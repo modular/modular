@@ -126,8 +126,10 @@ from max.experimental.sharding.per_shard_dim import (
 )
 from max.experimental.support import contextvar_context, driver_tensor_type
 from max.graph import (
+    Dim,
     DimLike,
     ShapeLike,
+    StaticDim,
     TensorType,
     TensorValueLike,
     ops,
@@ -778,6 +780,60 @@ class Tensor(DLPackArray, HasTensorValue):
         if not isinstance(value, GraphValue):
             raise TypeError(f"{value=} must be a tensor or buffer value")
         return current_realization_context().create_unrealized((value,))
+
+    @classmethod
+    def from_dim(cls, dim: DimLike) -> Tensor:
+        """Materializes a dimension as a rank-0 (scalar) tensor on CPU.
+
+        Converts a shape dimension — static, symbolic, or an algebraic
+        expression such as ``batch * seq`` — into a scalar tensor holding its
+        runtime value. This is the supported way to predicate runtime control
+        flow on a symbolic dimension: a symbolic :obj:`~max.graph.Dim` cannot be
+        compared to a Python ``int`` at trace time (``int(dim)`` and
+        ``dim <= 2`` both fail for dynamic dims), but the materialized tensor
+        can, and the comparison's result is exactly the scalar boolean predicate
+        that :func:`~max.experimental.functional.cond` expects.
+
+        .. code-block:: python
+
+            from max.experimental import functional as F
+            from max.experimental.tensor import Tensor
+
+            batch = x.shape[0]
+            pred = Tensor.from_dim(batch) <= 2  # scalar bool tensor on CPU
+            (out,) = F.cond(pred, [out_type], then_fn, else_fn)
+
+        Args:
+            dim: The dimension to materialize. Accepts anything
+                :obj:`~max.graph.DimLike` (an ``int``, a dim name, a
+                :obj:`~max.graph.Dim`, or an algebraic dim expression).
+
+        Returns:
+            Tensor: A rank-0 ``int64`` tensor on CPU holding the dimension's
+            runtime value.
+
+        Raises:
+            ValueError: In eager mode (no active graph) for a symbolic or
+                algebraic dimension, which has no value outside a graph.
+        """
+        d = Dim(dim)
+        if isinstance(d, StaticDim):
+            # The value is known now, so emit a scalar constant. This needs no
+            # active graph, so it works in eager mode as well as while building
+            # a graph.
+            return F.constant(int(d), DType.int64, CPU())
+        # A symbolic/algebraic dim has no value until runtime, which requires a
+        # graph to defer to. In eager mode there is none, so fail with a clear
+        # message rather than the downstream "No graph found" lookup error.
+        try:
+            _ = graph.Graph.current
+        except LookupError:
+            raise ValueError(
+                f"Tensor.from_dim({d}): a symbolic dimension has no value in "
+                "eager mode. Use a static dimension, or call this while "
+                "building a graph (e.g. inside Module.compile or F.functional)."
+            ) from None
+        return cls.from_graph_value(ops.shape_to_tensor([d])).reshape([])
 
     @classmethod
     def from_shard_values(

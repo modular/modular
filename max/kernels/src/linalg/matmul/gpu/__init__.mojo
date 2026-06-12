@@ -60,6 +60,7 @@ from ...utils import (
 from ...utils_gpu import (
     MatmulConfig,
     MatmulKernels,
+    _apple_m5_allow_lossy_f32_matmul,
     _bk_base,
     select_config,
     _vendor_blas_fallback_disabled,
@@ -69,6 +70,7 @@ from ._multistage_gemm_gpu import (
     multistage_gemm_kernel,
     multistage_gemm_split_k_kernel,
 )
+from .apple import enqueue_apple_matmul
 from .amd import (
     AMDMatmul,
     AMDPingPongMatmul,
@@ -541,6 +543,41 @@ def _matmul_gpu[
 
     logger.info("Static shapes available: N=", b.static_shape[1] > -1, " K=", a.static_shape[1] > -1)
     # fmt: on
+
+    # fp32 a/b are lossy on Apple (simdgroup MMA truncates to fp19), so gated
+    # behind MODULAR_APPLE_M5_ALLOW_LOSSY_F32_MATMUL.
+    comptime apple_supported = (
+        has_apple_gpu_accelerator()
+        and a_type == b_type
+        and a_type in (DType.float16, DType.bfloat16, DType.float32)
+        and c_type in (DType.float16, DType.bfloat16, DType.float32)
+    )
+    comptime if apple_supported:
+        comptime f32_in = a_type == DType.float32
+        if (
+            ctx.compute_capability() == 5
+            and (not f32_in or _apple_m5_allow_lossy_f32_matmul())
+            and m >= 64
+            and n >= 64
+            and k >= 16
+        ):
+            logger.info("Executing: Apple M5 simdgroup-tiled MATMUL kernel")
+            # Single `in_type`: rebind B to A's dtype (equal under the guard).
+            comptime BAsAType = TileTensor[
+                a_type,
+                type_of(b).LayoutType,
+                type_of(b).origin,
+                address_space=type_of(b).address_space,
+                linear_idx_type=type_of(b).linear_idx_type,
+                element_size=type_of(b).element_size,
+            ]
+            enqueue_apple_matmul[
+                a_type,
+                c_type=c_type,
+                transpose_b=transpose_b,
+                elementwise_lambda_fn=elementwise_lambda_wrapper,
+            ](c, a, rebind[BAsAType](b), ctx)
+            return
 
     comptime if get_defined_bool["MODULE_USE_VENDOR_BLAS", False]():
         logger.info("Executing: Vendor BLAS")

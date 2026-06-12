@@ -261,7 +261,7 @@ struct _block_Q8_K_packed[group_size: Int, tile_m: Int = 1]:
 def _quantize_a_Q8_K[
     group_size: Int, dtype: DType, *, interleave_group_sums: Bool = False
 ](a: LayoutTensor[dtype, ...]) -> UnsafePointer[
-    _block_Q8_K_packed[group_size], MutExternalOrigin
+    _block_Q8_K_packed[group_size], MutUntrackedOrigin
 ]:
     comptime assert a.rank == 2
     comptime quantized_k = _block_QK_K.quantized_k
@@ -1243,9 +1243,9 @@ def _matmul_Q6_K_tile[
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     a_ptr: UnsafePointer[
-        _block_Q8_K_packed[_block_Q6_K.group_size], ImmutAnyOrigin
+        mut=False, _block_Q8_K_packed[_block_Q6_K.group_size], _
     ],
-    b_ptr: UnsafePointer[_block_Q6_K_packed[], _],
+    b_ptr: UnsafePointer[mut=False, _block_Q6_K_packed[], _],
     c_ptr: UnsafePointer[mut=True, Float32, _],
     N: Int,
     accumulate: Bool,
@@ -1381,7 +1381,7 @@ def _matmul_Q6_K_columns[
     @__copy_capture(b_tile_ptr, b_q_bits)
     @always_inline
     def process_rows[tile_m: Int](m: Int):
-        var b_q_bits_ptr = b_q_bits.as_any_origin()
+        var b_q_bits_ptr = b_q_bits.as_unsafe_any_origin()
 
         @parameter
         def matmul_group_unpacked(

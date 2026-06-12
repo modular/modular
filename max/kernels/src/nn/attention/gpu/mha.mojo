@@ -94,11 +94,11 @@ from .amd_rdna.attention import AttentionRDNA
 from .amd_rdna.mha_decode import AttentionRDNA
 from .amd_rdna.mha_prefill import AttentionRDNA
 from .amd_structured.attention import Attention
-from .amd_structured.hk_mha_prefill import (
-    HKMhaConfig,
-    HKMhaPrefill,
-    hk_mha_prefill,
-    hk_mha_prefill_ragged,
+from .amd_structured.mha_prefill_v2 import (
+    MhaConfigV2,
+    MhaPrefillV2,
+    mha_prefill_v2,
+    mha_prefill_v2_ragged,
 )
 from .amd_structured.mha_decode import Attention
 from .amd_structured.mha_decode_streaming import Attention
@@ -385,14 +385,32 @@ def flash_attention[
     comptime assert (
         not ragged or q.rank == 3
     ), "only support rank 3 inputs for ragged inputs."
+
+    # Native FP8 SM100 path. K/V are FP8 in the paged cache.
+    # Q@K^T and P@V run as FP8 MMAs at tensorwise scale=1.
+    # Output is BF16.
+    comptime is_native_fp8_sm100 = (
+        q.dtype.is_float8()
+        and cache_t.dtype.is_float8()
+        and output.dtype == DType.bfloat16
+        and _is_sm10x_gpu(ctx.default_device_info)
+    )
+
     comptime assert (
-        q.dtype == cache_t.dtype == output.dtype
-    ), "Q, K, V, output should have same type."
+        q.dtype == cache_t.dtype == output.dtype or is_native_fp8_sm100
+    ), (
+        "Q, K, V, output should have same dtype, or Q=K=V=float8,"
+        " output=bfloat16 for the native FP8 SM100 path."
+    )
     comptime assert (
         q.dtype == DType.float32
         or q.dtype.is_half_float()
         or (q.dtype.is_float8() and has_amd_gpu_accelerator())
-    ), "Only support single, half, and float8 (AMD only) precision."
+        or is_native_fp8_sm100
+    ), (
+        "Only support single, half, float8 (AMD), and float8->bfloat16"
+        " (SM100) precision."
+    )
 
     # TODO docstring
     @always_inline
@@ -717,12 +735,12 @@ def flash_attention_dispatch[
             else:
                 # Long-context AMD CDNA prefill gate. Routes BF16
                 # prefill to the 8-warp structured kernel in
-                # `amd_structured/hk_mha_prefill.mojo`; otherwise falls
+                # `amd_structured/mha_prefill_v2.mojo`; otherwise falls
                 # through to the FA2 launch below. Gate (all comptime
                 # except the seq-length / page-size run-time checks):
                 # - BF16 throughout;
                 # - depth in (64, 128) (MFMA shape `32x32x16_bf16`);
-                # - any `MHAMask` (HK handles Causal natively + the
+                # - any `MHAMask` (`MhaPrefillV2` handles Causal natively + the
                 #   generic `_maybe_apply_mask` path covers
                 #   SlidingWindow / Chunked / Null / etc.);
                 # - no attention sink;
@@ -734,7 +752,7 @@ def flash_attention_dispatch[
                 # `_pv_strip_with_partial_softmax`'s else-branch ensures
                 # non-causal masks don't blow up `norm_vec` in the
                 # epilogue (see comment there).
-                comptime _hk_eligible = (
+                comptime _v2_eligible = (
                     config.dtype == DType.bfloat16
                     and output.dtype == DType.bfloat16
                     and (config.depth == 64 or config.depth == 128)
@@ -743,10 +761,10 @@ def flash_attention_dispatch[
                     and (k_t.page_size == 0 or k_t.page_size >= 64)
                 )
 
-                comptime if _hk_eligible:
-                    # Long-context perf threshold. Below this HK doesn't
-                    # fill the GPU at BM=256 and FA2 (BM=128) wins.
-                    # Partial-Q-tile masking inside HK now handles
+                comptime if _v2_eligible:
+                    # Long-context perf threshold. Below this the kernel
+                    # doesn't fill the GPU at BM=256 and FA2 (BM=128) wins.
+                    # Partial-Q-tile masking inside the kernel now handles
                     # `seq_len % 256 != 0` correctly for the Q-side
                     # writeback skip, so the alignment guard is gone;
                     # per-block early-return + writeback skip together
@@ -760,9 +778,10 @@ def flash_attention_dispatch[
                     # softmax, and the even-tile-count round-up fixes the
                     # odd-`N` main-loop/epilogue double-count that was the
                     # real i2i corruption. FLUX i2i is SSIM 0.994 through
-                    # HK (was 0.50), so the prior carve-out to FA2 is gone.
+                    # the kernel (was 0.50), so the prior carve-out to FA2
+                    # is gone.
                     if max_prompt_len >= 4096:
-                        comptime hk_config = HKMhaConfig(
+                        comptime v2_config = MhaConfigV2(
                             q_block_size=32,
                             kv_block=64,
                             depth=config.depth,
@@ -773,14 +792,14 @@ def flash_attention_dispatch[
                         )
                         comptime if ragged:
                             # Ragged batch: per-sequence setup happens
-                            # inside the dedicated ragged-HK kernel so
-                            # HK keeps its tuned single-kernel
+                            # inside the dedicated ragged `MhaPrefillV2`
+                            # kernel so it keeps its tuned single-kernel
                             # register-allocation context. Avoids the
-                            # ~14% perf hit observed when HK is inlined
-                            # into the FA2 host `def mha[]`.
+                            # ~14% perf hit observed when the kernel is
+                            # inlined into the FA2 host `def mha[]`.
                             #
                             # Handles any `batch_size`: the `ragged:
-                            # Bool` flag inside `HKMhaPrefill.run` forces
+                            # Bool` flag inside `MhaPrefillV2.run` forces
                             # the Q/O batch coord to 0 so each block
                             # reads from the per-sequence pre-offset
                             # pointer regardless of `block_idx.z` (the
@@ -799,7 +818,7 @@ def flash_attention_dispatch[
                             # codegen at the comptime monomorphization
                             # level.
                             var q_off_ptr = (
-                                valid_length.value().as_any_origin().ptr
+                                valid_length.value().as_unsafe_any_origin().ptr
                             )
                             # Sink-weights pointer: when `sink=True` the
                             # caller MUST pass non-None `sink_weights`
@@ -810,23 +829,25 @@ def flash_attention_dispatch[
                             # cross-attention vs self-attention variant.
                             comptime if sink:
                                 var sw_ptr = (
-                                    sink_weights.value().as_any_origin().ptr
+                                    sink_weights.value()
+                                    .as_unsafe_any_origin()
+                                    .ptr
                                 )
                                 if kv_input_row_offsets:
-                                    hk_mha_prefill_ragged[
-                                        config=hk_config,
+                                    mha_prefill_v2_ragged[
+                                        config=v2_config,
                                         cross_attention=True,
                                         sink=True,
                                     ](
-                                        q.as_any_origin().ptr,
+                                        q.as_unsafe_any_origin().ptr,
                                         k,
                                         v,
-                                        output.as_any_origin().ptr,
+                                        output.as_unsafe_any_origin().ptr,
                                         mask_functor,
                                         scale,
                                         q_off_ptr,
                                         kv_input_row_offsets.value()
-                                        .as_any_origin()
+                                        .as_unsafe_any_origin()
                                         .ptr,
                                         max_prompt_len,
                                         batch_size,
@@ -834,13 +855,13 @@ def flash_attention_dispatch[
                                         sw_ptr,
                                     )
                                 else:
-                                    hk_mha_prefill_ragged[
-                                        config=hk_config, sink=True
+                                    mha_prefill_v2_ragged[
+                                        config=v2_config, sink=True
                                     ](
-                                        q.as_any_origin().ptr,
+                                        q.as_unsafe_any_origin().ptr,
                                         k,
                                         v,
-                                        output.as_any_origin().ptr,
+                                        output.as_unsafe_any_origin().ptr,
                                         mask_functor,
                                         scale,
                                         q_off_ptr,
@@ -852,29 +873,29 @@ def flash_attention_dispatch[
                                     )
                             else:
                                 if kv_input_row_offsets:
-                                    hk_mha_prefill_ragged[
-                                        config=hk_config, cross_attention=True
+                                    mha_prefill_v2_ragged[
+                                        config=v2_config, cross_attention=True
                                     ](
-                                        q.as_any_origin().ptr,
+                                        q.as_unsafe_any_origin().ptr,
                                         k,
                                         v,
-                                        output.as_any_origin().ptr,
+                                        output.as_unsafe_any_origin().ptr,
                                         mask_functor,
                                         scale,
                                         q_off_ptr,
                                         kv_input_row_offsets.value()
-                                        .as_any_origin()
+                                        .as_unsafe_any_origin()
                                         .ptr,
                                         max_prompt_len,
                                         batch_size,
                                         ctx,
                                     )
                                 else:
-                                    hk_mha_prefill_ragged[config=hk_config](
-                                        q.as_any_origin().ptr,
+                                    mha_prefill_v2_ragged[config=v2_config](
+                                        q.as_unsafe_any_origin().ptr,
                                         k,
                                         v,
-                                        output.as_any_origin().ptr,
+                                        output.as_unsafe_any_origin().ptr,
                                         mask_functor,
                                         scale,
                                         q_off_ptr,
@@ -897,7 +918,7 @@ def flash_attention_dispatch[
                             # — zero for fresh prefill, positive for cache
                             # reuse.
                             comptime if sink:
-                                hk_mha_prefill[hk_config, sink=True](
+                                mha_prefill_v2[v2_config, sink=True](
                                     q_tt,
                                     k,
                                     v,
@@ -907,10 +928,12 @@ def flash_attention_dispatch[
                                     max_cache_valid_length,
                                     max_cache_valid_length - max_prompt_len,
                                     ctx,
-                                    sink_weights.value().as_any_origin().ptr,
+                                    sink_weights.value()
+                                    .as_unsafe_any_origin()
+                                    .ptr,
                                 )
                             else:
-                                hk_mha_prefill[hk_config](
+                                mha_prefill_v2[v2_config](
                                     q_tt,
                                     k,
                                     v,
@@ -1320,7 +1343,7 @@ def flash_attention_dispatch[
                                     kv_input_row_offsets,
                                     batch_size,
                                     SplitKPartition(
-                                        exp_sum_qk_max_data.unsafe_ptr(),
+                                        exp_sum_qk_max_data.unsafe_ptr().as_unsafe_any_origin(),
                                         UInt32(num_partitions_value),
                                     ),
                                     ctx,
@@ -1347,7 +1370,7 @@ def flash_attention_dispatch[
                                     _optional_lt_to_tt(kv_input_row_offsets),
                                     batch_size,
                                     SplitKPartition(
-                                        exp_sum_qk_max_data.unsafe_ptr(),
+                                        exp_sum_qk_max_data.unsafe_ptr().as_unsafe_any_origin(),
                                         UInt32(num_partitions_value),
                                     ),
                                     ctx,
@@ -1746,7 +1769,7 @@ def flash_attention_ragged[
 
     var is_token_generation = False
 
-    var cache_row_offsets = input_row_offsets.as_any_origin()
+    var cache_row_offsets = input_row_offsets.as_unsafe_any_origin()
 
     var k_operand = RaggedMHAOperand(
         LayoutTensor[k.dtype, Layout.row_major(k.layout.shape), k.origin](
@@ -2005,11 +2028,12 @@ def mha[
             )
             attention.mha_prefill()
         else:
-            # AMD CDNA prefill via FA2. The long-context HK path is dispatched
-            # host-side from `flash_attention_dispatch` so HK keeps its tuned
-            # single-kernel register-allocation context (`def mha[]`'s body
-            # holding the FA2 fallback inflates spills when HK is inlined
-            # here — measured ~14% loss vs HK as a top-level kernel).
+            # AMD CDNA prefill via FA2. The long-context `MhaPrefillV2` path
+            # is dispatched host-side from `flash_attention_dispatch` so the
+            # kernel keeps its tuned single-kernel register-allocation context
+            # (`def mha[]`'s body holding the FA2 fallback inflates spills when
+            # the kernel is inlined here — measured ~14% loss vs `MhaPrefillV2`
+            # as a top-level kernel).
             var attention = Attention[config, group, sink](
                 output_ptr + q_batch_offset,
                 q_ptr + q_batch_offset,
@@ -4531,7 +4555,8 @@ def mha_decoding_single_batch_pipelined[
         circular=True,
     ]
     var k_smem_iter = IteratorTypeK(
-        k_smem, IteratorTypeK.layout_uint_type(k_smem_size)
+        k_smem.as_unsafe_any_origin(),
+        IteratorTypeK.layout_uint_type(k_smem_size),
     )
 
     var kv_head_idx = block_idx.y
@@ -4612,7 +4637,8 @@ def mha_decoding_single_batch_pipelined[
         circular=True,
     ]
     var v_smem_iter = IteratorTypeV(
-        v_smem, IteratorTypeV.layout_uint_type(v_smem_size)
+        v_smem.as_unsafe_any_origin(),
+        IteratorTypeV.layout_uint_type(v_smem_size),
     )
 
     # Shared memory for P = Q * K^t
@@ -4636,7 +4662,7 @@ def mha_decoding_single_batch_pipelined[
         Layout.row_major(p_frag_simdwidth * num_warps_n, BM),
         MutAnyOrigin,
         address_space=AddressSpace.SHARED,
-    ]((p_smem + BM * BN).bitcast[Scalar[accum_type]]())
+    ]((p_smem + BM * BN).bitcast[Scalar[accum_type]]().as_unsafe_any_origin())
 
     var q_offset = depth * kv_head_idx * group
 
@@ -5161,14 +5187,13 @@ def mha_gpu_naive[
     @parameter
     @__copy_capture(p_buffer)
     def input_fn_device[
-        _simd_width: Int, _rank: Int
-    ](coords: IndexList[_rank]) -> SIMD[p_type, _simd_width]:
-        var p_coord = Coord(coords)
-        comptime assert p_buffer.flat_rank >= p_coord.flat_rank
-        return p_buffer.load[width=_simd_width](p_coord)
+        _simd_width: Int
+    ](coords: Coord) -> SIMD[p_type, _simd_width]:
+        comptime assert p_buffer.flat_rank >= coords.flat_rank
+        return p_buffer.load[width=_simd_width](coords)
 
     _softmax_gpu[p_type, 1, 3, input_fn_device, sink=sink](
-        Index(batch_size * num_heads, max_prompt_len, num_keys),
+        Coord(batch_size * num_heads, max_prompt_len, num_keys),
         p_buffer,
         2,
         ctx,

@@ -42,8 +42,8 @@ MTP. For experimenting with arbitrary target/draft pairs, use
 
 | Method             | Draft source                                                           | Supported targets and hardware                                    |
 |--------------------|------------------------------------------------------------------------|-------------------------------------------------------------------|
-| `eagle` / `eagle3` | A trained EAGLE draft that shares the target's embedding and `lm_head` | Llama 3 (1 GPU), Kimi K2.5 (8× B200).                             |
-| `mtp`              | A native multi-token prediction head inside the target checkpoint      | DeepSeek V3 and derivatives (8× B200).                            |
+| `eagle` / `eagle3` | A trained EAGLE draft that shares the target's embedding and `lm_head` | Llama 3 (1 GPU), Kimi K2.5 and K2.6 (8× B200).                    |
+| `mtp`              | A native multi-token prediction head inside the target checkpoint      | DeepSeek V3 and derivatives (8× B200), Gemma 4 (1 GPU).           |
 | `standalone`       | A separate small model you pass with `--draft-model-path`              | Any target with a same-family draft, on any GPU the pair fits on. |
 
 ## Serve with speculative decoding
@@ -181,8 +181,8 @@ print(response.choices[0].message.content)
 ## Read the startup architecture name
 
 For EAGLE and MTP, MAX reports a unified architecture at startup, for
-example `UnifiedEagleLlama3ForCausalLM` or
-`UnifiedMTPDeepseekV3ForCausalLM`. That's expected: MAX compiles the
+example `UnifiedEagleLlama3ForCausalLM`, `UnifiedMTPDeepseekV3ForCausalLM`,
+or `UnifiedMTPGemma4ForCausalLM`. That's expected: MAX compiles the
 target, draft, and verifier into a single graph. `standalone` runs the
 target and draft as separate models and reports the target's normal
 architecture.

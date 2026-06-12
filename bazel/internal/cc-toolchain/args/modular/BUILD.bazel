@@ -19,6 +19,10 @@ cc_args(
             "-g",
             "-O3",
         ],
+        "//:modular_config_dev": [
+            "-g",
+            "-O2",
+        ],
         "//:modular_config_debug_modular": [
             "-DMODULAR_DEBUG",
             "-g",
@@ -70,6 +74,10 @@ cc_args(
     actions = ["@rules_cc//cc/toolchains/actions:compile_actions"],
     args = select({
         "//:modular_config_default": [
+            "-gline-tables-only",
+            "-O2",
+        ],
+        "//:modular_config_dev": [
             "-gline-tables-only",
             "-O2",
         ],

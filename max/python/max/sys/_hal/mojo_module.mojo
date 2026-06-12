@@ -30,7 +30,7 @@ from _mojo_module import (
 
 
 @export
-def PyInit_mojo_module() -> PythonObject:
+def PyInit_mojo_module() abi("C") -> PythonObject:
     """Initializes the ``mojo_module`` Python extension."""
     try:
         var b = PythonModuleBuilder("mojo_module")

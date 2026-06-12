@@ -19,7 +19,7 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef
 from max.nn.kv_cache import KVCacheParams, KVConnectorType
-from max.pipelines.context import TextGenerationContext
+from max.pipelines.context import TextContext
 from max.pipelines.kv_cache import PagedKVCacheManager
 from max.pipelines.kv_cache.connectors.local_connector import LocalConnector
 from test_common.context_utils import create_text_context
@@ -214,7 +214,7 @@ async def test_swapping_to_host_multi_gpu(
     # Since the last 10 reqs are duplicates, we need approximately 1000 tokens worth of blocks.
     # This exceeds the 500 token limit so we will need to swap to host.
     prompt_len = 100
-    reqs: list[TextGenerationContext] = []
+    reqs: list[TextContext] = []
     for i in range(10):  # noqa: B007
         reqs.append(create_text_context(gen_prompt(prompt_len)))
     for i in range(10):
@@ -222,7 +222,7 @@ async def test_swapping_to_host_multi_gpu(
 
     # Each batch has 4 requests
     batch_size = 4
-    batches: list[list[TextGenerationContext]] = [
+    batches: list[list[TextContext]] = [
         reqs[i : i + batch_size] for i in range(0, len(reqs), batch_size)
     ]
 

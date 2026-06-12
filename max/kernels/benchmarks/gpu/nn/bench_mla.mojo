@@ -153,7 +153,7 @@ def bench_decode[
                 config=MHAConfig[qkv_type](num_heads, depth),
                 decoding_warp_split_k=decoding_warp_split_k,
             ](
-                output_device.as_any_origin(),
+                output_device.as_unsafe_any_origin(),
                 q_device,
                 k_device,
                 CausalMask(),

@@ -47,7 +47,6 @@ from max.pipelines.lib import (
 )
 from max.pipelines.lib.vlm_utils import compute_multimodal_merge_indices
 from max.profiler import Tracer
-from transformers import AutoConfig
 
 from .context import Qwen3VLTextAndVisionContext, VisionEncodingData
 from .model_config import Qwen3VLConfig
@@ -170,20 +169,6 @@ class Qwen3VLModel(
 
         self.vision_model, self.language_model = self.load_model(session)
         self._parallel_ops = ParallelArrayOps(max_workers=24)
-
-    @classmethod
-    def estimate_activation_memory(
-        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
-    ) -> int:
-        del pipeline_config, huggingface_config  # Unused.
-
-        # FIXME GEX-3248: This is a workaround for a MemoryManager fragmentation
-        # issue. In #77700 we swapped the order of model weight loading and kv
-        # cache loading. This affected memory fragmentation and led to CUDA OOM
-        # when running `br smoke-test -- qwen/qwen3-vl-30b-a3b-instruct` on 1xB200.
-        # We reduce the kv cache size slightly to avoid this.
-        # Update: Bumped to 10 GiB after #80736 removed MemoryManager fallthrough.
-        return 10 * 1024 * 1024 * 1024  # 10 GiB
 
     # TODO: Seems like a common pattern. Implement in a base class?
     def load_model(self, session: InferenceSession) -> tuple[Model, Model]:

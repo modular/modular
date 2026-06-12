@@ -25,7 +25,7 @@ from std.memory import (
     memcpy,
     memset,
     UnsafePointer,
-    MutExternalOrigin,
+    MutUntrackedOrigin,
     stack_allocation,
 )
 
@@ -35,7 +35,7 @@ comptime _CHUNK_SIZE = 64
 
 
 @always_inline
-def _metal_os_log_chunk(data: UnsafePointer[UInt8, MutExternalOrigin]):
+def _metal_os_log_chunk(data: UnsafePointer[UInt8, MutUntrackedOrigin]):
     """Emit a single 64-byte chunk via the os_log sentinel.
 
     The compiler's InstructionRewrite pass replaces this sentinel call

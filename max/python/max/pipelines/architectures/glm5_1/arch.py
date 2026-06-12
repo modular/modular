@@ -14,6 +14,7 @@
 from max.graph.weights import WeightsFormat
 from max.pipelines.architectures.deepseekV3_2 import weight_adapters
 from max.pipelines.context import TextContext
+from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
 from max.pipelines.lib import SupportedArchitecture, TextTokenizer
 from max.pipelines.modeling.types import PipelineTask
 
@@ -45,4 +46,5 @@ glm5_1_arch = SupportedArchitecture(
     supports_empty_batches=True,
     requires_max_batch_context_length=True,
     config=Glm5_1Config,
+    memory_planner=PagedMemoryPlanner,
 )

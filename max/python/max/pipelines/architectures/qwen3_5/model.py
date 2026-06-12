@@ -44,7 +44,6 @@ from max.pipelines.lib import (
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
-    supported_encoding_dtype,
 )
 from max.pipelines.lib.interfaces import AlwaysSignalBuffersMixin
 from max.pipelines.lib.utils import parse_state_dict_from_weights
@@ -191,53 +190,6 @@ class Qwen3_5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
     ) -> int:
         text_config = Qwen3_5Config._get_text_config(huggingface_config)
         return Qwen3_5Config.calculate_max_seq_len(pipeline_config, text_config)
-
-    @classmethod
-    def estimate_activation_memory(
-        cls,
-        pipeline_config: PipelineConfig,
-        huggingface_config: AutoConfig,
-    ) -> int:
-        """Reserve GPU memory for the GatedDeltaNet state pool.
-
-        The slot-indexed SSM kernels mutate the conv and recurrent pools in
-        place; there are no working buffers and no graph-output pool, so
-        peak footprint is a single ``max_batch x per_req`` allocation.
-
-        ``Qwen3_5Config.initialize_from_config`` pre-sets ``max_batch_size``
-        before this method runs, so it is always known here.
-        """
-        text_config = Qwen3_5Config._get_text_config(huggingface_config)
-        layer_types = Qwen3_5Config._get_layer_types(text_config)
-        num_linear = sum(1 for lt in layer_types if lt == "linear_attention")
-
-        nk = getattr(text_config, "linear_num_key_heads", 16)
-        nv = getattr(text_config, "linear_num_value_heads", 48)
-        kd = getattr(text_config, "linear_key_head_dim", 128)
-        vd = getattr(text_config, "linear_value_head_dim", 128)
-        kernel = getattr(text_config, "linear_conv_kernel_dim", 4)
-
-        conv_dim = 2 * kd * nk + vd * nv
-        # Determine state dtype bytes: states stored in model dtype (typically bfloat16).
-        encoding = pipeline_config.model.quantization_encoding
-        state_dtype = (
-            supported_encoding_dtype(encoding)
-            if encoding is not None
-            else DType.bfloat16
-        )
-        dtype_bytes = state_dtype.size_in_bytes
-        bytes_per_layer = (
-            conv_dim * (kernel - 1) * dtype_bytes + nv * kd * vd * dtype_bytes
-        )
-        per_req = num_linear * bytes_per_layer
-
-        max_batch = pipeline_config.runtime.max_batch_size
-        assert max_batch is not None, (
-            "Qwen3_5Config.initialize_from_config must set max_batch_size "
-            "before estimate_activation_memory runs"
-        )
-        # 1x: single in-place pool — kernels mutate it via slot_idx.
-        return max_batch * per_req if num_linear > 0 else 0
 
     @traced
     def load_model(self, session: InferenceSession) -> Model:

@@ -41,7 +41,7 @@ from op_utils import (
 
 
 @export
-def PyInit_roi_align_ops() -> PythonObject:
+def PyInit_roi_align_ops() abi("C") -> PythonObject:
     """Create a Python module with ROI Align kernel function bindings."""
     try:
         var b = PythonModuleBuilder("roi_align_ops")
@@ -62,9 +62,9 @@ def PyInit_roi_align_ops() -> PythonObject:
 def roi_align_op[
     dtype: DType, //
 ](
-    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    in_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    rois_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    out_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    in_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    rois_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     n_regions: Int,
     height: Int,
     width: Int,

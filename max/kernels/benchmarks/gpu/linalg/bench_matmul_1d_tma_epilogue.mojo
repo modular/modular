@@ -288,7 +288,7 @@ def bench_matmul_1d_tma_epilogue[
                 tensor_c,
                 tensor_a,
                 tensor_b,
-                epilogue_for_gpu.as_any_origin(),
+                epilogue_for_gpu.as_unsafe_any_origin(),
                 ctx,
             )
 
@@ -397,7 +397,7 @@ def bench_matmul_1d_tma_epilogue[
                 c_kernel_nd,
                 a_ver_nd,
                 b_ver_nd,
-                ver_epilogue.as_any_origin(),
+                ver_epilogue.as_unsafe_any_origin(),
                 ctx,
             )
 

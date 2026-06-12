@@ -168,11 +168,11 @@ struct Tuple[*element_types: Movable](
             ).init_pointee_copy(trait_downcast[Copyable](copy[i]))
 
     @always_inline("nodebug")
-    def __init__(out self, *, deinit take: Self):
+    def __init__(out self, *, deinit move: Self):
         """Move construct the tuple.
 
         Args:
-            take: The value to move from.
+            move: The value to move from.
         """
         # Mark '_mlir_value' as being initialized so we can work on it.
         __mlir_op.`lit.ownership.mark_initialized`(
@@ -183,9 +183,9 @@ struct Tuple[*element_types: Movable](
             # TODO: We should not use self[i] as this returns a reference to
             # uninitialized memory.
             UnsafePointer(to=self[i]).init_pointee_move_from(
-                UnsafePointer(to=take[i])
+                UnsafePointer(to=move[i])
             )
-        # Note: The destructor on `take` is auto-disabled in a moveinit.
+        # Note: The destructor on `move` is auto-disabled in a moveinit.
 
     @always_inline("builtin")
     @staticmethod

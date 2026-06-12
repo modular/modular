@@ -14,7 +14,7 @@
 """LoRA adapter management for MAX pipelines."""
 
 from .config import LoRAConfig
-from .lora import ADAPTER_CONFIG_FILE, LoRAManager, LoRAModel
+from .lora import ADAPTER_CONFIG_FILE, LoRAInputs, LoRAManager, LoRAModel
 from .lora_types import (
     LORA_REQUEST_ENDPOINT,
     LORA_RESPONSE_ENDPOINT,
@@ -30,6 +30,7 @@ __all__ = [
     "LORA_REQUEST_ENDPOINT",
     "LORA_RESPONSE_ENDPOINT",
     "LoRAConfig",
+    "LoRAInputs",
     "LoRAManager",
     "LoRAModel",
     "LoRAOperation",

@@ -10,6 +10,13 @@ _EXTRA_CONSTRAINTS = {
         "//:b200_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
+    # No SM100/B200-specific code; runs on any GPU. Apple is excluded because
+    # `_block_reduce_topk` uses MAX_BLOCK_SIZE == WARP_SIZE there, which the
+    # 128-thread block in the test would exceed.
+    "test_sparse_indexer_common.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     "test_cudnn_conv.mojo": ["//:nvidia_gpu"],
     "test_miopen_conv.mojo": ["//:amd_gpu"],
     # 4-wave implicit-GEMM conv inherits the matmul's MI355X-only MFMA
@@ -173,36 +180,17 @@ _EXTRA_CONSTRAINTS = {
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
-    # FP8 quantize+store path is SM100-only (uses float8_e4m3fn).
-    "test_rope_split_store_fp8.mojo": select({
-        "//:b200_gpu": [],
-        "//conditions:default": ["@platforms//:incompatible"],
-    }),
     # SM100 FA4 1Q attention-sink double-count regression. SM100-only
     # (exercises the FA4 `fa4_softmax` 1Q warp-specialized path).
     "attention/test_mha_sm100_1q_sink.mojo": select({
         "//:b200_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    # SM100 MHA with fp8 KV via dequant-staging + existing bf16 FA4 path.
-    # SM100-only.
-    "attention/test_mha_sm100_fp8_kv_d256_prefill.mojo": select({
-        "//:b200_gpu": [],
-        "//conditions:default": ["@platforms//:incompatible"],
-    }),
-    "attention/test_mha_sm100_fp8_kv_d256_decode.mojo": select({
-        "//:b200_gpu": [],
-        "//conditions:default": ["@platforms//:incompatible"],
-    }),
-    "attention/test_mha_sm100_fp8_kv_d512_prefill.mojo": select({
-        "//:b200_gpu": [],
-        "//conditions:default": ["@platforms//:incompatible"],
-    }),
-    "attention/test_mha_sm100_fp8_kv_d512_decode.mojo": select({
-        "//:b200_gpu": [],
-        "//conditions:default": ["@platforms//:incompatible"],
-    }),
     "attention/test_mha_sm100_qkv_fp8_d256_prefill.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "attention/test_mha_sm100_qkv_fp8_d256_paged.mojo": select({
         "//:b200_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
@@ -283,6 +271,8 @@ _EXTRA_CONSTRAINTS = {
     }),  # FIXME: MOCO-2411 — segfaults on Apple GPU remote workers
 }
 
+_EXTRA_DEPS = {}
+
 _FILECHECK_TESTS = [
     "test_mha_tile_scheduler.mojo",
     "test_padding_gpu.mojo",
@@ -343,7 +333,7 @@ _FILECHECK_TESTS = [
             "//max:nn",
             "//max:testdata",
             "@mojo//:std",
-        ],
+        ] + _EXTRA_DEPS.get(src, []),
     )
     for src in glob(
         ["**/*.mojo"],

@@ -407,8 +407,8 @@ struct Shuffler[E: Int]:
             K_BYTES % Self.MFMA_K_BYTES == 0
         ), "preshuffle_b_5d: K_BYTES must be a multiple of 64"
 
-        var raw_any = raw.as_any_origin()
-        var dst_any = dst.as_any_origin()
+        var raw_any = raw.as_unsafe_any_origin()
+        var dst_any = dst.as_unsafe_any_origin()
         comptime kernel = Self._preshuffle_b_5d_kernel[
             N,
             K_BYTES,
@@ -623,9 +623,9 @@ struct Shuffler[E: Int]:
             K_SCALES % Self.S_K_BLOCK == 0
         ), "preshuffle_grouped_scale_4d_gpu: K_SCALES must be a multiple of 8"
 
-        var raw_any = sfa_raw.as_any_origin()
-        var pre_any = sfa_pre.as_any_origin()
-        var a_off_any = a_offsets.as_any_origin()
+        var raw_any = sfa_raw.as_unsafe_any_origin()
+        var pre_any = sfa_pre.as_unsafe_any_origin()
+        var a_off_any = a_offsets.as_unsafe_any_origin()
 
         var max_padded_M = align_up(max_num_tokens_per_expert, Self.S_MN_BLOCK)
 

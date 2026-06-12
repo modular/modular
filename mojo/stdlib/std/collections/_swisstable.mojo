@@ -284,14 +284,14 @@ struct SwissTable[
         H: The hasher type.
     """
 
-    var _ctrl: UnsafePointer[UInt8, MutExternalOrigin]
+    var _ctrl: UnsafePointer[UInt8, MutUntrackedOrigin]
     """Control byte array. Size is _capacity + GROUP_WIDTH.
     Each byte is EMPTY (0xFF), DELETED (0x80), or h2 fingerprint (0x00-0x7F).
     The last GROUP_WIDTH bytes mirror the first GROUP_WIDTH for SIMD wrapping.
     """
 
     var _slots: UnsafePointer[
-        SwissTableEntry[Self.K, Self.V, Self.H], MutExternalOrigin
+        SwissTableEntry[Self.K, Self.V, Self.H], MutUntrackedOrigin
     ]
     """Flat slot array. Size is _capacity. Only occupied slots are initialized.
     """
@@ -611,7 +611,7 @@ struct SwissTable[
 
         return relocations^
 
-    def rehash_in_place(mut self) -> UnsafePointer[Int32, MutExternalOrigin]:
+    def rehash_in_place(mut self) -> UnsafePointer[Int32, MutUntrackedOrigin]:
         """Rehash in place without changing capacity (Abseil's drop-deletes).
 
         Reclaims DELETED tombstones by moving all entries to their ideal

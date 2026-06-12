@@ -52,7 +52,7 @@ def _is_gpu_allowed_mixed_unary_op[op: ElementwiseUnaryMixedOp]() -> Bool:
 
 
 @export
-def PyInit_elementwise_cast_ops() -> PythonObject:
+def PyInit_elementwise_cast_ops() abi("C") -> PythonObject:
     """Create a Python module with cast kernel function bindings."""
     try:
         var b = PythonModuleBuilder("elementwise_cast_ops")
@@ -235,8 +235,8 @@ def _cast_dispatch_out[
 def unary_mixed_op[
     op: ElementwiseUnaryMixedOp, dtype: DType, out_dtype: DType
 ](
-    out_ptr: UnsafePointer[Scalar[out_dtype], MutExternalOrigin],
-    in_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    out_ptr: UnsafePointer[Scalar[out_dtype], MutUntrackedOrigin],
+    in_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     size: Int,
     ctx: DeviceContext,
 ) raises:

@@ -57,7 +57,7 @@ def _setup_category(
     value: Int,
     name: StaticString,
 ):
-    name_category(UInt32(value), name.unsafe_ptr().as_any_origin())
+    name_category(UInt32(value), name.unsafe_ptr().as_unsafe_any_origin())
 
 
 def _setup_categories(
@@ -214,7 +214,7 @@ struct _C_EventAttributes(TrivialRegisterPassable):
     var message_type: Int32
     """Message type specified in this attribute structure."""
 
-    var message: UnsafePointer[UInt8, ImmutExternalOrigin]
+    var message: UnsafePointer[UInt8, ImmutUntrackedOrigin]
     """Message assigned to this attribute structure."""
 
 
@@ -260,7 +260,7 @@ struct EventAttributes(TrivialRegisterPassable):
             message_type=ASCII,
             # FIXME(MSTDL-2739): Ths is is wildly unsafe. What is keeping the 'message' string alive?
             message=message.unsafe_ptr().unsafe_origin_cast[
-                ImmutExternalOrigin
+                ImmutUntrackedOrigin
             ](),
         )
 
@@ -347,11 +347,11 @@ struct _Mark:
 
     def __call__(self, val: UnsafePointer[mut=False, _C_EventAttributes, _]):
         comptime assert has_nvidia_gpu_accelerator()
-        self._fn[_nvtxMarkEx.fn_type](val.as_any_origin())
+        self._fn[_nvtxMarkEx.fn_type](val.as_unsafe_any_origin())
 
     def __call__(self, val: UnsafePointer[mut=False, UInt8, _]):
         comptime assert has_amd_gpu_accelerator()
-        self._fn[_roctxMarkA.fn_type](val.as_any_origin())
+        self._fn[_roctxMarkA.fn_type](val.as_unsafe_any_origin())
 
 
 struct _RangeStart:
@@ -367,11 +367,11 @@ struct _RangeStart:
         self, val: UnsafePointer[mut=False, _C_EventAttributes, _]
     ) -> RangeID:
         comptime assert has_nvidia_gpu_accelerator()
-        return self._fn[_nvtxRangeStartEx.fn_type](val.as_any_origin())
+        return self._fn[_nvtxRangeStartEx.fn_type](val.as_unsafe_any_origin())
 
     def __call__(self, val: UnsafePointer[mut=False, UInt8, _]) -> RangeID:
         comptime assert has_amd_gpu_accelerator()
-        return self._fn[_roctxRangeStartA.fn_type](val.as_any_origin())
+        return self._fn[_roctxRangeStartA.fn_type](val.as_unsafe_any_origin())
 
 
 struct _RangeEnd:
@@ -400,11 +400,11 @@ struct _RangePush:
         self, val: UnsafePointer[mut=False, _C_EventAttributes, _]
     ) -> Int32:
         comptime assert has_nvidia_gpu_accelerator()
-        return self._fn[_nvtxRangePushEx.fn_type](val.as_any_origin())
+        return self._fn[_nvtxRangePushEx.fn_type](val.as_unsafe_any_origin())
 
     def __call__(self, val: UnsafePointer[mut=False, UInt8, _]) -> Int32:
         comptime assert has_amd_gpu_accelerator()
-        return self._fn[_roctxRangePushA.fn_type](val.as_any_origin())
+        return self._fn[_roctxRangePushA.fn_type](val.as_unsafe_any_origin())
 
 
 struct _RangePop:

@@ -345,7 +345,7 @@ struct MHAPosition[
         out gmem_block: LayoutTensor[
             dtype,
             Self.q_output_gmem_layout,
-            MutAnyOrigin,
+            type_of(ptr).origin,
             layout_int_type=DType.int32,
             linear_idx_type=DType.int32,
             masked=True,

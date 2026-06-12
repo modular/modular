@@ -153,7 +153,7 @@ struct _InlineArrayIterOwned[T: Copyable, size: Int](
         self._array = array^
         self._index = 0
 
-    def __init__(out self, *, deinit take: Self):
+    def __init__(out self, *, deinit move: Self):
         """Move constructor that handles partially consumed array storage.
 
         After partial iteration some array slots are uninitialized, so
@@ -162,14 +162,14 @@ struct _InlineArrayIterOwned[T: Copyable, size: Int](
         destroyed.
 
         Args:
-            take: The iterator to move from.
+            move: The iterator to move from.
         """
-        self._index = take._index
+        self._index = move._index
         self._array = InlineArray[Self.T, Self.size](uninitialized=True)
         uninit_move_n[overlapping=False](
-            dest=self._array.unsafe_ptr() + take._index,
-            src=take._array.unsafe_ptr() + take._index,
-            count=Self.size - take._index,
+            dest=self._array.unsafe_ptr() + move._index,
+            src=move._array.unsafe_ptr() + move._index,
+            count=Self.size - move._index,
         )
 
     @always_inline
@@ -539,22 +539,22 @@ struct InlineArray[ElementType: Movable, size: Int](
                     copy.unsafe_get(idx)
                 )
 
-    def __init__(out self, *, deinit take: Self):
+    def __init__(out self, *, deinit move: Self):
         """Move constructs the array from another array.
 
         Args:
-            take: The array to move from.
+            move: The array to move from.
 
         Notes:
             Moves the elements from the source array into this array.
         """
 
         comptime if is_trivially_movable[Self.ElementType]():
-            self._array = take._array
+            self._array = move._array
         else:
             self = Self(uninitialized=True)
             for idx in range(Self.size):
-                var other_ptr = take.unsafe_ptr() + idx
+                var other_ptr = move.unsafe_ptr() + idx
                 (self.unsafe_ptr() + idx).init_pointee_move_from(other_ptr)
 
     def __del__(deinit self):

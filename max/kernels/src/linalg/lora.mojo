@@ -97,7 +97,7 @@ def shrink_qkv_permute_3mn_sm100(
     # write into C directly; any changes to the final C output must happen
     # exclusively via the epilogue function.
     var c = TileTensor(
-        UnsafePointer[Scalar[c_type], MutExternalOrigin].unsafe_dangling(),
+        UnsafePointer[Scalar[c_type], MutUntrackedOrigin].unsafe_dangling(),
         row_major(Coord(M, N_Total)),
     )
 

@@ -2457,21 +2457,28 @@ struct TileTensor[
     """
 
     @always_inline("nodebug")
-    def as_any_origin(self) -> Self.OriginCastType[AnyOrigin[mut=Self.mut]]:
-        """Casts the origin of the mutable `LayoutTensor` to `MutAnyOrigin`.
+    def as_unsafe_any_origin(
+        self,
+    ) -> Self.OriginCastType[UnsafeAnyOrigin[mut=Self.mut]]:
+        """Casts the origin of the `TileTensor` to `UnsafeAnyOrigin`.
 
         Returns:
-            A pointer with the origin set to `MutAnyOrigin`.
+            A tensor with the origin set to `UnsafeAnyOrigin`.
 
-        This requires the tensor to already be mutable as casting mutability
-        is inherently very unsafe.
+        Safety:
 
-        It is usually preferred to maintain concrete origin values instead of
-        using `MutAnyOrigin`. However, if it is needed, keep in mind that
-        `MutAnyOrigin` can alias any memory value, so Mojo's ASAP
-        destruction will not apply during the lifetime of the tensor.
+        It is **always** preferred to maintain a concrete origin values instead of
+        using `UnsafeAnyOrigin`. Casting to `UnsafeAnyOrigin` is an inherently unsafe
+        operation that will silently extend unrelated lifetimes and turn off
+        exclusivity checking.
         """
-        return {self.ptr.as_any_origin(), self.layout}
+        return {self.ptr.as_unsafe_any_origin(), self.layout}
+
+    @doc_hidden
+    @always_inline("nodebug")
+    @deprecated(use=as_unsafe_any_origin)
+    def as_any_origin(self) -> Self.OriginCastType[AnyOrigin[mut=Self.mut]]:
+        return self.as_unsafe_any_origin()
 
     @always_inline
     def as_immut(
@@ -2883,7 +2890,7 @@ def stack_allocation[
 ](var layout: LayoutType) -> TileTensor[
     dtype,
     LayoutType,
-    MutExternalOrigin,
+    MutUntrackedOrigin,
     address_space=address_space,
 ] where LayoutType.all_dims_known:
     """Allocate a TileTensor on the stack with the given layout.
@@ -2915,7 +2922,7 @@ def stack_allocation[
     return TileTensor[
         dtype,
         LayoutType,
-        MutExternalOrigin,
+        MutUntrackedOrigin,
         address_space=address_space,
     ](
         _std_stack_allocation[

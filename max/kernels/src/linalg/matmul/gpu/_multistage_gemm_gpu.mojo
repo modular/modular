@@ -125,8 +125,10 @@ def warp_split_k_reduction[
             MutAnyOrigin,
             address_space=AddressSpace.SHARED,
         ](
-            smem.bitcast[Scalar[c_type]]()
-            + ((warp_k_part_id % i_red) * BM * BN)
+            (
+                smem.bitcast[Scalar[c_type]]()
+                + ((warp_k_part_id % i_red) * BM * BN)
+            ).as_unsafe_any_origin()
         ).vectorize[
             1, c_frag_size
         ]()
@@ -813,7 +815,10 @@ def multistage_gemm_kernel[
         circular=True,
     ]
     var b_smem_iter = IteratorTypeB(
-        b_smem + IteratorTypeB.linear_uint_type(warp_k_part_id * b_smem_size),
+        (
+            b_smem
+            + IteratorTypeB.linear_uint_type(warp_k_part_id * b_smem_size)
+        ).as_unsafe_any_origin(),
         IteratorTypeB.linear_uint_type(b_smem_size),
     )
 
@@ -963,7 +968,11 @@ def multistage_gemm_kernel[
             Layout.row_major(WM, WN),
             MutAnyOrigin,
             address_space=AddressSpace.SHARED,
-        ](a_smem.bitcast[Scalar[c_type]]() + warp_id * WM * WN)
+        ](
+            (
+                a_smem.bitcast[Scalar[c_type]]() + warp_id * WM * WN
+            ).as_unsafe_any_origin()
+        )
 
         copy_local_to_shared[
             thread_layout=Layout.row_major(8, 4),

@@ -548,10 +548,12 @@ def linear(
     elif quant_config:
         assert weight_scale is not None
 
-        # The FP4 matmul kernel requires rank-2 inputs. Flatten leading
-        # dims before the call and restore them afterward.
+        # The FP4 and static-scaled FP8 matmul kernels require rank-2
+        # inputs. Flatten leading dims before the call and restore them
+        # afterward. (LLM callers already pass rank-2 ragged activations;
+        # this only engages for batched rank-3+ inputs such as the Wan DiT.)
         leading_dims: list[Dim] | None = None
-        if quant_config.is_fp4 and x.rank > 2:
+        if x.rank > 2:
             leading_dims = list(x.shape[:-1])
             m_dim: Dim = Dim(1)
             for d in leading_dims:

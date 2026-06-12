@@ -256,7 +256,7 @@ struct SM100AttentionSMem[
             address_space=AddressSpace.SHARED,
             alignment=128,
             name="mha_dynamic_shared_memory",
-        ]()
+        ]().as_unsafe_any_origin()
 
     # ---- accessors -----------------------------------------------------------
 

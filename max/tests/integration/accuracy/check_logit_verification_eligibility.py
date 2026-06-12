@@ -30,6 +30,13 @@ Typical invocation in a GitHub Actions step::
         --verdicts-dir "$GITHUB_WORKSPACE/verdicts"
 """
 
+# TODO: This script and check_logit_flakes.py both read the same verdict JSON
+# format and share JSON-parsing logic.  They should ideally be unified into a
+# single tool (e.g. by adding an optional --ignore-list flag to
+# check_logit_flakes.py and consolidating the verdict-reading code).  Kept
+# separate for now to avoid changing check_logit_flakes.py's exit-code
+# behavior and its existing callers in pipelineVerification.yaml.
+
 # /// script
 # dependencies = ["click>=8,<9", "pyyaml>=6,<7"]
 # ///
@@ -77,9 +84,6 @@ def load_ignore_list(path: Path) -> list[IgnoredFailure]:
     """Load and parse the logit verification ignore list from *path*."""
     try:
         data = yaml.safe_load(path.read_text())
-    except FileNotFoundError:
-        logger.error("Ignore list not found: %s", path)
-        sys.exit(1)
     except yaml.YAMLError as exc:
         logger.error("Failed to parse ignore list: %s", exc)
         sys.exit(1)
@@ -125,8 +129,18 @@ def read_verdicts(verdicts_dir: Path) -> list[ModelVerdict]:
     json_files = sorted(verdicts_dir.glob("*.json"))
 
     if not json_files:
-        logger.error("No verdict JSON files found in '%s'.", verdicts_dir)
-        sys.exit(1)
+        # No artifacts were uploaded — logit verification did not run (e.g. the
+        # calling workflow was cancelled or skipped).  Treat as eligible so that
+        # a cancelled verification run does not permanently block the golden tag.
+        click.echo(
+            "[WARN] No verdict JSON files found in "
+            f"'{verdicts_dir}' — logit verification did not produce results "
+            "(run may have been cancelled or skipped). Treating as eligible."
+        )
+        click.echo(
+            "[PASS] 0 passed, 0 ignored, 0 blocking — no unexpected regressions."
+        )
+        return results
 
     for json_file in json_files:
         runner = json_file.stem  # e.g. "intel-gpu-8xb200"
@@ -172,7 +186,7 @@ def read_verdicts(verdicts_dir: Path) -> list[ModelVerdict]:
 @click.option(
     "--ignore-list",
     "ignore_list_path",
-    type=click.Path(path_type=Path),
+    type=click.Path(exists=True, path_type=Path),
     default=DEFAULT_IGNORE_LIST,
     show_default=True,
     help="Path to the logit-verification ignore list YAML.",

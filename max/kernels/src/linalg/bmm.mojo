@@ -41,6 +41,8 @@ from layout import (
     RuntimeLayout,
     TensorLayout,
     TileTensor,
+    LTToTTLayout,
+    lt_to_tt,
     coord_to_index_list,
     row_major,
 )
@@ -1096,16 +1098,23 @@ def _bmm_sm100_blockwise_scaled_fp8_kernel[
             batch_coords[1] = out_coords[0]
             elementwise_epilogue(batch_coords, val)
 
+    # Compatibility boundary: the SM100 blockwise FP8 kernel is TileTensor-
+    # native. This BMM entry point still slices legacy LayoutTensor views, so
+    # adapt exactly once at the call boundary instead of reintroducing
+    # LayoutTensor inside matmul/gpu/sm100.
+    var c_tt = lt_to_tt(c)
+    var b_scales_tt = lt_to_tt(b_scales)
+
     matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
         a_type,
         b_type,
         c_type,
         a_scales_type,
         b_scales_type,
-        a_layout,
-        type_of(c).layout,
-        a_scales_layout,
-        type_of(b_scales).layout,
+        LTToTTLayout[a_layout],
+        type_of(c_tt).LayoutType,
+        LTToTTLayout[a_scales_layout],
+        type_of(b_scales_tt).LayoutType,
         type_of(a_tma_op).rank,
         type_of(a_tma_op).tile_shape,
         type_of(a_tma_op).desc_shape,
@@ -1128,9 +1137,9 @@ def _bmm_sm100_blockwise_scaled_fp8_kernel[
     ](
         a_tma_op,
         b_tma_op,
-        c,
+        c_tt,
         a_scales_tma_op,
-        b_scales,
+        b_scales_tt,
         num_iters,
     )
 

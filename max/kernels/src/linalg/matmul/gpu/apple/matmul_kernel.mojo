@@ -155,8 +155,9 @@ def apple_matmul_kernel[
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     d_ptr: UnsafePointer[Scalar[c_type], MutAnyOrigin],
-    a_ptr: UnsafePointer[Scalar[in_type], MutAnyOrigin],
-    b_ptr: UnsafePointer[Scalar[in_type], MutAnyOrigin],
+    # Immutable so the MAX dispatch can pass its `mut=False` operands.
+    a_ptr: UnsafePointer[Scalar[in_type], ImmutAnyOrigin],
+    b_ptr: UnsafePointer[Scalar[in_type], ImmutAnyOrigin],
     m: Int,
     n: Int,
     k: Int,

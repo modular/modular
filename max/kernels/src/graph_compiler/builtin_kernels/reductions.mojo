@@ -1175,6 +1175,7 @@ struct Softmax:
     def execute[
         target: StaticString,
         axis: Int,
+        has_prologue_fusion: Bool,
     ](
         output: OutputTensor[...],
         input: FusedInputTensor[dtype=output.dtype, rank=output.rank, ...],
@@ -1183,12 +1184,8 @@ struct Softmax:
         # For adapting input fusion lambda required by call
         @parameter
         @always_inline
-        def input_fn[
-            width: Int, _rank: Int
-        ](coords: IndexList[_rank]) -> SIMD[output.dtype, width]:
-            return input._lambda_load[width=width](
-                rebind[IndexList[input.rank]](coords)
-            )
+        def input_fn[width: Int](coords: Coord) -> SIMD[output.dtype, width]:
+            return input._lambda_load[width=width](coords)
 
         comptime simd_width = simd_width_of[
             output.dtype, target=get_gpu_target()
@@ -1200,8 +1197,9 @@ struct Softmax:
             output.rank,
             input_fn,
             target,
+            has_prologue_fusion=has_prologue_fusion,
         ](
-            output.shape(),
+            Coord(output.shape()),
             output.to_tile_tensor[DType.int64](),
             axis,
             context=ctx,
@@ -1214,6 +1212,7 @@ struct LogSoftmax:
     def execute[
         target: StaticString,
         axis: Int,
+        has_prologue_fusion: Bool,
     ](
         output: OutputTensor[...],
         input: FusedInputTensor[dtype=output.dtype, rank=output.rank, ...],
@@ -1222,12 +1221,8 @@ struct LogSoftmax:
         # For adapting input fusion lambda required by call
         @parameter
         @always_inline
-        def input_fn[
-            width: Int, _rank: Int
-        ](coords: IndexList[_rank]) -> SIMD[output.dtype, width]:
-            return input._lambda_load[width=width](
-                rebind[IndexList[input.rank]](coords)
-            )
+        def input_fn[width: Int](coords: Coord) -> SIMD[output.dtype, width]:
+            return input._lambda_load[width=width](coords)
 
         logsoftmax[
             output.dtype,
@@ -1235,8 +1230,9 @@ struct LogSoftmax:
             output.rank,
             input_fn,
             target,
+            has_prologue_fusion=has_prologue_fusion,
         ](
-            output.shape(),
+            Coord(output.shape()),
             output.to_tile_tensor[DType.int64](),
             axis,
             context=ctx,

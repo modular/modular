@@ -38,7 +38,7 @@ from op_utils import _get_dtype, _get_buffer_ptr, _get_ctx, _get_shape, MAX_RANK
 
 
 @export
-def PyInit_reduce_ops() -> PythonObject:
+def PyInit_reduce_ops() abi("C") -> PythonObject:
     """Create a Python module with reduce kernel function bindings."""
     try:
         var b = PythonModuleBuilder("reduce_ops")
@@ -379,8 +379,8 @@ def reduce_op[
     dtype: DType,
     reduce_fn: ReduceFn,
 ](
-    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    in_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    out_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    in_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     normalized_shape: IndexList[3],
     ctx: DeviceContext,
 ) raises:

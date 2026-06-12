@@ -2676,7 +2676,9 @@ struct PagedKVCacheCollection[
     var kv_cache_dynamic_shape: IndexList[4]
     var kv_cache_dynamic_strides: IndexList[4]
 
-    def __init__(
+    def __init__[
+        scales_origin: MutOrigin, //
+    ](
         out self,
         blocks: LayoutTensor[Self.dtype, Layout.row_major[6](), MutAnyOrigin],
         cache_lengths: LayoutTensor[
@@ -2688,8 +2690,12 @@ struct PagedKVCacheCollection[
         max_seq_length: UInt32,
         max_cache_length: UInt32,
         scales: OptionalReg[
-            LayoutTensor[Self.scale_dtype, Layout.row_major[6](), MutAnyOrigin]
-        ] = None,
+            LayoutTensor[Self.scale_dtype, Layout.row_major[6](), scales_origin]
+        ] = OptionalReg[
+            LayoutTensor[
+                Self.scale_dtype, Layout.row_major[6](), MutUntrackedOrigin
+            ]
+        ](),
     ):
         """Construct from LayoutTensor params (MOGG boundary)."""
         comptime assert blocks.rank == 6
@@ -2708,7 +2714,7 @@ struct PagedKVCacheCollection[
         if scales is not None:
             self.scales = lt_to_tt[ResultLayout=Self.scales_tt_layout](
                 scales.value()
-            )
+            ).as_unsafe_any_origin()
             self.kv_cache_scales_dynamic_shape, self.kv_cache_scales_dynamic_strides = _compute_kv_cache_dynamic_shape_strides[
                 4, (1, 2)
             ](

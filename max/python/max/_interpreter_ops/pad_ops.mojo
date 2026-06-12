@@ -54,7 +54,7 @@ comptime MAX_PAD_SIZE = 2 * MAX_RANK
 
 
 @export
-def PyInit_pad_ops() -> PythonObject:
+def PyInit_pad_ops() abi("C") -> PythonObject:
     """Create a Python module with pad kernel function bindings."""
     try:
         var b = PythonModuleBuilder("pad_ops")
@@ -81,8 +81,8 @@ def PyInit_pad_ops() -> PythonObject:
 def pad_constant_op[
     dtype: DType, //
 ](
-    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    in_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    out_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    in_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     constant: Scalar[dtype],
     paddings: InlineArray[Int, MAX_PAD_SIZE],
     out_shape: InlineArray[Int, MAX_RANK],
@@ -167,8 +167,8 @@ def pad_constant_op[
 def pad_reflect_op[
     dtype: DType, //
 ](
-    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    in_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    out_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    in_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     paddings: InlineArray[Int, MAX_PAD_SIZE],
     out_shape: InlineArray[Int, MAX_RANK],
     in_shape: InlineArray[Int, MAX_RANK],
@@ -241,8 +241,8 @@ def pad_reflect_op[
 def pad_repeat_op[
     dtype: DType, //
 ](
-    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    in_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    out_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    in_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     paddings: InlineArray[Int, MAX_PAD_SIZE],
     out_shape: InlineArray[Int, MAX_RANK],
     in_shape: InlineArray[Int, MAX_RANK],

@@ -14,6 +14,7 @@
 
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextContext
+from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
 from max.pipelines.lib import SupportedArchitecture, TextTokenizer
 from max.pipelines.modeling.types import PipelineTask
 
@@ -46,4 +47,5 @@ gemma3_modulev3_arch = SupportedArchitecture(
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
     },
     config=Gemma3Config,
+    memory_planner=PagedMemoryPlanner,
 )

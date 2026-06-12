@@ -16,14 +16,53 @@
 from __future__ import annotations
 
 import contextlib
-from collections.abc import Generator
+from collections.abc import Callable, Generator
 from contextvars import ContextVar
-from typing import TypeVar
+from types import TracebackType
+from typing import Generic, TypeVar
 
 from max import driver
 from max.graph import DeviceRef, TensorType
 
 T = TypeVar("T")
+
+
+class SetterContext(Generic[T], contextlib.AbstractContextManager[T]):
+    """An optional undo handle returned by eager setters.
+
+    The set has already happened by the time this object exists. Use it as
+    a context manager for scoped semantics -- the previous value is
+    restored on exit -- or discard it to keep the new value:
+
+    .. code-block:: python
+
+        set_thing(value)            # permanent: return value ignored
+
+        with set_thing(value):      # scoped: previous restored on exit
+            ...
+
+    Restoration is value-based (the previous value is captured when the
+    setter runs), so out-of-LIFO-order exits restore stale values; nest
+    scopes in stack order.
+    """
+
+    def __init__(
+        self, value: T, previous: T, restore: Callable[[T], None]
+    ) -> None:
+        self._value = value
+        self._previous = previous
+        self._restore = restore
+
+    def __enter__(self) -> T:
+        return self._value
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
+        self._restore(self._previous)
 
 
 @contextlib.contextmanager

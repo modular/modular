@@ -86,6 +86,7 @@
           "collapsed": true,
           "items": [
             "max/develop/model-bringup-workflow",
+            "max/develop/read-model-config",
             "max/develop/pipelines",
             "max/develop/serve-custom-model-architectures",
             "max/graph/quantize"
@@ -476,13 +477,13 @@
             },
             {
               "type": "category",
-              "label": "core",
+              "label": "context",
               "link": {
                 "type": "doc",
-                "id": "max/api/python/pipelines.core"
+                "id": "max/api/python/pipelines.context"
               },
               "items": [
-                "__AUTOGEN:max.pipelines.core__"
+                "__AUTOGEN:max.pipelines.context__"
               ]
             },
             {

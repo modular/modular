@@ -3474,7 +3474,7 @@ class IsRunInComptimeInterpreterOp(max._core.Operation):
     Example:
 
     ```mlir
-      kgen.is_run_in_comptime_interpreter : i1
+      kgen.is_run_in_comptime_interpreter : !kgen.scalar<bool>
     ```
     """
 
@@ -3482,7 +3482,7 @@ class IsRunInComptimeInterpreterOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        result: max._core.dialects.builtin.IntegerType,
+        result: max._core.Type,
     ) -> None: ...
 
 class ParamApplyOp(max._core.Operation):
@@ -4478,8 +4478,8 @@ class VariantGetOp(max._core.Operation):
 class VariantIsOp(max._core.Operation):
     """
     The `kgen.variant.is` operation checks whether the given variant contains
-    a particular type. Returns an `i1` that indicates whether the variant is the
-    particular type.
+    a particular type. Returns a `!kgen.scalar<bool>` that indicates whether the
+    variant is the particular type.
 
     Example:
 
@@ -4493,7 +4493,7 @@ class VariantIsOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        result: max._core.dialects.builtin.IntegerType,
+        result: max._core.Type,
         variant: max._core.Value[VariantType],
         index: max._core.dialects.builtin.IntegerAttr,
     ) -> None: ...
