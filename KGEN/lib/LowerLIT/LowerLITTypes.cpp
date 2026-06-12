@@ -55,6 +55,13 @@ public:
           return replace(attr, TypeDomain::AsType);
         },
         TypeDomain::AsValue);
+    // param_list should always use the AsType domain: the parameter is always
+    // the param_list attr, never the param_list type.
+    addNonRecursiveReplacement(
+        [&](ParamListType paramList) -> FailureOr<Type> {
+          return replace(paramList, TypeDomain::AsType);
+        },
+        TypeDomain::AsValue);
   }
 
   /// Add a replacement that skips recursing down the replaced result.
@@ -292,8 +299,6 @@ static void populateReplacer(StructDecls &decls, LowerLITReplacer &replacer,
   replacer.addInferredDomainNonRecursiveReplacement(
       [=](AnyTraitType) { return typeType; });
   replacer.addInferredDomainNonRecursiveReplacement(
-      [=](TraitType) { return typeType; });
-  replacer.addInferredDomainNonRecursiveReplacement(
       [=](FnLiteralTypeGeneratorMetaType) { return typeType; });
   replacer.addInferredDomainNonRecursiveReplacement(
       [=](FnLiteralTypeGeneratorMetaMetaType) { return typeType; });
@@ -434,6 +439,17 @@ static void populateReplacer(StructDecls &decls, LowerLITReplacer &replacer,
     llvm_unreachable("sugar should be replaced by now");
     return Attribute();
   });
+
+  // lower TraitType to `!kgen.type` in type domain and
+  //                 to `!kgen.typevalue<@trait>` in value domain.
+  replacer.addNonRecursiveReplacement([=](TraitType) { return typeType; },
+                                      TypeDomain::AsType);
+  replacer.addNonRecursiveReplacement(
+      [=](TraitType traitType) {
+        return TypeValueType::get(
+            TraitInstanceRefAttr::get(ctx, traitType.getSymbols(), typeType));
+      },
+      TypeDomain::AsValue);
 
   // Since lowerings have been generated for all struct types, we just need to
   // lookup the lowered type and substitute the parameters.

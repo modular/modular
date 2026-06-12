@@ -1369,6 +1369,13 @@ LogicalResult TypeGeneratorRefAttr::verifySymbolUses(
 bool TypeInstanceRefAttr::isConstant() const { return true; }
 
 //===----------------------------------------------------------------------===//
+// TraitInstanceRefAttr
+//===----------------------------------------------------------------------===//
+
+/// This symbol is a constant its bindings are constants.
+bool TraitInstanceRefAttr::isConstant() const { return true; }
+
+//===----------------------------------------------------------------------===//
 // DTypeConstantAttr
 //===----------------------------------------------------------------------===//
 
