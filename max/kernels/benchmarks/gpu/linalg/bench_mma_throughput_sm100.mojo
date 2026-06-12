@@ -27,7 +27,7 @@ https://docs.nvidia.com/cuda/parallel-thread-execution/#tcgen05-data-path-layout
   * BM=128 -> layout D, emits `tcgen05.mma.cta_group::1.<kind>` via `mma()`.
   * BM=64  -> layout E, emits `tcgen05.mma.ws.cta_group::1.<kind>` via the
               local `mma_ws_cta1()` helper (matches `bulk_mma_ws` in
-              `mla_decode_utils.mojo`).
+              `attention_utils.mojo`).
   * BM=32  -> layout G, emits `tcgen05.mma.ws.cta_group::1.<kind>` via the
               local helper. (No high-level `mma()` API supports M=32, so the
               inline-PTX path is the only option.)
@@ -121,7 +121,7 @@ def mma_ws_cta1[
 
     Mirrors the structure of `mma()` from `std.gpu.compute.arch.mma_nvidia_sm100`
     but emits the `.ws.` variant of the PTX instruction (which is the form used
-    by `bulk_mma_ws` in `mla_decode_utils.mojo`). The `.ws.` variant takes only
+    by `bulk_mma_ws` in `attention_utils.mojo`). The `.ws.` variant takes only
     `[c_tmem], a_desc, b_desc, idesc, predicate` — no mask operands.
 
     This helper is the only path the bench has to layouts E (M=64) and G (M=32):
@@ -277,7 +277,7 @@ def mma_throughput_kernel[
         UnsafePointer[
             Scalar[a_type],
             address_space=AddressSpace.SHARED,
-            ExternalOrigin[mut=True],
+            UntrackedOrigin[mut=True],
         ]
     ](
         external_memory[

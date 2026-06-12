@@ -318,7 +318,7 @@ comptime SIZE = 256
 comptime MAX = SIZE * 2
 ```
 
-`comptime` is also used to declare associated types in traits, and can be
+`comptime` declares associated types in traits, and can be
 used to create type aliases and trait composition aliases:
 
 ```mojo
@@ -327,3 +327,17 @@ comptime Permissive = ImplicitlyCopyable & ImplicitlyDestructible
 trait SimpleTrait(Writable):  # `SimpleTrait` refines `Writable`
     comptime Element = Permissive  # Associated type with a comptime alias
 ```
+
+A trailing `where` clause constrains a parametric declaration's parameters.
+The compiler checks the condition at each use:
+
+```mojo
+comptime AscendingMidpoint[lo: Int, hi: Int]: Int where lo < hi = (lo + hi) / 2
+
+def main():
+    comptime mid = AscendingMidpoint[2, 10]    # 6
+    # comptime bad = AscendingMidpoint[10, 2]  # Error: lo < hi not satisfied
+```
+
+A `where` clause requires conditions the compiler can evaluate at compile
+time, such as comparisons, boolean combinations, and `conforms_to()`.

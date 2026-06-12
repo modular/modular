@@ -36,7 +36,7 @@ from op_utils import _get_dtype, _get_buffer_ptr, _get_ctx, _get_shape, MAX_RANK
 
 
 @export
-def PyInit_rms_norm_ops() -> PythonObject:
+def PyInit_rms_norm_ops() abi("C") -> PythonObject:
     """Create a Python module with rms_norm kernel function bindings."""
     try:
         var b = PythonModuleBuilder("rms_norm_ops")
@@ -58,9 +58,9 @@ def PyInit_rms_norm_ops() -> PythonObject:
 def _rms_norm_cpu[
     dtype: DType,
 ](
-    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    in_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    gamma_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    out_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    in_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    gamma_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     batch_dim: Int,
     feature_dim: Int,
     epsilon: Scalar[dtype],
@@ -110,9 +110,9 @@ def rms_norm_op[
     dtype: DType,
     multiply_before_cast: Bool,
 ](
-    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    in_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    gamma_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    out_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    in_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    gamma_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     shape: IndexList[2],
     gamma_shape: IndexList[1],
     epsilon: Scalar[dtype],

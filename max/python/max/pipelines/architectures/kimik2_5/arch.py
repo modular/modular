@@ -18,6 +18,7 @@ from transformers import AutoConfig, PretrainedConfig
 
 from . import weight_adapters
 from .context import KimiK2_5TextAndVisionContext
+from .memory_planner import KimiK25MemoryPlanner
 from .model import KimiK2_5Model
 from .model_config import KimiK2_5Config, KimiK2_5TextConfig
 from .tokenizer import KimiK2_5VLTokenizer
@@ -67,6 +68,7 @@ kimik2_5_arch = SupportedArchitecture(
     config=KimiK2_5Config,
     tool_parser="kimik2_5",
     reasoning_parser="kimik2_5",
+    memory_planner=KimiK25MemoryPlanner,
 )
 
 kimivl_arch = SupportedArchitecture(
@@ -95,6 +97,7 @@ kimivl_arch = SupportedArchitecture(
     config=KimiK2_5Config,
     tool_parser="kimik2_5",
     reasoning_parser="kimik2_5",
+    memory_planner=KimiK25MemoryPlanner,
 )
 
 eagle3_kimik25_arch = SupportedArchitecture(
@@ -120,6 +123,7 @@ eagle3_kimik25_arch = SupportedArchitecture(
     config=KimiK2_5TextConfig,
     tool_parser="kimik2_5",
     reasoning_parser="kimik2_5",
+    memory_planner=KimiK25MemoryPlanner,
 )
 
 eagle3_mha_kimik25_arch = SupportedArchitecture(
@@ -145,4 +149,5 @@ eagle3_mha_kimik25_arch = SupportedArchitecture(
     config=KimiK2_5TextConfig,
     tool_parser="kimik2_5",
     reasoning_parser="kimik2_5",
+    memory_planner=KimiK25MemoryPlanner,
 )

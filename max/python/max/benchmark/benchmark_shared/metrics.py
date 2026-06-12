@@ -493,6 +493,10 @@ class TextGenAggregates(_CompletedRunBase):
     # Per-turn cached_tokens / prompt_tokens; None when usage data is
     # unavailable.
     per_turn_cached_token_rate: RatePercentileMetrics | None = None
+    # Turn-by-turn KV cache retention: cached_tokens(turn N) vs the
+    # block-aligned context carried from turn N-1 in the same session. Catches
+    # cached-token drop between turns. None for single-turn / no usage data.
+    per_turn_cache_retention: RatePercentileMetrics | None = None
 
     # ``skip_first_n_requests`` / ``skip_last_n_requests`` are inputs and
     # shouldn't be part of the output metrics, but are included for
@@ -510,6 +514,9 @@ class TextGenAggregates(_CompletedRunBase):
     ttfts: list[float] = Field(default_factory=list)
     # Empty when the server did not report per-request cached_tokens.
     per_turn_cached_token_rates: list[float] = Field(default_factory=list)
+    # Per-turn cache retention fractions (one per checked turn, N>=2). Empty
+    # for single-turn workloads or when usage data is unavailable.
+    per_turn_cache_retentions: list[float] = Field(default_factory=list)
 
     def to_result_dict(self) -> dict[str, object]:
         d = super().to_result_dict()
@@ -529,6 +536,7 @@ class TextGenAggregates(_CompletedRunBase):
         d["output_lens"] = self.output_lens
         d["ttfts"] = self.ttfts
         d["per_turn_cached_token_rates"] = self.per_turn_cached_token_rates
+        d["per_turn_cache_retentions"] = self.per_turn_cache_retentions
         d["global_cached_token_rate"] = self.global_cached_token_rate
         for name, pm in [
             ("input_throughput", self.input_throughput),
@@ -555,6 +563,17 @@ class TextGenAggregates(_CompletedRunBase):
             d.update(
                 self.per_turn_cached_token_rate.confidence_to_flat_dict(
                     "per_turn_cached_token_rate"
+                )
+            )
+        if self.per_turn_cache_retention is not None:
+            d.update(
+                self.per_turn_cache_retention.to_flat_dict(
+                    "per_turn_cache_retention"
+                )
+            )
+            d.update(
+                self.per_turn_cache_retention.confidence_to_flat_dict(
+                    "per_turn_cache_retention"
                 )
             )
         return d
@@ -584,6 +603,12 @@ class TextGenAggregates(_CompletedRunBase):
             if not ok:
                 errors.extend(
                     f"per_turn_cached_token_rate: {e}" for e in sub_errors
+                )
+        if self.per_turn_cache_retention is not None:
+            ok, sub_errors = self.per_turn_cache_retention.validate_metrics()
+            if not ok:
+                errors.extend(
+                    f"per_turn_cache_retention: {e}" for e in sub_errors
                 )
         # Prefill-only workloads (max 1 output token per request) produce
         # no decode data, so decode-phase metrics are expected to be

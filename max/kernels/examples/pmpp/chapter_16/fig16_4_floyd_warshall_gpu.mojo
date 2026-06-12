@@ -84,7 +84,7 @@ def floyd_warshall_kernel(
 # ========================== CPU REFERENCE ==========================
 
 
-def cpu_floyd_warshall(dist: UnsafePointer[Float32, MutAnyOrigin], V: Int):
+def cpu_floyd_warshall(dist: UnsafePointer[mut=True, Float32, _], V: Int):
     """CPU version of Floyd-Warshall algorithm for verification.
 
     Args:
@@ -104,7 +104,7 @@ def cpu_floyd_warshall(dist: UnsafePointer[Float32, MutAnyOrigin], V: Int):
                 dist[idx_ij] = new_dist
 
 
-def initialize_dist(dist: UnsafePointer[Float32, MutAnyOrigin], V: Int):
+def initialize_dist(dist: UnsafePointer[mut=True, Float32, _], V: Int):
     """Initialize distance matrix with diagonal = 0, others = INF.
 
     Args:

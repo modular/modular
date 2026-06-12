@@ -30,7 +30,7 @@ A ``mode(...)`` block selects the solver for the ops inside it:
         y = relu(matmul(a, b))
 
 Shipped solvers: :class:`GreedyReshard` (cheapest feasible action),
-:class:`NoReshard` (first feasible, prefers passthrough), and
+:class:`NoReshard` (passthrough only; errors on any reshard), and
 :class:`PartialsOnly` (only ``Partial -> Replicated`` resolutions).
 
 This module avoids the overloaded word "rank". A *device* is one accelerator;

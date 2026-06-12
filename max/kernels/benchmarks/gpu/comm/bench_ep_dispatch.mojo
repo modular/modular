@@ -335,7 +335,7 @@ def bench_dispatch[
 
         var bf16_output = output_tensor.bitcast[
             DType.bfloat16
-        ]().as_any_origin()
+        ]().as_unsafe_any_origin()
         var format_handler = token_fmt_type(bf16_output)
 
         setup_and_run_benchmark[
@@ -360,7 +360,9 @@ def bench_dispatch[
             top_k,
         ]
 
-        var fp8_output = output_tensor.bitcast[token_dtype]().as_any_origin()
+        var fp8_output = output_tensor.bitcast[
+            token_dtype
+        ]().as_unsafe_any_origin()
         var format_handler = token_fmt_type(fp8_output, output_scales_tensor)
 
         setup_and_run_benchmark[

@@ -1582,6 +1582,7 @@ class MAXModelConfig(MAXModelConfigBase):
         logger.info("  %s KV Cache %s", sub_separator, sub_separator)
 
         entries: list[tuple[str, Any]] = [
+            ("cache_dtype", kv_config.cache_dtype),
             ("page_size", f"{kv_config.kv_cache_page_size} tokens"),
             ("prefix_caching", kv_config.enable_prefix_caching),
             ("kv_connector", kv_config.kv_connector or "null"),

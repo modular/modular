@@ -76,14 +76,15 @@ def do_test[
     var max_cache_length = UInt32(2048)
 
     var scales: OptionalReg[
-        LayoutTensor[scale_dtype, Layout.row_major[6](), MutAnyOrigin]
+        LayoutTensor[scale_dtype, Layout.row_major[6](), MutUntrackedOrigin]
     ] = None
 
     comptime if scale_dtype == DType.float8_e4m3fn:
         # Use the same shape as the blocks
         var scales_ptr = alloc[Scalar[scale_dtype]](shape.flattened_length())
-        scales = LayoutTensor[scale_dtype, Layout.row_major[6](), MutAnyOrigin](
-            scales_ptr, RuntimeLayout[Layout.row_major[6]()].row_major(shape)
+        scales = LayoutTensor[scale_dtype, Layout.row_major[6]()](
+            scales_ptr,
+            RuntimeLayout[Layout.row_major[6]()].row_major(shape),
         ).fill(0)
 
     var collection = PagedKVCacheCollection[
@@ -92,23 +93,21 @@ def do_test[
         page_size,
         scale_dtype,
     ](
-        LayoutTensor[blocks.dtype, Layout.row_major[6](), MutAnyOrigin](
+        LayoutTensor[blocks.dtype, Layout.row_major[6]()](
             blocks.ptr,
             RuntimeLayout[Layout.row_major[6]()](
                 blocks.runtime_layout.shape.value,
                 blocks.runtime_layout.stride.value,
             ),
         ),
-        LayoutTensor[
-            cache_lengths.dtype, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
-        ](
-            cache_lengths.ptr,
+        LayoutTensor[mut=False, cache_lengths.dtype, Layout(UNKNOWN_VALUE)](
+            cache_lengths.ptr.as_immutable().as_unsafe_any_origin(),
             RuntimeLayout[Layout(UNKNOWN_VALUE)](
                 cache_lengths.runtime_layout.shape.value,
                 cache_lengths.runtime_layout.stride.value,
             ),
         ),
-        LayoutTensor[lookup_table.dtype, Layout.row_major[2](), ImmutAnyOrigin](
+        LayoutTensor[mut=False, lookup_table.dtype, Layout.row_major[2]()](
             lookup_table.ptr,
             RuntimeLayout[Layout.row_major[2]()](
                 lookup_table.runtime_layout.shape.value,
@@ -246,21 +245,21 @@ def test_paged_kv_cache_offset_correctness() raises:
     var collection = PagedKVCacheCollection[
         DType.float32, kv_params_small, page_size
     ](
-        LayoutTensor[DType.float32, Layout.row_major[6](), MutAnyOrigin](
+        LayoutTensor[DType.float32, Layout.row_major[6]()](
             blocks.ptr,
             RuntimeLayout[Layout.row_major[6]()](
                 blocks.runtime_layout.shape.value,
                 blocks.runtime_layout.stride.value,
             ),
         ),
-        LayoutTensor[DType.uint32, Layout(UNKNOWN_VALUE), ImmutAnyOrigin](
+        LayoutTensor[mut=False, DType.uint32, Layout(UNKNOWN_VALUE)](
             cache_lengths.ptr,
             RuntimeLayout[Layout(UNKNOWN_VALUE)](
                 cache_lengths.runtime_layout.shape.value,
                 cache_lengths.runtime_layout.stride.value,
             ),
         ),
-        LayoutTensor[DType.uint32, Layout.row_major[2](), ImmutAnyOrigin](
+        LayoutTensor[mut=False, DType.uint32, Layout.row_major[2]()](
             lookup_table.ptr,
             RuntimeLayout[Layout.row_major[2]()](
                 lookup_table.runtime_layout.shape.value,

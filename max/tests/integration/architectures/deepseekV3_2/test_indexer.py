@@ -395,6 +395,12 @@ def run_max_indexer(
     return output_tensor
 
 
+@pytest.mark.skip(
+    reason="Disabled due to nondeterminism. "
+    "https://linear.app/modularml/issue/GEX-3777 "
+    "https://linear.app/modularml/issue/QUA-448 "
+    "Re-enable tracking: https://linear.app/modularml/issue/MODELS-1543"
+)
 @pytest.mark.skipif(
     accelerator_api() == "hip",
     reason="Memory access fault by GPU node-2 (Agent handle: 0x49c8e0a0) on address 0x10e2bfcf8000. Reason: Unknown.",
@@ -430,6 +436,12 @@ def test_indexer_no_mask(
     assert total_equal / float(total_seq_len * index_topk) >= 0.89
 
 
+@pytest.mark.skip(
+    reason="Disabled due to nondeterminism. "
+    "https://linear.app/modularml/issue/GEX-3777 "
+    "https://linear.app/modularml/issue/QUA-448 "
+    "Re-enable tracking: https://linear.app/modularml/issue/MODELS-1543"
+)
 @pytest.mark.skipif(
     accelerator_api() == "hip",
     reason="Memory access fault by GPU node-2 (Agent handle: 0x49c8e0a0) on address 0x10e2bfcf8000. Reason: Unknown.",

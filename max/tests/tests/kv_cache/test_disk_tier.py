@@ -219,23 +219,28 @@ def test_persistence_reload(cache_dir: str) -> None:
     tier2.shutdown()
 
 
-def test_persistence_config_mismatch(cache_dir: str) -> None:
+def test_block_size_change_is_not_detected(cache_dir: str) -> None:
+    """Reusing a cache_dir across a block_nbytes change is unsupported.
+
+    No metadata is persisted, so a block-size change is not detected and the
+    stale blocks remain indexed. Callers must point a changed configuration at
+    a fresh cache_dir.
+    """
     tier1 = DiskTier(
         cache_dir=cache_dir,
         block_nbytes=16,
         max_disk_size_bytes=10_000,
     )
-    src = _make_block(16, seed=7)
-    tier1.write_block_async(block_hash=7, src=src)
+    tier1.write_block_async(block_hash=7, src=_make_block(16, seed=7))
+    tier1.wait_for_writes()
     tier1.shutdown()
 
-    # Different block_nbytes → cache should be wiped
     tier2 = DiskTier(
         cache_dir=cache_dir,
         block_nbytes=32,
         max_disk_size_bytes=10_000,
     )
-    assert not tier2.contains(7)
+    assert tier2.contains(7)
     tier2.shutdown()
 
 
@@ -407,17 +412,14 @@ def test_direct_io_roundtrip(cache_dir: str) -> None:
     tier.shutdown()
 
 
-def test_concurrent_metadata_saves(cache_dir: str) -> None:
-    """Multiple threads saving metadata simultaneously must not crash."""
+def test_rebuild_after_concurrent_writes(cache_dir: str) -> None:
+    """A fresh instance rebuilds the index from disk after concurrent writes."""
     tier = DiskTier(
         cache_dir=cache_dir,
         block_nbytes=16,
         max_disk_size_bytes=10_000,
         num_workers=8,
     )
-    # Force metadata_save_interval=1 so every write triggers a save,
-    # maximizing the chance of concurrent _save_metadata calls.
-    tier._metadata_save_interval = 1
 
     num_blocks = 64
     futures = []
@@ -427,24 +429,42 @@ def test_concurrent_metadata_saves(cache_dir: str) -> None:
         if f is not None:
             futures.append(f)
 
-    # All writes (and their metadata saves) must complete without error.
     for f in futures:
         f.result()
 
-    # Verify all blocks persisted correctly.
     for h in range(num_blocks):
         assert tier.contains(h)
 
     tier.shutdown()
 
-    # Verify metadata reload works after concurrent saves.
     tier2 = DiskTier(
         cache_dir=cache_dir,
         block_nbytes=16,
         max_disk_size_bytes=10_000,
     )
+    assert tier2.num_used_blocks == num_blocks
     for h in range(num_blocks):
         assert tier2.contains(h)
+    tier2.shutdown()
+
+
+def test_scan_ignores_non_block_files(cache_dir: str) -> None:
+    """The startup scan skips non-'.bin' and malformed-hash files."""
+    tier = DiskTier(
+        cache_dir=cache_dir, block_nbytes=16, max_disk_size_bytes=10_000
+    )
+    tier.write_block_async(block_hash=1, src=_make_block(16, seed=1))
+    tier.wait_for_writes()
+    tier.shutdown()
+
+    (Path(cache_dir) / "notes.txt").write_text("junk")
+    (Path(cache_dir) / "zzzz.bin").write_text("non-hex stem")
+
+    tier2 = DiskTier(
+        cache_dir=cache_dir, block_nbytes=16, max_disk_size_bytes=10_000
+    )
+    assert tier2.num_used_blocks == 1
+    assert tier2.contains(1)
     tier2.shutdown()
 
 

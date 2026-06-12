@@ -117,7 +117,7 @@ def app(
         model_factory=pipeline_factory,
         pipeline_config=pipeline_config,
         tokenizer=tokenizer,
-        pipeline_task=pipeline_task,
+        task=pipeline_task,
     )
 
     settings = Settings(**settings_config)

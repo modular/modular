@@ -34,7 +34,7 @@ from op_utils import (
 
 
 @export
-def PyInit_pooling_ops() -> PythonObject:
+def PyInit_pooling_ops() abi("C") -> PythonObject:
     """Create a Python module with pooling kernel function bindings."""
     try:
         var b = PythonModuleBuilder("pooling_ops")
@@ -63,8 +63,8 @@ def PyInit_pooling_ops() -> PythonObject:
 def max_pool_op[
     dtype: DType, //
 ](
-    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    in_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    out_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    in_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     batch: Int,
     in_h: Int,
     in_w: Int,

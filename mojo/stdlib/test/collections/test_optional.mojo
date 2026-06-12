@@ -186,7 +186,7 @@ struct _NonTrivial(Copyable):
     def __init__(out self, *, copy: Self):
         pass
 
-    def __init__(out self, *, deinit take: Self):
+    def __init__(out self, *, deinit move: Self):
         pass
 
     def __del__(deinit self):

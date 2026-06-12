@@ -386,3 +386,20 @@ config_setting(
     name = "use_vllm_setting",
     flag_values = {"//:use_vllm": "true"},
 )
+
+# When set, GPU tests disable MAX's device memory manager (caching allocator)
+# so each `enqueue_create_buffer` is a 1:1 device allocation and
+# compute-sanitizer memcheck/initcheck see true per-buffer bounds. Without this,
+# small OOBs and OOB reads land inside the shared ~205MB pool and go undetected.
+# Consumed by `get_default_test_env` in bazel/internal/config.bzl.
+bool_flag(
+    name = "gpu_disable_memory_manager",
+    build_setting_default = False,
+    tags = [ALLOW_UNUSED_TAG],
+)
+
+config_setting(
+    name = "gpu_memory_manager_disabled",
+    flag_values = {"//:gpu_disable_memory_manager": "true"},
+    tags = [ALLOW_UNUSED_TAG],
+)

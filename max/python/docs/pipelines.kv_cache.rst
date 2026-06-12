@@ -11,6 +11,19 @@ max.pipelines.kv_cache
 
 .. currentmodule:: max.pipelines.kv_cache
 
+Memory planning
+---------------
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/class.rst
+
+   MemoryPlanner
+   ModelConfig
+   ModelConfigWithKVCache
+   PagedMemoryPlanner
+
 Configuration
 -------------
 

@@ -55,7 +55,7 @@ from op_utils import (
 
 
 @export
-def PyInit_misc_ops() -> PythonObject:
+def PyInit_misc_ops() abi("C") -> PythonObject:
     """Create a Python module with miscellaneous kernel function bindings."""
     try:
         var b = PythonModuleBuilder("misc_ops")
@@ -165,10 +165,10 @@ def range_dispatcher(
 def range_op[
     dtype: DType
 ](
-    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    start_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    stop_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    step_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    out_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    start_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    stop_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    step_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     size: Int,
     ctx: DeviceContext,
 ) raises:
@@ -236,9 +236,9 @@ def range_op[
 def range_shape_op[
     dtype: DType
 ](
-    start_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    stop_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    step_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    start_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    stop_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    step_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
 ) raises -> Int:
     """Compute range output size using Range.shape from the `kernels` package.
 
@@ -300,7 +300,7 @@ def range_shape_dispatcher(
 def random_normal_op[
     dtype: DType
 ](
-    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    out_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     size: Int,
     mean: Float32,
     variance: Float32,
@@ -457,7 +457,7 @@ def random_normal_dispatcher(
 def random_uniform_op[
     dtype: DType
 ](
-    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    out_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     size: Int,
     lower_bound: Float32,
     upper_bound: Float32,
@@ -578,8 +578,8 @@ def random_uniform_dispatcher(
 def _cumsum_cpu[
     dtype: DType,
 ](
-    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    in_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    out_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    in_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     dim0: Int,
     dim1: Int,
     dim2: Int,

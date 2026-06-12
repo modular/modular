@@ -239,7 +239,7 @@ def test_matmul[
 
 
 def test_matmul[
-    lambdas_have_fusion: Bool,
+    has_epilogue_fusion: Bool,
     *,
     a_type: DType,
     b_type: DType,
@@ -310,7 +310,7 @@ def test_matmul[
     ](idx: IndexList[2], val: SIMD[_type, width]) -> None:
         c.store(Coord(idx), rebind[SIMD[c_type, width]](val + some_constant))
 
-    comptime if lambdas_have_fusion:
+    comptime if has_epilogue_fusion:
         errors = test_matmul[
             a_type,
             b_type,

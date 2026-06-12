@@ -230,8 +230,8 @@ def _cast_bf16_to_fp8(
     num_cols: Int,
 ) raises:
     """Cast BF16 tensor to FP8 using elementwise kernel."""
-    var out_tt = output.as_any_origin()
-    var in_tt = input.as_any_origin()
+    var out_tt = output.as_unsafe_any_origin()
+    var in_tt = input.as_unsafe_any_origin()
     comptime assert out_tt.flat_rank == 2, "output must be rank 2"
     comptime assert in_tt.flat_rank == 2, "input must be rank 2"
     comptime assert out_tt.mut, "output must be mutable"

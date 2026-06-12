@@ -40,7 +40,7 @@ from op_utils import (
 
 
 @export
-def PyInit_avg_pool_ops() -> PythonObject:
+def PyInit_avg_pool_ops() abi("C") -> PythonObject:
     """Create a Python module with avg_pool2d kernel function bindings."""
     try:
         var b = PythonModuleBuilder("avg_pool_ops")
@@ -61,8 +61,8 @@ def PyInit_avg_pool_ops() -> PythonObject:
 def avg_pool2d_op[
     dtype: DType, //
 ](
-    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    in_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    out_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    in_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     batch: Int,
     in_h: Int,
     in_w: Int,

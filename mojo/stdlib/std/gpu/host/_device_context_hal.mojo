@@ -1244,9 +1244,9 @@ struct DeviceFunction[
         var extra_align = align_up(start_addr, 8) - start_addr
 
         var dense_args_addrs: UnsafePointer[
-            OpaquePointer[MutAnyOrigin], MutExternalOrigin
+            OpaquePointer[MutAnyOrigin], MutUntrackedOrigin
         ]
-        var dense_args_sizes: UnsafePointer[UInt64, MutExternalOrigin]
+        var dense_args_sizes: UnsafePointer[UInt64, MutUntrackedOrigin]
         if num_captures > num_captures_static:
             dense_args_addrs = alloc(
                 Layout[OpaquePointer[MutAnyOrigin]](
@@ -1285,7 +1285,7 @@ struct DeviceFunction[
                 args[i]._to_device_type(device_type_encoder, first_word_addr)
                 dense_args_addrs[
                     translated_arg_idx
-                ] = first_word_addr.as_any_origin()
+                ] = first_word_addr.as_unsafe_any_origin()
                 dense_args_sizes[translated_arg_idx] = UInt64(
                     size_of[
                         actual_arg_type.device_type,
@@ -1300,7 +1300,9 @@ struct DeviceFunction[
                     i
                 ]
             var capture_args_start = dense_args_addrs + num_translated_args
-            populate(capture_args_start.bitcast[NoneType]().as_any_origin())
+            populate(
+                capture_args_start.bitcast[NoneType]().as_unsafe_any_origin()
+            )
 
         ctx._hal_stream()[].execute(
             self._inner[]._func_handle,
@@ -1315,7 +1317,7 @@ struct DeviceFunction[
                 UInt32(block_dim.z()),
             ),
             args=rebind[
-                UnsafePointer[OpaquePointer[MutExternalOrigin], MutAnyOrigin]
+                UnsafePointer[OpaquePointer[MutUntrackedOrigin], MutAnyOrigin]
             ](dense_args_addrs),
             arg_sizes=rebind[UnsafePointer[UInt64, MutAnyOrigin]](
                 dense_args_sizes
@@ -1368,9 +1370,9 @@ struct DeviceFunction[
         comptime num_captures_static = 16
 
         var dense_args_addrs: UnsafePointer[
-            OpaquePointer[MutAnyOrigin], MutExternalOrigin
+            OpaquePointer[MutAnyOrigin], MutUntrackedOrigin
         ]
-        var dense_args_sizes: UnsafePointer[UInt64, MutExternalOrigin]
+        var dense_args_sizes: UnsafePointer[UInt64, MutUntrackedOrigin]
         if num_captures > num_captures_static:
             dense_args_addrs = alloc(
                 Layout[OpaquePointer[MutAnyOrigin]](
@@ -1425,7 +1427,7 @@ struct DeviceFunction[
                 UInt32(block_dim.z()),
             ),
             args=rebind[
-                UnsafePointer[OpaquePointer[MutExternalOrigin], MutAnyOrigin]
+                UnsafePointer[OpaquePointer[MutUntrackedOrigin], MutAnyOrigin]
             ](dense_args_addrs),
             arg_sizes=rebind[UnsafePointer[UInt64, MutAnyOrigin]](
                 dense_args_sizes
@@ -1564,7 +1566,7 @@ struct DeviceExternalFunction(ImplicitlyCopyable, Movable):
                 UInt32(block_dim.z()),
             ),
             args=rebind[
-                UnsafePointer[OpaquePointer[MutExternalOrigin], MutAnyOrigin]
+                UnsafePointer[OpaquePointer[MutUntrackedOrigin], MutAnyOrigin]
             ](dense_args_addrs),
             arg_sizes=rebind[UnsafePointer[UInt64, MutAnyOrigin]](
                 dense_args_sizes
@@ -2271,7 +2273,7 @@ struct _HostBufferInner(Movable):
 
     var _buffer: Buffer
     var _context: ArcPointer[Context[get_device_spec[0]()]]
-    var _host_ptr: UnsafePointer[UInt8, MutExternalOrigin]
+    var _host_ptr: UnsafePointer[UInt8, MutUntrackedOrigin]
 
     def __del__(deinit self):
         try:
@@ -2305,7 +2307,7 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Movable, Sized):
         var addr = UInt64(0)
         if byte_size > 0:
             addr = ctx._context[].memory_get_address(buffer)
-        var host_ptr = UnsafePointer[UInt8, MutExternalOrigin](
+        var host_ptr = UnsafePointer[UInt8, MutUntrackedOrigin](
             unsafe_from_address=Int(addr)
         )
         self._ctx = ctx
@@ -2349,7 +2351,7 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Movable, Sized):
         return (
             self._inner[]
             ._host_ptr.bitcast[Scalar[Self.dtype]]()
-            .as_any_origin()
+            .as_unsafe_any_origin()
         )
 
     def __getitem__(self, idx: Int) -> Scalar[Self.dtype]:

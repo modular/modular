@@ -12,7 +12,7 @@ modular_py_test(
     size = "large",
     srcs = glob(["*.py"]),
     deps = [
-        "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/architectures/unified_mtp_deepseekV3",
         requirement("transformers"),
     ],
 )

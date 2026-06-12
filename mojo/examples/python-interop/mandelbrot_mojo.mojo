@@ -38,7 +38,7 @@ comptime layout = Layout.row_major(GRID_HEIGHT, GRID_WIDTH)
 
 # An interface for this Mojo module must be exported to Python.
 @export
-def PyInit_mandelbrot_mojo() -> PythonObject:
+def PyInit_mandelbrot_mojo() abi("C") -> PythonObject:
     try:
         # A Python module is constructed, matching the name of this Mojo module.
         var module = PythonModuleBuilder("mandelbrot_mojo")

@@ -294,7 +294,7 @@ struct KVBuffer[
     comptime MMATileType = TileTensor[
         Self.kv_t.dtype,
         type_of(Self.mma_layout),
-        MutExternalOrigin,
+        MutUntrackedOrigin,
         address_space=AddressSpace.LOCAL,
     ]
     comptime KVMmaOpType = KVMmaOp[
@@ -401,6 +401,8 @@ struct KVBuffer[
                 var gmem_warp_tile = gmem_tile.tile[
                     Self.warp_tile_rows, Self.bk_smem
                 ](warp_row, 0)
+                # Default `hoist_scalar_offset=False` keeps the legacy
+                # per-iter `Int(src_partitions.ptr) - dram_base` codegen.
                 loader.load(smem_warp, gmem_warp_tile)
         elif (
             Self.smem_depth == 64
@@ -437,9 +439,9 @@ struct KVBuffer[
                 loader.load(smem_warp, gmem_warp_tile)
 
         # K-tail padding is handled register-side in `zero_partial_tile_pad`
-        # (AITER-style — see that method for the rationale). The SMEM tail
-        # bytes for `cols [depth, smem_depth)` of the last K-tile remain
-        # at whatever the DMA's OOB-clamp / row-aliasing produced; the K
+        # (as the reference does — see that method for the rationale). The
+        # SMEM tail bytes for `cols [depth, smem_depth)` of the last K-tile
+        # remain at whatever the DMA's OOB-clamp / row-aliasing produced; the K
         # MFMA never reads from those bytes because the per-lane fragment's
         # upper half is overridden with zero after the LDS load.
 
@@ -454,7 +456,7 @@ struct KVBuffer[
     ](self) -> TileTensor[
         Self.kv_t.dtype,
         type_of(row_major[Self._rows_per_k_mma, Self.input_frag_size]()),
-        MutExternalOrigin,
+        MutUntrackedOrigin,
         address_space=AddressSpace.LOCAL,
     ]:
         comptime reg_slot = bk_tile_idx % Self._reg_num_k_tiles
@@ -467,7 +469,7 @@ struct KVBuffer[
     ](self) -> TileTensor[
         Self.kv_t.dtype,
         type_of(row_major[Self._rows_per_k_mma, Self.input_frag_size]()),
-        MutExternalOrigin,
+        MutUntrackedOrigin,
         address_space=AddressSpace.LOCAL,
     ]:
         """Alias for get_mma_tile, kept for decode-call-site symmetry."""
@@ -488,8 +490,8 @@ struct KVBuffer[
         `input_frag_size - valid_per_lane` elements correspond to the
         pad.  Zero the upper portion per lane.
 
-        AITER pre-zeros half of the partial-tile K-fragment dwords once
-        and reuses; we re-zero each K LDS load because the LDS loader
+        The reference pre-zeros half of the partial-tile K-fragment dwords
+        once and reuses; we re-zero each K LDS load because the LDS loader
         fills the whole reg tile.
 
         A no-op when `depth % BK == 0`.
@@ -599,12 +601,14 @@ struct KVBuffer[
             #
             # Paired lanes (even/odd) access the same key at depth offsets
             # differing by 8.  After the hardware 8x8 transpose, each lane
-            # holds 8 contiguous depth values.  Even lanes cover depths
-            # [d, d+8), odd lanes [d+8, d+16) -> 16 unique depths per
-            # 16-lane row.  Two rows within hw0 (depth_base 0 and 16) give
-            # 32 depths; hw1 shifts keys by +4 for the complementary MFMA
-            # C-output column pattern, covering all 64 BN keys per MFMA
-            # tile. The per-strip load lives in
+            # holds 8 different keys at ONE depth (NOT 8 contiguous depths
+            # per lane — that's the pre-transpose source layout).  The 16
+            # lanes in a row collectively cover 16 unique depths; the
+            # depth-per-lane mapping is `depth_in_block = lane_in_row +
+            # (row_in_warp % 2) * 16`.  Two rows within hw0 (depth_base 0
+            # and 16) give 32 depths; hw1 shifts keys by +4 for the
+            # complementary MFMA C-output column pattern, covering all
+            # 64 BN keys per MFMA tile. The per-strip load lives in
             # `TiledMmaLoader.load_v_fp8_strip` — see that method for
             # the addressing details; here we precompute the lane-only
             # coords once and iterate (bk_tile, dt).
@@ -762,7 +766,7 @@ struct DecodeStreamingKVBuffer[
     comptime MMATileType = TileTensor[
         Self.kv_t.dtype,
         type_of(Self.mma_layout),
-        MutExternalOrigin,
+        MutUntrackedOrigin,
         address_space=AddressSpace.LOCAL,
     ]
     comptime KVMmaOpType = KVMmaOp[
@@ -1086,7 +1090,7 @@ struct DecodeStreamingKVBuffer[
     ](self) -> TileTensor[
         Self.kv_t.dtype,
         type_of(row_major[Self.num_mmas, Self.input_frag_size]()),
-        MutExternalOrigin,
+        MutUntrackedOrigin,
         address_space=AddressSpace.LOCAL,
     ]:
         """Get register tile for one k_mma group within the single strip."""
@@ -1201,7 +1205,7 @@ struct DecodeKVBuffer[
     comptime LoadTile = TileTensor[
         Self.dtype,
         type_of(Self._load_layout),
-        MutExternalOrigin,
+        MutUntrackedOrigin,
         address_space=AddressSpace.LOCAL,
     ]
     var load_tile: Self.LoadTile
@@ -1213,7 +1217,7 @@ struct DecodeKVBuffer[
     comptime MmaTile = TileTensor[
         Self.dtype,
         type_of(Self._mma_layout),
-        MutExternalOrigin,
+        MutUntrackedOrigin,
         address_space=AddressSpace.LOCAL,
     ]
     var mma_tile: Self.MmaTile

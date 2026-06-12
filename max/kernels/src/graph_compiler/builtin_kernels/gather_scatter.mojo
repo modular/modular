@@ -1962,7 +1962,7 @@ struct Split:
         comptime for i in range(output.size):
             output_bufs[i] = rebind[output_bufs.element_type](
                 TileTensor(
-                    output[i].unsafe_ptr().as_any_origin(),
+                    output[i].unsafe_ptr().as_unsafe_any_origin(),
                     output[i]
                     .to_tile_tensor[DType.int64]()
                     .layout.make_dynamic[DType.int64](),

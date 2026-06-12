@@ -37,7 +37,7 @@ struct _Chain(Boolable, Defaultable, ImplicitlyCopyable, RegisterPassable):
     """A proxy for the C++ runtime's AsyncValueRef<_Chain> type."""
 
     # Actually an AsyncValueRef<_Chain>, which is just an AsyncValue*
-    var storage: _CPointer[Int, MutExternalOrigin]
+    var storage: _CPointer[Int, MutUntrackedOrigin]
 
     def __init__(out self):
         self.storage = {}
@@ -415,10 +415,10 @@ struct RaisingTask[type: Movable, origins: OriginSet]:
     var _handle: RaisingCoroutine[Self.type, Self.origins]
     """The underlying raising coroutine."""
 
-    var _result_ptr: UnsafePointer[Self.type, MutExternalOrigin]
+    var _result_ptr: UnsafePointer[Self.type, MutUntrackedOrigin]
     """Heap-allocated storage for the result value."""
 
-    var _error_ptr: UnsafePointer[Error, MutExternalOrigin]
+    var _error_ptr: UnsafePointer[Error, MutUntrackedOrigin]
     """Heap-allocated storage for the error value."""
 
     def __init__(
@@ -546,7 +546,7 @@ struct TaskGroupContext(TrivialRegisterPassable):
     var callback: Self.tg_callback_fn_type
     """Callback function to be invoked on the TaskGroup when an operation completes."""
 
-    var task_group: UnsafePointer[TaskGroup, MutExternalOrigin]
+    var task_group: UnsafePointer[TaskGroup, MutUntrackedOrigin]
     """Pointer to the TaskGroup that owns or is associated with this context."""
 
 
@@ -636,7 +636,7 @@ struct TaskGroup(Defaultable):
         self.counter += 1
         task._get_ctx[TaskGroupContext]()[] = TaskGroupContext(
             Self._task_complete_callback,
-            UnsafePointer(to=self).unsafe_origin_cast[MutExternalOrigin](),
+            UnsafePointer(to=self).unsafe_origin_cast[MutUntrackedOrigin](),
         )
         _async_execute[NoneType](task._handle, desired_worker_id)
         self.tasks.append(_TaskGroupBox(task^))

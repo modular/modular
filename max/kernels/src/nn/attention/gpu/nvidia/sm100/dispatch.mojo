@@ -223,7 +223,11 @@ def mha_sm100_dispatch[
                         max_num_prompt_tiles,
                     )
 
-                    comptime smem_use = fa4_config.smem_used
+                    # Covers the in-kernel 1Q/2Q switch: when
+                    # `can_switch_to_1q()` the kernel constructs the 1Q smem
+                    # layout over the same dynamic smem region, so this is the
+                    # max of both footprints (see `FA4Config.launch_smem_used`).
+                    comptime smem_use = fa4_config.launch_smem_used()
 
                     comptime kernel = SM100MHA2Q[
                         KVType,
@@ -265,7 +269,7 @@ def mha_sm100_dispatch[
                 # --- ragged dispatch ---
                 comptime if ragged:
                     with_valid_length[NonNullPointer[DType.uint32]](
-                        {valid_length}
+                        {valid_length.as_immutable().as_unsafe_any_origin()}
                     )
                 else:
                     with_valid_length[NullPointer[DType.uint32]]({})
@@ -299,17 +303,7 @@ def mha_sm100_dispatch[
         not pair_cta and config.depth >= 64 and config.depth <= 256
     )
     comptime if can_use_1q:
-        comptime fa4_config_1q = FA4Config[KVType.dtype](
-            num_q_heads=config.num_heads,
-            group=group,
-            qk_depth=config.depth,
-            ov_depth=config.depth,
-            swizzle_mode=config.swizzle_mode,
-            page_size=KVType.page_size,
-            is_mla=False,
-            pair_cta=False,
-            num_qo=1,
-        )
+        comptime fa4_config_1q = fa4_config_2q.with_num_qo(1)
         comptime assert fa4_config_1q.supported(), fa4_config_1q.description()
 
         # Heuristic: pick 1Q when (a) max_prompt_len <= 128 (so 2Q's
@@ -333,7 +327,8 @@ def mha_sm100_dispatch[
             DeviceAttribute.MULTIPROCESSOR_COUNT
         )
         var grid_threshold: UInt32 = UInt32(sm_count // 2)
-        if max_prompt_len_u32 <= UInt32(128) or raw_grid_2q <= grid_threshold:
+        comptime bm_eff_1q = UInt32(fa4_config_1q.BM_eff())
+        if max_prompt_len_u32 <= bm_eff_1q or raw_grid_2q <= grid_threshold:
             with_fa4_config[fa4_config_1q]()
         else:
             with_fa4_config[fa4_config_2q]()

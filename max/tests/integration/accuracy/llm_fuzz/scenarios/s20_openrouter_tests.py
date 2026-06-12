@@ -941,7 +941,13 @@ class ProviderBaseline(BaseScenario):
             else:
                 v, d = Verdict.FAIL, "Invalid JSON"
         elif resp.status == 400:
-            v, d = Verdict.INTERESTING, "Server rejects logprobs (400)"
+            # MAX's overlap pipeline does not currently support logprobs, so a
+            # clean 400 rejection is the expected, correct behavior here rather
+            # than a divergence to investigate.
+            v, d = (
+                Verdict.PASS,
+                "Server correctly rejects unsupported logprobs (400)",
+            )
         else:
             v = Verdict.FAIL if resp.status >= 500 else Verdict.INTERESTING
             d = f"Status {resp.status}"
@@ -1676,7 +1682,9 @@ class ProviderBaseline(BaseScenario):
 
     # =====================================================================
     # J. Verbosity (4 probe tests — OR: Verbosity{Low,Medium,High,Max})
-    #    OR sends verbosity as top-level param. Validation: completion_tokens_positive.
+    #    OR sends verbosity as top-level param. Matches OpenAI: low/medium/high
+    #    are valid (accepted, 200; do not affect output for now), "max" is not
+    #    an OpenAI verbosity level so the invalid enum must be rejected with 400.
     # =====================================================================
 
     async def _verbosity(
@@ -1687,7 +1695,9 @@ class ProviderBaseline(BaseScenario):
         def result(test: str, verdict: Verdict, **kw: Any) -> None:
             results.append(self.make_result(self.name, test, verdict, **kw))
 
-        for level in ("low", "medium", "high", "max"):
+        # OpenAI defines verbosity as Literal["low","medium","high"]. These are
+        # accepted (200, positive completion tokens) but need not affect output.
+        for level in ("low", "medium", "high"):
             # OR sends verbosity as top-level param (not chat_template_kwargs)
             pl_v = self._req(
                 model,
@@ -1708,6 +1718,27 @@ class ProviderBaseline(BaseScenario):
                 detail=d,
                 **self._exchange_verbose(pl_v, resp),
             )
+
+        # "max" is not a valid OpenAI verbosity value; the invalid enum must be
+        # rejected with 400 (a 200 would mean the bad value was silently accepted).
+        pl_max = self._req(model, "Explain what a CPU is.", verbosity="max")
+        resp = await client.post_json(pl_max)
+        if resp.status == 400:
+            v, d = Verdict.PASS, "Invalid verbosity rejected (400)"
+        elif resp.status >= 500:
+            v, d = Verdict.FAIL, f"Server error {resp.status}"
+        else:
+            v, d = (
+                Verdict.FAIL,
+                f"Invalid verbosity not rejected (got {resp.status})",
+            )
+        result(
+            "verbosity-max",
+            v,
+            status_code=resp.status,
+            detail=d,
+            **self._exchange_verbose(pl_max, resp),
+        )
 
         return results
 

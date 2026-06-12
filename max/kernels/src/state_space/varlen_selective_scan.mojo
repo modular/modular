@@ -63,18 +63,18 @@ def varlen_selective_state_update_gpu[
     dt_softplus: Int8,
     has_state_batch_indices: Int8,
     # Tensors
-    state: TileTensor[kernel_dtype, state_LT, MutExternalOrigin],
-    x: TileTensor[kernel_dtype, x_LT, MutExternalOrigin],
-    dt: TileTensor[kernel_dtype, dt_LT, MutExternalOrigin],
-    A: TileTensor[kernel_dtype, A_LT, MutExternalOrigin],
-    B: TileTensor[kernel_dtype, B_LT, MutExternalOrigin],
-    C: TileTensor[kernel_dtype, C_LT, MutExternalOrigin],
-    D: TileTensor[kernel_dtype, D_LT, MutExternalOrigin],
-    z: TileTensor[kernel_dtype, z_LT, MutExternalOrigin],
-    output: TileTensor[kernel_dtype, output_LT, MutExternalOrigin],
-    dt_bias: TileTensor[kernel_dtype, dt_bias_LT, MutExternalOrigin],
+    state: TileTensor[kernel_dtype, state_LT, MutUntrackedOrigin],
+    x: TileTensor[kernel_dtype, x_LT, MutUntrackedOrigin],
+    dt: TileTensor[kernel_dtype, dt_LT, MutUntrackedOrigin],
+    A: TileTensor[kernel_dtype, A_LT, MutUntrackedOrigin],
+    B: TileTensor[kernel_dtype, B_LT, MutUntrackedOrigin],
+    C: TileTensor[kernel_dtype, C_LT, MutUntrackedOrigin],
+    D: TileTensor[kernel_dtype, D_LT, MutUntrackedOrigin],
+    z: TileTensor[kernel_dtype, z_LT, MutUntrackedOrigin],
+    output: TileTensor[kernel_dtype, output_LT, MutUntrackedOrigin],
+    dt_bias: TileTensor[kernel_dtype, dt_bias_LT, MutUntrackedOrigin],
     state_batch_indices: TileTensor[
-        DType.int32, state_batch_indices_LT, MutExternalOrigin
+        DType.int32, state_batch_indices_LT, MutUntrackedOrigin
     ],
     state_strides: Strides4D,  # (batch, nheads, dim, d_state)
     x_strides: Strides3D,  # (batch, nheads, dim)
@@ -259,32 +259,32 @@ def varlen_selective_scan_fwd_gpu[
     pad_slot_id: Int32,
     delta_softplus: Int8,
     # Tensors - varlen format: (dim, total_length) for u, delta, z, out
-    u: TileTensor[kernel_dtype, u_LT, MutExternalOrigin],
-    delta: TileTensor[kernel_dtype, delta_LT, MutExternalOrigin],
-    A: TileTensor[kernel_dtype, A_LT, MutExternalOrigin],
+    u: TileTensor[kernel_dtype, u_LT, MutUntrackedOrigin],
+    delta: TileTensor[kernel_dtype, delta_LT, MutUntrackedOrigin],
+    A: TileTensor[kernel_dtype, A_LT, MutUntrackedOrigin],
     B: TileTensor[
-        kernel_dtype, B_LT, MutExternalOrigin
-    ],  # (ngroups, d_state, total_length)
+        kernel_dtype, B_LT, MutUntrackedOrigin
+    ],  # (ngroups, dstate, total_length)
     C: TileTensor[
-        kernel_dtype, C_LT, MutExternalOrigin
-    ],  # (ngroups, d_state, total_length)
-    D: TileTensor[kernel_dtype, D_LT, MutExternalOrigin],
-    z: TileTensor[kernel_dtype, z_LT, MutExternalOrigin],
-    delta_bias: TileTensor[kernel_dtype, delta_bias_LT, MutExternalOrigin],
+        kernel_dtype, C_LT, MutUntrackedOrigin
+    ],  # (ngroups, dstate, total_length)
+    D: TileTensor[kernel_dtype, D_LT, MutUntrackedOrigin],
+    z: TileTensor[kernel_dtype, z_LT, MutUntrackedOrigin],
+    delta_bias: TileTensor[kernel_dtype, delta_bias_LT, MutUntrackedOrigin],
     ssm_states: TileTensor[
-        kernel_dtype, ssm_states_LT, MutExternalOrigin
-    ],  # (batch, dim, d_state)
+        kernel_dtype, ssm_states_LT, MutUntrackedOrigin
+    ],  # (batch, dim, dstate)
     output: TileTensor[
-        kernel_dtype, output_LT, MutExternalOrigin
+        kernel_dtype, output_LT, MutUntrackedOrigin
     ],  # Output written here (or to z if z is present)
     query_start_loc: TileTensor[
-        DType.int32, query_start_loc_LT, MutExternalOrigin
+        DType.int32, query_start_loc_LT, MutUntrackedOrigin
     ],  # (batch + 1,)
     cache_indices: TileTensor[
-        DType.int32, cache_indices_LT, MutExternalOrigin
+        DType.int32, cache_indices_LT, MutUntrackedOrigin
     ],  # (batch,)
     has_initial_state: TileTensor[
-        DType.bool, has_initial_state_LT, MutExternalOrigin
+        DType.bool, has_initial_state_LT, MutUntrackedOrigin
     ],  # (batch,)
     u_strides: Strides2D,  # (dim, total_length)
     delta_strides: Strides2D,  # (dim, total_length)

@@ -177,7 +177,7 @@ and a ready-to-use pipeline instance.
 import asyncio
 from max.pipelines.modeling.types import RequestID, TextGenerationInputs, TextGenerationRequest
 from max.pipelines import PIPELINE_REGISTRY, PipelineConfig
-from max.pipelines.core import TextContext
+from max.pipelines.context import TextContext
 
 # 1. Configure and retrieve the pipeline and tokenizer
 config = PipelineConfig(
@@ -284,7 +284,7 @@ The key interfaces are:
 These interfaces are task-agnostic. Specialized variants like
 [`TextGenerationInputs`](/max/api/python/generated/max.pipelines.modeling.types.TextGenerationInputs)
 and
-[`TextGenerationOutput`](/max/api/python/generated/max.pipelines.modeling.types.TextGenerationOutput)
+[`TextGenerationOutput`](/max/api/python/generated/max.pipelines.context.TextGenerationOutput)
 extend them for specific use cases.
 
 ### Pipeline registry

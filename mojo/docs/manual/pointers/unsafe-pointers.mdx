@@ -71,7 +71,7 @@ or point to a memory location:
   be declared but uninitialized.
 
   ```mojo
-  var ptr: UnsafePointer[Int, MutExternalOrigin]
+  var ptr: UnsafePointer[Int, MutUntrackedOrigin]
   ```
 
 - Pointing to allocated, uninitialized memory. The `alloc()` function
@@ -334,7 +334,7 @@ s_ptr = UnsafePointer(to=s)
 ```
 
 When allocating memory with the `alloc()` function, the returned pointer has an
-`origin` value of `MutExternalOrigin`. This value represents an origin that is
+`origin` value of `MutUntrackedOrigin`. This value represents an origin that is
 mutable and doesn't *alias* existing values. For example, it doesn't point to
 the memory allocated for any other variable. That means the compiler won't
 unnecessarily extend the lifetimes of unrelated values. This memory isn't
@@ -375,7 +375,7 @@ list.
 in `Optional`:
 
 ```mojo
-  var ptr = Optional[UnsafePointer[Int, MutExternalOrigin]]()
+  var ptr = Optional[UnsafePointer[Int, MutUntrackedOrigin]]()
 ```
 
 This creates an `Optional` with a value of `None`, which is equivalent
@@ -394,7 +394,7 @@ When you need a non-null sentinel for deferred initialization, use
 `unsafe_dangling()` instead:
 
 ```mojo
-  var ptr = UnsafePointer[Int, MutExternalOrigin].unsafe_dangling()
+  var ptr = UnsafePointer[Int, MutUntrackedOrigin].unsafe_dangling()
 ```
 
 For a practical example of optional pointers in a data structure, see
@@ -428,7 +428,7 @@ You can create a `UnsafePointer` from a raw memory address using the
 
 ```mojo
 def write_to_address(mmio_address: Int, value: Int32):
-    var ptr = UnsafePointer[Int32, MutExternalOrigin](
+    var ptr = UnsafePointer[Int32, MutUntrackedOrigin](
       unsafe_from_address=mmio_address
     )
 
@@ -485,16 +485,16 @@ the return type as an `UnsafePointer`, and Mojo will handle the type conversion
 for you.
 
 Notably, the `origin` parameter when working across FFI boundaries should often
-be set to `(Mut/Immut)ExternalOrigin`, since the pointer points to memory
+be set to `(Mut/Immut)UntrackedOrigin`, since the pointer points to memory
 external to the mojo program.
 
 ```mojo
 from std.ffi import external_call
 
-def get_foreign_pointer() -> UnsafePointer[Int, MutExternalOrigin]:
+def get_foreign_pointer() -> UnsafePointer[Int, MutUntrackedOrigin]:
     var ptr = external_call[
         "my_c_function", # external function name
-        UnsafePointer[Int, MutExternalOrigin] # return type
+        UnsafePointer[Int, MutUntrackedOrigin] # return type
     ]()
     return ptr
 ```

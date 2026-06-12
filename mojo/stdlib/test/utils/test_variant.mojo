@@ -46,7 +46,7 @@ def _initialize_poison() -> Bool:
     return False
 
 
-def _poison_ptr() -> UnsafePointer[Bool, MutExternalOrigin]:
+def _poison_ptr() -> UnsafePointer[Bool, MutUntrackedOrigin]:
     try:
         return TEST_VARIANT_POISON.get_or_create_ptr()
     except:
@@ -64,7 +64,7 @@ struct Poison(ImplicitlyCopyable):
     def __init__(out self, *, copy: Self):
         _poison_ptr().init_pointee_move(True)
 
-    def __init__(out self, *, deinit take: Self):
+    def __init__(out self, *, deinit move: Self):
         _poison_ptr().init_pointee_move(True)
 
     def __del__(deinit self):
