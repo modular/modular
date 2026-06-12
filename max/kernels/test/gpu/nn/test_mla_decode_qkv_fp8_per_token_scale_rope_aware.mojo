@@ -53,7 +53,6 @@ from layout import (
     RuntimeLayout,
     TileTensor,
     UNKNOWN_VALUE,
-    lt_to_tt,
     row_major,
 )
 from nn.attention.gpu.mha import mha_gpu_naive
@@ -562,7 +561,7 @@ def run_test[
         num_heads=num_heads,
         is_fp8_kv=True,
     ](batch_size, max_cache_len, q_max_seq_len, ctx)
-    var scalar_args_buf_lt = mla_args.gpu_layout_tensor()
+    var scalar_args_buf_tt = mla_args.gpu_tile_tensor()
     flare_mla_decoding[
         rank=3,
         config=MHAConfig[fp8_type](num_heads, LOGICAL_DEPTH),
@@ -576,7 +575,7 @@ def run_test[
         row_offsets_tt,
         scale,
         ctx,
-        scalar_args_buf=lt_to_tt(scalar_args_buf_lt),
+        scalar_args_buf=scalar_args_buf_tt,
         q_max_seq_len=q_max_seq_len,
         q_scale_ptr=q_scale_ptr,
     )
@@ -1235,7 +1234,7 @@ def run_test_with_scales[
         num_heads=num_heads,
         is_fp8_kv=True,
     ](batch_size, max_cache_len, q_max_seq_len, ctx)
-    var scalar_args_buf_lt2 = mla_args2.gpu_layout_tensor()
+    var scalar_args_buf_tt2 = mla_args2.gpu_tile_tensor()
     flare_mla_decoding[
         rank=3,
         config=MHAConfig[fp8_type](num_heads, LOGICAL_DEPTH),
@@ -1249,7 +1248,7 @@ def run_test_with_scales[
         row_offsets_tt,
         scale,
         ctx,
-        scalar_args_buf=lt_to_tt(scalar_args_buf_lt2),
+        scalar_args_buf=scalar_args_buf_tt2,
         q_max_seq_len=q_max_seq_len,
         q_scale_ptr=q_scale_ptr,
     )

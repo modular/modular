@@ -52,7 +52,6 @@ from layout import (
     RuntimeLayout,
     TileTensor,
     UNKNOWN_VALUE,
-    lt_to_tt,
     row_major,
 )
 from nn.attention.gpu.mha import mha_gpu_naive
@@ -198,11 +197,11 @@ def test[
         _is_cache_length_accurate=True,
         is_fp8_kv=True,
     ](batch_size, num_keys, seq_len, ctx)
-    var scalar_args_buf_lt = mla_args.gpu_layout_tensor()
+    var scalar_args_buf_tt = mla_args.gpu_tile_tensor()
 
     @parameter
     @always_inline
-    @__copy_capture(q_tt, k_tt, out_tt, scalar_args_buf_lt)
+    @__copy_capture(q_tt, k_tt, out_tt, scalar_args_buf_tt)
     def kernel_launch(ctx: DeviceContext) raises:
         # CAUSAL only (production MLA mask). See main() — every cell is CAUSAL.
         flare_mla_decoding[
@@ -215,7 +214,7 @@ def test[
             CausalMask(),
             scale,
             ctx,
-            lt_to_tt(scalar_args_buf_lt),
+            scalar_args_buf_tt,
             num_partitions=num_partitions,
         )
 

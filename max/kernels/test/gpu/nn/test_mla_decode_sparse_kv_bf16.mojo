@@ -34,7 +34,6 @@ from layout import (
     RuntimeLayout,
     TileTensor,
     UNKNOWN_VALUE,
-    lt_to_tt,
     row_major,
 )
 from nn.attention.mha_mask import CausalMask, NullMask
@@ -269,7 +268,7 @@ def run_bit_exact_vs_dense[
         num_heads=num_heads,
         is_fp8_kv=False,
     ](batch_size, cache_len, q_max_seq_len, ctx)
-    var scalar_args_dense_lt = mla_args_dense.gpu_layout_tensor()
+    var scalar_args_dense_tt = mla_args_dense.gpu_tile_tensor()
 
     # sparse_max_topk shrink is now derived inside mla_decode_sm100_dispatch
     # from indices_stride, so it's no longer passed at host-side projection.
@@ -277,7 +276,7 @@ def run_bit_exact_vs_dense[
         num_heads=num_heads,
         is_fp8_kv=False,
     ](batch_size, cache_len, q_max_seq_len, ctx)
-    var scalar_args_sparse_lt = mla_args_sparse.gpu_layout_tensor()
+    var scalar_args_sparse_tt = mla_args_sparse.gpu_tile_tensor()
 
     print("  Launching dense BF16 MLA decode (reference)...")
     flare_mla_decoding[
@@ -292,7 +291,7 @@ def run_bit_exact_vs_dense[
         row_offsets_tt,
         scale,
         ctx,
-        lt_to_tt(scalar_args_dense_lt),
+        scalar_args_dense_tt,
     )
     ctx.synchronize()
 
@@ -310,7 +309,7 @@ def run_bit_exact_vs_dense[
         row_offsets_tt,
         scale,
         ctx,
-        lt_to_tt(scalar_args_sparse_lt),
+        scalar_args_sparse_tt,
         d_indices=rebind[UnsafePointer[Int32, MutAnyOrigin]](
             d_indices_device.unsafe_ptr()
         ),
@@ -917,7 +916,7 @@ def run_test_sparse_kv_bf16[
         num_heads=num_heads,
         is_fp8_kv=False,
     ](batch_size, cache_len, q_max_seq_len, ctx)
-    var scalar_args_buf_lt = mla_args.gpu_layout_tensor()
+    var scalar_args_buf_tt = mla_args.gpu_tile_tensor()
 
     var indices_stride = topk
     print(
@@ -941,7 +940,7 @@ def run_test_sparse_kv_bf16[
             row_offsets_tt,
             scale,
             ctx,
-            lt_to_tt(scalar_args_buf_lt),
+            scalar_args_buf_tt,
             d_indices=rebind[UnsafePointer[Int32, MutAnyOrigin]](
                 d_indices_device.unsafe_ptr()
             ),
@@ -961,7 +960,7 @@ def run_test_sparse_kv_bf16[
             row_offsets_tt,
             scale,
             ctx,
-            lt_to_tt(scalar_args_buf_lt),
+            scalar_args_buf_tt,
             d_indices=rebind[UnsafePointer[Int32, MutAnyOrigin]](
                 d_indices_device.unsafe_ptr()
             ),
@@ -1362,7 +1361,7 @@ def run_test_sparse_kv_bf16_variable_topk[
         num_heads=num_heads,
         is_fp8_kv=False,
     ](batch_size, max_cache_len, q_max_seq_len, ctx)
-    var scalar_args_buf_lt = mla_args.gpu_layout_tensor()
+    var scalar_args_buf_tt = mla_args.gpu_tile_tensor()
 
     print("  Launching MLA sparse KV_BF16 (variable topk)...")
     flare_mla_decoding[
@@ -1378,7 +1377,7 @@ def run_test_sparse_kv_bf16_variable_topk[
         row_offsets_tt,
         scale,
         ctx,
-        lt_to_tt(scalar_args_buf_lt),
+        scalar_args_buf_tt,
         d_indices=rebind[UnsafePointer[Int32, MutAnyOrigin]](
             d_indices_device.unsafe_ptr()
         ),
@@ -1682,7 +1681,7 @@ def run_test_sparse_kv_bf16_attn_sink[
         num_heads=num_heads,
         is_fp8_kv=False,
     ](batch_size, cache_len, q_max_seq_len, ctx)
-    var scalar_args_buf_lt = mla_args.gpu_layout_tensor()
+    var scalar_args_buf_tt = mla_args.gpu_tile_tensor()
 
     print("  Launching MLA sparse KV_BF16 (attn_sink)...")
     flare_mla_decoding[
@@ -1698,7 +1697,7 @@ def run_test_sparse_kv_bf16_attn_sink[
         row_offsets_tt,
         scale,
         ctx,
-        lt_to_tt(scalar_args_buf_lt),
+        scalar_args_buf_tt,
         d_indices=rebind[UnsafePointer[Int32, MutAnyOrigin]](
             d_indices_device.unsafe_ptr()
         ),
@@ -2246,7 +2245,7 @@ def run_test_sparse_kv_bf16_extra_kv[
         q_max_seq_len,
         ctx,
     )
-    var scalar_args_buf_lt = mla_args.gpu_layout_tensor()
+    var scalar_args_buf_tt = mla_args.gpu_tile_tensor()
 
     print("  Launching MLA sparse KV_BF16 (extra KV)...")
     flare_mla_decoding[
@@ -2262,7 +2261,7 @@ def run_test_sparse_kv_bf16_extra_kv[
         row_offsets_tt,
         scale,
         ctx,
-        lt_to_tt(scalar_args_buf_lt),
+        scalar_args_buf_tt,
         d_indices=rebind[UnsafePointer[Int32, MutAnyOrigin]](
             d_indices_device.unsafe_ptr()
         ),
@@ -2645,7 +2644,7 @@ def run_test_sparse_kv_bf16_topk_clamping[
         q_max_seq_len,
         ctx,
     )
-    var scalar_args_buf_lt = mla_args.gpu_layout_tensor()
+    var scalar_args_buf_tt = mla_args.gpu_tile_tensor()
 
     comptime sm_count = ctx.default_device_info.sm_count
     var dispatch_scalars = compute_mla_dispatch_scalars[
@@ -2681,7 +2680,7 @@ def run_test_sparse_kv_bf16_topk_clamping[
         row_offsets_tt,
         scale,
         ctx,
-        lt_to_tt(scalar_args_buf_lt),
+        scalar_args_buf_tt,
         d_indices=rebind[UnsafePointer[Int32, MutAnyOrigin]](
             d_indices_device.unsafe_ptr()
         ),

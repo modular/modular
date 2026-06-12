@@ -50,7 +50,6 @@ from layout import (
     RuntimeLayout,
     TileTensor,
     UNKNOWN_VALUE,
-    lt_to_tt,
     row_major,
 )
 from nn.attention.gpu.mha import mha_gpu_naive
@@ -236,7 +235,7 @@ def test[
         seq_len,
         ctx,
     )
-    var scalar_args_buf_lt = mla_args.gpu_layout_tensor()
+    var scalar_args_buf_tt = mla_args.gpu_tile_tensor()
 
     @parameter
     @always_inline
@@ -244,7 +243,7 @@ def test[
         q_fp8_tt,
         k_fp8_tt,
         out_tt,
-        scalar_args_buf_lt,
+        scalar_args_buf_tt,
     )
     def kernel_launch(ctx: DeviceContext) raises:
         comptime config = MHAConfig[q_type](num_heads, depth)
@@ -255,7 +254,7 @@ def test[
             SlidingWindowCausalMask[window_size](),
             scale,
             ctx,
-            lt_to_tt(scalar_args_buf_lt),
+            scalar_args_buf_tt,
         )
 
     kernel_launch(ctx)

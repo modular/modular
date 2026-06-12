@@ -19,9 +19,12 @@ from std.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
 from std.gpu.memory import AddressSpace
 from std.gpu.primitives.grid_controls import pdl_launch_attributes, PDLLevel
 from layout import (
+    ComptimeInt,
     Coord,
+    Idx,
     Layout,
     LayoutTensor,
+    RowMajorLayout,
     TileTensor,
     row_major,
 )
@@ -693,6 +696,16 @@ struct MLADispatchScalarArgs[
             rebind[UnsafePointer[Scalar[DType.int64], origin=MutAnyOrigin]](
                 self.gpu_buf.unsafe_ptr()
             ),
+        )
+
+    def gpu_tile_tensor(
+        self,
+    ) -> TileTensor[DType.int64, RowMajorLayout[ComptimeInt[3]], MutAnyOrigin]:
+        return TileTensor(
+            rebind[UnsafePointer[Scalar[DType.int64], MutAnyOrigin]](
+                self.gpu_buf.unsafe_ptr()
+            ),
+            row_major((Idx[3],)),
         )
 
 

@@ -36,10 +36,11 @@ from layout import (
     IntTuple,
     Layout,
     LayoutTensor,
+    LTToTTLayout,
     RuntimeLayout,
     RuntimeTuple,
+    TileTensor,
     UNKNOWN_VALUE,
-    lt_to_tt,
 )
 from layout._utils import ManagedLayoutTensor
 from layout.swizzle import make_swizzle
@@ -177,19 +178,8 @@ def kernel_5[
         Int64
     ]()
 
-    var a_smem_tile = LayoutTensor[
-        a_type,
-        a_smem_layout,
-        address_space=AddressSpace.SHARED,
-        alignment=128,
-    ](a_smem)
-
-    var b_smem_tile = LayoutTensor[
-        b_type,
-        b_smem_layout,
-        address_space=AddressSpace.SHARED,
-        alignment=128,
-    ](b_smem)
+    var a_smem_tile = TileTensor(a_smem, LTToTTLayout[a_smem_layout]())
+    var b_smem_tile = TileTensor(b_smem, LTToTTLayout[b_smem_layout]())
 
     comptime accum_type = get_accum_type[a_type]()
 
@@ -324,8 +314,8 @@ def kernel_5[
 
             if elect_one_warp and elect_one_thread:
                 mma_op.mma(
-                    lt_to_tt(a_smem_tile),
-                    lt_to_tt(b_smem_tile),
+                    a_smem_tile,
+                    b_smem_tile,
                     tmem_addr,
                     init_c=(i == 0),  # Initialize C on first iteration
                 )
