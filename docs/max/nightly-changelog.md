@@ -10,6 +10,8 @@ This version is still a work in progress.
 
 ## MAX models
 
+- Added tool-calling and reasoning support to Qwen 3.5 / 3.6.
+
 ## MAX framework
 
 ### Inference server

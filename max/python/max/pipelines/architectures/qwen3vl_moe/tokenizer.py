@@ -513,11 +513,13 @@ class Qwen3VLTokenizer(TextAndVisionTokenizer):
                 assert new_request.messages
                 prompt = self.apply_chat_template(
                     new_request.messages,
+                    tools=request.tools,
                     **(request.chat_template_options or {}),
                 )
         elif request.messages:
             prompt = self.apply_chat_template(
                 request.messages,
+                tools=request.tools,
                 **(request.chat_template_options or {}),
             )
         else:
