@@ -369,8 +369,8 @@ struct BatchProcessor:
 
 ### Explicit destruction in generic code
 
-Generic code parameterized over `AnyType` can accept both implicitly and
-explicitly destructible values. However, it cannot automatically destroy
+Generic code parameterized over `AnyType` can accept both implicitly deletable
+and explicitly destructible values. However, it cannot automatically destroy
 values that require explicit destruction.
 
 Because explicit destructors are type-specific, generic code has no way
