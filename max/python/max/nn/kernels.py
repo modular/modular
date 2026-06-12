@@ -5248,6 +5248,49 @@ def mxfp4_dequant(
     return result
 
 
+def nvfp4_gemv(
+    x: TensorValue,
+    packed_weights: TensorValue,
+    scales: TensorValue,
+) -> TensorValue:
+    """Fused NVFP4 dequant-GEMV: ``x @ W.T`` with FP4 decoded in registers.
+
+    Pre-Blackwell fallback path. The BF16 weight is never materialized, so
+    per-token DRAM traffic is the packed bytes (~0.5 B/element). Optimized
+    for small M (decode); prefill rows are tiled in groups of 4.
+
+    Args:
+        x: Activations ``[M, K]`` in bfloat16.
+        packed_weights: Packed FP4 weight ``[N, K // 2]`` in uint8.
+        scales: Float32 block scales ``[N, K // 16]`` with the per-tensor
+            scale pre-multiplied.
+
+    Returns:
+        ``[M, N]`` in bfloat16.
+    """
+    if x.dtype != DType.bfloat16:
+        raise ValueError(f"nvfp4_gemv requires bfloat16 x, got {x.dtype}")
+    if packed_weights.dtype != DType.uint8:
+        raise ValueError("nvfp4_gemv requires uint8 packed weights")
+    if scales.dtype != DType.float32:
+        raise ValueError("nvfp4_gemv requires float32 scales")
+
+    m = x.shape[0]
+    n = packed_weights.shape[0]
+    return ops.custom(
+        "mo.gemv.nvfp4",
+        device=x.device,
+        values=[x, packed_weights, scales],
+        out_types=[
+            TensorType(
+                dtype=DType.bfloat16,
+                shape=[m, n],
+                device=x.device,
+            )
+        ],
+    )[0].tensor
+
+
 def nvfp4_dequant(
     packed_weights: TensorValue,
     scales: TensorValue,

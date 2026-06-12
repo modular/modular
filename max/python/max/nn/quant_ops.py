@@ -29,6 +29,7 @@ from .kernels import (
     matmul_static_scaled_float8,
     mxfp4_dequant,
     nvfp4_dequant,
+    nvfp4_gemv,
     quantize_dynamic_block_scaled,
     quantize_dynamic_block_scaled_mxfp4,
     quantize_dynamic_scaled_float8,
@@ -124,10 +125,20 @@ def _matmul_float4(
         The output tensor in bf16.
     """
     if not _is_sm10x_gpu():
-        dequanted = _dequant_weight_nvfp4(
-            weight, weight_scale, weight_scale_2, scales_pre_interleaved
-        )
-        return x @ dequanted.T
+        # Fused dequant-GEMV (Marlin-style): FP4 is decoded in registers
+        # inside the kernel, so the BF16 weight is never materialized and
+        # per-token DRAM traffic is the packed bytes only. The op consumes
+        # x, so unlike dequantize-then-matmul it can never be hoisted into
+        # an init-time constant (which costs ~3x the packed size in VRAM).
+        if scales_pre_interleaved:
+            raise ValueError(
+                "NVFP4 checkpoints with pre-interleaved (TCGEN 5D) scales"
+                " are not supported on pre-Blackwell GPUs"
+            )
+        scales_f32 = weight_scale.to(weight.device).cast(
+            DType.float32
+        ) * weight_scale_2.to(weight.device)
+        return nvfp4_gemv(x.cast(DType.bfloat16), weight, scales_f32)
 
     x, x_scales = quantize_dynamic_block_scaled(
         x,
