@@ -114,7 +114,11 @@ def small_MN_gemms[
         comptime b_type = b.dtype
         comptime simd_width = simd_width_of[a_type, target=get_gpu_target()]()
         comptime static_N = c.static_shape[1]
-        comptime check_bounds = static_N % config.tile_n != 0
+        # m is only known at runtime, so the grid can overshoot the final
+        # rows whenever tile_m > 1 (m % tile_m != 0); the row guard must
+        # then be on. The column guard is comptime-decidable from static N.
+        comptime check_bounds_m = config.tile_m > 1
+        comptime check_bounds_n = static_N % config.tile_n != 0
 
         var m = Int(c.dim[0]())
         var n = Int(c.dim[1]())
@@ -137,7 +141,8 @@ def small_MN_gemms[
             num_threads=config.num_threads,
             unroll_factor=config.unroll_factor,
             elementwise_lambda_fn=elementwise_lambda_fn,
-            check_bounds=check_bounds,
+            check_bounds_m=check_bounds_m,
+            check_bounds_n=check_bounds_n,
         ]
 
         ctx.enqueue_function[kernel](
