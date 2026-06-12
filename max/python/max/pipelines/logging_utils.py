@@ -25,9 +25,9 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from max.pipelines.lib.config.model_config import _format_config_entries
-from max.pipelines.lib.memory_estimation import to_human_readable_bytes
 from max.pipelines.lib.registry import PIPELINE_REGISTRY, get_pipeline_for_task
 from max.pipelines.modeling.types.task import PipelineTask
+from max.support.human_readable_formatter import to_human_readable_bytes
 
 if TYPE_CHECKING:
     from max.pipelines.lib.config.config import PipelineConfig
