@@ -28,6 +28,8 @@ import pytest
 import torch
 from max.driver import (
     CPU,
+    Accelerator,
+    accelerator_count,
     set_virtual_device_api,
     set_virtual_device_count,
     set_virtual_device_target_arch,
@@ -215,6 +217,25 @@ def virtual_device_mode() -> Iterator[None]:
         yield
     finally:
         set_virtual_device_count(0)
+
+
+def test_accelerator_constructs_in_virtual_device_mode(
+    virtual_device_mode: None,
+) -> None:
+    """Virtual-device mode must apply to device creation, not just counting.
+
+    The virtual-device settings are process-wide globals in the MLRT driver.
+    If the ``_core`` extension ever links its own copy of that library, the
+    ``set_virtual_device_*`` setters and ``accelerator_count()`` see one copy
+    while ``Accelerator()`` construction (which goes through libmax) sees the
+    other — and on a machine with no physical GPU, construction fails with
+    'No supported "gpu" device available' even though the count says one is
+    present. This is exactly what broke the compile benchmarks on CPU-only
+    runners; constructing here guards against the globals splitting again.
+    """
+    assert accelerator_count() >= 1
+    # Must not raise, even on machines with no physical GPU.
+    Accelerator()
 
 
 def test_init_all_in_virtual_device_mode_returns_dict(
