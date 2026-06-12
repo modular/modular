@@ -17,7 +17,7 @@ from max.graph import DeviceRef, TensorValue, ops
 from .kernels import (
     _fused_qkv_ragged_matmul_scaled_float4,
     _fused_qkv_ragged_matmul_scaled_float8,
-    _is_sm10x_gpu,
+    _is_pre_sm100_nvidia_gpu,
     block_scales_interleave,
     convert_weights_to_fp8_fnuz_if_needed,
     dynamic_block_scaled_matmul,
@@ -30,13 +30,13 @@ from .kernels import (
     mxfp4_dequant,
     nvfp4_dequant,
     nvfp4_gemv,
-    store_k_cache_ragged,
-    store_v_cache_ragged,
     quantize_dynamic_block_scaled,
     quantize_dynamic_block_scaled_mxfp4,
     quantize_dynamic_scaled_float8,
     quantize_static_scaled_float8,
     quantize_tensor_dynamic_scaled_float8,
+    store_k_cache_ragged,
+    store_v_cache_ragged,
 )
 from .kv_cache import KVCacheParams, PagedCacheValues
 from .quant_config import (
@@ -126,7 +126,7 @@ def _matmul_float4(
     Returns:
         The output tensor in bf16.
     """
-    if not _is_sm10x_gpu():
+    if _is_pre_sm100_nvidia_gpu():
         # Fused dequant-GEMV (Marlin-style): FP4 is decoded in registers
         # inside the kernel, so the BF16 weight is never materialized and
         # per-token DRAM traffic is the packed bytes only. The op consumes
@@ -525,7 +525,7 @@ def quantized_fused_qkv_matmul(
             assert input_scale is not None
             assert weight_scale_2 is not None
 
-            if not _is_sm10x_gpu():
+            if _is_pre_sm100_nvidia_gpu():
                 # Pre-Blackwell fallback: fused dequant-GEMV for the QKV
                 # projection (FP4 decoded in registers, no BF16 weight is
                 # materialized), then split and store K/V into the paged

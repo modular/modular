@@ -20,7 +20,7 @@ from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, ops
 
 from ..comm.ep.ep_kernels import fused_silu
-from ..kernels import _is_sm10x_gpu, moe_create_indices
+from ..kernels import _is_pre_sm100_nvidia_gpu, moe_create_indices
 from .moe import MoE
 from .quant_strategy import (
     Fp8Strategy,
@@ -56,7 +56,7 @@ class MoEQuantized(MoE):
         if self._uses_nvidia_block_scaled_ep_layout:
             return NvMxf4f8Strategy(self.quant_config, self.dtype)
         if self.quant_config.is_nvfp4:
-            if not _is_sm10x_gpu():
+            if _is_pre_sm100_nvidia_gpu():
                 if self._ep_batch_manager:
                     raise NotImplementedError(
                         "Expert-parallel NVFP4 is not supported on"
@@ -105,10 +105,11 @@ class MoEQuantized(MoE):
             gate_up_max_scale, down_input.shape
         )
 
-        if not _is_sm10x_gpu():
-            # Dequant fallback: activations are never quantized, so the
-            # matmul epilogue must apply ONLY the per-tensor weight scale
-            # (no activation input-scale factor).
+        if _is_pre_sm100_nvidia_gpu():
+            # Dequant fallback: activations are never quantized and the
+            # BF16 grouped matmul has no scale epilogue; the per-tensor
+            # weight scale is folded into the dequant block scales instead
+            # (no activation input-scale factor anywhere).
             return Nvfp4Scales(
                 gate_up_input=gate_up_input,
                 down_input=down_input,

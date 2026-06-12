@@ -5302,7 +5302,8 @@ def nvfp4_dequant(
     architectures without native FP4 matmul support (pre-Blackwell NVIDIA).
     The modelopt per-tensor ``weight_scale_2`` must be pre-multiplied into
     ``scales`` by the caller (yielding float32 scales); raw float8_e4m3fn
-    block scales are also accepted when no per-tensor scale exists.
+    block scales are also accepted (currently exercised only by tests —
+    the modelopt parser always provides a per-tensor scale).
 
     Supports rank 2 ``[N, K//2]`` and rank 3 ``[E, N, K//2]`` inputs.
     For rank 3, leading dims are flattened to 2D, dequantized, and reshaped back.
@@ -5374,6 +5375,20 @@ def _is_sm10x_gpu() -> bool:
         return accelerator_architecture_name().startswith("sm_10")
     except Exception:
         return False
+
+
+def _is_pre_sm100_nvidia_gpu() -> bool:
+    """Checks for an NVIDIA GPU without native FP4 matmul (pre-Blackwell).
+
+    Deliberately False on AMD and Apple GPUs: the NVFP4 dequant fallback is
+    only validated on NVIDIA, so other vendors keep their previous behavior
+    (erroring at the Blackwell-only kernels).
+    """
+    try:
+        arch = accelerator_architecture_name()
+    except Exception:
+        return False
+    return arch.startswith("sm_") and not arch.startswith("sm_10")
 
 
 def quantize_dynamic_block_scaled(
