@@ -226,7 +226,7 @@ def alloc[
         "alloc[",
         type_name,
         "]() count must be non-negative: ",
-        count,
+        Int(count),
     )
     var pointer = _malloc[type](size_of_t * count, alignment=alignment)
     if unlikely(not pointer):

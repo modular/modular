@@ -130,7 +130,7 @@ struct Context[device_spec: DeviceSpec](ImplicitlyDeletable, Movable):
         comptime target = Self.device_spec._mlir_target()
         comptime emission_kind_id = _get_emission_kind_id[
             "object"
-        ]()._mlir_value
+        ]()._int_mlir_index()
 
         var offload = __mlir_op.`kgen.compile_offload`[
             target_type=Self.device_spec._mlir_target(),

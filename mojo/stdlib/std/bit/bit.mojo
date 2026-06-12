@@ -296,20 +296,6 @@ def bit_not[
 
 
 @always_inline("nodebug")
-def bit_width(val: Int) -> Int:
-    """Computes the minimum number of bits required to represent the integer.
-
-    Args:
-        val: The input value.
-
-    Returns:
-        The number of bits required to represent the integer.
-    """
-    comptime bitwidth = bit_width_of[Int]()
-    return bitwidth - count_leading_zeros(select(val < 0, ~val, val))
-
-
-@always_inline("nodebug")
 def bit_width[
     dtype: DType, width: SIMDSize, //
 ](val: SIMD[dtype, width]) -> SIMD[dtype, width]:
@@ -342,20 +328,6 @@ def bit_width[
 # ===-----------------------------------------------------------------------===#
 # log2_floor
 # ===-----------------------------------------------------------------------===#
-
-
-@always_inline
-def log2_floor(val: Int) -> Int:
-    """Returns the floor of the base-2 logarithm of an integer value.
-
-    Args:
-        val: The input value.
-
-    Returns:
-        The floor of the base-2 logarithm of the input value, which is equal to
-        the position of the highest set bit. Returns -1 if val is 0 or negative.
-    """
-    return Int(log2_floor(Scalar[DType.int](val)))
 
 
 @always_inline
@@ -474,7 +446,7 @@ def next_power_of_two[
         value.
     """
     comptime assert dtype.is_integral(), "must be integral"
-    return val.gt(1).select(1 << bit_width(val - 1), 1)
+    return val.gt(1).select(SIMD[dtype, width](1 << bit_width(val - 1)), 1)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -525,7 +497,9 @@ def prev_power_of_two[
         value.
     """
     comptime assert dtype.is_integral(), "must be integral and unsigned"
-    return val.gt(0).select(1 << (bit_width(val) - 1), 0)
+    return val.gt(0).select(
+        SIMD[dtype, width](1) << (bit_width(val) - 1), SIMD[dtype, width](0)
+    )
 
 
 # ===-----------------------------------------------------------------------===#

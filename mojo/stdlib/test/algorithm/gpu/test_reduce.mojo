@@ -238,6 +238,7 @@ def reduce_inner_test[
 
     with res_device.map_to_host() as res_host:
         for i in range(out_shape.flattened_length()):
+            print(res_host[i], expected_vals[i])
             assert_equal(String(res_host[i]), String(expected_vals[i]))
 
     _ = vec_device
@@ -438,14 +439,14 @@ def test_multiblock_reduce() raises:
     @parameter
     def reduce_add[
         dtype: DType,
-        width: Int,
+        width: SIMDSize,
     ](x: SIMD[dtype, width], y: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return x + y
 
     @parameter
     def reduce_max[
         dtype: DType,
-        width: Int,
+        width: SIMDSize,
     ](x: SIMD[dtype, width], y: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return max(x, y)
 
@@ -511,7 +512,7 @@ def test_thread_saturated_contiguous_reduce() raises:
     @parameter
     def reduce_add[
         dtype: DType,
-        width: Int,
+        width: SIMDSize,
     ](x: SIMD[dtype, width], y: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return x + y
 

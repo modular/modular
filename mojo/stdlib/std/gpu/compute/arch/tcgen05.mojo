@@ -382,10 +382,10 @@ def tcgen05_st[
     comptime pack_str = ".unpack::16b" if pack else ""
     comptime constraints_str = (
         _get_nvtx_register_constraint[dtype]() + ","
-    ) * width + "r"
-    comptime addr_str = "[$" + String(width) + "]"
+    ) * Int(width) + "r"
+    comptime addr_str = "[$" + String(Int(width)) + "]"
     comptime input_args_str = "{" + _str_iota[
-        width, prefix="$", sep=","
+        Int(width), prefix="$", sep=","
     ]() + "}"
 
     comptime asm_str = (

@@ -61,14 +61,16 @@ def test_write_repr_to() raises:
     check_write_to(
         Pointer(to=n),
         contains=(
-            "Pointer[mut=True, Int, address_space=AddressSpace.GENERIC](0x"
+            "Pointer[mut=True, SIMD[DType.int, 1],"
+            " address_space=AddressSpace.GENERIC](0x"
         ),
         is_repr=True,
     )
     check_write_to(
         Pointer(to=n).get_immutable(),
         contains=(
-            "Pointer[mut=False, Int, address_space=AddressSpace.GENERIC](0x"
+            "Pointer[mut=False, SIMD[DType.int, 1],"
+            " address_space=AddressSpace.GENERIC](0x"
         ),
         is_repr=True,
     )

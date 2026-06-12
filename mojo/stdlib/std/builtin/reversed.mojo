@@ -25,7 +25,12 @@ from std.hashlib import Hasher
 
 from std.memory.span import Span, _SpanIter
 
-from .range import _StridedRange
+from .range import (
+    _StridedRange,
+    _ZeroStartingScalarRange,
+    _StridedScalarRange,
+    _SequentialScalarRange,
+)
 
 # ===----------------------------------------------------------------------=== #
 #  Reversible
@@ -72,6 +77,44 @@ def reversed[T: ReversibleRange](value: T) -> _StridedRange:
 
     Parameters:
         T: The type conforming to ReversibleRange.
+
+    Args:
+        value: The range to get the reversed iterator of.
+
+    Returns:
+        The reversed iterator of the range.
+    """
+    return value.__reversed__()
+
+
+def reversed[
+    dtype: DType
+](value: _ZeroStartingScalarRange[dtype]) -> _StridedScalarRange[dtype]:
+    """Get a reversed iterator of the input range.
+
+    **Note**: iterators are currently non-raising.
+
+    Parameters:
+        dtype: The dtype of the range to reverse.
+
+    Args:
+        value: The range to get the reversed iterator of.
+
+    Returns:
+        The reversed iterator of the range.
+    """
+    return value.__reversed__()
+
+
+def reversed[
+    dtype: DType
+](value: _SequentialScalarRange[dtype]) -> _StridedScalarRange[dtype]:
+    """Get a reversed iterator of the input range.
+
+    **Note**: iterators are currently non-raising.
+
+    Parameters:
+        dtype: The dtype of the range to reverse.
 
     Args:
         value: The range to get the reversed iterator of.

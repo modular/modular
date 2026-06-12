@@ -202,4 +202,4 @@ struct AHasher[key: U256](Defaultable, Hasher):
         """
         var rot = self.buffer & 63
         var folded = _folded_multiply(self.buffer, self.pad)
-        return (folded << rot) | (folded >> ((64 - rot) & 63))
+        return (folded << rot) | (folded >> ((UInt64(64) - rot) & UInt64(63)))

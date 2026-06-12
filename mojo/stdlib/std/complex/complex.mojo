@@ -38,7 +38,7 @@ comptime ComplexFloat64 = ComplexScalar[DType.float64]
 # ===-----------------------------------------------------------------------===#
 
 
-struct ComplexSIMD[dtype: DType, size: Int](
+struct ComplexSIMD[dtype: DType, size: SIMDSize](
     Equatable, TrivialRegisterPassable, Writable, _Expable
 ):
     """Represents a complex SIMD value.
@@ -148,7 +148,7 @@ struct ComplexSIMD[dtype: DType, size: Int](
         """
         FormatStruct(writer, "ComplexSIMD").params(
             Self.dtype,
-            Self.size,
+            Int(Self.size),
         ).fields(self)
 
     @always_inline
