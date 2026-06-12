@@ -2,57 +2,12 @@ This Third-Party Notices file provides notices and information about third
 party components included in the SOFTWARE. The following third-party
 components are licensed to Licensee pursuant to the following terms and conditions:
 
-1. Licensee's use of MLPerf v3.0 inference benchmarks is subject to the terms and conditions of the Apache 2.0 license.
-   All third-party software packages are copyright by their respective authors.
-   The Apache 2.0 license terms and conditions are hereby incorporated into the Agreement by this reference.
-   The full text of the Apache 2.0 license can be found at: https://www.apache.org/licenses/LICENSE-2.0
-
-   @misc{reddi2019mlperf,
-    title={MLPerf Inference Benchmark},
-    author={Vijay Janapa Reddi and Christine Cheng and David Kanter and Peter Mattson and Guenther Schmuelling and Carole-Jean Wu and Brian Anderson and Maximilien Breughe and Mark Charlebois and William Chou and Ramesh Chukka and Cody Coleman and Sam Davis and Pan Deng and Greg Diamos and Jared Duke and Dave Fick and J. Scott Gardner and Itay Hubara and Sachin Idgunji and Thomas B. Jablin and Jeff Jiao and Tom St. John and Pankaj Kanwar and David Lee and Jeffery Liao and Anton Lokhmotov and Francisco Massa and Peng Meng and Paulius Micikevicius and Colin Osborne and Gennady Pekhimenko and Arun Tejusve Raghunath Rajan and Dilip Sequeira and Ashish Sirasao and Fei Sun and Hanlin Tang and Michael Thomson and Frank Wei and Ephrem Wu and Lingjie Xu and Koichi Yamada and Bing Yu and George Yuan and Aaron Zhong and Peizhao Zhang and Yuchen Zhou},
-    year={2019},
-    eprint={1911.02549},
-    archivePrefix={arXiv},
-    primaryClass={cs.LG}
-   }
-
-2. Licensee's use of LLVM is subject to the terms and conditions of the Apache License v2.0 with LLVM Exceptions.
+1. Licensee's use of LLVM is subject to the terms and conditions of the Apache License v2.0 with LLVM Exceptions.
    All third-party software packages are copyright by their respective authors.
    The Apache 2.0 with LLVM exceptions license terms and conditions are hereby incorporated into the Agreement by this reference.
    The full text of the license can be found at: https://github.com/llvm/llvm-project/blob/main/LICENSE.TXT
 
-3. Licensee's use of pybind11 is subject to the terms and conditions of the 3-clause BSD license.
-   All third-party software packages are copyright by their respective authors.
-   The 3-clause BSD license terms and conditions are hereby incorporated into the Agreement by this reference.
-
-   Copyright (c) 2016 Wenzel Jakob <wenzel.jakob@epfl.ch>, All rights reserved.
-
-   Redistribution and use in source and binary forms, with or without
-   modification, are permitted provided that the following conditions are met:
-
-   1. Redistributions of source code must retain the above copyright notice, this
-      list of conditions and the following disclaimer.
-
-   2. Redistributions in binary form must reproduce the above copyright notice,
-      this list of conditions and the following disclaimer in the documentation
-      and/or other materials provided with the distribution.
-
-   3. Neither the name of the copyright holder nor the names of its contributors
-      may be used to endorse or promote products derived from this software
-      without specific prior written permission.
-
-   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
-   ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
-   WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-   DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
-   FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
-   DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
-   SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
-   CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
-   OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-
-4. Licensee's use of curl/libcurl is subject to the terms and conditions of the MIT license.
+2. Licensee's use of curl/libcurl is subject to the terms and conditions of the MIT license.
     All third-party software packages are copyright by their respective authors.
     The MIT license terms and conditions are hereby incorporated into the Agreement by this reference.
 
@@ -80,17 +35,17 @@ components are licensed to Licensee pursuant to the following terms and conditio
    be used in advertising or otherwise to promote the sale, use or other dealings
    in this Software without prior written authorization of the copyright holder.
 
-5. Licensee's use of OpenTelemetry C++ is subject to the terms and conditions of the Apache 2.0 license.
+3. Licensee's use of OpenTelemetry C++ is subject to the terms and conditions of the Apache 2.0 license.
    All third-party software packages are copyright by their respective authors.
    The Apache 2.0 license terms and conditions are hereby incorporated into the Agreement by this reference.
    The full text of the Apache 2.0 license can be found at: https://www.apache.org/licenses/LICENSE-2.0
 
-6. Licensee's use of Mbed TLS is subject to the terms and conditions of the Apache 2.0 license.
+4. Licensee's use of Mbed TLS is subject to the terms and conditions of the Apache 2.0 license.
    All third-party software packages are copyright by their respective authors.
    The Apache 2.0 license terms and conditions are hereby incorporated into the Agreement by this reference.
    The full text of the Apache 2.0 license can be found at: https://www.apache.org/licenses/LICENSE-2.0
 
-7. Licensee's use of Google's gperftools is subject to the terms and conditions of the 3-clause BSD license.
+5. Licensee's use of Google's gperftools is subject to the terms and conditions of the 3-clause BSD license.
    All third-party software packages are copyright by their respective authors.
    The 3-clause BSD license terms and conditions are hereby incorporated into the Agreement by this reference.
 
@@ -124,7 +79,7 @@ components are licensed to Licensee pursuant to the following terms and conditio
    (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
    OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-8. Licensee's use of libz is subject to the terms and conditions of the zlib license.
+6. Licensee's use of libz is subject to the terms and conditions of the zlib license.
    All third-party software packages are copyright by their respective authors.
    The zlib license terms and conditions are hereby incorporated into the Agreement by this reference.
 
@@ -149,7 +104,7 @@ components are licensed to Licensee pursuant to the following terms and conditio
   Jean-loup Gailly        Mark Adler
   jloup@gzip.org          madler@alumni.caltech.edu
 
-9. Licensee's use of Zstandard is subject to the terms and conditions of the Zstandard license.
+7. Licensee's use of Zstandard is subject to the terms and conditions of the Zstandard license.
    All third-party software packages are copyright by their respective authors.
    The Zstandard license terms and conditions are hereby incorporated into the Agreement by this reference.
 
@@ -180,7 +135,7 @@ components are licensed to Licensee pursuant to the following terms and conditio
    (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
    SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-10. Licensee's use of a derivative work of llama.cpp is subject to the terms and conditions of the MIT license.
+8. Licensee's use of a derivative work of llama.cpp is subject to the terms and conditions of the MIT license.
    All third-party software packages are copyright by their respective authors.
    The MIT license terms and conditions are hereby incorporated into the Agreement by this reference.
 
@@ -206,7 +161,7 @@ components are licensed to Licensee pursuant to the following terms and conditio
    OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
    SOFTWARE.
 
-11. Licensee's use of AMD's HIP runtime API is subject to terms and conditions of the AMD license.
+9. Licensee's use of AMD's HIP runtime API is subject to terms and conditions of the AMD license.
    The AMD license terms and conditions are hereby incorporated into the Agreement by this reference.
 
    Copyright (c) 2008 - 2024 Advanced Micro Devices, Inc. All rights reserved.
@@ -230,7 +185,7 @@ components are licensed to Licensee pursuant to the following terms and conditio
    THE SOFTWARE.
 
 
-12. Licensee's use of Protocol Buffers is subject to the terms and conditions of the 3-clause BSD license.
+10. Licensee's use of Protocol Buffers is subject to the terms and conditions of the 3-clause BSD license.
    All third-party software packages are copyright by their respective authors.
    The 3-clause BSD license terms and conditions are hereby incorporated into the Agreement by this reference.
 
@@ -267,12 +222,12 @@ components are licensed to Licensee pursuant to the following terms and conditio
    standalone and requires a support library to be linked with it.  This
    support library is itself covered by the above license.
 
-13. Licensee's use of metal-cpp is subject to the terms and conditions of the Apache 2.0 license.
+11. Licensee's use of metal-cpp is subject to the terms and conditions of the Apache 2.0 license.
    All third-party software packages are copyright by their respective authors.
    The Apache 2.0 license terms and conditions are hereby incorporated into the Agreement by this reference.
    The full text of the Apache 2.0 license can be found at: https://www.apache.org/licenses/LICENSE-2.0
 
-14. Licensee's use of NVSHMEM is subject to the terms and conditions of the below licenses.
+12. Licensee's use of NVSHMEM is subject to the terms and conditions of the below licenses.
    Copyright (c) 2016-2025, NVIDIA CORPORATION. All rights reserved.
 
    Unless otherwise noted in the ADDITIONAL LICENSES section, the entirety of the NVSHMEM repository is covered under the LICENSE AGREEMENT FOR NVIDIA SOFTWARE DEVELOPMENT KITS and the NVSHMEM SUPPLEMENT TO SOFTWARE LICENSE AGREEMENT FOR NVIDIA SOFTWARE DEVELOPMENT KITS supplement below.
@@ -654,7 +609,7 @@ components are licensed to Licensee pursuant to the following terms and conditio
    END Inclusion of mlx5_prm.h from dpdk
    ----------------------------------------------------------------------------------
 
-15. Licensee's use of Cameron Desrochers' Concurrent Queue is subject to the terms and conditions of the BSD 2-Clause "Simplified" License.
+13. Licensee's use of Cameron Desrochers' Concurrent Queue is subject to the terms and conditions of the BSD 2-Clause "Simplified" License.
     All third-party software packages are copyright by their respective authors.
     The 2-Clause "Simplified" BSD License terms and conditions are hereby incorporated into the Agreement by this reference.
 
@@ -682,7 +637,7 @@ components are licensed to Licensee pursuant to the following terms and conditio
     ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
     POSSIBILITY OF SUCH DAMAGE.
 
-16. Licensee's use of AMD's ROCR-Runtime is subject to the terms and conditions of the University of Illinois/NCSA Open Source License.
+14. Licensee's use of AMD's ROCR-Runtime is subject to the terms and conditions of the University of Illinois/NCSA Open Source License.
    The license terms and conditions are hereby incorporated into the Agreement by this reference.
    The full text of the license can be found at: https://github.com/ROCm/ROCR-Runtime/blob/master/LICENSE.md
 
@@ -712,7 +667,7 @@ components are licensed to Licensee pursuant to the following terms and conditio
    OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS WITH
    THE SOFTWARE.
 
-17. Licensee's use of AMD's rocprofiler-sdk is subject to the terms and conditions of the MIT license.
+15. Licensee's use of AMD's rocprofiler-sdk is subject to the terms and conditions of the MIT license.
    The MIT license terms and conditions are hereby incorporated into the Agreement by this reference.
    The full text of the license can be found at: https://github.com/ROCm/rocprofiler-sdk/blob/main/LICENSE
 
