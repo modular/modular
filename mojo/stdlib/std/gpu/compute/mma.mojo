@@ -397,7 +397,11 @@ def st_matrix[
         must execute this instruction to avoid deadlock.
     """
 
-    comptime assert dtype in (DType.bfloat16, DType.float32), ""
+    comptime assert dtype in (
+        DType.bfloat16,
+        DType.float16,
+        DType.float32,
+    ), ""
 
     comptime num_matrices = simd_width
 
