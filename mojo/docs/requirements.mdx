@@ -405,11 +405,14 @@ To check that your system's GPU is accessible at runtime, try a minimal GPU
 program:
 
 ```mojo title="check_gpu.mojo"
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 
 def main():
-    var ctx = DeviceContext()
-    print("GPU:", ctx.name())
+    try:
+        var ctx = DeviceContext()
+        print("GPU:", ctx.name())
+    except e:
+        print("error:", e)
 ```
 
 ```bash
