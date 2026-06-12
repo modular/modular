@@ -1351,6 +1351,11 @@ async def openai_create_chat_completion(
             if completion_request.thinking_temperature is not None
             else pipeline_config.runtime.thinking_temperature
         )
+        max_new_tokens = (
+            completion_request.max_completion_tokens
+            if completion_request.max_completion_tokens is not None
+            else completion_request.max_tokens
+        )
         sampling_params = SamplingParams.from_input_and_generation_config(
             SamplingParamsInput(
                 top_k=completion_request.top_k,
@@ -1361,7 +1366,7 @@ async def openai_create_chat_completion(
                 frequency_penalty=completion_request.frequency_penalty,
                 presence_penalty=completion_request.presence_penalty,
                 repetition_penalty=completion_request.repetition_penalty,
-                max_new_tokens=completion_request.max_tokens,
+                max_new_tokens=max_new_tokens,
                 min_new_tokens=completion_request.min_tokens,
                 ignore_eos=completion_request.ignore_eos,
                 seed=completion_request.seed or randint(0, 2**63 - 1),

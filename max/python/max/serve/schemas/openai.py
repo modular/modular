@@ -83,7 +83,7 @@ from openai.types.embedding_create_params import (
 )
 
 # isort: on
-from pydantic import BaseModel, ConfigDict, Field, create_model
+from pydantic import BaseModel, ConfigDict, Field, create_model, model_validator
 from typing_extensions import NotRequired, TypedDict
 
 # ---------------------------------------------------------------------------
@@ -344,6 +344,20 @@ class CreateChatCompletionRequest(
     # HuggingFace tokenizer as MAX so the IDs match the model vocabulary).
     # If both are provided, ``prompt_tokens`` takes precedence.
     prompt_tokens: list[int] | None = None
+
+    @model_validator(mode="after")
+    def _check_max_completion_tokens_conflict(self) -> CreateChatCompletionRequest:
+        if (
+            self.max_tokens is not None
+            and self.max_completion_tokens is not None
+            and self.max_tokens != self.max_completion_tokens
+        ):
+            raise ValueError(
+                "Both 'max_tokens' and 'max_completion_tokens' were"
+                " provided with different values, prefer only passing"
+                " 'max_completion_tokens'."
+            )
+        return self
 
 
 class CreateCompletionRequest(
