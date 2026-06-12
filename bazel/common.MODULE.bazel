@@ -23,10 +23,10 @@ bazel_dep(name = "buildifier_prebuilt", version = "8.2.1", dev_dependency = True
 
 archive_override(
     module_name = "rules_mojo",
-    integrity = "sha256-U1nZFqGyqmfDV7ifCB79d1ctwQ6lRY35ecckbpUX/Fc=",
-    strip_prefix = "rules_mojo-be8b3078e2a4fb36356bc2c29e906b0ca253c0f8",
+    integrity = "sha256-PvMqbvlCakQ3JczLgemNYHlPzV0ZdIW3WXBNQAQ50Mg=",
+    strip_prefix = "rules_mojo-9a6a240114bd8ce0e0d3fea0dbef1d70744f7c6f",
     urls = [
-        "https://github.com/modular/rules_mojo/archive/be8b3078e2a4fb36356bc2c29e906b0ca253c0f8.tar.gz",
+        "https://github.com/modular/rules_mojo/archive/9a6a240114bd8ce0e0d3fea0dbef1d70744f7c6f.tar.gz",
     ],
 )
 
