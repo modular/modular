@@ -312,7 +312,9 @@ def causal_conv1d_channel_first_fwd_gpu[
     width: Int,
     x: TileTensor[x_dtype, x_LT, ImmutUntrackedOrigin],  # (B, C, L)
     weight: TileTensor[weight_dtype, weight_LT, ImmutUntrackedOrigin],  # (C, W)
-    output: TileTensor[output_dtype, output_LT, MutUntrackedOrigin],  # (B, C, L)
+    output: TileTensor[
+        output_dtype, output_LT, MutUntrackedOrigin
+    ],  # (B, C, L)
     bias: TileTensor[bias_dtype, bias_LT, ImmutUntrackedOrigin],  # (C,)
     seq_idx: TileTensor[
         seq_idx_dtype, seq_idx_LT, ImmutUntrackedOrigin
@@ -460,7 +462,9 @@ def causal_conv1d_channel_last_fwd_gpu[
     width: Int,
     x: TileTensor[x_dtype, x_LT, ImmutUntrackedOrigin],  # (B, L, C)
     weight: TileTensor[weight_dtype, weight_LT, ImmutUntrackedOrigin],  # (C, W)
-    output: TileTensor[output_dtype, output_LT, MutUntrackedOrigin],  # (B, L, C)
+    output: TileTensor[
+        output_dtype, output_LT, MutUntrackedOrigin
+    ],  # (B, L, C)
     bias: TileTensor[bias_dtype, bias_LT, ImmutUntrackedOrigin],  # (C,)
     seq_idx: TileTensor[
         seq_idx_dtype, seq_idx_LT, ImmutUntrackedOrigin
