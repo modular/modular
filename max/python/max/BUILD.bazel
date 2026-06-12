@@ -91,6 +91,7 @@ write_source_files(
     files = {"_core/nixl.pyi": ":stubfiles/_core/nixl.pyi"},
     tags = [
         TOP_LEVEL_TAG,
+        "skip-external-ci",  # Generated file does not exist externally
         "stubfiles",
     ],
     target_compatible_with = select({
