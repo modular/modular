@@ -66,8 +66,6 @@ struct FA4Config[
     var TMEM_O1: Int
     var TMEM_P0: Int
     var TMEM_P1: Int
-    var TMEM_C0: Int
-    var TMEM_C1: Int
     var tmem_used: Int
     var num_kv_stages: Int
     var num_qk_stages: Int  # Stages for Q@K' (K loading pipelining)
@@ -241,8 +239,6 @@ struct FA4Config[
         self.TMEM_S1 = Self.TMEM_S0 + self.BN
         self.TMEM_P0 = Self.TMEM_S0
         self.TMEM_P1 = self.TMEM_S1
-        self.TMEM_C0 = self.TMEM_P0 + self.BN // 2
-        self.TMEM_C1 = self.TMEM_P1 + self.BN // 2
         self.TMEM_O0 = self.TMEM_S1 + self.BN
         self.TMEM_O1 = self.TMEM_O0 + self.padded_ov_depth
         self.tmem_used = self.TMEM_O1 + self.padded_ov_depth

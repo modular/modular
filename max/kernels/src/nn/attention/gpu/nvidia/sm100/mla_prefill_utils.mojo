@@ -93,8 +93,6 @@ struct MLAConfig[
     var TMEM_O1: Int
     var TMEM_P0: Int
     var TMEM_P1: Int
-    var TMEM_C0: Int
-    var TMEM_C1: Int
     var tmem_used: Int
     var num_kv_stages: Int
     var num_qk_stages: Int  # Stages for Q@K' (K loading pipelining)
@@ -181,8 +179,6 @@ struct MLAConfig[
         self.TMEM_O1 = self.fa4_config.TMEM_O1
         self.TMEM_P0 = self.fa4_config.TMEM_P0
         self.TMEM_P1 = self.fa4_config.TMEM_P1
-        self.TMEM_C0 = self.fa4_config.TMEM_C0
-        self.TMEM_C1 = self.fa4_config.TMEM_C1
 
     @always_inline
     def num_qo(self) -> Int:

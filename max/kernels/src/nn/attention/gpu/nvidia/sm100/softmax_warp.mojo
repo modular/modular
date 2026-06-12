@@ -730,7 +730,6 @@ def fa4_softmax[
     s_tmem += UInt32(config.BN) * warp_group_idx
 
     p_tmem = s_tmem
-    c_tmem = p_tmem + UInt32(config.BN // 2)
     s_tile = UMMA0Type.CType(s_tmem)
     p_tile = UMMA1Type.AType(p_tmem)
 
