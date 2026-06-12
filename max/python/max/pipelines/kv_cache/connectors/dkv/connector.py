@@ -39,8 +39,8 @@ from dkv import (
     DKVNotReadyError,
     DKVTransportError,
     G1Location,
-    G2Location,
     RequestState,
+    StagedLocation,
     Tier,
 )
 from max._core import nixl
@@ -745,7 +745,9 @@ class DKVConnector:
         # means any cached prefix that got spilled to disk is invisible
         # to MAX. Blocks on disk surface as soon as DRAM pressure
         # triggers offloading.
-        g2_count = sum(1 for loc in locations if isinstance(loc, G2Location))
+        g2_count = sum(
+            1 for loc in locations if isinstance(loc, StagedLocation)
+        )
         if g2_count:
             logger.warning(
                 "dKV returned %d disk-tier blocks which cannot be read over"
