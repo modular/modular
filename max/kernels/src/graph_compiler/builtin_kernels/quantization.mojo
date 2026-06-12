@@ -826,7 +826,7 @@ struct Struct_dequant_mxfp4:
 
 
 @compiler.register("mo.dequant.nvfp4")
-struct Struct_dequant_nvfp4:
+struct NVFP4Dequant:
     @always_inline
     @staticmethod
     def execute[
@@ -875,7 +875,7 @@ struct Struct_dequant_nvfp4:
 
 
 @compiler.register("mo.gemv.nvfp4")
-struct Struct_gemv_nvfp4:
+struct NVFP4Gemv:
     """Fused NVFP4 dequant-GEMV: C[M, N] = A[M, K] @ W_packed.T.
 
     Pre-Blackwell fallback that decodes FP4 in registers — the BF16 weight
