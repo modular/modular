@@ -638,8 +638,6 @@ class Gemma3_MultiModalModel(
         for d_offsets in device_row_offsets:
             d_offsets.inplace_copy_from(host_row_offsets)
 
-        k = self.config.vision_config.pooling_kernel_size
-
         needs_images = (
             any(
                 getattr(ctx, "needs_vision_encoding", False)
@@ -647,6 +645,17 @@ class Gemma3_MultiModalModel(
             )
             if context_batch
             else False
+        )
+        if needs_images and self.vision_model is None:
+            raise ValueError(
+                "This checkpoint is served text-only (its gemma4_unified"
+                " vision embedder is not implemented); image inputs are"
+                " not supported."
+            )
+        k = (
+            self.config.vision_config.pooling_kernel_size
+            if self.config.vision_config is not None
+            else 1
         )
         if needs_images:
             uncached = self._ve_cache.get_uncached_contexts(context_batch)

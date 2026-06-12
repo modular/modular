@@ -67,4 +67,6 @@ gemma4_unified_arch = dataclasses.replace(
     gemma4_arch,
     name="Gemma4UnifiedForConditionalGeneration",
     example_repo_ids=["google/gemma-4-12b-it"],
+    # Served text-only: the unified vision embedder is not implemented.
+    input_modalities={InputModality.TEXT},
 )

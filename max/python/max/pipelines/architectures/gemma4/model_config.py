@@ -68,13 +68,21 @@ except ImportError:
     except ValueError:
         pass
 
-    class Gemma4UnifiedHFConfig(Gemma4HFConfig):
-        model_type = "gemma4_unified"
 
-    try:
-        AutoConfig.register("gemma4_unified", Gemma4UnifiedHFConfig)
-    except ValueError:
-        pass
+class _Gemma4UnifiedHFConfig(Gemma4HFConfig):
+    """Config shim for the public "gemma4_unified" model_type (Gemma 4 12B).
+
+    Registered unconditionally: even transformers releases that ship a
+    native Gemma4Config may not register the unified model_type.
+    """
+
+    model_type = "gemma4_unified"
+
+
+try:
+    AutoConfig.register("gemma4_unified", _Gemma4UnifiedHFConfig)
+except ValueError:
+    pass
 
 
 @dataclass(kw_only=True)
