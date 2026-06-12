@@ -455,6 +455,12 @@ class Gemma3_MultiModalModel(
         return vision_graph, vision_model.state_dict()
 
     def _run_vision_encoder(self, raw: VisionRawInputs) -> list[Buffer]:
+        if self.vision_model is None:
+            raise ValueError(
+                "This checkpoint is served text-only (its gemma4_unified"
+                " vision embedder is not implemented); image and video"
+                " inputs are not supported."
+            )
         return self.vision_model(
             *raw.patches_flat,
             *raw.pixel_position_ids,
