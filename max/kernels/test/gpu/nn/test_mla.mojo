@@ -961,6 +961,64 @@ def test_mla_prefill[
         batch_size=batch_size,
         output_type=output_type,
     ](120, 240, ctx)
+    # In-kernel 2Q->1Q switch: num_heads=128 makes the 2Q grid large
+    # enough that the dispatch heuristic keeps the launch at 2Q (BM=256),
+    # so the per-tile switch — not the dispatch-time one — handles short
+    # tails. seq_len=300 tiles as [0,256) (full) + [256,300) whose
+    # remaining 44 rows (<= 128) route to the 1Q body; the would-be empty
+    # 2Q second half is exactly that tile, validating `output_nonempty`.
+    # seq_len=428 tiles as [0,256) (full) + [256,428) whose 172 remaining
+    # rows (> 128) stay on the 2Q body with both output halves non-empty
+    # (WG1 covers 44 valid rows), the complementary `output_nonempty` case.
+    test_prefill[
+        qkv_type,
+        k_rope_type,
+        depth=192,
+        num_heads=128,
+        kv_depth=128,
+        cache_depth=576,
+        cache_num_heads=1,
+        batch_size=batch_size,
+        output_type=output_type,
+    ](300, 300, ctx)
+    test_prefill[
+        qkv_type,
+        k_rope_type,
+        depth=192,
+        num_heads=128,
+        kv_depth=128,
+        cache_depth=576,
+        cache_num_heads=1,
+        batch_size=batch_size,
+        output_type=output_type,
+    ](428, 428, ctx)
+    # Short query chunk over a long cache history: routes to the 1Q
+    # (num_qo=1) kernel via the dispatch heuristic (prompt_len <= 128)
+    # while iterating many KV tiles. 800 keys = 7 BN=128 tiles (odd T:
+    # exercises the 1Q tail path); 768 keys = 6 tiles (even T: 1Q
+    # main-loop only).
+    test_prefill[
+        qkv_type,
+        k_rope_type,
+        depth=192,
+        num_heads=128,
+        kv_depth=128,
+        cache_depth=576,
+        cache_num_heads=1,
+        batch_size=batch_size,
+        output_type=output_type,
+    ](100, 800, ctx)
+    test_prefill[
+        qkv_type,
+        k_rope_type,
+        depth=192,
+        num_heads=128,
+        kv_depth=128,
+        cache_depth=576,
+        cache_num_heads=1,
+        batch_size=batch_size,
+        output_type=output_type,
+    ](64, 768, ctx)
 
 
 def main() raises:
