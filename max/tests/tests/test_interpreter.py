@@ -16,25 +16,20 @@ from typing import Any
 
 import numpy as np
 import pytest
-from max._interpreter import MOInterpreter
+from max import _interpreter
 from max._interpreter_ops import _MO_OP_HANDLERS, register_op_handler
 from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.experimental.realization_context import EagerRealizationContext
+from max.experimental.tensor import Tensor, realization_context
 from max.graph import Graph, TensorType, ops
 
 
-class TestMOInterpreter:
-    """Tests for MOInterpreter class."""
-
-    def test_init(self) -> None:
-        """Test interpreter initialization."""
-        interp = MOInterpreter()
-        assert interp is not None
+class TestValidateInputs:
+    """Tests for input validation."""
 
     def test_validate_inputs_wrong_count(self) -> None:
         """Test that validate_inputs catches input count mismatch."""
-        interp = MOInterpreter()
 
         class MockGraph:
             @property
@@ -44,11 +39,11 @@ class TestMOInterpreter:
         graph: Any = MockGraph()
         inputs: Any = [object()]
         with pytest.raises(ValueError, match="Expected 3 inputs, got 1"):
-            interp._validate_inputs(graph, inputs)
+            _interpreter._validate_inputs(graph, inputs)
 
 
 class TestCanExecute:
-    """Tests for MOInterpreter.can_execute() pre-flight check."""
+    """Tests for the can_execute() pre-flight check."""
 
     def test_can_execute_supported_graph(self) -> None:
         """Test can_execute returns True for a graph with only supported ops."""
@@ -58,30 +53,25 @@ class TestCanExecute:
             c = ops.add(a, b)
             graph.output(c)
 
-        interp = MOInterpreter()
-        assert interp.can_execute(graph) is True
+        assert _interpreter.can_execute(graph) is True
 
     def test_can_execute_returns_false_for_compilation_required_op(
-        self,
+        self, monkeypatch: Any
     ) -> None:
         """Test can_execute returns False when graph contains a
         compilation-required op (e.g. mo.CustomOp)."""
-        interp = MOInterpreter()
-
         # Temporarily add ConstantOp to _COMPILATION_REQUIRED_OP_NAMES to
         # simulate a compilation-required op without needing a real custom
         # kernel.  ConstantOp is used because it's always present in simple
         # graphs and its name is stable.
-        orig = MOInterpreter._COMPILATION_REQUIRED_OP_NAMES
-        MOInterpreter._COMPILATION_REQUIRED_OP_NAMES = ("ConstantOp",)
-        try:
-            with Graph("custom", input_types=[]) as graph:
-                c = ops.constant([1.0, 1.0], dtype=DType.float32, device=CPU())
-                graph.output(c)
+        monkeypatch.setattr(
+            _interpreter, "_COMPILATION_REQUIRED_OP_NAMES", ("ConstantOp",)
+        )
+        with Graph("custom", input_types=[]) as graph:
+            c = ops.constant([1.0, 1.0], dtype=DType.float32, device=CPU())
+            graph.output(c)
 
-            assert interp.can_execute(graph) is False
-        finally:
-            MOInterpreter._COMPILATION_REQUIRED_OP_NAMES = orig
+        assert _interpreter.can_execute(graph) is False
 
     def test_can_execute_max_ops_within_limit(self) -> None:
         """Test can_execute respects max_ops when graph is within limit."""
@@ -91,9 +81,8 @@ class TestCanExecute:
             c = ops.add(a, b)
             graph.output(c)
 
-        interp = MOInterpreter()
         # 3 dispatchable ops (2 constants + 1 add), limit at 5 -> ok
-        assert interp.can_execute(graph, max_ops=5) is True
+        assert _interpreter.can_execute(graph, max_ops=5) is True
 
     def test_can_execute_max_ops_exceeds_limit(self) -> None:
         """Test can_execute returns False when graph exceeds max_ops."""
@@ -105,9 +94,8 @@ class TestCanExecute:
             e = ops.sub(c, d)
             graph.output(e)
 
-        interp = MOInterpreter()
         # 5 dispatchable ops (2 constants + add + mul + sub), limit at 2 -> too many
-        assert interp.can_execute(graph, max_ops=2) is False
+        assert _interpreter.can_execute(graph, max_ops=2) is False
 
     def test_can_execute_no_limit(self) -> None:
         """Test can_execute with max_ops=None imposes no limit."""
@@ -119,8 +107,7 @@ class TestCanExecute:
             e = ops.sub(d, a)
             graph.output(e)
 
-        interp = MOInterpreter()
-        assert interp.can_execute(graph, max_ops=None) is True
+        assert _interpreter.can_execute(graph, max_ops=None) is True
 
     def test_can_execute_returns_false_for_unhandled_op(self) -> None:
         """Test can_execute returns False when an op has no registered handler."""
@@ -132,8 +119,7 @@ class TestCanExecute:
             result = ops.pad(a, [0, 1, 0, 1])
             graph.output(result)
 
-        interp = MOInterpreter()
-        assert interp.can_execute(graph) is False
+        assert _interpreter.can_execute(graph) is False
 
 
 class TestOpHandlerRegistry:
@@ -190,8 +176,7 @@ class TestGraphExecution:
             graph.output(c)
 
         # Execute through interpreter
-        interp = MOInterpreter()
-        outputs = interp.execute(graph, [])
+        outputs = _interpreter.execute(graph, [])
 
         # Verify output
         assert len(outputs) == 1
@@ -220,8 +205,7 @@ class TestGraphExecution:
         )
         input_buffer = Buffer.from_numpy(input_np)
 
-        interp = MOInterpreter()
-        outputs = interp.execute(graph, [input_buffer])
+        outputs = _interpreter.execute(graph, [input_buffer])
 
         assert len(outputs) == 1
         result = outputs[0]
@@ -249,8 +233,7 @@ class TestGraphExecution:
             e = ops.sub(d, one)  # [8, 11, 14]
             graph.output(e)
 
-        interp = MOInterpreter()
-        outputs = interp.execute(graph, [])
+        outputs = _interpreter.execute(graph, [])
 
         assert len(outputs) == 1
         result = outputs[0]
@@ -268,8 +251,7 @@ class TestGraphExecution:
             prod_ab = ops.mul(a, b)
             graph.output(sum_ab, prod_ab)
 
-        interp = MOInterpreter()
-        outputs = interp.execute(graph, [])
+        outputs = _interpreter.execute(graph, [])
 
         assert len(outputs) == 2
         sum_result = outputs[0]
@@ -339,54 +321,27 @@ class TestRuntimeFallback:
     falls back to the compiler, while explicit mode surfaces the error.
     """
 
-    def test_auto_mode_falls_back_on_execute_error(self) -> None:
-        """When auto-selected, a runtime error in execute() sets
-        use_interpreter=False so the compiler path runs instead."""
-        import max.experimental.realization_context as rc
-
-        ctx = EagerRealizationContext()
-        assert ctx._use_interpreter is True
-        assert ctx._auto_interpreter is True
-
-        interp = MOInterpreter()
-
-        with Graph(
-            "add",
-            input_types=[TensorType(DType.float32, [3], device=CPU())],
-        ) as graph:
-            (a,) = graph.inputs
-            graph.output(ops.add(a, a))
-
-        assert interp.can_execute(graph)
-
+    def test_auto_mode_falls_back_on_execute_error(
+        self, monkeypatch: Any
+    ) -> None:
+        """When auto-selected, a runtime error in execute() falls back to
+        the compiler, which still realizes the tensors."""
         call_log: list[str] = []
 
-        original_execute = MOInterpreter.execute
-
-        def _failing_execute(self: Any, graph: Any, inputs: Any) -> Any:
+        def _failing_execute(graph: Any, inputs: Any) -> Any:
             call_log.append("interpreter_called")
             raise RuntimeError("simulated unsupported dtype")
 
-        MOInterpreter.execute = _failing_execute  # type: ignore[assignment]
-        try:
-            max_ops = rc._interpreter_max_ops()
-            use_interpreter = True
-            if not interp.can_execute(graph, max_ops=max_ops):
-                use_interpreter = False
+        monkeypatch.setattr(_interpreter, "execute", _failing_execute)
 
-            assert use_interpreter is True
+        with EagerRealizationContext() as ctx, realization_context(ctx):
+            assert ctx._auto_interpreter is True
+            a = Tensor.zeros([3])
+            b = a + 1.0
 
-            if use_interpreter and ctx._auto_interpreter:
-                inp = Buffer(shape=[3], dtype=DType.float32, device=CPU())
-                try:
-                    interp.execute(graph, [inp])
-                except Exception:
-                    use_interpreter = False
-
-            assert use_interpreter is False
-            assert "interpreter_called" in call_log
-        finally:
-            MOInterpreter.execute = original_execute  # type: ignore[method-assign]
+        assert call_log == ["interpreter_called"]
+        assert b.real
+        assert b.driver_tensor.to(CPU())[0].item() == 1.0
 
     def test_explicit_interpreter_does_not_swallow_error(
         self, monkeypatch: Any
@@ -413,8 +368,7 @@ class TestDebugPrintOps:
             c = ops.constant([1.0], dtype=DType.float32, device=CPU())
             graph.output(c)
 
-        interp = MOInterpreter()
-        assert interp.can_execute(graph) is True
+        assert _interpreter.can_execute(graph) is True
 
     def test_can_execute_with_debug_tensor_print(self) -> None:
         """Test can_execute returns True for a graph using ops.print on a tensor."""
@@ -423,8 +377,7 @@ class TestDebugPrintOps:
             ops.print(t, label="my_tensor")
             graph.output(t)
 
-        interp = MOInterpreter()
-        assert interp.can_execute(graph) is True
+        assert _interpreter.can_execute(graph) is True
 
     def test_debug_print_executes(
         self, capsys: pytest.CaptureFixture[str]
@@ -435,8 +388,7 @@ class TestDebugPrintOps:
             c = ops.constant([1.0], dtype=DType.float32, device=CPU())
             graph.output(c)
 
-        interp = MOInterpreter()
-        outputs = interp.execute(graph, [])
+        outputs = _interpreter.execute(graph, [])
         assert len(outputs) == 1
 
         captured = capsys.readouterr()
@@ -453,8 +405,7 @@ class TestDebugPrintOps:
             ops.print(t, label="vec")
             graph.output(t)
 
-        interp = MOInterpreter()
-        outputs = interp.execute(graph, [])
+        outputs = _interpreter.execute(graph, [])
         assert len(outputs) == 1
 
         captured = capsys.readouterr()
@@ -472,8 +423,7 @@ class TestDebugPrintOps:
             c = ops.constant([1.0], dtype=DType.float32, device=CPU())
             graph.output(c)
 
-        interp = MOInterpreter()
-        interp.execute(graph, [])
+        _interpreter.execute(graph, [])
 
         captured = capsys.readouterr()
         assert "bare message" in captured.out
@@ -593,17 +543,14 @@ class TestConstantScalarOp:
 
 
 class TestConstantExternalOp:
-    """Tests for ConstantExternalOp interpreter handler.
+    """The interpreter must statically refuse graphs with external constants.
 
-    Builds a graph with ops.constant_external, passes a weights registry
-    to MOInterpreter.execute(), and verifies the weight is resolved.
+    mo.constant.external requires a weights registry that only the compiled
+    execution path provides, so can_execute() routes such graphs to the
+    graph compiler.
     """
 
-    def test_basic_weight_lookup(self) -> None:
-        """External constant is resolved from weights registry."""
-        weight_np = np.array([[1.0, 2.0], [3.0, 4.0]], dtype=np.float32)
-        weight_buf = Buffer.from_numpy(weight_np)
-
+    def test_can_execute_returns_false(self) -> None:
         with Graph("external_const_graph", input_types=[]) as graph:
             w = ops.constant_external(
                 "my_weight",
@@ -611,79 +558,4 @@ class TestConstantExternalOp:
             )
             graph.output(w)
 
-        interp = MOInterpreter()
-        outputs = interp.execute(graph, [], weights={"my_weight": weight_buf})
-
-        assert len(outputs) == 1
-        result = outputs[0]
-        assert isinstance(result, Buffer)
-        np.testing.assert_array_equal(result.to_numpy(), weight_np)
-
-    def test_multiple_weights(self) -> None:
-        """Multiple external constants resolved from registry."""
-        w1_np = np.array([1.0, 2.0, 3.0], dtype=np.float32)
-        w2_np = np.array([4.0, 5.0], dtype=np.float32)
-        w1_buf = Buffer.from_numpy(w1_np)
-        w2_buf = Buffer.from_numpy(w2_np)
-
-        with Graph("multi_weight_graph", input_types=[]) as graph:
-            a = ops.constant_external(
-                "weight_a",
-                TensorType(DType.float32, [3], CPU()),
-            )
-            b = ops.constant_external(
-                "weight_b",
-                TensorType(DType.float32, [2], CPU()),
-            )
-            graph.output(a, b)
-
-        interp = MOInterpreter()
-        outputs = interp.execute(
-            graph,
-            [],
-            weights={"weight_a": w1_buf, "weight_b": w2_buf},
-        )
-
-        assert len(outputs) == 2
-        assert isinstance(outputs[0], Buffer)
-        assert isinstance(outputs[1], Buffer)
-        np.testing.assert_array_equal(outputs[0].to_numpy(), w1_np)
-        np.testing.assert_array_equal(outputs[1].to_numpy(), w2_np)
-
-    def test_missing_weight_raises(self) -> None:
-        """RuntimeError when a weight name is not in the registry."""
-        with Graph("missing_weight_graph", input_types=[]) as graph:
-            w = ops.constant_external(
-                "nonexistent",
-                TensorType(DType.float32, [2], CPU()),
-            )
-            graph.output(w)
-
-        interp = MOInterpreter()
-        with pytest.raises(RuntimeError, match="nonexistent"):
-            interp.execute(graph, [], weights={})
-
-    def test_no_registry_raises(self) -> None:
-        """RuntimeError when no weights registry is provided."""
-        with Graph("no_registry_graph", input_types=[]) as graph:
-            w = ops.constant_external(
-                "some_weight",
-                TensorType(DType.float32, [2], CPU()),
-            )
-            graph.output(w)
-
-        interp = MOInterpreter()
-        with pytest.raises(RuntimeError, match="No weights registry"):
-            interp.execute(graph, [])
-
-    def test_can_execute_with_constant_external(self) -> None:
-        """can_execute returns True for graphs with constant_external."""
-        with Graph("can_exec_graph", input_types=[]) as graph:
-            w = ops.constant_external(
-                "w",
-                TensorType(DType.float32, [4], CPU()),
-            )
-            graph.output(w)
-
-        interp = MOInterpreter()
-        assert interp.can_execute(graph)
+        assert _interpreter.can_execute(graph) is False

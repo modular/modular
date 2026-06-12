@@ -436,11 +436,10 @@ class EagerRealizationContext(RealizationContext):
         # requested by the caller).
         use_interpreter = self._use_interpreter
         if use_interpreter:
-            from max._interpreter import MOInterpreter
+            from max import _interpreter
 
-            interp = MOInterpreter()
             max_ops = _interpreter_max_ops() if self._auto_interpreter else None
-            if not interp.can_execute(graph, max_ops=max_ops):
+            if not _interpreter.can_execute(graph, max_ops=max_ops):
                 use_interpreter = False
 
         # All graph inputs (tensor data + signal buffers) go through
@@ -453,7 +452,7 @@ class EagerRealizationContext(RealizationContext):
         if use_interpreter:
             if self._auto_interpreter:
                 try:
-                    results = interp.execute(graph, input_buffers)
+                    results = _interpreter.execute(graph, input_buffers)
                 except Exception:
                     logging.getLogger("max.experimental").debug(
                         "Interpreter failed, falling back to graph compiler",
@@ -461,7 +460,7 @@ class EagerRealizationContext(RealizationContext):
                     )
                     use_interpreter = False
             else:
-                results = interp.execute(graph, input_buffers)
+                results = _interpreter.execute(graph, input_buffers)
         if not use_interpreter:
             model = _load_eager_model(graph)
             results = model(*input_buffers)

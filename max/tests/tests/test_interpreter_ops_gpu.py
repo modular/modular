@@ -23,7 +23,7 @@ from typing import Any
 import numpy as np
 import pytest
 import torch
-from max._interpreter import MOInterpreter
+from max import _interpreter
 from max.driver import CPU, Accelerator, Buffer, accelerator_count
 from max.dtype import DType
 from max.experimental import functional as F
@@ -1748,8 +1748,7 @@ class TestTransferOpsGPU:
         )
         input_buf = Buffer.from_dlpack(x_torch)
 
-        interp = MOInterpreter()
-        outputs = interp.execute(g, [input_buf])
+        outputs = _interpreter.execute(g, [input_buf])
 
         out_buf = outputs[0]
         assert isinstance(out_buf, Buffer)
@@ -1782,8 +1781,7 @@ class TestTransferOpsGPU:
         )
         input_buf = Buffer.from_dlpack(x_torch)
 
-        interp = MOInterpreter()
-        outputs = interp.execute(g, [input_buf])
+        outputs = _interpreter.execute(g, [input_buf])
 
         out_buf = outputs[0]
         assert isinstance(out_buf, Buffer)
@@ -3344,7 +3342,7 @@ class TestDistributedAllreduceSumHandler:
 
     @_NEED_2_GPUS
     def test_allreduce_sum_low_level(self) -> None:
-        """Directly build a graph with ops.allreduce.sum and run via MOInterpreter."""
+        """Directly build a graph with ops.allreduce.sum and run via the MO interpreter."""
         shape = [4, 4]
         gpu0, gpu1 = DeviceRef.GPU(0), DeviceRef.GPU(1)
 
@@ -3385,9 +3383,8 @@ class TestDistributedAllreduceSumHandler:
             Buffer(shape=[1024], dtype=DType.uint8, device=dev1),
         ]
 
-        interp = MOInterpreter()
-        assert interp.can_execute(graph)
-        outputs = interp.execute(graph, input_bufs)
+        assert _interpreter.can_execute(graph)
+        outputs = _interpreter.execute(graph, input_bufs)
 
         assert len(outputs) == 2
         for out in outputs:
@@ -3486,7 +3483,7 @@ class TestDistributedScatterHandler:
 
     @_NEED_2_GPUS
     def test_scatter_via_graph_ops(self) -> None:
-        """Build a graph using ops.distributed_scatter and run via MOInterpreter."""
+        """Build a graph using ops.distributed_scatter and run via the MO interpreter."""
         shape = [4]
         gpu0, gpu1 = DeviceRef.GPU(0), DeviceRef.GPU(1)
 
@@ -3515,9 +3512,8 @@ class TestDistributedScatterHandler:
             Buffer(shape=[1024], dtype=DType.uint8, device=dev1),
         ]
 
-        interp = MOInterpreter()
-        assert interp.can_execute(graph)
-        outputs = interp.execute(graph, input_bufs)
+        assert _interpreter.can_execute(graph)
+        outputs = _interpreter.execute(graph, input_bufs)
 
         assert len(outputs) == 2
         out0, out1 = outputs[0], outputs[1]
@@ -3557,7 +3553,7 @@ class TestDistributedBroadcastHandler:
 
     @_NEED_2_GPUS
     def test_broadcast_via_graph_ops(self) -> None:
-        """Build a graph using ops.distributed_broadcast and run via MOInterpreter."""
+        """Build a graph using ops.distributed_broadcast and run via the MO interpreter."""
         shape = [4]
         gpu0, gpu1 = DeviceRef.GPU(0), DeviceRef.GPU(1)
 
@@ -3583,9 +3579,8 @@ class TestDistributedBroadcastHandler:
             Buffer(shape=[1024], dtype=DType.uint8, device=dev1),
         ]
 
-        interp = MOInterpreter()
-        assert interp.can_execute(graph)
-        outputs = interp.execute(graph, input_bufs)
+        assert _interpreter.can_execute(graph)
+        outputs = _interpreter.execute(graph, input_bufs)
 
         assert len(outputs) == 2
         out0, out1 = outputs[0], outputs[1]
@@ -3624,7 +3619,7 @@ class TestDistributedReducescatterSumHandler:
 
     @_NEED_2_GPUS
     def test_reducescatter_sum_via_graph_ops(self) -> None:
-        """Build a graph with ops.reducescatter.sum and run via MOInterpreter."""
+        """Build a graph with ops.reducescatter.sum and run via the MO interpreter."""
         shape = [4, 4]
         gpu0, gpu1 = DeviceRef.GPU(0), DeviceRef.GPU(1)
 
@@ -3668,9 +3663,8 @@ class TestDistributedReducescatterSumHandler:
             Buffer(shape=[1024], dtype=DType.uint8, device=dev1),
         ]
 
-        interp = MOInterpreter()
-        assert interp.can_execute(graph)
-        outputs = interp.execute(graph, input_bufs)
+        assert _interpreter.can_execute(graph)
+        outputs = _interpreter.execute(graph, input_bufs)
 
         assert len(outputs) == 2
         out0, out1 = outputs[0], outputs[1]

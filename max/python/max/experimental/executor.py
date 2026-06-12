@@ -33,9 +33,8 @@ from collections.abc import Callable, Sequence
 from concurrent.futures import Future
 from typing import Protocol, runtime_checkable
 
-from max import _core, driver, engine
+from max import _core, _interpreter, driver, engine
 from max._core.dialects import rmo
-from max._interpreter import MOInterpreter
 from max._mlir_context import MLIRThreadPoolExecutor
 from max.graph import Graph
 
@@ -93,10 +92,10 @@ def _legalize(graph: Graph) -> None:
 
 
 class InterpreterExecutor:
-    """Executes a graph via :class:`~max._interpreter.MOInterpreter`.
+    """Executes a graph via :func:`max._interpreter.execute`.
 
     Raises :class:`UnsupportedGraphError` when
-    :meth:`~max._interpreter.MOInterpreter.can_execute` refuses the graph
+    :func:`max._interpreter.can_execute` refuses the graph
     (e.g. ``CustomOp`` present, unregistered op, or over the op-count
     threshold).  All runtime errors propagate unchanged — an explicit
     interpreter request is deliberately loud.
@@ -111,7 +110,6 @@ class InterpreterExecutor:
                 imposes no limit.
         """
         self._max_ops = max_ops
-        self._interp = MOInterpreter()
 
     def execute(
         self, graph: Graph, inputs: Sequence[driver.Buffer]
@@ -122,13 +120,13 @@ class InterpreterExecutor:
             UnsupportedGraphError: If the interpreter cannot handle the graph.
         """
         _legalize(graph)
-        if not self._interp.can_execute(graph, max_ops=self._max_ops):
+        if not _interpreter.can_execute(graph, max_ops=self._max_ops):
             raise UnsupportedGraphError(
                 "InterpreterExecutor: graph contains ops that require "
                 "compilation (CustomOp, unregistered op, or over op-count "
                 f"threshold {self._max_ops!r})."
             )
-        return self._interp.execute(graph, inputs)
+        return _interpreter.execute(graph, inputs)
 
 
 class CompilingExecutor:

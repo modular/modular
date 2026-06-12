@@ -20,7 +20,7 @@ from concurrent.futures import Future
 from typing import Any
 
 import pytest
-from max._interpreter import MOInterpreter
+from max import _interpreter
 from max._mlir_context import MLIRThreadPoolExecutor
 from max.driver import CPU, Buffer
 from max.dtype import DType
@@ -129,7 +129,7 @@ class TestInterpreterExecutor:
     ) -> None:
         """InterpreterExecutor raises UnsupportedGraphError for CustomOp graphs."""
         monkeypatch.setattr(
-            MOInterpreter, "_COMPILATION_REQUIRED_OP_NAMES", ("ConstantOp",)
+            _interpreter, "_COMPILATION_REQUIRED_OP_NAMES", ("ConstantOp",)
         )
         graph = _custom_op_graph()
         executor = InterpreterExecutor()
@@ -147,10 +147,10 @@ class TestInterpreterExecutor:
     def test_propagates_runtime_error(self, monkeypatch: Any) -> None:
         """Runtime errors from execute() propagate unchanged (no swallowing)."""
 
-        def _boom(self: Any, graph: Any, inputs: Any) -> Any:
+        def _boom(graph: Any, inputs: Any) -> Any:
             raise RuntimeError("simulated kernel failure")
 
-        monkeypatch.setattr(MOInterpreter, "execute", _boom)
+        monkeypatch.setattr(_interpreter, "execute", _boom)
         graph, buf = _add_graph()
         executor = InterpreterExecutor()
         with pytest.raises(RuntimeError, match="simulated kernel failure"):
@@ -225,10 +225,10 @@ class TestJitExecutor:
     ) -> None:
         """Errors raised mid-execution are never masked as cache misses."""
 
-        def _boom(self: Any, graph: Any, inputs: Any) -> Any:
+        def _boom(graph: Any, inputs: Any) -> Any:
             raise RuntimeError("simulated kernel failure")
 
-        monkeypatch.setattr(MOInterpreter, "execute", _boom)
+        monkeypatch.setattr(_interpreter, "execute", _boom)
         graph, buf = _add_graph()
         executor = JitExecutor()
         with pytest.raises(RuntimeError, match="simulated kernel failure"):
