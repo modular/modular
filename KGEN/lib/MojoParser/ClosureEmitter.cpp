@@ -11,6 +11,7 @@
 #include "ClosureEmitter.h"
 #include "IREmitter.h"
 #include "KGEN/MojoParser/ASTDecl.h"
+#include "KGEN/MojoParser/ASTType.h"
 #include "KGEN/MojoParser/DeclResolver.h"
 #include "MojoUtils.h"
 #include "OverloadSet.h"
@@ -1820,17 +1821,12 @@ static KGEN::StructType getMlirType(MLIRContext *ctx,
                                     ArrayRef<ParamDeclAttr> structParams,
                                     ArrayRef<TypedAttr> structBindings) {
   ParameterEvaluator structEvaluator(structParams, structBindings);
-  SmallVector<Type> mlirFieldTypes;
-  for (StructDefFieldAttr field : structInstType.getFields()) {
-    TypedAttr concreteFieldAttr =
-        structEvaluator.getReboundAttribute(field.getTypeValue());
-    if (auto typeParam = dyn_cast<TypeParamAttr>(concreteFieldAttr))
-      mlirFieldTypes.push_back(typeParam.getMlirType());
-    else if (isa<ParamDeclRefAttr>(concreteFieldAttr))
-      mlirFieldTypes.push_back(ParamType::get(concreteFieldAttr));
-    else
-      mlirFieldTypes.push_back(concreteFieldAttr.getType());
-  }
+  SmallVector<Type> mlirFieldTypes = llvm::map_to_vector(
+      structInstType.getFields(), [&](StructDefFieldAttr field) -> Type {
+        TypedAttr fieldType =
+            structEvaluator.getReboundAttribute(field.getTypeValue());
+        return ASTType(fieldType);
+      });
   bool isMemOnly = cast<BoolAttr>(structInstType.getIsMemoryOnly()).getValue();
   return KGEN::StructType::get(ctx, mlirFieldTypes, isMemOnly);
 }
