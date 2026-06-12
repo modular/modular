@@ -127,7 +127,7 @@ def run_python_interop_example() raises:
 # Metaprogramming example
 
 
-trait FauxEquatable(ImplicitlyDestructible):
+trait FauxEquatable(ImplicitlyDeletable):
     # Generic implementation using reflection: compare all fields
     def __eq__(self, other: Self) -> Bool:
         comptime r = reflect[Self]

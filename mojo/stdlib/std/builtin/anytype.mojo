@@ -130,6 +130,7 @@ trait AnyType:
     pass
 
 
+@deprecated(use=ImplicitlyDeletable)
 comptime ImplicitlyDestructible = ImplicitlyDeletable
 """Deprecated: A trait for types that require lifetime management through destructors.
 
@@ -162,7 +163,7 @@ trait ImplicitlyDeletable:
     ```mojo
     from std.memory.alloc import alloc, dealloc, Layout, Allocation
 
-    struct ResourceOwner(ImplicitlyDestructible):
+    struct ResourceOwner(ImplicitlyDeletable):
         var allocation: Allocation[Int]
 
         def __init__(out self, size: Int):

@@ -34,6 +34,9 @@ This version is still a work in progress.
 
   The new `Int` should still be used in all other situations.
 
+- `ImplicitlyDestructible` has been renamed to `ImplicitlyDeletable`, for better
+  name consistency with its required `__del__()` "delete" special method.
+
 ## Tooling changes
 
 - Added a `--lld-path` CLI flag. This overrides the LLD path that Mojo uses.

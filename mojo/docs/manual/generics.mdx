@@ -886,7 +886,7 @@ parameter. For example, a fixed-capacity wrapper might only be
 The `Sized` conformance is unconditional.
 
 ```mojo
-struct SizedListWrapper[capacity: Int, T: Copyable & ImplicitlyDestructible](
+struct SizedListWrapper[capacity: Int, T: Copyable & ImplicitlyDeletable](
     Sized, Writable where conforms_to(T, Writable) and capacity > 0
 ):
     var data: List[Self.T]
