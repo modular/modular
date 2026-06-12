@@ -17,7 +17,7 @@ struct Foo[X: TrivialRegisterPassable, Y: TrivialRegisterPassable]:
         return nested_function(val)
 
     def getFloat(self, x: Float32, y: Int) -> Float32:
-        var tmp = self.getParametrized[Float32](Float32(4.125 + x + y))
+        var tmp = self.getParametrized[Float32](Float32(4.125 + x + Float32(y)))
         stop_tail_call()
         return tmp
 

@@ -41,7 +41,7 @@ def main() raises:
 # O3-FULL-NO-STACK: Unhandled exception caught during execution: nested gotcha!
 
 # O3-FULL:      #{{.*}} KGEN_CompilerRT_GetStackTrace
-# O3-FULL-NEXT: #{{.*}} std::builtin::error::StackTrace::collect_if_enabled(::Int)
+# O3-FULL-NEXT: #{{.*}} std::builtin::error::StackTrace::collect_if_enabled(::SIMD[::DType(int), ::SIMDSize(1)])
 # O3-FULL-NEXT: #{{.*}} stack_trace_exception_no_handling::foo2()_REMOVED_ARG {{.*}}/stack_trace_exception_no_handling.mojo:{{.*}}:{{.*}}
 # O3-FULL-NEXT: #{{.*}} std::builtin::_startup::__wrap_and_execute_raising_main
 # O3-FULL-NEXT: #{{.*}} main {{.*}}oss/modular/mojo/stdlib/std/builtin/_startup.mojo:{{.*}}:{{.*}}

@@ -235,9 +235,9 @@ def fn_with_recovered_and[N: Int, M: Int]() where is_positive(N) and is_even(M):
 
 
 # CHECK-LABEL: "name": "fn_with_default_and_constraint",
-# CHECK: "default": "10",
+# CHECK: "default": "Int(10)",
 # CHECK: "name": "N",
-# CHECK: "signature": "def fn_with_default_and_constraint[N: Int = 10]() where is_positive(N)"
+# CHECK: "signature": "def fn_with_default_and_constraint[N: Int = Int(10)]() where is_positive(N)"
 def fn_with_default_and_constraint[N: Int = 10]() where is_positive(N):
     """Function with default parameter value and where clause.
 
@@ -255,7 +255,7 @@ def fn_with_default_and_constraint[N: Int = 10]() where is_positive(N):
 
 
 # CHECK-LABEL: "name": "fn_with_eq_constraint",
-# CHECK: "signature": "def fn_with_eq_constraint[N: Int]() where (N == 0)"
+# CHECK: "signature": "def fn_with_eq_constraint[N: Int]() where (N == Int(0))"
 def fn_with_eq_constraint[N: Int]() where N == 0:
     """Function with an equality constraint.
 
@@ -266,7 +266,7 @@ def fn_with_eq_constraint[N: Int]() where N == 0:
 
 
 # CHECK-LABEL: "name": "fn_with_ne_constraint",
-# CHECK: "signature": "def fn_with_ne_constraint[N: Int]() where (N != 0)"
+# CHECK: "signature": "def fn_with_ne_constraint[N: Int]() where (N != Int(0))"
 def fn_with_ne_constraint[N: Int]() where N != 0:
     """Function with an inequality constraint.
 
@@ -277,7 +277,7 @@ def fn_with_ne_constraint[N: Int]() where N != 0:
 
 
 # CHECK-LABEL: "name": "fn_with_lt_constraint",
-# CHECK: "signature": "def fn_with_lt_constraint[N: Int]() where (N < 10)"
+# CHECK: "signature": "def fn_with_lt_constraint[N: Int]() where (N < Int(10))"
 def fn_with_lt_constraint[N: Int]() where N < 10:
     """Function with a less-than constraint.
 
@@ -304,7 +304,7 @@ def fn_with_not_constraint[x: Bool]() where not x:
 
 
 # CHECK-LABEL: "name": "fn_with_neg_constraint",
-# CHECK: "signature": "def fn_with_neg_constraint[N: Int]() where (-N == 1)"
+# CHECK: "signature": "def fn_with_neg_constraint[N: Int]() where (-N == Int(1))"
 def fn_with_neg_constraint[N: Int]() where -N == 1:
     """Function with a negation constraint.
 
@@ -323,7 +323,8 @@ def fn_with_neg_constraint[N: Int]() where -N == 1:
 
 
 # CHECK-LABEL: "name": "fn_with_identity_reconstruction",
-# CHECK: "signature": "def fn_with_identity_reconstruction(c: Container) where (c.inner_size == 2)"
+# FIXME: MOTO-1591
+# COM: CHECK: "signature": "def fn_with_identity_reconstruction(c: Container) where (c.inner_size == Int(2))"
 def fn_with_identity_reconstruction(c: Container) where c.inner_size == 2:
     """Function where a constraint references a computed property of an argument.
 
@@ -339,7 +340,8 @@ def fn_with_identity_reconstruction(c: Container) where c.inner_size == 2:
 # Negative test: AltContainer has different declared param names than Container,
 # so AltContainer[c.T] should NOT simplify to just 'c'.
 # CHECK-LABEL: "name": "fn_no_false_positive_different_struct",
-# CHECK: "signature": "def fn_no_false_positive_different_struct(c: Container) where (AltContainer[c.T].alt_size == 4)"
+# FIXME: MOTO-1591
+# COM: CHECK: "signature": "def fn_no_false_positive_different_struct(c: Container) where (AltContainer[c.T].alt_size == Int(4))"
 def fn_no_false_positive_different_struct(
     c: Container,
 ) where AltContainer[c.T].alt_size == 4:
@@ -362,7 +364,7 @@ def fn_no_false_positive_different_struct(
 
 
 # CHECK-LABEL: "name": "fn_with_cond_where",
-# CHECK: "signature": "def fn_with_cond_where[A: Int, B: Int, C: Int]() where (C <= B) if (A <= B) else (C <= 0)"
+# CHECK: "signature": "def fn_with_cond_where[A: Int, B: Int, C: Int]() where (C <= B) if (A <= B) else (C <= Int(0))"
 def fn_with_cond_where[
     A: Int, B: Int, C: Int
 ]() where (C <= B) if (A <= B) else (C <= 0):

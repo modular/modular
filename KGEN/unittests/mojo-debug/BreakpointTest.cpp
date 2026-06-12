@@ -15,7 +15,7 @@ TEST(BreakpointTest, testBreakpoint) {
   // Test the breakpoint() intrinsic: stop and check a variable.
 
   StopContext ctx = buildAndLaunch("breakpoint.mojo");
-  SBValue sum = ctx.frame.FindVariable("sum");
+  SBValue sum = ctx.frame.FindVariable("sum").GetChildAtIndex(0);
   EXPECT_EQ((int)sum.GetValueAsSigned(), 36);
 
   // Resuming after breakpoint() should continue normally to exit.
@@ -56,14 +56,14 @@ TEST(BreakpointTest, testSeparatedBreakpoints) {
   ctx.resume();
   EXPECT_EQ(src.findFirstLineWithText("# stop_2"),
             (int)ctx.frame.GetLineEntry().GetLine());
-  x = ctx.frame.FindVariable("x");
+  x = ctx.frame.FindVariable("x").GetChildAtIndex(0);
   EXPECT_EQ((int)x.GetValueAsSigned(), 1);
 
   // Third stop: x += 1 again, so x == 2.
   ctx.resume();
   EXPECT_EQ(src.findFirstLineWithText("# stop_3"),
             (int)ctx.frame.GetLineEntry().GetLine());
-  x = ctx.frame.FindVariable("x");
+  x = ctx.frame.FindVariable("x").GetChildAtIndex(0);
   EXPECT_EQ((int)x.GetValueAsSigned(), 2);
 
   // Resume to exit.

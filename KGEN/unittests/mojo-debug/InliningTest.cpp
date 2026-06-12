@@ -42,7 +42,7 @@ TEST(InliningTest, testInlinedVariableCalledFromNoDebug) {
   // debuggable after being inlined again into a regular function.
   StopContext ctx = buildAndLaunch("inlined_variable.mojo");
 
-  SBValue number = ctx.frame.FindVariable("nested_var");
+  SBValue number = ctx.frame.FindVariable("nested_var").GetChildAtIndex(0);
   EXPECT_EQ((int)number.GetValueAsSigned(), 2);
 }
 
@@ -51,7 +51,7 @@ TEST(InliningTest, testLiftedInlinedInoutArgModification) {
   // show up.
   StopContext ctx = buildAndLaunch("inlined_argument.mojo");
 
-  SBValue number = ctx.frame.FindVariable("m");
+  SBValue number = ctx.frame.FindVariable("m").GetChildAtIndex(0);
   // Check the value is the updated value from the inlined callee.
   EXPECT_EQ((int)number.GetValueAsSigned(), 42);
 }
@@ -69,8 +69,8 @@ TEST(InliningTest, testLiftedInlinedInoutArgPartialModification) {
   // this requires plumbing an opt-level parameter through the test infra first.
   // Check the value is the updated value from the inlined callee.
   ASSERT_EQ((int)pair.GetNumChildren(), 2);
-  SBValue firstField = pair.GetChildAtIndex(0);
+  SBValue firstField = pair.GetChildAtIndex(0).GetChildAtIndex(0);
   EXPECT_EQ((int)firstField.GetValueAsSigned(), 42);
-  SBValue secondField = pair.GetChildAtIndex(1);
+  SBValue secondField = pair.GetChildAtIndex(1).GetChildAtIndex(0);
   EXPECT_EQ((int)secondField.GetValueAsSigned(), 4);
 }

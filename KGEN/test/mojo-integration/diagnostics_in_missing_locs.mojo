@@ -32,11 +32,11 @@ def my_unprovable_constraints[
 
 def main():
     # CHECK: error: invalid call to 'fn_missing_constraint': violated constraint
-    # CHECK: note: constraint declared here evaluated to False, expected '(n > 0)'
+    # CHECK: note: constraint declared here evaluated to False, expected '(n > Int(0))'
     # FIXME: Improve the pretty-printing of this constraint
-    # CHECK-NEXT: ($0 > 0)
+    # CHECK-NEXT: ($0 > Int(0))
     # CHECK: note: function declared here
-    # CHECK-NEXT: def fn_missing_constraint[n: Int]() where (n > 0)
+    # CHECK-NEXT: def fn_missing_constraint[n: Int]() where (n > Int(0))
     diags_package.fn_missing_constraint[0]()
 
     # CHECK: error: no matching function in call to 'overloaded_function'
@@ -50,7 +50,7 @@ def main():
 
     # CHECK: error: invalid initialization: failed to infer parameter 'b' of parent struct 'PosOnlyStruct'
     # CHECK: note: struct declared here
-    # CHECK-NEXT: struct PosOnlyStruct[a: Int, b: Int, /, c: Int = 9]    # note - synthetic signature
+    # CHECK-NEXT: struct PosOnlyStruct[a: Int, b: Int, /, c: Int = Int(9)]    # note - synthetic signature
     # CHECK: note: function declared here
     # CHECK-NEXT: def __init__(out self) # note - generated function
     _ = diags_package.PosOnlyStruct[1, c=9]()
@@ -64,7 +64,7 @@ def main():
     # CHECK: error: invalid call to 'my_unprovable_constraints': lacking evidence to prove correctness
     # CHECK-NEXT: _ = my_unprovable_constraints[0]()
     # CHECK: note: cannot prove constraint for candidate
-    # CHECK: note: constraint declared here needs evidence for 'unfoldable_predicate(0)'
+    # CHECK: note: constraint declared here needs evidence for 'unfoldable_predicate(Int(0))'
     # CHECK-NEXT: ]() where diags_package.unfoldable_predicate(x):
     # CHECK: note: cannot evaluate call to non-builtin function declared here
     # CHECK-NEXT: def unfoldable_predicate(y: Int) -> Bool    # note - synthetic signature
@@ -73,7 +73,7 @@ def main():
     # CHECK: error: invalid call to 'unprovable_constraints': lacking evidence to prove correctness
     # CHECK-NEXT: _ = diags_package.unprovable_constraints[0]()
     # CHECK: note: cannot prove constraint for candidate
-    # CHECK: note: constraint declared here needs evidence for 'unfoldable_predicate(0)'
+    # CHECK: note: constraint declared here needs evidence for 'unfoldable_predicate(Int(0))'
     # FIXME: We're not printing anything here, unlike the above. It would be
     #        nice to print the constraint along with the function
     # CHECK: note: cannot evaluate call to non-builtin function declared here
@@ -81,11 +81,11 @@ def main():
     _ = diags_package.unprovable_constraints[0]()
 
     # CHECK: error: violated constraint
-    # CHECK: note: constraint declared here evaluated to False, expected '(a > 0)'
+    # CHECK: note: constraint declared here evaluated to False, expected '(a > Int(0))'
     # FIXME: Improve the pretty-printing of this constraint
-    # CHECK-NEXT: ($0 > 0)
+    # CHECK-NEXT: ($0 > Int(0))
     # CHECK: note: function declared here
-    # CHECK-NEXT: def constraint_fn[a: Int, b: Int]() where (a > 0)    # note - synthetic signature
+    # CHECK-NEXT: def constraint_fn[a: Int, b: Int]() where (a > Int(0))    # note - synthetic signature
     comptime _ = diags_package.constraint_fn[0, 1]
 
 

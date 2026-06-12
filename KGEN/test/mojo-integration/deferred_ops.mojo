@@ -10,7 +10,9 @@
 def test0(a: Int, b: Int) raises -> Bool:
     comptime pred_attr = __mlir_attr.`#index<cmp_predicate sle>`
 
-    var res = __mlir_op.`index.cmp`[pred=pred_attr](a, b)
+    var res = __mlir_op.`index.cmp`[pred=pred_attr](
+        a._int_mlir_index(), b._int_mlir_index()
+    )
     return res
 
 
@@ -23,7 +25,9 @@ def test1[cmp: Bool](a: Int, b: Int) raises -> Bool:
 
     comptime pred_attr = select_pred[cmp]()
 
-    var res = __mlir_op.`index.cmp`[pred=pred_attr](a, b)
+    var res = __mlir_op.`index.cmp`[pred=pred_attr](
+        a._int_mlir_index(), b._int_mlir_index()
+    )
     return res
 
 
@@ -46,7 +50,9 @@ def test2[pred: StaticString](x: Int, y: Int) -> Bool:
             `#index<cmp_predicate `, +to_string[pred](), `>`
         ]
 
-    var z = __mlir_op.`index.cmp`[pred=get_pred[pred]()](x, y)
+    var z = __mlir_op.`index.cmp`[pred=get_pred[pred]()](
+        x._int_mlir_index(), y._int_mlir_index()
+    )
 
     return z
 

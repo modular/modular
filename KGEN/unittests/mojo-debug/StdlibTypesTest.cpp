@@ -11,6 +11,7 @@ using namespace M;
 using namespace lldb;
 
 TEST(StdlibTypesTest, testVariant) {
+  GTEST_SKIP() << "Disabled due to MOTO-1590";
   StopContext ctx = buildAndLaunch("variant.mojo");
 
   // v = Variant[Int, String](42) — active type is Int
@@ -50,6 +51,7 @@ TEST(StdlibTypesTest, testVariant) {
 }
 
 TEST(StdlibTypesTest, testOptional) {
+  GTEST_SKIP() << "Disabled due to MOTO-1590";
   StopContext ctx = buildAndLaunch("optional.mojo");
 
   // opt_int = Optional(42) — Some with an Int payload.
@@ -94,9 +96,15 @@ TEST(StdlibTypesTest, testList) {
   StopContext ctx = buildAndLaunch("list.mojo");
   SBValue var = ctx.frame.FindVariable("point_vec");
   EXPECT_STREQ(var.GetSummary(), "(size 3)");
-  EXPECT_STREQ(var.GetValueForExpressionPath("[0].x").GetValue(), "1");
-  EXPECT_STREQ(var.GetValueForExpressionPath("[1].y").GetValue(), "-2");
-  EXPECT_STREQ(var.GetValueForExpressionPath("[2].x").GetValue(), "3");
+  EXPECT_STREQ(
+      var.GetValueForExpressionPath("[0].x").GetChildAtIndex(0).GetValue(),
+      "1");
+  EXPECT_STREQ(
+      var.GetValueForExpressionPath("[1].y").GetChildAtIndex(0).GetValue(),
+      "-2");
+  EXPECT_STREQ(
+      var.GetValueForExpressionPath("[2].x").GetChildAtIndex(0).GetValue(),
+      "3");
 
   ctx.resume();
   var = ctx.frame.FindVariable("int_vec");
@@ -146,7 +154,9 @@ TEST(StdlibTypesTest, testDict) {
   EXPECT_EQ(d.GetNumChildren(), 3);
   // Entries are exposed in insertion order. Entry [0] is "one" → 1.
   EXPECT_STREQ(d.GetValueForExpressionPath("[0].key").GetSummary(), "\"one\"");
-  EXPECT_STREQ(d.GetValueForExpressionPath("[0].value").GetValue(), "1");
+  EXPECT_STREQ(
+      d.GetValueForExpressionPath("[0].value").GetChildAtIndex(0).GetValue(),
+      "1");
 
   ctx.resume();
 

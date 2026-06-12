@@ -882,7 +882,7 @@ def repr_with_where[
 
 def test_where_clause_proves_variadic():
     var t = (1, "hello")
-    # CHECK: where_variadic: Tuple[Int, String](Int(1), 'hello')
+    # CHECK: where_variadic: Tuple[SIMD[DType.int, 1], String](Int(1), 'hello')
     print("where_variadic:", repr_with_where(t))
 
 

@@ -14,9 +14,11 @@
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
 #include "KGEN/POPDialect/POPUtils.h"
+#include "Support/LLVMCompilerForwardDecls.h"
 #include "Support/MDialect/MAttrs.h"
 #include "mlir/IR/Matchers.h"
 #include "mlir/IR/PatternMatch.h"
+#include <mlir/IR/Diagnostics.h>
 #include <unistd.h>
 
 using namespace M;
@@ -1851,28 +1853,30 @@ static ErrorTreeOrSuccess interpretAllocation(int64_t size, int64_t align,
 
 ErrorTreeOrSuccess AlignedAllocOp::interpret(ArrayRef<Attribute> operands,
                                              InterpreterState &state) {
-  auto alignAttr = dyn_cast_or_null<IntegerAttr>(operands.front());
-  auto sizeAttr = dyn_cast_or_null<IntegerAttr>(operands.back());
-
-  if (!alignAttr || !sizeAttr)
+  ErrorOr<int64_t> alignOr =
+      getScalarIndexValue(dyn_cast_or_null<TypedAttr>(operands.front()));
+  ErrorOr<int64_t> sizeOr =
+      getScalarIndexValue(dyn_cast_or_null<TypedAttr>(operands.back()));
+  if (alignOr.isError() || sizeOr.isError())
     return ErrorTree(getLoc(), "non-concrete inputs");
 
-  if (sizeAttr.getInt() < 0) {
+  if (sizeOr.get() < 0) {
     return ErrorTree(getLoc(), "alloc has negative size");
   }
-
-  return interpretAllocation(sizeAttr.getInt(), alignAttr.getInt(), getLoc(),
-                             getType(), state);
+  return interpretAllocation(sizeOr.get(), alignOr.get(), getLoc(), getType(),
+                             state);
 }
 
 ErrorTreeOrSuccess
 AlignedAllocOp::parametric_interpret(ArrayRef<Attribute> operands,
                                      ParametricInterpreterState &state) {
-  auto alignAttr = dyn_cast_or_null<IntegerAttr>(operands.front());
-  auto sizeAttr = dyn_cast_or_null<IntegerAttr>(operands.back());
-  if (!alignAttr || !sizeAttr)
+  ErrorOr<int64_t> alignOr =
+      getScalarIndexValue(dyn_cast_or_null<TypedAttr>(operands.front()));
+  ErrorOr<int64_t> sizeOr =
+      getScalarIndexValue(dyn_cast_or_null<TypedAttr>(operands.back()));
+  if (alignOr.isError() || sizeOr.isError())
     return ErrorTree(getLoc(), "non-concrete inputs");
-  return interpretAllocation(sizeAttr.getInt(), alignAttr.getInt(), getLoc(),
+  return interpretAllocation(sizeOr.get(), alignOr.get(), getLoc(),
                              state.getReboundType(getType()), state);
 }
 
@@ -2725,8 +2729,13 @@ static ErrorTreeOrSuccess interpretMalloc(ExternalCallOp op,
     return ErrorTree(op.getLoc(), "unable to interpret call to 'malloc', "
                                   "expected 1 operand and 1 result");
   }
-  size_t size = dyn_cast_or_null<IntegerAttr>(operands.front()).getInt();
-  return interpretAllocation(size, /*align=*/0, op.getLoc(),
+  ErrorOr<int64_t> sizeOr =
+      POP::getScalarIndexValue(dyn_cast_or_null<TypedAttr>(operands.front()));
+  if (sizeOr.isError()) {
+    return ErrorTree(op->getLoc(), "Unable to interpret call to 'malloc', "
+                                   "could not interpret size.");
+  }
+  return interpretAllocation(sizeOr.get(), /*align=*/0, op.getLoc(),
                              op->getResultTypes()[0], state);
 }
 
@@ -2755,8 +2764,9 @@ static ErrorTreeOrSuccess interpreterWrite(ExternalCallOp op,
   if (!resultType.isIntOrIndex() && !isa<SIMDType>(resultType))
     return ErrorTree(op.getLoc(), "unable to interpret call to 'write', "
                                   "expected integer result type");
-  IntegerAttr fileDescriptor = dyn_cast<IntegerAttr>(operands[0]);
-  if (!fileDescriptor)
+  ErrorOr<int64_t> fdOr =
+      POP::getScalarIndexValue(dyn_cast_or_null<TypedAttr>(operands[0]));
+  if (fdOr.isError())
     return ErrorTree(op.getLoc(), "unable to interpret call to 'write', "
                                   "expected integer typed first operand");
 
@@ -2765,8 +2775,9 @@ static ErrorTreeOrSuccess interpreterWrite(ExternalCallOp op,
     return ErrorTree(op.getLoc(), "unable to interpret call to 'write', "
                                   "expected pointer typed second operand");
 
-  IntegerAttr nbytes = cast<IntegerAttr>(operands[2]);
-  if (!nbytes)
+  ErrorOr<int64_t> nbytesOr =
+      POP::getScalarIndexValue(dyn_cast_or_null<TypedAttr>(operands[2]));
+  if (nbytesOr.isError())
     return ErrorTree(op.getLoc(), "unable to interpret call to 'write', "
                                   "expected integer typed third operand");
   unsigned ptrSize = state.getTarget().getDataLayout().getPointerSize();
@@ -2774,9 +2785,8 @@ static ErrorTreeOrSuccess interpreterWrite(ExternalCallOp op,
       state.getReadableMemory(buffer.getAddr(), ptrSize);
   if (mem)
     return ErrorTree(op.getLoc(), mem.takeError());
-  int size = nbytes.getValue().getZExtValue();
-  int numWritten =
-      write(fileDescriptor.getValue().getZExtValue(), (const void *)*mem, size);
+  int size = static_cast<int>(nbytesOr.get());
+  int numWritten = write(fdOr.get(), (const void *)*mem, size);
   if (auto simdType = dyn_cast<SIMDType>(resultType)) {
     auto simdAttr = SIMDAttr::get(numWritten, simdType);
     state.mapResults(simdAttr);

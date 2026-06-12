@@ -18,12 +18,12 @@ from std.collections.string.string_slice import _get_kgen_string
 def add_with_nsw[
     width: Int
 ](
-    a: __mlir_deferred_type[`i`, +width._mlir_value],
-    b: __mlir_deferred_type[`i`, +width._mlir_value],
-) -> __mlir_deferred_type[`i`, +width._mlir_value]:
+    a: __mlir_deferred_type[`i`, +width._int_mlir_index()],
+    b: __mlir_deferred_type[`i`, +width._int_mlir_index()],
+) -> __mlir_deferred_type[`i`, +width._int_mlir_index()]:
     # IR: add nsw i32
     return __mlir_op.`llvm.add`[
-        _type=__mlir_deferred_type[`i`, +width._mlir_value],
+        _type=__mlir_deferred_type[`i`, +width._int_mlir_index()],
         _properties=__mlir_attr.`{overflowFlags = #llvm.overflow<nsw>}`,
     ](a, b)
 
@@ -40,12 +40,12 @@ def _overflow_kind_str[signed: Bool]() -> StaticString:
 def add_with_deferred_props[
     width: Int, signed: Bool
 ](
-    a: __mlir_deferred_type[`i`, +width._mlir_value],
-    b: __mlir_deferred_type[`i`, +width._mlir_value],
-) -> __mlir_deferred_type[`i`, +width._mlir_value]:
+    a: __mlir_deferred_type[`i`, +width._int_mlir_index()],
+    b: __mlir_deferred_type[`i`, +width._int_mlir_index()],
+) -> __mlir_deferred_type[`i`, +width._int_mlir_index()]:
     # IR: add nuw i32
     return __mlir_op.`llvm.add`[
-        _type=__mlir_deferred_type[`i`, +width._mlir_value],
+        _type=__mlir_deferred_type[`i`, +width._int_mlir_index()],
         _properties=__mlir_deferred_attr[
             `{overflowFlags = #llvm.overflow<`,
             +_get_kgen_string[_overflow_kind_str[signed]()](),

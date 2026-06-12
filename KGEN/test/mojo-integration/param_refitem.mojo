@@ -14,5 +14,5 @@ from std.utils import Variant
 def param_refitem() abi("Mojo") -> Int:
     comptime vec = Variant[Int](42)
     comptime value = vec[Int]
-    # CHECK-NEXT: constant = <42>
+    # CHECK-NEXT: constant: scalar<index> = <42>
     return value

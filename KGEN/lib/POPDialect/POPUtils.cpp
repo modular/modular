@@ -326,12 +326,13 @@ template <typename State>
 static ErrorTreeOrSuccess interpretMemcpy(Attribute dst, Attribute src,
                                           Attribute len, Location loc,
                                           State &state) {
-  auto lenAttr = dyn_cast<IntegerAttr>(len);
-  if (!lenAttr)
+  ErrorOr<int64_t> lenOr =
+      POP::getScalarIndexValue(dyn_cast_or_null<TypedAttr>(len));
+  if (lenOr.isError())
     return ErrorTree(loc, "interpreting memcpy 3nd operand len is not "
                           "interpreted correctly");
 
-  if (!lenAttr.getInt())
+  if (!lenOr.get())
     return success();
 
   auto dstPtr = dyn_cast<M::PointerAttr>(dst);
@@ -345,9 +346,9 @@ static ErrorTreeOrSuccess interpretMemcpy(Attribute dst, Attribute src,
                           "not interpreted correctly");
 
   ErrorOr<void *> dstAddrOr =
-      state.getWritableMemory(dstPtr.getAddr(), size_t(lenAttr.getInt()));
+      state.getWritableMemory(dstPtr.getAddr(), size_t(lenOr.get()));
   ErrorOr<const void *> srcAddrOr =
-      state.getReadableMemory(srcPtr.getAddr(), size_t(lenAttr.getInt()));
+      state.getReadableMemory(srcPtr.getAddr(), size_t(lenOr.get()));
 
   if (dstAddrOr.isError()) {
     return ErrorTree(
@@ -361,13 +362,13 @@ static ErrorTreeOrSuccess interpretMemcpy(Attribute dst, Attribute src,
         ErrorTree(loc, srcAddrOr.takeError()));
   }
 
-  std::memcpy(*dstAddrOr, *srcAddrOr, lenAttr.getInt());
+  std::memcpy(*dstAddrOr, *srcAddrOr, lenOr.get());
 
   // Propagate pointer/symbol region markings so that pointer fields copied
   // as raw bytes (e.g. UnsafePointer inside a struct) remain tracked for
   // correct materialization from comptime to runtime.
-  ErrorOrSuccess cpyResult = state.copyMarkedRegions(
-      srcPtr.getAddr(), dstPtr.getAddr(), lenAttr.getInt());
+  ErrorOrSuccess cpyResult =
+      state.copyMarkedRegions(srcPtr.getAddr(), dstPtr.getAddr(), lenOr.get());
   if (cpyResult.isError())
     return ErrorTree(loc, cpyResult.takeError());
 

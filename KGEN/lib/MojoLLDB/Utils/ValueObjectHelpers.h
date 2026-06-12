@@ -65,7 +65,7 @@ inline lldb::ValueObjectSP unwrapToScalarOrPointer(lldb::ValueObjectSP field) {
     //
     // We check the type name explicitly to avoid descending into arbitrary
     // 1-child wrappers that happen to lack a named member field.
-    if (llvm::StringRef(field->GetTypeName()).starts_with("!kgen.simd<1,")) {
+    if (llvm::StringRef(field->GetTypeName()).starts_with("!kgen.scalar<")) {
       if (auto inner = field->GetChildAtIndex(0)) {
         field = inner;
         continue;

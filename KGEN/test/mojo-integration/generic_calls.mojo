@@ -28,7 +28,7 @@ def borrowed_generic[T: AnyType](x: T):
 
 # CHECK-LABEL: kgen.func export @test_owned(
 # CHECK-SAME: %arg0: !kgen.struct<(scalar<f32>, scalar<f32>)> owned,
-# CHECK-SAME: %arg1: !kgen.pointer<struct<(index, index) memoryOnly>> owned_in_mem)
+# CHECK-SAME: %arg1: !kgen.pointer<struct<(scalar<index>, scalar<index>) memoryOnly>> owned_in_mem)
 @export
 def test_owned(var x: RegPassable, var y: MemOnly) abi("Mojo"):
     # CHECK: [[LEN:%.*]] = kgen.param.constant = <16>
@@ -43,8 +43,8 @@ def test_owned(var x: RegPassable, var y: MemOnly) abi("Mojo"):
     # CHECK: kgen.call {{.*}}owned_generic{{.*}}"(%arg0)
     owned_generic(x)
 
-    # CHECK: [[XPTR3:%.*]] = pop.stack_allocation 1 x struct<(index, index) memoryOnly>
-    # CHECK: pop.memcpy [[XPTR3]], %arg1, [[LEN]] : !kgen.pointer<struct<(index, index) memoryOnly>> -> !kgen.pointer<struct<(index, index) memoryOnly>>
+    # CHECK: [[XPTR3:%.*]] = pop.stack_allocation 1 x struct<(scalar<index>, scalar<index>) memoryOnly>
+    # CHECK: pop.memcpy [[XPTR3]], %arg1, [[LEN]] : !kgen.pointer<struct<(scalar<index>, scalar<index>) memoryOnly>> -> !kgen.pointer<struct<(scalar<index>, scalar<index>) memoryOnly>>
     # CHECK: kgen.call {{.*}}owned_generic{{.*}}"([[XPTR3]])
     owned_generic(y)
 
@@ -56,7 +56,7 @@ def test_owned(var x: RegPassable, var y: MemOnly) abi("Mojo"):
 
 # CHECK: kgen.func export @test_borrowed(
 # CHECK-SAME: %arg0: !kgen.struct<(scalar<f32>, scalar<f32>)>,
-# CHECK-SAME: %arg1: !kgen.pointer<struct<(index, index) memoryOnly>> read_mem)
+# CHECK-SAME: %arg1: !kgen.pointer<struct<(scalar<index>, scalar<index>) memoryOnly>> read_mem)
 @export
 def test_borrowed(x: RegPassable, y: MemOnly) abi("Mojo"):
     # CHECK: [[LEN:%.*]] = kgen.param.constant = <16>
@@ -70,7 +70,7 @@ def test_borrowed(x: RegPassable, y: MemOnly) abi("Mojo"):
     # CHECK: kgen.call {{.*}}owned_generic{{.*}}"(%arg0)
     owned_generic(x)
 
-    # CHECK: [[XPTR3:%.*]] = pop.stack_allocation 1 x struct<(index, index) memoryOnly>
-    # CHECK: pop.memcpy [[XPTR3]], %arg1, [[LEN]] : !kgen.pointer<struct<(index, index) memoryOnly>> -> !kgen.pointer<struct<(index, index) memoryOnly>>
+    # CHECK: [[XPTR3:%.*]] = pop.stack_allocation 1 x struct<(scalar<index>, scalar<index>) memoryOnly>
+    # CHECK: pop.memcpy [[XPTR3]], %arg1, [[LEN]] : !kgen.pointer<struct<(scalar<index>, scalar<index>) memoryOnly>> -> !kgen.pointer<struct<(scalar<index>, scalar<index>) memoryOnly>>
     # CHECK: kgen.call {{.*}}owned_generic{{.*}}"([[XPTR3]])
     owned_generic(y)

@@ -45,14 +45,14 @@ comptime alias_Value = 10
 # CHECK:  "kind": "alias",
 # CHECK:  "name": "alias_construct",
 # CHECK:  "path": "/mojo_doc/#alias_construct",
-# CHECK:  "value": "IntTuple(0, 1, 2, 3, 4)"
+# CHECK:  "value": "IntTuple(Int(0), Int(1), Int(2), Int(3), Int(4))"
 comptime alias_construct = IntTuple(0, 1, 2, 3, 4)
 
 
 # CHECK:  "kind": "alias",
 # CHECK:  "name": "alias_cond",
 # CHECK:  "path": "/mojo_doc/#alias_cond",
-# CHECK:  "value": "2 if is_nvidia_gpu() else 1"
+# CHECK:  "value": "Int(2) if is_nvidia_gpu() else Int(1)"
 comptime alias_cond = 2 if is_nvidia_gpu() else 1
 
 # CHECK:  "kind": "alias",
@@ -146,7 +146,7 @@ comptime __double_underscore_private_member = ""
 # CHECK:      "async": true
 # CHECK:      "returns": {
 # CHECK:        "doc": "An Int.",
-# CHECK:        "path": "/std/builtin/int/Int",
+# CHECK:        "path": "/std/builtin/simd/#int",
 # CHECK:        "type": "Int"
 # CHECK:      },
 # CHECK:      "signature": "def fn_that_async() -> Int"
@@ -171,7 +171,7 @@ async def fn_that_async() -> Int:
 # CHECK:      "raisesDoc": "Raises an exception when it wants to.\n"
 # CHECK:      "returns": {
 # CHECK:        "doc": "An Int.",
-# CHECK:        "path": "/std/builtin/int/Int",
+# CHECK:        "path": "/std/builtin/simd/#int",
 # CHECK:        "type": "Int"
 # CHECK:      },
 # CHECK:      "signature": "def fn_that_raises() -> Int"
@@ -198,22 +198,22 @@ def fn_that_raises() raises -> Int:
 # CHECK:      "args":
 # CHECK:          "description": "This is an argument."
 # CHECK:          "name": "arg"
-# CHECK:          "path": "/std/builtin/int/Int"
+# CHECK:          "path": "/std/builtin/simd/#int"
 # CHECK:          "type": "Int"
 # CHECK:          "convention": "mut"
 # CHECK:          "description": "This is an mut arg."
 # CHECK:          "name": "inoutArg"
-# CHECK:          "path": "/std/builtin/int/Int"
+# CHECK:          "path": "/std/builtin/simd/#int"
 # CHECK:          "type": "Int"
 # CHECK:          "convention": "var"
 # CHECK:          "description": "This is an owned arg."
 # CHECK:          "name": "ownedArg"
-# CHECK:          "path": "/std/builtin/int/Int"
+# CHECK:          "path": "/std/builtin/simd/#int"
 # CHECK:          "type": "Int"
 # CHECK:          "convention": "read"
 # CHECK:          "description": "This is a borrowedArg."
 # CHECK:          "name": "borrowedArg"
-# CHECK:          "path": "/std/builtin/int/Int"
+# CHECK:          "path": "/std/builtin/simd/#int"
 # CHECK:          "type": "Int"
 # CHECK:      "signature": "def fn_with_args(arg: Int, mut inoutArg: Int, var ownedArg: Int, borrowedArg: Int)",
 # CHECK:      "summary": "This is a function summary."
@@ -315,11 +315,11 @@ def fn_with_params[
 # CHECK:     "args":
 # CHECK:         "description": "This is an argument."
 # CHECK:         "name": "arg"
-# CHECK:         "path": "/std/builtin/int/Int"
+# CHECK:         "path": "/std/builtin/simd/#int"
 # CHECK:         "type": "Int"
 # CHECK:     "returns": {
 # CHECK:       "doc": "This is a return value.",
-# CHECK:       "path": "/std/builtin/int/Int",
+# CHECK:       "path": "/std/builtin/simd/#int",
 # CHECK:       "type": "Int"
 # CHECK:     },
 # CHECK:     "signature": "def fn_with_params_and_return(arg: Int) -> Int"
@@ -435,7 +435,7 @@ struct MyStruct[x: Int]:
 # CHECK:     "description": "Explicitly declared function parameter.",
 # CHECK:     "kind": "parameter",
 # CHECK:     "name": "p",
-# CHECK:     "path": "/std/builtin/int/Int",
+# CHECK:     "path": "/std/builtin/simd/#int",
 # CHECK:     "type": "Int"
 # CHECK: }
 # CHECK: "signature": "def fn_with_implicit_params[p: Int](arg: MyStruct)"
@@ -484,15 +484,15 @@ def pos_only_print(x: String, /, sep: String):
 # CHECK:      "args":
 # CHECK:          "name": "a"
 # CHECK:          "passingKind": "pos",
-# CHECK:          "path": "/std/builtin/int/Int"
+# CHECK:          "path": "/std/builtin/simd/#int"
 
 # CHECK:          "name": "b"
 # CHECK:          "passingKind": "pos",
-# CHECK:          "path": "/std/builtin/int/Int"
+# CHECK:          "path": "/std/builtin/simd/#int"
 
 # CHECK:          "name": "offset"
 # CHECK:          "passingKind": "kw",
-# CHECK:          "path": "/std/builtin/int/Int"
+# CHECK:          "path": "/std/builtin/simd/#int"
 # CHECK:      "signature": "def keyword_only_prod(a: Int, b: Int, /, *, offset: Int)",
 
 
@@ -510,19 +510,19 @@ def keyword_only_prod(a: Int, b: Int, /, *, offset: Int):
 # CHECK:  "name": "default_args_and_params",
 # CHECK:  "overloads":
 # CHECK:      "args":
-# CHECK:          "default": "2",
+# CHECK:          "default": "Int(2)",
 # CHECK:          "name": "b"
-# CHECK:          "path": "/std/builtin/int/Int"
+# CHECK:          "path": "/std/builtin/simd/#int"
 
-# CHECK:          "default": "3",
+# CHECK:          "default": "Int(3)",
 # CHECK:          "name": "c"
-# CHECK:          "path": "/std/builtin/int/Int"
+# CHECK:          "path": "/std/builtin/simd/#int"
 
 # CHECK:      "parameters":
-# CHECK:          "default": "1",
+# CHECK:          "default": "Int(1)",
 # CHECK:          "name": "a"
-# CHECK:          "path": "/std/builtin/int/Int"
-# CHECK:      "signature": "def default_args_and_params[a: Int = 1](b: Int = 2, /, *, c: Int = 3)",
+# CHECK:          "path": "/std/builtin/simd/#int"
+# CHECK:      "signature": "def default_args_and_params[a: Int = Int(1)](b: Int = Int(2), /, *, c: Int = Int(3))",
 
 
 def default_args_and_params[a: Int = 1](b: Int = 2, /, *, c: Int = 3):
@@ -571,7 +571,7 @@ def variadic_pack[*Ts: AnyType](*vals: *Ts):
 # CHECK:     "args":
 # CHECK:         "name": "*vals",
 # CHECK:         "passingKind": "pos_or_kw",
-# CHECK:         "path": "/std/builtin/int/Int",
+# CHECK:         "path": "/std/builtin/simd/#int",
 # CHECK:         "type": "Int"
 
 # CHECK:         "name": "**kwargs",
@@ -715,7 +715,7 @@ def optional_default_arg_none(input: Optional[Int64] = None):
 
 
 # CHECK-LABEL: "name": "optional_default_arg_none2"
-# CHECK: "signature": "def optional_default_arg_none2(input: Optional[SIMD[DType.int64, 4]] = None)"
+# CHECK: "signature": "def optional_default_arg_none2(input: Optional[SIMD[DType.int64, SIMDSize(4)]] = None)"
 def optional_default_arg_none2(input: Optional[SIMD[DType.int64, 4]] = None):
     pass
 
@@ -940,9 +940,9 @@ struct ParameterClass[_type: __mlir_type.`!kgen.dtype`](RegisterPassable):
 # CHECK:  "kind": "struct",
 # CHECK:  "name": "StructWithDefault",
 # CHECK:  "parameters":
-# CHECK:      "default": "1",
+# CHECK:      "default": "Int(1)",
 # CHECK:      "name": "a",
-# CHECK:      "path": "/std/builtin/int/Int"
+# CHECK:      "path": "/std/builtin/simd/#int"
 
 
 struct StructWithDefault[a: Int = 1]:

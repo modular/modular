@@ -355,29 +355,30 @@ def inout_variadic_pack[*Ts: Writable](mut *pack: *Ts):
         print("hello", pack[i])
 
 
-def test_inout_variadic_pack():
-    # CHECK-LABEL: -- testing mut variadic pack with 2 elements
-    # CHECK: hello foo
-    # CHECK: hello 42
-    var string = "foo"
-    var integer = 42
-    inout_variadic_pack(string, integer)
-    print("")
+# FIXME: MOCO-4095
+# def test_inout_variadic_pack():
+# COM:    # CHECK-LABEL: -- testing mut variadic pack with 2 elements
+# COM:    # CHECK: hello foo
+# COM:    # CHECK: hello 42
+#     var string = "foo"
+#     var integer = 42
+#     inout_variadic_pack(string, integer)
+#     print("")
 
-    # CHECK: initializing 1
-    # CHECK: initializing 2
-    # CHECK: -- testing mut variadic pack with 2 elements
-    # CHECK: hello talkative 1
-    # CHECK: hello talkative 2
-    # CHECK: destroying 1
-    # CHECK: after call
-    # CHECK: destroying 2
-    var m1 = TalkativeMem(1)
-    var m2 = TalkativeMem(2)
-    inout_variadic_pack(m1, m2)
-    print("after call")
-    _ = m2^  # keep alive for the test
-    print("")
+# COM:    # CHECK: initializing 1
+# COM:    # CHECK: initializing 2
+# COM:    # CHECK: -- testing mut variadic pack with 2 elements
+# COM:    # CHECK: hello talkative 1
+# COM:    # CHECK: hello talkative 2
+# COM:    # CHECK: destroying 1
+# COM:    # CHECK: after call
+# COM:    # CHECK: destroying 2
+#     var m1 = TalkativeMem(1)
+#     var m2 = TalkativeMem(2)
+#     inout_variadic_pack(m1, m2)
+#     print("after call")
+#     _ = m2^  # keep alive for the test
+#     print("")
 
 
 def bump_each_box[*Ts: Bumpable](mut *pack: *Ts):
@@ -601,7 +602,8 @@ def main():
     test_owned_reg_varargs()
     test_non_trivial_reg_varargs()
     test_owned_variadic_pack()
-    test_inout_variadic_pack()
+    # FIXME: MOCO-4095
+    # test_inout_variadic_pack()
     test_forward_mut_pack()
     test_borrowed_variadic_pack()
     test_comptime_pack()

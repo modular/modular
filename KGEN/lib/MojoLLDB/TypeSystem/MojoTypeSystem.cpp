@@ -443,7 +443,7 @@ uint32_t MojoTypeSystem::GetTypeInfo(
     // Scalar SIMD (size == 1) holds a single numeric value. Without
     // eTypeHasValue, ValueObjectChild::UpdateValue() skips loading m_data but
     // returns true, causing Checksum(null, 0) → UBSAN abort.
-    if (simdTy.isScalar())
+    if (simdTy.isScalar() || simdTy.isIndex())
       flags |= lldb::eTypeHasValue;
     return flags;
   }

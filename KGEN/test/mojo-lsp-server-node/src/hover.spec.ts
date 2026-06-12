@@ -283,7 +283,7 @@ Int alias description.
       {
         contents: {
           kind: "markdown",
-          value: "```mojo\ncomptime ExplicitIntAlias = 123\n```",
+          value: "```mojo\ncomptime ExplicitIntAlias = Int(123)\n```",
         },
         range: doc.findFirstRange("ExplicitIntAlias"),
       }

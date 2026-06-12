@@ -37,7 +37,7 @@ struct BoolT[x: Bool](ImplicitlyCopyable):
 
 # CHECK-LABEL: lit.fn @"fold_select_op
 def fold_select_op[B: Int = 4, C: Int = 3]() -> IntT[B]:
-    # CHECK: %a = lit.var.decl "a" var : !lit.ref<!lit.struct<#IntT <:!Int B>>, mut *"a`1">
+    # CHECK: %a = lit.var.decl "a" var : !lit.ref<!lit.struct<#IntT <:!Int1 B>>, mut *"a`1">
     var a = IntT[select(True, B, C)]()
     return a
 
