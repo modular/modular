@@ -800,8 +800,6 @@ class PipelineRegistry:
             pipeline_config.runtime.custom_architectures
         )
 
-        pipeline_class = get_pipeline_for_task(task, pipeline_config)
-
         # MAX pipeline
         if override_architecture:
             arch = self._resolve_architecture(override_architecture, task)
@@ -861,6 +859,11 @@ class PipelineRegistry:
             arch,
             draft_arch=draft_arch,
         )
+
+        # Must be called after pipeline_config.resolve() so that
+        # enable_overlap_scheduler is set correctly (e.g. forced True when
+        # --device-graph-capture is explicitly passed).
+        pipeline_class = get_pipeline_for_task(task, pipeline_config)
 
         post_resolve_arch_name = pipeline_config.models.main_architecture_name
         if post_resolve_arch_name != pre_resolve_arch_name:
