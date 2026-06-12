@@ -232,11 +232,11 @@ This feature explains why some members in the Mojo standard library can be
 imported from their package name, while others required the
 `<package_name>.<module_name>` notation. For example, the
 [`functional`](/docs/std/algorithm/functional/) module resides in the
-`algorithm` package, so you can import members of that module (such as the
+`std.algorithm` package, so you can import members of that module (such as the
 `map()` function) like this:
 
 ```mojo
-from algorithm.functional import map
+from std.algorithm.functional import map
 ```
 
 However, the `algorithm/__init__.mojo` file also includes these lines:
@@ -251,7 +251,7 @@ naming the package. That is, you can drop the `functional` name from the import
 statement, and it also works:
 
 ```mojo
-from algorithm import map
+from std.algorithm import map
 ```
 
 :::note
