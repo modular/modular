@@ -1694,3 +1694,24 @@ def demo[
         _ = immut_ptr[0]
 
     must_be_read_only(read, immut_ptr)
+
+
+# // -----
+
+
+# COM: MOCO-4128
+
+
+# CHECK-LABEL: lit.fn @"apply_closure
+def apply_closure[T: TrivialRegisterPassable](x: T):
+    # COM: Make sure the field type is paramtric over `T`, not a plain `AnyType`.
+    # CHECK: [[CLOSURE:%[0-9a-zA-Z_]+]] = lit.closure.init
+    # CHECK: kgen.rebind [[CLOSURE]] : !lit.ref<!kgen.closure{{.*}}> to !lit.ref<struct<(:!TrivialRegisterPassable T)>
+    def f() {var x}:
+        _ = x
+
+    f()
+
+
+def main():
+    apply_closure(Int(42))
