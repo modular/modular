@@ -1520,6 +1520,30 @@ def KGEN_TypeInstanceRefAttr : KGEN_ExprAttr<"TypeInstanceRef", "instref"> {
 }
 
 //===----------------------------------------------------------------------===//
+// TypeInstanceRefAttr
+//===----------------------------------------------------------------------===//
+
+def KGEN_TraitInstanceRefAttr : KGEN_ExprAttr<"TraitInstanceRef", "trait_ref"> {
+  let summary = "trait instance reference";
+  let description = [{
+    This is a symbolic reference to a trait instance. Its type is the metatype
+    of the trait.
+  }];
+
+  let parameters = (ins ArrayRefParameter<"SymbolRefAttr">:$symbols,
+                        AttributeSelfTypeParameter<"">:$type);
+
+  let builders = [
+    AttrBuilderWithInferredContext<(ins "ArrayRef<SymbolRefAttr>":$symbols,
+                                        "Type":$type), [{
+      return get(type.getContext(), symbols, type);
+    }]>
+  ];
+  let assemblyFormat = "`<` $symbols `>`";
+}
+
+
+//===----------------------------------------------------------------------===//
 // DTypeConstantAttr
 //===----------------------------------------------------------------------===//
 

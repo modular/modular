@@ -323,12 +323,24 @@ lit.struct.decl @foo {
 // Traits
 //===----------------------------------------------------------------------===//
 
+// CHECK: #type_value = #kgen.type<typevalue<#kgen.trait_ref<@RetZero>>, type> : !kgen.type
 lit.trait.decl @RetZero {
   // CHECK-LABEL: kgen.generator @"RetZero::return_zero"
   lit.fn @return_zero() -> index {
     %idx0_0 = index.constant 0
     kgen.return %idx0_0 : index
   }
+}
+
+lit.fn @A<t: !lit.anytrait<!lit.trait<@RetZero>> = !lit.trait<@RetZero>>() -> index {
+    %0 = kgen.param.constant = <0>
+    kgen.return %0 : index
+}
+
+lit.fn @t() -> index {
+  // CHECK: kgen.call @A<:type #type_value>() : () -> index
+  %0 = lit.call @A<:!lit.anytrait<!lit.trait<@RetZero>> !lit.trait<@RetZero>>() : !lit.generator<() -> index>
+  kgen.return %0 : index
 }
 
 // -----
