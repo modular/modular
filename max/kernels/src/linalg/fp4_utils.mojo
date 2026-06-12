@@ -118,18 +118,33 @@ def cast_uint_to_fp4e2m1[
         " output_width"
     )
 
-    var result = SIMD[out_dtype, out_width]()
-
+    # Unpack nibbles with comptime indices only. Dynamic indexing into a
+    # SIMD value (the old `E2M1_TO_FLOAT32[Int(x)]` lookup) forces the
+    # vector to spill to GPU local memory on every access, which makes the
+    # dequant kernels local-memory bound (~35x slower than memory-bound).
+    var nibbles = SIMD[DType.uint8, out_width]()
     comptime for i in range(in_width):
         comptime for shift in range(0, num_fp4_values):
             comptime BitsType = type_of(x[i].to_bits())
-            var x = (
+            var nib = (
                 x[i].to_bits() >> BitsType(shift * FP4_E2M1_WIDTH)
             ) & BitsType(FP4_E2M1_MASK)
-            result[i * num_fp4_values + shift] = E2M1_TO_FLOAT32[Int(x)].cast[
-                out_dtype
-            ]()
-    return result
+            nibbles[i * num_fp4_values + shift] = nib.cast[DType.uint8]()
+
+    # Branchless E2M1 decode (1 sign, 2 exponent, 1 mantissa):
+    #   exp == 0 -> 0.5 * man               (0.0 or 0.5)
+    #   exp  > 0 -> 2^(exp - 1) * (1 + 0.5 * man)
+    var man = (nibbles & 1).cast[DType.float32]()
+    var exp = ((nibbles >> 1) & 3).cast[DType.int32]()
+    var half_man = man * 0.5
+    var pow2 = (
+        SIMD[DType.int32, out_width](1)
+        << max(exp - 1, SIMD[DType.int32, out_width](0))
+    ).cast[DType.float32]()
+    var is_subnormal = exp.eq(SIMD[DType.int32, out_width](0))
+    var mag = is_subnormal.select(half_man, pow2 * (1.0 + half_man))
+    var negative = (nibbles >> 3).eq(SIMD[DType.uint8, out_width](1))
+    return negative.select(-mag, mag).cast[out_dtype]()
 
 
 def cast_fp_to_fp4e2m1[
