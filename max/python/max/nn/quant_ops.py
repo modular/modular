@@ -35,8 +35,6 @@ from .kernels import (
     quantize_dynamic_scaled_float8,
     quantize_static_scaled_float8,
     quantize_tensor_dynamic_scaled_float8,
-    store_k_cache_ragged,
-    store_v_cache_ragged,
 )
 from .kv_cache import KVCacheParams, PagedCacheValues
 from .quant_config import (
@@ -501,58 +499,15 @@ def quantized_fused_qkv_matmul(
             assert weight_scale_2 is not None
 
             if _is_pre_sm100_nvidia_gpu():
-                # Pre-Blackwell fallback: fused dequant-GEMV for the QKV
-                # projection (FP4 decoded in registers, no BF16 weight is
-                # materialized), then split and store K/V into the paged
-                # cache explicitly — fused_qkv_ragged_matmul owns that write
-                # on the unquantized path.
-                if quant_config.scales_pre_interleaved:
-                    raise ValueError(
-                        "NVFP4 checkpoints with pre-interleaved (TCGEN 5D)"
-                        " scales are not supported on pre-Blackwell GPUs"
-                    )
-                scales_f32 = weight_scale.to(wqkv.device).cast(
-                    DType.float32
-                ) * weight_scale_2.to(wqkv.device)
-                qkv = nvfp4_gemv(x.cast(DType.bfloat16), wqkv, scales_f32)
-                if bias is not None:
-                    qkv = qkv + bias.cast(qkv.dtype)
-
-                head_dim = kv_params.head_dim
-                kv_dim = kv_params.n_kv_heads_per_device * head_dim
-                total_dim = int(wqkv.shape[0])
-                q_dim = (
-                    _output_dim
-                    if _output_dim is not None
-                    else n_heads * head_dim
+                # No in-tree model reaches this branch on pre-Blackwell:
+                # NVFP4 QKV projections route through StackedLinear and
+                # _matmul_float4 (already fused). Keep a clear error rather
+                # than dead fallback code.
+                raise ValueError(
+                    "quantized_fused_qkv_matmul has no NVFP4 path on"
+                    " pre-Blackwell GPUs; route QKV through StackedLinear"
+                    " (_matmul_float4) instead"
                 )
-                q_out = qkv[:, :q_dim]
-                k_out = ops.reshape(
-                    qkv[:, q_dim : q_dim + kv_dim],
-                    [-1, kv_params.n_kv_heads_per_device, head_dim],
-                )
-                remaining = total_dim - q_dim - kv_dim
-                if remaining not in (0, kv_dim):
-                    raise ValueError(
-                        f"unexpected wqkv layout: {total_dim} rows with"
-                        f" q_dim={q_dim}, kv_dim={kv_dim}"
-                    )
-                if remaining == kv_dim:
-                    v_out = ops.reshape(
-                        qkv[:, q_dim + kv_dim : q_dim + 2 * kv_dim],
-                        [-1, kv_params.n_kv_heads_per_device, head_dim],
-                    )
-                else:
-                    # K-equals-V layers (e.g. Gemma 4 full-attention) pack
-                    # only Q and K rows in wqkv.
-                    v_out = k_out
-                store_k_cache_ragged(
-                    kv_collection, k_out, input_row_offsets, layer_idx
-                )
-                store_v_cache_ragged(
-                    kv_collection, v_out, input_row_offsets, layer_idx
-                )
-                return q_out
 
             x, x_scales = quantize_dynamic_block_scaled(
                 x,
