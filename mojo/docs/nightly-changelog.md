@@ -36,6 +36,8 @@ This version is still a work in progress.
 
 ## Tooling changes
 
+- Added a `--lld-path` CLI flag. This overrides the LLD path that Mojo uses.
+
 ## GPU programming
 
 ## Removed
