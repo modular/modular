@@ -519,6 +519,9 @@ struct MXFP4MatmulAMD[
             Int32(Self.num_threads)
         )
     )
+    @__name(
+        t"mxfp4_dense_BM{Self.BM}_BN{Self.BN}_WM{Self.WM}_WN{Self.WN}_BK{Self.BK_ELEMS}_N{b_layout.static_shape[0]}_KB{a_layout.static_shape[1]}_SK{num_splits}"
+    )
     @staticmethod
     def run[
         out_dtype: DType,
