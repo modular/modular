@@ -798,6 +798,19 @@ def mgp_sync(ctx: StateContext, dev_ctx: DeviceContext) raises:
     dev_ctx.synchronize()
 
 
+@register_internal("mgp.device_wait")
+@no_inline
+def mgp_device_wait(
+    ctx: StateContext,
+    waiting_dev_ctx: DeviceContext,
+    signaling_dev_ctx: DeviceContext,
+) raises:
+    # Enqueue a one-directional cross-stream dependency: the waiting context's
+    # stream waits for the work already enqueued on the signaling context's
+    # stream. Non-blocking on the host (unlike mgp.sync).
+    waiting_dev_ctx.enqueue_wait_for(signaling_dev_ctx)
+
+
 @register_internal("mgp.debug.print")
 @no_inline
 def mgp_debug_print[
