@@ -1,6 +1,5 @@
 """Define bazel dependencies common to the internal and external repos."""
 
-bazel_dep(name = "abseil-cpp", version = "20250814.2")
 bazel_dep(name = "apple_support", version = "2.3.0", repo_name = "build_bazel_apple_support")
 bazel_dep(name = "aspect_bazel_lib", version = "2.21.2")
 bazel_dep(name = "bazel_skylib", version = "1.9.0")
@@ -18,7 +17,6 @@ bazel_dep(name = "rules_proto", version = "7.1.0")
 bazel_dep(name = "rules_pycross", version = "0.8.1")
 bazel_dep(name = "rules_python", version = "1.8.5")
 bazel_dep(name = "rules_shell", version = "0.6.1")
-bazel_dep(name = "tomlplusplus", version = "3.4.0")
 bazel_dep(name = "with_cfg.bzl", version = "0.10.3")
 
 bazel_dep(name = "buildifier_prebuilt", version = "8.2.1", dev_dependency = True)
@@ -104,17 +102,6 @@ single_version_override(
     version = "1.76.0.bcr.1",
 )
 
-# Expose the :toml++-src target (header-only impl) to external repos
-# (consumed by @nixl_upstream). The BCR patch creates the target but leaves
-# its visibility restricted.
-single_version_override(
-    module_name = "tomlplusplus",
-    patch_strip = 1,
-    patches = [
-        "//bazel/public-patches:tomlplusplus-visibility.patch",
-    ],
-)
-
 DEFAULT_PYTHON_VERSION = "3.13"
 
 PYTHON_VERSIONS = [
@@ -173,53 +160,6 @@ use_repo(compat, "cc_compatibility_proxy")
 http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
 http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
-
-# ......................... NIXL (KV transfer) ................................
-#
-# Upstream NIXL (github.com/ai-dynamo/nixl) plus its UCX / libfabric backends.
-# These live here (rather than the internal MODULE.bazel) because an
-# OSS-mirrored target (//max/tests/tests/nixl) depends on @nixl_upstream via
-# its plugin `.so` data deps, so the repos must resolve in both the internal
-# build and the standalone OSS-mirror build. The overlay BUILD files live in
-# //bazel/public-patches (an OSS-visible, symlinked overlay dir) so the
-# build_file labels resolve in both contexts.
-# BEGIN_NIXL_GENERATED
-# NOTE: Use 'update-nixl' to update these values (utils/update_nixl.py).
-# To add a NIXL patch, drop a bazel/public-patches/nixl-*.patch file and add it
-# to the patches list below (same pattern as LLVM patches above).
-http_archive(
-    name = "nixl_upstream",
-    build_file = "//bazel/public-patches:nixl_upstream.BUILD",
-    patch_args = ["-p1"],
-    patches = [],
-    sha256 = "c55b244c087aba26f4b5ca92a11a848960618c9ec0646ce620a03ed1b3a02600",
-    strip_prefix = "nixl-1.1.0",
-    url = "https://github.com/ai-dynamo/nixl/archive/refs/tags/v1.1.0.tar.gz",
-)
-# END_NIXL_GENERATED
-
-http_archive(
-    name = "ucx_prebuilt",
-    build_file = "//bazel/public-patches:ucx_prebuilt.BUILD",
-    sha256 = "5e3488de55c83f8a6440c597063117721319fa8433c0d35a66c1a14702f7d46c",
-    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/ucx_prebuilt/501d8fd1611247ac46efb1a56fca3b16b9feae2f/5e3488de55c83f8a6440c597063117721319fa8433c0d35a66c1a14702f7d46c/ucx-prebuilt-linux-x86-64.tar.gz",
-)
-
-http_archive(
-    name = "efa_libfabric_prebuilt",
-    build_file = "//bazel/public-patches:efa_libfabric_prebuilt.BUILD",
-    sha256 = "bacb29273e6117e61b2843864cd74fc31c662252ec55349ba623705a043cfd99",
-    strip_prefix = "efa-libfabric-prebuilt",
-    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/efa-libfabric-prebuilt/2.4.0amzn5.0/bacb29273e6117e61b2843864cd74fc31c662252ec55349ba623705a043cfd99/efa-libfabric-prebuilt-cpu.tar.xz",
-)
-
-http_archive(
-    name = "efa_libfabric_prebuilt_cuda",
-    build_file = "//bazel/public-patches:efa_libfabric_prebuilt.BUILD",
-    sha256 = "60303b4c40430de5dfc0dc1be45d022695fe421b44bc57d44a1085410620ea82",
-    strip_prefix = "efa-libfabric-prebuilt",
-    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/efa-libfabric-prebuilt/2.4.0amzn5.0/60303b4c40430de5dfc0dc1be45d022695fe421b44bc57d44a1085410620ea82/efa-libfabric-prebuilt-cuda.tar.xz",
-)
 
 RUFF_VERSION = "0.14.0"
 
