@@ -30,6 +30,8 @@ from .kernels import (
     mxfp4_dequant,
     nvfp4_dequant,
     nvfp4_gemv,
+    store_k_cache_ragged,
+    store_v_cache_ragged,
     quantize_dynamic_block_scaled,
     quantize_dynamic_block_scaled_mxfp4,
     quantize_dynamic_scaled_float8,
@@ -524,26 +526,52 @@ def quantized_fused_qkv_matmul(
             assert weight_scale_2 is not None
 
             if not _is_sm10x_gpu():
-                # Pre-Blackwell fallback: no FP4 tensor cores, so dequantize
-                # the (constant) QKV weight to bf16 and use the unquantized
-                # fused QKV ragged matmul.
-                wqkv_bf16 = _dequant_weight_nvfp4(
-                    wqkv,
-                    weight_scale,
-                    weight_scale_2,
-                    quant_config.scales_pre_interleaved,
+                # Pre-Blackwell fallback: fused dequant-GEMV for the QKV
+                # projection (FP4 decoded in registers, no BF16 weight is
+                # materialized), then split and store K/V into the paged
+                # cache explicitly — fused_qkv_ragged_matmul owns that write
+                # on the unquantized path.
+                if quant_config.scales_pre_interleaved:
+                    raise ValueError(
+                        "NVFP4 checkpoints with pre-interleaved (TCGEN 5D)"
+                        " scales are not supported on pre-Blackwell GPUs"
+                    )
+                scales_f32 = weight_scale.to(wqkv.device).cast(
+                    DType.float32
+                ) * weight_scale_2.to(wqkv.device)
+                qkv = nvfp4_gemv(x.cast(DType.bfloat16), wqkv, scales_f32)
+                if bias is not None:
+                    qkv = qkv + bias.cast(qkv.dtype)
+
+                head_dim = kv_params.head_dim
+                kv_dim = kv_params.n_kv_heads_per_device * head_dim
+                total_dim = int(wqkv.shape[0])
+                q_dim = (
+                    _output_dim
+                    if _output_dim is not None
+                    else n_heads * head_dim
                 )
-                return fused_qkv_ragged_matmul(
-                    kv_params,
-                    input=x,
-                    input_row_offsets=input_row_offsets,
-                    wqkv=wqkv_bf16,
-                    kv_collection=kv_collection,
-                    layer_idx=layer_idx,
-                    n_heads=n_heads,
-                    bias=bias,
-                    _output_dim=_output_dim,
+                q_out = qkv[:, :q_dim]
+                k_out = ops.reshape(
+                    qkv[:, q_dim : q_dim + kv_dim],
+                    [-1, kv_params.n_kv_heads_per_device, head_dim],
                 )
+                if total_dim - q_dim - kv_dim >= kv_dim:
+                    v_out = ops.reshape(
+                        qkv[:, q_dim + kv_dim : q_dim + 2 * kv_dim],
+                        [-1, kv_params.n_kv_heads_per_device, head_dim],
+                    )
+                else:
+                    # K-equals-V layers (e.g. Gemma 4 full-attention) pack
+                    # only Q and K rows in wqkv.
+                    v_out = k_out
+                store_k_cache_ragged(
+                    kv_collection, k_out, input_row_offsets, layer_idx
+                )
+                store_v_cache_ragged(
+                    kv_collection, v_out, input_row_offsets, layer_idx
+                )
+                return q_out
 
             x, x_scales = quantize_dynamic_block_scaled(
                 x,
