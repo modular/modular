@@ -52,6 +52,7 @@ from layout import (
     RuntimeLayout,
     TileTensor,
     UNKNOWN_VALUE,
+    lt_to_tt,
     row_major,
 )
 from nn.attention.gpu.mha import mha_gpu_naive
@@ -243,7 +244,7 @@ def test[
     ctx.enqueue_copy(k_ref_device_ptr, k_bf16_ptr)
 
     comptime if mla_mask_type == MLAMaskType.CAUSAL:
-        var k_operand = LayoutTensorMHAOperand(k_ref_device)
+        var k_operand = LayoutTensorMHAOperand(lt_to_tt(k_ref_device))
         var null_valid_length = LayoutTensor[
             DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
         ](

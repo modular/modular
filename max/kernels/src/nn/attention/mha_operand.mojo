@@ -37,7 +37,7 @@ from layout.tma_async import (
     create_tensor_tile,
     create_tma_tile_gather4,
 )
-from layout.tile_tensor import LTToTTLayout, TileTensor, lt_to_tt
+from layout.tile_tensor import TileTensor
 from layout.tile_layout import row_major
 from layout.coord import Idx, Coord
 from std.math import ceildiv
@@ -888,34 +888,68 @@ struct KVCacheScalesMHAOperand[
         ].unsafe_dangling()
 
 
+@always_inline
+def _null_scale_tile_tensor[
+    scale_dtype: DType,
+    scale_layout: TensorLayout,
+]() -> TileTensor[scale_dtype, scale_layout, ImmutAnyOrigin]:
+    """Builds a null (dangling) scale `TileTensor` for the no-scale path.
+
+    `scale_layout` is trait-typed, so re-materialize the concrete `Layout` to
+    construct the value, then implicitly convert to the trait-typed slot. Used
+    as the default `scale_buffer` argument so `scale_origin` binds to
+    `ImmutAnyOrigin` (matching the legacy default-arg behavior).
+    """
+    comptime NullScaleLayout = MixedLayout[
+        shape_types=scale_layout._shape_types,
+        stride_types=scale_layout._stride_types,
+    ]
+    return rebind[TileTensor[scale_dtype, scale_layout, ImmutAnyOrigin]](
+        TileTensor[scale_dtype, NullScaleLayout, ImmutAnyOrigin](
+            ptr=UnsafePointer[
+                Scalar[scale_dtype], ImmutAnyOrigin
+            ].unsafe_dangling(),
+            layout=NullScaleLayout(),
+        )
+    )
+
+
 struct LayoutTensorMHAOperand[
     origin: Origin[mut=False],
     scale_origin: Origin[mut=False],
     //,
     dtype_: DType,
-    layout: Layout,
+    buffer_layout: TensorLayout,
     scale_dtype_: DType = DType.float32,
-    scale_layout: Layout = Layout(),
+    scale_buffer_layout: TensorLayout = MixedLayout[
+        shape_types=Coord[].element_types,
+        stride_types=Coord[].element_types,
+    ],
 ](MHAOperand, TrivialRegisterPassable):
     """An implementation for contiguous tensor arguments to MHA kernels."""
 
     comptime dtype = Self.dtype_
     comptime scale_dtype = Self.scale_dtype_
     comptime page_size = 0
-    comptime layout_rank = Self.layout.rank()
-    comptime scale_rank = Self.scale_layout.rank()
-    comptime layout_dim: Int = Self.layout.shape[Self.layout_rank - 1].value()
-    comptime scale_dim: Int = Self.scale_layout.shape[
+    comptime layout_rank = Self.buffer_layout.rank
+    comptime scale_rank = Self.scale_buffer_layout.rank
+    comptime layout_dim: Int = Self.buffer_layout._shape_types[
+        Self.layout_rank - 1
+    ].static_value
+    # `scale_dim` is only meaningful (and only read) when quantization is
+    # enabled. For the no-scale path (`scale_rank == 0`) fall back to 1 so the
+    # `ceildiv` below stays well-formed without indexing an empty shape list.
+    comptime scale_dim: Int = Self.scale_buffer_layout._shape_types[
         Self.scale_rank - 1
-    ].value()
+    ].static_value if Self.scale_rank != 0 else 1
     comptime quantization_granularity: Int = ceildiv(
         Self.layout_dim, Self.scale_dim
     )
-    comptime quantization_enabled: Bool = Self.scale_layout.rank() != 0
+    comptime quantization_enabled: Bool = Self.scale_buffer_layout.rank != 0
 
-    var buffer: TileTensor[Self.dtype, LTToTTLayout[Self.layout], Self.origin]
+    var buffer: TileTensor[Self.dtype, Self.buffer_layout, Self.origin]
     var scale_buffer: TileTensor[
-        Self.scale_dtype, LTToTTLayout[Self.scale_layout], Self.scale_origin
+        Self.scale_dtype, Self.scale_buffer_layout, Self.scale_origin
     ]
     comptime device_type: AnyType = Self
 
@@ -930,15 +964,15 @@ struct LayoutTensorMHAOperand[
 
     def __init__(
         out self,
-        buffer: LayoutTensor[Self.dtype, Self.layout, Self.origin],
-        scale_buffer: LayoutTensor[
-            Self.scale_dtype, Self.scale_layout, Self.scale_origin
-        ] = LayoutTensor[Self.scale_dtype, Self.scale_layout, ImmutAnyOrigin](
-            None
-        ),
+        buffer: TileTensor[Self.dtype, Self.buffer_layout, Self.origin],
+        scale_buffer: TileTensor[
+            Self.scale_dtype, Self.scale_buffer_layout, Self.scale_origin
+        ] = _null_scale_tile_tensor[
+            Self.scale_dtype, Self.scale_buffer_layout
+        ](),
     ):
-        self.buffer = lt_to_tt(buffer)
-        self.scale_buffer = lt_to_tt(scale_buffer)
+        self.buffer = buffer
+        self.scale_buffer = scale_buffer
 
     @always_inline
     def block_paged_ptr[

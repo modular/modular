@@ -232,7 +232,9 @@ def test[
         )
         ctx.enqueue_copy(output_ref_device_ptr, output_ptr)
 
-        var k_operand = LayoutTensorMHAOperand(k_device.to_layout_tensor())
+        var k_operand = LayoutTensorMHAOperand(
+            k_device.as_immut().as_unsafe_any_origin()
+        )
         var null_valid_length = LayoutTensor[
             DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
         ](
@@ -593,8 +595,12 @@ def test_prefill[
         RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(Index(0)),
     )
 
-    var k_ref_operand = LayoutTensorMHAOperand(k_ref_device.to_layout_tensor())
-    var v_ref_operand = LayoutTensorMHAOperand(v_ref_device.to_layout_tensor())
+    var k_ref_operand = LayoutTensorMHAOperand(
+        k_ref_device.as_immut().as_unsafe_any_origin()
+    )
+    var v_ref_operand = LayoutTensorMHAOperand(
+        v_ref_device.as_immut().as_unsafe_any_origin()
+    )
 
     # create reference output
     mha_gpu_naive[_is_cache_length_accurate=True](

@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.gpu.host import DeviceContext, FuncAttribute
-from layout import Layout, LTToTTLayout
+from layout import ComptimeInt, RowMajorLayout
 from linalg.matmul.gpu._multistage_gemm_gpu import multistage_gemm_kernel
 from linalg.utils_gpu import MatmulKernels
 
@@ -29,20 +29,25 @@ def multistage_gemm_simple[
     comptime kernels = MatmulKernels[a_type, b_type, c_type, transpose_b]()
     comptime config = kernels.ampere_128x128_4
 
-    comptime a_layout = Layout.row_major(M, K)
-    comptime b_layout = Layout.row_major(
-        N, K
-    ) if transpose_b else Layout.row_major(K, N)
-    comptime c_layout = Layout.row_major(M, N)
+    comptime a_tt_layout = RowMajorLayout[ComptimeInt[M], ComptimeInt[K]]
+    # Select the b dims first (an `Int` ternary unifies cleanly); a ternary
+    # over the two `RowMajorLayout[...]` types directly does not, since the
+    # transposed/non-transposed layouts are distinct parameterized types.
+    comptime b_dim0 = N if transpose_b else K
+    comptime b_dim1 = K if transpose_b else N
+    comptime b_tt_layout = RowMajorLayout[
+        ComptimeInt[b_dim0], ComptimeInt[b_dim1]
+    ]
+    comptime c_tt_layout = RowMajorLayout[ComptimeInt[M], ComptimeInt[N]]
 
     # Dispatch w/o split K
     comptime gemm_kernel_type = multistage_gemm_kernel[
         c_type,
-        LTToTTLayout[c_layout],
+        c_tt_layout,
         a_type,
-        LTToTTLayout[a_layout],
+        a_tt_layout,
         b_type,
-        LTToTTLayout[b_layout],
+        b_tt_layout,
         transpose_b,
         c_linear_idx_type=DType.int64,
         a_linear_idx_type=DType.int64,

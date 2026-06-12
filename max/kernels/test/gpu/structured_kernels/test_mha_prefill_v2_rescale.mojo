@@ -155,24 +155,8 @@ def test_v2_rescale[depth: Int](ctx: DeviceContext) raises:
             )
         ),
     )
-    var k_lt = k_tt.to_layout_tensor()
-    var k_op = LayoutTensorMHAOperand(
-        LayoutTensor[k_lt.dtype, k_lt.layout, k_lt.origin](
-            k_lt.ptr,
-            RuntimeLayout[k_lt.layout].row_major(
-                k_lt.runtime_layout.shape.value.canonicalize()
-            ),
-        )
-    )
-    var v_lt = v_tt.to_layout_tensor()
-    var v_op = LayoutTensorMHAOperand(
-        LayoutTensor[v_lt.dtype, v_lt.layout, v_lt.origin](
-            v_lt.ptr,
-            RuntimeLayout[v_lt.layout].row_major(
-                v_lt.runtime_layout.shape.value.canonicalize()
-            ),
-        )
-    )
+    var k_op = LayoutTensorMHAOperand(k_tt)
+    var v_op = LayoutTensorMHAOperand(v_tt)
 
     mha_prefill_v2[CONFIG](
         q_tt,

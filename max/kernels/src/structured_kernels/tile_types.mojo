@@ -36,9 +36,7 @@ from layout import (
     Coord,
     CoordLike,
     Idx,
-    LTToTTLayout,
     LayoutTensor,
-    Layout as LegacyLayout,
     TensorLayout,
     TileTensor,
     row_major,
@@ -533,13 +531,13 @@ def create_tma_tile[
 
 comptime GMEMTile[
     dtype: DType,
-    lt_layout: LegacyLayout,
+    tt_layout: TensorLayout,
 ] = TileTensor[
     dtype,
-    LTToTTLayout[lt_layout],
+    tt_layout,
     MutAnyOrigin,
 ]
-"""Global memory TileTensor derived from a legacy Layout.
+"""Global memory TileTensor for global memory kernel parameters.
 
 Used for kernel parameter types, replacing LayoutTensor parameters.
 """

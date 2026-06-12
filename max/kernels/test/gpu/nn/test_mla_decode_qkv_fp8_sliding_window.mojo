@@ -280,10 +280,13 @@ def test[
     )
 
     var k_bf16_operand = LayoutTensorMHAOperand(
-        LayoutTensor[output_type, k_layout](
+        TileTensor(
             k_bf16_device.ptr,
-            RuntimeLayout[k_layout].row_major(
-                k_bf16_device.runtime_layout.shape.value.canonicalize()
+            row_major(
+                Int(batch_size),
+                Int(num_keys),
+                Idx[kv_num_heads],
+                Idx[depth],
             ),
         )
     )

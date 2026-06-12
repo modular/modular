@@ -1659,19 +1659,29 @@ def flash_attention[
 
     var is_token_generation = seq_len == 1 and num_keys > seq_len
 
+    # Build the row-major K/V TileTensors directly (no throwaway LayoutTensor
+    # round-trip). BSHD layout: batch/seq are runtime, head/depth static, so
+    # mirror `k`'s static pattern with `Idx` for the known dims. The operand
+    # infers `buffer_layout` from the passed TileTensor.
     var k_operand = LayoutTensorMHAOperand(
-        LayoutTensor[k.dtype, Layout.row_major(k.layout.shape), k.origin](
+        TileTensor(
             k.ptr,
-            RuntimeLayout[Layout.row_major(k.layout.shape)].row_major(
-                k.runtime_layout.shape.value.canonicalize()
+            row_major(
+                Int(k.dim[0]()),
+                Int(k.dim[1]()),
+                Idx[kv_num_heads],
+                Idx[depth],
             ),
         )
     )
     var v_operand = LayoutTensorMHAOperand(
-        LayoutTensor[v.dtype, Layout.row_major(v.layout.shape), v.origin](
+        TileTensor(
             v.ptr,
-            RuntimeLayout[Layout.row_major(v.layout.shape)].row_major(
-                v.runtime_layout.shape.value.canonicalize()
+            row_major(
+                Int(v.dim[0]()),
+                Int(v.dim[1]()),
+                Idx[kv_num_heads],
+                Idx[depth],
             ),
         )
     )
@@ -5605,20 +5615,30 @@ def mha_gpu_naive[
         LayoutTensor[q_type, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
     ] = None,
 ) raises:
+    # The naive reference accepts K/V with either a fully static or a fully
+    # dynamic layout (e.g. `Layout.row_major[4]`), so reinterpret each as a
+    # row-major view over its own shape -- this preserves the static/dynamic
+    # pattern exactly. A static `Idx[k.layout.shape[i]]` would be UNKNOWN_VALUE
+    # for a dynamic dim (corrupting strides), while all-runtime dims regress the
+    # static-dim path.
     var k_operand = LayoutTensorMHAOperand(
-        LayoutTensor[k.dtype, Layout.row_major(k.layout.shape), k.origin](
-            k.ptr,
-            RuntimeLayout[Layout.row_major(k.layout.shape)].row_major(
-                k.runtime_layout.shape.value.canonicalize()
-            ),
+        lt_to_tt(
+            LayoutTensor[k.dtype, Layout.row_major(k.layout.shape), k.origin](
+                k.ptr,
+                RuntimeLayout[Layout.row_major(k.layout.shape)].row_major(
+                    k.runtime_layout.shape.value.canonicalize()
+                ),
+            )
         )
     )
     var v_operand = LayoutTensorMHAOperand(
-        LayoutTensor[v.dtype, Layout.row_major(v.layout.shape), v.origin](
-            v.ptr,
-            RuntimeLayout[Layout.row_major(v.layout.shape)].row_major(
-                v.runtime_layout.shape.value.canonicalize()
-            ),
+        lt_to_tt(
+            LayoutTensor[v.dtype, Layout.row_major(v.layout.shape), v.origin](
+                v.ptr,
+                RuntimeLayout[Layout.row_major(v.layout.shape)].row_major(
+                    v.runtime_layout.shape.value.canonicalize()
+                ),
+            )
         )
     )
     var null_valid_length = LayoutTensor[

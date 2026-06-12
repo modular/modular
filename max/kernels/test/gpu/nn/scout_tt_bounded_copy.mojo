@@ -19,15 +19,13 @@ rows [valid, BM) == 0 (the partial-tile zero-fill the LT path produces).
 """
 
 from layout import TensorLayout, TileTensor
-from layout.tile_tensor import LTToTTLayout, stack_allocation as tt_stack_alloc
+from layout.tile_tensor import stack_allocation as tt_stack_alloc
 from layout.tile_layout import (
     Layout as InternalLayout,
     row_major as tt_row_major,
 )
-from layout import Layout as LegacyLayout
-from layout.layout import UNKNOWN_VALUE, IntTuple
 from layout.tile_io import copy_dram_to_sram_async
-from layout.coord import Coord, Idx
+from layout.coord import ComptimeInt, Coord, Idx
 from std.gpu import block_idx, thread_idx
 from std.gpu.host import DeviceContext
 from std.gpu.sync import barrier
@@ -98,10 +96,14 @@ comptime num_threads = 32
 # NON-contiguous row stride (num_heads*depth) — matches mha's q_gmem_layout.
 # The masked copy never reads past the explicit bound, so static rows >= valid
 # are safe even though those GMEM rows are out of the valid sequence range.
-comptime q_legacy = LegacyLayout(
-    IntTuple(BM, depth), IntTuple(num_heads * depth, 1)
-)
-comptime QTTLayout = LTToTTLayout[q_legacy]
+# Direct TileTensor layout: static rows/depth with a non-contiguous row
+# stride (num_heads*depth) — matches mha's q_gmem_layout.
+comptime QTTLayout = InternalLayout[
+    shape_types=Coord[ComptimeInt[BM], ComptimeInt[depth]].element_types,
+    stride_types=Coord[
+        ComptimeInt[num_heads * depth], ComptimeInt[1]
+    ].element_types,
+]
 
 # Thread layout matches the mha async_copy_q_layout shape:
 #   rows = min(num_threads, BM*BK//simd) * simd // BK ; cols = BK//simd

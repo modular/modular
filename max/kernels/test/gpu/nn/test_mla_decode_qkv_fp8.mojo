@@ -354,10 +354,13 @@ def test[
 
     # Create BF16 K operand for reference
     var k_bf16_operand = LayoutTensorMHAOperand(
-        LayoutTensor[output_type, k_layout, MutAnyOrigin](
+        TileTensor(
             k_bf16_device.ptr.as_unsafe_any_origin(),
-            RuntimeLayout[k_layout].row_major(
-                k_bf16_device.runtime_layout.shape.value.canonicalize()
+            row_major(
+                Int(batch_size),
+                Int(num_keys),
+                Idx[kv_num_heads],
+                Idx[depth],
             ),
         )
     )
@@ -832,10 +835,13 @@ def test_sw[
     )
 
     var k_bf16_operand = LayoutTensorMHAOperand(
-        LayoutTensor[output_type, k_layout, MutAnyOrigin](
+        TileTensor(
             k_bf16_device.ptr.as_unsafe_any_origin(),
-            RuntimeLayout[k_layout].row_major(
-                k_bf16_device.runtime_layout.shape.value.canonicalize()
+            row_major(
+                Int(batch_size),
+                Int(num_keys),
+                Idx[kv_num_heads],
+                Idx[depth],
             ),
         )
     )
