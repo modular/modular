@@ -506,6 +506,17 @@
             },
             {
               "type": "category",
+              "label": "logging_utils",
+              "link": {
+                "type": "doc",
+                "id": "max/api/python/pipelines.logging_utils"
+              },
+              "items": [
+                "__AUTOGEN:max.pipelines.logging_utils__"
+              ]
+            },
+            {
+              "type": "category",
               "label": "lora",
               "link": {
                 "type": "doc",
