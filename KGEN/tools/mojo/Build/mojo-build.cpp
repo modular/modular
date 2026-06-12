@@ -411,6 +411,7 @@ static std::optional<int> parseArgs(State &state, llvm::opt::InputArgList &args,
       .fixit = options::OPT_fixit,
       .exportFixit = options::OPT_export_fixit,
       .warnOnUnstableAPIs = options::OPT_warn_on_unstable_apis,
+      .lldPath = options::OPT_lld_path,
   };
 
   // Configure parsing for `mojo build` - parse all arguments normally.

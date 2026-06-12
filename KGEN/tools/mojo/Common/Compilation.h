@@ -92,6 +92,9 @@ struct CommonOptionIDs {
 
   // Stability options
   llvm::opt::OptSpecifier warnOnUnstableAPIs;
+
+  // Linker options
+  llvm::opt::OptSpecifier lldPath;
 };
 
 /// Configuration flags for common argument parsing behavior.

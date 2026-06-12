@@ -104,6 +104,12 @@ public:
   /// Returns the path to lld that should be used for linking shared libraries.
   StringRef getLLDPath();
 
+  /// Sets a process-wide override for the lld path used when linking,
+  /// equivalent to setting the `MODULAR_MOJO_MAX_LLD_PATH` environment
+  /// variable. The override takes precedence over the environment variable and
+  /// the `mojo-max.lld_path` configuration value.
+  static void setLLDPathOverride(StringRef path);
+
   /// Appends the system libraries to link with Mojo when building a standalone
   /// binary.
   void appendSystemLibraryLinkArgs(SmallVectorImpl<StringRef> &libs);
