@@ -253,27 +253,27 @@ struct String(
     # This is the number of bytes that can be stored inline in the string value.
     # 'String' is 3 words in size and we use the top byte of the capacity field
     # to store flags.
-    comptime INLINE_CAPACITY = bit_width_of[DType.int]() // 8 * 3 - 1
+    comptime INLINE_CAPACITY = Int.BITWIDTH // 8 * 3 - 1
     """Maximum bytes for inline (SSO) string storage."""
 
     # When FLAG_HAS_NUL_TERMINATOR is set, the byte past the end of the string
     # is known to be an accessible 'nul' terminator.
-    comptime FLAG_HAS_NUL_TERMINATOR = 1 << (bit_width_of[DType.int]() - 3)
+    comptime FLAG_HAS_NUL_TERMINATOR = 1 << (Int.BITWIDTH - 3)
     """Flag indicating string has accessible nul terminator."""
 
     # When FLAG_IS_REF_COUNTED is set, the string is pointing to a mutable buffer
     # that may have other references to it.
-    comptime FLAG_IS_REF_COUNTED = 1 << (bit_width_of[DType.int]() - 2)
+    comptime FLAG_IS_REF_COUNTED = 1 << (Int.BITWIDTH - 2)
     """Flag indicating string uses reference-counted storage."""
 
     # When FLAG_IS_INLINE is set, the string is inline or "Short String
     # Optimized" (SSO). The first 23 bytes of the fields are treated as UTF-8
     # data
-    comptime FLAG_IS_INLINE = 1 << (bit_width_of[DType.int]() - 1)
+    comptime FLAG_IS_INLINE = 1 << (Int.BITWIDTH - 1)
     """Flag indicating string uses inline (SSO) storage."""
 
     # gives us 5 bits for the length.
-    comptime INLINE_LENGTH_START = bit_width_of[DType.int]() - 8
+    comptime INLINE_LENGTH_START = Int.BITWIDTH - 8
     """Bit position where inline length field starts."""
 
     comptime INLINE_LENGTH_MASK = 0b1_1111 << Self.INLINE_LENGTH_START
@@ -346,7 +346,7 @@ struct String(
             data: The static constant string to refer to.
         """
         self._len_or_data = Int(
-            SIMDSize(mlir_value=__mlir_op.`pop.string.size`(data.value))
+            mlir_value=__mlir_op.`pop.string.size`(data.value)
         )
         self._ptr_or_data = UnsafePointer[_, MutUntrackedOrigin](
             __mlir_op.`pop.string.address`(data.value)
@@ -677,10 +677,7 @@ struct String(
 
     @always_inline("nodebug")
     def _has_nul_terminator(self) -> Bool:
-        return Bool(
-            UInt64(self._capacity_or_data)
-            & UInt64(Self.FLAG_HAS_NUL_TERMINATOR)
-        )
+        return Bool(self._capacity_or_data & Self.FLAG_HAS_NUL_TERMINATOR)
 
     @always_inline("nodebug")
     def _clear_nul_terminator(mut self):
@@ -688,9 +685,7 @@ struct String(
 
     @always_inline("nodebug")
     def _is_inline(self) -> Bool:
-        return Bool(
-            UInt64(self._capacity_or_data) & UInt64(Self.FLAG_IS_INLINE)
-        )
+        return Bool(self._capacity_or_data & Self.FLAG_IS_INLINE)
 
     @always_inline("nodebug")
     def _set_ref_counted(mut self):
@@ -698,9 +693,7 @@ struct String(
 
     @always_inline("nodebug")
     def _is_ref_counted(self) -> Bool:
-        return Bool(
-            UInt64(self._capacity_or_data) & UInt64(Self.FLAG_IS_REF_COUNTED)
-        )
+        return Bool(self._capacity_or_data & Self.FLAG_IS_REF_COUNTED)
 
     # ===------------------------------------------------------------------=== #
     # Pointer Field Helpers
@@ -719,7 +712,7 @@ struct String(
     @always_inline("nodebug")
     def _is_unique(mut self) -> Bool:
         """Return true if the refcount is 1."""
-        if UInt64(self._capacity_or_data) & UInt64(Self.FLAG_IS_REF_COUNTED):
+        if self._capacity_or_data & Self.FLAG_IS_REF_COUNTED:
             return self._refcount().load[ordering=Ordering.RELAXED]() == 1
         else:
             return False
@@ -1459,10 +1452,9 @@ struct String(
             The length of this string in bytes.
         """
         if self._is_inline():
-            return Int(
-                UInt64(self._capacity_or_data & Self.INLINE_LENGTH_MASK)
-                >> UInt64(Self.INLINE_LENGTH_START)
-            )
+            return (
+                self._capacity_or_data & Self.INLINE_LENGTH_MASK
+            ) >> Self.INLINE_LENGTH_START
         else:
             return self._len_or_data
 

@@ -490,7 +490,7 @@ def test_write_repr_to() raises:
     check_write_to(
         UnsafeNullablePointer[Int, MutAnyOrigin](),
         expected=(
-            "UnsafeNullablePointer[mut=True, SIMD[DType.int, 1],"
+            "UnsafeNullablePointer[mut=True, Int,"
             " address_space=AddressSpace.GENERIC](0x0)"
         ),
         is_repr=True,
@@ -500,7 +500,7 @@ def test_write_repr_to() raises:
     check_write_to(
         UnsafeNullablePointer(to=x),
         contains=(
-            "UnsafeNullablePointer[mut=True, SIMD[DType.int, 1],"
+            "UnsafeNullablePointer[mut=True, Int,"
             " address_space=AddressSpace.GENERIC](0x"
         ),
         is_repr=True,
@@ -508,7 +508,7 @@ def test_write_repr_to() raises:
     check_write_to(
         UnsafeNullablePointer(to=x).as_immutable(),
         contains=(
-            "UnsafeNullablePointer[mut=False, SIMD[DType.int, 1],"
+            "UnsafeNullablePointer[mut=False, Int,"
             " address_space=AddressSpace.GENERIC](0x"
         ),
         is_repr=True,
@@ -516,7 +516,7 @@ def test_write_repr_to() raises:
     check_write_to(
         UnsafeNullablePointer(to=x).address_space_cast[AddressSpace.SHARED](),
         contains=(
-            "UnsafeNullablePointer[mut=True, SIMD[DType.int, 1],"
+            "UnsafeNullablePointer[mut=True, Int,"
             " address_space=AddressSpace.SHARED](0x"
         ),
         is_repr=True,

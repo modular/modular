@@ -90,7 +90,7 @@ struct TypeList[
     comptime _mlir_type = _MLIR.KGENParamListType[Self.Trait]
     """The low-level MLIR type of the type list."""
 
-    comptime size = Int(
+    comptime size: Int = Int(
         mlir_value=__mlir_attr[
             `#kgen.param_list.size<:`,
             Self._mlir_type,
@@ -101,7 +101,7 @@ struct TypeList[
     )
     """The number of types in the list."""
 
-    comptime __getitem_param__[idx: SIMDSize] = __mlir_attr[
+    comptime __getitem_param__[idx: Int] = __mlir_attr[
         `#kgen.param_list.get<:`,
         Self._mlir_type,
         ` `,
@@ -268,7 +268,7 @@ struct TypeList[
         `, "From": `,
         _MLIR.KGENParamListType[Self.Trait],
         `, "Idx":`,
-        Int,
+        SIMDSize,
         `>`,
         +Prev,
         `>`,
@@ -781,13 +781,13 @@ struct ParameterList[type: AnyType, //, values: _MLIR.KGENParamListType[type]](
         """
         return self.get_span()[idx]
 
-    comptime __getitem_param__[idx: SIMDSize]: Self.type = __mlir_attr[
+    comptime __getitem_param__[idx: Int]: Self.type = __mlir_attr[
         `#kgen.param_list.get<:`,
         Self._mlir_type,
         ` `,
         +Self.values,
         `, `,
-        idx._mlir_value,
+        idx._int_mlir_index(),
         `> : `,
         +Self.type,
     ]
@@ -911,7 +911,7 @@ struct ParameterList[type: AnyType, //, values: _MLIR.KGENParamListType[type]](
         PrevV: FromAndTo,
         VA: Self._mlir_type,
         idx: __mlir_type.index,
-    ] = ToWrap[PrevV, Self.__getitem_param__[SIMDSize(mlir_value=idx)]]
+    ] = ToWrap[PrevV, Self.__getitem_param__[Int(mlir_value=idx)]]
     """Takes an index because kgen.variadic.reduce passes it but we don't want it"""
 
     # TODO: This isn't returning a ParamList, so it should really be a 'def' so

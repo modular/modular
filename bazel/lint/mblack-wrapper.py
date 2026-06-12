@@ -32,10 +32,6 @@ def _config_file_changed(changed_files: set[str]) -> bool:
 
 
 def main() -> None:
-    config = Path("pyproject.toml")
-    if not config.is_file():
-        sys.exit(f"mblack: config not found at {config.resolve()}")
-
     if is_fast():
         all_files = get_changed_files()
 
@@ -50,7 +46,7 @@ def main() -> None:
     else:
         files = ["."]
 
-    args = ["--quiet", "--config", str(config)]
+    args = ["--quiet"]
     if is_check():
         args.extend(["--check", "--diff"])
     args.extend(files)

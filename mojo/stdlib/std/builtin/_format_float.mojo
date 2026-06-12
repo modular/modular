@@ -539,14 +539,10 @@ def _rotr[
 ](n: Scalar[CarrierDType], r: Scalar[CarrierDType]) -> Scalar[CarrierDType]:
     comptime if CarrierDType == DType.uint32:
         var r_masked = r & 31
-        return (n >> r_masked) | (
-            n << ((Scalar[CarrierDType](32) - r_masked) & 31)
-        )
+        return (n >> r_masked) | (n << ((32 - r_masked) & 31))
     else:
         var r_masked = r & 63
-        return (n >> r_masked) | (
-            n << ((Scalar[CarrierDType](64) - r_masked) & 63)
-        )
+        return (n >> r_masked) | (n << ((64 - r_masked) & 63))
 
 
 def _floor_log2(n: UInt64) -> Int:

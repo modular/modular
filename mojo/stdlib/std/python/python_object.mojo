@@ -236,6 +236,16 @@ struct PythonObject(
         self = Self(from_owned=cpy.PyBool_FromLong(c_long(Int(value))))
 
     @implicit
+    def __init__(out self, value: Int):
+        """Initialize the object with an integer value.
+
+        Args:
+            value: The integer value.
+        """
+        ref cpy = Python().cpython()
+        self = Self(from_owned=cpy.PyLong_FromSsize_t(c_ssize_t(value)))
+
+    @implicit
     def __init__[dtype: DType](out self, value: Scalar[dtype]):
         """Initialize the object with a generic scalar value. If the scalar
         value type is bool, it is converted to a boolean. Otherwise, it is
@@ -256,7 +266,7 @@ struct PythonObject(
             var val = c_size_t(value.cast[DType.uint]())
             self = Self(from_owned=cpy.PyLong_FromSize_t(val))
         elif dtype.is_integral():
-            var val = c_ssize_t(value.cast[DType.int]())
+            var val = c_ssize_t(value.cast[DType.int]()._mlir_value)
             self = Self(from_owned=cpy.PyLong_FromSsize_t(val))
         else:
             var val = c_double(value.cast[DType.float64]())

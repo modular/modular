@@ -373,14 +373,12 @@ def test_variadic_list_write_repr_to() raises:
     def check_three(*args: Int) raises:
         var s = String()
         args.write_repr_to(s)
-        assert_equal(
-            s, "VariadicList[SIMD[DType.int, 1]]((Int(1), Int(2), Int(3)))"
-        )
+        assert_equal(s, "VariadicList[Int]((Int(1), Int(2), Int(3)))")
 
     def check_single(*args: Int) raises:
         var s = String()
         args.write_repr_to(s)
-        assert_equal(s, "VariadicList[SIMD[DType.int, 1]]((Int(42)))")
+        assert_equal(s, "VariadicList[Int]((Int(42)))")
 
     check_three(1, 2, 3)
     check_single(42)

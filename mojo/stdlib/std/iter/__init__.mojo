@@ -208,7 +208,7 @@ trait Iterator(ImplicitlyDeletable, Movable):
         ```
         """
         comptime assert conforms_to(Self.Element, ImplicitlyDeletable)
-        debug_assert[assert_mode="safe"](n.ge(0), "nth: n must be non-negative")
+        debug_assert[assert_mode="safe"](n >= 0, "nth: n must be non-negative")
         try:
             for _ in range(n):
                 # `Self.Element` is only declared `Movable` on the trait, so a

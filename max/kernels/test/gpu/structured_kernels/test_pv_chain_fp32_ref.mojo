@@ -447,7 +447,7 @@ def test_pv_chain[T: DType](ctx: DeviceContext) raises -> Bool:
                             mismatches += 1
 
     var cos_sim: Float32 = 0.0
-    var denom = (sumsq_got * sumsq_ref) ** Float32(0.5)
+    var denom = (sumsq_got * sumsq_ref) ** 0.5
     if denom > Float32(0.0):
         cos_sim = dot_got_ref / denom
 

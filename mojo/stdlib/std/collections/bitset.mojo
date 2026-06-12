@@ -123,10 +123,10 @@ struct BitSet[size: Int](Boolable, Copyable, Defaultable, Sized, Writable):
             init: A SIMD vector of booleans to initialize the bitset with.
         """
         comptime assert (
-            max(Int(init.size), _WORD_BITS) // _WORD_BITS == Self._words_size
+            max(init.size, _WORD_BITS) // _WORD_BITS == Self._words_size
         )
         self._words = type_of(self._words)(uninitialized=True)
-        comptime step = min(Int(init.size), _WORD_BITS)
+        comptime step = min(init.size, _WORD_BITS)
 
         comptime for i in range(Self._words_size):
             self._words.unsafe_get(i) = pack_bits(
@@ -341,11 +341,9 @@ struct BitSet[size: Int](Boolable, Copyable, Defaultable, Sized, Writable):
         else:
             # For small bitsets, use a simple scalar implementation
             comptime for i in range(Self._words_size):
-                res._words.unsafe_get(i) = Int64(
-                    func[simd_width=1](
-                        left._words.unsafe_get(i),
-                        right._words.unsafe_get(i),
-                    )
+                res._words.unsafe_get(i) = func(
+                    left._words.unsafe_get(i),
+                    right._words.unsafe_get(i),
                 )
 
         return res^

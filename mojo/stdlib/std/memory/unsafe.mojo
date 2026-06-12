@@ -20,7 +20,7 @@ from std.memory import bitcast
 """
 
 from std.sys import bit_width_of, is_amd_gpu, is_nvidia_gpu
-from std.builtin.simd_size import SIMDSize
+
 from std.builtin.dtype import _uint_type_of_width
 
 

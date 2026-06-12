@@ -73,7 +73,7 @@ def run_case[depth: Int, seq_q: Int, num_keys: Int](ctx: DeviceContext) raises:
     comptime SIZE_Q = seq_q * depth
     comptime SIZE_KV = num_keys * depth
     comptime SIZE_OUT = seq_q * depth
-    var scale = Float32(1.0) / (Float32(depth) ** Float32(0.5))
+    var scale = Float32(1.0) / (Float32(depth) ** 0.5)
 
     comptime CONFIG = MhaConfigV2(
         q_block_size=Q_BLOCK_SIZE,

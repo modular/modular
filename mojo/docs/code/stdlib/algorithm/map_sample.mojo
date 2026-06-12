@@ -21,7 +21,7 @@ def main():
     # Function applied to the value at each index
     @parameter
     def exponent_2(idx: Int):
-        list[idx] = Float32(2.0) ** list[idx]
+        list[idx] = 2.0 ** list[idx]
 
     # Apply the mapped function across the index range
     map[exponent_2](len(list))

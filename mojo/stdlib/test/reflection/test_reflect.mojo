@@ -189,7 +189,7 @@ def test_field_names_simple() raises:
 
 def test_field_types_match_get_type_name() raises:
     comptime types = reflect[SimpleStruct].field_types()
-    assert_equal(reflect[types[0]].name(), "SIMD[DType.int, 1]")
+    assert_equal(reflect[types[0]].name(), "Int")
     assert_equal(reflect[types[1]].name(), "SIMD[DType.float64, 1]")
 
 
@@ -236,7 +236,7 @@ def test_field_index_nested() raises:
 def test_field_type_by_name_simple() raises:
     comptime r = reflect[SimpleStruct]
     comptime x_type = r.field_type["x"]
-    assert_equal(x_type.name(), "SIMD[DType.int, 1]")
+    assert_equal(x_type.name(), "Int")
 
     comptime y_type = r.field_type["y"]
     assert_equal(y_type.name(), "SIMD[DType.float64, 1]")

@@ -531,14 +531,14 @@ def test_set_write_repr_to() raises:
     var s = {1, 2, 3}
     var output = String()
     s.write_repr_to(output)
-    assert_true(output.startswith("Set[SIMD[DType.int, 1], Hasher="))
+    assert_true(output.startswith("Set[Int, Hasher="))
     assert_true(output.endswith("]({Int(1), Int(2), Int(3)})"))
 
     # Test empty set
     var empty = Set[Int]()
     var empty_output = String()
     empty.write_repr_to(empty_output)
-    assert_true(empty_output.startswith("Set[SIMD[DType.int, 1], Hasher="))
+    assert_true(empty_output.startswith("Set[Int, Hasher="))
     assert_true(empty_output.endswith("]({})"), empty_output)
 
 

@@ -632,9 +632,7 @@ def test_iter() raises:
 
 def test_repr_wrap() raises:
     var l1 = LinkedList[Int](1, 2, 3)
-    assert_equal(
-        repr(l1), "LinkedList[SIMD[DType.int, 1]]([Int(1), Int(2), Int(3)])"
-    )
+    assert_equal(repr(l1), "LinkedList[Int]([Int(1), Int(2), Int(3)])")
 
 
 def test_write_to() raises:
@@ -650,18 +648,14 @@ def test_write_repr_to() raises:
     """Test write_repr_to implementation."""
     check_write_to(
         LinkedList[Int](1, 2, 3),
-        expected="LinkedList[SIMD[DType.int, 1]]([Int(1), Int(2), Int(3)])",
+        expected="LinkedList[Int]([Int(1), Int(2), Int(3)])",
         is_repr=True,
     )
     check_write_to(
-        LinkedList[Int](1),
-        expected="LinkedList[SIMD[DType.int, 1]]([Int(1)])",
-        is_repr=True,
+        LinkedList[Int](1), expected="LinkedList[Int]([Int(1)])", is_repr=True
     )
     check_write_to(
-        LinkedList[Int](),
-        expected="LinkedList[SIMD[DType.int, 1]]([])",
-        is_repr=True,
+        LinkedList[Int](), expected="LinkedList[Int]([])", is_repr=True
     )
 
 

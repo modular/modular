@@ -267,17 +267,11 @@ def test_tuple_write_to() raises:
 def test_tuple_write_repr_to() raises:
     var s = String()
     (1, 2, 3).write_repr_to(s)
-    assert_equal(
-        s,
-        (
-            "Tuple[SIMD[DType.int, 1], SIMD[DType.int, 1], SIMD[DType.int,"
-            " 1]](Int(1), Int(2), Int(3))"
-        ),
-    )
+    assert_equal(s, "Tuple[Int, Int, Int](Int(1), Int(2), Int(3))")
 
     s = String()
     (1,).write_repr_to(s)
-    assert_equal(s, "Tuple[SIMD[DType.int, 1]](Int(1),)")
+    assert_equal(s, "Tuple[Int](Int(1),)")
 
     s = String()
     ().write_repr_to(s)
@@ -286,13 +280,11 @@ def test_tuple_write_repr_to() raises:
     # write_repr_to uses write_repr_to on elements, so strings are quoted.
     s = String()
     (1, "hello").write_repr_to(s)
-    assert_equal(s, "Tuple[SIMD[DType.int, 1], String](Int(1), 'hello')")
+    assert_equal(s, "Tuple[Int, String](Int(1), 'hello')")
 
     s = String()
     (True, 42, "hi").write_repr_to(s)
-    assert_equal(
-        s, "Tuple[Bool, SIMD[DType.int, 1], String](True, Int(42), 'hi')"
-    )
+    assert_equal(s, "Tuple[Bool, Int, String](True, Int(42), 'hi')")
 
 
 def test_tuple_assert_equal() raises:

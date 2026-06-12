@@ -371,15 +371,13 @@ def test_write_repr_to() raises:
     var array: InlineArray[Int, 3] = [1, 2, 3]
     check_write_to(
         array,
-        expected="InlineArray[SIMD[DType.int, 1], 3]([Int(1), Int(2), Int(3)])",
+        expected="InlineArray[Int, 3]([Int(1), Int(2), Int(3)])",
         is_repr=True,
     )
 
     var single: InlineArray[Int, 1] = [1]
     check_write_to(
-        single,
-        expected="InlineArray[SIMD[DType.int, 1], 1]([Int(1)])",
-        is_repr=True,
+        single, expected="InlineArray[Int, 1]([Int(1)])", is_repr=True
     )
 
 

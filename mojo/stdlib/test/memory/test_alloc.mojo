@@ -58,14 +58,10 @@ def test_layout_as_byte_layout_scales_count_and_preserves_alignment() raises:
 def test_layout_write_to_and_repr() raises:
     var layout = Layout[Int](count=8, alignment=64)
     check_write_to(
-        layout,
-        expected="Layout[SIMD[DType.int, 1]](count=8, alignment=64)",
-        is_repr=False,
+        layout, expected="Layout[Int](count=8, alignment=64)", is_repr=False
     )
     check_write_to(
-        layout,
-        expected="Layout[SIMD[DType.int, 1]](count=8, alignment=64)",
-        is_repr=True,
+        layout, expected="Layout[Int](count=8, alignment=64)", is_repr=True
     )
 
 

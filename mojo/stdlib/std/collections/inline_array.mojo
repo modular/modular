@@ -643,7 +643,7 @@ struct InlineArray[ElementType: Movable, size: Int](
     ) -> ref[self] Self.ElementType:
         var ptr = __mlir_op.`pop.array.gep`(
             UnsafePointer(to=self._array).address,
-            index(idx)._int_mlir_index(),
+            index(idx)._mlir_value,
         )
         return UnsafePointer[_, origin_of(self)](ptr)[]
 

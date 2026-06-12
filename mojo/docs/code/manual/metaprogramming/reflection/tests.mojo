@@ -57,7 +57,7 @@ def test_reflect_field_types() raises:
     """Returns field types iterable with reflect."""
     comptime types = reflect[Point].field_types()
     comptime first_type_name = reflect[types[0]].name()
-    assert_equal(first_type_name, "SIMD[DType.int, 1]")
+    assert_equal(first_type_name, "Int")
 
 
 # --- base_name ---
@@ -71,7 +71,7 @@ def test_base_name_parameterized() raises:
 
 def test_base_name_simple() raises:
     """Returns simple name for non-parameterized type."""
-    assert_equal(reflect[Int].base_name(), "SIMD")
+    assert_equal(reflect[Int].base_name(), "Int")
 
 
 # --- is_struct ---

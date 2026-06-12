@@ -1691,7 +1691,7 @@ struct FusedConcatSlice:
         @always_inline
         @parameter
         def epilogue_wrapper[
-            _dtype: DType, _rank: Int, width: SIMDSize, *, alignment: Int = 1
+            _dtype: DType, _rank: Int, width: Int, *, alignment: Int = 1
         ](indices: IndexList[_rank], value: SIMD[_dtype, width]):
             var concat_indices = rebind[IndexList[rank]](indices)
 
@@ -1822,7 +1822,7 @@ struct DualFusedConcatSlice:
         @always_inline
         @parameter
         def epilogue_0[
-            _dtype: DType, _rank: Int, width: SIMDSize, *, alignment: Int = 1
+            _dtype: DType, _rank: Int, width: Int, *, alignment: Int = 1
         ](indices: IndexList[_rank], value: SIMD[_dtype, width]):
             var concat_indices = rebind[IndexList[rank]](indices)
 
@@ -1875,7 +1875,7 @@ struct DualFusedConcatSlice:
         @always_inline
         @parameter
         def epilogue_1[
-            _dtype: DType, _rank: Int, width: SIMDSize, *, alignment: Int = 1
+            _dtype: DType, _rank: Int, width: Int, *, alignment: Int = 1
         ](indices: IndexList[_rank], value: SIMD[_dtype, width]):
             var concat_indices = rebind[IndexList[rank]](indices)
 

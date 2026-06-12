@@ -604,9 +604,7 @@ def _hex_digits_to_hex_chars(
     comptime size = size_of[decimal.dtype]()
     var bytes = bitcast[DType.uint8, size](byte_swap(decimal))
     var nibbles = (bytes >> 4).interleave(bytes & 0xF)
-    return SIMD[DType.uint8, size_of[decimal.dtype]() * 2](
-        _hex_table._dynamic_shuffle(nibbles)
-    )
+    return _hex_table._dynamic_shuffle(nibbles)
 
 
 @always_inline

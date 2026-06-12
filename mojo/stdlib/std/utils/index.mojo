@@ -327,19 +327,6 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
             res[i] = self.get[i]()
         return res
 
-    def as_index_tuple(self) -> StaticTuple[SIMDSize, Self.size]:
-        """Converts this IndexList to a static tuple of mlir indexes.
-
-        Returns:
-            The corresponding StaticTuple object.
-        """
-        var res = StaticTuple[SIMDSize, Self.size]()
-
-        comptime for i in range(Self.size):
-            res[i] = self.get[i]()
-
-        return res
-
     @always_inline("nodebug")
     def canonicalize(
         self,

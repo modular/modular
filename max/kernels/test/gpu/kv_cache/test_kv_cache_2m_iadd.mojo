@@ -11,10 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from std.collections import Set
 from std.math import ceildiv
+from std.random import random_ui64
 
 from std.gpu.host import DeviceContext
-from kv_cache_test_utils import random_distinct
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import (
     Layout,
@@ -302,21 +303,17 @@ def test_kv_cache_2m_iadd_gpu[
     var paged_lut_host = TileTensor(
         paged_lut.tensor[update=False]().ptr, row_major(Coord(paged_lut_shape))
     )
-    # Sample one distinct paged block per page across the whole batch up
-    # front, then hand them out in iteration order. Total pages needed is
-    # <= num_paged_blocks by construction.
-    var total_pages = 0
-    for bs in range(batch_size):
-        total_pages += ceildiv(cache_lens[bs] + prompt_lens[bs], page_size)
-    var paged_blocks = random_distinct(num_paged_blocks, total_pages)
-
-    var page_pos = 0
+    paged_lut_set = Set[Int]()
     for bs in range(batch_size):
         seq_len = cache_lens[bs] + prompt_lens[bs]
 
         for block_idx in range(0, ceildiv(seq_len, page_size)):
-            paged_lut_host[bs, block_idx] = UInt32(paged_blocks[page_pos])
-            page_pos += 1
+            var randval = Int(random_ui64(0, UInt64(num_paged_blocks - 1)))
+            while randval in paged_lut_set:
+                randval = Int(random_ui64(0, UInt64(num_paged_blocks - 1)))
+
+            paged_lut_set.add(randval)
+            paged_lut_host[bs, block_idx] = UInt32(randval)
 
     var kv_collection_device = PagedKVCacheCollection[
         dtype,
@@ -493,21 +490,17 @@ def test_kv_cache_2m_iadd_cpu[
     var paged_lut_host = TileTensor(
         paged_lut_host_ptr, row_major(Coord(paged_lut_shape))
     )
-    # Sample one distinct paged block per page across the whole batch up
-    # front, then hand them out in iteration order. Total pages needed is
-    # <= num_paged_blocks by construction.
-    var total_pages = 0
-    for bs in range(batch_size):
-        total_pages += ceildiv(cache_lens[bs] + prompt_lens[bs], page_size)
-    var paged_blocks = random_distinct(num_paged_blocks, total_pages)
-
-    var page_pos = 0
+    paged_lut_set = Set[Int]()
     for bs in range(batch_size):
         seq_len = cache_lens[bs] + prompt_lens[bs]
 
         for block_idx in range(0, ceildiv(seq_len, page_size)):
-            paged_lut_host[bs, block_idx] = UInt32(paged_blocks[page_pos])
-            page_pos += 1
+            var randval = Int(random_ui64(0, UInt64(num_paged_blocks - 1)))
+            while randval in paged_lut_set:
+                randval = Int(random_ui64(0, UInt64(num_paged_blocks - 1)))
+
+            paged_lut_set.add(randval)
+            paged_lut_host[bs, block_idx] = UInt32(randval)
 
     var kv_collection_host = _create_kv_collection_from_host[
         dtype, num_heads, head_dim, page_size

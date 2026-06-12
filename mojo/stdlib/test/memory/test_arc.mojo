@@ -110,9 +110,7 @@ def test_write_to() raises:
 
 def test_write_repr_to() raises:
     check_write_to(
-        ArcPointer(42),
-        expected="ArcPointer[SIMD[DType.int, 1]](Int(42))",
-        is_repr=True,
+        ArcPointer(42), expected="ArcPointer[Int](Int(42))", is_repr=True
     )
     check_write_to(
         ArcPointer("hello"),

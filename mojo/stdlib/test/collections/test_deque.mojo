@@ -1152,17 +1152,11 @@ def test_write_repr_to() raises:
     """Test write_repr_to implementation."""
     check_write_to(
         Deque[Int](1, 2, 3),
-        expected="Deque[SIMD[DType.int, 1]]([Int(1), Int(2), Int(3)])",
+        expected="Deque[Int]([Int(1), Int(2), Int(3)])",
         is_repr=True,
     )
-    check_write_to(
-        Deque[Int](1),
-        expected="Deque[SIMD[DType.int, 1]]([Int(1)])",
-        is_repr=True,
-    )
-    check_write_to(
-        Deque[Int](), expected="Deque[SIMD[DType.int, 1]]([])", is_repr=True
-    )
+    check_write_to(Deque[Int](1), expected="Deque[Int]([Int(1)])", is_repr=True)
+    check_write_to(Deque[Int](), expected="Deque[Int]([])", is_repr=True)
 
 
 struct NonEquatable(Copyable):

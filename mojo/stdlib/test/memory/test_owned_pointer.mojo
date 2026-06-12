@@ -150,9 +150,7 @@ def test_write_to() raises:
 
 def test_write_repr_to() raises:
     check_write_to(
-        OwnedPointer(42),
-        expected="OwnedPointer[SIMD[DType.int, 1]](Int(42))",
-        is_repr=True,
+        OwnedPointer(42), expected="OwnedPointer[Int](Int(42))", is_repr=True
     )
     check_write_to(
         OwnedPointer("hello"),

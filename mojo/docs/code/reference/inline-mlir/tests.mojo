@@ -243,7 +243,7 @@ struct MiniInt(Writable):
 
     @implicit
     def __init__(out self, value: Int):
-        self._mlir_value = value._int_mlir_index()
+        self._mlir_value = value._mlir_value
 
     def __add__(self, rhs: Self) -> Self:
         return Self(
@@ -335,10 +335,10 @@ def sum_to(end: Int) -> Int:
     var i: __mlir_type.index = __mlir_attr.`0 : index`
     var one: __mlir_type.index = __mlir_attr.`1 : index`
 
-    # end._int_mlir_index() converts Int to raw __mlir_type.index
+    # end._mlir_value unwraps Int to raw __mlir_type.index
     while Bool(
         __mlir_op.`index.cmp`[pred=__mlir_attr.`#index<cmp_predicate slt>`](
-            i, end._int_mlir_index()
+            i, end._mlir_value
         )
     ):
         acc = __mlir_op.`index.add`(acc, i)
@@ -370,7 +370,7 @@ def test_circle_area_approx() raises:
     """MLIR attrs as constants in a computation."""
 
     def circle_area_approx(radius: Int) -> Int:
-        var r = radius._int_mlir_index()
+        var r = radius._mlir_value
         var r_squared = __mlir_op.`index.mul`(r, r)
         var pi: __mlir_type.index = __mlir_attr.`3 : index`
         var area = __mlir_op.`index.mul`(pi, r_squared)
@@ -385,9 +385,9 @@ def test_clamp() raises:
     """Comparisons with pop.select to clamp a value."""
 
     def clamp(val: Int, low: Int, high: Int) -> Int:
-        var v = val._int_mlir_index()
-        var lo = low._int_mlir_index()
-        var hi = high._int_mlir_index()
+        var v = val._mlir_value
+        var lo = low._mlir_value
+        var hi = high._mlir_value
         # index.cmp returns i1, but pop.select needs a !kgen.scalar<bool>.
         var too_low = __mlir_op.`pop.cast_from_builtin`[
             _type=__mlir_type.`!kgen.scalar<bool>`

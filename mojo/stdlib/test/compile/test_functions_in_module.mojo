@@ -31,14 +31,11 @@ comptime funcs = __functions_in_module()
 def main() raises:
     var expected_names = [
         "test_functions_in_module::foo()",
-        "test_functions_in_module::bar(::SIMD[::DType(int), ::SIMDSize(1)])",
-        (
-            "test_functions_in_module::bar(::SIMD[::DType(int),"
-            " ::SIMDSize(1)],::SIMD[::DType(int), ::SIMDSize(1)])"
-        ),
+        "test_functions_in_module::bar(::Int)",
+        "test_functions_in_module::bar(::Int,::Int)",
         (
             "test_functions_in_module::foobar(z:::SIMD[::DType(float64),"
-            " ::SIMDSize(1)])"
+            " ::Int(1)])"
         ),
     ]
 

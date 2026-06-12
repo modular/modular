@@ -234,9 +234,9 @@ struct MojoVersion(ImplicitlyCopyable, TrivialRegisterPassable):
     def __init__(out self):
         """Initializes the version by reading it from the compiler at compile time.
         """
-        self.major = Int(mlir_value=__mlir_op.`lit.mojo.version.major`())
-        self.minor = Int(mlir_value=__mlir_op.`lit.mojo.version.minor`())
-        self.patch = Int(mlir_value=__mlir_op.`lit.mojo.version.patch`())
+        self.major = Int(value=__mlir_op.`lit.mojo.version.major`())
+        self.minor = Int(value=__mlir_op.`lit.mojo.version.minor`())
+        self.patch = Int(value=__mlir_op.`lit.mojo.version.patch`())
 
 
 comptime MOJO_VERSION = MojoVersion()

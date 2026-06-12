@@ -86,10 +86,10 @@ def _unsupported_mma_op(d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     # fmt: off
     comptime assert False, String(
         "no valid implementation of mma for a=",
-        Int(a.size), "x",  a.dtype,
-        ", b=",  Int(b.size), "x",  b.dtype,
-        ", c=",  Int(c.size), "x",  c.dtype,
-        ", and d=", Int(d.size), "x", d.dtype,
+        a.size, "x",  a.dtype,
+        ", b=",  b.size, "x",  b.dtype,
+        ", c=",  c.size, "x",  c.dtype,
+        ", and d=", d.size, "x", d.dtype,
     )
     # fmt: on
 
@@ -812,7 +812,7 @@ def wgmma_async[
         c_dtype
     ](), String(
         "Number of output registers ",
-        String(Int(width)),
+        String(width),
         " don't match the instruction shape ",
         String(Index(m, n, k)),
     )
@@ -935,7 +935,7 @@ def wgmma_async[
         accum_type
     ]() == frag_c_width * size_of[c_dtype](), String(
         "Number of output registers ",
-        String(Int(frag_c_width)),
+        String(frag_c_width),
         " don't match the instruction shape ",
         String(Index(m, n, k)),
     )
@@ -944,7 +944,7 @@ def wgmma_async[
         a_type
     ]() == frag_a_width * size_of[a_dtype](), String(
         "Number of input a registers ",
-        String(Int(frag_a_width)),
+        String(frag_a_width),
         " don't match the instruction shape ",
         String(Index(m, n, k)),
     )

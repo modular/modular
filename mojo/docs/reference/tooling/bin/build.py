@@ -59,7 +59,7 @@ def _find_chrome() -> str:
 
 CHROME = _find_chrome()
 SHEET_W = 1100  # css px; matches .sheet max-width
-VERSION = "1.0.0b3"  # bump per release (strip the .devNNN nightly suffix)
+VERSION = "1.0.0b2"  # bump per release (strip the .devNNN nightly suffix)
 PREFIX = "mojo-cheat-sheet"  # filename stem; matches the repo assets dir
 
 # Cards are discovered from the body-<slug>.html files present in src/, so this

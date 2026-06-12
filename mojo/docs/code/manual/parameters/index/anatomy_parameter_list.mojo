@@ -17,7 +17,7 @@
 def my_sort[
     # infer-only parameters
     dtype: DType,
-    width: SIMDSize,
+    width: Int,
     //,
     # positional-only parameter
     values: SIMD[dtype, width],

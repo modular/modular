@@ -247,12 +247,7 @@ def lemire_algorithm(var w: UInt64, var q: Int64) -> Float64:
     m = product.high >> (upper_bit + 9)
 
     # Step 9
-    p: Int64 = (
-        (((Int64(152170) + Int64(65536)) * q) >> Int64(16))
-        + Int64(63)
-        - Int64(l)
-        + Int64(upper_bit)
-    )
+    p = (((152170 + 65536) * q) >> 16) + 63 - Int64(l) + Int64(upper_bit)
 
     # Step 10
     if p <= (-1022 - 64):
@@ -262,7 +257,7 @@ def lemire_algorithm(var w: UInt64, var q: Int64) -> Float64:
     # Subnormal case
     if p < -1022:
         s = -1022 - p
-        m = m // (UInt64(2) ** UInt64(s))
+        m = m // (2 ** UInt64(s))
         if m % 2 == 1:
             m += 1
         m >>= 1

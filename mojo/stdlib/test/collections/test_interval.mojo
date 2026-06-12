@@ -35,10 +35,7 @@ def test_interval() raises:
 
     # Test string representations
     assert_equal(String(interval), "(1, 10)")
-    assert_equal(
-        repr(interval),
-        "Interval[SIMD[DType.int, 1]](start=Int(1), end=Int(10))",
-    )
+    assert_equal(repr(interval), "Interval[Int](start=Int(1), end=Int(10))")
 
     # Test equality comparisons
     assert_equal(interval, Interval(1, 10))
@@ -199,7 +196,7 @@ def test_interval_write_to() raises:
 def test_interval_write_repr_to() raises:
     check_write_to(
         Interval(1, 10),
-        expected="Interval[SIMD[DType.int, 1]](start=Int(1), end=Int(10))",
+        expected="Interval[Int](start=Int(1), end=Int(10))",
         is_repr=True,
     )
 
@@ -214,9 +211,7 @@ def test_interval_tree_write_to() raises:
 def test_interval_tree_write_repr_to() raises:
     var tree = IntervalTree[Int, MyType]()
     tree.insert((1, 5), MyType(1.0))
-    check_write_to(
-        tree, contains="IntervalTree[SIMD[DType.int, 1], MyType](", is_repr=True
-    )
+    check_write_to(tree, contains="IntervalTree[Int, MyType](", is_repr=True)
 
     var output = String()
     tree.write_repr_to(output)

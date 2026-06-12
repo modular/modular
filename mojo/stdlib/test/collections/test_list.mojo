@@ -1072,16 +1072,10 @@ def test_destructor_trivial_elements() raises:
 
 def test_list_write_repr_to() raises:
     check_write_to(
-        [1, 2, 3],
-        expected="List[SIMD[DType.int, 1]]([Int(1), Int(2), Int(3)])",
-        is_repr=True,
+        [1, 2, 3], expected="List[Int]([Int(1), Int(2), Int(3)])", is_repr=True
     )
-    check_write_to(
-        [1], expected="List[SIMD[DType.int, 1]]([Int(1)])", is_repr=True
-    )
-    check_write_to(
-        List[Int](), expected="List[SIMD[DType.int, 1]]([])", is_repr=True
-    )
+    check_write_to([1], expected="List[Int]([Int(1)])", is_repr=True)
+    check_write_to(List[Int](), expected="List[Int]([])", is_repr=True)
 
 
 def test_list_fill_constructor() raises:

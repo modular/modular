@@ -216,7 +216,7 @@ def test_dict_string_representation_string_int() raises:
     check_write_to(d, expected="{a: 1, b: 2}", is_repr=False)
     check_write_to(
         d,
-        expected="Dict[String, SIMD[DType.int, 1]]({'a': Int(1), 'b': Int(2)})",
+        expected="Dict[String, Int]({'a': Int(1), 'b': Int(2)})",
         is_repr=True,
     )
 
@@ -226,10 +226,7 @@ def test_dict_string_representation_int_int() raises:
     check_write_to(d, expected="{1: 2, 3: 4}", is_repr=False)
     check_write_to(
         d,
-        expected=(
-            "Dict[SIMD[DType.int, 1], SIMD[DType.int, 1]]({Int(1): Int(2),"
-            " Int(3): Int(4)})"
-        ),
+        expected="Dict[Int, Int]({Int(1): Int(2), Int(3): Int(4)})",
         is_repr=True,
     )
 
@@ -801,12 +798,8 @@ def test_popitem_no_copies() raises:
 
 def test_dict_key_error_repr() raises:
     var e = DictKeyError[Int]()
-    check_write_to(
-        e, expected="DictKeyError[SIMD[DType.int, 1]]()", is_repr=False
-    )
-    check_write_to(
-        e, expected="DictKeyError[SIMD[DType.int, 1]]()", is_repr=True
-    )
+    check_write_to(e, expected="DictKeyError[Int]()", is_repr=False)
+    check_write_to(e, expected="DictKeyError[Int]()", is_repr=True)
 
 
 def test_empty_dict_error_repr() raises:
