@@ -685,9 +685,7 @@ class InferenceSession:
 
         with _record_phase("compile_seconds"):
             if isinstance(model, Path | str):
-                handle = self._impl.compile_from_path(
-                    model, custom_extensions_final
-                )
+                handle = self._impl.compile(model, custom_extensions_final)
             elif isinstance(model, Graph):
                 module = model.module
                 custom_extensions_final.extend(
@@ -722,6 +720,11 @@ class InferenceSession:
                 handle = self._compile_module(module, custom_extensions_final)
             else:
                 raise RuntimeError("The model is not a valid path or module.")
+
+        # synchronously complete the compilation and raise errors
+        handle.wait()
+        if (exception := handle.exception()) is not None:
+            raise exception
 
         compiled = CompiledModel(
             compiled=handle, expected_weights=expected_weights
@@ -862,7 +865,7 @@ class InferenceSession:
         """
         with self._compilation_lock:
             try:
-                return self._impl.compile_from_object(
+                return self._impl.compile(
                     module.mlir_module._CAPIPtr,
                     custom_extensions_final,
                     _derive_pipeline_name(module),

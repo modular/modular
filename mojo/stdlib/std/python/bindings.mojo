@@ -564,7 +564,7 @@ struct PythonTypeBuilder(Copyable):
     var basicsize: Int
     """The required allocation size to hold an instance of this type as a Python object."""
 
-    var _slots: Dict[Int, _CPointer[NoneType, MutExternalOrigin]]
+    var _slots: Dict[Int, _CPointer[NoneType, MutUntrackedOrigin]]
     """Dictionary of Python type slots that define the behavior of the type, mapping slot number to function pointer."""
 
     var methods: List[PyMethodDef]
@@ -670,7 +670,7 @@ struct PythonTypeBuilder(Copyable):
             0,
             Py_TPFLAGS_DEFAULT,
             # Note: This pointer is only "read-only" by PyType_FromSpec.
-            slots.unsafe_ptr().unsafe_origin_cast[MutExternalOrigin](),
+            slots.unsafe_ptr().unsafe_origin_cast[MutUntrackedOrigin](),
         )
 
         # Construct a Python 'type' object from our type spec.
@@ -1282,7 +1282,7 @@ def _py_function_fastcall_wrapper[
     @always_inline
     def fastcall(
         py_self_ptr: PyObjectPtr,
-        args: UnsafePointer[PyObjectPtr, MutExternalOrigin],
+        args: UnsafePointer[PyObjectPtr, MutUntrackedOrigin],
         nargs: Py_ssize_t,
     ) abi("C") -> PyObjectPtr:
         var py_self = PythonObject(from_borrowed=py_self_ptr)
@@ -1547,7 +1547,7 @@ def check_and_get_or_convert_arg[
         )
         # Return a pointer to stack data. Only valid because this function is
         # @always_inline.
-        return converted_arg_ptr.as_any_origin()
+        return converted_arg_ptr.as_unsafe_any_origin()
 
 
 def _get_type_name(obj: PythonObject) raises -> String:

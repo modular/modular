@@ -33,7 +33,6 @@ from max.graph import DeviceRef
 from max.nn.kv_cache import KVCacheParams
 from max.pipelines.context import (
     TextContext,
-    TextGenerationContext,
     TokenBuffer,
 )
 from max.pipelines.kv_cache import PagedKVCacheManager
@@ -80,7 +79,7 @@ class RaggedAttentionHarness(
     LayerTestHarness[
         AttentionStaticParamsT,
         AttentionDynamicParams,
-        list[TextGenerationContext],
+        list[TextContext],
     ]
 ):
     """ABC for single-GPU ragged attention harnesses.
@@ -139,11 +138,11 @@ class RaggedAttentionHarness(
         self,
         bundle: CompiledLayerBundle,
         dynamic_params: AttentionDynamicParams,
-    ) -> tuple[list[Buffer], list[TextGenerationContext]]:
+    ) -> tuple[list[Buffer], list[TextContext]]:
         device = bundle.device
         total_len = dynamic_params.ctx_len + dynamic_params.seq_len
 
-        batch: list[TextGenerationContext] = []
+        batch: list[TextContext] = []
         for _ in range(dynamic_params.batch_size):
             ctx = TextContext(
                 request_id=RequestID(),
@@ -157,7 +156,7 @@ class RaggedAttentionHarness(
             batch.append(ctx)
 
         kv_runtime = self._kv_manager.runtime_inputs(
-            cast(list[list[TextGenerationContext]], [batch])
+            cast(list[list[TextContext]], [batch])
         ).inputs[0]
         assert kv_runtime.attention_dispatch_metadata is not None
 
@@ -191,7 +190,7 @@ class RaggedAttentionHarness(
     def cleanup_inputs(
         self,
         bundle: CompiledLayerBundle,
-        context: list[TextGenerationContext],
+        context: list[TextContext],
     ) -> None:
         for ctx in context:
             self._kv_manager.release(ctx.request_id, replica_idx=0)

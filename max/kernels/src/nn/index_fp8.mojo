@@ -118,14 +118,12 @@ def fp8_index_kernel[
     var q_smem_tile = LayoutTensor[
         dtype,
         Layout.row_major(num_heads, depth),
-        MutAnyOrigin,
         address_space=AddressSpace.SHARED,
     ](q_smem.unsafe_ptr())
 
     var k_smem_tile = LayoutTensor[
         dtype,
         Layout.row_major(BN, depth),
-        MutAnyOrigin,
         address_space=AddressSpace.SHARED,
     ](k_smem.unsafe_ptr())
 
@@ -178,7 +176,7 @@ def fp8_index_kernel[
     var logits = LogitsType.stack_allocation()
     var q_s_reg_tile = QSRegTileType.stack_allocation()
     var logits_sum = LogitsSumType.stack_allocation()
-    var scratch = ScratchType(scratch_smem.unsafe_ptr())
+    var scratch = ScratchType(scratch_smem.unsafe_ptr().as_unsafe_any_origin())
 
     var q_s_frag = q_s_tile.tile[1, num_heads // thread_dim_y](
         ufloordiv(thread_idx.x, thread_dim_x), thread_idx.y
@@ -590,7 +588,8 @@ def fp8_index_naive[
     )
 
     var logits_tensor = LayoutTensor[
-        DType.float32, logits_layout, MutAnyOrigin
+        DType.float32,
+        logits_layout,
     ](logits_dev.unsafe_ptr(), logits_runtime_layout)
 
     comptime mm = _index_matmul_max[

@@ -260,7 +260,7 @@ struct KVMmaOp[
     var reg_tile: TileTensor[
         Self.in_type,
         type_of(Self._reg_layout),
-        MutExternalOrigin,
+        MutUntrackedOrigin,
         address_space=AddressSpace.LOCAL,
     ]
 
@@ -383,7 +383,7 @@ struct KVMmaOp[
     ](self) -> TileTensor[
         Self.in_type,
         type_of(row_major[Self.num_mmas, Self.input_frag_size]()),
-        MutExternalOrigin,
+        MutUntrackedOrigin,
         address_space=AddressSpace.LOCAL,
     ]:
         """Sub-view of the reg tile for a given (bk_tile, k-group) pair."""

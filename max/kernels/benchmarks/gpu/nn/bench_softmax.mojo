@@ -50,10 +50,8 @@ def bench_softmax_gpu[
     # The no-lambda `softmax` overload defaults to target="cpu".
     @parameter
     @__copy_capture(data_buf)
-    def input_fn[
-        _simd_width: Int, _rank: Int
-    ](coords: IndexList[_rank]) -> SIMD[dtype, _simd_width]:
-        return data_buf.load_linear[width=_simd_width, alignment=1](coords)
+    def input_fn[_simd_width: Int](coords: Coord) -> SIMD[dtype, _simd_width]:
+        return data_buf.load[width=_simd_width, alignment=1](coords)
 
     @always_inline
     @__copy_capture(shape, out_buf)
@@ -69,7 +67,7 @@ def bench_softmax_gpu[
                 input_fn,
                 target="gpu",
             ](
-                rebind[IndexList[rank]](shape),
+                Coord(shape),
                 out_buf,
                 rank - 1,
                 ctx,

@@ -157,7 +157,7 @@ trait ImplicitlyDestructible:
     from std.memory.alloc import alloc, free, Layout
 
     struct ResourceOwner(ImplicitlyDestructible):
-        var ptr: UnsafePointer[Int, MutExternalOrigin]
+        var ptr: UnsafePointer[Int, MutUntrackedOrigin]
         var size: Int
 
         def __init__(out self, size: Int):

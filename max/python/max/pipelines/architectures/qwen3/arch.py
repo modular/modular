@@ -13,6 +13,7 @@
 
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextContext
+from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
 from max.pipelines.lib import (
     SupportedArchitecture,
     TextTokenizer,
@@ -44,6 +45,9 @@ qwen3_arch = SupportedArchitecture(
     },
     config=Qwen3Config,
     multi_gpu_supported=True,
+    memory_planner=PagedMemoryPlanner.with_activation_reservation(
+        0, always_signal_buffers=True
+    ),
 )
 
 # Qwen3MoE architecture - uses the same model and config as Qwen3,
@@ -71,4 +75,7 @@ qwen3_moe_arch = SupportedArchitecture(
     },
     config=Qwen3Config,
     multi_gpu_supported=True,
+    memory_planner=PagedMemoryPlanner.with_activation_reservation(
+        0, always_signal_buffers=True
+    ),
 )

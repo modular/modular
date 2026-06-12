@@ -13,6 +13,7 @@
 
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextContext
+from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
 from max.pipelines.lib import SupportedArchitecture, TextTokenizer
 from max.pipelines.modeling.types import PipelineTask
 
@@ -35,4 +36,7 @@ gemma4_assistant_arch = SupportedArchitecture(
     task=PipelineTask.TEXT_GENERATION,
     multi_gpu_supported=True,
     config=Gemma4AssistantConfig,
+    memory_planner=PagedMemoryPlanner.with_activation_reservation(
+        0, always_signal_buffers=True
+    ),
 )

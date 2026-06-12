@@ -68,11 +68,10 @@ def split[
     comptime for i in range(num_outputs):
         output_sizes[i] = Int(outputs[i].dim(axis))
 
-    @__copy_capture(output_sizes)
-    @parameter
+    @always_inline
     def elementwise_fn_wrapper[
         width: Int, alignment: Int = 1
-    ](input_coords: Coord) capturing:
+    ](input_coords: Coord) {var output_sizes, var input, var outputs,}:
         # The associated index in the output tensor
         var output_coords = IndexList[input_coords.rank]()
         var input_idx = coord_to_index_list(input_coords)
@@ -115,15 +114,13 @@ def split[
         ]()
 
         elementwise[
-            elementwise_fn_wrapper,
-            target_simd_width,
+            simd_width=target_simd_width,
             target=target,
             _trace_description=trace_description,
-        ](input.layout.shape_coord(), ctx)
+        ](elementwise_fn_wrapper, input.layout.shape_coord(), ctx)
     else:
         elementwise[
-            elementwise_fn_wrapper,
-            1,
+            simd_width=1,
             target=target,
             _trace_description=trace_description,
-        ](input.layout.shape_coord(), ctx)
+        ](elementwise_fn_wrapper, input.layout.shape_coord(), ctx)

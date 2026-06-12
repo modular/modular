@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import subprocess
 import tempfile
 
 # Standard library
@@ -117,6 +118,41 @@ class TorchModelAndDataProcessor:
         | transformers.PixtralProcessor
         | InternVLProcessor
     )
+
+
+# Local cache root for model weights synced from S3 (see
+# `_sync_s3_model_to_local`).
+_S3_MODEL_CACHE_ROOT = os.path.expanduser("~/.cache/modular/s3-models")
+
+
+def _sync_s3_model_to_local(model_path: str) -> str:
+    """Resolve a model path to a local directory, syncing from S3 if needed.
+
+    If ``model_path`` is an ``s3://bucket/prefix`` URI, mirror that prefix to a
+    local cache directory with ``aws s3 sync`` and return the local path;
+    otherwise return ``model_path`` unchanged. The sync is idempotent (only
+    changed objects are transferred) and uses the ambient AWS credentials
+    (the standard AWS credential chain, e.g. an ``AWS_PROFILE`` with an active
+    ``aws sso login`` session).
+
+    Args:
+        model_path: A local path, Hugging Face repo id, or ``s3://`` URI.
+
+    Returns:
+        A local filesystem path (the cache dir for ``s3://`` URIs, otherwise
+        the input unchanged).
+    """
+    if not model_path.startswith("s3://"):
+        return model_path
+    rel = model_path[len("s3://") :].strip("/")
+    local_dir = os.path.join(_S3_MODEL_CACHE_ROOT, rel)
+    os.makedirs(local_dir, exist_ok=True)
+    print(
+        f"Syncing model weights from s3://{rel} to {local_dir} ...",
+        flush=True,
+    )
+    subprocess.run(["aws", "s3", "sync", f"s3://{rel}", local_dir], check=True)
+    return local_dir
 
 
 @dataclass
@@ -988,6 +1024,9 @@ class GenericOracle(PipelineOracle):
         add_bos_token: bool | None = None,
     ) -> None:
         self.model_path = model_path
+        # Memoized local path: an ``s3://`` model_path is synced to a local
+        # cache dir on first use (see `_local_model_path`).
+        self._resolved_model_path: str | None = None
         self._device_encoding_map = device_encoding_map
         self._weight_path_map = weight_path_map
         self.config_params = config_params
@@ -1004,6 +1043,17 @@ class GenericOracle(PipelineOracle):
     @property
     def device_encoding_map(self) -> dict[str, list[str]] | None:
         return self._device_encoding_map
+
+    def _local_model_path(self) -> str:
+        """Return a local model directory, syncing from S3 once if needed.
+
+        For an ``s3://`` ``model_path`` the weights are mirrored to a local
+        cache dir on first call and reused thereafter; for any other path the
+        value is returned unchanged.
+        """
+        if self._resolved_model_path is None:
+            self._resolved_model_path = _sync_s3_model_to_local(self.model_path)
+        return self._resolved_model_path
 
     def weight_path(self, encoding: pipelines.SupportedEncoding) -> str | None:
         if self._weight_path_map and encoding in self._weight_path_map:
@@ -1026,7 +1076,18 @@ class GenericOracle(PipelineOracle):
         encoding: pipelines.SupportedEncoding,
         device_specs: list[driver.DeviceSpec],
     ) -> MaxPipelineAndTokenizer:
-        model_revision = hf_repo_lock.revision_for_hf_repo(self.model_path)
+        # A local model directory (e.g. a trimmed checkpoint at /home/... or an
+        # `s3://` checkpoint synced to a local cache) is not an HF repo id, so
+        # it has no entry in hf-repo-lock.tsv. Skip the revision lookup /
+        # apply_to_config for it (both would raise/ warn), and don't pass a None
+        # revision through to the config.
+        model_path = self._local_model_path()
+        is_local_model = os.path.isdir(model_path)
+        model_revision = (
+            None
+            if is_local_model
+            else hf_repo_lock.revision_for_hf_repo(model_path)
+        )
         weight_path = self.weight_path(encoding) if encoding else None
 
         weight_filename: str | None = None
@@ -1040,21 +1101,23 @@ class GenericOracle(PipelineOracle):
         # validation runs.  Without this, PipelineConfig.resolve() would
         # look for weight files in the model repo (meta-llama) instead of
         # the weights repo (bartowski).
-        config = pipelines.PipelineConfig.model_validate(
-            {
-                "defer_resolve": True,
-                "device_specs": device_specs if device_specs else None,
-                "quantization_encoding": encoding,
-                "model_path": self.model_path,
-                "huggingface_model_revision": model_revision,
-                "huggingface_weight_revision": model_revision,
-                "weight_path": [] if weight_path is None else [weight_filename],
-                **self.config_params,
-            }
-        )
-        if weight_repo_id and weight_repo_id != self.model_path:
+        config_kwargs = {
+            "defer_resolve": True,
+            "task": self.task,
+            "device_specs": device_specs if device_specs else None,
+            "quantization_encoding": encoding,
+            "model_path": model_path,
+            "weight_path": [] if weight_path is None else [weight_filename],
+            **self.config_params,
+        }
+        if not is_local_model:
+            config_kwargs["huggingface_model_revision"] = model_revision
+            config_kwargs["huggingface_weight_revision"] = model_revision
+        config = pipelines.PipelineConfig.model_validate(config_kwargs)
+        if weight_repo_id and weight_repo_id != model_path:
             config.model._weights_repo_id = weight_repo_id
-        hf_repo_lock.apply_to_config(config)
+        if not is_local_model:
+            hf_repo_lock.apply_to_config(config)
         config.resolve()
         tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(
             config, task=self.task
@@ -1077,9 +1140,15 @@ class GenericOracle(PipelineOracle):
         encoding: pipelines.SupportedEncoding | None,
         device: torch.device,
     ) -> TorchModelAndDataProcessor:
-        model_revision = hf_repo_lock.revision_for_hf_repo(self.model_path)
+        model_path = self._local_model_path()
+        is_local_model = os.path.isdir(model_path)
+        model_revision = (
+            None
+            if is_local_model
+            else hf_repo_lock.revision_for_hf_repo(model_path)
+        )
         processor = self.auto_processor_cls.from_pretrained(
-            self.model_path,
+            model_path,
             revision=model_revision,
             trust_remote_code=self.trust_remote_code,
         )
@@ -1125,8 +1194,8 @@ class GenericOracle(PipelineOracle):
                     ENCODING_TO_TORCH_DTYPE[encoding] if encoding else None
                 )
             model = self.auto_model_cls.from_pretrained(
-                self.model_path,
-                revision=hf_repo_lock.revision_for_hf_repo(self.model_path),
+                model_path,
+                revision=model_revision,
                 device_map=device,
                 trust_remote_code=self.trust_remote_code,
                 torch_dtype=torch_dtype,

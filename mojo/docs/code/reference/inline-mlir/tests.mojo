@@ -388,13 +388,22 @@ def test_clamp() raises:
         var v = val._mlir_value
         var lo = low._mlir_value
         var hi = high._mlir_value
-        var too_low = __mlir_op.`index.cmp`[
-            pred=__mlir_attr.`#index<cmp_predicate slt>`
-        ](v, lo)
+        # index.cmp returns i1, but pop.select needs a !kgen.scalar<bool>.
+        var too_low = __mlir_op.`pop.cast_from_builtin`[
+            _type=__mlir_type.`!kgen.scalar<bool>`
+        ](
+            __mlir_op.`index.cmp`[pred=__mlir_attr.`#index<cmp_predicate slt>`](
+                v, lo
+            )
+        )
         var result = __mlir_op.`pop.select`(too_low, lo, v)
-        var too_high = __mlir_op.`index.cmp`[
-            pred=__mlir_attr.`#index<cmp_predicate sgt>`
-        ](result, hi)
+        var too_high = __mlir_op.`pop.cast_from_builtin`[
+            _type=__mlir_type.`!kgen.scalar<bool>`
+        ](
+            __mlir_op.`index.cmp`[pred=__mlir_attr.`#index<cmp_predicate sgt>`](
+                result, hi
+            )
+        )
         result = __mlir_op.`pop.select`(too_high, hi, result)
         return Int(mlir_value=result)
 

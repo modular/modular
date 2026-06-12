@@ -10,6 +10,27 @@ This version is still a work in progress.
 
 ## Language enhancements
 
+- Added an `@unavailable` decorator that marks a function or method as
+  intentionally unavailable. Unlike `@deprecated` (which emits a warning),
+  referencing an `@unavailable` declaration is an error. Like `@deprecated`,
+  it accepts either a reason message (positional or as `reason=`) or a
+  `use=symbol` replacement. When `use=symbol` is given, the error includes a
+  fix-it that renames the call to `symbol`.
+
+  ```mojo
+  struct Foo:
+      @unavailable("message here...")
+      def foo(self) -> Int:
+          ...
+
+  @unavailable(use=new_api)
+  def old_api():
+      ...
+
+  def new_api():
+      pass
+  ```
+
 - Types can parameterize the `out` argument modifier when they want to be
   bindable to alternate address spaces, e.g.:
 
@@ -101,6 +122,14 @@ This version is still a work in progress.
   @export("new")
   def new() abi("C"): pass
   ```
+
+- Functions marked `@export` must now be given an explicit `abi` effect, rather
+  than relying implicitly on the default (equivalent to `abi("Mojo")`). The
+  compiler will produce a warning on missing `abi` effects, which will become
+  an error in a future release.
+
+- A bug preventing `from . import module` with a spurious recursive-reference
+  error has been fixed.
 
 ## Library changes
 
@@ -365,6 +394,21 @@ This version is still a work in progress.
   through this trait must now spell it out explicitly, for example
   `T: Indexer & ImplicitlyDestructible`.
 
+- Added the `UntrackedOrigin` and `UnsafeAnyOrigin` origin aliases (and their
+  `Mut`/`Immut` variants) as the new names for `ExternalOrigin` and
+  `AnyOrigin`, respectively. `UntrackedOrigin` is the empty origin: it aliases
+  nothing, so the lifetime checker has nothing to track, and it remains a
+  supported tool for interfacing with memory from outside the Mojo program.
+  `UnsafeAnyOrigin` is the universal origin: it might alias anything, defeating
+  lifetime extension and exclusivity checking, so its `Unsafe` prefix marks it
+  as an escape hatch slated for deprecation and removal.
+
+- The `ExternalOrigin`, `ImmutExternalOrigin`, and `MutExternalOrigin` aliases
+  are now deprecated and emit a deprecation warning when referenced. Use
+  `UntrackedOrigin`, `ImmutUntrackedOrigin`, and `MutUntrackedOrigin`
+  respectively instead. The deprecated aliases still forward to the new names,
+  so existing code keeps compiling until they are removed in a future release.
+
 ## Tooling changes
 
 - Importing a Mojo module from Python no longer fails when the module lives in a
@@ -515,6 +559,10 @@ This version is still a work in progress.
   ```
 
 ## Removed
+
+- The `-kgenModule` flag has been removed from `mojo precompile`. It emitted a
+  serialized KGEN module (`.mlirbc`) instead of a `.mojoc` package and was only
+  used internally.
 
 - The `DeviceContextPtr` and `DeviceContextPtrList` types have been removed
   from `std.runtime.asyncrt`. Custom-op `execute` methods now take

@@ -34,7 +34,7 @@ def stack_allocation[
     address_space: AddressSpace = AddressSpace.GENERIC,
 ]() -> UnsafePointer[
     Scalar[dtype],
-    MutExternalOrigin,
+    MutUntrackedOrigin,
     address_space=address_space,
 ]:
     """Allocates data buffer space on the stack given a data type and number of
@@ -61,7 +61,7 @@ comptime _StackAllocationPluginHookFnType[address_space: AddressSpace] = def[
     /,
     name: Optional[StaticString],
     alignment: Int,
-]() thin -> UnsafePointer[type, MutExternalOrigin, address_space=address_space]
+]() thin -> UnsafePointer[type, MutUntrackedOrigin, address_space=address_space]
 """Plugin-hook signature for `PluginHooks.stack_allocation_fn`; keep in sync with `stack_allocation`."""
 
 
@@ -74,7 +74,7 @@ def stack_allocation[
     name: Optional[StaticString] = None,
     alignment: Int = align_of[type](),
     address_space: AddressSpace = AddressSpace.GENERIC,
-]() -> UnsafePointer[type, MutExternalOrigin, address_space=address_space]:
+]() -> UnsafePointer[type, MutUntrackedOrigin, address_space=address_space]:
     """Allocates data buffer space on the stack given a data type and number of
     elements.
 
@@ -100,7 +100,7 @@ def stack_allocation[
                 count=count._int_mlir_index(),
                 memoryType=__mlir_attr.`#pop<global_alloc_addr_space gpu_shared>`,
                 _type=UnsafePointer[
-                    type, MutExternalOrigin, address_space=address_space
+                    type, MutUntrackedOrigin, address_space=address_space
                 ]._mlir_type,
                 alignment=alignment._int_mlir_index(),
             ]()
@@ -112,7 +112,7 @@ def stack_allocation[
                 name=_get_kgen_string[global_name](),
                 count=count._int_mlir_index(),
                 _type=UnsafePointer[
-                    type, MutExternalOrigin, address_space=address_space
+                    type, MutUntrackedOrigin, address_space=address_space
                 ]._mlir_type,
                 alignment=alignment._int_mlir_index(),
             ]()
@@ -123,12 +123,12 @@ def stack_allocation[
         elif address_space == AddressSpace.LOCAL:
             var generic_ptr = __mlir_op.`pop.stack_allocation`[
                 count=count._int_mlir_index(),
-                _type=UnsafePointer[type, MutExternalOrigin]._mlir_type,
+                _type=UnsafePointer[type, MutUntrackedOrigin]._mlir_type,
                 alignment=alignment._int_mlir_index(),
             ]()
             return __mlir_op.`pop.pointer.bitcast`[
                 _type=UnsafePointer[
-                    type, MutExternalOrigin, address_space=address_space
+                    type, MutUntrackedOrigin, address_space=address_space
                 ]._mlir_type
             ](generic_ptr)
 
@@ -141,7 +141,7 @@ def stack_allocation[
     return __mlir_op.`pop.stack_allocation`[
         count=count._int_mlir_index(),
         _type=UnsafePointer[
-            type, MutExternalOrigin, address_space=address_space
+            type, MutUntrackedOrigin, address_space=address_space
         ]._mlir_type,
         alignment=alignment._int_mlir_index(),
     ]()

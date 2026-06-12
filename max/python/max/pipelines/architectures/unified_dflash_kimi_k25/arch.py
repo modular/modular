@@ -17,6 +17,7 @@ from max.pipelines.modeling.types import InputModality, PipelineTask
 
 from ..kimik2_5 import weight_adapters
 from ..kimik2_5.context import KimiK2_5TextAndVisionContext
+from ..kimik2_5.memory_planner import KimiK25MemoryPlanner
 from ..kimik2_5.tokenizer import KimiK2_5VLTokenizer
 from .model import UnifiedDflashKimiK25Model
 from .model_config import UnifiedDflashKimiK25Config
@@ -47,4 +48,5 @@ unified_dflash_kimi_k25_arch = SupportedArchitecture(
     config=UnifiedDflashKimiK25Config,
     tool_parser="kimik2_5",
     reasoning_parser="kimik2_5",
+    memory_planner=KimiK25MemoryPlanner,
 )

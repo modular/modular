@@ -54,7 +54,7 @@ from typing import TYPE_CHECKING, TypeAlias
 import max.driver as md
 
 if TYPE_CHECKING:
-    from .context import TextGenerationContext
+    from .context import TextContext
 
 
 @dataclass
@@ -64,7 +64,7 @@ class ProcessorInputs:
     logits: md.Buffer
     """The model logits buffer with shape ``(N, vocab_size)`` and ``float32`` dtype."""
 
-    context: TextGenerationContext
+    context: TextContext
     """The generation context containing request state and sampling configuration."""
 
 
@@ -89,7 +89,7 @@ class BatchProcessorInputs:
     logit_offsets: md.Buffer | None
     """Offsets tensor with shape ``(batch_size + 1, 1)`` for multi-logit models, or ``None``."""
 
-    context_batch: Sequence[TextGenerationContext]
+    context_batch: Sequence[TextContext]
     """The ordered sequence of generation contexts corresponding to each batch entry."""
 
 

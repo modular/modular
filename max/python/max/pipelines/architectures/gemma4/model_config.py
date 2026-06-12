@@ -19,7 +19,7 @@ from typing import Any
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import WeightData, WeightsFormat, weights_format
-from max.nn.kv_cache import KVCacheQuantizationConfig, MultiKVCacheParams
+from max.nn.kv_cache import MultiKVCacheParams
 from max.nn.transformer import ReturnLogits
 from max.pipelines.architectures.gemma3.model_config import (
     _HIDDEN_ACTIVATION_MAP,
@@ -31,7 +31,7 @@ from max.pipelines.lib import (
     PipelineConfig,
 )
 from max.pipelines.lib.interfaces.arch_config import (
-    ArchConfigWithKVAndVisionCache,
+    ArchConfigWithKVCache,
     ArchConfigWithStoredKVParams,
 )
 from max.pipelines.modeling.config_enums import supported_encoding_dtype
@@ -138,7 +138,8 @@ class Gemma4TextConfig(Gemma3Config):
     @property  # type: ignore[misc]
     def rope_theta(self) -> float:
         raise ValueError(
-            "rope_theta is not supported for Gemma4TextConfig. Use global_rope_theta or sliding_window_rope_theta instead."
+            "rope_theta is not supported for Gemma4TextConfig. Use"
+            " global_rope_theta or sliding_window_rope_theta instead."
         )
 
     @rope_theta.setter
@@ -148,7 +149,8 @@ class Gemma4TextConfig(Gemma3Config):
     @property  # type: ignore[misc, override]
     def rope_scaling(self) -> ProportionalScalingParams | None:
         raise ValueError(
-            "rope_scaling is not supported for Gemma4TextConfig. Use global_rope_scaling or sliding_window_rope_scaling instead."
+            "rope_scaling is not supported for Gemma4TextConfig. Use"
+            " global_rope_scaling or sliding_window_rope_scaling instead."
         )
 
     @rope_scaling.setter
@@ -410,7 +412,7 @@ class Gemma4VisionConfig:
 
 
 @dataclass(kw_only=True)
-class Gemma4ForConditionalGenerationConfig(ArchConfigWithKVAndVisionCache):
+class Gemma4ForConditionalGenerationConfig(ArchConfigWithKVCache):
     """Base configuration for Gemma 4 multimodal models.
 
     This is the top-level config that composes text and vision sub-configs.
@@ -444,31 +446,6 @@ class Gemma4ForConditionalGenerationConfig(ArchConfigWithKVAndVisionCache):
     tie_word_embeddings: bool = False
     """Whether to tie weight embeddings. When true, the output linear layer
     uses the same weight as the embedding layer."""
-
-    @staticmethod
-    def estimate_vision_cache_entry_bytes(
-        huggingface_config: AutoConfig,
-    ) -> int:
-        """Estimate per-entry bytes for the vision encoder cache.
-
-        Worst-case tokens per image is
-        ``position_embedding_size / pooling_kernel_size²``, stored at the
-        text hidden size in bfloat16.
-        """
-        vision_config = getattr(huggingface_config, "vision_config", None)
-        if vision_config is None:
-            raise ValueError(
-                "Gemma4 requires a vision_config in the HuggingFace config"
-            )
-        text_config = getattr(huggingface_config, "text_config", None)
-        if text_config is None:
-            raise ValueError(
-                "Gemma4 requires a text_config in the HuggingFace config"
-            )
-        k = vision_config.pooling_kernel_size
-        max_tokens = vision_config.position_embedding_size // (k * k)
-        hidden = text_config.hidden_size
-        return max_tokens * hidden * 2  # bfloat16
 
     def get_kv_params(self) -> MultiKVCacheParams:
         """Returns the KV cache parameters."""
@@ -508,17 +485,6 @@ class Gemma4ForConditionalGenerationConfig(ArchConfigWithKVAndVisionCache):
             else:
                 raise ValueError(f"Unknown attention type: {attention_type}")
 
-        # When fp8 KV cache is requested, construct a quantization config with
-        # blockwise granularity=64 along head_dim.  Both sliding (head_dim=256)
-        # and global (head_dim=512) layers use the same granularity so that
-        # scale overhead stays under 4% while keeping per-block resolution tight.
-        kvcache_quant_config: KVCacheQuantizationConfig | None = None
-        if cache_dtype in (DType.float8_e4m3fn, DType.float8_e4m3fnuz):
-            kvcache_quant_config = KVCacheQuantizationConfig(
-                scale_dtype=DType.float32,
-                quantization_granularity=64,
-            )
-
         num_spec_tokens = (
             pipeline_config.speculative.num_speculative_tokens
             if pipeline_config.speculative
@@ -531,7 +497,6 @@ class Gemma4ForConditionalGenerationConfig(ArchConfigWithKVAndVisionCache):
             num_layers=sliding_window_layers,
             devices=devices,
             data_parallel_degree=pipeline_config.model.data_parallel_degree,
-            kvcache_quant_config=kvcache_quant_config,
             speculative_method=(
                 pipeline_config.speculative.speculative_method
                 if pipeline_config.speculative
@@ -546,7 +511,6 @@ class Gemma4ForConditionalGenerationConfig(ArchConfigWithKVAndVisionCache):
             num_layers=global_layers,
             devices=devices,
             data_parallel_degree=pipeline_config.model.data_parallel_degree,
-            kvcache_quant_config=kvcache_quant_config,
             speculative_method=(
                 pipeline_config.speculative.speculative_method
                 if pipeline_config.speculative
@@ -587,9 +551,10 @@ class Gemma4ForConditionalGenerationConfig(ArchConfigWithKVAndVisionCache):
         huggingface_config = model_config.huggingface_config
         if huggingface_config is None:
             raise ValueError(
-                f"HuggingFace config is required for '{model_config.model_path}', "
-                "but config could not be loaded. "
-                "Please ensure the model repository contains a valid config.json file."
+                "HuggingFace config is required for"
+                f" '{model_config.model_path}', but config could not be loaded."
+                " Please ensure the model repository contains a valid"
+                " config.json file."
             )
         return cls.initialize_from_config(pipeline_config, huggingface_config)
 

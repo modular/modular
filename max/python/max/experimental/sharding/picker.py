@@ -288,13 +288,12 @@ def _only_partial_to_replicated(
 
 
 class NoReshard:
-    """Cost-model-free picker: returns the first feasible action.
+    """Passthrough-only picker: returns the first zero-reshard action.
 
-    Walks the menu in order and prefers actions whose input mappings
-    already match the actual input layouts (no reshard needed). Falls
-    back to the first feasible action when none does. Never computes a
-    transition cost. No ``on_reshard`` diagnostic — picking the first
-    feasible row is a best-effort policy, not a cost-driven one.
+    Refuses any reshard, including a ``Partial → Replicated`` allreduce. If
+    no input-matching action exists, raises
+    :class:`~max.experimental.sharding.placements.ShardingError` instead of
+    silently inserting a collective. Never computes a transition cost.
     """
 
     def __call__(
@@ -302,14 +301,18 @@ class NoReshard:
         menu: ActionSet,
         in_layouts: Sequence[TensorLayout],
     ) -> Action:
-        """Picks the first zero-reshard action, else the first feasible one."""
+        """Picks the first zero-reshard action; raises if none exists."""
         actions = enumerate_feasible_actions(menu, menu.mesh)
         if not actions:
             raise RuntimeError("NoReshard: rule returned no feasible actions.")
         for action in actions:
             if _zero_reshard(action, in_layouts):
                 return _finalize(menu, action)
-        return _finalize(menu, actions[0])
+        raise ShardingError(
+            "NoReshard: no zero-reshard action for input layouts "
+            f"{[layout.mapping for layout in in_layouts]}; an input would need "
+            "resharding. Use PartialsOnly or GreedyReshard to allow it."
+        )
 
 
 class PartialsOnly:

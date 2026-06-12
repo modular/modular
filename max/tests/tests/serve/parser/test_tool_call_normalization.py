@@ -224,21 +224,39 @@ def test_validate_response_format_schema_accepts_object_root() -> None:
 
 
 def test_validate_response_format_schema_rejects_string_root() -> None:
-    schema = {"type": "string"}
-    with pytest.raises(ValueError, match=r"root must have type 'object'"):
-        _validate_response_format_schema(schema)
+    """A single non-object scalar root is rejected (callers expect an object)."""
+    with pytest.raises(ValueError, match=r"must be\s+'object'"):
+        _validate_response_format_schema({"type": "string"})
 
 
 def test_validate_response_format_schema_rejects_array_root() -> None:
-    schema = {"type": "array", "items": {"type": "string"}}
-    with pytest.raises(ValueError, match=r"root must have type 'object'"):
-        _validate_response_format_schema(schema)
+    """A single non-object root (array) is rejected."""
+    with pytest.raises(ValueError, match=r"must be\s+'object'"):
+        _validate_response_format_schema(
+            {"type": "array", "items": {"type": "string"}}
+        )
 
 
-def test_validate_response_format_schema_rejects_missing_type() -> None:
-    schema = {"properties": {"x": {"type": "string"}}}
-    with pytest.raises(ValueError, match=r"root must have type 'object'"):
-        _validate_response_format_schema(schema)
+def test_validate_response_format_schema_accepts_missing_type() -> None:
+    """A missing root ``type`` means "any" and is valid JSON Schema."""
+    _validate_response_format_schema({"properties": {"x": {"type": "string"}}})
+
+
+def test_validate_response_format_schema_accepts_type_union() -> None:
+    """A root ``type`` union is valid JSON Schema and compiles fine."""
+    _validate_response_format_schema({"type": ["object", "array", "string"]})
+
+
+def test_validate_response_format_schema_rejects_unknown_type() -> None:
+    """A root ``type`` that is a single non-object value is rejected."""
+    with pytest.raises(ValueError, match=r"must be\s+'object'"):
+        _validate_response_format_schema({"type": "frobnicate"})
+
+
+def test_validate_response_format_schema_rejects_bad_type_union() -> None:
+    """A root ``type`` list with a non-JSON-Schema member is rejected."""
+    with pytest.raises(ValueError, match=r"list must"):
+        _validate_response_format_schema({"type": ["object", "frob"]})
 
 
 def test_validate_response_format_schema_accepts_none_schema() -> None:

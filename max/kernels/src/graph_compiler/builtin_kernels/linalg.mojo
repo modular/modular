@@ -153,7 +153,7 @@ struct Matmul:
     def execute[
         transpose_b: Bool,
         packed_b: Bool,
-        lambdas_have_fusion: Bool,
+        has_epilogue_fusion: Bool,
         target: StaticString,
         _trace_name: StaticString,
     ](
@@ -198,13 +198,13 @@ struct Matmul:
             matmul_elementwise_epilogue_type
         ](
             epilogue_fn
-        ) if lambdas_have_fusion and not has_compute_lambda else None
+        ) if has_epilogue_fusion and not has_compute_lambda else None
 
         comptime compute_lambda = Optional[
             matmul_elementwise_compute_lambda_type
         ](
             output_compute_fn
-        ) if lambdas_have_fusion and has_compute_lambda else None
+        ) if has_epilogue_fusion and has_compute_lambda else None
 
         matmul[
             transposed_a,
@@ -226,7 +226,7 @@ struct Matmul:
 struct BatchMatmul:
     @staticmethod
     def execute[
-        lambdas_have_fusion: Bool,
+        has_epilogue_fusion: Bool,
         rank: Int,
         transpose_b: Bool,
         target: StaticString,
@@ -270,7 +270,7 @@ struct BatchMatmul:
             transpose_b=transpose_b,
             elementwise_epilogue_fn=Optional[
                 batched_matmul_elementwise_epilogue_type
-            ](output_fn) if lambdas_have_fusion else None,
+            ](output_fn) if has_epilogue_fusion else None,
             target=target,
         ](c_tile, a_tile, b_tile, context=ctx)
 

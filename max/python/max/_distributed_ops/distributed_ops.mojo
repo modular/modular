@@ -27,7 +27,7 @@ from layout import Idx, TileTensor, row_major
 
 
 @export
-def PyInit_distributed_ops() -> PythonObject:
+def PyInit_distributed_ops() abi("C") -> PythonObject:
     """Creates a Python module with distributed-ops bindings."""
     try:
         var b = PythonModuleBuilder("distributed_ops")
@@ -37,7 +37,6 @@ def PyInit_distributed_ops() -> PythonObject:
         abort(t"failed to create distributed_ops bindings module: {e}")
 
 
-@export
 def broadcast_kernel(
     input_data_ptr: PythonObject,
     output_buffers: PythonObject,
@@ -114,7 +113,7 @@ def _do_broadcast[
         # refcount, so assigning into the uninitialized slot would destroy it
         (ctx_array.unsafe_ptr() + i).init_pointee_move(
             DeviceContext(
-                OpaquePointer[MutExternalOrigin](unsafe_from_address=ctx_addr)
+                OpaquePointer[MutUntrackedOrigin](unsafe_from_address=ctx_addr)
             )
         )
     var dev_ctxs = DeviceContextList[ngpus](ctx_array^)

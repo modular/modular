@@ -24,8 +24,8 @@ from std.itertools import product
 
 
 def color_to_grayscale_kernel(
-    p_out: UnsafePointer[UInt8, MutExternalOrigin],
-    p_in: UnsafePointer[UInt8, MutExternalOrigin],
+    p_out: UnsafePointer[UInt8, MutUntrackedOrigin],
+    p_in: UnsafePointer[UInt8, MutUntrackedOrigin],
     width: Int,
     height: Int,
 ):
@@ -60,8 +60,8 @@ def color_to_grayscale_kernel(
 
 
 def color_to_grayscale(
-    h_input: UnsafePointer[UInt8, MutExternalOrigin],
-    h_output: UnsafePointer[UInt8, MutExternalOrigin],
+    h_input: UnsafePointer[UInt8, MutUntrackedOrigin],
+    h_output: UnsafePointer[UInt8, MutUntrackedOrigin],
     width: Int,
     height: Int,
     ctx: DeviceContext,
@@ -112,8 +112,8 @@ def color_to_grayscale(
 
 
 def color_to_grayscale_cpu(
-    input: UnsafePointer[UInt8, MutExternalOrigin],
-    output: UnsafePointer[UInt8, MutExternalOrigin],
+    input: UnsafePointer[UInt8, MutUntrackedOrigin],
+    output: UnsafePointer[UInt8, MutUntrackedOrigin],
     width: Int,
     height: Int,
 ):
@@ -137,7 +137,7 @@ def color_to_grayscale_cpu(
 
 
 def initialize_image(
-    image: UnsafePointer[UInt8, MutExternalOrigin], width: Int, height: Int
+    image: UnsafePointer[UInt8, MutUntrackedOrigin], width: Int, height: Int
 ):
     """Initialize a test image with gradient pattern.
 
@@ -157,8 +157,8 @@ def initialize_image(
 
 
 def verify_results(
-    cpu_output: UnsafePointer[UInt8, MutExternalOrigin],
-    gpu_output: UnsafePointer[UInt8, MutExternalOrigin],
+    cpu_output: UnsafePointer[UInt8, MutUntrackedOrigin],
+    gpu_output: UnsafePointer[UInt8, MutUntrackedOrigin],
     width: Int,
     height: Int,
 ) -> Bool:

@@ -88,7 +88,7 @@ def test_fused_qk_rope[
     kv_cache_block_buffer = List[Scalar[dtype]](
         length=block_shape.flattened_length(), fill=0
     )
-    kv_cache_block = LayoutTensor[dtype, Layout.row_major[6](), MutAnyOrigin](
+    kv_cache_block = LayoutTensor[dtype, Layout.row_major[6]()](
         kv_cache_block_buffer.unsafe_ptr(),
         RuntimeLayout[Layout.row_major[6]()].row_major(block_shape),
     )
@@ -116,7 +116,7 @@ def test_fused_qk_rope[
     kv_collection = ContinuousBatchingKVCacheCollection[dtype, kv_params](
         blocks=kv_cache_block,
         cache_lengths=LayoutTensor[
-            DType.uint32, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
+            mut=False, DType.uint32, Layout(UNKNOWN_VALUE)
         ](
             start_positions_dyn.unsafe_ptr(),
             RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(
@@ -124,7 +124,7 @@ def test_fused_qk_rope[
             ),
         ),
         lookup_table=LayoutTensor[
-            DType.uint32, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
+            mut=False, DType.uint32, Layout(UNKNOWN_VALUE)
         ](
             lookup_table.unsafe_ptr(),
             RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(
@@ -290,6 +290,8 @@ def test_fused_qk_rope[
     _ = k_cache_input_buffer^
     _ = kv_cache_block_buffer^
     _ = position_ids_input_buffer^
+    _ = lookup_table^
+    _ = start_positions_dyn^
 
 
 def main() raises -> None:

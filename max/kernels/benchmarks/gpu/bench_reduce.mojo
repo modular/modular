@@ -109,9 +109,7 @@ def run_reduce[
         @parameter
         @always_inline
         def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
-            var input_lt = LayoutTensor[
-                dtype, Layout.row_major[rank](), MutAnyOrigin
-            ](
+            var input_lt = LayoutTensor[dtype, Layout.row_major[rank]()](
                 cb_in.offset_ptr(iteration),
                 RuntimeLayout[Layout.row_major[rank]()].row_major(shape),
             )

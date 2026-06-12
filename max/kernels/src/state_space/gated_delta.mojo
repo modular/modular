@@ -143,23 +143,23 @@ def gated_delta_recurrence_fwd_gpu[
     value_dim: Int,  # num_value_heads * value_head_dim
     conv_dim: Int,  # key_dim * 2 + value_dim
     recurrence_output: TileTensor[
-        work_dtype, recurrence_output_LT, MutExternalOrigin
+        work_dtype, recurrence_output_LT, MutUntrackedOrigin
     ],
     recurrent_state: TileTensor[
-        state_dtype, recurrent_state_LT, MutExternalOrigin
+        state_dtype, recurrent_state_LT, MutUntrackedOrigin
     ],
-    slot_idx: TileTensor[DType.uint32, slot_idx_LT, MutExternalOrigin],
+    slot_idx: TileTensor[DType.uint32, slot_idx_LT, MutUntrackedOrigin],
     qkv_conv_output: TileTensor[
-        work_dtype, qkv_conv_output_LT, MutExternalOrigin
+        work_dtype, qkv_conv_output_LT, MutUntrackedOrigin
     ],
     decay_per_token: TileTensor[
-        work_dtype, decay_per_token_LT, MutExternalOrigin
+        work_dtype, decay_per_token_LT, MutUntrackedOrigin
     ],
     beta_per_token: TileTensor[
-        work_dtype, beta_per_token_LT, MutExternalOrigin
+        work_dtype, beta_per_token_LT, MutUntrackedOrigin
     ],
     input_row_offsets: TileTensor[
-        DType.uint32, input_row_offsets_LT, MutExternalOrigin
+        DType.uint32, input_row_offsets_LT, MutUntrackedOrigin
     ],
     # Strides for [total_seq_len, conv_dim] tensors
     qkv_conv_output_seqlen_stride: UInt32,

@@ -158,7 +158,7 @@ class QwenImagePipeline(DiffusionPipeline):
         self._compile_cfg_fastpath_helpers()
         self.cache: QwenImageCache = QwenImageCache()
 
-    def prepare_inputs(self, context: PixelContext) -> QwenImageModelInputs:  # type: ignore[override]
+    def prepare_inputs(self, context: PixelContext) -> QwenImageModelInputs:
         """Convert a PixelContext into QwenImageModelInputs."""
         return QwenImageModelInputs.from_context(context)
 

@@ -178,7 +178,7 @@ def test_case_batched[
                 device_local_topk_idxs_tt,
                 device_out_vals_tt,
                 device_out_idxs_tt,
-                k=k_tt.as_any_origin().as_immut(),
+                k=k_tt.as_unsafe_any_origin().as_immut(),
                 block_size=block_size,
                 num_blocks_per_input=num_blocks_per_input,
             )
@@ -197,7 +197,7 @@ def test_case_batched[
         device_local_topk_idxs_tt,
         device_out_vals_tt,
         device_out_idxs_tt,
-        k=k_tt.as_any_origin().as_immut(),
+        k=k_tt.as_unsafe_any_origin().as_immut(),
         block_size=block_size,
         num_blocks_per_input=num_blocks_per_input,
     )
@@ -250,7 +250,7 @@ def test_case_batched[
                     topk_idxs_cpu_tt,
                     1,
                     True,
-                    k=k_host_tt.as_any_origin().as_immut(),
+                    k=k_host_tt.as_unsafe_any_origin().as_immut(),
                 )
 
             time_kernel[run_func_cpu](m, ctx, "topk-cpu")
@@ -263,7 +263,7 @@ def test_case_batched[
             topk_idxs_cpu_tt,
             1,
             True,
-            k=k_host_tt.as_any_origin().as_immut(),
+            k=k_host_tt.as_unsafe_any_origin().as_immut(),
         )
 
         for i in range(out_vals_shape.flattened_length()):
@@ -391,7 +391,7 @@ def test_case_multi_rank[
         device_in_tt,
         device_out_vals_tt,
         device_out_idxs_tt,
-        k=k_tt.as_any_origin().as_immut(),
+        k=k_tt.as_unsafe_any_origin().as_immut(),
         block_size=block_size,
         num_blocks_per_input=num_blocks_per_input,
     )
@@ -428,7 +428,7 @@ def test_case_multi_rank[
             topk_idxs_cpu_tt,
             1,
             True,
-            k=k_host_tt.as_any_origin().as_immut(),
+            k=k_host_tt.as_unsafe_any_origin().as_immut(),
         )
 
         for i in range(out_vals_shape.flattened_length()):

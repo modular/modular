@@ -337,7 +337,6 @@ class DeepseekV3_2DecoderLayer(Module):
         input_row_offsets: list[TensorValue],
         mla_decode_scalar_args: list[TensorValue] | None = None,
         mla_num_partitions_scalars: list[TensorValue] | None = None,
-        mla_effective_split_len_scalars: list[TensorValue] | None = None,
         ep_inputs: list[Value[Any]] | None = None,
     ) -> list[TensorValue]:
         # We have to unpack our PagedCacheValues into constituent parts so
@@ -356,9 +355,6 @@ class DeepseekV3_2DecoderLayer(Module):
                 else None,
                 mla_num_partitions=mla_num_partitions_scalars[i]
                 if mla_num_partitions_scalars is not None
-                else None,
-                mla_effective_split_len=mla_effective_split_len_scalars[i]
-                if mla_effective_split_len_scalars is not None
                 else None,
             )
             for i in range(num_devices)
@@ -642,18 +638,11 @@ class DeepseekV3_2(Module):
             ]
 
         mla_num_partitions_scalars: list[TensorValue] | None = None
-        mla_effective_split_len_scalars: list[TensorValue] | None = None
         if mla_kv_collections[0].mla_num_partitions is not None:
             mla_num_partitions_scalars = [
                 kv.mla_num_partitions
                 for kv in mla_kv_collections
                 if kv.mla_num_partitions is not None
-            ]
-        if mla_kv_collections[0].mla_effective_split_len is not None:
-            mla_effective_split_len_scalars = [
-                kv.mla_effective_split_len
-                for kv in mla_kv_collections
-                if kv.mla_effective_split_len is not None
             ]
 
         def inputs_for_layer(
@@ -681,8 +670,6 @@ class DeepseekV3_2(Module):
                 values.append(mla_decode_scalar_args)
             if mla_num_partitions_scalars is not None:
                 values.append(mla_num_partitions_scalars)
-            if mla_effective_split_len_scalars is not None:
-                values.append(mla_effective_split_len_scalars)
             if ep_inputs is not None:
                 values.append(ep_inputs)
             return values

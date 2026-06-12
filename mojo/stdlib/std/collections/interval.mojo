@@ -300,7 +300,7 @@ struct _IntervalNode[
     """
 
     comptime _OpaquePointer = Optional[
-        UnsafePointer[NoneType, MutExternalOrigin]
+        UnsafePointer[NoneType, MutUntrackedOrigin]
     ]
 
     var interval: Interval[Self.T]
@@ -326,26 +326,26 @@ struct _IntervalNode[
 
     def left(
         ref self,
-    ) -> ref[self._left] Optional[UnsafePointer[Self, MutExternalOrigin]]:
+    ) -> ref[self._left] Optional[UnsafePointer[Self, MutUntrackedOrigin]]:
         """Returns a reference to the left child pointer."""
         return UnsafePointer(to=self._left).bitcast[
-            Optional[UnsafePointer[Self, MutExternalOrigin]]
+            Optional[UnsafePointer[Self, MutUntrackedOrigin]]
         ]()[]
 
     def right(
         ref self,
-    ) -> ref[self._right] Optional[UnsafePointer[Self, MutExternalOrigin]]:
+    ) -> ref[self._right] Optional[UnsafePointer[Self, MutUntrackedOrigin]]:
         """Returns a reference to the right child pointer."""
         return UnsafePointer(to=self._right).bitcast[
-            Optional[UnsafePointer[Self, MutExternalOrigin]]
+            Optional[UnsafePointer[Self, MutUntrackedOrigin]]
         ]()[]
 
     def parent(
         ref self,
-    ) -> ref[self._parent] Optional[UnsafePointer[Self, MutExternalOrigin]]:
+    ) -> ref[self._parent] Optional[UnsafePointer[Self, MutUntrackedOrigin]]:
         """Returns a reference to the parent pointer."""
         return UnsafePointer(to=self._parent).bitcast[
-            Optional[UnsafePointer[Self, MutExternalOrigin]]
+            Optional[UnsafePointer[Self, MutUntrackedOrigin]]
         ]()[]
 
     def __init__(
@@ -467,7 +467,7 @@ struct IntervalTree[
     """
 
     comptime _IntervalNodePointer = Optional[
-        UnsafePointer[_IntervalNode[Self.T, Self.U], MutExternalOrigin]
+        UnsafePointer[_IntervalNode[Self.T, Self.U], MutUntrackedOrigin]
     ]
 
     var _root: Self._IntervalNodePointer
@@ -488,7 +488,7 @@ struct IntervalTree[
 
     @staticmethod
     def _del_helper(
-        node: UnsafePointer[_IntervalNode[Self.T, Self.U], MutExternalOrigin],
+        node: UnsafePointer[_IntervalNode[Self.T, Self.U], MutUntrackedOrigin],
     ):
         if node[].left():
             Self._del_helper(node[].left().value())

@@ -29,7 +29,7 @@ from linalg.matmul.gpu.apple.matmul_kernel import (
 
 def _fill_small_int[
     dtype: DType
-](buf: UnsafePointer[Scalar[dtype], MutAnyOrigin], count: Int, seed: UInt64,):
+](buf: UnsafePointer[mut=True, Scalar[dtype], _], count: Int, seed: UInt64):
     """Fill `buf` with deterministic uniform values in `{-2, -1, 0, 1, 2}`.
 
     Inlined xorshift64 keeps the sequence reproducible across runs. With
@@ -188,9 +188,9 @@ def _bench_shape[
         ctx.enqueue_copy(d_host, d_dev)
         ctx.synchronize()
         _verify[in_type, transpose_b](
-            a_host.unsafe_ptr(),
-            b_host.unsafe_ptr(),
-            d_host.unsafe_ptr(),
+            a_host.unsafe_ptr().as_unsafe_any_origin(),
+            b_host.unsafe_ptr().as_unsafe_any_origin(),
+            d_host.unsafe_ptr().as_unsafe_any_origin(),
             m,
             n,
             k,

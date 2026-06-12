@@ -52,8 +52,7 @@ from nn.attention.gpu.nvidia.sm100.attention_utils import (
     SharedMemPointer,
     MBarType,
     TMemTile,
-    SM100TensorAccumulatorSS,
-    SM100TensorAccumulatorTS,
+    SM100TensorAccumulator,
     STMatrixLayout,
     STMatrixOffsets,
     break_into_powers_of_two,
@@ -613,6 +612,13 @@ def fa4_softmax[
     SinkType: OptionalPointer,
     _is_cache_length_accurate: Bool,
     MaxSeqLenType: OptionallyStaticInt,
+    # Statically guarantees `num_output_rows > 0` for every warp group,
+    # folding the 2Q output guard away. Only pass True when the calling
+    # kernel routes every tile short enough for an empty row half
+    # (`seq_len - prompt_offset <= wg_row_offset_seq`) to the 1Q body
+    # instead (see `can_switch_to_1q()` use in `kernel.mojo`). The MLA
+    # prefill kernels do not perform that switch and must leave this False.
+    output_nonempty: Bool = False,
 ](
     smem: SM100AttentionSMem[config],
     score_row: UInt32,
@@ -654,24 +660,26 @@ def fa4_softmax[
     comptime MiscMBarsType = type_of(mbars)
 
     # MMA types for TMEM access
-    comptime UMMA0Type = SM100TensorAccumulatorSS[
+    comptime UMMA0Type = SM100TensorAccumulator[
         qkv_type,
         accum_dtype,
         MMA_M=config.MMA_M,
         MMA_N=BN,
         BK=align_up(config.qk_depth, config.MMA_K),
+        a_tmem=False,
         swizzle_a=config.swizzle_mode,
         swizzle_b=config.swizzle_mode,
         transpose_b=True,
         num_stages=config.num_qk_stages,
         cta_group=cta_group,
     ]
-    comptime UMMA1Type = SM100TensorAccumulatorTS[
+    comptime UMMA1Type = SM100TensorAccumulator[
         qkv_type,
         accum_dtype,
         MMA_M=config.MMA_M,
         MMA_N=padded_ov_depth,
         BK=BN,
+        a_tmem=True,
         swizzle_b=config.swizzle_mode,
         transpose_b=False,
         num_stages=config.num_pv_stages,
@@ -1433,8 +1441,11 @@ def fa4_softmax[
             + UInt32(config.TMEM_O0)
             + warp_group_idx * UInt32(padded_ov_depth)
         )
+
         # wait on the o_pipeline producer
-        if num_output_rows > 0:
+        @parameter
+        @always_inline
+        def wait_and_write_output():
             o_prod_mbar[warp_group_idx].wait(o_phase)  # consumer wait
             tcgen05_fence_after()  # example 1
             # TODO: pass in a dedicated barrier that a q-writer can wait on in a persistent kernel?
@@ -1454,10 +1465,35 @@ def fa4_softmax[
                 + warp_group_idx
                 * UInt32(HalfBM // group if fuse_gqa else HalfBM),
             )
+
+        # `output_nonempty` statically discharges the guard: the entry
+        # kernel routed every tile with
+        # `seq_len - prompt_offset <= wg_row_offset_seq` to the 1Q body,
+        # so both WGs' halves are non-empty whenever this 2Q path runs.
+        comptime if output_nonempty:
+            debug_assert(
+                num_output_rows > 0,
+                "1Q switch must take every tile with an empty output half",
+            )
+            wait_and_write_output()
+        else:
+            if num_output_rows > 0:
+                wait_and_write_output()
     else:
         # 1Q output. T==1 takes a fast path (WG0 has the full output
         # in TMEM_O0 and WG1 has no work / already returned); T>=2
         # combines per-WG partials via LSE exchange.
+        #
+        # No `num_output_rows > 0` guards on the 1Q write paths: 1Q has no
+        # per-WG row offset (`wg_row_offset == 0`) and is single-CTA
+        # (`supported()` forbids pair_cta), so `num_output_rows =
+        # min(seq_len - prompt_offset, per_qo_BM_seq)`, which is >= 1
+        # because every caller dispatches the softmax warps only for tiles
+        # with `seq_info.is_valid()` (seq_len > prompt_offset).
+        debug_assert(
+            num_output_rows > 0,
+            "1Q tiles always have output rows (is_valid() holds)",
+        )
         if total_iters_combined == UInt32(1):
             # T==1 fast path: skip LSE-exchange entirely and reuse the
             # 2Q row-scale + stmatrix + TMA helper directly. No peer
@@ -1468,22 +1504,21 @@ def fa4_softmax[
             o_tile = TMemTile[
                 accum_dtype, BM // config.num_qo, padded_ov_depth
             ](tmem_addr + UInt32(config.TMEM_O0))
-            if num_output_rows > 0:
-                # Only o0 is produced (MMA skipped the o1 commit at T==1).
-                o_prod_mbar[0].wait(o_phase)
-                tcgen05_fence_after()
-                fa4_scale_write_output[config](
-                    row,
-                    warp_idx & 3,
-                    UInt32(0),
-                    inv_row_sum,
-                    o_smem,
-                    o_tile,
-                    ragged_tma_store,
-                    num_output_rows,
-                    head_idx,
-                    gmem_row + cta_q_offset,
-                )
+            # Only o0 is produced (MMA skipped the o1 commit at T==1).
+            o_prod_mbar[0].wait(o_phase)
+            tcgen05_fence_after()
+            fa4_scale_write_output[config](
+                row,
+                warp_idx & 3,
+                UInt32(0),
+                inv_row_sum,
+                o_smem,
+                o_tile,
+                ragged_tma_store,
+                num_output_rows,
+                head_idx,
+                gmem_row + cta_q_offset,
+            )
             # WG1 already participated in `named_barrier[2*WG](2)` and
             # returned; WG0 must hit it here so the pair-WG sync resolves
             # before TMEM dealloc. Mirrors the unconditional sync below.
@@ -1507,10 +1542,7 @@ def fa4_softmax[
         # 2. Wait on OWN pipeline_o producer. After this, MMA1 has finished
         # its last V·P, so the last P in own's s_tmem has been consumed and
         # the slot is safe to repurpose for the cross-WG LSE exchange below.
-        # The wait is unconditional (independent of num_output_rows) because
-        # MMA1 always runs and the TMEM reuse requires it; the peer-side
-        # wait stays inside the num_output_rows guard since it only gates
-        # the TMEM_O read in fa4_lse_combine_write.
+        # MMA1 always runs and the TMEM reuse requires this wait.
         o_prod_mbar[warp_group_idx].wait(o_phase)
         tcgen05_fence_after()
 
@@ -1573,44 +1605,63 @@ def fa4_softmax[
         # `total_iters_combined & 1` for odd combined-T, so peer's phase
         # XORs in that bit. (Own's producer was already waited on above
         # before the LSE exchange.)
-        if num_output_rows > 0:
-            peer_phase = o_phase ^ (total_iters_combined & UInt32(1))
-            o_prod_mbar[peer_wg].wait(peer_phase)
-            tcgen05_fence_after()
+        peer_phase = o_phase ^ (total_iters_combined & UInt32(1))
+        o_prod_mbar[peer_wg].wait(peer_phase)
+        tcgen05_fence_after()
 
-            # 5. Build own + peer TMEM tiles at full-BM extent.
-            own_o_tile = TMemTile[accum_dtype, BM, padded_ov_depth](
-                tmem_addr
-                + UInt32(config.TMEM_O0)
-                + warp_group_idx * UInt32(padded_ov_depth)
-            )
-            peer_o_tile = TMemTile[accum_dtype, BM, padded_ov_depth](
-                tmem_addr
-                + UInt32(config.TMEM_O0)
-                + peer_wg * UInt32(padded_ov_depth)
-            )
+        # 5. Build own + peer TMEM tiles at full-BM extent.
+        own_o_tile = TMemTile[accum_dtype, BM, padded_ov_depth](
+            tmem_addr
+            + UInt32(config.TMEM_O0)
+            + warp_group_idx * UInt32(padded_ov_depth)
+        )
+        peer_o_tile = TMemTile[accum_dtype, BM, padded_ov_depth](
+            tmem_addr
+            + UInt32(config.TMEM_O0)
+            + peer_wg * UInt32(padded_ov_depth)
+        )
 
-            # 6. Per-WG comptime j-range specialization for the helper.
-            # Ceil/floor split: WG0 takes ceil(iters/2) blocks starting
-            # at j=0, WG1 takes floor(iters/2) starting at j=ceil(iters/2).
-            # Even iters → both WGs get iters/2. Odd iters (depth=64 with
-            # iters=1) → WG0 takes the only block; WG1 skips the helper
-            # entirely (its iters_per_wg would be 0, which the helper
-            # rejects via comptime assert).
-            comptime swizzle_granularity = (
-                config.swizzle_mode.bytes() // size_of[output_type]()
+        # 6. Per-WG comptime j-range specialization for the helper.
+        # Ceil/floor split: WG0 takes ceil(iters/2) blocks starting
+        # at j=0, WG1 takes floor(iters/2) starting at j=ceil(iters/2).
+        # Even iters → both WGs get iters/2. Odd iters (depth=64 with
+        # iters=1) → WG0 takes the only block; WG1 skips the helper
+        # entirely (its iters_per_wg would be 0, which the helper
+        # rejects via comptime assert).
+        comptime swizzle_granularity = (
+            config.swizzle_mode.bytes() // size_of[output_type]()
+        )
+        comptime iters_total = padded_ov_depth // swizzle_granularity
+        comptime iters_per_wg0 = (iters_total + 1) // 2
+        comptime iters_per_wg1 = iters_total // 2
+        # In 1Q both WGs write the same Q rows; no per-WG gmem-row
+        # offset (the depth column j drives the gmem position).
+        out_row_idx = gmem_row + cta_q_offset
+        if warp_group_idx == UInt32(0):
+            fa4_lse_combine_write[
+                config,
+                wg_j_offset=0,
+                iters_per_wg=iters_per_wg0,
+            ](
+                row,
+                warp_idx & 3,
+                warp_group_idx,
+                final_scale_local,
+                final_scale_peer,
+                o_smem,
+                own_o_tile,
+                peer_o_tile,
+                ragged_tma_store,
+                num_output_rows,
+                head_idx,
+                out_row_idx,
             )
-            comptime iters_total = padded_ov_depth // swizzle_granularity
-            comptime iters_per_wg0 = (iters_total + 1) // 2
-            comptime iters_per_wg1 = iters_total // 2
-            # In 1Q both WGs write the same Q rows; no per-WG gmem-row
-            # offset (the depth column j drives the gmem position).
-            out_row_idx = gmem_row + cta_q_offset
-            if warp_group_idx == UInt32(0):
+        else:
+            comptime if iters_per_wg1 > 0:
                 fa4_lse_combine_write[
                     config,
-                    wg_j_offset=0,
-                    iters_per_wg=iters_per_wg0,
+                    wg_j_offset=iters_per_wg0,
+                    iters_per_wg=iters_per_wg1,
                 ](
                     row,
                     warp_idx & 3,
@@ -1625,26 +1676,6 @@ def fa4_softmax[
                     head_idx,
                     out_row_idx,
                 )
-            else:
-                comptime if iters_per_wg1 > 0:
-                    fa4_lse_combine_write[
-                        config,
-                        wg_j_offset=iters_per_wg0,
-                        iters_per_wg=iters_per_wg1,
-                    ](
-                        row,
-                        warp_idx & 3,
-                        warp_group_idx,
-                        final_scale_local,
-                        final_scale_peer,
-                        o_smem,
-                        own_o_tile,
-                        peer_o_tile,
-                        ragged_tma_store,
-                        num_output_rows,
-                        head_idx,
-                        out_row_idx,
-                    )
     named_barrier[Int32(2 * WARPGROUP_SIZE)](4)
     # Pair-CTA: dealloc is deferred to the kernel after cluster_sync so that
     # the peer CTA cannot exit while cluster-scoped stmatrix is in flight.

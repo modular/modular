@@ -38,7 +38,7 @@ def _insertion_sort[
     cmp_fn: def(T, T) capturing[_] -> Bool,
 ](span: Span[T, origin]):
     """Sort the array[start:end] slice"""
-    var array = span.unsafe_ptr().as_any_origin()
+    var array = span.unsafe_ptr().as_unsafe_any_origin()
     var size = len(span)
 
     for i in range(1, size):

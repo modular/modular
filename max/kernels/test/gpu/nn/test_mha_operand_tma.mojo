@@ -366,18 +366,18 @@ def test_continuous_kv_cache[
                     var src_host_collection = ContinuousBatchingKVCacheCollection[
                         dtype, kv_params
                     ](
-                        src_host_tensor.as_any_origin(),
-                        cache_lengths_host_tensor.as_any_origin().get_immutable(),
-                        lookup_host_tensor.as_any_origin().get_immutable(),
+                        src_host_tensor.as_unsafe_any_origin(),
+                        cache_lengths_host_tensor.as_unsafe_any_origin().get_immutable(),
+                        lookup_host_tensor.as_unsafe_any_origin().get_immutable(),
                         UInt32(max_seq_len),
                         UInt32(max_seq_len),
                     )
                     var dst_host_collection = ContinuousBatchingKVCacheCollection[
                         dtype, kv_params
                     ](
-                        dst_host_tensor.as_any_origin(),
-                        cache_lengths_host_tensor.as_any_origin().get_immutable(),
-                        lookup_host_tensor.as_any_origin().get_immutable(),
+                        dst_host_tensor.as_unsafe_any_origin(),
+                        cache_lengths_host_tensor.as_unsafe_any_origin().get_immutable(),
+                        lookup_host_tensor.as_unsafe_any_origin().get_immutable(),
                         UInt32(max_seq_len),
                         UInt32(max_seq_len),
                     )
@@ -549,18 +549,18 @@ def test_paged_kv_cache[
                     var src_host_collection = PagedKVCacheCollection[
                         dtype, kv_params, page_size
                     ](
-                        src_host_tensor.as_any_origin(),
-                        cache_lengths_host_tensor.as_any_origin().get_immutable(),
-                        paged_lut_host_tensor.as_any_origin().get_immutable(),
+                        src_host_tensor.as_unsafe_any_origin(),
+                        cache_lengths_host_tensor.as_unsafe_any_origin().get_immutable(),
+                        paged_lut_host_tensor.as_unsafe_any_origin().get_immutable(),
                         UInt32(max_seq_len),
                         UInt32(max_seq_len),
                     )
                     var dst_host_collection = PagedKVCacheCollection[
                         dtype, kv_params, page_size
                     ](
-                        dst_host_tensor.as_any_origin(),
-                        cache_lengths_host_tensor.as_any_origin().get_immutable(),
-                        paged_lut_host_tensor.as_any_origin().get_immutable(),
+                        dst_host_tensor.as_unsafe_any_origin(),
+                        cache_lengths_host_tensor.as_unsafe_any_origin().get_immutable(),
+                        paged_lut_host_tensor.as_unsafe_any_origin().get_immutable(),
                         UInt32(max_seq_len),
                         UInt32(max_seq_len),
                     )
@@ -625,7 +625,7 @@ def test_layout_tensor[
         ),
     )
     src_operand = LayoutTensorMHAOperand(
-        src_tt.to_layout_tensor().as_any_origin()
+        src_tt.to_layout_tensor().as_unsafe_any_origin()
     )
 
     for is_k_major in range(2):
@@ -649,7 +649,7 @@ def test_layout_tensor[
             ),
         )
         dst_operand = LayoutTensorMHAOperand(
-            dst_tt.to_layout_tensor().as_any_origin()
+            dst_tt.to_layout_tensor().as_unsafe_any_origin()
         )
 
         mha_operand_copy[tile_m, kv_params](
@@ -687,10 +687,10 @@ def test_layout_tensor[
                 )
 
                 src_host_operand = LayoutTensorMHAOperand(
-                    src_host_tt.to_layout_tensor().as_any_origin()
+                    src_host_tt.to_layout_tensor().as_unsafe_any_origin()
                 )
                 dst_host_operand = LayoutTensorMHAOperand(
-                    dst_host_tt.to_layout_tensor().as_any_origin()
+                    dst_host_tt.to_layout_tensor().as_unsafe_any_origin()
                 )
 
                 test_mha_host_operand[tile_m, kv_params](
@@ -771,7 +771,7 @@ def test_ragged[
         ),
     )
     src_operand = RaggedMHAOperand(
-        src_tt.to_layout_tensor().as_any_origin(),
+        src_tt.to_layout_tensor().as_unsafe_any_origin(),
         LayoutTensor[DType.uint32, offsets_layout, MutAnyOrigin](
             cache_row_offsets_device, offsets_runtime_layout
         ),
@@ -801,7 +801,7 @@ def test_ragged[
         ),
     )
     dst_operand = RaggedMHAOperand(
-        dst_tt.to_layout_tensor().as_any_origin(),
+        dst_tt.to_layout_tensor().as_unsafe_any_origin(),
         LayoutTensor[DType.uint32, offsets_layout, MutAnyOrigin](
             cache_row_offsets_device, offsets_runtime_layout
         ),
@@ -844,12 +844,12 @@ def test_ragged[
                 ](offsets_host, offsets_runtime_layout)
 
                 src_host_operand = RaggedMHAOperand(
-                    src_host_tt.to_layout_tensor().as_any_origin(),
-                    offsets_host_tensor.as_any_origin(),
+                    src_host_tt.to_layout_tensor().as_unsafe_any_origin(),
+                    offsets_host_tensor.as_unsafe_any_origin(),
                 )
                 dst_host_operand = RaggedMHAOperand(
-                    dst_host_tt.to_layout_tensor().as_any_origin(),
-                    offsets_host_tensor.as_any_origin(),
+                    dst_host_tt.to_layout_tensor().as_unsafe_any_origin(),
+                    offsets_host_tensor.as_unsafe_any_origin(),
                 )
 
                 test_mha_host_operand[tile_m, kv_params](

@@ -33,7 +33,7 @@ from max.experimental.nn import Module
 from max.experimental.tensor import Tensor
 from max.graph import Graph, TensorType
 from max.graph.weights import load_weights
-from max.pipelines.context import PixelGenerationContext
+from max.pipelines.context import PixelContext
 from max.pipelines.modeling.base.component_model import ComponentModel
 from tqdm import tqdm
 
@@ -151,7 +151,7 @@ class DiffusionPipeline(ABC):
         """Initialize non-ComponentModel components (e.g., image processors)."""
 
     @abstractmethod
-    def prepare_inputs(self, context: PixelGenerationContext) -> Any:
+    def prepare_inputs(self, context: PixelContext) -> Any:
         """Prepare inputs for the pipeline."""
         raise NotImplementedError(
             f"prepare_inputs is not implemented for {self.__class__.__name__}"

@@ -136,7 +136,7 @@ __extension Attention:
                 self.k,
                 self.batch_idx,
                 Self.kv_head_idx(),
-                self.k_smem_ptr,
+                self.k_smem_ptr.as_unsafe_any_origin(),
                 self.num_keys,
                 warp_id,
             )
@@ -156,7 +156,7 @@ __extension Attention:
                 self.v,
                 self.batch_idx,
                 Self.kv_head_idx(),
-                self.v_smem_ptr,
+                self.v_smem_ptr.as_unsafe_any_origin(),
                 self.num_keys,
                 warp_id,
             )

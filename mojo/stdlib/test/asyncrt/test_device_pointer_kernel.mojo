@@ -71,6 +71,11 @@ def test_kernel_with_device_pointers() raises:
         block_dim=_BLOCK_DIM,
     )
     ctx.synchronize()
+    # `DevicePointer` is a non-owning view, so each buffer it borrows must be
+    # kept alive until the enqueued kernel has completed. `out` is kept alive
+    # by its `map_to_host()` use below; keep the inputs alive explicitly.
+    _ = in0^
+    _ = in1^
 
     with out.map_to_host() as out_host:
         for i in range(_LENGTH):
@@ -105,6 +110,9 @@ def test_kernel_mixed_buffer_and_device_pointer() raises:
         block_dim=_BLOCK_DIM,
     )
     ctx.synchronize()
+    # `in1` is borrowed by a non-owning `DevicePointer`, so it must be kept
+    # alive until the enqueued kernel has completed.
+    _ = in1^
 
     with out.map_to_host() as out_host:
         for i in range(_LENGTH):

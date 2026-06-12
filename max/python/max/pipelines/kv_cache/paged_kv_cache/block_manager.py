@@ -31,8 +31,8 @@ from collections.abc import Iterable
 
 from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.pipelines.context import (
-    TextGenerationContext,
-    VLMTextGenerationContext,
+    TextAndVisionContext,
+    TextContext,
 )
 from max.pipelines.kv_cache.kv_connector import KVConnector
 from max.pipelines.kv_cache.memory_tier import MemoryTier
@@ -51,7 +51,7 @@ logger = logging.getLogger("max.pipelines")
 
 
 def _compute_seq_len(
-    ctx: TextGenerationContext,
+    ctx: TextContext,
     num_steps: int,
     num_draft_tokens: int,
     num_draft_tokens_per_step: int = 1,
@@ -182,7 +182,7 @@ class BlockManager:
         )
 
     @traced
-    def step(self, ctx: TextGenerationContext) -> None:
+    def step(self, ctx: TextContext) -> None:
         """Step the block manager by committing blocks into prefix cache."""
         self.assert_runtime_invariants(ctx)
 
@@ -201,7 +201,7 @@ class BlockManager:
     @traced
     def compute_hashes_for_request(
         self,
-        ctx: TextGenerationContext,
+        ctx: TextContext,
     ) -> None:
         """Computes the block hashes for the request."""
         hashes = self.req_to_hashes[ctx.request_id]
@@ -221,7 +221,7 @@ class BlockManager:
 
         unhashed_tokens = ctx.tokens[num_hashed_tokens:num_hashable_tokens]
 
-        images = ctx.images if isinstance(ctx, VLMTextGenerationContext) else []
+        images = ctx.images if isinstance(ctx, TextAndVisionContext) else []
         new_hashes = hash_request_tokens(
             token_ids=unhashed_tokens,
             block_size=self.block_size,
@@ -234,7 +234,7 @@ class BlockManager:
     @traced
     def reuse_blocks_from_prefix_cache(
         self,
-        ctx: TextGenerationContext,
+        ctx: TextContext,
         skip_tokens: bool = True,
     ) -> int:
         """Reuses blocks from prefix cache.
@@ -306,7 +306,7 @@ class BlockManager:
 
     @traced
     def _count_full_blocks_from_prefix_cache(
-        self, ctx: TextGenerationContext, desired_hashes: list[int]
+        self, ctx: TextContext, desired_hashes: list[int]
     ) -> int:
         """Returns the count of device and host blocks with the desired hashes."""
         # Count the number of device block hashes that are in the device prefix cache.
@@ -395,9 +395,7 @@ class BlockManager:
         return loaded_blocks
 
     @traced
-    def count_full_blocks_from_prefix_caches(
-        self, ctx: TextGenerationContext
-    ) -> int:
+    def count_full_blocks_from_prefix_caches(self, ctx: TextContext) -> int:
         """Returns the number of computed (cached) blocks related to this request.
 
         Note that only full blocks are counted.
@@ -418,7 +416,7 @@ class BlockManager:
 
     @traced
     def get_full_blocks_from_prefix_cache(
-        self, ctx: TextGenerationContext
+        self, ctx: TextContext
     ) -> list[KVCacheBlock]:
         """Gets the computed (cached) blocks for the request.
 
@@ -453,14 +451,14 @@ class BlockManager:
     @traced
     def commit_to_prefix_cache(
         self,
-        ctx: TextGenerationContext,
+        ctx: TextContext,
     ) -> None:
         """Commits all blocks whose hashes are known for prefix caching.
 
         This increments the committed_idx.
 
         Args:
-            ctx: TextGenerationContext.
+            ctx: TextContext.
         """
         req_blocks = self.req_to_blocks[ctx.request_id]
         req_hashes = self.req_to_hashes[ctx.request_id]
@@ -533,7 +531,7 @@ class BlockManager:
     @traced
     def allocate_new_blocks(
         self,
-        ctx: TextGenerationContext,
+        ctx: TextContext,
         num_steps: int = 1,
         num_draft_tokens: int = 0,
         num_draft_tokens_per_step: int = 1,
@@ -622,7 +620,7 @@ class BlockManager:
     @traced
     def num_blocks_to_allocate(
         self,
-        ctx: TextGenerationContext,
+        ctx: TextContext,
         num_steps: int = 1,
         num_draft_tokens: int = 0,
         num_draft_tokens_per_step: int = 1,
@@ -666,7 +664,7 @@ class BlockManager:
 
     def release_uncommitted_blocks(
         self,
-        ctx: TextGenerationContext,
+        ctx: TextContext,
         skip_tokens: bool = True,
     ) -> None:
         """Release the uncommitted blocks for the request."""
@@ -717,7 +715,7 @@ class BlockManager:
         self._metrics = KVCacheMetrics()
 
     @traced
-    def assert_runtime_invariants(self, ctx: TextGenerationContext) -> None:
+    def assert_runtime_invariants(self, ctx: TextContext) -> None:
         """Asserts runtime invariants when runtime checks are enabled."""
         if not self.enable_runtime_checks:
             return

@@ -89,7 +89,7 @@ struct _dirent_macos(Copyable):
 struct _DirHandle:
     """Handle to an open directory descriptor opened via opendir."""
 
-    var _handle: OpaquePointer[MutExternalOrigin]
+    var _handle: OpaquePointer[MutUntrackedOrigin]
 
     def __init__(out self, var path: String) raises:
         """Construct the _DirHandle using the path provided.
@@ -101,7 +101,7 @@ struct _DirHandle:
             raise Error("the directory '", path, "' does not exist")
 
         var handle = external_call[
-            "opendir", _CPointer[NoneType, ExternalOrigin[mut=True]]
+            "opendir", _CPointer[NoneType, UntrackedOrigin[mut=True]]
         ](path.as_c_string_slice().unsafe_ptr())
 
         if not handle:
@@ -142,7 +142,7 @@ struct _DirHandle:
 
         while True:
             var ep = external_call[
-                "readdir", _CPointer[_dirent_linux, MutExternalOrigin]
+                "readdir", _CPointer[_dirent_linux, MutUntrackedOrigin]
             ](self._handle)
             if not ep:
                 break
@@ -172,7 +172,7 @@ struct _DirHandle:
 
         while True:
             var ep = external_call[
-                "readdir", _CPointer[_dirent_macos, MutExternalOrigin]
+                "readdir", _CPointer[_dirent_macos, MutUntrackedOrigin]
             ](self._handle)
             if not ep:
                 break

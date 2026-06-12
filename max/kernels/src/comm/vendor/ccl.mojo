@@ -30,7 +30,7 @@ from comm.allreduce import elementwise_epilogue_type
 from std.gpu.primitives.grid_controls import PDLLevel
 from std.utils.coord import Coord
 
-comptime ncclComm_t = _CPointer[NoneType, MutExternalOrigin]
+comptime ncclComm_t = _CPointer[NoneType, MutUntrackedOrigin]
 
 
 @fieldwise_init
@@ -219,7 +219,7 @@ def _ccl_broadcast(
 @always_inline
 def _ccl_stream_ptr(
     ctx: DeviceContext,
-) raises -> _CPointer[NoneType, ExternalOrigin[mut=True]]:
+) raises -> _CPointer[NoneType, UntrackedOrigin[mut=True]]:
     comptime if has_amd_gpu_accelerator():
         return unsafe_cast[Type=NoneType](HIP(ctx.stream()))
     else:

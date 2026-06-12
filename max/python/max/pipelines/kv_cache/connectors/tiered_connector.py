@@ -27,9 +27,9 @@ from collections.abc import Sequence
 from concurrent.futures import Future, wait
 from dataclasses import dataclass
 
-from max.driver import Buffer, Device
+from max.driver import Device
 from max.dtype import DType
-from max.nn.kv_cache import KVCacheParams
+from max.nn.kv_cache.cache_params import KVCacheMemory
 from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.pipelines.kv_cache.memory_tier import MemoryTier
 from max.profiler import Tracer, traced
@@ -75,32 +75,23 @@ class TieredConnector:
     @traced
     def __init__(
         self,
-        params: KVCacheParams,
         devices: Sequence[Device],
-        device_buffers: list[Buffer],
+        kv_memory: list[KVCacheMemory],
         total_num_host_blocks: int,
         disk_cache_dir: str,
         max_disk_size_gb: float,
         use_direct_io: bool = False,
         synchronous_d2h_copy_mode: bool = False,
-        non_replicated_device_buffers_to_offload: list[Buffer] | None = None,
     ) -> None:
-        if not params.enable_prefix_caching:
-            raise ValueError(
-                "TieredConnector requires prefix caching to be enabled"
-            )
         if total_num_host_blocks <= 0:
             raise ValueError("TieredConnector requires host blocks")
 
         self._devices = list(devices)
-        self._block_size = params.page_size
         self._total_num_host_blocks = total_num_host_blocks
 
         self._block_copy_engine = BlockOffloadEngine(
             total_num_host_blocks,
-            device_buffers,
-            replicate_kv_across_tp=params.replicates_kv_across_tp,
-            non_replicated_device_buffers_to_offload=non_replicated_device_buffers_to_offload,
+            kv_memory,
         )
         self._host_buffer: PinnedHostKVCacheBuffer = (
             self._block_copy_engine.host_buffer
