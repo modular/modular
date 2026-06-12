@@ -851,10 +851,29 @@ class PipelineRegistry:
                     "MAX-Optimized architecture not found for `draft_model`"
                 )
 
+        # resolve() may override the target architecture for unified spec-decode
+        # models (it mutates architectures[0] in-place, e.g.
+        # "Gemma4ForConditionalGeneration" → "UnifiedMTPGemma4ForCausalLM").
+        # Snapshot the name before so we can detect the mutation after.
+        pre_resolve_arch_name = pipeline_config.models.main_architecture_name
+
         pipeline_config.resolve(
             arch,
             draft_arch=draft_arch,
         )
+
+        post_resolve_arch_name = pipeline_config.models.main_architecture_name
+        if post_resolve_arch_name != pre_resolve_arch_name:
+            arch = self.retrieve_architecture(
+                architecture_name=post_resolve_arch_name,
+                prefer_module_v3=pipeline_config.runtime.prefer_module_v3,
+                task=task,
+            )
+            if arch is None:
+                raise ValueError(
+                    f"No architecture found for overridden architecture"
+                    f" '{post_resolve_arch_name}'"
+                )
 
         arch_config = arch.config.initialize(pipeline_config)
         max_length = arch_config.get_max_seq_len()
