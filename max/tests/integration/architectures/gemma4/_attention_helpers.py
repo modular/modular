@@ -41,7 +41,6 @@ from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType
 from max.nn.kernels import KVCacheParams
-from max.nn.kv_cache import KVCacheQuantizationConfig
 from max.nn.rotary_embedding import Llama3RotaryEmbedding
 from max.pipelines.architectures.gemma4.layers.attention import (
     Gemma4Attention as MaxGemma4Attention,
@@ -165,7 +164,6 @@ def build_max_attention(
     layer_idx: int,
     *,
     cache_dtype: DType | None = None,
-    quantization_granularity: int = 64,
 ) -> CompiledAttention:
     """Builds and compiles the MAX Gemma4 attention graph.
 
@@ -178,26 +176,15 @@ def build_max_attention(
     `RoPE` is used.
 
     `cache_dtype` controls the KV cache storage dtype.  Pass
-    `DType.float8_e4m3fn` to exercise the fp8-KV path.  Defaults to
-    `dtype` (= bf16).
+    `DType.float8_e4m3fn` to exercise the fp8-KV path (automatically routed
+    to the native pure-fp8 MHA op).  Defaults to `dtype` (= bf16).
     """
     state_dict = {
         weight_name: value.cpu()
         for weight_name, value in attention_weights.items()
     }
 
-    # When `cache_dtype` selects fp8, attach a per-block quantization
-    # config matching Gemma4's production wiring
-    # (`gemma4/model_config.py:524-527`).  This drives the fp8 quantize
-    # + dequant path inside `Gemma4Attention` end-to-end.
     cache_dtype_eff = cache_dtype if cache_dtype is not None else dtype
-    quant_cfg: KVCacheQuantizationConfig | None = None
-    if cache_dtype_eff in (DType.float8_e4m3fn, DType.float8_e4m3fnuz):
-        quant_cfg = KVCacheQuantizationConfig(
-            scale_dtype=DType.float32,
-            quantization_granularity=quantization_granularity,
-        )
-
     kv_params_local = KVCacheParams(
         dtype=cache_dtype_eff,
         devices=[device_ref],
@@ -207,7 +194,6 @@ def build_max_attention(
             [lt for lt in text_config.layer_types if lt == "sliding_attention"]
         ),
         page_size=256,
-        kvcache_quant_config=quant_cfg,
     )
 
     kv_params_global = KVCacheParams(
@@ -219,7 +205,6 @@ def build_max_attention(
             [lt for lt in text_config.layer_types if lt == "full_attention"]
         ),
         page_size=256,
-        kvcache_quant_config=quant_cfg,
     )
 
     kv_params = (
@@ -261,14 +246,6 @@ def build_max_attention(
         devices=[device_ref],
         qk_norm_eps=text_config.rms_norm_eps,
         local_window_size=text_config.sliding_window,
-        # Mirror gemma4.py's production wiring
-        # (`use_interleaved_rope=kv_params.quantized_kv_cache`).
-        # `attention.py` ignores `use_interleaved_rope` and uses
-        # `rope.interleaved` directly; if a future change ever flips
-        # `interleaved=True` under fp8 (which would change the rotation
-        # pairing against trained weights and corrupt attention), this
-        # test would catch it.
-        use_interleaved_rope=kv_params.quantized_kv_cache,
     )
     attention.load_state_dict(state_dict)
 
@@ -397,7 +374,7 @@ def assert_fp8_matches_bf16(
         f"cosine={cos:.6f} max_abs_diff={max_abs_diff:.4f}"
     )
     assert cos >= 0.99, (
-        f"fp8 KV attention output diverged from bf16 baseline: "
+        "fp8 KV attention output diverged from bf16 baseline: "
         f"cosine={cos:.4f} < 0.99 (layer_idx={layer_idx} "
         f"head_dim={head_dim_for_log})"
     )

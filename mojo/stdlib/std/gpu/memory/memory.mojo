@@ -845,7 +845,7 @@ def external_memory[
     address_space: AddressSpace,
     alignment: Int,
     name: StaticString = "extern_ptr_syml",
-]() -> UnsafePointer[dtype, MutExternalOrigin, address_space=address_space]:
+]() -> UnsafePointer[dtype, MutUntrackedOrigin, address_space=address_space]:
     """Gets a pointer to dynamically allocated external memory.
 
     This function returns a pointer to external memory that can be used for dynamic
@@ -871,7 +871,7 @@ def external_memory[
     - Care must be taken to respect alignment requirements when accessing the memory.
     """
     comptime PtrTy = UnsafePointer[
-        StaticTuple[dtype, 0], MutExternalOrigin, address_space=address_space
+        StaticTuple[dtype, 0], MutUntrackedOrigin, address_space=address_space
     ]
     var extern_ptr_symbol = PtrTy(
         __mlir_op.`pop.extern_ptr_symbol`[

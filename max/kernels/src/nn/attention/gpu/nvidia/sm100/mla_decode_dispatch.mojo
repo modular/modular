@@ -511,14 +511,15 @@ def compute_mla_dispatch_scalars[
     max_cache_valid_length: Int,
     q_max_seq_len: Int,
     sm_count: Int,
-) -> Tuple[Int, Int, Int, Int]:
+) -> Tuple[Int, Int, Int]:
     """Pure computation of the packed MLA dispatch metadata.
 
-    Returns ``(batch_size, q_max_seq_len, num_partitions, effective_split_len)``.
-    The first three values are baked into the size-3 GPU buffer; the fourth
-    is exposed for callers that need to align grid-time partition decisions
-    (e.g. capturable graph dispatch) with the kernel's divmod on
-    ``scalar_args[2]``.
+    Returns ``(batch_size, q_max_seq_len, num_partitions)``.
+    These three values are baked into the size-3 GPU buffer.
+    ``effective_split_len`` is computed directly inside the MoGG ops from
+    ``max_lengths`` (``max_cache_valid_length + q_max_seq_len`` when
+    ``_is_cache_length_accurate=False``, else ``max_cache_valid_length``),
+    and no longer needs to be returned here.
     """
     var effective = max_cache_valid_length
 
@@ -530,7 +531,7 @@ def compute_mla_dispatch_scalars[
         num_heads, is_fp8_kv, half_sms
     ](batch_size, effective, q_max_seq_len, split_page_size, sm_count)
 
-    return (batch_size, q_max_seq_len, num_partitions, effective)
+    return (batch_size, q_max_seq_len, num_partitions)
 
 
 def compute_mla_dispatch_scalars_runtime(
@@ -540,7 +541,7 @@ def compute_mla_dispatch_scalars_runtime(
     num_heads: Int,
     is_fp8_kv: Bool,
     sm_count: Int,
-) raises -> Tuple[Int, Int, Int, Int]:
+) raises -> Tuple[Int, Int, Int]:
     if is_fp8_kv:
         if num_heads == 8:
             return compute_mla_dispatch_scalars[8, is_fp8_kv=True](
@@ -752,12 +753,11 @@ def mla_decode_sm100_dispatch[
     extra_scales_ptr: OptionalReg[
         UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
     ] = None,
-    # Pre-computed grid-time scalars from the dispatcher input list (capturable
-    # graph path). When provided, both values bypass the local recompute so
+    # Pre-computed grid-time scalar from the dispatcher input list (capturable
+    # graph path). When provided, the value bypasses the local recompute so
     # the host-side grid sizing matches the device-side divmod on
     # scalar_args_buf[2].
     num_partitions_in: Optional[Int] = None,
-    effective_split_len_in: Optional[Int] = None,
 ) raises:
     var scales_ptr = k.scales_raw_ptr()
 
@@ -795,14 +795,6 @@ def mla_decode_sm100_dispatch[
         if batch_size >= 64 and sw_cap <= 2048:
             sw_cap = 2048
         effective_split_len = min(effective_split_len, sw_cap)
-
-    # Capturable-graph override: when the dispatcher receives the worst-case
-    # effective_split_len from the Python resolver (the same value baked into
-    # scalar_args_buf[2] on the device), use it verbatim so the grid sizing
-    # matches the kernel's divmod. Avoids the multi-step recompute drift that
-    # caused MLA capturable hangs.
-    if effective_split_len_in:
-        effective_split_len = effective_split_len_in.value()
 
     var use_small_split_pages = effective_split_len <= 512 and batch_size >= 32
     var split_page_size = 64 if use_small_split_pages else 128
@@ -1031,7 +1023,10 @@ def _mla_decode_sm100_dispatch_impl[
             ),
         )
         var lse_accum_split_ptr: SplitAccumType = {
-            lse_accum_split.to_device_buffer(ctx).unsafe_ptr()
+            lse_accum_split.to_device_buffer(ctx)
+            .unsafe_ptr()
+            .as_immutable()
+            .as_unsafe_any_origin()
         }
 
         # Get input_row_offsets pointer for combine kernel's ragged output writes.
@@ -1524,7 +1519,9 @@ def mla_decode_sm100_sink_split_k[
                 ]() raises:
                     if ragged:
                         comptime ValidLengthType = NonNullPointer[DType.uint32]
-                        var valid_len: ValidLengthType = {valid_length.ptr}
+                        var valid_len: ValidLengthType = {
+                            valid_length.ptr.as_immutable().as_unsafe_any_origin()
+                        }
                         launch_mla_sm100_decode_sparse_kv_bf16[
                             q_type=q_type,
                             KVLUTType=k_t,
@@ -1641,7 +1638,9 @@ def mla_decode_sm100_sink_split_k[
             ]() raises:
                 if ragged:
                     comptime ValidLengthType = NonNullPointer[DType.uint32]
-                    var valid_len: ValidLengthType = {valid_length.ptr}
+                    var valid_len: ValidLengthType = {
+                        valid_length.ptr.as_immutable().as_unsafe_any_origin()
+                    }
                     launch_mla_sm100_decode_sparse_kv_fp8[
                         q_type=q_type,
                         KVLUTType=k_t,
@@ -1788,7 +1787,9 @@ def mla_decode_sm100_sink_split_k[
         ]() raises:
             if ragged:
                 comptime ValidLengthType = NonNullPointer[DType.uint32]
-                var valid_len: ValidLengthType = {valid_length.ptr}
+                var valid_len: ValidLengthType = {
+                    valid_length.ptr.as_immutable().as_unsafe_any_origin()
+                }
                 launch_mla_sm100_decode_sparse[
                     q_type=q_type,
                     KVLUTType=k_t,
@@ -1951,7 +1952,9 @@ def mla_decode_sm100_sink_split_k[
 
         if ragged:
             comptime ValidLengthType = NonNullPointer[DType.uint32]
-            var valid_len: ValidLengthType = {valid_length.ptr}
+            var valid_len: ValidLengthType = {
+                valid_length.ptr.as_immutable().as_unsafe_any_origin()
+            }
             launch_mla_sm100_decode_fp8_per_token_scale_rope_aware[
                 q_type=q_type,
                 KVLUTType=k_t,
@@ -2065,7 +2068,9 @@ def mla_decode_sm100_sink_split_k[
 
         if ragged:
             comptime ValidLengthType = NonNullPointer[DType.uint32]
-            var valid_len: ValidLengthType = {valid_length.ptr}
+            var valid_len: ValidLengthType = {
+                valid_length.ptr.as_immutable().as_unsafe_any_origin()
+            }
 
             @parameter
             @always_inline
@@ -2273,7 +2278,9 @@ def mla_decode_sm100_sink_split_k[
 
         if ragged:
             comptime ValidLengthType = NonNullPointer[DType.uint32]
-            var valid_len: ValidLengthType = {valid_length.ptr}
+            var valid_len: ValidLengthType = {
+                valid_length.ptr.as_immutable().as_unsafe_any_origin()
+            }
             launch_mla_sm100_decode_enqueue_kernel[
                 q_type=q_type,
                 KVLUTType=k_t,

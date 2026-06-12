@@ -168,13 +168,9 @@ def cast_saturating[
     Returns:
         The values cast to `out_dtype`, saturated if `out_dtype` is FP8.
     """
-    comptime if out_dtype.is_float8():
-        comptime min_val = SIMD[values.dtype, values.size](
-            min_finite[out_dtype]()
-        )
-        comptime max_val = SIMD[values.dtype, values.size](
-            max_finite[out_dtype]()
-        )
-        return clamp(values, min_val, max_val).cast[out_dtype]()
-    else:
+    comptime if in_dtype == out_dtype or not out_dtype.is_float8():
         return values.cast[out_dtype]()
+
+    comptime min_val = SIMD[values.dtype, values.size](min_finite[out_dtype]())
+    comptime max_val = SIMD[values.dtype, values.size](max_finite[out_dtype]())
+    return clamp(values, min_val, max_val).cast[out_dtype]()

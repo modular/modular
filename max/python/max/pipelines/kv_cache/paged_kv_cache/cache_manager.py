@@ -39,7 +39,7 @@ from max.nn.kv_cache.utils import (
     AttentionDispatchResolver,
     build_max_lengths_tensor,
 )
-from max.pipelines.context import TextGenerationContext
+from max.pipelines.context import TextContext
 from max.pipelines.kv_cache.kv_connector import KVConnector
 from max.pipelines.kv_cache.memory_tier import MemoryTier
 from max.pipelines.modeling.types import RequestID
@@ -211,11 +211,7 @@ class PagedKVCacheManager:
         enable_runtime_checks: bool = False,
         *,
         max_batch_size: int,
-        other_kv_managers_device_buffers_per_replica: list[list[Buffer]]
-        | None = None,
-        other_kv_managers_device_buffers_per_replica_not_replicated: list[
-            list[Buffer]
-        ]
+        other_kv_managers_kv_buffers_per_replica: list[list[KVCacheBuffer]]
         | None = None,
     ) -> None:
         """Initialize the multi-device paged KV cache manager.
@@ -229,15 +225,9 @@ class PagedKVCacheManager:
             max_batch_size: Maximum runtime batch size used to preallocate
                 per-replica runtime lookup-table/cache-length row capacity.
             enable_runtime_checks: Whether to enable runtime checks.
-            other_kv_managers_device_buffers_per_replica:
-                A list of lists of device buffers for other KV managers that should
-                be offloaded by this KV manager's KVConnectors. This is a massive
-                hack due to the lack of unified KVCache that handles multiple KVs.
-            other_kv_managers_device_buffers_per_replica_not_replicated:
-                A list of lists of device buffers for other KV managers that should
-                be offloaded by this KV manager's KVConnectors. This is a massive
-                hack due to the lack of unified KVCache that handles multiple KVs.
-                This is only present for mla target and mha draft.
+            other_kv_managers_kv_buffers_per_replica:
+                KVCacheBuffers from other KV managers to be co-offloaded by
+                this manager's KVConnector.
         """
         if max_batch_size < 1:
             raise ValueError("max_batch_size must be positive")
@@ -319,30 +309,19 @@ class PagedKVCacheManager:
             replica_params = primary_params.copy_as_dp_1(
                 replica_idx=replica_idx
             )
-            device_buffers_to_offload: list[Buffer] = []
-            for cache_buffer in replica_device_buffers:
-                device_buffers_to_offload.extend(cache_buffer.all_buffers)
-            if other_kv_managers_device_buffers_per_replica is not None:
-                device_buffers_to_offload.extend(
-                    other_kv_managers_device_buffers_per_replica[replica_idx]
-                )
-            non_replicated_device_buffers_to_offload = []
-            if (
-                other_kv_managers_device_buffers_per_replica_not_replicated
-                is not None
-            ):
-                non_replicated_device_buffers_to_offload.extend(
-                    other_kv_managers_device_buffers_per_replica_not_replicated[
-                        replica_idx
-                    ]
+            kv_buffers_to_offload: list[KVCacheBuffer] = list(
+                replica_device_buffers
+            )
+            if other_kv_managers_kv_buffers_per_replica is not None:
+                kv_buffers_to_offload.extend(
+                    other_kv_managers_kv_buffers_per_replica[replica_idx]
                 )
             connector = create_connector(
-                params=replica_params,
+                kv_connector=replica_params.kv_connector,
+                kv_connector_config=replica_params.kv_connector_config,
                 devices=replica_devices,
-                device_buffers=device_buffers_to_offload,
+                kv_buffers=kv_buffers_to_offload,
                 total_num_host_blocks=total_num_host_pages,
-                total_num_blocks=total_num_pages,
-                non_replicated_device_buffers_to_offload=non_replicated_device_buffers_to_offload,
             )
 
             persistent_kv_device_input_buffers = (
@@ -396,7 +375,7 @@ class PagedKVCacheManager:
         return self._replica[replica_idx].attention_dispatch_resolver
 
     def get_pct_used_blocks_after_allocation(
-        self, ctx: TextGenerationContext, replica_idx: int, num_steps: int = 1
+        self, ctx: TextContext, replica_idx: int, num_steps: int = 1
     ) -> float:
         """Gets the percentage of blocks used after allocating for a request.
 
@@ -426,7 +405,7 @@ class PagedKVCacheManager:
 
     def alloc(
         self,
-        data: TextGenerationContext,
+        data: TextContext,
         replica_idx: int,
         num_steps: int = 1,
     ) -> None:
@@ -457,7 +436,7 @@ class PagedKVCacheManager:
 
     def _does_req_need_more_blocks(
         self,
-        ctx: TextGenerationContext,
+        ctx: TextContext,
         num_steps: int,
         replica_idx: int,
     ) -> bool:
@@ -477,7 +456,7 @@ class PagedKVCacheManager:
     def _runtime_inputs_for_replica(
         self,
         replica_idx: int,
-        batch: Sequence[TextGenerationContext],
+        batch: Sequence[TextContext],
         num_steps: int = 1,
         *,
         max_cache_length: int | None = None,
@@ -680,26 +659,18 @@ class PagedKVCacheManager:
         (
             resolved_metadata,
             mla_num_partitions,
-            mla_effective_split_len,
         ) = replica.attention_dispatch_resolver.resolve_for_replica_with_scalars(
             batch_size,
             max_prompt_len,
             absolute_max_cached_len,
         )
 
-        # Wrap the MLA capturable scalars into 1-element host buffers
-        # exactly once per fetch, then share them across shards. None for
+        # Wrap the MLA capturable scalar into a 1-element host buffer
+        # exactly once per fetch, then share it across shards. None for
         # MHA / degenerate paths.
         mla_num_partitions_buf: Buffer | None = (
             Buffer.from_numpy(np.array([mla_num_partitions], dtype=np.int64))
             if mla_num_partitions is not None
-            else None
-        )
-        mla_effective_split_len_buf: Buffer | None = (
-            Buffer.from_numpy(
-                np.array([mla_effective_split_len], dtype=np.int64)
-            )
-            if mla_effective_split_len is not None
             else None
         )
 
@@ -711,7 +682,6 @@ class PagedKVCacheManager:
             (
                 draft_resolved_metadata_,
                 draft_mla_num_partitions,
-                draft_mla_effective_split_len,
             ) = draft_resolver.resolve_for_replica_with_scalars(
                 batch_size,
                 self.params.num_draft_tokens_per_step,
@@ -727,17 +697,9 @@ class PagedKVCacheManager:
                 if draft_mla_num_partitions is not None
                 else None
             )
-            draft_mla_effective_split_len_buf: Buffer | None = (
-                Buffer.from_numpy(
-                    np.array([draft_mla_effective_split_len], dtype=np.int64)
-                )
-                if draft_mla_effective_split_len is not None
-                else None
-            )
         else:
             draft_resolved_metadata = None
             draft_mla_num_partitions_buf = None
-            draft_mla_effective_split_len_buf = None
 
         # TODO(SERVOPT-942): Generalize to support 3+ caches
         secondary_resolved_metadata: list[Buffer]
@@ -795,11 +757,7 @@ class PagedKVCacheManager:
                         attention_dispatch_metadata=metadata,
                         draft_attention_dispatch_metadata=draft_metadata,
                         mla_num_partitions=mla_num_partitions_buf,
-                        mla_effective_split_len=mla_effective_split_len_buf,
                         draft_mla_num_partitions=draft_mla_num_partitions_buf,
-                        draft_mla_effective_split_len=(
-                            draft_mla_effective_split_len_buf
-                        ),
                     )
                 )
 
@@ -807,7 +765,7 @@ class PagedKVCacheManager:
 
     def runtime_inputs(
         self,
-        batches: Sequence[Sequence[TextGenerationContext]],
+        batches: Sequence[Sequence[TextContext]],
         num_steps: int = 1,
         *,
         max_cache_length: int | None = None,
@@ -901,7 +859,7 @@ class PagedKVCacheManager:
     @contextmanager
     def reserve(
         self,
-        replica_batches: Sequence[Sequence[TextGenerationContext]],
+        replica_batches: Sequence[Sequence[TextContext]],
         *,
         num_steps: int = 1,
     ) -> Iterator[None]:
@@ -936,7 +894,7 @@ class PagedKVCacheManager:
             for request_id, replica_idx in claimed:
                 self.release(request_id, replica_idx=replica_idx)
 
-    def step(self, batches: Sequence[Sequence[TextGenerationContext]]) -> None:
+    def step(self, batches: Sequence[Sequence[TextContext]]) -> None:
         """Commits new tokens into the prefix cache for per-replica batches."""
         for replica, ctxs in zip(self._replica, batches, strict=True):
             replica.connector.sync()

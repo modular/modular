@@ -77,6 +77,12 @@ class QuantFormat(Enum):
     BLOCKSCALED_FP8 = "blockscaled-fp8"
     """FP8 quantization with block-level scaling."""
 
+    MXFP8 = "mxfp8"
+    """Microscaling FP8 (MX) quantization: ``float8_e4m3fn`` data with E8M0
+    block scales at a 32-element K granularity. Uses the SM100 block-scaled
+    tensor-core MMA (``KIND_MXF8F6F4``) rather than the 128-granularity
+    blockwise-FP8 path."""
+
     NVFP4 = "nvfp4"
     """NVIDIA FP4 quantization format."""
 
@@ -343,6 +349,11 @@ class QuantConfig:
     def is_mxfp4(self) -> bool:
         """Returns ``True`` if this config represents MXFP4 quantization."""
         return self.format == QuantFormat.MXFP4
+
+    @property
+    def is_mxfp8(self) -> bool:
+        """Returns ``True`` if this config represents MXFP8 quantization."""
+        return self.format == QuantFormat.MXFP8
 
     @property
     def is_fp4(self) -> bool:

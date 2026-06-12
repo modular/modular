@@ -300,6 +300,12 @@ def test_cli_mixed_pass_and_ignored(tmp_path: Path) -> None:
 
 
 def test_cli_no_json_files(tmp_path: Path) -> None:
+    """An empty verdicts directory is treated as eligible (soft pass).
+
+    Logit verification may not produce results if the calling workflow was
+    cancelled or skipped.  We do not want a cancelled run to permanently
+    block the golden tag, so the script exits 0 with a WARN message.
+    """
     verdicts_dir = tmp_path / "empty"
     verdicts_dir.mkdir()
     ignore_list = _write_ignore_list(tmp_path, "ignored_failures: []\n")
@@ -312,4 +318,6 @@ def test_cli_no_json_files(tmp_path: Path) -> None:
             str(ignore_list),
         ],
     )
-    assert result.exit_code != 0
+    assert result.exit_code == 0, result.output
+    assert "WARN" in result.output
+    assert "PASS" in result.output

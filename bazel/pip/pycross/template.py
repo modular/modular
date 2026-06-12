@@ -113,7 +113,8 @@ def targets():
         testonly = True,
         actual = select({{
             "@@//:use_sglang_setting": ":llguidance@0.7.30",
-            "//conditions:default": ":llguidance@1.3.0",
+            "@@//:use_vllm_setting": ":llguidance@1.3.0",
+            "//conditions:default": ":llguidance@1.7.5",
         }}),
     )
 

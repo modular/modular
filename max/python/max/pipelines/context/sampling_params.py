@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Defines sampling parameters, generation configuration defaults, and base context protocols for MAX pipeline requests."""
+"""Defines sampling parameters and generation configuration defaults for MAX pipeline requests."""
 
 from __future__ import annotations
 
@@ -21,12 +21,9 @@ import secrets
 from collections.abc import Sequence
 from dataclasses import dataclass, field, fields
 from functools import cached_property
-from typing import Any, Protocol, TypeVar, runtime_checkable
-
-from max.pipelines.request import RequestID
+from typing import Any
 
 from .logit_processors_type import LogitsProcessor
-from .status import GenerationStatus
 
 
 def _validate_temperature(value: float, name: str) -> None:
@@ -412,55 +409,3 @@ class SamplingParams:
             or self.presence_penalty != 0.0
             or self.repetition_penalty != 1.0
         )
-
-
-@runtime_checkable
-class BaseContext(Protocol):
-    """Core interface for request lifecycle management across all of MAX, including serving, scheduling, and pipelines.
-
-    This protocol is intended to provide a unified, minimal contract for request state and status handling throughout the MAX stack.
-    Each pipeline variant (for example, text generation, embeddings, image generation) is expected to extend this interface by creating
-    their own modality-specific context classes that implement this protocol and add additional functionality relevant to their
-    particular use case.
-
-    The minimal interface ensures that all context types can be handled uniformly by the scheduling and serving infrastructure,
-    while allowing pipeline-specific implementations to add their own state management, input validation, and result handling.
-    """
-
-    @property
-    def request_id(self) -> RequestID:
-        """Unique identifier for the request."""
-        ...
-
-    @property
-    def status(self) -> GenerationStatus:
-        """Current generation status of the request."""
-        ...
-
-    @status.setter
-    def status(self, status: GenerationStatus) -> None:
-        """Updates the generation status of the request."""
-        ...
-
-    @property
-    def is_done(self) -> bool:
-        """Whether the request has completed generation."""
-        return self.status.is_done
-
-
-BaseContextType = TypeVar("BaseContextType", bound=BaseContext)
-"""
-Type variable for generic programming with :class:`BaseContext` implementations.
-
-This TypeVar is bound to :class:`BaseContext`, meaning it can represent any type that
-implements the :class:`BaseContext` protocol. It enables type-safe generic functions
-and classes that work with any :class:`BaseContext` subtype while preserving the
-specific type information through the type system.
-
-.. code-block:: python
-
-    def process_context(context: BaseContextType) -> BaseContextType:
-        # Function that accepts any BaseContext implementation
-        # and returns the same type
-        ...
-"""

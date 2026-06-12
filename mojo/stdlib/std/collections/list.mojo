@@ -323,7 +323,7 @@ struct List[T: Movable](
         T: The type of elements stored in the list.
     """
 
-    comptime _UnsafePointerType = UnsafePointer[Self.T, MutExternalOrigin]
+    comptime _UnsafePointerType = UnsafePointer[Self.T, MutUntrackedOrigin]
 
     # Fields
     var _data: Self._UnsafePointerType
@@ -1084,7 +1084,7 @@ struct List[T: Movable](
         self._annotate_increase(new_size - self._len)
         for i in range(self._len, new_size):
             rebind[
-                UnsafePointer[downcast[Self.T, Copyable], MutExternalOrigin]
+                UnsafePointer[downcast[Self.T, Copyable], MutUntrackedOrigin]
             ](self._data + i).init_pointee_copy(value)
         self._len = new_size
 
@@ -1261,7 +1261,7 @@ struct List[T: Movable](
         self._len = 0
         self._annotate_shrink(old_size)
 
-    def steal_data(mut self) -> UnsafePointer[Self.T, MutExternalOrigin]:
+    def steal_data(mut self) -> UnsafePointer[Self.T, MutUntrackedOrigin]:
         """Take ownership of the underlying pointer from the list.
 
         Returns:

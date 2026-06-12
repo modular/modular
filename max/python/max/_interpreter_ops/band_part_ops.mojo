@@ -44,7 +44,7 @@ from op_utils import (
 
 
 @export
-def PyInit_band_part_ops() -> PythonObject:
+def PyInit_band_part_ops() abi("C") -> PythonObject:
     """Create a Python module with band_part kernel function bindings."""
     try:
         var b = PythonModuleBuilder("band_part_ops")
@@ -65,8 +65,8 @@ def PyInit_band_part_ops() -> PythonObject:
 def band_part_op[
     dtype: DType, //
 ](
-    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    in_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    out_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    in_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     mn_stride: Int,
     M: Int,
     N: Int,

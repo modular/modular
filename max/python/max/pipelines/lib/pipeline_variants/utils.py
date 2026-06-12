@@ -107,7 +107,23 @@ class _TikTokenAdapter:
         self.bos_token_id = tokenizer.bos_token_id
         self.special_token_ids = getattr(tokenizer, "all_special_ids", [])
 
-        # Build byte representation for each token (required by TokenizerWrapper)
+        # Build byte representation for each token (required by TokenizerWrapper).
+        # convert_ids_to_tokens(i) returns the token's byte->unicode *surface
+        # form* (e.g. raw newline 0x0A -> 'Ċ', space 0x20 -> 'Ġ'); .encode("utf-8")
+        # then gives the UTF-8 bytes of those placeholder characters (b'\xc4\x8a'),
+        # not the token's true bytes (b'\n'). Feeding those to llguidance makes it
+        # mask against the wrong bytes and admit control-char tokens as legal JSON
+        # string content, leaking raw newlines into structured output. Reverse the
+        # map via the tokenizer's byte_decoder to recover the true bytes.
+        # byte_decoder is integral to a byte-level BPE tokenizer (its own decode
+        # depends on it).
+        byte_decoder = getattr(tokenizer, "byte_decoder", None)
+        if byte_decoder is None:
+            raise ValueError(
+                "TikToken-based structured output requires a tokenizer with a "
+                "`byte_decoder` (byte-level BPE inverse map); "
+                f"{type(tokenizer).__name__} does not provide one."
+            )
         vocab_size = len(tokenizer.get_vocab())
         self._tokens: list[bytes] = []
         for i in range(vocab_size):
@@ -115,7 +131,17 @@ class _TikTokenAdapter:
             if token_str is None:
                 self._tokens.append(b"")
             else:
-                self._tokens.append(token_str.encode("utf-8", errors="replace"))
+                try:
+                    self._tokens.append(
+                        bytes(byte_decoder[c] for c in token_str)
+                    )
+                except KeyError:
+                    # A char outside the byte->unicode map (rare; e.g. some
+                    # special tokens, like an emoji): fall back to the UTF-8 encoding.
+                    # This fallback is not expected to be used for standard TikToken vocabs.
+                    self._tokens.append(
+                        token_str.encode("utf-8", errors="replace")
+                    )
 
     @property
     def tokens(self) -> list[bytes]:

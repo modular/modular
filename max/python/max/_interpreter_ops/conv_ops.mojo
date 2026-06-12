@@ -33,7 +33,7 @@ from op_utils import _get_dtype, _get_ctx, _make_ptr
 
 
 @export
-def PyInit_conv_ops() -> PythonObject:
+def PyInit_conv_ops() abi("C") -> PythonObject:
     """Create a Python module with convolution kernel function bindings."""
     try:
         var b = PythonModuleBuilder("conv_ops")
@@ -58,9 +58,9 @@ def PyInit_conv_ops() -> PythonObject:
 def conv2d_op[
     dtype: DType, //
 ](
-    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    in_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    filt_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    out_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    in_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    filt_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     batch: Int,
     in_h: Int,
     in_w: Int,
@@ -187,9 +187,9 @@ def conv2d_op[
 def conv_transpose2d_op[
     dtype: DType, //
 ](
-    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    in_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    filt_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    out_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    in_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    filt_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     batch: Int,
     in_h: Int,
     in_w: Int,

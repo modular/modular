@@ -38,7 +38,7 @@ struct TensorMemory(TrivialRegisterPassable):
     """A wrapper around tensor memory allocated for tcgen05 instructions."""
 
     var ptr: UnsafePointer[
-        UInt32, MutExternalOrigin, address_space=AddressSpace.SHARED
+        UInt32, MutUntrackedOrigin, address_space=AddressSpace.SHARED
     ]
     """Pointer to the tensor memory address."""
 
@@ -58,7 +58,7 @@ struct TensorMemory(TrivialRegisterPassable):
                 UInt32, address_space=AddressSpace.SHARED, alignment=16
             ]()
             .bitcast[UInt32]()
-            .unsafe_origin_cast[MutExternalOrigin]()
+            .unsafe_origin_cast[MutUntrackedOrigin]()
         )
         self.num_cols = num_cols
 

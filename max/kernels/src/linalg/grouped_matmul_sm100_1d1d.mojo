@@ -344,10 +344,10 @@ def copy_accum_to_gmem[
                     c_smem_warp_tt.tile[data_paths, stageN](1, 0),
                 )
 
-            var c_smem_warp_tile_upper = c_smem_warp_tile.tile[
+            var c_smem_warp_tile_upper = c_smem_warp_tt.tile[
                 data_paths, stageN
             ](0, 0)
-            var c_smem_warp_tile_lower = c_smem_warp_tile.tile[
+            var c_smem_warp_tile_lower = c_smem_warp_tt.tile[
                 data_paths, stageN
             ](1, 0)
 
@@ -365,8 +365,6 @@ def copy_accum_to_gmem[
                         c_smem_warp_tile_upper.dtype,
                         c_smem_tile.shape[1](),
                         simd_size,
-                        c_smem_warp_tile_upper.layout,
-                        c_smem_warp_tile_lower.layout,
                         swizzle,
                         elementwise_compute_lambda_fn.value(),
                         num_output_warps,
@@ -628,7 +626,7 @@ def multi_stage_store_C[
     scale_c_coord: Bool = True,
 ](
     c_smem_base: UnsafePointer[
-        Scalar[c_type], MutAnyOrigin, address_space=AddressSpace.SHARED
+        mut=True, Scalar[c_type], _, address_space=AddressSpace.SHARED
     ],
     c_tma_op: TMATensorTile[c_type, c_tile_rank, c_tile_shape, c_desc_shape],
     c: LayoutTensor[c_type, c_tensor_layout, MutAnyOrigin],
@@ -834,16 +832,16 @@ def load_AB[
         sfb_dtype, sfb_tile_rank, sfb_tile_shape, sfb_desc_shape
     ],
     a_smem_base: UnsafePointer[
-        Scalar[a_type], MutAnyOrigin, address_space=AddressSpace.SHARED
+        mut=True, Scalar[a_type], _, address_space=AddressSpace.SHARED
     ],
     b_smem_base: UnsafePointer[
-        Scalar[b_type], MutAnyOrigin, address_space=AddressSpace.SHARED
+        mut=True, Scalar[b_type], _, address_space=AddressSpace.SHARED
     ],
     sfa_smem_base: UnsafePointer[
-        Scalar[sfa_dtype], MutAnyOrigin, address_space=AddressSpace.SHARED
+        mut=True, Scalar[sfa_dtype], _, address_space=AddressSpace.SHARED
     ],
     sfb_smem_base: UnsafePointer[
-        Scalar[sfb_dtype], MutAnyOrigin, address_space=AddressSpace.SHARED
+        mut=True, Scalar[sfb_dtype], _, address_space=AddressSpace.SHARED
     ],
     load_mma_pipeline: ProducerConsumerPipeline[num_pipeline_stages],
     peer_cta_coord: Tuple[Int, Int, Int],
@@ -1041,16 +1039,16 @@ def consumer_main_loop[
     sfa_tmem: UInt32,
     sfb_tmem: UInt32,
     a_smem_base: UnsafePointer[
-        Scalar[a_type], MutAnyOrigin, address_space=AddressSpace.SHARED
+        mut=True, Scalar[a_type], _, address_space=AddressSpace.SHARED
     ],
     b_smem_base: UnsafePointer[
-        Scalar[b_type], MutAnyOrigin, address_space=AddressSpace.SHARED
+        mut=True, Scalar[b_type], _, address_space=AddressSpace.SHARED
     ],
     sfa_smem_base: UnsafePointer[
-        Scalar[sfa_dtype], MutAnyOrigin, address_space=AddressSpace.SHARED
+        mut=True, Scalar[sfa_dtype], _, address_space=AddressSpace.SHARED
     ],
     sfb_smem_base: UnsafePointer[
-        Scalar[sfb_dtype], MutAnyOrigin, address_space=AddressSpace.SHARED
+        mut=True, Scalar[sfb_dtype], _, address_space=AddressSpace.SHARED
     ],
     load_mma_pipeline: ProducerConsumerPipeline[pipeline_stages],
     mma_op: MmaOpSM100_BlockScaled_SS[
@@ -1292,7 +1290,7 @@ def blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         b_type,
         flat_b_layout,
         address_space=AddressSpace.GENERIC,
-    ](b_device.ptr.as_any_origin())
+    ](b_device.ptr.as_unsafe_any_origin())
 
     comptime assert (
         sfb_layout.shape[0].value() == num_experts
@@ -1910,7 +1908,7 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
         config.num_pipeline_stages // config.k_group_size
     ](
         tma_mma_mbars_storage.unsafe_ptr().unsafe_origin_cast[
-            MutExternalOrigin
+            MutUntrackedOrigin
         ](),
     )
 
@@ -1920,7 +1918,7 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
         config.num_accum_pipeline_stages
     ](
         accum_mbars_storage.unsafe_ptr().unsafe_origin_cast[
-            MutExternalOrigin
+            MutUntrackedOrigin
         ](),
     )
 

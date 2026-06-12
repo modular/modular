@@ -79,12 +79,12 @@ def as_dynamic_row_major_1d[
         mut=False, dtype, address_space=AddressSpace.GENERIC, ...
     ],
 ) -> LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]:
-    return LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin](
-        tensor.ptr,
+    return {
+        tensor.ptr.as_immutable().as_unsafe_any_origin(),
         RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
             tensor.get_shape()
         ),
-    )
+    }
 
 
 struct FlashAttentionAlgorithm(Defaultable, TrivialRegisterPassable, Writable):
@@ -449,11 +449,11 @@ def _copy_frag_to_smem_nvidia[
     # for BM x BN output tile. The layout for 2nd mma is in p_smem_iter.
     # Use ImmutAnyOrigin so distance() call below does not see aliased writable args.
     var p_smem_tile = LayoutTensor[
+        mut=False,
         p_smem_iter.dtype,
         Layout.row_major(BM, BN),
-        ImmutAnyOrigin,
         address_space=AddressSpace.SHARED,
-    ](p_smem_iter.ptr.as_immutable())
+    ](p_smem_iter.ptr)
     var p_smem_warp_tile = p_smem_tile.tile[WM, WN](Int(warp_y), Int(warp_x))
     var p_reg_vecs = p_reg_tile.vectorize[1, frag_simd_width]()
 
@@ -543,11 +543,11 @@ def _copy_frag_to_smem_amd[
     # for BM x BN output tile. The layout for 2nd mma is in p_smem_iter.
     # Use ImmutAnyOrigin so distance() call below does not see aliased writable args.
     var p_smem_tile = LayoutTensor[
+        mut=False,
         p_smem_iter.dtype,
         Layout.row_major(BM, BN),
-        ImmutAnyOrigin,
         address_space=AddressSpace.SHARED,
-    ](p_smem_iter.ptr.as_immutable())
+    ](p_smem_iter.ptr)
 
     var p_smem_warp_tile = p_smem_tile.tile[WM, WN](Int(warp_y), Int(warp_x))
     var p_reg_vecs = p_reg_tile.vectorize[1, frag_simd_width]()

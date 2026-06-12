@@ -97,8 +97,8 @@ def bench_concat[
         TileTensor[type, input0_device.LayoutType, ImmutAnyOrigin],
         num_inputs,
     ](
-        input0_device.as_any_origin().as_immut(),
-        input1_device.as_any_origin().as_immut(),
+        input0_device.as_unsafe_any_origin().as_immut(),
+        input1_device.as_unsafe_any_origin().as_immut(),
     )
 
     # Create host TileTensors for verification
@@ -119,8 +119,8 @@ def bench_concat[
         TileTensor[type, input0_host.LayoutType, MutAnyOrigin],
         num_inputs,
     ](
-        input0_host.as_any_origin(),
-        input1_host.as_any_origin(),
+        input0_host.as_unsafe_any_origin(),
+        input1_host.as_unsafe_any_origin(),
     )
 
     @parameter
@@ -130,7 +130,7 @@ def bench_concat[
         @always_inline
         def kernel_launch(ctx: DeviceContext) raises:
             _concat_gpu_elementwise[epilogue_fn=None](
-                output_device.as_any_origin(), axis, inputs, ctx
+                output_device.as_unsafe_any_origin(), axis, inputs, ctx
             )
 
         b.iter_custom[kernel_launch](ctx)

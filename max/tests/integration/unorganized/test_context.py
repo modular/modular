@@ -22,14 +22,11 @@ from max.pipelines.context import (
     GenerationStatus,
     ImageMetadata,
     PixelContext,
-    PixelGenerationContext,
     SamplingParams,
     SpecDecodingState,
     TextAndVisionContext,
     TextContext,
-    TextGenerationContext,
     TokenBuffer,
-    VLMTextGenerationContext,
 )
 from max.pipelines.context.context import FUTURE_TOKEN
 from max.pipelines.modeling.types import (
@@ -1079,14 +1076,12 @@ def does_not_raise_due_to_check_in_property_method() -> None:
         tokens=TokenBuffer(np.array([0, 1, 2, 3], dtype=np.int64)),
     )
 
-    # Protocol structural checks should NOT trigger the method body!
-    # (TextGenerationContext, VLMTextGenerationContext, and PixelGenerationContext are Protocols)
-    _ = isinstance(ctx, TextGenerationContext)
-    # The original bug report indicated that MAX threw a ValueError in call to
-    # isinstance(ctx, VLMTextGenerationContext) so we are validating this case here.
-    # See GENAI-318 for details.
-    _ = isinstance(ctx, VLMTextGenerationContext)
-    _ = isinstance(ctx, PixelGenerationContext)
+    # isinstance checks against concrete context classes should not raise.
+    # The original bug report (GENAI-318) indicated that isinstance on VLM
+    # contexts threw a ValueError; validate the concrete-class equivalents.
+    assert isinstance(ctx, TextContext)
+    _ = isinstance(ctx, TextAndVisionContext)
+    _ = isinstance(ctx, PixelContext)
 
 
 def test_context__spec_decoding_state_lazy_init() -> None:

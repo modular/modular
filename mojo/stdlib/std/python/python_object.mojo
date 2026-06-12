@@ -1511,7 +1511,9 @@ struct PythonObject(
         if type == expected_type:
             ref mojo_obj = self._obj_ptr.bitcast[PyMojoObject[T]]().value()[]
             if mojo_obj.is_initialized:
-                return UnsafePointer(to=mojo_obj.mojo_value).as_any_origin()
+                return UnsafePointer(
+                    to=mojo_obj.mojo_value
+                ).as_unsafe_any_origin()
         return None
 
     def unchecked_downcast_value_ptr[

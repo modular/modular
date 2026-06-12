@@ -148,7 +148,7 @@ def tma_umma_kernel_ss[
         UnsafePointer[
             Scalar[a_type],
             address_space=AddressSpace.SHARED,
-            ExternalOrigin[mut=True],
+            UntrackedOrigin[mut=True],
         ]
     ](
         external_memory[
@@ -411,7 +411,7 @@ def tma_umma_kernel_ts[
         UnsafePointer[
             Scalar[b_type],
             address_space=AddressSpace.SHARED,
-            ExternalOrigin[mut=True],
+            UntrackedOrigin[mut=True],
         ]
     ](
         external_memory[

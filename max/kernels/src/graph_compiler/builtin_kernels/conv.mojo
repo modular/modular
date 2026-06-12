@@ -306,7 +306,7 @@ struct Conv:
     def execute[
         input_layout: StaticString,
         filter_layout: StaticString,
-        lambdas_have_fusion: Bool,
+        has_epilogue_fusion: Bool,
         static_strides: IntTuple,
         static_dilations: IntTuple,
         static_padding: IntTuple,
@@ -414,7 +414,7 @@ struct Conv:
                 output.dtype,
                 filter_packed,
                 conv_attr,
-                lambdas_have_fusion,
+                has_epilogue_fusion,
                 output_fn,
             ](
                 input_tt,
@@ -558,7 +558,7 @@ struct Conv2dResidualAdd:
             pad_tuple,
             1,  # num_groups
             cuda_ctx,
-            source.unsafe_ptr().as_any_origin(),
+            source.unsafe_ptr().as_unsafe_any_origin(),
             Float32(1.0),  # beta
         )
 
@@ -579,7 +579,7 @@ struct ConvTranspose:
     def execute[
         input_layout: StaticString,
         filter_layout: StaticString,
-        lambdas_have_fusion: Bool,
+        has_epilogue_fusion: Bool,
         target: StaticString,
     ](
         output: FusedOutputTensor[...],
@@ -660,7 +660,7 @@ struct ConvTranspose:
             conv_transposed_cpu[
                 filter_packed,
                 filter_is_cfrs,
-                lambdas_have_fusion,
+                has_epilogue_fusion,
                 output_fn,
             ](
                 output.to_tile_tensor[DType.int64](),
@@ -696,7 +696,7 @@ struct ConvTranspose:
                 output.dtype,
                 elementwise_epilogue=Optional[elementwise_simd_epilogue_type](
                     output_fn
-                ) if lambdas_have_fusion else Optional[
+                ) if has_epilogue_fusion else Optional[
                     elementwise_simd_epilogue_type
                 ](),
             ](

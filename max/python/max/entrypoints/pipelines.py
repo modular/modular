@@ -204,7 +204,6 @@ def common_server_options(func: Callable[_P, _R]) -> Callable[_P, _R]:
 
 @main.command(name="serve", cls=WithLazyPipelineOptions)
 @common_server_options
-@click.option("--task", type=str, default="undefined", help="The task to run.")
 @click.option(
     "--task-arg",
     multiple=True,
@@ -221,7 +220,6 @@ def cli_serve(
     port: int,
     headless: bool,
     log_prefix: str | None,
-    task: str,
     task_arg: tuple[str, ...],
     pretty_print_config: bool,
     **config_kwargs: Any,
@@ -234,11 +232,7 @@ def cli_serve(
     from max.entrypoints.cli import serve_api_server_and_model_worker
     from max.entrypoints.workers import start_workers
     from max.pipelines import PipelineConfig
-    from max.pipelines.context import (
-        SamplingParams,
-        SamplingParamsInput,
-    )
-    from max.pipelines.modeling.types import PipelineTask
+    from max.pipelines.context import SamplingParams, SamplingParamsInput
     from max.serve.config import Settings
     from max.serve.telemetry.common import configure_logging
 
@@ -287,9 +281,7 @@ def cli_serve(
         )
     else:
         serve_api_server_and_model_worker(
-            settings=settings,
-            pipeline_config=pipeline_config,
-            pipeline_task=PipelineTask(task),
+            settings=settings, pipeline_config=pipeline_config
         )
 
 
@@ -377,10 +369,7 @@ def cli_pipeline(
     """
     from max.entrypoints.cli import generate_text_for_pipeline
     from max.pipelines import PipelineConfig
-    from max.pipelines.context import (
-        SamplingParams,
-        SamplingParamsInput,
-    )
+    from max.pipelines.context import SamplingParams, SamplingParamsInput
     from max.profiler import maybe_reexec_under_nsys
 
     # When --profile is set and we have a usable nsys + NVIDIA GPU, re-exec

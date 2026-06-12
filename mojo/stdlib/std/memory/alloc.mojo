@@ -26,7 +26,7 @@ from std.sys.intrinsics import unlikely
 
 def _alloc_bytes(
     layout: Layout[Byte],
-) -> UnsafePointer[Byte, MutExternalOrigin]:
+) -> UnsafePointer[Byte, MutUntrackedOrigin]:
     var pointer = _malloc[Byte](layout.count(), alignment=layout.alignment())
     if unlikely(not pointer):
         abort("alloc failed: returned a null pointer")
@@ -36,7 +36,7 @@ def _alloc_bytes(
 @always_inline
 def alloc[
     T: AnyType, //
-](layout: Layout[T]) -> UnsafePointer[T, MutExternalOrigin]:
+](layout: Layout[T]) -> UnsafePointer[T, MutUntrackedOrigin]:
     """Allocates contiguous storage for `layout.count()` elements of `T`.
 
     The allocation uses the alignment specified by `layout`. Use `free` with the
@@ -84,7 +84,7 @@ def alloc[
 @always_inline
 def free[
     T: AnyType, //
-](pointer: UnsafePointer[T, MutExternalOrigin], /, layout: Layout[T]):
+](pointer: UnsafePointer[T, MutUntrackedOrigin], /, layout: Layout[T]):
     """Frees memory previously allocated with `alloc`.
 
     The `layout` argument must match the one passed to the corresponding `alloc`

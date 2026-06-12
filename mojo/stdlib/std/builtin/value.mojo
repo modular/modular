@@ -21,14 +21,14 @@ trait Movable:
     """The Movable trait denotes a type whose value can be moved.
 
     Implement the `Movable` trait on `Foo` which requires the
-    `def __init__(out self, *, deinit take: Self)` method:
+    `def __init__(out self, *, deinit move: Self)` method:
 
     ```mojo
     struct Foo(Movable):
         def __init__(out self):
             pass
 
-        def __init__(out self, *, deinit take: Self):
+        def __init__(out self, *, deinit move: Self):
             print("moving")
     ```
 
@@ -47,11 +47,11 @@ trait Movable:
     ```
     """
 
-    def __init__(out self, *, deinit take: Self):
+    def __init__(out self, *, deinit move: Self):
         """Create a new instance of the value by moving the value of another.
 
         Args:
-            take: The value to move.
+            move: The value to move.
         """
         ...
 

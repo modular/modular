@@ -47,7 +47,7 @@ from max._core import nixl
 from max.driver import Buffer, Device
 from max.nn.kv_cache import KVCacheParams
 from max.nn.kv_cache.metrics import KVCacheMetrics
-from max.pipelines.context import TextGenerationContext
+from max.pipelines.context import TextContext
 from max.pipelines.kv_cache.paged_kv_cache.transfer_engine import (
     KVTransferEngine,
     KVTransferEngineMetadata,
@@ -609,7 +609,7 @@ class DKVConnector:
     @traced
     def lookup(
         self,
-        ctx: TextGenerationContext,
+        ctx: TextContext,
         block_hashes: list[int],
     ) -> int:
         """Check which blocks are available in the dKV system.
@@ -679,7 +679,7 @@ class DKVConnector:
     @traced
     def load(
         self,
-        ctx: TextGenerationContext,
+        ctx: TextContext,
         target_block_ids: list[int],
     ) -> list[int]:
         """Load blocks from dKV into device.

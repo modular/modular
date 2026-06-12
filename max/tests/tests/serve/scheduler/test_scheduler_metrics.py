@@ -371,7 +371,7 @@ def test_publish_metrics_default_path() -> None:
     )  # CE, total_kv_blocks=16, host KV active, num_new_admissions=1
     with patch("max.serve.scheduler.utils.METRICS") as mock_metrics:
         metrics.publish_metrics()
-    mock_metrics.batch_size.assert_called_once_with(1)
+    mock_metrics.batch_size.assert_called_once_with(1, batch_type="CE")
     mock_metrics.batch_input_tokens.assert_called_once_with(6, batch_type="CE")
     mock_metrics.batch_context_tokens.assert_called_once_with(
         8, batch_type="CE"
@@ -447,7 +447,7 @@ def test_publish_metrics_subsystem_gating() -> None:
     with patch("max.serve.scheduler.utils.METRICS") as mock_metrics:
         metrics.publish_metrics()
     # Always-on path uses the TG label.
-    mock_metrics.batch_size.assert_called_once_with(1)
+    mock_metrics.batch_size.assert_called_once_with(1, batch_type="TG")
     mock_metrics.batch_execution_time.assert_called_once_with(
         11000.0, batch_type="TG"
     )

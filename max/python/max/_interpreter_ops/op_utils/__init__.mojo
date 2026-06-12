@@ -32,9 +32,9 @@ def _get_dtype(buffer: PythonObject) raises -> DType:
 def _get_buffer_ptr[
     dtype: DType
 ](buffer: PythonObject) raises -> UnsafePointer[
-    Scalar[dtype], MutExternalOrigin
+    Scalar[dtype], MutUntrackedOrigin
 ]:
-    return UnsafePointer[Scalar[dtype], MutExternalOrigin](
+    return UnsafePointer[Scalar[dtype], MutUntrackedOrigin](
         unsafe_from_address=Int(py=buffer._data_ptr())
     )
 
@@ -46,9 +46,9 @@ def _get_size(buffer: PythonObject) raises -> Int:
 @always_inline
 def _make_ptr[
     dtype: DType
-](addr: Int) -> UnsafePointer[Scalar[dtype], MutExternalOrigin]:
+](addr: Int) -> UnsafePointer[Scalar[dtype], MutUntrackedOrigin]:
     """Create a typed pointer from a raw integer address."""
-    return UnsafePointer[Scalar[dtype], MutExternalOrigin](
+    return UnsafePointer[Scalar[dtype], MutUntrackedOrigin](
         unsafe_from_address=addr
     )
 
@@ -58,7 +58,7 @@ def _get_ctx(
 ) raises -> DeviceContext:
     var addr = Int(py=device_context_ptr)
     return DeviceContext(
-        OpaquePointer[MutExternalOrigin](unsafe_from_address=addr)
+        OpaquePointer[MutUntrackedOrigin](unsafe_from_address=addr)
     )
 
 

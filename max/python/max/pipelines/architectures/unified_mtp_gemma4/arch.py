@@ -16,6 +16,7 @@ from max.pipelines.context import TextContext
 from max.pipelines.lib import SupportedArchitecture, TextTokenizer
 from max.pipelines.modeling.types import PipelineTask
 
+from ..gemma4.memory_planner import Gemma4MemoryPlanner
 from ..gemma4.model_config import Gemma4ForConditionalGenerationConfig
 from .model import UnifiedMTPGemma4Model
 from .weight_adapters import convert_safetensor_state_dict
@@ -35,4 +36,5 @@ unified_mtp_gemma4_arch = SupportedArchitecture(
     requires_max_batch_context_length=True,
     multi_gpu_supported=True,
     config=Gemma4ForConditionalGenerationConfig,
+    memory_planner=Gemma4MemoryPlanner,
 )

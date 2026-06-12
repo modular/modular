@@ -18,7 +18,7 @@ from typing import Any, cast
 
 from max.pipelines.context import (
     BaseContextType,
-    PixelGenerationContext,
+    PixelContext,
     TextContext,
     TextGenerationOutput,
 )
@@ -80,18 +80,18 @@ def load_scheduler(
         pixel_pipeline = cast(PixelGenerationPipeline[Any], pipeline)
 
         def batch_constructor(
-            context: PixelGenerationContext,
+            context: PixelContext,
         ) -> PixelGenerationInputs[Any]:
-            """Convert a single PixelGenerationContext into PixelGenerationInputs."""
+            """Convert a single PixelContext into PixelGenerationInputs."""
             return PixelGenerationInputs(batch={context.request_id: context})
 
         return OneShotScheduler[
-            PixelGenerationContext, PixelGenerationInputs[Any], GenerationOutput
+            PixelContext, PixelGenerationInputs[Any], GenerationOutput
         ](
             pipeline=pixel_pipeline,
             batch_constructor=batch_constructor,
             request_queue=cast(
-                MAXPullQueue[PixelGenerationContext],
+                MAXPullQueue[PixelContext],
                 request_queue,
             ),
             response_queue=cast(

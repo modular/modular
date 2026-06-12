@@ -50,7 +50,6 @@ from max.pipelines.lib import (
 )
 from max.pipelines.lib.vlm_utils import compute_multimodal_merge_indices
 from max.profiler import Tracer, traced
-from transformers import AutoConfig
 
 from .context import Qwen2_5VLTextAndVisionContext, VisionEncodingData
 from .model_config import Qwen2_5VLConfig
@@ -1095,10 +1094,3 @@ class Qwen2_5VLModel(
             max_seqlen=max_seqlen,
             max_window_seqlen=max_window_seqlen,
         )
-
-    @classmethod
-    def estimate_activation_memory(
-        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
-    ) -> int:
-        # TODO: Make this more robust
-        return 5 * 1024 * 1024 * 1024  # 5 GiB

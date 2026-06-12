@@ -431,9 +431,11 @@ struct MLA_SM100_Decode_QKV_FP8[
 
         # ---- Barrier layout (6N+11 fixed for N-stage pipelines) ----
         # bar_q(1) + kv(2N) + s(2N) + p(2N) + o(4) + c(2) + corr_done(4)
-        var mbar_base: MBarType = (li_smem + WARPGROUP_SIZE).bitcast[
-            SharedMemBarrier
-        ]()
+        var mbar_base: MBarType = (
+            (li_smem + WARPGROUP_SIZE)
+            .bitcast[SharedMemBarrier]()
+            .as_unsafe_any_origin()
+        )
 
         var mbar_q: MBarType = mbar_base
         var mbar_kv_base: MBarType = mbar_base + 1
@@ -518,10 +520,12 @@ struct MLA_SM100_Decode_QKV_FP8[
                 ptr_tmem_addr[0],
                 s_bars,
                 p_bars,
-                p_smem.bitcast[Scalar[Self.Common_MLA_Op.q_type]](),
-                max_smem,
-                li_smem,
-                out_smem,
+                p_smem.bitcast[
+                    Scalar[Self.Common_MLA_Op.q_type]
+                ]().as_unsafe_any_origin(),
+                max_smem.as_unsafe_any_origin(),
+                li_smem.as_unsafe_any_origin(),
+                out_smem.as_unsafe_any_origin(),
                 c_bars,
                 corr_done_bars,
                 out_pipeline,
@@ -548,8 +552,8 @@ struct MLA_SM100_Decode_QKV_FP8[
                     q_tma,
                     k_tma,
                     kv_lut,
-                    q_smem,
-                    kv_smem,
+                    q_smem.as_unsafe_any_origin(),
+                    kv_smem.as_unsafe_any_origin(),
                     mbar_q,
                     kv_pipeline,
                     offset_position,
@@ -557,8 +561,8 @@ struct MLA_SM100_Decode_QKV_FP8[
             elif warp_idx == 9:
                 Self.mmaQK(
                     ptr_tmem_addr[0],
-                    q_smem,
-                    kv_smem,
+                    q_smem.as_unsafe_any_origin(),
+                    kv_smem.as_unsafe_any_origin(),
                     mbar_q,
                     s_bars,
                     kv_pipeline,
@@ -567,8 +571,8 @@ struct MLA_SM100_Decode_QKV_FP8[
             elif warp_idx == 10:
                 Self.mmaPV(
                     ptr_tmem_addr[0],
-                    kv_smem,
-                    p_smem,
+                    kv_smem.as_unsafe_any_origin(),
+                    p_smem.as_unsafe_any_origin(),
                     p_bars,
                     o_bars,
                     kv_pipeline,
@@ -577,7 +581,12 @@ struct MLA_SM100_Decode_QKV_FP8[
             elif warp_idx == 11:
                 Self.Common_MLA_Op.store[
                     fold_q=Self.fold_q, q_len_fold=Self.q_len_fold
-                ](out_pipeline, out_smem, o_tma, offset_position)
+                ](
+                    out_pipeline,
+                    out_smem.as_unsafe_any_origin(),
+                    o_tma,
+                    offset_position,
+                )
         barrier()
 
         # PDL: Signal that this CTA is done

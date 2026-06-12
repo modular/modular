@@ -307,7 +307,7 @@ def test[
         comptime config = MHAConfig[q_type](num_heads, depth)
         comptime if mla_mask_type == MLAMaskType.CAUSAL:
             flare_mla_decoding[config=config](
-                out_tt.as_any_origin(),
+                out_tt.as_unsafe_any_origin(),
                 q_fp8_tt,
                 k_fp8_tt,
                 CausalMask(),
@@ -317,7 +317,7 @@ def test[
             )
         elif mla_mask_type == MLAMaskType.NO_MASK:
             flare_mla_decoding[config=config](
-                out_tt.as_any_origin(),
+                out_tt.as_unsafe_any_origin(),
                 q_fp8_tt,
                 k_fp8_tt,
                 NullMask(),
@@ -356,7 +356,7 @@ def test[
     # Create BF16 K operand for reference
     var k_bf16_operand = LayoutTensorMHAOperand(
         LayoutTensor[output_type, k_layout, MutAnyOrigin](
-            k_bf16_device.ptr,
+            k_bf16_device.ptr.as_unsafe_any_origin(),
             RuntimeLayout[k_layout].row_major(
                 k_bf16_device.runtime_layout.shape.value.canonicalize()
             ),
@@ -544,7 +544,7 @@ def bench[
     def kernel_launch(ctx: DeviceContext) raises:
         comptime config = MHAConfig[q_type](num_heads, depth)
         flare_mla_decoding[config=config](
-            out_tt.as_any_origin(),
+            out_tt.as_unsafe_any_origin(),
             q_fp8_tt,
             k_fp8_tt,
             NullMask(),
@@ -801,7 +801,7 @@ def test_sw[
     def kernel_launch(ctx: DeviceContext) raises:
         comptime config = MHAConfig[q_type](num_heads, depth)
         flare_mla_decoding[config=config](
-            out_tt.as_any_origin(),
+            out_tt.as_unsafe_any_origin(),
             q_fp8_tt,
             k_fp8_tt,
             SlidingWindowCausalMask[window_size](),
@@ -834,7 +834,7 @@ def test_sw[
 
     var k_bf16_operand = LayoutTensorMHAOperand(
         LayoutTensor[output_type, k_layout, MutAnyOrigin](
-            k_bf16_device.ptr,
+            k_bf16_device.ptr.as_unsafe_any_origin(),
             RuntimeLayout[k_layout].row_major(
                 k_bf16_device.runtime_layout.shape.value.canonicalize()
             ),
@@ -964,6 +964,44 @@ def main() raises:
             test_decoding[1, MLAMaskType.NO_MASK](ctx, 1, 9600)
             test_decoding[1, MLAMaskType.NO_MASK](ctx, 1, 32768)
             test_decoding[1, MLAMaskType.NO_MASK](ctx, 1, 65536)
+
+            # Two-wave split-K coverage (num_heads=16 latency-bound heuristic):
+            # bs=4 now dispatches np=128 and bs=8 np=64 across this band. Verify
+            # split-K correctness at the elevated partition counts the
+            # two-wave heuristic selects (the bs=1 cases above only exercise
+            # the unchanged bs=1 path). num_heads=16 only — that is the path
+            # the two-wave heuristic touches.
+            print("=== Two-wave split-K coverage (bs=4/8, num_heads=16) ===")
+            test[
+                MLAMaskType.NO_MASK,
+                DType.float8_e4m3fn,
+                DType.float8_e4m3fn,
+                DType.bfloat16,
+                576,
+                16,
+                group=16,
+                batch_size=4,
+            ](1, 40960, ctx)
+            test[
+                MLAMaskType.CAUSAL,
+                DType.float8_e4m3fn,
+                DType.float8_e4m3fn,
+                DType.bfloat16,
+                576,
+                16,
+                group=16,
+                batch_size=4,
+            ](1, 73728, ctx)
+            test[
+                MLAMaskType.NO_MASK,
+                DType.float8_e4m3fn,
+                DType.float8_e4m3fn,
+                DType.bfloat16,
+                576,
+                16,
+                group=16,
+                batch_size=8,
+            ](1, 32768, ctx)
 
             # fold-path configs.  num_q_heads * q_len <= BM(64) and
             # q_len > 1 triggers fold_q=True in the dispatcher.  BM=64 packs

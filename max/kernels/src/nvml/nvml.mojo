@@ -364,7 +364,7 @@ struct Device(Writable):
             _get_dylib_function[
                 "nvmlDeviceGetHandleByIndex_v2",
                 def(
-                    UInt32, UnsafePointer[_DeviceImpl, MutAnyOrigin]
+                    UInt32, UnsafePointer[_DeviceImpl, origin_of(device)]
                 ) thin -> Result,
             ]()(UInt32(idx), UnsafePointer(to=device))
         )
@@ -383,7 +383,9 @@ struct Device(Writable):
         _check_error(
             _get_dylib_function[
                 "nvmlSystemGetDriverVersion",
-                def(UnsafePointer[c_char, MutAnyOrigin], UInt32) thin -> Result,
+                def(
+                    UnsafePointer[c_char, MutUntrackedOrigin], UInt32
+                ) thin -> Result,
             ]()(driver_version_buffer, UInt32(max_length))
         )
         var driver_version_list = StringSlice(
@@ -397,7 +399,9 @@ struct Device(Writable):
             _get_dylib_function[
                 "nvmlDeviceGetMaxClockInfo",
                 def(
-                    _DeviceImpl, ClockType, UnsafePointer[UInt32, MutAnyOrigin]
+                    _DeviceImpl,
+                    ClockType,
+                    UnsafePointer[UInt32, origin_of(clock)],
                 ) thin -> Result,
             ]()(self.device, clock_type, UnsafePointer(to=clock))
         )
@@ -416,8 +420,8 @@ struct Device(Writable):
             "nvmlDeviceGetSupportedMemoryClocks",
             def(
                 _DeviceImpl,
-                UnsafePointer[UInt32, MutAnyOrigin],
-                Optional[UnsafePointer[UInt32, MutAnyOrigin]],
+                UnsafePointer[UInt32, origin_of(num_clocks)],
+                Optional[UnsafePointer[UInt32, MutUntrackedOrigin]],
             ) thin abi("C") -> Result,
         ]()(
             self.device,
@@ -434,8 +438,8 @@ struct Device(Writable):
                 "nvmlDeviceGetSupportedMemoryClocks",
                 def(
                     _DeviceImpl,
-                    UnsafePointer[UInt32, MutAnyOrigin],
-                    UnsafePointer[UInt32, MutAnyOrigin],
+                    UnsafePointer[UInt32, origin_of(num_clocks)],
+                    UnsafePointer[UInt32, origin_of(clocks)],
                 ) thin -> Result,
             ]()(self.device, UnsafePointer(to=num_clocks), clocks.unsafe_ptr())
         )
@@ -454,8 +458,8 @@ struct Device(Writable):
             def(
                 _DeviceImpl,
                 UInt32,
-                UnsafePointer[UInt32, MutAnyOrigin],
-                Optional[UnsafePointer[UInt32, MutAnyOrigin]],
+                UnsafePointer[UInt32, origin_of(num_clocks)],
+                Optional[UnsafePointer[UInt32, MutUntrackedOrigin]],
             ) thin abi("C") -> Result,
         ]()(
             self.device,
@@ -478,8 +482,8 @@ struct Device(Writable):
                 def(
                     _DeviceImpl,
                     UInt32,
-                    UnsafePointer[UInt32, MutAnyOrigin],
-                    UnsafePointer[UInt32, MutAnyOrigin],
+                    UnsafePointer[UInt32, origin_of(num_clocks)],
+                    UnsafePointer[UInt32, origin_of(clocks)],
                 ) thin -> Result,
             ]()(
                 self.device,
@@ -516,8 +520,8 @@ struct Device(Writable):
                 "nvmlDeviceGetAutoBoostedClocksEnabled",
                 def(
                     _DeviceImpl,
-                    UnsafePointer[_EnableState, MutAnyOrigin],
-                    UnsafePointer[_EnableState, MutAnyOrigin],
+                    UnsafePointer[_EnableState, origin_of(is_enabled)],
+                    UnsafePointer[_EnableState, origin_of(default_is_enabled)],
                 ) thin -> Result,
             ]()(
                 self.device,
@@ -554,7 +558,8 @@ struct Device(Writable):
             _get_dylib_function[
                 "nvmlDeviceGetPersistenceMode",
                 def(
-                    _DeviceImpl, UnsafePointer[_EnableState, MutAnyOrigin]
+                    _DeviceImpl,
+                    UnsafePointer[_EnableState, origin_of(is_enabled)],
                 ) thin -> Result,
             ]()(
                 self.device,

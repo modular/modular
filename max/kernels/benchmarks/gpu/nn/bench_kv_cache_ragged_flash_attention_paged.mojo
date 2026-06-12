@@ -279,9 +279,7 @@ def execute_kv_cache_ragged_flash_attention[
 
     # Create LayoutTensors for KV collection
     comptime kv_block_layout = Layout.row_major[6]()
-    var kv_block_layout_tensor = LayoutTensor[
-        dtype, kv_block_layout, MutAnyOrigin
-    ](
+    var kv_block_layout_tensor = LayoutTensor[dtype, kv_block_layout](
         kv_block_paged_dev_buffer.unsafe_ptr(),
         RuntimeLayout[kv_block_layout].row_major(
             IndexList[6](
@@ -292,7 +290,7 @@ def execute_kv_cache_ragged_flash_attention[
 
     comptime cache_lengths_layout = Layout(UNKNOWN_VALUE)
     var cache_lengths_layout_tensor = LayoutTensor[
-        DType.uint32, cache_lengths_layout, ImmutAnyOrigin
+        mut=False, DType.uint32, cache_lengths_layout
     ](
         cache_lengths_dev_buffer.unsafe_ptr(),
         RuntimeLayout[cache_lengths_layout].row_major(IndexList[1](batch_size)),
@@ -300,7 +298,7 @@ def execute_kv_cache_ragged_flash_attention[
 
     comptime paged_lut_layout = Layout.row_major[2]()
     var paged_lut_layout_tensor = LayoutTensor[
-        DType.uint32, paged_lut_layout, ImmutAnyOrigin
+        mut=False, DType.uint32, paged_lut_layout
     ](
         paged_lut_dev_buffer.unsafe_ptr(),
         RuntimeLayout[paged_lut_layout].row_major(
@@ -333,7 +331,7 @@ def execute_kv_cache_ragged_flash_attention[
     # Phase-10 cross-attention path: an independent kv-side
     # input_row_offsets. For the bench harness we set it equal to
     # the Q-side so the dispatcher routes through the cross-attention
-    # launcher (`hk_mha_prefill_ragged[cross_attention=True]`) but
+    # launcher (`mha_prefill_v2_ragged[cross_attention=True]`) but
     # `num_keys` derives identically; this measures the comptime-
     # monomorphized path, not a true encoder-decoder shape.
     var kv_input_row_offsets_dev_buffer = ctx.enqueue_create_buffer[
@@ -345,7 +343,7 @@ def execute_kv_cache_ragged_flash_attention[
         )
 
     var kv_input_row_offsets_view = LayoutTensor[
-        DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
+        mut=False, DType.uint32, Layout.row_major(UNKNOWN_VALUE)
     ](
         kv_input_row_offsets_dev_buffer.unsafe_ptr(),
         RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
@@ -363,7 +361,9 @@ def execute_kv_cache_ragged_flash_attention[
         _ = sw_host^
 
     var sink_weights_view = LayoutTensor[
-        dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
+        dtype,
+        Layout.row_major(UNKNOWN_VALUE),
+        ImmutAnyOrigin,
     ](
         sink_weights_dev_buffer.unsafe_ptr(),
         RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
@@ -391,12 +391,12 @@ def execute_kv_cache_ragged_flash_attention[
                 # Sink/cross_attention dispatch: passing
                 # `sink_weights=…` to `flash_attention[sink=True]`
                 # selects the dispatcher's `comptime if sink:`
-                # branch (HK Phase 5b). Passing
+                # branch. Passing
                 # `kv_input_row_offsets=…` selects the runtime
-                # `if kv_input_row_offsets:` branch (HK Phase 10).
+                # `if kv_input_row_offsets:` branch.
                 comptime if sink and cross_attention:
                     flash_attention[ragged=True, sink=True](
-                        output_device_tensor.to_layout_tensor().as_any_origin(),
+                        output_device_tensor.to_layout_tensor().as_unsafe_any_origin(),
                         q_device_tensor.to_layout_tensor(),
                         k_cache_device,
                         v_cache_device,
@@ -404,12 +404,12 @@ def execute_kv_cache_ragged_flash_attention[
                         input_row_offsets_tensor.to_layout_tensor(),
                         rsqrt(Float32(head_dim)),
                         ctx,
-                        kv_input_row_offsets=kv_input_row_offsets_view,
+                        kv_input_row_offsets=kv_input_row_offsets_view.as_unsafe_any_origin(),
                         sink_weights=sink_weights_view,
                     )
                 elif sink:
                     flash_attention[ragged=True, sink=True](
-                        output_device_tensor.to_layout_tensor().as_any_origin(),
+                        output_device_tensor.to_layout_tensor().as_unsafe_any_origin(),
                         q_device_tensor.to_layout_tensor(),
                         k_cache_device,
                         v_cache_device,
@@ -421,7 +421,7 @@ def execute_kv_cache_ragged_flash_attention[
                     )
                 elif cross_attention:
                     flash_attention[ragged=True](
-                        output_device_tensor.to_layout_tensor().as_any_origin(),
+                        output_device_tensor.to_layout_tensor().as_unsafe_any_origin(),
                         q_device_tensor.to_layout_tensor(),
                         k_cache_device,
                         v_cache_device,
@@ -429,11 +429,11 @@ def execute_kv_cache_ragged_flash_attention[
                         input_row_offsets_tensor.to_layout_tensor(),
                         rsqrt(Float32(head_dim)),
                         ctx,
-                        kv_input_row_offsets=kv_input_row_offsets_view,
+                        kv_input_row_offsets=kv_input_row_offsets_view.as_unsafe_any_origin(),
                     )
                 else:
                     flash_attention[ragged=True](
-                        output_device_tensor.to_layout_tensor().as_any_origin(),
+                        output_device_tensor.to_layout_tensor().as_unsafe_any_origin(),
                         q_device_tensor.to_layout_tensor(),
                         k_cache_device,
                         v_cache_device,
@@ -477,7 +477,7 @@ def execute_kv_cache_ragged_flash_attention[
         # take a very long time and bloats the prof full of extra runs that
         # we don't look at.
         flash_attention[ragged=True](
-            output_device_tensor.to_layout_tensor().as_any_origin(),
+            output_device_tensor.to_layout_tensor().as_unsafe_any_origin(),
             q_device_tensor.to_layout_tensor(),
             k_cache_device,
             v_cache_device,

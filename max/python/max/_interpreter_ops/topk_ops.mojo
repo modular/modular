@@ -43,7 +43,7 @@ from op_utils import (
 
 
 @export
-def PyInit_topk_ops() -> PythonObject:
+def PyInit_topk_ops() abi("C") -> PythonObject:
     """Create a Python module with top_k kernel function bindings."""
     try:
         var b = PythonModuleBuilder("topk_ops")
@@ -62,9 +62,9 @@ def PyInit_topk_ops() -> PythonObject:
 def topk_op[
     dtype: DType, //
 ](
-    out_val_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    out_idx_ptr: UnsafePointer[Scalar[DType.int64], MutExternalOrigin],
-    in_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    out_val_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    out_idx_ptr: UnsafePointer[Scalar[DType.int64], MutUntrackedOrigin],
+    in_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     dim0: Int,
     dim1: Int,
     dim2: Int,

@@ -46,7 +46,7 @@ from std.gpu.compute.mma import (
     wgmma_wait_group_sync,
 )
 from layout.coord import Coord, Idx
-from layout import IntTuple, Layout, LayoutTensor
+from layout import IntTuple, Layout, LayoutTensor, TileTensor
 from layout.layout import (
     MakeLayoutList,
     composition,
@@ -1049,6 +1049,70 @@ struct TensorCoreAsync[
                     _convert_cfrags_to_simd[Self.c_type, c_frag_size](
                         c_frags_out_tuple, c_frags
                     )
+
+    @staticmethod
+    @always_inline
+    def wgmma[
+        num_warp_groups: Int = 1,
+        scale_c: Int = 1,
+        scale_a: Int = 1,
+        scale_b: Int = 1,
+        num_k_iters: Optional[Int] = None,
+    ](
+        a_smem_tile: TileTensor[
+            mut=True,
+            dtype=Self.a_type,
+            address_space=AddressSpace.SHARED,
+            ...,
+        ],
+        b_smem_tile: TileTensor[
+            mut=True,
+            dtype=Self.b_type,
+            address_space=AddressSpace.SHARED,
+            ...,
+        ],
+        c_reg_tile: LayoutTensor[
+            mut=True,
+            Self.c_type,
+            _,
+            _,
+            address_space=AddressSpace.LOCAL,
+            ...,
+        ],
+        wg_idx: Int = 0,
+    ):
+        """Perform asynchronous matrix multiplication with TileTensor inputs.
+
+        This overload handles the case where both A and B matrices are in
+        shared memory as TileTensor values. It converts at this boundary so
+        SM90 kernels can stay TileTensor-native while the WGMMA implementation
+        continues to reuse the legacy descriptor path internally.
+
+        Parameters:
+            num_warp_groups: Number of warp groups to distribute work across.
+            scale_c: Scale factor for matrix C. Valid values are 1 or 0.
+            scale_a: Scale factor for matrix A. Valid values are 1 or -1.
+            scale_b: Scale factor for matrix B. Valid values are 1 or -1.
+            num_k_iters: Number of K-dimension iterations to execute.
+
+        Args:
+            a_smem_tile: Matrix A tile in shared memory.
+            b_smem_tile: Matrix B tile in shared memory.
+            c_reg_tile: Accumulator tile in register memory.
+            wg_idx: Warp group index for multi-warp-group execution.
+        """
+        Self.wgmma[
+            num_warp_groups,
+            scale_c,
+            scale_a,
+            scale_b,
+            num_k_iters,
+        ](
+            a_smem_tile.to_layout_tensor(),
+            b_smem_tile.to_layout_tensor(),
+            c_reg_tile,
+            wg_idx,
+        )
 
     @staticmethod
     @always_inline

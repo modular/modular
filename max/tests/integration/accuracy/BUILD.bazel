@@ -237,11 +237,6 @@ modular_py_test(
     size = "small",
     srcs = ["test_check_logit_verification_eligibility.py"],
     imports = ["."],
-    # TODO: Investigate and enable on macOS if needed
-    target_compatible_with = select({
-        "@platforms//os:macos": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),
     deps = [
         ":check_logit_verification_eligibility",
         requirement("click"),

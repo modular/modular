@@ -13,7 +13,7 @@
 
 from std.bit import next_power_of_two
 from std.gpu.host import DeviceAttribute, DeviceContext
-from std.math import ceildiv
+from std.math import ceildiv, clamp
 
 
 @always_inline
@@ -101,7 +101,17 @@ def hip_mha_decoding_num_partitions(
           one_wave    = sm_count // ctas_per_partition
           two_wave    = 2 × sm_count // ctas_per_partition
           work_floor  = ceildiv(pages, MAX_PAGES_PER_SPLIT)
-          np_target   = max(one_wave, min(work_floor, two_wave))
+          np_target   = clamp(work_floor, one_wave, two_wave)
+
+      EXCEPTION (num_heads <= 16, e.g. Kimi-K2.5 TP=4): the one_wave floor
+      underfills. With num_blocks_y=1, ctas_per_partition = batch_size, so
+      one wave (np = sm/bs) gives each CU exactly one CTA — no second block
+      to overlap HBM-read latency. These shapes are latency-bound, so target
+      two full waves instead:
+          np_target   = min(two_wave, pages)
+      Measured on MI355: two-wave np is 5-10% faster than one-wave across
+      bs=4 (32K-128K) and bs=8/16 short context; past two waves regresses on
+      reduce cost. bs=1 (two_wave=512 -> clamps to 256 = one wave) unchanged.
 
     Phase 0 sweep (PARTITIONING_PLAN.md) validated MLA-style at h=64:
         bs=1  ctx=131K → np=128 (capped, fills GPU at 1-wave + cap)
@@ -166,7 +176,27 @@ def hip_mha_decoding_num_partitions(
     var one_wave = max(1, sm_count // ctas_per_partition)
     var two_wave = max(1, (2 * sm_count) // ctas_per_partition)
     var work_floor = ceildiv(pages, MAX_PAGES_PER_SPLIT)
-    var np_target = max(one_wave, min(work_floor, two_wave))
+
+    var np_target: Int
+    if is_mla and heads_per_group <= 16:
+        # num_heads <= 16 (Kimi-K2.5 TP=4) packs all heads into one block
+        # (num_blocks_y=1), so ctas_per_partition = batch_size — tiny. Decode
+        # is latency-bound: each CTA stalls on HBM K-reads, so fill TWO waves
+        # — a second CTA per CU hides the first's stalls. Bounded by available
+        # pages (cannot split below one page) and the 256-partition cap. The
+        # one_wave floor used below underfills here: measured on MI355, the
+        # two-wave np is 5-10% faster than one-wave across bs=4 (32K-128K) and
+        # bs=8/16 short context, while going *past* two waves regresses (split-K
+        # reduce cost). bs=1 has two_wave=512 which clamps to 256 = one wave
+        # (the most CTAs it can reach), so it is unchanged.
+        np_target = min(two_wave, pages)
+    else:
+        # num_heads >= 32 (or low-occupancy MHA fallthrough): keep the tuned
+        # wave-aligned target — clamp work_floor to [one_wave, two_wave]
+        # (one_wave floor, two_wave cap; validated for num_heads=64/128 in the
+        # Phase-0/1 sweeps).
+        np_target = clamp(work_floor, one_wave, two_wave)
+
     var num_partitions = min(np_target, pages, MAX_HIP_PARTITIONS)
 
     # Bucket to a fixed ladder (1, 2, ..., 64, 96, 128, 192, 256) so

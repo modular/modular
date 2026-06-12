@@ -1247,6 +1247,23 @@ struct UnsafeNullablePointer[
         return self.to_unsafe_pointer_unchecked().as_immutable().address
 
     @always_inline("nodebug")
+    def as_unsafe_any_origin(
+        self,
+    ) -> UnsafeNullablePointer[
+        Self.type,
+        UnsafeAnyOrigin[mut=Self.mut],
+        address_space=Self.address_space,
+    ]:
+        """Please refer to `UnsafePointer.as_unsafe_any_origin`.
+
+        Returns:
+            A pointer with the origin set to `UnsafeAnyOrigin`.
+        """
+        return self.to_unsafe_pointer_unchecked().as_unsafe_any_origin().address
+
+    @doc_hidden
+    @always_inline("nodebug")
+    @deprecated(use=as_unsafe_any_origin)
     def as_any_origin(
         self,
     ) -> UnsafeNullablePointer[
@@ -1254,12 +1271,7 @@ struct UnsafeNullablePointer[
         AnyOrigin[mut=Self.mut],
         address_space=Self.address_space,
     ]:
-        """Please refer to `UnsafePointer.as_any_origin`.
-
-        Returns:
-            A pointer with the origin set to `AnyOrigin`.
-        """
-        return self.to_unsafe_pointer_unchecked().as_any_origin().address
+        return self.as_unsafe_any_origin()
 
     @always_inline("nodebug")
     def address_space_cast[

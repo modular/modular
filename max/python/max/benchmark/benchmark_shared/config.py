@@ -437,6 +437,17 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
         json_schema_extra={"group": "Request Configuration"},
     )
 
+    kv_block_size: int = Field(
+        default=128,
+        description=(
+            "KV cache block (page) size in tokens, used to block-align the "
+            "per-turn cache retention metric. Should match the server's "
+            "--kv-cache-page-size so retention reflects true block-aligned "
+            "cache reuse."
+        ),
+        json_schema_extra={"group": "Request Configuration"},
+    )
+
     # Workload configuration (serving-specific)
     max_benchmark_duration_s: int | None = Field(
         default=None,
@@ -752,6 +763,18 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
     collect_cpu_stats: bool = Field(
         default=True,
         description="Enable CPU stats collection for serving benchmarks.",
+        json_schema_extra={"group": "Control Flags"},
+    )
+
+    server_pids: list[int] = Field(
+        default_factory=list,
+        description=(
+            "Explicit PIDs to monitor for CPU stats, including their children."
+            " Bypasses automatic port-based PID detection. Useful when the"
+            " server runs inside a container."
+            " Example: --server-pids $(docker inspect -f '{{.State.Pid}}'"
+            " <container_name>)"
+        ),
         json_schema_extra={"group": "Control Flags"},
     )
 
