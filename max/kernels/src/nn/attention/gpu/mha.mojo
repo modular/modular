@@ -1835,22 +1835,18 @@ def flash_attention_ragged[
     var cache_row_offsets = input_row_offsets.as_unsafe_any_origin()
 
     var k_operand = RaggedMHAOperand(
-        LayoutTensor[k.dtype, Layout.row_major(k.layout.shape), k.origin](
+        TileTensor(
             k.ptr,
-            RuntimeLayout[Layout.row_major(k.layout.shape)].row_major(
-                k.runtime_layout.shape.value.canonicalize()
-            ),
+            row_major(Coord(Int(k.dim[0]()), Int(k.dim[1]()), Int(k.dim[2]()))),
         ),
-        cache_row_offsets,
+        lt_to_tt(cache_row_offsets),
     )
     var v_operand = RaggedMHAOperand(
-        LayoutTensor[v.dtype, Layout.row_major(v.layout.shape), v.origin](
+        TileTensor(
             v.ptr,
-            RuntimeLayout[Layout.row_major(v.layout.shape)].row_major(
-                v.runtime_layout.shape.value.canonicalize()
-            ),
+            row_major(Coord(Int(v.dim[0]()), Int(v.dim[1]()), Int(v.dim[2]()))),
         ),
-        cache_row_offsets,
+        lt_to_tt(cache_row_offsets),
     )
     flash_attention_dispatch[
         kv_num_heads=kv_num_heads,

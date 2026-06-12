@@ -72,6 +72,7 @@ from layout import (
     Idx,
     IntTuple,
     LayoutTensor,
+    RowMajorLayout,
     RuntimeLayout,
     RuntimeTuple,
     TensorLayout,
@@ -2003,6 +2004,64 @@ def mla_decoding_single_batch[
 # ===-----------------------------------------------------------------------===#
 
 
+@always_inline
+def _ragged_kv_view(
+    src: TileTensor[address_space=AddressSpace.GENERIC, ...],
+) -> TileTensor[
+    src.dtype,
+    RowMajorLayout[*Coord[Int, Int, Int].element_types],
+    ImmutAnyOrigin,
+]:
+    """Rebuild a ragged K/V buffer as a rank-3 row-major TileTensor view.
+
+    The MLA prefill K/V operands are contiguous row-major
+    `[total_keys, num_heads, depth]` tensors. Rebuilding the view directly
+    from the source pointer (instead of round-tripping through a
+    `LayoutTensor` + `lt_to_tt`) normalizes the origin, address space, and
+    linear-index type to the canonical GENERIC + `ImmutAnyOrigin` form the
+    `RaggedMHAOperand` buffer field expects.
+    """
+    return TileTensor(
+        rebind[UnsafePointer[Scalar[src.dtype], ImmutAnyOrigin]](src.ptr),
+        row_major(
+            Coord(Int(src.dim[0]()), Int(src.dim[1]()), Int(src.dim[2]()))
+        ),
+    )
+
+
+@always_inline
+def _ragged_offsets_view(
+    src: TileTensor[DType.uint32, address_space=AddressSpace.GENERIC, ...],
+) -> TileTensor[
+    DType.uint32, RowMajorLayout[*Coord[Int].element_types], ImmutAnyOrigin
+]:
+    """Rebuild ragged cache-row-offsets as a rank-1 row-major TileTensor view.
+
+    Mirrors `_ragged_kv_view` for the rank-1 `cache_row_offsets` operand.
+    """
+    return TileTensor(
+        rebind[UnsafePointer[UInt32, ImmutAnyOrigin]](src.ptr),
+        row_major(Coord(Int(src.dim[0]()))),
+    )
+
+
+@always_inline
+def _ragged_scales_view(
+    src: TileTensor[address_space=AddressSpace.GENERIC, ...],
+) -> TileTensor[
+    src.dtype, RowMajorLayout[*Coord[Int, Int].element_types], ImmutAnyOrigin
+]:
+    """Rebuild a ragged per-token scale buffer as a rank-2 row-major view.
+
+    Mirrors `_ragged_kv_view` for the rank-2 `[total_keys, 1]` `k_scales`
+    operand, normalizing to the GENERIC + `ImmutAnyOrigin` scale-buffer form.
+    """
+    return TileTensor(
+        rebind[UnsafePointer[Scalar[src.dtype], ImmutAnyOrigin]](src.ptr),
+        row_major(Coord(Int(src.dim[0]()), Int(src.dim[1]()))),
+    )
+
+
 # entrypoint for MLA prefill kernels
 @always_inline
 def flare_mla_prefill[
@@ -2110,37 +2169,24 @@ def flare_mla_prefill[
         else:
             max_prompt_len = Int(k_rope.max_prompt_length())
 
-        # Build row-major LayoutTensor from TileTensor for RaggedMHAOperand.
-        comptime cache_row_offsets_layout = Layout.row_major(UNKNOWN_VALUE)
-        var cache_row_offsets_lt = LayoutTensor[
-            DType.uint32,
-            cache_row_offsets_layout,
-            cache_row_offsets.origin,
-        ](
-            cache_row_offsets.ptr,
-            RuntimeLayout[cache_row_offsets_layout].row_major(
-                coord_to_index_list(
-                    cache_row_offsets.layout.shape_coord()
-                ).canonicalize()
-            ),
-        )
+        var cro_buf = _ragged_offsets_view(cache_row_offsets)
         var k_operand = RaggedMHAOperand(
-            LayoutTensor[k.dtype, k.layout, k.origin](
+            TileTensor(
                 k.ptr,
-                RuntimeLayout[k.layout].row_major(
-                    k.runtime_layout.shape.value.canonicalize()
+                row_major(
+                    Coord(Int(k.dim[0]()), Int(k.dim[1]()), Int(k.dim[2]()))
                 ),
             ),
-            cache_row_offsets_lt,
+            cro_buf,
         )
         var v_operand = RaggedMHAOperand(
-            LayoutTensor[v.dtype, v.layout, v.origin](
+            TileTensor(
                 v.ptr,
-                RuntimeLayout[v.layout].row_major(
-                    v.runtime_layout.shape.value.canonicalize()
+                row_major(
+                    Coord(Int(v.dim[0]()), Int(v.dim[1]()), Int(v.dim[2]()))
                 ),
             ),
-            cache_row_offsets_lt,
+            cro_buf,
         )
         var k_rope_operand = KVCacheMHAOperand(k_rope)
 
@@ -2266,28 +2312,10 @@ def flare_mla_prefill[
 
         if q_max_seq_len:
             max_prompt_len = q_max_seq_len.value()
-        var cache_row_offsets_lt = cache_row_offsets.to_layout_tensor()
-        var k_lt = k.to_layout_tensor()
-        var v_lt = v.to_layout_tensor()
         var k_rope_lt = k_rope.to_layout_tensor()
-        var k_operand = RaggedMHAOperand(
-            LayoutTensor[k_lt.dtype, k_lt.layout, k_lt.origin](
-                k_lt.ptr,
-                RuntimeLayout[k_lt.layout].row_major(
-                    k_lt.runtime_layout.shape.value.canonicalize()
-                ),
-            ),
-            cache_row_offsets_lt,
-        )
-        var v_operand = RaggedMHAOperand(
-            LayoutTensor[v_lt.dtype, v_lt.layout, v_lt.origin](
-                v_lt.ptr,
-                RuntimeLayout[v_lt.layout].row_major(
-                    v_lt.runtime_layout.shape.value.canonicalize()
-                ),
-            ),
-            cache_row_offsets_lt,
-        )
+        var cro_buf = _ragged_offsets_view(cache_row_offsets)
+        var k_operand = RaggedMHAOperand(_ragged_kv_view(k), cro_buf)
+        var v_operand = RaggedMHAOperand(_ragged_kv_view(v), cro_buf)
         var k_rope_operand = LayoutTensorMHAOperand(
             LayoutTensor[k_rope_lt.dtype, k_rope_lt.layout, k_rope_lt.origin](
                 k_rope_lt.ptr,
@@ -2410,29 +2438,11 @@ def flare_mla_prefill[
 
         if q_max_seq_len:
             max_prompt_len = q_max_seq_len.value()
-        var cache_row_offsets_lt = cache_row_offsets.to_layout_tensor()
-        var k_lt = k.to_layout_tensor()
-        var v_lt = v.to_layout_tensor()
         var k_rope_lt = k_rope.to_layout_tensor()
         var k_rope_scales_lt = k_rope_scales.to_layout_tensor()
-        var k_operand = RaggedMHAOperand(
-            LayoutTensor[k_lt.dtype, k_lt.layout, k_lt.origin](
-                k_lt.ptr,
-                RuntimeLayout[k_lt.layout].row_major(
-                    k_lt.runtime_layout.shape.value.canonicalize()
-                ),
-            ),
-            cache_row_offsets_lt,
-        )
-        var v_operand = RaggedMHAOperand(
-            LayoutTensor[v_lt.dtype, v_lt.layout, v_lt.origin](
-                v_lt.ptr,
-                RuntimeLayout[v_lt.layout].row_major(
-                    v_lt.runtime_layout.shape.value.canonicalize()
-                ),
-            ),
-            cache_row_offsets_lt,
-        )
+        var cro_buf = _ragged_offsets_view(cache_row_offsets)
+        var k_operand = RaggedMHAOperand(_ragged_kv_view(k), cro_buf)
+        var v_operand = RaggedMHAOperand(_ragged_kv_view(v), cro_buf)
         var k_rope_operand = LayoutTensorMHAOperand(
             LayoutTensor[k_rope_lt.dtype, k_rope_lt.layout, k_rope_lt.origin](
                 k_rope_lt.ptr,
@@ -2562,44 +2572,23 @@ def flare_mla_prefill[
         )
         if q_max_seq_len:
             max_prompt_len = q_max_seq_len.value()
-        var cache_row_offsets_lt = cache_row_offsets.to_layout_tensor()
 
         comptime assert k_scales.rank == 2, (
             "k_scales must be a per token scale 2D tensor of [batch_size *"
             " num_keys, 1]"
         )
 
-        var k_lt = k.to_layout_tensor()
-        var k_scales_lt = k_scales.to_layout_tensor()
-        var v_lt = v.to_layout_tensor()
         var k_rope_lt = k_rope.to_layout_tensor()
         var q_rope_lt = q_rope.to_layout_tensor()
         var q_scale_lt = q_scale.to_layout_tensor()
+        var cro_buf = _ragged_offsets_view(cache_row_offsets)
         var k_operand = RaggedMHAOperand(
-            LayoutTensor[k_lt.dtype, k_lt.layout, k_lt.origin](
-                k_lt.ptr,
-                RuntimeLayout[k_lt.layout].row_major(
-                    k_lt.runtime_layout.shape.value.canonicalize()
-                ),
-            ),
-            LayoutTensor[k_scales_lt.dtype, k_scales_lt.layout, ImmutAnyOrigin](
-                k_scales_lt.ptr.as_immutable().as_unsafe_any_origin(),
-                RuntimeLayout[k_scales_lt.layout].row_major(
-                    k_scales_lt.runtime_layout.shape.value.canonicalize()
-                ),
-            ),
-            cache_row_offsets_lt,
+            _ragged_kv_view(k),
+            _ragged_scales_view(k_scales),
+            cro_buf,
         )
 
-        var v_operand = RaggedMHAOperand(
-            LayoutTensor[v_lt.dtype, v_lt.layout, v_lt.origin](
-                v_lt.ptr,
-                RuntimeLayout[v_lt.layout].row_major(
-                    v_lt.runtime_layout.shape.value.canonicalize()
-                ),
-            ),
-            cache_row_offsets_lt,
-        )
+        var v_operand = RaggedMHAOperand(_ragged_kv_view(v), cro_buf)
         var k_rope_operand = LayoutTensorMHAOperand(
             LayoutTensor[k_rope_lt.dtype, k_rope_lt.layout, k_rope_lt.origin](
                 k_rope_lt.ptr,
@@ -2741,37 +2730,16 @@ def flare_mla_prefill[
             " num_keys, 1]"
         )
 
-        var cache_row_offsets_lt = cache_row_offsets.to_layout_tensor()
-        var k_lt = k.to_layout_tensor()
-        var k_scales_lt = k_scales.to_layout_tensor()
-        var v_lt = v.to_layout_tensor()
         var q_rope_lt = q_rope.to_layout_tensor()
         var q_scale_lt = q_scale.to_layout_tensor()
+        var cro_buf = _ragged_offsets_view(cache_row_offsets)
         var k_operand = RaggedMHAOperand(
-            LayoutTensor[k_lt.dtype, k_lt.layout, k_lt.origin](
-                k_lt.ptr,
-                RuntimeLayout[k_lt.layout].row_major(
-                    k_lt.runtime_layout.shape.value.canonicalize()
-                ),
-            ),
-            LayoutTensor[k_scales_lt.dtype, k_scales_lt.layout, ImmutAnyOrigin](
-                k_scales_lt.ptr.as_immutable().as_unsafe_any_origin(),
-                RuntimeLayout[k_scales_lt.layout].row_major(
-                    k_scales_lt.runtime_layout.shape.value.canonicalize()
-                ),
-            ),
-            cache_row_offsets_lt,
+            _ragged_kv_view(k),
+            _ragged_scales_view(k_scales),
+            cro_buf,
         )
 
-        var v_operand = RaggedMHAOperand(
-            LayoutTensor[v_lt.dtype, v_lt.layout, v_lt.origin](
-                v_lt.ptr,
-                RuntimeLayout[v_lt.layout].row_major(
-                    v_lt.runtime_layout.shape.value.canonicalize()
-                ),
-            ),
-            cache_row_offsets_lt,
-        )
+        var v_operand = RaggedMHAOperand(_ragged_kv_view(v), cro_buf)
         var k_rope_operand = KVCacheMHAOperand(k_rope)
 
         var batch_size: Int = Int(valid_length.dim[0]()) - 1
@@ -2896,7 +2864,7 @@ def flare_mla_prefill_dispatch[
             output,
             q,
             k,
-            rebind[type_of(k)](v),
+            v,
             k_rope,
             mask_functor,
             valid_length,
