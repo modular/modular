@@ -42,7 +42,7 @@ from std.sys.info import is_32bit
 
 from std.bit import count_leading_zeros
 from std.memory import memcmp, memcpy, memset
-from std.python import ConvertibleFromPython, PythonObject
+from std.python import ConvertibleFromPython, ConvertibleToPython, PythonObject
 from std.reflection.traits import AllWritable
 
 # ===----------------------------------------------------------------------=== #
@@ -54,6 +54,7 @@ struct String(
     Boolable,
     Comparable,
     ConvertibleFromPython,
+    ConvertibleToPython,
     Defaultable,
     FloatableRaising,
     ImplicitlyCopyable,
@@ -1100,6 +1101,20 @@ struct String(
         self = String(StringSlice(unsafe_borrowed_obj=str_obj))
         # keep python object alive so the copy can occur
         _ = str_obj
+
+    comptime ConversionToPythonErrorType = Error
+    """The error type raised if conversion to a PythonObject fails."""
+
+    def to_python_object(var self) raises -> PythonObject:
+        """Convert this value to a Python `str` object.
+
+        Returns:
+            A PythonObject representing this value.
+
+        Raises:
+            If the Python runtime is not initialized or conversion fails.
+        """
+        return StringSlice(self).to_python_object()
 
     # ===------------------------------------------------------------------=== #
     # Methods

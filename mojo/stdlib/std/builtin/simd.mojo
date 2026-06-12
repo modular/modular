@@ -74,9 +74,10 @@ from std.builtin._format_float import _write_float
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.builtin.format_int import _write_int
 from std.builtin.int import _FromInt
+from std.ffi import c_double, c_long, c_size_t, c_ssize_t
 from std.math import DivModable, Powable
 from std.memory import bitcast, memcpy, pack_bits
-from std.python import Python, PythonObject
+from std.python import ConvertibleToPython, Python, PythonObject
 
 from std.utils import IndexList, StaticTuple
 from std.utils._visualizers import lldb_formatter_wrapping_type
@@ -408,6 +409,7 @@ struct SIMD[dtype: DType, size: Int](
     CeilDivable,
     Ceilable,
     Comparable,
+    ConvertibleToPython,
     CoordLike,
     Defaultable,
     DevicePassable,
@@ -2010,6 +2012,31 @@ struct SIMD[dtype: DType, size: Int](
         comptime if Self.dtype.is_signed():
             return -(self // -denominator)
         return (self + denominator - 1) // denominator
+
+    def to_python_object(var self) -> PythonObject:
+        """Converts this value to a `PythonObject`. If the scalar
+        value type is bool, it is converted to a boolean. Otherwise, it is
+        converted to the appropriate integer or floating point type.
+
+        Returns:
+            A Python object representing this SIMD vector.
+        """
+        comptime assert Self.size == 1, "only work with scalar values"
+        var scalar = self._refine[new_size=1]()
+        ref cpy = Python().cpython()
+
+        comptime if Self.dtype == DType.bool:
+            var val = c_long(Int(scalar))
+            return PythonObject(from_owned=cpy.PyBool_FromLong(val))
+        elif Self.dtype.is_unsigned():
+            var val = c_size_t(scalar.cast[DType.uint]())
+            return PythonObject(from_owned=cpy.PyLong_FromSize_t(val))
+        elif Self.dtype.is_integral():
+            var val = c_ssize_t(scalar.cast[DType.int]()._mlir_value)
+            return PythonObject(from_owned=cpy.PyLong_FromSsize_t(val))
+        else:
+            var val = c_double(scalar.cast[DType.float64]())
+            return PythonObject(from_owned=cpy.PyFloat_FromDouble(val))
 
     # ===------------------------------------------------------------------=== #
     # Methods

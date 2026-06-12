@@ -20,6 +20,7 @@ from std.collections.string.string import (
     _calc_initial_buffer_size_int32,
     _calc_initial_buffer_size_int64,
 )
+from std.ffi import c_ssize_t
 from std.hashlib.hasher import Hasher
 from std.math import Ceilable, CeilDivable, Floorable, Truncable
 from std.sys.info import is_32bit
@@ -31,6 +32,7 @@ from std.python import (
     ConvertibleFromPython,
     Python,
     PythonObject,
+    ConvertibleToPython,
 )
 
 from std.utils._select import _select_register_value as select
@@ -188,6 +190,7 @@ struct Int(
     Ceilable,
     Comparable,
     ConvertibleFromPython,
+    ConvertibleToPython,
     CoordLike,
     Defaultable,
     DevicePassable,
@@ -1112,6 +1115,15 @@ struct Int(
                 raise cpy.unsafe_get_error()
             return
         self = Python.py_long_as_ssize_t(py.__int__())
+
+    def to_python_object(var self) -> PythonObject:
+        """Convert this value to a `PythonObject`.
+
+        Returns:
+            A `PythonObject` representing this value.
+        """
+        ref cpy = Python().cpython()
+        return PythonObject(from_owned=cpy.PyLong_FromSsize_t(c_ssize_t(self)))
 
     # ===-------------------------------------------------------------------===#
     # Methods

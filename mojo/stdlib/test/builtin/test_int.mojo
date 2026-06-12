@@ -11,8 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.sys import bit_width_of
 from std.python import PythonObject
+from std.sys import bit_width_of
 from std.testing import (
     assert_equal,
     assert_false,
@@ -20,6 +20,7 @@ from std.testing import (
     assert_true,
     TestSuite,
 )
+from test_utils import check_convertible_to_python, check_python_object
 
 
 def test_properties() raises:
@@ -261,6 +262,19 @@ def test_is_power_of_two() raises:
     assert_equal(Int(4).is_power_of_two(), True)
     assert_equal(Int(5).is_power_of_two(), False)
     assert_equal(UInt64(Int.MAX).is_power_of_two(), False)
+
+
+def test_convertible_to_python() raises:
+    check_convertible_to_python(42, "42")
+
+    # test implicit conversion
+    check_python_object(42, "42")
+
+    # non raising conversion to PythonObject
+    def non_raising_to_python(var value: Int) -> PythonObject:
+        return PythonObject(value)
+
+    assert_equal(String(non_raising_to_python(42)), "42")
 
 
 def main() raises:

@@ -28,6 +28,7 @@ from std.testing import (
     assert_true,
 )
 from std.testing import TestSuite
+from test_utils import check_convertible_to_python, check_python_object
 
 
 def test_constructors() raises:
@@ -1808,6 +1809,17 @@ def test_append_codepoint() raises:
     s.append(Codepoint.ord("🔥"))
     assert_equal(s, "a€🔥")
     assert_equal(s.byte_length(), 8)
+
+
+def test_convertible_to_Python() raises:
+    check_convertible_to_python(StringSlice("Foo"), "Foo")
+    check_convertible_to_python(String("Bar"), "Bar")
+    check_convertible_to_python("Baz", "Baz")
+
+    # test implicit conversions
+    check_python_object(StringSlice("Foo"), "Foo")
+    check_python_object(String("Bar"), "Bar")
+    check_python_object("Baz", "Baz")
 
 
 def main() raises:

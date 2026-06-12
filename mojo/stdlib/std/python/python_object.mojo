@@ -21,7 +21,7 @@ from std.python import PythonObject
 
 from std.os import abort
 from std.sys import bit_width_of
-from std.ffi import _CPointer, c_double, c_long, c_size_t, c_ssize_t
+from std.ffi import _CPointer, c_ssize_t
 import std.format._utils as fmt
 
 from std.reflection import reflect
@@ -158,9 +158,14 @@ struct PythonObject(
         self._obj_ptr = from_borrowed
 
     @implicit
-    def __init__(out self, var source: Some[ConvertibleToPython]) raises:
+    def __init__[
+        T: ConvertibleToPython, //
+    ](out self, var source: T) raises T.ConversionToPythonErrorType:
         """Initialize this object from a value of some type that can be
         custom converted to a PythonObject.
+
+        Parameters:
+            T: The type of the value to convert to a PythonObject.
 
         Args:
             source: The value to convert to a PythonObject.
@@ -224,95 +229,6 @@ struct PythonObject(
         """
         ref cpy = Python().cpython()
         self = Self(from_borrowed=cpy.Py_None())
-
-    @implicit
-    def __init__(out self, value: Bool):
-        """Initialize the object from a bool.
-
-        Args:
-            value: The boolean value.
-        """
-        ref cpy = Python().cpython()
-        self = Self(from_owned=cpy.PyBool_FromLong(c_long(Int(value))))
-
-    @implicit
-    def __init__(out self, value: Int):
-        """Initialize the object with an integer value.
-
-        Args:
-            value: The integer value.
-        """
-        ref cpy = Python().cpython()
-        self = Self(from_owned=cpy.PyLong_FromSsize_t(c_ssize_t(value)))
-
-    @implicit
-    def __init__[dtype: DType](out self, value: Scalar[dtype]):
-        """Initialize the object with a generic scalar value. If the scalar
-        value type is bool, it is converted to a boolean. Otherwise, it is
-        converted to the appropriate integer or floating point type.
-
-        Parameters:
-            dtype: The scalar value type.
-
-        Args:
-            value: The scalar value.
-        """
-        ref cpy = Python().cpython()
-
-        comptime if dtype == DType.bool:
-            var val = c_long(Int(value))
-            self = Self(from_owned=cpy.PyBool_FromLong(val))
-        elif dtype.is_unsigned():
-            var val = c_size_t(value.cast[DType.uint]())
-            self = Self(from_owned=cpy.PyLong_FromSize_t(val))
-        elif dtype.is_integral():
-            var val = c_ssize_t(value.cast[DType.int]()._mlir_value)
-            self = Self(from_owned=cpy.PyLong_FromSsize_t(val))
-        else:
-            var val = c_double(value.cast[DType.float64]())
-            self = Self(from_owned=cpy.PyFloat_FromDouble(val))
-
-    @implicit
-    def __init__(out self, string: StringSlice) raises:
-        """Initialize the object from a string.
-
-        Args:
-            string: The string value.
-
-        Raises:
-            If the string is not valid UTF-8.
-        """
-        ref cpy = Python().cpython()
-        # TODO: This should not be necessary, as `StringSlice` is guaranteed to
-        # be valid UTF-8.
-        var unicode = cpy.PyUnicode_DecodeUTF8(string)
-        if not unicode:
-            raise cpy.unsafe_get_error()
-        self = Self(from_owned=unicode)
-
-    @implicit
-    def __init__(out self, value: StringLiteral) raises:
-        """Initialize the object from a string literal.
-
-        Args:
-            value: The string literal value.
-
-        Raises:
-            If the string is not valid UTF-8.
-        """
-        self = Self(StringSlice(value))
-
-    @implicit
-    def __init__(out self, value: String) raises:
-        """Initialize the object from a string.
-
-        Args:
-            value: The string value.
-
-        Raises:
-            If the string is not valid UTF-8.
-        """
-        self = Self(StringSlice(value))
 
     @implicit
     def __init__(out self, slice: Slice):

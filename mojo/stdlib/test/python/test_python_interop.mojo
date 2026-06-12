@@ -76,8 +76,9 @@ def test_int_conversion() raises:
     # TODO: use assert_equal once we have parametric raises in __eq__.
     assert_true(py_int == PythonObject(123))
 
+    py_obj = PythonObject("foo")
     with assert_raises(contains="invalid literal for int()"):
-        _ = Python.int(PythonObject("foo"))
+        _ = Int(py=py_obj)
 
 
 def test_float_conversion() raises:

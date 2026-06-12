@@ -17,9 +17,11 @@ These are Mojo built-ins, so you don't need to import them.
 
 from std.collections import List, Set
 from std.hashlib.hasher import Hasher
+from std.ffi import c_long
 
 from std.python import (
     ConvertibleFromPython,
+    ConvertibleToPython,
     Python,
     PythonObject,
 )
@@ -67,6 +69,7 @@ struct Bool(
     Boolable,
     Comparable,
     ConvertibleFromPython,
+    ConvertibleToPython,
     Defaultable,
     Floatable,
     Hashable,
@@ -470,6 +473,15 @@ struct Bool(
             hasher: The hasher instance.
         """
         hasher._update_with_simd(Scalar[DType.bool](self))
+
+    def to_python_object(var self) -> PythonObject:
+        """Convert this value to a `PythonObject`.
+
+        Returns:
+            A `PythonObject` representing the value.
+        """
+        ref cpy = Python().cpython()
+        return PythonObject(from_owned=cpy.PyBool_FromLong(c_long(Int(self))))
 
     @doc_hidden
     def __init__(out self, *, py: PythonObject) raises:
