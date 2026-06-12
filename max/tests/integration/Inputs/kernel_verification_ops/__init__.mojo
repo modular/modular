@@ -40,12 +40,13 @@ struct MyAdd:
     ):
         output[0] = x[0] + y[0]
 
-    @staticmethod
-    def shape(
-        x: InputTensor,
-        y: InputTensor,
-    ) raises -> IndexList[x.rank]:
-        raise "NotImplemented"
+
+@compiler.register_shape_function("my_add")
+def my_add_shape(
+    x: InputTensor,
+    y: InputTensor,
+) raises -> IndexList[x.rank]:
+    raise "NotImplemented"
 
 
 @compiler.register("op_with_device_context")
@@ -58,11 +59,12 @@ struct OpWidthDeviceContext:
     ):
         output[0] = x[0]
 
-    @staticmethod
-    def shape(
-        x: InputTensor,
-    ) raises -> IndexList[x.rank]:
-        raise "NotImplemented"
+
+@compiler.register_shape_function("op_with_device_context")
+def op_with_device_context_shape(
+    x: InputTensor,
+) raises -> IndexList[x.rank]:
+    raise "NotImplemented"
 
 
 @compiler.register("op_with_multiple_outputs")
@@ -76,11 +78,12 @@ struct OpWithMultipleOutputs:
         out0[0] = 2 * x[0]
         out1[0] = 4 * x[0]
 
-    @staticmethod
-    def shape(
-        x: InputTensor,
-    ) raises -> IndexList[x.rank]:
-        raise "NotImplemented"
+
+@compiler.register_shape_function("op_with_multiple_outputs")
+def op_with_multiple_outputs_shape(
+    x: InputTensor,
+) raises -> IndexList[x.rank]:
+    raise "NotImplemented"
 
 
 @compiler.register("op_without_outputs")
@@ -166,12 +169,13 @@ struct BinaryKernelWithRaises:
     ) raises:
         output[0] = x[0] + y[0]
 
-    @staticmethod
-    def shape(
-        x: InputTensor,
-        y: InputTensor,
-    ) raises -> IndexList[x.rank]:
-        raise "NotImplemented"
+
+@compiler.register_shape_function("binary_kernel_with_raises")
+def binary_kernel_with_raises_shape(
+    x: InputTensor,
+    y: InputTensor,
+) raises -> IndexList[x.rank]:
+    raise "NotImplemented"
 
 
 @compiler.register("mutable_input_tensor")
