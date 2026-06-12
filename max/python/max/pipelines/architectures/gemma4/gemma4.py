@@ -134,6 +134,14 @@ class Gemma4TextModel(DistributedLogitsPostprocessMixin, Module):
 
             is_nvfp4 = quant_config is not None and quant_config.is_nvfp4
             moe_nvfp4 = is_nvfp4 and text_config.enable_moe_block
+            # The first-party NVFP4 checkpoints (nvidia/Gemma-4-*) keep
+            # attention in BF16, but other modelopt quants (e.g. the
+            # community 12B NVFP4 ones) quantize it too -- honor the
+            # per-layer classification instead of assuming BF16.
+            attn_quantized = is_nvfp4 and (
+                quant_config is not None
+                and i in quant_config.attn_quantized_layers
+            )
 
             moe_block: MoE | None = None
             if text_config.enable_moe_block:
@@ -192,11 +200,15 @@ class Gemma4TextModel(DistributedLogitsPostprocessMixin, Module):
                         layer_idx=i,
                         layer_idx_in_cache=layer_idx_in_cache,
                         is_sliding=is_sliding,
-                        dtype=unquantized_dtype if is_nvfp4 else config.dtype,
+                        dtype=unquantized_dtype
+                        if (is_nvfp4 and not attn_quantized)
+                        else config.dtype,
                         devices=config.devices,
                         qk_norm_eps=text_config.rms_norm_eps,
                         local_window_size=text_config.sliding_window,
-                        quant_config=None if is_nvfp4 else quant_config,
+                        quant_config=None
+                        if (is_nvfp4 and not attn_quantized)
+                        else quant_config,
                     ),
                     mlp=MLP(
                         dtype=unquantized_dtype if moe_nvfp4 else config.dtype,
