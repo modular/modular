@@ -116,7 +116,7 @@ def correlation[
     ctx: DeviceContext,
     *,
     w: OptionalUnsafePointer[mut=True, u.type, _] = Optional[
-        UnsafePointer[u.type, MutExternalOrigin]
+        UnsafePointer[u.type, MutUntrackedOrigin]
     ](),
     centered: Bool = True,
 ) raises -> Scalar[out_type]:

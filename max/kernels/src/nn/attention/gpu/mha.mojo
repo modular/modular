@@ -818,7 +818,7 @@ def flash_attention_dispatch[
                             # codegen at the comptime monomorphization
                             # level.
                             var q_off_ptr = (
-                                valid_length.value().as_any_origin().ptr
+                                valid_length.value().as_unsafe_any_origin().ptr
                             )
                             # Sink-weights pointer: when `sink=True` the
                             # caller MUST pass non-None `sink_weights`
@@ -829,7 +829,9 @@ def flash_attention_dispatch[
                             # cross-attention vs self-attention variant.
                             comptime if sink:
                                 var sw_ptr = (
-                                    sink_weights.value().as_any_origin().ptr
+                                    sink_weights.value()
+                                    .as_unsafe_any_origin()
+                                    .ptr
                                 )
                                 if kv_input_row_offsets:
                                     mha_prefill_v2_ragged[
@@ -837,15 +839,15 @@ def flash_attention_dispatch[
                                         cross_attention=True,
                                         sink=True,
                                     ](
-                                        q.as_any_origin().ptr,
+                                        q.as_unsafe_any_origin().ptr,
                                         k,
                                         v,
-                                        output.as_any_origin().ptr,
+                                        output.as_unsafe_any_origin().ptr,
                                         mask_functor,
                                         scale,
                                         q_off_ptr,
                                         kv_input_row_offsets.value()
-                                        .as_any_origin()
+                                        .as_unsafe_any_origin()
                                         .ptr,
                                         max_prompt_len,
                                         batch_size,
@@ -856,10 +858,10 @@ def flash_attention_dispatch[
                                     mha_prefill_v2_ragged[
                                         config=v2_config, sink=True
                                     ](
-                                        q.as_any_origin().ptr,
+                                        q.as_unsafe_any_origin().ptr,
                                         k,
                                         v,
-                                        output.as_any_origin().ptr,
+                                        output.as_unsafe_any_origin().ptr,
                                         mask_functor,
                                         scale,
                                         q_off_ptr,
@@ -874,15 +876,15 @@ def flash_attention_dispatch[
                                     mha_prefill_v2_ragged[
                                         config=v2_config, cross_attention=True
                                     ](
-                                        q.as_any_origin().ptr,
+                                        q.as_unsafe_any_origin().ptr,
                                         k,
                                         v,
-                                        output.as_any_origin().ptr,
+                                        output.as_unsafe_any_origin().ptr,
                                         mask_functor,
                                         scale,
                                         q_off_ptr,
                                         kv_input_row_offsets.value()
-                                        .as_any_origin()
+                                        .as_unsafe_any_origin()
                                         .ptr,
                                         max_prompt_len,
                                         batch_size,
@@ -890,10 +892,10 @@ def flash_attention_dispatch[
                                     )
                                 else:
                                     mha_prefill_v2_ragged[config=v2_config](
-                                        q.as_any_origin().ptr,
+                                        q.as_unsafe_any_origin().ptr,
                                         k,
                                         v,
-                                        output.as_any_origin().ptr,
+                                        output.as_unsafe_any_origin().ptr,
                                         mask_functor,
                                         scale,
                                         q_off_ptr,
@@ -926,7 +928,9 @@ def flash_attention_dispatch[
                                     max_cache_valid_length,
                                     max_cache_valid_length - max_prompt_len,
                                     ctx,
-                                    sink_weights.value().as_any_origin().ptr,
+                                    sink_weights.value()
+                                    .as_unsafe_any_origin()
+                                    .ptr,
                                 )
                             else:
                                 mha_prefill_v2[v2_config](
@@ -1339,7 +1343,7 @@ def flash_attention_dispatch[
                                     kv_input_row_offsets,
                                     batch_size,
                                     SplitKPartition(
-                                        exp_sum_qk_max_data.unsafe_ptr(),
+                                        exp_sum_qk_max_data.unsafe_ptr().as_unsafe_any_origin(),
                                         UInt32(num_partitions_value),
                                     ),
                                     ctx,
@@ -1366,7 +1370,7 @@ def flash_attention_dispatch[
                                     _optional_lt_to_tt(kv_input_row_offsets),
                                     batch_size,
                                     SplitKPartition(
-                                        exp_sum_qk_max_data.unsafe_ptr(),
+                                        exp_sum_qk_max_data.unsafe_ptr().as_unsafe_any_origin(),
                                         UInt32(num_partitions_value),
                                     ),
                                     ctx,
@@ -1765,7 +1769,7 @@ def flash_attention_ragged[
 
     var is_token_generation = False
 
-    var cache_row_offsets = input_row_offsets.as_any_origin()
+    var cache_row_offsets = input_row_offsets.as_unsafe_any_origin()
 
     var k_operand = RaggedMHAOperand(
         LayoutTensor[k.dtype, Layout.row_major(k.layout.shape), k.origin](
@@ -4551,7 +4555,8 @@ def mha_decoding_single_batch_pipelined[
         circular=True,
     ]
     var k_smem_iter = IteratorTypeK(
-        k_smem, IteratorTypeK.layout_uint_type(k_smem_size)
+        k_smem.as_unsafe_any_origin(),
+        IteratorTypeK.layout_uint_type(k_smem_size),
     )
 
     var kv_head_idx = block_idx.y
@@ -4632,7 +4637,8 @@ def mha_decoding_single_batch_pipelined[
         circular=True,
     ]
     var v_smem_iter = IteratorTypeV(
-        v_smem, IteratorTypeV.layout_uint_type(v_smem_size)
+        v_smem.as_unsafe_any_origin(),
+        IteratorTypeV.layout_uint_type(v_smem_size),
     )
 
     # Shared memory for P = Q * K^t
@@ -4656,7 +4662,7 @@ def mha_decoding_single_batch_pipelined[
         Layout.row_major(p_frag_simdwidth * num_warps_n, BM),
         MutAnyOrigin,
         address_space=AddressSpace.SHARED,
-    ]((p_smem + BM * BN).bitcast[Scalar[accum_type]]())
+    ]((p_smem + BM * BN).bitcast[Scalar[accum_type]]().as_unsafe_any_origin())
 
     var q_offset = depth * kv_head_idx * group
 

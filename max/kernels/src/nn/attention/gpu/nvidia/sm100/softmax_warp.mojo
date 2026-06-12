@@ -52,8 +52,7 @@ from nn.attention.gpu.nvidia.sm100.attention_utils import (
     SharedMemPointer,
     MBarType,
     TMemTile,
-    SM100TensorAccumulatorSS,
-    SM100TensorAccumulatorTS,
+    SM100TensorAccumulator,
     STMatrixLayout,
     STMatrixOffsets,
     break_into_powers_of_two,
@@ -661,24 +660,26 @@ def fa4_softmax[
     comptime MiscMBarsType = type_of(mbars)
 
     # MMA types for TMEM access
-    comptime UMMA0Type = SM100TensorAccumulatorSS[
+    comptime UMMA0Type = SM100TensorAccumulator[
         qkv_type,
         accum_dtype,
         MMA_M=config.MMA_M,
         MMA_N=BN,
         BK=align_up(config.qk_depth, config.MMA_K),
+        a_tmem=False,
         swizzle_a=config.swizzle_mode,
         swizzle_b=config.swizzle_mode,
         transpose_b=True,
         num_stages=config.num_qk_stages,
         cta_group=cta_group,
     ]
-    comptime UMMA1Type = SM100TensorAccumulatorTS[
+    comptime UMMA1Type = SM100TensorAccumulator[
         qkv_type,
         accum_dtype,
         MMA_M=config.MMA_M,
         MMA_N=padded_ov_depth,
         BK=BN,
+        a_tmem=True,
         swizzle_b=config.swizzle_mode,
         transpose_b=False,
         num_stages=config.num_pv_stages,

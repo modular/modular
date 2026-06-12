@@ -861,10 +861,8 @@ def multistage_qgemm_kernel[
         ]()
 
         var accum_smem_warp_tile = LayoutTensor[
-            mut=True,
             c_type,
             Layout.row_major(WM, WN),
-            MutAnyOrigin,
             address_space=AddressSpace.SHARED,
         ](a_smem.bitcast[Scalar[c_type]]() + warp_id * WM * WN)
 
@@ -2256,9 +2254,9 @@ def gpu_qint4_repack_GPTQ[
             False,
         ]
 
-        # Create null tensor using MutExternalOrigin (null pointer with no real origin)
+        # Create null tensor using MutUntrackedOrigin (null pointer with no real origin)
         var null_tensor = LayoutTensor[
-            DType.int32, Layout(), MutExternalOrigin
+            DType.int32, Layout(), MutUntrackedOrigin
         ](None)
 
         cuda_ctx.enqueue_function[repack](

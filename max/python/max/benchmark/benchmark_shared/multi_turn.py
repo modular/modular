@@ -209,6 +209,10 @@ async def chat_session_driver(
                 )
 
         if not (ignore_first_turn_stats and content_idx == prefix_end_idx):
+            # Tag with session + turn order so per-turn cache retention can
+            # compare each measured turn against the previous one in-session.
+            response.session_id = str(chat_session.id)
+            response.turn_index = len(session_outputs)
             session_outputs.append(response)
 
         if not response.success:

@@ -475,7 +475,7 @@ class BatchMetrics:
 
     def publish_metrics(self) -> None:
         bt = self.batch_type.value  # "CE" (prefill) or "TG" (decode)
-        METRICS.batch_size(self.batch_size)
+        METRICS.batch_size(self.batch_size, batch_type=bt)
         METRICS.batch_input_tokens(self.num_input_tokens, batch_type=bt)
         METRICS.batch_context_tokens(self.num_context_tokens, batch_type=bt)
 

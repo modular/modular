@@ -168,7 +168,10 @@ def broadcast_impl[
     if Int(input.dim(axis)) != Int(output.dim(axis)):
         var output_tile_start = output.ptr + output_offset
         _tile_1d(
-            output_tile_start + output_axis_stride,  # 1st tile is already there
+            # AnyOrigin needed for exclusivity check
+            (
+                output_tile_start + output_axis_stride
+            ).as_unsafe_any_origin(),  # 1st tile is already there
             output_tile_start,
             output_axis_stride,  # elems_to_copy
             Int(output.dim(axis)) - 1,  # 1st tile is already there
@@ -181,11 +184,13 @@ def _tile_1d[
     init_dst_ptr: UnsafePointer[
         mut=True,
         Scalar[dtype],
-        MutAnyOrigin,
+        _,
         address_space=AddressSpace.GENERIC,
     ],
-    src_ptr: ImmutUnsafePointer[
+    src_ptr: UnsafePointer[
+        mut=False,
         Scalar[dtype],
+        _,
         address_space=AddressSpace.GENERIC,
         ...,
     ],

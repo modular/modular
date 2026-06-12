@@ -5096,7 +5096,7 @@ struct TMATensorTileArray[
             to accommodate hardware requirements like WGMMA.
     """
 
-    var tensormaps_ptr: UnsafePointer[UInt8, MutExternalOrigin]
+    var tensormaps_ptr: UnsafePointer[UInt8, MutUntrackedOrigin]
     """A static tuple of pointers to TMA descriptors.
 
     This field stores an array of pointers to `TMATensorTile` instances, where each pointer
@@ -5176,11 +5176,15 @@ struct TMATensorTileArray[
         Returns:
             `UnsafePointer` to the `TMATensorTile` at the specified index.
         """
-        return (self.tensormaps_ptr + index * self.descriptor_bytes).bitcast[
-            TMATensorTile[
-                Self.dtype, Self.rank, Self.cta_tile_shape, Self.desc_shape
-            ]
-        ]()
+        return (
+            (self.tensormaps_ptr + index * self.descriptor_bytes)
+            .bitcast[
+                TMATensorTile[
+                    Self.dtype, Self.rank, Self.cta_tile_shape, Self.desc_shape
+                ]
+            ]()
+            .as_unsafe_any_origin()
+        )
 
 
 struct RaggedTMA3DTile[

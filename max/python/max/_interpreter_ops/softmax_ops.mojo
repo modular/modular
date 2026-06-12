@@ -60,8 +60,8 @@ def _softmax_cpu[
     dtype: DType,
     is_logsoftmax: Bool,
 ](
-    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    in_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    out_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    in_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     batch_dim: Int,
     axis_dim: Int,
 ) where dtype.is_floating_point():
@@ -113,8 +113,8 @@ def softmax_op[
     dtype: DType,
     is_logsoftmax: Bool,
 ](
-    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    in_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    out_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    in_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     shape: IndexList[2],
     ctx: DeviceContext,
 ) raises where dtype.is_floating_point():

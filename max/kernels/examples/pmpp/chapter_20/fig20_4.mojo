@@ -106,7 +106,7 @@ def softmax_kernel(
     barrier()
 
     var max_val_row = block_reduce[max_op](
-        max_val_thread, temp_store.as_any_origin()
+        max_val_thread, temp_store.as_unsafe_any_origin()
     )
 
     if tid == 0:
@@ -123,7 +123,9 @@ def softmax_kernel(
 
     barrier()
 
-    var sum_row = block_reduce[sum_op](sum_thread, temp_store.as_any_origin())
+    var sum_row = block_reduce[sum_op](
+        sum_thread, temp_store.as_unsafe_any_origin()
+    )
 
     if tid == 0:
         broadcast_slot[0] = sum_row

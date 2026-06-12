@@ -177,6 +177,14 @@ class TokenGeneratorPipeline(
             reasoning_parser.reset()
         is_still_reasoning = reasoning_parser is not None
 
+        # Count this request as awaiting admission to the model worker: it has
+        # been accepted by the API server but is still API-side (tokenization /
+        # pre-submit). Decremented just before the handoff to the worker below,
+        # so a persistently high gauge points at an API-server backlog rather
+        # than the scheduler queue.
+        self.model_worker.note_awaiting_admission(1)
+        awaiting_admission = True
+
         try:
             with record_ms(METRICS.input_time):
                 context = await self.tokenizer.new_context(request)
@@ -244,6 +252,11 @@ class TokenGeneratorPipeline(
 
             with record_ms(METRICS.output_time):
                 has_stop_sequences = bool(context.eos_tracker.eos_stop_strings)
+
+                # Handing the request off to the model worker; it is no longer
+                # awaiting admission on the API side.
+                self.model_worker.note_awaiting_admission(-1)
+                awaiting_admission = False
 
                 async for responses in self.model_worker.stream(
                     context.request_id, context
@@ -390,6 +403,11 @@ class TokenGeneratorPipeline(
                         stop_sequence=stop_sequence_match,
                     )
         finally:
+            # Balance the awaiting-admission counter if we never reached the
+            # handoff (e.g. tokenization failed, or the consumer abandoned the
+            # stream before submit).
+            if awaiting_admission:
+                self.model_worker.note_awaiting_admission(-1)
             if first_chunk_yielded and num_generated_tokens > 1:
                 METRICS.time_per_output_token(
                     decode_elapsed_ms / (num_generated_tokens - 1)

@@ -79,38 +79,20 @@ comptime MutUnsafeAnyOrigin = UnsafeAnyOrigin[mut=True]
 This is an unsafe escape hatch slated for removal. See `UnsafeAnyOrigin`.
 """
 
-comptime ExternalOrigin[*, mut: Bool] = Origin[
-    _mlir_origin=__mlir_attr[
-        `#lit.origin.union<> : !lit.origin<`,
-        +mut._mlir_value,
-        `>`,
-    ],
-]()
-"""A parameterized external origin guaranteed not to alias any existing origins.
 
-Parameters:
-    mut: Whether the origin is mutable.
+@doc_hidden
+@deprecated(use=UntrackedOrigin)
+comptime ExternalOrigin[*, mut: Bool] = UntrackedOrigin[mut=mut]
 
-An external origin implies there is no previously existing value that this
-origin aliases. The compiler cannot track the origin or the value's lifecycle.
-Useful when interfacing with memory from outside the current Mojo program.
-"""
 
-comptime ImmutExternalOrigin = ExternalOrigin[mut=False]
-"""An immutable external origin guaranteed not to alias any existing origins.
+@doc_hidden
+@deprecated(use=ImmutUntrackedOrigin)
+comptime ImmutExternalOrigin = ImmutUntrackedOrigin
 
-An external origin implies there is no previously existing value that this
-origin aliases. The compiler cannot track the origin or the value's lifecycle.
-Useful when interfacing with memory from outside the current Mojo program.
-"""
 
-comptime MutExternalOrigin = ExternalOrigin[mut=True]
-"""A mutable external origin guaranteed not to alias any existing origins.
-
-An external origin implies there is no previously existing value that this
-origin aliases. The compiler cannot track the origin or the value's lifecycle.
-Useful when interfacing with memory from outside the current Mojo program.
-"""
+@doc_hidden
+@deprecated(use=MutUntrackedOrigin)
+comptime MutExternalOrigin = MutUntrackedOrigin
 
 comptime UntrackedOrigin[*, mut: Bool] = Origin[
     _mlir_origin=__mlir_attr[

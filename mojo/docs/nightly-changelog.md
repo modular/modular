@@ -403,6 +403,12 @@ This version is still a work in progress.
   lifetime extension and exclusivity checking, so its `Unsafe` prefix marks it
   as an escape hatch slated for deprecation and removal.
 
+- The `ExternalOrigin`, `ImmutExternalOrigin`, and `MutExternalOrigin` aliases
+  are now deprecated and emit a deprecation warning when referenced. Use
+  `UntrackedOrigin`, `ImmutUntrackedOrigin`, and `MutUntrackedOrigin`
+  respectively instead. The deprecated aliases still forward to the new names,
+  so existing code keeps compiling until they are removed in a future release.
+
 ## Tooling changes
 
 - Importing a Mojo module from Python no longer fails when the module lives in a
@@ -553,6 +559,10 @@ This version is still a work in progress.
   ```
 
 ## Removed
+
+- The `-kgenModule` flag has been removed from `mojo precompile`. It emitted a
+  serialized KGEN module (`.mlirbc`) instead of a `.mojoc` package and was only
+  used internally.
 
 - The `DeviceContextPtr` and `DeviceContextPtrList` types have been removed
   from `std.runtime.asyncrt`. Custom-op `execute` methods now take

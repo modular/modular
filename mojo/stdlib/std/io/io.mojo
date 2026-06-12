@@ -146,7 +146,7 @@ struct _fdopen[mode: StaticString = "a"](ImplicitlyCopyable, RegisterPassable):
         ```
         """
         # getdelim will allocate the buffer using malloc().
-        var buffer = _CPointer[UInt8, MutExternalOrigin]()
+        var buffer = _CPointer[UInt8, MutUntrackedOrigin]()
         var n = c_size_t(0)
         # ssize_t getdelim(char **restrict lineptr, size_t *restrict n,
         #                  int delimiter, FILE *restrict stream);
@@ -166,7 +166,7 @@ struct _fdopen[mode: StaticString = "a"](ImplicitlyCopyable, RegisterPassable):
             raise Error("EOF")
         # Copy the buffer (excluding the delimiter itself) into a Mojo String.
         var s = String(
-            StringSlice[MutExternalOrigin](
+            StringSlice[MutUntrackedOrigin](
                 unsafe_from_utf8=Span(
                     ptr=buffer.unsafe_value(), length=bytes_read - 1
                 )

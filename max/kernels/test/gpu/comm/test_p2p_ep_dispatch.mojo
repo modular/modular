@@ -58,7 +58,7 @@ from std.gpu.host.info import _is_sm10x_gpu, MI355X
 
 def legalize_topk_ids[
     n_experts: Int, top_k: Int
-](topk_ids: UnsafePointer[Int32, MutExternalOrigin], n_tokens: Int):
+](topk_ids: UnsafePointer[Int32, MutUntrackedOrigin], n_tokens: Int):
     for tok_id in range(n_tokens):
         var topk_ids_for_token = topk_ids + tok_id * top_k
 
@@ -148,7 +148,7 @@ struct BF16DispatchTest[
 
     var device_output_bufs_list: List[DeviceBuffer[DType.bfloat16]]
     var host_output_bufs_list: List[
-        UnsafePointer[Scalar[DType.bfloat16], MutExternalOrigin]
+        UnsafePointer[Scalar[DType.bfloat16], MutUntrackedOrigin]
     ]
 
     def __init__(out self, list_of_ctx: List[DeviceContext]) raises:
@@ -156,7 +156,7 @@ struct BF16DispatchTest[
             capacity=Self.n_ranks
         )
         self.host_output_bufs_list = List[
-            UnsafePointer[Scalar[DType.bfloat16], MutExternalOrigin]
+            UnsafePointer[Scalar[DType.bfloat16], MutUntrackedOrigin]
         ](capacity=Self.n_ranks)
         for i in range(Self.n_ranks):
             self.device_output_bufs_list.append(
@@ -272,10 +272,10 @@ struct BlockwiseFP8DispatchTest[
     var device_output_bufs_list: List[DeviceBuffer[Self.fp8_dtype]]
     var device_output_scales_bufs_list: List[DeviceBuffer[Self.scales_dtype]]
     var host_output_bufs_list: List[
-        UnsafePointer[Scalar[Self.fp8_dtype], MutExternalOrigin]
+        UnsafePointer[Scalar[Self.fp8_dtype], MutUntrackedOrigin]
     ]
     var host_output_scales_bufs_list: List[
-        UnsafePointer[Scalar[Self.scales_dtype], MutExternalOrigin]
+        UnsafePointer[Scalar[Self.scales_dtype], MutUntrackedOrigin]
     ]
 
     def __init__(out self, list_of_ctx: List[DeviceContext]) raises:
@@ -286,10 +286,10 @@ struct BlockwiseFP8DispatchTest[
             DeviceBuffer[Self.scales_dtype]
         ](capacity=Self.n_ranks)
         self.host_output_bufs_list = List[
-            UnsafePointer[Scalar[Self.fp8_dtype], MutExternalOrigin]
+            UnsafePointer[Scalar[Self.fp8_dtype], MutUntrackedOrigin]
         ](capacity=Self.n_ranks)
         self.host_output_scales_bufs_list = List[
-            UnsafePointer[Scalar[Self.scales_dtype], MutExternalOrigin]
+            UnsafePointer[Scalar[Self.scales_dtype], MutUntrackedOrigin]
         ](capacity=Self.n_ranks)
         for i in range(Self.n_ranks):
             self.device_output_bufs_list.append(
@@ -460,13 +460,13 @@ struct NVFP4DispatchTest[
     var device_output_scales_bufs_list: List[DeviceBuffer[Self.scales_dtype]]
     var device_output_scales_offset_bufs_list: List[DeviceBuffer[DType.uint32]]
     var host_output_bufs_list: List[
-        UnsafePointer[Scalar[Self.fp4_dtype], MutExternalOrigin]
+        UnsafePointer[Scalar[Self.fp4_dtype], MutUntrackedOrigin]
     ]
     var host_output_scales_bufs_list: List[
-        UnsafePointer[Scalar[Self.scales_dtype], MutExternalOrigin]
+        UnsafePointer[Scalar[Self.scales_dtype], MutUntrackedOrigin]
     ]
     var host_output_scales_offset_bufs_list: List[
-        UnsafePointer[Scalar[DType.uint32], MutExternalOrigin]
+        UnsafePointer[Scalar[DType.uint32], MutUntrackedOrigin]
     ]
 
     def __init__(out self, list_of_ctx: List[DeviceContext]) raises:
@@ -480,13 +480,13 @@ struct NVFP4DispatchTest[
             DeviceBuffer[DType.uint32]
         ](capacity=Self.n_ranks)
         self.host_output_bufs_list = List[
-            UnsafePointer[Scalar[Self.fp4_dtype], MutExternalOrigin]
+            UnsafePointer[Scalar[Self.fp4_dtype], MutUntrackedOrigin]
         ](capacity=Self.n_ranks)
         self.host_output_scales_bufs_list = List[
-            UnsafePointer[Scalar[Self.scales_dtype], MutExternalOrigin]
+            UnsafePointer[Scalar[Self.scales_dtype], MutUntrackedOrigin]
         ](capacity=Self.n_ranks)
         self.host_output_scales_offset_bufs_list = List[
-            UnsafePointer[Scalar[DType.uint32], MutExternalOrigin]
+            UnsafePointer[Scalar[DType.uint32], MutUntrackedOrigin]
         ](capacity=Self.n_ranks)
         for i in range(Self.n_ranks):
             self.device_output_bufs_list.append(
@@ -710,10 +710,10 @@ struct MXFP4DispatchTest[
     var device_output_bufs_list: List[DeviceBuffer[Self.fp4_dtype]]
     var device_output_scales_bufs_list: List[DeviceBuffer[Self.scales_dtype]]
     var host_output_bufs_list: List[
-        UnsafePointer[Scalar[Self.fp4_dtype], MutExternalOrigin]
+        UnsafePointer[Scalar[Self.fp4_dtype], MutUntrackedOrigin]
     ]
     var host_output_scales_bufs_list: List[
-        UnsafePointer[Scalar[Self.scales_dtype], MutExternalOrigin]
+        UnsafePointer[Scalar[Self.scales_dtype], MutUntrackedOrigin]
     ]
 
     def __init__(out self, list_of_ctx: List[DeviceContext]) raises:
@@ -724,10 +724,10 @@ struct MXFP4DispatchTest[
             DeviceBuffer[Self.scales_dtype]
         ](capacity=Self.n_ranks)
         self.host_output_bufs_list = List[
-            UnsafePointer[Scalar[Self.fp4_dtype], MutExternalOrigin]
+            UnsafePointer[Scalar[Self.fp4_dtype], MutUntrackedOrigin]
         ](capacity=Self.n_ranks)
         self.host_output_scales_bufs_list = List[
-            UnsafePointer[Scalar[Self.scales_dtype], MutExternalOrigin]
+            UnsafePointer[Scalar[Self.scales_dtype], MutUntrackedOrigin]
         ](capacity=Self.n_ranks)
         for i in range(Self.n_ranks):
             self.device_output_bufs_list.append(
@@ -908,8 +908,8 @@ def test_dispatch_common[
     var recv_count_bufs_list = List[DeviceBuffer[DType.uint64]](capacity=n_ranks)
     var atomic_counters_list = List[DeviceBuffer[DType.int32]](capacity=n_ranks)
 
-    var host_topk_ids_list = InlineArray[UnsafePointer[Int32, MutExternalOrigin], n_ranks](uninitialized=True)
-    var host_input_tokens_list = InlineArray[UnsafePointer[Scalar[input_type], MutExternalOrigin], n_ranks](uninitialized=True)
+    var host_topk_ids_list = InlineArray[UnsafePointer[Int32, MutUntrackedOrigin], n_ranks](uninitialized=True)
+    var host_input_tokens_list = InlineArray[UnsafePointer[Scalar[input_type], MutUntrackedOrigin], n_ranks](uninitialized=True)
 
     var device_topk_bufs_list = List[DeviceBuffer[DType.int32]](capacity=n_ranks)
     var device_input_bufs_list = List[DeviceBuffer[input_type]](capacity=n_ranks)

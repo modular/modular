@@ -51,11 +51,11 @@ def topk_wrapper_no_shmem[
     K: Int,
     num_elements: Int,
     num_blocks_per_input: Int,
-    in_buffer: UnsafePointer[Scalar[input_type], ImmutExternalOrigin],
-    local_topk_vals: UnsafePointer[Scalar[input_type], MutExternalOrigin],
-    local_topk_idxs: UnsafePointer[Scalar[index_type], MutExternalOrigin],
-    p_threshold: UnsafePointer[Scalar[input_type], MutExternalOrigin],
-    skip_sort: UnsafePointer[Scalar[DType.bool], MutExternalOrigin],
+    in_buffer: UnsafePointer[Scalar[input_type], ImmutUntrackedOrigin],
+    local_topk_vals: UnsafePointer[Scalar[input_type], MutUntrackedOrigin],
+    local_topk_idxs: UnsafePointer[Scalar[index_type], MutUntrackedOrigin],
+    p_threshold: UnsafePointer[Scalar[input_type], MutUntrackedOrigin],
+    skip_sort: UnsafePointer[Scalar[DType.bool], MutUntrackedOrigin],
 ):
     """Shared-memory-free variant of topk_wrapper for Apple GPUs.
 
@@ -115,15 +115,15 @@ def topk_wrapper[
     K: Int,
     num_elements: Int,
     num_blocks_per_input: Int,
-    in_buffer: UnsafePointer[Scalar[input_type], ImmutExternalOrigin],
+    in_buffer: UnsafePointer[Scalar[input_type], ImmutUntrackedOrigin],
     local_topk_vals: UnsafePointer[
-        Scalar[input_type], MutExternalOrigin
+        Scalar[input_type], MutUntrackedOrigin
     ],  # Output buffer of size num_blocks_per_input * K
     local_topk_idxs: UnsafePointer[
-        Scalar[index_type], MutExternalOrigin
+        Scalar[index_type], MutUntrackedOrigin
     ],  # Output buffer of size num_blocks_per_input * K
-    p_threshold: UnsafePointer[Scalar[input_type], MutExternalOrigin],
-    skip_sort: UnsafePointer[Scalar[DType.bool], MutExternalOrigin],
+    p_threshold: UnsafePointer[Scalar[input_type], MutUntrackedOrigin],
+    skip_sort: UnsafePointer[Scalar[DType.bool], MutUntrackedOrigin],
 ):
     """
     Copy of `Kernels/mojo/nn/topk.mojo:_topk_stage1` with the addition of
@@ -313,15 +313,15 @@ def radix_sort_pairs_kernel[
     NUM_BITS_PER_PASS: Int = 4,
 ](
     input_keys_: UnsafePointer[
-        Scalar[dtype], MutExternalOrigin
+        Scalar[dtype], MutUntrackedOrigin
     ],  # modifies input
-    output_keys_: UnsafePointer[mut=True, Scalar[dtype], MutExternalOrigin],
+    output_keys_: UnsafePointer[mut=True, Scalar[dtype], MutUntrackedOrigin],
     input_key_ids_: UnsafePointer[
-        Scalar[out_idx_type], MutExternalOrigin
+        Scalar[out_idx_type], MutUntrackedOrigin
     ],  # modifies input
-    output_key_ids_: UnsafePointer[Scalar[out_idx_type], MutExternalOrigin],
+    output_key_ids_: UnsafePointer[Scalar[out_idx_type], MutUntrackedOrigin],
     num_keys: Int,
-    skip_sort: UnsafePointer[Scalar[DType.bool], MutExternalOrigin],
+    skip_sort: UnsafePointer[Scalar[DType.bool], MutUntrackedOrigin],
 ):
     """
     Radix pair sort kernel for (default) descending order.
@@ -521,7 +521,7 @@ def radix_sort_pairs_kernel[
 
 struct DoubleBuffer[dtype: DType](ImplicitlyCopyable):
     var _d_buffers: InlineArray[
-        Optional[UnsafePointer[Scalar[Self.dtype], MutExternalOrigin]], 2
+        Optional[UnsafePointer[Scalar[Self.dtype], MutUntrackedOrigin]], 2
     ]
     var _selection: Int32
     var _size: Int
@@ -533,8 +533,8 @@ struct DoubleBuffer[dtype: DType](ImplicitlyCopyable):
 
     def __init__(
         out self,
-        current: UnsafePointer[Scalar[Self.dtype], MutExternalOrigin],
-        alternate: UnsafePointer[Scalar[Self.dtype], MutExternalOrigin],
+        current: UnsafePointer[Scalar[Self.dtype], MutUntrackedOrigin],
+        alternate: UnsafePointer[Scalar[Self.dtype], MutUntrackedOrigin],
         size: Int,
     ):
         self._d_buffers = [current, alternate]
@@ -627,11 +627,11 @@ def topp_minp_sampling_kernel[
     out_idx_type: DType,
     is_top_p: Bool,
 ](
-    p_thresholds_: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    sorted_probs_: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    sorted_ids_: UnsafePointer[Scalar[out_idx_type], MutExternalOrigin],
-    out_token_ids: UnsafePointer[Scalar[out_idx_type], MutExternalOrigin],
-    skip_sort: UnsafePointer[Scalar[DType.bool], MutExternalOrigin],
+    p_thresholds_: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    sorted_probs_: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    sorted_ids_: UnsafePointer[Scalar[out_idx_type], MutUntrackedOrigin],
+    out_token_ids: UnsafePointer[Scalar[out_idx_type], MutUntrackedOrigin],
+    skip_sort: UnsafePointer[Scalar[DType.bool], MutUntrackedOrigin],
     vocab_size: Int,
 ):
     """
@@ -878,14 +878,14 @@ def _topp_minp_sampling_gpu[
     # Create the input_ids buffer
     var ids_buf = ctx.enqueue_create_buffer[out_idx_type](input_size * 2)
     var probs_double_buffer = DoubleBuffer(
-        probs_buf.unsafe_ptr().unsafe_origin_cast[MutExternalOrigin](),
-        probs_buf.unsafe_ptr().unsafe_origin_cast[MutExternalOrigin]()
+        probs_buf.unsafe_ptr().unsafe_origin_cast[MutUntrackedOrigin](),
+        probs_buf.unsafe_ptr().unsafe_origin_cast[MutUntrackedOrigin]()
         + input_size,
         input_size,
     )
     var keys_double_buffer = DoubleBuffer(
-        ids_buf.unsafe_ptr().unsafe_origin_cast[MutExternalOrigin](),
-        ids_buf.unsafe_ptr().unsafe_origin_cast[MutExternalOrigin]()
+        ids_buf.unsafe_ptr().unsafe_origin_cast[MutUntrackedOrigin](),
+        ids_buf.unsafe_ptr().unsafe_origin_cast[MutUntrackedOrigin]()
         + input_size,
         input_size,
     )

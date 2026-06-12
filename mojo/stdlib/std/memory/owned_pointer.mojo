@@ -47,7 +47,7 @@ struct OwnedPointer[T: AnyType](
         T: The type to be stored in the `OwnedPointer`.
     """
 
-    var _inner: UnsafePointer[Self.T, MutExternalOrigin]
+    var _inner: UnsafePointer[Self.T, MutUntrackedOrigin]
 
     # ===-------------------------------------------------------------------===#
     # Life cycle methods
@@ -109,7 +109,7 @@ struct OwnedPointer[T: AnyType](
     def __init__(
         out self,
         *,
-        unsafe_from_raw_pointer: UnsafePointer[Self.T, MutExternalOrigin],
+        unsafe_from_raw_pointer: UnsafePointer[Self.T, MutUntrackedOrigin],
     ):
         """Construct a new `OwnedPointer` by taking ownership of the provided `UnsafePointer`.
 
@@ -146,7 +146,7 @@ struct OwnedPointer[T: AnyType](
         """
         var ptr = unsafe_from_opaque_pointer.bitcast[Self.T]()
         self = Self(
-            unsafe_from_raw_pointer=ptr.unsafe_origin_cast[MutExternalOrigin]()
+            unsafe_from_raw_pointer=ptr.unsafe_origin_cast[MutUntrackedOrigin]()
         )
 
     def __del__(deinit self):
@@ -218,7 +218,7 @@ struct OwnedPointer[T: AnyType](
         free(self._inner, Layout[_T].single())
         return r^
 
-    def steal_data(deinit self) -> UnsafePointer[Self.T, MutExternalOrigin]:
+    def steal_data(deinit self) -> UnsafePointer[Self.T, MutUntrackedOrigin]:
         """Take ownership over the heap allocated pointer backing this
         `OwnedPointer`.
 

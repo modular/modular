@@ -17,6 +17,7 @@ Fills a random QKV buffer, runs rope_split_store_ragged, and compares
 Q output and KV cache contents against the unfused reference path.
 """
 
+from internal_utils.fp8_utils import cast_saturating
 from std.collections import Set
 from std.memory import memcpy
 from std.math import ceildiv
@@ -763,7 +764,7 @@ def execute_test_with_position_ids[
     )
 
     var pos_ids_immut = TileTensor(
-        pos_ids_tile.ptr.mut_cast[True]().as_any_origin(),
+        pos_ids_tile.ptr.mut_cast[True]().as_unsafe_any_origin(),
         pos_ids_tile.layout,
     ).as_immut()
     fused_qk_rope_ragged[
@@ -1117,7 +1118,9 @@ def execute_test_fp8[
     ctx.synchronize()
 
     for i in range(output_size):
-        var expected = bf16_q_host[i].cast[fp8_dtype]().cast[DType.float32]()
+        var expected = cast_saturating[fp8_dtype](bf16_q_host[i]).cast[
+            DType.float32
+        ]()
         var actual = fp8_q_host[i].cast[DType.float32]()
         assert_almost_equal(
             actual,
@@ -1140,7 +1143,9 @@ def execute_test_fp8[
     ctx.synchronize()
 
     for i in range(kv_block_total):
-        var expected = bf16_kv_result[i].cast[fp8_dtype]().cast[DType.float32]()
+        var expected = cast_saturating[fp8_dtype](bf16_kv_result[i]).cast[
+            DType.float32
+        ]()
         var actual = fp8_kv_result[i].cast[DType.float32]()
         assert_almost_equal(
             actual,

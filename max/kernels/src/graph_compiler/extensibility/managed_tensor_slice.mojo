@@ -1191,7 +1191,7 @@ struct ManagedTensorSlice[
         instances, but instead use the ones provided by the MAX inference
         engine.
         """
-        self._ptr = ptr.as_any_origin()
+        self._ptr = ptr.as_unsafe_any_origin()
         self._runtime_layout = Self._make_runtime_layout(
             shape, shape.get_row_major_strides()
         )
@@ -1212,7 +1212,7 @@ struct ManagedTensorSlice[
         instances, but instead use the ones provided by the MAX inference
         engine.
         """
-        self._ptr = ptr.as_any_origin()
+        self._ptr = ptr.as_unsafe_any_origin()
         self._runtime_layout = Self._make_runtime_layout(shape, strides)
         self.in_fusion = Self._sentinel_in_fusion()
         self.out_fusion = Self._sentinel_out_fusion()
@@ -1234,7 +1234,7 @@ struct ManagedTensorSlice[
         instances, but instead use the ones provided by the MAX inference
         engine.
         """
-        self._ptr = ptr.as_any_origin()
+        self._ptr = ptr.as_unsafe_any_origin()
         self._runtime_layout = Self.RuntimeLayout(shape, strides)
         self.in_fusion = Self._sentinel_in_fusion()
         self.out_fusion = Self._sentinel_out_fusion()
@@ -2064,12 +2064,12 @@ struct ManagedTensorSlice[
         self,
         out result: TileTensor[
             dtype=Self.dtype,
-            origin=MutExternalOrigin,
+            origin=MutUntrackedOrigin,
             LayoutType=Self.RuntimeLayout,
         ],
     ):
         return {
-            self.unsafe_ptr().unsafe_origin_cast[MutExternalOrigin](),
+            self.unsafe_ptr().unsafe_origin_cast[MutUntrackedOrigin](),
             self._runtime_layout,
         }
 

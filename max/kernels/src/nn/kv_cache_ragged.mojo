@@ -1377,7 +1377,7 @@ def _matmul_common[
     var TOTAL_SEQ_LEN = hidden_state.dim[0]()
     comptime N = Int(weight.layout.shape[0])
     var c_nd: LayoutTensor[
-        output_dtype, Layout.row_major(UNKNOWN_VALUE, N), MutAnyOrigin
+        output_dtype, Layout.row_major(UNKNOWN_VALUE, N), MutUntrackedOrigin
     ]
 
     comptime if is_cpu[target]():
@@ -2487,7 +2487,7 @@ def _qmatmul_gguf_quantized_alloc_output[
     var TOTAL_SEQ_LEN = hidden_state.dim[0]()
     comptime N = Int(weight.layout.shape[0])
     var c_nd: LayoutTensor[
-        DType.float32, Layout.row_major(UNKNOWN_VALUE, N), MutAnyOrigin
+        DType.float32, Layout.row_major(UNKNOWN_VALUE, N), MutUntrackedOrigin
     ]
 
     # The CPU matmul codepath uses the C buffer as a workspace
@@ -2638,7 +2638,7 @@ def generic_fused_qk_rope_bshd_paged_ragged[
                 kv_collection,
                 freqs_cis,
                 TileTensor(
-                    position_ids.ptr.mut_cast[True]().as_any_origin(),
+                    position_ids.ptr.mut_cast[True]().as_unsafe_any_origin(),
                     position_ids.layout,
                 ).as_immut(),
                 layer_idx,
@@ -3321,7 +3321,7 @@ def _flare_mla_prefill_kv_cache_ragged[
                 Layout.row_major(UNKNOWN_VALUE),
                 MutAnyOrigin,
             ](
-                cache_offsets.ptr,
+                cache_offsets.ptr.as_unsafe_any_origin(),
                 RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
                     coord_to_index_list(
                         cache_offsets.layout.shape_coord()
@@ -3469,6 +3469,7 @@ def _cross_attention_dispatch[
     target: StaticString,
     mask_str: StaticString,
     local_window_size: Int = -1,
+    output_dtype: DType = dtype,
 ](
     q: LayoutTensor[mut=False, dtype, address_space=AddressSpace.GENERIC, ...],
     q_input_row_offsets: LayoutTensor[
@@ -3482,7 +3483,7 @@ def _cross_attention_dispatch[
     layer_idx: UInt32,
     scale: Float32,
     output: LayoutTensor[
-        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
+        mut=True, output_dtype, address_space=AddressSpace.GENERIC, ...
     ],
     context: DeviceContext,
     sink_weights: OptionalReg[
@@ -3498,6 +3499,10 @@ def _cross_attention_dispatch[
     @__copy_capture(q, k, v, output, q_input_row_offsets, kv_input_row_offsets)
     def _dispatch_flash_attention[mask_t: MHAMask](mask: mask_t) raises:
         comptime if is_cpu[target]():
+            comptime assert output_dtype == dtype, (
+                "CPU flash attention requires output dtype == q dtype;"
+                " the distinct-output-dtype (fp8->bf16) path is GPU-only."
+            )
             return flash_attention_kv_cache_cpu(
                 q,
                 q_input_row_offsets,
@@ -3507,7 +3512,7 @@ def _cross_attention_dispatch[
                 v,
                 mask,
                 scale,
-                output,
+                output.bitcast[dtype](),
                 sink_weights,
             )
         else:
@@ -3526,7 +3531,7 @@ def _cross_attention_dispatch[
                     Layout.row_major(UNKNOWN_VALUE),
                     ImmutAnyOrigin,
                 ](
-                    kv_input_row_offsets.ptr,
+                    kv_input_row_offsets.ptr.as_immutable().as_unsafe_any_origin(),
                     RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
                         kv_input_row_offsets.runtime_layout.shape.value.canonicalize()
                     ),
@@ -3549,6 +3554,7 @@ def generic_cross_attention_kv_cache[
     target: StaticString,
     mask_str: StaticString,
     local_window_size: Int = -1,
+    output_dtype: DType = dtype,
 ](
     q: LayoutTensor[mut=True, dtype, address_space=AddressSpace.GENERIC, ...],
     q_input_row_offsets: LayoutTensor[
@@ -3564,7 +3570,7 @@ def generic_cross_attention_kv_cache[
     layer_idx: UInt32,
     scale: Float32,
     output: LayoutTensor[
-        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
+        mut=True, output_dtype, address_space=AddressSpace.GENERIC, ...
     ],
     context: DeviceContext,
     sink_weights: OptionalReg[
@@ -3610,6 +3616,7 @@ def generic_cross_attention_kv_cache[
             target=target,
             mask_str=mask_str,
             local_window_size=local_window_size,
+            output_dtype=output_dtype,
         ](
             q,
             q_input_row_offsets,

@@ -297,7 +297,7 @@ struct OnlineSoftmax[att_dtype: DType = DType.float32](ImplicitlyCopyable):
         layout: TensorLayout,
         //,
     ](
-        mut dst: RegTile[Self.att_dtype, layout, MutExternalOrigin],
+        mut dst: RegTile[Self.att_dtype, layout, MutUntrackedOrigin],
         scalar: Float32,
     ):
         """`dst -= scalar` per element — broadcast scalar across the
@@ -325,7 +325,7 @@ struct OnlineSoftmax[att_dtype: DType = DType.float32](ImplicitlyCopyable):
         layout: TensorLayout,
         //,
     ](
-        mut dst: RegTile[Self.att_dtype, layout, MutExternalOrigin],
+        mut dst: RegTile[Self.att_dtype, layout, MutUntrackedOrigin],
         mul: Float32,
         sub: Float32,
     ):
@@ -417,7 +417,7 @@ struct OnlineSoftmax[att_dtype: DType = DType.float32](ImplicitlyCopyable):
         //,
     ](
         mut self,
-        mut att_block: RegTile[Self.att_dtype, layout, MutExternalOrigin],
+        mut att_block: RegTile[Self.att_dtype, layout, MutUntrackedOrigin],
     ):
         """Prologue tile-0 partial softmax setup.
 
@@ -436,7 +436,10 @@ struct OnlineSoftmax[att_dtype: DType = DType.float32](ImplicitlyCopyable):
     def col_max_acc[
         layout: TensorLayout,
         //,
-    ](mut self, att_block: RegTile[Self.att_dtype, layout, MutExternalOrigin],):
+    ](
+        mut self,
+        att_block: RegTile[Self.att_dtype, layout, MutUntrackedOrigin],
+    ):
         """Running rowmax: `max_vec = max(max_vec_prev, col_max(att_block))`.
 
         Caller maintains the `max_vec_prev = max_vec` shadow-write
@@ -453,7 +456,7 @@ struct OnlineSoftmax[att_dtype: DType = DType.float32](ImplicitlyCopyable):
         //,
     ](
         mut self,
-        mut att_block: RegTile[Self.att_dtype, layout, MutExternalOrigin],
+        mut att_block: RegTile[Self.att_dtype, layout, MutUntrackedOrigin],
     ):
         """`att_block -= max_vec` per element. Prepares `att_block` for
         the subsequent `exp2_inplace_range` call."""
@@ -465,7 +468,7 @@ struct OnlineSoftmax[att_dtype: DType = DType.float32](ImplicitlyCopyable):
         //,
     ](
         mut self,
-        mut att_block: RegTile[Self.att_dtype, layout, MutExternalOrigin],
+        mut att_block: RegTile[Self.att_dtype, layout, MutUntrackedOrigin],
         log2_scale: Float32,
     ):
         """Scale-folded `seed_tile0` for the FP32-in-place sequential
@@ -494,7 +497,7 @@ struct OnlineSoftmax[att_dtype: DType = DType.float32](ImplicitlyCopyable):
         //,
     ](
         mut self,
-        att_block: RegTile[Self.att_dtype, layout, MutExternalOrigin],
+        att_block: RegTile[Self.att_dtype, layout, MutUntrackedOrigin],
         log2_scale: Float32,
     ):
         """Scale-folded `col_max_acc`: `max_vec = max(max_prev,
@@ -521,7 +524,7 @@ struct OnlineSoftmax[att_dtype: DType = DType.float32](ImplicitlyCopyable):
         //,
     ](
         mut self,
-        mut att_block: RegTile[Self.att_dtype, layout, MutExternalOrigin],
+        mut att_block: RegTile[Self.att_dtype, layout, MutUntrackedOrigin],
         log2_scale: Float32,
     ):
         """Scale-folded `sub_max`: `att = log2_scale*att - max_vec` via one
@@ -535,8 +538,8 @@ struct OnlineSoftmax[att_dtype: DType = DType.float32](ImplicitlyCopyable):
         att_full_dtype: DType
     ](
         mut self,
-        mut o_reg: RegTile[DType.float32, _, MutExternalOrigin],
-        mut att_bf16_full: RegTile[att_full_dtype, _, MutExternalOrigin],
+        mut o_reg: RegTile[DType.float32, _, MutUntrackedOrigin],
+        mut att_bf16_full: RegTile[att_full_dtype, _, MutUntrackedOrigin],
         threshold: Float32,
     ) -> Bool:
         """Lazy-rescale decision for main-loop C2/C6.
@@ -598,7 +601,7 @@ struct OnlineSoftmax[att_dtype: DType = DType.float32](ImplicitlyCopyable):
     @always_inline
     def rescale_output(
         mut self,
-        mut o_reg: RegTile[DType.float32, _, MutExternalOrigin],
+        mut o_reg: RegTile[DType.float32, _, MutUntrackedOrigin],
     ):
         """`o_reg *= scale_vec` per element.
 
@@ -629,14 +632,17 @@ struct OnlineSoftmax[att_dtype: DType = DType.float32](ImplicitlyCopyable):
     def col_sum_acc[
         layout: TensorLayout,
         //,
-    ](mut self, att_block: RegTile[Self.att_dtype, layout, MutExternalOrigin],):
+    ](
+        mut self,
+        att_block: RegTile[Self.att_dtype, layout, MutUntrackedOrigin],
+    ):
         """Running denominator: `norm_vec += sum(att_block, axis=row)`."""
         self.norm_vec = self.norm_vec + Self._col_sum_scalar(att_block)
 
     @always_inline
     def normalize_output(
         mut self,
-        mut o_reg: RegTile[DType.float32, _, MutExternalOrigin],
+        mut o_reg: RegTile[DType.float32, _, MutUntrackedOrigin],
     ):
         """Final `o_reg /= norm_vec` in place.
 

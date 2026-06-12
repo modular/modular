@@ -269,8 +269,9 @@ struct FA4Config[
         # - Both must respect MMA_K alignment (16 elements)
         #
         # Staging infrastructure:
-        # - SM100TensorAccumulatorSS.mma and SM100TensorAccumulatorTS.mma support
-        #   stage_idx parameter for processing in chunks when num_stages > 1
+        # - SM100TensorAccumulator.mma (both a_tmem=False/True quadrants)
+        #   supports a stage_idx parameter for processing in chunks when
+        #   num_stages > 1
         # - KPipeline and VPipeline structs support separate K/V barrier management
         # - FA4MiscMBars is parameterized by num_pv_stages for S barriers
         # - load() loads K in num_qk_stages chunks with separate barriers per stage

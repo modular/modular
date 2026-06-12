@@ -173,7 +173,7 @@ modular_py_test(
     # (dim=384, 60x106 at 480p / 90x160 at 720p) use ~40GB because
     # torch SDPA materializes the NxN attention matrix for head_dim
     # larger than the flash-attn threshold.
-    exec_properties = {"test.resources:gpu-memory": "40"},
+    exec_properties = {"test.resources:gpu-memory": "38"},
     gpu_constraints = _GPU_CONSTRAINTS,
     ignore_extra_deps = ["//max/python/max/pipelines/context"],
     imports = ["."],

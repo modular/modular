@@ -62,7 +62,7 @@ def PyInit_nms_ops() abi("C") -> PythonObject:
 def _iou[
     dtype: DType, //
 ](
-    boxes_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    boxes_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     stride: Int,
     i: Int,
     j: Int,
@@ -131,8 +131,8 @@ def _iou[
 def _greedy_nms[
     dtype: DType, //
 ](
-    boxes_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    scores_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    boxes_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    scores_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     num_boxes: Int,
     max_output: Int,
     iou_thresh: Float64,
@@ -208,10 +208,10 @@ def _greedy_nms[
 def nms_run_op[
     dtype: DType, //
 ](
-    count_ptr: UnsafePointer[Scalar[DType.int64], MutExternalOrigin],
-    out_ptr: UnsafePointer[Scalar[DType.int64], MutExternalOrigin],
-    boxes_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    scores_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    count_ptr: UnsafePointer[Scalar[DType.int64], MutUntrackedOrigin],
+    out_ptr: UnsafePointer[Scalar[DType.int64], MutUntrackedOrigin],
+    boxes_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    scores_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     batch_size: Int,
     num_classes: Int,
     num_boxes: Int,

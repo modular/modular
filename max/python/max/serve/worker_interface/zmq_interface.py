@@ -17,6 +17,7 @@ import asyncio
 import contextlib
 import logging
 import queue
+import time
 from collections.abc import AsyncGenerator, AsyncIterator, Generator
 from typing import Any, Generic
 
@@ -33,6 +34,7 @@ from max.pipelines.modeling.types import (
 )
 from max.serve.queue import MAXPullQueue, MAXPushQueue
 from max.serve.scheduler_result import SchedulerResult
+from max.serve.telemetry.metrics import METRICS
 from max.serve.worker_interface import (
     ModelWorkerInterface,
     ModelWorkerProxy,
@@ -42,6 +44,12 @@ from max.serve.worker_interface import (
 from max.serve.worker_interface.zmq_queue import ZmqConfig
 
 logger = logging.getLogger("max.serve")
+
+# How often the response worker samples the ingress / egress backlog
+# gauges and histograms. The response worker loops at least every 10ms (see
+# ``sleep_with_backoff``), so a 1s cadence keeps the values fresh, including
+# dropping back to zero promptly once a backlog drains.
+_BACKLOG_SAMPLE_INTERVAL_S = 1.0
 
 
 class ZmqModelWorkerProxy(
@@ -60,15 +68,30 @@ class ZmqModelWorkerProxy(
         self.response_queue = response_queue
         self.cancel_queue = cancel_queue
 
+        # Each queued item is ``(enqueue_monotonic_s, result)`` so the
+        # streaming layer can measure how long the response waited in the
+        # output queue (the egress backlog). The timestamp is attached
+        # API-side here, not on ``SchedulerResult`` (which is a msgspec wire
+        # type serialized from the model worker).
         self.pending_out_queues: dict[
-            RequestID, asyncio.Queue[SchedulerResult[PipelineOutputType]]
+            RequestID,
+            asyncio.Queue[tuple[float, SchedulerResult[PipelineOutputType]]],
         ] = {}
+
+        # Monotonic timestamp of the last backlog gauge/histogram sample.
+        self._last_sample_s = 0.0
+
+    def egress_backlog(self) -> int:
+        """Total responses buffered across all pending output queues."""
+        return sum(q.qsize() for q in self.pending_out_queues.values())
 
     @contextlib.contextmanager
     def _open_channel(
         self, req_id: RequestID, data: BaseContextType
     ) -> Generator[
-        asyncio.Queue[SchedulerResult[PipelineOutputType]], None, None
+        asyncio.Queue[tuple[float, SchedulerResult[PipelineOutputType]]],
+        None,
+        None,
     ]:
         """
         Context manager to open a communication channel for a specific request.
@@ -95,9 +118,9 @@ class ZmqModelWorkerProxy(
                     "Please ensure that the `req_id` is unique for each request."
                 )
 
-            out_queue: asyncio.Queue[SchedulerResult[PipelineOutputType]] = (
-                asyncio.Queue()
-            )
+            out_queue: asyncio.Queue[
+                tuple[float, SchedulerResult[PipelineOutputType]]
+            ] = asyncio.Queue()
             self.pending_out_queues[req_id] = out_queue
 
             # put_nowait will fail if the request_push_socket is unavailable
@@ -129,7 +152,15 @@ class ZmqModelWorkerProxy(
             # This will exit when no result is passed in the SchedulerResult.
             # or the SchedulerResult states that we should stop the stream.
             while True:
-                item = await queue.get()
+                enqueue_s, item = await queue.get()
+                # Record how long this head-of-line response waited in the
+                # output queue. Sampled once per consumer wake (not on the
+                # get_nowait drain below) to bound metric volume while still
+                # capturing egress congestion: the head item is the oldest
+                # waiter, so this is the per-wake worst-case wait.
+                METRICS.response_queue_time(
+                    (time.monotonic() - enqueue_s) * 1000
+                )
                 if item.result is None:
                     break
 
@@ -137,7 +168,7 @@ class ZmqModelWorkerProxy(
                 should_stop = item.is_done
                 while True:
                     try:
-                        item = queue.get_nowait()
+                        _, item = queue.get_nowait()
                     except asyncio.QueueEmpty:
                         break
 
@@ -202,12 +233,31 @@ class ZmqModelWorkerProxy(
         """
         count_no_progress = 0
         while True:
+            # Periodically sample the backlog gauges/histograms. Sampled here
+            # (rather than per-request) so the cost is independent of QPS; the
+            # loop runs at least every 10ms so the values stay fresh and drop
+            # to zero promptly once a backlog drains. We sample both the egress
+            # backlog (responses received but not yet streamed) and the ingress
+            # backlog (requests accepted but not yet handed to the worker); the
+            # ingress live value is published separately as an up/down counter.
+            now_s = time.monotonic()
+            if now_s - self._last_sample_s >= _BACKLOG_SAMPLE_INTERVAL_S:
+                self._last_sample_s = now_s
+                backlog = self.egress_backlog()
+                METRICS.responses_buffered(backlog)
+                METRICS.responses_buffered_dist(backlog)
+                METRICS.requests_awaiting_admission_dist(
+                    self._awaiting_admission_count
+                )
+
             try:
                 response_dict = self.response_queue.get_nowait()
                 cancelled = set()
                 for request_id, response in response_dict.items():
                     if request_id in self.pending_out_queues:
-                        await self.pending_out_queues[request_id].put(response)
+                        await self.pending_out_queues[request_id].put(
+                            (time.monotonic(), response)
+                        )
                     else:
                         cancelled.add(request_id)
 

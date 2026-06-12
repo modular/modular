@@ -54,7 +54,7 @@ from extensibility import (
 def _remap_one(
     log_t: Int32,
     batch_u32: UInt32,
-    lut: UnsafePointer[UInt32, MutAnyOrigin],
+    lut: UnsafePointer[mut=False, UInt32, _],
     lut_cols: Int,
     lut_rows: Int,
     page_size: Int,
@@ -80,7 +80,7 @@ def _remap_one(
 @always_inline
 def _find_batch_for_row(
     r: Int,
-    row_offsets: UnsafePointer[UInt32, MutAnyOrigin],
+    row_offsets: UnsafePointer[mut=False, UInt32, _],
     num_batches: Int,
 ) -> UInt32:
     """Map ragged row ``r`` to batch ``b`` with ``row_offsets[b] <= r < row_offsets[b+1]``.
@@ -95,7 +95,7 @@ def _find_batch_for_row(
 @__name(t"paged_sparse_kv_index_remap_row_offs_kernel")
 def _paged_sparse_kv_index_remap_row_offs_kernel(
     logical: UnsafePointer[Int32, MutAnyOrigin],
-    row_offsets: UnsafePointer[UInt32, MutAnyOrigin],
+    row_offsets: UnsafePointer[UInt32, ImmutAnyOrigin],
     lut: UnsafePointer[UInt32, MutAnyOrigin],
     physical_out: UnsafePointer[Int32, MutAnyOrigin],
     num_indices: Int,
@@ -200,7 +200,7 @@ def paged_sparse_kv_index_remap[
     indices_stride: Int,
     cache_dtype: DType,
 ](
-    physical_out: UnsafePointer[Int32, MutAnyOrigin],
+    physical_out: UnsafePointer[mut=True, Int32, _],
     sparse_indices: InputTensor[dtype=DType.int32, rank=2, ...],
     input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
     kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],

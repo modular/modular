@@ -244,6 +244,10 @@ class RequestFuncOutput(BaseRequestFuncOutput):
     server_token_stats: ServerTokenStats = field(
         default_factory=ServerTokenStats
     )
+    # Multi-turn provenance, set by the conversation driver so per-turn cache
+    # retention can group/order turns within a session. None for single-turn.
+    session_id: str | None = None
+    turn_index: int | None = None
 
 
 @dataclass

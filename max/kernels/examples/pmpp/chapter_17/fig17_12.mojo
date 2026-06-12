@@ -132,8 +132,8 @@ def main() raises:
         rows,
         cols,
         max_nnz,
-        d_colIdx_buf.unsafe_ptr().as_any_origin(),
-        d_value_buf.unsafe_ptr().as_any_origin(),
+        d_colIdx_buf.unsafe_ptr().as_unsafe_any_origin(),
+        d_value_buf.unsafe_ptr().as_unsafe_any_origin(),
     )
 
     var blockSize = 256

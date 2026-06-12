@@ -61,8 +61,8 @@ def PyInit_split_ops() abi("C") -> PythonObject:
 def split_copy_op[
     dtype: DType, //
 ](
-    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    in_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    out_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    in_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     dim0: Int,
     out_dim1: Int,
     dim2: Int,

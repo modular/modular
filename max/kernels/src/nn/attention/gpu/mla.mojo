@@ -408,7 +408,7 @@ def flare_mla_decoding[
 
     var valid_length = TileTensor(
         UnsafePointer[
-            Scalar[DType.uint32], MutExternalOrigin
+            Scalar[DType.uint32], MutUntrackedOrigin
         ].unsafe_dangling(),
         row_major(Coord(Idx[0])),
     )
@@ -2583,7 +2583,7 @@ def flare_mla_prefill[
                 ),
             ),
             LayoutTensor[k_scales_lt.dtype, k_scales_lt.layout, ImmutAnyOrigin](
-                k_scales_lt.ptr,
+                k_scales_lt.ptr.as_immutable().as_unsafe_any_origin(),
                 RuntimeLayout[k_scales_lt.layout].row_major(
                     k_scales_lt.runtime_layout.shape.value.canonicalize()
                 ),
@@ -2755,7 +2755,7 @@ def flare_mla_prefill[
                 ),
             ),
             LayoutTensor[k_scales_lt.dtype, k_scales_lt.layout, ImmutAnyOrigin](
-                k_scales_lt.ptr,
+                k_scales_lt.ptr.as_immutable().as_unsafe_any_origin(),
                 RuntimeLayout[k_scales_lt.layout].row_major(
                     k_scales_lt.runtime_layout.shape.value.canonicalize()
                 ),
@@ -3872,7 +3872,7 @@ def set_buffer_lengths_to_zero[
     BufferLengthsLayoutType: TensorLayout,
 ](
     buffer_lengths: TileTensor[
-        mut=True, DType.int32, BufferLengthsLayoutType, MutExternalOrigin
+        mut=True, DType.int32, BufferLengthsLayoutType, MutUntrackedOrigin
     ],
 ):
     comptime assert buffer_lengths.flat_rank == 1
@@ -3946,24 +3946,24 @@ def mla_prefill_plan_kernel[
         mut=True,
         DType.uint32,
         BufferRowOffsetsLayoutType,
-        MutExternalOrigin,
+        MutUntrackedOrigin,
     ],
     cache_offsets: TileTensor[
         mut=True,
         DType.uint32,
         CacheOffsetsLayoutType,
-        MutExternalOrigin,
+        MutUntrackedOrigin,
     ],
     buffer_lengths: TileTensor[
         mut=True,
         DType.int32,
         BufferLengthsLayoutType,
-        MutExternalOrigin,
+        MutUntrackedOrigin,
     ],
     input_row_offsets: TileTensor[
         DType.uint32,
         InputRowOffsetsLayoutType,
-        ImmutExternalOrigin,
+        ImmutUntrackedOrigin,
     ],
     k_cache: cache_t,
     buffer_token_size: UInt32,

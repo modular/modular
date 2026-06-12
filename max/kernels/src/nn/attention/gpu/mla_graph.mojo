@@ -88,14 +88,14 @@ def fused_rope_rmsnorm_kernel[
     n_rms_blocks: Int,
 ](
     q_rope_output: TileTensor[
-        mut=True, dtype, QRopeOutputLayoutType, MutExternalOrigin
+        mut=True, dtype, QRopeOutputLayoutType, MutUntrackedOrigin
     ],
-    q_rope: TileTensor[dtype, QRopeLayoutType, ImmutExternalOrigin],
+    q_rope: TileTensor[dtype, QRopeLayoutType, ImmutUntrackedOrigin],
     input_row_offsets: TileTensor[
-        DType.uint32, InputRowOffsetsLayoutType, ImmutExternalOrigin
+        DType.uint32, InputRowOffsetsLayoutType, ImmutUntrackedOrigin
     ],
-    freqs_cis: TileTensor[freq_dtype, FreqsCisLayoutType, ImmutExternalOrigin],
-    gamma: TileTensor[gamma_dtype, GammaLayoutType, ImmutExternalOrigin],
+    freqs_cis: TileTensor[freq_dtype, FreqsCisLayoutType, ImmutUntrackedOrigin],
+    gamma: TileTensor[gamma_dtype, GammaLayoutType, ImmutUntrackedOrigin],
     k_cache: cache_t,
     epsilon: Float32,
 ) -> None:
@@ -145,12 +145,12 @@ def fused_rope_rmsnorm_kernel[
     # Evidence asserts for TileTensor load/store Coord constraints.
     comptime assert (
         TileTensor[
-            freq_dtype, FreqsCisLayoutType, ImmutExternalOrigin
+            freq_dtype, FreqsCisLayoutType, ImmutUntrackedOrigin
         ].flat_rank
         >= 2
     )
     comptime assert (
-        TileTensor[gamma_dtype, GammaLayoutType, ImmutExternalOrigin].flat_rank
+        TileTensor[gamma_dtype, GammaLayoutType, ImmutUntrackedOrigin].flat_rank
         >= 1
     )
 
@@ -276,14 +276,14 @@ def fused_rope_rmsnorm_quantization_kernel[
     ],
 ](
     q_rope_output: TileTensor[
-        mut=True, out_rope_dtype, QRopeOutputLayoutType, MutExternalOrigin
+        mut=True, out_rope_dtype, QRopeOutputLayoutType, MutUntrackedOrigin
     ],
-    q_rope: TileTensor[dtype, QRopeLayoutType, ImmutExternalOrigin],
+    q_rope: TileTensor[dtype, QRopeLayoutType, ImmutUntrackedOrigin],
     input_row_offsets: TileTensor[
-        DType.uint32, InputRowOffsetsLayoutType, ImmutExternalOrigin
+        DType.uint32, InputRowOffsetsLayoutType, ImmutUntrackedOrigin
     ],
-    freqs_cis: TileTensor[freq_dtype, FreqsCisLayoutType, ImmutExternalOrigin],
-    gamma: TileTensor[gamma_dtype, GammaLayoutType, ImmutExternalOrigin],
+    freqs_cis: TileTensor[freq_dtype, FreqsCisLayoutType, ImmutUntrackedOrigin],
+    gamma: TileTensor[gamma_dtype, GammaLayoutType, ImmutUntrackedOrigin],
     k_cache: cache_t,
     epsilon: Float32,
 ) -> None:
@@ -338,12 +338,12 @@ def fused_rope_rmsnorm_quantization_kernel[
     # Evidence asserts for TileTensor load/store Coord constraints.
     comptime assert (
         TileTensor[
-            freq_dtype, FreqsCisLayoutType, ImmutExternalOrigin
+            freq_dtype, FreqsCisLayoutType, ImmutUntrackedOrigin
         ].flat_rank
         >= 2
     )
     comptime assert (
-        TileTensor[gamma_dtype, GammaLayoutType, ImmutExternalOrigin].flat_rank
+        TileTensor[gamma_dtype, GammaLayoutType, ImmutUntrackedOrigin].flat_rank
         >= 1
     )
 
@@ -740,7 +740,7 @@ def mla_prefill_branch_fp8[
 
     mla_fused_rope_rmsnorm_quantization[kv_input_fn=kv_input_fn](
         q_rope_mut,
-        q_rope.as_any_origin(),  # hack aliasing.
+        q_rope.as_unsafe_any_origin(),  # hack aliasing.
         input_row_offsets,
         freqs_cis,
         kv_norm_gamma,
@@ -1619,7 +1619,7 @@ def mla_prefill_branch_bf16[
 
     mla_fused_rope_rmsnorm_quantization[kv_input_fn=kv_input_fn](
         q_rope_mut,
-        q_rope.as_any_origin(),  # hack aliasing.
+        q_rope.as_unsafe_any_origin(),  # hack aliasing.
         input_row_offsets,
         freqs_cis,
         kv_norm_gamma,

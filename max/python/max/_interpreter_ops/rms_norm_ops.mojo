@@ -58,9 +58,9 @@ def PyInit_rms_norm_ops() abi("C") -> PythonObject:
 def _rms_norm_cpu[
     dtype: DType,
 ](
-    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    in_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    gamma_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    out_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    in_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    gamma_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     batch_dim: Int,
     feature_dim: Int,
     epsilon: Scalar[dtype],
@@ -110,9 +110,9 @@ def rms_norm_op[
     dtype: DType,
     multiply_before_cast: Bool,
 ](
-    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    in_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    gamma_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    out_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    in_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    gamma_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     shape: IndexList[2],
     gamma_shape: IndexList[1],
     epsilon: Scalar[dtype],

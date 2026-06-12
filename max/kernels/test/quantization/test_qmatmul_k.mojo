@@ -141,7 +141,7 @@ struct qgemm_Q4_0(QuantizedGemm):
     @staticmethod
     def build_b_buffer(
         N: Int, K: Int
-    ) -> LayoutTensor[DType.uint8, Layout.row_major[2](), MutExternalOrigin]:
+    ) -> LayoutTensor[DType.uint8, Layout.row_major[2](), MutUntrackedOrigin]:
         var k_groups = ceildiv(K, Self.k_group_size())
         var b_ptr = alloc[UInt8](N * k_groups * size_of[_block_Q4_0]())
         var block_ptr = b_ptr.bitcast[_block_Q4_0]()
@@ -239,7 +239,7 @@ struct qgemm_Q4_K(QuantizedGemm):
     @staticmethod
     def build_b_buffer(
         N: Int, K: Int
-    ) -> LayoutTensor[DType.uint8, Layout.row_major[2](), MutExternalOrigin]:
+    ) -> LayoutTensor[DType.uint8, Layout.row_major[2](), MutUntrackedOrigin]:
         var k_groups = ceildiv(K, Self.k_group_size())
         var b_ptr = alloc[UInt8](N * k_groups * size_of[_block_Q4_K]())
         var block_ptr = b_ptr.bitcast[_block_Q4_K]()
@@ -370,7 +370,7 @@ struct qgemm_Q6_K(QuantizedGemm):
     @staticmethod
     def build_b_buffer(
         N: Int, K: Int
-    ) -> LayoutTensor[DType.uint8, Layout.row_major[2](), MutExternalOrigin]:
+    ) -> LayoutTensor[DType.uint8, Layout.row_major[2](), MutUntrackedOrigin]:
         var k_groups = ceildiv(K, Self.k_group_size())
         var b_ptr = alloc[UInt8](N * k_groups * size_of[_block_Q6_K]())
         var block_ptr = b_ptr.bitcast[_block_Q6_K]()
@@ -514,7 +514,7 @@ struct GemmContext[qgemm: QuantizedGemm]:
     def _build_float_buffer(
         M: Int, N: Int
     ) raises -> LayoutTensor[
-        DType.float32, Layout.row_major[2](), MutExternalOrigin
+        DType.float32, Layout.row_major[2](), MutUntrackedOrigin
     ]:
         var ptr = alloc[Float32](M * N)
         for i in range(M * N):
@@ -533,7 +533,7 @@ struct GemmContext[qgemm: QuantizedGemm]:
     def _pack_b_buffer(
         b: LayoutTensor[mut=True, DType.uint8, Layout.row_major[2](), _]
     ) raises -> LayoutTensor[
-        DType.uint8, Layout.row_major[2](), MutExternalOrigin
+        DType.uint8, Layout.row_major[2](), MutUntrackedOrigin
     ]:
         var b_packed_buffer = alloc[UInt8](b.size())
         var b_packed = LayoutTensor[DType.uint8, Layout.row_major[2]()](

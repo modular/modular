@@ -70,8 +70,8 @@ from nn.attention.gpu.mla_graph import (
     mla_prefill_decode_graph_bf16,
 )
 from nn.attention.gpu.mla_index_fp8 import mla_indexer_ragged_float8_paged
-from nn.attention.gpu.nvidia.sm100.mla_decode_dispatch import (
-    compute_mla_dispatch_scalars,
+from nn.attention.gpu.mla_decode_dispatch_scalars import (
+    mla_decode_dispatch_scalars,
 )
 from nn.attention.gpu.nvidia.sm100.mla_prefill import (
     mla_sm100_prefill_sparse,
@@ -1565,9 +1565,7 @@ struct Struct_mla_decode_ragged_paged_scaled:
         )
 
         # Get the q_scales raw pointer for per-token Q scaling.
-        var q_scale_ptr = UnsafePointer[
-            Scalar[DType.float32], origin=MutAnyOrigin
-        ](q_scales.to_layout_tensor().ptr)
+        var q_scale_ptr = q_scales.to_layout_tensor().ptr
 
         generic_flare_mla_decode_kv_cache_ragged[
             target=target,
@@ -1841,17 +1839,17 @@ struct Struct_mla_compute_dispatch_args_scalar:
             output[2] = Int64(1)
             return
 
-        comptime sm_count = ctx.default_device_info.sm_count
-        comptime _half_sms = sm_count // 2
-        var scalars = compute_mla_dispatch_scalars[
-            num_heads=num_heads,
-            is_fp8_kv=is_fp8_kv,
-            half_sms=_half_sms,
-        ](
+        # Route through the device-generic helper so this op (the test
+        # reference) stays in lockstep with the `mla_dispatch_args_scalar`
+        # binding the runtime resolver calls: HIP -> AMD heuristic, CUDA ->
+        # SM100 runtime heuristic.
+        var scalars = mla_decode_dispatch_scalars(
             batch_size,
             max_cache_valid_length,
             q_max_seq_len,
-            sm_count,
+            num_heads,
+            is_fp8_kv,
+            ctx,
         )
 
         output[0] = Int64(scalars[0])
@@ -2015,12 +2013,8 @@ struct Struct_mla_decode_graph_paged_fp8_sparse:
         var dev_ctx = context
         var num_indices_sparse = sparse_indices.size()
 
-        var topk_lengths_ptr = UnsafePointer[Int32, MutAnyOrigin](
-            topk_lengths.to_layout_tensor().ptr
-        )
-        var attn_sink_ptr = UnsafePointer[
-            Scalar[DType.float32], origin=MutAnyOrigin
-        ](attn_sink.to_layout_tensor().ptr)
+        var topk_lengths_ptr = topk_lengths.to_layout_tensor().ptr
+        var attn_sink_ptr = attn_sink.to_layout_tensor().ptr
 
         with Trace[TraceLevel.OP, target=target](
             "mo.mla.graph.decode.paged.fp8.sparse",
@@ -2403,12 +2397,8 @@ struct Struct_mla_prefill_graph_decode_paged_fp8_sparse:
         var dev_ctx = context
         var num_indices_sparse = sparse_indices.size()
 
-        var topk_lengths_ptr = UnsafePointer[Int32, MutAnyOrigin](
-            topk_lengths.to_layout_tensor().ptr
-        )
-        var attn_sink_ptr = UnsafePointer[
-            Scalar[DType.float32], origin=MutAnyOrigin
-        ](attn_sink.to_layout_tensor().ptr)
+        var topk_lengths_ptr = topk_lengths.to_layout_tensor().ptr
+        var attn_sink_ptr = attn_sink.to_layout_tensor().ptr
 
         with Trace[TraceLevel.OP, target=target](
             "mo.mla.graph.prefill.decode.paged.fp8.sparse",
@@ -2868,18 +2858,20 @@ struct Struct_cross_attention_ragged_paged:
     @always_inline
     @staticmethod
     def execute[
-        dtype: DType,
+        out_dtype: DType,
+        q_dtype: DType,
+        cache_dtype: DType,
         //,
         mask_str: StaticString,
         target: StaticString,
         local_window_size: Int = -1,
     ](
-        output: OutputTensor[dtype=dtype, rank=3, ...],
-        q: InputTensor[dtype=dtype, rank=3, ...],
+        output: OutputTensor[dtype=out_dtype, rank=3, ...],
+        q: InputTensor[dtype=q_dtype, rank=3, ...],
         q_input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
         q_max_seq_len: InputTensor[dtype=DType.uint32, rank=1, ...],
         kv_input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
-        kv_blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
+        kv_blocks: MutableInputTensor[dtype=cache_dtype, rank=6, ...],
         cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
         kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
         max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
@@ -2897,6 +2889,7 @@ struct Struct_cross_attention_ragged_paged:
             mask_str=mask_str,
             local_window_size=local_window_size,
             target=target,
+            output_dtype=out_dtype,
         ](
             q.to_layout_tensor(),
             q_input_row_offsets.to_layout_tensor(),

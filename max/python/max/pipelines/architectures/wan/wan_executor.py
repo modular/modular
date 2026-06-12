@@ -44,6 +44,21 @@ from .context import WanContext
 
 logger = logging.getLogger("max.pipelines")
 
+
+def _tokens_are_cfg_batched(tokens_shape: tuple[int, ...]) -> bool:
+    """Whether a tokens tensor holds a pre-concatenated ``[cond; uncond]`` CFG
+    batch.
+
+    ``prepare_inputs`` only batches CFG for the T2V path, producing a 2-D
+    ``[2, seq_len]`` tensor. The I2V / sequential path leaves tokens 1-D
+    ``[seq_len]``, where ``shape[0]`` is the sequence length — guarding on rank
+    prevents that from being mistaken for a batch of 2 (which would skip
+    negative-prompt encoding and collapse the unconditional pass to zero,
+    over-guiding the prediction and producing degenerate output).
+    """
+    return len(tokens_shape) > 1 and int(tokens_shape[0]) > 1
+
+
 # ---------------------------------------------------------------------------
 # Input / Output structs
 # ---------------------------------------------------------------------------
@@ -406,11 +421,10 @@ class WanExecutor(
         # ``prepare_inputs`` already decides whether to batch CFG: when it
         # does, ``inputs.tokens`` arrives at B=2 ([cond; uncond]) and
         # ``inputs.negative_tokens`` is ``None``. When it doesn't,
-        # ``inputs.tokens`` is B=1 and ``inputs.negative_tokens`` may be
-        # set for sequential CFG. So a single text-encoder call on
-        # ``inputs.tokens`` produces the right embedding shape for both
-        # paths.
-        cfg_batched = int(inputs.tokens.shape[0]) > 1
+        # ``inputs.tokens`` is 1-D ``[seq_len]`` and ``inputs.negative_tokens``
+        # may be set for sequential CFG. So a single text-encoder call on
+        # ``inputs.tokens`` produces the right embedding shape for both paths.
+        cfg_batched = _tokens_are_cfg_batched(tuple(inputs.tokens.shape))
         guidance_scale_val = self._buffer_to_scalar_f32(inputs.guidance_scale)
         do_cfg = cfg_batched or (
             guidance_scale_val > 1.0 and inputs.negative_tokens is not None

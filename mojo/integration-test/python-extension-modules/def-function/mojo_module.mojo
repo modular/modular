@@ -238,7 +238,7 @@ def sum_pos_arg_and_kwargs(
 
 def fastcall_concat(
     py_self: PyObjectPtr,
-    args: UnsafePointer[PyObjectPtr, MutExternalOrigin],
+    args: UnsafePointer[PyObjectPtr, MutUntrackedOrigin],
     nargs: Py_ssize_t,
 ) abi("C") -> PyObjectPtr:
     """Hand-written METH_FASTCALL wrapper that concatenates `nargs` strings.

@@ -418,10 +418,10 @@ struct MlaPrefillV2[config: MlaConfigV2]:
         layout: TensorLayout,
     ](
         q_warp_2d: TileTensor[Self.config.dtype, layout, ...],
-        q_lds: SMemTile[Self.config.dtype, _, MutExternalOrigin, ...],
+        q_lds: SMemTile[Self.config.dtype, _, MutUntrackedOrigin, ...],
         w_id: Int,
         scale_log2e: Float32,
-    ) -> RegTile[Self.config.dtype, Self._Q_LAYOUT_MLA_T, MutExternalOrigin]:
+    ) -> RegTile[Self.config.dtype, Self._Q_LAYOUT_MLA_T, MutUntrackedOrigin]:
         """Reference Q-in-LDS resident load (Q@0x0 region pattern).
 
         Stages Q DRAM->LDS->VGPR, producing the SAME `q_reg` fragment a
@@ -575,16 +575,16 @@ struct MlaPrefillV2[config: MlaConfigV2]:
         //,
     ](
         mut q_reg: RegTile[
-            Self.config.dtype, Self._Q_LAYOUT_MLA_T, MutExternalOrigin
+            Self.config.dtype, Self._Q_LAYOUT_MLA_T, MutUntrackedOrigin
         ],
-        mut o_reg: RegTile[DType.float32, Self._O_LAYOUT_T, MutExternalOrigin],
+        mut o_reg: RegTile[DType.float32, Self._O_LAYOUT_T, MutUntrackedOrigin],
         mut softmax: OnlineSoftmax[Self._SOFTMAX_DTYPE],
         mask_functor: mask_t,
         mut att_block: RegTile[
-            Self._SOFTMAX_DTYPE, Self._ATT_LAYOUT_T, MutExternalOrigin
+            Self._SOFTMAX_DTYPE, Self._ATT_LAYOUT_T, MutUntrackedOrigin
         ],
-        k_ring: SMemTile[Self.config.dtype, _, MutExternalOrigin, ...],
-        v_ring: SMemTile[Self.config.dtype, _, MutExternalOrigin, ...],
+        k_ring: SMemTile[Self.config.dtype, _, MutUntrackedOrigin, ...],
+        v_ring: SMemTile[Self.config.dtype, _, MutUntrackedOrigin, ...],
         k_op: k_t,
         v_op: v_t,
         o_warp_2d: TileTensor[out_dtype, o_layout, MutAnyOrigin],
@@ -1681,7 +1681,7 @@ struct MlaPrefillV2[config: MlaConfigV2]:
         var o_normalized_view = TileTensor[
             DType.float32,
             type_of(_o_view_layout),
-            MutExternalOrigin,
+            MutUntrackedOrigin,
             address_space=AddressSpace.LOCAL,
         ](o_reg.ptr, _o_view_layout)
         var epilogue_writer = RegTileEpilogue[out_dtype, 1](o_warp_2d)

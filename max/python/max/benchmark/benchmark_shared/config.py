@@ -437,6 +437,17 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
         json_schema_extra={"group": "Request Configuration"},
     )
 
+    kv_block_size: int = Field(
+        default=128,
+        description=(
+            "KV cache block (page) size in tokens, used to block-align the "
+            "per-turn cache retention metric. Should match the server's "
+            "--kv-cache-page-size so retention reflects true block-aligned "
+            "cache reuse."
+        ),
+        json_schema_extra={"group": "Request Configuration"},
+    )
+
     # Workload configuration (serving-specific)
     max_benchmark_duration_s: int | None = Field(
         default=None,

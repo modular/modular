@@ -156,6 +156,7 @@
     "docs/reference/keywords",
     "docs/reference/literals",
     "docs/reference/numeric-types",
+    "docs/reference/types",
     "docs/reference/operators",
     "docs/reference/expressions",
     "docs/reference/simple-statements",

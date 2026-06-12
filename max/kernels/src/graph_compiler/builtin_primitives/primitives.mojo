@@ -232,7 +232,7 @@ def create_tensor_spec_async[
 
 
 @export
-def empty_destructor(ptr: UnsafePointer[UInt8, MutExternalOrigin]) abi("Mojo"):
+def empty_destructor(ptr: UnsafePointer[UInt8, MutUntrackedOrigin]) abi("Mojo"):
     pass
 
 
@@ -634,7 +634,7 @@ def mgp_buffer_concat[
     )
     var input_tensors = StaticTuple[_, inputs.size](
         TileTensor(inputs[0].unsafe_ptr(), row_major(Coord(inputs[0].size())))
-        .as_any_origin()
+        .as_unsafe_any_origin()
         .as_immut()
     )
     for i in range(1, len(inputs)):
@@ -642,7 +642,7 @@ def mgp_buffer_concat[
             TileTensor(
                 inputs[i].unsafe_ptr(), row_major(Coord(inputs[i].size()))
             )
-            .as_any_origin()
+            .as_unsafe_any_origin()
             .as_immut()
         )
     concat[DType.int8, bDevice, None](
@@ -1112,12 +1112,12 @@ struct MoggAsyncPackHelper:
 
         # MGP_RT_CreateOwnedAsyncMojoValue expects a type erased destructor
         @always_inline("nodebug")
-        def erased_destructor(ptr: UnsafePointer[UInt8, MutExternalOrigin]):
+        def erased_destructor(ptr: UnsafePointer[UInt8, MutUntrackedOrigin]):
             ptr.bitcast[Type]().destroy_pointee()
 
         var dst_ptr = external_call[
             "MGP_RT_MojoValueAllocateBuffer",
-            UnsafePointer[UInt8, MutExternalOrigin],
+            UnsafePointer[UInt8, MutUntrackedOrigin],
         ](size_of[Type](), align_of[Type]())
 
         dst_ptr.bitcast[Type]().init_pointee_move(data^)

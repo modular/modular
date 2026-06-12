@@ -100,9 +100,9 @@ def PyInit_gather_scatter_ops() abi("C") -> PythonObject:
 def gather_op[
     dtype: DType, idx_dtype: DType, //
 ](
-    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    in_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    indices_ptr: UnsafePointer[Scalar[idx_dtype], MutExternalOrigin],
+    out_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    in_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    indices_ptr: UnsafePointer[Scalar[idx_dtype], MutUntrackedOrigin],
     outer_size: Int,
     axis_size: Int,
     inner_size: Int,
@@ -203,7 +203,7 @@ struct _GatherBody[idx_dtype: DType](Dispatchable):
 
     var out_addr: Int
     var in_addr: Int
-    var idx_ptr: UnsafePointer[Scalar[Self.idx_dtype], MutExternalOrigin]
+    var idx_ptr: UnsafePointer[Scalar[Self.idx_dtype], MutUntrackedOrigin]
     var outer_size: Int
     var axis_size: Int
     var inner_size: Int
@@ -214,7 +214,7 @@ struct _GatherBody[idx_dtype: DType](Dispatchable):
         out self,
         out_addr: Int,
         in_addr: Int,
-        idx_ptr: UnsafePointer[Scalar[Self.idx_dtype], MutExternalOrigin],
+        idx_ptr: UnsafePointer[Scalar[Self.idx_dtype], MutUntrackedOrigin],
         outer_size: Int,
         axis_size: Int,
         inner_size: Int,
@@ -287,9 +287,9 @@ def _gather_dispatch_integer[
 def gather_nd_op[
     dtype: DType, idx_dtype: DType, //
 ](
-    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    in_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    indices_ptr: UnsafePointer[Scalar[idx_dtype], MutExternalOrigin],
+    out_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    in_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    indices_ptr: UnsafePointer[Scalar[idx_dtype], MutUntrackedOrigin],
     batch_size: Int,
     indices_outer_size: Int,
     index_depth: Int,
@@ -437,7 +437,7 @@ struct _GatherNdBody[idx_dtype: DType](Dispatchable):
 
     var out_addr: Int
     var in_addr: Int
-    var idx_ptr: UnsafePointer[Scalar[Self.idx_dtype], MutExternalOrigin]
+    var idx_ptr: UnsafePointer[Scalar[Self.idx_dtype], MutUntrackedOrigin]
     var batch_size: Int
     var indices_outer_size: Int
     var index_depth: Int
@@ -450,7 +450,7 @@ struct _GatherNdBody[idx_dtype: DType](Dispatchable):
         out self,
         out_addr: Int,
         in_addr: Int,
-        idx_ptr: UnsafePointer[Scalar[Self.idx_dtype], MutExternalOrigin],
+        idx_ptr: UnsafePointer[Scalar[Self.idx_dtype], MutUntrackedOrigin],
         batch_size: Int,
         indices_outer_size: Int,
         index_depth: Int,
@@ -532,9 +532,9 @@ def _gather_nd_dispatch_integer[
 def scatter_op[
     dtype: DType, idx_dtype: DType, //
 ](
-    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    updates_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    indices_ptr: UnsafePointer[Scalar[idx_dtype], MutExternalOrigin],
+    out_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    updates_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    indices_ptr: UnsafePointer[Scalar[idx_dtype], MutUntrackedOrigin],
     outer_size: Int,
     axis_size: Int,
     inner_size: Int,
@@ -631,7 +631,7 @@ struct _ScatterBody[idx_dtype: DType](Dispatchable):
 
     var out_addr: Int
     var upd_addr: Int
-    var idx_ptr: UnsafePointer[Scalar[Self.idx_dtype], MutExternalOrigin]
+    var idx_ptr: UnsafePointer[Scalar[Self.idx_dtype], MutUntrackedOrigin]
     var outer_size: Int
     var axis_size: Int
     var inner_size: Int
@@ -641,7 +641,7 @@ struct _ScatterBody[idx_dtype: DType](Dispatchable):
         out self,
         out_addr: Int,
         upd_addr: Int,
-        idx_ptr: UnsafePointer[Scalar[Self.idx_dtype], MutExternalOrigin],
+        idx_ptr: UnsafePointer[Scalar[Self.idx_dtype], MutUntrackedOrigin],
         outer_size: Int,
         axis_size: Int,
         inner_size: Int,
@@ -706,9 +706,9 @@ def _scatter_dispatch_integer[
 def scatter_add_op[
     dtype: DType, idx_dtype: DType, //
 ](
-    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    updates_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    indices_ptr: UnsafePointer[Scalar[idx_dtype], MutExternalOrigin],
+    out_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    updates_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    indices_ptr: UnsafePointer[Scalar[idx_dtype], MutUntrackedOrigin],
     outer_size: Int,
     axis_size: Int,
     inner_size: Int,
@@ -807,7 +807,7 @@ struct _ScatterAddBody[idx_dtype: DType](Dispatchable):
 
     var out_addr: Int
     var upd_addr: Int
-    var idx_ptr: UnsafePointer[Scalar[Self.idx_dtype], MutExternalOrigin]
+    var idx_ptr: UnsafePointer[Scalar[Self.idx_dtype], MutUntrackedOrigin]
     var outer_size: Int
     var axis_size: Int
     var inner_size: Int
@@ -817,7 +817,7 @@ struct _ScatterAddBody[idx_dtype: DType](Dispatchable):
         out self,
         out_addr: Int,
         upd_addr: Int,
-        idx_ptr: UnsafePointer[Scalar[Self.idx_dtype], MutExternalOrigin],
+        idx_ptr: UnsafePointer[Scalar[Self.idx_dtype], MutUntrackedOrigin],
         outer_size: Int,
         axis_size: Int,
         inner_size: Int,
@@ -884,9 +884,9 @@ def _scatter_add_dispatch_integer[
 def scatter_max_op[
     dtype: DType, idx_dtype: DType, //
 ](
-    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    updates_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    indices_ptr: UnsafePointer[Scalar[idx_dtype], MutExternalOrigin],
+    out_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    updates_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    indices_ptr: UnsafePointer[Scalar[idx_dtype], MutUntrackedOrigin],
     outer_size: Int,
     axis_size: Int,
     inner_size: Int,
@@ -985,7 +985,7 @@ struct _ScatterMaxBody[idx_dtype: DType](Dispatchable):
 
     var out_addr: Int
     var upd_addr: Int
-    var idx_ptr: UnsafePointer[Scalar[Self.idx_dtype], MutExternalOrigin]
+    var idx_ptr: UnsafePointer[Scalar[Self.idx_dtype], MutUntrackedOrigin]
     var outer_size: Int
     var axis_size: Int
     var inner_size: Int
@@ -995,7 +995,7 @@ struct _ScatterMaxBody[idx_dtype: DType](Dispatchable):
         out self,
         out_addr: Int,
         upd_addr: Int,
-        idx_ptr: UnsafePointer[Scalar[Self.idx_dtype], MutExternalOrigin],
+        idx_ptr: UnsafePointer[Scalar[Self.idx_dtype], MutUntrackedOrigin],
         outer_size: Int,
         axis_size: Int,
         inner_size: Int,
@@ -1062,9 +1062,9 @@ def _scatter_max_dispatch_integer[
 def scatter_min_op[
     dtype: DType, idx_dtype: DType, //
 ](
-    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    updates_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    indices_ptr: UnsafePointer[Scalar[idx_dtype], MutExternalOrigin],
+    out_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    updates_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    indices_ptr: UnsafePointer[Scalar[idx_dtype], MutUntrackedOrigin],
     outer_size: Int,
     axis_size: Int,
     inner_size: Int,
@@ -1163,7 +1163,7 @@ struct _ScatterMinBody[idx_dtype: DType](Dispatchable):
 
     var out_addr: Int
     var upd_addr: Int
-    var idx_ptr: UnsafePointer[Scalar[Self.idx_dtype], MutExternalOrigin]
+    var idx_ptr: UnsafePointer[Scalar[Self.idx_dtype], MutUntrackedOrigin]
     var outer_size: Int
     var axis_size: Int
     var inner_size: Int
@@ -1173,7 +1173,7 @@ struct _ScatterMinBody[idx_dtype: DType](Dispatchable):
         out self,
         out_addr: Int,
         upd_addr: Int,
-        idx_ptr: UnsafePointer[Scalar[Self.idx_dtype], MutExternalOrigin],
+        idx_ptr: UnsafePointer[Scalar[Self.idx_dtype], MutUntrackedOrigin],
         outer_size: Int,
         axis_size: Int,
         inner_size: Int,
@@ -1240,9 +1240,9 @@ def _scatter_min_dispatch_integer[
 def scatter_mul_op[
     dtype: DType, idx_dtype: DType, //
 ](
-    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    updates_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    indices_ptr: UnsafePointer[Scalar[idx_dtype], MutExternalOrigin],
+    out_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    updates_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    indices_ptr: UnsafePointer[Scalar[idx_dtype], MutUntrackedOrigin],
     outer_size: Int,
     axis_size: Int,
     inner_size: Int,
@@ -1341,7 +1341,7 @@ struct _ScatterMulBody[idx_dtype: DType](Dispatchable):
 
     var out_addr: Int
     var upd_addr: Int
-    var idx_ptr: UnsafePointer[Scalar[Self.idx_dtype], MutExternalOrigin]
+    var idx_ptr: UnsafePointer[Scalar[Self.idx_dtype], MutUntrackedOrigin]
     var outer_size: Int
     var axis_size: Int
     var inner_size: Int
@@ -1351,7 +1351,7 @@ struct _ScatterMulBody[idx_dtype: DType](Dispatchable):
         out self,
         out_addr: Int,
         upd_addr: Int,
-        idx_ptr: UnsafePointer[Scalar[Self.idx_dtype], MutExternalOrigin],
+        idx_ptr: UnsafePointer[Scalar[Self.idx_dtype], MutUntrackedOrigin],
         outer_size: Int,
         axis_size: Int,
         inner_size: Int,
@@ -1429,9 +1429,9 @@ def _scatter_mul_dispatch_integer[
 def scatter_nd_op[
     dtype: DType, idx_dtype: DType, //
 ](
-    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    updates_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    indices_ptr: UnsafePointer[Scalar[idx_dtype], MutExternalOrigin],
+    out_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    updates_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    indices_ptr: UnsafePointer[Scalar[idx_dtype], MutUntrackedOrigin],
     batch_size: Int,
     indices_outer_size: Int,
     index_depth: Int,
@@ -1596,7 +1596,7 @@ struct _ScatterNdBody[idx_dtype: DType](Dispatchable):
 
     var out_addr: Int
     var upd_addr: Int
-    var idx_ptr: UnsafePointer[Scalar[Self.idx_dtype], MutExternalOrigin]
+    var idx_ptr: UnsafePointer[Scalar[Self.idx_dtype], MutUntrackedOrigin]
     var batch_size: Int
     var indices_outer_size: Int
     var index_depth: Int
@@ -1609,7 +1609,7 @@ struct _ScatterNdBody[idx_dtype: DType](Dispatchable):
         out self,
         out_addr: Int,
         upd_addr: Int,
-        idx_ptr: UnsafePointer[Scalar[Self.idx_dtype], MutExternalOrigin],
+        idx_ptr: UnsafePointer[Scalar[Self.idx_dtype], MutUntrackedOrigin],
         batch_size: Int,
         indices_outer_size: Int,
         index_depth: Int,
@@ -1689,9 +1689,9 @@ def _scatter_nd_dispatch_integer[
 def scatter_nd_add_op[
     dtype: DType, idx_dtype: DType, //
 ](
-    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    updates_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    indices_ptr: UnsafePointer[Scalar[idx_dtype], MutExternalOrigin],
+    out_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    updates_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    indices_ptr: UnsafePointer[Scalar[idx_dtype], MutUntrackedOrigin],
     batch_size: Int,
     indices_outer_size: Int,
     index_depth: Int,
@@ -1831,7 +1831,7 @@ struct _ScatterNdAddBody[idx_dtype: DType](Dispatchable):
 
     var out_addr: Int
     var upd_addr: Int
-    var idx_ptr: UnsafePointer[Scalar[Self.idx_dtype], MutExternalOrigin]
+    var idx_ptr: UnsafePointer[Scalar[Self.idx_dtype], MutUntrackedOrigin]
     var batch_size: Int
     var indices_outer_size: Int
     var index_depth: Int
@@ -1843,7 +1843,7 @@ struct _ScatterNdAddBody[idx_dtype: DType](Dispatchable):
         out self,
         out_addr: Int,
         upd_addr: Int,
-        idx_ptr: UnsafePointer[Scalar[Self.idx_dtype], MutExternalOrigin],
+        idx_ptr: UnsafePointer[Scalar[Self.idx_dtype], MutUntrackedOrigin],
         batch_size: Int,
         indices_outer_size: Int,
         index_depth: Int,
@@ -1917,9 +1917,9 @@ def _scatter_nd_add_dispatch_integer[
 def scatter_nd_max_op[
     dtype: DType, idx_dtype: DType, //
 ](
-    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    updates_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    indices_ptr: UnsafePointer[Scalar[idx_dtype], MutExternalOrigin],
+    out_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    updates_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    indices_ptr: UnsafePointer[Scalar[idx_dtype], MutUntrackedOrigin],
     batch_size: Int,
     indices_outer_size: Int,
     index_depth: Int,
@@ -2058,7 +2058,7 @@ struct _ScatterNdMaxBody[idx_dtype: DType](Dispatchable):
 
     var out_addr: Int
     var upd_addr: Int
-    var idx_ptr: UnsafePointer[Scalar[Self.idx_dtype], MutExternalOrigin]
+    var idx_ptr: UnsafePointer[Scalar[Self.idx_dtype], MutUntrackedOrigin]
     var batch_size: Int
     var indices_outer_size: Int
     var index_depth: Int
@@ -2070,7 +2070,7 @@ struct _ScatterNdMaxBody[idx_dtype: DType](Dispatchable):
         out self,
         out_addr: Int,
         upd_addr: Int,
-        idx_ptr: UnsafePointer[Scalar[Self.idx_dtype], MutExternalOrigin],
+        idx_ptr: UnsafePointer[Scalar[Self.idx_dtype], MutUntrackedOrigin],
         batch_size: Int,
         indices_outer_size: Int,
         index_depth: Int,
@@ -2144,9 +2144,9 @@ def _scatter_nd_max_dispatch_integer[
 def scatter_nd_min_op[
     dtype: DType, idx_dtype: DType, //
 ](
-    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    updates_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    indices_ptr: UnsafePointer[Scalar[idx_dtype], MutExternalOrigin],
+    out_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    updates_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    indices_ptr: UnsafePointer[Scalar[idx_dtype], MutUntrackedOrigin],
     batch_size: Int,
     indices_outer_size: Int,
     index_depth: Int,
@@ -2285,7 +2285,7 @@ struct _ScatterNdMinBody[idx_dtype: DType](Dispatchable):
 
     var out_addr: Int
     var upd_addr: Int
-    var idx_ptr: UnsafePointer[Scalar[Self.idx_dtype], MutExternalOrigin]
+    var idx_ptr: UnsafePointer[Scalar[Self.idx_dtype], MutUntrackedOrigin]
     var batch_size: Int
     var indices_outer_size: Int
     var index_depth: Int
@@ -2297,7 +2297,7 @@ struct _ScatterNdMinBody[idx_dtype: DType](Dispatchable):
         out self,
         out_addr: Int,
         upd_addr: Int,
-        idx_ptr: UnsafePointer[Scalar[Self.idx_dtype], MutExternalOrigin],
+        idx_ptr: UnsafePointer[Scalar[Self.idx_dtype], MutUntrackedOrigin],
         batch_size: Int,
         indices_outer_size: Int,
         index_depth: Int,
@@ -2371,9 +2371,9 @@ def _scatter_nd_min_dispatch_integer[
 def scatter_nd_mul_op[
     dtype: DType, idx_dtype: DType, //
 ](
-    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    updates_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    indices_ptr: UnsafePointer[Scalar[idx_dtype], MutExternalOrigin],
+    out_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    updates_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    indices_ptr: UnsafePointer[Scalar[idx_dtype], MutUntrackedOrigin],
     batch_size: Int,
     indices_outer_size: Int,
     index_depth: Int,
@@ -2512,7 +2512,7 @@ struct _ScatterNdMulBody[idx_dtype: DType](Dispatchable):
 
     var out_addr: Int
     var upd_addr: Int
-    var idx_ptr: UnsafePointer[Scalar[Self.idx_dtype], MutExternalOrigin]
+    var idx_ptr: UnsafePointer[Scalar[Self.idx_dtype], MutUntrackedOrigin]
     var batch_size: Int
     var indices_outer_size: Int
     var index_depth: Int
@@ -2524,7 +2524,7 @@ struct _ScatterNdMulBody[idx_dtype: DType](Dispatchable):
         out self,
         out_addr: Int,
         upd_addr: Int,
-        idx_ptr: UnsafePointer[Scalar[Self.idx_dtype], MutExternalOrigin],
+        idx_ptr: UnsafePointer[Scalar[Self.idx_dtype], MutUntrackedOrigin],
         batch_size: Int,
         indices_outer_size: Int,
         index_depth: Int,

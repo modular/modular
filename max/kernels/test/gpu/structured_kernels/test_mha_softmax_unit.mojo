@@ -96,7 +96,7 @@ comptime DIAG_PER_LANE = 5  # o_avg, max_vec, norm_vec, scale_vec, nan_count
 
 @always_inline
 def _fill_att_block(
-    mut att_block: RegTile[DType.float32, _, MutExternalOrigin],
+    mut att_block: RegTile[DType.float32, _, MutUntrackedOrigin],
     value: Float32,
 ):
     """Sets every per-lane element of `att_block` to `value`."""
@@ -110,7 +110,7 @@ def _fill_att_block(
 
 @always_inline
 def _fill_att_block_one_hot(
-    mut att_block: RegTile[DType.float32, _, MutExternalOrigin],
+    mut att_block: RegTile[DType.float32, _, MutUntrackedOrigin],
     base_value: Float32,
     hot_value: Float32,
     hot_lane: Int,
@@ -132,7 +132,7 @@ def _fill_att_block_one_hot(
 
 @always_inline
 def _exp2_inplace(
-    mut att_block: RegTile[DType.float32, _, MutExternalOrigin],
+    mut att_block: RegTile[DType.float32, _, MutUntrackedOrigin],
 ):
     """Local copy of `MhaMmaOp.exp2_inplace_range[0, ATT_PER_LANE]` —
     avoids pulling in a full `MhaMmaOp` instantiation for the unit
@@ -146,8 +146,8 @@ def _exp2_inplace(
 
 @always_inline
 def _accumulate_o_from_att(
-    mut o_reg: RegTile[DType.float32, _, MutExternalOrigin],
-    att_block: RegTile[DType.float32, _, MutExternalOrigin],
+    mut o_reg: RegTile[DType.float32, _, MutUntrackedOrigin],
+    att_block: RegTile[DType.float32, _, MutUntrackedOrigin],
     v_value: Float32,
 ):
     """`o_reg[*] += sum(att_block) * v_value * 2`. Emulates PV MFMA
@@ -182,7 +182,7 @@ def _accumulate_o_from_att(
 @always_inline
 def _emit_diag(
     out_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
-    o_reg: RegTile[DType.float32, _, MutExternalOrigin],
+    o_reg: RegTile[DType.float32, _, MutUntrackedOrigin],
     softmax: OnlineSoftmax,
 ):
     """Writes 5 diag scalars (o_avg, max_vec, norm_vec, scale_vec,

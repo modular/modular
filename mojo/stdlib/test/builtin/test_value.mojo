@@ -58,8 +58,8 @@ struct ConditionalTriviality[
         else:
             self.add_event(EVENT_COPY)
 
-    def __init__(out self, *, deinit take: Self):
-        self.events = take.events
+    def __init__(out self, *, deinit move: Self):
+        self.events = move.events
 
         comptime if is_trivially_movable[Self.T]():
             self.add_event(EVENT_MOVE | EVENT_TRIVIAL)

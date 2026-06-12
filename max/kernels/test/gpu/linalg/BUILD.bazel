@@ -162,6 +162,7 @@ _B200_SMOKE_TESTS = [
 
 _B200_TESTS = [
     "test_bulk_mma_pair_cta_sm100.mojo",
+    "test_mma_ws_partial_sm100.mojo",
     "test_tma_mma_sm100.mojo",
     "test_tma_mma_sm100_fp8.mojo",
     "test_tma_mma_sm100_fp8_cast.mojo",

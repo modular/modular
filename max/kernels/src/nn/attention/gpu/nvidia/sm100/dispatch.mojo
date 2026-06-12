@@ -269,7 +269,7 @@ def mha_sm100_dispatch[
                 # --- ragged dispatch ---
                 comptime if ragged:
                     with_valid_length[NonNullPointer[DType.uint32]](
-                        {valid_length}
+                        {valid_length.as_immutable().as_unsafe_any_origin()}
                     )
                 else:
                     with_valid_length[NullPointer[DType.uint32]]({})
@@ -327,7 +327,8 @@ def mha_sm100_dispatch[
             DeviceAttribute.MULTIPROCESSOR_COUNT
         )
         var grid_threshold: UInt32 = UInt32(sm_count // 2)
-        if max_prompt_len_u32 <= UInt32(128) or raw_grid_2q <= grid_threshold:
+        comptime bm_eff_1q = UInt32(fa4_config_1q.BM_eff())
+        if max_prompt_len_u32 <= bm_eff_1q or raw_grid_2q <= grid_threshold:
             with_fa4_config[fa4_config_1q]()
         else:
             with_fa4_config[fa4_config_2q]()

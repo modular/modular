@@ -294,7 +294,7 @@ struct KVBuffer[
     comptime MMATileType = TileTensor[
         Self.kv_t.dtype,
         type_of(Self.mma_layout),
-        MutExternalOrigin,
+        MutUntrackedOrigin,
         address_space=AddressSpace.LOCAL,
     ]
     comptime KVMmaOpType = KVMmaOp[
@@ -456,7 +456,7 @@ struct KVBuffer[
     ](self) -> TileTensor[
         Self.kv_t.dtype,
         type_of(row_major[Self._rows_per_k_mma, Self.input_frag_size]()),
-        MutExternalOrigin,
+        MutUntrackedOrigin,
         address_space=AddressSpace.LOCAL,
     ]:
         comptime reg_slot = bk_tile_idx % Self._reg_num_k_tiles
@@ -469,7 +469,7 @@ struct KVBuffer[
     ](self) -> TileTensor[
         Self.kv_t.dtype,
         type_of(row_major[Self._rows_per_k_mma, Self.input_frag_size]()),
-        MutExternalOrigin,
+        MutUntrackedOrigin,
         address_space=AddressSpace.LOCAL,
     ]:
         """Alias for get_mma_tile, kept for decode-call-site symmetry."""
@@ -766,7 +766,7 @@ struct DecodeStreamingKVBuffer[
     comptime MMATileType = TileTensor[
         Self.kv_t.dtype,
         type_of(Self.mma_layout),
-        MutExternalOrigin,
+        MutUntrackedOrigin,
         address_space=AddressSpace.LOCAL,
     ]
     comptime KVMmaOpType = KVMmaOp[
@@ -1090,7 +1090,7 @@ struct DecodeStreamingKVBuffer[
     ](self) -> TileTensor[
         Self.kv_t.dtype,
         type_of(row_major[Self.num_mmas, Self.input_frag_size]()),
-        MutExternalOrigin,
+        MutUntrackedOrigin,
         address_space=AddressSpace.LOCAL,
     ]:
         """Get register tile for one k_mma group within the single strip."""
@@ -1205,7 +1205,7 @@ struct DecodeKVBuffer[
     comptime LoadTile = TileTensor[
         Self.dtype,
         type_of(Self._load_layout),
-        MutExternalOrigin,
+        MutUntrackedOrigin,
         address_space=AddressSpace.LOCAL,
     ]
     var load_tile: Self.LoadTile
@@ -1217,7 +1217,7 @@ struct DecodeKVBuffer[
     comptime MmaTile = TileTensor[
         Self.dtype,
         type_of(Self._mma_layout),
-        MutExternalOrigin,
+        MutUntrackedOrigin,
         address_space=AddressSpace.LOCAL,
     ]
     var mma_tile: Self.MmaTile

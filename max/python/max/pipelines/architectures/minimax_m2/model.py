@@ -101,11 +101,6 @@ class MiniMaxM2Model(AlwaysSignalBuffersMixin, LlamaModelBase):
     attention_bias: bool = False
     state_dict: dict[str, Any]
 
-    # Empirically determined headroom reserved per device when CUDA graph
-    # capture is enabled, on top of the activation memory we account for
-    # explicitly. Without this, capture can OOM on large MoE models.
-    _GRAPH_CAPTURE_HEADROOM_BYTES_PER_DEVICE = 8 * 1024**3
-
     @override
     def prepare_initial_token_inputs(
         self,

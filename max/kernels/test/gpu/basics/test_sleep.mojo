@@ -26,7 +26,7 @@ from std.gpu.host import DeviceContext
 from std.testing import assert_true
 
 
-def sleep_kernel_100ms(result_ptr: UnsafePointer[UInt64, MutExternalOrigin]):
+def sleep_kernel_100ms(result_ptr: UnsafePointer[UInt64, MutUntrackedOrigin]):
     """GPU kernel that sleeps for 100ms and stores elapsed time."""
     # Use global_perf_counter_ns() which returns actual nanoseconds on GPUs.
     var start = global_perf_counter_ns()
@@ -35,7 +35,7 @@ def sleep_kernel_100ms(result_ptr: UnsafePointer[UInt64, MutExternalOrigin]):
     result_ptr[] = end - start
 
 
-def sleep_kernel_500us(result_ptr: UnsafePointer[UInt64, MutExternalOrigin]):
+def sleep_kernel_500us(result_ptr: UnsafePointer[UInt64, MutUntrackedOrigin]):
     """GPU kernel that sleeps for 500 microseconds (sub-1ms)."""
     var start = global_perf_counter_ns()
     sleep(0.0005)
@@ -43,7 +43,7 @@ def sleep_kernel_500us(result_ptr: UnsafePointer[UInt64, MutExternalOrigin]):
     result_ptr[] = end - start
 
 
-def sleep_kernel_zero(result_ptr: UnsafePointer[UInt64, MutExternalOrigin]):
+def sleep_kernel_zero(result_ptr: UnsafePointer[UInt64, MutUntrackedOrigin]):
     """GPU kernel that sleeps for zero duration (should return immediately)."""
     var start = global_perf_counter_ns()
     sleep(0.0)
@@ -118,7 +118,7 @@ def test_sleep_zero(ctx: DeviceContext) raises:
 
 
 def perf_counter_kernel(
-    result_ptr: UnsafePointer[UInt64, MutExternalOrigin],
+    result_ptr: UnsafePointer[UInt64, MutUntrackedOrigin],
 ):
     """GPU kernel that measures a single sleep with both timer functions."""
     # Measure the SAME sleep interval with both counters. If both return

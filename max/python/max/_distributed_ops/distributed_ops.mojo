@@ -113,7 +113,7 @@ def _do_broadcast[
         # refcount, so assigning into the uninitialized slot would destroy it
         (ctx_array.unsafe_ptr() + i).init_pointee_move(
             DeviceContext(
-                OpaquePointer[MutExternalOrigin](unsafe_from_address=ctx_addr)
+                OpaquePointer[MutUntrackedOrigin](unsafe_from_address=ctx_addr)
             )
         )
     var dev_ctxs = DeviceContextList[ngpus](ctx_array^)

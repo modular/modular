@@ -1451,6 +1451,7 @@ def rope_ragged(
     freqs_cis: TensorValue,
     *,
     interleaved: bool = True,
+    output_dtype: DType | None = None,
 ) -> TensorValue:
     """Applies RoPE to ragged input using the standard rope kernel."""
     _check_dtype(
@@ -1487,7 +1488,9 @@ def rope_ragged(
         ],
         out_types=[
             TensorType(
-                dtype=input.dtype, shape=input.shape, device=input.device
+                dtype=output_dtype if output_dtype is not None else input.dtype,
+                shape=input.shape,
+                device=input.device,
             )
         ],
         parameters=parameters,
@@ -2121,12 +2124,7 @@ def flash_attention_ragged(
             f"expected input of rank {input_rank_expected} but got {input.rank}"
         )
 
-    is_native_fp8 = (
-        input.dtype.is_float8()
-        and kv_params.dtype.is_float8()
-        and not kv_params.quantized_kv_cache
-    )
-    if input.dtype != kv_params.dtype and not is_native_fp8:
+    if input.dtype != kv_params.dtype:
         raise ValueError(
             f"expected input to be dtype: {kv_params.dtype}, got {input.dtype}"
         )
@@ -3308,6 +3306,7 @@ def cross_attention_ragged(
     q_max_seq_len: TensorValue,
     scale: float,
     local_window_size: int = -1,
+    output_dtype: DType | None = None,
 ) -> TensorValue:
     """Computes cross attention provided the `!mo.opaque` KV Cache.
 
@@ -3368,7 +3367,9 @@ def cross_attention_ragged(
         ],
         out_types=[
             TensorType(
-                dtype=input.dtype, shape=input.shape, device=input.device
+                dtype=output_dtype if output_dtype is not None else input.dtype,
+                shape=input.shape,
+                device=input.device,
             )
         ],
         parameters=parameters,
@@ -4956,26 +4957,40 @@ def dynamic_scaled_matmul(
     return result
 
 
-def dynamic_block_scaled_matmul_fp4(
+def dynamic_block_scaled_matmul(
     a: TensorValue,
     b: TensorValue,
     a_scales: TensorValue,
     b_scales: TensorValue,
-    tensor_sf: TensorValue | float,
+    tensor_sf: TensorValue | float = 1.0,
     sf_vector_size: int = 16,
     out_type: DType = DType.bfloat16,
 ) -> TensorValue:
-    """Performs a matmul of two FP4 tensors with 1D-block scaled scaling factors.
+    """Performs a block-scaled matmul of two NVFP4 or MXFP8 tensors.
+
+    Both formats drive the same SM100 tensor-core block-scaled MMA kernel
+    (``UMMAKind.KIND_MXF8F6F4``) via the ``mo.matmul.dynamic.block.scaled`` op;
+    the format is selected from ``a.dtype``:
+
+    - NVFP4: ``a``/``b`` are ``uint8`` (two ``e2m1`` values packed per byte)
+      with ``float8_e4m3fn`` scales and ``sf_vector_size=16``.
+    - MXFP8: ``a``/``b`` are ``float8_e4m3fn`` (unpacked) with
+      ``float8_e8m0fnu`` scales and ``sf_vector_size=32``.
 
     Args:
-        a: The first tensor to multiply.
-        b: The second tensor to multiply, must be transposed.
-        a_scales: The scaling factors for the first tensor.
-        b_scales: The scaling factors for the second tensor.
-        tensor_sf: Buffer-wise scaling factor equal to weight_scale_2 * input_scale (non-inverted).
+        a: The first tensor to multiply, rank 2 ``[M, K]``.
+        b: The second tensor to multiply, rank 2 ``[N, K]`` (transposed).
+        a_scales: The rank-5 SF-atom scaling factors for ``a``.
+        b_scales: The rank-5 SF-atom scaling factors for ``b``.
+        tensor_sf: Buffer-wise scaling factor applied to the output. For NVFP4
+            this is ``weight_scale_2 * input_scale`` (non-inverted); MXFP8 uses
+            pure block scaling, so it defaults to ``1.0`` (identity).
+        sf_vector_size: K-block size for the scaling factors: 16 for NVFP4 or
+            32 for MXFP8.
+        out_type: The output dtype.
 
     Returns:
-        The result of the matmul operation.
+        The result of the matmul operation, shape ``[M, N]``.
     """
     if a.rank != 2 or b.rank != 2:
         raise ValueError("Both a and b must be rank 2 tensors")
@@ -4993,29 +5008,39 @@ def dynamic_block_scaled_matmul_fp4(
             f"as do a and b scales dtypes {a_scales.dtype}, {b_scales.dtype}"
         )
 
-    if a.dtype != DType.uint8:
-        raise ValueError("A dtype must be uint8 (fp4-e2m1fnX2)")
-
-    if a_scales.dtype != DType.float8_e4m3fn:
-        raise ValueError("a_scales dtype must be float8_e4m3fn")
-
-    if sf_vector_size != 16:
-        raise ValueError("sf_vector_size must be 16 for NVFP4")
+    # Select the quantization format from the operand dtype.
+    if a.dtype == DType.uint8:
+        # NVFP4: two e2m1 values packed per uint8, so the logical K is doubled
+        # relative to the stored K when sizing the scales.
+        if a_scales.dtype != DType.float8_e4m3fn:
+            raise ValueError("a_scales dtype must be float8_e4m3fn for NVFP4")
+        if sf_vector_size != 16:
+            raise ValueError("sf_vector_size must be 16 for NVFP4")
+        k_packing = 2
+    elif a.dtype == DType.float8_e4m3fn:
+        # MXFP8: data is not packed, so the stored K is used directly.
+        if a_scales.dtype != DType.float8_e8m0fnu:
+            raise ValueError("a_scales dtype must be float8_e8m0fnu for MXFP8")
+        if sf_vector_size != 32:
+            raise ValueError("sf_vector_size must be 32 for MXFP8")
+        k_packing = 1
+    else:
+        raise ValueError(
+            "a dtype must be uint8 (NVFP4) or float8_e4m3fn (MXFP8), got"
+            f" {a.dtype}"
+        )
 
     SF_ATOM_M = [32, 4]
     SF_ATOM_K = 4
     SF_MN_GROUP_SIZE = SF_ATOM_M[0] * SF_ATOM_M[1]  # 128
     SF_K_GROUP_SIZE = SF_ATOM_K * sf_vector_size
 
-    # scales tensor shape: [ceildiv(M, SF_MN_GROUP_SIZE), ceildiv(N, sf_vector_size * 4), SF_ATOM_M[0], SF_ATOM_M[1], SF_ATOM_K]
-    # a_scales_dim_0 = (a.shape[0] + SF_MN_GROUP_SIZE - 1) // SF_MN_GROUP_SIZE
-    a_scales_dim_1 = ceildiv(
-        a.shape[1] * 2, Dim(SF_K_GROUP_SIZE)
-    )  # each output element (uint8) is 2 fp4-e2m1fn values
+    # scales tensor shape: [ceildiv(MN, SF_MN_GROUP_SIZE),
+    #   ceildiv(K, SF_K_GROUP_SIZE), SF_ATOM_M[0], SF_ATOM_M[1], SF_ATOM_K].
+    # For NVFP4 each uint8 packs two values, so the logical K is K * k_packing.
+    a_scales_dim_1 = ceildiv(a.shape[1] * k_packing, Dim(SF_K_GROUP_SIZE))
     b_scales_dim_0 = ceildiv(b.shape[0], Dim(SF_MN_GROUP_SIZE))
-    b_scales_dim_1 = ceildiv(
-        b.shape[1] * 2, Dim(SF_K_GROUP_SIZE)
-    )  # each output element (uint8) is 2 fp4-e2m1fn values
+    b_scales_dim_1 = ceildiv(b.shape[1] * k_packing, Dim(SF_K_GROUP_SIZE))
     scales_dim_2 = SF_ATOM_M[0]
     scales_dim_3 = SF_ATOM_M[1]
     scales_dim_4 = SF_ATOM_K
@@ -5216,24 +5241,35 @@ def _is_sm10x_gpu() -> bool:
         return False
 
 
-def quantize_dynamic_block_scaled_fp4(
+def quantize_dynamic_block_scaled(
     input: TensorValue,
-    tensor_sf: TensorValue | float,
+    tensor_sf: TensorValue | float = 1.0,
     sf_vector_size: int = 16,
     scales_type: DType = DType.float8_e4m3fn,
     out_type: DType = DType.uint8,  # fp4-e2m1fnX2
 ) -> tuple[TensorValue, TensorValue]:
-    """Dynamically quantize the input tensor to fp4-e2m1fn.
+    """Dynamically quantize a bf16 tensor to NVFP4 or MXFP8 with block scales.
+
+    Both formats go through the ``mo.quantize.dynamic.block.scaled`` op; the
+    format is selected from ``out_type``:
+
+    - NVFP4 (``out_type=uint8``): two ``e2m1`` values packed per output byte,
+      with ``float8_e4m3fn`` (NVFP4) or ``float8_e8m0fnu`` (MXFP4) scales and
+      ``sf_vector_size`` 16 or 32.
+    - MXFP8 (``out_type=float8_e4m3fn``): unpacked ``float8_e4m3fn`` data with
+      ``float8_e8m0fnu`` scales and ``sf_vector_size=32``. MXFP8 uses pure
+      block scaling, so ``tensor_sf`` defaults to ``1.0`` (identity).
 
     Args:
-        input: The input tensor to quantize. Shape: [seq_len, hidden_size]
-        tensor_sf: The tensor-wise scale factor (inverted as per
-            quantization kernel requirement).
+        input: The input tensor to quantize. Shape: [seq_len, hidden_size].
+        tensor_sf: The tensor-wise scale factor (inverted as per the
+            quantization kernel requirement for NVFP4; identity for MXFP8).
         sf_vector_size: The block size for the scaling factors.
-            16 for NVFP4, 32 for MXFP4.
-        out_type: The type of the output tensor.
+            16 for NVFP4, 32 for MXFP4/MXFP8.
         scales_type: The type of the scales tensor.
-            ``float8_e4m3fn`` for NVFP4, ``float8_e8m0fnu`` for MXFP4.
+            ``float8_e4m3fn`` for NVFP4, ``float8_e8m0fnu`` for MXFP4/MXFP8.
+        out_type: The type of the output tensor. ``uint8`` for packed FP4 or
+            ``float8_e4m3fn`` for MXFP8.
 
     Returns:
         The quantized tensor and scales. Scales layout depends on hardware:
@@ -5246,19 +5282,31 @@ def quantize_dynamic_block_scaled_fp4(
     if input.dtype != DType.bfloat16:
         raise ValueError("input tensor dtype must be bfloat16")
 
-    if out_type not in (DType.uint8,):
-        raise ValueError("out_type must be uint8 (fp4-e2m1fnX2)")
-
-    if scales_type not in (DType.float8_e4m3fn, DType.float8_e8m0fnu):
+    # Select the quantization format from the output dtype.
+    if out_type == DType.uint8:
+        # NVFP4 / MXFP4: two e2m1 values packed per output byte.
+        if scales_type not in (DType.float8_e4m3fn, DType.float8_e8m0fnu):
+            raise ValueError(
+                "scales_type must be float8_e4m3fn (NVFP4) or float8_e8m0fnu"
+                " (MXFP4)"
+            )
+        if sf_vector_size not in (16, 32):
+            raise ValueError("sf_vector_size must be 16 (NVFP4) or 32 (MXFP4)")
+        is_packed = True
+    elif out_type == DType.float8_e4m3fn:
+        # MXFP8: float8 data, not packed.
+        if scales_type != DType.float8_e8m0fnu:
+            raise ValueError("scales_type must be float8_e8m0fnu for MXFP8")
+        if sf_vector_size != 32:
+            raise ValueError("sf_vector_size must be 32 for MXFP8")
+        is_packed = False
+    else:
         raise ValueError(
-            "scales_type must be float8_e4m3fn (NVFP4) or float8_e8m0fnu"
-            " (MXFP4)"
+            "out_type must be uint8 (FP4) or float8_e4m3fn (MXFP8), got"
+            f" {out_type}"
         )
 
-    if sf_vector_size not in (16, 32):
-        raise ValueError("sf_vector_size must be 16 (NVFP4) or 32 (MXFP4)")
-
-    # MXFP4 (sf_vector_size=32) requires K % 32 because the kernel's
+    # MXFP4/MXFP8 (sf_vector_size=32) requires K % 32 because the kernel's
     # 4-thread cooperative scale reduction operates on 32-element groups.
     # NVFP4 (sf_vector_size=16) only requires K % 8.
     k_alignment = (
@@ -5289,6 +5337,9 @@ def quantize_dynamic_block_scaled_fp4(
             ceildiv(input.shape[1], Dim(sf_vector_size)),
         ]
 
+    # FP4 packs two values per output byte; MXFP8 stores one value per element.
+    quantized_k = input.shape[1] // 2 if is_packed else input.shape[1]
+
     tensor_sf_value: TensorValue
     if isinstance(tensor_sf, float):
         tensor_sf_value = ops.constant(
@@ -5304,10 +5355,7 @@ def quantize_dynamic_block_scaled_fp4(
         out_types=[
             TensorType(
                 dtype=out_type,
-                shape=[
-                    input.shape[0],
-                    input.shape[1] // 2,  # each uint8 packs 2 fp4 values
-                ],
+                shape=[input.shape[0], quantized_k],
                 device=input.device,
             ),
             TensorType(
@@ -5367,7 +5415,7 @@ def grouped_quantize_dynamic_block_scaled_fp4(
 
     if not _is_sm10x_gpu():
         # route to the fallback kernel
-        return quantize_dynamic_block_scaled_fp4(
+        return quantize_dynamic_block_scaled(
             input, sf_tensor[0], sf_vector_size, scales_type, out_type
         )
 

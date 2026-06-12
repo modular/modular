@@ -26,6 +26,7 @@ import extensibility as compiler
 # ===-----------------------------------------------------------------------===#
 from std.algorithm import mean
 from comm.allreduce import allreduce
+from internal_utils.fp8_utils import cast_saturating
 
 from comm.allreduce_residual_rmsnorm import allreduce_residual_rmsnorm
 from comm.device_collective import _launch_device_collective
@@ -1230,12 +1231,13 @@ struct Struct_rope_ragged_paged[interleaved: Bool]:
     @always_inline
     @staticmethod
     def execute[
+        out_dtype: DType,
         dtype: DType,
         freq_dtype: DType,
         //,
         target: StaticString,
     ](
-        output: FusedOutputTensor[dtype=dtype, rank=3, ...],
+        output: FusedOutputTensor[dtype=out_dtype, rank=3, ...],
         x: InputTensor[dtype=dtype, rank=3, ...],
         input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
         start_pos: InputTensor[dtype=DType.uint32, rank=1, ...],
@@ -1268,7 +1270,7 @@ struct Struct_rope_ragged_paged[interleaved: Bool]:
         ](idx: IndexList[3], val: SIMD[dtype, width]) capturing -> None:
             output._lambda_store[width=width, element_alignment=alignment](
                 idx,
-                rebind[SIMD[dtype, width]](val),
+                cast_saturating[out_dtype](val),
             )
 
         var x_tensor = x.to_tile_tensor[DType.int64]()
@@ -1360,7 +1362,7 @@ struct Struct_rope_ragged_paged_with_position_id[interleaved: Bool]:
             start_tensor,
             freqs_cis_tensor,
             ctx,
-            position_ids=position_ids_tensor.as_any_origin().as_immut(),
+            position_ids=position_ids_tensor.as_unsafe_any_origin().as_immut(),
         )
 
 
@@ -1859,15 +1861,17 @@ struct Struct_fused_token_sampling:
                 Int(max_k),
                 input.to_tile_tensor[DType.int64](),
                 out_idxs.to_tile_tensor[DType.int64](),
-                k=K.to_tile_tensor[DType.int64]().as_any_origin().as_immut(),
+                k=K.to_tile_tensor[DType.int64]()
+                .as_unsafe_any_origin()
+                .as_immut(),
                 temperature=temperature.to_tile_tensor[DType.int64]()
-                .as_any_origin()
+                .as_unsafe_any_origin()
                 .as_immut(),
                 top_p=top_p.to_tile_tensor[DType.int64]()
-                .as_any_origin()
+                .as_unsafe_any_origin()
                 .as_immut(),
                 seed=seed.to_tile_tensor[DType.int64]()
-                .as_any_origin()
+                .as_unsafe_any_origin()
                 .as_immut(),
             )
         else:
@@ -1878,18 +1882,20 @@ struct Struct_fused_token_sampling:
                 min_top_p,
                 input.to_tile_tensor[DType.int64](),
                 out_idxs.to_tile_tensor[DType.int64](),
-                k=K.to_tile_tensor[DType.int64]().as_any_origin().as_immut(),
+                k=K.to_tile_tensor[DType.int64]()
+                .as_unsafe_any_origin()
+                .as_immut(),
                 temperature=temperature.to_tile_tensor[DType.int64]()
-                .as_any_origin()
+                .as_unsafe_any_origin()
                 .as_immut(),
                 top_p=top_p.to_tile_tensor[DType.int64]()
-                .as_any_origin()
+                .as_unsafe_any_origin()
                 .as_immut(),
                 min_p=min_p.to_tile_tensor[DType.int64]()
-                .as_any_origin()
+                .as_unsafe_any_origin()
                 .as_immut(),
                 seed=seed.to_tile_tensor[DType.int64]()
-                .as_any_origin()
+                .as_unsafe_any_origin()
                 .as_immut(),
             )
 

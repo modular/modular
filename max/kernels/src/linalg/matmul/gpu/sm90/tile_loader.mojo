@@ -410,7 +410,9 @@ struct TileLoaderCPAsync[
         # Perform the async copy with bounds checking and swizzling.  Rebind
         # through an exact destination type so the dtype parameter can unify
         # across the source and destination TileTensor arguments.
-        var dst_vec_any = dst.as_any_origin().vectorize[1, Self.vector_size]()
+        var dst_vec_any = dst.as_unsafe_any_origin().vectorize[
+            1, Self.vector_size
+        ]()
         var dst_vec = TileTensor[
             mut=True,
             dtype=Self._dtype,

@@ -31,7 +31,7 @@ struct ImplT(BaseT):
         out self,
         buf: LayoutTensor[mut=True, DType.float32, Layout(UNKNOWN_VALUE), _],
     ) raises:
-        self.values = buf.as_any_origin()
+        self.values = buf.as_unsafe_any_origin()
 
     def get_val(self, idx: Int) -> Float32:
         return self.values[idx][0]

@@ -595,7 +595,7 @@ struct HopperMatmulSM90Kernel[
             elementwise_compute_lambda_fn=Self.elementwise_compute_lambda_fn,
             swapAB=Self.swapAB,
         ](
-            c.as_any_origin(),
+            c.as_unsafe_any_origin(),
             c_tile,
             warp_group_thread_idx,
             local_warp_group_idx,

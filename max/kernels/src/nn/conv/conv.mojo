@@ -527,7 +527,7 @@ struct ConvDirectNHWC[
 
         # Safety: the scratch pointer below will alias the output_ptr, so cast to MutAnyOrigin
         # here to turn off the check.
-        var output_ptr = output.ptr.unsafe_origin_cast[MutAnyOrigin]()
+        var output_ptr = output.ptr.unsafe_origin_cast[MutUntrackedOrigin]()
         var output_size = output.size()
         var scratch_size = num_partitions[1] * output_size
         if num_partitions[1] > 1:
@@ -1167,7 +1167,7 @@ struct ConvDirectNHWC[
             simd_size,
             row_start,
             row_stop,
-        ](acc_in._storage)
+        ](acc_in._storage.as_unsafe_any_origin())
 
         acc.accumulate[
             prefetch_offset=prefetch_offset,
@@ -1248,7 +1248,9 @@ struct ConvDirectNHWC[
 
         # Filter pointer to the current cf tile offset location.
         # Use ImmutAnyOrigin to detach from self's filter_origin for aliasing.
-        var filter_ptr: UnsafePointer[Scalar[Self.filter_type], ImmutAnyOrigin]
+        var filter_ptr: UnsafePointer[
+            Scalar[Self.filter_type], type_of(self.filter.ptr).origin
+        ]
 
         comptime if Self.filter_packed:
             # Move the pointer to the current group's start.
@@ -1689,7 +1691,9 @@ struct ConvDirectNHWC[
         comptime WO = Int(Self.output_layout.shape[2])  # NHWC
         comptime F = Int(Self.output_layout.shape[3])  # NHWC
 
-        var filter_base: UnsafePointer[Scalar[Self.filter_type], ImmutAnyOrigin]
+        var filter_base: UnsafePointer[
+            Scalar[Self.filter_type], type_of(self.filter.ptr).origin
+        ]
 
         comptime if Self.filter_packed:
             filter_base = self.filter.ptr + (
@@ -3430,7 +3434,7 @@ def _get_cudnn_meta(
     if ptr_meta := _get_global_or_null(cache_key):
         var ptr = ptr_meta.unsafe_value().bitcast[CuDNNConvMeta]()
         check_cudnn_error(cudnnSetStream(ptr[].ptr_handle, CUDA(ctx.stream())))
-        return ptr
+        return ptr.as_unsafe_any_origin()
 
     var new_ptr_meta = alloc[CuDNNConvMeta](1)
     new_ptr_meta.init_pointee_move(CuDNNConvMeta())
@@ -3440,7 +3444,7 @@ def _get_cudnn_meta(
         new_ptr_meta.bitcast[NoneType](),
     )
 
-    return new_ptr_meta
+    return new_ptr_meta.as_unsafe_any_origin()
 
 
 def get_cudnn_dtype[dtype: DType]() raises -> cudnnDataType_t:
@@ -3541,7 +3545,7 @@ def _get_cached_cudnn_meta_nhwc_full(
     if ptr_meta := _get_global_or_null(cache_key):
         var ptr = ptr_meta.unsafe_value().bitcast[CachedCuDNNMetaNHWCFull]()
         check_cudnn_error(cudnnSetStream(ptr[].ptr_handle, CUDA(ctx.stream())))
-        return ptr
+        return ptr.as_unsafe_any_origin()
 
     var new_ptr_meta = alloc[CachedCuDNNMetaNHWCFull](1)
     new_ptr_meta.init_pointee_move(CachedCuDNNMetaNHWCFull())
@@ -3555,7 +3559,7 @@ def _get_cached_cudnn_meta_nhwc_full(
         cudnnSetStream(new_ptr_meta[].ptr_handle, CUDA(ctx.stream()))
     )
 
-    return new_ptr_meta
+    return new_ptr_meta.as_unsafe_any_origin()
 
 
 def _conv_cudnn[
@@ -3889,7 +3893,7 @@ def _get_cached_miopen_meta[
     if ptr_meta := _get_global_or_null(cache_key):
         var ptr = ptr_meta.unsafe_value().bitcast[CachedMIOpenMeta[conv_rank]]()
         check_miopen_error(miopenSetStream(ptr[].handle, HIP(ctx.stream())))
-        return ptr
+        return ptr.as_unsafe_any_origin()
 
     var new_ptr_meta = alloc[CachedMIOpenMeta[conv_rank]](1)
     new_ptr_meta.init_pointee_move(CachedMIOpenMeta[conv_rank]())
@@ -3903,7 +3907,7 @@ def _get_cached_miopen_meta[
         miopenSetStream(new_ptr_meta[].handle, HIP(ctx.stream()))
     )
 
-    return new_ptr_meta
+    return new_ptr_meta.as_unsafe_any_origin()
 
 
 def _conv_miopen[
@@ -4113,8 +4117,10 @@ def _conv_miopen[
                 ptr_meta[].input_desc,
                 MIOpenDataType(input_type),
                 Int32(tensor_rank),
-                input_shape.unsafe_ptr(),
-                input_strides.unsafe_ptr(),
+                input_shape.unsafe_ptr().as_immutable().as_unsafe_any_origin(),
+                input_strides.unsafe_ptr()
+                .as_immutable()
+                .as_unsafe_any_origin(),
             )
         )
 
@@ -4125,8 +4131,10 @@ def _conv_miopen[
                 ptr_meta[].filter_desc,
                 MIOpenDataType(filter_type),
                 Int32(tensor_rank),
-                filter_shape.unsafe_ptr(),
-                filter_strides.unsafe_ptr(),
+                filter_shape.unsafe_ptr().as_immutable().as_unsafe_any_origin(),
+                filter_strides.unsafe_ptr()
+                .as_immutable()
+                .as_unsafe_any_origin(),
             )
         )
 
@@ -4136,8 +4144,10 @@ def _conv_miopen[
                 ptr_meta[].output_desc,
                 MIOpenDataType(output_type),
                 Int32(tensor_rank),
-                output_shape.unsafe_ptr(),
-                output_strides.unsafe_ptr(),
+                output_shape.unsafe_ptr().as_immutable().as_unsafe_any_origin(),
+                output_strides.unsafe_ptr()
+                .as_immutable()
+                .as_unsafe_any_origin(),
             )
         )
 
@@ -4146,9 +4156,9 @@ def _conv_miopen[
             miopenInitConvolutionNdDescriptor(
                 ptr_meta[].conv_desc,
                 Int32(conv_rank),
-                padding.unsafe_ptr(),
-                stride.unsafe_ptr(),
-                dilation.unsafe_ptr(),
+                padding.unsafe_ptr().as_immutable().as_unsafe_any_origin(),
+                stride.unsafe_ptr().as_immutable().as_unsafe_any_origin(),
+                dilation.unsafe_ptr().as_immutable().as_unsafe_any_origin(),
                 ConvolutionMode.CONVOLUTION,
             )
         )
@@ -4169,7 +4179,7 @@ def _conv_miopen[
                 ptr_meta[].input_desc,
                 ptr_meta[].conv_desc,
                 ptr_meta[].output_desc,
-                UnsafePointer(to=workspace_size),
+                UnsafePointer(to=workspace_size).as_unsafe_any_origin(),
             )
         )
 
@@ -4190,8 +4200,8 @@ def _conv_miopen[
                 ptr_meta[].output_desc,
                 output.ptr.bitcast[NoneType](),
                 Int32(1),
-                UnsafePointer(to=returned_count),
-                UnsafePointer(to=perf),
+                UnsafePointer(to=returned_count).as_unsafe_any_origin(),
+                UnsafePointer(to=perf).as_unsafe_any_origin(),
                 find_workspace.unsafe_ptr().bitcast[NoneType](),
                 workspace_size,
                 False,  # non-exhaustive search
@@ -4225,14 +4235,14 @@ def _conv_miopen[
     check_miopen_error(
         miopenConvolutionForward(
             ptr_meta[].handle,
-            UnsafePointer(to=alpha),
+            UnsafePointer(to=alpha).as_immutable().as_unsafe_any_origin(),
             ptr_meta[].input_desc,
             input.ptr.bitcast[NoneType](),
             ptr_meta[].filter_desc,
             filter_frsc_ptr.bitcast[NoneType](),
             ptr_meta[].conv_desc,
             ptr_meta[].algo,
-            UnsafePointer(to=beta),
+            UnsafePointer(to=beta).as_immutable().as_unsafe_any_origin(),
             ptr_meta[].output_desc,
             output.ptr.bitcast[NoneType](),
             forward_workspace.unsafe_ptr().bitcast[NoneType](),
@@ -4434,7 +4444,7 @@ def conv_gpu[
             Layout.row_major[full_rank](),
             MutAnyOrigin,
         ](
-            padded_device_buffer,
+            padded_device_buffer.as_unsafe_any_origin(),
             RuntimeLayout[Layout.row_major[full_rank]()].row_major(
                 padded_shape
             ),
@@ -4937,7 +4947,7 @@ def conv_gpu[
                 var output_tmp_lt = LayoutTensor[
                     output_type, output_layout, MutAnyOrigin
                 ](
-                    output_tmp_data.unsafe_ptr(),
+                    output_tmp_data.unsafe_ptr().as_unsafe_any_origin(),
                     output_lt.runtime_layout,
                 )
 

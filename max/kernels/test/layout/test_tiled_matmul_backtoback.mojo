@@ -293,9 +293,9 @@ def matmul[
 
 def alloc_tensor[
     elt: DType, layout: Layout
-]() -> LayoutTensor[elt, layout, MutExternalOrigin]:
+]() -> LayoutTensor[elt, layout, MutUntrackedOrigin]:
     comptime size: Int = layout.size()
-    return LayoutTensor[elt, layout, MutExternalOrigin](
+    return LayoutTensor[elt, layout, MutUntrackedOrigin](
         alloc[Scalar[elt]](size, alignment=64)
     )
 
@@ -303,9 +303,9 @@ def alloc_tensor[
 def alloc_tensor[
     elt: DType, layout: Layout
 ](rtlayout: RuntimeLayout[layout, ...]) -> LayoutTensor[
-    elt, layout, MutExternalOrigin
+    elt, layout, MutUntrackedOrigin
 ]:
-    return LayoutTensor[elt, layout, MutExternalOrigin](
+    return LayoutTensor[elt, layout, MutUntrackedOrigin](
         alloc[Scalar[elt]](rtlayout.size(), alignment=64),
         rtlayout,
     )

@@ -558,7 +558,7 @@ struct Conv2dResidualAdd:
             pad_tuple,
             1,  # num_groups
             cuda_ctx,
-            source.unsafe_ptr().as_any_origin(),
+            source.unsafe_ptr().as_unsafe_any_origin(),
             Float32(1.0),  # beta
         )
 

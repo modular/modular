@@ -471,7 +471,7 @@ def _gemv_partial_norm_fused[
     weight: TileTensor[a_type, ...],
     gamma: TileTensor[a_type, ...],
     eps: Scalar[a_type],
-    finish_counter: UnsafePointer[Scalar[DType.int32], MutAnyOrigin],
+    finish_counter: UnsafePointer[mut=True, Scalar[DType.int32], _],
     trace_buf: TraceBufT,
     ctx: DeviceContext,
 ) raises:
@@ -559,7 +559,7 @@ def _gemv_partial_norm_unfused_with_scratch[
     weight: TileTensor[a_type, ...],
     gamma: TileTensor[a_type, ...],
     eps: Scalar[a_type],
-    y_scratch: UnsafePointer[Scalar[c_type], MutAnyOrigin],
+    y_scratch: UnsafePointer[mut=True, Scalar[c_type], _],
     ctx: DeviceContext,
 ) raises:
     """Unfused 2-launch path using caller-provided y scratch.

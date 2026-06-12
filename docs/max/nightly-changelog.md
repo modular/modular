@@ -41,13 +41,13 @@ This version is still a work in progress.
 
 ### Inference server
 
-- Chat completion responses now emit reasoning under both `reasoning` and
-  `reasoning_content`. Reasoning models previously exposed their
-  chain-of-thought only under `reasoning`; adding the `reasoning_content`
-  alias (the field used by vLLM, SGLang, and the DeepSeek API, in both
-  streaming deltas and the final message) lets a wider range of
-  OpenAI-compatible clients surface it. The two fields always hold the same
-  text.
+- Chat completion responses now emit reasoning only under `reasoning`,
+  aligning with OpenAI's Responses API naming. The `reasoning_content` alias
+  (previously emitted alongside `reasoning` for compatibility with vLLM,
+  SGLang, and the DeepSeek API) is no longer included in responses. vLLM has
+  deprecated `reasoning_content` in favor of `reasoning`; see
+  <https://github.com/vllm-project/vllm/pull/33402>. Clients should read
+  chain-of-thought tokens from the `reasoning` field.
 
 - `response_format` JSON schemas with a non-object root are now accepted when
   the root `type` is missing (any) or a type union that includes `object`
@@ -56,18 +56,49 @@ This version is still a work in progress.
   non-object type (for example `{"type": "string"}`) is still rejected,
   matching OpenAI's structured-outputs contract.
 
-- Added a `maxserve.startup_time` Prometheus histogram (seconds) that
-  records model-worker startup time, previously only available in the
-  server logs. It is split by a `component` tag (`build`, `compile`, `init`,
-  `graph_capture`, `pinned_memory`, `spawn`, and `total`), so a single metric
-  can be plotted broken down by startup phase to track pod startup time in
-  production.
+- Added a per-phase startup breakdown to the `maxserve.model_load_time`
+  Prometheus histogram (milliseconds), previously only available in the
+  server logs. In addition to the existing untagged model-load aggregate,
+  the model worker now records each startup phase on the same metric split
+  by a `component` tag (`build`, `compile`, `init`, `graph_capture`,
+  `pinned_memory`, `spawn`, and `total`), so a single metric can be plotted
+  broken down by startup phase to track pod startup time in production.
+  This replaces the `maxserve.startup_time` histogram (seconds) added
+  earlier in this nightly cycle.
 
 - Added a `maxserve.time_per_output_token` Prometheus histogram (milliseconds).
   Emitted once per request, it reports the mean decode-phase latency per
   generated token (`decode_time / (num_generated_tokens - 1)`), excluding the
   first token and prefill time. Because the denominator counts the tokens the
   model actually produced, the metric accounts for speculative decoding.
+
+- The `maxserve.batch_size` Prometheus histogram is now labeled by
+  `batch_type` (`CE` for prefill, `TG` for decode), so the token-generation
+  (decode) batch size can be observed separately from prefill. For the
+  prefill token-count view, use `maxserve.batch_input_tokens` (also labeled
+  by `batch_type`). Existing aggregate queries over `maxserve.batch_size`
+  continue to work; selectors that pin a single series now gain the
+  `batch_type` dimension.
+
+- Added Prometheus metrics for the API-server ingress backlog: requests accepted
+  by the API server but not yet handed off to the model worker (still API-side,
+  for example in tokenization). `maxserve.num_requests_awaiting_admission` is an
+  up/down counter with the live value (incremented on arrival, decremented at
+  handoff), and `maxserve.requests_awaiting_admission` is a companion histogram
+  that captures the distribution / tail (p50/p99) over time. A persistently high
+  value points at a backlog in the API server rather than in the scheduler queue
+  (the latter is visible via `maxserve.num_requests_queued`).
+
+- Added Prometheus metrics for the egress (response) path, which show whether
+  the API server is shipping tokens back to clients slower than the model
+  produces them: `maxserve.num_responses_buffered` (a gauge sampling the total
+  model-worker responses received but not yet streamed to clients) with a
+  companion `maxserve.responses_buffered` distribution histogram, and
+  `maxserve.response_queue_time` (a millisecond histogram of how long a
+  response waits in the API server's per-request output queue before the
+  streaming layer consumes it). Together they surface API-side egress
+  bottlenecks (detokenization, serialization, slow clients) and the associated
+  unbounded-output-queue memory growth.
 
 - MAX Serve now returns a clearer 400 Bad Request with the underlying
   message when a prompt is too long for the model, instead of a generic
@@ -192,6 +223,14 @@ This version is still a work in progress.
 
 ### `max` CLI
 
+- The serving benchmark now reports a per-turn KV cache retention percentile
+  metric for multi-turn workloads. For each turn after the first, it compares
+  the server-reported cached prefix against the block-aligned prefix carried
+  over from the previous turn, surfacing when cached tokens are dropped between
+  turns (distinct from the existing cached-token-rate metrics, whose denominator
+  includes new and uncacheable tokens). The KV cache block size used to align
+  the expected prefix is configurable via `--kv-block-size` (default `128`);
+  match it to the server's `--kv-cache-page-size`.
 - Added `--devices=gpu:all` to use every visible GPU (including MAX Serve).
 - Removed the `default` value for `--devices`; omit `--devices` to use the model
   or config default.

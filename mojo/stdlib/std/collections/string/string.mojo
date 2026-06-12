@@ -215,7 +215,7 @@ struct String(
     # form when '_capacity_or_data.is_inline()' is true. The inline form
     # clobbers these fields (except the top byte of the capacity field) with
     # the string data.
-    var _ptr_or_data: UnsafePointer[UInt8, MutExternalOrigin]
+    var _ptr_or_data: UnsafePointer[UInt8, MutUntrackedOrigin]
     """The underlying storage for the string data."""
     var _len_or_data: Int
     """The number of bytes in the string data."""
@@ -332,7 +332,7 @@ struct String(
         # the string.
         self._ptr_or_data = data._slice._data.unsafe_mut_cast[
             True
-        ]().unsafe_origin_cast[MutExternalOrigin]()
+        ]().unsafe_origin_cast[MutUntrackedOrigin]()
         # Always use static constant representation initially, defer inlining
         # decision until mutation to avoid unnecessary memcpy.
         self._capacity_or_data = 0
@@ -348,7 +348,7 @@ struct String(
         self._len_or_data = Int(
             mlir_value=__mlir_op.`pop.string.size`(data.value)
         )
-        self._ptr_or_data = UnsafePointer[_, MutExternalOrigin](
+        self._ptr_or_data = UnsafePointer[_, MutUntrackedOrigin](
             __mlir_op.`pop.string.address`(data.value)
         ).bitcast[Byte]()
         # Always use static constant representation initially, defer inlining
@@ -738,7 +738,7 @@ struct String(
                 ptr.free()
 
     @staticmethod
-    def _alloc(capacity: Int) -> UnsafePointer[Byte, MutExternalOrigin]:
+    def _alloc(capacity: Int) -> UnsafePointer[Byte, MutUntrackedOrigin]:
         """Allocate space for a new out-of-line string buffer."""
         var ptr = alloc[Byte](capacity + Self.REF_COUNT_SIZE)
 

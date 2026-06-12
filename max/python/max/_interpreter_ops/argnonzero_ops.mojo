@@ -73,8 +73,8 @@ def PyInit_argnonzero_ops() abi("C") -> PythonObject:
 def argnonzero_count_op[
     dtype: DType, //
 ](
-    count_ptr: UnsafePointer[Scalar[DType.int64], MutExternalOrigin],
-    in_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    count_ptr: UnsafePointer[Scalar[DType.int64], MutUntrackedOrigin],
+    in_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     numel: Int,
 ):
     """Count the nonzero elements in a flat input buffer.
@@ -144,8 +144,8 @@ def argnonzero_count_dispatcher(
 def argnonzero_fill_op[
     dtype: DType, //
 ](
-    out_ptr: UnsafePointer[Scalar[DType.int64], MutExternalOrigin],
-    in_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    out_ptr: UnsafePointer[Scalar[DType.int64], MutUntrackedOrigin],
+    in_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     numel: Int,
     rank: Int,
     shape: InlineArray[Int, MAX_RANK],

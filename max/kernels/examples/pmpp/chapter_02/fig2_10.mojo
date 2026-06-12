@@ -21,9 +21,9 @@ from std.gpu import global_idx
 
 
 def vec_add(
-    a: UnsafePointer[Float32, MutExternalOrigin],
-    b: UnsafePointer[Float32, MutExternalOrigin],
-    c: UnsafePointer[Float32, MutExternalOrigin],
+    a: UnsafePointer[Float32, MutUntrackedOrigin],
+    b: UnsafePointer[Float32, MutUntrackedOrigin],
+    c: UnsafePointer[Float32, MutUntrackedOrigin],
     n: Int,
 ):
     """GPU kernel for vector addition.
