@@ -148,7 +148,7 @@ def test_detect_infra_errors_hf_rate_limit() -> None:
         "We had to rate limit you, you hit the quota of 1000 api requests "
         "per 5 minutes period.\n"
         "See https://huggingface.co/docs/hub/rate-limits "
-        "[type=value_error, input_value={'defer_resolve': True}]"
+        "[type=value_error, input_value={'model_path': 'test-model'}]"
     )
     with pytest.raises(InfraError):
         with detect_infra_errors():

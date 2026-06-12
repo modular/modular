@@ -476,6 +476,10 @@ class PipelineRegistry:
         self._cached_huggingface_tokenizers: dict[
             HuggingFaceRepo, PreTrainedTokenizer | PreTrainedTokenizerFast
         ] = {}
+        # Tracks already-imported custom architecture specs so that repeated
+        # retrieve_factory() calls don't re-run importlib.import_module and
+        # spuriously re-register the same architectures.
+        self._imported_custom_arch_specs: set[str] = set()
 
     def register(
         self,
@@ -741,6 +745,46 @@ class PipelineRegistry:
 
         return tokenizer
 
+    def _import_custom_architectures(
+        self, custom_architectures: list[str]
+    ) -> None:
+        """Imports custom model modules and registers them in the pipeline registry."""
+        import importlib
+        import os
+        import sys
+
+        for module_spec in custom_architectures:
+            if module_spec in self._imported_custom_arch_specs:
+                continue
+            module_parts = module_spec.split(":")
+            if len(module_parts) > 2:
+                raise ValueError(
+                    f"Custom module spec contains too many colons: {module_spec}"
+                )
+            elif len(module_parts) == 2:
+                module_path, module_name = module_parts
+            else:
+                module_path = os.path.dirname(module_parts[0])
+                module_name = os.path.basename(module_parts[0])
+            sys.path.append(module_path)
+            try:
+                module = importlib.import_module(module_name)
+            except Exception as e:
+                raise ValueError(
+                    f"Failed to import custom model from: {module_spec}"
+                ) from e
+
+            if not module.ARCHITECTURES or not isinstance(
+                module.ARCHITECTURES, list
+            ):
+                raise ValueError(
+                    f"Custom model imported, but did not expose an `ARCHITECTURES` list. Module: {module_spec}"
+                )
+
+            for arch in module.ARCHITECTURES:
+                self.register(arch, allow_override=True)
+            self._imported_custom_arch_specs.add(module_spec)
+
     def retrieve_factory(
         self,
         pipeline_config: PipelineConfig,
@@ -750,6 +794,11 @@ class PipelineRegistry:
         """Retrieves the tokenizer and a factory that creates the pipeline instance."""
         tokenizer: PipelineTokenizer[Any, Any, Any]
         pipeline_factory: Callable[[], PipelineTypes]
+
+        # Register any user-supplied custom architectures before the arch lookup.
+        self._import_custom_architectures(
+            pipeline_config.runtime.custom_architectures
+        )
 
         pipeline_class = get_pipeline_for_task(task, pipeline_config)
 
@@ -768,6 +817,44 @@ class PipelineRegistry:
             raise ValueError(
                 f"No architecture found for {pipeline_config.models.main_architecture_name}"
             )
+
+        # For speculative decoding, pre-resolve the draft architecture before
+        # calling resolve() so config.py never needs a registry import.
+        draft_arch = None
+        if pipeline_config.draft_model is not None:
+            draft_arch_name = pipeline_config.draft_model.architecture_name
+            if draft_arch_name is None:
+                raise ValueError(
+                    f"Cannot determine architecture for draft model "
+                    f"'{pipeline_config.draft_model.model_path}': "
+                    "no 'architectures' field in HuggingFace config."
+                )
+            draft_arch = self.retrieve_architecture(
+                architecture_name=draft_arch_name,
+                prefer_module_v3=pipeline_config.runtime.prefer_module_v3,
+            )
+            if not draft_arch:
+                if not pipeline_config.runtime.prefer_module_v3:
+                    v3_draft = self.retrieve_architecture(
+                        architecture_name=draft_arch_name,
+                        prefer_module_v3=True,
+                    )
+                    if v3_draft:
+                        raise ValueError(
+                            f"MAX-optimized architecture found for draft model "
+                            f"'{pipeline_config.draft_model.model_path}', but only the "
+                            f"new Module-based implementation is available "
+                            f"(architecture: '{v3_draft.name}'). "
+                            "Please use the '--prefer-module-v3' flag."
+                        )
+                raise ValueError(
+                    "MAX-Optimized architecture not found for `draft_model`"
+                )
+
+        pipeline_config.resolve(
+            arch,
+            draft_arch=draft_arch,
+        )
 
         arch_config = arch.config.initialize(pipeline_config)
         max_length = arch_config.get_max_seq_len()
