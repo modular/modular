@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.collections import Set
 from std.random import random_ui64, seed
 from std.math.uutils import udivmod
 
@@ -45,7 +44,11 @@ from std.testing import assert_almost_equal
 
 from std.utils import IndexList
 
-from kv_cache_test_utils import CacheLengthsTable, PagedLookupTable
+from kv_cache_test_utils import (
+    CacheLengthsTable,
+    PagedLookupTable,
+    random_distinct,
+)
 
 comptime kv_params_llama3 = KVCacheStaticParams(num_heads=8, head_size=128)
 comptime llama_num_q_heads = 32
@@ -274,17 +277,12 @@ def execute_matmul_kv_cache_ragged[
     )
     var lookup_table_host = lookup_table.tensor[update=False]()
 
-    # Hacky way to select random blocks.
-    block_idx_set = Set[Int]()
-    idx = 0
-    while idx < batch_size:
-        randval = Int(random_ui64(0, num_blocks - 1))
-        if randval in block_idx_set:
-            continue
-
-        block_idx_set.add(randval)
-        lookup_table_host[idx] = UInt32(randval)
-        idx += 1
+    # Assign each batch entry a distinct block. `random_ui64` is inclusive, so
+    # the original draw range `[0, num_blocks - 1]` is a population of
+    # `num_blocks` blocks.
+    lut_blocks = random_distinct(num_blocks, batch_size)
+    for idx in range(batch_size):
+        lookup_table_host[idx] = UInt32(lut_blocks[idx])
 
     # Create runtime layouts
     var cache_len_runtime = cache_lengths_host.runtime_layout
@@ -1069,17 +1067,12 @@ def execute_cont_batch_fused_qkv_matmul[
 
     var lookup_table_host_ptr = alloc[Scalar[DType.uint32]](batch_size)
 
-    # Hacky way to select random blocks.
-    var block_idx_set = Set[Int]()
-    var idx = 0
-    while idx < batch_size:
-        var randval = Int(random_ui64(0, num_blocks - 1))
-        if randval in block_idx_set:
-            continue
-
-        block_idx_set.add(randval)
-        lookup_table_host_ptr[idx] = UInt32(randval)
-        idx += 1
+    # Assign each batch entry a distinct block. `random_ui64` is inclusive, so
+    # the original draw range `[0, num_blocks - 1]` is a population of
+    # `num_blocks` blocks.
+    var lut_blocks = random_distinct(num_blocks, batch_size)
+    for idx in range(batch_size):
+        lookup_table_host_ptr[idx] = UInt32(lut_blocks[idx])
 
     var lookup_table_device = ctx.enqueue_create_buffer[DType.uint32](
         batch_size

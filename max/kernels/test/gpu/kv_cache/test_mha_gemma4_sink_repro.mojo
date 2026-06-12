@@ -36,11 +36,12 @@ that may or may not be correct — run this through `./bazelw test`.
 """
 
 from std.math import ceildiv, rsqrt
-from std.random import random_ui64, seed
-from std.collections import OptionalReg, Set
+from std.random import seed
+from std.collections import OptionalReg
 from layout._utils import ManagedLayoutTensor
 from std.gpu.host import DeviceContext
 
+from kv_cache_test_utils import random_distinct
 from kv_cache.types import (
     KVCacheStaticParams,
     PagedKVCacheCollection,
@@ -167,15 +168,19 @@ def execute_sink_prefill_repro[
     random(kv_block_paged_tensor)
 
     var paged_lut_tensor = paged_lut.tensor[update=False]()
-    var paged_lut_set = Set[Int]()
+    # Sample one distinct paged block per page across the whole batch up
+    # front, then hand them out in iteration order. Total pages needed is
+    # <= num_paged_blocks by construction.
+    var total_pages = 0
+    for bs in range(batch_size):
+        total_pages += ceildiv(cache_lengths[bs] + valid_lengths[bs], page_size)
+    var paged_blocks = random_distinct(num_paged_blocks, total_pages)
+    var page_pos = 0
     for bs in range(batch_size):
         var seq_len = cache_lengths[bs] + valid_lengths[bs]
         for block_idx in range(0, ceildiv(seq_len, page_size)):
-            var randval = Int(random_ui64(0, UInt64(num_paged_blocks - 1)))
-            while randval in paged_lut_set:
-                randval = Int(random_ui64(0, UInt64(num_paged_blocks - 1)))
-            paged_lut_set.add(randval)
-            paged_lut_tensor[bs, block_idx] = UInt32(randval)
+            paged_lut_tensor[bs, block_idx] = UInt32(paged_blocks[page_pos])
+            page_pos += 1
 
     # Sink weights: one per query head, per spec at [num_q_heads].
     var sink_weights_shape = IndexList[1](num_q_heads)
