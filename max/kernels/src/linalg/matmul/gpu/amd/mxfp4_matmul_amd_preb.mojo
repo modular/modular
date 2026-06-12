@@ -45,20 +45,43 @@ from std.gpu import (
     warp_id,
 )
 from std.gpu.host import DeviceContext
+from std.gpu.memory import CacheOperation
+from std.gpu.sync import s_waitcnt
+from std.sys.intrinsics import llvm_intrinsic
 
-from layout import TensorLayout, TileTensor
+from layout import Coord, TensorLayout, TileTensor
 from layout.tile_layout import row_major, col_major
 from layout.tile_tensor import stack_allocation
+from layout.swizzle import Swizzle
+from std.bit import log2_floor
 
 from std.utils import IndexList, StaticTuple
 from linalg.arch.amd.block_scaled_mma import (
     CDNA4F8F6F4MatrixFormat,
     cdna4_block_scaled_mfma,
 )
-from structured_kernels.amd_tile_io import RegTileLoader, RegTileWriter
+from structured_kernels.amd_tile_io import (
+    RegTileLoader,
+    RegTileWriter,
+    TileLoaderLDS,
+)
 
 from .mxfp4_matmul_amd import MX_BLOCK_SIZE
 from .mxfp4_preshuffle_loaders import PreshuffledBLoader, PreshuffledScaleLoader
+
+
+# `swizzle_xor16`: XOR-16 LDS swizzle on a row-major [BM, BK_BYTES]
+# uint8 A tile. The in-tile byte address is `row*BK_BYTES + (col ^ ((row & (BK_BYTES//16-1))*16))`
+# — a 16B-granule XOR that removes A LDS bank conflicts. Applied identically at
+# write (copy_a_tile_to_smem) and read (load_a_frag_from_smem); a mismatch is
+# wrong logits. As a `Swizzle` on the flat in-tile byte offset: extract the
+# `log2(BK_BYTES//16)` row bits sitting at flat-bit `log2(BK_BYTES)` and XOR
+# them down into col's 16B-granule bits (base=4). yyy at base+shift => shift =
+# log2(BK_BYTES)-4 = log2(BK_BYTES//16) = bits. BK_BYTES is pow-2 (64/128/256).
+@always_inline
+def a_lds_swizzle[BK_BYTES: Int]() -> Swizzle:
+    comptime bits = log2_floor(BK_BYTES // 16)
+    return Swizzle(bits, 4, bits)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -110,6 +133,8 @@ struct BlockScaledMmaOp_PreB[
     comptime MMA_K_BYTES = Self.MMA_K // 2  # 64 bytes / MFMA along K
     comptime c_frag_size = (Self.MMA_M * Self.MMA_N) // WARP_SIZE  # 4
     comptime mma_frag_width_bytes: Int = 16
+    # Per-slot A LDS tile is [BM, BK_BYTES]; BK_BYTES = BK_ELEMS // 2.
+    comptime BK_BYTES = Self.warp_tile[2] // 2
 
     comptime _a_reg_layout = row_major[
         Self.num_k_mmas,
@@ -232,26 +257,39 @@ struct BlockScaledMmaOp_PreB[
         ],
     ):
         """Load A fragment for MFMA-K position `mma_k_idx` from row-major SMEM.
-        """
-        comptime lane_layout = col_major[
-            Self.MMA_M, WARP_SIZE // Self.MMA_M
-        ]()  # 16x4 col major
 
+        XOR-16 swizzled read (matches the write in `copy_a_tile_to_smem`): each
+        lane reads the 16B vec at slot-tile (row, col_byte), then swizzles the
+        flat in-tile byte offset before the `raw_load`. WM==BM so `a_smem_warp`
+        IS the contiguous [BM, BK_BYTES] slot tile and `raw_load` indexes it
+        directly.
+        """
+        # col_major 16x4 lane layout: decode lane -> (m, k_vec).
+        comptime lane_layout = col_major[Self.MMA_M, WARP_SIZE // Self.MMA_M]()
+        var crd = lane_layout.idx2crd(Int(lane_id()))
+        var m = crd[0]
+        var k_vec = crd[1]
+        var col_byte = (
+            mma_k_idx * Self.MMA_K_BYTES
+            + Int(k_vec) * Self.mma_frag_width_bytes
+        )
+
+        comptime swizzle = a_lds_swizzle[Self.BK_BYTES]()
+        comptime tile_layout = row_major[Self.warp_tile[0], Self.BK_BYTES]()
         var a_reg_v = self._a_reg.vectorize[1, 1, Self.mma_frag_width_bytes]()
         comptime for i in range(Self.num_m_mmas):
-            var a_frag = (
-                a_smem_warp.tile[Self.MMA_M, Self.MMA_K_BYTES](i, mma_k_idx)
-                .vectorize[1, Self.mma_frag_width_bytes]()
-                .distribute[lane_layout](lane_id())
-            )
-            a_reg_v[mma_k_idx, i, 0] = a_frag[0, 0]
+            var row = i * Self.MMA_M + Int(m)
+            var off = swizzle(Int(tile_layout(Coord(row, col_byte))))
+            a_reg_v[mma_k_idx, i, 0] = a_smem_warp.raw_load[
+                width=Self.mma_frag_width_bytes
+            ](off)
 
     @always_inline
     def load_b_frag_preshuffled[
         mma_k_idx: Int, slot: Int = 0
     ](
         self,
-        b_loader: PreshuffledBLoader[_, _],
+        b_loader: PreshuffledBLoader[_, _, _],
         warp_n_off: Int,
         k_byte_base: Int,
     ):
@@ -410,19 +448,39 @@ struct MXFP4MatmulAMD_PreB[
     BN: Int = 128,
     BK_ELEMS: Int = 512,
     WN: Int = 64,
-    B_PREFETCH: Bool = False,
+    b_prefetch: Bool = False,
+    b_cache_policy: CacheOperation = CacheOperation.ALWAYS,
+    dram_to_lds: Bool = False,
+    cluster_drain_sched: Bool = False,
+    mfma_cluster: Int = 4,
+    deep_prime: Bool = False,
 ]:
     """Preshuffled-B variant of `MXFP4MatmulAMD`.
 
     The preb path requires `num_warps_m == 1` (no LDS staging for B = no
     cross-warp M-direction B reuse), so `WM` is structurally fixed to `BM`.
 
-    When `B_PREFETCH=True`, runs a depth-2 outer-K software pipeline: while
+    When `b_prefetch=True`, runs a depth-2 outer-K software pipeline: while
     the current iter's MFMAs execute, the next iter's B fragments stream
     from DRAM into the alternate b_reg slot. Doubles `_b_reg` size (extra
     VGPRs) but hides DRAM B latency across the inner MFMA chain. Targets
     K-heavy shapes (e.g. gate/up, K=7168) where outer-iter serialization
     dominates.
+
+    `cluster_drain_sched` (b_prefetch only) stage1 inner-loop
+    interleave: per-cluster `s_setprio` bracketing each `mfma_cluster` MFMAs
+    (not one coarse bracket) and a partial-`vmcnt` staircase that keeps the
+    prefetched B loads in flight per cluster instead of one full drain.
+    Default off — existing callers are bit-identical.
+
+    `deep_prime` (b_prefetch only, num_tiles >= 2) deepens the A pipeline to
+    2-tiles-ahead: the prologue stages BOTH tile0 -> slot0 and tile1 -> slot1
+    into LDS so each steady iter reads an A tile that has had a full extra
+    iteration of MFMA shadow to land. Iter i reads slot[i%2] and issues the
+    A DMA for tile i+2 into that same (just-freed) slot. Reuses the existing
+    `num_a_slots=2` LDS buffers — no extra LDS/VGPR. Composes with cluster_drain_sched/mfma_cluster
+    (the MFMA chain is unchanged). Falls back to the 1-deep path when num_tiles < 2.
+    Default off — existing callers are bit-identical.
     """
 
     # WM is locked to BM — single warp along M for the preb (no-LDS-B) path.
@@ -432,7 +490,10 @@ struct MXFP4MatmulAMD_PreB[
     comptime MMA_N = 16
     comptime MMA_K = 128
 
-    comptime num_b_slots = 2 if Self.B_PREFETCH else 1
+    comptime num_b_slots = 2 if Self.b_prefetch else 1
+    # A LDS is double-buffered on the prefetch path so iter i+1's tile is
+    # written into the alternate slot while iter i reads the current one
+    comptime num_a_slots = 2 if Self.b_prefetch else 1
 
     comptime MmaOpType = BlockScaledMmaOp_PreB[
         mma_shape=IndexList[3](Self.MMA_M, Self.MMA_N, Self.MMA_K),
@@ -512,11 +573,14 @@ struct MXFP4MatmulAMD_PreB[
         var warp_m, warp_n = divmod(warp_id, Self.num_warps_n)
 
         # SMEM for A only — B and scales come direct from preshuffled DRAM.
+        # `num_a_slots` buffers laid out slot-major ([slot, BM, BK_BYTES]).
         var a_smem = stack_allocation[DType.uint8, AddressSpace.SHARED](
-            row_major[Self.BM, Self.BK_BYTES]()
+            row_major[Self.num_a_slots * Self.BM, Self.BK_BYTES]()
         )
 
-        var b_loader = PreshuffledBLoader[N=N, K_BYTES=K_BYTES](b_pre)
+        var b_loader = PreshuffledBLoader[
+            N=N, K_BYTES=K_BYTES, cache_policy=Self.b_cache_policy
+        ](b_pre)
         # Bitcast scales' float8_e8m0fnu to uint8 — same byte representation,
         # the PreshuffledScaleLoader expects uint8 buffers.
         var sfa_u8 = TileTensor(
@@ -554,6 +618,19 @@ struct MXFP4MatmulAMD_PreB[
             a_blockrow,
             bounds_from=a,
         )
+        # Shared swizzled DRAM->LDS loader (the fp8 4wave/ping-pong path uses
+        # the same one). Producer byte-swizzle == the consumer read swizzle.
+        # Only consumed on the dram_to_lds path.
+        var a_lds_loader = TileLoaderLDS[
+            DType.uint8,
+            Self.BM,
+            Self.BK_BYTES,
+            stride=type_of(a_blockrow).static_stride[0],
+            num_loading_warps=Self.num_warps,
+            swizzle=a_lds_swizzle[Self.BK_BYTES](),
+            load_width=Self.simd_width,
+            use_full_tile_width=True,
+        ](a_blockrow, warp_id, Int(lane_id()))
 
         var warp_m_off_global = m_tile_idx * Self.BM
         var warp_n_off_global = n_tile_idx * Self.BN + warp_n * Self.WN
@@ -569,27 +646,64 @@ struct MXFP4MatmulAMD_PreB[
         @always_inline
         @parameter
         def load_a_tile_from_dram():
-            var a_block = a_blockrow.tile[Self.BM, Self.BK_BYTES](0, k_counter)
-            # Idle threads past the A load layout (only matters when BM is
-            # small enough that load_thread_rows is capped at BM, e.g.
-            # BM=16 with many warps_n).
-            if Int(thread_idx.x) < load_active_threads:
-                a_loader.load(
-                    a_load_reg, a_block.vectorize[1, Self.simd_width]()
+            # Register-bounce load. In dram_to_lds mode the DMA and the position
+            # advance both live in copy_a_tile_to_smem, so this is a no-op.
+            comptime if not Self.dram_to_lds:
+                var a_block = a_blockrow.tile[Self.BM, Self.BK_BYTES](
+                    0, k_counter
                 )
-            k_counter += 1
+                # Idle threads past the A load layout (only matters when BM is
+                # small enough that load_thread_rows is capped at BM, e.g.
+                # BM=16 with many warps_n).
+                if thread_idx.x < load_active_threads:
+                    a_loader.load(
+                        a_load_reg, a_block.vectorize[1, Self.simd_width]()
+                    )
+                k_counter += 1
 
         @always_inline
         @parameter
-        def copy_a_tile_to_smem():
-            if Int(thread_idx.x) < load_active_threads:
-                var a_smem_dist = a_smem.vectorize[
-                    1, Self.simd_width
-                ]().distribute[load_layout](thread_idx.x)
-                comptime for v in range(a_loads_per_tile):
-                    a_smem_dist[v, 0] = a_load_reg.raw_load[
-                        width=Self.simd_width
-                    ](v * Self.simd_width)
+        def a_smem_slot(
+            slot: Int,
+        ) -> type_of(a_smem.tile[Self.BM, Self.BK_BYTES](0, 0)):
+            return a_smem.tile[Self.BM, Self.BK_BYTES](slot, 0)
+
+        @always_inline
+        @parameter
+        def copy_a_tile_to_smem(slot: Int):
+            comptime if Self.dram_to_lds:
+                # DRAM->LDS via the shared swizzled loader (TileLoaderLDS does
+                # the readfirstlane->m0 base + source-side byte swizzle +
+                # buffer_load_*_lds internally). k_offset selects the K-tile
+                # column; the block's M origin is folded into a_blockrow.
+                a_lds_loader.load_tile(
+                    a_smem_slot(slot), 0, k_counter * Self.BK_BYTES
+                )
+                k_counter += 1
+                # Drain this wave's DMA so the next barrier publishes a
+                # complete LDS tile cross-wave.
+                s_waitcnt[vmcnt=0]()
+            else:
+                # XOR-16 swizzled write (matches load_a_frag_from_smem read).
+                # load_layout row_major[rows, cols] maps thread t -> tile
+                # (row = t // cols, col_byte = (t % cols) * simd_width); the v
+                # loop strides BM by load_thread_rows. Swizzle the flat in-tile
+                # byte offset before the raw_store.
+                if thread_idx.x < load_active_threads:
+                    comptime swizzle = a_lds_swizzle[Self.BK_BYTES]()
+                    var a_smem_dst = a_smem_slot(slot)
+                    var t = thread_idx.x
+                    var base_row = t // load_thread_cols
+                    var col_byte = (t % load_thread_cols) * Self.simd_width
+                    comptime for v in range(a_loads_per_tile):
+                        var row = base_row + v * load_thread_rows
+                        var off = swizzle(row * Self.BK_BYTES + col_byte)
+                        a_smem_dst.raw_store[width=Self.simd_width](
+                            off,
+                            a_load_reg.raw_load[width=Self.simd_width](
+                                v * Self.simd_width
+                            ),
+                        )
 
         @always_inline
         @parameter
@@ -612,17 +726,155 @@ struct MXFP4MatmulAMD_PreB[
                     k_pair_base + k_pair,
                 )
 
+        @always_inline
+        @parameter
+        def s_setprio[priority: Int16]():
+            # Raise wave priority during MFMA clusters so the matrix unit
+            # isn't preempted by memory-issuing waves; lower it for loads.
+            llvm_intrinsic["llvm.amdgcn.s.setprio", NoneType](priority)
+
+        # Per-cluster setprio + partial-vmcnt staircase.
+        # Splits the num_k_mmas MFMA chain into mfma_cluster-sized groups,
+        # brackets each with s_setprio[1]/[0], and drains the prefetched
+        # B-frag loads proportionally to MFMA progress (vmcnt staircase)
+        # rather than one full drain. Lands at vmcnt(0) on the final cluster
+        # so the end-of-iter barrier publishes a complete next-slot B.
+        comptime n_clusters = ceildiv(Self.num_k_mmas, Self.mfma_cluster)
+        # B-frag loads outstanding after the prefetch for one iter.
+        comptime b_loads_in_flight = Self.num_k_mmas * Self.num_n_mmas
+
+        @always_inline
+        @parameter
+        def mma_chain_plain[slot: Int]():
+            var a_warp = a_smem_slot(slot).tile[Self.WM, Self.BK_BYTES](
+                warp_m, 0
+            )
+            s_setprio[1]()
+            comptime for k in range(Self.num_k_mmas):
+                mma_op.load_a_frag_from_smem[k](a_warp)
+                mma_op.mma[k, slot=slot]()
+            s_setprio[0]()
+
+        @always_inline
+        @parameter
+        def mma_chain_scheduled[slot: Int]():
+            var a_warp = a_smem_slot(slot).tile[Self.WM, Self.BK_BYTES](
+                warp_m, 0
+            )
+            comptime for c in range(n_clusters):
+                comptime k_lo = c * Self.mfma_cluster
+                comptime k_hi = min(k_lo + Self.mfma_cluster, Self.num_k_mmas)
+                # Drain B loads down to a target proportional to remaining
+                # clusters; final cluster reaches 0.
+                comptime remaining = n_clusters - 1 - c
+                comptime vm_target = (
+                    b_loads_in_flight * remaining
+                ) // n_clusters
+                s_waitcnt[vmcnt=UInt32(vm_target)]()
+                s_setprio[1]()
+                comptime for k in range(k_lo, k_hi):
+                    mma_op.load_a_frag_from_smem[k](a_warp)
+                    mma_op.mma[k, slot=slot]()
+                s_setprio[0]()
+
+        @always_inline
+        @parameter
+        def mma_chain[slot: Int]():
+            comptime if Self.cluster_drain_sched:
+                mma_chain_scheduled[slot]()
+            else:
+                mma_chain_plain[slot]()
+
+        @always_inline
+        @parameter
+        def mma_chain_epilogue[slot: Int]():
+            # Last resident tile, no B prefetch left to overlap.
+            comptime if Self.cluster_drain_sched:
+                # Fully drain the slot's B + scales first (the vmcnt staircase
+                # needs newer ops behind the consumed slot; epilogue has none),
+                # then keep per-cluster setprio bracketing.
+                s_waitcnt[vmcnt=0]()
+                var a_warp = a_smem_slot(slot).tile[Self.WM, Self.BK_BYTES](
+                    warp_m, 0
+                )
+                comptime for c in range(n_clusters):
+                    comptime k_lo = c * Self.mfma_cluster
+                    comptime k_hi = min(
+                        k_lo + Self.mfma_cluster, Self.num_k_mmas
+                    )
+                    s_setprio[1]()
+                    comptime for k in range(k_lo, k_hi):
+                        mma_op.load_a_frag_from_smem[k](a_warp)
+                        mma_op.mma[k, slot=slot]()
+                    s_setprio[0]()
+            else:
+                mma_chain_plain[slot]()
+
         comptime num_tiles = K_BYTES // Self.BK_BYTES
 
         # TODO use comptime pipeline scheduler
 
-        comptime if Self.B_PREFETCH:
-            # Depth-2 outer-K software pipeline.
+        comptime if Self.b_prefetch and Self.deep_prime and num_tiles >= 2:
+            # Depth-2 outer-K pipeline with a 2-tiles-ahead A stream.
+            #
+            # Prologue: stage BOTH tile0 -> slot0 and tile1 -> slot1 into LDS
+            # so the steady loop always reads an A tile that landed a full
+            # extra iteration ago. Prime B + scales for tile0 as in the
+            # 1-deep path (B prefetch stays 1-ahead). One barrier publishes
+            # both A tiles cross-wave before any read.
+            load_a_tile_from_dram()
+            copy_a_tile_to_smem(0)
+            load_a_tile_from_dram()
+            copy_a_tile_to_smem(1)
+            comptime for k in range(Self.num_k_mmas):
+                mma_op.load_b_frag_preshuffled[k, slot=0](
+                    b_loader, warp_n_off_global, 0
+                )
+            load_scales_for_iter(0)
+            barrier()
+
+            # Steady state: for each i in [0, num_tiles-1) read slot[i%2]
+            # (tile i, resident since prologue or a prior iter), prefetch B
+            # for tile i+1 into nxt_slot, MFMA, then issue tile i+2's A into
+            # slot[i%2] (the slot just freed). The A DMA for tile i+2 is thus
+            # issued at iter i and consumed at iter i+2 = two iterations of
+            # MFMA shadow.
+            comptime for i in range(num_tiles - 1):
+                comptime cur_slot = i % 2
+                comptime nxt_slot = (i + 1) % 2
+                var nxt_k_byte_base = (i + 1) * Self.BK_BYTES
+
+                comptime for k in range(Self.num_k_mmas):
+                    mma_op.load_b_frag_preshuffled[k, slot=nxt_slot](
+                        b_loader, warp_n_off_global, nxt_k_byte_base
+                    )
+
+                mma_chain[cur_slot]()
+
+                # Issue tile i+2's A into the freed cur_slot once it exists.
+                # cur_slot held tile i (just read) so WAR is covered by the
+                # read above; tile i+1 lives in nxt_slot and is untouched.
+                comptime if i + 2 < num_tiles:
+                    load_a_tile_from_dram()
+                    copy_a_tile_to_smem(cur_slot)
+                load_scales_for_iter((i + 1) * mma_k_pair_per_tile)
+                # Publishes tile i+2's write (RAW for iter i+2) and tile i+1's
+                # B/scales; covers WAR on cur_slot's overwrite.
+                barrier()
+
+            # Epilogue: steady MFMA'd tiles [0, num_tiles-2]; tile num_tiles-1
+            # is resident in last_slot (staged in the prologue when
+            # num_tiles==2, else by the steady i+2 issue). MFMA it.
+            comptime last_slot = (num_tiles - 1) % 2
+            mma_chain_epilogue[last_slot]()
+            barrier()
+        elif Self.b_prefetch:
+            # Depth-2 outer-K software pipeline (1-deep A prime).
             #
             # Prologue: load A (smem), all B fragments (slot 0), and the
             # iter-0 scale dwords into VGPRs.
             load_a_tile_from_dram()
-            copy_a_tile_to_smem()
+            copy_a_tile_to_smem(0)
             comptime for k in range(Self.num_k_mmas):
                 mma_op.load_b_frag_preshuffled[k, slot=0](
                     b_loader, warp_n_off_global, 0
@@ -645,32 +897,33 @@ struct MXFP4MatmulAMD_PreB[
                         b_loader, warp_n_off_global, nxt_k_byte_base
                     )
 
-                var a_warp = a_smem.tile[Self.WM, Self.BK_BYTES](warp_m, 0)
-                comptime for k in range(Self.num_k_mmas):
-                    mma_op.load_a_frag_from_smem[k](a_warp)
-                    mma_op.mma[k, slot=cur_slot]()
+                mma_chain[cur_slot]()
 
+                # Double-buffered A: iter i reads `cur_slot` and writes the
+                # next tile into `nxt_slot`, so the old WAR barrier here is
+                # gone. The single end-of-iter barrier covers both RAW (write
+                # nxt -> read nxt next iter) and WAR (read cur -> overwrite cur
+                # next iter, whose nxt == cur).
                 load_a_tile_from_dram()
-                barrier()
-                copy_a_tile_to_smem()
+                copy_a_tile_to_smem(nxt_slot)
                 load_scales_for_iter((i + 1) * mma_k_pair_per_tile)
                 barrier()
 
             # Epilogue: MFMA the last iter from its slot.
             comptime last_slot = (num_tiles - 1) % 2
-            var a_warp = a_smem.tile[Self.WM, Self.BK_BYTES](warp_m, 0)
-            comptime for k in range(Self.num_k_mmas):
-                mma_op.load_a_frag_from_smem[k](a_warp)
-                mma_op.mma[k, slot=last_slot]()
+            mma_chain_epilogue[last_slot]()
             barrier()
         else:
             for k_iter in range(num_tiles):
+                var a_slot = k_iter % Self.num_a_slots
                 load_a_tile_from_dram()
-                copy_a_tile_to_smem()
+                copy_a_tile_to_smem(a_slot)
                 load_scales_for_iter(k_iter * mma_k_pair_per_tile)
                 barrier()
 
-                var a_warp = a_smem.tile[Self.WM, Self.BK_BYTES](warp_m, 0)
+                var a_warp = a_smem_slot(a_slot).tile[Self.WM, Self.BK_BYTES](
+                    warp_m, 0
+                )
                 var k_byte_base = k_iter * Self.BK_BYTES
 
                 comptime for k in range(Self.num_k_mmas):
