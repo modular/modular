@@ -755,10 +755,10 @@ class StructuredOutputHelper:
         A draft that flips enforcement on mid-window causes downstream
         slots to be constrained: e.g. a ``</think>`` draft exits the
         thinking region, so the slot immediately after it gets a filled
-        bitmask instead of staying unconstrained. Matcher and
-        enforcement state are rolled back at the end so committed-token
-        processing on the next batch replays the same transitions from
-        a clean state.
+        bitmask instead of staying unconstrained. The matcher is walked
+        on a deep copy (never mutated), and enforcement state is restored
+        at the end, so committed-token processing on the next batch
+        replays the same transitions from a clean state.
 
         Out-of-vocab drafts stop the speculative advance and leave any
         remaining slots unconstrained; they are not treated as errors.
@@ -775,49 +775,50 @@ class StructuredOutputHelper:
         assert ctx.matcher is not None
         fsm_snap = ctx.snapshot_grammar_state()
 
+        # Speculatively consume drafts on a throwaway copy of the matcher.
+        # LLMatcher.rollback() is not a perfect inverse when the consumed
+        # span crosses a grammar rule/repetition boundary — e.g.
+        # ``<|tool_call_begin|>`` can cause issues for rollback. Bypass this
+        # issue by taking a deep copy instead.
+        matcher_copy = ctx.matcher.deep_copy()
+
         # Slot 0: state immediately after committed tokens.
         if ctx.grammar_enforced:
             llguidance.numpy.fill_next_token_bitmask(
-                ctx.matcher,
+                matcher_copy,
                 bitmask_window[0, :].reshape(1, -1),
                 index=0,
             )
 
         vocab_size = self.vocab_size or 0
-        tokens_consumed = 0
         for i in range(drafts.shape[0]):
             draft_token = int(drafts[i])
             if draft_token < 0 or draft_token >= vocab_size:
                 break
 
             # EOS-class tokens are not part of the grammar — they signal end of
-            # generation. Skip the matcher so it stays in a clean
-            # terminal state. The speculative state is rolled back at
-            # the end via ``restore_grammar_state``, so this flip is
-            # transient. Drafts past EOS are pointless (the request
-            # ended), so exit the loop and leave remaining slots
-            # unconstrained.
+            # generation. Skip the matcher so it stays in a clean terminal
+            # state. ``restore_grammar_state`` undoes this transient flip.
+            # Drafts past EOS are pointless (the request ended), so exit the
+            # loop and leave remaining slots unconstrained.
             if draft_token in ctx.eos_tracker.eos_token_ids:
                 ctx.grammar_enforced = False
                 break
 
             consumed = False
             if ctx.update_enforcement_state(draft_token):
-                if ctx.matcher.try_consume_tokens([draft_token]) == 1:
-                    tokens_consumed += 1
+                if matcher_copy.try_consume_tokens([draft_token]) == 1:
                     consumed = True
                 else:
                     break
 
             if consumed or ctx.grammar_enforced:
                 llguidance.numpy.fill_next_token_bitmask(
-                    ctx.matcher,
+                    matcher_copy,
                     bitmask_window[i + 1, :].reshape(1, -1),
                     index=0,
                 )
 
-        if tokens_consumed > 0:
-            ctx.matcher.rollback(tokens_consumed)
         ctx.restore_grammar_state(fsm_snap)
 
     def _rejection_diagnostics(
