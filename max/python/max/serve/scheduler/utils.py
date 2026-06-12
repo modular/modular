@@ -515,6 +515,8 @@ class BatchMetrics:
 
         if self.total_disk_kv_blocks != 0:
             METRICS.cache_used_disk_kv_pct(self.used_disk_kv_pct * 100)
+            METRICS.cache_disk_blocks_read(self.disk_blocks_read)
+            METRICS.cache_disk_blocks_written(self.disk_blocks_written)
 
         if self.nixl_read_latency_avg_ms > 0:
             METRICS.dkv_nixl_read_latency(self.nixl_read_latency_avg_ms)

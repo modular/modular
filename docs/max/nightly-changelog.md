@@ -16,6 +16,23 @@ This version is still a work in progress.
 
 ### Inference server
 
+- Retuned the Prometheus/OpenTelemetry histogram buckets for MAX Serve metrics.
+  Previously every histogram shared one millisecond-latency bucket range, which
+  was inaccurate for non-latency metrics. Each histogram now uses bucket
+  boundaries matched to its actual range (percentages bucket 0–100, token and
+  occupancy counts use power-of-two buckets, batch size is fine-grained up to
+  512, throughput and time metrics use appropriately wide ranges, and time
+  metrics now extend out to 30 minutes). Quantile queries become more accurate;
+  dashboards that hardcoded specific bucket boundaries may need updating.
+- Changed `maxserve.cache.num_used_blocks` and `maxserve.cache.num_total_blocks`
+  from counters to gauges. These report an instantaneous level, so a gauge is
+  correct; as counters their exported values were meaningless. The Prometheus
+  type changes to `gauge` and the exported series drops the counter `_total`
+  suffix.
+- Added `maxserve.cache.disk_blocks_read` and
+  `maxserve.cache.disk_blocks_written` counters, reporting KV blocks read from
+  and written to the disk cache tier when tiered (disk) KV caching is enabled.
+
 ### `max` CLI
 
 ### Python API

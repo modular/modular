@@ -217,14 +217,12 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
         unit="ms",
         description="Distribution of batch execution time",
     ),  # type: ignore
-    # semantically, this should be a gauge, but it seems unimplemented in the OTEL SDK
-    "maxserve.cache.num_used_blocks": _meter.create_counter(
+    "maxserve.cache.num_used_blocks": _meter.create_gauge(
         "maxserve.cache.num_used_blocks",
         unit="blocks",
         description="Number of used blocks or pages, measured at the scheduler after batch work.",
     ),  # type: ignore
-    # semantically, this should be a gauge, but it seems unimplemented in the OTEL SDK
-    "maxserve.cache.num_total_blocks": _meter.create_counter(
+    "maxserve.cache.num_total_blocks": _meter.create_gauge(
         "maxserve.cache.num_total_blocks",
         unit="blocks",
         description="Total number of blocks or pages, measured at the scheduler after batch work.",
@@ -346,6 +344,16 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
         "maxserve.cache.d2h_blocks_copied",
         unit="blocks",
         description="Cumulative device->host KV block copies.",
+    ),  # type: ignore
+    "maxserve.cache.disk_blocks_read": _meter.create_counter(
+        "maxserve.cache.disk_blocks_read",
+        unit="blocks",
+        description="Cumulative KV blocks read from the disk cache tier.",
+    ),  # type: ignore
+    "maxserve.cache.disk_blocks_written": _meter.create_counter(
+        "maxserve.cache.disk_blocks_written",
+        unit="blocks",
+        description="Cumulative KV blocks written to the disk cache tier.",
     ),  # type: ignore
     "maxserve.spec_decode.avg_acceptance_length": _meter.create_histogram(
         "maxserve.spec_decode.avg_acceptance_length",
@@ -970,6 +978,26 @@ class _AsyncMetrics:
         self.client.send_measurement(
             MaxMeasurement(
                 "maxserve.cache.d2h_blocks_copied",
+                count,
+                self.extra_attributes,
+            ),
+            MetricLevel.DETAILED,
+        )
+
+    def cache_disk_blocks_read(self, count: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.cache.disk_blocks_read",
+                count,
+                self.extra_attributes,
+            ),
+            MetricLevel.DETAILED,
+        )
+
+    def cache_disk_blocks_written(self, count: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.cache.disk_blocks_written",
                 count,
                 self.extra_attributes,
             ),
