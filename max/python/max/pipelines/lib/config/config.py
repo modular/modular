@@ -1059,6 +1059,86 @@ class PipelineConfig(ConfigFileModel):
                 # We should be able to override this value for all config objects.
                 continue
 
+    def _resolve_speculative_target_architecture(self) -> None:
+        """Override the target architecture for unified spec-decode pipelines.
+
+        Unified EAGLE / DFlash / MTP pipelines fold the draft into a dedicated
+        target architecture (e.g. ``DeepseekV3ForCausalLM`` →
+        ``UnifiedMTPDeepseekV3ForCausalLM``). This mutates
+        ``model.huggingface_config.architectures[0]`` in place.
+
+        This must run *before* the architecture is resolved from
+        ``models.main_architecture_name`` (i.e. before :meth:`resolve` is
+        called), so that the resolved ``arch`` — consumed by memory estimation,
+        the overlap scheduler, parser resolution, and ``pipeline_model``
+        construction — reflects the override. The registry invokes it at that
+        point. It is a no-op when speculative decoding is disabled.
+        """
+        if not self.speculative:
+            return
+
+        target_archs = self.model.huggingface_config.architectures
+        if target_archs[0] == "LlamaForCausalLM":
+            if self.speculative.is_dflash():
+                target_archs[0] = "UnifiedDflashLlama3ForCausalLM"
+            else:
+                target_archs[0] = "UnifiedEagleLlama3ForCausalLM"
+        if target_archs[0] == "DeepseekV3ForCausalLM":
+            # Choose between MTP (NextN layer baked into target ckpt) and
+            # Eagle3 (separate draft ckpt with arch
+            # ``Eagle3DeepseekV2ForCausalLM``) based on the draft arch.
+            draft_archs = (
+                self.draft_model.huggingface_config.architectures
+                if self.draft_model is not None
+                else None
+            )
+            if draft_archs is None:
+                target_archs[0] = "UnifiedMTPDeepseekV3ForCausalLM"
+            elif (
+                draft_archs and draft_archs[0] == "Eagle3DeepseekV2ForCausalLM"
+            ):
+                target_archs[0] = "Eagle3DeepseekV3ForCausalLM"
+            elif draft_archs and draft_archs[0] == "LlamaForCausalLMEagle3":
+                target_archs[0] = "Eagle3MHADeepseekV3ForCausalLM"
+            else:
+                if not draft_archs:
+                    raise ValueError(
+                        "Draft model HF config has empty"
+                        " ``architectures=[]``. Expected"
+                        " 'Eagle3DeepseekV2ForCausalLM' (Eagle3 draft),"
+                        " 'LlamaForCausalLMEagle3' (Llama MHA Eagle3"
+                        " draft), or no draft model (MTP path)."
+                    )
+                raise ValueError(
+                    "Unrecognized draft architecture for DeepseekV3"
+                    f" target: {draft_archs[0]!r}. Expected"
+                    " 'Eagle3DeepseekV2ForCausalLM' (Eagle3 draft),"
+                    " 'LlamaForCausalLMEagle3' (Llama MHA Eagle3 draft),"
+                    " or no draft model (MTP path)."
+                )
+        if target_archs[0] == "KimiK25ForConditionalGeneration":
+            draft_archs = (
+                self.draft_model.huggingface_config.architectures
+                if self.draft_model is not None
+                else None
+            )
+            if self.speculative.is_dflash():
+                target_archs[0] = "UnifiedDflashKimiK25ForCausalLM"
+            elif draft_archs and draft_archs[0] == "LlamaForCausalLMEagle3":
+                # MLA target + MHA (Llama-style) Eagle3 draft.
+                target_archs[0] = "Eagle3MHAKimiK25ForCausalLM"
+            else:
+                # MLA target + MLA Eagle3 draft (existing path).
+                target_archs[0] = "Eagle3DeepseekV2ForCausalLM"
+        if target_archs[0] == "Gemma4ForConditionalGeneration":
+            draft_archs = (
+                self.draft_model.huggingface_config.architectures
+                if self.draft_model is not None
+                else None
+            )
+            if draft_archs and draft_archs[0] == "Gemma4AssistantForCausalLM":
+                target_archs[0] = "UnifiedMTPGemma4ForCausalLM"
+
     def resolve(
         self,
         arch: Any,
@@ -1101,73 +1181,14 @@ class PipelineConfig(ConfigFileModel):
         if self.lora and self.lora.enable_lora:
             self.model.validate_lora_compatibility()
 
-        # Override target architecture for unified EAGLE / DFlash pipelines.
-        if self.speculative:
-            target_archs = self.model.huggingface_config.architectures
-            if target_archs[0] == "LlamaForCausalLM":
-                if self.speculative.is_dflash():
-                    target_archs[0] = "UnifiedDflashLlama3ForCausalLM"
-                else:
-                    target_archs[0] = "UnifiedEagleLlama3ForCausalLM"
-            if target_archs[0] == "DeepseekV3ForCausalLM":
-                # Choose between MTP (NextN layer baked into target ckpt) and
-                # Eagle3 (separate draft ckpt with arch
-                # ``Eagle3DeepseekV2ForCausalLM``) based on the draft arch.
-                draft_archs = (
-                    self.draft_model.huggingface_config.architectures
-                    if self.draft_model is not None
-                    else None
-                )
-                if draft_archs is None:
-                    target_archs[0] = "UnifiedMTPDeepseekV3ForCausalLM"
-                elif (
-                    draft_archs
-                    and draft_archs[0] == "Eagle3DeepseekV2ForCausalLM"
-                ):
-                    target_archs[0] = "Eagle3DeepseekV3ForCausalLM"
-                elif draft_archs and draft_archs[0] == "LlamaForCausalLMEagle3":
-                    target_archs[0] = "Eagle3MHADeepseekV3ForCausalLM"
-                else:
-                    if not draft_archs:
-                        raise ValueError(
-                            "Draft model HF config has empty"
-                            " ``architectures=[]``. Expected"
-                            " 'Eagle3DeepseekV2ForCausalLM' (Eagle3 draft),"
-                            " 'LlamaForCausalLMEagle3' (Llama MHA Eagle3"
-                            " draft), or no draft model (MTP path)."
-                        )
-                    raise ValueError(
-                        "Unrecognized draft architecture for DeepseekV3"
-                        f" target: {draft_archs[0]!r}. Expected"
-                        " 'Eagle3DeepseekV2ForCausalLM' (Eagle3 draft),"
-                        " 'LlamaForCausalLMEagle3' (Llama MHA Eagle3 draft),"
-                        " or no draft model (MTP path)."
-                    )
-            if target_archs[0] == "KimiK25ForConditionalGeneration":
-                draft_archs = (
-                    self.draft_model.huggingface_config.architectures
-                    if self.draft_model is not None
-                    else None
-                )
-                if self.speculative.is_dflash():
-                    target_archs[0] = "UnifiedDflashKimiK25ForCausalLM"
-                elif draft_archs and draft_archs[0] == "LlamaForCausalLMEagle3":
-                    # MLA target + MHA (Llama-style) Eagle3 draft.
-                    target_archs[0] = "Eagle3MHAKimiK25ForCausalLM"
-                else:
-                    # MLA target + MLA Eagle3 draft (existing path).
-                    target_archs[0] = "Eagle3DeepseekV2ForCausalLM"
-            if target_archs[0] == "Gemma4ForConditionalGeneration":
-                draft_archs = (
-                    self.draft_model.huggingface_config.architectures
-                    if self.draft_model is not None
-                    else None
-                )
-                if (
-                    draft_archs
-                    and draft_archs[0] == "Gemma4AssistantForCausalLM"
-                ):
-                    target_archs[0] = "UnifiedMTPGemma4ForCausalLM"
+        # NOTE: the unified spec-decode target-architecture override
+        # (``_resolve_speculative_target_architecture``) is applied by the
+        # registry *before* it resolves ``arch`` and passes it in here, so that
+        # the ``arch`` consumed by memory estimation, the overlap scheduler, and
+        # parser resolution below already reflects the override. Applying it
+        # here (after ``arch`` is resolved) would leave those consumers using
+        # the stale pre-override architecture. See SERVOPT regression from
+        # PipelineConfig/registry decoupling (#88511).
 
         # Validate KV connector configuration
         _resolve_kvconnector_config(self.model.kv_cache)

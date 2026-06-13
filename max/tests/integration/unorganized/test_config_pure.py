@@ -495,6 +495,80 @@ class TestNeedsBitmaskConstraints:
         assert config.needs_bitmask_constraints is expected
 
 
+class TestSpeculativeArchitectureOverride:
+    """Tests for ``_resolve_speculative_target_architecture``.
+
+    The override must rewrite ``model.huggingface_config.architectures[0]`` to
+    the unified spec-decode target arch. The registry applies it *before*
+    resolving ``arch`` so memory estimation / scheduler / parser resolution all
+    see the overridden arch (regression guard for #88511).
+    """
+
+    @staticmethod
+    def _make_config(
+        target_arch: str,
+        *,
+        speculative: bool = True,
+        is_dflash: bool = False,
+        draft_arch: str | None = None,
+    ) -> SimpleNamespace:
+        """Build a minimal stand-in exposing the attrs the method reads."""
+        model = SimpleNamespace(
+            huggingface_config=SimpleNamespace(architectures=[target_arch])
+        )
+        draft_model = None
+        if draft_arch is not None:
+            draft_model = SimpleNamespace(
+                huggingface_config=SimpleNamespace(architectures=[draft_arch])
+            )
+        spec = (
+            SimpleNamespace(is_dflash=lambda: is_dflash)
+            if speculative
+            else None
+        )
+        return SimpleNamespace(
+            speculative=spec, model=model, draft_model=draft_model
+        )
+
+    @staticmethod
+    def _resolved_arch(cfg: SimpleNamespace) -> str:
+        # Invoke the method unbound on the lightweight stand-in.
+        PipelineConfig._resolve_speculative_target_architecture(cfg)  # type: ignore[arg-type]
+        return cfg.model.huggingface_config.architectures[0]
+
+    def test_deepseek_mtp_no_draft(self) -> None:
+        """DeepseekV3 + no draft (NextN baked in) -> unified MTP arch."""
+        cfg = self._make_config("DeepseekV3ForCausalLM", draft_arch=None)
+        assert self._resolved_arch(cfg) == "UnifiedMTPDeepseekV3ForCausalLM"
+
+    def test_deepseek_eagle3_draft(self) -> None:
+        cfg = self._make_config(
+            "DeepseekV3ForCausalLM", draft_arch="Eagle3DeepseekV2ForCausalLM"
+        )
+        assert self._resolved_arch(cfg) == "Eagle3DeepseekV3ForCausalLM"
+
+    def test_llama_eagle(self) -> None:
+        cfg = self._make_config("LlamaForCausalLM")
+        assert self._resolved_arch(cfg) == "UnifiedEagleLlama3ForCausalLM"
+
+    def test_llama_dflash(self) -> None:
+        cfg = self._make_config("LlamaForCausalLM", is_dflash=True)
+        assert self._resolved_arch(cfg) == "UnifiedDflashLlama3ForCausalLM"
+
+    def test_gemma4_mtp(self) -> None:
+        cfg = self._make_config(
+            "Gemma4ForConditionalGeneration",
+            draft_arch="Gemma4AssistantForCausalLM",
+        )
+        assert self._resolved_arch(cfg) == "UnifiedMTPGemma4ForCausalLM"
+
+    def test_no_speculative_is_noop(self) -> None:
+        cfg = self._make_config(
+            "DeepseekV3ForCausalLM", speculative=False, draft_arch=None
+        )
+        assert self._resolved_arch(cfg) == "DeepseekV3ForCausalLM"
+
+
 class TestDraftModelDefaultsInheritance:
     """Tests that draft model inherits certain defaults from the target model."""
 

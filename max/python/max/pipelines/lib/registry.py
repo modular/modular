@@ -800,6 +800,15 @@ class PipelineRegistry:
             pipeline_config.runtime.custom_architectures
         )
 
+        # Apply the unified spec-decode target-architecture override (e.g.
+        # "DeepseekV3ForCausalLM" -> "UnifiedMTPDeepseekV3ForCausalLM") *before*
+        # resolving ``arch``, so the resolved architecture passed to
+        # ``pipeline_config.resolve()`` is consumed by memory estimation, the
+        # overlap scheduler, and parser resolution as the overridden arch — not
+        # the stale base arch. Resolving after the override (as the inline block
+        # in ``resolve()`` did) regressed all unified spec-decode models (#88511).
+        pipeline_config._resolve_speculative_target_architecture()
+
         # MAX pipeline
         if override_architecture:
             arch = self._resolve_architecture(override_architecture, task)
@@ -849,12 +858,9 @@ class PipelineRegistry:
                     "MAX-Optimized architecture not found for `draft_model`"
                 )
 
-        # resolve() may override the target architecture for unified spec-decode
-        # models (it mutates architectures[0] in-place, e.g.
-        # "Gemma4ForConditionalGeneration" → "UnifiedMTPGemma4ForCausalLM").
-        # Snapshot the name before so we can detect the mutation after.
-        pre_resolve_arch_name = pipeline_config.models.main_architecture_name
-
+        # The unified spec-decode target-architecture override is applied above
+        # (before ``arch`` is resolved), so ``arch`` already reflects it here
+        # and no post-resolve re-resolution is needed.
         pipeline_config.resolve(
             arch,
             draft_arch=draft_arch,
@@ -864,19 +870,6 @@ class PipelineRegistry:
         # enable_overlap_scheduler is set correctly (e.g. forced True when
         # --device-graph-capture is explicitly passed).
         pipeline_class = get_pipeline_for_task(task, pipeline_config)
-
-        post_resolve_arch_name = pipeline_config.models.main_architecture_name
-        if post_resolve_arch_name != pre_resolve_arch_name:
-            arch = self.retrieve_architecture(
-                architecture_name=post_resolve_arch_name,
-                prefer_module_v3=pipeline_config.runtime.prefer_module_v3,
-                task=task,
-            )
-            if arch is None:
-                raise ValueError(
-                    f"No architecture found for overridden architecture"
-                    f" '{post_resolve_arch_name}'"
-                )
 
         arch_config = arch.config.initialize(pipeline_config)
         max_length = arch_config.get_max_seq_len()
