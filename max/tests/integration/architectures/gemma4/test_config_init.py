@@ -33,13 +33,15 @@ from max.pipelines.architectures.gemma4.model_config import (
     _resolve_num_global_kv_heads,
 )
 from max.pipelines.lib import KVCacheConfig
-from transformers import AutoConfig
+from transformers import AutoConfig, PretrainedConfig
 
 CONFIG_DIR = Path(__file__).parent / "configs" / "gemma4_e4b"
 
 
-def _load_hf_config() -> AutoConfig:
-    return AutoConfig.from_pretrained(str(CONFIG_DIR), trust_remote_code=True)
+def _load_hf_config() -> PretrainedConfig:
+    # No trust_remote_code: importing model_config above registers the
+    # gemma4 config shim, so AutoConfig resolves the local fixture natively.
+    return AutoConfig.from_pretrained(str(CONFIG_DIR))
 
 
 def _mock_pipeline_config() -> Mock:
