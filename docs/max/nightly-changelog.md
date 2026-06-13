@@ -16,6 +16,15 @@ This version is still a work in progress.
 
 ### Inference server
 
+- Fixed a structured-output runaway: a `response_format` JSON schema that omits
+  the root `"type"` (for example `{"properties": {"x": {}}}`, valid JSON Schema)
+  previously compiled to a grammar that permitted a bare, unbounded top-level
+  value, so a model that looped inside that value could never emit a terminator
+  and generated until `max_length` (`finish_reason="length"`). Such schemas with
+  an object-implying keyword (`properties`, `required`, `additionalProperties`,
+  `patternProperties`) are now normalized to `"type": "object"` before grammar
+  compilation, matching the behavior of xgrammar-based engines. A genuinely
+  empty `{}` schema is still treated as "any value".
 - Retuned the Prometheus/OpenTelemetry histogram buckets for MAX Serve metrics.
   Previously every histogram shared one millisecond-latency bucket range, which
   was inaccurate for non-latency metrics. Each histogram now uses bucket

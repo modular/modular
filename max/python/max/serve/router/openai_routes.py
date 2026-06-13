@@ -76,6 +76,7 @@ from max.serve.parser import (
 from max.serve.parser.tool_call_normalization import (
     _normalize_tools_parameters,
     _validate_response_format_schema,
+    normalize_response_format_schema,
 )
 from max.serve.parser.tool_call_validation import log_tool_call_conformance
 from max.serve.pipelines.llm import (
@@ -1661,6 +1662,12 @@ def _create_response_format(
 
     # Validate the schema early to return 400 instead of crashing the model worker.
     _validate_json_schema(json_schema)
+
+    # Default a missing root ``type`` to ``"object"`` before the schema
+    # reaches the grammar backend. An untyped root compiles to a grammar that
+    # permits a bare unbounded top-level value, which lets a looping model run
+    # to ``max_length`` (the runaway-output incident).
+    json_schema = normalize_response_format_schema(json_schema)
 
     # Enforce grammar from the first token only when there is an actual
     # schema to enforce. The json_schema can also be used to create a grammar,

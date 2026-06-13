@@ -89,5 +89,6 @@ modular_py_test(
         "//max/python/max/serve/router",
         "//max/python/max/serve/schemas",
         requirement("jsonschema"),
+        requirement("llguidance"),
     ],
 )
