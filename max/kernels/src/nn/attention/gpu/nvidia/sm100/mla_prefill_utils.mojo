@@ -22,8 +22,7 @@ from nn.attention.gpu.nvidia.sm100.attention import (
     SM100_RESERVED_SMEM_BYTES,
 )
 from nn.attention.gpu.nvidia.sm100.attention_utils import (
-    SM100TensorAccumulatorSS,
-    SM100TensorAccumulatorTS,
+    SM100TensorAccumulator,
     FA4MiscMBars,
     SharedMemPointer,
     TMADestination,
@@ -31,7 +30,7 @@ from nn.attention.gpu.nvidia.sm100.attention_utils import (
     elect,
     elect_mma_arrive,
 )
-from nn.attention.gpu.nvidia.sm90.attention import (
+from nn.attention.gpu.nvidia.common import (
     OptionalPointer,
     MHAPosition,
 )
@@ -94,8 +93,6 @@ struct MLAConfig[
     var TMEM_O1: Int
     var TMEM_P0: Int
     var TMEM_P1: Int
-    var TMEM_C0: Int
-    var TMEM_C1: Int
     var tmem_used: Int
     var num_kv_stages: Int
     var num_qk_stages: Int  # Stages for Q@K' (K loading pipelining)
@@ -182,8 +179,6 @@ struct MLAConfig[
         self.TMEM_O1 = self.fa4_config.TMEM_O1
         self.TMEM_P0 = self.fa4_config.TMEM_P0
         self.TMEM_P1 = self.fa4_config.TMEM_P1
-        self.TMEM_C0 = self.fa4_config.TMEM_C0
-        self.TMEM_C1 = self.fa4_config.TMEM_C1
 
     @always_inline
     def num_qo(self) -> Int:
@@ -598,24 +593,26 @@ struct SM100MLA[
 
     # First MMA is Q@K' (can be staged by num_qk_stages)
     # (BM x depth) @ (BN x depth)' -> (BM x BN)
-    comptime UMMA0Type = SM100TensorAccumulatorSS[
+    comptime UMMA0Type = SM100TensorAccumulator[
         Self.qkv_dtype,
         Self.accum_dtype,
         MMA_M=Self.MMA_M,  # generally 128
         MMA_N=Self.BN,
         BK=Self.BK0,  # BK in memory depth
+        a_tmem=False,
         mma_kind=Self.nope_mma_kind,
         swizzle_a=Self.config.qkv_swizzle_mode,
         swizzle_b=Self.config.qkv_swizzle_mode,
         transpose_b=True,
         num_stages=Self.num_qk_stages,
     ]
-    comptime UMMA0RopeType = SM100TensorAccumulatorSS[
+    comptime UMMA0RopeType = SM100TensorAccumulator[
         Self.rope_mma_dtype,
         Self.accum_dtype,
         MMA_M=Self.MMA_M,
         MMA_N=Self.BN,
         BK=Self.rope_depth,
+        a_tmem=False,
         mma_kind=Self.rope_mma_kind,
         swizzle_a=Self.config.rope_mma_swizzle_mode,
         swizzle_b=Self.config.rope_mma_swizzle_mode,
@@ -624,12 +621,13 @@ struct SM100MLA[
     ]
     # Second MMA is P@V
     # (BM x BN) @ (BN x depth) -> (BM x depth)
-    comptime UMMA1Type = SM100TensorAccumulatorTS[
+    comptime UMMA1Type = SM100TensorAccumulator[
         Self.qkv_dtype,
         Self.accum_dtype,
         MMA_M=Self.MMA_M,
         MMA_N=Self.nope_depth,  # 128
         BK=Self.BN,
+        a_tmem=True,
         mma_kind=Self.nope_mma_kind,
         swizzle_b=Self.config.qkv_swizzle_mode,
         transpose_b=False,

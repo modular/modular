@@ -53,6 +53,8 @@ from extensibility import (
     ElementwiseUnaryMixedOp,
     ElementwiseUnaryOp,
 )
+from layout import TileTensor
+from layout.tile_layout import TensorLayout
 from std.logger import Logger
 
 comptime logger = Logger()
@@ -71,6 +73,18 @@ struct Add(ElementwiseBinaryOp):
         width: SIMDSize,
     ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return lhs + rhs
+
+    @staticmethod
+    def elementwise[
+        dtype: DType,
+        LayoutType: TensorLayout,
+    ](
+        lhs: TileTensor[dtype, LayoutType, MutAnyOrigin],
+        rhs: TileTensor[dtype, LayoutType, MutAnyOrigin],
+    ) -> TileTensor[dtype, LayoutType, MutAnyOrigin]:
+        # TODO(GEX-3799): implement TileTensor element-wise add.
+        _ = rhs
+        return lhs
 
 
 @compiler.register("mo.sub")
@@ -256,6 +270,18 @@ struct ReLU(ElementwiseUnaryOp):
         width: SIMDSize,
     ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return relu(x)
+
+    @staticmethod
+    def elementwise[
+        dtype: DType,
+        LayoutType: TensorLayout,
+    ](
+        x: TileTensor[dtype, LayoutType, MutAnyOrigin],
+    ) -> TileTensor[
+        dtype, LayoutType, MutAnyOrigin
+    ]:
+        # TODO(GEX-3799): implement TileTensor element-wise relu.
+        return x
 
 
 @compiler.register("mo.gelu")

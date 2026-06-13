@@ -678,7 +678,7 @@ def kernel_6[
     comptime c_smem_tile_t = LayoutTensor[
         c_type,
         c_smem_layout,
-        MutAnyOrigin,
+        _,
         address_space=AddressSpace.SHARED,
         alignment=128,
     ]
@@ -687,7 +687,7 @@ def kernel_6[
         UnsafePointer[
             Scalar[a_type],
             address_space=AddressSpace.SHARED,
-            ExternalOrigin[mut=True],
+            UntrackedOrigin[mut=True],
         ]
     ](
         external_memory[
@@ -712,7 +712,6 @@ def kernel_6[
     var a_smem = LayoutTensorIter[
         a_type,
         a_smem_layout,
-        MutAnyOrigin,
         address_space=AddressSpace.SHARED,
         alignment=128,
         circular=False,
@@ -724,7 +723,6 @@ def kernel_6[
     var b_smem = LayoutTensorIter[
         b_type,
         b_smem_layout,
-        MutAnyOrigin,
         address_space=AddressSpace.SHARED,
         alignment=128,
         circular=False,
@@ -916,9 +914,9 @@ def blackwell_kernel_6[
     c_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     cta_group: Int = 1,
 ](
-    c: LayoutTensor[c_type, c_layout, MutExternalOrigin],
-    a: LayoutTensor[a_type, a_layout, MutExternalOrigin],
-    b: LayoutTensor[b_type, b_layout, MutExternalOrigin],
+    c: LayoutTensor[c_type, c_layout, MutUntrackedOrigin],
+    a: LayoutTensor[a_type, a_layout, MutUntrackedOrigin],
+    b: LayoutTensor[b_type, b_layout, MutUntrackedOrigin],
     ctx: DeviceContext,
 ) raises:
     var M = c.dim[0]()

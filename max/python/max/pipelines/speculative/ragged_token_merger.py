@@ -15,9 +15,7 @@
 
 __all__ = ["RaggedTokenMerger", "ragged_token_merger"]
 
-from max.driver import Buffer
 from max.dtype import DType
-from max.engine import InferenceSession
 from max.graph import DeviceRef, Dim, Graph, TensorType, TensorValue, ops
 from max.nn.kernels import merge_ragged_tensors
 from max.nn.layer import Module
@@ -123,37 +121,3 @@ class RaggedTokenMerger(Module):
         )
 
         return merged_tensor, merged_offsets
-
-
-class _RaggedTokenMergerRunner:
-    """Runner for the ragged token merger."""
-
-    def __init__(
-        self, session: InferenceSession, device_ref: DeviceRef
-    ) -> None:
-        self._model = session.load(ragged_token_merger(device=device_ref))
-        self._device = device_ref.to_device()
-
-    def run(
-        self,
-        tokens: Buffer,
-        input_row_offsets: Buffer,
-        draft_tokens: Buffer,
-    ) -> tuple[Buffer, Buffer]:
-        """Runs the ragged token merger."""
-        if tokens.device != self._device:
-            raise ValueError(
-                f"Tokens must be on device {self._device}, got {tokens.device}"
-            )
-        if input_row_offsets.device != self._device:
-            raise ValueError(
-                f"Input row offsets must be on device {self._device}, got {input_row_offsets.device}"
-            )
-        if draft_tokens.device != self._device:
-            raise ValueError(
-                f"Draft tokens must be on device {self._device}, got {draft_tokens.device}"
-            )
-        merged_tokens, merged_offsets = self._model(
-            tokens, input_row_offsets, draft_tokens
-        )
-        return merged_tokens, merged_offsets

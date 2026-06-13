@@ -98,8 +98,19 @@ class ChatJudgeBenchmarkDataset(LocalBenchmarkDataset):
         with open(self.dataset_path) as f:
             raw_sessions = [json.loads(line) for line in f if line.strip()]
 
+        # Shuffle (keeping original line index for stable ids) then tokenize
+        # lazily, stopping once num_sessions usable ones are collected, so we
+        # only tokenize what we'll actually use.
+        indexed_sessions = list(enumerate(raw_sessions))
+        if shuffle:
+            rng = random.Random(seed)
+            rng.shuffle(indexed_sessions)
+
         chat_sessions: list[ChatSession] = []
-        for line_idx, raw in enumerate(raw_sessions):
+        for line_idx, raw in indexed_sessions:
+            if len(chat_sessions) >= num_sessions:
+                break
+
             turns = raw.get("turns") or []
             if not turns:
                 continue
@@ -137,15 +148,9 @@ class ChatJudgeBenchmarkDataset(LocalBenchmarkDataset):
                 f"chat-judge: no sessions found in {self.dataset_path}"
             )
 
-        if shuffle:
-            rng = random.Random(seed)
-            rng.shuffle(chat_sessions)
-
-        if num_sessions < len(chat_sessions):
-            chat_sessions = chat_sessions[:num_sessions]
-        elif len(chat_sessions) < num_sessions:
+        if len(chat_sessions) < num_sessions:
             logger.warning(
-                "chat-judge: requested %d sessions but only %d available in %s",
+                "chat-judge: requested %d sessions but only %d usable in %s",
                 num_sessions,
                 len(chat_sessions),
                 self.dataset_path,

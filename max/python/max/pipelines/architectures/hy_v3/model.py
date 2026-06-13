@@ -28,30 +28,25 @@ from max.graph.weights import Weights, WeightsAdapter
 from max.nn.comm.ep import EPCommInitializer, EPConfig
 from max.nn.comm.ep.ep_config import (
     calculate_ep_max_tokens_per_rank,
-    estimate_ep_memory_usage,
 )
 from max.pipelines.architectures.llama3.model import (
     Llama3Inputs,
     LlamaModelBase,
 )
-from max.pipelines.core import TextContext
+from max.pipelines.context import TextContext
 from max.pipelines.lib import (
     CompilationTimer,
-    PipelineConfig,
 )
 from max.pipelines.lib.interfaces import AlwaysSignalBuffersMixin
-from max.pipelines.lib.interfaces.pipeline_model import ModelInputs
 from max.pipelines.lib.utils import (
     compute_data_parallel_splits,
     parse_state_dict_from_weights,
 )
-from max.pipelines.modeling.config_enums import supported_encoding_dtype
 from max.support.algorithm import flatten2d
-from transformers import AutoConfig
 from typing_extensions import override
 
 from .hy_v3 import HYV3
-from .model_config import HYV3Config, hyv3_num_experts_from_config
+from .model_config import HYV3Config
 
 
 @dataclass
@@ -95,75 +90,6 @@ class HYV3Model(AlwaysSignalBuffersMixin, LlamaModelBase):
     norm_method: Literal["rms_norm"] | Literal["layer_norm"] = "rms_norm"
     attention_bias: bool = False
     state_dict: dict[str, Any]
-
-    _GRAPH_CAPTURE_HEADROOM_BYTES_PER_DEVICE = 8 * 1024**3
-
-    @classmethod
-    def estimate_activation_memory(
-        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
-    ) -> int:
-        encoding = pipeline_config.model.quantization_encoding
-        n_gpus_per_node = len(pipeline_config.model.device_specs)
-        # Use moe_intermediate_size for EP buffer math, not the
-        # dense-layer intermediate_size (the latter is ~9x larger on
-        # Hy3 and would over-reserve).
-        num_experts = hyv3_num_experts_from_config(huggingface_config)
-        moe_dim = int(huggingface_config.moe_intermediate_size)
-        hidden_size = int(huggingface_config.hidden_size)
-        top_k = int(huggingface_config.num_experts_per_tok)
-
-        ep_buffer_memory = 0
-        moe_activation_memory = 0
-        ep_size = pipeline_config.runtime.ep_size
-        if ep_size > 1 and encoding is not None:
-            ep_max_rank_send_tokens = calculate_ep_max_tokens_per_rank(
-                max_batch_input_tokens=pipeline_config.runtime.max_batch_input_tokens,
-                ep_size=ep_size,
-                data_parallel_degree=pipeline_config.model.data_parallel_degree,
-            )
-            ep_dispatch_dtype = supported_encoding_dtype(encoding)
-
-            max_recv_tokens_per_rank = ep_max_rank_send_tokens * min(
-                num_experts,
-                ep_size * top_k,
-            )
-
-            moe_activation_memory += (
-                max_recv_tokens_per_rank
-                * moe_dim
-                * ep_dispatch_dtype.size_in_bytes
-            )
-            moe_activation_memory += (
-                max_recv_tokens_per_rank
-                * hidden_size
-                * DType.bfloat16.size_in_bytes
-            )
-            moe_activation_memory += 256 * 1024 * 1024
-            moe_activation_memory *= n_gpus_per_node
-
-            n_nodes = max(ep_size // n_gpus_per_node, 1)
-            per_device_ep_memory = estimate_ep_memory_usage(
-                hidden_size=hidden_size,
-                dispatch_dtype=ep_dispatch_dtype,
-                combine_dtype=DType.bfloat16,
-                max_tokens_per_rank=ep_max_rank_send_tokens,
-                n_experts=num_experts,
-                n_nodes=n_nodes,
-                n_gpus_per_node=n_gpus_per_node,
-                top_k=top_k,
-            )
-            ep_buffer_memory = per_device_ep_memory * n_gpus_per_node * 2
-
-        activation_memory = moe_activation_memory + ep_buffer_memory
-
-        graph_capture_headroom = 0
-        if pipeline_config.runtime.device_graph_capture:
-            graph_capture_headroom = (
-                cls._GRAPH_CAPTURE_HEADROOM_BYTES_PER_DEVICE * n_gpus_per_node
-            )
-            activation_memory += graph_capture_headroom
-
-        return activation_memory
 
     @override
     def prepare_initial_token_inputs(
@@ -270,30 +196,6 @@ class HYV3Model(AlwaysSignalBuffersMixin, LlamaModelBase):
             data_parallel_splits=data_parallel_splits,
             ep_inputs=ep_inputs,
             host_input_row_offsets=host_row_offsets,
-        )
-
-    @override
-    def prepare_next_token_inputs(
-        self,
-        next_tokens: Buffer,
-        prev_model_inputs: ModelInputs,
-    ) -> HYV3Inputs:
-        assert isinstance(prev_model_inputs, HYV3Inputs)
-        llama_inputs = super().prepare_next_token_inputs(
-            next_tokens, prev_model_inputs
-        )
-        host_input_row_offsets = Buffer.from_numpy(
-            np.arange(llama_inputs.input_row_offsets.shape[0], dtype=np.uint32)
-        )
-        return HYV3Inputs(
-            tokens=llama_inputs.tokens,
-            input_row_offsets=llama_inputs.input_row_offsets,
-            signal_buffers=llama_inputs.signal_buffers,
-            kv_cache_inputs=llama_inputs.kv_cache_inputs,
-            return_n_logits=llama_inputs.return_n_logits,
-            data_parallel_splits=llama_inputs.data_parallel_splits,
-            ep_inputs=prev_model_inputs.ep_inputs,
-            host_input_row_offsets=host_input_row_offsets,
         )
 
     @override

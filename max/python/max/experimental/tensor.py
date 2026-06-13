@@ -117,17 +117,19 @@ from max.experimental.sharding import (
     PlacementMapping,
     Replicated,
     Sharded,
-    is_fully_replicated,
-    shard_shape,
 )
+from max.experimental.sharding.mappings import is_fully_replicated
 from max.experimental.sharding.per_shard_dim import (
     is_per_shard_dim,
+    local_shape_at,
     make_per_shard_dim,
 )
 from max.experimental.support import contextvar_context, driver_tensor_type
 from max.graph import (
+    Dim,
     DimLike,
     ShapeLike,
+    StaticDim,
     TensorType,
     TensorValueLike,
     ops,
@@ -780,6 +782,60 @@ class Tensor(DLPackArray, HasTensorValue):
         return current_realization_context().create_unrealized((value,))
 
     @classmethod
+    def from_dim(cls, dim: DimLike) -> Tensor:
+        """Materializes a dimension as a rank-0 (scalar) tensor on CPU.
+
+        Converts a shape dimension — static, symbolic, or an algebraic
+        expression such as ``batch * seq`` — into a scalar tensor holding its
+        runtime value. This is the supported way to predicate runtime control
+        flow on a symbolic dimension: a symbolic :obj:`~max.graph.Dim` cannot be
+        compared to a Python ``int`` at trace time (``int(dim)`` and
+        ``dim <= 2`` both fail for dynamic dims), but the materialized tensor
+        can, and the comparison's result is exactly the scalar boolean predicate
+        that :func:`~max.experimental.functional.cond` expects.
+
+        .. code-block:: python
+
+            from max.experimental import functional as F
+            from max.experimental.tensor import Tensor
+
+            batch = x.shape[0]
+            pred = Tensor.from_dim(batch) <= 2  # scalar bool tensor on CPU
+            (out,) = F.cond(pred, [out_type], then_fn, else_fn)
+
+        Args:
+            dim: The dimension to materialize. Accepts anything
+                :obj:`~max.graph.DimLike` (an ``int``, a dim name, a
+                :obj:`~max.graph.Dim`, or an algebraic dim expression).
+
+        Returns:
+            Tensor: A rank-0 ``int64`` tensor on CPU holding the dimension's
+            runtime value.
+
+        Raises:
+            ValueError: In eager mode (no active graph) for a symbolic or
+                algebraic dimension, which has no value outside a graph.
+        """
+        d = Dim(dim)
+        if isinstance(d, StaticDim):
+            # The value is known now, so emit a scalar constant. This needs no
+            # active graph, so it works in eager mode as well as while building
+            # a graph.
+            return F.constant(int(d), DType.int64, CPU())
+        # A symbolic/algebraic dim has no value until runtime, which requires a
+        # graph to defer to. In eager mode there is none, so fail with a clear
+        # message rather than the downstream "No graph found" lookup error.
+        try:
+            _ = graph.Graph.current
+        except LookupError:
+            raise ValueError(
+                f"Tensor.from_dim({d}): a symbolic dimension has no value in "
+                "eager mode. Use a static dimension, or call this while "
+                "building a graph (e.g. inside Module.compile or F.functional)."
+            ) from None
+        return cls.from_graph_value(ops.shape_to_tensor([d])).reshape([])
+
+    @classmethod
     def from_shard_values(
         cls,
         shard_values: Sequence[GraphValue],
@@ -927,10 +983,10 @@ class Tensor(DLPackArray, HasTensorValue):
             return F.constant_external(name, stype).to(self.device)
         assert self._mapping is not None
         _mesh = self._mapping.mesh
-        _placements = self._mapping.to_placements()
-        local = shard_shape(self.shape, _placements, _mesh)
         values = []
+        shape = self.shape
         for i in range(_mesh.num_devices):
+            local = local_shape_at(shape, i)
             stype = TensorType(self.dtype, local, CPU())
             t = F.constant_external(f"{name}._shard.{i}", stype)
             t = t.to(_mesh.devices[i])
@@ -1390,6 +1446,7 @@ class Tensor(DLPackArray, HasTensorValue):
             TypeError: If the tensor is distributed.
         """
         if self.is_distributed:
+            # self.shape already reports the global, so no fold is needed.
             dist_type = DistributedTensorType(
                 self.dtype, self.shape, self.mesh, self.placements
             )
@@ -1420,27 +1477,18 @@ class Tensor(DLPackArray, HasTensorValue):
 
     @property
     def shape(self) -> graph.Shape:
-        """Gets the global shape of the tensor.
-
-        For a sharded tensor, returns the logical (un-sharded) shape, folded
-        from the per-rank shard shapes and the device mapping. For an
-        unsharded tensor, returns the backing value's shape.
+        """Gets the global (logical) shape of the tensor.
 
         Returns:
             The global shape of the tensor.
         """
         if not self.is_distributed:
-            shape = self._backing_value.shape
+            backing = self._backing_value.shape
             return (
-                shape if isinstance(shape, graph.Shape) else graph.Shape(shape)
+                backing
+                if isinstance(backing, graph.Shape)
+                else graph.Shape(backing)
             )
-        return _fold_sharded_shape(self.per_rank_shape, self._mapping)
-
-    @property
-    def per_rank_shape(self) -> graph.Shape:
-        """Per-rank-aware shape; Sharded axes carry a :class:`PerShardDim` wrapper."""
-        if not self.is_distributed:
-            return self.shape
         per_rank_shapes = self._per_rank_shapes()
         ndim = len(per_rank_shapes[0])
         sharded_axes = {
@@ -1448,12 +1496,21 @@ class Tensor(DLPackArray, HasTensorValue):
             for p in self._mapping.to_placements()
             if (ax := p.localized_axis()) is not None
         }
+        cells = [
+            tuple(graph.Dim(s[i]) for s in per_rank_shapes) for i in range(ndim)
+        ]
+        wrapped = graph.Shape(
+            [
+                make_per_shard_dim(cells[i], force_wrap=i in sharded_axes)
+                for i in range(ndim)
+            ]
+        )
+        globals_ = _fold_sharded_shape(wrapped, self._mapping)
         return graph.Shape(
             [
-                make_per_shard_dim(
-                    tuple(graph.Dim(s[i]) for s in per_rank_shapes),
-                    force_wrap=i in sharded_axes,
-                )
+                make_per_shard_dim(cells[i], global_dim=globals_[i])
+                if i in sharded_axes
+                else globals_[i]
                 for i in range(ndim)
             ]
         )

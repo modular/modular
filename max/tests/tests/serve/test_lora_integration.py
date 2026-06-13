@@ -25,10 +25,10 @@ from unittest.mock import MagicMock, NonCallableMock
 import numpy as np
 import pytest
 from max.dtype import DType
-from max.pipelines.core import TextContext
-from max.pipelines.lib.config.lora_config import LoRAConfig
-from max.pipelines.lib.lora import LoRAManager
-from max.pipelines.modeling.types import (
+from max.pipelines.context import TextContext
+from max.pipelines.lora import (
+    LoRAConfig,
+    LoRAManager,
     LoRAOperation,
     LoRARequest,
     LoRAResponse,
@@ -49,7 +49,6 @@ class MockLoRARequestProcessor:
 
     def _handle_lora_request(self, request: LoRARequest) -> LoRAResponse:
         """Mock request handler for testing."""
-
         if request.operation == LoRAOperation.LOAD:
             status = self.manager.load_adapter(
                 f"{request.lora_name}={request.lora_path}"
@@ -76,10 +75,10 @@ class MockLoRARequestProcessor:
 
 @pytest.fixture
 def lora_manager(monkeypatch: pytest.MonkeyPatch) -> Iterator[LoRAManager]:
-    """Create a LoRAManager instance with mocked load_weights and locks disabled."""
+    """Create a LoRAManager instance with mocked weight loading."""
     mock_load_weights = MagicMock()
     monkeypatch.setattr(
-        "max.pipelines.lib.lora.load_weights", mock_load_weights
+        "max.pipelines.lora.lora.load_weights", mock_load_weights
     )
 
     config = LoRAConfig(
@@ -369,7 +368,7 @@ def test_lora_bias_config_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_lora_bias_none_accepted(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test that LoRA adapters with bias='none' are accepted."""
     mock_lora_model = MagicMock()
-    monkeypatch.setattr("max.pipelines.lib.lora.LoRAModel", mock_lora_model)
+    monkeypatch.setattr("max.pipelines.lora.lora.LoRAModel", mock_lora_model)
 
     with tempfile.TemporaryDirectory() as tmpdir:
         config_data = {
@@ -438,14 +437,14 @@ def test_lora_allocation_respects_protected_tg_loras(
     - Can allocate when LoRA is already active (just refreshes LRU)
     - Non-protected globally active LoRAs can be evicted
     """
-    from max.pipelines.core.context import TextContext
+    from max.pipelines.context.context import TextContext
     from max.serve.scheduler.lora_scheduler_utils import (
         can_allocate_lora_request,
     )
 
     mock_load_weights = MagicMock()
     monkeypatch.setattr(
-        "max.pipelines.lib.lora.load_weights", mock_load_weights
+        "max.pipelines.lora.lora.load_weights", mock_load_weights
     )
 
     # Create a LoRAManager with max_num_loras=2 (simulating the deadlock scenario)

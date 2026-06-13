@@ -27,11 +27,11 @@ from typing import Generic
 import numpy as np
 import numpy.typing as npt
 from max.driver import Buffer
-from max.pipelines.lib.vlm_utils import compute_multimodal_merge_indices
-from max.pipelines.modeling.types.pipeline_variants.text_generation import (
+from max.pipelines.context import (
+    TextAndVisionContext,
     VLMContextType,
-    VLMTextGenerationContext,
 )
+from max.pipelines.lib.vlm_utils import compute_multimodal_merge_indices
 from max.pipelines.request import RequestID
 from max.profiler import traced
 
@@ -190,7 +190,7 @@ class VisionEncoderCache(Generic[VLMContextType]):
 
     @staticmethod
     def _ensure_image_hashes(
-        ctx: VLMTextGenerationContext,
+        ctx: TextAndVisionContext,
     ) -> None:
         """Assert that all images have pre-computed hashes.
 

@@ -30,12 +30,7 @@ from std.benchmark import (
 )
 from std.gpu.host import DeviceContext, get_gpu_target
 from std.gpu.host.info import _is_sm10x_gpu
-from internal_utils import (
-    arg_parse,
-    parse_shape,
-    CacheBustingBuffer,
-    ScalarArray,
-)
+from internal_utils import arg_parse, parse_shape, CacheBustingBuffer
 
 from std.utils import IndexList
 from std.utils.index import product
@@ -82,15 +77,13 @@ def run_elementwise[
     var cb_in = CacheBustingBuffer[dtype](N, pack_size, ctx)
     var cb_out = CacheBustingBuffer[dtype](N, pack_size, ctx)
 
-    var in_host_ptr = ScalarArray[dtype](
-        count=cb_in.alloc_size(), alignment=align
-    )
-    var out_host_ptr = ScalarArray[dtype](
-        count=cb_out.alloc_size(), alignment=align
+    var in_host_ptr = alloc[Scalar[dtype]](cb_in.alloc_size(), alignment=align)
+    var out_host_ptr = alloc[Scalar[dtype]](
+        cb_out.alloc_size(), alignment=align
     )
 
-    var in_host = TileTensor(in_host_ptr.unsafe_ptr(), row_major(Coord(dims)))
-    var out_host = TileTensor(out_host_ptr.unsafe_ptr(), row_major(Coord(dims)))
+    var in_host = TileTensor(in_host_ptr, row_major(Coord(dims)))
+    var out_host = TileTensor(out_host_ptr, row_major(Coord(dims)))
 
     for i in range(cb_in.alloc_size()):
         in_host_ptr[i] = Scalar[dtype](i)
@@ -115,11 +108,7 @@ def run_elementwise[
             @always_inline
             @__copy_capture(in_tensor, out_tensor)
             @parameter
-            def func[
-                simd_width: Int, rank_: Int, alignment: Int = 1
-            ](idx0: IndexList[rank_]):
-                var idx = rebind[IndexList[rank]](idx0)
-                var coord = Coord(idx)
+            def func[simd_width: Int, alignment: Int = 1](coord: Coord):
                 comptime assert out_tensor.flat_rank >= coord.flat_rank
                 comptime assert in_tensor.flat_rank >= coord.flat_rank
 
@@ -131,7 +120,7 @@ def run_elementwise[
                 )
 
             elementwise[func, pack_size, target="gpu"](
-                dims,
+                Coord(dims),
                 ctx,
             )
 
@@ -158,7 +147,8 @@ def run_elementwise[
 
     _ = cb_in
     _ = cb_out
-    _ = (in_host_ptr^, out_host_ptr^)
+    in_host_ptr.free()
+    out_host_ptr.free()
 
 
 def list_to_static_tuple[x: List[Int]]() -> IndexList[len(x)]:

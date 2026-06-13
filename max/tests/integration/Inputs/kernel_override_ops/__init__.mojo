@@ -37,7 +37,7 @@ struct AddOverride(ElementwiseBinaryOp):
     @staticmethod
     def elementwise[
         dtype: DType,
-        width: Int,
+        width: SIMDSize,
     ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return lhs + rhs + 1000
 
@@ -61,15 +61,3 @@ struct LayerNormOverride:
         ctx: DeviceContext,
     ) capturing raises:
         raise Error("LAYER_NORM_OVERRIDE_FIRED")
-
-    @staticmethod
-    def shape[
-        dtype: DType,
-        rank: Int,
-    ](
-        input: InputTensor[dtype=dtype, rank=rank, ...],
-        gamma: InputTensor[dtype=dtype, rank=1, ...],
-        beta: InputTensor[dtype=dtype, rank=1, ...],
-        epsilon: Scalar[dtype=dtype],
-    ) -> IndexList[rank]:
-        return input.shape()

@@ -23,7 +23,7 @@ from std.python.bindings import check_arguments_arity
 
 struct PyObjectFunction[
     func_type: TrivialRegisterPassable,
-    self_type: ImplicitlyDestructible = NoneType,
+    self_type: ImplicitlyDeletable = NoneType,
     has_kwargs: Bool = False,
 ](ImplicitlyCopyable):
     """Wrapper to hide the binding logic for functions taking a variadic number
@@ -1990,7 +1990,7 @@ struct PyObjectFunction[
     ](
         func: Self.func_type,
         py_self: PO,
-        args: UnsafePointer[PyObjectPtr, MutExternalOrigin],
+        args: UnsafePointer[PyObjectPtr, MutUntrackedOrigin],
         nargs: Int,
     ) raises -> PO:
         """Compile-time dispatch for METH_FASTCALL non-kwargs function/method

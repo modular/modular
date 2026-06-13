@@ -44,15 +44,33 @@ DEFAULT_MSGPACK_NUMPY_ENCODER = msgpack_numpy_encoder(use_shared_memory=True)
 NON_SHARED_MSGPACK_NUMPY_ENCODER = msgpack_numpy_encoder()
 
 
+# Maximum number of characters a caller may append to a base IPC path
+# returned by generate_zmq_ipc_path (a leading "-" plus a socket-name
+# suffix). The longest in-tree suffix is "-reset_prefix_cache" (19 chars);
+# LoRA adds "-lora_response" (14). We reserve a conservative budget so the
+# fully-suffixed socket path stays under zmq.IPC_PATH_MAX_LEN even when the
+# platform temp dir is long.
+_MAX_IPC_SUFFIX_LEN = 24
+
+
 def generate_zmq_ipc_path() -> str:
     """Generate a unique ZMQ IPC path."""
-    base_rpc_path = tempfile.gettempdir()
     # The full UUID is 36 chars (8-4-4-4-12 hex)
     # However, this may cause the full path to be too long for ZMQ if you append
     # additional characters to it. As such, we truncate the UUID to 18 chars.
     # The chances of collision are still very low, because we don't really make
     # that many ZMQs anyways.
     short_uuid = uuid.uuid4().hex[:18]
+    base_rpc_path = tempfile.gettempdir()
+    # An ipc:// socket binds to a filesystem path bounded by
+    # zmq.IPC_PATH_MAX_LEN (107 on Linux, the sun_path limit). On hosts with a
+    # long temp dir (e.g. the BuildBuddy macOS remote-build sandbox, whose
+    # gettempdir() is ~80 chars) the base path plus a caller suffix overflows
+    # that limit. Fall back to a short, writable directory so the
+    # fully-suffixed path always fits.
+    suffix_budget = len("/") + len(short_uuid) + _MAX_IPC_SUFFIX_LEN
+    if len(base_rpc_path) + suffix_budget > zmq.IPC_PATH_MAX_LEN:
+        base_rpc_path = "/tmp"
     return f"ipc://{base_rpc_path}/{short_uuid}"
 
 

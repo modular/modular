@@ -24,7 +24,12 @@ from typing import TYPE_CHECKING, Any, TypeAlias, cast
 import numpy as np
 import numpy.typing as npt
 from max.graph.weights import WeightsAdapter, WeightsFormat
-from max.pipelines.core import PixelContext, TextAndVisionContext, TextContext
+from max.pipelines.context import (
+    PixelContext,
+    TextAndVisionContext,
+    TextContext,
+)
+from max.pipelines.kv_cache.memory_planner import MemoryPlanner
 from max.pipelines.modeling.types import (
     EmbeddingsContext,
     InputModality,
@@ -32,7 +37,6 @@ from max.pipelines.modeling.types import (
     PipelineTask,
     PipelineTokenizer,
     ReasoningParser,
-    TextGenerationContext,
     TextGenerationRequest,
 )
 from transformers import (
@@ -49,10 +53,7 @@ if TYPE_CHECKING:
 from max.pipelines.diffusion.pipeline import PixelGenerationPipeline
 from max.pipelines.lib._hf_config import load_huggingface_config
 from max.pipelines.modeling.config_enums import RopeType, SupportedEncoding
-from max.pipelines.modeling.weights.hf_utils import HuggingFaceRepo
-from max.pipelines.speculative.standalone import (
-    _StandaloneSpeculativeDecodingPipeline,
-)
+from max.pipelines.weights.hf_utils import HuggingFaceRepo
 
 from .embeddings_pipeline import EmbeddingsPipeline
 from .interfaces import ArchConfig, ArchConfigWithKVCache, PipelineModel
@@ -78,7 +79,6 @@ def get_pipeline_for_task(
     type[TextGenerationPipeline[TextContext]]
     | type[EmbeddingsPipeline]
     | type[PixelGenerationPipeline[Any]]
-    | type[_StandaloneSpeculativeDecodingPipeline]
     | type[OverlapTextGenerationPipeline[TextContext]]
 ):
     """Returns the pipeline class for the given task and config.
@@ -95,9 +95,7 @@ def get_pipeline_for_task(
         and pipeline_config.speculative is not None
     ):
         spec_method = pipeline_config.speculative.speculative_method
-        if pipeline_config.speculative.is_standalone():
-            return _StandaloneSpeculativeDecodingPipeline
-        elif (
+        if (
             pipeline_config.speculative.is_eagle()
             or pipeline_config.speculative.is_mtp()
             or pipeline_config.speculative.is_dflash()
@@ -194,10 +192,10 @@ class SupportedArchitecture:
     default_weights_format: WeightsFormat
     """The weights format expected by the `pipeline_model`."""
 
-    context_type: type[TextGenerationContext] | type[EmbeddingsContext]
+    context_type: type[TextContext] | type[EmbeddingsContext]
     """The context class type that this architecture uses for managing request state and inputs.
 
-    This should be a class (not an instance) that implements either the `TextGenerationContext`
+    This should be a class (not an instance) that implements either the `TextContext`
     or `EmbeddingsContext` protocol, defining how the pipeline processes and tracks requests.
     """
 
@@ -307,6 +305,20 @@ class SupportedArchitecture:
 
     If None, no reasoning parser is enabled by default and the user must
     opt in by setting ``runtime.reasoning_parser`` explicitly.
+    """
+
+    memory_planner: type[MemoryPlanner] | None = None
+    """Optional :class:`~max.pipelines.kv_cache.MemoryPlanner` subclass for
+    this architecture.
+
+    When set, ``PipelineConfig`` uses the planner to estimate weight size,
+    activation memory, signal-buffer memory, and vision cache entry bytes.
+    Autoregressive text-generation models should set this to
+    :class:`~max.pipelines.kv_cache.PagedMemoryPlanner` (or a subclass with
+    architecture-specific overrides).
+
+    ``None`` means the architecture manages its own memory estimation (e.g.
+    diffusion pipelines that skip KV cache estimation entirely).
     """
 
     @property
@@ -897,36 +909,6 @@ class PipelineRegistry:
             "tokenizer": typed_tokenizer,
         }
 
-        # If using standalone speculative decoding, add draft model-specific args
-        if (
-            pipeline_config.draft_model is not None
-            and pipeline_config.speculative is not None
-            and pipeline_config.speculative.is_standalone()
-        ):
-            draft_arch_name = pipeline_config.draft_model.architecture_name
-            if draft_arch_name is None:
-                raise ValueError(
-                    f"Cannot determine architecture for draft model "
-                    f"'{pipeline_config.draft_model.model_path}': "
-                    "no 'architectures' field in HuggingFace config."
-                )
-            draft_arch = self.retrieve_architecture(
-                architecture_name=draft_arch_name,
-                prefer_module_v3=pipeline_config.runtime.prefer_module_v3,
-                task=task,
-            )
-            if draft_arch is None:
-                raise ValueError(
-                    f"MAX-Optimized architecture not found for draft model "
-                    f"'{pipeline_config.draft_model.model_path}'"
-                )
-            assert issubclass(draft_arch.pipeline_model, PipelineModel), (
-                f"Draft model must be a PipelineModel, "
-                f"got {draft_arch.pipeline_model.__name__}"
-            )
-            factory_kwargs["draft_pipeline_model"] = draft_arch.pipeline_model
-            factory_kwargs["draft_weight_adapters"] = draft_arch.weight_adapters
-
         # TODO: Running with overlap results in a CUDA_ILLEGAL_ADDRESS error.
         # The source of this error is in the realize_future_tokens graph where
         # garbage values are passed to the scatter_nd_skip_oob_indices custom op even though the inputs to the graph are correct.
@@ -953,12 +935,12 @@ class PipelineRegistry:
         pipeline_config: PipelineConfig,
         override_architecture: str | None = None,
         task: PipelineTask | None = None,
-    ) -> type[TextGenerationContext] | type[EmbeddingsContext]:
+    ) -> type[TextContext] | type[EmbeddingsContext]:
         """Retrieve the context class type associated with the architecture for the given pipeline configuration.
 
         The context type defines how the pipeline manages request state and inputs during
         model execution. Different architectures may use different context implementations
-        that adhere to either the TextGenerationContext or EmbeddingsContext protocol.
+        that adhere to either the TextContext or EmbeddingsContext protocol.
 
         Args:
             pipeline_config: The configuration for the pipeline.
@@ -969,7 +951,7 @@ class PipelineRegistry:
 
         Returns:
             The context class type associated with the architecture, which implements
-            either the TextGenerationContext or EmbeddingsContext protocol.
+            either the TextContext or EmbeddingsContext protocol.
 
         Raises:
             ValueError: If no supported architecture is found for the given model repository

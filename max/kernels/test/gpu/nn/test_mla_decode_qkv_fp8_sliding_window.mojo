@@ -249,7 +249,7 @@ def test[
     def kernel_launch(ctx: DeviceContext) raises:
         comptime config = MHAConfig[q_type](num_heads, depth)
         flare_mla_decoding[config=config](
-            out_tt.as_any_origin(),
+            out_tt.as_unsafe_any_origin(),
             q_fp8_tt,
             k_fp8_tt,
             SlidingWindowCausalMask[window_size](),
@@ -281,7 +281,7 @@ def test[
     )
 
     var k_bf16_operand = LayoutTensorMHAOperand(
-        LayoutTensor[output_type, k_layout, MutAnyOrigin](
+        LayoutTensor[output_type, k_layout](
             k_bf16_device.ptr,
             RuntimeLayout[k_layout].row_major(
                 k_bf16_device.runtime_layout.shape.value.canonicalize()

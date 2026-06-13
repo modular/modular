@@ -79,7 +79,7 @@ def named_barrier[
         is_nvidia_gpu()
     ), "named barrier is only supported by NVIDIA GPUs"
     _ = __mlir_op.`nvvm.barrier`[
-        _properties=__mlir_attr.`{operandSegmentSizes = array<i32: 1, 1, 0>}`,
+        _properties=__mlir_attr.`{operandSegmentSizes = array<i32: 1, 1>}`,
     ](to_i32(id), to_i32(num_threads))
 
 
@@ -123,7 +123,7 @@ def barrier():
 
     comptime if is_nvidia_gpu():
         _ = __mlir_op.`nvvm.barrier`[
-            _properties=__mlir_attr.`{operandSegmentSizes = array<i32: 0, 0, 0>}`,
+            _properties=__mlir_attr.`{operandSegmentSizes = array<i32: 0, 0>}`,
         ]()
     elif _USE_EXPERIMENTAL_AMD_BLOCK_SYNC_LDS_WITHOUT_SYNC_VMEM:
         comptime assert is_amd_gpu()

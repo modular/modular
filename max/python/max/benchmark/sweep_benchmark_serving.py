@@ -131,6 +131,7 @@ def run_sweep(
     *,
     uploader: SweepUploader | None = None,
     report_result: Callable[[BenchmarkRunResult], None] | None = None,
+    server_liveness: Callable[[], bool] | None = None,
 ) -> list[BenchmarkRunResult]:
     """Set up CSV + upload infrastructure and delegate benchmarking to the library.
 
@@ -153,6 +154,11 @@ def run_sweep(
             during the run rather than after — preserves "live progress"
             visibility and ensures partial results survive a mid-sweep
             crash.
+        server_liveness: Optional predicate forwarded to
+            :func:`benchmark_serving.main_with_parsed_args`. When the
+            orchestrator launched the server it passes a process-liveness
+            check so the server-ready wait aborts promptly on a crashed
+            bring-up instead of polling until the timeout.
 
     Returns:
         The per-iteration :class:`BenchmarkRunResult` list produced by
@@ -214,7 +220,9 @@ def run_sweep(
     # No log directory configured (dry-run without --log-dir): skip CSV
     # and per-result JSON output but still drive the benchmarks.
     if log_dir is None:
-        for result in benchmark_serving_main(config):
+        for result in benchmark_serving_main(
+            config, server_liveness=server_liveness
+        ):
             results.append(result)
             if report_result is not None:
                 report_result(result)
@@ -234,7 +242,9 @@ def run_sweep(
     )
 
     with result_writer:
-        for result in benchmark_serving_main(config):
+        for result in benchmark_serving_main(
+            config, server_liveness=server_liveness
+        ):
             results.append(result)
             # Save per-concurrency JSON with full metrics.
             json_path: str | None = None

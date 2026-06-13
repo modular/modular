@@ -19,6 +19,7 @@ import numpy as np
 import pytest
 import verify_pipelines
 from click.testing import CliRunner
+from verify_pipelines import InfraError, detect_infra_errors
 
 PIXEL_PIPELINE = "black-forest-labs/FLUX.2-dev-t2i-bfloat16-v2"
 RUNNER = CliRunner()
@@ -138,3 +139,33 @@ def test_main_passes_pixel_results_dir_when_requested(
         )
         == tmp_path
     )
+
+
+def test_detect_infra_errors_hf_rate_limit() -> None:
+    """HuggingFace 429 rate limit errors must be classified as InfraError."""
+    msg = (
+        "429 Too Many Requests: you have reached your 'api' rate limit.\n"
+        "We had to rate limit you, you hit the quota of 1000 api requests "
+        "per 5 minutes period.\n"
+        "See https://huggingface.co/docs/hub/rate-limits "
+        "[type=value_error, input_value={'defer_resolve': True}]"
+    )
+    with pytest.raises(InfraError):
+        with detect_infra_errors():
+            raise ValueError(msg)
+
+
+def test_detect_infra_errors_non_hf_error_not_caught() -> None:
+    """Non-HF ValueErrors must not be swallowed as InfraError."""
+    with pytest.raises(ValueError):
+        with detect_infra_errors():
+            raise ValueError("some other 429-like error without HF url")
+
+
+def test_detect_infra_errors_hf_non_rate_limit_not_caught() -> None:
+    """HF errors that are not rate limits must not be caught as InfraError."""
+    with pytest.raises(ValueError):
+        with detect_infra_errors():
+            raise ValueError(
+                "some error from huggingface.co that is not a rate limit"
+            )

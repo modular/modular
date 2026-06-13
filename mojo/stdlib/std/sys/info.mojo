@@ -1081,13 +1081,15 @@ def size_of[type: AnyType, target: _TargetType = _current_target()]() -> Int:
         `> : !kgen.type`,
     ]
     return Int(
-        mlir_value=__mlir_attr[
-            `#kgen.param.expr<get_sizeof, #kgen.type<`,
-            mlir_type,
-            `> : !kgen.type,`,
-            target,
-            `> : index`,
-        ]
+        SIMDSize(
+            mlir_value=__mlir_attr[
+                `#kgen.param.expr<get_sizeof, #kgen.type<`,
+                mlir_type,
+                `> : !kgen.type,`,
+                target,
+                `> : index`,
+            ]
+        )
     )
 
 
@@ -1132,13 +1134,15 @@ def align_of[type: AnyType, target: _TargetType = _current_target()]() -> Int:
         `> : !kgen.type`,
     ]
     return Int(
-        mlir_value=__mlir_attr[
-            `#kgen.param.expr<get_alignof, #kgen.type<`,
-            +mlir_type,
-            `> : !kgen.type,`,
-            target,
-            `> : index`,
-        ]
+        SIMDSize(
+            mlir_value=__mlir_attr[
+                `#kgen.param.expr<get_alignof, #kgen.type<`,
+                +mlir_type,
+                `> : !kgen.type,`,
+                target,
+                `> : index`,
+            ]
+        )
     )
 
 
@@ -1154,13 +1158,15 @@ def align_of[dtype: DType, target: _TargetType = _current_target()]() -> Int:
         The alignment of the dtype in bytes.
     """
     return Int(
-        mlir_value=__mlir_attr[
-            `#kgen.param.expr<get_alignof, #kgen.type<`,
-            Scalar[dtype]._mlir_type,
-            `> : !kgen.type,`,
-            target,
-            `> : index`,
-        ]
+        SIMDSize(
+            mlir_value=__mlir_attr[
+                `#kgen.param.expr<get_alignof, #kgen.type<`,
+                Scalar[dtype]._mlir_type,
+                `> : !kgen.type,`,
+                target,
+                `> : index`,
+            ]
+        )
     )
 
 

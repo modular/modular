@@ -19,7 +19,7 @@ import time
 from dataclasses import dataclass, field
 
 from max.driver import Buffer
-from max.pipelines.core import TextContext
+from max.pipelines.context import TextContext
 from max.pipelines.kv_cache import PagedKVCacheManager
 from max.pipelines.modeling.types import (
     BatchType,
@@ -475,7 +475,7 @@ class BatchMetrics:
 
     def publish_metrics(self) -> None:
         bt = self.batch_type.value  # "CE" (prefill) or "TG" (decode)
-        METRICS.batch_size(self.batch_size)
+        METRICS.batch_size(self.batch_size, batch_type=bt)
         METRICS.batch_input_tokens(self.num_input_tokens, batch_type=bt)
         METRICS.batch_context_tokens(self.num_context_tokens, batch_type=bt)
 

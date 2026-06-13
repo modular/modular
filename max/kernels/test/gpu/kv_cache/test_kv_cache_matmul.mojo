@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.collections import Set
 from std.random import random_ui64, seed
 from std.math.uutils import udivmod
 
 from std.gpu.host import DeviceContext
+from kv_cache_test_utils import random_distinct
 from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
     KVCacheStaticParams,
@@ -155,16 +155,12 @@ def execute_fused_qkv_matmul[
     )
     var lookup_table_host = lookup_table.tensor[update=False]()
 
-    # Hacky way to get random block indices
-    var block_idx_set = Set[Int]()
-    var idx = 0
-    while len(block_idx_set) < batch_size:
-        var randval = Int(random_ui64(0, num_blocks - 1))
-        if randval in block_idx_set:
-            continue
-        block_idx_set.add(randval)
-        lookup_table_host[idx] = UInt32(randval)
-        idx += 1
+    # Assign each batch entry a distinct block. `random_ui64` is inclusive, so
+    # the original draw range `[0, num_blocks - 1]` is a population of
+    # `num_blocks` blocks.
+    var lut_blocks = random_distinct(num_blocks, batch_size)
+    for idx in range(batch_size):
+        lookup_table_host[idx] = UInt32(lut_blocks[idx])
 
     var kv_collection_device = CollectionType(
         kv_block.device_tensor(),
@@ -176,8 +172,8 @@ def execute_fused_qkv_matmul[
 
     # Create device tensors for kernel calls
     var hidden_state_device_tensor = hidden_state.device_tensor()
-    var weight_device_tensor = LayoutTensor[dtype, weight_layout, MutAnyOrigin](
-        weight_device.unsafe_ptr(),
+    var weight_device_tensor = LayoutTensor[dtype, weight_layout](
+        weight_device,
         RuntimeLayout[weight_layout].row_major(weight_shape),
     )
     var test_output_device_tensor = test_output.device_tensor()

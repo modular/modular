@@ -26,7 +26,7 @@ from max.graph.weights import WeightData
 from max.nn.comm.ep import EPCommInitializer, EPConfig
 from max.nn.kv_cache import MultiKVCacheParams
 from max.pipelines.lib import CompilationTimer, PipelineConfig
-from max.pipelines.lib.quant import parse_quant_config
+from max.pipelines.weights.quant import parse_quant_config
 from typing_extensions import override
 
 from ..deepseekV3.model import DeepseekV3Model
@@ -42,7 +42,6 @@ class DeepseekV3_2Model(DeepseekV3Model):
     model_config_cls: ClassVar[type[Any]] = DeepseekV3_2Config
 
     @classmethod
-    @override
     def _ep_max_rank_send_tokens_for_pipeline(
         cls, pipeline_config: PipelineConfig
     ) -> int:

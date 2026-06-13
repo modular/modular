@@ -31,7 +31,7 @@ from max.graph import Graph
 from max.graph.weights import Weights, WeightsAdapter
 from max.nn.kv_cache import KVCacheInputs
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
-from max.pipelines.core import TextContext
+from max.pipelines.context import TextContext
 from max.pipelines.lib import (
     CompilationTimer,
     KVCacheConfig,
@@ -45,9 +45,9 @@ from max.pipelines.lib.utils import (
     compute_data_parallel_splits,
     parse_state_dict_from_weights,
 )
+from max.pipelines.lora import LoRAInputs
 from max.profiler import traced
 from max.support.algorithm import flatten2d
-from transformers import AutoConfig
 
 from .data_parallel_llama import create_graph as create_data_parallel_graph
 from .distributed_llama import DistributedLlama3
@@ -77,12 +77,6 @@ class Llama3Inputs(ModelInputs):
 
     return_n_logits: Buffer
 
-    lora_grouped_offsets: Buffer | None = None
-    num_active_loras: Buffer | None = None
-    lora_end_idx: Buffer | None = None
-    batch_seq_len: Buffer | None = None
-    lora_ids_kv: Buffer | None = None
-    lora_grouped_offsets_kv: Buffer | None = None
     data_parallel_splits: Buffer | Sequence[Sequence[int]] | None = None
     """Tensor containing the data parallel splits."""
 
@@ -182,18 +176,12 @@ class LlamaModelBase(
         if self.pipeline_config.model.data_parallel_degree > 1:
             model_outputs = self.model.execute(*model_inputs.buffers)
         elif self._lora_manager:
+            assert model_inputs.lora is not None
             model_outputs = self.model.execute(
                 model_inputs.tokens,
                 model_inputs.input_row_offsets,
                 model_inputs.return_n_logits,
-                model_inputs.lora_ids,  # type: ignore
-                model_inputs.lora_ranks,  # type: ignore
-                model_inputs.lora_grouped_offsets,  # type: ignore
-                model_inputs.num_active_loras,  # type: ignore
-                model_inputs.lora_end_idx,  # type: ignore
-                model_inputs.batch_seq_len,  # type: ignore
-                model_inputs.lora_ids_kv,  # type: ignore
-                model_inputs.lora_grouped_offsets_kv,  # type: ignore
+                *model_inputs.lora.buffers(),
                 *model_inputs.signal_buffers,
                 *model_inputs.kv_cache_inputs.flatten(),
             )
@@ -352,70 +340,15 @@ class LlamaModelBase(
             data_parallel_splits=data_parallel_splits,
         )
 
-        # Map model names to LoRA graph inputs
         if self._lora_manager:
-            # TODO: Move LORA graph inputs to pinned memory
-            (
-                lora_ids,
-                lora_ranks,
-                lora_grouped_offsets,
-                num_active_loras,
-                lora_end_idx,
-                batch_seq_len,
-                lora_ids_kv,
-                lora_grouped_offsets_kv,
-            ) = self._lora_manager.get_lora_graph_inputs(
-                context_batch, input_row_offsets_np, self.devices[0]
+            # TODO: Move LoRA graph inputs to pinned memory
+            inputs.lora = LoRAInputs(
+                *self._lora_manager.get_lora_graph_inputs(
+                    context_batch, input_row_offsets_np, self.devices[0]
+                )
             )
 
-            inputs.lora_ids = lora_ids
-            inputs.lora_ranks = lora_ranks
-            inputs.lora_grouped_offsets = lora_grouped_offsets
-            inputs.num_active_loras = num_active_loras
-            inputs.lora_end_idx = lora_end_idx
-            inputs.batch_seq_len = batch_seq_len
-            inputs.lora_ids_kv = lora_ids_kv
-            inputs.lora_grouped_offsets_kv = lora_grouped_offsets_kv
-
         return inputs
-
-    def prepare_next_token_inputs(
-        self,
-        next_tokens: Buffer,
-        prev_model_inputs: ModelInputs,
-    ) -> Llama3Inputs:
-        """Prepare the inputs for the next token in multistep execution.
-        This should avoid any device synchronization or copy operations.
-        """
-        assert isinstance(prev_model_inputs, Llama3Inputs)
-        assert self._input_row_offsets_prealloc is not None
-        row_offsets_size = prev_model_inputs.input_row_offsets.shape[0]
-        next_row_offsets = self._input_row_offsets_prealloc[:row_offsets_size]
-
-        return Llama3Inputs(
-            tokens=next_tokens,
-            input_row_offsets=next_row_offsets,
-            signal_buffers=self.signal_buffers,
-            kv_cache_inputs=prev_model_inputs.kv_cache_inputs,
-            return_n_logits=prev_model_inputs.return_n_logits,
-            lora_ids=prev_model_inputs.lora_ids,
-            lora_ranks=prev_model_inputs.lora_ranks,
-            lora_grouped_offsets=prev_model_inputs.lora_grouped_offsets,
-            num_active_loras=prev_model_inputs.num_active_loras,
-            lora_end_idx=prev_model_inputs.lora_end_idx,
-            batch_seq_len=prev_model_inputs.batch_seq_len,
-            lora_ids_kv=prev_model_inputs.lora_ids_kv,
-            lora_grouped_offsets_kv=prev_model_inputs.lora_grouped_offsets_kv,
-            data_parallel_splits=prev_model_inputs.data_parallel_splits,
-        )
-
-    @classmethod
-    def calculate_max_seq_len(
-        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
-    ) -> int:
-        return Llama3Config.calculate_max_seq_len(
-            pipeline_config, huggingface_config
-        )
 
     @traced
     def load_model(self, session: InferenceSession) -> Model:
@@ -532,39 +465,15 @@ class LlamaModelBase(
                     self.kv_params, self._lora_manager
                 ),
             ) as graph:
+                (
+                    tokens,
+                    input_row_offsets,
+                    return_n_logits,
+                    *rest,
+                ) = graph.inputs
                 if self._lora_manager:
-                    (
-                        tokens,
-                        input_row_offsets,
-                        return_n_logits,
-                        lora_ids,
-                        lora_ranks,
-                        lora_grouped_offsets,
-                        num_active_loras,
-                        lora_end_idx,
-                        batch_seq_len,
-                        lora_ids_kv,
-                        lora_grouped_offsets_kv,
-                        *kv_cache_inputs,
-                    ) = graph.inputs
-                    self._lora_manager.set_graph_info(
-                        lora_ids.tensor,
-                        lora_ranks.tensor,
-                        lora_grouped_offsets.tensor,
-                        num_active_loras.tensor,
-                        lora_end_idx.tensor,
-                        batch_seq_len.tensor,
-                        lora_ids_kv.tensor,
-                        lora_grouped_offsets_kv.tensor,
-                    )
-                else:
-                    (
-                        tokens,
-                        input_row_offsets,
-                        return_n_logits,
-                        *kv_cache_inputs,
-                    ) = graph.inputs
-                kv_collections = self._unflatten_kv_inputs(kv_cache_inputs)
+                    rest = self._lora_manager.bind_graph_inputs(rest)
+                kv_collections = self._unflatten_kv_inputs(rest)
                 outputs = single_model(
                     tokens.tensor,
                     kv_collections[0],

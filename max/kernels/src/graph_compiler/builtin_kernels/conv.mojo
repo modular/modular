@@ -72,11 +72,12 @@ struct ConvertE4M3FNToE4M3FNUZ:
             ctx,
         )
 
-    @staticmethod
-    def shape(
-        input: InputTensor[dtype=DType.float8_e4m3fn, rank=2, ...],
-    ) -> IndexList[2]:
-        return IndexList[2](input.dim_size[0](), input.dim_size[1]())
+
+@compiler.register_shape_function("mo.convert_e4m3fn_to_e4m3fnuz")
+def convert_e4m3fn_to_e4m3fnuz_shape(
+    input: InputTensor[dtype=DType.float8_e4m3fn, rank=2, ...],
+) -> IndexList[2]:
+    return IndexList[2](input.dim_size[0](), input.dim_size[1]())
 
 
 @compiler.register("mo.avg_pool")
@@ -107,26 +108,27 @@ struct AvgPool:
             ctx,
         )
 
-    @staticmethod
-    def shape[
-        dtype: DType,
-        int_type: DType,
-    ](
-        input: InputTensor[dtype=dtype, rank=4, ...],
-        filter: InputTensor[dtype=int_type, rank=1, ...],
-        strides: InputTensor[dtype=int_type, rank=1, ...],
-        dilations: InputTensor[dtype=int_type, rank=1, ...],
-        paddings: InputTensor[dtype=int_type, rank=1, ...],
-    ) raises -> IndexList[input.rank]:
-        return rebind[IndexList[input.rank]](
-            pool_shape(
-                input.to_tile_tensor[DType.int64](),
-                filter.to_tile_tensor[DType.int64](),
-                strides.to_tile_tensor[DType.int64](),
-                dilations.to_tile_tensor[DType.int64](),
-                paddings.to_tile_tensor[DType.int64](),
-            )
+
+@compiler.register_shape_function("mo.avg_pool")
+def avg_pool_shape[
+    dtype: DType,
+    int_type: DType,
+](
+    input: InputTensor[dtype=dtype, rank=4, ...],
+    filter: InputTensor[dtype=int_type, rank=1, ...],
+    strides: InputTensor[dtype=int_type, rank=1, ...],
+    dilations: InputTensor[dtype=int_type, rank=1, ...],
+    paddings: InputTensor[dtype=int_type, rank=1, ...],
+) raises -> IndexList[input.rank]:
+    return rebind[IndexList[input.rank]](
+        pool_shape(
+            input.to_tile_tensor[DType.int64](),
+            filter.to_tile_tensor[DType.int64](),
+            strides.to_tile_tensor[DType.int64](),
+            dilations.to_tile_tensor[DType.int64](),
+            paddings.to_tile_tensor[DType.int64](),
         )
+    )
 
 
 @compiler.register("mo.avg_pool_ceil_mode_true")
@@ -157,26 +159,27 @@ struct AvgPoolCeilModeTrue:
             ctx,
         )
 
-    @staticmethod
-    def shape[
-        dtype: DType,
-        int_type: DType,
-    ](
-        input: InputTensor[dtype=dtype, rank=4, ...],
-        filter: InputTensor[dtype=int_type, rank=1, ...],
-        strides: InputTensor[dtype=int_type, rank=1, ...],
-        dilations: InputTensor[dtype=int_type, rank=1, ...],
-        paddings: InputTensor[dtype=int_type, rank=1, ...],
-    ) raises -> IndexList[input.rank]:
-        return rebind[IndexList[input.rank]](
-            pool_shape_ceil(
-                input.to_tile_tensor[DType.int64](),
-                filter.to_tile_tensor[DType.int64](),
-                strides.to_tile_tensor[DType.int64](),
-                dilations.to_tile_tensor[DType.int64](),
-                paddings.to_tile_tensor[DType.int64](),
-            )
+
+@compiler.register_shape_function("mo.avg_pool_ceil_mode_true")
+def avg_pool_ceil_mode_true_shape[
+    dtype: DType,
+    int_type: DType,
+](
+    input: InputTensor[dtype=dtype, rank=4, ...],
+    filter: InputTensor[dtype=int_type, rank=1, ...],
+    strides: InputTensor[dtype=int_type, rank=1, ...],
+    dilations: InputTensor[dtype=int_type, rank=1, ...],
+    paddings: InputTensor[dtype=int_type, rank=1, ...],
+) raises -> IndexList[input.rank]:
+    return rebind[IndexList[input.rank]](
+        pool_shape_ceil(
+            input.to_tile_tensor[DType.int64](),
+            filter.to_tile_tensor[DType.int64](),
+            strides.to_tile_tensor[DType.int64](),
+            dilations.to_tile_tensor[DType.int64](),
+            paddings.to_tile_tensor[DType.int64](),
         )
+    )
 
 
 @compiler.register("mo.pad.constant")
@@ -213,23 +216,24 @@ struct PadConstant:
         else:
             comptime assert False, "Unknown target " + target
 
-    @staticmethod
-    def shape[
-        dtype: DType,
-        rank: Int,
-    ](
-        input: InputTensor[dtype=dtype, rank=rank, ...],
-        padding: InputTensor[rank=1, ...],
-        constant: Scalar[dtype=dtype],
-    ) raises -> IndexList[rank]:
-        # rebind is required because mojo can't figure out that
-        # input.static_spec.to_layout_tensor().rank == input.rank
-        return rebind[IndexList[rank]](
-            pad_shape(
-                input.to_tile_tensor[DType.int64](),
-                padding.to_tile_tensor[DType.int64](),
-            )
+
+@compiler.register_shape_function("mo.pad.constant")
+def pad_constant_shape[
+    dtype: DType,
+    rank: Int,
+](
+    input: InputTensor[dtype=dtype, rank=rank, ...],
+    padding: InputTensor[rank=1, ...],
+    constant: Scalar[dtype=dtype],
+) raises -> IndexList[rank]:
+    # rebind is required because mojo can't figure out that
+    # input.static_spec.to_layout_tensor().rank == input.rank
+    return rebind[IndexList[rank]](
+        pad_shape(
+            input.to_tile_tensor[DType.int64](),
+            padding.to_tile_tensor[DType.int64](),
         )
+    )
 
 
 @compiler.register("mo.pad.repeat")
@@ -250,20 +254,21 @@ struct PadRepeat:
             paddings_ptr,
         )
 
-    @staticmethod
-    def shape[
-        dtype: DType,
-        rank: Int,
-    ](
-        input: InputTensor[dtype=dtype, rank=rank, ...],
-        padding: InputTensor[rank=1, ...],
-    ) raises -> IndexList[rank]:
-        return rebind[IndexList[rank]](
-            pad_shape(
-                input.to_tile_tensor[DType.int64](),
-                padding.to_tile_tensor[DType.int64](),
-            )
+
+@compiler.register_shape_function("mo.pad.repeat")
+def pad_repeat_shape[
+    dtype: DType,
+    rank: Int,
+](
+    input: InputTensor[dtype=dtype, rank=rank, ...],
+    padding: InputTensor[rank=1, ...],
+) raises -> IndexList[rank]:
+    return rebind[IndexList[rank]](
+        pad_shape(
+            input.to_tile_tensor[DType.int64](),
+            padding.to_tile_tensor[DType.int64](),
         )
+    )
 
 
 @compiler.register("mo.pad.reflect")
@@ -284,20 +289,21 @@ struct PadReflect:
             paddings_ptr,
         )
 
-    @staticmethod
-    def shape[
-        dtype: DType,
-        rank: Int,
-    ](
-        input: InputTensor[dtype=dtype, rank=rank, ...],
-        padding: InputTensor[rank=1, ...],
-    ) raises -> IndexList[rank]:
-        return rebind[IndexList[rank]](
-            pad_shape(
-                input.to_tile_tensor[DType.int64](),
-                padding.to_tile_tensor[DType.int64](),
-            )
+
+@compiler.register_shape_function("mo.pad.reflect")
+def pad_reflect_shape[
+    dtype: DType,
+    rank: Int,
+](
+    input: InputTensor[dtype=dtype, rank=rank, ...],
+    padding: InputTensor[rank=1, ...],
+) raises -> IndexList[rank]:
+    return rebind[IndexList[rank]](
+        pad_shape(
+            input.to_tile_tensor[DType.int64](),
+            padding.to_tile_tensor[DType.int64](),
         )
+    )
 
 
 @compiler.register("mo.conv")
@@ -306,7 +312,7 @@ struct Conv:
     def execute[
         input_layout: StaticString,
         filter_layout: StaticString,
-        lambdas_have_fusion: Bool,
+        has_epilogue_fusion: Bool,
         static_strides: IntTuple,
         static_dilations: IntTuple,
         static_padding: IntTuple,
@@ -414,7 +420,7 @@ struct Conv:
                 output.dtype,
                 filter_packed,
                 conv_attr,
-                lambdas_have_fusion,
+                has_epilogue_fusion,
                 output_fn,
             ](
                 input_tt,
@@ -460,25 +466,26 @@ struct Conv:
                 cuda_ctx,
             )
 
-    @staticmethod
-    def shape(
-        input: InputTensor[...],
-        filter: InputTensor[...],
-        strides: InputTensor[rank=1, ...],
-        dilations: InputTensor[rank=1, ...],
-        paddings: InputTensor[rank=1, ...],
-        num_groups: Scalar,
-    ) raises -> IndexList[input.rank]:
-        return rebind[IndexList[input.rank]](
-            conv_shape(
-                input.to_tile_tensor[DType.int64](),
-                filter.to_tile_tensor[DType.int64](),
-                strides.to_tile_tensor[DType.int64](),
-                dilations.to_tile_tensor[DType.int64](),
-                paddings.to_tile_tensor[DType.int64](),
-                num_groups,
-            )
+
+@compiler.register_shape_function("mo.conv")
+def mo_conv_shape(
+    input: InputTensor[...],
+    filter: InputTensor[...],
+    strides: InputTensor[rank=1, ...],
+    dilations: InputTensor[rank=1, ...],
+    paddings: InputTensor[rank=1, ...],
+    num_groups: Scalar,
+) raises -> IndexList[input.rank]:
+    return rebind[IndexList[input.rank]](
+        conv_shape(
+            input.to_tile_tensor[DType.int64](),
+            filter.to_tile_tensor[DType.int64](),
+            strides.to_tile_tensor[DType.int64](),
+            dilations.to_tile_tensor[DType.int64](),
+            paddings.to_tile_tensor[DType.int64](),
+            num_groups,
         )
+    )
 
 
 @compiler.register("conv2d_residual_add")
@@ -558,19 +565,20 @@ struct Conv2dResidualAdd:
             pad_tuple,
             1,  # num_groups
             cuda_ctx,
-            source.unsafe_ptr().as_any_origin(),
+            source.unsafe_ptr().as_unsafe_any_origin(),
             Float32(1.0),  # beta
         )
 
-    @staticmethod
-    def shape(
-        input: InputTensor[rank=4, ...],
-        filter: InputTensor[rank=4, ...],
-        source: InputTensor[rank=4, ...],
-        bias: InputTensor[rank=1, ...],
-    ) raises -> IndexList[4]:
-        # Output shape is the same as source shape (residual tensor).
-        return source.shape()
+
+@compiler.register_shape_function("conv2d_residual_add")
+def conv2d_residual_add_shape(
+    input: InputTensor[rank=4, ...],
+    filter: InputTensor[rank=4, ...],
+    source: InputTensor[rank=4, ...],
+    bias: InputTensor[rank=1, ...],
+) raises -> IndexList[4]:
+    # Output shape is the same as source shape (residual tensor).
+    return source.shape()
 
 
 @compiler.register("mo.conv_transpose")
@@ -579,7 +587,7 @@ struct ConvTranspose:
     def execute[
         input_layout: StaticString,
         filter_layout: StaticString,
-        lambdas_have_fusion: Bool,
+        has_epilogue_fusion: Bool,
         target: StaticString,
     ](
         output: FusedOutputTensor[...],
@@ -660,7 +668,7 @@ struct ConvTranspose:
             conv_transposed_cpu[
                 filter_packed,
                 filter_is_cfrs,
-                lambdas_have_fusion,
+                has_epilogue_fusion,
                 output_fn,
             ](
                 output.to_tile_tensor[DType.int64](),
@@ -696,7 +704,7 @@ struct ConvTranspose:
                 output.dtype,
                 elementwise_epilogue=Optional[elementwise_simd_epilogue_type](
                     output_fn
-                ) if lambdas_have_fusion else Optional[
+                ) if has_epilogue_fusion else Optional[
                     elementwise_simd_epilogue_type
                 ](),
             ](
@@ -709,27 +717,28 @@ struct ConvTranspose:
                 cuda_ctx,
             )
 
-    @staticmethod
-    def shape[
-        dtype: DType
-    ](
-        input: InputTensor[dtype=dtype, ...],
-        filter: InputTensor[dtype=dtype, ...],
-        strides: InputTensor[rank=1, ...],
-        dilations: InputTensor[rank=1, ...],
-        paddings: InputTensor[rank=1, ...],
-        output_paddings: InputTensor[rank=1, ...],
-    ) raises -> IndexList[input.rank]:
-        return rebind[IndexList[input.rank]](
-            conv_transpose_shape(
-                input.to_tile_tensor[DType.int64](),
-                filter.to_tile_tensor[DType.int64](),
-                strides.to_tile_tensor[DType.int64](),
-                dilations.to_tile_tensor[DType.int64](),
-                paddings.to_tile_tensor[DType.int64](),
-                output_paddings.to_tile_tensor[DType.int64](),
-            )
+
+@compiler.register_shape_function("mo.conv_transpose")
+def mo_conv_transpose_shape[
+    dtype: DType
+](
+    input: InputTensor[dtype=dtype, ...],
+    filter: InputTensor[dtype=dtype, ...],
+    strides: InputTensor[rank=1, ...],
+    dilations: InputTensor[rank=1, ...],
+    paddings: InputTensor[rank=1, ...],
+    output_paddings: InputTensor[rank=1, ...],
+) raises -> IndexList[input.rank]:
+    return rebind[IndexList[input.rank]](
+        conv_transpose_shape(
+            input.to_tile_tensor[DType.int64](),
+            filter.to_tile_tensor[DType.int64](),
+            strides.to_tile_tensor[DType.int64](),
+            dilations.to_tile_tensor[DType.int64](),
+            paddings.to_tile_tensor[DType.int64](),
+            output_paddings.to_tile_tensor[DType.int64](),
         )
+    )
 
 
 @compiler.register("layout_transform_RSFC_to_FRSCf")
@@ -765,54 +774,54 @@ struct PackConvFilterShape:
     def execute(filter_buf: InputTensor) raises:
         raise Error("Only meant to be used for shape function!")
 
-    @always_inline
-    @staticmethod
-    def shape[
-        rank: Int,
-        filter_type: DType,
-        input_shape: IntTuple,
-        filter_shape: IntTuple,
-        output_shape: IntTuple,
-        strides: IntTuple,
-        dilations: IntTuple,
-        paddings: IntTuple,
-        num_groups: Int,
-    ](filter_buf: InputTensor[dtype=filter_type, rank=rank, ...]) -> IndexList[
-        rank + 1
-    ]:
-        """
-        Compute the output shape of convolution filter packing.
 
-        Parameters:
-            rank: Rank of the un-packed filter.
-            filter_type: Type of the filter.
-            input_shape: NHWC layout.
-            filter_shape: Filter shape.
-            output_shape: NHWC layout.
-            strides: Should be rank 1 size 2.
-            dilations: Should be rank 1 size 2.
-            paddings: Should be rank 1 size 4.
-            num_groups: The number of groups in the convolution.
+@compiler.register_shape_function("pack_conv_filter_shape")
+def pack_conv_filter_shape_fn[
+    rank: Int,
+    filter_type: DType,
+    input_shape: IntTuple,
+    filter_shape: IntTuple,
+    output_shape: IntTuple,
+    strides: IntTuple,
+    dilations: IntTuple,
+    paddings: IntTuple,
+    num_groups: Int,
+](filter_buf: InputTensor[dtype=filter_type, rank=rank, ...]) -> IndexList[
+    rank + 1
+]:
+    """
+    Compute the output shape of convolution filter packing.
 
-        Args:
-            filter_buf: The filter to be packed.
+    Parameters:
+        rank: Rank of the un-packed filter.
+        filter_type: Type of the filter.
+        input_shape: NHWC layout.
+        filter_shape: Filter shape.
+        output_shape: NHWC layout.
+        strides: Should be rank 1 size 2.
+        dilations: Should be rank 1 size 2.
+        paddings: Should be rank 1 size 4.
+        num_groups: The number of groups in the convolution.
 
-        Returns:
-            The output shape.
-        """
+    Args:
+        filter_buf: The filter to be packed.
 
-        return rebind[IndexList[rank + 1]](
-            pack_filter_shape_conv[
-                filter_type,
-                input_shape,
-                filter_shape,
-                output_shape,
-                strides,
-                dilations,
-                paddings,
-                num_groups,
-            ](filter_buf.to_tile_tensor[DType.int64]())
-        )
+    Returns:
+        The output shape.
+    """
+
+    return rebind[IndexList[rank + 1]](
+        pack_filter_shape_conv[
+            filter_type,
+            input_shape,
+            filter_shape,
+            output_shape,
+            strides,
+            dilations,
+            paddings,
+            num_groups,
+        ](filter_buf.to_tile_tensor[DType.int64]())
+    )
 
 
 @compiler.register("layout_transform_QRSCF_to_FQRSCf")

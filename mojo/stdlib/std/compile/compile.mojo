@@ -63,7 +63,7 @@ struct _Info(TrivialRegisterPassable):
     var asm: __mlir_type.`!kgen.string`
     var module_name: __mlir_type.`!kgen.string`
     var num_captures: __mlir_type.index
-    var capture_sizes: UnsafePointer[UInt64, ImmutExternalOrigin]
+    var capture_sizes: UnsafePointer[UInt64, ImmutUntrackedOrigin]
 
 
 struct _PopulateInfo(TrivialRegisterPassable):
@@ -111,7 +111,7 @@ struct CompiledFunctionInfo[
     var num_captures: Int
     """Number of variables captured by the function closure."""
 
-    var capture_sizes: UnsafePointer[UInt64, ImmutExternalOrigin]
+    var capture_sizes: UnsafePointer[UInt64, ImmutUntrackedOrigin]
     """Pointer to the sizes of the variables captured by the function closure."""
 
     var emission_kind: StaticString
@@ -280,7 +280,7 @@ def compile_info[
         asm=StaticString(offload.asm),
         function_name=get_linkage_name[func, target=target](),
         module_name=StaticString(offload.module_name),
-        num_captures=Int(mlir_value=offload.num_captures),
+        num_captures=Int(SIMDSize(mlir_value=offload.num_captures)),
         capture_sizes=offload.capture_sizes,
         emission_kind=emission_kind,
     )

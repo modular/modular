@@ -19,7 +19,7 @@ from std.gpu.host import DeviceContext
 from std.testing import assert_almost_equal
 from std.testing import TestSuite
 
-from std.utils.index import IndexList
+from std.utils.coord import Coord
 
 
 def test_elementwise_1d() raises:
@@ -35,16 +35,12 @@ def test_elementwise_1d() raises:
     @always_inline
     @__copy_capture(vector)
     @parameter
-    def func[
-        simd_width: Int, rank: Int, alignment: Int = 1
-    ](idx: IndexList[rank]):
-        var elem = vector.unsafe_ptr().load[width=simd_width](idx[0])
+    def func[simd_width: Int, alignment: Int = 1](idx: Coord):
+        var elem = vector.unsafe_ptr().load[width=simd_width](idx[0].value())
         var val = exp(erf(tanh(elem + 1)))
-        vector.unsafe_ptr().store[width=simd_width](idx[0], val)
+        vector.unsafe_ptr().store[width=simd_width](idx[0].value(), val)
 
-    elementwise[func, simd_width_of[DType.float32]()](
-        IndexList[1](num_elements), ctx
-    )
+    elementwise[func, simd_width_of[DType.float32]()](Coord(num_elements), ctx)
 
     assert_almost_equal(vector[0], 2.051446)
 

@@ -261,6 +261,10 @@ class LatentAttentionWithRope(Module[..., Tensor]):
             attn_kwargs["scalar_args"] = (
                 kv_collection.attention_dispatch_metadata
             )
+            assert kv_collection.mla_num_partitions is not None
+            attn_kwargs["num_partitions_scalar"] = (
+                kv_collection.mla_num_partitions
+            )
 
         if self.graph_mode == "prefill":
             result = mla_prefill_graph(**attn_kwargs)
@@ -269,9 +273,7 @@ class LatentAttentionWithRope(Module[..., Tensor]):
         else:
             result = mla_prefill_decode_graph(**attn_kwargs)
 
-        return result.reshape(
-            [result.per_rank_shape[0], self.n_heads * self.v_head_dim]
-        )
+        return result.reshape([result.shape[0], self.n_heads * self.v_head_dim])
 
     def forward(
         self,

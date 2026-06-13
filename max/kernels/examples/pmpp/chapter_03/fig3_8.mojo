@@ -23,8 +23,8 @@ from std.itertools import product
 
 
 def blur_kernel(
-    input: UnsafePointer[UInt8, MutExternalOrigin],
-    output: UnsafePointer[UInt8, MutExternalOrigin],
+    input: UnsafePointer[UInt8, MutUntrackedOrigin],
+    output: UnsafePointer[UInt8, MutUntrackedOrigin],
     m: Int,
     n: Int,
 ):
@@ -67,8 +67,8 @@ def blur_kernel(
 
 
 def cpu_blur(
-    h_in: UnsafePointer[UInt8, MutExternalOrigin],
-    h_ref: UnsafePointer[UInt8, MutExternalOrigin],
+    h_in: UnsafePointer[UInt8, MutUntrackedOrigin],
+    h_ref: UnsafePointer[UInt8, MutUntrackedOrigin],
     n: Int,
     m: Int,
 ):
@@ -105,7 +105,7 @@ def cpu_blur(
         h_ref[curr_idx] = avg
 
 
-def initialize(h_in: UnsafePointer[UInt8, MutExternalOrigin], size: Int):
+def initialize(h_in: UnsafePointer[UInt8, MutUntrackedOrigin], size: Int):
     """Initialize input array with test data.
 
     Args:

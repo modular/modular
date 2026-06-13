@@ -37,7 +37,7 @@ from kv_cache.paged_sparse_kv_index_remap import (
 @always_inline
 def _find_batch_for_row_ref(
     r: Int,
-    row_offsets: UnsafePointer[UInt32, MutAnyOrigin],
+    row_offsets: UnsafePointer[mut=False, UInt32, _],
     num_batches: Int,
 ) -> UInt32:
     """Matches production ``_find_batch_for_row`` (test golden only)."""
@@ -52,7 +52,7 @@ def _find_batch_for_row_ref(
 def _remap_one_ref(
     log_t: Int32,
     batch_u32: UInt32,
-    lut: UnsafePointer[UInt32, MutAnyOrigin],
+    lut: UnsafePointer[mut=False, UInt32, _],
     lut_cols: Int,
     lut_rows: Int,
     page_size: Int,
@@ -76,10 +76,10 @@ def _remap_one_ref(
 
 
 def _reference_row_offsets_remap(
-    logical: UnsafePointer[Int32, MutAnyOrigin],
-    row_offsets: UnsafePointer[UInt32, MutAnyOrigin],
-    lut: UnsafePointer[UInt32, MutAnyOrigin],
-    physical_out: UnsafePointer[Int32, MutAnyOrigin],
+    logical: UnsafePointer[mut=False, Int32, _],
+    row_offsets: UnsafePointer[mut=False, UInt32, _],
+    lut: UnsafePointer[mut=False, UInt32, _],
+    physical_out: UnsafePointer[mut=True, Int32, _],
     num_indices: Int,
     lut_cols: Int,
     lut_rows: Int,

@@ -73,6 +73,6 @@ modular_py_test(
         "//conditions:default": [],
     }),
     deps = _COMMON_DEPS + [
-        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/sampling",
     ],
 )

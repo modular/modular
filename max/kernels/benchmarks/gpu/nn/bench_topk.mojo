@@ -162,11 +162,11 @@ def bench_topk_batched[
                 device_out_vals,
                 device_out_idxs,
                 k=TileTensor(k.ptr, row_major(Int64(batch_size)))
-                .as_any_origin()
+                .as_unsafe_any_origin()
                 .as_immut(),
                 block_size=block_size,
                 num_blocks_per_input=num_blocks_per_input,
-                top_p=top_p_tt.as_any_origin().as_immut(),
+                top_p=top_p_tt.as_unsafe_any_origin().as_immut(),
             )
 
         b.iter_custom[kernel_launch](ctx)
@@ -207,7 +207,7 @@ def bench_topk_batched[
             topk_idxs_cpu,
             1,
             True,
-            k=K_host_buffer.as_any_origin().as_immut(),
+            k=K_host_buffer.as_unsafe_any_origin().as_immut(),
         )
 
         for i in range(topk_vals.num_elements()):
@@ -335,7 +335,7 @@ def bench_topk_multi_rank[
                 device_out_vals,
                 device_out_idxs,
                 k=TileTensor(k.ptr, row_major(Int64(batch_size)))
-                .as_any_origin()
+                .as_unsafe_any_origin()
                 .as_immut(),
                 block_size=block_size,
                 num_blocks_per_input=num_blocks_per_input,
@@ -375,7 +375,7 @@ def bench_topk_multi_rank[
             topk_idxs_cpu,
             1,
             True,
-            k=K_host_buffer.as_any_origin().as_immut(),
+            k=K_host_buffer.as_unsafe_any_origin().as_immut(),
         )
 
         for i in range(topk_vals.num_elements()):
@@ -470,8 +470,8 @@ def bench_topk_fi[
                 top_p,
                 device_in,
                 device_out_idxs,
-                temperature=temp_tt.as_any_origin().as_immut(),
-                rng_seed=seed_tt.as_any_origin().as_immut(),
+                temperature=temp_tt.as_unsafe_any_origin().as_immut(),
+                rng_seed=seed_tt.as_unsafe_any_origin().as_immut(),
             )
 
         b.iter_custom[kernel_launch](ctx)

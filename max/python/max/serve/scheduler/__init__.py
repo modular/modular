@@ -16,7 +16,13 @@ import contextlib
 from collections.abc import AsyncGenerator
 from typing import Any, cast
 
-from max.pipelines.core import TextContext
+from max.pipelines.context import (
+    BaseContextType,
+    PixelContext,
+    TextContext,
+    TextGenerationOutput,
+)
+from max.pipelines.context.outputs import GenerationOutput
 from max.pipelines.diffusion.pipeline import (
     PixelGenerationPipeline,
 )
@@ -26,18 +32,14 @@ from max.pipelines.lib import (
     TextGenerationPipeline,
 )
 from max.pipelines.modeling.types import (
-    BaseContextType,
     EmbeddingsContext,
     EmbeddingsGenerationOutput,
     Pipeline,
     PipelineInputsType,
     PipelineOutputType,
-    PixelGenerationContext,
     PixelGenerationInputs,
     RequestID,
-    TextGenerationOutput,
 )
-from max.pipelines.modeling.types.generation import GenerationOutput
 from max.serve.config import Settings
 from max.serve.queue import MAXPullQueue, MAXPushQueue
 from max.serve.scheduler.interface import Scheduler
@@ -78,18 +80,18 @@ def load_scheduler(
         pixel_pipeline = cast(PixelGenerationPipeline[Any], pipeline)
 
         def batch_constructor(
-            context: PixelGenerationContext,
+            context: PixelContext,
         ) -> PixelGenerationInputs[Any]:
-            """Convert a single PixelGenerationContext into PixelGenerationInputs."""
+            """Convert a single PixelContext into PixelGenerationInputs."""
             return PixelGenerationInputs(batch={context.request_id: context})
 
         return OneShotScheduler[
-            PixelGenerationContext, PixelGenerationInputs[Any], GenerationOutput
+            PixelContext, PixelGenerationInputs[Any], GenerationOutput
         ](
             pipeline=pixel_pipeline,
             batch_constructor=batch_constructor,
             request_queue=cast(
-                MAXPullQueue[PixelGenerationContext],
+                MAXPullQueue[PixelContext],
                 request_queue,
             ),
             response_queue=cast(

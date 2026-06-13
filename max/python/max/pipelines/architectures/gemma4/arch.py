@@ -16,6 +16,7 @@ from max.pipelines.lib import SupportedArchitecture
 from max.pipelines.modeling.types import InputModality, PipelineTask
 
 from .context import Gemma4Context
+from .memory_planner import Gemma4MemoryPlanner
 from .model import Gemma3_MultiModalModel
 from .model_config import Gemma4ForConditionalGenerationConfig
 from .tokenizer import Gemma4Tokenizer
@@ -48,9 +49,9 @@ gemma4_arch = SupportedArchitecture(
         InputModality.VIDEO,
     },
     rope_type="normal",
-    required_arguments={"max_num_steps": 1},
     context_type=Gemma4Context,
     config=Gemma4ForConditionalGenerationConfig,
     tool_parser="gemma4",
     reasoning_parser="gemma4",
+    memory_planner=Gemma4MemoryPlanner,
 )

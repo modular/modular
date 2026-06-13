@@ -89,7 +89,9 @@ struct MmaOpApple[
         dtype, 8
     ]:
         # Offsets are precomputed + hoisted once per slab in `mma()`.
-        comptime alignment = 4 * align_of[Scalar[dtype]]()
+        # Element alignment only: `rb * row_stride` is unaligned for odd K/N.
+        # `width` drives vectorization, not the alignment hint.
+        comptime alignment = align_of[Scalar[dtype]]()
         var lo = (tile.ptr + lo_off).load[width=4, alignment=alignment]()
         var hi = (tile.ptr + hi_off).load[width=4, alignment=alignment]()
         return lo.join(hi)

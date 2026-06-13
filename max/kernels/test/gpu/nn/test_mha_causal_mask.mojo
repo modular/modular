@@ -506,13 +506,11 @@ def main() raises:
         def make_vl(
             val: UInt32, ctx: DeviceContext
         ) raises -> LayoutTensor[
-            DType.uint32, Layout.row_major(1), MutAnyOrigin
+            DType.uint32, Layout.row_major(1), MutUntrackedOrigin
         ]:
             var dev_buf = ctx.enqueue_create_buffer[DType.uint32](1)
             ctx.enqueue_memset(dev_buf, val)
-            return LayoutTensor[
-                DType.uint32, Layout.row_major(1), MutAnyOrigin
-            ](dev_buf.unsafe_ptr())
+            return {dev_buf.unsafe_ptr()}
 
         # valid_length == num_keys (equivalent to CausalMask).
         var vl_128_t = make_vl(128, ctx)

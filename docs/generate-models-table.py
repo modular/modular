@@ -292,9 +292,6 @@ def collect_architectures() -> list[dict[str, Any]]:
 
 def filter_architectures(archs: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Apply filtering rules to remove duplicates and helper architectures."""
-    # Build set of all architecture names for cross-referencing
-    all_names = {a["name"] for a in archs}
-
     filtered = []
     for arch in archs:
         name = arch["name"]
@@ -303,12 +300,12 @@ def filter_architectures(archs: list[dict[str, Any]]) -> list[dict[str, Any]]:
         if "Eagle" in name or "NextN" in name:
             continue
 
-        # Exclude ModuleV3 duplicates where a base counterpart exists
-        if name.endswith("_ModuleV3"):
-            base_name = name[: -len("_ModuleV3")]
-            if base_name in all_names:
-                continue
-            # No base counterpart (e.g., Flux models) — keep it
+        # Exclude ModuleV3 architectures from the public models table. They
+        # stay registered and importable, but their internal module-v3
+        # variants (directories suffixed ``_modulev3``) are not surfaced in
+        # the supported-models catalog, even when no base counterpart exists.
+        if arch.get("module_name", "").endswith("_modulev3"):
+            continue
 
         filtered.append(arch)
 
@@ -499,9 +496,9 @@ def main() -> None:
 
     already_current = check_table(table)
 
-    if args.check:
+    # Manually re-implementing is_check() from lint_helpers since it's the only use here
+    if args.check or os.getenv("CHECK", "").lower() in ("1", "true"):
         if already_current:
-            print("✅ models.mdx is up-to-date.")
             sys.exit(0)
         else:
             print(
@@ -512,9 +509,7 @@ def main() -> None:
             )
             sys.exit(1)
 
-    if already_current:
-        print("✅ models.mdx is already up-to-date.")
-    else:
+    if not already_current:
         write_table(table)
         print(
             "✅ models.mdx updated.\n"

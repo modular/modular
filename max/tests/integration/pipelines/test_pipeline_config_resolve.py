@@ -31,17 +31,20 @@ from unittest.mock import patch
 import pytest
 from max.driver import DeviceSpec
 from max.graph import DeviceRef
+from max.graph.weights import WeightsFormat
 from max.pipelines import PIPELINE_REGISTRY, PipelineConfig
+from max.pipelines.context import TextContext
+from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
 from max.pipelines.lib import MAXModelConfig, MemoryEstimator
 from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
 from max.pipelines.lib.registry import SupportedArchitecture
+from max.pipelines.modeling.types import PipelineTask
 from test_common.pipeline_model_dummy import (
     DUMMY_GEMMA_ARCH,
     DUMMY_LLAMA_ARCH,
     DummyLlamaArchConfig,
     DummyLlamaPipelineModel,
-    DummyPipelineModel,
     DummyTextTokenizer,
 )
 from test_common.registry import prepare_registry
@@ -175,7 +178,7 @@ def _pipeline_resolve_mocks(
     - validate_hf_repo_access — avoid network
     - MemoryEstimator — avoid real memory estimation
     - accelerator_api — avoid CUDA probes
-    - estimate_weights_size / estimate_activation_memory — avoid graph ops
+    - PagedMemoryPlanner — avoid activation memory estimation
     """
     mock_devices = [DeviceRef.GPU()] * num_devices
 
@@ -206,22 +209,7 @@ def _pipeline_resolve_mocks(
             return_value="cpu",
         ),
         patch.object(
-            DummyLlamaPipelineModel,
-            "estimate_weights_size",
-            return_value=0,
-        ),
-        patch.object(
-            DummyLlamaPipelineModel,
-            "estimate_activation_memory",
-            return_value=0,
-        ),
-        patch.object(
-            DummyPipelineModel,
-            "estimate_weights_size",
-            return_value=0,
-        ),
-        patch.object(
-            DummyPipelineModel,
+            PagedMemoryPlanner,
             "estimate_activation_memory",
             return_value=0,
         ),
@@ -241,6 +229,7 @@ def _make_pipeline_config(
     weight_path: list[Path] | None = None,
     max_length: int | None = 512,
     max_batch_size: int = 1,
+    pipeline_task: Any = None,
     **model_kwargs: Any,
 ) -> PipelineConfig:
     """Create a PipelineConfig with defer_resolve=True for testing."""
@@ -262,6 +251,7 @@ def _make_pipeline_config(
             max_batch_size=max_batch_size,
             defer_resolve=True,
         ),
+        task=pipeline_task or PipelineTask.UNDEFINED,
     )
 
 
@@ -380,7 +370,7 @@ class TestDefaultEncodingFallback:
         falls back to the architecture's default_encoding.
         """
         from max.graph.weights import WeightsFormat
-        from max.pipelines import TextContext
+        from max.pipelines.context import TextContext
         from max.pipelines.modeling.types import PipelineTask
 
         # Create an architecture with default_encoding="float32" compatible with CPU
@@ -680,7 +670,7 @@ class TestRequiredArguments:
     @prepare_registry
     def test_required_arguments_override_user_config(self) -> None:
         """Architecture required_arguments should override conflicting config values."""
-        from max.pipelines import TextContext
+        from max.pipelines.context import TextContext
         from max.pipelines.modeling.types import PipelineTask
 
         arch_with_required = SupportedArchitecture(
@@ -711,3 +701,134 @@ class TestRequiredArguments:
                 config.resolve()
             # Architecture should have overridden it
             assert _model(config).kv_cache.enable_prefix_caching is False
+
+
+# ---------------------------------------------------------------------------
+# Category J: DGC suppressed for embedding task on shared arch name (QUA-484)
+# ---------------------------------------------------------------------------
+
+
+class TestDGCTaskDisambiguation:
+    """DGC must not be auto-enabled when the arch name is shared between
+    TEXT_GENERATION and EMBEDDINGS_GENERATION and the pipeline task is
+    EMBEDDINGS_GENERATION.
+
+    Regression test for QUA-484: Qwen3ForCausalLM is registered for both
+    tasks; removing it from the DGC disable list incorrectly enabled DGC
+    for the embedding model because the no-task lookup returned the
+    text-gen arch (registered first), passing the task eligibility check.
+    """
+
+    @prepare_registry
+    def test_dgc_not_enabled_for_embedding_task(self) -> None:
+        """resolve(task=EMBEDDINGS_GENERATION) must not auto-enable DGC."""
+
+        shared_name = "SharedArchForCausalLM"
+        text_gen_arch = SupportedArchitecture(
+            name=shared_name,
+            task=PipelineTask.TEXT_GENERATION,
+            example_repo_ids=["test/text-model"],
+            default_encoding="bfloat16",
+            supported_encodings={"bfloat16", "float32"},
+            pipeline_model=DummyLlamaPipelineModel,
+            tokenizer=DummyTextTokenizer,
+            context_type=TextContext,
+            multi_gpu_supported=True,
+            default_weights_format=WeightsFormat.safetensors,
+            config=DummyLlamaArchConfig,
+        )
+        embedding_arch = SupportedArchitecture(
+            name=shared_name,
+            task=PipelineTask.EMBEDDINGS_GENERATION,
+            example_repo_ids=["test/embed-model"],
+            default_encoding="bfloat16",
+            supported_encodings={"bfloat16", "float32"},
+            pipeline_model=DummyLlamaPipelineModel,
+            tokenizer=DummyTextTokenizer,
+            context_type=TextContext,
+            multi_gpu_supported=True,
+            default_weights_format=WeightsFormat.safetensors,
+            config=DummyLlamaArchConfig,
+        )
+        # Register text-gen first (mirrors Qwen3ForCausalLM registration order)
+        PIPELINE_REGISTRY.register(text_gen_arch)
+        PIPELINE_REGISTRY.register(embedding_arch)
+
+        hf_config = dict(_LLAMA_CONFIG)
+        hf_config["architectures"] = [shared_name]
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            _make_local_repo(
+                tmpdir,
+                hf_config=hf_config,
+                safetensors_files={"model.safetensors": {"w": "BF16"}},
+            )
+            config = _make_pipeline_config(
+                tmpdir,
+                max_batch_size=4,
+                pipeline_task=PipelineTask.EMBEDDINGS_GENERATION,
+            )
+            with (
+                _pipeline_resolve_mocks(),
+                patch(
+                    "max.pipelines.lib.config.config.accelerator_api",
+                    return_value="cuda",
+                ),
+            ):
+                config.resolve()
+            assert config.runtime.device_graph_capture is False
+
+    @prepare_registry
+    def test_dgc_enabled_for_text_gen_task(self) -> None:
+        """resolve() without task (text-gen default) auto-enables DGC when eligible."""
+
+        shared_name = "SharedArchForCausalLM"
+        text_gen_arch = SupportedArchitecture(
+            name=shared_name,
+            task=PipelineTask.TEXT_GENERATION,
+            example_repo_ids=["test/text-model"],
+            default_encoding="bfloat16",
+            supported_encodings={"bfloat16", "float32"},
+            pipeline_model=DummyLlamaPipelineModel,
+            tokenizer=DummyTextTokenizer,
+            context_type=TextContext,
+            multi_gpu_supported=True,
+            default_weights_format=WeightsFormat.safetensors,
+            config=DummyLlamaArchConfig,
+        )
+        embedding_arch = SupportedArchitecture(
+            name=shared_name,
+            task=PipelineTask.EMBEDDINGS_GENERATION,
+            example_repo_ids=["test/embed-model"],
+            default_encoding="bfloat16",
+            supported_encodings={"bfloat16", "float32"},
+            pipeline_model=DummyLlamaPipelineModel,
+            tokenizer=DummyTextTokenizer,
+            context_type=TextContext,
+            multi_gpu_supported=True,
+            default_weights_format=WeightsFormat.safetensors,
+            config=DummyLlamaArchConfig,
+        )
+        PIPELINE_REGISTRY.register(text_gen_arch)
+        PIPELINE_REGISTRY.register(embedding_arch)
+
+        hf_config = dict(_LLAMA_CONFIG)
+        hf_config["architectures"] = [shared_name]
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            _make_local_repo(
+                tmpdir,
+                hf_config=hf_config,
+                safetensors_files={"model.safetensors": {"w": "BF16"}},
+            )
+            config = _make_pipeline_config(tmpdir, max_batch_size=4)
+            # pipeline_task defaults to UNDEFINED, which falls back to text-gen arch
+            with (
+                _pipeline_resolve_mocks(),
+                patch(
+                    "max.pipelines.lib.config.config.accelerator_api",
+                    return_value="cuda",
+                ),
+            ):
+                config.resolve()
+            assert config.runtime.device_graph_capture is True

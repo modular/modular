@@ -23,9 +23,9 @@ from std.itertools import product
 
 
 def matrix_mul_kernel(
-    M: UnsafePointer[Float32, MutExternalOrigin],
-    N: UnsafePointer[Float32, MutExternalOrigin],
-    P: UnsafePointer[Float32, MutExternalOrigin],
+    M: UnsafePointer[Float32, MutUntrackedOrigin],
+    N: UnsafePointer[Float32, MutUntrackedOrigin],
+    P: UnsafePointer[Float32, MutUntrackedOrigin],
     Width: Int,
 ):
     """GPU kernel for matrix multiplication.
@@ -50,9 +50,9 @@ def matrix_mul_kernel(
 
 
 def matmul_cpu(
-    A_host: UnsafePointer[Float32, _],
-    B_host: UnsafePointer[Float32, _],
-    C_ref: UnsafePointer[Float32, MutAnyOrigin],
+    A_host: UnsafePointer[mut=False, Float32, _],
+    B_host: UnsafePointer[mut=False, Float32, _],
+    C_ref: UnsafePointer[mut=True, Float32, _],
     Width: Int,
 ):
     """CPU reference implementation for matrix multiplication.
@@ -72,8 +72,8 @@ def matmul_cpu(
 
 
 def initialize_host(
-    A_host: UnsafePointer[Float32, MutExternalOrigin],
-    B_host: UnsafePointer[Float32, MutExternalOrigin],
+    A_host: UnsafePointer[Float32, MutUntrackedOrigin],
+    B_host: UnsafePointer[Float32, MutUntrackedOrigin],
     Width: Int,
 ):
     """Initialize input matrices with test data.
@@ -139,7 +139,7 @@ def main() raises:
         ctx.synchronize()
 
     # Run CPU matrix multiplication
-    matmul_cpu(A_h, B_h, C_ref, Width)
+    matmul_cpu(A_h, B_h, C_ref.as_unsafe_any_origin(), Width)
 
     # Compare results (allow small floating point error)
     var errors = 0

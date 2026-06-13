@@ -21,15 +21,16 @@ import logging
 import os
 import sys
 import tempfile
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, get_args
 
 from max.config import ConfigFileModel
-from max.driver import DeviceSpec, accelerator_api, load_devices
+from max.driver import accelerator_api, load_devices
 from max.engine import InferenceSession
 from max.graph.quantization import QuantizationEncoding
 from max.nn.comm import Signals
 from max.nn.kv_cache.cache_params import KVConnectorType
 from max.pipelines.diffusion.cache import DenoisingCacheConfig
+from max.pipelines.kv_cache.config import KVCacheConfig, KVConnectorConfig
 from max.pipelines.lib.interfaces import (
     ArchConfig,
     ArchConfigWithKVCache,
@@ -49,15 +50,13 @@ from max.pipelines.lib.registry import (
     SupportedArchitecture,
     get_pipeline_for_task,
 )
-from max.pipelines.lib.sampling import SamplingConfig
-from max.pipelines.modeling.kv_cache_config import (
-    KVCacheConfig,
-    KVConnectorConfig,
-)
+from max.pipelines.lora import LoRAConfig
 from max.pipelines.modeling.types.task import PipelineTask
-from max.pipelines.modeling.weights.hf_utils import is_diffusion_pipeline
+from max.pipelines.sampling import SamplingConfig
 from max.pipelines.speculative.config import SpeculativeConfig
+from max.pipelines.weights.hf_utils import is_diffusion_pipeline
 from pydantic import (
+    BaseModel,
     ConfigDict,
     Field,
     ModelWrapValidatorHandler,
@@ -68,7 +67,6 @@ from pydantic import (
 )
 from typing_extensions import Self
 
-from .lora_config import LoRAConfig
 from .model_config import MAXModelConfig, _format_config_entries
 from .profiling_config import ProfilingConfig
 
@@ -118,6 +116,20 @@ def _strip_default_model_kwargs(
     return non_default
 
 
+def _nested_model_class(annotation: Any) -> type[BaseModel] | None:
+    """Return the Pydantic model class for a field annotation, if any.
+
+    Unwraps ``Optional``/``Union`` annotations (e.g. ``KVCacheConfig | None``)
+    and returns the first :class:`~pydantic.BaseModel` subclass found. Returns
+    ``None`` for non-model annotations such as ``dict[str, Any]`` or ``str``,
+    so plain data dicts are never treated as nested config sub-models.
+    """
+    for candidate in get_args(annotation) or (annotation,):
+        if isinstance(candidate, type) and issubclass(candidate, BaseModel):
+            return candidate
+    return None
+
+
 # FIXME: This method seems like a major hack...
 # Can this be moved to the KVCacheConfig post init?
 def _resolve_kvconnector_config(kv: KVCacheConfig) -> None:
@@ -140,37 +152,90 @@ def _resolve_kvconnector_config(kv: KVCacheConfig) -> None:
     kv.kv_connector_config = cfg
 
 
-_AUTO_ENABLE_OVERLAP_SCHEDULER_ARCHITECTURES = (
-    "LlamaForCausalLM",
-    "DeepseekV3ForCausalLM",
-    "DeepseekV32ForCausalLM",
-    "DeepseekV3ForCausalLMNextN",
-    "KimiK25ForConditionalGeneration",
-    "Gemma4ForConditionalGeneration",
-    "UnifiedEagleLlama3ForCausalLM",
-    "UnifiedDflashLlama3ForCausalLM",
-    "UnifiedDflashKimiK25ForCausalLM",
-    "UnifiedMTPDeepseekV3ForCausalLM",
-    "Eagle3DeepseekV2ForCausalLM",
-    "Eagle3DeepseekV3ForCausalLM",
-    "Eagle3MHADeepseekV3ForCausalLM",
-    "Eagle3MHAKimiK25ForCausalLM",
-    "MiniMaxM2ForCausalLM",
+# Architectures excluded from auto-enabling overlap scheduler.
+# Models not in this list will auto-enable overlap scheduler when eligible.
+_DISABLE_AUTO_OVERLAP_SCHEDULER_ARCHITECTURES = (
+    "DFlashDraftModel",
+    "DeepseekV2ForCausalLM",
+    "DeepseekV2ForCausalLM_ModuleV3",
+    "ExaoneForCausalLM",
+    "ExaoneForCausalLM_ModuleV3",
+    "Gemma3ForCausalLM",
+    "Gemma3ForCausalLM_ModuleV3",
+    "Gemma3ForConditionalGeneration",
+    "Gemma3ForConditionalGeneration_ModuleV3",
+    "GlmMoeDsaForCausalLM",
+    "GptOssForCausalLM",
+    "GptOssForCausalLM_ModuleV3",
+    "GraniteForCausalLM",
+    "GraniteForCausalLM_ModuleV3",
+    "HYV3ForCausalLM",
+    "Idefics3ForConditionalGeneration",
+    "Idefics3ForConditionalGeneration_ModuleV3",
+    "InternVLChatModel",
+    "KimiVLForConditionalGeneration",
+    "Lfm2ForCausalLM",
+    "LlamaForCausalLMEagle",
+    "LlamaForCausalLMEagle3",
+    "LlamaForCausalLM_ModuleV3",
+    "LlavaForConditionalGeneration",
+    "LlavaForConditionalGeneration_ModuleV3",
+    "MambaForCausalLM",
+    "Mistral3ForConditionalGeneration",
+    "MistralForCausalLM",
+    "Olmo3ForCausalLM",
+    "Phi3ForCausalLM",
+    "Phi3ForCausalLM_ModuleV3",
+    "Qwen2_5_VLForConditionalGeneration",
+    "Qwen3VLForConditionalGeneration",
+    "Qwen3VLMoeForConditionalGeneration",
+    "Step3p5ForCausalLM",
 )
 
-_AUTO_ENABLE_DEVICE_GRAPH_CAPTURE_ARCHITECTURES = (
-    "LlamaForCausalLM",
-    "DeepseekV3ForCausalLM",
-    "DeepseekV32ForCausalLM",
-    "DeepseekV3ForCausalLMNextN",
-    "KimiK25ForConditionalGeneration",
-    "UnifiedEagleLlama3ForCausalLM",
-    "UnifiedMTPDeepseekV3ForCausalLM",
-    "Eagle3DeepseekV2ForCausalLM",
-    "Eagle3DeepseekV3ForCausalLM",
-    "Eagle3MHADeepseekV3ForCausalLM",
-    "Eagle3MHAKimiK25ForCausalLM",
-    "MiniMaxM2ForCausalLM",
+# Architectures excluded from auto-enabling device graph capture.
+# Models not in this list will auto-enable device graph capture when eligible.
+_DISABLE_AUTO_DEVICE_GRAPH_CAPTURE_ARCHITECTURES = (
+    "DFlashDraftModel",
+    "DeepseekV2ForCausalLM",
+    "DeepseekV2ForCausalLM_ModuleV3",
+    "ExaoneForCausalLM",
+    "ExaoneForCausalLM_ModuleV3",
+    "Gemma3ForCausalLM",
+    "Gemma3ForCausalLM_ModuleV3",
+    "Gemma3ForConditionalGeneration",
+    "Gemma3ForConditionalGeneration_ModuleV3",
+    "Gemma4ForConditionalGeneration",
+    "GlmMoeDsaForCausalLM",
+    "GptOssForCausalLM",
+    "GptOssForCausalLM_ModuleV3",
+    "GraniteForCausalLM",
+    "GraniteForCausalLM_ModuleV3",
+    "HYV3ForCausalLM",
+    "Idefics3ForConditionalGeneration",
+    "Idefics3ForConditionalGeneration_ModuleV3",
+    "InternVLChatModel",
+    "KimiVLForConditionalGeneration",
+    "Lfm2ForCausalLM",
+    "LlamaForCausalLMEagle",
+    "LlamaForCausalLMEagle3",
+    "LlamaForCausalLM_ModuleV3",
+    "LlavaForConditionalGeneration",
+    "LlavaForConditionalGeneration_ModuleV3",
+    "MambaForCausalLM",
+    "Mistral3ForConditionalGeneration",
+    "MistralForCausalLM",
+    "Olmo3ForCausalLM",
+    "Phi3ForCausalLM",
+    "Phi3ForCausalLM_ModuleV3",
+    "Qwen2_5_VLForConditionalGeneration",
+    "Qwen3ForCausalLM",
+    "Qwen3MoeForCausalLM",
+    "Qwen3VLForConditionalGeneration",
+    "Qwen3VLMoeForConditionalGeneration",
+    "Qwen3_5ForConditionalGeneration",
+    "Step3p5ForCausalLM",
+    "UnifiedDflashKimiK25ForCausalLM",
+    "UnifiedDflashLlama3ForCausalLM",
 )
 
 
@@ -234,15 +299,52 @@ class PipelineConfig(ConfigFileModel):
         it produces nested dicts with dash-separated keys (e.g.
         ``{"main": {"model-path": "value"}}``).  Pydantic expects underscore-
         separated field names, so we normalise before validation.
+
+        Normalization recurses into nested config sub-models so fields like
+        ``--pipeline.models.main.kv-cache.kv-cache-format`` resolve to
+        ``{"main": {"kv_cache": {"kv_cache_format": ...}}}``. Recursion is
+        schema-aware: it only descends into keys whose field is a Pydantic
+        model, leaving plain data dicts (e.g. ``vision_config_overrides``)
+        untouched so legitimately-dashed data keys are preserved.
+
+        Raises:
+            ValueError: If two keys at the same level normalize to the same
+                field name (e.g. mixing ``kv-cache`` and ``kv_cache``), which
+                would otherwise silently drop one of the values.
         """
+
+        def normalize(
+            raw: dict[str, Any], model_cls: type[BaseModel]
+        ) -> dict[str, Any]:
+            fields = model_cls.model_fields
+            normalized: dict[str, Any] = {}
+            for key, value in raw.items():
+                norm_key = key.replace("-", "_")
+                if norm_key in normalized:
+                    raise ValueError(
+                        f"Conflicting CLI keys normalize to '{norm_key}' on "
+                        f"{model_cls.__name__}: '{key}' collides with an "
+                        "earlier key. Use one consistent spelling (e.g. "
+                        f"'--...{norm_key.replace('_', '-')}'), not a mix of "
+                        "dashes and underscores."
+                    )
+                field = fields.get(norm_key)
+                nested_cls = (
+                    _nested_model_class(field.annotation) if field else None
+                )
+                if nested_cls is not None and isinstance(value, dict):
+                    normalized[norm_key] = normalize(value, nested_cls)
+                else:
+                    normalized[norm_key] = value
+            return normalized
+
         result: dict[str, Any] = {}
         for role, value in data.items():
-            if isinstance(value, dict):
-                result[role] = {
-                    k.replace("-", "_"): v for k, v in value.items()
-                }
-            else:
-                result[role] = value
+            result[role] = (
+                normalize(value, MAXModelConfig)
+                if isinstance(value, dict)
+                else value
+            )
         return result
 
     @field_validator("models", mode="wrap")
@@ -307,6 +409,16 @@ class PipelineConfig(ConfigFileModel):
     )
     """The model-agnostic runtime settings for pipeline execution."""
 
+    task: PipelineTask = Field(
+        default=PipelineTask.UNDEFINED,
+        description=(
+            "The pipeline task to run (e.g. ``text_generation``, "
+            "``embeddings_generation``). Used to disambiguate architectures "
+            "registered under the same name for multiple tasks."
+        ),
+    )
+    """The pipeline task, used for arch disambiguation during config resolution."""
+
     @property
     def needs_bitmask_constraints(self) -> bool:
         """Whether constrained decoding can fire and requires the bitmask path.
@@ -358,9 +470,7 @@ class PipelineConfig(ConfigFileModel):
           ``replicate_kv_across_tp`` path is active (MLA model with DP=1 and
           multi-device TP). See ``block_copy_engine.py`` / ``transfer_engine.py``.
 
-        Returns 0 for single-device pipelines. Architecture-specific outliers
-        (e.g. always-allreduce mixins, Flux2, multimodal encoders) should
-        override :meth:`~max.pipelines.lib.interfaces.PipelineModel.estimate_signal_buffer_memory`.
+        Returns 0 for single-device pipelines.
 
         Args:
             arch_config: Optional architecture config. When provided and it
@@ -788,12 +898,7 @@ class PipelineConfig(ConfigFileModel):
             else:
                 sampling_config = config_class(**matched_kwargs)
 
-            is_standalone_spec_decoding = (
-                self.speculative and self.speculative.is_standalone()
-            )
-            if (
-                "main" in self.models and self.model.enable_echo
-            ) or is_standalone_spec_decoding:
+            if "main" in self.models and self.model.enable_echo:
                 sampling_config.enable_variable_logits = True
             setattr(self, config_name, sampling_config)
         else:
@@ -1100,6 +1205,17 @@ class PipelineConfig(ConfigFileModel):
                 else:
                     # MLA target + MLA Eagle3 draft (existing path).
                     target_archs[0] = "Eagle3DeepseekV2ForCausalLM"
+            if target_archs[0] == "Gemma4ForConditionalGeneration":
+                draft_archs = (
+                    self.draft_model.huggingface_config.architectures
+                    if self.draft_model is not None
+                    else None
+                )
+                if (
+                    draft_archs
+                    and draft_archs[0] == "Gemma4AssistantForCausalLM"
+                ):
+                    target_archs[0] = "UnifiedMTPGemma4ForCausalLM"
 
         # Validate KV connector configuration
         _resolve_kvconnector_config(self.model.kv_cache)
@@ -1203,18 +1319,21 @@ class PipelineConfig(ConfigFileModel):
     def _validate_and_resolve_overlap_scheduler(self) -> None:
         arch: SupportedArchitecture | None = None
         if not self.runtime.force:
+            task = self.task if self.task != PipelineTask.UNDEFINED else None
             arch = PIPELINE_REGISTRY.retrieve_architecture(
                 architecture_name=self.models.main_architecture_name,
                 prefer_module_v3=self.runtime.prefer_module_v3,
+                task=task,
             )
             max_batch_size = self.runtime.max_batch_size
             if (
                 self.runtime.device_graph_capture is None
                 and arch is not None
-                and arch.name in _AUTO_ENABLE_DEVICE_GRAPH_CAPTURE_ARCHITECTURES
+                and arch.name
+                not in _DISABLE_AUTO_DEVICE_GRAPH_CAPTURE_ARCHITECTURES
                 and max_batch_size is not None
                 and accelerator_api() in ("cuda", "hip")
-                and self._is_eligible_for_overlap_serve_optimizations()
+                and self._is_eligible_for_overlap_serve_optimizations(arch)
                 # Device graph capture is not supported for prefill-only workers.
                 and self.runtime.pipeline_role != "prefill_only"
             ):
@@ -1234,29 +1353,26 @@ class PipelineConfig(ConfigFileModel):
         if self.runtime.force:
             return
 
-        # Automatically enable overlap scheduling for select architectures.
+        # Automatically enable overlap scheduling for architectures not in the
+        # disable list. This is a blacklist approach so new architectures get
+        # overlap scheduler by default, making it easier to track which models
+        # still need work.
         if not self.runtime.enable_overlap_scheduler:
             if (
                 arch is not None
-                and arch.name in _AUTO_ENABLE_OVERLAP_SCHEDULER_ARCHITECTURES
-                and self._is_eligible_for_overlap_serve_optimizations()
+                and arch.name
+                not in _DISABLE_AUTO_OVERLAP_SCHEDULER_ARCHITECTURES
+                and self._is_eligible_for_overlap_serve_optimizations(arch)
             ):
                 self.runtime.enable_overlap_scheduler = True
-                self.runtime.max_num_steps = 1
                 logger.info(
-                    f"Automatically enabling overlap scheduling for {arch.name} with max-num-steps=1. "
+                    f"Automatically enabling overlap scheduling for {arch.name}. "
                     "You can manually disable this by setting --no-enable-overlap-scheduler --force."
                 )
 
         # Raise errors when we detect features that are not compatible with the overlap scheduler.
         if self.runtime.enable_overlap_scheduler:
             if self.runtime.pipeline_role in ("decode_only", "prefill_only"):
-                if self.runtime.max_num_steps != 1:
-                    logger.info(
-                        "Setting max-num-steps=1 for overlap scheduling on %s worker.",
-                        self.runtime.pipeline_role,
-                    )
-                    self.runtime.max_num_steps = 1
                 logger.info(
                     "Overlap scheduling enabled for %s worker "
                     "(Disaggregated Inference). THIS IS EXPERIMENTAL.",
@@ -1270,18 +1386,21 @@ class PipelineConfig(ConfigFileModel):
                 raise ValueError(
                     "LoRA is not supported with the Overlap scheduler."
                 )
-            if self.runtime.max_num_steps > 1:
-                raise ValueError(
-                    "Max num steps > 1 is not supported with the Overlap scheduler."
-                )
             if self.model.device_specs[0].device_type == "cpu":
                 raise ValueError(
                     "Overlap scheduler is not supported with CPU models."
                 )
 
-    def _is_eligible_for_overlap_serve_optimizations(self) -> bool:
+    def _is_eligible_for_overlap_serve_optimizations(
+        self, arch: SupportedArchitecture
+    ) -> bool:
+        # Overlap scheduling and device graph capture are only supported for
+        # text generation. Auto-enabling them for other tasks (e.g. embeddings)
+        # would fail downstream pipeline construction. See
+        # `get_pipeline_for_task` in registry.py.
         return (
-            not self.sampling.enable_variable_logits
+            arch.task == PipelineTask.TEXT_GENERATION
+            and not self.sampling.enable_variable_logits
             and not self.lora
             and self.model.device_specs[0].device_type != "cpu"
         )
@@ -1297,28 +1416,19 @@ class PipelineConfig(ConfigFileModel):
         if not self.runtime.enable_overlap_scheduler:
             logger.info("Enabling overlap scheduling for device graph capture.")
         self.runtime.enable_overlap_scheduler = True
-        if self.runtime.max_num_steps != 1:
-            logger.info(
-                "Setting max-num-steps=1 for device graph capture with overlap scheduling."
-            )
-        self.runtime.max_num_steps = 1
 
     def _validate_and_resolve_max_num_steps(self) -> None:
-        """Validates and resolves the max_num_steps field (platform-specific)."""
-        if self.draft_model is not None and self.runtime.max_num_steps > 1:
-            raise ValueError(
-                f"max_num_steps must be 1 when speculative decoding is enabled, "
-                f"got {self.runtime.max_num_steps}."
-            )
-        if self.runtime.max_num_steps < 0:
-            if self.model.default_device_spec == DeviceSpec.cpu():
-                self.runtime.max_num_steps = 1
-            elif self.draft_model is not None:
-                # Speculative decoding pipelines manage multi-step KV
-                # allocation internally.
-                self.runtime.max_num_steps = 1
-            else:
-                self.runtime.max_num_steps = 10
+        """Normalize deprecated ``max_num_steps`` to single-step decode."""
+        if self.runtime.max_num_steps in (1, -1):
+            self.runtime.max_num_steps = 1
+            return
+
+        logger.warning(
+            "--max-num-steps=%s is deprecated and ignored; using single-step "
+            "decode (max_num_steps=1).",
+            self.runtime.max_num_steps,
+        )
+        self.runtime.max_num_steps = 1
 
     def _validate_pipeline_config_for_speculative_decoding(self) -> None:
         """Validates pipeline config when used in speculative decoding mode."""
@@ -1376,43 +1486,6 @@ class PipelineConfig(ConfigFileModel):
             raise ValueError(
                 "MAX-Optimized architecture not found for target model (`model_path`)"
             )
-
-        # Validate that their tokenizers are identical.
-        if self.speculative.is_standalone():
-            if draft_arch != target_arch:
-                raise ValueError(
-                    f"architecture for the draft_model ({draft_arch.name}) does not match the architecture retrieved for the target model ({target_arch.name})"
-                )
-
-            draft_tokenizer = PIPELINE_REGISTRY.get_active_tokenizer(
-                huggingface_repo=self.draft_model.huggingface_model_repo
-            )
-            target_tokenizer = PIPELINE_REGISTRY.get_active_tokenizer(
-                huggingface_repo=self.model.huggingface_model_repo
-            )
-
-            # Compare Vocabularies
-            if draft_tokenizer.get_vocab() != target_tokenizer.get_vocab():
-                raise ValueError(
-                    f"tokenizer for draft_model ({self.draft_model.model_path}) does not match the vocabulary of the tokenizer for the target model ({self.model.model_path})"
-                )
-
-            # Compare Tokenizer Configuration
-            if hasattr(draft_tokenizer, "_tokenizer") and hasattr(
-                target_tokenizer, "_tokenizer"
-            ):
-                if (
-                    draft_tokenizer._tokenizer.__dict__
-                    != target_tokenizer._tokenizer.__dict__
-                ):
-                    raise ValueError(
-                        f"tokenizer for draft_model ({self.draft_model.model_path}) does not match the configuration of the tokenizer for the target model ({self.model.model_path})"
-                    )
-            else:
-                if draft_tokenizer.__dict__ != target_tokenizer.__dict__:
-                    raise ValueError(
-                        f"tokenizer for draft_model ({self.draft_model.model_path}) does not match the configuration of the tokenizer for the target model ({self.model.model_path})"
-                    )
 
         if self.model.enable_echo:
             raise ValueError(
@@ -1594,19 +1667,32 @@ class PipelineConfig(ConfigFileModel):
 
         if not issubclass(arch.pipeline_model, PipelineModel):
             # Non-PipelineModel architectures (e.g. PipelineExecutor) skip
-            # memory estimation — they don't expose these classmethods.
+            # memory estimation.
             return
 
         devices = load_devices(model_config.device_specs)
         arch_config = arch.config.initialize(self, model_config=model_config)
 
-        weights_size = arch.pipeline_model.estimate_weights_size(self)
-        activation_size = arch.pipeline_model.estimate_activation_memory(
-            self, model_config.huggingface_config
-        )
-        signal_buffer_size = arch.pipeline_model.estimate_signal_buffer_memory(
-            self, arch_config
-        )
+        if arch.memory_planner is not None:
+            planner = arch.memory_planner(arch_config)
+            weights_size = planner.estimate_weights_size(self)
+            activation_size = planner.estimate_activation_memory(
+                self, model_config.huggingface_config
+            )
+            signal_buffer_size = planner.estimate_signal_buffer_memory(
+                self, arch_config
+            )
+        else:
+            # ``memory_planner=None`` is the intentional state for architectures
+            # that manage memory outside the planner path (e.g. diffusion models,
+            # which exit early via ``is_diffusion_pipeline()`` before reaching
+            # this point).  It is also the fallback for any architecture not yet
+            # wired to a MemoryPlanner — if you are adding a new architecture
+            # that uses a KV cache, set ``memory_planner=PagedMemoryPlanner``
+            # on your ``SupportedArchitecture`` to get correct memory estimation.
+            weights_size = model_config.weights_size()
+            activation_size = 0
+            signal_buffer_size = self.estimate_signal_buffer_memory(arch_config)
 
         MemoryEstimator.estimate_memory_footprint(
             self,
@@ -1616,6 +1702,7 @@ class PipelineConfig(ConfigFileModel):
             weights_size,
             activation_size,
             signal_buffer_size,
+            arch=arch,
         )
 
         if clamped_max_seq_len := MemoryEstimator.max_supported_sequence_length(

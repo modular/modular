@@ -16,7 +16,7 @@
 from __future__ import annotations
 
 import pytest
-from max.pipelines.modeling.types import TextGenerationContext
+from max.pipelines.context import TextContext
 from testbed.harnesses.qwen3_attention import (
     Qwen3AttentionHarness,
     Qwen3AttentionStaticParams,
@@ -45,7 +45,7 @@ _SMOKE_SHAPES = [
 def runner() -> LayerTestRunner[
     Qwen3AttentionStaticParams,
     AttentionDynamicParams,
-    list[TextGenerationContext],
+    list[TextContext],
 ]:
     session, device = create_session()
     return LayerTestRunner(
@@ -57,7 +57,7 @@ def test_benchmark_smoke(
     runner: LayerTestRunner[
         Qwen3AttentionStaticParams,
         AttentionDynamicParams,
-        list[TextGenerationContext],
+        list[TextContext],
     ],
 ) -> None:
     results = runner.benchmark(_SMOKE_SHAPES, iterations=1, warmup=1)
@@ -69,7 +69,7 @@ def test_correctness(
     runner: LayerTestRunner[
         Qwen3AttentionStaticParams,
         AttentionDynamicParams,
-        list[TextGenerationContext],
+        list[TextContext],
     ],
 ) -> None:
     # Correctness only works for prefill (ctx_len=0), batch_size=1.

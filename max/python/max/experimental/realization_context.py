@@ -53,7 +53,7 @@ import os
 import threading
 import weakref
 from collections import OrderedDict
-from collections.abc import Generator
+from collections.abc import Callable, Generator
 from pathlib import Path
 from types import TracebackType
 from typing import TYPE_CHECKING, Any, TypeVar, cast
@@ -63,7 +63,7 @@ from max._core.dialects import builtin, rmo
 from max._mlir_context import in_default_mlir_context
 from max.dtype import DType
 from max.experimental import _passes
-from max.experimental.support import driver_tensor_type
+from max.experimental.support import SetterContext, driver_tensor_type
 from max.experimental.tensor import (
     GraphValue,
     RealizationContext,
@@ -90,10 +90,10 @@ _SESSION_LOCK = threading.Lock()
 _SESSION: engine.api.InferenceSession | None = None
 _SEED: Tensor | None = None
 
-# Each distinct (op name, input dtypes/shapes) combination produces a unique
-# graph and thus a unique cache entry.  128 is generous for typical workloads
-# (a handful of custom ops x a few shape variants) while bounding memory.
-_EAGER_MODEL_CACHE_MAX_SIZE = 128
+# Bounds memory: each entry pins an engine.Model + its MEF buffer.
+_EAGER_MODEL_CACHE_MAX_SIZE = int(
+    os.environ.get("MAX_EAGER_MODEL_CACHE_SIZE", "128")
+)
 _EAGER_MODEL_CACHE_LOCK = threading.Lock()
 _EAGER_MODEL_CACHE: OrderedDict[
     tuple[str, tuple[tuple[str, str], ...]],
@@ -293,14 +293,10 @@ def _eager_model_cache_key(
 def _load_eager_model(graph: Graph) -> engine.Model:
     """Loads or retrieves a cached compiled model for an eager graph.
 
-    Only caches graphs that use custom kernel libraries (custom ops),
-    since those bypass the interpreter and incur expensive per-call
-    compilation.  Regular graphs use the interpreter fast path and are
-    not cached.
-
-    The compiled ``Model`` is keyed by a hash of the graph IR plus the
-    resolved kernel library paths and content hashes so that recompiling
-    a ``.mojoc``/``.mojopkg`` automatically invalidates the cache.
+    The cache is load-bearing even though the C++ MEF cache exists below
+    it: ~74% of a MEF hit is spent bytecode-serializing seeded MOGG
+    kernel decls into the C++ cache key (``FrameworkFrontend.cpp:518``).
+    A Python hit here skips the whole ``session.load`` roundtrip.
 
     Returns:
         A compiled ``engine.Model`` ready for execution.
@@ -308,9 +304,6 @@ def _load_eager_model(graph: Graph) -> engine.Model:
     global _EAGER_MODEL_CACHE_SESSION
 
     session = _session()
-    if not graph.kernel_libraries_paths:
-        return session.load(graph)
-
     key = _eager_model_cache_key(graph)
 
     with _EAGER_MODEL_CACHE_LOCK:
@@ -760,16 +753,55 @@ def in_graph_context() -> bool:
     return True
 
 
+_DEFAULT_REALIZATION_CONTEXT: Callable[[], RealizationContext] = (
+    EagerRealizationContext
+)
+
+
+def default_realization_context() -> RealizationContext:
+    """Constructs a context for ops realized outside any explicit context."""
+    return _DEFAULT_REALIZATION_CONTEXT()
+
+
+def _set_default_realization_context_raw(
+    fn: Callable[[], RealizationContext],
+) -> None:
+    global _DEFAULT_REALIZATION_CONTEXT
+    _DEFAULT_REALIZATION_CONTEXT = fn
+
+
+def set_default_realization_context(
+    fn: Callable[[], RealizationContext],
+) -> SetterContext[Callable[[], RealizationContext]]:
+    """Sets the constructor used by :func:`default_realization_context`.
+
+    The set takes effect immediately. The returned
+    :class:`~max.experimental.support.SetterContext` may be used as a
+    context manager to restore the previous constructor on exit, or
+    discarded to keep the new one.
+
+    Args:
+        fn: A zero-argument callable returning a new realization context,
+            invoked each time an op realizes outside any explicit context.
+
+    Returns:
+        An undo handle restoring the previously installed constructor.
+    """
+    previous = _DEFAULT_REALIZATION_CONTEXT
+    _set_default_realization_context_raw(fn)
+    return SetterContext(fn, previous, _set_default_realization_context_raw)
+
+
 @contextlib.contextmanager
 def ensure_context() -> Generator[None]:
     """Ensures a realization context exists for Tensor / TensorValue conversion."""
     if current_realization_context(None) is not None:
         yield
         return
-    ctx: EagerRealizationContext | GraphRealizationContext = (
+    ctx: RealizationContext = (
         GraphRealizationContext(Graph.current)
         if in_graph_context()
-        else EagerRealizationContext()
+        else default_realization_context()
     )
     with ctx, realization_context(ctx):
         yield
@@ -786,9 +818,11 @@ __all__ = [
     "EagerRealizationContext",
     "GraphRealizationContext",
     "LazyRealizationContext",
+    "default_realization_context",
     "ensure_context",
     "in_graph_context",
     "lazy",
     "seed",
+    "set_default_realization_context",
     "set_seed",
 ]

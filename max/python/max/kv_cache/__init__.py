@@ -24,9 +24,6 @@ warnings.warn(
 
 from max.pipelines.kv_cache import DummyKVCache as DummyKVCache
 from max.pipelines.kv_cache import (
-    IncrementCacheLengthsProcessor as IncrementCacheLengthsProcessor,
-)
-from max.pipelines.kv_cache import (
     InsufficientBlocksError as InsufficientBlocksError,
 )
 from max.pipelines.kv_cache import KVTransferEngine as KVTransferEngine

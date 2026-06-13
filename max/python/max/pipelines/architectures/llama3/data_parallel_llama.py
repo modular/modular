@@ -30,7 +30,7 @@ from max.graph import (
 from max.nn.data_parallelism import split_batch
 from max.nn.kv_cache import KVCacheParamInterface
 from max.nn.layer import Module
-from max.pipelines.lib.lora import LoRAManager
+from max.pipelines.lora import LoRAManager
 
 from .llama3 import Llama3
 from .model_config import Llama3Config

@@ -121,9 +121,8 @@ def distributed_broadcast(
     num_bytes = input_buffer.num_elements * dtype.size_in_bytes
     _broadcast_kernel(
         input_buffer._data_ptr(),
-        [b._data_ptr() for b in output_buffers],
+        list(output_buffers),
         [b._data_ptr() for b in signal_buffers],
-        [d._device_context_ptr() for d in devices],
         int(num_bytes),
         n,
         int(root),

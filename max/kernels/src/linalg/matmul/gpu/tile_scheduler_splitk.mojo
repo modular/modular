@@ -20,7 +20,7 @@ from std.gpu import NamedBarrierSemaphore
 from std.gpu.globals import WARPGROUP_SIZE
 from std.gpu.host.info import H100
 from std.gpu import block_idx, grid_dim, thread_idx
-from layout import Layout, LayoutTensor, RuntimeLayout
+from layout import Layout, LayoutTensor, RuntimeLayout, TensorLayout, TileTensor
 from std.bit import log2_floor
 
 from std.utils.index import Index, IndexList
@@ -512,6 +512,30 @@ struct SplitKTileScheduler[
     def reduction[
         accum_type: DType,
         c_reg_layout: Layout,
+        workspace_layout: TensorLayout,
+    ](
+        self,
+        reduction_workspace: TileTensor[
+            mut=True, accum_type, workspace_layout, _
+        ],
+        c_reg_tile: RegTile[accum_type, c_reg_layout],
+        work_tile_info: WorkInfo,
+        num_barriers: UInt32,
+        warp_group_local_idx: UInt32,
+    ):
+        var reduction_workspace_lt = reduction_workspace.to_layout_tensor()
+        self.reduction(
+            reduction_workspace_lt,
+            c_reg_tile,
+            work_tile_info,
+            num_barriers,
+            warp_group_local_idx,
+        )
+
+    @always_inline
+    def reduction[
+        accum_type: DType,
+        c_reg_layout: Layout,
         workspace_layout: Layout,
     ](
         self,
@@ -603,7 +627,7 @@ struct SplitKTileScheduler[
     @staticmethod
     @always_inline
     def wait_eq(
-        lock_ptr: UnsafePointer[Int32, MutAnyOrigin],
+        lock_ptr: UnsafePointer[mut=True, Int32, _],
         barrier_id: Int32,
         barrier_group_thread_idx: Int,
         lock_idx: UInt32,
@@ -617,7 +641,7 @@ struct SplitKTileScheduler[
     @staticmethod
     @always_inline
     def wait_lt(
-        lock_ptr: UnsafePointer[Int32, MutAnyOrigin],
+        lock_ptr: UnsafePointer[mut=True, Int32, _],
         barrier_id: Int32,
         barrier_group_thread_idx: Int,
         lock_idx: UInt32,
@@ -631,7 +655,7 @@ struct SplitKTileScheduler[
     @staticmethod
     @always_inline
     def arrive_set(
-        lock_ptr: UnsafePointer[Int32, MutAnyOrigin],
+        lock_ptr: UnsafePointer[mut=True, Int32, _],
         barrier_id: Int32,
         barrier_group_thread_idx: Int,
         lock_idx: UInt32,

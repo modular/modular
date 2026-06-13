@@ -19,6 +19,7 @@ from std.logger import Logger
 from extensibility import foreach, OutputTensor, InputTensor
 
 
+from std.utils.coord import Coord
 from std.utils.index import IndexList
 
 comptime logger = Logger()
@@ -57,7 +58,7 @@ struct AddOneCustom:
         ctx: DeviceContext,
     ) raises:
         @parameter
-        def add_one[width: Int](idx: IndexList[x.rank]) -> SIMD[x.dtype, width]:
+        def add_one[width: Int](idx: Coord) -> SIMD[x.dtype, width]:
             return x.load[width](idx) + 1
 
         foreach[add_one, target=target](output, ctx)

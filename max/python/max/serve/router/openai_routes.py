@@ -22,7 +22,7 @@ import queue
 import re
 import uuid
 from abc import ABC, abstractmethod
-from collections.abc import AsyncGenerator, Sequence
+from collections.abc import AsyncGenerator, Iterable, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from json.decoder import JSONDecodeError
@@ -35,8 +35,15 @@ import aiofiles
 from fastapi import APIRouter, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
 from httpx import AsyncClient, HTTPStatusError
+from jinja2.exceptions import UndefinedError
 from llguidance import LLMatcher
-from max.pipelines.core.exceptions import InputError
+from max.pipelines.context import (
+    GenerationStatus,
+    SamplingParams,
+    SamplingParamsInput,
+    TextGenerationResponseFormat,
+)
+from max.pipelines.context.exceptions import InputError
 from max.pipelines.lib import PipelineConfig
 from max.pipelines.lib.tool_parsing import create as create_tool_parser
 from max.pipelines.lib.tool_parsing import (
@@ -44,24 +51,18 @@ from max.pipelines.lib.tool_parsing import (
     name_from_tool,
     names_from_tools,
 )
+from max.pipelines.lora import LoRAOperation, LoRARequest, LoRAStatus
 from max.pipelines.modeling.types import (
-    GenerationStatus,
     ImageContentPart,
-    LoRAOperation,
-    LoRARequest,
-    LoRAStatus,
     MessageContent,
     ParsedToolResponse,
     PipelineTokenizer,
     RequestID,
-    SamplingParams,
-    SamplingParamsInput,
     TextContentPart,
     TextGenerationRequest,
     TextGenerationRequestFunction,
     TextGenerationRequestMessage,
     TextGenerationRequestTool,
-    TextGenerationResponseFormat,
     VideoContentPart,
 )
 from max.profiler import Tracer, traced
@@ -71,6 +72,10 @@ from max.serve.parser import (
     ToolParser,
     normalize_tool_call_arguments,
     parse_json_from_text,
+)
+from max.serve.parser.tool_call_normalization import (
+    _normalize_tools_parameters,
+    _validate_response_format_schema,
 )
 from max.serve.pipelines.llm import (
     TokenGeneratorOutput,
@@ -87,6 +92,7 @@ from max.serve.schemas.openai import (
     ChatCompletionTokenLogprob,
     CompletionLogprobs,
     CompletionResponseChoice,
+    CompletionTokensDetails,
     CompletionUsage,
     CreateChatCompletionRequest,
     CreateChatCompletionResponse,
@@ -100,6 +106,7 @@ from max.serve.schemas.openai import (
     ErrorResponse,
     ListModelsResponse,
     LoadLoraRequest,
+    MaxModel,
     Model,
     PromptTokensDetails,
     TopLogprob,
@@ -462,7 +469,12 @@ class OpenAIChatResponseGenerator(
                 )
                 n_reasoning_tokens += chunk.reasoning_token_count or 0
                 n_tokens += chunk.token_count
-                payload = response.model_dump_json()
+                # Omit unset (None) fields so each delta carries only what
+                # changed, matching the OpenAI streaming spec. Without this a
+                # delta serializes tool_calls/function_call/refusal as null on
+                # every chunk, so a client reading the first tool_calls-bearing
+                # delta sees null instead of the real tool-call fragment.
+                payload = response.model_dump_json(exclude_none=True)
                 yield payload
 
             # TODO: (MODELS-1117) determine whether to break out reasoning tokens into a separate metric
@@ -472,10 +484,17 @@ class OpenAIChatResponseGenerator(
                 n_reasoning_tokens + n_tokens,
             )
 
+            if request.response_format is not None:
+                logger.info(
+                    "Tool/constrained request %s succeeded (stream=true): type=%s, tool_calls_emitted=%s",
+                    request.request_id,
+                    request.response_format.type,
+                    has_emitted_tool_calls,
+                )
+
             # If `include_usage=True`, send a final chunk with usage statistics
             if self.stream_options and self.stream_options.get("include_usage"):
                 final_usage = CompletionUsage(
-                    # TODO: (MODELS-1116) add reasoning token usage under completion_tokens_details
                     prompt_tokens=n_prompt_tokens,
                     completion_tokens=n_reasoning_tokens + n_tokens,
                     total_tokens=n_prompt_tokens
@@ -483,6 +502,9 @@ class OpenAIChatResponseGenerator(
                     + n_tokens,
                     prompt_tokens_details=PromptTokensDetails(
                         cached_tokens=n_cached_prompt_tokens,
+                    ),
+                    completion_tokens_details=CompletionTokensDetails(
+                        reasoning_tokens=n_reasoning_tokens,
                     ),
                 )
 
@@ -601,6 +623,21 @@ class OpenAIChatResponseGenerator(
                     completed_outputs[-1].status, allow_none=False
                 )
 
+            # Kimi K2.5 (thinking enabled) can answer inside the prefilled
+            # ``<think>`` block and stop without emitting ``</think>``, so the
+            # reasoning parser routes the whole answer to reasoning and leaves
+            # content empty. On a voluntary stop, surface that reasoning as
+            # content so a successful turn never returns ``message.content``
+            # null. On ``length`` (truncated mid-thought) keep it as reasoning
+            # rather than misrepresenting a partial thought as the answer.
+            if (
+                not response_message.strip()
+                and reasoning_message
+                and finish_reason == "stop"
+            ):
+                response_message = reasoning_message
+                reasoning_message = None
+
             response_choices: list[ChatCompletionResponseChoice] = []
             # Note: Do not gate on `response_format is None` here.
             # The TextGenerationRequest was mutated to contain a
@@ -649,7 +686,6 @@ class OpenAIChatResponseGenerator(
             usage = None
             if n_reasoning_tokens > 0 or n_tokens > 0:
                 usage = CompletionUsage(
-                    # TODO: (MODELS-1116) add reasoning token usage under completion_tokens_details
                     prompt_tokens=n_prompt_tokens,
                     completion_tokens=n_reasoning_tokens + n_tokens,
                     total_tokens=n_prompt_tokens
@@ -657,6 +693,9 @@ class OpenAIChatResponseGenerator(
                     + n_tokens,
                     prompt_tokens_details=PromptTokensDetails(
                         cached_tokens=n_cached_prompt_tokens,
+                    ),
+                    completion_tokens_details=CompletionTokensDetails(
+                        reasoning_tokens=n_reasoning_tokens,
                     ),
                 )
 
@@ -670,6 +709,15 @@ class OpenAIChatResponseGenerator(
                 service_tier=None,
                 usage=usage,
             )
+            if request.response_format is not None:
+                logger.info(
+                    "Tool/constrained request %s succeeded (stream=false): type=%s, tool_calls_emitted=%s",
+                    request.request_id,
+                    request.response_format.type,
+                    any(
+                        choice.message.tool_calls for choice in response_choices
+                    ),
+                )
             return response
         finally:
             record_request_end(
@@ -919,7 +967,7 @@ async def openai_parse_chat_completion_request(
             messages.append(
                 TextGenerationRequestMessage(
                     role=_normalize_openai_role(m["role"]),
-                    content=content if content else "",
+                    content=content or "",
                     tool_calls=tool_calls,
                     tool_call_id=tool_call_id,
                     reasoning_content=reasoning_content,
@@ -1409,6 +1457,15 @@ async def openai_create_chat_completion(
             "Input validation error in request %s: %s", request_id, str(e)
         )
         raise HTTPException(status_code=400, detail=str(e)) from e
+    except UndefinedError as e:
+        logger.warning(
+            "Chat template UndefinedError in request %s: %s",
+            request_id,
+            str(e),
+        )
+        raise HTTPException(
+            status_code=400, detail=f"Invalid request: {e}"
+        ) from e
     except ValueError as e:
         logger.warning("Value error in request %s: %s", request_id, str(e))
         # NOTE(SI-722): These errors need to return more helpful details,
@@ -1418,7 +1475,7 @@ async def openai_create_chat_completion(
 
 
 def _convert_chat_completion_tools_to_token_generator_tools(
-    chat_tools: list[ChatCompletionFunctionToolParam] | None,
+    chat_tools: Iterable[ChatCompletionFunctionToolParam] | None,
 ) -> list[TextGenerationRequestTool] | None:
     """Convert ChatCompletionTool list to TextGenerationRequestTool list."""
     if not chat_tools:
@@ -1463,15 +1520,21 @@ def _validate_tool_function_name(name: str) -> None:
 def _validate_json_schema(json_schema: dict[str, Any]) -> None:
     """Validate that a JSON schema can be compiled to a grammar.
 
-    This catches invalid schemas (recursive $ref, unsupported constructs) early
-    in the HTTP request handler, returning a 400 error instead of crashing the
-    model worker process later during constrained decoding.
+    This catches invalid schemas (recursive $ref, unsupported constructs)
+    early in the HTTP request handler, returning a 400 error instead of
+    crashing the model worker process later during constrained decoding.
 
     Raises:
-        InputError: If the schema cannot be compiled.
+        InputError: If the schema cannot be compiled or has a non-object root.
     """
     if not json_schema:
         return
+
+    # Root must be type: object per OpenAI's structured-outputs guide.
+    try:
+        _validate_response_format_schema(json_schema)
+    except ValueError as e:
+        raise InputError(str(e)) from e
 
     try:
         # This validates the schema can be compiled to a grammar.
@@ -1755,28 +1818,36 @@ async def _parse_openai_request_body(
 ) -> _TRequest:
     """Parse a JSON request body into a pydantic request model.
 
+    Pre-normalizes ``tools[*].function.parameters: null`` to ``{}`` to
+    match OpenAI's API behavior (null parameters is treated as omitted).
+    Without this, Pydantic rejects the request before our handler runs.
+
     Honors ``pipeline_config.runtime.allow_extra_request_fields``: when set,
     unknown top-level fields are dropped (with a warning) before validation
     instead of failing pydantic's ``extra="forbid"`` check.
     """
     raw = await request.body()
-    pipeline_config = get_app_pipeline_config(request.app)
-    if not pipeline_config.runtime.allow_extra_request_fields:
-        return model_cls.model_validate_json(raw)
-
     parsed = json.loads(raw)
     if not isinstance(parsed, dict):
         return model_cls.model_validate(parsed)
-    known = set(model_cls.model_fields)
-    extras = [k for k in parsed if k not in known]
-    if extras:
-        logger.warning(
-            "Request %s contained unknown top-level fields %s; dropping "
-            "(allow_extra_request_fields=True).",
-            request_id,
-            extras,
-        )
-        parsed = {k: v for k, v in parsed.items() if k in known}
+
+    # Pre-normalize tools.parameters: null -> {} before Pydantic validation.
+    tools = parsed.get("tools")
+    if isinstance(tools, list):
+        parsed = {**parsed, "tools": _normalize_tools_parameters(tools)}
+
+    pipeline_config = get_app_pipeline_config(request.app)
+    if pipeline_config.runtime.allow_extra_request_fields:
+        known = set(model_cls.model_fields)
+        extras = [k for k in parsed if k not in known]
+        if extras:
+            logger.warning(
+                "Request %s contained unknown top-level fields %s; dropping "
+                "(allow_extra_request_fields=True).",
+                request_id,
+                extras,
+            )
+            parsed = {k: v for k, v in parsed.items() if k in known}
     return model_cls.model_validate(parsed)
 
 
@@ -1795,6 +1866,14 @@ def get_tool_parser(app: FastAPI) -> ToolParser | None:
 class OpenAICompletionResponseGenerator(
     OpenAIResponseGenerator[CreateCompletionResponse]
 ):
+    def __init__(
+        self,
+        pipeline: TokenGeneratorPipeline,
+        stream_options: ChatCompletionStreamOptionsParam | None = None,
+    ) -> None:
+        super().__init__(pipeline)
+        self.stream_options = stream_options
+
     async def stream(
         self, request: TextGenerationRequest
     ) -> AsyncGenerator[str | ErrorResponse | JSONResponse, None]:
@@ -1804,6 +1883,7 @@ class OpenAICompletionResponseGenerator(
         n_reasoning_tokens = 0
         n_tokens = 0
         n_prompt_tokens = 0
+        n_cached_prompt_tokens = 0
         status_code = 200
         try:
             async for chunk in self.pipeline.next_token_chunk(request):
@@ -1820,6 +1900,8 @@ class OpenAICompletionResponseGenerator(
 
                 if chunk.prompt_token_count:
                     n_prompt_tokens = chunk.prompt_token_count
+                if chunk.cached_token_count is not None:
+                    n_cached_prompt_tokens = chunk.cached_token_count
                 n_reasoning_tokens += chunk.reasoning_token_count or 0
                 n_tokens += chunk.token_count
 
@@ -1876,6 +1958,33 @@ class OpenAICompletionResponseGenerator(
                 request,
                 n_reasoning_tokens + n_tokens,
             )
+
+            # If `include_usage=True`, send a final chunk with usage statistics.
+            # https://platform.openai.com/docs/api-reference/completions/create#completions_create-stream_options
+            if self.stream_options and self.stream_options.get("include_usage"):
+                final_usage = CompletionUsage(
+                    prompt_tokens=n_prompt_tokens,
+                    completion_tokens=n_reasoning_tokens + n_tokens,
+                    total_tokens=n_prompt_tokens
+                    + n_reasoning_tokens
+                    + n_tokens,
+                    prompt_tokens_details=PromptTokensDetails(
+                        cached_tokens=n_cached_prompt_tokens,
+                    ),
+                    completion_tokens_details=CompletionTokensDetails(
+                        reasoning_tokens=n_reasoning_tokens,
+                    ),
+                )
+                final_response = CompletionStreamResponse(
+                    id=request.request_id.value,
+                    choices=[],
+                    created=int(datetime.now().timestamp()),
+                    model=request.model_name,
+                    object="text_completion",
+                    usage=final_usage,
+                )
+                yield final_response.model_dump_json()
+
             yield "[DONE]"
         except queue.Full:
             logger.exception("Request queue full %s", request.request_id)
@@ -1919,6 +2028,7 @@ class OpenAICompletionResponseGenerator(
         n_reasoning_tokens = 0
         n_tokens = 0
         n_prompt_tokens = 0
+        n_cached_prompt_tokens = 0
         request_timer = StopWatch(start_ns=requests[0].timestamp_ns)
         status_code = 200
 
@@ -1934,6 +2044,11 @@ class OpenAICompletionResponseGenerator(
                 n_tokens += sum(chunk.token_count for chunk in req_outputs)
                 if req_outputs and req_outputs[0].prompt_token_count:
                     n_prompt_tokens += req_outputs[0].prompt_token_count
+                if (
+                    req_outputs
+                    and req_outputs[0].cached_token_count is not None
+                ):
+                    n_cached_prompt_tokens += req_outputs[0].cached_token_count
 
                 log_probs = _process_log_probabilities(req_outputs)
                 response_message = "".join(
@@ -1952,6 +2067,17 @@ class OpenAICompletionResponseGenerator(
                         logprobs=log_probs,
                     )
                 )
+            usage = CompletionUsage(
+                prompt_tokens=n_prompt_tokens,
+                completion_tokens=n_reasoning_tokens + n_tokens,
+                total_tokens=n_prompt_tokens + n_reasoning_tokens + n_tokens,
+                prompt_tokens_details=PromptTokensDetails(
+                    cached_tokens=n_cached_prompt_tokens,
+                ),
+                completion_tokens_details=CompletionTokensDetails(
+                    reasoning_tokens=n_reasoning_tokens,
+                ),
+            )
             response = CreateCompletionResponse(
                 # CreateCompletionResponse.id refers to the http request, while
                 # request.request_id refers to the prompt. We don't have access to the
@@ -1962,6 +2088,7 @@ class OpenAICompletionResponseGenerator(
                 model=requests[0].model_name,
                 object="text_completion",
                 system_fingerprint=None,
+                usage=usage,
             )
             return response
         except:
@@ -2066,7 +2193,9 @@ async def openai_create_completion(
                     " field."
                 )
 
-        response_generator = OpenAICompletionResponseGenerator(pipeline)
+        response_generator = OpenAICompletionResponseGenerator(
+            pipeline, stream_options=completion_request.stream_options
+        )
         prompts = get_prompts_from_openai_request(completion_request.prompt)
         token_requests = []
         # Use request-level temperature/thinking_temperature if provided, else server defaults.
@@ -2176,19 +2305,49 @@ async def health() -> Response:
     return Response(status_code=200)
 
 
+def _resolve_max_model_len(request: Request) -> int | None:
+    """Resolve the served model's max context length.
+
+    Returns the smallest length the tokenizer and model can handle, so clients
+    can avoid overflowing the model's context.
+    """
+    max_model_len = get_app_pipeline_config(request.app).model.max_length
+    if max_model_len is None:
+        return None
+
+    tokenizer_max = getattr(
+        request.app.state.pipeline.tokenizer, "max_length", None
+    )
+    if isinstance(tokenizer_max, int):
+        max_model_len = min(max_model_len, tokenizer_max)
+
+    return max_model_len
+
+
 @router.get("/models", response_model=None)
 async def openai_get_models(request: Request) -> ListModelsResponse:
     pipeline: TokenGeneratorPipeline = request.app.state.pipeline
     created = int(datetime.now().timestamp())
+    max_model_len = _resolve_max_model_len(request)
     model_list = [
-        Model(
-            id=pipeline.model_name, object="model", created=created, owned_by=""
+        MaxModel(
+            id=pipeline.model_name,
+            object="model",
+            created=created,
+            owned_by="",
+            max_model_len=max_model_len,
         )
     ]
 
     if lora_queue := request.app.state.pipeline.lora_queue:
         model_list += [
-            Model(id=lora, object="model", created=created, owned_by="")
+            MaxModel(
+                id=lora,
+                object="model",
+                created=created,
+                owned_by="",
+                max_model_len=max_model_len,
+            )
             for lora in lora_queue.list_loras()
         ]
 
@@ -2198,11 +2357,12 @@ async def openai_get_models(request: Request) -> ListModelsResponse:
 @router.get("/models/{model_id}", response_model=None)
 async def openai_get_model(model_id: str, request: Request) -> Model:
     pipeline: TokenGeneratorPipeline = request.app.state.pipeline
-    pipeline_model = Model(
+    pipeline_model = MaxModel(
         id=pipeline.model_name,
         object="model",
         created=int(datetime.now().timestamp()),
         owned_by="",
+        max_model_len=_resolve_max_model_len(request),
     )
 
     if model_id == pipeline.model_name:

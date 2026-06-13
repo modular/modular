@@ -32,7 +32,7 @@ from max.nn.linear import MLP, GPTQLinear, Linear
 from max.nn.lora import AttentionWithRopeAndLoRA
 from max.nn.norm import ConstantLayerNorm, RMSNorm
 from max.nn.transformer import Transformer, TransformerBlock
-from max.pipelines.lib.lora import LoRAManager
+from max.pipelines.lora import LoRAManager
 
 from .model_config import Llama3Config, create_rope_embedding
 
@@ -265,28 +265,11 @@ class Llama3(Transformer):
             DType.uint32, shape=["input_row_offsets_len"], device=device_ref
         )
         if lora_manager is not None:
-            (
-                lora_ids,
-                lora_ranks,
-                lora_grouped_offsets,
-                num_active_loras,
-                lora_end_idx,
-                batch_seq_len,
-                lora_ids_kv,
-                lora_grouped_offsets_kv,
-            ) = lora_manager.get_symbolic_inputs(device_ref)
             return (
                 tokens_type,
                 input_row_offsets_type,
                 return_n_logits_type,
-                lora_ids,
-                lora_ranks,
-                lora_grouped_offsets,
-                num_active_loras,
-                lora_end_idx,
-                batch_seq_len,
-                lora_ids_kv,
-                lora_grouped_offsets_kv,
+                *lora_manager.get_symbolic_inputs(device_ref),
                 *kv_inputs.flatten(),
             )
         # hidden state input is for EAGLE-like spec decoding draft models

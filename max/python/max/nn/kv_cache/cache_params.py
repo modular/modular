@@ -30,13 +30,14 @@ from max.support.human_readable_formatter import to_human_readable_bytes
 
 from .data_parallelism_utils import split_into_groups
 from .input_types import KVCacheInputs, KVCacheInputsPerDevice
+from .utils import AttentionDispatchResolver, AttnKey
 
 # Mirror of max.pipelines.speculative.config.SpeculativeMethod. Defined
 # inline rather than imported because max.pipelines.speculative depends
 # on max.nn (BUILD.bazel), so importing back would create a circular
 # bazel dependency. The two definitions are structurally identical
 # Literals, so mypy treats them as the same type at use sites.
-SpeculativeMethod = Literal["standalone", "eagle", "mtp", "dflash"]
+SpeculativeMethod = Literal["eagle", "mtp", "dflash"]
 
 logger = logging.getLogger("max.pipelines")
 
@@ -73,76 +74,193 @@ class KVConnectorType(str, Enum):
     """
 
 
+def _validate_is_2d_uint8_buffer(buffer: Buffer) -> None:
+    if len(buffer.shape) != 2:
+        raise ValueError("KVCacheMemory buffer must have 2 dimensions")
+    if buffer.dtype != DType.uint8:
+        raise ValueError("KVCacheMemory buffer must have dtype uint8")
+
+
 @dataclass
-class KVCacheBuffer:
-    """This is a collection of the KVCache buffers.
+class KVCacheMemory:
+    """A single KV cache shard as a 2-D ``uint8`` view.
 
-    There are three types of supported buffers: values, scales, and staging.
-    The scales are optional and used for FP8 quantization.
-    The staging buffer is optional and used for the fp8-KV dequant-staging
-    path (``mo.mha.ragged.paged.fp8_kv``): a pre-allocated bf16 scratch
-    buffer of shape ``[num_blocks, 2, 1, page_size, num_heads, head_dim]``
-    (one layer only) so that the MOGG op does not need to call
-    ``enqueue_create_buffer`` inside a CUDA graph capture region.
-
-    The length of the list of buffers correspond to the tensor parallel degree
-    where each buffer in the list corresponds to a single TP shard.
-
-    For DP, we would have multiple instances of KVCacheBuffer per replica.
+    ``buffer`` has shape ``[num_pages, bytes_per_page]`` with dtype
+    ``uint8``.  This is the form consumed by the offload engine and KV
+    connectors.  :class:`ReplicatedKVCacheMemory` subclasses this for
+    caches that are replicated across TP shards (MLA).
     """
 
-    total_num_pages: int
-    values: list[Buffer]
-    scales: list[Buffer] | None = None
-    staging: list[Buffer] | None = None
+    buffer: Buffer
 
     def __post_init__(self) -> None:
-        if self.total_num_pages <= 0:
-            raise ValueError("Total number of pages must be strictly positive")
+        _validate_is_2d_uint8_buffer(self.buffer)
+
+    @property
+    def total_num_pages(self) -> int:
+        """Returns the total number of pages."""
+        return self.buffer.shape[0]
+
+
+@dataclass
+class ReplicatedKVCacheMemory(KVCacheMemory):
+    """A replicated KV cache unit (rank-0 shard plus its TP peers).
+
+    All shards hold identical data (MLA); D2H reads from ``buffer``
+    (rank-0) and H2D broadcasts back to ``buffer`` and every entry in
+    ``peers``.  Each buffer has shape ``[num_pages, bytes_per_page]``
+    with dtype ``uint8``.
+    """
+
+    peers: list[Buffer]
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+
+        if len(self.peers) == 0:
+            raise ValueError(
+                "ReplicatedKVCacheMemory must have at least one peer"
+            )
+
+        for peer in self.peers:
+            _validate_is_2d_uint8_buffer(peer)
+
+        unique_shapes = set(
+            buffer.shape for buffer in [self.buffer, *self.peers]
+        )
+        if len(unique_shapes) > 1:
+            raise ValueError("All buffers must have the same shape")
+
+
+@dataclass
+class KVCacheBuffer:
+    """A collection of KVCache buffers for one data-parallel replica.
+
+    Two buffer kinds are supported: ``values`` and (optionally, for FP8
+    quantization) ``scales``. The length of each list corresponds to the
+    tensor-parallel degree, with one buffer per TP shard.
+
+    ``page_size`` and ``replicates_kv_across_tp`` describe the physical layout
+    so KV connectors can offload this cache without a separate
+    ``KVCacheParams`` reference: ``replicates_kv_across_tp`` is ``True`` when
+    the KV data is replicated identically across TP shards (MLA) and ``False``
+    when it is sharded (MHA).
+    """
+
+    replicates_kv_across_tp: bool
+    values: list[Buffer]
+    scales: list[Buffer] | None = None
+
+    def __post_init__(self) -> None:
+        all_buffers = self.all_buffers
 
         if len(self.values) == 0:
             raise ValueError("List of values must be non-empty")
 
-        if self.scales is not None:
-            if len(self.scales) != len(self.values):
-                raise ValueError("Scales must be the same length as values")
+        if self.replicates_kv_across_tp and len(self.values) <= 1:
+            raise ValueError(
+                "replicates_kv_across_tp=True requires at least 2 TP shards "
+                "(len(values) > 1)"
+            )
 
-            for value, scale in zip(self.values, self.scales, strict=True):
-                if value.device != scale.device:
-                    raise ValueError(
-                        "Corresponding values and scales must be on the same device"
-                    )
-                if isinstance(value, DevicePinnedBuffer) != isinstance(
-                    scale, DevicePinnedBuffer
-                ):
-                    raise ValueError(
-                        "Corresponding values and scales must be either both pinned or both non-pinned"
-                    )
+        unique_dtype = set(b.dtype for b in self.values)
+        if len(unique_dtype) > 1:
+            raise ValueError("All values must have the same dtype")
 
-        if self.staging is not None:
-            if len(self.staging) != len(self.values):
-                raise ValueError("Staging must be the same length as values")
+        unique_shapes = set(b.shape for b in self.values)
+        if len(unique_shapes) > 1:
+            raise ValueError("All values must have the same shape")
 
-            for value, stg in zip(self.values, self.staging, strict=True):
-                if value.device != stg.device:
-                    raise ValueError(
-                        "Corresponding values and staging must be on the same device"
-                    )
+        unique_is_pinned = set(
+            isinstance(b, DevicePinnedBuffer) for b in all_buffers
+        )
+        if len(unique_is_pinned) > 1:
+            raise ValueError(
+                "All values (and scales if present) must be either all pinned "
+                "or all non-pinned"
+            )
+
+        if self.scales is None:
+            return
+
+        if len(self.scales) != len(self.values):
+            raise ValueError("Scales must be the same length as values")
+
+        unique_dtype = set(b.dtype for b in self.scales)
+        if len(unique_dtype) > 1:
+            raise ValueError("All scales must have the same dtype")
+
+        unique_shapes = set(b.shape for b in self.scales)
+        if len(unique_shapes) > 1:
+            raise ValueError("All scales must have the same shape")
+
+        unique_num_pages = set(b.shape[0] for b in all_buffers)
+        if len(unique_num_pages) > 1:
+            raise ValueError(
+                "Values and scales must have the same number of pages"
+            )
+        for value, scale in zip(self.values, self.scales, strict=True):
+            if value.device != scale.device:
+                raise ValueError(
+                    "Corresponding values and scales must be on the same device"
+                )
+
+    @property
+    def total_num_pages(self) -> int:
+        """Returns the total number of pages across all values and scales."""
+        return self.values[0].shape[0]
 
     @property
     def all_buffers(self) -> list[Buffer]:
-        """Returns all value, scale, and staging buffers in a single flat list.
+        """Returns all value and scale buffers in a single flat list.
 
         Returns:
             A list containing every value buffer followed by every scale
-            buffer (if scales are present) and every staging buffer (if
-            staging is present).
+            buffer (if scales are present).
         """
         return [
             *self.values,
             *(self.scales if self.scales is not None else []),
-            *(self.staging if self.staging is not None else []),
         ]
+
+    def to_memory(self) -> list[KVCacheMemory]:
+        """Convert to a flat list of offload-ready memory units.
+
+        Each unit covers one buffer kind (values or scales) and one
+        logical TP group.  Non-replicated shards become individual
+        :class:`KVCacheMemory` entries; replicated shards become one
+        :class:`ReplicatedKVCacheMemory` entry (root + peers).
+
+        Every buffer is re-viewed as a 2-D ``[num_pages, bytes_per_page]``
+        ``uint8`` array so the offload engine can treat all caches
+        uniformly regardless of original dtype or shape.
+
+        Returns:
+            A list of memory units ready for use by KV connectors and the
+            offload engine.
+        """
+        result: list[KVCacheMemory] = []
+        shard_lists: list[list[Buffer]] = [self.values]
+        if self.scales is not None:
+            shard_lists.append(self.scales)
+        for shards in shard_lists:
+            viewed = [
+                b.view(
+                    dtype=DType.uint8,
+                    shape=[
+                        b.shape[0],
+                        b.num_elements * b.dtype.size_in_bytes // b.shape[0],
+                    ],
+                )
+                for b in shards
+            ]
+            if self.replicates_kv_across_tp:
+                result.append(
+                    ReplicatedKVCacheMemory(buffer=viewed[0], peers=viewed[1:])
+                )
+            else:
+                result.extend(KVCacheMemory(buffer=v) for v in viewed)
+        return result
 
 
 @dataclass
@@ -157,6 +275,25 @@ class KVCacheQuantizationConfig:
 
     quantization_granularity: int = 128
     """Block-size used for KVCache quantization along head-dimension (e.g. 128)."""
+
+
+@dataclass(frozen=True)
+class BatchCharacteristics:
+    """Upper-bound batch shape used to prepare decode attention metadata.
+
+    Captures the ``(batch_size, max_prompt_length, max_cache_valid_length)`` a
+    decode forward should prepare its attention dispatch metadata *for*, which
+    may exceed the batch's real per-request values.
+    :meth:`PagedKVCacheManager.runtime_inputs` uses it to resolve the dispatch
+    key once: e.g. for graph-capture replay, ``max_cache_valid_length`` is
+    aligned up to a cache length recorded during capture and every data-parallel
+    replica must run the identical captured graph. The batch's real values must
+    not exceed these.
+    """
+
+    batch_size: int
+    max_prompt_length: int
+    max_cache_valid_length: int
 
 
 @runtime_checkable
@@ -175,7 +312,7 @@ class KVCacheParamInterface(Protocol):
     def num_draft_tokens_per_step(self) -> int:
         """Number of draft tokens written per draft forward.
 
-        One for autoregressive drafts (``eagle``, ``mtp``, ``standalone``);
+        One for autoregressive drafts (``eagle``, ``mtp``);
         equal to ``num_draft_tokens`` for block drafts (``dflash``).
         """
         if self.speculative_method == "dflash":
@@ -297,11 +434,14 @@ class KVCacheParams(KVCacheParamInterface):
             # Data parallel mode: simply duplicate the heads across all devices
             if self.n_devices < self.data_parallel_degree:
                 raise ValueError(
-                    f"Data parallelism degree ({self.data_parallel_degree}) cannot be greater than the number of devices ({self.n_devices})"
+                    f"Data parallelism degree ({self.data_parallel_degree})"
+                    " cannot be greater than the number of devices"
+                    f" ({self.n_devices})"
                 )
             if self.data_parallel_degree < self.n_devices:
                 raise ValueError(
-                    f"We do not yet support DP + TP at the same time. Found {self.data_parallel_degree=} and {self.n_devices=}"
+                    "We do not yet support DP + TP at the same time. Found"
+                    f" {self.data_parallel_degree=} and {self.n_devices=}"
                 )
             self.n_kv_heads_per_device = self.n_kv_heads
             self.num_q_heads_per_device = self.num_q_heads
@@ -314,7 +454,9 @@ class KVCacheParams(KVCacheParamInterface):
             else:
                 if self.n_kv_heads % self.n_devices != 0:
                     raise ValueError(
-                        f"Number of KV heads ({self.n_kv_heads}) must be divisible by the number of devices ({self.n_devices})"
+                        f"Number of KV heads ({self.n_kv_heads}) must be"
+                        " divisible by the number of devices"
+                        f" ({self.n_devices})"
                     )
                 self.n_kv_heads_per_device = max(
                     self.n_kv_heads // self.n_devices, 1
@@ -325,7 +467,9 @@ class KVCacheParams(KVCacheParamInterface):
             if self.num_q_heads is not None:
                 if self.num_q_heads % self.n_devices != 0:
                     raise ValueError(
-                        f"Number of query heads ({self.num_q_heads}) must be divisible by the number of devices ({self.n_devices})"
+                        f"Number of query heads ({self.num_q_heads}) must be"
+                        " divisible by the number of devices"
+                        f" ({self.n_devices})"
                     )
                 self.num_q_heads_per_device = max(
                     self.num_q_heads // self.n_devices, 1
@@ -338,11 +482,13 @@ class KVCacheParams(KVCacheParamInterface):
         ):
             if not self.enable_prefix_caching:
                 raise ValueError(
-                    f"KV connector '{self.kv_connector.value}' requires prefix caching to be enabled"
+                    f"KV connector '{self.kv_connector.value}' requires prefix"
+                    " caching to be enabled"
                 )
             if self.host_kvcache_swap_space_gb is None:
                 raise ValueError(
-                    f"host_kvcache_swap_space_gb is required when kv_connector is '{self.kv_connector.value}'"
+                    "host_kvcache_swap_space_gb is required when kv_connector"
+                    f" is '{self.kv_connector.value}'"
                 )
 
         if self.quantized_kv_cache and self.kvcache_quant_config is not None:
@@ -353,10 +499,72 @@ class KVCacheParams(KVCacheParamInterface):
                 != 0
             ):
                 raise ValueError(
-                    "KVCache quantization granularity must evenly divide KV head dimension."
+                    "KVCache quantization granularity must evenly divide KV"
+                    " head dimension."
                 )
             if self.kvcache_quant_config is None:
                 raise ValueError("KVCache quantization config required.")
+
+        # Owns decode attention dispatch resolution (attn-key + graph-capture
+        # probe lengths). Built lazily (see :meth:`_get_dispatch_resolver`) so
+        # constructing params for a GPU device on a CPU-only host (e.g. unit
+        # tests) does not require a device context.
+        self._dispatch_resolver: AttentionDispatchResolver | None = None
+
+    def _get_dispatch_resolver(self) -> AttentionDispatchResolver:
+        """Returns the attention dispatch resolver, building it on first use."""
+        if self._dispatch_resolver is None:
+            self._dispatch_resolver = AttentionDispatchResolver(
+                devices=self.devices,
+                is_mla=self.is_mla,
+                n_kv_heads_per_device=self.n_kv_heads_per_device,
+                num_q_heads_per_device=self.num_q_heads_per_device,
+                is_fp8_kv=self.is_fp8_kv_dtype,
+            )
+        return self._dispatch_resolver
+
+    def resolve_attn_key(
+        self,
+        batch_size: int,
+        max_prompt_length: int,
+        max_cache_valid_length: int,
+    ) -> AttnKey:
+        """Resolves the decode attention dispatch key for the given shape.
+
+        Args:
+            batch_size: Number of requests in the decode batch.
+            max_prompt_length: Per-step query width (``1`` for plain decode,
+                ``1 + num_spec_tokens`` for speculative verify).
+            max_cache_valid_length: Maximum valid cache length in the batch.
+
+        Returns:
+            The resolved :class:`~max.nn.kv_cache.AttnKey` (an
+            :class:`~max.nn.kv_cache.MHAAttnKey` or
+            :class:`~max.nn.kv_cache.MLAAttnKey`).
+        """
+        return self._get_dispatch_resolver().resolve_attn_key(
+            batch_size, max_prompt_length, max_cache_valid_length
+        )
+
+    def graph_capture_probe_cache_lengths(
+        self, max_cache_length: int, q_max_seq_len: int = 1
+    ) -> list[int]:
+        """Returns the cache lengths to probe during decode graph capture.
+
+        Args:
+            max_cache_length: Upper bound on the cache length to probe.
+            q_max_seq_len: Per-step query width (affects MLA spec-decode
+                probing).
+
+        Returns:
+            The cache lengths to probe, one per distinct dispatch mode to
+            capture.
+        """
+        cache_lengths = self._get_dispatch_resolver().probe_lengths(
+            max_cache_length, q_max_seq_len
+        )
+        min_cache_length = 1 + 2 * self.num_draft_tokens
+        return [cl for cl in cache_lengths if cl >= min_cache_length]
 
     @property
     def is_fp8_kv_dtype(self) -> bool:
@@ -511,8 +719,8 @@ class KVCacheParams(KVCacheParamInterface):
         """
         if self.n_devices % self.data_parallel_degree != 0:
             raise ValueError(
-                f"Number of devices ({self.n_devices}) must be evenly divisible "
-                f"by data parallel degree ({self.data_parallel_degree})"
+                f"Number of devices ({self.n_devices}) must be evenly divisible"
+                f" by data parallel degree ({self.data_parallel_degree})"
             )
 
         devices_per_replica = split_into_groups(
@@ -622,6 +830,18 @@ class KVCacheParams(KVCacheParamInterface):
                 )
                 if draft_params is not None
                 else None,
+                # MLA capturable-graph scalar (host-resident size-1 tensor).
+                # Only present when this attention path is MLA.
+                mla_num_partitions=TensorType(
+                    DType.int64, shape=[1], device=DeviceRef.CPU()
+                )
+                if self.is_mla
+                else None,
+                draft_mla_num_partitions=TensorType(
+                    DType.int64, shape=[1], device=DeviceRef.CPU()
+                )
+                if draft_params is not None and draft_params.is_mla
+                else None,
             )
             for device in devices
         ]
@@ -691,7 +911,7 @@ class KVCacheParams(KVCacheParamInterface):
             kv_cache_buffer = KVCacheBuffer(
                 values=values,
                 scales=scales,
-                total_num_pages=total_num_pages,
+                replicates_kv_across_tp=self.replicates_kv_across_tp,
             )
             kv_cache_buffers.append(kv_cache_buffer)
         return kv_cache_buffers
@@ -763,19 +983,22 @@ class MultiKVCacheParams(KVCacheParamInterface):
         data_parallel_degrees = {p.data_parallel_degree for p in self.params}
         if len(data_parallel_degrees) > 1:
             raise ValueError(
-                f"All params must use the same data parallel degree, got: {data_parallel_degrees}"
+                "All params must use the same data parallel degree, got:"
+                f" {data_parallel_degrees}"
             )
 
         n_devices = {p.n_devices for p in self.params}
         if len(n_devices) > 1:
             raise ValueError(
-                f"All params must use the same number of devices, got: {n_devices}"
+                "All params must use the same number of devices, got:"
+                f" {n_devices}"
             )
 
         kv_connectors = {p.kv_connector for p in self.params}
         if len(kv_connectors) > 1:
             raise ValueError(
-                f"All params must use the same kv_connector, got: {kv_connectors}"
+                "All params must use the same kv_connector, got:"
+                f" {kv_connectors}"
             )
 
         host_kvcache_swap_space_gb = {
@@ -783,19 +1006,22 @@ class MultiKVCacheParams(KVCacheParamInterface):
         }
         if len(host_kvcache_swap_space_gb) > 1:
             raise ValueError(
-                f"All params must use the same host_kvcache_swap_space_gb, got: {host_kvcache_swap_space_gb}"
+                "All params must use the same host_kvcache_swap_space_gb, got:"
+                f" {host_kvcache_swap_space_gb}"
             )
 
         speculative_methods = {p.speculative_method for p in self.params}
         if len(speculative_methods) > 1:
             raise ValueError(
-                f"All params must use the same speculative_method, got: {speculative_methods}"
+                "All params must use the same speculative_method, got:"
+                f" {speculative_methods}"
             )
 
         num_draft_tokens_set = {p.num_draft_tokens for p in self.params}
         if len(num_draft_tokens_set) > 1:
             raise ValueError(
-                f"All params must use the same num_draft_tokens, got: {num_draft_tokens_set}"
+                "All params must use the same num_draft_tokens, got:"
+                f" {num_draft_tokens_set}"
             )
 
     @property
@@ -880,7 +1106,7 @@ def compute_num_device_blocks(
     )
     if num_allocable_blocks == 0:
         raise RuntimeError(
-            f"Insufficient cache memory to allocate even a single page.\n"
+            "Insufficient cache memory to allocate even a single page.\n"
             f"One page requires {single_page_size_bytes_str} but only "
             f"{cache_memory_str} are available{across_x_devices_str}."
         )
@@ -890,10 +1116,11 @@ def compute_num_device_blocks(
             max_batch_size * params.bytes_per_block
         )
         logger.warning(
-            f"Insufficient cache memory to support a batch containing {max_batch_size} "
-            f"requests with one token per request. Need to allocate at least {max_batch_size} "
-            f"pages ({memory_needed_str}), but only have enough memory for {num_allocable_blocks} "
-            f"pages ({cache_memory_str}{across_x_devices_str})."
+            "Insufficient cache memory to support a batch containing"
+            f" {max_batch_size} requests with one token per request. Need to"
+            f" allocate at least {max_batch_size} pages ({memory_needed_str}),"
+            f" but only have enough memory for {num_allocable_blocks} pages"
+            f" ({cache_memory_str}{across_x_devices_str})."
         )
 
     if (
@@ -904,11 +1131,12 @@ def compute_num_device_blocks(
             max_blocks_per_req * params.bytes_per_block
         )
         logger.warning(
-            f"Insufficient cache memory to support a batch containing one request "
-            f"at the max sequence length of {max_seq_len} tokens. "
-            f"Need to allocate at least {max_blocks_per_req} "
-            f"pages ({memory_needed_str}), but only have enough memory for "
-            f"{num_allocable_blocks} pages ({cache_memory_str}{across_x_devices_str})."
+            "Insufficient cache memory to support a batch containing one"
+            f" request at the max sequence length of {max_seq_len} tokens. Need"
+            f" to allocate at least {max_blocks_per_req} pages"
+            f" ({memory_needed_str}), but only have enough memory for"
+            f" {num_allocable_blocks} pages"
+            f" ({cache_memory_str}{across_x_devices_str})."
         )
 
     return num_blocks
@@ -991,9 +1219,11 @@ def compute_num_host_blocks(params: KVCacheParamInterface) -> int:
 
     if num_host_blocks == 0:
         raise RuntimeError(
-            f"Insufficient cache memory to allocate even a single page.\n"
-            f"One page requires {to_human_readable_bytes(params.bytes_per_block)} but only "
-            f"{to_human_readable_bytes(host_gb_per_replica * GiB)} are available on host."
+            "Insufficient cache memory to allocate even a single page.\nOne"
+            " page requires"
+            f" {to_human_readable_bytes(params.bytes_per_block)} but only"
+            f" {to_human_readable_bytes(host_gb_per_replica * GiB)} are"
+            " available on host."
         )
 
     return num_host_blocks
