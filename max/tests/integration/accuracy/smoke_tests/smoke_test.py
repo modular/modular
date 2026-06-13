@@ -392,8 +392,9 @@ def get_server_cmd(
     *,
     serve_extra_args: str = "",
     recipe_path: str | None = None,
+    gpu_spec: tuple[str, int],
 ) -> list[str]:
-    gpu_model, gpu_count = get_gpu_name_and_count()
+    gpu_model, gpu_count = gpu_spec
     if recipe_path is None:
         recipe_path = MODEL_RECIPES.get(model)
     recipe = _load_recipe(recipe_path) if recipe_path else None
@@ -625,6 +626,7 @@ def smoke_test(
         hf_model_path,
         serve_extra_args=serve_extra_args,
         recipe_path=recipe_path,
+        gpu_spec=get_gpu_name_and_count(),
     )
 
     tasks = [TEXT_TASK]
