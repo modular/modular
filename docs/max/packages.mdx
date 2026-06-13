@@ -14,7 +14,7 @@ single Python/Conda package named `modular`. This page explains what's in the
 package and shows how to install it.
 
 If you just want to get started with Modular, instead see our
-[quickstart guide](/max/get-started).
+[quickstart guide](/max/get-started/).
 
 ## Package managers
 
@@ -36,7 +36,7 @@ examples](https://github.com/modular/modular/tree/main/max/examples) include a
 the same packages and get the same results—you just need to install `pixi`.
 
 So if you're not set on using a particular package manager, we suggest you try
-`pixi`. If you haven't used it before, check out our [Pixi basics guide](/pixi)
+`pixi`. If you haven't used it before, check out our [Pixi basics guide](/pixi/)
 or the [official Pixi docs](https://pixi.sh/latest/).
 
 ## Install
@@ -44,7 +44,7 @@ or the [official Pixi docs](https://pixi.sh/latest/).
 To get the latest improvements and new features, we recommend
 installing our nightly build, which we release several times a week. If you
 want a better tested but older version, you can install a stable
-build. (Each release is described in the [changelog](/max/changelog).)
+build. (Each release is described in the [changelog](/max/changelog/).)
 
 System requirements:
 
@@ -149,17 +149,17 @@ Here's a summary of what's in the `modular` package.
     The `modular` Conda package installs the following:
 
     - MAX tools and libraries:
-      - [`max` CLI](/max/cli)
+      - [`max` CLI](/max/cli/)
       - [`max` Python library](/max/api/python/)
       - [`max` Mojo library](/max/api/kernels/comm/)
       - [MAX Engine C API](/max/api/c/)
     - The `mojo` package:
-      - [`mojo` CLI](https://mojolang.org/docs/cli) (includes the Mojo compiler)
-      - [Mojo standard library](https://mojolang.org/docs/std)
+      - [`mojo` CLI](https://mojolang.org/docs/cli/) (includes the Mojo compiler)
+      - [Mojo standard library](https://mojolang.org/docs/std/)
       - Mojo language server (LSP) for IDE/editor integration
-      - [Mojo debugger](https://mojolang.org/docs/tools/debugging) (includes LLDB)
-      - [Mojo code formatter](https://mojolang.org/docs/cli/format)
-      - [Mojo REPL](https://mojolang.org/docs/cli/repl)
+      - [Mojo debugger](https://mojolang.org/docs/tools/debugging/) (includes LLDB)
+      - [Mojo code formatter](https://mojolang.org/docs/cli/format/)
+      - [Mojo REPL](https://mojolang.org/docs/cli/repl/)
 
     `pixi` known issues:
 
@@ -172,16 +172,16 @@ Here's a summary of what's in the `modular` package.
     The `modular` Python wheel installs the following:
 
     - MAX tools and libraries:
-      - [`max` CLI](/max/cli)
+      - [`max` CLI](/max/cli/)
       - [`max` Python library](/max/api/python/)
       - [`max` Mojo library](/max/api/kernels/comm/)
     - The `mojo` package:
-      - [`mojo` CLI](https://mojolang.org/docs/cli) (includes the Mojo compiler)
-      - [Mojo standard library](https://mojolang.org/docs/std)
+      - [`mojo` CLI](https://mojolang.org/docs/cli/) (includes the Mojo compiler)
+      - [Mojo standard library](https://mojolang.org/docs/std/)
       - Mojo language server (LSP) for IDE/editor integration
-      - [Mojo debugger](https://mojolang.org/docs/tools/debugging) (includes LLDB)
-      - [Mojo code formatter](https://mojolang.org/docs/cli/format)
-      - [Mojo REPL](https://mojolang.org/docs/cli/repl)
+      - [Mojo debugger](https://mojolang.org/docs/tools/debugging/) (includes LLDB)
+      - [Mojo code formatter](https://mojolang.org/docs/cli/format/)
+      - [Mojo REPL](https://mojolang.org/docs/cli/repl/)
 
   </TabItem>
 </Tabs>
@@ -189,7 +189,7 @@ Here's a summary of what's in the `modular` package.
 :::note Note
 
 For information about the `mojo` package, see the [Mojo install
-guide](https://mojolang.org/docs/manual/install).
+guide](https://mojolang.org/docs/manual/install/).
 
 :::
 
@@ -200,10 +200,10 @@ To install `modular`, your system must meet these specifications.
 <Tabs groupId="os">
 <TabItem value="mac" label="Mac">
 
-- macOS Sequoia (15) or later
-- Apple silicon (M1 - M5 processor)
-- Python 3.10 - 3.14
-- Xcode or Xcode Command Line Tools 16 or later
+- macOS Sequoia (15) or later.
+- Apple silicon (M1–M5 processor).
+- Python 3.10–3.14.
+- Xcode or Xcode Command Line Tools 16 or later.
 - Apple silicon GPU support is available for Mojo GPU programming. See
   [GPU compatibility](#gpu-compatibility) for details. You may need to run
   `xcodebuild -downloadComponent MetalToolchain` to install the Metal utilities
@@ -212,14 +212,38 @@ To install `modular`, your system must meet these specifications.
 </TabItem>
 <TabItem value="linux" label="Linux">
 
-- Ubuntu 22.04 LTS
-- x86-64 CPU (with [SSE4.2 or
-  newer](https://www.intel.com/content/www/us/en/support/articles/000057621/processors.html))
-  or AWS Graviton2/3 CPU
-- Minimum 8 GiB RAM (or much more, depending on the model you run)
-- Python 3.10 - 3.14
-- g++ or clang++ C++ compiler
-- To use GPUs, see the [GPU compatibility](#gpu-compatibility)
+- glibc 2.34 or later (for example, Ubuntu 22.04 LTS or later).
+
+  :::note Officially supported distribution
+
+  Modular tests MAX on Ubuntu 22.04 LTS or later. Other Linux distributions
+  that meet the glibc 2.34+ requirement are expected to work but aren't
+  continuously tested.
+
+  :::
+
+- x86-64-v3 (Haswell-class or newer; CPUs from approximately 2013 onward) or
+  ARM64 Neoverse N1 or newer (for example, AWS Graviton2 and later).
+
+  :::note x86-64-v3 CPU instruction sets
+
+  The [x86-64-v3 microarchitecture
+  level](https://github.com/llvm/llvm-project/blob/main/clang/docs/UsersManual.rst#x86)
+  requires AVX, AVX2, BMI1, BMI2, F16C, FMA, LZCNT, MOVBE, and XSAVE
+  instructions. To verify your x86-64 CPU on Linux, run
+  `cat /proc/cpuinfo | grep flags` and confirm those flags are present.
+  This requirement doesn't apply to ARM64 hosts.
+
+  :::
+
+- 8 GiB RAM minimum for Mojo development. MAX inference and model serving
+  require significantly more memory, with the exact amount varying by model.
+  For the catalog of supported models, see the
+  [supported models](/max/models/) page; for a specific model, check its
+  Hugging Face page for memory details.
+- Python 3.10–3.14.
+- A C compiler (such as `cc`, `gcc`, or `clang`)—used as a linker.
+- To use GPUs, see the [GPU compatibility](#gpu-compatibility).
 
 </TabItem>
 <TabItem value="windows" label="Windows">
@@ -257,14 +281,6 @@ with Mojo, the following GPUs are compatible.
       <td>Blackwell</td>
     </tr>
     <tr>
-      <td>H100</td>
-      <td>Hopper</td>
-    </tr>
-    <tr>
-      <td>H200</td>
-      <td>Hopper</td>
-    </tr>
-    <tr>
       <td colSpan="2"><strong>Known compatible for development</strong></td>
     </tr>
     <tr>
@@ -274,6 +290,18 @@ with Mojo, the following GPUs are compatible.
     <tr>
       <td>B100</td>
       <td>Blackwell</td>
+    </tr>
+    <tr>
+      <td>DGX Spark</td>
+      <td>Blackwell</td>
+    </tr>
+    <tr>
+      <td>H200</td>
+      <td>Hopper</td>
+    </tr>
+    <tr>
+      <td>H100</td>
+      <td>Hopper</td>
     </tr>
     <tr>
       <td>L4</td>
@@ -292,6 +320,10 @@ with Mojo, the following GPUs are compatible.
       <td>Ampere</td>
     </tr>
     <tr>
+      <td>A1000</td>
+      <td>Ampere</td>
+    </tr>
+    <tr>
       <td>RTX 50XX series</td>
       <td>Blackwell</td>
     </tr>
@@ -306,6 +338,18 @@ with Mojo, the following GPUs are compatible.
     <tr>
       <td>Jetson Orin / Orin Nano</td>
       <td>Ampere</td>
+    </tr>
+    <tr>
+      <td>Jetson Thor</td>
+      <td>Blackwell</td>
+    </tr>
+    <tr>
+      <td>T4</td>
+      <td>Turing</td>
+    </tr>
+    <tr>
+      <td>RTX 20XX series</td>
+      <td>Turing</td>
     </tr>
   </tbody>
 </table>
@@ -358,7 +402,7 @@ variable to a system `ptxas` binary (for example,
       <td>RDNA4</td>
     </tr>
     <tr>
-      <td>Radeon 880M</td>
+      <td>Radeon 880M / 890M</td>
       <td>RDNA3.5</td>
     </tr>
     <tr>
@@ -381,6 +425,14 @@ variable to a system `ptxas` binary (for example,
       <td>Radeon RX 7600</td>
       <td>RDNA3</td>
     </tr>
+    <tr>
+      <td>Radeon 780M</td>
+      <td>RDNA3</td>
+    </tr>
+    <tr>
+      <td>Radeon RX 6900</td>
+      <td>RDNA2</td>
+    </tr>
   </tbody>
 </table>
 
@@ -390,10 +442,10 @@ later). For installation, see the
 
 #### Apple silicon GPUs
 
-Apple silicon GPU support (M1--M5) is functional for GPU programming with Mojo.
+Apple silicon GPU support (M1–M5) is functional for GPU programming with Mojo.
 Large GenAI model inference via MAX isn't yet available on Apple silicon. For
 details, see the
-[Mojo system requirements](https://mojolang.org/docs/requirements#apple-silicon-gpus).
+[Mojo system requirements](https://mojolang.org/docs/requirements/#apple-silicon-gpus).
 
 :::note Notes
 
@@ -408,9 +460,9 @@ for multi-GPU support.
 
 - For comprehensive GPU hardware tables, arch targets, and troubleshooting, see
 the
-[Mojo system requirements](https://mojolang.org/docs/requirements#gpu-compatibility)
+[Mojo system requirements](https://mojolang.org/docs/requirements/#gpu-compatibility)
 page.
 
-- To deploy MAX in containers, see the [deployment guide](/max/deploy/).
+- To deploy MAX in containers, see the [deployment guide](/max/deploy/cloud/).
 
 :::

@@ -338,10 +338,8 @@ def stsm_helper[
 
         comptime for k in range(stsmx4_lane_size // 2):
             var pair = SIMD[vec_dtype, 2](
-                rebind[Scalar[vec_dtype]](vec[i * stsmx4_lane_size + 2 * k]),
-                rebind[Scalar[vec_dtype]](
-                    vec[i * stsmx4_lane_size + 2 * k + 1]
-                ),
+                vec[i * stsmx4_lane_size + 2 * k],
+                vec[i * stsmx4_lane_size + 2 * k + 1],
             )
             var casted = pair.cast[dst.dtype]()
             v[2 * k] = casted[0]
@@ -610,32 +608,29 @@ def kernel_8[
     var a_smem = LayoutTensorIter[
         a_type,
         a_smem_layout,
-        MutAnyOrigin,
         address_space=AddressSpace.SHARED,
         alignment=128,
     ](
-        a_smem_base,
+        a_smem_base.as_unsafe_any_origin(),
         a_smem_size,
     )
 
     var b_smem = LayoutTensorIter[
         b_type,
         b_smem_layout,
-        MutAnyOrigin,
         address_space=AddressSpace.SHARED,
         alignment=128,
     ](
-        b_smem_base,
+        b_smem_base.as_unsafe_any_origin(),
         b_smem_size,
     )
 
     var c_smem_iter = LayoutTensorIter[
         c_type,
         Layout.row_major(output_tile_shape[0], output_tile_shape[1]),
-        MutAnyOrigin,
         address_space=AddressSpace.SHARED,
         alignment=128,
-    ](c_smem_base, c_smem_size)
+    ](c_smem_base.as_unsafe_any_origin(), c_smem_size)
 
     var smem_pool = (c_smem_base + c_smem_size).bitcast[Int64]()
 
@@ -985,9 +980,9 @@ def blackwell_kernel_8[
     cta_group: Int = 1,
     num_clc_pipeline_stages: Int = 2,
 ](
-    c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
-    a: LayoutTensor[a_type, a_layout, MutAnyOrigin],
-    b: LayoutTensor[b_type, b_layout, MutAnyOrigin],
+    c: LayoutTensor[c_type, c_layout, _],
+    a: LayoutTensor[a_type, a_layout, _],
+    b: LayoutTensor[b_type, b_layout, _],
     ctx: DeviceContext,
 ) raises:
     var M = c.dim[0]()

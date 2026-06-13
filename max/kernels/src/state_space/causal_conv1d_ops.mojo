@@ -407,16 +407,17 @@ struct CausalConv1DChannelLast[activation: StaticString]:
         else:
             raise Error("Unsupported target device")
 
-    @staticmethod
-    def shape[
-        dtype: DType,
-        rank: Int,
-    ](
-        input: InputTensor[dtype=dtype, rank=rank, ...],
-        weight: InputTensor[dtype=dtype, rank=2, ...],
-        bias: InputTensor[dtype=dtype, rank=1, ...],
-    ) -> IndexList[rank]:
-        return input.shape()
+
+@compiler.register_shape_function("causal_conv1d")
+def causal_conv1d_shape[
+    dtype: DType,
+    rank: Int,
+](
+    input: InputTensor[dtype=dtype, rank=rank, ...],
+    weight: InputTensor[dtype=dtype, rank=2, ...],
+    bias: InputTensor[dtype=dtype, rank=1, ...],
+) -> IndexList[rank]:
+    return input.shape()
 
 
 # ===----------------------------------------------------------------------=== #
@@ -589,14 +590,15 @@ struct CausalConv1DUpdate[activation: StaticString]:
         else:
             raise Error("Unsupported target device")
 
-    @staticmethod
-    def shape[
-        dtype: DType,
-        rank: Int,
-    ](
-        input: InputTensor[dtype=dtype, rank=rank, ...],
-        conv_state_in: InputTensor[dtype=dtype, rank=rank, ...],
-        weight: InputTensor[dtype=dtype, rank=2, ...],
-        bias: InputTensor[dtype=dtype, rank=1, ...],
-    ) -> Tuple[IndexList[rank], IndexList[rank]]:
-        return (input.shape(), conv_state_in.shape())
+
+@compiler.register_shape_function("causal_conv1d_update")
+def causal_conv1d_update_shape[
+    dtype: DType,
+    rank: Int,
+](
+    input: InputTensor[dtype=dtype, rank=rank, ...],
+    conv_state_in: InputTensor[dtype=dtype, rank=rank, ...],
+    weight: InputTensor[dtype=dtype, rank=2, ...],
+    bias: InputTensor[dtype=dtype, rank=1, ...],
+) -> Tuple[IndexList[rank], IndexList[rank]]:
+    return (input.shape(), conv_state_in.shape())

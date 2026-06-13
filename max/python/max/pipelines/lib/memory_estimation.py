@@ -27,12 +27,13 @@ from max.nn.kv_cache import (
 from max.support.human_readable_formatter import to_human_readable_bytes
 
 if TYPE_CHECKING:
+    from max.pipelines.lib.registry import SupportedArchitecture
+
     from .config import PipelineConfig
 
 from .config.model_config import MAXModelConfig
 from .interfaces import (
     ArchConfig,
-    ArchConfigWithKVAndVisionCache,
     ArchConfigWithKVCache,
 )
 
@@ -182,6 +183,7 @@ class MemoryEstimator:
         model_weights_size: int,
         activation_memory_size: int,
         signal_buffer_size: int = 0,
+        arch: SupportedArchitecture | None = None,
     ) -> None:
         """Estimates memory footprint and validates ``max_length``/``max_batch_size`` fit."""
         is_draft_model = (
@@ -264,6 +266,7 @@ class MemoryEstimator:
             available_kv_cache_memory,
             devices,
             arch_config,
+            arch=arch,
         )
         available_kv_cache_memory -= vision_cache_bytes
         total_size += vision_cache_bytes
@@ -771,12 +774,13 @@ class MemoryEstimator:
         available_memory: int,
         devices: list[Device],
         arch_config: ArchConfig,
+        arch: SupportedArchitecture | None = None,
     ) -> int:
         """Estimate and reserve memory for the vision encoder cache.
 
-        Calls ``arch_config.estimate_vision_cache_entry_bytes()`` to get the
-        per-entry size.  Non-VLM architectures that don't implement this
-        method return 0 and no memory is reserved.
+        Delegates to ``arch.memory_planner.estimate_vision_cache_entry_bytes()``.
+        Non-VLM architectures whose planner returns ``0`` reserve no vision
+        cache memory.
 
         Vision cache is capped to at most a fraction of the shared KV+vision pool
         (see ``_VISION_CACHE_MAX_FRACTION_OF_KV_BUDGET``) so token KV cache retains
@@ -790,24 +794,16 @@ class MemoryEstimator:
         if max_entries <= 0:
             return 0
 
-        if not isinstance(arch_config, ArchConfigWithKVAndVisionCache):
-            hf_config = model_config.huggingface_config
-            is_vlm = hf_config is not None and hasattr(
-                hf_config, "vision_config"
-            )
-            if is_vlm:
-                logger.warning(
-                    "VLM architecture %s does not implement "
-                    "ArchConfigWithKVAndVisionCache; vision encoder "
-                    "cache memory will not be reserved.",
-                    type(arch_config).__name__,
-                )
+        hf_config = model_config.huggingface_config
+
+        if arch is None:
             return 0
 
-        hf_config = model_config.huggingface_config
-        per_entry_bytes = arch_config.estimate_vision_cache_entry_bytes(
-            hf_config
-        )
+        if arch.memory_planner is None:
+            return 0
+
+        planner = arch.memory_planner(arch_config)
+        per_entry_bytes = planner.estimate_vision_cache_entry_bytes(hf_config)
         if per_entry_bytes <= 0:
             return 0
 

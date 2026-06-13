@@ -20,6 +20,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from max.driver import accelerator_api
 from max.dtype import DType
 from max.graph import (
     BufferValue,
@@ -39,6 +40,24 @@ from .ep_config import NUM_GROUPS, EPConfig
 # With NVFP4 format, each expert's scales need to be padded to the nearest
 # multiple of NVFP4_MN_GROUP_SIZE.
 NVFP4_MN_GROUP_SIZE = 128
+
+
+def _uses_block_scaled_nv_ep_layout(config: EPConfig) -> bool:
+    quant_config = config.dispatch_quant_config
+    return (
+        quant_config is not None
+        and accelerator_api() == "cuda"
+        and (quant_config.is_nvfp4 or quant_config.is_mxfp8)
+    )
+
+
+def _is_legacy_float8_dispatch(config: EPConfig) -> bool:
+    quant_config = config.dispatch_quant_config
+    return (
+        quant_config is not None
+        and config.dispatch_dtype.is_float8()
+        and not _uses_block_scaled_nv_ep_layout(config)
+    )
 
 
 def _ep_dispatch_output_types(
@@ -86,27 +105,14 @@ def _ep_dispatch_output_types(
     if config.dispatch_quant_config is not None:
         quant_config = config.dispatch_quant_config
 
-        if config.dispatch_dtype.is_float8() or quant_config.is_mxfp4:
-            out_scales_type = quant_config.quantized_scales_type(
-                Shape([max_recv_tokens, config.hidden_size]), device_ref
-            )
-            return [
-                output_tokens_type,
-                out_scales_type,
-                expert_start_indices_type,
-                expert_ids_type,
-                src_info_type,
-            ]
-        elif quant_config.is_nvfp4:
-            # NVFP4 format will produce an extra tensor for offsets of the
-            # padded scales.
+        if _uses_block_scaled_nv_ep_layout(config):
+            # NVIDIA block-scaled formats produce padded 5D scale tiles plus
+            # offsets mapping each expert's token rows to those padded tiles.
             scales_offsets_type = TensorType(
                 dtype=DType.uint32,
                 shape=[n_local_experts],
                 device=device_ref,
             )
-            # Also, up to 128 tokens may be padded for scales of each expert. We
-            # need to accommodate this in the output types.
             padded_scales_tokens = (
                 max_recv_tokens + n_local_experts * NVFP4_MN_GROUP_SIZE
             )
@@ -118,6 +124,17 @@ def _ep_dispatch_output_types(
                 padded_scales_type,
                 expert_start_indices_type,
                 scales_offsets_type,
+                expert_ids_type,
+                src_info_type,
+            ]
+        elif _is_legacy_float8_dispatch(config) or quant_config.is_mxfp4:
+            out_scales_type = quant_config.quantized_scales_type(
+                Shape([max_recv_tokens, config.hidden_size]), device_ref
+            )
+            return [
+                output_tokens_type,
+                out_scales_type,
+                expert_start_indices_type,
                 expert_ids_type,
                 src_info_type,
             ]
@@ -191,13 +208,17 @@ def call_ep_init(
     parameters["combine_dtype"] = config.combine_dtype
 
     if config.dispatch_quant_config is not None:
-        if config.dispatch_quant_config.is_nvfp4:
-            parameters["dispatch_fmt_str"] = "NVFP4"
-            parameters["dispatch_scale_dtype"] = DType.float8_e4m3fn
+        if _uses_block_scaled_nv_ep_layout(config):
+            parameters["dispatch_fmt_str"] = "BLOCK_SCALED_NV"
+            parameters["dispatch_scale_dtype"] = (
+                DType.float8_e4m3fn
+                if config.dispatch_quant_config.is_nvfp4
+                else DType.float8_e8m0fnu
+            )
         elif config.dispatch_quant_config.is_mxfp4:
             parameters["dispatch_fmt_str"] = "MXFP4"
             parameters["dispatch_scale_dtype"] = DType.float8_e8m0fnu
-        elif config.dispatch_dtype.is_float8():
+        elif _is_legacy_float8_dispatch(config):
             parameters["dispatch_fmt_str"] = "BlockwiseFP8"
             parameters["dispatch_scale_dtype"] = DType.float32
         else:
@@ -280,19 +301,32 @@ def call_ep_dispatch_async(
 
     if config.dispatch_quant_config is not None:
         quant_config = config.dispatch_quant_config
-        if quant_config.is_nvfp4:
-            if input_scales is None:
+        if _uses_block_scaled_nv_ep_layout(config):
+            if quant_config.is_nvfp4 and input_scales is None:
                 raise ValueError(
                     "input_scales must be provided when using NVFP4 dispatch"
                 )
-            op_name += ".nvfp4"
-            input_vals.append(1.0 / input_scales.to(input_tokens.device))
+            op_name += ".block.scaled.nv"
+            parameters["dispatch_scale_dtype"] = (
+                DType.float8_e4m3fn
+                if quant_config.is_nvfp4
+                else DType.float8_e8m0fnu
+            )
+            if input_scales is not None:
+                input_vals.append(1.0 / input_scales.to(input_tokens.device))
+            else:
+                input_vals.append(
+                    ops.constant(
+                        [1.0], DType.float32, device=input_tokens.device
+                    )
+                )
         elif quant_config.is_mxfp4:
             op_name += ".mxfp4"
             # No output tensor for MOGG to deduce the scale dtype from.
             parameters["dispatch_scale_dtype"] = DType.float8_e8m0fnu
-        elif config.dispatch_dtype.is_float8():
+        elif _is_legacy_float8_dispatch(config):
             parameters["dispatch_fmt_str"] = "BlockwiseFP8"
+            parameters["dispatch_scale_dtype"] = DType.float32
         else:
             raise ValueError(
                 f"Unsupported dispatch dtype: {config.dispatch_dtype}"
@@ -378,17 +412,22 @@ def call_ep_dispatch_wait(
     if config.dispatch_quant_config is not None:
         quant_config = config.dispatch_quant_config
 
-        if config.dispatch_dtype.is_float8():
+        if _uses_block_scaled_nv_ep_layout(config):
+            op_name += ".block.scaled.nv"
+            parameters["dispatch_scale_dtype"] = (
+                DType.float8_e4m3fn
+                if quant_config.is_nvfp4
+                else DType.float8_e8m0fnu
+            )
+            if config.fused_shared_expert and quant_config.is_nvfp4:
+                raise ValueError(
+                    "NVFP4 dispatch with fused shared expert is not supported"
+                )
+        elif _is_legacy_float8_dispatch(config):
             op_name += ".fp8"
             parameters["dispatch_scale_granularity"] = str(
                 quant_config.input_scale.granularity
             )
-        elif quant_config.is_nvfp4:
-            op_name += ".nvfp4"
-            if config.fused_shared_expert:
-                raise ValueError(
-                    "NVFP4 dispatch with fused shared expert is not supported"
-                )
         elif quant_config.is_mxfp4:
             op_name += ".mxfp4"
         else:
@@ -621,18 +660,30 @@ def call_ep_dispatch(
     if config.dispatch_quant_config is not None:
         quant_config = config.dispatch_quant_config
 
-        if config.dispatch_dtype.is_float8():
+        if _uses_block_scaled_nv_ep_layout(config):
+            if quant_config.is_nvfp4 and input_scales is None:
+                raise ValueError(
+                    "input_scales must be provided when using NVFP4 dispatch"
+                )
+            op_name += ".block.scaled.nv"
+            parameters["dispatch_scale_dtype"] = (
+                DType.float8_e4m3fn
+                if quant_config.is_nvfp4
+                else DType.float8_e8m0fnu
+            )
+            if input_scales is not None:
+                input_vals.append(1.0 / input_scales.to(device_ref))
+            else:
+                input_vals.append(
+                    ops.constant([1.0], DType.float32, device=device_ref)
+                )
+        elif _is_legacy_float8_dispatch(config):
             op_name += ".fp8"
             parameters["dispatch_scale_granularity"] = str(
                 quant_config.input_scale.granularity
             )
-        elif quant_config.is_nvfp4:
-            if input_scales is None:
-                raise ValueError(
-                    "input_scales must be provided when using NVFP4 dispatch"
-                )
-            op_name += ".nvfp4"
-            input_vals.append(1.0 / input_scales.to(device_ref))
+        elif quant_config.is_mxfp4:
+            op_name += ".mxfp4"
         else:
             raise ValueError(
                 f"Unsupported dispatch dtype: {config.dispatch_dtype}"
@@ -671,9 +722,11 @@ def call_distributed_ep_dispatch(
     num_devices = len(input_tokens)
 
     quant_config = config.dispatch_quant_config
-    is_nvfp4 = quant_config is not None and quant_config.is_nvfp4
+    uses_nvidia_block_scaled = (
+        quant_config is not None and _uses_block_scaled_nv_ep_layout(config)
+    )
     is_mxfp4 = quant_config is not None and quant_config.is_mxfp4
-    is_fp8 = quant_config is not None and config.dispatch_dtype.is_float8()
+    is_fp8 = _is_legacy_float8_dispatch(config)
 
     output_types_per_device: list[list[TensorType]] = []
     for i in range(num_devices):
@@ -681,14 +734,23 @@ def call_distributed_ep_dispatch(
         types = _ep_dispatch_output_types(config, device_ref)
         output_types_per_device.append(types)
 
-    if is_nvfp4:
-        if input_scales is None:
+    if uses_nvidia_block_scaled:
+        assert quant_config is not None
+        if quant_config.is_nvfp4 and input_scales is None:
             raise ValueError("input_scales must be provided for NVFP4 dispatch")
-        inv_scales = [
-            1.0 / input_scales[i].to(atomic_counters[i].device)
-            for i in range(num_devices)
-        ]
-        return ops.distributed_ep.dispatch_nvfp4(
+        if input_scales is not None:
+            inv_scales = [
+                1.0 / input_scales[i].to(atomic_counters[i].device)
+                for i in range(num_devices)
+            ]
+        else:
+            inv_scales = [
+                ops.constant(
+                    [1.0], DType.float32, device=atomic_counters[i].device
+                )
+                for i in range(num_devices)
+            ]
+        return ops.distributed_ep.dispatch_block_scaled_nv(
             input_tokens,
             topk_ids,
             send_buf_ptrs,

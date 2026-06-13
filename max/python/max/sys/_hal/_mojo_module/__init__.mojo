@@ -13,9 +13,11 @@
 """Mojo-side type definitions for the ``max.sys._hal`` Python module."""
 
 from .buffer import Buffer
+from .bundle import Bundle, compile_to_python_bundle
 from .context import Context
 from .device import Device
 from .driver import Driver, load_driver
 from .event import Event
+from .function import Function
 from .queue import Queue
 from .stream import Stream

@@ -14,6 +14,7 @@
 from std.math import ceildiv, iota
 from std.sys.info import simd_width_of
 
+from std.math import isfinite
 import std.gpu.primitives.block as block
 from std.algorithm.functional import elementwise
 from std.gpu import block_idx, thread_idx
@@ -23,6 +24,7 @@ from layout import TensorLayout, TileTensor
 from nn._ragged_utils import get_batch_from_row_offsets
 
 from std.utils import IndexList
+from std.utils.coord import Coord, coord_to_index_list
 
 
 def apply_penalties_to_logits[
@@ -66,17 +68,21 @@ def apply_penalties_to_logits[
 
     @always_inline
     @parameter
-    def apply_penalties_fn[
-        width: Int, rank_: Int, alignment: Int = 1
-    ](idx: IndexList[rank_]):
-        comptime assert rank_ == 1, "apply_penalties_fn: rank must be 1"
+    def apply_penalties_fn[width: Int, alignment: Int = 1](idx: Coord):
+        comptime assert idx.rank == 1, "apply_penalties_fn: rank must be 1"
 
-        var batch_id = get_batch_from_row_offsets(frequency_offsets, idx[0])
+        var batch_id = get_batch_from_row_offsets(
+            frequency_offsets, Int(idx[0].value())
+        )
         var token = Int(compressed_frequency_data[idx[0], 0])
 
         var repetition_penalty_val = repetition_penalty[batch_id][0]
         var presence_penalty_val = presence_penalty[batch_id][0]
         var frequency_penalty_val = frequency_penalty[batch_id][0]
+        debug_assert(
+            isfinite(presence_penalty_val) and isfinite(frequency_penalty_val),
+            "frequency/presence penalty must be finite",
+        )
         # skip padding tokens
         if token >= 0:
             var count = compressed_frequency_data[idx[0], 1][0].cast[
@@ -86,6 +92,12 @@ def apply_penalties_to_logits[
             var logit = logits[batch_id, token][0]
 
             if logit > 0:
+                debug_assert(
+                    repetition_penalty_val[0] > 0
+                    and isfinite(repetition_penalty_val[0]),
+                    "repetition_penalty must be finite and > 0, was ",
+                    repetition_penalty_val[0],
+                )
                 logit = logit / repetition_penalty_val.cast[logit_type]()
             else:
                 logit = logit * repetition_penalty_val.cast[logit_type]()
@@ -97,7 +109,7 @@ def apply_penalties_to_logits[
 
             logits[batch_id, token] = logit
 
-    var dispatch_shape = IndexList[1](Int(compressed_frequency_data.dim[0]()))
+    var dispatch_shape = Coord(Int(compressed_frequency_data.dim[0]()))
     elementwise[
         func=apply_penalties_fn,
         simd_width=1,
@@ -242,14 +254,14 @@ def update_frequency_data[
         @always_inline
         @parameter
         def update_frequency_data_fn[
-            width: Int, rank_: Int, alignment: Int = 1
-        ](idx: IndexList[rank_]):
+            width: Int, alignment: Int = 1
+        ](idx: Coord):
             comptime assert (
-                rank_ == 1
+                idx.rank == 1
             ), "update_frequency_data_fn: rank must be 1"
 
-            var tok_start = frequency_offsets[idx[0]]
-            var tok_end = frequency_offsets[idx[0] + 1]
+            var tok_start = frequency_offsets[idx]
+            var tok_end = frequency_offsets[idx[0].value() + 1]
 
             var new_token = new_tokens[idx[0]][0].cast[DType.int32]()
 
@@ -265,7 +277,7 @@ def update_frequency_data[
                     compressed_frequency_data[tok_id, 1] = 1
                     break
 
-        var dispatch_shape = IndexList[1](new_tokens.num_elements())
+        var dispatch_shape = Coord(new_tokens.num_elements())
         elementwise[
             func=update_frequency_data_fn,
             simd_width=1,

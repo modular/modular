@@ -638,7 +638,9 @@ struct SMemTileArrayWithLayout[
 
     # Pointer to the array data
     var ptr: UnsafePointer[
-        Scalar[Self.dtype], MutAnyOrigin, address_space=AddressSpace.SHARED
+        Scalar[Self.dtype],
+        MutUntrackedOrigin,
+        address_space=AddressSpace.SHARED,
     ]
 
     def __init__(ref[AddressSpace.SHARED] storage: Self.Storage) -> Self:
@@ -679,7 +681,7 @@ struct SMemTileArrayWithLayout[
             A TileTensor with correct swizzled layout at the given index.
         """
         var tile_ptr = self.ptr + Self.tile_size * Int(index)
-        return Self.Tile(tile_ptr, Self.tile_layout)
+        return Self.Tile(tile_ptr.as_unsafe_any_origin(), Self.tile_layout)
 
     def slice[
         length: Int
@@ -787,7 +789,9 @@ struct SMemTileArray[
 
     # Pointer to the array data
     var ptr: UnsafePointer[
-        Scalar[Self.dtype], MutAnyOrigin, address_space=AddressSpace.SHARED
+        Scalar[Self.dtype],
+        MutUntrackedOrigin,
+        address_space=AddressSpace.SHARED,
     ]
 
     def __init__(ref[AddressSpace.SHARED] storage: Self.Storage) -> Self:
@@ -833,7 +837,7 @@ struct SMemTileArray[
             Coord[*Self.shape_types](),
             Coord[*Self.stride_types](),
         )
-        return Self.Tile(tile_ptr, layout)
+        return Self.Tile(tile_ptr.as_unsafe_any_origin(), layout)
 
     def slice[
         length: Int
@@ -952,7 +956,9 @@ struct SMemTileArray2D[
 
     # Pointer to the array data
     var ptr: UnsafePointer[
-        Scalar[Self.dtype], MutAnyOrigin, address_space=AddressSpace.SHARED
+        Scalar[Self.dtype],
+        MutUntrackedOrigin,
+        address_space=AddressSpace.SHARED,
     ]
 
     def __init__(ref[AddressSpace.SHARED] storage: Self.Storage) -> Self:
@@ -999,7 +1005,7 @@ struct SMemTileArray2D[
         """
         var tile_ptr = self.ptr + Self.tile_size * Int(index)
         return Self.Tile(
-            tile_ptr,
+            tile_ptr.as_unsafe_any_origin(),
             Self.tile_layout,
         )
 
@@ -1027,7 +1033,7 @@ struct SMemTileArray2D[
         """
         var tile_ptr = self.ptr + Self.tile_size * Int(index)
         return SMemTile[Self.dtype, tile_layout, alignment=Self.alignment](
-            tile_ptr, tile_layout
+            tile_ptr.as_unsafe_any_origin(), tile_layout
         )
 
     def slice[
@@ -1122,7 +1128,9 @@ struct SMemTileArray2DRowMajor[
 
     # Pointer to the array data
     var ptr: UnsafePointer[
-        Scalar[Self.dtype], MutAnyOrigin, address_space=AddressSpace.SHARED
+        Scalar[Self.dtype],
+        MutUntrackedOrigin,
+        address_space=AddressSpace.SHARED,
     ]
 
     def __init__(ref[AddressSpace.SHARED] storage: Self.Storage) -> Self:
@@ -1164,7 +1172,7 @@ struct SMemTileArray2DRowMajor[
         """
         var tile_ptr = self.ptr + Self.tile_size * Int(index)
         return Self.Tile(
-            tile_ptr,
+            tile_ptr.as_unsafe_any_origin(),
             Self.tile_layout,
         )
 

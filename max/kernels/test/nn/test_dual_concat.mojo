@@ -150,9 +150,9 @@ def test_dual_concat_inner_most_single_dim(ctx: DeviceContext) raises:
     ](
         rank - 1,
         input_shapes_0,
-        out0.as_any_origin(),
+        out0.as_unsafe_any_origin(),
         input_shapes_1,
-        out1.as_any_origin(),
+        out1.as_unsafe_any_origin(),
         ctx,
     )
 
@@ -323,9 +323,9 @@ def test_dual_concat_general_axis(ctx: DeviceContext) raises:
     ](
         1,
         input_shapes_0,
-        out0.as_any_origin(),
+        out0.as_unsafe_any_origin(),
         input_shapes_1,
-        out1.as_any_origin(),
+        out1.as_unsafe_any_origin(),
         ctx,
     )
 

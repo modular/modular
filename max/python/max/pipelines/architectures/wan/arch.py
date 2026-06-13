@@ -16,7 +16,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from max.graph.weights import WeightsFormat
-from max.pipelines.core import validate_wan_max_pixel_area
+from max.pipelines.context import validate_wan_max_pixel_area
 from max.pipelines.lib import SupportedArchitecture
 from max.pipelines.lib.config import MAXModelConfig, PipelineConfig
 from max.pipelines.lib.interfaces import ArchConfig
@@ -62,7 +62,7 @@ wan_arch = SupportedArchitecture(
     name="WanPipeline",
     task=PipelineTask.PIXEL_GENERATION,
     default_encoding="bfloat16",
-    supported_encodings={"bfloat16", "float32"},
+    supported_encodings={"bfloat16", "float32", "float8_e4m3fn"},
     example_repo_ids=[
         "Wan-AI/Wan2.2-T2V-A14B-Diffusers",
         "Wan-AI/Wan2.1-T2V-14B-Diffusers",
@@ -81,7 +81,7 @@ wan_i2v_arch = SupportedArchitecture(
     name="WanImageToVideoPipeline",
     task=PipelineTask.PIXEL_GENERATION,
     default_encoding="bfloat16",
-    supported_encodings={"bfloat16", "float32"},
+    supported_encodings={"bfloat16", "float32", "float8_e4m3fn"},
     example_repo_ids=[
         "Wan-AI/Wan2.2-I2V-A14B-Diffusers",
         "Wan-AI/Wan2.1-I2V-14B-720P-Diffusers",

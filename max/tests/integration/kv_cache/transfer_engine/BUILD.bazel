@@ -1,4 +1,4 @@
-load("//bazel:api.bzl", "modular_py_test", "requirement")
+load("//bazel:api.bzl", "modular_py_binary", "modular_py_test", "requirement")
 
 package(default_visibility = [
     "//:__pkg__",
@@ -6,6 +6,34 @@ package(default_visibility = [
     "//max/tests:__subpackages__",
     "//oss/modular/max/tests:__subpackages__",
 ])
+
+modular_py_binary(
+    name = "run_cross_node",
+    srcs = ["run_cross_node.py"],
+    main = "run_cross_node.py",
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    deps = [],
+)
+
+modular_py_binary(
+    name = "test_transfer_engine_cross_node",
+    srcs = ["test_transfer_engine_cross_node.py"],
+    main = "test_transfer_engine_cross_node.py",
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/pipelines/kv_cache",
+        requirement("msgspec"),
+        requirement("numpy"),
+        requirement("pyzmq"),
+    ],
+)
 
 modular_py_test(
     name = "test_notification_latency",
@@ -83,14 +111,19 @@ _4X_GPU_TESTS = [
     "test_send_recv_heterogeneous_mla_gpu.py",
 ]
 
+_LIGHT_TRANSFER_GPU_TESTS = [
+    "test_basic_gpu.py",
+    "test_send_recv_multi_thread_gpu.py",
+]
+
 modular_py_test(
     name = "multi-gpu-tests",
     srcs = glob(
         ["*_gpu.py"],
-        exclude = _4X_GPU_TESTS,
+        exclude = _4X_GPU_TESTS + _LIGHT_TRANSFER_GPU_TESTS,
     ),
     exec_properties = {
-        "test.resources:gpu-memory": "2",
+        "test.resources:gpu-memory": "5",
     },
     gpu_constraints = [
         "//:has_gpu",
@@ -101,6 +134,26 @@ modular_py_test(
     per_test_tags = {
         "test_send_recv_multi_process_gpu.py": ["manual"],  # FIXME: Times out intermittently (SERVOPT-1326)
     },
+    tags = ["gpu"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/pipelines/kv_cache",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "transfer_light_gpu_tests",
+    srcs = _LIGHT_TRANSFER_GPU_TESTS,
+    exec_properties = {
+        "test.resources:gpu-memory": "3",
+    },
+    gpu_constraints = [
+        "//:has_gpu",
+        "//:has_multi_gpu",
+        "//:nvidia_gpu",
+    ],
+    imports = ["."],
     tags = ["gpu"],
     deps = [
         "//max/python/max/driver",

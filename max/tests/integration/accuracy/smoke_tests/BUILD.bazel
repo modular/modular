@@ -36,7 +36,6 @@ modular_py_binary(
     name = "smoke_test",
     testonly = True,
     srcs = ["smoke_test.py"],
-    data = ["//max/python/max/pipelines/architectures:recipe_configs"],
     imports = [".."],
     tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
@@ -69,8 +68,27 @@ modular_py_binary(
     name = "smoke_test_github_matrix",
     srcs = ["smoke_test_github_matrix.py"],
     imports = [".."],
+    visibility = [
+        "//:__pkg__",
+        "//SDK/integration-test:__subpackages__",
+        "//ci/serve_smoke_tests_workflow:__pkg__",
+        "//max/tests:__subpackages__",
+        "//oss/modular/max/tests:__subpackages__",
+    ],
     deps = [
         requirement("click"),
+    ],
+)
+
+modular_py_library(
+    name = "check_golden_eligibility",
+    srcs = ["check_golden_eligibility.py"],
+    data = ["golden_ignore_list.yaml"],
+    imports = [".."],
+    deps = [
+        requirement("click"),
+        requirement("pyyaml"),
+        requirement("requests"),
     ],
 )
 
@@ -92,47 +110,6 @@ modular_py_binary(
     testonly = True,
     srcs = ["bisect_smoke_test.py"],
     imports = [".."],
-)
-
-modular_py_binary(
-    name = "upload_smoke_test_results",
-    srcs = ["upload_smoke_test_results.py"],
-    imports = [".."],
-    tags = ["no-pydeps"],
-    deps = [
-        requirement("google-cloud-bigquery"),
-    ],
-)
-
-modular_py_library(
-    name = "compute_accuracy_status",
-    srcs = [
-        "accuracy_windows_config.py",
-        "compute_accuracy_status.py",
-    ],
-    imports = [".."],
-    tags = ["no-pydeps"],
-    deps = [
-        ":smoke_test_github_matrix",
-        requirement("click"),
-        requirement("google-cloud-bigquery"),
-    ],
-)
-
-modular_py_test(
-    name = "test_compute_accuracy_status",
-    size = "small",
-    srcs = [
-        "conftest.py",
-        "test_compute_accuracy_status.py",
-    ],
-    imports = [".."],
-    tags = ["no-pydeps"],
-    deps = [
-        ":compute_accuracy_status",
-        ":smoke_test_github_matrix",
-        requirement("click"),
-    ],
 )
 
 modular_py_test(
@@ -191,6 +168,25 @@ modular_py_test(
     deps = [
         ":smoke_test",
         ":smoke_test_github_matrix",
+        requirement("click"),
+    ],
+)
+
+modular_py_test(
+    name = "test_check_golden_eligibility",
+    size = "small",
+    srcs = [
+        "conftest.py",
+        "test_check_golden_eligibility.py",
+    ],
+    imports = [".."],
+    # TODO(MODELS-994): Investigate and enable on macOS
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        ":check_golden_eligibility",
         requirement("click"),
     ],
 )

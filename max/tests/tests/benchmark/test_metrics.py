@@ -18,14 +18,18 @@ from __future__ import annotations
 import numpy as np
 import pytest
 from max.benchmark.benchmark_shared.metrics import (
+    BenchmarkResult,
     PercentileMetrics,
+    PixelGenAggregates,
     RatePercentileMetrics,
-    ServingBenchmarkMetrics,
+    SpecDecodeStats,
     StandardPercentileMetrics,
+    SteadyStateResult,
     TextGenAggregates,
     ThroughputMetrics,
     _compute_confidence_info,
 )
+from pydantic import ValidationError
 
 # ---------------------------------------------------------------------------
 # PercentileMetrics construction and formatting
@@ -482,7 +486,7 @@ def test_rate_percentile_metrics_fraction_mode_bound() -> None:
 
 
 # ---------------------------------------------------------------------------
-# ServingBenchmarkMetrics.validate_metrics()
+# BenchmarkResult.validate_metrics()
 # ---------------------------------------------------------------------------
 
 
@@ -499,8 +503,8 @@ def _make_metrics(
     itl_values: list[float] | None = None,
     ttft_values: list[float] | None = None,
     latency_values: list[float] | None = None,
-) -> ServingBenchmarkMetrics:
-    """Build a text-gen ServingBenchmarkMetrics with defaults that pass validation.
+) -> BenchmarkResult:
+    """Build a text-gen BenchmarkResult with defaults that pass validation.
 
     Individual fields can be overridden to inject specific degenerate values.
     """
@@ -510,7 +514,7 @@ def _make_metrics(
     ttft_values = ttft_values or [0.05]
     latency_values = latency_values or [0.5]
 
-    return ServingBenchmarkMetrics(
+    return BenchmarkResult(
         task_type="text",
         max_concurrency=1,
         peak_gpu_memory_mib=[],
@@ -873,14 +877,14 @@ def test_benchmark_metrics_to_result_dict_keys() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Pixel-gen ServingBenchmarkMetrics.to_result_dict
+# Pixel-gen BenchmarkResult.to_result_dict
 # ---------------------------------------------------------------------------
 
 
 def test_pixel_metrics_to_result_dict() -> None:
     from max.benchmark.benchmark_shared.metrics import PixelGenAggregates
 
-    pm = ServingBenchmarkMetrics(
+    pm = BenchmarkResult(
         task_type="pixel",
         max_concurrency=2,
         peak_gpu_memory_mib=[],
@@ -901,3 +905,50 @@ def test_pixel_metrics_to_result_dict() -> None:
     assert d["total_generated_outputs"] == 8
     assert "mean_latency_ms" in d
     assert "p99_latency_ms" in d
+
+
+def test_benchmark_result_rejects_text_only_fields_for_pixel_task() -> None:
+    with pytest.raises(ValidationError):
+        BenchmarkResult(
+            task_type="pixel",
+            max_concurrency=1,
+            steady_state_result=SteadyStateResult(
+                detected=False,
+                start_index=None,
+                end_index=None,
+                count=0,
+                warning=None,
+            ),
+            pixel_data=PixelGenAggregates(
+                duration=1.0,
+                completed=1,
+                failures=0,
+                request_throughput=1.0,
+                latency_ms=StandardPercentileMetrics(
+                    [0.5], scale_factor=1000.0
+                ),
+                total_generated_outputs=1,
+            ),
+        )
+
+
+def test_benchmark_result_to_result_dict_includes_text_only_fields() -> None:
+    result = _make_metrics()
+    result = result.model_copy(
+        update={
+            "steady_state_result": SteadyStateResult(
+                detected=True,
+                start_index=0,
+                end_index=9,
+                count=10,
+                warning=None,
+            ),
+            "spec_decode_stats": SpecDecodeStats(
+                acceptance_rate=55.0,
+                acceptance_length=2.0,
+            ),
+        }
+    )
+    d = result.to_result_dict()
+    assert d["steady_state_detected"] is True
+    assert d["spec_decode_acceptance_rate"] == 55.0

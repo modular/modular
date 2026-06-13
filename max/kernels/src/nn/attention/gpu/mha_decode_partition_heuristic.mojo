@@ -13,7 +13,7 @@
 
 from std.bit import next_power_of_two
 from std.gpu.host import DeviceAttribute, DeviceContext
-from std.math import ceildiv
+from std.math import ceildiv, clamp
 
 
 @always_inline
@@ -26,7 +26,7 @@ def _bucket_partitions(n: Int) -> Int:
     halve the worst-case over-partitioning above 32 while keeping the
     bucket count small enough for HIP graph capture.
 
-    Ladder: 1, 2, 4, 8, 16, 32, 48, 64, 96, 128.
+    Ladder: 1, 2, 4, 8, 16, 32, 48, 64, 96, 128, 192, 256.
 
     The SM100 path has an analogous helper, `_bucket_num_partitions` in
     `nvidia/sm100/mla_decode_dispatch.mojo`, with a different ladder
@@ -42,7 +42,11 @@ def _bucket_partitions(n: Int) -> Int:
         return 64
     if n <= 96:
         return 96
-    return 128
+    if n <= 128:
+        return 128
+    if n <= 192:
+        return 192
+    return 256
 
 
 def cuda_mha_decoding_num_partitions(
@@ -69,6 +73,7 @@ def hip_mha_decoding_num_partitions(
     num_keys: Int,
     heads_per_group: Int,
     sm_count: Int,
+    is_mla: Bool = False,
 ) -> Int:
     """Wave-aligned split-K target for MI355X MHA + MLA decode.
 
@@ -96,7 +101,17 @@ def hip_mha_decoding_num_partitions(
           one_wave    = sm_count // ctas_per_partition
           two_wave    = 2 × sm_count // ctas_per_partition
           work_floor  = ceildiv(pages, MAX_PAGES_PER_SPLIT)
-          np_target   = max(one_wave, min(work_floor, two_wave))
+          np_target   = clamp(work_floor, one_wave, two_wave)
+
+      EXCEPTION (num_heads <= 16, e.g. Kimi-K2.5 TP=4): the one_wave floor
+      underfills. With num_blocks_y=1, ctas_per_partition = batch_size, so
+      one wave (np = sm/bs) gives each CU exactly one CTA — no second block
+      to overlap HBM-read latency. These shapes are latency-bound, so target
+      two full waves instead:
+          np_target   = min(two_wave, pages)
+      Measured on MI355: two-wave np is 5-10% faster than one-wave across
+      bs=4 (32K-128K) and bs=8/16 short context; past two waves regresses on
+      reduce cost. bs=1 (two_wave=512 -> clamps to 256 = one wave) unchanged.
 
     Phase 0 sweep (PARTITIONING_PLAN.md) validated MLA-style at h=64:
         bs=1  ctx=131K → np=128 (capped, fills GPU at 1-wave + cap)
@@ -108,18 +123,21 @@ def hip_mha_decoding_num_partitions(
         bs=16 ctx=131K → np=16  (work_floor 103 capped by two_wave=16)
 
     AMD reducer constraint: `mla_splitk_reduce` supports MAX_PARTITIONS
-    up to `parts_per_lane × WARP_SIZE = 128`. Cap at 128.
+    up to `parts_per_lane × WARP_SIZE`; the 256-partition specialization
+    (parts_per_lane=4) lifts the MLA-style cap to 256. Only nk >= 64K
+    (pages >= 256) actually reaches np=256 — smaller nk is page-limited.
 
     Tunables (MLA-style):
         BM                   = 32   (MLA decode block-M on MI355)
         SPLIT_PAGE_SIZE      = 256  (min keys per partition)
         MAX_PAGES_PER_SPLIT  = 5    (= 1280 keys per partition cap)
-        MAX_HIP_PARTITIONS   = 128  (reducer's MAX_PARTITIONS limit)
+        MAX_HIP_PARTITIONS   = 256  (reducer's MAX_PARTITIONS limit; the
+                                     MHA-style branch above stays pinned ≤64)
     """
     comptime BM = 32
     comptime SPLIT_PAGE_SIZE = 256
     comptime MAX_PAGES_PER_SPLIT = 5
-    comptime MAX_HIP_PARTITIONS = 128
+    comptime MAX_HIP_PARTITIONS = 256
     # Empirically-tuned divisor used in the MHA HIGH_OCC branch to scale
     # partitions inversely with work_items. NOT WARP_SIZE — it's a
     # workload-shaping constant inherited from the pre-Phase-1 heuristic
@@ -133,7 +151,7 @@ def hip_mha_decoding_num_partitions(
     var work_items = heads_per_group * batch_size
 
     # MHA-style: kv_num_heads spawns CTAs directly in grid_y.
-    if heads_per_group < BM:
+    if (not is_mla) and heads_per_group < BM:
         if work_items >= sm_count:
             # High occupancy: 1 partition already fills the GPU. Scale
             # partition size up as work_items grows so we don't
@@ -142,7 +160,9 @@ def hip_mha_decoding_num_partitions(
             var occupancy_scale = max(1, work_items // MHA_OCC_SCALE_DIVISOR)
             var np_mha = min(
                 ceildiv(num_keys, SPLIT_PAGE_SIZE * occupancy_scale),
-                MAX_HIP_PARTITIONS // 2,  # cheap reducer (≤ 64)
+                # MHA-style cheap-reducer cap; pinned at 64 so the MLA-only
+                # MAX_HIP_PARTITIONS bump (128->256) does not change MHA grids.
+                64,
             )
             return min(_bucket_partitions(np_mha), MAX_HIP_PARTITIONS)
         # Low occupancy MHA: rare. Fall through to MLA-style formula
@@ -156,10 +176,30 @@ def hip_mha_decoding_num_partitions(
     var one_wave = max(1, sm_count // ctas_per_partition)
     var two_wave = max(1, (2 * sm_count) // ctas_per_partition)
     var work_floor = ceildiv(pages, MAX_PAGES_PER_SPLIT)
-    var np_target = max(one_wave, min(work_floor, two_wave))
+
+    var np_target: Int
+    if is_mla and heads_per_group <= 16:
+        # num_heads <= 16 (Kimi-K2.5 TP=4) packs all heads into one block
+        # (num_blocks_y=1), so ctas_per_partition = batch_size — tiny. Decode
+        # is latency-bound: each CTA stalls on HBM K-reads, so fill TWO waves
+        # — a second CTA per CU hides the first's stalls. Bounded by available
+        # pages (cannot split below one page) and the 256-partition cap. The
+        # one_wave floor used below underfills here: measured on MI355, the
+        # two-wave np is 5-10% faster than one-wave across bs=4 (32K-128K) and
+        # bs=8/16 short context, while going *past* two waves regresses (split-K
+        # reduce cost). bs=1 has two_wave=512 which clamps to 256 = one wave
+        # (the most CTAs it can reach), so it is unchanged.
+        np_target = min(two_wave, pages)
+    else:
+        # num_heads >= 32 (or low-occupancy MHA fallthrough): keep the tuned
+        # wave-aligned target — clamp work_floor to [one_wave, two_wave]
+        # (one_wave floor, two_wave cap; validated for num_heads=64/128 in the
+        # Phase-0/1 sweeps).
+        np_target = clamp(work_floor, one_wave, two_wave)
+
     var num_partitions = min(np_target, pages, MAX_HIP_PARTITIONS)
 
-    # Bucket to a fixed ladder (1, 2, 4, ..., 32, 48, 64, 96, 128) so
+    # Bucket to a fixed ladder (1, 2, ..., 64, 96, 128, 192, 256) so
     # HIP graph capture sees a small number of decode grid shapes.
     return min(_bucket_partitions(num_partitions), MAX_HIP_PARTITIONS)
 
@@ -169,6 +209,7 @@ def mha_decoding_num_partitions(
     num_keys: Int,
     heads_per_group: Int,
     ctx: DeviceContext,
+    is_mla: Bool = False,
 ) raises -> Int:
     var sm_count = ctx.get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT)
     if ctx.api() == "hip":
@@ -177,6 +218,7 @@ def mha_decoding_num_partitions(
             num_keys,
             heads_per_group,
             sm_count,
+            is_mla=is_mla,
         )
     if ctx.api() == "cuda":
         return cuda_mha_decoding_num_partitions(

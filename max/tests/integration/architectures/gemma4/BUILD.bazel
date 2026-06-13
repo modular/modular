@@ -40,6 +40,10 @@ modular_py_test(
         "test.resources:gpu-memory": "16",
     },
     gpu_constraints = ["//:has_gpu"],
+    # test_attention.py: 4 tests, 4 shards = one test per shard, compiles run in parallel
+    per_test_shard_count = {
+        "test_attention.py": 4,
+    },
     tags = ["gpu"],
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
@@ -51,9 +55,10 @@ modular_py_test(
         "//max/python/max/engine",
         "//max/python/max/graph",
         "//max/python/max/nn",
-        "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/architectures/gemma4",
         "//max/python/max/pipelines/kv_cache",
         "//max/tests/integration/test_common:context_utils",
+        "//max/tests/integration/test_common:graph_utils",
         requirement("numpy"),
         requirement("torch"),
         requirement("transformers"),
@@ -73,7 +78,7 @@ modular_py_test(
         "requires-network",
     ],
     deps = [
-        "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/architectures/gemma4",
         requirement("numpy"),
         requirement("pillow"),
         requirement("transformers"),
@@ -84,7 +89,8 @@ modular_py_test(
     name = "test_tokenizer",
     srcs = ["test_tokenizer.py"],
     deps = [
-        "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/architectures/gemma4",
+        "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/lib",
         "//max/python/max/pipelines/modeling",
         requirement("numpy"),
@@ -98,7 +104,7 @@ modular_py_test(
     name = "test_reasoning",
     srcs = ["test_reasoning.py"],
     deps = [
-        "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/architectures/gemma4",
         requirement("numpy"),
         requirement("pytest-asyncio"),
     ],
@@ -108,7 +114,7 @@ modular_py_test(
     name = "test_tool_parser",
     srcs = ["test_tool_parser.py"],
     deps = [
-        "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/architectures/gemma4",
         "//max/python/max/pipelines/modeling",
         requirement("llguidance"),
     ],
@@ -122,7 +128,7 @@ modular_py_test(
         "//conditions:default": [],
     }),  # FIXME: MOCO-2411
     deps = [
-        "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/architectures/gemma4",
         requirement("av"),
         requirement("numpy"),
     ],
@@ -142,7 +148,7 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/architectures/gemma4",
         requirement("torch"),
     ],
 )

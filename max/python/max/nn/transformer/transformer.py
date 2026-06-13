@@ -176,7 +176,7 @@ def extract_hs(
     return_hidden_states: ReturnHiddenStates,
     last_token_hs_distributed: Sequence[TensorValue],
     all_hs_distributed: Sequence[TensorValue],
-    normalizer: Sequence[Callable[[TensorValue], TensorValue]],
+    normalizer: Sequence[Callable[[TensorValue], TensorValue]] | None = None,
     capture_hidden_states: list[list[TensorValue]] | None = None,
 ) -> tuple[TensorValue, ...]:
     """Extract hidden states from the model.
@@ -188,7 +188,8 @@ def extract_hs(
         all_hs_distributed: Per-device hidden states from all tokens — one
             entry per device (distinct batch shards in DP, identical
             replicas in TP/single-device).
-        normalizer: Per-device normalization functions.
+        normalizer: Per-device normalization functions. Required when
+            ``return_hidden_states`` is ``ALL_NORMALIZED``.
         capture_hidden_states: A list of per-layer captured hidden states at specific layer indices.  Each entry is a
             per-device list of tensors. The entries are concatenated along the
             feature dimension to produce a single fused hidden-state tensor
@@ -209,6 +210,7 @@ def extract_hs(
     elif return_hidden_states == ReturnHiddenStates.ALL:
         return tuple(all_hs_distributed)
     elif return_hidden_states == ReturnHiddenStates.ALL_NORMALIZED:
+        assert normalizer is not None
         norm_hs = forward_sharded_layers(normalizer, all_hs_distributed)
         return tuple(norm_hs)
     elif return_hidden_states == ReturnHiddenStates.SELECTED_LAYERS:

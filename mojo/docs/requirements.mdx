@@ -9,7 +9,7 @@ import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
 Mojo runs on Mac, Linux, and Windows (with WSL). You don't need a GPU to
-program with Mojo---GPU support is optional.
+program with Mojo—GPU support is optional.
 
 For installation instructions, see the [install guide](/install/).
 
@@ -18,26 +18,22 @@ For installation instructions, see the [install guide](/install/).
 <Tabs groupId="os">
 <TabItem value="linux" label="Linux">
 
-- Ubuntu 22.04 LTS or later
-- x86-64 CPU (with [SSE4.2 or
-  newer](https://www.intel.com/content/www/us/en/support/articles/000057621/processors.html))
-  or ARM64 (AWS Graviton2/3)
-- glibc 2.34 or later
+- glibc 2.34 or later (for example, Ubuntu 22.04 LTS or later).
 
-:::note
+  :::note Officially supported distribution
 
-Mojo is expected to work on other Linux distributions that meet the glibc
-requirement, but we only test on Ubuntu. If your system has an older glibc
-version, run Mojo inside a container with a compatible base image such as
-Ubuntu 22.04.
+  Modular tests Mojo on Ubuntu 22.04 LTS or later. Other Linux distributions
+  that meet the glibc 2.34+ requirement are expected to work but aren't
+  continuously tested. If your system has an older glibc version, run Mojo
+  inside a container with a compatible base image such as Ubuntu 22.04.
 
-:::
+  :::
 
 </TabItem>
 <TabItem value="mac" label="Mac">
 
-- macOS Sequoia (15) or later
-- Apple silicon (M1--M5 processor)
+- macOS Sequoia (15) or later.
+- Apple silicon (M1–M5 processor).
 
 </TabItem>
 <TabItem value="windows" label="Windows">
@@ -51,18 +47,40 @@ version of Ubuntu (see the Linux requirements).
 
 ## Hardware
 
-- **CPU:** x86-64 (Intel/AMD with SSE4.2) or ARM64 on Linux; Apple silicon on
-  macOS
-- **RAM:** 8 GB minimum
+{/* rumdl's MD013 reflow strips blank lines inside the nested admonition
+below; disable it for this section. */}
+<!-- rumdl-disable MD013 -->
+
+- **CPU:** x86-64-v3 (Haswell-class or newer; CPUs from approximately 2013
+  onward) or ARM64 Neoverse N1 or newer (for example, AWS Graviton2 and later)
+  on Linux; Apple silicon on macOS.
+
+  :::note x86-64-v3 CPU instruction sets
+
+  The [x86-64-v3 microarchitecture
+  level](https://github.com/llvm/llvm-project/blob/main/clang/docs/UsersManual.rst#x86)
+  requires AVX, AVX2, BMI1, BMI2, F16C, FMA, LZCNT, MOVBE, and XSAVE
+  instructions. To verify your x86-64 CPU on Linux, run
+  `cat /proc/cpuinfo | grep flags` and confirm those flags are present.
+  This requirement doesn't apply to ARM64 or Apple silicon hosts.
+
+  :::
+
+<!-- rumdl-enable MD013 -->
+
+- **RAM:** 8 GiB minimum for Mojo development. MAX inference and model serving
+  require significantly more memory, with the exact amount varying by model.
+  For the catalog of supported models, see the
+  [supported models](https://docs.modular.com/max/models/) page; for a
+  specific model, check its Hugging Face page for memory details.
 - **GPU:** Optional. Mojo supports GPU programming across NVIDIA, AMD, and Apple
   silicon. See [GPU compatibility](#gpu-compatibility) below for supported
   hardware and driver requirements.
 
 ## Software
 
-- Python 3.10--3.14
-- C++ compiler (`g++` or `clang++`) on Linux
-- Xcode or Xcode Command Line Tools 16 or later on macOS
+- A C compiler (such as `cc`, `gcc`, or `clang`) on Linux—used as a linker.
+- Xcode or Xcode Command Line Tools 16 or later on macOS.
 
 ## GPU compatibility
 
@@ -119,11 +137,6 @@ We categorize GPU compatibility into two levels:
       <td><code>sm_100</code></td>
     </tr>
     <tr>
-      <td>H100</td>
-      <td>Hopper</td>
-      <td><code>sm_90</code></td>
-    </tr>
-    <tr>
       <td colSpan="3"><strong>Known compatible</strong></td>
     </tr>
     <tr>
@@ -143,6 +156,11 @@ We categorize GPU compatibility into two levels:
     </tr>
     <tr>
       <td>H200</td>
+      <td>Hopper</td>
+      <td><code>sm_90</code></td>
+    </tr>
+    <tr>
+      <td>H100</td>
       <td>Hopper</td>
       <td><code>sm_90</code></td>
     </tr>
@@ -173,6 +191,11 @@ We categorize GPU compatibility into two levels:
     </tr>
     <tr>
       <td>A10</td>
+      <td>Ampere</td>
+      <td><code>sm_86</code></td>
+    </tr>
+    <tr>
+      <td>A1000</td>
       <td>Ampere</td>
       <td><code>sm_86</code></td>
     </tr>
@@ -270,7 +293,7 @@ system `ptxas` binary compatible with your hardware and driver version.
       <td><code>gfx1200</code></td>
     </tr>
     <tr>
-      <td>Radeon 880M</td>
+      <td>Radeon 880M / 890M</td>
       <td>RDNA3.5</td>
       <td><code>gfx1150</code></td>
     </tr>
@@ -303,6 +326,11 @@ system `ptxas` binary compatible with your hardware and driver version.
       <td>Radeon 780M</td>
       <td>RDNA3</td>
       <td><code>gfx1103</code></td>
+    </tr>
+    <tr>
+      <td>Radeon RX 6900</td>
+      <td>RDNA2</td>
+      <td><code>gfx1030</code></td>
     </tr>
   </tbody>
 </table>

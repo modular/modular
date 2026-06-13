@@ -26,7 +26,14 @@ import std.format._utils as fmt
 
 from std.reflection import reflect
 
-from ._cpython import CPython, GILAcquired, PyObject, PyObjectPtr, PyTypeObject
+from ._cpython import (
+    CPython,
+    GILAcquired,
+    PyObject,
+    PyObjectPtr,
+    PyTypeObject,
+    PyTypeObjectPtr,
+)
 from .bindings import PyMojoObject, _get_type_name, lookup_py_type_object
 from .python import Python
 
@@ -165,7 +172,7 @@ struct PythonObject(
 
     @always_inline
     def __init__[
-        T: Movable & ImplicitlyDestructible
+        T: Movable & ImplicitlyDeletable
     ](out self, *, var alloc: T) raises:
         """Allocate a new `PythonObject` and store a Mojo value in it.
 
@@ -229,16 +236,6 @@ struct PythonObject(
         self = Self(from_owned=cpy.PyBool_FromLong(c_long(Int(value))))
 
     @implicit
-    def __init__(out self, value: Int):
-        """Initialize the object with an integer value.
-
-        Args:
-            value: The integer value.
-        """
-        ref cpy = Python().cpython()
-        self = Self(from_owned=cpy.PyLong_FromSsize_t(c_ssize_t(value)))
-
-    @implicit
     def __init__[dtype: DType](out self, value: Scalar[dtype]):
         """Initialize the object with a generic scalar value. If the scalar
         value type is bool, it is converted to a boolean. Otherwise, it is
@@ -259,7 +256,7 @@ struct PythonObject(
             var val = c_size_t(value.cast[DType.uint]())
             self = Self(from_owned=cpy.PyLong_FromSize_t(val))
         elif dtype.is_integral():
-            var val = c_ssize_t(value.cast[DType.int]()._mlir_value)
+            var val = c_ssize_t(value.cast[DType.int]())
             self = Self(from_owned=cpy.PyLong_FromSsize_t(val))
         else:
             var val = c_double(value.cast[DType.float64]())
@@ -1429,7 +1426,7 @@ struct PythonObject(
         )
 
     def downcast_value_ptr[
-        T: ImplicitlyDestructible
+        T: ImplicitlyDeletable
     ](self, *, func: Optional[StaticString] = None) raises -> UnsafePointer[
         T, MutAnyOrigin
     ]:
@@ -1481,7 +1478,7 @@ struct PythonObject(
             )
 
     def _try_downcast_value[
-        T: ImplicitlyDestructible
+        T: ImplicitlyDeletable
     ](var self) raises -> Optional[UnsafePointer[T, MutAnyOrigin]]:
         """Try to get a pointer to the expected contained Mojo value of type `T`.
 
@@ -1504,11 +1501,13 @@ struct PythonObject(
         if type == expected_type:
             ref mojo_obj = self._obj_ptr.bitcast[PyMojoObject[T]]().value()[]
             if mojo_obj.is_initialized:
-                return UnsafePointer(to=mojo_obj.mojo_value).as_any_origin()
+                return UnsafePointer(
+                    to=mojo_obj.mojo_value
+                ).as_unsafe_any_origin()
         return None
 
     def unchecked_downcast_value_ptr[
-        mut: Bool, origin: Origin[mut=mut], //, T: ImplicitlyDestructible
+        mut: Bool, origin: Origin[mut=mut], //, T: ImplicitlyDeletable
     ](ref[origin] self) -> UnsafePointer[T, origin]:
         """Get a pointer to the expected Mojo value of type `T`.
 
@@ -1544,7 +1543,7 @@ struct PythonObject(
 
 def _unsafe_alloc[
     T: AnyType
-](type_obj_ptr: _CPointer[PyTypeObject, MutAnyOrigin]) raises -> PyObjectPtr:
+](type_obj_ptr: PyTypeObjectPtr) raises -> PyObjectPtr:
     """Allocate an uninitialized Python object for storing a Mojo value.
 
     Parameters:
@@ -1567,7 +1566,7 @@ def _unsafe_alloc[
 
 
 def _unsafe_init[
-    T: Movable & ImplicitlyDestructible,
+    T: Movable & ImplicitlyDeletable,
     //,
 ](obj_ptr: PyObjectPtr, var mojo_value: T) raises:
     """Initialize a Python object pointer with a Mojo value.
@@ -1590,11 +1589,9 @@ def _unsafe_init[
 
 
 def _unsafe_alloc_init[
-    T: Movable & ImplicitlyDestructible,
+    T: Movable & ImplicitlyDeletable,
     //,
-](
-    type_obj_ptr: _CPointer[PyTypeObject, MutAnyOrigin], var mojo_value: T
-) raises -> PythonObject:
+](type_obj_ptr: PyTypeObjectPtr, var mojo_value: T) raises -> PythonObject:
     """Allocate a Python object pointer and initialize it with a Mojo value.
 
     Parameters:

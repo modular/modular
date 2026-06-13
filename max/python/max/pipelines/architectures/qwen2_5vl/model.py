@@ -38,7 +38,7 @@ from max.nn.kv_cache import KVCacheInputs
 from max.nn.layer import Module
 from max.nn.parallel import ParallelArrayOps
 from max.nn.transformer import ReturnLogits
-from max.pipelines.core import TextAndVisionContext
+from max.pipelines.context import TextAndVisionContext
 from max.pipelines.lib import (
     AlwaysSignalBuffersMixin,
     CompilationTimer,
@@ -50,7 +50,6 @@ from max.pipelines.lib import (
 )
 from max.pipelines.lib.vlm_utils import compute_multimodal_merge_indices
 from max.profiler import Tracer, traced
-from transformers import AutoConfig
 
 from .context import Qwen2_5VLTextAndVisionContext, VisionEncodingData
 from .model_config import Qwen2_5VLConfig
@@ -172,15 +171,6 @@ class Qwen2_5VLModel(
         self._parallel_ops = ParallelArrayOps(accelerator=gpu0, max_workers=24)
 
         self.vision_model, self.language_model = self.load_model(session)
-
-    @staticmethod
-    def calculate_max_seq_len(
-        pipeline_config: PipelineConfig, huggingface_config: AutoConfig
-    ) -> int:
-        """Calculates the maximum sequence length for the Qwen2.5VL model."""
-        return Qwen2_5VLConfig.calculate_max_seq_len(
-            pipeline_config, huggingface_config
-        )
 
     def load_model(self, session: InferenceSession) -> tuple[Model, Model]:
         """Loads the compiled Qwen2.5VL models into the MAX Engine session.
@@ -1104,59 +1094,3 @@ class Qwen2_5VLModel(
             max_seqlen=max_seqlen,
             max_window_seqlen=max_window_seqlen,
         )
-
-    def prepare_next_token_inputs(
-        self,
-        next_tokens: Buffer,
-        prev_model_inputs: ModelInputs,
-    ) -> Qwen2_5VLInputs:
-        """Prepares the inputs for subsequent execution steps in a multi-step generation."""
-        # TODO: This is still buggy. Use max_num_steps=1 until this is fixed.
-        assert isinstance(prev_model_inputs, Qwen2_5VLInputs)
-
-        # tokens, old_row_offsets, Optional: [pixel_values, attention_mask]
-        old_row_offsets = prev_model_inputs.input_row_offsets
-
-        row_offsets_size = old_row_offsets[0].shape[0]
-        next_row_offsets = [
-            offsets_prealloc[:row_offsets_size]
-            for offsets_prealloc in self._input_row_offsets_prealloc
-        ]
-
-        old_row_offsets_np = old_row_offsets[0].to_numpy()
-        old_position_ids_np = prev_model_inputs.position_ids.to_numpy()
-
-        # Compute new position ids by adding 1 to the previous final position id
-        # for each element in the batch.
-        # TODO: check this is correct for multi-gpu
-        position_ids_np = (
-            old_position_ids_np[..., old_row_offsets_np[1:] - 1] + 1
-        )
-        position_ids = Buffer.from_numpy(position_ids_np).to(self.devices[0])
-
-        return Qwen2_5VLInputs(
-            signal_buffers=self.signal_buffers,
-            tokens=next_tokens,
-            input_row_offsets=next_row_offsets,
-            position_ids=position_ids,
-            kv_cache_inputs=prev_model_inputs.kv_cache_inputs,
-            return_n_logits=prev_model_inputs.return_n_logits,
-            image_token_indices=None,
-            # Leave vision inputs empty since they are only processed on the
-            # first step.
-            pixel_values=None,
-            window_index=None,
-            vision_position_ids=None,
-            cu_seqlens=None,
-            cu_window_seqlens=None,
-            max_seqlen=None,
-            max_window_seqlen=None,
-            max_grid_size=None,
-        )
-
-    @classmethod
-    def estimate_activation_memory(
-        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
-    ) -> int:
-        # TODO: Make this more robust
-        return 5 * 1024 * 1024 * 1024  # 5 GiB

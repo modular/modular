@@ -12,12 +12,15 @@
 # ===----------------------------------------------------------------------=== #
 
 from .cache_params import (
+    BatchCharacteristics,
     KVCacheBuffer,
+    KVCacheMemory,
     KVCacheParamInterface,
     KVCacheParams,
     KVCacheQuantizationConfig,
     KVConnectorType,
     MultiKVCacheParams,
+    ReplicatedKVCacheMemory,
     compute_max_seq_len_fitting_in_cache,
     compute_num_device_blocks,
     compute_num_host_blocks,
@@ -25,20 +28,32 @@ from .cache_params import (
 )
 from .input_types import KVCacheInputs, KVCacheInputsPerDevice, PagedCacheValues
 from .metrics import KVCacheMetrics
-from .utils import AttentionDispatchResolver, build_max_lengths_tensor
+from .utils import (
+    AttentionDispatchResolver,
+    AttnKey,
+    MHAAttnKey,
+    MLAAttnKey,
+    build_max_lengths_tensor,
+)
 
 __all__ = [
     "AttentionDispatchResolver",
+    "AttnKey",
+    "BatchCharacteristics",
     "KVCacheBuffer",
     "KVCacheInputs",
     "KVCacheInputsPerDevice",
+    "KVCacheMemory",
     "KVCacheMetrics",
     "KVCacheParamInterface",
     "KVCacheParams",
     "KVCacheQuantizationConfig",
     "KVConnectorType",
+    "MHAAttnKey",
+    "MLAAttnKey",
     "MultiKVCacheParams",
     "PagedCacheValues",
+    "ReplicatedKVCacheMemory",
     "build_max_lengths_tensor",
     "compute_max_seq_len_fitting_in_cache",
     "compute_num_device_blocks",

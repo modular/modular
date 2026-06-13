@@ -26,6 +26,7 @@ import subprocess
 import sys
 import time
 from collections.abc import (
+    Callable,
     Generator,
     Iterator,
     Mapping,
@@ -38,10 +39,10 @@ from urllib.parse import urlparse
 from uuid import uuid4
 
 import numpy as np
+import psutil
 import yaml
 from cyclopts import App, Parameter
 from cyclopts.config import Env
-from tqdm.asyncio import tqdm
 from transformers import PreTrainedTokenizerBase
 
 if TYPE_CHECKING:
@@ -73,8 +74,7 @@ from max.benchmark.benchmark_shared.lora_benchmark_manager import (
     LoRABenchmarkManager,
 )
 from max.benchmark.benchmark_shared.metrics import (
-    PixelGenerationBenchmarkResult,
-    TextGenerationBenchmarkResult,
+    BenchmarkResult,
     calculate_spec_decode_stats,
 )
 from max.benchmark.benchmark_shared.multi_turn import (
@@ -86,10 +86,10 @@ from max.benchmark.benchmark_shared.multi_turn import (
 from max.benchmark.benchmark_shared.request import (
     BaseRequestFuncOutput,
     PixelGenerationRequestFuncOutput,
-    ProgressBarRequestDriver,
     RequestDriver,
     RequestFuncOutput,
     get_request_driver_class,
+    progressbar_request_driver,
 )
 from max.benchmark.benchmark_shared.server_metrics import (
     collect_benchmark_metrics,
@@ -142,6 +142,25 @@ BENCHMARK_SERVING_ARGPARSER_DESCRIPTION = (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _expand_pids(pids: list[int]) -> list[int]:
+    """Returns pids plus all their descendants."""
+    ppid_to_children: dict[int, list[int]] = {}
+    for proc in psutil.process_iter(["pid", "ppid"]):
+        ppid_to_children.setdefault(proc.info["ppid"], []).append(
+            proc.info["pid"]
+        )
+
+    result: set[int] = set()
+    queue = list(pids)
+    while queue:
+        pid = queue.pop()
+        if pid in result:
+            continue
+        result.add(pid)
+        queue.extend(ppid_to_children.get(pid, []))
+    return list(result)
 
 
 def parse_response_format(arg: str) -> ResponseFormat:
@@ -222,26 +241,13 @@ def under_nsys_tracing(
         subprocess.run(stop_cmd, check=True)
 
 
-def create_benchmark_pbar(disable_tqdm: bool, samples: Samples) -> tqdm | None:
-    """Create a progress bar for benchmark runs.
-
-    Args:
-        disable_tqdm: Whether to disable the progress bar.
-        samples: Samples that will be benchmarked with.
-
-    Returns:
-        A tqdm progress bar instance or None if disabled.
-    """
-    if disable_tqdm:
-        return None
-
+def _benchmark_request_total(samples: Samples) -> int:
+    """Return the number of requests a benchmark run will issue for *samples*."""
     if isinstance(samples, RequestSamples):
         # single-turn chat scenario
-        return tqdm(total=len(samples.requests))
-    else:
-        # multi-turn chat scenario
-        num_qa_turns = [session.num_turns for session in samples.chat_sessions]
-        return tqdm(total=sum(num_qa_turns))
+        return len(samples.requests)
+    # multi-turn chat scenario
+    return sum(session.num_turns for session in samples.chat_sessions)
 
 
 def _resolve_skip_counts(
@@ -313,9 +319,7 @@ async def benchmark(
     session: BenchmarkSession,
     max_concurrency: int | None,
     request_rate: float,
-) -> tuple[
-    TextGenerationBenchmarkResult | PixelGenerationBenchmarkResult, bool
-]:
+) -> tuple[BenchmarkResult, bool]:
     """Run a single benchmark invocation.
 
     ``session.orig_skip_first`` / ``session.orig_skip_last`` are the
@@ -409,6 +413,8 @@ async def benchmark(
             sampling=args.sampling,
             run_prefix=run_prefix,
             run_prefix_len=run_prefix_len,
+            max_concurrency=args.warmup_concurrency,
+            disable_tqdm=args.disable_tqdm,
         )
 
     if not args.skip_test_prompt:
@@ -466,6 +472,9 @@ async def benchmark(
                 warmup_oversample_factor=args.warmup_oversample_factor,
                 main_pool_target=args.num_chat_sessions or len(chat_sessions),
                 rng=np.random.default_rng(args.seed),
+                delay_biased=args.warmup_delay_biased,
+                est_ttft_ms=args.warmup_delay_estimated_ttft_ms,
+                est_tpot_ms=args.warmup_delay_estimated_tpot_ms,
             )
             if report is not None:
                 log_warmup_sampling_report(report)
@@ -487,6 +496,7 @@ async def benchmark(
             max_chat_len=session.tokenizer.model_max_length,
             sampling=args.sampling,
             disable_tqdm=args.disable_tqdm,
+            max_concurrency=args.warmup_concurrency,
         )
 
     # Capture baseline server metrics after priming so priming requests
@@ -531,9 +541,12 @@ async def benchmark(
         cpu_collector = None
         if args.collect_cpu_stats:
             try:
-                pids = collect_pids_for_port(
-                    int(urlparse(session.api_url).port or 8000)
-                )
+                if args.server_pids:
+                    pids = _expand_pids(args.server_pids)
+                else:
+                    pids = collect_pids_for_port(
+                        int(urlparse(session.api_url).port or 8000)
+                    )
                 cpu_collector = benchmark_stack.enter_context(
                     CPUMetricsCollector(pids)
                 )
@@ -550,13 +563,13 @@ async def benchmark(
             )
 
         # Create pbar for actual benchmark runs
-        request_driver = base_driver
-        pbar = create_benchmark_pbar(
-            disable_tqdm=args.disable_tqdm, samples=session.samples
+        request_driver = benchmark_stack.enter_context(
+            progressbar_request_driver(
+                base_driver,
+                _benchmark_request_total(session.samples),
+                disable_tqdm=args.disable_tqdm,
+            )
         )
-        if pbar is not None:
-            benchmark_stack.callback(pbar.close)
-            request_driver = ProgressBarRequestDriver(request_driver, pbar)
 
         # Marker consumed by utils/benchmarking/serving/analyze_batch_logs.py
         # to slice the batch log by concurrency and exclude warmup/test-prompt
@@ -633,9 +646,12 @@ async def benchmark(
                 lora_manager=session.lora_manager,
                 warmup_delay_ms=args.chat_warmup_delay_ms,
                 sampling=args.sampling,
-                randomize_session_start=args.randomize_session_start,
                 run_prefix=run_prefix,
                 run_prefix_len=run_prefix_len,
+                request_rate=request_rate,
+                burstiness=args.burstiness,
+                est_ttft_ms=args.warmup_delay_estimated_ttft_ms,
+                est_tpot_ms=args.warmup_delay_estimated_tpot_ms,
             )
             all_outputs = [
                 out for outs in outputs_by_session.values() for out in outs
@@ -678,9 +694,12 @@ async def benchmark(
                 warmup_delay_ms=args.chat_warmup_delay_ms,
                 max_concurrency=max_concurrency,
                 sampling=args.sampling,
-                randomize_session_start=args.randomize_session_start,
                 run_prefix=run_prefix,
                 run_prefix_len=run_prefix_len,
+                request_rate=request_rate,
+                burstiness=args.burstiness,
+                est_ttft_ms=args.warmup_delay_estimated_ttft_ms,
+                est_tpot_ms=args.warmup_delay_estimated_tpot_ms,
             )
             all_outputs = [
                 out for outs in outputs_by_session.values() for out in outs
@@ -763,7 +782,7 @@ async def benchmark(
 
     achieved_request_rate = 0.0
 
-    result: PixelGenerationBenchmarkResult | TextGenerationBenchmarkResult
+    result: BenchmarkResult
     if session.benchmark_task in PIXEL_GENERATION_TASKS:
         result = build_pixel_generation_result(
             outputs=all_outputs,
@@ -788,6 +807,7 @@ async def benchmark(
             collect_gpu_stats=args.collect_gpu_stats,
             metrics_by_endpoint=endpoint_metrics,
             spec_decode_stats=spec_decode_stats,
+            kv_block_size=args.kv_block_size,
         )
         if outputs_by_session is not None:
             text_result.session_server_stats = {
@@ -808,7 +828,7 @@ async def benchmark(
         result.lora_metrics = session.lora_manager.metrics
 
     print_benchmark_summary(
-        metrics=result.metrics,
+        metrics=result,
         request_rate=request_rate,
         max_concurrency=max_concurrency,
         achieved_request_rate=achieved_request_rate,
@@ -964,9 +984,7 @@ class BenchmarkRunResult:
     max_concurrency: int | None
     request_rate: float
     num_prompts: int
-    result: (
-        TextGenerationBenchmarkResult | PixelGenerationBenchmarkResult | None
-    ) = None
+    result: BenchmarkResult | None = None
 
 
 @dataclass
@@ -1081,6 +1099,22 @@ def _apply_dynamic_num_prompts(
         )
         args.max_benchmark_duration_s = 300
     return use_dynamic_num_prompts
+
+
+def _resolve_seed(args: ServingBenchmarkConfig) -> None:
+    """Draw and record a random seed when one was not pinned.
+
+    ``args.seed`` defaults to a fixed value so scheduled and repeated runs are
+    reproducible. A caller can opt into a fresh draw with ``--seed none`` (which
+    sets ``args.seed`` to ``None``); this resolves that draw to a concrete value
+    *before* the workload is sampled, so the run stays reproducible from the
+    recorded seed.
+    """
+    if args.seed is None:
+        args.seed = int(np.random.default_rng().integers(0, 10000))
+        logger.info("Drew a fresh random seed=%d", args.seed)
+    else:
+        logger.info("Using pinned seed=%d", args.seed)
 
 
 def _build_session(args: ServingBenchmarkConfig) -> BenchmarkSession:
@@ -1232,6 +1266,9 @@ def _run_dry_run_sweep(
                 warmup_oversample_factor=args.warmup_oversample_factor,
                 main_pool_target=args.num_chat_sessions or 0,
                 rng=rng,
+                delay_biased=args.warmup_delay_biased,
+                est_ttft_ms=args.warmup_delay_estimated_ttft_ms,
+                est_tpot_ms=args.warmup_delay_estimated_tpot_ms,
             )
             if report is not None:
                 log_warmup_sampling_report(report)
@@ -1271,9 +1308,7 @@ def _run_benchmark_sweep(
             )
 
         for rr in args.request_rate:
-            iteration_results: list[
-                TextGenerationBenchmarkResult | PixelGenerationBenchmarkResult
-            ] = []
+            iteration_results: list[BenchmarkResult] = []
             validation_passed = True
             for _iteration in range(args.num_iters):
                 if args.flush_prefix_cache:
@@ -1281,8 +1316,6 @@ def _run_benchmark_sweep(
                         args.backend, args.host, args.port, args.dry_run
                     )
 
-                if args.seed is None:
-                    args.seed = int(np.random.randint(0, 10000))
                 logger.info("mc=%s seed=%d", mc, args.seed)
 
                 result, ok = asyncio.run(benchmark(args, session, mc, rr))
@@ -1296,7 +1329,7 @@ def _run_benchmark_sweep(
                     [
                         agg.request_throughput
                         for r in iteration_results
-                        if (agg := r.metrics.aggregates) is not None
+                        if (agg := r.aggregates) is not None
                     ]
                 )
                 idx = argmedian(throughputs)
@@ -1336,6 +1369,8 @@ def _run_benchmark_sweep(
 
 def main_with_parsed_args(
     args: ServingBenchmarkConfig,
+    *,
+    server_liveness: Callable[[], bool] | None = None,
 ) -> Iterator[BenchmarkRunResult]:
     logging.basicConfig(
         format="%(asctime)s.%(msecs)03d %(levelname)s: %(name)s: %(message)s",
@@ -1350,6 +1385,7 @@ def main_with_parsed_args(
 
     _load_workload_yaml(args)
     _apply_run_length_defaults(args)
+    _resolve_seed(args)
 
     use_dynamic_num_prompts = _apply_dynamic_num_prompts(
         args, args.max_concurrency
@@ -1373,6 +1409,7 @@ def main_with_parsed_args(
         args.port,
         timeout_s=args.server_ready_timeout_s,
         backend=args.backend,
+        liveness_check=server_liveness,
     )
 
     yield from _run_benchmark_sweep(args, session, use_dynamic_num_prompts)

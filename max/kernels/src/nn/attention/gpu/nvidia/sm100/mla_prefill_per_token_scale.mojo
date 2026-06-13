@@ -21,7 +21,7 @@ from std.math import ceildiv
 from nn.attention.mha_operand import MHAOperand
 from nn.attention.mha_mask import MHAMask, TileMaskStatus
 from nn.attention.gpu.nvidia.mha_tile_scheduler import TransientScheduler
-from nn.attention.gpu.nvidia.sm90.attention import (
+from nn.attention.gpu.nvidia.common import (
     get_seq_info,
     kv_coord,
     KVTMATile,
@@ -192,7 +192,12 @@ __extension SM100MLA:
         ragged_tma_store: RaggedTMA3DTile[
             Self.output_dtype,
             Self.config.output_swizzle_mode,
-            BM=Self.config.fa4_config.BM // 2,
+            # `// fa4_config.num_qo` instead of `// 2`: matches the
+            # fa4_softmax / fa4_lse_combine_write signature so MLA's 2Q
+            # path type-checks under the unified 1Q/2Q signature.
+            # Numerically identical to `// 2` for num_qo=2 (the only
+            # mode MLA exercises today).
+            BM=Self.config.fa4_config.BM // Self.config.fa4_config.num_qo,
             BN=Self.config.fa4_config.ov_depth,
             group=config.fa4_config.group if config.fa4_config.fuse_gqa else 1,
         ],
@@ -353,6 +358,7 @@ __extension SM100MLA:
                 Self.page_size,
             ](
                 attn_smem,
+                seq_info.prompt_idx,
                 pos.score_row,
                 pos.num_keys,
                 mask,
@@ -411,6 +417,7 @@ __extension SM100MLA:
             Self.mma(
                 tmem_addr,
                 misc_mbars,
+                seq_info.prompt_idx,
                 pos.score_row,
                 pos.num_keys,
                 mask,
@@ -581,7 +588,7 @@ __extension SM100MLA:
 
         var kv_row: UInt32 = mask.start_column[
             Self.BM, Self.BN, Self.page_size
-        ](score_row)
+        ](seq_info.prompt_idx, score_row)
         var paged_rows = kv_lut.populate[Self.config.BN, base_alignment](
             seq_info.prompt_idx, kv_row
         )
@@ -590,7 +597,7 @@ __extension SM100MLA:
         ](seq_info.prompt_idx, kv_row)
         var iter_count: UInt32 = (
             mask.last_masked_set_end[Self.BM, Self.BN, Self.page_size](
-                score_row, num_keys
+                seq_info.prompt_idx, score_row, num_keys
             )
             - 1
         )
@@ -1035,7 +1042,9 @@ __extension SM100MLA:
 
                 comptime if check_mask:
                     if (
-                        Self.mask_status(mask, score_row, kv_row)
+                        Self.mask_status(
+                            mask, seq_info.prompt_idx, score_row, kv_row
+                        )
                         == TileMaskStatus.FULL_MASK
                     ):
                         continue
@@ -1071,7 +1080,9 @@ __extension SM100MLA:
                     var _skip_last = False
                     comptime if check_mask:
                         if (
-                            Self.mask_status(mask, score_row, kv_row)
+                            Self.mask_status(
+                                mask, seq_info.prompt_idx, score_row, kv_row
+                            )
                             == TileMaskStatus.FULL_MASK
                         ):
                             _skip_last = True
@@ -1346,7 +1357,9 @@ __extension SM100MLA:
 
                 comptime if check_mask:
                     if (
-                        Self.mask_status(mask, score_row, kv_row)
+                        Self.mask_status(
+                            mask, seq_info.prompt_idx, score_row, kv_row
+                        )
                         == TileMaskStatus.FULL_MASK
                     ):
                         continue
@@ -1380,7 +1393,9 @@ __extension SM100MLA:
                     var _skip_last = False
                     comptime if check_mask:
                         if (
-                            Self.mask_status(mask, score_row, kv_row)
+                            Self.mask_status(
+                                mask, seq_info.prompt_idx, score_row, kv_row
+                            )
                             == TileMaskStatus.FULL_MASK
                         ):
                             _skip_last = True
@@ -1504,7 +1519,7 @@ def mla_sm100_prefill_per_token_scale[
     comptime RaggedStoreType = RaggedTMA3DTile[
         output_dtype,
         fa4_config.output_swizzle_mode,
-        BM=fa4_config.fa4_config.BM // 2,
+        BM=fa4_config.fa4_config.BM // fa4_config.fa4_config.num_qo,
         BN=fa4_config.fa4_config.ov_depth,
     ]
 

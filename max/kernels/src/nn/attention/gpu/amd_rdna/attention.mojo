@@ -332,12 +332,12 @@ struct AttentionRDNA[
 
     var k_smem_ptr: UnsafePointer[
         Scalar[Self.k_t.dtype],
-        MutExternalOrigin,
+        MutUntrackedOrigin,
         address_space=AddressSpace.SHARED,
     ]
     var v_smem_ptr: UnsafePointer[
         Scalar[Self.v_t.dtype],
-        MutExternalOrigin,
+        MutUntrackedOrigin,
         address_space=AddressSpace.SHARED,
     ]
 
@@ -452,6 +452,7 @@ struct AttentionRDNA[
     ) -> TileMaskStatus:
         comptime if Self.token_gen:
             return self.mask.status(
+                UInt32(self.batch_idx),
                 IndexList[2, element_type=DType.uint32](
                     Int(self.num_keys - 1),
                     Int(kv_tile_start_row),
@@ -460,6 +461,7 @@ struct AttentionRDNA[
             )
         else:
             return self.mask.status(
+                UInt32(self.batch_idx),
                 IndexList[2, element_type=DType.uint32](
                     Int(self.mask_block_row + UInt32(self.start_pos)),
                     Int(kv_tile_start_row + UInt32(self.cache_start_pos)),
@@ -579,14 +581,18 @@ struct AttentionRDNA[
                 Self.q_type,
                 address_space=AddressSpace.SHARED,
             ]()
-            self.p_reg_buffer = Self.PRegisterBufferType(p_ptr)
+            self.p_reg_buffer = Self.PRegisterBufferType(
+                p_ptr.as_unsafe_any_origin()
+            )
         else:
             var p_ptr = stack_allocation[
                 Self._p_smem_size,
                 Self.q_type,
                 address_space=AddressSpace.SHARED,
             ]()
-            self.p_reg_buffer = Self.PRegisterBufferType(p_ptr)
+            self.p_reg_buffer = Self.PRegisterBufferType(
+                p_ptr.as_unsafe_any_origin()
+            )
 
         # Q tile: pre-offset and wrapped as TileTensor with Scalar rows.
         var valid_rows: UInt32 = UInt32(Self.group) if Self.token_gen else min(
@@ -670,7 +676,6 @@ struct AttentionRDNA[
         var warp_scratch = TileTensor[
             Self.accum_type,
             type_of(Self._warp_scratch_layout),
-            MutAnyOrigin,
             address_space=AddressSpace.SHARED,
         ](
             self.k_smem_ptr.bitcast[Scalar[Self.accum_type]](),

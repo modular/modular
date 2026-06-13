@@ -17,24 +17,20 @@ from typing import Any
 
 import numpy as np
 import pytest
-from max.pipelines.core import (
-    PixelContext,
-    SpecDecodingState,
-    TextAndVisionContext,
-    TextContext,
-    TTSContext,
-)
-from max.pipelines.core.context import FUTURE_TOKEN
-from max.pipelines.modeling.types import (
+from max.pipelines.context import (
     EOSTracker,
     GenerationStatus,
     ImageMetadata,
-    PixelGenerationContext,
-    RequestID,
+    PixelContext,
     SamplingParams,
-    TextGenerationContext,
+    SpecDecodingState,
+    TextAndVisionContext,
+    TextContext,
     TokenBuffer,
-    VLMTextGenerationContext,
+)
+from max.pipelines.context.context import FUTURE_TOKEN
+from max.pipelines.modeling.types import (
+    RequestID,
     msgpack_numpy_decoder,
     msgpack_numpy_encoder,
 )
@@ -605,65 +601,6 @@ def test_text_and_vision_context_tuple_serializable() -> None:
     assert dataclass_equal(msgpack_decoded[1], original_tuple[1])
 
 
-def test_tts_context_msgpack_serialization_and_speech_tokens() -> None:
-    """Tests that TTSContext can be serialized/deserialized with msgpack and that _speech_tokens can be written to after deserialization."""
-    # Create a TTSContext with some audio prompt tokens
-    audio_prompt_tokens = np.array([100, 101, 102, 103], dtype=np.int32)
-    original_context = TTSContext(
-        max_length=50,
-        tokens=TokenBuffer(np.array([0, 1, 2, 3, 4], dtype=np.int64)),
-        audio_prompt_tokens=audio_prompt_tokens,
-        sampling_params=SamplingParams(temperature=0.8),
-    )
-
-    # Add some initial speech tokens to the context
-    initial_speech_tokens = np.array([200, 201, 202], dtype=np.int32)
-    original_context.update_speech_tokens(initial_speech_tokens)
-
-    # Verify initial state
-    assert np.array_equal(
-        original_context.audio_prompt_tokens, audio_prompt_tokens
-    )
-    assert np.array_equal(original_context.speech_tokens, initial_speech_tokens)
-    assert original_context._speech_token_end_idx == 3
-    assert original_context.block_counter == 1
-
-    # Test that we can encode TTSContext with MsgPack
-    serialize = msgpack_numpy_encoder()
-    deserialize = msgpack_numpy_decoder(TTSContext)
-    msgpack_encoded = serialize(original_context)
-    msgpack_decoded = deserialize(msgpack_encoded)
-
-    # Verify the deserialized context matches the original
-    assert isinstance(msgpack_decoded, TTSContext)
-    assert dataclass_equal(msgpack_decoded, original_context)
-    assert np.array_equal(
-        msgpack_decoded.audio_prompt_tokens, audio_prompt_tokens
-    )
-    assert np.array_equal(msgpack_decoded.speech_tokens, initial_speech_tokens)
-    assert msgpack_decoded._speech_token_end_idx == 3
-    assert msgpack_decoded.block_counter == 1
-
-    # Test writing to the _speech_tokens array after deserialization
-    new_speech_tokens = np.array([300, 301, 302, 303], dtype=np.int32)
-    msgpack_decoded.update_speech_tokens(new_speech_tokens)
-
-    # Verify that the new speech tokens were added correctly
-    expected_combined_tokens = np.concatenate(
-        [initial_speech_tokens, new_speech_tokens]
-    )
-    assert np.array_equal(
-        msgpack_decoded.speech_tokens, expected_combined_tokens
-    )
-    assert msgpack_decoded._speech_token_end_idx == 7
-    assert msgpack_decoded.block_counter == 2
-
-    # Verify that the original context was not affected
-    assert np.array_equal(original_context.speech_tokens, initial_speech_tokens)
-    assert original_context._speech_token_end_idx == 3
-    assert original_context.block_counter == 1
-
-
 def test_text_context_update_with_future_token() -> None:
     context = TextContext(
         max_length=50,
@@ -721,6 +658,61 @@ def test_text_context_update_with_preemption_and_future_token() -> None:
     context.reset()
     assert context.tokens.all.tolist() == [0, 1, 2, 3, 4]
     assert context.tokens.generated_length == 0
+
+
+def test_text_context_to_generation_output_validates_vocab_size() -> None:
+    """Generated tokens must be non-negative and within vocab when vocab_size is set."""
+    request_id = RequestID()
+
+    context = TextContext(
+        request_id=request_id,
+        max_length=50,
+        tokens=TokenBuffer(np.array([0, 1, 2], dtype=np.int64)),
+        eos_tracker=EOSTracker(),
+        vocab_size=100,
+    )
+    context.update(42)
+    output = context.to_generation_output()
+    assert output.tokens == [42]
+    assert output.request_id == request_id
+
+    negative_context = TextContext(
+        request_id=request_id,
+        max_length=50,
+        tokens=TokenBuffer(np.array([0, 1, 2], dtype=np.int64)),
+        eos_tracker=EOSTracker(),
+        vocab_size=100,
+    )
+    negative_context.update(-1)
+    with pytest.raises(
+        RuntimeError,
+        match=r"Generated negative token_id=-1",
+    ):
+        negative_context.to_generation_output()
+
+    oob_context = TextContext(
+        request_id=request_id,
+        max_length=50,
+        tokens=TokenBuffer(np.array([0, 1, 2], dtype=np.int64)),
+        eos_tracker=EOSTracker(),
+        vocab_size=10,
+    )
+    oob_context.update(10)
+    with pytest.raises(
+        RuntimeError,
+        match=r"Generated out-of-vocabulary token_id=10.*\(valid range: \[0, 10\)\)",
+    ):
+        oob_context.to_generation_output()
+
+    unset_vocab_context = TextContext(
+        request_id=request_id,
+        max_length=50,
+        tokens=TokenBuffer(np.array([0, 1, 2], dtype=np.int64)),
+        eos_tracker=EOSTracker(),
+    )
+    unset_vocab_context.update(999)
+    output = unset_vocab_context.to_generation_output()
+    assert output.tokens == [999]
 
 
 def test_vision_context_reset() -> None:
@@ -1079,19 +1071,17 @@ def does_not_raise_due_to_check_in_property_method() -> None:
     exception.
     """
 
-    ctx = TTSContext(
+    ctx = TextContext(
         max_length=10,
         tokens=TokenBuffer(np.array([0, 1, 2, 3], dtype=np.int64)),
     )
 
-    # Protocol structural checks should NOT trigger the method body!
-    # (TextGenerationContext, VLMTextGenerationContext, and PixelGenerationContext are Protocols)
-    _ = isinstance(ctx, TextGenerationContext)
-    # The original bug report indicated that MAX threw a ValueError in call to
-    # isinstance(ctx, VLMTextGenerationContext) so we are validating this case here.
-    # See GENAI-318 for details.
-    _ = isinstance(ctx, VLMTextGenerationContext)
-    _ = isinstance(ctx, PixelGenerationContext)
+    # isinstance checks against concrete context classes should not raise.
+    # The original bug report (GENAI-318) indicated that isinstance on VLM
+    # contexts threw a ValueError; validate the concrete-class equivalents.
+    assert isinstance(ctx, TextContext)
+    _ = isinstance(ctx, TextAndVisionContext)
+    _ = isinstance(ctx, PixelContext)
 
 
 def test_context__spec_decoding_state_lazy_init() -> None:

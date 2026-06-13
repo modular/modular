@@ -22,12 +22,13 @@ from std.gpu.host import DeviceContext
 from std.python import PythonObject
 from std.python.bindings import PythonModuleBuilder
 from std.sys.info import has_accelerator, simd_width_of
+from std.utils.coord import Coord
 
 from std.algorithm.functional import elementwise, IndexList
 from std.reflection import reflect
 
 from extensibility import ElementwiseBinaryOp
-from elementwise_kernels import (
+from builtin_kernels import (
     Add,
     Sub,
     Mul,
@@ -86,7 +87,7 @@ def _is_gpu_allowed_binary_op[op: ElementwiseBinaryOp]() -> Bool:
 
 
 @export
-def PyInit_elementwise_binary_ops() -> PythonObject:
+def PyInit_elementwise_binary_ops() abi("C") -> PythonObject:
     """Create a Python module with binary elementwise kernel function bindings.
     """
     try:
@@ -429,9 +430,9 @@ def bin_bool_dispatcher[
 def bin_elementwise_op[
     op: ElementwiseBinaryOp, dtype: DType
 ](
-    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    lhs_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    rhs_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    out_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    lhs_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    rhs_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     size: Int,
     ctx: DeviceContext,
 ) raises:
@@ -453,8 +454,8 @@ def bin_elementwise_op[
     @always_inline
     @parameter
     @__copy_capture(out_ptr, lhs_ptr, rhs_ptr)
-    def func[width: Int, rank: Int, alignment: Int = 1](idx: IndexList[rank]):
-        var i = rebind[IndexList[1]](idx)[0]
+    def func[width: Int, alignment: Int = 1](idx: Coord):
+        var i = Int(idx[0].value())
 
         var res = op.elementwise(
             lhs_ptr.load[width=width](i), rhs_ptr.load[width=width](i)
@@ -462,18 +463,14 @@ def bin_elementwise_op[
         out_ptr.store[width=width](i, res)
 
     if ctx.api() == "cpu":
-        elementwise[func, simd_width=simd_width_of[dtype]()](
-            IndexList[1](size), ctx
-        )
+        elementwise[func, simd_width=simd_width_of[dtype]()](Coord(size), ctx)
     else:
         # GPU execution - check GPU availability and op/dtype support
         comptime if has_accelerator():
             comptime if _is_gpu_allowed_binary_op[
                 op
             ]() and dtype != DType.float64:
-                elementwise[func, simd_width=1, target="gpu"](
-                    IndexList[1](size), ctx
-                )
+                elementwise[func, simd_width=1, target="gpu"](Coord(size), ctx)
             else:
                 raise Error(
                     "GPU execution not supported for this binary elementwise"
@@ -487,9 +484,9 @@ def bin_elementwise_op[
 def pow_elementwise_op[
     dtype: DType
 ](
-    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    lhs_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    rhs_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    out_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    lhs_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    rhs_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     size: Int,
     ctx: DeviceContext,
 ) raises:
@@ -512,8 +509,8 @@ def pow_elementwise_op[
     @always_inline
     @parameter
     @__copy_capture(out_ptr, lhs_ptr, rhs_ptr)
-    def func[width: Int, rank: Int, alignment: Int = 1](idx: IndexList[rank]):
-        var i = rebind[IndexList[1]](idx)[0]
+    def func[width: Int, alignment: Int = 1](idx: Coord):
+        var i = Int(idx[0].value())
 
         var res = Pow.elementwise[dtype, dtype, width](
             lhs_ptr.load[width=width](i), rhs_ptr.load[width=width](i)
@@ -521,16 +518,12 @@ def pow_elementwise_op[
         out_ptr.store[width=width](i, res)
 
     if ctx.api() == "cpu":
-        elementwise[func, simd_width=simd_width_of[dtype]()](
-            IndexList[1](size), ctx
-        )
+        elementwise[func, simd_width=simd_width_of[dtype]()](Coord(size), ctx)
     else:
         # GPU execution - check GPU availability and dtype support
         comptime if has_accelerator():
             comptime if dtype != DType.float64:
-                elementwise[func, simd_width=1, target="gpu"](
-                    IndexList[1](size), ctx
-                )
+                elementwise[func, simd_width=1, target="gpu"](Coord(size), ctx)
             else:
                 raise Error(
                     "GPU execution not supported for pow with dtype float64"

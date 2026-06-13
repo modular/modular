@@ -1099,9 +1099,7 @@ def _test_deque_iter_bounds[
         var lower, upper = iter.bounds()
         assert_equal(deque_len - i, lower)
         assert_equal(deque_len - i, upper.value())
-        _ = trait_downcast_var[Movable & ImplicitlyDestructible](
-            iter.__next__()
-        )
+        _ = trait_downcast_var[Movable & ImplicitlyDeletable](iter.__next__())
 
     var lower, upper = iter.bounds()
     assert_equal(0, lower)
@@ -1154,11 +1152,17 @@ def test_write_repr_to() raises:
     """Test write_repr_to implementation."""
     check_write_to(
         Deque[Int](1, 2, 3),
-        expected="Deque[Int]([Int(1), Int(2), Int(3)])",
+        expected="Deque[SIMD[DType.int, 1]]([Int(1), Int(2), Int(3)])",
         is_repr=True,
     )
-    check_write_to(Deque[Int](1), expected="Deque[Int]([Int(1)])", is_repr=True)
-    check_write_to(Deque[Int](), expected="Deque[Int]([])", is_repr=True)
+    check_write_to(
+        Deque[Int](1),
+        expected="Deque[SIMD[DType.int, 1]]([Int(1)])",
+        is_repr=True,
+    )
+    check_write_to(
+        Deque[Int](), expected="Deque[SIMD[DType.int, 1]]([])", is_repr=True
+    )
 
 
 struct NonEquatable(Copyable):
@@ -1273,7 +1277,7 @@ def test_deque_iter_owned_bounds() raises:
 
 def test_deque_move_only() raises:
     # `MoveOnly[Int]` is not `Copyable`; this exercises the conditional
-    # conformance path of `Deque[T: Movable & ImplicitlyDestructible]`.
+    # conformance path of `Deque[T: Movable & ImplicitlyDeletable]`.
     assert_false(conforms_to(Deque[MoveOnly[Int]], Copyable))
 
     var d = Deque[MoveOnly[Int]]()

@@ -21,6 +21,7 @@ from std.sys import (
     size_of,
 )
 from std.ffi import external_call, _get_global_or_null
+from std.os import getenv
 
 from std.gpu import WARP_SIZE
 from std.gpu.primitives.grid_controls import PDLLevel
@@ -506,6 +507,14 @@ def _vendor_blas_fallback_disabled() -> Bool:
     ]()
     comptime bench_disabled = not get_defined_bool["use_vendor_blas", True]()
     return globally_disabled or bench_disabled
+
+
+def _apple_m5_allow_lossy_f32_matmul() -> Bool:
+    """Whether fp32 a/b may use the M5 matmul (the simdgroup MMA truncates them
+    to fp19). On by default; set `MODULAR_APPLE_M5_ALLOW_LOSSY_F32_MATMUL=0` for
+    the precise naive path.
+    """
+    return getenv("MODULAR_APPLE_M5_ALLOW_LOSSY_F32_MATMUL", "1") != "0"
 
 
 def create_hilbert_lut(

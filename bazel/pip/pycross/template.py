@@ -24,24 +24,18 @@ load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
 load("@@rules_pycross+//pycross:defs.bzl", "pycross_wheel_build", "pycross_wheel_library")
 
 _TESTONLY_DEPS = [
-    "einx",
-    "frozendict",
     "hypothesis",
-    "librosa",
     "lm-eval",
     "mteb",
     "peft",
     "pygame-ce",
-    "reference_residual_fsq",
     "sentence-transformers",
     "sglang",
-    "soxr",
     "timm",
     "torchmetrics",
     "torchvision",
     "vllm",
     "xgrammar",
-    "zhconv",
 ]
 
 PINS = {{
@@ -113,7 +107,8 @@ def targets():
         testonly = True,
         actual = select({{
             "@@//:use_sglang_setting": ":llguidance@0.7.30",
-            "//conditions:default": ":llguidance@1.3.0",
+            "@@//:use_vllm_setting": ":llguidance@1.3.0",
+            "//conditions:default": ":llguidance@1.7.5",
         }}),
     )
 

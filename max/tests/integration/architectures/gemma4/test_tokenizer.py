@@ -23,15 +23,19 @@ import numpy as np
 import pytest
 from max.pipelines.architectures.gemma4.tokenizer import Gemma4Tokenizer
 from max.pipelines.architectures.gemma4.video_processor import VideoMetadata
+from max.pipelines.context import (
+    SamplingParams,
+    TextGenerationResponseFormat,
+)
+from max.pipelines.context.exceptions import PromptTooLongError
 from max.pipelines.lib import KVCacheConfig
 from max.pipelines.modeling.types import (
     ImageContentPart,
+    ReasoningPipelineTokenizer,
     RequestID,
-    SamplingParams,
     TextContentPart,
     TextGenerationRequest,
     TextGenerationRequestMessage,
-    TextGenerationResponseFormat,
     VideoContentPart,
 )
 from PIL import Image
@@ -262,12 +266,44 @@ async def test_no_response_format(
     assert context.json_schema is None
 
 
+def test_gemma4_tokenizer_satisfies_reasoning_pipeline_tokenizer_protocol(
+    mocker: MockerFixture,
+    mock_pipeline_config: MagicMock,
+) -> None:
+    """``Gemma4Tokenizer`` exposes ``reasoning_start_token_id`` and
+    ``reasoning_end_token_id`` as instance attributes so it satisfies the
+    ``ReasoningPipelineTokenizer`` ``@runtime_checkable`` ``Protocol``.
+
+    This lets the overlap pipeline's thinking-mode temperature scaling
+    resolve the per-model delimiter ids without depending on the reasoning
+    parser registry.
+    """
+    delegate = _make_mock_delegate()
+    # Distinct ids for <|channel> vs <channel|> so we can assert the values.
+
+    def _convert(token: str) -> int:
+        if token == "<|channel>":
+            return 100
+        if token == "<channel|>":
+            return 101
+        return VIDEO_TOKEN_ID
+
+    delegate.convert_tokens_to_ids.side_effect = _convert
+    _patch_tokenizer_deps(mocker, delegate)
+
+    tokenizer = Gemma4Tokenizer("test-model", mock_pipeline_config)
+
+    assert isinstance(tokenizer, ReasoningPipelineTokenizer)
+    assert tokenizer.reasoning_start_token_id == 100
+    assert tokenizer.reasoning_end_token_id == 101
+
+
 @pytest.mark.asyncio
 async def test_prompt_too_long(
     mocker: MockerFixture,
     mock_pipeline_config: MagicMock,
 ) -> None:
-    """Prompt exceeding max_length raises ValueError."""
+    """Prompt exceeding max_length raises PromptTooLongError."""
     delegate = _make_mock_delegate()
     delegate.model_max_length = 5
     long_tokens = list(range(10))
@@ -287,11 +323,10 @@ async def test_prompt_too_long(
         model_name="test-model",
     )
 
-    with pytest.raises(
-        ValueError,
-        match="encoded_prompt is greater than the max_length",
-    ):
+    with pytest.raises(PromptTooLongError) as exc_info:
         await tokenizer.new_context(request)
+    assert exc_info.value.num_tokens == 10
+    assert exc_info.value.max_length == 5
 
 
 @pytest.mark.asyncio

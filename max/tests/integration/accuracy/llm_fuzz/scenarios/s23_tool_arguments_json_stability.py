@@ -69,7 +69,10 @@ def _forced_search_payload(model: str) -> dict[str, Any]:
             },
         ],
         "tool_choice": {"type": "function", "function": {"name": "search"}},
-        "max_tokens": 128,
+        # Reasoning models take a variable-length <think> block before the
+        # forced tool call; 128 truncated the longer path mid-reasoning (no
+        # tool_calls emitted). 512 lets it finish and reach the tool call.
+        "max_tokens": 512,
         "temperature": 0,
     }
 

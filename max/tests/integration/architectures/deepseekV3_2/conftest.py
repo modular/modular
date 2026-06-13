@@ -34,79 +34,75 @@ block_size = 128
 
 @dataclass
 class ModelArgs:
-    """
-    Data class for defining model arguments and hyperparameters.
-
-    Attributes:
-        max_batch_size (int): Maximum batch size.
-        max_seq_len (int): Maximum sequence length.
-        dtype (Literal["bf16", "fp8"]): Data type for computations.
-        scale_fmt (Optional[str]): Format for quantization scale.
-        vocab_size (int): Vocabulary size.
-        dim (int): Model dimension.
-        inter_dim (int): Intermediate dimension for MLP layers.
-        moe_inter_dim (int): Intermediate dimension for MoE layers.
-        n_layers (int): Number of transformer layers.
-        n_dense_layers (int): Number of dense layers in the model.
-        n_heads (int): Number of attention heads.
-        n_routed_experts (int): Number of routed experts for MoE layers.
-        n_shared_experts (int): Number of shared experts for MoE layers.
-        n_activated_experts (int): Number of activated experts in MoE layers.
-        n_expert_groups (int): Number of expert groups.
-        n_limited_groups (int): Number of limited groups for MoE routing.
-        score_func (Literal["softmax", "sigmoid"]): Scoring function for MoE routing.
-        route_scale (float): Scaling factor for routing scores.
-        q_lora_rank (int): LoRA rank for query projections.
-        kv_lora_rank (int): LoRA rank for key-value projections.
-        qk_nope_head_dim (int): Dimension for query-key projections without positional embeddings.
-        qk_rope_head_dim (int): Dimension for query-key projections with rotary embeddings.
-        v_head_dim (int): Dimension for value projections.
-        original_seq_len (int): Original sequence length.
-        rope_theta (float): Base for rotary positional encoding.
-        rope_factor (float): Scaling factor for extended sequence lengths.
-        beta_fast (int): Fast beta correction factor.
-        beta_slow (int): Slow beta correction factor.
-        mscale (float): Scaling factor for extended attention.
-        index_head_dim (int): Dimension for index head.
-        index_topk (int): Top-k for index head.
-    """
+    """Data class for defining model arguments and hyperparameters."""
 
     max_batch_size: int = 8
+    """Maximum batch size."""
     max_seq_len: int = 4096 * 4
+    """Maximum sequence length."""
     dtype: Literal["bf16", "fp8"] = "bf16"
+    """Data type for computations."""
     scale_fmt: str | None = None
+    """Format for quantization scale."""
     vocab_size: int = 102400
+    """Vocabulary size."""
     dim: int = 2048
+    """Model dimension."""
     inter_dim: int = 10944
+    """Intermediate dimension for MLP layers."""
     moe_inter_dim: int = 1408
+    """Intermediate dimension for MoE layers."""
     n_layers: int = 27
+    """Number of transformer layers."""
     n_dense_layers: int = 1
+    """Number of dense layers in the model."""
     n_heads: int = 16
+    """Number of attention heads."""
     # moe
     n_routed_experts: int = 64
+    """Number of routed experts for MoE layers."""
     n_shared_experts: int = 2
+    """Number of shared experts for MoE layers."""
     n_activated_experts: int = 6
+    """Number of activated experts in MoE layers."""
     n_expert_groups: int = 1
+    """Number of expert groups."""
     n_limited_groups: int = 1
+    """Number of limited groups for MoE routing."""
     score_func: Literal["softmax", "sigmoid"] = "softmax"
+    """Scoring function for MoE routing."""
     route_scale: float = 1.0
+    """Scaling factor for routing scores."""
     # mla
     q_lora_rank: int = 0
+    """LoRA rank for query projections."""
     kv_lora_rank: int = 512
+    """LoRA rank for key-value projections."""
     qk_nope_head_dim: int = 128
+    """Dimension for query-key projections without positional embeddings."""
     qk_rope_head_dim: int = 64
+    """Dimension for query-key projections with rotary embeddings."""
     v_head_dim: int = 128
+    """Dimension for value projections."""
     # yarn
     original_seq_len: int = 4096
+    """Original sequence length."""
     rope_theta: float = 10000.0
+    """Base for rotary positional encoding."""
     rope_factor: float = 40
+    """Scaling factor for extended sequence lengths."""
     beta_fast: int = 32
+    """Fast beta correction factor."""
     beta_slow: int = 1
+    """Slow beta correction factor."""
     mscale: float = 1.0
+    """Scaling factor for extended attention."""
     # index
     index_n_heads: int = 64
     index_head_dim: int = 128
+    """Dimension for index head."""
     index_topk: int = 2048
+    """Top-k for index head."""
 
 
 pass_configs = {
@@ -198,9 +194,9 @@ def act_quant(
     Quantizes the input tensor `x` using block-wise quantization.
 
     Args:
-        x (torch.Tensor): The input tensor to be quantized. Must be contiguous and its last dimension size must be divisible by `block_size`.
-        block_size (int, optional): The size of the blocks to be used for quantization. Default is 128.
-        scale_fmt (Optional[str], optional): The format of the scale. Default is None.
+        x: The input tensor to be quantized. Must be contiguous and its last dimension size must be divisible by `block_size`.
+        block_size: The size of the blocks to be used for quantization. Default is 128.
+        scale_fmt: The format of the scale. Default is None.
     Returns:
         Tuple[torch.Tensor, torch.Tensor]: A tuple containing:
             - The quantized tensor with dtype `torch.float8_e4m3fn`.
@@ -230,11 +226,11 @@ def linear(
     and tensor formats.
 
     Args:
-        x (torch.Tensor): The input tensor.
-        weight (torch.Tensor): The weight tensor. It may be quantized and
+        x: The input tensor.
+        weight: The weight tensor. It may be quantized and
             requires dequantization for certain cases.
-        bias (Optional[torch.Tensor]): The bias tensor to be added. Default is None.
-        scale_fmt (Optional[str]): The format of scaling factors.
+        bias: The bias tensor to be added. Default is None.
+        scale_fmt: The format of scaling factors.
 
     Returns:
         torch.Tensor: The result of the linear transformation, which may involve
@@ -259,10 +255,10 @@ class Linear(nn.Module):
     Custom linear layer with support for quantized weights and optional bias.
 
     Args:
-        in_features (int): Number of input features.
-        out_features (int): Number of output features.
-        bias (bool): Whether to include a bias term. Defaults to False.
-        dtype (optional): Data type for the layer. Defaults to `torch.bfloat16`.
+        in_features: Number of input features.
+        out_features: Number of output features.
+        bias: Whether to include a bias term. Defaults to False.
+        dtype: Data type for the layer. Defaults to `torch.bfloat16`.
     """
 
     dtype = torch.bfloat16
@@ -301,7 +297,7 @@ class Linear(nn.Module):
         Forward pass for the custom linear layer.
 
         Args:
-            x (torch.Tensor): Input tensor.
+            x: Input tensor.
 
         Returns:
             torch.Tensor: Transformed tensor after linear computation.
@@ -332,7 +328,7 @@ def precompute_freqs_cis(args) -> torch.Tensor:
     Precomputes frequency-based complex exponential values for rotary positional embeddings.
 
     Args:
-        args (ModelArgs): Model arguments containing positional embedding parameters.
+        args: Model arguments containing positional embedding parameters.
 
     Returns:
         torch.Tensor: Precomputed complex exponential values for positional embeddings.
@@ -349,10 +345,10 @@ def precompute_freqs_cis(args) -> torch.Tensor:
         Computes the correction dimension for a given number of rotations in the rotary positional embedding.
 
         Args:
-            num_rotations (float): Number of rotations to compute the correction for.
-            dim (int): Dimensionality of the embedding space.
-            base (float): Base value for the exponential computation.
-            max_seq_len (int): Maximum sequence length.
+            num_rotations: Number of rotations to compute the correction for.
+            dim: Dimensionality of the embedding space.
+            base: Base value for the exponential computation.
+            max_seq_len: Maximum sequence length.
 
         Returns:
             float: The correction dimension based on the input parameters.
@@ -368,11 +364,11 @@ def precompute_freqs_cis(args) -> torch.Tensor:
         Computes the range of correction dimensions for rotary positional embeddings.
 
         Args:
-            low_rot (float): Lower bound for the number of rotations.
-            high_rot (float): Upper bound for the number of rotations.
-            dim (int): Dimensionality of the embedding space.
-            base (float): Base value for the exponential computation.
-            max_seq_len (int): Maximum sequence length.
+            low_rot: Lower bound for the number of rotations.
+            high_rot: Upper bound for the number of rotations.
+            dim: Dimensionality of the embedding space.
+            base: Base value for the exponential computation.
+            max_seq_len: Maximum sequence length.
 
         Returns:
             Tuple[int, int]: The range of correction dimensions (low, high), clamped to valid indices.
@@ -386,9 +382,9 @@ def precompute_freqs_cis(args) -> torch.Tensor:
         Computes a linear ramp function used to smooth values between a minimum and maximum range.
 
         Args:
-            min (float): Minimum value for the ramp function.
-            max (float): Maximum value for the ramp function.
-            dim (int): Dimensionality of the ramp tensor.
+            min: Minimum value for the ramp function.
+            max: Maximum value for the ramp function.
+            dim: Dimensionality of the ramp tensor.
 
         Returns:
             torch.Tensor: A tensor of shape (dim,) with values linearly interpolated between 0 and 1,
@@ -423,8 +419,8 @@ def apply_rotary_emb(
     Applies rotary positional embeddings to the input tensor.
 
     Args:
-        x (torch.Tensor): Input tensor with positional embeddings to be applied.
-        freqs_cis (torch.Tensor): Precomputed complex exponential values for positional embeddings.
+        x: Input tensor with positional embeddings to be applied.
+        freqs_cis: Precomputed complex exponential values for positional embeddings.
 
     Returns:
         torch.Tensor: Tensor with rotary embeddings applied.
@@ -538,10 +534,10 @@ def fp8_index(
     Perform index score using FP8 precision.
 
     Args:
-        q (torch.Tensor): The Q tensor, must be contiguous.
-        q_s (torch.Tensor): The scaling factor for Q (float), must be contiguous.
-        k (torch.Tensor): The K tensor, must be contiguous.
-        k_s (torch.Tensor): The scaling factor for K (e8m0 here), must be contiguous.
+        q: The Q tensor, must be contiguous.
+        q_s: The scaling factor for Q (float), must be contiguous.
+        k: The K tensor, must be contiguous.
+        k_s: The scaling factor for K (e8m0 here), must be contiguous.
 
         fp8 q @ fp8 k -> fp32 logits
         relu(fp32 logits) * q_s (weights) -> fp32 logits

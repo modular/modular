@@ -193,15 +193,9 @@ def test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
     comptime b_layout = Layout.row_major(K, M)
     comptime c_layout = Layout.row_major(M, N)
 
-    var a_tensor = LayoutTensor[DType.float32, a_layout, MutAnyOrigin](
-        a_device.unsafe_ptr()
-    )
-    var b_tensor = LayoutTensor[DType.float32, b_layout, MutAnyOrigin](
-        b_device.unsafe_ptr()
-    )
-    var c_tensor = LayoutTensor[DType.float32, c_layout, MutAnyOrigin](
-        c_device.unsafe_ptr()
-    )
+    var a_tensor = LayoutTensor[DType.float32, a_layout, MutAnyOrigin](a_device)
+    var b_tensor = LayoutTensor[DType.float32, b_layout, MutAnyOrigin](b_device)
+    var c_tensor = LayoutTensor[DType.float32, c_layout, MutAnyOrigin](c_device)
 
     comptime kernel = gemm_kernel[
         DType.float32,

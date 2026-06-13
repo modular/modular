@@ -19,6 +19,7 @@ from std.collections.string._parsing_numbers.parsing_floats import _atof
 from std.collections.string._utf8 import UTF8Chunks, _is_valid_utf8
 from std.collections.string.format import _FormatUtils
 from std.collections.string.string_slice import (
+    BytesIter,
     CodepointSliceIter,
     GraphemeIndicesIter,
     GraphemeSliceIter,
@@ -120,7 +121,7 @@ struct String(
     Be aware of the following characteristics when working with `String`:
 
     - **UTF-8 encoding**: Strings store UTF-8 encoded text, so byte length may
-      differ from character count. Use `string.count_codepoints())` to get
+      differ from character count. Use `text.count_codepoints()` to get
       the codepoint count:
 
       ```mojo
@@ -214,7 +215,7 @@ struct String(
     # form when '_capacity_or_data.is_inline()' is true. The inline form
     # clobbers these fields (except the top byte of the capacity field) with
     # the string data.
-    var _ptr_or_data: UnsafePointer[UInt8, MutExternalOrigin]
+    var _ptr_or_data: UnsafePointer[UInt8, MutUntrackedOrigin]
     """The underlying storage for the string data."""
     var _len_or_data: Int
     """The number of bytes in the string data."""
@@ -252,27 +253,27 @@ struct String(
     # This is the number of bytes that can be stored inline in the string value.
     # 'String' is 3 words in size and we use the top byte of the capacity field
     # to store flags.
-    comptime INLINE_CAPACITY = Int.BITWIDTH // 8 * 3 - 1
+    comptime INLINE_CAPACITY = bit_width_of[DType.int]() // 8 * 3 - 1
     """Maximum bytes for inline (SSO) string storage."""
 
     # When FLAG_HAS_NUL_TERMINATOR is set, the byte past the end of the string
     # is known to be an accessible 'nul' terminator.
-    comptime FLAG_HAS_NUL_TERMINATOR = 1 << (Int.BITWIDTH - 3)
+    comptime FLAG_HAS_NUL_TERMINATOR = 1 << (bit_width_of[DType.int]() - 3)
     """Flag indicating string has accessible nul terminator."""
 
     # When FLAG_IS_REF_COUNTED is set, the string is pointing to a mutable buffer
     # that may have other references to it.
-    comptime FLAG_IS_REF_COUNTED = 1 << (Int.BITWIDTH - 2)
+    comptime FLAG_IS_REF_COUNTED = 1 << (bit_width_of[DType.int]() - 2)
     """Flag indicating string uses reference-counted storage."""
 
     # When FLAG_IS_INLINE is set, the string is inline or "Short String
     # Optimized" (SSO). The first 23 bytes of the fields are treated as UTF-8
     # data
-    comptime FLAG_IS_INLINE = 1 << (Int.BITWIDTH - 1)
+    comptime FLAG_IS_INLINE = 1 << (bit_width_of[DType.int]() - 1)
     """Flag indicating string uses inline (SSO) storage."""
 
     # gives us 5 bits for the length.
-    comptime INLINE_LENGTH_START = Int.BITWIDTH - 8
+    comptime INLINE_LENGTH_START = bit_width_of[DType.int]() - 8
     """Bit position where inline length field starts."""
 
     comptime INLINE_LENGTH_MASK = 0b1_1111 << Self.INLINE_LENGTH_START
@@ -331,7 +332,7 @@ struct String(
         # the string.
         self._ptr_or_data = data._slice._data.unsafe_mut_cast[
             True
-        ]().unsafe_origin_cast[MutExternalOrigin]()
+        ]().unsafe_origin_cast[MutUntrackedOrigin]()
         # Always use static constant representation initially, defer inlining
         # decision until mutation to avoid unnecessary memcpy.
         self._capacity_or_data = 0
@@ -345,9 +346,9 @@ struct String(
             data: The static constant string to refer to.
         """
         self._len_or_data = Int(
-            mlir_value=__mlir_op.`pop.string.size`(data.value)
+            SIMDSize(mlir_value=__mlir_op.`pop.string.size`(data.value))
         )
-        self._ptr_or_data = UnsafePointer[_, MutExternalOrigin](
+        self._ptr_or_data = UnsafePointer[_, MutUntrackedOrigin](
             __mlir_op.`pop.string.address`(data.value)
         ).bitcast[Byte]()
         # Always use static constant representation initially, defer inlining
@@ -676,7 +677,10 @@ struct String(
 
     @always_inline("nodebug")
     def _has_nul_terminator(self) -> Bool:
-        return Bool(self._capacity_or_data & Self.FLAG_HAS_NUL_TERMINATOR)
+        return Bool(
+            UInt64(self._capacity_or_data)
+            & UInt64(Self.FLAG_HAS_NUL_TERMINATOR)
+        )
 
     @always_inline("nodebug")
     def _clear_nul_terminator(mut self):
@@ -684,7 +688,9 @@ struct String(
 
     @always_inline("nodebug")
     def _is_inline(self) -> Bool:
-        return Bool(self._capacity_or_data & Self.FLAG_IS_INLINE)
+        return Bool(
+            UInt64(self._capacity_or_data) & UInt64(Self.FLAG_IS_INLINE)
+        )
 
     @always_inline("nodebug")
     def _set_ref_counted(mut self):
@@ -692,7 +698,9 @@ struct String(
 
     @always_inline("nodebug")
     def _is_ref_counted(self) -> Bool:
-        return Bool(self._capacity_or_data & Self.FLAG_IS_REF_COUNTED)
+        return Bool(
+            UInt64(self._capacity_or_data) & UInt64(Self.FLAG_IS_REF_COUNTED)
+        )
 
     # ===------------------------------------------------------------------=== #
     # Pointer Field Helpers
@@ -711,7 +719,7 @@ struct String(
     @always_inline("nodebug")
     def _is_unique(mut self) -> Bool:
         """Return true if the refcount is 1."""
-        if self._capacity_or_data & Self.FLAG_IS_REF_COUNTED:
+        if UInt64(self._capacity_or_data) & UInt64(Self.FLAG_IS_REF_COUNTED):
             return self._refcount().load[ordering=Ordering.RELAXED]() == 1
         else:
             return False
@@ -737,7 +745,7 @@ struct String(
                 ptr.free()
 
     @staticmethod
-    def _alloc(capacity: Int) -> UnsafePointer[Byte, MutExternalOrigin]:
+    def _alloc(capacity: Int) -> UnsafePointer[Byte, MutUntrackedOrigin]:
         """Allocate space for a new out-of-line string buffer."""
         var ptr = alloc[Byte](capacity + Self.REF_COUNT_SIZE)
 
@@ -766,6 +774,32 @@ struct String(
     # ===------------------------------------------------------------------=== #
     # Operator dunders
     # ===------------------------------------------------------------------=== #
+
+    @doc_hidden
+    @unavailable(
+        "String does not support direct positional indexing like `s[i]`"
+        " because Mojo strings are UTF-8 encoded, and the same position can"
+        " mean three different things. Use one of: `s[byte=i]` for a raw"
+        " UTF-8 byte, `s[codepoint=i]` for a Unicode code point, or"
+        " `s[grapheme=i]` for a user-visible character (grapheme cluster)."
+    )
+    def __getitem__(
+        self, _index: Some[Indexer], /
+    ) -> StringSlice[origin_of(self)]:
+        ...
+
+    @doc_hidden
+    @unavailable(
+        "String does not support direct positional slicing like `s[a:b]`"
+        " because Mojo strings are UTF-8 encoded, and the same range can"
+        " mean different things. Use `s[byte=a:b]` to slice by raw UTF-8"
+        " byte positions, or `s[codepoint=a:b]` to slice by Unicode code"
+        " points."
+    )
+    def __getitem__(
+        self, _slice: ContiguousSlice, /
+    ) -> StringSlice[origin_of(self)]:
+        ...
 
     @always_inline
     def __getitem__[
@@ -1127,6 +1161,47 @@ struct String(
         """
         return StringSlice(self).join(elems)
 
+    def bytes(self) -> BytesIter[origin_of(self)]:
+        """Returns an iterator over the raw UTF-8 bytes of this string.
+
+        Unlike `codepoints()` and `graphemes()`, this iterator operates at the
+        byte level and yields individual `Byte` values without interpreting
+        multi-byte UTF-8 sequences.
+
+        Returns:
+            An iterator type that returns successive `Byte` values stored in
+            this string.
+
+        Examples:
+
+        Iterate over the bytes of an ASCII string:
+
+        ```mojo
+        from std.testing import assert_equal, assert_raises
+
+        var s = String("abc")
+        var iter = s.bytes()
+        assert_equal(next(iter), Byte(ord("a")))
+        assert_equal(next(iter), Byte(ord("b")))
+        assert_equal(next(iter), Byte(ord("c")))
+        with assert_raises():
+            _ = next(iter) # raises StopIteration
+        ```
+
+        Multi-byte UTF-8 sequences are yielded as individual bytes:
+
+        ```mojo
+        from std.testing import assert_equal
+
+        # "é" is encoded in UTF-8 as two bytes: 0xC3 0xA9.
+        var s = String("é")
+        var iter = s.bytes()
+        assert_equal(next(iter), Byte(0xC3))
+        assert_equal(next(iter), Byte(0xA9))
+        ```
+        """
+        return StringSlice(self).bytes()
+
     def codepoints(self) -> CodepointsIter[origin_of(self)]:
         """Returns an iterator over the `Codepoint`s encoded in this string slice.
 
@@ -1384,9 +1459,10 @@ struct String(
             The length of this string in bytes.
         """
         if self._is_inline():
-            return (
-                self._capacity_or_data & Self.INLINE_LENGTH_MASK
-            ) >> Self.INLINE_LENGTH_START
+            return Int(
+                UInt64(self._capacity_or_data & Self.INLINE_LENGTH_MASK)
+                >> UInt64(Self.INLINE_LENGTH_START)
+            )
         else:
             return self._len_or_data
 

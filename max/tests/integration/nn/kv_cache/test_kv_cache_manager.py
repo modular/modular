@@ -11,17 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from types import SimpleNamespace
 
 import numpy as np
 import pytest
-from max.driver import CPU, Buffer
+from max.driver import CPU
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef
 from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams
 from max.pipelines.kv_cache import (
-    IncrementCacheLengthsProcessor,
     PagedKVCacheManager,
 )
 from max.pipelines.kv_cache.paged_kv_cache.cache_manager import _padded_lut_cols
@@ -236,6 +234,53 @@ async def test_mla_runtime_inputs_handles_empty_replica_batch() -> None:
     assert runtime_inputs.inputs[1].attention_dispatch_metadata is not None
 
 
+@pytest.mark.parametrize("data_parallel_degree", [1, 2, 4])
+@pytest.mark.asyncio
+async def test_multi_cache_runtime_inputs_match_symbolic_order(
+    data_parallel_degree: int,
+) -> None:
+    """Runtime KV input order must match the graph's symbolic input order."""
+    kv_manager = _make_multi_kv_manager(
+        num_devices=data_parallel_degree,
+        data_parallel_degree=data_parallel_degree,
+    )
+
+    batches = []
+    for replica_idx in range(data_parallel_degree):
+        ctx = create_text_context(np.zeros(1, dtype=np.int64))
+        kv_manager.claim(ctx.request_id, replica_idx=replica_idx)
+        kv_manager.alloc(ctx, replica_idx=replica_idx, num_steps=1)
+        batches.append([ctx])
+
+    symbolic_types = kv_manager.params.get_symbolic_inputs().flatten()
+    runtime_buffers = kv_manager.runtime_inputs(batches, num_steps=1).flatten()
+
+    assert len(runtime_buffers) == len(symbolic_types), (
+        "runtime produced a different number of KV inputs than the graph "
+        "declares"
+    )
+    for i, (typ, buf) in enumerate(
+        zip(symbolic_types, runtime_buffers, strict=True)
+    ):
+        assert typ.dtype == buf.dtype, (
+            f"position {i}: runtime dtype {buf.dtype} != symbolic "
+            f"{typ.dtype} (KV input order mismatch)"
+        )
+        # The graph engine validates each statically-known dim positionally
+        # (the leading block-count dim is symbolic and is skipped). A wrong
+        # cache ordering shows up as a head_dim mismatch here.
+        for axis, dim in enumerate(typ.shape):
+            try:
+                static_dim = int(dim)
+            except Exception:
+                continue
+            assert int(buf.shape[axis]) == static_dim, (
+                f"position {i} axis {axis}: runtime {buf.shape[axis]} != "
+                f"symbolic {static_dim} (likely MLA/indexer cache order "
+                f"mismatch)"
+            )
+
+
 @pytest.mark.asyncio
 async def test_alloc_num_speculative_steps_allocates_extra_blocks() -> None:
     """alloc with num_speculative_steps reserves blocks for spec tokens."""
@@ -356,9 +401,11 @@ def _make_multi_kv_manager(
     max_batch_size: int = 128,
     enable_prefix_caching: bool = False,
     session: InferenceSession | None = None,
+    num_devices: int = 1,
+    data_parallel_degree: int = 1,
 ) -> PagedKVCacheManager:
     """Creates a multi-cache manager with two caches (primary + secondary)."""
-    devices = [DeviceRef.CPU()]
+    devices = [DeviceRef.CPU() for _ in range(num_devices)]
     primary = KVCacheParams(
         dtype=DType.float32,
         n_kv_heads=8,
@@ -366,6 +413,7 @@ def _make_multi_kv_manager(
         num_layers=10,
         page_size=page_size,
         devices=devices,
+        data_parallel_degree=data_parallel_degree,
         enable_prefix_caching=enable_prefix_caching,
     )
     secondary = KVCacheParams(
@@ -375,6 +423,7 @@ def _make_multi_kv_manager(
         num_layers=10,
         page_size=page_size,
         devices=devices,
+        data_parallel_degree=data_parallel_degree,
         enable_prefix_caching=enable_prefix_caching,
     )
     multi_params = MultiKVCacheParams.from_params(primary, secondary)
@@ -466,44 +515,6 @@ async def test_multi_cache_runtime_inputs_combined() -> None:
     assert inputs.inputs[0].kv_blocks is not inputs.inputs[1].kv_blocks
 
 
-def test_multi_cache_increment_cache_lengths_updates_every_physical_cache() -> (
-    None
-):
-    """All KVCacheInputsPerDevice entries must get the new cache_lengths from execute.
-
-    Multi-cache runtime inputs interleave one entry per (cache, TP shard) per
-    replica. A bug only writing back the first `len(devices)` entries left
-    non-primary caches (e.g. an indexer) with stale lengths.
-    """
-    session = InferenceSession(devices=[CPU()])
-    kv_manager = _make_multi_kv_manager(
-        total_num_pages=16,
-        session=session,
-    )
-    ctx = create_text_context(np.array([1, 2, 3], dtype=np.int64))
-    kv_manager.claim(ctx.request_id, replica_idx=0)
-    kv_manager.alloc(ctx, replica_idx=0, num_steps=1)
-    kv_in = kv_manager.runtime_inputs([[ctx]])
-
-    assert len(kv_in.inputs) == 2
-    # Independent buffers with the same starting counts (simulates distinct slots).
-    start = np.array([5], dtype=np.uint32)
-    kv_in.inputs[0].cache_lengths = Buffer.from_numpy(start.copy()).to(CPU())
-    kv_in.inputs[1].cache_lengths = Buffer.from_numpy(start.copy()).to(CPU())
-
-    processor = IncrementCacheLengthsProcessor(
-        session=session,
-        params=kv_manager.cache_params(),
-    )
-    row_offsets = Buffer.from_numpy(np.array([0, 3], dtype=np.uint32)).to(CPU())
-    prev = SimpleNamespace(input_row_offsets=row_offsets)
-    out = processor.execute(kv_in, prev)
-
-    want = np.array([8], dtype=np.uint32)
-    np.testing.assert_array_equal(out.inputs[0].cache_lengths.to_numpy(), want)
-    np.testing.assert_array_equal(out.inputs[1].cache_lengths.to_numpy(), want)
-
-
 @pytest.mark.asyncio
 async def test_multi_cache_lifecycle() -> None:
     """claim/alloc/step/release work across all caches with one call each."""
@@ -526,3 +537,74 @@ async def test_multi_cache_lifecycle() -> None:
     # Single release covers all caches.
     kv_manager.release(ctx.request_id, replica_idx=0)
     assert not kv_manager.contains(ctx.request_id, replica_idx=0)
+
+
+def test_alloc_dummy_uses_null_block_without_refcount() -> None:
+    """Dummy requests map to the null block."""
+    kv_manager = _make_kv_manager(total_num_pages=8)
+    pool = kv_manager._replica[0].block_manager.device_block_pool
+    assert pool.null_block.is_null
+    assert pool.null_block.bid == 8
+    assert 8 not in pool.free_blocks
+    assert pool.num_free_blocks == 8
+
+    dummy_id = RequestID("dummy-test")
+    kv_manager.alloc_dummy(dummy_id, replica_idx=0)
+    assert pool.num_free_blocks == 8
+    assert kv_manager.get_req_blocks(dummy_id, replica_idx=0) == [8]
+
+
+def test_lut_tail_padding_sentinel_is_total_num_pages() -> None:
+    """Regression test: LUT tail-padding must be filled with total_num_pages.
+
+    The SIMD populate path in PagedKVCache multiplies every LUT entry by
+    page_stride with no sentinel guard. Tail-padding columns (past a request's
+    last real block) and dummy-request rows must contain total_num_pages so that
+    the multiply produces the null-block address rather than an out-of-bounds
+    GPU address (CUDA_ERROR_ILLEGAL_ADDRESS).
+    """
+    total_num_pages = 16
+    page_size = 4
+    # Real request spans 3 pages; dummy has 1 null-block entry.
+    # LUT row width = _padded_lut_cols(3) >> 3, so columns 3.. are tail-padding.
+    num_real_pages = 3
+    kv_manager = _make_kv_manager(
+        total_num_pages=total_num_pages,
+        page_size=page_size,
+    )
+
+    real_ctx = create_text_context(
+        np.zeros(page_size * num_real_pages, dtype=np.int64)
+    )
+    kv_manager.claim(real_ctx.request_id, replica_idx=0)
+    kv_manager.alloc(real_ctx, replica_idx=0, num_steps=1)
+
+    dummy_ctx = create_text_context(np.zeros(1, dtype=np.int64))
+    kv_manager.alloc_dummy(dummy_ctx.request_id, replica_idx=0)
+
+    lut = (
+        kv_manager.runtime_inputs([[real_ctx, dummy_ctx]])
+        .inputs[0]
+        .lookup_table.to_numpy()
+    )
+
+    # No cell should contain the poison value 0xCCCCCCCC — that value times any
+    # realistic page_stride overflows into unmapped GPU memory.
+    assert not np.any(lut == 0xCCCCCCCC), (
+        "LUT contains 0xCCCCCCCC — SIMD over-reads would compute illegal GPU"
+        " addresses; fill must be total_num_pages"
+    )
+
+    # Tail-padding on the real request's row (columns past num_real_pages)
+    # must be total_num_pages so populate's multiply lands on the null block.
+    assert np.all(lut[0, num_real_pages:] == total_num_pages), (
+        f"Real-request tail-padding should be {total_num_pages},"
+        f" got: {lut[0, num_real_pages:]}"
+    )
+
+    # Dummy request: column 0 is the null block (== total_num_pages), and all
+    # remaining columns are tail-padding fill — also total_num_pages.
+    assert np.all(lut[1, :] == total_num_pages), (
+        f"Dummy-request LUT row should be all {total_num_pages},"
+        f" got: {lut[1, :]}"
+    )

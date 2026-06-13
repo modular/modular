@@ -29,7 +29,7 @@ from max.graph.weights import WeightData, Weights, WeightsAdapter
 from max.nn.comm.ep import EPCommInitializer
 from max.nn.kv_cache import KVCacheInputs
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
-from max.pipelines.core import TextContext
+from max.pipelines.context import TextContext
 from max.pipelines.lib import (
     AlwaysSignalBuffersMixin,
     KVCacheConfig,
@@ -39,12 +39,7 @@ from max.pipelines.lib import (
     PipelineModel,
 )
 from max.pipelines.lib.utils import compute_data_parallel_splits
-from max.pipelines.modeling.config_enums import (
-    is_float4_encoding,
-    supported_encoding_dtype,
-)
 from max.support.algorithm import flatten2d
-from max.support.human_readable_formatter import to_human_readable_bytes
 from typing_extensions import override
 
 from ..deepseekV2.model import DeepseekV2Model
@@ -103,149 +98,6 @@ class DeepseekV3NextNModel(AlwaysSignalBuffersMixin, DeepseekV2Model):
             # safetensors may omit weights shared with the target model
             # (e.g. embed_tokens, lm_head) so we must be able to add them.
             state_dict[key] = cast(WeightData, value)
-
-    @classmethod
-    def estimate_weights_size(cls, pipeline_config: PipelineConfig) -> int:
-        """Calculates the estimated memory consumption of the DeepseekV3 NextN model.
-
-        The NextN model consists of:
-        - embed_tokens: VocabParallelEmbedding (shared in EAGLE/MTP mode)
-        - lm_head: ColumnParallelLinear (shared in EAGLE/MTP mode)
-        - enorm, hnorm, shared_head_norm: RMSNorm layers
-        - eh_proj: Linear layer (hidden_size * 2 -> hidden_size)
-        - decoder_layer: Single DeepseekV3DecoderLayer (MoE layer)
-
-        Args:
-            pipeline_config: The pipeline configuration containing model settings.
-
-        Returns:
-            Estimated weight memory in bytes.
-        """
-        draft_model_config = pipeline_config.draft_model
-        assert draft_model_config is not None, (
-            "draft_model must be set for NextN"
-        )
-        encoding = draft_model_config.quantization_encoding
-        assert encoding is not None
-        # NextN weights are always BF16 even when the pipeline encoding is FP4,
-        # because the NextN checkpoint is not quantized.
-        if is_float4_encoding(encoding):
-            dtype_bytes = DType.bfloat16.size_in_bytes
-        else:
-            dtype_bytes = supported_encoding_dtype(encoding).size_in_bytes
-        config = draft_model_config.huggingface_config
-        assert config is not None
-        n_gpus_per_node = len(draft_model_config.device_specs)
-        data_parallel_degree = pipeline_config.model.data_parallel_degree
-
-        total_size = 0
-
-        sharing_enabled = pipeline_config.speculative is not None and (
-            pipeline_config.speculative.is_eagle()
-            or pipeline_config.speculative.is_mtp()
-        )
-
-        # 1. Embedding and LM head (always in BF16 unless shared with target)
-        # In EAGLE/MTP, embedding and lm_head are shared with the target model.
-        embedding_size = (
-            config.vocab_size
-            * config.hidden_size
-            * DType.bfloat16.size_in_bytes
-        )
-        lm_head_size = embedding_size
-        if not sharing_enabled:
-            total_size += embedding_size + lm_head_size
-
-        # 2-4. Non-expert weights: norms, eh_proj, attention, router.
-        # In DP mode these are replicated per DP rank; in TP mode they are
-        # sharded across devices. Multiply by data_parallel_degree to account
-        # for this, matching the pattern in DeepseekV3Model.estimate_weights_size.
-        non_expert_size = 0
-
-        # 2. NextN-specific norms (enorm, hnorm, shared_head_norm) - always BF16
-        norm_size = config.hidden_size * DType.bfloat16.size_in_bytes
-        non_expert_size += 2 * norm_size
-        if not sharing_enabled:
-            non_expert_size += norm_size
-
-        # 3. eh_proj: Linear(hidden_size * 2, hidden_size)
-        eh_proj_size = config.hidden_size * 2 * config.hidden_size * dtype_bytes
-        non_expert_size += eh_proj_size
-
-        # 4. Single decoder layer components
-
-        # 4a. Layer norms (input_layernorm, post_attention_layernorm)
-        non_expert_size += 2 * norm_size
-
-        # 4b. MLA attention weights
-        num_heads = config.num_attention_heads
-        # kv_a_proj: hidden_size -> kv_lora_rank + qk_rope_head_dim
-        kv_a_proj_size = (
-            config.hidden_size
-            * (config.kv_lora_rank + config.qk_rope_head_dim)
-            * dtype_bytes
-        )
-        # kv_a_layernorm: kv_lora_rank
-        kv_a_layernorm_size = config.kv_lora_rank * DType.bfloat16.size_in_bytes
-        # kv_b_proj: kv_lora_rank -> num_heads * (qk_nope_head_dim + v_head_dim)
-        kv_b_proj_size = (
-            config.kv_lora_rank
-            * num_heads
-            * (config.qk_nope_head_dim + config.v_head_dim)
-            * dtype_bytes
-        )
-        # q_proj: hidden_size -> num_heads * (qk_nope_head_dim + qk_rope_head_dim)
-        q_proj_size = (
-            config.hidden_size
-            * num_heads
-            * (config.qk_nope_head_dim + config.qk_rope_head_dim)
-            * dtype_bytes
-        )
-        # o_proj: num_heads * v_head_dim -> hidden_size
-        o_proj_size = (
-            num_heads * config.v_head_dim * config.hidden_size * dtype_bytes
-        )
-
-        attn_size = (
-            kv_a_proj_size
-            + kv_a_layernorm_size
-            + kv_b_proj_size
-            + q_proj_size
-            + o_proj_size
-        )
-        non_expert_size += attn_size
-
-        # 4c. MoE weights (single layer)
-        # Expert FFN: gate_proj, up_proj, down_proj
-        expert_size = (
-            config.moe_intermediate_size * config.hidden_size * 3 * dtype_bytes
-        )
-        routing_experts_size = config.n_routed_experts * expert_size
-        shared_experts_size = config.n_shared_experts * expert_size
-
-        # Router gate weights
-        router_size = config.hidden_size * config.n_routed_experts * dtype_bytes
-        non_expert_size += router_size
-
-        total_size += non_expert_size * data_parallel_degree
-
-        # Handle expert parallelism
-        ep_size = max(pipeline_config.runtime.ep_size, 1)
-        if ep_size == 1:
-            total_size += routing_experts_size
-        else:
-            # Routing experts are sharded across nodes
-            n_nodes = ep_size // n_gpus_per_node
-            total_size += routing_experts_size // n_nodes
-
-        # Shared experts are replicated on each device
-        total_size += shared_experts_size * n_gpus_per_node
-
-        logger.info(
-            f"Estimated NextN weights size: {to_human_readable_bytes(total_size)}"
-        )
-
-        return total_size
 
     def _create_model_config(
         self, state_dict: dict[str, WeightData]
@@ -570,54 +422,6 @@ class DeepseekV3NextNModel(AlwaysSignalBuffersMixin, DeepseekV2Model):
                 np.array([return_n_logits], dtype=np.int64)
             ),
             data_parallel_splits=Buffer.from_numpy(data_parallel_splits),
-        )
-
-    def prepare_next_token_inputs(
-        self,
-        next_tokens: Buffer,
-        prev_model_inputs: ModelInputs,
-        hidden_states: Buffer | None = None,
-    ) -> DeepseekV3NextNInputs:
-        """Prepare inputs for next token generation.
-
-        Args:
-            next_tokens: Next tokens to process
-            prev_model_inputs: Previous model inputs
-            hidden_states: Hidden states from the base model (optional, will use
-                          hidden_states from prev_model_inputs if not provided)
-
-        Returns:
-            NextN model inputs for next token
-        """
-        assert isinstance(prev_model_inputs, DeepseekV3NextNInputs)
-
-        # Use provided hidden_states, or fall back to previous hidden_states
-        # This allows EAGLE pipeline to set hidden_states after calling this method
-        if hidden_states is None:
-            hidden_states = prev_model_inputs.hidden_states
-
-        # If still None after fallback, that's a real error
-        if hidden_states is None:
-            raise ValueError(
-                "hidden_states must be provided for DeepSeekV3 NextN model"
-            )
-        row_offsets_size = prev_model_inputs.input_row_offsets.shape[0]
-        next_device_row_offsets = self._device_input_row_offsets_prealloc[
-            :row_offsets_size
-        ]
-        next_host_row_offsets = self._host_input_row_offsets_prealloc[
-            :row_offsets_size
-        ]
-        return DeepseekV3NextNInputs(
-            tokens=next_tokens,
-            hidden_states=hidden_states,
-            input_row_offsets=next_device_row_offsets,
-            host_input_row_offsets=next_host_row_offsets,
-            signal_buffers=self.signal_buffers,
-            batch_context_lengths=self._batch_context_lengths_prealloc_cpu,
-            kv_cache_inputs=prev_model_inputs.kv_cache_inputs,
-            return_n_logits=prev_model_inputs.return_n_logits,
-            data_parallel_splits=prev_model_inputs.data_parallel_splits,
         )
 
 

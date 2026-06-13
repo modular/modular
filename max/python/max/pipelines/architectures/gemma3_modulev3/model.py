@@ -30,7 +30,7 @@ from max.graph import DeviceRef, TensorType
 from max.graph.weights import Weights, WeightsAdapter
 from max.nn.kv_cache import KVCacheInputs
 from max.nn.transformer import ReturnLogits
-from max.pipelines.core import TextContext
+from max.pipelines.context import TextContext
 from max.pipelines.lib import (
     KVCacheConfig,
     ModelInputs,
@@ -101,15 +101,6 @@ class Gemma3Model(
         self._is_multimodal = hasattr(self.huggingface_config, "text_config")
 
         self.model = self.load_model()
-
-    @staticmethod
-    def calculate_max_seq_len(
-        pipeline_config: PipelineConfig, huggingface_config: AutoConfig
-    ) -> int:
-        max_seq_len = pipeline_config.model.max_length
-        if max_seq_len:
-            return max_seq_len
-        return huggingface_config.max_position_embeddings
 
     @classmethod
     def get_num_layers(cls, huggingface_config: AutoConfig) -> int:
@@ -239,20 +230,4 @@ class Gemma3Model(
                 np.array([return_n_logits], dtype=np.int64)
             ),
             kv_cache_inputs=kv_cache_inputs,
-        )
-
-    def prepare_next_token_inputs(
-        self, next_tokens: Buffer, prev_model_inputs: ModelInputs
-    ) -> ModelInputs:
-        assert isinstance(prev_model_inputs, Gemma3Inputs)
-
-        row_offsets_size = prev_model_inputs.input_row_offsets.shape[0]
-
-        return Gemma3Inputs(
-            tokens=next_tokens,
-            input_row_offsets=self._input_row_offsets_prealloc[
-                :row_offsets_size
-            ],
-            return_n_logits=prev_model_inputs.return_n_logits,
-            kv_cache_inputs=prev_model_inputs.kv_cache_inputs,
         )

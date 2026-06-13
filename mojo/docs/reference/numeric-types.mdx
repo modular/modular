@@ -230,18 +230,16 @@ that depends on a specific width should use a sized type.
 `Intable`, `Writable`, `Hashable`, `Comparable`, and
 `TrivialRegisterPassable`.
 
-### Integer-type bounds and bit width
+### Integer-type bounds
 
-`Int` exposes its bounds and bit width as compile-time constants:
+`Int` exposes its bounds as compile-time constants:
 
 | Constant       | Value                           |
 |----------------|---------------------------------|
-| `Int.BITWIDTH` | System word size (typically 64) |
 | `Int.MAX`      | Maximum representable value     |
 | `Int.MIN`      | Minimum representable value     |
 
 ```mojo
-print(Int.BITWIDTH)   # 64 on most platforms
 print(Int.MIN)        # -9223372036854775808
 print(Int.MAX)        # 9223372036854775807
 ```

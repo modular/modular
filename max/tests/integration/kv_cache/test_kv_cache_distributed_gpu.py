@@ -14,14 +14,14 @@
 
 import numpy as np
 import pytest
-from max.driver import CPU, Accelerator, accelerator_count
+from max.driver import Accelerator, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef
 from max.nn.kv_cache import KVCacheParams, KVConnectorType
+from max.pipelines.context import TextContext
 from max.pipelines.kv_cache import PagedKVCacheManager
 from max.pipelines.kv_cache.connectors.local_connector import LocalConnector
-from max.pipelines.modeling.types import TextGenerationContext
 from test_common.context_utils import create_text_context
 
 
@@ -101,44 +101,6 @@ async def test_mla_runtime_inputs_keep_dispatch_metadata_on_shard_device() -> (
         )
 
 
-@pytest.mark.asyncio
-@pytest.mark.skipif(
-    accelerator_count() < 2,
-    reason="requires at least 2 GPUs",
-)
-async def test_mla_runtime_inputs_keep_dispatch_metadata_on_host_for_replay() -> (
-    None
-):
-    devices = [Accelerator(id=i) for i in range(2)]
-    session = InferenceSession(devices=devices)
-    kv_params = KVCacheParams(
-        dtype=DType.bfloat16,
-        n_kv_heads=8,
-        head_dim=128,
-        num_layers=1,
-        page_size=128,
-        is_mla=True,
-        num_q_heads=16,
-        devices=[DeviceRef.GPU(i) for i in range(2)],
-    )
-    kv_manager = PagedKVCacheManager(
-        params=kv_params,
-        total_num_pages=8,
-        session=session,
-        max_batch_size=128,
-    )
-    context = create_text_context(np.empty(1))
-    kv_manager.claim(context.request_id, replica_idx=0)
-    kv_manager.alloc(context, replica_idx=0, num_steps=1)
-
-    with kv_manager.scalar_metadata_on_host():
-        kv_inputs = kv_manager.runtime_inputs([[context]])
-
-    for kv_inputs_per_device in kv_inputs.inputs:
-        assert kv_inputs_per_device.attention_dispatch_metadata is not None
-        assert kv_inputs_per_device.attention_dispatch_metadata.device == CPU()
-
-
 def create_kv_cache(
     num_blocks: int,
     max_batch_size: int,
@@ -214,7 +176,7 @@ async def test_swapping_to_host_multi_gpu(
     # Since the last 10 reqs are duplicates, we need approximately 1000 tokens worth of blocks.
     # This exceeds the 500 token limit so we will need to swap to host.
     prompt_len = 100
-    reqs: list[TextGenerationContext] = []
+    reqs: list[TextContext] = []
     for i in range(10):  # noqa: B007
         reqs.append(create_text_context(gen_prompt(prompt_len)))
     for i in range(10):
@@ -222,7 +184,7 @@ async def test_swapping_to_host_multi_gpu(
 
     # Each batch has 4 requests
     batch_size = 4
-    batches: list[list[TextGenerationContext]] = [
+    batches: list[list[TextContext]] = [
         reqs[i : i + batch_size] for i in range(0, len(reqs), batch_size)
     ]
 
@@ -267,8 +229,9 @@ async def test_swapping_to_host_multi_gpu(
         expected_cache_hit_rates = np.array([0.0, 0.02, 0.03, 0.02, 0.03])
         expected_blocks_copied = np.array([0, 0])  # d2h, h2d
 
-    d2h_blocks_copied = kv_manager.get_metrics(replica_idx=0).d2h_blocks_copied
-    h2d_blocks_copied = kv_manager.get_metrics(replica_idx=0).h2d_blocks_copied
+    metrics_agg = kv_manager.get_metrics_aggregated()
+    d2h_blocks_copied = metrics_agg.d2h_blocks_copied
+    h2d_blocks_copied = metrics_agg.h2d_blocks_copied
     print(f"Blocks copied: D2H: {d2h_blocks_copied}, H2D: {h2d_blocks_copied}")
     blocks_copied_arr = np.array([d2h_blocks_copied, h2d_blocks_copied])
     assert np.allclose(blocks_copied_arr, expected_blocks_copied, atol=5)

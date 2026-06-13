@@ -54,15 +54,27 @@ def test_custom() -> None:
     DEVICE.is_host, reason="scatter_set_constant only supports GPU devices"
 )
 def test_inplace_custom() -> None:
+    # Prior allocate-then-free perturbs the heap next to the buffers below;
+    # the mutation must still land at exactly the requested coordinate.
+    junk = Tensor.ones([4])
+    del junk
+
     values = Tensor.zeros([2, 2])
-    indices = Tensor.ones([1, 1], dtype=DType.int32)
+    # Each indices row is a (row, col) coordinate into values.
+    indices = Tensor([[1, 0]], dtype=DType.int32, device=DEVICE)
     scatter_set_constant(values, indices, 5.0)
     assert values[1, 0].item() == 5.0
     assert values.real
     scatter_set_constant(values, indices, 4.0)
-    assert not values.real
     assert values[1, 0].item() == 4.0
     assert values.real
+
+
+def test_inplace_custom_invalid_indices_shape() -> None:
+    values = Tensor.zeros([2, 2])
+    indices = Tensor.ones([1, 1], dtype=DType.int32)
+    with pytest.raises(ValueError, match=r"\[num_indices, 2\]"):
+        scatter_set_constant(values, indices, 5.0)
 
 
 def test_custom_with_custom_extensions(

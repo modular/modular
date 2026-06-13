@@ -17,7 +17,8 @@ from typing import Any
 
 import pytest
 from max.graph.weights import WeightsFormat
-from max.pipelines import PIPELINE_REGISTRY, PipelineConfig, TextContext
+from max.pipelines import PIPELINE_REGISTRY, PipelineConfig
+from max.pipelines.context import TextContext
 from max.pipelines.lib.config.model_config import MAXModelConfig
 from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
@@ -61,7 +62,7 @@ def test_registry__test_retrieve_with_unknown_architecture_max_engine() -> None:
                 {
                     "main": MAXModelConfig(
                         model_path="GSAI-ML/LLaDA-8B-Instruct",
-                        # This forces it to fail if we dont have it.
+                        # This forces it to fail if we don't have it.
                         trust_remote_code=True,
                         max_length=1,
                     )

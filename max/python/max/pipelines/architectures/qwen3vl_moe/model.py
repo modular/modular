@@ -47,7 +47,6 @@ from max.pipelines.lib import (
 )
 from max.pipelines.lib.vlm_utils import compute_multimodal_merge_indices
 from max.profiler import Tracer
-from transformers import AutoConfig
 
 from .context import Qwen3VLTextAndVisionContext, VisionEncodingData
 from .model_config import Qwen3VLConfig
@@ -171,30 +170,7 @@ class Qwen3VLModel(
         self.vision_model, self.language_model = self.load_model(session)
         self._parallel_ops = ParallelArrayOps(max_workers=24)
 
-    @classmethod
-    def estimate_activation_memory(
-        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
-    ) -> int:
-        del pipeline_config, huggingface_config  # Unused.
-
-        # FIXME GEX-3248: This is a workaround for a MemoryManager fragmentation
-        # issue. In #77700 we swapped the order of model weight loading and kv
-        # cache loading. This affected memory fragmentation and led to CUDA OOM
-        # when running `br smoke-test -- qwen/qwen3-vl-30b-a3b-instruct` on 1xB200.
-        # We reduce the kv cache size slightly to avoid this.
-        # Update: Bumped to 10 GiB after #80736 removed MemoryManager fallthrough.
-        return 10 * 1024 * 1024 * 1024  # 10 GiB
-
     # TODO: Seems like a common pattern. Implement in a base class?
-    @staticmethod
-    def calculate_max_seq_len(
-        pipeline_config: PipelineConfig, huggingface_config: AutoConfig
-    ) -> int:
-        """Calculates the maximum sequence length for the Qwen3VL model."""
-        return Qwen3VLConfig.calculate_max_seq_len(
-            pipeline_config, huggingface_config
-        )
-
     def load_model(self, session: InferenceSession) -> tuple[Model, Model]:
         """Loads the compiled Qwen3VL models into the MAX Engine session.
 
@@ -1027,45 +1003,4 @@ class Qwen3VLModel(
             cu_seqlens=cu_seqlens,
             max_seqlen=max_seqlen,
             grid_thw=grid_thw,
-        )
-
-    def prepare_next_token_inputs(
-        self, next_tokens: Buffer, prev_model_inputs: ModelInputs
-    ) -> Qwen3VLInputs:
-        """Prepares the inputs for subsequent execution steps in a multi-step generation."""
-        assert isinstance(prev_model_inputs, Qwen3VLInputs)
-        prev_inputs = prev_model_inputs
-
-        # Use pre-allocated row offsets for next token
-        offset = prev_inputs.input_row_offsets[0].shape[0]
-        next_row_offsets = [
-            offsets_prealloc[:offset]
-            for offsets_prealloc in self._input_row_offsets_prealloc
-        ]
-
-        # Compute new position ids by adding 1 to the previous final position id
-        old_row_offsets_np = prev_inputs.input_row_offsets[0].to_numpy()
-        old_position_ids_np = prev_inputs.decoder_position_ids.to_numpy()
-
-        # For 3D position IDs (mrope), update each dimension
-        position_ids_np = old_position_ids_np[:, old_row_offsets_np[1:] - 1] + 1
-        decoder_position_ids = Buffer.from_numpy(position_ids_np)
-
-        return Qwen3VLInputs(
-            signal_buffers=self.signal_buffers,
-            tokens=next_tokens,
-            input_row_offsets=next_row_offsets,
-            decoder_position_ids=decoder_position_ids,
-            kv_cache_inputs=prev_inputs.kv_cache_inputs,
-            return_n_logits=prev_inputs.return_n_logits,
-            # Set vision model inputs to None after the first step
-            image_token_indices=None,
-            pixel_values=None,
-            vision_position_ids=None,
-            weights=None,
-            indices=None,
-            cu_seqlens=None,
-            max_seqlen=None,
-            max_grid_size=None,
-            grid_thw=None,
         )

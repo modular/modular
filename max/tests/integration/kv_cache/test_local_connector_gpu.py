@@ -50,7 +50,6 @@ def create_local_connector(
         devices=[DeviceRef.GPU()],
     )
 
-    # Create device tensors required by the connector
     device_values = [
         Buffer(
             shape=[num_device_blocks, *kv_params.shape_per_block],
@@ -58,12 +57,13 @@ def create_local_connector(
             device=device,
         )
     ]
+    kv_buffer = KVCacheBuffer(
+        values=device_values,
+        replicates_kv_across_tp=False,
+    )
 
     return LocalConnector(
-        params=kv_params,
-        device_buffers=KVCacheBuffer(
-            total_num_pages=num_device_blocks, values=device_values
-        ).all_buffers,
+        kv_memory=kv_buffer.to_memory(),
         total_num_host_blocks=num_host_blocks,
     )
 

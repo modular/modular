@@ -52,7 +52,7 @@ struct _Accumulator[
     comptime _size = Self.num_rows * Self.num_cols * Self.simd_width
 
     # The output buffer, should have num_rows x num_cols x simd_width.
-    var _storage: UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]
+    var _storage: UnsafePointer[Scalar[Self.dtype], MutUntrackedOrigin]
 
     @always_inline
     def __init__(out self):
@@ -64,7 +64,7 @@ struct _Accumulator[
         comptime alignment = align_of[SIMD[Self.dtype, Self.simd_width]]()
         self._storage = stack_allocation[
             Self._size, Self.dtype, alignment=alignment
-        ]().unsafe_origin_cast[MutAnyOrigin]()
+        ]()
 
     @always_inline
     def __init__(
@@ -76,7 +76,7 @@ struct _Accumulator[
             and (Self.num_rows > 0)
             and (Self.simd_width > 0)
         )
-        self._storage = other_storage
+        self._storage = other_storage.unsafe_origin_cast[MutUntrackedOrigin]()
 
     # NOTE: This is NOT a deepcopy; self uses the same _storage as copy.
     @always_inline
@@ -150,7 +150,9 @@ struct _Accumulator[
                 func(
                     m,
                     n,
-                    (row_ptr + n * Self.simd_width).unsafe_mut_cast[True](),
+                    (row_ptr + n * Self.simd_width)
+                    .unsafe_mut_cast[True]()
+                    .as_unsafe_any_origin(),
                 )
             row_ptr += stride
 
@@ -226,7 +228,9 @@ struct _Accumulator[
             ](uninitialized=True)
 
             comptime for row in range(Self.num_rows):
-                row_ptrs[row] = (c_ptr_loc + row * c_stride).as_any_origin()
+                row_ptrs[row] = (
+                    c_ptr_loc + row * c_stride
+                ).as_unsafe_any_origin()
 
             self._transfer_loop[0, is_load](
                 transfer_count, row_ptrs.unsafe_ptr(), c_stride

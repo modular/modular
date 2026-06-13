@@ -32,7 +32,7 @@ from std.memory.arc_pointer import WeakPointer
 
 
 @fieldwise_init
-struct Queue[device_spec: DeviceSpec](ImplicitlyDestructible, Movable):
+struct Queue[device_spec: DeviceSpec](ImplicitlyDeletable, Movable):
     """A command queue bound to a context.
 
     Parameters:
@@ -92,7 +92,7 @@ struct Queue[device_spec: DeviceSpec](ImplicitlyDestructible, Movable):
         func: FunctionHandle,
         grid: Tuple[UInt32, UInt32, UInt32],
         block: Tuple[UInt32, UInt32, UInt32],
-        args: UnsafePointer[mut=True, OpaquePointer[MutExternalOrigin], _],
+        args: UnsafePointer[mut=True, OpaquePointer[MutUntrackedOrigin], _],
         arg_sizes: UnsafePointer[mut=True, UInt64, _],
         num_args: UInt32,
         shared_mem_bytes: UInt32 = 0,

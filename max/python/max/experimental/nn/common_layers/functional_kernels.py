@@ -20,19 +20,25 @@ from collections.abc import Callable
 from typing import Any
 
 from max.experimental import functional as F
-from max.experimental.functional.utils import collect_tensors
 from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
+from max.experimental.realization_context import ensure_context  # noqa: F401
 from max.experimental.sharding import (
     DeviceMesh,
     Placement,
     PlacementMapping,
     Replicated,
-    global_shape_from_local,
 )
-from max.experimental.sharding.rules import RuleSignature
+from max.experimental.sharding.action import Action, ActionSet, AxisAssignment
+from max.experimental.sharding.cost import (
+    build_action_set,
+    force_replicated_action_set,
+)
 from max.experimental.sharding.types import TensorLayout
 from max.experimental.tensor import Tensor
 from max.graph import TensorValue, ops
+from max.nn.comm.ep.ep_kernels import (
+    fused_silu as _fused_silu,
+)
 from max.nn.kernels import (
     flare_mla_prefill_plan as _flare_mla_prefill_plan,
 )
@@ -69,22 +75,41 @@ from max.nn.kernels import (
 Independent = Replicated
 
 
+def _preserve_orig_mappings(
+    orig_mappings: tuple[Any, ...],
+) -> Callable[[Action], Action]:
+    """Returns a finalize that restores the op's original input mappings."""
+
+    def finalize(action: Action) -> Action:
+        return Action(inputs=orig_mappings, outputs=action.outputs)
+
+    return finalize
+
+
 def grouped_matmul_ragged_rule(
     hidden_states: TensorLayout,
     weight: TensorLayout,
     expert_start_indices: TensorLayout,
     expert_ids: TensorLayout,
     expert_usage_stats_host: TensorLayout,
-) -> RuleSignature:
-    return (
-        (
-            hidden_states,
-            weight,
-            expert_start_indices,
-            expert_ids,
-            expert_usage_stats_host,
-        ),
-        (weight.mapping,),
+) -> ActionSet:
+    layouts = (
+        hidden_states,
+        weight,
+        expert_start_indices,
+        expert_ids,
+        expert_usage_stats_host,
+    )
+    n_axes = weight.mapping.mesh.ndim
+    rows = []
+    for axis in range(n_axes):
+        needed = tuple(l.mapping.to_placements()[axis] for l in layouts)
+        out = weight.mapping.to_placements()[axis]
+        rows.append(AxisAssignment(needed_inputs=needed, output=out))
+    return build_action_set(
+        rows,
+        layouts=layouts,
+        finalize=_preserve_orig_mappings(tuple(l.mapping for l in layouts)),
     )
 
 
@@ -93,9 +118,8 @@ grouped_matmul_ragged = F.functional(
 )
 
 
-def _moe_create_indices_rule(lhs: TensorLayout, *args: object) -> RuleSignature:
-    mesh = lhs.mapping.mesh
-    return ((lhs, *args), (PlacementMapping(mesh, (Independent(),)),))
+def _moe_create_indices_rule(lhs: TensorLayout, *args: Any) -> ActionSet:
+    return force_replicated_action_set(lhs)
 
 
 moe_create_indices = F.functional(
@@ -154,26 +178,10 @@ def _wrap_kvcache_op(
         mapping = _get_mapping(
             op.__name__, sig, return_input_sharding, args, kwargs
         )
-        reference_tensors = collect_tensors((*args, *kwargs.values()))
         for i in range(len(results)):
             result = results[i]
             if isinstance(result, (TensorValue, list, tuple)):
-                shards = (
-                    [result]
-                    if isinstance(result, TensorValue)
-                    else list(result)
-                )
-                global_shape = global_shape_from_local(
-                    [list(s.shape) for s in shards],
-                    mapping.mesh,
-                    mapping.to_placements(),
-                    reference_tensors,
-                )
-                tensor_results.append(
-                    Tensor.from_shard_values(
-                        result, mapping, global_shape=global_shape
-                    )
-                )
+                tensor_results.append(Tensor.from_shard_values(result, mapping))
             else:
                 raise TypeError(f"Unexpected result type: {type(results[0])}")
         if len(tensor_results) == 1:
@@ -242,7 +250,7 @@ def _loop_distributed_args(
     """Unwrap distributed args into per-device (args, kwargs) tuples.
 
     Tensor args are split via ``local_shards``, PagedCacheValues via
-    ``for_device``, and everything else is broadcast unchanged.
+    ``for_device``, and everything else is ooadcast unchanged.
     """
     num_devices = 1
     for a in (*args, *kwargs.values()):
@@ -270,9 +278,11 @@ mla_prefill_graph = _wrap_kvcache_op(_mla_prefill_graph, "q")
 mla_decode_graph = _wrap_kvcache_op(_mla_decode_graph, "q")
 mla_prefill_decode_graph = _wrap_kvcache_op(_mla_prefill_decode_graph, "q")
 
+fused_silu = _wrap_kvcache_op(_fused_silu, "input")
 
 __all__ = [
     "flash_attention_ragged",
+    "fused_silu",
     "grouped_matmul_ragged",
     "moe_create_indices",
     "rms_norm_key_cache",

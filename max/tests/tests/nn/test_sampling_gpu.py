@@ -28,7 +28,7 @@ from max.nn.sampling import (
     compute_synthetic_acceptance_base_rate,
     stochastic_acceptance_sampler,
 )
-from max.pipelines.lib.sampling import (
+from max.pipelines.sampling import (
     SyntheticRunner,
     build_greedy_acceptance_sampler_graph,
     build_stochastic_acceptance_sampler_graph,
@@ -475,6 +475,53 @@ def test_stochastic_acceptance_sampler_mixed_per_row_params() -> None:
     np.testing.assert_array_equal(first_rejected_np, [num_steps, 0, num_steps])
     assert np.isfinite(cast(Buffer, recovered).to_numpy()).all()
     assert np.isfinite(cast(Buffer, bonus).to_numpy()).all()
+
+
+def test_stochastic_acceptance_sampler_bonus_token_uses_seed() -> None:
+    """Bonus token sampling must honor the per-execute seed.
+
+    With num_steps=0 the bonus token is the only varying output, so distinct
+    seeds must produce different draws and a repeated seed must reproduce them.
+    """
+    device = Accelerator()
+    session = InferenceSession(devices=[device])
+    graph = build_stochastic_acceptance_sampler_graph(
+        device=DeviceRef.from_device(device)
+    )
+    model = session.load(graph)
+
+    # Flat logits + temperature=1.0 give a near-uniform draw, so different
+    # seeds diverge.
+    batch_size = 16
+    vocab_size = 64
+    num_steps = 0
+    draft_tokens_np = np.zeros((batch_size, num_steps), dtype=np.int64)
+    logits = np.zeros((batch_size, vocab_size), dtype=np.float32)
+    temperature_np = np.ones(batch_size, dtype=np.float32)
+
+    def _bonus_for_seed(seed: int) -> npt.NDArray[np.int64]:
+        _, _, bonus = model.execute(
+            *_stochastic_sampler_inputs(
+                device,
+                batch_size,
+                vocab_size,
+                draft_tokens_np,
+                logits,
+                temperature_np,
+                seed=seed,
+            )
+        )
+        return cast(Buffer, bonus).to_numpy()
+
+    bonus_seed_1 = _bonus_for_seed(1)
+    bonus_seed_2 = _bonus_for_seed(2)
+    bonus_seed_1_again = _bonus_for_seed(1)
+
+    assert bonus_seed_1.shape == (batch_size, 1)
+    assert ((bonus_seed_1 >= 0) & (bonus_seed_1 < vocab_size)).all()
+
+    assert not np.array_equal(bonus_seed_1, bonus_seed_2)
+    np.testing.assert_array_equal(bonus_seed_1, bonus_seed_1_again)
 
 
 def _build_relaxed_acceptance_graph(

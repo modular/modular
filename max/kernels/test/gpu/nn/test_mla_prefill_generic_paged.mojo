@@ -300,21 +300,21 @@ def run_test_paged_prefill[
         k_rope_type, kv_params, page_size
     ](
         LayoutTensor[k_rope_type, Layout.row_major[6](), MutAnyOrigin](
-            blocks_lt.ptr,
+            blocks_lt.ptr.as_unsafe_any_origin(),
             RuntimeLayout[Layout.row_major[6]()](
                 blocks_lt.runtime_layout.shape.value,
                 blocks_lt.runtime_layout.stride.value,
             ),
         ),
         LayoutTensor[DType.uint32, cl_layout, ImmutAnyOrigin](
-            cache_lengths_lt.ptr,
+            cache_lengths_lt.ptr.as_unsafe_any_origin(),
             RuntimeLayout[cl_layout](
                 cache_lengths_lt.runtime_layout.shape.value,
                 cache_lengths_lt.runtime_layout.stride.value,
             ),
         ),
         LayoutTensor[DType.uint32, lt_layout_2d, ImmutAnyOrigin](
-            lookup_table_lt.ptr,
+            lookup_table_lt.ptr.as_unsafe_any_origin(),
             RuntimeLayout[lt_layout_2d](
                 lookup_table_lt.runtime_layout.shape.value,
                 lookup_table_lt.runtime_layout.stride.value,
@@ -374,7 +374,11 @@ def run_test_paged_prefill[
 
     for b in range(batch_size):
         extract_k_rope_for_batch[k_rope_type](
-            blocks_host, k_rope_one_batch, b, num_keys, page_size
+            blocks_host.as_unsafe_any_origin(),
+            k_rope_one_batch.as_unsafe_any_origin(),
+            b,
+            num_keys,
+            page_size,
         )
         for s in range(num_keys):
             for h in range(num_heads):

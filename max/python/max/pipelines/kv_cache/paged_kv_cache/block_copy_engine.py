@@ -15,25 +15,28 @@
 
 from __future__ import annotations
 
+import logging
+import time
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-import numpy as np
-import numpy.typing as npt
-from max._distributed_ops import distributed_broadcast_raw
+from max._distributed_ops import distributed_broadcast
 from max.driver import (
     Buffer,
     Device,
     DeviceEvent,
     DevicePinnedBuffer,
     DeviceStream,
+    _unsafe_alloc_fast_pinned_buffer,
+    _unsafe_free_fast_pinned_buffer,
 )
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn.comm.allreduce import Signals
+from max.nn.kv_cache.cache_params import KVCacheMemory, ReplicatedKVCacheMemory
 from max.profiler import Tracer, traced
-from max.support.math import ceildiv
-from tqdm import tqdm
+
+_logger = logging.getLogger("max.pipelines")
 
 
 @dataclass
@@ -59,136 +62,7 @@ class DeviceEventBundle:
             event.synchronize()
 
 
-def _bytes_per_page(buffer: Buffer) -> int:
-    num_pages = buffer.shape[0]
-    return buffer.num_elements * buffer.dtype.size_in_bytes // num_pages
-
-
-def _group_by_device(buffers: list[Buffer]) -> list[list[Buffer]]:
-    """Reshape a flat per-rank buffer list into per-group buffer lists.
-
-    Buckets ``buffers`` by device in first-seen order, then transposes so
-    each returned group is one buffer per device in canonical order. Every
-    device must contribute the same number of buffers.
-    """
-    by_device: dict[int, list[Buffer]] = {}
-    device_order: list[int] = []
-    for buf in buffers:
-        if buf.device.id not in by_device:
-            by_device[buf.device.id] = []
-            device_order.append(buf.device.id)
-        by_device[buf.device.id].append(buf)
-
-    counts = {len(b) for b in by_device.values()}
-    if len(counts) != 1:
-        raise ValueError(
-            f"every device must contribute the same number of buffers; got "
-            f"per-device counts {counts}"
-        )
-
-    num_groups = counts.pop()
-    return [
-        [by_device[dev_id][g] for dev_id in device_order]
-        for g in range(num_groups)
-    ]
-
-
-def _2d_view(buffer: Buffer, num_pages: int) -> Buffer:
-    if buffer.shape[0] != num_pages:
-        raise ValueError(
-            f"Expected first dimension of buffer to be {num_pages}, got {buffer.shape[0]}"
-        )
-    return buffer.view(
-        dtype=DType.uint8,
-        shape=[num_pages, _bytes_per_page(buffer)],
-    )
-
-
 _GIB = 1024**3
-_MAX_PINNED_CHUNK_BYTES = 4 * _GIB
-
-
-class PinnedHostKVCacheBuffer:
-    """Chunked pinned host buffer for KV cache offloading.
-
-    ``cuMemAllocHost`` can fail for very large contiguous allocations
-    (e.g. >1 TiB) even when sufficient physical memory exists. This class
-    splits the allocation into multiple ``DevicePinnedBuffer`` chunks and
-    presents a unified interface keyed by block index.
-
-    Args:
-        total_num_blocks: Total number of KV cache blocks to host.
-        bytes_per_block: Size of each block in bytes.
-        device: GPU device the pinned memory is associated with.
-        max_chunk_bytes: Upper bound on each pinned allocation in bytes.
-    """
-
-    def __init__(
-        self,
-        total_num_blocks: int,
-        bytes_per_block: int,
-        device: Device,
-        max_chunk_bytes: int = _MAX_PINNED_CHUNK_BYTES,
-    ) -> None:
-        self._total_num_blocks = total_num_blocks
-        self._bytes_per_block = bytes_per_block
-
-        blocks_per_chunk = max(1, max_chunk_bytes // bytes_per_block)
-        self._blocks_per_chunk = blocks_per_chunk
-
-        total_gib = (total_num_blocks * bytes_per_block) / _GIB
-        num_chunks = ceildiv(total_num_blocks, blocks_per_chunk)
-
-        self._chunks: list[DevicePinnedBuffer] = []
-        for i in tqdm(
-            range(num_chunks),
-            desc=f"Allocating {total_gib:.1f} GiB pinned host KV cache",
-        ):
-            start = i * blocks_per_chunk
-            n = min(blocks_per_chunk, total_num_blocks - start)
-            self._chunks.append(
-                DevicePinnedBuffer(
-                    shape=[n, bytes_per_block],
-                    dtype=DType.uint8,
-                    device=device,
-                )
-            )
-
-    def _locate(self, block_id: int) -> tuple[int, int]:
-        """Map a global *block_id* to ``(chunk_index, local_block_id)``."""
-        if block_id < 0 or block_id >= self._total_num_blocks:
-            raise IndexError(
-                f"block_id {block_id} out of range "
-                f"[0, {self._total_num_blocks})"
-            )
-        chunk_idx = block_id // self._blocks_per_chunk
-        local_id = block_id % self._blocks_per_chunk
-        return chunk_idx, local_id
-
-    def page_view(self, block_id: int) -> Buffer:
-        """Return a 1-D ``Buffer`` view of a given page."""
-        chunk_idx, local_id = self._locate(block_id)
-        return self._chunks[chunk_idx][local_id, :]
-
-    def numpy_page_view(self, block_id: int) -> npt.NDArray[np.uint8]:
-        """Return a 1-D NumPy view of a given page."""
-        chunk_idx, local_id = self._locate(block_id)
-        return self._chunks[chunk_idx].to_numpy()[local_id]
-
-    @property
-    def shape(self) -> list[int]:
-        """Virtual ``[total_num_blocks, bytes_per_block]`` shape."""
-        return [self._total_num_blocks, self._bytes_per_block]
-
-    @property
-    def dtype(self) -> DType:
-        """Always ``DType.uint8``."""
-        return DType.uint8
-
-    @property
-    def pinned(self) -> bool:
-        """Always ``True``; every chunk is device-pinned."""
-        return True
 
 
 class BlockOffloadEngine:
@@ -200,81 +74,89 @@ class BlockOffloadEngine:
     stream. However, it still issues the h2d transfers on the same stream as
     kernel execution which is a major limitation (SERVOPT-1036).
 
-    With ``replicate_kv_across_tp=True``, the host buffer holds a single
-    replica per logical group. ``self.device_buffers`` is the rank-0 buffer of
-    each group (the H2D/D2H endpoints) and ``self.replicated_buffers[g]`` is
-    the list of peer-rank buffers for group ``g``. H2D copies host → rank 0,
-    then fans each group out to its peers via a broadcast.
+    For replicated KV caches (MLA), the host buffer holds a single replica per
+    logical group. D2H copies from rank 0, then H2D fans back out to all peers
+    via a broadcast. For sharded caches (MHA), every shard is its own unit.
     """
 
     def __init__(
         self,
         total_num_host_blocks: int,
-        device_buffers: list[Buffer],
-        *,
-        replicate_kv_across_tp: bool = False,
-        non_replicated_device_buffers_to_offload: list[Buffer] | None = None,
+        kv_memory: list[KVCacheMemory],
     ) -> None:
-        num_device_pages = device_buffers[0].shape[0]
-        viewed = [
-            _2d_view(buffer, num_device_pages) for buffer in device_buffers
-        ]
-        gpu0 = device_buffers[0].device
+        gpu0 = kv_memory[0].buffer.device
         if gpu0.is_host:
             raise ValueError(
-                "KVCacheBuffer is on the CPU. Unable to allocate host"
+                "KVCacheMemory is on the CPU. Unable to allocate host"
                 " offload buffer for already-on-CPU buffers."
             )
 
-        if (
-            non_replicated_device_buffers_to_offload
-            and not replicate_kv_across_tp
-        ):
+        self._units = kv_memory
+        self._replicated_units: list[ReplicatedKVCacheMemory] = [
+            u for u in self._units if isinstance(u, ReplicatedKVCacheMemory)
+        ]
+
+        # Validate that all units have the same number of pages.
+        unique_total_num_pages = {mem.total_num_pages for mem in kv_memory}
+        if len(unique_total_num_pages) > 1:
             raise ValueError(
-                "non_replicated_device_buffers_to_offload is only supported when replicate_kv_across_tp is True"
+                "all kv_memory units must have the same total_num_pages; got "
+                f"{unique_total_num_pages}"
             )
 
-        # Sharded layout: every buffer is its own group of one. Replicated
-        # layout: bucket by device so each logical group's peers ride
-        # alongside its rank-0 buffer.
-        self.device_buffers: list[Buffer]
-        self.replicated_buffers: list[list[Buffer]]
-        if replicate_kv_across_tp:
-            groups = _group_by_device(viewed)
-            if len(groups[0]) > 1:
-                self.device_buffers = [g[0] for g in groups]
-                self.replicated_buffers = [g[1:] for g in groups]
-            else:
-                self.device_buffers = viewed
-                self.replicated_buffers = []
-        else:
-            self.device_buffers = viewed
-            self.replicated_buffers = []
+        # Validate device topology across all replicated units.
+        unique_topologies: set[tuple[int, ...]] = {
+            tuple(
+                d.id
+                for d in [unit.buffer.device, *(p.device for p in unit.peers)]
+            )
+            for unit in self._replicated_units
+        }
+        if len(unique_topologies) > 1:
+            raise ValueError(
+                "all replicated KVCacheMemory units must share the same "
+                "TP device topology; mixed topologies are not supported"
+            )
 
-        # Special case for mla target + mha draft
-        if non_replicated_device_buffers_to_offload is not None:
-            non_replicated_viewed = [
-                _2d_view(b, num_device_pages)
-                for b in non_replicated_device_buffers_to_offload
+        # Broadcast devices: rank-0 + peers from the first replicated unit
+        # (topology uniformity was validated above).
+        self._broadcast_devices: list[Device] = (
+            [
+                self._replicated_units[0].buffer.device,
+                *(p.device for p in self._replicated_units[0].peers),
             ]
-            self.device_buffers.extend(non_replicated_viewed)
+            if self._replicated_units
+            else []
+        )
 
-        for root, peers in zip(
-            self.device_buffers, self.replicated_buffers, strict=False
-        ):
-            page_bytes = _bytes_per_page(root)
-            for peer in peers:
-                if _bytes_per_page(peer) != page_bytes:
-                    raise ValueError(
-                        "replicate_kv_across_tp requires identical "
-                        "bytes_per_page across replicas within a group"
-                    )
+        # The D2H/H2D endpoints — one per unit (rank-0 for replicated units).
+        self.device_buffers: list[Buffer] = [u.buffer for u in self._units]
 
-        bytes_per_page = sum(_bytes_per_page(b) for b in self.device_buffers)
-        self.host_buffer = PinnedHostKVCacheBuffer(
-            total_num_blocks=total_num_host_blocks,
-            bytes_per_block=bytes_per_page,
-            device=gpu0,
+        bytes_per_page = sum(b.shape[1] for b in self.device_buffers)
+        # 2-D [num_host_blocks, bytes_per_page] page-locked host region; row
+        # ``bid`` is block ``bid``. Not GC-freed -- close() releases it.
+        total_bytes = total_num_host_blocks * bytes_per_page
+        total_gib = total_bytes / _GIB
+        # Large allocations take minutes; log before so the wait is explained.
+        _logger.info(
+            (
+                "Allocating %.1f GiB pinned host KV cache (this can take"
+                " several minutes for large sizes)..."
+            ),
+            total_gib,
+        )
+        start = time.perf_counter()
+        self.host_buffer: DevicePinnedBuffer = _unsafe_alloc_fast_pinned_buffer(
+            DType.uint8,
+            [total_num_host_blocks, bytes_per_page],
+            gpu0,
+        )
+        elapsed = time.perf_counter() - start
+        _logger.info(
+            "Allocated %.1f GiB pinned host KV cache in %.1f s (%.2f GiB/s)",
+            total_gib,
+            elapsed,
+            total_gib / elapsed if elapsed > 0 else float("inf"),
         )
         self.main_streams: dict[int, DeviceStream] = {
             buffer.device.id: buffer.device.default_stream
@@ -291,27 +173,33 @@ class BlockOffloadEngine:
 
         self._signals: Signals | None = None
         self._signal_buffers: list[Buffer] = []
-        self._broadcast_devices: list[Device] = []
-        self._signal_buffer_ptrs: list[int] = []
-        self._broadcast_device_ptrs: list[int] = []
-        if self.replicated_buffers:
-            # Every group shares the same TP devices in the same order.
-            self._broadcast_devices = [
-                self.device_buffers[0].device,
-                *(p.device for p in self.replicated_buffers[0]),
-            ]
+        if self._replicated_units:
             self._signals = Signals(
                 devices=[
                     DeviceRef.GPU(id=d.id) for d in self._broadcast_devices
                 ]
             )
             self._signal_buffers = self._signals.buffers()
-            self._signal_buffer_ptrs = [
-                b._data_ptr() for b in self._signal_buffers
-            ]
-            self._broadcast_device_ptrs = [
-                d._device_context_ptr() for d in self._broadcast_devices
-            ]
+
+        self._closed = False
+
+    def close(self) -> None:
+        """Host-synchronize the copy streams and free the host buffer.
+
+        The host buffer is not GC-freed; it must be released explicitly, and
+        only once the GPU is done with it. This belongs here, not in a
+        destructor: the engine owns the streams that copy into the buffer (a
+        destructor knows neither the streams nor when GC runs). Idempotent;
+        forgetting to call it leaks (safe), freeing without the sync is a UAF.
+        """
+        if self._closed:
+            return
+        self._closed = True
+        for stream in self.main_streams.values():
+            stream.synchronize()
+        for stream in self.d2h_auxiliary_streams.values():
+            stream.synchronize()
+        _unsafe_free_fast_pinned_buffer(self.host_buffer)
 
     @traced
     def memcpy_h2d(self, dst: int, src: int) -> None:
@@ -321,11 +209,11 @@ class BlockOffloadEngine:
         for buf in self.device_buffers_on_aux_stream:
             page_bytes = buf.shape[1]
             buf[dst, :].inplace_copy_from(
-                self.host_buffer.page_view(src)[offset : offset + page_bytes]
+                self.host_buffer[src, offset : offset + page_bytes]
             )
             offset += page_bytes
 
-        if not self.replicated_buffers:
+        if not self._replicated_units:
             return
 
         # main stream waits for completion of d2h on auxiliary stream.
@@ -337,24 +225,17 @@ class BlockOffloadEngine:
             main_stream.wait_for(d2h_auxiliary_stream)
 
         # Broadcast the block to the other devices on main stream.
-        num_replicated_buffers = len(self.replicated_buffers)
-        for root, peers in zip(
-            self.device_buffers[:num_replicated_buffers],
-            self.replicated_buffers,
-            strict=True,
-        ):
+        for unit in self._replicated_units:
+            root = unit.buffer
             with Tracer("distributed_broadcast"):
-                in_slice = root[dst, :]
-                out_ptrs = [
-                    in_slice._data_ptr(),
-                    *(p[dst, :]._data_ptr() for p in peers),
-                ]
-                distributed_broadcast_raw(
-                    input_data_ptr=out_ptrs[0],
-                    output_data_ptrs=out_ptrs,
-                    signal_data_ptrs=self._signal_buffer_ptrs,
-                    device_context_ptrs=self._broadcast_device_ptrs,
-                    num_bytes=in_slice.num_elements,
+                distributed_broadcast(
+                    input_buffer=root[dst, :],
+                    output_buffers=[
+                        root[dst, :],
+                        *(p[dst, :] for p in unit.peers),
+                    ],
+                    signal_buffers=self._signal_buffers,
+                    devices=self._broadcast_devices,
                     root=0,
                 )
 
@@ -364,8 +245,8 @@ class BlockOffloadEngine:
         offset = 0
         for buf in self.device_buffers_on_aux_stream:
             page_bytes = buf.shape[1]
-            self.host_buffer.page_view(dst)[
-                offset : offset + page_bytes
+            self.host_buffer[
+                dst, offset : offset + page_bytes
             ].inplace_copy_from(buf[src, :])
             offset += page_bytes
 

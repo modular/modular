@@ -52,7 +52,7 @@ def show2(*pack: *SomeTypeList[Writable]):
 
 
 @fieldwise_init
-struct Struct1[T: Copyable & ImplicitlyDestructible]:
+struct Struct1[T: Copyable & ImplicitlyDeletable]:
     var x: Self.T
 
     def __getitem__[I: Indexer, //](self, idx: I) -> ref[self.x] Self.T:
@@ -60,7 +60,7 @@ struct Struct1[T: Copyable & ImplicitlyDestructible]:
 
 
 @fieldwise_init
-struct Struct2[T: Copyable & ImplicitlyDestructible]:
+struct Struct2[T: Copyable & ImplicitlyDeletable]:
     var x: Self.T
 
     def __getitem__(self, idx: Some[Indexer]) -> ref[self.x] Self.T:

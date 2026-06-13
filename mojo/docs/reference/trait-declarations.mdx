@@ -222,7 +222,7 @@ type `Associated`:
 
 ```mojo
 trait Boxable:
-    comptime Associated: Writable & Copyable & ImplicitlyDestructible
+    comptime Associated: Writable & Copyable & ImplicitlyDeletable
 
     def unbox(self) -> Self.Associated:
         ...
@@ -239,14 +239,14 @@ def main():
     var box = ConcreteBox(value="Hello")
     var unboxed = box.unbox()  # Known to be Copyable
     print(unboxed)             # Known to be Writable
-    _ = unboxed^               # Known to be ImplicitlyDestructible
+    _ = unboxed^               # Known to be ImplicitlyDeletable
 ```
 
 An associated type can also be assigned from call sites with a generic
 parameter. This lets the trait work across a family of types:
 
 ```mojo
-comptime Base = Copyable & ImplicitlyDestructible & Writable
+comptime Base = Copyable & ImplicitlyDeletable & Writable
 
 @fieldwise_init
 struct Box[T: Base](Boxable):
@@ -293,7 +293,7 @@ the `Element` associated type and a named trait composition:
 ```mojo
 from std.sys.info import bit_width_of
 
-comptime BaseElement = Copyable & ImplicitlyDestructible & Writable
+comptime BaseElement = Copyable & ImplicitlyDeletable & Writable
 
 trait Test:
     comptime Element: RegisterPassable
@@ -378,7 +378,7 @@ trait PrettyPrintable(Printable):
         ...
 
 @fieldwise_init
-struct Box[T: Copyable & Writable & ImplicitlyDestructible](PrettyPrintable):
+struct Box[T: Copyable & Writable & ImplicitlyDeletable](PrettyPrintable):
     var value: Self.T
 
     def to_string(self) -> String:

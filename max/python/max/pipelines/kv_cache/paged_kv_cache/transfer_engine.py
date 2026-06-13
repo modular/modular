@@ -110,9 +110,9 @@ def available_port(
     """Finds an available TCP port in the given range.
 
     Args:
-        start_port (int): The lower bound of the port range (inclusive).
-        end_port (int): The upper bound of the port range (inclusive).
-        max_attempts (int): Maximum number of attempts to find a free port.
+        start_port: The lower bound of the port range (inclusive).
+        end_port: The upper bound of the port range (inclusive).
+        max_attempts: Maximum number of attempts to find a free port.
 
     Returns:
         int: An available port number.
@@ -680,7 +680,8 @@ class KVTransferEngine:
                 [t.device for t in replica_tensors], backend_type
             )
             bytes_per_page, elts_per_page = _validate_tensor_shape(
-                replica_tensors, total_num_pages
+                replica_tensors,
+                total_num_pages,
             )
             bytes_per_page_list.append(bytes_per_page)
             elts_per_page_list.append(elts_per_page)
@@ -783,7 +784,8 @@ class KVTransferEngine:
         return cls(
             name=name,
             tensors=tensors,
-            total_num_pages=kv_cache.get_num_pages(replica_idx=0),
+            # Need to add 1 for the null block
+            total_num_pages=kv_cache.get_num_pages(replica_idx=0) + 1,
             replicate_kv_across_tp=primary_params.is_mla,
         )
 

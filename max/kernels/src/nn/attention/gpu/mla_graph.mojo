@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from std.collections import OptionalReg
+from std.collections import Optional, OptionalReg
 from std.math import align_up, ceildiv
 
 from std.sys import simd_width_of, size_of
@@ -53,6 +53,7 @@ from linalg.fp8_quantization import (
     quantize_dynamic_scaled_fp8,
     batched_quantize_dynamic_scaled_fp8,
 )
+from internal_utils.fp8_utils import cast_saturating
 from nn._ragged_utils import get_batch_and_token_idx_from_row_offsets
 from nn.fused_qk_rope import rope_k_cache, rope_q_proj, rope_value
 from nn.kv_cache import KVCollectionT, KVCacheT
@@ -60,16 +61,9 @@ from nn.kv_cache_ragged import (
     generic_flare_mla_decode_kv_cache_ragged,
     generic_flare_mla_prefill_kv_cache_ragged,
 )
-from nn.attention.gpu.mla import _k_cache_to_buffer
+from nn.attention.gpu.mla import _k_cache_to_buffer, MLA_DECODE_MAX_SEQ_LEN
 from nn.normalization import _rms_norm_warp_tiling_subkernel
 
-
-# ===-----------------------------------------------------------------------===#
-# Maximum sequence length that routes through the decode branch instead of
-# prefill. This covers MTP verification and speculative decoding (1 actual +
-# up to 5 spec ahead = 6) where a small number of draft tokens (> 1) should
-# still use the decode kernel.
-comptime MLA_DECODE_MAX_SEQ_LEN = 6
 
 # Manually fused MLA RoPE and RMSNorm kernel
 # ===-----------------------------------------------------------------------===#
@@ -94,14 +88,14 @@ def fused_rope_rmsnorm_kernel[
     n_rms_blocks: Int,
 ](
     q_rope_output: TileTensor[
-        mut=True, dtype, QRopeOutputLayoutType, MutExternalOrigin
+        mut=True, dtype, QRopeOutputLayoutType, MutUntrackedOrigin
     ],
-    q_rope: TileTensor[dtype, QRopeLayoutType, ImmutExternalOrigin],
+    q_rope: TileTensor[dtype, QRopeLayoutType, ImmutUntrackedOrigin],
     input_row_offsets: TileTensor[
-        DType.uint32, InputRowOffsetsLayoutType, ImmutExternalOrigin
+        DType.uint32, InputRowOffsetsLayoutType, ImmutUntrackedOrigin
     ],
-    freqs_cis: TileTensor[freq_dtype, FreqsCisLayoutType, ImmutExternalOrigin],
-    gamma: TileTensor[gamma_dtype, GammaLayoutType, ImmutExternalOrigin],
+    freqs_cis: TileTensor[freq_dtype, FreqsCisLayoutType, ImmutUntrackedOrigin],
+    gamma: TileTensor[gamma_dtype, GammaLayoutType, ImmutUntrackedOrigin],
     k_cache: cache_t,
     epsilon: Float32,
 ) -> None:
@@ -151,12 +145,12 @@ def fused_rope_rmsnorm_kernel[
     # Evidence asserts for TileTensor load/store Coord constraints.
     comptime assert (
         TileTensor[
-            freq_dtype, FreqsCisLayoutType, ImmutExternalOrigin
+            freq_dtype, FreqsCisLayoutType, ImmutUntrackedOrigin
         ].flat_rank
         >= 2
     )
     comptime assert (
-        TileTensor[gamma_dtype, GammaLayoutType, ImmutExternalOrigin].flat_rank
+        TileTensor[gamma_dtype, GammaLayoutType, ImmutUntrackedOrigin].flat_rank
         >= 1
     )
 
@@ -255,7 +249,7 @@ def fused_rope_rmsnorm_kernel[
                         0,  # num_k_heads is 1 for MLA
                         post_seq_idx,
                         idx,
-                        norm_val.cast[k_dtype](),
+                        cast_saturating[k_dtype](norm_val),
                     )
 
 
@@ -282,14 +276,14 @@ def fused_rope_rmsnorm_quantization_kernel[
     ],
 ](
     q_rope_output: TileTensor[
-        mut=True, out_rope_dtype, QRopeOutputLayoutType, MutExternalOrigin
+        mut=True, out_rope_dtype, QRopeOutputLayoutType, MutUntrackedOrigin
     ],
-    q_rope: TileTensor[dtype, QRopeLayoutType, ImmutExternalOrigin],
+    q_rope: TileTensor[dtype, QRopeLayoutType, ImmutUntrackedOrigin],
     input_row_offsets: TileTensor[
-        DType.uint32, InputRowOffsetsLayoutType, ImmutExternalOrigin
+        DType.uint32, InputRowOffsetsLayoutType, ImmutUntrackedOrigin
     ],
-    freqs_cis: TileTensor[freq_dtype, FreqsCisLayoutType, ImmutExternalOrigin],
-    gamma: TileTensor[gamma_dtype, GammaLayoutType, ImmutExternalOrigin],
+    freqs_cis: TileTensor[freq_dtype, FreqsCisLayoutType, ImmutUntrackedOrigin],
+    gamma: TileTensor[gamma_dtype, GammaLayoutType, ImmutUntrackedOrigin],
     k_cache: cache_t,
     epsilon: Float32,
 ) -> None:
@@ -344,12 +338,12 @@ def fused_rope_rmsnorm_quantization_kernel[
     # Evidence asserts for TileTensor load/store Coord constraints.
     comptime assert (
         TileTensor[
-            freq_dtype, FreqsCisLayoutType, ImmutExternalOrigin
+            freq_dtype, FreqsCisLayoutType, ImmutUntrackedOrigin
         ].flat_rank
         >= 2
     )
     comptime assert (
-        TileTensor[gamma_dtype, GammaLayoutType, ImmutExternalOrigin].flat_rank
+        TileTensor[gamma_dtype, GammaLayoutType, ImmutUntrackedOrigin].flat_rank
         >= 1
     )
 
@@ -402,7 +396,7 @@ def fused_rope_rmsnorm_quantization_kernel[
                         0,  # num_k_heads is 1 for MLA
                         post_seq_idx,
                         head_dim_idx + kv_norm_dim,
-                        roped_val.cast[cache_dtype](),
+                        cast_saturating[cache_dtype](roped_val),
                     )
 
             # The last block of this worker processes RMSNorm.
@@ -447,7 +441,7 @@ def fused_rope_rmsnorm_quantization_kernel[
                         0,  # num_k_heads is 1 for MLA
                         post_seq_idx,
                         idx,
-                        norm_val.cast[cache_dtype](),
+                        cast_saturating[cache_dtype](norm_val),
                     )
 
 
@@ -746,7 +740,7 @@ def mla_prefill_branch_fp8[
 
     mla_fused_rope_rmsnorm_quantization[kv_input_fn=kv_input_fn](
         q_rope_mut,
-        q_rope.as_any_origin(),  # hack aliasing.
+        q_rope.as_unsafe_any_origin(),  # hack aliasing.
         input_row_offsets,
         freqs_cis,
         kv_norm_gamma,
@@ -796,11 +790,13 @@ def mla_prefill_branch_fp8[
     comptime scales_m_padding = 16 // size_of[fp8_scale_dtype]()
     var scales_padded_m = align_up(buffer_length, scales_m_padding)
     var fp8_k_latent_scale_buf = ctx.enqueue_create_buffer[fp8_scale_dtype](
-        scales_padded_m * kv_latent_dim // k_scale_granularity
+        scales_padded_m * ceildiv(kv_latent_dim, k_scale_granularity)
     )
     var fp8_k_latent_scale = TileTensor(
         fp8_k_latent_scale_buf,
-        row_major((Idx[kv_latent_dim // k_scale_granularity], scales_padded_m)),
+        row_major(
+            (Idx[ceildiv(kv_latent_dim, k_scale_granularity)], scales_padded_m)
+        ),
     )
 
     @__copy_capture(k_latent)
@@ -958,11 +954,13 @@ def quantize_and_bmm_fp8_helper[
     comptime scales_m_padding = 16 // size_of[fp8_scale_dtype]()
     var scales_padded_m = align_up(m, scales_m_padding)
     var fp8_a_scale_buf = ctx.enqueue_create_buffer[fp8_scale_dtype](
-        B * (K // k_scale_granularity) * scales_padded_m
+        B * ceildiv(K, k_scale_granularity) * scales_padded_m
     )
     var fp8_a_scale = TileTensor(
         fp8_a_scale_buf,
-        row_major((Idx[B], Idx[K // k_scale_granularity], scales_padded_m)),
+        row_major(
+            (Idx[B], Idx[ceildiv(K, k_scale_granularity)], scales_padded_m)
+        ),
     )
 
     @parameter
@@ -1060,6 +1058,8 @@ def mla_decode_branch_fp8[
     extra_scales_ptr: OptionalReg[
         UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
     ] = None,
+    # Capturable-graph scalar forwarded from the MoGG op input list.
+    num_partitions_in: Optional[Int] = None,
 ) raises:
     """
     This is a manually fused kernel that performs the following operations:
@@ -1124,6 +1124,7 @@ def mla_decode_branch_fp8[
         extra_indices_stride: Stride for ``extra_d_indices``.
         extra_topk_lengths: Extra-stream per-batch lengths.
         extra_scales_ptr: Extra-stream scales.
+        num_partitions_in: Capturable-graph num_partitions override.
     """
 
     comptime kv_params = collection_t.kv_params
@@ -1271,6 +1272,7 @@ def mla_decode_branch_fp8[
         extra_indices_stride=extra_indices_stride,
         extra_topk_lengths=extra_topk_lengths,
         extra_scales_ptr=extra_scales_ptr,
+        num_partitions_in=num_partitions_in,
     )
 
     # Create a view of the output tensor with logical shape
@@ -1369,6 +1371,8 @@ def mla_prefill_decode_graph_fp8[
     extra_scales_ptr: OptionalReg[
         UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
     ] = None,
+    # Capturable-graph scalar forwarded from the MoGG op input list.
+    num_partitions_in: Optional[Int] = None,
 ) raises:
     """
     This is a manually fused kernel that performs the following operations:
@@ -1415,6 +1419,7 @@ def mla_prefill_decode_graph_fp8[
             extra_indices_stride,
             extra_topk_lengths,
             extra_scales_ptr,
+            num_partitions_in,
         )
 
     else:
@@ -1474,7 +1479,9 @@ def convert_bf16_to_fp8_e4m3fn(
 
         output_buffer.store_linear(
             idx,
-            input_buffer.load_linear[width](idx).cast[DType.float8_e4m3fn](),
+            cast_saturating[DType.float8_e4m3fn](
+                input_buffer.load_linear[width](idx)
+            ),
         )
 
     comptime target_simd_width = simd_width_of[
@@ -1485,7 +1492,10 @@ def convert_bf16_to_fp8_e4m3fn(
         convert_kernel[width, idx.rank, alignment](coord_to_index_list(idx))
 
     comptime if input_buffer.rank == 2:
-        _elementwise_impl_gpu[simd_width=target_simd_width](
+        _elementwise_impl_gpu[
+            simd_width=target_simd_width,
+            trace_description="mla_bf16_to_fp8_convert",
+        ](
             convert_kernel_unified,
             shape=(
                 Int(input_buffer.dim[0]()),
@@ -1494,7 +1504,10 @@ def convert_bf16_to_fp8_e4m3fn(
             ctx=context,
         )
     else:
-        _elementwise_impl_gpu[simd_width=target_simd_width](
+        _elementwise_impl_gpu[
+            simd_width=target_simd_width,
+            trace_description="mla_bf16_to_fp8_convert",
+        ](
             convert_kernel_unified,
             shape=(
                 Int(input_buffer.dim[0]()),
@@ -1606,7 +1619,7 @@ def mla_prefill_branch_bf16[
 
     mla_fused_rope_rmsnorm_quantization[kv_input_fn=kv_input_fn](
         q_rope_mut,
-        q_rope.as_any_origin(),  # hack aliasing.
+        q_rope.as_unsafe_any_origin(),  # hack aliasing.
         input_row_offsets,
         freqs_cis,
         kv_norm_gamma,
@@ -1813,6 +1826,8 @@ def mla_decode_branch_bf16[
         DType.int64, address_space=AddressSpace.GENERIC, ...
     ],
     ctx: DeviceContext,
+    # Capturable-graph scalar forwarded from the MoGG op input list.
+    num_partitions_in: Optional[Int] = None,
 ) raises:
     """BF16 MLA decode path.
 
@@ -1943,6 +1958,7 @@ def mla_decode_branch_bf16[
         raw_output,
         scalar_args_buf,
         ctx,
+        num_partitions_in=num_partitions_in,
     )
 
     # Create a view of the raw output tensor with logical shape
@@ -2013,6 +2029,8 @@ def mla_prefill_decode_graph_bf16[
         DType.int64, address_space=AddressSpace.GENERIC, ...
     ],
     ctx: DeviceContext,
+    # Capturable-graph scalar forwarded from the MoGG op input list.
+    num_partitions_in: Optional[Int] = None,
 ) raises:
     """BF16 MLA prefill/decode graph.
 
@@ -2043,6 +2061,7 @@ def mla_prefill_decode_graph_bf16[
             w_uv,
             scalar_args_buf,
             ctx,
+            num_partitions_in=num_partitions_in,
         )
     else:
         mla_prefill_branch_bf16[

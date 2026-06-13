@@ -216,7 +216,7 @@ def test_dict_string_representation_string_int() raises:
     check_write_to(d, expected="{a: 1, b: 2}", is_repr=False)
     check_write_to(
         d,
-        expected="Dict[String, Int]({'a': Int(1), 'b': Int(2)})",
+        expected="Dict[String, SIMD[DType.int, 1]]({'a': Int(1), 'b': Int(2)})",
         is_repr=True,
     )
 
@@ -226,7 +226,10 @@ def test_dict_string_representation_int_int() raises:
     check_write_to(d, expected="{1: 2, 3: 4}", is_repr=False)
     check_write_to(
         d,
-        expected="Dict[Int, Int]({Int(1): Int(2), Int(3): Int(4)})",
+        expected=(
+            "Dict[SIMD[DType.int, 1], SIMD[DType.int, 1]]({Int(1): Int(2),"
+            " Int(3): Int(4)})"
+        ),
         is_repr=True,
     )
 
@@ -279,9 +282,7 @@ def _test_iter_bounds[
         var lower, upper = iter.bounds()
         assert_equal(dict_len - i, lower)
         assert_equal(dict_len - i, upper.value())
-        _ = trait_downcast_var[Movable & ImplicitlyDestructible](
-            iter.__next__()
-        )
+        _ = trait_downcast_var[Movable & ImplicitlyDeletable](iter.__next__())
 
     var lower, upper = iter.bounds()
     assert_equal(0, lower)
@@ -800,8 +801,12 @@ def test_popitem_no_copies() raises:
 
 def test_dict_key_error_repr() raises:
     var e = DictKeyError[Int]()
-    check_write_to(e, expected="DictKeyError[Int]()", is_repr=False)
-    check_write_to(e, expected="DictKeyError[Int]()", is_repr=True)
+    check_write_to(
+        e, expected="DictKeyError[SIMD[DType.int, 1]]()", is_repr=False
+    )
+    check_write_to(
+        e, expected="DictKeyError[SIMD[DType.int, 1]]()", is_repr=True
+    )
 
 
 def test_empty_dict_error_repr() raises:
@@ -1259,7 +1264,7 @@ def test_dict_hash() raises:
     assert_equal(hash(Dict[String, Int]()), hash(Dict[String, Int]()))
 
 
-struct NonWritable(Copyable, ImplicitlyDestructible):
+struct NonWritable(Copyable, ImplicitlyDeletable):
     pass
 
 
@@ -1268,6 +1273,27 @@ def test_dict_conditional_conformances() raises:
     assert_true(conforms_to(Dict[Int, Int], Equatable))
     assert_true(conforms_to(Dict[Int, Int], Hashable))
     assert_false(conforms_to(Dict[Int, NonWritable], Writable))
+
+    # Move-only key drops every copy-requiring conformance: each conditional
+    # clause on `Dict` includes `conforms_to(K, Copyable)`.
+    assert_false(conforms_to(Dict[MoveOnly[Int], Int], Copyable))
+    assert_false(conforms_to(Dict[MoveOnly[Int], Int], Equatable))
+    assert_false(conforms_to(Dict[MoveOnly[Int], Int], Hashable))
+    assert_false(conforms_to(Dict[MoveOnly[Int], Int], Writable))
+
+    # Move-only value: only `Copyable` is dropped. `MoveOnly[Int]` is itself
+    # conditionally `Equatable`/`Hashable`/`Writable` when its payload is, so
+    # `Dict[Int, MoveOnly[Int]]` keeps those conformances (K is `Copyable`).
+    assert_false(conforms_to(Dict[Int, MoveOnly[Int]], Copyable))
+    assert_true(conforms_to(Dict[Int, MoveOnly[Int]], Equatable))
+    assert_true(conforms_to(Dict[Int, MoveOnly[Int]], Hashable))
+    assert_true(conforms_to(Dict[Int, MoveOnly[Int]], Writable))
+
+    # Both axes move-only: K-side `Copyable` failure drops everything.
+    assert_false(conforms_to(Dict[MoveOnly[Int], MoveOnly[Int]], Copyable))
+    assert_false(conforms_to(Dict[MoveOnly[Int], MoveOnly[Int]], Equatable))
+    assert_false(conforms_to(Dict[MoveOnly[Int], MoveOnly[Int]], Hashable))
+    assert_false(conforms_to(Dict[MoveOnly[Int], MoveOnly[Int]], Writable))
 
 
 def test_dict_iter_owned() raises:
@@ -1288,7 +1314,7 @@ def test_dict_iter_owned() raises:
 
 def test_dict_iter_owned_destroys_elements_if_not_consumed() raises:
     var del_count = 0
-    var ptr = UnsafePointer(to=del_count).as_immutable().as_any_origin()
+    var ptr = UnsafePointer(to=del_count).as_immutable().as_unsafe_any_origin()
     var d = Dict[Int, DelCounter[ptr.origin]]()
     d[1] = DelCounter(ptr)
     d[2] = DelCounter(ptr)
@@ -1303,7 +1329,7 @@ def test_dict_iter_owned_destroys_elements_if_not_consumed() raises:
 
 def test_dict_iter_owned_destroys_elements_if_partially_consumed() raises:
     var del_count = 0
-    var ptr = UnsafePointer(to=del_count).as_immutable().as_any_origin()
+    var ptr = UnsafePointer(to=del_count).as_immutable().as_unsafe_any_origin()
     var d = Dict[Int, DelCounter[ptr.origin]]()
     d[1] = DelCounter(ptr)
     d[2] = DelCounter(ptr)
@@ -1337,7 +1363,7 @@ def test_dict_iter_owned_bounds() raises:
 
 def test_dict_move_only_value() raises:
     # `MoveOnly[Int]` is not `Copyable`; this exercises the conditional
-    # conformance path of `Dict[K, V: Movable & ImplicitlyDestructible, H]`.
+    # conformance path of `Dict[K, V: Movable & ImplicitlyDeletable, H]`.
     assert_false(conforms_to(Dict[String, MoveOnly[Int]], Copyable))
 
     var d = Dict[String, MoveOnly[Int]]()
@@ -1365,6 +1391,95 @@ def test_dict_move_only_value() raises:
         _ = entry^
     assert_equal(seen, 2)
     assert_equal(len(d), 0)
+
+
+def test_dict_move_only_key() raises:
+    # `MoveOnly[Int]` is not `Copyable`; this exercises the conditional
+    # conformance path of `Dict[K: Movable & Hashable & Equatable, V, H]`
+    # where the key type is move-only.
+    assert_false(conforms_to(Dict[MoveOnly[Int], Int], Copyable))
+
+    var d = Dict[MoveOnly[Int], Int]()
+    d[MoveOnly[Int](1)] = 10
+    d[MoveOnly[Int](2)] = 20
+    d[MoveOnly[Int](3)] = 30
+    assert_equal(d[MoveOnly[Int](1)], 10)
+    assert_equal(d[MoveOnly[Int](2)], 20)
+    assert_equal(d[MoveOnly[Int](3)], 30)
+    assert_equal(len(d), 3)
+    assert_true(MoveOnly[Int](1) in d)
+    assert_false(MoveOnly[Int](99) in d)
+
+    # Updating an existing key by `__setitem__` moves the new key in.
+    d[MoveOnly[Int](1)] = 100
+    assert_equal(d[MoveOnly[Int](1)], 100)
+    assert_equal(len(d), 3)
+
+    # `pop(key)` removes by key without copying the key.
+    var v = d.pop(MoveOnly[Int](2))
+    assert_equal(v, 20)
+    assert_equal(len(d), 2)
+    assert_false(MoveOnly[Int](2) in d)
+
+    # `popitem` returns an owned entry by moving the key out.
+    var seen: Int = 0
+    while len(d) > 0:
+        var entry = d.popitem()
+        seen += 1
+        _ = entry^
+    assert_equal(seen, 2)
+    assert_equal(len(d), 0)
+
+    # `setdefault` takes the key by `var`, so it moves a move-only key in.
+    d = Dict[MoveOnly[Int], Int]()
+    ref existing = d.setdefault(MoveOnly[Int](1), 10)
+    assert_equal(existing, 10)
+    assert_equal(len(d), 1)
+    ref already = d.setdefault(MoveOnly[Int](1), 999)
+    assert_equal(already, 10)
+    assert_equal(len(d), 1)
+
+    # `pop(key, default)` falls back to the default for missing keys.
+    assert_equal(d.pop(MoveOnly[Int](42), 7), 7)
+    assert_equal(len(d), 1)
+    assert_equal(d.pop(MoveOnly[Int](1), 7), 10)
+    assert_equal(len(d), 0)
+
+    # `__bool__` and `clear` on a move-only-keyed dict.
+    d[MoveOnly[Int](1)] = 1
+    assert_true(d.__bool__())
+    d.clear()
+    assert_false(d.__bool__())
+    assert_equal(len(d), 0)
+
+
+def test_dict_move_only_key_and_value() raises:
+    # Both K and V are move-only: confirms the orthogonal conditional
+    # conformance clauses on `Dict[K, V, H]` compose correctly.
+    assert_false(conforms_to(Dict[MoveOnly[Int], MoveOnly[Int]], Copyable))
+
+    var d = Dict[MoveOnly[Int], MoveOnly[Int]]()
+    d[MoveOnly[Int](1)] = MoveOnly[Int](10)
+    d[MoveOnly[Int](2)] = MoveOnly[Int](20)
+    assert_equal(len(d), 2)
+    assert_equal(d[MoveOnly[Int](1)], MoveOnly[Int](10))
+    assert_true(MoveOnly[Int](2) in d)
+
+    var v = d.pop(MoveOnly[Int](1))
+    assert_equal(v, MoveOnly[Int](10))
+    assert_equal(len(d), 1)
+
+    var entry = d.popitem()
+    _ = entry^
+    assert_equal(len(d), 0)
+
+    # `setdefault` moves both the key and the default value in.
+    ref inserted = d.setdefault(MoveOnly[Int](1), MoveOnly[Int](10))
+    assert_equal(inserted, MoveOnly[Int](10))
+    assert_equal(len(d), 1)
+    ref already = d.setdefault(MoveOnly[Int](1), MoveOnly[Int](999))
+    assert_equal(already, MoveOnly[Int](10))
+    assert_equal(len(d), 1)
 
 
 def main() raises:

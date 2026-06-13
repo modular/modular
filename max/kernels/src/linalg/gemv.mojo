@@ -69,6 +69,7 @@ from layout import (
 from std.logger import Logger
 from std.memory import bitcast, stack_allocation
 from std.utils import IndexList
+from std.utils.coord import Coord
 from std.utils.index import Index
 from std.utils.numerics import get_accum_type
 from std.utils.static_tuple import StaticTuple
@@ -253,9 +254,7 @@ def gemv_kernel_vector[
         var b_tile = b.tile[1, WARP_SIZE * simd_width](0, i)
         var a_vec = a_tile.vectorize[1, simd_width]()[0, lane_id]
         var b_vec = b_tile.vectorize[1, simd_width]()[0, lane_id]
-        local_accum += rebind[local_accum_type](
-            a_vec.cast[accum_type]() * b_vec.cast[accum_type]()
-        )
+        local_accum += a_vec.cast[accum_type]() * b_vec.cast[accum_type]()
 
     # Last iteration: only lanes with valid K indices participate and
     # only if check_bounds is True.
@@ -267,7 +266,7 @@ def gemv_kernel_vector[
             if (lane_id + last * WARP_SIZE) * simd_width < k:
                 var a_vec = a_tile.vectorize[1, simd_width]()[0, lane_id]
                 var b_vec = b_tile.vectorize[1, simd_width]()[0, lane_id]
-                local_accum += rebind[local_accum_type](
+                local_accum += (
                     a_vec.cast[accum_type]() * b_vec.cast[accum_type]()
                 )
 
@@ -408,7 +407,6 @@ def gemv_split_k[
     var acc = tt_stack_allocation[
         dtype=accum_type, address_space=AddressSpace.LOCAL
     ](row_major[tile_m, tile_n]()).fill(0)
-    var output_idx = tile_id_m * n + tile_id_n
     var iteration = 0
     comptime WeightVecType = SIMD[b_type, simd_width]
 
@@ -434,11 +432,11 @@ def gemv_split_k[
                 var b_vec = weight_tile.load[simd_width, non_temporal=True](
                     Coord(i, thread_idx.x * simd_width)
                 )
-                tile_w.store(Coord(i, Idx[0]), rebind[WeightVecType](b_vec))
+                tile_w.store(Coord(i, Idx[0]), b_vec)
             else:
                 var vec_weight_tile = weight_tile.vectorize[1, simd_width]()
                 var b_vec = vec_weight_tile[i, thread_idx.x]
-                tile_w.store(Coord(i, Idx[0]), rebind[WeightVecType](b_vec))
+                tile_w.store(Coord(i, Idx[0]), b_vec)
 
         # Load activations and accumulate dot products.
         comptime for i in range(tile_m):
@@ -501,32 +499,31 @@ def gemv_split_k[
 
         comptime for jj in range(k_warp_num):
             comptime for ni in range(tile_n):
-                vals[ni] += rebind[Scalar[accum_type]](
-                    shmem[0, jj * tile_m * tile_n + mid * tile_n + ni]
-                )
+                vals[ni] += shmem[0, jj * tile_m * tile_n + mid * tile_n + ni]
 
-        var base_idx = output_idx + mid * n
+        var row = tile_id_m + mid
+        var col = tile_id_n
 
         comptime if check_bounds:
             comptime for ni in range(tile_n):
-                if base_idx + ni < n:
+                if col + ni < n:
                     comptime if elementwise_lambda_fn:
                         comptime elementwise_lambda = (
                             elementwise_lambda_fn.value()
                         )
                         elementwise_lambda(
-                            Index(0, base_idx + ni),
+                            Index(row, col + ni),
                             vals[ni].cast[c_type](),
                         )
                     else:
-                        output[0, base_idx + ni] = vals[ni].cast[c_type]()
+                        output[row, col + ni] = vals[ni].cast[c_type]()
         else:
             comptime if elementwise_lambda_fn:
                 comptime elementwise_lambda = elementwise_lambda_fn.value()
-                elementwise_lambda(Index(0, base_idx), vals.cast[c_type]())
+                elementwise_lambda(Index(row, col), vals.cast[c_type]())
             else:
                 comptime for ni in range(tile_n):
-                    output[0, base_idx + ni] = vals[ni].cast[c_type]()
+                    output[row, col + ni] = vals[ni].cast[c_type]()
 
     comptime if pdl_level > PDLLevel.OFF:
         launch_dependent_grids()
@@ -1179,10 +1176,10 @@ def gemv[
         input_fn,
         output_fn,
         reduce_impl,
-    ](
-        Index(M, K),
-        init=Scalar[c_type](0),
         reduce_dim=1,
+    ](
+        Coord((M, K)),
+        init=Scalar[c_type](0),
     )
 
 
@@ -1207,6 +1204,8 @@ def naive_gemv(
 
 
 struct _MmaCpAsyncGmemLoaderA[
+    origin: Origin,
+    //,
     a_type: DType,
     a_layout: TensorLayout,
     tile_m: Int,
@@ -1226,7 +1225,7 @@ struct _MmaCpAsyncGmemLoaderA[
         Self.a_type, Self.tile_m, Self.tile_k, Self.stage_cnt
     ]
     comptime Barriers = SMemArray[SharedMemBarrier, Self.stage_cnt * 2]
-    comptime ActTensor = TileTensor[Self.a_type, Self.a_layout, ImmutAnyOrigin]
+    comptime ActTensor = TileTensor[Self.a_type, Self.a_layout, Self.origin]
     comptime swizzle = make_swizzle[8, Self.tile_k, 8]()
 
     @always_inline
@@ -1326,6 +1325,8 @@ struct _MmaCpAsyncGmemLoaderA[
 
 
 struct _MmaCpAsyncGmemLoaderB[
+    weight_origin: ImmutOrigin,
+    //,
     b_type: DType,
     b_layout: TensorLayout,
     tile_n: Int,
@@ -1346,7 +1347,7 @@ struct _MmaCpAsyncGmemLoaderB[
     ]
     comptime Barriers = SMemArray[SharedMemBarrier, Self.stage_cnt * 2]
     comptime WeightTensor = TileTensor[
-        Self.b_type, Self.b_layout, ImmutAnyOrigin
+        Self.b_type, Self.b_layout, Self.weight_origin
     ]
     comptime swizzle = make_swizzle[8, Self.tile_k, 8]()
 
@@ -1465,6 +1466,8 @@ struct _MmaCpAsyncGmemLoaderB[
 
 
 struct _MmaCpAsyncMmaComputer[
+    out_origin: MutOrigin,
+    //,
     c_type: DType,
     a_type: DType,
     b_type: DType,
@@ -1494,7 +1497,7 @@ struct _MmaCpAsyncMmaComputer[
     var smem_a: Self.SmemTilesA
     var smem_b: Self.SmemTilesB
     var smem_barrier: Self.Barriers
-    var out_ptr: UnsafePointer[Scalar[Self.c_type], MutAnyOrigin]
+    var out_ptr: UnsafePointer[Scalar[Self.c_type], Self.out_origin]
     var compute_warp: Int
     var lane_idx: Int
     var warp_k_off: Int
@@ -1511,7 +1514,7 @@ struct _MmaCpAsyncMmaComputer[
         smem_a: Self.SmemTilesA,
         smem_b: Self.SmemTilesB,
         smem_barrier: Self.Barriers,
-        out_ptr: UnsafePointer[Scalar[Self.c_type], MutAnyOrigin],
+        out_ptr: UnsafePointer[Scalar[Self.c_type], Self.out_origin],
         compute_warp: Int,
         lane_idx: Int,
         warp_k_off: Int,
@@ -1756,7 +1759,12 @@ def gemm_mma_cpasync_kernel[
 
     elif warp_idx_ < 4:
         comptime LoaderB = _MmaCpAsyncGmemLoaderB[
-            a_type, type_of(weight).LayoutType, tile_n, tile_k, stage_cnt
+            weight_origin=weight.origin,
+            a_type,
+            type_of(weight).LayoutType,
+            tile_n,
+            tile_k,
+            stage_cnt,
         ]
         var loader = LoaderB(
             rebind[LoaderB.WeightTensor](weight),

@@ -31,6 +31,7 @@ from nn.attention.mha_operand import MHAOperand
 from std.utils.numerics import get_accum_type
 
 from .attention import Attention
+from .iglp import _iglp_opt, AMDIGLPStrategy
 from .kv_buffer import KVBuffer
 from .mha_prefill import barrier, block_sync_lds_direct_load
 from .mma import TiledMmaOp
@@ -91,7 +92,10 @@ __extension Attention:
             self.k,
             self.batch_idx,
             self.kv_head_idx(),
-            KBufT.SmemParentType(self.k_smem_ptr, KBufT._SmemParentLayout()),
+            KBufT.SmemParentType(
+                self.k_smem_ptr.as_unsafe_any_origin(),
+                KBufT._SmemParentLayout(),
+            ),
             self.num_keys,
             warp_id,
         )
@@ -122,7 +126,10 @@ __extension Attention:
             self.v,
             self.batch_idx,
             self.kv_head_idx(),
-            VBufT.SmemParentType(self.v_smem_ptr, VBufT._SmemParentLayout()),
+            VBufT.SmemParentType(
+                self.v_smem_ptr.as_unsafe_any_origin(),
+                VBufT._SmemParentLayout(),
+            ),
             self.num_keys,
             warp_id,
         )
@@ -158,7 +165,8 @@ __extension Attention:
             self.batch_idx,
             ufloordiv(Int(self.kv_head_idx()), cache_group),
             KRopeBufT.SmemParentType(
-                k_rope_smem_ptr, KRopeBufT._SmemParentLayout()
+                k_rope_smem_ptr.as_unsafe_any_origin(),
+                KRopeBufT._SmemParentLayout(),
             ),
             self.num_keys,
             warp_id,
@@ -226,10 +234,12 @@ __extension Attention:
 
         # Calculate iteration bounds using mask helpers.
         var score_row = UInt32(self.mask_block_row + UInt32(self.start_pos))
-        var start_col = self.mask.start_column[Self.BM, Self.BN, 1](score_row)
+        var start_col = self.mask.start_column[Self.BM, Self.BN, 1](
+            UInt32(self.batch_idx), score_row
+        )
         var num_tiles = Int(
             self.mask.last_masked_set_end[Self.BM, Self.BN, 1](
-                score_row, UInt32(self.num_keys)
+                UInt32(self.batch_idx), score_row, UInt32(self.num_keys)
             )
         )
 
@@ -267,6 +277,10 @@ __extension Attention:
             else:
                 block_sync_lds_direct_load[vmcnt=0]()
             barrier()
+
+            # IGroupLP: co-issue the softmax exp with the next tile's QK MMA to
+            # hide the online-softmax latency on this overlap-bound kernel.
+            _iglp_opt[AMDIGLPStrategy.MFMA_EXP_INTERLEAVE]()
 
             # Skip fully masked tiles for non-causal masks.
             comptime if has_interior_full_mask:

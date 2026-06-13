@@ -27,7 +27,7 @@ from max.graph import Graph
 from max.graph.weights import Weights, WeightsAdapter, load_weights
 from max.nn.kv_cache import KVCacheInputs, KVCacheParams
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
-from max.pipelines.core import TextContext
+from max.pipelines.context import TextContext
 from max.pipelines.lib import (
     CompilationTimer,
     KVCacheConfig,
@@ -36,7 +36,6 @@ from max.pipelines.lib import (
     PipelineRuntimeConfig,
     UnifiedEagleOutputs,
 )
-from max.pipelines.lib._hf_config import PretrainedConfig
 from max.pipelines.lib.interfaces import PipelineModelWithKVCache
 from max.pipelines.lib.utils import parse_state_dict_from_weights
 
@@ -370,24 +369,4 @@ class UnifiedEagleLlama3Model(PipelineModelWithKVCache[TextContext]):
             return_n_logits=return_n_logits_buf,
             kv_cache_inputs=kv_cache_inputs,
             seed=self._next_seed(),
-        )
-
-    def prepare_next_token_inputs(
-        self,
-        next_tokens: Buffer,
-        prev_model_inputs: ModelInputs,
-    ) -> UnifiedEagleLlama3Inputs:
-        raise NotImplementedError(
-            "Multistep execution is not supported for UnifiedEagleLlama3Model. "
-            "The unified pipeline handles iteration internally."
-        )
-
-    @classmethod
-    def calculate_max_seq_len(
-        cls,
-        pipeline_config: PipelineConfig,
-        huggingface_config: PretrainedConfig,
-    ) -> int:
-        return Llama3Config.calculate_max_seq_len(
-            pipeline_config, huggingface_config
         )

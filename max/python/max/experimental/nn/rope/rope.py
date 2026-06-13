@@ -154,7 +154,7 @@ class RotaryEmbedding(Module[..., Tensor]):
             Input activation tensor with rotary positional embeddings applied and
             the same shape as `x`.
         """
-        _, seq_len, _, _ = x.shape
+        seq_len = x.shape[1]
         start_pos = Dim(start_pos)
 
         x_complex = F.as_interleaved_complex(x)
@@ -185,7 +185,7 @@ class TransposedRotaryEmbedding(RotaryEmbedding):
             Input activation tensor with rotary positional embeddings applied and
             the same shape as `x`.
         """
-        _, seq_len, _, _ = x.shape
+        seq_len = x.shape[1]
         *rest, head_dim = x.shape
         start_pos = Dim(start_pos)
 

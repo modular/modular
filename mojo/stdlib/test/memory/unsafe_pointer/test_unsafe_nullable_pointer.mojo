@@ -146,7 +146,7 @@ def test_bitcast() raises:
 
 
 def test_unsafepointer_string() raises:
-    var nullptr = UnsafeNullablePointer[Int, MutExternalOrigin]()
+    var nullptr = UnsafeNullablePointer[Int, MutUntrackedOrigin]()
     assert_equal(String(nullptr), "0x0")
 
     var ptr = alloc[Int](1)
@@ -250,8 +250,8 @@ def test_indexing_simd() raises:
 
 
 def test_bool() raises:
-    var nullptr = UnsafeNullablePointer[Int, MutExternalOrigin]()
-    var ptr: UnsafeNullablePointer[Int, MutExternalOrigin] = alloc[Int](1)
+    var nullptr = UnsafeNullablePointer[Int, MutUntrackedOrigin]()
+    var ptr: UnsafeNullablePointer[Int, MutUntrackedOrigin] = alloc[Int](1)
 
     assert_true(ptr.__bool__())
     assert_false(nullptr.__bool__())
@@ -373,8 +373,8 @@ def test_merge() raises:
 
 def test_swap_pointees_trivial_move() raises:
     var a = 42
-    UnsafeNullablePointer(to=a).as_any_origin().swap_pointees(
-        UnsafeNullablePointer(to=a).as_any_origin()
+    UnsafeNullablePointer(to=a).as_unsafe_any_origin().swap_pointees(
+        UnsafeNullablePointer(to=a).as_unsafe_any_origin()
     )
     assert_equal(a, 42)
 
@@ -387,8 +387,8 @@ def test_swap_pointees_trivial_move() raises:
 
 def test_swap_pointees_non_trivial_move() raises:
     var counter = MoveCounter[Int](42)
-    UnsafeNullablePointer(to=counter).as_any_origin().swap_pointees(
-        UnsafeNullablePointer(to=counter).as_any_origin()
+    UnsafeNullablePointer(to=counter).as_unsafe_any_origin().swap_pointees(
+        UnsafeNullablePointer(to=counter).as_unsafe_any_origin()
     )
     # Pointers point to the same object, so no move should be performed
     assert_equal(counter.value, 42)
@@ -436,7 +436,7 @@ def test_unsafe_origin_cast() raises:
     _ref_to[origin_of(y)](ptr.unsafe_origin_cast[origin_of(y)]()[])
 
 
-def _ptr_to_int(ptr: UnsafeNullablePointer[Int, MutExternalOrigin]) -> Int:
+def _ptr_to_int(ptr: UnsafeNullablePointer[Int, MutUntrackedOrigin]) -> Int:
     return Int(ptr)
 
 
@@ -450,7 +450,7 @@ def test_ptr_to_int_llvm_lowering() raises:
 
 
 def _from_address(
-    x: Int, out result: UnsafeNullablePointer[Int, MutExternalOrigin]
+    x: Int, out result: UnsafeNullablePointer[Int, MutUntrackedOrigin]
 ):
     result = type_of(result)(unsafe_from_address=x)
 
@@ -466,7 +466,7 @@ def test_unsafe_from_address() raises:
     var ptr2 = type_of(ptr)(unsafe_from_address=Int(ptr))
     assert_equal(ptr2[], 42)
 
-    var ptr3 = UnsafeNullablePointer[Int, MutExternalOrigin](
+    var ptr3 = UnsafeNullablePointer[Int, MutUntrackedOrigin](
         unsafe_from_address=42
     )
     assert_true(ptr3)
@@ -490,7 +490,7 @@ def test_write_repr_to() raises:
     check_write_to(
         UnsafeNullablePointer[Int, MutAnyOrigin](),
         expected=(
-            "UnsafeNullablePointer[mut=True, Int,"
+            "UnsafeNullablePointer[mut=True, SIMD[DType.int, 1],"
             " address_space=AddressSpace.GENERIC](0x0)"
         ),
         is_repr=True,
@@ -500,7 +500,7 @@ def test_write_repr_to() raises:
     check_write_to(
         UnsafeNullablePointer(to=x),
         contains=(
-            "UnsafeNullablePointer[mut=True, Int,"
+            "UnsafeNullablePointer[mut=True, SIMD[DType.int, 1],"
             " address_space=AddressSpace.GENERIC](0x"
         ),
         is_repr=True,
@@ -508,7 +508,7 @@ def test_write_repr_to() raises:
     check_write_to(
         UnsafeNullablePointer(to=x).as_immutable(),
         contains=(
-            "UnsafeNullablePointer[mut=False, Int,"
+            "UnsafeNullablePointer[mut=False, SIMD[DType.int, 1],"
             " address_space=AddressSpace.GENERIC](0x"
         ),
         is_repr=True,
@@ -516,7 +516,7 @@ def test_write_repr_to() raises:
     check_write_to(
         UnsafeNullablePointer(to=x).address_space_cast[AddressSpace.SHARED](),
         contains=(
-            "UnsafeNullablePointer[mut=True, Int,"
+            "UnsafeNullablePointer[mut=True, SIMD[DType.int, 1],"
             " address_space=AddressSpace.SHARED](0x"
         ),
         is_repr=True,

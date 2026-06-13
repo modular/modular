@@ -144,9 +144,7 @@ def _get_start_indices_of_nth_subvolume[
 
 @always_inline
 def elementwise[
-    func: def[width: Int, rank: Int, alignment: Int = 1](
-        IndexList[rank]
-    ) capturing[_] -> None,
+    func: def[width: Int, alignment: Int = 1](Coord) capturing[_] -> None,
     simd_width: Int,
     *,
     target: StaticString = "cpu",
@@ -175,27 +173,22 @@ def elementwise[
         simd_width=simd_width,
         target=target,
         _trace_description=_trace_description,
-    ](Index(shape), context)
+    ](Coord(shape), context)
 
 
 @always_inline
 def elementwise[
-    rank: Int,
-    //,
-    func: def[width: Int, rank: Int, alignment: Int = 1](
-        IndexList[rank]
-    ) capturing[_] -> None,
+    func: def[width: Int, alignment: Int = 1](Coord) capturing[_] -> None,
     simd_width: Int,
     *,
     target: StaticString = "cpu",
     _trace_description: StaticString = "elementwise",
-](shape: IndexList[rank, ...], context: DeviceContext) raises:
+](shape: Coord, context: DeviceContext) raises:
     """Executes `func[width, rank](indices)`, possibly as sub-tasks, for a
     suitable combination of width and indices so as to cover shape. Returns when
     all sub-tasks have completed.
 
     Parameters:
-        rank: The rank of the buffer.
         func: The body function.
         simd_width: The SIMD vector width to use.
         target: The target to run on.
@@ -209,10 +202,8 @@ def elementwise[
         If the operation fails.
     """
 
-    def func_unified[
-        width: Int, rank: Int, alignment: Int = 1
-    ](indices: IndexList[rank]) {}:
-        func[width, rank, alignment](indices)
+    def func_unified[width: Int, alignment: Int = 1](indices: Coord) {}:
+        func[width, alignment](indices)
 
     _elementwise_impl[
         simd_width,
@@ -223,16 +214,14 @@ def elementwise[
 
 @always_inline
 def elementwise[
-    rank: Int,
-    //,
     FuncType: ImplicitlyCopyable
     & RegisterPassable
-    & def[width: Int, rank: Int, alignment: Int = 1](IndexList[rank]) -> None,
+    & def[width: Int, alignment: Int = 1](Coord) -> None,
     simd_width: Int,
     *,
     target: StaticString = "cpu",
     _trace_description: StaticString = "elementwise",
-](func: FuncType, shape: IndexList[rank, ...], context: DeviceContext,) raises:
+](func: FuncType, shape: Coord, context: DeviceContext,) raises:
     """Unified-closure entry point for `elementwise` (DeviceContext).
 
     Accepts a parametric body (already in
@@ -243,7 +232,6 @@ def elementwise[
     `elementwise[N](func, shape, ctx)`.
 
     Parameters:
-        rank: The rank of the buffer.
         FuncType: A parametric callable taking
             `IndexList[rank]` and template parameters `width`, `rank`,
             `alignment`.
@@ -266,23 +254,91 @@ def elementwise[
     ](func, shape, context)
 
 
-@always_inline
-def _elementwise_impl[
+@fieldwise_init
+struct _IndexListToCoordAdapter[
     rank: Int,
-    //,
-    simd_width: Int,
     FuncType: ImplicitlyCopyable
     & RegisterPassable
     & def[width: Int, rank: Int, alignment: Int = 1](IndexList[rank]) -> None,
+](
+    ImplicitlyCopyable,
+    RegisterPassable,
+    def[width: Int, alignment: Int = 1](Coord) -> None,
+):
+    """Adapts an `IndexList`-taking function to a `Coord`-taking callable.
+
+    Bridges the `IndexList`-based elementwise body convention to the
+    `Coord`-based GPU kernel interface required by `_elementwise_impl_gpu`.
+
+    TODO(MOCO-4071): Use a closure instead, using a struct avoids a generic
+    `lit.closure.init` with parametric witnesses in the MOGG package that the
+    package loader cannot resolve.
+
+    Parameters:
+        rank: The rank of the index space.
+        FuncType: The wrapped function type.
+    """
+
+    var func: Self.FuncType
+
+    @always_inline
+    def __call__[width: Int, alignment: Int = 1](self, coords: Coord):
+        self.func[width, Self.rank, alignment](
+            rebind[IndexList[Self.rank]](coord_to_index_list(coords))
+        )
+
+
+@fieldwise_init
+struct _CoordToIndexListAdapter[
+    rank: Int,
+    FuncType: ImplicitlyCopyable
+    & RegisterPassable
+    & def[width: Int, alignment: Int = 1](Coord) -> None,
+](
+    ImplicitlyCopyable,
+    RegisterPassable,
+    def[width: Int, rank: Int, alignment: Int = 1](IndexList[rank]) -> None,
+):
+    """Adapts a `Coord`-taking function to an `IndexList`-taking callable.
+
+    Bridges the `Coord`-based elementwise body convention to the
+    `IndexList`-based plugin entry points required by
+    `CurrentPlugin.elementwise_fn`.
+
+    TODO(MOCO-4071): Use a closure instead, using a struct avoids a generic
+    `lit.closure.init` with parametric witnesses in the MOGG package that the
+    package loader cannot resolve.
+
+    Parameters:
+        rank: The rank of the index space.
+        FuncType: The wrapped function type.
+    """
+
+    var func: Self.FuncType
+
+    @always_inline
+    def __call__[
+        width: Int, call_rank: Int, alignment: Int = 1
+    ](self, indices: IndexList[call_rank]):
+        comptime assert call_rank == Self.rank
+        self.func[width, alignment](Coord(indices))
+
+
+@always_inline
+def _elementwise_impl[
+    simd_width: Int,
+    FuncType: ImplicitlyCopyable
+    & RegisterPassable
+    & def[width: Int, alignment: Int = 1](Coord) -> None,
     /,
     *,
     target: StaticString = "cpu",
-    trace_description: StaticString = "elementwise",
-](func: FuncType, shape: IndexList[rank, ...], context: DeviceContext) raises:
+    trace_description: StaticString,
+](func: FuncType, shape: Coord, context: DeviceContext) raises:
     @always_inline
     @parameter
     def description_fn() -> String:
-        var shape_str = trace_arg("shape", shape)
+        var shape_str = trace_arg("shape", coord_to_index_list(shape))
         var vector_width_str = String(t"vector_width={simd_width}")
         return ";".join(Span([shape_str^, vector_width_str^]))
 
@@ -297,8 +353,10 @@ def _elementwise_impl[
         task_id=get_safe_task_id(context),
     ):
         comptime if CurrentPlugin._handles_elementwise[target]:
-            return CurrentPlugin.elementwise_fn[target, rank, simd_width](
-                func, shape, context
+            return CurrentPlugin.elementwise_fn[target, shape.rank, simd_width](
+                _CoordToIndexListAdapter[shape.rank, FuncType](func),
+                coord_to_index_list(shape),
+                context,
             )
         elif is_cpu[target]():
 
@@ -306,27 +364,21 @@ def _elementwise_impl[
             def func_wrap_cpu[
                 width: Int, alignment: Int = 1
             ](coords: Coord) {read}:
-                func[width, rank, alignment](
-                    rebind[IndexList[rank]](coord_to_index_list(coords))
-                )
+                func[width, alignment](coords)
 
             _elementwise_impl_cpu[
                 simd_width=simd_width,
                 trace_description=trace_description,
-            ](func_wrap_cpu, shape=Coord(shape), ctx=Optional(context))
+            ](func_wrap_cpu, shape=shape, ctx=Optional(context))
         elif is_gpu[target]():
-            var shape_coord = Coord(shape)
-
-            @always_inline
-            def func_wrap[width: Int, alignment: Int = 1](coords: Coord) {read}:
-                func[width, rank, alignment](
-                    rebind[IndexList[rank]](coord_to_index_list(coords))
-                )
-
             _elementwise_impl_gpu[
                 simd_width=simd_width,
                 trace_description=trace_description,
-            ](func_wrap, shape=shape_coord, ctx=context)
+            ](
+                func,
+                shape=shape,
+                ctx=context,
+            )
         else:
             CompilationTarget.unsupported_target_error[
                 operation=__get_current_function_name()
@@ -340,29 +392,18 @@ def _elementwise_impl[
 
 @always_inline
 def dual_elementwise[
-    rank: Int,
-    //,
-    func_0: def[width: Int, rank: Int, alignment: Int = 1](
-        IndexList[rank]
-    ) capturing[_] -> None,
-    func_1: def[width: Int, rank: Int, alignment: Int = 1](
-        IndexList[rank]
-    ) capturing[_] -> None,
+    func_0: def[width: Int, alignment: Int = 1](Coord) capturing[_] -> None,
+    func_1: def[width: Int, alignment: Int = 1](Coord) capturing[_] -> None,
     simd_width: Int,
     *,
     target: StaticString = "gpu",
     _trace_description: StaticString = "dual_elementwise",
-](
-    shape_0: IndexList[rank],
-    shape_1: IndexList[rank],
-    context: DeviceContext,
-) raises:
+](shape_0: Coord, shape_1: Coord, context: DeviceContext,) raises:
     """Executes two elementwise functions over their respective shapes in a
     single GPU kernel launch. Each thread processes elements from both shapes,
     fusing two independent elementwise passes into one.
 
     Parameters:
-        rank: The rank of the buffers.
         func_0: The first body function.
         func_1: The second body function.
         simd_width: The SIMD vector width to use.
@@ -378,15 +419,11 @@ def dual_elementwise[
         If the operation fails.
     """
 
-    def func_0_unified[
-        width: Int, rank: Int, alignment: Int = 1
-    ](indices: IndexList[rank]) {}:
-        func_0[width, rank, alignment](indices)
+    def func_0_unified[width: Int, alignment: Int = 1](indices: Coord) {}:
+        func_0[width, alignment](indices)
 
-    def func_1_unified[
-        width: Int, rank: Int, alignment: Int = 1
-    ](indices: IndexList[rank]) {}:
-        func_1[width, rank, alignment](indices)
+    def func_1_unified[width: Int, alignment: Int = 1](indices: Coord) {}:
+        func_1[width, alignment](indices)
 
     _dual_elementwise_impl[
         simd_width,
@@ -397,31 +434,29 @@ def dual_elementwise[
 
 @always_inline
 def _dual_elementwise_impl[
-    rank: Int,
-    //,
     simd_width: Int,
     Func0Type: ImplicitlyCopyable
     & RegisterPassable
-    & def[width: Int, rank: Int, alignment: Int = 1](IndexList[rank]) -> None,
+    & def[width: Int, alignment: Int = 1](Coord) -> None,
     Func1Type: ImplicitlyCopyable
     & RegisterPassable
-    & def[width: Int, rank: Int, alignment: Int = 1](IndexList[rank]) -> None,
+    & def[width: Int, alignment: Int = 1](Coord) -> None,
     /,
     *,
     target: StaticString = "gpu",
-    trace_description: StaticString = "dual_elementwise",
+    trace_description: StaticString,
 ](
     func_0: Func0Type,
     func_1: Func1Type,
-    shape_0: IndexList[rank],
-    shape_1: IndexList[rank],
+    shape_0: Coord,
+    shape_1: Coord,
     context: DeviceContext,
 ) raises:
     @always_inline
     @parameter
     def description_fn() -> String:
-        var s0 = trace_arg("shape_0", shape_0)
-        var s1 = trace_arg("shape_1", shape_1)
+        var s0 = trace_arg("shape_0", coord_to_index_list(shape_0))
+        var s1 = trace_arg("shape_1", coord_to_index_list(shape_1))
         var vw = String(t"vector_width={simd_width}")
         return ";".join(Span([s0^, s1^, vw^]))
 

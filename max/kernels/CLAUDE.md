@@ -37,7 +37,6 @@ This project uses Bazel for building. Commands should be run through the
 ./bazelw test //max/kernels/test/linalg/...
 
 # Run GPU tests with specific hardware
-./bazelw test --config=remote-h100 //max/kernels/test/gpu/...  # For H100 GPU
 ./bazelw test --config=remote-b200 //max/kernels/test/gpu/...  # For B200 GPU
 ./bazelw test --config=remote-mi355 //max/kernels/test/gpu/... # For MI355 GPU
 ```
@@ -60,6 +59,18 @@ bmojo /path/to/file.mojo
 # Debug a Mojo file
 bd //KGEN/tools/mojo -- /path/to/file.mojo
 ```
+
+For kernel development (editing `max/kernels/src`), run
+`./bazelw run //:install-kernel-dev` so that `mojo file.mojo` picks up live
+source edits. It ships the same compiler, runtime, and standard library as
+`//:install` but omits the prebuilt kernel packages, which otherwise shadow
+`max/kernels/src` on the import path — so a plain `mojo file.mojo` under the
+default `//:install` silently imports the prebuilt kernel and ignores your
+source edits. With `//:install-kernel-dev`, kernel imports resolve from source,
+so there is no need to rebuild a kernel package after each edit (PR #87956).
+To confirm an edit reached codegen, round-trip a visible asm marker (for
+example an `s_sleep`/`s_setprio` instruction); comments and scheduler hints
+leave no asm trace.
 
 ## Code Architecture
 

@@ -18,11 +18,7 @@ import logging
 import os
 
 import uvloop
-from max.pipelines import (
-    PIPELINE_REGISTRY,
-    AudioGenerationConfig,
-    PipelineConfig,
-)
+from max.pipelines import PIPELINE_REGISTRY, PipelineConfig
 from max.pipelines.modeling.types import PipelineTask
 from max.profiler import Tracer
 from max.serve.api_server import (
@@ -32,9 +28,7 @@ from max.serve.api_server import (
     validate_port_is_free,
 )
 from max.serve.config import Settings
-from max.serve.pipelines.echo_gen import (
-    EchoTokenGenerator,
-)
+from max.serve.pipelines.echo_gen import EchoTokenGenerator
 from uvicorn import Server
 
 logger = logging.getLogger("max.entrypoints")
@@ -43,35 +37,29 @@ logger = logging.getLogger("max.entrypoints")
 def serve_api_server_and_model_worker(
     settings: Settings,
     pipeline_config: PipelineConfig,
-    pipeline_task: PipelineTask = PipelineTask.UNDEFINED,
 ) -> None:
     # Auto-detect pipeline task from the model architecture if not explicitly set.
-    if pipeline_task == PipelineTask.UNDEFINED:
-        pipeline_task = PIPELINE_REGISTRY.retrieve_pipeline_task(
+    if pipeline_config.task == PipelineTask.UNDEFINED:
+        pipeline_config.task = PIPELINE_REGISTRY.retrieve_pipeline_task(
             pipeline_config.models.main_architecture_name,
         )
         logger.info(
-            f"Auto-detected pipeline task: {pipeline_task.value} "
+            f"Auto-detected pipeline task: {pipeline_config.task.value} "
             f"(model architecture: {pipeline_config.models.main_architecture_name})"
         )
 
     override_architecture: str | None = None
 
-    # Use the audio decoder architecture for the audio generation pipeline.
-    if pipeline_task == PipelineTask.AUDIO_GENERATION:
-        assert isinstance(pipeline_config, AudioGenerationConfig)
-        override_architecture = pipeline_config.audio_decoder
-
     # Load tokenizer and pipeline from PIPELINE_REGISTRY.
     tokenizer, pipeline_factory = PIPELINE_REGISTRY.retrieve_factory(
         pipeline_config,
-        task=pipeline_task,
+        task=pipeline_config.task,
         override_architecture=override_architecture,
     )
 
     # Dummy model is for diagnostics and overhead benchmarking
     if os.getenv("MAX_SERVE_DUMMY_MODEL"):
-        assert pipeline_task == PipelineTask.TEXT_GENERATION, (
+        assert pipeline_config.task == PipelineTask.TEXT_GENERATION, (
             "dummy model only implemented for text gen models"
         )
         logging.warning("Replacing pipeline model with dummy model!")
@@ -81,7 +69,7 @@ def serve_api_server_and_model_worker(
         model_factory=pipeline_factory,
         pipeline_config=pipeline_config,
         tokenizer=tokenizer,
-        pipeline_task=pipeline_task,
+        task=pipeline_config.task,
         reasoning_parser_name=pipeline_config.runtime.reasoning_parser,
         temperature=pipeline_config.runtime.temperature,
         thinking_temperature=pipeline_config.runtime.thinking_temperature,

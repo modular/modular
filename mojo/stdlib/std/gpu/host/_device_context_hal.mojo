@@ -19,7 +19,14 @@ from std.builtin.rebind import downcast
 from std.collections.optional import OptionalReg
 from std.compile import CompiledFunctionInfo
 from std.math import align_up
-from std.memory import alloc, ArcPointer, free, Layout, UnsafePointer
+from std.memory import (
+    alloc,
+    dealloc,
+    ThinAllocation,
+    ArcPointer,
+    Layout,
+    UnsafePointer,
+)
 from std.memory import stack_allocation
 from std.os import getenv
 from std.reflection import call_location, reflect, SourceLocation
@@ -106,7 +113,7 @@ struct _DeviceFunctionInner[
     var _compiled: Tuple[
         RuntimeBundle,
         CompiledFunctionInfo[
-            Self.func_type, Self.func, get_device_spec[0]().target.value
+            Self.func_type, Self.func, get_device_spec[0]()._mlir_target()
         ],
     ]
     var _context: ArcPointer[Context[get_device_spec[0]()]]
@@ -145,18 +152,17 @@ struct DeviceContext(
         ctx.synchronize()
     ```
 
-    A custom operation receives an opaque `DeviceContextPtr`, which provides
-    a `get_device_context()` method to retrieve the device context:
+    A custom operation receives the `DeviceContext` for the target device
+    directly as an argument to its `execute` method:
 
     ```text
-    from std.runtime.asyncrt import DeviceContextPtr
+    from std.gpu.host import DeviceContext
     from compiler import register
 
     @register("custom_op")
     struct CustomOp:
         @staticmethod
-        def execute(ctx_ptr: DeviceContextPtr) raises:
-            var ctx = ctx_ptr.get_device_context()
+        def execute(ctx: DeviceContext) raises:
             ctx.enqueue_function[kernel, kernel](grid_dim=1, block_dim=(2, 2, 2))
             ctx.synchronize()
     ```
@@ -165,7 +171,7 @@ struct DeviceContext(
     comptime device_spec = get_device_spec[0]()
 
     comptime default_device_info = GPUInfo.from_target[
-        Self.device_spec.target.value
+        Self.device_spec._mlir_target()
     ]()
 
     var _driver: ArcPointer[Driver]
@@ -418,6 +424,66 @@ struct DeviceContext(
     @parameter
     @always_inline
     def enqueue_function[
+        FuncType: def() -> None,
+        //,
+    ](
+        self,
+        func: FuncType,
+        *,
+        grid_dim: Dim,
+        block_dim: Dim,
+        cluster_dim: OptionalReg[Dim] = None,
+        shared_mem_bytes: OptionalReg[Int] = None,
+        var attributes: List[LaunchAttribute] = [],
+        var constant_memory: List[ConstantMemoryMapping] = [],
+        location: OptionalReg[SourceLocation] = None,
+    ) raises:
+        """Compiles and enqueues a capturing kernel for execution on this device.
+
+        This overload is for kernels that capture variables from their enclosing scope.
+        The `capturing` annotation on the signature function indicates that the kernel
+        can access variables from the surrounding context.
+
+        Parameters:
+            FuncType: The type of the function to launch (usually inferred).
+
+        Args:
+            func: The capturing kernel function to compile and launch.
+            grid_dim: The grid dimensions.
+            block_dim: The block dimensions.
+            cluster_dim: The cluster dimensions.
+            shared_mem_bytes: Per-block memory shared between blocks.
+            attributes: A `List` of launch attributes.
+            constant_memory: A `List` of constant memory mappings.
+            location: Source location for the function call.
+
+        Raises:
+            If the operation fails.
+        """
+        _check_dim["DeviceContext.enqueue_function", "grid_dim"](
+            grid_dim, location=call_location()
+        )
+        _check_dim["DeviceContext.enqueue_function", "block_dim"](
+            block_dim, location=call_location()
+        )
+        var gpu_kernel = DeviceFunction[
+            FuncType.__call__, TypeList.of[Trait=AnyType]().values
+        ](self)
+        gpu_kernel._call_with_pack(
+            self,
+            func,
+            grid_dim=grid_dim,
+            block_dim=block_dim,
+            cluster_dim=cluster_dim,
+            shared_mem_bytes=shared_mem_bytes,
+            attributes=attributes^,
+            constant_memory=constant_memory^,
+            location=location.or_else(call_location()),
+        )
+
+    @parameter
+    @always_inline
+    def enqueue_function[
         *Ts: DevicePassable,
     ](
         self,
@@ -476,6 +542,93 @@ struct DeviceContext(
             block_dim, location=call_location()
         )
         f._call_with_pack_checked(
+            self,
+            *args,
+            grid_dim=grid_dim,
+            block_dim=block_dim,
+            cluster_dim=cluster_dim,
+            shared_mem_bytes=shared_mem_bytes,
+            attributes=attributes^,
+            constant_memory=constant_memory^,
+            location=location.or_else(call_location()),
+        )
+
+    @always_inline
+    def load_function[
+        func_type: TrivialRegisterPassable,
+        //,
+        func: func_type,
+    ](
+        self,
+        *,
+        var function_name: String,
+        var asm: String,
+        out result: DeviceExternalFunction,
+    ) raises:
+        """Loads a pre-compiled device function from assembly code.
+
+        This method loads an external GPU function from provided assembly code (PTX/SASS)
+        rather than compiling it from Mojo source. This is useful for integrating with
+        existing CUDA/HIP code or for using specialized assembly optimizations.
+
+        Parameters:
+            func_type: The dtype of the function to load.
+            func: The function reference.
+
+        Args:
+            function_name: The name of the function in the assembly code.
+            asm: The assembly code (PTX/SASS) containing the function.
+
+        Returns:
+            The loaded function is stored in the `result` parameter.
+
+        Raises:
+            If loading the function fails or the assembly code is invalid.
+        """
+        return DeviceExternalFunction(self, function_name^, asm)
+
+    @parameter
+    @always_inline
+    def enqueue_function[
+        *Ts: AnyType,
+    ](
+        self,
+        f: DeviceExternalFunction,
+        *args: *Ts,
+        grid_dim: Dim,
+        block_dim: Dim,
+        cluster_dim: OptionalReg[Dim] = None,
+        shared_mem_bytes: OptionalReg[Int] = None,
+        var attributes: List[LaunchAttribute] = [],
+        var constant_memory: List[ConstantMemoryMapping] = [],
+        location: OptionalReg[SourceLocation] = None,
+    ) raises:
+        """Enqueues an external device function for execution on this device.
+
+        Parameters:
+            Ts: Argument types to pass to the external function.
+
+        Args:
+            f: The external device function to execute.
+            args: Arguments to pass to the function.
+            grid_dim: The grid dimensions.
+            block_dim: The block dimensions.
+            cluster_dim: Optional cluster dimensions.
+            shared_mem_bytes: Optional shared memory per block.
+            attributes: Launch attributes.
+            constant_memory: Constant memory mapping.
+            location: Source location for the function call.
+
+        Raises:
+            If the operation fails.
+        """
+        _check_dim["DeviceContext.enqueue_function", "grid_dim"](
+            grid_dim, location=call_location()
+        )
+        _check_dim["DeviceContext.enqueue_function", "block_dim"](
+            block_dim, location=call_location()
+        )
+        f._call_with_pack(
             self,
             *args,
             grid_dim=grid_dim,
@@ -1097,18 +1250,18 @@ struct DeviceFunction[
         var extra_align = align_up(start_addr, 8) - start_addr
 
         var dense_args_addrs: UnsafePointer[
-            OpaquePointer[MutAnyOrigin], MutExternalOrigin
+            OpaquePointer[MutAnyOrigin], MutUntrackedOrigin
         ]
-        var dense_args_sizes: UnsafePointer[UInt64, MutExternalOrigin]
+        var dense_args_sizes: UnsafePointer[UInt64, MutUntrackedOrigin]
         if num_captures > num_captures_static:
             dense_args_addrs = alloc(
                 Layout[OpaquePointer[MutAnyOrigin]](
                     count=num_captures + num_passed_args
                 )
-            )
+            ).unsafe_leak()
             dense_args_sizes = alloc(
                 Layout[UInt64](count=num_captures + num_passed_args)
-            )
+            ).unsafe_leak()
             for i in range(num_captures + num_passed_args):
                 dense_args_sizes[i] = 0
         else:
@@ -1136,9 +1289,14 @@ struct DeviceFunction[
                     ]
                 ).bitcast[NoneType]()
                 args[i]._to_device_type(device_type_encoder, first_word_addr)
-                dense_args_addrs[translated_arg_idx] = first_word_addr
+                dense_args_addrs[
+                    translated_arg_idx
+                ] = first_word_addr.as_unsafe_any_origin()
                 dense_args_sizes[translated_arg_idx] = UInt64(
-                    size_of[actual_arg_type.device_type]()
+                    size_of[
+                        actual_arg_type.device_type,
+                        target=device_type_encoder.target(),
+                    ]()
                 )
                 translated_arg_idx += 1
 
@@ -1148,6 +1306,126 @@ struct DeviceFunction[
                     i
                 ]
             var capture_args_start = dense_args_addrs + num_translated_args
+            populate(
+                capture_args_start.bitcast[NoneType]().as_unsafe_any_origin()
+            )
+
+        ctx._hal_stream()[].execute(
+            self._inner[]._func_handle,
+            grid=(
+                UInt32(grid_dim.x()),
+                UInt32(grid_dim.y()),
+                UInt32(grid_dim.z()),
+            ),
+            block=(
+                UInt32(block_dim.x()),
+                UInt32(block_dim.y()),
+                UInt32(block_dim.z()),
+            ),
+            args=rebind[
+                UnsafePointer[OpaquePointer[MutUntrackedOrigin], MutAnyOrigin]
+            ](dense_args_addrs),
+            arg_sizes=rebind[UnsafePointer[UInt64, MutAnyOrigin]](
+                dense_args_sizes
+            ),
+            num_args=UInt32(num_translated_args + num_captures),
+            shared_mem_bytes=UInt32(shared_mem_bytes.or_else(0)),
+        )
+
+        if num_captures > num_captures_static:
+            dealloc(
+                ThinAllocation(
+                    unsafe_assume_ownership=dense_args_addrs
+                ).unsafe_with_layout({count = num_captures + num_passed_args})
+            )
+            dealloc(
+                ThinAllocation(
+                    unsafe_assume_ownership=dense_args_sizes
+                ).unsafe_with_layout({count = num_captures + num_passed_args})
+            )
+
+    @always_inline
+    @parameter
+    def _call_with_pack[
+        *Ts: AnyType,
+        ContextT: _HALFunctionEnqueuer,
+    ](
+        read self,
+        ctx: ContextT,
+        *args: *Ts,
+        grid_dim: Dim,
+        block_dim: Dim,
+        cluster_dim: OptionalReg[Dim] = None,
+        shared_mem_bytes: OptionalReg[Int] = None,
+        var attributes: List[LaunchAttribute] = [],
+        var constant_memory: List[ConstantMemoryMapping] = [],
+        location: OptionalReg[SourceLocation] = None,
+    ) raises:
+        if cluster_dim:
+            raise Error(
+                "HAL DeviceContext.enqueue_function does not support"
+                " `cluster_dim`."
+            )
+        if attributes:
+            raise Error(
+                "HAL DeviceContext.enqueue_function does not support launch"
+                " `attributes`."
+            )
+        if constant_memory:
+            raise Error(
+                "HAL DeviceContext.enqueue_function does not support"
+                " `constant_memory` mappings."
+            )
+
+        comptime num_args = Ts.size
+        ref func_info = self._inner[]._compiled[1]
+        var num_captures = max(0, func_info.num_captures)
+        comptime populate = type_of(func_info).populate
+        comptime num_captures_static = 16
+
+        var dense_args_addrs: UnsafePointer[
+            OpaquePointer[MutAnyOrigin], MutUntrackedOrigin
+        ]
+        var dense_args_sizes: UnsafePointer[UInt64, MutUntrackedOrigin]
+        if num_captures > num_captures_static:
+            dense_args_addrs = alloc(
+                Layout[OpaquePointer[MutAnyOrigin]](
+                    count=num_captures + num_args
+                )
+            ).unsafe_leak()
+            dense_args_sizes = alloc(
+                Layout[UInt64](count=num_captures + num_args)
+            ).unsafe_leak()
+            for i in range(num_captures + num_args):
+                dense_args_sizes[i] = 0
+        else:
+            dense_args_addrs = stack_allocation[
+                num_captures_static + num_args, OpaquePointer[MutAnyOrigin]
+            ]()
+            dense_args_sizes = stack_allocation[
+                num_captures_static + num_args, UInt64
+            ]()
+            for i in range(num_captures_static + num_args):
+                dense_args_sizes[i] = 0
+
+        comptime for i in range(num_args):
+            dense_args_addrs[i] = (
+                UnsafePointer(to=args[i])
+                .bitcast[NoneType]()
+                .unsafe_mut_cast[True]()
+            )
+
+        @parameter
+        def _populate_arg_sizes[i: Int]():
+            dense_args_sizes[i] = UInt64(size_of[Ts[i]]())
+
+        comptime for i in range(num_args):
+            _populate_arg_sizes[i]()
+
+        if num_captures > 0:
+            for i in range(num_captures):
+                dense_args_sizes[num_args + i] = func_info.capture_sizes[i]
+            var capture_args_start = dense_args_addrs + num_args
             populate(capture_args_start.bitcast[NoneType]())
 
         ctx._hal_stream()[].execute(
@@ -1163,18 +1441,161 @@ struct DeviceFunction[
                 UInt32(block_dim.z()),
             ),
             args=rebind[
-                UnsafePointer[OpaquePointer[MutExternalOrigin], MutAnyOrigin]
+                UnsafePointer[OpaquePointer[MutUntrackedOrigin], MutAnyOrigin]
             ](dense_args_addrs),
             arg_sizes=rebind[UnsafePointer[UInt64, MutAnyOrigin]](
                 dense_args_sizes
             ),
-            num_args=UInt32(num_translated_args + num_captures),
+            num_args=UInt32(num_args + num_captures),
             shared_mem_bytes=UInt32(shared_mem_bytes.or_else(0)),
         )
 
         if num_captures > num_captures_static:
-            free(dense_args_addrs, {count = num_captures + num_passed_args})
-            free(dense_args_sizes, {count = num_captures + num_passed_args})
+            dealloc(
+                ThinAllocation(
+                    unsafe_assume_ownership=dense_args_addrs
+                ).unsafe_with_layout({count = num_captures + num_args})
+            )
+            dealloc(
+                ThinAllocation(
+                    unsafe_assume_ownership=dense_args_sizes
+                ).unsafe_with_layout({count = num_captures + num_args})
+            )
+
+
+# ===-----------------------------------------------------------------------===#
+# DeviceExternalFunction
+# ===-----------------------------------------------------------------------===#
+
+
+@fieldwise_init
+struct _ExternalFunctionInner(Movable):
+    """Holder for an externally-loaded HAL `FunctionHandle`.
+
+    Owns the function handle, the `RuntimeBundle` it was loaded from, and
+    the `Context` needed to unload them. Distinct from `_DeviceFunctionInner`
+    because external functions don't carry `CompiledFunctionInfo`.
+    """
+
+    var _func_handle: FunctionHandle
+    var _bundle: RuntimeBundle
+    var _context: ArcPointer[Context[get_device_spec[0]()]]
+
+    def __del__(deinit self):
+        try:
+            self._context[].unload_function(self._func_handle)
+        except e:
+            print("warning: unload_function failed:", e)
+
+
+struct DeviceExternalFunction(ImplicitlyCopyable, Movable):
+    """Represents an external device function loaded from PTX/SASS assembly.
+
+    This class provides functionality to load and execute pre-compiled GPU functions
+    from assembly code rather than compiling them from Mojo source. This is useful
+    for integrating with existing CUDA/HIP code or for using specialized assembly
+    optimizations.
+    """
+
+    var _ctx: DeviceContext
+    var _inner: ArcPointer[_ExternalFunctionInner]
+
+    @doc_hidden
+    def __init__(
+        out self,
+        ctx: DeviceContext,
+        var function_name: String,
+        asm: StringSlice,
+    ) raises:
+        """Loads a function from raw PTX/SASS bytes.
+
+        Args:
+            ctx: The device context to associate this function with.
+            function_name: Mangled symbol name to look up inside the loaded
+                bundle.
+            asm: Pre-compiled assembly/object bytes.
+        """
+        var bundle = ctx._context[].load_bundle(asm)
+        var func_handle = ctx._context[].load_function(bundle, function_name^)
+        self._ctx = ctx
+        self._inner = ArcPointer(
+            _ExternalFunctionInner(func_handle, bundle^, ctx._context)
+        )
+
+    @always_inline
+    @parameter
+    def _call_with_pack[
+        *Ts: AnyType,
+        ContextT: _HALFunctionEnqueuer,
+    ](
+        read self,
+        ctx: ContextT,
+        *args: *Ts,
+        grid_dim: Dim,
+        block_dim: Dim,
+        cluster_dim: OptionalReg[Dim] = None,
+        shared_mem_bytes: OptionalReg[Int] = None,
+        var attributes: List[LaunchAttribute] = [],
+        var constant_memory: List[ConstantMemoryMapping] = [],
+        location: OptionalReg[SourceLocation] = None,
+    ) raises:
+        if cluster_dim:
+            raise Error(
+                "HAL DeviceContext.enqueue_function does not support"
+                " `cluster_dim`."
+            )
+        if attributes:
+            raise Error(
+                "HAL DeviceContext.enqueue_function does not support launch"
+                " `attributes`."
+            )
+        if constant_memory:
+            raise Error(
+                "HAL DeviceContext.enqueue_function does not support"
+                " `constant_memory` mappings."
+            )
+
+        comptime num_args = Ts.size
+        var dense_args_addrs = stack_allocation[
+            num_args + 1, OpaquePointer[MutAnyOrigin]
+        ]()
+        var dense_args_sizes = stack_allocation[num_args + 1, UInt64]()
+
+        comptime for i in range(num_args):
+            dense_args_addrs[i] = (
+                UnsafePointer(to=args[i])
+                .bitcast[NoneType]()
+                .unsafe_mut_cast[True]()
+            )
+
+        @parameter
+        def _populate_arg_sizes[i: Int]():
+            dense_args_sizes[i] = UInt64(size_of[Ts[i]]())
+
+        comptime for i in range(num_args):
+            _populate_arg_sizes[i]()
+
+        ctx._hal_stream()[].execute(
+            self._inner[]._func_handle,
+            grid=(
+                UInt32(grid_dim.x()),
+                UInt32(grid_dim.y()),
+                UInt32(grid_dim.z()),
+            ),
+            block=(
+                UInt32(block_dim.x()),
+                UInt32(block_dim.y()),
+                UInt32(block_dim.z()),
+            ),
+            args=rebind[
+                UnsafePointer[OpaquePointer[MutUntrackedOrigin], MutAnyOrigin]
+            ](dense_args_addrs),
+            arg_sizes=rebind[UnsafePointer[UInt64, MutAnyOrigin]](
+                dense_args_sizes
+            ),
+            num_args=UInt32(num_args),
+            shared_mem_bytes=UInt32(shared_mem_bytes.or_else(0)),
+        )
 
 
 # ===-----------------------------------------------------------------------===#
@@ -1388,6 +1809,62 @@ struct DeviceStream(ImplicitlyCopyable, Movable, _HALFunctionEnqueuer):
     @parameter
     @always_inline
     def enqueue_function[
+        FuncType: def() -> None,
+        //,
+    ](
+        self,
+        func: FuncType,
+        *,
+        grid_dim: Dim,
+        block_dim: Dim,
+        cluster_dim: OptionalReg[Dim] = None,
+        shared_mem_bytes: OptionalReg[Int] = None,
+        var attributes: List[LaunchAttribute] = [],
+        var constant_memory: List[ConstantMemoryMapping] = [],
+        location: OptionalReg[SourceLocation] = None,
+    ) raises:
+        """Compiles and enqueues a capturing kernel for execution on this stream.
+
+        Parameters:
+            FuncType: The type of the function to launch (usually inferred).
+
+        Args:
+            func: The capturing kernel function to compile and launch.
+            grid_dim: The grid dimensions.
+            block_dim: The block dimensions.
+            cluster_dim: The cluster dimensions.
+            shared_mem_bytes: Per-block memory shared between blocks.
+            attributes: A `List` of launch attributes.
+            constant_memory: A `List` of constant memory mappings.
+            location: Source location for the function call.
+
+        Raises:
+            If the operation fails.
+        """
+        _check_dim["DeviceStream.enqueue_function", "grid_dim"](
+            grid_dim, location=call_location()
+        )
+        _check_dim["DeviceStream.enqueue_function", "block_dim"](
+            block_dim, location=call_location()
+        )
+        var gpu_kernel = DeviceFunction[
+            FuncType.__call__, TypeList.of[Trait=AnyType]().values
+        ](self._ctx)
+        gpu_kernel._call_with_pack(
+            self,
+            func,
+            grid_dim=grid_dim,
+            block_dim=block_dim,
+            cluster_dim=cluster_dim,
+            shared_mem_bytes=shared_mem_bytes,
+            attributes=attributes^,
+            constant_memory=constant_memory^,
+            location=location.or_else(call_location()),
+        )
+
+    @parameter
+    @always_inline
+    def enqueue_function[
         *Ts: DevicePassable,
     ](
         self,
@@ -1427,6 +1904,59 @@ struct DeviceStream(ImplicitlyCopyable, Movable, _HALFunctionEnqueuer):
             block_dim, location=call_location()
         )
         f._call_with_pack_checked(
+            self,
+            *args,
+            grid_dim=grid_dim,
+            block_dim=block_dim,
+            cluster_dim=cluster_dim,
+            shared_mem_bytes=shared_mem_bytes,
+            attributes=attributes^,
+            constant_memory=constant_memory^,
+            location=location.or_else(call_location()),
+        )
+
+    @parameter
+    @always_inline
+    def enqueue_function[
+        *Ts: AnyType,
+    ](
+        self,
+        f: DeviceExternalFunction,
+        *args: *Ts,
+        grid_dim: Dim,
+        block_dim: Dim,
+        cluster_dim: OptionalReg[Dim] = None,
+        shared_mem_bytes: OptionalReg[Int] = None,
+        var attributes: List[LaunchAttribute] = [],
+        var constant_memory: List[ConstantMemoryMapping] = [],
+        location: OptionalReg[SourceLocation] = None,
+    ) raises:
+        """Enqueues an external device function for execution on this stream.
+
+        Parameters:
+            Ts: Argument types to pass to the external function.
+
+        Args:
+            f: The external device function to execute.
+            args: Arguments to pass to the function.
+            grid_dim: The grid dimensions.
+            block_dim: The block dimensions.
+            cluster_dim: Optional cluster dimensions.
+            shared_mem_bytes: Optional shared memory per block.
+            attributes: Launch attributes.
+            constant_memory: Constant memory mapping.
+            location: Source location for the function call.
+
+        Raises:
+            If the operation fails.
+        """
+        _check_dim["DeviceStream.enqueue_function", "grid_dim"](
+            grid_dim, location=call_location()
+        )
+        _check_dim["DeviceStream.enqueue_function", "block_dim"](
+            block_dim, location=call_location()
+        )
+        f._call_with_pack(
             self,
             *args,
             grid_dim=grid_dim,
@@ -1765,7 +2295,7 @@ struct _HostBufferInner(Movable):
 
     var _buffer: Buffer
     var _context: ArcPointer[Context[get_device_spec[0]()]]
-    var _host_ptr: UnsafePointer[UInt8, MutAnyOrigin]
+    var _host_ptr: UnsafePointer[UInt8, MutUntrackedOrigin]
 
     def __del__(deinit self):
         try:
@@ -1799,7 +2329,7 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Movable, Sized):
         var addr = UInt64(0)
         if byte_size > 0:
             addr = ctx._context[].memory_get_address(buffer)
-        var host_ptr = UnsafePointer[UInt8, MutAnyOrigin](
+        var host_ptr = UnsafePointer[UInt8, MutUntrackedOrigin](
             unsafe_from_address=Int(addr)
         )
         self._ctx = ctx
@@ -1840,7 +2370,11 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Movable, Sized):
         Returns:
             The raw device pointer owned by this buffer.
         """
-        return self._inner[]._host_ptr.bitcast[Scalar[Self.dtype]]()
+        return (
+            self._inner[]
+            ._host_ptr.bitcast[Scalar[Self.dtype]]()
+            .as_unsafe_any_origin()
+        )
 
     def __getitem__(self, idx: Int) -> Scalar[Self.dtype]:
         """Retrieves the element at the specified index from the host buffer.

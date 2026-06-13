@@ -17,6 +17,7 @@ modular_py_test(
     ),
     tags = [
         "external-exclusive",  # Times out if run with too many other tests
+        "manual",  # FIXME: KERN-3012
     ],
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
