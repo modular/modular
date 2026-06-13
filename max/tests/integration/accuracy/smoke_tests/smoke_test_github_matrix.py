@@ -147,11 +147,11 @@ CUSTOM_MODELS: dict[str, set[str]] = {
     "meta-llama/Llama-3.1-8B-Instruct__eagle_local_kvconnector": MULTI | {"MI355"},
     "meta-llama/Llama-3.1-8B-Instruct__tiered_kvconnector": MULTI | {"MI355"},
     "nvidia/Kimi-K2.5-NVFP4__tpep": NON_XL | {"4xMI355"},
-    "nvidia/Kimi-K2.5-NVFP4__local_kvconnector": NON_XL | {"4xMI355"},
-    "nvidia/Kimi-K2.5-NVFP4__eagle_tiered_kvconnector": NON_XL | {"4xMI355"},
+    "nvidia/Kimi-K2.5-NVFP4__local_kvconnector_tpep_ar": NON_XL | {"4xMI355"},
+    "nvidia/Kimi-K2.5-NVFP4__eagle_tiered_kvconnector_tpep_ar": NON_XL | {"4xMI355"},
     "nvidia/Kimi-K2.5-NVFP4__mha_eagle_tiered_kvconnector_tpep_ar": NON_XL | {"4xMI355"},
     "nvidia/Kimi-K2.6-NVFP4__eagle_tpep": NON_XL | {"4xMI355"},
-    "nvidia/Kimi-K2.6-NVFP4__eagle_tiered_kvconnector": NON_XL | {"4xMI355"},
+    "nvidia/Kimi-K2.6-NVFP4__eagle_tiered_kvconnector_tpep_ar": NON_XL | {"4xMI355"},
 }
 
 MODELS = {**HF_MODELS, **CUSTOM_MODELS}

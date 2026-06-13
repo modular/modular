@@ -138,7 +138,9 @@ def test_recipe_aliases_preserve_key_model_path_and_speculation() -> None:
     assert mtp_recipe.speculative.num_speculative_tokens == 3
 
     kimi_recipe = smoke_test._load_recipe(
-        MODEL_RECIPES["nvidia/Kimi-K2.5-NVFP4__eagle_tiered_kvconnector"]
+        MODEL_RECIPES[
+            "nvidia/Kimi-K2.5-NVFP4__eagle_tiered_kvconnector_tpep_ar"
+        ]
     )
     assert kimi_recipe.model.model_path == "nvidia/Kimi-K2.5-NVFP4"
     assert kimi_recipe.speculative is not None
@@ -268,7 +270,7 @@ def test_sglang_uses_recipe_memory_cap(monkeypatch: MonkeyPatch) -> None:
 
     cmd = smoke_test.get_server_cmd(
         "sglang",
-        "nvidia/Kimi-K2.5-NVFP4__eagle_tiered_kvconnector",
+        "nvidia/Kimi-K2.5-NVFP4__eagle_tiered_kvconnector_tpep_ar",
         gpu_spec=("NVIDIA B200", 8),
     )
 
