@@ -457,9 +457,8 @@ class Gemma3_MultiModalModel(
     def _run_vision_encoder(self, raw: VisionRawInputs) -> list[Buffer]:
         if self.vision_model is None:
             raise ValueError(
-                "This checkpoint is served text-only (its gemma4_unified"
-                " vision embedder is not implemented); image and video"
-                " inputs are not supported."
+                "This checkpoint is served text-only (no vision encoder"
+                " is loaded); image and video inputs are not supported."
             )
         return self.vision_model(
             *raw.patches_flat,
@@ -654,9 +653,8 @@ class Gemma3_MultiModalModel(
         )
         if needs_images and self.vision_model is None:
             raise ValueError(
-                "This checkpoint is served text-only (its gemma4_unified"
-                " vision embedder is not implemented); image inputs are"
-                " not supported."
+                "This checkpoint is served text-only (no vision encoder"
+                " is loaded); image inputs are not supported."
             )
         k = (
             self.config.vision_config.pooling_kernel_size

@@ -138,9 +138,9 @@ class Gemma4TextModel(DistributedLogitsPostprocessMixin, Module):
             # attention in BF16, but other modelopt quants (e.g. the
             # community 12B NVFP4 ones) quantize it too -- honor the
             # per-layer classification instead of assuming BF16.
-            attn_quantized = is_nvfp4 and (
-                quant_config is not None
-                and i in quant_config.attn_quantized_layers
+            # is_nvfp4 already implies quant_config is not None.
+            attn_quantized = (
+                is_nvfp4 and i in quant_config.attn_quantized_layers
             )
 
             moe_block: MoE | None = None
