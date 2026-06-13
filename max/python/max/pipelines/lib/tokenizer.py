@@ -832,9 +832,13 @@ class TextAndVisionTokenizer(
         return encoded_prompt
 
     async def decode(
-        self, encoded: npt.NDArray[np.integer[Any]], **kwargs
+        self, encoded: npt.NDArray[np.integer[Any]] | int, **kwargs
     ) -> str:
         """Transforms a provided encoded token array back into readable text."""
+        # Log-probability responses decode one token id (a plain int) at a
+        # time; match the text tokenizer's handling.
+        if isinstance(encoded, int):
+            encoded = np.array(encoded)
         try:
             return self.delegate.decode(encoded.tolist(), **kwargs)
         except OverflowError as e:
@@ -981,6 +985,8 @@ class TextAndVisionTokenizer(
             max_length=encoded_prompt.shape[0] + max_gen_tokens
             if max_gen_tokens is not None
             else self.max_length,
+            log_probabilities=request.logprobs,
+            log_probabilities_echo=request.echo,
             json_schema=json_schema,
             grammar=grammar,
             grammar_state=grammar_state,
