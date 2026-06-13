@@ -268,7 +268,7 @@ or a concise subclass:
   <TabItem value="llama3" label="Llama 3.1">
 
 `Llama3Config` is the baseline architecture configuration class that dense decoders extend. Open the configuration schema
-in [`llama3/model_config.py`](https://github.com/modular/modular/blob/main/max/python/max/pipelines/architectures/llama3/model_config.py)
+in [`llama3/model_config.py`](https://github.com/modular/modular/blob/max/v26.4/max/python/max/pipelines/architectures/llama3/model_config.py)
 to inspect how each direct-map field is defined as a typed attribute:
 
 ```python title="llama3/model_config.py"
@@ -309,7 +309,7 @@ class Llama3Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
   <TabItem value="qwen3" label="Qwen3">
 
 Because Qwen3's direct-map fields match Llama's, the configuration class in
-[`qwen3/model_config.py`](https://github.com/modular/modular/blob/main/max/python/max/pipelines/architectures/qwen3/model_config.py)
+[`qwen3/model_config.py`](https://github.com/modular/modular/blob/max/v26.4/max/python/max/pipelines/architectures/qwen3/model_config.py)
 subclasses `Llama3Config` to inherit its base fields and appends only the custom MoE properties:
 
 ```python title="qwen3/model_config.py"
@@ -339,7 +339,7 @@ class Qwen3Config(Llama3Config):
   <TabItem value="deepseek" label="DeepSeek-V3">
 
 DeepSeek-V3 diverges significantly from dense decoders. Open the standalone configuration class in
-[`deepseekV3/model_config.py`](https://github.com/modular/modular/blob/main/max/python/max/pipelines/architectures/deepseekV3/model_config.py)
+[`deepseekV3/model_config.py`](https://github.com/modular/modular/blob/max/v26.4/max/python/max/pipelines/architectures/deepseekV3/model_config.py)
 to review the custom schema mapping general parameters alongside structural fields:
 
 ```python title="deepseekV3/model_config.py"
@@ -403,7 +403,7 @@ custom layer logic based on these structural fields:
 
 Llama 3.1's only structural variation is `rope_scaling`. This requires no custom layers; instead,
 read the scaling parameters from the configuration and pass them to the rotary embedding constructor in
-[`llama3/model_config.py`](https://github.com/modular/modular/blob/main/max/python/max/pipelines/architectures/llama3/model_config.py):
+[`llama3/model_config.py`](https://github.com/modular/modular/blob/max/v26.4/max/python/max/pipelines/architectures/llama3/model_config.py):
 
 ```python title="llama3/model_config.py"
 # Read rope_scaling into typed params if the config uses the llama3 scheme.
@@ -431,7 +431,7 @@ rope = Llama3RotaryEmbedding(
 
 Qwen3 applies a [`RMSNorm`](/max/api/python/generated/max.nn.RMSNorm/) to the query and key projections before the RoPE calculation. To implement this
 in the compute graph, define two additional normalization layers in
-[`qwen3/layers/attention.py`](https://github.com/modular/modular/blob/main/max/python/max/pipelines/architectures/qwen3/layers/attention.py)
+[`qwen3/layers/attention.py`](https://github.com/modular/modular/blob/max/v26.4/max/python/max/pipelines/architectures/qwen3/layers/attention.py)
 and apply them to query and key projections in the block forward pass:
 
 ```python title="qwen3/layers/attention.py"
@@ -463,7 +463,7 @@ class Qwen3Attention(Module):
 
 DeepSeek-V3 replaces the standard attention mechanism with Multi-head Latent Attention (MLA). The block
 reads low-rank projection parameters directly from the configuration, instantiating a custom attention
-module in [`deepseekV3/deepseekV3.py`](https://github.com/modular/modular/blob/main/max/python/max/pipelines/architectures/deepseekV3/deepseekV3.py):
+module in [`deepseekV3/deepseekV3.py`](https://github.com/modular/modular/blob/max/v26.4/max/python/max/pipelines/architectures/deepseekV3/deepseekV3.py):
 
 ```python title="deepseekV3/deepseekV3.py"
 # Multi-head latent attention: q_lora_rank and kv_lora_rank project Q and KV

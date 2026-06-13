@@ -77,7 +77,7 @@ run `max generate` or `max serve`. MAX imports the package at startup, reads its
 The reference architectures in MAX's codebase are complete implementations of
 this package structure. Each one is a working example that serves production
 traffic with `max serve` today. Browse the
-[`architectures/` directory](https://github.com/modular/modular/tree/main/max/python/max/pipelines/architectures)
+[`architectures/` directory](https://github.com/modular/modular/tree/max/v26.4/max/python/max/pipelines/architectures)
 alongside this guide to see how the files fit together in a finished
 implementation.
 
@@ -112,11 +112,11 @@ features, not model name or family, for example:
 - **[`deepseekV3/`][deepseekV3-arch]**: Use when your model uses MoE routing
   and MLA with auxiliary-loss-free load balancing.
 
-[llama3-arch]: https://github.com/modular/modular/tree/main/max/python/max/pipelines/architectures/llama3
-[mistral-arch]: https://github.com/modular/modular/tree/main/max/python/max/pipelines/architectures/mistral
-[gemma3-arch]: https://github.com/modular/modular/tree/main/max/python/max/pipelines/architectures/gemma3
-[deepseekV2-arch]: https://github.com/modular/modular/tree/main/max/python/max/pipelines/architectures/deepseekV2
-[deepseekV3-arch]: https://github.com/modular/modular/tree/main/max/python/max/pipelines/architectures/deepseekV3
+[llama3-arch]: https://github.com/modular/modular/tree/max/v26.4/max/python/max/pipelines/architectures/llama3
+[mistral-arch]: https://github.com/modular/modular/tree/max/v26.4/max/python/max/pipelines/architectures/mistral
+[gemma3-arch]: https://github.com/modular/modular/tree/max/v26.4/max/python/max/pipelines/architectures/gemma3
+[deepseekV2-arch]: https://github.com/modular/modular/tree/max/v26.4/max/python/max/pipelines/architectures/deepseekV2
+[deepseekV3-arch]: https://github.com/modular/modular/tree/max/v26.4/max/python/max/pipelines/architectures/deepseekV3
 
 The sections below build on each other. Config field mapping, weight naming,
 and KV cache integration are required for every LLM implementation. If your

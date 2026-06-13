@@ -207,8 +207,7 @@ It includes:
 - [`mojo` CLI](/docs/cli/) (includes the Mojo compiler)
 - [Mojo standard library](/docs/std/)
 - [Layout library](/docs/layout/)
-- [`mojo` Python
-  package](https://github.com/modular/modular/tree/main/mojo/python/mojo)
+- [`mojo` Python package](https://github.com/modular/modular/tree/mojo/v1.0.0b2/mojo/python/mojo)
 - Mojo language server (LSP) for IDE/editor integration
 - [Mojo debugger](/docs/tools/debugging/) (includes LLDB)
 - [Mojo code formatter](/docs/cli/format/)
@@ -224,8 +223,7 @@ the LSP and debugger tools. It includes:
 - [`mojo` CLI](/docs/cli/) (includes the Mojo compiler)
 - [Mojo standard library](/docs/std/)
 - [Layout library](/docs/layout/)
-- [`mojo` Python
-  package](https://github.com/modular/modular/tree/main/mojo/python/mojo)
+- [`mojo` Python package](https://github.com/modular/modular/tree/mojo/v1.0.0b2/mojo/python/mojo)
 
 ### What are the license terms for the SDK?
 

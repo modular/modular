@@ -2,7 +2,7 @@
 title: Build custom ops for GPUs
 sidebar_label: Build custom ops
 description: Write custom GPU and CPU operations in Mojo and load them into a MAX graph.
-github_url: https://github.com/modular/modular/tree/main/max/examples/custom_ops
+github_url: https://github.com/modular/modular/tree/max/v26.4/max/examples/custom_ops
 show_languages: true
 is_tutorial: true
 ---
@@ -94,7 +94,7 @@ available.
 ### Define the custom op in Mojo
 
 Take a look at the custom op defined in
-[`custom_ops/kernels/add_one.mojo`](https://github.com/modular/modular/tree/main/max/examples/custom_ops/kernels/add_one.mojo).
+[`custom_ops/kernels/add_one.mojo`](https://github.com/modular/modular/tree/max/v26.4/max/examples/custom_ops/kernels/add_one.mojo).
 You'll see a Mojo [struct](https://mojolang.org/docs/manual/structs) called
 `AddOne` with an `execute()` function. Every custom op must be defined with this
 general format, as described below.
@@ -185,7 +185,7 @@ the [next example](#example-2-write-device-specific-kernels).)
 ### Add the custom op to a Python graph
 
 Let's now look at the corresponding
-[`custom_ops/addition.py`](https://github.com/modular/modular/tree/main/max/examples/custom_ops/addition.py)
+[`custom_ops/addition.py`](https://github.com/modular/modular/tree/max/v26.4/max/examples/custom_ops/addition.py)
 file where we load the `add_one` custom op into a graph using
 [`ops.custom()`](/max/api/python/graph.ops#max.graph.ops.custom).
 
@@ -294,7 +294,7 @@ might also be situations in which you want to write your own hardware-specific
 algorithms.
 
 So let's now look at the
-[`vector_addition.mojo`](https://github.com/modular/modular/tree/main/max/examples/custom_ops/kernels/vector_addition.mojo)
+[`vector_addition.mojo`](https://github.com/modular/modular/tree/max/v26.4/max/examples/custom_ops/kernels/vector_addition.mojo)
 custom op, which adds two vectors together in parallel on a GPU.
 
 This example uses a programming model that may be familiar if you've used

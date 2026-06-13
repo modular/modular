@@ -44,7 +44,7 @@ INIT_FILE = ARCH_BASE / "__init__.py"
 OUTPUT_FILE = REPO_ROOT / "oss" / "modular" / "docs" / "max" / "models.mdx"
 
 GITHUB_ARCH_URL = (
-    "https://github.com/modular/modular/tree/main/"
+    "https://github.com/modular/modular/tree/max/v26.4/"
     "max/python/max/pipelines/architectures"
 )
 
