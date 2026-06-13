@@ -24,7 +24,7 @@ from std.sys._hal.plugin import FunctionHandle
 
 
 @fieldwise_init
-struct Function(ImplicitlyDestructible, Movable, Writable):
+struct Function(ImplicitlyDeletable, Movable, Writable):
     """Python projection of HAL ``FunctionHandle``."""
 
     # TODO: generalize to multi-device — currently hardcoded to device 0.

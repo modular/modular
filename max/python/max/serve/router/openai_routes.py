@@ -623,6 +623,21 @@ class OpenAIChatResponseGenerator(
                     completed_outputs[-1].status, allow_none=False
                 )
 
+            # Kimi K2.5 (thinking enabled) can answer inside the prefilled
+            # ``<think>`` block and stop without emitting ``</think>``, so the
+            # reasoning parser routes the whole answer to reasoning and leaves
+            # content empty. On a voluntary stop, surface that reasoning as
+            # content so a successful turn never returns ``message.content``
+            # null. On ``length`` (truncated mid-thought) keep it as reasoning
+            # rather than misrepresenting a partial thought as the answer.
+            if (
+                not response_message.strip()
+                and reasoning_message
+                and finish_reason == "stop"
+            ):
+                response_message = reasoning_message
+                reasoning_message = None
+
             response_choices: list[ChatCompletionResponseChoice] = []
             # Note: Do not gate on `response_format is None` here.
             # The TextGenerationRequest was mutated to contain a

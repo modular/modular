@@ -142,18 +142,16 @@ def bulk_mma_pair_cta_kernel[
     var a_smem_tile = LayoutTensor[
         ab_type,
         a_smem_layout,
-        MutAnyOrigin,
         address_space=AddressSpace.SHARED,
         alignment=128,
-    ](a_smem)
+    ](a_smem.as_unsafe_any_origin())
 
     var b_smem_tile = LayoutTensor[
         ab_type,
         b_smem_layout,
-        MutAnyOrigin,
         address_space=AddressSpace.SHARED,
         alignment=128,
-    ](b_smem)
+    ](b_smem.as_unsafe_any_origin())
 
     comptime accum_type = get_accum_type[ab_type]()
 
@@ -440,18 +438,16 @@ def bulk_mma_pair_cta_ts_kernel[
     var a_smem_tile = LayoutTensor[
         ab_type,
         a_smem_layout,
-        MutAnyOrigin,
         address_space=AddressSpace.SHARED,
         alignment=128,
-    ](a_smem)
+    ](a_smem.as_unsafe_any_origin())
 
     var b_smem_tile = LayoutTensor[
         ab_type,
         b_smem_layout,
-        MutAnyOrigin,
         address_space=AddressSpace.SHARED,
         alignment=128,
-    ](b_smem)
+    ](b_smem.as_unsafe_any_origin())
 
     comptime accum_type = get_accum_type[ab_type]()
 

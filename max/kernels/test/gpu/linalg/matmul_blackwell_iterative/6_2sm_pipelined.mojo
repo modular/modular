@@ -678,7 +678,7 @@ def kernel_6[
     comptime c_smem_tile_t = LayoutTensor[
         c_type,
         c_smem_layout,
-        MutAnyOrigin,
+        _,
         address_space=AddressSpace.SHARED,
         alignment=128,
     ]
@@ -712,7 +712,6 @@ def kernel_6[
     var a_smem = LayoutTensorIter[
         a_type,
         a_smem_layout,
-        MutAnyOrigin,
         address_space=AddressSpace.SHARED,
         alignment=128,
         circular=False,
@@ -724,7 +723,6 @@ def kernel_6[
     var b_smem = LayoutTensorIter[
         b_type,
         b_smem_layout,
-        MutAnyOrigin,
         address_space=AddressSpace.SHARED,
         alignment=128,
         circular=False,

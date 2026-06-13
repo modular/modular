@@ -14,7 +14,7 @@
 
 
 # TODO: Copyable can be relaxed
-struct BinaryHeap[T: Copyable & Comparable & ImplicitlyDestructible](
+struct BinaryHeap[T: Copyable & Comparable & ImplicitlyDeletable](
     Copyable,
     Defaultable,
     Sized,

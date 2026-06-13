@@ -103,7 +103,7 @@ struct StateContext(TrivialRegisterPassable):
 
 
 def pack_string_res(
-    str_ptr: UnsafePointer[Byte, ImmutAnyOrigin], str_len: Int
+    str_ptr: UnsafePointer[mut=False, Byte, _], str_len: Int
 ) raises -> String:
     var span = Span(ptr=str_ptr, length=str_len)
     # We can not free the resource ptr embedded in MEF, create a copy
@@ -829,7 +829,7 @@ def mgp_debug_tensor_print[
 ](
     buffer: ImmutByteBuffer,
     shape: IndexList[spec_rank],
-    label_ptr: UnsafePointer[Byte, ImmutAnyOrigin],
+    label_ptr: UnsafePointer[mut=False, Byte, _],
     label_len: Int,
 ) raises:
     external_call["MGP_RT_DebugTensorPrint", NoneType](
@@ -1101,7 +1101,7 @@ struct MoggAsyncPackHelper:
 
     def __init__(
         out self,
-        var data: Some[Movable & ImplicitlyDestructible],
+        var data: Some[Movable & ImplicitlyDeletable],
         async_ptr: AnyAsyncValueRefPtr,
     ):
         """
@@ -1380,7 +1380,7 @@ def mgp_buffer_remove_cached(ctx: StateContextRef, buffer_slot: Int):
 @register_internal("mgp.assert")
 @no_inline
 def mgp_assert(
-    cond: Bool, msg_ptr: UnsafePointer[Byte, ImmutAnyOrigin], msg_len: Int
+    cond: Bool, msg_ptr: UnsafePointer[mut=False, Byte, _], msg_len: Int
 ) raises:
     """
     Raises an error when the input condition is not true.
@@ -1399,7 +1399,7 @@ def all_zeros(indices: IndexList) -> Bool:
 def get_buffer_mem_storage_handle(
     buffer: OpaquePointer[MutAnyOrigin],
     type: Int,
-    memStorageHandle: OpaquePointer[MutAnyOrigin],
+    memStorageHandle: OpaquePointer[mut=True, _],
 ):
     external_call["MGP_RT_GetBufferMemStorageHandle", NoneType](
         buffer, type, memStorageHandle

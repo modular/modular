@@ -135,7 +135,7 @@ struct StopIteration(TrivialRegisterPassable, Writable):
         writer.write("StopIteration")
 
 
-trait Iterator(ImplicitlyDestructible, Movable):
+trait Iterator(ImplicitlyDeletable, Movable):
     """The `Iterator` trait describes a type that can be used as an
     iterator, e.g. in a `for` loop.
     """
@@ -195,7 +195,7 @@ trait Iterator(ImplicitlyDestructible, Movable):
             `n + 1` remaining elements.
 
         Constraints:
-            `Self.Element` must conform to `ImplicitlyDestructible` so the
+            `Self.Element` must conform to `ImplicitlyDeletable` so the
             intermediate elements can be discarded.
 
         Examples:
@@ -207,8 +207,8 @@ trait Iterator(ImplicitlyDestructible, Movable):
         var missing = iter(l).nth(10)   # None
         ```
         """
-        comptime assert conforms_to(Self.Element, ImplicitlyDestructible)
-        debug_assert[assert_mode="safe"](n >= 0, "nth: n must be non-negative")
+        comptime assert conforms_to(Self.Element, ImplicitlyDeletable)
+        debug_assert[assert_mode="safe"](n.ge(0), "nth: n must be non-negative")
         try:
             for _ in range(n):
                 # `Self.Element` is only declared `Movable` on the trait, so a
@@ -218,7 +218,7 @@ trait Iterator(ImplicitlyDestructible, Movable):
                 # `where` clause on the method.
                 var elem = self.__next__()
                 _ = rebind_var[
-                    downcast[Self.Element, Movable & ImplicitlyDestructible]
+                    downcast[Self.Element, Movable & ImplicitlyDeletable]
                 ](elem^)
             return self.__next__()
         except StopIteration:
@@ -450,7 +450,7 @@ struct _ZipIterator[origin: Origin, *Ts: Iterator](
     Iteration stops as soon as any inner iterator raises `StopIteration`.
     When that happens mid-tuple, any elements already produced for the
     current tuple are destroyed before propagating the exception, which is
-    why each element type in `Ts` must be `ImplicitlyDestructible`.
+    why each element type in `Ts` must be `ImplicitlyDeletable`.
 
     Parameters:
         origin: The origin from which the inner iterators were produced.
@@ -459,7 +459,7 @@ struct _ZipIterator[origin: Origin, *Ts: Iterator](
             `MutUntrackedOrigin` by the owning overload since its iterators
             own their data.
         Ts: The inner iterator types being zipped. Each must conform to
-            `Iterator` and its `Element` must be `ImplicitlyDestructible`.
+            `Iterator` and its `Element` must be `ImplicitlyDeletable`.
     """
 
     comptime _InjectedValues = Tuple[*Self.Ts]
@@ -498,7 +498,7 @@ struct _ZipIterator[origin: Origin, *Ts: Iterator](
         except StopIteration:
             comptime for i in range(Self._InjectedValues.__len__()):
                 comptime assert conforms_to(
-                    type_of(res[i]), ImplicitlyDestructible
+                    type_of(res[i]), ImplicitlyDeletable
                 )
                 if i < initialized:
                     UnsafePointer(to=res[i]).destroy_pointee()

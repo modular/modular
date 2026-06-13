@@ -14,6 +14,8 @@ from std.math.uutils import ufloordiv, udivmod
 from std.sys import size_of, simd_width_of
 from std.math import ceildiv
 from layout import (
+    Coord,
+    Idx,
     Layout,
     LayoutTensor,
     RuntimeLayout,
@@ -295,37 +297,25 @@ def fp8_index[
     max_num_keys: Int,
     ctx: DeviceContext,
 ) raises:
-    # Construct LayoutTensors from TileTensor ptr + dimensions for
-    # RaggedMHAOperand, which requires LayoutTensor with Layout.row_major().
-    comptime k_layout = Layout.row_major(UNKNOWN_VALUE, 1, depth)
-    comptime ks_layout = Layout.row_major(UNKNOWN_VALUE)
-    comptime cro_layout = Layout.row_major(UNKNOWN_VALUE)
-
     var total_keys = Int(k.dim[0]())
     var cro_size = Int(cache_row_offsets.dim[0]())
 
-    var k_lt = LayoutTensor[dtype, k_layout, ImmutAnyOrigin](
-        rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](k.ptr),
-        RuntimeLayout[k_layout].row_major(Index(total_keys, 1, depth)),
-    )
-    var cache_row_offsets_lt = LayoutTensor[
-        DType.uint32, cro_layout, ImmutAnyOrigin
-    ](
+    var cro_buf = TileTensor(
         rebind[UnsafePointer[UInt32, ImmutAnyOrigin]](cache_row_offsets.ptr),
-        RuntimeLayout[cro_layout].row_major(Index(cro_size)),
+        row_major(Coord(cro_size)),
     )
 
-    var k_operand = RaggedMHAOperand(k_lt, cache_row_offsets_lt)
-
-    # K_s is 1D [total_keys], reshape to 3D [total_keys, 1, 1] for MHAOperand interface
-    comptime ks_3d_layout = Layout.row_major(UNKNOWN_VALUE, 1, 1)
-    var ks_operand = RaggedMHAOperand(
-        LayoutTensor[DType.float32, ks_3d_layout, ImmutAnyOrigin](
-            rebind[UnsafePointer[Float32, ImmutAnyOrigin]](k_s.ptr),
-            RuntimeLayout[ks_3d_layout].row_major(Index(total_keys, 1, 1)),
-        ),
-        cache_row_offsets_lt,
+    var k_buf = TileTensor(
+        rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](k.ptr),
+        row_major(Coord(total_keys, Idx[1], Idx[depth])),
     )
+    var k_operand = RaggedMHAOperand(k_buf, cro_buf)
+
+    var ks_buf = TileTensor(
+        rebind[UnsafePointer[Float32, ImmutAnyOrigin]](k_s.ptr),
+        row_major(Coord(total_keys, Idx[1], Idx[1])),
+    )
+    var ks_operand = RaggedMHAOperand(ks_buf, cro_buf)
 
     comptime block_tile_shape: InlineArray[Int, 2] = [512, 128]
     comptime BM = block_tile_shape[0]
@@ -530,12 +520,10 @@ def fp8_index_naive[
     comptime ks_layout = Layout.row_major(UNKNOWN_VALUE)
     comptime output_layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
     comptime vl_layout = Layout.row_major(UNKNOWN_VALUE)
-    comptime cro_layout = Layout.row_major(UNKNOWN_VALUE)
 
     var total_seq_len = Int(q.dim[0]())
     var total_keys = Int(k.dim[0]())
     var vl_size = Int(valid_length.dim[0]())
-    var cro_size = Int(cache_row_offsets.dim[0]())
 
     var q_lt = LayoutTensor[dtype, q_layout, ImmutAnyOrigin](
         rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](q.ptr),
@@ -565,14 +553,17 @@ def fp8_index_naive[
         rebind[UnsafePointer[UInt32, ImmutAnyOrigin]](valid_length.ptr),
         RuntimeLayout[vl_layout].row_major(Index(vl_size)),
     )
-    var cache_row_offsets_lt = LayoutTensor[
-        DType.uint32, cro_layout, ImmutAnyOrigin
-    ](
-        rebind[UnsafePointer[UInt32, ImmutAnyOrigin]](cache_row_offsets.ptr),
-        RuntimeLayout[cro_layout].row_major(Index(cro_size)),
-    )
 
-    var k_operand = RaggedMHAOperand(k_lt, cache_row_offsets_lt)
+    var cro_size = Int(cache_row_offsets.dim[0]())
+    var cro_buf = TileTensor(
+        rebind[UnsafePointer[UInt32, ImmutAnyOrigin]](cache_row_offsets.ptr),
+        row_major(Coord(cro_size)),
+    )
+    var k_buf = TileTensor(
+        rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](k.ptr),
+        row_major(Coord(total_keys, Idx[1], Idx[depth])),
+    )
+    var k_operand = RaggedMHAOperand(k_buf, cro_buf)
 
     var logits_size = batch_size * max_seq_len * max_num_keys * num_heads
 

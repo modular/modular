@@ -38,6 +38,7 @@ from max.nn.attention.multi_latent_attention import (
 )
 from max.nn.attention.multi_latent_attention_fp8 import (
     DataParallelLatentAttentionWithRopeFp8,
+    TensorParallelLatentAttentionWithRopeFp8,
 )
 from max.nn.comm import Signals
 from max.nn.comm.ep import EPBatchManager
@@ -336,16 +337,27 @@ class DeepseekV3DecoderLayer(Module):
             type[DataParallelLatentAttentionWithRope]
             | type[DataParallelLatentAttentionWithRopeFp8]
             | type[TensorParallelLatentAttentionWithRope]
+            | type[TensorParallelLatentAttentionWithRopeFp8]
         )
         match self.mode:
             case ParallelismMode.TP_EP:
-                mla_kwargs["dtype"] = DType.bfloat16
+                # TP attention + EP MoE: the cross-device communication is
+                # handled by the EP MoE, so skip the attention all-reduce.
                 mla_kwargs["skip_allreduce"] = True
-                mla_cls = TensorParallelLatentAttentionWithRope
+                if use_fp8_mla:
+                    mla_kwargs["quant_config"] = config.quant_config
+                    mla_cls = TensorParallelLatentAttentionWithRopeFp8
+                else:
+                    mla_kwargs["dtype"] = DType.bfloat16
+                    mla_cls = TensorParallelLatentAttentionWithRope
             case ParallelismMode.TP_TP:
-                mla_kwargs["dtype"] = DType.bfloat16
                 mla_kwargs["skip_allreduce"] = False
-                mla_cls = TensorParallelLatentAttentionWithRope
+                if use_fp8_mla:
+                    mla_kwargs["quant_config"] = config.quant_config
+                    mla_cls = TensorParallelLatentAttentionWithRopeFp8
+                else:
+                    mla_kwargs["dtype"] = DType.bfloat16
+                    mla_cls = TensorParallelLatentAttentionWithRope
             case ParallelismMode.DP_EP:
                 if use_fp8_mla:
                     mla_kwargs["quant_config"] = config.quant_config

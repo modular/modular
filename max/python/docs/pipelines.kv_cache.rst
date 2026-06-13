@@ -44,7 +44,6 @@ Cache manager
    :template: autosummary/class.rst
 
    DummyKVCache
-   IncrementCacheLengthsProcessor
    InsufficientBlocksError
    PagedKVCacheManager
 

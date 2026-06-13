@@ -22,7 +22,11 @@ from kv_cache.types import (
     swizzle_granularity,
 )
 from layout import Layout, LayoutTensor, UNKNOWN_VALUE
-from layout.tile_layout import TensorLayout
+from layout.tile_layout import (
+    Layout as MixedLayout,
+    RowMajorLayout,
+    TensorLayout,
+)
 from layout.tma_async import (
     SplitLastDimTMATensorTile,
     SharedMemBarrier,
@@ -33,7 +37,7 @@ from layout.tma_async import (
     create_tensor_tile,
     create_tma_tile_gather4,
 )
-from layout.tile_tensor import TileTensor
+from layout.tile_tensor import LTToTTLayout, TileTensor, lt_to_tt
 from layout.tile_layout import row_major
 from layout.coord import Idx, Coord
 from std.math import ceildiv
@@ -893,7 +897,7 @@ struct LayoutTensorMHAOperand[
     scale_dtype_: DType = DType.float32,
     scale_layout: Layout = Layout(),
 ](MHAOperand, TrivialRegisterPassable):
-    """An implementation for LayoutTensor arguments to MHA kernels."""
+    """An implementation for contiguous tensor arguments to MHA kernels."""
 
     comptime dtype = Self.dtype_
     comptime scale_dtype = Self.scale_dtype_
@@ -909,9 +913,9 @@ struct LayoutTensorMHAOperand[
     )
     comptime quantization_enabled: Bool = Self.scale_layout.rank() != 0
 
-    var buffer: LayoutTensor[Self.dtype, Self.layout, Self.origin]
-    var scale_buffer: LayoutTensor[
-        Self.scale_dtype, Self.scale_layout, Self.scale_origin
+    var buffer: TileTensor[Self.dtype, LTToTTLayout[Self.layout], Self.origin]
+    var scale_buffer: TileTensor[
+        Self.scale_dtype, LTToTTLayout[Self.scale_layout], Self.scale_origin
     ]
     comptime device_type: AnyType = Self
 
@@ -933,8 +937,8 @@ struct LayoutTensorMHAOperand[
             None
         ),
     ):
-        self.buffer = buffer
-        self.scale_buffer = scale_buffer
+        self.buffer = lt_to_tt(buffer)
+        self.scale_buffer = lt_to_tt(scale_buffer)
 
     @always_inline
     def block_paged_ptr[
@@ -946,8 +950,10 @@ struct LayoutTensorMHAOperand[
         head_idx: UInt32,
         head_dim_idx: UInt32 = 0,
     ) -> UnsafePointer[Scalar[Self.dtype], ImmutAnyOrigin]:
-        var ret_ptr = self.buffer.ptr + self.buffer._offset(
-            IndexList[self.layout.rank()](
+        var ret_ptr = self.buffer.ptr + self.buffer.layout[
+            linear_idx_type=type_of(self.buffer).linear_idx_type
+        ](
+            Coord(
                 Int(batch_idx),
                 Int(start_tok_idx),
                 Int(head_idx),
@@ -964,8 +970,10 @@ struct LayoutTensorMHAOperand[
         head_idx: Int,
         head_dim_idx: Int = 0,
     ) -> UnsafePointer[Scalar[Self.scale_dtype], ImmutAnyOrigin]:
-        var ret_ptr = self.scale_buffer.ptr + self.scale_buffer._offset(
-            IndexList[self.scale_layout.rank()](
+        var ret_ptr = self.scale_buffer.ptr + self.scale_buffer.layout[
+            linear_idx_type=type_of(self.scale_buffer).linear_idx_type
+        ](
+            Coord(
                 Int(batch_idx),
                 Int(start_tok_idx),
                 Int(head_idx),
@@ -985,7 +993,7 @@ struct LayoutTensorMHAOperand[
         head_dim_idx: Int,
     ) -> SIMD[Self.scale_dtype, width]:
         return self.scale_buffer.load[width=width](
-            Index(
+            Coord(
                 Int(batch_idx),
                 Int(start_tok_idx),
                 Int(head_idx),
@@ -995,23 +1003,23 @@ struct LayoutTensorMHAOperand[
 
     @always_inline
     def cache_length(self, batch_idx: Int) -> Int:
-        # LayoutTensor path assumes BSHD layout and all cache entries have
+        # Contiguous tensor path assumes BSHD layout and all cache entries have
         # the same length.
-        return self.buffer.dim[1]()
+        return Int(self.buffer.dim[1]())
 
     @always_inline
     def max_context_length(self) -> UInt32:
-        return UInt32(self.buffer.dim[1]())
+        return UInt32(Int(self.buffer.dim[1]()))
 
     @always_inline
     def num_kv_rows(self) -> Int:
         """Returns the total number of virtual rows (batch * seq_len)."""
-        return self.buffer.dim[0]() * self.buffer.dim[1]()
+        return Int(self.buffer.dim[0]()) * Int(self.buffer.dim[1]())
 
     @always_inline
     def row_idx(self, batch_idx: UInt32, start_tok_idx: UInt32) -> UInt32:
         """Returns the row idx when viewing the memory as a matrix."""
-        return batch_idx * UInt32(self.buffer.dim[1]()) + start_tok_idx
+        return batch_idx * UInt32(Int(self.buffer.dim[1]())) + start_tok_idx
 
     @always_inline
     def get_tma_row(self, encoded_index: Int32) -> Int32:
@@ -1042,7 +1050,7 @@ struct LayoutTensorMHAOperand[
         comptime assert (
             BK % swizzle_granularity[Self.dtype, swizzle_mode]()
         ) == 0, String("BN = ", BN, "\ndepth = ", depth, "\nBK = ", BK)
-        var rows = self.buffer.dim[0]() * self.buffer.dim[1]()
+        var rows = Int(self.buffer.dim[0]()) * Int(self.buffer.dim[1]())
         comptime smem_shape = IndexList[3](BN, 1, BK)
         comptime gmem_shape = IndexList[3](UNKNOWN_VALUE, UNKNOWN_VALUE, depth)
 
@@ -1054,7 +1062,7 @@ struct LayoutTensorMHAOperand[
             ctx,
             self.buffer.ptr.as_immutable().as_unsafe_any_origin(),
             rows,
-            self.buffer.dim[2](),
+            Int(self.buffer.dim[2]()),
         )
 
     @always_inline
@@ -1070,7 +1078,7 @@ struct LayoutTensorMHAOperand[
             Index(1, BMN),
         ],
     ) raises:
-        var total_elements = self.scale_buffer.size()
+        var total_elements = self.scale_buffer.num_elements()
         debug_assert(
             total_elements % 4 == 0,
             (
@@ -1108,8 +1116,8 @@ struct LayoutTensorMHAOperand[
         comptime assert (
             BK % swizzle_granularity[Self.dtype, swizzle_mode]()
         ) == 0
-        var rows = self.buffer.dim[0]() * self.buffer.dim[1]()
-        var num_heads = self.buffer.dim[2]()
+        var rows = Int(self.buffer.dim[0]()) * Int(self.buffer.dim[1]())
+        var num_heads = Int(self.buffer.dim[2]())
         tma = type_of(tma).create[depth=depth](
             ctx, self.buffer.ptr, rows=rows, middle_dim=num_heads
         )
@@ -1159,9 +1167,9 @@ struct LayoutTensorMHAOperand[
             ),
         ],
     ) raises:
-        """Creates a 2D TMA gather4 descriptor for this LayoutTensor operand."""
+        """Creates a 2D TMA gather4 descriptor for this contiguous operand."""
         # View the 4D buffer as a 2D matrix [batch*seq, tile_width]
-        var rows = self.buffer.dim[0]() * self.buffer.dim[1]()
+        var rows = Int(self.buffer.dim[0]()) * Int(self.buffer.dim[1]())
         tma = create_tma_tile_gather4[
             tma_dtype,
             tile_height=tile_height,
@@ -1204,7 +1212,7 @@ struct LayoutTensorMHAOperand[
     def scales_raw_ptr(
         self,
     ) -> UnsafePointer[Scalar[DType.float32], MutAnyOrigin]:
-        """Returns a dangling pointer. LayoutTensor operands do not support
+        """Returns a dangling pointer. Contiguous operands do not support
         quantization."""
         # SAFETY: LayoutTensor operands are never quantized; callers only
         # dereference behind comptime quantization guards.
@@ -1218,22 +1226,25 @@ struct RaggedMHAOperand[
     cache_origin: Origin[mut=False],
     //,
     dtype_: DType,
-    layout: Layout,
-    cache_layout: Layout,
+    layout: TensorLayout,
+    cache_layout: TensorLayout,
     scale_dtype_: DType = DType.invalid,
-    scale_layout: Layout = Layout(),
+    scale_layout: TensorLayout = RowMajorLayout[
+        *Coord[Int64, Int64].element_types
+    ],
 ](MHAOperand, TrivialRegisterPassable):
-    """An implementation for ragged LayoutTensor arguments to MHA kernels."""
+    """An implementation for ragged contiguous tensor arguments to MHA kernels.
+    """
 
     comptime dtype = Self.dtype_
     comptime scale_dtype = Self.scale_dtype_
     comptime page_size = 0
     comptime quantization_granularity = 0
-    var buffer: LayoutTensor[Self.dtype, Self.layout, Self.origin]
-    var scale_buffer: LayoutTensor[
+    var buffer: TileTensor[Self.dtype, Self.layout, Self.origin]
+    var scale_buffer: TileTensor[
         Self.scale_dtype, Self.scale_layout, ImmutAnyOrigin
     ]
-    var cache_row_offsets: LayoutTensor[
+    var cache_row_offsets: TileTensor[
         DType.uint32, Self.cache_layout, Self.cache_origin
     ]
 
@@ -1250,8 +1261,8 @@ struct RaggedMHAOperand[
 
     def __init__(
         out self,
-        buffer: LayoutTensor[Self.dtype, Self.layout, Self.origin],
-        cache_row_offsets: LayoutTensor[
+        buffer: TileTensor[Self.dtype, Self.layout, Self.origin],
+        cache_row_offsets: TileTensor[
             DType.uint32, Self.cache_layout, Self.cache_origin
         ],
     ):
@@ -1262,27 +1273,37 @@ struct RaggedMHAOperand[
             cache_row_offsets.rank == 1
         ), "only support rank 1 inputs for cache offsets."
         self.buffer = buffer
-        self.cache_row_offsets = rebind[type_of(self.cache_row_offsets)](
-            cache_row_offsets
+        self.cache_row_offsets = cache_row_offsets
+        # No-scale operand: build a null scale buffer. `scale_layout` is
+        # trait-typed, so re-materialize the concrete `Layout` and rebind it
+        # to the field's exact type.
+        comptime NullScaleLayout = MixedLayout[
+            shape_types=Self.scale_layout._shape_types,
+            stride_types=Self.scale_layout._stride_types,
+        ]
+        self.scale_buffer = rebind[
+            TileTensor[Self.scale_dtype, Self.scale_layout, ImmutAnyOrigin]
+        ](
+            TileTensor[Self.scale_dtype, NullScaleLayout, ImmutAnyOrigin](
+                ptr=UnsafePointer[
+                    Scalar[Self.scale_dtype], ImmutAnyOrigin
+                ].unsafe_dangling(),
+                layout=NullScaleLayout(),
+            )
         )
-        self.scale_buffer = LayoutTensor[
-            Self.scale_dtype, Self.scale_layout, ImmutAnyOrigin
-        ](None)
 
     def __init__(
         out self,
-        buffer: LayoutTensor[Self.dtype, Self.layout, Self.origin],
-        scale_buffer: LayoutTensor[
+        buffer: TileTensor[Self.dtype, Self.layout, Self.origin],
+        scale_buffer: TileTensor[
             Self.scale_dtype, Self.scale_layout, ImmutAnyOrigin
         ],
-        cache_row_offsets: LayoutTensor[
+        cache_row_offsets: TileTensor[
             DType.uint32, Self.cache_layout, Self.cache_origin
         ],
     ):
         self.buffer = buffer
-        self.cache_row_offsets = rebind[type_of(self.cache_row_offsets)](
-            cache_row_offsets
-        )
+        self.cache_row_offsets = cache_row_offsets
         self.scale_buffer = scale_buffer
 
     @always_inline
@@ -1294,20 +1315,20 @@ struct RaggedMHAOperand[
         start_tok_idx: UInt32,
         head_idx: UInt32,
         head_dim_idx: UInt32 = 0,
-    ) -> UnsafePointer[
-        Scalar[Self.dtype], ImmutOrigin(type_of(self.buffer.ptr).origin)
-    ]:
+    ) -> UnsafePointer[Scalar[Self.dtype], ImmutAnyOrigin]:
         global_token_idx = Int(
             self.cache_row_offsets[Int(batch_idx)] + start_tok_idx
         )
-        var ret_ptr = self.buffer.ptr + self.buffer._offset(
-            IndexList[self.layout.rank()](
+        var ret_ptr = self.buffer.ptr + self.buffer.layout[
+            linear_idx_type=type_of(self.buffer).linear_idx_type
+        ](
+            Coord(
                 global_token_idx,
                 Int(head_idx),
                 Int(head_dim_idx),
             )
         )
-        return ret_ptr
+        return ret_ptr.as_immutable().as_unsafe_any_origin()
 
     @always_inline
     def scales_block_paged_ptr(
@@ -1351,7 +1372,7 @@ struct RaggedMHAOperand[
     @always_inline
     def num_kv_rows(self) -> Int:
         """Returns the total number of tokens in the ragged buffer."""
-        return self.buffer.dim[0]()
+        return Int(self.buffer.dim[0]())
 
     @always_inline
     def row_idx(self, batch_idx: UInt32, start_tok_idx: UInt32) -> UInt32:
@@ -1387,7 +1408,7 @@ struct RaggedMHAOperand[
         comptime assert (
             BK % swizzle_granularity[Self.dtype, swizzle_mode]()
         ) == 0
-        var rows = self.buffer.dim[0]()  # total tokens
+        var rows = Int(self.buffer.dim[0]())  # total tokens
         comptime smem_shape = IndexList[3](BN, 1, BK)
         comptime gmem_shape = IndexList[3](UNKNOWN_VALUE, UNKNOWN_VALUE, depth)
 
@@ -1399,7 +1420,7 @@ struct RaggedMHAOperand[
             ctx,
             self.buffer.ptr.as_immutable().as_unsafe_any_origin(),
             rows,
-            self.buffer.dim[1](),
+            Int(self.buffer.dim[1]()),
         )
 
     @always_inline
@@ -1416,8 +1437,8 @@ struct RaggedMHAOperand[
         ],
     ) raises:
         # if per token scale, treat as 1D tensor
-        comptime if Self.scale_layout.rank() == 2:
-            var total_elements = self.scale_buffer.size()
+        comptime if Self.scale_layout.rank == 2:
+            var total_elements = self.scale_buffer.num_elements()
             debug_assert(
                 total_elements % 4 == 0,
                 (
@@ -1436,9 +1457,9 @@ struct RaggedMHAOperand[
             ](ctx, scale_tensor)
 
         # if per token per head scale, treat as 2D tensor with shape [num_heads, total_seq_len]
-        elif Self.scale_layout.rank() == 3:
-            comptime num_heads = Self.scale_layout.shape[0].value()
-            var total_seq_len = self.buffer.dim[1]()
+        elif Self.scale_layout.rank == 3:
+            comptime num_heads = Self.scale_layout.static_shape[0]
+            var total_seq_len = Int(self.buffer.dim[1]())
 
             var scale_tensor = TileTensor(
                 self.scale_buffer.ptr,
@@ -1477,8 +1498,8 @@ struct RaggedMHAOperand[
         comptime assert (
             BK % swizzle_granularity[Self.dtype, swizzle_mode]()
         ) == 0
-        var rows = self.buffer.dim[0]()  # total tokens
-        var num_heads = self.buffer.dim[1]()
+        var rows = Int(self.buffer.dim[0]())  # total tokens
+        var num_heads = Int(self.buffer.dim[1]())
         tma = type_of(tma).create[depth=depth](
             ctx, self.buffer.ptr, rows=rows, middle_dim=num_heads
         )
@@ -1530,7 +1551,7 @@ struct RaggedMHAOperand[
     ) raises:
         """Creates a 2D TMA gather4 descriptor for this ragged operand."""
         # View the ragged buffer as a 2D matrix [total_tokens, tile_width]
-        var rows = self.buffer.dim[0]()
+        var rows = Int(self.buffer.dim[0]())
         tma = create_tma_tile_gather4[
             tma_dtype,
             tile_height=tile_height,

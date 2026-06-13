@@ -31,7 +31,7 @@ from extensibility import (
 )
 from extensibility import FusedOutput
 from extensibility import StaticTensorSpec
-from builtin_kernels import Range
+from builtin_kernels import Range, range_shape
 
 from std.utils.coord import Coord
 from std.utils.numerics import get_accum_type
@@ -256,7 +256,7 @@ def range_shape_op[
     var start = start_ptr.load()
     var stop = stop_ptr.load()
     var step = step_ptr.load()
-    var shape = Range.shape[dtype](start, stop, step)
+    var shape = range_shape[dtype](start, stop, step)
     return shape[0]
 
 

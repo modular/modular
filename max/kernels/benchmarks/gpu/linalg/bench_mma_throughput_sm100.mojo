@@ -314,8 +314,8 @@ def mma_throughput_kernel[
 
     var b_smem = (a_smem + a_size).bitcast[Scalar[a_type]]()
 
-    var a_smem_tile = a_smem_tile_t(a_smem)
-    var b_smem_tile = b_smem_tile_t(b_smem)
+    var a_smem_tile = a_smem_tile_t(a_smem.as_unsafe_any_origin())
+    var b_smem_tile = b_smem_tile_t(b_smem.as_unsafe_any_origin())
 
     # Shared memory pointer for tensor memory address handshake + mbarriers.
     var ptr_tmem_addr = (b_smem + b_size).bitcast[UInt32]()

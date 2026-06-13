@@ -18,6 +18,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 
+from max.driver import accelerator_api
 from max.dtype import DType
 from max.graph import DeviceRef, Dim, DimLike, Shape, TensorType
 
@@ -265,12 +266,12 @@ class QuantConfig:
     can_use_fused_mlp: bool = False
     """Whether the quantization scales can be used with fused MLP operations."""
 
-    can_use_fused_swiglu_nvfp4: bool = False
-    """Whether to use the fused NVFP4 grouped matmul + SwiGLU + NVFP4 quant
+    can_use_fused_swiglu: bool = False
+    """Whether to use the fused grouped matmul + SwiGLU + NVFP4/MXFP4/MXFP8 quant
     SM100 kernel for the MoE gate/up projection. When ``True``, the MoE layer
     pre-permutes ``gate_up_proj`` and its scales on the N axis
     (``sigma(2i)=i, sigma(2i+1)=D+i``) and dispatches the internal
-    ``_grouped_matmul_swiglu_nvfp4`` kernel wrapper. Defaults to ``False``
+    ``grouped_matmul_blocked_swiglu`` kernel wrapper. Defaults to ``False``
     so the chained (matmul -> BF16 -> SwiGLU+quant) path is unchanged."""
 
     scales_pre_interleaved: bool = False
@@ -378,9 +379,13 @@ class QuantConfig:
     ) -> TensorType:
         """The :class:`~max.graph.TensorType` of the scales tensor after dynamic quantization."""
         if self.is_nvfp4:
-            return _nvfp4_scales_type(quantized_shape, device_ref)
+            return _nvmxf4f8_scales_type(
+                quantized_shape, device_ref, DType.float8_e4m3fn, 16
+            )
         elif self.is_mxfp4:
             return _mxfp4_scales_type(quantized_shape, device_ref)
+        elif self.is_mxfp8:
+            return _mxfp8_scales_type(quantized_shape, device_ref)
         elif (
             self.input_scale.block_size is not None
             and self.input_scale.block_size == (1, 128)
@@ -424,13 +429,17 @@ def _blockwise_fp8_scales_type(
     )
 
 
-def _nvfp4_scales_type(
-    quantized_shape: Shape, device_ref: DeviceRef
+def _nvmxf4f8_scales_type(
+    quantized_shape: Shape,
+    device_ref: DeviceRef,
+    scales_dtype: DType,
+    sf_vector_size: int,
 ) -> TensorType:
-    """Returns the TensorType of the NVFP4 scales tensor."""
-    # Nvidia NVFP4 format requires the scales tensor to be in a 128x4 tiled
-    # layout. The follow constant needs to be in sync with those defined in
-    # `max/kernels/src/linalg/fp4_utils.mojo`.
+    """Returns the TensorType of the NVFP4/MXFP4/MXFP8 scales tensor on NVIDIA
+    GPUs."""
+    # Nvidia NVFP4/MXFP4/MXFP8 format requires the scales tensor to be in a
+    # 128x4 tiled layout. The follow constant needs to be in sync with those
+    # defined in `max/kernels/src/linalg/fp4_utils.mojo`.
     #
     # References:
     # - https://docs.nvidia.com/cuda/cublas/#d-block-scaling-factors-layout
@@ -438,12 +447,10 @@ def _nvfp4_scales_type(
     SF_ATOM_M = [32, 4]
     SF_ATOM_K = 4
     SF_MN_GROUP_SIZE = SF_ATOM_M[0] * SF_ATOM_M[1]  # 128
-    NVFP4_SF_VECTOR_SIZE = 16
-
     scales_dim_0 = ceildiv(quantized_shape[0], SF_MN_GROUP_SIZE)
-    scales_dim_1 = ceildiv(quantized_shape[1], NVFP4_SF_VECTOR_SIZE * SF_ATOM_K)
+    scales_dim_1 = ceildiv(quantized_shape[1], sf_vector_size * SF_ATOM_K)
     return TensorType(
-        dtype=DType.float8_e4m3fn,
+        dtype=scales_dtype,
         shape=(
             scales_dim_0,
             scales_dim_1,
@@ -459,8 +466,29 @@ def _mxfp4_scales_type(
     quantized_shape: Shape, device_ref: DeviceRef
 ) -> TensorType:
     """Returns the TensorType of the MXFP4 scales tensor."""
-    return TensorType(
-        dtype=DType.float8_e8m0fnu,
-        shape=(quantized_shape[0], ceildiv(quantized_shape[1], 32)),
-        device=device_ref,
-    )
+    api_name = accelerator_api()
+    if api_name == "cuda":
+        return _nvmxf4f8_scales_type(
+            quantized_shape, device_ref, DType.float8_e8m0fnu, 32
+        )
+    elif api_name == "hip":
+        return TensorType(
+            dtype=DType.float8_e8m0fnu,
+            shape=(quantized_shape[0], ceildiv(quantized_shape[1], 32)),
+            device=device_ref,
+        )
+    else:
+        raise ValueError(f"Unsupported accelerator API: {api_name}")
+
+
+def _mxfp8_scales_type(
+    quantized_shape: Shape, device_ref: DeviceRef
+) -> TensorType:
+    """Returns the TensorType of the MXFP8 scales tensor."""
+    api_name = accelerator_api()
+    if api_name == "cuda":
+        return _nvmxf4f8_scales_type(
+            quantized_shape, device_ref, DType.float8_e8m0fnu, 32
+        )
+    else:
+        raise ValueError(f"Unsupported accelerator API: {api_name}")

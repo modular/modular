@@ -30,13 +30,14 @@ from max.support.human_readable_formatter import to_human_readable_bytes
 
 from .data_parallelism_utils import split_into_groups
 from .input_types import KVCacheInputs, KVCacheInputsPerDevice
+from .utils import AttentionDispatchResolver, AttnKey
 
 # Mirror of max.pipelines.speculative.config.SpeculativeMethod. Defined
 # inline rather than imported because max.pipelines.speculative depends
 # on max.nn (BUILD.bazel), so importing back would create a circular
 # bazel dependency. The two definitions are structurally identical
 # Literals, so mypy treats them as the same type at use sites.
-SpeculativeMethod = Literal["standalone", "eagle", "mtp", "dflash"]
+SpeculativeMethod = Literal["eagle", "mtp", "dflash"]
 
 logger = logging.getLogger("max.pipelines")
 
@@ -276,6 +277,25 @@ class KVCacheQuantizationConfig:
     """Block-size used for KVCache quantization along head-dimension (e.g. 128)."""
 
 
+@dataclass(frozen=True)
+class BatchCharacteristics:
+    """Upper-bound batch shape used to prepare decode attention metadata.
+
+    Captures the ``(batch_size, max_prompt_length, max_cache_valid_length)`` a
+    decode forward should prepare its attention dispatch metadata *for*, which
+    may exceed the batch's real per-request values.
+    :meth:`PagedKVCacheManager.runtime_inputs` uses it to resolve the dispatch
+    key once: e.g. for graph-capture replay, ``max_cache_valid_length`` is
+    aligned up to a cache length recorded during capture and every data-parallel
+    replica must run the identical captured graph. The batch's real values must
+    not exceed these.
+    """
+
+    batch_size: int
+    max_prompt_length: int
+    max_cache_valid_length: int
+
+
 @runtime_checkable
 class KVCacheParamInterface(Protocol):
     """Interface for KV cache parameters."""
@@ -292,7 +312,7 @@ class KVCacheParamInterface(Protocol):
     def num_draft_tokens_per_step(self) -> int:
         """Number of draft tokens written per draft forward.
 
-        One for autoregressive drafts (``eagle``, ``mtp``, ``standalone``);
+        One for autoregressive drafts (``eagle``, ``mtp``);
         equal to ``num_draft_tokens`` for block drafts (``dflash``).
         """
         if self.speculative_method == "dflash":
@@ -484,6 +504,67 @@ class KVCacheParams(KVCacheParamInterface):
                 )
             if self.kvcache_quant_config is None:
                 raise ValueError("KVCache quantization config required.")
+
+        # Owns decode attention dispatch resolution (attn-key + graph-capture
+        # probe lengths). Built lazily (see :meth:`_get_dispatch_resolver`) so
+        # constructing params for a GPU device on a CPU-only host (e.g. unit
+        # tests) does not require a device context.
+        self._dispatch_resolver: AttentionDispatchResolver | None = None
+
+    def _get_dispatch_resolver(self) -> AttentionDispatchResolver:
+        """Returns the attention dispatch resolver, building it on first use."""
+        if self._dispatch_resolver is None:
+            self._dispatch_resolver = AttentionDispatchResolver(
+                devices=self.devices,
+                is_mla=self.is_mla,
+                n_kv_heads_per_device=self.n_kv_heads_per_device,
+                num_q_heads_per_device=self.num_q_heads_per_device,
+                is_fp8_kv=self.is_fp8_kv_dtype,
+            )
+        return self._dispatch_resolver
+
+    def resolve_attn_key(
+        self,
+        batch_size: int,
+        max_prompt_length: int,
+        max_cache_valid_length: int,
+    ) -> AttnKey:
+        """Resolves the decode attention dispatch key for the given shape.
+
+        Args:
+            batch_size: Number of requests in the decode batch.
+            max_prompt_length: Per-step query width (``1`` for plain decode,
+                ``1 + num_spec_tokens`` for speculative verify).
+            max_cache_valid_length: Maximum valid cache length in the batch.
+
+        Returns:
+            The resolved :class:`~max.nn.kv_cache.AttnKey` (an
+            :class:`~max.nn.kv_cache.MHAAttnKey` or
+            :class:`~max.nn.kv_cache.MLAAttnKey`).
+        """
+        return self._get_dispatch_resolver().resolve_attn_key(
+            batch_size, max_prompt_length, max_cache_valid_length
+        )
+
+    def graph_capture_probe_cache_lengths(
+        self, max_cache_length: int, q_max_seq_len: int = 1
+    ) -> list[int]:
+        """Returns the cache lengths to probe during decode graph capture.
+
+        Args:
+            max_cache_length: Upper bound on the cache length to probe.
+            q_max_seq_len: Per-step query width (affects MLA spec-decode
+                probing).
+
+        Returns:
+            The cache lengths to probe, one per distinct dispatch mode to
+            capture.
+        """
+        cache_lengths = self._get_dispatch_resolver().probe_lengths(
+            max_cache_length, q_max_seq_len
+        )
+        min_cache_length = 1 + 2 * self.num_draft_tokens
+        return [cl for cl in cache_lengths if cl >= min_cache_length]
 
     @property
     def is_fp8_kv_dtype(self) -> bool:

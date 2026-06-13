@@ -23,7 +23,7 @@ def test_constant_memory_compile(ctx: DeviceContext) raises:
     def _alloc[
         n: Int
     ]() -> UnsafePointer[
-        Float32, MutAnyOrigin, address_space=AddressSpace.CONSTANT
+        Float32, MutUntrackedOrigin, address_space=AddressSpace.CONSTANT
     ]:
         return stack_allocation[
             n, Float32, address_space=AddressSpace.CONSTANT
@@ -42,7 +42,7 @@ def test_constant_mem(ctx: DeviceContext) raises:
     def _fill_impl[
         n: Int
     ]() -> UnsafePointer[
-        Float32, MutAnyOrigin, address_space=AddressSpace.CONSTANT
+        Float32, MutUntrackedOrigin, address_space=AddressSpace.CONSTANT
     ]:
         var ptr = stack_allocation[
             n, Float32, address_space=AddressSpace.CONSTANT
@@ -75,7 +75,7 @@ def test_constant_mem_via_func(ctx: DeviceContext) raises:
     def _fill_impl[
         n: Int
     ]() -> UnsafePointer[
-        Float32, MutAnyOrigin, address_space=AddressSpace.CONSTANT
+        Float32, MutUntrackedOrigin, address_space=AddressSpace.CONSTANT
     ]:
         var ptr = stack_allocation[
             n, Float32, address_space=AddressSpace.CONSTANT
@@ -87,7 +87,7 @@ def test_constant_mem_via_func(ctx: DeviceContext) raises:
 
     def static_constant_kernel[
         get_constant_memory: def() thin -> UnsafePointer[
-            Float32, MutAnyOrigin, address_space=AddressSpace.CONSTANT
+            Float32, MutUntrackedOrigin, address_space=AddressSpace.CONSTANT
         ]
     ](data: UnsafePointer[Float32, MutAnyOrigin]):
         comptime val = get_constant_memory()

@@ -65,7 +65,7 @@ export default function InstallModular({ folder = "example-project", extraLibrar
               <li>
                 Install <code>modular</code> ({tooltipStable}){extraLibsDescription}:
                 <CodeBlock language="sh">
-                  {`pixi add "modular==26.3"${extraLibsString}`}
+                  {`pixi add "modular==26.4"${extraLibsString}`}
                 </CodeBlock>
               </li>
             </ConditionalVersionDocs>
@@ -119,8 +119,7 @@ export default function InstallModular({ folder = "example-project", extraLibrar
                 Install <code>modular</code> ({tooltipStable}){extraLibsDescription}:
                 <CodeBlock language="sh">
                   {`uv add modular${extraLibsString} \\
-    --prerelease allow \\
-    --extra-index-url https://modular.gateway.scarf.sh/simple/`}
+    --prerelease allow`}
                 </CodeBlock>
               </li>
             </ConditionalVersionDocs>

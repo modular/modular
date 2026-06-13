@@ -800,7 +800,7 @@ struct _TakeWhileIterator[
             self._exhausted = True
             # Discard the element that failed the predicate
             _ = rebind_var[
-                downcast[Self.Element, Movable & ImplicitlyDestructible]
+                downcast[Self.Element, Movable & ImplicitlyDeletable]
             ](elem^)
             raise StopIteration()
         return elem^
@@ -817,7 +817,7 @@ def take_while[
     predicate=predicate,
 ] where conforms_to(
     IterableType.IteratorType[origin].Element,
-    ImplicitlyDestructible,
+    ImplicitlyDeletable,
 ):
     """Creates an iterator that yields elements while predicate returns True.
 
@@ -869,7 +869,7 @@ def take_while[
     predicate=predicate,
 ] where conforms_to(
     IterableType.IteratorOwnedType.Element,
-    ImplicitlyDestructible,
+    ImplicitlyDeletable,
 ):
     """Creates an iterator that yields elements while predicate returns True,
     consuming the iterable.
@@ -960,7 +960,7 @@ struct _DropWhileIterator[
                 if Self.predicate(elem):
                     # Discard the element that matched the predicate
                     _ = rebind_var[
-                        downcast[Self.Element, Movable & ImplicitlyDestructible]
+                        downcast[Self.Element, Movable & ImplicitlyDeletable]
                     ](elem^)
                     continue
                 self._dropping = False
@@ -979,7 +979,7 @@ def drop_while[
     predicate=predicate,
 ] where conforms_to(
     IterableType.IteratorType[origin].Element,
-    ImplicitlyDestructible,
+    ImplicitlyDeletable,
 ):
     """Creates an iterator that drops elements while predicate returns True.
 
@@ -1032,7 +1032,7 @@ def drop_while[
     predicate=predicate,
 ] where conforms_to(
     IterableType.IteratorOwnedType.Element,
-    ImplicitlyDestructible,
+    ImplicitlyDeletable,
 ):
     """Creates an iterator that drops elements while predicate returns True,
     consuming the iterable.
@@ -1062,7 +1062,7 @@ def drop_while[
 
 
 @fieldwise_init
-struct _RepeatIterator[ElementType: Copyable & ImplicitlyDestructible](
+struct _RepeatIterator[ElementType: Copyable & ImplicitlyDeletable](
     Copyable, Iterable, IterableOwned, Iterator
 ):
     """Iterator that repeats an element a specified number of times.
@@ -1098,7 +1098,7 @@ struct _RepeatIterator[ElementType: Copyable & ImplicitlyDestructible](
 
 @always_inline
 def repeat[
-    ElementType: Copyable & ImplicitlyDestructible
+    ElementType: Copyable & ImplicitlyDeletable
 ](element: ElementType, *, times: Int) -> _RepeatIterator[ElementType]:
     """Constructs an iterator that repeats the given element a specified number of times.
 
@@ -1243,7 +1243,7 @@ def take[
     ```
     """
     assert count >= 0, "The `count` argument must be non-negative"
-    # Unlike `drop` and `take_while`, `take` has no `ImplicitlyDestructible`
+    # Unlike `drop` and `take_while`, `take` has no `ImplicitlyDeletable`
     # constraint on the element type: it never discards an element, it just
     # stops yielding once `count` is reached.
     # FIXME(MOCO-3238): This rebind shouldn't be needed, something isn't getting
@@ -1341,7 +1341,7 @@ struct _DropIterator[InnerIteratorType: Iterator](
             # state.
             var elem = next(self._inner)
             _ = rebind_var[
-                downcast[Self.Element, Movable & ImplicitlyDestructible]
+                downcast[Self.Element, Movable & ImplicitlyDeletable]
             ](elem^)
             self._to_drop -= 1
         return next(self._inner)
@@ -1364,7 +1364,7 @@ def drop[
     IterableType.IteratorType[origin]
 ] where conforms_to(
     IterableType.IteratorType[origin].Element,
-    ImplicitlyDestructible,
+    ImplicitlyDeletable,
 ):
     """Creates an iterator that drops the first `count` elements.
 
@@ -1408,7 +1408,7 @@ def drop[
     IterableType.IteratorOwnedType
 ] where conforms_to(
     IterableType.IteratorOwnedType.Element,
-    ImplicitlyDestructible,
+    ImplicitlyDeletable,
 ):
     """Creates an iterator that drops the first `count` elements, consuming
     the iterable.

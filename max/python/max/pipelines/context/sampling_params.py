@@ -367,8 +367,19 @@ class SamplingParams:
         if self.min_p < 0.0 or self.min_p > 1.0:
             raise ValueError("min_p must be in [0.0, 1.0]")
 
-        if self.repetition_penalty <= 0:
-            raise ValueError("repetition_penalty must be greater than 0.")
+        # repetition_penalty divides the logits in the sampling kernel, so a
+        # value <= 0 or non-finite yields Inf/NaN logits that wedge the
+        # request like a bad temperature. ``NaN <= 0`` / ``inf <= 0`` are both
+        # False, so the bound check alone lets non-finite values through --
+        # gate on isfinite first.
+        if (
+            not math.isfinite(self.repetition_penalty)
+            or self.repetition_penalty <= 0
+        ):
+            raise ValueError(
+                "repetition_penalty must be a finite value greater than 0, "
+                f"was {self.repetition_penalty}."
+            )
 
         if self.top_k == 0:
             self.top_k = -1
@@ -400,6 +411,35 @@ class SamplingParams:
         if self.temperature == 0:
             _logger.debug("Temperature is 0, overriding top_k to 1.")
             self.top_k = 1
+
+        # Penalties are added to / subtracted from logits before sampling; a
+        # non-finite value yields NaN/Inf logits that wedge the request the
+        # same way a bad temperature does. Pin to OpenAI's documented range.
+        for _penalty_name, _penalty in (
+            ("frequency_penalty", self.frequency_penalty),
+            ("presence_penalty", self.presence_penalty),
+        ):
+            if not math.isfinite(_penalty) or not -2.0 <= _penalty <= 2.0:
+                raise ValueError(
+                    f"{_penalty_name} must be in [-2.0, 2.0], was {_penalty}."
+                )
+
+        # ``bool`` is an ``int`` subclass in Python, so a JSON ``true`` for
+        # max_tokens/min_tokens would silently coerce to 1 and truncate the
+        # response; reject it explicitly. Negative counts underflow the step
+        # budget. (``max_new_tokens=None`` means "use the model's limit".)
+        if isinstance(self.max_new_tokens, bool) or (
+            self.max_new_tokens is not None and self.max_new_tokens < 0
+        ):
+            raise ValueError(
+                "max_new_tokens must be a non-negative integer, was "
+                f"{self.max_new_tokens!r}."
+            )
+        if isinstance(self.min_new_tokens, bool) or self.min_new_tokens < 0:
+            raise ValueError(
+                "min_new_tokens must be a non-negative integer, was "
+                f"{self.min_new_tokens!r}."
+            )
 
     @property
     def needs_penalties(self) -> bool:

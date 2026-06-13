@@ -201,14 +201,14 @@ struct UnsafeMaybeUninit[T: AnyType](
 
     @always_inline
     def unsafe_assume_init_destroy[
-        D: ImplicitlyDestructible
+        D: ImplicitlyDeletable
     ](mut self: UnsafeMaybeUninit[D]):
         """Runs the destructor of the internal value.
 
         Calling this method assumes that the memory is initialized.
 
         Parameters:
-            D: An element type that is implicitly destructible.
+            D: An element type that is implicitly deletable.
 
         """
         self.unsafe_ptr().destroy_pointee()

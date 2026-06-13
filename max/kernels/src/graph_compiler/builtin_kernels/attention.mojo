@@ -633,20 +633,21 @@ struct WithMaskFlashAttentionSplitKVCPU:
             ctx=Optional[DeviceContext](ctx),
         )
 
-    @staticmethod
-    def shape[
-        dtype: DType,
-        rank: Int,
-    ](
-        q: InputTensor[dtype=dtype, rank=rank, ...],
-        k: InputTensor[dtype=dtype, rank=rank, ...],
-        v: InputTensor[dtype=dtype, rank=rank, ...],
-        k_cache: InputTensor[dtype=dtype, rank=rank + 1, ...],
-        v_cache: InputTensor[dtype=dtype, rank=rank + 1, ...],
-        mask: InputTensor[dtype=dtype, ...],
-        scale: Scalar[dtype=DType.float32],
-    ) -> IndexList[q.rank]:
-        return q.shape()
+
+@compiler.register_shape_function("with_mask_flash_attention_split_kv_cpu")
+def with_mask_flash_attention_split_kv_cpu_shape[
+    dtype: DType,
+    rank: Int,
+](
+    q: InputTensor[dtype=dtype, rank=rank, ...],
+    k: InputTensor[dtype=dtype, rank=rank, ...],
+    v: InputTensor[dtype=dtype, rank=rank, ...],
+    k_cache: InputTensor[dtype=dtype, rank=rank + 1, ...],
+    v_cache: InputTensor[dtype=dtype, rank=rank + 1, ...],
+    mask: InputTensor[dtype=dtype, ...],
+    scale: Scalar[dtype=DType.float32],
+) -> IndexList[q.rank]:
+    return q.shape()
 
 
 @compiler.register("mo.composite.masked_flash_attention_cpu")

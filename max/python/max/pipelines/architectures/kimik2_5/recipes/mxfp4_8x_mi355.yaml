@@ -17,10 +17,10 @@ model:
   max_length: 262144
   trust_remote_code: true
   kv_cache:
-    device_memory_utilization: 0.7
+    device_memory_utilization: 0.9
     enable_prefix_caching: true
     kv_cache_format: float8_e4m3fn
 
 runtime:
   ep_size: 8
-  max_batch_input_tokens: 4096
+  max_batch_input_tokens: 8192

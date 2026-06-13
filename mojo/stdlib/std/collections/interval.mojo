@@ -50,7 +50,7 @@ query interval data, particularly for finding overlaps.
 
 
 from std.builtin.string_literal import StaticString
-from std.memory.alloc import alloc, free, Layout
+from std.memory.alloc import alloc, dealloc, ThinAllocation, Layout
 
 import std.format._utils as fmt
 
@@ -58,7 +58,7 @@ from .deque import Deque
 
 
 trait IntervalElement(
-    Comparable, Copyable, ImplicitlyDestructible, Intable, Writable
+    Comparable, Copyable, ImplicitlyDeletable, Intable, Writable
 ):
     """The trait denotes a trait composition of the `Copyable`,
     `Writable`, `Intable`, and `Comparable` traits. Which is also subtractable.
@@ -288,7 +288,7 @@ struct Interval[T: IntervalElement](
 
 struct _IntervalNode[
     T: IntervalElement,
-    U: Copyable & Comparable & ImplicitlyDestructible & Writable,
+    U: Copyable & Comparable & ImplicitlyDeletable & Writable,
 ](Copyable, Writable):
     """A node containing an interval and associated data.
 
@@ -455,7 +455,7 @@ struct _IntervalNode[
 
 struct IntervalTree[
     T: IntervalElement,
-    U: Copyable & Comparable & ImplicitlyDestructible & Writable,
+    U: Copyable & Comparable & ImplicitlyDeletable & Writable,
 ](Defaultable, Writable):
     """An interval tree data structure for efficient range queries.
 
@@ -495,7 +495,11 @@ struct IntervalTree[
         if node[].right():
             Self._del_helper(node[].right().value())
         node.destroy_pointee()
-        free(node, {count = 1})
+        dealloc(
+            ThinAllocation(unsafe_assume_ownership=node).unsafe_with_layout(
+                {count = 1}
+            )
+        )
 
     def _left_rotate(mut self, rotation_node: Self._IntervalNodePointer):
         """Performs a left rotation around node x in the red-black tree.
@@ -652,7 +656,9 @@ struct IntervalTree[
         """
         # Allocate memory for a new node and initialize it with the interval
         # and data
-        var new_node = alloc(Layout[_IntervalNode[Self.T, Self.U]].single())
+        var new_node = alloc(
+            Layout[_IntervalNode[Self.T, Self.U]].single()
+        ).unsafe_leak()
         new_node.init_pointee_move(_IntervalNode(interval, data))
         self._len += 1
 

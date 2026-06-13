@@ -39,7 +39,7 @@ def main() raises:
     comptime TwoOfAKind[dt: DType] = SIMD[dt, 2]
     twoFloats = TwoOfAKind[DType.float32](1.0, 2.0)
 
-    comptime StringKeyDict[ValueType: Copyable & ImplicitlyDestructible] = Dict[
+    comptime StringKeyDict[ValueType: Copyable & ImplicitlyDeletable] = Dict[
         String, ValueType
     ]
     var b: StringKeyDict[UInt8] = {"answer": 42}

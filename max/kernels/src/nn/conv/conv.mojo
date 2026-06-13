@@ -566,7 +566,7 @@ struct ConvDirectNHWC[
             # TODO: Need to have a more robust way to compute task_id_c
             var task_id_c = (task_id // num_partitions[2]) % num_partitions[1]
             var task_output = LayoutTensor[
-                Self.output_type, Self.output_layout, AnyOrigin[mut=True]
+                Self.output_type, Self.output_layout
             ](
                 output_scratch.ptr + task_id_c * output_size,
                 RuntimeLayout[Self.output_layout].row_major(

@@ -322,7 +322,7 @@ comptime MAX = SIZE * 2
 used to create type aliases and trait composition aliases:
 
 ```mojo
-comptime Permissive = ImplicitlyCopyable & ImplicitlyDestructible
+comptime Permissive = ImplicitlyCopyable & ImplicitlyDeletable
 
 trait SimpleTrait(Writable):  # `SimpleTrait` refines `Writable`
     comptime Element = Permissive  # Associated type with a comptime alias

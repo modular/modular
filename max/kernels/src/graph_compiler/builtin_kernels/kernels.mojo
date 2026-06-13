@@ -235,15 +235,16 @@ struct Range:
             _trace_name=_trace_name,
         ](func, output, ctx)
 
-    @staticmethod
-    def shape[
-        dtype: DType
-    ](
-        start: Scalar[dtype],
-        stop: Scalar[dtype],
-        step: Scalar[dtype],
-    ) raises -> IndexList[1]:
-        return arange_shape(start, stop, step)
+
+@compiler.register_shape_function("mo.range")
+def range_shape[
+    dtype: DType
+](
+    start: Scalar[dtype],
+    stop: Scalar[dtype],
+    step: Scalar[dtype],
+) raises -> IndexList[1]:
+    return arange_shape(start, stop, step)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -412,26 +413,27 @@ struct MaxPool:
             ctx,
         )
 
-    @staticmethod
-    def shape[
-        dtype: DType,
-        int_type: DType,
-    ](
-        input: InputTensor[dtype=dtype, rank=4, ...],
-        filter: InputTensor[dtype=int_type, rank=1, ...],
-        strides: InputTensor[dtype=int_type, rank=1, ...],
-        dilations: InputTensor[dtype=int_type, rank=1, ...],
-        paddings: InputTensor[dtype=int_type, rank=1, ...],
-    ) raises -> IndexList[input.rank]:
-        return rebind[IndexList[input.rank]](
-            pool_shape(
-                input.to_tile_tensor[DType.int64](),
-                filter.to_tile_tensor[DType.int64](),
-                strides.to_tile_tensor[DType.int64](),
-                dilations.to_tile_tensor[DType.int64](),
-                paddings.to_tile_tensor[DType.int64](),
-            )
+
+@compiler.register_shape_function("mo.max_pool")
+def max_pool_shape[
+    dtype: DType,
+    int_type: DType,
+](
+    input: InputTensor[dtype=dtype, rank=4, ...],
+    filter: InputTensor[dtype=int_type, rank=1, ...],
+    strides: InputTensor[dtype=int_type, rank=1, ...],
+    dilations: InputTensor[dtype=int_type, rank=1, ...],
+    paddings: InputTensor[dtype=int_type, rank=1, ...],
+) raises -> IndexList[input.rank]:
+    return rebind[IndexList[input.rank]](
+        pool_shape(
+            input.to_tile_tensor[DType.int64](),
+            filter.to_tile_tensor[DType.int64](),
+            strides.to_tile_tensor[DType.int64](),
+            dilations.to_tile_tensor[DType.int64](),
+            paddings.to_tile_tensor[DType.int64](),
         )
+    )
 
 
 @compiler.register("mo.max_pool_ceil_mode_true")
@@ -461,26 +463,27 @@ struct MaxPoolCeilModeTrue:
             ctx,
         )
 
-    @staticmethod
-    def shape[
-        dtype: DType,
-        int_type: DType,
-    ](
-        input: InputTensor[dtype=dtype, rank=4, ...],
-        filter: InputTensor[dtype=int_type, rank=1, ...],
-        strides: InputTensor[dtype=int_type, rank=1, ...],
-        dilations: InputTensor[dtype=int_type, rank=1, ...],
-        paddings: InputTensor[dtype=int_type, rank=1, ...],
-    ) raises -> IndexList[input.rank]:
-        return rebind[IndexList[input.rank]](
-            pool_shape_ceil(
-                input.to_tile_tensor[DType.int64](),
-                filter.to_tile_tensor[DType.int64](),
-                strides.to_tile_tensor[DType.int64](),
-                dilations.to_tile_tensor[DType.int64](),
-                paddings.to_tile_tensor[DType.int64](),
-            )
+
+@compiler.register_shape_function("mo.max_pool_ceil_mode_true")
+def max_pool_ceil_mode_true_shape[
+    dtype: DType,
+    int_type: DType,
+](
+    input: InputTensor[dtype=dtype, rank=4, ...],
+    filter: InputTensor[dtype=int_type, rank=1, ...],
+    strides: InputTensor[dtype=int_type, rank=1, ...],
+    dilations: InputTensor[dtype=int_type, rank=1, ...],
+    paddings: InputTensor[dtype=int_type, rank=1, ...],
+) raises -> IndexList[input.rank]:
+    return rebind[IndexList[input.rank]](
+        pool_shape_ceil(
+            input.to_tile_tensor[DType.int64](),
+            filter.to_tile_tensor[DType.int64](),
+            strides.to_tile_tensor[DType.int64](),
+            dilations.to_tile_tensor[DType.int64](),
+            paddings.to_tile_tensor[DType.int64](),
         )
+    )
 
 
 # ===-----------------------------------------------------------------------===#
@@ -514,27 +517,28 @@ struct NonMaximumSuppression:
             score_threshold_float,
         )
 
-    @staticmethod
-    def shape[
-        dtype: DType
-    ](
-        boxes: InputTensor[dtype=dtype, rank=3, ...],
-        scores: InputTensor[dtype=dtype, rank=3, ...],
-        max_output_boxes_per_class: Int64,
-        iou_threshold: Float32,
-        score_threshold: Float32,
-    ) -> IndexList[2]:
-        var max_output_boxes_int = Int(max_output_boxes_per_class)
-        var iou_threshold_float = iou_threshold
-        var score_threshold_float = score_threshold
 
-        return non_max_suppression_shape_func(
-            boxes.to_tile_tensor[DType.int64](),
-            scores.to_tile_tensor[DType.int64](),
-            max_output_boxes_int,
-            iou_threshold_float,
-            score_threshold_float,
-        )
+@compiler.register_shape_function("mo.non_maximum_suppression")
+def non_maximum_suppression_shape[
+    dtype: DType
+](
+    boxes: InputTensor[dtype=dtype, rank=3, ...],
+    scores: InputTensor[dtype=dtype, rank=3, ...],
+    max_output_boxes_per_class: Int64,
+    iou_threshold: Float32,
+    score_threshold: Float32,
+) -> IndexList[2]:
+    var max_output_boxes_int = Int(max_output_boxes_per_class)
+    var iou_threshold_float = iou_threshold
+    var score_threshold_float = score_threshold
+
+    return non_max_suppression_shape_func(
+        boxes.to_tile_tensor[DType.int64](),
+        scores.to_tile_tensor[DType.int64](),
+        max_output_boxes_int,
+        iou_threshold_float,
+        score_threshold_float,
+    )
 
 
 # ===-----------------------------------------------------------------------===#
@@ -568,25 +572,26 @@ struct ROIAlign:
             sampling_ratio,
         )
 
-    @staticmethod
-    def shape(
-        input: InputTensor[rank=4, ...],
-        rois: InputTensor[rank=2, ...],
-        output_height: Int64,
-        output_width: Int64,
-        spatial_scale: Scalar,
-        sampling_ratio: Scalar,
-    ) -> IndexList[4]:
-        var shape = IndexList[4]()
-        # input shape is [N, H, W, C]
-        # rois shape is [M, 5]
-        # output shape is [M, output_height, output_width, C]
-        shape[0] = rois.dim_size[0]()
-        shape[1] = Int(output_height)
-        shape[2] = Int(output_width)
-        shape[3] = input.dim_size[3]()
 
-        return shape
+@compiler.register_shape_function("mo.roi_align")
+def roi_align_shape(
+    input: InputTensor[rank=4, ...],
+    rois: InputTensor[rank=2, ...],
+    output_height: Int64,
+    output_width: Int64,
+    spatial_scale: Scalar,
+    sampling_ratio: Scalar,
+) -> IndexList[4]:
+    var shape = IndexList[4]()
+    # input shape is [N, H, W, C]
+    # rois shape is [M, 5]
+    # output shape is [M, output_height, output_width, C]
+    shape[0] = rois.dim_size[0]()
+    shape[1] = Int(output_height)
+    shape[2] = Int(output_width)
+    shape[3] = input.dim_size[3]()
+
+    return shape
 
 
 # ===-----------------------------------------------------------------------===#
@@ -616,21 +621,20 @@ struct RepeatInterleave:
             ctx,
         )
 
-    @staticmethod
-    def shape(
-        input: InputTensor[...], repeats: InputTensor[rank=1, ...], axis: Scalar
-    ) raises -> IndexList[input.rank]:
-        comptime assert (
-            axis.dtype.is_integral()
-        ), "axis value must be integer type"
 
-        var interleave_shape = repeat_interleave_shape(
-            input.to_tile_tensor[DType.int64](),
-            repeats.to_tile_tensor[DType.int64](),
-            Int(normalize_neg_index(axis, input.rank)),
-        )
+@compiler.register_shape_function("repeat_interleave")
+def repeat_interleave_kernel_shape(
+    input: InputTensor[...], repeats: InputTensor[rank=1, ...], axis: Scalar
+) raises -> IndexList[input.rank]:
+    comptime assert axis.dtype.is_integral(), "axis value must be integer type"
 
-        return rebind[IndexList[input.rank]](interleave_shape)
+    var interleave_shape = repeat_interleave_shape(
+        input.to_tile_tensor[DType.int64](),
+        repeats.to_tile_tensor[DType.int64](),
+        Int(normalize_neg_index(axis, input.rank)),
+    )
+
+    return rebind[IndexList[input.rank]](interleave_shape)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -671,20 +675,21 @@ struct RandomNormal:
             ctx,
         )
 
-    @staticmethod
-    def shape[
-        output_rank: Int
-    ](
-        shape: InputTensor[rank=1, ...],
-        mean: Scalar,
-        variance: Scalar,
-        seed_value: InputTensor[dtype=DType.uint64, rank=1, ...],
-    ) -> IndexList[output_rank]:
-        var unrolled_shape = IndexList[output_rank]()
-        for i in range(output_rank):
-            unrolled_shape[i] = Int(shape[i])
 
-        return unrolled_shape
+@compiler.register_shape_function("mo.random.normal")
+def random_normal_shape[
+    output_rank: Int
+](
+    shape: InputTensor[rank=1, ...],
+    mean: Scalar,
+    variance: Scalar,
+    seed_value: InputTensor[dtype=DType.uint64, rank=1, ...],
+) -> IndexList[output_rank]:
+    var unrolled_shape = IndexList[output_rank]()
+    for i in range(output_rank):
+        unrolled_shape[i] = Int(shape[i])
+
+    return unrolled_shape
 
 
 @compiler.register("mo.random.uniform")
@@ -720,22 +725,23 @@ struct RandomUniform:
             ctx,
         )
 
-    @staticmethod
-    def shape[
-        output_rank: Int
-    ](
-        shape: InputTensor[rank=1, ...],
-        mean: Scalar,
-        variance: Scalar,
-        seed_value: InputTensor[dtype=DType.uint64, rank=1, ...],
-    ) -> IndexList[output_rank]:
-        assert shape.dim_size[0]() == output_rank
 
-        var unrolled_shape = IndexList[output_rank]()
-        for i in range(output_rank):
-            unrolled_shape[i] = Int(shape[i])
+@compiler.register_shape_function("mo.random.uniform")
+def random_uniform_shape[
+    output_rank: Int
+](
+    shape: InputTensor[rank=1, ...],
+    mean: Scalar,
+    variance: Scalar,
+    seed_value: InputTensor[dtype=DType.uint64, rank=1, ...],
+) -> IndexList[output_rank]:
+    assert shape.dim_size[0]() == output_rank
 
-        return unrolled_shape
+    var unrolled_shape = IndexList[output_rank]()
+    for i in range(output_rank):
+        unrolled_shape[i] = Int(shape[i])
+
+    return unrolled_shape
 
 
 # ===-----------------------------------------------------------------------===#
@@ -878,30 +884,31 @@ struct Fold:
             ctx,
         )
 
-    @staticmethod
-    def shape[
-        dtype: DType,
-        stride_h: Int,
-        stride_w: Int,
-        dilation_h: Int,
-        dilation_w: Int,
-        padding_h: Int,
-        padding_w: Int,
-    ](
-        input: InputTensor[dtype=dtype, rank=3, ...],
-        output_size: InputTensor[...],
-        kernel_size: InputTensor[...],
-    ) raises -> IndexList[4]:
-        comptime assert (
-            kernel_size.dtype.is_integral() and output_size.dtype.is_integral()
-        ), "kernel_size and output_size must have integral type"
-        var output_size_tuple = Index(output_size._ptr[0], output_size._ptr[1])
-        var kernel_size_tuple = Index(kernel_size._ptr[0], kernel_size._ptr[1])
-        return fold_shape(
-            input.to_tile_tensor[DType.int64](),
-            output_size_tuple,
-            kernel_size_tuple,
-        )
+
+@compiler.register_shape_function("fold")
+def fold_kernel_shape[
+    dtype: DType,
+    stride_h: Int,
+    stride_w: Int,
+    dilation_h: Int,
+    dilation_w: Int,
+    padding_h: Int,
+    padding_w: Int,
+](
+    input: InputTensor[dtype=dtype, rank=3, ...],
+    output_size: InputTensor[...],
+    kernel_size: InputTensor[...],
+) raises -> IndexList[4]:
+    comptime assert (
+        kernel_size.dtype.is_integral() and output_size.dtype.is_integral()
+    ), "kernel_size and output_size must have integral type"
+    var output_size_tuple = Index(output_size._ptr[0], output_size._ptr[1])
+    var kernel_size_tuple = Index(kernel_size._ptr[0], kernel_size._ptr[1])
+    return fold_shape(
+        input.to_tile_tensor[DType.int64](),
+        output_size_tuple,
+        kernel_size_tuple,
+    )
 
 
 # ===-----------------------------------------------------------------------===#
@@ -1695,19 +1702,19 @@ struct PackConvTransposeFilterShape:
     ](filter_buf: InputTensor[dtype=filter_type, rank=rank, ...]) raises:
         raise Error("Only meant to be used for shape function!")
 
-    @always_inline
-    @staticmethod
-    def shape[
-        rank: Int,
-        filter_type: DType,
-    ](filter_buf: InputTensor[dtype=filter_type, rank=rank, ...]) -> IndexList[
-        rank + 1
-    ]:
-        return rebind[IndexList[rank + 1]](
-            pack_filter_shape_conv_transpose(
-                filter_buf.to_tile_tensor[DType.int64](), 1
-            )
+
+@compiler.register_shape_function("pack_conv_transpose_filter_shape")
+def pack_conv_transpose_filter_shape_shape[
+    rank: Int,
+    filter_type: DType,
+](filter_buf: InputTensor[dtype=filter_type, rank=rank, ...]) -> IndexList[
+    rank + 1
+]:
+    return rebind[IndexList[rank + 1]](
+        pack_filter_shape_conv_transpose(
+            filter_buf.to_tile_tensor[DType.int64](), 1
         )
+    )
 
 
 # Wrapper that take `num_groups` as a parameter.
@@ -2335,19 +2342,6 @@ struct SpatialMerge:
 struct TPoolPatchMerger:
     @always_inline
     @staticmethod
-    def shape(
-        input: InputTensor[rank=2, ...],
-        _grid_thws: InputTensor[dtype=DType.int64, rank=2, ...],
-        _kH: Int32,
-        _kW: Int32,
-        _max_h: Int32,
-        _max_w: Int32,
-        total_output_patches: Int32,
-    ) -> IndexList[2]:
-        return IndexList[2](Int(total_output_patches), Int(input.dim_size(1)))
-
-    @always_inline
-    @staticmethod
     def execute[
         dtype: DType,
         //,
@@ -2392,6 +2386,19 @@ struct TPoolPatchMerger:
             Int(max_w),
             cuda_ctx,
         )
+
+
+@compiler.register_shape_function("tpool_patch_merger")
+def tpool_patch_merger_shape(
+    input: InputTensor[rank=2, ...],
+    _grid_thws: InputTensor[dtype=DType.int64, rank=2, ...],
+    _kH: Int32,
+    _kW: Int32,
+    _max_h: Int32,
+    _max_w: Int32,
+    total_output_patches: Int32,
+) -> IndexList[2]:
+    return IndexList[2](Int(total_output_patches), Int(input.dim_size(1)))
 
 
 # ===-----------------------------------------------------------------------===#
@@ -2556,19 +2563,20 @@ struct GatedDeltaConv1dFwd:
                 + " branch in kernels to support other sizes."
             )
 
-    @staticmethod
-    def shape[
-        work_dtype: DType,
-        state_dtype: DType,
-    ](
-        qkv_input_ragged: InputTensor[dtype=work_dtype, rank=2, ...],
-        conv_weight: InputTensor[dtype=work_dtype, rank=2, ...],
-        conv_state: InputTensor[dtype=state_dtype, rank=3, ...],
-        slot_idx: InputTensor[dtype=DType.uint32, rank=1, ...],
-        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
-    ) -> IndexList[2]:
-        # conv_output_ragged has same shape as qkv_input_ragged
-        return qkv_input_ragged.shape()
+
+@compiler.register_shape_function("gated_delta_conv1d_fwd")
+def gated_delta_conv1d_fwd_shape[
+    work_dtype: DType,
+    state_dtype: DType,
+](
+    qkv_input_ragged: InputTensor[dtype=work_dtype, rank=2, ...],
+    conv_weight: InputTensor[dtype=work_dtype, rank=2, ...],
+    conv_state: InputTensor[dtype=state_dtype, rank=3, ...],
+    slot_idx: InputTensor[dtype=DType.uint32, rank=1, ...],
+    input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+) -> IndexList[2]:
+    # conv_output_ragged has same shape as qkv_input_ragged
+    return qkv_input_ragged.shape()
 
 
 @compiler.register("gated_delta_recurrence_fwd")
@@ -2788,24 +2796,25 @@ struct GatedDeltaRecurrenceFwd:
                 + " branch in kernels to support other sizes."
             )
 
-    @staticmethod
-    def shape[
-        work_dtype: DType,
-        state_dtype: DType,
-    ](
-        qkv_conv_output: InputTensor[dtype=work_dtype, rank=2, ...],
-        decay_per_token: InputTensor[dtype=work_dtype, rank=2, ...],
-        beta_per_token: InputTensor[dtype=work_dtype, rank=2, ...],
-        recurrent_state: InputTensor[dtype=state_dtype, rank=4, ...],
-        slot_idx: InputTensor[dtype=DType.uint32, rank=1, ...],
-        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
-    ) -> IndexList[2]:
-        # recurrence_output: [total_seq_len, value_dim]
-        var total_seq_len = qkv_conv_output.dim_size(0)
-        var num_value_heads = decay_per_token.dim_size(1)
-        var value_head_dim = recurrent_state.dim_size(3)
-        var value_dim = num_value_heads * value_head_dim
-        return IndexList[2](total_seq_len, value_dim)
+
+@compiler.register_shape_function("gated_delta_recurrence_fwd")
+def gated_delta_recurrence_fwd_shape[
+    work_dtype: DType,
+    state_dtype: DType,
+](
+    qkv_conv_output: InputTensor[dtype=work_dtype, rank=2, ...],
+    decay_per_token: InputTensor[dtype=work_dtype, rank=2, ...],
+    beta_per_token: InputTensor[dtype=work_dtype, rank=2, ...],
+    recurrent_state: InputTensor[dtype=state_dtype, rank=4, ...],
+    slot_idx: InputTensor[dtype=DType.uint32, rank=1, ...],
+    input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+) -> IndexList[2]:
+    # recurrence_output: [total_seq_len, value_dim]
+    var total_seq_len = qkv_conv_output.dim_size(0)
+    var num_value_heads = decay_per_token.dim_size(1)
+    var value_head_dim = recurrent_state.dim_size(3)
+    var value_dim = num_value_heads * value_head_dim
+    return IndexList[2](total_seq_len, value_dim)
 
 
 # ===-----------------------------------------------------------------------===#

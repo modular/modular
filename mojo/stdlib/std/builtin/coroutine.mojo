@@ -82,7 +82,7 @@ def _coro_resume_noop_callback(null: AnyCoroutine):
 
 
 @explicit_destroy
-struct Coroutine[type: ImplicitlyDestructible, origins: OriginSet](
+struct Coroutine[type: ImplicitlyDeletable, origins: OriginSet](
     RegisterPassable
 ):
     """Represents a coroutine.

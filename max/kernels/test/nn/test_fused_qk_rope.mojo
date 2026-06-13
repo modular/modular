@@ -118,7 +118,7 @@ def test_fused_qk_rope[dtype: DType](ctx: DeviceContext) raises -> None:
             ),
         ),
         lookup_table=LayoutTensor[
-            mut=False, DType.uint32, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
+            mut=False, DType.uint32, Layout(UNKNOWN_VALUE)
         ](
             lookup_table.unsafe_ptr(),
             RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(

@@ -66,7 +66,7 @@ from std.gpu.host.compile import (
     get_gpu_target,
 )
 from std.memory import stack_allocation
-from std.memory import alloc, free, Layout, UnsafeMaybeUninit
+from std.memory import alloc, dealloc, ThinAllocation, Layout, UnsafeMaybeUninit
 from std.memory.unsafe import bitcast
 from std.builtin.rebind import downcast
 
@@ -2967,10 +2967,10 @@ struct DeviceFunction[
                 Layout[OpaquePointer[MutAnyOrigin]](
                     count=num_captures + num_args
                 )
-            )
+            ).unsafe_leak()
             dense_args_sizes = alloc(
                 Layout[UInt64](count=num_captures + num_args)
-            )
+            ).unsafe_leak()
             for i in range(num_captures + num_args):
                 dense_args_sizes[i] = 0
         else:
@@ -3064,8 +3064,16 @@ struct DeviceFunction[
             )
 
         if num_captures > num_captures_static:
-            free(dense_args_addrs, {count = num_captures + num_args})
-            free(dense_args_sizes, {count = num_captures + num_args})
+            dealloc(
+                ThinAllocation(
+                    unsafe_assume_ownership=dense_args_addrs
+                ).unsafe_with_layout({count = num_captures + num_args})
+            )
+            dealloc(
+                ThinAllocation(
+                    unsafe_assume_ownership=dense_args_sizes
+                ).unsafe_with_layout({count = num_captures + num_args})
+            )
 
     @always_inline
     @staticmethod
@@ -3238,7 +3246,7 @@ struct DeviceFunction[
                 Layout[OpaquePointer[MutAnyOrigin]](
                     count=num_captures + num_passed_args
                 )
-            )
+            ).unsafe_leak()
         else:
             dense_args_addrs = stack_allocation[
                 num_captures_static + num_passed_args,
@@ -3334,7 +3342,11 @@ struct DeviceFunction[
             )
 
         if num_captures > num_captures_static:
-            free(dense_args_addrs, {count = num_captures + num_passed_args})
+            dealloc(
+                ThinAllocation(
+                    unsafe_assume_ownership=dense_args_addrs
+                ).unsafe_with_layout({count = num_captures + num_passed_args})
+            )
 
     @always_inline
     def get_attribute(self, attr: Attribute) raises -> Int:

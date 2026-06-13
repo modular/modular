@@ -106,6 +106,7 @@ from max.graph.weights import (
 )
 from max.nn import kernels
 from max.nn.kv_cache import (
+    BatchCharacteristics,
     KVCacheInputs,
     KVCacheParams,
     MultiKVCacheParams,
@@ -120,13 +121,15 @@ from max.pipelines.context import (
     TextGenerationContextType,
     TextGenerationOutput,
 )
-from max.pipelines.context.exceptions import (
-    InputError,  # noqa: F401 (for docstring)
+from max.pipelines.context.exceptions import (  # noqa: F401 (for docstring)
+    InputError,
 )
 from max.pipelines.context.tokens import TokenBuffer
 from max.pipelines.kv_cache import PagedKVCacheManager, load_multi_kv_managers
 from max.pipelines.kv_cache.paged_kv_cache.cache_manager import (
     _contiguous_prefix_2d,
+    cache_valid_length_for_context,
+    prompt_tokens_for_context,
 )
 from max.pipelines.modeling.types import (
     BatchType,
@@ -137,10 +140,8 @@ from max.pipelines.modeling.types import (
     TextGenerationInputs,
     TextGenerationRequest,
 )
-from max.pipelines.speculative.base import _SpeculativeDecodingMetrics
-from max.pipelines.speculative.ragged_token_merger import (
-    _shape_to_scalar,
-)
+from max.pipelines.speculative.ragged_token_merger import _shape_to_scalar
+from max.pipelines.speculative.utils import _SpeculativeDecodingMetrics
 from max.profiler import Tracer, traced
 from max.support.math import ceildiv
 
@@ -1975,7 +1976,9 @@ class OverlapTextGenerationPipeline(
     # Warmup inputs use runtime construction with explicit max-cache-length LUT
     # sizing, so eager warmup and capture both see replay-stable buffer shapes.
     @contextmanager
-    def _warmup_model_inputs(self, batch_size: int) -> Iterator[ModelInputs]:
+    def _warmup_model_inputs(
+        self, batch_size: int, batch_characteristics: BatchCharacteristics
+    ) -> Iterator[ModelInputs]:
         dp_size = self._pipeline_config.model.data_parallel_degree
         replica_batches: list[list[TextContext]] = []
 
@@ -2008,10 +2011,14 @@ class OverlapTextGenerationPipeline(
             )
         with self._kv_manager.reserve(replica_batches, num_steps=1):
             max_cache_length = self._effective_max_cache_length
+            # Prepare dispatch metadata for the probed characteristics so the
+            # captured graph matches what replay produces for the same aligned
+            # cache length.
             kv_cache_inputs = self._kv_manager.runtime_inputs(
                 replica_batches,
                 num_steps=1,
                 max_cache_length=max_cache_length,
+                batch_characteristics=batch_characteristics,
             )
 
             return_n_logits = (
@@ -2151,14 +2158,11 @@ class OverlapTextGenerationPipeline(
             draft_kv_params = self._pipeline_model._draft_kv_params
         graph_capture_runner = ServeGraphCaptureRunner(
             model=self._pipeline_model.model,
-            execute_model=self._pipeline_model.execute,
-            session=self.session,
             kv_params=self._kv_manager.cache_params(),
             warmup_model_inputs=self._warmup_model_inputs,
             max_cache_length_upper_bound=self._effective_max_cache_length,
             max_batch_size=max_capture_batch_size,
             num_speculative_tokens=num_speculative_tokens,
-            num_kv_caches=self._kv_manager.num_caches,
             draft_kv_params=draft_kv_params,
         )
         self._graph_capture_runner = graph_capture_runner
@@ -2288,6 +2292,35 @@ class OverlapTextGenerationPipeline(
             seed=seed_view,
         )
 
+    def _replay_batch_characteristics(
+        self, inputs: TextGenerationInputs[TextGenerationContextType]
+    ) -> BatchCharacteristics:
+        """Computes the real (upper-bound) batch characteristics for replay.
+
+        Mirrors the per-request cache / prompt-length computation in
+        ``PagedKVCacheManager`` so the result is an upper bound on what
+        ``runtime_inputs`` sees. For data parallelism the per-replica maxima are
+        folded into one uniform shape, since every replica must replay the
+        identical captured graph.
+        """
+        num_draft_tokens = self._kv_manager.params.num_draft_tokens
+        batch_size = max((len(b) for b in inputs.batches), default=0)
+        max_prompt_length = 0
+        max_cache_valid_length = 0
+        for ctx in inputs.flat_batch:
+            max_prompt_length = max(
+                max_prompt_length, prompt_tokens_for_context(ctx)
+            )
+            max_cache_valid_length = max(
+                max_cache_valid_length,
+                cache_valid_length_for_context(ctx, num_draft_tokens),
+            )
+        return BatchCharacteristics(
+            batch_size=batch_size,
+            max_prompt_length=max_prompt_length,
+            max_cache_valid_length=max_cache_valid_length,
+        )
+
     def _run_forward(
         self,
         inputs: TextGenerationInputs[TextGenerationContextType],
@@ -2339,14 +2372,21 @@ class OverlapTextGenerationPipeline(
         # Prepare the batch.
         # Replay uses LUT buffers sized by max cache length so copied inputs
         # match captured graph buffer shapes.
+        aligned_characteristics: BatchCharacteristics | None = None
         if use_graph_capture_replay:
             assert self._graph_capture_runner is not None
-            with self._kv_manager.scalar_metadata_on_host():
-                kv_cache_inputs = self._kv_manager.runtime_inputs(
-                    inputs.batches,
-                    num_steps=1,
-                    max_cache_length=self._graph_capture_runner._max_cache_length_upper_bound,
-                )
+            # Align the batch's real (upper-bound) shape to a captured graph,
+            # then prepare dispatch metadata once for the aligned cache length.
+            real_characteristics = self._replay_batch_characteristics(inputs)
+            aligned_characteristics = self._graph_capture_runner.align(
+                real_characteristics
+            )
+            kv_cache_inputs = self._kv_manager.runtime_inputs(
+                inputs.batches,
+                num_steps=1,
+                max_cache_length=self._graph_capture_runner._max_cache_length_upper_bound,
+                batch_characteristics=aligned_characteristics,
+            )
         else:
             kv_cache_inputs = self._kv_manager.runtime_inputs(
                 inputs.batches, num_steps=1
@@ -2460,8 +2500,10 @@ class OverlapTextGenerationPipeline(
             with Tracer("pipeline_model.execute"):
                 if use_graph_capture_replay:
                     assert runner is not None
+                    assert aligned_characteristics is not None
                     return runner.replay(
                         model_inputs=model_inputs,
+                        batch_characteristics=aligned_characteristics,
                         debug_verify_replay=debug_verify_replay_enabled,
                         debug_verify_model_inputs=debug_verify_model_inputs,
                     )

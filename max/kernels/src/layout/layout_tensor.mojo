@@ -8319,7 +8319,7 @@ struct LayoutTensorIter[
         other: LayoutTensorIter[mut=True, ...],
         out self: type_of(other)._OriginCastType[MutAnyOrigin],
     ):
-        self.ptr = other.ptr
+        self.ptr = other.ptr.as_unsafe_any_origin()
         self.bound = other.bound
         self.stride = other.stride
         self.runtime_layout = other.runtime_layout
@@ -8336,7 +8336,7 @@ struct LayoutTensorIter[
         other: LayoutTensorIter[...],
         out self: type_of(other)._OriginCastType[ImmutAnyOrigin],
     ):
-        self.ptr = other.ptr
+        self.ptr = other.ptr.as_unsafe_any_origin()
         self.bound = other.bound
         self.stride = other.stride
         self.runtime_layout = other.runtime_layout

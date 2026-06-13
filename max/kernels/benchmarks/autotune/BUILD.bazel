@@ -104,6 +104,7 @@ modular_py_binary(
         "@rules_python//python/runfiles",
     ] + select({
         "//:nvidia_gpu": ["//max/kernels/benchmarks/misc/comparison:bench_baseline_lib"],
+        "//:amd_gpu": ["//max/kernels/benchmarks/misc/comparison:bench_softmax_lib"],
         "//conditions:default": [],
     }),
 )
