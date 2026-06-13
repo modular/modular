@@ -94,9 +94,14 @@ class AsyncValue(Generic[T]):
         Mark this AsyncValue as errored with the given exception. Raises `asyncio.InvalidStateError` if already done.
         """
 
+    def and_then(self, fn: object, /) -> AsyncValue:
+        """
+        Run fn(self) when this AsyncValue resolves (promptly if already resolved) and return a new AsyncValue that resolves to the callback's return value, or to the exception it raises. The callback is invoked with the GIL held on a runtime worker thread (not the registering thread), concurrently with other Python threads.
+        """
+
     def add_done_callback(self, arg: object, /) -> None:
         """
-        Schedule fn(self) to run when this AsyncValue resolves. Must be called from a context with a running asyncio event loop; the callback is dispatched via `loop.call_soon_threadsafe`, so any exception it raises flows through the loop's standard `call_exception_handler`. Raises `RuntimeError` if no loop is running.
+        Run fn(self) when this AsyncValue resolves, like `concurrent.futures.Future.add_done_callback`. The callback is invoked with the GIL held on a runtime worker thread (not the registering thread), concurrently with other Python threads. Exceptions it raises are reported via `sys.unraisablehook`.
         """
 
     @staticmethod
