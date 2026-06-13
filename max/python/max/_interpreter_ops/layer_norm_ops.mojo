@@ -36,7 +36,7 @@ from op_utils import _get_dtype, _get_buffer_ptr, _get_ctx, _get_shape, MAX_RANK
 
 
 @export
-def PyInit_layer_norm_ops() -> PythonObject:
+def PyInit_layer_norm_ops() abi("C") -> PythonObject:
     """Create a Python module with layer_norm kernel function bindings."""
     try:
         var b = PythonModuleBuilder("layer_norm_ops")
@@ -58,10 +58,10 @@ def PyInit_layer_norm_ops() -> PythonObject:
 def _layer_norm_cpu[
     dtype: DType,
 ](
-    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    in_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    gamma_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    beta_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    out_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    in_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    gamma_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    beta_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     batch_dim: Int,
     feature_dim: Int,
     epsilon: Scalar[dtype],
@@ -112,10 +112,10 @@ def _layer_norm_cpu[
 def layer_norm_op[
     dtype: DType,
 ](
-    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    in_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    gamma_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    beta_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    out_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    in_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    gamma_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    beta_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     shape: IndexList[2],
     gamma_shape: IndexList[1],
     epsilon: Scalar[dtype],

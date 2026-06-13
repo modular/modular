@@ -57,7 +57,7 @@ from .vnni import Inner_matmul_vnni
 # - _run_inner_loop_i8mm()
 
 
-trait InnerMatmulKernel(ImplicitlyCopyable, ImplicitlyDestructible):
+trait InnerMatmulKernel(ImplicitlyCopyable, ImplicitlyDeletable):
     def __inner_matmul__[
         kernel_rows: Int,
         kernel_cols: Int,
@@ -456,7 +456,7 @@ def _matmul_cpu_impl[
         var kh = align_up(k, 8)
         var mh = align_up(m, 2)
         var a_packed_ptr: Optional[
-            UnsafePointer[Scalar[a.dtype], MutExternalOrigin]
+            UnsafePointer[Scalar[a.dtype], MutUntrackedOrigin]
         ] = None
         comptime if use_i8mm:
             a_packed_ptr = alloc[Scalar[a.dtype]](mh * kh, alignment=alignment)
@@ -530,7 +530,7 @@ def _matmul_cpu_impl[
                     alg,
                     c,
                     TileTensor(
-                        a.ptr.unsafe_mut_cast[True]().as_any_origin(),
+                        a.ptr.unsafe_mut_cast[True]().as_unsafe_any_origin(),
                         a.layout,
                     ),
                     b,

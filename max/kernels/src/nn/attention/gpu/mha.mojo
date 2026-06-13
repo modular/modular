@@ -13,6 +13,7 @@
 
 from std.math import ceildiv, recip
 from std.math.uutils import umod, ufloordiv, udivmod
+from std.os.env import getenv
 from std.math.constants import log2e
 from std.collections import OptionalReg
 from std.sys import (
@@ -20,6 +21,7 @@ from std.sys import (
     align_of,
     get_defined_bool,
     has_amd_gpu_accelerator,
+    has_apple_gpu_accelerator,
     has_nvidia_gpu_accelerator,
     is_amd_gpu,
     is_nvidia_gpu,
@@ -29,6 +31,12 @@ from std.sys import (
 from std.sys.info import _is_amd_rdna
 from std.sys.intrinsics import _type_is_eq
 import std.gpu.primitives.warp as warp
+from std.gpu.primitives.grid_controls import (
+    PDLLevel,
+    launch_dependent_grids,
+    pdl_launch_attributes,
+    wait_on_dependent_grids,
+)
 from std.algorithm import elementwise
 from std.algorithm.functional import tile_and_unswitch, unswitch, vectorize
 from std.bit import next_power_of_two
@@ -67,6 +75,7 @@ from layout import (
     UNKNOWN_VALUE,
     lt_to_tt,
     row_major,
+    coord_to_index_list,
 )
 from layout.layout import *
 from layout.layout_tensor import (
@@ -86,12 +95,16 @@ from std.memory import stack_allocation
 from .amd_rdna.attention import AttentionRDNA
 from .amd_rdna.mha_decode import AttentionRDNA
 from .amd_rdna.mha_prefill import AttentionRDNA
+from .apple.naive_fa_decode import (
+    NAIVE_FA_DECODE_APPLE_MAX_HEAD_DIM,
+    naive_fa_decode_apple,
+)
 from .amd_structured.attention import Attention
-from .amd_structured.hk_mha_prefill import (
-    HKMhaConfig,
-    HKMhaPrefill,
-    hk_mha_prefill,
-    hk_mha_prefill_ragged,
+from .amd_structured.mha_prefill_v2 import (
+    MhaConfigV2,
+    MhaPrefillV2,
+    mha_prefill_v2,
+    mha_prefill_v2_ragged,
 )
 from .amd_structured.mha_decode import Attention
 from .amd_structured.mha_decode_streaming import Attention
@@ -126,6 +139,7 @@ from nn.attention.gpu.nvidia.sm100.mha_depth512 import (
 from nn.attention.mha_utils import (
     DynamicInt,
     FlashAttentionAlgorithm,
+    MHA_PDL_LEVEL,
     MHAConfig,
     NoPartition,
     SplitKPartition,
@@ -377,14 +391,32 @@ def flash_attention[
     comptime assert (
         not ragged or q.rank == 3
     ), "only support rank 3 inputs for ragged inputs."
+
+    # Native FP8 SM100 path. K/V are FP8 in the paged cache.
+    # Q@K^T and P@V run as FP8 MMAs at tensorwise scale=1.
+    # Output is BF16.
+    comptime is_native_fp8_sm100 = (
+        q.dtype.is_float8()
+        and cache_t.dtype.is_float8()
+        and output.dtype == DType.bfloat16
+        and _is_sm10x_gpu(ctx.default_device_info)
+    )
+
     comptime assert (
-        q.dtype == cache_t.dtype == output.dtype
-    ), "Q, K, V, output should have same type."
+        q.dtype == cache_t.dtype == output.dtype or is_native_fp8_sm100
+    ), (
+        "Q, K, V, output should have same dtype, or Q=K=V=float8,"
+        " output=bfloat16 for the native FP8 SM100 path."
+    )
     comptime assert (
         q.dtype == DType.float32
         or q.dtype.is_half_float()
         or (q.dtype.is_float8() and has_amd_gpu_accelerator())
-    ), "Only support single, half, and float8 (AMD only) precision."
+        or is_native_fp8_sm100
+    ), (
+        "Only support single, half, float8 (AMD), and float8->bfloat16"
+        " (SM100) precision."
+    )
 
     # TODO docstring
     @always_inline
@@ -491,6 +523,10 @@ def q_num_matrix_view_rows[dtype: DType, //](q: TileTensor[dtype, ...]) -> Int:
     return num_rows
 
 
+def _apple_naive_fa_decode_enabled() -> Bool:
+    return getenv("MODULAR_ENABLE_APPLE_NAIVE_FA_DECODE", "0") == "1"
+
+
 @always_inline
 def flash_attention_dispatch[
     k_t: MHAOperand,
@@ -567,6 +603,10 @@ def flash_attention_dispatch[
 
     comptime q_half_float = dtype in (DType.float16, DType.bfloat16)
     comptime q_half_float_or_fp32 = dtype == DType.float32 or q_half_float
+    comptime q_fp8_depth512 = dtype.is_float8() and (
+        depth == 256 or depth == 512
+    )
+    comptime q_fp8_2q = dtype.is_float8() and (depth == 64 or depth == 128)
 
     var q_device = DeviceBuffer[q.dtype](ctx, q.ptr, q.size(), owning=False)
     var output_device = DeviceBuffer[output.dtype](
@@ -581,9 +621,14 @@ def flash_attention_dispatch[
             # Choose matmul parameters based on dtype.
             comptime if (
                 (is_sm90 or is_sm100)
-                and q_half_float
-                and (ragged or not _use_valid_length)
-                and config.algorithm == FlashAttentionAlgorithm(3)
+                and (
+                    (
+                        q_half_float
+                        and (ragged or not _use_valid_length)
+                        and config.algorithm == FlashAttentionAlgorithm(3)
+                    )
+                    or (is_sm100 and (q_fp8_depth512 or q_fp8_2q))
+                )
             ):
                 num_rows_q = q_num_matrix_view_rows(q)
 
@@ -700,12 +745,12 @@ def flash_attention_dispatch[
             else:
                 # Long-context AMD CDNA prefill gate. Routes BF16
                 # prefill to the 8-warp structured kernel in
-                # `amd_structured/hk_mha_prefill.mojo`; otherwise falls
+                # `amd_structured/mha_prefill_v2.mojo`; otherwise falls
                 # through to the FA2 launch below. Gate (all comptime
                 # except the seq-length / page-size run-time checks):
                 # - BF16 throughout;
                 # - depth in (64, 128) (MFMA shape `32x32x16_bf16`);
-                # - any `MHAMask` (HK handles Causal natively + the
+                # - any `MHAMask` (`MhaPrefillV2` handles Causal natively + the
                 #   generic `_maybe_apply_mask` path covers
                 #   SlidingWindow / Chunked / Null / etc.);
                 # - no attention sink;
@@ -717,7 +762,7 @@ def flash_attention_dispatch[
                 # `_pv_strip_with_partial_softmax`'s else-branch ensures
                 # non-causal masks don't blow up `norm_vec` in the
                 # epilogue (see comment there).
-                comptime _hk_eligible = (
+                comptime _v2_eligible = (
                     config.dtype == DType.bfloat16
                     and output.dtype == DType.bfloat16
                     and (config.depth == 64 or config.depth == 128)
@@ -726,41 +771,27 @@ def flash_attention_dispatch[
                     and (k_t.page_size == 0 or k_t.page_size >= 64)
                 )
 
-                comptime if _hk_eligible:
-                    # Long-context perf threshold. Below this HK doesn't
-                    # fill the GPU at BM=256 and FA2 (BM=128) wins.
-                    # Partial-Q-tile masking inside HK now handles
+                comptime if _v2_eligible:
+                    # Long-context perf threshold. Below this the kernel
+                    # doesn't fill the GPU at BM=256 and FA2 (BM=128) wins.
+                    # Partial-Q-tile masking inside the kernel now handles
                     # `seq_len % 256 != 0` correctly for the Q-side
                     # writeback skip, so the alignment guard is gone;
                     # per-block early-return + writeback skip together
                     # handle mixed-length multi-sequence ragged.
                     #
-                    # NullMask + partial-K-tile carve-out:
-                    # `num_keys % KV_BLOCK != 0` leaves the last K tile
-                    # partially valid (e.g., FLUX.2-dev i2i runs at
-                    # seq_len=8623 → last K tile has 47/64 valid keys).
-                    # Attempted kernel fix in this branch
-                    # (`_apply_oob_k_mask_fast` in
-                    # `_full_softmax_unconditional`) correctly masks
-                    # `att_block` OOB columns to -inf before softmax,
-                    # but `math_exp2(-3.4e38)` on AMD saturates at
-                    # ~1.18e-38 (not 0); combined with V SMEM OOB rows
-                    # that the DMA SRD doesn't cleanly bound at
-                    # `num_keys` (probe at PR-time showed V_OOB
-                    # containing real ±12-magnitude values from past
-                    # the V buffer's end), PV[N-1] sees small but
-                    # nonzero leakage that compounds over FLUX's 5600
-                    # HK calls per image. A literal-0 BF16 mask on the
-                    # post-cast P-cache would close the leak but the
-                    # PV-A operand uses a different lane/element
-                    # layout than the FP32 ACC, so the lane→K-position
-                    # table needs to be rederived. Until that lands,
-                    # route NullMask + partial-K to FA2.
-                    comptime _is_null_mask = _type_is_eq[mask_t, NullMask]()
-                    if max_prompt_len >= 4096 and not (
-                        _is_null_mask and max_cache_valid_length % 64 != 0
-                    ):
-                        comptime hk_config = HKMhaConfig(
+                    # NullMask + partial-K (`num_keys % KV_BLOCK != 0`,
+                    # e.g. FLUX.2-dev i2i at seq_len=8623 → 135 K tiles,
+                    # last tile 47/64 valid) is now handled in-kernel: the
+                    # SRD clamp hardware-zeros the partial tile's OOB
+                    # columns, `_apply_kbound_mask_fast` excludes them from
+                    # softmax, and the even-tile-count round-up fixes the
+                    # odd-`N` main-loop/epilogue double-count that was the
+                    # real i2i corruption. FLUX i2i is SSIM 0.994 through
+                    # the kernel (was 0.50), so the prior carve-out to FA2
+                    # is gone.
+                    if max_prompt_len >= 4096:
+                        comptime v2_config = MhaConfigV2(
                             q_block_size=32,
                             kv_block=64,
                             depth=config.depth,
@@ -771,14 +802,14 @@ def flash_attention_dispatch[
                         )
                         comptime if ragged:
                             # Ragged batch: per-sequence setup happens
-                            # inside the dedicated ragged-HK kernel so
-                            # HK keeps its tuned single-kernel
+                            # inside the dedicated ragged `MhaPrefillV2`
+                            # kernel so it keeps its tuned single-kernel
                             # register-allocation context. Avoids the
-                            # ~14% perf hit observed when HK is inlined
-                            # into the FA2 host `def mha[]`.
+                            # ~14% perf hit observed when the kernel is
+                            # inlined into the FA2 host `def mha[]`.
                             #
                             # Handles any `batch_size`: the `ragged:
-                            # Bool` flag inside `HKMhaPrefill.run` forces
+                            # Bool` flag inside `MhaPrefillV2.run` forces
                             # the Q/O batch coord to 0 so each block
                             # reads from the per-sequence pre-offset
                             # pointer regardless of `block_idx.z` (the
@@ -797,7 +828,7 @@ def flash_attention_dispatch[
                             # codegen at the comptime monomorphization
                             # level.
                             var q_off_ptr = (
-                                valid_length.value().as_any_origin().ptr
+                                valid_length.value().as_unsafe_any_origin().ptr
                             )
                             # Sink-weights pointer: when `sink=True` the
                             # caller MUST pass non-None `sink_weights`
@@ -808,23 +839,25 @@ def flash_attention_dispatch[
                             # cross-attention vs self-attention variant.
                             comptime if sink:
                                 var sw_ptr = (
-                                    sink_weights.value().as_any_origin().ptr
+                                    sink_weights.value()
+                                    .as_unsafe_any_origin()
+                                    .ptr
                                 )
                                 if kv_input_row_offsets:
-                                    hk_mha_prefill_ragged[
-                                        config=hk_config,
+                                    mha_prefill_v2_ragged[
+                                        config=v2_config,
                                         cross_attention=True,
                                         sink=True,
                                     ](
-                                        q.as_any_origin().ptr,
+                                        q.as_unsafe_any_origin().ptr,
                                         k,
                                         v,
-                                        output.as_any_origin().ptr,
+                                        output.as_unsafe_any_origin().ptr,
                                         mask_functor,
                                         scale,
                                         q_off_ptr,
                                         kv_input_row_offsets.value()
-                                        .as_any_origin()
+                                        .as_unsafe_any_origin()
                                         .ptr,
                                         max_prompt_len,
                                         batch_size,
@@ -832,13 +865,13 @@ def flash_attention_dispatch[
                                         sw_ptr,
                                     )
                                 else:
-                                    hk_mha_prefill_ragged[
-                                        config=hk_config, sink=True
+                                    mha_prefill_v2_ragged[
+                                        config=v2_config, sink=True
                                     ](
-                                        q.as_any_origin().ptr,
+                                        q.as_unsafe_any_origin().ptr,
                                         k,
                                         v,
-                                        output.as_any_origin().ptr,
+                                        output.as_unsafe_any_origin().ptr,
                                         mask_functor,
                                         scale,
                                         q_off_ptr,
@@ -850,29 +883,29 @@ def flash_attention_dispatch[
                                     )
                             else:
                                 if kv_input_row_offsets:
-                                    hk_mha_prefill_ragged[
-                                        config=hk_config, cross_attention=True
+                                    mha_prefill_v2_ragged[
+                                        config=v2_config, cross_attention=True
                                     ](
-                                        q.as_any_origin().ptr,
+                                        q.as_unsafe_any_origin().ptr,
                                         k,
                                         v,
-                                        output.as_any_origin().ptr,
+                                        output.as_unsafe_any_origin().ptr,
                                         mask_functor,
                                         scale,
                                         q_off_ptr,
                                         kv_input_row_offsets.value()
-                                        .as_any_origin()
+                                        .as_unsafe_any_origin()
                                         .ptr,
                                         max_prompt_len,
                                         batch_size,
                                         ctx,
                                     )
                                 else:
-                                    hk_mha_prefill_ragged[config=hk_config](
-                                        q.as_any_origin().ptr,
+                                    mha_prefill_v2_ragged[config=v2_config](
+                                        q.as_unsafe_any_origin().ptr,
                                         k,
                                         v,
-                                        output.as_any_origin().ptr,
+                                        output.as_unsafe_any_origin().ptr,
                                         mask_functor,
                                         scale,
                                         q_off_ptr,
@@ -895,7 +928,7 @@ def flash_attention_dispatch[
                             # — zero for fresh prefill, positive for cache
                             # reuse.
                             comptime if sink:
-                                hk_mha_prefill[hk_config, sink=True](
+                                mha_prefill_v2[v2_config, sink=True](
                                     q_tt,
                                     k,
                                     v,
@@ -905,10 +938,12 @@ def flash_attention_dispatch[
                                     max_cache_valid_length,
                                     max_cache_valid_length - max_prompt_len,
                                     ctx,
-                                    sink_weights.value().as_any_origin().ptr,
+                                    sink_weights.value()
+                                    .as_unsafe_any_origin()
+                                    .ptr,
                                 )
                             else:
-                                hk_mha_prefill[hk_config](
+                                mha_prefill_v2[v2_config](
                                     q_tt,
                                     k,
                                     v,
@@ -975,8 +1010,13 @@ def flash_attention_dispatch[
         elif (
             q_half_float_or_fp32
             or (dtype.is_float8() and has_amd_gpu_accelerator())
+            or (dtype.is_float8() and is_sm100)
         ) and is_token_generation:
-            comptime if depth <= 576:
+            comptime if depth <= 576 and (
+                not dtype.is_float8()
+                or has_amd_gpu_accelerator()
+                or (dtype.is_float8() and is_sm100 and depth <= 512)
+            ):
                 # AMD bf16: 4 warps (256 threads) with 16x16 MMA.
                 # BN=128 WN=32: each warp owns a full [16,32] P block.
                 # AMD fp8: 16x16x128 MMA when depth%128==0, else 32x32x64.
@@ -1072,10 +1112,15 @@ def flash_attention_dispatch[
 
                 comptime use_fa3_kernel = (
                     (is_sm90 or is_sm100)
-                    and q_half_float
-                    and (ragged or not _use_valid_length)
                     and mask_t.mask_safe_out_of_bounds
-                    and config.algorithm == FlashAttentionAlgorithm(3)
+                    and (
+                        (
+                            q_half_float
+                            and (ragged or not _use_valid_length)
+                            and config.algorithm == FlashAttentionAlgorithm(3)
+                        )
+                        or (is_sm100 and dtype.is_float8() and depth <= 512)
+                    )
                 )
 
                 comptime if (not use_fa3_kernel) and (depth % 64) != 0:
@@ -1104,31 +1149,6 @@ def flash_attention_dispatch[
                         sink_weights,
                     )
                 else:
-                    comptime kernel = mha_decoding[
-                        q.dtype,
-                        k_t,
-                        v_t,
-                        output.dtype,
-                        mask_t,
-                        type_of(valid_length.value()).layout,
-                        BM=BM,
-                        BN=BN,
-                        BK=BK,
-                        WM=WM,
-                        WN=WN,
-                        depth=depth,
-                        num_heads=num_heads,
-                        num_threads=num_threads,
-                        num_pipeline_stages=num_pipeline_stages,
-                        group=group,
-                        ragged=ragged,
-                        is_shared_kv=is_shared_kv,
-                        sink=sink,
-                        _use_valid_length=_use_valid_length,
-                        _is_cache_length_accurate=_is_cache_length_accurate,
-                        decoding_warp_split_k=decoding_warp_split_k,
-                    ]
-
                     if num_partitions_value == 1:
                         comptime if use_fa3_kernel:
                             num_rows_q = q_num_matrix_view_rows(q)
@@ -1182,6 +1202,30 @@ def flash_attention_dispatch[
                                     _optional_lt_to_tt(sink_weights),
                                 )
                         else:
+                            comptime kernel = mha_decoding[
+                                q.dtype,
+                                k_t,
+                                v_t,
+                                output.dtype,
+                                mask_t,
+                                type_of(valid_length.value()).layout,
+                                BM=BM,
+                                BN=BN,
+                                BK=BK,
+                                WM=WM,
+                                WN=WN,
+                                depth=depth,
+                                num_heads=num_heads,
+                                num_threads=num_threads,
+                                num_pipeline_stages=num_pipeline_stages,
+                                group=group,
+                                ragged=ragged,
+                                is_shared_kv=is_shared_kv,
+                                sink=sink,
+                                _use_valid_length=_use_valid_length,
+                                _is_cache_length_accurate=_is_cache_length_accurate,
+                                decoding_warp_split_k=decoding_warp_split_k,
+                            ]
                             var nullptr_device = DeviceBuffer[accum_type].empty(
                                 ctx
                             )
@@ -1309,7 +1353,7 @@ def flash_attention_dispatch[
                                     kv_input_row_offsets,
                                     batch_size,
                                     SplitKPartition(
-                                        exp_sum_qk_max_data.unsafe_ptr(),
+                                        exp_sum_qk_max_data.unsafe_ptr().as_unsafe_any_origin(),
                                         UInt32(num_partitions_value),
                                     ),
                                     ctx,
@@ -1336,7 +1380,7 @@ def flash_attention_dispatch[
                                     _optional_lt_to_tt(kv_input_row_offsets),
                                     batch_size,
                                     SplitKPartition(
-                                        exp_sum_qk_max_data.unsafe_ptr(),
+                                        exp_sum_qk_max_data.unsafe_ptr().as_unsafe_any_origin(),
                                         UInt32(num_partitions_value),
                                     ),
                                     ctx,
@@ -1422,6 +1466,7 @@ def flash_attention_dispatch[
                                 batch_size,
                             ),
                             block_dim=(WARP_SIZE, 1, 1),
+                            attributes=pdl_launch_attributes(MHA_PDL_LEVEL),
                         )
                         _ = exp_sum_qk_max_data^
                         _ = output_intermediate_data^
@@ -1478,28 +1523,81 @@ def flash_attention_dispatch[
     # Not supported by fast flash attention kernel.
     else:
         # Assumes BSHD.
-        mha_gpu_naive[
-            ragged=ragged,
-            _use_valid_length=_use_valid_length,
-            _is_cache_length_accurate=_is_cache_length_accurate,
-            sink=sink,
-        ](
-            q,
-            k,
-            v,
-            mask_functor,
-            output,
-            valid_length.value(),
-            scale,
-            batch_size,
-            max_prompt_len,
-            max_cache_valid_length,
-            num_heads,
-            depth,
-            group,
-            ctx,
-            sink_weights,
-        )
+        comptime if has_apple_gpu_accelerator():
+            # Apple decode-only opt-in; larger head_dim/prefill/flag-off -> mha_gpu_naive.
+            if (
+                is_token_generation
+                and _apple_naive_fa_decode_enabled()
+                and depth <= NAIVE_FA_DECODE_APPLE_MAX_HEAD_DIM
+            ):
+                naive_fa_decode_apple[
+                    ragged=ragged,
+                    sink=sink,
+                    _use_valid_length=_use_valid_length,
+                    _is_cache_length_accurate=_is_cache_length_accurate,
+                ](
+                    q,
+                    k,
+                    v,
+                    mask_functor,
+                    output,
+                    valid_length.value(),
+                    scale,
+                    batch_size,
+                    max_prompt_len,
+                    max_cache_valid_length,
+                    num_heads,
+                    depth,
+                    group,
+                    ctx,
+                    sink_weights,
+                )
+            else:
+                mha_gpu_naive[
+                    ragged=ragged,
+                    _use_valid_length=_use_valid_length,
+                    _is_cache_length_accurate=_is_cache_length_accurate,
+                    sink=sink,
+                ](
+                    q,
+                    k,
+                    v,
+                    mask_functor,
+                    output,
+                    valid_length.value(),
+                    scale,
+                    batch_size,
+                    max_prompt_len,
+                    max_cache_valid_length,
+                    num_heads,
+                    depth,
+                    group,
+                    ctx,
+                    sink_weights,
+                )
+        else:
+            mha_gpu_naive[
+                ragged=ragged,
+                _use_valid_length=_use_valid_length,
+                _is_cache_length_accurate=_is_cache_length_accurate,
+                sink=sink,
+            ](
+                q,
+                k,
+                v,
+                mask_functor,
+                output,
+                valid_length.value(),
+                scale,
+                batch_size,
+                max_prompt_len,
+                max_cache_valid_length,
+                num_heads,
+                depth,
+                group,
+                ctx,
+                sink_weights,
+            )
 
 
 def flash_attention[
@@ -1734,25 +1832,21 @@ def flash_attention_ragged[
 
     var is_token_generation = False
 
-    var cache_row_offsets = input_row_offsets.as_any_origin()
+    var cache_row_offsets = input_row_offsets.as_unsafe_any_origin()
 
     var k_operand = RaggedMHAOperand(
-        LayoutTensor[k.dtype, Layout.row_major(k.layout.shape), k.origin](
+        TileTensor(
             k.ptr,
-            RuntimeLayout[Layout.row_major(k.layout.shape)].row_major(
-                k.runtime_layout.shape.value.canonicalize()
-            ),
+            row_major(Coord(Int(k.dim[0]()), Int(k.dim[1]()), Int(k.dim[2]()))),
         ),
-        cache_row_offsets,
+        lt_to_tt(cache_row_offsets),
     )
     var v_operand = RaggedMHAOperand(
-        LayoutTensor[v.dtype, Layout.row_major(v.layout.shape), v.origin](
+        TileTensor(
             v.ptr,
-            RuntimeLayout[Layout.row_major(v.layout.shape)].row_major(
-                v.runtime_layout.shape.value.canonicalize()
-            ),
+            row_major(Coord(Int(v.dim[0]()), Int(v.dim[1]()), Int(v.dim[2]()))),
         ),
-        cache_row_offsets,
+        lt_to_tt(cache_row_offsets),
     )
     flash_attention_dispatch[
         kv_num_heads=kv_num_heads,
@@ -1993,11 +2087,12 @@ def mha[
             )
             attention.mha_prefill()
         else:
-            # AMD CDNA prefill via FA2. The long-context HK path is dispatched
-            # host-side from `flash_attention_dispatch` so HK keeps its tuned
-            # single-kernel register-allocation context (`def mha[]`'s body
-            # holding the FA2 fallback inflates spills when HK is inlined
-            # here — measured ~14% loss vs HK as a top-level kernel).
+            # AMD CDNA prefill via FA2. The long-context `MhaPrefillV2` path
+            # is dispatched host-side from `flash_attention_dispatch` so the
+            # kernel keeps its tuned single-kernel register-allocation context
+            # (`def mha[]`'s body holding the FA2 fallback inflates spills when
+            # the kernel is inlined here — measured ~14% loss vs `MhaPrefillV2`
+            # as a top-level kernel).
             var attention = Attention[config, group, sink](
                 output_ptr + q_batch_offset,
                 q_ptr + q_batch_offset,
@@ -4519,7 +4614,8 @@ def mha_decoding_single_batch_pipelined[
         circular=True,
     ]
     var k_smem_iter = IteratorTypeK(
-        k_smem, IteratorTypeK.layout_uint_type(k_smem_size)
+        k_smem.as_unsafe_any_origin(),
+        IteratorTypeK.layout_uint_type(k_smem_size),
     )
 
     var kv_head_idx = block_idx.y
@@ -4600,7 +4696,8 @@ def mha_decoding_single_batch_pipelined[
         circular=True,
     ]
     var v_smem_iter = IteratorTypeV(
-        v_smem, IteratorTypeV.layout_uint_type(v_smem_size)
+        v_smem.as_unsafe_any_origin(),
+        IteratorTypeV.layout_uint_type(v_smem_size),
     )
 
     # Shared memory for P = Q * K^t
@@ -4624,7 +4721,7 @@ def mha_decoding_single_batch_pipelined[
         Layout.row_major(p_frag_simdwidth * num_warps_n, BM),
         MutAnyOrigin,
         address_space=AddressSpace.SHARED,
-    ]((p_smem + BM * BN).bitcast[Scalar[accum_type]]())
+    ]((p_smem + BM * BN).bitcast[Scalar[accum_type]]().as_unsafe_any_origin())
 
     var q_offset = depth * kv_head_idx * group
 
@@ -4906,6 +5003,16 @@ def mha_splitk_reduce[
         block_dim.x == WARP_SIZE
     ), "block_dim.x should be equal to the warp_size"
 
+    # Programmatic Dependent Launch.  Single-warp kernel with no early returns,
+    # so the function entry is a divergence-free point all threads reach before
+    # the first read of the producer's partial outputs / exp_sum / qk_max
+    # below.  `wait` fences here so those reads only happen after the split-K
+    # producer grid has flushed them; `launch` lets the successor grid's
+    # prologue overlap this reduction.  No-op on non-SM90+ and when MHA_PDL=off.
+    comptime if MHA_PDL_LEVEL > PDLLevel.OFF:
+        wait_on_dependent_grids()
+        launch_dependent_grids()
+
     comptime accum_type = get_accum_type[output_type]()
     var batch_idx = block_idx.z
     var q_head_idx = block_idx.y
@@ -5139,14 +5246,13 @@ def mha_gpu_naive[
     @parameter
     @__copy_capture(p_buffer)
     def input_fn_device[
-        _simd_width: Int, _rank: Int
-    ](coords: IndexList[_rank]) -> SIMD[p_type, _simd_width]:
-        var p_coord = Coord(coords)
-        comptime assert p_buffer.flat_rank >= p_coord.flat_rank
-        return p_buffer.load[width=_simd_width](p_coord)
+        _simd_width: Int
+    ](coords: Coord) -> SIMD[p_type, _simd_width]:
+        comptime assert p_buffer.flat_rank >= coords.flat_rank
+        return p_buffer.load[width=_simd_width](coords)
 
     _softmax_gpu[p_type, 1, 3, input_fn_device, sink=sink](
-        Index(batch_size * num_heads, max_prompt_len, num_keys),
+        Coord(batch_size * num_heads, max_prompt_len, num_keys),
         p_buffer,
         2,
         ctx,
@@ -5707,7 +5813,10 @@ def mha_gpu_naive[
     var v_operand = KVCacheMHAOperand(v)
 
     mha_gpu_naive[
-        _use_valid_length=True, _is_cache_length_accurate=False, sink=sink
+        ragged=ragged,
+        _use_valid_length=True,
+        _is_cache_length_accurate=False,
+        sink=sink,
     ](
         q,
         k_operand,
@@ -5966,22 +6075,20 @@ def _naive_attention[
     @__copy_capture(score)
     @parameter
     @always_inline
-    def scale_and_mask[
-        width: Int, _rank: Int, alignment: Int = 1
-    ](coords: IndexList[_rank]):
-        var vec = score.load_linear[width, alignment=alignment](
-            rebind[IndexList[4]](coords)
-        )
+    def scale_and_mask[width: Int, alignment: Int = 1](coords: Coord):
+        var score_idx = coord_to_index_list(coords)
+        var vec = score.load_linear[width, alignment=alignment](score_idx)
         vec = vec * scale.cast[dtype]()
         vec = vec + mask.load[width=width](
-            Index(coords[_rank - 2], coords[_rank - 1])
+            IndexList[2](
+                Int(coords[coords.rank - 2].value()),
+                Int(coords[coords.rank - 1].value()),
+            )
         )
-        score.store_linear[width, alignment=alignment](
-            rebind[IndexList[4]](coords), vec
-        )
+        score.store_linear[width, alignment=alignment](score_idx, vec)
 
     elementwise[scale_and_mask, simd_size](
-        Index(batch_size, num_heads, seq_len, num_keys), ctx
+        (batch_size, num_heads, seq_len, num_keys), ctx
     )
 
     softmax[dtype, simd_size, 4](score, score, axis=3)

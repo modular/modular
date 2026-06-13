@@ -543,21 +543,30 @@ def depth512_softmax[
         comptime assert num_p_batches >= 1
 
         # Helper to write a range of exp values from s[] to P SMEM.
+        comptime p_elems_per_store: Int = 16 // size_of[qkv_dtype]()
+        comptime assert (
+            16 % size_of[qkv_dtype]() == 0
+        ), "P store byte width (16) must be a multiple of dtype size"
+
         @parameter
         @always_inline
         def write_p_batch[start_elem: Int, num_elems: Int]():
-            comptime for c in range(0, num_elems, 8):
+            comptime assert num_elems % p_elems_per_store == 0, (
+                "write_p_batch num_elems must be a multiple of the per-store"
+                " element count (16/size_of[dtype])"
+            )
+            comptime for c in range(0, num_elems, p_elems_per_store):
                 comptime base = start_elem + c
-                var vals = SIMD[accum_dtype, 8](
-                    s[base],
-                    s[base + 1],
-                    s[base + 2],
-                    s[base + 3],
-                    s[base + 4],
-                    s[base + 5],
-                    s[base + 6],
-                    s[base + 7],
-                ).cast[qkv_dtype]()
+
+                @parameter
+                @always_inline
+                def pack_vals[n: Int]() -> SIMD[qkv_dtype, n]:
+                    var vec = SIMD[accum_dtype, n](0)
+                    comptime for k in range(n):
+                        vec[k] = s[base + k]
+                    return vec.cast[qkv_dtype]()
+
+                var vals = pack_vals[p_elems_per_store]()
                 var col = Int(col_offset) + base
                 var p_k_block = col // p_sw_K
                 comptime assert effective_bn % p_sw_K == 0

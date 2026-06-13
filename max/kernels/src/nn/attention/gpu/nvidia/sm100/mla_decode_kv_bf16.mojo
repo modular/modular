@@ -28,7 +28,7 @@ from layout.tma_async import (
     SharedMemBarrier,
 )
 from layout import ComptimeInt, CoordLike, RowMajorLayout, TileTensor
-from nn.attention.gpu.nvidia.sm90.attention import (
+from nn.attention.gpu.nvidia.common import (
     OptionalPointer,
 )
 from nn.attention.mha_mask import MHAMask
@@ -42,7 +42,7 @@ from nn.attention.gpu.nvidia.sm100.attention_utils import (
     SharedMemPointer,
     MBarType,
 )
-from nn.attention.gpu.nvidia.sm90.attention import KVTMATile
+from nn.attention.gpu.nvidia.common import KVTMATile
 
 from nn.attention.gpu.nvidia.sm100.mla_decode_utils import (
     MLA_SM100_Decode_Config,
@@ -323,9 +323,11 @@ struct MLA_SM100_Decode_KV_BF16[
             max_smem + 2 * WARPGROUP_SIZE
         )  # 128 x1 for SMEM correction for Softmax
         #  Now we have to define MBARS for the kernel
-        var mbar_base: MBarType = (li_smem + WARPGROUP_SIZE).bitcast[
-            SharedMemBarrier
-        ]()
+        var mbar_base: MBarType = (
+            (li_smem + WARPGROUP_SIZE)
+            .bitcast[SharedMemBarrier]()
+            .as_unsafe_any_origin()
+        )
 
         var mbar_q: MBarType = mbar_base  # q uses 0
         var mbar_kv_base: MBarType = mbar_base + 1  # barrier total[1]
@@ -420,10 +422,10 @@ struct MLA_SM100_Decode_KV_BF16[
                 ptr_tmem_addr[0],
                 s_bars,
                 p_bars,
-                kv_smem.bitcast[Scalar[Self.q_type]](),
-                max_smem,
-                li_smem,
-                out_smem,
+                kv_smem.bitcast[Scalar[Self.q_type]]().as_unsafe_any_origin(),
+                max_smem.as_unsafe_any_origin(),
+                li_smem.as_unsafe_any_origin(),
+                out_smem.as_unsafe_any_origin(),
                 c_bars,
                 corr_done_bars,
                 out_pipeline,
@@ -450,8 +452,8 @@ struct MLA_SM100_Decode_KV_BF16[
                     q_tma,
                     k_tma,
                     kv_lut,
-                    q_smem,
-                    kv_smem,
+                    q_smem.as_unsafe_any_origin(),
+                    kv_smem.as_unsafe_any_origin(),
                     mbar_q,
                     kv_pipeline,
                     offset_position,
@@ -459,8 +461,10 @@ struct MLA_SM100_Decode_KV_BF16[
             elif warp_idx == 9:
                 Self.mmaQK(
                     ptr_tmem_addr[0],
-                    q_smem,
-                    (kv_smem).bitcast[Scalar[Self.q_type]](),
+                    q_smem.as_unsafe_any_origin(),
+                    (kv_smem)
+                    .bitcast[Scalar[Self.q_type]]()
+                    .as_unsafe_any_origin(),
                     mbar_q,
                     s_bars,
                     kv_pipeline,
@@ -469,7 +473,9 @@ struct MLA_SM100_Decode_KV_BF16[
             elif warp_idx == 10:
                 Self.mmaPV(
                     ptr_tmem_addr[0],
-                    (kv_smem).bitcast[Scalar[Self.q_type]](),
+                    (kv_smem)
+                    .bitcast[Scalar[Self.q_type]]()
+                    .as_unsafe_any_origin(),
                     p_bars,
                     o_bars,
                     kv_pipeline,
@@ -477,7 +483,10 @@ struct MLA_SM100_Decode_KV_BF16[
                 )
             elif warp_idx == 11:
                 Self.Common_MLA_Op.store(
-                    out_pipeline, out_smem, o_tma, offset_position
+                    out_pipeline,
+                    out_smem.as_unsafe_any_origin(),
+                    o_tma,
+                    offset_position,
                 )
         barrier()
 

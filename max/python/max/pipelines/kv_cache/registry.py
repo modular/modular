@@ -19,9 +19,10 @@ import logging
 from dataclasses import replace
 from unittest.mock import MagicMock, Mock
 
-from max.driver import Buffer, is_virtual_device_mode
+from max.driver import is_virtual_device_mode
 from max.engine import InferenceSession
 from max.nn.kv_cache import (
+    KVCacheBuffer,
     KVCacheParamInterface,
     KVConnectorType,
     MultiKVCacheParams,
@@ -40,11 +41,7 @@ def _load_single_kv_manager(
     total_num_host_pages: int,
     session: InferenceSession,
     max_batch_size: int,
-    other_kv_managers_device_buffers_per_replica: list[list[Buffer]]
-    | None = None,
-    other_kv_managers_device_buffers_per_replica_not_replicated: list[
-        list[Buffer]
-    ]
+    other_kv_managers_kv_buffers_per_replica: list[list[KVCacheBuffer]]
     | None = None,
 ) -> PagedKVCacheManager:
     # In compile-only mode (virtual device mode), use the null KV manager
@@ -67,8 +64,7 @@ def _load_single_kv_manager(
         total_num_host_pages=total_num_host_pages,
         session=session,
         max_batch_size=max_batch_size,
-        other_kv_managers_device_buffers_per_replica=other_kv_managers_device_buffers_per_replica,
-        other_kv_managers_device_buffers_per_replica_not_replicated=other_kv_managers_device_buffers_per_replica_not_replicated,
+        other_kv_managers_kv_buffers_per_replica=other_kv_managers_kv_buffers_per_replica,
     )
 
 
@@ -197,42 +193,19 @@ def load_multi_kv_managers(
     ]
 
     dp = param0.data_parallel_degree
-    other_kv_managers_device_buffers_per_replica: list[list[Buffer]] = [
+    other_kv_managers_kv_buffers_per_replica: list[list[KVCacheBuffer]] = [
         [] for _ in range(dp)
     ]
-    other_kv_managers_device_buffers_per_replica_not_replicated: list[
-        list[Buffer]
-    ] = [[] for _ in range(dp)]
 
+    # Mixed strategies like mla target + mha draft (or the reverse) are supported
+    # with KVCache offloading since each buffer carries its own replicates_kv_across_tp
+    # metadata.
     if kv_managers_1_to_n:
-        target_is_replicated = param0.replicates_kv_across_tp
-        param1 = kv_managers_1_to_n[0].params
-        draft_is_replicated = param1.replicates_kv_across_tp
-
-        # Try to support MLA target + MHA draft
-        is_different_tp_sharding_strategy = (
-            target_is_replicated != draft_is_replicated
-        )
-        if is_different_tp_sharding_strategy and not target_is_replicated:
-            raise ValueError("MHA target + MLA draft is not supported")
-
-        list_to_append_to = (
-            other_kv_managers_device_buffers_per_replica
-            if not is_different_tp_sharding_strategy
-            else other_kv_managers_device_buffers_per_replica_not_replicated
-        )
-
         for kv_manager_i in kv_managers_1_to_n:
             for replica_idx in range(dp):
-                buffers = kv_manager_i.get_device_buffer(
-                    replica_idx
-                ).all_buffers
-                list_to_append_to[replica_idx].extend(buffers)
-
-    if other_kv_managers_device_buffers_per_replica_not_replicated:
-        logger.warning(
-            "other_kv_managers_device_buffers_per_replica_not_replicated is set in order to support mla target + mha draft"
-        )
+                other_kv_managers_kv_buffers_per_replica[replica_idx].append(
+                    kv_manager_i.get_device_buffer(replica_idx)
+                )
 
     kv_manager_0 = _load_single_kv_manager(
         params=param0,
@@ -240,9 +213,6 @@ def load_multi_kv_managers(
         total_num_host_pages=total_num_host_pages,
         session=session,
         max_batch_size=max_batch_size,
-        # Smuggle the other kv managers' device buffers to the first kv manager
-        # for use in its KVConnector.
-        other_kv_managers_device_buffers_per_replica=other_kv_managers_device_buffers_per_replica,
-        other_kv_managers_device_buffers_per_replica_not_replicated=other_kv_managers_device_buffers_per_replica_not_replicated,
+        other_kv_managers_kv_buffers_per_replica=other_kv_managers_kv_buffers_per_replica,
     )
     return [kv_manager_0] + kv_managers_1_to_n

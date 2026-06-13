@@ -32,9 +32,9 @@ from max.nn.quant_config import QuantConfig
 from max.pipelines.architectures.llama3.model_config import (
     create_rope_embedding,
 )
+from max.pipelines.context import TextContext
 from max.pipelines.kv_cache import PagedKVCacheManager
-from max.pipelines.lib.quant import parse_quant_config
-from max.pipelines.modeling.types import TextGenerationContext
+from max.pipelines.weights.quant import parse_quant_config
 from test_common.context_utils import create_text_context
 from test_common.graph_utils import is_h100_h200
 from torch.utils.dlpack import from_dlpack
@@ -279,7 +279,7 @@ def generate_max_outputs_fp4(
     kv_manager.claim(batch[0].request_id, replica_idx=0)
     kv_manager.alloc(batch[0], replica_idx=0)
     kv_runtime_inputs = kv_manager.runtime_inputs(
-        cast(list[list[TextGenerationContext]], [batch])
+        cast(list[list[TextContext]], [batch])
     ).inputs[0]
     assert kv_runtime_inputs.attention_dispatch_metadata is not None
 

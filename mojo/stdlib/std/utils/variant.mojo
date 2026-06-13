@@ -59,7 +59,7 @@ def _get_type_index[T: AnyType, *Ts: AnyType]() -> Int:
     return _InvalidTypeIndex
 
 
-trait _VariantStorage(Copyable, ImplicitlyDestructible):
+trait _VariantStorage(Copyable, ImplicitlyDeletable):
     """Internal storage backend for `Variant`.
 
     This trait abstracts over the two concrete storage strategies:
@@ -90,7 +90,7 @@ trait _VariantStorage(Copyable, ImplicitlyDestructible):
         ...
 
 
-trait _NicheStorage(Defaultable, ImplicitlyCopyable, ImplicitlyDestructible):
+trait _NicheStorage(Defaultable, ImplicitlyCopyable, ImplicitlyDeletable):
     """Internal abstraction over niche backing storage backends."""
 
     def as_uninit[
@@ -208,11 +208,11 @@ struct _NichedOptionalStorage[
             self = Self()
 
     @always_inline
-    def __init__(out self, *, deinit take: Self):
+    def __init__(out self, *, deinit move: Self):
         comptime assert conforms_to(Self.T, Movable)
-        if take.isa[Self.T]():
+        if move.isa[Self.T]():
             self = Self(
-                take.unsafe_ptr[downcast[Self.T, Movable]]().take_pointee()
+                move.unsafe_ptr[downcast[Self.T, Movable]]().take_pointee()
             )
         else:
             self = Self()
@@ -229,9 +229,9 @@ struct _NichedOptionalStorage[
 
     @always_inline
     def __del__(deinit self):
-        comptime assert conforms_to(Self.T, ImplicitlyDestructible)
+        comptime assert conforms_to(Self.T, ImplicitlyDeletable)
         if self.isa[Self.T]():
-            rebind[UnsafeMaybeUninit[downcast[Self.T, ImplicitlyDestructible]]](
+            rebind[UnsafeMaybeUninit[downcast[Self.T, ImplicitlyDeletable]]](
                 self._memory.as_uninit[Self.T]()[]
             ).unsafe_assume_init_destroy()
 
@@ -304,9 +304,9 @@ struct _DefaultVariantStorage[*Ts: AnyType](
                 return
 
     @always_inline
-    def __init__(out self, *, deinit take: Self):
+    def __init__(out self, *, deinit move: Self):
         self = Self(unsafe_uninitialized=())
-        self.get_discriminant() = take.get_discriminant()
+        self.get_discriminant() = move.get_discriminant()
 
         comptime for i in range(Self.Ts.size):
             comptime TUnknown = Self.Ts[i]
@@ -315,7 +315,7 @@ struct _DefaultVariantStorage[*Ts: AnyType](
 
             if self.get_discriminant() == UInt8(i):
                 self.unsafe_ptr[T]().init_pointee_move_from(
-                    take.unsafe_ptr[T]()
+                    move.unsafe_ptr[T]()
                 )
                 return
 
@@ -323,8 +323,8 @@ struct _DefaultVariantStorage[*Ts: AnyType](
     def __del__(deinit self):
         comptime for i in range(Self.Ts.size):
             comptime TUnknown = Self.Ts[i]
-            comptime assert conforms_to(TUnknown, ImplicitlyDestructible)
-            comptime T = downcast[TUnknown, ImplicitlyDestructible]
+            comptime assert conforms_to(TUnknown, ImplicitlyDeletable)
+            comptime T = downcast[TUnknown, ImplicitlyDeletable]
 
             if self.get_discriminant() == UInt8(i):
                 self.unsafe_ptr[T]().destroy_pointee()
@@ -409,7 +409,7 @@ struct Variant[*Ts: Movable](
     # parent trait constraints from derived ones yet. Remove AllCopyable
     # from this where clause once that's fixed.
     ImplicitlyCopyable where AllImplicitlyCopyable[*Ts] and AllCopyable[*Ts],
-    ImplicitlyDestructible,
+    ImplicitlyDeletable,
     Movable,
     RegisterPassable where AllRegisterPassable[*Ts],
     Writable where AllWritable[*Ts],
@@ -576,22 +576,22 @@ struct Variant[*Ts: Movable](
         ], "Cannot copy Variant with non-copyable types"
         self._storage = Self._Storage(copy=copy._storage)
 
-    def __init__(out self, *, deinit take: Self):
+    def __init__(out self, *, deinit move: Self):
         """Move-initialize this variant from another variant of the same type.
 
         Args:
-            take: The variant to move from.
+            move: The variant to move from.
         """
         comptime assert _all_movable[
             *Self.Ts
         ](), "Cannot move Variant with non-movable types"
-        self._storage = Self._Storage(take=take._storage^)
+        self._storage = Self._Storage(move=move._storage^)
 
     def __del__(deinit self):
         """Destroy the variant, running the destructor of the currently held value.
 
         Constraints:
-            All types in `Ts` must conform to `ImplicitlyDestructible`.
+            All types in `Ts` must conform to `ImplicitlyDeletable`.
         """
         comptime assert _all_implicitly_destructible[
             *Self.Ts
@@ -766,7 +766,7 @@ struct Variant[*Ts: Movable](
 
     @always_inline
     def replace[
-        Tin: Movable & ImplicitlyDestructible,
+        Tin: Movable & ImplicitlyDeletable,
         Tout: Movable,
     ](mut self, var value: Tin) -> Tout:
         """Replace the current value of the variant with the provided type.
@@ -906,7 +906,7 @@ struct Variant[*Ts: Movable](
 
         This method can be used to destroy types marked `@explicit_destroy`
         in a `Variant` in-place, without requiring that they be
-        `ImplicitlyDestructible`.
+        `ImplicitlyDeletable`.
 
         This method will abort if this variant does not current contain an
         element of the specified type `T`.
@@ -934,7 +934,7 @@ struct Variant[*Ts: Movable](
 def _all_implicitly_destructible[*Ts: AnyType]() -> Bool:
     comptime for i in range(Ts.size):
         comptime T = Ts[i]
-        if not conforms_to(T, ImplicitlyDestructible):
+        if not conforms_to(T, ImplicitlyDeletable):
             return False
     return True
 
@@ -949,9 +949,9 @@ def _all_movable[*Ts: AnyType]() -> Bool:
 
 def _all_trivial_del[*Ts: AnyType]() -> Bool:
     comptime for i in range(Ts.size):
-        comptime if conforms_to(Ts[i], ImplicitlyDestructible):
+        comptime if conforms_to(Ts[i], ImplicitlyDeletable):
             if not is_trivially_destructible[
-                downcast[Ts[i], ImplicitlyDestructible]
+                downcast[Ts[i], ImplicitlyDeletable]
             ]():
                 return False
         else:

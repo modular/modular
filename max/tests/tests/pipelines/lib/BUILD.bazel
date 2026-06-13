@@ -28,14 +28,18 @@ modular_py_test(
         "//max/python/max/entrypoints",
         "//max/python/max/graph",
         "//max/python/max/nn",
-        "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/architectures/kimik2_5",
+        "//max/python/max/pipelines/architectures/minimax_m2",
+        "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/lib",
         "//max/python/max/pipelines/modeling",
+        "//max/python/max/pipelines/weights",
         "//max/python/max/serve/parser",
         requirement("click"),
-        requirement("pyyaml"),
+        requirement("numpy"),
         requirement("pydantic"),
         requirement("pytest-mock"),
+        requirement("pyyaml"),
     ],
 )
 
@@ -55,7 +59,8 @@ modular_py_test(
         "//conditions:default": [],
     }),  # FIXME: MOCO-2411
     deps = [
-        "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/architectures/kimik2_5",
+        "//max/python/max/pipelines/architectures/minimax_m2",
         "//max/python/max/pipelines/lib",
         "//max/python/max/pipelines/modeling",
         requirement("numpy"),

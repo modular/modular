@@ -73,3 +73,82 @@ def normalize_message_tool_calls(message: dict[str, Any]) -> dict[str, Any]:
     out = dict(message)
     out["tool_calls"] = normalize_tool_call_arguments(tool_calls)
     return out
+
+
+_JSON_SCHEMA_TYPES = frozenset(
+    {"object", "array", "string", "number", "integer", "boolean", "null"}
+)
+
+
+def _validate_response_format_schema(
+    schema: dict[str, Any] | None,
+) -> None:
+    """Validates the root ``type`` of a ``response_format.json_schema.schema``.
+
+    OpenAI's structured outputs require an object root, but JSON Schema (and
+    the grammar backend, llguidance) also accept a missing ``type`` ("any")
+    and a type *union* that includes ``object``
+    (``"type": ["object", "array", "string"]``); both compile to a
+    constraining grammar, so we accept them. A root pinned to a single
+    *non-object scalar* type (e.g. ``{"type": "string"}``) is still rejected:
+    callers expect a JSON object back, and this matches OpenAI's contract.
+
+    - ``None`` / empty dict are acceptable (no constraint).
+    - Missing ``type`` is acceptable (means "any").
+    - ``type`` may be a non-empty list of recognized types (a union).
+    - A single ``type`` must be ``object``; any other single scalar is rejected.
+
+    Raises:
+        ValueError: If the root ``type`` is a single non-object type, a list
+            containing an unrecognized type, or otherwise not a JSON Schema
+            type.
+    """
+    if schema is None or schema == {}:
+        return
+    root_type = schema.get("type")
+    if root_type is None:
+        return
+    if isinstance(root_type, list):
+        invalid = [t for t in root_type if t not in _JSON_SCHEMA_TYPES]
+        if not root_type or invalid:
+            raise ValueError(
+                "response_format.json_schema.schema: root 'type' list must "
+                f"contain only JSON Schema types (got {root_type!r})"
+            )
+        return
+    if root_type != "object":
+        raise ValueError(
+            "response_format.json_schema.schema: root 'type' must be "
+            f"'object' or a type union including it (got {root_type!r})"
+        )
+
+
+def _normalize_tools_parameters(
+    tools: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Returns ``tools`` with ``function.parameters`` coerced to a dict.
+
+    OpenAI's API normalizes ``tools[*].function.parameters: null`` to an
+    empty parameter list (equivalent to omitting the field) and returns
+    200. MAX should match.
+
+    - Dict ``parameters`` are passed through unchanged.
+    - ``None`` or missing ``parameters`` becomes ``{}``.
+    - Other values pass through unchanged (downstream validation handles
+      type errors).
+    - Tool entries without a ``function`` dict pass through unchanged.
+
+    The input list and its dicts are not mutated.
+    """
+    normalized: list[dict[str, Any]] = []
+    for tool in tools:
+        out = dict(tool)
+        fn = out.get("function")
+        if isinstance(fn, dict):
+            fn = dict(fn)
+            params = fn.get("parameters")
+            if params is None:
+                fn["parameters"] = {}
+            out["function"] = fn
+        normalized.append(out)
+    return normalized

@@ -34,6 +34,7 @@ def mla_sm100_prefill[
     output_type: DType,
     q_type: DType,
     KVType: MHAOperand,
+    VType: MHAOperand,
     KRopeType: MHAOperand,
     MaskType: MHAMask,
     MaxPromptLenType: OptionallyStaticInt,
@@ -48,7 +49,7 @@ def mla_sm100_prefill[
     output: TileTensor[output_type, address_space=AddressSpace.GENERIC, ...],
     q: TileTensor[q_type, address_space=AddressSpace.GENERIC, ...],
     k: KVType,
-    v: KVType,
+    v: VType,
     k_rope: KRopeType,
     mask_functor: MaskType,
     valid_length: TileTensor[
@@ -62,6 +63,9 @@ def mla_sm100_prefill[
     comptime assert (
         output_type == DType.bfloat16
     ), "Only support bfloat16 output for SM100 MLA prefill"
+    comptime assert (
+        KVType.dtype == VType.dtype
+    ), "k and v must share an element dtype for SM100 MLA prefill"
 
     comptime if blockwise_scale == 0 and (
         KRopeType.dtype == KVType.dtype == q.dtype
@@ -79,7 +83,7 @@ def mla_sm100_prefill[
             output,
             q,
             k,
-            rebind[type_of(k)](v),
+            v,
             k_rope,
             mask_functor,
             valid_length,
@@ -100,7 +104,7 @@ def mla_sm100_prefill[
             output,
             q,
             k,
-            rebind[type_of(k)](v),
+            v,
             k_rope,
             mask_functor,
             valid_length,

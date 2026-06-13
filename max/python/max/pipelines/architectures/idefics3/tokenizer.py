@@ -22,16 +22,19 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import numpy.typing as npt
-from max.pipelines.core import TextAndVisionContext
+from max.pipelines.context import (
+    ImageMetadata,
+    TextAndVisionContext,
+    TokenBuffer,
+)
+from max.pipelines.context.exceptions import PromptTooLongError
 from max.pipelines.lib import TextAndVisionTokenizer
 from max.pipelines.modeling.types import (
     ImageContentPart,
-    ImageMetadata,
     TextContentPart,
     TextGenerationRequest,
     TextGenerationRequestMessage,
     TextGenerationRequestTool,
-    TokenBuffer,
 )
 from max.support.image import find_contiguous_ranges, hash_image
 from PIL import Image
@@ -269,9 +272,7 @@ class Idefics3Tokenizer(TextAndVisionTokenizer):
         )
 
         if self.max_length and encoded_prompt.shape[0] > self.max_length:
-            raise ValueError(
-                "encoded_prompt is greater than the max_length of the tokenizer"
-            )
+            raise PromptTooLongError(encoded_prompt.shape[0], self.max_length)
 
         start_and_end_idxs = find_contiguous_ranges(
             encoded_prompt, self.vision_token_ids
@@ -310,6 +311,7 @@ class Idefics3Tokenizer(TextAndVisionTokenizer):
                 )
             ],
             vision_token_ids=self.vision_token_ids,
+            vocab_size=self.tokenizer_vocab_size,
         )
         return context
 

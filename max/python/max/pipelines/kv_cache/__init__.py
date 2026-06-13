@@ -13,9 +13,15 @@
 
 """KV cache management for MAX pipelines."""
 
+from .config import KVCacheConfig, KVConnectorConfig
+from .memory_planner import (
+    MemoryPlanner,
+    ModelConfig,
+    ModelConfigWithKVCache,
+    PagedMemoryPlanner,
+)
 from .paged_kv_cache import (
     DummyKVCache,
-    IncrementCacheLengthsProcessor,
     InsufficientBlocksError,
     KVTransferEngine,
     KVTransferEngineMetadata,
@@ -27,11 +33,16 @@ from .registry import load_kv_manager, load_multi_kv_managers
 
 __all__ = [
     "DummyKVCache",
-    "IncrementCacheLengthsProcessor",
     "InsufficientBlocksError",
+    "KVCacheConfig",
+    "KVConnectorConfig",
     "KVTransferEngine",
     "KVTransferEngineMetadata",
+    "MemoryPlanner",
+    "ModelConfig",
+    "ModelConfigWithKVCache",
     "PagedKVCacheManager",
+    "PagedMemoryPlanner",
     "TransferReqData",
     "available_port",
     "load_kv_manager",

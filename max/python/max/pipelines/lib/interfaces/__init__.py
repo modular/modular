@@ -20,9 +20,11 @@ from max.pipelines.diffusion.interface import (
 from .arch_config import (
     ArchConfig,
     ArchConfigWithAttentionKVCache,
-    ArchConfigWithKVAndVisionCache,
+    ArchConfigWithBoundedMaxSeqLen,
     ArchConfigWithKVCache,
+    ArchConfigWithPermissiveMaxSeqLen,
     ArchConfigWithStoredKVParams,
+    ArchVLConfigWithTextSubconfig,
 )
 from .generate import GenerateMixin
 from .pipeline_model import (
@@ -38,9 +40,11 @@ __all__ = [
     "AlwaysSignalBuffersMixin",
     "ArchConfig",
     "ArchConfigWithAttentionKVCache",
-    "ArchConfigWithKVAndVisionCache",
+    "ArchConfigWithBoundedMaxSeqLen",
     "ArchConfigWithKVCache",
+    "ArchConfigWithPermissiveMaxSeqLen",
     "ArchConfigWithStoredKVParams",
+    "ArchVLConfigWithTextSubconfig",
     "DiffusionPipeline",
     "DiffusionPipelineOutput",
     "GenerateMixin",

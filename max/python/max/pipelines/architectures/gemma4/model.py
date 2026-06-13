@@ -28,9 +28,6 @@ from max.graph.weights import WeightData, Weights, WeightsAdapter
 from max.nn.comm import Signals
 from max.nn.kv_cache import KVCacheInputs, MultiKVCacheParams
 from max.nn.transformer import ReturnLogits
-from max.pipelines.kv_cache.paged_kv_cache.increment_cache_lengths import (
-    IncrementCacheLengthsProcessor,
-)
 from max.pipelines.lib import (
     AlwaysSignalBuffersMixin,
     CompilationTimer,
@@ -43,7 +40,6 @@ from max.pipelines.lib import (
 from max.pipelines.lib.vision_encoder_cache import VisionEncoderCache
 from max.pipelines.modeling.types import RequestID
 from max.profiler import traced
-from transformers import AutoConfig
 
 from .batch_vision_inputs import (
     ImageInputs,
@@ -65,8 +61,6 @@ from .weight_adapters import (
 )
 
 logger = logging.getLogger("max.pipelines")
-
-_GRAPH_CAPTURE_HEADROOM_BYTES = 2 * 1024**3  # 2 GiB
 
 
 @dataclass
@@ -185,11 +179,6 @@ class Gemma3_MultiModalModel(
         )
 
         assert isinstance(self.kv_params, MultiKVCacheParams)
-        self._increment_global_cache_lengths_processor = (
-            IncrementCacheLengthsProcessor(
-                session=session, params=self.kv_params.params[1]
-            )
-        )
 
     @property
     def model(self) -> Model:
@@ -203,29 +192,6 @@ class Gemma3_MultiModalModel(
     def release(self, request_id: RequestID) -> None:
         """Release vision encoder cache for a completed request."""
         self._ve_cache.release_request(request_id)
-
-    @classmethod
-    def estimate_activation_memory(
-        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
-    ) -> int:
-        del huggingface_config  # Unused.
-
-        # FIXME: We arbitrarily set some memory for activation memory to leave headroom
-        # for vision processing. We should determine this in a more principled way.
-        # Update: Bumped to 15 GiB after #80736 removed MemoryManager fallthrough.
-        base = 15 * 1024 * 1024 * 1024  # 15 GiB
-        if pipeline_config.runtime.device_graph_capture:
-            base += _GRAPH_CAPTURE_HEADROOM_BYTES
-        return base
-
-    @classmethod
-    def calculate_max_seq_len(
-        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
-    ) -> int:
-        """Calculates the maximum sequence length for the InternVL model."""
-        return Gemma4ForConditionalGenerationConfig.calculate_max_seq_len(
-            pipeline_config, huggingface_config
-        )
 
     def load_model(self, session: InferenceSession) -> tuple[Model, Model]:
         """Loads the compiled Gemma3 MultiModal models into the MAX Engine session.
@@ -710,44 +676,6 @@ class Gemma3_MultiModalModel(
             kv_cache_inputs=kv_cache_inputs,
             images=image_inputs,
             video=video_inputs,
-            combined_embeds=self._empty_embeddings(),
-            combined_indices=self._empty_indices(),
-        )
-
-    @traced
-    def prepare_next_token_inputs(
-        self, next_tokens: Buffer, prev_model_inputs: ModelInputs
-    ) -> ModelInputs:
-        prev_model_inputs = cast(Gemma3MultiModalModelInputs, prev_model_inputs)
-
-        # Extract the global cache portion from combined kv_cache_inputs.
-        # Combined layout per replica: [primary_tp0..tpN, global_tp0..tpN].
-        n_devices = len(self.devices)
-        assert prev_model_inputs.kv_cache_inputs is not None
-        global_kv_inputs = KVCacheInputs(
-            inputs=prev_model_inputs.kv_cache_inputs.inputs[
-                n_devices : 2 * n_devices
-            ]
-        )
-        self._increment_global_cache_lengths_processor.execute(
-            kv_cache_inputs=global_kv_inputs,
-            prev_model_inputs=prev_model_inputs,
-        )
-
-        row_offsets_size = prev_model_inputs.input_row_offsets[0].shape[0]
-
-        # Slice each tensor in the list, not the list itself
-        next_row_offsets = [
-            offsets_prealloc[:row_offsets_size]
-            for offsets_prealloc in self._input_row_offsets_prealloc
-        ]
-
-        return Gemma3MultiModalModelInputs(
-            tokens=next_tokens,
-            input_row_offsets=next_row_offsets,
-            return_n_logits=prev_model_inputs.return_n_logits,
-            signal_buffers=self.signal_buffers,
-            kv_cache_inputs=prev_model_inputs.kv_cache_inputs,
             combined_embeds=self._empty_embeddings(),
             combined_indices=self._empty_indices(),
         )

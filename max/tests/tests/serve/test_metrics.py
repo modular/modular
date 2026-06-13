@@ -35,6 +35,13 @@ def test_max_measurement() -> None:
     m.commit()
 
 
+def test_time_per_output_token_measurement() -> None:
+    common.configure_metrics(Settings())
+    assert "maxserve.time_per_output_token" in metrics.SERVE_METRICS
+    m = metrics.MaxMeasurement("maxserve.time_per_output_token", 1.5)
+    m.commit()  # Should not raise
+
+
 def test_serialization() -> None:
     measurements = [
         metrics.MaxMeasurement("maxserve.itl", 1),
@@ -74,6 +81,28 @@ def test_instrument_called() -> None:
         metrics.MaxMeasurement("maxserve.itl", 1).commit()
         # make sure the consumer got called
         assert mock_consumer.consume_measurement.call_count == 1
+
+
+def test_model_load_time_with_component_attribute() -> None:
+    """Pins down the ``component`` tag on the model_load_time histogram.
+
+    The model worker records the per-phase startup breakdown (build, compile,
+    init, ...) on the same histogram as the untagged model-load aggregate,
+    split by the ``component`` tag.
+    """
+    common.configure_metrics(Settings())
+    assert "maxserve.model_load_time" in metrics.SERVE_METRICS
+
+    # Untagged aggregate.
+    metrics.MaxMeasurement("maxserve.model_load_time", 1234.5).commit()
+
+    # Per-phase records, tagged by component.
+    for component in ("build", "compile", "total"):
+        metrics.MaxMeasurement(
+            "maxserve.model_load_time",
+            100.0,
+            attributes={"component": component},
+        ).commit()  # Should not raise
 
 
 def test_batch_execution_time_with_attributes() -> None:

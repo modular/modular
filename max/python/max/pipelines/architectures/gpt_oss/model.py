@@ -28,7 +28,7 @@ from max.graph.weights import Weights, WeightsAdapter
 from max.nn.comm import Signals
 from max.nn.kv_cache import KVCacheInputs
 from max.nn.transformer import ReturnLogits
-from max.pipelines.core import TextContext
+from max.pipelines.context import TextContext
 from max.pipelines.lib import (
     AlwaysSignalBuffersMixin,
     CompilationTimer,
@@ -38,7 +38,6 @@ from max.pipelines.lib import (
     PipelineConfig,
     PipelineModelWithKVCache,
 )
-from transformers import AutoConfig
 
 from .gpt_oss import GptOss
 from .model_config import GptOssConfig
@@ -119,54 +118,6 @@ class GptOssModel(
         )
 
         self.model = self.load_model(session)
-
-    @classmethod
-    def estimate_activation_memory(
-        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
-    ) -> int:
-        # FIXME GEX-3248: This is a workaround for a MemoryManager fragmentation
-        # issue. In #77700 we swapped the order of model weight loading and kv
-        # cache loading. This affected memory fragmentation and led to CUDA OOM
-        # when running `br smoke-test -- unsloth/gpt-oss-20b-bf16` on 1xH100.
-        # We reduce the kv cache size slightly to avoid this.
-        base = 6 * 1024 * 1024 * 1024  # 6 GiB
-
-        # MXFP4 dequant materializes full BF16 weight buffers on GPU.
-        # 3 projections (gate, up, down), each num_experts * hidden * moe_dim
-        # at 2 bytes (BF16). The extra 15 GiB covers compilation workspace
-        # and memory fragmentation.
-        if pipeline_config.model.quantization_encoding == "float4_e2m1fnx2":
-            num_experts = getattr(huggingface_config, "num_local_experts", 32)
-            moe_dim = getattr(huggingface_config, "intermediate_size", 2880)
-            hidden_size = getattr(huggingface_config, "hidden_size", 2880)
-            # 3 projections (gate, up, down) * 2 bytes per BF16 element.
-            dequant_bytes = num_experts * hidden_size * 3 * moe_dim * 2
-            base += dequant_bytes + 15 * 1024 * 1024 * 1024
-
-        return base
-
-    @staticmethod
-    def calculate_max_seq_len(
-        pipeline_config: PipelineConfig, huggingface_config: AutoConfig
-    ) -> int:
-        """Calculates the maximum sequence length for the GPT OSS model.
-
-        Uses the `max_length` from the :obj:`max.pipelines.config.PipelineConfig`
-        if provided, otherwise falls back to the `max_position_embeddings` from
-        the HuggingFace configuration's text config.
-
-        Args:
-            pipeline_config: The MAX Engine pipeline configuration.
-            huggingface_config: The HuggingFace model configuration object
-                (:obj:`transformers.AutoConfig`).
-
-        Returns:
-            The calculated maximum sequence length.
-        """
-        max_seq_len = pipeline_config.model.max_length
-        if max_seq_len:
-            return max_seq_len
-        return huggingface_config.max_position_embeddings
 
     def load_model(self, session: InferenceSession) -> Model:
         """Loads the compiled GPT OSS model into the MAX Engine session.
@@ -390,33 +341,4 @@ class GptOssModel(
             ),
             signal_buffers=self.signal_buffers,
             kv_cache_inputs=kv_cache_inputs,
-        )
-
-    def prepare_next_token_inputs(
-        self, next_tokens: Buffer, prev_model_inputs: ModelInputs
-    ) -> ModelInputs:
-        """Prepares the inputs for subsequent execution steps in a multi-step generation.
-
-        Args:
-            next_tokens: The tensor containing the token IDs generated in the previous step.
-            prev_model_inputs: The :obj:`ModelInputs` used in the previous execution step.
-
-        Returns:
-            The prepared :obj:`ModelInputs` object for the next execution step.
-        """
-        prev_model_inputs = cast(GptOssInputs, prev_model_inputs)
-
-        row_offsets_size = prev_model_inputs.input_row_offsets[0].shape[0]
-
-        next_row_offsets = [
-            self._input_row_offsets_prealloc[:row_offsets_size].to(device)
-            for device in self.devices
-        ]
-
-        return GptOssInputs(
-            tokens=next_tokens,
-            input_row_offsets=next_row_offsets,
-            return_n_logits=prev_model_inputs.return_n_logits,
-            signal_buffers=self.signal_buffers,
-            kv_cache_inputs=prev_model_inputs.kv_cache_inputs,
         )

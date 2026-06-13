@@ -14,7 +14,7 @@
 from std.collections import InlineArray, OptionalReg
 from std.math import align_up, ceildiv, recip
 from std.math.uutils import umod, ufloordiv, udivmod
-from nn.attention.mha_utils import DynamicInt
+from nn.attention.mha_utils import DynamicInt, MHA_PDL_LEVEL
 from std.math.constants import log2e
 from std.sys import (
     align_of,
@@ -28,11 +28,15 @@ from std.sys import (
     CompilationTarget,
 )
 
-from nn.attention.gpu.mha import mha_splitk_reduce, q_num_matrix_view_rows
+from nn.attention.gpu.mha import (
+    mha_splitk_reduce,
+    q_num_matrix_view_rows,
+)
 from nn.attention.gpu.mha_decode_partition_heuristic import (
     mha_decoding_num_partitions,
 )
 import std.gpu.primitives.warp as warp
+from std.gpu.primitives.grid_controls import pdl_launch_attributes
 from std.algorithm.functional import (
     _elementwise_impl_gpu,
     tile_and_unswitch,
@@ -68,6 +72,7 @@ from layout import (
     Idx,
     IntTuple,
     LayoutTensor,
+    RowMajorLayout,
     RuntimeLayout,
     RuntimeTuple,
     TensorLayout,
@@ -132,6 +137,12 @@ from .nvidia.sm100.mla_prefill_per_token_scale import (
 # ===-----------------------------------------------------------------------===#
 # GPU Multi-head Latent Attention (MLA) decoding implementations
 # ===-----------------------------------------------------------------------===#
+
+
+# Max query tokens per sequence the decode branch handles. Only NVIDIA's
+# decode kernel takes more than one (MTP / speculative decode); AMD's is
+# token-generation only.
+comptime MLA_DECODE_MAX_SEQ_LEN = 8 if has_nvidia_gpu_accelerator() else 1
 
 
 # entrypoint for MLA decoding kernels
@@ -199,6 +210,10 @@ def flare_mla_decoding[
     extra_scales_ptr: OptionalReg[
         UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
     ] = None,
+    # Capturable-graph scalar from the Python resolver. When set, the
+    # SM100 dispatcher uses this instead of recomputing num_partitions
+    # at grid time.
+    num_partitions_in: Optional[Int] = None,
 ) raises:
     """MLA decoding kernel that would only be called in the optimized compute
     graph.
@@ -312,6 +327,7 @@ def flare_mla_decoding[
                 extra_indices_stride=extra_indices_stride,
                 extra_topk_lengths=extra_topk_lengths,
                 extra_scales_ptr=extra_scales_ptr,
+                num_partitions_in=num_partitions_in,
             )
         else:
             # Build extra_k_operand when extra_k is provided.
@@ -350,6 +366,7 @@ def flare_mla_decoding[
                 extra_indices_stride=extra_indices_stride,
                 extra_topk_lengths=extra_topk_lengths,
                 extra_scales_ptr=extra_scales_ptr,
+                num_partitions_in=num_partitions_in,
             )
 
 
@@ -392,7 +409,7 @@ def flare_mla_decoding[
 
     var valid_length = TileTensor(
         UnsafePointer[
-            Scalar[DType.uint32], MutExternalOrigin
+            Scalar[DType.uint32], MutUntrackedOrigin
         ].unsafe_dangling(),
         row_major(Coord(Idx[0])),
     )
@@ -481,6 +498,9 @@ def flare_mla_decoding_dispatch[
     extra_scales_ptr: OptionalReg[
         UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
     ] = None,
+    # Capturable-graph scalar: forwarded by the Python resolver so grid-time
+    # dispatch matches the kernel's device-side divmod.
+    num_partitions_in: Optional[Int] = None,
 ) raises:
     comptime num_heads = config.num_heads
     comptime depth = config.depth
@@ -514,6 +534,17 @@ def flare_mla_decoding_dispatch[
     comptime assert (
         q.dtype.is_half_float() or q.dtype == DType.float8_e4m3fn
     ), "Only support half precision or float8_e4m3fn Q."
+
+    # AMD's decode kernel handles only one query token per sequence; assert it
+    # here at the dispatch chokepoint so every decode caller is covered.
+    comptime if has_amd_gpu_accelerator():
+        debug_assert(
+            max_prompt_len <= 1,
+            (
+                "AMD MLA decode kernel handles exactly one query token per"
+                " sequence; route multi-token sequences to the prefill kernel."
+            ),
+        )
 
     # TileTensor always has static shapes for the last two dims.
 
@@ -565,6 +596,7 @@ def flare_mla_decoding_dispatch[
                 extra_indices_stride=extra_indices_stride,
                 extra_topk_lengths=extra_topk_lengths,
                 extra_scales_ptr=extra_scales_ptr,
+                num_partitions_in=num_partitions_in,
             )
         else:
             # Legacy path: compute dispatch params and GPU buffer from inputs.
@@ -729,7 +761,11 @@ def flare_mla_decoding_dispatch[
                 comptime if has_amd_gpu_accelerator():
                     # MLA: kv_num_heads == 1, so heads_per_group == num_heads.
                     num_partitions_value = mha_decoding_num_partitions(
-                        batch_size, max_cache_valid_length, num_heads, ctx
+                        batch_size,
+                        max_cache_valid_length,
+                        num_heads,
+                        ctx,
+                        is_mla=True,
                     )
                 else:
                     num_partitions_value = 1
@@ -840,6 +876,15 @@ def flare_mla_decoding_dispatch[
                     comptime W_PARTS_128 = get_defined_int[
                         "MODULAR_MLA_REDUCE_WPARTS_128", 16
                     ]()
+                    # 256-partition reducer for launch-starved large-num_keys
+                    # bs=1 decode (nk>=64K): W_PARTS=16 => 1024 threads/CTA
+                    # (the block-dim ceiling), giving parts_per_warp=16 (2x
+                    # the 8 sweet spot, but the np=128->256 decode-parallelism
+                    # win dominates here — the decode grid was launch-starved
+                    # at ~128 blocks / 256 CUs).
+                    comptime W_PARTS_256 = get_defined_int[
+                        "MODULAR_MLA_REDUCE_WPARTS_256", 16
+                    ]()
                     # Two specializations: 64-kernel covers np <= 64
                     # (short context); 128-kernel covers np > 64 (long
                     # context). Picking per dispatch keeps O(MAX_PARTITIONS)
@@ -865,6 +910,16 @@ def flare_mla_decoding_dispatch[
                         MAX_PARTITIONS=128,
                         use_exp2=reduce_use_exp2,
                     ]
+                    comptime kernel_reduce_256 = mla_splitk_reduce[
+                        intermediate_dtype,
+                        output.dtype,
+                        depth=depth_v,
+                        num_heads=num_heads,
+                        D_TILES=D_TILES,
+                        W_PARTS=W_PARTS_256,
+                        MAX_PARTITIONS=256,
+                        use_exp2=reduce_use_exp2,
+                    ]
                     if num_partitions_value <= 64:
                         ctx.enqueue_function[kernel_reduce_64](
                             output_intermediate_data,
@@ -876,7 +931,7 @@ def flare_mla_decoding_dispatch[
                             grid_dim=(D_TILES, num_heads, batch_size),
                             block_dim=(W_PARTS_64 * WARP_SIZE, 1, 1),
                         )
-                    else:
+                    elif num_partitions_value <= 128:
                         ctx.enqueue_function[kernel_reduce_128](
                             output_intermediate_data,
                             output_device,
@@ -886,6 +941,17 @@ def flare_mla_decoding_dispatch[
                             num_partitions_value,
                             grid_dim=(D_TILES, num_heads, batch_size),
                             block_dim=(W_PARTS_128 * WARP_SIZE, 1, 1),
+                        )
+                    else:
+                        ctx.enqueue_function[kernel_reduce_256](
+                            output_intermediate_data,
+                            output_device,
+                            exp_sum_device,
+                            qk_max_device,
+                            batch_size,
+                            num_partitions_value,
+                            grid_dim=(D_TILES, num_heads, batch_size),
+                            block_dim=(W_PARTS_256 * WARP_SIZE, 1, 1),
                         )
                 else:
                     comptime kernel_reduce = mha_splitk_reduce[
@@ -905,6 +971,7 @@ def flare_mla_decoding_dispatch[
                         num_partitions_value,
                         grid_dim=(1, num_heads, batch_size),
                         block_dim=(WARP_SIZE, 1, 1),
+                        attributes=pdl_launch_attributes(MHA_PDL_LEVEL),
                     )
                 _ = exp_sum_qk_max_data^
                 _ = output_intermediate_data^
@@ -1937,6 +2004,64 @@ def mla_decoding_single_batch[
 # ===-----------------------------------------------------------------------===#
 
 
+@always_inline
+def _ragged_kv_view(
+    src: TileTensor[address_space=AddressSpace.GENERIC, ...],
+) -> TileTensor[
+    src.dtype,
+    RowMajorLayout[*Coord[Int, Int, Int].element_types],
+    ImmutAnyOrigin,
+]:
+    """Rebuild a ragged K/V buffer as a rank-3 row-major TileTensor view.
+
+    The MLA prefill K/V operands are contiguous row-major
+    `[total_keys, num_heads, depth]` tensors. Rebuilding the view directly
+    from the source pointer (instead of round-tripping through a
+    `LayoutTensor` + `lt_to_tt`) normalizes the origin, address space, and
+    linear-index type to the canonical GENERIC + `ImmutAnyOrigin` form the
+    `RaggedMHAOperand` buffer field expects.
+    """
+    return TileTensor(
+        rebind[UnsafePointer[Scalar[src.dtype], ImmutAnyOrigin]](src.ptr),
+        row_major(
+            Coord(Int(src.dim[0]()), Int(src.dim[1]()), Int(src.dim[2]()))
+        ),
+    )
+
+
+@always_inline
+def _ragged_offsets_view(
+    src: TileTensor[DType.uint32, address_space=AddressSpace.GENERIC, ...],
+) -> TileTensor[
+    DType.uint32, RowMajorLayout[*Coord[Int].element_types], ImmutAnyOrigin
+]:
+    """Rebuild ragged cache-row-offsets as a rank-1 row-major TileTensor view.
+
+    Mirrors `_ragged_kv_view` for the rank-1 `cache_row_offsets` operand.
+    """
+    return TileTensor(
+        rebind[UnsafePointer[UInt32, ImmutAnyOrigin]](src.ptr),
+        row_major(Coord(Int(src.dim[0]()))),
+    )
+
+
+@always_inline
+def _ragged_scales_view(
+    src: TileTensor[address_space=AddressSpace.GENERIC, ...],
+) -> TileTensor[
+    src.dtype, RowMajorLayout[*Coord[Int, Int].element_types], ImmutAnyOrigin
+]:
+    """Rebuild a ragged per-token scale buffer as a rank-2 row-major view.
+
+    Mirrors `_ragged_kv_view` for the rank-2 `[total_keys, 1]` `k_scales`
+    operand, normalizing to the GENERIC + `ImmutAnyOrigin` scale-buffer form.
+    """
+    return TileTensor(
+        rebind[UnsafePointer[Scalar[src.dtype], ImmutAnyOrigin]](src.ptr),
+        row_major(Coord(Int(src.dim[0]()), Int(src.dim[1]()))),
+    )
+
+
 # entrypoint for MLA prefill kernels
 @always_inline
 def flare_mla_prefill[
@@ -2044,37 +2169,24 @@ def flare_mla_prefill[
         else:
             max_prompt_len = Int(k_rope.max_prompt_length())
 
-        # Build row-major LayoutTensor from TileTensor for RaggedMHAOperand.
-        comptime cache_row_offsets_layout = Layout.row_major(UNKNOWN_VALUE)
-        var cache_row_offsets_lt = LayoutTensor[
-            DType.uint32,
-            cache_row_offsets_layout,
-            cache_row_offsets.origin,
-        ](
-            cache_row_offsets.ptr,
-            RuntimeLayout[cache_row_offsets_layout].row_major(
-                coord_to_index_list(
-                    cache_row_offsets.layout.shape_coord()
-                ).canonicalize()
-            ),
-        )
+        var cro_buf = _ragged_offsets_view(cache_row_offsets)
         var k_operand = RaggedMHAOperand(
-            LayoutTensor[k.dtype, k.layout, k.origin](
+            TileTensor(
                 k.ptr,
-                RuntimeLayout[k.layout].row_major(
-                    k.runtime_layout.shape.value.canonicalize()
+                row_major(
+                    Coord(Int(k.dim[0]()), Int(k.dim[1]()), Int(k.dim[2]()))
                 ),
             ),
-            cache_row_offsets_lt,
+            cro_buf,
         )
         var v_operand = RaggedMHAOperand(
-            LayoutTensor[v.dtype, v.layout, v.origin](
+            TileTensor(
                 v.ptr,
-                RuntimeLayout[v.layout].row_major(
-                    v.runtime_layout.shape.value.canonicalize()
+                row_major(
+                    Coord(Int(v.dim[0]()), Int(v.dim[1]()), Int(v.dim[2]()))
                 ),
             ),
-            cache_row_offsets_lt,
+            cro_buf,
         )
         var k_rope_operand = KVCacheMHAOperand(k_rope)
 
@@ -2200,28 +2312,10 @@ def flare_mla_prefill[
 
         if q_max_seq_len:
             max_prompt_len = q_max_seq_len.value()
-        var cache_row_offsets_lt = cache_row_offsets.to_layout_tensor()
-        var k_lt = k.to_layout_tensor()
-        var v_lt = v.to_layout_tensor()
         var k_rope_lt = k_rope.to_layout_tensor()
-        var k_operand = RaggedMHAOperand(
-            LayoutTensor[k_lt.dtype, k_lt.layout, k_lt.origin](
-                k_lt.ptr,
-                RuntimeLayout[k_lt.layout].row_major(
-                    k_lt.runtime_layout.shape.value.canonicalize()
-                ),
-            ),
-            cache_row_offsets_lt,
-        )
-        var v_operand = RaggedMHAOperand(
-            LayoutTensor[v_lt.dtype, v_lt.layout, v_lt.origin](
-                v_lt.ptr,
-                RuntimeLayout[v_lt.layout].row_major(
-                    v_lt.runtime_layout.shape.value.canonicalize()
-                ),
-            ),
-            cache_row_offsets_lt,
-        )
+        var cro_buf = _ragged_offsets_view(cache_row_offsets)
+        var k_operand = RaggedMHAOperand(_ragged_kv_view(k), cro_buf)
+        var v_operand = RaggedMHAOperand(_ragged_kv_view(v), cro_buf)
         var k_rope_operand = LayoutTensorMHAOperand(
             LayoutTensor[k_rope_lt.dtype, k_rope_lt.layout, k_rope_lt.origin](
                 k_rope_lt.ptr,
@@ -2344,29 +2438,11 @@ def flare_mla_prefill[
 
         if q_max_seq_len:
             max_prompt_len = q_max_seq_len.value()
-        var cache_row_offsets_lt = cache_row_offsets.to_layout_tensor()
-        var k_lt = k.to_layout_tensor()
-        var v_lt = v.to_layout_tensor()
         var k_rope_lt = k_rope.to_layout_tensor()
         var k_rope_scales_lt = k_rope_scales.to_layout_tensor()
-        var k_operand = RaggedMHAOperand(
-            LayoutTensor[k_lt.dtype, k_lt.layout, k_lt.origin](
-                k_lt.ptr,
-                RuntimeLayout[k_lt.layout].row_major(
-                    k_lt.runtime_layout.shape.value.canonicalize()
-                ),
-            ),
-            cache_row_offsets_lt,
-        )
-        var v_operand = RaggedMHAOperand(
-            LayoutTensor[v_lt.dtype, v_lt.layout, v_lt.origin](
-                v_lt.ptr,
-                RuntimeLayout[v_lt.layout].row_major(
-                    v_lt.runtime_layout.shape.value.canonicalize()
-                ),
-            ),
-            cache_row_offsets_lt,
-        )
+        var cro_buf = _ragged_offsets_view(cache_row_offsets)
+        var k_operand = RaggedMHAOperand(_ragged_kv_view(k), cro_buf)
+        var v_operand = RaggedMHAOperand(_ragged_kv_view(v), cro_buf)
         var k_rope_operand = LayoutTensorMHAOperand(
             LayoutTensor[k_rope_lt.dtype, k_rope_lt.layout, k_rope_lt.origin](
                 k_rope_lt.ptr,
@@ -2496,44 +2572,23 @@ def flare_mla_prefill[
         )
         if q_max_seq_len:
             max_prompt_len = q_max_seq_len.value()
-        var cache_row_offsets_lt = cache_row_offsets.to_layout_tensor()
 
         comptime assert k_scales.rank == 2, (
             "k_scales must be a per token scale 2D tensor of [batch_size *"
             " num_keys, 1]"
         )
 
-        var k_lt = k.to_layout_tensor()
-        var k_scales_lt = k_scales.to_layout_tensor()
-        var v_lt = v.to_layout_tensor()
         var k_rope_lt = k_rope.to_layout_tensor()
         var q_rope_lt = q_rope.to_layout_tensor()
         var q_scale_lt = q_scale.to_layout_tensor()
+        var cro_buf = _ragged_offsets_view(cache_row_offsets)
         var k_operand = RaggedMHAOperand(
-            LayoutTensor[k_lt.dtype, k_lt.layout, k_lt.origin](
-                k_lt.ptr,
-                RuntimeLayout[k_lt.layout].row_major(
-                    k_lt.runtime_layout.shape.value.canonicalize()
-                ),
-            ),
-            LayoutTensor[k_scales_lt.dtype, k_scales_lt.layout, ImmutAnyOrigin](
-                k_scales_lt.ptr,
-                RuntimeLayout[k_scales_lt.layout].row_major(
-                    k_scales_lt.runtime_layout.shape.value.canonicalize()
-                ),
-            ),
-            cache_row_offsets_lt,
+            _ragged_kv_view(k),
+            _ragged_scales_view(k_scales),
+            cro_buf,
         )
 
-        var v_operand = RaggedMHAOperand(
-            LayoutTensor[v_lt.dtype, v_lt.layout, v_lt.origin](
-                v_lt.ptr,
-                RuntimeLayout[v_lt.layout].row_major(
-                    v_lt.runtime_layout.shape.value.canonicalize()
-                ),
-            ),
-            cache_row_offsets_lt,
-        )
+        var v_operand = RaggedMHAOperand(_ragged_kv_view(v), cro_buf)
         var k_rope_operand = LayoutTensorMHAOperand(
             LayoutTensor[k_rope_lt.dtype, k_rope_lt.layout, k_rope_lt.origin](
                 k_rope_lt.ptr,
@@ -2675,37 +2730,16 @@ def flare_mla_prefill[
             " num_keys, 1]"
         )
 
-        var cache_row_offsets_lt = cache_row_offsets.to_layout_tensor()
-        var k_lt = k.to_layout_tensor()
-        var k_scales_lt = k_scales.to_layout_tensor()
-        var v_lt = v.to_layout_tensor()
         var q_rope_lt = q_rope.to_layout_tensor()
         var q_scale_lt = q_scale.to_layout_tensor()
+        var cro_buf = _ragged_offsets_view(cache_row_offsets)
         var k_operand = RaggedMHAOperand(
-            LayoutTensor[k_lt.dtype, k_lt.layout, k_lt.origin](
-                k_lt.ptr,
-                RuntimeLayout[k_lt.layout].row_major(
-                    k_lt.runtime_layout.shape.value.canonicalize()
-                ),
-            ),
-            LayoutTensor[k_scales_lt.dtype, k_scales_lt.layout, ImmutAnyOrigin](
-                k_scales_lt.ptr,
-                RuntimeLayout[k_scales_lt.layout].row_major(
-                    k_scales_lt.runtime_layout.shape.value.canonicalize()
-                ),
-            ),
-            cache_row_offsets_lt,
+            _ragged_kv_view(k),
+            _ragged_scales_view(k_scales),
+            cro_buf,
         )
 
-        var v_operand = RaggedMHAOperand(
-            LayoutTensor[v_lt.dtype, v_lt.layout, v_lt.origin](
-                v_lt.ptr,
-                RuntimeLayout[v_lt.layout].row_major(
-                    v_lt.runtime_layout.shape.value.canonicalize()
-                ),
-            ),
-            cache_row_offsets_lt,
-        )
+        var v_operand = RaggedMHAOperand(_ragged_kv_view(v), cro_buf)
         var k_rope_operand = KVCacheMHAOperand(k_rope)
 
         var batch_size: Int = Int(valid_length.dim[0]()) - 1
@@ -2830,7 +2864,7 @@ def flare_mla_prefill_dispatch[
             output,
             q,
             k,
-            rebind[type_of(k)](v),
+            v,
             k_rope,
             mask_functor,
             valid_length,
@@ -3806,7 +3840,7 @@ def set_buffer_lengths_to_zero[
     BufferLengthsLayoutType: TensorLayout,
 ](
     buffer_lengths: TileTensor[
-        mut=True, DType.int32, BufferLengthsLayoutType, MutExternalOrigin
+        mut=True, DType.int32, BufferLengthsLayoutType, MutUntrackedOrigin
     ],
 ):
     comptime assert buffer_lengths.flat_rank == 1
@@ -3880,24 +3914,24 @@ def mla_prefill_plan_kernel[
         mut=True,
         DType.uint32,
         BufferRowOffsetsLayoutType,
-        MutExternalOrigin,
+        MutUntrackedOrigin,
     ],
     cache_offsets: TileTensor[
         mut=True,
         DType.uint32,
         CacheOffsetsLayoutType,
-        MutExternalOrigin,
+        MutUntrackedOrigin,
     ],
     buffer_lengths: TileTensor[
         mut=True,
         DType.int32,
         BufferLengthsLayoutType,
-        MutExternalOrigin,
+        MutUntrackedOrigin,
     ],
     input_row_offsets: TileTensor[
         DType.uint32,
         InputRowOffsetsLayoutType,
-        ImmutExternalOrigin,
+        ImmutUntrackedOrigin,
     ],
     k_cache: cache_t,
     buffer_token_size: UInt32,
@@ -4049,6 +4083,7 @@ def _k_cache_to_buffer[
     def copy_fn_unified[width: Int, alignment: Int = 1](idx: Coord):
         copy_fn[width, idx.rank, alignment](coord_to_index_list(idx))
 
-    _elementwise_impl_gpu[simd_width=target_simd_width](
-        copy_fn_unified, shape=launch_shape, ctx=context
-    )
+    _elementwise_impl_gpu[
+        simd_width=target_simd_width,
+        trace_description="mla_k_cache_copy",
+    ](copy_fn_unified, shape=launch_shape, ctx=context)

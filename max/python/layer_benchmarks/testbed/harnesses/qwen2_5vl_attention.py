@@ -47,13 +47,12 @@ from max.nn.rotary_embedding import Llama3RotaryEmbedding
 from max.pipelines.architectures.qwen2_5vl.nn.decoder import (
     Qwen25VLDecoderAttentionWithRope,
 )
-from max.pipelines.core import TextContext
-from max.pipelines.kv_cache import PagedKVCacheManager
-from max.pipelines.modeling.types import (
-    RequestID,
-    TextGenerationContext,
+from max.pipelines.context import (
+    TextContext,
     TokenBuffer,
 )
+from max.pipelines.kv_cache import PagedKVCacheManager
+from max.pipelines.modeling.types import RequestID
 
 from testbed.harness import CompiledLayerBundle, LayerTestHarness
 from testbed.harnesses.ragged_attention_harness import (
@@ -74,7 +73,7 @@ class Qwen25VLAttentionHarness(
     LayerTestHarness[
         Qwen25VLAttentionStaticParams,
         AttentionDynamicParams,
-        list[TextGenerationContext],
+        list[TextContext],
     ]
 ):
     """Harness for Qwen2.5VL decoder attention with mRoPE position_ids.
@@ -235,13 +234,13 @@ class Qwen25VLAttentionHarness(
         self,
         bundle: CompiledLayerBundle,
         dynamic_params: AttentionDynamicParams,
-    ) -> tuple[list[Buffer], list[TextGenerationContext]]:
+    ) -> tuple[list[Buffer], list[TextContext]]:
         device = bundle.device
         p = self.static_params
         total_len = dynamic_params.ctx_len + dynamic_params.seq_len
         num_sections = len(p.mrope_section)
 
-        batch: list[TextGenerationContext] = []
+        batch: list[TextContext] = []
         for _ in range(dynamic_params.batch_size):
             ctx = TextContext(
                 request_id=RequestID(),
@@ -255,7 +254,7 @@ class Qwen25VLAttentionHarness(
             batch.append(ctx)
 
         kv_runtime = self._kv_manager.runtime_inputs(
-            cast(list[list[TextGenerationContext]], [batch])
+            cast(list[list[TextContext]], [batch])
         ).inputs[0]
         assert kv_runtime.attention_dispatch_metadata is not None
 
@@ -296,7 +295,7 @@ class Qwen25VLAttentionHarness(
     def cleanup_inputs(
         self,
         bundle: CompiledLayerBundle,
-        context: list[TextGenerationContext],
+        context: list[TextContext],
     ) -> None:
         for ctx in context:
             self._kv_manager.release(ctx.request_id, replica_idx=0)

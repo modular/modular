@@ -13,9 +13,14 @@
 
 from typing import Any
 
+import pytest
 from max.serve.parser import (
     normalize_message_tool_calls,
     normalize_tool_call_arguments,
+)
+from max.serve.parser.tool_call_normalization import (
+    _normalize_tools_parameters,
+    _validate_response_format_schema,
 )
 
 
@@ -157,3 +162,108 @@ def test_normalize_message_tool_calls_empty_list_passthrough() -> None:
     # Empty list is preserved here; the openai_routes layer is responsible
     # for dropping empty tool_calls from incoming requests.
     assert out is msg
+
+
+def test_normalize_tools_params_replaces_null_with_empty_dict() -> None:
+    tools: list[dict[str, Any]] = [
+        {
+            "type": "function",
+            "function": {"name": "test", "parameters": None},
+        }
+    ]
+    [out] = _normalize_tools_parameters(tools)
+    assert out["function"]["parameters"] == {}
+    # Source dict not mutated.
+    assert tools[0]["function"]["parameters"] is None
+
+
+def test_normalize_tools_params_passes_through_valid_object() -> None:
+    params = {"type": "object", "properties": {"city": {"type": "string"}}}
+    tools: list[dict[str, Any]] = [
+        {
+            "type": "function",
+            "function": {"name": "test", "parameters": params},
+        }
+    ]
+    [out] = _normalize_tools_parameters(tools)
+    assert out["function"]["parameters"] == params
+
+
+def test_normalize_tools_params_passes_through_missing_parameters() -> None:
+    """Missing parameters means 'empty parameter list' per the OpenAPI spec."""
+    tools: list[dict[str, Any]] = [
+        {
+            "type": "function",
+            "function": {"name": "test"},
+        }
+    ]
+    [out] = _normalize_tools_parameters(tools)
+    # Treat omission the same as null: normalize to {}.
+    assert out["function"]["parameters"] == {}
+
+
+def test_normalize_tools_params_handles_empty_list() -> None:
+    assert _normalize_tools_parameters([]) == []
+
+
+def test_normalize_tools_params_handles_missing_function() -> None:
+    """Tool entry without a function dict is passed through unchanged."""
+    tools: list[dict[str, Any]] = [{"type": "function"}]
+    out = _normalize_tools_parameters(tools)
+    assert out == tools
+
+
+def test_validate_response_format_schema_accepts_object_root() -> None:
+    schema = {
+        "type": "object",
+        "properties": {"name": {"type": "string"}},
+        "required": ["name"],
+    }
+    # Should not raise.
+    _validate_response_format_schema(schema)
+
+
+def test_validate_response_format_schema_rejects_string_root() -> None:
+    """A single non-object scalar root is rejected (callers expect an object)."""
+    with pytest.raises(ValueError, match=r"must be\s+'object'"):
+        _validate_response_format_schema({"type": "string"})
+
+
+def test_validate_response_format_schema_rejects_array_root() -> None:
+    """A single non-object root (array) is rejected."""
+    with pytest.raises(ValueError, match=r"must be\s+'object'"):
+        _validate_response_format_schema(
+            {"type": "array", "items": {"type": "string"}}
+        )
+
+
+def test_validate_response_format_schema_accepts_missing_type() -> None:
+    """A missing root ``type`` means "any" and is valid JSON Schema."""
+    _validate_response_format_schema({"properties": {"x": {"type": "string"}}})
+
+
+def test_validate_response_format_schema_accepts_type_union() -> None:
+    """A root ``type`` union is valid JSON Schema and compiles fine."""
+    _validate_response_format_schema({"type": ["object", "array", "string"]})
+
+
+def test_validate_response_format_schema_rejects_unknown_type() -> None:
+    """A root ``type`` that is a single non-object value is rejected."""
+    with pytest.raises(ValueError, match=r"must be\s+'object'"):
+        _validate_response_format_schema({"type": "frobnicate"})
+
+
+def test_validate_response_format_schema_rejects_bad_type_union() -> None:
+    """A root ``type`` list with a non-JSON-Schema member is rejected."""
+    with pytest.raises(ValueError, match=r"list must"):
+        _validate_response_format_schema({"type": ["object", "frob"]})
+
+
+def test_validate_response_format_schema_accepts_none_schema() -> None:
+    """A None schema is acceptable (no validation requested)."""
+    _validate_response_format_schema(None)
+
+
+def test_validate_response_format_schema_accepts_empty_dict() -> None:
+    """An empty schema dict is acceptable (treated as no constraint)."""
+    _validate_response_format_schema({})

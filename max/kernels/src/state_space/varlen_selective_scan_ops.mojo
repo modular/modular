@@ -557,22 +557,23 @@ struct VarlenSelectiveScanFwd[delta_softplus: Bool = False]:
 
         args.dispatch_for_d_state[target](d_state)
 
-    @staticmethod
-    def shape[
-        dtype: DType,
-    ](
-        u: InputTensor[dtype=dtype, rank=2, ...],
-        delta: InputTensor[dtype=dtype, rank=2, ...],
-        A: InputTensor[dtype=dtype, rank=2, ...],
-        B: InputTensor[dtype=dtype, rank=3, ...],
-        C: InputTensor[dtype=dtype, rank=3, ...],
-        D: InputTensor[dtype=dtype, rank=1, ...],
-        delta_bias: InputTensor[dtype=dtype, rank=1, ...],
-        query_start_loc: InputTensor[dtype=DType.int32, rank=1, ...],
-        cache_indices: InputTensor[dtype=DType.int32, rank=1, ...],
-        has_initial_state: InputTensor[dtype=DType.bool, rank=1, ...],
-    ) -> IndexList[2]:
-        return u.shape()
+
+@compiler.register_shape_function("varlen_selective_scan_fwd")
+def varlen_selective_scan_fwd_shape[
+    dtype: DType,
+](
+    u: InputTensor[dtype=dtype, rank=2, ...],
+    delta: InputTensor[dtype=dtype, rank=2, ...],
+    A: InputTensor[dtype=dtype, rank=2, ...],
+    B: InputTensor[dtype=dtype, rank=3, ...],
+    C: InputTensor[dtype=dtype, rank=3, ...],
+    D: InputTensor[dtype=dtype, rank=1, ...],
+    delta_bias: InputTensor[dtype=dtype, rank=1, ...],
+    query_start_loc: InputTensor[dtype=DType.int32, rank=1, ...],
+    cache_indices: InputTensor[dtype=DType.int32, rank=1, ...],
+    has_initial_state: InputTensor[dtype=DType.bool, rank=1, ...],
+) -> IndexList[2]:
+    return u.shape()
 
 
 @compiler.register("varlen_selective_state_update")

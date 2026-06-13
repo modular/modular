@@ -70,7 +70,7 @@ from std import math
 from std.os import abort
 
 @export
-def PyInit_mojo_module() -> PythonObject:
+def PyInit_mojo_module() abi("C") -> PythonObject:
     try:
         var m = PythonModuleBuilder("mojo_module")
         m.def_function[factorial]("factorial", docstring="Compute n!")
@@ -143,6 +143,32 @@ always safe to delete the contents of a `__mojocache__` directory. Needed
 artifacts will simply be rebuilt the next time the Mojo module is imported.
 :::
 
+### The `abi` of exported functions
+
+An [`@export`](/docs/reference/decorators/export/) function must declare which
+calling convention it uses with an explicit
+[`abi`](/docs/reference/function-declarations#abi-c) effect. In a Python
+extension module, the only function you need to export is the
+`PyInit_<module>` entry point, and it must use `abi("C")`:
+
+```mojo
+@export
+def PyInit_mojo_module() abi("C") -> PythonObject:
+    ...
+```
+
+This is because the CPython runtime locates and calls `PyInit_<module>`
+directly across the C boundary, so it must expose the C calling convention. A
+`abi("C")` function can't be marked `raises`, which is why the examples above
+catch any error inside the body and `abort` instead of propagating it.
+
+The functions, methods, and initializers you register with the module builder
+(`def_function`, `def_method`, `def_py_init`, and so on) don't need `@export` at
+all; you pass them by reference, and Mojo generates the C wrapper that CPython
+actually calls. That wrapper invokes your function using the Mojo calling
+convention and translates any raised error into a Python exception, so a
+registered function such as `factorial` above can freely be marked `raises`.
+
 Now that we've looked at the basics of how Mojo can be used from Python, let's
 dig into the available features and how you can leverage them to accelerate
 your Python with Mojo.
@@ -162,7 +188,7 @@ struct Person(Movable, Writable):
     var age: Int
 
 @export
-def PyInit_person_module() -> PythonObject:
+def PyInit_person_module() abi("C") -> PythonObject:
     try:
         var mb = PythonModuleBuilder("person_module")
         var person_type = mb.add_type[Person]("Person")
@@ -208,7 +234,7 @@ you add the type to your module. For example:
 
 ```mojo
 @export
-def PyInit_person_module() -> PythonObject:
+def PyInit_person_module() abi("C") -> PythonObject:
     try:
         var mb = PythonModuleBuilder("person_module")
         # highlight-start
@@ -403,7 +429,7 @@ from std.python.bindings import PythonModuleBuilder
 from std.os import abort
 
 @export
-def PyInit_mojo_module() -> PythonObject:
+def PyInit_mojo_module() abi("C") -> PythonObject:
     try:
         var mb = PythonModuleBuilder("mojo_module")
         # highlight-start
@@ -459,7 +485,7 @@ from std.python.bindings import PythonModuleBuilder
 from std.os import abort
 
 @export
-def PyInit_mojo_module() -> PythonObject:
+def PyInit_mojo_module() abi("C") -> PythonObject:
     try:
         var mb = PythonModuleBuilder("mojo_module")
         # highlight-start
@@ -583,7 +609,7 @@ provided:
 
 ```mojo
 @export
-def PyInit_mojo_module() -> PythonObject:
+def PyInit_mojo_module() abi("C") -> PythonObject:
     try:
         var b = PythonModuleBuilder("mojo_module")
         b.def_py_function[count_args]("count_args")

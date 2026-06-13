@@ -363,7 +363,7 @@ performs a deep copy:
 
 ```mojo
 struct HeapArray(Copyable):
-    var data: UnsafePointer[Int, MutExternalOrigin]
+    var data: UnsafePointer[Int, MutUntrackedOrigin]
     var size: Int
     var cap: Int
 
@@ -553,19 +553,19 @@ The generated move constructor for `MyPet` would look like this if you wrote
 it yourself:
 
 ```mojo
-def __init__(out self, *, deinit take: Self):
-    self.name = take.name^
-    self.age = take.age
+def __init__(out self, *, deinit move: Self):
+    self.name = move.name^
+    self.age = move.age
 ```
 
-The move constructor takes its `take` argument using the `deinit`
+The move constructor takes its `move` argument using the `deinit`
 [passing convention](/docs/manual/values/ownership/#argument-passing-conventions),
 which grants exclusive ownership of the value and marks it as destroyed at the
 end of the function. (For more information on the `deinit` convention, see
 [Field lifetimes during destruct and move](/docs/manual/lifecycle/death/#field-lifetimes-during-destruct-and-move)).
 
 The move constructor uses the transfer sigil (`^`) to indicate that
-ownership of the `name` value transfers from `take` to `self`. For
+ownership of the `name` value transfers from `move` to `self`. For
 trivial register-passable types like `Int`, omit the transfer sigil.
 Trivial types are always movable. Since they can't define custom move
 constructors or destructors, there's no special logic required to move.

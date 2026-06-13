@@ -33,11 +33,6 @@ EXTRA_DEPS = {
         "//max:builtin_kernels",
         "//max:extensibility",
     ],
-    "elementwise_unary_ops": [
-        "//max:extensibility",
-        "//max:builtin_kernels",
-        "//max:nn",
-    ],
     "group_norm_ops": [
         "//max:extensibility",
         "//max:nn",
@@ -45,12 +40,6 @@ EXTRA_DEPS = {
     "layer_norm_ops": [
         "//max:nn",
         "//max:extensibility",
-    ],
-    "matmul_ops": [
-        "//max:extensibility",
-        "//max:linalg",
-        "//max:builtin_kernels",
-        "//max:layout",
     ],
     "misc_ops": [
         "//max:builtin_kernels",
@@ -86,33 +75,16 @@ EXTRA_DEPS = {
     for name in OPS
 ]
 
-_SHARED_LIBS = [":" + name for name in OPS]
-
-# Wrap .mojo sources in a filegroup for macOS runtime compilation.
-# On macOS (cross-compiled from Linux CI), the mojo_shared_library targets
-# crash with SIGILL, so we fall back to runtime compilation via mojo.importer.
-# Using a filegroup avoids the duplicate-srcs lint (find_duplicate_srcs.py
-# ignores filegroup targets).
-filegroup(
-    name = "_mojo_srcs",
-    srcs = glob(["**/*.mojo"]),
-)
-
 modular_py_library(
     name = "_interpreter_ops",
     srcs = glob(["**/*.py"]),
-    data = select({
-        "@platforms//os:macos": [
-            ":_mojo_srcs",
-            "//max:builtin_kernels",
-            "@mojo//:std",
-        ],
-        "//conditions:default": _SHARED_LIBS,
-    }),
+    data = [":" + name for name in OPS],
     deps = [
         "//max/python/max:_core",
+        "//max/python/max:_mlir_context",
         "//max/python/max/driver",
         "//max/python/max/dtype",
+        "//max/python/max/engine",
         "//max/python/max/graph",
         "@mojo//:python",
         requirement("numpy"),

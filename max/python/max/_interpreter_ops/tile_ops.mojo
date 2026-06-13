@@ -25,6 +25,7 @@ from std.python import PythonObject
 from std.python.bindings import PythonModuleBuilder
 
 from std.algorithm.functional import elementwise, IndexList
+from std.utils.coord import Coord
 
 from op_utils import (
     _get_ctx,
@@ -38,7 +39,7 @@ from op_utils import (
 
 
 @export
-def PyInit_tile_ops() -> PythonObject:
+def PyInit_tile_ops() abi("C") -> PythonObject:
     """Create a Python module with tile kernel function bindings."""
     try:
         var b = PythonModuleBuilder("tile_ops")
@@ -59,8 +60,8 @@ def PyInit_tile_ops() -> PythonObject:
 def tile_op[
     dtype: DType, //
 ](
-    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    in_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    out_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    in_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     in_shape: InlineArray[Int, MAX_RANK],
     out_strides: InlineArray[Int, MAX_RANK],
     in_strides: InlineArray[Int, MAX_RANK],
@@ -91,8 +92,8 @@ def tile_op[
     @always_inline
     @parameter
     @__copy_capture(out_ptr, in_ptr, in_shape, out_strides, in_strides, rank)
-    def func[width: Int, rank_: Int, alignment: Int = 1](idx: IndexList[rank_]):
-        var i = idx[0]
+    def func[width: Int, alignment: Int = 1](idx: Coord):
+        var i = Int(idx[0].value())
         var rem = i
         var in_flat = 0
         for d in range(rank):
@@ -101,7 +102,7 @@ def tile_op[
             in_flat += (coord % in_shape[d]) * in_strides[d]
         out_ptr[i] = in_ptr[in_flat]
 
-    elementwise[func, simd_width=1](IndexList[1](total), ctx)
+    elementwise[func, simd_width=1](Coord(total), ctx)
 
 
 # ===----------------------------------------------------------------------=== #

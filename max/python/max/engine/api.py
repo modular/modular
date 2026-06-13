@@ -410,6 +410,22 @@ class CompiledModel:
     def __repr__(self) -> str:
         return "CompiledModel()"
 
+    def export_mef(self, path: str | Path) -> None:
+        """Exports this compiled artifact to a MEF file.
+
+        Writes the serialized model straight from the compiled artifact, so
+        it does not require the model to be initialized on a device. This
+        makes it usable in cross-compilation / virtual-device scenarios where
+        the target device may not be attached.
+
+        Args:
+            path: Filesystem path to write the MEF to.
+        """
+        self._compiled.wait()
+        if (exc := self._compiled.exception()) is not None:
+            raise exc
+        self._compiled.result().export_mef(str(path))
+
 
 class InferenceSession:
     """Manages an inference session in which you can load and run models.
@@ -685,9 +701,7 @@ class InferenceSession:
 
         with _record_phase("compile_seconds"):
             if isinstance(model, Path | str):
-                handle = self._impl.compile_from_path(
-                    model, custom_extensions_final
-                )
+                handle = self._impl.compile(model, custom_extensions_final)
             elif isinstance(model, Graph):
                 module = model.module
                 custom_extensions_final.extend(
@@ -722,6 +736,11 @@ class InferenceSession:
                 handle = self._compile_module(module, custom_extensions_final)
             else:
                 raise RuntimeError("The model is not a valid path or module.")
+
+        # synchronously complete the compilation and raise errors
+        handle.wait()
+        if (exception := handle.exception()) is not None:
+            raise exception
 
         compiled = CompiledModel(
             compiled=handle, expected_weights=expected_weights
@@ -772,8 +791,9 @@ class InferenceSession:
     ) -> dict[str, Model]:
         """Initializes all models in a compiled artifact for execution.
 
-        Use this to complete the second half of a :meth:`compile`/:meth:`init`
-        pair. Returns one :class:`Model` per top-level graph in the artifact,
+        Use this to complete the second half of a
+        :meth:`compile`/:meth:`init_all` pair. Returns one :class:`Model` per
+        top-level graph in the artifact,
         keyed by ``sym_name``.
 
         Args:
@@ -861,7 +881,7 @@ class InferenceSession:
         """
         with self._compilation_lock:
             try:
-                return self._impl.compile_from_object(
+                return self._impl.compile(
                     module.mlir_module._CAPIPtr,
                     custom_extensions_final,
                     _derive_pipeline_name(module),

@@ -12,7 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 from max.graph.weights import WeightsFormat
-from max.pipelines.core import TextContext
+from max.pipelines.context import TextContext
+from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
 from max.pipelines.lib import SupportedArchitecture, TextTokenizer
 from max.pipelines.modeling.types import PipelineTask
 
@@ -54,4 +55,5 @@ llama_arch = SupportedArchitecture(
     },
     task=PipelineTask.TEXT_GENERATION,
     config=Llama3Config,
+    memory_planner=PagedMemoryPlanner,
 )

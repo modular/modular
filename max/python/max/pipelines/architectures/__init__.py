@@ -35,8 +35,10 @@ def register_all_models() -> None:
 
     from .bert import bert_arch
     from .deepseekV2 import deepseekV2_arch
+    from .deepseekV2_modulev3 import deepseekV2_modulev3_arch
     from .deepseekV3 import deepseekV3_arch
     from .deepseekV3_2 import deepseekV3_2_arch
+    from .deepseekV3_modulev3 import deepseekV3_modulev3_arch
     from .deepseekV3_nextn import deepseekV3_nextn_arch
     from .dflash_llama3 import dflash_llama_arch
     from .eagle3_deepseekV3 import (
@@ -52,6 +54,7 @@ def register_all_models() -> None:
     from .gemma3multimodal import gemma3_multimodal_arch
     from .gemma3multimodal_modulev3 import gemma3_multimodal_modulev3_arch
     from .gemma4 import gemma4_arch
+    from .gemma4_assistant import gemma4_assistant_arch
     from .glm5_1 import glm5_1_arch
     from .gpt_oss import gpt_oss_arch
     from .gpt_oss_modulev3 import gpt_oss_modulev3_arch
@@ -99,6 +102,7 @@ def register_all_models() -> None:
     from .unified_dflash_llama3 import unified_dflash_llama3_arch
     from .unified_eagle_llama3 import unified_eagle_llama3_arch
     from .unified_mtp_deepseekV3 import unified_mtp_deepseekV3_arch
+    from .unified_mtp_gemma4 import unified_mtp_gemma4_arch
     from .wan import wan_arch, wan_i2v_arch
     from .z_image_modulev3 import z_image_arch
 
@@ -106,7 +110,9 @@ def register_all_models() -> None:
         exaone_arch,
         exaone_modulev3_arch,
         deepseekV2_arch,
+        deepseekV2_modulev3_arch,
         deepseekV3_arch,
+        deepseekV3_modulev3_arch,
         deepseekV3_2_arch,
         deepseekV3_nextn_arch,
         dflash_llama_arch,
@@ -121,6 +127,7 @@ def register_all_models() -> None:
         gemma3_multimodal_arch,
         gemma3_multimodal_modulev3_arch,
         gemma4_arch,
+        gemma4_assistant_arch,
         glm5_1_arch,
         granite_arch,
         granite_modulev3_arch,
@@ -170,6 +177,7 @@ def register_all_models() -> None:
         unified_dflash_llama3_arch,
         unified_eagle_llama3_arch,
         unified_mtp_deepseekV3_arch,
+        unified_mtp_gemma4_arch,
         wan_arch,
         wan_i2v_arch,
         z_image_arch,

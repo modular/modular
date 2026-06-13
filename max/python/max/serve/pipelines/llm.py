@@ -18,18 +18,21 @@ from collections.abc import AsyncGenerator, Sequence
 from dataclasses import dataclass
 from typing import Any, Generic, cast
 
-from max.pipelines.core import TextAndVisionContext, TextContext
-from max.pipelines.lib import reasoning
-from max.pipelines.modeling.types import (
+from max.pipelines.context import (
     BaseContextType,
-    EmbeddingsGenerationOutput,
     GenerationStatus,
     LogProbabilities,
+    TextAndVisionContext,
+    TextContext,
+    TextGenerationOutput,
+)
+from max.pipelines.lib import reasoning
+from max.pipelines.modeling.types import (
+    EmbeddingsGenerationOutput,
     PipelineOutputType,
     PipelineTokenizer,
     ReasoningParser,
     RequestType,
-    TextGenerationOutput,
     TextGenerationRequest,
 )
 from max.profiler import Tracer
@@ -142,13 +145,15 @@ class TokenGeneratorPipeline(
         """Generates and streams token chunks for the provided request.
 
         Yields chunks of tokens aligned with scheduler responses. Each chunk
-        contains all tokens from a single model worker response (size depends
-        on max_num_steps config). Benefits:
+        contains all tokens from a single model worker response. Benefits:
         - Single tokenizer.decode() call per chunk instead of per token
         - Callers can amortize Pydantic/SSE overhead across the chunk
         """
         itl = StopWatch()
         total_sw = StopWatch()
+        decode_sw = StopWatch()
+        decode_elapsed_ms = 0.0
+        num_generated_tokens = 0
         self.logger.debug(
             "%s: Started: Elapsed: %0.2f ms",
             request.request_id,
@@ -171,6 +176,14 @@ class TokenGeneratorPipeline(
         if reasoning_parser is not None:
             reasoning_parser.reset()
         is_still_reasoning = reasoning_parser is not None
+
+        # Count this request as awaiting admission to the model worker: it has
+        # been accepted by the API server but is still API-side (tokenization /
+        # pre-submit). Decremented just before the handoff to the worker below,
+        # so a persistently high gauge points at an API-server backlog rather
+        # than the scheduler queue.
+        self.model_worker.note_awaiting_admission(1)
+        awaiting_admission = True
 
         try:
             with record_ms(METRICS.input_time):
@@ -240,6 +253,11 @@ class TokenGeneratorPipeline(
             with record_ms(METRICS.output_time):
                 has_stop_sequences = bool(context.eos_tracker.eos_stop_strings)
 
+                # Handing the request off to the model worker; it is no longer
+                # awaiting admission on the API side.
+                self.model_worker.note_awaiting_admission(-1)
+                awaiting_admission = False
+
                 async for responses in self.model_worker.stream(
                     context.request_id, context
                 ):
@@ -247,6 +265,8 @@ class TokenGeneratorPipeline(
                     assert len(responses) > 0
                     assert isinstance(responses[0], TextGenerationOutput)
                     response = TextGenerationOutput.merge(responses)
+
+                    num_generated_tokens += len(response.tokens)
 
                     tokens: list[int] | None = response.tokens
                     token_log_probs = response.log_probabilities
@@ -361,9 +381,11 @@ class TokenGeneratorPipeline(
                     is_first_chunk = not first_chunk_yielded
                     if is_first_chunk:
                         METRICS.ttft(itl.elapsed_ms)
+                        decode_sw.reset()
                         first_chunk_yielded = True
                     else:
                         METRICS.itl(itl.elapsed_ms)
+                        decode_elapsed_ms = decode_sw.elapsed_ms
                     itl.reset()
 
                     yield TokenGeneratorOutput(
@@ -381,6 +403,15 @@ class TokenGeneratorPipeline(
                         stop_sequence=stop_sequence_match,
                     )
         finally:
+            # Balance the awaiting-admission counter if we never reached the
+            # handoff (e.g. tokenization failed, or the consumer abandoned the
+            # stream before submit).
+            if awaiting_admission:
+                self.model_worker.note_awaiting_admission(-1)
+            if first_chunk_yielded and num_generated_tokens > 1:
+                METRICS.time_per_output_token(
+                    decode_elapsed_ms / (num_generated_tokens - 1)
+                )
             if self.debug_logging:
                 self.logger.debug(
                     "%s: Completed: Elapsed: %0.2f ms",

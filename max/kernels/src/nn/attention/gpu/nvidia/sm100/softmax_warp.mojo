@@ -52,8 +52,7 @@ from nn.attention.gpu.nvidia.sm100.attention_utils import (
     SharedMemPointer,
     MBarType,
     TMemTile,
-    SM100TensorAccumulatorSS,
-    SM100TensorAccumulatorTS,
+    SM100TensorAccumulator,
     STMatrixLayout,
     STMatrixOffsets,
     break_into_powers_of_two,
@@ -68,7 +67,7 @@ from nn.attention.gpu.nvidia.sm100.attention_utils import (
     apply_mask,
     peel_mask,
 )
-from nn.attention.gpu.nvidia.sm90.attention import (
+from nn.attention.gpu.nvidia.common import (
     MHAPosition,
     NullPointer,
     OptionalPointer,
@@ -146,21 +145,21 @@ def fa4_scale_write_output[
         if e != 0:
             ragged_tma_store.prefetch_descriptor()
 
-    # Allocate register tiles for double-buffered pipeline.
-    comptime ChunkTMemType = TMemTile[
-        accum_dtype, bm_per_q, swizzle_granularity
-    ]
-    var o_cur = ChunkTMemType.allocate_register_tile[
-        num_threads=WARPGROUP_SIZE
-    ]()
+    # Flat register staging buffer for the double-buffered pipeline. The
+    # st_matrix fragment is just a contiguous f32 register array; we index
+    # it flat (see scale_half / write_to_smem) instead of through the 2D
+    # STMatrixLayout tensor.
+    var o_cur = InlineArray[Scalar[accum_dtype], ST.frag_size * ST.num_m_tiles](
+        uninitialized=True
+    )
 
     # --- Composable pipeline primitives, parameterized by m_half ---
 
     @always_inline
     @parameter
-    def load_chunk[col: Int, m_half: Int](dst: type_of(o_cur)):
+    def load_chunk[col: Int, m_half: Int](mut dst: type_of(o_cur)):
         """Async tmem load for one M-half of column `col`."""
-        comptime load_dtype = DType.uint32
+        comptime load_dtype = DType.float32
         chunk_tmem_addr = o_tmem_arg.tmem_addr + UInt32(
             col * swizzle_granularity
         )
@@ -179,9 +178,6 @@ def fa4_scale_write_output[
                     cumulative_repeat=local_offset,
                     m_mma=m_half,
                 ]()
-                comptime assert (
-                    offsets.local_frag_size_b32 % 2 == 0
-                ), "local_frag_size_b32 must be even for f32x2 stores"
                 tmem = chunk_tmem_addr + UInt32(offsets.tmem_offset)
                 frag = tcgen05_ld[
                     datapaths=16,
@@ -192,17 +188,8 @@ def fa4_scale_write_output[
                     width=offsets.local_frag_size_b32,
                 ](tmem)
 
-                # Store as f32x2 pairs so SROA decomposes the alloca
-                # into individual f32x2 pieces instead of <8 x i32>.
-                comptime for _i in range(offsets.local_frag_size_b32 // 2):
-                    var pair = SIMD[DType.float32, 2](
-                        bitcast[DType.float32](frag[2 * _i]),
-                        bitcast[DType.float32](frag[2 * _i + 1]),
-                    )
-                    dst.ptr.store(
-                        offsets.ptr_offset + 2 * _i,
-                        pair,
-                    )
+                comptime for _i in range(offsets.local_frag_size_b32):
+                    dst[offsets.ptr_offset + _i] = frag[_i]
 
         comptime max_value = 64 if ST.bits == 128 else 32
         break_into_powers_of_two[
@@ -224,26 +211,34 @@ def fa4_scale_write_output[
 
     @always_inline
     @parameter
-    def scale_half[m_half: Int](o: type_of(o_cur)):
+    def scale_half[m_half: Int](mut o: type_of(o_cur)):
         """Scale one M-half's registers by `inv_row_sum`."""
         comptime rows_per_half = ST.num_row_blocks_per_mma
-        comptime start = m_half * rows_per_half
-        comptime for i in range(start, start + rows_per_half):
-            irs = o.element_type(rebind[Scalar[accum_dtype]](inv_row_sums[i]))
-            comptime for k in range(o.layout[1].size()):
-                o[i, k] *= irs
+        comptime for i0 in range(rows_per_half):
+            comptime i = m_half * rows_per_half + i0
+            irs = rebind[Scalar[accum_dtype]](inv_row_sums[i])
+            comptime base = m_half * ST.frag_size + i0 * ST.frag_simdwidth
+            comptime for k in range(ST.repeat):
+                comptime for e in range(ST.frag_simdwidth):
+                    comptime idx = base + k * ST.elements_per_repeat + e
+                    o[idx] *= irs
 
     @always_inline
     @parameter
-    def write_to_smem[j: Int, m_half: Int](o: type_of(o_cur)):
+    def write_to_smem[j: Int, m_half: Int](mut o: type_of(o_cur)):
         """Write one M-half of column `j` to smem."""
         comptime datapath_offset: UInt32 = UInt32(
             16 * m_half * swizzle_granularity
         )
         comptime ofs = m_half * ST.frag_size
         comptime reg_layout = row_major[1, ST.frag_size]()
+        var o_ptr = (
+            o.unsafe_ptr()
+            .unsafe_origin_cast[MutAnyOrigin]()
+            .address_space_cast[AddressSpace.LOCAL]()
+        )
         var rows_of_o_frags = _LocalTT[accum_dtype, reg_layout](
-            o.ptr + ofs, reg_layout
+            o_ptr + ofs, reg_layout
         )
 
         comptime warp_smem_offset: UInt32 = datapath_offset + UInt32(
@@ -359,7 +354,6 @@ def fa4_lse_combine_write[
     before invoking this helper, so the TMEM fragments are visible.
     """
     comptime assert config.num_qo == 1
-    comptime accum_dtype = DType.float32
 
     comptime swizzle_granularity = output_swizzle_mode.bytes() // size_of[
         output_type
@@ -406,28 +400,30 @@ def fa4_lse_combine_write[
         if e != 0:
             ragged_tma_store.prefetch_descriptor()
 
-    # Two register tiles, one per source (own + peer). Combined result
-    # lives in `o_own` after each combine_half call.
-    comptime ChunkTMemType = TMemTile[accum_dtype, bm, swizzle_granularity]
-    var o_own = ChunkTMemType.allocate_register_tile[
-        num_threads=WARPGROUP_SIZE
-    ]()
-    var o_peer = ChunkTMemType.allocate_register_tile[
-        num_threads=WARPGROUP_SIZE
-    ]()
+    # Two flat register staging buffers, one per source (own + peer). The
+    # combined result lives in `o_own` after each combine_half call. The
+    # st_matrix fragment is a contiguous f32 register array, indexed flat
+    # (see combine_half / write_to_smem) rather than via the 2D layout.
+    comptime reg_frag_len = ST.frag_size * ST.num_m_tiles
+    var o_own = InlineArray[Scalar[DType.float32], reg_frag_len](
+        uninitialized=True
+    )
+    var o_peer = InlineArray[Scalar[DType.float32], reg_frag_len](
+        uninitialized=True
+    )
 
     @always_inline
     @parameter
     def load_chunk[
         col: Int, m_half: Int
-    ](tmem_base: UInt32, dst: type_of(o_own)):
+    ](tmem_base: UInt32, mut dst: type_of(o_own)):
         """Async tmem load of one M-half of column `col` from `tmem_base`.
 
         Same body as fa4_scale_write_output's load_chunk, but
         parameterized on a runtime base so it serves both the own and
         peer fragments.
         """
-        comptime load_dtype = DType.uint32
+        comptime load_dtype = DType.float32
         chunk_tmem_addr = tmem_base + UInt32(col * swizzle_granularity)
 
         @parameter
@@ -444,9 +440,6 @@ def fa4_lse_combine_write[
                     cumulative_repeat=local_offset,
                     m_mma=m_half,
                 ]()
-                comptime assert (
-                    offsets.local_frag_size_b32 % 2 == 0
-                ), "local_frag_size_b32 must be even for f32x2 stores"
                 tmem = chunk_tmem_addr + UInt32(offsets.tmem_offset)
                 frag = tcgen05_ld[
                     datapaths=16,
@@ -457,15 +450,8 @@ def fa4_lse_combine_write[
                     width=offsets.local_frag_size_b32,
                 ](tmem)
 
-                comptime for _i in range(offsets.local_frag_size_b32 // 2):
-                    var pair = SIMD[DType.float32, 2](
-                        bitcast[DType.float32](frag[2 * _i]),
-                        bitcast[DType.float32](frag[2 * _i + 1]),
-                    )
-                    dst.ptr.store(
-                        offsets.ptr_offset + 2 * _i,
-                        pair,
-                    )
+                comptime for _i in range(offsets.local_frag_size_b32):
+                    dst[offsets.ptr_offset + _i] = frag[_i]
 
         comptime max_value = 64 if ST.bits == 128 else 32
         break_into_powers_of_two[
@@ -480,10 +466,10 @@ def fa4_lse_combine_write[
 
     # Broadcast per-row scales (lane row index, 8 row blocks per lane).
     fsl_stack = tt_stack_allocation[
-        dtype=accum_dtype, address_space=AddressSpace.LOCAL
+        dtype=DType.float32, address_space=AddressSpace.LOCAL
     ](row_major[num_rows]())
     fsp_stack = tt_stack_allocation[
-        dtype=accum_dtype, address_space=AddressSpace.LOCAL
+        dtype=DType.float32, address_space=AddressSpace.LOCAL
     ](row_major[num_rows]())
     lane = local_row % 32
     lane_row = lane // 4
@@ -503,31 +489,41 @@ def fa4_lse_combine_write[
 
     @always_inline
     @parameter
-    def combine_half[m_half: Int](own: type_of(o_own), peer: type_of(o_peer)):
-        """Combine: own[i, k] = own[i, k] * fsl[i] + peer[i, k] * fsp[i].
+    def combine_half[
+        m_half: Int
+    ](mut own: type_of(o_own), peer: type_of(o_peer)):
+        """Combine: own = own * fsl[i] + peer * fsp[i], per row block `i`.
 
         Stores the result back into `own`'s storage so the subsequent
         write_to_smem reuses the same code path as the 2Q helper.
         """
         comptime rows_per_half = ST.num_row_blocks_per_mma
-        comptime start = m_half * rows_per_half
-        comptime for i in range(start, start + rows_per_half):
-            fsl_i = own.element_type(rebind[Scalar[accum_dtype]](fsl_stack[i]))
-            fsp_i = peer.element_type(rebind[Scalar[accum_dtype]](fsp_stack[i]))
-            comptime for k in range(own.layout[1].size()):
-                own[i, k] = own[i, k] * fsl_i + peer[i, k] * fsp_i
+        comptime for i0 in range(rows_per_half):
+            comptime i = m_half * rows_per_half + i0
+            fsl_i = rebind[Scalar[DType.float32]](fsl_stack[i])
+            fsp_i = rebind[Scalar[DType.float32]](fsp_stack[i])
+            comptime base = m_half * ST.frag_size + i0 * ST.frag_simdwidth
+            comptime for k in range(ST.repeat):
+                comptime for e in range(ST.frag_simdwidth):
+                    comptime idx = base + k * ST.elements_per_repeat + e
+                    own[idx] = peer[idx].fma(fsp_i, own[idx] * fsl_i)
 
     @always_inline
     @parameter
-    def write_to_smem[j: Int, m_half: Int](o: type_of(o_own)):
+    def write_to_smem[j: Int, m_half: Int](mut o: type_of(o_own)):
         """Write one M-half of column `j` to the shared smem slot."""
         comptime datapath_offset: UInt32 = UInt32(
             16 * m_half * swizzle_granularity
         )
         comptime ofs = m_half * ST.frag_size
         comptime reg_layout = row_major[1, ST.frag_size]()
-        var rows_of_o_frags = _LocalTT[accum_dtype, reg_layout](
-            o.ptr + ofs, reg_layout
+        var o_ptr = (
+            o.unsafe_ptr()
+            .unsafe_origin_cast[MutAnyOrigin]()
+            .address_space_cast[AddressSpace.LOCAL]()
+        )
+        var rows_of_o_frags = _LocalTT[DType.float32, reg_layout](
+            o_ptr + ofs, reg_layout
         )
 
         comptime warp_smem_offset: UInt32 = datapath_offset + UInt32(
@@ -616,6 +612,13 @@ def fa4_softmax[
     SinkType: OptionalPointer,
     _is_cache_length_accurate: Bool,
     MaxSeqLenType: OptionallyStaticInt,
+    # Statically guarantees `num_output_rows > 0` for every warp group,
+    # folding the 2Q output guard away. Only pass True when the calling
+    # kernel routes every tile short enough for an empty row half
+    # (`seq_len - prompt_offset <= wg_row_offset_seq`) to the 1Q body
+    # instead (see `can_switch_to_1q()` use in `kernel.mojo`). The MLA
+    # prefill kernels do not perform that switch and must leave this False.
+    output_nonempty: Bool = False,
 ](
     smem: SM100AttentionSMem[config],
     score_row: UInt32,
@@ -657,24 +660,26 @@ def fa4_softmax[
     comptime MiscMBarsType = type_of(mbars)
 
     # MMA types for TMEM access
-    comptime UMMA0Type = SM100TensorAccumulatorSS[
+    comptime UMMA0Type = SM100TensorAccumulator[
         qkv_type,
         accum_dtype,
         MMA_M=config.MMA_M,
         MMA_N=BN,
         BK=align_up(config.qk_depth, config.MMA_K),
+        a_tmem=False,
         swizzle_a=config.swizzle_mode,
         swizzle_b=config.swizzle_mode,
         transpose_b=True,
         num_stages=config.num_qk_stages,
         cta_group=cta_group,
     ]
-    comptime UMMA1Type = SM100TensorAccumulatorTS[
+    comptime UMMA1Type = SM100TensorAccumulator[
         qkv_type,
         accum_dtype,
         MMA_M=config.MMA_M,
         MMA_N=padded_ov_depth,
         BK=BN,
+        a_tmem=True,
         swizzle_b=config.swizzle_mode,
         transpose_b=False,
         num_stages=config.num_pv_stages,
@@ -725,7 +730,6 @@ def fa4_softmax[
     s_tmem += UInt32(config.BN) * warp_group_idx
 
     p_tmem = s_tmem
-    c_tmem = p_tmem + UInt32(config.BN // 2)
     s_tile = UMMA0Type.CType(s_tmem)
     p_tile = UMMA1Type.AType(p_tmem)
 
@@ -1292,10 +1296,31 @@ def fa4_softmax[
     var o_phase: UInt32 = 0  # initial wait is phase 0
 
     comptime if not SinkType.is_null:
-        comptime if use_fma:
-            row_sum[0] += exp2((sink_weight - row_max) * scale_log2e)
+        # The sink mass must land in `global_sum` exactly once per Q row.
+        #
+        # 2Q: each WG owns a disjoint set of Q rows, so adding the sink to
+        # every WG's `row_sum` already contributes it once per row.
+        #
+        # 1Q: both WGs cover the SAME Q rows but stride over disjoint halves
+        # of the K/V stream (`kv_row_stride = 2*BN`), then LSE-combine their
+        # `row_sum`s (`global_sum = row_sum_total*scale_local +
+        # peer_sum*scale_peer`, ~L1548). Adding the sink to BOTH WGs would
+        # double-count it in `global_sum`, inflating the denominator and
+        # shrinking every output (the gpt-oss-20b sink bug). Add it in WG0
+        # only. WG0 must be the carrier because the T==1 fast path returns
+        # WG1 early (~L1257) before any LSE exchange, so WG0 always survives
+        # to fold the sink into the combined denominator.
+        comptime if config.num_qo == 1:
+            if warp_group_idx == UInt32(0):
+                comptime if use_fma:
+                    row_sum[0] += exp2((sink_weight - row_max) * scale_log2e)
+                else:
+                    row_sum[0] += exp2(sink_weight - row_max)
         else:
-            row_sum[0] += exp2(sink_weight - row_max)
+            comptime if use_fma:
+                row_sum[0] += exp2((sink_weight - row_max) * scale_log2e)
+            else:
+                row_sum[0] += exp2(sink_weight - row_max)
 
     # Lazy-rescale gate for online softmax: only re-scale the accumulator
     # (and adopt the new running max) when `new_row_max - old_max > 8` in
@@ -1415,8 +1440,11 @@ def fa4_softmax[
             + UInt32(config.TMEM_O0)
             + warp_group_idx * UInt32(padded_ov_depth)
         )
+
         # wait on the o_pipeline producer
-        if num_output_rows > 0:
+        @parameter
+        @always_inline
+        def wait_and_write_output():
             o_prod_mbar[warp_group_idx].wait(o_phase)  # consumer wait
             tcgen05_fence_after()  # example 1
             # TODO: pass in a dedicated barrier that a q-writer can wait on in a persistent kernel?
@@ -1436,10 +1464,35 @@ def fa4_softmax[
                 + warp_group_idx
                 * UInt32(HalfBM // group if fuse_gqa else HalfBM),
             )
+
+        # `output_nonempty` statically discharges the guard: the entry
+        # kernel routed every tile with
+        # `seq_len - prompt_offset <= wg_row_offset_seq` to the 1Q body,
+        # so both WGs' halves are non-empty whenever this 2Q path runs.
+        comptime if output_nonempty:
+            debug_assert(
+                num_output_rows > 0,
+                "1Q switch must take every tile with an empty output half",
+            )
+            wait_and_write_output()
+        else:
+            if num_output_rows > 0:
+                wait_and_write_output()
     else:
         # 1Q output. T==1 takes a fast path (WG0 has the full output
         # in TMEM_O0 and WG1 has no work / already returned); T>=2
         # combines per-WG partials via LSE exchange.
+        #
+        # No `num_output_rows > 0` guards on the 1Q write paths: 1Q has no
+        # per-WG row offset (`wg_row_offset == 0`) and is single-CTA
+        # (`supported()` forbids pair_cta), so `num_output_rows =
+        # min(seq_len - prompt_offset, per_qo_BM_seq)`, which is >= 1
+        # because every caller dispatches the softmax warps only for tiles
+        # with `seq_info.is_valid()` (seq_len > prompt_offset).
+        debug_assert(
+            num_output_rows > 0,
+            "1Q tiles always have output rows (is_valid() holds)",
+        )
         if total_iters_combined == UInt32(1):
             # T==1 fast path: skip LSE-exchange entirely and reuse the
             # 2Q row-scale + stmatrix + TMA helper directly. No peer
@@ -1450,22 +1503,21 @@ def fa4_softmax[
             o_tile = TMemTile[
                 accum_dtype, BM // config.num_qo, padded_ov_depth
             ](tmem_addr + UInt32(config.TMEM_O0))
-            if num_output_rows > 0:
-                # Only o0 is produced (MMA skipped the o1 commit at T==1).
-                o_prod_mbar[0].wait(o_phase)
-                tcgen05_fence_after()
-                fa4_scale_write_output[config](
-                    row,
-                    warp_idx & 3,
-                    UInt32(0),
-                    inv_row_sum,
-                    o_smem,
-                    o_tile,
-                    ragged_tma_store,
-                    num_output_rows,
-                    head_idx,
-                    gmem_row + cta_q_offset,
-                )
+            # Only o0 is produced (MMA skipped the o1 commit at T==1).
+            o_prod_mbar[0].wait(o_phase)
+            tcgen05_fence_after()
+            fa4_scale_write_output[config](
+                row,
+                warp_idx & 3,
+                UInt32(0),
+                inv_row_sum,
+                o_smem,
+                o_tile,
+                ragged_tma_store,
+                num_output_rows,
+                head_idx,
+                gmem_row + cta_q_offset,
+            )
             # WG1 already participated in `named_barrier[2*WG](2)` and
             # returned; WG0 must hit it here so the pair-WG sync resolves
             # before TMEM dealloc. Mirrors the unconditional sync below.
@@ -1489,10 +1541,7 @@ def fa4_softmax[
         # 2. Wait on OWN pipeline_o producer. After this, MMA1 has finished
         # its last V·P, so the last P in own's s_tmem has been consumed and
         # the slot is safe to repurpose for the cross-WG LSE exchange below.
-        # The wait is unconditional (independent of num_output_rows) because
-        # MMA1 always runs and the TMEM reuse requires it; the peer-side
-        # wait stays inside the num_output_rows guard since it only gates
-        # the TMEM_O read in fa4_lse_combine_write.
+        # MMA1 always runs and the TMEM reuse requires this wait.
         o_prod_mbar[warp_group_idx].wait(o_phase)
         tcgen05_fence_after()
 
@@ -1555,44 +1604,63 @@ def fa4_softmax[
         # `total_iters_combined & 1` for odd combined-T, so peer's phase
         # XORs in that bit. (Own's producer was already waited on above
         # before the LSE exchange.)
-        if num_output_rows > 0:
-            peer_phase = o_phase ^ (total_iters_combined & UInt32(1))
-            o_prod_mbar[peer_wg].wait(peer_phase)
-            tcgen05_fence_after()
+        peer_phase = o_phase ^ (total_iters_combined & UInt32(1))
+        o_prod_mbar[peer_wg].wait(peer_phase)
+        tcgen05_fence_after()
 
-            # 5. Build own + peer TMEM tiles at full-BM extent.
-            own_o_tile = TMemTile[accum_dtype, BM, padded_ov_depth](
-                tmem_addr
-                + UInt32(config.TMEM_O0)
-                + warp_group_idx * UInt32(padded_ov_depth)
-            )
-            peer_o_tile = TMemTile[accum_dtype, BM, padded_ov_depth](
-                tmem_addr
-                + UInt32(config.TMEM_O0)
-                + peer_wg * UInt32(padded_ov_depth)
-            )
+        # 5. Build own + peer TMEM tiles at full-BM extent.
+        own_o_tile = TMemTile[accum_dtype, BM, padded_ov_depth](
+            tmem_addr
+            + UInt32(config.TMEM_O0)
+            + warp_group_idx * UInt32(padded_ov_depth)
+        )
+        peer_o_tile = TMemTile[accum_dtype, BM, padded_ov_depth](
+            tmem_addr
+            + UInt32(config.TMEM_O0)
+            + peer_wg * UInt32(padded_ov_depth)
+        )
 
-            # 6. Per-WG comptime j-range specialization for the helper.
-            # Ceil/floor split: WG0 takes ceil(iters/2) blocks starting
-            # at j=0, WG1 takes floor(iters/2) starting at j=ceil(iters/2).
-            # Even iters → both WGs get iters/2. Odd iters (depth=64 with
-            # iters=1) → WG0 takes the only block; WG1 skips the helper
-            # entirely (its iters_per_wg would be 0, which the helper
-            # rejects via comptime assert).
-            comptime swizzle_granularity = (
-                config.swizzle_mode.bytes() // size_of[output_type]()
+        # 6. Per-WG comptime j-range specialization for the helper.
+        # Ceil/floor split: WG0 takes ceil(iters/2) blocks starting
+        # at j=0, WG1 takes floor(iters/2) starting at j=ceil(iters/2).
+        # Even iters → both WGs get iters/2. Odd iters (depth=64 with
+        # iters=1) → WG0 takes the only block; WG1 skips the helper
+        # entirely (its iters_per_wg would be 0, which the helper
+        # rejects via comptime assert).
+        comptime swizzle_granularity = (
+            config.swizzle_mode.bytes() // size_of[output_type]()
+        )
+        comptime iters_total = padded_ov_depth // swizzle_granularity
+        comptime iters_per_wg0 = (iters_total + 1) // 2
+        comptime iters_per_wg1 = iters_total // 2
+        # In 1Q both WGs write the same Q rows; no per-WG gmem-row
+        # offset (the depth column j drives the gmem position).
+        out_row_idx = gmem_row + cta_q_offset
+        if warp_group_idx == UInt32(0):
+            fa4_lse_combine_write[
+                config,
+                wg_j_offset=0,
+                iters_per_wg=iters_per_wg0,
+            ](
+                row,
+                warp_idx & 3,
+                warp_group_idx,
+                final_scale_local,
+                final_scale_peer,
+                o_smem,
+                own_o_tile,
+                peer_o_tile,
+                ragged_tma_store,
+                num_output_rows,
+                head_idx,
+                out_row_idx,
             )
-            comptime iters_total = padded_ov_depth // swizzle_granularity
-            comptime iters_per_wg0 = (iters_total + 1) // 2
-            comptime iters_per_wg1 = iters_total // 2
-            # In 1Q both WGs write the same Q rows; no per-WG gmem-row
-            # offset (the depth column j drives the gmem position).
-            out_row_idx = gmem_row + cta_q_offset
-            if warp_group_idx == UInt32(0):
+        else:
+            comptime if iters_per_wg1 > 0:
                 fa4_lse_combine_write[
                     config,
-                    wg_j_offset=0,
-                    iters_per_wg=iters_per_wg0,
+                    wg_j_offset=iters_per_wg0,
+                    iters_per_wg=iters_per_wg1,
                 ](
                     row,
                     warp_idx & 3,
@@ -1607,26 +1675,6 @@ def fa4_softmax[
                     head_idx,
                     out_row_idx,
                 )
-            else:
-                comptime if iters_per_wg1 > 0:
-                    fa4_lse_combine_write[
-                        config,
-                        wg_j_offset=iters_per_wg0,
-                        iters_per_wg=iters_per_wg1,
-                    ](
-                        row,
-                        warp_idx & 3,
-                        warp_group_idx,
-                        final_scale_local,
-                        final_scale_peer,
-                        o_smem,
-                        own_o_tile,
-                        peer_o_tile,
-                        ragged_tma_store,
-                        num_output_rows,
-                        head_idx,
-                        out_row_idx,
-                    )
     named_barrier[Int32(2 * WARPGROUP_SIZE)](4)
     # Pair-CTA: dealloc is deferred to the kernel after cluster_sync so that
     # the peer CTA cannot exit while cluster-scoped stmatrix is in flight.

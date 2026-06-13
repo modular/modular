@@ -659,20 +659,21 @@ struct SelectiveScanFwd[delta_softplus: Bool = False]:
 
         args.dispatch_for_d_state[target](d_state)
 
-    @staticmethod
-    def shape[
-        dtype: DType,
-    ](
-        u: InputTensor[dtype=dtype, rank=3, ...],
-        delta: InputTensor[dtype=dtype, rank=3, ...],
-        A: InputTensor[dtype=dtype, rank=2, ...],
-        B: InputTensor[dtype=dtype, rank=4, ...],
-        C: InputTensor[dtype=dtype, rank=4, ...],
-        D: InputTensor[dtype=dtype, rank=1, ...],
-        z: InputTensor[dtype=dtype, rank=3, ...],
-        delta_bias: InputTensor[dtype=dtype, rank=1, ...],
-    ) -> IndexList[3]:
-        return u.shape()
+
+@compiler.register_shape_function("selective_scan_fwd")
+def selective_scan_fwd_shape[
+    dtype: DType,
+](
+    u: InputTensor[dtype=dtype, rank=3, ...],
+    delta: InputTensor[dtype=dtype, rank=3, ...],
+    A: InputTensor[dtype=dtype, rank=2, ...],
+    B: InputTensor[dtype=dtype, rank=4, ...],
+    C: InputTensor[dtype=dtype, rank=4, ...],
+    D: InputTensor[dtype=dtype, rank=1, ...],
+    z: InputTensor[dtype=dtype, rank=3, ...],
+    delta_bias: InputTensor[dtype=dtype, rank=1, ...],
+) -> IndexList[3]:
+    return u.shape()
 
 
 @compiler.register("selective_scan_fwd_minimal")
@@ -787,17 +788,18 @@ struct SelectiveScanFwdMinimal[delta_softplus: Bool = False]:
 
         args.dispatch_for_d_state[target](d_state)
 
-    @staticmethod
-    def shape[
-        dtype: DType,
-    ](
-        u: InputTensor[dtype=dtype, rank=3, ...],
-        delta: InputTensor[dtype=dtype, rank=3, ...],
-        A: InputTensor[dtype=dtype, rank=2, ...],
-        B: InputTensor[dtype=dtype, rank=4, ...],
-        C: InputTensor[dtype=dtype, rank=4, ...],
-    ) -> IndexList[3]:
-        return u.shape()
+
+@compiler.register_shape_function("selective_scan_fwd_minimal")
+def selective_scan_fwd_minimal_shape[
+    dtype: DType,
+](
+    u: InputTensor[dtype=dtype, rank=3, ...],
+    delta: InputTensor[dtype=dtype, rank=3, ...],
+    A: InputTensor[dtype=dtype, rank=2, ...],
+    B: InputTensor[dtype=dtype, rank=4, ...],
+    C: InputTensor[dtype=dtype, rank=4, ...],
+) -> IndexList[3]:
+    return u.shape()
 
 
 @compiler.register("selective_scan_update")
@@ -930,18 +932,19 @@ struct SelectiveScanUpdate[delta_softplus: Bool = False]:
 
         args.dispatch_for_d_state[target](d_state)
 
-    @staticmethod
-    def shape[
-        dtype: DType,
-    ](
-        state_in: InputTensor[dtype=dtype, rank=3, ...],
-        x: InputTensor[dtype=dtype, rank=2, ...],
-        dt: InputTensor[dtype=dtype, rank=2, ...],
-        A: InputTensor[dtype=dtype, rank=2, ...],
-        B: InputTensor[dtype=dtype, rank=3, ...],
-        C: InputTensor[dtype=dtype, rank=3, ...],
-        D: InputTensor[dtype=dtype, rank=1, ...],
-        z: InputTensor[dtype=dtype, rank=2, ...],
-        dt_bias: InputTensor[dtype=dtype, rank=1, ...],
-    ) -> Tuple[IndexList[3], IndexList[2]]:
-        return (state_in.shape(), x.shape())
+
+@compiler.register_shape_function("selective_scan_update")
+def selective_scan_update_shape[
+    dtype: DType,
+](
+    state_in: InputTensor[dtype=dtype, rank=3, ...],
+    x: InputTensor[dtype=dtype, rank=2, ...],
+    dt: InputTensor[dtype=dtype, rank=2, ...],
+    A: InputTensor[dtype=dtype, rank=2, ...],
+    B: InputTensor[dtype=dtype, rank=3, ...],
+    C: InputTensor[dtype=dtype, rank=3, ...],
+    D: InputTensor[dtype=dtype, rank=1, ...],
+    z: InputTensor[dtype=dtype, rank=2, ...],
+    dt_bias: InputTensor[dtype=dtype, rank=1, ...],
+) -> Tuple[IndexList[3], IndexList[2]]:
+    return (state_in.shape(), x.shape())

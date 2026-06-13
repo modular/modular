@@ -24,7 +24,7 @@ or an h2 fingerprint (0x00-0x7F) derived from the top 7 bits of the hash.
 from std.bit import count_trailing_zeros, next_power_of_two
 from std.hashlib import Hasher, default_hasher
 from std.math import ceildiv
-from std.memory import alloc, free, memcpy, memset, pack_bits
+from std.memory import alloc, dealloc, ThinAllocation, memcpy, memset, pack_bits
 from std.memory.alloc import Layout
 from std.sys.intrinsics import likely
 
@@ -205,8 +205,8 @@ struct Group(Copyable, Movable):
 
 @fieldwise_init
 struct SwissTableEntry[
-    K: KeyElement & ImplicitlyDestructible,
-    V: Movable & ImplicitlyDestructible,
+    K: KeyElement & ImplicitlyDeletable,
+    V: Movable & ImplicitlyDeletable,
     H: Hasher,
 ](
     Copyable where conforms_to(K, Copyable) and conforms_to(V, Copyable),
@@ -217,7 +217,7 @@ struct SwissTableEntry[
     Parameters:
         K: The key type. Must be `Movable`, `Hashable`, and `Equatable`.
             `Copyable` is required only for entry copy construction.
-        V: The value type. Must be `Movable` and `ImplicitlyDestructible`.
+        V: The value type. Must be `Movable` and `ImplicitlyDeletable`.
             `Copyable` is required only for entry copy construction.
         H: The type of the hasher used to hash the key.
     """
@@ -263,8 +263,8 @@ struct SwissTableEntry[
 
 
 struct SwissTable[
-    K: KeyElement & ImplicitlyDestructible,
-    V: Movable & ImplicitlyDestructible,
+    K: KeyElement & ImplicitlyDeletable,
+    V: Movable & ImplicitlyDeletable,
     H: Hasher = default_hasher,
 ](
     Copyable where conforms_to(K, Copyable) and conforms_to(V, Copyable),
@@ -279,19 +279,19 @@ struct SwissTable[
     Parameters:
         K: The key type. Must be `Movable`, `Hashable`, and `Equatable`.
             `Copyable` is required only for table copy construction.
-        V: The value type. Must be `Movable` and `ImplicitlyDestructible`.
+        V: The value type. Must be `Movable` and `ImplicitlyDeletable`.
             `Copyable` is required only for table copy construction.
         H: The hasher type.
     """
 
-    var _ctrl: UnsafePointer[UInt8, MutExternalOrigin]
+    var _ctrl: UnsafePointer[UInt8, MutUntrackedOrigin]
     """Control byte array. Size is _capacity + GROUP_WIDTH.
     Each byte is EMPTY (0xFF), DELETED (0x80), or h2 fingerprint (0x00-0x7F).
     The last GROUP_WIDTH bytes mirror the first GROUP_WIDTH for SIMD wrapping.
     """
 
     var _slots: UnsafePointer[
-        SwissTableEntry[Self.K, Self.V, Self.H], MutExternalOrigin
+        SwissTableEntry[Self.K, Self.V, Self.H], MutUntrackedOrigin
     ]
     """Flat slot array. Size is _capacity. Only occupied slots are initialized.
     """
@@ -337,13 +337,15 @@ struct SwissTable[
         self._capacity = max(
             next_power_of_two(ceildiv(capacity * 8, 7)), INITIAL_CAPACITY
         )
-        self._ctrl = alloc(Layout[UInt8](count=self._capacity + GROUP_WIDTH))
+        self._ctrl = alloc(
+            Layout[UInt8](count=self._capacity + GROUP_WIDTH)
+        ).unsafe_leak()
         memset(self._ctrl, CTRL_EMPTY, self._capacity + GROUP_WIDTH)
         self._slots = alloc(
             Layout[SwissTableEntry[Self.K, Self.V, Self.H]](
                 count=self._capacity
             )
-        )
+        ).unsafe_leak()
         self._len = 0
         self._growth_left = self._capacity * 7 // 8
 
@@ -363,7 +365,9 @@ struct SwissTable[
         self._len = copy._len
         self._growth_left = copy._growth_left
 
-        self._ctrl = alloc(Layout[UInt8](count=self._capacity + GROUP_WIDTH))
+        self._ctrl = alloc(
+            Layout[UInt8](count=self._capacity + GROUP_WIDTH)
+        ).unsafe_leak()
         memcpy(
             dest=self._ctrl,
             src=copy._ctrl,
@@ -374,7 +378,7 @@ struct SwissTable[
             Layout[SwissTableEntry[Self.K, Self.V, Self.H]](
                 count=self._capacity
             )
-        )
+        ).unsafe_leak()
         for i in range(self._capacity):
             if is_occupied(self._ctrl[i]):
                 (self._slots + i).init_pointee_copy((copy._slots + i)[])
@@ -386,8 +390,16 @@ struct SwissTable[
                 (self._slots + i).destroy_pointee()
 
         if self._capacity > 0:
-            free(self._ctrl, {count = self._capacity + GROUP_WIDTH})
-            free(self._slots, {count = self._capacity})
+            dealloc(
+                ThinAllocation(
+                    unsafe_assume_ownership=self._ctrl
+                ).unsafe_with_layout({count = self._capacity + GROUP_WIDTH})
+            )
+            dealloc(
+                ThinAllocation(
+                    unsafe_assume_ownership=self._slots
+                ).unsafe_with_layout({count = self._capacity})
+            )
 
     # ===-------------------------------------------------------------------===#
     # Core operations
@@ -586,11 +598,13 @@ struct SwissTable[
         var old_slots = self._slots
         var old_capacity = self._capacity
 
-        self._ctrl = alloc(Layout[UInt8](count=new_capacity + GROUP_WIDTH))
+        self._ctrl = alloc(
+            Layout[UInt8](count=new_capacity + GROUP_WIDTH)
+        ).unsafe_leak()
         memset(self._ctrl, CTRL_EMPTY, new_capacity + GROUP_WIDTH)
         self._slots = alloc(
             Layout[SwissTableEntry[Self.K, Self.V, Self.H]](count=new_capacity)
-        )
+        ).unsafe_leak()
         self._capacity = new_capacity
         self._growth_left = new_capacity * 7 // 8 - self._len
 
@@ -606,12 +620,20 @@ struct SwissTable[
                 relocations.append((i, new_slot))
 
         if old_capacity > 0:
-            free(old_ctrl, {count = old_capacity + GROUP_WIDTH})
-            free(old_slots, {count = old_capacity})
+            dealloc(
+                ThinAllocation(
+                    unsafe_assume_ownership=old_ctrl
+                ).unsafe_with_layout({count = old_capacity + GROUP_WIDTH})
+            )
+            dealloc(
+                ThinAllocation(
+                    unsafe_assume_ownership=old_slots
+                ).unsafe_with_layout({count = old_capacity})
+            )
 
         return relocations^
 
-    def rehash_in_place(mut self) -> UnsafePointer[Int32, MutExternalOrigin]:
+    def rehash_in_place(mut self) -> UnsafePointer[Int32, MutUntrackedOrigin]:
         """Rehash in place without changing capacity (Abseil's drop-deletes).
 
         Reclaims DELETED tombstones by moving all entries to their ideal
@@ -640,7 +662,7 @@ struct SwissTable[
         )
 
         # Step 3: Relocate entries.
-        var slot_map = alloc(Layout[Int32](count=self._capacity))
+        var slot_map = alloc(Layout[Int32](count=self._capacity)).unsafe_leak()
         for i in range(self._capacity):
             slot_map[i] = Int32(i)
 

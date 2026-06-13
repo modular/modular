@@ -317,9 +317,7 @@ struct GroupedWorkIterator1D1D[
         var info, m_end = self._fetch_next_work()
         var expert_scale: Float32 = 1.0
         if info.is_valid():
-            expert_scale = rebind[Scalar[DType.float32]](
-                self.expert_scales[Int(info.expert_id)]
-            )
+            expert_scale = self.expert_scales[Int(info.expert_id)]
         return GroupedWorkContext1D1D(info, expert_scale, m_end)
 
     @always_inline
@@ -331,9 +329,7 @@ struct GroupedWorkIterator1D1D[
         var next_block_idx = UInt32(self.current_iter) * UInt32(
             ufloordiv(grid_dim.x, Self.cta_group)
         ) + UInt32(ufloordiv(block_idx.x, Self.cta_group))
-        var start_idx = rebind[Scalar[DType.uint32]](
-            self.group_offsets[Int(self.current_group_idx)]
-        )
+        var start_idx = self.group_offsets[Int(self.current_group_idx)]
         var end_idx: UInt32 = 0
         var num_dynamic_dim_blocks: UInt32 = 0
         var current_dynamic_dim: UInt32 = 0
@@ -347,17 +343,13 @@ struct GroupedWorkIterator1D1D[
                     UInt32(0),
                 )
 
-            end_idx = rebind[Scalar[DType.uint32]](
-                self.group_offsets[Int(self.current_group_idx + 1)]
-            )
+            end_idx = self.group_offsets[Int(self.current_group_idx + 1)]
 
             current_dynamic_dim = end_idx - start_idx
 
             # Fast-skip inactive experts (expert_id < 0) and groups with
             # zero tokens.  No A, B, or scale-factor loads should happen.
-            var group_expert_id = rebind[Scalar[DType.int32]](
-                self.expert_ids[Int(self.current_group_idx)]
-            )
+            var group_expert_id = self.expert_ids[Int(self.current_group_idx)]
             if group_expert_id < 0 or current_dynamic_dim <= 0:
                 self.current_group_idx += 1
                 start_idx = end_idx
@@ -396,9 +388,7 @@ struct GroupedWorkIterator1D1D[
             )
 
         # Get expert_id for this group
-        var expert_id = rebind[Scalar[DType.int32]](
-            self.expert_ids[Int(self.current_group_idx)]
-        )
+        var expert_id = self.expert_ids[Int(self.current_group_idx)]
 
         # Compute swizzled block indices
         var num_n_blocks = Self.num_static_dim_blocks

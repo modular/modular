@@ -229,6 +229,8 @@ def mla_indexer_ragged_float8_paged[
 
     var batch_size = Int(input_row_offsets.dim[0]()) - 1
     var total_seq_len = Int(q.dim[0]())
+    if total_seq_len == 0:
+        return
 
     var k_cache = k_collection.get_key_cache(Int(layer_idx))
 

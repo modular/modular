@@ -32,7 +32,7 @@ from nn.attention.gpu.nvidia.sm100.attention_utils import (
     VProducerPipeline,
 )
 from nn.attention.gpu.mha import q_num_matrix_view_rows
-from nn.attention.gpu.nvidia.sm90.attention import (
+from nn.attention.gpu.nvidia.common import (
     get_seq_info,
     kv_coord,
     KVTMATile,
@@ -1606,6 +1606,7 @@ def mla_sm100_prefill_generic[
     output_dtype: DType,
     q_type: DType,
     KVType: MHAOperand,
+    VType: MHAOperand,
     KRopeType: MHAOperand,
     MaskType: MHAMask,
     MaxPromptLenType: OptionallyStaticInt,
@@ -1619,7 +1620,7 @@ def mla_sm100_prefill_generic[
     output: TileTensor[output_dtype, address_space=AddressSpace.GENERIC, ...],
     q: TileTensor[q_type, address_space=AddressSpace.GENERIC, ...],
     k: KVType,
-    v: KVType,
+    v: VType,
     k_rope: KRopeType,
     mask_functor: MaskType,
     valid_length: TileTensor[
@@ -1630,6 +1631,9 @@ def mla_sm100_prefill_generic[
     batch_size: Int,
     ctx: DeviceContext,
 ) raises:
+    comptime assert (
+        KVType.dtype == VType.dtype
+    ), "k and v must share an element dtype for SM100 MLA prefill"
     comptime fa4_config = MLAConfig[
         q_type, rope_gmem_dtype=KRopeType.dtype, rope_mma_dtype=KRopeType.dtype
     ](
@@ -1687,6 +1691,8 @@ def mla_sm100_prefill_generic[
         depth=fa4_config.nope_depth,
     ](ctx)
 
+    # k and v share a dtype (asserted above), so rebind v's TMA tile to the
+    # dispatch's KVType tile type.
     _mla_prefill_sm100_valid_length_dispatch[
         fa4_config=fa4_config,
         cache_depth=cache_depth,
@@ -1696,7 +1702,7 @@ def mla_sm100_prefill_generic[
         q_tma_op,
         k_nope_tma_op,
         k_rope_tma_op,
-        v_tma_op,
+        rebind[type_of(k_nope_tma_op)](v_tma_op),
         k,
         k_rope,
         mask_functor,

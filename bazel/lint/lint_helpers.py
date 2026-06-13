@@ -41,38 +41,115 @@ def _get_files(stdout: bytes) -> set[str]:
     return set(stdout.decode().splitlines())
 
 
+def _submodule_paths() -> list[str]:
+    # Submodule paths relative to the superproject root. `git ls-files` /
+    # `git diff` treat a submodule as a single gitlink and don't descend into
+    # it, so we run git inside each submodule separately (see below).
+    result = subprocess.run(
+        ["git", "submodule", "--quiet", "foreach", "echo $sm_path"],
+        capture_output=True,
+    )
+    if result.returncode != 0:
+        return []
+    return result.stdout.decode().splitlines()
+
+
+def _prefixed(prefix: str, files: set[str]) -> set[str]:
+    return {f"{prefix}/{f}" for f in files}
+
+
+def _git_all_files(cwd: str = ".") -> set[str]:
+    tracked = subprocess.check_output(["git", "ls-files"], cwd=cwd)
+    deleted = subprocess.check_output(["git", "ls-files", "--deleted"], cwd=cwd)
+    return _get_files(tracked) - _get_files(deleted)
+
+
+def _git_changed_files(diff_target: str, cwd: str = ".") -> set[str]:
+    result = subprocess.check_output(
+        ["git", "diff", "--diff-filter=d", "--name-only", diff_target],
+        cwd=cwd,
+    )
+    return _get_files(result)
+
+
+def _submodule_diff_target(sm_path: str, super_target: str) -> str | None:
+    # The submodule commit recorded in the superproject at `super_target`; this
+    # is the right base to diff a submodule's working tree against. Returns None
+    # if the submodule isn't a gitlink there or hasn't fetched that commit.
+    rev = subprocess.run(
+        ["git", "rev-parse", f"{super_target}:{sm_path}"], capture_output=True
+    )
+    if rev.returncode != 0:
+        return None
+    target = rev.stdout.decode().strip()
+    has_commit = subprocess.run(
+        ["git", "cat-file", "-e", f"{target}^{{commit}}"],
+        cwd=sm_path,
+        capture_output=True,
+    )
+    return target if has_commit.returncode == 0 else None
+
+
+def _oss_filter(files: set[str]) -> set[str]:
+    # Only used for testing with the OSS overlay
+    if not os.getenv("USE_OSS_FILTER"):
+        return files
+
+    return {
+        f.removeprefix("oss/modular/")
+        for f in files
+        if f.startswith("oss/modular/")
+    }
+
+
 def get_all_files() -> set[str]:
     if _has_jj():
-        return _get_files(subprocess.check_output(["jj", "file", "list"]))
+        return _oss_filter(
+            _get_files(subprocess.check_output(["jj", "file", "list"]))
+        )
     else:
-        tracked = subprocess.check_output(["git", "ls-files"])
-        deleted = subprocess.check_output(["git", "ls-files", "--deleted"])
-
-        return _get_files(tracked) - _get_files(deleted)
+        files = _git_all_files()
+        for sm_path in _submodule_paths():
+            files |= _prefixed(sm_path, _git_all_files(sm_path))
+        return _oss_filter(files)
 
 
 def get_changed_files() -> set[str]:
     if _has_jj():
-        return _get_files(
-            subprocess.check_output(
-                [
-                    "jj",
-                    "diff",
-                    "--name-only",
-                    "--from",
-                    "main@origin",
-                    "--to",
-                    "@",
-                ],
+        return _oss_filter(
+            _get_files(
+                subprocess.check_output(
+                    [
+                        "jj",
+                        "diff",
+                        "--name-only",
+                        "--from",
+                        "main@origin",
+                        "--to",
+                        "@",
+                    ],
+                )
             )
         )
     else:
-        merge_base_result = subprocess.check_output(
-            ["git", "merge-base", "origin/main", "HEAD"],
-        )
-        merge_base = merge_base_result.decode().rstrip("\n")
+        # TODO: Need a way to use a different diff base
+        if lint_diff_target := os.getenv("LINT_DIFF_TARGET"):
+            diff_target = lint_diff_target
+        else:
+            diff_target = (
+                subprocess.check_output(
+                    ["git", "merge-base", "origin/main", "HEAD"],
+                )
+                .decode()
+                .rstrip("\n")
+            )
 
-        changed_files_result = subprocess.check_output(
-            ["git", "diff", "--diff-filter=d", "--name-only", merge_base]
-        )
-        return _get_files(changed_files_result)
+        files = _git_changed_files(diff_target)
+        for sm_path in _submodule_paths():
+            sm_target = _submodule_diff_target(sm_path, diff_target)
+            if sm_target is None:
+                continue
+            files |= _prefixed(
+                sm_path, _git_changed_files(sm_target, cwd=sm_path)
+            )
+        return _oss_filter(files)

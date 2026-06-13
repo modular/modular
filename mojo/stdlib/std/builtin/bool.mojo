@@ -494,7 +494,7 @@ def any[
     IterableType: Iterable
 ](iterable: IterableType) -> Bool where conforms_to(
     IterableType.IteratorType[origin_of(iterable)].Element,
-    Boolable & ImplicitlyDestructible,
+    Boolable & ImplicitlyDeletable,
 ):
     """Checks if **all** elements in the list are truthy.
 
@@ -537,7 +537,7 @@ def all[
     IterableType: Iterable
 ](iterable: IterableType) -> Bool where conforms_to(
     IterableType.IteratorType[origin_of(iterable)].Element,
-    Boolable & ImplicitlyDestructible,
+    Boolable & ImplicitlyDeletable,
 ):
     """Checks if **all** elements in the list are truthy.
 

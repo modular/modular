@@ -12,7 +12,14 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.gpu.host import DeviceContext
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from layout import (
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    TileTensor,
+    UNKNOWN_VALUE,
+    row_major,
+)
 from std.math import exp, exp2, log
 from std.random import rand
 from state_space.selective_scan import (
@@ -196,127 +203,63 @@ def run_ssd_combined_gpu[
             ctx.enqueue_copy[dtype](delta_bias_gpu, delta_bias_h)
         ctx.enqueue_copy[dtype](gamma_gpu, gamma_h)
 
-    # Create CPU LayoutTensors for CPU kernel (using host memory)
-    var output_cpu_lt = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
-        output_cpu_h,
-        RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen)),
+    # Create CPU TileTensors for CPU kernel (using host memory)
+    var output_cpu_lt = TileTensor(output_cpu_h, row_major(batch, dim, seqlen))
+    var x_cpu_lt = TileTensor(
+        x_cpu_h, row_major(batch, dim, n_chunks, 2 * dstate)
     )
-    var x_cpu_lt = LayoutTensor[dtype, layout_4d, MutAnyOrigin](
-        x_cpu_h,
-        RuntimeLayout[layout_4d].row_major(
-            Index(batch, dim, n_chunks, 2 * dstate)
-        ),
-    )
-    var out_z_cpu_lt = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
-        out_z_cpu_h,
-        RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen)),
-    )
-    var residual_cpu_lt = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
-        residual_h,
-        RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen)),
-    )
-    var u_cpu_lt = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
-        u_h, RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen))
-    )
-    var delta_cpu_lt = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
-        delta_h, RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen))
-    )
-    var A_cpu_lt = LayoutTensor[dtype, layout_2d, MutAnyOrigin](
-        A_h, RuntimeLayout[layout_2d].row_major(Index(dim, dstate))
-    )
-    var B_cpu_lt = LayoutTensor[dtype, layout_4d, MutAnyOrigin](
-        B_h,
-        RuntimeLayout[layout_4d].row_major(
-            Index(batch, n_groups, dstate, seqlen)
-        ),
-    )
-    var C_cpu_lt = LayoutTensor[dtype, layout_4d, MutAnyOrigin](
-        C_h,
-        RuntimeLayout[layout_4d].row_major(
-            Index(batch, n_groups, dstate, seqlen)
-        ),
-    )
-    var D_cpu_lt = LayoutTensor[dtype, layout_1d, MutAnyOrigin](
-        D_h, RuntimeLayout[layout_1d].row_major(Index(D_size))
-    )
-    var z_cpu_lt = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
+    var out_z_cpu_lt = TileTensor(out_z_cpu_h, row_major(batch, dim, seqlen))
+    var residual_cpu_lt = TileTensor(residual_h, row_major(batch, dim, seqlen))
+    var u_cpu_lt = TileTensor(u_h, row_major(batch, dim, seqlen))
+    var delta_cpu_lt = TileTensor(delta_h, row_major(batch, dim, seqlen))
+    var A_cpu_lt = TileTensor(A_h, row_major(dim, dstate))
+    var B_cpu_lt = TileTensor(B_h, row_major(batch, n_groups, dstate, seqlen))
+    var C_cpu_lt = TileTensor(C_h, row_major(batch, n_groups, dstate, seqlen))
+    var D_cpu_lt = TileTensor(D_h, row_major(D_size))
+    var z_cpu_lt = TileTensor(
         z_h,
-        RuntimeLayout[layout_3d].row_major(
-            Index(
+        row_major(
+            (
                 batch if has_z else 0,
                 dim if has_z else 0,
                 seqlen if has_z else 0,
             )
         ),
     )
-    var delta_bias_cpu_lt = LayoutTensor[dtype, layout_1d, MutAnyOrigin](
-        delta_bias_h,
-        RuntimeLayout[layout_1d].row_major(Index(delta_bias_size)),
-    )
-    var gamma_cpu_lt = LayoutTensor[dtype, layout_1d, MutAnyOrigin](
-        gamma_h, RuntimeLayout[layout_1d].row_major(Index(dim))
-    )
+    var delta_bias_cpu_lt = TileTensor(delta_bias_h, row_major(delta_bias_size))
+    var gamma_cpu_lt = TileTensor(gamma_h, row_major(dim))
 
-    # Create GPU LayoutTensors for GPU kernel
-    var output_gpu_lt = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
-        output_gpu_gpu,
-        RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen)),
+    # Create GPU TileTensors for GPU kernel
+    var output_gpu_lt = TileTensor(
+        output_gpu_gpu, row_major(batch, dim, seqlen)
     )
-    var x_gpu_lt = LayoutTensor[dtype, layout_4d, MutAnyOrigin](
-        x_gpu_gpu,
-        RuntimeLayout[layout_4d].row_major(
-            Index(batch, dim, n_chunks, 2 * dstate)
-        ),
+    var x_gpu_lt = TileTensor(
+        x_gpu_gpu, row_major(batch, dim, n_chunks, 2 * dstate)
     )
-    var out_z_gpu_lt = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
-        out_z_gpu_gpu,
-        RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen)),
+    var out_z_gpu_lt = TileTensor(out_z_gpu_gpu, row_major(batch, dim, seqlen))
+    var residual_gpu_lt = TileTensor(
+        residual_gpu, row_major(batch, dim, seqlen)
     )
-    var residual_gpu_lt = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
-        residual_gpu,
-        RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen)),
-    )
-    var u_gpu_lt = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
-        u_gpu, RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen))
-    )
-    var delta_gpu_lt = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
-        delta_gpu, RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen))
-    )
-    var A_gpu_lt = LayoutTensor[dtype, layout_2d, MutAnyOrigin](
-        A_gpu, RuntimeLayout[layout_2d].row_major(Index(dim, dstate))
-    )
-    var B_gpu_lt = LayoutTensor[dtype, layout_4d, MutAnyOrigin](
-        B_gpu,
-        RuntimeLayout[layout_4d].row_major(
-            Index(batch, n_groups, dstate, seqlen)
-        ),
-    )
-    var C_gpu_lt = LayoutTensor[dtype, layout_4d, MutAnyOrigin](
-        C_gpu,
-        RuntimeLayout[layout_4d].row_major(
-            Index(batch, n_groups, dstate, seqlen)
-        ),
-    )
-    var D_gpu_lt = LayoutTensor[dtype, layout_1d, MutAnyOrigin](
-        D_gpu, RuntimeLayout[layout_1d].row_major(Index(D_size))
-    )
-    var z_gpu_lt = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
+    var u_gpu_lt = TileTensor(u_gpu, row_major(batch, dim, seqlen))
+    var delta_gpu_lt = TileTensor(delta_gpu, row_major(batch, dim, seqlen))
+    var A_gpu_lt = TileTensor(A_gpu, row_major(dim, dstate))
+    var B_gpu_lt = TileTensor(B_gpu, row_major(batch, n_groups, dstate, seqlen))
+    var C_gpu_lt = TileTensor(C_gpu, row_major(batch, n_groups, dstate, seqlen))
+    var D_gpu_lt = TileTensor(D_gpu, row_major(D_size))
+    var z_gpu_lt = TileTensor(
         z_gpu,
-        RuntimeLayout[layout_3d].row_major(
-            Index(
+        row_major(
+            (
                 batch if has_z else 0,
                 dim if has_z else 0,
                 seqlen if has_z else 0,
             )
         ),
     )
-    var delta_bias_gpu_lt = LayoutTensor[dtype, layout_1d, MutAnyOrigin](
-        delta_bias_gpu,
-        RuntimeLayout[layout_1d].row_major(Index(delta_bias_size)),
+    var delta_bias_gpu_lt = TileTensor(
+        delta_bias_gpu, row_major(delta_bias_size)
     )
-    var gamma_gpu_lt = LayoutTensor[dtype, layout_1d, MutAnyOrigin](
-        gamma_gpu, RuntimeLayout[layout_1d].row_major(Index(dim))
-    )
+    var gamma_gpu_lt = TileTensor(gamma_gpu, row_major(dim))
 
     var epsilon = Scalar[dtype](0.001)
     var weight_offset = Scalar[dtype](0.0)
@@ -325,19 +268,19 @@ def run_ssd_combined_gpu[
     ssd_combined_cpu[
         dtype,
         DSTATE,
-        output_cpu_lt.layout,
-        x_cpu_lt.layout,
-        out_z_cpu_lt.layout,
-        residual_cpu_lt.layout,
-        u_cpu_lt.layout,
-        delta_cpu_lt.layout,
-        A_cpu_lt.layout,
-        B_cpu_lt.layout,
-        C_cpu_lt.layout,
-        D_cpu_lt.layout,
-        z_cpu_lt.layout,
-        delta_bias_cpu_lt.layout,
-        gamma_cpu_lt.layout,
+        output_cpu_lt.LayoutType,
+        x_cpu_lt.LayoutType,
+        out_z_cpu_lt.LayoutType,
+        residual_cpu_lt.LayoutType,
+        u_cpu_lt.LayoutType,
+        delta_cpu_lt.LayoutType,
+        A_cpu_lt.LayoutType,
+        B_cpu_lt.LayoutType,
+        C_cpu_lt.LayoutType,
+        D_cpu_lt.LayoutType,
+        z_cpu_lt.LayoutType,
+        delta_bias_cpu_lt.LayoutType,
+        gamma_cpu_lt.LayoutType,
     ](
         batch,
         dim,
@@ -372,19 +315,19 @@ def run_ssd_combined_gpu[
         ssd_combined_gpu[
             dtype,
             DSTATE,
-            output_gpu_lt.layout,
-            x_gpu_lt.layout,
-            out_z_gpu_lt.layout,
-            residual_gpu_lt.layout,
-            u_gpu_lt.layout,
-            delta_gpu_lt.layout,
-            A_gpu_lt.layout,
-            B_gpu_lt.layout,
-            C_gpu_lt.layout,
-            D_gpu_lt.layout,
-            z_gpu_lt.layout,
-            delta_bias_gpu_lt.layout,
-            gamma_gpu_lt.layout,
+            output_gpu_lt.LayoutType,
+            x_gpu_lt.LayoutType,
+            out_z_gpu_lt.LayoutType,
+            residual_gpu_lt.LayoutType,
+            u_gpu_lt.LayoutType,
+            delta_gpu_lt.LayoutType,
+            A_gpu_lt.LayoutType,
+            B_gpu_lt.LayoutType,
+            C_gpu_lt.LayoutType,
+            D_gpu_lt.LayoutType,
+            z_gpu_lt.LayoutType,
+            delta_bias_gpu_lt.LayoutType,
+            gamma_gpu_lt.LayoutType,
         ]
     ]()
 

@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import contextlib
 import logging
 import os
 import sys
@@ -24,7 +25,7 @@ import threading
 import time
 import traceback
 from abc import ABC, abstractmethod
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass, field
 from typing import Any, TypeVar
 
@@ -42,6 +43,7 @@ from .datasets.types import (
     PixelGenerationImageOptions,
 )
 from .sse import iter_events
+from .utils import deadline_passed
 
 # 30 minute timeout per request session
 AIOHTTP_TIMEOUT = aiohttp.ClientTimeout(total=30 * 60)
@@ -157,6 +159,35 @@ class BaseRequestFuncOutput:
         return self.request_submit_time + self.latency
 
 
+def mark_cancelled_if_past_deadline(
+    output: BaseRequestFuncOutput, end_time_ns: int | None
+) -> BaseRequestFuncOutput:
+    """Reclassify an end-of-benchmark cut-off as cancelled rather than failed.
+
+    When the benchmark duration deadline cancels an in-flight request, aiohttp
+    can surface the cancellation as a swallowed error inside the request driver
+    instead of propagating the ``wait_for`` timeout, leaving a ``success=False``
+    output. If the result is not a success and the benchmark deadline has
+    passed, treat it as cancelled (cut off by benchmark end) rather than a real
+    failure. Successful results are left untouched.
+
+    Args:
+        output: The request output to (possibly) reclassify, mutated in place.
+        end_time_ns: The benchmark ``perf_counter_ns`` deadline, or ``None`` if
+            the run is unbounded.
+
+    Returns:
+        The same ``output`` instance, for convenient inline use.
+    """
+    if not output.success and deadline_passed(end_time_ns):
+        output.cancelled = True
+        logger.info(
+            "Reclassifying request as cancelled (cut off by benchmark end): %s",
+            output.error or "<no error>",
+        )
+    return output
+
+
 def measured_window_duration(
     outputs: Iterable[BaseRequestFuncOutput], fallback: float
 ) -> float:
@@ -213,6 +244,10 @@ class RequestFuncOutput(BaseRequestFuncOutput):
     server_token_stats: ServerTokenStats = field(
         default_factory=ServerTokenStats
     )
+    # Multi-turn provenance, set by the conversation driver so per-turn cache
+    # retention can group/order turns within a session. None for single-turn.
+    session_id: str | None = None
+    turn_index: int | None = None
 
 
 @dataclass
@@ -282,6 +317,39 @@ class ProgressBarRequestDriver(RequestDriver):
         result = await self.request_driver.request(request_func_input)
         self.pbar.update(1)
         return result
+
+
+@contextlib.contextmanager
+def progressbar_request_driver(
+    request_driver: RequestDriver,
+    total: int,
+    *,
+    disable_tqdm: bool = False,
+    desc: str | None = None,
+) -> Iterator[RequestDriver]:
+    """Yield a request driver that advances a progress bar per request.
+
+    When *disable_tqdm* is set, the driver is yielded unwrapped and no bar is
+    shown. Otherwise the driver is wrapped in a :class:`ProgressBarRequestDriver`
+    backed by a ``tqdm`` bar that is closed on exit.
+
+    Args:
+        request_driver: The underlying request driver to wrap.
+        total: Total number of requests the bar tracks.
+        disable_tqdm: If True, skip the progress bar entirely.
+        desc: Optional description shown alongside the bar.
+
+    Yields:
+        The (possibly progress-wrapped) request driver.
+    """
+    if disable_tqdm:
+        yield request_driver
+        return
+    pbar = tqdm(total=total, desc=desc)
+    try:
+        yield ProgressBarRequestDriver(request_driver, pbar)
+    finally:
+        pbar.close()
 
 
 class TRTLLMRequestDriver(RequestDriver):

@@ -12,7 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 from max.graph.weights import WeightsFormat
-from max.pipelines.core import TextAndVisionContext
+from max.pipelines.context import TextAndVisionContext
+from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
 from max.pipelines.lib import SupportedArchitecture, TextAndVisionTokenizer
 from max.pipelines.modeling.types import InputModality, PipelineTask
 
@@ -46,10 +47,12 @@ gemma3_multimodal_arch = SupportedArchitecture(
     input_modalities={InputModality.TEXT, InputModality.IMAGE},
     rope_type="normal",
     required_arguments={
-        "max_num_steps": 1,
         "enable_prefix_caching": False,
         "enable_chunked_prefill": False,
     },
     context_type=TextAndVisionContext,
     config=Gemma3ForConditionalGenerationConfig,
+    memory_planner=PagedMemoryPlanner.with_activation_reservation(
+        15 * 1024**3, always_signal_buffers=True
+    ),
 )

@@ -252,20 +252,17 @@ class UnifiedDflashKimiK25(Module):
             block_ids_flat, signal_buffers
         )
 
-        block_indices = ops.range(
-            start=0,
-            stop=input_row_offsets.shape[0],
-            out_dim="input_row_offsets_len",
-            device=device0,
-            dtype=DType.uint32,
-        )
-        block_offsets = block_indices * ops.constant(
-            K, DType.uint32, device=device0
-        )
-
-        block_offsets_per_dev = ops.distributed_broadcast(
-            block_offsets, signal_buffers
-        )
+        block_offsets_per_dev = [
+            ops.range(
+                start=0,
+                stop=input_row_offsets.shape[0],
+                out_dim="input_row_offsets_len",
+                device=dev,
+                dtype=DType.uint32,
+            )
+            * ops.constant(K, DType.uint32, device=dev)
+            for dev in devices
+        ]
         if is_dp:
             ctx_input_row_offsets_per_dev: list[TensorValue] = []
             block_offsets_per_dev_list: list[TensorValue] = []

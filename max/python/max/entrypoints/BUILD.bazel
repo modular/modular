@@ -22,7 +22,7 @@ modular_py_library(
     deps = [
         "//max/python/max/driver",
         "//max/python/max/pipelines",
-        "//max/python/max/pipelines/core",
+        "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/diffusion",
         "//max/python/max/pipelines/lib",
         "//max/python/max/pipelines/modeling",
@@ -55,9 +55,10 @@ modular_py_library(
     deps = [
         "//max/python/max/entrypoints",
         "//max/python/max:_core",
+        "//max/python/max/profiler",
         "//max/python/max/serve/telemetry",
         "//max/python/max/serve:config",
-        "//max/python/max/pipelines/modeling",
+        "//max/python/max/pipelines/context",
         "//max/python/max/pipelines",
         # These all point to the symlinked version of the benchmark directory.
         "//max/python/max/benchmark:benchmark_serving_lib",
@@ -84,7 +85,8 @@ modular_py_binary(
         "//max/python/max:_core",
         "//max/python/max/benchmark:benchmark_serving_lib",
         "//max/python/max/pipelines",
-        "//max/python/max/pipelines/modeling",
+        "//max/python/max/pipelines/context",
+        "//max/python/max/profiler",
         "//max/python/max/serve:config",
         "//max/python/max/serve/telemetry",
         requirement("click"),

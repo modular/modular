@@ -23,7 +23,7 @@ from std.math import ceildiv
 from std.gpu.host import DeviceContext, Dim, FuncAttribute, DeviceBuffer
 from layout.tma_async import RaggedTMA3DTile
 from std.logger import Logger
-from nn.attention.gpu.nvidia.sm90.attention import (
+from nn.attention.gpu.nvidia.common import (
     ImmutTileTensor1D,
     NonNullPointer,
     NullPointer,
@@ -249,7 +249,9 @@ def mha_sm100_depth512_dispatch[
 
         # --- ragged dispatch ---
         comptime if ragged:
-            with_valid_length[NonNullPointer[DType.uint32]]({valid_length})
+            with_valid_length[NonNullPointer[DType.uint32]](
+                {valid_length.as_immutable().as_unsafe_any_origin()}
+            )
         else:
             with_valid_length[NullPointer[DType.uint32]]({})
 

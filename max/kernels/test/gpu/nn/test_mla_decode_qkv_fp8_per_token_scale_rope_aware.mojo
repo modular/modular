@@ -495,22 +495,22 @@ def run_test[
         scale_dtype_=DType.float32,
         quantization_granularity_=PHYSICAL_DIM,
     ](
-        LayoutTensor[fp8_type, Layout.row_major[6](), MutAnyOrigin](
-            blocks_lt.ptr,
+        LayoutTensor[fp8_type, Layout.row_major[6]()](
+            blocks_lt.ptr.as_unsafe_any_origin(),
             RuntimeLayout[Layout.row_major[6]()](
                 blocks_lt.runtime_layout.shape.value,
                 blocks_lt.runtime_layout.stride.value,
             ),
         ),
-        LayoutTensor[DType.uint32, cl_layout, ImmutAnyOrigin](
-            cache_lengths_lt.ptr,
+        LayoutTensor[mut=False, DType.uint32, cl_layout](
+            cache_lengths_lt.ptr.as_unsafe_any_origin(),
             RuntimeLayout[cl_layout](
                 cache_lengths_lt.runtime_layout.shape.value,
                 cache_lengths_lt.runtime_layout.stride.value,
             ),
         ),
-        LayoutTensor[DType.uint32, lt_layout_2d, ImmutAnyOrigin](
-            lookup_table_lt.ptr,
+        LayoutTensor[mut=False, DType.uint32, lt_layout_2d](
+            lookup_table_lt.ptr.as_unsafe_any_origin(),
             RuntimeLayout[lt_layout_2d](
                 lookup_table_lt.runtime_layout.shape.value,
                 lookup_table_lt.runtime_layout.stride.value,
@@ -518,8 +518,8 @@ def run_test[
         ),
         UInt32(q_max_seq_len),
         UInt32(max_cache_len),
-        LayoutTensor[DType.float32, Layout.row_major[6](), MutAnyOrigin](
-            scales_lt.ptr,
+        LayoutTensor[DType.float32, Layout.row_major[6]()](
+            scales_lt.ptr.as_unsafe_any_origin(),
             RuntimeLayout[Layout.row_major[6]()](
                 scales_lt.runtime_layout.shape.value,
                 scales_lt.runtime_layout.stride.value,
@@ -1167,22 +1167,22 @@ def run_test_with_scales[
         scale_dtype_=DType.float32,
         quantization_granularity_=PHYSICAL_DIM,
     ](
-        LayoutTensor[fp8_type, Layout.row_major[6](), MutAnyOrigin](
-            blocks_lt.ptr,
+        LayoutTensor[fp8_type, Layout.row_major[6]()](
+            blocks_lt.ptr.as_unsafe_any_origin(),
             RuntimeLayout[Layout.row_major[6]()](
                 blocks_lt.runtime_layout.shape.value,
                 blocks_lt.runtime_layout.stride.value,
             ),
         ),
-        LayoutTensor[DType.uint32, cl_layout, ImmutAnyOrigin](
-            cache_lengths_lt.ptr,
+        LayoutTensor[mut=False, DType.uint32, cl_layout](
+            cache_lengths_lt.ptr.as_unsafe_any_origin(),
             RuntimeLayout[cl_layout](
                 cache_lengths_lt.runtime_layout.shape.value,
                 cache_lengths_lt.runtime_layout.stride.value,
             ),
         ),
-        LayoutTensor[DType.uint32, lt_layout_2d, ImmutAnyOrigin](
-            lookup_table_lt.ptr,
+        LayoutTensor[mut=False, DType.uint32, lt_layout_2d](
+            lookup_table_lt.ptr.as_unsafe_any_origin(),
             RuntimeLayout[lt_layout_2d](
                 lookup_table_lt.runtime_layout.shape.value,
                 lookup_table_lt.runtime_layout.stride.value,
@@ -1191,8 +1191,8 @@ def run_test_with_scales[
         UInt32(q_max_seq_len),
         UInt32(max_cache_len),
         # Pass the scales tensor
-        LayoutTensor[DType.float32, Layout.row_major[6](), MutAnyOrigin](
-            scales_lt.ptr,
+        LayoutTensor[DType.float32, Layout.row_major[6]()](
+            scales_lt.ptr.as_unsafe_any_origin(),
             RuntimeLayout[Layout.row_major[6]()](
                 scales_lt.runtime_layout.shape.value,
                 scales_lt.runtime_layout.stride.value,

@@ -903,7 +903,7 @@ struct BTileGenerator[
     var b: TileTensor[
         Self.b_type, Self.b_layout, Self.origin
     ]  # packed layout if b_packed is True
-    var b_tile_stack_ptr: UnsafePointer[Scalar[Self.b_type], MutExternalOrigin]
+    var b_tile_stack_ptr: UnsafePointer[Scalar[Self.b_type], MutUntrackedOrigin]
     var tile_n_k: IndexList[2]
 
     # needs to be always_inline so b_tile_stack_ptr gets allocated on caller's stack
@@ -923,7 +923,7 @@ struct BTileGenerator[
         Self.origin,
     ]:
         var b_tile_stack_ptr = UnsafePointer[
-            Scalar[Self.b_type], MutExternalOrigin
+            Scalar[Self.b_type], MutUntrackedOrigin
         ].unsafe_dangling()
 
         assert not (
@@ -1014,7 +1014,7 @@ struct BTileGenerator[
                 # Valid amount of input from the starting offset.
                 Index(valid_data_dim_nk[0], valid_data_dim_nk[1]),
             )
-            return packed_b.as_immut().as_any_origin()
+            return packed_b.as_immut().as_unsafe_any_origin()
         elif (not Self.transpose_b) and (not Self.b_packed):
             PackMatrixCols[
                 Self.b_type,
@@ -1073,9 +1073,9 @@ struct BTileGenerator[
                     )
                 ),
             )
-            return b_tile_view.as_any_origin()
+            return b_tile_view.as_unsafe_any_origin()
 
         else:
             assert False, "unreachable, b_packed not supported with transpose_b"
 
-        return packed_b.as_immut().as_any_origin()
+        return packed_b.as_immut().as_unsafe_any_origin()

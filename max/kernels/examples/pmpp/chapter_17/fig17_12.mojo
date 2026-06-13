@@ -19,7 +19,7 @@ from std.gpu.host import DeviceContext
 
 def spmv_ell_kernel(
     ellMatrix: ELLMatrix,
-    x: UnsafePointer[Float32, MutAnyOrigin],
+    x: UnsafePointer[Float32, ImmutAnyOrigin],
     y: UnsafePointer[Float32, MutAnyOrigin],
 ):
     var row = block_idx.x * block_dim.x + thread_idx.x
@@ -129,7 +129,11 @@ def main() raises:
     h_y_zeros.free()
 
     var d_ellMatrix = ELLMatrix(
-        rows, cols, max_nnz, d_colIdx_buf.unsafe_ptr(), d_value_buf.unsafe_ptr()
+        rows,
+        cols,
+        max_nnz,
+        d_colIdx_buf.unsafe_ptr().as_unsafe_any_origin(),
+        d_value_buf.unsafe_ptr().as_unsafe_any_origin(),
     )
 
     var blockSize = 256

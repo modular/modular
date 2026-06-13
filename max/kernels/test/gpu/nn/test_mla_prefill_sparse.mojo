@@ -483,21 +483,21 @@ def run_test_prefill_sparse[
     )
 
     var kv_collection = PagedKVCacheCollection[q_type, kv_params, PAGE_SIZE](
-        LayoutTensor[q_type, Layout.row_major[6](), MutAnyOrigin](
+        LayoutTensor[q_type, Layout.row_major[6]()](
             blocks_lt.ptr,
             RuntimeLayout[Layout.row_major[6]()](
                 blocks_lt.runtime_layout.shape.value,
                 blocks_lt.runtime_layout.stride.value,
             ),
         ),
-        LayoutTensor[DType.uint32, cl_layout, ImmutAnyOrigin](
+        LayoutTensor[mut=False, DType.uint32, cl_layout](
             cache_lengths_lt.ptr,
             RuntimeLayout[cl_layout](
                 cache_lengths_lt.runtime_layout.shape.value,
                 cache_lengths_lt.runtime_layout.stride.value,
             ),
         ),
-        LayoutTensor[DType.uint32, lt_layout_2d, ImmutAnyOrigin](
+        LayoutTensor[mut=False, DType.uint32, lt_layout_2d](
             lookup_table_lt.ptr,
             RuntimeLayout[lt_layout_2d](
                 lookup_table_lt.runtime_layout.shape.value,
@@ -1040,21 +1040,21 @@ def run_test_prefill_sparse_fp8[
     var kv_collection = PagedKVCacheCollection[
         DType.float8_e4m3fn, kv_params, PAGE_SIZE
     ](
-        LayoutTensor[DType.float8_e4m3fn, Layout.row_major[6](), MutAnyOrigin](
+        LayoutTensor[DType.float8_e4m3fn, Layout.row_major[6]()](
             blocks_lt.ptr,
             RuntimeLayout[Layout.row_major[6]()](
                 blocks_lt.runtime_layout.shape.value,
                 blocks_lt.runtime_layout.stride.value,
             ),
         ),
-        LayoutTensor[DType.uint32, cl_layout, ImmutAnyOrigin](
+        LayoutTensor[mut=False, DType.uint32, cl_layout](
             cache_lengths_lt.ptr,
             RuntimeLayout[cl_layout](
                 cache_lengths_lt.runtime_layout.shape.value,
                 cache_lengths_lt.runtime_layout.stride.value,
             ),
         ),
-        LayoutTensor[DType.uint32, lt_layout_2d, ImmutAnyOrigin](
+        LayoutTensor[mut=False, DType.uint32, lt_layout_2d](
             lookup_table_lt.ptr,
             RuntimeLayout[lt_layout_2d](
                 lookup_table_lt.runtime_layout.shape.value,
@@ -1118,7 +1118,7 @@ def run_test_prefill_sparse_fp8[
         indices_tt,
         topk_lengths_tt,
         attn_sink_ptr,
-        scales_device.unsafe_ptr().bitcast[Float32](),
+        scales_device.unsafe_ptr().bitcast[Float32]().as_unsafe_any_origin(),
         scale,
         Int32(topk),
         ctx,

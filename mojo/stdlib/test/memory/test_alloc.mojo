@@ -11,7 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.memory.alloc import alloc, free, Layout
+from std.memory import destroy_n
+from std.memory.alloc import alloc, dealloc, ThinAllocation, Layout
 from std.sys import align_of, size_of
 
 from test_utils import ObservableDel, check_write_to
@@ -57,36 +58,124 @@ def test_layout_as_byte_layout_scales_count_and_preserves_alignment() raises:
 def test_layout_write_to_and_repr() raises:
     var layout = Layout[Int](count=8, alignment=64)
     check_write_to(
-        layout, expected="Layout[Int](count=8, alignment=64)", is_repr=False
+        layout,
+        expected="Layout[SIMD[DType.int, 1]](count=8, alignment=64)",
+        is_repr=False,
     )
     check_write_to(
-        layout, expected="Layout[Int](count=8, alignment=64)", is_repr=True
+        layout,
+        expected="Layout[SIMD[DType.int, 1]](count=8, alignment=64)",
+        is_repr=True,
     )
 
 
 def test_alloc_and_free_round_trip_reads_and_writes_values() raises:
     var layout = Layout[Int](count=5)
-    var ptr = alloc(layout)
+    var a = alloc(layout)
+    var ptr = a.unsafe_ptr()
     for i in range(5):
         (ptr + i).init_pointee_move(i)
+    # `assert_equal` can raise, and an `Allocation` must be consumed on
+    # every path (including the raising one). So accumulate into a plain `Bool`,
+    # `dealloc` the handle, and only then assert.
+    var all_match = True
     for i in range(5):
-        assert_equal(ptr[i], i)
-    free(ptr, layout)
+        all_match = all_match and (ptr[i] == i)
+    dealloc(a^)
+    assert_true(all_match)
 
 
 def test_alloc_returns_pointer_meeting_layout_alignment() raises:
     var layout = Layout[UInt8](count=1, alignment=128)
-    var ptr = alloc(layout)
-    assert_equal(Int(ptr) % 128, 0)
-    free(ptr, layout)
+    var a = alloc(layout)
+    var addr = Int(a.unsafe_ptr())
+    dealloc(a^)
+    assert_equal(addr % 128, 0)
 
 
 def test_alloc_with_layout_single_supports_one_element() raises:
     var layout = Layout[Int64].single()
-    var ptr = alloc(layout)
+    var a = alloc(layout)
+    var ptr = a.unsafe_ptr()
     ptr.init_pointee_move(42)
-    assert_equal(ptr[], 42)
-    free(ptr, layout)
+    var value = ptr[]
+    dealloc(a^)
+    assert_equal(value, 42)
+
+
+def test_allocation_unsafe_span_covers_layout_count() raises:
+    var a = alloc(Layout[Int](count=3))
+    var ptr = a.unsafe_ptr()
+    for i in range(3):
+        (ptr + i).init_pointee_move(i * 10)
+    var span = a.unsafe_span()
+    var span_len = len(span)
+    var first = span[0]
+    var last = span[2]
+    dealloc(a^)
+    assert_equal(span_len, 3)
+    assert_equal(first, 0)
+    assert_equal(last, 20)
+
+
+def test_allocation_count_matches_layout() raises:
+    var a = alloc(Layout[Int32](count=7))
+    var element_count = a.layout().count()
+    dealloc(a^)
+    assert_equal(element_count, 7)
+
+
+def test_allocation_unsized_then_unsafe_with_layout_round_trip() raises:
+    var layout = Layout[Int](count=4)
+    var a = alloc(layout)
+    a.unsafe_ptr().init_pointee_move(99)
+    var thin = a^.into_thin()
+    var value = thin.unsafe_ptr()[]
+    dealloc(thin^.unsafe_with_layout(layout))
+    assert_equal(value, 99)
+
+
+def test_allocation_unsafe_leak_then_reconstruct() raises:
+    var layout = Layout[Int](count=2)
+    var ptr = alloc(layout).unsafe_leak()
+    ptr.init_pointee_move(5)
+    (ptr + 1).init_pointee_move(6)
+    var total = ptr[0] + ptr[1]
+    dealloc(
+        ThinAllocation(unsafe_assume_ownership=ptr).unsafe_with_layout(layout)
+    )
+    assert_equal(total, 11)
+
+
+def test_thin_allocation_unsafe_with_layout_and_unsafe_ptr() raises:
+    var layout = Layout[Int](count=1)
+    var thin = ThinAllocation(
+        unsafe_assume_ownership=alloc(layout).unsafe_leak()
+    )
+    thin.unsafe_ptr().init_pointee_move(7)
+    var value = thin.unsafe_ptr()[]
+    dealloc(thin^.unsafe_with_layout(layout))
+    assert_equal(value, 7)
+
+
+def test_dealloc_does_not_run_pointee_destructors() raises:
+    var deleted = False
+    var obs = ObservableDel(UnsafePointer(to=deleted).as_unsafe_any_origin())
+    var a = alloc(Layout[type_of(obs)](count=1))
+    a.unsafe_ptr().init_pointee_move(obs^)
+    dealloc(a^)
+    assert_false(deleted)
+
+
+def test_destroy_n_runs_pointee_destructors_before_dealloc() raises:
+    var deleted = False
+    var obs = ObservableDel(UnsafePointer(to=deleted).as_unsafe_any_origin())
+    var a = alloc(Layout[type_of(obs)](count=1))
+    a.unsafe_ptr().init_pointee_move(obs^)
+    destroy_n(a.unsafe_ptr(), 1)
+    var ran = deleted
+    dealloc(a^)
+    assert_true(ran)
 
 
 def main() raises:
