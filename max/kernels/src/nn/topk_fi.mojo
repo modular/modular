@@ -971,12 +971,23 @@ def topk_sampling_from_prob[
 
         @parameter
         def launch_kernel[vec_size: Int, deterministic: Bool]() raises:
+            # Consumer Blackwell (sm_120/sm_121) allows only 1536 threads/SM vs
+            # 2048 on datacenter parts, so a 1024-thread block exhausts SM
+            # resources and the launch fails with LAUNCH_OUT_OF_RESOURCES. Cap the
+            # block size to 896 on those GPUs only; datacenter behavior is
+            # unchanged. 896 was chosen per @dylan-stark's benchmark sweep
+            # (~20% better throughput than 512) and still fits the 1536-thread
+            # SM budget at one block per SM.
+            comptime hw_info = ctx.default_device_info
+            comptime bs = min(
+                block_size, 896
+            ) if hw_info.threads_per_multiprocessor < 2048 else block_size
             comptime kernel = TopKSamplingFromProbKernel[
                 probs.LayoutType,
                 ImmutOrigin(probs.origin),
                 output.LayoutType,
                 output.origin,
-                block_size,
+                bs,
                 vec_size,
                 dtype,
                 out_idx_type,
@@ -992,7 +1003,7 @@ def topk_sampling_from_prob[
                 rng_seed,
                 rng_offset,
                 grid_dim=batch_size,
-                block_dim=block_size,
+                block_dim=bs,
                 attributes=pdl_launch_attributes(PDLLevel.ON),
             )
 
@@ -1400,12 +1411,23 @@ def topk_topp_sampling_from_prob[
 
         @parameter
         def launch_kernel[vec_size: Int, deterministic: Bool]() raises:
+            # Consumer Blackwell (sm_120/sm_121) allows only 1536 threads/SM vs
+            # 2048 on datacenter parts, so a 1024-thread block exhausts SM
+            # resources and the launch fails with LAUNCH_OUT_OF_RESOURCES. Cap the
+            # block size to 896 on those GPUs only; datacenter behavior is
+            # unchanged. 896 was chosen per @dylan-stark's benchmark sweep
+            # (~20% better throughput than 512) and still fits the 1536-thread
+            # SM budget at one block per SM.
+            comptime hw_info = ctx.default_device_info
+            comptime bs = min(
+                block_size, 896
+            ) if hw_info.threads_per_multiprocessor < 2048 else block_size
             comptime kernel = TopKTopPSamplingFromProbKernel[
                 probs.LayoutType,
                 ImmutOrigin(probs.origin),
                 output.LayoutType,
                 output.origin,
-                block_size,
+                bs,
                 vec_size,
                 dtype,
                 out_idx_type,
@@ -1423,7 +1445,7 @@ def topk_topp_sampling_from_prob[
                 seed_ptr,
                 rng_offset,
                 grid_dim=batch_size,
-                block_dim=block_size,
+                block_dim=bs,
                 attributes=pdl_launch_attributes(PDLLevel.ON),
             )
 
@@ -1792,8 +1814,19 @@ def topk_softmax_sample[
 
         @parameter
         def launch_kernel[vec_size: Int]() raises:
+            # Consumer Blackwell (sm_120/sm_121) allows only 1536 threads/SM vs
+            # 2048 on datacenter parts, so a 1024-thread block exhausts SM
+            # resources and the launch fails with LAUNCH_OUT_OF_RESOURCES. Cap the
+            # block size to 896 on those GPUs only; datacenter behavior is
+            # unchanged. 896 was chosen per @dylan-stark's benchmark sweep
+            # (~20% better throughput than 512) and still fits the 1536-thread
+            # SM budget at one block per SM.
+            comptime hw_info = ctx.default_device_info
+            comptime bs = min(
+                block_size, 896
+            ) if hw_info.threads_per_multiprocessor < 2048 else block_size
             comptime kernel = topk_softmax_sample_kernel[
-                block_size,
+                bs,
                 vec_size,
                 dtype,
                 out_idx_type,
@@ -1813,7 +1846,7 @@ def topk_softmax_sample[
                 seed_ptr,
                 d,
                 grid_dim=batch_size,
-                block_dim=block_size,
+                block_dim=bs,
                 shared_mem_bytes=shared_mem_bytes,
                 attributes=pdl_launch_attributes(PDLLevel.ON),
             )
