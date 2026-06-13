@@ -209,10 +209,6 @@ struct DenseMapInfo<M::KGEN::CallGraphEdgeBase<DerivedT, FuncT, CallT>>
     : DenseMapInfo<std::pair<CallT, DerivedT *>> {
   using EdgeT = M::KGEN::CallGraphEdgeBase<DerivedT, FuncT, CallT>;
 
-  static EdgeT getEmptyKey() {
-    return {DenseMapInfo<CallT>::getEmptyKey(),
-            DenseMapInfo<DerivedT *>::getEmptyKey()};
-  }
   static unsigned getHashValue(const EdgeT &node) {
     return DenseMapInfo<std::pair<CallT, DerivedT *>>::getHashValue(
         {node.call, node.node});

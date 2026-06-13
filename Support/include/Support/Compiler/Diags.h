@@ -40,11 +40,6 @@ template <>
 struct DenseMapInfo<SMFixIt> {
   using KeyTy = SMFixIt;
 
-  static inline KeyTy getEmptyKey() {
-    return SMFixIt(
-        SMLoc::getFromPointer(DenseMapInfo<const char *>::getEmptyKey()), "");
-  }
-
   static unsigned getHashValue(const KeyTy &k) {
     SMRange range = k.getRange();
     return DenseMapInfo<std::tuple<const char *, const char *, StringRef>>::

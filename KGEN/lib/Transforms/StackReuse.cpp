@@ -115,9 +115,6 @@ namespace llvm {
 /// Allow `PotentialValue` to be used as a key in a hash map.
 template <>
 struct DenseMapInfo<PotentialValue> {
-  static PotentialValue getEmptyKey() {
-    return DenseMapInfo<Value>::getEmptyKey();
-  }
   static unsigned getHashValue(PotentialValue value) {
     if (isa<Value>(value))
       return DenseMapInfo<Value>::getHashValue(cast<Value>(value));
