@@ -29,77 +29,12 @@ from nn.topk import (
     TopK_2,
     _block_reduce_topk,
     _topk_dead_val,
-    _warp_reduce_topk,
 )
 
 from std.utils import IndexList
 
 comptime DEBUG_FILE = False
 comptime SEED = 42
-
-
-@__name(t"topk_wrapper_no_shmem_{input_type}_{index_type}_{is_top_p}")
-def topk_wrapper_no_shmem[
-    input_type: DType,
-    index_type: DType,
-    *,
-    is_top_p: Bool,
-    block_size: Int,
-    largest: Bool = True,
-    _test_sort: Bool = False,
-](
-    K: Int,
-    num_elements: Int,
-    num_blocks_per_input: Int,
-    in_buffer: UnsafePointer[Scalar[input_type], ImmutUntrackedOrigin],
-    local_topk_vals: UnsafePointer[Scalar[input_type], MutUntrackedOrigin],
-    local_topk_idxs: UnsafePointer[Scalar[index_type], MutUntrackedOrigin],
-    p_threshold: UnsafePointer[Scalar[input_type], MutUntrackedOrigin],
-    skip_sort: UnsafePointer[Scalar[DType.bool], MutUntrackedOrigin],
-):
-    """Shared-memory-free variant of topk_wrapper for Apple GPUs.
-
-    Uses warp-level reduction and register-based invalidation instead of
-    shared memory. Only correct when block_size <= WARP_SIZE.
-    """
-    var tid = thread_idx.x
-    var bid = block_idx.x
-
-    var batch_id, block_lane = divmod(bid, num_blocks_per_input)
-
-    var _in_buffer = in_buffer + batch_id * num_elements
-
-    # Each thread finds its local best element in registers.
-    var block_offset = block_lane * block_size
-    var stride = block_size * num_blocks_per_input
-    var partial = TopK_2[input_type, largest]()
-    for i in range(tid + block_offset, num_elements, stride):
-        partial.insert(_in_buffer[i], i)
-
-    for k in range(K):
-        var total = _warp_reduce_topk[input_type, largest](partial)
-
-        var winner_p = warp.broadcast(total.p)
-
-        if tid == 0:
-            local_topk_vals[bid * K + k] = total.u
-            local_topk_idxs[bid * K + k] = Scalar[DType.int](total.p).cast[
-                index_type
-            ]()
-
-            comptime if is_top_p:
-                skip_sort[batch_id] = (
-                    total.u > p_threshold[batch_id]
-                ) and not _test_sort
-            else:
-                var p_threshold_val = p_threshold[batch_id] * total.u
-                p_threshold[batch_id] = p_threshold_val
-                skip_sort[batch_id] = False
-
-        # The thread that owned the winning element invalidates it.
-        if partial.p == winner_p:
-            partial.u = _topk_dead_val[input_type, largest]()
-            partial.p = -1
 
 
 @__name(t"topk_wrapper_{input_type}_{index_type}_{is_top_p}")
@@ -831,48 +766,26 @@ def _topp_minp_sampling_gpu[
 
     comptime K = 1
     comptime num_blocks_per_input = 1
-    comptime if has_apple_gpu_accelerator():
-        comptime topk_kernel = topk_wrapper_no_shmem[
-            input_type=dtype,
-            index_type=out_idx_type,
-            is_top_p=is_top_p,
-            block_size=BLOCK_SIZE,
-            _test_sort=_test_sort,
-        ]
+    comptime topk_kernel = topk_wrapper[
+        input_type=dtype,
+        index_type=out_idx_type,
+        is_top_p=is_top_p,
+        block_size=BLOCK_SIZE,
+        _test_sort=_test_sort,
+    ]
 
-        ctx.enqueue_function[topk_kernel](
-            K,
-            vocab_size,
-            num_blocks_per_input,
-            probs_buf,
-            max_vals,
-            out_token_ids.to_device_buffer(ctx),
-            p_thresholds.to_device_buffer(ctx),
-            skip_sort,
-            grid_dim=batch_size,
-            block_dim=BLOCK_SIZE,
-        )
-    else:
-        comptime topk_kernel = topk_wrapper[
-            input_type=dtype,
-            index_type=out_idx_type,
-            is_top_p=is_top_p,
-            block_size=BLOCK_SIZE,
-            _test_sort=_test_sort,
-        ]
-
-        ctx.enqueue_function[topk_kernel](
-            K,
-            vocab_size,
-            num_blocks_per_input,
-            probs_buf,
-            max_vals,
-            out_token_ids.to_device_buffer(ctx),
-            p_thresholds.to_device_buffer(ctx),
-            skip_sort,
-            grid_dim=batch_size,
-            block_dim=BLOCK_SIZE,
-        )
+    ctx.enqueue_function[topk_kernel](
+        K,
+        vocab_size,
+        num_blocks_per_input,
+        probs_buf,
+        max_vals,
+        out_token_ids.to_device_buffer(ctx),
+        p_thresholds.to_device_buffer(ctx),
+        skip_sort,
+        grid_dim=batch_size,
+        block_dim=BLOCK_SIZE,
+    )
 
     # Step 3: Apply a global sort on the input tensor of probs
     # Create the input_ids buffer
