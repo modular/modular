@@ -77,6 +77,7 @@ from max.serve.parser.tool_call_normalization import (
     _normalize_tools_parameters,
     _validate_response_format_schema,
 )
+from max.serve.parser.tool_call_validation import log_tool_call_conformance
 from max.serve.pipelines.llm import (
     TokenGeneratorOutput,
     TokenGeneratorPipeline,
@@ -290,6 +291,7 @@ class OpenAIChatResponseGenerator(
         stream_options: ChatCompletionStreamOptionsParam | None = None,
         parser: ToolParser | None = None,
         parse_tool_calls: bool = False,
+        tools: list[TextGenerationRequestTool] | None = None,
     ) -> None:
         super().__init__(pipeline)
         self.stream_options = stream_options
@@ -298,6 +300,22 @@ class OpenAIChatResponseGenerator(
         )
         # Whether to parse tool calls from the response.
         self.parse_tool_calls = parse_tool_calls
+        # Function name -> JSON schema, used only for observability-only
+        # schema-conformance logging (see tool_call_validation). The raw
+        # client schema is kept so it matches what callers validate against.
+        self._tool_schemas: dict[str, dict[str, Any]] = {}
+        for t in tools or []:
+            name = maybe_name_from_tool(t)
+            fn = t.get("function")
+            if (
+                name
+                and isinstance(fn, dict)
+                and isinstance(fn.get("parameters"), dict)
+            ):
+                self._tool_schemas[name] = fn["parameters"]
+        # Per-call streaming accumulators for end-of-stream conformance check.
+        self._stream_tool_names: dict[int, str] = {}
+        self._stream_tool_args: dict[int, list[str]] = {}
 
     async def stream(
         self, request: TextGenerationRequest
@@ -315,6 +333,8 @@ class OpenAIChatResponseGenerator(
         # Reset parser state for new streaming session
         if self.parse_tool_calls:
             self.parser.reset()
+            self._stream_tool_names.clear()
+            self._stream_tool_args.clear()
 
         try:
             async for chunk in self.pipeline.next_token_chunk(request):
@@ -363,6 +383,14 @@ class OpenAIChatResponseGenerator(
                         for delta in tool_deltas:
                             if delta.content is not None:
                                 stream_content_parts.append(delta.content)
+                            if delta.name:
+                                self._stream_tool_names[delta.index] = (
+                                    delta.name
+                                )
+                            if delta.arguments:
+                                self._stream_tool_args.setdefault(
+                                    delta.index, []
+                                ).append(delta.arguments)
                             if delta.id or delta.name or delta.arguments:
                                 has_emitted_tool_calls = True
                                 tool_call_chunks.append(
@@ -383,6 +411,25 @@ class OpenAIChatResponseGenerator(
                         # merged_stream_content is non-None and prevents
                         # chunk.decoded_tokens from being used as content.
                         merged_stream_content = "".join(stream_content_parts)
+
+                if (
+                    self.parse_tool_calls
+                    and chunk.status.is_done
+                    and self._tool_schemas
+                    and self._stream_tool_names
+                ):
+                    log_tool_call_conformance(
+                        [
+                            (
+                                self._stream_tool_names[i],
+                                "".join(self._stream_tool_args.get(i, [])),
+                            )
+                            for i in sorted(self._stream_tool_names)
+                        ],
+                        self._tool_schemas,
+                        request_id=str(request.request_id),
+                        streaming=True,
+                    )
 
                 if (
                     chunk.decoded_tokens is not None
@@ -647,6 +694,16 @@ class OpenAIChatResponseGenerator(
                 try:
                     parsed = self.parser.parse_complete(response_message)
                     if parsed.tool_calls:
+                        if self._tool_schemas:
+                            log_tool_call_conformance(
+                                [
+                                    (tc.name, tc.arguments)
+                                    for tc in parsed.tool_calls
+                                ],
+                                self._tool_schemas,
+                                request_id=str(request.request_id),
+                                streaming=False,
+                            )
                         response_choices = self._tool_response_to_choices(
                             parsed, logprobs=logprobs
                         )
@@ -1339,6 +1396,7 @@ async def openai_create_chat_completion(
             stream_options=stream_options,
             parser=parser,
             parse_tool_calls=parse_tool_calls,
+            tools=tools,
         )
         # Use request-level temperature/thinking_temperature if provided, else server defaults.
         temp = (
