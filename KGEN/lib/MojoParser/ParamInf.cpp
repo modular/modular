@@ -589,7 +589,7 @@ ParamInf::inferAndEmitOneParam(ASTExprAnd<AnyValue> binding,
   // Otherwise, the parameter is simply the wrong type, emit an error about this
   // problem.
   DeclResolver::DiagnosticDeclContextChanger x(&(getDeclScope()));
-  MojoInflightDiag &diag = getMojoDiag({});
+  MojoInflightDiag &diag = getMojoDiag(binding.expr->getLoc());
   if (declIfKnown) // Why only structs? Seems arbitrary, push higher?
     diag << "'" << *declIfKnown->getUserNameIfOperation() << "' ";
   diag << "parameter "
@@ -636,16 +636,19 @@ LogicalResult ParamInf::inferFromParamList() {
   // use the original operands list.
   const CallOperands &givenBindings = this->getGivenBindings();
 
-  auto getStagedDiag = [&]() -> MojoInflightDiag & { return getMojoDiag({}); };
+  auto getStagedDiag = [&](SMLoc loc) -> MojoInflightDiag & {
+    // TODO: getMojoDiag should always require an SMLoc.
+    return getMojoDiag(loc);
+  };
 
   // Do basic validation of the argument list using shared logic.
   // TODO: Integrate this into the logic below.
   // FIXME: why the verification here does not guarantee there is no parameter
   // number mismatch/missing kw error below?
   CallOperands::PogAssignment pogAssignment;
-  if (failed(givenBindings.diagnoseOperands(declaredParamPogs,
-                                            /*isParameterList=*/true,
-                                            pogAssignment, getStagedDiag)))
+  if (failed(givenBindings.assignToPogs(declaredParamPogs,
+                                        /*isParameterList=*/true, pogAssignment,
+                                        getStagedDiag)))
     return failure();
 
   // We may have pre-checked and out-of-order inferred parameters.  Avoid

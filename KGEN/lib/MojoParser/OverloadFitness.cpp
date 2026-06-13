@@ -371,13 +371,13 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
   PogListAttr argListAttr = signature.getArgListAttrs();
   CallOperands::PogAssignment pogAssignment;
   std::optional<MojoInflightDiag> stagedDiag;
-  auto getStagedDiag = [&]() -> MojoInflightDiag & {
-    stagedDiag = shared.emitError(callLoc);
+  auto getStagedDiag = [&](SMLoc loc) -> MojoInflightDiag & {
+    stagedDiag = shared.emitError(loc);
     return *stagedDiag;
   };
 
-  if (failed(operands.diagnoseOperands(argListAttr, /*isParameterList=*/false,
-                                       pogAssignment, getStagedDiag)))
+  if (failed(operands.assignToPogs(argListAttr, /*isParameterList=*/false,
+                                   pogAssignment, getStagedDiag)))
     return std::move(*stagedDiag);
 
   // Check that the signature can be rebound with this set of bindings.

@@ -40,11 +40,11 @@ def main():
     diags_package.fn_missing_constraint[0]()
 
     # CHECK: error: no matching function in call to 'overloaded_function'
-    # CHECK: note: candidate not viable: missing required positional argument: 'n'
+    # CHECK: candidate not viable: missing required argument: 'n'
     # CHECK-NEXT: def overloaded_function(n: Int)
-    # CHECK: note: candidate not viable: missing required positional argument: 'n'
+    # CHECK: note: candidate not viable: missing required argument: 'n'
     # CHECK-NEXT: def overloaded_function(n: Float64)
-    # CHECK: note: candidate not viable: missing required positional argument: 'n'
+    # CHECK: note: candidate not viable: missing required argument: 'n'
     # CHECK-NEXT: def overloaded_function(n: Int, m: Float64)
     diags_package.overloaded_function()
 

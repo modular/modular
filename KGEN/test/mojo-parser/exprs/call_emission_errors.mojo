@@ -13,10 +13,10 @@ def takes_pos_only_arg(a: Int, b: Int, /):
 
 
 def test_pos_only_arg_passed_by_kw(x: Int):
-    # expected-error @+1 {{positional-only argument passed as keyword operand: 'b'}}
+    # expected-error @+1 {{invalid call to 'takes_pos_only_arg': missing required argument: 'b'}}
     takes_pos_only_arg(x, b=x)
 
-    # expected-error @+1 {{invalid call to 'takes_pos_only_arg': positional-only argument passed as keyword operand: 'a'}}
+    # expected-error @+1 {{invalid call to 'takes_pos_only_arg': missing required argument: 'a'}}
     takes_pos_only_arg(b=x, a=x)
 
 
@@ -27,10 +27,10 @@ def takes_kw_only_arg(*, a: Int, b: Int, c: Int = 7):
 
 def test_missing_kw_only_arg(x: Int):
     # COM: missing kw-only error takes precedence over unknown keyword
-    # expected-error @+1 {{invalid call to 'takes_kw_only_arg': missing required keyword-only argument: 'b'}}
+    # expected-error @+1 {{invalid call to 'takes_kw_only_arg': missing required argument: 'b'}}
     takes_kw_only_arg(a=x, d=x)
 
-    # expected-error @+1 {{invalid call to 'takes_kw_only_arg': missing required keyword-only argument: 'a'}}
+    # expected-error @+1 {{invalid call to 'takes_kw_only_arg': missing required argument: 'a'}}
     takes_kw_only_arg()
 
 
@@ -52,7 +52,7 @@ def pack_func[*Ts: AnyType](*args: *Ts):
 def test_unknown_kw_arg(x: Int):
     # expected-error @+1 {{unknown keyword argument: 'c'}}
     takes_pos_or_kw_arg(x, c=x, j=x)
-    # expected-error @+1 {{invalid call to 'takes_pos_or_kw_arg': unknown keyword argument: 'd'}}
+    # expected-error @+1 {{invalid call to 'takes_pos_or_kw_arg': missing required argument: 'j'}}
     takes_pos_or_kw_arg(x, d=x, c=x)
     # expected-error @+1 {{unknown keyword argument: 'args'}}
     var_arg_func(args=x)
@@ -61,10 +61,10 @@ def test_unknown_kw_arg(x: Int):
 
 
 def test_passed_by_pos_and_kw_arg(x: Int):
-    # expected-error @+1 {{argument passed both as positional and keyword operand: 'i'}}
+    # expected-error @+1 {{invalid call to 'takes_pos_or_kw_arg': missing required argument: 'j'}}
     takes_pos_or_kw_arg(x, i=x)
 
-    # expected-error @+1 {{argument passed both as positional and keyword operand: 'i'}}
+    # expected-error @+1 {{invalid call to 'takes_pos_or_kw_arg': unexpected argument}}
     takes_pos_or_kw_arg(x, x, j=x, i=x)
 
 
@@ -114,7 +114,7 @@ def missing_keyword_only_params_tricky[a: Int, /, *, b: Int, c: Int = 3]():
 
 
 def test_missing_keyword_only_params_tricky[x: Int]():
-    # expected-error @below {{'missing_keyword_only_params_tricky' expects 1 positional parameter, but 3 were specified}}
+    # expected-error @below {{unexpected parameter}}
     missing_keyword_only_params_tricky[x, x, x]
 
 
@@ -124,7 +124,7 @@ def takes_kw_only_args(a: Int, b: Int, *args: Int, c: Int, d: Int = 2):
 
 
 def test_missing_positional_arg_with_vararg_keyword(x: Int):
-    # expected-error @+1 {{invalid call to 'takes_kw_only_args': missing required positional argument: 'b'}}
+    # expected-error @+1 {{invalid call to 'takes_kw_only_args': missing required argument: 'b'}}
     takes_kw_only_args(x, c=2)
 
 

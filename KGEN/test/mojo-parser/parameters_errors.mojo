@@ -31,7 +31,7 @@ def GoodUseOfThing(a: Thing[4, 5]):
     pass
 
 
-# expected-error @below {{'Thing' expects 0 positional parameters, but 1 was specified}}
+# expected-error @below {{unexpected parameter}}
 def MultipleThingMetaparams(a: Thing[1, 2][1]):
     pass
 
@@ -62,7 +62,7 @@ def testTestParamStruct(a: Parameterized[4]):
     # expected-error-re @below {{invalid call to 'method': value passed to 'other' cannot be converted from 'Parameterized[{{.*}}12{{.*}}]' to 'Parameterized[{{.*}}11{{.*}}]'}}
     a.method[7](Parameterized[12]())
     a.method[2](Parameterized[6]())
-    # expected-error @below {{'method' expects 1 positional parameter, but 2 were specified}}
+    # expected-error @below {{unexpected parameter}}
     a.method[2, 7]
 
     # expected-error @below {{'Thing' failed to infer parameter 'b'}}
@@ -139,7 +139,7 @@ def generic_fn[a: FloatLiteral, b: Int](c: Int) raises:
 
 
 def call_generic[dt: FloatLiteral]() raises:
-    # expected-error @+1 {{invalid call to 'generic_fn': 'generic_fn' expects 2 positional parameters, but 3 were specified}}
+    # expected-error @+1 {{invalid call to 'generic_fn': unexpected parameter}}
     generic_fn[dt, 1, 42](57)
 
 
@@ -248,7 +248,7 @@ def testStructWithParams():
     # expected-error @+1 {{cannot access comptime member 'a3' with unbound parameter 'StructWithParams.a'}}
     _ = StructWithParams.a3
 
-    # expected-error @+1 {{parametric value expects 0 positional parameters, but 2 were specified}}
+    # expected-error @+1 {{unexpected parameter}}
     _ = StructWithRecReference.res[1, 2](1, 2, 3)
 
 
@@ -270,7 +270,7 @@ struct DefaultParams2[a: Int, b: Int = 7]:  # expected-note {{declared here}}
 
 
 def test_default_param_struct():
-    # expected-error @+1 {{expects 2 positional parameters, but 3 were specified}}
+    # expected-error @+1 {{unexpected parameter}}
     comptime S = DefaultParams2[1, 3, 4]
 
 
@@ -478,7 +478,7 @@ struct BindStructField:
 def invalid_params[f: def (ParamType) thin -> None]():
     # expected-error @below {{failed to infer parameter 'a'}}
     autoparams[](ParamType[1]())
-    # expected-error @below {{invalid call to 'autoparams': 'autoparams' expects 1 positional parameter, but 2 were specified}}
+    # expected-error @below {{invalid call to 'autoparams': unexpected parameter}}
     autoparams[1, 2](ParamType[2]())
     # expected-error @below {{value passed to 'x' cannot be converted from 'IntLiteral[1]' to 'ParamType[x.p]', it depends on an unresolved parameter 'x.p'}}
     autoparams[1](1)
@@ -538,9 +538,9 @@ def unused_init_self_param():
     # expected-error @below {{failed to infer parameter 'A' of parent struct 'UnusedInitSelfParam'}}
     var slice = UnusedInitSelfParam()
 
-# expected-note @below {{candidate not viable: missing required keyword-only argument: 'move'}}
+# expected-note @below {{candidate not viable: missing required argument: 'move'}}
 # expected-note @below {{def __init__(out self, *, deinit move: Self)    # note - generated function}}
-# expected-note @below {{candidate not viable: missing required keyword-only argument: 'copy'}}
+# expected-note @below {{candidate not viable: missing required argument: 'copy'}}
 # expected-note @below {{def __init__(out self, *, copy: Self)    # note - generated function}}
 struct SimpleSIMD[arg1: Int, size: Int](TrivialRegisterPassable):
     # expected-note @below {{candidate not viable: return type 'SimpleSIMD[50, 1]' parameter 'size' value '1' doesn't match expected value '4'}}

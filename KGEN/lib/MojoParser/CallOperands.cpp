@@ -92,13 +92,143 @@ raw_ostream &M::KGEN::LIT::operator<<(raw_ostream &os,
   return os << '}';
 }
 
-/// Validation the operand list against the signature indicated by
+/// Validate the operand list against the signature indicated by
 /// pogListAttr, emitting an error with "getDiag" if invalid.
 ///
-/// This collects variadic keyword args/params if the function allows them.
-LogicalResult CallOperands::diagnoseOperands(
+/// This populates "pogAssignment" with information about the mapping of
+/// operands to POG entries.
+LogicalResult CallOperands::assignToPogs(
     PogListAttr pogListAttr, bool isParameterList, PogAssignment &pogAssignment,
-    llvm::function_ref<MojoInflightDiag &()> getDiag) const {
+    llvm::function_ref<MojoInflightDiag &(llvm::SMLoc)> getDiag) const {
+
+  // The specified operand is being passed to a non-variadic arg/param.  If it
+  // is unpacked with `*arg` emit an error.
+  auto checkPackSplat = [&](size_t opIdx) -> LogicalResult {
+    if (values[opIdx].unpackStyle == ArgUnpackStyle::kPositional ||
+        values[opIdx].unpackStyle == ArgUnpackStyle::kKeyword)
+      return success();
+    getDiag(values[opIdx].expr->getLoc())
+        << "unpack is only supported when the callee accepts a "
+           "variadic; to forward a runtime pack to a fixed-arity callee, "
+           "route the call through a dispatcher whose argument is itself a "
+           "variadic pack (e.g. "
+           "`def shim[Ts: TypeList[Trait=AnyType, ...], //, callee: "
+           "def(*args: *Ts) thin](...): callee(*pack)`)"
+        << values[opIdx].expr->getRange();
+    return failure();
+  };
+
+  // Scan each pog and figure out which operands contribute to it. We know that
+  // the POG list is validated, so positional arguments will precede keyword
+  // arguments, but keyword arguments can be specified in call operands in any
+  // order:   foo(kw=42, 7).
+  SmallVector<size_t> skippedKW;
+
+  size_t opIdx = 0, numOperands = values.size();
+  for (auto [idx, pog] : llvm::enumerate(pogListAttr.getPogs())) {
+    PassingKind passingKind = pog.getPassingKind();
+
+    // Ignore implicit operands like out parameters: byref_result and error.
+    if (passingKind == PassingKind::Implicit) {
+      pogAssignment.operandIdxs.push_back(PogAssignment::kPA_Unspecified);
+      continue;
+    }
+
+    // Skip over any provided keyword operands when matching things up, we
+    // handle them separately below.
+    while (opIdx < numOperands && values[opIdx].keyword) {
+      skippedKW.push_back(opIdx);
+      ++opIdx;
+    }
+
+    // For positional variadics and packs, consume any positional operands.
+    if (pog.isPosVarArg() || pog.isPack()) {
+      // Note that the contents will be captured in the posVariadicIdxs list.
+      // Note this captures individual values as well as unpacks.
+      pogAssignment.posVariadicIdxs.push_back(PogAssignment::kPA_Variadic);
+      while (opIdx != numOperands) {
+        if (!values[opIdx].keyword)
+          pogAssignment.posVariadicIdxs.push_back(opIdx);
+        else
+          skippedKW.push_back(opIdx);
+        ++opIdx;
+      }
+      continue;
+    }
+
+    // KW variadics eat up any remaining keyword operands, and accept **kwargs.
+    if (pog.isKwVarArg()) {
+      pogAssignment.posVariadicIdxs.push_back(PogAssignment::kPA_Variadic);
+
+      // Start with any skipped kw operands.
+      pogAssignment.kwVariadicIdxs = std::move(skippedKW);
+
+      // Then eat up any remaining keyword operands.
+      for (size_t opIdx = 0; opIdx < numOperands; ++opIdx) {
+        if (values[opIdx].keyword)
+          pogAssignment.kwVariadicIdxs.push_back(opIdx);
+        else // Unassigned positional operands are errors.
+          break;
+      }
+      continue;
+    }
+
+    // If we have a non-kw value and non-kw POG, bind the operand.
+    if (opIdx < numOperands && (passingKind == PassingKind::PosOrKw ||
+                                passingKind == PassingKind::PosOnly)) {
+      if (failed(checkPackSplat(opIdx)))
+        return failure();
+
+      pogAssignment.operandIdxs.push_back(opIdx);
+      ++opIdx;
+      continue;
+    }
+
+    // If this POG allows a keyword operand and we have one, bind it.
+    if (passingKind != PassingKind::PosOnly &&
+        passingKind != PassingKind::Implicit) {
+      if (const OperandValue *operand = findKwArg(pog.getName())) {
+        size_t operandIdx = operand - values.begin();
+        pogAssignment.operandIdxs.push_back(operandIdx);
+        if (failed(checkPackSplat(operandIdx)))
+          return failure();
+
+        auto it = std::find(skippedKW.begin(), skippedKW.end(), operandIdx);
+        if (it != skippedKW.end())
+          skippedKW.erase(it);
+        continue;
+      }
+    }
+
+    // Parameters can be inferred for many calls, return them inferred.
+    if (isParameterList) {
+      pogAssignment.operandIdxs.push_back(PogAssignment::kPA_Unspecified);
+      continue;
+    }
+
+    // If there is a default value use it.
+    if (auto defaultVal = pog.getDefaultValue()) {
+      pogAssignment.operandIdxs.push_back(PogAssignment::kPA_Default);
+      continue;
+    }
+
+    // Otherwise, this is missing.
+    const char *kindStr = isParameterList ? "parameter" : "argument";
+    getDiag(getExprLoc()) << "missing required " << kindStr << ": "
+                          << pog.getName();
+    return failure();
+  }
+
+  // Now that we assigned operands to all POG entries, make sure we don't have
+  // any excess operands.
+
+  // If there are no positional variadics, we can check for too many operands.
+  if (opIdx != numOperands) {
+    const char *kindStr = isParameterList ? "parameter" : "argument";
+    getDiag(values[opIdx].expr->getLoc())
+        << "unexpected " << kindStr << values[opIdx].expr->getRange();
+    return failure();
+  }
 
   // First, we collect any (named) pos-only args/params passed by keyword
   // operand, and missing kw-only args/params. We also collect all arg/param
@@ -125,7 +255,7 @@ LogicalResult CallOperands::diagnoseOperands(
     if (passingKind == PassingKind::KwOnly && !pogListAttr.getDefault(argIdx) &&
         !findKwArg(name)) {
       if (!isParameterList) { // KWOnly parameters may be inferred.
-        auto &diag = getDiag();
+        auto &diag = getDiag(getExprLoc());
         const char *kindStr = isParameterList ? "parameter" : "argument";
         diag << "missing required keyword-only " << kindStr << ": " << name;
         return failure();
@@ -134,7 +264,7 @@ LogicalResult CallOperands::diagnoseOperands(
     }
     if (passingKind == PassingKind::PosOnly) {
       if (!name.empty() && findKwArg(name)) {
-        auto &diag = getDiag();
+        auto &diag = getDiag(getExprLoc());
         const char *argOrParam = isParameterList ? "parameter" : "argument";
         diag << "positional-only " << argOrParam
              << " passed as keyword operand: " << name;
@@ -159,7 +289,7 @@ LogicalResult CallOperands::diagnoseOperands(
       continue;
 
     if (inferredNames.contains(operand.keyword)) {
-      auto &diag = getDiag();
+      auto &diag = getDiag(getExprLoc());
       diag << "inferred parameter passed out of order: " << operand.keyword;
       return failure();
     }
@@ -167,14 +297,11 @@ LogicalResult CallOperands::diagnoseOperands(
     if (operand.keyword && !kwPassableNames.contains(operand.keyword)) {
       // If the function doesn't accept variadic kwargs, this is an error.
       if (!pogListAttr.hasKwVarArg()) {
-        auto &diag = getDiag();
+        auto &diag = getDiag(getExprLoc());
         const char *argOrParam = isParameterList ? "parameter" : "argument";
         diag << "unknown keyword " << argOrParam << ": " << operand.keyword;
         return failure();
       }
-
-      // Otherwise remember it.
-      pogAssignment.kwVariadicIdxs.push_back(operandIdx);
     }
   }
 
@@ -200,7 +327,6 @@ LogicalResult CallOperands::diagnoseOperands(
     }
   };
 
-  size_t numOperands = values.size();
   size_t numPosMinimum = countNumInferredKinds(pogListAttr);
   size_t numPosMaximum = numPosMinimum + countNumPositional(pogListAttr);
   bool hasVariadicOrPack = false;
@@ -227,7 +353,7 @@ LogicalResult CallOperands::diagnoseOperands(
       StringAttr name = pogListAttr.getName(idx);
       if (findKwArg(name)) {
         const char *argOrParam = isParameterList ? "parameter" : "argument";
-        auto &diag = getDiag();
+        auto &diag = getDiag(getExprLoc());
         diag << argOrParam
              << " passed both as positional and keyword operand: " << name;
         return failure();
@@ -255,7 +381,7 @@ LogicalResult CallOperands::diagnoseOperands(
               ")");
     }
 
-    auto &diag = getDiag();
+    auto &diag = getDiag(getExprLoc());
     diag << "missing required positional argument: " << name;
     attachPackSplatNote(diag);
     return failure();
@@ -264,7 +390,7 @@ LogicalResult CallOperands::diagnoseOperands(
   if (!isParameterList) { // Parameters can be inferred, don't error on missing.
     // If there are no positional variadics, we can check for too many operands.
     if (!hasVariadicOrPack && getNumPositional() > numPosMaximum) {
-      auto &diag = getDiag();
+      auto &diag = getDiag(getExprLoc());
       size_t numPosMaximum = countNumPositional(pogListAttr);
       size_t numPosOperands = getNumPositional();
       diag << "expected at most " << numPosMaximum << " positional argument"
