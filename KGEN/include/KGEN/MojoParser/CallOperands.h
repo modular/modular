@@ -181,21 +181,45 @@ public:
   void dump() const;
 
   struct PogAssignment {
+    enum {
+      /// This POG is unspecified because it is implicit (eg a result slot) or
+      /// in a parameter list where parameters can get inferred.
+      kPA_Unspecified = -1,
+      /// This POG takes its default value.
+      kPA_Default = -2,
+      /// This POG is a variadic argument, whose elements are specified by the
+      /// lists below.
+      kPA_Variadic = -3,
+    };
+
+    /// This array contains one entry for every POG in the signature.  It
+    /// indicates the operand index that is assigned to that POG.  Parameter
+    /// lists may have unbound parameters and call operand list may have result
+    /// slots.  These will generally be labeled as kPA_Unspecified.  Variadic
+    /// lists have out-of-line representation and are marked by kPA_Variadic.
+    SmallVector<ssize_t> operandIdxs;
+
+    /// This is a list of operand indexes that are assigned to a PosVarArg or
+    /// PackVarArg (only one of which may be present). This is only non-empty in
+    /// the presence of a variadic keyword argument, but may be empty in the
+    /// case that no keyword arguments are passed.
+    SmallVector<size_t> posVariadicIdxs;
+
     /// This is a list of operand indexes that are assigned to a KWArg POG. This
     /// is only non-empty in the presence of a variadic keyword argument, but
     /// may be empty in the case that no keyword arguments are passed.
-    SmallVector<ssize_t> kwVariadicIdxs;
+    SmallVector<size_t> kwVariadicIdxs;
   };
 
-  /// Validate the operand list against the signature indicated by pogListAttr,
-  /// emitting an error with "getDiag" if invalid.
+  /// Validate the operand list against the signature indicated by
+  /// pogListAttr, emitting an error with "getDiag" if invalid.
   ///
   /// This populates "pogAssignment" with information about the mapping of
   /// operands to POG entries.
-  LogicalResult
-  diagnoseOperands(PogListAttr pogListAttr, bool isParameterList,
-                   PogAssignment &pogAssignment,
-                   llvm::function_ref<MojoInflightDiag &()> getDiag) const;
+  LogicalResult assignToPogs(
+      PogListAttr pogListAttr, bool isParameterList,
+      PogAssignment &pogAssignment,
+      llvm::function_ref<MojoInflightDiag &(llvm::SMLoc)> getDiag) const;
 };
 
 raw_ostream &operator<<(raw_ostream &os, const CallOperands &value);

@@ -18,7 +18,7 @@ def test_getitem(var a: WeirdArray, f: float, x: Int):
     # expected-note @+1 {{'float' is aka '__mlir_type.`!kgen.scalar<f64>`'}}
     _ = a[f]
 
-    # expected-error @+1 {{invalid call to '__getitem__': expected at most 2 positional arguments, got 3}}
+    # expected-error @+1 {{invalid call to '__getitem__': unexpected argument}}
     _ = a[x, x]
 
     # expected-error @+1 {{expression must be mutable in assignment}}

@@ -15,7 +15,7 @@
 def test_unpack(d: Int):
     # expected-error @+1 {{unpacked keyword arguments are not supported yet}}
     test_unpack(**d)
-    # expected-error @+1 {{unpacked positional arguments are only supported for callees that expect a variadic pack argument}}
+    # expected-error @+1 {{unpack is only supported when the callee accepts a variadic; to forward a runtime pack to a fixed-arity callee, route the call through a dispatcher whose argument is itself a variadic pack (e.g. `def shim[Ts: TypeList[Trait=AnyType, ...], //, callee: def(*args: *Ts) thin](...): callee(*pack)`)}}
     test_unpack(*d)
     # expected-error @+2 {{positional argument must not follow an unpack; move it before or convert to a keyword argument}}
     # expected-note @+1 {{unpacked positional argument specified here}}
@@ -47,8 +47,7 @@ def takes_two_ints(x: Int, y: Int):
 
 
 def test_splat_into_fixed_arity[*Ts: AnyType](*pack: *Ts):
-    # expected-error @+2 {{invalid call to 'takes_two_ints': missing required positional argument: 'y'}}
-    # expected-note @+1 {{'*' splat is only supported when the callee accepts a variadic pack argument at this position}}
+    # expected-error @+1 {{unpack is only supported when the callee accepts a variadic; to forward a runtime pack to a fixed-arity callee, route the call through a dispatcher whose argument is itself a variadic pack (e.g. `def shim[Ts: TypeList[Trait=AnyType, ...], //, callee: def(*args: *Ts) thin](...): callee(*pack)`)}}
     takes_two_ints(*pack)
 
 
@@ -65,7 +64,7 @@ def test_unpack_into_varargs[*Ts: AnyType](*pack: *Ts):
 
 
 def test_unpack_varargs(*args: Int):
-    # expected-error @+1 {{unpacked positional arguments are only supported for callees that expect a variadic pack argument}}
+    # expected-error @+1 {{unpack is only supported when the callee accepts a variadic; to forward a runtime pack to a fixed-arity callee, route the call through a dispatcher whose argument is itself a variadic pack (e.g. `def shim[Ts: TypeList[Trait=AnyType, ...], //, callee: def(*args: *Ts) thin](...): callee(*pack)`)}}
     test_unpack(*args)
 
 

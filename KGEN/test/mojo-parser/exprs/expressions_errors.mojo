@@ -469,11 +469,11 @@ struct MyIntPair(RegisterPassable):
 
 struct TwoAndThreeList:
 
-   # expected-note @below {{argument passed both as positional and keyword operand: '__list_literal__'}}
-   # expected-note @below {{candidate not viable: missing required positional argument: 'a'}}
+   # expected-note @below {{candidate not viable: unexpected argument}}
+   # expected-note @below {{candidate not viable: missing required argument: 'a'}}
    def __init__(out self, a: Int, b: Int, __list_literal__: NoneType): pass
-   # expected-note @below {{argument passed both as positional and keyword operand: '__list_literal__'}}
-   # expected-note @below {{candidate not viable: missing required positional argument: 'a'}}
+   # expected-note @below {{candidate not viable: unexpected argument}}
+   # expected-note @below {{candidate not viable: missing required argument: 'a'}}
    def __init__(out self, a: Int, b: Int, c: Int, __list_literal__: NoneType): pass
 
 struct SimpleRange(TrivialRegisterPassable):
@@ -625,7 +625,7 @@ def test_int_to_int_error(a: Int, b: NoSelfCtor):
   # expected-error @+1 {{cannot construct 'NoSelfCtor' with itself, you can remove the constructor call}}
   _ = NoSelfCtor(NoSelfCtor(a))
 
-  # expected-error @+1 {{invalid initialization: expected at most 0 positional arguments, got 1}}
+  # expected-error @+1 {{invalid initialization: unexpected argument}}
   _ = GetAttrNotString(a)
 
 
@@ -858,7 +858,7 @@ def test_signature():
   var z : def(out x: HasIntParam[1]) thin = HasIntParam[1].__init__
 
   var str : HasIntParam[1]
-  # expected-error @+1 {{invalid call to '__init__': expected at most 0 positional arguments, got 1}}
+  # expected-error @+1 {{invalid call to '__init__': unexpected argument}}
   HasIntParam[1].__init__(str)
 
 def bad_union[ao: Origin[mut=True]](ref [ao] a: String, mut b: String) -> ref [a, b] String:

@@ -88,8 +88,8 @@ comptime myRenamedCurriedIntAdd2 = myRenamedCurriedIntAdd[x=2]
 # expected-error @below {{'Int' is not subscriptable}}
 comptime mySix = myCurriedIntAdd[2][4][6]
 
-# expected-error @below {{parametric value expects 2 positional parameters, but 3 were specified}}
-comptime myIntAddTooManyParams = myIntAdd[1, 2, 3]
+comptime myIntAddTooManyParams = myIntAdd[1, 2,
+   3]  # expected-error {{unexpected parameter}}
 
 
 # COM: A type with dependent parameters.
