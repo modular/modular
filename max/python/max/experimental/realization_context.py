@@ -63,7 +63,11 @@ from max._core.dialects import builtin, rmo
 from max._mlir_context import in_default_mlir_context
 from max.dtype import DType
 from max.experimental import _passes
-from max.experimental.support import SetterContext, driver_tensor_type
+from max.experimental.support import (
+    SetterContext,
+    _session,
+    driver_tensor_type,
+)
 from max.experimental.tensor import (
     GraphValue,
     RealizationContext,
@@ -86,8 +90,6 @@ if TYPE_CHECKING:
 
 Ex = TypeVar("Ex", bound=BaseException)
 
-_SESSION_LOCK = threading.Lock()
-_SESSION: engine.api.InferenceSession | None = None
 _SEED: Tensor | None = None
 
 # Bounds memory: each entry pins an engine.Model + its MEF buffer.
@@ -171,19 +173,6 @@ def set_seed(value: int) -> None:
         value: The integer seed value to set.
     """
     seed().driver_tensor[0] = value
-
-
-def _session() -> engine.api.InferenceSession:
-    """A single global inference session for compiling and running kernels on tensors."""
-    global _SESSION
-    with _SESSION_LOCK:
-        if _SESSION is None:
-            device_specs = driver.scan_available_devices()
-            if (cpu := driver.DeviceSpec.cpu()) not in device_specs:
-                device_specs.append(cpu)
-            devices = driver.load_devices(device_specs)
-            _SESSION = engine.api.InferenceSession(devices=devices)
-        return _SESSION
 
 
 # ─── Shared signal-buffer cache (allocated once per device set) ──────────

@@ -38,8 +38,8 @@ from max._core.dialects import rmo
 from max._mlir_context import MLIRThreadPoolExecutor
 from max.graph import Graph
 
-from .realization_context import _eager_model_cache_key, _session
-from .support import SetterContext
+from .realization_context import _eager_model_cache_key
+from .support import SetterContext, _session
 
 
 class UnsupportedGraphError(RuntimeError):

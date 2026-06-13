@@ -16,15 +16,32 @@
 from __future__ import annotations
 
 import contextlib
+import threading
 from collections.abc import Callable, Generator
 from contextvars import ContextVar
 from types import TracebackType
 from typing import Generic, TypeVar
 
-from max import driver
+from max import driver, engine
 from max.graph import DeviceRef, TensorType
 
 T = TypeVar("T")
+
+_SESSION_LOCK = threading.Lock()
+_SESSION: engine.api.InferenceSession | None = None
+
+
+def _session() -> engine.api.InferenceSession:
+    """Returns the module-global inference session, creating it on first call."""
+    global _SESSION
+    with _SESSION_LOCK:
+        if _SESSION is None:
+            device_specs = driver.scan_available_devices()
+            if (cpu := driver.DeviceSpec.cpu()) not in device_specs:
+                device_specs.append(cpu)
+            devices = driver.load_devices(device_specs)
+            _SESSION = engine.api.InferenceSession(devices=devices)
+        return _SESSION
 
 
 class SetterContext(Generic[T], contextlib.AbstractContextManager[T]):
