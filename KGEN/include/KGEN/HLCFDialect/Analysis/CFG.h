@@ -42,9 +42,6 @@ public:
 namespace llvm {
 template <>
 struct DenseMapInfo<M::HLCF::CFGNode> {
-  static M::HLCF::CFGNode getEmptyKey() {
-    return {nullptr, DenseMapInfo<unsigned>::getEmptyKey()};
-  }
   static unsigned getHashValue(M::HLCF::CFGNode node) {
     return hash_combine(
         DenseMapInfo<void *>::getHashValue(node.node.getOperation()),

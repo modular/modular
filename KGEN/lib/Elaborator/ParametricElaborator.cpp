@@ -2280,10 +2280,6 @@ struct PartialExpansionGraph {
 namespace llvm {
 template <>
 struct DenseMapInfo<GraphEdge> {
-  static GraphEdge getEmptyKey() {
-    return {DenseMapInfo<PParamNode *>::getEmptyKey(),
-            DenseMapInfo<size_t>::getEmptyKey()};
-  }
   static unsigned getHashValue(GraphEdge node) {
     return DenseMapInfo<std::pair<PParamNode *, size_t>>::getHashValue(
         {node.pnode, node.depIdx});

@@ -568,9 +568,6 @@ ParameterUseDefGraphNodeIterator ParameterUseDefGraphNode::end() const {
 namespace llvm {
 template <>
 struct DenseMapInfo<ParameterUseDefGraphNode> {
-  static inline ParameterUseDefGraphNode getEmptyKey() {
-    return {nullptr, DenseMapInfo<StringAttr>::getEmptyKey()};
-  }
   static unsigned getHashValue(const ParameterUseDefGraphNode &node) {
     return DenseMapInfo<StringAttr>::getHashValue(node.param);
   }
