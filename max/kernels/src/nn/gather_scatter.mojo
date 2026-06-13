@@ -1448,6 +1448,7 @@ def gather_nd_shape[
 def gather_nd[
     dtype: DType,
     indices_type: DType,
+    //,
     batch_dims: Int,
     target: StaticString = "cpu",
 ](
@@ -1476,31 +1477,6 @@ def gather_nd[
         ctx: The device context as prepared by the graph compiler.
 
     """
-
-    comptime if is_cpu[target]():
-        return _gather_nd_impl[
-            batch_dims,
-            target=target,
-        ](data, indices, output)
-    else:
-        return _gather_nd_impl[
-            batch_dims,
-            target=target,
-        ](data, indices, output, ctx)
-
-
-def _gather_nd_impl[
-    dtype: DType,
-    indices_type: DType,
-    //,
-    batch_dims: Int,
-    target: StaticString = "cpu",
-](
-    data: TileTensor[dtype, ...],
-    indices: TileTensor[indices_type, ...],
-    output: TileTensor[mut=True, dtype, ...],
-    ctx: Optional[DeviceContext] = None,
-) raises:
     comptime assert (
         data.rank >= 1 and indices.rank >= 1
     ), "Constraint: data_rank >= 1 and indices_rank >= 1"
@@ -1580,35 +1556,20 @@ def _gather_nd_impl[
         and (slice_last_dim % target_simd_width) == 0
     )
 
-    comptime if is_cpu[target]():
-        var cpu_ctx = DeviceContext(api="cpu")
-        if use_simd:
-            elementwise[
-                gather_nd_elementwise_fn,
-                target_simd_width,
-                target=target,
-            ](output.layout.shape_coord(), cpu_ctx)
-        else:
-            elementwise[
-                gather_nd_elementwise_fn,
-                1,
-                target=target,
-            ](output.layout.shape_coord(), cpu_ctx)
+    if use_simd:
+        elementwise[
+            gather_nd_elementwise_fn,
+            target_simd_width,
+            target=target,
+            _trace_description="gather_nd",
+        ](output.layout.shape_coord(), ctx)
     else:
-        assert Bool(ctx), "Must provide DeviceContext if executing on GPU."
-        var cuda_ctx = ctx.value()
-        if use_simd:
-            elementwise[
-                gather_nd_elementwise_fn,
-                target_simd_width,
-                target=target,
-            ](output.layout.shape_coord(), cuda_ctx)
-        else:
-            elementwise[
-                gather_nd_elementwise_fn,
-                1,
-                target=target,
-            ](output.layout.shape_coord(), cuda_ctx)
+        elementwise[
+            gather_nd_elementwise_fn,
+            1,
+            target=target,
+            _trace_description="gather_nd",
+        ](output.layout.shape_coord(), ctx)
 
 
 # ===-----------------------------------------------------------------------===#
