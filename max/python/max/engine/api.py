@@ -18,7 +18,6 @@ import faulthandler
 import os
 import signal
 import sys
-import threading
 from collections.abc import Iterable, Mapping, Sequence
 from enum import Enum, IntEnum, auto
 from inspect import Parameter, Signature
@@ -459,8 +458,6 @@ class InferenceSession:
     """
 
     _impl: _InferenceSession
-    # This is shared across sessions. Compilation is currently not thread safe.
-    _compilation_lock = threading.Lock()
     # DebugConfig is a process-wide singleton. Assigning it as a class
     # attribute at import time means both ``InferenceSession.debug`` and
     # ``session.debug`` return the same underlying object, and any
@@ -938,15 +935,14 @@ class InferenceSession:
         Compilation itself is asynchronous; that failure surfaces when the
         returned value is awaited (see :meth:`compile`).
         """
-        with self._compilation_lock:
-            try:
-                return self._impl.compile(
-                    module.mlir_module._CAPIPtr,
-                    custom_extensions_final,
-                    _derive_pipeline_name(module),
-                )
-            except Exception as e:
-                raise RuntimeError(self._compile_failure_message()) from e
+        try:
+            return self._impl.compile(
+                module.mlir_module._CAPIPtr,
+                custom_extensions_final,
+                _derive_pipeline_name(module),
+            )
+        except Exception as e:
+            raise RuntimeError(self._compile_failure_message()) from e
 
     def set_debug_print_options(
         self,
