@@ -593,13 +593,13 @@ def _parse_mxfp8_config(
 
     weight_spec = WeightScaleSpec(
         granularity=ScaleGranularity.BLOCK,
-        dtype=DType.float32,
+        dtype=DType.float8_e8m0fnu,
         block_size=(1, 32),
     )
     input_spec = InputScaleSpec(
         granularity=ScaleGranularity.BLOCK,
         origin=ScaleOrigin.DYNAMIC,
-        dtype=DType.float32,
+        dtype=DType.float8_e8m0fnu,
         block_size=(1, 32),
     )
 
@@ -620,7 +620,7 @@ def _parse_mxfp8_config(
         attn_quantized_layers=attn_quantized_layers,
         embedding_output_dtype=embedding_output_dtype,
         bias_dtype=bias_dtype,
-        format=QuantFormat.BLOCKSCALED_FP8,
+        format=QuantFormat.MXFP8,
     )
 
 
