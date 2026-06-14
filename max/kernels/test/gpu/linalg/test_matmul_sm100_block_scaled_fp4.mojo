@@ -273,7 +273,9 @@ def _test_blackwell_block_scaled_matmul_tma_umma_warp_specialized_impl[
         alignment: Int = 1,
     ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> None:
         var scaled = rebind[SIMD[c_type, width]](val) * Scalar[c_type](2)
-        c_device_lt.store[alignment=alignment * size_of[c_type](),](idx, scaled)
+        c_device_lt.store[store_alignment=alignment * size_of[c_type](),](
+            idx, scaled
+        )
 
     comptime epi = Optional[elementwise_epilogue_type](
         epilogue_fn
