@@ -467,20 +467,6 @@ ParseResult KGEN::parseOptionalName(AsmParser &p, StringAttr &name) {
 // Pog Utils
 //===----------------------------------------------------------------------===//
 
-size_t KGEN::countNumInferredKinds(ArrayRef<PogMetadataAttr> pogs) {
-  size_t num = 0;
-  for (PogMetadataAttr pogAttr : pogs) {
-    if (pogAttr.getPassingKind() != PassingKind::Inferred)
-      break;
-    ++num;
-  }
-  return num;
-}
-
-size_t KGEN::countNumInferredKinds(PogListAttr pogListAttr) {
-  return countNumInferredKinds(pogListAttr.getPogs());
-}
-
 size_t KGEN::countNumPosOnly(ArrayRef<PogMetadataAttr> pogs) {
   size_t idx = 0;
   for (PogMetadataAttr pog : pogs) {

@@ -469,9 +469,9 @@ struct BindStructField:
     var value: InferredParam[Int]
     # expected-error @below {{'InferredParam' failed to infer parameter 'T'}}
     var infer_keyword: InferredParam[p=1]
-    # expected-error @below {{inferred parameter passed out of order: 'p'}}
+    # expected-error @below {{'MultiInferred' failed to infer parameter 'uP', specify the parameter or use '_' or '...' to unbind the parameter explicitly}}
     var multi_infer_ooo: MultiInferred[q=1, p=2]
-    # expected-error @below {{inferred parameter passed out of order: 'q'}}
+    # expected-error @below {{'MultiInferred' failed to infer parameter 'uQ'}}
     var multi_infer_ooo2: MultiInferred[p=1, uP=ParamType[1](), q=2]
 
 

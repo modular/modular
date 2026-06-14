@@ -100,10 +100,6 @@ void printConventionAndVariadicness(AsmPrinter &p, ArgConvention convention,
 // Pog Utils
 //===----------------------------------------------------------------------===//
 
-/// Count the number of inferred passing kinds.
-size_t countNumInferredKinds(ArrayRef<PogMetadataAttr> pogs);
-size_t countNumInferredKinds(PogListAttr pogListAttr);
-
 /// Count the number of positional-only passing kinds.
 size_t countNumPosOnly(ArrayRef<PogMetadataAttr> pogs);
 size_t countNumPosOnly(PogListAttr pogListAttr);
