@@ -630,8 +630,6 @@ static void emitWrongArgOrParamCount(MojoInflightDiag &diag, size_t minRequired,
 ///
 /// On failure, this will emit a diagnostic through the 'getDiag' callback.
 LogicalResult ParamInf::inferFromParamList() {
-  bool hasEllipsis = paramBindings.bindingKind == ParamBindings::kWithEllipsis;
-
   // Use the temporary operands list if we had to remove an ellipsis, otherwise
   // use the original operands list.
   const CallOperands &givenBindings = this->getGivenBindings();
@@ -642,9 +640,6 @@ LogicalResult ParamInf::inferFromParamList() {
   };
 
   // Do basic validation of the argument list using shared logic.
-  // TODO: Integrate this into the logic below.
-  // FIXME: why the verification here does not guarantee there is no parameter
-  // number mismatch/missing kw error below?
   CallOperands::PogAssignment pogAssignment;
   if (failed(givenBindings.assignToPogs(declaredParamPogs,
                                         /*isParameterList=*/true, pogAssignment,
@@ -653,75 +648,88 @@ LogicalResult ParamInf::inferFromParamList() {
 
   // We may have pre-checked and out-of-order inferred parameters.  Avoid
   // stomping on them.
-  auto applyBinding = [&](size_t idx, TypedAttr paramVal) -> LogicalResult {
+  auto applyBinding = [&](size_t idx,
+                          FailureOr<TypedAttr> paramVal) -> LogicalResult {
+    if (failed(paramVal))
+      return failure(); // Already diagnosed.
+
     // Ignore this if the parameter value is deferred.
-    if (!paramVal)
+    if (!*paramVal)
       return success();
 
     auto existing = evaluator.getIndexBindings()[idx];
     if (!existing)
-      return setInferredValue(idx, paramVal);
+      return setInferredValue(idx, *paramVal);
 
-    assert(isEqualCanon(existing, paramVal) &&
+    assert(isEqualCanon(existing, *paramVal) &&
            "inferred to different values but didn't notice");
-
     return success();
   };
 
-  size_t posIdx = 0, numParams = givenBindings.size();
   for (auto [idx, pog] : llvm::enumerate(declaredParamPogs.getPogs())) {
     // Note that 'signature' changes the type as we go, so don't use
     // llvm::enumerate on the argument type list!
     Type expectedType = evaluator.getReboundType(declaredParamTypes[idx]);
 
-    // Skip over any provided keyword parameters when matching things up, we
-    // handle them separately below.
-    while (posIdx < numParams && givenBindings[posIdx].keyword)
-      ++posIdx;
+    switch (pogAssignment.operandIdxs[idx]) {
+    default: {
+      size_t operandIdx = pogAssignment.operandIdxs[idx];
+      FailureOr<TypedAttr> paramVal = inferAndEmitOneParam(
+          givenBindings.values[operandIdx], expectedType, idx);
+      // Exit if an error was already emitted.
+      if (failed(applyBinding(idx, paramVal)))
+        return failure();
+      continue;
+    }
+    case CallOperands::PogAssignment::kPA_Unspecified:
+    case CallOperands::PogAssignment::kPA_Default:
+      // Default values and unspecified values are handled separately in param
+      // inference.  TODO: Pull default values into here.
+      break;
+    case CallOperands::PogAssignment::kPA_Variadic:
+      if (!pog.isPosVarArg()) {
+        getMojoDiag({}) << "Keyword variadics are not supported for parameters";
+        return failure();
+      }
 
-    // If we have a varargs parameters, then it will eat the rest of the
-    // parameters, but we have to check each of them.
-    if (declaredParamPogs.isPosVarArg(idx)) {
       // If there are no parameter values, then leave the parameter uninferred
       // for now.  It could be inferred from an call-argument or be left
       // unbound.
-      if (posIdx == numParams)
+      if (pogAssignment.posVariadicIdxs.empty())
         continue;
 
       // Unpacked variadics (`Tuple[*elts]` where elts is a variadic list) can
       // be passed directly as a whole variadic parameter.
       auto [varArgsEltType, expectedValueList] =
           ASTType(expectedType).getParameterListInfo();
-      if (auto unpacked = dyn_cast_or_null<UnpackedAttr>(
-              givenBindings[posIdx].ir.getIfPValue().get())) {
-        // FIXME: Make sure to only unpack *x in pos varargs and **x in kw
-        // varargs.
-        FailureOr<TypedAttr> paramVal = inferAndEmitOneParam(
-            {unpacked.getValue(), givenBindings[posIdx].expr}, expectedType,
-            idx);
-        // Exit if an error was already emitted.
-        if (failed(paramVal) || failed(applyBinding(idx, *paramVal)))
-          return failure();
-        ++posIdx;
-        continue;
+
+      // TODO: What is UnpackedAttr about? Why isn't this part of the operand?
+      if (pogAssignment.posVariadicIdxs.size() == 1) {
+        auto &operand = givenBindings[pogAssignment.posVariadicIdxs[0]];
+        if (auto unpacked = dyn_cast_or_null<UnpackedAttr>(
+                operand.ir.getIfPValue().get())) {
+          // FIXME: Make sure to only unpack *x in pos varargs and **x in kw
+          // varargs.
+          FailureOr<TypedAttr> paramVal = inferAndEmitOneParam(
+              {unpacked.getValue(), operand.expr}, expectedType, idx);
+          // Exit if an error was already emitted.
+          if (failed(applyBinding(idx, paramVal)))
+            return failure();
+          continue;
+        }
       }
 
       // Otherwise, we infer the variadic to be the elements of the variadic
       // list being passed in.
       SmallVector<TypedAttr> elements;
       bool isDeferred = false;
-      while (posIdx != numParams) {
-        // This pass just skips keyword parameters, they are handled later.
-        if (givenBindings[posIdx].keyword) {
-          ++posIdx;
-          continue;
-        }
+      for (auto operandIdx : pogAssignment.posVariadicIdxs) {
+        auto &operand = givenBindings[operandIdx];
 
         // Passing `_` to a variadic is not allowed. Users should pass `*_` to
         // unbind a variadic parameter.
-        if (isa_and_nonnull<UnboundAttr>(
-                givenBindings[posIdx].ir.getIfPValue().get())) {
-          auto &diag = getMojoDiag(givenBindings[posIdx].expr->getLoc());
+        if (isa_and_nonnull<UnboundAttr>(operand.ir.getIfPValue().get())) {
+          auto &diag = getMojoDiag(operand.expr->getLoc());
           diag << "unbound syntax (i.e. `_`) cannot be passed as a variadic "
                   "parameter";
           return failure();
@@ -729,11 +737,10 @@ LogicalResult ParamInf::inferFromParamList() {
 
         // FIXME: pack and install variadics parameter correctly.
         FailureOr<TypedAttr> paramVal =
-            inferAndEmitOneParam(givenBindings[posIdx], varArgsEltType, idx);
+            inferAndEmitOneParam(operand, varArgsEltType, idx);
         if (failed(paramVal)) // Exit if an error was already emitted.
           return failure();
 
-        ++posIdx;
         if (!*paramVal) {
           isDeferred = true;
           continue;
@@ -758,68 +765,11 @@ LogicalResult ParamInf::inferFromParamList() {
         // The ParameterList now has a concrete type.
         auto listValue =
             UnknownAttr::get(evaluator.getReboundType(expectedType));
-        if (failed(applyBinding(idx, listValue)))
+        if (failed(setInferredValue(idx, listValue)))
           return failure();
       }
       continue;
     }
-
-    // If we have a non-kw param value, it binds to this parameter if it accepts
-    // it.
-    if (posIdx < numParams && (pog.getPassingKind() == PassingKind::PosOrKw ||
-                               pog.getPassingKind() == PassingKind::PosOnly)) {
-      FailureOr<TypedAttr> paramVal =
-          inferAndEmitOneParam(givenBindings[posIdx], expectedType, idx);
-      // Exit if an error was already emitted.
-      if (failed(paramVal) || failed(applyBinding(idx, *paramVal)))
-        return failure();
-      ++posIdx;
-      continue;
-    }
-
-    // If we're out of positional bindings, or this works with a keyword, try
-    // looking for a provided keyword parameter binding.
-    if ((pog.getPassingKind() != PassingKind::PosOnly &&
-         pog.getPassingKind() != PassingKind::Implicit)) {
-      if (const OperandValue *param =
-              givenBindings.findKwArg(declaredParamPogs.getName(idx))) {
-
-        FailureOr<TypedAttr> paramVal =
-            inferAndEmitOneParam(*param, expectedType, idx);
-        // Exit if an error was already emitted.
-        if (failed(paramVal) || failed(applyBinding(idx, *paramVal)))
-          return failure();
-        continue;
-      }
-    }
-
-    // If this parameter is unspecified but we have a ... in the parameter list,
-    // leave it unbound even if it has a default.
-    if (hasEllipsis)
-      continue;
-  }
-
-  // Check and complain if we have bindings that didn't get used.
-  // FIXME: why do we still need this? should it has already been verified
-  // above?
-  if (posIdx != numParams) {
-    // Hide the implicit trait parameter from the diagnostic.
-    size_t hidden = 0;
-    if (declIfKnown)
-      if (auto fn = dyn_cast<FnOp>(declIfKnown->getIfOperation()))
-        hidden = isa_and_nonnull<TraitDeclOp>(fn->getParentOp());
-
-    size_t numExpected = countNumPositional(declaredParamPogs) - hidden;
-    auto &diag = getMojoDiag({});
-    if (declIfKnown)
-      diag << "'" << *declIfKnown->getUserNameIfOperation() << "'";
-    else
-      diag << "parametric value";
-    emitWrongArgOrParamCount(diag, /*minRequired=*/numExpected,
-                             /*maxAllowed=*/numExpected,
-                             givenBindings.getNumPositional() - hidden,
-                             "positional parameter");
-    return failure();
   }
 
   return success();

@@ -145,7 +145,7 @@ LogicalResult CallOperands::assignToPogs(
     if (pog.isPosVarArg() || pog.isPack()) {
       // Note that the contents will be captured in the posVariadicIdxs list.
       // Note this captures individual values as well as unpacks.
-      pogAssignment.posVariadicIdxs.push_back(PogAssignment::kPA_Variadic);
+      pogAssignment.operandIdxs.push_back(PogAssignment::kPA_Variadic);
       while (opIdx != numOperands) {
         if (!values[opIdx].keyword)
           pogAssignment.posVariadicIdxs.push_back(opIdx);
