@@ -23,6 +23,8 @@ modular_py_library(
     ignore_unresolved_imports = [
         # Private tool parsers are imported at runtime, not directly
         "tool_parsers",
+        # Private MiniMax-M3 arch is imported at runtime, not directly
+        "minimax_m3",
     ],
     deps = [
         "//max/python/max/pipelines/lib",
