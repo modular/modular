@@ -169,10 +169,11 @@ modular_py_test(
         "//conditions:default": [],
     }),  # FIXME: MOCO-2411
     deps = [
-        "//max/python/max:_mlir_context",
+        "//max/python/max:_core",
         "//max/python/max:interpreter",
         "//max/python/max/driver",
         "//max/python/max/dtype",
+        "//max/python/max/engine",
         "//max/python/max/experimental",
         "//max/python/max/graph",
     ],

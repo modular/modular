@@ -16,14 +16,14 @@ from __future__ import annotations
 
 import threading
 from collections.abc import Sequence
-from concurrent.futures import Future
 from typing import Any
 
 import pytest
 from max import _interpreter
-from max._mlir_context import MLIRThreadPoolExecutor
+from max._core.mlrt import AsyncValue
 from max.driver import CPU, Buffer
 from max.dtype import DType
+from max.engine import CompiledModel
 from max.experimental.executor import (
     CompilingExecutor,
     CompositeExecutor,
@@ -36,6 +36,7 @@ from max.experimental.executor import (
     default_executor,
     set_default_executor,
 )
+from max.experimental.support import _session
 from max.graph import Graph, TensorType, ops
 
 # ---------------------------------------------------------------------------
@@ -266,24 +267,19 @@ class TestJitExecutor:
         assert _values(results[0]) == pytest.approx([4.0, 5.0])
 
     def test_cache_idempotence_same_graph(self) -> None:
-        """Structurally identical graphs share one cache entry and future."""
+        """Structurally identical graphs share one cache entry."""
         graph, buf1 = _add_graph()
         executor = JitExecutor()
 
-        # Prime the cache.
         executor.execute(graph, [buf1])
-
-        # The cache must have exactly one entry.
         assert len(executor.cache) == 1
-        cached_future = next(iter(executor.cache.values()))
+        cached_entry = next(iter(executor.cache.values()))
 
         # Second execute on a fresh (but structurally identical) graph.
         graph2, buf2 = _add_graph()
         executor.execute(graph2, [buf2])
-
-        # Still one entry and the future object is the same.
         assert len(executor.cache) == 1
-        assert next(iter(executor.cache.values())) is cached_future
+        assert next(iter(executor.cache.values())) is cached_entry
 
     def test_blocks_on_compile_when_interpreter_refuses(self) -> None:
         """Graphs the interpreter refuses are served by the compiled model."""
@@ -304,6 +300,12 @@ class TestJitExecutor:
         monkeypatch.setattr(_interpreter, "execute", _boom)
         graph, buf = _add_graph()
         executor = JitExecutor()
+        # Pin the compile as forever-pending so the interpreter path is
+        # deterministically chosen (a real compile may win the race).
+        _session()  # AsyncValue construction needs an initialized runtime.
+        pending: AsyncValue[Any] = AsyncValue()
+        with executor.lock:
+            executor.cache[_eager_model_cache_key(graph)] = pending
         with pytest.raises(RuntimeError, match="simulated kernel failure"):
             executor.execute(graph, [buf])
 
@@ -318,16 +320,27 @@ class TestJitExecutor:
         (out,) = executor.execute(graph, [buf])
         assert _values(out) == pytest.approx([4.0, 5.0])
 
-    def test_failed_compile_propagates(self) -> None:
+    def test_failed_compile_propagates(self, monkeypatch: Any) -> None:
         """A failed compile re-raises on every call; it is not retried."""
-        graph, buf = _add_graph()
-        bad_future: Future[Any] = Future()
-        bad_future.set_exception(RuntimeError("compile exploded"))
+        import max.experimental.executor as executor_module
 
-        key = _eager_model_cache_key(graph)
+        session = executor_module._session()
+
+        class _FailingInitSession:
+            def compile_async(self, graph: Graph) -> CompiledModel:
+                return session.compile_async(graph)
+
+            def init(self, compiled: CompiledModel) -> Any:
+                raise RuntimeError("compile exploded")
+
+        monkeypatch.setattr(
+            executor_module, "_session", lambda: _FailingInitSession()
+        )
+
+        graph, buf = _add_graph()
         executor = JitExecutor()
-        with executor.lock:
-            executor.cache[key] = bad_future
+        # Force the demand path: the interpreter must refuse the graph.
+        executor.interpreter = InterpreterExecutor(max_ops=0)
 
         with pytest.raises(RuntimeError, match="compile exploded"):
             executor.execute(graph, [buf])
@@ -354,7 +367,7 @@ class TestJitExecutorSnapshot:
         executor = JitExecutor()
         (first,) = executor.execute(graph, [inp])
         (future,) = executor.cache.values()
-        future.result(timeout=300)
+        future.wait()  # Waits for the background compile and init.
         (second,) = executor.execute(graph, [inp])
         assert _values(first) == pytest.approx(_values(second))
 
@@ -449,49 +462,26 @@ class TestDefaultExecutor:
         assert all(r is results[0] for r in results)
 
 
-class TestJitExecutorDemandPriority:
-    """Demand compiles never wait behind speculative queue entries."""
-
-    def test_demand_skips_speculative_queue(self) -> None:
-        executor = JitExecutor()
-        # Force the demand path: the interpreter must refuse the graph.
-        executor.interpreter = InterpreterExecutor(max_ops=0)
-        release = threading.Event()
-        started = threading.Event()
-
-        def _stall() -> None:
-            started.set()
-            release.wait(timeout=30)
-
-        try:
-            # Occupy the worker and queue a second job behind it.
-            executor.pool.submit(_stall)
-            started.wait(timeout=10)
-            executor.pool.submit(lambda: None)
-
-            # A demand execute must complete while the queue is stalled.
-            graph, inp = _add_graph()
-            (out,) = executor.execute(graph, [inp])
-            assert _values(out) == pytest.approx([4.0, 5.0])
-        finally:
-            release.set()
+class TestJitExecutorConcurrency:
+    """Racing executes for one graph share a single compile and init."""
 
     def test_concurrent_demands_share_one_compile(
         self, monkeypatch: Any
     ) -> None:
-        """Racing demands for one graph produce exactly one compile; the
-        losers wait on the winner's future instead of cancelling it."""
         import max.experimental.executor as executor_module
 
         session = executor_module._session()
-        load_count = [0]
-        loaders: list[str] = []
+        compile_count = [0]
+        init_count = [0]
 
         class _CountingSession:
-            def load(self, graph: Graph) -> Any:
-                load_count[0] += 1
-                loaders.append(threading.current_thread().name)
-                return session.load(graph)
+            def compile_async(self, graph: Graph) -> CompiledModel:
+                compile_count[0] += 1
+                return session.compile_async(graph)
+
+            def init(self, compiled: CompiledModel) -> Any:
+                init_count[0] += 1
+                return session.init(compiled)
 
         monkeypatch.setattr(
             executor_module, "_session", lambda: _CountingSession()
@@ -500,15 +490,6 @@ class TestJitExecutorDemandPriority:
         executor = JitExecutor()
         # Force the demand path: the interpreter must refuse the graph.
         executor.interpreter = InterpreterExecutor(max_ops=0)
-        # A single worker so one stalled job keeps the speculative compile
-        # queued (cancellable) for every racing demand.
-        executor.pool = MLIRThreadPoolExecutor(max_workers=1)
-        release = threading.Event()
-        started = threading.Event()
-
-        def _stall() -> None:
-            started.set()
-            release.wait(timeout=30)
 
         # One graph object per thread: executors mutate graphs in place, so
         # sharing one object across threads is outside the contract.  The
@@ -523,24 +504,17 @@ class TestJitExecutorDemandPriority:
             except Exception as e:
                 errors.append(e)
 
-        try:
-            # Stall the pool so the speculative compile stays cancellable.
-            executor.pool.submit(_stall)
-            started.wait(timeout=10)
-
-            threads = [
-                threading.Thread(target=_demand, args=pair)
-                for pair in workloads
-            ]
-            for t in threads:
-                t.start()
-            for t in threads:
-                t.join(timeout=300)
-        finally:
-            release.set()
+        threads = [
+            threading.Thread(target=_demand, args=pair) for pair in workloads
+        ]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=300)
 
         assert not errors
         assert len(results) == 4
         for result in results:
             assert _values(result[0]) == pytest.approx([4.0, 5.0])
-        assert load_count[0] == 1, loaders
+        assert compile_count[0] == 1
+        assert init_count[0] == 1

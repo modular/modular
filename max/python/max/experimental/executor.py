@@ -33,13 +33,12 @@ import os
 import threading
 from collections import OrderedDict
 from collections.abc import Callable, Sequence
-from concurrent.futures import Future
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
 from max import _core, driver, engine
 from max._core.dialects import rmo
-from max._mlir_context import MLIRThreadPoolExecutor
+from max._core.mlrt import AsyncValue
 from max.graph import Graph
 
 from .support import SetterContext, _session
@@ -294,11 +293,11 @@ class CompositeExecutor:
 class JitExecutor:
     """Executes via the interpreter while compiling in the background.
 
-    The first call for a given graph (keyed by structure) submits a
-    background compile and caches the resulting future for the life of this
-    executor; while it is pending, calls execute via the interpreter.  When
-    the interpreter refuses a graph, the call blocks until the compiled
-    model is available.
+    The first call for a given graph (keyed by structure) starts an
+    asynchronous compile on the runtime's worker pool and caches the
+    handle for the life of this executor; while the compile is pending,
+    calls execute via the interpreter.  When the interpreter refuses a
+    graph, the call waits for that graph's compile.
 
     ``MAX_INTERPRETER_MAX_OPS`` caps the graph size the interpreter serves
     (default 1024 dispatchable ops).
@@ -307,7 +306,7 @@ class JitExecutor:
     path for that graph; it is not retried.
     """
 
-    cache: dict[EagerCacheKey, Future[engine.Model]]
+    cache: dict[EagerCacheKey, AsyncValue[engine.Model]]
     lock: threading.Lock
 
     def __init__(self) -> None:
@@ -320,7 +319,6 @@ class JitExecutor:
                 )
             )
         )
-        self.pool = MLIRThreadPoolExecutor()
 
     def execute(
         self, graph: Graph, inputs: Sequence[driver.Buffer]
@@ -333,40 +331,25 @@ class JitExecutor:
         """
         key = _eager_model_cache_key(graph)
 
-        def compile(graph: Graph) -> engine.Model:
-            # `session.load` legalizes RMO as part of compilation.
-            return _session().load(graph)
-
         with self.lock:
-            if key not in self.cache:
+            future = self.cache.get(key)
+            if future is None:
+                session = _session()
                 # Compilation mutates the graph; compile a copy so the
                 # interpreter path still sees the original module.
-                future = self.pool.submit(compile, graph.copy())
-                self.cache[key] = future
-            future = self.cache[key]
+                compiled = session.compile_async(graph.copy())
+                future = self.cache[key] = compiled._compiled.and_then(
+                    lambda _: session.init(compiled)
+                )
 
-        if future.done():
-            if (exc := future.exception()) is not None:
-                raise exc
-            model = future.result()
-            return model(*inputs)
+        if not future.done():
+            try:
+                return self.interpreter.execute(graph, inputs)
+            except UnsupportedGraphError:
+                pass
+            future.wait()
 
-        try:
-            return self.interpreter.execute(graph, inputs)
-        except UnsupportedGraphError:
-            pass
-
-        # JIT compile may be queued behind other graphs. Cancel it and
-        # compile inline.
-        with self.lock:
-            future = self.cache[key]
-            if future.cancel():
-                model = compile(graph)
-                done: Future[engine.Model] = Future()
-                done.set_result(model)
-                self.cache[key] = done
-            else:
-                model = future.result()
+        model = future.result()
         return model(*inputs)
 
 
