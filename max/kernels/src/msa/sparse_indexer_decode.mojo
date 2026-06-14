@@ -15,12 +15,18 @@
 For each decode query (one token per batch element) and each index head, this
 selects the top-k key *blocks* to attend to. It runs as two launches:
 
-1. `_decode_block_score_kernel` -- one CTA per (batch, index head). Each thread
-   owns a strided subset of the row's blocks; for each block it takes the max
-   over that block's `q . k * sm_scale` (bf16 inputs, f32 accumulation) and
-   applies init/local forcing, writing one f32 per block into a caller-owned
-   score buffer. Only in-range keys are read, so out-of-range keys in a partial
-   final block cannot contaminate the block max.
+1. `_decode_block_score_kernel` -- one CTA per (batch, index head, block chunk).
+   The block range `[0, num_blocks)` is split into `num_chunks` contiguous,
+   block-aligned slices across the `block_idx.z` grid axis; each CTA owns one
+   slice. Within a slice, each thread owns a strided subset of blocks; for each
+   block it takes the max over that block's `q . k * sm_scale` (bf16 inputs, f32
+   accumulation) and applies init/local forcing, writing one f32 per block into
+   a caller-owned score buffer. Only in-range keys are read, so out-of-range
+   keys in a partial final block cannot contaminate the block max. Blocks are
+   independent and each is written by exactly one chunk, so there is no
+   cross-CTA reduction. `num_chunks` is derived from graph-constant quantities
+   (batch, head count) only, so empty chunks early-return and the grid stays
+   capture-safe.
 2. `_decode_topk_kernel` -- one CTA per (index head, batch). Selects the top-k
    blocks from the score row via `block_select_topk`.
 
@@ -70,22 +76,32 @@ def _decode_block_score_kernel[
     init_blocks: Int,
     local_blocks: Int,
     sm_scale: Float32,
+    num_chunks: Int,
 ):
     comptime assert seq_lens.flat_rank == 1
     comptime INIT_SCORE = Float32(1.0e30)
     comptime LOCAL_SCORE = Float32(1.0e29)
     var b = block_idx.x
     var h = block_idx.y
+    var chunk_id = block_idx.z
     var tid = thread_idx.x
     var bsize = block_dim.x
 
     var num_keys = Int(seq_lens[b])
-    # num_keys == 0 needs no special case: num_blocks is 0, so the block loop
+    # num_keys == 0 needs no special case: num_blocks is 0, so the chunk range
     # below is empty and nothing is written (the top-k kernel reads 0 blocks).
     var num_blocks = ceildiv(num_keys, block_size)
     var local_start = max(0, num_blocks - local_blocks)
 
-    # Load q[b, h, :] into shared memory once (f32), reused by every block.
+    # Each block belongs to exactly one chunk, so these writes need no cross-CTA
+    # reduction. The chunk range is CTA-uniform, so the early-return is uniform
+    # (no barrier deadlock) and empty chunks cost ~nothing.
+    var chunk_blocks = ceildiv(num_blocks, num_chunks)
+    var chunk_start = chunk_id * chunk_blocks
+    var chunk_end = min(chunk_start + chunk_blocks, num_blocks)
+    if chunk_start >= num_blocks:
+        return
+
     var q_base = q.to_layout_tensor().ptr_at_offset(Index(b, h, 0))
     var q_smem = stack_allocation[
         idx_head_dim, Scalar[DType.float32], address_space=AddressSpace.SHARED
@@ -96,7 +112,7 @@ def _decode_block_score_kernel[
 
     var score_row = score.to_layout_tensor().ptr_at_offset(Index(h, b, 0))
 
-    for blk in range(tid, num_blocks, bsize):
+    for blk in range(chunk_start + tid, chunk_end, bsize):
         var key_start = blk * block_size
         var key_end = min(key_start + block_size, num_keys)
         # Every block in [0, num_blocks) has >= 1 in-range key, so this max is
@@ -188,6 +204,21 @@ def sparse_indexer_decode_score[
     comptime assert (
         BLOCK_DIM % WARP_SIZE == 0
     ), "block_dim must be a multiple of the warp size"
+
+    # Split-K so low-batch launches fill the GPU: the un-split grid is only
+    # `batch * num_index_heads` CTAs (4 at batch=1) on a 148-SM B200.
+    #
+    # CAPTURE-SAFETY: `num_chunks` depends only on graph-constant quantities
+    # (`batch`, `num_index_heads`), never on `seq_len`/`num_keys` (which vary
+    # call-to-call inside a CUDA-graph capture). The block range is computed
+    # on-device and chunks past `num_blocks` early-return, so any chunk count is
+    # valid -- each block is written by exactly one chunk, no reduction.
+    comptime TARGET_GRID = 512  # ~3.5x the B200 SM count
+    comptime MAX_CHUNKS = 128
+    var num_chunks = max(
+        1, min(MAX_CHUNKS, TARGET_GRID // max(1, batch * num_index_heads))
+    )
+
     comptime score_kernel = _decode_block_score_kernel[
         dtype,
         KOperand,
@@ -208,7 +239,8 @@ def sparse_indexer_decode_score[
         init_blocks,
         local_blocks,
         sm_scale,
-        grid_dim=(batch, num_index_heads),
+        num_chunks,
+        grid_dim=(batch, num_index_heads, num_chunks),
         block_dim=BLOCK_DIM,
     )
 
