@@ -223,10 +223,17 @@ LogicalResult CallOperands::assignToPogs(
   // any excess operands.
 
   // If there are no positional variadics, we can check for too many operands.
-  if (opIdx != numOperands) {
-    const char *kindStr = isParameterList ? "parameter" : "argument";
-    getDiag(values[opIdx].expr->getLoc())
-        << "unexpected " << kindStr << values[opIdx].expr->getRange();
+  if (opIdx != numOperands || !skippedKW.empty()) {
+    if (opIdx == numOperands)
+      opIdx = skippedKW.front();
+
+    auto &diag = getDiag(values[opIdx].expr->getLoc()) << "unexpected ";
+    if (values[opIdx].keyword)
+      diag << "keyword ";
+    diag << (isParameterList ? "parameter" : "argument");
+    if (values[opIdx].keyword)
+      diag << " " << values[opIdx].keyword;
+    diag << values[opIdx].expr->getRange();
     return failure();
   }
 

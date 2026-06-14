@@ -50,13 +50,13 @@ def pack_func[*Ts: AnyType](*args: *Ts):
 
 
 def test_unknown_kw_arg(x: Int):
-    # expected-error @+1 {{unknown keyword argument: 'c'}}
+    # expected-error @+1 {{invalid call to 'takes_pos_or_kw_arg': unexpected keyword argument 'c'}}
     takes_pos_or_kw_arg(x, c=x, j=x)
     # expected-error @+1 {{invalid call to 'takes_pos_or_kw_arg': missing required argument: 'j'}}
     takes_pos_or_kw_arg(x, d=x, c=x)
-    # expected-error @+1 {{unknown keyword argument: 'args'}}
+    # expected-error @+1 {{invalid call to 'var_arg_func': unexpected keyword argument 'args'}}
     var_arg_func(args=x)
-    # expected-error @+1 {{unknown keyword argument: 'args'}}
+    # expected-error @+1 {{invalid call to 'pack_func': unexpected keyword argument 'args'}}
     pack_func(args=x)
 
 
@@ -64,7 +64,7 @@ def test_passed_by_pos_and_kw_arg(x: Int):
     # expected-error @+1 {{invalid call to 'takes_pos_or_kw_arg': missing required argument: 'j'}}
     takes_pos_or_kw_arg(x, i=x)
 
-    # expected-error @+1 {{invalid call to 'takes_pos_or_kw_arg': unexpected argument}}
+    # expected-error @+1 {{invalid call to 'takes_pos_or_kw_arg': unexpected keyword argument 'j'}}
     takes_pos_or_kw_arg(x, x, j=x, i=x)
 
 
@@ -74,11 +74,11 @@ def takes_pos_or_kw_param[i: Int, j: Int]():
 
 
 def test_unknown_kw_param[x: Int]():
-    # expected-error @+1 {{unknown keyword parameter: 'c'}}
+    # expected-error @+1 {{unexpected keyword parameter 'c'}}
     takes_pos_or_kw_param[x, c=x, j=x]
-    # expected-error @+1 {{unknown keyword parameter: 'd'}}
+    # expected-error @+1 {{unexpected keyword parameter 'd'}}
     takes_pos_or_kw_param[x, d=x, c=x]
-    # expected-error @below {{unknown keyword parameter: 'Ts'}}
+    # expected-error @below {{unexpected keyword parameter 'Ts'}}
     pack_func[Ts=Int]
 
 
@@ -88,10 +88,10 @@ def takes_pos_only_param[a: Int, b: Int, /]():
 
 
 def test_pos_only_param_passed_by_kw[x: Int]():
-    # expected-error @+1 {{positional-only parameter passed as keyword operand: 'b'}}
+    # expected-error @+1 {{invalid call to 'takes_pos_only_param': unexpected keyword parameter 'b'}}
     takes_pos_only_param[x, b=x]()
 
-    # expected-error @+1 {{invalid call to 'takes_pos_only_param': positional-only parameter passed as keyword operand: 'a'}}
+    # expected-error @+1 {{invalid call to 'takes_pos_only_param': unexpected keyword parameter 'b'}}
     takes_pos_only_param[b=x, a=x]()
 
 
@@ -101,7 +101,7 @@ def takes_kw_only_param[*, a: Int, b: Int, c: Int = 7]():
 
 
 def test_missing_kw_only_param[x: Int]():
-    # expected-error @+1 {{unknown keyword parameter: 'd'}}
+    # expected-error @+1 {{invalid call to 'takes_kw_only_param': unexpected keyword parameter 'd'}}
     takes_kw_only_param[a=x, d=x]()
 
     # expected-error @+1 {{missing required keyword-only parameter: 'a'}}
