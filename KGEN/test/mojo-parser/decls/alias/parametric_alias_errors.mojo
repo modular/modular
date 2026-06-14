@@ -77,12 +77,12 @@ def implicit_generator_constraint_add[condA: Bool, condB: Bool]() where condA wh
 
 comptime myCurriedIntAdd[x: Int] = myIntAdd[x, ...]
 
-# expected-error @below {{unknown keyword parameter: 'y'}}
+# expected-error @below {{unexpected keyword parameter 'y'}}
 comptime myCurriedIntAdd2 = myCurriedIntAdd[y=2]
 
 comptime myRenamedCurriedIntAdd[a: Int] = myCurriedIntAdd[a]
 
-# expected-error @below {{unknown keyword parameter: 'x'}}
+# expected-error @below {{unexpected keyword parameter 'x'}}
 comptime myRenamedCurriedIntAdd2 = myRenamedCurriedIntAdd[x=2]
 
 # expected-error @below {{'Int' is not subscriptable}}

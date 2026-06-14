@@ -472,7 +472,7 @@ struct TwoAndThreeList:
    # expected-note @below {{candidate not viable: unexpected argument}}
    # expected-note @below {{candidate not viable: missing required argument: 'a'}}
    def __init__(out self, a: Int, b: Int, __list_literal__: NoneType): pass
-   # expected-note @below {{candidate not viable: unexpected argument}}
+   # expected-note @below {{candidate not viable: unexpected keyword argument '__list_literal__'}}
    # expected-note @below {{candidate not viable: missing required argument: 'a'}}
    def __init__(out self, a: Int, b: Int, c: Int, __list_literal__: NoneType): pass
 

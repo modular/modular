@@ -291,9 +291,9 @@ def has_pos_only[a: Int, b: Int, /, c: Int = 9]():
 
 
 def test_pos_only():
-    # expected-error @below {{positional-only parameter passed as keyword operand: 'b'}}
+    # expected-error @below {{invalid call to 'has_pos_only': unexpected keyword parameter 'b'}}
     has_pos_only[0, b=1, c=2]()
-    # expected-error @below {{invalid call to 'has_pos_only': positional-only parameter passed as keyword operand: 'a'}}
+    # expected-error @below {{invalid call to 'has_pos_only': unexpected keyword parameter 'b'}}
     has_pos_only[b=1, a=3, c=2]()
 
     # expected-error @below {{invalid call to 'has_pos_only': failed to infer parameter 'b'}}
@@ -303,9 +303,9 @@ def test_pos_only():
 def indirect_callable_pos_only[
     callable: def[a: Int, b: Int, /, c: Int = 9] () thin -> None
 ]():
-    # expected-error @below {{positional-only parameter passed as keyword operand: 'b'}}
+    # expected-error @below {{unexpected keyword parameter 'b'}}
     _ = callable[0, b=1, c=2]
-    # expected-error @below {{positional-only parameter passed as keyword operand: 'a'}}
+    # expected-error @below {{unexpected keyword parameter 'b'}}
     _ = callable[b=1, a=3, c=2]
 
 
@@ -339,13 +339,13 @@ def test_struct_kw_params2():
 
 
 def test_struct_kw_params3():
-    # expected-error @below {{unknown keyword parameter: 'args'}}
+    # expected-error @below {{unexpected keyword parameter 'args'}}
     _ = VarParamStruct["woof", args=7]
-    # expected-error @below {{unknown keyword parameter: 'c'}}
+    # expected-error @below {{unexpected keyword parameter 'c'}}
     _ = KwParamStruct[7, c=9]()
-    # expected-error @below {{unknown keyword parameter: 'z'}}
+    # expected-error @below {{unexpected keyword parameter 'z'}}
     _ = KwParamStruct[7, z=13, c=9]()
-    # expected-error @below {{parameter passed both as positional and keyword operand: 'a'}}
+    # expected-error @below {{unexpected keyword parameter 'a'}}
     _ = KwParamStruct[7, b=7, a=9]()
 
 
@@ -363,9 +363,9 @@ struct PosOnlyStruct[a: Int, b: Int, /, c: Int = 9]:
 
 
 def test_pos_only_struct():
-    # expected-error @below {{positional-only parameter passed as keyword operand: 'b'}}
+    # expected-error @below {{unexpected keyword parameter 'b'}}
     _ = PosOnlyStruct[0, b=1, c=2]
-    # expected-error @below {{positional-only parameter passed as keyword operand: 'a'}}
+    # expected-error @below {{unexpected keyword parameter 'b'}}
     _ = PosOnlyStruct[b=1, a=3, c=2]
     # expected-error @below {{failed to infer parameter 'b' of parent struct 'PosOnlyStruct'}}
     _ = PosOnlyStruct[1, c=9]()
