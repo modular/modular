@@ -20,6 +20,11 @@ from max import _interpreter
 from max._interpreter_ops import _MO_OP_HANDLERS, register_op_handler
 from max.driver import CPU, Buffer
 from max.dtype import DType
+from max.experimental.executor import (
+    CompositeExecutor,
+    InterpreterExecutor,
+    default_executor,
+)
 from max.experimental.realization_context import EagerRealizationContext
 from max.experimental.tensor import Tensor, realization_context
 from max.graph import Graph, TensorType, ops
@@ -268,57 +273,35 @@ class TestGraphExecution:
 
 
 class TestRealizationContextIntegration:
-    """Tests for interpreter integration with EagerRealizationContext."""
+    """The context binds an executor from its constructor arguments."""
 
-    def test_default_uses_interpreter(self, monkeypatch: Any) -> None:
-        """Test that interpreter is enabled by default."""
-        monkeypatch.delenv("MAX_USE_EAGER_INTERPRETER", raising=False)
+    def test_default_uses_default_executor(self) -> None:
+        """With no arguments the context uses the ambient default executor."""
+        assert EagerRealizationContext()._executor is default_executor()
 
-        ctx = EagerRealizationContext()
-        assert ctx._use_interpreter is True
+    def test_explicit_executor_is_used(self) -> None:
+        """An injected executor takes precedence over the default."""
+        executor = InterpreterExecutor()
+        assert EagerRealizationContext(executor=executor)._executor is executor
 
-    def test_can_enable_interpreter(self) -> None:
-        """Test that interpreter can be enabled explicitly."""
-
+    def test_use_interpreter_true_selects_interpreter(self) -> None:
+        """The deprecated ``use_interpreter=True`` shim forces the interpreter."""
         ctx = EagerRealizationContext(use_interpreter=True)
-        assert ctx._use_interpreter is True
+        assert isinstance(ctx._executor, CompositeExecutor)
+        assert isinstance(ctx._executor._interpreter, InterpreterExecutor)
 
-    def test_env_var_disables_interpreter(self, monkeypatch: Any) -> None:
-        """Test that MAX_USE_EAGER_INTERPRETER=0 disables interpreter."""
-        monkeypatch.setenv("MAX_USE_EAGER_INTERPRETER", "0")
-
-        ctx = EagerRealizationContext()
-        assert ctx._use_interpreter is False
-
-    def test_env_var_false_disables_interpreter(self, monkeypatch: Any) -> None:
-        """Test that MAX_USE_EAGER_INTERPRETER=false disables interpreter."""
-        monkeypatch.setenv("MAX_USE_EAGER_INTERPRETER", "false")
-
-        ctx = EagerRealizationContext()
-        assert ctx._use_interpreter is False
-
-    def test_env_var_1_keeps_interpreter_enabled(
-        self, monkeypatch: Any
-    ) -> None:
-        """Test that MAX_USE_EAGER_INTERPRETER=1 keeps interpreter enabled."""
-        monkeypatch.setenv("MAX_USE_EAGER_INTERPRETER", "1")
-
-        ctx = EagerRealizationContext()
-        assert ctx._use_interpreter is True
-
-    def test_explicit_false_overrides_default(self) -> None:
-        """Test that explicit use_interpreter=False overrides the default."""
-
+    def test_use_interpreter_false_selects_compile(self) -> None:
+        """The deprecated ``use_interpreter=False`` shim forces compilation."""
         ctx = EagerRealizationContext(use_interpreter=False)
-        assert ctx._use_interpreter is False
+        assert isinstance(ctx._executor, CompositeExecutor)
+        assert ctx._executor._interpreter is None
 
 
 class TestRuntimeFallback:
-    """Tests for interpreter runtime fallback to the graph compiler.
+    """Interpreter runtime fallback to the graph compiler.
 
-    These tests verify the control flow in realize_all(): when the
-    interpreter raises at runtime (e.g. unsupported dtype), auto-mode
-    falls back to the compiler, while explicit mode surfaces the error.
+    The auto-selected default executor swallows interpreter runtime errors
+    and compiles instead; an explicitly requested interpreter surfaces them.
     """
 
     def test_auto_mode_falls_back_on_execute_error(
@@ -335,7 +318,6 @@ class TestRuntimeFallback:
         monkeypatch.setattr(_interpreter, "execute", _failing_execute)
 
         with EagerRealizationContext() as ctx, realization_context(ctx):
-            assert ctx._auto_interpreter is True
             a = Tensor.zeros([3])
             b = a + 1.0
 
@@ -348,14 +330,18 @@ class TestRuntimeFallback:
     ) -> None:
         """When the interpreter is explicitly requested, runtime errors
         must propagate instead of silently falling back."""
-        ctx_auto = EagerRealizationContext()
-        assert ctx_auto._auto_interpreter is True
 
-        ctx_explicit = EagerRealizationContext(use_interpreter=True)
-        assert ctx_explicit._auto_interpreter is False
+        def _failing_execute(graph: Any, inputs: Any) -> Any:
+            raise RuntimeError("simulated unsupported dtype")
 
-        ctx_explicit_off = EagerRealizationContext(use_interpreter=False)
-        assert ctx_explicit_off._auto_interpreter is False
+        monkeypatch.setattr(_interpreter, "execute", _failing_execute)
+
+        with pytest.raises(RuntimeError, match="simulated unsupported dtype"):
+            with (
+                EagerRealizationContext(use_interpreter=True) as ctx,
+                realization_context(ctx),
+            ):
+                _ = Tensor.zeros([3]) + 1.0
 
 
 class TestDebugPrintOps:
@@ -435,28 +421,28 @@ class TestInterpreterMaxOps:
     def test_default_max_ops(self, monkeypatch: Any) -> None:
         """Test that the default max_ops is 1024."""
         monkeypatch.delenv("MAX_INTERPRETER_MAX_OPS", raising=False)
-        from max.experimental.realization_context import _interpreter_max_ops
+        from max.experimental.executor import _interpreter_max_ops
 
         assert _interpreter_max_ops() == 1024
 
     def test_env_var_overrides_max_ops(self, monkeypatch: Any) -> None:
         """Test that MAX_INTERPRETER_MAX_OPS env var overrides the default."""
         monkeypatch.setenv("MAX_INTERPRETER_MAX_OPS", "5")
-        from max.experimental.realization_context import _interpreter_max_ops
+        from max.experimental.executor import _interpreter_max_ops
 
         assert _interpreter_max_ops() == 5
 
     def test_env_var_max_ops_2(self, monkeypatch: Any) -> None:
         """Test setting the threshold to 2."""
         monkeypatch.setenv("MAX_INTERPRETER_MAX_OPS", "2")
-        from max.experimental.realization_context import _interpreter_max_ops
+        from max.experimental.executor import _interpreter_max_ops
 
         assert _interpreter_max_ops() == 2
 
     def test_invalid_env_var_uses_default(self, monkeypatch: Any) -> None:
         """Test that non-numeric env var falls back to default."""
         monkeypatch.setenv("MAX_INTERPRETER_MAX_OPS", "abc")
-        from max.experimental.realization_context import _interpreter_max_ops
+        from max.experimental.executor import _interpreter_max_ops
 
         assert _interpreter_max_ops() == 1024
 

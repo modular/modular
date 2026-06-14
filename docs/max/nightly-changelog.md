@@ -46,6 +46,17 @@ This version is still a work in progress.
 
 ### Python API
 
+- Eager execution in `max.experimental` now routes every realization through
+  the `max.experimental.executor.Executor` abstraction. The out-of-the-box
+  path is unchanged — graphs within the `MAX_INTERPRETER_MAX_OPS` threshold run
+  on the interpreter and fall back to a cached compile otherwise — but it is
+  now expressed as a new `CompositeExecutor` selected by
+  `MAX_EAGER_EXECUTOR=composite` (the new default). The
+  `MAX_USE_EAGER_INTERPRETER` environment variable has been removed; force
+  compilation with `MAX_EAGER_EXECUTOR=compile` instead. The
+  `EagerRealizationContext(use_interpreter=...)` argument is deprecated in
+  favor of `EagerRealizationContext(executor=...)`.
+
 ## MAX kernels
 
 ## Breaking changes

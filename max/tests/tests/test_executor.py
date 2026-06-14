@@ -26,15 +26,16 @@ from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.experimental.executor import (
     CompilingExecutor,
+    CompositeExecutor,
     Executor,
     InterpreterExecutor,
     JitExecutor,
     UnsupportedGraphError,
+    _eager_model_cache_key,
     _executor_from_env,
     default_executor,
     set_default_executor,
 )
-from max.experimental.realization_context import _eager_model_cache_key
 from max.graph import Graph, TensorType, ops
 
 # ---------------------------------------------------------------------------
@@ -181,6 +182,78 @@ class TestCompilingExecutor:
 
 
 # ---------------------------------------------------------------------------
+# CompositeExecutor
+# ---------------------------------------------------------------------------
+
+
+class TestCompositeExecutor:
+    """Interpreter-first with a cached-compile fallback."""
+
+    def test_is_executor(self) -> None:
+        assert isinstance(
+            CompositeExecutor(interpreter=None, fallback_on_error=True),
+            Executor,
+        )
+
+    def test_interpreter_path(self) -> None:
+        """A small graph runs on the interpreter, never touching compile."""
+        graph, buf = _add_graph()
+        executor = CompositeExecutor(
+            interpreter=InterpreterExecutor(), fallback_on_error=True
+        )
+        results = executor.execute(graph, [buf])
+        assert _values(results[0]) == pytest.approx([4.0, 5.0])
+
+    def test_compiles_when_interpreter_refuses(self) -> None:
+        """An over-threshold graph falls back to the compiled model."""
+        graph, buf = _add_graph()
+        executor = CompositeExecutor(
+            interpreter=InterpreterExecutor(max_ops=0), fallback_on_error=True
+        )
+        results = executor.execute(graph, [buf])
+        assert _values(results[0]) == pytest.approx([4.0, 5.0])
+
+    def test_no_interpreter_compiles(self) -> None:
+        """``interpreter=None`` makes this a pure cached-compile executor."""
+        graph, buf = _add_graph()
+        executor = CompositeExecutor(interpreter=None, fallback_on_error=True)
+        results = executor.execute(graph, [buf])
+        assert _values(results[0]) == pytest.approx([4.0, 5.0])
+
+    def test_fallback_on_error_swallows_then_compiles(
+        self, monkeypatch: Any
+    ) -> None:
+        """A runtime interpreter error is swallowed and the graph compiled."""
+
+        def _boom(graph: Any, inputs: Any) -> Any:
+            raise RuntimeError("simulated kernel failure")
+
+        monkeypatch.setattr(_interpreter, "execute", _boom)
+        graph, buf = _add_graph()
+        executor = CompositeExecutor(
+            interpreter=InterpreterExecutor(), fallback_on_error=True
+        )
+        (out,) = executor.execute(graph, [buf])
+        assert _values(out) == pytest.approx([4.0, 5.0])
+
+    def test_no_fallback_propagates_runtime_error(
+        self, monkeypatch: Any
+    ) -> None:
+        """With ``fallback_on_error=False`` a runtime error propagates."""
+
+        def _boom(graph: Any, inputs: Any) -> Any:
+            raise RuntimeError("simulated kernel failure")
+
+        monkeypatch.setattr(_interpreter, "execute", _boom)
+        graph, buf = _add_graph()
+        executor = CompositeExecutor(
+            interpreter=InterpreterExecutor(), fallback_on_error=False
+        )
+        with pytest.raises(RuntimeError, match="simulated kernel failure"):
+            executor.execute(graph, [buf])
+
+
+# ---------------------------------------------------------------------------
 # JitExecutor
 # ---------------------------------------------------------------------------
 
@@ -304,9 +377,13 @@ class TestJitExecutorSnapshot:
 class TestDefaultExecutor:
     """Tests for the ambient default executor mechanism."""
 
-    def test_env_default_is_jit(self, monkeypatch: Any) -> None:
+    def test_env_default_is_composite(self, monkeypatch: Any) -> None:
         monkeypatch.delenv("MAX_EAGER_EXECUTOR", raising=False)
-        assert isinstance(_executor_from_env(), JitExecutor)
+        assert isinstance(_executor_from_env(), CompositeExecutor)
+
+    def test_env_selects_composite(self, monkeypatch: Any) -> None:
+        monkeypatch.setenv("MAX_EAGER_EXECUTOR", "composite")
+        assert isinstance(_executor_from_env(), CompositeExecutor)
 
     def test_env_selects_jit(self, monkeypatch: Any) -> None:
         monkeypatch.setenv("MAX_EAGER_EXECUTOR", "jit")

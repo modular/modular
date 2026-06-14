@@ -20,6 +20,8 @@ from max.driver import CPU
 from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental import realization_context as rc
+from max.experimental.executor import CompositeExecutor
+from max.experimental.support import _session
 from max.experimental.tensor import (
     Tensor,
     TensorType,
@@ -167,7 +169,7 @@ def test_graph_context_using_realized_tensors() -> None:
     with Graph("test", input_types=[input_type]) as graph:
         graph.output(eager + graph.inputs[0].tensor)
 
-    model = rc._session().load(graph)
+    model = _session().load(graph)
     input = Tensor.ones([3, 3], dtype=DType.float32, device=CPU())
     output = model(input)[0]
     assert output[0, 0].item() == 6
@@ -186,7 +188,7 @@ def test_graph_context_using_lazy_tensors() -> None:
 
     assert lazy.real
 
-    model = rc._session().load(graph)
+    model = _session().load(graph)
     input = Tensor.ones([3, 3], dtype=DType.float32, device=CPU())
     output = model(input)[0]
     assert output[0, 0].item() == 6
@@ -236,7 +238,10 @@ def test_set_default_realization_context_scoped() -> None:
         # No explicit context: realization goes through ensure_context.
         t = Tensor.zeros([2]) + 1.0
         assert created, "factory was not used for the implicit context"
-        assert all(not ctx._use_interpreter for ctx in created)
+        # use_interpreter=False routes through a compile-only CompositeExecutor.
+        for ctx in created:
+            assert isinstance(ctx._executor, CompositeExecutor)
+            assert ctx._executor._interpreter is None
         assert t.real
     # Exiting the scope restores the previous factory.
     assert rc._DEFAULT_REALIZATION_CONTEXT is rc.EagerRealizationContext
