@@ -48,6 +48,11 @@ This version is still a work in progress.
   instruction, a `readfirstlane` ballot fold on AMD, and a shuffle-based
   emulation on Apple Silicon GPUs.
 
+- Added `warp.match_all()`, which returns the warp's active-lane mask if every
+  lane holds the same bits and 0 otherwise. It uses NVIDIA's `match.all.sync`
+  instruction, a `readfirstlane` ballot fold on AMD, and a shuffle-based check
+  on Apple Silicon GPUs.
+
 ## Removed
 
 ## Fixed
