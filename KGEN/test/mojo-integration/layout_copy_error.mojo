@@ -13,6 +13,6 @@
 from layout import Layout, LayoutTensor
 
 
-def kernel(tensor: LayoutTensor[...]):
+def kernel(tensor: LayoutTensor):
     # CHECK: cannot materialize comptime value of type 'Layout' to runtime because it is not 'ImplicitlyCopyable'
     var size = tensor.layout.size()
