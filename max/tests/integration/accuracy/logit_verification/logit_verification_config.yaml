@@ -855,6 +855,22 @@ logit_verification_pipelines:
     cos_dist_threshold: 8.0e-03
     kl_div_threshold: 1.5e+00
 
+  # MiniMax-M3 (dense-only layers) on a trimmed checkpoint, compared
+  # against goldens pregenerated from the mm-sglang MiniMax-M3 fork.
+  minimax/minimax3-dense-only:
+    pre_submit_agents: []
+    post_submit_agents: []
+    pipeline: "minimax/minimax3-dense-only"
+    compatible_with: [gpu]
+    encoding: float8_e4m3fn
+    tags: [manual]
+    pregenerated_torch_goldens:
+      tar_file: "s3://modular-bazel-artifacts-public/artifacts/minimax_m3_dense_only_golden/1/916ae32aad3b2c036783d3451e9c897512734de1f4d71c95d0afdaaaa2aeddd4/minimax_m3_dense_only_golden.tar.gz"
+      json_file: "torch_minimax_m3_dense_only_golden.json"
+    # Placeholder tolerances (headroom over measured); re-tune via the Action.
+    cos_dist_threshold: 5.0e-04
+    kl_div_threshold: 1.0e-03
+
   deepseek-ai/DeepSeek-V3.1-Terminus:
     pre_submit_agents: []
     pipeline: "deepseek-ai/DeepSeek-V3.1-Terminus"

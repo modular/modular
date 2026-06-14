@@ -2212,6 +2212,19 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
     "nvidia/Kimi-K2.5-NVFP4__internal": KimiK2_5DeepseekV3LocalPathPipelineOracle(
         "/mnt/local/data/quantized/v4"
     ),
+    # Trimmed MiniMax-M3 (dense-only layers) for logit verification. The prompts
+    # are pinned and apply_chat_template is off so the input_ids match those the
+    # reference logits were generated from.
+    "minimax/minimax3-dense-only": GenericOracle(
+        model_path="s3://modular-kadabra-weights/minimax-m3-3L-fp8",
+        config_params={"trust_remote_code": True},
+        device_encoding_map={"gpu": ["float8_e4m3fn"]},
+        prompts=[
+            "The capital of France is",
+            "Quantum computing is",
+        ],
+        apply_chat_template=False,
+    ),
     "MiniMaxAI/MiniMax-M2.7": GenericOracle(
         model_path="MiniMaxAI/MiniMax-M2.7",
         config_params={
