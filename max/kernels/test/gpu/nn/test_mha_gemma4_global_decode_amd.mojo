@@ -13,11 +13,12 @@
 
 """Correctness test for the Gemma 4 global decode attention shape on AMD.
 
-Regression test for KERN-2826.
+Regression test for KERN-2826 and CENG-418.
 
 Gemma 4's global layers use 32 query heads, 4 KV heads, and head_dim=512.
-This compares the gfx950 flash attention decode kernel against the existing
-naive GPU reference for a numerically stressful two-tile causal decode shape.
+Compares the gfx950 flash attention decode kernel against the naive reference
+at a short context and a long context, with the attended keys placed in the
+last split-K partition.
 """
 
 from std.math import isclose
@@ -38,12 +39,14 @@ from std.utils.index import Index
 from std.utils.numerics import min_or_neg_inf
 
 
-def test_gemma4_global_decode(ctx: DeviceContext) raises:
-    print("gemma4 global decode")
+def test_gemma4_global_decode(
+    ctx: DeviceContext, num_keys: Int, hot_start: Int, hot_end: Int
+) raises:
+    # [hot_start, hot_end) is the key range that dominates the softmax.
+    print("gemma4 global decode, num_keys =", num_keys)
 
     comptime batch_size = 1
     comptime seq_len = 1
-    comptime num_keys = 512
     comptime num_heads = 32
     comptime kv_num_heads = 4
     comptime group = num_heads // kv_num_heads
@@ -69,8 +72,9 @@ def test_gemma4_global_decode(ctx: DeviceContext) raises:
             for d in range(depth):
                 q_ptr[(i * num_heads + h) * depth + d] = Scalar[dtype](5.0)
     for i in range(num_keys):
-        var k_val = Scalar[dtype](100.0) if i < 128 else Scalar[dtype](1.0)
-        var v_val = Scalar[dtype](1.0) if i < 128 else Scalar[dtype](-1.0)
+        var is_hot = i >= hot_start and i < hot_end
+        var k_val = Scalar[dtype](100.0) if is_hot else Scalar[dtype](1.0)
+        var v_val = Scalar[dtype](1.0) if is_hot else Scalar[dtype](-1.0)
         for h in range(kv_num_heads):
             for d in range(depth):
                 k_ptr[(i * kv_num_heads + h) * depth + d] = k_val
@@ -179,4 +183,9 @@ def test_gemma4_global_decode(ctx: DeviceContext) raises:
 
 def main() raises:
     with DeviceContext() as ctx:
-        test_gemma4_global_decode(ctx)
+        # KERN-2826: short context.
+        test_gemma4_global_decode(ctx, num_keys=512, hot_start=0, hot_end=128)
+        # CENG-418: long context, attended keys in the last partition.
+        test_gemma4_global_decode(
+            ctx, num_keys=32768, hot_start=32768 - 256, hot_end=32768
+        )
