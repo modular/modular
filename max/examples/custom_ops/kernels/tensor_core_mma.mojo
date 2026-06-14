@@ -116,7 +116,7 @@ struct TensorCoreMMA[algorithm: StaticString]:
                     for j in range(N):  # cols of original KxN matrix
                         b_transposed_ptr[j * K + i] = b_tt.ptr[i * N + j]
 
-                b_ptr_to_use = b_transposed_ptr
+                b_ptr_to_use = b_transposed_ptr.as_unsafe_any_origin()
             else:
                 b_ptr_to_use = b.unsafe_ptr()
 

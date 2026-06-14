@@ -123,7 +123,8 @@ def _tvm_ffi_error_move_from_raised(
     lib = OwnedDLHandle(path="libtvm_ffi.so")
     comptime FnType = def(
         UnsafePointer[
-            Optional[UnsafePointer[TVMFFIObject, MutAnyOrigin]], MutAnyOrigin
+            Optional[UnsafePointer[TVMFFIObject, MutAnyOrigin]],
+            origin_of(result),
         ]
     ) thin abi("C") -> None
     fn_ptr = lib.get_function[FnType]("TVMFFIErrorMoveFromRaised")

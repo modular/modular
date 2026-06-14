@@ -188,9 +188,10 @@ def test_v2_causal_paged[depth: Int](ctx: DeviceContext) raises:
     # PagedKVCacheCollection. LayoutTensor wrappers over the device buffers.
     comptime kv_block_layout = Layout.row_major[6]()
     var kv_block_tensor = LayoutTensor[
-        DType.bfloat16, kv_block_layout, MutAnyOrigin
+        DType.bfloat16,
+        kv_block_layout,
     ](
-        dev_kv_block.unsafe_ptr(),
+        dev_kv_block,
         RuntimeLayout[kv_block_layout].row_major(
             IndexList[6](
                 NUM_PAGES, 2, NUM_LAYERS, PAGE_SIZE, NUM_KV_HEADS, depth
@@ -200,15 +201,19 @@ def test_v2_causal_paged[depth: Int](ctx: DeviceContext) raises:
 
     comptime cache_lengths_layout = Layout(UNKNOWN_VALUE)
     var cache_lengths_tensor = LayoutTensor[
-        DType.uint32, cache_lengths_layout, ImmutAnyOrigin
+        mut=False,
+        DType.uint32,
+        cache_lengths_layout,
     ](
-        dev_cache_lengths.unsafe_ptr(),
+        dev_cache_lengths,
         RuntimeLayout[cache_lengths_layout].row_major(IndexList[1](BATCH)),
     )
 
     comptime paged_lut_layout = Layout.row_major[2]()
     var paged_lut_tensor = LayoutTensor[
-        DType.uint32, paged_lut_layout, ImmutAnyOrigin
+        mut=False,
+        DType.uint32,
+        paged_lut_layout,
     ](
         dev_paged_lut.unsafe_ptr(),
         RuntimeLayout[paged_lut_layout].row_major(

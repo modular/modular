@@ -37,6 +37,14 @@ This version is still a work in progress.
 - `ImplicitlyDestructible` has been renamed to `ImplicitlyDeletable`, for better
   name consistency with its required `__del__()` "delete" special method.
 
+- The implicit conversion constructors that cast an `UnsafePointer` to
+  `MutUnsafeAnyOrigin` or `ImmutUnsafeAnyOrigin` are now deprecated and emit a
+  deprecation warning when used. `UnsafeAnyOrigin` is an unsafe escape hatch
+  that silently extends unrelated lifetimes and disables exclusivity checking,
+  so it should never be applied implicitly. Prefer keeping a concrete origin;
+  if you must discard it, make the cast explicit with the
+  `as_unsafe_any_origin()` method.
+
 ## Tooling changes
 
 - Added a `--lld-path` CLI flag. This overrides the LLD path that Mojo uses.

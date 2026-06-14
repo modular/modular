@@ -44,14 +44,6 @@ def _immutable_pointer(p: ImmutUnsafePointer[Int, ...]) raises:
     assert_equal(p[], 42)
 
 
-def _mutable_any_pointer(p: UnsafePointer[Int, MutAnyOrigin, ...]) raises:
-    assert_equal(p[], 42)
-
-
-def _immutable_any_pointer(p: UnsafePointer[Int, ImmutAnyOrigin, ...]) raises:
-    assert_equal(p[], 42)
-
-
 def _parameterized_pointer(p: UnsafePointer[Int, ...]) raises:
     assert_equal(p[], 42)
 
@@ -68,8 +60,6 @@ def test_mutable_conversions() raises:
     _named_origin[origin_of(x)](p)
     _mutable_pointer(p)
     _immutable_pointer(p)
-    _mutable_any_pointer(p)
-    _immutable_any_pointer(p)
     _parameterized_pointer(p)
 
 
@@ -78,7 +68,6 @@ def test_immutable_conversions() raises:
     var p = UnsafePointer(to=x).as_immutable()
     _named_origin[mut=False, origin_of(x)](p)
     _immutable_pointer(p)
-    _immutable_any_pointer(p)
     _parameterized_pointer(p)
 
 
@@ -87,8 +76,6 @@ def test_mutable_any_conversions() raises:
     var p = UnsafePointer(to=x).as_unsafe_any_origin()
     _mutable_pointer(p)
     _immutable_pointer(p)
-    _mutable_any_pointer(p)
-    _immutable_any_pointer(p)
     _parameterized_pointer(p)
 
 
@@ -96,7 +83,6 @@ def test_immutable_any_conversions() raises:
     var x = 42
     var p = UnsafePointer(to=x).as_immutable().as_unsafe_any_origin()
     _immutable_pointer(p)
-    _immutable_any_pointer(p)
     _parameterized_pointer(p)
 
 

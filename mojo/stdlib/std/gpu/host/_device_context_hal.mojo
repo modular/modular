@@ -1413,6 +1413,7 @@ struct DeviceFunction[
                 UnsafePointer(to=args[i])
                 .bitcast[NoneType]()
                 .unsafe_mut_cast[True]()
+                .as_unsafe_any_origin()
             )
 
         @parameter
@@ -1426,7 +1427,9 @@ struct DeviceFunction[
             for i in range(num_captures):
                 dense_args_sizes[num_args + i] = func_info.capture_sizes[i]
             var capture_args_start = dense_args_addrs + num_args
-            populate(capture_args_start.bitcast[NoneType]())
+            populate(
+                capture_args_start.bitcast[NoneType]().as_unsafe_any_origin()
+            )
 
         ctx._hal_stream()[].execute(
             self._inner[]._func_handle,
@@ -1566,6 +1569,7 @@ struct DeviceExternalFunction(ImplicitlyCopyable, Movable):
                 UnsafePointer(to=args[i])
                 .bitcast[NoneType]()
                 .unsafe_mut_cast[True]()
+                .as_unsafe_any_origin()
             )
 
         @parameter

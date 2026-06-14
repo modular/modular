@@ -434,9 +434,9 @@ def _msa_sm100[
     produced_mbar_kv = (kv_smem + kv_smem_size).bitcast[SharedMemBarrier]()
     producer_mbar_kv = produced_mbar_kv + pipeline_stages
     mma_mbar = producer_mbar_kv + pipeline_stages
-    umma_0 = UMMA0Type(mma_mbar)
-    umma_1_ts = UMMA1Type(mma_mbar + 2 * num_s)
-    umma_1_ss = UMMA1TypeSS(mma_mbar + 2 * num_s)
+    umma_0 = UMMA0Type(mma_mbar.as_unsafe_any_origin())
+    umma_1_ts = UMMA1Type(mma_mbar.as_unsafe_any_origin() + 2 * num_s)
+    umma_1_ss = UMMA1TypeSS(mma_mbar.as_unsafe_any_origin() + 2 * num_s)
     ptr_tmem_addr = (mma_mbar + 2 * num_s + 2).bitcast[UInt32]()
 
     comptime num_producer_regs = 56
@@ -450,7 +450,7 @@ def _msa_sm100[
         max_seq_len.as_uint32(),
     )
     var state: MHATileState = scheduler.initial_state(
-        ptr_tmem_addr + 2, tile_summary
+        ptr_tmem_addr.as_unsafe_any_origin() + 2, tile_summary
     )
 
     initial_seq_info = scheduler.unsafe_seq_info(tile_summary, state)
@@ -632,7 +632,7 @@ def _msa_sm100[
                     alignment=128,
                 ],
             ):
-                tile = {q_smem + offset}
+                tile = {q_smem.as_unsafe_any_origin() + offset}
 
             # Inlined dense `produce_kv` body: the producer is single-threaded so
             # `elect()` elects this lone thread.  K and V each occupy a fresh
@@ -749,7 +749,9 @@ def _msa_sm100[
                 comptime assert tmem_cols <= max_tmem_cols
             tcgen05_alloc[cta_group](ptr_tmem_addr, max_tmem_cols)
 
-            qk_desc = UMMA0Type.mma_descriptors(q_smem, kv_smem)
+            qk_desc = UMMA0Type.mma_descriptors(
+                q_smem.as_unsafe_any_origin(), kv_smem.as_unsafe_any_origin()
+            )
 
             named_barrier[Int32(num_softmax_threads + 2 * WARP_SIZE)]()
             if tid != 0:
@@ -855,7 +857,10 @@ def _msa_sm100[
                         output_accumulator = UMMA1Type.c_t(o_tmem)
                         s_tmem = tmem_addr + UInt32(1 << 20)  # bank 1
                         # SS MMA: both P and V from SMEM
-                        pv_descs = UMMA1TypeSS.mma_descriptors(p_smem, kv_smem)
+                        pv_descs = UMMA1TypeSS.mma_descriptors(
+                            p_smem.as_unsafe_any_origin(),
+                            kv_smem.as_unsafe_any_origin(),
+                        )
                         p_desc_a = pv_descs.get_a()
                         v_desc = pv_descs.get_b()
                         v = v_desc + Int(UInt32(offset_bytes_per) * read_idx)
@@ -878,7 +883,9 @@ def _msa_sm100[
                             tmem_addr + UInt32(MMA_N0 * num_s) + UInt32(MMA_N1)
                         )
                         p_desc = UMMA1Type.a_mma_descriptor(p_tmem)
-                        v_desc = UMMA1Type.b_mma_descriptor(kv_smem)
+                        v_desc = UMMA1Type.b_mma_descriptor(
+                            kv_smem.as_unsafe_any_origin()
+                        )
                         v = v_desc + Int(UInt32(offset_bytes_per) * read_idx)
                         umma_1_ts.wait_for_tmem()
                         produced_mbar_kv[read_idx].wait(read_phase)

@@ -98,10 +98,10 @@ def _is_finite(v: Float32) -> Bool:
 
 
 def _mla_naive_fp32_ref_chunked(
-    host_q_src: UnsafePointer[Scalar[DType.bfloat16], MutAnyOrigin],
-    host_knope_src: UnsafePointer[Scalar[DType.bfloat16], MutAnyOrigin],
-    host_krope_src: UnsafePointer[Scalar[DType.bfloat16], MutAnyOrigin],
-    host_out_ref_fp32: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    host_q_src: UnsafePointer[mut=False, Scalar[DType.bfloat16], _],
+    host_knope_src: UnsafePointer[mut=False, Scalar[DType.bfloat16], _],
+    host_krope_src: UnsafePointer[mut=False, Scalar[DType.bfloat16], _],
+    host_out_ref_fp32: UnsafePointer[mut=True, Scalar[DType.float32], _],
     batch: Int,
     seq_len: Int,
     num_keys: Int,

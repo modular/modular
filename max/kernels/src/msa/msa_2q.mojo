@@ -165,16 +165,16 @@ def _stage_q_rows_to_smem[
 ](
     coop_tid: Int,
     qsplit_indices: UnsafePointer[
-        Int32, MutAnyOrigin
-    ],  # packed q|split<<24; indexed [row_start + tok]
+        mut=False, Int32, _
+    ],  # packed q|split<<24, indexed [row_start + tok]
     idx_smem: UnsafePointer[
-        Int32, MutAnyOrigin, address_space=AddressSpace.SHARED
+        mut=True, Int32, _, address_space=AddressSpace.SHARED
     ],
     qsplit_smem: UnsafePointer[
-        Int32, MutAnyOrigin, address_space=AddressSpace.SHARED
+        mut=True, Int32, _, address_space=AddressSpace.SHARED
     ],
     qpos_smem: UnsafePointer[
-        Int32, MutAnyOrigin, address_space=AddressSpace.SHARED
+        mut=True, Int32, _, address_space=AddressSpace.SHARED
     ],
     causal_q_offset: Int32,  # seqlen_k - seqlen_q; qpos = qloc + this (causal)
     row_start: Int,  # CSR token base for this tile (token units)
@@ -459,8 +459,8 @@ def _msa_sm100_block_major[
     produced_mbar_kv = (kv_smem + kv_smem_size).bitcast[SharedMemBarrier]()
     producer_mbar_kv = produced_mbar_kv + pipeline_stages
     mma_mbar = producer_mbar_kv + pipeline_stages
-    umma_0 = UMMA0Type(mma_mbar)
-    umma_1_ts = UMMA1Type(mma_mbar + 2 * num_s)
+    umma_0 = UMMA0Type(mma_mbar.as_unsafe_any_origin())
+    umma_1_ts = UMMA1Type(mma_mbar.as_unsafe_any_origin() + 2 * num_s)
     ptr_tmem_addr = (mma_mbar + 2 * num_s + 2).bitcast[UInt32]()
     # Q ring (after the tmem-addr slot): per slot a `q_produced` (load -> QK) and
     # a `q_consumed` (softmax-epilogue -> load) barrier, then the per-slot idx /
@@ -808,7 +808,8 @@ def _msa_sm100_block_major[
             var s = qg % q_stage
             var q_phase: UInt32 = UInt32((qg // q_stage) & 1)
             qk_desc = UMMA0Type.mma_descriptors(
-                q_smem + s * q_tile_elems, kv_smem
+                q_smem.as_unsafe_any_origin() + s * q_tile_elems,
+                kv_smem.as_unsafe_any_origin(),
             )
             var q_desc = qk_desc.get_a()
             var k_desc = qk_desc.get_b()
@@ -849,7 +850,9 @@ def _msa_sm100_block_major[
             var pv_phase: UInt32 = UInt32((pv_qi // num_s) & 1)
             var pv_o = pv_qi % o_stage
             var pv_o_phase: UInt32 = UInt32((pv_qi // o_stage) & 1)
-            var v_desc = UMMA1Type.b_mma_descriptor(kv_smem)
+            var v_desc = UMMA1Type.b_mma_descriptor(
+                kv_smem.as_unsafe_any_origin()
+            )
             var v = v_desc + Int(UInt32(offset_bytes_per) * UInt32(1))
             var p_tmem = tmem_addr + UInt32(pv_s * MMA_N0 + MMA_N0 // 2)
             p_desc = UMMA1Type.a_mma_descriptor(p_tmem)
@@ -966,7 +969,7 @@ def _msa_sm100_block_major[
         @always_inline
         def apply_mask(
             q_pos_row: UnsafePointer[
-                Int32, MutAnyOrigin, address_space=AddressSpace.SHARED
+                mut=True, Int32, _, address_space=AddressSpace.SHARED
             ],
             count_g: Int,
         ):
@@ -1049,10 +1052,10 @@ def _msa_sm100_block_major[
             vout: VecOType,
             count_g: Int,
             qsplit_ring: UnsafePointer[
-                Int32, MutAnyOrigin, address_space=AddressSpace.SHARED
+                mut=False, Int32, _, address_space=AddressSpace.SHARED
             ],
             o_smem_base: UnsafePointer[
-                Scalar[kv_type], MutAnyOrigin, address_space=AddressSpace.SHARED
+                mut=True, Scalar[kv_type], _, address_space=AddressSpace.SHARED
             ],
         ):
             # Rescale O by 1/rowsum, packed (one FMUL2 per col-pair) instead of a

@@ -143,7 +143,9 @@ struct DLTensor[rank: Int, dtype: DType](ImplicitlyCopyable):
         self.strides = tensor.strides()
         self.byte_offset = 0
 
-        self._shape_ptr = UnsafePointer(to=self.shape).bitcast[Int64]()
+        self._shape_ptr = (
+            UnsafePointer(to=self.shape).bitcast[Int64]().as_unsafe_any_origin()
+        )
 
         # DLPack convention is that null strides mean the tensor isrow-major
         # contiguous. Many consumers (e.g. FlashInfer's `IsContiguous()`) check
@@ -169,5 +171,11 @@ struct DLTensor[rank: Int, dtype: DType](ImplicitlyCopyable):
         self.byte_offset = copy.byte_offset
 
         # Fix up self-referential pointers to our own inline storage.
-        self._shape_ptr = UnsafePointer(to=self.shape).bitcast[Int64]()
-        self._strides_ptr = UnsafePointer(to=self.strides).bitcast[Int64]()
+        self._shape_ptr = (
+            UnsafePointer(to=self.shape).bitcast[Int64]().as_unsafe_any_origin()
+        )
+        self._strides_ptr = (
+            UnsafePointer(to=self.strides)
+            .bitcast[Int64]()
+            .as_unsafe_any_origin()
+        )

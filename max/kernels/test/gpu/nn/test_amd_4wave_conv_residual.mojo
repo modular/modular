@@ -85,10 +85,10 @@ def _conv2d_residual_host_ref[
     in_dtype: DType,
     out_dtype: DType,
 ](
-    input_host: UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin],
-    filter_host: UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin],
-    residual_host: UnsafePointer[Scalar[out_dtype], ImmutAnyOrigin],
-    ref_host: UnsafePointer[Scalar[out_dtype], MutAnyOrigin],
+    input_host: UnsafePointer[mut=False, Scalar[in_dtype], _],
+    filter_host: UnsafePointer[mut=False, Scalar[in_dtype], _],
+    residual_host: UnsafePointer[mut=False, Scalar[out_dtype], _],
+    ref_host: UnsafePointer[mut=True, Scalar[out_dtype], _],
     *,
     N: Int,
     H: Int,
@@ -157,8 +157,8 @@ def _conv2d_residual_host_ref[
 def _compare[
     dtype: DType
 ](
-    actual: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    expected: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
+    actual: UnsafePointer[mut=False, Scalar[dtype], _],
+    expected: UnsafePointer[mut=False, Scalar[dtype], _],
     *,
     n_elems: Int,
     label: StaticString,
