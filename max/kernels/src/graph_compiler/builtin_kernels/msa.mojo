@@ -65,7 +65,8 @@ from std.utils.numerics import get_accum_type
 
 from msa.sparse_indexer_prefill import sparse_indexer_prefill
 from msa.sparse_indexer_decode import sparse_indexer_decode
-from msa.msa_1q import msa_sm100_dispatch, msa_sm100_prefill_dispatch
+from msa.msa_1q import msa_sm100_dispatch
+from msa.msa_2q import msa_sm100_prefill_b_device_csr_dispatch
 
 
 # ===-----------------------------------------------------------------------===#
@@ -250,9 +251,12 @@ struct Struct_msa_attention_ragged_paged:
         Gathers `topk` KV blocks per (kv head, query token) using the block ids
         in `d_indices`.  Dispatches to the decode kernel when
         `kv_collection.max_seq_length == 1` (one query token per sequence) and to
-        the per-token prefill kernel otherwise.  First cut uses `NullMask` +
-        `NoPartition` (no split-K) and passes `q_positions` for causal with
-        `kv_logical_pos=None` (see module TODO).
+        the prefill kernel otherwise.
+
+        Decode uses `NullMask` + `NoPartition` (no split-K).  Prefill uses the
+        device-CSR path (`msa_sm100_prefill_b_device_csr_dispatch`) which
+        requires cumulative sequence lengths copied to host.  Both paths pass
+        `q_positions` for causal with `kv_logical_pos=None` (see module TODO).
 
         Parameters:
             group: Query heads per kv-head (`n_heads // n_kv_heads`); asserts
@@ -308,19 +312,19 @@ struct Struct_msa_attention_ragged_paged:
         var q_buf = DeviceBuffer[DType.bfloat16](
             ctx, q_lt.ptr, num_rows * num_heads * head_dim, owning=False
         )
-        # `valid_length` is unread on both paths (prefill maps grid.x straight to
-        # the global row; decode derives num_keys from topk-blocks); reuse the
-        # input_row_offsets storage to satisfy the signature.
-        var iro_lt = input_row_offsets.to_layout_tensor()
-        var valid_length = DeviceBuffer[DType.uint32](
-            ctx, iro_lt.ptr, Int(input_row_offsets.dim_size[0]()), owning=False
-        )
 
-        var d_indices_ptr = rebind[KVPtrT](d_indices.to_layout_tensor().ptr)
         var q_positions_ptr = rebind[KVPtrT](q_positions.to_layout_tensor().ptr)
 
         # Decode == one query token per sequence (`max_seq_length == 1`).
         if Int(kv_collection.max_seq_length) == 1:
+            var iro_lt = input_row_offsets.to_layout_tensor()
+            var valid_length = DeviceBuffer[DType.uint32](
+                ctx,
+                iro_lt.ptr,
+                Int(input_row_offsets.dim_size[0]()),
+                owning=False,
+            )
+            var d_indices_ptr = rebind[KVPtrT](d_indices.to_layout_tensor().ptr)
             var topk_tokens = topk * page_size
             msa_sm100_dispatch[
                 config=config,
@@ -348,25 +352,64 @@ struct Struct_msa_attention_ragged_paged:
                 q_positions=OptionalReg[KVPtrT](q_positions_ptr),
             )
         else:
-            msa_sm100_prefill_dispatch[
+            var batch = Int(input_row_offsets.dim_size[0]()) - 1
+
+            var lse_buf = ctx.enqueue_create_buffer[DType.float32](
+                num_rows * num_heads
+            )
+
+            var d_lt = d_indices.to_layout_tensor()
+            var d_indices_buf = DeviceBuffer[DType.int32](
+                ctx, d_lt.ptr, k_num_heads * num_rows * topk, owning=False
+            )
+
+            var iro_lt = input_row_offsets.to_layout_tensor()
+            var iro_dev = DeviceBuffer[DType.uint32](
+                ctx, iro_lt.ptr, batch + 1, owning=False
+            )
+            var iro_host = ctx.enqueue_create_host_buffer[DType.uint32](
+                batch + 1
+            )
+            ctx.enqueue_copy(iro_host, iro_dev)
+
+            var cl_lt = cache_lengths.to_layout_tensor()
+            var cl_dev = DeviceBuffer[DType.uint32](
+                ctx, cl_lt.ptr, batch, owning=False
+            )
+            var cl_host = ctx.enqueue_create_host_buffer[DType.uint32](batch)
+            ctx.enqueue_copy(cl_host, cl_dev)
+            ctx.synchronize()
+
+            var cu_seqlens_q = List[Int32](length=batch + 1, fill=Int32(0))
+            for i in range(batch + 1):
+                cu_seqlens_q[i] = iro_host[i].cast[DType.int32]()
+
+            var cu_seqlens_k = List[Int32](length=batch + 1, fill=Int32(0))
+            for i in range(batch):
+                var seq_len_q = (
+                    iro_host[i + 1].cast[DType.int32]()
+                    - iro_host[i].cast[DType.int32]()
+                )
+                cu_seqlens_k[i + 1] = (
+                    cu_seqlens_k[i] + cl_host[i].cast[DType.int32]() + seq_len_q
+                )
+
+            msa_sm100_prefill_b_device_csr_dispatch[
                 config=config,
                 group=group,
-                ragged=True,
-                _is_cache_length_accurate=False,
+                topk=topk,
             ](
                 output_buf,
+                lse_buf,
                 q_buf,
                 k_op,
                 v_op,
-                d_indices_ptr,
-                topk,  # indices_stride (topk in BLOCKS)
-                num_rows,  # total_q
-                NullMask(),
-                valid_length,
+                d_indices_buf,
+                cu_seqlens_q,
+                cu_seqlens_k,
                 scale,
-                None,  # kv_input_row_offsets
-                NoPartition[accum_type](),
                 ctx,
-                kv_logical_pos=None,  # TODO(causal): see module docstring
                 q_positions=OptionalReg[KVPtrT](q_positions_ptr),
             )
+
+            _ = lse_buf^
