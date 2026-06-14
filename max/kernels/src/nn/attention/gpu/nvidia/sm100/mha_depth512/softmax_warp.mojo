@@ -102,6 +102,7 @@ def depth512_scale_write_output[
     is_lower: Bool,
     inv_row_sum: Float32,
     smem: Depth512AttentionSMem[config=config],
+    tmem_addr: UInt32,
     ragged_tma_store: RaggedTMA3DTile[
         output_type,
         config.swizzle_mode,
@@ -130,7 +131,8 @@ def depth512_scale_write_output[
     comptime num_batches = o_cols_per_phase // batch_size
     comptime assert o_cols_per_phase % batch_size == 0
 
-    var tmem_addr = smem.tmem_addr_ptr()[]
+    # `tmem_addr` passed in by register (read once post-`cluster_sync` in the
+    # kernel prologue); do NOT re-read `smem.tmem_addr_ptr()` here.
 
     # Output SMEM base (reuses Q buffer).
     var o_smem = smem.o_smem[output_type]()
@@ -232,6 +234,7 @@ def depth512_softmax[
     page_size: Int,
 ](
     smem: Depth512AttentionSMem[config=config],
+    tmem_addr: UInt32,
     seq_id: UInt32,
     score_row: UInt32,
     num_keys: UInt32,
@@ -293,7 +296,8 @@ def depth512_softmax[
     var col_offset: UInt32 = 0 if is_lower else UInt32(effective_bn)
 
     # ---- TMEM addresses --------------------------------------------------
-    var tmem_addr = smem.tmem_addr_ptr()[]
+    # `tmem_addr` passed in by register (read once post-`cluster_sync` in the
+    # kernel prologue); do NOT re-read `smem.tmem_addr_ptr()` here.
     var s_even_tmem = tmem_addr + UInt32(config.TMEM_S_even)
     var s_odd_tmem = tmem_addr + UInt32(config.TMEM_S_odd)
 
@@ -776,6 +780,7 @@ def depth512_softmax[
             is_lower,
             inv_row_sum,
             smem,
+            tmem_addr,
             ragged_tma_store,
             num_output_rows,
             out_head_idx,

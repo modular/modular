@@ -623,6 +623,7 @@ def fa4_softmax[
     output_nonempty: Bool = False,
 ](
     smem: SM100AttentionSMem[config],
+    tmem_addr: UInt32,
     score_row: UInt32,
     seq_info: SeqInfo,
     mask: MaskType,
@@ -697,7 +698,8 @@ def fa4_softmax[
         _is_decoding[MaxSeqLenType](),
     ]
 
-    var tmem_addr: UInt32 = smem.tmem_addr_ptr()[]
+    # `tmem_addr` passed in by register (read once post-barrier in the kernel
+    # prologue); do NOT re-read `smem.tmem_addr_ptr()` here.
     var o_smem = smem.o_smem[output_type]()
     var o_prod_mbar: MBarType = (
         mbars.mbar_base + MiscMBarsType.O_producer_offset

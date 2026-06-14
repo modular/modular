@@ -462,6 +462,12 @@ __extension SM100MLA:
             wait_on_dependent_grids()
             launch_dependent_grids()
 
+        # Read the TMEM base from SMEM ONCE here, post-barrier (alloc + this
+        # barrier publish it), and carry it by register into the shared
+        # fa4_softmax / fa4_correction consumers. See the depth-512 fix: the
+        # consumers must not re-read `tmem_addr_ptr()` in their bodies.
+        var tmem_addr = ptr_tmem_addr[0]
+
         var role = warp_idx_to_role(warp_idx)
 
         # warp group partitioning
@@ -487,6 +493,7 @@ __extension SM100MLA:
                 output_nonempty=output_nonempty,
             ](
                 attn_smem,
+                tmem_addr,
                 pos.score_row,
                 seq_info,
                 mask,
@@ -511,6 +518,7 @@ __extension SM100MLA:
                 Self.page_size,
             ](
                 attn_smem,
+                tmem_addr,
                 seq_info.prompt_idx,
                 pos.score_row,
                 pos.num_keys,

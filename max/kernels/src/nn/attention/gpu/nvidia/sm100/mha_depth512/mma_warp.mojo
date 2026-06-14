@@ -64,6 +64,7 @@ def depth512_mma[
     page_size: Int,
 ](
     smem: Depth512AttentionSMem[config=config],
+    tmem_addr: UInt32,
     seq_id: UInt32,
     score_row: UInt32,
     num_keys: UInt32,
@@ -113,8 +114,9 @@ def depth512_mma[
     # P@V MMA types are defined inside pv_mma (depth-dependent).
 
     # ---- TMEM addresses ------------------------------------------------------
-
-    var tmem_addr = smem.tmem_addr_ptr()[]
+    # `tmem_addr` is read ONCE in the kernel prologue (post-`cluster_sync`) and
+    # passed in by register; do NOT re-read `smem.tmem_addr_ptr()` here (see the
+    # publish-handshake note in `kernel.mojo`).
     o_tmem = tmem_addr + UInt32(config.TMEM_O)
     o_hi_tmem = tmem_addr + UInt32(config.TMEM_O_hi)
     s_even_tmem = tmem_addr + UInt32(config.TMEM_S_even)
