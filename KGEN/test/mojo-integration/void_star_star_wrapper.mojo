@@ -113,7 +113,7 @@ def invoke_kernel[
                 UnsafePointer(to=args[i])
             )
     return wrapped_kernel(
-        UnsafePointer(to=pa),
+        UnsafePointer(to=pa).as_unsafe_any_origin(),
     )
 
 
@@ -140,6 +140,8 @@ def main():
     # CHECK: 11
     print(
         invoke_kernel[MixedKernel](
-            WrappedMixedKernel, 4, UnsafePointer(to=value)
+            WrappedMixedKernel,
+            4,
+            UnsafePointer(to=value).as_unsafe_any_origin(),
         )
     )
