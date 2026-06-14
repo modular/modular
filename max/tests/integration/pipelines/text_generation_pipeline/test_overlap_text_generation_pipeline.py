@@ -512,6 +512,10 @@ class TestSyncAndProcessOutputsStructuredOutput:
             mock_matcher = MagicMock()
             mock_matcher.try_consume_tokens = MagicMock(return_value=1)
             ctx._matcher = mock_matcher
+            # A real committed token bumps generated_length > 0 -- the only
+            # state in which the FSM should advance.
+            ctx.update_with_future_token()
+            assert ctx.tokens.generated_length == 1
             contexts.append(ctx)
 
         # Create mock inputs
@@ -554,6 +558,70 @@ class TestSyncAndProcessOutputsStructuredOutput:
                 ctx._matcher.try_consume_tokens.assert_called_once_with(
                     [int(real_tokens[i])]
                 )
+
+    def test_skips_fsm_for_intermediate_chunk_even_when_not_actively_chunked(
+        self,
+    ) -> None:
+        """Regression: do not advance the FSM for an intermediate chunked-prefill
+        batch, even if ``actively_chunked`` reads False at sync time.
+
+        An intermediate chunk-prefill step never commits a real generated token
+        (``update_with_future_token`` early-returns via ``advance_chunk()``
+        without appending a placeholder), so ``generated_length`` stays 0. By
+        the time the previous batch is synced, the scheduler may have rebuilt
+        the current batch and toggled ``actively_chunked`` back to False (e.g.
+        when the current batch is this request's final, short chunk). The old
+        guard read that mutated flag and wrongly fed the previous
+        (intermediate-chunk) batch's prefill-artifact sampled token into the
+        matcher, advancing the grammar FSM one token too far — which dropped the
+        opening ``{`` of a JSON-schema answer and led to a structured-output
+        runaway under chunked prefill. The correct guard is
+        ``generated_length``.
+        """
+        real_token = np.array([100], dtype=np.int64)
+
+        ctx = TextContext(
+            request_id=RequestID("chunked_req"),
+            max_length=1000,
+            tokens=TokenBuffer(np.array([42, 67, 21, 11, 9])),
+        )
+        ctx.grammar_enforced = True
+        mock_matcher = MagicMock()
+        mock_matcher.try_consume_tokens = MagicMock(return_value=1)
+        ctx._matcher = mock_matcher
+
+        # Simulate the previous batch having been an intermediate chunked
+        # prefill step: no real token committed, so generated_length == 0.
+        assert ctx.tokens.generated_length == 0
+        # Reproduce the trap: actively_chunked reads False at sync time even
+        # though no real token was committed.
+        assert not ctx.tokens.actively_chunked
+
+        mock_inputs = MagicMock()
+        mock_inputs.flat_batch = [ctx]
+        mock_host_buffer = MagicMock()
+        mock_host_buffer.to_numpy.return_value = real_token
+        mock_host_buffer.shape = real_token.shape
+        mock_structured_output = MagicMock()
+        mock_structured_output.enabled = True
+
+        async_batch: AsyncBatch[TextContext] = AsyncBatch(
+            inputs=mock_inputs,
+            generated_tokens_device=MagicMock(),
+            generated_tokens_host=mock_host_buffer,
+            copy_event=MagicMock(),
+            structured_output=mock_structured_output,
+        )
+
+        with patch(
+            "max.pipelines.lib.pipeline_variants.overlap_text_generation"
+            ".update_context_and_prepare_responses"
+        ) as mock_update:
+            mock_update.return_value = {}
+            async_batch.sync_and_process_outputs()
+
+            # The FSM must NOT be advanced: no real token was committed.
+            mock_matcher.try_consume_tokens.assert_not_called()
 
     def test_updates_bitmask_for_continuing_requests(self) -> None:
         """sync_and_process_outputs should update bitmask for requests continuing to next batch."""
