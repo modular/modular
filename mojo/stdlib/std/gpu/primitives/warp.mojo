@@ -43,6 +43,7 @@ from std.sys import (
 )
 from std.sys._assembly import inlined_assembly
 from std.sys.info import _is_sm_100x_or_newer, _cdna_4_or_newer
+from std.sys.intrinsics import readfirstlane
 
 from std.bit import log2_floor
 from std.math.math import max as _max, min as _min
@@ -1412,4 +1413,122 @@ def vote[ret_type: DType](val: Bool) -> Scalar[ret_type]:
     else:
         CompilationTarget.unsupported_target_error[
             operation=__get_current_function_name()
+        ]()
+
+
+# ===-----------------------------------------------------------------------===#
+# match_any
+# ===-----------------------------------------------------------------------===#
+
+
+@always_inline
+def match_any[
+    dtype: DType,
+    //,
+    mask_type: DType = (DType.uint32 if WARP_SIZE <= 32 else DType.uint64),
+](value: Scalar[dtype]) -> Scalar[mask_type]:
+    """Finds, for each lane, the mask of warp lanes whose `value` bits match it.
+
+    Returns a per-lane lane mask whose bit `l` is set for every active lane `l`
+    whose `value` has the same bit pattern as the calling lane's. The comparison
+    is on the bits (matching NVIDIA's `match.any.sync`), so `0.0` and `-0.0` do
+    not match while two `NaN`s with equal bits do. This is the fold a warp uses
+    to coalesce same-keyed lanes (a histogram or scatter leader handling a whole
+    group in one non-atomic update) instead of one atomic per lane.
+
+    All `WARP_SIZE` lanes must reach the call converged.
+
+    Example:
+
+        ```mojo
+        from std.gpu.primitives.warp import match_any
+
+        # If lanes 0, 3, 7 hold the same value, each of them gets a mask with
+        # bits 0, 3, and 7 set; the remaining lanes get their own groups.
+        var group = match_any(my_key)
+        ```
+
+    Parameters:
+        dtype: The element type of `value` (inferred from the argument).
+        mask_type: The lane-mask return type, `DType.uint32` or `DType.uint64`
+            (defaults to the type matching `WARP_SIZE`).
+
+    Args:
+        value: The calling lane's value to match against the rest of the warp.
+
+    Returns:
+        A `mask_type` lane mask with bit `l` set for each active lane `l` holding
+        a bit-equal `value`.
+
+    Constraints:
+        Only NVIDIA, AMD, and Apple Silicon GPUs are supported. `dtype` must be
+        a 32- or 64-bit type and `mask_type` must be `DType.uint32` or
+        `DType.uint64` (NVIDIA returns a 32-bit mask, so `mask_type` must be
+        `DType.uint32` there).
+    """
+    comptime assert mask_type in (
+        DType.uint32,
+        DType.uint64,
+    ), "match_any mask_type must be DType.uint32 or DType.uint64"
+    comptime assert size_of[dtype]() in (
+        4,
+        8,
+    ), "match_any value must be a 32- or 64-bit type"
+    comptime bits_type = DType.uint32 if size_of[dtype]() == 4 else DType.uint64
+    var bits = bitcast[bits_type](value)
+
+    comptime if is_nvidia_gpu():
+        comptime assert (
+            mask_type == DType.uint32
+        ), "NVIDIA match_any returns a 32-bit mask (mask_type == DType.uint32)"
+        comptime if size_of[dtype]() == 4:
+            return rebind[Scalar[mask_type]](
+                inlined_assembly[
+                    "match.any.sync.b32 $0, $1, $2;",
+                    UInt32,
+                    constraints="=r,r,r",
+                    has_side_effect=False,
+                ](bits, UInt32(0xFFFFFFFF))
+            )
+        else:
+            return rebind[Scalar[mask_type]](
+                inlined_assembly[
+                    "match.any.sync.b64 $0, $1, $2;",
+                    UInt32,
+                    constraints="=r,l,r",
+                    has_side_effect=False,
+                ](bits, UInt32(0xFFFFFFFF))
+            )
+    elif is_amd_gpu():
+        # CDNA has no match op, so fold with ROCm's `__match_any` idiom
+        # (amd_warp_sync_functions.h): loop while any lane is still unmatched;
+        # each round the lowest unmatched lane broadcasts its bits via
+        # `readfirstlane` and a ballot over the unmatched lanes picks out the
+        # ones that match -- their group -- which then drop out.  (ROCm reads
+        # the group off `__activemask()` under branch divergence; a converged
+        # ballot of the match predicate is the same set and survives the Mojo ->
+        # LLVM lowering.)  O(distinct values), far below `WARP_SIZE` for the few
+        # distinct keys a warp usually holds.
+        var done = False
+        var result = Scalar[mask_type](0)
+        while vote[mask_type](not done) != Scalar[mask_type](0):
+            if not done:
+                var matches = readfirstlane(bits) == bits
+                var group = vote[mask_type](matches)
+                if matches:
+                    result = group
+                    done = True
+        return result
+    elif is_apple_gpu():
+        # Apple Silicon has neither a match op nor a ballot, so emulate with a
+        # fully-unrolled sweep of `WARP_SIZE` shuffles: each lane reads every
+        # lane's bits and sets the bit for those that match.
+        var result = Scalar[mask_type](0)
+        comptime for l in range(WARP_SIZE):
+            if shuffle_idx(bits, UInt32(l)) == bits:
+                result |= Scalar[mask_type](1) << Scalar[mask_type](l)
+        return result
+    else:
+        CompilationTarget.unsupported_target_error[
+            operation=__get_current_function_name(),
         ]()

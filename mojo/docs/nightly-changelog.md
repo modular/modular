@@ -43,6 +43,11 @@ This version is still a work in progress.
 
 ## GPU programming
 
+- Added `warp.match_any()`, which returns, for each warp lane, the mask of
+  lanes whose value has the same bits. It uses NVIDIA's `match.any.sync`
+  instruction, a `readfirstlane` ballot fold on AMD, and a shuffle-based
+  emulation on Apple Silicon GPUs.
+
 ## Removed
 
 ## Fixed
