@@ -368,8 +368,8 @@ def apple_matmul[
 ](
     cblas_gemm_fn: cblas_gemm_type,
     c: TileTensor[mut=True, ...],
-    a: TileTensor[...],
-    b: TileTensor[...],
+    a: TileTensor,
+    b: TileTensor,
 ) raises:
     comptime assert c.flat_rank >= 2
     comptime assert a.flat_rank >= 2
@@ -432,7 +432,7 @@ def apple_matmul[
     *,
     transpose_b: Bool = False,
     elementwise_lambda_fn: Optional[matmul_elementwise_epilogue_type] = None,
-](c: TileTensor[mut=True, ...], a: TileTensor[...], b: TileTensor[...]) raises:
+](c: TileTensor[mut=True, ...], a: TileTensor, b: TileTensor) raises:
     comptime assert (
         a.dtype == b.dtype == c.dtype == DType.float32
     ), "unsupported type in apple accelerate"
@@ -458,8 +458,8 @@ def apple_batched_matmul[
     ] = None,
 ](
     c: TileTensor[mut=True, ...],
-    a: TileTensor[...],
-    b: TileTensor[...],
+    a: TileTensor,
+    b: TileTensor,
     c_shape_idx: IndexList[rank],
 ) raises:
     comptime assert rank >= 3, "expecting at least rank-3 TileTensor"

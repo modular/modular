@@ -321,10 +321,10 @@ struct Conv:
     ](
         output: FusedOutputTensor[...],
         input: InputTensor[rank=output.rank, ...],
-        filter: InputTensor[...],
-        strides: InputTensor[...],
-        dilation: InputTensor[...],
-        paddings: InputTensor[...],
+        filter: InputTensor,
+        strides: InputTensor,
+        dilation: InputTensor,
+        paddings: InputTensor,
         num_groups: Scalar,
         ctx: DeviceContext,
     ) capturing raises:
@@ -469,8 +469,8 @@ struct Conv:
 
 @compiler.register_shape_function("mo.conv")
 def mo_conv_shape(
-    input: InputTensor[...],
-    filter: InputTensor[...],
+    input: InputTensor,
+    filter: InputTensor,
     strides: InputTensor[rank=1, ...],
     dilations: InputTensor[rank=1, ...],
     paddings: InputTensor[rank=1, ...],
@@ -592,7 +592,7 @@ struct ConvTranspose:
     ](
         output: FusedOutputTensor[...],
         input: InputTensor[rank=output.rank, ...],
-        filter: InputTensor[...],
+        filter: InputTensor,
         strides: InputTensor[rank=1, ...],
         dilation: InputTensor[rank=1, ...],
         paddings: InputTensor[rank=1, ...],

@@ -458,7 +458,7 @@ def create_tma_tile[
     tile_shape: IndexList[tma_tile_layout.rank],
     *,
     swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
-](ctx: DeviceContext, tensor: LayoutTensor[...]) raises -> TmaOpType[
+](ctx: DeviceContext, tensor: LayoutTensor) raises -> TmaOpType[
     tensor.dtype, tma_tile_layout, tma_desc_layout
 ]:
     """Create a TMATensorTile using new Layout types.

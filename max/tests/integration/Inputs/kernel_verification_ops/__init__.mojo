@@ -200,7 +200,7 @@ struct OpWithIntParameter[IntParameter: Int]:
 struct OpWithDTypeParameter[DTypeParameter: DType]:
     @staticmethod
     def execute(
-        output: OutputTensor[...],
+        output: OutputTensor,
         x: InputTensor[dtype=output.dtype, rank=output.rank, ...],
     ):
         output[0] = x[0]
@@ -211,7 +211,7 @@ struct OpWithDTypeParameter[DTypeParameter: DType]:
 struct OpWithStringParameter[StringParameter: String]:
     @staticmethod
     def execute(
-        output: OutputTensor[...],
+        output: OutputTensor,
         x: InputTensor[dtype=output.dtype, rank=output.rank, ...],
     ):
         output[0] = x[0]
@@ -222,7 +222,7 @@ struct OpWithStringParameter[StringParameter: String]:
 struct OpWithStringSliceParameter[StringParameter: StringSlice]:
     @staticmethod
     def execute(
-        output: OutputTensor[...],
+        output: OutputTensor,
         x: InputTensor[dtype=output.dtype, rank=output.rank, ...],
     ):
         output[0] = x[0]
@@ -233,7 +233,7 @@ struct OpWithStringSliceParameter[StringParameter: StringSlice]:
 struct OpWithStaticStringParameter[StringParameter: StaticString]:
     @staticmethod
     def execute(
-        output: OutputTensor[...],
+        output: OutputTensor,
         x: InputTensor[dtype=output.dtype, rank=output.rank, ...],
     ):
         output[0] = x[0]

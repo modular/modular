@@ -4050,7 +4050,7 @@ def _conv_miopen[
 
     @always_inline
     def image_shape_from_tensor(
-        tensor: TileTensor[...],
+        tensor: TileTensor,
     ) -> InlineArray[UInt64, tensor_rank]:
         # Convert to channels first format.
         var shape = InlineArray[UInt64, tensor_rank](fill=0)

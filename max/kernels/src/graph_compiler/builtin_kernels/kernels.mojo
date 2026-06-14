@@ -603,7 +603,7 @@ def roi_align_shape(
 struct RepeatInterleave:
     @staticmethod
     def execute(
-        output: OutputTensor[...],
+        output: OutputTensor,
         input: InputTensor[dtype=output.dtype, rank=output.rank, ...],
         repeats: InputTensor[rank=1, ...],
         axis: Scalar,
@@ -624,7 +624,7 @@ struct RepeatInterleave:
 
 @compiler.register_shape_function("repeat_interleave")
 def repeat_interleave_kernel_shape(
-    input: InputTensor[...], repeats: InputTensor[rank=1, ...], axis: Scalar
+    input: InputTensor, repeats: InputTensor[rank=1, ...], axis: Scalar
 ) raises -> IndexList[input.rank]:
     comptime assert axis.dtype.is_integral(), "axis value must be integer type"
 
@@ -859,8 +859,8 @@ struct Fold:
     ](
         output: OutputTensor[dtype=dtype, rank=4, ...],
         input: InputTensor[dtype=dtype, rank=3, ...],
-        output_size: InputTensor[...],
-        kernel_size: InputTensor[...],
+        output_size: InputTensor,
+        kernel_size: InputTensor,
         ctx: DeviceContext,
     ) raises:
         comptime assert (
@@ -896,8 +896,8 @@ def fold_kernel_shape[
     padding_w: Int,
 ](
     input: InputTensor[dtype=dtype, rank=3, ...],
-    output_size: InputTensor[...],
-    kernel_size: InputTensor[...],
+    output_size: InputTensor,
+    kernel_size: InputTensor,
 ) raises -> IndexList[4]:
     comptime assert (
         kernel_size.dtype.is_integral() and output_size.dtype.is_integral()

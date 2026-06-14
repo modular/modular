@@ -238,7 +238,7 @@ struct MaskedFlashAttentionGPU:
         q: InputTensor[rank=rank, ...],
         k: InputTensor[rank=rank, ...],
         v: InputTensor[rank=rank, ...],
-        mask: InputTensor[...],
+        mask: InputTensor,
         scale: Float32,
         ctx: DeviceContext,
     ) raises:
