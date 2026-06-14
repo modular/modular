@@ -766,12 +766,33 @@ class PagedKVCacheManager:
                 )
             )
 
+        # ``mla_num_partitions`` is emitted per-cache and must follow each
+        # cache's own ``is_mla``-ness, not the primary's. The graph declares
+        # this input (via ``get_symbolic_inputs``) exactly when a cache is MLA,
+        # so the runtime must supply it for exactly the same caches. When the
+        # primary is MHA but the secondary is MLA (e.g. MiniMax-M3: GQA main +
+        # MLA index-K cache), deriving the scalar only from the primary
+        # ``target_key`` drops the secondary cache's ``mla_num_partitions`` and
+        # the fed input count falls short of the graph by one per device.
+        secondary_mla_num_partitions_buf: Buffer | None = (
+            Buffer.from_numpy(
+                np.array([secondary_key.num_partitions], dtype=np.int64)
+            )
+            if isinstance(secondary_key, MLAAttnKey)
+            else None
+        )
+
         ret_list: list[KVCacheInputsPerDevice] = []
         for cache_idx in range(self._num_caches):
             device_buffer = replica.device_buffers[cache_idx]
             # TODO(SERVOPT-942): Generalize to support 3+ caches
             is_secondary_cache = cache_idx == 1
             key_for_cache = secondary_key if is_secondary_cache else target_key
+            mla_num_partitions_for_cache = (
+                secondary_mla_num_partitions_buf
+                if is_secondary_cache
+                else mla_num_partitions_buf
+            )
 
             for tp_shard in range(num_tp_shards):
                 block_device = device_buffer.values[tp_shard].device
@@ -801,7 +822,7 @@ class PagedKVCacheManager:
                         ),
                         attention_dispatch_metadata=metadata,
                         draft_attention_dispatch_metadata=draft_metadata,
-                        mla_num_partitions=mla_num_partitions_buf,
+                        mla_num_partitions=mla_num_partitions_for_cache,
                         draft_mla_num_partitions=draft_mla_num_partitions_buf,
                     )
                 )
