@@ -1524,11 +1524,14 @@ def flash_attention_dispatch[
     else:
         # Assumes BSHD.
         comptime if has_apple_gpu_accelerator():
-            # Apple decode-only opt-in; larger head_dim/prefill/flag-off -> mha_gpu_naive.
+            # Apple decode-only opt-in. The warp producer splits the head dim
+            # across lanes, hence the `% WARP_SIZE` gate; anything else (prefill,
+            # flag-off, oversized/odd head_dim) falls to mha_gpu_naive.
             if (
                 is_token_generation
                 and _apple_naive_fa_decode_enabled()
                 and depth <= NAIVE_FA_DECODE_APPLE_MAX_HEAD_DIM
+                and depth % WARP_SIZE == 0
             ):
                 naive_fa_decode_apple[
                     ragged=ragged,
