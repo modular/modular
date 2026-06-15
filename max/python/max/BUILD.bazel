@@ -1,6 +1,7 @@
 load("@aspect_bazel_lib//lib:write_source_files.bzl", "write_source_files")
 load("//bazel:api.bzl", "modular_generate_stubfiles", "modular_nanobind_extension", "modular_py_library", "requirement")
 load("//bazel:config.bzl", "TOP_LEVEL_TAG")
+load("//max/python/max/pipelines/architectures:all_arches.bzl", "ALL_ARCHITECTURES")
 
 package(default_visibility = ["//max:consumers"])
 
@@ -139,7 +140,7 @@ modular_py_library(
     name = "max",
     srcs = [],
     tags = ["no-pydeps"],  # All deps are unused
-    deps = [
+    deps = ALL_ARCHITECTURES + [
         ":_core",
         ":tensor",
         "//max/python/max/_core_mojo",

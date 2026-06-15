@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import functools
+import importlib
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -473,6 +474,14 @@ class PipelineRegistry:
         self._architectures_by_task: dict[
             tuple[str, PipelineTask], SupportedArchitecture
         ] = {}
+        # Deferred registrations: architecture name -> list of (module, symbol,
+        # package) describing *how* to import the SupportedArchitecture. The
+        # module is imported lazily the first time the name is looked up (see
+        # register_lazy / _materialize_lazy). A name maps to a list because
+        # several modules may register the same name under different tasks.
+        self._lazy_architectures: dict[
+            str, list[tuple[str, str, str | None]]
+        ] = {}
         self._cached_huggingface_tokenizers: dict[
             HuggingFaceRepo, PreTrainedTokenizer | PreTrainedTokenizerFast
         ] = {}
@@ -525,6 +534,61 @@ class PipelineRegistry:
             # First registration of this name
             self.architectures[architecture.name] = architecture
             self._architectures_by_task[task_key] = architecture
+
+    def register_lazy(
+        self,
+        name: str,
+        module: str,
+        symbol: str,
+        *,
+        package: str | None = None,
+    ) -> None:
+        """Records *how* to import an architecture without importing it yet.
+
+        This defers the import of an architecture's
+        module until the architecture is actually requested. The real
+        :class:`SupportedArchitecture` is imported and registered the first
+        time ``name`` is looked up; see :meth:`_materialize_lazy`.
+
+        Args:
+            name: The architecture name to expose. Must match the ``name`` of
+                the :class:`SupportedArchitecture` that ``module``.``symbol``
+                resolves to (including any ``_ModuleV3`` suffix).
+            module: Dotted module path to import the architecture from. May be
+                ``.``-relative, resolved against ``package``.
+            symbol: The attribute on ``module`` holding the
+                :class:`SupportedArchitecture`.
+            package: Anchor package used to resolve a relative ``module`` path.
+        """
+        self._lazy_architectures.setdefault(name, []).append(
+            (module, symbol, package)
+        )
+
+    def _materialize_lazy(self, name: str) -> None:
+        """Imports and registers any architectures deferred under ``name``.
+
+        No-op when ``name`` has no pending lazy registrations. The entries are
+        removed before importing so a failed or repeated lookup does not retry
+        the import.
+        """
+        entries = self._lazy_architectures.pop(name, None)
+        if not entries:
+            return
+        for module, symbol, package in entries:
+            imported = importlib.import_module(module, package)
+            self.register(getattr(imported, symbol))
+
+    def all_architectures(self) -> list[SupportedArchitecture]:
+        """Returns every registered architecture, importing any deferred ones.
+
+        This forces all lazily-registered architectures to be imported, so it
+        is only appropriate for callers that genuinely need the full set (for
+        example, listing supported models). Normal lookups should go through
+        :meth:`retrieve_architecture`, which imports only what it needs.
+        """
+        for name in list(self._lazy_architectures):
+            self._materialize_lazy(name)
+        return list(self.architectures.values())
 
     def retrieve_architecture(
         self,
@@ -654,6 +718,9 @@ class PipelineRegistry:
         Returns:
             The matching SupportedArchitecture, or None if not found.
         """
+        # Import any architecture deferred under this name before looking it up.
+        if name in self._lazy_architectures:
+            self._materialize_lazy(name)
         if task is not None:
             task_key = (name, task)
             if task_key in self._architectures_by_task:
@@ -1096,6 +1163,10 @@ class PipelineRegistry:
                 "Cannot determine pipeline task: architecture name is unknown. "
                 "Please specify --task explicitly."
             )
+        # Import any architecture deferred under this name so its task(s) are
+        # discoverable below.
+        if architecture_name in self._lazy_architectures:
+            self._materialize_lazy(architecture_name)
         matching_tasks = [
             arch_task
             for (arch_name, arch_task) in self._architectures_by_task
@@ -1147,6 +1218,7 @@ class PipelineRegistry:
         """Clears all registered architectures (mainly for tests)."""
         self.architectures.clear()
         self._architectures_by_task.clear()
+        self._lazy_architectures.clear()
 
 
 PIPELINE_REGISTRY = PipelineRegistry([])
