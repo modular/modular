@@ -307,9 +307,9 @@ def unresolvedPackCall[*t : AnyType](var *args: *t):
   var _ = examplePack[*t]()
 
 def badPackCalls(value: Int):
-  # expected-error @+1 {{invalid call to 'examplePack': callee with non-empty variadic pack argument expects 1 positional operand, but 2 were specified}}
+  # expected-error @+1 {{expected 1 element in variadic pack, got 2 argument values}}
   examplePack[Int](1, 2)
-  # expected-error @+1 {{invalid call to 'examplePack': callee with non-empty variadic pack argument expects 2 positional operands, but 1 was specified}}
+  # expected-error @+1 {{expected 2 elements in variadic pack, got 1 argument value}}
   examplePack[Int, FloatDyn](1)
   # expected-error-re @below {{invalid call to 'examplePack': value passed to 'args' cannot be converted from '__mlir_type.index' to 'FloatDyn'}}
   examplePack[Int, FloatDyn](1, Int(2)._mlir_value)

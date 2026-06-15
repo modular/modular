@@ -30,9 +30,6 @@ TypedAttr LIT::getOriginsAccessibleByParams(PogListAttr paramList,
                                             ArrayRef<ParamDeclAttr> params,
                                             SharedState &shared,
                                             TypedAttr captureOrigins) {
-  // Implicit parameters are not accessible on the callee side, so we don't
-  // consider their origin accesses.
-  params = params.drop_back(countNumImplicitKinds(paramList));
 
   // We also need to find all accessible origin sets, even if they are
   // parametric, and union them with the found origins. We don't need to
@@ -54,9 +51,14 @@ TypedAttr LIT::getOriginsAccessibleByParams(PogListAttr paramList,
         param, OriginType::get(shared.getContext(), /*isMutable=*/true)));
   };
 
-  for (ParamDeclAttr param : params)
+  for (auto [param, pog] : llvm::zip(params, paramList.getPogs())) {
+    // Implicit parameters in result slots are not visible on the callee side,
+    // so we don't consider their origin accesses.
+    if (pog.getPassingKind() == PassingKind::Implicit)
+      continue;
     if (sugarIsa<OriginSetType>(param.getType()))
       addOriginSet(ParamDeclRefAttr::get(param));
+  }
   if (captureOrigins)
     addOriginSet(captureOrigins);
 
