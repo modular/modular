@@ -29,7 +29,7 @@ from .paged_kv_cache import (
     TransferReqData,
     available_port,
 )
-from .registry import load_kv_manager, load_multi_kv_managers
+from .registry import load_kv_manager
 
 __all__ = [
     "DummyKVCache",
@@ -46,5 +46,4 @@ __all__ = [
     "TransferReqData",
     "available_port",
     "load_kv_manager",
-    "load_multi_kv_managers",
 ]

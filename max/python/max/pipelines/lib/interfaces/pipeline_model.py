@@ -33,14 +33,12 @@ from max.graph import DeviceRef, Value
 from max.graph.weights import Weights, WeightsAdapter
 from max.nn.kv_cache import (
     KVCacheInputs,
+    KVCacheInputsInterface,
     KVCacheParamInterface,
     PagedCacheValues,
 )
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
-from max.pipelines.context import (
-    BaseContextType,
-    LogProbabilities,
-)
+from max.pipelines.context import BaseContextType, LogProbabilities
 from max.pipelines.kv_cache.config import KVCacheConfig
 from max.pipelines.lora import LoRAInputs, LoRAManager
 from max.pipelines.modeling.config_enums import supported_encoding_dtype
@@ -186,7 +184,10 @@ class ModelInputs:
         list(inputs) == [tokens, input_row_offsets]  # Output: True
     """
 
-    kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None
+    kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None
+    """KV cache graph inputs holding every (DP replica x TP shard) device's
+    inputs: a ``KVCacheInputs`` leaf, or a ``MultiKVCacheInputs`` tree for
+    multi-cache models. ``flatten()`` yields the full positional input list."""
 
     lora: LoRAInputs | None = None
     """Per-batch LoRA adapter buffers, or ``None`` when LoRA is disabled."""
@@ -413,7 +414,7 @@ class PipelineModel(ABC, Generic[BaseContextType]):
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[BaseContextType]],
-        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
+        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> ModelInputs:
         """Prepares the initial inputs to be passed to ``execute()``.
@@ -494,11 +495,11 @@ class PipelineModelWithKVCache(PipelineModel[BaseContextType]):
     def _unflatten_kv_inputs(
         self, kv_inputs_flat: Sequence[Value[Any]]
     ) -> list[PagedCacheValues]:
-        return list(
-            self.kv_params.get_symbolic_inputs()
-            .unflatten(iter(kv_inputs_flat))
-            .inputs
-        )
+        # This helper supports single-cache (leaf) models; multi-cache trees
+        # are unflattened by the architecture itself.
+        kv_inputs = self.kv_params.unflatten_kv_inputs(iter(kv_inputs_flat))
+        assert isinstance(kv_inputs, KVCacheInputs)
+        return list(kv_inputs.inputs)
 
     @classmethod
     def get_kv_params(

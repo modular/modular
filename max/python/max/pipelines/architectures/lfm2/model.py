@@ -23,7 +23,7 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import Graph
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn.kv_cache import KVCacheInputs
+from max.nn.kv_cache import KVCacheInputsInterface
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.context import TextContext
 from max.pipelines.lib import (
@@ -264,9 +264,7 @@ class LFM2Model(LlamaModelBase):
             strict=True,
         )
         self.state_dict = model.state_dict()
-        self._num_kv_inputs = len(
-            self.kv_params.get_symbolic_inputs().flatten()
-        )
+        self._num_kv_inputs = len(self.kv_params.flattened_kv_inputs())
 
         with Graph(
             "lfm2",
@@ -334,7 +332,7 @@ class LFM2Model(LlamaModelBase):
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
+        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> LFM2Inputs:
         base = super().prepare_initial_token_inputs(

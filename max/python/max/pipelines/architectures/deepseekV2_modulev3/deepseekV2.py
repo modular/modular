@@ -31,7 +31,11 @@ from max.experimental.nn.linear import Linear
 from max.experimental.nn.norm import RMSNorm
 from max.experimental.nn.sequential import ModuleList
 from max.experimental.tensor import Tensor
-from max.nn.kv_cache import KVCacheParamInterface, PagedCacheValues
+from max.nn.kv_cache import (
+    KVCacheInputs,
+    KVCacheParamInterface,
+    PagedCacheValues,
+)
 from max.nn.rotary_embedding import DeepseekYarnRopeScalingParams
 
 from .layers.moe_gate import DeepSeekV2MoEGate
@@ -207,9 +211,9 @@ class DeepseekV2(Module[..., tuple[Tensor, ...]]):
         *variadic_args: Tensor,
     ) -> tuple[Tensor, ...]:
         kv_inputs = iter(x._graph_value for x in variadic_args)
-        kv_collections = (
-            self.kv_params.get_symbolic_inputs().unflatten(kv_inputs).inputs
-        )
+        symbolic_inputs = self.kv_params.unflatten_kv_inputs(kv_inputs)
+        assert isinstance(symbolic_inputs, KVCacheInputs)
+        kv_collections = symbolic_inputs.inputs
         return self.language_model(
             tokens, kv_collections[0], return_n_logits, input_row_offsets
         )

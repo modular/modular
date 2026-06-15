@@ -109,7 +109,9 @@ def make_test_config() -> DeepseekV3_2Config:
         num_layers=hf_config.num_hidden_layers,
         devices=[device],
     )
-    kv_params = MultiKVCacheParams.from_params(mla_kv_params, indexer_kv_params)
+    kv_params = MultiKVCacheParams.from_params(
+        {"mla": mla_kv_params, "indexer": indexer_kv_params}
+    )
 
     return DeepseekV3_2Config(
         dtype=DType.float8_e4m3fn,

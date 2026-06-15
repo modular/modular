@@ -28,7 +28,7 @@ from max.graph import (
     ops,
 )
 from max.nn.data_parallelism import split_batch
-from max.nn.kv_cache import KVCacheParamInterface
+from max.nn.kv_cache import KVCacheInputs, KVCacheParamInterface
 from max.nn.layer import Module
 from max.pipelines.lora import LoRAManager
 
@@ -110,7 +110,7 @@ class DataParallelLlama(Module):
         ) = single_model_inputs
         del single_model_kv_cache_inputs
 
-        flat_kv_cache_inputs = kv_params.get_symbolic_inputs().flatten()
+        flat_kv_cache_inputs = kv_params.flattened_kv_inputs()
 
         data_parallel_split_type = TensorType(
             DType.int64,
@@ -147,11 +147,11 @@ class DataParallelLlama(Module):
 
         all_model_args = []
 
-        kv_collections = (
-            kv_params.get_symbolic_inputs()
-            .unflatten(iter(all_kv_cache_inputs))
-            .inputs
+        symbolic_inputs = kv_params.unflatten_kv_inputs(
+            iter(all_kv_cache_inputs)
         )
+        assert isinstance(symbolic_inputs, KVCacheInputs)
+        kv_collections = symbolic_inputs.inputs
 
         for i in range(len(self.config.devices)):
             all_model_args.append(

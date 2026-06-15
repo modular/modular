@@ -19,20 +19,10 @@ from dataclasses import dataclass, replace
 from typing import Any
 
 from max.dtype import DType
-from max.graph import (
-    BufferType,
-    BufferValue,
-    DeviceRef,
-    TensorType,
-    TensorValue,
-    Value,
-    ops,
-)
-from max.nn.kv_cache import PagedCacheValues
+from max.graph import BufferType, DeviceRef, TensorType, TensorValue, Value, ops
+from max.nn.kv_cache import MultiKVCacheParams, PagedCacheValues
 from max.nn.layer import Module
-from max.nn.sampling.rejection_sampler import (
-    AcceptanceSampler,
-)
+from max.nn.sampling.rejection_sampler import AcceptanceSampler
 from max.pipelines.speculative.ragged_token_merger import (
     RaggedTokenMerger,
     _shape_to_scalar,
@@ -52,7 +42,7 @@ class UnifiedDflashLlama3Values:
     draft_tokens: TensorValue
     return_n_logits: TensorValue
     kv_collection: PagedCacheValues
-    draft_kv_blocks: BufferValue
+    draft_kv_collection: PagedCacheValues
     seed: TensorValue
     temperature: TensorValue
     top_k: TensorValue
@@ -90,34 +80,28 @@ class UnifiedDflashLlama3(Module):
         self,
         inputs: Sequence[Value[Any]],
     ) -> UnifiedDflashLlama3Values:
-        (
-            tokens,
-            input_row_offsets,
-            return_n_logits,
-            target_kv_blocks,
-            cache_lengths,
-            lookup_table,
-            max_lengths,
-            dispatch_metadata,
-            draft_dispatch_metadata,
-            draft_tokens,
-            draft_kv_blocks,
-            seed,
-            temperature,
-            top_k,
-            max_k,
-            top_p,
-            min_top_p,
-        ) = inputs
-
-        target_kv_collection = PagedCacheValues(
-            kv_blocks=target_kv_blocks.buffer,
-            cache_lengths=cache_lengths.tensor,
-            lookup_table=lookup_table.tensor,
-            max_lengths=max_lengths.tensor,
-            attention_dispatch_metadata=dispatch_metadata.tensor,
-            draft_attention_dispatch_metadata=draft_dispatch_metadata.tensor,
+        it = iter(inputs)
+        tokens = next(it)
+        input_row_offsets = next(it)
+        return_n_logits = next(it)
+        kv_params = MultiKVCacheParams.from_params(
+            {
+                "target": self.config.target.kv_params,
+                "draft": self.config.draft.kv_params,
+            }
         )
+        target_kv_collections, draft_kv_collections = (
+            kv_params.unflatten_basic_kv_tree(it)
+        )
+        target_kv_collection = target_kv_collections[0]
+        draft_kv_collection = draft_kv_collections[0]
+        draft_tokens = next(it)
+        seed = next(it)
+        temperature = next(it)
+        top_k = next(it)
+        max_k = next(it)
+        top_p = next(it)
+        min_top_p = next(it)
 
         return UnifiedDflashLlama3Values(
             tokens=tokens.tensor,
@@ -125,7 +109,7 @@ class UnifiedDflashLlama3(Module):
             draft_tokens=draft_tokens.tensor,
             return_n_logits=return_n_logits.tensor,
             kv_collection=target_kv_collection,
-            draft_kv_blocks=draft_kv_blocks.buffer,
+            draft_kv_collection=draft_kv_collection,
             seed=seed.tensor,
             temperature=temperature.tensor,
             top_k=top_k.tensor,
@@ -150,13 +134,13 @@ class UnifiedDflashLlama3(Module):
             DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
         )
 
-        target_kv_inputs = self.config.target.kv_params.get_symbolic_inputs()
-        assert len(target_kv_inputs.inputs) == 1
-        target_kv_flat = list(target_kv_inputs.inputs[0].flatten())
-
-        draft_kv_inputs = self.config.draft.kv_params.get_symbolic_inputs()
-        assert len(draft_kv_inputs.inputs) == 1
-        draft_kv_blocks = draft_kv_inputs.inputs[0].kv_blocks
+        kv_params = MultiKVCacheParams.from_params(
+            {
+                "target": self.config.target.kv_params,
+                "draft": self.config.draft.kv_params,
+            }
+        )
+        kv_tree_flat = list(kv_params.flattened_kv_inputs())
 
         temperature_type = TensorType(
             DType.float32, shape=["batch_size"], device=device_ref
@@ -176,9 +160,8 @@ class UnifiedDflashLlama3(Module):
             tokens_type,
             input_row_offsets_type,
             return_n_logits_type,
-            *target_kv_flat,
+            *kv_tree_flat,
             draft_tokens_type,
-            draft_kv_blocks,
             TensorType(DType.uint64, shape=["batch_size"], device=device_ref),
             temperature_type,
             top_k_type,
@@ -278,17 +261,12 @@ class UnifiedDflashLlama3(Module):
 
         ctx_hidden = self.draft.project_target_hidden(target_hs_concat)
 
-        draft_kv_collection = PagedCacheValues(
-            kv_blocks=inputs.draft_kv_blocks,
+        # The draft leaf already carries draft blocks + lookup_table /
+        # max_lengths / dispatch metadata (mirroring the target leaf); only
+        # cache_lengths is overridden with the pre-step value.
+        draft_kv_collection = replace(
+            inputs.draft_kv_collection,
             cache_lengths=pre_cache_lengths,
-            lookup_table=inputs.kv_collection.lookup_table,
-            max_lengths=inputs.kv_collection.max_lengths,
-            attention_dispatch_metadata=(
-                inputs.kv_collection.attention_dispatch_metadata
-            ),
-            draft_attention_dispatch_metadata=(
-                inputs.kv_collection.draft_attention_dispatch_metadata
-            ),
         )
 
         self.draft.materialize_kv(

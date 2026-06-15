@@ -36,7 +36,7 @@ from max.nn.kernels import (
     inplace_memcpy,
     wait_host_value_with_dep,
 )
-from max.nn.kv_cache import PagedCacheValues
+from max.nn.kv_cache import MultiKVCacheParams, PagedCacheValues
 from max.nn.layer import Module
 from max.nn.sampling.rejection_sampler import (
     AcceptanceSampler,
@@ -59,7 +59,7 @@ class UnifiedEagleLlama3Values:
     draft_tokens: TensorValue
     return_n_logits: TensorValue
     kv_collection: PagedCacheValues
-    draft_kv_blocks: BufferValue
+    draft_kv_collection: PagedCacheValues
     seed: TensorValue
     temperature: TensorValue
     top_k: TensorValue
@@ -123,17 +123,19 @@ class UnifiedEagleLlama3(Module):
         tokens = next(it)
         input_row_offsets = next(it)
         return_n_logits = next(it)
-        # target model kvcache inputs
-        target_kv_blocks = next(it)
-        cache_lengths = next(it)
-        lookup_table = next(it)
-        max_lengths = next(it)
-        dispatch_metadata = next(it)
-        draft_dispatch_metadata = next(it)
+        kv_params = MultiKVCacheParams.from_params(
+            {
+                "target": self.config.target.kv_params,
+                "draft": self.config.draft.kv_params,
+            }
+        )
+        target_kv_collections, draft_kv_collections = (
+            kv_params.unflatten_basic_kv_tree(it)
+        )
+        target_kv_collection = target_kv_collections[0]
+        draft_kv_collection = draft_kv_collections[0]
         # draft model inputs
         draft_tokens = next(it)
-        # draft kvcache
-        draft_kv_blocks = next(it)
         # stochastic acceptance seed (scalar int64 on CPU)
         seed = next(it)
         # sampling params for stochastic acceptance
@@ -154,22 +156,13 @@ class UnifiedEagleLlama3(Module):
             wait_payload_in = next(it).buffer
             device_bitmask_scratch_in = next(it).buffer
 
-        target_kv_collection = PagedCacheValues(
-            kv_blocks=target_kv_blocks.buffer,
-            cache_lengths=cache_lengths.tensor,
-            lookup_table=lookup_table.tensor,
-            max_lengths=max_lengths.tensor,
-            attention_dispatch_metadata=dispatch_metadata.tensor,
-            draft_attention_dispatch_metadata=draft_dispatch_metadata.tensor,
-        )
-
         return UnifiedEagleLlama3Values(
             tokens=tokens.tensor,
             input_row_offsets=input_row_offsets.tensor,
             draft_tokens=draft_tokens.tensor,
             return_n_logits=return_n_logits.tensor,
             kv_collection=target_kv_collection,
-            draft_kv_blocks=draft_kv_blocks.buffer,
+            draft_kv_collection=draft_kv_collection,
             seed=seed.tensor,
             temperature=temperature.tensor,
             top_k=top_k.tensor,
@@ -184,13 +177,15 @@ class UnifiedEagleLlama3(Module):
     def input_types(self) -> tuple[TensorType | BufferType, ...]:
         """Input types for the unified graph.
 
-        Order: tokens, input_row_offsets, return_n_logits, target_kv_cache,
-               draft_tokens, draft_kv_blocks, seed, temperature, top_k,
-               max_k, top_p, min_top_p[, pinned_bitmask, wait_payload,
+        Order: tokens, input_row_offsets, return_n_logits, kv_cache_tree
+               (target then draft, flattened), draft_tokens, seed, temperature,
+               top_k, max_k, top_p, min_top_p[, pinned_bitmask, wait_payload,
                device_bitmask_scratch].
 
-        The bitmask triple is only included when structured output is
-        enabled via config.enable_structured_output.
+        ``kv_cache_tree`` is the unified ``{"target", "draft"}`` tree; the
+        draft leaf carries its own blocks and dispatch metadata. The bitmask
+        triple is only included when structured output is enabled via
+        config.enable_structured_output.
         """
         device_ref = self.config.target.devices[0]
 
@@ -207,13 +202,14 @@ class UnifiedEagleLlama3(Module):
             DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
         )
 
-        target_kv_inputs = self.config.target.kv_params.get_symbolic_inputs()
-        assert len(target_kv_inputs.inputs) == 1
-        target_kv_flat = list(target_kv_inputs.inputs[0].flatten())
-
-        draft_kv_inputs = self.config.draft.kv_params.get_symbolic_inputs()
-        assert len(draft_kv_inputs.inputs) == 1
-        draft_kv_blocks = draft_kv_inputs.inputs[0].kv_blocks
+        kv_tree_flat = list(
+            MultiKVCacheParams.from_params(
+                {
+                    "target": self.config.target.kv_params,
+                    "draft": self.config.draft.kv_params,
+                }
+            ).flattened_kv_inputs()
+        )
 
         temperature_type = TensorType(
             DType.float32, shape=["batch_size"], device=device_ref
@@ -234,9 +230,8 @@ class UnifiedEagleLlama3(Module):
             tokens_type,
             input_row_offsets_type,
             return_n_logits_type,
-            *target_kv_flat,
+            *kv_tree_flat,
             draft_tokens_type,
-            draft_kv_blocks,
             TensorType(DType.uint64, shape=["batch_size"], device=device_ref),
             temperature_type,
             top_k_type,
@@ -295,7 +290,7 @@ class UnifiedEagleLlama3(Module):
         draft_tokens = inputs.draft_tokens
         return_n_logits = inputs.return_n_logits
         kv_collection = inputs.kv_collection
-        draft_kv_blocks = inputs.draft_kv_blocks
+        draft_kv_collection = inputs.draft_kv_collection
 
         device = tokens.device
 
@@ -411,17 +406,6 @@ class UnifiedEagleLlama3(Module):
             corrected_merged,
             corrected_offsets,
             bonus.reshape((-1,)),
-        )
-
-        # draft_kv_collection is same as the target's kv_collection other than
-        # the kv_blocks.
-        draft_kv_collection = PagedCacheValues(
-            kv_blocks=draft_kv_blocks,
-            cache_lengths=kv_collection.cache_lengths,
-            lookup_table=kv_collection.lookup_table,
-            max_lengths=kv_collection.max_lengths,
-            attention_dispatch_metadata=kv_collection.attention_dispatch_metadata,
-            draft_attention_dispatch_metadata=kv_collection.draft_attention_dispatch_metadata,
         )
 
         # --- Draft step 0 ---

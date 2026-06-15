@@ -80,7 +80,9 @@ class DeepseekV3_2Config(DeepseekV3Config):
             kvcache_quant_config=indexer_kvcache_quant_config,
         )
         assert isinstance(indexer_kv_params, KVCacheParams)
-        return MultiKVCacheParams.from_params(mla_kv_params, indexer_kv_params)
+        return MultiKVCacheParams.from_params(
+            {"mla": mla_kv_params, "indexer": indexer_kv_params}
+        )
 
     @override
     @classmethod

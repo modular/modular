@@ -19,9 +19,11 @@ from typing import Any
 
 from max.dtype import DType
 from max.graph import DeviceRef
+from max.nn.kv_cache import KVCacheParams
+from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.pipelines.modeling.types import RequestID
 
-from .cache_manager import KVCacheMetrics, KVCacheParams, PagedKVCacheManager
+from .cache_manager import PagedKVCacheManager
 
 
 class DummyKVCache(PagedKVCacheManager):

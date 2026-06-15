@@ -372,7 +372,7 @@ class DeepseekV3NextN(Module):
             ]
         )
         all_input_types.extend(signal_buffer_types)
-        all_input_types.extend(kv_params.get_symbolic_inputs().flatten())
+        all_input_types.extend(kv_params.flattened_kv_inputs())
 
         # Add batch context lengths (one per device)
         batch_context_length_type = TensorType(

@@ -28,12 +28,7 @@ from max.graph import (
     ops,
 )
 from max.nn.comm import Signals
-from max.nn.kv_cache import (
-    KVCacheInputsPerDevice,
-    KVCacheParamInterface,
-    KVCacheParams,
-    PagedCacheValues,
-)
+from max.nn.kv_cache import MultiKVCacheParams, PagedCacheValues
 from max.nn.layer import Module
 from max.nn.sampling.rejection_sampler import AcceptanceSampler
 from max.pipelines.speculative.ragged_token_merger import (
@@ -361,18 +356,18 @@ class UnifiedDflashKimiK25(Module):
         return (num_accepted_out, next_tokens, next_draft_tokens)
 
     def input_types(
-        self,
-        kv_params: KVCacheParamInterface,
-        draft_kv_params: KVCacheParams,
+        self, kv_params: MultiKVCacheParams
     ) -> tuple[TensorType | BufferType, ...]:
         """Input types mirror :class:`Eagle3MHAKimiK25Unified.input_types`.
 
+        ``kv_params`` is the unified ``{"target", "draft"}`` tree; the draft
+        leaf carries its own blocks and dispatch metadata.
+
         Order:
             tokens, device_offsets, host_offsets, return_n_logits,
-            data_parallel_splits, signal_buffers, target_kv_cache (flat),
-            batch_context_lengths, target_ep_inputs, draft_tokens,
-            draft_kv_blocks (one per device), seed, temperature, top_k,
-            max_k, top_p, min_top_p.
+            data_parallel_splits, signal_buffers, kv_cache_tree (target then
+            draft, flattened), batch_context_lengths, target_ep_inputs,
+            draft_tokens, seed, temperature, top_k, max_k, top_p, min_top_p.
         """
         devices = self.config.target.devices
         device_ref = devices[0]
@@ -416,12 +411,7 @@ class UnifiedDflashKimiK25(Module):
         ]
         all_input_types.extend(signal_buffer_types)
 
-        assert isinstance(kv_params, KVCacheParams)
-        all_input_types.extend(
-            kv_params.get_symbolic_inputs(
-                draft_attention_group=draft_kv_params
-            ).flatten()
-        )
+        all_input_types.extend(kv_params.flattened_kv_inputs())
 
         batch_context_length_type = TensorType(
             DType.int32, shape=[1], device=DeviceRef.CPU()
@@ -434,10 +424,6 @@ class UnifiedDflashKimiK25(Module):
             all_input_types.extend(self.target.ep_manager.input_types())
 
         all_input_types.append(draft_tokens_type)
-
-        for sym in draft_kv_params.get_symbolic_inputs().inputs:
-            assert isinstance(sym, KVCacheInputsPerDevice)
-            all_input_types.append(sym.kv_blocks)
 
         seed_type = TensorType(
             DType.uint64, shape=["batch_size"], device=device_ref

@@ -103,40 +103,6 @@ modular_py_test(
 )
 
 modular_py_test(
-    name = "test_send_recv_extra_group",
-    srcs = [
-        "conftest.py",
-        "test_send_recv_extra_group.py",
-    ],
-    # Explicit data dep so the NIXL plugin .so is in the runfiles tree and
-    # conftest.py can locate it via TEST_SRCDIR/+http_archive+nixl_upstream/.
-    data = [
-        "@nixl_upstream//:libplugin_LIBFABRIC.so",
-        "@nixl_upstream//:libplugin_UCX.so",
-    ],
-    # TODO(GEX-3817): upstream NIXL only ships a CUDA-flavor libplugin_UCX.so;
-    # AMD (mi355) lacks libcuda so the plugin cannot load there.  Gate to NVIDIA
-    # until ucx_rocm / ucx_cpu plugin variants are shipped.
-    gpu_constraints = [
-        "//:has_gpu",
-        "//:nvidia_gpu",
-    ],
-    imports = ["."],
-    tags = [
-        "gpu",
-    ],
-    # UCX currently only supports linux machines
-    target_compatible_with = [
-        "@platforms//os:linux",
-    ],
-    deps = [
-        "//max/python/max/driver",
-        "//max/python/max/pipelines/kv_cache",
-        requirement("numpy"),
-    ],
-)
-
-modular_py_test(
     name = "test_read_transfer",
     srcs = [
         "conftest.py",

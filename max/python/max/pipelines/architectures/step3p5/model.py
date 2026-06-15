@@ -28,12 +28,10 @@ from max.graph.weights import Weights, WeightsAdapter
 from max.nn.comm.ep import EPCommInitializer, EPConfig
 from max.nn.comm.ep.ep_config import calculate_ep_max_tokens_per_rank
 from max.nn.comm.ep.ep_manager import EPBatchManager
-from max.nn.kv_cache import KVCacheInputs
+from max.nn.kv_cache import KVCacheInputsInterface
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.context import TextContext
-from max.pipelines.lib import (
-    CompilationTimer,
-)
+from max.pipelines.lib import CompilationTimer
 from max.pipelines.lib.interfaces import AlwaysSignalBuffersMixin
 from max.pipelines.lib.utils import (
     compute_data_parallel_splits,
@@ -285,7 +283,7 @@ class Step3p5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
                 next(inputs_iter).buffer for _ in range(num_devices)
             ]
 
-            kv_input_count = len(self.kv_params.get_symbolic_inputs().flatten())
+            kv_input_count = len(self.kv_params.flattened_kv_inputs())
             kv_cache_inputs = [next(inputs_iter) for _ in range(kv_input_count)]
             kv_collections = self._unflatten_kv_inputs(kv_cache_inputs)
 
@@ -321,7 +319,7 @@ class Step3p5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
+        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> Llama3Inputs | Step3p5Inputs:
         # TP_TP needs no EP/DP plumbing; defer to the base class.

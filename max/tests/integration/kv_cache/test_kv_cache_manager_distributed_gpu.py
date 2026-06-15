@@ -23,14 +23,14 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef
 from max.nn.kv_cache import (
+    KVCacheInputs,
     KVCacheParams,
     KVConnectorType,
+    MultiKVCacheInputs,
     MultiKVCacheParams,
 )
 from max.pipelines.context import TextContext
-from max.pipelines.kv_cache import (
-    PagedKVCacheManager,
-)
+from max.pipelines.kv_cache import PagedKVCacheManager
 from max.pipelines.kv_cache.config import KVConnectorConfig
 from max.pipelines.kv_cache.connectors.tiered_connector import TieredConnector
 from test_common.context_utils import create_text_context
@@ -335,7 +335,9 @@ def test_runtime_inputs_mha_primary_mla_secondary_matches_graph() -> None:
         is_mla=True,
         num_q_heads=64,
     )
-    params = MultiKVCacheParams.from_params(main_params, indexer_params)
+    params = MultiKVCacheParams.from_params(
+        {"main": main_params, "indexer": indexer_params}
+    )
 
     session = InferenceSession(devices=devices)
     manager = PagedKVCacheManager(
@@ -350,9 +352,10 @@ def test_runtime_inputs_mha_primary_mla_secondary_matches_graph() -> None:
     manager.alloc(context, replica_idx=0, num_steps=1)
 
     kv_cache_inputs = manager.runtime_inputs([[context]])
+    assert isinstance(kv_cache_inputs, MultiKVCacheInputs)
 
     # The compiled graph declares its KV inputs from the same symbolic params.
-    num_graph_inputs = len(params.get_symbolic_inputs().flatten())
+    num_graph_inputs = len(params.flattened_kv_inputs())
     num_runtime_inputs = len(kv_cache_inputs.flatten())
 
     assert num_runtime_inputs == num_graph_inputs, (
@@ -361,7 +364,8 @@ def test_runtime_inputs_mha_primary_mla_secondary_matches_graph() -> None:
     )
 
     # The MLA secondary cache must contribute its per-device mla_num_partitions.
-    secondary_inputs = kv_cache_inputs.inputs[num_devices:]
-    assert len(secondary_inputs) == num_devices
-    for per_device in secondary_inputs:
+    secondary_inputs = kv_cache_inputs.children["indexer"]
+    assert isinstance(secondary_inputs, KVCacheInputs)
+    assert len(secondary_inputs.inputs) == num_devices
+    for per_device in secondary_inputs.inputs:
         assert per_device.mla_num_partitions is not None

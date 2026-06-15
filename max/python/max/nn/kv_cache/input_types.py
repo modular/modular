@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import itertools
+from abc import ABC, abstractmethod
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from typing import Any, Generic, TypeVar
@@ -145,9 +146,57 @@ class KVCacheInputsPerDevice(Generic[_Tensor, _Buffer]):
 PagedCacheValues = KVCacheInputsPerDevice[TensorValue, BufferValue]
 
 
+class KVCacheInputsInterface(ABC, Generic[_Tensor, _Buffer]):
+    """Common interface for KV cache graph inputs (leaf or tree)."""
+
+    @abstractmethod
+    def flatten(self) -> list[_Tensor | _Buffer]:
+        """Flattens this (sub)tree into a flattened buffer/tensor list."""
+        ...
+
+    @abstractmethod
+    def unflatten(
+        self, it: Iterator[Any]
+    ) -> KVCacheInputsInterface[TensorValue, BufferValue]:
+        """Rebuilds this (sub)tree by consuming values from ``it``."""
+        ...
+
+
 @dataclass
-class KVCacheInputs(Generic[_Tensor, _Buffer]):
-    """Symbolic graph input types for all devices' paged KV cache."""
+class MultiKVCacheInputs(KVCacheInputsInterface[_Tensor, _Buffer]):
+    """Symbolic graph input types for a tree of KV caches.
+
+    This class is used to represent a tree of KV caches. For example, hybrid models
+    like Gemma4 may have "sliding_window" and "full_attention" caches. Furthermore,
+    we can also have "target" and "draft" caches for speculative decoding.
+    """
+
+    children: dict[str, KVCacheInputsInterface[_Tensor, _Buffer]]
+
+    def flatten(self) -> list[_Tensor | _Buffer]:
+        return list(
+            itertools.chain.from_iterable(
+                item.flatten() for item in self.children.values()
+            )
+        )
+
+    def unflatten(
+        self, it: Iterator[Any]
+    ) -> MultiKVCacheInputs[TensorValue, BufferValue]:
+        return MultiKVCacheInputs(
+            children={
+                key: item.unflatten(it) for key, item in self.children.items()
+            }
+        )
+
+
+@dataclass
+class KVCacheInputs(
+    Generic[_Tensor, _Buffer], KVCacheInputsInterface[_Tensor, _Buffer]
+):
+    """Symbolic graph input types for a leaf KV cache.
+
+    This contains the KV cache inputs for all TP shards."""
 
     inputs: Sequence[KVCacheInputsPerDevice[_Tensor, _Buffer]]
 

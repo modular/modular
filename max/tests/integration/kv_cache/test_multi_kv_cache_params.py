@@ -51,14 +51,16 @@ class TestMultiKVCacheParamsValidation:
     def test_empty_params_raises_error(self) -> None:
         """MultiKVCacheParams should raise an error if params list is empty."""
         with pytest.raises(ValueError, match="requires at least one param"):
-            MultiKVCacheParams.from_params()
+            MultiKVCacheParams.from_params({})
 
     def test_mismatched_page_size_raises_error(self) -> None:
         """MultiKVCacheParams should raise if page sizes don't match."""
         params1 = create_kv_cache_params(page_size=128)
         params2 = create_kv_cache_params(page_size=256)
         with pytest.raises(ValueError, match="same page size"):
-            MultiKVCacheParams.from_params(params1, params2)
+            MultiKVCacheParams.from_params(
+                {"cache0": params1, "cache1": params2}
+            )
 
     def test_mismatched_data_parallel_degree_raises_error(self) -> None:
         """MultiKVCacheParams should raise if data parallel degrees don't match."""
@@ -81,7 +83,9 @@ class TestMultiKVCacheParamsValidation:
             data_parallel_degree=2,
         )
         with pytest.raises(ValueError, match="same data parallel degree"):
-            MultiKVCacheParams.from_params(params1, params2)
+            MultiKVCacheParams.from_params(
+                {"cache0": params1, "cache1": params2}
+            )
 
 
 class TestMultiKVCacheParamsBytesPerBlock:
@@ -92,7 +96,9 @@ class TestMultiKVCacheParamsBytesPerBlock:
         params1 = create_kv_cache_params(num_layers=16, n_kv_heads=8)
         params2 = create_kv_cache_params(num_layers=16, n_kv_heads=4)
 
-        multi_params = MultiKVCacheParams.from_params(params1, params2)
+        multi_params = MultiKVCacheParams.from_params(
+            {"cache0": params1, "cache1": params2}
+        )
 
         expected = params1.bytes_per_block + params2.bytes_per_block
         assert multi_params.bytes_per_block == expected
@@ -100,7 +106,7 @@ class TestMultiKVCacheParamsBytesPerBlock:
     def test_single_param_bytes_per_block_unchanged(self) -> None:
         """With a single param, bytes_per_block should match that param."""
         params = create_kv_cache_params()
-        multi_params = MultiKVCacheParams.from_params(params)
+        multi_params = MultiKVCacheParams.from_params({"cache0": params})
 
         assert multi_params.bytes_per_block == params.bytes_per_block
 
@@ -126,7 +132,9 @@ class TestMultiKVCacheParamsMemoryEstimation:
         )
 
         # Compute max seq len for multi params
-        multi_params = MultiKVCacheParams.from_params(params1, params2)
+        multi_params = MultiKVCacheParams.from_params(
+            {"cache0": params1, "cache1": params2}
+        )
         max_seq_len_multi = compute_max_seq_len_fitting_in_cache(
             multi_params, available_memory
         )
@@ -146,7 +154,9 @@ class TestMultiKVCacheParamsMemoryEstimation:
         """compute_num_device_blocks should work correctly with MultiKVCacheParams."""
         params1 = create_kv_cache_params(num_layers=16)
         params2 = create_kv_cache_params(num_layers=16)
-        multi_params = MultiKVCacheParams.from_params(params1, params2)
+        multi_params = MultiKVCacheParams.from_params(
+            {"cache0": params1, "cache1": params2}
+        )
 
         available_memory = 100 * 1024 * 1024  # 100 MB
 
@@ -170,7 +180,9 @@ class TestMultiKVCacheParamsMemoryEstimation:
         """estimated_memory_size should work correctly with MultiKVCacheParams."""
         params1 = create_kv_cache_params(num_layers=16)
         params2 = create_kv_cache_params(num_layers=16)
-        multi_params = MultiKVCacheParams.from_params(params1, params2)
+        multi_params = MultiKVCacheParams.from_params(
+            {"cache0": params1, "cache1": params2}
+        )
 
         available_memory = 100 * 1024 * 1024  # 100 MB
         max_batch_size = 4
@@ -198,7 +210,9 @@ class TestMultiKVCacheParamsMemoryEstimation:
             num_layers=32, n_kv_heads=8, head_dim=64
         )
 
-        multi_params = MultiKVCacheParams.from_params(params1, params2)
+        multi_params = MultiKVCacheParams.from_params(
+            {"cache0": params1, "cache1": params2}
+        )
 
         # bytes_per_block should reflect the sum
         assert (
@@ -222,7 +236,9 @@ class TestMultiKVCacheParamsProperties:
         params1 = create_kv_cache_params(num_layers=16, page_size=128)
         params2 = create_kv_cache_params(num_layers=32, page_size=128)
 
-        multi_params = MultiKVCacheParams.from_params(params1, params2)
+        multi_params = MultiKVCacheParams.from_params(
+            {"cache0": params1, "cache1": params2}
+        )
 
         assert multi_params.page_size == 128
         assert multi_params.data_parallel_degree == 1
@@ -231,7 +247,7 @@ class TestMultiKVCacheParamsProperties:
     def test_frozen_dataclass(self) -> None:
         """MultiKVCacheParams should be frozen (immutable)."""
         params = create_kv_cache_params()
-        multi_params = MultiKVCacheParams.from_params(params)
+        multi_params = MultiKVCacheParams.from_params({"cache0": params})
 
         with pytest.raises(AttributeError):
-            multi_params.params = []  # type: ignore[misc]  # ty:ignore[invalid-assignment]
+            multi_params.params = {}  # type: ignore[misc]  # ty:ignore[invalid-assignment]

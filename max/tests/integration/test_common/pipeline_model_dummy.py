@@ -24,7 +24,7 @@ from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType
 from max.graph.weights import WeightsFormat
 from max.nn.kv_cache import (
-    KVCacheInputs,
+    KVCacheInputsInterface,
     KVCacheParams,
     KVCacheQuantizationConfig,
 )
@@ -38,10 +38,7 @@ from max.pipelines import (
     TextTokenizer,
     upper_bounded_default,
 )
-from max.pipelines.context import (
-    TextContext,
-    TokenBuffer,
-)
+from max.pipelines.context import TextContext, TokenBuffer
 from max.pipelines.lib import PipelineModelWithKVCache
 from max.pipelines.lib.interfaces import (
     ArchConfig,
@@ -86,7 +83,7 @@ class DummyPipelineModel(PipelineModelWithKVCache):  # type: ignore[type-arg]
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
+        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> DummyModelInputs:
         """Prepares the initial inputs to be passed to `.execute()`.
@@ -185,7 +182,7 @@ class DummyPipelineModel(PipelineModelWithKVCache):  # type: ignore[type-arg]
     ) -> Model:
         """Provided a PipelineConfig and InferenceSession, build and load the model graph."""
         assert hasattr(self, "kv_params")
-        kv_inputs = self.kv_params.get_symbolic_inputs().flatten()
+        kv_inputs = self.kv_params.flattened_kv_inputs()
         with Graph(
             "dummy",
             input_types=[

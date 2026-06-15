@@ -40,12 +40,6 @@ from .layers.rms_norm import Gemma4RMSNorm
 from .layers.rotary_embedding import ProportionalRotaryEmbedding
 from .model_config import Gemma4ForConditionalGenerationConfig
 
-# Map from layer type string to the index in MultiKVCacheParams.params.
-_LAYER_TYPE_TO_KV_INDEX = {
-    "sliding_attention": 0,
-    "full_attention": 1,
-}
-
 
 class Gemma4TextModel(DistributedLogitsPostprocessMixin, Module):
     """The Gemma 4 language model."""
@@ -112,12 +106,13 @@ class Gemma4TextModel(DistributedLogitsPostprocessMixin, Module):
             ),
         )
 
-        # Resolve per-layer KVCacheParams from MultiKVCacheParams.
+        # Resolve per-layer KVCacheParams from MultiKVCacheParams. The tree is
+        # keyed by layer-type name ("sliding_attention" / "full_attention").
         assert isinstance(config.kv_params, MultiKVCacheParams)
-        kv_params_by_layer_type: dict[str, KVCacheParams] = {
-            layer_type: config.kv_params.params[kv_idx]
-            for layer_type, kv_idx in _LAYER_TYPE_TO_KV_INDEX.items()
-        }
+        kv_params_by_layer_type: dict[str, KVCacheParams] = {}
+        for _k, _p in config.kv_params.params.items():
+            assert isinstance(_p, KVCacheParams)
+            kv_params_by_layer_type[_k] = _p
 
         layer_type_counts: dict[str, int] = {
             "sliding_attention": 0,
@@ -216,10 +211,11 @@ class Gemma4TextModel(DistributedLogitsPostprocessMixin, Module):
                 )
             )
 
-        # Store per-layer mapping to kv collection index so __call__ can
-        # route the correct cache to each layer.
-        self._layer_kv_index = [
-            _LAYER_TYPE_TO_KV_INDEX[text_config.layer_types[i]]
+        # Store the per-layer cache-tree key ("sliding_attention" /
+        # "full_attention") so __call__ can route the correct cache to each
+        # layer.
+        self._layer_kv_key = [
+            text_config.layer_types[i]
             for i in range(text_config.num_hidden_layers)
         ]
 
@@ -241,10 +237,10 @@ class Gemma4TextModel(DistributedLogitsPostprocessMixin, Module):
         image_token_indices: Sequence[TensorValue],
         **kwargs: object,
     ) -> tuple[TensorValue, ...]:
-        kv_collections_by_type = [
-            sliding_kv_collections,
-            global_kv_collections,
-        ]
+        kv_collections_by_type = {
+            "sliding_attention": sliding_kv_collections,
+            "full_attention": global_kv_collections,
+        }
 
         h = self.embed_tokens(tokens, signal_buffers)
 
@@ -264,7 +260,7 @@ class Gemma4TextModel(DistributedLogitsPostprocessMixin, Module):
             layer_idx_tensor = ops.constant(
                 idx, DType.uint32, device=self.devices[0]
             )
-            kv_collections = kv_collections_by_type[self._layer_kv_index[idx]]
+            kv_collections = kv_collections_by_type[self._layer_kv_key[idx]]
             h = layer(
                 layer_idx_tensor,
                 h,

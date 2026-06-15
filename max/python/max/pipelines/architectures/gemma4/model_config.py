@@ -519,7 +519,10 @@ class Gemma4ForConditionalGenerationConfig(ArchConfigWithKVCache):
             num_draft_tokens=num_spec_tokens,
         )
         return MultiKVCacheParams.from_params(
-            sliding_window_kv_params, global_kv_params
+            {
+                "sliding_attention": sliding_window_kv_params,
+                "full_attention": global_kv_params,
+            }
         )
 
     @staticmethod

@@ -26,7 +26,7 @@ from collections.abc import Sequence
 
 from max.driver import Device
 from max.nn.kv_cache.cache_params import (
-    KVCacheBuffer,
+    KVCacheBufferInterface,
     KVCacheMemory,
     KVConnectorType,
 )
@@ -44,7 +44,7 @@ def create_connector(
     kv_connector: KVConnectorType | None,
     kv_connector_config: KVConnectorConfig | None,
     devices: Sequence[Device],
-    kv_buffers: list[KVCacheBuffer],
+    kv_buffers: KVCacheBufferInterface,
     total_num_host_blocks: int,
 ) -> KVConnector:
     """Create a KV cache connector instance based on ``kv_connector``.
@@ -53,16 +53,15 @@ def create_connector(
         kv_connector: Connector type to instantiate (or None for no-op).
         kv_connector_config: Connector-specific configuration object.
         devices: Devices for the KV cache tensors.
-        kv_buffers: KVCacheBuffer objects describing all caches to offload.
+        kv_buffers: The replica's KV buffer (a single leaf or a tree of
+            leaves) describing all caches to offload.
         total_num_host_blocks: Total number of host blocks for swapping.
 
     Returns:
         A connector instance implementing the KVConnector protocol.
     """
     connector = kv_connector
-    kv_memory: list[KVCacheMemory] = [
-        m for kvb in kv_buffers for m in kvb.to_memory()
-    ]
+    kv_memory: list[KVCacheMemory] = kv_buffers.to_memory()
 
     if connector == KVConnectorType.dkv:
         from .dkv import DKVConnector
