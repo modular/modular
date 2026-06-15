@@ -56,6 +56,10 @@ Adding New Datasets:
            has_multiturn_chat_support=True,  # or False
        )
 
+    3. Document the dataset in max/python/docs/cli/benchmark.rst (Datasets
+       section): name, source, required flags, and any dataset-specific CLI
+       options.
+
 Notes:
     - The registry is loaded at module import time and should not be modified
       at runtime unless you understand the implications for ongoing benchmarks

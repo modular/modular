@@ -84,8 +84,12 @@
 
     - Load generation:
 
-      - `--num-prompts`: Number of prompts to process. Default: unset (driven by
-        the dataset and duration).
+      - `--num-prompts`: Number of single-turn prompts to process. Default:
+        unset. Use this or `--num-chat-sessions` (at least one is required).
+
+      - `--num-chat-sessions`: Number of multiturn chat sessions to drive.
+        Required for `chat-judge`. Use with multiturn-capable datasets instead
+        of `--num-prompts`.
 
       - `--request-rate`: Requests per second. Accepts a single value or a
         comma-separated sweep (such as `1,2,4,8`). Default: `inf` (no rate
@@ -94,7 +98,9 @@
       - `--max-concurrency`: Maximum concurrent requests. Accepts a single
         integer or a comma-separated sweep.
 
-      - `--seed`: Random seed used to sample the dataset. Default: `0`.
+      - `--seed`: Random seed used to sample the dataset. Default: `24301`
+        (fixed for reproducibility). Pass `--seed none` to draw a fresh random
+        seed.
 
     - Dataset selection:
 
@@ -102,8 +108,8 @@
         and processing logic. Default: `sharegpt`. See [Datasets](#datasets)
         below.
 
-      - `--dataset-path`: Path to a local dataset file that overrides the
-        default source for the chosen `--dataset-name`.
+      - `--dataset-path`: Path to a local dataset file. Supported only for
+        datasets that accept a local override; see [Datasets](#datasets) below.
 
     - Output control:
 
@@ -165,20 +171,38 @@
     The `--dataset-name` option supports the following datasets. For any
     dataset that has configurable flags, those flags are listed inline.
 
-    You can override the default data source for most datasets using
-    `--dataset-path`. You must always set `--dataset-name` so the tool knows
-    how to process the file.
+    Some datasets download from Hugging Face Hub or Hugging Face Datasets
+    automatically. Others require `--dataset-path` or generate prompts in
+    memory. Datasets that don't support `--dataset-path` are noted below.
 
     #### Text
 
     - `sharegpt` (default): Conversational dataset with human-AI exchanges,
-      from Hugging Face Datasets.
+      from Hugging Face Hub (`anon8231489123/ShareGPT_Vicuna_unfiltered`).
 
-    - `axolotl`: Local dataset in Axolotl format with human/assistant
-      conversation segments. Pair with `--dataset-path`.
+    - `axolotl`: Dataset in Axolotl format with human/assistant conversation
+      segments. Uses a packaged default file; override with `--dataset-path`.
 
-    - `obfuscated-conversations`: Local obfuscated conversation dataset. Pair
-      with `--dataset-path` to point at a local JSONL file.
+    - `chat-judge`: LLM-as-judge multiturn workload backed by a local JSONL
+      session file. Each turn inlines prior context in the user message, so the
+      driver sends `[system?, user]` per turn without accumulating assistant
+      responses. Requires `--dataset-path` and `--num-chat-sessions` (single-turn
+      mode isn't supported).
+
+      Example JSONL (one session per line):
+
+      ```json
+      {
+        "session_id": "s1",
+        "turns": [
+          {"text": "You are a safety judge.", "role": "system"},
+          {"text": "Rate this content: ..."}
+        ]
+      }
+      ```
+
+    - `obfuscated-conversations`: Local obfuscated conversation dataset.
+      Requires `--dataset-path` pointing at a local JSONL file.
 
       - `--obfuscated-conversations-average-output-len`: Average output length
         when per-request output lengths are not provided. Default: `175`.
@@ -194,7 +218,8 @@
       - `--arxiv-summarization-input-len`: Input tokens per request.
         Default: `15000`.
 
-    - `sonnet`: Poetry dataset using local text files of poem lines.
+    - `sonnet`: Poetry dataset using poem lines from a packaged text file.
+      Override with `--dataset-path`.
 
       - `--sonnet-input-len`: Input tokens per request. Default: `550`.
       - `--sonnet-prefix-len`: Shared prefix tokens per request. Default: `200`.
@@ -224,28 +249,54 @@
       - `--random-image-size`: Pixel dimensions of generated images (for
         example, `512x512`). Used with `--random-image-count`.
 
-    - `synthetic`: Synthetic text generation workload with multiturn support.
-      Also supports `--warm-shared-prefix` (see `random` above).
+    - `synthetic`: Synthetic text generation workload that uses the same
+      distribution flags as `random`, but generates synthetic token IDs instead
+      of vocabulary text. Supports multiturn via `--num-chat-sessions` and the
+      `random_*` flags listed above. Also supports `--warm-shared-prefix`.
 
     #### Code
 
-    - `instruct-coder`: Instruction-following coding dataset with multiturn
-      support.
+    - `instruct-coder`: Instruction-following coding dataset from Hugging Face
+      Hub (`likaixin/InstructCoder`). Supports single-turn (`--num-prompts`) and
+      multiturn (`--num-chat-sessions`) modes. With `--num-chat-sessions`, pass
+      `--fit-distributions` to reshape turns using the `random_*` flags and
+      `--delay-between-chat-turns`.
 
-    - `agentic-code`: Multiturn agentic coding workload with tool-call turns.
+    - `agentic-code`: Multiturn agentic coding workload with tool-call turns,
+      from Hugging Face Hub (`novita/agentic_code_dataset_22`). Supports
+      single-turn and multiturn modes. With `--num-chat-sessions`, optional
+      `--fit-distributions` reshapes turns using `random_*` flags (same as
+      `instruct-coder`).
+
+      - `--tool-calls` / `--no-tool-calls`: Include or strip tool-call turns and
+        forward tool definitions. Default: enabled.
+
+    - `nemotron-opencode`: Large-scale agentic coding traces from Hugging Face
+      (`nvidia/Nemotron-SFT-OpenCode-v1`), streamed on demand. Includes tool
+      schemas translated to OpenAI function-tool format. Doesn't support
+      `--dataset-path`. Supports single-turn (`--num-prompts`) and multiturn
+      (`--num-chat-sessions`) modes. With `--num-chat-sessions`, optional
+      `--fit-distributions` reshapes turns using `random_*` flags (same as
+      `instruct-coder`).
+
+      - `--tool-calls` / `--no-tool-calls`: Include or strip tool-call turns and
+        forward tool definitions. Default: enabled.
 
     - `code_debug`: Long-context code debugging dataset with multiple-choice
-      questions, from Hugging Face Datasets.
+      questions, from Hugging Face Hub (`xinrongzhang2022/InfiniteBench`).
+      Single-turn via `--num-prompts`. Also supports a fixed two-turn long-context
+      template via `--num-chat-sessions`.
 
     #### Vision
 
-    - `batch-job`: Batch image workload.
+    - `batch-job`: Batch image workload in OpenAI Batch API format. Requires
+      `--dataset-path` (tar archive or extracted directory with `jobs.jsonl`).
 
       - `--batch-job-image-dir`: Directory where the server can access images
         (file reference mode). When unset, images are embedded as base64.
 
-    - `local-image`: Local images for vision benchmarks. Pair with
-      `--dataset-path`.
+    - `local-image`: Local images for vision benchmarks. Requires
+      `--dataset-path` (JSONL with `prompt` and `image_path` per line).
 
     - `vision-arena`: Vision-language benchmark dataset with images and
       associated questions for multimodal model evaluation, from Hugging Face
