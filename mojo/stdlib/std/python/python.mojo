@@ -356,28 +356,6 @@ struct Python(Defaultable, ImplicitlyCopyable):
     # Methods
     # ===-------------------------------------------------------------------===#
 
-    @doc_hidden
-    @staticmethod
-    def _dict(kwargs: OwnedKwargsDict[PythonObject]) raises -> PyObjectPtr:
-        """Construct a Python dictionary from keyword arguments.
-
-        Return value: New reference.
-        """
-        ref cpy = Self().cpython()
-        var dict_ptr = cpy.PyDict_New()
-        for entry in kwargs.items():
-            var key_ptr = cpy.PyUnicode_DecodeUTF8(StringSlice(entry.key))
-            if not key_ptr:
-                raise cpy.unsafe_get_error()
-            # PyDict_SetItem doesn't steal the value.
-            var errno = cpy.PyDict_SetItem(
-                dict_ptr, key_ptr, entry.value._obj_ptr
-            )
-            cpy.Py_DecRef(key_ptr)
-            if errno == -1:
-                raise cpy.unsafe_get_error()
-        return dict_ptr
-
     @staticmethod
     def dict(**kwargs: PythonObject) raises -> PythonObject:
         """Construct an Python dictionary from keyword arguments.
@@ -392,7 +370,20 @@ struct Python(Defaultable, ImplicitlyCopyable):
             On failure to construct the dictionary or convert the values to
             Python objects.
         """
-        return PythonObject(from_owned=Self._dict(kwargs))
+        ref cpy = Self().cpython()
+        var dict_ptr = cpy.PyDict_New()
+        for entry in kwargs.items():
+            var key_ptr = cpy.PyUnicode_DecodeUTF8(StringSlice(entry.key))
+            if not key_ptr:
+                raise cpy.unsafe_get_error()
+            # PyDict_SetItem doesn't steal the value.
+            var errno = cpy.PyDict_SetItem(
+                dict_ptr, key_ptr, entry.value._obj_ptr
+            )
+            cpy.Py_DecRef(key_ptr)
+            if errno == -1:
+                raise cpy.unsafe_get_error()
+        return PythonObject(from_owned=dict_ptr)
 
     @staticmethod
     def dict(

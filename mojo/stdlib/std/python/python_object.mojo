@@ -1278,7 +1278,7 @@ struct PythonObject(
             _ = cpy.PyTuple_SetItem(
                 args_ptr, i, cpy.Py_NewRef(args[i].steal_data())
             )
-        var kwargs_ptr = Python._dict(kwargs)
+        var kwargs_ptr = Python.dict(**kwargs^).steal_data()
         var res_ptr = cpy.PyObject_Call(self._obj_ptr, args_ptr, kwargs_ptr)
         cpy.Py_DecRef(args_ptr)
         cpy.Py_DecRef(kwargs_ptr)
