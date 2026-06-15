@@ -46,6 +46,22 @@ This version is still a work in progress.
 
 ### Python API
 
+- **Preview (no-op today)**: `InferenceSession.profiling` is a new namespace
+  that will control the libkineto-backed MAX profiler. The lifecycle methods
+  are callable but do not yet produce trace files; the libkineto-backed
+  Chrome-trace JSON output (compatible with
+  [HTA](https://github.com/facebookresearch/HolisticTraceAnalysis)) and the
+  `session.debug.profiling_*` setter mirrors land in subsequent nightlies.
+  The control surface is final: `session.profiling.start()` / `.stop()` /
+  `.wait_for_trace()` and the read-only `.state` and `.is_enabled` properties.
+  This API is orthogonal to the existing `session.gpu_profiling()` (NVTX/Nsight)
+  path.
+
+- `ProfilingConfig` gains six new fields for the libkineto profiler:
+  `profiling_enabled`, `profiling_output_path`, `profiling_dynolog_enabled`,
+  `profiling_warmup_steps`, `profiling_active_steps`, and
+  `profiling_periodic_flush_seconds`.
+
 - Eager execution in `max.experimental` now routes every realization through
   the `max.experimental.executor.Executor` abstraction. The out-of-the-box
   path is unchanged — graphs within the `MAX_INTERPRETER_MAX_OPS` threshold run
