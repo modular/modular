@@ -163,7 +163,8 @@ class DeepseekV3_2DecoderLayer(Module):
             )
 
         assert isinstance(config.kv_params, MultiKVCacheParams)
-        mla_kv_params, _indexer_kv_params = config.kv_params.params
+        mla_kv_params = config.kv_params.params["mla"]
+        _indexer_kv_params = config.kv_params.params["indexer"]
 
         sparse_attn_kwargs: dict[str, Any] = dict(
             rope=rope,
