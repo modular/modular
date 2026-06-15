@@ -38,21 +38,12 @@ from idefics3 import torch_utils as idefics3_torch_utils
 from internvl import torch_utils as internvl_torch_utils
 from max import driver, pipelines
 from max.pipelines import TextGenerationPipelineInterface
-from max.pipelines.architectures.flux2.flux2_executor import Flux2Executor
-from max.pipelines.architectures.flux2.flux2_klein_executor import (
-    Flux2KleinExecutor,
-)
-from max.pipelines.architectures.flux2.tokenizer import Flux2Tokenizer
 from max.pipelines.architectures.internvl.tokenizer import InternVLProcessor
 from max.pipelines.architectures.qwen3.text_encoder import (
     Qwen3TextEncoderKleinModel,
 )
-from max.pipelines.architectures.wan.context import WanContext
-from max.pipelines.architectures.wan.tokenizer import WanTokenizer
-from max.pipelines.architectures.wan.wan_executor import WanExecutor
-from max.pipelines.context import PixelContext
 from max.pipelines.diffusion.cache import DenoisingCacheConfig
-from max.pipelines.lib import PipelineRuntimeConfig, PixelGenerationPipeline
+from max.pipelines.lib import PipelineRuntimeConfig
 from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.modeling.types import PipelineTask, PipelineTokenizer
 from peft.peft_model import PeftModel
@@ -1494,20 +1485,10 @@ class ImageGenerationOracle(PipelineOracle):
             runtime=PipelineRuntimeConfig(**runtime_kwargs),
         )
 
-        pipeline_model_cls = (
-            Flux2KleinExecutor
-            if self.model_path.startswith("black-forest-labs/FLUX.2-klein")
-            else Flux2Executor
-        )
-        tokenizer = Flux2Tokenizer(
-            model_path=self.model_path,
-            pipeline_config=config,
-            subfolder="tokenizer",
-            max_length=512,
-        )
-        pipeline = PixelGenerationPipeline[PixelContext](
-            pipeline_config=config,
-            pipeline_model=pipeline_model_cls,
+        # retrieve resolves the manifest and picks the tokenizer/executor
+        # from the arch registry, like production serving.
+        tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(
+            config, task=self.task
         )
 
         return MaxPipelineAndTokenizer(
@@ -1586,15 +1567,10 @@ class WanGenerationOracle(ImageGenerationOracle):
             device_specs=device_specs,
         )
         config = pipelines.PipelineConfig(models=models)
-        tokenizer = WanTokenizer(
-            model_path=self.model_path,
-            pipeline_config=config,
-            subfolder="tokenizer",
-            max_length=512,
-        )
-        pipeline = PixelGenerationPipeline[WanContext](
-            pipeline_config=config,
-            pipeline_model=WanExecutor,
+        # retrieve resolves the manifest and picks the tokenizer/executor
+        # from the arch registry (see ImageGenerationOracle).
+        tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(
+            config, task=self.task
         )
         return MaxPipelineAndTokenizer(
             pipeline=pipeline,  # type: ignore
