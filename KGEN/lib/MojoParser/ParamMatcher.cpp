@@ -811,7 +811,9 @@ LogicalResult ParamMatcher::matchParams(TypedAttr actualAttr,
 
           auto matchFixed =
               matchTypes(actualAttr.getType(), expectedAttr.getType());
-          assert(succeeded(matchFixed));
+          // Fixable yet unable to match, propagate the error.
+          if (failed(matchFixed))
+            return failure();
 
           // If we found an exact match, we're done.
           if (isEqualCanon(actualAttr, expectedAttr))

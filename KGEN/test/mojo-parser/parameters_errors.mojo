@@ -695,3 +695,15 @@ struct UnboundFieldHolder:
 
 def use_unbound_field_holder():
     var x: UnboundFieldHolder
+
+
+##===----------------------------------------------------------------------===##
+# MOCO-4132
+##===----------------------------------------------------------------------===##
+
+comptime compute[Trait: type_of(AnyType), T: Trait, val: T] = val
+
+
+def main():
+    # expected-error @below {{failed to infer from type 'IntLiteral[5]', it overwrites an explicitly unbound parameter '_' at #0}}
+    var value = compute[_, _, 5]
