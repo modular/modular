@@ -2717,6 +2717,7 @@ def flare_mla_prefill_ragged(
     mask_variant: MHAMaskVariant,
     scale: float,
     qk_rope_dim: int = 64,
+    output_dtype: DType | None = None,
 ) -> TensorValue:
     """Performs MLA prefill. In the MLA prefill, we need to decompress
     the KV tensors, as we store the latent representations in the KV cache.
@@ -2742,6 +2743,9 @@ def flare_mla_prefill_ragged(
         mask_variant: Mask variant
         scale: Scale
         qk_rope_dim: QK rope dimension
+        output_dtype: Dtype for the attention output. Defaults to ``input.dtype``.
+            FP8 inputs typically pass ``bfloat16`` since the MFMA pipeline
+            accumulates in f32 and stores bf16.
 
     Returns:
         The output tensor for this iteration
@@ -2782,7 +2786,7 @@ def flare_mla_prefill_ragged(
         values=input_values,
         out_types=[
             TensorType(
-                dtype=input.dtype,
+                dtype=output_dtype if output_dtype is not None else input.dtype,
                 shape=[
                     input.shape[0],
                     input.shape[1],

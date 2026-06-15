@@ -826,6 +826,7 @@ dependencies = [
 amd = [
     { name = "gptqmodel", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
     { name = "llguidance", version = "1.7.5", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
+    { name = "pybind11", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
     { name = "tilelang", version = "0.1.8", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "torch", version = "2.10.0+rocm7.2.3.lw.git1a270074", source = { url = "https://repo.radeon.com/rocm/manylinux/rocm-rel-7.2.3/torch-2.10.0%2Brocm7.2.3.lw.git1a270074-cp313-cp313-linux_x86_64.whl" }, marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
     { name = "torchaudio", version = "2.10.0+rocm7.2.3.git5047768f", source = { url = "https://repo.radeon.com/rocm/manylinux/rocm-rel-7.2.3/torchaudio-2.10.0%2Brocm7.2.3.git5047768f-cp313-cp313-linux_x86_64.whl" }, marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
@@ -1018,6 +1019,7 @@ requires-dist = [
 amd = [
     { name = "gptqmodel", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'", url = "https://github.com/ModelCloud/GPTQModel/releases/download/v2.0.0/gptqmodel-2.0.0+cu126torch2.6-cp313-cp313-linux_x86_64.whl" },
     { name = "llguidance", specifier = "==1.7.5" },
+    { name = "pybind11", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'", specifier = "==3.0.3" },
     { name = "tilelang", specifier = "==0.1.8" },
     { name = "torch", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'", url = "https://repo.radeon.com/rocm/manylinux/rocm-rel-7.2.3/torch-2.10.0%2Brocm7.2.3.lw.git1a270074-cp313-cp313-linux_x86_64.whl" },
     { name = "torchaudio", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'", url = "https://repo.radeon.com/rocm/manylinux/rocm-rel-7.2.3/torchaudio-2.10.0%2Brocm7.2.3.git5047768f-cp313-cp313-linux_x86_64.whl" },
@@ -7438,6 +7440,15 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/12/d7/6610f34a8972415fab3bb4704c174a1cc477bffbc3c36e526428d0f3957d/pybase64-1.4.3-pp311-pypy311_pp73-manylinux1_x86_64.manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_5_x86_64.whl", hash = "sha256:2af6d0d3a691911cc4c9a625f3ddcd3af720738c21be3d5c72de05629139d393", size = 41294, upload-time = "2025-12-06T13:26:44.936Z" },
     { url = "https://files.pythonhosted.org/packages/64/25/ed24400948a6c974ab1374a233cb7e8af0a5373cea0dd8a944627d17c34a/pybase64-1.4.3-pp311-pypy311_pp73-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:5cfc8c49a28322d82242088378f8542ce97459866ba73150b062a7073e82629d", size = 35447, upload-time = "2025-12-06T13:26:46.098Z" },
     { url = "https://files.pythonhosted.org/packages/ee/2b/e18ee7c5ee508a82897f021c1981533eca2940b5f072fc6ed0906c03a7a7/pybase64-1.4.3-pp311-pypy311_pp73-win_amd64.whl", hash = "sha256:debf737e09b8bf832ba86f5ecc3d3dbd0e3021d6cd86ba4abe962d6a5a77adb3", size = 36134, upload-time = "2025-12-06T13:26:47.35Z" },
+]
+
+[[package]]
+name = "pybind11"
+version = "3.0.3"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/41/50/b83d65efc1914681f5aded4ce37c703408a9bb74829f27f041560ca52ffb/pybind11-3.0.3.tar.gz", hash = "sha256:00471cdb816882c484708bc5dde80815c8c11cea540ab2cc6410f5ddea434755", size = 587814, upload-time = "2026-03-31T23:42:06.481Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ab/87/99f21e9b20899d6dc1bf7544cfe53e5fa17acc21bb267971a540425357d3/pybind11-3.0.3-py3-none-any.whl", hash = "sha256:fb5f8e4a64946b4dcc0451c83a8c384f803bc0a62dd1ba02f199e97dbc9aad4c", size = 313717, upload-time = "2026-03-31T23:42:04.814Z" },
 ]
 
 [[package]]

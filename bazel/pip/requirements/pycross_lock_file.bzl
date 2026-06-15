@@ -108,6 +108,7 @@ PINS = {
     "protobuf": "protobuf@6.33.5",
     "psutil": "psutil@7.0.0",
     "pyarrow": "pyarrow@22.0.0",
+    "pybind11": "pybind11@3.0.3",
     "pydantic": "pydantic@2.12.5",
     "pydantic-core": "pydantic-core@2.41.5",
     "pydantic-settings": "pydantic-settings@2.3.4",
@@ -7802,6 +7803,17 @@ def targets():
         name = "pybase64@1.4.3",
         wheel = ":_wheel_pybase64@1.4.3",
         testonly = "pybase64" in _TESTONLY_DEPS,
+    )
+
+    native.alias(
+        name = "_wheel_pybind11@3.0.3",
+        actual = "@pycross_lock_file_wheel_pybind11_3.0.3_py3_none_any//file",
+    )
+
+    pycross_wheel_library(
+        name = "pybind11@3.0.3",
+        wheel = ":_wheel_pybind11@3.0.3",
+        testonly = "pybind11" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -24750,6 +24762,16 @@ def repositories():
         ],
         sha256 = "fb852f900e27ffc4ec1896817535a0fa19610ef8875a096b59f21d0aa42ff172",
         downloaded_file_path = "pybase64-1.4.3-cp314-cp314t-manylinux2014_aarch64.manylinux_2_17_aarch64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_pybind11_3.0.3_py3_none_any",
+        urls = [
+            "https://files.pythonhosted.org/packages/ab/87/99f21e9b20899d6dc1bf7544cfe53e5fa17acc21bb267971a540425357d3/pybind11-3.0.3-py3-none-any.whl",
+        ],
+        sha256 = "fb5f8e4a64946b4dcc0451c83a8c384f803bc0a62dd1ba02f199e97dbc9aad4c",
+        downloaded_file_path = "pybind11-3.0.3-py3-none-any.whl",
     )
 
     maybe(
