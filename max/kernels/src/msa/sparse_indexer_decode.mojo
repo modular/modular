@@ -238,7 +238,7 @@ def sparse_indexer_decode_score[
     # never on seq_len/num_keys (which vary call-to-call inside a CUDA-graph
     # capture); deriving it from the live block count would silently break capture.
     comptime TARGET_GRID = 512  # ~3.5x the B200 SM count
-    comptime MAX_CHUNKS = 128
+    comptime MAX_CHUNKS = 512
     var num_chunks = clamp(TARGET_GRID // max(1, batch), 1, MAX_CHUNKS)
 
     comptime score_kernel = _decode_block_score_kernel[
