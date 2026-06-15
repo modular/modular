@@ -46,7 +46,7 @@ def _vectorized_copy_row[
     dtype: DType,
     simd_width: Int,
 ](
-    input_ptr: UnsafePointer[Scalar[dtype], _],
+    input_ptr: UnsafePointer[mut=False, Scalar[dtype], _],
     output_ptr: UnsafePointer[mut=True, Scalar[dtype], _],
     row_length: Int,
     threads_per_row: Int,
@@ -148,7 +148,9 @@ def _pad_constant_impl[
     max_threads: Int = 256,
     threads_per_row: Int = 16,
 ](
-    input_tensor: TileTensor[dtype, address_space=AddressSpace.GENERIC, ...],
+    input_tensor: TileTensor[
+        mut=False, dtype, address_space=AddressSpace.GENERIC, ...
+    ],
     output_tensor: TileTensor[
         mut=True, dtype, address_space=AddressSpace.GENERIC, ...
     ],
@@ -198,9 +200,9 @@ def pad_constant[
 ](
     output: UnsafePointer[mut=True, Scalar[dtype], _],
     output_shape: IndexList[rank],
-    input: UnsafePointer[Scalar[dtype], _],
+    input: UnsafePointer[mut=False, Scalar[dtype], _],
     input_shape: IndexList[rank],
-    paddings: UnsafePointer[Scalar[padding_type], _],
+    paddings: UnsafePointer[mut=False, Scalar[padding_type], _],
     constant: Scalar[dtype],
     ctx: DeviceContext,
 ) raises:
@@ -274,7 +276,7 @@ def get_padding_output_shape[
     rank: Int
 ](
     input_shape: IndexList[rank],
-    paddings: TileTensor[DType.int, ...],
+    paddings: TileTensor[mut=False, DType.int, ...],
 ) -> IndexList[rank]:
     comptime assert (
         paddings.flat_rank == 1 and paddings.static_shape[0] == 2 * rank

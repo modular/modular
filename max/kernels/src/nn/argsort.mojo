@@ -41,7 +41,7 @@ def _argsort_cpu[
     ascending: Bool = True,
 ](
     indices: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
-    input: TileTensor,
+    input: TileTensor[mut=False, ...],
 ) raises:
     """
     Performs argsort on CPU.
@@ -381,7 +381,7 @@ def _argsort_gpu[
     ascending: Bool = True,
 ](
     indices: TileTensor[mut=True, ...],
-    input: TileTensor,
+    input: TileTensor[mut=False, ...],
     ctx: DeviceContext,
 ) raises:
     """
@@ -508,7 +508,9 @@ def _argsort_gpu[
     _ = padded_indices_buffer^
 
 
-def _validate_argsort(input: TileTensor, output: TileTensor) raises:
+def _validate_argsort(
+    input: TileTensor[mut=False, ...], output: TileTensor[mut=False, ...]
+) raises:
     """
     Validates input and output buffers for argsort operation.
 
@@ -530,7 +532,7 @@ def argsort[
     target: StaticString = "cpu",
 ](
     output: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
-    input: TileTensor,
+    input: TileTensor[mut=False, ...],
     ctx: DeviceContext,
 ) raises:
     """
@@ -563,7 +565,7 @@ def argsort[
     ascending: Bool = True
 ](
     output: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
-    input: TileTensor,
+    input: TileTensor[mut=False, ...],
 ) raises:
     """
     CPU-only version of argsort.

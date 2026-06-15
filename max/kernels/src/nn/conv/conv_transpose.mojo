@@ -993,8 +993,8 @@ def update_w_tile_2d[
     filter_dt: DType,
 ](
     output: UnsafePointer[mut=True, Scalar[output_dt], _],
-    input: UnsafePointer[Scalar[input_dt], _],
-    filter: UnsafePointer[Scalar[filter_dt], _],
+    input: UnsafePointer[mut=False, Scalar[input_dt], _],
+    filter: UnsafePointer[mut=False, Scalar[filter_dt], _],
     _init_output: Bool,
     c_tile_size: Int,
     f_tile_offset: Int,
@@ -1175,9 +1175,9 @@ def accumulate_wo_tile[
     c_tile_size: Int,
     output: UnsafePointer[mut=True, Scalar[output_dt], _],
     output_stride: Int,
-    input: UnsafePointer[Scalar[input_dt], _],
+    input: UnsafePointer[mut=False, Scalar[input_dt], _],
     input_stride: Int,
-    filter: UnsafePointer[Scalar[filter_dt], _],
+    filter: UnsafePointer[mut=False, Scalar[filter_dt], _],
     filter_stride: Int,
     partial_load_size: Int,
 ):
@@ -1513,9 +1513,11 @@ def conv_transposed_gpu[
         address_space=AddressSpace.GENERIC,
         ...,
     ],
-    input: TileTensor[input_type, address_space=AddressSpace.GENERIC, ...],
+    input: TileTensor[
+        mut=False, input_type, address_space=AddressSpace.GENERIC, ...
+    ],
     filter: TileTensor[
-        mut=True, filter_type, address_space=AddressSpace.GENERIC, ...
+        mut=False, filter_type, address_space=AddressSpace.GENERIC, ...
     ],
     stride: IndexList[input.rank - 2],
     dilation: IndexList[input.rank - 2],
@@ -1573,8 +1575,12 @@ def _conv_transposed_cudnn[
     filter_type: DType,
     output_type: DType,
 ](
-    input: TileTensor[input_type, address_space=AddressSpace.GENERIC, ...],
-    filter: TileTensor[filter_type, address_space=AddressSpace.GENERIC, ...],
+    input: TileTensor[
+        mut=False, input_type, address_space=AddressSpace.GENERIC, ...
+    ],
+    filter: TileTensor[
+        mut=False, filter_type, address_space=AddressSpace.GENERIC, ...
+    ],
     output: TileTensor[output_type, address_space=AddressSpace.GENERIC, ...],
     stride: IndexList[2],
     dilation: IndexList[2],
@@ -1691,8 +1697,12 @@ def conv_transposed_cudnn[
     filter_type: DType,
     output_type: DType,
 ](
-    input: TileTensor[input_type, address_space=AddressSpace.GENERIC, ...],
-    filter: TileTensor[filter_type, address_space=AddressSpace.GENERIC, ...],
+    input: TileTensor[
+        mut=False, input_type, address_space=AddressSpace.GENERIC, ...
+    ],
+    filter: TileTensor[
+        mut=False, filter_type, address_space=AddressSpace.GENERIC, ...
+    ],
     output: TileTensor[output_type, address_space=AddressSpace.GENERIC, ...],
     stride: IndexList[2],
     dilation: IndexList[2],

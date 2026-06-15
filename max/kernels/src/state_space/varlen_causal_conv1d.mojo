@@ -63,8 +63,10 @@ def causal_conv1d_varlen_states_cpu[
     dim: Int,
     batch: Int,
     state_len: Int,
-    x: TileTensor[x_dtype, ...],  # Shape (total_tokens, dim)
-    cu_seqlens: TileTensor[cu_seqlens_dtype, ...],  # Shape (batch + 1,)
+    x: TileTensor[mut=False, x_dtype, ...],  # Shape (total_tokens, dim)
+    cu_seqlens: TileTensor[
+        mut=False, cu_seqlens_dtype, ...
+    ],  # Shape (batch + 1,)
     states: TileTensor[
         mut=True, states_dtype, ...
     ],  # Shape (batch, dim, state_len)
@@ -153,13 +155,19 @@ def causal_conv1d_varlen_fwd_cpu[
     total_seqlen: Int,
     width: Int,
     batch: Int,
-    x: TileTensor[x_dtype, ...],  # Shape (dim, total_seqlen) for varlen
-    weight: TileTensor[weight_dtype, ...],  # Shape (dim, width)
-    bias: TileTensor[bias_dtype, ...],  # Shape (dim,)
-    query_start_loc: TileTensor[cu_seqlens_dtype, ...],  # Shape (batch + 1,)
-    cache_indices: TileTensor[cache_indices_dtype, ...],  # Shape (batch,)
+    x: TileTensor[
+        mut=False, x_dtype, ...
+    ],  # Shape (dim, total_seqlen) for varlen
+    weight: TileTensor[mut=False, weight_dtype, ...],  # Shape (dim, width)
+    bias: TileTensor[mut=False, bias_dtype, ...],  # Shape (dim,)
+    query_start_loc: TileTensor[
+        mut=False, cu_seqlens_dtype, ...
+    ],  # Shape (batch + 1,)
+    cache_indices: TileTensor[
+        mut=False, cache_indices_dtype, ...
+    ],  # Shape (batch,)
     has_initial_state: TileTensor[
-        has_initial_state_dtype, ...
+        mut=False, has_initial_state_dtype, ...
     ],  # Shape (batch,)
     conv_states: TileTensor[
         mut=True, conv_states_dtype, ...
@@ -327,15 +335,19 @@ def causal_conv1d_varlen_update_cpu[
     seqlen: Int,
     width: Int,
     state_len: Int,
-    x: TileTensor[x_dtype, ...],  # Shape (batch, dim) or (batch, dim, seqlen)
-    weight: TileTensor[weight_dtype, ...],  # Shape (dim, width)
-    bias: TileTensor[bias_dtype, ...],  # Shape (dim,)
+    x: TileTensor[
+        mut=False, x_dtype, ...
+    ],  # Shape (batch, dim) or (batch, dim, seqlen)
+    weight: TileTensor[mut=False, weight_dtype, ...],  # Shape (dim, width)
+    bias: TileTensor[mut=False, bias_dtype, ...],  # Shape (dim,)
     conv_state: TileTensor[
         mut=True, conv_state_dtype, ...
     ],  # Shape (batch, dim, state_len)
-    cache_seqlens: TileTensor[cache_seqlens_dtype, ...],  # Shape (batch,)
+    cache_seqlens: TileTensor[
+        mut=False, cache_seqlens_dtype, ...
+    ],  # Shape (batch,)
     conv_state_indices: TileTensor[
-        conv_state_indices_dtype, ...
+        mut=False, conv_state_indices_dtype, ...
     ],  # Shape (batch,)
     output: TileTensor[
         mut=True, output_dtype, ...

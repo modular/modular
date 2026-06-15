@@ -787,7 +787,7 @@ def flare_mla_decoding_dispatch[
                     batch_size,
                     num_partitions_value,
                     max_cache_valid_length,
-                    valid_length,
+                    valid_length.as_immut(),
                     mask_functor,
                     grid_dim=(1, num_blocks_y, batch_size),
                     block_dim=(num_threads, 1, 1),
@@ -834,7 +834,7 @@ def flare_mla_decoding_dispatch[
                     batch_size,
                     num_partitions_value,
                     max_cache_valid_length,
-                    valid_length,
+                    valid_length.as_immut(),
                     mask_functor,
                     grid_dim=(
                         num_partitions_value,
@@ -1299,7 +1299,7 @@ def mla_decoding[
     valid_length_tt: TileTensor[
         DType.uint32,
         ValidLT,
-        MutAnyOrigin,
+        ImmutAnyOrigin,
     ],  # valid length per batch
     mask: mask_t,
 ):
@@ -2893,7 +2893,7 @@ def flare_mla_prefill_dispatch[
             scale,
             batch_size,
             max_prompt_len,
-            valid_length,
+            valid_length.as_immut(),
             cache_offsets,
             mask_functor,
             grid_dim=grid_dim,
@@ -2939,7 +2939,7 @@ def mla_prefill[
     valid_length_tt: TileTensor[
         DType.uint32,
         valid_layout,
-        MutAnyOrigin,
+        ImmutAnyOrigin,
     ],
     cache_offsets: OptionalReg[
         LayoutTensor[
@@ -3829,7 +3829,7 @@ def mla_prefill_plan[
     buffer_row_offsets: TileTensor[mut=True, DType.uint32, ...],
     cache_offsets: TileTensor[mut=True, DType.uint32, ...],
     buffer_lengths: TileTensor[mut=True, DType.int32, ...],
-    input_row_offsets: TileTensor[DType.uint32, ...],
+    input_row_offsets: TileTensor[mut=False, DType.uint32, ...],
     k_cache: cache_t,
     buffer_token_size: UInt32,
     ctx: DeviceContext,

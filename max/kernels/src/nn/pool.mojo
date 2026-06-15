@@ -48,11 +48,11 @@ def pool_shape_ceil[
     dilations_type: DType,
     paddings_type: DType,
 ](
-    input_buf: TileTensor[input_type, ...],
-    filter_buf: TileTensor[filter_type, ...],
-    strides_buf: TileTensor[strides_type, ...],
-    dilations_buf: TileTensor[dilations_type, ...],
-    paddings_buf: TileTensor[paddings_type, ...],
+    input_buf: TileTensor[mut=False, input_type, ...],
+    filter_buf: TileTensor[mut=False, filter_type, ...],
+    strides_buf: TileTensor[mut=False, strides_type, ...],
+    dilations_buf: TileTensor[mut=False, dilations_type, ...],
+    paddings_buf: TileTensor[mut=False, paddings_type, ...],
 ) raises -> IndexList[input_buf.rank]:
     return pool_shape_impl[
         input_type,
@@ -72,11 +72,11 @@ def pool_shape[
     dilations_type: DType,
     paddings_type: DType,
 ](
-    input_buf: TileTensor[input_type, ...],
-    filter_buf: TileTensor[filter_type, ...],
-    strides_buf: TileTensor[strides_type, ...],
-    dilations_buf: TileTensor[dilations_type, ...],
-    paddings_buf: TileTensor[paddings_type, ...],
+    input_buf: TileTensor[mut=False, input_type, ...],
+    filter_buf: TileTensor[mut=False, filter_type, ...],
+    strides_buf: TileTensor[mut=False, strides_type, ...],
+    dilations_buf: TileTensor[mut=False, dilations_type, ...],
+    paddings_buf: TileTensor[mut=False, paddings_type, ...],
 ) raises -> IndexList[input_buf.rank]:
     return pool_shape_impl[
         input_type,
@@ -97,11 +97,11 @@ def pool_shape_impl[
     paddings_type: DType,
     ceil_mode: Bool,
 ](
-    input_buf: TileTensor[input_type, ...],
-    filter_buf: TileTensor[filter_type, ...],
-    strides_buf: TileTensor[strides_type, ...],
-    dilations_buf: TileTensor[dilations_type, ...],
-    paddings_buf: TileTensor[paddings_type, ...],
+    input_buf: TileTensor[mut=False, input_type, ...],
+    filter_buf: TileTensor[mut=False, filter_type, ...],
+    strides_buf: TileTensor[mut=False, strides_type, ...],
+    dilations_buf: TileTensor[mut=False, dilations_type, ...],
+    paddings_buf: TileTensor[mut=False, paddings_type, ...],
 ) raises -> IndexList[input_buf.rank]:
     """
     Compute the output shape of a pooling operation, and assert the inputs are
@@ -178,11 +178,11 @@ def pool_shape_impl[
 def max_pool_cpu[
     dtype: DType, int_type: DType
 ](
-    input: TileTensor[dtype, ...],
-    filter: TileTensor[int_type, ...],
-    strides: TileTensor[int_type, ...],
-    dilations: TileTensor[int_type, ...],
-    paddings: TileTensor[int_type, ...],
+    input: TileTensor[mut=False, dtype, ...],
+    filter: TileTensor[mut=False, int_type, ...],
+    strides: TileTensor[mut=False, int_type, ...],
+    dilations: TileTensor[mut=False, int_type, ...],
+    paddings: TileTensor[mut=False, int_type, ...],
     output: TileTensor[mut=True, dtype, ...],
     ceil_mode: Bool = False,
 ):
@@ -357,11 +357,11 @@ def max_pool_gpu[
     dtype: DType, int_type: DType
 ](
     ctx: DeviceContext,
-    input: TileTensor[dtype, ...],
-    filter: TileTensor[int_type, ...],
-    strides: TileTensor[int_type, ...],
-    dilations: TileTensor[int_type, ...],
-    paddings: TileTensor[int_type, ...],
+    input: TileTensor[mut=False, dtype, ...],
+    filter: TileTensor[mut=False, int_type, ...],
+    strides: TileTensor[mut=False, int_type, ...],
+    dilations: TileTensor[mut=False, int_type, ...],
+    paddings: TileTensor[mut=False, int_type, ...],
     output: TileTensor[mut=True, dtype, ...],
     ceil_mode: Bool = False,
 ) raises:
@@ -517,11 +517,11 @@ def avg_pool_cpu[
     rank: Int = 4,
     count_boundary: Bool = False,
 ](
-    input: TileTensor[dtype, ...],
-    filter: TileTensor[int_type, ...],
-    strides: TileTensor[int_type, ...],
-    dilations: TileTensor[int_type, ...],
-    paddings: TileTensor[int_type, ...],
+    input: TileTensor[mut=False, dtype, ...],
+    filter: TileTensor[mut=False, int_type, ...],
+    strides: TileTensor[mut=False, int_type, ...],
+    dilations: TileTensor[mut=False, int_type, ...],
+    paddings: TileTensor[mut=False, int_type, ...],
     output: TileTensor[mut=True, dtype, ...],
     ceil_mode: Bool = False,
 ):
@@ -803,11 +803,11 @@ def avg_pool_gpu[
     count_boundary: Bool = False,
 ](
     ctx: DeviceContext,
-    input: TileTensor[dtype, ...],
-    filter: TileTensor[int_type, ...],
-    strides: TileTensor[int_type, ...],
-    dilations: TileTensor[int_type, ...],
-    paddings: TileTensor[int_type, ...],
+    input: TileTensor[mut=False, dtype, ...],
+    filter: TileTensor[mut=False, int_type, ...],
+    strides: TileTensor[mut=False, int_type, ...],
+    dilations: TileTensor[mut=False, int_type, ...],
+    paddings: TileTensor[mut=False, int_type, ...],
     output: TileTensor[mut=True, dtype, ...],
     ceil_mode: Bool = False,
 ) raises:
@@ -1086,11 +1086,11 @@ def avg_pool[
     count_boundary: Bool = False,
     target: StaticString = "cpu",
 ](
-    input: TileTensor[dtype, ...],
-    filter: TileTensor[int_type, ...],
-    strides: TileTensor[int_type, ...],
-    dilations: TileTensor[int_type, ...],
-    paddings: TileTensor[int_type, ...],
+    input: TileTensor[mut=False, dtype, ...],
+    filter: TileTensor[mut=False, int_type, ...],
+    strides: TileTensor[mut=False, int_type, ...],
+    dilations: TileTensor[mut=False, int_type, ...],
+    paddings: TileTensor[mut=False, int_type, ...],
     output: TileTensor[mut=True, dtype, ...],
     ceil_mode: Bool = False,
     ctx: Optional[DeviceContext] = None,
@@ -1120,11 +1120,11 @@ def max_pool[
     int_type: DType,
     target: StaticString = "cpu",
 ](
-    input: TileTensor[dtype, ...],
-    filter: TileTensor[int_type, ...],
-    strides: TileTensor[int_type, ...],
-    dilations: TileTensor[int_type, ...],
-    paddings: TileTensor[int_type, ...],
+    input: TileTensor[mut=False, dtype, ...],
+    filter: TileTensor[mut=False, int_type, ...],
+    strides: TileTensor[mut=False, int_type, ...],
+    dilations: TileTensor[mut=False, int_type, ...],
+    paddings: TileTensor[mut=False, int_type, ...],
     output: TileTensor[mut=True, dtype, ...],
     ceil_mode: Bool = False,
     ctx: Optional[DeviceContext] = None,

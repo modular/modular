@@ -68,9 +68,9 @@ from .normalization import (
 @always_inline
 def top_k_shape_impl[
     dtype: DType
-](input: TileTensor[dtype, ...], max_k: Int, axis: Int) raises -> IndexList[
-    input.rank
-]:
+](
+    input: TileTensor[mut=False, dtype, ...], max_k: Int, axis: Int
+) raises -> IndexList[input.rank]:
     """
     Compute the output shape of a top/bottom k operation.
 
@@ -132,7 +132,7 @@ def top_k[
     largest: Bool = True,
     target: StaticString = "cpu",
 ](
-    input: TileTensor[dtype, ...],
+    input: TileTensor[mut=False, dtype, ...],
     max_k: Int,
     axis: Int,
     out_vals: TileTensor[mut=True, dtype, ...],
@@ -242,7 +242,7 @@ def _top_k_cpu[
     largest: Bool,
     KLayoutType: TensorLayout = RowMajorLayout[Int64],
 ](
-    input: TileTensor[dtype, ...],
+    input: TileTensor[mut=False, dtype, ...],
     max_k: Int,
     axis: Int,
     out_vals: TileTensor[mut=True, dtype, ...],
@@ -366,7 +366,7 @@ def fused_token_sampling_cpu[
     SeedLayoutType: TensorLayout = RowMajorLayout[Int64],
 ](
     max_k: Int,
-    input: TileTensor[dtype, ...],
+    input: TileTensor[mut=False, dtype, ...],
     out_idxs: TileTensor[mut=True, out_idx_type, ...],
     k: Optional[TileTensor[DType.int64, KLayoutType, ImmutAnyOrigin]] = None,
     temperature: Optional[
@@ -457,7 +457,7 @@ def _top_k_sampling[
     SeedLayoutType: TensorLayout = RowMajorLayout[Int64],
 ](
     max_k: Int,
-    input: TileTensor[dtype, ...],
+    input: TileTensor[mut=False, dtype, ...],
     out_vals: TileTensor[mut=True, dtype, ...],
     out_idxs: TileTensor[mut=True, DType.int64, ...],
     k: Optional[TileTensor[DType.int64, KLayoutType, ImmutAnyOrigin]] = None,
@@ -1398,7 +1398,7 @@ def _topk_gpu[
 ](
     ctx: DeviceContext,
     max_k: Int,
-    input_buf: TileTensor[dtype, ...],
+    input_buf: TileTensor[mut=False, dtype, ...],
     device_local_topk_vals: TileTensor[dtype, ...],
     device_local_topk_idxs: TileTensor[out_idx_type, ...],
     out_vals: TileTensor[mut=True, dtype, ...],
@@ -1645,7 +1645,7 @@ def topk_gpu[
 ](
     ctx: DeviceContext,
     max_k: Int,
-    input: TileTensor[dtype, ...],
+    input: TileTensor[mut=False, dtype, ...],
     out_vals: TileTensor[mut=True, dtype, ...],
     out_idxs: TileTensor[mut=True, out_idx_type, ...],
     block_size: Optional[Int] = None,
@@ -1900,7 +1900,7 @@ def _topk_topp_sampling_fi[
     ctx: DeviceContext,
     max_k: Int,
     min_top_p: Float32,
-    input: TileTensor[dtype, ...],
+    input: TileTensor[mut=False, dtype, ...],
     out_idxs: TileTensor[mut=True, out_idx_type, ...],
     k: Optional[TileTensor[out_idx_type, KLayoutType, ImmutAnyOrigin]] = None,
     temperature: Optional[
@@ -1986,7 +1986,7 @@ def fused_token_sampling_gpu[
     ctx: DeviceContext,
     max_k: Int,
     min_top_p: Float32,
-    input: TileTensor[dtype, ...],
+    input: TileTensor[mut=False, dtype, ...],
     out_idxs: TileTensor[mut=True, out_idx_type, ...],
     block_size: Optional[Int] = None,
     num_blocks_per_input: Optional[Int] = None,
@@ -2217,7 +2217,7 @@ def gumbel_sampling_gpu[
     SeedLayoutType: TensorLayout = RowMajorLayout[Int64],
 ](
     ctx: DeviceContext,
-    input: TileTensor[dtype, ...],
+    input: TileTensor[mut=False, dtype, ...],
     out_idxs: TileTensor[mut=True, out_idx_type, ...],
     temperature: Optional[
         TileTensor[DType.float32, TemperatureLayoutType, ImmutAnyOrigin]

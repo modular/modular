@@ -231,8 +231,12 @@ def _batched_matmul_cpu[
     c_tile: TileTensor[
         mut=True, c_type, address_space=AddressSpace.GENERIC, ...
     ],
-    a_tile: TileTensor[a_type, address_space=AddressSpace.GENERIC, ...],
-    b_tile: TileTensor[b_type, address_space=AddressSpace.GENERIC, ...],
+    a_tile: TileTensor[
+        mut=False, a_type, address_space=AddressSpace.GENERIC, ...
+    ],
+    b_tile: TileTensor[
+        mut=False, b_type, address_space=AddressSpace.GENERIC, ...
+    ],
     ctx: Optional[DeviceContext] = None,
 ) raises:
     comptime assert rank < 5, "max rank for batched matmul is currently 4"
@@ -622,8 +626,8 @@ def _batched_matmul_gpu[
     elementwise_epilogue_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c_buf: TileTensor[mut=True, c_type, ...],
-    a_buf: TileTensor[a_type, ...],
-    b_buf: TileTensor[b_type, ...],
+    a_buf: TileTensor[mut=False, a_type, ...],
+    b_buf: TileTensor[mut=False, b_type, ...],
     ctx: DeviceContext,
 ) raises:
     comptime rank = c_buf.rank
@@ -882,8 +886,8 @@ def batched_matmul[
     target: StaticString = "cpu",
 ](
     c_buf: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
-    a_buf: TileTensor[address_space=AddressSpace.GENERIC, ...],
-    b_buf: TileTensor[address_space=AddressSpace.GENERIC, ...],
+    a_buf: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
+    b_buf: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
     *,
     context: Optional[DeviceContext] = None,
 ) raises:
@@ -965,7 +969,9 @@ def batched_matmul[
 @always_inline
 def batched_matmul_shape[
     rank: Int
-](a_buff: TileTensor, b_buff: TileTensor,) raises -> IndexList[rank]:
+](
+    a_buff: TileTensor[mut=False, ...], b_buff: TileTensor[mut=False, ...]
+) raises -> IndexList[rank]:
     """
     Compute the output shape of a `batch_matmul` operation, and assert the
     inputs are compatible.

@@ -31,8 +31,8 @@ def index_tensor_shape[
     indices_type: DType,
     batch_dims: Int,
 ](
-    input_buf: TileTensor[input_type, ...],
-    indices_buf: TileTensor[indices_type, ...],
+    input_buf: TileTensor[mut=False, input_type, ...],
+    indices_buf: TileTensor[mut=False, indices_type, ...],
 ) raises -> IndexList[output_rank]:
     """
     Compute the output shape of a `index_tensor` operation, and assert the
@@ -143,8 +143,8 @@ def index_tensor[
     batch_dims: Int,
     target: StaticString = "cpu",
 ](
-    data: TileTensor[dtype, ...],
-    indices: TileTensor[indices_type, ...],
+    data: TileTensor[mut=False, dtype, ...],
+    indices: TileTensor[mut=False, indices_type, ...],
     output: TileTensor[mut=True, dtype, ...],
     ctx: DeviceContext,
 ) raises:
@@ -190,8 +190,8 @@ def _index_tensor_1d[
     batch_dims: Int,
     target: StaticString = "cpu",
 ](
-    data: TileTensor[dtype, ...],
-    indices: TileTensor[indices_type, ...],
+    data: TileTensor[mut=False, dtype, ...],
+    indices: TileTensor[mut=False, indices_type, ...],
     output: TileTensor[mut=True, dtype, ...],
     ctx: Optional[DeviceContext] = None,
 ):
@@ -271,8 +271,8 @@ def _index_tensor_impl[
     batch_dims: Int,
     target: StaticString = "cpu",
 ](
-    data: TileTensor[dtype, ...],
-    indices: TileTensor[indices_type, ...],
+    data: TileTensor[mut=False, dtype, ...],
+    indices: TileTensor[mut=False, indices_type, ...],
     output: TileTensor[mut=True, dtype, ...],
     ctx: Optional[DeviceContext] = None,
 ) raises:

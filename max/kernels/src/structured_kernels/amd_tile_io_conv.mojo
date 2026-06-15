@@ -399,7 +399,7 @@ struct TileLoaderLDSIm2col[
         InLayout: TensorLayout,
     ](
         out self,
-        src_nhwc: TileTensor[Self.dtype, InLayout, _],
+        src_nhwc: TileTensor[mut=False, Self.dtype, InLayout, _],
         warp_id: Int,
         lane_id: Int,
         *,
@@ -586,7 +586,7 @@ struct TileLoaderLDSIm2col[
         InLayout: TensorLayout,
     ](
         out self,
-        src_nhwc: TileTensor[Self.dtype, InLayout, _],
+        src_nhwc: TileTensor[mut=False, Self.dtype, InLayout, _],
         warp_id: Int,
         lane_id: Int,
         *,
@@ -699,7 +699,7 @@ struct TileLoaderLDSIm2col[
         InLayout: TensorLayout,
     ](
         out self,
-        src_ndhwc: TileTensor[Self.dtype, InLayout, _],
+        src_ndhwc: TileTensor[mut=False, Self.dtype, InLayout, _],
         warp_id: Int,
         lane_id: Int,
         *,

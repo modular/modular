@@ -355,7 +355,7 @@ def topk_mask_logits[
     ],
 ](
     ctx: DeviceContext,
-    logits: TileTensor[dtype, ...],
+    logits: TileTensor[mut=False, dtype, ...],
     masked_logits: TileTensor[mut=True, dtype, ...],
     top_k_val: Int,
     top_k_arr: Optional[
@@ -890,7 +890,7 @@ def topk_sampling_from_prob[
     ],
 ](
     ctx: DeviceContext,
-    probs: TileTensor[dtype, ...],
+    probs: TileTensor[mut=False, dtype, ...],
     output: TileTensor[mut=True, out_idx_type, ...],
     top_k_val: Int,
     deterministic: Bool = False,
@@ -1301,7 +1301,7 @@ def topk_topp_sampling_from_prob[
     ],
 ](
     ctx: DeviceContext,
-    probs: TileTensor[dtype, ...],
+    probs: TileTensor[mut=False, dtype, ...],
     output: TileTensor[mut=True, out_idx_type, ...],
     top_k_val: Int,
     top_p_val: Float32 = 1.0,
@@ -1671,7 +1671,9 @@ def topk_softmax_sample[
     ],
 ](
     ctx: DeviceContext,
-    logits: TileTensor[dtype, address_space=AddressSpace.GENERIC, ...],
+    logits: TileTensor[
+        mut=False, dtype, address_space=AddressSpace.GENERIC, ...
+    ],
     sampled_indices: TileTensor[
         mut=True, out_idx_type, address_space=AddressSpace.GENERIC, ...
     ],

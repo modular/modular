@@ -75,7 +75,7 @@ def memcpy_or_fuse[
 ](
     dest_data: UnsafePointer[mut=True, Int8, _],
     out_byte_offset: Int,
-    src_data: UnsafePointer[Int8, _],
+    src_data: UnsafePointer[mut=False, Int8, _],
     n: Int,
     out_shape: IndexList[rank, ...],
 ) raises:

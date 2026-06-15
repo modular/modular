@@ -74,7 +74,7 @@ def quantize_static_scaled_fp8[
     scale_is_inverted: Bool = True,
 ](
     out_tensor: TileTensor[mut=True, dtype=out_dtype, ...],
-    in_tensor: TileTensor[dtype=in_dtype, ...],
+    in_tensor: TileTensor[mut=False, dtype=in_dtype, ...],
     scale: Float32,
     context: DeviceContext,
 ) raises:
@@ -785,13 +785,13 @@ def matmul_dynamic_scaled_fp8[
     target: StaticString = "cpu",
 ](
     c: TileTensor[mut=True, c_type, address_space=AddressSpace.GENERIC, ...],
-    a: TileTensor[a_type, address_space=AddressSpace.GENERIC, ...],
-    b: TileTensor[b_type, address_space=AddressSpace.GENERIC, ...],
+    a: TileTensor[mut=False, a_type, address_space=AddressSpace.GENERIC, ...],
+    b: TileTensor[mut=False, b_type, address_space=AddressSpace.GENERIC, ...],
     a_scales: TileTensor[
-        a_scales_type, address_space=AddressSpace.GENERIC, ...
+        mut=False, a_scales_type, address_space=AddressSpace.GENERIC, ...
     ],
     b_scales: TileTensor[
-        b_scales_type, address_space=AddressSpace.GENERIC, ...
+        mut=False, b_scales_type, address_space=AddressSpace.GENERIC, ...
     ],
     ctx: DeviceContext,
 ) raises:
@@ -860,13 +860,13 @@ def _matmul_dynamic_scaled_fp8_impl[
     target: StaticString = "cpu",
 ](
     c: TileTensor[mut=True, c_type, address_space=AddressSpace.GENERIC, ...],
-    a: TileTensor[a_type, address_space=AddressSpace.GENERIC, ...],
-    b: TileTensor[b_type, address_space=AddressSpace.GENERIC, ...],
+    a: TileTensor[mut=False, a_type, address_space=AddressSpace.GENERIC, ...],
+    b: TileTensor[mut=False, b_type, address_space=AddressSpace.GENERIC, ...],
     a_scales: TileTensor[
-        a_scales_type, address_space=AddressSpace.GENERIC, ...
+        mut=False, a_scales_type, address_space=AddressSpace.GENERIC, ...
     ],
     b_scales: TileTensor[
-        b_scales_type, address_space=AddressSpace.GENERIC, ...
+        mut=False, b_scales_type, address_space=AddressSpace.GENERIC, ...
     ],
     ctx: DeviceContext,
 ) raises:
@@ -1612,7 +1612,7 @@ def naive_blockwise_scaled_fp8_grouped_matmul_kernel[
 
 @always_inline
 def convert_e4m3fn_to_e4m3fnuz(
-    input_buffer: TileTensor[dtype=DType.float8_e4m3fn, ...],
+    input_buffer: TileTensor[mut=False, dtype=DType.float8_e4m3fn, ...],
     output_buffer: TileTensor[mut=True, dtype=DType.float8_e4m3fnuz, ...],
     context: DeviceContext,
 ) raises:
@@ -1691,13 +1691,13 @@ def blockwise_scaled_fp8_with_epilogue[
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: TileTensor[mut=True, c_type, address_space=AddressSpace.GENERIC, ...],
-    a: TileTensor[a_type, address_space=AddressSpace.GENERIC, ...],
-    b: TileTensor[b_type, address_space=AddressSpace.GENERIC, ...],
+    a: TileTensor[mut=False, a_type, address_space=AddressSpace.GENERIC, ...],
+    b: TileTensor[mut=False, b_type, address_space=AddressSpace.GENERIC, ...],
     a_scales: TileTensor[
-        a_scales_type, address_space=AddressSpace.GENERIC, ...
+        mut=False, a_scales_type, address_space=AddressSpace.GENERIC, ...
     ],
     b_scales: TileTensor[
-        b_scales_type, address_space=AddressSpace.GENERIC, ...
+        mut=False, b_scales_type, address_space=AddressSpace.GENERIC, ...
     ],
     ctx: DeviceContext,
 ) raises:

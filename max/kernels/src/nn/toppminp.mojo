@@ -28,7 +28,7 @@ def top_p_sampling[
     //,
     _test_sort: Bool = False,
 ](
-    top_ps: TileTensor[dtype, ...],
+    top_ps: TileTensor[mut=False, dtype, ...],
     input_logits: TileTensor[mut=True, dtype, ...],
     out_token_ids: TileTensor[mut=True, out_idx_type, ...],
     temperature: Scalar[dtype] = 1,
@@ -52,7 +52,7 @@ def min_p_sampling[
     //,
     _test_sort: Bool = False,
 ](
-    min_ps: TileTensor[dtype, ...],
+    min_ps: TileTensor[mut=False, dtype, ...],
     input_logits: TileTensor[mut=True, dtype, ...],
     out_token_ids: TileTensor[mut=True, out_idx_type, ...],
     temperature: Scalar[dtype] = 1,
@@ -75,7 +75,7 @@ def _topp_minp_sampling[
     is_top_p: Bool,
     _test_sort: Bool = False,
 ](
-    p_thresholds: TileTensor[dtype, ...],
+    p_thresholds: TileTensor[mut=False, dtype, ...],
     input_logits: TileTensor[mut=True, dtype, ...],
     out_token_ids: TileTensor[mut=True, out_idx_type, ...],
     temperature: Scalar[dtype] = 1,

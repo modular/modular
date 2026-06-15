@@ -509,7 +509,7 @@ def layer_norm_gpu[
     ) capturing -> None,
 ](
     shape: IndexList[rank, ...],
-    beta: TileTensor[dtype, ...],
+    beta: TileTensor[mut=False, dtype, ...],
     epsilon: Scalar[dtype],
     *,
     ctx: DeviceContext,
@@ -673,7 +673,7 @@ def layer_norm_cpu[
 ](
     num_rows: Int,
     num_cols: Int,
-    beta: TileTensor[dtype, ...],
+    beta: TileTensor[mut=False, dtype, ...],
     epsilon: Scalar[dtype],
 ) raises:
     """Computes layernorm(elementwise_fn(x)) across the last dimension of x, where layernorm is
@@ -766,7 +766,7 @@ def layer_norm_cpu[
     ) capturing -> None,
 ](
     shape: IndexList[rank],
-    beta: TileTensor[dtype, ...],
+    beta: TileTensor[mut=False, dtype, ...],
     epsilon: Scalar[dtype],
     ctx: Optional[DeviceContext] = None,
 ):
@@ -838,7 +838,7 @@ def layer_norm[
 ](
     shape: IndexList[rank],
     gamma_shape: IndexList[1],
-    beta: TileTensor[dtype, ...],
+    beta: TileTensor[mut=False, dtype, ...],
     epsilon: Scalar[dtype],
     ctx: DeviceContext,
 ) raises:
@@ -882,9 +882,9 @@ def layer_norm[
 def layer_norm_shape[
     dtype: DType
 ](
-    input: TileTensor[dtype, ...],
-    gamma: TileTensor[dtype, ...],
-    beta: TileTensor[dtype, ...],
+    input: TileTensor[mut=False, dtype, ...],
+    gamma: TileTensor[mut=False, dtype, ...],
+    beta: TileTensor[mut=False, dtype, ...],
     epsilon: Scalar[dtype],
 ) -> IndexList[input.rank]:
     """
@@ -1094,7 +1094,7 @@ def _rms_norm_gpu_block_subkernel[
     ) capturing -> None,
     multiply_before_cast: Bool,
 ](
-    gamma: TileTensor[dtype, ...],
+    gamma: TileTensor[mut=False, dtype, ...],
     epsilon: Scalar[dtype],
     weight_offset: Scalar[dtype],
     num_cols: Int,
@@ -1319,7 +1319,7 @@ def rms_norm_gpu[
     pdl_level: PDLLevel = PDLLevel.ON,
 ](
     shape: IndexList[rank, ...],
-    gamma: TileTensor[dtype, ...],
+    gamma: TileTensor[mut=False, dtype, ...],
     epsilon: Scalar[dtype],
     weight_offset: Scalar[dtype],
     ctx: DeviceContext,
@@ -1491,7 +1491,7 @@ def rms_norm_cpu[
     ) capturing -> None,
     multiply_before_cast: Bool,
 ](
-    gamma: TileTensor[dtype, ...],
+    gamma: TileTensor[mut=False, dtype, ...],
     epsilon: Scalar[dtype],
     weight_offset: Scalar[dtype],
     out_shape: IndexList[2],
@@ -1560,7 +1560,7 @@ def rms_norm_cpu[
     multiply_before_cast: Bool,
 ](
     shape: IndexList[rank],
-    gamma: TileTensor[dtype, ...],
+    gamma: TileTensor[mut=False, dtype, ...],
     epsilon: Scalar[dtype],
     weight_offset: Scalar[dtype],
     ctx: Optional[DeviceContext] = None,
@@ -1638,7 +1638,7 @@ def _rms_norm_impl[
     multiply_before_cast: Bool = True,
 ](
     shape: IndexList[rank],
-    gamma: TileTensor[dtype, ...],
+    gamma: TileTensor[mut=False, dtype, ...],
     epsilon: Scalar[dtype],
     weight_offset: Scalar[dtype],
     ctx: DeviceContext,
@@ -1973,10 +1973,10 @@ def rms_norm_fused_residual_add_gpu[
     multiply_before_cast: Bool,
 ](
     shape: IndexList[rank, ...],
-    gamma1: TileTensor[dtype, ...],
+    gamma1: TileTensor[mut=False, dtype, ...],
     epsilon1: Scalar[dtype],
     weight_offset1: Scalar[dtype],
-    gamma2: TileTensor[dtype, ...],
+    gamma2: TileTensor[mut=False, dtype, ...],
     epsilon2: Scalar[dtype],
     weight_offset2: Scalar[dtype],
     ctx: DeviceContext,
@@ -2172,10 +2172,10 @@ def rms_norm_fused_residual_add_cpu[
     multiply_before_cast: Bool = True,
 ](
     shape: IndexList[rank],
-    gamma1: TileTensor[dtype, ...],
+    gamma1: TileTensor[mut=False, dtype, ...],
     epsilon1: Scalar[dtype],
     weight_offset1: Scalar[dtype],
-    gamma2: TileTensor[dtype, ...],
+    gamma2: TileTensor[mut=False, dtype, ...],
     epsilon2: Scalar[dtype],
     weight_offset2: Scalar[dtype],
 ) raises:
@@ -2717,11 +2717,11 @@ def rms_norm_rope_gpu[
     pdl_level: PDLLevel = PDLLevel.ON,
 ](
     shape: IndexList[rank, ...],
-    gamma: TileTensor[input_dtype, ...],
+    gamma: TileTensor[mut=False, input_dtype, ...],
     epsilon: Scalar[input_dtype],
     weight_offset: Scalar[input_dtype],
-    cos_vals: TileTensor[cos_sin_dtype, ...],
-    sin_vals: TileTensor[cos_sin_dtype, ...],
+    cos_vals: TileTensor[mut=False, cos_sin_dtype, ...],
+    sin_vals: TileTensor[mut=False, cos_sin_dtype, ...],
     ctx: DeviceContext,
 ) raises:
     """Fused RMS normalization followed by Rotary Position Embedding (RoPE) for GPU.
@@ -2929,7 +2929,7 @@ def rms_norm[
     multiply_before_cast: Bool = True,
 ](
     shape: IndexList[rank],
-    gamma: TileTensor[dtype, ...],
+    gamma: TileTensor[mut=False, dtype, ...],
     epsilon: Scalar[dtype],
     weight_offset: Scalar[dtype],
     ctx: DeviceContext,
@@ -3117,8 +3117,8 @@ def row_mean_of_squares_qk_gpu[
     pdl_level: PDLLevel = PDLLevel.ON,
 ](
     output: TileTensor[mut=True, out_dtype, ...],
-    q: TileTensor[in_dtype, ...],
-    k: TileTensor[in_dtype, ...],
+    q: TileTensor[mut=False, in_dtype, ...],
+    k: TileTensor[mut=False, in_dtype, ...],
     rows: Int,
     q_cols: Int,
     k_cols: Int,
@@ -3206,8 +3206,8 @@ def row_mean_of_squares_qk_cpu[
     //,
 ](
     output: TileTensor[mut=True, out_dtype, ...],
-    q: TileTensor[in_dtype, ...],
-    k: TileTensor[in_dtype, ...],
+    q: TileTensor[mut=False, in_dtype, ...],
+    k: TileTensor[mut=False, in_dtype, ...],
     rows: Int,
     q_cols: Int,
     k_cols: Int,
@@ -3243,8 +3243,8 @@ def row_mean_of_squares_qk[
     target: StaticString = "cpu",
 ](
     output: TileTensor[mut=True, out_dtype, ...],
-    q: TileTensor[in_dtype, ...],
-    k: TileTensor[in_dtype, ...],
+    q: TileTensor[mut=False, in_dtype, ...],
+    k: TileTensor[mut=False, in_dtype, ...],
     rows: Int,
     q_cols: Int,
     k_cols: Int,
@@ -3421,11 +3421,11 @@ def apply_qk_rms_norm_gpu[
 ](
     q_out: TileTensor[mut=True, out_dtype, ...],
     k_out: TileTensor[mut=True, out_dtype, ...],
-    gamma_q: TileTensor[DType.float32, ...],
-    gamma_k: TileTensor[DType.float32, ...],
-    qk_var: TileTensor[DType.float32, ...],
-    q: TileTensor[in_dtype, ...],
-    k: TileTensor[in_dtype, ...],
+    gamma_q: TileTensor[mut=False, DType.float32, ...],
+    gamma_k: TileTensor[mut=False, DType.float32, ...],
+    qk_var: TileTensor[mut=False, DType.float32, ...],
+    q: TileTensor[mut=False, in_dtype, ...],
+    k: TileTensor[mut=False, in_dtype, ...],
     epsilon: Scalar[DType.float32],
     rows: Int,
     q_cols: Int,
@@ -3547,11 +3547,11 @@ def apply_qk_rms_norm_cpu[
 ](
     q_out: TileTensor[mut=True, out_dtype, ...],
     k_out: TileTensor[mut=True, out_dtype, ...],
-    gamma_q: TileTensor[DType.float32, ...],
-    gamma_k: TileTensor[DType.float32, ...],
-    qk_var: TileTensor[DType.float32, ...],
-    q: TileTensor[in_dtype, ...],
-    k: TileTensor[in_dtype, ...],
+    gamma_q: TileTensor[mut=False, DType.float32, ...],
+    gamma_k: TileTensor[mut=False, DType.float32, ...],
+    qk_var: TileTensor[mut=False, DType.float32, ...],
+    q: TileTensor[mut=False, in_dtype, ...],
+    k: TileTensor[mut=False, in_dtype, ...],
     epsilon: Scalar[DType.float32],
     rows: Int,
     q_cols: Int,
@@ -3590,11 +3590,11 @@ def apply_qk_rms_norm[
 ](
     q_out: TileTensor[mut=True, out_dtype, ...],
     k_out: TileTensor[mut=True, out_dtype, ...],
-    gamma_q: TileTensor[DType.float32, ...],
-    gamma_k: TileTensor[DType.float32, ...],
-    qk_var: TileTensor[DType.float32, ...],
-    q: TileTensor[in_dtype, ...],
-    k: TileTensor[in_dtype, ...],
+    gamma_q: TileTensor[mut=False, DType.float32, ...],
+    gamma_k: TileTensor[mut=False, DType.float32, ...],
+    qk_var: TileTensor[mut=False, DType.float32, ...],
+    q: TileTensor[mut=False, in_dtype, ...],
+    k: TileTensor[mut=False, in_dtype, ...],
     epsilon: Scalar[DType.float32],
     rows: Int,
     q_cols: Int,
@@ -3706,10 +3706,10 @@ def _rms_norm_fused_residual_add_impl[
     multiply_before_cast: Bool = True,
 ](
     shape: IndexList[rank],
-    gamma1: TileTensor[dtype, ...],
+    gamma1: TileTensor[mut=False, dtype, ...],
     epsilon1: Scalar[dtype],
     weight_offset1: Scalar[dtype],
-    gamma2: TileTensor[dtype, ...],
+    gamma2: TileTensor[mut=False, dtype, ...],
     epsilon2: Scalar[dtype],
     weight_offset2: Scalar[dtype],
     ctx: DeviceContext,
@@ -3797,10 +3797,10 @@ def rms_norm_fused_residual_add[
     multiply_before_cast: Bool = True,
 ](
     shape: IndexList[rank],
-    gamma1: TileTensor[dtype, ...],
+    gamma1: TileTensor[mut=False, dtype, ...],
     epsilon1: Scalar[dtype],
     weight_offset1: Scalar[dtype],
-    gamma2: TileTensor[dtype, ...],
+    gamma2: TileTensor[mut=False, dtype, ...],
     epsilon2: Scalar[dtype],
     weight_offset2: Scalar[dtype],
     ctx: DeviceContext,

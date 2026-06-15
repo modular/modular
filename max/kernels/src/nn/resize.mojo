@@ -139,7 +139,7 @@ def resize_nearest_neighbor[
     round_mode: RoundMode,
     dtype: DType,
 ](
-    input: TileTensor[dtype, ...],
+    input: TileTensor[mut=False, dtype, ...],
     output: TileTensor[mut=True, dtype, ...],
     ctx: DeviceContext,
 ) raises:
@@ -227,7 +227,7 @@ def interpolate_point_1d[
     out_coords: IndexList[InputLayoutType.rank],
     scale: Float32,
     input: TileTensor[
-        mut=True,
+        mut=False,
         dtype,
         InputLayoutType,
         address_space=AddressSpace.GENERIC,

@@ -34,11 +34,11 @@ def apply_penalties_to_logits[
     target: StaticString,
 ](
     logits: TileTensor[mut=True, logit_type, ...],
-    compressed_frequency_data: TileTensor[DType.int32, ...],
-    frequency_offsets: TileTensor[DType.uint32, ...],
-    frequency_penalty: TileTensor[penalty_type, ...],
-    presence_penalty: TileTensor[penalty_type, ...],
-    repetition_penalty: TileTensor[penalty_type, ...],
+    compressed_frequency_data: TileTensor[mut=False, DType.int32, ...],
+    frequency_offsets: TileTensor[mut=False, DType.uint32, ...],
+    frequency_penalty: TileTensor[mut=False, penalty_type, ...],
+    presence_penalty: TileTensor[mut=False, penalty_type, ...],
+    repetition_penalty: TileTensor[mut=False, penalty_type, ...],
     ctx: DeviceContext,
 ) raises:
     """
@@ -210,9 +210,11 @@ def update_frequency_data[
         mut=True, DType.int32, address_space=AddressSpace.GENERIC, ...
     ],
     frequency_offsets: TileTensor[
-        DType.uint32, address_space=AddressSpace.GENERIC, ...
+        mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
-    new_tokens: TileTensor[token_type, address_space=AddressSpace.GENERIC, ...],
+    new_tokens: TileTensor[
+        mut=False, token_type, address_space=AddressSpace.GENERIC, ...
+    ],
     ctx: DeviceContext,
 ) raises:
     """
