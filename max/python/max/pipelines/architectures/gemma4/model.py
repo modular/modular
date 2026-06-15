@@ -139,8 +139,9 @@ class Gemma3_MultiModalModel(
     language_model: Model
     """The compiled and initialized MAX Engine model ready for inference."""
 
-    vision_model: Model
-    """The compiled and initialized MAX Engine vision model ready for inference."""
+    vision_model: Model | None
+    """The compiled vision model, or None for text-only ("gemma4_unified")
+    checkpoints whose vision embedder is not implemented yet."""
     # The vision and text towers are in the same weights file, but are in
     # separate models, so load_state_dict will naturally be loading subsets in
     # each case.
@@ -193,7 +194,9 @@ class Gemma3_MultiModalModel(
         """Release vision encoder cache for a completed request."""
         self._ve_cache.release_request(request_id)
 
-    def load_model(self, session: InferenceSession) -> tuple[Model, Model]:
+    def load_model(
+        self, session: InferenceSession
+    ) -> tuple[Model | None, Model]:
         """Loads the compiled Gemma3 MultiModal models into the MAX Engine session.
 
         Returns:
@@ -248,9 +251,14 @@ class Gemma3_MultiModalModel(
         with CompilationTimer("vision + language model") as timer:
             module = Module()
 
-            vision_graph, vision_model_state_dict = self._build_vision_graph(
-                model_config, vision_weights_dict, module=module
-            )
+            vision_graph = None
+            vision_model_state_dict: dict[str, DLPackArray] = {}
+            if model_config.vision_config is not None:
+                vision_graph, vision_model_state_dict = (
+                    self._build_vision_graph(
+                        model_config, vision_weights_dict, module=module
+                    )
+                )
 
             language_graph, language_model_state_dict = (
                 self._build_language_graph(
@@ -264,7 +272,9 @@ class Gemma3_MultiModalModel(
                 **language_model_state_dict,
             }
             models = session.load_all(module, weights_registry=combined_weights)
-            vision_model = models[vision_graph.name]
+            vision_model = (
+                models[vision_graph.name] if vision_graph is not None else None
+            )
             language_model = models[language_graph.name]
 
         return vision_model, language_model
@@ -443,6 +453,11 @@ class Gemma3_MultiModalModel(
         return vision_graph, vision_model.state_dict()
 
     def _run_vision_encoder(self, raw: VisionRawInputs) -> list[Buffer]:
+        if self.vision_model is None:
+            raise ValueError(
+                "This checkpoint is served text-only (no vision encoder"
+                " is loaded); image and video inputs are not supported."
+            )
         return self.vision_model(
             *raw.patches_flat,
             *raw.pixel_position_ids,
@@ -626,8 +641,6 @@ class Gemma3_MultiModalModel(
         for d_offsets in device_row_offsets:
             d_offsets.inplace_copy_from(host_row_offsets)
 
-        k = self.config.vision_config.pooling_kernel_size
-
         needs_images = (
             any(
                 getattr(ctx, "needs_vision_encoding", False)
@@ -635,6 +648,16 @@ class Gemma3_MultiModalModel(
             )
             if context_batch
             else False
+        )
+        if needs_images and self.vision_model is None:
+            raise ValueError(
+                "This checkpoint is served text-only (no vision encoder"
+                " is loaded); image inputs are not supported."
+            )
+        k = (
+            self.config.vision_config.pooling_kernel_size
+            if self.config.vision_config is not None
+            else 1
         )
         if needs_images:
             uncached = self._ve_cache.get_uncached_contexts(context_batch)

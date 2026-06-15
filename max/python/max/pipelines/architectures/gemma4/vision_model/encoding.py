@@ -42,6 +42,7 @@ class Gemma4VisionEncoderLayer(Module):
         super().__init__()
         self.config = config
         vision_config = config.vision_config
+        assert vision_config is not None
         vision_dtype = DType.bfloat16
 
         self.device = device if device is not None else config.devices[0]
@@ -197,6 +198,7 @@ class Gemma4VisionEncoder(Module):
     def __init__(self, config: Gemma4ForConditionalGenerationConfig) -> None:
         super().__init__()
         self.config = config
+        assert config.vision_config is not None
         self._sharding_strategy: ShardingStrategy | None = None
         encoder_layers = [
             Gemma4VisionEncoderLayer(config, layer_idx)

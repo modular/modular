@@ -69,6 +69,22 @@ except ImportError:
         pass
 
 
+class _Gemma4UnifiedHFConfig(Gemma4HFConfig):
+    """Config shim for the public "gemma4_unified" model_type (Gemma 4 12B).
+
+    Registered unconditionally: even transformers releases that ship a
+    native Gemma4Config may not register the unified model_type.
+    """
+
+    model_type = "gemma4_unified"
+
+
+try:
+    AutoConfig.register("gemma4_unified", _Gemma4UnifiedHFConfig)
+except ValueError:
+    pass
+
+
 @dataclass(kw_only=True)
 class Gemma4TextConfig(Gemma3Config):
     """Text configuration for Gemma 4 models.
@@ -440,8 +456,9 @@ class Gemma4ForConditionalGenerationConfig(ArchConfigWithKVCache):
     text_config: Gemma4TextConfig
     """The config object of the text backbone."""
 
-    vision_config: Gemma4VisionConfig
-    """The config object of the vision encoder."""
+    vision_config: Gemma4VisionConfig | None
+    """The config object of the vision encoder, or ``None`` for checkpoints
+    served text-only (the ``gemma4_unified`` line)."""
 
     tie_word_embeddings: bool = False
     """Whether to tie weight embeddings. When true, the output linear layer
@@ -596,9 +613,18 @@ class Gemma4ForConditionalGenerationConfig(ArchConfigWithKVCache):
         hf_vision_config = getattr(huggingface_config, "vision_config", None)
         if hf_vision_config is None:
             raise ValueError("vision_config not found in huggingface_config")
-        vision_config = Gemma4VisionConfig.initialize_from_config(
-            hf_vision_config
-        )
+        vision_config: Gemma4VisionConfig | None
+        if getattr(huggingface_config, "model_type", None) == "gemma4_unified":
+            # These checkpoints (e.g. google/gemma-4-12b-it) carry a
+            # lightweight vision_embedder with a different schema that is not
+            # implemented yet; serve text-only. Keyed on model_type so a
+            # genuinely malformed full-vision config fails loudly below
+            # instead of silently degrading to text-only.
+            vision_config = None
+        else:
+            vision_config = Gemma4VisionConfig.initialize_from_config(
+                hf_vision_config
+            )
 
         hf_text_config = getattr(huggingface_config, "text_config", None)
         if hf_text_config is None:
@@ -654,6 +680,13 @@ class Gemma4ForConditionalGenerationConfig(ArchConfigWithKVCache):
             huggingface_config,
             state_dict,
             self.dtype,
+            # Gemma 4 checkpoints nest the language tower under
+            # "model.language_model."; without these prefixes the per-layer
+            # quantized/ignored classification looks up "model.layers.*"
+            # keys that never exist, so ignore-listed (BF16) attention in
+            # modelopt 12B quants was never recognized as ignored.
+            state_dict_name_prefix="model.language_model.",
+            ignored_modules_prefix="model.language_model.",
         )
 
         for k, v in state_dict.items():

@@ -129,6 +129,11 @@ def register_all_models() -> None:
         ),
         _LazyArch("Gemma4ForConditionalGeneration", ".gemma4", "gemma4_arch"),
         _LazyArch(
+            "Gemma4UnifiedForConditionalGeneration",
+            ".gemma4",
+            "gemma4_unified_arch",
+        ),
+        _LazyArch(
             "Gemma4AssistantForCausalLM",
             ".gemma4_assistant",
             "gemma4_assistant_arch",
