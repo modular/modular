@@ -37,6 +37,7 @@ family.
    pipelines.architectures.granite
    pipelines.architectures.hy_v3
    pipelines.architectures.idefics3
+   pipelines.architectures.ideogram4
    pipelines.architectures.internvl
    pipelines.architectures.kimik2_5
    pipelines.architectures.lfm2
@@ -132,6 +133,7 @@ Image generation
    :nosignatures:
 
    ~max.pipelines.architectures.flux2
+   ~max.pipelines.architectures.ideogram4
    ~max.pipelines.architectures.qwen_image
    ~max.pipelines.architectures.qwen_image_edit
    ~max.pipelines.architectures.wan

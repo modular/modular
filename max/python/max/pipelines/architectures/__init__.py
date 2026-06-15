@@ -155,6 +155,7 @@ def register_all_models() -> None:
             ".idefics3_modulev3",
             "idefics3_modulev3_arch",
         ),
+        _LazyArch("Ideogram4Pipeline", ".ideogram4", "ideogram4_arch"),
         _LazyArch("InternVLChatModel", ".internvl", "internvl_arch"),
         _LazyArch(
             "Eagle3DeepseekV2ForCausalLM", ".kimik2_5", "eagle3_kimik25_arch"

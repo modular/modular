@@ -11,6 +11,14 @@ This version is still a work in progress.
 ## MAX models
 
 - Added tool-calling and reasoning support to Qwen 3.5 / 3.6.
+- Added support for the Ideogram 4 (`Ideogram4Pipeline`) text-to-image
+  flow-matching diffusion transformer. The pipeline pairs a Qwen3-VL text
+  encoder (run text-only, emitting concatenated intermediate hidden states)
+  with a single-stream DiT that uses QK-RMSNorm, 3D MRoPE, SwiGLU, and AdaLN,
+  and an asymmetric dual-branch classifier-free guidance scheme. FP8
+  (`float8_e4m3fn`) checkpoint weights are dequantized to `bfloat16` at load.
+  Serve via `/v1/responses`; benchmark with
+  `--benchmark-task text-to-image`.
 
 ## MAX framework
 

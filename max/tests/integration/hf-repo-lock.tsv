@@ -88,6 +88,7 @@ google/gemma-4-31B-it	419b2efe421994fdfd3394e621983d4cc511cd4f
 google/gemma-4-31B-it-assistant	03206cda0a11ee6fab1b4ad1ae2af48b950cc319
 hf-internal-testing/tiny-random-LlamaForCausalLM	f142fc3230c41b4e67f2826b879e289a4e08e679
 hugging-quants/Meta-Llama-3.1-8B-Instruct-GPTQ-INT4	f184d2b18e2b7c257af79aa0bc53ef3ee505caa2
+ideogram-ai/ideogram-4-fp8	ee79a7237b519f1402ceacf952f30c8a31ec5073
 kaitchup/DeepSeek-R1-Distill-Llama-8B-AutoRound-GPTQ-4bit	0dbc9d99d9036c187562e72e9eeb8036da4e1105
 kathywu95/deepseek-v3-small-random	c8999f0050b2a37c69d2021de1ec2caf6bae6199
 kathywu95/deepseek-v3-small-random-fp8	b7ec9ae548f7a26e91818d381997046a65d30a2a
