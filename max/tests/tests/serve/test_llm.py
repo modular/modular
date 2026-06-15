@@ -315,8 +315,10 @@ async def test_ttft_recorded_once_per_chunk() -> None:
     for chunk in chunks:
         assert chunk.prompt_token_count == 10
 
-    # Verify METRICS.input_tokens was called with prompt_length
-    mock_metrics.input_tokens.assert_called_once_with(10)
+    # next_token_chunk must not emit the input-token counter; that is owned
+    # by record_request_end so the counter stays consistent with the
+    # per-request histogram and the API usage field.
+    mock_metrics.input_tokens.assert_not_called()
 
 
 @pytest.mark.asyncio

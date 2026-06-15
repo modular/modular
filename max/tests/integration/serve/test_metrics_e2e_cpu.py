@@ -75,6 +75,25 @@ def _series_value(
     return float(match.group(1)) if match else None
 
 
+def _metric_total(metrics_text: str, name: str) -> float:
+    """Sum the value of every Prometheus series for ``name``.
+
+    Handles both label-free lines (``name <value>``) and labeled lines
+    (``name{...} <value>``) so the total is independent of label
+    cardinality. Intended for counters and histogram ``_sum`` series, not
+    cumulative ``_bucket`` series.
+    """
+    total = 0.0
+    for line in metrics_text.splitlines():
+        series, sep, value = line.partition(" ")
+        if not sep:
+            continue
+        series_name = series.split("{", 1)[0]
+        if series_name == name:
+            total += float(value)
+    return total
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "pipeline_config",
@@ -143,8 +162,11 @@ async def test_metrics_e2e_v1(app: FastAPI) -> None:
             f"model_load_time total sum should be > 0, got {total}"
         )
 
-        # Make a few requests
-        for _ in range(5):
+        # Make a few requests, summing the prompt tokens the API reports.
+        # The API usage field is the ground truth for input-token counts.
+        num_requests = 5
+        expected_input_tokens = 0
+        for _ in range(num_requests):
             raw_response = await client.post(
                 "/v1/chat/completions",
                 json={
@@ -155,7 +177,11 @@ async def test_metrics_e2e_v1(app: FastAPI) -> None:
                 },
             )
             # This is not a streamed completion - There is no [DONE] at the end.
-            CreateChatCompletionResponse.model_validate(raw_response.json())
+            parsed = CreateChatCompletionResponse.model_validate(
+                raw_response.json()
+            )
+            assert parsed.usage is not None
+            expected_input_tokens += parsed.usage.prompt_tokens
 
         # Wait for request metrics to propagate
         assert_metrics(
@@ -169,6 +195,43 @@ async def test_metrics_e2e_v1(app: FastAPI) -> None:
                 f'maxserve_pipeline_load_total{{model="{MODEL_NAME}"}} 1.0',
             ],
             absent_metrics=None,
+        )
+
+        # Once all requests land in the histogram, assert the counter matches
+        # the API's prompt-token total. The exact-count check catches both a
+        # 2x counter and a symmetric counter+histogram double-emit.
+        deadline = time.time() + 10.0
+        input_counter = input_hist_sum = hist_count = 0.0
+        while time.time() < deadline:
+            metrics_text = requests.get(
+                "http://localhost:8001/metrics", timeout=1
+            ).text
+            hist_count = _metric_total(
+                metrics_text, "maxserve_input_tokens_per_request_tokens_count"
+            )
+            if hist_count == num_requests:
+                input_counter = _metric_total(
+                    metrics_text, "maxserve_num_input_tokens_total"
+                )
+                input_hist_sum = _metric_total(
+                    metrics_text,
+                    "maxserve_input_tokens_per_request_tokens_sum",
+                )
+                break
+            time.sleep(0.5)
+
+        assert hist_count == num_requests, (
+            f"expected {num_requests} requests recorded in the input-token "
+            f"histogram, got {hist_count}"
+        )
+        assert input_counter == expected_input_tokens, (
+            f"input counter ({input_counter}) must equal the API-reported "
+            f"prompt-token total ({expected_input_tokens}); a larger value "
+            "means the counter is emitted more than once per request"
+        )
+        assert input_hist_sum == expected_input_tokens, (
+            f"input histogram sum ({input_hist_sum}) must equal the "
+            f"API-reported prompt-token total ({expected_input_tokens})"
         )
 
 
