@@ -595,6 +595,29 @@ def test_comptime_variadics():
     # CHECK-NEXT: baz
 
 
+def print_kwargs(**kwargs: Int):
+    for item in kwargs.items():
+        print(item.key, item.value)
+
+
+def test_kwargs():
+    print("test_kwargs")
+    # CHECK-LABEL: test_kwargs
+
+    print_kwargs(x=1, y=2, z=3)
+    # CHECK-NEXT: x 1
+    # CHECK-NEXT: y 2
+    # CHECK-NEXT: z 3
+
+    def forward_kwargs(**kwargs: Int):
+        print_kwargs(**kwargs^)
+
+    forward_kwargs(aa=4, y=5, z=6)
+    # CHECK-NEXT: aa 4
+    # CHECK-NEXT: y 5
+    # CHECK-NEXT: z 6
+
+
 def main():
     test_param_varargs()
     test_mut_varargs()
@@ -611,3 +634,4 @@ def main():
     test_forward_comptime_pack_writable()
     test_tuple()
     test_comptime_variadics()
+    test_kwargs()

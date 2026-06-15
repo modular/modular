@@ -1228,7 +1228,7 @@ ParseResult ExprParser::checkOperands(ArrayRef<Operand> operands,
   const Operand *unpackedPosOperand = nullptr;
   for (const Operand &operand : operands) {
     SMLoc loc = operand.getLoc();
-    hasUnpackedKw |= operand.isUnpackedKeyword();
+    hasUnpackedKw |= operand.unpackStyle == ArgUnpackStyle::kStarStar;
 
     if (isArgument && operand.unpackStyle == ArgUnpackStyle::kStar) {
       if (unpackedPosOperand) {

@@ -13,7 +13,7 @@
 
 # expected-note @+1 {{function declared here}}
 def test_unpack(d: Int):
-    # expected-error @+1 {{unpacked keyword arguments are not supported yet}}
+    # expected-error @+1 {{kwargs unpack can only satisfy another kwargs argument, it can't fulfill 'd'}}
     test_unpack(**d)
     # expected-error @+1 {{unpack is only supported when the callee accepts a variadic; to forward a runtime pack to a fixed-arity callee, route the call through a dispatcher whose argument is itself a variadic pack (e.g. `def shim[Ts: TypeList[Trait=AnyType, ...], //, callee: def(*args: *Ts) thin](...): callee(*pack)`)}}
     test_unpack(*d)
@@ -74,8 +74,11 @@ def takes_kwargs(**kwargs: Int):
 
 
 def test_unpack_kwargs_pack(**kwargs: Int):
-    # expected-error @+1 {{unpacked keyword arguments are not supported yet}}
+    # expected-error @below {{value of type 'OwnedKwargsDict[Int]' cannot be implicitly copied}}
+    # expected-note @below {{consider transferring the value with '^'}}
     takes_kwargs(**kwargs)
+    # Ok!
+    takes_kwargs(**kwargs^)
 
 
 # expected-note @+1 {{function declared here}}

@@ -1617,7 +1617,7 @@ static AnyValue emitSingleParamExpr(const Operand &operand,
   // Evaluate foo() as a param call not dynamic call if in a dynamic context.
   auto emitter = srcEmitter.getParamEmitter(EC_TypeParamValue);
   if (operand.expr->kind == ExprNode::kDiscardLiteral) {
-    if (operand.isUnpackedKeyword()) {
+    if (operand.unpackStyle == ArgUnpackStyle::kStarStar) {
       srcEmitter.shared.emitError(operand.expr->getLoc())
           << "'**_' not supported on parameter list, using '...' instead"
           << operand.expr->getRange();
@@ -2824,13 +2824,7 @@ AnyValue CallNode::emitIR(ExprDest &dest, IREmitter &emitter) const {
   CallOperands operandsList(CallSyntax::kDirectCall, this, std::move(dest));
   for (const Operand &operand : operands) {
     ExprNode *operandExpr = operand.expr;
-    if (operand.isUnpackedKeyword()) {
-      emitter.emitError(operand.getLoc())
-          << "unpacked keyword arguments are not supported yet";
-      operandsList.dest.resetForError(emitter);
-      return {};
-    }
-    if (operand.isUnpackedPositional()) {
+    if (operand.unpackStyle == ArgUnpackStyle::kStar) {
       auto unaryOp = cast<UnaryOpNode>(operand.expr);
       ExprNode *packedExpr = unaryOp->subExpr;
       if (packedExpr->kind == ExprNode::kDiscardLiteral) {

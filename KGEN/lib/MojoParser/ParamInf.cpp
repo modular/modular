@@ -1624,6 +1624,18 @@ VerifiedParamBindings CallParamInf::inferForCall() {
 
     // Keyword argument variadics.
     if (calleeSignature.isKwVarArg(expectedArgIdx)) {
+      // Support forwarding an entire list with "**kwargs".
+      if (pogAssignment.kwVariadicIdxs.size() == 1 &&
+          callOperands[pogAssignment.kwVariadicIdxs[0]].unpackStyle ==
+              ArgUnpackStyle::kStarStar) {
+        size_t operandIdx = pogAssignment.kwVariadicIdxs[0];
+        if (failed(inferOneOperand(callOperands[operandIdx], operandIdx,
+                                   expectedArgIdx, expectedType,
+                                   expectedConvention)))
+          return {};
+        continue;
+      }
+
       Type valTy = ASTType(expectedType).getKwargsDictRefValueType();
       auto refValType = RefType::getAnyOrigin(valTy, /*isMut=*/true);
       for (auto operandIdx : pogAssignment.kwVariadicIdxs) {
@@ -1693,16 +1705,6 @@ VerifiedParamBindings CallParamInf::inferForCall() {
     // If we have a varargs argument, then it will eat the rest of the
     // arguments, but we have to check each of them.
     if (calleeSignature.isPosVarArg(expectedArgIdx)) {
-      ASTType expectedRVType =
-          RefType::stripRefConvention(expectedType, expectedConvention);
-      // The expected origin type will always have its mutability known because
-      // the arg convention of the VariadicList is always constant.
-      auto variadicListInfo = expectedRVType.getVariadicListInfo();
-      auto expectedOriginType =
-          cast<OriginType>(variadicListInfo.origin.getType());
-      auto argConvention =
-          calleeSignature.getVariadicConvention(expectedArgIdx);
-
       // Support forwarding an entire list with "*list".
       if (pogAssignment.posVariadicIdxs.size() == 1 &&
           callOperands[pogAssignment.posVariadicIdxs[0]].unpackStyle ==
@@ -1716,6 +1718,15 @@ VerifiedParamBindings CallParamInf::inferForCall() {
       }
 
       // Otherwise, we're binding a sequence of values into the list.
+      ASTType expectedRVType =
+          RefType::stripRefConvention(expectedType, expectedConvention);
+      // The expected origin type will always have its mutability known because
+      // the arg convention of the VariadicList is always constant.
+      auto variadicListInfo = expectedRVType.getVariadicListInfo();
+      auto expectedOriginType =
+          cast<OriginType>(variadicListInfo.origin.getType());
+      auto argConvention =
+          calleeSignature.getVariadicConvention(expectedArgIdx);
 
       // TODO: This is subtly wrong in a way that doesn't matter. We're passing
       // the ultimate origin in as the origin for the RefType, but we need to
