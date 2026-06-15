@@ -10,6 +10,15 @@ This version is still a work in progress.
 
 ## Language enhancements
 
+- Keyword variadic arguments can now be forwarded to another function that takes
+  keyword variadics, using Python style `**` syntax:
+
+  ```mojo
+  def takes_them(**kwargs: Int): ...
+  def pass_them(**kwargs: Int):
+    takes_them(**kwargs^)
+  ```
+
 ## Language changes
 
 ## Library changes
