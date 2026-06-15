@@ -772,19 +772,17 @@ class _KimiK2_5BaseOracle(PipelineOracle):
         device_specs: list[driver.DeviceSpec],
     ) -> MaxPipelineAndTokenizer:
         revision = hf_repo_lock.revision_for_hf_repo(self.model_path)
-        config = pipelines.PipelineConfig.model_validate(
-            {
-                "device_specs": device_specs,
-                "quantization_encoding": encoding,
-                "model_path": self.model_path,
-                "huggingface_model_revision": revision,
-                "huggingface_weight_revision": revision,
-                "max_length": 4096,
-                "trust_remote_code": self.trust_remote_code,
-                "max_batch_input_tokens": 4096,
-                "ep_size": 8,
-                "data_parallel_degree": 8,
-            }
+        config = pipelines.PipelineConfig.from_flat_kwargs(
+            device_specs=device_specs,
+            quantization_encoding=encoding,
+            model_path=self.model_path,
+            huggingface_model_revision=revision,
+            huggingface_weight_revision=revision,
+            max_length=4096,
+            trust_remote_code=self.trust_remote_code,
+            max_batch_input_tokens=4096,
+            ep_size=8,
+            data_parallel_degree=8,
         )
         hf_repo_lock.apply_to_config(config)
         tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
@@ -898,19 +896,17 @@ class AmdKimiK2_5MXFP4PipelineOracle(PipelineOracle):
         gpu_count = max(
             1, sum(1 for d in device_specs if d.device_type == "gpu")
         )
-        config = pipelines.PipelineConfig.model_validate(
-            {
-                "device_specs": device_specs,
-                "quantization_encoding": encoding,
-                "model_path": self.model_path,
-                "huggingface_model_revision": revision,
-                "huggingface_weight_revision": revision,
-                "max_length": 4096,
-                "trust_remote_code": self.trust_remote_code,
-                "max_batch_input_tokens": 4096,
-                "ep_size": gpu_count,
-                "data_parallel_degree": gpu_count,
-            }
+        config = pipelines.PipelineConfig.from_flat_kwargs(
+            device_specs=device_specs,
+            quantization_encoding=encoding,
+            model_path=self.model_path,
+            huggingface_model_revision=revision,
+            huggingface_weight_revision=revision,
+            max_length=4096,
+            trust_remote_code=self.trust_remote_code,
+            max_batch_input_tokens=4096,
+            ep_size=gpu_count,
+            data_parallel_degree=gpu_count,
         )
         hf_repo_lock.apply_to_config(config)
         tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
@@ -1097,7 +1093,7 @@ class GenericOracle(PipelineOracle):
         if not is_local_model:
             config_kwargs["huggingface_model_revision"] = model_revision
             config_kwargs["huggingface_weight_revision"] = model_revision
-        config = pipelines.PipelineConfig.model_validate(config_kwargs)
+        config = pipelines.PipelineConfig.from_flat_kwargs(**config_kwargs)
         if weight_repo_id and weight_repo_id != model_path:
             config.model._weights_repo_id = weight_repo_id
         if not is_local_model:
@@ -1338,20 +1334,18 @@ class LoRAOracle(PipelineOracle):
         revision = hf_repo_lock.revision_for_hf_repo(self.model_path)
         lora_path = self._get_shared_adapter()
 
-        config = pipelines.PipelineConfig.model_validate(
-            {
-                "device_specs": device_specs,
-                "quantization_encoding": encoding,
-                "model_path": self.model_path,
-                "huggingface_model_revision": revision,
-                "enable_lora": True,
-                "lora_paths": [lora_path],
-                "max_num_loras": 1,
-                "max_lora_rank": self.lora_rank,
-                "enable_prefix_caching": False,  # LoRA requires prefix caching disabled
-                "trust_remote_code": True,
-                **self.config_params,
-            }
+        config = pipelines.PipelineConfig.from_flat_kwargs(
+            device_specs=device_specs,
+            quantization_encoding=encoding,
+            model_path=self.model_path,
+            huggingface_model_revision=revision,
+            enable_lora=True,
+            lora_paths=[lora_path],
+            max_num_loras=1,
+            max_lora_rank=self.lora_rank,
+            enable_prefix_caching=False,
+            trust_remote_code=True,
+            **self.config_params,
         )
         tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
 

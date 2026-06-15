@@ -317,6 +317,10 @@ def mock_pipeline_config_resolve(func: Callable[_P, _R]) -> Callable[_P, _R]:
                 "max.pipelines.lib.config.model_config.validate_hf_repo_access",
                 return_value=None,
             ),
+            patch(
+                "max.pipelines.weights.hf_utils.validate_hf_repo_access",
+                return_value=None,
+            ),
         ):
             return func(*args, **kwargs)
 

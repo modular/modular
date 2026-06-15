@@ -251,7 +251,7 @@ def cli_serve(
 
     # Initialize config, and serve.
     # Load tokenizer & pipeline.
-    pipeline_config = PipelineConfig(**config_kwargs)
+    pipeline_config = PipelineConfig.from_flat_kwargs(**config_kwargs)
 
     # Log Pipeline and Sampling Configuration
     if pretty_print_config:
@@ -393,7 +393,7 @@ def cli_pipeline(
     )
 
     # Load tokenizer & pipeline.
-    pipeline_config = PipelineConfig(**config_kwargs)
+    pipeline_config = PipelineConfig.from_flat_kwargs(**config_kwargs)
     generate_text_for_pipeline(
         pipeline_config,
         sampling_params=SamplingParams.from_input_and_generation_config(
@@ -432,7 +432,7 @@ def encode(prompt: str, num_warmups: int, **config_kwargs: Any) -> None:
     from max.pipelines import PipelineConfig
 
     # Load tokenizer & pipeline.
-    pipeline_config = PipelineConfig(**config_kwargs)
+    pipeline_config = PipelineConfig.from_flat_kwargs(**config_kwargs)
     pipeline_encode(pipeline_config, prompt=prompt, num_warmups=num_warmups)
 
 
@@ -460,7 +460,7 @@ def cli_warm_cache(target: str | None, **config_kwargs) -> None:
             f"Compiling for target: {api} ({target_arch}) using virtual devices"
         )
 
-    pipeline_config = PipelineConfig(**config_kwargs)
+    pipeline_config = PipelineConfig.from_flat_kwargs(**config_kwargs)
     _ = PIPELINE_REGISTRY.retrieve(pipeline_config)
 
 

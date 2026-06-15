@@ -86,7 +86,7 @@ class LLM:
         from max.entrypoints.llm import LLM
         from max.pipelines import PipelineConfig
 
-        pipeline_config = PipelineConfig(model_path="LiquidAI/LFM2.5-350M")
+        pipeline_config = PipelineConfig.from_flat_kwargs(model_path="LiquidAI/LFM2.5-350M")
         llm = LLM(pipeline_config)
 
         prompts = [

@@ -360,7 +360,7 @@ class TestPipelineConfigUtilityMethods:
             "kv_cache_page_size": 512,
         }
 
-        config = PipelineConfig(**kwargs)  # type: ignore[arg-type]
+        config = PipelineConfig.from_flat_kwargs(**kwargs)
 
         # Should have created all configs correctly
         assert config.runtime.max_batch_size == 4
@@ -398,7 +398,7 @@ class TestPipelineConfigUtilityMethods:
             "kv_cache_page_size": 512,
         }
 
-        config = PipelineConfig(**kwargs)  # type: ignore[arg-type]
+        config = PipelineConfig.from_flat_kwargs(**kwargs)
         assert config.model.quantization_encoding == "float4_e2m1fnx2"
         # The KV cache dtype initially has a default value.
         assert config.model.kv_cache.cache_dtype == DType.float32
@@ -434,7 +434,7 @@ class TestPipelineConfigUtilityMethods:
             "max_batch_size": 4,
         }
 
-        config = PipelineConfig(**kwargs)  # type: ignore[arg-type]
+        config = PipelineConfig.from_flat_kwargs(**kwargs)
 
         assert config.runtime.max_batch_size == 4
         assert config.runtime.denoising_cache.taylorseer is True
@@ -451,7 +451,7 @@ class TestPipelineConfigUtilityMethods:
             "max_batch_size": 4,
         }
 
-        config = PipelineConfig(**kwargs)  # type: ignore[arg-type]
+        config = PipelineConfig.from_flat_kwargs(**kwargs)
 
         assert config.runtime.max_batch_size == 4
         assert config.runtime.denoising_cache.first_block_caching is True
