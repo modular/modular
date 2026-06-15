@@ -46,12 +46,12 @@ from std.gpu.host.info import is_cpu, is_gpu
 from std.gpu.primitives import block
 from layout._utils import idx2crd
 from layout import (
+    ComptimeInt,
     Coord,
     CoordLike,
     Idx,
     Layout,
     LayoutTensor,
-    LTToTTLayout,
     RowMajorLayout,
     TensorLayout,
     TileTensor,
@@ -60,6 +60,7 @@ from layout import (
     row_major,
     stack_allocation as tt_stack_allocation,
 )
+from layout.tile_layout import Layout as InternalLayout
 from layout.tensor_core import get_fragment_size
 from std.memory import stack_allocation
 from std.runtime.asyncrt import parallelism_level
@@ -859,7 +860,10 @@ def softmax_kernel[
 
 # TileTensor layout type for 1D row-major tensors with dynamic size,
 # used for sink_weights parameters.
-comptime _SinkWeightsTTLayout = LTToTTLayout[Layout.row_major(UNKNOWN_VALUE)]
+comptime _SinkWeightsTTLayout = InternalLayout[
+    shape_types=Coord[Int64].element_types,
+    stride_types=Coord[ComptimeInt[1]].element_types,
+]
 
 
 @__name(t"softmax_warp_{dtype}_{WARP_ROWS}_fused_{has_prologue_fusion}")

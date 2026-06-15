@@ -99,7 +99,15 @@ def _optional_lt_to_tt[
 ) -> OptionalReg[ImmutTileTensor1D[dtype]]:
     """Convert an OptionalReg[LayoutTensor] to OptionalReg[TileTensor]."""
     if opt:
-        return lt_to_tt(opt.value())
+        # NOTE: a plain `return lt_to_tt(opt.value())` compiles for the host
+        # target but FAILS the sm90 GPU-target compile: there `lt_to_tt`'s
+        # inferred result layout and `ImmutTileTensor1D`'s declared layout are
+        # structurally identical but not type-identical (the 1-D contiguous
+        # stride is `ComptimeInt[1]` on one side and a runtime `Int64` on the
+        # other). The stride of a contiguous 1-D tensor is always 1, so rebind
+        # to bridge the type-identity gap. Verify changes here with a remote
+        # GPU build (`--config=remote-b200`), not just a host build.
+        return rebind[ImmutTileTensor1D[dtype]](lt_to_tt(opt.value()))
     return None
 
 
@@ -487,7 +495,7 @@ def produce[
     ) -> LayoutTensor[
         qkv_type,
         Layout.row_major(q_tile_shape),
-        MutAnyOrigin,
+        type_of(q_smem).origin,
         address_space=AddressSpace.SHARED,
         alignment=128,
     ]:
@@ -505,7 +513,7 @@ def produce[
         out tile: LayoutTensor[
             qkv_type,
             k_smem_layout,
-            MutAnyOrigin,
+            type_of(kv_smem).origin,
             address_space=AddressSpace.SHARED,
             layout_int_type=DType.int32,
             linear_idx_type=DType.int32,

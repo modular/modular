@@ -65,6 +65,7 @@ from .layers import (
 )
 from .layers.sparse_mla import (
     DataParallelSparseLatentAttentionWithRopeFp8,
+    TensorParallelSparseLatentAttentionWithRopeFp8,
 )
 from .model_config import DeepseekV3_2Config
 
@@ -189,11 +190,24 @@ class DeepseekV3_2DecoderLayer(Module):
             index_topk=config.index_topk,
         )
 
-        self.self_attn = DataParallelSparseLatentAttentionWithRopeFp8(
-            norm_dtype=config.norm_dtype,
-            quant_config=config.quant_config,
-            **sparse_attn_kwargs,
+        self.tp_attention = num_devices > 1 and config.data_parallel_degree == 1
+        self.self_attn: (
+            DataParallelSparseLatentAttentionWithRopeFp8
+            | TensorParallelSparseLatentAttentionWithRopeFp8
         )
+        if self.tp_attention:
+            self.self_attn = TensorParallelSparseLatentAttentionWithRopeFp8(
+                skip_allreduce=True,
+                norm_dtype=config.norm_dtype,
+                quant_config=config.quant_config,
+                **sparse_attn_kwargs,
+            )
+        else:
+            self.self_attn = DataParallelSparseLatentAttentionWithRopeFp8(
+                norm_dtype=config.norm_dtype,
+                quant_config=config.quant_config,
+                **sparse_attn_kwargs,
+            )
 
         # Create MLP or MoE layer
         self.mlp = self._get_mlp(config, layer_idx)
@@ -312,9 +326,14 @@ class DeepseekV3_2DecoderLayer(Module):
                 devices=config.devices,
                 quant_config=layer_quant_config,
             )
-            mlp.sharding_strategy = ShardingStrategy.replicate(
-                len(config.devices)
-            )
+            if config.ep_config is not None and config.ep_config.use_allreduce:
+                mlp.sharding_strategy = ShardingStrategy.tensor_parallel(
+                    len(config.devices)
+                )
+            else:
+                mlp.sharding_strategy = ShardingStrategy.replicate(
+                    len(config.devices)
+                )
             return mlp
 
     def __call__(
@@ -399,7 +418,7 @@ class DeepseekV3_2DecoderLayer(Module):
             mla_prefill_metadata=mla_prefill_metadata,
         )
 
-        hs = [x + attn_out for x, attn_out in zip(xs, attn_outs, strict=True)]
+        hs = self._post_attention(xs, attn_outs, signal_buffers)
 
         # Post-attention norm (per-device)
         norm_outs = forward_sharded_layers(
@@ -413,9 +432,52 @@ class DeepseekV3_2DecoderLayer(Module):
 
         mlp_outs = forward_moe_sharded_layers(self.mlp_shards, norm_outs)
 
-        hs = [h + mlp_out for h, mlp_out in zip(hs, mlp_outs, strict=True)]
+        hs = self._post_mlp(hs, mlp_outs, signal_buffers)
+
+        # In TP mode the reduce-scatter/all-gather round trip can lose the
+        # static shape; rebind to the original per-device input shape.
+        if self.tp_attention:
+            hs = [ops.rebind(h, x.shape) for h, x in zip(hs, xs, strict=True)]
 
         return hs
+
+    def _post_attention(
+        self,
+        xs: list[TensorValue],
+        attn_outs: list[TensorValue],
+        signal_buffers: list[BufferValue],
+    ) -> list[TensorValue]:
+        """Residual connection and collective after attention."""
+        if not self.tp_attention:
+            return [x + a for x, a in zip(xs, attn_outs, strict=True)]
+
+        assert self.config.ep_config is not None
+        if self.config.ep_config.use_allreduce:
+            attn_outs = ops.allreduce.sum(attn_outs, signal_buffers)
+            return [x + a for x, a in zip(xs, attn_outs, strict=True)]
+
+        # The residual is replicated across devices, so add it only on device 0
+        # to avoid counting it once per device after the reduce-scatter sum.
+        hs = [xs[0] + attn_outs[0], *attn_outs[1:]]
+        return ops.reducescatter.sum(hs, signal_buffers, axis=0)
+
+    def _post_mlp(
+        self,
+        hs: list[TensorValue],
+        mlp_outs: list[TensorValue],
+        signal_buffers: list[BufferValue],
+    ) -> list[TensorValue]:
+        """Residual connection and collective after the MoE/MLP."""
+        if not self.tp_attention:
+            return [h + m for h, m in zip(hs, mlp_outs, strict=True)]
+
+        assert self.config.ep_config is not None
+        if self.config.ep_config.use_allreduce:
+            mlp_outs = ops.allreduce.sum(mlp_outs, signal_buffers)
+            return [h + m for h, m in zip(hs, mlp_outs, strict=True)]
+
+        hs = [h + m for h, m in zip(hs, mlp_outs, strict=True)]
+        return ops.allgather(hs, signal_buffers, axis=0)
 
 
 class DeepseekV3_2(Module):

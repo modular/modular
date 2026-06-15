@@ -209,7 +209,6 @@ def test_cli_overrides_yaml_recipe_values(tmp_path: Path) -> None:
         device_specs=[DeviceSpec(i, "gpu") for i in range(4)],
         data_parallel_degree=4,
         ep_size=4,
-        defer_resolve=True,
     )
 
     main = config.models["main"]

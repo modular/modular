@@ -104,7 +104,9 @@ def _test_pull[
         var out_buf = ctxs[i].enqueue_create_buffer[dtype](n)
         ctxs[i].enqueue_memset(out_buf, 0)
         ctxs[i].synchronize()
-        out_tiles[i] = OutputTileType(out_buf.unsafe_ptr(), row_major(n))
+        out_tiles[i] = OutputTileType(
+            out_buf.unsafe_ptr().as_unsafe_any_origin(), row_major(n)
+        )
         output_devbufs.append(out_buf)
 
     # Signal buffers.
@@ -116,7 +118,9 @@ def _test_pull[
         var sig_buf = ctxs[i].create_buffer_sync[DType.uint8](size_of[Signal]())
         ctxs[i].enqueue_memset[DType.uint8](sig_buf, 0)
         ctxs[i].synchronize()
-        rank_sigs[i] = sig_buf.unsafe_ptr().bitcast[Signal]()
+        rank_sigs[i] = (
+            sig_buf.unsafe_ptr().bitcast[Signal]().as_unsafe_any_origin()
+        )
         signal_bufs.append(sig_buf)
 
     # Launch scatter.

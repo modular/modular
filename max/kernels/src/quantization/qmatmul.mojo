@@ -779,9 +779,9 @@ struct _MatmulQInt4Kernel_neon_dotprod(_MatmulQInt4Kernel):
 
             comptime for lane in range(0, 4, 2):
                 comptime for col in range(tile_n):
-                    var b_data_packed = b_ptr.load[width=simd_width * 4](
-                        b_offset
-                    ).cast[DType.uint8]()
+                    var b_data_packed = b_ptr.load[
+                        width=SIMDSize(simd_width) * 4
+                    ](b_offset).cast[DType.uint8]()
                     b_offset += simd_width * 4
 
                     var b_data_i4_lo = (b_data_packed & 15).cast[
@@ -832,7 +832,9 @@ struct _MatmulQInt4Kernel_neon_dotprod(_MatmulQInt4Kernel):
 
             comptime for lane in range(4):
                 comptime for col in range(tile_n):
-                    var b_val = b_ptr.load[width=simd_width * 4](b_offset)
+                    var b_val = b_ptr.load[width=SIMDSize(simd_width) * 4](
+                        b_offset
+                    )
                     b_offset += simd_width * 4
 
                     comptime for row in range(tile_m):
@@ -912,23 +914,25 @@ struct _MatmulQInt4Kernel_neon_i8mm(_MatmulQInt4Kernel):
         var b_offset = 0
 
         comptime for k in range(0, group_size, 8):
-            var a_tile = InlineArray[SIMD[DType.int8, simd_width * 4], block_m](
-                fill=0
-            )
+            var a_tile = InlineArray[
+                SIMD[DType.int8, SIMDSize(simd_width) * 4], block_m
+            ](fill=0)
 
             comptime if tile_m > 1:
                 comptime for row in range(block_m):
-                    a_tile[row] = a_ptr.load[width=simd_width * 4](a_offset)
+                    a_tile[row] = a_ptr.load[width=SIMDSize(simd_width) * 4](
+                        a_offset
+                    )
                     a_offset += simd_width * 4
             else:
                 var a_val = a_ptr.load[width=simd_width * 2](a_offset)
-                a_tile[0] = rebind[SIMD[DType.int8, simd_width * 4]](
+                a_tile[0] = rebind[SIMD[DType.int8, SIMDSize(simd_width) * 4]](
                     a_val.join(SIMD[DType.int8, simd_width * 2](0))
                 )
                 a_offset += simd_width * 2
 
             comptime for col in range(tile_n * 2):
-                var b_val = b_ptr.load[width=simd_width * 4](b_offset)
+                var b_val = b_ptr.load[width=SIMDSize(simd_width) * 4](b_offset)
                 b_offset += simd_width * 4
 
                 comptime for row in range(block_m):

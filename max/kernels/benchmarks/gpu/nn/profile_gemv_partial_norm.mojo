@@ -245,7 +245,7 @@ def main() raises:
                     b_tensor,
                     gamma_tensor,
                     eps,
-                    counter_buf.unsafe_ptr(),
+                    counter_buf.unsafe_ptr().as_unsafe_any_origin(),
                     ctx,
                 )
             else:
@@ -255,7 +255,7 @@ def main() raises:
                     b_tensor,
                     gamma_tensor,
                     eps,
-                    cb_y.offset_ptr(iteration),
+                    cb_y.offset_ptr(iteration).as_unsafe_any_origin(),
                     ctx,
                 )
 
@@ -302,10 +302,10 @@ def main() raises:
         ctx.synchronize()
 
         _host_reference[c_type, a_type](
-            y_ref_host_ptr.unsafe_ptr(),
-            gamma_host_ptr.unsafe_ptr(),
-            normed_ref_ptr.unsafe_ptr(),
-            unnormed_ref_ptr.unsafe_ptr(),
+            y_ref_host_ptr.unsafe_ptr().as_unsafe_any_origin(),
+            gamma_host_ptr.unsafe_ptr().as_unsafe_any_origin(),
+            normed_ref_ptr.unsafe_ptr().as_unsafe_any_origin(),
+            unnormed_ref_ptr.unsafe_ptr().as_unsafe_any_origin(),
             N,
             N_NORMED,
             eps,

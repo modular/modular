@@ -25,7 +25,7 @@ import numpy.typing as npt
 from max.driver import Buffer, Device, DLPackArray
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import BufferType, DeviceRef, Graph, TensorType, Type
+from max.graph import BufferType, DeviceRef, Graph, Module, TensorType, Type
 from max.graph.buffer_utils import cast_dlpack_to
 from max.graph.weights import WeightData, Weights, WeightsAdapter
 from max.nn.comm import Signals
@@ -279,25 +279,25 @@ class Gemma3_MultiModalModel(
             input_row_offsets_prealloc_host.to(dev) for dev in self.devices
         ]
 
-        # Build and compile language model
-        with CompilationTimer("language model") as timer:
+        # Build and compile vision + language models in parallel
+        with CompilationTimer("vision + language model") as timer:
+            module = Module()
             language_graph, language_weight_dict = self._build_language_graph(
-                model_config, language_weights_dict
+                model_config, language_weights_dict, module=module
             )
-            timer.mark_build_complete()
-            language_model = session.load(
-                language_graph, weights_registry=language_weight_dict
-            )
-
-        # Build and compile vision model
-        with CompilationTimer("vision model") as timer:
             vision_graph, vision_model_state_dict = self._build_vision_graph(
-                model_config, vision_weights_dict
+                model_config, vision_weights_dict, module=module
             )
             timer.mark_build_complete()
-            vision_model = session.load(
-                vision_graph, weights_registry=vision_model_state_dict
+            combined_registry = {
+                **language_weight_dict,
+                **vision_model_state_dict,
+            }
+            models = session.load_all(
+                module, weights_registry=combined_registry
             )
+            language_model = models[language_graph.name]
+            vision_model = models[vision_graph.name]
 
         return vision_model, language_model
 
@@ -362,11 +362,13 @@ class Gemma3_MultiModalModel(
         self,
         config: Gemma3ForConditionalGenerationConfig,
         state_dict: dict[str, WeightData],
+        module: Module | None = None,
     ) -> tuple[Graph, dict[str, DLPackArray]]:
         """Build the language model with our input types and graph"""
         with Graph(
             getattr(self.huggingface_config, "model_type", "Gemma3"),
             input_types=self._language_model_input_types(config),
+            module=module,
         ) as graph:
             language_model = Gemma3LanguageModel(config)
             language_model.load_state_dict(
@@ -376,7 +378,7 @@ class Gemma3_MultiModalModel(
             )
 
             # Unpack inputs following InternVL pattern
-            (tokens, return_n_logits, *variadic_args) = graph.inputs
+            tokens, return_n_logits, *variadic_args = graph.inputs
 
             # Extract input_row_offsets (one per device)
             input_row_offsets = [
@@ -444,11 +446,16 @@ class Gemma3_MultiModalModel(
         self,
         config: Gemma3ForConditionalGenerationConfig,
         state_dict: dict[str, WeightData],
+        module: Module | None = None,
     ) -> tuple[Graph, dict[str, DLPackArray]]:
         """Build the vision model with our input types and graph"""
+        vision_graph_name = (
+            getattr(self.huggingface_config, "model_type", "Gemma3") + "_vision"
+        )
         with Graph(
-            getattr(self.huggingface_config, "model_type", "Gemma3"),
+            vision_graph_name,
             input_types=self._vision_model_input_types(config),
+            module=module,
         ) as graph:
             vision_model = Gemma3VisionModel(
                 config,
@@ -584,7 +591,8 @@ class Gemma3_MultiModalModel(
         self, context_batch: Sequence[TextAndVisionContext]
     ) -> list[Buffer] | None:
         """Use the VisionStacker to prepare batched vision inputs from multiple contexts.
-        The Tokenizer should have already processed images into pixel_values (pan and scan etc)"""
+        The Tokenizer should have already processed images into pixel_values (pan and scan etc)
+        """
         images = []
         for context in context_batch:
             for img in context.next_images:

@@ -27,12 +27,12 @@ from kv_cache.types import (
     PagedKVCacheCollection,
 )
 from layout import (
+    ComptimeInt,
     Coord,
     CoordLike,
     Idx,
     Layout,
     LayoutTensor,
-    LTToTTLayout,
     RowMajorLayout,
     RuntimeLayout,
     TileTensor,
@@ -3071,7 +3071,7 @@ def _flare_mla_decode_kv_cache_ragged[
     var k = kv_collection.get_key_cache(layer_idx_cast)
 
     var scalar_args_buf_tt = rebind[
-        TileTensor[DType.int64, LTToTTLayout[Layout.row_major(3)], MutAnyOrigin]
+        TileTensor[DType.int64, RowMajorLayout[ComptimeInt[3]], MutAnyOrigin]
     ](scalar_args_buf)
 
     comptime _q_num_heads = type_of(q).static_shape[q.rank - 2]
@@ -3881,13 +3881,13 @@ def kv_cache_2m_iadd_dispatch[
     kv: LayoutTensor[dtype, address_space=AddressSpace.GENERIC, ...],
     cache: collection_t,
     input_row_offsets: LayoutTensor[
-        DType.uint32, address_space=AddressSpace.GENERIC, ...
+        mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
     lora_end_idx: LayoutTensor[
-        DType.int64, address_space=AddressSpace.GENERIC, ...
+        mut=False, DType.int64, address_space=AddressSpace.GENERIC, ...
     ],
     batch_seq_len: LayoutTensor[
-        DType.int64, address_space=AddressSpace.GENERIC, ...
+        mut=False, DType.int64, address_space=AddressSpace.GENERIC, ...
     ],
     layer_idx: UInt32,
     ctx: DeviceContext,

@@ -320,7 +320,7 @@ struct UnsafeNullablePointer[
         ](other.address)
 
     def __init__[
-        T: ImplicitlyDestructible, //
+        T: ImplicitlyDeletable, //
     ](
         out self: UnsafeNullablePointer[T, Self.origin],
         *,
@@ -1298,7 +1298,7 @@ struct UnsafeNullablePointer[
 
     @always_inline
     def destroy_pointee[
-        T: ImplicitlyDestructible, //
+        T: ImplicitlyDeletable, //
     ](self: UnsafeNullablePointer[T, _]) where type_of(self).mut:
         """Please refer to `UnsafePointer.destroy_pointee`.
 

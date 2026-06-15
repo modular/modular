@@ -223,7 +223,6 @@ modular_py_test(
     deps = [
         "//max/python/max/graph",
         "//max/python/max/nn",
-        "//max/python/max/pipelines/lib",
     ],
 )
 

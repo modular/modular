@@ -18,7 +18,6 @@ import faulthandler
 import os
 import signal
 import sys
-import threading
 from collections.abc import Iterable, Mapping, Sequence
 from enum import Enum, IntEnum, auto
 from inspect import Parameter, Signature
@@ -410,6 +409,22 @@ class CompiledModel:
     def __repr__(self) -> str:
         return "CompiledModel()"
 
+    def export_mef(self, path: str | Path) -> None:
+        """Exports this compiled artifact to a MEF file.
+
+        Writes the serialized model straight from the compiled artifact, so
+        it does not require the model to be initialized on a device. This
+        makes it usable in cross-compilation / virtual-device scenarios where
+        the target device may not be attached.
+
+        Args:
+            path: Filesystem path to write the MEF to.
+        """
+        self._compiled.wait()
+        if (exc := self._compiled.exception()) is not None:
+            raise exc
+        self._compiled.result().export_mef(str(path))
+
 
 class InferenceSession:
     """Manages an inference session in which you can load and run models.
@@ -443,8 +458,6 @@ class InferenceSession:
     """
 
     _impl: _InferenceSession
-    # This is shared across sessions. Compilation is currently not thread safe.
-    _compilation_lock = threading.Lock()
     # DebugConfig is a process-wide singleton. Assigning it as a class
     # attribute at import time means both ``InferenceSession.debug`` and
     # ``session.debug`` return the same underlying object, and any
@@ -642,6 +655,83 @@ class InferenceSession:
         compiled = self.compile(model, custom_extensions=custom_extensions)
         return self.init_all(compiled, weights_registry=weights_registry)
 
+    def compile_async(
+        self,
+        model: str | Path | Module | Graph,
+        *,
+        custom_extensions: CustomExtensionsType | None = None,
+    ) -> CompiledModel:
+        """Compiles a model without blocking on the compilation finishing.
+
+        Returns as soon as the compile is scheduled; the returned
+        :class:`CompiledModel` wraps a pending compilation that runs on the
+        runtime's worker pool. Compilation errors are not raised here — they
+        surface when the artifact is awaited, for example by :meth:`init`,
+        :meth:`init_all`, or :meth:`CompiledModel.export_mef`. Use
+        :meth:`compile` for the synchronous variant that blocks and raises.
+
+        Args:
+            model: A :class:`Graph` instance, a :class:`max.graph.Module`
+                containing one or more ``mo.graph`` ops, or the path to a
+                saved model file (for example, a ``.mef`` file).
+
+            custom_extensions: The extensions to load for the model.
+                Supports paths to ``.mojopkg`` custom ops.
+
+        Returns:
+            A :class:`CompiledModel` artifact wrapping the pending compilation.
+        """
+        custom_extensions_final: list[CustomExtensionType] = []
+        if custom_extensions is not None:
+            custom_extensions_final = _process_custom_extensions_objects(
+                custom_extensions
+            )
+
+        # Track the MLIR module if we have one so we can enumerate graph
+        # names and capture expected-weight metadata for init-time validation.
+        module: Module | None = None
+        expected_weights: dict[str, Any] | None = None
+
+        if isinstance(model, Path | str):
+            handle = self._impl.compile(model, custom_extensions_final)
+        elif isinstance(model, Graph):
+            module = model.module
+            custom_extensions_final.extend(
+                _process_custom_extensions_objects(model.kernel_libraries_paths)
+            )
+
+            # TODO: if the model has been loaded from a serialized MLIR
+            # file, we don't have the _weights attribute available to us
+            if hasattr(model, "_weights"):
+                expected_weights = {
+                    name: weight.value.device
+                    for name, weight in model._weights.items()
+                }
+
+            # Seed the model module with kernel decls + the opaque-type
+            # mapping from the graph's KernelLibrary. The GC pipeline
+            # detects the mapping attribute and skips
+            # `mogg-import-packages`, so the expensive package-loading
+            # step (run once at KernelLibrary construction) doesn't
+            # repeat on every compile.
+            kernel_library = getattr(model, "_kernel_library", None)
+            if kernel_library is not None:
+                kernel_library._analysis.seed_kernel_decls(module.mlir_module)
+
+            handle = self._compile_module(module, custom_extensions_final)
+        elif isinstance(model, Module):
+            module = model
+            handle = self._compile_module(module, custom_extensions_final)
+        else:
+            raise RuntimeError("The model is not a valid path or module.")
+
+        compiled = CompiledModel(
+            compiled=handle, expected_weights=expected_weights
+        )
+        if module is not None:
+            compiled._graph_names = tuple(module.top_level_graph_names())
+        return compiled
+
     def compile(
         self,
         model: str | Path | Module | Graph,
@@ -656,6 +746,9 @@ class InferenceSession:
         attached. The returned :class:`CompiledModel` requires initialization
         before execution. Pass it to :meth:`init` or :meth:`init_all` to
         produce an executable :class:`Model`.
+
+        Blocks until compilation finishes and raises on failure. Use
+        :meth:`compile_async` to schedule compilation without blocking.
 
         Args:
             model: A :class:`Graph` instance, a :class:`max.graph.Module`
@@ -672,66 +765,22 @@ class InferenceSession:
             RuntimeError: If the path provided is invalid or compilation
                 fails.
         """
-        custom_extensions_final: list[CustomExtensionType] = []
-        if custom_extensions is not None:
-            custom_extensions_final = _process_custom_extensions_objects(
-                custom_extensions
-            )
-
-        # Track the MLIR module if we have one so we can enumerate graph
-        # names and capture expected-weight metadata for init-time validation.
-        module: Module | None = None
-        expected_weights: dict[str, Any] | None = None
-
         with _record_phase("compile_seconds"):
-            if isinstance(model, Path | str):
-                handle = self._impl.compile(model, custom_extensions_final)
-            elif isinstance(model, Graph):
-                module = model.module
-                custom_extensions_final.extend(
-                    _process_custom_extensions_objects(
-                        model.kernel_libraries_paths
-                    )
-                )
-
-                # TODO: if the model has been loaded from a serialized MLIR
-                # file, we don't have the _weights attribute available to us
-                if hasattr(model, "_weights"):
-                    expected_weights = {
-                        name: weight.value.device
-                        for name, weight in model._weights.items()
-                    }
-
-                # Seed the model module with kernel decls + the opaque-type
-                # mapping from the graph's KernelLibrary. The GC pipeline
-                # detects the mapping attribute and skips
-                # `mogg-import-packages`, so the expensive package-loading
-                # step (run once at KernelLibrary construction) doesn't
-                # repeat on every compile.
-                kernel_library = getattr(model, "_kernel_library", None)
-                if kernel_library is not None:
-                    kernel_library._analysis.seed_kernel_decls(
-                        module.mlir_module
-                    )
-
-                handle = self._compile_module(module, custom_extensions_final)
-            elif isinstance(model, Module):
-                module = model
-                handle = self._compile_module(module, custom_extensions_final)
-            else:
-                raise RuntimeError("The model is not a valid path or module.")
-
-        # synchronously complete the compilation and raise errors
-        handle.wait()
-        if (exception := handle.exception()) is not None:
-            raise exception
-
-        compiled = CompiledModel(
-            compiled=handle, expected_weights=expected_weights
-        )
-        if module is not None:
-            compiled._graph_names = tuple(module.top_level_graph_names())
-        return compiled
+            compiled = self.compile_async(
+                model, custom_extensions=custom_extensions
+            )
+            # Synchronously complete the compilation and raise errors.
+            compiled._compiled.wait()
+        exception = compiled._compiled.exception()
+        if exception is None:
+            return compiled
+        # compile_async surfaces the compile failure here rather than from the
+        # compile call, so the Graph/Module wrapping that _compile_module
+        # applies to synchronous setup errors is repeated here for the async
+        # failure.
+        if isinstance(model, (Graph, Module)):
+            raise RuntimeError(self._compile_failure_message()) from exception
+        raise exception
 
     def init(
         self,
@@ -853,6 +902,27 @@ class InferenceSession:
             )
         return result
 
+    def _compile_failure_message(self) -> str:
+        """Returns the wrapper text for a Graph/Module compilation failure.
+
+        Shared by the synchronous setup-error path in :meth:`_compile_module`
+        and the asynchronous compile-failure path in :meth:`compile`, so both
+        surface identical guidance.
+        """
+        msg = (
+            "Failed to compile the model. Please file an issue, "
+            "all models should be correct by construction and "
+            "this error should have been caught during construction."
+        )
+        if not self.debug.source_tracebacks:
+            msg += (
+                "\nFor more detailed failure information enable the "
+                "`max-debug.source-tracebacks` config key (for example, "
+                "`Graph.debug.source_tracebacks = True` or "
+                "`MODULAR_DEBUG=source-tracebacks`)."
+            )
+        return msg
+
     def _compile_module(
         self,
         module: Module,
@@ -860,30 +930,19 @@ class InferenceSession:
     ) -> _AsyncValue[_CompiledModels]:
         """Compiles an MLIR module under the session's compilation lock.
 
-        Wraps any compilation failure in a ``RuntimeError`` pointing at the
-        ``max-debug.source-tracebacks`` config key for richer diagnostics.
+        Wraps any synchronous setup failure in a ``RuntimeError`` pointing at
+        the ``max-debug.source-tracebacks`` config key for richer diagnostics.
+        Compilation itself is asynchronous; that failure surfaces when the
+        returned value is awaited (see :meth:`compile`).
         """
-        with self._compilation_lock:
-            try:
-                return self._impl.compile(
-                    module.mlir_module._CAPIPtr,
-                    custom_extensions_final,
-                    _derive_pipeline_name(module),
-                )
-            except Exception as e:
-                msg = (
-                    "Failed to compile the model. Please file an issue, "
-                    "all models should be correct by construction and "
-                    "this error should have been caught during construction."
-                )
-                if not self.debug.source_tracebacks:
-                    msg += (
-                        "\nFor more detailed failure information enable the "
-                        "`max-debug.source-tracebacks` config key (for example, "
-                        "`Graph.debug.source_tracebacks = True` or "
-                        "`MODULAR_DEBUG=source-tracebacks`)."
-                    )
-                raise RuntimeError(msg) from e
+        try:
+            return self._impl.compile(
+                module.mlir_module._CAPIPtr,
+                custom_extensions_final,
+                _derive_pipeline_name(module),
+            )
+        except Exception as e:
+            raise RuntimeError(self._compile_failure_message()) from e
 
     def set_debug_print_options(
         self,

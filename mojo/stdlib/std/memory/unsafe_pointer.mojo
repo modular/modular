@@ -226,7 +226,7 @@ def alloc[
         "alloc[",
         type_name,
         "]() count must be non-negative: ",
-        count,
+        Int(count),
     )
     var pointer = _malloc[type](size_of_t * count, alignment=alignment)
     if unlikely(not pointer):
@@ -533,9 +533,6 @@ struct UnsafePointer[
             must also ensure the pointer's origin and mutability is valid for
             the address, failure to do may result in undefined behavior.
         """
-        comptime assert (
-            size_of[type_of(self)]() == size_of[Int]()
-        ), "Pointer/Int size mismatch"
         self = UnsafePointer(to=unsafe_from_address).bitcast[type_of(self)]()[]
 
     @always_inline
@@ -635,7 +632,7 @@ struct UnsafePointer[
         ](other.address)
 
     def __init__[
-        T: ImplicitlyDestructible, //
+        T: ImplicitlyDeletable, //
     ](
         out self: UnsafePointer[T, Self.origin],
         *,
@@ -1928,7 +1925,7 @@ struct UnsafePointer[
 
     @always_inline
     def destroy_pointee[
-        T: ImplicitlyDestructible, //
+        T: ImplicitlyDeletable, //
     ](self: UnsafePointer[T, _]) where type_of(self).mut:
         """Destroy the pointed-to value.
 
@@ -1956,7 +1953,7 @@ struct UnsafePointer[
     ) where type_of(self).mut:
         """Destroy the pointed-to value using a user-provided destructor function.
 
-        This can be used to destroy non-`ImplicitlyDestructible` values in-place
+        This can be used to destroy non-`ImplicitlyDeletable` values in-place
         without moving.
 
         Args:

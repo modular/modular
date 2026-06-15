@@ -76,7 +76,9 @@ from max.serve.parser import (
 from max.serve.parser.tool_call_normalization import (
     _normalize_tools_parameters,
     _validate_response_format_schema,
+    normalize_response_format_schema,
 )
+from max.serve.parser.tool_call_validation import log_tool_call_conformance
 from max.serve.pipelines.llm import (
     TokenGeneratorOutput,
     TokenGeneratorPipeline,
@@ -290,6 +292,7 @@ class OpenAIChatResponseGenerator(
         stream_options: ChatCompletionStreamOptionsParam | None = None,
         parser: ToolParser | None = None,
         parse_tool_calls: bool = False,
+        tools: list[TextGenerationRequestTool] | None = None,
     ) -> None:
         super().__init__(pipeline)
         self.stream_options = stream_options
@@ -298,6 +301,22 @@ class OpenAIChatResponseGenerator(
         )
         # Whether to parse tool calls from the response.
         self.parse_tool_calls = parse_tool_calls
+        # Function name -> JSON schema, used only for observability-only
+        # schema-conformance logging (see tool_call_validation). The raw
+        # client schema is kept so it matches what callers validate against.
+        self._tool_schemas: dict[str, dict[str, Any]] = {}
+        for t in tools or []:
+            name = maybe_name_from_tool(t)
+            fn = t.get("function")
+            if (
+                name
+                and isinstance(fn, dict)
+                and isinstance(fn.get("parameters"), dict)
+            ):
+                self._tool_schemas[name] = fn["parameters"]
+        # Per-call streaming accumulators for end-of-stream conformance check.
+        self._stream_tool_names: dict[int, str] = {}
+        self._stream_tool_args: dict[int, list[str]] = {}
 
     async def stream(
         self, request: TextGenerationRequest
@@ -315,6 +334,8 @@ class OpenAIChatResponseGenerator(
         # Reset parser state for new streaming session
         if self.parse_tool_calls:
             self.parser.reset()
+            self._stream_tool_names.clear()
+            self._stream_tool_args.clear()
 
         try:
             async for chunk in self.pipeline.next_token_chunk(request):
@@ -363,6 +384,14 @@ class OpenAIChatResponseGenerator(
                         for delta in tool_deltas:
                             if delta.content is not None:
                                 stream_content_parts.append(delta.content)
+                            if delta.name:
+                                self._stream_tool_names[delta.index] = (
+                                    delta.name
+                                )
+                            if delta.arguments:
+                                self._stream_tool_args.setdefault(
+                                    delta.index, []
+                                ).append(delta.arguments)
                             if delta.id or delta.name or delta.arguments:
                                 has_emitted_tool_calls = True
                                 tool_call_chunks.append(
@@ -383,6 +412,25 @@ class OpenAIChatResponseGenerator(
                         # merged_stream_content is non-None and prevents
                         # chunk.decoded_tokens from being used as content.
                         merged_stream_content = "".join(stream_content_parts)
+
+                if (
+                    self.parse_tool_calls
+                    and chunk.status.is_done
+                    and self._tool_schemas
+                    and self._stream_tool_names
+                ):
+                    log_tool_call_conformance(
+                        [
+                            (
+                                self._stream_tool_names[i],
+                                "".join(self._stream_tool_args.get(i, [])),
+                            )
+                            for i in sorted(self._stream_tool_names)
+                        ],
+                        self._tool_schemas,
+                        request_id=str(request.request_id),
+                        streaming=True,
+                    )
 
                 if (
                     chunk.decoded_tokens is not None
@@ -623,6 +671,21 @@ class OpenAIChatResponseGenerator(
                     completed_outputs[-1].status, allow_none=False
                 )
 
+            # Kimi K2.5 (thinking enabled) can answer inside the prefilled
+            # ``<think>`` block and stop without emitting ``</think>``, so the
+            # reasoning parser routes the whole answer to reasoning and leaves
+            # content empty. On a voluntary stop, surface that reasoning as
+            # content so a successful turn never returns ``message.content``
+            # null. On ``length`` (truncated mid-thought) keep it as reasoning
+            # rather than misrepresenting a partial thought as the answer.
+            if (
+                not response_message.strip()
+                and reasoning_message
+                and finish_reason == "stop"
+            ):
+                response_message = reasoning_message
+                reasoning_message = None
+
             response_choices: list[ChatCompletionResponseChoice] = []
             # Note: Do not gate on `response_format is None` here.
             # The TextGenerationRequest was mutated to contain a
@@ -632,6 +695,16 @@ class OpenAIChatResponseGenerator(
                 try:
                     parsed = self.parser.parse_complete(response_message)
                     if parsed.tool_calls:
+                        if self._tool_schemas:
+                            log_tool_call_conformance(
+                                [
+                                    (tc.name, tc.arguments)
+                                    for tc in parsed.tool_calls
+                                ],
+                                self._tool_schemas,
+                                request_id=str(request.request_id),
+                                streaming=False,
+                            )
                         response_choices = self._tool_response_to_choices(
                             parsed, logprobs=logprobs
                         )
@@ -1324,6 +1397,7 @@ async def openai_create_chat_completion(
             stream_options=stream_options,
             parser=parser,
             parse_tool_calls=parse_tool_calls,
+            tools=tools,
         )
         # Use request-level temperature/thinking_temperature if provided, else server defaults.
         temp = (
@@ -1336,6 +1410,11 @@ async def openai_create_chat_completion(
             if completion_request.thinking_temperature is not None
             else pipeline_config.runtime.thinking_temperature
         )
+        max_new_tokens = (
+            completion_request.max_completion_tokens
+            if completion_request.max_completion_tokens is not None
+            else completion_request.max_tokens
+        )
         sampling_params = SamplingParams.from_input_and_generation_config(
             SamplingParamsInput(
                 top_k=completion_request.top_k,
@@ -1346,7 +1425,7 @@ async def openai_create_chat_completion(
                 frequency_penalty=completion_request.frequency_penalty,
                 presence_penalty=completion_request.presence_penalty,
                 repetition_penalty=completion_request.repetition_penalty,
-                max_new_tokens=completion_request.max_tokens,
+                max_new_tokens=max_new_tokens,
                 min_new_tokens=completion_request.min_tokens,
                 ignore_eos=completion_request.ignore_eos,
                 seed=completion_request.seed or randint(0, 2**63 - 1),
@@ -1583,6 +1662,12 @@ def _create_response_format(
 
     # Validate the schema early to return 400 instead of crashing the model worker.
     _validate_json_schema(json_schema)
+
+    # Default a missing root ``type`` to ``"object"`` before the schema
+    # reaches the grammar backend. An untyped root compiles to a grammar that
+    # permits a bare unbounded top-level value, which lets a looping model run
+    # to ``max_length`` (the runaway-output incident).
+    json_schema = normalize_response_format_schema(json_schema)
 
     # Enforce grammar from the first token only when there is an actual
     # schema to enforce. The json_schema can also be used to create a grammar,

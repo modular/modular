@@ -147,7 +147,10 @@ def bench_broadcast[
                 signal_buffers[gpu_idx], 0
             )
             rank_sigs[gpu_idx] = (
-                signal_buffers[gpu_idx].unsafe_ptr().bitcast[Signal]()
+                signal_buffers[gpu_idx]
+                .unsafe_ptr()
+                .bitcast[Signal]()
+                .as_unsafe_any_origin()
             )
     else:
         comptime for gpu_idx in range(ngpus):
@@ -166,7 +169,10 @@ def bench_broadcast[
                 signal_buffers[gpu_idx], 0
             )
             rank_sigs[gpu_idx] = (
-                signal_buffers[gpu_idx].unsafe_ptr().bitcast[Signal]()
+                signal_buffers[gpu_idx]
+                .unsafe_ptr()
+                .bitcast[Signal]()
+                .as_unsafe_any_origin()
             )
 
     # Create and initialize host buffer for root with position-based values
@@ -195,7 +201,8 @@ def bench_broadcast[
     else:
         for i in range(ngpus):
             out_tiles[i] = OutputTileType(
-                out_bufs_list[i].unsafe_ptr(), row_major(length)
+                out_bufs_list[i].unsafe_ptr().as_unsafe_any_origin(),
+                row_major(length),
             )
             # Ensure setup has propagated.
             list_of_ctx[i].synchronize()

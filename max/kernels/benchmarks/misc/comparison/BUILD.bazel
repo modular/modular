@@ -54,6 +54,22 @@ modular_py_library(
     ],
 )
 
+# Softmax benchmark: MAX vs PyTorch
+modular_py_library(
+    name = "bench_softmax_lib",
+    srcs = ["bench_softmax.py"],
+    tags = ["no-pydeps"],
+    deps = [
+        requirement("torch"),
+        "//max/kernels/benchmarks/autotune:bencher_utils",
+        "//max/kernels/benchmarks/misc/utils:bench_utils",
+        "//max/python/max/driver",
+        "//max/python/max/engine",
+        "//max/python/max/experimental/torch",
+        "//max/python/max/graph",
+    ],
+)
+
 # MHA prefill benchmark: MAX vs FlashInfer vs flash-attention
 # Moved to kbench. Please run the following:
 # kbench bench_prefill.yaml --param engine:"[modular_max, flashinfer, tridao]"

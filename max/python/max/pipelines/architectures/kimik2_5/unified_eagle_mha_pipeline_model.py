@@ -31,7 +31,7 @@ from max._core.driver import is_virtual_device_mode
 from max.driver import Buffer
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import BufferValue, Graph, TensorValue, Value
+from max.graph import BufferValue, Graph, Module, TensorValue, Value
 from max.graph.weights import WeightData, load_weights
 from max.nn.comm.ep import EPCommInitializer
 from max.nn.kv_cache import KVCacheInputs, KVCacheParams, PagedCacheValues
@@ -363,21 +363,17 @@ class Eagle3MHAKimiK25Model(KimiK2_5Model):
                 continue
             self.state_dict[f"draft.{k}"] = v
 
-        with CompilationTimer("vision model") as timer:
+        with CompilationTimer("vision + eagle3 mha language model") as timer:
+            graph_module = Module()
             vision_graph = self._build_vision_graph(
-                kimik2_5_config, vision_state_dict
+                kimik2_5_config, vision_state_dict, module=graph_module
             )
-            timer.mark_build_complete()
-            vision_model = session.load(
-                vision_graph, weights_registry=self.state_dict
-            )
-
-        with CompilationTimer("eagle3_mha_kimik25_language_model") as timer:
             with Graph(
                 "eagle3_mha_kimik25_graph",
                 input_types=nn_model.input_types(
                     self.kv_params, self._draft_kv_params
                 ),
+                module=graph_module,
             ) as graph:
                 (
                     tokens,
@@ -500,9 +496,11 @@ class Eagle3MHAKimiK25Model(KimiK2_5Model):
                 graph.output(*outputs)
 
             timer.mark_build_complete()
-            language_model = session.load(
-                graph, weights_registry=self.state_dict
+            models = session.load_all(
+                graph_module, weights_registry=self.state_dict
             )
+            vision_model = models[vision_graph.name]
+            language_model = models[graph.name]
 
         return vision_model, language_model
 

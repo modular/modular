@@ -192,6 +192,14 @@ def register_all_models() -> None:
     except ModuleNotFoundError:
         pass
 
+    # Optional: import the MiniMax-M3 model if available.
+    try:
+        from minimax_m3 import minimax_m3_arch  # type: ignore[import-not-found]
+
+        PIPELINE_REGISTRY.register(minimax_m3_arch)
+    except ModuleNotFoundError:
+        pass
+
     _MODELS_ALREADY_REGISTERED = True
 
 

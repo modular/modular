@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+import ctypes
 import itertools
 import logging
 import os
@@ -43,50 +44,59 @@ _ShardT = TypeVar("_ShardT")
 _NIXL_BACKEND_ENV_VAR = "MODULAR_NIXL_TRANSFER_BACKEND"
 _SUPPORTED_BACKENDS: set[NixlBackendType] = {"ucx", "libfabric"}
 
+# GPU runtime libraries that the upstream UCX plugin (libplugin_UCX.so, CUDA
+# flavor) references but does not itself dlopen. The upstream plugin manager
+# loads plugins with ``dlopen(..., RTLD_NOW | RTLD_LOCAL)``; ``RTLD_NOW``
+# requires every undefined symbol (CUDA driver, NVML, optionally RDMA/HIP) to
+# be resolvable at load time, and ``RTLD_LOCAL`` means the plugin cannot see
+# symbols unless they were already loaded ``RTLD_GLOBAL`` into the process.
+_NIXL_PLUGIN_DEP_LIBS: tuple[str, ...] = (
+    # RDMA verbs (only needed by the *_verbs UCX flavors); harmless if absent.
+    "libmlx5.so.1",
+    # CUDA driver + NVML: required by the CUDA-flavor UCX plugin.
+    "libcuda.so.1",
+    "libnvidia-ml.so.1",
+    # HSA runtime: required by the ROCm-flavor UCX plugin.
+    "libhsa-runtime64.so.1",
+)
 
-def _warn_on_notif_overflow(
-    agent: nixl.Agent,
-    transfer_id: int,
-    *,
-    transfer_name: str,
-    remote_agent: str,
-    src_replica_idx: int,
-    dst_replica_idx: int,
-    tp_idx: int,
-    direction: str,
-) -> None:
-    """Surfaces BinaryNotification xfer_id overflow from the backend.
+_nixl_plugin_deps_preloaded = False
 
-    Queries the agent for overflow accounting on the freshly-posted
-    `transfer_id` and emits a structured warning when the backend's
-    notification format could not relay every submitted xfer_id to the
-    receiver. For backends without a fixed-capacity notification format
-    (UCX) the agent reports `dropped == 0` so this is a no-op.
 
-    The breach is not a correctness bug: the receiver still completes
-    because data lands via RDMA WRITE imm_data, and the receiver only
-    waits for the xfer_ids it was told about. This warning surfaces
-    regressions and lets ops / metrics react if a future workload
-    re-hits the cap.
+def _preload_nixl_plugin_deps() -> None:
+    """Pre-loads the UCX plugin's runtime dependencies with ``RTLD_GLOBAL``.
+
+    The upstream NIXL plugin manager ``dlopen``s ``libplugin_UCX.so`` with
+    ``RTLD_NOW | RTLD_LOCAL``. The vendored plugin is the CUDA flavor and
+    references CUDA/NVML symbols; ``RTLD_LOCAL`` prevents the plugin from
+    resolving them against the process unless they were previously loaded with
+    ``RTLD_GLOBAL``. Without this, ``get_plugin_params("UCX")`` returns
+    ``NIXL_ERR_NOT_FOUND`` because the plugin fails to load.
+
+    The Modular NIXL fork performed this preload inside its plugin-manager
+    constructor; upstream does not, so we restore it here. It runs in every
+    process that constructs a transfer engine — including ``spawn``-ed
+    multiprocessing children, which do NOT inherit the parent's ``RTLD_GLOBAL``
+    handles. Libraries that are absent on the host (e.g. CUDA on an AMD/CPU
+    box) are skipped; the plugin simply cannot load there, which is reported by
+    the existing availability checks rather than masked.
     """
-    dropped, submitted = agent.get_transfer_notif_overflow(transfer_id)
-    if dropped == 0:
+    global _nixl_plugin_deps_preloaded
+    if _nixl_plugin_deps_preloaded:
         return
-    logger.warning(
-        "[GEX-3736] NIXL BinaryNotification xfer_id capacity exceeded on "
-        "%s transfer %s to %s (src DP %d -> dst DP %d, TP shard %d): "
-        "%d of %d xfer_ids were not relayed to the receiver. Sender-side "
-        "completion tracking is unaffected; receiver may observe "
-        "stragglers. See SERVOPT-1419 for the structural fix.",
-        direction,
-        transfer_name,
-        remote_agent,
-        src_replica_idx,
-        dst_replica_idx,
-        tp_idx,
-        dropped,
-        submitted,
-    )
+    for lib_name in _NIXL_PLUGIN_DEP_LIBS:
+        try:
+            ctypes.CDLL(lib_name, mode=ctypes.RTLD_GLOBAL)
+        except OSError:
+            # Not present on this host; the corresponding UCX flavor cannot be
+            # used here. This is not an error to swallow — it is a genuine
+            # "this transport is unavailable on this machine" signal that
+            # surfaces downstream via get_available_plugins / get_plugin_params.
+            logger.debug(
+                "NIXL plugin dependency %s not found; skipping preload",
+                lib_name,
+            )
+    _nixl_plugin_deps_preloaded = True
 
 
 def _get_nixl_backend_type() -> NixlBackendType:
@@ -312,6 +322,11 @@ class TensorAgent:
             memory_type: NIXL memory segment type (DRAM or VRAM).
             backend_type: NIXL transport backend (``"ucx"`` or ``"libfabric"``).
         """
+        # Pre-load the UCX plugin's GPU runtime dependencies with RTLD_GLOBAL
+        # before the NIXL plugin manager dlopens the plugin. Must run in this
+        # process (e.g. spawn-ed children do not inherit RTLD_GLOBAL handles).
+        _preload_nixl_plugin_deps()
+
         # Create NIXL agent
         agent = nixl.Agent(
             agent_name,
@@ -328,9 +343,13 @@ class TensorAgent:
         # Reshape tensor to 2D view
         tensor_2d = tensor.view(tensor.dtype, (total_num_pages, elts_per_page))
 
-        # Check backend availability
+        # Check backend availability.
+        # Upstream NIXL plugin names are uppercase (UCX, LIBFABRIC); the
+        # Modular-facing API (MODULAR_NIXL_TRANSFER_BACKEND) keeps lowercase
+        # values for backwards compatibility. Map to upstream internally.
+        upstream_backend_type = backend_type.upper()
         available = agent.get_available_plugins()
-        if backend_type not in available:
+        if upstream_backend_type not in available:
             raise RuntimeError(
                 f"NIXL backend {backend_type!r} not available for agent "
                 f"{agent_name}. Available plugins: {available}"
@@ -338,12 +357,12 @@ class TensorAgent:
 
         # Configure and create backend
         device = tensor.device
-        backend_params = agent.get_plugin_params(backend_type)[0]
+        backend_params = agent.get_plugin_params(upstream_backend_type)[0]
         if not device.is_host:
             backend_params["gpu_device_id"] = str(device.id)
 
         backend = agent.create_backend(
-            type=backend_type,
+            type=upstream_backend_type,
             init_params=backend_params,
         )
 
@@ -1304,17 +1323,6 @@ class KVTransferEngine:
                     f"Transfer request failed with status {status} for TP shard {tp_idx}"
                 )
 
-            _warn_on_notif_overflow(
-                ta.agent,
-                transfer_id,
-                transfer_name=transfer_name,
-                remote_agent=remote_agent_name,
-                src_replica_idx=src_replica_idx,
-                dst_replica_idx=dst_replica_idx,
-                tp_idx=tp_idx,
-                direction="write",
-            )
-
             transfer_ids.append(transfer_id)
 
         transfer_req = TransferReqData(
@@ -1480,17 +1488,6 @@ class KVTransferEngine:
                 raise ValueError(
                     f"Read transfer request failed with status {status} for TP shard {tp_idx}"
                 )
-
-            _warn_on_notif_overflow(
-                ta.agent,
-                transfer_id,
-                transfer_name=transfer_name,
-                remote_agent=remote_agent_meta.agent_name,
-                src_replica_idx=src_replica_idx,
-                dst_replica_idx=dst_replica_idx,
-                tp_idx=tp_idx,
-                direction="read",
-            )
 
             transfer_ids.append(transfer_id)
 

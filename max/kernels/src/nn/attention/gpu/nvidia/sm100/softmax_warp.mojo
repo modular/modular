@@ -616,8 +616,10 @@ def fa4_softmax[
     # folding the 2Q output guard away. Only pass True when the calling
     # kernel routes every tile short enough for an empty row half
     # (`seq_len - prompt_offset <= wg_row_offset_seq`) to the 1Q body
-    # instead (see `can_switch_to_1q()` use in `kernel.mojo`). The MLA
-    # prefill kernels do not perform that switch and must leave this False.
+    # instead (see `can_switch_to_1q()` use in `kernel.mojo` for MHA and the
+    # thin `mla_prefill_kernel_generic` / `_per_token_scale` entrypoints for
+    # MLA). A pure-2Q kernel (or one whose mask needs the runtime FULL_MASK
+    # slow path, where MLA cannot switch) must leave this False.
     output_nonempty: Bool = False,
 ](
     smem: SM100AttentionSMem[config],
@@ -730,7 +732,6 @@ def fa4_softmax[
     s_tmem += UInt32(config.BN) * warp_group_idx
 
     p_tmem = s_tmem
-    c_tmem = p_tmem + UInt32(config.BN // 2)
     s_tile = UMMA0Type.CType(s_tmem)
     p_tile = UMMA1Type.AType(p_tmem)
 
@@ -828,7 +829,12 @@ def fa4_softmax[
     # Per-token k_scale buffer offset. The load warp cycles k_scale through
     # num_k_scale_bufs staged buffers (each BN elements wide). The softmax
     # must advance this offset after each K tile to read the correct buffer.
+    # 1Q: each softmax WG consumes every other K tile (WG0 even, WG1 odd),
+    # so WG1 starts one buffer in and both advance by TWO buffers per
+    # processed tile (see the stride-2 advance in load_mask_max_impl).
     var k_scale_off: UInt32 = 0
+    comptime if config.num_qo == 1 and not KScaleType.is_null:
+        k_scale_off = warp_group_idx * UInt32(config.BN)
     comptime k_scale_wrap = config.num_k_scale_bufs() * config.BN
     comptime assert KScaleType.is_null == (k_scale_wrap == 0), String(
         "KScaleType.is_null = ",
@@ -927,9 +933,17 @@ def fa4_softmax[
                     s[offset1 + _i] = s2[_i]
 
         comptime if not KScaleType.is_null:
-            k_scale_off = (k_scale_off + UInt32(config.BN)) if (
-                k_scale_off != UInt32(k_scale_wrap - config.BN)
-            ) else 0
+            comptime if config.num_qo == 1:
+                # Stride 2 buffers per processed tile (each WG sees every
+                # other K tile). `num_k_scale_bufs` may be odd, so use a
+                # modular wrap rather than the equality trick below.
+                k_scale_off += UInt32(2 * config.BN)
+                if k_scale_off >= UInt32(k_scale_wrap):
+                    k_scale_off -= UInt32(k_scale_wrap)
+            else:
+                k_scale_off = (k_scale_off + UInt32(config.BN)) if (
+                    k_scale_off != UInt32(k_scale_wrap - config.BN)
+                ) else 0
         return vrow_max
 
     @parameter
@@ -1628,8 +1642,16 @@ def fa4_softmax[
         # iters=1) → WG0 takes the only block; WG1 skips the helper
         # entirely (its iters_per_wg would be 0, which the helper
         # rejects via comptime assert).
+        #
+        # The block size must come from the OUTPUT store's swizzle, not
+        # `config.swizzle_mode`: fa4_lse_combine_write infers its
+        # `output_swizzle_mode` from `ragged_tma_store`, and the two
+        # differ for FP8-QKV MLA (64B QKV swizzle, 128B BF16 output
+        # store). For MHA the store is built with `config.swizzle_mode`,
+        # so this folds to the previous expression.
         comptime swizzle_granularity = (
-            config.swizzle_mode.bytes() // size_of[output_type]()
+            type_of(ragged_tma_store).swizzle_mode.bytes()
+            // size_of[output_type]()
         )
         comptime iters_total = padded_ov_depth // swizzle_granularity
         comptime iters_per_wg0 = (iters_total + 1) // 2

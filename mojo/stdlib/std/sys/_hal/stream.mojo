@@ -26,7 +26,7 @@ from std.memory.arc_pointer import WeakPointer
 
 
 @fieldwise_init
-struct Stream[device_spec: DeviceSpec](ImplicitlyDestructible, Movable):
+struct Stream[device_spec: DeviceSpec](ImplicitlyDeletable, Movable):
     """An in-order command stream bound to a context.
 
     Operations submitted to a Stream complete in submission order. Each op

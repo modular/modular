@@ -1,5 +1,6 @@
 """Define bazel dependencies common to the internal and external repos."""
 
+bazel_dep(name = "abseil-cpp", version = "20250814.2")
 bazel_dep(name = "apple_support", version = "2.3.0", repo_name = "build_bazel_apple_support")
 bazel_dep(name = "aspect_bazel_lib", version = "2.21.2")
 bazel_dep(name = "bazel_skylib", version = "1.9.0")
@@ -17,16 +18,17 @@ bazel_dep(name = "rules_proto", version = "7.1.0")
 bazel_dep(name = "rules_pycross", version = "0.8.1")
 bazel_dep(name = "rules_python", version = "1.8.5")
 bazel_dep(name = "rules_shell", version = "0.6.1")
+bazel_dep(name = "tomlplusplus", version = "3.4.0")
 bazel_dep(name = "with_cfg.bzl", version = "0.10.3")
 
 bazel_dep(name = "buildifier_prebuilt", version = "8.2.1", dev_dependency = True)
 
 archive_override(
     module_name = "rules_mojo",
-    integrity = "sha256-U1nZFqGyqmfDV7ifCB79d1ctwQ6lRY35ecckbpUX/Fc=",
-    strip_prefix = "rules_mojo-be8b3078e2a4fb36356bc2c29e906b0ca253c0f8",
+    integrity = "sha256-PvMqbvlCakQ3JczLgemNYHlPzV0ZdIW3WXBNQAQ50Mg=",
+    strip_prefix = "rules_mojo-9a6a240114bd8ce0e0d3fea0dbef1d70744f7c6f",
     urls = [
-        "https://github.com/modular/rules_mojo/archive/be8b3078e2a4fb36356bc2c29e906b0ca253c0f8.tar.gz",
+        "https://github.com/modular/rules_mojo/archive/9a6a240114bd8ce0e0d3fea0dbef1d70744f7c6f.tar.gz",
     ],
 )
 
@@ -102,6 +104,17 @@ single_version_override(
     version = "1.76.0.bcr.1",
 )
 
+# Expose the :toml++-src target (header-only impl) to external repos
+# (consumed by @nixl_upstream). The BCR patch creates the target but leaves
+# its visibility restricted.
+single_version_override(
+    module_name = "tomlplusplus",
+    patch_strip = 1,
+    patches = [
+        "//bazel/public-patches:tomlplusplus-visibility.patch",
+    ],
+)
+
 DEFAULT_PYTHON_VERSION = "3.13"
 
 PYTHON_VERSIONS = [
@@ -160,6 +173,86 @@ use_repo(compat, "cc_compatibility_proxy")
 http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
 http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
+
+# ......................... NIXL (KV transfer) ................................
+#
+# Upstream NIXL (github.com/ai-dynamo/nixl) plus its UCX / libfabric backends.
+# These live here (rather than the internal MODULE.bazel) because an
+# OSS-mirrored target (//max/tests/tests/nixl) depends on @nixl_upstream via
+# its plugin `.so` data deps, so the repos must resolve in both the internal
+# build and the standalone OSS-mirror build. The overlay BUILD files live in
+# //bazel/public-patches (an OSS-visible, symlinked overlay dir) so the
+# build_file labels resolve in both contexts.
+# BEGIN_NIXL_GENERATED
+# NOTE: Use 'update-nixl' to update these values (utils/update_nixl.py).
+# To add a NIXL patch, drop a bazel/public-patches/nixl-*.patch file and add it
+# to the patches list below (same pattern as LLVM patches above).
+http_archive(
+    name = "nixl_upstream",
+    build_file = "//bazel/public-patches:nixl_upstream.BUILD",
+    patch_args = ["-p1"],
+    patches = [],
+    sha256 = "d86da898277f51d5e5b72ca5bf69c1c3f93d10c433ea128cd205afdbbaa93839",
+    strip_prefix = "nixl-1.2.0",
+    url = "https://github.com/ai-dynamo/nixl/archive/refs/tags/v1.2.0.tar.gz",
+)
+# END_NIXL_GENERATED
+
+http_archive(
+    name = "ucx_prebuilt",
+    build_file = "//bazel/public-patches:ucx_prebuilt.BUILD",
+    sha256 = "5e3488de55c83f8a6440c597063117721319fa8433c0d35a66c1a14702f7d46c",
+    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/ucx_prebuilt/501d8fd1611247ac46efb1a56fca3b16b9feae2f/5e3488de55c83f8a6440c597063117721319fa8433c0d35a66c1a14702f7d46c/ucx-prebuilt-linux-x86-64.tar.gz",
+)
+
+http_archive(
+    name = "efa_libfabric_prebuilt",
+    build_file = "//bazel/public-patches:efa_libfabric_prebuilt.BUILD",
+    sha256 = "bacb29273e6117e61b2843864cd74fc31c662252ec55349ba623705a043cfd99",
+    strip_prefix = "efa-libfabric-prebuilt",
+    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/efa-libfabric-prebuilt/2.4.0amzn5.0/bacb29273e6117e61b2843864cd74fc31c662252ec55349ba623705a043cfd99/efa-libfabric-prebuilt-cpu.tar.xz",
+)
+
+http_archive(
+    name = "efa_libfabric_prebuilt_cuda",
+    build_file = "//bazel/public-patches:efa_libfabric_prebuilt.BUILD",
+    sha256 = "60303b4c40430de5dfc0dc1be45d022695fe421b44bc57d44a1085410620ea82",
+    strip_prefix = "efa-libfabric-prebuilt",
+    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/efa-libfabric-prebuilt/2.4.0amzn5.0/60303b4c40430de5dfc0dc1be45d022695fe421b44bc57d44a1085410620ea82/efa-libfabric-prebuilt-cuda.tar.xz",
+)
+
+# CUDA Driver API + runtime headers used by libfabric_plugin_lib (-DHAVE_CUDA).
+# These are the NVIDIA cuda_cudart redistributables; no CUDA runtime is linked.
+# Repo names match the internal tree so bazel/third-party/BUILD.bazel aliases
+# (@cuda_x86_64//:cuda_headers etc.) keep working in both build contexts.
+CUDART_VERSION = "13.1.80"
+
+http_archive(
+    name = "cuda_x86_64",
+    build_file = "//bazel/public-patches:cuda_cudart.BUILD",
+    sha256 = "b626f4790f46bc9324a1047f2fbcc9a42bc4a722b053056e61cc00da54ad6f32",
+    strip_prefix = "cuda_cudart-linux-x86_64-{}-archive".format(CUDART_VERSION),
+    url = "https://developer.download.nvidia.com/compute/cuda/redist/cuda_cudart/linux-x86_64/cuda_cudart-linux-x86_64-{}-archive.tar.xz".format(CUDART_VERSION),
+)
+
+http_archive(
+    name = "cuda_sbsa",  # 64b ARM
+    build_file = "//bazel/public-patches:cuda_cudart.BUILD",
+    sha256 = "b0f50edb6bd7a4a1b6c642167cbb1aab4765dbf94a96f98e48e1ae53243c6011",
+    strip_prefix = "cuda_cudart-linux-sbsa-{}-archive".format(CUDART_VERSION),
+    url = "https://developer.download.nvidia.com/compute/cuda/redist/cuda_cudart/linux-sbsa/cuda_cudart-linux-sbsa-{}-archive.tar.xz".format(CUDART_VERSION),
+)
+
+# asio: async I/O library used by @nixl_upstream and MLRT.
+# The repo name is unchanged from the internal declaration; internal consumers
+# (MLRT/BUILD.bazel) keep working since common.MODULE.bazel is include()d.
+http_archive(
+    name = "asio",
+    build_file = "//bazel/public-patches:asio.BUILD",
+    sha256 = "755bd7f85a4b269c67ae0ea254907c078d408cce8e1a352ad2ed664d233780e8",
+    strip_prefix = "asio-asio-1-30-2",
+    url = "https://github.com/chriskohlhoff/asio/archive/refs/tags/asio-1-30-2.tar.gz",
+)
 
 RUFF_VERSION = "0.14.0"
 

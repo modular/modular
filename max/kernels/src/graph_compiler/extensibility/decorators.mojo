@@ -48,6 +48,11 @@ def register(name: StaticString):
     pass
 
 
+# Register a standalone shape function for an op.
+def register_shape_function(name: StaticString):
+    pass
+
+
 # Indicates that a DPS Kernel is a view operation.
 def view_kernel():
     return

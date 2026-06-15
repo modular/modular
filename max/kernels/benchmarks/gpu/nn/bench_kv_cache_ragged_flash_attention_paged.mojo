@@ -363,9 +363,10 @@ def execute_kv_cache_ragged_flash_attention[
     var sink_weights_view = LayoutTensor[
         dtype,
         Layout.row_major(UNKNOWN_VALUE),
-        ImmutAnyOrigin,
     ](
-        sink_weights_dev_buffer.unsafe_ptr(),
+        sink_weights_dev_buffer.unsafe_ptr()
+        .as_immutable()
+        .as_unsafe_any_origin(),
         RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
             IndexList[1](num_q_heads)
         ),

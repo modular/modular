@@ -188,7 +188,6 @@ def test_warmup_graph_capture_batch_size(
     )
     mock_model = MagicMock()
     mock_model.model = MagicMock()
-    mock_model.execute = MagicMock()
     mock_model.max_seq_len = 2048
     pipeline._pipeline_model = mock_model
     pipeline._pipeline_config = MagicMock()
@@ -202,7 +201,6 @@ def test_warmup_graph_capture_batch_size(
     pipeline._kv_manager._total_num_pages = 100
     pipeline._spec_decode_state = None
     pipeline._kv_manager.num_caches = 1
-    pipeline.session = MagicMock()
 
     with patch(
         "max.pipelines.lib.pipeline_variants.overlap_text_generation"
@@ -215,8 +213,6 @@ def test_warmup_graph_capture_batch_size(
 
         call_kwargs = MockRunner.call_args.kwargs
         assert call_kwargs["model"] is mock_model.model
-        assert call_kwargs["execute_model"] is mock_model.execute
-        assert call_kwargs["session"] is pipeline.session
         assert call_kwargs["kv_params"] is mock_kv_params
         assert callable(call_kwargs["warmup_model_inputs"])
         assert (
@@ -683,8 +679,14 @@ class TestAdvanceFsmAndComputeBitmasks:
         # these tests exercise the matcher-advance path.
         ctx.grammar_enforced = True
         mock_matcher = MagicMock()
-        mock_matcher.try_consume_tokens = MagicMock(
-            return_value=1 if always_accept else 0
+        ret = 1 if always_accept else 0
+        mock_matcher.try_consume_tokens = MagicMock(return_value=ret)
+        # Part 2 speculates on a deep copy of the matcher (never the real one),
+        # so the rollback-across-rule-boundary desync cannot occur. Mirror the
+        # accept behavior on the copy; tests reach it via
+        # ``mock_matcher.deep_copy.return_value``.
+        mock_matcher.deep_copy.return_value.try_consume_tokens = MagicMock(
+            return_value=ret
         )
         ctx._matcher = mock_matcher
         return ctx, mock_matcher
@@ -780,33 +782,19 @@ class TestAdvanceFsmAndComputeBitmasks:
         first_kwargs = mock_fill.call_args_list[0][1]
         assert first_kwargs["index"] == 0
 
-    def test_part2_speculative_advance_then_rollback(self) -> None:
-        """Part 2 speculatively advances through next draft tokens then rolls back."""
-        helper = self._make_helper()
-        ctx, mock_matcher = self._make_context_with_matcher(always_accept=True)
-        bitmask_out = np.full((1, 3, 2), -1, dtype=np.int32)
-
-        with patch("llguidance.numpy.fill_next_token_bitmask"):
-            helper.advance_fsm_and_compute_bitmasks(
-                context_batch=[ctx],
-                accepted_draft_tokens=np.zeros((1, 0), dtype=np.int64),
-                num_accepted=np.zeros(1, dtype=np.int32),
-                bonus_tokens=np.array([5], dtype=np.int64),
-                next_draft_tokens=np.array([[10, 11]], dtype=np.int64),
-                bitmask_out=bitmask_out,
-            )
-
-        # Both next draft tokens consumed → rollback(2)
-        mock_matcher.rollback.assert_called_once_with(2)
-
-    def test_part2_stops_and_no_rollback_when_fsm_rejects_first_draft(
+    def test_part2_speculatively_advances_on_deep_copy_not_real_matcher(
         self,
     ) -> None:
-        """When FSM rejects the first next draft token, rollback is not called."""
+        """Part 2 walks next draft tokens on a deep copy; the real matcher is
+        never advanced or rolled back.
+
+        ``LLMatcher.rollback`` is not a perfect inverse across a grammar
+        rule/repetition boundary, so the speculative walk must not mutate the
+        real matcher. ``try_consume_tokens`` and ``rollback`` run on a deep copy.
+        """
         helper = self._make_helper()
-        ctx, mock_matcher = self._make_context_with_matcher()
-        # Bonus token accepted (Part 1), first next_draft rejected (Part 2)
-        mock_matcher.try_consume_tokens.side_effect = [1, 0]
+        ctx, mock_matcher = self._make_context_with_matcher(always_accept=True)
+        scratch = mock_matcher.deep_copy.return_value
         bitmask_out = np.full((1, 3, 2), -1, dtype=np.int32)
 
         with patch("llguidance.numpy.fill_next_token_bitmask"):
@@ -819,8 +807,46 @@ class TestAdvanceFsmAndComputeBitmasks:
                 bitmask_out=bitmask_out,
             )
 
-        # No tokens consumed in Part 2 → no rollback
+        # Real matcher: Part 1 consumes only the bonus token; never rolled back.
+        assert mock_matcher.try_consume_tokens.call_args_list == [call([5])]
         mock_matcher.rollback.assert_not_called()
+        # Part 2 speculates on the deep copy: both next draft tokens consumed.
+        mock_matcher.deep_copy.assert_called_once()
+        assert scratch.try_consume_tokens.call_args_list == [
+            call([10]),
+            call([11]),
+        ]
+        scratch.rollback.assert_not_called()
+
+    def test_part2_stops_on_deep_copy_when_fsm_rejects_first_draft(
+        self,
+    ) -> None:
+        """When the FSM rejects the first next draft token, the speculative
+        walk stops and the real matcher is untouched in Part 2."""
+        helper = self._make_helper()
+        ctx, mock_matcher = self._make_context_with_matcher()
+        scratch = mock_matcher.deep_copy.return_value
+        # Bonus token accepted (Part 1, real matcher); first next_draft
+        # rejected (Part 2, deep copy).
+        mock_matcher.try_consume_tokens.side_effect = [1]
+        scratch.try_consume_tokens.side_effect = [0]
+        bitmask_out = np.full((1, 3, 2), -1, dtype=np.int32)
+
+        with patch("llguidance.numpy.fill_next_token_bitmask"):
+            helper.advance_fsm_and_compute_bitmasks(
+                context_batch=[ctx],
+                accepted_draft_tokens=np.zeros((1, 0), dtype=np.int64),
+                num_accepted=np.zeros(1, dtype=np.int32),
+                bonus_tokens=np.array([5], dtype=np.int64),
+                next_draft_tokens=np.array([[10, 11]], dtype=np.int64),
+                bitmask_out=bitmask_out,
+            )
+
+        # Walk broke at the first rejected draft on the copy.
+        assert scratch.try_consume_tokens.call_args_list == [call([10])]
+        mock_matcher.rollback.assert_not_called()
+        # Rollback() should not be used to undo token consumption.
+        scratch.rollback.assert_not_called()
 
 
 class TestBuildBitmaskCallback:

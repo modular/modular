@@ -23,7 +23,16 @@ import numpy as np
 from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import DeviceRef, Graph, TensorType, TensorValue, Type
+from max.graph import (
+    DeviceRef,
+    Graph,
+    TensorType,
+    TensorValue,
+    Type,
+)
+from max.graph import (
+    Module as GraphModule,
+)
 from max.graph.buffer_utils import cast_tensors_to
 from max.graph.weights import (
     SafetensorWeights,
@@ -241,30 +250,30 @@ class Qwen3VLModel(
             model_state_dict, weight_alignment=1, strict=True
         )
 
-        # Build and compile vision model
-        with CompilationTimer("vision model") as timer:
+        # Build and compile vision + language models in parallel
+        with CompilationTimer("vision + language model") as timer:
+            graph_module = GraphModule()
             vision_graph = self._build_vision_graph(
-                qwen3vl_config, vision_state_dict
+                qwen3vl_config, vision_state_dict, module=graph_module
             )
-            timer.mark_build_complete()
-            vision_model = session.load(
-                vision_graph, weights_registry=vision_state_dict
-            )
-
-        # Build and compile language model
-        with CompilationTimer("language model") as timer:
             language_graph = self._build_language_graph(
-                qwen3vl_config, llm_state_dict
+                qwen3vl_config, llm_state_dict, module=graph_module
             )
             timer.mark_build_complete()
-            language_model = session.load(
-                language_graph, weights_registry=llm_state_dict
+            combined_registry = {**vision_state_dict, **llm_state_dict}
+            models = session.load_all(
+                graph_module, weights_registry=combined_registry
             )
+            vision_model = models[vision_graph.name]
+            language_model = models[language_graph.name]
 
         return vision_model, language_model
 
     def _build_vision_graph(
-        self, config: Qwen3VLConfig, state_dict: dict[str, WeightData]
+        self,
+        config: Qwen3VLConfig,
+        state_dict: dict[str, WeightData],
+        module: GraphModule | None = None,
     ) -> Graph:
         """Build the vision model graph for processing images."""
         assert isinstance(self.model, Qwen3VL)
@@ -364,6 +373,7 @@ class Qwen3VLModel(
                     *signals.input_types(),
                 ]
             ),
+            module=module,
         ) as graph:
             # Extract inputs
             all_inputs = graph.inputs
@@ -518,7 +528,10 @@ class Qwen3VLModel(
         )
 
     def _build_language_graph(
-        self, config: Qwen3VLConfig, state_dict: dict[str, WeightData]
+        self,
+        config: Qwen3VLConfig,
+        state_dict: dict[str, WeightData],
+        module: GraphModule | None = None,
     ) -> Graph:
         """Build the language model graph for text generation with image embeddings."""
         assert isinstance(self.model, Qwen3VL)
@@ -533,7 +546,9 @@ class Qwen3VLModel(
         # Get input types from the helper method
         input_types = self._language_graph_input_types()
 
-        with Graph("qwen3vl_moe_language", input_types=input_types) as graph:
+        with Graph(
+            "qwen3vl_moe_language", input_types=input_types, module=module
+        ) as graph:
             # Extract inputs
             (
                 input_ids,
@@ -866,9 +881,11 @@ class Qwen3VLModel(
                     temp_pos_ids = np.tile(
                         np.arange(context_seq_length).reshape(1, 1, -1),
                         (
-                            len(self.model_config.mrope_section)
-                            if self.model_config
-                            else 3,
+                            (
+                                len(self.model_config.mrope_section)
+                                if self.model_config
+                                else 3
+                            ),
                             1,
                             1,
                         ),

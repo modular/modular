@@ -27,7 +27,11 @@ from max.graph import (
     ops,
 )
 from max.nn.comm import Signals
-from max.nn.kernels import eagle_prefill_shift_tokens
+from max.nn.kernels import (
+    eagle_prefill_shift_tokens,
+    inplace_memcpy,
+    wait_host_value_with_dep,
+)
 from max.nn.kv_cache import (
     KVCacheInputsPerDevice,
     KVCacheParamInterface,
@@ -90,9 +94,11 @@ class UnifiedMTPGemma4(Module):
         config: Gemma4ForConditionalGenerationConfig,
         draft_config: Gemma4AssistantConfig,
         speculative_config: SpeculativeConfig | None = None,
+        enable_structured_output: bool = False,
     ) -> None:
         super().__init__()
         self.config = config
+        self.enable_structured_output = enable_structured_output
         self.num_draft_steps = (
             speculative_config.num_speculative_tokens
             if speculative_config
@@ -142,6 +148,9 @@ class UnifiedMTPGemma4(Module):
         top_p: TensorValue,
         min_top_p: TensorValue,
         in_thinking_phase: TensorValue,
+        pinned_bitmask: TensorValue | None = None,
+        wait_payload: BufferValue | None = None,
+        device_bitmask_scratch: BufferValue | None = None,
     ) -> tuple[TensorValue, ...]:
         # -- 1. Merge tokens + draft tokens --
         merged_tokens, merged_offsets = self.merger(
@@ -190,6 +199,35 @@ class UnifiedMTPGemma4(Module):
         hidden_states = list(target_outputs[3 : 3 + n_devs])
 
         # -- 4. Rejection sampling --
+        if not (
+            (pinned_bitmask is None)
+            == (wait_payload is None)
+            == (device_bitmask_scratch is None)
+        ):
+            raise ValueError(
+                "pinned_bitmask, wait_payload, and device_bitmask_scratch "
+                "must be either all None or all non-None; got "
+                f"pinned_bitmask={'set' if pinned_bitmask is not None else 'None'}, "
+                f"wait_payload={'set' if wait_payload is not None else 'None'}, "
+                f"device_bitmask_scratch={'set' if device_bitmask_scratch is not None else 'None'}"
+            )
+        effective_bitmasks: TensorValue | None = None
+        if (
+            pinned_bitmask is not None
+            and wait_payload is not None
+            and device_bitmask_scratch is not None
+        ):
+            wait_host_value_with_dep(
+                wait_payload,
+                device_bitmask_scratch,
+                device=self.config.devices[0],
+            )
+            inplace_memcpy(device_bitmask_scratch, pinned_bitmask)
+            num_steps_plus_one = draft_tokens.shape[1] + 1
+            effective_bitmasks = device_bitmask_scratch[
+                :, :num_steps_plus_one, :
+            ]
+
         seed_scalar = seed[0]
         num_accepted_draft_tokens, recovered, bonus = self.acceptance_sampler(
             draft_tokens,
@@ -201,6 +239,7 @@ class UnifiedMTPGemma4(Module):
             top_p=top_p,
             min_top_p=min_top_p,
             in_thinking_phase=in_thinking_phase,
+            token_bitmasks=effective_bitmasks,
         )
 
         target_tokens = ops.concat([recovered, bonus], axis=1)
@@ -496,5 +535,29 @@ class UnifiedMTPGemma4(Module):
                 in_thinking_phase_type,
             ]
         )
+
+        if self.enable_structured_output:
+            pinned_bitmask_type = TensorType(
+                DType.bool,
+                shape=["batch_size", "num_bitmask_positions", "vocab_size"],
+                device=DeviceRef.CPU(),
+            )
+            wait_payload_type = BufferType(
+                DType.int64,
+                shape=[2],
+                device=DeviceRef.CPU(),
+            )
+            device_bitmask_scratch_type = BufferType(
+                DType.bool,
+                shape=["batch_size", "num_bitmask_positions", "vocab_size"],
+                device=device_ref,
+            )
+            all_input_types.extend(
+                [
+                    pinned_bitmask_type,
+                    wait_payload_type,
+                    device_bitmask_scratch_type,
+                ]
+            )
 
         return tuple(all_input_types)

@@ -783,7 +783,6 @@ class _KimiK2_5BaseOracle(PipelineOracle):
         revision = hf_repo_lock.revision_for_hf_repo(self.model_path)
         config = pipelines.PipelineConfig.model_validate(
             {
-                "defer_resolve": True,
                 "device_specs": device_specs,
                 "quantization_encoding": encoding,
                 "model_path": self.model_path,
@@ -797,7 +796,6 @@ class _KimiK2_5BaseOracle(PipelineOracle):
             }
         )
         hf_repo_lock.apply_to_config(config)
-        config.resolve()
         tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
         assert isinstance(pipeline, TextGenerationPipelineInterface)
         return MaxPipelineAndTokenizer(pipeline, tokenizer)
@@ -911,7 +909,6 @@ class AmdKimiK2_5MXFP4PipelineOracle(PipelineOracle):
         )
         config = pipelines.PipelineConfig.model_validate(
             {
-                "defer_resolve": True,
                 "device_specs": device_specs,
                 "quantization_encoding": encoding,
                 "model_path": self.model_path,
@@ -925,7 +922,6 @@ class AmdKimiK2_5MXFP4PipelineOracle(PipelineOracle):
             }
         )
         hf_repo_lock.apply_to_config(config)
-        config.resolve()
         tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
         assert isinstance(pipeline, TextGenerationPipelineInterface)
         return MaxPipelineAndTokenizer(pipeline, tokenizer)
@@ -995,12 +991,10 @@ class KimiK2_5DeepseekV3LocalPathPipelineOracle(
                 }
             ),
             runtime=PipelineRuntimeConfig(
-                defer_resolve=True,
                 max_batch_input_tokens=4096,
                 ep_size=8,
             ),
         )
-        config.resolve()
         tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
         assert isinstance(pipeline, TextGenerationPipelineInterface)
         return MaxPipelineAndTokenizer(pipeline, tokenizer)
@@ -1102,7 +1096,6 @@ class GenericOracle(PipelineOracle):
         # look for weight files in the model repo (meta-llama) instead of
         # the weights repo (bartowski).
         config_kwargs = {
-            "defer_resolve": True,
             "task": self.task,
             "device_specs": device_specs if device_specs else None,
             "quantization_encoding": encoding,
@@ -1118,7 +1111,6 @@ class GenericOracle(PipelineOracle):
             config.model._weights_repo_id = weight_repo_id
         if not is_local_model:
             hf_repo_lock.apply_to_config(config)
-        config.resolve()
         tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(
             config, task=self.task
         )
@@ -2219,6 +2211,19 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
     # on that runner via the +prod-2-8xb200 tag filter.
     "nvidia/Kimi-K2.5-NVFP4__internal": KimiK2_5DeepseekV3LocalPathPipelineOracle(
         "/mnt/local/data/quantized/v4"
+    ),
+    # Trimmed MiniMax-M3 (dense-only layers) for logit verification. The prompts
+    # are pinned and apply_chat_template is off so the input_ids match those the
+    # reference logits were generated from.
+    "minimax/minimax3-dense-only": GenericOracle(
+        model_path="s3://modular-kadabra-weights/minimax-m3-3L-fp8",
+        config_params={"trust_remote_code": True},
+        device_encoding_map={"gpu": ["float8_e4m3fn"]},
+        prompts=[
+            "The capital of France is",
+            "Quantum computing is",
+        ],
+        apply_chat_template=False,
     ),
     "MiniMaxAI/MiniMax-M2.7": GenericOracle(
         model_path="MiniMaxAI/MiniMax-M2.7",

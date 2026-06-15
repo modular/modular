@@ -59,6 +59,7 @@ from layout import (
     IntTuple,
     Layout,
     LayoutTensor,
+    LTToTTLayout,
     RuntimeLayout,
     RuntimeTuple,
     TileTensor,
@@ -706,7 +707,7 @@ def multi_stage_store_C[
         transpose_c=transpose_c,
         scale_c_coord=scale_c_coord,
     ](
-        c_smem_base,
+        c_smem_base.as_unsafe_any_origin(),
         c_tma_op,
         c,
         mma_output_pipeline,
@@ -913,28 +914,24 @@ def load_AB[
             var a_smem_tile = LayoutTensor[
                 a_type,
                 a_smem_layout,
-                MutAnyOrigin,
                 address_space=AddressSpace.SHARED,
                 alignment=128,
             ](a_smem_base + offset * a_smem_tile_size)
             var b_smem_tile = LayoutTensor[
                 b_type,
                 b_smem_layout,
-                MutAnyOrigin,
                 address_space=AddressSpace.SHARED,
                 alignment=128,
             ](b_smem_base + offset * b_smem_tile_size)
             var sfa_smem_tile = LayoutTensor[
                 sfa_dtype,
                 sfa_smem_layout,
-                MutAnyOrigin,
                 address_space=AddressSpace.SHARED,
                 alignment=128,
             ](sfa_smem_base + offset * sfa_smem_tile_size)
             var sfb_smem_tile = LayoutTensor[
                 sfb_dtype,
                 sfb_smem_layout,
-                MutAnyOrigin,
                 address_space=AddressSpace.SHARED,
                 alignment=128,
             ](sfb_smem_base + offset * sfb_smem_tile_size)
@@ -1093,30 +1090,26 @@ def consumer_main_loop[
     if elect_one_sync():
         for j in range(UInt32(k_group_size)):
             var offset = Int(stage * UInt32(k_group_size) + j)
-            var a_smem_tile = LayoutTensor[
-                a_type,
-                a_smem_layout,
-                MutAnyOrigin,
-                address_space=AddressSpace.SHARED,
-                alignment=128,
-            ](a_smem_base + offset * a_smem_tile_size)
-            var b_smem_tile = LayoutTensor[
-                b_type,
-                b_smem_layout,
-                MutAnyOrigin,
-                address_space=AddressSpace.SHARED,
-                alignment=128,
-            ](b_smem_base + offset * b_smem_tile_size)
+            var a_smem_tile = TileTensor(
+                a_smem_base + offset * a_smem_tile_size,
+                LTToTTLayout[a_smem_layout](),
+            )
+            var b_smem_tile = TileTensor(
+                b_smem_base + offset * b_smem_tile_size,
+                LTToTTLayout[b_smem_layout](),
+            )
             var sfa_smem_tile = SMemTile[
                 sfa_dtype, internal_sf_k_major[sfa_d0, sfa_d1]
             ](
-                sfa_smem_base + offset * sfa_smem_tile_size,
+                sfa_smem_base.as_unsafe_any_origin()
+                + offset * sfa_smem_tile_size,
                 internal_sf_k_major[sfa_d0, sfa_d1],
             )
             var sfb_smem_tile = SMemTile[
                 sfb_dtype, internal_sf_k_major[sfb_d0, sfb_d1]
             ](
-                sfb_smem_base + offset * sfb_smem_tile_size,
+                sfb_smem_base.as_unsafe_any_origin()
+                + offset * sfb_smem_tile_size,
                 internal_sf_k_major[sfb_d0, sfb_d1],
             )
 
@@ -1137,8 +1130,8 @@ def consumer_main_loop[
                 sfb_tmem_adj = UInt32(0)
 
             mma_op.mma(
-                lt_to_tt(a_smem_tile),
-                lt_to_tt(b_smem_tile),
+                a_smem_tile,
+                b_smem_tile,
                 sfa_smem_tile,
                 sfb_smem_tile,
                 tmem_addr,

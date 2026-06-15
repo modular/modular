@@ -262,17 +262,15 @@ def ss_qk_partial_kernel[
     var a_smem_tile = LayoutTensor[
         FP8_TYPE,
         Layout.row_major(QK_M, QK_K),
-        MutAnyOrigin,
         address_space=AddressSpace.SHARED,
         alignment=128,
-    ](a_smem_ptr)
+    ](a_smem_ptr.as_unsafe_any_origin())
     var b_smem_tile = LayoutTensor[
         FP8_TYPE,
         Layout.row_major(QK_N, QK_K),
-        MutAnyOrigin,
         address_space=AddressSpace.SHARED,
         alignment=128,
-    ](b_smem_ptr)
+    ](b_smem_ptr.as_unsafe_any_origin())
 
     # ---- Metadata ----
     var metadata_ptr = (smem_base + QK_META_OFFSET).bitcast[UInt32]()
@@ -480,17 +478,15 @@ def ss_qk_multistage_kernel[
     var a_smem_tile = LayoutTensor[
         FP8_TYPE,
         Layout.row_major(QK_M, QK_K),
-        MutAnyOrigin,
         address_space=AddressSpace.SHARED,
         alignment=128,
-    ](a_smem_ptr)
+    ](a_smem_ptr.as_unsafe_any_origin())
     var b_smem_tile = LayoutTensor[
         FP8_TYPE,
         Layout.row_major(QK_N, QK_K),
-        MutAnyOrigin,
         address_space=AddressSpace.SHARED,
         alignment=128,
-    ](b_smem_ptr)
+    ](b_smem_ptr.as_unsafe_any_origin())
 
     var metadata_ptr = (smem_base + QK_META_OFFSET).bitcast[UInt32]()
     var ptr_tmem_addr = metadata_ptr
@@ -649,8 +645,8 @@ def fill_random_fp8[
 def dequant_fp8_to_bf16[
     src_dtype: DType, dst_dtype: DType
 ](
-    src: UnsafePointer[Scalar[src_dtype], MutAnyOrigin],
-    dst: UnsafePointer[Scalar[dst_dtype], MutAnyOrigin],
+    src: UnsafePointer[mut=False, Scalar[src_dtype], _],
+    dst: UnsafePointer[mut=True, Scalar[dst_dtype], _],
     n: Int,
 ):
     for i in range(n):
@@ -1331,17 +1327,15 @@ def ss_nonws_partial_kernel[
     var a_smem_tile = LayoutTensor[
         FP8_TYPE,
         Layout.row_major(NW_M, QK_K),
-        MutAnyOrigin,
         address_space=AddressSpace.SHARED,
         alignment=128,
-    ](a_smem_ptr)
+    ](a_smem_ptr.as_unsafe_any_origin())
     var b_smem_tile = LayoutTensor[
         FP8_TYPE,
         Layout.row_major(QK_N, QK_K),
-        MutAnyOrigin,
         address_space=AddressSpace.SHARED,
         alignment=128,
-    ](b_smem_ptr)
+    ](b_smem_ptr.as_unsafe_any_origin())
 
     # ---- Metadata ----
     var metadata_ptr = (smem_base + NW_META_OFFSET).bitcast[UInt32]()
@@ -1937,10 +1931,9 @@ def ts_partial_kernel[
     var q_smem_tile = LayoutTensor[
         TS_OP_TYPE,
         TS_Q_SMEM_LAYOUT,
-        MutAnyOrigin,
         address_space=AddressSpace.SHARED,
         alignment=128,
-    ](q_smem_ptr)
+    ](q_smem_ptr.as_unsafe_any_origin())
 
     var k_smem_ptr = (smem_base + TS_K_SMEM_OFFSET).bitcast[
         Scalar[TS_OP_TYPE]
@@ -1948,10 +1941,9 @@ def ts_partial_kernel[
     var k_smem_tile = LayoutTensor[
         TS_OP_TYPE,
         TS_K_SMEM_LAYOUT,
-        MutAnyOrigin,
         address_space=AddressSpace.SHARED,
         alignment=128,
-    ](k_smem_ptr)
+    ](k_smem_ptr.as_unsafe_any_origin())
 
     var metadata_ptr = (smem_base + TS_METADATA_OFFSET).bitcast[UInt32]()
     var ptr_tmem_addr = metadata_ptr

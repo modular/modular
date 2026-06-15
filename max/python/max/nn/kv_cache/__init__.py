@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from .cache_params import (
+    BatchCharacteristics,
     KVCacheBuffer,
     KVCacheMemory,
     KVCacheParamInterface,
@@ -27,10 +28,18 @@ from .cache_params import (
 )
 from .input_types import KVCacheInputs, KVCacheInputsPerDevice, PagedCacheValues
 from .metrics import KVCacheMetrics
-from .utils import AttentionDispatchResolver, build_max_lengths_tensor
+from .utils import (
+    AttentionDispatchResolver,
+    AttnKey,
+    MHAAttnKey,
+    MLAAttnKey,
+    build_max_lengths_tensor,
+)
 
 __all__ = [
     "AttentionDispatchResolver",
+    "AttnKey",
+    "BatchCharacteristics",
     "KVCacheBuffer",
     "KVCacheInputs",
     "KVCacheInputsPerDevice",
@@ -40,6 +49,8 @@ __all__ = [
     "KVCacheParams",
     "KVCacheQuantizationConfig",
     "KVConnectorType",
+    "MHAAttnKey",
+    "MLAAttnKey",
     "MultiKVCacheParams",
     "PagedCacheValues",
     "ReplicatedKVCacheMemory",

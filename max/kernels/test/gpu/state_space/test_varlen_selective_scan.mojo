@@ -164,56 +164,64 @@ def run_varlen_selective_scan_fwd_gpu[
         ssm_states_gpu_h.store(i, ssm_states_cpu_h.load(i))
 
     # Create LayoutTensors for CPU kernel
-    var ssm_states_cpu = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
+    var ssm_states_cpu = LayoutTensor[dtype, layout_3d](
         ssm_states_cpu_h,
         RuntimeLayout[layout_3d].row_major(Index(batch, dim, dstate)),
     )
-    var output_cpu = LayoutTensor[dtype, layout_2d, MutAnyOrigin](
+    var output_cpu = LayoutTensor[dtype, layout_2d](
         output_cpu_h,
         RuntimeLayout[layout_2d].row_major(Index(dim, total_length)),
     )
-    var u_cpu = LayoutTensor[dtype, layout_2d, MutAnyOrigin](
-        u_h, RuntimeLayout[layout_2d].row_major(Index(dim, total_length))
+    var u_cpu = LayoutTensor[dtype, layout_2d](
+        u_h,
+        RuntimeLayout[layout_2d].row_major(Index(dim, total_length)),
     )
-    var delta_cpu = LayoutTensor[dtype, layout_2d, MutAnyOrigin](
-        delta_h, RuntimeLayout[layout_2d].row_major(Index(dim, total_length))
+    var delta_cpu = LayoutTensor[dtype, layout_2d](
+        delta_h,
+        RuntimeLayout[layout_2d].row_major(Index(dim, total_length)),
     )
-    var A_cpu = LayoutTensor[dtype, layout_2d, MutAnyOrigin](
-        A_h, RuntimeLayout[layout_2d].row_major(Index(dim, dstate))
+    var A_cpu = LayoutTensor[dtype, layout_2d](
+        A_h,
+        RuntimeLayout[layout_2d].row_major(Index(dim, dstate)),
     )
-    var B_cpu = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
+    var B_cpu = LayoutTensor[dtype, layout_3d](
         B_h,
         RuntimeLayout[layout_3d].row_major(
             Index(ngroups, dstate, total_length)
         ),
     )
-    var C_cpu = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
+    var C_cpu = LayoutTensor[dtype, layout_3d](
         C_h,
         RuntimeLayout[layout_3d].row_major(
             Index(ngroups, dstate, total_length)
         ),
     )
-    var D_cpu = LayoutTensor[dtype, layout_1d, MutAnyOrigin](
-        D_h, RuntimeLayout[layout_1d].row_major(Index(D_size))
+    var D_cpu = LayoutTensor[dtype, layout_1d](
+        D_h,
+        RuntimeLayout[layout_1d].row_major(Index(D_size)),
     )
-    var z_cpu = LayoutTensor[dtype, layout_2d, MutAnyOrigin](
+    var z_cpu = LayoutTensor[dtype, layout_2d](
         z_cpu_h,
         RuntimeLayout[layout_2d].row_major(
             Index(dim if has_z else 0, total_length if has_z else 0)
         ),
     )
-    var delta_bias_cpu = LayoutTensor[dtype, layout_1d, MutAnyOrigin](
-        delta_bias_h, RuntimeLayout[layout_1d].row_major(Index(delta_bias_size))
+    var delta_bias_cpu = LayoutTensor[dtype, layout_1d](
+        delta_bias_h,
+        RuntimeLayout[layout_1d].row_major(Index(delta_bias_size)),
     )
-    var query_start_loc_cpu = LayoutTensor[
-        DType.int32, layout_1d, MutAnyOrigin
-    ](query_start_loc_h, RuntimeLayout[layout_1d].row_major(Index(batch + 1)))
-    var cache_indices_cpu = LayoutTensor[DType.int32, layout_1d, MutAnyOrigin](
-        cache_indices_h, RuntimeLayout[layout_1d].row_major(Index(batch))
+    var query_start_loc_cpu = LayoutTensor[DType.int32, layout_1d](
+        query_start_loc_h,
+        RuntimeLayout[layout_1d].row_major(Index(batch + 1)),
     )
-    var has_initial_state_cpu = LayoutTensor[
-        DType.bool, layout_1d, MutAnyOrigin
-    ](has_initial_state_h, RuntimeLayout[layout_1d].row_major(Index(batch)))
+    var cache_indices_cpu = LayoutTensor[DType.int32, layout_1d](
+        cache_indices_h,
+        RuntimeLayout[layout_1d].row_major(Index(batch)),
+    )
+    var has_initial_state_cpu = LayoutTensor[DType.bool, layout_1d](
+        has_initial_state_h,
+        RuntimeLayout[layout_1d].row_major(Index(batch)),
+    )
 
     # Strides for row-major layout using IndexList types
     var u_strides = IndexList[2](total_length, 1)

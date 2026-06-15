@@ -48,7 +48,8 @@ def _calculate_mojo_source_hash(mojo_dir: Path) -> str:
         # This should be unreachable if the caller validates that mojo_dir
         # contains Mojo source files before calling this function.
         raise ImportError(
-            f"Internal Error: No .mojo files found in directory '{mojo_dir}' for hashing."
+            f"Internal Error: No .mojo files found in directory '{mojo_dir}'"
+            " for hashing."
         )
 
     hasher = hashlib.sha256()
@@ -220,7 +221,7 @@ class MojoImporter:
         self,
         name: str,
         import_path: Sequence[str] | None,
-        target: object | None,
+        target: object | None = None,
     ):
         name_path = name.replace(".", "/")
 
@@ -283,4 +284,4 @@ class MojoImporter:
 # Side Effect: Add custom importer to the Python metapath
 # -------------------------------------------------------
 
-sys.meta_path.append(MojoImporter())  # type: ignore
+sys.meta_path.append(MojoImporter())

@@ -18,6 +18,7 @@ from std.gpu import (
 )
 from std.gpu.host import DeviceContext
 from std.gpu.host.info import MI355X
+from std.gpu.memory import CacheOperation
 
 from layout import Coord, Idx, TensorLayout, TileTensor
 from layout.tile_layout import row_major
@@ -26,6 +27,12 @@ from std.utils import StaticTuple
 
 from .mxfp4_matmul_amd import MXFP4MatmulAMD as _MXFP4MatmulAMD
 from .mxfp4_matmul_amd_preb import MXFP4MatmulAMD_PreB as _MXFP4MatmulAMD_PreB
+
+# Preb perf knobs (b_cache_policy / dram_to_lds / cluster_drain_sched /
+# mfma_cluster / deep_prime) are per-launch comptime params on `launch[...]`,
+# defaulted to current behavior — tune them per (N, K, M-band) in the dispatch
+# branches, same as the tile config. kbench: cluster_drain_sched regressed -7.9%
+# globally, so leave it off unless a specific band shows a win.
 
 
 struct PreShuffledBGroupedGEMM[
@@ -72,7 +79,7 @@ struct PreShuffledBGroupedGEMM[
                     BN=BN,
                     BK_ELEMS=BK_ELEMS,
                     WN=WN,
-                    B_PREFETCH=True,
+                    b_prefetch=True,
                 ].num_threads
             )
         )
@@ -95,6 +102,11 @@ struct PreShuffledBGroupedGEMM[
         ExpertIdsLayout: TensorLayout,
         N: Int,
         K_BYTES: Int,
+        b_cache_policy: CacheOperation = CacheOperation.ALWAYS,
+        dram_to_lds: Bool = False,
+        cluster_drain_sched: Bool = False,
+        mfma_cluster: Int = 4,
+        deep_prime: Bool = False,
     ](
         c_tensor: TileTensor[mut=True, out_dtype, LayoutC, MutAnyOrigin],
         a_tensor: TileTensor[DType.uint8, LayoutA, ImmutAnyOrigin],
@@ -118,7 +130,12 @@ struct PreShuffledBGroupedGEMM[
             BN=BN,
             BK_ELEMS=BK_ELEMS,
             WN=WN,
-            B_PREFETCH=True,
+            b_prefetch=True,
+            b_cache_policy=b_cache_policy,
+            dram_to_lds=dram_to_lds,
+            cluster_drain_sched=cluster_drain_sched,
+            mfma_cluster=mfma_cluster,
+            deep_prime=deep_prime,
         ]
         # K_SCALES (= K / 32) derived from A-data packed_K (= K / 2). The
         # preshuffled sfa_tensor's static shape is layout-dependent (i32-cell
@@ -255,7 +272,7 @@ struct PreShuffledBGroupedGEMM[
                     BN=BN,
                     BK_ELEMS=BK_ELEMS,
                     WN=WN,
-                    B_PREFETCH=True,
+                    b_prefetch=True,
                 ].num_threads
             )
         )
@@ -276,6 +293,11 @@ struct PreShuffledBGroupedGEMM[
         ExpertIdsLayout: TensorLayout,
         N: Int,
         K_BYTES: Int,
+        b_cache_policy: CacheOperation = CacheOperation.ALWAYS,
+        dram_to_lds: Bool = False,
+        cluster_drain_sched: Bool = False,
+        mfma_cluster: Int = 4,
+        deep_prime: Bool = False,
     ](
         c_tensor: TileTensor[mut=True, out_dtype, LayoutC, MutAnyOrigin],
         a_tensor: TileTensor[DType.uint8, LayoutA, ImmutAnyOrigin],
@@ -299,7 +321,12 @@ struct PreShuffledBGroupedGEMM[
             BN=BN,
             BK_ELEMS=BK_ELEMS,
             WN=WN,
-            B_PREFETCH=True,
+            b_prefetch=True,
+            b_cache_policy=b_cache_policy,
+            dram_to_lds=dram_to_lds,
+            cluster_drain_sched=cluster_drain_sched,
+            mfma_cluster=mfma_cluster,
+            deep_prime=deep_prime,
         ]
         # K_SCALES (= K / 32) derived from A-data packed_K (= K / 2). The
         # preshuffled sfa_tensor's static shape is layout-dependent (i32-cell
@@ -369,6 +396,11 @@ struct PreShuffledBGroupedGEMM[
         BK_ELEMS: Int,
         WN: Int,
         persistent: Bool,
+        b_cache_policy: CacheOperation = CacheOperation.ALWAYS,
+        dram_to_lds: Bool = False,
+        cluster_drain_sched: Bool = False,
+        mfma_cluster: Int = 4,
+        deep_prime: Bool = False,
     ](
         c: TileTensor[mut=True, ...],
         a: TileTensor[DType.uint8, ...],
@@ -390,7 +422,12 @@ struct PreShuffledBGroupedGEMM[
             BN=BN,
             BK_ELEMS=BK_ELEMS,
             WN=WN,
-            B_PREFETCH=True,
+            b_prefetch=True,
+            b_cache_policy=b_cache_policy,
+            dram_to_lds=dram_to_lds,
+            cluster_drain_sched=cluster_drain_sched,
+            mfma_cluster=mfma_cluster,
+            deep_prime=deep_prime,
         ]
 
         comptime N = c.static_shape[1]
@@ -448,6 +485,11 @@ struct PreShuffledBGroupedGEMM[
                 type_of(expert_ids_i).LayoutType,
                 N,
                 K_BYTES,
+                b_cache_policy,
+                dram_to_lds,
+                cluster_drain_sched,
+                mfma_cluster,
+                deep_prime,
             ]
             ctx.enqueue_function[kernel](
                 c,
@@ -478,6 +520,11 @@ struct PreShuffledBGroupedGEMM[
                 type_of(expert_ids_i).LayoutType,
                 N,
                 K_BYTES,
+                b_cache_policy,
+                dram_to_lds,
+                cluster_drain_sched,
+                mfma_cluster,
+                deep_prime,
             ]
             ctx.enqueue_function[kernel](
                 c,
@@ -898,7 +945,8 @@ def mxfp4_grouped_matmul_amd_preb(
                     ctx,
                 )
                 return
-            elif 2 <= estimated_total_m <= 16:
+            elif 2 <= estimated_total_m <= 7:
+                # STREAMING hurt the few-token end (M=4 -7.6%) — keep cached.
                 PreBGroupedGemmType.launch[
                     BM=16, BN=256, BK_ELEMS=256, WN=64, persistent=True
                 ](
@@ -914,9 +962,83 @@ def mxfp4_grouped_matmul_amd_preb(
                     ctx,
                 )
                 return
-            elif 17 <= estimated_total_m <= 400:
+            elif 8 <= estimated_total_m <= 16:
                 PreBGroupedGemmType.launch[
-                    BM=32, BN=256, BK_ELEMS=512, WN=64, persistent=True
+                    BM=16,
+                    BN=256,
+                    BK_ELEMS=256,
+                    WN=64,
+                    persistent=True,
+                    b_cache_policy=CacheOperation.STREAMING,
+                ](
+                    c,
+                    a,
+                    b_pre,
+                    a_scales,
+                    b_scales,
+                    a_offsets,
+                    expert_ids,
+                    max_num_tokens_per_expert,
+                    num_active_experts,
+                    ctx,
+                )
+                return
+            elif 17 <= estimated_total_m <= 37:
+                # STREAMING tested here and regressed (mean +2.8% vs +3.8%
+                # cached, M=34/35 went negative) — keep B cached below M=38.
+                PreBGroupedGemmType.launch[
+                    BM=32,
+                    BN=256,
+                    BK_ELEMS=512,
+                    WN=64,
+                    persistent=True,
+                    b_cache_policy=CacheOperation.ALWAYS,
+                ](
+                    c,
+                    a,
+                    b_pre,
+                    a_scales,
+                    b_scales,
+                    a_offsets,
+                    expert_ids,
+                    max_num_tokens_per_expert,
+                    num_active_experts,
+                    ctx,
+                )
+                return
+            elif 38 <= estimated_total_m <= 384:
+                # STREAMING recovers this band: +5-10% vs ALWAYS, tested
+                # through M=384 (M=256 +5.4%, M=384 +6.8%).
+                PreBGroupedGemmType.launch[
+                    BM=32,
+                    BN=256,
+                    BK_ELEMS=512,
+                    WN=64,
+                    persistent=True,
+                    b_cache_policy=CacheOperation.STREAMING,
+                ](
+                    c,
+                    a,
+                    b_pre,
+                    a_scales,
+                    b_scales,
+                    a_offsets,
+                    expert_ids,
+                    max_num_tokens_per_expert,
+                    num_active_experts,
+                    ctx,
+                )
+                return
+            elif 385 <= estimated_total_m <= 400:
+                # Untested with STREAMING (last tested M=384) — keep original
+                # B-cached config.
+                PreBGroupedGemmType.launch[
+                    BM=32,
+                    BN=256,
+                    BK_ELEMS=512,
+                    WN=64,
+                    persistent=True,
+                    b_cache_policy=CacheOperation.ALWAYS,
                 ](
                     c,
                     a,
@@ -931,8 +1053,22 @@ def mxfp4_grouped_matmul_amd_preb(
                 )
                 return
             elif 401 <= estimated_total_m <= 1200:
+                # Double-buffered A makes BK_ELEMS=512 cost 32KB LDS (BM=64),
+                # which regressed this band ~25%. BK_ELEMS=256 halves that to
+                # 16KB (== single-buffer footprint) while BM=64 preserves
+                # B-weight reuse (BM=32 sacrificed it). Net: ~5% faster than
+                # the pre-double-buffer baseline.
                 PreBGroupedGemmType.launch[
-                    BM=64, BN=256, BK_ELEMS=512, WN=64, persistent=True
+                    BM=64,
+                    BN=256,
+                    BK_ELEMS=256,
+                    WN=64,
+                    persistent=True,
+                    # STREAMING regressed this large-M band -6 to -24% (B is
+                    # reused across BM=64 tiles for the big shared expert), so
+                    # keep B cached here (flydsl's bnt2 here pairs with tile_m=32
+                    # + sort_block + atomic epilogue we don't have).
+                    b_cache_policy=CacheOperation.ALWAYS,
                 ](
                     c,
                     a,

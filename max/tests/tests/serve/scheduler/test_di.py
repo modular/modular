@@ -1718,17 +1718,6 @@ def test_spec_decode_prefill_decode_receives_draft_tokens() -> None:
     )
 
 
-def test_load_prefill_scheduler_rejects_standalone_spec_decode() -> None:
-    """load_prefill_scheduler must raise for standalone speculative decoding."""
-    pipeline = MagicMock()
-    pipeline.kv_manager = MagicMock()
-    config = MagicMock()
-    config.speculative = SpeculativeConfig(speculative_method="standalone")
-
-    with pytest.raises(ValueError, match="Standalone speculative decoding"):
-        load_prefill_scheduler(pipeline, config, MagicMock())
-
-
 def test_load_prefill_scheduler_accepts_eagle_spec_decode() -> None:
     """load_prefill_scheduler returns a PrefillScheduler for eagle spec decode.
 

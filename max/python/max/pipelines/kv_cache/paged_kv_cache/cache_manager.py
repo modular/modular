@@ -21,15 +21,18 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 
 import numpy as np
-from max.driver import CPU, Buffer, Device, DevicePinnedBuffer
+from max.driver import Buffer, Device, DevicePinnedBuffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef
 from max.nn.kv_cache import (
+    AttnKey,
+    BatchCharacteristics,
     KVCacheBuffer,
     KVCacheInputs,
     KVCacheParamInterface,
     KVCacheParams,
+    MLAAttnKey,
     MultiKVCacheParams,
 )
 from max.nn.kv_cache import KVCacheInputsPerDevice as _KVCacheInputsPerDevice
@@ -61,6 +64,36 @@ KVCacheInputsPerDevice = _KVCacheInputsPerDevice[Buffer, Buffer]
 #: a multiple of 8 so the inner-dim stride stays 32-byte aligned for the
 #: ``ld.global.v{N}.u32`` vector loads.
 _LUT_TAIL_PAD = 16
+
+
+def prompt_tokens_for_context(ctx: TextContext) -> int:
+    """Returns the per-step query (prompt) width for ``ctx``.
+
+    The new tokens processed this step plus any draft tokens to verify. Matches
+    the decode kernel's ``q_max_seq_len`` (prefill: full prompt; decode:
+    ``1 + num_draft_tokens_to_verify``).
+    """
+    return ctx.tokens.active_length + len(
+        ctx.spec_decoding_state.draft_tokens_to_verify
+    )
+
+
+def cache_valid_length_for_context(
+    ctx: TextContext, num_draft_tokens: int
+) -> int:
+    """Returns the maximum valid cache length this forward reads for ``ctx``.
+
+    Already-cached tokens (processed + accepted draft) plus this step's query
+    width (:func:`prompt_tokens_for_context`) plus the draft tokens written this
+    step (``num_draft_tokens``). Shared with the graph-capture replay path so
+    its upper-bound characteristics match what this manager prepares.
+    """
+    return (
+        ctx.tokens.processed_length
+        + len(ctx.spec_decoding_state.maybe_accepted_draft_tokens)
+        + prompt_tokens_for_context(ctx)
+        + num_draft_tokens
+    )
 
 
 def _padded_lut_cols(cols: int) -> int:
@@ -460,6 +493,7 @@ class PagedKVCacheManager:
         num_steps: int = 1,
         *,
         max_cache_length: int | None = None,
+        batch_characteristics: BatchCharacteristics | None = None,
     ) -> list[KVCacheInputsPerDevice]:
         """Gets runtime inputs for a batch of requests.
 
@@ -469,11 +503,19 @@ class PagedKVCacheManager:
             num_steps: Number of decode steps for the fetch.
             max_cache_length: Optional explicit max cache length to size LUT
                 views. If not provided, uses request-derived runtime length.
+            batch_characteristics: Optional upper-bound batch shape used to
+                prepare attention dispatch metadata. When provided, the dispatch
+                metadata (and ``max_lengths``) is resolved from these
+                (e.g. graph-capture-aligned) values rather than the batch's real
+                values, so the resolved key matches a captured graph. The batch's
+                real values must not exceed these. When ``None``, the metadata is
+                prepared from the real per-replica values.
 
         Raises:
             ValueError: If a request in ``batch`` is missing allocated blocks,
-                if ``batch`` exceeds preallocated runtime capacity, or if
-                ``max_cache_length`` implies a LUT shape that is invalid.
+                if ``batch`` exceeds preallocated runtime capacity, if
+                ``max_cache_length`` implies a LUT shape that is invalid, or if
+                the real batch shape exceeds ``batch_characteristics``.
         """
         replica = self._replica[replica_idx]
 
@@ -593,7 +635,7 @@ class PagedKVCacheManager:
 
         # Update cache_lengths and max_lengths.
         max_prompt_len = 0
-        max_cached_len = 0
+        absolute_max_cached_len = 0
         for batch_idx, ctx in enumerate(batch):
             # Get the blocks for this request.
             blocks = self.get_req_blocks(ctx.request_id, replica_idx)
@@ -621,21 +663,40 @@ class PagedKVCacheManager:
             )
             cache_lengths_np[batch_idx] = cache_length
 
-            # Update the maximum lengths seen so far.
-            prompt_tokens = ctx.tokens.active_length + len(
-                ctx.spec_decoding_state.draft_tokens_to_verify
+            # Update the maximum lengths seen so far. The shared helpers keep
+            # this in lockstep with the graph-capture replay path's
+            # upper-bound characteristics.
+            max_prompt_len = max(max_prompt_len, prompt_tokens_for_context(ctx))
+            absolute_max_cached_len = max(
+                absolute_max_cached_len,
+                cache_valid_length_for_context(
+                    ctx, self.params.num_draft_tokens
+                ),
             )
-            max_prompt_len = max(max_prompt_len, prompt_tokens)
-            max_cached_len = max(max_cached_len, cache_length + prompt_tokens)
 
         # Initiate saves to external cache tiers.
         replica.block_manager.offload()
 
-        # Build a tensor of maximum lengths. Each step slices the first row to
-        # advance to the values for the next row. This should not be allocated
-        # on pinned memory since it is exclusively accessed on the CPU and never
-        # copied to the GPU.
-        absolute_max_cached_len = max_cached_len + self.params.num_draft_tokens
+        # Choose the shape used to prepare attention dispatch metadata. When
+        # ``batch_characteristics`` is provided (e.g. graph-capture replay), the
+        # dispatch key is resolved once from those (aligned, upper-bound) values
+        # so it matches a captured graph; otherwise the real per-replica values
+        # are used. LUT / cache_lengths always use the real values; only the
+        # dispatch metadata and ``max_lengths`` follow ``dispatch_*``.
+        if batch_characteristics is not None:
+            bc = batch_characteristics
+            if (
+                batch_size > bc.batch_size
+                or max_prompt_len > bc.max_prompt_length
+                or absolute_max_cached_len > bc.max_cache_valid_length
+            ):
+                raise ValueError(
+                    f"Real batch size ({batch_size}) exceeds the requested dispatch batch size ({bc.batch_size})."
+                )
+            batch_size = bc.batch_size
+            max_prompt_len = bc.max_prompt_length
+            absolute_max_cached_len = bc.max_cache_valid_length
+
         max_lengths_host = build_max_lengths_tensor(
             num_steps,
             max_prompt_len,
@@ -652,96 +713,80 @@ class PagedKVCacheManager:
         replica.last_lut_table_host = lut_table_host
         replica.last_cache_lengths_host = cache_lengths_host
 
-        # Keep metadata aligned with kernel-side dispatch inputs.
-        # `k.max_context_length()` in flash attention corresponds to the
-        # max cached context length for this step (including active prompt
-        # tokens), i.e. `max_cached_len` here.
-        (
-            resolved_metadata,
-            mla_num_partitions,
-        ) = replica.attention_dispatch_resolver.resolve_for_replica_with_scalars(
+        # Resolve the decode attention dispatch keys once; per-shard dispatch
+        # buffers are packed from them below. `k.max_context_length()` in flash
+        # attention corresponds to the max cached context length for this step
+        # (including active prompt tokens), i.e. `dispatch_max_cached_len`.
+        target_key = replica.attention_dispatch_resolver.resolve_attn_key(
             batch_size,
             max_prompt_len,
             absolute_max_cached_len,
         )
-
-        # Wrap the MLA capturable scalar into a 1-element host buffer
-        # exactly once per fetch, then share it across shards. None for
-        # MHA / degenerate paths.
+        # MLA carries a capturable host `num_partitions` scalar (shared across
+        # shards); MHA does not.
         mla_num_partitions_buf: Buffer | None = (
-            Buffer.from_numpy(np.array([mla_num_partitions], dtype=np.int64))
-            if mla_num_partitions is not None
+            Buffer.from_numpy(
+                np.array([target_key.num_partitions], dtype=np.int64)
+            )
+            if isinstance(target_key, MLAAttnKey)
             else None
         )
 
+        draft_key: AttnKey | None = None
+        draft_mla_num_partitions_buf: Buffer | None = None
         if self.params.num_draft_tokens > 0:
             draft_resolver = (
                 replica.draft_attention_dispatch_resolver
                 or replica.attention_dispatch_resolver
             )
-            (
-                draft_resolved_metadata_,
-                draft_mla_num_partitions,
-            ) = draft_resolver.resolve_for_replica_with_scalars(
+            draft_key = draft_resolver.resolve_attn_key(
                 batch_size,
                 self.params.num_draft_tokens_per_step,
                 absolute_max_cached_len,
             )
-            draft_resolved_metadata: list[Buffer] | None = (
-                draft_resolved_metadata_
-            )
-            draft_mla_num_partitions_buf: Buffer | None = (
+            draft_mla_num_partitions_buf = (
                 Buffer.from_numpy(
-                    np.array([draft_mla_num_partitions], dtype=np.int64)
+                    np.array([draft_key.num_partitions], dtype=np.int64)
                 )
-                if draft_mla_num_partitions is not None
+                if isinstance(draft_key, MLAAttnKey)
                 else None
             )
-        else:
-            draft_resolved_metadata = None
-            draft_mla_num_partitions_buf = None
 
         # TODO(SERVOPT-942): Generalize to support 3+ caches
-        secondary_resolved_metadata: list[Buffer]
+        secondary_key = target_key
         if (
             self._has_secondary_cache
             and replica.draft_attention_dispatch_resolver is not None
         ):
-            secondary_resolved_metadata = (
-                replica.draft_attention_dispatch_resolver.resolve_for_replica(
+            secondary_key = (
+                replica.draft_attention_dispatch_resolver.resolve_attn_key(
                     batch_size,
                     max_prompt_len,
                     absolute_max_cached_len,
                 )
             )
-        else:
-            secondary_resolved_metadata = resolved_metadata
 
         ret_list: list[KVCacheInputsPerDevice] = []
         for cache_idx in range(self._num_caches):
             device_buffer = replica.device_buffers[cache_idx]
             # TODO(SERVOPT-942): Generalize to support 3+ caches
             is_secondary_cache = cache_idx == 1
+            key_for_cache = secondary_key if is_secondary_cache else target_key
 
             for tp_shard in range(num_tp_shards):
-                metadata = (
-                    secondary_resolved_metadata[tp_shard]
-                    if is_secondary_cache
-                    else resolved_metadata[tp_shard]
+                block_device = device_buffer.values[tp_shard].device
+                # MHA packs a CPU buffer (device ignored); MLA packs on the
+                # shard device.
+                metadata = key_for_cache.pack_into_buffer(
+                    block_device, absolute_max_cached_len
                 )
                 draft_metadata = (
-                    draft_resolved_metadata[tp_shard]
-                    if draft_resolved_metadata is not None
+                    draft_key.pack_into_buffer(
+                        block_device, absolute_max_cached_len
+                    )
+                    if draft_key is not None
                     else None
                 )
-                block_device = device_buffer.values[tp_shard].device
-                if metadata.device not in (CPU(), block_device):
-                    raise AssertionError(
-                        "attention_dispatch_metadata must be host-resident "
-                        "or on the shard device; got "
-                        f"{metadata.device} for cache {cache_idx}, shard "
-                        f"{tp_shard} on {block_device}."
-                    )
 
                 ret_list.append(
                     KVCacheInputsPerDevice(
@@ -769,6 +814,7 @@ class PagedKVCacheManager:
         num_steps: int = 1,
         *,
         max_cache_length: int | None = None,
+        batch_characteristics: BatchCharacteristics | None = None,
     ) -> KVCacheInputs[Buffer, Buffer]:
         """Gets the graph inputs for per-replica batches of requests.
 
@@ -780,43 +826,42 @@ class PagedKVCacheManager:
             num_steps: Number of steps to run for
             max_cache_length: Optional explicit max cache length to size LUT
                 views. If not provided, uses request-derived runtime length.
+            batch_characteristics: Optional upper-bound batch shape applied
+                uniformly across every replica when preparing attention dispatch
+                metadata. When provided (e.g. graph-capture replay, where every
+                DP replica must run the identical captured graph), the dispatch
+                key is resolved once from these aligned values; the real
+                per-replica values must not exceed them. When ``None``, each
+                replica prepares metadata from its own real values (which may
+                differ per replica).
         """
         if len(batches) != len(self._replica):
             raise ValueError(
                 f"Number of batches must match number of replicas. Expected {len(self._replica)}, got {len(batches)}"
             )
-        ret_list: list[KVCacheInputsPerDevice] = []
-        for replica_idx, ctxs in enumerate(batches):
-            ret_list.extend(
-                self._runtime_inputs_for_replica(
-                    replica_idx,
-                    ctxs,
-                    num_steps,
-                    max_cache_length=max_cache_length,
-                )
+        per_replica = [
+            self._runtime_inputs_for_replica(
+                replica_idx,
+                ctxs,
+                num_steps,
+                max_cache_length=max_cache_length,
+                batch_characteristics=batch_characteristics,
             )
+            for replica_idx, ctxs in enumerate(batches)
+        ]
+
+        # Reorder returned inputs to match the order of get_symbolic_inputs:
+        # ([cache0 across all replicas, then cache1, ...]).
+        ret_list: list[KVCacheInputsPerDevice] = []
+        for cache_idx in range(self._num_caches):
+            for replica_inputs in per_replica:
+                # Each cache contributes the same number of per-shard
+                # entries per replica, laid out contiguously cache-major.
+                seg = len(replica_inputs) // self._num_caches
+                ret_list.extend(
+                    replica_inputs[cache_idx * seg : (cache_idx + 1) * seg]
+                )
         return KVCacheInputs(inputs=ret_list)
-
-    @contextmanager
-    def scalar_metadata_on_host(self) -> Iterator[None]:
-        """Temporarily keep scalar dispatch metadata on CPU.
-
-        Within this context the attention dispatch resolvers return host
-        buffers so that graph-capture replay can perform a single
-        CPU-to-GPU ``inplace_copy_from`` instead of a redundant
-        GPU-to-GPU copy.
-        """
-        for replica in self._replica:
-            replica.attention_dispatch_resolver.host_only = True
-            if replica.draft_attention_dispatch_resolver is not None:
-                replica.draft_attention_dispatch_resolver.host_only = True
-        try:
-            yield
-        finally:
-            for replica in self._replica:
-                replica.attention_dispatch_resolver.host_only = False
-                if replica.draft_attention_dispatch_resolver is not None:
-                    replica.draft_attention_dispatch_resolver.host_only = False
 
     def alloc_dummy(self, request_id: RequestID, replica_idx: int) -> None:
         """Claims a dummy request and maps it to the replica's null block."""

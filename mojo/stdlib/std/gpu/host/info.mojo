@@ -1691,7 +1691,7 @@ comptime Radeon860m = GPUInfo.from_family(
 
 
 @fieldwise_init
-struct GPUInfo(Equatable, RegisterPassable, Writable):
+struct GPUInfo(Copyable, Equatable, Movable, RegisterPassable, Writable):
     """Comprehensive information about a GPU architecture.
 
     This struct contains detailed specifications about GPU capabilities,

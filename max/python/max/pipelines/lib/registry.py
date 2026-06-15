@@ -53,9 +53,6 @@ if TYPE_CHECKING:
 from max.pipelines.diffusion.pipeline import PixelGenerationPipeline
 from max.pipelines.lib._hf_config import load_huggingface_config
 from max.pipelines.modeling.config_enums import RopeType, SupportedEncoding
-from max.pipelines.speculative.standalone import (
-    _StandaloneSpeculativeDecodingPipeline,
-)
 from max.pipelines.weights.hf_utils import HuggingFaceRepo
 
 from .embeddings_pipeline import EmbeddingsPipeline
@@ -82,7 +79,6 @@ def get_pipeline_for_task(
     type[TextGenerationPipeline[TextContext]]
     | type[EmbeddingsPipeline]
     | type[PixelGenerationPipeline[Any]]
-    | type[_StandaloneSpeculativeDecodingPipeline]
     | type[OverlapTextGenerationPipeline[TextContext]]
 ):
     """Returns the pipeline class for the given task and config.
@@ -99,9 +95,7 @@ def get_pipeline_for_task(
         and pipeline_config.speculative is not None
     ):
         spec_method = pipeline_config.speculative.speculative_method
-        if pipeline_config.speculative.is_standalone():
-            return _StandaloneSpeculativeDecodingPipeline
-        elif (
+        if (
             pipeline_config.speculative.is_eagle()
             or pipeline_config.speculative.is_mtp()
             or pipeline_config.speculative.is_dflash()
@@ -482,6 +476,10 @@ class PipelineRegistry:
         self._cached_huggingface_tokenizers: dict[
             HuggingFaceRepo, PreTrainedTokenizer | PreTrainedTokenizerFast
         ] = {}
+        # Tracks already-imported custom architecture specs so that repeated
+        # retrieve_factory() calls don't re-run importlib.import_module and
+        # spuriously re-register the same architectures.
+        self._imported_custom_arch_specs: set[str] = set()
 
     def register(
         self,
@@ -747,6 +745,46 @@ class PipelineRegistry:
 
         return tokenizer
 
+    def _import_custom_architectures(
+        self, custom_architectures: list[str]
+    ) -> None:
+        """Imports custom model modules and registers them in the pipeline registry."""
+        import importlib
+        import os
+        import sys
+
+        for module_spec in custom_architectures:
+            if module_spec in self._imported_custom_arch_specs:
+                continue
+            module_parts = module_spec.split(":")
+            if len(module_parts) > 2:
+                raise ValueError(
+                    f"Custom module spec contains too many colons: {module_spec}"
+                )
+            elif len(module_parts) == 2:
+                module_path, module_name = module_parts
+            else:
+                module_path = os.path.dirname(module_parts[0])
+                module_name = os.path.basename(module_parts[0])
+            sys.path.append(module_path)
+            try:
+                module = importlib.import_module(module_name)
+            except Exception as e:
+                raise ValueError(
+                    f"Failed to import custom model from: {module_spec}"
+                ) from e
+
+            if not module.ARCHITECTURES or not isinstance(
+                module.ARCHITECTURES, list
+            ):
+                raise ValueError(
+                    f"Custom model imported, but did not expose an `ARCHITECTURES` list. Module: {module_spec}"
+                )
+
+            for arch in module.ARCHITECTURES:
+                self.register(arch, allow_override=True)
+            self._imported_custom_arch_specs.add(module_spec)
+
     def retrieve_factory(
         self,
         pipeline_config: PipelineConfig,
@@ -757,7 +795,19 @@ class PipelineRegistry:
         tokenizer: PipelineTokenizer[Any, Any, Any]
         pipeline_factory: Callable[[], PipelineTypes]
 
-        pipeline_class = get_pipeline_for_task(task, pipeline_config)
+        # Register any user-supplied custom architectures before the arch lookup.
+        self._import_custom_architectures(
+            pipeline_config.runtime.custom_architectures
+        )
+
+        # Apply the unified spec-decode target-architecture override (e.g.
+        # "DeepseekV3ForCausalLM" -> "UnifiedMTPDeepseekV3ForCausalLM") *before*
+        # resolving ``arch``, so the resolved architecture passed to
+        # ``pipeline_config.resolve()`` is consumed by memory estimation, the
+        # overlap scheduler, and parser resolution as the overridden arch — not
+        # the stale base arch. Resolving after the override (as the inline block
+        # in ``resolve()`` did) regressed all unified spec-decode models (#88511).
+        pipeline_config._resolve_speculative_target_architecture()
 
         # MAX pipeline
         if override_architecture:
@@ -774,6 +824,52 @@ class PipelineRegistry:
             raise ValueError(
                 f"No architecture found for {pipeline_config.models.main_architecture_name}"
             )
+
+        # For speculative decoding, pre-resolve the draft architecture before
+        # calling resolve() so config.py never needs a registry import.
+        draft_arch = None
+        if pipeline_config.draft_model is not None:
+            draft_arch_name = pipeline_config.draft_model.architecture_name
+            if draft_arch_name is None:
+                raise ValueError(
+                    f"Cannot determine architecture for draft model "
+                    f"'{pipeline_config.draft_model.model_path}': "
+                    "no 'architectures' field in HuggingFace config."
+                )
+            draft_arch = self.retrieve_architecture(
+                architecture_name=draft_arch_name,
+                prefer_module_v3=pipeline_config.runtime.prefer_module_v3,
+            )
+            if not draft_arch:
+                if not pipeline_config.runtime.prefer_module_v3:
+                    v3_draft = self.retrieve_architecture(
+                        architecture_name=draft_arch_name,
+                        prefer_module_v3=True,
+                    )
+                    if v3_draft:
+                        raise ValueError(
+                            f"MAX-optimized architecture found for draft model "
+                            f"'{pipeline_config.draft_model.model_path}', but only the "
+                            f"new Module-based implementation is available "
+                            f"(architecture: '{v3_draft.name}'). "
+                            "Please use the '--prefer-module-v3' flag."
+                        )
+                raise ValueError(
+                    "MAX-Optimized architecture not found for `draft_model`"
+                )
+
+        # The unified spec-decode target-architecture override is applied above
+        # (before ``arch`` is resolved), so ``arch`` already reflects it here
+        # and no post-resolve re-resolution is needed.
+        pipeline_config.resolve(
+            arch,
+            draft_arch=draft_arch,
+        )
+
+        # Must be called after pipeline_config.resolve() so that
+        # enable_overlap_scheduler is set correctly (e.g. forced True when
+        # --device-graph-capture is explicitly passed).
+        pipeline_class = get_pipeline_for_task(task, pipeline_config)
 
         arch_config = arch.config.initialize(pipeline_config)
         max_length = arch_config.get_max_seq_len()
@@ -914,36 +1010,6 @@ class PipelineRegistry:
             "weight_adapters": arch.weight_adapters,
             "tokenizer": typed_tokenizer,
         }
-
-        # If using standalone speculative decoding, add draft model-specific args
-        if (
-            pipeline_config.draft_model is not None
-            and pipeline_config.speculative is not None
-            and pipeline_config.speculative.is_standalone()
-        ):
-            draft_arch_name = pipeline_config.draft_model.architecture_name
-            if draft_arch_name is None:
-                raise ValueError(
-                    f"Cannot determine architecture for draft model "
-                    f"'{pipeline_config.draft_model.model_path}': "
-                    "no 'architectures' field in HuggingFace config."
-                )
-            draft_arch = self.retrieve_architecture(
-                architecture_name=draft_arch_name,
-                prefer_module_v3=pipeline_config.runtime.prefer_module_v3,
-                task=task,
-            )
-            if draft_arch is None:
-                raise ValueError(
-                    f"MAX-Optimized architecture not found for draft model "
-                    f"'{pipeline_config.draft_model.model_path}'"
-                )
-            assert issubclass(draft_arch.pipeline_model, PipelineModel), (
-                f"Draft model must be a PipelineModel, "
-                f"got {draft_arch.pipeline_model.__name__}"
-            )
-            factory_kwargs["draft_pipeline_model"] = draft_arch.pipeline_model
-            factory_kwargs["draft_weight_adapters"] = draft_arch.weight_adapters
 
         # TODO: Running with overlap results in a CUDA_ILLEGAL_ADDRESS error.
         # The source of this error is in the realize_future_tokens graph where

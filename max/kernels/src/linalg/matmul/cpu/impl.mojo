@@ -57,7 +57,7 @@ from .vnni import Inner_matmul_vnni
 # - _run_inner_loop_i8mm()
 
 
-trait InnerMatmulKernel(ImplicitlyCopyable, ImplicitlyDestructible):
+trait InnerMatmulKernel(ImplicitlyCopyable, ImplicitlyDeletable):
     def __inner_matmul__[
         kernel_rows: Int,
         kernel_cols: Int,

@@ -12,9 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 
 
-struct SizedListWrapper[capacity: Int, T: Writable & Copyable](
-    Sized, Writable where conforms_to(T, Writable) and capacity > 0
-):
+struct SizedListWrapper[
+    capacity: Int, T: Writable & Copyable & ImplicitlyDeletable
+](Sized, Writable where conforms_to(T, Writable) and capacity > 0):
     var data: List[Self.T]
 
     def __init__(out self, value: Self.T):
@@ -39,7 +39,7 @@ def main() raises:
     assert_equal(s.first(), 42)
     assert_true(conforms_to(type_of(s), Writable))
 
-    comptime CollectionElement = ImplicitlyCopyable & ImplicitlyDestructible
+    comptime CollectionElement = ImplicitlyCopyable & ImplicitlyDeletable
 
     def make_filled[T: CollectionElement, size: Int](splat_value: T) -> List[T]:
         var result = List[T](capacity=size)
