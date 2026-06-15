@@ -19,9 +19,9 @@ key *blocks* via two launches:
    forcing, split-K over the KV-block dimension; writes a caller-owned scores buffer.
 2. `_decode_topk_kernel` -- `block_select_topk` over each score row.
 
-Both grids depend only on graph-constant shapes (batch, head count), never on
-sequence length, and nothing is allocated inside the op, so the decode path is
-safe inside a CUDA-graph capture region. M3 disables the index value/output, so
+Both grids depend only on graph-constant shapes, never on sequence length, and
+nothing is allocated inside the op, so the decode path is safe inside a
+CUDA-graph capture region. M3 disables the index value/output, so
 this emits block indices only (score type `max`).
 """
 
@@ -37,7 +37,7 @@ from std.gpu import (
 from std.gpu.host import DeviceContext
 from std.gpu.memory import AddressSpace
 from std.gpu.primitives import warp
-from std.math import ceildiv, max, min
+from std.math import ceildiv, clamp, max, min
 from std.memory import stack_allocation
 from std.utils.index import Index
 from std.utils.numerics import min_or_neg_inf
@@ -84,8 +84,7 @@ def _decode_block_score_kernel[
     comptime INIT_SCORE = Float32(1.0e30)
     comptime LOCAL_SCORE = Float32(1.0e29)
     var b = block_idx.x
-    var h = block_idx.y
-    var chunk_id = block_idx.z
+    var chunk_id = block_idx.y
     var tid = thread_idx.x
 
     var num_keys = Int(seq_lens[b])
@@ -101,15 +100,15 @@ def _decode_block_score_kernel[
     if chunk_start >= num_blocks:
         return
 
-    var q_base = q.to_layout_tensor().ptr_at_offset(Index(b, h, 0))
+    var q_base = q.to_layout_tensor().ptr_at_offset(Index(b, 0, 0))
     var q_smem = stack_allocation[
-        idx_head_dim, Scalar[DType.float32], address_space=AddressSpace.SHARED
+        num_index_heads * idx_head_dim,
+        Scalar[DType.float32],
+        address_space=AddressSpace.SHARED,
     ]()
-    for d in range(tid, idx_head_dim, _SCORE_CTA_SIZE):
-        q_smem[d] = q_base[d].cast[DType.float32]()
+    for i in range(tid, num_index_heads * idx_head_dim, _SCORE_CTA_SIZE):
+        q_smem[i] = q_base[i].cast[DType.float32]()
     barrier()
-
-    var score_row = score.to_layout_tensor().ptr_at_offset(Index(h, b, 0))
 
     comptime num_warps = _SCORE_CTA_SIZE // WARP_SIZE
     var warp_in_cta = warp_id()
@@ -118,29 +117,39 @@ def _decode_block_score_kernel[
     for blk in range(chunk_start + warp_in_cta, chunk_end, num_warps):
         var key_start = blk * block_size
         var key_end = min(key_start + block_size, num_keys)
-        var lane_max = min_or_neg_inf[DType.float32]()
+        var lane_max = SIMD[DType.float32, num_index_heads](
+            min_or_neg_inf[DType.float32]()
+        )
         for key in range(key_start + lane, key_end, WARP_SIZE):
             var k_ptr = k_operand.block_paged_ptr[1](
                 UInt32(b), UInt32(key), UInt32(0), UInt32(0)
             )
-            var dot = Float32(0)
-            for d in range(idx_head_dim):
-                dot += q_smem[d] * k_ptr[d].cast[DType.float32]()
-            var s = dot * sm_scale
-            if s > lane_max:
-                lane_max = s
 
-        var blk_max = warp.max(SIMD[DType.float32, 1](lane_max))[0]
+            comptime for h in range(num_index_heads):
+                var dot = Float32(0)
+                for d in range(idx_head_dim):
+                    dot += (
+                        q_smem[h * idx_head_dim + d]
+                        * k_ptr[d].cast[DType.float32]()
+                    )
+                var s = dot * sm_scale
+                if s > lane_max[h]:
+                    lane_max[h] = s
 
-        # When a block is both init- and local-forced, local wins: the second
-        # assignment overwriting the first is intentional, not a clobber bug.
-        if lane == 0:
-            var val = blk_max
-            if blk < init_blocks:
-                val = INIT_SCORE
-            if blk >= local_start:
-                val = LOCAL_SCORE
-            score_row[blk] = val
+        comptime for h in range(num_index_heads):
+            var blk_max = warp.max(SIMD[DType.float32, 1](lane_max[h]))[0]
+
+            # When a block is both init- and local-forced, local wins: the second
+            # assignment overwriting the first is intentional, not a clobber bug.
+            if lane == 0:
+                var val = blk_max
+                if blk < init_blocks:
+                    val = INIT_SCORE
+                if blk >= local_start:
+                    val = LOCAL_SCORE
+                score.to_layout_tensor().ptr_at_offset(Index(h, b, 0))[
+                    blk
+                ] = val
 
 
 @__name(t"sparse_indexer_decode_topk")
@@ -208,19 +217,12 @@ def sparse_indexer_decode_score[
         _SCORE_CTA_SIZE % WARP_SIZE == 0
     ), "block_dim must be a multiple of the warp size"
 
-    # Split-K so low-batch launches fill the GPU: the un-split grid is only
-    # `batch * num_index_heads` CTAs (4 at batch=1) on a 148-SM B200.
-    #
-    # CAPTURE-SAFETY: `num_chunks` depends only on graph-constant quantities
-    # (`batch`, `num_index_heads`), never on `seq_len`/`num_keys` (which vary
-    # call-to-call inside a CUDA-graph capture). The block range is computed
-    # on-device and chunks past `num_blocks` early-return, so any chunk count is
-    # valid -- each block is written by exactly one chunk, no reduction.
+    # CAPTURE-SAFETY: num_chunks must depend only on the graph-constant batch,
+    # never on seq_len/num_keys (which vary call-to-call inside a CUDA-graph
+    # capture); deriving it from the live block count would silently break capture.
     comptime TARGET_GRID = 512  # ~3.5x the B200 SM count
     comptime MAX_CHUNKS = 128
-    var num_chunks = max(
-        1, min(MAX_CHUNKS, TARGET_GRID // max(1, batch * num_index_heads))
-    )
+    var num_chunks = clamp(TARGET_GRID // max(1, batch), 1, MAX_CHUNKS)
 
     comptime score_kernel = _decode_block_score_kernel[
         dtype,
@@ -243,7 +245,7 @@ def sparse_indexer_decode_score[
         local_blocks,
         sm_scale,
         num_chunks,
-        grid_dim=(batch, num_index_heads, num_chunks),
+        grid_dim=(batch, num_chunks),
         block_dim=_SCORE_CTA_SIZE,
     )
 
