@@ -2541,6 +2541,12 @@ struct ConvertSymbolOpToAIR : public ConvertSymbolOpToLLVM<OpT> {
       assert(!vecTy.allDimsScalable() &&
              "Scalable vectors are not yet supported.");
       return "v" + llvm::utostr(shape[0]) + mangleType(vecTy.getElementType());
+    } else if (auto simdTy = dyn_cast<SIMDType>(type)) {
+      // Mangle from the dtype, not the LLVM lowering: keeps fp8 (which lowers
+      // to i8 storage) in the name as its logical type.
+      KGENDType dtype = *simdTy.getResolvedDType();
+      return "v" + llvm::utostr(*simdTy.getResolvedSize()) +
+             mangleType(dtype.getEquivalentBuiltinType(type.getContext()));
     } else {
       llvm_unreachable("Unknown type to mangle");
     }
@@ -2775,10 +2781,10 @@ private:
     funcName += mangleScalarTypeChar(aDType);
     funcName += '.';
     funcName += mangleScalarTypeChar(bDType);
-    funcName += "." + mangleType(resultTypes[0]); // D
-    funcName += "." + mangleType(argTypes[aIdx]); // A
-    funcName += "." + mangleType(argTypes[bIdx]); // B
-    funcName += "." + mangleType(argTypes[cIdx]); // C
+    funcName += "." + mangleType(resultTypes[0]);  // D
+    funcName += "." + mangleType(elemTypes[aIdx]); // A
+    funcName += "." + mangleType(elemTypes[bIdx]); // B
+    funcName += "." + mangleType(argTypes[cIdx]);  // C
 
     AIRIntrinsicName airFunctionName(funcName, /*requiresMangling=*/false);
     return createAIRFunction(rewriter, module, loc, airFunctionName, operands,
