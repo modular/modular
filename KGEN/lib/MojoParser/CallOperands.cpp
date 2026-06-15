@@ -158,7 +158,7 @@ LogicalResult CallOperands::assignToPogs(
 
     // KW variadics eat up any remaining keyword operands, and accept **kwargs.
     if (pog.isKwVarArg()) {
-      pogAssignment.posVariadicIdxs.push_back(PogAssignment::kPA_Variadic);
+      pogAssignment.operandIdxs.push_back(PogAssignment::kPA_Variadic);
 
       // Start with any skipped kw operands.
       pogAssignment.kwVariadicIdxs = std::move(skippedKW);

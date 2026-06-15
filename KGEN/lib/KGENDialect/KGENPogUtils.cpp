@@ -464,58 +464,6 @@ ParseResult KGEN::parseOptionalName(AsmParser &p, StringAttr &name) {
 }
 
 //===----------------------------------------------------------------------===//
-// Pog Utils
-//===----------------------------------------------------------------------===//
-
-size_t KGEN::countNumPosOnly(ArrayRef<PogMetadataAttr> pogs) {
-  size_t idx = 0;
-  for (PogMetadataAttr pog : pogs) {
-    PassingKind kind = pog.getPassingKind();
-    if (kind == PassingKind::Inferred)
-      continue;
-    if (kind != PassingKind::PosOnly)
-      break;
-    ++idx;
-  }
-  return idx;
-}
-
-size_t KGEN::countNumPosOnly(PogListAttr pogListAttr) {
-  return countNumPosOnly(pogListAttr.getPogs());
-}
-
-size_t KGEN::countNumPositional(ArrayRef<PogMetadataAttr> pogs) {
-  size_t idx = 0;
-  for (PogMetadataAttr pog : pogs) {
-    PassingKind kind = pog.getPassingKind();
-    if (kind == PassingKind::Inferred)
-      continue;
-    if (kind != PassingKind::PosOnly && kind != PassingKind::PosOrKw)
-      break;
-    ++idx;
-  }
-  return idx;
-}
-
-size_t KGEN::countNumPositional(PogListAttr pogListAttr) {
-  return countNumPositional(pogListAttr.getPogs());
-}
-
-size_t KGEN::countNumImplicitKinds(ArrayRef<PogMetadataAttr> pogs) {
-  size_t num = 0;
-  for (PogMetadataAttr pogAttr : llvm::reverse(pogs)) {
-    if (pogAttr.getPassingKind() != PassingKind::Implicit)
-      break;
-    ++num;
-  }
-  return num;
-}
-
-size_t KGEN::countNumImplicitKinds(PogListAttr pogListAttr) {
-  return countNumImplicitKinds(pogListAttr.getPogs());
-}
-
-//===----------------------------------------------------------------------===//
 // PassingKindParser / PassingKindPrinter
 //===----------------------------------------------------------------------===//
 

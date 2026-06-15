@@ -97,22 +97,6 @@ void printConventionAndVariadicness(AsmPrinter &p, ArgConvention convention,
                                     VariadicKind variadicness);
 
 //===----------------------------------------------------------------------===//
-// Pog Utils
-//===----------------------------------------------------------------------===//
-
-/// Count the number of positional-only passing kinds.
-size_t countNumPosOnly(ArrayRef<PogMetadataAttr> pogs);
-size_t countNumPosOnly(PogListAttr pogListAttr);
-
-/// Count the number of positional (pos-only or pos-or-kw) passing kinds.
-size_t countNumPositional(ArrayRef<PogMetadataAttr> pogs);
-size_t countNumPositional(PogListAttr pogListAttr);
-
-/// Count the number of implicit passing kinds.
-size_t countNumImplicitKinds(ArrayRef<PogMetadataAttr> pogs);
-size_t countNumImplicitKinds(PogListAttr pogListAttr);
-
-//===----------------------------------------------------------------------===//
 // PassingKindParser / PassingKindPrinter
 //===----------------------------------------------------------------------===//
 
