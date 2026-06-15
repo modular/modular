@@ -51,6 +51,10 @@ This version is still a work in progress.
 
 ## GPU programming
 
+- Apple M5 `simdgroup_matrix` MMA now accepts FP8 (`float8_e4m3fn`,
+  `float8_e5m2`) inputs with an F32 accumulator, alongside the existing
+  F16/BF16/F32 and 8-bit integer types.
+
 - Added `warp.match_any()`, which returns, for each warp lane, the mask of
   lanes whose value has the same bits. It uses NVIDIA's `match.any.sync`
   instruction, a `readfirstlane` ballot fold on AMD, and a shuffle-based
