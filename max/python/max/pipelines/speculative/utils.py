@@ -45,24 +45,6 @@ class _SpeculativeDecodingMetrics:
         if self.accepted_per_position is None:
             self.accepted_per_position = [0] * self.num_speculative_tokens
 
-    @classmethod
-    def empty(cls, num_speculative_tokens: int) -> _SpeculativeDecodingMetrics:
-        """Create an empty metrics object."""
-        return _SpeculativeDecodingMetrics(
-            num_speculative_tokens=num_speculative_tokens,
-            accepted_per_position=[0] * num_speculative_tokens,
-            num_verifications=0,
-        )
-
-    def update(self, metrics: _SpeculativeDecodingMetrics) -> None:
-        """Update metrics with results from a batch."""
-        assert metrics.num_speculative_tokens == self.num_speculative_tokens
-        self.num_verifications += metrics.num_verifications
-        if metrics.accepted_per_position is not None:
-            assert self.accepted_per_position is not None
-            for i, count in enumerate(metrics.accepted_per_position):
-                self.accepted_per_position[i] += count
-
     @property
     def draft_tokens_accepted(self) -> int:
         """The number of draft tokens accepted by the target model.
@@ -109,3 +91,8 @@ class _SpeculativeDecodingMetrics:
             count / self.num_verifications
             for count in self.accepted_per_position
         ]
+
+    @property
+    def output_tokens(self) -> int:
+        """Total output tokens: accepted drafts + one bonus token per verification."""
+        return self.draft_tokens_accepted + self.num_verifications

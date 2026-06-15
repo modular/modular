@@ -306,9 +306,6 @@ class SpecDecodeState:
     kv_manager: PagedKVCacheManager
     """The KVCache manager for model."""
 
-    metrics: _SpeculativeDecodingMetrics
-    """The metrics for speculative decoding."""
-
     persistent_draft_tokens: Buffer
     """Persistent input buffer for draft tokens.
 
@@ -329,6 +326,9 @@ class SpecDecodeState:
     persistent_seed: Buffer
     """Persistent ``[total_max_batch]`` uint64 seed values, one per request,
     derived from ``sampling_params.seed + len(tokens)``."""
+
+    batch_metrics: _SpeculativeDecodingMetrics | None = None
+    """Per-batch metrics for the most recently completed batch."""
 
     persistent_bitmask_pinned: DevicePinnedBuffer | None = None
     """Pinned memory for the packed int32 bitmask the async callback writes.
@@ -447,10 +447,6 @@ class SpecDecodeState:
         num_speculative_tokens = (
             pipeline_config.speculative.num_speculative_tokens
         )
-        spec_decoding_metrics = _SpeculativeDecodingMetrics.empty(
-            num_speculative_tokens=num_speculative_tokens
-        )
-
         assert pipeline_config.runtime.max_batch_size is not None
         total_max_batch = (
             pipeline_config.runtime.max_batch_size
@@ -543,7 +539,6 @@ class SpecDecodeState:
         return SpecDecodeState(
             num_speculative_tokens=num_speculative_tokens,
             kv_manager=kv_manager,
-            metrics=spec_decoding_metrics,
             persistent_draft_tokens=persistent_draft_tokens,
             persistent_temperature=persistent_temperature,
             persistent_top_k=persistent_top_k,
@@ -3365,6 +3360,9 @@ class OverlapTextGenerationPipeline(
         # below to prevent double-calling sync_and_process_outputs.
         _early_sync_outputs: _AsyncBatchOutput | None = None
 
+        if self._spec_decode_state is not None:
+            self._spec_decode_state.batch_metrics = None
+
         if inputs:
             # Spec-decode handles sampling internally.
             # Remove the condition below when SERVOPT-992 is resolved.
@@ -3414,8 +3412,8 @@ class OverlapTextGenerationPipeline(
 
             if self._spec_decode_state is not None:
                 assert wrapped_outputs.spec_decode_metrics is not None
-                self._spec_decode_state.metrics.update(
-                    wrapped_outputs.spec_decode_metrics,
+                self._spec_decode_state.batch_metrics = (
+                    wrapped_outputs.spec_decode_metrics
                 )
             outputs = wrapped_outputs.output_dict
             self._prev_batch = None
@@ -3474,8 +3472,8 @@ class OverlapTextGenerationPipeline(
                 wrapped_outputs = curr_batch.sync_and_process_outputs()
                 if self._spec_decode_state is not None:
                     assert wrapped_outputs.spec_decode_metrics is not None
-                    self._spec_decode_state.metrics.update(
-                        wrapped_outputs.spec_decode_metrics,
+                    self._spec_decode_state.batch_metrics = (
+                        wrapped_outputs.spec_decode_metrics
                     )
                 # Merge current batch outputs with any previous batch outputs
                 outputs.update(wrapped_outputs.output_dict)
@@ -3505,8 +3503,10 @@ class OverlapTextGenerationPipeline(
         """Returns the KV cache manager for this pipeline."""
         return self._kv_manager
 
-    def spec_decode_metrics(self) -> _SpeculativeDecodingMetrics | None:
-        """Returns the draft token acceptance metrics for speculative decoding."""
+    def batch_spec_decode_metrics(
+        self,
+    ) -> _SpeculativeDecodingMetrics | None:
+        """Returns the per-batch draft token acceptance metrics for the most recent batch."""
         if self._spec_decode_state is None:
             return None
-        return self._spec_decode_state.metrics
+        return self._spec_decode_state.batch_metrics
