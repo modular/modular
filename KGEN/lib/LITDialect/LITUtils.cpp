@@ -684,24 +684,33 @@ Attribute IndexToDeclRefRemapper::tryReplace(Attribute attr, size_t depth) {
 // Constraint Implication
 //===----------------------------------------------------------------------===//
 
-/// If \p prop is a multi-trait TypeConformsToTraitAttr, decompose it into an
-/// AND of individual single-trait conforms_to attrs. Returns a null attr if
-/// \p prop is not a multi-trait conforms_to.
+static TypedAttr stripIdentityWrappers(TypedAttr attr);
+
+/// Normalize a `conforms_to` for structural comparison: strip identity wrappers
+/// (rebind/upcast/downcast) from the type value so `conforms_to(upcast<T>, X)`
+/// matches `conforms_to(T, X)`, and split multi-trait into an AND of
+/// single-trait conforms_to. Returns null if \p prop is not a conforms_to, or
+/// is single-trait needing no stripping.
 static TypedAttr decomposeConformsTo(TypedAttr prop) {
   auto conformsTo = dyn_cast<TypeConformsToTraitAttr>(prop);
   if (!conformsTo)
     return {};
 
+  TypedAttr typeValue = stripIdentityWrappers(conformsTo.getTypeValue());
+
   ArrayRef<SymbolRefAttr> traitSymbols = conformsTo.getTraitSymbols();
-  if (traitSymbols.size() <= 1)
-    return {};
+  if (traitSymbols.size() <= 1) {
+    // Nothing to split. Only rebuild when stripping changed the type value;
+    // otherwise report "not decomposable" so callers use the prop unchanged.
+    if (traitSymbols.empty() || typeValue == conformsTo.getTypeValue())
+      return {};
+    return TypeConformsToTraitAttr::get(typeValue, traitSymbols);
+  }
 
   SmallVector<TypedAttr> operands;
   operands.reserve(traitSymbols.size());
-  for (SymbolRefAttr sym : traitSymbols) {
-    operands.push_back(
-        TypeConformsToTraitAttr::get(conformsTo.getTypeValue(), {sym}));
-  }
+  for (SymbolRefAttr sym : traitSymbols)
+    operands.push_back(TypeConformsToTraitAttr::get(typeValue, {sym}));
   return ParamOperatorAttr::get(POC::And, operands);
 }
 

@@ -1269,6 +1269,39 @@ def test_alias_param_conforms_to():
     )
 
 
+# ===========================================================================
+# where-clause evidence proves a method constraint that folds a narrower bound
+# ===========================================================================
+# Regression for the conforms_to solver. A method's `where conforms_to(Self.T,
+# Copyable)` is unprovable when the caller's bound is wider than the struct's
+# and supplies Copyable via a `where` clause: the goal upcasts the type value
+# while the assumption is on the bare parameter. Failed "lacking evidence"
+# before the fix stripped that upcast.
+
+
+# Struct parameter bound (Movable) is intentionally narrower than the caller
+# bounds below. A T-typed field is not needed to reproduce -- the bound
+# mismatch alone drives it -- so T is a phantom parameter.
+@fieldwise_init
+struct NarrowBoundMethod[T: Movable]:
+    def use_copyable(self) where conforms_to(Self.T, Copyable):
+        print("narrow_bound_method: ok")
+
+
+def call_narrow_bound[
+    T: Movable & ImplicitlyDeletable
+](x: NarrowBoundMethod[T]) where conforms_to(T, Copyable):
+    # Movable comes from T's bound, Copyable from this where clause; together
+    # they discharge the method's folded `conforms_to(T, Copyable & Movable)`.
+    x.use_copyable()
+
+
+def test_narrow_bound_where_evidence():
+    var x = NarrowBoundMethod[CopyableType]()
+    # CHECK: narrow_bound_method: ok
+    call_narrow_bound(x)
+
+
 def main():
     test_simple_conditional()
     test_nested_wrappers()
@@ -1308,6 +1341,7 @@ def main():
     test_explicit_copy_in_generic()
     test_comptime_alias_conditional_conformance()
     test_default_equatable_conditional()
+    test_narrow_bound_where_evidence()
     # CHECK: RegisterPassable!
     test_conditional_rp()
     # CHECK: alias_param_conditional: ok
