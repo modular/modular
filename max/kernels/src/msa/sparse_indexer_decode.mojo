@@ -138,20 +138,25 @@ def _decode_block_score_kernel[
         var lane_max = SIMD[DType.float32, num_index_heads](
             min_or_neg_inf[DType.float32]()
         )
-        for key in range(key_start + Int(key_in_group), key_end, KEYS_PER_ITER):
-            var k_ptr = k_operand.block_paged_ptr[1](
-                UInt32(b), UInt32(key), UInt32(0), UInt32(0)
-            )
-            var k_vec = (
-                (k_ptr + d0).load[width=LANE_SIMD]().cast[DType.float32]()
-            )
+        var n_iter = ceildiv(key_end - key_start, KEYS_PER_ITER)
+        for it in range(n_iter):
+            var key = key_start + Int(key_in_group) + it * KEYS_PER_ITER
+            var k_vec = SIMD[DType.float32, LANE_SIMD](0)
+            if key < key_end:
+                var k_ptr = k_operand.block_paged_ptr[1](
+                    UInt32(b), UInt32(key), UInt32(0), UInt32(0)
+                )
+                k_vec = (
+                    (k_ptr + d0).load[width=LANE_SIMD]().cast[DType.float32]()
+                )
             comptime for h in range(num_index_heads):
                 var dot = warp.lane_group_sum[num_lanes=LANES_PER_KEY](
                     SIMD[DType.float32, 1]((q_reg[h] * k_vec).reduce_add())
                 )[0]
-                var s = dot * sm_scale
-                if s > lane_max[h]:
-                    lane_max[h] = s
+                if key < key_end:
+                    var s = dot * sm_scale
+                    if s > lane_max[h]:
+                        lane_max[h] = s
 
         comptime for h in range(num_index_heads):
             var blk_max = warp.max(SIMD[DType.float32, 1](lane_max[h]))[0]
