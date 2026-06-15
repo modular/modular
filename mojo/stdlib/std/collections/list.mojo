@@ -500,11 +500,7 @@ struct List[T: Movable](
     def __del__(deinit self) where conforms_to(Self.T, ImplicitlyDeletable):
         """Destroy all elements in the list and free its memory."""
         destroy_n(
-            rebind[
-                UnsafePointer[
-                    downcast[Self.T, ImplicitlyDeletable], MutUntrackedOrigin
-                ]
-            ](self._data),
+            self._data,
             count=len(self),
         )
         self^._unsafe_assume_destroyed_and_deallocate()
@@ -938,15 +934,9 @@ struct List[T: Movable](
         var i = self._len
         self._len = new_num_elts
 
-        comptime UnsafePointerType = UnsafePointer[
-            downcast[Self.T, Copyable], _
-        ]
         uninit_copy_n[overlapping=False](
-            dest=rebind[UnsafePointerType[origin_of(self)]](self.unsafe_ptr())
-            + i,
-            src=rebind[UnsafePointerType[elements.origin]](
-                elements.unsafe_ptr()
-            ),
+            dest=self.unsafe_ptr() + i,
+            src=elements.unsafe_ptr(),
             count=elements_len,
         )
 
@@ -1112,9 +1102,7 @@ struct List[T: Movable](
         self.reserve(new_size)
         self._annotate_increase(new_size - self._len)
         for i in range(self._len, new_size):
-            rebind[
-                UnsafePointer[downcast[Self.T, Copyable], MutUntrackedOrigin]
-            ](self._data + i).init_pointee_copy(value)
+            (self._data + i).init_pointee_copy(value)
         self._len = new_size
 
     def resize(
