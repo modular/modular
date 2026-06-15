@@ -25,6 +25,7 @@ CUDA-graph capture region. M3 disables the index value/output, so
 this emits block indices only (score type `max`).
 """
 
+from std.collections import InlineArray
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
@@ -114,24 +115,40 @@ def _decode_block_score_kernel[
     var warp_in_cta = warp_id()
     var lane = lane_id()
 
+    # Splitting each dot across LANES_PER_KEY lanes reorders the f32 accumulation,
+    # so scores are within f32 tolerance of (not bit-identical to) a per-lane dot.
+    comptime LANES_PER_KEY = max(1, min(WARP_SIZE, idx_head_dim // 16))
+    comptime assert (
+        WARP_SIZE % LANES_PER_KEY == 0 and idx_head_dim % LANES_PER_KEY == 0
+    ), "LANES_PER_KEY must divide both the warp size and idx_head_dim"
+    comptime LANE_SIMD = idx_head_dim // LANES_PER_KEY
+    comptime KEYS_PER_ITER = WARP_SIZE // LANES_PER_KEY
+
+    var key_in_group = lane // LANES_PER_KEY
+    var d0 = (lane % LANES_PER_KEY) * LANE_SIMD
+    var q_reg = InlineArray[SIMD[DType.float32, LANE_SIMD], num_index_heads](
+        uninitialized=True
+    )
+    comptime for h in range(num_index_heads):
+        q_reg[h] = (q_smem + h * idx_head_dim + d0).load[width=LANE_SIMD]()
+
     for blk in range(chunk_start + warp_in_cta, chunk_end, num_warps):
         var key_start = blk * block_size
         var key_end = min(key_start + block_size, num_keys)
         var lane_max = SIMD[DType.float32, num_index_heads](
             min_or_neg_inf[DType.float32]()
         )
-        for key in range(key_start + lane, key_end, WARP_SIZE):
+        for key in range(key_start + Int(key_in_group), key_end, KEYS_PER_ITER):
             var k_ptr = k_operand.block_paged_ptr[1](
                 UInt32(b), UInt32(key), UInt32(0), UInt32(0)
             )
-
+            var k_vec = (
+                (k_ptr + d0).load[width=LANE_SIMD]().cast[DType.float32]()
+            )
             comptime for h in range(num_index_heads):
-                var dot = Float32(0)
-                for d in range(idx_head_dim):
-                    dot += (
-                        q_smem[h * idx_head_dim + d]
-                        * k_ptr[d].cast[DType.float32]()
-                    )
+                var dot = warp.lane_group_sum[num_lanes=LANES_PER_KEY](
+                    SIMD[DType.float32, 1]((q_reg[h] * k_vec).reduce_add())
+                )[0]
                 var s = dot * sm_scale
                 if s > lane_max[h]:
                     lane_max[h] = s
