@@ -56,6 +56,13 @@ def test_variadic_kwargs():
     # CHECK lit.call {{.*}}@"takes_int_variadic_kwargs{{.*}}(%[[DICT_VAR]])
     takes_int_variadic_kwargs(x=9, stuff=8)
 
+# MOCO-2199 - Forwarding of kwargs
+# CHECK-LABEL: lit.fn @"pass_kwargs
+def pass_kwargs(**kwargs: Int):
+    # CHECK-NEXT: lit.ownership.use %kwargs
+    # CHECK-NEXT: lit.call {{.*}}@"takes_int_variadic_kwargs_multiline{{.*}}(%kwargs)
+    takes_int_variadic_kwargs_multiline(**kwargs^)
+
 
 trait SomeTrait(ImplicitlyCopyable):
     pass

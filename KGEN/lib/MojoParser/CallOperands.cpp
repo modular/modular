@@ -103,7 +103,7 @@ LogicalResult CallOperands::assignToPogs(
 
   // The specified operand is being passed to a non-variadic arg/param.  If it
   // is unpacked with `*arg` emit an error.
-  auto checkPackSplat = [&](size_t opIdx) -> LogicalResult {
+  auto checkSingleValue = [&](size_t opIdx) -> LogicalResult {
     if (values[opIdx].unpackStyle == ArgUnpackStyle::kPositional ||
         values[opIdx].unpackStyle == ArgUnpackStyle::kKeyword)
       return success();
@@ -136,7 +136,9 @@ LogicalResult CallOperands::assignToPogs(
 
     // Skip over any provided keyword operands when matching things up, we
     // handle them separately below.
-    while (opIdx < numOperands && values[opIdx].keyword) {
+    while (opIdx < numOperands &&
+           (values[opIdx].unpackStyle == ArgUnpackStyle::kKeyword ||
+            values[opIdx].unpackStyle == ArgUnpackStyle::kStarStar)) {
       skippedKW.push_back(opIdx);
       ++opIdx;
     }
@@ -164,8 +166,9 @@ LogicalResult CallOperands::assignToPogs(
       pogAssignment.kwVariadicIdxs = std::move(skippedKW);
 
       // Then eat up any remaining keyword operands.
-      for (size_t opIdx = 0; opIdx < numOperands; ++opIdx) {
-        if (values[opIdx].keyword)
+      for (; opIdx < numOperands; ++opIdx) {
+        if (values[opIdx].unpackStyle == ArgUnpackStyle::kKeyword ||
+            values[opIdx].unpackStyle == ArgUnpackStyle::kStarStar)
           pogAssignment.kwVariadicIdxs.push_back(opIdx);
         else // Unassigned positional operands are errors.
           break;
@@ -176,7 +179,7 @@ LogicalResult CallOperands::assignToPogs(
     // If we have a non-kw value and non-kw POG, bind the operand.
     if (opIdx < numOperands && (passingKind == PassingKind::PosOrKw ||
                                 passingKind == PassingKind::PosOnly)) {
-      if (failed(checkPackSplat(opIdx)))
+      if (failed(checkSingleValue(opIdx)))
         return failure();
 
       pogAssignment.operandIdxs.push_back(opIdx);
@@ -190,7 +193,7 @@ LogicalResult CallOperands::assignToPogs(
       if (const OperandValue *operand = findKwArg(pog.getName())) {
         size_t operandIdx = operand - values.begin();
         pogAssignment.operandIdxs.push_back(operandIdx);
-        if (failed(checkPackSplat(operandIdx)))
+        if (failed(checkSingleValue(operandIdx)))
           return failure();
 
         auto it = std::find(skippedKW.begin(), skippedKW.end(), operandIdx);
@@ -212,7 +215,18 @@ LogicalResult CallOperands::assignToPogs(
       continue;
     }
 
-    // Otherwise, this is missing.
+    // Otherwise, this is missing. If there were an kwargs unpack, emit a
+    // specific error.
+    for (auto &value : values) {
+      if (value.unpackStyle == ArgUnpackStyle::kStarStar) {
+        getDiag(value.expr->getLoc())
+            << "kwargs unpack can only satisfy another kwargs argument, it "
+               "can't fulfill "
+            << pog.getName() << value.expr->getRange();
+        return failure();
+      }
+    }
+
     const char *kindStr = isParameterList ? "parameter" : "argument";
     getDiag(getExprLoc()) << "missing required " << kindStr << ": "
                           << pog.getName();

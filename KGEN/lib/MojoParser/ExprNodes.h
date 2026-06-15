@@ -301,21 +301,6 @@ struct Operand {
   /// Return true if this is a keyword operand.
   bool isKeyword() const { return unpackStyle == ArgUnpackStyle::kKeyword; }
 
-  /// Return true if this is an unpacked keyword operand.
-  bool isUnpackedKeyword() const {
-    return unpackStyle == ArgUnpackStyle::kStarStar;
-  }
-
-  /// Return true if this is an unpacked positional operand.
-  bool isUnpackedPositional() const {
-    return unpackStyle == ArgUnpackStyle::kStar;
-  }
-
-  /// Return true if this is a keyword or keyword pack operand.
-  bool isKeywordOrUnpackedKeyword() const {
-    return isKeyword() || isUnpackedKeyword();
-  }
-
   /// Return true if this is a positional operand with a string literal
   /// containing the specified string.
   bool isPositionalStringLiteral(StringRef str) const;
