@@ -88,6 +88,11 @@ This version is still a work in progress.
 
 ## Fixes
 
+- Fixed `max.experimental.nn.Conv2d.forward` moving the weight to the
+  input's device but leaving the bias behind, which failed with a device
+  mismatch when the bias started on a different device than the input. The
+  bias is now moved alongside the weight.
+
 - Fixed a constrained-decoding bug that could intermittently drop grammar
   enforcement during speculative decoding with grammar-guided tool calling.
   The speculative bitmask walk advanced the matcher through draft tokens and
