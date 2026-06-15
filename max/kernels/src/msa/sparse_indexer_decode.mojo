@@ -10,41 +10,40 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Decode-path MiniMax-M3 sparse-attention (MSA) indexer.
+"""Decode-path MiniMax-M3 sparse-attention (MSA) indexer (selection only).
 
-For each decode query (one token per batch element) and each index head, this
-selects the top-k key *blocks* to attend to. It runs as two launches:
+Per decode query (one token per batch element) and index head, selects the top-k
+key *blocks* via two launches:
 
-1. `_decode_block_score_kernel` -- one CTA per (batch, index head, block chunk).
-   The block range `[0, num_blocks)` is split into `num_chunks` contiguous,
-   block-aligned slices across the `block_idx.z` grid axis; each CTA owns one
-   slice. Within a slice, each thread owns a strided subset of blocks; for each
-   block it takes the max over that block's `q . k * sm_scale` (bf16 inputs, f32
-   accumulation) and applies init/local forcing, writing one f32 per block into
-   a caller-owned score buffer. Only in-range keys are read, so out-of-range
-   keys in a partial final block cannot contaminate the block max. Blocks are
-   independent and each is written by exactly one chunk, so there is no
-   cross-CTA reduction. `num_chunks` is derived from graph-constant quantities
-   (batch, head count) only, so empty chunks early-return and the grid stays
-   capture-safe.
-2. `_decode_topk_kernel` -- one CTA per (index head, batch). Selects the top-k
-   blocks from the score row via `block_select_topk`.
+1. `_decode_block_score_kernel` -- block-max `q . k * sm_scale` with init/local
+   forcing, split-K over the KV-block dimension; writes a caller-owned scores buffer.
+2. `_decode_topk_kernel` -- `block_select_topk` over each score row.
 
-Both grids depend only on graph-constant shapes (batch, head count) -- never on
-sequence length -- and nothing is allocated inside the op (the score buffer is
-passed in). That keeps the decode path safe inside a CUDA-graph capture region.
-
-Selection-only: M3 disables the index value/output on every sparse layer, so
-this emits block indices only (no attention output). Score type is `max`.
+Both grids depend only on graph-constant shapes (batch, head count), never on
+sequence length, and nothing is allocated inside the op, so the decode path is
+safe inside a CUDA-graph capture region. M3 disables the index value/output, so
+this emits block indices only (score type `max`).
 """
 
-from std.gpu import WARP_SIZE, barrier, block_dim, block_idx, thread_idx
+from std.gpu import (
+    MAX_THREADS_PER_BLOCK_METADATA,
+    WARP_SIZE,
+    barrier,
+    block_idx,
+    lane_id,
+    thread_idx,
+    warp_id,
+)
 from std.gpu.host import DeviceContext
 from std.gpu.memory import AddressSpace
+from std.gpu.primitives import warp
 from std.math import ceildiv, max, min
 from std.memory import stack_allocation
 from std.utils.index import Index
 from std.utils.numerics import min_or_neg_inf
+from std.utils.static_tuple import StaticTuple
+
+comptime _SCORE_CTA_SIZE = 128
 
 from layout import TensorLayout, TileTensor
 
@@ -52,6 +51,9 @@ from nn.attention.gpu.sparse_indexer_common import block_select_topk
 from nn.attention.mha_operand import MHAOperand
 
 
+@__llvm_metadata(
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(_SCORE_CTA_SIZE))
+)
 @__name(t"sparse_indexer_decode_score_{dtype}")
 def _decode_block_score_kernel[
     dtype: DType,
@@ -85,17 +87,14 @@ def _decode_block_score_kernel[
     var h = block_idx.y
     var chunk_id = block_idx.z
     var tid = thread_idx.x
-    var bsize = block_dim.x
 
     var num_keys = Int(seq_lens[b])
-    # num_keys == 0 needs no special case: num_blocks is 0, so the chunk range
-    # below is empty and nothing is written (the top-k kernel reads 0 blocks).
     var num_blocks = ceildiv(num_keys, block_size)
     var local_start = max(0, num_blocks - local_blocks)
 
-    # Each block belongs to exactly one chunk, so these writes need no cross-CTA
-    # reduction. The chunk range is CTA-uniform, so the early-return is uniform
-    # (no barrier deadlock) and empty chunks cost ~nothing.
+    # Each block is written by exactly one chunk, so the score writes are race-free
+    # without a cross-CTA reduction. chunk_start/chunk_end are CTA-uniform, so this
+    # early-return cannot deadlock the barrier below.
     var chunk_blocks = ceildiv(num_blocks, num_chunks)
     var chunk_start = chunk_id * chunk_blocks
     var chunk_end = min(chunk_start + chunk_blocks, num_blocks)
@@ -106,19 +105,21 @@ def _decode_block_score_kernel[
     var q_smem = stack_allocation[
         idx_head_dim, Scalar[DType.float32], address_space=AddressSpace.SHARED
     ]()
-    for d in range(tid, idx_head_dim, bsize):
+    for d in range(tid, idx_head_dim, _SCORE_CTA_SIZE):
         q_smem[d] = q_base[d].cast[DType.float32]()
     barrier()
 
     var score_row = score.to_layout_tensor().ptr_at_offset(Index(h, b, 0))
 
-    for blk in range(chunk_start + tid, chunk_end, bsize):
+    comptime num_warps = _SCORE_CTA_SIZE // WARP_SIZE
+    var warp_in_cta = warp_id()
+    var lane = lane_id()
+
+    for blk in range(chunk_start + warp_in_cta, chunk_end, num_warps):
         var key_start = blk * block_size
         var key_end = min(key_start + block_size, num_keys)
-        # Every block in [0, num_blocks) has >= 1 in-range key, so this max is
-        # over real keys only and is always finite.
-        var blk_max = min_or_neg_inf[DType.float32]()
-        for key in range(key_start, key_end):
+        var lane_max = min_or_neg_inf[DType.float32]()
+        for key in range(key_start + lane, key_end, WARP_SIZE):
             var k_ptr = k_operand.block_paged_ptr[1](
                 UInt32(b), UInt32(key), UInt32(0), UInt32(0)
             )
@@ -126,17 +127,20 @@ def _decode_block_score_kernel[
             for d in range(idx_head_dim):
                 dot += q_smem[d] * k_ptr[d].cast[DType.float32]()
             var s = dot * sm_scale
-            if s > blk_max:
-                blk_max = s
+            if s > lane_max:
+                lane_max = s
 
-        # Forcing: local (1e29) takes priority over init (1e30). Selection is by
-        # value, so a forced block always wins a top-k slot.
-        var val = blk_max
-        if blk < init_blocks:
-            val = INIT_SCORE
-        if blk >= local_start:
-            val = LOCAL_SCORE
-        score_row[blk] = val
+        var blk_max = warp.max(SIMD[DType.float32, 1](lane_max))[0]
+
+        # When a block is both init- and local-forced, local wins: the second
+        # assignment overwriting the first is intentional, not a clobber bug.
+        if lane == 0:
+            var val = blk_max
+            if blk < init_blocks:
+                val = INIT_SCORE
+            if blk >= local_start:
+                val = LOCAL_SCORE
+            score_row[blk] = val
 
 
 @__name(t"sparse_indexer_decode_topk")
@@ -200,9 +204,8 @@ def sparse_indexer_decode_score[
     See `sparse_indexer_decode` for the argument contract. Exposed separately so
     tests can drive scoring and selection independently.
     """
-    comptime BLOCK_DIM = 128
     comptime assert (
-        BLOCK_DIM % WARP_SIZE == 0
+        _SCORE_CTA_SIZE % WARP_SIZE == 0
     ), "block_dim must be a multiple of the warp size"
 
     # Split-K so low-batch launches fill the GPU: the un-split grid is only
@@ -241,7 +244,7 @@ def sparse_indexer_decode_score[
         sm_scale,
         num_chunks,
         grid_dim=(batch, num_index_heads, num_chunks),
-        block_dim=BLOCK_DIM,
+        block_dim=_SCORE_CTA_SIZE,
     )
 
 
