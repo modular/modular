@@ -23,6 +23,7 @@ import pytest
 from max.driver import CPU, Accelerator, accelerator_count
 from max.dtype import DType
 from max.experimental import functional as F
+from max.experimental.nn.module import Module, module_dataclass
 from max.experimental.tensor import Tensor
 from max.graph import DeviceRef, TensorType, ops
 
@@ -367,6 +368,32 @@ def test_permute() -> None:
     tensor_3d = Tensor.ones([2, 3, 4], dtype=DType.float32, device=DEVICE)
     result = F.permute(tensor_3d, [2, 0, 1])
     assert result.real
+
+
+def test_print(capfd: pytest.CaptureFixture[str]) -> None:
+    # A realized (eager) tensor has concrete storage and no graph value, so
+    # `F.print` echoes its value directly to stdout.
+    tensor = Tensor.ones([2, 2], dtype=DType.float32, device=DEVICE)
+    assert tensor.real
+    F.print(tensor, "eager_tensor")
+    assert "Tensor eager_tensor=" in capfd.readouterr().out
+
+
+def test_print_symbolic(capfd: pytest.CaptureFixture[str]) -> None:
+    # A symbolic (graph) tensor has no concrete storage, so `F.print` records a
+    # print op that fires when the compiled graph runs.
+    @module_dataclass
+    class PrintModule(Module[[Tensor], Tensor]):
+        def forward(self, x: Tensor) -> Tensor:
+            F.print(x, "graph_tensor")
+            return x
+
+    input_type = TensorType(
+        DType.float32, [2, 2], device=DeviceRef.from_device(DEVICE)
+    )
+    compiled = PrintModule().compile(input_type)
+    compiled(Tensor.ones([2, 2], dtype=DType.float32, device=DEVICE))
+    assert "graph_tensor" in capfd.readouterr().out
 
 
 def test_arange() -> None:

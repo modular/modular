@@ -73,6 +73,10 @@ This version is still a work in progress.
   `EagerRealizationContext(use_interpreter=...)` argument is deprecated in
   favor of `EagerRealizationContext(executor=...)`.
 
+- `max.nn.hooks.PrintHook` now supports `max.experimental.nn.Module`.
+
+- Added `F.print`, which supports both single-device and multi-device tensors.
+
 ## MAX kernels
 
 - Fixed a rare illegal-instruction crash in the SM100 (Blackwell)
