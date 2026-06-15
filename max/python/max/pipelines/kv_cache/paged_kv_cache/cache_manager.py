@@ -562,6 +562,11 @@ class PagedKVCacheManager:
                 ),
             )
 
+        # Barrier for in-flight loads before the forward pass: connectors whose
+        # loads complete off the device stream (dKV's NIXL READs) must land here,
+        # since this runs before the model executes. No-op for host/disk tiers.
+        replica.connector.wait_for_loads()
+
         # Initiate saves to external cache tiers.
         replica.block_manager.offload()
 
@@ -764,6 +769,10 @@ class PagedKVCacheManager:
         """Commits new tokens into the prefix cache for per-replica batches."""
         for replica, ctxs in zip(self._replica, batches, strict=True):
             replica.connector.sync()
+            # Drain offloads posted this iteration (post-forward-pass). No-op for
+            # host/disk tiers, which complete in sync(); used by the dKV
+            # connector to await its NIXL WRITEs and register the blocks.
+            replica.connector.wait_for_offloads()
             for ctx in ctxs:
                 replica.block_manager.step(ctx)
 

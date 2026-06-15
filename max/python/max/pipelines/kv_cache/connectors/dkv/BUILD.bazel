@@ -19,7 +19,9 @@ modular_py_library(
         "max.interfaces",
         "max.profiler",
         "msgspec",
-        "dkv",
+        # The high-level connector client (pyo3 module), provided at runtime
+        # only (private dkv-connector wheel); OSS MAX lazily imports it.
+        "dkv_connector",
     ],
     tags = [
         "no-mypy",
