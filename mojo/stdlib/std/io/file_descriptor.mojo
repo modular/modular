@@ -145,4 +145,4 @@ struct FileDescriptor(TrivialRegisterPassable, Writer):
 
         comptime if is_gpu():
             return False
-        return _external_call_const["isatty", c_int](c_int(self.value)) != 0
+        return external_call["isatty", c_int](c_int(self.value)) != 0
