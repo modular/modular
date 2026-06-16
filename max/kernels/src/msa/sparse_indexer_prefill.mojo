@@ -86,11 +86,18 @@ def _token_batch(
 
 comptime _SCORE_SWIZZLE = TensorMapSwizzle.SWIZZLE_128B
 
-# K SMEM ring depth, shared with the launcher's SMEM sizing: prefetch this
-# many K blocks ahead of the MMA/epilogue. Depth 2 captures nearly all the
-# overlap; a 3rd stage adds little for 32 KB more SMEM and no occupancy gain
-# (still 1 CTA/SM).
-comptime _K_PREFETCH_STAGES = 2
+# K SMEM ring depth, shared with the launcher's SMEM sizing: prefetch this many
+# K blocks ahead of the MMA/epilogue.
+#
+# Occupancy coupling (load-bearing): SMEM/CTA = 4-head Q (64 KB) + NSTAGE*K
+# (NSTAGE*32 KB) + barriers, against ~227 KB SMEM/SM on B200. NSTAGE=1 -> ~96 KB
+# -> 2 CTAs/SM resident; NSTAGE>=2 -> >=128 KB -> 1 CTA/SM. At 1 CTA/SM only the
+# CTA's 4 warps run, so the per-block tcgen05 MMA `wait` + per-(block,head)
+# `named_barrier` stalls have nothing to hide behind (DRAM is far from
+# saturated). With 2 CTAs/SM the scheduler interleaves one CTA's compute under
+# the other's wait/barrier, which more than replaces the intra-CTA K prefetch
+# lost at NSTAGE=1.
+comptime _K_PREFETCH_STAGES = 1
 
 comptime QTMATileT[dtype: DType, BM: Int, BK: Int] = SplitLastDimTMATensorTile[
     dtype, Index(BM, 1, BK), _SCORE_SWIZZLE
@@ -267,8 +274,21 @@ def _prefill_block_score_kernel[
     named_barrier[Int32(NTHREADS)]()
 
     # tcgen05 alloc on ONE warp (warp-collective .sync.aligned).
+    #
+    # Occupancy coupling (load-bearing): TMEM is 512 cols per SM, shared across
+    # resident CTAs. The S=Q@K^T accumulator is [BM, MMA_N=BN] f32, so it needs
+    # only BN cols. Allocating the full 512 would let just one CTA hold TMEM,
+    # re-serializing the two CTAs that SMEM alone would allow. Allocating only
+    # TMEM_COLS (= BN, padded to the 32-col tcgen05 granularity) lets up to
+    # 512//TMEM_COLS CTAs hold TMEM at once. The alloc permit (a per-SM
+    # serialization token, not the columns) must also be relinquished right
+    # after alloc, so the second CTA can grab the permit and alloc its own cols
+    # while the first computes; releasing it only at dealloc (the mha_1q
+    # 1-CTA/SM idiom) would re-serialize the two CTAs.
+    comptime TMEM_COLS = UInt32(align_up(BN, 32))
     if warp_id() == 0:
-        tcgen05_alloc[1](ptr_tmem, 512)
+        tcgen05_alloc[1](ptr_tmem, TMEM_COLS)
+        tcgen05_release_allocation_lock[1]()
     named_barrier[Int32(NTHREADS)]()
     var tmem_addr: UInt32 = ptr_tmem[0]
 
@@ -390,9 +410,10 @@ def _prefill_block_score_kernel[
         if next_it < chunk_num_blocks:
             issue_k(chunk_start + next_it, next_it)
 
+    # Permit already relinquished right after alloc (see occupancy note above);
+    # only the columns are freed here.
     if warp_id() == 0:
-        tcgen05_release_allocation_lock[1]()
-        tcgen05_dealloc[1](tmem_addr, 512)
+        tcgen05_dealloc[1](tmem_addr, TMEM_COLS)
 
 
 @__name(t"sparse_indexer_prefill_topk")
