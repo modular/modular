@@ -290,7 +290,7 @@ class Gemma4Tokenizer(TextAndVisionTokenizer):
         return templated_message
 
     async def decode(
-        self, encoded: npt.NDArray[np.integer[Any]], **kwargs
+        self, encoded: npt.NDArray[np.integer[Any]] | int, **kwargs
     ) -> str:
         """Decode tokens, preserving tool-related special tokens.
 
@@ -298,6 +298,10 @@ class Gemma4Tokenizer(TextAndVisionTokenizer):
         to selectively preserve them when skip_special_tokens=True by filtering
         unwanted special tokens before decoding.
         """
+        # Log-probability responses decode one token id (a plain int) at a
+        # time; match the text tokenizer's handling.
+        if isinstance(encoded, int):
+            encoded = np.array(encoded)
         skip_special_tokens = kwargs.get("skip_special_tokens", True)
 
         if not skip_special_tokens:
@@ -519,6 +523,8 @@ class Gemma4Tokenizer(TextAndVisionTokenizer):
             json_schema=json_schema,
             grammar=grammar,
             grammar_state=grammar_state,
+            log_probabilities=request.logprobs,
+            log_probabilities_echo=request.echo,
             sampling_params=request.sampling_params,
             images=image_metadata,
             vision_token_ids=self.vision_token_ids,

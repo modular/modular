@@ -15,13 +15,17 @@
 
 from __future__ import annotations
 
-from typing import TypeAlias, TypeGuard
+from collections.abc import Callable
+from typing import Any, TypeAlias
 
 from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental.nn.common_layers.functional_kernels import (
     grouped_matmul_ragged,
 )
+from max.experimental.sharding.action import ActionSet
+from max.experimental.sharding.cost import force_replicated_action_set
+from max.experimental.sharding.types import TensorLayout
 from max.experimental.tensor import Tensor
 from max.nn.kernels import (
     dynamic_scaled_matmul as _dynamic_scaled_matmul,
@@ -40,16 +44,27 @@ from max.nn.quant_config import (
     WeightScaleSpec,
 )
 
-from .quant_tensor import FP8BlockTensor
+from .quant_tensor import FP8BlockTensor, all_fp8_block
 
 QuantAwareTensor: TypeAlias = Tensor | FP8BlockTensor
 
+
+def _replicated_rule(*layout_args: Any) -> ActionSet:
+    """Per-shard ``(R,…,R) -> R`` rule for FP8 kernels."""
+    layouts = [a for a in layout_args if isinstance(a, TensorLayout)]
+    return force_replicated_action_set(*layouts)
+
+
 # Wrap raw graph ops so they accept ``Tensor`` and run inside an
 # ``ensure_context()``.
-quantize_dynamic_scaled_float8 = F.functional(_quantize_dynamic_scaled_float8)
-dynamic_scaled_matmul = F.functional(_dynamic_scaled_matmul)
+quantize_dynamic_scaled_float8 = F.functional(
+    _quantize_dynamic_scaled_float8, rule=_replicated_rule
+)
+dynamic_scaled_matmul = F.functional(
+    _dynamic_scaled_matmul, rule=_replicated_rule
+)
 grouped_dynamic_scaled_fp8_matmul = F.functional(
-    _grouped_dynamic_scaled_fp8_matmul
+    _grouped_dynamic_scaled_fp8_matmul, rule=_replicated_rule
 )
 
 
@@ -81,11 +96,75 @@ def quantized_weight(
     return Tensor.zeros((int(out_dim), int(in_dim)))
 
 
-def _all_fp8_block(
-    weights: tuple[QuantAwareTensor, ...],
-) -> TypeGuard[tuple[FP8BlockTensor, ...]]:
-    """Narrow a tuple of mixed weights to a homogeneous FP8 tuple."""
-    return all(isinstance(w, FP8BlockTensor) for w in weights)
+def stack(items: list[QuantAwareTensor], axis: int = 0) -> QuantAwareTensor:
+    """Stack a homogeneous bundle along ``axis``, dispatching on quant type.
+
+    For FP8 items, both leaves (``data`` and ``scale_inv``) are stacked and
+    rewrapped in an :class:`FP8BlockTensor`; for plain tensors the list is
+    stacked directly. Companion to :func:`concat_weights`.
+
+    Args:
+        items: Homogeneous list of :class:`QuantAwareTensor`s (all plain
+            tensors, or all :class:`FP8BlockTensor`s).
+        axis: Axis to stack along (a new dimension is inserted here).
+
+    Returns:
+        A single stacked :class:`QuantAwareTensor` of the same kind as
+        ``items``.
+    """
+    first = items[0]
+    if isinstance(first, FP8BlockTensor):
+        assert all_fp8_block(items)
+        return FP8BlockTensor(
+            data=F.stack([w.data for w in items], axis=axis),
+            scale_inv=F.stack([w.scale_inv for w in items], axis=axis),
+            block_size=first.block_size,
+        )
+    return F.stack(list(items), axis=axis)
+
+
+def combine_quant_per_device(
+    items: list[QuantAwareTensor],
+    combine: Callable[[list[Tensor]], list[Tensor]],
+) -> list[QuantAwareTensor]:
+    """Map a per-device leaf transform over a homogeneous bundle.
+
+    ``combine`` merges all items' tensors for one leaf into a per-device list
+    (one tensor per mesh device) — e.g. a TP shard-and-stack.  For FP8 input,
+    ``combine`` is applied to the ``data`` and ``scale_inv`` leaves
+    independently and the per-device leaves are zipped back into one
+    :class:`FP8BlockTensor` per device, so the FP8 invariant (``data`` and
+    ``scale_inv`` are each a single :class:`~max.experimental.tensor.Tensor`)
+    is preserved without the caller transposing a struct-of-lists into a
+    list-of-structs.  For plain tensors the per-device list is returned as-is.
+
+    ``combine`` must be leaf-agnostic — read any per-leaf difference (e.g. the
+    block-scale leaf's smaller trailing dim) off the leaf tensors' own shapes
+    rather than branching on which leaf it is.
+
+    Args:
+        items: Homogeneous list of :class:`QuantAwareTensor`s (all plain
+            tensors, or all :class:`FP8BlockTensor`s).
+        combine: Callable that merges a list of leaf tensors into a per-device
+            list of tensors.
+
+    Returns:
+        One :class:`QuantAwareTensor` per device. For FP8 input, each is an
+        :class:`FP8BlockTensor` whose ``data``/``scale_inv`` are that device's
+        leaves; for plain tensors, the per-device list is returned directly.
+    """
+    first = items[0]
+    if isinstance(first, FP8BlockTensor):
+        assert all_fp8_block(items)
+        data = combine([w.data for w in items])
+        scale_inv = combine([w.scale_inv for w in items])
+        return [
+            FP8BlockTensor(data=d, scale_inv=s, block_size=first.block_size)
+            for d, s in zip(data, scale_inv, strict=True)
+        ]
+    plain = [w for w in items if isinstance(w, Tensor)]
+    result: list[QuantAwareTensor] = [*combine(plain)]
+    return result
 
 
 def concat_weights(
@@ -95,7 +174,7 @@ def concat_weights(
     if not weights:
         raise ValueError("concat_weights requires at least one tensor")
     if isinstance(weights[0], FP8BlockTensor):
-        assert _all_fp8_block(weights), (
+        assert all_fp8_block(weights), (
             "concat_weights requires all weights to be FP8BlockTensor when "
             "the first is"
         )
@@ -151,7 +230,9 @@ def _matmul_fp8_block(x: Tensor, weight: FP8BlockTensor) -> Tensor:
     input_spec, weight_spec = _fp8_block_specs(
         (block_m, block_k), input_block=(1, block_k)
     )
-
+    # TODO: this forces the output to be replicated, which we want to avoid
+    # when the input is sharded, and weight is replicated (output should be
+    # sharded in this case)
     x_fp8, x_scales = quantize_dynamic_scaled_float8(
         x,
         input_spec,

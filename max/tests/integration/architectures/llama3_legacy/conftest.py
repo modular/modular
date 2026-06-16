@@ -137,10 +137,7 @@ def make_kv_inputs(
             contexts.append(ctx)
             batches.append([ctx])
 
-        runtime_inputs = kv_manager.runtime_inputs(batches)
-        kv_inputs: KVCacheInputs[Buffer, Buffer] = runtime_inputs
-
-        return kv_inputs
+        return kv_manager.runtime_inputs_for_leaf(batches)
 
     return _make
 

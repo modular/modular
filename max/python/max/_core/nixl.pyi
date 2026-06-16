@@ -215,8 +215,9 @@ class AgentConfig:
         self,
         use_prog_thread: bool,
         use_listen_thread: bool = False,
-        listen_port: int = 0,
+        listen_port: int = 8888,
         sync_mode: ThreadSyncMode = ThreadSyncMode.NONE,
+        num_workers: int = 1,
         pthr_delay_us: int = 0,
         lthr_delay_us: int = 100000,
     ) -> None: ...
@@ -289,9 +290,6 @@ class Agent:
     def get_transfer_telemetry(
         self, request_handle: int
     ) -> TransferTelemetry: ...
-    def get_transfer_notif_overflow(
-        self, request_handle: int
-    ) -> tuple[int, int]: ...
     def query_transfer_backend(self, request_handle: int) -> int: ...
     def release_transfer_request(self, request_handle: int) -> Status: ...
     def release_descriptor_list_handle(self, handle: int) -> Status: ...

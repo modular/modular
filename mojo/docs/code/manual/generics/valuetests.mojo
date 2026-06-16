@@ -13,7 +13,7 @@
 
 
 struct SizedListWrapper[
-    capacity: Int, T: Writable & Copyable & ImplicitlyDestructible
+    capacity: Int, T: Writable & Copyable & ImplicitlyDeletable
 ](Sized, Writable where conforms_to(T, Writable) and capacity > 0):
     var data: List[Self.T]
 

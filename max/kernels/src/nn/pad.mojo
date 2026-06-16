@@ -130,7 +130,9 @@ def pad_constant[
         address_space=AddressSpace.GENERIC,
         ...,
     ],
-    input: TileTensor[dtype, address_space=AddressSpace.GENERIC, ...],
+    input: TileTensor[
+        mut=False, dtype, address_space=AddressSpace.GENERIC, ...
+    ],
     paddings: UnsafePointer[Scalar[paddings_type], _],
     constant: Scalar[constant_type],
 ):
@@ -198,7 +200,9 @@ def pad_reflect[
         address_space=AddressSpace.GENERIC,
         ...,
     ],
-    input: TileTensor[dtype, address_space=AddressSpace.GENERIC, ...],
+    input: TileTensor[
+        mut=False, dtype, address_space=AddressSpace.GENERIC, ...
+    ],
     paddings: UnsafePointer[Scalar[paddings_type], _],
 ):
     """
@@ -255,8 +259,8 @@ def pad_shape[
     input_type: DType,
     paddings_type: DType,
 ](
-    input_buf: TileTensor[input_type, ...],
-    paddings_buf: TileTensor[paddings_type, ...],
+    input_buf: TileTensor[mut=False, input_type, ...],
+    paddings_buf: TileTensor[mut=False, paddings_type, ...],
 ) raises -> IndexList[input_buf.rank]:
     """
     Compute the output shape of a `pad` operation, and assert the inputs are
@@ -318,7 +322,9 @@ def _do_pad[
         address_space=AddressSpace.GENERIC,
         ...,
     ],
-    input: TileTensor[dtype, address_space=AddressSpace.GENERIC, ...],
+    input: TileTensor[
+        mut=False, dtype, address_space=AddressSpace.GENERIC, ...
+    ],
     paddings: UnsafePointer[Scalar[paddings_type], _],
 ):
     var input_strides_stack = InlineArray[Scalar[DType.int], output.rank](
@@ -784,7 +790,7 @@ def pad_repeat[
     paddings_type: DType,
 ](
     output: TileTensor[mut=True, dtype, ...],
-    input: TileTensor[dtype, ...],
+    input: TileTensor[mut=False, dtype, ...],
     paddings: UnsafePointer[Scalar[paddings_type], _],
 ):
     """

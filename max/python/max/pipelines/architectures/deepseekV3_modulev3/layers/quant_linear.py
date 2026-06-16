@@ -21,6 +21,7 @@ from max.experimental.nn import Module
 from max.experimental.nn.common_layers.activation import (
     activation_function_from_name,
 )
+from max.experimental.nn.common_layers.linear import col_parallel, row_parallel
 from max.experimental.tensor import Tensor
 from max.nn.quant_config import QuantConfig
 
@@ -99,6 +100,22 @@ class QuantizedMLP(Module[[Tensor], Tensor]):
         )
 
     def forward(self, x: Tensor) -> Tensor:
-        gate = self.gate_proj(x)
-        up = self.up_proj(x)
+        # Fuse the gate and up projections into a single matmul.
+        gate_up_weight = quant_ops.concat_weights(
+            self.gate_proj.weight, self.up_proj.weight, axis=0
+        )
+        gate_up = quant_ops.matmul(x, gate_up_weight)
+        gate, up = gate_up.split(
+            [self.feed_forward_length, self.feed_forward_length], axis=-1
+        )
+        gate = gate + self.gate_proj.bias
+        up = up + self.up_proj.bias
         return self.down_proj(self.activation_function(gate) * up)
+
+
+def tensor_parallel_mlp(layer: QuantizedMLP) -> QuantizedMLP:
+    """Parallelize the quantized MLP across the tensor dimension."""
+    layer.gate_proj = col_parallel(layer.gate_proj)  # type: ignore[type-var]
+    layer.up_proj = col_parallel(layer.up_proj)  # type: ignore[type-var]
+    layer.down_proj = row_parallel(layer.down_proj)  # type: ignore[type-var]
+    return layer

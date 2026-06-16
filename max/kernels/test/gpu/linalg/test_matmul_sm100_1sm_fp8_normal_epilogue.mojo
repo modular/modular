@@ -185,7 +185,7 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
         *,
         alignment: Int = 1,
     ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> None:
-        c_tensor_lt.store[alignment=alignment * size_of[c_type](),](
+        c_tensor_lt.store[store_alignment=alignment * size_of[c_type](),](
             idx, rebind[SIMD[c_type, width]](val)
         )
 

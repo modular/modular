@@ -25,7 +25,11 @@ from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import Graph
 from max.graph.weights import Weights, WeightsAdapter, load_weights
-from max.nn.kv_cache import KVCacheInputs, KVCacheParams
+from max.nn.kv_cache import (
+    KVCacheInputsInterface,
+    KVCacheParams,
+    MultiKVCacheParams,
+)
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.context import TextContext
 from max.pipelines.lib import (
@@ -57,7 +61,6 @@ class UnifiedEagleLlama3Inputs(ModelInputs):
     return_n_logits: Buffer
 
     draft_tokens: Buffer | None = None
-    draft_kv_blocks: list[Buffer] | None = None
     seed: Buffer | None = None
 
     temperature: Buffer | None = None
@@ -104,8 +107,6 @@ class UnifiedEagleLlama3Inputs(ModelInputs):
         )
         if self.draft_tokens is not None:
             buffers += (self.draft_tokens,)
-        if self.draft_kv_blocks is not None:
-            buffers += tuple(self.draft_kv_blocks)
         assert self.seed is not None
         buffers += (self.seed,)
         if self.draft_tokens is not None:
@@ -287,6 +288,9 @@ class UnifiedEagleLlama3Model(PipelineModelWithKVCache[TextContext]):
             self._draft_kv_params = replace(
                 self.kv_params, num_layers=draft_num_layers
             )
+            self.kv_params = MultiKVCacheParams.from_params(
+                {"target": self.kv_params, "draft": self._draft_kv_params}
+            )
 
             with Graph(
                 "unified_eagle_llama3",
@@ -317,7 +321,7 @@ class UnifiedEagleLlama3Model(PipelineModelWithKVCache[TextContext]):
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
+        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> UnifiedEagleLlama3Inputs:
         context_batch = [ctx for batch in replica_batches for ctx in batch]

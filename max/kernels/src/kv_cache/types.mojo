@@ -34,7 +34,6 @@ from layout import (
     Coord,
     CoordLike,
     IntTuple,
-    LTToTTLayout,
     Layout,
     LayoutTensor,
     TensorLayout,
@@ -1059,7 +1058,23 @@ struct ContinuousBatchingKVCache[
     )
     comptime blocks_layout = Layout.row_major(Self.blocks_shape)
 
-    comptime blocks_tt_layout = LTToTTLayout[Self.blocks_layout]
+    # Direct TileTensor layout for `blocks_shape` (row-major): leading two dims
+    # are runtime (Int64), inner dims are static. stride[0] is runtime because
+    # it folds in the runtime second dim.
+    comptime blocks_tt_layout = InternalLayout[
+        shape_types=Coord[
+            Int64,
+            Int64,
+            ComptimeInt[Self.kv_params.num_heads],
+            ComptimeInt[Self.kv_params.head_size],
+        ].element_types,
+        stride_types=Coord[
+            Int64,
+            ComptimeInt[Self.kv_params.num_heads * Self.kv_params.head_size],
+            ComptimeInt[Self.kv_params.head_size],
+            ComptimeInt[1],
+        ].element_types,
+    ]
     comptime blocks_tt_type = TileTensor[
         Self.dtype, Self.blocks_tt_layout, MutAnyOrigin
     ]
@@ -1576,8 +1591,23 @@ struct PagedKVCache[
     )
     comptime blocks_layout = Layout(Self.blocks_shape, Self.blocks_strides)
 
-    # TileTensor layout for blocks.
-    comptime blocks_tt_layout = LTToTTLayout[Self.blocks_layout]
+    # TileTensor layout for blocks, built directly from `blocks_shape` /
+    # `blocks_strides`: leading dim is a runtime view stride (Int64), inner
+    # dims are static.
+    comptime blocks_tt_layout = InternalLayout[
+        shape_types=Coord[
+            Int64,
+            ComptimeInt[Self.page_size],
+            ComptimeInt[Self.kv_params.num_heads],
+            ComptimeInt[Self.kv_params.head_size],
+        ].element_types,
+        stride_types=Coord[
+            Int64,
+            ComptimeInt[Self.kv_params.num_heads * Self.kv_params.head_size],
+            ComptimeInt[Self.kv_params.head_size],
+            ComptimeInt[1],
+        ].element_types,
+    ]
     comptime blocks_tt_type = TileTensor[
         Self.dtype, Self.blocks_tt_layout, MutAnyOrigin
     ]
@@ -2510,7 +2540,26 @@ struct ContinuousBatchingKVCacheCollection[
         Self.kv_params.head_size,
     )
     comptime blocks_layout = Layout.row_major(Self.blocks_shape)
-    comptime blocks_tt_layout = LTToTTLayout[Self.blocks_layout]
+    # Direct row-major TileTensor layout: the four leading dims are runtime
+    # (Int64), so every stride that folds one in is also runtime.
+    comptime blocks_tt_layout = InternalLayout[
+        shape_types=Coord[
+            Int64,
+            Int64,
+            Int64,
+            Int64,
+            ComptimeInt[Self.kv_params.num_heads],
+            ComptimeInt[Self.kv_params.head_size],
+        ].element_types,
+        stride_types=Coord[
+            Int64,
+            Int64,
+            Int64,
+            ComptimeInt[Self.kv_params.num_heads * Self.kv_params.head_size],
+            ComptimeInt[Self.kv_params.head_size],
+            ComptimeInt[1],
+        ].element_types,
+    ]
     comptime blocks_tt_type = TileTensor[
         Self.dtype, Self.blocks_tt_layout, MutAnyOrigin
     ]
@@ -2640,7 +2689,30 @@ struct PagedKVCacheCollection[
         Self.kv_params.head_size,
     )
     comptime blocks_layout = Layout.row_major(Self.blocks_shape)
-    comptime blocks_tt_layout = LTToTTLayout[Self.blocks_layout]
+    # Direct row-major TileTensor layout. dims 0 and 2 (total_num_blocks and
+    # num_layers) are runtime, so strides[0..1] that fold them in are runtime.
+    comptime blocks_tt_layout = InternalLayout[
+        shape_types=Coord[
+            Int64,
+            ComptimeInt[2 if not Self.kv_params.is_mla else 1],
+            Int64,
+            ComptimeInt[Self.page_size],
+            ComptimeInt[Self.kv_params.num_heads],
+            ComptimeInt[Self.kv_params.head_size],
+        ].element_types,
+        stride_types=Coord[
+            Int64,
+            Int64,
+            ComptimeInt[
+                Self.page_size
+                * Self.kv_params.num_heads
+                * Self.kv_params.head_size
+            ],
+            ComptimeInt[Self.kv_params.num_heads * Self.kv_params.head_size],
+            ComptimeInt[Self.kv_params.head_size],
+            ComptimeInt[1],
+        ].element_types,
+    ]
     comptime blocks_tt_type = TileTensor[
         Self.dtype, Self.blocks_tt_layout, MutAnyOrigin
     ]
@@ -2660,7 +2732,30 @@ struct PagedKVCacheCollection[
         Self.head_dim_granularity,  # scales per token
     )
     comptime scales_layout = Layout.row_major(Self.scales_shape)
-    comptime scales_tt_layout = LTToTTLayout[Self.scales_layout]
+    # Direct row-major TileTensor layout, mirroring `blocks_tt_layout` but with
+    # `head_dim_granularity` as the inner dim. dims 0 and 2 are runtime.
+    comptime scales_tt_layout = InternalLayout[
+        shape_types=Coord[
+            Int64,
+            ComptimeInt[2 if not Self.kv_params.is_mla else 1],
+            Int64,
+            ComptimeInt[Self.page_size],
+            ComptimeInt[Self.kv_params.num_heads],
+            ComptimeInt[Self.head_dim_granularity],
+        ].element_types,
+        stride_types=Coord[
+            Int64,
+            Int64,
+            ComptimeInt[
+                Self.page_size
+                * Self.kv_params.num_heads
+                * Self.head_dim_granularity
+            ],
+            ComptimeInt[Self.kv_params.num_heads * Self.head_dim_granularity],
+            ComptimeInt[Self.head_dim_granularity],
+            ComptimeInt[1],
+        ].element_types,
+    ]
     comptime scales_tt_type = TileTensor[
         Self.scale_dtype, Self.scales_tt_layout, MutAnyOrigin
     ]

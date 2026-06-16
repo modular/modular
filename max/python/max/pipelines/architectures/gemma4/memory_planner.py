@@ -91,6 +91,10 @@ class Gemma4MemoryPlanner(PagedMemoryPlanner):
             raise ValueError(
                 "Gemma4 requires a text_config in the HuggingFace config"
             )
+        if getattr(huggingface_config, "model_type", None) == "gemma4_unified":
+            # These checkpoints are served text-only (different vision
+            # schema); no vision cache is needed.
+            return 0
         k = vision_config.pooling_kernel_size
         max_tokens = vision_config.position_embedding_size // (k * k)
         hidden = text_config.hidden_size

@@ -146,12 +146,16 @@ def causal_conv1d_fwd_cpu[
     dim: Int,
     seqlen: Int,
     width: Int,
-    x: TileTensor[x_dtype, ...],  # (B, C, L) or (B, L, C) via strides
-    weight: TileTensor[weight_dtype, ...],  # (C, W)
+    x: TileTensor[
+        mut=False, x_dtype, ...
+    ],  # (B, C, L) or (B, L, C) via strides
+    weight: TileTensor[mut=False, weight_dtype, ...],  # (C, W)
     output: TileTensor[mut=True, output_dtype, ...],  # same layout as x
-    bias: TileTensor[bias_dtype, ...],  # (C,) — ignored unless has_bias
+    bias: TileTensor[
+        mut=False, bias_dtype, ...
+    ],  # (C,) — ignored unless has_bias
     seq_idx: TileTensor[
-        seq_idx_dtype, ...
+        mut=False, seq_idx_dtype, ...
     ],  # (B, L) — ignored unless has_seq_idx
     x_batch_stride: UInt32,
     x_c_stride: UInt32,
@@ -608,11 +612,13 @@ def causal_conv1d_update_cpu[
     seqlen: Int,  # seqlen of x (typically 1 for autoregressive inference)
     width: Int,
     state_len: Int,  # state_len of conv_state (>= width - 1)
-    x: TileTensor[x_dtype, ...],  # (B, C, L) or (B, C) when L=1
+    x: TileTensor[mut=False, x_dtype, ...],  # (B, C, L) or (B, C) when L=1
     conv_state: TileTensor[mut=True, conv_state_dtype, ...],  # (B, C, S)
-    weight: TileTensor[weight_dtype, ...],  # (C, W)
+    weight: TileTensor[mut=False, weight_dtype, ...],  # (C, W)
     output: TileTensor[mut=True, output_dtype, ...],  # (B, C, L)
-    bias: TileTensor[bias_dtype, ...],  # (C,) — ignored unless has_bias
+    bias: TileTensor[
+        mut=False, bias_dtype, ...
+    ],  # (C,) — ignored unless has_bias
     x_batch_stride: UInt32,
     x_c_stride: UInt32,
     x_l_stride: UInt32,
@@ -791,11 +797,11 @@ def causal_conv1d_update_gpu[
     seqlen: Int,
     width: Int,
     state_len: Int,
-    x: TileTensor[x_dtype, x_LT, MutUntrackedOrigin],
+    x: TileTensor[x_dtype, x_LT, ImmutUntrackedOrigin],
     conv_state: TileTensor[conv_state_dtype, conv_state_LT, MutUntrackedOrigin],
-    weight: TileTensor[weight_dtype, weight_LT, MutUntrackedOrigin],
+    weight: TileTensor[weight_dtype, weight_LT, ImmutUntrackedOrigin],
     output: TileTensor[output_dtype, output_LT, MutUntrackedOrigin],
-    bias: TileTensor[bias_dtype, bias_LT, MutUntrackedOrigin],
+    bias: TileTensor[bias_dtype, bias_LT, ImmutUntrackedOrigin],
     x_batch_stride: UInt32,
     x_c_stride: UInt32,
     x_l_stride: UInt32,

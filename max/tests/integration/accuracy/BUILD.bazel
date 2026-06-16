@@ -101,6 +101,20 @@ modular_py_binary(
         # binary spawns (see deps comment below).
         requirement("accelerate"),
     ],
+    # Expose this package as an import root so out-of-package entrypoints
+    # (e.g. //max_private/minimax_m3:verify_minimax_m3) can `from
+    # verify_pipelines import main`.
+    imports = ["."],
+    # Target-level visibility (the package default cannot list //max_private).
+    # Mirrors the package default plus //max_private so private archs can host
+    # their own logit-verification entrypoints that reuse this driver.
+    visibility = [
+        "//:__pkg__",
+        "//SDK/integration-test:__subpackages__",
+        "//max/tests:__subpackages__",
+        "//max_private:__subpackages__",
+        "//oss/modular/max/tests:__subpackages__",
+    ],
     deps = [
         ":verify",
         "//max/python/max/pipelines/lib",

@@ -583,7 +583,16 @@ struct UnsafePointer[
             _type=type_of(self)._mlir_type
         ](other.address)
 
+    @deprecated(
+        "Implicitly converting an `UnsafePointer` to `MutUnsafeAnyOrigin` is"
+        " deprecated. `UnsafeAnyOrigin` is an unsafe escape hatch that silently"
+        " extends unrelated lifetimes and disables exclusivity checking, and it"
+        " is slated for removal, so it should never be applied implicitly."
+        " Prefer keeping a concrete origin; if you must discard it, make the"
+        " cast explicit with `as_unsafe_any_origin()`."
+    )
     @always_inline("builtin")
+    @doc_hidden
     @implicit
     def __init__[
         disambig: Int = 0  # FIXME: Work around name mangling conflict.
@@ -595,22 +604,23 @@ struct UnsafePointer[
             address_space=other.address_space,
         ],
     ):
-        """Implicitly casts a mutable pointer to `MutAnyOrigin`.
-
-        Args:
-            other: The mutable pointer to cast from.
-
-        Parameters:
-            disambig: Ignored. Works around name mangling conflict.
-        """
         self.address = __mlir_op.`pop.pointer.bitcast`[
             _type=type_of(self)._mlir_type
         ](other.address)
 
+    @deprecated(
+        "Implicitly converting an `UnsafePointer` to `ImmutUnsafeAnyOrigin` is"
+        " deprecated. `UnsafeAnyOrigin` is an unsafe escape hatch that silently"
+        " extends unrelated lifetimes and disables exclusivity checking, and it"
+        " is slated for removal, so it should never be applied implicitly."
+        " Prefer keeping a concrete origin; if you must discard it, make the"
+        " cast explicit with `as_unsafe_any_origin()`."
+    )
     @always_inline("builtin")
+    @doc_hidden
     @implicit
     def __init__[
-        disambig2: Int = 0  # FIXME: Work around name mangling conflict.
+        disambig2: Int = 0
     ](
         other: UnsafePointer[...],
         out self: UnsafePointer[
@@ -619,14 +629,6 @@ struct UnsafePointer[
             address_space=other.address_space,
         ],
     ):
-        """Implicitly casts a pointer to `ImmutAnyOrigin`.
-
-        Args:
-            other: The pointer to cast from.
-
-        Parameters:
-            disambig2: Ignored. Works around name mangling conflict.
-        """
         self.address = __mlir_op.`pop.pointer.bitcast`[
             _type=type_of(self)._mlir_type
         ](other.address)

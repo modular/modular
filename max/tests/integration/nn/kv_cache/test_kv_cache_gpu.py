@@ -19,10 +19,12 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef
 from max.nn.kv_cache import (
+    KVCacheBuffer,
     KVCacheInputs,
     KVCacheInputsPerDevice,
     KVCacheParams,
     KVConnectorType,
+    MultiKVCacheBuffer,
     MultiKVCacheParams,
 )
 from max.pipelines.kv_cache import PagedKVCacheManager
@@ -67,7 +69,9 @@ def test_multi_cache_connector_offloads_all_caches() -> None:
         kv_connector=KVConnectorType.local,
         host_kvcache_swap_space_gb=999,
     )
-    multi_params = MultiKVCacheParams.from_params(primary, secondary)
+    multi_params = MultiKVCacheParams.from_params(
+        {"primary": primary, "secondary": secondary}
+    )
     kv_manager = PagedKVCacheManager(
         params=multi_params,
         session=InferenceSession(devices=[device]),
@@ -80,8 +84,13 @@ def test_multi_cache_connector_offloads_all_caches() -> None:
     assert isinstance(connector, LocalConnector)
     assert len(connector._block_copy_engine.device_buffers) == 2
 
-    sliding_cache = kv_manager.get_device_buffer(0, cache_idx=0).values[0]
-    global_cache = kv_manager.get_device_buffer(0, cache_idx=1).values[0]
+    kv_buffer = kv_manager.get_device_buffer(0)
+    assert isinstance(kv_buffer, MultiKVCacheBuffer)
+    sliding_buf, global_buf = kv_buffer.children.values()
+    assert isinstance(sliding_buf, KVCacheBuffer)
+    assert isinstance(global_buf, KVCacheBuffer)
+    sliding_cache = sliding_buf.values[0]
+    global_cache = global_buf.values[0]
 
     _write_block(sliding_cache, 0, 1.0)
     _write_block(global_cache, 0, 2.0)
