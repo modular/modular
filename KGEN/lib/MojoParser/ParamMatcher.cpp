@@ -988,6 +988,25 @@ LogicalResult ParamMatcher::matchParams(TypedAttr actualAttr,
     }
   }
 
+  if (auto actualBind = dyn_cast<BindParamsAttr>(actualAttr)) {
+    if (auto expectedBind = dyn_cast<BindParamsAttr>(expectedAttr)) {
+      if (actualBind.getParamValues().size() ==
+          expectedBind.getParamValues().size()) {
+        PROP(matchParams(actualBind.getGenerator(),
+                         expectedBind.getGenerator()));
+        for (auto [act, exp] : llvm::zip(actualBind.getParamValues(),
+                                         expectedBind.getParamValues())) {
+          PROP(matchParams(act, exp));
+        }
+        // The discharged body constraints are derived from the generator and
+        // parameter values, so once those match they must agree as well.
+        assert(actualBind.getDischarged() == expectedBind.getDischarged() &&
+               "bind_params matched but disagree on discharged constraints");
+        return success();
+      }
+    }
+  }
+
   // StoreToMem occurs in parameter expressions in types.
   if (auto actualStore = dyn_cast<StoreToMemAttr>(actualAttr)) {
     if (auto expectedStore = dyn_cast<StoreToMemAttr>(expectedAttr))
