@@ -107,7 +107,7 @@ def main():
 
     var a_float_or_bool_or_simd = __mlir_op.`kgen.variant.create`[
         _type=AFloatOrBoolOrSimd,
-        index=Int(2)._int_mlir_index(),
+        index=Int(2).__mlir_index__(),
     ](c_simd)
 
     print("breakpoint")  # breakpoint

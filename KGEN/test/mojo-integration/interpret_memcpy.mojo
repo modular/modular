@@ -21,7 +21,7 @@ def memcpy(
         llvm_intrinsic["llvm.memcpy", NoneType](
             dst.bitcast[Byte](),
             src.bitcast[Byte](),
-            byte_count._int_mlir_index(),
+            byte_count.__mlir_index__(),
         )
     else:
         # Intentionally mis-match behavior between then and else
