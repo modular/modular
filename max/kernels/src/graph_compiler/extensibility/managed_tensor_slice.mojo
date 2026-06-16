@@ -2273,7 +2273,7 @@ struct _FusionPack[*Ts: TrivialRegisterPassable](TrivialRegisterPassable):
 
     @always_inline("nodebug")
     def __getitem_param__[i: Int](self) -> Self.Ts[i]:
-        return __mlir_op.`kgen.struct.extract`[index=i._int_mlir_index()](
+        return __mlir_op.`kgen.struct.extract`[index=i.__mlir_index__()](
             self._mlir_value
         )
 

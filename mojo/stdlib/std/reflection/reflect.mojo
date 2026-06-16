@@ -428,7 +428,7 @@ struct Reflected[T: AnyType]:
         # for concrete structs, generic type parameters, and closures alike.
         return __get_litref_as_mvalue(
             __mlir_op.`lit.ref.struct.ger`[
-                index=idx._int_mlir_index(),
+                index=idx.__mlir_index__(),
                 _type=__mlir_type[
                     `!lit.ref<`,
                     _field_types_of[Self.T]()[idx],
@@ -511,7 +511,7 @@ struct Reflected[T: AnyType]:
                 `#kgen.struct_field_offset_by_index<`,
                 Self.T,
                 `, `,
-                index._int_mlir_index(),
+                index.__mlir_index__(),
                 `, `,
                 target,
                 `> : index`,

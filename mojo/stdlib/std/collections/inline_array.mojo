@@ -271,7 +271,7 @@ struct InlineArray[ElementType: Movable, size: Int](
 
     # Fields
     comptime type = __mlir_type[
-        `!pop.array<`, Self.size._int_mlir_index(), `, `, Self.ElementType, `>`
+        `!pop.array<`, Self.size.__mlir_index__(), `, `, Self.ElementType, `>`
     ]
     """The underlying MLIR array type."""
 
@@ -663,7 +663,7 @@ struct InlineArray[ElementType: Movable, size: Int](
     ) -> ref[self] Self.ElementType:
         var ptr = __mlir_op.`pop.array.gep`(
             UnsafePointer(to=self._array).address,
-            index(idx)._int_mlir_index(),
+            index(idx).__mlir_index__(),
         )
         return UnsafePointer[_, origin_of(self)](ptr)[]
 

@@ -1169,7 +1169,7 @@ def _raw_ptr_buffer_load_lds[
     ), "unsupported AMD buffer cache-policy aux bitmask"
     __mlir_op.`rocdl.raw.ptr.buffer.load.lds`[
         alias_scopes=scopes,
-        aux=__mlir_attr[aux._int_mlir_index(), `: i32`],
+        aux=__mlir_attr[aux.__mlir_index__(), `: i32`],
         _type=None,
     ](desc_ptr_llvm, shared_ptr3, size, voffset, soffset, offset)
 

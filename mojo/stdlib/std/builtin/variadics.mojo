@@ -186,7 +186,7 @@ struct TypeList[
         Trait=Trait,
         __mlir_attr[
             `#kgen.param_list.tabulate<`,
-            count._int_mlir_index(),
+            count.__mlir_index__(),
             `,`,
             Self._IndexToIntTypeTabulateWrap[Trait=Trait, ToT=ToT, Mapper, ...],
             `> : `,
@@ -846,7 +846,7 @@ struct ParameterList[type: AnyType, //, values: _MLIR.KGENParamListType[type]](
         type=type,
         __mlir_attr[
             `#kgen.param_list.tabulate<`,
-            count._int_mlir_index(),
+            count.__mlir_index__(),
             `,`,
             Self._IndexToIntTabulateWrap[Mapper, ...],
             `> : `,
@@ -1235,7 +1235,7 @@ struct VariadicList[
         var elt_ptr = UnsafePointer[_, UntrackedOrigin[mut=False]](
             __mlir_op.`pop.array.gep`(
                 array_up.address,
-                Int(0)._int_mlir_index(),
+                Int(0).__mlir_index__(),
             )
         ).bitcast[Self._EltPointerType]()
         self._value = Span(ptr=elt_ptr, length=Int(mlir_value=size))
@@ -1597,7 +1597,7 @@ struct VariadicPack[
             mutability of the pack argument convention.
         """
         litref_elt = __mlir_op.`lit.ref.pack.extract`[
-            index=index._int_mlir_index()
+            index=index.__mlir_index__()
         ](self._value)
         return __get_litref_as_mvalue(litref_elt)
 

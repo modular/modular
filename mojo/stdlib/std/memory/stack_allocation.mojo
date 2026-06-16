@@ -97,12 +97,12 @@ def stack_allocation[
         comptime if address_space == AddressSpace.SHARED:
             return __mlir_op.`pop.global_alloc`[
                 name=_get_kgen_string[global_name](),
-                count=count._int_mlir_index(),
+                count=count.__mlir_index__(),
                 memoryType=__mlir_attr.`#pop<global_alloc_addr_space gpu_shared>`,
                 _type=UnsafePointer[
                     type, MutUntrackedOrigin, address_space=address_space
                 ]._mlir_type,
-                alignment=alignment._int_mlir_index(),
+                alignment=alignment.__mlir_index__(),
             ]()
         elif address_space == AddressSpace.CONSTANT:
             # No need to annotation this global_alloc because constants in
@@ -110,11 +110,11 @@ def stack_allocation[
             # happen since they are immutables.
             return __mlir_op.`pop.global_alloc`[
                 name=_get_kgen_string[global_name](),
-                count=count._int_mlir_index(),
+                count=count.__mlir_index__(),
                 _type=UnsafePointer[
                     type, MutUntrackedOrigin, address_space=address_space
                 ]._mlir_type,
-                alignment=alignment._int_mlir_index(),
+                alignment=alignment.__mlir_index__(),
             ]()
 
         # MSTDL-797: The NVPTX backend requires that `alloca` instructions may
@@ -122,9 +122,9 @@ def stack_allocation[
         # addrspacecast the resulting pointer.
         elif address_space == AddressSpace.LOCAL:
             var generic_ptr = __mlir_op.`pop.stack_allocation`[
-                count=count._int_mlir_index(),
+                count=count.__mlir_index__(),
                 _type=UnsafePointer[type, MutUntrackedOrigin]._mlir_type,
-                alignment=alignment._int_mlir_index(),
+                alignment=alignment.__mlir_index__(),
             ]()
             return __mlir_op.`pop.pointer.bitcast`[
                 _type=UnsafePointer[
@@ -139,9 +139,9 @@ def stack_allocation[
 
     # Perform a stack allocation of the requested size, alignment, and type.
     return __mlir_op.`pop.stack_allocation`[
-        count=count._int_mlir_index(),
+        count=count.__mlir_index__(),
         _type=UnsafePointer[
             type, MutUntrackedOrigin, address_space=address_space
         ]._mlir_type,
-        alignment=alignment._int_mlir_index(),
+        alignment=alignment.__mlir_index__(),
     ]()
