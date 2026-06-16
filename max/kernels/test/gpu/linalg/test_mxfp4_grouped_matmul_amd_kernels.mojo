@@ -161,6 +161,7 @@ def _run_preb[
     BN: Int = 128,
     WN: Int = 64,
     b_cache_policy: CacheOperation = CacheOperation.ALWAYS,
+    waves_per_eu: Int = 0,
 ](
     name: String,
     num_tokens_by_expert: List[Int],
@@ -361,6 +362,7 @@ def _run_preb[
         WN=WN,
         persistent=persistent,
         b_cache_policy=b_cache_policy,
+        waves_per_eu=waves_per_eu,
     ](
         c_tt,
         a_tt,
@@ -416,6 +418,7 @@ def test_persistent[
     BN: Int = 128,
     WN: Int = 64,
     b_cache_policy: CacheOperation = CacheOperation.ALWAYS,
+    waves_per_eu: Int = 0,
 ](
     name: String,
     num_tokens_by_expert: List[Int],
@@ -441,6 +444,7 @@ def test_persistent[
         BN=BN,
         WN=WN,
         b_cache_policy=b_cache_policy,
+        waves_per_eu=waves_per_eu,
     ](name, num_tokens_by_expert, expert_ids_list, ctx)
 
 
@@ -454,6 +458,7 @@ def test_direct[
     BN: Int = 128,
     WN: Int = 64,
     b_cache_policy: CacheOperation = CacheOperation.ALWAYS,
+    waves_per_eu: Int = 0,
 ](
     name: String,
     num_tokens_by_expert: List[Int],
@@ -473,6 +478,7 @@ def test_direct[
         BN=BN,
         WN=WN,
         b_cache_policy=b_cache_policy,
+        waves_per_eu=waves_per_eu,
     ](name, num_tokens_by_expert, expert_ids_list, ctx)
 
 
@@ -986,5 +992,19 @@ def main() raises:
     test_direct[1, 7168, 2048, BM=64, BN=128, BK_ELEMS=512, WN=64](
         "down direct", [512], [0], ctx
     )
+
+    # The `waves_per_eu` EU-bounding cap is a codegen hint and must not change
+    # results. Re-run representative persistent + direct shapes at non-default
+    # caps; correctness is checked against the same reference.
+    print("---- preb waves_per_eu EU-bounding cap ----")
+    test_persistent[4, 512, 2048, waves_per_eu=1](
+        "wpe=1 persistent", [128, 96, 128, 64], [0, 1, 2, 3], ctx
+    )
+    test_persistent[4, 512, 2048, waves_per_eu=2](
+        "wpe=2 persistent", [128, 96, 128, 64], [0, 1, 2, 3], ctx
+    )
+    test_direct[
+        1, 7168, 2048, BM=64, BN=128, BK_ELEMS=512, WN=64, waves_per_eu=2
+    ]("wpe=2 direct", [512], [0], ctx)
 
     print("==== all preb grouped MXFP4 kernel tests passed ====")
