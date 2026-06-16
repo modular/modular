@@ -14,7 +14,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
 
 from max.dtype import DType
 from max.graph import DeviceRef
@@ -36,53 +35,10 @@ from max.pipelines.lib.interfaces.arch_config import (
 )
 from max.pipelines.modeling.config_enums import supported_encoding_dtype
 from max.pipelines.weights.quant import parse_quant_config
-from transformers import AutoConfig, PretrainedConfig
+from transformers import AutoConfig
 from typing_extensions import Self, override
 
 from .layers.rotary_embedding import ProportionalScalingParams
-
-# Use the native Gemma4Config if available (transformers >= 5.5.0.dev0),
-# otherwise fall back to our shim for older versions.
-try:
-    from transformers import Gemma4Config as Gemma4HFConfig
-except ImportError:
-
-    class Gemma4HFConfig(PretrainedConfig):  # type: ignore[no-redef]
-        model_type = "gemma4"
-
-        def __init__(
-            self,
-            vision_config: Any = None,
-            text_config: Any = None,
-            *args,
-            **kwargs,
-        ):
-            vision_config = vision_config if vision_config is not None else {}
-            text_config = text_config if text_config is not None else {}
-            self.vision_config = PretrainedConfig(**vision_config)
-            self.text_config = PretrainedConfig(**text_config)
-            super().__init__(*args, **kwargs)
-
-    try:
-        AutoConfig.register("gemma4", Gemma4HFConfig)
-    except ValueError:
-        pass
-
-
-class _Gemma4UnifiedHFConfig(Gemma4HFConfig):
-    """Config shim for the public "gemma4_unified" model_type (Gemma 4 12B).
-
-    Registered unconditionally: even transformers releases that ship a
-    native Gemma4Config may not register the unified model_type.
-    """
-
-    model_type = "gemma4_unified"
-
-
-try:
-    AutoConfig.register("gemma4_unified", _Gemma4UnifiedHFConfig)
-except ValueError:
-    pass
 
 
 @dataclass(kw_only=True)

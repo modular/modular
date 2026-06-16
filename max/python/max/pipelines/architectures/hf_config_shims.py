@@ -1,0 +1,190 @@
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+
+"""Eagerly-registered HuggingFace ``AutoConfig`` shims.
+
+HuggingFace AutoConfig shims for model_types that the installed version of
+transformers does not recognize natively.
+"""
+
+from typing import Any
+
+from transformers import AutoConfig, DeepseekV3Config, PretrainedConfig
+
+# Use the native Gemma4Config if available (transformers >= 5.5.0.dev0),
+# otherwise fall back to our shim for older versions.
+try:
+    from transformers import Gemma4Config as Gemma4HFConfig
+except ImportError:
+
+    class Gemma4HFConfig(PretrainedConfig):  # type: ignore[no-redef]
+        model_type = "gemma4"
+
+        def __init__(
+            self,
+            vision_config: Any = None,
+            text_config: Any = None,
+            *args,
+            **kwargs,
+        ):
+            vision_config = vision_config if vision_config is not None else {}
+            text_config = text_config if text_config is not None else {}
+            self.vision_config = PretrainedConfig(**vision_config)
+            self.text_config = PretrainedConfig(**text_config)
+            super().__init__(*args, **kwargs)
+
+    try:
+        AutoConfig.register("gemma4", Gemma4HFConfig)
+    except ValueError:
+        pass
+
+
+class _Gemma4UnifiedHFConfig(Gemma4HFConfig):
+    """Config shim for the public "gemma4_unified" model_type (Gemma 4 12B).
+
+    Registered unconditionally: even transformers releases that ship a
+    native Gemma4Config may not register the unified model_type.
+    """
+
+    model_type = "gemma4_unified"
+
+
+try:
+    AutoConfig.register("gemma4_unified", _Gemma4UnifiedHFConfig)
+except ValueError:
+    pass
+
+
+# Register custom config since "step3p5" is not in the transformers library.
+class Step3p5PretrainedConfig(PretrainedConfig):
+    """Custom PretrainedConfig for Step-3.5 so AutoConfig.from_pretrained() works.
+
+    This is the primary location for mapping Step-3.5 field names to the
+    standard HuggingFace fields that Llama3Config expects.  A subset of these
+    aliases is also applied in Step3p5Config._ensure_hf_config_aliases() as a
+    fallback when trust_remote_code=True loads the repo's own config class
+    instead of this one.
+    """
+
+    model_type = "step3p5"
+
+    def __init__(self, **kwargs: object) -> None:
+        super().__init__(**kwargs)
+        for k, v in kwargs.items():
+            if not hasattr(self, k):
+                setattr(self, k, v)
+        # Standard field aliases that Llama3Config reads.
+        if not hasattr(self, "num_key_value_heads"):
+            self.num_key_value_heads = getattr(self, "num_attention_groups", 8)
+        if not hasattr(self, "rms_norm_eps"):
+            self.rms_norm_eps = 1e-5
+        if not hasattr(self, "rope_scaling"):
+            self.rope_scaling = None
+        if not hasattr(self, "hidden_act"):
+            self.hidden_act = "silu"
+        # rope_theta may be a per-layer list; preserve it and set scalar.
+        # transformers v5 nests rope config inside `rope_parameters`; fall
+        # back to that before the 10000 default to avoid silently using a
+        # wrong base frequency under v5.
+        rope_theta = getattr(self, "rope_theta", None)
+        if rope_theta is None:
+            rope_params = getattr(self, "rope_parameters", None)
+            if isinstance(rope_params, dict):
+                rope_theta = rope_params.get("rope_theta")
+        if rope_theta is None:
+            rope_theta = 10000.0
+        self.rope_theta = rope_theta
+        if isinstance(rope_theta, list):
+            self.per_layer_rope_theta = rope_theta
+            self.rope_theta = rope_theta[0] if rope_theta else 10000.0
+        elif not hasattr(self, "per_layer_rope_theta"):
+            self.per_layer_rope_theta = []
+
+
+try:
+    AutoConfig.register("step3p5", Step3p5PretrainedConfig)
+except ValueError:
+    pass  # Already registered
+
+
+class _KimiK2Config(PretrainedConfig):
+    """Minimal config for the ``kimi_k2`` model type.
+
+    The Eagle3 draft checkpoint (``nvidia/Kimi-K2.5-Thinking-Eagle3``)
+    declares ``model_type: "kimi_k2"`` which is not natively registered
+    in transformers, and ships no ``auto_map``.  Registering this stub
+    lets ``AutoConfig.from_pretrained`` succeed without a manual JSON
+    fallback.
+    """
+
+    model_type = "kimi_k2"
+
+
+AutoConfig.register("kimi_k2", _KimiK2Config, exist_ok=True)
+
+
+class DeepseekV32HFConfig(DeepseekV3Config):
+    """HuggingFace configuration class for DeepSeek-V3.2 models.
+
+    The ``deepseek_v32`` model type is not natively registered in transformers.
+    This subclass of ``DeepseekV3Config`` adds the V3.2-specific fields for
+    sparse attention (indexer) and registers itself so that
+    ``AutoConfig.from_pretrained`` can load DeepSeek-V3.2 repos.
+    """
+
+    model_type = "deepseek_v32"
+
+    def __init__(
+        self,
+        index_head_dim: int = 128,
+        index_n_heads: int = 64,
+        index_topk: int = 2048,
+        **kwargs,
+    ):
+        super().__init__(**kwargs)
+        self.index_head_dim = index_head_dim
+        self.index_n_heads = index_n_heads
+        self.index_topk = index_topk
+
+
+# Register the config with AutoConfig if not already registered.
+# This allows AutoConfig.from_pretrained() to work with deepseek_v32 models.
+try:
+    AutoConfig.register("deepseek_v32", DeepseekV32HFConfig)
+except ValueError:
+    # Already registered, which is fine.
+    pass
+
+
+class ExaoneConfig(PretrainedConfig):
+    """Local config class for EXAONE 3.5 models.
+
+    The ``exaone`` model type is not natively registered in transformers, and the
+    remote ``configuration_exaone.py`` shipped in EXAONE 3.5 HuggingFace repos is
+    incompatible with the pinned transformers version.  Registering this minimal
+    subclass lets ``AutoConfig.from_pretrained`` load the repo's ``config.json``
+    without requiring ``trust_remote_code``.
+    """
+
+    model_type = "exaone"
+
+    @property
+    def num_hidden_layers(self) -> int:
+        """Aliases ``num_layers`` to the standard ``num_hidden_layers`` name."""
+        return self.num_layers
+
+
+try:
+    AutoConfig.register("exaone", ExaoneConfig)
+except ValueError:
+    pass

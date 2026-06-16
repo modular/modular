@@ -1,4 +1,4 @@
-load("//bazel:api.bzl", "modular_py_library")
+load("//bazel:api.bzl", "modular_py_library", "requirement")
 
 package(default_visibility = ["//max:consumers"])
 
@@ -16,6 +16,7 @@ modular_py_library(
         "minimax_m3",
     ],
     deps = [
+        requirement("transformers"),  # Used in hf_config_shims.py
         "//max/python/max/pipelines/lib",
         # Hooks added for convenience for when we want to print the model layers
         "//max/python/max/nn/hooks",

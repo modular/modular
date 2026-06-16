@@ -66,6 +66,10 @@ def register_all_models() -> None:
     if _MODELS_ALREADY_REGISTERED:
         return
 
+    # Register HuggingFace AutoConfig shims for model_types that the installed
+    # version of transformers does not recognize natively.
+    from . import hf_config_shims as hf_config_shims
+
     lazy_architectures = [
         _LazyArch("BertModel", ".bert", "bert_arch"),
         _LazyArch("DeepseekV2ForCausalLM", ".deepseekV2", "deepseekV2_arch"),
