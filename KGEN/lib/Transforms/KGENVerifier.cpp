@@ -8,7 +8,9 @@
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/ToolCommon/CLOptions.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
+#include "mlir/IR/Dialect.h"
 #include "mlir/IR/Verifier.h"
+#include "llvm/ADT/StringSwitch.h"
 
 using namespace M;
 using namespace KGEN;
@@ -17,6 +19,26 @@ namespace M::KGEN {
 #define GEN_PASS_DEF_KGENVERIFIERPASS
 #include "KGEN/KGENPasses.h.inc"
 } // namespace M::KGEN
+
+/// True for first-party + GPU target dialects; others may be mid-lowering.
+static bool shouldVerifyOp(Operation *op) {
+  Dialect *dialect = op->getDialect();
+  if (!dialect)
+    return false;
+  // Curated subset of registerAllKGENDialects(); keep in sync.
+  return llvm::StringSwitch<bool>(dialect->getNamespace())
+      .Case("kgen", true)
+      .Case("pop", true)
+      .Case("lit", true)
+      .Case("hlcf", true)
+      .Case("co", true)
+      .Case("interp", true)
+      .Case("M", true)
+      .Case("debuginfo", true)
+      .Case("nvvm", true)
+      .Case("rocdl", true)
+      .Default(false);
+}
 
 /// Verify correctness of the attribute for a given target.
 /// * Fail if MemoryBlob attribute on GPU will lowered into heap
@@ -73,24 +95,39 @@ static LogicalResult verifyOperation(Operation *op, TargetInfoAttr target) {
 
 namespace {
 struct KGENVerifierPass : public impl::KGENVerifierPassBase<KGENVerifierPass> {
+  using KGENVerifierPassBase::KGENVerifierPassBase;
+
   void runOnOperation() override {
     Operation *op = getOperation();
-    if (failed(mlir::verify(op)))
+
+    size_t numErrors = 0;
+    const size_t maxErrors = *KGENPassCLOptions::kgenVerifierMaxErrors();
+
+    // Per-op (non-recursive): skips off-allowlist ops; structural/dominance
+    // checks come from the PM verifier (off in MODULAR_PRODUCTION).
+    if (op->walk([&](Operation *operation) {
+            if (shouldVerifyOp(operation) &&
+                failed(mlir::verify(operation, /*verifyRecursively=*/false)))
+              ++numErrors;
+            if (numErrors >= maxErrors)
+              return WalkResult::interrupt();
+            return WalkResult::advance();
+          }).wasInterrupted()) {
       signalPassFailure();
+    }
 
     TargetInfoAttr target = lookupTargetInfo(op);
-    if (!target || !isGPUTriple(target.getTriple()))
+    if (!verifyGPU || !target || !isGPUTriple(target.getTriple())) {
+      if (numErrors > 0)
+        signalPassFailure();
       return;
+    }
 
-    // Number of errors encountered during verification.
-    size_t numErrors = 0;
-
-    // Following code is GPU-specific verification that makes sure no operation
-    // introduces heap allocation for GPU compilation.
+    // GPU-specific verification: reject heap allocation for GPU compilation.
     if (op->walk([&](Operation *operation) {
             if (failed(verifyOperation(operation, target)))
               ++numErrors;
-            if (numErrors >= *KGENPassCLOptions::kgenVerifierMaxErrors())
+            if (numErrors >= maxErrors)
               return WalkResult::interrupt();
             return WalkResult::advance();
           }).wasInterrupted()) {

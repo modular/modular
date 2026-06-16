@@ -1151,6 +1151,10 @@ def KGENVerifierPass : Pass<"kgen-verifier"> {
     It can be invoked in production build and does not depend on pass manager's
     settings.
   }];
+  let options = [
+    Option<"verifyGPU", "verify-gpu", "bool", "true",
+           "Run GPU-specific verification (e.g. reject heap allocation).">,
+  ];
 }
 
 //===----------------------------------------------------------------------===//

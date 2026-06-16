@@ -12,7 +12,7 @@
 def wrong_attribute_name(a: Int, b: Int) abi("Mojo") raises -> Bool:
     comptime pred_attr = __mlir_attr.`#index<cmp_predicate sle>`
 
-    # expected-note @below {{MLIR verification error: 'index.cmp' op requires attribute 'pred'}}
+    # expected-note @below {{unexpected attribute 'foobar' on operation}}
     var res = __mlir_op.`index.cmp`[foobar=pred_attr](a, b)
     return res
 
