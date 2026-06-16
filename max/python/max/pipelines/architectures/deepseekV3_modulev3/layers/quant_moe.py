@@ -24,22 +24,25 @@ from max.experimental.nn import Module
 from max.experimental.nn.common_layers.functional_kernels import (
     local_map,
     moe_create_indices,
+    shard_and_stack,
 )
 from max.experimental.nn.common_layers.moe import MoEGate
 from max.experimental.nn.sequential import ModuleList
 from max.experimental.sharding import (
     DeviceMapping,
     DeviceMesh,
+    Partial,
     PlacementMapping,
     Sharded,
 )
 from max.experimental.tensor import Tensor
-from max.graph import TensorValue
+from max.graph import DimLike, TensorValue
 from max.nn.comm.ep.ep_kernels import fused_silu as _ep_fused_silu
 from max.nn.quant_config import QuantConfig
+from typing_extensions import Self
 
 from . import quant_ops
-from .quant_linear import QuantizedMLP
+from .quant_linear import QuantizedMLP, tensor_parallel_mlp
 from .quant_ops import QuantAwareTensor
 from .quant_tensor import FP8BlockTensor
 
@@ -301,3 +304,105 @@ class QuantizedMoE(Module[[Tensor], Tensor]):
         if self.shared_experts is not None:
             routed_expert_out = routed_expert_out + self.shared_experts(x)
         return routed_expert_out
+
+
+class TensorParallelMoE(QuantizedMoE):
+    """Quantize-aware MoE with tensor parallelism."""
+
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self._initial_moe_dim = self.moe_dim
+        self.mesh = DeviceMesh.single(self.device)
+        if self.shared_experts is not None:
+            self.shared_experts = tensor_parallel_mlp(self.shared_experts)
+        for n, expert in enumerate(self.experts):
+            assert isinstance(expert, QuantizedMLP)
+            self.experts[n] = tensor_parallel_mlp(expert)
+
+    def to(self, target: Device | DeviceMesh | DeviceMapping) -> Self:
+        """Transfer the MoE layer to the target device mesh."""
+        self.mesh = _mesh(target)
+        if self.mesh.ndim != 1:
+            raise ValueError(
+                "Mesh used with TensorParallelMoE must have exactly one device"
+                f" axis, but got {self.mesh}"
+            )
+        if self._initial_moe_dim % self.mesh.num_devices != 0:
+            raise ValueError(
+                f"moe_dim ({self._initial_moe_dim}) must be divisible by the "
+                f"number of devices ({self.mesh.num_devices}) for tensor "
+                "parallelism"
+            )
+        self.moe_dim = self._initial_moe_dim // self.mesh.num_devices
+
+        self.gate.to(target)
+        if self.shared_experts is not None:
+            self.shared_experts.to(target)
+
+        # With multiple devices, keep expert weights on CPU because they are
+        # transferred (sharded) via the ``shard_and_stack`` operation. On a
+        # single device, place them directly.
+        device = CPU() if self.mesh.num_devices > 1 else self.mesh.devices[0]
+        for expert in self.experts:
+            expert.to(device)
+        return self
+
+    def _shard_stack_tensors(
+        self,
+        per_expert: list[Tensor],
+        axis: int,
+        shard_shape: list[DimLike] | None = None,
+    ) -> list[Tensor]:
+        """Shard each weight in ``per_expert`` along ``axis`` and stack."""
+        shards: list[Tensor] = []
+        for shard in shard_and_stack(per_expert, self.mesh.devices, axis=axis):
+            assert isinstance(shard, Tensor)
+            if shard_shape is not None:
+                shard = shard.reshape(shard_shape)
+            shards.append(shard)
+        return shards
+
+    @property
+    def gate_up_proj(self) -> list[QuantAwareTensor]:
+        """Per-device ``[gate, up]`` weight bundle, sharded along ``moe_dim``."""
+        if self.mesh.num_devices == 1:
+            return super().gate_up_proj
+
+        # Interleave per-expert gate/up so each device receives a contiguous
+        # ``gate||up`` block of its ``moe_dim`` slice.
+        interleaved: list[QuantAwareTensor] = []
+        for e in self.experts:
+            assert isinstance(e, QuantizedMLP)
+            interleaved.extend((e.gate_proj.weight, e.up_proj.weight))
+
+        def _combine_gate_up(tensors: list[Tensor]) -> list[Tensor]:
+            # The shard is along axis 0, so each leaf's trailing dim is
+            # preserved: ``hidden_dim`` for the data leaf, ``hidden_dim //
+            # block_k`` for the FP8 block-scale leaf. Read it off the leaf
+            # rather than discriminating on a leaf name.
+            return self._shard_stack_tensors(
+                tensors,
+                axis=0,
+                shard_shape=[self.num_experts, -1, tensors[0].shape[-1]],
+            )
+
+        return quant_ops.combine_quant_per_device(interleaved, _combine_gate_up)
+
+    @property
+    def down_proj(self) -> list[QuantAwareTensor]:
+        """Per-device down-projection weight bundle, sharded along ``moe_dim``."""
+        if self.mesh.num_devices == 1:
+            return super().down_proj
+
+        down_list: list[QuantAwareTensor] = []
+        for e in self.experts:
+            assert isinstance(e, QuantizedMLP)
+            down_list.append(e.down_proj.weight)
+
+        distributed = stack_experts(down_list, shard_axis=-1, mesh=self.mesh)
+        return list(distributed.local_shards)
+
+    def _routed_output_mapping(self, permuted_states: Tensor) -> DeviceMapping:
+        if self.mesh.num_devices == 1:
+            return super()._routed_output_mapping(permuted_states)
+        return PlacementMapping(self.mesh, (Partial(),))
