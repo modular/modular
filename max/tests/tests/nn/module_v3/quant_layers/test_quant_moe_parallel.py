@@ -18,6 +18,7 @@ from __future__ import annotations
 from unittest.mock import MagicMock
 
 import pytest
+from max.driver import CPU, Device
 from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental.nn.common_layers.mesh_axis import TP
@@ -28,8 +29,16 @@ from max.experimental.sharding import (
     Replicated,
 )
 from max.experimental.tensor import Tensor, default_dtype
+from max.graph import BufferValue, TensorValue
+from max.nn.comm.ep import EPConfig
+from max.nn.comm.ep.ep_config import NUM_GROUPS
+from max.nn.comm.ep.ep_manager import (
+    EPBatchManager,
+    get_ep_local_sync_counters_size,
+)
 from max.nn.quant_config import QuantConfig
 from max.pipelines.architectures.deepseekV3_modulev3.layers.quant_moe import (
+    ExpertParallelMoE,
     TensorParallelMoE,
 )
 from max.pipelines.architectures.deepseekV3_modulev3.layers.quant_tensor import (
@@ -183,3 +192,167 @@ def test_tensor_parallel_moe_fp8_weights(
             _FP8_HIDDEN_DIM // 128,
             _FP8_MOE_DIM // num_devices // 128,
         ]
+
+
+# --------------------------------------------------------------------------- #
+# ExpertParallelMoE
+# --------------------------------------------------------------------------- #
+
+
+def _build_ep_batch_manager(
+    config: EPConfig, devices: list[Device]
+) -> EPBatchManager:
+    """Construct an EPBatchManager with placeholder buffer values.
+
+    Bypasses :meth:`EPBatchManager.fetch_buffers` so the EP forward path can be
+    traced under :func:`F.lazy` without wiring up real graph inputs.
+    """
+    mgr = EPBatchManager(config)
+    n_devices = config.n_gpus_per_node
+    n_experts_for_counters = (
+        config.n_experts // n_devices
+        if config.use_allreduce
+        else config.n_experts
+    )
+    counter_size = get_ep_local_sync_counters_size(n_experts_for_counters)
+
+    mgr._atomic_counters = []
+    for _ in range(NUM_GROUPS):
+        group: list[BufferValue] = []
+        for i in range(n_devices):
+            buf = Tensor.zeros(
+                [counter_size], dtype=DType.int32, device=devices[i]
+            )
+            group.append(BufferValue(buf))
+        mgr._atomic_counters.append(group)
+
+    def _make_ptrs() -> list[TensorValue]:
+        return [
+            TensorValue(
+                Tensor.zeros([n_devices], dtype=DType.uint64, device=CPU())
+            )
+            for _ in range(NUM_GROUPS)
+        ]
+
+    mgr._send_buf_ptrs = _make_ptrs()
+    mgr._recv_buf_ptrs = _make_ptrs()
+    mgr._recv_count_ptrs = _make_ptrs()
+    return mgr
+
+
+def _ep_config(dispatch_dtype: DType, num_devices: int, **kwargs) -> EPConfig:
+    return EPConfig(
+        dispatch_dtype=dispatch_dtype,
+        combine_dtype=DType.bfloat16,
+        hidden_size=_HIDDEN_DIM,
+        top_k=_NUM_EXPERTS_PER_TOKEN,
+        n_experts=_NUM_EXPERTS,
+        max_tokens_per_rank=_SEQ_LEN,
+        n_gpus_per_node=num_devices,
+        n_nodes=1,
+        **kwargs,
+    )
+
+
+def test_expert_parallel_moe_bf16(mock_accelerator: MagicMock) -> None:
+    """EP distributes whole experts; weights keep full moe_dim per device."""
+    with F.lazy():
+        devices = [mock_accelerator(0), mock_accelerator(1)]
+        num_devices = len(devices)
+        num_local_experts = _NUM_EXPERTS // num_devices
+        mesh = DeviceMesh(tuple(devices), (num_devices,), (TP,))
+        replicated = PlacementMapping(mesh, (Replicated(),))
+
+        ep_batch_manager = _build_ep_batch_manager(
+            _ep_config(DType.bfloat16, num_devices), devices
+        )
+
+        with default_dtype(DType.bfloat16):
+            layer = ExpertParallelMoE(
+                hidden_dim=_HIDDEN_DIM,
+                num_experts=_NUM_EXPERTS,
+                num_experts_per_token=_NUM_EXPERTS_PER_TOKEN,
+                moe_dim=_MOE_DIM,
+                ep_batch_manager=ep_batch_manager,
+            ).to(mesh)
+
+            gate_up = layer.gate_up_proj
+            assert len(gate_up) == num_devices
+            for i, shard in enumerate(gate_up):
+                assert isinstance(shard, Tensor)
+                assert list(shard.shape) == [
+                    num_local_experts,
+                    2 * _MOE_DIM,
+                    _HIDDEN_DIM,
+                ]
+                assert shard.device == devices[i]
+
+            down = layer.down_proj
+            assert len(down) == num_devices
+            for shard in down:
+                assert isinstance(shard, Tensor)
+                assert list(shard.shape) == [
+                    num_local_experts,
+                    _HIDDEN_DIM,
+                    _MOE_DIM,
+                ]
+
+            x = Tensor.zeros(
+                [_SEQ_LEN, _HIDDEN_DIM],
+                dtype=DType.bfloat16,
+                device=replicated,
+            )
+            out = layer(x)
+
+        assert list(out.shape) == [_SEQ_LEN, _HIDDEN_DIM]
+        assert out.mapping.mesh == mesh
+
+
+def test_expert_parallel_moe_fp8_weights(
+    mock_accelerator: MagicMock, fp8_quant_config: QuantConfig
+) -> None:
+    """FP8 EP stacks per-device FP8 expert weights (data + scale)."""
+    with F.lazy():
+        devices = [mock_accelerator(0), mock_accelerator(1)]
+        num_devices = len(devices)
+        num_local_experts = _NUM_EXPERTS // num_devices
+        mesh = DeviceMesh(tuple(devices), (num_devices,), (TP,))
+
+        ep_batch_manager = _build_ep_batch_manager(
+            _ep_config(
+                DType.float8_e4m3fn,
+                num_devices,
+                dispatch_quant_config=fp8_quant_config,
+            ),
+            devices,
+        )
+
+        layer = ExpertParallelMoE(
+            hidden_dim=_HIDDEN_DIM,
+            num_experts=_NUM_EXPERTS,
+            num_experts_per_token=_NUM_EXPERTS_PER_TOKEN,
+            moe_dim=_MOE_DIM,
+            quant_config=fp8_quant_config,
+            ep_batch_manager=ep_batch_manager,
+        ).to(mesh)
+
+        gate_up = layer.gate_up_proj
+        assert len(gate_up) == num_devices
+        for i, shard in enumerate(gate_up):
+            assert isinstance(shard, FP8BlockTensor)
+            assert list(shard.data.shape) == [
+                num_local_experts,
+                2 * _MOE_DIM,
+                _HIDDEN_DIM,
+            ]
+            assert shard.data.device == devices[i]
+
+        down = layer.down_proj
+        assert len(down) == num_devices
+        for shard in down:
+            assert isinstance(shard, FP8BlockTensor)
+            assert list(shard.data.shape) == [
+                num_local_experts,
+                _HIDDEN_DIM,
+                _MOE_DIM,
+            ]
