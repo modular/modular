@@ -13,6 +13,7 @@
 """8x8 `simdgroup_matrix` GEMM kernel for Apple Silicon GPUs (M1-M4)."""
 
 from std.sys import llvm_intrinsic
+from std.sys.info import CompilationTarget
 
 from std.gpu import (
     block_idx,
@@ -101,6 +102,14 @@ def _simdgroup8x8_matmul_kernel[
     comptime NT_M = SG_M // MMA8_DIM  # 4
     comptime NT_N = SG_N // MMA8_DIM  # 4
 
+    # A backend issue in current macOS versions on M1 and M2 GPUs is leading to
+    # corrupted results when using bfloat16 inputs, therefore we widen to f32
+    # and perform the MMA operation at that precision. This is under
+    # investigation.
+    comptime widen_bf16_to_f32 = (
+        a_type == DType.bfloat16 or b_type == DType.bfloat16
+    ) and (CompilationTarget.is_apple_m1() or CompilationTarget.is_apple_m2())
+
     var lane = Int(lane_id())
     var fl = _frag8_layout(lane)
     var frow = fl[0]
@@ -158,9 +167,18 @@ def _simdgroup8x8_matmul_kernel[
                     bfrag[ni] = bf
         comptime for mi in range(NT_M):
             comptime for ni in range(NT_N):
-                accum[mi * NT_N + ni] = _mma8x8[a_type, b_type](
-                    afrag[mi], bfrag[ni], accum[mi * NT_N + ni]
-                )
+                comptime if widen_bf16_to_f32:
+                    accum[mi * NT_N + ni] = _mma8x8[
+                        DType.float32, DType.float32
+                    ](
+                        afrag[mi].cast[DType.float32](),
+                        bfrag[ni].cast[DType.float32](),
+                        accum[mi * NT_N + ni],
+                    )
+                else:
+                    accum[mi * NT_N + ni] = _mma8x8[a_type, b_type](
+                        afrag[mi], bfrag[ni], accum[mi * NT_N + ni]
+                    )
 
     comptime for mi in range(NT_M):
         comptime for ni in range(NT_N):
