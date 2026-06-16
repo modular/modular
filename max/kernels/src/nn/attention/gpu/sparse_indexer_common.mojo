@@ -100,7 +100,13 @@ def block_select_topk[
         # Block-wide best (valid at thread 0); ties broken by smallest index.
         var total = _block_reduce_topk[ascending=largest](partial)
         if tid == 0:
-            winner_sram[0] = total.p
+            # Write -1 when no selectable value remains (u == dead_val covers
+            # both all-evicted and all-NaN rows, since NaN never beats dead_val
+            # in insert() and p stays at its 0 default).
+            if total.u == _topk_dead_val[T, largest]():
+                winner_sram[0] = -1
+            else:
+                winner_sram[0] = total.p
         barrier()
 
         # `p < 0` means no selectable value remains in the row (all evicted, or
