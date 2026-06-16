@@ -90,6 +90,7 @@
             "max/develop/model-bringup-workflow",
             "max/develop/read-model-config",
             "max/develop/pipelines",
+            "max/develop/logit-comparison",
             "max/graph/quantize"
           ]
         },
