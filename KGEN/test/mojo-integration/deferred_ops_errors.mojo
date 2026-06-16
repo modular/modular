@@ -24,7 +24,7 @@ def extra_attribute(a: Int, b: Int) abi("Mojo") raises -> Bool:
 
     # expected-note @below {{unexpected attribute 'foobar' on operation}}
     var res = __mlir_op.`index.cmp`[pred=pred_attr, foobar=pred_attr](
-        a._int_mlir_index(), b._int_mlir_index()
+        a.__mlir_index__(), b.__mlir_index__()
     )
     return res
 

@@ -15,10 +15,10 @@
 @always_inline
 def get_llvm_array[
     n: Int
-]() -> __mlir_deferred_type[`!llvm.array<`, +n._int_mlir_index(), ` x f32>`]:
+]() -> __mlir_deferred_type[`!llvm.array<`, +n.__mlir_index__(), ` x f32>`]:
     return __mlir_op.`llvm.mlir.undef`[
         _type=__mlir_deferred_type[
-            `!llvm.array<`, +n._int_mlir_index(), ` x f32>`
+            `!llvm.array<`, +n.__mlir_index__(), ` x f32>`
         ]
     ]()
 
@@ -29,7 +29,7 @@ def get_llvm_array[
 @no_inline
 def get_array_noinline[
     n: Int
-]() -> __mlir_deferred_type[`!llvm.array<`, +n._int_mlir_index(), ` x f32>`]:
+]() -> __mlir_deferred_type[`!llvm.array<`, +n.__mlir_index__(), ` x f32>`]:
     return get_llvm_array[n]()
 
 

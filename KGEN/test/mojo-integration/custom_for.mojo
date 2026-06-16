@@ -59,7 +59,7 @@ def printInt(x: Int):
 
 def main():
     var buffer = __mlir_op.`pop.stack_allocation`[
-        count=Int(3)._int_mlir_index(),
+        count=Int(3).__mlir_index__(),
         _type=__mlir_type[`!kgen.pointer<`, Int, `>`],
     ]()
     var my_pointer = UnsafePointer[Int, MutAnyOrigin](buffer)
