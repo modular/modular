@@ -329,6 +329,53 @@ def empty[T: Movable]() -> _Empty[T]:
 
 
 # ===-----------------------------------------------------------------------===#
+# once
+# ===-----------------------------------------------------------------------===#
+
+
+@fieldwise_init
+struct _Once[T: Movable](
+    Copyable where conforms_to(T, Copyable),
+    Iterable where conforms_to(T, Copyable),
+    IterableOwned,
+    Iterator,
+):
+    """An iterator that yields an element exactly once."""
+
+    comptime Element = Self.T
+
+    comptime IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
+    ]: Iterator = Self
+
+    comptime IteratorOwnedType: Iterator = Self
+
+    var _inner: Optional[Self.T]
+
+    def __iter__(var self) -> Self.IteratorOwnedType:
+        return self^
+
+    def __iter__(
+        ref self,
+    ) -> Self.IteratorType[origin_of(self)] where conforms_to(
+        Self.Element, Copyable
+    ):
+        return self.copy()
+
+    def __next__(mut self) raises StopIteration -> Self.Element:
+        return next(self._inner)
+
+    def bounds(self) -> Tuple[Int, Optional[Int]]:
+        var n_remaining = Int(Bool(self._inner))
+        return Tuple(n_remaining, Optional(n_remaining))
+
+
+def once[T: Movable](var value: T) -> _Once[T]:
+    """Creates an iterator that yields an element exactly once."""
+    return _Once(value^)
+
+
+# ===-----------------------------------------------------------------------===#
 # enumerate
 # ===-----------------------------------------------------------------------===#
 
