@@ -912,30 +912,58 @@ def _normalize_openai_role(role: str) -> Any:
     return "system" if role == "developer" else role
 
 
-def _validate_decodable_images(images: list[bytes]) -> None:
-    # Identify each image (a cheap header parse, not a full pixel decode) so
-    # empty or non-image base64 fails here as a clean 400 instead of reaching
-    # the model worker and crashing it with an unhandled
-    # PIL.UnidentifiedImageError (HTTP 500). The actual decode still happens
-    # once, later, in the tokenizer.
+def _decode_and_validate_images(images: list[bytes]) -> list[Image.Image]:
+    # Fully decode each image so empty, non-image, or truncated/streamed
+    # content (e.g. animated or content-negotiated WebP) fails here as a clean
+    # 400 instead of reaching the model worker and crashing it with an
+    # unhandled PIL error or OSError (HTTP 500). ``Image.open`` is lazy -- it
+    # only parses the header -- so a header-valid but undecodable image slips
+    # through and later blows up in the tokenizer's ``to_rgb(...)`` ->
+    # ``.convert("RGB")`` decode. ``image.load()`` forces that same pixel
+    # decode now, while we can still turn the failure into a 400.
+    #
+    # The decoded images are returned and carried on the request
+    # (``TextGenerationRequest.decoded_images``) so the tokenizer reuses them
+    # instead of decoding the same bytes a second time. We therefore do not
+    # close the images here (no ``with`` block): ``load()`` has already pulled
+    # the pixels into memory and the caller owns the decoded image.
+    decoded: list[Image.Image] = []
     for image_bytes in images:
         try:
-            with Image.open(io.BytesIO(image_bytes)):
-                pass
-        except (UnidentifiedImageError, OSError, ValueError, SyntaxError) as e:
+            image = Image.open(io.BytesIO(image_bytes))
+            image.load()
+        except (
+            UnidentifiedImageError,
+            OSError,
+            ValueError,
+            SyntaxError,
+            Image.DecompressionBombError,
+        ) as e:
             raise InputError("invalid or unreadable image content") from e
+        decoded.append(image)
+    return decoded
 
 
 async def openai_parse_chat_completion_request(
     completion_request: CreateChatCompletionRequest,
     wrap_content: bool,
     settings: Settings,
-) -> tuple[list[TextGenerationRequestMessage], list[bytes], list[bytes]]:
+) -> tuple[
+    list[TextGenerationRequestMessage],
+    list[bytes],
+    list[bytes],
+    list[Image.Image],
+]:
     """Parse the OpenAI ChatCompletionRequest to build TextGenerationRequestMessages.
     These will be used as inputs to the chat template to build the prompt.
     Also extract the list of image/video references while we are here so they
     can be downloaded and bundled alongside the request for preprocessing by
     pipelines.
+
+    Returns the parsed messages, the resolved image bytes, the resolved video
+    bytes, and the decoded (and validated) images. The decoded images are
+    carried on the request so the tokenizer does not decode the same bytes a
+    second time; see :func:`_decode_and_validate_images`.
     """
     messages: list[TextGenerationRequestMessage] = []
     image_refs: list[AnyUrl] = []
@@ -1021,14 +1049,46 @@ async def openai_parse_chat_completion_request(
     ]
     request_images = await asyncio.gather(*resolve_image_tasks)
 
-    _validate_decodable_images(request_images)
+    # Fully decoding every image is CPU-bound (a few ms to tens of ms each), so
+    # run it off the event loop to avoid blocking concurrent requests. PIL's C
+    # codecs release the GIL during decode, so this is genuinely concurrent.
+    # The decoded images are carried on the request and reused by the tokenizer
+    # (decode-once), so this is the only place a request's images are decoded.
+    decoded_images = await asyncio.to_thread(
+        _decode_and_validate_images, request_images
+    )
 
     resolve_video_tasks = [
         resolve_image_from_url(video_url, settings) for video_url in video_refs
     ]
     request_videos = await asyncio.gather(*resolve_video_tasks)
 
-    return messages, request_images, list(request_videos)
+    return messages, request_images, list(request_videos), decoded_images
+
+
+def _decode_data_uri_base64(data_uri: str) -> bytes:
+    """Decode the base64 payload of a ``data:`` image URI.
+
+    Tolerates the two ways real clients (and the OpenRouter image relay)
+    routinely deviate from canonical base64: stripped ``=`` padding and the
+    URL-safe alphabet (``-``/``_``). ``base64.decodebytes`` accepts neither --
+    it raises ``binascii.Error`` on missing padding and silently mis-decodes
+    URL-safe input to the wrong bytes -- which turned valid image requests into
+    400s.
+    """
+    parts = data_uri.split(",", 1)
+    if len(parts) != 2 or not parts[1]:
+        raise ValueError("data URI has no base64 payload")
+    # Some clients wrap long payloads across lines; strip any whitespace.
+    b64 = "".join(parts[1].split())
+    # Re-add stripped padding (base64 length must be a multiple of 4).
+    b64 += "=" * (-len(b64) % 4)
+    decoder = (
+        base64.urlsafe_b64decode
+        if ("-" in b64 or "_" in b64)
+        else base64.b64decode
+    )
+    return decoder(b64)
 
 
 async def resolve_image_from_url(
@@ -1052,8 +1112,7 @@ async def resolve_image_from_url(
             )
             return images_bytes
     elif image_ref.scheme == "data":
-        image_b64 = image_ref.unicode_string().split(",")[1]
-        images_bytes = base64.decodebytes(image_b64.encode())
+        images_bytes = _decode_data_uri_base64(image_ref.unicode_string())
         logger.debug(
             "ResolvedImageB64: %s -> %d bytes",
             str(image_ref)[:16],
@@ -1280,6 +1339,7 @@ async def openai_create_chat_completion(
             request_messages,
             request_images,
             request_videos,
+            request_decoded_images,
         ) = await openai_parse_chat_completion_request(
             completion_request,
             pipeline.tokenizer.expects_content_wrapping,
@@ -1460,6 +1520,7 @@ async def openai_create_chat_completion(
             prompt=prompt_token_ids if prompt_token_ids else None,
             messages=[] if prompt_token_ids else request_messages,
             images=request_images,
+            decoded_images=request_decoded_images,
             videos=request_videos,
             tools=tools,
             timestamp_ns=request.state.request_timer.start_ns,

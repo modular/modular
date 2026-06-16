@@ -53,6 +53,27 @@ if TYPE_CHECKING:
     from max.pipelines.lib.config import PipelineConfig
 
 
+def open_image(image: bytes | Image.Image) -> Image.Image:
+    """Decode raw image ``bytes`` into a ``PIL.Image``, or pass one through.
+
+    Vision tokenizers receive each image either as raw ``bytes`` (offline and
+    test callers) or as a ``PIL.Image`` that the API server already decoded and
+    validated once at admission (see
+    :attr:`~max.pipelines.modeling.types.TextGenerationRequest.decoded_images`).
+    Routing both through this helper lets a tokenizer reuse the pre-decoded
+    image instead of decoding the same bytes a second time.
+
+    Args:
+        image: Raw encoded image bytes, or an already-decoded ``PIL.Image``.
+
+    Returns:
+        The decoded ``PIL.Image``.
+    """
+    if isinstance(image, Image.Image):
+        return image
+    return Image.open(io.BytesIO(image))
+
+
 async def convert_token_to_id(
     tokenizer: PipelineTokenizer[Any, Any, Any],
     token: str,
@@ -873,11 +894,12 @@ class TextAndVisionTokenizer(
         else:
             raise ValueError(f"{request} does not provide messages or prompt.")
 
-        # Load images.
+        # open_image reuses the API server's decode-once result, or decodes
+        # raw bytes on the offline/test fallback path.
         images = (
             [
-                _convert_image_mode(Image.open(io.BytesIO(image_data)), "RGB")
-                for image_data in request.images
+                _convert_image_mode(open_image(image), "RGB")
+                for image in request.images_for_processing()
             ]
             if request.images
             else None

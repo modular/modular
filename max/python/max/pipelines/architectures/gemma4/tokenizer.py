@@ -15,7 +15,6 @@
 
 from __future__ import annotations
 
-import io
 import json
 import re
 from collections.abc import Sequence
@@ -33,14 +32,13 @@ from max.pipelines.context.context import GrammarEnforcementState
 from max.pipelines.context.exceptions import PromptTooLongError
 from max.pipelines.lib import TextAndVisionTokenizer, max_tokens_to_generate
 from max.pipelines.lib.config import PipelineConfig
-from max.pipelines.lib.tokenizer import resolve_single_special_token
+from max.pipelines.lib.tokenizer import open_image, resolve_single_special_token
 from max.pipelines.modeling.types import (
     TextGenerationRequest,
     TextGenerationRequestMessage,
     TextGenerationRequestTool,
 )
 from max.support.image import find_contiguous_ranges, hash_image
-from PIL import Image
 from transformers import AutoTokenizer, GenerationConfig
 
 from .context import Gemma4Context
@@ -345,8 +343,8 @@ class Gemma4Tokenizer(TextAndVisionTokenizer):
 
         if request.images:
             images = [
-                to_rgb(Image.open(io.BytesIO(img_data)))
-                for img_data in request.images
+                to_rgb(open_image(image))
+                for image in request.images_for_processing()
             ]
             pixel_values_list, pixel_position_ids_list, num_soft_tokens = (
                 self.img_processor(images)

@@ -24,6 +24,15 @@ This version is still a work in progress.
 
 ### Inference server
 
+- Fixed image requests failing with a 400 or 500 across all vision models. Two
+  bugs in the shared image-resolution layer: `data:` URIs with unpadded or
+  URL-safe base64 (sent routinely by clients and relays) were rejected by the
+  strict decoder, and truncated, animated, or content-negotiated images (for
+  example a `.jpg` URL that a host serves as WebP) passed the lazy header-only
+  validation and then crashed later in the tokenizer's pixel decode with an
+  unhandled error. Image payloads are now decoded tolerantly and validated with
+  a full pixel decode that the tokenizer reuses (so each image is decoded only
+  once), and undecodable content fails fast as a clean 400.
 - Fixed a structured-output runaway: a `response_format` JSON schema that omits
   the root `"type"` (for example `{"properties": {"x": {}}}`, valid JSON Schema)
   previously compiled to a grammar that permitted a bare, unbounded top-level
