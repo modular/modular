@@ -92,6 +92,7 @@ Reasoning
 
    ParsedReasoningDelta
    ReasoningParser
+   ReasoningPipelineTokenizer
    ReasoningSpan
 
 Tool parsing

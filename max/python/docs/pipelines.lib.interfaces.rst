@@ -21,7 +21,11 @@ Architecture config
 
    ArchConfig
    ArchConfigWithAttentionKVCache
+   ArchConfigWithBoundedMaxSeqLen
    ArchConfigWithKVCache
+   ArchConfigWithPermissiveMaxSeqLen
+   ArchConfigWithStoredKVParams
+   ArchVLConfigWithTextSubconfig
 
 Diffusion
 ---------
