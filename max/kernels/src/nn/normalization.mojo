@@ -1020,6 +1020,83 @@ def rms_norm_gpu_warp_tiling_128[
             output_fn[simd_width, align](row, idx, norm_val)
 
 
+@__name(t"rms_norm_gpu_warp_per_row_{dtype}_{multiply_before_cast}")
+def rms_norm_gpu_warp_per_row[
+    mut: Bool,
+    LayoutType: TensorLayout,
+    origin: Origin[mut=mut],
+    dtype: DType,
+    //,
+    simd_width: Int,
+    rows_per_block: Int,
+    input_fn: def[width: Int](row: Int, col: Int) capturing -> SIMD[
+        dtype, width
+    ],
+    output_fn: def[width: SIMDSize, alignment: Int](
+        row: Int, col: Int, val: SIMD[dtype, width]
+    ) capturing -> None,
+    multiply_before_cast: Bool,
+](
+    gamma: TileTensor[dtype, LayoutType, origin],
+    epsilon: Scalar[dtype],
+    weight_offset: Scalar[dtype],
+    num_rows: Int,
+    num_cols: Int,
+):
+    comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
+    comptime assert gamma.flat_rank >= 1
+
+    comptime align = align_of[SIMD[dtype, simd_width]]()
+    comptime accum_type = get_accum_type[dtype]()
+
+    var eps_accum = epsilon.cast[accum_type]()
+    var weight_offset_accum = weight_offset.cast[accum_type]()
+
+    var tid = thread_idx.x
+    var warp_in_block = ufloordiv(tid, WARP_SIZE)
+    var lane = umod(tid, WARP_SIZE)
+    var row = block_idx.x * rows_per_block + Int(warp_in_block)
+
+    comptime stride = WARP_SIZE * simd_width
+
+    with PDL():
+        # Pass 1: accumulate the per-thread mean-of-squares scalar only.
+        var thread_m2 = Scalar[accum_type](0)
+        if row < num_rows:
+            var col = Int(lane) * simd_width
+            while col < num_cols:
+                var v = input_fn[simd_width](row, col).cast[accum_type]()
+                thread_m2 += (v**2).reduce_add()
+                col += stride
+
+        # Barrier-free, SMEM-free warp reduction (shuffle butterfly).
+        var row_m2 = warp.sum(thread_m2)
+        var norm_factor = rsqrt(
+            (row_m2 / Scalar[accum_type](num_cols)) + eps_accum
+        )
+
+        # Pass 2: reload from L2 and normalize.
+        if row < num_rows:
+            var col = Int(lane) * simd_width
+            while col < num_cols:
+                var v = input_fn[simd_width](row, col).cast[accum_type]()
+                var gamma_val = gamma.load[width=simd_width, alignment=align](
+                    Coord(col)
+                )
+                var norm_val: SIMD[dtype, simd_width]
+                comptime if multiply_before_cast:
+                    var gamma_accum = (
+                        gamma_val.cast[accum_type]() + weight_offset_accum
+                    )
+                    norm_val = (v * norm_factor * gamma_accum).cast[dtype]()
+                else:
+                    norm_val = (v * norm_factor).cast[dtype]() * (
+                        gamma_val + weight_offset
+                    )
+                output_fn[simd_width, align](row, col, norm_val)
+                col += stride
+
+
 @__name(t"rms_norm_gpu_warp_tiling_{dtype}_{multiply_before_cast}")
 def rms_norm_gpu_warp_tiling[
     mut: Bool,
@@ -1361,6 +1438,11 @@ def rms_norm_gpu[
     comptime max_warps_per_block = ctx.default_device_info.max_thread_block_size // WARP_SIZE
     comptime sm_version = ctx.default_device_info.version
     comptime sm_count = ctx.default_device_info.sm_count
+    comptime warp_per_row_rows_per_block = 8
+    var warp_per_row_min_grid = 3 * sm_count
+    var warp_per_row_region = (
+        ceildiv(rows, warp_per_row_rows_per_block) >= warp_per_row_min_grid
+    )
 
     var grid_dim = rows
     var block_dim = min(
@@ -1385,6 +1467,35 @@ def rms_norm_gpu[
                 origin=gamma.origin,
                 simd_width,
                 warps_per_block,
+                input_fn_2d,
+                output_fn_2d,
+                multiply_before_cast=multiply_before_cast,
+            ]
+            ctx.enqueue_function[kernel](
+                gamma,
+                epsilon,
+                weight_offset,
+                rows,
+                cols,
+                grid_dim=grid_dim,
+                block_dim=block_dim,
+                attributes=pdl_launch_attributes(pdl_level),
+            )
+        elif (
+            cols > 128
+            and cols <= (WARP_SIZE * simd_width * max_warps_per_block)
+            and warp_per_row_region
+        ):
+            comptime rows_per_block = warp_per_row_rows_per_block
+            block_dim = rows_per_block * WARP_SIZE
+            grid_dim = ceildiv(rows, rows_per_block)
+
+            comptime kernel = rms_norm_gpu_warp_per_row[
+                mut=gamma.mut,
+                LayoutType=gamma.LayoutType,
+                origin=gamma.origin,
+                simd_width,
+                rows_per_block,
                 input_fn_2d,
                 output_fn_2d,
                 multiply_before_cast=multiply_before_cast,

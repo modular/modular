@@ -124,6 +124,16 @@ def main() raises:
         run_rms_norm_gpu[DType.bfloat16](ctx, Index(3000, 32, 128), rtol=2e-2)
         run_rms_norm_gpu[DType.bfloat16](ctx, Index(2999, 31, 128), rtol=2e-2)
 
+        run_rms_norm_gpu[DType.float32](ctx, Index(32768, 1536))
+        run_rms_norm_gpu[DType.bfloat16](ctx, Index(32768, 1536), rtol=2e-2)
+        run_rms_norm_gpu[DType.float32](ctx, Index(4095, 1536))
+        run_rms_norm_gpu[DType.float32](ctx, Index(64, 256))
+        run_rms_norm_gpu[DType.bfloat16](ctx, Index(64, 256), rtol=2e-2)
+        run_rms_norm_gpu[DType.float32](ctx, Index(32768, 2048))
+        run_rms_norm_gpu[DType.bfloat16](ctx, Index(32768, 4096), rtol=2e-2)
+        run_rms_norm_gpu[DType.bfloat16](ctx, Index(8, 2048), rtol=2e-2)
+        run_rms_norm_gpu[DType.float32](ctx, Index(8, 8193))
+
         # Test static shape dispatch.
         run_rms_norm_gpu[DType.bfloat16, static_cols=4096](
             ctx, Index(2, 4096), rtol=2e-2
