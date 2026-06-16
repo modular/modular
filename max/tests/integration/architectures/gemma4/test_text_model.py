@@ -102,7 +102,9 @@ def _make_kv_params(
         devices=devices,
         page_size=128,
     )
-    return MultiKVCacheParams.from_params(sliding_kv, global_kv)
+    return MultiKVCacheParams.from_params(
+        {"sliding_attention": sliding_kv, "full_attention": global_kv}
+    )
 
 
 def _make_text_config(
@@ -315,10 +317,10 @@ def test_state_dict_has_four_norms_per_layer() -> None:
 
 
 def test_layer_kv_index_length() -> None:
-    """_layer_kv_index should have one entry per layer."""
+    """_layer_kv_key should have one entry per layer."""
     config = _make_model_config([DeviceRef.GPU()])
     model = Gemma4TextModel(config)
-    assert len(model._layer_kv_index) == TEXT_NUM_HIDDEN_LAYERS
+    assert len(model._layer_kv_key) == TEXT_NUM_HIDDEN_LAYERS
 
 
 @pytest.mark.parametrize(
@@ -327,11 +329,11 @@ def test_layer_kv_index_length() -> None:
     ids=["layer_0_sliding", "layer_1_sliding", "layer_4_sliding"],
 )
 def test_sliding_layers_map_to_kv_index_0(layer_idx: int) -> None:
-    """Sliding attention layers should map to KV index 0."""
+    """Sliding attention layers should map to the sliding cache key."""
     config = _make_model_config([DeviceRef.GPU()])
     model = Gemma4TextModel(config)
     assert TEXT_LAYER_TYPES[layer_idx] == "sliding_attention"
-    assert model._layer_kv_index[layer_idx] == 0
+    assert model._layer_kv_key[layer_idx] == "sliding_attention"
 
 
 @pytest.mark.parametrize(
@@ -340,33 +342,33 @@ def test_sliding_layers_map_to_kv_index_0(layer_idx: int) -> None:
     ids=["layer_5_full", "layer_11_full", "layer_59_full"],
 )
 def test_full_attention_layers_map_to_kv_index_1(layer_idx: int) -> None:
-    """Full attention layers should map to KV index 1."""
+    """Full attention layers should map to the full-attention cache key."""
     config = _make_model_config([DeviceRef.GPU()])
     model = Gemma4TextModel(config)
     assert TEXT_LAYER_TYPES[layer_idx] == "full_attention"
-    assert model._layer_kv_index[layer_idx] == 1
+    assert model._layer_kv_key[layer_idx] == "full_attention"
 
 
 def test_layer_kv_index_matches_layer_types() -> None:
-    """Every layer_kv_index entry should match its layer type."""
+    """Every _layer_kv_key entry should match its layer type."""
     config = _make_model_config([DeviceRef.GPU()])
     model = Gemma4TextModel(config)
-    for i, (kv_idx, layer_type) in enumerate(
-        zip(model._layer_kv_index, TEXT_LAYER_TYPES, strict=True)
+    for i, (kv_key, layer_type) in enumerate(
+        zip(model._layer_kv_key, TEXT_LAYER_TYPES, strict=True)
     ):
-        expected = 0 if layer_type == "sliding_attention" else 1
-        assert kv_idx == expected, (
-            f"Layer {i}: expected KV index {expected} for {layer_type}, "
-            f"got {kv_idx}"
+        assert kv_key == layer_type, (
+            f"Layer {i}: expected KV key {layer_type}, got {kv_key}"
         )
 
 
 def test_kv_index_counts_match_layer_type_counts() -> None:
-    """The number of sliding/global KV indices should match the layer type counts."""
+    """The number of sliding/global KV keys should match the layer type counts."""
     config = _make_model_config([DeviceRef.GPU()])
     model = Gemma4TextModel(config)
-    sliding_count = sum(1 for idx in model._layer_kv_index if idx == 0)
-    global_count = sum(1 for idx in model._layer_kv_index if idx == 1)
+    sliding_count = sum(
+        1 for k in model._layer_kv_key if k == "sliding_attention"
+    )
+    global_count = sum(1 for k in model._layer_kv_key if k == "full_attention")
 
     expected_sliding = sum(
         1 for t in TEXT_LAYER_TYPES if t == "sliding_attention"
@@ -568,7 +570,9 @@ def _make_small_model_config(
         devices=devices,
         page_size=128,
     )
-    kv_params = MultiKVCacheParams.from_params(sliding_kv, global_kv)
+    kv_params = MultiKVCacheParams.from_params(
+        {"sliding_attention": sliding_kv, "full_attention": global_kv}
+    )
 
     text_kv = KVCacheParams(
         dtype=DType.bfloat16,

@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-comptime BaseTraits = Copyable & ImplicitlyDestructible
+comptime BaseTraits = Copyable & ImplicitlyDeletable
 
 
 @fieldwise_init
@@ -71,7 +71,7 @@ def main():
     # Does not compile
     # Error: constraint declared (for `__bool__()` function) evaluated to
     # False, expected 'Bool(conforms_to(T, std::builtin::anytype::AnyType &
-    # std::builtin::anytype::ImplicitlyDestructible &
+    # std::builtin::anytype::ImplicitlyDeletable &
     # std::builtin::bool::Boolable))'
     # if w_not_writable:
     #     print(t"NotWritable with data {w_not_writable.value.data} is truthy")

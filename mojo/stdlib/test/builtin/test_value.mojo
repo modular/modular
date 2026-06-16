@@ -33,7 +33,7 @@ comptime EVENT_MOVE = 0b10000  # 16
 struct ConditionalTriviality[
     O: MutOrigin,
     //,
-    T: Copyable & ImplicitlyDestructible,
+    T: Copyable & ImplicitlyDeletable,
 ](Copyable):
     var events: Pointer[List[Int], Self.O]
 
@@ -67,7 +67,7 @@ struct ConditionalTriviality[
             self.add_event(EVENT_MOVE)
 
 
-struct StructInheritTriviality[T: Copyable & ImplicitlyDestructible](Copyable):
+struct StructInheritTriviality[T: Copyable & ImplicitlyDeletable](Copyable):
     comptime __move_ctor_is_trivial = is_trivially_movable[Self.T]()
     comptime __copy_ctor_is_trivial = is_trivially_copyable[Self.T]()
     comptime __del__is_trivial = is_trivially_destructible[Self.T]()
@@ -78,7 +78,7 @@ struct StructInheritTriviality[T: Copyable & ImplicitlyDestructible](Copyable):
 # ===-----------------------------------------------------------------------===#
 
 
-def _test_type_trivial[T: Copyable & ImplicitlyDestructible]() raises:
+def _test_type_trivial[T: Copyable & ImplicitlyDeletable]() raises:
     var events = List[Int]()
     var value = ConditionalTriviality[T](events)
     var value_copy = value.copy()
@@ -99,7 +99,7 @@ def test_type_trivial() raises:
     _test_type_trivial[Int]()
 
 
-def _test_type_not_trivial[T: Copyable & ImplicitlyDestructible]() raises:
+def _test_type_not_trivial[T: Copyable & ImplicitlyDeletable]() raises:
     var events = List[Int]()
     var value = ConditionalTriviality[T](events)
     var value_copy = value.copy()
@@ -120,9 +120,7 @@ def test_type_not_trivial() raises:
     _test_type_not_trivial[String]()
 
 
-def _test_type_inherit_triviality[
-    T: Copyable & ImplicitlyDestructible
-]() raises:
+def _test_type_inherit_triviality[T: Copyable & ImplicitlyDeletable]() raises:
     var events = List[Int]()
     var value = ConditionalTriviality[StructInheritTriviality[T]](events)
     var value_copy = value.copy()
@@ -145,7 +143,7 @@ def test_type_inherit_triviality() raises:
 
 
 def _test_type_inherit_non_triviality[
-    T: Copyable & ImplicitlyDestructible
+    T: Copyable & ImplicitlyDeletable
 ]() raises:
     var events = List[Int]()
     var value = ConditionalTriviality[StructInheritTriviality[T]](events)

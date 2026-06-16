@@ -47,6 +47,7 @@ from std.builtin.anytype import (
     Some,
     SomeTypeList,
     ImplicitlyDestructible,
+    ImplicitlyDeletable,
 )
 from std.builtin.bool import Bool, Boolable, all, any
 from std.builtin.breakpoint import breakpoint
@@ -62,8 +63,6 @@ from std.builtin.format_int import bin, hex, oct
 from std.builtin.identifiable import Identifiable
 from std.builtin.int import (
     Indexer,
-    SIMDSize,
-    Int,
     Intable,
     IntableRaising,
     index,
@@ -90,6 +89,7 @@ from std.builtin.rebind import (
     trait_downcast_var,
 )
 from std.builtin.reversed import ReversibleRange, reversed
+from std.builtin.simd_size import SIMDSize
 from std.builtin.simd import (
     SIMD,
     BFloat16,
@@ -102,6 +102,7 @@ from std.builtin.simd import (
     Float16,
     Float32,
     Float64,
+    Int,
     Int8,
     Int16,
     Int32,

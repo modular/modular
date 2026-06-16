@@ -12,13 +12,14 @@
 # ===----------------------------------------------------------------------=== #
 """Implements the `DevicePassable` trait for types transferable to accelerator devices."""
 
-from std.os import abort
 from std.sys import size_of
 from std.sys.info import _TargetType
 from std.sys.intrinsics import _type_is_eq
 from std.builtin.rebind import downcast, trait_downcast
 from std.gpu.host.device_context import DeviceBuffer, DevicePointer
+from std.collections.inline_array import InlineArray
 from std.reflection import reflect
+from std.utils.static_tuple import StaticTuple, _StaticTupleTraits
 
 
 trait DevicePassable:
@@ -83,6 +84,10 @@ def _contains_device_passable_field[T: AnyType]() -> Bool:
     comptime if not reflect[T].is_struct():
         return False
     comptime r = reflect[T]
+    # TODO: Remove this workaround once _RegTuple has been removed. Field
+    # reflection is not functional for _RegTuple, assume it is bit copyable.
+    comptime if r.base_name() == "_RegTuple":
+        return False
     comptime field_types = r.field_types()
     comptime for i in range(r.field_count()):
         comptime FieldType = field_types[i]
@@ -136,8 +141,8 @@ trait DeviceTypeEncoder:
         Constraints:
             - `ValueType` must conform to `DevicePassable` or `RegisterPassable`.
             - `ValueType` must conform to
-              `ImplicitlyCopyable & ImplicitlyDestructible` or
-              `Copyable & ImplicitlyDestructible`.
+              `ImplicitlyCopyable & ImplicitlyDeletable` or
+              `Copyable & ImplicitlyDeletable`.
             - If `ValueType` is `DevicePassable`, it must be its own leaf
               `device_type`
               (`ValueType._is_convertible_to_device_type[ValueType]()`), since a
@@ -167,20 +172,20 @@ trait DeviceTypeEncoder:
             )
 
         comptime if conforms_to(
-            ValueType, ImplicitlyCopyable & ImplicitlyDestructible
+            ValueType, ImplicitlyCopyable & ImplicitlyDeletable
         ):
             comptime T = downcast[
-                ValueType, ImplicitlyCopyable & ImplicitlyDestructible
+                ValueType, ImplicitlyCopyable & ImplicitlyDeletable
             ]
             dst.bitcast[T]()[] = rebind[T](value)
-        elif conforms_to(ValueType, Copyable & ImplicitlyDestructible):
-            comptime T = downcast[ValueType, Copyable & ImplicitlyDestructible]
+        elif conforms_to(ValueType, Copyable & ImplicitlyDeletable):
+            comptime T = downcast[ValueType, Copyable & ImplicitlyDeletable]
             dst.bitcast[T]()[] = rebind[T](value).copy()
         else:
             comptime assert False, String(
                 t"encode: ValueType '{reflect[ValueType].base_name()}' must"
-                t" conform to ImplicitlyCopyable & ImplicitlyDestructible or"
-                t" Copyable & ImplicitlyDestructible"
+                t" conform to ImplicitlyCopyable & ImplicitlyDeletable or"
+                t" Copyable & ImplicitlyDeletable"
             )
 
     def encode_fields[
@@ -217,8 +222,8 @@ trait DeviceTypeEncoder:
               struct type.
             - Every field must either conform to `DevicePassable`, be a
               composite transitively containing a `DevicePassable` member,
-              conform to `ImplicitlyCopyable & ImplicitlyDestructible`, or
-              conform to `Copyable & ImplicitlyDestructible`.
+              conform to `ImplicitlyCopyable & ImplicitlyDeletable`, or
+              conform to `Copyable & ImplicitlyDeletable`.
         """
         # NOTE: The trait system does not enforce viral conformance to
         # DevicePassable if a RegisterPassable struct field is DevicePassable.
@@ -233,16 +238,17 @@ trait DeviceTypeEncoder:
             t" must be struct"
         )
         comptime r = reflect[StructType]
+        comptime base = r.base_name()
+
+        # Field reflection is not functional for StaticTuple so handle it
+        # specially to avoid crashing, see MOCO-4018.
+        comptime if conforms_to(StructType, DevicePassable) and (
+            base == "StaticTuple"
+        ):
+            trait_downcast[DevicePassable](value)._to_device_type(self, dst)
+            return
+
         comptime field_types = r.field_types()
-
-        # FIXME: MOCO-4018 We don't properly support field reflection on these
-        # types yet.
-        if r.base_name() in ("InlineArray", "StaticTuple", "_RegTuple"):
-            abort(
-                t"encode_fields: StructType '{r.base_name()}' is not currently"
-                t" supported"
-            )
-
         comptime for i in range(r.field_count()):
             comptime FieldType = field_types[i]
             # Offset in the device data layout, not the host's.
@@ -253,13 +259,121 @@ trait DeviceTypeEncoder:
             comptime if conforms_to(FieldType, DevicePassable):
                 trait_downcast[DevicePassable](field)._to_device_type(self, sub)
             elif _contains_device_passable_field[FieldType]():
-                # Recurse so the nested `DevicePassable` member runs its own
-                # `_to_device_type` instead of being byte-copied.
+                # Recurse so the nested `DevicePassable` member runs its
+                # own `_to_device_type` instead of being byte-copied.
                 self.encode_fields[FieldType](field, sub)
             else:
                 # Register-passable field with no `DevicePassable` member:
                 # bit-copy. `encode` rejects any other type at compile time.
                 self.encode(field, sub)
+
+    def encode_static_tuple[
+        ElementType: _StaticTupleTraits,
+        size: Int,
+        //,
+    ](
+        mut self,
+        value: StaticTuple[ElementType, size],
+        dst: MutOpaquePointer[_],
+    ):
+        """Encodes each element of a `StaticTuple` into `dst` element-wise.
+
+        `StaticTuple`'s `!pop.array` storage is opaque to field reflection
+        (see MOCO-4018), so `encode_fields` cannot iterate it. This encodes the
+        tuple by element instead, applying the same dispatch `encode_fields`
+        uses per field:
+
+        - If `ElementType` conforms to `DevicePassable`, dispatch to its own
+          `_to_device_type()` so any host-to-device conversion runs.
+        - Otherwise, if `ElementType` is a composite transitively containing a
+          `DevicePassable` member, recurse into `encode_fields`.
+        - Otherwise, bit-copy via `encode`.
+
+        Elements are placed at `i * size_of[device-element-type]` in the
+        encoder's target data layout (`Self.target()`), matching the device
+        layout of `StaticTuple.device_type`.
+
+        Parameters:
+            ElementType: The tuple's element type (inferred).
+            size: The number of elements (inferred).
+
+        Args:
+            value: The `StaticTuple` to encode.
+            dst: The opaque destination pointer that receives the encoded
+                elements.
+        """
+        # Stride in the device layout. `_DeviceElementType` is the element's
+        # `device_type` when `DevicePassable`, else the element type itself, so
+        # this matches `StaticTuple.device_type`'s `!pop.array` element stride.
+        comptime stride = size_of[
+            StaticTuple[ElementType, size]._DeviceElementType,
+            target=Self.target(),
+        ]()
+
+        comptime for i in range(size):
+            var sub = (dst.bitcast[UInt8]() + i * stride).bitcast[NoneType]()
+            ref elem = value._unsafe_ref(i)
+
+            comptime if conforms_to(ElementType, DevicePassable):
+                trait_downcast[DevicePassable](elem)._to_device_type(self, sub)
+            elif _contains_device_passable_field[ElementType]():
+                self.encode_fields[ElementType](elem, sub)
+            else:
+                self.encode(elem, sub)
+
+    def encode_inline_array[
+        ElementType: Movable,
+        size: Int,
+        //,
+    ](
+        mut self,
+        value: InlineArray[ElementType, size],
+        dst: MutOpaquePointer[_],
+    ):
+        """Encodes each element of an `InlineArray` into `dst` element-wise.
+
+        Like `encode_static_tuple`, but for `InlineArray`. The array's
+        `!pop.array` storage is opaque to field reflection (see MOCO-4018), so
+        this encodes by element, applying the same dispatch `encode_fields`
+        uses per field:
+
+        - If `ElementType` conforms to `DevicePassable`, dispatch to its own
+          `_to_device_type()` so any host-to-device conversion runs.
+        - Otherwise, if `ElementType` is a composite transitively containing a
+          `DevicePassable` member, recurse into `encode_fields`.
+        - Otherwise, bit-copy via `encode`.
+
+        Elements are placed at `i * size_of[device-element-type]` in the
+        encoder's target data layout (`Self.target()`), matching the device
+        layout of `InlineArray.device_type`.
+
+        Parameters:
+            ElementType: The array's element type (inferred).
+            size: The number of elements (inferred).
+
+        Args:
+            value: The `InlineArray` to encode.
+            dst: The opaque destination pointer that receives the encoded
+                elements.
+        """
+        # Stride in the device layout. `_DeviceElementType` is the element's
+        # `device_type` when `DevicePassable`, else the element type itself, so
+        # this matches `InlineArray.device_type`'s `!pop.array` element stride.
+        comptime stride = size_of[
+            InlineArray[ElementType, size]._DeviceElementType,
+            target=Self.target(),
+        ]()
+
+        comptime for i in range(size):
+            var sub = (dst.bitcast[UInt8]() + i * stride).bitcast[NoneType]()
+            ref elem = value.unsafe_get(i)
+
+            comptime if conforms_to(ElementType, DevicePassable):
+                trait_downcast[DevicePassable](elem)._to_device_type(self, sub)
+            elif _contains_device_passable_field[ElementType]():
+                self.encode_fields[ElementType](elem, sub)
+            else:
+                self.encode(elem, sub)
 
     def encode_device_ptr(
         mut self, value: DevicePointer, dst: MutOpaquePointer[_]

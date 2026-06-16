@@ -301,6 +301,11 @@ __extension SM100MLA:
 
         barrier()
 
+        # Read the TMEM base from SMEM ONCE here, post-barrier (alloc + this
+        # barrier publish it), and carry it by register into the shared
+        # fa4_softmax / fa4_correction consumers (see depth-512 fix).
+        var tmem_addr = ptr_tmem_addr[0]
+
         var role = warp_idx_to_role(warp_idx)
 
         # warp group partitioning
@@ -330,6 +335,7 @@ __extension SM100MLA:
                 Self.MaxSeqLenType,
             ](
                 attn_smem,
+                tmem_addr,
                 pos.score_row,
                 seq_info,
                 mask,
@@ -359,6 +365,7 @@ __extension SM100MLA:
                 Self.page_size,
             ](
                 attn_smem,
+                tmem_addr,
                 seq_info.prompt_idx,
                 pos.score_row,
                 pos.num_keys,
@@ -1656,6 +1663,7 @@ def mla_sm100_prefill_blockscale[
     output_dtype: DType,
     q_type: DType,
     KVType: MHAOperand,
+    VType: MHAOperand,
     KRopeType: MHAOperand,
     MaskType: MHAMask,
     MaxPromptLenType: OptionallyStaticInt,
@@ -1670,7 +1678,7 @@ def mla_sm100_prefill_blockscale[
     output: TileTensor[output_dtype, address_space=AddressSpace.GENERIC, ...],
     q: TileTensor[q_type, address_space=AddressSpace.GENERIC, ...],
     k: KVType,
-    v: KVType,
+    v: VType,
     k_rope: KRopeType,
     mask_functor: MaskType,
     valid_length: TileTensor[
@@ -1681,6 +1689,9 @@ def mla_sm100_prefill_blockscale[
     batch_size: Int,
     ctx: DeviceContext,
 ) raises:
+    comptime assert (
+        KVType.dtype == VType.dtype
+    ), "k and v must share an element dtype for SM100 MLA prefill"
     comptime fa4_config = MLAConfig[
         q_type, rope_gmem_dtype=KRopeType.dtype, rope_mma_dtype=q_type
     ](
@@ -1738,6 +1749,8 @@ def mla_sm100_prefill_blockscale[
         depth=fa4_config.nope_depth,
     ](ctx)
 
+    # k and v share a dtype (asserted above), so rebind v's TMA tile to the
+    # dispatch's KVType tile type.
     _mla_prefill_sm100_valid_length_dispatch[
         fa4_config=fa4_config,
         cache_depth=cache_depth,
@@ -1748,7 +1761,7 @@ def mla_sm100_prefill_blockscale[
         q_tma_op,
         k_nope_tma_op,
         k_rope_tma_op,
-        v_tma_op,
+        rebind[type_of(k_nope_tma_op)](v_tma_op),
         k,
         k_rope,
         mask_functor,

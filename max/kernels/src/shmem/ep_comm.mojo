@@ -293,7 +293,7 @@ def get_device_alignment() -> Int:
     return gpu_alignment
 
 
-trait TokenFormat(DevicePassable, ImplicitlyDestructible):
+trait TokenFormat(DevicePassable, ImplicitlyDeletable):
     comptime hid_dim: Int
     comptime top_k: Int
     comptime alignment: Int
@@ -756,8 +756,8 @@ struct BlockwiseFP8TokenFormat[
 
 
 @align(64)
-struct NVFP4TokenFormat[
-    fp4_dtype: DType,
+struct NVBlockScaledTokenFormat[
+    quant_dtype: DType,
     scales_dtype: DType,
     output_layout: TensorLayout,
     scales_offset_layout: TensorLayout,
@@ -769,33 +769,58 @@ struct NVFP4TokenFormat[
     comptime hid_dim = Self._hid_dim
     comptime top_k = Self._top_k
     comptime alignment = Self._alignment or get_device_alignment()
-    comptime group_size = NVFP4_SF_VECTOR_SIZE
+    comptime is_mxfp8 = (
+        Self.scales_dtype == DType.float8_e8m0fnu
+        and Self.quant_dtype == DType.float8_e4m3fn
+    )
+    comptime is_mxfp4 = (
+        Self.scales_dtype == DType.float8_e8m0fnu
+        and Self.quant_dtype == DType.uint8
+    )
+    comptime is_nvfp4 = (
+        Self.scales_dtype == DType.float8_e4m3fn
+        and Self.quant_dtype == DType.uint8
+    )
 
     comptime dispatch_wait_tile_shape = (128, 2)
 
     comptime TensorType = TileTensor[
-        Self.fp4_dtype, Self.output_layout, MutUntrackedOrigin
+        Self.quant_dtype, Self.output_layout, MutUntrackedOrigin
     ]
     comptime ScalesOffsetTensorType = TileTensor[
         DType.uint32, Self.scales_offset_layout, MutUntrackedOrigin
     ]
 
+    @staticmethod
+    def get_group_size() -> Int:
+        comptime if Self.is_nvfp4:
+            return NVFP4_SF_VECTOR_SIZE
+        elif Self.is_mxfp4:
+            return MXFP4_SF_VECTOR_SIZE
+        elif Self.is_mxfp8:
+            return MXFP8_SF_VECTOR_SIZE
+        else:
+            # Unsupported combination of scales dtype and fp4 dtype
+            return -1
+
+    comptime group_size = Self.get_group_size()
+
     comptime _n_k_tiles = Self.dispatch_wait_tile_shape[1]
     comptime _n_warps = 32  # Always use 32 warps per block on Nvidia GPUs.
     comptime tma_tile_shape = Index(
         1,
-        Self._hid_dim // NVFP4_SF_VECTOR_SIZE // SF_ATOM_K // Self._n_k_tiles,
+        Self._hid_dim // Self.group_size // SF_ATOM_K // Self._n_k_tiles,
         1,
         SF_ATOM_K * SF_ATOM_M[1],
     )
     comptime _scales_smem_per_warp = align_up(
         Int(Coord(Self.tma_tile_shape).product()), 128
     ) * size_of[Self.scales_dtype]()
-    comptime _fp4_smem_per_warp = align_up(
-        Self._hid_dim // 2 // Self._n_k_tiles, 16
+    comptime _quant_smem_per_warp = align_up(
+        Self.quant_size() // Self._n_k_tiles, 16
     )
     comptime _mbar_smem_offset = Self._n_warps * (
-        Self._scales_smem_per_warp + Self._fp4_smem_per_warp
+        Self._scales_smem_per_warp + Self._quant_smem_per_warp
     )
     comptime _mbar_smem_size = align_up(
         Self._n_warps * size_of[SharedMemBarrier](), 8
@@ -834,8 +859,8 @@ struct NVFP4TokenFormat[
     @staticmethod
     def get_type_name() -> String:
         return String(
-            "NVFP4TokenFormat[fp4_dtype = ",
-            String(Self.fp4_dtype),
+            "NVBlockScaledTokenFormat[quant_dtype = ",
+            String(Self.quant_dtype),
             ", scales_dtype = ",
             String(Self.scales_dtype),
             ", hid_dim = ",
@@ -850,7 +875,7 @@ struct NVFP4TokenFormat[
     @always_inline
     def __init__(
         out self,
-        output_tokens: TileTensor[Self.fp4_dtype, Self.output_layout, ...],
+        output_tokens: TileTensor[Self.quant_dtype, Self.output_layout, ...],
         output_scales: TileTensor[Self.scales_dtype, ...],
         output_scales_offset: TileTensor[
             DType.uint32, Self.scales_offset_layout, ...
@@ -858,7 +883,7 @@ struct NVFP4TokenFormat[
         ctx: DeviceContext,
     ):
         self.output_tokens = {
-            UnsafePointer[Scalar[Self.fp4_dtype], MutUntrackedOrigin](
+            UnsafePointer[Scalar[Self.quant_dtype], MutUntrackedOrigin](
                 unsafe_from_address=Int(output_tokens.ptr)
             ),
             output_tokens.layout,
@@ -878,7 +903,7 @@ struct NVFP4TokenFormat[
             row_major(
                 (
                     Int(output_scales.dim(0)),
-                    Idx[Self._hid_dim // NVFP4_SF_VECTOR_SIZE // SF_ATOM_K],
+                    Idx[Self._hid_dim // Self.group_size // SF_ATOM_K],
                     Idx[SF_ATOM_M[0]],
                     Idx[SF_ATOM_K * SF_ATOM_M[1]],
                 ),
@@ -894,8 +919,13 @@ struct NVFP4TokenFormat[
 
     @always_inline
     @staticmethod
-    def fp4_quant_size() -> Int:
-        return align_up(Self.hid_dim // 2, Self.alignment)
+    def quant_size() -> Int:
+        comptime payload_size = (
+            Self.hid_dim
+            // 2 if Self.is_nvfp4 else Self.hid_dim
+            * size_of[Self.quant_dtype]()
+        )
+        return align_up(payload_size, Self.alignment)
 
     @always_inline
     @staticmethod
@@ -911,12 +941,12 @@ struct NVFP4TokenFormat[
     @always_inline
     @staticmethod
     def token_size() -> Int:
-        return Self.fp4_quant_size() + Self.scales_size()
+        return Self.quant_size() + Self.scales_size()
 
     @always_inline
     @staticmethod
     def scales_offset() -> Int:
-        return Self.fp4_quant_size()
+        return Self.quant_size()
 
     @always_inline
     def pad_expert_offsets[
@@ -988,7 +1018,7 @@ struct NVFP4TokenFormat[
     ) -> None:
         comptime src_width = 8
         comptime byte_width = src_width // 2
-        comptime NUM_THREADS_PER_SF = NVFP4_SF_VECTOR_SIZE // src_width
+        comptime NUM_THREADS_PER_SF = Self.group_size // src_width
 
         for i in range(thread_idx.x, Self.hid_dim // src_width, block_size):
             var loaded_vec = src_p.load[
@@ -1002,17 +1032,26 @@ struct NVFP4TokenFormat[
                 thread_max
             )
 
-            # get the scale factor for these 16 elements by dividing it by the maximum value of fp4-e2m1
-            var scale_factor = input_scale * (group_max * recip(Float32(6.0)))
+            var scale_factor: Float32
+            comptime if Self.is_mxfp8:
+                scale_factor = group_max * recip(Float32(448.0))
+            elif Self.is_nvfp4:
+                scale_factor = input_scale * (group_max * recip(Float32(6.0)))
+            else:
+                scale_factor = group_max * recip(Float32(6.0))
 
             # NOTE: NVFP4 uses FP8-UE4M3 format for the scale factor but we know that scale_factor is always positive, so we can use E4M3 instead of UE4M3.
             var fp8_scale_factor = scale_factor.cast[Self.scales_dtype]()
 
             var output_scale = Float32(0.0)
             if group_max != 0:
-                output_scale = recip(
-                    fp8_scale_factor.cast[DType.float32]() * recip(input_scale)
-                )
+                comptime if Self.is_nvfp4:
+                    output_scale = recip(
+                        fp8_scale_factor.cast[DType.float32]()
+                        * recip(input_scale)
+                    )
+                else:
+                    output_scale = recip(fp8_scale_factor.cast[DType.float32]())
 
             # write back the scale factor
             comptime scale_bytes = size_of[Self.scales_dtype]()
@@ -1024,13 +1063,20 @@ struct NVFP4TokenFormat[
                 )
 
             var input_f32 = loaded_vec.cast[DType.float32]() * output_scale
-            var output_vector = bitcast[Self.fp4_dtype, byte_width](
-                cast_fp32_to_fp4e2m1(input_f32)
-            )
-            buf_p.store[alignment=byte_width](
-                i * byte_width,
-                bitcast[DType.uint8, byte_width](output_vector),
-            )
+            comptime if Self.is_mxfp8:
+                var output_vector = input_f32.cast[Self.quant_dtype]()
+                buf_p.store[alignment=src_width](
+                    i * src_width,
+                    bitcast[DType.uint8, src_width](output_vector),
+                )
+            else:
+                var output_vector = bitcast[Self.quant_dtype, byte_width](
+                    cast_fp32_to_fp4e2m1(input_f32)
+                )
+                buf_p.store[alignment=byte_width](
+                    i * byte_width,
+                    bitcast[DType.uint8, byte_width](output_vector),
+                )
 
     @always_inline
     def copy_msg_to_output_tensor[
@@ -1105,7 +1151,7 @@ struct NVFP4TokenFormat[
         var oob = scales_tok >= tile_token_count
 
         comptime n_scales_per_token = (
-            Self.hid_dim // NVFP4_SF_VECTOR_SIZE // Self._n_k_tiles
+            Self.hid_dim // Self.group_size // Self._n_k_tiles
         )
         comptime n_scales_simd_per_token = n_scales_per_token // SF_ATOM_K
 
@@ -1166,15 +1212,15 @@ struct NVFP4TokenFormat[
 
             self.scales_tma_op.commit_group()
 
-        # --- FP4 values: 1D TMA g2s then s2g per warp ---
-        comptime fp4_bytes_per_ktile = Self.hid_dim // 2 // Self._n_k_tiles
-        var k_byte_offset = k_tile_idx * fp4_bytes_per_ktile
+        # --- Quant values: 1D TMA g2s then s2g per warp ---
+        comptime quant_bytes_per_ktile = Self.quant_size() // Self._n_k_tiles
+        var k_byte_offset = k_tile_idx * quant_bytes_per_ktile
 
         var smem_base = smem_ptr.bitcast[UInt8]()
-        var warp_fp4_smem = (
+        var warp_quant_smem = (
             smem_base
             + 32 * Self._scales_smem_per_warp
-            + w * Self._fp4_smem_per_warp
+            + w * Self._quant_smem_per_warp
         )
         var mbar_base = (smem_base + Self._mbar_smem_offset).bitcast[
             SharedMemBarrier
@@ -1189,26 +1235,26 @@ struct NVFP4TokenFormat[
             var output_pos = expert_start_pos + tile_start + tok_local
 
             if is_warp_leader:
-                # g2s: load FP4 bytes from recv_buf to SMEM via 1D TMA.
+                # g2s: load quant bytes from recv_buf to SMEM via 1D TMA.
                 var mbar = mbar_base + w
-                mbar[].expect_bytes(Int32(fp4_bytes_per_ktile))
+                mbar[].expect_bytes(Int32(quant_bytes_per_ktile))
                 cp_async_bulk_shared_cluster_global(
-                    warp_fp4_smem,
+                    warp_quant_smem,
                     token_ptr + k_byte_offset,
-                    Int32(fp4_bytes_per_ktile),
+                    Int32(quant_bytes_per_ktile),
                     mbar[].unsafe_ptr(),
                 )
                 mbar[].wait(phase=phase)
                 phase ^= 1
 
-                # s2g: write FP4 bytes from SMEM to output_tokens via 1D TMA.
+                # s2g: write quant bytes from SMEM to output_tokens via 1D TMA.
                 fence_async_view_proxy()
                 cp_async_bulk_global_shared_cta(
                     output_tokens_base
-                    + output_pos * (Self.hid_dim // 2)
+                    + output_pos * Self.quant_size()
                     + k_byte_offset,
-                    warp_fp4_smem,
-                    Int32(fp4_bytes_per_ktile),
+                    warp_quant_smem,
+                    Int32(quant_bytes_per_ktile),
                 )
                 cp_async_bulk_commit_group()
                 cp_async_bulk_wait_group[0]()

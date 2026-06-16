@@ -621,7 +621,6 @@ def multi_stage_store_C[
         var c_smem_tile = LayoutTensor[
             c_type,
             c_smem_layout,
-            MutAnyOrigin,
             address_space=AddressSpace.SHARED,
             alignment=128,
         ](c_smem_base + (stage % 2) * c_smem_tile_size)

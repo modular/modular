@@ -26,13 +26,13 @@ from std.memory import (
 from std.memory.arc_pointer import WeakPointer
 
 from std.gpu.host.compile import get_gpu_target
+from std.gpu.host.info import GPUInfo
+from std.sys.machine import MachineDefinition, DeviceRef, DeviceSpec
 
 
-@fieldwise_init
-struct DeviceSpec[target: CompilationTarget[value=get_gpu_target()]](
-    Movable, TrivialRegisterPassable
-):
-    pass
+def get_machine_definition() -> MachineDefinition:
+    comptime shared_def = MachineDefinition(private=())
+    return materialize[shared_def]()
 
 
 # TODO(Sawyer: Static Device Info, DRIV-4):
@@ -40,13 +40,28 @@ struct DeviceSpec[target: CompilationTarget[value=get_gpu_target()]](
 # in anyway. This should pull from machine topo and actually use the `device_id`.
 @doc_hidden
 def get_device_spec[
-    _device_id: Int64
-]() -> DeviceSpec[target=CompilationTarget[value=get_gpu_target()]()]:
-    return DeviceSpec[target=CompilationTarget[value=get_gpu_target()]()]()
+    device_id: Int64,
+    machine: MachineDefinition = get_machine_definition(),
+]() -> DeviceSpec:
+    # There isn't currently a way of telling the Mojo compiler
+    # that multiple devices exist on the target machine.
+    # To enable building out the stdlib constructs,
+    # we map that down to assuming the device has an unbounded
+    # number of accelerators with arch matching the value passed
+    # to --target-accelerator.
+    comptime if device_id < 0:
+        comptime assert False, "Negative device indices are not supported"
+    elif len(machine.devices()) == 0:
+        comptime assert False, "Can't get device spec if no devices exist"
+    else:
+        # clamp the max idx so that for the default constructed
+        # case we get a spec for machines with N devices (now)
+        comptime idx = min(len(machine.devices()) - 1, Int(device_id))
+        return materialize[machine.devices()[idx].spec]()
 
 
 @fieldwise_init
-struct Device[spec: DeviceSpec](ImplicitlyDestructible, Movable):
+struct Device[spec: DeviceSpec](ImplicitlyDeletable, Movable):
     """A device retrieved from a Driver.
 
     Does not own the device handle — the plugin manages device lifetime

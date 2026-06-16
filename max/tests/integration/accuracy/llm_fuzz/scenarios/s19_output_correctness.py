@@ -110,8 +110,10 @@ def _extract_content(resp: RawResponse) -> tuple[str | None, str | None]:
         data = json.loads(resp.body)
         msg = data.get("choices", [{}])[0].get("message", {})
         content = msg.get("content") or ""
-        reasoning = msg.get("reasoning_content") or ""
-        # Prefer content; fall back to reasoning_content for thinking models.
+        # MAX emits the reasoning channel under ``reasoning``; accept the
+        # deprecated ``reasoning_content`` alias for back-compat.
+        reasoning = msg.get("reasoning") or msg.get("reasoning_content") or ""
+        # Prefer content; fall back to reasoning for thinking models.
         text = content or reasoning
         return text, None
     except Exception as exc:
@@ -129,7 +131,9 @@ def _extract_content_and_reasoning(
         data = json.loads(resp.body)
         msg = data.get("choices", [{}])[0].get("message", {})
         content = msg.get("content") or ""
-        reasoning = msg.get("reasoning_content") or ""
+        # MAX emits the reasoning channel under ``reasoning``; accept the
+        # deprecated ``reasoning_content`` alias for back-compat.
+        reasoning = msg.get("reasoning") or msg.get("reasoning_content") or ""
         return content, reasoning, None
     except Exception as exc:
         return "", "", str(exc)
@@ -744,7 +748,13 @@ class OutputCorrectnessScenario(BaseScenario):
                         obj = json.loads(data_str)
                         delta = obj.get("choices", [{}])[0].get("delta", {})
                         content += delta.get("content") or ""
-                        reasoning += delta.get("reasoning_content") or ""
+                        # MAX streams the reasoning channel under ``reasoning``;
+                        # accept the deprecated ``reasoning_content`` alias too.
+                        reasoning += (
+                            delta.get("reasoning")
+                            or delta.get("reasoning_content")
+                            or ""
+                        )
                     except (json.JSONDecodeError, IndexError):
                         pass
 

@@ -467,6 +467,8 @@ class KimiK2_5VLTokenizer(TextAndVisionTokenizer):
             json_schema=json_schema,
             grammar=grammar,
             grammar_state=grammar_state,
+            log_probabilities=request.logprobs,
+            log_probabilities_echo=request.echo,
             sampling_params=request.sampling_params,
             target_endpoint=request.target_endpoint,
             grid_thws=grid_thws,

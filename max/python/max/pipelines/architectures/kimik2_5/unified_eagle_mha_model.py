@@ -42,12 +42,7 @@ from max.nn.kernels import (
     inplace_memcpy,
     wait_host_value_with_dep,
 )
-from max.nn.kv_cache import (
-    KVCacheInputsPerDevice,
-    KVCacheParamInterface,
-    KVCacheParams,
-    PagedCacheValues,
-)
+from max.nn.kv_cache import MultiKVCacheParams, PagedCacheValues
 from max.nn.layer import Module
 from max.nn.sampling.rejection_sampler import (
     AcceptanceSampler,
@@ -493,27 +488,25 @@ class Eagle3MHAKimiK25Unified(Module):
 
     def input_types(
         self,
-        kv_params: KVCacheParamInterface,
-        draft_kv_params: KVCacheParams,
+        kv_params: MultiKVCacheParams,
     ) -> tuple[TensorType | BufferType, ...]:
         """Input types for the unified MHA-draft graph.
 
+        ``kv_params`` is the unified ``{"target", "draft"}`` tree. The target
+        leaf is MLA; the draft leaf is MHA and carries its own per-device
+        blocks, cache lengths, lookup table, and dispatch metadata (the qN
+        verify slot plus the q1 decode slot), so the graph-capture branch can
+        populate MHA geometry for the draft independently of the target's MLA
+        geometry.
+
         Order:
-            tokens, device_offsets, host_offsets, return_n_logits,
-            data_parallel_splits, signal_buffers,
-            target_kv_cache (flat), batch_context_lengths, target_ep_inputs,
-            draft_tokens, draft_kv_cache (flat per-device — kv_blocks
-            + cache_lengths + lookup_table + max_lengths +
-            attention_dispatch_metadata + draft_attention_dispatch_metadata),
-            seed, temperature, top_k, max_k, top_p, min_top_p,
+            tokens, image_embeddings_per_dev, image_token_indices_per_dev,
+            device_offsets, host_offsets, return_n_logits,
+            data_parallel_splits, signal_buffers, kv_cache_tree (target then
+            draft, flattened), batch_context_lengths, target_ep_inputs,
+            draft_tokens, seed, temperature, top_k, max_k, top_p, min_top_p,
             in_thinking_phase, [pinned_bitmask, wait_payload,
             device_bitmask_scratch].
-
-        The draft cache contributes its own per-device dispatch metadata
-        (one buffer for the q_max_seq_len = ``1 + num_speculative_tokens``
-        prefill at step 0 and one for the q_max_seq_len = 1 decode at
-        steps 1..K), so the graph-capture branch can populate MHA geometry
-        for the draft independently of the target's MLA geometry.
         """
         devices = self.config.devices
         device_ref = devices[0]
@@ -579,20 +572,7 @@ class Eagle3MHAKimiK25Unified(Module):
             ]
         )
         all_input_types.extend(signal_buffer_types)
-        # Size the target's ``draft_attention_dispatch_metadata`` slot by
-        # the draft's ``is_mla`` (shape [4]/CPU for MHA vs [3]/device for
-        # MLA). The colleague's graph-capture branch populates that slot
-        # at runtime with the draft resolver's output. The
-        # ``draft_attention_group`` kwarg lives on ``KVCacheParams`` (the
-        # concrete dataclass), not on the ``KVCacheParamInterface``
-        # Protocol — narrow with ``isinstance`` so mypy can see the
-        # kwarg.
-        assert isinstance(kv_params, KVCacheParams)
-        all_input_types.extend(
-            kv_params.get_symbolic_inputs(
-                draft_attention_group=draft_kv_params
-            ).flatten()
-        )
+        all_input_types.extend(kv_params.flattened_kv_inputs())
 
         batch_context_length_type = TensorType(
             DType.int32, shape=[1], device=DeviceRef.CPU()
@@ -605,16 +585,6 @@ class Eagle3MHAKimiK25Unified(Module):
             all_input_types.extend(self.target.ep_manager.input_types())
 
         all_input_types.append(draft_tokens_type)
-
-        # Draft KV block storage: one Buffer per device. The rest of the
-        # draft cache fields are reused from the target (same logical
-        # pages, different physical storage). The draft's MHA dispatch
-        # metadata is plumbed via the target KV input's
-        # ``draft_attention_dispatch_metadata`` slot, populated by the
-        # graph-capture branch.
-        for sym in draft_kv_params.get_symbolic_inputs().inputs:
-            assert isinstance(sym, KVCacheInputsPerDevice)
-            all_input_types.append(sym.kv_blocks)
 
         seed_type = TensorType(
             DType.uint64, shape=["batch_size"], device=device_ref

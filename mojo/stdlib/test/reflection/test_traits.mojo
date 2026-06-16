@@ -83,7 +83,7 @@ def test_all_hashable() raises:
 def test_all_implicitly_destructible() raises:
     assert_true(comptime (AllImplicitlyDestructible[Int]))
     assert_true(comptime (AllImplicitlyDestructible[Int, String, Bool]))
-    # NoConformances is trivially ImplicitlyDestructible (no fields), so use
+    # NoConformances is trivially ImplicitlyDeletable (no fields), so use
     # ExplicitDelOnly from test_utils which requires explicit destruction.
     assert_false(comptime (AllImplicitlyDestructible[Int, ExplicitDelOnly]))
     assert_false(comptime (AllImplicitlyDestructible[ExplicitDelOnly]))

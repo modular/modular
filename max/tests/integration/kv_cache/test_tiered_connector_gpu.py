@@ -16,7 +16,7 @@
 from __future__ import annotations
 
 import tempfile
-import types
+from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
@@ -29,6 +29,7 @@ from max.nn.kv_cache import (
     KVCacheBuffer,
     KVCacheParams,
     KVConnectorType,
+    MultiKVCacheBuffer,
     MultiKVCacheParams,
 )
 from max.nn.kv_cache.cache_params import KVCacheQuantizationConfig
@@ -840,8 +841,18 @@ def test_mixed_cpu_and_disk_chain_is_bit_exact(use_fp8: bool) -> None:
 # offload/restore EVERY cache's buffers.
 
 
+@dataclass(frozen=True)
+class _DiskConnectorConfig:
+    """Hashable stand-in for the tiered connector config."""
+
+    disk_offload_dir: str
+    disk_offload_max_gb: float
+    disk_offload_direct_io: bool
+    host_kvcache_swap_space_gb: float
+
+
 def _fp8_cache_params(
-    cfg: types.SimpleNamespace,
+    cfg: _DiskConnectorConfig,
     *,
     n_kv_heads: int,
     head_dim: int,
@@ -872,7 +883,7 @@ def _build_multi_cache_manager(
 ) -> PagedKVCacheManager:
     """Two fp8 caches (gemma4-like sliding idx0 + global idx1) on one pool with
     a tiered connector."""
-    cfg = types.SimpleNamespace(
+    cfg = _DiskConnectorConfig(
         disk_offload_dir=disk_dir,
         disk_offload_max_gb=1.0,
         disk_offload_direct_io=False,
@@ -880,7 +891,9 @@ def _build_multi_cache_manager(
     )
     sliding = _fp8_cache_params(cfg, n_kv_heads=4, head_dim=256)  # idx0
     global_ = _fp8_cache_params(cfg, n_kv_heads=2, head_dim=512)  # idx1
-    multi = MultiKVCacheParams.from_params(sliding, global_)
+    multi = MultiKVCacheParams.from_params(
+        {"sliding_attention": sliding, "full_attention": global_}
+    )
     session = InferenceSession(devices=[Accelerator()])
     return PagedKVCacheManager(
         params=multi,
@@ -907,7 +920,9 @@ def test_connector_offloads_every_cache_not_just_primary() -> None:
         connector = mgr._replica[0].connector
         assert isinstance(connector, TieredConnector)
         engine = connector._block_copy_engine
-        cache_buffers = mgr._replica[0].device_buffers
+        multi_buffer = mgr.get_device_buffer(0)
+        assert isinstance(multi_buffer, MultiKVCacheBuffer)
+        cache_buffers = list(multi_buffer.children.values())
 
         expected_num_buffers = sum(len(kc.all_buffers) for kc in cache_buffers)
         expected_page_bytes = sum(
@@ -946,8 +961,10 @@ def test_multi_cache_disk_round_trip_restores_all_caches() -> None:
         assert isinstance(connector, TieredConnector)
 
         # Flatten all caches' buffers in engine-packing order: [v0,s0,v1,s1].
+        multi_buffer = mgr.get_device_buffer(0)
+        assert isinstance(multi_buffer, MultiKVCacheBuffer)
         all_bufs = [
-            b for kc in mgr._replica[0].device_buffers for b in kc.all_buffers
+            b for kc in multi_buffer.children.values() for b in kc.all_buffers
         ]
         assert len(all_bufs) == 4
 

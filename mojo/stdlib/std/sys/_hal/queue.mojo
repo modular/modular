@@ -32,7 +32,7 @@ from std.memory.arc_pointer import WeakPointer
 
 
 @fieldwise_init
-struct Queue[device_spec: DeviceSpec](ImplicitlyDestructible, Movable):
+struct Queue[device_spec: DeviceSpec](ImplicitlyDeletable, Movable):
     """A command queue bound to a context.
 
     Parameters:

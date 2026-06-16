@@ -26,7 +26,7 @@ struct FlooringInt:
     # and converted to an Integer
     @implicit
     def __init__[
-        T: Floorable & Intable & ImplicitlyDestructible
+        T: Floorable & Intable & ImplicitlyDeletable
     ](out self, value: T):
         self.floored = Int(floor(value))
 

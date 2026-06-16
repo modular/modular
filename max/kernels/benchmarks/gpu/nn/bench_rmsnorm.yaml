@@ -15,8 +15,18 @@ name: bench_normalization
 file: $KERNEL_BENCHMARKS_ROOT/gpu/nn/bench_normalization.mojo
 
 params:
- 
+
 - shape: 1x1x4096
 - shape: 1x512x4096
 - shape: 1x1024x4096
 - shape: 1x4096x4096
+# Prefill-sized row counts across common LLM hidden sizes.
+- shape: 1x8192x2880
+- shape: 1x8192x4096
+- shape: 1x8192x5120
+- shape: 1x8192x8192
+# Wide rows that exercise the two-pass block path.
+- shape: 1x4096x16384
+- shape: 1x2048x32768
+# Columns not divisible by the SIMD width (scalar fallback path).
+- shape: 1x8192x4100

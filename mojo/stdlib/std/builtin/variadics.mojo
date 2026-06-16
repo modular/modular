@@ -90,7 +90,7 @@ struct TypeList[
     comptime _mlir_type = _MLIR.KGENParamListType[Self.Trait]
     """The low-level MLIR type of the type list."""
 
-    comptime size: Int = Int(
+    comptime size = Int(
         mlir_value=__mlir_attr[
             `#kgen.param_list.size<:`,
             Self._mlir_type,
@@ -101,7 +101,7 @@ struct TypeList[
     )
     """The number of types in the list."""
 
-    comptime __getitem_param__[idx: Int] = __mlir_attr[
+    comptime __getitem_param__[idx: SIMDSize] = __mlir_attr[
         `#kgen.param_list.get<:`,
         Self._mlir_type,
         ` `,
@@ -268,7 +268,7 @@ struct TypeList[
         `, "From": `,
         _MLIR.KGENParamListType[Self.Trait],
         `, "Idx":`,
-        SIMDSize,
+        Int,
         `>`,
         +Prev,
         `>`,
@@ -781,13 +781,13 @@ struct ParameterList[type: AnyType, //, values: _MLIR.KGENParamListType[type]](
         """
         return self.get_span()[idx]
 
-    comptime __getitem_param__[idx: Int]: Self.type = __mlir_attr[
+    comptime __getitem_param__[idx: SIMDSize]: Self.type = __mlir_attr[
         `#kgen.param_list.get<:`,
         Self._mlir_type,
         ` `,
         +Self.values,
         `, `,
-        idx._int_mlir_index(),
+        idx._mlir_value,
         `> : `,
         +Self.type,
     ]
@@ -911,7 +911,7 @@ struct ParameterList[type: AnyType, //, values: _MLIR.KGENParamListType[type]](
         PrevV: FromAndTo,
         VA: Self._mlir_type,
         idx: __mlir_type.index,
-    ] = ToWrap[PrevV, Self.__getitem_param__[Int(mlir_value=idx)]]
+    ] = ToWrap[PrevV, Self.__getitem_param__[SIMDSize(mlir_value=idx)]]
     """Takes an index because kgen.variadic.reduce passes it but we don't want it"""
 
     # TODO: This isn't returning a ParamList, so it should really be a 'def' so
@@ -1252,13 +1252,13 @@ struct VariadicList[
         # normally torn down when CheckLifetimes is left to its own devices.
         comptime if Self.is_owned:
             _constrained_conforms_to[
-                conforms_to(Self.element_type, ImplicitlyDestructible),
+                conforms_to(Self.element_type, ImplicitlyDeletable),
                 Parent=Self,
                 Element=Self.element_type,
-                ParentConformsTo="ImplicitlyDestructible",
+                ParentConformsTo="ImplicitlyDeletable",
             ]()
             comptime TDestructible = downcast[
-                Self.element_type, ImplicitlyDestructible
+                Self.element_type, ImplicitlyDeletable
             ]
 
             for i in reversed(range(len(self))):
@@ -1523,15 +1523,15 @@ struct VariadicPack[
             comptime for i in reversed(range(Self.__len__())):
                 comptime element_type = Self.element_types[i]
                 _constrained_conforms_to[
-                    conforms_to(element_type, ImplicitlyDestructible),
+                    conforms_to(element_type, ImplicitlyDeletable),
                     Parent=Self,
                     Element=element_type,
-                    ParentConformsTo="ImplicitlyDestructible",
+                    ParentConformsTo="ImplicitlyDeletable",
                 ]()
 
                 # Safety: We own the elements in this pack.
                 UnsafePointer(
-                    to=trait_downcast[ImplicitlyDestructible](self[i])
+                    to=trait_downcast[ImplicitlyDeletable](self[i])
                 ).mut_cast[True]().destroy_pointee()
 
     def consume_elements[

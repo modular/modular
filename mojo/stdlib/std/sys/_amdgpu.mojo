@@ -769,7 +769,7 @@ struct ControlWidth(TrivialRegisterPassable):
 
 @always_inline
 def get_control_mask(control: UInt32, offset: UInt32, width: UInt32) -> UInt32:
-    var value: UInt32 = (control >> offset) & ((1 << width) - 1)
+    var value: UInt32 = (control >> offset) & ((UInt32(1) << width) - UInt32(1))
     return value
 
 

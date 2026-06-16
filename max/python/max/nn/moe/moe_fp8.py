@@ -26,7 +26,7 @@ from .quant_strategy import (
     Fp8Strategy,
     Mxfp4Strategy,
     Nvfp4Scales,
-    Nvfp4Strategy,
+    NvMxf4f8Strategy,
     QuantStrategy,
 )
 
@@ -52,8 +52,8 @@ class MoEQuantized(MoE):
     def _strategy(self) -> QuantStrategy:
         """Selects the quantization strategy for this MoE."""
         assert self.quant_config is not None
-        if self.quant_config.is_nvfp4:
-            return Nvfp4Strategy(self.quant_config, self.dtype)
+        if self._uses_nvidia_block_scaled_ep_layout:
+            return NvMxf4f8Strategy(self.quant_config, self.dtype)
         elif self.quant_config.is_mxfp4:
             return Mxfp4Strategy(
                 self.quant_config,
@@ -130,7 +130,7 @@ class MoEQuantized(MoE):
         """Returns stacked gate/up weight scales for grouped matmul."""
         assert self.quant_config is not None
         assert self.quant_config.weight_scale.block_size is not None
-        if not self.quant_config.is_fp4:
+        if not (self.quant_config.is_fp4 or self.quant_config.is_mxfp8):
             assert self.quant_config.weight_scale.block_size == (128, 128), (
                 "Only support block_size=[128, 128] for weights."
             )
@@ -168,10 +168,9 @@ class MoEQuantized(MoE):
         # The stacked [2E, scale_m, scale_k] tensor splits to
         # [E, 2, scale_m, scale_k], then permute axes 1,2 → collapse to
         # [E, 2*scale_m, scale_k] with rows row-interleaved (g_0, u_0, ...).
-        # This sits BEFORE _interleave_nvfp4_scales (in
-        # Nvfp4Strategy.prepare_weight_scales) lifts to the 5D tcgen05
-        # layout the kernel expects.
-        if self._uses_fused_swiglu_nvfp4_layout():
+        # This sits before NvMxf4f8Strategy.prepare_weight_scales lifts to the
+        # 5D tcgen05 layout the kernel expects.
+        if self._uses_fused_swiglu_layout():
             shard = shard.reshape([len(gate_scales), 2, -1, scale_k_dim])
             shard = ops.permute(shard, [0, 2, 1, 3])
             return shard.reshape([len(gate_scales), -1, scale_k_dim]).to(
@@ -205,6 +204,13 @@ class MoEQuantized(MoE):
         """Whether the current quant config uses NVFP4."""
         return self.quant_config is not None and self.quant_config.is_nvfp4
 
+    @property
+    def _uses_nvidia_block_scaled_ep_layout(self) -> bool:
+        """Whether local expert inputs include NVIDIA scale offsets."""
+        return self.quant_config is not None and (
+            self.quant_config.is_nvfp4 or self.quant_config.is_mxfp8
+        )
+
     def _can_fuse_swiglu_nvfp4(self) -> bool:
         """Whether the fused SwiGLU+NVFP4 grouped matmul kernel should fire.
 
@@ -222,7 +228,11 @@ class MoEQuantized(MoE):
         consumer must update the sharding strategy before relaxing the EP
         check.
         """
-        return self._is_nvfp4 and self._uses_fused_swiglu_nvfp4_layout()
+        return (
+            self.quant_config is not None
+            and (self.quant_config.is_nvfp4 or self.quant_config.is_mxfp8)
+            and self._uses_fused_swiglu_layout()
+        )
 
     def _ep_dispatch_input_scales(self) -> TensorValue | None:
         """Returns NVFP4 input scales for EP dispatch, or ``None``."""
@@ -250,15 +260,17 @@ class MoEQuantized(MoE):
         )
 
         if self._can_fuse_swiglu_nvfp4():
-            assert isinstance(strategy, Nvfp4Strategy)
-            assert nvfp4 is not None
+            assert isinstance(strategy, NvMxf4f8Strategy)
             down_in, silu_scales = strategy.grouped_matmul_swiglu(
                 self.gate_up_proj,
                 gate_up_scales,
-                expert_scales=nvfp4.gate_up_expert,
-                input_scales=nvfp4.down_input,
+                expert_scales=nvfp4.gate_up_expert if nvfp4 else None,
+                input_scales=nvfp4.down_input if nvfp4 else None,
                 expert_inputs=expert_inputs,
                 estimated_total_m=estimated_total_m,
+                use_swigluoai=self.use_swigluoai,
+                swiglu_alpha=self.swiglu_alpha,
+                swiglu_limit=self.swiglu_limit,
             )
         else:
             gate_up = strategy.grouped_matmul(
@@ -269,11 +281,30 @@ class MoEQuantized(MoE):
                 estimated_total_m=estimated_total_m,
             )
 
-            down_in, silu_scales = strategy.fused_silu_quantize(
-                gate_up,
-                input_scales=nvfp4.down_input if nvfp4 else None,
-                expert_inputs=expert_inputs,
-            )
+            if self.use_swigluoai:
+                gate_up = self._swigluoai_activation(gate_up)
+                if self._uses_nvidia_block_scaled_ep_layout:
+                    _, _, expert_start, scales_offset, expert_ids, _ = (
+                        expert_inputs
+                    )
+                    down_in, silu_scales = strategy.grouped_quantize(
+                        gate_up,
+                        self._token_group_size,
+                        nvfp4.down_input if nvfp4 else None,
+                        expert_start,
+                        scales_offset,
+                        expert_ids,
+                    )
+                else:
+                    down_in, silu_scales = strategy.quantize(
+                        gate_up, self._token_group_size
+                    )
+            else:
+                down_in, silu_scales = strategy.fused_silu_quantize(
+                    gate_up,
+                    input_scales=nvfp4.down_input if nvfp4 else None,
+                    expert_inputs=expert_inputs,
+                )
 
         down_inputs = (down_in, silu_scales) + expert_inputs[2:]
         return strategy.grouped_matmul(
@@ -307,12 +338,16 @@ class MoEQuantized(MoE):
         create_indices_result = moe_create_indices(
             ops.cast(router_idx, DType.int32),
             self.num_experts,
-            needs_scales_offset=self._is_nvfp4,
+            needs_scales_offset=self._uses_nvidia_block_scaled_ep_layout,
         )
         token_order, expert_start, restore_order, expert_ids, usage_stats = (
             create_indices_result[:5]
         )
-        scales_offset = create_indices_result[5] if nvfp4 else None
+        scales_offset = (
+            create_indices_result[5]
+            if self._uses_nvidia_block_scaled_ep_layout
+            else None
+        )
 
         if self.pre_expert_norm is not None:
             x = self.pre_expert_norm(x)
@@ -325,12 +360,12 @@ class MoEQuantized(MoE):
 
         total_m = ops.shape_to_tensor(permuted.shape)[0].cast(DType.uint32)
 
-        if nvfp4:
+        if self._uses_nvidia_block_scaled_ep_layout:
             assert scales_offset is not None
             permuted_quant, permuted_scales = strategy.grouped_quantize(
                 permuted,
                 self._token_group_size,
-                nvfp4.gate_up_input,
+                nvfp4.gate_up_input if nvfp4 else None,
                 expert_start,
                 scales_offset,
                 expert_ids,
@@ -353,7 +388,7 @@ class MoEQuantized(MoE):
             usage_stats,
         )
 
-        if nvfp4:
+        if self._uses_nvidia_block_scaled_ep_layout:
             assert scales_offset is not None
             expert_inputs = (
                 *expert_inputs[:3],
@@ -371,15 +406,17 @@ class MoEQuantized(MoE):
 
         if self.gated_activation_fn is not None:
             gate_up = self.gated_activation_fn(gate_up, self.moe_dim)
+        elif self.use_swigluoai:
+            gate_up = self._swigluoai_activation(gate_up)
         else:
             gate_up = fused_silu(gate_up, expert_start)
 
-        if nvfp4:
+        if self._uses_nvidia_block_scaled_ep_layout:
             assert scales_offset is not None
             gate_up_quant, gate_up_scales = strategy.grouped_quantize(
                 gate_up,
                 self._token_group_size,
-                nvfp4.down_input,
+                nvfp4.down_input if nvfp4 else None,
                 expert_start,
                 scales_offset,
                 expert_ids,

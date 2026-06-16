@@ -426,7 +426,7 @@ struct _Accumulator[
         partial_load: Bool = False,
     ](
         mut self,
-        input: UnsafePointer[Scalar[dt], ...],
+        input: UnsafePointer[mut=False, Scalar[dt], ...],
         input_stride: Int,
         partial_load_size: Optional[Int] = None,
     ):
@@ -506,9 +506,9 @@ struct _Accumulator[
     ](
         mut self,
         length: Int,
-        a: UnsafePointer[Scalar[a_type], ...],
+        a: UnsafePointer[mut=False, Scalar[a_type], ...],
         a_stride: Int,
-        b: UnsafePointer[Scalar[b_type], ...],
+        b: UnsafePointer[mut=False, Scalar[b_type], ...],
         b_stride: Int,
         partial_load_b_size: Optional[Int] = None,
     ):
@@ -564,10 +564,10 @@ struct _Accumulator[
     ](
         mut self,
         length: Int,
-        a: UnsafePointer[Scalar[a_type], ...],
-        a_base_offsets: TileTensor[DType.int32, ...],
+        a: UnsafePointer[mut=False, Scalar[a_type], ...],
+        a_base_offsets: TileTensor[mut=False, DType.int32, ...],
         a_offset: Int,
-        b: UnsafePointer[Scalar[b_type], ...],
+        b: UnsafePointer[mut=False, Scalar[b_type], ...],
         b_stride: Int,
         partial_load_b_size: Optional[Int] = None,
     ):
@@ -680,9 +680,9 @@ struct _Accumulator[
     ](
         mut self,
         length: Int,
-        a: UnsafePointer[Scalar[a_type], ...],
+        a: UnsafePointer[mut=False, Scalar[a_type], ...],
         a_stride: Int,
-        b: UnsafePointer[Scalar[b_type], ...],
+        b: UnsafePointer[mut=False, Scalar[b_type], ...],
         b_stride: Int,
         partial_load_b_size: Optional[Int] = None,
     ):
@@ -740,10 +740,10 @@ struct _Accumulator[
     ](
         mut self,
         length: Int,
-        a: UnsafePointer[Scalar[a_type], ...],
-        a_base_offsets: TileTensor[DType.int32, ...],
+        a: UnsafePointer[mut=False, Scalar[a_type], ...],
+        a_base_offsets: TileTensor[mut=False, DType.int32, ...],
         a_offset: Int,
-        b: UnsafePointer[Scalar[b_type], ...],
+        b: UnsafePointer[mut=False, Scalar[b_type], ...],
         b_stride: Int,
         partial_load_b_size: Optional[Int] = None,
     ):
@@ -842,9 +842,9 @@ struct _Accumulator[
     ](
         mut self,
         length: Int,
-        a: UnsafePointer[Scalar[a_type], ...],
+        a: UnsafePointer[mut=False, Scalar[a_type], ...],
         a_stride: Int,
-        b: UnsafePointer[Scalar[b_type], ...],
+        b: UnsafePointer[mut=False, Scalar[b_type], ...],
         b_stride: Int,
         partial_load_b_size: Optional[Int] = None,
     ):
@@ -897,10 +897,10 @@ struct _Accumulator[
     ](
         mut self,
         length: Int,
-        a: UnsafePointer[Scalar[a_type], ...],
-        a_base_offsets: TileTensor[DType.int32, ...],
+        a: UnsafePointer[mut=False, Scalar[a_type], ...],
+        a_base_offsets: TileTensor[mut=False, DType.int32, ...],
         a_offset: Int,
-        b: UnsafePointer[Scalar[b_type], ...],
+        b: UnsafePointer[mut=False, Scalar[b_type], ...],
         b_stride: Int,
         partial_load_b_size: Optional[Int] = None,
     ):

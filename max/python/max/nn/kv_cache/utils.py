@@ -13,23 +13,120 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import dataclass
 
 import numpy as np
 from max._kv_cache_ops import (
     mha_decode_num_partitions,
     mla_dispatch_args_scalar,
 )
-from max.driver import Buffer
+from max.driver import Buffer, Device
 from max.graph import DeviceRef
+
+
+@dataclass(frozen=True)
+class AttnKeyInterface:
+    """Common base for resolved attention keys."""
+
+
+@dataclass(frozen=True)
+class AttnKey(AttnKeyInterface):
+    """A resolved decode-attention dispatch shape.
+
+    The resolved ``num_partitions`` (the kernel grid) plus the batch and prompt
+    dimensions. The runtime ``max_cache_valid_length`` is supplied to
+    :meth:`pack_into_buffer` rather than stored, so dispatches that differ only
+    in cache length share one identity. Concrete subclasses
+    (:class:`MHAAttnKey`, :class:`MLAAttnKey`)
+    implement the kernel-specific buffer layout.
+    """
+
+    batch_size: int
+    max_prompt_length: int
+    num_partitions: int
+
+    def pack_into_buffer(
+        self, device: Device, max_cache_valid_length: int
+    ) -> Buffer:
+        """Packs this into a kernel dispatch-metadata buffer.
+
+        ``max_cache_valid_length`` is the runtime cache length; it is supplied
+        here rather than stored so the identity is independent of it.
+        """
+        raise NotImplementedError
+
+
+@dataclass(frozen=True)
+class MHAAttnKey(AttnKey):
+    """Decode dispatch metadata for multi-head attention (MHA)."""
+
+    def pack_into_buffer(
+        self, device: Device, max_cache_valid_length: int
+    ) -> Buffer:
+        # MHA decode kernels read a 4-int dispatch buffer on the host (CPU).
+        # ``device`` is intentionally ignored: the MHA dispatch-metadata graph
+        # input is declared CPU-resident.
+        del device
+        return Buffer.from_numpy(
+            np.array(
+                [
+                    self.batch_size,
+                    self.max_prompt_length,
+                    self.num_partitions,
+                    max_cache_valid_length,
+                ],
+                dtype=np.int64,
+            )
+        )
+
+
+@dataclass(frozen=True)
+class MLAAttnKey(AttnKey):
+    """Decode dispatch metadata for multi-latent attention (MLA)."""
+
+    def pack_into_buffer(
+        self, device: Device, max_cache_valid_length: int
+    ) -> Buffer:
+        # MLA decode kernels read a 3-int dispatch buffer on the accelerator.
+        # ``max_cache_valid_length`` is not part of the MLA dispatch buffer (it
+        # is carried separately in ``max_lengths``), so it is ignored here.
+        del max_cache_valid_length
+        metadata = Buffer.from_numpy(
+            np.array(
+                [
+                    self.batch_size,
+                    self.max_prompt_length,
+                    self.num_partitions,
+                ],
+                dtype=np.int64,
+            )
+        )
+        return metadata.to(device)
+
+
+@dataclass(frozen=True)
+class MultiAttnKey(AttnKeyInterface):
+    """A tree of resolved dispatch metadata mirroring a ``MultiKVCacheParams``
+    tree.
+
+    ``children`` is a tuple of ``(name, key)`` pairs (rather than a dict) so it
+    stays a frozen, hashable identity for the graph-capture key map.
+    """
+
+    children: tuple[tuple[str, AttnKeyInterface], ...]
+
+    @classmethod
+    def from_dict(cls, children: dict[str, AttnKeyInterface]) -> MultiAttnKey:
+        """Builds a :class:`MultiAttnKey` from a name -> key mapping."""
+        return cls(children=tuple(children.items()))
 
 
 class AttentionDispatchResolver:
     """Resolves packed attention decode metadata via kernel custom ops.
 
     Supports both MHA (``mo.mha.decode.get_num_partitions``) and MLA
-    (``mo.mla.compute_dispatch_args.scalar``) decode kernels.  The mode
-    is selected automatically from ``kv_params.is_mla``.
-
+    (``mo.mla.compute_dispatch_args.scalar``) decode kernels, selected from the
+    ``is_mla`` flag.
     """
 
     def __init__(
@@ -42,184 +139,91 @@ class AttentionDispatchResolver:
     ) -> None:
         if not devices:
             raise ValueError("devices must not be empty")
-        devices = list(devices)
         self._is_mla = is_mla
-        self._output_devices = [
-            None if device.is_cpu() else device.to_device()
-            for device in devices
-        ]
-        self._device = self._output_devices[0]
+        # The decode dispatch kernels are GPU custom ops needing a concrete
+        # ``Device``. A CPU-only resolver has no device; ``resolve_attn_key``
+        # returns the sentinel key (num_partitions=1) without invoking them.
+        first_device = devices[0]
+        self._device = (
+            None if first_device.is_cpu() else first_device.to_device()
+        )
         self._n_kv_heads_per_device = n_kv_heads_per_device
         self._num_q_heads = num_q_heads_per_device
         self._is_fp8_kv = is_fp8_kv
-        self.host_only = False
+        self._key_cls: type[AttnKey] = MLAAttnKey if is_mla else MHAAttnKey
 
         if self._is_mla:
             assert num_q_heads_per_device is not None
 
-    def _default_metadata(
+    def resolve_attn_key(
         self,
         batch_size: int,
         max_prompt_length: int,
         max_cache_valid_length: int,
-    ) -> Buffer:
-        metadata = Buffer.from_numpy(
-            np.array(
-                [batch_size, max_prompt_length, 1]
-                + ([] if self._is_mla else [max_cache_valid_length]),
-                dtype=np.int64,
-            )
-        )
-        if self._is_mla and self._device is not None and not self.host_only:
-            return metadata.to(self._device)
-        return metadata
+    ) -> AttnKey:
+        """Returns the resolved decode dispatch key for the given shape.
 
-    def __call__(
-        self,
-        batch_size: int,
-        max_prompt_length: int,
-        max_cache_valid_length: int,
-    ) -> Buffer:
-        """Returns packed decode dispatch metadata for the given shape."""
-        if batch_size <= 0 or self._device is None:
-            return self._default_metadata(
-                batch_size, max_prompt_length, max_cache_valid_length
-            )
-
-        if self._is_mla:
-            assert self._num_q_heads is not None
-            # mla_dispatch_args_scalar returns 3 ints:
-            # (batch_size, q_max_seq_len, num_partitions).
-            # The size-3 GPU buffer uses all three; num_partitions is also
-            # surfaced via resolve_for_replica_with_scalars for the capturable
-            # graph dispatcher.
-            mla_scalars = mla_dispatch_args_scalar(
-                batch_size,
-                max_cache_valid_length,
-                max_prompt_length,
-                self._num_q_heads,
-                self._is_fp8_kv,
-                self._device,
-            )
-            metadata = Buffer.from_numpy(
-                np.array(mla_scalars[:3], dtype=np.int64)
-            )
-            if not self.host_only and self._device is not None:
-                return metadata.to(self._device)
-            return metadata
-
-        num_partitions = mha_decode_num_partitions(
-            batch_size,
-            max_cache_valid_length,
-            self._n_kv_heads_per_device,
-            self._device,
-        )
-        return Buffer.from_numpy(
-            np.array(
-                [
-                    batch_size,
-                    max_prompt_length,
-                    num_partitions,
-                    max_cache_valid_length,
-                ],
-                dtype=np.int64,
-            )
-        )
-
-    def resolve_for_replica(
-        self,
-        batch_size: int,
-        max_prompt_length: int,
-        max_cache_valid_length: int,
-    ) -> list[Buffer]:
-        """Returns one dispatch-metadata buffer per shard in a replica."""
-        metadata = self(
-            batch_size,
-            max_prompt_length,
-            max_cache_valid_length,
-        )
-        if not self._is_mla or self.host_only or self._device is None:
-            return [metadata] * len(self._output_devices)
-
-        return [
-            metadata
-            if device is None or metadata.device == device
-            else metadata.to(device)
-            for device in self._output_devices
-        ]
-
-    def resolve_for_replica_with_scalars(
-        self,
-        batch_size: int,
-        max_prompt_length: int,
-        max_cache_valid_length: int,
-    ) -> tuple[list[Buffer], int | None]:
-        """Like :meth:`resolve_for_replica`, plus the capturable-graph scalar.
-
-        Returns ``(buffers, num_partitions)`` for MLA;
-        ``(buffers, None)`` for MHA or empty-batch degenerate paths.
-
-        ``num_partitions`` flows into the SM100 dispatcher as a scalar input
-        tensor so grid-time partition decisions match the kernel's device-side
-        divmod.  It is always CPU-resident and is returned even when
-        ``host_only=True`` (graph-capture replay path) so that the
-        ``mla_num_partitions`` graph input is populated and
-        ``model_inputs.buffers`` has the same length as the captured inputs.
-        The metadata buffer device is still controlled by
-        ``resolve_for_replica`` (which respects ``host_only``).
-
-        For MLA, a sentinel scalar value (num_partitions=1) is returned even
-        for empty replicas (batch_size=0) so that all DP replicas emit the
-        same number of graph inputs regardless of whether they hold active
-        requests.
+        Empty / degenerate replicas (``batch_size <= 0`` or a CPU-only
+        resolver) return a sentinel key (``num_partitions=1``) without invoking
+        the dispatch kernels.
         """
-        if not self._is_mla:
-            return (
-                self.resolve_for_replica(
-                    batch_size, max_prompt_length, max_cache_valid_length
-                ),
-                None,
-            )
-
-        # MLA degenerate path: no device or empty batch. Return sentinel
-        # scalar (1) so empty DP replicas still emit mla_num_partitions in
-        # flatten(), matching the compiled graph's input schema for all
-        # replicas.
         if batch_size <= 0 or self._device is None:
-            return (
-                self.resolve_for_replica(
-                    batch_size, max_prompt_length, max_cache_valid_length
-                ),
-                1,  # sentinel: num_partitions
-            )
-
-        assert self._num_q_heads is not None
-        mla_scalars = mla_dispatch_args_scalar(
-            batch_size,
-            max_cache_valid_length,
-            max_prompt_length,
-            self._num_q_heads,
-            self._is_fp8_kv,
-            self._device,
-        )
-        # When host_only=True (graph-capture replay), keep the metadata buffer
-        # on CPU via resolve_for_replica which already handles host_only.
-        # Either way, always return the int scalar.
-        if self.host_only:
-            buffers = self.resolve_for_replica(
-                batch_size, max_prompt_length, max_cache_valid_length
+            # Sentinel for empty / degenerate replicas; skip the kernels.
+            num_partitions = 1
+        elif self._is_mla:
+            assert self._num_q_heads is not None
+            # mla_dispatch_args_scalar returns (batch_size, max_prompt_length,
+            # num_partitions), possibly adjusted from the inputs.
+            batch_size, max_prompt_length, num_partitions = (
+                mla_dispatch_args_scalar(
+                    batch_size,
+                    max_cache_valid_length,
+                    max_prompt_length,
+                    self._num_q_heads,
+                    self._is_fp8_kv,
+                    self._device,
+                )
             )
         else:
-            metadata = Buffer.from_numpy(
-                np.array(mla_scalars[:3], dtype=np.int64)
-            ).to(self._device)
-            buffers = [
-                metadata
-                if device is None or metadata.device == device
-                else metadata.to(device)
-                for device in self._output_devices
-            ]
-        return buffers, int(mla_scalars[2])
+            num_partitions = mha_decode_num_partitions(
+                batch_size,
+                max_cache_valid_length,
+                self._n_kv_heads_per_device,
+                self._device,
+            )
+
+        return self._key_cls(
+            batch_size=int(batch_size),
+            max_prompt_length=int(max_prompt_length),
+            num_partitions=int(num_partitions),
+        )
+
+    def probe_lengths(
+        self, max_cache_length: int, q_max_seq_len: int = 1
+    ) -> list[int]:
+        """Returns cache lengths to probe for distinct num_partitions.
+
+        These are the cache lengths warmed up during graph capture. MHA probes
+        at 256-token granularity; MLA probes at a finer 64-token granularity
+        (and, under speculative decoding, adds extra probes to hit more
+        ``(num_partitions, draft_num_partitions)`` pairs). The selected
+        granularity follows ``is_mla``.
+        """
+        granularity = 64 if self._is_mla else 256
+        probe_lengths = (
+            [1]
+            + list(range(granularity, max_cache_length, granularity))
+            + [max_cache_length]
+        )
+        if self._is_mla and q_max_seq_len > 1:
+            # With spec decoding, probe a few more entries to hit all viable
+            # (num_partition, draft_num_partition) pairs. Determined
+            # experimentally; brute-forcing all pairs would inflate capture
+            # time significantly.
+            probe_lengths.extend(
+                range(granularity - 1, max_cache_length, granularity)
+            )
+        return probe_lengths
 
 
 def build_max_lengths_tensor(

@@ -232,7 +232,7 @@ trait Defaultable:
 
 
 trait TrivialRegisterPassable(
-    ImplicitlyCopyable, ImplicitlyDestructible, Movable, RegisterPassable
+    ImplicitlyCopyable, ImplicitlyDeletable, Movable, RegisterPassable
 ):
     """A marker trait to denote the type to be register passable trivial.
 

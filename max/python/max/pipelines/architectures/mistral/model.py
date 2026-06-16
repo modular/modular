@@ -25,7 +25,7 @@ from max.engine import InferenceSession, Model
 from max.graph import BufferType, DeviceRef, Graph, TensorType
 from max.graph.weights import SafetensorWeights, Weights, WeightsAdapter
 from max.nn.comm import Signals
-from max.nn.kv_cache import KVCacheInputs
+from max.nn.kv_cache import KVCacheInputsInterface
 from max.nn.layer import Module
 from max.nn.transformer import ReturnLogits
 from max.pipelines.context import TextContext
@@ -151,7 +151,7 @@ class MistralModel(PipelineModelWithKVCache[TextContext]):
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
+        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> MistralInputs:
         if len(replica_batches) > 1:
@@ -192,7 +192,7 @@ class MistralModel(PipelineModelWithKVCache[TextContext]):
             DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
         )
 
-        kv_inputs = self.kv_params.get_symbolic_inputs().flatten()
+        kv_inputs = self.kv_params.flattened_kv_inputs()
 
         tokens_type = TensorType(
             DType.int64, shape=["total_seq_len"], device=device_ref

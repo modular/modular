@@ -943,6 +943,65 @@ async def test_openai_chat_completion_reasoning(
     assert response.usage.completion_tokens == expected_completion_tokens
 
 
+def _all_reasoning_chunks(
+    status: GenerationStatus,
+) -> list[TokenGeneratorOutput]:
+    """A turn whose entire output is reasoning (no content tokens).
+
+    Mirrors Kimi K2.5 answering inside the prefilled ``<think>`` block and
+    stopping without ever emitting ``</think>`` — the parser routes everything
+    to reasoning and content stays empty.
+    """
+    return [
+        TokenGeneratorOutput(
+            status=status,
+            decoded_reasoning_tokens="The weather is 22F and Sunny.",
+            reasoning_token_count=7,
+            decoded_tokens=None,
+            token_count=0,
+            prompt_token_count=5,
+        ),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_reasoning_promoted_to_content_on_stop(
+    patch_openai_metrics: None,
+) -> None:
+    """A1: all-reasoning + voluntary stop surfaces as content (not null)."""
+    mock_pipeline = Mock()
+    mock_pipeline.model_name = "test-model"
+    mock_pipeline.all_tokens = AsyncMock(
+        return_value=_all_reasoning_chunks(GenerationStatus.END_OF_SEQUENCE)
+    )
+
+    response = await OpenAIChatResponseGenerator(mock_pipeline).complete(
+        [_make_mock_request()]
+    )
+    message = response.choices[0].message
+    assert message.content == "The weather is 22F and Sunny."
+    assert message.reasoning is None
+
+
+@pytest.mark.asyncio
+async def test_reasoning_not_promoted_on_length(
+    patch_openai_metrics: None,
+) -> None:
+    """A1 gate: a length-truncated thought stays reasoning, not content."""
+    mock_pipeline = Mock()
+    mock_pipeline.model_name = "test-model"
+    mock_pipeline.all_tokens = AsyncMock(
+        return_value=_all_reasoning_chunks(GenerationStatus.MAXIMUM_LENGTH)
+    )
+
+    response = await OpenAIChatResponseGenerator(mock_pipeline).complete(
+        [_make_mock_request()]
+    )
+    message = response.choices[0].message
+    assert message.reasoning == "The weather is 22F and Sunny."
+    assert not message.content
+
+
 async def _run_stream(
     chunks: list[TokenGeneratorOutput],
     *,

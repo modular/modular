@@ -26,6 +26,7 @@
 * `DelRecorder`
 * `AbortOnDel`
 * `AbortOnCopy`
+* `ExplicitDestroy`
 """
 
 from std.hashlib import Hasher
@@ -35,11 +36,29 @@ from std.reflection import call_location
 from std.utils._nicheable import UnsafeNicheable, NicheIndex
 
 # ===----------------------------------------------------------------------=== #
+# ExplicitDestroy
+# ===----------------------------------------------------------------------=== #
+
+
+@explicit_destroy("You must use .destroy() to consume `ExplicitDestroy`")
+@fieldwise_init
+struct ExplicitDestroy(Movable):
+    """Test type that is explicitly-destroyed."""
+
+    var value: Int
+    """Int data."""
+
+    def destroy(deinit self):
+        """Destroys self."""
+        pass
+
+
+# ===----------------------------------------------------------------------=== #
 # MoveOnly
 # ===----------------------------------------------------------------------=== #
 
 
-struct MoveOnly[T: Movable & ImplicitlyDestructible](
+struct MoveOnly[T: Movable & ImplicitlyDeletable](
     Equatable where conforms_to(T, Equatable),
     Hashable where conforms_to(T, Hashable),
     Movable,
@@ -215,12 +234,12 @@ struct ImplicitCopyOnly(ImplicitlyCopyable):
 
 struct CopyCounter[
     T: ImplicitlyCopyable
-    & ImplicitlyDestructible
+    & ImplicitlyDeletable
     & Writable
     & Defaultable = NoneType,
     *,
     trivial_copy: Bool = False,
-](ImplicitlyCopyable, ImplicitlyDestructible, Writable):
+](ImplicitlyCopyable, ImplicitlyDeletable, Writable):
     """Counts the number of copies performed on a value.
 
     Parameters:
@@ -280,7 +299,7 @@ struct CopyCounter[
 # TODO: This type should not be Copyable, but has to be to satisfy
 #       Copyable at the moment.
 struct MoveCounter[
-    T: Copyable & ImplicitlyDestructible, *, trivial_move: Bool = False
+    T: Copyable & ImplicitlyDeletable, *, trivial_move: Bool = False
 ](Copyable):
     """Counts the number of moves performed on a value.
 

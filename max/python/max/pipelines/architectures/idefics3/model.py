@@ -25,7 +25,7 @@ import numpy.typing as npt
 from max.driver import Buffer, Device, DLPackArray
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import BufferType, DeviceRef, Graph, TensorType
+from max.graph import BufferType, DeviceRef, Graph, Module, TensorType
 from max.graph.buffer_utils import cast_dlpack_to
 from max.graph.weights import (
     SafetensorWeights,
@@ -33,7 +33,7 @@ from max.graph.weights import (
     Weights,
     WeightsAdapter,
 )
-from max.nn.kv_cache import KVCacheInputs
+from max.nn.kv_cache import KVCacheInputsInterface
 from max.nn.transformer import ReturnLogits
 from max.pipelines.context import TextAndVisionContext
 from max.pipelines.lib import (
@@ -276,30 +276,35 @@ class Idefics3Model(PipelineModelWithKVCache[TextAndVisionContext]):
             return_logits=self.return_logits,
         )
 
-        # Build and compile vision model
-        with CompilationTimer("vision model") as timer:
+        # Build and compile vision + language models in parallel
+        with CompilationTimer("vision + language model") as timer:
+            module = Module()
             vision_graph, vision_model_state_dict = self._build_vision_graph(
-                idefics3_config, vision_model_weights_dict
+                idefics3_config, vision_model_weights_dict, module=module
             )
-            timer.mark_build_complete()
-            vision_model = session.load(
-                vision_graph, weights_registry=vision_model_state_dict
-            )
-
-        # Build and compile language model
-        with CompilationTimer("language model") as timer:
             language_graph, language_model_state_dict = (
-                self._build_language_graph(idefics3_config, llm_weights_dict)
+                self._build_language_graph(
+                    idefics3_config, llm_weights_dict, module=module
+                )
             )
             timer.mark_build_complete()
-            language_model = session.load(
-                language_graph, weights_registry=language_model_state_dict
+            combined_registry = {
+                **vision_model_state_dict,
+                **language_model_state_dict,
+            }
+            models = session.load_all(
+                module, weights_registry=combined_registry
             )
+            vision_model = models[vision_graph.name]
+            language_model = models[language_graph.name]
 
         return vision_model, language_model
 
     def _build_vision_graph(
-        self, config: Idefics3Config, state_dict: dict[str, WeightData]
+        self,
+        config: Idefics3Config,
+        state_dict: dict[str, WeightData],
+        module: Module | None = None,
     ) -> tuple[Graph, dict[str, DLPackArray]]:
         """Build the vision model graph for processing images."""
         # Define input types for the vision model
@@ -320,7 +325,9 @@ class Idefics3Model(PipelineModelWithKVCache[TextAndVisionContext]):
         )
 
         # Initialize graph with input types
-        with Graph("idefics3_vision", input_types=[pixel_values_type]) as graph:
+        with Graph(
+            "idefics3_vision", input_types=[pixel_values_type], module=module
+        ) as graph:
             # Build vision model architecture.
             vision_model = Idefics3VisionModel(
                 config.vision_config,
@@ -381,16 +388,21 @@ class Idefics3Model(PipelineModelWithKVCache[TextAndVisionContext]):
             return_n_logits_type,
             image_embeddings_type,
             image_token_indices_type,
-            *self.kv_params.get_symbolic_inputs().flatten(),
+            *self.kv_params.flattened_kv_inputs(),
         )
 
     def _build_language_graph(
-        self, config: Idefics3Config, state_dict: dict[str, WeightData]
+        self,
+        config: Idefics3Config,
+        state_dict: dict[str, WeightData],
+        module: Module | None = None,
     ) -> tuple[Graph, dict[str, DLPackArray]]:
         """Build the language model graph for text generation with image embeddings."""
         # Initialize graph with input types.
         with Graph(
-            "idefics3_language", input_types=self._language_graph_input_types()
+            "idefics3_language",
+            input_types=self._language_graph_input_types(),
+            module=module,
         ) as graph:
             # Build language model architecture.
             language_model = Idefics3LanguageModel(
@@ -570,7 +582,7 @@ class Idefics3Model(PipelineModelWithKVCache[TextAndVisionContext]):
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[TextAndVisionContext]],
-        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
+        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> ModelInputs:
         """Prepares the initial inputs for the first execution pass of the Idefics3 model."""

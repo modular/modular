@@ -26,6 +26,7 @@ from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine.api import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
+from max.graph import Module as GraphModule
 from max.graph.buffer_utils import cast_tensors_to
 from max.graph.weights import (
     SafetensorWeights,
@@ -34,7 +35,7 @@ from max.graph.weights import (
     WeightsAdapter,
 )
 from max.nn.comm import Signals
-from max.nn.kv_cache import KVCacheInputs
+from max.nn.kv_cache import KVCacheInputsInterface
 from max.nn.layer import Module
 from max.nn.parallel import ParallelArrayOps
 from max.nn.transformer import ReturnLogits
@@ -82,7 +83,9 @@ class Qwen2_5VLInputs(ModelInputs):
     return_n_logits: Buffer
     """Number of logits to return, used by speculative decoding for example."""
 
-    kv_cache_inputs: KVCacheInputs[Buffer, Buffer] = field(kw_only=True)
+    kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] = field(
+        kw_only=True
+    )
     """KV cache inputs for the model."""
 
     image_token_indices: list[Buffer] | None = None
@@ -234,23 +237,22 @@ class Qwen2_5VLModel(
         self.model: Module = Qwen2_5VL(self.model_config)
         self.model.load_state_dict(model_state_dict, strict=True)
 
-        with CompilationTimer("vision model") as timer:
-            vision_graph = self._build_vision_graph()
+        # Build and compile vision + language models in parallel
+        with CompilationTimer("vision + language model") as timer:
+            graph_module = GraphModule()
+            vision_graph = self._build_vision_graph(module=graph_module)
+            language_graph = self._build_language_graph(module=graph_module)
             timer.mark_build_complete()
-            vision_model = session.load(
-                vision_graph, weights_registry=vision_state_dict
+            combined_registry = {**vision_state_dict, **llm_state_dict}
+            models = session.load_all(
+                graph_module, weights_registry=combined_registry
             )
-
-        with CompilationTimer("language model") as timer:
-            language_graph = self._build_language_graph()
-            timer.mark_build_complete()
-            language_model = session.load(
-                language_graph, weights_registry=llm_state_dict
-            )
+            vision_model = models[vision_graph.name]
+            language_model = models[language_graph.name]
 
         return vision_model, language_model
 
-    def _build_vision_graph(self) -> Graph:
+    def _build_vision_graph(self, module: GraphModule | None = None) -> Graph:
         """Build the vision model graph for processing images.
 
         Now supports multi-GPU processing for the vision encoder.
@@ -354,6 +356,7 @@ class Qwen2_5VLModel(
                     *signals.input_types(),
                 ]
             ),
+            module=module,
         ) as graph:
             # Extract inputs
             all_inputs = graph.inputs
@@ -404,7 +407,7 @@ class Qwen2_5VLModel(
 
         return graph
 
-    def _build_language_graph(self) -> Graph:
+    def _build_language_graph(self, module: GraphModule | None = None) -> Graph:
         """Build the language model graph for text generation with image embeddings."""
 
         assert isinstance(self.model, Qwen2_5VL)
@@ -482,6 +485,7 @@ class Qwen2_5VLModel(
                 *signals.input_types(),
                 *flattened_kv_types,
             ),
+            module=module,
         ) as graph:
             (
                 input_ids,
@@ -887,7 +891,7 @@ class Qwen2_5VLModel(
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[Qwen2_5VLTextAndVisionContext]],  # type: ignore[override]
-        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
+        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> Qwen2_5VLInputs:
         """Prepares the initial inputs for the first execution pass of the Qwen2.5VL model."""

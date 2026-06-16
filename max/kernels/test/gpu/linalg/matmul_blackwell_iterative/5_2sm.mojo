@@ -36,10 +36,11 @@ from layout import (
     IntTuple,
     Layout,
     LayoutTensor,
+    LTToTTLayout,
     RuntimeLayout,
     RuntimeTuple,
+    TileTensor,
     UNKNOWN_VALUE,
-    lt_to_tt,
 )
 from layout._utils import ManagedLayoutTensor
 from layout.swizzle import make_swizzle
@@ -140,21 +141,21 @@ def kernel_5[
     comptime sub_a_smem_tile_t = LayoutTensor[
         a_type,
         sub_a_smem_layout,
-        MutAnyOrigin,
+        _,
         address_space=AddressSpace.SHARED,
         alignment=128,
     ]
     comptime sub_b_smem_tile_t = LayoutTensor[
         b_type,
         sub_b_smem_layout,
-        MutAnyOrigin,
+        _,
         address_space=AddressSpace.SHARED,
         alignment=128,
     ]
     comptime c_smem_tile_t = LayoutTensor[
         c_type,
         c_smem_layout,
-        MutAnyOrigin,
+        _,
         address_space=AddressSpace.SHARED,
         alignment=128,
     ]
@@ -177,21 +178,8 @@ def kernel_5[
         Int64
     ]()
 
-    var a_smem_tile = LayoutTensor[
-        a_type,
-        a_smem_layout,
-        MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
-        alignment=128,
-    ](a_smem)
-
-    var b_smem_tile = LayoutTensor[
-        b_type,
-        b_smem_layout,
-        MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
-        alignment=128,
-    ](b_smem)
+    var a_smem_tile = TileTensor(a_smem, LTToTTLayout[a_smem_layout]())
+    var b_smem_tile = TileTensor(b_smem, LTToTTLayout[b_smem_layout]())
 
     comptime accum_type = get_accum_type[a_type]()
 
@@ -261,11 +249,6 @@ def kernel_5[
     b_multicast_mask <<= UInt16(peer_cta_coord[0])
     b_multicast_mask <<= UInt16(rank_n * CLUSTER_M)
 
-    var a_mma_mask = a_multicast_mask >> UInt16(peer_cta_coord[0])
-    var b_mma_mask = b_multicast_mask >> UInt16(peer_cta_coord[0])
-    var c_mma_mask: UInt16 = (a_mma_mask | a_mma_mask << 1) | (
-        b_mma_mask | b_mma_mask << 1
-    )
     var mma_op = MmaOpSM100_SS[
         c_type,
         a_type,
@@ -331,8 +314,8 @@ def kernel_5[
 
             if elect_one_warp and elect_one_thread:
                 mma_op.mma(
-                    lt_to_tt(a_smem_tile),
-                    lt_to_tt(b_smem_tile),
+                    a_smem_tile,
+                    b_smem_tile,
                     tmem_addr,
                     init_c=(i == 0),  # Initialize C on first iteration
                 )
@@ -374,7 +357,7 @@ def kernel_5[
     var c_coord_y = ufloordiv(warp_id(), 2) if MMA_M == 128 else 0
 
     # 32 x BN
-    c_warp_tile = c_smem_tile.tile[C_WBM, C_WBN](c_coord_x, c_coord_y)
+    _c_warp_tile = c_smem_tile.tile[C_WBM, C_WBN](c_coord_x, c_coord_y)
 
     var st_matrix_rt_layout = RuntimeLayout[
         st_matrix_n_layout[c_type, TMA_BN, num_m_mmas, 1](),
@@ -472,7 +455,6 @@ def kernel_5[
         var c_tma_tile = LayoutTensor[
             c_type,
             Layout.row_major(c_tile_shape[0], c_tile_shape[1]),
-            MutAnyOrigin,
             address_space=AddressSpace.SHARED,
             alignment=128,
         ](c_smem_offset)

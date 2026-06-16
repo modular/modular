@@ -85,7 +85,7 @@ def llvm_intrinsic[
 @always_inline("nodebug")
 def gather[
     dtype: DType,
-    size: Int,
+    size: SIMDSize,
     //,
     *,
     invariant: Bool = False,
@@ -142,7 +142,9 @@ def gather[
     comptime if size == 1:
         return UnsafePointer[Scalar[dtype], MutUntrackedOrigin](
             unsafe_from_address=Int(base[0])
-        ).load[invariant=invariant]() if mask else passthrough[0]
+        ).load[invariant=invariant]() if mask else SIMD[dtype, size](
+            passthrough[0]
+        )
 
     comptime if is_gpu() and invariant:
         var result = SIMD[dtype, size]()
@@ -150,7 +152,9 @@ def gather[
         comptime for i in range(size):
             result[i] = UnsafePointer[Scalar[dtype], MutUntrackedOrigin](
                 unsafe_from_address=Int(base[i])
-            ).load[invariant=invariant]() if mask[i] else passthrough[i]
+            ).load[invariant=invariant]() if mask[i] else Scalar[dtype](
+                passthrough[i]
+            )
         return result
 
     var result = llvm_intrinsic[
@@ -547,7 +551,7 @@ def masked_load[
       The loaded memory stored in a vector of type SIMD[dtype, size].
     """
     comptime if size == 1:
-        return addr.load() if mask else passthrough[0]
+        return addr.load() if mask else SIMD[dtype, size](passthrough[0])
 
     var result = llvm_intrinsic["llvm.masked.load", SIMD[dtype, size]](
         addr.bitcast[NoneType]().address,
@@ -645,7 +649,7 @@ def compressed_store[
 
 @always_inline("nodebug")
 def strided_load[
-    dtype: DType, //, simd_width: Int, *, invariant: Bool = False
+    dtype: DType, //, simd_width: SIMDSize, *, invariant: Bool = False
 ](
     addr: UnsafePointer[mut=False, Scalar[dtype], ...],
     stride: Int,

@@ -237,7 +237,12 @@ def test_fused_allreduce_rmsnorm_fp8[
             )
         )
         list_of_ctx[i].enqueue_memset[DType.uint8](signal_buffers[i], 0)
-        rank_sigs[i] = signal_buffers[i].unsafe_ptr().bitcast[Signal]()
+        rank_sigs[i] = (
+            signal_buffers[i]
+            .unsafe_ptr()
+            .bitcast[Signal]()
+            .as_unsafe_any_origin()
+        )
 
     comptime in_layout = row_major(Coord(Idx[rows], Idx[cols]))
     comptime InputTileType = TileTensor[
@@ -438,7 +443,12 @@ def test_fused_allreduce_rmsnorm_noquant[
             )
         )
         list_of_ctx[i].enqueue_memset[DType.uint8](signal_buffers[i], 0)
-        rank_sigs[i] = signal_buffers[i].unsafe_ptr().bitcast[Signal]()
+        rank_sigs[i] = (
+            signal_buffers[i]
+            .unsafe_ptr()
+            .bitcast[Signal]()
+            .as_unsafe_any_origin()
+        )
 
     comptime in_layout = row_major(Coord(Idx[rows], Idx[cols]))
     comptime InputTileType = TileTensor[
@@ -591,7 +601,12 @@ def test_fused_allreduce_residual_rmsnorm_fp8[
             )
         )
         list_of_ctx[i].enqueue_memset[DType.uint8](signal_buffers[i], 0)
-        rank_sigs[i] = signal_buffers[i].unsafe_ptr().bitcast[Signal]()
+        rank_sigs[i] = (
+            signal_buffers[i]
+            .unsafe_ptr()
+            .bitcast[Signal]()
+            .as_unsafe_any_origin()
+        )
 
     comptime in_layout = row_major(Coord(Idx[rows], Idx[cols]))
     comptime InputTileType = TileTensor[
@@ -855,7 +870,12 @@ def test_fused_allreduce_residual_rmsnorm_noquant[
             )
         )
         list_of_ctx[i].enqueue_memset[DType.uint8](signal_buffers[i], 0)
-        rank_sigs[i] = signal_buffers[i].unsafe_ptr().bitcast[Signal]()
+        rank_sigs[i] = (
+            signal_buffers[i]
+            .unsafe_ptr()
+            .bitcast[Signal]()
+            .as_unsafe_any_origin()
+        )
 
     comptime in_layout = row_major(Coord(Idx[rows], Idx[cols]))
     comptime InputTileType = TileTensor[

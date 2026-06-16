@@ -36,6 +36,7 @@ from max.pipelines.context import (
     SamplingParams,
     TextContext,
 )
+from max.pipelines.logging_utils import log_basic_config
 from max.pipelines.modeling.types import (
     ImageContentPart,
     Pipeline,
@@ -131,12 +132,14 @@ def generate_text_for_pipeline(
     # nsys, ``cudaProfilerStop`` triggers the ``.nsys-rep`` write — delaying
     # it past the metrics report keeps the normal generate output (text +
     # stats) from being buried inside nsys's file-writing progress lines.
+    tokenizer, pipeline = PIPELINE_REGISTRY.retrieve(pipeline_config)
+    log_basic_config(pipeline_config)
+    assert isinstance(pipeline, Pipeline)
+
     capture = OneShotCapture(top_n=profile_top_n) if profile else None
     try:
         # Run timed run & print results.
         with TextGenerationMetrics(print_report=True) as metrics:
-            tokenizer, pipeline = PIPELINE_REGISTRY.retrieve(pipeline_config)
-            assert isinstance(pipeline, Pipeline)
             if image_urls:
                 logger.info("Downloading images")
                 images = [requests.get(url).content for url in image_urls]

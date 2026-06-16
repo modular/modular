@@ -22,7 +22,6 @@ from .memory_planner import (
 )
 from .paged_kv_cache import (
     DummyKVCache,
-    IncrementCacheLengthsProcessor,
     InsufficientBlocksError,
     KVTransferEngine,
     KVTransferEngineMetadata,
@@ -30,11 +29,10 @@ from .paged_kv_cache import (
     TransferReqData,
     available_port,
 )
-from .registry import load_kv_manager, load_multi_kv_managers
+from .registry import load_kv_manager
 
 __all__ = [
     "DummyKVCache",
-    "IncrementCacheLengthsProcessor",
     "InsufficientBlocksError",
     "KVCacheConfig",
     "KVConnectorConfig",
@@ -48,5 +46,4 @@ __all__ = [
     "TransferReqData",
     "available_port",
     "load_kv_manager",
-    "load_multi_kv_managers",
 ]

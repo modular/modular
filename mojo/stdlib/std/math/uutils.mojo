@@ -82,7 +82,7 @@ def umod(a: Int, b: Int) -> Int:
 
 @always_inline
 def umod[
-    dtype: DType, width: Int, //
+    dtype: DType, width: SIMDSize, //
 ](a: SIMD[dtype, width], b: SIMD[dtype, width]) -> SIMD[dtype, width]:
     """Perform unsigned modulo (`%`) on `SIMD` arguments.
 

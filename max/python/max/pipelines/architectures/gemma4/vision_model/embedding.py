@@ -42,6 +42,7 @@ class Gemma4VisionPatchEmbedder(Module):
         self.dtype = config.dtype
 
         vision_cfg = config.vision_config
+        assert vision_cfg is not None
         hidden_size = vision_cfg.hidden_size
         patch_size = vision_cfg.patch_size
         self.hidden_size = hidden_size

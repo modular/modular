@@ -10,10 +10,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Unit tests for the Apple M5 simdgroup-tiled matmul kernel."""
+"""Unit tests for the Apple GPU matmul kernels.
+
+Covers two paths:
+
+- The 8x8 `simdgroup_matrix` GEMM (`gemm_kernel_apple_8x8`), the M1-M4 dispatch
+  path in `_matmul_gpu`. These tests run on any Apple GPU.
+- The M5 hardware-MMA simdgroup-tiled kernel (`apple_matmul_kernel` /
+  `enqueue_apple_matmul`), which requires `compute_capability() == 5`.
+"""
 
 from std.collections import Optional
 from std.random import random_si64
+from std.gpu import WARP_SIZE
 from std.gpu.host import DeviceContext
 from std.sys.info import _accelerator_arch
 from std.utils import IndexList
@@ -21,6 +30,7 @@ from std.utils import IndexList
 from layout import TileTensor, Idx
 from layout.tile_layout import row_major
 
+from linalg.matmul.gpu.apple import gemm_kernel_apple_8x8
 from linalg.matmul.gpu.apple.matmul_kernel import (
     apple_matmul_kernel,
     enqueue_apple_matmul,
@@ -64,6 +74,214 @@ def _within_tol[c_type: DType](got: Float32, exp: Float32) -> Bool:
         return abs(got - exp) <= Float32(1e-5) + Float32(1.6e-2) * abs(exp)
     else:
         return abs(got - exp) <= Float32(1e-5) + Float32(1e-4) * abs(exp)
+
+
+# ===----------------------------------------------------------------------=== #
+# 8x8 simdgroup-matrix GEMM (M1-M4 dispatch path; runs on any Apple GPU)
+# ===----------------------------------------------------------------------=== #
+
+
+def _run_8x8_case[
+    a_type: DType, c_type: DType, transpose_b: Bool
+](ctx: DeviceContext, M: Int, N: Int, K: Int, name: String) raises:
+    """One launch + forced readback of `gemm_kernel_apple_8x8`, checked against
+    an fp32 host reference.
+
+    Uses the same 64x64 / 4-simdgroup tiling the dispatcher enqueues. Exercises
+    clean and ragged M/N (the kernel bounds-checks edge subtiles); K is a
+    multiple of 16, matching the dispatch gate.
+    """
+    print("==", name, M, "x", N, "x", K, "NT=" + String(transpose_b))
+    comptime BM = 64
+    comptime BN = 64
+    comptime NSG = 4
+    var b_rows = N if transpose_b else K
+    var b_cols = K if transpose_b else N
+
+    var a_host = ctx.enqueue_create_host_buffer[a_type](M * K)
+    var b_host = ctx.enqueue_create_host_buffer[a_type](b_rows * b_cols)
+    for i in range(M * K):
+        a_host[i] = random_si64(Int64(-2), Int64(2)).cast[a_type]()
+    for i in range(b_rows * b_cols):
+        b_host[i] = random_si64(Int64(-2), Int64(2)).cast[a_type]()
+
+    var a_dev = ctx.enqueue_create_buffer[a_type](M * K)
+    var b_dev = ctx.enqueue_create_buffer[a_type](b_rows * b_cols)
+    var d_dev = ctx.enqueue_create_buffer[c_type](M * N)
+    ctx.enqueue_copy(a_dev, a_host)
+    ctx.enqueue_copy(b_dev, b_host)
+
+    var a_tt = TileTensor(a_dev.unsafe_ptr(), row_major(M, K)).as_immut()
+    var b_tt = TileTensor(
+        b_dev.unsafe_ptr(), row_major(b_rows, b_cols)
+    ).as_immut()
+    var d_tt = TileTensor(d_dev.unsafe_ptr(), row_major(M, N))
+
+    comptime kernel = gemm_kernel_apple_8x8[
+        c_type,
+        a_type,
+        a_type,
+        type_of(d_tt).LayoutType,
+        type_of(a_tt).LayoutType,
+        type_of(b_tt).LayoutType,
+        transpose_b,
+        BLOCK_M=BM,
+        BLOCK_N=BN,
+        NUM_SIMDGROUPS=NSG,
+    ]
+    ctx.enqueue_function[kernel](
+        d_tt,
+        a_tt,
+        b_tt,
+        M,
+        N,
+        K,
+        grid_dim=((N + BN - 1) // BN, (M + BM - 1) // BM),
+        block_dim=(NSG * WARP_SIZE,),
+    )
+
+    var d_host = ctx.enqueue_create_host_buffer[c_type](M * N)
+    ctx.enqueue_copy(d_host, d_dev)
+    ctx.synchronize()
+
+    # DRIV-199 workaround: keep device buffers alive past `synchronize`, else
+    # ASAP destruction frees them mid-kernel and the suite flakes.
+    _ = a_dev^
+    _ = b_dev^
+    _ = d_dev^
+
+    var pass_ = True
+    for i in range(M):
+        for j in range(N):
+            var exp = Float32(0)
+            for kk in range(K):
+                var bv = Float32(
+                    b_host[j * K + kk]
+                ) if transpose_b else Float32(b_host[kk * N + j])
+                exp += Float32(a_host[i * K + kk]) * bv
+            var got = Float32(d_host[i * N + j])
+            if not _within_tol[c_type](got, exp):
+                if pass_:
+                    print("FAIL:", i, j, "got", got, "expected", exp)
+                pass_ = False
+    if not pass_:
+        raise Error("FAILED (see FAIL lines above)")
+    print("PASS")
+
+
+def _run_8x8_bias_case[
+    a_type: DType, c_type: DType, transpose_b: Bool
+](ctx: DeviceContext, M: Int, N: Int, K: Int, name: String) raises:
+    """`gemm_kernel_apple_8x8` with a bias-add `elementwise_lambda_fn`, checked
+    against an fp32 host reference.
+
+    Exercises the epilogue store path (`elementwise_lambda_fn` branch), and
+    uses odd/ragged shapes to cover the epilogue at edge subtiles as well as
+    the interior.
+    """
+    print("==", name, M, "x", N, "x", K, "NT=" + String(transpose_b))
+    comptime BM = 64
+    comptime BN = 64
+    comptime NSG = 4
+    var b_rows = N if transpose_b else K
+    var b_cols = K if transpose_b else N
+
+    var a_host = ctx.enqueue_create_host_buffer[a_type](M * K)
+    var b_host = ctx.enqueue_create_host_buffer[a_type](b_rows * b_cols)
+    var bias_host = ctx.enqueue_create_host_buffer[c_type](N)
+    for i in range(M * K):
+        a_host[i] = random_si64(Int64(-2), Int64(2)).cast[a_type]()
+    for i in range(b_rows * b_cols):
+        b_host[i] = random_si64(Int64(-2), Int64(2)).cast[a_type]()
+    for j in range(N):
+        bias_host[j] = random_si64(Int64(-2), Int64(2)).cast[c_type]()
+
+    var a_dev = ctx.enqueue_create_buffer[a_type](M * K)
+    var b_dev = ctx.enqueue_create_buffer[a_type](b_rows * b_cols)
+    var bias_dev = ctx.enqueue_create_buffer[c_type](N)
+    var d_dev = ctx.enqueue_create_buffer[c_type](M * N)
+    ctx.enqueue_copy(a_dev, a_host)
+    ctx.enqueue_copy(b_dev, b_host)
+    ctx.enqueue_copy(bias_dev, bias_host)
+
+    var a_tt = TileTensor(a_dev.unsafe_ptr(), row_major(M, K)).as_immut()
+    var b_tt = TileTensor(
+        b_dev.unsafe_ptr(), row_major(b_rows, b_cols)
+    ).as_immut()
+    var d_tt = TileTensor(d_dev.unsafe_ptr(), row_major(M, N))
+
+    var d_ptr = d_dev.unsafe_ptr()
+    var bias_ptr = bias_dev.unsafe_ptr()
+    var row_stride = N  # output is row_major(M, N)
+
+    @parameter
+    @always_inline
+    @__copy_capture(d_ptr, bias_ptr, row_stride)
+    def bias_epilogue[
+        dt: DType, w: SIMDSize, *, alignment: Int = 1
+    ](coords: IndexList[2], val: SIMD[dt, w]) capturing -> None:
+        # Kernel invokes with `dt == c_type`; rebind so the store matches d_ptr.
+        var bias = (bias_ptr + coords[1]).load[width=w]()
+        var v_c = rebind[SIMD[c_type, w]](val)
+        (d_ptr + coords[0] * row_stride + coords[1]).store[alignment=alignment](
+            v_c + bias
+        )
+
+    comptime kernel = gemm_kernel_apple_8x8[
+        c_type,
+        a_type,
+        a_type,
+        type_of(d_tt).LayoutType,
+        type_of(a_tt).LayoutType,
+        type_of(b_tt).LayoutType,
+        transpose_b,
+        elementwise_lambda_fn=Optional[elementwise_epilogue_type](
+            bias_epilogue
+        ),
+        BLOCK_M=BM,
+        BLOCK_N=BN,
+        NUM_SIMDGROUPS=NSG,
+    ]
+    ctx.enqueue_function[kernel](
+        d_tt,
+        a_tt,
+        b_tt,
+        M,
+        N,
+        K,
+        grid_dim=((N + BN - 1) // BN, (M + BM - 1) // BM),
+        block_dim=(NSG * WARP_SIZE,),
+    )
+
+    var d_host = ctx.enqueue_create_host_buffer[c_type](M * N)
+    ctx.enqueue_copy(d_host, d_dev)
+    ctx.synchronize()
+
+    # DRIV-199 workaround: keep device buffers alive past `synchronize`, else
+    # ASAP destruction frees them mid-kernel and the suite flakes.
+    _ = a_dev^
+    _ = b_dev^
+    _ = bias_dev^
+    _ = d_dev^
+
+    var pass_ = True
+    for i in range(M):
+        for j in range(N):
+            var acc = Float32(0)
+            for kk in range(K):
+                var bv = Float32(
+                    b_host[j * K + kk]
+                ) if transpose_b else Float32(b_host[kk * N + j])
+                acc += Float32(a_host[i * K + kk]) * bv
+            var exp = acc + Float32(bias_host[j])
+            var got = Float32(d_host[i * N + j])
+            if not _within_tol[c_type](got, exp):
+                if pass_:
+                    print("FAIL:", i, j, "got", got, "expected", exp)
+                pass_ = False
+    if not pass_:
+        raise Error("FAILED (see FAIL lines above)")
+    print("PASS")
 
 
 def test_morton_decode_2d() raises:
@@ -1335,7 +1553,7 @@ def _run_bias_epilogue_test[
     @always_inline
     @__copy_capture(d_ptr, bias_ptr)
     def bias_epilogue[
-        dt: DType, w: Int, *, alignment: Int = 1
+        dt: DType, w: SIMDSize, *, alignment: Int = 1
     ](coords: IndexList[2], val: SIMD[dt, w]) capturing -> None:
         # Kernel invokes with `dt == c_type`; rebind so the store matches d_ptr.
         var b = (bias_ptr + coords[1]).load[width=w]()
@@ -1562,7 +1780,7 @@ def test_kernel_128_nt_fp16_fp16_relu_compose_epilogue(
     @always_inline
     @__copy_capture(d_ptr)
     def relu_compose_epilogue[
-        dt: DType, w: Int, *, alignment: Int = 1
+        dt: DType, w: SIMDSize, *, alignment: Int = 1
     ](coords: IndexList[2], val: SIMD[dt, w]) capturing -> None:
         var v_fp16 = rebind[SIMD[DType.float16, w]](val)
         var relu_val = max(v_fp16, SIMD[DType.float16, w](0))
@@ -1647,7 +1865,7 @@ def test_kernel_128_nt_fp16_fp16_bias_relu_compose_epilogue(
     @always_inline
     @__copy_capture(d_ptr, bias_ptr)
     def bias_relu_compose_epilogue[
-        dt: DType, w: Int, *, alignment: Int = 1
+        dt: DType, w: SIMDSize, *, alignment: Int = 1
     ](coords: IndexList[2], val: SIMD[dt, w]) capturing -> None:
         var v_fp16 = rebind[SIMD[DType.float16, w]](val)
         var b = (bias_ptr + coords[1]).load[width=w]()
@@ -1738,7 +1956,7 @@ def test_kernel_ragged_100x100x97_nt_fp16_fp16_bias_epilogue(
     @always_inline
     @__copy_capture(d_ptr, bias_ptr)
     def bias_epilogue[
-        dt: DType, w: Int, *, alignment: Int = 1
+        dt: DType, w: SIMDSize, *, alignment: Int = 1
     ](coords: IndexList[2], val: SIMD[dt, w]) capturing -> None:
         var v_fp16 = rebind[SIMD[DType.float16, w]](val)
         var b = (bias_ptr + coords[1]).load[width=w]()
@@ -1889,7 +2107,7 @@ def test_kernel_64x130x64_nn_fp16_fp16_oddn_bias_epilogue(
     @always_inline
     @__copy_capture(d_ptr, bias_ptr)
     def bias_epilogue[
-        dt: DType, w: Int, *, alignment: Int = 1
+        dt: DType, w: SIMDSize, *, alignment: Int = 1
     ](coords: IndexList[2], val: SIMD[dt, w]) capturing -> None:
         var b = (bias_ptr + coords[1]).load[width=w]()
         var v_c = rebind[SIMD[DType.float16, w]](val)
@@ -1938,9 +2156,74 @@ def main() raises:
         print("SKIP: apple_gpu_matmul tests require Apple GPU")
         return
     var ctx = DeviceContext()
+
+    # 8x8 simdgroup-matrix path (`gemm_kernel_apple_8x8`, the M1-M4 dispatch
+    # path). Valid on every Apple GPU, so these run regardless of compute
+    # capability.
+    _run_8x8_case[DType.bfloat16, DType.bfloat16, True](
+        ctx, 64, 64, 16, "8x8 bf16 nt min"
+    )
+    _run_8x8_case[DType.bfloat16, DType.bfloat16, True](
+        ctx, 512, 1024, 256, "8x8 bf16 nt large"
+    )
+    _run_8x8_case[DType.bfloat16, DType.bfloat16, False](
+        ctx, 128, 256, 64, "8x8 bf16 nn"
+    )
+    _run_8x8_case[DType.float16, DType.float16, True](
+        ctx, 256, 256, 128, "8x8 fp16 nt"
+    )
+    _run_8x8_case[DType.bfloat16, DType.float32, True](
+        ctx, 128, 128, 64, "8x8 bf16 in f32 out"
+    )
+    # Ragged M (real prefill: seq_len not a multiple of 64) and ragged N.
+    _run_8x8_case[DType.bfloat16, DType.bfloat16, True](
+        ctx, 100, 128, 64, "8x8 bf16 nt ragged-m"
+    )
+    _run_8x8_case[DType.bfloat16, DType.bfloat16, False](
+        ctx, 100, 200, 64, "8x8 bf16 nn ragged-mn"
+    )
+    # Odd M/N: edge subtiles where the bound splits a lane's 2-wide fragment.
+    # NN + odd N hits the single-slot B-load path (`gj + 1 >= n > gj`); even
+    # dims never trigger it since every lane's column index is even.
+    _run_8x8_case[DType.bfloat16, DType.bfloat16, False](
+        ctx, 64, 129, 64, "8x8 bf16 nn odd-n"
+    )
+    _run_8x8_case[DType.bfloat16, DType.bfloat16, True](
+        ctx, 65, 129, 64, "8x8 bf16 nt odd-mn"
+    )
+
+    # Bias-add `elementwise_lambda_fn` epilogue (clean interior, odd NT edges,
+    # and the NN odd-N load edge combined with the epilogue store).
+    _run_8x8_bias_case[DType.bfloat16, DType.bfloat16, True](
+        ctx, 128, 128, 64, "8x8 bias nt"
+    )
+    _run_8x8_bias_case[DType.bfloat16, DType.bfloat16, True](
+        ctx, 65, 129, 64, "8x8 bias nt odd"
+    )
+    _run_8x8_bias_case[DType.bfloat16, DType.bfloat16, False](
+        ctx, 64, 129, 64, "8x8 bias nn odd-n"
+    )
+
+    # f32 in/out: the 8x8 unit is full-precision for f32 (no fp19 truncation),
+    # so these check against the tight f32 tolerance. Covers NT/NN, an odd edge,
+    # and the epilogue store.
+    _run_8x8_case[DType.float32, DType.float32, True](
+        ctx, 256, 256, 128, "8x8 f32 nt"
+    )
+    _run_8x8_case[DType.float32, DType.float32, False](
+        ctx, 128, 256, 64, "8x8 f32 nn"
+    )
+    _run_8x8_case[DType.float32, DType.float32, False](
+        ctx, 64, 129, 64, "8x8 f32 nn odd-n"
+    )
+    _run_8x8_bias_case[DType.float32, DType.float32, True](
+        ctx, 128, 128, 64, "8x8 f32 bias nt"
+    )
+
+    # M5 hardware-MMA path (`apple_matmul_kernel`): requires Apple M5.
     if ctx.compute_capability() != 5:
         print(
-            "SKIP: apple_gpu_matmul tests require Apple M5"
+            "SKIP: M5 hardware-MMA matmul tests require Apple M5"
             " (compute_capability == 5)"
         )
         return

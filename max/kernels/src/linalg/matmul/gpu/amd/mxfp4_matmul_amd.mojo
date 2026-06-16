@@ -71,6 +71,7 @@ from std.gpu.sync import (
 from layout import Idx, TensorLayout, TileTensor
 from layout.tile_layout import row_major, col_major
 from layout.tile_tensor import stack_allocation
+from layout.swizzle import Swizzle
 
 from std.utils import IndexList, StaticTuple
 from linalg.arch.amd.block_scaled_mma import (
@@ -148,6 +149,19 @@ struct BlockScaledMmaOp[
     # where 16 threads operate on a 1x32 tile (total 16x32). Each
     # thread owns one row, that row is 16 bytes.
     comptime mma_frag_width_bytes: Int = 16
+
+    # XOR swizzle removing the LDS bank conflict on the 64B-pitch A/B fragment
+    # SMEM read/write. `distribute` swizzles the element (16B) index, so base=0
+    # equals a byte-offset Swizzle(3, 4, 3). Gated to the 16x16x128/64B config.
+    comptime use_smem_swizzle = (
+        Self.num_k_tiles == 1
+        and Self.packed_k_per_mma == 64
+        and Self.mma_frag_width_bytes == 16
+        and Self.MMA_M == 16
+    )
+    comptime smem_swizzle = Optional[Swizzle](
+        Swizzle(3, 0, 3)
+    ) if Self.use_smem_swizzle else Optional[Swizzle]()
 
     # Scales: 4 E8M0 bytes per MFMA call (128 MXFP4 / 32 per scale = 4).
     comptime scales_per_mma = Self.MMA_K // MX_BLOCK_SIZE  # 4
@@ -266,7 +280,7 @@ struct BlockScaledMmaOp[
             var b_frag = (
                 b_smem_warp.tile[Self.MMA_N, mma_k_bytes](i, k_tile_idx)
                 .vectorize[1, frag_w]()
-                .distribute[lane_layout](lane_id())
+                .distribute[lane_layout, swizzle=Self.smem_swizzle](lane_id())
             )
             self._b_reg.vectorize[1, frag_w]()[b_idx, 0] = b_frag[0, 0]
 
@@ -276,7 +290,7 @@ struct BlockScaledMmaOp[
             var a_frag = (
                 a_smem_warp.tile[Self.MMA_M, mma_k_bytes](i, k_tile_idx)
                 .vectorize[1, frag_w]()
-                .distribute[lane_layout](lane_id())
+                .distribute[lane_layout, swizzle=Self.smem_swizzle](lane_id())
             )
             self._a_reg.vectorize[1, frag_w]()[a_idx, 0] = a_frag[0, 0]
 
@@ -299,7 +313,7 @@ struct BlockScaledMmaOp[
             var a_frag = (
                 a_smem_warp.tile[Self.MMA_M, mma_k_bytes](i, k_tile_idx)
                 .vectorize[1, frag_w]()
-                .distribute[lane_layout](lane_id())
+                .distribute[lane_layout, swizzle=Self.smem_swizzle](lane_id())
             )
             self._a_reg.vectorize[1, frag_w]()[a_idx, 0] = a_frag[0, 0]
 
@@ -519,6 +533,9 @@ struct MXFP4MatmulAMD[
             Int32(Self.num_threads)
         )
     )
+    @__name(
+        t"mxfp4_dense_BM{Self.BM}_BN{Self.BN}_WM{Self.WM}_WN{Self.WN}_BK{Self.BK_ELEMS}_N{b_layout.static_shape[0]}_KB{a_layout.static_shape[1]}_SK{num_splits}"
+    )
     @staticmethod
     def run[
         out_dtype: DType,
@@ -709,10 +726,10 @@ struct MXFP4MatmulAMD[
         def copy_tiles_to_smem():
             """Copy register buffers to SMEM in row-major order."""
             var a_smem_dist = a_smem.vectorize[1, simd_width]().distribute[
-                load_layout
+                load_layout, swizzle=type_of(mma_op).smem_swizzle
             ](thread_idx.x)
             var b_smem_dist = b_smem.vectorize[1, simd_width]().distribute[
-                load_layout
+                load_layout, swizzle=type_of(mma_op).smem_swizzle
             ](thread_idx.x)
             comptime for v in range(a_loads_per_tile):
                 a_smem_dist[v, 0] = a_load_reg.raw_load[width=simd_width](

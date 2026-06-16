@@ -61,7 +61,7 @@ def _bundle_file_type[target: _TargetType]() -> StaticString:
 
 
 @fieldwise_init
-struct Context[device_spec: DeviceSpec](ImplicitlyDestructible, Movable):
+struct Context[device_spec: DeviceSpec](ImplicitlyDeletable, Movable):
     """A context loaded on a specific device.
 
     Represents a runtime handle to an initialized
@@ -125,18 +125,20 @@ struct Context[device_spec: DeviceSpec](ImplicitlyDestructible, Movable):
         fn_type: TrivialRegisterPassable,
         func: fn_type,
     ](self) raises -> CompiledFunctionInfo[
-        fn_type, func, Self.device_spec.target.value
+        fn_type, func, Self.device_spec._mlir_target()
     ]:
-        comptime target = Self.device_spec.target.value
+        comptime target = Self.device_spec._mlir_target()
         comptime emission_kind_id = _get_emission_kind_id[
             "object"
-        ]()._mlir_value
+        ]()._int_mlir_index()
 
         var offload = __mlir_op.`kgen.compile_offload`[
-            target_type=Self.device_spec.target.value,
+            target_type=Self.device_spec._mlir_target(),
             emission_kind=emission_kind_id,
             emission_option=_get_kgen_string[
-                Self.device_spec.target.default_compile_options()
+                CompilationTarget[
+                    Self.device_spec._mlir_target()
+                ].default_compile_options()
             ](),
             emission_link_option=_get_kgen_string[""](),
             func=func,
@@ -157,7 +159,7 @@ struct Context[device_spec: DeviceSpec](ImplicitlyDestructible, Movable):
         func: fn_type,
     ](self) raises -> Tuple[
         RuntimeBundle,
-        CompiledFunctionInfo[fn_type, func, Self.device_spec.target.value],
+        CompiledFunctionInfo[fn_type, func, Self.device_spec._mlir_target()],
     ]:
         var compiled_info = self._compile_inner[fn_type, func]()
         var bundle = self.load_bundle(compiled_info.asm)
@@ -171,7 +173,7 @@ struct Context[device_spec: DeviceSpec](ImplicitlyDestructible, Movable):
         """Loads a runtime bundle from pre-compiled binary bytes."""
         # Each plugin expects a specific file_type string. PTX text is
         # accepted by `cuModuleLoadDataEx` even when file_type="cubin".
-        comptime target = Self.device_spec.target.value
+        comptime target = Self.device_spec._mlir_target()
         comptime file_type = _bundle_file_type[target]()
 
         var static_bundle = M_driver_static_bundle(

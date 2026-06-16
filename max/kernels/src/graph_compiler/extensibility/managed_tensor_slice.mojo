@@ -180,7 +180,7 @@ comptime _RowMajorTileLayout[
 
 comptime _IndexListToCoordLikeTabulator[
     list: IndexList,
-    idx: SIMDSize,
+    idx: Int,
 ]: CoordLike = ComptimeInt[list[idx]] if list[idx] >= 0 else Scalar[DType.int]
 
 """Maps a single IndexList element to a CoordLike type.

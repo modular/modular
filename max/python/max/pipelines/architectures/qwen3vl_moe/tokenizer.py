@@ -513,11 +513,13 @@ class Qwen3VLTokenizer(TextAndVisionTokenizer):
                 assert new_request.messages
                 prompt = self.apply_chat_template(
                     new_request.messages,
+                    tools=request.tools,
                     **(request.chat_template_options or {}),
                 )
         elif request.messages:
             prompt = self.apply_chat_template(
                 request.messages,
+                tools=request.tools,
                 **(request.chat_template_options or {}),
             )
         else:
@@ -747,6 +749,8 @@ class Qwen3VLTokenizer(TextAndVisionTokenizer):
             if max_gen_tokens is not None
             else self.max_length,
             json_schema=json_schema,
+            log_probabilities=request.logprobs,
+            log_probabilities_echo=request.echo,
             sampling_params=request.sampling_params,
             target_endpoint=request.target_endpoint,
             images=images,

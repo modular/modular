@@ -86,10 +86,10 @@ def _unsupported_mma_op(d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     # fmt: off
     comptime assert False, String(
         "no valid implementation of mma for a=",
-        a.size, "x",  a.dtype,
-        ", b=",  b.size, "x",  b.dtype,
-        ", c=",  c.size, "x",  c.dtype,
-        ", and d=", d.size, "x", d.dtype,
+        Int(a.size), "x",  a.dtype,
+        ", b=",  Int(b.size), "x",  b.dtype,
+        ", c=",  Int(c.size), "x",  c.dtype,
+        ", and d=", Int(d.size), "x", d.dtype,
     )
     # fmt: on
 
@@ -271,10 +271,11 @@ def ld_matrix[
 
         ```mojo
         from std.gpu.compute.mma import ld_matrix
-        from std.memory import alloc, free, Layout
+        from std.memory import alloc, dealloc, Layout
 
         var layout = Layout[Scalar[DType.float16]](count=8)
-        var ptr = alloc(layout)
+        var allocation = alloc(layout)
+        var ptr = allocation.unsafe_ptr()
 
         # Load 8x8 matrix of float16 values
         var data = ld_matrix[simd_width=8](ptr)
@@ -282,7 +283,7 @@ def ld_matrix[
         # Load transposed matrix
         var transposed = ld_matrix[simd_width=8, transpose=True](ptr)
 
-        free(ptr, layout)
+        dealloc(allocation^)
         ```
     """
 
@@ -396,7 +397,11 @@ def st_matrix[
         must execute this instruction to avoid deadlock.
     """
 
-    comptime assert dtype in (DType.bfloat16, DType.float32), ""
+    comptime assert dtype in (
+        DType.bfloat16,
+        DType.float16,
+        DType.float32,
+    ), ""
 
     comptime num_matrices = simd_width
 
@@ -811,7 +816,7 @@ def wgmma_async[
         c_dtype
     ](), String(
         "Number of output registers ",
-        String(width),
+        String(Int(width)),
         " don't match the instruction shape ",
         String(Index(m, n, k)),
     )
@@ -934,7 +939,7 @@ def wgmma_async[
         accum_type
     ]() == frag_c_width * size_of[c_dtype](), String(
         "Number of output registers ",
-        String(frag_c_width),
+        String(Int(frag_c_width)),
         " don't match the instruction shape ",
         String(Index(m, n, k)),
     )
@@ -943,7 +948,7 @@ def wgmma_async[
         a_type
     ]() == frag_a_width * size_of[a_dtype](), String(
         "Number of input a registers ",
-        String(frag_a_width),
+        String(Int(frag_a_width)),
         " don't match the instruction shape ",
         String(Index(m, n, k)),
     )

@@ -14,10 +14,11 @@
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextContext
 from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
-from max.pipelines.lib import SupportedArchitecture, TextTokenizer
+from max.pipelines.lib import SupportedArchitecture
 from max.pipelines.modeling.types import PipelineTask
 
 from ..gemma4.model import Gemma3_MultiModalModel
+from ..gemma4.tokenizer import Gemma4Tokenizer
 from ..gemma4.weight_adapters import convert_safetensor_language_state_dict
 from .model_config import Gemma4AssistantConfig
 
@@ -27,7 +28,7 @@ gemma4_assistant_arch = SupportedArchitecture(
     default_encoding="bfloat16",
     supported_encodings={"bfloat16"},
     pipeline_model=Gemma3_MultiModalModel,
-    tokenizer=TextTokenizer,
+    tokenizer=Gemma4Tokenizer,
     context_type=TextContext,
     default_weights_format=WeightsFormat.safetensors,
     weight_adapters={
@@ -35,6 +36,8 @@ gemma4_assistant_arch = SupportedArchitecture(
     },
     task=PipelineTask.TEXT_GENERATION,
     multi_gpu_supported=True,
+    tool_parser="gemma4",
+    reasoning_parser="gemma4",
     config=Gemma4AssistantConfig,
     memory_planner=PagedMemoryPlanner.with_activation_reservation(
         0, always_signal_buffers=True

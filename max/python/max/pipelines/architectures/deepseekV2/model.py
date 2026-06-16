@@ -28,6 +28,7 @@ from max.graph.weights import SafetensorWeights, Weights, WeightsAdapter
 from max.nn.comm import Signals
 from max.nn.kv_cache import (
     KVCacheInputs,
+    KVCacheInputsInterface,
     KVCacheParamInterface,
     PagedCacheValues,
 )
@@ -136,7 +137,7 @@ class DeepseekV2Model(
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
+        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> DeepseekV2Inputs:
         if len(replica_batches) > 1:
@@ -190,14 +191,14 @@ class DeepseekV2Model(
                 input_row_offsets_type,
                 return_n_logits_type,
                 *signals.input_types(),
-                *self.kv_params.get_symbolic_inputs().flatten(),
+                *self.kv_params.flattened_kv_inputs(),
             )
         else:
             return (
                 tokens_type,
                 input_row_offsets_type,
                 return_n_logits_type,
-                *self.kv_params.get_symbolic_inputs().flatten(),
+                *self.kv_params.flattened_kv_inputs(),
             )
 
     def _unflatten_kv_inputs(
@@ -212,11 +213,9 @@ class DeepseekV2Model(
             kv_cache_config=self.kv_cache_config,
             cache_dtype=self.pipeline_config.model.kv_cache.cache_dtype,
         )
-        return list(
-            kv_params.get_symbolic_inputs()
-            .unflatten(iter(kv_inputs_flat))
-            .inputs
-        )
+        symbolic_inputs = kv_params.unflatten_kv_inputs(iter(kv_inputs_flat))
+        assert isinstance(symbolic_inputs, KVCacheInputs)
+        return list(symbolic_inputs.inputs)
 
     def _build_graph(self) -> Graph:
         # Pre-allocate a buffer for input_row_offsets in multistep execution.

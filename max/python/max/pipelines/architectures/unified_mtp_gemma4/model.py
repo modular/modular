@@ -25,7 +25,8 @@ from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph
 from max.graph.weights import WeightData, Weights, WeightsAdapter, load_weights
 from max.nn.kv_cache import (
-    KVCacheInputs,
+    KVCacheInputsInterface,
+    KVCacheParams,
     MultiKVCacheParams,
 )
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
@@ -62,7 +63,6 @@ class UnifiedMTPGemma4Inputs(ModelInputs):
     batch_context_lengths: list[Buffer]
 
     draft_tokens: Buffer | None = None
-    draft_kv_blocks: list[Buffer] | None = None
     seed: Buffer | None = None
     temperature: Buffer | None = None
     top_k: Buffer | None = None
@@ -73,6 +73,10 @@ class UnifiedMTPGemma4Inputs(ModelInputs):
     in_thinking_phase: Buffer | None = None
     """Per-batch ``bool`` flag marking rows currently inside a
     ``<think>...</think>`` block; consumed by relaxed acceptance."""
+
+    pinned_bitmask: Buffer | None = None
+    wait_payload: Buffer | None = None
+    device_bitmask_scratch: Buffer | None = None
 
     @property
     def buffers(self) -> tuple[Buffer, ...]:
@@ -99,8 +103,6 @@ class UnifiedMTPGemma4Inputs(ModelInputs):
             *self.batch_context_lengths,
             self.draft_tokens,
         )
-        if self.draft_kv_blocks is not None:
-            buffers += tuple(self.draft_kv_blocks)
         buffers += (
             self.seed,
             self.temperature,
@@ -110,6 +112,14 @@ class UnifiedMTPGemma4Inputs(ModelInputs):
             self.min_top_p,
             self.in_thinking_phase,
         )
+        if self.pinned_bitmask is not None:
+            assert self.wait_payload is not None
+            assert self.device_bitmask_scratch is not None
+            buffers += (
+                self.pinned_bitmask,
+                self.wait_payload,
+                self.device_bitmask_scratch,
+            )
         return buffers
 
 
@@ -205,6 +215,7 @@ class UnifiedMTPGemma4Model(
                 config,
                 draft_config,
                 speculative_config=self.pipeline_config.speculative,
+                enable_structured_output=self.pipeline_config.needs_bitmask_constraints,
             )
 
             # Set return modes on the target model
@@ -215,8 +226,12 @@ class UnifiedMTPGemma4Model(
 
             # -- 6. Create draft model and share embed_tokens/lm_head --
             assert isinstance(self.kv_params, MultiKVCacheParams)
-            target_sliding_kv_params = self.kv_params.params[0]
-            target_global_kv_params = self.kv_params.params[1]
+            target_sliding_kv_params = self.kv_params.params[
+                "sliding_attention"
+            ]
+            assert isinstance(target_sliding_kv_params, KVCacheParams)
+            target_global_kv_params = self.kv_params.params["full_attention"]
+            assert isinstance(target_global_kv_params, KVCacheParams)
             target_layer_types = config.text_config.layer_types
 
             nn_model.draft = Gemma4Assistant(
@@ -254,9 +269,7 @@ class UnifiedMTPGemma4Model(
             # -- 9. Build graph and compile --
             with Graph(
                 "gemma4_with_mtp_graph",
-                input_types=nn_model.input_types(
-                    self.kv_params, self._draft_kv_params
-                ),
+                input_types=nn_model.input_types(self.kv_params),
             ) as graph:
                 (
                     tokens,
@@ -273,21 +286,10 @@ class UnifiedMTPGemma4Model(
                     for _ in range(len(self.devices))
                 ]
 
-                # Unflatten target KV cache inputs. MultiKVCacheParams produces
-                # [sliding_dev0, ..., global_dev0, ...] in order.
-                kv_flat_types = list(
-                    self.kv_params.get_symbolic_inputs().flatten()
+                # Unflatten the hybrid {sliding, global} KV tree.
+                sliding_kv_collections, global_kv_collections = (
+                    self.kv_params.unflatten_basic_kv_tree(variadic_args_iter)
                 )
-                all_kv_caches = self._unflatten_kv_inputs(
-                    [
-                        next(variadic_args_iter)
-                        for _ in range(len(kv_flat_types))
-                    ]
-                )
-                # Split into sliding and global cache collections
-                half = len(all_kv_caches) // 2
-                sliding_kv_collections = list(all_kv_caches[:half])
-                global_kv_collections = list(all_kv_caches[half:])
 
                 batch_context_lengths = [
                     next(variadic_args_iter).tensor
@@ -303,6 +305,16 @@ class UnifiedMTPGemma4Model(
                 top_p = next(variadic_args_iter).tensor
                 min_top_p = next(variadic_args_iter).tensor
                 in_thinking_phase = next(variadic_args_iter).tensor
+
+                pinned_bitmask_graph = None
+                wait_payload_graph = None
+                device_bitmask_scratch_graph = None
+                if nn_model.enable_structured_output:
+                    pinned_bitmask_graph = next(variadic_args_iter).tensor
+                    wait_payload_graph = next(variadic_args_iter).buffer
+                    device_bitmask_scratch_graph = next(
+                        variadic_args_iter
+                    ).buffer
 
                 outputs = nn_model(
                     tokens=tokens.tensor,
@@ -322,6 +334,9 @@ class UnifiedMTPGemma4Model(
                     top_p=top_p,
                     min_top_p=min_top_p,
                     in_thinking_phase=in_thinking_phase,
+                    pinned_bitmask=pinned_bitmask_graph,
+                    wait_payload=wait_payload_graph,
+                    device_bitmask_scratch=device_bitmask_scratch_graph,
                 )
 
                 graph.output(*outputs)
@@ -351,10 +366,9 @@ class UnifiedMTPGemma4Model(
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
+        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
         draft_tokens: Buffer | None = None,
-        draft_kv_cache_buffers: list[Buffer] | None = None,
         **kwargs: object,
     ) -> UnifiedMTPGemma4Inputs:
         context_batch = [ctx for batch in replica_batches for ctx in batch]
@@ -417,7 +431,6 @@ class UnifiedMTPGemma4Model(
             kv_cache_inputs=kv_cache_inputs,
             batch_context_lengths=batch_context_lengths,
             draft_tokens=draft_tokens,
-            draft_kv_blocks=draft_kv_cache_buffers,
         )
 
     @classmethod

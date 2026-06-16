@@ -218,21 +218,21 @@ def execute_kv_cache_ragged_matmul[
             cache_lengths_host[i] = 10
 
     var kv_collection_device = CollectionType(
-        LayoutTensor[dtype, kv_block_static_shape, MutAnyOrigin](
+        LayoutTensor[dtype, kv_block_static_shape](
             kv_block_device.ptr,
             RuntimeLayout[kv_block_static_shape](
                 kv_block_runtime_layout.shape.value,
                 kv_block_runtime_layout.stride.value,
             ),
         ),
-        LayoutTensor[DType.uint32, cache_lengths_static_shape, ImmutAnyOrigin](
+        LayoutTensor[mut=False, DType.uint32, cache_lengths_static_shape](
             cache_lengths_device.ptr,
             RuntimeLayout[cache_lengths_static_shape](
                 cache_lengths_runtime_layout.shape.value,
                 cache_lengths_runtime_layout.stride.value,
             ),
         ),
-        LayoutTensor[DType.uint32, lookup_table_static_shape, ImmutAnyOrigin](
+        LayoutTensor[mut=False, DType.uint32, lookup_table_static_shape](
             lookup_table_device.ptr,
             RuntimeLayout[lookup_table_static_shape](
                 lookup_table_runtime_layout.shape.value,

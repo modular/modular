@@ -330,7 +330,6 @@ class DiskTier:
             self._pending_hashes.clear()
         for path in self._cache_dir.glob("*.bin"):
             path.unlink(missing_ok=True)
-        (self._cache_dir / "_metadata.json").unlink(missing_ok=True)
 
     # -- sync I/O (runs on worker threads) --
 
@@ -472,16 +471,10 @@ class DiskTier:
     # -- persistence --
 
     def _load_existing(self) -> None:
-        """Rebuild the in-memory index from the on-disk ``*.bin`` files.
-
-        The cached set is the block files themselves, so no metadata is
-        persisted or read. A leftover ``_metadata.json`` from an older build is
-        removed. ``block_nbytes`` is assumed unchanged for this ``cache_dir``
-        (see the class docstring); a block-size change is not detected here.
-        """
-        (self._cache_dir / "_metadata.json").unlink(missing_ok=True)
-
+        """Rebuild the in-memory index from the on-disk ``*.bin`` files."""
+        scanned = 0
         for entry in os.scandir(self._cache_dir):
+            scanned += 1
             name = entry.name
             if not name.endswith(".bin"):
                 continue
@@ -493,13 +486,19 @@ class DiskTier:
 
         if self._saved_hashes:
             logger.info(
-                "Disk cache warm start: scanned %d blocks (%.1f GB) from %s",
+                "Disk cache warm start: indexed %d blocks (%.1f GB) from "
+                "%d files in %s",
                 len(self._saved_hashes),
                 len(self._saved_hashes) * self._block_nbytes / (1024**3),
+                scanned,
                 self._cache_dir,
             )
         else:
-            logger.info("Disk cache cold start at %s", self._cache_dir)
+            logger.info(
+                "Disk cache cold start at %s (scanned %d files)",
+                self._cache_dir,
+                scanned,
+            )
 
     @property
     def inflight_disk_ops(self) -> int:
