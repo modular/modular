@@ -133,7 +133,7 @@ pointer pointing to the requested memory. You can allocate space for one or
 more values of the pointee's type. Allocation failure traps the program.
 The `alloc()` function always returns a valid, non-null pointer:
 
-```mojo
+```mojo no-test
 var ptr = alloc[Int](10) # Allocate space for 10 Int values
 ```
 
@@ -148,14 +148,14 @@ and
 [`init_pointee_move()`](/docs/std/memory/unsafe_pointer/UnsafePointer/#init_pointee_move)
 methods. For example:
 
-```mojo
+```mojo no-test
 ptr.init_pointee_copy(my_value)
 ```
 
 To move a value into the pointer's memory location, use
 `init_pointee_move()`:
 
-```mojo
+```mojo no-test
 str_ptr.init_pointee_move(my_string^)
 ```
 
@@ -321,12 +321,24 @@ for offset in range(6):
 
 ## `UnsafePointer` and origins
 
-The `UnsafePointer` struct has an `origin` parameter to track the
-origin of the memory it points to.
+The `UnsafePointer` struct has an `origin` parameter to track the origin of the
+memory it points to. The full parameter signature for `UnsafePointer` looks like
+this:
 
-For pointers initialized with the `to` keyword argument, the origin is set to
-the origin of the pointee. For example, in the following code, `s_ptr.origin` is
-the same as the origin of `s`:
+```mojo
+struct UnsafePointer[
+    mut: Bool,
+    //,
+    type: AnyType,
+    origin: Origin[mut=mut],
+    *,
+    address_space: AddressSpace = AddressSpace.GENERIC,
+]
+```
+
+For pointers initialized with the `to` keyword argument, the origin is inferred
+from the origin of the pointee. For example, in the following code,
+`s_ptr.origin` is the same as the origin of `s`:
 
 ```mojo
 s = "Testing"
@@ -336,8 +348,7 @@ s_ptr = UnsafePointer(to=s)
 When allocating memory with the `alloc()` function, the returned pointer has an
 `origin` value of `MutUntrackedOrigin`. This value represents an origin that is
 mutable and doesn't *alias* existing values. For example, it doesn't point to
-the memory allocated for any other variable. That means the compiler won't
-unnecessarily extend the lifetimes of unrelated values. This memory isn't
+the memory allocated for any other variable. This memory isn't
 tracked by Mojo's lifetime checker and you're responsible for freeing it.
 
 If you're using a pointer in the implementation of a struct, you usually don't
@@ -346,15 +357,15 @@ of the struct. For example, if you implement a static array type that allocates
 memory in its constructor, deallocates it in its destructor, and doesn't expose
 the pointer outside of the struct, the default origin is fine.
 
-But if the struct exposes a pointer to that memory, you need to set the origin
-appropriately. For example, the `List` type has an `unsafe_ptr()` method that
-returns an `UnsafePointer` to the underlying storage. In this case, the returned
-pointer should share the origin of the list, since the list is the logical owner
-of the storage.
+But if the struct exposes a pointer or reference to that memory, you need to set
+the origin appropriately. For example, the `List` type has an `unsafe_ptr()`
+method that returns an `UnsafePointer` to the underlying storage. In this case,
+the returned pointer should share the origin of the list, since the list is the
+logical owner of the storage.
 
 That method looks something like this:
 
-```mojo
+```mojo no-test
 def unsafe_ptr(
     ref self,
 ) -> UnsafePointer[T, origin_of(self)]:
@@ -369,13 +380,29 @@ A method like this is unsafe, but setting the correct origin makes it safer,
 since the compiler knows that the pointer is referring to data owned by the
 list.
 
+When taking a pointer as a function argument, you often want to require either
+a mutable or immutable origin, but otherwise allow the compiler to infer the
+origin. Here's an example:
+
+```mojo
+def print_bytes(bytes: UnsafePointer[mut=False, Byte, _], count: Int):
+    for i in range(count):
+        print(hex(bytes[i]), end=" ")
+    print()
+
+By binding the infer-only `mut` parameter to `False`, and leaving the origin
+unbound (using `_`), this signature lets the compiler infer the origin, but
+forces the origin to be immutable. Mojo can implicitly cast a mutable pointer to
+an immutable pointer, so you can pass a mutable pointer into `print_bytes()`,
+but the function can't mutate the data.
+
 ## Working with nullability
 
 `UnsafePointer` is a non-nullable type. To model a null pointer, wrap it
 in `Optional`:
 
 ```mojo
-  var ptr = Optional[UnsafePointer[Int, MutUntrackedOrigin]]()
+var ptr = Optional[UnsafePointer[Int, MutUntrackedOrigin]]()
 ```
 
 This creates an `Optional` with a value of `None`, which is equivalent
@@ -390,11 +417,11 @@ if ptr:
     var p = ptr.value()
 ```
 
-When you need a non-null sentinel for deferred initialization, use
+When you need a non-null value for deferred initialization, use
 `unsafe_dangling()` instead:
 
 ```mojo
-  var ptr = UnsafePointer[Int, MutUntrackedOrigin].unsafe_dangling()
+var ptr = UnsafePointer[Int, MutUntrackedOrigin].unsafe_dangling()
 ```
 
 For a practical example of optional pointers in a data structure, see
@@ -432,9 +459,9 @@ def write_to_address(mmio_address: Int, value: Int32):
       unsafe_from_address=mmio_address
     )
 
-     # Writing to a raw memory address may require a volatile load/store as the
-     # operation may have side effects not visible to the compiler.
-     # You can specify this using the `volatile` parameter.
+    # Writing to a raw memory address may require a volatile load/store as the
+    # operation may have side effects not visible to the compiler.
+    # You can specify this using the `volatile` parameter.
     ptr.store[volatile = True](value)
 ```
 
@@ -456,9 +483,9 @@ data using a Mojo pointer:
 from std.python import Python
 
 def share_array() raises:
-    np = Python.import_module("numpy")
-    arr = np.array(Python.list(1, 2, 3, 4, 5, 6, 7, 8, 9))
-    ptr = arr.ctypes.data.unsafe_get_as_pointer[DType.int64]()
+    var np = Python.import_module("numpy")
+    var arr = np.array(Python.list(1, 2, 3, 4, 5, 6, 7, 8, 9))
+    var ptr = arr.ctypes.data.unsafe_get_as_pointer[DType.int64]()
     for i in range(9):
         print(ptr[i], end=", ")
     print()
@@ -486,9 +513,9 @@ for you.
 
 Notably, the `origin` parameter when working across FFI boundaries should often
 be set to `(Mut/Immut)UntrackedOrigin`, since the pointer points to memory
-external to the mojo program.
+allocated outside of the Mojo program.
 
-```mojo
+```mojo no-test
 from std.ffi import external_call
 
 def get_foreign_pointer() -> UnsafePointer[Int, MutUntrackedOrigin]:
@@ -534,24 +561,25 @@ in the chunk.
 
 ```mojo
 def read_chunks(
-  var ptr: UnsafePointer[mut=False, UInt8],
+  var ptr: UnsafePointer[mut=False, UInt8, _],
 ) -> List[List[UInt32]]:
-    chunks = List[List[UInt32]]()
+    var chunks = List[List[UInt32]]()
     # A chunk size of 0 indicates the end of the data
-    chunk_size = Int(ptr[])
+    var chunk_size = Int(ptr[])
     while (chunk_size > 0):
         # Skip the 1 byte chunk_size and get a pointer to the first
         # UInt32 in the chunk
-        ui32_ptr = (ptr + 1).bitcast[UInt32]()
-        chunk = List[UInt32](capacity=chunk_size)
+        var ui32_ptr = (ptr + 1).bitcast[UInt32]()
+        var chunk = List[UInt32](capacity=chunk_size)
         for i in range(chunk_size):
             chunk.append(ui32_ptr[i])
-        chunks.append(chunk)
+        # list is not implicitly copyable, so it needs the transfer sigil (^)
+        chunks.append(chunk^)
         # Move our pointer to the next byte after the current chunk
         ptr += (1 + 4 * chunk_size)
         # Read the size of the next chunk
         chunk_size = Int(ptr[])
-    return chunks
+    return chunks^
 ```
 
 When dealing with data read in from a file or from the network, you may also
@@ -570,7 +598,7 @@ order of a SIMD value from big-endian to little-endian or the reverse. For
 example, if the method above was reading big-endian data, you'd just need to
 change a single line:
 
-```mojo
+```mojo no-test
 chunk.append(byte_swap(ui32_ptr[i]))
 ```
 
@@ -606,13 +634,13 @@ that this function only handles images where the number of pixels is evenly
 divisible by eight.)
 
 ```mojo
-def invert_red_channel(ptr: UnsafePointer[mut=True, UInt8], pixel_count: Int):
+def invert_red_channel(ptr: UnsafePointer[mut=True, UInt8, _], pixel_count: Int):
     # number of values loaded or stored at a time
     comptime simd_width = 8
     # bytes per pixel, which is also the stride size
-    bpp = 3
+    comptime bpp = 3
     for i in range(0, pixel_count * bpp, simd_width * bpp):
-        red_values = (ptr + i).strided_load[width=simd_width](bpp)
+        var red_values = (ptr + i).strided_load[width=simd_width](bpp)
         # Invert values and store them in their original locations
         (ptr + i).strided_store[width=simd_width](~red_values, bpp)
 ```
