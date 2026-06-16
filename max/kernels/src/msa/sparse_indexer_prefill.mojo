@@ -129,6 +129,7 @@ def _prefill_block_score_kernel[
     init_blocks: Int,
     local_blocks: Int,
     sm_scale: Float32,
+    num_chunks: Int,
 ):
     """SM100 (B200) BF16 tensor-core (SS-UMMA) MSA prefill block scorer.
 
@@ -138,7 +139,12 @@ def _prefill_block_score_kernel[
     idx_head_dim], transpose_b=True so S = Q @ K_block^T. bf16 in, f32 TMEM
     accumulation.
 
-    Three gotchas, all load-bearing:
+    The block loop is split-K over `block_idx.z`: each of `num_chunks` CTAs owns
+    a disjoint, contiguous slice of this tile's K blocks, so every block is
+    scored by exactly one chunk and the per-block writes need no cross-CTA
+    reduction.
+
+    Four gotchas, all load-bearing:
     1. SS-UMMA SMEM must be staged via TMA, because the hardware applies the 128B
        swizzle XOR on the copy, and the UMMA descriptor reads it back with the
        matching XOR. Manual swizzle-less stores silently compute a wrong dot.
@@ -149,6 +155,14 @@ def _prefill_block_score_kernel[
        AFTER the MMA (a column key >= that query's num_keys is excluded from its
        max), not to the K read, so one key block serves every query row in the
        tile.
+    4. Split-K disjoint-block invariant: each chunk handles blocks
+       `[chunk_start, chunk_end)` (non-overlapping), so every block is written by
+       exactly one CTA -- no reduction, no race. An empty chunk
+       (`chunk_start >= max_blocks_tile`) must early-return uniformly before any
+       collective op (TMA mbar / tcgen05 alloc), same as an empty query tile, or
+       a straggler in a collective hangs the block. The K ring is re-indexed by
+       the chunk-LOCAL iteration `it = blk - chunk_start` for phase/stage math,
+       while absolute `blk` drives K coords and score offsets.
     """
     comptime assert (
         input_row_offsets.flat_rank == 1 and prefix_lens.flat_rank == 1
@@ -182,6 +196,17 @@ def _prefill_block_score_kernel[
         Int(prefix_lens[b]) + (q_tile_start + n_tile_q - 1) + 1
     )
     var max_blocks_tile = ceildiv(num_keys_tile_max, block_size)
+
+    # Split-K slice for this CTA (block_idx.z); the slice is CTA-uniform, so the
+    # empty-chunk early-return below stays uniform -- a straggler in a
+    # collective would hang the block.
+    var chunk_id = Int(block_idx.z)
+    var chunk_blocks = ceildiv(max_blocks_tile, num_chunks)
+    var chunk_start = chunk_id * chunk_blocks
+    var chunk_end = min(chunk_start + chunk_blocks, max_blocks_tile)
+    if chunk_start >= max_blocks_tile:
+        return
+    var chunk_num_blocks = chunk_end - chunk_start
 
     comptime UMMAType = SM100TensorAccumulatorSS[
         dtype,
@@ -264,34 +289,36 @@ def _prefill_block_score_kernel[
             q_tma.async_copy_3d(q_dst, q_mbar[0], (0, h, q_row0))
     q_mbar[0].wait(0)
 
-    # Ring stage `s = blk % NSTAGE` toggles its phase every NSTAGE blocks; the
-    # consumer waits with phase = (blk // NSTAGE) & 1. No Q-prologue collision:
-    # Q uses its own mbar.
+    # Ring indexed by chunk-LOCAL iter `it = blk - chunk_start`: stage
+    # `s = it % NSTAGE` toggles phase every NSTAGE iters; consumer waits with
+    # phase = (it // NSTAGE) & 1. No Q-prologue collision (Q uses its own mbar).
+    # `issue_k` takes absolute `blk` for K coords, chunk-local `it` for the stage.
     @parameter
     @always_inline
-    def issue_k(blk: Int):
+    def issue_k(blk: Int, it: Int):
         if tid == 0:
             var key_start = blk * block_size
             var k_row0 = Int(k_operand.row_idx(UInt32(b), UInt32(key_start)))
-            var s = blk % NSTAGE
+            var s = it % NSTAGE
             var k_dst = TileTensor[
                 dtype, type_of(k_flat_layout), address_space=AddressSpace.SHARED
             ](k_smem + s * k_elems, k_flat_layout)
             k_mbar[s].expect_bytes(Int32(k_bytes))
             k_tma.async_copy_3d(k_dst, k_mbar[s], (0, 0, k_row0))
 
-    var n_prefetch = min(NSTAGE, max_blocks_tile)
-    for blk in range(n_prefetch):
-        issue_k(blk)
+    var n_prefetch = min(NSTAGE, chunk_num_blocks)
+    for it in range(n_prefetch):
+        issue_k(chunk_start + it, it)
 
     umma_c.tmem_arrive_init()
     named_barrier[Int32(NTHREADS)]()
 
-    for blk in range(max_blocks_tile):
+    for it in range(chunk_num_blocks):
+        var blk = chunk_start + it
         var key_start = blk * block_size
-        var s = blk % NSTAGE
-        # k_mbar[s] phase = number of full ring cycles completed for this stage.
-        var k_phase = UInt32((blk // NSTAGE) & 1)
+        var s = it % NSTAGE
+        # k_mbar[s] phase = number of full ring cycles completed (chunk-local).
+        var k_phase = UInt32((it // NSTAGE) & 1)
         k_mbar[s].wait(k_phase)
 
         # B descriptor for this K ring stage; A descriptor rebuilt per head.
@@ -357,11 +384,11 @@ def _prefill_block_score_kernel[
         # Prefetch the block that will land in this freed ring stage. All threads
         # have finished reading K[s] for every head's MMA (the accumulator
         # handshake serialized MMA-consume per head), so reissuing into stage s
-        # is safe. One elected thread issues; the wait happens NSTAGE blocks on.
+        # is safe. One elected thread issues; the wait happens NSTAGE iters on.
         named_barrier[Int32(NTHREADS)]()
-        var next_blk = blk + NSTAGE
-        if next_blk < max_blocks_tile:
-            issue_k(next_blk)
+        var next_it = it + NSTAGE
+        if next_it < chunk_num_blocks:
+            issue_k(chunk_start + next_it, next_it)
 
     if warp_id() == 0:
         tcgen05_release_allocation_lock[1]()
@@ -453,6 +480,46 @@ def sparse_indexer_prefill_score[
     # BK=idx_head_dim contraction. The accumulator asserts BM%MMA_M, BN%MMA_N,
     # compute_BK%16; idx_head_dim and block_size feed BK/BN directly.
     comptime QTILE = 64
+
+    # Split-K so low-batch / short-extend launches fill the GPU. Base grid is
+    # only `q_tiles * batch` CTAs (a 256-token chunked-prefill against a long
+    # prefix has q_tiles=4 -> 4 CTAs on a 148-SM B200, with the K-block loop
+    # serialized inside each). Splitting the K-block range over `block_idx.z`
+    # raises in-flight CTAs (each resides 1/SM, SMEM-bound) so the scheduler can
+    # hide the per-iteration MMA/barrier latency that dominates at 1 CTA/SM.
+    #
+    # CAPTURE-SAFETY: `num_chunks` depends ONLY on graph-constant quantities
+    # (`max_seqlen_q`, `batch`), never on per-call `prefix_lens`/`num_keys`
+    # (which vary inside a CUDA-graph capture). Chunks past a tile's live block
+    # count early-return on-device, so any chunk count is valid -- each block is
+    # written by exactly one chunk, no reduction. Capped so well-subscribed
+    # shapes (large q_tiles*batch) get chunks=1 and do not regress.
+    var q_tiles = ceildiv(max_seqlen_q, QTILE)
+    # TARGET_GRID is several SM-counts' worth of CTAs: at 1 CTA/SM (SMEM-bound)
+    # the kernel is barrier/MMA-wait latency-bound, so it wants several waves of
+    # short CTAs to hide that latency. Too small under-fills bulk shapes; too
+    # large over-fragments short tiles (per-chunk TMA/tcgen05 prologue cost).
+    comptime TARGET_GRID = 1024
+    comptime MAX_CHUNKS = 512
+    var chunks_for_grid = TARGET_GRID // max(1, q_tiles * batch)
+    # Depth-balanced split-K (load-bearing for deep fresh-prefill shapes):
+    # `chunks_for_grid` alone under-splits a grid-full launch whose per-tile K
+    # loops are long and uneven -- causal means tile qt does ~qt blocks, so the
+    # deepest tile (~q_tiles blocks) runs long after the short tiles finish and
+    # the scheduler runs dry of warps to hide the per-(block,head) MMA/barrier
+    # latency. So also split so the deepest tile's chunk holds
+    # ~TARGET_BLOCKS_PER_CHUNK blocks, breaking the long CTAs into more uniform
+    # ones: too small over-fragments (per-chunk tcgen05/Q-prologue cost), too
+    # large under-splits the deep tiles.
+    # CAPTURE-SAFE: `max_tile_blocks` uses `max_seqlen_q` (graph constant) only,
+    # never `prefix_lens`; QTILE < block_size so multiply before the divide.
+    comptime TARGET_BLOCKS_PER_CHUNK = 8
+    var max_tile_blocks = ceildiv(q_tiles * QTILE, block_size)
+    var chunks_for_depth = ceildiv(max_tile_blocks, TARGET_BLOCKS_PER_CHUNK)
+    var num_chunks = max(
+        1, min(MAX_CHUNKS, max(chunks_for_grid, chunks_for_depth))
+    )
+
     comptime score_kernel = _prefill_block_score_kernel[
         dtype,
         KOperand,
@@ -510,7 +577,8 @@ def sparse_indexer_prefill_score[
         init_blocks,
         local_blocks,
         sm_scale,
-        grid_dim=(ceildiv(max_seqlen_q, QTILE), batch),
+        num_chunks,
+        grid_dim=(q_tiles, batch, num_chunks),
         block_dim=BLOCK_DIM,
         shared_mem_bytes=smem_bytes,
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
