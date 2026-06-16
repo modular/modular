@@ -21,7 +21,7 @@ from typing import Any
 
 from ._nvml import NVMLContext
 from ._rsmi import RSMIContext
-from ._types import GPUStats
+from .types import GPUStats
 
 
 class GPUDiagContext:

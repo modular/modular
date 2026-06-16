@@ -19,5 +19,15 @@ try:
 except ImportError:
 
     class GGUFWeights:  # type: ignore
+        """Placeholder when the ``gguf`` package is not installed.
+
+        Preserves the :class:`GGUFWeights` export from this module when
+        :mod:`max.graph.weights.load_gguf` cannot be imported. Construction
+        always raises :exc:`ImportError`.
+
+        Raises:
+            ImportError: If an instance is constructed.
+        """
+
         def __init__(self, *args, **kwargs):
             raise ImportError("Unable to load gguf file, gguf not installed")
