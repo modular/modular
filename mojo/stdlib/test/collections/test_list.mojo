@@ -17,6 +17,7 @@ from test_utils import (
     CopyCountedStruct,
     CopyCounter,
     DelCounter,
+    ExplicitDestroy,
     MoveCounter,
     MoveOnly,
     Observable,
@@ -777,9 +778,7 @@ def _test_list_iter_bounds[I: Iterator](var list_iter: I, list_len: Int) raises:
         var lower, upper = iter.bounds()
         assert_equal(list_len - i, lower)
         assert_equal(list_len - i, upper.value())
-        _ = trait_downcast_var[Movable & ImplicitlyDestructible](
-            iter.__next__()
-        )
+        _ = trait_downcast_var[Movable & ImplicitlyDeletable](iter.__next__())
 
     var lower, upper = iter.bounds()
     assert_equal(0, lower)
@@ -1073,10 +1072,16 @@ def test_destructor_trivial_elements() raises:
 
 def test_list_write_repr_to() raises:
     check_write_to(
-        [1, 2, 3], expected="List[Int]([Int(1), Int(2), Int(3)])", is_repr=True
+        [1, 2, 3],
+        expected="List[SIMD[DType.int, 1]]([Int(1), Int(2), Int(3)])",
+        is_repr=True,
     )
-    check_write_to([1], expected="List[Int]([Int(1)])", is_repr=True)
-    check_write_to(List[Int](), expected="List[Int]([])", is_repr=True)
+    check_write_to(
+        [1], expected="List[SIMD[DType.int, 1]]([Int(1)])", is_repr=True
+    )
+    check_write_to(
+        List[Int](), expected="List[SIMD[DType.int, 1]]([])", is_repr=True
+    )
 
 
 def test_list_fill_constructor() raises:
@@ -1209,6 +1214,49 @@ def test_list_move_only() raises:
 
     l.clear()
     assert_equal(len(l), 0)
+
+
+def test_list_with_explicit_destroy_type() raises:
+    var list = [ExplicitDestroy(0), ExplicitDestroy(1)]
+
+    var destroyed = List[Int]()
+
+    def destroy_closure(var e: ExplicitDestroy) {mut}:
+        destroyed.append(e.value)
+        e^.destroy()
+
+    list^.destroy_with(destroy_closure)
+
+    assert_equal(destroyed, [0, 1])
+
+
+def test_empty_list_with_explicit_destroy_type() raises:
+    var list = List[ExplicitDestroy]()
+
+    var destroyed = 0
+
+    def destroy_closure(var e: ExplicitDestroy) {mut}:
+        destroyed += 1
+        e^.destroy()
+
+    list^.destroy_with(destroy_closure)
+
+    assert_equal(destroyed, 0)
+
+
+def test_extend_list_with_explicit_destroy_type() raises:
+    var list1 = [ExplicitDestroy(0)]
+    var list2 = [ExplicitDestroy(1), ExplicitDestroy(2)]
+    list1.extend(list2^)
+
+    var destroyed = List[Int]()
+
+    def destroy_closure(var e: ExplicitDestroy) {mut}:
+        destroyed.append(e.value)
+        e^.destroy()
+
+    list1^.destroy_with(destroy_closure)
+    assert_equal(destroyed, [0, 1, 2])
 
 
 # ===-------------------------------------------------------------------===#

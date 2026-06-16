@@ -59,9 +59,9 @@ def _all_trivial_del[*Ts: AnyType]() -> Bool:
     """Check if all types have trivial destructors."""
 
     comptime for i in range(Ts.size):
-        comptime if conforms_to(Ts[i], ImplicitlyDestructible):
+        comptime if conforms_to(Ts[i], ImplicitlyDeletable):
             if not is_trivially_destructible[
-                downcast[Ts[i], ImplicitlyDestructible]
+                downcast[Ts[i], ImplicitlyDeletable]
             ]():
                 return False
         else:

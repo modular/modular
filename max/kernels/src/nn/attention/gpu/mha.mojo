@@ -13,6 +13,7 @@
 
 from std.math import ceildiv, recip
 from std.math.uutils import umod, ufloordiv, udivmod
+from std.os.env import getenv
 from std.math.constants import log2e
 from std.collections import OptionalReg
 from std.sys import (
@@ -20,6 +21,7 @@ from std.sys import (
     align_of,
     get_defined_bool,
     has_amd_gpu_accelerator,
+    has_apple_gpu_accelerator,
     has_nvidia_gpu_accelerator,
     is_amd_gpu,
     is_nvidia_gpu,
@@ -93,6 +95,10 @@ from std.memory import stack_allocation
 from .amd_rdna.attention import AttentionRDNA
 from .amd_rdna.mha_decode import AttentionRDNA
 from .amd_rdna.mha_prefill import AttentionRDNA
+from .apple.naive_fa_decode import (
+    NAIVE_FA_DECODE_APPLE_MAX_HEAD_DIM,
+    naive_fa_decode_apple,
+)
 from .amd_structured.attention import Attention
 from .amd_structured.mha_prefill_v2 import (
     MhaConfigV2,
@@ -508,13 +514,19 @@ def q_num_matrix_view_rows[
 
 
 @always_inline
-def q_num_matrix_view_rows[dtype: DType, //](q: TileTensor[dtype, ...]) -> Int:
+def q_num_matrix_view_rows[
+    dtype: DType, //
+](q: TileTensor[mut=False, dtype, ...]) -> Int:
     # TileTensor overload for the same computation.
     var num_rows: Int = Int(q.dim[0]())
 
     comptime for i in range(1, q.rank - 2):
         num_rows *= Int(q.dim[i]())
     return num_rows
+
+
+def _apple_naive_fa_decode_enabled() -> Bool:
+    return getenv("MODULAR_ENABLE_APPLE_NAIVE_FA_DECODE", "0") == "1"
 
 
 @always_inline
@@ -1513,28 +1525,84 @@ def flash_attention_dispatch[
     # Not supported by fast flash attention kernel.
     else:
         # Assumes BSHD.
-        mha_gpu_naive[
-            ragged=ragged,
-            _use_valid_length=_use_valid_length,
-            _is_cache_length_accurate=_is_cache_length_accurate,
-            sink=sink,
-        ](
-            q,
-            k,
-            v,
-            mask_functor,
-            output,
-            valid_length.value(),
-            scale,
-            batch_size,
-            max_prompt_len,
-            max_cache_valid_length,
-            num_heads,
-            depth,
-            group,
-            ctx,
-            sink_weights,
-        )
+        comptime if has_apple_gpu_accelerator():
+            # Apple decode-only opt-in. The warp producer splits the head dim
+            # across lanes, hence the `% WARP_SIZE` gate; anything else (prefill,
+            # flag-off, oversized/odd head_dim) falls to mha_gpu_naive.
+            if (
+                is_token_generation
+                and _apple_naive_fa_decode_enabled()
+                and depth <= NAIVE_FA_DECODE_APPLE_MAX_HEAD_DIM
+                and depth % WARP_SIZE == 0
+            ):
+                naive_fa_decode_apple[
+                    ragged=ragged,
+                    sink=sink,
+                    _use_valid_length=_use_valid_length,
+                    _is_cache_length_accurate=_is_cache_length_accurate,
+                ](
+                    q,
+                    k,
+                    v,
+                    mask_functor,
+                    output,
+                    valid_length.value(),
+                    scale,
+                    batch_size,
+                    max_prompt_len,
+                    max_cache_valid_length,
+                    num_heads,
+                    depth,
+                    group,
+                    ctx,
+                    sink_weights,
+                )
+            else:
+                mha_gpu_naive[
+                    ragged=ragged,
+                    _use_valid_length=_use_valid_length,
+                    _is_cache_length_accurate=_is_cache_length_accurate,
+                    sink=sink,
+                ](
+                    q,
+                    k,
+                    v,
+                    mask_functor,
+                    output,
+                    valid_length.value(),
+                    scale,
+                    batch_size,
+                    max_prompt_len,
+                    max_cache_valid_length,
+                    num_heads,
+                    depth,
+                    group,
+                    ctx,
+                    sink_weights,
+                )
+        else:
+            mha_gpu_naive[
+                ragged=ragged,
+                _use_valid_length=_use_valid_length,
+                _is_cache_length_accurate=_is_cache_length_accurate,
+                sink=sink,
+            ](
+                q,
+                k,
+                v,
+                mask_functor,
+                output,
+                valid_length.value(),
+                scale,
+                batch_size,
+                max_prompt_len,
+                max_cache_valid_length,
+                num_heads,
+                depth,
+                group,
+                ctx,
+                sink_weights,
+            )
 
 
 def flash_attention[
@@ -1596,19 +1664,29 @@ def flash_attention[
 
     var is_token_generation = seq_len == 1 and num_keys > seq_len
 
+    # Build the row-major K/V TileTensors directly (no throwaway LayoutTensor
+    # round-trip). BSHD layout: batch/seq are runtime, head/depth static, so
+    # mirror `k`'s static pattern with `Idx` for the known dims. The operand
+    # infers `buffer_layout` from the passed TileTensor.
     var k_operand = LayoutTensorMHAOperand(
-        LayoutTensor[k.dtype, Layout.row_major(k.layout.shape), k.origin](
+        TileTensor(
             k.ptr,
-            RuntimeLayout[Layout.row_major(k.layout.shape)].row_major(
-                k.runtime_layout.shape.value.canonicalize()
+            row_major(
+                Int(k.dim[0]()),
+                Int(k.dim[1]()),
+                Idx[kv_num_heads],
+                Idx[depth],
             ),
         )
     )
     var v_operand = LayoutTensorMHAOperand(
-        LayoutTensor[v.dtype, Layout.row_major(v.layout.shape), v.origin](
+        TileTensor(
             v.ptr,
-            RuntimeLayout[Layout.row_major(v.layout.shape)].row_major(
-                v.runtime_layout.shape.value.canonicalize()
+            row_major(
+                Int(v.dim[0]()),
+                Int(v.dim[1]()),
+                Idx[kv_num_heads],
+                Idx[depth],
             ),
         )
     )
@@ -1772,22 +1850,18 @@ def flash_attention_ragged[
     var cache_row_offsets = input_row_offsets.as_unsafe_any_origin()
 
     var k_operand = RaggedMHAOperand(
-        LayoutTensor[k.dtype, Layout.row_major(k.layout.shape), k.origin](
+        TileTensor(
             k.ptr,
-            RuntimeLayout[Layout.row_major(k.layout.shape)].row_major(
-                k.runtime_layout.shape.value.canonicalize()
-            ),
+            row_major(Coord(Int(k.dim[0]()), Int(k.dim[1]()), Int(k.dim[2]()))),
         ),
-        cache_row_offsets,
+        lt_to_tt(cache_row_offsets),
     )
     var v_operand = RaggedMHAOperand(
-        LayoutTensor[v.dtype, Layout.row_major(v.layout.shape), v.origin](
+        TileTensor(
             v.ptr,
-            RuntimeLayout[Layout.row_major(v.layout.shape)].row_major(
-                v.runtime_layout.shape.value.canonicalize()
-            ),
+            row_major(Coord(Int(v.dim[0]()), Int(v.dim[1]()), Int(v.dim[2]()))),
         ),
-        cache_row_offsets,
+        lt_to_tt(cache_row_offsets),
     )
     flash_attention_dispatch[
         kv_num_heads=kv_num_heads,
@@ -1863,7 +1937,7 @@ def mha[
     _is_cache_length_accurate: Bool = False,
     _padded_ndbuffer: Bool = False,
 ](
-    q_ptr: UnsafePointer[Scalar[q_type], MutAnyOrigin],
+    q_ptr: UnsafePointer[Scalar[q_type], ImmutAnyOrigin],
     k: k_t,
     v: v_t,
     output_ptr: UnsafePointer[Scalar[output_type], MutAnyOrigin],
@@ -4925,10 +4999,10 @@ def mha_splitk_reduce[
     intermediate_ptr: UnsafePointer[Scalar[intermediate_type], ImmutAnyOrigin],
     output_ptr: UnsafePointer[Scalar[output_type], MutAnyOrigin],
     exp_sum_ptr: UnsafePointer[
-        Scalar[get_accum_type[output_type]()], MutAnyOrigin
+        Scalar[get_accum_type[output_type]()], ImmutAnyOrigin
     ],
     qk_max_ptr: UnsafePointer[
-        Scalar[get_accum_type[output_type]()], MutAnyOrigin
+        Scalar[get_accum_type[output_type]()], ImmutAnyOrigin
     ],
     batch_size: Int,
     num_partitions: Int,
@@ -5546,20 +5620,30 @@ def mha_gpu_naive[
         LayoutTensor[q_type, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
     ] = None,
 ) raises:
+    # The naive reference accepts K/V with either a fully static or a fully
+    # dynamic layout (e.g. `Layout.row_major[4]`), so reinterpret each as a
+    # row-major view over its own shape -- this preserves the static/dynamic
+    # pattern exactly. A static `Idx[k.layout.shape[i]]` would be UNKNOWN_VALUE
+    # for a dynamic dim (corrupting strides), while all-runtime dims regress the
+    # static-dim path.
     var k_operand = LayoutTensorMHAOperand(
-        LayoutTensor[k.dtype, Layout.row_major(k.layout.shape), k.origin](
-            k.ptr,
-            RuntimeLayout[Layout.row_major(k.layout.shape)].row_major(
-                k.runtime_layout.shape.value.canonicalize()
-            ),
+        lt_to_tt(
+            LayoutTensor[k.dtype, Layout.row_major(k.layout.shape), k.origin](
+                k.ptr,
+                RuntimeLayout[Layout.row_major(k.layout.shape)].row_major(
+                    k.runtime_layout.shape.value.canonicalize()
+                ),
+            )
         )
     )
     var v_operand = LayoutTensorMHAOperand(
-        LayoutTensor[v.dtype, Layout.row_major(v.layout.shape), v.origin](
-            v.ptr,
-            RuntimeLayout[Layout.row_major(v.layout.shape)].row_major(
-                v.runtime_layout.shape.value.canonicalize()
-            ),
+        lt_to_tt(
+            LayoutTensor[v.dtype, Layout.row_major(v.layout.shape), v.origin](
+                v.ptr,
+                RuntimeLayout[Layout.row_major(v.layout.shape)].row_major(
+                    v.runtime_layout.shape.value.canonicalize()
+                ),
+            )
         )
     )
     var null_valid_length = LayoutTensor[

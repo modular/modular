@@ -60,9 +60,9 @@ def _rope_split_store_ragged_impl[
     interleaved: Bool = True,
     get_freq_pos: def(Int, Int, Int) capturing -> Int,
 ](
-    qkv: TileTensor[dtype, ...],
-    input_row_offsets: TileTensor[DType.uint32, ...],
-    freqs_cis: TileTensor[freq_dtype, ...],
+    qkv: TileTensor[mut=False, dtype, ...],
+    input_row_offsets: TileTensor[mut=False, DType.uint32, ...],
+    freqs_cis: TileTensor[mut=False, freq_dtype, ...],
     k_cache: cache_t,
     v_cache: OptionalReg[cache_t],
     q_output: TileTensor[mut=True, q_out_dtype, ...],
@@ -190,7 +190,7 @@ def _rope_split_store_ragged_impl[
                     )
                 else:
                     # Non-interleaved: gather re/im halves, rope, scatter.
-                    comptime width_2 = simd_width / 2
+                    comptime width_2 = SIMDSize(simd_width) / 2
                     comptime align_qkv_2 = align_of[
                         SIMD[dtype, width_2]
                     ]() if is_gpu[target]() else align_of[SIMD[dtype, 1]]()
@@ -261,7 +261,7 @@ def _rope_split_store_ragged_impl[
                 else:
                     # Non-interleaved K: gather re/im, rope, deinterleave,
                     # store.
-                    comptime width_2 = simd_width / 2
+                    comptime width_2 = SIMDSize(simd_width) / 2
                     comptime align_qkv_2 = align_of[
                         SIMD[dtype, width_2]
                     ]() if is_gpu[target]() else align_of[SIMD[dtype, 1]]()
@@ -362,9 +362,9 @@ def _rope_split_store_ragged[
     target: StaticString,
     interleaved: Bool = True,
 ](
-    qkv: TileTensor[dtype, ...],
-    input_row_offsets: TileTensor[DType.uint32, ...],
-    freqs_cis: TileTensor[freq_dtype, ...],
+    qkv: TileTensor[mut=False, dtype, ...],
+    input_row_offsets: TileTensor[mut=False, DType.uint32, ...],
+    freqs_cis: TileTensor[mut=False, freq_dtype, ...],
     k_cache: cache_t,
     v_cache: OptionalReg[cache_t],
     q_output: TileTensor[mut=True, q_out_dtype, ...],
@@ -411,9 +411,9 @@ def rope_split_store_paged_ragged[
     target: StaticString = "cpu",
     interleaved: Bool = True,
 ](
-    qkv: TileTensor[dtype, ...],
-    input_row_offsets: TileTensor[DType.uint32, ...],
-    freqs_cis: TileTensor[freq_dtype, ...],
+    qkv: TileTensor[mut=False, dtype, ...],
+    input_row_offsets: TileTensor[mut=False, DType.uint32, ...],
+    freqs_cis: TileTensor[mut=False, freq_dtype, ...],
     kv_collection: PagedKVCacheCollection,
     layer_idx: UInt32,
     q_output: TileTensor[mut=True, q_out_dtype, ...],
@@ -458,12 +458,14 @@ def _rope_split_store_ragged_with_position_ids[
         *Coord[Int64, Int64].element_types
     ],
 ](
-    qkv: TileTensor[dtype, ...],
-    input_row_offsets: TileTensor[DType.uint32, ...],
-    freqs_cis: TileTensor[freq_dtype, ...],
+    qkv: TileTensor[mut=False, dtype, ...],
+    input_row_offsets: TileTensor[mut=False, DType.uint32, ...],
+    freqs_cis: TileTensor[mut=False, freq_dtype, ...],
     k_cache: cache_t,
     v_cache: OptionalReg[cache_t],
-    position_ids: TileTensor[DType.uint32, PositionIdsLayoutType, ...],
+    position_ids: TileTensor[
+        mut=False, DType.uint32, PositionIdsLayoutType, ...
+    ],
     q_output: TileTensor[mut=True, dtype, ...],
     context: Optional[DeviceContext],
 ) raises:
@@ -551,11 +553,13 @@ def rope_split_store_paged_ragged_with_position_ids[
         *Coord[Int64, Int64].element_types
     ],
 ](
-    qkv: TileTensor[dtype, ...],
-    input_row_offsets: TileTensor[DType.uint32, ...],
-    freqs_cis: TileTensor[freq_dtype, ...],
+    qkv: TileTensor[mut=False, dtype, ...],
+    input_row_offsets: TileTensor[mut=False, DType.uint32, ...],
+    freqs_cis: TileTensor[mut=False, freq_dtype, ...],
     kv_collection: PagedKVCacheCollection,
-    position_ids: TileTensor[DType.uint32, PositionIdsLayoutType, ...],
+    position_ids: TileTensor[
+        mut=False, DType.uint32, PositionIdsLayoutType, ...
+    ],
     layer_idx: UInt32,
     q_output: TileTensor[mut=True, dtype, ...],
     ctx: DeviceContext,

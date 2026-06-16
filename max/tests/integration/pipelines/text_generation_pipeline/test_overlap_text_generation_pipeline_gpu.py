@@ -34,8 +34,8 @@ from max.graph import (
     TensorType,
     ops,
 )
-from max.nn import KVCacheInputs, kernels
-from max.nn.kv_cache import KVCacheParams
+from max.nn import kernels
+from max.nn.kv_cache import KVCacheInputsInterface, KVCacheParams
 from max.pipelines.context import TextContext, TokenBuffer
 from max.pipelines.context.context import FUTURE_TOKEN
 from max.pipelines.lib import (
@@ -289,7 +289,7 @@ class FakePipelineModel(PipelineModelWithKVCache[TextContext]):
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
+        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> ModelInputs:
         del kv_cache_inputs, return_n_logits  # Unused args

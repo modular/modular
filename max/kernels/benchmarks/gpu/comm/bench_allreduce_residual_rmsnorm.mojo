@@ -607,7 +607,12 @@ def bench_allreduce_rmsnorm_fp8[
             )
         )
         list_of_ctx[i].enqueue_memset[DType.uint8](signal_buffers[i], 0)
-        rank_sigs[i] = signal_buffers[i].unsafe_ptr().bitcast[Signal]()
+        rank_sigs[i] = (
+            signal_buffers[i]
+            .unsafe_ptr()
+            .bitcast[Signal]()
+            .as_unsafe_any_origin()
+        )
 
     # TileTensor views for allreduce.
     comptime InTensorType = TileTensor[
@@ -737,13 +742,27 @@ def bench_allreduce_rmsnorm_fp8[
         UnsafePointer[Scalar[in_dtype], MutAnyOrigin], ngpus
     ](uninitialized=True)
     for i in range(ngpus):
-        fused_fp8_out_ptrs[i] = fused_fp8_out_dev[i].unsafe_ptr()
-        fused_scales_ptrs[i] = fused_scales_dev[i].unsafe_ptr()
-        fully_fused_fp8_out_ptrs[i] = fully_fused_fp8_out_dev[i].unsafe_ptr()
-        fully_fused_scales_ptrs[i] = fully_fused_scales_dev[i].unsafe_ptr()
-        fused_add_fp8_out_ptrs[i] = fused_add_fp8_out_dev[i].unsafe_ptr()
-        fused_add_scales_ptrs[i] = fused_add_scales_dev[i].unsafe_ptr()
-        residual_output_ptrs[i] = residual_out_dev[i].unsafe_ptr()
+        fused_fp8_out_ptrs[i] = (
+            fused_fp8_out_dev[i].unsafe_ptr().as_unsafe_any_origin()
+        )
+        fused_scales_ptrs[i] = (
+            fused_scales_dev[i].unsafe_ptr().as_unsafe_any_origin()
+        )
+        fully_fused_fp8_out_ptrs[i] = (
+            fully_fused_fp8_out_dev[i].unsafe_ptr().as_unsafe_any_origin()
+        )
+        fully_fused_scales_ptrs[i] = (
+            fully_fused_scales_dev[i].unsafe_ptr().as_unsafe_any_origin()
+        )
+        fused_add_fp8_out_ptrs[i] = (
+            fused_add_fp8_out_dev[i].unsafe_ptr().as_unsafe_any_origin()
+        )
+        fused_add_scales_ptrs[i] = (
+            fused_add_scales_dev[i].unsafe_ptr().as_unsafe_any_origin()
+        )
+        residual_output_ptrs[i] = (
+            residual_out_dev[i].unsafe_ptr().as_unsafe_any_origin()
+        )
 
     # ===== Benchmark 1: allreduce only =====
 

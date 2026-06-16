@@ -146,9 +146,9 @@ def gemv_partial_norm_kernel[
 ](
     normed_output: TileTensor[c_type, normed_layout, MutAnyOrigin],
     unnormed_output: TileTensor[c_type, unnormed_layout, MutAnyOrigin],
-    act: TileTensor[a_type, a_layout, MutAnyOrigin],
-    weight: TileTensor[b_type, b_layout, MutAnyOrigin],
-    gamma: TileTensor[a_type, gamma_layout, MutAnyOrigin],
+    act: TileTensor[a_type, a_layout, ImmutAnyOrigin],
+    weight: TileTensor[b_type, b_layout, ImmutAnyOrigin],
+    gamma: TileTensor[a_type, gamma_layout, ImmutAnyOrigin],
     finish_counter: UnsafePointer[Scalar[DType.int32], MutAnyOrigin],
     trace_buf: TraceBufT,
     eps: Scalar[a_type],
@@ -467,9 +467,9 @@ def _gemv_partial_norm_fused[
 ](
     normed_output: TileTensor[mut=True, c_type, ...],
     unnormed_output: TileTensor[mut=True, c_type, ...],
-    act: TileTensor[a_type, ...],
-    weight: TileTensor[a_type, ...],
-    gamma: TileTensor[a_type, ...],
+    act: TileTensor[mut=False, a_type, ...],
+    weight: TileTensor[mut=False, a_type, ...],
+    gamma: TileTensor[mut=False, a_type, ...],
     eps: Scalar[a_type],
     finish_counter: UnsafePointer[mut=True, Scalar[DType.int32], _],
     trace_buf: TraceBufT,
@@ -555,9 +555,9 @@ def _gemv_partial_norm_unfused_with_scratch[
     pdl_level: PDLLevel,
 ](
     normed_output: TileTensor[mut=True, c_type, ...],
-    act: TileTensor[a_type, ...],
-    weight: TileTensor[a_type, ...],
-    gamma: TileTensor[a_type, ...],
+    act: TileTensor[mut=False, a_type, ...],
+    weight: TileTensor[mut=False, a_type, ...],
+    gamma: TileTensor[mut=False, a_type, ...],
     eps: Scalar[a_type],
     y_scratch: UnsafePointer[mut=True, Scalar[c_type], _],
     ctx: DeviceContext,
@@ -589,9 +589,7 @@ def _gemv_partial_norm_unfused_with_scratch[
     var n = Int(weight.dim[0]())
 
     var y_layout = row_major(Coord(m, n))
-    var y = TileTensor[c_type, type_of(y_layout), MutAnyOrigin](
-        y_scratch, y_layout
-    )
+    var y = TileTensor[c_type, type_of(y_layout)](y_scratch, y_layout)
 
     _matmul_gpu[transpose_b=transpose_b](y, act, weight, ctx)
 
@@ -639,9 +637,9 @@ def gemv_and_partial_norm[
 ](
     normed_output: TileTensor[mut=True, c_type, ...],
     unnormed_output: TileTensor[mut=True, c_type, ...],
-    act: TileTensor[a_type, ...],
-    weight: TileTensor[a_type, ...],
-    gamma: TileTensor[a_type, ...],
+    act: TileTensor[mut=False, a_type, ...],
+    weight: TileTensor[mut=False, a_type, ...],
+    gamma: TileTensor[mut=False, a_type, ...],
     eps: Scalar[a_type],
     ctx: DeviceContext,
 ) raises:
@@ -730,9 +728,9 @@ def gemv_and_partial_norm_unfused_with_scratch[
     pdl_level: PDLLevel = PDLLevel(),
 ](
     normed_output: TileTensor[mut=True, c_type, ...],
-    act: TileTensor[a_type, ...],
-    weight: TileTensor[a_type, ...],
-    gamma: TileTensor[a_type, ...],
+    act: TileTensor[mut=False, a_type, ...],
+    weight: TileTensor[mut=False, a_type, ...],
+    gamma: TileTensor[mut=False, a_type, ...],
     eps: Scalar[a_type],
     y_scratch: UnsafePointer[Scalar[c_type], MutAnyOrigin],
     ctx: DeviceContext,
@@ -802,9 +800,9 @@ def gemv_and_partial_norm_with_scratch[
 ](
     normed_output: TileTensor[mut=True, c_type, ...],
     unnormed_output: TileTensor[mut=True, c_type, ...],
-    act: TileTensor[a_type, ...],
-    weight: TileTensor[a_type, ...],
-    gamma: TileTensor[a_type, ...],
+    act: TileTensor[mut=False, a_type, ...],
+    weight: TileTensor[mut=False, a_type, ...],
+    gamma: TileTensor[mut=False, a_type, ...],
     eps: Scalar[a_type],
     finish_counter: UnsafePointer[Scalar[DType.int32], MutAnyOrigin],
     ctx: DeviceContext,

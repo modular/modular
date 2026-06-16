@@ -95,10 +95,10 @@ def _is_finite(v: Float32) -> Bool:
 
 
 def _mla_naive_fp32_ref_chunked(
-    host_q_src: UnsafePointer[Scalar[DType.bfloat16], MutAnyOrigin],
-    host_knope_src: UnsafePointer[Scalar[DType.bfloat16], MutAnyOrigin],
-    host_krope_src: UnsafePointer[Scalar[DType.bfloat16], MutAnyOrigin],
-    host_out_ref_fp32: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    host_q_src: UnsafePointer[mut=False, Scalar[DType.bfloat16], _],
+    host_knope_src: UnsafePointer[mut=False, Scalar[DType.bfloat16], _],
+    host_krope_src: UnsafePointer[mut=False, Scalar[DType.bfloat16], _],
+    host_out_ref_fp32: UnsafePointer[mut=True, Scalar[DType.float32], _],
     batch: Int,
     seq_len: Int,
     num_keys: Int,
@@ -216,8 +216,8 @@ def _mla_prefill_v2_launch[
     scale: Float32,
     num_keys: Int,
     start_pos: Int,
-    work_indptr_ptr: UnsafePointer[Scalar[DType.int32], ImmutAnyOrigin],
-    work_info_ptr: UnsafePointer[Scalar[DType.int32], ImmutAnyOrigin],
+    work_indptr_ptr: UnsafePointer[mut=False, Scalar[DType.int32], _],
+    work_info_ptr: UnsafePointer[mut=False, Scalar[DType.int32], _],
     num_works: Int,
     num_cu: Int,
     ctx: DeviceContext,
@@ -473,24 +473,8 @@ def test_mla_vs_fp32_ref[
             )
         ),
     )
-    var k_lt_nope = k_tt.to_layout_tensor()
-    var k_nope_op = LayoutTensorMHAOperand(
-        LayoutTensor[k_lt_nope.dtype, k_lt_nope.layout, k_lt_nope.origin](
-            k_lt_nope.ptr,
-            RuntimeLayout[k_lt_nope.layout].row_major(
-                k_lt_nope.runtime_layout.shape.value.canonicalize()
-            ),
-        )
-    )
-    var k_lt_rope = k_tt.to_layout_tensor()
-    var k_rope_op = LayoutTensorMHAOperand(
-        LayoutTensor[k_lt_rope.dtype, k_lt_rope.layout, k_lt_rope.origin](
-            k_lt_rope.ptr,
-            RuntimeLayout[k_lt_rope.layout].row_major(
-                k_lt_rope.runtime_layout.shape.value.canonicalize()
-            ),
-        )
-    )
+    var k_nope_op = LayoutTensorMHAOperand(k_tt)
+    var k_rope_op = LayoutTensorMHAOperand(k_tt)
     var v_tt = TileTensor(
         dev_k_latent,
         row_major(
@@ -502,15 +486,7 @@ def test_mla_vs_fp32_ref[
             )
         ),
     )
-    var v_lt = v_tt.to_layout_tensor()
-    var v_op = LayoutTensorMHAOperand(
-        LayoutTensor[v_lt.dtype, v_lt.layout, v_lt.origin](
-            v_lt.ptr,
-            RuntimeLayout[v_lt.layout].row_major(
-                v_lt.runtime_layout.shape.value.canonicalize()
-            ),
-        )
-    )
+    var v_op = LayoutTensorMHAOperand(v_tt)
 
     _mla_prefill_v2_launch[config=CONFIG](
         q_tt,

@@ -55,7 +55,7 @@ trait Waitable:
 
 
 @fieldwise_init
-struct _EventInner(ImplicitlyDestructible, Movable):
+struct _EventInner(ImplicitlyDeletable, Movable):
     """Internal event state, ref-counted via ArcPointer."""
 
     var _handle: EventHandle
@@ -74,7 +74,7 @@ struct _EventInner(ImplicitlyDestructible, Movable):
 
 struct Event[
     flags: EventFlags = EVENT_FLAG_NONE,
-](ImplicitlyCopyable, ImplicitlyDestructible, Movable, Waitable):
+](ImplicitlyCopyable, ImplicitlyDeletable, Movable, Waitable):
     """A synchronization event tied to a context.
 
     Created via `Queue.record_event[flags]()` or `Stream.record_event[flags]()`.

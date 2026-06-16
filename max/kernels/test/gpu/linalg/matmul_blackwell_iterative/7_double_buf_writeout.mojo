@@ -571,7 +571,6 @@ def kernel_7[
     var a_smem = LayoutTensorIter[
         a_type,
         a_smem_layout,
-        MutAnyOrigin,
         address_space=AddressSpace.SHARED,
         alignment=128,
         circular=False,
@@ -583,7 +582,6 @@ def kernel_7[
     var b_smem = LayoutTensorIter[
         b_type,
         b_smem_layout,
-        MutAnyOrigin,
         address_space=AddressSpace.SHARED,
         alignment=128,
         circular=False,
@@ -598,7 +596,6 @@ def kernel_7[
     var c_smem_iter = LayoutTensorIter[
         c_type,
         Layout.row_major(output_tile_shape[0], output_tile_shape[1]),
-        MutAnyOrigin,
         address_space=AddressSpace.SHARED,
         alignment=128,
     ](c_smem_base, c_smem_size)

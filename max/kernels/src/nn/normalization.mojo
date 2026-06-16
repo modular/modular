@@ -36,7 +36,7 @@ from std.gpu import (
 from std.gpu.host import DeviceContext, FuncAttribute, get_gpu_target
 from std.gpu.host.info import is_cpu, is_gpu
 from std.gpu.memory import external_memory
-from std.sys.info import has_apple_gpu_accelerator, is_apple_gpu
+from std.sys.info import is_apple_gpu
 from std.gpu.primitives import block
 from std.gpu.primitives.grid_controls import (
     PDL,
@@ -509,7 +509,7 @@ def layer_norm_gpu[
     ) capturing -> None,
 ](
     shape: IndexList[rank, ...],
-    beta: TileTensor[dtype, ...],
+    beta: TileTensor[mut=False, dtype, ...],
     epsilon: Scalar[dtype],
     *,
     ctx: DeviceContext,
@@ -518,15 +518,13 @@ def layer_norm_gpu[
     if rank == 0:
         return
 
-    var last_dim = shape[rank - 1]
-
-    if last_dim == 0:
-        return
-
     comptime rank_rs = 2
     var flattened_shape = layer_norm_reshape[rank_rs](shape)
     var rows = flattened_shape[0]
     var cols = flattened_shape[1]
+
+    if rows == 0 or cols == 0:
+        return
 
     @parameter
     @always_inline
@@ -675,7 +673,7 @@ def layer_norm_cpu[
 ](
     num_rows: Int,
     num_cols: Int,
-    beta: TileTensor[dtype, ...],
+    beta: TileTensor[mut=False, dtype, ...],
     epsilon: Scalar[dtype],
 ) raises:
     """Computes layernorm(elementwise_fn(x)) across the last dimension of x, where layernorm is
@@ -768,7 +766,7 @@ def layer_norm_cpu[
     ) capturing -> None,
 ](
     shape: IndexList[rank],
-    beta: TileTensor[dtype, ...],
+    beta: TileTensor[mut=False, dtype, ...],
     epsilon: Scalar[dtype],
     ctx: Optional[DeviceContext] = None,
 ):
@@ -840,7 +838,7 @@ def layer_norm[
 ](
     shape: IndexList[rank],
     gamma_shape: IndexList[1],
-    beta: TileTensor[dtype, ...],
+    beta: TileTensor[mut=False, dtype, ...],
     epsilon: Scalar[dtype],
     ctx: DeviceContext,
 ) raises:
@@ -884,9 +882,9 @@ def layer_norm[
 def layer_norm_shape[
     dtype: DType
 ](
-    input: TileTensor[dtype, ...],
-    gamma: TileTensor[dtype, ...],
-    beta: TileTensor[dtype, ...],
+    input: TileTensor[mut=False, dtype, ...],
+    gamma: TileTensor[mut=False, dtype, ...],
+    beta: TileTensor[mut=False, dtype, ...],
     epsilon: Scalar[dtype],
 ) -> IndexList[input.rank]:
     """
@@ -1096,7 +1094,7 @@ def _rms_norm_gpu_block_subkernel[
     ) capturing -> None,
     multiply_before_cast: Bool,
 ](
-    gamma: TileTensor[dtype, ...],
+    gamma: TileTensor[mut=False, dtype, ...],
     epsilon: Scalar[dtype],
     weight_offset: Scalar[dtype],
     num_cols: Int,
@@ -1321,7 +1319,7 @@ def rms_norm_gpu[
     pdl_level: PDLLevel = PDLLevel.ON,
 ](
     shape: IndexList[rank, ...],
-    gamma: TileTensor[dtype, ...],
+    gamma: TileTensor[mut=False, dtype, ...],
     epsilon: Scalar[dtype],
     weight_offset: Scalar[dtype],
     ctx: DeviceContext,
@@ -1493,7 +1491,7 @@ def rms_norm_cpu[
     ) capturing -> None,
     multiply_before_cast: Bool,
 ](
-    gamma: TileTensor[dtype, ...],
+    gamma: TileTensor[mut=False, dtype, ...],
     epsilon: Scalar[dtype],
     weight_offset: Scalar[dtype],
     out_shape: IndexList[2],
@@ -1562,7 +1560,7 @@ def rms_norm_cpu[
     multiply_before_cast: Bool,
 ](
     shape: IndexList[rank],
-    gamma: TileTensor[dtype, ...],
+    gamma: TileTensor[mut=False, dtype, ...],
     epsilon: Scalar[dtype],
     weight_offset: Scalar[dtype],
     ctx: Optional[DeviceContext] = None,
@@ -1640,7 +1638,7 @@ def _rms_norm_impl[
     multiply_before_cast: Bool = True,
 ](
     shape: IndexList[rank],
-    gamma: TileTensor[dtype, ...],
+    gamma: TileTensor[mut=False, dtype, ...],
     epsilon: Scalar[dtype],
     weight_offset: Scalar[dtype],
     ctx: DeviceContext,
@@ -1956,187 +1954,6 @@ def rms_norm_fused_residual_add_gpu_block[
                 output_fn[simd_width, align](row, offset, norm2_val)
 
 
-@__name(
-    t"rms_norm_fused_residual_add_gpu_block_no_shmem_{dtype}_{multiply_before_cast}",
-)
-def rms_norm_fused_residual_add_gpu_block_no_shmem[
-    mut1: Bool,
-    LayoutType1: TensorLayout,
-    origin1: Origin[mut=mut1],
-    mut2: Bool,
-    LayoutType2: TensorLayout,
-    origin2: Origin[mut=mut2],
-    dtype: DType,
-    //,
-    simd_width: Int,
-    max_warps_per_block: Int,
-    input_fn: def[width: Int](row: Int, col: Int) capturing -> SIMD[
-        dtype, width
-    ],
-    residual_input_fn: def[width: Int](row: Int, col: Int) capturing -> SIMD[
-        dtype, width
-    ],
-    output_fn: def[width: SIMDSize, alignment: Int](
-        row: Int, col: Int, val: SIMD[dtype, width]
-    ) capturing -> None,
-    output_residual_fn: def[width: SIMDSize, alignment: Int](
-        row: Int, col: Int, val: SIMD[dtype, width]
-    ) capturing -> None,
-    multiply_before_cast: Bool,
-](
-    gamma1: TileTensor[dtype, LayoutType1, origin1],
-    epsilon1: Scalar[dtype],
-    weight_offset1: Scalar[dtype],
-    gamma2: TileTensor[dtype, LayoutType2, origin2],
-    epsilon2: Scalar[dtype],
-    weight_offset2: Scalar[dtype],
-    num_rows: Int,
-    num_cols: Int,
-):
-    """RMS norm fused with residual add, without shared memory reductions.
-
-    Each warp independently processes one row using only warp-level
-    reductions (`warp.sum`), avoiding all shared memory usage. Multiple
-    rows are processed per block (one row per warp). Intermediate results
-    between stages are recomputed instead of being stored in shared memory,
-    trading extra global memory reads for zero shared memory usage.
-
-    This is particularly useful on Apple GPUs where shared memory capacity
-    is limited.
-    """
-    comptime assert gamma1.rank == 1, "gamma1 must have rank 1"
-    comptime assert gamma1.flat_rank == 1, "gamma1 must have flat_rank 1"
-    comptime assert gamma1.flat_rank >= 1
-    comptime assert gamma2.rank == 1, "gamma2 must have rank 1"
-    comptime assert gamma2.flat_rank == 1, "gamma2 must have flat_rank 1"
-    comptime assert gamma2.flat_rank >= 1
-
-    comptime align = align_of[SIMD[dtype, simd_width]]()
-    comptime accum_type = get_accum_type[dtype]()
-
-    var eps_accum1 = epsilon1.cast[accum_type]()
-    var weight_offset_accum1 = weight_offset1.cast[accum_type]()
-    var eps_accum2 = epsilon2.cast[accum_type]()
-    var weight_offset_accum2 = weight_offset2.cast[accum_type]()
-
-    var wid = warp_id[broadcast=True]()
-    var lid = lane_id()
-    var row = block_idx.x * max_warps_per_block + wid
-
-    if row >= num_rows:
-        return
-
-    with PDL():
-        # ---- Stage 1: First RMS norm ----
-        # Pass 1: Accumulate sum-of-squares for stage 1.
-        var thread_m2_1 = Scalar[accum_type](0)
-        for x in range(ceildiv(num_cols // simd_width, WARP_SIZE)):
-            var offset = x * WARP_SIZE * simd_width + lid * simd_width
-            if offset < num_cols:
-                var vec_data = input_fn[simd_width](row, offset).cast[
-                    accum_type
-                ]()
-                thread_m2_1 += (vec_data**2).reduce_add()
-
-        var row_m2_1 = warp.sum(thread_m2_1)
-        var norm_factor1 = rsqrt(
-            (row_m2_1 / Scalar[accum_type](num_cols)) + eps_accum1
-        )
-
-        # Pass 2: Normalize with gamma1, add residual, write output_residual,
-        # and accumulate sum-of-squares for stage 2.
-        var thread_m2_2 = Scalar[accum_type](0)
-        for x in range(ceildiv(num_cols // simd_width, WARP_SIZE)):
-            var offset = x * WARP_SIZE * simd_width + lid * simd_width
-            if offset < num_cols:
-                var vec_data = input_fn[simd_width](row, offset).cast[
-                    accum_type
-                ]()
-                var gamma1_val = gamma1.load[width=simd_width, alignment=align](
-                    Coord(offset)
-                )
-
-                var norm1_val: SIMD[dtype, simd_width]
-
-                comptime if multiply_before_cast:
-                    var gamma1_accum = (
-                        gamma1_val.cast[accum_type]() + weight_offset_accum1
-                    )
-                    norm1_val = (vec_data * norm_factor1 * gamma1_accum).cast[
-                        dtype
-                    ]()
-                else:
-                    norm1_val = (vec_data * norm_factor1).cast[dtype]() * (
-                        gamma1_val + weight_offset1
-                    )
-
-                var residual_val = residual_input_fn[simd_width](row, offset)
-                var residual_add_val = norm1_val + residual_val
-                output_residual_fn[simd_width, align](
-                    row, offset, residual_add_val
-                )
-
-                # Accumulate for stage 2.
-                var residual_add_accum = residual_add_val.cast[accum_type]()
-                thread_m2_2 += (residual_add_accum**2).reduce_add()
-
-        # ---- Stage 2: Second RMS norm ----
-        var row_m2_2 = warp.sum(thread_m2_2)
-        var norm_factor2 = rsqrt(
-            (row_m2_2 / Scalar[accum_type](num_cols)) + eps_accum2
-        )
-
-        # Pass 3: Recompute stage 1 output (input norm + residual add),
-        # then normalize with gamma2 and write final output.
-        for x in range(ceildiv(num_cols // simd_width, WARP_SIZE)):
-            var offset = x * WARP_SIZE * simd_width + lid * simd_width
-            if offset < num_cols:
-                # Recompute the residual-added value from stage 1.
-                var vec_data = input_fn[simd_width](row, offset).cast[
-                    accum_type
-                ]()
-                var gamma1_val = gamma1.load[width=simd_width, alignment=align](
-                    Coord(offset)
-                )
-
-                var norm1_val: SIMD[dtype, simd_width]
-
-                comptime if multiply_before_cast:
-                    var gamma1_accum = (
-                        gamma1_val.cast[accum_type]() + weight_offset_accum1
-                    )
-                    norm1_val = (vec_data * norm_factor1 * gamma1_accum).cast[
-                        dtype
-                    ]()
-                else:
-                    norm1_val = (vec_data * norm_factor1).cast[dtype]() * (
-                        gamma1_val + weight_offset1
-                    )
-
-                var residual_val = residual_input_fn[simd_width](row, offset)
-                var stage2_input = (norm1_val + residual_val).cast[accum_type]()
-
-                var gamma2_val = gamma2.load[width=simd_width, alignment=align](
-                    Coord(offset)
-                )
-
-                var norm2_val: SIMD[dtype, simd_width]
-
-                comptime if multiply_before_cast:
-                    var gamma2_accum = (
-                        gamma2_val.cast[accum_type]() + weight_offset_accum2
-                    )
-                    norm2_val = (
-                        stage2_input * norm_factor2 * gamma2_accum
-                    ).cast[dtype]()
-                else:
-                    norm2_val = (stage2_input * norm_factor2).cast[dtype]() * (
-                        gamma2_val + weight_offset2
-                    )
-
-                output_fn[simd_width, align](row, offset, norm2_val)
-
-
 def rms_norm_fused_residual_add_gpu[
     dtype: DType,
     rank: Int,
@@ -2156,10 +1973,10 @@ def rms_norm_fused_residual_add_gpu[
     multiply_before_cast: Bool,
 ](
     shape: IndexList[rank, ...],
-    gamma1: TileTensor[dtype, ...],
+    gamma1: TileTensor[mut=False, dtype, ...],
     epsilon1: Scalar[dtype],
     weight_offset1: Scalar[dtype],
-    gamma2: TileTensor[dtype, ...],
+    gamma2: TileTensor[mut=False, dtype, ...],
     epsilon2: Scalar[dtype],
     weight_offset2: Scalar[dtype],
     ctx: DeviceContext,
@@ -2260,110 +2077,9 @@ def rms_norm_fused_residual_add_gpu[
                 attributes=pdl_launch_attributes(PDLLevel.ON),
             )
         else:
-            comptime if has_apple_gpu_accelerator():
-                # On Apple GPUs, use the no-shmem variant to avoid shared
-                # memory limitations. Each warp handles one row
-                # independently using only warp-level reductions.
-                comptime no_shmem_kernel = rms_norm_fused_residual_add_gpu_block_no_shmem[
-                    mut1=gamma1.mut,
-                    LayoutType1=gamma1.LayoutType,
-                    origin1=gamma1.origin,
-                    mut2=gamma2.mut,
-                    LayoutType2=gamma2.LayoutType,
-                    origin2=gamma2.origin,
-                    simd_width,
-                    max_warps_per_block,
-                    input_fn_2d,
-                    residual_input_fn_2d,
-                    output_fn_2d,
-                    output_residual_fn_2d,
-                    multiply_before_cast=multiply_before_cast,
-                ]
-                ctx.enqueue_function[no_shmem_kernel](
-                    gamma1,
-                    epsilon1,
-                    weight_offset1,
-                    gamma2,
-                    epsilon2,
-                    weight_offset2,
-                    rows,
-                    cols,
-                    grid_dim=ceildiv(rows, max_warps_per_block),
-                    block_dim=WARP_SIZE * max_warps_per_block,
-                    attributes=pdl_launch_attributes(PDLLevel.ON),
-                )
-            else:
-                var shared_mem_size = (
-                    ceildiv(cols, simd_width) * simd_width * size_of[dtype]()
-                )
-
-                comptime kernel = rms_norm_fused_residual_add_gpu_block[
-                    mut1=gamma1.mut,
-                    LayoutType1=gamma1.LayoutType,
-                    origin1=gamma1.origin,
-                    mut2=gamma2.mut,
-                    LayoutType2=gamma2.LayoutType,
-                    origin2=gamma2.origin,
-                    simd_width,
-                    max_warps_per_block,
-                    input_fn_2d,
-                    residual_input_fn_2d,
-                    output_fn_2d,
-                    output_residual_fn_2d,
-                    multiply_before_cast=multiply_before_cast,
-                ]
-                ctx.enqueue_function[kernel](
-                    gamma1,
-                    epsilon1,
-                    weight_offset1,
-                    gamma2,
-                    epsilon2,
-                    weight_offset2,
-                    cols,
-                    grid_dim=grid_dim,
-                    block_dim=block_dim,
-                    attributes=pdl_launch_attributes(PDLLevel.ON),
-                    shared_mem_bytes=shared_mem_size,
-                    func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                        UInt32(shared_mem_size)
-                    ),
-                )
-
-    else:
-        comptime if has_apple_gpu_accelerator():
-            # On Apple GPUs, use the no-shmem variant with simd_width=1
-            # for non-aligned column counts.
-            comptime no_shmem_kernel = rms_norm_fused_residual_add_gpu_block_no_shmem[
-                mut1=gamma1.mut,
-                LayoutType1=gamma1.LayoutType,
-                origin1=gamma1.origin,
-                mut2=gamma2.mut,
-                LayoutType2=gamma2.LayoutType,
-                origin2=gamma2.origin,
-                1,
-                max_warps_per_block,
-                input_fn_2d,
-                residual_input_fn_2d,
-                output_fn_2d,
-                output_residual_fn_2d,
-                multiply_before_cast=multiply_before_cast,
-            ]
-
-            ctx.enqueue_function[no_shmem_kernel](
-                gamma1,
-                epsilon1,
-                weight_offset1,
-                gamma2,
-                epsilon2,
-                weight_offset2,
-                rows,
-                cols,
-                grid_dim=ceildiv(rows, max_warps_per_block),
-                block_dim=WARP_SIZE * max_warps_per_block,
-                attributes=pdl_launch_attributes(PDLLevel.ON),
+            var shared_mem_size = (
+                ceildiv(cols, simd_width) * simd_width * size_of[dtype]()
             )
-        else:
-            var shared_mem_size = cols * size_of[dtype]()
 
             comptime kernel = rms_norm_fused_residual_add_gpu_block[
                 mut1=gamma1.mut,
@@ -2372,7 +2088,7 @@ def rms_norm_fused_residual_add_gpu[
                 mut2=gamma2.mut,
                 LayoutType2=gamma2.LayoutType,
                 origin2=gamma2.origin,
-                1,
+                simd_width,
                 max_warps_per_block,
                 input_fn_2d,
                 residual_input_fn_2d,
@@ -2393,12 +2109,47 @@ def rms_norm_fused_residual_add_gpu[
                 attributes=pdl_launch_attributes(PDLLevel.ON),
                 shared_mem_bytes=shared_mem_size,
                 func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                    UInt32(
-                        ctx.default_device_info.shared_memory_per_multiprocessor
-                        - 4096
-                    )
+                    UInt32(shared_mem_size)
                 ),
             )
+
+    else:
+        var shared_mem_size = cols * size_of[dtype]()
+
+        comptime kernel = rms_norm_fused_residual_add_gpu_block[
+            mut1=gamma1.mut,
+            LayoutType1=gamma1.LayoutType,
+            origin1=gamma1.origin,
+            mut2=gamma2.mut,
+            LayoutType2=gamma2.LayoutType,
+            origin2=gamma2.origin,
+            1,
+            max_warps_per_block,
+            input_fn_2d,
+            residual_input_fn_2d,
+            output_fn_2d,
+            output_residual_fn_2d,
+            multiply_before_cast=multiply_before_cast,
+        ]
+        ctx.enqueue_function[kernel](
+            gamma1,
+            epsilon1,
+            weight_offset1,
+            gamma2,
+            epsilon2,
+            weight_offset2,
+            cols,
+            grid_dim=grid_dim,
+            block_dim=block_dim,
+            attributes=pdl_launch_attributes(PDLLevel.ON),
+            shared_mem_bytes=shared_mem_size,
+            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+                UInt32(
+                    ctx.default_device_info.shared_memory_per_multiprocessor
+                    - 4096
+                )
+            ),
+        )
 
 
 def rms_norm_fused_residual_add_cpu[
@@ -2421,10 +2172,10 @@ def rms_norm_fused_residual_add_cpu[
     multiply_before_cast: Bool = True,
 ](
     shape: IndexList[rank],
-    gamma1: TileTensor[dtype, ...],
+    gamma1: TileTensor[mut=False, dtype, ...],
     epsilon1: Scalar[dtype],
     weight_offset1: Scalar[dtype],
-    gamma2: TileTensor[dtype, ...],
+    gamma2: TileTensor[mut=False, dtype, ...],
     epsilon2: Scalar[dtype],
     weight_offset2: Scalar[dtype],
 ) raises:
@@ -2966,11 +2717,11 @@ def rms_norm_rope_gpu[
     pdl_level: PDLLevel = PDLLevel.ON,
 ](
     shape: IndexList[rank, ...],
-    gamma: TileTensor[input_dtype, ...],
+    gamma: TileTensor[mut=False, input_dtype, ...],
     epsilon: Scalar[input_dtype],
     weight_offset: Scalar[input_dtype],
-    cos_vals: TileTensor[cos_sin_dtype, ...],
-    sin_vals: TileTensor[cos_sin_dtype, ...],
+    cos_vals: TileTensor[mut=False, cos_sin_dtype, ...],
+    sin_vals: TileTensor[mut=False, cos_sin_dtype, ...],
     ctx: DeviceContext,
 ) raises:
     """Fused RMS normalization followed by Rotary Position Embedding (RoPE) for GPU.
@@ -3178,7 +2929,7 @@ def rms_norm[
     multiply_before_cast: Bool = True,
 ](
     shape: IndexList[rank],
-    gamma: TileTensor[dtype, ...],
+    gamma: TileTensor[mut=False, dtype, ...],
     epsilon: Scalar[dtype],
     weight_offset: Scalar[dtype],
     ctx: DeviceContext,
@@ -3366,8 +3117,8 @@ def row_mean_of_squares_qk_gpu[
     pdl_level: PDLLevel = PDLLevel.ON,
 ](
     output: TileTensor[mut=True, out_dtype, ...],
-    q: TileTensor[in_dtype, ...],
-    k: TileTensor[in_dtype, ...],
+    q: TileTensor[mut=False, in_dtype, ...],
+    k: TileTensor[mut=False, in_dtype, ...],
     rows: Int,
     q_cols: Int,
     k_cols: Int,
@@ -3455,8 +3206,8 @@ def row_mean_of_squares_qk_cpu[
     //,
 ](
     output: TileTensor[mut=True, out_dtype, ...],
-    q: TileTensor[in_dtype, ...],
-    k: TileTensor[in_dtype, ...],
+    q: TileTensor[mut=False, in_dtype, ...],
+    k: TileTensor[mut=False, in_dtype, ...],
     rows: Int,
     q_cols: Int,
     k_cols: Int,
@@ -3492,8 +3243,8 @@ def row_mean_of_squares_qk[
     target: StaticString = "cpu",
 ](
     output: TileTensor[mut=True, out_dtype, ...],
-    q: TileTensor[in_dtype, ...],
-    k: TileTensor[in_dtype, ...],
+    q: TileTensor[mut=False, in_dtype, ...],
+    k: TileTensor[mut=False, in_dtype, ...],
     rows: Int,
     q_cols: Int,
     k_cols: Int,
@@ -3670,11 +3421,11 @@ def apply_qk_rms_norm_gpu[
 ](
     q_out: TileTensor[mut=True, out_dtype, ...],
     k_out: TileTensor[mut=True, out_dtype, ...],
-    gamma_q: TileTensor[DType.float32, ...],
-    gamma_k: TileTensor[DType.float32, ...],
-    qk_var: TileTensor[DType.float32, ...],
-    q: TileTensor[in_dtype, ...],
-    k: TileTensor[in_dtype, ...],
+    gamma_q: TileTensor[mut=False, DType.float32, ...],
+    gamma_k: TileTensor[mut=False, DType.float32, ...],
+    qk_var: TileTensor[mut=False, DType.float32, ...],
+    q: TileTensor[mut=False, in_dtype, ...],
+    k: TileTensor[mut=False, in_dtype, ...],
     epsilon: Scalar[DType.float32],
     rows: Int,
     q_cols: Int,
@@ -3796,11 +3547,11 @@ def apply_qk_rms_norm_cpu[
 ](
     q_out: TileTensor[mut=True, out_dtype, ...],
     k_out: TileTensor[mut=True, out_dtype, ...],
-    gamma_q: TileTensor[DType.float32, ...],
-    gamma_k: TileTensor[DType.float32, ...],
-    qk_var: TileTensor[DType.float32, ...],
-    q: TileTensor[in_dtype, ...],
-    k: TileTensor[in_dtype, ...],
+    gamma_q: TileTensor[mut=False, DType.float32, ...],
+    gamma_k: TileTensor[mut=False, DType.float32, ...],
+    qk_var: TileTensor[mut=False, DType.float32, ...],
+    q: TileTensor[mut=False, in_dtype, ...],
+    k: TileTensor[mut=False, in_dtype, ...],
     epsilon: Scalar[DType.float32],
     rows: Int,
     q_cols: Int,
@@ -3839,11 +3590,11 @@ def apply_qk_rms_norm[
 ](
     q_out: TileTensor[mut=True, out_dtype, ...],
     k_out: TileTensor[mut=True, out_dtype, ...],
-    gamma_q: TileTensor[DType.float32, ...],
-    gamma_k: TileTensor[DType.float32, ...],
-    qk_var: TileTensor[DType.float32, ...],
-    q: TileTensor[in_dtype, ...],
-    k: TileTensor[in_dtype, ...],
+    gamma_q: TileTensor[mut=False, DType.float32, ...],
+    gamma_k: TileTensor[mut=False, DType.float32, ...],
+    qk_var: TileTensor[mut=False, DType.float32, ...],
+    q: TileTensor[mut=False, in_dtype, ...],
+    k: TileTensor[mut=False, in_dtype, ...],
     epsilon: Scalar[DType.float32],
     rows: Int,
     q_cols: Int,
@@ -3955,10 +3706,10 @@ def _rms_norm_fused_residual_add_impl[
     multiply_before_cast: Bool = True,
 ](
     shape: IndexList[rank],
-    gamma1: TileTensor[dtype, ...],
+    gamma1: TileTensor[mut=False, dtype, ...],
     epsilon1: Scalar[dtype],
     weight_offset1: Scalar[dtype],
-    gamma2: TileTensor[dtype, ...],
+    gamma2: TileTensor[mut=False, dtype, ...],
     epsilon2: Scalar[dtype],
     weight_offset2: Scalar[dtype],
     ctx: DeviceContext,
@@ -4046,10 +3797,10 @@ def rms_norm_fused_residual_add[
     multiply_before_cast: Bool = True,
 ](
     shape: IndexList[rank],
-    gamma1: TileTensor[dtype, ...],
+    gamma1: TileTensor[mut=False, dtype, ...],
     epsilon1: Scalar[dtype],
     weight_offset1: Scalar[dtype],
-    gamma2: TileTensor[dtype, ...],
+    gamma2: TileTensor[mut=False, dtype, ...],
     epsilon2: Scalar[dtype],
     weight_offset2: Scalar[dtype],
     ctx: DeviceContext,

@@ -30,10 +30,7 @@ from collections import defaultdict
 from collections.abc import Iterable
 
 from max.nn.kv_cache.metrics import KVCacheMetrics
-from max.pipelines.context import (
-    TextAndVisionContext,
-    TextContext,
-)
+from max.pipelines.context import TextAndVisionContext, TextContext
 from max.pipelines.kv_cache.kv_connector import KVConnector
 from max.pipelines.kv_cache.memory_tier import MemoryTier
 from max.pipelines.modeling.types import RequestID
@@ -139,8 +136,13 @@ class BlockManager:
         # The connector owns host memory, host block pool, and H2D/D2H transfers.
         self.connector = connector
 
-        # List of block hashes that need to be offloaded to the connector.
-        self._hashes_to_offload: set[int] = set()
+        # Ordered offload sequences pending delivery to the connector. Each
+        # entry is (parent_seq_hash, ordered block hashes): one contiguous run
+        # of newly-committed blocks, in prefix order, chaining onto
+        # parent_seq_hash (0 = root). Ordering and parentage are preserved so
+        # connectors that chain sequences (dKV) can reconstruct the prefix;
+        # hash-keyed connectors (host/disk) ignore the parent.
+        self._pending_offloads: list[tuple[int, list[int]]] = []
 
         # A pool of device blocks.
         self.device_block_pool = BlockPool(
@@ -484,8 +486,21 @@ class BlockManager:
             if new_block is not None:
                 req_blocks[block_idx] = new_block
 
-            # Add the block to the offload queue.
-            self._hashes_to_offload.add(block_hash)
+        # Queue the newly-committed blocks as one ordered offload sequence. Its
+        # parent is the block immediately before this run in the prefix (0 =
+        # root); that block was committed and offloaded in a previous step.
+        if num_computed_blocks > num_committed_blocks:
+            parent_seq_hash = (
+                req_hashes[num_committed_blocks - 1]
+                if num_committed_blocks > 0
+                else 0
+            )
+            new_block_hashes = req_hashes[
+                num_committed_blocks:num_computed_blocks
+            ]
+            self._pending_offloads.append(
+                (parent_seq_hash, list(new_block_hashes))
+            )
 
         # Bump the committed index.
         self.req_to_committed_idx[ctx.request_id] = (
@@ -493,20 +508,27 @@ class BlockManager:
         )
 
     def offload(self) -> None:
-        """Offload the blocks to the connector."""
-        block_ids = []
-        block_hashes = []
+        """Offload the pending sequences to the connector.
+
+        Each pending sequence is delivered as one ordered ``offload`` call so
+        connectors can chain it onto ``parent_seq_hash``. Hashes are re-resolved
+        to their current device blocks here; if a block was evicted since it was
+        committed, the run is truncated at that point (the remaining blocks'
+        parent would be absent), so the connector never sees a gap-chain.
+        """
         prefix_cache = self.device_block_pool.prefix_cache
-        for block_hash in self._hashes_to_offload:
-            # It is possible that the hash is no longer available in the prefix
-            # cache since the corresponding block has been evicted.
-            if block_hash not in prefix_cache:
-                continue
-            block = prefix_cache[block_hash]
-            block_ids.append(block.bid)
-            block_hashes.append(block_hash)
-        self.connector.offload(block_ids, block_hashes)
-        self._hashes_to_offload.clear()
+        for parent_seq_hash, hashes in self._pending_offloads:
+            block_ids = []
+            block_hashes = []
+            for block_hash in hashes:
+                if block_hash not in prefix_cache:
+                    # Block evicted since commit; truncate the run here.
+                    break
+                block_ids.append(prefix_cache[block_hash].bid)
+                block_hashes.append(block_hash)
+            if block_hashes:
+                self.connector.offload(block_ids, block_hashes, parent_seq_hash)
+        self._pending_offloads.clear()
 
     def release(self, request_id: RequestID) -> None:
         """Release the blocks for the request."""
@@ -550,7 +572,7 @@ class BlockManager:
                 iteration. Zero for non-speculative decode.
             num_draft_tokens_per_step: Number of draft KV positions written
                 per draft forward. One for autoregressive drafts
-                (``eagle``, ``mtp``, ``standalone``); equal to
+                (``eagle``, ``mtp``); equal to
                 ``num_draft_tokens`` for block drafts (``dflash``). Used by
                 ``_compute_seq_len`` to size the cache for block drafts,
                 whose ``forward_block`` writes one extra position past the
@@ -634,7 +656,7 @@ class BlockManager:
                 iteration. Zero for non-speculative decode.
             num_draft_tokens_per_step: Number of draft KV positions written
                 per draft forward. One for autoregressive drafts
-                (``eagle``, ``mtp``, ``standalone``); equal to
+                (``eagle``, ``mtp``); equal to
                 ``num_draft_tokens`` for block drafts (``dflash``). Used by
                 ``_compute_seq_len`` to size the cache for block drafts,
                 whose ``forward_block`` writes one extra position past the

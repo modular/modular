@@ -94,7 +94,7 @@ def _host_topk_set(
 
 
 def _fill_row(
-    row_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    row_ptr: UnsafePointer[mut=True, Scalar[DType.float32], _],
     num_blocks: Int,
     k: Int,
     mode: Int,

@@ -15,7 +15,7 @@ from std.sys import size_of
 from std.sys.info import CompilationTarget, is_64bit
 
 from std.bit import count_leading_zeros
-from std.memory import alloc, free, Layout
+from std.memory import alloc, dealloc, ThinAllocation, Layout
 from std.memory.unsafe import bitcast
 from std.builtin.simd import _modf
 from std.itertools import product
@@ -405,15 +405,19 @@ def test_issue_1625() raises:
 
 def test_issue_20421() raises:
     var a_layout = Layout[UInt8](count=16 * 64, alignment=64)
-    var a = alloc(a_layout)
+    var ptr = alloc(a_layout).unsafe_leak()
     for i in range(16 * 64):
-        a[i] = UInt8(i & 255)
-    var av16 = (a + 128 + 64 + 4).bitcast[Int32]().load[width=4, alignment=1]()
+        ptr[i] = UInt8(i & 255)
+    var av16 = (
+        (ptr + 128 + 64 + 4).bitcast[Int32]().load[width=4, alignment=1]()
+    )
+    dealloc(
+        ThinAllocation(unsafe_assume_ownership=ptr).unsafe_with_layout(a_layout)
+    )
     assert_equal(
         av16,
         SIMD[DType.int32, 4](-943274556, -875902520, -808530484, -741158448),
     )
-    free(a, a_layout)
 
 
 def test_issue_30237() raises:

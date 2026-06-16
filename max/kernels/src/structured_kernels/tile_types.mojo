@@ -36,9 +36,7 @@ from layout import (
     Coord,
     CoordLike,
     Idx,
-    LTToTTLayout,
     LayoutTensor,
-    Layout as LegacyLayout,
     TensorLayout,
     TileTensor,
     row_major,
@@ -460,7 +458,7 @@ def create_tma_tile[
     tile_shape: IndexList[tma_tile_layout.rank],
     *,
     swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
-](ctx: DeviceContext, tensor: LayoutTensor[...]) raises -> TmaOpType[
+](ctx: DeviceContext, tensor: LayoutTensor[mut=False, ...]) raises -> TmaOpType[
     tensor.dtype, tma_tile_layout, tma_desc_layout
 ]:
     """Create a TMATensorTile using new Layout types.
@@ -496,7 +494,7 @@ def create_tma_tile[
     tile_shape: IndexList[tma_tile_layout.rank],
     *,
     swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
-](ctx: DeviceContext, tensor: TileTensor) raises -> TmaOpType[
+](ctx: DeviceContext, tensor: TileTensor[mut=False, ...]) raises -> TmaOpType[
     tensor.dtype, tma_tile_layout, tma_desc_layout
 ]:
     """TileTensor overload of create_tma_tile.
@@ -533,13 +531,13 @@ def create_tma_tile[
 
 comptime GMEMTile[
     dtype: DType,
-    lt_layout: LegacyLayout,
+    tt_layout: TensorLayout,
 ] = TileTensor[
     dtype,
-    LTToTTLayout[lt_layout],
+    tt_layout,
     MutAnyOrigin,
 ]
-"""Global memory TileTensor derived from a legacy Layout.
+"""Global memory TileTensor for global memory kernel parameters.
 
 Used for kernel parameter types, replacing LayoutTensor parameters.
 """

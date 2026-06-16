@@ -14,6 +14,7 @@
 from std.math import ceildiv, iota
 from std.sys.info import simd_width_of
 
+from std.math import isfinite
 import std.gpu.primitives.block as block
 from std.algorithm.functional import elementwise
 from std.gpu import block_idx, thread_idx
@@ -33,11 +34,11 @@ def apply_penalties_to_logits[
     target: StaticString,
 ](
     logits: TileTensor[mut=True, logit_type, ...],
-    compressed_frequency_data: TileTensor[DType.int32, ...],
-    frequency_offsets: TileTensor[DType.uint32, ...],
-    frequency_penalty: TileTensor[penalty_type, ...],
-    presence_penalty: TileTensor[penalty_type, ...],
-    repetition_penalty: TileTensor[penalty_type, ...],
+    compressed_frequency_data: TileTensor[mut=False, DType.int32, ...],
+    frequency_offsets: TileTensor[mut=False, DType.uint32, ...],
+    frequency_penalty: TileTensor[mut=False, penalty_type, ...],
+    presence_penalty: TileTensor[mut=False, penalty_type, ...],
+    repetition_penalty: TileTensor[mut=False, penalty_type, ...],
     ctx: DeviceContext,
 ) raises:
     """
@@ -78,6 +79,10 @@ def apply_penalties_to_logits[
         var repetition_penalty_val = repetition_penalty[batch_id][0]
         var presence_penalty_val = presence_penalty[batch_id][0]
         var frequency_penalty_val = frequency_penalty[batch_id][0]
+        debug_assert(
+            isfinite(presence_penalty_val) and isfinite(frequency_penalty_val),
+            "frequency/presence penalty must be finite",
+        )
         # skip padding tokens
         if token >= 0:
             var count = compressed_frequency_data[idx[0], 1][0].cast[
@@ -87,6 +92,12 @@ def apply_penalties_to_logits[
             var logit = logits[batch_id, token][0]
 
             if logit > 0:
+                debug_assert(
+                    repetition_penalty_val[0] > 0
+                    and isfinite(repetition_penalty_val[0]),
+                    "repetition_penalty must be finite and > 0, was ",
+                    repetition_penalty_val[0],
+                )
                 logit = logit / repetition_penalty_val.cast[logit_type]()
             else:
                 logit = logit * repetition_penalty_val.cast[logit_type]()
@@ -199,9 +210,11 @@ def update_frequency_data[
         mut=True, DType.int32, address_space=AddressSpace.GENERIC, ...
     ],
     frequency_offsets: TileTensor[
-        DType.uint32, address_space=AddressSpace.GENERIC, ...
+        mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
-    new_tokens: TileTensor[token_type, address_space=AddressSpace.GENERIC, ...],
+    new_tokens: TileTensor[
+        mut=False, token_type, address_space=AddressSpace.GENERIC, ...
+    ],
     ctx: DeviceContext,
 ) raises:
     """

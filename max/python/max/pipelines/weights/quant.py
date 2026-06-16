@@ -571,6 +571,59 @@ def _parse_blockscaled_fp8_config(
     )
 
 
+def _parse_mxfp8_config(
+    huggingface_config: AutoConfig,
+    state_dict: Mapping[str, WeightData],
+    dtype: DType,
+) -> QuantConfig:
+    """Parse QuantConfig for MXFP8 (quant_method="mxfp8", weight_block_size=[1,32]).
+
+    MXFP8 stores float8_e4m3fn weights with per-row E8M0 block scales
+    (one scale per 32 weight columns).  The weight adapter converts E8M0 bytes
+    to float32 before loading, so we declare DType.float32 for weight scales
+    here.  Activation scales are computed dynamically at runtime.
+    """
+    text_config = getattr(huggingface_config, "text_config", huggingface_config)
+    hf_quant_config = getattr(huggingface_config, "quantization_config", None)
+    if hf_quant_config is None:
+        hf_quant_config = getattr(text_config, "quantization_config", {})
+
+    ignored_layers: list[str] = list(hf_quant_config.get("ignored_layers", []))
+    ignored_modules: set[str] = set(ignored_layers)
+
+    weight_spec = WeightScaleSpec(
+        granularity=ScaleGranularity.BLOCK,
+        dtype=DType.float8_e8m0fnu,
+        block_size=(1, 32),
+    )
+    input_spec = InputScaleSpec(
+        granularity=ScaleGranularity.BLOCK,
+        origin=ScaleOrigin.DYNAMIC,
+        dtype=DType.float8_e8m0fnu,
+        block_size=(1, 32),
+    )
+
+    mlp_quantized_layers, attn_quantized_layers, embedding_output_dtype = (
+        _quantized_layers_and_embedding_dtype(
+            huggingface_config,
+            ignored_modules,
+            state_dict,
+        )
+    )
+
+    bias_dtype = _bias_dtype(state_dict)
+
+    return QuantConfig(
+        input_scale=input_spec,
+        weight_scale=weight_spec,
+        mlp_quantized_layers=mlp_quantized_layers,
+        attn_quantized_layers=attn_quantized_layers,
+        embedding_output_dtype=embedding_output_dtype,
+        bias_dtype=bias_dtype,
+        format=QuantFormat.MXFP8,
+    )
+
+
 def _parse_fp8_config(
     huggingface_config: AutoConfig,
     state_dict: Mapping[str, WeightData],
@@ -616,6 +669,8 @@ def _parse_fp8_config(
             return _parse_tensorwise_fp8_config(
                 huggingface_config, state_dict, dtype
             )
+    elif quant_method == "mxfp8":
+        return _parse_mxfp8_config(huggingface_config, state_dict, dtype)
 
     raise ValueError(
         "FP8 dtype specified, but an unsupported or incompatible 'quantization_config' "
@@ -919,6 +974,7 @@ def parse_quant_config(
             "gptq",
             "modelopt",
             "mxfp4",
+            "mxfp8",
             "quark",
         ):
             raise ValueError(
@@ -968,7 +1024,7 @@ def parse_quant_config(
         # ``gate_up_proj`` and ``gate_up_proj_scales`` properties (which
         # gate the sigma-permutation on this flag) stay byte-equal to the
         # historical chained-kernel path.
-        config.can_use_fused_swiglu_nvfp4 = bool(config.is_nvfp4) and (
+        config.can_use_fused_swiglu = (config.is_nvfp4 or config.is_mxfp8) and (
             os.environ.get("MAX_DISABLE_FUSED_SWIGLU_NVFP4") != "1"
         )
 

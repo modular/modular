@@ -193,6 +193,34 @@ def _colocate_then_redistribute(
     ]
 
 
+def _sim_reduce_scatter(
+    inputs: list[TensorValue], scatter_axis: int
+) -> list[TensorValue]:
+    """Simulate reduce-scatter: sum the partial inputs, then scatter the chunks.
+
+    Used when no signal buffers are available (single-device or simulated
+    multi-device). Reduces on the first input's device, splits along
+    ``scatter_axis`` into one chunk per rank, and ships each chunk to its
+    rank's device.
+    """
+    n = len(inputs)
+    target_device = inputs[0].device
+    colocated = [
+        v if v.device == target_device else v.to(target_device) for v in inputs
+    ]
+    reduced = functools.reduce(ops.add, colocated)
+    # TODO(MXF-493): `_even_split_along_axis` splits uneven chunks and return
+    # the smallest chunks first, while the actual reduce-scatter kernel splits
+    # the chunks from largest to smallest.
+    chunks = _even_split_along_axis(reduced, scatter_axis, n)
+    return [
+        chunk
+        if inputs[i].device == target_device
+        else chunk.to(inputs[i].device)
+        for i, chunk in enumerate(chunks)
+    ]
+
+
 def allreduce_sum(t: Tensor, mesh_axis: int = 0) -> Tensor:
     """All-reduces a tensor by summing its shards across a mesh axis.
 
@@ -281,11 +309,14 @@ def reduce_scatter(
     Returns:
         A tensor with the reduced and re-sharded result.
     """
-    t = allreduce_sum(t, mesh_axis=mesh_axis)
-    return _local_split(
+    return _apply_per_group(
         t,
-        mesh_axis=mesh_axis,
-        target=Sharded(scatter_axis, even=even),
+        mesh_axis,
+        Sharded(scatter_axis, even=even),
+        hw_op=lambda inputs, sigs: ops.reducescatter.sum(
+            inputs, sigs, axis=scatter_axis
+        ),
+        sim_op=lambda inputs, _group: _sim_reduce_scatter(inputs, scatter_axis),
     )
 
 

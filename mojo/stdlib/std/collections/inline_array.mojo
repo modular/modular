@@ -51,6 +51,7 @@ from std.memory.unsafe_maybe_uninit import (
     _is_trivially_copyable,
     _is_trivially_movable,
 )
+from std.utils.type_functions import ConditionalType
 
 # ===-----------------------------------------------------------------------===#
 # Array
@@ -175,12 +176,12 @@ struct _InlineArrayIterOwned[T: Copyable, size: Int](
     @always_inline
     def __del__(deinit self):
         _constrained_conforms_to[
-            conforms_to(Self.T, ImplicitlyDestructible),
+            conforms_to(Self.T, ImplicitlyDeletable),
             Parent=Self,
             Element=Self.T,
-            ParentConformsTo="ImplicitlyDestructible",
+            ParentConformsTo="ImplicitlyDeletable",
         ]()
-        comptime TDestructible = downcast[Self.T, ImplicitlyDestructible]
+        comptime TDestructible = downcast[Self.T, ImplicitlyDeletable]
 
         # Move fields out of self so we can manage their lifetimes.
         var idx = self._index
@@ -223,7 +224,7 @@ struct InlineArray[ElementType: Movable, size: Int](
     Equatable where conforms_to(ElementType, Equatable),
     Hashable where conforms_to(ElementType, Hashable),
     ImplicitlyCopyable where conforms_to(ElementType, ImplicitlyCopyable),
-    ImplicitlyDestructible,
+    ImplicitlyDeletable,
     Iterable,
     IterableOwned,
     Movable,
@@ -259,7 +260,7 @@ struct InlineArray[ElementType: Movable, size: Int](
     """
 
     comptime __del__is_trivial: Bool = is_trivially_destructible[
-        downcast[Self.ElementType, ImplicitlyDestructible]
+        downcast[Self.ElementType, ImplicitlyDeletable]
     ]()
     comptime __copy_ctor_is_trivial: Bool = _is_trivially_copyable[
         Self.ElementType
@@ -277,8 +278,25 @@ struct InlineArray[ElementType: Movable, size: Int](
     var _array: Self.type
     """The underlying storage for the array."""
 
-    comptime device_type: AnyType = Self
-    """The device-side type for this array."""
+    comptime _DeviceElementType: Movable = ConditionalType[
+        Trait=Movable,
+        If=conforms_to(Self.ElementType, DevicePassable),
+        Then=downcast[
+            downcast[Self.ElementType, DevicePassable].device_type, Movable
+        ],
+        Else=Self.ElementType,
+    ]
+    """The device-side element type: the element's `device_type` when it is
+    `DevicePassable`, otherwise the element type itself."""
+
+    comptime device_type: AnyType = InlineArray[
+        Self._DeviceElementType, Self.size
+    ]
+    """The device-side type for this array.
+
+    Parametric over the elements' device types, so an array of a `DevicePassable`
+    element type encodes to the array of converted elements (and collapses to
+    `Self` for identity elements)."""
 
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
@@ -312,7 +330,9 @@ struct InlineArray[ElementType: Movable, size: Int](
             encoder: Target specific device type encoder.
             target: The target address to store the device type.
         """
-        encoder.encode(self, target)
+        # Encode element-wise so a `DevicePassable` element runs its own
+        # `_to_device_type` conversion rather than being byte-copied wholesale.
+        encoder.encode_inline_array(self, target)
 
     @staticmethod
     def get_type_name() -> String:
@@ -561,14 +581,12 @@ struct InlineArray[ElementType: Movable, size: Int](
         """Deallocates the array and destroys its elements."""
 
         _constrained_conforms_to[
-            conforms_to(Self.ElementType, ImplicitlyDestructible),
+            conforms_to(Self.ElementType, ImplicitlyDeletable),
             Parent=Self,
             Element=Self.ElementType,
-            ParentConformsTo="ImplicitlyDestructible",
+            ParentConformsTo="ImplicitlyDeletable",
         ]()
-        comptime TDestructible = downcast[
-            Self.ElementType, ImplicitlyDestructible
-        ]
+        comptime TDestructible = downcast[Self.ElementType, ImplicitlyDeletable]
 
         comptime if not is_trivially_destructible[TDestructible]():
             comptime for idx in range(Self.size):
@@ -607,7 +625,7 @@ struct InlineArray[ElementType: Movable, size: Int](
 
     @always_inline
     def __getitem_param__[
-        idx: Some[Indexer & ImplicitlyDestructible]
+        idx: Some[Indexer & ImplicitlyDeletable]
     ](ref self) -> ref[self] Self.ElementType:
         """Gets a reference to the element at the given index with compile-time
         bounds checking.
@@ -645,7 +663,7 @@ struct InlineArray[ElementType: Movable, size: Int](
     ) -> ref[self] Self.ElementType:
         var ptr = __mlir_op.`pop.array.gep`(
             UnsafePointer(to=self._array).address,
-            index(idx)._mlir_value,
+            index(idx)._int_mlir_index(),
         )
         return UnsafePointer[_, origin_of(self)](ptr)[]
 

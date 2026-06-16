@@ -86,7 +86,7 @@ missing requirements early.
   [`AnyType`](/docs/std/builtin/anytype/AnyType/). It places no behavioral
   requirements on a type and serves as the least restrictive option.
 
-- [`ImplicitlyDestructible`](/docs/std/builtin/anytype/ImplicitlyDestructible/)
+- [`ImplicitlyDeletable`](/docs/std/builtin/anytype/ImplicitlyDeletable/)
   is a common baseline for types with lifetimes. It marks types that need
   cleanup when they go out of scope. Generic code that stores or owns
   values often requires it.
@@ -357,8 +357,8 @@ example, Mojo cannot infer a concrete type from the context and errors:
 ```mojo
 @fieldwise_init
 struct Struct(Writable):
-    var x: Some[Copyable & ImplicitlyDestructible & Writable]
-    # comptime[T: Copyable & ImplicitlyDestructible & Writable] T' is not
+    var x: Some[Copyable & ImplicitlyDeletable & Writable]
+    # comptime[T: Copyable & ImplicitlyDeletable & Writable] T' is not
     # a concrete type, use '[]' to bind missing parameters
 def main():
     var s = Struct(1)
@@ -369,7 +369,7 @@ Move the conformances back to a generic type parameter to fix this:
 
 ```mojo
 @fieldwise_init
-struct Struct[T: Copyable & ImplicitlyDestructible & Writable](Writable):
+struct Struct[T: Copyable & ImplicitlyDeletable & Writable](Writable):
     var x: Self.T
 
 def main():
@@ -389,7 +389,7 @@ on, you write one `Pair[T]` and let the compiler generate specialized
 versions for each concrete `T` you use.
 
 ```mojo
-comptime ComparableValue = Equatable & ImplicitlyCopyable & ImplicitlyDestructible
+comptime ComparableValue = Equatable & ImplicitlyCopyable & ImplicitlyDeletable
 
 @fieldwise_init
 struct Pair[T: ComparableValue](ComparableValue):
@@ -413,7 +413,7 @@ so `T` must be equatable. It also needs to assign and copy values in common
 operations, so it applies a trait composition conformance on `T`:
 
 ```mojo
-comptime ComparableValue = Equatable & ImplicitlyCopyable & ImplicitlyDestructible
+comptime ComparableValue = Equatable & ImplicitlyCopyable & ImplicitlyDeletable
 ```
 
 The `Pair` definition applies this conformance in two places: to the type
@@ -473,10 +473,10 @@ This pattern keeps behavior explicit and safe:
 ```mojo
 def process[T: AnyType](value: T):
     comptime if conforms_to(
-        T, Writable & ImplicitlyCopyable & ImplicitlyDestructible
+        T, Writable & ImplicitlyCopyable & ImplicitlyDeletable
     ):
         var w = trait_downcast[
-            Writable & ImplicitlyCopyable & ImplicitlyDestructible
+            Writable & ImplicitlyCopyable & ImplicitlyDeletable
         ](value)
         print(w)
     else:
@@ -486,7 +486,7 @@ def process[T: AnyType](value: T):
 
 Key points:
 
-- `conforms_to(T, Writable & ImplicitlyCopyable & ImplicitlyDestructible)`
+- `conforms_to(T, Writable & ImplicitlyCopyable & ImplicitlyDeletable)`
   checks whether `T` satisfies the trait composition.
 - `trait_downcast()` rebinds the value to a trait-constrained view at
   compile time.
@@ -527,7 +527,7 @@ Think comparisons, predicates, and other pure operations.
 
 Rule of thumb: if your generic code needs to own, copy, or control
 when a value dies, avoid explicitly destroyed types. Add an
-`ImplicitlyDestructible` constraint to keep things working.
+`ImplicitlyDeletable` constraint to keep things working.
 
 ## Value generics
 
@@ -555,7 +555,7 @@ This function creates a fixed-size list initialized with a default
 value:
 
 ```mojo
-comptime MyCollectionElement = ImplicitlyCopyable & ImplicitlyDestructible
+comptime MyCollectionElement = ImplicitlyCopyable & ImplicitlyDeletable
 
 def make_filled[T: MyCollectionElement, size: Int](
     splat_value: T
@@ -606,7 +606,7 @@ larger APIs, you'll run into a few additional patterns:
   For example, collection and iteration traits use an associated
   element type (often `Element`) to describe the values they own.
   Associated types can also constrain behavior—for example, requiring
-  elements to be hashable or implicitly destructible.
+  elements to be hashable or implicitly deletable.
 
 - _Generic methods in non-generic types:_
   A type doesn't have to be generic to use generics. Individual methods
@@ -639,7 +639,7 @@ generic code grows.
 Conditional trait conformance is new and evolving. Certain
 capabilities may be unstable or unusable during roll-out. Use
 caution with `Copyable`, `Movable`, `RegisterPassable`,
-`TrivialRegisterPassable`, and `ImplicitlyDestructible`.
+`TrivialRegisterPassable`, and `ImplicitlyDeletable`.
 :::
 
 _Conditional trait conformance_ uses checks before allowing a type to
@@ -658,7 +658,7 @@ In the following declaration, Mojo conforms `Wrapper` to `Writable`
 when its parameter, `T`, is also `Writable`:
 
 ```mojo
-comptime BaseTraits = Copyable & ImplicitlyDestructible
+comptime BaseTraits = Copyable & ImplicitlyDeletable
 @fieldwise_init
 struct Wrapper[T: BaseTraits](
     Writable where conforms_to(T, Writable)
@@ -716,7 +716,7 @@ multiple distinct components: `Result[T, E]`, `Pair[L, R]`, `Dict[K, V]`,
 and similar. It says: "This type can do X if each of its parts can do X":
 
 ```mojo
-comptime BaseTraits = Copyable & ImplicitlyDestructible
+comptime BaseTraits = Copyable & ImplicitlyDeletable
 
 @fieldwise_init
 struct Pair[L: BaseTraits, R: BaseTraits](
@@ -801,7 +801,7 @@ else:
 ```
 
 The `NotWritable` type from earlier in this section has no traits
-beyond the base `Copyable` and `ImplicitlyDestructible`. Therefore
+beyond the base `Copyable` and `ImplicitlyDeletable`. Therefore
 it isn't `Boolable` and the condition on the `__bool__()` method
 will fail:
 
@@ -838,7 +838,7 @@ Mojo supports flexible condition composition, as shown in these examples:
 - Unconditional: No special clauses.
 
   ```mojo
-  struct Foo(Copyable, ImplicitlyDestructible):
+  struct Foo(Copyable, ImplicitlyDeletable):
   ```
 
 - Simple condition: as shown in `Wrapper`.
@@ -886,7 +886,7 @@ parameter. For example, a fixed-capacity wrapper might only be
 The `Sized` conformance is unconditional.
 
 ```mojo
-struct SizedListWrapper[capacity: Int, T: Copyable](
+struct SizedListWrapper[capacity: Int, T: Copyable & ImplicitlyDeletable](
     Sized, Writable where conforms_to(T, Writable) and capacity > 0
 ):
     var data: List[Self.T]

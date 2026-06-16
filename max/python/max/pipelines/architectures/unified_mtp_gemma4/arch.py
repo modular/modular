@@ -13,11 +13,12 @@
 
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextContext
-from max.pipelines.lib import SupportedArchitecture, TextTokenizer
+from max.pipelines.lib import SupportedArchitecture
 from max.pipelines.modeling.types import PipelineTask
 
 from ..gemma4.memory_planner import Gemma4MemoryPlanner
 from ..gemma4.model_config import Gemma4ForConditionalGenerationConfig
+from ..gemma4.tokenizer import Gemma4Tokenizer
 from .model import UnifiedMTPGemma4Model
 from .weight_adapters import convert_safetensor_state_dict
 
@@ -28,7 +29,7 @@ unified_mtp_gemma4_arch = SupportedArchitecture(
     default_encoding="float4_e2m1fnx2",
     supported_encodings={"bfloat16", "float4_e2m1fnx2"},
     pipeline_model=UnifiedMTPGemma4Model,
-    tokenizer=TextTokenizer,
+    tokenizer=Gemma4Tokenizer,
     context_type=TextContext,
     default_weights_format=WeightsFormat.safetensors,
     weight_adapters={WeightsFormat.safetensors: convert_safetensor_state_dict},
@@ -37,4 +38,6 @@ unified_mtp_gemma4_arch = SupportedArchitecture(
     multi_gpu_supported=True,
     config=Gemma4ForConditionalGenerationConfig,
     memory_planner=Gemma4MemoryPlanner,
+    tool_parser="gemma4",
+    reasoning_parser="gemma4",
 )

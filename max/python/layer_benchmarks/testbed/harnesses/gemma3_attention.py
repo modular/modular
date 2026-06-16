@@ -47,16 +47,12 @@ from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType
 from max.nn.kv_cache import KVCacheParams
 from max.nn.rotary_embedding import Llama3RotaryEmbedding
-from max.pipelines.architectures.gemma3.layers.attention import (
-    Gemma3Attention,
-)
+from max.pipelines.architectures.gemma3.layers.attention import Gemma3Attention
 from transformers.models.gemma3.configuration_gemma3 import Gemma3TextConfig
 from transformers.models.gemma3.modeling_gemma3 import (
     Gemma3Attention as HFGemma3Attention,
 )
-from transformers.models.gemma3.modeling_gemma3 import (
-    Gemma3RotaryEmbedding,
-)
+from transformers.models.gemma3.modeling_gemma3 import Gemma3RotaryEmbedding
 
 from testbed.harnesses.ragged_attention_harness import (
     AttentionDynamicParams,
@@ -194,7 +190,7 @@ class Gemma3AttentionHarness(
         input_row_offsets_type = TensorType(
             DType.uint32, shape=["input_row_offsets_len"], device=device_ref
         )
-        flattened_kv_types = kv_params.get_symbolic_inputs().flatten()
+        flattened_kv_types = kv_params.flattened_kv_inputs()
 
         with Graph(
             "Gemma3Attention",
@@ -205,11 +201,9 @@ class Gemma3AttentionHarness(
             ),
         ) as graph:
             inputs, input_row_offsets, *kv_cache = graph.inputs
-            kv_collection = (
-                kv_params.get_symbolic_inputs()
-                .unflatten(iter(kv_cache))
-                .inputs[0]
-            )
+            kv_collection = kv_params.unflatten_kv_inputs(
+                iter(kv_cache)
+            ).inputs[0]
             graph.output(
                 layer(
                     inputs.tensor,

@@ -566,7 +566,7 @@ struct ConvDirectNHWC[
             # TODO: Need to have a more robust way to compute task_id_c
             var task_id_c = (task_id // num_partitions[2]) % num_partitions[1]
             var task_output = LayoutTensor[
-                Self.output_type, Self.output_layout, AnyOrigin[mut=True]
+                Self.output_type, Self.output_layout
             ](
                 output_scratch.ptr + task_id_c * output_size,
                 RuntimeLayout[Self.output_layout].row_major(
@@ -1103,11 +1103,11 @@ struct ConvDirectNHWC[
         prefetch_offset: Int,
     ](
         self,
-        input_base_offsets: TileTensor[DType.int32, ...],
+        input_base_offsets: TileTensor[mut=False, DType.int32, ...],
         input_offset: Int,
         c_tile_size: Int,
-        input: UnsafePointer[Scalar[Self.input_type], ...],
-        filter: UnsafePointer[Scalar[Self.filter_type], ...],
+        input: UnsafePointer[mut=False, Scalar[Self.input_type], ...],
+        filter: UnsafePointer[mut=False, Scalar[Self.filter_type], ...],
         mut acc: _Accumulator[
             Self.output_type,
             micro_kernel_height,
@@ -2020,10 +2020,10 @@ def accumulate_wo_tile_1d[
     c_tile_size: Int,
     S: Int,
     mut acc: _Accumulator,
-    input: UnsafePointer[Scalar[input_dt], ...],
+    input: UnsafePointer[mut=False, Scalar[input_dt], ...],
     input_stride: Int,
     input_stride_to_nbr: Int,
-    filter: UnsafePointer[Scalar[filter_dt], ...],
+    filter: UnsafePointer[mut=False, Scalar[filter_dt], ...],
     filter_stride: Int,
     filter_stride_to_nbr: Int,
     partial_load_filter_size: Int,
@@ -2209,10 +2209,10 @@ def accumulate_wo_tile_2d[
     c_tile_size: Int,
     RS: IndexList[2],
     mut acc: _Accumulator,
-    input: UnsafePointer[Scalar[input_dt], ...],
+    input: UnsafePointer[mut=False, Scalar[input_dt], ...],
     input_stride: Int,
     input_stride_to_nbr: IndexList[2],
-    filter: UnsafePointer[Scalar[filter_dt], ...],
+    filter: UnsafePointer[mut=False, Scalar[filter_dt], ...],
     filter_stride: Int,
     filter_stride_to_nbr: IndexList[2],
     partial_load_filter_size: Int,
@@ -2266,8 +2266,8 @@ def conv2d_update_wo_tile[
     elementwise_epilogue: Optional[elementwise_epilogue_type] = None,
 ](
     output: UnsafePointer[mut=True, Scalar[output_dt], ...],
-    input: UnsafePointer[Scalar[input_dt], ...],
-    filter: UnsafePointer[Scalar[filter_dt], ...],
+    input: UnsafePointer[mut=False, Scalar[input_dt], ...],
+    filter: UnsafePointer[mut=False, Scalar[filter_dt], ...],
     first_c_tile: Bool,
     c_tile_size: Int,
     f_tile_offset: Int,
@@ -2389,10 +2389,10 @@ def accumulate_wo_tile_3d[
     c_tile_size: Int,
     QRS: IndexList[3],
     mut acc: _Accumulator,
-    input: UnsafePointer[Scalar[input_dt], ...],
+    input: UnsafePointer[mut=False, Scalar[input_dt], ...],
     input_stride: Int,
     input_stride_to_nbr: IndexList[3],
-    filter: UnsafePointer[Scalar[filter_dt], ...],
+    filter: UnsafePointer[mut=False, Scalar[filter_dt], ...],
     filter_stride: Int,
     filter_stride_to_nbr: IndexList[3],
     partial_load_filter_size: Int,
@@ -2993,18 +2993,20 @@ def conv_shape[
     dilations_type: DType,
     paddings_type: DType,
 ](
-    input_buf: TileTensor[input_type, address_space=AddressSpace.GENERIC, ...],
+    input_buf: TileTensor[
+        mut=False, input_type, address_space=AddressSpace.GENERIC, ...
+    ],
     filter_buf: TileTensor[
-        filter_type, address_space=AddressSpace.GENERIC, ...
+        mut=False, filter_type, address_space=AddressSpace.GENERIC, ...
     ],
     strides_buf: TileTensor[
-        strides_type, address_space=AddressSpace.GENERIC, ...
+        mut=False, strides_type, address_space=AddressSpace.GENERIC, ...
     ],
     dilations_buf: TileTensor[
-        dilations_type, address_space=AddressSpace.GENERIC, ...
+        mut=False, dilations_type, address_space=AddressSpace.GENERIC, ...
     ],
     paddings_buf: TileTensor[
-        paddings_type, address_space=AddressSpace.GENERIC, ...
+        mut=False, paddings_type, address_space=AddressSpace.GENERIC, ...
     ],
     num_groups_scalar: Scalar,
 ) raises -> IndexList[input_buf.flat_rank]:
@@ -3118,8 +3120,12 @@ def conv_nhwc_direct[
     has_epilogue_fusion: Bool,
     elementwise_lambda: elementwise_simd_epilogue_type,
 ](
-    input: TileTensor[input_type, address_space=AddressSpace.GENERIC, ...],
-    filter: TileTensor[filter_type, address_space=AddressSpace.GENERIC, ...],
+    input: TileTensor[
+        mut=False, input_type, address_space=AddressSpace.GENERIC, ...
+    ],
+    filter: TileTensor[
+        mut=False, filter_type, address_space=AddressSpace.GENERIC, ...
+    ],
     output: TileTensor[
         mut=True, output_type, address_space=AddressSpace.GENERIC, ...
     ],
@@ -3567,8 +3573,8 @@ def _conv_cudnn[
     filter_type: DType,
     output_type: DType,
 ](
-    input: TileTensor[input_type, ...],
-    filter: TileTensor[filter_type, ...],
+    input: TileTensor[mut=False, input_type, ...],
+    filter: TileTensor[mut=False, filter_type, ...],
     output: TileTensor[output_type, ...],
     stride_list: IndexList[2],
     dilation_list: IndexList[2],
@@ -3788,8 +3794,8 @@ def conv_cudnn[
     filter_type: DType,
     output_type: DType,
 ](
-    input: TileTensor[input_type, ...],
-    filter: TileTensor[filter_type, ...],
+    input: TileTensor[mut=False, input_type, ...],
+    filter: TileTensor[mut=False, filter_type, ...],
     output: TileTensor[output_type, ...],
     stride: IndexList[2],
     dilation: IndexList[2],
@@ -3918,8 +3924,8 @@ def _conv_miopen[
     //,
     filter_is_fcrs: Bool = False,
 ](
-    input: TileTensor[input_type, ...],
-    filter: TileTensor[filter_type, ...],
+    input: TileTensor[mut=False, input_type, ...],
+    filter: TileTensor[mut=False, filter_type, ...],
     output: TileTensor[output_type, ...],
     stride_list: IndexList[conv_rank],
     dilation_list: IndexList[conv_rank],
@@ -4050,7 +4056,7 @@ def _conv_miopen[
 
     @always_inline
     def image_shape_from_tensor(
-        tensor: TileTensor[...],
+        tensor: TileTensor,
     ) -> InlineArray[UInt64, tensor_rank]:
         # Convert to channels first format.
         var shape = InlineArray[UInt64, tensor_rank](fill=0)
@@ -4260,8 +4266,8 @@ def _conv_miopen[
     maybe_epilogue_func: Optional[elementwise_simd_epilogue_type] = None,
     filter_is_fcrs: Bool = False,
 ](
-    input: TileTensor[input_type, ...],
-    filter: TileTensor[filter_type, ...],
+    input: TileTensor[mut=False, input_type, ...],
+    filter: TileTensor[mut=False, filter_type, ...],
     output: TileTensor[output_type, ...],
     stride: IndexList[conv_rank],
     dilation: IndexList[conv_rank],
@@ -4329,8 +4335,8 @@ def conv_miopen[
     //,
     filter_is_fcrs: Bool = False,
 ](
-    input: TileTensor[input_type, ...],
-    filter: TileTensor[filter_type, ...],
+    input: TileTensor[mut=False, input_type, ...],
+    filter: TileTensor[mut=False, filter_type, ...],
     output: TileTensor[output_type, ...],
     stride: IndexList[conv_rank],
     dilation: IndexList[conv_rank],
@@ -5364,8 +5370,8 @@ def _conv3d_cudnn_depth_tiled[
     filter_type: DType,
     output_type: DType,
 ](
-    input: TileTensor[input_type, ...],
-    filter: TileTensor[filter_type, ...],
+    input: TileTensor[mut=False, input_type, ...],
+    filter: TileTensor[mut=False, filter_type, ...],
     output: TileTensor[output_type, ...],
     stride: IndexList[3],
     dilation: IndexList[3],
@@ -5632,8 +5638,8 @@ def _conv3d_cudnn[
     filter_type: DType,
     output_type: DType,
 ](
-    input: TileTensor[input_type, ...],
-    filter: TileTensor[filter_type, ...],
+    input: TileTensor[mut=False, input_type, ...],
+    filter: TileTensor[mut=False, filter_type, ...],
     output: TileTensor[output_type, ...],
     stride: IndexList[3],
     dilation: IndexList[3],
@@ -6049,8 +6055,8 @@ def conv3d_cudnn[
     filter_type: DType,
     output_type: DType,
 ](
-    input: TileTensor[input_type, ...],
-    filter: TileTensor[filter_type, ...],
+    input: TileTensor[mut=False, input_type, ...],
+    filter: TileTensor[mut=False, filter_type, ...],
     output: TileTensor[output_type, ...],
     stride: IndexList[3],
     dilation: IndexList[3],

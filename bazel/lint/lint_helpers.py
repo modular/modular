@@ -124,7 +124,7 @@ def get_changed_files() -> set[str]:
                         "diff",
                         "--name-only",
                         "--from",
-                        "main@origin",
+                        "heads(ancestors(@) & ancestors(main@origin))",
                         "--to",
                         "@",
                     ],
@@ -132,7 +132,6 @@ def get_changed_files() -> set[str]:
             )
         )
     else:
-        # TODO: Need a way to use a different diff base
         if lint_diff_target := os.getenv("LINT_DIFF_TARGET"):
             diff_target = lint_diff_target
         else:

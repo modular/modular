@@ -216,7 +216,7 @@ def test_dict_string_representation_string_int() raises:
     check_write_to(d, expected="{a: 1, b: 2}", is_repr=False)
     check_write_to(
         d,
-        expected="Dict[String, Int]({'a': Int(1), 'b': Int(2)})",
+        expected="Dict[String, SIMD[DType.int, 1]]({'a': Int(1), 'b': Int(2)})",
         is_repr=True,
     )
 
@@ -226,7 +226,10 @@ def test_dict_string_representation_int_int() raises:
     check_write_to(d, expected="{1: 2, 3: 4}", is_repr=False)
     check_write_to(
         d,
-        expected="Dict[Int, Int]({Int(1): Int(2), Int(3): Int(4)})",
+        expected=(
+            "Dict[SIMD[DType.int, 1], SIMD[DType.int, 1]]({Int(1): Int(2),"
+            " Int(3): Int(4)})"
+        ),
         is_repr=True,
     )
 
@@ -279,9 +282,7 @@ def _test_iter_bounds[
         var lower, upper = iter.bounds()
         assert_equal(dict_len - i, lower)
         assert_equal(dict_len - i, upper.value())
-        _ = trait_downcast_var[Movable & ImplicitlyDestructible](
-            iter.__next__()
-        )
+        _ = trait_downcast_var[Movable & ImplicitlyDeletable](iter.__next__())
 
     var lower, upper = iter.bounds()
     assert_equal(0, lower)
@@ -800,8 +801,12 @@ def test_popitem_no_copies() raises:
 
 def test_dict_key_error_repr() raises:
     var e = DictKeyError[Int]()
-    check_write_to(e, expected="DictKeyError[Int]()", is_repr=False)
-    check_write_to(e, expected="DictKeyError[Int]()", is_repr=True)
+    check_write_to(
+        e, expected="DictKeyError[SIMD[DType.int, 1]]()", is_repr=False
+    )
+    check_write_to(
+        e, expected="DictKeyError[SIMD[DType.int, 1]]()", is_repr=True
+    )
 
 
 def test_empty_dict_error_repr() raises:
@@ -1259,7 +1264,7 @@ def test_dict_hash() raises:
     assert_equal(hash(Dict[String, Int]()), hash(Dict[String, Int]()))
 
 
-struct NonWritable(Copyable, ImplicitlyDestructible):
+struct NonWritable(Copyable, ImplicitlyDeletable):
     pass
 
 
@@ -1358,7 +1363,7 @@ def test_dict_iter_owned_bounds() raises:
 
 def test_dict_move_only_value() raises:
     # `MoveOnly[Int]` is not `Copyable`; this exercises the conditional
-    # conformance path of `Dict[K, V: Movable & ImplicitlyDestructible, H]`.
+    # conformance path of `Dict[K, V: Movable & ImplicitlyDeletable, H]`.
     assert_false(conforms_to(Dict[String, MoveOnly[Int]], Copyable))
 
     var d = Dict[String, MoveOnly[Int]]()

@@ -52,10 +52,10 @@ comptime _ReduceGeneratorPluginHookFnType = (
         input_0_fn: def[dtype: DType, width: Int, rank: Int](
             IndexList[rank]
         ) capturing[_] -> SIMD[dtype, width],
-        output_0_fn: def[dtype: DType, width: Int, rank: Int](
+        output_0_fn: def[dtype: DType, width: SIMDSize, rank: Int](
             IndexList[rank], StaticTuple[SIMD[dtype, width], num_reductions]
         ) capturing[_] -> None,
-        reduce_function: def[ty: DType, width: Int, reduction_idx: Int](
+        reduce_function: def[ty: DType, width: SIMDSize, reduction_idx: Int](
             SIMD[ty, width], SIMD[ty, width]
         ) capturing[_] -> SIMD[ty, width],
     ](

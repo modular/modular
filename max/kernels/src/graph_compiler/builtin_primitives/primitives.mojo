@@ -103,7 +103,7 @@ struct StateContext(TrivialRegisterPassable):
 
 
 def pack_string_res(
-    str_ptr: UnsafePointer[Byte, ImmutAnyOrigin], str_len: Int
+    str_ptr: UnsafePointer[mut=False, Byte, _], str_len: Int
 ) raises -> String:
     var span = Span(ptr=str_ptr, length=str_len)
     # We can not free the resource ptr embedded in MEF, create a copy
@@ -684,7 +684,10 @@ def mgp_buffer_device_to_device[
     dst_dev_ctx: DeviceContext,
 ) raises:
     comptime if is_gpu[cSrcDevice]() and is_gpu[dDstDevice]():
-        dst_dev_ctx.enqueue_copy[DType.int8](
+        # The graph emits explicit mgp.device_wait ops around this copy to
+        # synchronize the source and destination streams, so the driver must
+        # not insert its own cross-stream synchronization here.
+        dst_dev_ctx.enqueue_copy_no_cross_stream_sync[DType.int8](
             dst_buf.to_device_buffer(dst_dev_ctx),
             src_buf.to_device_buffer(src_dev_ctx),
         )
@@ -798,6 +801,19 @@ def mgp_sync(ctx: StateContext, dev_ctx: DeviceContext) raises:
     dev_ctx.synchronize()
 
 
+@register_internal("mgp.device_wait")
+@no_inline
+def mgp_device_wait(
+    ctx: StateContext,
+    waiting_dev_ctx: DeviceContext,
+    signaling_dev_ctx: DeviceContext,
+) raises:
+    # Enqueue a one-directional cross-stream dependency: the waiting context's
+    # stream waits for the work already enqueued on the signaling context's
+    # stream. Non-blocking on the host (unlike mgp.sync).
+    waiting_dev_ctx.enqueue_wait_for(signaling_dev_ctx)
+
+
 @register_internal("mgp.debug.print")
 @no_inline
 def mgp_debug_print[
@@ -829,7 +845,7 @@ def mgp_debug_tensor_print[
 ](
     buffer: ImmutByteBuffer,
     shape: IndexList[spec_rank],
-    label_ptr: UnsafePointer[Byte, ImmutAnyOrigin],
+    label_ptr: UnsafePointer[mut=False, Byte, _],
     label_len: Int,
 ) raises:
     external_call["MGP_RT_DebugTensorPrint", NoneType](
@@ -1101,7 +1117,7 @@ struct MoggAsyncPackHelper:
 
     def __init__(
         out self,
-        var data: Some[Movable & ImplicitlyDestructible],
+        var data: Some[Movable & ImplicitlyDeletable],
         async_ptr: AnyAsyncValueRefPtr,
     ):
         """
@@ -1380,7 +1396,7 @@ def mgp_buffer_remove_cached(ctx: StateContextRef, buffer_slot: Int):
 @register_internal("mgp.assert")
 @no_inline
 def mgp_assert(
-    cond: Bool, msg_ptr: UnsafePointer[Byte, ImmutAnyOrigin], msg_len: Int
+    cond: Bool, msg_ptr: UnsafePointer[mut=False, Byte, _], msg_len: Int
 ) raises:
     """
     Raises an error when the input condition is not true.
@@ -1399,7 +1415,7 @@ def all_zeros(indices: IndexList) -> Bool:
 def get_buffer_mem_storage_handle(
     buffer: OpaquePointer[MutAnyOrigin],
     type: Int,
-    memStorageHandle: OpaquePointer[MutAnyOrigin],
+    memStorageHandle: OpaquePointer[mut=True, _],
 ):
     external_call["MGP_RT_GetBufferMemStorageHandle", NoneType](
         buffer, type, memStorageHandle

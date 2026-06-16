@@ -238,7 +238,7 @@ struct MaskedFlashAttentionGPU:
         q: InputTensor[rank=rank, ...],
         k: InputTensor[rank=rank, ...],
         v: InputTensor[rank=rank, ...],
-        mask: InputTensor[...],
+        mask: InputTensor,
         scale: Float32,
         ctx: DeviceContext,
     ) raises:
@@ -633,20 +633,21 @@ struct WithMaskFlashAttentionSplitKVCPU:
             ctx=Optional[DeviceContext](ctx),
         )
 
-    @staticmethod
-    def shape[
-        dtype: DType,
-        rank: Int,
-    ](
-        q: InputTensor[dtype=dtype, rank=rank, ...],
-        k: InputTensor[dtype=dtype, rank=rank, ...],
-        v: InputTensor[dtype=dtype, rank=rank, ...],
-        k_cache: InputTensor[dtype=dtype, rank=rank + 1, ...],
-        v_cache: InputTensor[dtype=dtype, rank=rank + 1, ...],
-        mask: InputTensor[dtype=dtype, ...],
-        scale: Scalar[dtype=DType.float32],
-    ) -> IndexList[q.rank]:
-        return q.shape()
+
+@compiler.register_shape_function("with_mask_flash_attention_split_kv_cpu")
+def with_mask_flash_attention_split_kv_cpu_shape[
+    dtype: DType,
+    rank: Int,
+](
+    q: InputTensor[dtype=dtype, rank=rank, ...],
+    k: InputTensor[dtype=dtype, rank=rank, ...],
+    v: InputTensor[dtype=dtype, rank=rank, ...],
+    k_cache: InputTensor[dtype=dtype, rank=rank + 1, ...],
+    v_cache: InputTensor[dtype=dtype, rank=rank + 1, ...],
+    mask: InputTensor[dtype=dtype, ...],
+    scale: Scalar[dtype=DType.float32],
+) -> IndexList[q.rank]:
+    return q.shape()
 
 
 @compiler.register("mo.composite.masked_flash_attention_cpu")
@@ -1590,18 +1591,19 @@ struct Struct_mla_prefill_ragged_paged:
     @staticmethod
     def execute[
         dtype: DType,
+        qkv_dtype: DType,
         //,
         target: StaticString,
         mask_str: StaticString,
     ](
         output: OutputTensor[dtype=dtype, rank=3, ...],
-        q: InputTensor[dtype=dtype, rank=3, ...],
-        k: InputTensor[dtype=dtype, rank=3, ...],
-        v: InputTensor[dtype=dtype, rank=3, ...],
+        q: InputTensor[dtype=qkv_dtype, rank=3, ...],
+        k: InputTensor[dtype=qkv_dtype, rank=3, ...],
+        v: InputTensor[dtype=qkv_dtype, rank=3, ...],
         buffer_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
         cache_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
         input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
-        kv_blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
+        kv_blocks: MutableInputTensor[dtype=qkv_dtype, rank=6, ...],
         cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
         kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
         max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],

@@ -66,7 +66,7 @@ from std.gpu.host.compile import (
     get_gpu_target,
 )
 from std.memory import stack_allocation
-from std.memory import alloc, free, Layout, UnsafeMaybeUninit
+from std.memory import alloc, dealloc, ThinAllocation, Layout, UnsafeMaybeUninit
 from std.memory.unsafe import bitcast
 from std.builtin.rebind import downcast
 
@@ -2967,10 +2967,10 @@ struct DeviceFunction[
                 Layout[OpaquePointer[MutAnyOrigin]](
                     count=num_captures + num_args
                 )
-            )
+            ).unsafe_leak()
             dense_args_sizes = alloc(
                 Layout[UInt64](count=num_captures + num_args)
-            )
+            ).unsafe_leak()
             for i in range(num_captures + num_args):
                 dense_args_sizes[i] = 0
         else:
@@ -3064,8 +3064,16 @@ struct DeviceFunction[
             )
 
         if num_captures > num_captures_static:
-            free(dense_args_addrs, {count = num_captures + num_args})
-            free(dense_args_sizes, {count = num_captures + num_args})
+            dealloc(
+                ThinAllocation(
+                    unsafe_assume_ownership=dense_args_addrs
+                ).unsafe_with_layout({count = num_captures + num_args})
+            )
+            dealloc(
+                ThinAllocation(
+                    unsafe_assume_ownership=dense_args_sizes
+                ).unsafe_with_layout({count = num_captures + num_args})
+            )
 
     @always_inline
     @staticmethod
@@ -3238,7 +3246,7 @@ struct DeviceFunction[
                 Layout[OpaquePointer[MutAnyOrigin]](
                     count=num_captures + num_passed_args
                 )
-            )
+            ).unsafe_leak()
         else:
             dense_args_addrs = stack_allocation[
                 num_captures_static + num_passed_args,
@@ -3334,7 +3342,11 @@ struct DeviceFunction[
             )
 
         if num_captures > num_captures_static:
-            free(dense_args_addrs, {count = num_captures + num_passed_args})
+            dealloc(
+                ThinAllocation(
+                    unsafe_assume_ownership=dense_args_addrs
+                ).unsafe_with_layout({count = num_captures + num_passed_args})
+            )
 
     @always_inline
     def get_attribute(self, attr: Attribute) raises -> Int:
@@ -7442,6 +7454,50 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_DtoD_async",
+                _CString[],
+                _DeviceContextPtr[mut=True],
+                _DeviceBufferPtr[mut=True],
+                _DeviceBufferPtr[mut=True],
+            ](
+                self._handle,
+                dst_buf._handle,
+                src_buf._handle,
+            )
+        )
+
+    @always_inline
+    def enqueue_copy_no_cross_stream_sync[
+        dtype: DType
+    ](
+        self,
+        dst_buf: DeviceBuffer[dtype, ...],
+        src_buf: DeviceBuffer[dtype, ...],
+    ) raises:
+        """Enqueues a device-to-device copy without cross-stream synchronization.
+
+        This behaves like `enqueue_copy` for two device buffers, except that
+        when the source and destination are on different streams the driver does
+        not insert the events that normally synchronize them. The caller is
+        responsible for ensuring the source data is ready before the copy and
+        that the source buffer is not reused until the copy completes. This is
+        used by the graph compiler, which emits explicit synchronization ops
+        around the copy.
+
+        Parameters:
+            dtype: Type of the data being copied.
+
+        Args:
+            dst_buf: Device buffer to copy to.
+            src_buf: Device buffer to copy from. Must be at least as large as
+                `dst_buf`.
+
+        Raises:
+            If the operation fails.
+        """
+        # const char * AsyncRT_DeviceContext_DtoD_async_no_cross_stream_sync(const DeviceContext *ctx, const DeviceBuffer *dst, const DeviceBuffer *src)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceContext_DtoD_async_no_cross_stream_sync",
                 _CString[],
                 _DeviceContextPtr[mut=True],
                 _DeviceBufferPtr[mut=True],

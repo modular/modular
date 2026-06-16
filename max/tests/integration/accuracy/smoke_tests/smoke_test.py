@@ -126,11 +126,11 @@ MODEL_RECIPES = CaseInsensitiveDict({
     "nvidia/Kimi-K2.5-NVFP4__dflash_dp": "max/pipelines/architectures/kimik2_5/recipes/nvfp4_dflash_dp_8x_b200.yaml",
     "Qwen/Qwen3-235B-A22B-Instruct-2507": "max/pipelines/architectures/qwen3/recipes/qwen3_235b_a22b_8x_b200.yaml",
     "unsloth/gpt-oss-20b-BF16__modulev3": "max/pipelines/architectures/gpt_oss_modulev3/recipes/gpt_oss_20b.yaml",
-    "nvidia/Kimi-K2.5-NVFP4__eagle_tiered_kvconnector": "max/pipelines/architectures/kimik2_5/recipes/nvfp4_eagle_tiered_kvconnector_8x_b200_with_vision.yaml",
+    "nvidia/Kimi-K2.5-NVFP4__eagle_tiered_kvconnector_tpep_ar": "max/pipelines/architectures/kimik2_5/recipes/nvfp4_eagle_tiered_kvconnector_tpep_ar_8x_b200_with_vision.yaml",
     "nvidia/Kimi-K2.5-NVFP4__mha_eagle_tiered_kvconnector_tpep_ar": "max/pipelines/architectures/kimik2_5/recipes/nvfp4_mha_eagle_tiered_kvconnector_tpep_ar_8x_b200_with_vision.yaml",
     "nvidia/Kimi-K2.6-NVFP4__eagle_tpep": "max/pipelines/architectures/kimik2_5/recipes/nvfp4_kimi_k2_6_eagle_tpep_8x_b200.yaml",
-    "nvidia/Kimi-K2.6-NVFP4__eagle_tiered_kvconnector": "max/pipelines/architectures/kimik2_5/recipes/nvfp4_kimi_k2_6_eagle_tiered_kvconnector_8x_b200.yaml",
-    "nvidia/Kimi-K2.5-NVFP4__local_kvconnector": "max/pipelines/architectures/kimik2_5/recipes/nvfp4_local_kvconnector_8x_b200_with_vision.yaml",
+    "nvidia/Kimi-K2.6-NVFP4__eagle_tiered_kvconnector_tpep_ar": "max/pipelines/architectures/kimik2_5/recipes/nvfp4_kimi_k2_6_eagle_tiered_kvconnector_tpep_ar_8x_b200.yaml",
+    "nvidia/Kimi-K2.5-NVFP4__local_kvconnector_tpep_ar": "max/pipelines/architectures/kimik2_5/recipes/nvfp4_local_kvconnector_tpep_ar_8x_b200_with_vision.yaml",
 })
 # fmt: on
 
@@ -392,8 +392,9 @@ def get_server_cmd(
     *,
     serve_extra_args: str = "",
     recipe_path: str | None = None,
+    gpu_spec: tuple[str, int],
 ) -> list[str]:
-    gpu_model, gpu_count = get_gpu_name_and_count()
+    gpu_model, gpu_count = gpu_spec
     if recipe_path is None:
         recipe_path = MODEL_RECIPES.get(model)
     recipe = _load_recipe(recipe_path) if recipe_path else None
@@ -625,6 +626,7 @@ def smoke_test(
         hf_model_path,
         serve_extra_args=serve_extra_args,
         recipe_path=recipe_path,
+        gpu_spec=get_gpu_name_and_count(),
     )
 
     tasks = [TEXT_TASK]

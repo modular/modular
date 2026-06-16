@@ -727,9 +727,9 @@ struct Optional[T: Movable](
         caller-provided destructor function.
 
         This method can be used to destroy `Optional` values whose element
-        type is not `ImplicitlyDestructible` (for example, types
+        type is not `ImplicitlyDeletable` (for example, types
         marked `@explicit_destroy`). The `__del__` on `Optional`
-        requires `T: ImplicitlyDestructible`, so explicit-destroy users must
+        requires `T: ImplicitlyDeletable`, so explicit-destroy users must
         destroy an `Optional[T]` through this API instead.
 
         If `self` is empty, `destroy_func` is not called. Otherwise
@@ -769,14 +769,14 @@ struct Optional[T: Movable](
             self._value^.destroy_with[_NoneType](_NoneType.__del__)
 
     def or_else[
-        _T: Movable & ImplicitlyDestructible, //
+        _T: Movable & ImplicitlyDeletable, //
     ](deinit self: Optional[_T], var default: _T) -> _T:
         """Return the underlying value contained in the `Optional` or a default
         value if the `Optional`'s underlying value is not present.
 
         Parameters:
             _T: Type of the optional element, which must conform to
-                `ImplicitlyDestructible`.
+                `ImplicitlyDeletable`.
 
         Args:
             default: The new value to use if no value was present.
@@ -979,27 +979,27 @@ struct _DefaultOptionalRegStorage[T: TrivialRegisterPassable](
     @always_inline
     def __init__(out self):
         self._value = __mlir_op.`kgen.variant.create`[
-            _type=Self._mlir_type, index=Int(1)._mlir_value
+            _type=Self._mlir_type, index=SIMDSize(1)._mlir_value
         ](__mlir_attr.false)
 
     @always_inline
     def __init__[U: TrivialRegisterPassable](out self, value: U):
         comptime assert _type_is_eq[U, Self.T]()
         self._value = __mlir_op.`kgen.variant.create`[
-            _type=Self._mlir_type, index=Int(0)._mlir_value
+            _type=Self._mlir_type, index=SIMDSize(0)._mlir_value
         ](rebind[Self.T](value))
 
     @always_inline
     def value[U: TrivialRegisterPassable](self) -> U:
         comptime assert _type_is_eq[U, Self.T]()
-        var value = __mlir_op.`kgen.variant.get`[index=Int(0)._mlir_value](
+        var value = __mlir_op.`kgen.variant.get`[index=SIMDSize(0)._mlir_value](
             self._value
         )
         return rebind[U](value)
 
     @always_inline
     def __bool__(self) -> Bool:
-        return __mlir_op.`kgen.variant.is`[index=Int(0)._mlir_value](
+        return __mlir_op.`kgen.variant.is`[index=SIMDSize(0)._mlir_value](
             self._value
         )
 

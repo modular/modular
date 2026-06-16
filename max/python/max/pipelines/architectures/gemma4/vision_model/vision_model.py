@@ -56,6 +56,7 @@ class Gemma4VisionModel(Module):
         self.config = config
         self.device = config.devices[0]
         vision_config = config.vision_config
+        assert vision_config is not None
         self.patch_embedder = Gemma4VisionPatchEmbedder(
             config, device=self.device
         )
@@ -222,6 +223,7 @@ class Gemma4VisionModel(Module):
         * ``max_seq_len``         — scalar uint32, on CPU (one shared tensor)
         """
         vision_config = self.config.vision_config
+        assert vision_config is not None
         patch_dim = 3 * vision_config.patch_size**2
         devices = self.config.devices
 

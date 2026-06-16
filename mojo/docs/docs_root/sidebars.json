@@ -153,6 +153,7 @@
   ],
   "referenceSidebar": [
     "docs/reference/index",
+    "docs/reference/cheat-sheets",
     "docs/reference/keywords",
     "docs/reference/literals",
     "docs/reference/numeric-types",
