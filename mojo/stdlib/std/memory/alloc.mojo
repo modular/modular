@@ -431,6 +431,8 @@ def alloc[T: AnyType, //](layout: Layout[T], /) -> Allocation[T]:
     the `Allocation` is destroyed on every path — by passing it to `dealloc`,
     or by explicitly leaking it with `unsafe_leak()`.
 
+    When `size_of[T]() == 0`, this function returns a sentinel value.
+
     Parameters:
         T: The type of the elements to allocate storage for.
 
@@ -457,21 +459,23 @@ def alloc[T: AnyType, //](layout: Layout[T], /) -> Allocation[T]:
     dealloc(allocation^)
     ```
     """
-    # NOTE: The message must not build a `String`: `String`'s allocating
-    # constructor routes through `alloc`, so a `String(...)` message here
-    # would recursively require instantiating `alloc[Byte]` while it is being
-    # instantiated. Keep the message a plain string literal.
-    comptime assert (
-        size_of[T]() > 0
-    ), "Mojo's alloc cannot handle zero-sized types"
+    comptime size_of_t = size_of[T]()
 
     # TODO: Cannot use t-string as is causes a recursive reference to `alloc`
     debug_assert(layout.count() > 0, "alloc(", layout, "): count must be > 0")
 
-    var pointer = _alloc_bytes(layout.as_byte_layout()).bitcast[T]()
-    return ThinAllocation(unsafe_assume_ownership=pointer).unsafe_with_layout(
-        layout
-    )
+    comptime if size_of_t == 0:
+        return ThinAllocation(
+            unsafe_assume_ownership=UnsafePointer[
+                T, MutUntrackedOrigin
+            ].unsafe_dangling()
+        ).unsafe_with_layout(layout)
+    else:
+        return ThinAllocation(
+            unsafe_assume_ownership=_alloc_bytes(
+                layout.as_byte_layout()
+            ).bitcast[T]()
+        ).unsafe_with_layout(layout)
 
 
 def dealloc[T: AnyType, //](var allocation: Allocation[T], /):
@@ -498,7 +502,10 @@ def dealloc[T: AnyType, //](var allocation: Allocation[T], /):
     dealloc(allocation^)
     ```
     """
-    _free(allocation^.unsafe_leak())
+    comptime if size_of[T]() == 0:
+        _ = allocation^.unsafe_leak()
+    else:
+        _free(allocation^.unsafe_leak())
 
 
 struct Layout[T: AnyType](TrivialRegisterPassable, Writable):

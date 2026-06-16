@@ -220,7 +220,6 @@ def alloc[
     """
     comptime size_of_t = size_of[type]()
     comptime type_name = reflect[type].name()
-    comptime assert size_of_t > 0, "size must be greater than zero"
     debug_assert(
         count >= 0,
         "alloc[",
