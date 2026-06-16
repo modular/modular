@@ -308,7 +308,7 @@ def run_max_indexer(
             x_type,
             qr_type,
             input_row_offsets_type,
-            *kv_params.get_symbolic_inputs().flatten(),
+            *kv_params.flattened_kv_inputs(),
         ),
     ) as graph:
         x_in = graph.inputs[0].tensor
@@ -359,7 +359,7 @@ def run_max_indexer(
         kv_manager.alloc(context, replica_idx=0, num_steps=1)
         batch_contexts.append(context)
 
-    kv_inputs = kv_manager.runtime_inputs([batch_contexts]).inputs[0]
+    kv_inputs = kv_manager.runtime_inputs_for_leaf([batch_contexts]).inputs[0]
 
     # Prepare input tensors - flatten batch dimension for ragged format
     x_flat = x.view(-1, dim)

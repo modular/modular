@@ -103,9 +103,9 @@ def slice_as_view[
     step_type: DType,
 ](
     tensor: TileTensor[dtype, ...],
-    starts: TileTensor[start_type, ...],
-    ends: TileTensor[end_type, ...],
-    steps: TileTensor[step_type, ...],
+    starts: TileTensor[mut=False, start_type, ...],
+    ends: TileTensor[mut=False, end_type, ...],
+    steps: TileTensor[mut=False, step_type, ...],
 ) -> TileTensor[
     dtype,
     Layout[
@@ -172,10 +172,10 @@ def copy_to_slice[
     target: StaticString = "cpu",
 ](
     buffer: TileTensor[mut=True, dtype, ...],
-    in_slice: TileTensor[dtype, ...],
-    start: TileTensor[start_type, ...],
-    end: TileTensor[end_type, ...],
-    step: TileTensor[step_type, ...],
+    in_slice: TileTensor[mut=False, dtype, ...],
+    start: TileTensor[mut=False, start_type, ...],
+    end: TileTensor[mut=False, end_type, ...],
+    step: TileTensor[mut=False, step_type, ...],
     context: DeviceContext,
 ) raises:
     var expected_shape = slice_shape(buffer, start, end, step)
@@ -218,10 +218,10 @@ def slice_as_copy[
     index_type: DType,
 ](
     output: TileTensor[mut=True, dtype, ...],
-    tensor: TileTensor[dtype, ...],
-    start: TileTensor[index_type, ...],
-    end: TileTensor[index_type, ...],
-    step: TileTensor[index_type, ...],
+    tensor: TileTensor[mut=False, dtype, ...],
+    start: TileTensor[mut=False, index_type, ...],
+    end: TileTensor[mut=False, index_type, ...],
+    step: TileTensor[mut=False, index_type, ...],
     ctx: DeviceContext,
 ) raises:
     comptime assert output.flat_rank == tensor.flat_rank
@@ -251,10 +251,10 @@ def slice_shape[
     stop_type: DType,
     step_type: DType,
 ](
-    input_buf: TileTensor[input_type, ...],
-    start_buf: TileTensor[start_type, ...],
-    stop_buf: TileTensor[stop_type, ...],
-    step_buf: TileTensor[step_type, ...],
+    input_buf: TileTensor[mut=False, input_type, ...],
+    start_buf: TileTensor[mut=False, start_type, ...],
+    stop_buf: TileTensor[mut=False, stop_type, ...],
+    step_buf: TileTensor[mut=False, step_type, ...],
 ) raises -> IndexList[input_buf.rank]:
     comptime assert start_buf.flat_rank == 1, "start_buf.rank must be 1"
     comptime assert stop_buf.flat_rank == 1, "stop_buf.rank must be 1"
@@ -310,9 +310,9 @@ def sliced_add[
     target: StaticString,
 ](
     c: TileTensor[mut=True, dtype, ...],
-    a: TileTensor[dtype, ...],
-    b: TileTensor[dtype, ...],
-    lora_end_idx: TileTensor[DType.int64, ...],
+    a: TileTensor[mut=False, dtype, ...],
+    b: TileTensor[mut=False, dtype, ...],
+    lora_end_idx: TileTensor[mut=False, DType.int64, ...],
     ctx: DeviceContext,
 ) raises:
     """Adds tensors a and b element-wise for rows < lora_end_idx, otherwise copies a.

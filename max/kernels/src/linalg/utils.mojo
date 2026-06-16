@@ -148,9 +148,9 @@ struct GemmShape(TrivialRegisterPassable):
         layout_a: Layout,
         layout_b: Layout,
     ](
-        c: LayoutTensor[_, layout_c, ...],
-        a: LayoutTensor[_, layout_a, ...],
-        b: LayoutTensor[_, layout_b, ...],
+        c: LayoutTensor[mut=False, _, layout_c, ...],
+        a: LayoutTensor[mut=False, _, layout_a, ...],
+        b: LayoutTensor[mut=False, _, layout_b, ...],
     ) -> GemmShape:
         """Constructor of a gemm shape record from input buffers.
 
@@ -174,7 +174,11 @@ struct GemmShape(TrivialRegisterPassable):
     @staticmethod
     def get[
         transpose_b: Bool,
-    ](c: TileTensor, a: TileTensor, b: TileTensor,) -> GemmShape:
+    ](
+        c: TileTensor[mut=False, ...],
+        a: TileTensor[mut=False, ...],
+        b: TileTensor[mut=False, ...],
+    ) -> GemmShape:
         """Constructor of a gemm shape record from TileTensor inputs.
 
         M, N, and K are intentionally calculated using `a` and `c` ONLY. This
@@ -317,7 +321,7 @@ def _get_tile_n_k[
     c_type: DType,
     kernel_cols: Int,
     transpose_b: Bool,
-](b: TileTensor) -> IndexList[2]:
+](b: TileTensor[mut=False, ...]) -> IndexList[2]:
     comptime assert b.rank == 2
     var tile_n_k: IndexList[2]
 
@@ -776,7 +780,7 @@ def apply_epilogue[
     elementwise_lambda: elementwise_epilogue_type,
     dst_layout: Layout,
     dst_element_layout: Layout = Layout(1, 1),
-](src: LayoutTensor, offset: Int):  # register or shared memory
+](src: LayoutTensor[mut=False, ...], offset: Int):  # register or shared memory
     # Check if input is 2D simd tile. This is only for double buffer gemm
     # TODO: extend it to 1D simd tile.
     comptime if (

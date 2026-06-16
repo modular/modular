@@ -144,7 +144,7 @@ struct ArgNonZero:
     @staticmethod
     def execute(
         output_buffer: OutputTensor[rank=2, ...],
-        input_buffer: InputTensor[...],
+        input_buffer: InputTensor,
     ) raises:
         arg_nonzero.arg_nonzero(
             input_buffer.to_tile_tensor[DType.int64](),
@@ -166,7 +166,7 @@ struct Mean:
         target: StaticString,
         axis: Int,
     ](
-        output: FusedOutputTensor[...],
+        output: FusedOutputTensor,
         input: FusedInputTensor[dtype=output.dtype, rank=output.rank, ...],
         ctx: DeviceContext,
     ) capturing raises:
@@ -387,7 +387,7 @@ struct ReduceAdd:
         axis: Int,
         _trace_name: StaticString,
     ](
-        output: FusedOutputTensor[...],
+        output: FusedOutputTensor,
         input: FusedInputTensor[dtype=output.dtype, rank=output.rank, ...],
         ctx: DeviceContext,
     ) capturing raises:
@@ -438,7 +438,7 @@ struct ReduceMul:
         axis: Int,
         _trace_name: StaticString,
     ](
-        output: FusedOutputTensor[...],
+        output: FusedOutputTensor,
         input: FusedInputTensor[dtype=output.dtype, rank=output.rank, ...],
         ctx: DeviceContext,
     ) capturing raises:
@@ -489,7 +489,7 @@ struct ReduceMax:
         axis: Int,
         _trace_name: StaticString,
     ](
-        output: FusedOutputTensor[...],
+        output: FusedOutputTensor,
         input: FusedInputTensor[dtype=output.dtype, rank=output.rank, ...],
         ctx: DeviceContext,
     ) capturing raises:
@@ -540,7 +540,7 @@ struct ReduceMin:
         axis: Int,
         _trace_name: StaticString,
     ](
-        output: FusedOutputTensor[...],
+        output: FusedOutputTensor,
         input: FusedInputTensor[dtype=output.dtype, rank=output.rank, ...],
         ctx: DeviceContext,
     ) capturing raises:
@@ -988,7 +988,7 @@ struct ReduceMinAndMax:
 @compiler.register_shape_function("mo.reduce.reduce_min_and_max")
 def reduce_reduce_min_and_max_shape[
     axis: Int,
-](input: InputTensor[...]) -> IndexList[input.rank]:
+](input: InputTensor) -> IndexList[input.rank]:
     var new_shape = input.shape()
     new_shape[_unsafe_normalize_neg_index(axis, input.rank)] = 2
 
@@ -1127,7 +1127,7 @@ struct BottomK:
 
 @compiler.register_shape_function("mo.bottom_k")
 def bottom_k_shape(
-    input: InputTensor[...],
+    input: InputTensor,
     k: Scalar,
     axis: Scalar,
     sorted: Scalar[DType.bool],
@@ -1171,7 +1171,7 @@ struct TopK:
 
 @compiler.register_shape_function("mo.top_k")
 def top_k_shape(
-    input: InputTensor[...],
+    input: InputTensor,
     k: Scalar,
     axis: Scalar,
     sorted: Scalar[DType.bool],
@@ -1193,7 +1193,7 @@ struct Softmax:
         axis: Int,
         has_prologue_fusion: Bool,
     ](
-        output: OutputTensor[...],
+        output: OutputTensor,
         input: FusedInputTensor[dtype=output.dtype, rank=output.rank, ...],
         ctx: DeviceContext,
     ) capturing raises:
@@ -1230,7 +1230,7 @@ struct LogSoftmax:
         axis: Int,
         has_prologue_fusion: Bool,
     ](
-        output: OutputTensor[...],
+        output: OutputTensor,
         input: FusedInputTensor[dtype=output.dtype, rank=output.rank, ...],
         ctx: DeviceContext,
     ) capturing raises:

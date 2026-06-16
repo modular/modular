@@ -24,7 +24,9 @@ Cache configuration
    KVCacheParams
    KVCacheQuantizationConfig
    KVConnectorType
+   KVCacheMemory
    MultiKVCacheParams
+   ReplicatedKVCacheMemory
 
 Cache inputs
 ------------
@@ -36,6 +38,7 @@ Cache inputs
 
    KVCacheInputs
    KVCacheInputsPerDevice
+   BatchCharacteristics
    PagedCacheValues
 
 Attention dispatch
@@ -47,6 +50,9 @@ Attention dispatch
    :template: autosummary/class.rst
 
    AttentionDispatchResolver
+   AttnKey
+   MHAAttnKey
+   MLAAttnKey
 
 Metrics
 -------

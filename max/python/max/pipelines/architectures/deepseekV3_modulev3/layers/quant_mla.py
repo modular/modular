@@ -30,6 +30,9 @@ from max.experimental.nn.common_layers.functional_kernels import (
 )
 from max.experimental.nn.common_layers.multi_latent_attention import (
     MLAPrefillMetadata,
+    assign_columnwise_mapping,
+    assign_replicated_mapping,
+    assign_rowwise_mapping,
 )
 from max.experimental.nn.norm import RMSNorm
 from max.experimental.tensor import Tensor
@@ -351,3 +354,37 @@ class QuantizedLatentAttentionWithRope(Module[..., Tensor]):
         )
 
         return self.o_proj(attn_out)
+
+
+def tensor_parallel_latent_attention_with_rope(
+    layer: QuantizedLatentAttentionWithRope,
+) -> QuantizedLatentAttentionWithRope:
+    """Modifies latent attention layer to be tensor parallel along the TP axis."""
+    if layer.quantized:
+        # Note: This feature is also missing for ModuleV2 TP+EP.
+        raise ValueError(
+            "Tensor parallelism is not supported for FP8 quantized MLA."
+        )
+
+    # Replicated weights: q_a_proj, q_a_layernorm
+    if layer.q_lora_rank is not None:
+        assert isinstance(layer.q_a_proj, Tensor)
+        assert isinstance(layer.q_a_layernorm.weight, Tensor)
+        assert isinstance(layer.q_b_proj, Tensor)
+        assign_replicated_mapping(layer.q_a_proj)
+        assign_replicated_mapping(layer.q_a_layernorm.weight)
+        assign_rowwise_mapping(layer.q_b_proj)
+    else:
+        assert isinstance(layer.q_proj, Tensor)
+        assign_rowwise_mapping(layer.q_proj)
+
+    assert isinstance(layer.kv_a_proj_layernorm, Tensor)
+    assert isinstance(layer.kv_a_proj_with_mqa, Tensor)
+    assert isinstance(layer.kv_b_proj, Tensor)
+    assert isinstance(layer.o_proj.weight, Tensor)
+    assign_replicated_mapping(layer.kv_a_proj_layernorm)
+    assign_replicated_mapping(layer.kv_a_proj_with_mqa)
+    assign_rowwise_mapping(layer.kv_b_proj)
+    assign_columnwise_mapping(layer.o_proj.weight)
+
+    return layer

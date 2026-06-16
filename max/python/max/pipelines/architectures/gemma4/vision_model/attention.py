@@ -54,6 +54,7 @@ class Gemma4VisionAttention(Module):
         super().__init__()
         self.config = config
         vision_cfg = config.vision_config
+        assert vision_cfg is not None
         vision_dtype = DType.bfloat16
 
         self.layer_idx = layer_idx

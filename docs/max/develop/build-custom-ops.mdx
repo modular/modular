@@ -182,6 +182,18 @@ Also notice that we pass the `target` parameter to the `foreach()` function,
 which allows it to optimize for the hardware device. (We'll do this ourselves in
 the [next example](#example-2-write-device-specific-kernels).)
 
+### Declare the output shape
+
+If you don't annotate output shapes manually in the Python graph, you must tell
+the compiler how to infer them by registering a shape function with
+[`@compiler.register_shape_function()`](/max/api/mojo-decorators/compiler-register):
+
+```mojo title="kernels/add_one.mojo"
+@compiler.register_shape_function("add_one")
+def add_one_shape(x: InputTensor) -> IndexList[x.rank]:
+    return x.shape()
+```
+
 ### Add the custom op to a Python graph
 
 Let's now look at the corresponding

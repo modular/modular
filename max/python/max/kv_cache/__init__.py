@@ -34,6 +34,3 @@ from max.pipelines.kv_cache import PagedKVCacheManager as PagedKVCacheManager
 from max.pipelines.kv_cache import TransferReqData as TransferReqData
 from max.pipelines.kv_cache import available_port as available_port
 from max.pipelines.kv_cache import load_kv_manager as load_kv_manager
-from max.pipelines.kv_cache import (
-    load_multi_kv_managers as load_multi_kv_managers,
-)

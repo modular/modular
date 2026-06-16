@@ -397,14 +397,11 @@ def flare_mla_decoding[
     # Runtime dimensions.
     var num_keys = Int(k.dim[1]())
 
-    var k_lt = k.to_layout_tensor()
+    # Re-view `k` as a row-major TileTensor directly (no throwaway
+    # LayoutTensor round-trip). `shape_coord()` preserves the static/runtime
+    # dim types, and the operand infers `buffer_layout` from this TileTensor.
     var k_operand = LayoutTensorMHAOperand(
-        LayoutTensor[k_lt.dtype, k_lt.layout, k_lt.origin](
-            k_lt.ptr,
-            RuntimeLayout[k_lt.layout].row_major(
-                k_lt.runtime_layout.shape.value.canonicalize()
-            ),
-        )
+        TileTensor(k.ptr, row_major(k.layout.shape_coord()))
     )
 
     var valid_length = TileTensor(
@@ -790,7 +787,7 @@ def flare_mla_decoding_dispatch[
                     batch_size,
                     num_partitions_value,
                     max_cache_valid_length,
-                    valid_length,
+                    valid_length.as_immut(),
                     mask_functor,
                     grid_dim=(1, num_blocks_y, batch_size),
                     block_dim=(num_threads, 1, 1),
@@ -837,7 +834,7 @@ def flare_mla_decoding_dispatch[
                     batch_size,
                     num_partitions_value,
                     max_cache_valid_length,
-                    valid_length,
+                    valid_length.as_immut(),
                     mask_functor,
                     grid_dim=(
                         num_partitions_value,
@@ -1302,7 +1299,7 @@ def mla_decoding[
     valid_length_tt: TileTensor[
         DType.uint32,
         ValidLT,
-        MutAnyOrigin,
+        ImmutAnyOrigin,
     ],  # valid length per batch
     mask: mask_t,
 ):
@@ -2312,17 +2309,11 @@ def flare_mla_prefill[
 
         if q_max_seq_len:
             max_prompt_len = q_max_seq_len.value()
-        var k_rope_lt = k_rope.to_layout_tensor()
         var cro_buf = _ragged_offsets_view(cache_row_offsets)
         var k_operand = RaggedMHAOperand(_ragged_kv_view(k), cro_buf)
         var v_operand = RaggedMHAOperand(_ragged_kv_view(v), cro_buf)
         var k_rope_operand = LayoutTensorMHAOperand(
-            LayoutTensor[k_rope_lt.dtype, k_rope_lt.layout, k_rope_lt.origin](
-                k_rope_lt.ptr,
-                RuntimeLayout[k_rope_lt.layout].row_major(
-                    k_rope_lt.runtime_layout.shape.value.canonicalize()
-                ),
-            ),
+            TileTensor(k_rope.ptr, row_major(k_rope.layout.shape_coord()))
         )
 
         comptime output_type = output.dtype
@@ -2438,27 +2429,14 @@ def flare_mla_prefill[
 
         if q_max_seq_len:
             max_prompt_len = q_max_seq_len.value()
-        var k_rope_lt = k_rope.to_layout_tensor()
-        var k_rope_scales_lt = k_rope_scales.to_layout_tensor()
         var cro_buf = _ragged_offsets_view(cache_row_offsets)
         var k_operand = RaggedMHAOperand(_ragged_kv_view(k), cro_buf)
         var v_operand = RaggedMHAOperand(_ragged_kv_view(v), cro_buf)
         var k_rope_operand = LayoutTensorMHAOperand(
-            LayoutTensor[k_rope_lt.dtype, k_rope_lt.layout, k_rope_lt.origin](
-                k_rope_lt.ptr,
-                RuntimeLayout[k_rope_lt.layout].row_major(
-                    k_rope_lt.runtime_layout.shape.value.canonicalize()
-                ),
-            ),
-            LayoutTensor[
-                k_rope_scales_lt.dtype,
-                k_rope_scales_lt.layout,
-                k_rope_scales_lt.origin,
-            ](
-                k_rope_scales_lt.ptr,
-                RuntimeLayout[k_rope_scales_lt.layout].row_major(
-                    k_rope_scales_lt.runtime_layout.shape.value.canonicalize()
-                ),
+            TileTensor(k_rope.ptr, row_major(k_rope.layout.shape_coord())),
+            TileTensor(
+                k_rope_scales.ptr,
+                row_major(k_rope_scales.layout.shape_coord()),
             ),
         )
 
@@ -2578,7 +2556,6 @@ def flare_mla_prefill[
             " num_keys, 1]"
         )
 
-        var k_rope_lt = k_rope.to_layout_tensor()
         var q_rope_lt = q_rope.to_layout_tensor()
         var q_scale_lt = q_scale.to_layout_tensor()
         var cro_buf = _ragged_offsets_view(cache_row_offsets)
@@ -2590,12 +2567,7 @@ def flare_mla_prefill[
 
         var v_operand = RaggedMHAOperand(_ragged_kv_view(v), cro_buf)
         var k_rope_operand = LayoutTensorMHAOperand(
-            LayoutTensor[k_rope_lt.dtype, k_rope_lt.layout, k_rope_lt.origin](
-                k_rope_lt.ptr,
-                RuntimeLayout[k_rope_lt.layout].row_major(
-                    k_rope_lt.runtime_layout.shape.value.canonicalize()
-                ),
-            ),
+            TileTensor(k_rope.ptr, row_major(k_rope.layout.shape_coord()))
         )
 
         var batch_size: Int = Int(valid_length.dim[0]()) - 1
@@ -2921,7 +2893,7 @@ def flare_mla_prefill_dispatch[
             scale,
             batch_size,
             max_prompt_len,
-            valid_length,
+            valid_length.as_immut(),
             cache_offsets,
             mask_functor,
             grid_dim=grid_dim,
@@ -2967,7 +2939,7 @@ def mla_prefill[
     valid_length_tt: TileTensor[
         DType.uint32,
         valid_layout,
-        MutAnyOrigin,
+        ImmutAnyOrigin,
     ],
     cache_offsets: OptionalReg[
         LayoutTensor[
@@ -3857,7 +3829,7 @@ def mla_prefill_plan[
     buffer_row_offsets: TileTensor[mut=True, DType.uint32, ...],
     cache_offsets: TileTensor[mut=True, DType.uint32, ...],
     buffer_lengths: TileTensor[mut=True, DType.int32, ...],
-    input_row_offsets: TileTensor[DType.uint32, ...],
+    input_row_offsets: TileTensor[mut=False, DType.uint32, ...],
     k_cache: cache_t,
     buffer_token_size: UInt32,
     ctx: DeviceContext,

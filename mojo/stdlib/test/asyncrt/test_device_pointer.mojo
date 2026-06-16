@@ -125,7 +125,7 @@ def test_pointer_requires_buffer_kept_alive() raises:
     var q = p + 8
     assert_equal(q.offset(), 8)
     assert_equal(len(p.buffer()), _LENGTH)
-    assert_true(p.unsafe_ptr() == buf.unsafe_ptr())
+    assert_true(p.unsafe_ptr() == buf.unsafe_ptr().as_unsafe_any_origin())
     _ = buf^
 
 

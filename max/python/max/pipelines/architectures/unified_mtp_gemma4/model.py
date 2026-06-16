@@ -25,7 +25,8 @@ from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph
 from max.graph.weights import WeightData, Weights, WeightsAdapter, load_weights
 from max.nn.kv_cache import (
-    KVCacheInputs,
+    KVCacheInputsInterface,
+    KVCacheParams,
     MultiKVCacheParams,
 )
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
@@ -62,7 +63,6 @@ class UnifiedMTPGemma4Inputs(ModelInputs):
     batch_context_lengths: list[Buffer]
 
     draft_tokens: Buffer | None = None
-    draft_kv_blocks: list[Buffer] | None = None
     seed: Buffer | None = None
     temperature: Buffer | None = None
     top_k: Buffer | None = None
@@ -103,8 +103,6 @@ class UnifiedMTPGemma4Inputs(ModelInputs):
             *self.batch_context_lengths,
             self.draft_tokens,
         )
-        if self.draft_kv_blocks is not None:
-            buffers += tuple(self.draft_kv_blocks)
         buffers += (
             self.seed,
             self.temperature,
@@ -228,8 +226,12 @@ class UnifiedMTPGemma4Model(
 
             # -- 6. Create draft model and share embed_tokens/lm_head --
             assert isinstance(self.kv_params, MultiKVCacheParams)
-            target_sliding_kv_params = self.kv_params.params[0]
-            target_global_kv_params = self.kv_params.params[1]
+            target_sliding_kv_params = self.kv_params.params[
+                "sliding_attention"
+            ]
+            assert isinstance(target_sliding_kv_params, KVCacheParams)
+            target_global_kv_params = self.kv_params.params["full_attention"]
+            assert isinstance(target_global_kv_params, KVCacheParams)
             target_layer_types = config.text_config.layer_types
 
             nn_model.draft = Gemma4Assistant(
@@ -267,9 +269,7 @@ class UnifiedMTPGemma4Model(
             # -- 9. Build graph and compile --
             with Graph(
                 "gemma4_with_mtp_graph",
-                input_types=nn_model.input_types(
-                    self.kv_params, self._draft_kv_params
-                ),
+                input_types=nn_model.input_types(self.kv_params),
             ) as graph:
                 (
                     tokens,
@@ -286,21 +286,10 @@ class UnifiedMTPGemma4Model(
                     for _ in range(len(self.devices))
                 ]
 
-                # Unflatten target KV cache inputs. MultiKVCacheParams produces
-                # [sliding_dev0, ..., global_dev0, ...] in order.
-                kv_flat_types = list(
-                    self.kv_params.get_symbolic_inputs().flatten()
+                # Unflatten the hybrid {sliding, global} KV tree.
+                sliding_kv_collections, global_kv_collections = (
+                    self.kv_params.unflatten_basic_kv_tree(variadic_args_iter)
                 )
-                all_kv_caches = self._unflatten_kv_inputs(
-                    [
-                        next(variadic_args_iter)
-                        for _ in range(len(kv_flat_types))
-                    ]
-                )
-                # Split into sliding and global cache collections
-                half = len(all_kv_caches) // 2
-                sliding_kv_collections = list(all_kv_caches[:half])
-                global_kv_collections = list(all_kv_caches[half:])
 
                 batch_context_lengths = [
                     next(variadic_args_iter).tensor
@@ -377,10 +366,9 @@ class UnifiedMTPGemma4Model(
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
+        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
         draft_tokens: Buffer | None = None,
-        draft_kv_cache_buffers: list[Buffer] | None = None,
         **kwargs: object,
     ) -> UnifiedMTPGemma4Inputs:
         context_batch = [ctx for batch in replica_batches for ctx in batch]
@@ -443,7 +431,6 @@ class UnifiedMTPGemma4Model(
             kv_cache_inputs=kv_cache_inputs,
             batch_context_lengths=batch_context_lengths,
             draft_tokens=draft_tokens,
-            draft_kv_blocks=draft_kv_cache_buffers,
         )
 
     @classmethod

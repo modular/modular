@@ -182,6 +182,10 @@ amd = [
 
   "gptqmodel; sys_platform == 'linux' and platform_machine == 'x86_64'",
 
+  # Needed at runtime by aiter's JIT compilation system (the aiter wheel
+  # itself is vendored as a prebuilt http_file, not from PyPI).
+  "pybind11==3.0.3; sys_platform == 'linux' and platform_machine == 'x86_64'",
+
 ]
 
 cpu = [

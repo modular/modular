@@ -1,4 +1,4 @@
-##===----------------------------------------------------------------------===##
+# ===----------------------------------------------------------------------=== #
 # Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
@@ -9,17 +9,15 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-##===----------------------------------------------------------------------===##
-model:
-  model_path: nvidia/Kimi-K2.5-NVFP4
-  trust_remote_code: true
-  device_specs: [0, 1, 2, 3, 4, 5, 6, 7]
-  data_parallel_degree: 8
-  kv_cache:
-    kv_cache_format: float8_e4m3fn
-    device_memory_utilization: 0.75
-    kv_connector: local
+# ===----------------------------------------------------------------------=== #
 
-runtime:
-  ep_size: 8
-  max_batch_input_tokens: 4096
+from std.memory import ArcPointer
+
+
+def main():
+    # start-arc-pointer-create
+    var attributesDict: Dict[String, String] = {}
+    var attributes = ArcPointer(attributesDict^)
+    # end-arc-pointer-create
+
+    _ = attributes

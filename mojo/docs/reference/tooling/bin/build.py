@@ -75,7 +75,7 @@ KW = set(
 )
 LIT = set("True False None".split())
 TY = set(
-    "Int UInt Int8 Int16 Int32 Int64 Int128 Int256 UInt8 UInt16 UInt32 UInt64 UInt128 UInt256 Byte Float16 Float32 Float64 BFloat16 Float8_e4m3fn Float8_e5m2 Float4_e2m1fn Bool String List Dict Optional SIMD Scalar DType Error NoneType StaticString Comparable Copyable Movable Writable Writer ImplicitlyCopyable ImplicitlyDestructible AnyType Equatable Sized Printable PrettyPrintable Identifiable Powable Intable TrivialRegisterPassable RegisterPassable Container Shape Box Pair MyInt Color Point Bag Buffer Matrix Test ValueError Self".split()
+    "Int UInt Int8 Int16 Int32 Int64 Int128 Int256 UInt8 UInt16 UInt32 UInt64 UInt128 UInt256 Byte Float16 Float32 Float64 BFloat16 Float8_e4m3fn Float8_e5m2 Float4_e2m1fn Bool String List Dict Optional SIMD Scalar DType Error NoneType StaticString Comparable Copyable Movable Writable Writer ImplicitlyCopyable ImplicitlyDeletable AnyType Equatable Sized Printable PrettyPrintable Identifiable Powable Intable TrivialRegisterPassable RegisterPassable Container Shape Box Pair MyInt Color Point Bag Buffer Matrix Test ValueError Self".split()
 )
 BI = set("print len range reflect type_of".split())
 

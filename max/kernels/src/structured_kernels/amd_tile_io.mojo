@@ -1692,8 +1692,6 @@ struct SubTileLoaderLDS[
         comptime assert dst_stride1 == 1
         comptime assert dst_stride0 == BN
 
-        comptime aux = 0
-
         # The comptime partition offset is folded into the `s_add`
         # immediate alongside the runtime piece in BOTH codegen modes;
         # only the source of the runtime piece differs (hoisted caller
@@ -1777,6 +1775,7 @@ struct SubTileLoaderLDS[
 
             __mlir_op.`rocdl.raw.ptr.buffer.load.lds`[
                 alias_scopes=_alias_scope_attr,
+                aux=__mlir_attr.`0 : i32`,  # default cache policy
                 _type=None,
             ](
                 desc_ptr_llvm,
@@ -1785,7 +1784,6 @@ struct SubTileLoaderLDS[
                 to_i32(Int32(vector_offset_bytes)),
                 to_i32(Int32(scalar_offset_bytes)),
                 to_i32(0),
-                to_i32(aux),
             )
 
 
@@ -1978,8 +1976,6 @@ struct SubTileLoaderLDS_st_8x32[
         # advance by `NUM_KV_HEADS * depth` per row, not just `depth`.
         comptime _v_row_stride = type_of(v_gmem_tile).static_stride[0]
 
-        comptime aux = 0
-
         comptime for i in range(_num_iters):
             var lane_byte_offset = (
                 thread_id * _bytes_per_thread + Int(i) * _bytes_per_iter
@@ -2159,6 +2155,7 @@ struct SubTileLoaderLDS_st_8x32[
 
             __mlir_op.`rocdl.raw.ptr.buffer.load.lds`[
                 alias_scopes=_alias_scope_attr,
+                aux=__mlir_attr.`0 : i32`,  # default cache policy
                 _type=None,
             ](
                 desc_ptr_llvm,
@@ -2167,7 +2164,6 @@ struct SubTileLoaderLDS_st_8x32[
                 to_i32(Int32(global_byte_in_tile)),
                 to_i32(Int32(tile_byte_offset)),
                 to_i32(0),
-                to_i32(aux),
             )
 
 

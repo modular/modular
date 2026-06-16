@@ -20,12 +20,14 @@ from std.utils import StaticTuple
 """
 
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
+from std.builtin.rebind import downcast
 from std.memory import (
     is_trivially_copyable,
     is_trivially_destructible,
     is_trivially_movable,
 )
 from std.reflection import reflect
+from std.utils.type_functions import ConditionalType
 
 # ===-----------------------------------------------------------------------===#
 # StaticTuple
@@ -73,8 +75,27 @@ struct StaticTuple[element_type: _StaticTupleTraits, size: Int](
     comptime _mlir_type = __mlir_type[
         `!pop.array<`, Self.size._int_mlir_index(), `, `, Self.element_type, `>`
     ]
-    comptime device_type: AnyType = Self
-    """The device-side type for this `StaticTuple`."""
+
+    comptime _DeviceElementType: _StaticTupleTraits = ConditionalType[
+        Trait=_StaticTupleTraits,
+        If=conforms_to(Self.element_type, DevicePassable),
+        Then=downcast[
+            downcast[Self.element_type, DevicePassable].device_type,
+            _StaticTupleTraits,
+        ],
+        Else=Self.element_type,
+    ]
+    """The device-side element type: the element's `device_type` when it is
+    `DevicePassable`, otherwise the element type itself."""
+
+    comptime device_type: AnyType = StaticTuple[
+        Self._DeviceElementType, Self.size
+    ]
+    """The device-side type for this `StaticTuple`.
+
+    Parametric over the elements' device types, so a tuple of a `DevicePassable`
+    element type encodes to the array of converted elements (and collapses to
+    `Self` for identity elements)."""
 
     var _mlir_value: Self._mlir_type
     """The underlying storage for the static tuple."""
@@ -82,7 +103,9 @@ struct StaticTuple[element_type: _StaticTupleTraits, size: Int](
     def _to_device_type(
         self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
     ):
-        encoder.encode(self, target)
+        # Encode element-wise so a `DevicePassable` element runs its own
+        # `_to_device_type` conversion rather than being byte-copied wholesale.
+        encoder.encode_static_tuple(self, target)
 
     @staticmethod
     def get_type_name() -> String:

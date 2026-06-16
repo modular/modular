@@ -733,22 +733,23 @@ struct VarlenSelectiveStateUpdate[dt_softplus: Bool = False]:
 
         args.dispatch_for_d_state[target](d_state)
 
-    @staticmethod
-    def shape[
-        dtype: DType,
-    ](
-        x: InputTensor[dtype=dtype, rank=3, ...],
-        dt: InputTensor[dtype=dtype, rank=3, ...],
-        A: InputTensor[dtype=dtype, rank=3, ...],
-        B: InputTensor[dtype=dtype, rank=3, ...],
-        C: InputTensor[dtype=dtype, rank=3, ...],
-        D: InputTensor[dtype=dtype, rank=2, ...],
-        z: InputTensor[dtype=dtype, rank=3, ...],
-        dt_bias: InputTensor[dtype=dtype, rank=2, ...],
-        state_batch_indices: InputTensor[dtype=DType.int32, rank=1, ...],
-    ) -> Tuple[IndexList[4], IndexList[3]]:
-        var batch = x.dim_size(0)
-        var nheads = x.dim_size(1)
-        var dim = x.dim_size(2)
-        var d_state = A.dim_size(2)
-        return (IndexList[4](batch, nheads, dim, d_state), x.shape())
+
+@compiler.register_shape_function("varlen_selective_state_update")
+def varlen_selective_state_update_shape[
+    dtype: DType,
+](
+    x: InputTensor[dtype=dtype, rank=3, ...],
+    dt: InputTensor[dtype=dtype, rank=3, ...],
+    A: InputTensor[dtype=dtype, rank=3, ...],
+    B: InputTensor[dtype=dtype, rank=3, ...],
+    C: InputTensor[dtype=dtype, rank=3, ...],
+    D: InputTensor[dtype=dtype, rank=2, ...],
+    z: InputTensor[dtype=dtype, rank=3, ...],
+    dt_bias: InputTensor[dtype=dtype, rank=2, ...],
+    state_batch_indices: InputTensor[dtype=DType.int32, rank=1, ...],
+) -> Tuple[IndexList[4], IndexList[3]]:
+    var batch = x.dim_size(0)
+    var nheads = x.dim_size(1)
+    var dim = x.dim_size(2)
+    var d_state = A.dim_size(2)
+    return (IndexList[4](batch, nheads, dim, d_state), x.shape())

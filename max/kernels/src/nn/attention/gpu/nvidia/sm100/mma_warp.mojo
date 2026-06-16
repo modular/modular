@@ -19,7 +19,6 @@ from std.gpu.compute.arch.mma_nvidia_sm100 import (
     UMMAKind,
     mma_arrive_multicast,
 )
-from std.gpu.primitives.warp import broadcast
 from nn.attention.gpu.nvidia.sm100.attention import FA4Config
 from nn.attention.gpu.nvidia.sm100.attention_utils import (
     SharedMemPointer,
@@ -45,6 +44,7 @@ def fa4_mma[
     page_size: Int,
 ](
     smem: SM100AttentionSMem[config],
+    tmem_addr: UInt32,
     seq_id: UInt32,
     score_row: UInt32,
     num_keys: UInt32,
@@ -101,7 +101,8 @@ def fa4_mma[
     # boundary is MMA_K-aligned and the cut is exact.
     comptime PARTIAL_K = page_size > 0 and page_size < BN
 
-    var tmem_addr: UInt32 = broadcast(smem.tmem_addr_ptr()[])
+    # `tmem_addr` passed in by register (read once post-barrier in the kernel
+    # prologue); do NOT re-read `smem.tmem_addr_ptr()` here.
     var q_smem = smem.q_smem()
 
     s0_tmem = tmem_addr + UInt32(config.TMEM_S0)

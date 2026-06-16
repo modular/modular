@@ -22,11 +22,15 @@ from max.driver import Accelerator, Buffer, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef
-from max.nn.kv_cache import KVCacheParams, KVConnectorType
-from max.pipelines.context import TextContext
-from max.pipelines.kv_cache import (
-    PagedKVCacheManager,
+from max.nn.kv_cache import (
+    KVCacheInputs,
+    KVCacheParams,
+    KVConnectorType,
+    MultiKVCacheInputs,
+    MultiKVCacheParams,
 )
+from max.pipelines.context import TextContext
+from max.pipelines.kv_cache import PagedKVCacheManager
 from max.pipelines.kv_cache.config import KVConnectorConfig
 from max.pipelines.kv_cache.connectors.tiered_connector import TieredConnector
 from test_common.context_utils import create_text_context
@@ -289,3 +293,79 @@ def test_get_metrics_aggregated_disk_ops() -> None:
         metrics = manager.get_metrics_aggregated()
         assert metrics.disk_blocks_read == 4  # 2 per replica x 2 replicas
         assert metrics.h2d_blocks_copied == 4  # 2 per replica x 2 replicas
+
+
+def test_runtime_inputs_mha_primary_mla_secondary_matches_graph() -> None:
+    """Runtime KV input count must match the graph for an MLA secondary cache.
+
+    Regression for MiniMax-M3 sparse attention: a ``MultiKVCacheParams`` whose
+    primary is a non-MLA GQA cache and whose secondary is an ``is_mla`` index-K
+    cache.  The graph declares ``mla_num_partitions`` for each MLA cache (via
+    ``get_symbolic_inputs``), but the runtime previously derived that scalar
+    only from the primary (non-MLA) cache and applied it to every cache, so the
+    secondary cache's ``mla_num_partitions`` was dropped — the fed input count
+    fell short of the compiled graph by one per device (``ValueError: Number of
+    inputs ... does not match expected number``).  The flattened runtime inputs
+    must match the flattened symbolic graph inputs exactly.
+    """
+    num_devices = 2
+
+    devices = [Accelerator(id=i) for i in range(num_devices)]
+    device_refs = [DeviceRef.GPU(i) for i in range(num_devices)]
+
+    # Primary: non-MLA GQA cache (mirrors M3 main attention).
+    main_params = KVCacheParams(
+        dtype=DType.bfloat16,
+        n_kv_heads=8,
+        head_dim=128,
+        num_layers=4,
+        devices=device_refs,
+        page_size=128,
+    )
+    # Secondary: is_mla index-K cache (1 KV head, replicated K), mirrors M3's
+    # indexer cache and DeepSeek-V3.2's order *reversed* (there the MLA cache is
+    # primary, so this asymmetry is exercised only by M3).
+    indexer_params = KVCacheParams(
+        dtype=DType.bfloat16,
+        n_kv_heads=1,
+        head_dim=128,
+        num_layers=4,
+        devices=device_refs,
+        page_size=128,
+        is_mla=True,
+        num_q_heads=64,
+    )
+    params = MultiKVCacheParams.from_params(
+        {"main": main_params, "indexer": indexer_params}
+    )
+
+    session = InferenceSession(devices=devices)
+    manager = PagedKVCacheManager(
+        params=params,
+        session=session,
+        total_num_pages=8,
+        max_batch_size=128,
+    )
+
+    context = create_text_context(np.empty(4))
+    manager.claim(context.request_id, replica_idx=0)
+    manager.alloc(context, replica_idx=0, num_steps=1)
+
+    kv_cache_inputs = manager.runtime_inputs([[context]])
+    assert isinstance(kv_cache_inputs, MultiKVCacheInputs)
+
+    # The compiled graph declares its KV inputs from the same symbolic params.
+    num_graph_inputs = len(params.flattened_kv_inputs())
+    num_runtime_inputs = len(kv_cache_inputs.flatten())
+
+    assert num_runtime_inputs == num_graph_inputs, (
+        f"runtime fed {num_runtime_inputs} KV inputs but the graph expects "
+        f"{num_graph_inputs}"
+    )
+
+    # The MLA secondary cache must contribute its per-device mla_num_partitions.
+    secondary_inputs = kv_cache_inputs.children["indexer"]
+    assert isinstance(secondary_inputs, KVCacheInputs)
+    assert len(secondary_inputs.inputs) == num_devices
+    for per_device in secondary_inputs.inputs:
+        assert per_device.mla_num_partitions is not None

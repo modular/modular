@@ -197,11 +197,15 @@ def hip_mha_decoding_num_partitions(
         # Phase-0/1 sweeps).
         np_target = clamp(work_floor, one_wave, two_wave)
 
-    var num_partitions = min(np_target, pages, MAX_HIP_PARTITIONS)
+    # The MHA split-K reducer runs in a single warp and only handles up to
+    # WARP_SIZE partitions, so cap MHA at 64. MLA uses a partition-aware
+    # reducer and keeps the full 256.
+    var partition_cap = MAX_HIP_PARTITIONS if is_mla else 64
+    var num_partitions = min(np_target, pages, partition_cap)
 
     # Bucket to a fixed ladder (1, 2, ..., 64, 96, 128, 192, 256) so
     # HIP graph capture sees a small number of decode grid shapes.
-    return min(_bucket_partitions(num_partitions), MAX_HIP_PARTITIONS)
+    return min(_bucket_partitions(num_partitions), partition_cap)
 
 
 def mha_decoding_num_partitions(

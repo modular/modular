@@ -180,9 +180,9 @@ def mla_indexer_ragged_float8_paged[
     mask_str: StaticString,
 ](
     output_indices: TileTensor[DType.int32, ...],
-    q: TileTensor[dtype, ...],
+    q: TileTensor[mut=False, dtype, ...],
     q_s: TileTensor[DType.float32, ...],
-    input_row_offsets: TileTensor[DType.uint32, ...],
+    input_row_offsets: TileTensor[mut=False, DType.uint32, ...],
     k_collection: KCollectionT,
     layer_idx: UInt32,
     ctx: DeviceContext,

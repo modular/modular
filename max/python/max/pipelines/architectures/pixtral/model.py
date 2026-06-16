@@ -22,14 +22,14 @@ import numpy as np
 from max.driver import Buffer, Device, DLPackArray
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import BufferType, DeviceRef, Graph, TensorType
+from max.graph import BufferType, DeviceRef, Graph, Module, TensorType
 from max.graph.weights import (
     SafetensorWeights,
     WeightData,
     Weights,
     WeightsAdapter,
 )
-from max.nn.kv_cache import KVCacheInputs
+from max.nn.kv_cache import KVCacheInputsInterface
 from max.nn.transformer import ReturnLogits
 from max.pipelines.context import TextAndVisionContext
 from max.pipelines.lib import (
@@ -176,7 +176,7 @@ class PixtralModel(PipelineModelWithKVCache[TextAndVisionContext]):
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[TextAndVisionContext]],
-        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
+        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> PixtralInputs:
         if len(replica_batches) > 1:
@@ -353,7 +353,7 @@ class PixtralModel(PipelineModelWithKVCache[TextAndVisionContext]):
                 shape=["total_image_tokens"],
                 device=device_ref,
             ),
-            *self.kv_params.get_symbolic_inputs().flatten(),
+            *self.kv_params.flattened_kv_inputs(),
         )
 
     @traced
@@ -362,10 +362,12 @@ class PixtralModel(PipelineModelWithKVCache[TextAndVisionContext]):
         config: PixtralConfig,
         state_dict: dict[str, WeightData],
         patch_dim: int,
+        module: Module | None = None,
     ) -> tuple[Graph, dict[str, DLPackArray]]:
         with Graph(
             "pixtral_vision",
             input_types=self._vision_graph_input_types(patch_dim),
+            module=module,
         ) as graph:
             vision_nn = PixtralVision(config)
             vision_nn.load_state_dict(
@@ -386,10 +388,12 @@ class PixtralModel(PipelineModelWithKVCache[TextAndVisionContext]):
         self,
         config: PixtralConfig,
         state_dict: dict[str, WeightData],
+        module: Module | None = None,
     ) -> tuple[Graph, dict[str, DLPackArray]]:
         with Graph(
             "pixtral_language",
             input_types=self._language_graph_input_types(),
+            module=module,
         ) as graph:
             language_nn = PixtralLanguage(config)
             language_nn.load_state_dict(
@@ -476,24 +480,21 @@ class PixtralModel(PipelineModelWithKVCache[TextAndVisionContext]):
         model_config = PixtralConfig.initialize(self.pipeline_config)
         model_config.return_logits = self.return_logits
 
-        # Build and compile vision model.
-        with CompilationTimer("vision model") as timer:
+        # Build and compile vision + language models in parallel.
+        with CompilationTimer("vision + language model") as timer:
+            module = Module()
             vision_graph, vision_weights = self._build_vision_graph(
-                model_config, vision_state_dict, patch_dim
+                model_config, vision_state_dict, patch_dim, module=module
             )
-            timer.mark_build_complete()
-            vision_model = session.load(
-                vision_graph, weights_registry=vision_weights
-            )
-
-        # Build and compile language model.
-        with CompilationTimer("language model") as timer:
             language_graph, language_weights = self._build_language_graph(
-                model_config, language_state_dict
+                model_config, language_state_dict, module=module
             )
             timer.mark_build_complete()
-            language_model = session.load(
-                language_graph, weights_registry=language_weights
+            combined_registry = {**vision_weights, **language_weights}
+            models = session.load_all(
+                module, weights_registry=combined_registry
             )
+            vision_model = models[vision_graph.name]
+            language_model = models[language_graph.name]
 
         return vision_model, language_model
