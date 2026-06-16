@@ -74,8 +74,8 @@ from ...structuring import SMemTile
 def distance[
     dtype: DType, //
 ](
-    arg0: UnsafePointer[Scalar[dtype], _],
-    arg1: UnsafePointer[Scalar[dtype], _],
+    arg0: UnsafePointer[mut=False, Scalar[dtype], _],
+    arg1: UnsafePointer[mut=False, Scalar[dtype], _],
 ) -> Int:
     return (Int(arg0) - Int(arg1)) // size_of[dtype]()
 
@@ -726,14 +726,16 @@ def multistage_gemm_kernel[
     var c = c_tt.to_layout_tensor()
     var a = a_tt.to_layout_tensor()
     var b = b_tt.to_layout_tensor()
-    # Hold on adding fp16 because it could have different precisions than bf16.
+    # float16 shares bf16's MMA path here; its accumulation precision can
+    # differ from bf16, so it is opt-in via the float16 quantization encoding.
     comptime assert (
-        a_type in (DType.float32, DType.bfloat16) and a_type == b_type
+        a_type in (DType.float32, DType.bfloat16, DType.float16)
+        and a_type == b_type
     ) or (
         a_type in (DType.float8_e4m3fn, DType.float8_e5m2)
         and a_type == b_type
         and c_type == DType.float32
-    ), "Pipeline gemm only supports tf32, BF16, E4M3, and E5M2 mma"
+    ), "Pipeline gemm only supports tf32, F16, BF16, E4M3, and E5M2 mma"
     comptime simd_size = simd_width_of[c_type]()
 
     var M: Int = c.dim[0]()

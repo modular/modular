@@ -41,6 +41,7 @@ class Gemma4MultiModalProjector(Module, Shardable):
         super().__init__()
 
         self.config = config
+        assert config.vision_config is not None
         self.device = device if device is not None else config.devices[0]
 
         vision_dtype = DType.bfloat16

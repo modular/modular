@@ -270,7 +270,7 @@ struct Q4sym[
         input_rank: Int
     ](
         input_tt: TileTensor[
-            Self.float_dtype, address_space=AddressSpace.GENERIC, ...
+            mut=False, Self.float_dtype, address_space=AddressSpace.GENERIC, ...
         ],
         output_tt: TileTensor[
             mut=True, DType.uint8, address_space=AddressSpace.GENERIC, ...
@@ -354,7 +354,7 @@ struct Q4sym[
         output_rank: Int
     ](
         input_tt: TileTensor[
-            DType.uint8, address_space=AddressSpace.GENERIC, ...
+            mut=False, DType.uint8, address_space=AddressSpace.GENERIC, ...
         ],
         output_tt: TileTensor[
             mut=True,
@@ -468,7 +468,9 @@ def scale_min_k4(
 
 
 def q4_k_dequantize_impl(
-    input_tt: TileTensor[DType.uint8, address_space=AddressSpace.GENERIC, ...],
+    input_tt: TileTensor[
+        mut=False, DType.uint8, address_space=AddressSpace.GENERIC, ...
+    ],
     output_tt: TileTensor[
         mut=True, DType.float32, address_space=AddressSpace.GENERIC, ...
     ],
@@ -554,7 +556,9 @@ struct block_Q6_K:
 def q6_k_dequantize_impl[
     output_rank: Int
 ](
-    input_tt: TileTensor[DType.uint8, address_space=AddressSpace.GENERIC, ...],
+    input_tt: TileTensor[
+        mut=False, DType.uint8, address_space=AddressSpace.GENERIC, ...
+    ],
     output_tt: TileTensor[
         mut=True, DType.float32, address_space=AddressSpace.GENERIC, ...
     ],

@@ -126,8 +126,8 @@ def gather_reduce[
     ) thin -> SIMD[dtype, width],
 ](
     output: TileTensor[mut=True, dtype, ...],
-    input: TileTensor[dtype, ...],
-    indices: TileTensor[DType.int32, ...],
+    input: TileTensor[mut=False, dtype, ...],
+    indices: TileTensor[mut=False, DType.int32, ...],
     reduce_init: Scalar[dtype],
     ctx: Optional[DeviceContext] = None,
 ):
@@ -297,8 +297,8 @@ def gather[
     target: StaticString = "cpu",
 ](
     output: TileTensor[mut=True, dtype, ...],
-    input: TileTensor[dtype, ...],
-    indices: TileTensor[indices_type, ...],
+    input: TileTensor[mut=False, dtype, ...],
+    indices: TileTensor[mut=False, indices_type, ...],
     *,
     context: DeviceContext,
 ) raises:
@@ -697,9 +697,15 @@ def scatter_nd_generator[
     *,
     _trace_description: StaticString = "scatter_nd",
 ](
-    data: TileTensor[output_type, address_space=AddressSpace.GENERIC, ...],
-    indices: TileTensor[indices_type, address_space=AddressSpace.GENERIC, ...],
-    updates: TileTensor[output_type, address_space=AddressSpace.GENERIC, ...],
+    data: TileTensor[
+        mut=False, output_type, address_space=AddressSpace.GENERIC, ...
+    ],
+    indices: TileTensor[
+        mut=False, indices_type, address_space=AddressSpace.GENERIC, ...
+    ],
+    updates: TileTensor[
+        mut=False, output_type, address_space=AddressSpace.GENERIC, ...
+    ],
     output: TileTensor[
         mut=True, output_type, address_space=AddressSpace.GENERIC, ...
     ],
@@ -1062,9 +1068,15 @@ def scatter_nd[
     //,
     target: StaticString = "cpu",
 ](
-    data: TileTensor[output_type, address_space=AddressSpace.GENERIC, ...],
-    indices: TileTensor[indices_type, address_space=AddressSpace.GENERIC, ...],
-    updates: TileTensor[output_type, address_space=AddressSpace.GENERIC, ...],
+    data: TileTensor[
+        mut=False, output_type, address_space=AddressSpace.GENERIC, ...
+    ],
+    indices: TileTensor[
+        mut=False, indices_type, address_space=AddressSpace.GENERIC, ...
+    ],
+    updates: TileTensor[
+        mut=False, output_type, address_space=AddressSpace.GENERIC, ...
+    ],
     output: TileTensor[
         mut=True, output_type, address_space=AddressSpace.GENERIC, ...
     ],
@@ -1079,9 +1091,9 @@ def scatter_nd_shape[
     input_type: DType,
     indices_type: DType,
 ](
-    input: TileTensor[input_type, ...],
-    updates: TileTensor[input_type, ...],
-    indices: TileTensor[indices_type, ...],
+    input: TileTensor[mut=False, input_type, ...],
+    updates: TileTensor[mut=False, input_type, ...],
+    indices: TileTensor[mut=False, indices_type, ...],
 ) raises -> IndexList[input.rank]:
     """
     Compute the output shape of a `scatter_nd` operation, and assert the
@@ -1147,8 +1159,8 @@ def gather_shape[
     input_type: DType,
     indices_type: DType,
 ](
-    input_buf: TileTensor[input_type, ...],
-    indices_buf: TileTensor[indices_type, ...],
+    input_buf: TileTensor[mut=False, input_type, ...],
+    indices_buf: TileTensor[mut=False, indices_type, ...],
     axis: Int,
 ) raises -> IndexList[output_rank]:
     """
@@ -1269,9 +1281,9 @@ def scatter_elements_shape[
     input_type: DType,
     indices_type: DType,
 ](
-    input: TileTensor[input_type, ...],
-    updates: TileTensor[input_type, ...],
-    indices: TileTensor[indices_type, ...],
+    input: TileTensor[mut=False, input_type, ...],
+    updates: TileTensor[mut=False, input_type, ...],
+    indices: TileTensor[mut=False, indices_type, ...],
     axis: Int,
 ) raises -> IndexList[input.rank]:
     """
@@ -1325,8 +1337,8 @@ def gather_elements[
     input_type: DType,
     indices_type: DType,
 ](
-    input: TileTensor[input_type, ...],
-    indices: TileTensor[indices_type, ...],
+    input: TileTensor[mut=False, input_type, ...],
+    indices: TileTensor[mut=False, indices_type, ...],
     _axis: Int,
     output: TileTensor[mut=True, input_type, ...],
     ctx: DeviceContext,
@@ -1386,8 +1398,8 @@ def gather_nd_shape[
     indices_type: DType,
     batch_dims: Int,
 ](
-    input_buf: TileTensor[input_type, ...],
-    indices_buf: TileTensor[indices_type, ...],
+    input_buf: TileTensor[mut=False, input_type, ...],
+    indices_buf: TileTensor[mut=False, indices_type, ...],
 ) raises -> IndexList[output_rank]:
     """
     Compute the output shape of a `gather` operation, and assert the inputs are
@@ -1448,11 +1460,12 @@ def gather_nd_shape[
 def gather_nd[
     dtype: DType,
     indices_type: DType,
+    //,
     batch_dims: Int,
     target: StaticString = "cpu",
 ](
-    data: TileTensor[dtype, ...],
-    indices: TileTensor[indices_type, ...],
+    data: TileTensor[mut=False, dtype, ...],
+    indices: TileTensor[mut=False, indices_type, ...],
     output: TileTensor[mut=True, dtype, ...],
     ctx: DeviceContext,
 ) raises:
@@ -1476,31 +1489,6 @@ def gather_nd[
         ctx: The device context as prepared by the graph compiler.
 
     """
-
-    comptime if is_cpu[target]():
-        return _gather_nd_impl[
-            batch_dims,
-            target=target,
-        ](data, indices, output)
-    else:
-        return _gather_nd_impl[
-            batch_dims,
-            target=target,
-        ](data, indices, output, ctx)
-
-
-def _gather_nd_impl[
-    dtype: DType,
-    indices_type: DType,
-    //,
-    batch_dims: Int,
-    target: StaticString = "cpu",
-](
-    data: TileTensor[dtype, ...],
-    indices: TileTensor[indices_type, ...],
-    output: TileTensor[mut=True, dtype, ...],
-    ctx: Optional[DeviceContext] = None,
-) raises:
     comptime assert (
         data.rank >= 1 and indices.rank >= 1
     ), "Constraint: data_rank >= 1 and indices_rank >= 1"
@@ -1580,35 +1568,20 @@ def _gather_nd_impl[
         and (slice_last_dim % target_simd_width) == 0
     )
 
-    comptime if is_cpu[target]():
-        var cpu_ctx = DeviceContext(api="cpu")
-        if use_simd:
-            elementwise[
-                gather_nd_elementwise_fn,
-                target_simd_width,
-                target=target,
-            ](output.layout.shape_coord(), cpu_ctx)
-        else:
-            elementwise[
-                gather_nd_elementwise_fn,
-                1,
-                target=target,
-            ](output.layout.shape_coord(), cpu_ctx)
+    if use_simd:
+        elementwise[
+            gather_nd_elementwise_fn,
+            target_simd_width,
+            target=target,
+            _trace_description="gather_nd",
+        ](output.layout.shape_coord(), ctx)
     else:
-        assert Bool(ctx), "Must provide DeviceContext if executing on GPU."
-        var cuda_ctx = ctx.value()
-        if use_simd:
-            elementwise[
-                gather_nd_elementwise_fn,
-                target_simd_width,
-                target=target,
-            ](output.layout.shape_coord(), cuda_ctx)
-        else:
-            elementwise[
-                gather_nd_elementwise_fn,
-                1,
-                target=target,
-            ](output.layout.shape_coord(), cuda_ctx)
+        elementwise[
+            gather_nd_elementwise_fn,
+            1,
+            target=target,
+            _trace_description="gather_nd",
+        ](output.layout.shape_coord(), ctx)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -1623,7 +1596,7 @@ def scatter_set_constant[
     target: StaticString,
 ](
     data: TileTensor[mut=True, data_type, ...],
-    indices: TileTensor[index_type, ...],
+    indices: TileTensor[mut=False, index_type, ...],
     fill_value: Scalar[data_type],
     ctx: DeviceContext,
 ) raises:

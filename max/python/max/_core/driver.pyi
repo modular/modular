@@ -723,6 +723,21 @@ class DeviceStream:
     def device(self) -> Device:
         """The device this stream is executing on."""
 
+    @property
+    def native_stream_handle(self) -> int:
+        """
+        The native stream handle as an integer, or ``0`` if there is none.
+
+        The handle is the CUDA ``CUstream`` / HIP ``hipStream_t``; ``0`` means
+        the stream has no native handle (e.g. a CPU device). Lets native code
+        outside MLRT order its own work against this stream -- for example,
+        record a CUDA event on it. The handle remains owned by this stream; do
+        not destroy it.
+
+        Returns:
+            int: The native stream handle, or ``0`` if there is none.
+        """
+
     def __str__(self) -> str: ...
     def __repr__(self) -> str: ...
     def __eq__(self, arg: object, /) -> bool: ...

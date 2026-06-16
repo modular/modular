@@ -119,29 +119,29 @@ struct VarlenSelectiveScanFwdArgs[
     var pad_slot_id: Int32
     var delta_softplus_int8: Int8
     var output_tt: TileTensor[
-        mut=True, Self.dtype, Self.output_LT, MutExternalOrigin
+        mut=True, Self.dtype, Self.output_LT, MutUntrackedOrigin
     ]
     var ssm_states_tt: TileTensor[
-        mut=True, Self.dtype, Self.ssm_states_LT, MutExternalOrigin
+        mut=True, Self.dtype, Self.ssm_states_LT, MutUntrackedOrigin
     ]
-    var z_tt: TileTensor[mut=True, Self.dtype, Self.z_LT, MutExternalOrigin]
-    var u_tt: TileTensor[Self.dtype, Self.u_LT, MutExternalOrigin]
-    var delta_tt: TileTensor[Self.dtype, Self.delta_LT, MutExternalOrigin]
-    var A_tt: TileTensor[Self.dtype, Self.A_LT, MutExternalOrigin]
-    var B_tt: TileTensor[Self.dtype, Self.B_LT, MutExternalOrigin]
-    var C_tt: TileTensor[Self.dtype, Self.C_LT, MutExternalOrigin]
-    var D_tt: TileTensor[Self.dtype, Self.D_LT, MutExternalOrigin]
+    var z_tt: TileTensor[mut=True, Self.dtype, Self.z_LT, MutUntrackedOrigin]
+    var u_tt: TileTensor[Self.dtype, Self.u_LT, MutUntrackedOrigin]
+    var delta_tt: TileTensor[Self.dtype, Self.delta_LT, MutUntrackedOrigin]
+    var A_tt: TileTensor[Self.dtype, Self.A_LT, MutUntrackedOrigin]
+    var B_tt: TileTensor[Self.dtype, Self.B_LT, MutUntrackedOrigin]
+    var C_tt: TileTensor[Self.dtype, Self.C_LT, MutUntrackedOrigin]
+    var D_tt: TileTensor[Self.dtype, Self.D_LT, MutUntrackedOrigin]
     var delta_bias_tt: TileTensor[
-        Self.dtype, Self.delta_bias_LT, MutExternalOrigin
+        Self.dtype, Self.delta_bias_LT, MutUntrackedOrigin
     ]
     var query_start_loc_tt: TileTensor[
-        DType.int32, Self.query_start_loc_LT, MutExternalOrigin
+        DType.int32, Self.query_start_loc_LT, MutUntrackedOrigin
     ]
     var cache_indices_tt: TileTensor[
-        DType.int32, Self.cache_indices_LT, MutExternalOrigin
+        DType.int32, Self.cache_indices_LT, MutUntrackedOrigin
     ]
     var has_initial_state_tt: TileTensor[
-        DType.bool, Self.has_initial_state_LT, MutExternalOrigin
+        DType.bool, Self.has_initial_state_LT, MutUntrackedOrigin
     ]
     var strides: VarlenSelectiveScanFwdStrides
     var grid_dim: Dim
@@ -282,21 +282,21 @@ struct VarlenSelectiveStateUpdateArgs[
     var dt_softplus_int8: Int8
     var has_state_batch_indices_int8: Int8
     var state_tt: TileTensor[
-        mut=True, Self.dtype, Self.state_LT, MutExternalOrigin
+        mut=True, Self.dtype, Self.state_LT, MutUntrackedOrigin
     ]
     var output_tt: TileTensor[
-        mut=True, Self.dtype, Self.output_LT, MutExternalOrigin
+        mut=True, Self.dtype, Self.output_LT, MutUntrackedOrigin
     ]
-    var x_tt: TileTensor[Self.dtype, Self.x_LT, MutExternalOrigin]
-    var dt_tt: TileTensor[Self.dtype, Self.dt_LT, MutExternalOrigin]
-    var A_tt: TileTensor[Self.dtype, Self.A_LT, MutExternalOrigin]
-    var B_tt: TileTensor[Self.dtype, Self.B_LT, MutExternalOrigin]
-    var C_tt: TileTensor[Self.dtype, Self.C_LT, MutExternalOrigin]
-    var D_tt: TileTensor[Self.dtype, Self.D_LT, MutExternalOrigin]
-    var z_tt: TileTensor[Self.dtype, Self.z_LT, MutExternalOrigin]
-    var dt_bias_tt: TileTensor[Self.dtype, Self.dt_bias_LT, MutExternalOrigin]
+    var x_tt: TileTensor[Self.dtype, Self.x_LT, MutUntrackedOrigin]
+    var dt_tt: TileTensor[Self.dtype, Self.dt_LT, MutUntrackedOrigin]
+    var A_tt: TileTensor[Self.dtype, Self.A_LT, MutUntrackedOrigin]
+    var B_tt: TileTensor[Self.dtype, Self.B_LT, MutUntrackedOrigin]
+    var C_tt: TileTensor[Self.dtype, Self.C_LT, MutUntrackedOrigin]
+    var D_tt: TileTensor[Self.dtype, Self.D_LT, MutUntrackedOrigin]
+    var z_tt: TileTensor[Self.dtype, Self.z_LT, MutUntrackedOrigin]
+    var dt_bias_tt: TileTensor[Self.dtype, Self.dt_bias_LT, MutUntrackedOrigin]
     var state_batch_indices_tt: TileTensor[
-        DType.int32, Self.state_batch_indices_LT, MutExternalOrigin
+        DType.int32, Self.state_batch_indices_LT, MutUntrackedOrigin
     ]
     var strides: VarlenSelectiveStateUpdateStrides
     var grid_dim: Dim
@@ -733,22 +733,23 @@ struct VarlenSelectiveStateUpdate[dt_softplus: Bool = False]:
 
         args.dispatch_for_d_state[target](d_state)
 
-    @staticmethod
-    def shape[
-        dtype: DType,
-    ](
-        x: InputTensor[dtype=dtype, rank=3, ...],
-        dt: InputTensor[dtype=dtype, rank=3, ...],
-        A: InputTensor[dtype=dtype, rank=3, ...],
-        B: InputTensor[dtype=dtype, rank=3, ...],
-        C: InputTensor[dtype=dtype, rank=3, ...],
-        D: InputTensor[dtype=dtype, rank=2, ...],
-        z: InputTensor[dtype=dtype, rank=3, ...],
-        dt_bias: InputTensor[dtype=dtype, rank=2, ...],
-        state_batch_indices: InputTensor[dtype=DType.int32, rank=1, ...],
-    ) -> Tuple[IndexList[4], IndexList[3]]:
-        var batch = x.dim_size(0)
-        var nheads = x.dim_size(1)
-        var dim = x.dim_size(2)
-        var d_state = A.dim_size(2)
-        return (IndexList[4](batch, nheads, dim, d_state), x.shape())
+
+@compiler.register_shape_function("varlen_selective_state_update")
+def varlen_selective_state_update_shape[
+    dtype: DType,
+](
+    x: InputTensor[dtype=dtype, rank=3, ...],
+    dt: InputTensor[dtype=dtype, rank=3, ...],
+    A: InputTensor[dtype=dtype, rank=3, ...],
+    B: InputTensor[dtype=dtype, rank=3, ...],
+    C: InputTensor[dtype=dtype, rank=3, ...],
+    D: InputTensor[dtype=dtype, rank=2, ...],
+    z: InputTensor[dtype=dtype, rank=3, ...],
+    dt_bias: InputTensor[dtype=dtype, rank=2, ...],
+    state_batch_indices: InputTensor[dtype=DType.int32, rank=1, ...],
+) -> Tuple[IndexList[4], IndexList[3]]:
+    var batch = x.dim_size(0)
+    var nheads = x.dim_size(1)
+    var dim = x.dim_size(2)
+    var dstate = A.dim_size(2)
+    return (IndexList[4](batch, nheads, dim, dstate), x.shape())

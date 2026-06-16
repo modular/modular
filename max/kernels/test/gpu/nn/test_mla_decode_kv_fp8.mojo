@@ -197,7 +197,7 @@ def test[
         _is_cache_length_accurate=True,
         is_fp8_kv=True,
     ](batch_size, num_keys, seq_len, ctx)
-    var scalar_args_buf_lt = mla_args.gpu_layout_tensor()
+    var scalar_args_buf_tt = mla_args.gpu_tile_tensor()
 
     @parameter
     @always_inline
@@ -205,7 +205,7 @@ def test[
         q_tt,
         k_tt,
         out_tt,
-        scalar_args_buf_lt,
+        scalar_args_buf_tt,
     )
     def kernel_launch(ctx: DeviceContext) raises:
         comptime if mla_mask_type == MLAMaskType.CAUSAL:
@@ -219,7 +219,7 @@ def test[
                 CausalMask(),
                 scale,
                 ctx,
-                lt_to_tt(scalar_args_buf_lt),
+                scalar_args_buf_tt,
                 num_partitions=num_partitions,
             )
         elif mla_mask_type == MLAMaskType.NO_MASK:
@@ -233,7 +233,7 @@ def test[
                 NullMask(),
                 scale,
                 ctx,
-                lt_to_tt(scalar_args_buf_lt),
+                scalar_args_buf_tt,
                 num_partitions=num_partitions,
             )
 
@@ -280,7 +280,7 @@ def test[
         ctx.enqueue_copy(k_ref_device_ptr, k_bf16_ptr)
 
         comptime if mla_mask_type == MLAMaskType.CAUSAL:
-            var k_operand = LayoutTensorMHAOperand(k_ref_device)
+            var k_operand = LayoutTensorMHAOperand(lt_to_tt(k_ref_device))
             var null_valid_length = LayoutTensor[
                 DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
             ](

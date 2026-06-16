@@ -57,7 +57,6 @@ from layout import (
     RuntimeLayout,
     TileTensor,
     UNKNOWN_VALUE,
-    lt_to_tt,
     row_major,
 )
 from nn.attention.mha_mask import CausalMask, NullMask
@@ -721,7 +720,7 @@ def run_test_sparse_kv_fp8[
         num_heads=num_heads,
         is_fp8_kv=True,
     ](batch_size, cache_len, q_max_seq_len, ctx)
-    var scalar_args_buf_lt = mla_args.gpu_layout_tensor()
+    var scalar_args_buf_tt = mla_args.gpu_tile_tensor()
 
     comptime sm_count = ctx.default_device_info.sm_count
     var dispatch_scalars = compute_mla_dispatch_scalars[
@@ -760,7 +759,7 @@ def run_test_sparse_kv_fp8[
             row_offsets_tt,
             scale,
             ctx,
-            lt_to_tt(scalar_args_buf_lt),
+            scalar_args_buf_tt,
             d_indices=rebind[UnsafePointer[Int32, MutAnyOrigin]](
                 d_indices_device.unsafe_ptr()
             ),
@@ -780,7 +779,7 @@ def run_test_sparse_kv_fp8[
             row_offsets_tt,
             scale,
             ctx,
-            lt_to_tt(scalar_args_buf_lt),
+            scalar_args_buf_tt,
             d_indices=rebind[UnsafePointer[Int32, MutAnyOrigin]](
                 d_indices_device.unsafe_ptr()
             ),
@@ -1215,7 +1214,7 @@ def run_test_sparse_kv_fp8_variable_topk[
         num_heads=num_heads,
         is_fp8_kv=True,
     ](batch_size, max_cache_len, q_max_seq_len, ctx)
-    var scalar_args_buf_lt = mla_args.gpu_layout_tensor()
+    var scalar_args_buf_tt = mla_args.gpu_tile_tensor()
 
     comptime sm_count = ctx.default_device_info.sm_count
     var dispatch_scalars = compute_mla_dispatch_scalars[
@@ -1246,7 +1245,7 @@ def run_test_sparse_kv_fp8_variable_topk[
         row_offsets_tt,
         scale,
         ctx,
-        lt_to_tt(scalar_args_buf_lt),
+        scalar_args_buf_tt,
         d_indices=rebind[UnsafePointer[Int32, MutAnyOrigin]](
             d_indices_device.unsafe_ptr()
         ),
@@ -1584,7 +1583,7 @@ def run_test_sparse_kv_fp8_attn_sink[
         num_heads=num_heads,
         is_fp8_kv=True,
     ](batch_size, cache_len, q_max_seq_len, ctx)
-    var scalar_args_buf_lt = mla_args.gpu_layout_tensor()
+    var scalar_args_buf_tt = mla_args.gpu_tile_tensor()
 
     comptime sm_count = ctx.default_device_info.sm_count
     var dispatch_scalars = compute_mla_dispatch_scalars[
@@ -1615,7 +1614,7 @@ def run_test_sparse_kv_fp8_attn_sink[
         row_offsets_tt,
         scale,
         ctx,
-        lt_to_tt(scalar_args_buf_lt),
+        scalar_args_buf_tt,
         d_indices=rebind[UnsafePointer[Int32, MutAnyOrigin]](
             d_indices_device.unsafe_ptr()
         ),
@@ -2177,7 +2176,7 @@ def run_test_sparse_kv_fp8_extra_kv[
         num_heads=num_heads,
         is_fp8_kv=True,
     ](batch_size, max_cache_len, q_max_seq_len, ctx)
-    var scalar_args_buf_lt = mla_args.gpu_layout_tensor()
+    var scalar_args_buf_tt = mla_args.gpu_tile_tensor()
 
     comptime sm_count = ctx.default_device_info.sm_count
     var dispatch_scalars = compute_mla_dispatch_scalars[
@@ -2207,7 +2206,7 @@ def run_test_sparse_kv_fp8_extra_kv[
         row_offsets_tt,
         scale,
         ctx,
-        lt_to_tt(scalar_args_buf_lt),
+        scalar_args_buf_tt,
         d_indices=rebind[UnsafePointer[Int32, MutAnyOrigin]](
             d_indices_device.unsafe_ptr()
         ),
@@ -2590,7 +2589,7 @@ def run_test_sparse_kv_fp8_topk_clamping[
         num_heads=num_heads,
         is_fp8_kv=True,
     ](batch_size, max_cache_len, q_max_seq_len, ctx)
-    var scalar_args_buf_lt = mla_args.gpu_layout_tensor()
+    var scalar_args_buf_tt = mla_args.gpu_tile_tensor()
 
     comptime sm_count = ctx.default_device_info.sm_count
     var dispatch_scalars = compute_mla_dispatch_scalars[
@@ -2621,7 +2620,7 @@ def run_test_sparse_kv_fp8_topk_clamping[
         row_offsets_tt,
         scale,
         ctx,
-        lt_to_tt(scalar_args_buf_lt),
+        scalar_args_buf_tt,
         d_indices=rebind[UnsafePointer[Int32, MutAnyOrigin]](
             d_indices_device.unsafe_ptr()
         ),

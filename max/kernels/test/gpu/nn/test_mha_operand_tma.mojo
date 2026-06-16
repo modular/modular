@@ -32,6 +32,7 @@ from layout import (
     LayoutTensor,
     RuntimeLayout,
     TileTensor,
+    lt_to_tt,
     row_major,
     UNKNOWN_VALUE,
 )
@@ -626,7 +627,7 @@ def test_layout_tensor[
         ),
     )
     src_operand = LayoutTensorMHAOperand(
-        src_tt.to_layout_tensor().as_unsafe_any_origin()
+        src_tt.as_immut().as_unsafe_any_origin()
     )
 
     for is_k_major in range(2):
@@ -650,7 +651,7 @@ def test_layout_tensor[
             ),
         )
         dst_operand = LayoutTensorMHAOperand(
-            dst_tt.to_layout_tensor().as_unsafe_any_origin()
+            dst_tt.as_immut().as_unsafe_any_origin()
         )
 
         mha_operand_copy[tile_m, kv_params](
@@ -688,10 +689,14 @@ def test_layout_tensor[
                 )
 
                 src_host_operand = LayoutTensorMHAOperand(
-                    src_host_tt.to_layout_tensor().as_unsafe_any_origin()
+                    lt_to_tt(
+                        src_host_tt.to_layout_tensor().as_unsafe_any_origin()
+                    )
                 )
                 dst_host_operand = LayoutTensorMHAOperand(
-                    dst_host_tt.to_layout_tensor().as_unsafe_any_origin()
+                    lt_to_tt(
+                        dst_host_tt.to_layout_tensor().as_unsafe_any_origin()
+                    )
                 )
 
                 test_mha_host_operand[tile_m, kv_params](

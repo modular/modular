@@ -1554,7 +1554,7 @@ def check_and_get_or_convert_arg[
     """
 
     # Stack space to hold a converted value for this argument, if needed.
-    var converted_arg_ptr = stack_allocation[1, T]()
+    var converted_arg_ptr = stack_allocation[1, T]().as_unsafe_any_origin()
 
     try:
         return check_and_get_arg[T](func_name, py_args, index)
@@ -1568,7 +1568,7 @@ def check_and_get_or_convert_arg[
         )
         # Return a pointer to stack data. Only valid because this function is
         # @always_inline.
-        return converted_arg_ptr.as_unsafe_any_origin()
+        return converted_arg_ptr
 
 
 @always_inline
@@ -1599,9 +1599,7 @@ def check_and_get_or_convert_arg[
     """
 
     # Stack space to hold a converted value for this argument, if needed.
-    var converted_arg_ptr: UnsafePointer[
-        mut=True, Int, MutAnyOrigin
-    ] = stack_allocation[1, Int]()
+    var converted_arg_ptr = stack_allocation[1, Int]().as_unsafe_any_origin()
 
     try:
         return check_and_get_arg[Int](func_name, py_args, index)

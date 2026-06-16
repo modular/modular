@@ -590,6 +590,8 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
             tokens=TokenBuffer(input_ids),
             max_length=max_length,
             json_schema=json_schema,
+            log_probabilities=request.logprobs,
+            log_probabilities_echo=request.echo,
             sampling_params=request.sampling_params,
             target_endpoint=request.target_endpoint,
             images=images,

@@ -14,6 +14,7 @@
 
 Tests all supported type combinations:
 - Float: {F16, BF16, F32} x {F16, BF16, F32} -> F32 (9 combos)
+- FP8: {E4M3, E5M2} inputs -> F32 (e4m3xe4m3, e5m2xe5m2, mixed)
 - Integer: {I8, U8} x {I8, U8} -> I32 (4 combos)
 - Strided loads (col_stride > 1)
 - Runtime transpose
@@ -326,6 +327,13 @@ def run_mma_test_runtime_transpose(ctx: DeviceContext) raises:
 # CHECK: {{PASS|SKIP}}
 # CHECK-LABEL: test_f32_f32
 # CHECK: {{PASS|SKIP}}
+# FP8 combos: {E4M3, E5M2} inputs -> F32
+# CHECK-LABEL: test_e4m3_e4m3
+# CHECK: {{PASS|SKIP}}
+# CHECK-LABEL: test_e5m2_e5m2
+# CHECK: {{PASS|SKIP}}
+# CHECK-LABEL: test_e4m3_e5m2
+# CHECK: {{PASS|SKIP}}
 # Integer 8-bit combos: {I8, U8} x {I8, U8} -> I32
 # CHECK-LABEL: test_i8_i8
 # CHECK: {{PASS|SKIP}}
@@ -358,6 +366,9 @@ def _skip_all():
     _skip("test_f32_f16")
     _skip("test_f32_bf16")
     _skip("test_f32_f32")
+    _skip("test_e4m3_e4m3")
+    _skip("test_e5m2_e5m2")
+    _skip("test_e4m3_e5m2")
     _skip("test_i8_i8")
     _skip("test_i8_u8")
     _skip("test_u8_i8")
@@ -406,6 +417,18 @@ def main() raises:
     )
     run_mma_test[DType.float32, DType.float32, DType.float32](
         "test_f32_f32", ctx, tol=0.00001
+    )
+
+    # tol=0: A @ I is exact (1.0 is representable in fp8), so D reproduces the
+    # fp8-rounded A bit-for-bit.
+    run_mma_test[DType.float8_e4m3fn, DType.float8_e4m3fn, DType.float32](
+        "test_e4m3_e4m3", ctx
+    )
+    run_mma_test[DType.float8_e5m2, DType.float8_e5m2, DType.float32](
+        "test_e5m2_e5m2", ctx
+    )
+    run_mma_test[DType.float8_e4m3fn, DType.float8_e5m2, DType.float32](
+        "test_e4m3_e5m2", ctx
     )
 
     # Integer combos

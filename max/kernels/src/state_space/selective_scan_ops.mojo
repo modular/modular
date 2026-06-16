@@ -135,21 +135,21 @@ struct SelectiveScanFwdArgs[
     var group_size: Int
     var delta_softplus_int8: Int8
     var output_tt: TileTensor[
-        mut=True, Self.dtype, Self.output_LT, MutExternalOrigin
+        mut=True, Self.dtype, Self.output_LT, MutUntrackedOrigin
     ]
-    var x_tt: TileTensor[mut=True, Self.dtype, Self.x_LT, MutExternalOrigin]
+    var x_tt: TileTensor[mut=True, Self.dtype, Self.x_LT, MutUntrackedOrigin]
     var out_z_tt: TileTensor[
-        mut=True, Self.dtype, Self.out_z_LT, MutExternalOrigin
+        mut=True, Self.dtype, Self.out_z_LT, MutUntrackedOrigin
     ]
-    var u_tt: TileTensor[Self.dtype, Self.u_LT, MutExternalOrigin]
-    var delta_tt: TileTensor[Self.dtype, Self.delta_LT, MutExternalOrigin]
-    var A_tt: TileTensor[Self.dtype, Self.A_LT, MutExternalOrigin]
-    var B_tt: TileTensor[Self.dtype, Self.B_LT, MutExternalOrigin]
-    var C_tt: TileTensor[Self.dtype, Self.C_LT, MutExternalOrigin]
-    var D_tt: TileTensor[Self.dtype, Self.D_LT, MutExternalOrigin]
-    var z_tt: TileTensor[Self.dtype, Self.z_LT, MutExternalOrigin]
+    var u_tt: TileTensor[Self.dtype, Self.u_LT, MutUntrackedOrigin]
+    var delta_tt: TileTensor[Self.dtype, Self.delta_LT, MutUntrackedOrigin]
+    var A_tt: TileTensor[Self.dtype, Self.A_LT, MutUntrackedOrigin]
+    var B_tt: TileTensor[Self.dtype, Self.B_LT, MutUntrackedOrigin]
+    var C_tt: TileTensor[Self.dtype, Self.C_LT, MutUntrackedOrigin]
+    var D_tt: TileTensor[Self.dtype, Self.D_LT, MutUntrackedOrigin]
+    var z_tt: TileTensor[Self.dtype, Self.z_LT, MutUntrackedOrigin]
     var delta_bias_tt: TileTensor[
-        Self.dtype, Self.delta_bias_LT, MutExternalOrigin
+        Self.dtype, Self.delta_bias_LT, MutUntrackedOrigin
     ]
     var strides: SelectiveScanFwdStrides
     var grid_dim: Dim
@@ -281,14 +281,14 @@ struct SelectiveScanFwdMinimalArgs[
     var group_size: Int
     var delta_softplus_int8: Int8
     var output_tt: TileTensor[
-        mut=True, Self.dtype, Self.output_LT, MutExternalOrigin
+        mut=True, Self.dtype, Self.output_LT, MutUntrackedOrigin
     ]
-    var x_tt: TileTensor[mut=True, Self.dtype, Self.x_LT, MutExternalOrigin]
-    var u_tt: TileTensor[Self.dtype, Self.u_LT, MutExternalOrigin]
-    var delta_tt: TileTensor[Self.dtype, Self.delta_LT, MutExternalOrigin]
-    var A_tt: TileTensor[Self.dtype, Self.A_LT, MutExternalOrigin]
-    var B_tt: TileTensor[Self.dtype, Self.B_LT, MutExternalOrigin]
-    var C_tt: TileTensor[Self.dtype, Self.C_LT, MutExternalOrigin]
+    var x_tt: TileTensor[mut=True, Self.dtype, Self.x_LT, MutUntrackedOrigin]
+    var u_tt: TileTensor[Self.dtype, Self.u_LT, MutUntrackedOrigin]
+    var delta_tt: TileTensor[Self.dtype, Self.delta_LT, MutUntrackedOrigin]
+    var A_tt: TileTensor[Self.dtype, Self.A_LT, MutUntrackedOrigin]
+    var B_tt: TileTensor[Self.dtype, Self.B_LT, MutUntrackedOrigin]
+    var C_tt: TileTensor[Self.dtype, Self.C_LT, MutUntrackedOrigin]
     var strides: SelectiveScanFwdMinimalStrides
     var grid_dim: Dim
     var block_dim: Dim
@@ -402,20 +402,22 @@ struct SelectiveScanUpdateArgs[
     var group_size: Int
     var delta_softplus_int8: Int8
     var state_out_tt: TileTensor[
-        mut=True, Self.dtype, Self.state_out_LT, MutExternalOrigin
+        mut=True, Self.dtype, Self.state_out_LT, MutUntrackedOrigin
     ]
     var output_tt: TileTensor[
-        mut=True, Self.dtype, Self.output_LT, MutExternalOrigin
+        mut=True, Self.dtype, Self.output_LT, MutUntrackedOrigin
     ]
-    var state_in_tt: TileTensor[Self.dtype, Self.state_in_LT, MutExternalOrigin]
-    var x_tt: TileTensor[Self.dtype, Self.x_LT, MutExternalOrigin]
-    var dt_tt: TileTensor[Self.dtype, Self.dt_LT, MutExternalOrigin]
-    var A_tt: TileTensor[Self.dtype, Self.A_LT, MutExternalOrigin]
-    var B_tt: TileTensor[Self.dtype, Self.B_LT, MutExternalOrigin]
-    var C_tt: TileTensor[Self.dtype, Self.C_LT, MutExternalOrigin]
-    var D_tt: TileTensor[Self.dtype, Self.D_LT, MutExternalOrigin]
-    var z_tt: TileTensor[Self.dtype, Self.z_LT, MutExternalOrigin]
-    var dt_bias_tt: TileTensor[Self.dtype, Self.dt_bias_LT, MutExternalOrigin]
+    var state_in_tt: TileTensor[
+        Self.dtype, Self.state_in_LT, MutUntrackedOrigin
+    ]
+    var x_tt: TileTensor[Self.dtype, Self.x_LT, MutUntrackedOrigin]
+    var dt_tt: TileTensor[Self.dtype, Self.dt_LT, MutUntrackedOrigin]
+    var A_tt: TileTensor[Self.dtype, Self.A_LT, MutUntrackedOrigin]
+    var B_tt: TileTensor[Self.dtype, Self.B_LT, MutUntrackedOrigin]
+    var C_tt: TileTensor[Self.dtype, Self.C_LT, MutUntrackedOrigin]
+    var D_tt: TileTensor[Self.dtype, Self.D_LT, MutUntrackedOrigin]
+    var z_tt: TileTensor[Self.dtype, Self.z_LT, MutUntrackedOrigin]
+    var dt_bias_tt: TileTensor[Self.dtype, Self.dt_bias_LT, MutUntrackedOrigin]
     var strides: SelectiveScanUpdateStrides
     var grid_dim: Dim
     var block_dim: Dim

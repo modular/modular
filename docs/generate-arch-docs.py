@@ -90,6 +90,24 @@ def discover_categories(dir_names: list[str]) -> dict[str, list[str]]:
 # ---------------------------------------------------------------------------
 
 
+def _lazy_arch_module(elt: ast.expr) -> str | None:
+    """Return the ``module`` field of a ``_LazyArch(name, module, symbol)`` call.
+
+    Returns ``None`` for nodes that are not such a call. The module is the
+    second positional argument or the ``module`` keyword.
+    """
+    if not isinstance(elt, ast.Call):
+        return None
+    if len(elt.args) >= 2 and isinstance(elt.args[1], ast.Constant):
+        value = elt.args[1].value
+        return value if isinstance(value, str) else None
+    for kw in elt.keywords:
+        if kw.arg == "module" and isinstance(kw.value, ast.Constant):
+            value = kw.value.value
+            return value if isinstance(value, str) else None
+    return None
+
+
 def discover_registered_dirs() -> list[str]:
     """Return sorted directory names of all registered architectures.
 
@@ -103,12 +121,28 @@ def discover_registered_dirs() -> list[str]:
             isinstance(node, ast.FunctionDef)
             and node.name == "register_all_models"
         ):
+            # Architectures are registered lazily via a `lazy_architectures`
+            # table of ``_LazyArch(name, module, symbol)`` entries. Collect the
+            # module directory names, stripping the leading ``.``.
             modules = set()
-            for stmt in node.body:
-                if isinstance(stmt, ast.ImportFrom) and stmt.module:
-                    if stmt.module.endswith("_modulev3"):
+            for stmt in ast.walk(node):
+                if not (
+                    isinstance(stmt, ast.Assign)
+                    and any(
+                        isinstance(t, ast.Name) and t.id == "lazy_architectures"
+                        for t in stmt.targets
+                    )
+                    and isinstance(stmt.value, ast.List)
+                ):
+                    continue
+                for elt in stmt.value.elts:
+                    module = _lazy_arch_module(elt)
+                    if module is None:
                         continue
-                    modules.add(stmt.module)
+                    module = module.lstrip(".")
+                    if module.endswith("_modulev3"):
+                        continue
+                    modules.add(module)
             return sorted(modules)
     raise RuntimeError("Could not find register_all_models() in __init__.py")
 

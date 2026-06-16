@@ -330,13 +330,6 @@ class PipelineRuntimeConfig(ConfigFileModel):
         ),
     )
 
-    # TODO(SERVSYS-1096): Remove this field once we've reworked how required
-    # config fields are validated.
-    defer_resolve: bool = Field(
-        default=False,
-        description="Whether to defer resolving the pipeline config.",
-    )
-
     max_vision_cache_entries: int = Field(
         default=256,
         description=(

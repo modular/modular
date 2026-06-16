@@ -25,11 +25,9 @@ from typing import TYPE_CHECKING, Annotated, Any, Generic
 from max.driver import CPU, Buffer, Device, DLPackArray
 from max.engine import CompiledModel as EngineCompiledModel
 from max.engine import Model
-from max.experimental.realization_context import (
-    GraphRealizationContext,
-    _session,
-)
+from max.experimental.realization_context import GraphRealizationContext
 from max.experimental.sharding import DeviceMapping, DeviceMesh
+from max.experimental.support import _session
 from max.experimental.tensor import Tensor, realization_context
 from max.graph import DeviceRef, Graph
 from rich.pretty import pretty_repr

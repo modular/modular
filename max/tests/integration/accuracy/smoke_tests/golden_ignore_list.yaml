@@ -112,20 +112,24 @@ ignored_failures:
   - model: meta-llama/Llama-3.1-8B-Instruct__tiered_kvconnector
     reason: "Excluded from golden gate (llama3-8B)"
 
-  # ── Kimi-K2.5-NVFP4 KV-connector variants ────────────────────────────────────
+  # ── Kimi-K2.5/K2.6-NVFP4 tpep_ar variants ───────────────────────────────────
   # Explicit gpu: these variants are excluded from all single-card and 2x runners
   # and run only on 8xB200.
-  - model: nvidia/Kimi-K2.5-NVFP4__local_kvconnector_tpep
+  - model: nvidia/Kimi-K2.5-NVFP4__local_kvconnector_tpep_ar
     gpu: 8xB200
-    reason: "Excluded from golden gate (Kimi-K2.5-NVFP4 KV-connector)"
+    reason: "Excluded from golden gate (Kimi-K2.5-NVFP4 tpep_ar)"
 
-  - model: nvidia/Kimi-K2.5-NVFP4__eagle_tiered_kvconnector_tpep
+  - model: nvidia/Kimi-K2.5-NVFP4__eagle_tiered_kvconnector_tpep_ar
     gpu: 8xB200
-    reason: "Excluded from golden gate (Kimi-K2.5-NVFP4 KV-connector)"
+    reason: "Excluded from golden gate (Kimi-K2.5-NVFP4 tpep_ar)"
 
-  - model: nvidia/Kimi-K2.5-NVFP4__mha_eagle_tiered_kvconnector_tpep
+  - model: nvidia/Kimi-K2.5-NVFP4__mha_eagle_tiered_kvconnector_tpep_ar
     gpu: 8xB200
-    reason: "Excluded from golden gate (Kimi-K2.5-NVFP4 KV-connector)"
+    reason: "Excluded from golden gate (Kimi-K2.5-NVFP4 tpep_ar)"
+
+  - model: nvidia/Kimi-K2.6-NVFP4__eagle_tiered_kvconnector_tpep_ar
+    gpu: 8xB200
+    reason: "Excluded from golden gate (Kimi-K2.6-NVFP4 tpep_ar)"
 
   # ── nvidia/Gemma-4 ───────────────────────────────────────────────────────────
   # No gpu → defaults to B200 + MI355.

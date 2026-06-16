@@ -961,6 +961,37 @@ def test_text_and_vision_context_happy_case() -> None:
     assert len(ctx.next_images) == 0
 
 
+def test_text_and_vision_context_adjacent_images_allowed() -> None:
+    # Image ranges are half-open [start_idx, end_idx), so two images whose
+    # token runs touch (next.start_idx == prev.end_idx) do not overlap. Chat
+    # templates that emit no separator token between consecutive images
+    # produce exactly such touching ranges, and they must be accepted.
+    # fmt: off
+    #                                  |<-img0->|<-img1->|
+    #                   0   1   2   3   4   5   6   7   8   9
+    tokens = np.array([51, 52, 53, 54, 98, 98, 98, 98, 59, 60])
+    # fmt: on
+    ctx = TextAndVisionContext(
+        max_length=50,
+        tokens=TokenBuffer(tokens),
+        images=[
+            ImageMetadata(
+                start_idx=4,
+                end_idx=6,
+                pixel_values=np.array([99]),
+            ),
+            ImageMetadata(
+                start_idx=6,
+                end_idx=8,
+                pixel_values=np.array([99]),
+            ),
+        ],
+        vision_token_ids=[98],
+    )
+    assert len(ctx.images) == 2
+    assert ctx.needs_vision_encoding is True
+
+
 def test_text_and_vision_context_sad_case() -> None:
     # fmt: off
     #                                      |<-- img0 --->|                         |<--- img1 -->|
@@ -978,9 +1009,9 @@ def test_text_and_vision_context_sad_case() -> None:
                     end_idx=9,
                     pixel_values=np.array([99]),
                 ),
-                # This overlaps with img0
+                # This overlaps with img0 (starts at 8, before img0 ends at 9).
                 ImageMetadata(
-                    start_idx=9,
+                    start_idx=8,
                     end_idx=19,
                     pixel_values=np.array([99]),
                 ),

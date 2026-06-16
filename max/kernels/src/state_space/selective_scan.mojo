@@ -18,7 +18,7 @@ from std.gpu import (
     thread_idx,
 )
 from std.gpu.primitives import warp
-from layout import Layout, LayoutTensor, TensorLayout, TileTensor
+from layout import TensorLayout, TileTensor
 from std.utils.index import IndexList
 from std.algorithm import sync_parallelize
 from std.gpu.host import DeviceContext
@@ -694,9 +694,9 @@ def _decode_row_prologue[
     b: Int,
     d: Int,
     delta_softplus: Int8,
-    dt: TileTensor[kernel_dtype, dt_LT, MutExternalOrigin],
-    dt_bias: TileTensor[kernel_dtype, dt_bias_LT, MutExternalOrigin],
-    x: TileTensor[kernel_dtype, x_LT, MutExternalOrigin],
+    dt: TileTensor[kernel_dtype, dt_LT, MutUntrackedOrigin],
+    dt_bias: TileTensor[kernel_dtype, dt_bias_LT, MutUntrackedOrigin],
+    x: TileTensor[kernel_dtype, x_LT, MutUntrackedOrigin],
     dt_strides: Strides2D,
     dt_bias_strides: Strides1D,
     x_strides: Strides2D,
@@ -741,11 +741,11 @@ def _decode_row_recur[
     group_id: Int,
     dt_val: Float32,
     x_val: Float32,
-    A: TileTensor[kernel_dtype, A_LT, MutExternalOrigin],
-    B: TileTensor[kernel_dtype, B_LT, MutExternalOrigin],
-    state_in: TileTensor[kernel_dtype, state_in_LT, MutExternalOrigin],
-    state_out: TileTensor[kernel_dtype, state_out_LT, MutExternalOrigin],
-    C: TileTensor[kernel_dtype, C_LT, MutExternalOrigin],
+    A: TileTensor[kernel_dtype, A_LT, MutUntrackedOrigin],
+    B: TileTensor[kernel_dtype, B_LT, MutUntrackedOrigin],
+    state_in: TileTensor[kernel_dtype, state_in_LT, MutUntrackedOrigin],
+    state_out: TileTensor[kernel_dtype, state_out_LT, MutUntrackedOrigin],
+    C: TileTensor[kernel_dtype, C_LT, MutUntrackedOrigin],
     A_strides: Strides2D,
     B_strides: Strides3D,
     state_in_strides: Strides3D,
@@ -819,9 +819,9 @@ def _decode_row_finalize[
     d: Int,
     out_val_in: Float32,
     x_val: Float32,
-    D: TileTensor[kernel_dtype, D_LT, MutExternalOrigin],
-    z: TileTensor[kernel_dtype, z_LT, MutExternalOrigin],
-    output: TileTensor[kernel_dtype, output_LT, MutExternalOrigin],
+    D: TileTensor[kernel_dtype, D_LT, MutUntrackedOrigin],
+    z: TileTensor[kernel_dtype, z_LT, MutUntrackedOrigin],
+    output: TileTensor[kernel_dtype, output_LT, MutUntrackedOrigin],
     D_strides: Strides1D,
     z_strides: Strides2D,
     output_strides: Strides2D,
@@ -1103,15 +1103,15 @@ def selective_scan_update_cpu[
     delta_softplus: Int8,
     state_out: TileTensor[mut=True, kernel_dtype, ...],
     output: TileTensor[mut=True, kernel_dtype, ...],
-    state_in: TileTensor[kernel_dtype, ...],
-    x: TileTensor[kernel_dtype, ...],
-    dt: TileTensor[kernel_dtype, ...],
-    A: TileTensor[kernel_dtype, ...],
-    B: TileTensor[kernel_dtype, ...],
-    C: TileTensor[kernel_dtype, ...],
-    D: TileTensor[kernel_dtype, ...],
-    z: TileTensor[kernel_dtype, ...],
-    dt_bias: TileTensor[kernel_dtype, ...],
+    state_in: TileTensor[mut=False, kernel_dtype, ...],
+    x: TileTensor[mut=False, kernel_dtype, ...],
+    dt: TileTensor[mut=False, kernel_dtype, ...],
+    A: TileTensor[mut=False, kernel_dtype, ...],
+    B: TileTensor[mut=False, kernel_dtype, ...],
+    C: TileTensor[mut=False, kernel_dtype, ...],
+    D: TileTensor[mut=False, kernel_dtype, ...],
+    z: TileTensor[mut=False, kernel_dtype, ...],
+    dt_bias: TileTensor[mut=False, kernel_dtype, ...],
     state_out_strides: Strides3D,
     output_strides: Strides2D,
     state_in_strides: Strides3D,
@@ -1267,14 +1267,14 @@ def selective_scan_fwd_cpu[
     output: TileTensor[mut=True, kernel_dtype, ...],
     x: TileTensor[mut=True, kernel_dtype, ...],
     out_z: TileTensor[mut=True, kernel_dtype, ...],
-    u: TileTensor[kernel_dtype, ...],
-    delta: TileTensor[kernel_dtype, ...],
-    A: TileTensor[kernel_dtype, ...],
-    B: TileTensor[kernel_dtype, ...],
-    C: TileTensor[kernel_dtype, ...],
-    D: TileTensor[kernel_dtype, ...],
-    z: TileTensor[kernel_dtype, ...],
-    delta_bias: TileTensor[kernel_dtype, ...],
+    u: TileTensor[mut=False, kernel_dtype, ...],
+    delta: TileTensor[mut=False, kernel_dtype, ...],
+    A: TileTensor[mut=False, kernel_dtype, ...],
+    B: TileTensor[mut=False, kernel_dtype, ...],
+    C: TileTensor[mut=False, kernel_dtype, ...],
+    D: TileTensor[mut=False, kernel_dtype, ...],
+    z: TileTensor[mut=False, kernel_dtype, ...],
+    delta_bias: TileTensor[mut=False, kernel_dtype, ...],
     output_strides: Strides3D,
     x_strides: Strides4D,
     out_z_strides: Strides3D,
@@ -1591,11 +1591,11 @@ def selective_scan_fwd_cpu_minimal[
     delta_softplus: Int8,
     output: TileTensor[mut=True, kernel_dtype, ...],
     x: TileTensor[mut=True, kernel_dtype, ...],
-    u: TileTensor[kernel_dtype, ...],
-    delta: TileTensor[kernel_dtype, ...],
-    A: TileTensor[kernel_dtype, ...],
-    B: TileTensor[kernel_dtype, ...],
-    C: TileTensor[kernel_dtype, ...],
+    u: TileTensor[mut=False, kernel_dtype, ...],
+    delta: TileTensor[mut=False, kernel_dtype, ...],
+    A: TileTensor[mut=False, kernel_dtype, ...],
+    B: TileTensor[mut=False, kernel_dtype, ...],
+    C: TileTensor[mut=False, kernel_dtype, ...],
     output_strides: Strides3D,
     x_strides: Strides4D,
     u_strides: Strides3D,
@@ -1736,19 +1736,19 @@ def selective_scan_fwd_cpu_minimal[
 def ssd_combined_gpu[
     kernel_dtype: DType,
     D_STATE: Int,
-    output_layout: Layout,
-    x_layout: Layout,
-    out_z_layout: Layout,
-    residual_layout: Layout,
-    u_layout: Layout,
-    delta_layout: Layout,
-    A_layout: Layout,
-    B_layout: Layout,
-    C_layout: Layout,
-    D_layout: Layout,
-    z_layout: Layout,
-    delta_bias_layout: Layout,
-    gamma_layout: Layout,
+    output_LT: TensorLayout,
+    x_LT: TensorLayout,
+    out_z_LT: TensorLayout,
+    residual_LT: TensorLayout,
+    u_LT: TensorLayout,
+    delta_LT: TensorLayout,
+    A_LT: TensorLayout,
+    B_LT: TensorLayout,
+    C_LT: TensorLayout,
+    D_LT: TensorLayout,
+    z_LT: TensorLayout,
+    delta_bias_LT: TensorLayout,
+    gamma_LT: TensorLayout,
 ](
     total_batch_dim: Int,
     batch: Int,
@@ -2153,19 +2153,19 @@ def ssd_combined_gpu[
 def ssd_combined_cpu[
     kernel_dtype: DType,
     D_STATE: Int,
-    output_layout: Layout,
-    x_layout: Layout,
-    out_z_layout: Layout,
-    residual_layout: Layout,
-    u_layout: Layout,
-    delta_layout: Layout,
-    A_layout: Layout,
-    B_layout: Layout,
-    C_layout: Layout,
-    D_layout: Layout,
-    z_layout: Layout,
-    delta_bias_layout: Layout,
-    gamma_layout: Layout,
+    output_LT: TensorLayout,
+    x_LT: TensorLayout,
+    out_z_LT: TensorLayout,
+    residual_LT: TensorLayout,
+    u_LT: TensorLayout,
+    delta_LT: TensorLayout,
+    A_LT: TensorLayout,
+    B_LT: TensorLayout,
+    C_LT: TensorLayout,
+    D_LT: TensorLayout,
+    z_LT: TensorLayout,
+    delta_bias_LT: TensorLayout,
+    gamma_LT: TensorLayout,
 ](
     batch: Int,
     dim: Int,
@@ -2566,22 +2566,22 @@ def ssd_combined_cpu[
 def mamba_split_conv1d_scan_combined_cpu[
     kernel_dtype: DType,
     D_STATE: Int,
-    zxbcdt_layout: Layout,
-    conv_weight_layout: Layout,
-    conv_bias_layout: Layout,
-    output_layout: Layout,
-    x_layout: Layout,
-    out_z_layout: Layout,
-    dt_layout: Layout,
-    A_layout: Layout,
-    B_layout: Layout,
-    C_layout: Layout,
-    D_layout: Layout,
-    z_layout: Layout,
-    delta_bias_layout: Layout,
-    rmsnorm_weight_layout: Layout,
-    outproj_weight_layout: Layout,
-    outproj_bias_layout: Layout,
+    zxbcdt_layout: TensorLayout,
+    conv_weight_layout: TensorLayout,
+    conv_bias_layout: TensorLayout,
+    output_layout: TensorLayout,
+    x_layout: TensorLayout,
+    out_z_layout: TensorLayout,
+    dt_layout: TensorLayout,
+    A_layout: TensorLayout,
+    B_layout: TensorLayout,
+    C_layout: TensorLayout,
+    D_layout: TensorLayout,
+    z_layout: TensorLayout,
+    delta_bias_layout: TensorLayout,
+    rmsnorm_weight_layout: TensorLayout,
+    outproj_weight_layout: TensorLayout,
+    outproj_bias_layout: TensorLayout,
 ](
     batch: Int,
     seqlen: Int,
@@ -2597,14 +2597,14 @@ def mamba_split_conv1d_scan_combined_cpu[
     has_outproj: Int8,
     zxbcdt: TileTensor[
         kernel_dtype, zxbcdt_layout, MutAnyOrigin
-    ],  # (batch, seqlen, 2*dim + 2*ngroups*d_state + nheads)
-    conv_weight: LayoutTensor[
+    ],  # (batch, seqlen, 2*dim + 2*ngroups*dstate + nheads)
+    conv_weight: TileTensor[
         kernel_dtype, conv_weight_layout, MutAnyOrigin
-    ],  # (dim + 2*ngroups*d_state, width)
-    conv_bias: LayoutTensor[
+    ],  # (dim + 2*ngroups*dstate, width)
+    conv_bias: TileTensor[
         kernel_dtype, conv_bias_layout, MutAnyOrigin
-    ],  # (dim + 2*ngroups*d_state,)
-    dt_bias: LayoutTensor[
+    ],  # (dim + 2*ngroups*dstate,)
+    dt_bias: TileTensor[
         kernel_dtype, delta_bias_layout, MutAnyOrigin
     ],  # (nheads,)
     A: TileTensor[kernel_dtype, A_layout, MutAnyOrigin],  # (nheads,)
@@ -2613,8 +2613,8 @@ def mamba_split_conv1d_scan_combined_cpu[
     ],  # (nheads, headdim) or (nheads,)
     x: TileTensor[
         kernel_dtype, x_layout, MutAnyOrigin
-    ],  # (batch, dim, num_chunks, 2*d_state)
-    out_z: LayoutTensor[
+    ],  # (batch, dim, num_chunks, 2*dstate)
+    out_z: TileTensor[
         kernel_dtype, out_z_layout, MutAnyOrigin
     ],  # (batch, dim, seqlen)
     dt: TileTensor[
@@ -2622,14 +2622,12 @@ def mamba_split_conv1d_scan_combined_cpu[
     ],  # (batch, nheads, seqlen)
     B: TileTensor[
         kernel_dtype, B_layout, MutAnyOrigin
-    ],  # (batch, ngroups, d_state, seqlen)
-    C: LayoutTensor[
+    ],  # (batch, ngroups, dstate, seqlen)
+    C: TileTensor[
         kernel_dtype, C_layout, MutAnyOrigin
-    ],  # (batch, ngroups, d_state, seqlen)
-    z: LayoutTensor[
-        kernel_dtype, z_layout, MutAnyOrigin
-    ],  # (batch, dim, seqlen)
-    rmsnorm_weight: LayoutTensor[
+    ],  # (batch, ngroups, dstate, seqlen)
+    z: TileTensor[kernel_dtype, z_layout, MutAnyOrigin],  # (batch, dim, seqlen)
+    rmsnorm_weight: TileTensor[
         kernel_dtype, rmsnorm_weight_layout, MutAnyOrigin
     ],  # (dim,)
     outproj_weight: TileTensor[
@@ -3072,22 +3070,22 @@ def mamba_split_conv1d_scan_combined_cpu[
 def mamba_split_conv1d_scan_combined_gpu[
     kernel_dtype: DType,
     D_STATE: Int,
-    zxbcdt_layout: Layout,
-    conv_weight_layout: Layout,
-    conv_bias_layout: Layout,
-    output_layout: Layout,
-    x_layout: Layout,
-    out_z_layout: Layout,
-    dt_layout: Layout,
-    A_layout: Layout,
-    B_layout: Layout,
-    C_layout: Layout,
-    D_layout: Layout,
-    z_layout: Layout,
-    delta_bias_layout: Layout,
-    rmsnorm_weight_layout: Layout,
-    outproj_weight_layout: Layout,
-    outproj_bias_layout: Layout,
+    zxbcdt_layout: TensorLayout,
+    conv_weight_layout: TensorLayout,
+    conv_bias_layout: TensorLayout,
+    output_layout: TensorLayout,
+    x_layout: TensorLayout,
+    out_z_layout: TensorLayout,
+    dt_layout: TensorLayout,
+    A_layout: TensorLayout,
+    B_layout: TensorLayout,
+    C_layout: TensorLayout,
+    D_layout: TensorLayout,
+    z_layout: TensorLayout,
+    delta_bias_layout: TensorLayout,
+    rmsnorm_weight_layout: TensorLayout,
+    outproj_weight_layout: TensorLayout,
+    outproj_bias_layout: TensorLayout,
 ](
     total_batch_dim: Int,
     batch: Int,

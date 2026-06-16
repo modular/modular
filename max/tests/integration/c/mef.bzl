@@ -18,6 +18,7 @@ MOJO_DEPS = [
     "//max:kv_cache",
     "//max:layout",
     "//max:linalg",
+    "//max:msa",
     "//max:nn",
     "//max:pipeline",
     "//max:quantization",
