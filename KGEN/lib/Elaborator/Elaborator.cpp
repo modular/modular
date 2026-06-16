@@ -2159,13 +2159,9 @@ ElaborationState Elaborator::processDeferredOp(ImplNode *inode, DeferredOp op) {
     resultOp->getResult(i).setType(type);
   }
 
-  // Verify that the resulting op is correctly constructed. If not, we fail.
-  if (failed(mlir::verify(resultOp))) {
-    inode->setToError(
-        ErrorTree(loc, "MLIR verification error: " +
-                           handler.getDiagnostics().back().str()));
-    return failure();
-  }
+  // NOTE: this operation is not verified at this stage. KGENVerifier,
+  // which is invoked after Elaborator, will verify all operations
+  // from dialects used by Mojo: KGEN, LIT, POP, NVVM, HLCF, ROCDL.
 
   DenseSet<StringAttr> inherentAttrs;
   inherentAttrs.insert_range(resultOp->getName().getAttributeNames());
