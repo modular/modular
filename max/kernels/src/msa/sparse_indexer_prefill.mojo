@@ -15,12 +15,17 @@
 For each (ragged) query token and index head, this selects the top-k key
 *blocks* to attend to. It runs as two launches:
 
-1. `_prefill_block_score_kernel` -- one CTA per (query token, index head). The
-   query token's causal key count is `prefix_len + local_index + 1`, so each
-   thread takes the max over a block's in-range causal keys of `q . k * sm_scale`
-   (bf16 inputs, f32 accumulation), applies init/local forcing, and writes one
-   f32 per block into a caller-owned score buffer. Clamping the key range to the
-   causal count makes the diagonal (final) block exact without a separate mask.
+1. `_prefill_block_score_kernel` -- SM100 (B200) tensor-core (SS-UMMA) scorer.
+   One CTA scores a QTILE(=64)-row query tile of one batch against every
+   causally-reachable key block. Q (one head's tile) and the key block are
+   TMA-staged into 128B-swizzled SMEM and multiplied on tensor cores as
+   `S = Q @ K_block^T * sm_scale` (bf16 inputs, f32 TMEM accumulation). Each of
+   the 4 index heads runs its own MMA against the key block. Each query row has
+   its own causal key count `prefix_len + local_index + 1`; the per-query mask is
+   applied to the score fragment after the MMA (a key column >= that query's count
+   is excluded from its max), so one key-block read serves every query row in the
+   tile. Init/local forcing is applied before writing one f32 per (head, query,
+   block) into a caller-owned score buffer.
 2. `_prefill_topk_kernel` -- one CTA per (query token, index head). Selects the
    top-k blocks from the score row via `block_select_topk`.
 
@@ -29,17 +34,38 @@ Selection-only (M3 disables the index value/output on every sparse layer); score
 type is `max`.
 """
 
-from std.gpu import WARP_SIZE, barrier, block_dim, block_idx, thread_idx
-from std.gpu.host import DeviceContext
-from std.gpu.memory import AddressSpace
-from std.math import ceildiv, max, min
-from std.memory import stack_allocation
+from std.gpu import (
+    WARP_SIZE,
+    block_idx,
+    lane_id,
+    thread_idx,
+    warp_id,
+)
+from std.gpu.host import DeviceContext, FuncAttribute
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from std.gpu.memory import AddressSpace, external_memory
+from std.gpu.primitives import warp
+from std.gpu.sync import named_barrier
+from std.gpu.compute.arch.tcgen05 import (
+    tcgen05_alloc,
+    tcgen05_dealloc,
+    tcgen05_release_allocation_lock,
+)
+from std.math import align_up, ceildiv, max, min
+from std.sys import size_of
 from std.utils.index import Index
 from std.utils.numerics import min_or_neg_inf
 
-from layout import TensorLayout, TileTensor
+from layout import TensorLayout, TileTensor, UNKNOWN_VALUE
+from layout.tile_layout import row_major as tt_row_major
+from layout.tma_async import (
+    SharedMemBarrier,
+    SplitLastDimTMATensorTile,
+    create_split_tma,
+)
 
 from nn.attention.gpu.sparse_indexer_common import block_select_topk
+from nn.attention.gpu.nvidia.sm100.mha_1q import SM100TensorAccumulatorSS
 from nn.attention.mha_operand import MHAOperand
 
 
@@ -58,22 +84,34 @@ def _token_batch(
     return b
 
 
+comptime _SCORE_SWIZZLE = TensorMapSwizzle.SWIZZLE_128B
+
+
+comptime QTMATileT[dtype: DType, BM: Int, BK: Int] = SplitLastDimTMATensorTile[
+    dtype, Index(BM, 1, BK), _SCORE_SWIZZLE
+]
+comptime KTMATileT[dtype: DType, BN: Int, BK: Int] = SplitLastDimTMATensorTile[
+    dtype, Index(BN, 1, BK), _SCORE_SWIZZLE
+]
+
+
 @__name(t"sparse_indexer_prefill_score_{dtype}")
+@__llvm_arg_metadata(q_tma, `nvvm.grid_constant`)
+@__llvm_arg_metadata(k_tma, `nvvm.grid_constant`)
 def _prefill_block_score_kernel[
     dtype: DType,
     KOperand: MHAOperand,
-    QLT: TensorLayout,
     IROLT: TensorLayout,
     PLLT: TensorLayout,
     ScoreLT: TensorLayout,
     num_index_heads: Int,
     idx_head_dim: Int,
     block_size: Int,
+    QTILE: Int,
 ](
-    q: TileTensor[
-        dtype, QLT, ImmutAnyOrigin
-    ],  # [total_q, num_index_heads, idx_head_dim]
-    k_operand: KOperand,  # bf16 index-K cache, single head
+    q_tma: QTMATileT[dtype, QTILE, idx_head_dim],
+    k_tma: KTMATileT[dtype, block_size, idx_head_dim],
+    k_operand: KOperand,  # bf16 index-K cache, single head (for ragged row math)
     input_row_offsets: TileTensor[
         DType.uint32, IROLT, ImmutAnyOrigin
     ],  # [batch + 1]
@@ -87,61 +125,206 @@ def _prefill_block_score_kernel[
     local_blocks: Int,
     sm_scale: Float32,
 ):
+    """SM100 (B200) BF16 tensor-core (SS-UMMA) MSA prefill block scorer.
+
+    One CTA scores a QTILE(=BM=64)-row query tile of one batch against every
+    causally-reachable key block. Q (one head's tile) is the MMA A operand
+    [BM, idx_head_dim]; each key block is the B operand [block_size,
+    idx_head_dim], transpose_b=True so S = Q @ K_block^T. bf16 in, f32 TMEM
+    accumulation.
+
+    Three gotchas, all load-bearing:
+    1. SS-UMMA SMEM must be staged via TMA, because the hardware applies the 128B
+       swizzle XOR on the copy, and the UMMA descriptor reads it back with the
+       matching XOR. Manual swizzle-less stores silently compute a wrong dot.
+    2. tcgen05 alloc/dealloc/release are `.sync.aligned` WARP collectives. Call
+       them from exactly ONE warp (warp 0), because calling on all warps hangs.
+    3. One MMA scores the whole query tile against a key block, but each query row
+       has its OWN causal cutoff. The per-query mask is applied to the fragment
+       AFTER the MMA (a column key >= that query's num_keys is excluded from its
+       max), not to the K read, so one key block serves every query row in the
+       tile.
+    """
     comptime assert (
         input_row_offsets.flat_rank == 1 and prefix_lens.flat_rank == 1
     )
     comptime INIT_SCORE = Float32(1.0e30)
     comptime LOCAL_SCORE = Float32(1.0e29)
-    var t = block_idx.x
-    var h = block_idx.y
+
+    comptime BM = QTILE
+    comptime BN = block_size
+    comptime BK = idx_head_dim
+    comptime AT = DType.float32
+    comptime SW = _SCORE_SWIZZLE
+    comptime NTHREADS = 128
+
     var tid = thread_idx.x
-    var bsize = block_dim.x
+    var qt = block_idx.x  # query-tile index within the batch
+    var b = block_idx.y
 
-    var iro_ptr = input_row_offsets.to_layout_tensor().ptr_at_offset(Index(0))
-    var b = _token_batch(
-        t,
-        batch,
-        rebind[UnsafePointer[Scalar[DType.uint32], ImmutAnyOrigin]](iro_ptr),
+    var iro_b = Int(input_row_offsets[b])
+    var extend_b = Int(input_row_offsets[b + 1]) - iro_b
+    var q_tile_start = Int(qt) * BM
+    # Over-provisioned grid (sized for the longest batch): empty tiles bail
+    # before any collective op (TMA mbar / tcgen05 alloc). A straggler thread
+    # in a collective would hang the block.
+    if q_tile_start >= extend_b:
+        return
+    var n_tile_q = min(BM, extend_b - q_tile_start)
+
+    # Tile-wide causal extent: the last query's key count bounds the block loop.
+    var num_keys_tile_max = (
+        Int(prefix_lens[b]) + (q_tile_start + n_tile_q - 1) + 1
     )
-    var local_idx = t - Int(input_row_offsets[b])
-    # Causal: this query attends to keys [0, prefix_len + local_idx].
-    var num_keys = Int(prefix_lens[b]) + local_idx + 1
-    var num_blocks = ceildiv(num_keys, block_size)
-    var local_start = max(0, num_blocks - local_blocks)
+    var max_blocks_tile = ceildiv(num_keys_tile_max, block_size)
 
-    var q_base = q.to_layout_tensor().ptr_at_offset(Index(t, h, 0))
-    var q_smem = stack_allocation[
-        idx_head_dim, Scalar[DType.float32], address_space=AddressSpace.SHARED
+    comptime UMMAType = SM100TensorAccumulatorSS[
+        dtype,
+        AT,
+        MMA_M=BM,
+        MMA_N=BN,
+        BM=BM,
+        BN=BN,
+        BK=BK,
+        compute_BK=align_up(BK, 16),
+        num_softmax_threads=NTHREADS,
+        swizzle_a=SW,
+        swizzle_b=SW,
+        transpose_b=True,
+        pipeline_stages=1,
+    ]
+
+    # --- SMEM layout: q tile [BM,BK] | k tile [BN,BK] (both bf16) | mbars. ---
+    comptime q_elems = BM * BK
+    comptime k_elems = BN * BK
+    var smem = external_memory[
+        Scalar[dtype],
+        address_space=AddressSpace.SHARED,
+        alignment=128,
+        name="msa_prefill_mma_smem",
     ]()
-    for d in range(tid, idx_head_dim, bsize):
-        q_smem[d] = q_base[d].cast[DType.float32]()
-    barrier()
+    var q_smem = smem
+    var k_smem = smem + q_elems
+    # TMA only uses .ptr from the destination (swizzle is in the descriptor), so
+    # a flat row-major SMEM tile of the right byte size is sufficient.
+    comptime q_flat_layout = tt_row_major[q_elems]()
+    comptime k_flat_layout = tt_row_major[k_elems]()
+    var q_smem_flat = TileTensor[
+        dtype,
+        type_of(q_flat_layout),
+        address_space=AddressSpace.SHARED,
+    ](q_smem, q_flat_layout)
+    var k_smem_flat = TileTensor[
+        dtype,
+        type_of(k_flat_layout),
+        address_space=AddressSpace.SHARED,
+    ](k_smem, k_flat_layout)
 
-    var score_row = score.to_layout_tensor().ptr_at_offset(Index(h, t, 0))
+    var mbar = (smem + q_elems + k_elems).bitcast[SharedMemBarrier]()
+    # mbar[0] = TMA staging done; mbar[1..2] = accumulator handshake;
+    # mbar[3..] = tcgen05 TMEM base slot.
+    var acc_mbar = mbar + 1
+    var ptr_tmem = (mbar + 3).bitcast[UInt32]()
 
-    for blk in range(tid, num_blocks, bsize):
+    var umma_p = UMMAType(acc_mbar.as_unsafe_any_origin())
+    var umma_c = UMMAType(acc_mbar.as_unsafe_any_origin())
+
+    if tid == 0:
+        mbar[0].init()
+        umma_p.init()
+    named_barrier[Int32(NTHREADS)]()
+
+    # tcgen05 alloc on ONE warp (warp-collective .sync.aligned).
+    if warp_id() == 0:
+        tcgen05_alloc[1](ptr_tmem, 512)
+    named_barrier[Int32(NTHREADS)]()
+    var tmem_addr: UInt32 = ptr_tmem[0]
+
+    var q_row0 = iro_b + q_tile_start
+    var w = Int(warp_id())
+    var l = Int(lane_id())
+    comptime frag_simdwidth = 2
+
+    comptime q_bytes = q_elems * size_of[dtype]()
+    comptime k_bytes = k_elems * size_of[dtype]()
+
+    var qk_desc = UMMAType.mma_descriptors(
+        q_smem.as_unsafe_any_origin(), k_smem.as_unsafe_any_origin()
+    )
+
+    umma_c.tmem_arrive_init()
+    named_barrier[Int32(NTHREADS)]()
+
+    for blk in range(max_blocks_tile):
         var key_start = blk * block_size
-        var key_end = min(key_start + block_size, num_keys)
-        var blk_max = min_or_neg_inf[DType.float32]()
-        for key in range(key_start, key_end):
-            var k_ptr = k_operand.block_paged_ptr[1](
-                UInt32(b), UInt32(key), UInt32(0), UInt32(0)
-            )
-            var dot = Float32(0)
-            for d in range(idx_head_dim):
-                dot += q_smem[d] * k_ptr[d].cast[DType.float32]()
-            var s = dot * sm_scale
-            if s > blk_max:
-                blk_max = s
+        var k_row0 = Int(k_operand.row_idx(UInt32(b), UInt32(key_start)))
+        comptime for h in range(num_index_heads):
+            if tid == 0:
+                mbar[0].expect_bytes(Int32(q_bytes + k_bytes))
+                q_tma.async_copy_3d(q_smem_flat, mbar[0], (0, h, q_row0))
+                k_tma.async_copy_3d(k_smem_flat, mbar[0], (0, 0, k_row0))
+            var stage_phase = UInt32((blk * num_index_heads + h) & 1)
+            mbar[0].wait(stage_phase)
+            named_barrier[Int32(NTHREADS)]()
 
-        # Forcing: local (1e29) takes priority over init (1e30). Selection is by
-        # value, so a forced block always wins a top-k slot.
-        var val = blk_max
-        if blk < init_blocks:
-            val = INIT_SCORE
-        if blk >= local_start:
-            val = LOCAL_SCORE
-        score_row[blk] = val
+            var s_acc_p = UMMAType.c_t(tmem_addr)
+            var s_acc_c = UMMAType.c_t(tmem_addr)
+            if tid == 0:
+                umma_p.wait_for_tmem()
+                umma_p.mma(
+                    rebind[UMMAType.a_t](qk_desc.get_a()),
+                    rebind[UMMAType.b_t](qk_desc.get_b()),
+                    s_acc_p,
+                    0,
+                )
+            named_barrier[Int32(NTHREADS)]()
+
+            var c = umma_c.wait_for_mma(s_acc_c)
+            var reg = UMMAType.c_t.allocate_register_tile()
+            c.copy_to(reg)
+            umma_c.tmem_arrive()
+
+            # Each lane owns rows {w*16 + i*8 + l//4 : i in 0,1} and columns
+            # {(l%4)*2 + j*8 + cc : j in 0..BN//8, cc in 0,1}. Reduce each owned
+            # row's columns into a per-(query,head) max with the per-query causal
+            # mask, then lane-group-reduce across the 4 lanes sharing a row.
+            comptime for i in range(2):
+                var row = w * 16 + i * 8 + l // 4
+                var q_local = q_tile_start + row
+                var num_keys_q = Int(prefix_lens[b]) + q_local + 1
+                var lane_row_max = min_or_neg_inf[AT]()
+                comptime for j in range(BN // 8):
+                    var v = rebind[SIMD[AT, frag_simdwidth]](reg[i, 0, j, 0])
+                    comptime for cc in range(frag_simdwidth):
+                        var col = (l % 4) * 2 + j * 8 + cc
+                        var key = key_start + col
+                        # Per-query causal mask: exclude keys >= this query's own
+                        # causal count from its max (shared K tile, per-query cut).
+                        if key < num_keys_q:
+                            var s = v[cc] * sm_scale
+                            if s > lane_row_max:
+                                lane_row_max = s
+                # Reduce across the 4 lanes (l%4) that share this row.
+                var row_max = warp.lane_group_max[num_lanes=4](
+                    SIMD[AT, 1](lane_row_max)
+                )[0]
+                if (l % 4) == 0 and row < n_tile_q:
+                    var num_blocks_q = ceildiv(num_keys_q, block_size)
+                    if blk < num_blocks_q:
+                        var local_start_q = max(0, num_blocks_q - local_blocks)
+                        var val = row_max
+                        if blk < init_blocks:
+                            val = INIT_SCORE
+                        if blk >= local_start_q:
+                            val = LOCAL_SCORE
+                        score.to_layout_tensor().ptr_at_offset(
+                            Index(h, iro_b + q_local, 0)
+                        )[blk] = val
+            named_barrier[Int32(NTHREADS)]()
+
+    if warp_id() == 0:
+        tcgen05_release_allocation_lock[1]()
+        tcgen05_dealloc[1](tmem_addr, 512)
 
 
 @__name(t"sparse_indexer_prefill_topk")
@@ -209,6 +392,7 @@ def sparse_indexer_prefill_score[
     ],  # [num_index_heads, total_q, max_num_blocks]
     batch: Int,
     total_q: Int,
+    max_seqlen_q: Int,
     max_num_blocks: Int,
     init_blocks: Int,
     local_blocks: Int,
@@ -224,19 +408,52 @@ def sparse_indexer_prefill_score[
     comptime assert (
         BLOCK_DIM % WARP_SIZE == 0
     ), "block_dim must be a multiple of the warp size"
+    # SM100 SS-UMMA tile geometry: BM=64 query rows, MMA_N=block_size keys,
+    # BK=idx_head_dim contraction. The accumulator asserts BM%MMA_M, BN%MMA_N,
+    # compute_BK%16; idx_head_dim and block_size feed BK/BN directly.
+    comptime QTILE = 64
     comptime score_kernel = _prefill_block_score_kernel[
         dtype,
         KOperand,
-        type_of(q).LayoutType,
         type_of(input_row_offsets).LayoutType,
         type_of(prefix_lens).LayoutType,
         type_of(score).LayoutType,
         num_index_heads,
         idx_head_dim,
         block_size,
+        QTILE,
     ]
+
+    # 3D TMA over Q [total_q, num_index_heads, idx_head_dim]: one async_copy_3d
+    # loads a [QTILE, 1, idx_head_dim] tile at (depth=0, head=h, row=q_row0).
+    # Hardware applies the 128B swizzle the UMMA descriptor reads back with.
+    var q_ptr = q.to_layout_tensor().ptr_at_offset(Index(0, 0, 0))
+    var q_tma = create_split_tma[
+        Index(QTILE, 1, idx_head_dim),
+        Index(UNKNOWN_VALUE, UNKNOWN_VALUE, idx_head_dim),
+        _SCORE_SWIZZLE,
+    ](
+        ctx,
+        rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
+            q_ptr.as_immutable().as_unsafe_any_origin()
+        ),
+        total_q,
+        num_index_heads,
+    )
+    var k_tma = k_operand.create_tma_tile[
+        _SCORE_SWIZZLE,
+        BN=block_size,
+        depth=idx_head_dim,
+        BK=idx_head_dim,
+    ](ctx)
+
+    comptime smem_bytes = (
+        (QTILE + block_size) * idx_head_dim * size_of[Scalar[dtype]]()
+        + 8 * size_of[SharedMemBarrier]()
+    )
     ctx.enqueue_function[score_kernel](
-        q.as_immut(),
+        rebind[QTMATileT[dtype, QTILE, idx_head_dim]](q_tma),
+        rebind[KTMATileT[dtype, block_size, idx_head_dim]](k_tma),
         k_operand,
         input_row_offsets.as_immut(),
         prefix_lens.as_immut(),
@@ -246,8 +463,12 @@ def sparse_indexer_prefill_score[
         init_blocks,
         local_blocks,
         sm_scale,
-        grid_dim=(total_q, num_index_heads),
+        grid_dim=(ceildiv(max_seqlen_q, QTILE), batch),
         block_dim=BLOCK_DIM,
+        shared_mem_bytes=smem_bytes,
+        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+            UInt32(smem_bytes)
+        ),
     )
 
 
@@ -315,6 +536,7 @@ def sparse_indexer_prefill[
     out_idxs: TileTensor[DType.int32, ...],  # [num_index_heads, total_q, topk]
     batch: Int,
     total_q: Int,
+    max_seqlen_q: Int,
     max_num_blocks: Int,
     topk: Int,
     init_blocks: Int,
@@ -337,6 +559,8 @@ def sparse_indexer_prefill[
             `-1`-padded.
         batch: Batch size.
         total_q: Total ragged query tokens (`input_row_offsets[batch]`).
+        max_seqlen_q: Max per-batch query-token count (`max(extend_b)`); sizes the
+            query-tile grid dimension of the SM100 tensor-core scoring kernel.
         max_num_blocks: Row stride of `score` (>= every per-token block count).
         topk: Number of blocks to select.
         init_blocks: Always-keep leading blocks (forced score 1e30).
@@ -354,6 +578,7 @@ def sparse_indexer_prefill[
         score,
         batch,
         total_q,
+        max_seqlen_q,
         max_num_blocks,
         init_blocks,
         local_blocks,
