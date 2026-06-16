@@ -1098,7 +1098,7 @@ class MultiKVCacheParams(KVCacheParamInterface):
     callers never need to know the depth.
     """
 
-    params: dict[str, KVCacheParamInterface]
+    children: dict[str, KVCacheParamInterface]
     """KV cache parameter sets to aggregate. Values may be leaf
     :class:`KVCacheParams` or nested :class:`MultiKVCacheParams` trees."""
 
@@ -1137,7 +1137,7 @@ class MultiKVCacheParams(KVCacheParamInterface):
             raise ValueError("MultiKVCacheParams requires at least one param.")
         first = next(iter(params.values()))
         return cls(
-            params=dict(params),
+            children=dict(params),
             page_size=first.page_size,
             data_parallel_degree=first.data_parallel_degree,
             devices=first.devices,
@@ -1149,12 +1149,12 @@ class MultiKVCacheParams(KVCacheParamInterface):
 
     def __post_init__(self) -> None:
         """Validates that all params have consistent page size."""
-        if not self.params:
+        if not self.children:
             raise ValueError(
                 "MultiKVCacheParams requires at least one param set."
             )
 
-        params = list(self.params.values())
+        params = list(self.children.values())
         page_sizes = {p.page_size for p in params}
         if len(page_sizes) > 1:
             raise ValueError(
@@ -1226,7 +1226,7 @@ class MultiKVCacheParams(KVCacheParamInterface):
     @property
     def _first(self) -> KVCacheParamInterface:
         """Returns the first child param set."""
-        return next(iter(self.params.values()))
+        return next(iter(self.children.values()))
 
     @property
     def n_devices(self) -> int:
@@ -1250,13 +1250,13 @@ class MultiKVCacheParams(KVCacheParamInterface):
         Since all caches allocate memory for the same sequence, the total
         memory cost per block is the sum across all param sets.
         """
-        return sum(p.bytes_per_block for p in self.params.values())
+        return sum(p.bytes_per_block for p in self.children.values())
 
     def get_symbolic_inputs(self) -> MultiKVCacheInputs[TensorType, BufferType]:
         """Returns the symbolic inputs for the KV cache tree."""
         return MultiKVCacheInputs(
             children={
-                k: p.get_symbolic_inputs() for k, p in self.params.items()
+                k: p.get_symbolic_inputs() for k, p in self.children.items()
             }
         )
 
@@ -1305,7 +1305,7 @@ class MultiKVCacheParams(KVCacheParamInterface):
                 k: p.resolve_attn_key(
                     batch_size, max_prompt_length, max_cache_valid_length
                 )
-                for k, p in self.params.items()
+                for k, p in self.children.items()
             }
         )
 
@@ -1314,7 +1314,7 @@ class MultiKVCacheParams(KVCacheParamInterface):
     ) -> list[int]:
         """Returns the union of probe cache lengths across all child caches."""
         lengths: set[int] = set()
-        for p in self.params.values():
+        for p in self.children.values():
             lengths.update(
                 p.graph_capture_probe_cache_lengths(
                     max_cache_length, q_max_seq_len
@@ -1333,11 +1333,11 @@ class MultiKVCacheParams(KVCacheParamInterface):
         """
         per_key = {
             k: p.allocate_buffers(total_num_pages)
-            for k, p in self.params.items()
+            for k, p in self.children.items()
         }
         return [
             MultiKVCacheBuffer(
-                children={k: per_key[k][replica_idx] for k in self.params}
+                children={k: per_key[k][replica_idx] for k in self.children}
             )
             for replica_idx in range(self.data_parallel_degree)
         ]
@@ -1363,7 +1363,7 @@ class MultiKVCacheParams(KVCacheParamInterface):
                 k: p.build_runtime_inputs(
                     assignments, [b.children[k] for b in multi_buffers]
                 )
-                for k, p in self.params.items()
+                for k, p in self.children.items()
             }
         )
 

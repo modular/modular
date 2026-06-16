@@ -110,7 +110,7 @@ class Gemma4TextModel(DistributedLogitsPostprocessMixin, Module):
         # keyed by layer-type name ("sliding_attention" / "full_attention").
         assert isinstance(config.kv_params, MultiKVCacheParams)
         kv_params_by_layer_type: dict[str, KVCacheParams] = {}
-        for _k, _p in config.kv_params.params.items():
+        for _k, _p in config.kv_params.children.items():
             assert isinstance(_p, KVCacheParams)
             kv_params_by_layer_type[_k] = _p
 

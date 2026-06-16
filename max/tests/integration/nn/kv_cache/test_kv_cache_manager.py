@@ -467,7 +467,7 @@ async def test_multi_cache_alloc_skip_tokens_is_safe() -> None:
     )
     kv_params = kv_manager.params
     assert isinstance(kv_params, MultiKVCacheParams)
-    assert len(kv_params.params) == 2
+    assert len(kv_params.children) == 2
 
     # --- First request: populate the prefix cache ---
     ctx1 = create_text_context(
@@ -508,7 +508,7 @@ async def test_multi_cache_runtime_inputs_combined() -> None:
     kv_manager = _make_multi_kv_manager(total_num_pages=16)
     kv_params = kv_manager.params
     assert isinstance(kv_params, MultiKVCacheParams)
-    assert len(kv_params.params) == 2
+    assert len(kv_params.children) == 2
 
     ctx = create_text_context(np.array([1, 2, 3], dtype=np.int64))
     kv_manager.claim(ctx.request_id, replica_idx=0)

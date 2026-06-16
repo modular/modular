@@ -342,7 +342,7 @@ class TestMultiKVCacheParamsProperties:
         multi_params = MultiKVCacheParams.from_params({"cache0": params})
 
         with pytest.raises(AttributeError):
-            multi_params.params = {}  # type: ignore[misc]  # ty:ignore[invalid-assignment]
+            multi_params.children = {}  # type: ignore[misc]  # ty:ignore[invalid-assignment]
 
 
 class TestDeepNestedKVCacheTree:
@@ -357,7 +357,7 @@ class TestDeepNestedKVCacheTree:
         """Building the nested tree should not raise."""
         root = _build_deep_tree()
         assert isinstance(root, MultiKVCacheParams)
-        assert set(root.params.keys()) == {"target", "draft"}
+        assert set(root.children.keys()) == {"target", "draft"}
 
     def test_bytes_per_block_is_sum_of_all_leaves(self) -> None:
         """bytes_per_block must equal the sum of 2*layers*page*heads*dim*bf16_bytes
@@ -448,15 +448,15 @@ class TestDeepNestedKVCacheTree:
         assert root.page_size == _PAGE_SIZE
         assert root.data_parallel_degree == 1
 
-        target = root.params["target"]
+        target = root.children["target"]
         assert isinstance(target, MultiKVCacheParams)
         assert target.page_size == _PAGE_SIZE
 
-        draft = root.params["draft"]
+        draft = root.children["draft"]
         assert isinstance(draft, MultiKVCacheParams)
-        c = draft.params["c"]
+        c = draft.children["c"]
         assert isinstance(c, MultiKVCacheParams)
-        e = c.params["e"]
+        e = c.children["e"]
         assert isinstance(e, MultiKVCacheParams)
         assert e.page_size == _PAGE_SIZE
 
@@ -546,11 +546,11 @@ class TestDeepTreeParallelism:
         """Parallelism metadata must reach the deepest subtree (e, depth 4)."""
         tp = n_devices // dp_degree
         root = _build_deep_tree(n_devices=n_devices, dp_degree=dp_degree)
-        draft = root.params["draft"]
+        draft = root.children["draft"]
         assert isinstance(draft, MultiKVCacheParams)
-        c = draft.params["c"]
+        c = draft.children["c"]
         assert isinstance(c, MultiKVCacheParams)
-        e = c.params["e"]
+        e = c.children["e"]
         assert isinstance(e, MultiKVCacheParams)
         assert e.tensor_parallel_degree == tp
         assert e.data_parallel_degree == dp_degree
