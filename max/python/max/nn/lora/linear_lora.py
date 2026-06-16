@@ -30,6 +30,8 @@ from ..kv_cache import (
     PagedCacheValues,
 )
 from ..layer import Module
+from ..linear import Linear
+from ..quant_config import QuantConfig
 
 
 class LinearLoRA(Module, SupportsLoRA):
@@ -308,3 +310,179 @@ class QKVLinearLoRA(Module, SupportsLoRA):
         xq = sliced_add(xq, xq_lora, self.lora_end_idx)
 
         return xq
+
+
+class LoRAMixin(SupportsLoRA):
+    """Shared per-batch LoRA state for projection layers.
+
+    Holds the batch metadata the scheduler sets each step via
+    :meth:`set_lora_batch_info` and exposes it to the LoRA compute. Shared by
+    the plain (:class:`LoRALinear`) and fused-QKV (``StackedLinearLoRA``)
+    projections so the plumbing lives in one place; each projection adds its
+    own LoRA weights and ``lora()`` / ``qkv_lora()`` compute.
+    """
+
+    lora_ids: TensorValue | None = None
+    lora_ranks: TensorValue | None = None
+    lora_grouped_offsets: TensorValue | None = None
+    num_active_loras: TensorValue | None = None
+    lora_end_idx: TensorValue | None = None
+    batch_seq_len: TensorValue | None = None
+    lora_ids_kv: TensorValue | None = None
+    lora_grouped_offsets_kv: TensorValue | None = None
+
+    def set_lora_batch_info(
+        self,
+        lora_ids: TensorValue,
+        lora_ranks: TensorValue,
+        lora_grouped_offsets: TensorValue,
+        num_active_loras: TensorValue,
+        lora_end_idx: TensorValue,
+        batch_seq_len: TensorValue,
+        lora_ids_kv: TensorValue,
+        lora_grouped_offsets_kv: TensorValue,
+    ) -> None:
+        self.lora_ids = lora_ids
+        self.lora_ranks = lora_ranks
+        self.lora_grouped_offsets = lora_grouped_offsets
+        self.num_active_loras = num_active_loras
+        self.lora_end_idx = lora_end_idx
+        self.batch_seq_len = batch_seq_len
+        self.lora_ids_kv = lora_ids_kv
+        self.lora_grouped_offsets_kv = lora_grouped_offsets_kv
+
+
+class LoRALinear(Linear, LoRAMixin):
+    """A :class:`~max.nn.Linear` projection with an additive LoRA term.
+
+    Drop-in replacement for a base ``Linear``: ``__call__(x)`` returns the base
+    projection plus the active LoRA contribution. The base weight keeps its
+    ``weight`` name and the adapter weights are ``lora_A`` / ``lora_B``, so an
+    wrapped ``o_proj`` exposes ``o_proj.weight`` and ``o_proj.lora_A``,
+    matching PEFT-exported checkpoints.
+    """
+
+    def __init__(
+        self,
+        in_dim: int,
+        out_dim: int,
+        max_num_loras: int,
+        max_lora_rank: int,
+        max_lora_seq_len: int,
+        dtype: DType,
+        device: DeviceRef,
+        has_bias: bool = False,
+        quantization_encoding: QuantizationEncoding | None = None,
+        quant_config: QuantConfig | None = None,
+        name: str | None = None,
+        clip_weight: float | None = None,
+        has_lora_bias: bool = False,
+    ) -> None:
+        super().__init__(
+            in_dim=in_dim,
+            out_dim=out_dim,
+            dtype=dtype,
+            device=device,
+            has_bias=has_bias,
+            quantization_encoding=quantization_encoding,
+            quant_config=quant_config,
+            name=name,
+            clip_weight=clip_weight,
+        )
+        self.max_num_loras = max_num_loras
+        self.max_lora_rank = max_lora_rank
+        self.max_lora_seq_len = max_lora_seq_len
+        self.in_dim = in_dim
+
+        # LoRA weights stay in a compute dtype even when the base is quantized.
+        lora_dtype = DType.bfloat16 if quant_config is not None else dtype
+        self.lora_A = Weight(
+            name="lora_A.weight",
+            dtype=lora_dtype,
+            shape=[max_num_loras, max_lora_rank, in_dim],
+            device=device,
+            _has_alias=True,
+        )
+        self.lora_B = Weight(
+            name="lora_B.weight",
+            dtype=lora_dtype,
+            shape=[max_num_loras, out_dim, max_lora_rank],
+            device=device,
+            _has_alias=True,
+        )
+        self.lora_bias = (
+            Weight(
+                name="lora.bias",
+                dtype=lora_dtype,
+                shape=[max_num_loras, out_dim],
+                device=device,
+                _has_alias=True,
+            )
+            if has_lora_bias
+            else None
+        )
+
+    @classmethod
+    def from_linear(
+        cls,
+        base: Linear,
+        max_num_loras: int,
+        max_lora_rank: int,
+        max_lora_seq_len: int,
+        *,
+        has_lora_bias: bool = False,
+    ) -> LoRALinear:
+        """Builds a :class:`LoRALinear` mirroring an existing ``Linear``.
+
+        The base projection's configuration (dims, dtype, quantization, bias,
+        device) is reused so the base output is unchanged once the original
+        ``weight`` is loaded into the result.
+        """
+        if base.quant_config is not None and base.quant_config.is_fp4:
+            raise NotImplementedError(
+                "LoRA is not yet supported for fp4-quantized Linear layers."
+            )
+        out_dim, in_dim = (int(dim) for dim in base.weight.shape.static_dims)
+        return cls(
+            in_dim=in_dim,
+            out_dim=out_dim,
+            max_num_loras=max_num_loras,
+            max_lora_rank=max_lora_rank,
+            max_lora_seq_len=max_lora_seq_len,
+            dtype=base.weight.dtype,
+            device=base.device,
+            has_bias=base.bias is not None,
+            quantization_encoding=base.weight.quantization_encoding,
+            quant_config=base.quant_config,
+            clip_weight=base.clip_weight,
+            has_lora_bias=has_lora_bias,
+        )
+
+    def lora(self, x: TensorValue) -> TensorValue:
+        """Returns the LoRA contribution for ``x``."""
+        if (
+            self.lora_ids is None
+            or self.lora_ranks is None
+            or self.lora_grouped_offsets is None
+            or self.lora_end_idx is None
+        ):
+            raise ValueError(
+                "'set_lora_batch_info' not called before executing forward pass."
+            )
+        return sgmv_lora_kernel(
+            input=x,
+            lora_a=self.lora_A,
+            lora_b=self.lora_B,
+            lora_ids=self.lora_ids,
+            lora_ranks=self.lora_ranks,
+            grouped_row_offsets=self.lora_grouped_offsets,
+            max_lora_seq_len=self.max_lora_seq_len,
+            lora_end_idx=self.lora_end_idx,
+            bias=self.lora_bias,
+        )
+
+    def __call__(self, x: TensorValue) -> TensorValue:
+        out = super().__call__(x)
+        lora_out = self.lora(x)
+        assert self.lora_end_idx is not None
+        return sliced_add(out, lora_out, self.lora_end_idx)
