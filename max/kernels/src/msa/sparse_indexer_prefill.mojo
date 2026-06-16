@@ -51,7 +51,7 @@ from std.gpu.compute.arch.tcgen05 import (
     tcgen05_dealloc,
     tcgen05_release_allocation_lock,
 )
-from std.math import align_up, ceildiv, max, min
+from std.math import align_up, ceildiv, clamp, max, min
 from std.sys import size_of
 from std.utils.index import Index
 from std.utils.numerics import min_or_neg_inf
@@ -537,8 +537,8 @@ def sparse_indexer_prefill_score[
     comptime TARGET_BLOCKS_PER_CHUNK = 8
     var max_tile_blocks = ceildiv(q_tiles * QTILE, block_size)
     var chunks_for_depth = ceildiv(max_tile_blocks, TARGET_BLOCKS_PER_CHUNK)
-    var num_chunks = max(
-        1, min(MAX_CHUNKS, max(chunks_for_grid, chunks_for_depth))
+    var num_chunks = clamp(
+        max(chunks_for_grid, chunks_for_depth), 1, MAX_CHUNKS
     )
 
     comptime score_kernel = _prefill_block_score_kernel[
@@ -630,10 +630,29 @@ def sparse_indexer_prefill_topk[
     See `sparse_indexer_prefill` for the argument contract. Exposed separately so
     tests can drive scoring and selection independently.
     """
-    comptime BLOCK_DIM = 128
-    comptime assert (
-        BLOCK_DIM % WARP_SIZE == 0
-    ), "block_select_topk requires block_dim to be a multiple of the warp size"
+    # `block_select_topk` extracts the k winners serially: each iteration runs a
+    # `block_dim`-wide reduction for the next winner, then evicts it (an
+    # O(k * num_blocks) chain). The serial dependency makes the kernel
+    # latency-bound on the per-iteration reduction, not throughput-bound; more
+    # warps (higher occupancy) don't help -- the lever is the reduction width.
+    # Size block_dim to the work, not a fixed 128:
+    #   - small num_blocks (bulk prefill): a one-warp block (32) makes each
+    #     reduction a single warp shuffle + a trivial 1-warp barrier (shortest
+    #     path); a wider block's extra threads just idle.
+    #   - large num_blocks (long prefix): the per-thread scan
+    #     (num_blocks/block_dim) dominates, so a wider block parallelizes it.
+    # Target ~16 blocks/thread, clamped to [WARP_SIZE, 128], warp-multiple.
+    # block_select_topk reads `block_dim.x` at runtime, so a runtime value is
+    # valid (no comptime dependence).
+    var topk_block_dim = clamp(
+        align_up(ceildiv(max_num_blocks, 16), WARP_SIZE), WARP_SIZE, 128
+    )
+    # block_select_topk requires a warp-multiple block_dim; the formula gives
+    # one, but assert to guard a future regression.
+    debug_assert(
+        topk_block_dim % WARP_SIZE == 0,
+        "topk block_dim must be a multiple of the warp size",
+    )
     comptime topk_kernel = _prefill_topk_kernel[
         type_of(input_row_offsets).LayoutType,
         type_of(prefix_lens).LayoutType,
@@ -650,7 +669,7 @@ def sparse_indexer_prefill_topk[
         max_num_blocks,
         topk,
         grid_dim=(total_q, num_index_heads),
-        block_dim=BLOCK_DIM,
+        block_dim=topk_block_dim,
     )
 
 
