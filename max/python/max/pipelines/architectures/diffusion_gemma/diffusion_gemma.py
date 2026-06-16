@@ -299,7 +299,7 @@ class _DiffusionGemmaTextModelBase(DistributedLogitsPostprocessMixin, Module):
 
         assert isinstance(config.kv_params, MultiKVCacheParams)
         kv_params_by_layer_type: dict[str, KVCacheParams] = {}
-        for _k, _p in config.kv_params.params.items():
+        for _k, _p in config.kv_params.children.items():
             assert isinstance(_p, KVCacheParams)
             kv_params_by_layer_type[_k] = _p
         layer_type_counts = {"sliding_attention": 0, "full_attention": 0}
