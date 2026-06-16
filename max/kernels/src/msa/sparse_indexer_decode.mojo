@@ -146,9 +146,7 @@ def _decode_block_score_kernel[
                 var k_ptr = k_operand.block_paged_ptr[1](
                     UInt32(b), UInt32(key), UInt32(0), UInt32(0)
                 )
-                k_vec = (
-                    (k_ptr + d0).load[width=LANE_SIMD]().cast[DType.float32]()
-                )
+                k_vec = k_ptr.load[width=LANE_SIMD](d0).cast[DType.float32]()
             comptime for h in range(num_index_heads):
                 var dot = warp.lane_group_sum[num_lanes=LANES_PER_KEY](
                     SIMD[DType.float32, 1]((q_reg[h] * k_vec).reduce_add())
