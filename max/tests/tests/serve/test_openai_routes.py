@@ -58,18 +58,20 @@ from max.serve.pipelines.echo_gen import (
     EchoTokenGenerator,
 )
 from max.serve.pipelines.llm import TokenGeneratorOutput, TokenGeneratorPipeline
+from max.serve.router._image_resolution import (
+    _decode_data_uri_base64,
+    decode_and_validate_images,
+    resolve_image_from_url,
+)
 from max.serve.router.openai_routes import (
     CompletionStreamResponse,
     OpenAIChatResponseGenerator,
     OpenAICompletionResponseGenerator,
     _create_response_format,
-    _decode_and_validate_images,
-    _decode_data_uri_base64,
     _process_chat_log_probabilities,
     _resolve_grammar_constraints,
     get_tool_parser,
     openai_create_chat_completion,
-    resolve_image_from_url,
 )
 from max.serve.schemas.openai import (
     ChatCompletionLogprobs,
@@ -347,7 +349,7 @@ def test_decode_and_validate_images_rejects_bad_bytes() -> None:
     # PIL.UnidentifiedImageError (HTTP 500).
     for bad in (b"", b"tiny", b"\x00\x01\x02\x03"):
         with pytest.raises(InputError):
-            _decode_and_validate_images([bad])
+            decode_and_validate_images([bad])
 
 
 def test_decode_and_validate_images_returns_decoded_images() -> None:
@@ -355,7 +357,7 @@ def test_decode_and_validate_images_returns_decoded_images() -> None:
     # so the tokenizer can reuse them (decode-once); it must not discard them.
     buf = io.BytesIO()
     Image.new("RGB", (7, 11)).save(buf, format="PNG")
-    decoded = _decode_and_validate_images([buf.getvalue()])
+    decoded = decode_and_validate_images([buf.getvalue()])
     assert len(decoded) == 1
     assert decoded[0].size == (7, 11)
     # Must be fully decoded (load() already called), usable without the source.
@@ -377,7 +379,7 @@ def test_decode_and_validate_images_rejects_truncated_image() -> None:
     with Image.open(io.BytesIO(full[: int(len(full) * 0.88)])):
         pass
     with pytest.raises(InputError):
-        _decode_and_validate_images([full[: int(len(full) * 0.88)]])
+        decode_and_validate_images([full[: int(len(full) * 0.88)]])
 
 
 def test_decode_and_validate_images_rejects_decompression_bomb(
@@ -394,7 +396,7 @@ def test_decode_and_validate_images_rejects_decompression_bomb(
     # (DecompressionBombError fires above 2x MAX_IMAGE_PIXELS).
     monkeypatch.setattr(Image, "MAX_IMAGE_PIXELS", 16)
     with pytest.raises(InputError):
-        _decode_and_validate_images([data])
+        decode_and_validate_images([data])
 
 
 def test_open_image_carry_path_matches_bytes_path() -> None:
@@ -407,7 +409,7 @@ def test_open_image_carry_path_matches_bytes_path() -> None:
     data = buf.getvalue()
 
     # The validator decodes once and hands the image to the tokenizer.
-    pre_decoded = _decode_and_validate_images([data])[0]
+    pre_decoded = decode_and_validate_images([data])[0]
     # open_image passes an already-decoded image through untouched (no re-decode)
     # and decodes raw bytes on the fallback path.
     assert open_image(pre_decoded) is pre_decoded
