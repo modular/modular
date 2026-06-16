@@ -92,6 +92,7 @@ def lora_manager(monkeypatch: pytest.MonkeyPatch) -> Iterator[LoRAManager]:
         n_heads=32,
         n_kv_heads=8,
         head_dim=128,
+        max_lora_seq_len=128,
     )
 
     manager._validate_lora_path = lambda path: LoRAStatus.SUCCESS  # type: ignore
@@ -355,6 +356,7 @@ def test_lora_bias_config_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
                 n_heads=32,
                 n_kv_heads=8,
                 head_dim=128,
+                max_lora_seq_len=128,
             )
 
             manager._validate_lora_path = lambda path: LoRAStatus.SUCCESS  # type: ignore
@@ -409,6 +411,7 @@ def test_lora_bias_none_accepted(monkeypatch: pytest.MonkeyPatch) -> None:
             n_heads=32,
             n_kv_heads=8,
             head_dim=128,
+            max_lora_seq_len=128,
         )
 
         # Mock path validation to pass initial checks
@@ -462,6 +465,7 @@ def test_lora_allocation_respects_protected_tg_loras(
         n_heads=32,
         n_kv_heads=8,
         head_dim=128,
+        max_lora_seq_len=128,
     )
 
     manager._validate_lora_path = lambda _: LoRAStatus.SUCCESS  # type: ignore

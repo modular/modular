@@ -15,6 +15,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, Weight
 from max.graph.quantization import QuantizationEncoding
@@ -22,6 +24,7 @@ from max.nn.lora.interfaces import SupportsLoRA
 
 from ..kernels import (
     sgmv_lora_kernel,
+    sgmv_qkv_lora_fused,
     sgmv_qkv_lora_kernel,
     sliced_add,
 )
@@ -32,6 +35,7 @@ from ..kv_cache import (
 from ..layer import Module
 from ..linear import Linear
 from ..quant_config import QuantConfig
+from ..stacked_linear import StackedLinear
 
 
 class LinearLoRA(Module, SupportsLoRA):
@@ -351,6 +355,22 @@ class LoRAMixin(SupportsLoRA):
         self.lora_ids_kv = lora_ids_kv
         self.lora_grouped_offsets_kv = lora_grouped_offsets_kv
 
+    @classmethod
+    def from_base(
+        cls,
+        base: Module,
+        max_num_loras: int,
+        max_lora_rank: int,
+        max_lora_seq_len: int,
+    ) -> LoRAMixin:
+        """Builds a LoRA-wrapped projection mirroring ``base``.
+
+        Each concrete projection implements this to reuse ``base``'s dims,
+        dtype, quantization, and device so its output is unchanged once the
+        base weights load, then adds its own adapter weights.
+        """
+        raise NotImplementedError()
+
 
 class LoRALinear(Linear, LoRAMixin):
     """A :class:`~max.nn.Linear` projection with an additive LoRA term.
@@ -423,9 +443,9 @@ class LoRALinear(Linear, LoRAMixin):
         )
 
     @classmethod
-    def from_linear(
+    def from_base(
         cls,
-        base: Linear,
+        base: Module,
         max_num_loras: int,
         max_lora_rank: int,
         max_lora_seq_len: int,
@@ -438,6 +458,7 @@ class LoRALinear(Linear, LoRAMixin):
         device) is reused so the base output is unchanged once the original
         ``weight`` is loaded into the result.
         """
+        assert isinstance(base, Linear)
         if base.quant_config is not None and base.quant_config.is_fp4:
             raise NotImplementedError(
                 "LoRA is not yet supported for fp4-quantized Linear layers."
@@ -484,5 +505,154 @@ class LoRALinear(Linear, LoRAMixin):
     def __call__(self, x: TensorValue) -> TensorValue:
         out = super().__call__(x)
         lora_out = self.lora(x)
+        assert self.lora_end_idx is not None
+        return sliced_add(out, lora_out, self.lora_end_idx)
+
+
+class StackedLinearLoRA(StackedLinear, LoRAMixin):
+    """An unfused QKV :class:`~max.nn.StackedLinear` with a fused LoRA term.
+
+    Adapter weights ``qkv_lora.lora_A`` / ``lora_B_q`` / ``lora_B_kv`` sit at
+    ``<attn>.qkv_lora.*`` via the unfused name-omit, matching the keys
+    ``LoRAManager`` combines q/k/v adapters into.
+    """
+
+    def __init__(
+        self,
+        in_dim: int,
+        out_dims: Sequence[int],
+        names: Sequence[str],
+        max_num_loras: int,
+        max_lora_rank: int,
+        max_lora_seq_len: int,
+        dtype: DType,
+        device: DeviceRef,
+        has_bias: bool = False,
+        quant_config: QuantConfig | None = None,
+        clip_weight: float | None = None,
+    ) -> None:
+        if len(out_dims) != 3:
+            raise ValueError(
+                "StackedLinearLoRA expects three projections (q, k, v); got "
+                f"{len(out_dims)}."
+            )
+        q_dim, k_dim, v_dim = out_dims
+        if k_dim != v_dim:
+            raise ValueError(
+                "K and V projection dims must match for fused QKV LoRA; got "
+                f"{k_dim} and {v_dim}."
+            )
+
+        super().__init__(
+            in_dim=in_dim,
+            out_dims=out_dims,
+            names=names,
+            dtype=dtype,
+            device=device,
+            stacked=False,
+            has_bias=has_bias,
+            quant_config=quant_config,
+            clip_weight=clip_weight,
+        )
+        self.max_num_loras = max_num_loras
+        self.max_lora_rank = max_lora_rank
+        self.max_lora_seq_len = max_lora_seq_len
+
+        # LoRA weights stay in a compute dtype even when the base is quantized.
+        lora_dtype = DType.bfloat16 if quant_config is not None else dtype
+        self.lora_A = Weight(
+            name="qkv_lora.lora_A.weight",
+            dtype=lora_dtype,
+            shape=[max_num_loras, 3 * max_lora_rank, in_dim],
+            device=device,
+            _has_alias=True,
+        )
+        self.lora_B_q = Weight(
+            name="qkv_lora.lora_B_q.weight",
+            dtype=lora_dtype,
+            shape=[max_num_loras, q_dim, max_lora_rank],
+            device=device,
+            _has_alias=True,
+        )
+        self.lora_B_kv = Weight(
+            name="qkv_lora.lora_B_kv.weight",
+            dtype=lora_dtype,
+            shape=[2 * max_num_loras, k_dim, max_lora_rank],
+            device=device,
+            _has_alias=True,
+        )
+
+    @classmethod
+    def from_base(
+        cls,
+        base: Module,
+        max_num_loras: int,
+        max_lora_rank: int,
+        max_lora_seq_len: int,
+    ) -> StackedLinearLoRA:
+        """Builds a :class:`StackedLinearLoRA` mirroring an unfused QKV ``StackedLinear``.
+
+        Reuses the base config so its q/k/v output is unchanged once the
+        original child weights load.
+
+        Raises:
+            NotImplementedError: If ``base`` is pre-stacked or fp4-quantized.
+        """
+        assert isinstance(base, StackedLinear)
+        if base._stacked:
+            raise NotImplementedError(
+                "LoRA is not supported for pre-stacked QKV "
+                "projections; only the unfused q/k/v form is supported."
+            )
+        if base._quant_config is not None and base._quant_config.is_fp4:
+            raise NotImplementedError(
+                "LoRA is not yet supported for fp4-quantized projections."
+            )
+        first = base._child(base._names[0])
+        return cls(
+            in_dim=base._in_dim,
+            out_dims=base._out_dims,
+            names=base._names,
+            max_num_loras=max_num_loras,
+            max_lora_rank=max_lora_rank,
+            max_lora_seq_len=max_lora_seq_len,
+            dtype=first.weight.dtype,
+            device=first.device,
+            has_bias=base._has_bias,
+            quant_config=base._quant_config,
+            clip_weight=base._clip_weight,
+        )
+
+    def qkv_lora(self, x: TensorValue) -> TensorValue:
+        """Returns the fused ``[q|k|v]`` LoRA contribution for ``x``."""
+        if (
+            self.lora_ids is None
+            or self.lora_ranks is None
+            or self.lora_grouped_offsets is None
+            or self.lora_end_idx is None
+            or self.lora_ids_kv is None
+            or self.lora_grouped_offsets_kv is None
+        ):
+            raise ValueError(
+                "'set_lora_batch_info' not called before executing forward pass."
+            )
+        return sgmv_qkv_lora_fused(
+            input=x,
+            lora_a=self.lora_A,
+            lora_b_q=self.lora_B_q,
+            lora_b_kv=self.lora_B_kv,
+            lora_ids=self.lora_ids,
+            lora_ranks=self.lora_ranks,
+            lora_grouped_offsets=self.lora_grouped_offsets,
+            lora_end_idx=self.lora_end_idx,
+            lora_ids_kv=self.lora_ids_kv,
+            lora_grouped_offsets_kv=self.lora_grouped_offsets_kv,
+            max_lora_seq_len=self.max_lora_seq_len,
+            max_rank=self.max_lora_rank,
+        )
+
+    def __call__(self, x: TensorValue) -> TensorValue:
+        out = super().__call__(x)
+        lora_out = self.qkv_lora(x)
         assert self.lora_end_idx is not None
         return sliced_add(out, lora_out, self.lora_end_idx)

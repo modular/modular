@@ -6928,6 +6928,94 @@ def sgmv_qkv_lora_kernel(
     return q_out
 
 
+def sgmv_qkv_lora_fused(
+    input: TensorValue,
+    lora_a: TensorValue,
+    lora_b_q: TensorValue,
+    lora_b_kv: TensorValue,
+    lora_ids: TensorValue,
+    lora_ranks: TensorValue,
+    lora_grouped_offsets: TensorValue,
+    lora_end_idx: TensorValue,
+    lora_ids_kv: TensorValue,
+    lora_grouped_offsets_kv: TensorValue,
+    max_lora_seq_len: int,
+    max_rank: int,
+    bias: TensorValue | None = None,
+) -> TensorValue:
+    """Returns the fused ``[q|k|v]`` LoRA contribution for a QKV projection.
+
+    Same shrink + Q/KV expands as :func:`sgmv_qkv_lora_kernel`, but returns
+    the full ``[q|k|v]`` output of shape ``[M, q_dim + 2*kv_dim]`` (for the
+    ``M`` LoRA tokens) instead of writing K/V into the cache. The caller adds
+    it to the ``qkv`` projection before the fused rope + KV store.
+
+    Args:
+        input: The input tensor.
+        lora_a: The LoRA A tensor (q/k/v stacked on the rank dim).
+        lora_b_q: The LoRA B tensor for the Q projection.
+        lora_b_kv: The LoRA B tensor for the K and V projections (stacked).
+        lora_ids: IDs of the LoRAs used for each sequence.
+        lora_ranks: The ranks of the LoRAs in the batch.
+        lora_grouped_offsets: Grouped offsets for LoRA sequences.
+        lora_end_idx: End index of LoRA tokens in the batch.
+        lora_ids_kv: LoRA IDs for KV projections (with offset for V portion).
+        lora_grouped_offsets_kv: Grouped offsets for KV LoRA sequences.
+        max_lora_seq_len: The maximum sequence length of any LoRA in the batch.
+        max_rank: The maximum rank for the LoRAs.
+        bias: Optional LoRA bias.
+
+    Raises:
+        ValueError: on input shapes/dtypes that are invalid for the kernel.
+    """
+    _check_rank(2, input=input)
+    _check_rank(3, lora_a=lora_a, lora_b_q=lora_b_q, lora_b_kv=lora_b_kv)
+    _check_same_dtype(
+        input=input, lora_a=lora_a, lora_b_q=lora_b_q, lora_b_kv=lora_b_kv
+    )
+    _check_dtype(
+        DType.uint32,
+        lora_grouped_offsets=lora_grouped_offsets,
+        lora_grouped_offsets_kv=lora_grouped_offsets_kv,
+    )
+
+    m = lora_end_idx.shape[0]
+
+    v_qkv = sgmv_lora_qkv_shrink(
+        input=input,
+        lora_a=lora_a,
+        lora_ids=lora_ids,
+        lora_grouped_offsets=lora_grouped_offsets,
+        lora_end_idx=lora_end_idx,
+        max_lora_seq_len=max_lora_seq_len,
+        max_rank=max_rank,
+    )
+    v_qkv = ops.reshape(v_qkv, [3 * m, -1])
+
+    q_out = sgmv_kernel(
+        v_qkv[:m, :],
+        lora_b_q,
+        lora_ids,
+        lora_ranks,
+        lora_grouped_offsets,
+        max_lora_seq_len,
+        lora_end_idx=lora_end_idx,
+        bias=bias,
+    )
+    kv_out = sgmv_kernel(
+        v_qkv[m:, :],
+        lora_b_kv,
+        lora_ids_kv,
+        lora_ranks,
+        lora_grouped_offsets_kv,
+        max_lora_seq_len,
+        bias=bias,
+    )
+
+    # kv_out is [2M, kv_dim] (K then V on dim 0); fold into [M, q_dim+2*kv_dim].
+    return ops.concat([q_out, kv_out[:m, :], kv_out[m:, :]], axis=-1)
+
+
 def kv_cache_ragged_2m_iadd(
     kv_params: KVCacheParams,
     a: TensorValue,

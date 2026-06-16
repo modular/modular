@@ -42,7 +42,7 @@ from max.graph.value import TensorValue, Value
 from max.graph.weights import WeightData, WeightsFormat, load_weights
 from max.nn.layer.layer import Module, recursive_named_layers
 from max.nn.linear import Linear
-from max.nn.lora import LoRALinear, SupportsLoRA
+from max.nn.lora import LoRALinear, StackedLinearLoRA, SupportsLoRA
 from max.nn.stacked_linear import StackedLinear
 from max.pipelines.context import TextGenerationContextType
 from max.pipelines.modeling.types.pipeline import (
@@ -738,7 +738,7 @@ class LoRAManager:
         n_heads: int,
         n_kv_heads: int,
         head_dim: int,
-        max_lora_seq_len: int | None = None,
+        max_lora_seq_len: int,
     ):
         """Initializes the LoRAManager with a given base weight structure and maximum number of LoRA models.
 
@@ -1161,32 +1161,19 @@ class LoRAManager:
     def apply(self, model: Module, target_modules: Iterable[str]) -> set[str]:
         """Wraps the model's targeted projections with LoRA, in place.
 
-        Each child whose attribute name is in ``target_modules`` is swapped
-        for a :class:`~max.nn.lora.LoRALinear`, so the model's existing call
-        site applies LoRA. This is the create step that pairs with
-        :meth:`init_weights`, which initializes the injected adapters.
-        ``StackedLinear`` subtrees are skipped: their children fold into one
-        matmul, so wrapping them has no effect (the fused-QKV path covers
-        those).
-
         Args:
             model: The model to apply LoRA to. Mutated in place.
-            target_modules: Attribute names to wrap (e.g. ``{"o_proj"}``).
+            target_modules: Attribute names to wrap (e.g.
+                ``{"q_proj", "o_proj"}``).
 
         Returns:
-            The matched subset of ``target_modules``; diff against it to find
-            names absent as standalone projections (e.g. a fused ``q_proj``).
+            The matched subset of ``target_modules`` (q/k/v count as matched
+            when their fused projection is wrapped).
         """
-        assert self.max_lora_seq_len is not None, (
-            "LoRAManager.max_lora_seq_len must be set before applying LoRA."
-        )
-        max_lora_seq_len = self.max_lora_seq_len
         targets = set(target_modules)
         matched: set[str] = set()
 
         def visit(module: Module) -> None:
-            if isinstance(module, StackedLinear):
-                return
             for attr, child in list(module.sublayers.items()):
                 if (
                     attr in targets
@@ -1195,14 +1182,30 @@ class LoRAManager:
                 ):
                     module.replace_module(
                         attr,
-                        LoRALinear.from_linear(
+                        LoRALinear.from_base(
                             child,
                             self.max_num_loras,
                             self.max_lora_rank,
-                            max_lora_seq_len,
+                            self.max_lora_seq_len,
                         ),
                     )
                     matched.add(attr)
+                elif isinstance(child, StackedLinear):
+                    if (
+                        not isinstance(child, StackedLinearLoRA)
+                        and not child._stacked
+                        and (hit := set(child._names) & targets)
+                    ):
+                        module.replace_module(
+                            attr,
+                            StackedLinearLoRA.from_base(
+                                child,
+                                self.max_num_loras,
+                                self.max_lora_rank,
+                                self.max_lora_seq_len,
+                            ),
+                        )
+                        matched.update(hit)
                 else:
                     visit(child)
 

@@ -19,7 +19,7 @@ from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn.layer import Module
 from max.nn.linear import Linear
-from max.nn.lora import LoRALinear
+from max.nn.lora import LoRALinear, StackedLinearLoRA
 from max.nn.stacked_linear import StackedLinear
 from max.pipelines.lora import LoRAConfig, LoRAManager
 
@@ -83,13 +83,46 @@ def test_apply_wraps_standalone_linears() -> None:
     assert matched == {"o_proj", "down_proj"}
 
 
-def test_apply_skips_stacked_linear_children() -> None:
+def test_apply_wraps_qkv_stacked_linear() -> None:
     model = _Block()
+    matched = _manager().apply(model, {"q_proj", "k_proj", "v_proj"})
+    qkv = model.self_attn.qkv_proj
+    assert isinstance(qkv, StackedLinearLoRA)
+    # q/k/v stay plain base Linears inside the fused module; they are not
+    # wrapped individually.
+    assert not isinstance(qkv.sublayers["q_proj"], LoRALinear)
+    assert matched == {"q_proj", "k_proj", "v_proj"}
+
+
+def test_apply_wraps_qkv_when_any_child_targeted() -> None:
+    model = _Block()
+    # Targeting just q_proj still wraps the whole fused projection.
     matched = _manager().apply(model, {"o_proj", "q_proj"})
-    # q_proj is folded into the stacked qkv matmul, so it must be left alone.
-    q_proj = model.self_attn.qkv_proj.sublayers["q_proj"]
-    assert not isinstance(q_proj, LoRALinear)
-    assert matched == {"o_proj"}
+    assert isinstance(model.self_attn.qkv_proj, StackedLinearLoRA)
+    assert isinstance(model.self_attn.o_proj, LoRALinear)
+    assert matched == {"o_proj", "q_proj"}
+
+
+def test_apply_preserves_qkv_weight_fqns() -> None:
+    model = _Block()
+    _manager().apply(model, {"q_proj", "k_proj", "v_proj"})
+    keys = set(model.raw_state_dict().keys())
+    # Base q/k/v keep their checkpoint names (StackedLinear name-omit).
+    assert "self_attn.q_proj.weight" in keys
+    # Fused adapter weights sit at qkv_lora.*, matching LoRAManager's combine.
+    assert "self_attn.qkv_lora.lora_A.weight" in keys
+    assert "self_attn.qkv_lora.lora_B_q.weight" in keys
+    assert "self_attn.qkv_lora.lora_B_kv.weight" in keys
+
+
+def test_apply_qkv_is_idempotent() -> None:
+    model = _Block()
+    manager = _manager()
+    manager.apply(model, {"q_proj"})
+    wrapped = model.self_attn.qkv_proj
+    again = manager.apply(model, {"q_proj"})
+    assert model.self_attn.qkv_proj is wrapped
+    assert again == set()
 
 
 def test_apply_preserves_weight_fqns() -> None:
