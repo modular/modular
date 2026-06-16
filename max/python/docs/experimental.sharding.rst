@@ -21,6 +21,14 @@ Device mesh
 
    DeviceMesh
 
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/function.rst
+
+   get_active_mesh
+   mesh_context
+
 Placements
 ----------
 
@@ -34,6 +42,7 @@ Placements
    ReduceOp
    Replicated
    Sharded
+   Collective
 
 Per-shard dim wrappers
 ----------------------
