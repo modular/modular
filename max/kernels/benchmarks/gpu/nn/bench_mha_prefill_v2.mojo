@@ -144,15 +144,24 @@ def run_mha_prefill_v2[
             @parameter
             @always_inline
             def _kernel_launch(ctx: DeviceContext, iteration: Int) raises:
-                var q_ptr: UnsafePointer[
-                    Scalar[DType.bfloat16], ImmutAnyOrigin
-                ] = cb_q.offset_ptr(iteration).bitcast[Scalar[DType.bfloat16]]()
-                var k_ptr: UnsafePointer[
-                    Scalar[DType.bfloat16], ImmutAnyOrigin
-                ] = cb_k.offset_ptr(iteration).bitcast[Scalar[DType.bfloat16]]()
-                var v_ptr: UnsafePointer[
-                    Scalar[DType.bfloat16], ImmutAnyOrigin
-                ] = cb_v.offset_ptr(iteration).bitcast[Scalar[DType.bfloat16]]()
+                var q_ptr = (
+                    cb_q.offset_ptr(iteration)
+                    .bitcast[Scalar[DType.bfloat16]]()
+                    .as_immutable()
+                    .as_unsafe_any_origin()
+                )
+                var k_ptr = (
+                    cb_k.offset_ptr(iteration)
+                    .bitcast[Scalar[DType.bfloat16]]()
+                    .as_immutable()
+                    .as_unsafe_any_origin()
+                )
+                var v_ptr = (
+                    cb_v.offset_ptr(iteration)
+                    .bitcast[Scalar[DType.bfloat16]]()
+                    .as_immutable()
+                    .as_unsafe_any_origin()
+                )
                 var q_tt = TileTensor(
                     q_ptr,
                     row_major(
@@ -208,9 +217,12 @@ def run_mha_prefill_v2[
                     # `q.dtype` (literal BF16 here), so the cast must
                     # land on `Scalar[DType.bfloat16]` — generic
                     # `Scalar[qkv_type]` won't unify even when equal.
-                    var sw_ptr: UnsafePointer[
-                        Scalar[DType.bfloat16], ImmutAnyOrigin
-                    ] = sw_buf.unsafe_ptr().bitcast[Scalar[DType.bfloat16]]()
+                    var sw_ptr = (
+                        sw_buf.unsafe_ptr()
+                        .bitcast[Scalar[DType.bfloat16]]()
+                        .as_unsafe_any_origin()
+                        .as_immutable()
+                    )
                     mha_prefill_v2[
                         _config,
                         sink=True,

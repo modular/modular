@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.sys import size_of
+from std.sys import size_of, get_defined_bool
 from std.math import ceildiv
 from nn.attention.mha_operand import MHAOperand
 from nn.attention.mha_mask import MHAMask, TileMaskStatus
@@ -50,6 +50,12 @@ from std.gpu.memory import AddressSpace
 from std.gpu.host import DeviceAttribute, DeviceContext, FuncAttribute
 from std.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
 from std.gpu import MAX_THREADS_PER_BLOCK_METADATA, barrier, thread_idx, warp_id
+from std.gpu.primitives.grid_controls import (
+    PDLLevel,
+    launch_dependent_grids,
+    pdl_launch_attributes,
+    wait_on_dependent_grids,
+)
 from std.gpu.primitives.warp import broadcast
 from nn.attention.mha_utils import (
     _is_decoding,
@@ -72,6 +78,18 @@ from nn.attention.gpu.nvidia.sm100.mla_prefill_utils import (
 from nn.attention.gpu.nvidia.sm100.softmax_warp import fa4_softmax
 from nn.attention.gpu.nvidia.sm100.correction_warp import fa4_correction
 from nn.attention.gpu.nvidia.sm100.smem import SM100AttentionSMem
+
+
+# Programmatic Dependent Launch level for the SM100 MLA (depth-576) prefill
+# kernel.  On by default so back-to-back attention grids in a stream overlap
+# launch/prologue latency; disable with `-D MLA_PREFILL_PDL=false` (e.g. for
+# A/B benchmarking).  When > OFF the kernel emits `wait_on_dependent_grids()` /
+# `launch_dependent_grids()` and the dispatch attaches the
+# PROGRAMMATIC_STREAM_SERIALIZATION launch attribute.  Separate from the MHA
+# prefill flag (`MHA_PDL`) so the two kernels can be toggled independently.
+comptime MLA_PREFILL_PDL_LEVEL = PDLLevel.OVERLAP_AT_END if get_defined_bool[
+    "MLA_PREFILL_PDL", True
+]() else PDLLevel.OFF
 
 
 @fieldwise_init
@@ -430,6 +448,26 @@ __extension SM100MLA:
 
         barrier()
 
+        # Programmatic Dependent Launch (PDL).  This is the only point every
+        # thread of every CTA reaches before the warp-specialized early
+        # returns below (invalid tiles bail per-role in the Softmax/Correction/
+        # Load/MMA warps), so it is the only divergence-free place to honor the
+        # contract that *every* CTA signal launch-dependents — otherwise a
+        # back-to-back consumer grid's `wait` hangs (see MLA decode).  The
+        # data-independent prologue above (barrier init, tmem alloc, TMA
+        # descriptor prefetch) overlaps the predecessor grid's tail; `wait`
+        # fences here before the data-dependent Q/K/V loads in `Self.load`;
+        # `launch` lets the successor grid's prologue overlap our compute.
+        comptime if MLA_PREFILL_PDL_LEVEL > PDLLevel.OFF:
+            wait_on_dependent_grids()
+            launch_dependent_grids()
+
+        # Read the TMEM base from SMEM ONCE here, post-barrier (alloc + this
+        # barrier publish it), and carry it by register into the shared
+        # fa4_softmax / fa4_correction consumers. See the depth-512 fix: the
+        # consumers must not re-read `tmem_addr_ptr()` in their bodies.
+        var tmem_addr = ptr_tmem_addr[0]
+
         var role = warp_idx_to_role(warp_idx)
 
         # warp group partitioning
@@ -455,6 +493,7 @@ __extension SM100MLA:
                 output_nonempty=output_nonempty,
             ](
                 attn_smem,
+                tmem_addr,
                 pos.score_row,
                 seq_info,
                 mask,
@@ -479,6 +518,7 @@ __extension SM100MLA:
                 Self.page_size,
             ](
                 attn_smem,
+                tmem_addr,
                 seq_info.prompt_idx,
                 pos.score_row,
                 pos.num_keys,
@@ -2605,6 +2645,7 @@ def _mla_prefill_sm100_valid_length_dispatch[
             func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
                 UInt32(smem_use)
             ),
+            attributes=pdl_launch_attributes(MLA_PREFILL_PDL_LEVEL),
         )
 
     # --- 1Q / 2Q dispatch ---

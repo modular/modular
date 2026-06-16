@@ -372,18 +372,18 @@ def run_mla_prefill_v2[
             @parameter
             @always_inline
             def _kernel_launch(ctx: DeviceContext, iteration: Int) raises:
-                var q_ptr: UnsafePointer[
-                    Scalar[qkv_type], ImmutAnyOrigin
-                ] = cb_q.offset_ptr(iteration).bitcast[Scalar[qkv_type]]()
-                var k_ptr: UnsafePointer[
-                    Scalar[qkv_type], ImmutAnyOrigin
-                ] = cb_k.offset_ptr(iteration).bitcast[Scalar[qkv_type]]()
-                var v_ptr: UnsafePointer[
-                    Scalar[qkv_type], ImmutAnyOrigin
-                ] = cb_v.offset_ptr(iteration).bitcast[Scalar[qkv_type]]()
-                var o_ptr: UnsafePointer[
-                    Scalar[out_type], MutAnyOrigin
-                ] = cb_o.offset_ptr(iteration).bitcast[Scalar[out_type]]()
+                var q_ptr = cb_q.offset_ptr(iteration).bitcast[
+                    Scalar[qkv_type]
+                ]()
+                var k_ptr = cb_k.offset_ptr(iteration).bitcast[
+                    Scalar[qkv_type]
+                ]()
+                var v_ptr = cb_v.offset_ptr(iteration).bitcast[
+                    Scalar[qkv_type]
+                ]()
+                var o_ptr = cb_o.offset_ptr(iteration).bitcast[
+                    Scalar[out_type]
+                ]()
 
                 var q_tt = TileTensor(
                     q_ptr,

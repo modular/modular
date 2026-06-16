@@ -59,6 +59,15 @@ This version is still a work in progress.
 
 ## MAX kernels
 
+- Fixed a rare illegal-instruction crash in the SM100 (Blackwell)
+  flash-attention prefill kernels under chunked prefill with tensor
+  parallelism. When the attention grid shared SMs with the tensor-parallel
+  all-reduce collective under device graph capture, a consumer warp could read
+  a stale tensor-memory base address and issue a tensor-core MMA against an
+  invalid operand. The kernels now read the tensor-memory base once after it
+  is published and carry it in a register, so there is no in-loop re-read to
+  race.
+
 ## Breaking changes
 
 ## Fixes

@@ -1893,6 +1893,232 @@ def mla_fp8_index_top_k(
     return result
 
 
+def msa_sparse_indexer(
+    kv_params: KVCacheParams,
+    index_q: TensorValue,
+    input_row_offsets: TensorValue,
+    prefix_lens: TensorValue,
+    index_kv_collection: PagedCacheValues,
+    layer_idx: TensorValue,
+    *,
+    num_index_heads: int,
+    idx_head_dim: int,
+    block_size: int,
+    topk: int,
+    init_blocks: int,
+    local_blocks: int,
+    scale: float,
+) -> TensorValue:
+    """Selects the top-k key *blocks* per token for MiniMax-M3 sparse attention.
+
+    Computes per-block QK scores against the BF16 index-K paged cache and
+    returns, for each (index head, query token), the ids of the ``topk``
+    highest-scoring 128-token blocks. The forward sparse-attention op consumes
+    these block ids to gather a sparse KV band. The op selects the prefill or
+    decode kernel at runtime from the index-K cache's ``max_seq_length``, so the
+    same call serves both paths.
+
+    Args:
+        kv_params: Key-value cache parameters for the index-K cache.
+        index_q: Index queries. Prefill: ``[total_q, num_index_heads,
+            idx_head_dim]``; decode: ``[batch, num_index_heads, idx_head_dim]``.
+            BF16.
+        input_row_offsets: Ragged query offsets ``[batch + 1]`` uint32 (used on
+            the prefill path; on decode it is ``[0, 1, ..., batch]``).
+        prefix_lens: Per-row cached-key count ``[batch]`` (the index-K
+            ``cache_lengths``). uint32.
+        index_kv_collection: Paged index-K cache (BF16, no scales).
+        layer_idx: Layer index, uint32, on CPU.
+        num_index_heads: Number of index (query) heads.
+        idx_head_dim: Index head dimension.
+        block_size: KV block size in tokens (== page size).
+        topk: Number of blocks to select per token.
+        init_blocks: Always-keep leading blocks.
+        local_blocks: Always-keep trailing/local blocks.
+        scale: QK scale.
+
+    Returns:
+        Block indices, int32, ``-1``-padded. Prefill: ``[num_index_heads,
+        total_q, topk]``; decode: ``[num_index_heads, batch, topk]``.
+    """
+    _validate_argument_tensor(
+        "index_q",
+        index_q,
+        dtype=DType.bfloat16,
+        rank=3,
+        device_type=DeviceKind.GPU,
+    )
+    _validate_argument_tensor(
+        "input_row_offsets",
+        input_row_offsets,
+        dtype=DType.uint32,
+        rank=1,
+        device=index_q.device,
+    )
+    _validate_argument_tensor(
+        "prefix_lens",
+        prefix_lens,
+        dtype=DType.uint32,
+        rank=1,
+        device=index_q.device,
+    )
+    _validate_argument_tensor(
+        "index_kv_collection.kv_blocks",
+        index_kv_collection.kv_blocks,
+        dtype=DType.bfloat16,
+        rank=6,
+        device=index_q.device,
+    )
+    _validate_argument_tensor(
+        "layer_idx", layer_idx, dtype=DType.uint32, device=DeviceRef.CPU()
+    )
+    if topk <= 0:
+        raise ValueError(f"topk must be greater than 0, got {topk}")
+
+    num_rows = index_q.shape[0]
+
+    parameters: dict[str, int | str | DType] = {
+        "num_index_heads": num_index_heads,
+        "idx_head_dim": idx_head_dim,
+        "block_size": block_size,
+        "topk": topk,
+        "init_blocks": init_blocks,
+        "local_blocks": local_blocks,
+    }
+
+    values: list[Value[Any]] = [
+        index_q,
+        input_row_offsets,
+        prefix_lens,
+        *index_kv_collection.flatten_without_attention_dispatch_metadata(),
+        layer_idx,
+        ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU()),
+    ]
+
+    return ops.inplace_custom(
+        "mo.msa.indexer.ragged.paged",
+        device=index_q.device,
+        values=values,
+        out_types=[
+            TensorType(
+                dtype=DType.int32,
+                shape=(num_index_heads, num_rows, topk),
+                device=index_q.device,
+            )
+        ],
+        parameters=parameters,
+    )[0].tensor
+
+
+def msa_sparse_attention_ragged(
+    kv_params: KVCacheParams,
+    input: TensorValue,
+    input_row_offsets: TensorValue,
+    kv_collection: PagedCacheValues,
+    layer_idx: TensorValue,
+    block_indices: TensorValue,
+    q_positions: TensorValue,
+    *,
+    group: int,
+    topk: int,
+    scale: float,
+) -> TensorValue:
+    """Computes MiniMax-M3 block-sparse attention over the main paged KV cache.
+
+    Gathers ``topk`` 128-token KV blocks per (kv head, query token) using the
+    block ids produced by :func:`msa_sparse_indexer`, then runs SM100 BF16
+    block-sparse MHA. ``head_dim`` is 128. The op selects the prefill or decode
+    kernel at runtime from the main KV cache's ``max_seq_length``, so the same
+    call serves both paths.
+
+    Args:
+        kv_params: Key-value cache parameters for the main KV cache.
+        input: Query tensor ``[total_q, n_heads, head_dim]`` BF16 (prefill) or
+            ``[batch, n_heads, head_dim]`` BF16 (decode).
+        input_row_offsets: Ragged query offsets ``[batch + 1]`` uint32.
+        kv_collection: Main paged KV cache (BF16, no scales).
+        layer_idx: Layer index, uint32, on CPU.
+        block_indices: Selected block ids. Prefill: ``[n_kv_heads, total_q,
+            topk]``; decode: ``[n_kv_heads, batch, topk]``. int32.
+        q_positions: Per-token logical query position ``[total_q]`` (prefill) or
+            ``[batch]`` (decode), int32, used for causal masking.
+        group: Query heads per kv-head (``n_heads // n_kv_heads``).
+        topk: Number of gathered KV blocks per token.
+        scale: QK scale.
+
+    Returns:
+        Output tensor ``[total_q, n_heads, head_dim]`` (prefill) or
+        ``[batch, n_heads, head_dim]`` (decode), BF16.
+    """
+    _validate_argument_tensor(
+        "input",
+        input,
+        dtype=DType.bfloat16,
+        rank=3,
+        device_type=DeviceKind.GPU,
+    )
+    _validate_argument_tensor(
+        "input_row_offsets",
+        input_row_offsets,
+        dtype=DType.uint32,
+        rank=1,
+        device=input.device,
+    )
+    _validate_argument_tensor(
+        "kv_collection.kv_blocks",
+        kv_collection.kv_blocks,
+        dtype=DType.bfloat16,
+        rank=6,
+        device=input.device,
+    )
+    _validate_argument_tensor(
+        "block_indices",
+        block_indices,
+        dtype=DType.int32,
+        rank=3,
+        device=input.device,
+    )
+    _validate_argument_tensor(
+        "q_positions",
+        q_positions,
+        dtype=DType.int32,
+        rank=1,
+        device=input.device,
+    )
+    _validate_argument_tensor(
+        "layer_idx", layer_idx, dtype=DType.uint32, device=DeviceRef.CPU()
+    )
+    if topk <= 0:
+        raise ValueError(f"topk must be greater than 0, got {topk}")
+
+    values: list[Value[Any]] = [
+        input,
+        input_row_offsets,
+        *kv_collection.flatten_without_attention_dispatch_metadata(),
+        layer_idx,
+        block_indices,
+        q_positions,
+        ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU()),
+    ]
+
+    return ops.inplace_custom(
+        "mo.msa.attention.ragged.paged",
+        device=input.device,
+        values=values,
+        out_types=[
+            TensorType(
+                dtype=DType.bfloat16,
+                shape=input.shape,
+                device=input.device,
+            )
+        ],
+        parameters={
+            "group": group,
+            "topk": topk,
+        },
+    )[0].tensor
+
+
 def flash_attention_gpu(
     q: TensorValue,
     k: TensorValue,

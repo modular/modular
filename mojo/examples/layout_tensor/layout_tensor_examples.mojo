@@ -146,7 +146,7 @@ def layout_tensor_iterator_example() raises:
     for i in range(buf_size):
         storage[i] = Int16(i)
     comptime tile_layout = Layout.row_major(4, 4)
-    var iter = LayoutTensorIter[DType.int16, tile_layout, MutAnyOrigin](
+    var iter = LayoutTensorIter[DType.int16, tile_layout](
         storage.unsafe_ptr(), buf_size
     )
 
