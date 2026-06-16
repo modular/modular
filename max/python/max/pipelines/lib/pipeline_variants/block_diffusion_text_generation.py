@@ -127,15 +127,7 @@ class BlockDiffusionTextGenerationPipeline(TextGenerationPipeline[TextContext]):
         self, inputs: TextGenerationInputs[TextContext]
     ) -> dict[RequestID, TextGenerationOutput]:
         """Runs one canvas: encoder commit, denoising loop, finalize."""
-        if inputs.num_steps > 1:
-            raise ValueError(
-                "Block-diffusion pipeline runs one canvas per step; "
-                f"got num_steps={inputs.num_steps}."
-            )
-
-        model_inputs, bitmask, flat_batch = self.prepare_batch(
-            inputs.batches, inputs.num_steps
-        )
+        model_inputs, bitmask, flat_batch = self.prepare_batch(inputs.batches)
         if bitmask is not None:
             raise ValueError(
                 "Structured output is not supported by the block-diffusion"
@@ -192,7 +184,7 @@ class BlockDiffusionTextGenerationPipeline(TextGenerationPipeline[TextContext]):
         # _CanvasTokenView delegates to a real TextContext via __getattr__;
         # cast at the cache-manager boundary (a proxy can't pass isinstance).
         kv_inputs = self._kv_manager.runtime_inputs(
-            [cast("list[TextContext]", views)], num_steps=1
+            [cast("list[TextContext]", views)]
         )
         sc_out, argmax_d, topk_p_d, topk_i_d, entropy_d = (
             pm.execute_decoder_step(  # type: ignore[attr-defined]
@@ -301,9 +293,7 @@ class BlockDiffusionTextGenerationPipeline(TextGenerationPipeline[TextContext]):
             for i, ctx in enumerate(canvas_batch)
         ]
         for view in views:
-            self._kv_manager.alloc(
-                cast(TextContext, view), replica_idx=0, num_steps=1
-            )
+            self._kv_manager.alloc(cast(TextContext, view), replica_idx=0)
 
         row_offsets = Buffer.from_numpy(
             np.arange(0, n_tokens + 1, canvas_len, dtype=np.uint32)
