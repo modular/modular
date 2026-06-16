@@ -3,6 +3,7 @@
 load("@rules_pkg//pkg:mappings.bzl", _pkg_filegroup = "pkg_filegroup", _pkg_files = "pkg_files", _strip_prefix = "strip_prefix")
 load("//bazel/internal:copy_files.bzl", _copy_files = "copy_files")  # buildifier: disable=bzl-visibility
 load("//bazel/internal:lit.bzl", _lit_tests = "lit_tests")  # buildifier: disable=bzl-visibility
+load("//bazel/internal:mef.bzl", "MOJO_DEPS", _mef = "mef")  # buildifier: disable=bzl-visibility
 load("//bazel/internal:modular_cc_binary.bzl", _modular_cc_binary = "modular_cc_binary")  # buildifier: disable=bzl-visibility
 load("//bazel/internal:modular_cc_library.bzl", _modular_cc_library = "modular_cc_library")  # buildifier: disable=bzl-visibility
 load("//bazel/internal:modular_cc_test.bzl", _modular_cc_test = "modular_cc_test")  # buildifier: disable=bzl-visibility
@@ -25,13 +26,11 @@ load("//bazel/pip:pip_requirement.bzl", _requirement = "pip_requirement")
 
 lit_tests = _lit_tests
 modular_multi_py_version_test = _modular_multi_py_version_test
-modular_py_binary = _modular_py_binary
 modular_py_library = _modular_py_library
 modular_py_venv = _modular_py_venv
 modular_run_binary_test = _modular_run_binary_test
 modular_versioned_expand_template = _modular_versioned_expand_template
 mojo_binary = _mojo_binary
-mojo_library = _mojo_library
 mojo_shared_library = _mojo_shared_library
 mojo_test = _mojo_test
 mojo_filecheck_test = _mojo_filecheck_test
@@ -50,18 +49,21 @@ def modular_py_test(tags = [], **kwargs):
 
 def _process_cc_deps(data, deps):
     # TODO: This will break in the presence of select()s
-    extra_data = []
     new_deps = []
+    needs_wheel = False
     for dep in deps:
         if dep == "//max/internal:max":
             new_deps.append("@modular_wheel//:max_lib")
-            extra_data.append("@modular_wheel//:wheel")
+            needs_wheel = True
+        elif dep == "//Kernels/lib/msa":
+            new_deps.append("@modular_wheel//:msa_lib")
+            needs_wheel = True
         else:
             new_deps.append(dep)
 
     return {
         "deps": new_deps,
-        "data": data + extra_data,
+        "data": data + (["@modular_wheel//:wheel"] if needs_wheel else []),
     }
 
 def modular_cc_binary(data = [], deps = [], **kwargs):
@@ -95,6 +97,34 @@ def modular_generate_stubfiles(name, pyi_srcs, deps = [], tags = [], **_kwargs):
         deps = deps + ["@modular_wheel//:wheel"],
         tags = tags + ["no-pydeps"],  # Pydeps works internally but not externally
     )
+
+def mojo_library(data = [], deps = [], **kwargs):
+    _mojo_library(
+        **(kwargs | _process_cc_deps(
+            data = data,
+            deps = deps,
+        ))
+    )
+
+# buildifier: disable=function-docstring
+def modular_py_binary(mojo_deps = [], **kwargs):
+    new_mojo_deps = []
+    for dep in mojo_deps:
+        if dep == "//Kernels/lib/msa":
+            new_mojo_deps.append("@modular_wheel//:msa_lib")
+        else:
+            new_mojo_deps.append(dep)
+    _modular_py_binary(mojo_deps = new_mojo_deps, **kwargs)
+
+# buildifier: disable=function-docstring
+def mef(**kwargs):
+    new_deps = []
+    for dep in MOJO_DEPS:
+        if dep == "//Kernels/lib/msa":
+            new_deps.append("@modular_wheel//:msa_lib")
+        else:
+            new_deps.append(dep)
+    _mef(mojo_deps = new_deps, **kwargs)
 
 # buildifier: disable=function-docstring
 def copy_files(srcs, **kwargs):

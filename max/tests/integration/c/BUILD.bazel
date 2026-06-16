@@ -1,5 +1,4 @@
-load("//bazel:api.bzl", "modular_cc_library", "modular_cc_test", "requirement")
-load(":mef.bzl", "mef")
+load("//bazel:api.bzl", "mef", "modular_cc_library", "modular_cc_test", "requirement")
 
 # gazelle:default_features layering_check,parse_headers
 
