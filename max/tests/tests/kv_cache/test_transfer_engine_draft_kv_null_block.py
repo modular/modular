@@ -38,8 +38,6 @@ any host platform without hardware.
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
-
 # ---------------------------------------------------------------------------
 # Helpers that exercise the exact arithmetic used in register_extra_group
 # ---------------------------------------------------------------------------
@@ -156,36 +154,3 @@ def test_null_block_fix_works_for_other_block_geometries() -> None:
             f"n={n}, elts={elts}, dtype_bytes={dtype_bytes}: "
             f"expected {expected}, got {bpp}"
         )
-
-
-def test_register_tensor_group_uses_n_plus_1() -> None:
-    """The scheduler calls register_tensor_group with get_num_pages() + 1.
-
-    This test patches the KVTransferEngine.register_tensor_group call to
-    capture the total_num_pages argument and verifies it is N+1.
-
-    It does not exercise NIXL or GPU code.
-    """
-    # Simulate the scheduler-side logic that was changed:
-    #   Before fix: total_num_pages = kv_cache.get_num_pages(replica_idx=0)
-    #   After fix:  total_num_pages = kv_cache.get_num_pages(replica_idx=0) + 1
-
-    mock_kv_cache = MagicMock()
-    mock_kv_cache.get_num_pages.return_value = 14745
-
-    mock_transfer_engine = MagicMock()
-
-    mock_draft_kv_blocks = [MagicMock(), MagicMock()]  # 2 DP replicas, 1 TP
-
-    # Simulate the FIXED scheduler code:
-    mock_transfer_engine.register_tensor_group(
-        name="draft",
-        tensors=[[mock_draft_kv_blocks[0]], [mock_draft_kv_blocks[1]]],
-        total_num_pages=mock_kv_cache.get_num_pages(replica_idx=0) + 1,  # fix
-    )
-
-    _, kwargs = mock_transfer_engine.register_tensor_group.call_args
-    assert kwargs["total_num_pages"] == 14746, (
-        "register_tensor_group must be called with N+1 to match the null-block "
-        "allocation in KVCacheParams.allocate_buffers"
-    )

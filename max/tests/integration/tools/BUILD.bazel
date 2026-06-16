@@ -93,11 +93,8 @@ modular_py_library(
     deps = [
         "//max/python/max/driver",
         "//max/python/max/pipelines",
-        "//max/python/max/pipelines/architectures/flux2",
         "//max/python/max/pipelines/architectures/internvl",
         "//max/python/max/pipelines/architectures/qwen3",
-        "//max/python/max/pipelines/architectures/wan",
-        "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/diffusion",
         "//max/python/max/pipelines/lib",
         "//max/python/max/pipelines/modeling",
@@ -281,6 +278,10 @@ modular_py_test(
     size = "large",
     timeout = "long",
     srcs = ["test_precompile_all_pipelines_cpu.py"],
+    ignore_extra_deps = [
+        # Imported via string lookup
+        "//max/python/max/pipelines/architectures/mpnet",
+    ],
     imports = ["."],
     tags = [
         "no-sandbox",
@@ -292,6 +293,7 @@ modular_py_test(
         "//conditions:default": [],
     }),
     deps = [
+        "//max/python/max/pipelines/architectures/mpnet",
         "//max/tests/integration/tools:precompile_all_pipelines",
         "//max/tests/integration/tools:tag_filters",
     ],

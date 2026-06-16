@@ -41,7 +41,6 @@ from layout import (
     RuntimeLayout,
     TensorLayout,
     TileTensor,
-    LTToTTLayout,
     lt_to_tt,
     coord_to_index_list,
     row_major,
@@ -232,8 +231,12 @@ def _batched_matmul_cpu[
     c_tile: TileTensor[
         mut=True, c_type, address_space=AddressSpace.GENERIC, ...
     ],
-    a_tile: TileTensor[a_type, address_space=AddressSpace.GENERIC, ...],
-    b_tile: TileTensor[b_type, address_space=AddressSpace.GENERIC, ...],
+    a_tile: TileTensor[
+        mut=False, a_type, address_space=AddressSpace.GENERIC, ...
+    ],
+    b_tile: TileTensor[
+        mut=False, b_type, address_space=AddressSpace.GENERIC, ...
+    ],
     ctx: Optional[DeviceContext] = None,
 ) raises:
     comptime assert rank < 5, "max rank for batched matmul is currently 4"
@@ -623,8 +626,8 @@ def _batched_matmul_gpu[
     elementwise_epilogue_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c_buf: TileTensor[mut=True, c_type, ...],
-    a_buf: TileTensor[a_type, ...],
-    b_buf: TileTensor[b_type, ...],
+    a_buf: TileTensor[mut=False, a_type, ...],
+    b_buf: TileTensor[mut=False, b_type, ...],
     ctx: DeviceContext,
 ) raises:
     comptime rank = c_buf.rank
@@ -883,8 +886,8 @@ def batched_matmul[
     target: StaticString = "cpu",
 ](
     c_buf: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
-    a_buf: TileTensor[address_space=AddressSpace.GENERIC, ...],
-    b_buf: TileTensor[address_space=AddressSpace.GENERIC, ...],
+    a_buf: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
+    b_buf: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
     *,
     context: Optional[DeviceContext] = None,
 ) raises:
@@ -966,7 +969,9 @@ def batched_matmul[
 @always_inline
 def batched_matmul_shape[
     rank: Int
-](a_buff: TileTensor, b_buff: TileTensor,) raises -> IndexList[rank]:
+](
+    a_buff: TileTensor[mut=False, ...], b_buff: TileTensor[mut=False, ...]
+) raises -> IndexList[rank]:
     """
     Compute the output shape of a `batch_matmul` operation, and assert the
     inputs are compatible.
@@ -1025,9 +1030,9 @@ def _bmm_sm100_blockwise_scaled_fp8_kernel[
     c_type: DType,
     a_scales_type: DType,
     b_scales_type: DType,
-    a_layout: Layout,
+    a_layout: TensorLayout,
     c_layout: Layout,
-    a_scales_layout: Layout,
+    a_scales_layout: TensorLayout,
     b_scales_layout: Layout,
     a_tile_rank: Int,
     a_tile_shape: IndexList[a_tile_rank],
@@ -1111,9 +1116,9 @@ def _bmm_sm100_blockwise_scaled_fp8_kernel[
         c_type,
         a_scales_type,
         b_scales_type,
-        LTToTTLayout[a_layout],
+        a_layout,
         type_of(c_tt).LayoutType,
-        LTToTTLayout[a_scales_layout],
+        a_scales_layout,
         type_of(b_scales_tt).LayoutType,
         type_of(a_tma_op).rank,
         type_of(a_tma_op).tile_shape,
@@ -1290,9 +1295,9 @@ def bmm_sm100_blockwise_scaled_fp8[
         c_type,
         a_scales_type,
         b_scales_type,
-        type_of(a).layout,
+        type_of(a_).LayoutType,
         type_of(c).layout,
-        type_of(a_scales).layout,
+        type_of(a_scales_).LayoutType,
         type_of(b_scales).layout,
         type_of(a_tma_op).rank,
         type_of(a_tma_op).tile_shape,

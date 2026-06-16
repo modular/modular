@@ -1,4 +1,4 @@
-load("//bazel:api.bzl", "modular_py_library", "requirement")
+load("//bazel:api.bzl", "modular_py_library")
 
 package(default_visibility = ["//max:consumers"])
 
@@ -10,7 +10,6 @@ modular_py_library(
         "//max/python/max/nn/hooks",
     ],
     deps = [
-        requirement("transformers"),
         "//max/python/max/graph",
         # Hooks added for convenience for when we want to print the model layers
         "//max/python/max/nn/hooks",

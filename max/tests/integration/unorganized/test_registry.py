@@ -28,6 +28,7 @@ from max.pipelines.modeling.types import PipelineTask
 from test_common.mocks import (
     DummyPipelineConfig,
     mock_pipeline_config_hf_dependencies,
+    mock_pipeline_config_resolve,
 )
 from test_common.pipeline_model_dummy import (
     DUMMY_GEMMA_ARCH,
@@ -56,20 +57,23 @@ def test_registry__test_register() -> None:
 def test_registry__test_retrieve_with_unknown_architecture_max_engine() -> None:
     PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH)
 
+    # PipelineConfig construction is now pure (no resolve() auto-call).
+    # The unknown-architecture error surfaces when retrieve() is called.
+    config = PipelineConfig(
+        models=ModelManifest(
+            {
+                "main": MAXModelConfig(
+                    model_path="GSAI-ML/LLaDA-8B-Instruct",
+                    # This forces it to fail if we don't have it.
+                    trust_remote_code=True,
+                    max_length=1,
+                )
+            }
+        ),
+        runtime=PipelineRuntimeConfig(max_batch_size=1),
+    )
     with pytest.raises(ValueError):
-        PipelineConfig(
-            models=ModelManifest(
-                {
-                    "main": MAXModelConfig(
-                        model_path="GSAI-ML/LLaDA-8B-Instruct",
-                        # This forces it to fail if we don't have it.
-                        trust_remote_code=True,
-                        max_length=1,
-                    )
-                }
-            ),
-            runtime=PipelineRuntimeConfig(max_batch_size=1),
-        )
+        PIPELINE_REGISTRY.retrieve(config)
 
 
 @prepare_registry
@@ -79,23 +83,25 @@ def test_registry__test_retrieve_with_unknown_architecture_unknown_engine() -> (
 ):
     PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH)
 
-    # Should now raise an error since this model has no 'architectures' field
+    # PipelineConfig construction is now pure (no resolve() auto-call).
+    # The unknown-architecture error surfaces when retrieve_factory() is called.
+    config = PipelineConfig(
+        models=ModelManifest(
+            {
+                "main": MAXModelConfig(
+                    model_path="GSAI-ML/LLaDA-8B-Instruct",
+                    trust_remote_code=True,
+                    max_length=1,
+                )
+            }
+        ),
+        runtime=PipelineRuntimeConfig(max_batch_size=1),
+    )
     with pytest.raises(
-        Exception,
+        ValueError,
         match=r"Cannot determine architecture|no 'architectures' field",
     ):
-        PipelineConfig(
-            models=ModelManifest(
-                {
-                    "main": MAXModelConfig(
-                        model_path="GSAI-ML/LLaDA-8B-Instruct",
-                        trust_remote_code=True,
-                        max_length=1,
-                    )
-                }
-            ),
-            runtime=PipelineRuntimeConfig(max_batch_size=1),
-        )
+        PIPELINE_REGISTRY.retrieve(config)
 
 
 @prepare_registry
@@ -128,6 +134,7 @@ def test_registry__retrieve_pipeline_task_defaults_to_text_generation_on_ambiguo
 
 
 @prepare_registry
+@mock_pipeline_config_resolve
 def test_registry__retrieve_factory_pixel_uses_arch_config_max_length() -> None:
     pixel_arch = SupportedArchitecture(
         name="DummyPixelPipeline",
@@ -480,7 +487,7 @@ def test_architecture_context_types_are_msgspec_compatible() -> None:
 
     import msgspec
 
-    for arch in PIPELINE_REGISTRY.architectures.values():
+    for arch in PIPELINE_REGISTRY.all_architectures():
         context_type = arch.context_type
 
         # context_type must not be a Protocol (msgspec can't deserialize them)

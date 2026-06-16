@@ -19,6 +19,7 @@ import os
 
 import uvloop
 from max.pipelines import PIPELINE_REGISTRY, PipelineConfig
+from max.pipelines.logging_utils import log_basic_config, log_pipeline_info
 from max.pipelines.modeling.types import PipelineTask
 from max.profiler import Tracer
 from max.serve.api_server import (
@@ -56,6 +57,8 @@ def serve_api_server_and_model_worker(
         task=pipeline_config.task,
         override_architecture=override_architecture,
     )
+    log_basic_config(pipeline_config)
+    log_pipeline_info(pipeline_config)
 
     # Dummy model is for diagnostics and overhead benchmarking
     if os.getenv("MAX_SERVE_DUMMY_MODEL"):

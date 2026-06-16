@@ -112,7 +112,7 @@ def test_kv_cache_radd_basic() -> None:
             a_type,
             input_row_offsets_type,
             batch_offset_type,
-            *kv_params.get_symbolic_inputs().flatten(),
+            *kv_params.flattened_kv_inputs(),
         ],
     )
 

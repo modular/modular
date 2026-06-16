@@ -457,7 +457,15 @@ def _start_range(
 
     comptime if has_nvidia_gpu_accelerator():
         var info = EventAttributes(message=msg, color=color, category=category)
-        return _RangeStart()(UnsafePointer(to=info._value))
+        var result = _RangeStart()(UnsafePointer(to=info._value))
+        # Keep msg alive past the _RangeStart() constructor: _get_dylib_function
+        # allocates a temporary "GPU_TRACING_LIBRARY/nvtxRangeStartEx" String on
+        # the heap to do its cache lookup. Without this lifetime extension the
+        # compiler is free to destroy msg (whose last *tracked* use is
+        # EventAttributes above), letting that allocation reuse msg's buffer
+        # before nvtxRangeStartEx reads info._value.message.
+        _ = msg
+        return result
     else:
         return _RangeStart()(msg.unsafe_ptr())
 
@@ -484,6 +492,7 @@ def _mark(
     comptime if has_nvidia_gpu_accelerator():
         var info = EventAttributes(message=msg, color=color, category=category)
         _Mark()(UnsafePointer(to=info._value))
+        _ = msg
     else:
         _Mark()(msg.unsafe_ptr())
 

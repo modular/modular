@@ -39,7 +39,6 @@ from max.pipelines.lib.device_specs import (
     _default_device_specs,
     coerce_device_specs_input,
 )
-from max.pipelines.lib.memory_estimation import to_human_readable_bytes
 from max.pipelines.lib.weight_loader import (
     WeightLoader,
     _loader_over_weights,
@@ -60,6 +59,7 @@ from max.pipelines.weights.hf_utils import (
     validate_hf_repo_access,
 )
 from max.pipelines.weights.weight_path_parser import WeightPathParser
+from max.support.human_readable_formatter import to_human_readable_bytes
 from pydantic import (
     ConfigDict,
     Field,
@@ -573,7 +573,7 @@ class MAXModelConfig(MAXModelConfigBase):
         architecture validation.
 
         For LLM models that later go through
-        ``_validate_and_resolve_architecture()``, the fields resolved
+        ``_validate_model_config_against_arch()``, the fields resolved
         here are consumed as-is (the downstream methods are idempotent
         when these fields are already set).
 

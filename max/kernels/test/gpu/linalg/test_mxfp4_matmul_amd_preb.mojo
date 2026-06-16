@@ -24,6 +24,7 @@ Usage:
 
 from std.gpu import MAX_THREADS_PER_BLOCK_METADATA, block_idx, global_idx
 from std.gpu.host import DeviceContext, HostBuffer
+from std.gpu.memory import CacheOperation
 from std.gpu.host.info import MI355X
 from std.math import ceildiv
 from std.memory import bitcast
@@ -111,7 +112,7 @@ def block_scaled_matmul_ref(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
         Int32(
             MXFP4MatmulAMD_PreB[
-                BM=BM, BN=BN, BK_ELEMS=BK_ELEMS, WN=WN, B_PREFETCH=B_PREFETCH
+                BM=BM, BN=BN, BK_ELEMS=BK_ELEMS, WN=WN, b_prefetch=b_prefetch
             ].num_threads
         )
     )
@@ -121,7 +122,12 @@ def _preb_grid_kernel[
     BN: Int,
     BK_ELEMS: Int,
     WN: Int,
-    B_PREFETCH: Bool,
+    b_prefetch: Bool,
+    dram_to_lds: Bool,
+    b_cache_policy: CacheOperation,
+    cluster_drain_sched: Bool,
+    mfma_cluster: Int,
+    deep_prime: Bool,
     out_dtype: DType,
     LayoutC: TensorLayout,
     LayoutA: TensorLayout,
@@ -138,7 +144,16 @@ def _preb_grid_kernel[
     sfb: TileTensor[DType.float8_e8m0fnu, LayoutSFB, ImmutAnyOrigin],
 ):
     MXFP4MatmulAMD_PreB[
-        BM=BM, BN=BN, BK_ELEMS=BK_ELEMS, WN=WN, B_PREFETCH=B_PREFETCH
+        BM=BM,
+        BN=BN,
+        BK_ELEMS=BK_ELEMS,
+        WN=WN,
+        b_prefetch=b_prefetch,
+        b_cache_policy=b_cache_policy,
+        dram_to_lds=dram_to_lds,
+        cluster_drain_sched=cluster_drain_sched,
+        mfma_cluster=mfma_cluster,
+        deep_prime=deep_prime,
     ].run[
         out_dtype,
         LayoutC,
@@ -166,7 +181,13 @@ def _test_case[
     BN: Int = 128,
     BK_ELEMS: Int = 512,
     WN: Int = 64,
-    B_PREFETCH: Bool = False,
+    b_prefetch: Bool = False,
+    dram_to_lds: Bool = False,
+    b_cache_policy: CacheOperation = CacheOperation.ALWAYS,
+    cluster_drain_sched: Bool = False,
+    mfma_cluster: Int = 4,
+    deep_prime: Bool = False,
+    DUMP_ASM: Bool = False,
 ](name: String, ctx: DeviceContext) raises:
     """One direct-launch correctness case for the preb kernel."""
     comptime assert K_static % 128 == 0, "K must be a multiple of 128"
@@ -199,8 +220,8 @@ def _test_case[
         BK_ELEMS,
         " WN=",
         WN,
-        " B_PREFETCH=",
-        B_PREFETCH,
+        " b_prefetch=",
+        b_prefetch,
     )
 
     # ---- Host buffers + random init ----
@@ -316,7 +337,12 @@ def _test_case[
         BN,
         BK_ELEMS,
         WN,
-        B_PREFETCH,
+        b_prefetch,
+        dram_to_lds,
+        b_cache_policy,
+        cluster_drain_sched,
+        mfma_cluster,
+        deep_prime,
         DType.float32,
         type_of(c_tt).LayoutType,
         type_of(a_tt).LayoutType,
@@ -326,7 +352,7 @@ def _test_case[
         N_static,
         packed_K,
     ]
-    ctx.enqueue_function[kernel](
+    ctx.enqueue_function[kernel, dump_asm=DUMP_ASM](
         c_tt,
         a_tt,
         b_pre_tt,
@@ -334,7 +360,7 @@ def _test_case[
         sfb_tt,
         grid_dim=(N_static // BN, ceildiv(M_static, BM)),
         block_dim=MXFP4MatmulAMD_PreB[
-            BM=BM, BN=BN, BK_ELEMS=BK_ELEMS, WN=WN, B_PREFETCH=B_PREFETCH
+            BM=BM, BN=BN, BK_ELEMS=BK_ELEMS, WN=WN, b_prefetch=b_prefetch
         ].num_threads,
     )
     ctx.synchronize()
@@ -382,63 +408,79 @@ def main() raises:
 
     print("===> MXFP4MatmulAMD_PreB — direct kernel correctness")
 
+    # flydsl stage1 champion config: tile_m=32/n=128/k=256, 4 waves (WN=32),
+    # b_nt=2 (STREAMING), 2-stage pipeline, K=7168 (28 K-steps). Set
+    # DUMP_ASM=True here to dump the kernel ISA for comparison vs
+    # stage1_champion.s.
+    _test_case[
+        8,
+        128,
+        7168,
+        BM=32,
+        BN=128,
+        WN=32,
+        BK_ELEMS=256,
+        b_prefetch=True,
+        b_cache_policy=CacheOperation.STREAMING,
+    ]("champion config (STREAMING, WN=32)", ctx)
+
     _test_case[256, 256, 256, BM=64, BN=64, WN=64, BK_ELEMS=256](
         "single warp, no-prefetch", ctx
     )
     _test_case[
-        256, 256, 256, BM=64, BN=64, WN=64, BK_ELEMS=256, B_PREFETCH=True
-    ]("single warp, B_PREFETCH=True", ctx)
+        256, 256, 256, BM=64, BN=64, WN=64, BK_ELEMS=256, b_prefetch=True
+    ]("single warp, b_prefetch=True", ctx)
 
     _test_case[234, 1024, 512, BM=64, BN=128, WN=64, BK_ELEMS=256](
         "OOB test on M, no-prefetch", ctx
     )
     _test_case[
-        234, 1024, 512, BM=64, BN=128, WN=64, BK_ELEMS=256, B_PREFETCH=True
-    ]("OOB test on M, B_PREFETCH=True", ctx)
+        234, 1024, 512, BM=64, BN=128, WN=64, BK_ELEMS=256, b_prefetch=True
+    ]("OOB test on M, b_prefetch=True", ctx)
 
     _test_case[256, 1024, 512, BM=16, BN=64, WN=16, BK_ELEMS=256](
         "size 16 warp tile, no-prefetch", ctx
     )
     _test_case[
-        256, 1024, 512, BM=16, BN=64, WN=16, BK_ELEMS=256, B_PREFETCH=True
-    ]("size 16 warp tile, B_PREFETCH=True", ctx)
+        256, 1024, 512, BM=16, BN=64, WN=16, BK_ELEMS=256, b_prefetch=True
+    ]("size 16 warp tile, b_prefetch=True", ctx)
 
     _test_case[24, 1024, 2048, BM=64, BN=256, WN=64, BK_ELEMS=256](
         "Testing BM > M", ctx
     )
     _test_case[
-        24, 1024, 2048, BM=64, BN=256, WN=64, BK_ELEMS=256, B_PREFETCH=True
-    ]("Testing BM > M, B_PREFETCH=True", ctx)
+        24, 1024, 2048, BM=64, BN=256, WN=64, BK_ELEMS=256, b_prefetch=True
+    ]("Testing BM > M, b_prefetch=True", ctx)
 
     _test_case[1001, 1024, 2048, BM=64, BN=256, WN=64, BK_ELEMS=256](
         "Testing large M", ctx
     )
     _test_case[
-        1001, 1024, 2048, BM=64, BN=256, WN=64, BK_ELEMS=256, B_PREFETCH=True
-    ]("Testing large M, B_PREFETCH=True", ctx)
+        1001, 1024, 2048, BM=64, BN=256, WN=64, BK_ELEMS=256, b_prefetch=True
+    ]("Testing large M, b_prefetch=True", ctx)
 
     # Default production tile (BK_ELEMS=512, num_k_mmas=4).
     _test_case[256, 1024, 2048, BM=64, BN=128, WN=64, BK_ELEMS=512](
         "default prod tile", ctx
     )
     _test_case[
-        256, 1024, 2048, BM=64, BN=128, WN=64, BK_ELEMS=512, B_PREFETCH=True
-    ]("default prod tile, B_PREFETCH=True", ctx)
+        256, 1024, 2048, BM=64, BN=128, WN=64, BK_ELEMS=512, b_prefetch=True
+    ]("default prod tile, b_prefetch=True", ctx)
 
     # WN=16 with partial M (decode shape).
     _test_case[3, 1024, 2048, BM=16, BN=64, WN=16, BK_ELEMS=256](
         "decode-shape, WN=16", ctx
     )
     _test_case[
-        3, 1024, 2048, BM=16, BN=64, WN=16, BK_ELEMS=256, B_PREFETCH=True
-    ]("decode-shape, WN=16, B_PREFETCH=True", ctx)
+        3, 1024, 2048, BM=16, BN=64, WN=16, BK_ELEMS=256, b_prefetch=True
+    ]("decode-shape, WN=16, b_prefetch=True", ctx)
 
     # WN=16 only — N-side shrui without M-side (BM aligned, WN=16).
     _test_case[64, 64, 512, BM=64, BN=64, WN=16, BK_ELEMS=256](
         "WN=16 only", ctx
     )
-    _test_case[64, 64, 512, BM=64, BN=64, WN=16, BK_ELEMS=256, B_PREFETCH=True](
-        "WN=16 only, B_PREFETCH=True", ctx
+    _test_case[64, 64, 512, BM=64, BN=64, WN=16, BK_ELEMS=256, b_prefetch=True](
+        "WN=16 only, b_prefetch=True", ctx
     )
 
     # M=1 decode — smallest possible M with both tile-size variants.
@@ -448,5 +490,163 @@ def main() raises:
     _test_case[1, 1024, 2048, BM=64, BN=128, WN=64, BK_ELEMS=256](
         "M=1 decode, BM=64", ctx
     )
+
+    # dram_to_lds=True — direct DRAM->LDS DMA A staging (flydsl
+    # dram_to_lds). Same shapes, both prefetch modes.
+    _test_case[
+        256, 256, 256, BM=64, BN=64, WN=64, BK_ELEMS=256, dram_to_lds=True
+    ]("single warp, async", ctx)
+    _test_case[
+        256,
+        256,
+        256,
+        BM=64,
+        BN=64,
+        WN=64,
+        BK_ELEMS=256,
+        b_prefetch=True,
+        dram_to_lds=True,
+    ]("single warp, async + b_prefetch", ctx)
+    _test_case[
+        256, 1024, 2048, BM=64, BN=128, WN=64, BK_ELEMS=512, dram_to_lds=True
+    ]("default prod tile, async", ctx)
+    _test_case[
+        256,
+        1024,
+        2048,
+        BM=64,
+        BN=128,
+        WN=64,
+        BK_ELEMS=512,
+        b_prefetch=True,
+        dram_to_lds=True,
+    ]("default prod tile, async + b_prefetch", ctx)
+    _test_case[
+        234, 1024, 512, BM=64, BN=128, WN=64, BK_ELEMS=256, dram_to_lds=True
+    ]("OOB test on M, async", ctx)
+    _test_case[
+        3, 1024, 2048, BM=16, BN=64, WN=16, BK_ELEMS=256, dram_to_lds=True
+    ]("decode-shape, WN=16, async", ctx)
+
+    # cluster_drain_sched=True (b_prefetch only) — per-cluster setprio + partial
+    # vmcnt staircase. Covers default prod tile (num_k_mmas=4), the smaller
+    # decode tile (num_k_mmas=2), WN=16, and a non-default mfma_cluster.
+    _test_case[
+        256,
+        1024,
+        2048,
+        BM=64,
+        BN=128,
+        WN=64,
+        BK_ELEMS=512,
+        b_prefetch=True,
+        cluster_drain_sched=True,
+    ]("default prod tile, cluster_drain_sched", ctx)
+    _test_case[
+        256,
+        1024,
+        2048,
+        BM=64,
+        BN=128,
+        WN=64,
+        BK_ELEMS=512,
+        b_prefetch=True,
+        cluster_drain_sched=True,
+        mfma_cluster=2,
+    ]("default prod tile, cluster_drain_sched, cluster=2", ctx)
+    _test_case[
+        3,
+        1024,
+        2048,
+        BM=16,
+        BN=64,
+        WN=16,
+        BK_ELEMS=256,
+        b_prefetch=True,
+        cluster_drain_sched=True,
+    ]("decode-shape, WN=16, cluster_drain_sched", ctx)
+    _test_case[
+        256,
+        256,
+        256,
+        BM=64,
+        BN=64,
+        WN=64,
+        BK_ELEMS=256,
+        b_prefetch=True,
+        cluster_drain_sched=True,
+    ]("single warp, cluster_drain_sched (1 tile)", ctx)
+    _test_case[
+        234,
+        1024,
+        512,
+        BM=64,
+        BN=128,
+        WN=64,
+        BK_ELEMS=256,
+        b_prefetch=True,
+        cluster_drain_sched=True,
+    ]("OOB test on M, cluster_drain_sched", ctx)
+
+    # deep_prime=True (b_prefetch only) — 2-tiles-ahead A prime. Covers the
+    # default prod tile (num_tiles=4), composition with cluster_drain_sched, a
+    # decode WN=16 shape, OOB-on-M, the num_tiles=2 boundary, and the
+    # num_tiles=1 fallback to the 1-deep path.
+    _test_case[
+        256,
+        1024,
+        2048,
+        BM=64,
+        BN=128,
+        WN=64,
+        BK_ELEMS=512,
+        b_prefetch=True,
+        deep_prime=True,
+    ]("default prod tile, deep_prime (num_tiles=4)", ctx)
+    _test_case[
+        256,
+        1024,
+        2048,
+        BM=64,
+        BN=128,
+        WN=64,
+        BK_ELEMS=512,
+        b_prefetch=True,
+        cluster_drain_sched=True,
+        deep_prime=True,
+    ]("default prod tile, deep_prime + cluster_drain_sched", ctx)
+    _test_case[
+        3,
+        1024,
+        2048,
+        BM=16,
+        BN=64,
+        WN=16,
+        BK_ELEMS=256,
+        b_prefetch=True,
+        deep_prime=True,
+    ]("decode-shape, WN=16, deep_prime", ctx)
+    _test_case[
+        234,
+        1024,
+        512,
+        BM=64,
+        BN=128,
+        WN=64,
+        BK_ELEMS=256,
+        b_prefetch=True,
+        deep_prime=True,
+    ]("OOB test on M, deep_prime (num_tiles=2)", ctx)
+    _test_case[
+        256,
+        256,
+        256,
+        BM=64,
+        BN=64,
+        WN=64,
+        BK_ELEMS=256,
+        b_prefetch=True,
+        deep_prime=True,
+    ]("deep_prime fallback (num_tiles=1)", ctx)
 
     print("==== all preb direct kernel tests passed ====")

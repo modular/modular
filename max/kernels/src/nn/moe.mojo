@@ -104,7 +104,7 @@ def _count_expert_tokens[
     //,
     expected_count: Int,
 ](
-    topk_ids: TileTensor[input_type, ...],
+    topk_ids: TileTensor[mut=False, input_type, ...],
     smem: TileTensor[mut=True, DType.uint32, ...],
     bg_params: _BucketGroupParams[num_threads, input_type],
 ) -> UInt64:
@@ -219,7 +219,7 @@ def _copy_tokens_smem_to_gmem[
 ](
     token_expert_order: TileTensor[mut=True, DType.uint32, ...],
     restore_token_order: TileTensor[mut=True, DType.uint32, ...],
-    smem: TileTensor[DType.uint32, ...],
+    smem: TileTensor[mut=False, DType.uint32, ...],
     g_offset: UInt32,
     total_writes: UInt64,
     bg_params: _BucketGroupParams[num_threads, input_type],
@@ -280,8 +280,8 @@ def _copy_tokens_to_gmem[
     //,
     expected_count: Int,
 ](
-    topk_ids: TileTensor[input_type, ...],
-    smem: TileTensor[DType.uint32, ...],
+    topk_ids: TileTensor[mut=False, input_type, ...],
+    smem: TileTensor[mut=False, DType.uint32, ...],
     token_expert_order: TileTensor[mut=True, DType.uint32, ...],
     restore_token_order: TileTensor[mut=True, DType.uint32, ...],
     total_writes: UInt64,
@@ -398,7 +398,7 @@ def moe_create_indices_bucket_group_kernel[
     expert_usage_stats: TileTensor[
         mut=True, DType.uint32, ExpertUsageStatsLayoutType, MutAnyOrigin
     ],
-    topk_ids: TileTensor[input_type, TopkIdsLayoutType, MutAnyOrigin],
+    topk_ids: TileTensor[input_type, TopkIdsLayoutType, ImmutAnyOrigin],
     scales_offset_p: Optional[UnsafePointer[UInt32, MutAnyOrigin]],
 ):
     """Create indices for MoE routing using bucket sort algorithm.
@@ -537,7 +537,7 @@ def moe_create_indices[
     restore_token_order: TileTensor[mut=True, DType.uint32, ...],
     expert_ids: TileTensor[mut=True, DType.int32, ...],
     expert_usage_stats: TileTensor[mut=True, DType.uint32, ...],
-    topk_ids: TileTensor[input_type, ...],
+    topk_ids: TileTensor[mut=False, input_type, ...],
     context: DeviceContext,
     scales_offset_p: Optional[UnsafePointer[UInt32, MutAnyOrigin]] = None,
 ) raises:
@@ -873,8 +873,8 @@ def router_group_limited[
 ](
     expert_indices: TileTensor[mut=True, DType.int32, ...],
     expert_weights: TileTensor[mut=True, scores_type, ...],
-    expert_scores: TileTensor[scores_type, ...],
-    expert_bias: TileTensor[bias_type, ...],
+    expert_scores: TileTensor[mut=False, scores_type, ...],
+    expert_bias: TileTensor[mut=False, bias_type, ...],
     routed_scaling_factor: Float32,
     context: DeviceContext,
 ) raises:
@@ -1166,8 +1166,8 @@ def single_group_router[
 ](
     expert_indices: TileTensor[mut=True, DType.int32, ...],
     expert_weight: TileTensor[mut=True, scores_type, ...],
-    expert_scores: TileTensor[scores_type, ...],
-    expert_bias: TileTensor[bias_type, ...],
+    expert_scores: TileTensor[mut=False, scores_type, ...],
+    expert_bias: TileTensor[mut=False, bias_type, ...],
     routed_scaling_factor: Float32,
     context: DeviceContext,
 ) raises:

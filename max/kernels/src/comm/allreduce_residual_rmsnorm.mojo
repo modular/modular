@@ -945,7 +945,7 @@ def _launch_split_allreduce_rmsnorm_fp8[
     scale_output_1d: TileTensor[mut=True, scales_dtype, ...],
     rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     ctx: DeviceContext,
-    residual: TileTensor[in_dtype, ...],
+    residual: TileTensor[mut=False, in_dtype, ...],
     residual_output: TileTensor[mut=True, in_dtype, ...],
 ) raises:
     """Two-kernel fallback: allreduce+add epilogue, then rmsnorm+fp8.

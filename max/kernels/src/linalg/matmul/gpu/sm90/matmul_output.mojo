@@ -19,6 +19,7 @@ from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.sync import named_barrier
 from layout import Coord, Idx, Layout, TensorLayout, TileTensor, row_major
 from layout.swizzle import make_ldmatrix_swizzle
+from layout.tensor_storage import TensorStorage
 from layout.tma_async import TMATensorTile
 
 from std.utils.index import IndexList
@@ -41,6 +42,7 @@ import std.itertools
 struct MatmulTileWriter[
     dtype: DType,
     tensor_layout: TensorLayout,
+    tensor_storage: TensorStorage,
     linear_idx_type: DType,
     tensor_element_size: Int,
     smem_tile_layout: TensorLayout,
@@ -77,6 +79,7 @@ struct MatmulTileWriter[
         dtype=Self.dtype,
         LayoutType=Self.tensor_layout,
         origin=MutAnyOrigin,
+        Storage=Self.tensor_storage,
         address_space=AddressSpace.GENERIC,
         linear_idx_type=Self.linear_idx_type,
         element_size=Self.tensor_element_size,

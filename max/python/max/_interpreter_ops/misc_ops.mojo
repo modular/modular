@@ -285,7 +285,10 @@ def range_shape_dispatcher(
     var result: Int = 0
     dispatch_dtype(
         _RangeShapeBody(
-            start_addr, stop_addr, step_addr, UnsafePointer(to=result)
+            start_addr,
+            stop_addr,
+            step_addr,
+            UnsafePointer(to=result).as_unsafe_any_origin(),
         ),
         dtype,
     )

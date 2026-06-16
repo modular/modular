@@ -33,12 +33,7 @@ from max.nn.kernels import (
     inplace_memcpy,
     wait_host_value_with_dep,
 )
-from max.nn.kv_cache import (
-    KVCacheInputsPerDevice,
-    KVCacheParamInterface,
-    KVCacheParams,
-    PagedCacheValues,
-)
+from max.nn.kv_cache import MultiKVCacheParams, PagedCacheValues
 from max.nn.layer import Module
 from max.nn.sampling.rejection_sampler import (
     AcceptanceSampler,
@@ -477,20 +472,20 @@ class Eagle3DeepseekV3Unified(Module):
 
     def input_types(
         self,
-        kv_params: KVCacheParamInterface,
-        draft_kv_params: KVCacheParams | None = None,
+        kv_params: MultiKVCacheParams,
     ) -> tuple[TensorType | BufferType, ...]:
         """Input types for the Eagle3 unified graph.
 
         Order: tokens, device_offsets, host_offsets, return_n_logits,
-               data_parallel_splits, signal_buffers, target_kv_cache,
-               batch_context_lengths, target_ep_inputs, draft_tokens,
-               draft_kv_blocks_per_device, seed, temperature, top_k,
-               max_k, top_p, min_top_p[, pinned_bitmask, wait_payload,
+               data_parallel_splits, signal_buffers, kv_cache_tree (target then
+               draft, flattened), batch_context_lengths, target_ep_inputs,
+               draft_tokens, seed, temperature, top_k, max_k, top_p,
+               min_top_p[, pinned_bitmask, wait_payload,
                device_bitmask_scratch].
 
-        The bitmask triple is appended last when
-        ``enable_structured_output`` is True.
+        ``kv_params`` is the unified ``{"target", "draft"}`` tree; the draft
+        leaf carries its own blocks and dispatch metadata. The bitmask triple
+        is appended last when ``enable_structured_output`` is True.
         """
         devices = self.config.devices
         device_ref = devices[0]
@@ -533,7 +528,7 @@ class Eagle3DeepseekV3Unified(Module):
             data_parallel_splits_type,
         ]
         all_input_types.extend(signal_buffer_types)
-        all_input_types.extend(kv_params.get_symbolic_inputs().flatten())
+        all_input_types.extend(kv_params.flattened_kv_inputs())
 
         batch_context_length_type = TensorType(
             DType.int32, shape=[1], device=DeviceRef.CPU()
@@ -546,10 +541,6 @@ class Eagle3DeepseekV3Unified(Module):
             all_input_types.extend(self.target.ep_manager.input_types())
 
         all_input_types.append(draft_tokens_type)
-        if draft_kv_params is not None:
-            for sym in draft_kv_params.get_symbolic_inputs().inputs:
-                assert isinstance(sym, KVCacheInputsPerDevice)
-                all_input_types.append(sym.kv_blocks)
 
         all_input_types.append(
             TensorType(DType.uint64, shape=["batch_size"], device=device_ref)

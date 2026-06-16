@@ -20,6 +20,7 @@ Devices
    :template: autosummary/class.rst
 
    Accelerator
+   CompletionFlag
    CPU
    Device
    DeviceEvent
