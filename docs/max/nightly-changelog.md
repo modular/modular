@@ -108,6 +108,10 @@ This version is still a work in progress.
 
 ## Fixes
 
+- Fixed `max.nn.WeightNormConvTranspose1d` raising `AttributeError` when
+  constructed with its default `has_bias=False`. The constructor
+  unconditionally deleted the wrapped conv's `bias` attribute, which is only
+  set when `has_bias=True`; the delete is now guarded.
 - Fixed a GPU memory fault when benchmarking GPU layer norm: the benchmark's
   output lambda copy-captured the wrong tensor, so the actual output tensor was
   captured by reference and dereferenced as a host pointer on the device. This
