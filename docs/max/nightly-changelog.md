@@ -10,6 +10,10 @@ This version is still a work in progress.
 
 ## MAX models
 
+- Added DiffusionGemma (`DiffusionGemmaForBlockDiffusion`), an
+  encoder/decoder block-diffusion text model that generates 256-token
+  blocks per step via an inner denoising loop. Supports NVFP4 and bfloat16
+  weights; text-only for now.
 - Added tool-calling and reasoning support to Qwen 3.5 / 3.6.
 - Added support for the Ideogram 4 (`Ideogram4Pipeline`) text-to-image
   flow-matching diffusion transformer. The pipeline pairs a Qwen3-VL text

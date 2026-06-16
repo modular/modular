@@ -349,8 +349,10 @@ class Gemma4Attention(Module, Shardable):
                 num_devices=self.sharding_strategy.num_devices,
             )
 
-            # Create new attention instance with sharded configuration
-            sharded = Gemma4Attention(
+            # Create new attention instance with sharded configuration.
+            # Construct via type(self) so subclasses (e.g. a noncausal-mask
+            # decoder variant) shard into their own type rather than the base.
+            sharded = type(self)(
                 rope_global=self.rope_global,
                 rope_local=self.rope_local,
                 num_attention_heads=sharded_num_heads,

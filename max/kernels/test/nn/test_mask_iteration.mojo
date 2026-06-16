@@ -15,6 +15,7 @@ from nn.attention.mha_mask import (
     SlidingWindowCausalMask,
     SlidingWindowNonCausalMask,
     ChunkedCausalMask,
+    MaskStrategy,
     MHAMask,
     TileMaskStatus,
 )
@@ -155,7 +156,29 @@ def test_mask[
     )
 
 
+def test_noncausal_strategies_bitmask[
+    MaskType: MHAMask, //, BM: Int, BN: Int
+](mask: MaskType) raises:
+    # SlidingWindowNonCausalMask must mask every nonfull tile with BITMASK.
+    # The final tile can straddle num_keys when num_keys % BN != 0; BITMASK's
+    # mask_bits() folds in the col < num_keys clip, whereas a NO_MASK strategy
+    # lets the comptime softmax path skip that clip and attend out-of-bounds
+    # KV slots past the valid extent.
+    comptime strategies = MaskType.mask_strategies[BM, BN]()
+    for i in range(len(strategies)):
+        assert_equal(
+            Int(strategies[i]._value), Int(MaskStrategy.BITMASK._value)
+        )
+
+
 def main() raises:
+    test_noncausal_strategies_bitmask[BM=128, BN=128](
+        SlidingWindowNonCausalMask[16]()
+    )
+    test_noncausal_strategies_bitmask[BM=128, BN=64](
+        SlidingWindowNonCausalMask[1024]()
+    )
+
     # alias BM = 2
     # alias BN = 2
     comptime BM = 128

@@ -10,11 +10,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""DiffusionGemma block-diffusion architecture."""
 
-from max.pipelines.diffusion.pipeline import PixelGenerationPipeline
+from .arch import diffusion_gemma_arch
+from .model import DiffusionGemmaForBlockDiffusionModel
+from .model_config import DiffusionGemmaForBlockDiffusionConfig
 
-from .block_diffusion_text_generation import (
-    BlockDiffusionTextGenerationPipeline,
-)
-from .overlap_text_generation import OverlapTextGenerationPipeline
-from .text_generation import TextGenerationPipeline
+__all__ = [
+    "DiffusionGemmaForBlockDiffusionConfig",
+    "DiffusionGemmaForBlockDiffusionModel",
+    "diffusion_gemma_arch",
+]
