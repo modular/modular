@@ -337,8 +337,10 @@ class Qwen3_5ToolParser:
         # In INIT: once a tool call has started, any buffered text is an
         # inter-call separator or trailing token — return [] to suppress it
         # (the router passes raw tokens through as content on None). Only
-        # before the first call do we defer to that raw-content passthrough.
-        return [] if self._tool_index >= 0 else None
+        # before the first call do we defer to that raw-content passthrough —
+        # BUT if we're holding back bytes that partially match a sentinel,
+        # return [] to suppress the raw tokens so they don't leak as content.
+        return [] if self._tool_index >= 0 or self._buffer else None
 
     def reset(self) -> None:
         """Reset internal state for a new streaming session."""
