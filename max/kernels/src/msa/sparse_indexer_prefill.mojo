@@ -86,6 +86,11 @@ def _token_batch(
 
 comptime _SCORE_SWIZZLE = TensorMapSwizzle.SWIZZLE_128B
 
+# K SMEM ring depth, shared with the launcher's SMEM sizing: prefetch this
+# many K blocks ahead of the MMA/epilogue. Depth 2 captures nearly all the
+# overlap; a 3rd stage adds little for 32 KB more SMEM and no occupancy gain
+# (still 1 CTA/SM).
+comptime _K_PREFETCH_STAGES = 2
 
 comptime QTMATileT[dtype: DType, BM: Int, BK: Int] = SplitLastDimTMATensorTile[
     dtype, Index(BM, 1, BK), _SCORE_SWIZZLE
@@ -194,7 +199,11 @@ def _prefill_block_score_kernel[
         pipeline_stages=1,
     ]
 
-    # --- SMEM layout: q tile [BM,BK] | k tile [BN,BK] (both bf16) | mbars. ---
+    # --- SMEM layout (K is software-pipelined): all H query heads staged ONCE
+    # [H][BM,BK] | K ring buffer [NSTAGE][BN,BK] | mbars. Q is constant across
+    # the block loop, so it is loaded once up front and the per-block loop only
+    # streams K -- prefetching K[blk+NSTAGE-1] while MMA+epilogue consume K[blk].
+    comptime NSTAGE = _K_PREFETCH_STAGES
     comptime q_elems = BM * BK
     comptime k_elems = BN * BK
     var smem = external_memory[
@@ -204,33 +213,31 @@ def _prefill_block_score_kernel[
         name="msa_prefill_mma_smem",
     ]()
     var q_smem = smem
-    var k_smem = smem + q_elems
+    var k_smem = smem + num_index_heads * q_elems
     # TMA only uses .ptr from the destination (swizzle is in the descriptor), so
     # a flat row-major SMEM tile of the right byte size is sufficient.
     comptime q_flat_layout = tt_row_major[q_elems]()
     comptime k_flat_layout = tt_row_major[k_elems]()
-    var q_smem_flat = TileTensor[
-        dtype,
-        type_of(q_flat_layout),
-        address_space=AddressSpace.SHARED,
-    ](q_smem, q_flat_layout)
-    var k_smem_flat = TileTensor[
-        dtype,
-        type_of(k_flat_layout),
-        address_space=AddressSpace.SHARED,
-    ](k_smem, k_flat_layout)
 
-    var mbar = (smem + q_elems + k_elems).bitcast[SharedMemBarrier]()
-    # mbar[0] = TMA staging done; mbar[1..2] = accumulator handshake;
-    # mbar[3..] = tcgen05 TMEM base slot.
-    var acc_mbar = mbar + 1
-    var ptr_tmem = (mbar + 3).bitcast[UInt32]()
+    var mbar = (smem + num_index_heads * q_elems + NSTAGE * k_elems).bitcast[
+        SharedMemBarrier
+    ]()
+    # mbar[0] = Q-prologue staging-done (used exactly once, never reused, so its
+    # phase flip never collides with K-stage parity); mbar[1..NSTAGE] = per-stage
+    # K-staging-done; mbar[NSTAGE+1..NSTAGE+2] = accumulator handshake (count from
+    # the SS type); mbar[NSTAGE+3..] = tcgen05 TMEM base slot.
+    var q_mbar = mbar
+    var k_mbar = mbar + 1
+    var acc_mbar = mbar + 1 + NSTAGE
+    var ptr_tmem = (mbar + 1 + NSTAGE + 2).bitcast[UInt32]()
 
     var umma_p = UMMAType(acc_mbar.as_unsafe_any_origin())
     var umma_c = UMMAType(acc_mbar.as_unsafe_any_origin())
 
     if tid == 0:
-        mbar[0].init()
+        q_mbar[0].init()
+        comptime for s in range(NSTAGE):
+            k_mbar[s].init()
         umma_p.init()
     named_barrier[Int32(NTHREADS)]()
 
@@ -248,25 +255,51 @@ def _prefill_block_score_kernel[
     comptime q_bytes = q_elems * size_of[dtype]()
     comptime k_bytes = k_elems * size_of[dtype]()
 
-    var qk_desc = UMMAType.mma_descriptors(
-        q_smem.as_unsafe_any_origin(), k_smem.as_unsafe_any_origin()
-    )
+    if tid == 0:
+        q_mbar[0].expect_bytes(Int32(num_index_heads * q_bytes))
+        comptime for h in range(num_index_heads):
+            var q_dst = TileTensor[
+                dtype, type_of(q_flat_layout), address_space=AddressSpace.SHARED
+            ](q_smem + h * q_elems, q_flat_layout)
+            q_tma.async_copy_3d(q_dst, q_mbar[0], (0, h, q_row0))
+    q_mbar[0].wait(0)
+
+    # Ring stage `s = blk % NSTAGE` toggles its phase every NSTAGE blocks; the
+    # consumer waits with phase = (blk // NSTAGE) & 1. No Q-prologue collision:
+    # Q uses its own mbar.
+    @parameter
+    @always_inline
+    def issue_k(blk: Int):
+        if tid == 0:
+            var key_start = blk * block_size
+            var k_row0 = Int(k_operand.row_idx(UInt32(b), UInt32(key_start)))
+            var s = blk % NSTAGE
+            var k_dst = TileTensor[
+                dtype, type_of(k_flat_layout), address_space=AddressSpace.SHARED
+            ](k_smem + s * k_elems, k_flat_layout)
+            k_mbar[s].expect_bytes(Int32(k_bytes))
+            k_tma.async_copy_3d(k_dst, k_mbar[s], (0, 0, k_row0))
+
+    var n_prefetch = min(NSTAGE, max_blocks_tile)
+    for blk in range(n_prefetch):
+        issue_k(blk)
 
     umma_c.tmem_arrive_init()
     named_barrier[Int32(NTHREADS)]()
 
     for blk in range(max_blocks_tile):
         var key_start = blk * block_size
-        var k_row0 = Int(k_operand.row_idx(UInt32(b), UInt32(key_start)))
-        comptime for h in range(num_index_heads):
-            if tid == 0:
-                mbar[0].expect_bytes(Int32(q_bytes + k_bytes))
-                q_tma.async_copy_3d(q_smem_flat, mbar[0], (0, h, q_row0))
-                k_tma.async_copy_3d(k_smem_flat, mbar[0], (0, 0, k_row0))
-            var stage_phase = UInt32((blk * num_index_heads + h) & 1)
-            mbar[0].wait(stage_phase)
-            named_barrier[Int32(NTHREADS)]()
+        var s = blk % NSTAGE
+        # k_mbar[s] phase = number of full ring cycles completed for this stage.
+        var k_phase = UInt32((blk // NSTAGE) & 1)
+        k_mbar[s].wait(k_phase)
 
+        # B descriptor for this K ring stage; A descriptor rebuilt per head.
+        comptime for h in range(num_index_heads):
+            var qk_desc = UMMAType.mma_descriptors(
+                (q_smem + h * q_elems).as_unsafe_any_origin(),
+                (k_smem + s * k_elems).as_unsafe_any_origin(),
+            )
             var s_acc_p = UMMAType.c_t(tmem_addr)
             var s_acc_c = UMMAType.c_t(tmem_addr)
             if tid == 0:
@@ -301,9 +334,9 @@ def _prefill_block_score_kernel[
                         # Per-query causal mask: exclude keys >= this query's own
                         # causal count from its max (shared K tile, per-query cut).
                         if key < num_keys_q:
-                            var s = v[cc] * sm_scale
-                            if s > lane_row_max:
-                                lane_row_max = s
+                            var s_v = v[cc] * sm_scale
+                            if s_v > lane_row_max:
+                                lane_row_max = s_v
                 # Reduce across the 4 lanes (l%4) that share this row.
                 var row_max = warp.lane_group_max[num_lanes=4](
                     SIMD[AT, 1](lane_row_max)
@@ -320,7 +353,15 @@ def _prefill_block_score_kernel[
                         score.to_layout_tensor().ptr_at_offset(
                             Index(h, iro_b + q_local, 0)
                         )[blk] = val
-            named_barrier[Int32(NTHREADS)]()
+
+        # Prefetch the block that will land in this freed ring stage. All threads
+        # have finished reading K[s] for every head's MMA (the accumulator
+        # handshake serialized MMA-consume per head), so reissuing into stage s
+        # is safe. One elected thread issues; the wait happens NSTAGE blocks on.
+        named_barrier[Int32(NTHREADS)]()
+        var next_blk = blk + NSTAGE
+        if next_blk < max_blocks_tile:
+            issue_k(next_blk)
 
     if warp_id() == 0:
         tcgen05_release_allocation_lock[1]()
@@ -447,9 +488,15 @@ def sparse_indexer_prefill_score[
         BK=idx_head_dim,
     ](ctx)
 
+    # SMEM: H query heads staged once + _K_PREFETCH_STAGES K ring buffers, both
+    # bf16; plus barriers: q-prologue(1) + K stages(_K_PREFETCH_STAGES) +
+    # accumulator handshake(2) + tcgen05 TMEM slot(rounded up to 1 barrier).
+    comptime _N_BARRIERS = 1 + _K_PREFETCH_STAGES + 2 + 1
     comptime smem_bytes = (
-        (QTILE + block_size) * idx_head_dim * size_of[Scalar[dtype]]()
-        + 8 * size_of[SharedMemBarrier]()
+        (num_index_heads * QTILE + _K_PREFETCH_STAGES * block_size)
+        * idx_head_dim
+        * size_of[Scalar[dtype]]()
+        + _N_BARRIERS * size_of[SharedMemBarrier]()
     )
     ctx.enqueue_function[score_kernel](
         rebind[QTMATileT[dtype, QTILE, idx_head_dim]](q_tma),
