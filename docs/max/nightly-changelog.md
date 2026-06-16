@@ -87,6 +87,14 @@ This version is still a work in progress.
 
 ## MAX kernels
 
+- Sped up GPU RMS norm on AMD CDNA4 (MI355X) for prefill-sized shapes. The
+  warp-tiling path runs one row per block, so the per-thread SIMD width sets
+  how many warps a row needs; on CDNA4, when there are enough rows to keep the
+  GPU busy, using a 2x-wider per-thread SIMD halves the warps per row, which
+  cheapens the block reduction and raises blocks-per-CU. This improves
+  throughput by roughly 15-31% on shapes such as 8192x{2880,4096,5120,8192}
+  and 4096x4096 (bfloat16), with no change to small-row shapes or other
+  architectures.
 - Fixed a rare illegal-instruction crash in the SM100 (Blackwell)
   flash-attention prefill kernels under chunked prefill with tensor
   parallelism. When the attention grid shared SMs with the tensor-parallel
@@ -100,6 +108,11 @@ This version is still a work in progress.
 
 ## Fixes
 
+- Fixed a GPU memory fault when benchmarking GPU layer norm: the benchmark's
+  output lambda copy-captured the wrong tensor, so the actual output tensor was
+  captured by reference and dereferenced as a host pointer on the device. This
+  faulted on AMD GPUs (and was undefined behavior elsewhere). The lambda now
+  captures the output tensor it writes to.
 - Fixed `max.experimental.nn.Conv2d.forward` moving the weight to the
   input's device but leaving the bias behind, which failed with a device
   mismatch when the bias started on a different device than the input. The

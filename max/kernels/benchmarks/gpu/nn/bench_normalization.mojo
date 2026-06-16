@@ -77,7 +77,7 @@ def bench_layer_norm_gpu[
         return gamma.raw_load[width=width, alignment=alignment](idx)
 
     @always_inline
-    @__copy_capture(beta)
+    @__copy_capture(data_buf)
     @parameter
     def output_fn[
         width: SIMDSize, rank_: Int, alignment: Int

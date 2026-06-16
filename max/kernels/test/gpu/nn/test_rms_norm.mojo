@@ -131,3 +131,11 @@ def main() raises:
         run_rms_norm_gpu[DType.bfloat16, static_cols=16384](
             ctx, Index(2, 16384), rtol=2e-2
         )
+
+        # High-row-count, register-resident widths: exercises the CDNA4
+        # wide-SIMD warp-tiling path (gated on row count). cols are multiples
+        # of 16 in the (128, 8192] warp-tiling range.
+        run_rms_norm_gpu[DType.bfloat16](ctx, Index(1, 4096, 4096), rtol=2e-2)
+        run_rms_norm_gpu[DType.bfloat16](ctx, Index(1, 8192, 2880), rtol=2e-2)
+        run_rms_norm_gpu[DType.bfloat16](ctx, Index(1, 8192, 5120), rtol=2e-2)
+        run_rms_norm_gpu[DType.bfloat16](ctx, Index(1, 8192, 8192), rtol=2e-2)
