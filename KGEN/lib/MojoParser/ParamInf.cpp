@@ -1956,10 +1956,17 @@ VerifiedParamBindings CallParamInf::inferForCall() {
         if (!IREmitter::canImplicitlyConvertToType({eltTypeValue, operand.expr},
                                                    elementType,
                                                    emitter.getDeclScope())) {
+          // Packs cannot be constrained by concrete types so elementType is
+          // always a trait and reporting non-conformance instead of a type
+          // mismatch is safe. This path is only reachable for packs (isPack
+          // is asserted above), and ParamMatcher relies on the same invariant
+          // via an unconditional cast<TraitType>.
           getMojoDiag(operand.expr->getLoc())
-              << "could not convert element of "
-              << argPogs.getName(expectedArgIdx) << " with type " << toPush
-              << " to expected type " << elementType;
+              << "an element of " << argPogs.getName(expectedArgIdx)
+              << " with type " << toPush << " does not conform to trait "
+              << elementType
+              << "; either prove the conformance with 'conforms_to' and"
+                 " 'trait_downcast', or add conformance";
           return {};
         }
 
