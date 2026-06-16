@@ -25,13 +25,16 @@ from threading import Event, Thread
 from typing import TypeVar, cast
 
 import tqdm
-from max.pipelines.core import TextAndVisionContext, TextContext
+from max.pipelines.context import (
+    SamplingParams,
+    SamplingParamsInput,
+    TextAndVisionContext,
+    TextContext,
+    TextGenerationOutput,
+)
 from max.pipelines.lib import PIPELINE_REGISTRY, PipelineConfig
 from max.pipelines.modeling.types import (
     RequestID,
-    SamplingParams,
-    SamplingParamsInput,
-    TextGenerationOutput,
     TextGenerationRequest,
 )
 from max.serve.config import Settings
@@ -81,14 +84,9 @@ class LLM:
     .. code-block:: python
 
         from max.entrypoints.llm import LLM
-        from max.pipelines import MAXModelConfig, PipelineConfig
-        from max.pipelines.lib.model_manifest import ModelManifest
+        from max.pipelines import PipelineConfig
 
-        pipeline_config = PipelineConfig(
-            models=ModelManifest(
-                {"main": MAXModelConfig(model_path="LiquidAI/LFM2.5-350M")}
-            ),
-        )
+        pipeline_config = PipelineConfig.from_flat_kwargs(model_path="LiquidAI/LFM2.5-350M")
         llm = LLM(pipeline_config)
 
         prompts = [

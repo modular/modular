@@ -33,7 +33,7 @@ from max.nn.quant_config import (
     ScaleOrigin,
     WeightScaleSpec,
 )
-from max.pipelines.lib.quant import parse_quant_config
+from max.pipelines.weights.quant import parse_quant_config
 from transformers import AutoConfig
 
 # Define a base path for test data.

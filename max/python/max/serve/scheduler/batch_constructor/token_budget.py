@@ -16,7 +16,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from enum import Enum
 
-from max.pipelines.modeling.types.pipeline_variants import TextGenerationContext
+from max.pipelines.context import TextContext
 
 
 class RequestType(str, Enum):
@@ -51,7 +51,7 @@ class TokenBudget(ABC):
     dimension (for example, active prompt tokens or total context length) and
     exposes a common protocol for:
 
-    * Checking whether a :class:`TextGenerationContext` can be admitted to the
+    * Checking whether a :class:`TextContext` can be admitted to the
       batch via :meth:`status_after_context`.
     * Recording the token cost once a context has been accepted via
       :meth:`add_to_budget`.
@@ -84,7 +84,7 @@ class TokenBudget(ABC):
             capacity: Maximum number of tokens that may be consumed by this
                 budget.
             allow_chunking: Whether this budget is permitted to shrink
-                :class:`TextGenerationContext` instances via ``context.chunk`` in
+                :class:`TextContext` instances via ``context.chunk`` in
                 order to fit within the remaining capacity.
             applicable_types: Request types that this budget applies to. If the
                 active or incoming request type is not in this list, the budget
@@ -108,7 +108,7 @@ class TokenBudget(ABC):
     @abstractmethod
     def status_after_context(
         self,
-        context: TextGenerationContext,
+        context: TextContext,
         request_type: RequestType,
         num_steps: int = 1,
     ) -> BudgetStatus:
@@ -125,7 +125,7 @@ class TokenBudget(ABC):
     @abstractmethod
     def add_to_budget(
         self,
-        context: TextGenerationContext,
+        context: TextContext,
         request_type: RequestType,
         num_steps: int = 1,
     ) -> None:
@@ -184,7 +184,7 @@ class TokenBudgetCollection:
 
     def status_after_context(
         self,
-        context: TextGenerationContext,
+        context: TextContext,
         request_type: RequestType,
         num_steps: int = 1,
     ) -> BudgetStatus:
@@ -217,7 +217,7 @@ class TokenBudgetCollection:
 
     def add_to_budget(
         self,
-        context: TextGenerationContext,
+        context: TextContext,
         request_type: RequestType,
         num_steps: int = 1,
     ) -> None:
@@ -238,7 +238,7 @@ class ActiveTokenBudget(TokenBudget):
 
     This budget is intended for limiting the number of tokens processed during
     a single context-encoding (CE) step. For each accepted context, the token
-    cost is :attr:`TextGenerationContext.tokens.active_length`, and the budget
+    cost is :attr:`TextContext.tokens.active_length`, and the budget
     may optionally shrink the active window via ``context.chunk`` when
     ``allow_chunking`` is enabled.
 
@@ -253,7 +253,7 @@ class ActiveTokenBudget(TokenBudget):
 
     def status_after_context(
         self,
-        context: TextGenerationContext,
+        context: TextContext,
         request_type: RequestType,
         num_steps: int = 1,
     ) -> BudgetStatus:
@@ -276,7 +276,7 @@ class ActiveTokenBudget(TokenBudget):
           order to record the cost.
 
         Args:
-            context: The :class:`TextGenerationContext` being considered.
+            context: The :class:`TextContext` being considered.
             request_type: The type of request being evaluated.
             num_steps: Planned number of generation steps. Currently ignored for
                 active-token budgets, which operate strictly on a per-step basis.
@@ -329,7 +329,7 @@ class ActiveTokenBudget(TokenBudget):
 
     def add_to_budget(
         self,
-        context: TextGenerationContext,
+        context: TextContext,
         request_type: RequestType,
         num_steps: int = 1,
     ) -> None:
@@ -360,7 +360,7 @@ class TotalContextTokenBudget(TokenBudget):
 
     Unlike :class:`ActiveTokenBudget`, which only costs the active window per
     step, this budget has an effective cost derived from
-    :attr:`len(TextGenerationContext.tokens)` and the planned number of
+    :attr:`len(TextContext.tokens)` and the planned number of
     generation steps. It is intended for enforcing limits such as
     ``max_batch_total_tokens`` that bound the total number of tokens resident
     in a batch across multiple steps. The effective cost is rounded up to the
@@ -381,7 +381,7 @@ class TotalContextTokenBudget(TokenBudget):
             capacity: Maximum number of tokens that may be consumed by this
                 budget.
             allow_chunking: Whether this budget is permitted to shrink
-                :class:`TextGenerationContext` instances via ``context.chunk`` in
+                :class:`TextContext` instances via ``context.chunk`` in
                 order to fit within the remaining capacity.
             applicable_types: Request types that this budget applies to.
             cost_alignment: Alignment used to align effective costs for this budget.
@@ -407,14 +407,14 @@ class TotalContextTokenBudget(TokenBudget):
 
     def status_after_context(
         self,
-        context: TextGenerationContext,
+        context: TextContext,
         request_type: RequestType,
         num_steps: int = 1,
     ) -> BudgetStatus:
         """Evaluate whether the context's total length fits within the budget.
 
         This method considers an effective cost based on
-        :attr:`len(TextGenerationContext.tokens)` and ``num_steps`` against
+        :attr:`len(TextContext.tokens)` and ``num_steps`` against
         the remaining capacity. Concretely, it assumes that over ``num_steps``
         generation steps the context will grow by ``num_steps - 1`` tokens,
         yielding an effective cost of
@@ -431,7 +431,7 @@ class TotalContextTokenBudget(TokenBudget):
         active-token budgets.
 
         Args:
-            context: The :class:`TextGenerationContext` being considered.
+            context: The :class:`TextContext` being considered.
             request_type: The type of request being evaluated.
             num_steps: Planned number of generation steps for this context.
 
@@ -477,7 +477,7 @@ class TotalContextTokenBudget(TokenBudget):
 
     def add_to_budget(
         self,
-        context: TextGenerationContext,
+        context: TextContext,
         request_type: RequestType,
         num_steps: int = 1,
     ) -> None:

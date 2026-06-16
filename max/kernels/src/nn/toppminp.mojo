@@ -28,7 +28,7 @@ def top_p_sampling[
     //,
     _test_sort: Bool = False,
 ](
-    top_ps: TileTensor[dtype, ...],
+    top_ps: TileTensor[mut=False, dtype, ...],
     input_logits: TileTensor[mut=True, dtype, ...],
     out_token_ids: TileTensor[mut=True, out_idx_type, ...],
     temperature: Scalar[dtype] = 1,
@@ -52,7 +52,7 @@ def min_p_sampling[
     //,
     _test_sort: Bool = False,
 ](
-    min_ps: TileTensor[dtype, ...],
+    min_ps: TileTensor[mut=False, dtype, ...],
     input_logits: TileTensor[mut=True, dtype, ...],
     out_token_ids: TileTensor[mut=True, out_idx_type, ...],
     temperature: Scalar[dtype] = 1,
@@ -75,7 +75,7 @@ def _topp_minp_sampling[
     is_top_p: Bool,
     _test_sort: Bool = False,
 ](
-    p_thresholds: TileTensor[dtype, ...],
+    p_thresholds: TileTensor[mut=False, dtype, ...],
     input_logits: TileTensor[mut=True, dtype, ...],
     out_token_ids: TileTensor[mut=True, out_idx_type, ...],
     temperature: Scalar[dtype] = 1,
@@ -138,18 +138,13 @@ def _topp_minp_sampling[
     @parameter
     @__copy_capture(input_logits)
     def apply_temperature[
-        _simd_width: Int, _rank: Int
-    ](coords: IndexList[_rank]) -> SIMD[dtype, _simd_width]:
-        var val = input_logits.load[width=_simd_width](Coord(coords))
+        _simd_width: Int
+    ](coords: Coord) -> SIMD[dtype, _simd_width]:
+        var val = input_logits.load[width=_simd_width](coords)
         return val / temperature
 
-    var shape = IndexList[input_logits.rank]()
-
-    comptime for i in range(input_logits.rank):
-        shape[i] = Int(input_logits.layout.shape[i]().value())
-
-    softmax[simd_width=1, input_fn=apply_temperature](
-        shape,
+    softmax[simd_width=1, rank=input_logits.rank, input_fn=apply_temperature](
+        input_logits.layout.shape_coord(),
         sorted_probs,
         axis=input_logits.rank - 1,
     )

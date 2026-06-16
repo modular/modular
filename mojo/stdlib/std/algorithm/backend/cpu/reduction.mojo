@@ -20,6 +20,7 @@ from std.algorithm.functional import _get_num_workers
 from std.math.math import min as _min
 
 from std.utils.index import IndexList, StaticTuple
+from std.utils.coord import Coord, coord_to_index_list
 
 from std.algorithm.reduction import _get_nd_indices_from_flat_index
 
@@ -43,11 +44,9 @@ def _reduce_generator_cpu[
         SIMD[ty, width], SIMD[ty, width]
     ) capturing[_] -> SIMD[ty, width],
     /,
-](
-    shape: IndexList[_, element_type=DType.int64],
-    init: StaticTuple[Scalar[init_type], num_reductions],
+    *,
     reduce_dim: Int,
-):
+](shape_coord: Coord, init: StaticTuple[Scalar[init_type], num_reductions],):
     """Reduce the given tensor using the given reduction function on CPU. The
     num_reductions parameter enables callers to execute fused reductions. The
     reduce_0_fn and output_0_fn should be implemented in a way which routes
@@ -59,16 +58,21 @@ def _reduce_generator_cpu[
         input_0_fn: The lambda to use to access the incoming tensor.
         output_0_fn: The lambda to use to storing to the output tensor.
         reduce_function: The lambda implementing the reduction.
+        reduce_dim: The dimension we are reducing.
 
     Args:
-        shape: The shape of the tensor we are reducing.
+        shape_coord: The shape of the tensor we are reducing.
         init: The value to start the reduction from.
-        reduce_dim: The dimension we are reducing.
     """
+
+    # The inner/outer reduction helpers index the shape by a runtime
+    # `reduce_dim`, which a `Coord` does not support, so convert to an
+    # `IndexList` at the boundary.
+    var shape = coord_to_index_list(shape_coord)
 
     comptime rank = shape.size
 
-    var reduce_dim_normalized = (
+    comptime reduce_dim_normalized = (
         rank + reduce_dim
     ) if reduce_dim < 0 else reduce_dim
 
@@ -79,16 +83,18 @@ def _reduce_generator_cpu[
             input_0_fn,
             output_0_fn,
             reduce_function,
-        ](shape, init, reduce_dim_normalized)
+            reduce_dim=reduce_dim_normalized,
+        ](shape, init)
     else:
-        if rank - 1 == reduce_dim_normalized:
+        comptime if rank - 1 == reduce_dim_normalized:
             _reduce_along_inner_dimension[
                 num_reductions,
                 init_type,
                 input_0_fn,
                 output_0_fn,
                 reduce_function,
-            ](shape, init, reduce_dim_normalized)
+                reduce_dim=reduce_dim_normalized,
+            ](shape, init)
         else:
             _reduce_along_outer_dimension[
                 num_reductions,
@@ -96,7 +102,8 @@ def _reduce_generator_cpu[
                 input_0_fn,
                 output_0_fn,
                 reduce_function,
-            ](shape, init, reduce_dim_normalized)
+                reduce_dim=reduce_dim_normalized,
+            ](shape, init)
 
 
 def _reduce_along_inner_dimension[
@@ -112,10 +119,11 @@ def _reduce_along_inner_dimension[
         SIMD[ty, width], SIMD[ty, width]
     ) capturing[_] -> SIMD[ty, width],
     /,
+    *,
+    reduce_dim: Int,
 ](
     shape: IndexList[_, element_type=DType.int64],
     init_value: StaticTuple[Scalar[init_type], num_reductions],
-    reduce_dim: Int,
 ):
     """Reduces the innermost (or specified) dimension of a tensor using SIMD-
     vectorized accumulation with optional parallelism across rows.
@@ -126,11 +134,11 @@ def _reduce_along_inner_dimension[
         input_0_fn: The lambda to use to access the incoming tensor.
         output_0_fn: The lambda to use to store to the output tensor.
         reduce_function: The lambda implementing the reduction.
+        reduce_dim: The dimension being reduced.
 
     Args:
         shape: The shape of the tensor being reduced.
         init_value: The initial accumulator value for each reduction.
-        reduce_dim: The dimension being reduced.
     """
     var total_size: Int = shape.flattened_length()
     if total_size == 0:
@@ -286,10 +294,11 @@ def _reduce_along_outer_dimension[
         SIMD[ty, width], SIMD[ty, width]
     ) capturing[_] -> SIMD[ty, width],
     /,
+    *,
+    reduce_dim: Int,
 ](
     shape: IndexList[_, element_type=DType.int64],
     init: StaticTuple[Scalar[init_type], num_reductions],
-    reduce_dim: Int,
 ):
     """Reduce the given tensor using the given reduction function. The
     num_reductions parameter enables callers to execute fused reductions. The
@@ -302,11 +311,11 @@ def _reduce_along_outer_dimension[
         input_0_fn: The lambda to use to access the incoming tensor.
         output_0_fn: The lambda to use to storing to the output tensor.
         reduce_function: The lambda implementing the reduction.
+        reduce_dim: The dimension we are reducing.
 
     Args:
         shape: The shape of the tensor we are reducing
         init: The value to start the reduction from.
-        reduce_dim: The dimension we are reducing.
     """
     comptime rank = shape.size
     comptime dtype = init.element_type

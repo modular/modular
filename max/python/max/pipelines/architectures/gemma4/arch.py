@@ -11,11 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+import dataclasses
+
 from max.graph.weights import WeightsFormat
 from max.pipelines.lib import SupportedArchitecture
 from max.pipelines.modeling.types import InputModality, PipelineTask
 
 from .context import Gemma4Context
+from .memory_planner import Gemma4MemoryPlanner
 from .model import Gemma3_MultiModalModel
 from .model_config import Gemma4ForConditionalGenerationConfig
 from .tokenizer import Gemma4Tokenizer
@@ -48,9 +51,22 @@ gemma4_arch = SupportedArchitecture(
         InputModality.VIDEO,
     },
     rope_type="normal",
-    required_arguments={"max_num_steps": 1},
     context_type=Gemma4Context,
     config=Gemma4ForConditionalGenerationConfig,
     tool_parser="gemma4",
     reasoning_parser="gemma4",
+    memory_planner=Gemma4MemoryPlanner,
+)
+
+
+# The public "unified" checkpoints (google/gemma-4-12b-it and derived quants,
+# model_type "gemma4_unified") ship the regular Gemma 4 layout with no bundled
+# MTP draft weights, so they are served by this architecture under their own
+# architectures[0] name.
+gemma4_unified_arch = dataclasses.replace(
+    gemma4_arch,
+    name="Gemma4UnifiedForConditionalGeneration",
+    example_repo_ids=["google/gemma-4-12b-it"],
+    # Served text-only: the unified vision embedder is not implemented.
+    input_modalities={InputModality.TEXT},
 )

@@ -40,7 +40,7 @@ from nn.gather_scatter import (
     gather_nd_shape,
     gather_reduce,
     gather_shape,
-    normalize_neg_index,
+    _unsafe_normalize_neg_index as normalize_neg_index,
     scatter_elements,
     scatter_elements_shape,
     scatter_nd,
@@ -103,6 +103,34 @@ from .kernels import (
 )
 
 
+@always_inline
+def check_axis_in_range[idx: Int, dim_size: Int]() raises:
+    """Indices passed to gather and scatter ops may be negative. This performs
+    a check to see if the axis is valid.
+
+    Raises:
+        If the index is out of range [-dim_size, dim_size).
+    """
+    comptime if -dim_size <= idx < dim_size:
+        return
+
+    raise Error("indices must be in range [-dim_size, dim_size)")
+
+
+@always_inline
+def check_axis_in_range[dim_size: Int](idx: Int) raises:
+    """Indices passed to gather and scatter ops may be negative. This performs
+    a check to see if the axis is valid.
+
+    Raises:
+        If the index is out of range [-dim_size, dim_size).
+    """
+    if -dim_size <= idx < dim_size:
+        return
+
+    raise Error("indices must be in range [-dim_size, dim_size)")
+
+
 @compiler.register("mo.squeeze_shape")
 struct SqueezeShape:
     @staticmethod
@@ -151,22 +179,22 @@ struct SqueezeShape:
             )
             output_shape_index += 1
 
-    @staticmethod
-    def shape[
-        dtype: DType, indices_type: DType
-    ](
-        input_shape: InputTensor[dtype=dtype, rank=1, ...],
-        remove_indices: InputTensor[dtype=indices_type, rank=1, ...],
-    ) raises -> IndexList[1]:
-        var out_dim = input_shape.dim_size[0]() - remove_indices.dim_size[0]()
 
-        if out_dim < 0:
-            raise Error(
-                "[squeeze_shape] cannot remove more dimensions than there"
-                " exists"
-            )
+@compiler.register_shape_function("mo.squeeze_shape")
+def squeeze_shape_fn[
+    dtype: DType, indices_type: DType
+](
+    input_shape: InputTensor[dtype=dtype, rank=1, ...],
+    remove_indices: InputTensor[dtype=indices_type, rank=1, ...],
+) raises -> IndexList[1]:
+    var out_dim = input_shape.dim_size[0]() - remove_indices.dim_size[0]()
 
-        return IndexList[1](out_dim)
+    if out_dim < 0:
+        raise Error(
+            "[squeeze_shape] cannot remove more dimensions than there exists"
+        )
+
+    return IndexList[1](out_dim)
 
 
 @compiler.register("mo.unsqueeze_shape")
@@ -219,15 +247,16 @@ struct UnsqueezeShape:
             output_shape[output_shape_index] = input_shape[orig_shape_index]
             orig_shape_index += 1
 
-    @staticmethod
-    def shape[
-        dtype: DType, indices_type: DType
-    ](
-        input_shape: InputTensor[dtype=dtype, rank=1, ...],
-        remove_indices: InputTensor[dtype=indices_type, rank=1, ...],
-    ) -> IndexList[1]:
-        var out_dim = input_shape.dim_size[0]() + remove_indices.dim_size[0]()
-        return IndexList[1](out_dim)
+
+@compiler.register_shape_function("mo.unsqueeze_shape")
+def unsqueeze_shape_fn[
+    dtype: DType, indices_type: DType
+](
+    input_shape: InputTensor[dtype=dtype, rank=1, ...],
+    remove_indices: InputTensor[dtype=indices_type, rank=1, ...],
+) -> IndexList[1]:
+    var out_dim = input_shape.dim_size[0]() + remove_indices.dim_size[0]()
+    return IndexList[1](out_dim)
 
 
 @compiler.register("mo.scatter_nd")
@@ -236,10 +265,10 @@ struct ScatterND:
     def execute[
         target: StaticString,
     ](
-        output: OutputTensor[...],
+        output: OutputTensor,
         input: InputTensor[dtype=output.dtype, rank=output.rank, ...],
         updates: InputTensor[dtype=output.dtype, ...],
-        indices: InputTensor[...],
+        indices: InputTensor,
         ctx: DeviceContext,
     ) raises:
         # Existing implementations do not require static shape information
@@ -251,19 +280,20 @@ struct ScatterND:
             context=ctx,
         )
 
-    @staticmethod
-    def shape[](
-        input: InputTensor[...],
-        updates: InputTensor[dtype=input.dtype, ...],
-        indices: InputTensor[...],
-    ) raises -> IndexList[input.rank]:
-        return rebind[IndexList[input.rank]](
-            scatter_nd_shape(
-                input.to_tile_tensor[DType.int64](),
-                updates.to_tile_tensor[DType.int64](),
-                indices.to_tile_tensor[DType.int64](),
-            )
+
+@compiler.register_shape_function("mo.scatter_nd")
+def scatter_nd_shape_fn[](
+    input: InputTensor,
+    updates: InputTensor[dtype=input.dtype, ...],
+    indices: InputTensor,
+) raises -> IndexList[input.rank]:
+    return rebind[IndexList[input.rank]](
+        scatter_nd_shape(
+            input.to_tile_tensor[DType.int64](),
+            updates.to_tile_tensor[DType.int64](),
+            indices.to_tile_tensor[DType.int64](),
         )
+    )
 
 
 @compiler.register("mo.scatter_nd.skip_neg_indices")
@@ -272,10 +302,10 @@ struct ScatterNDSkipNegIndices:
     def execute[
         target: StaticString,
     ](
-        output: OutputTensor[...],
+        output: OutputTensor,
         input: InputTensor[dtype=output.dtype, rank=output.rank, ...],
         updates: InputTensor[dtype=output.dtype, ...],
-        indices: InputTensor[...],
+        indices: InputTensor,
         ctx: DeviceContext,
     ) raises:
         # This is identical to mo.scatter_nd except in how we handle negative indices.
@@ -306,14 +336,13 @@ struct ScatterNDAdd:
     def execute[
         target: StaticString,
     ](
-        output: OutputTensor[...],
+        output: OutputTensor,
         input: InputTensor[dtype=output.dtype, rank=output.rank, ...],
         updates: InputTensor[dtype=output.dtype, ...],
-        indices: InputTensor[...],
+        indices: InputTensor,
         ctx: DeviceContext,
     ) raises:
         @always_inline
-        @parameter
         def reduce_fn[
             dtype: DType, width: SIMDSize
         ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
@@ -333,19 +362,20 @@ struct ScatterNDAdd:
             context=ctx,
         )
 
-    @staticmethod
-    def shape[](
-        input: InputTensor[...],
-        updates: InputTensor[dtype=input.dtype, ...],
-        indices: InputTensor[...],
-    ) raises -> IndexList[input.rank]:
-        return rebind[IndexList[input.rank]](
-            scatter_nd_shape(
-                input.to_tile_tensor[DType.int64](),
-                updates.to_tile_tensor[DType.int64](),
-                indices.to_tile_tensor[DType.int64](),
-            )
+
+@compiler.register_shape_function("mo.scatter_nd.add")
+def scatter_nd_add_shape[](
+    input: InputTensor,
+    updates: InputTensor[dtype=input.dtype, ...],
+    indices: InputTensor,
+) raises -> IndexList[input.rank]:
+    return rebind[IndexList[input.rank]](
+        scatter_nd_shape(
+            input.to_tile_tensor[DType.int64](),
+            updates.to_tile_tensor[DType.int64](),
+            indices.to_tile_tensor[DType.int64](),
         )
+    )
 
 
 @compiler.register("mo.scatter_nd.mul")
@@ -354,14 +384,13 @@ struct ScatterNDMul:
     def execute[
         target: StaticString,
     ](
-        output: OutputTensor[...],
+        output: OutputTensor,
         input: InputTensor[dtype=output.dtype, rank=output.rank, ...],
         updates: InputTensor[dtype=output.dtype, ...],
-        indices: InputTensor[...],
+        indices: InputTensor,
         ctx: DeviceContext,
     ) raises:
         @always_inline
-        @parameter
         def reduce_fn[
             dtype: DType, width: SIMDSize
         ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
@@ -381,19 +410,20 @@ struct ScatterNDMul:
             context=ctx,
         )
 
-    @staticmethod
-    def shape[](
-        input: InputTensor[...],
-        updates: InputTensor[dtype=input.dtype, ...],
-        indices: InputTensor[...],
-    ) raises -> IndexList[input.rank]:
-        return rebind[IndexList[input.rank]](
-            scatter_nd_shape(
-                input.to_tile_tensor[DType.int64](),
-                updates.to_tile_tensor[DType.int64](),
-                indices.to_tile_tensor[DType.int64](),
-            )
+
+@compiler.register_shape_function("mo.scatter_nd.mul")
+def scatter_nd_mul_shape[](
+    input: InputTensor,
+    updates: InputTensor[dtype=input.dtype, ...],
+    indices: InputTensor,
+) raises -> IndexList[input.rank]:
+    return rebind[IndexList[input.rank]](
+        scatter_nd_shape(
+            input.to_tile_tensor[DType.int64](),
+            updates.to_tile_tensor[DType.int64](),
+            indices.to_tile_tensor[DType.int64](),
         )
+    )
 
 
 @compiler.register("mo.scatter_nd.min")
@@ -402,14 +432,13 @@ struct ScatterNDMin:
     def execute[
         target: StaticString,
     ](
-        output: OutputTensor[...],
+        output: OutputTensor,
         input: InputTensor[dtype=output.dtype, rank=output.rank, ...],
         updates: InputTensor[dtype=output.dtype, ...],
-        indices: InputTensor[...],
+        indices: InputTensor,
         ctx: DeviceContext,
     ) raises:
         @always_inline
-        @parameter
         def reduce_fn[
             dtype: DType, width: SIMDSize
         ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
@@ -429,19 +458,20 @@ struct ScatterNDMin:
             context=ctx,
         )
 
-    @staticmethod
-    def shape(
-        input: InputTensor[...],
-        updates: InputTensor[dtype=input.dtype, ...],
-        indices: InputTensor[...],
-    ) raises -> IndexList[input.rank]:
-        return rebind[IndexList[input.rank]](
-            scatter_nd_shape(
-                input.to_tile_tensor[DType.int64](),
-                updates.to_tile_tensor[DType.int64](),
-                indices.to_tile_tensor[DType.int64](),
-            )
+
+@compiler.register_shape_function("mo.scatter_nd.min")
+def scatter_nd_min_shape[](
+    input: InputTensor,
+    updates: InputTensor[dtype=input.dtype, ...],
+    indices: InputTensor,
+) raises -> IndexList[input.rank]:
+    return rebind[IndexList[input.rank]](
+        scatter_nd_shape(
+            input.to_tile_tensor[DType.int64](),
+            updates.to_tile_tensor[DType.int64](),
+            indices.to_tile_tensor[DType.int64](),
         )
+    )
 
 
 @compiler.register("mo.scatter_nd.max")
@@ -450,14 +480,13 @@ struct ScatterNDMax:
     def execute[
         target: StaticString,
     ](
-        output: OutputTensor[...],
+        output: OutputTensor,
         input: InputTensor[dtype=output.dtype, rank=output.rank, ...],
         updates: InputTensor[dtype=output.dtype, ...],
-        indices: InputTensor[...],
+        indices: InputTensor,
         ctx: DeviceContext,
     ) raises:
         @always_inline
-        @parameter
         def reduce_fn[
             dtype: DType, width: SIMDSize
         ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
@@ -477,19 +506,20 @@ struct ScatterNDMax:
             context=ctx,
         )
 
-    @staticmethod
-    def shape[](
-        input: InputTensor[...],
-        updates: InputTensor[dtype=input.dtype, ...],
-        indices: InputTensor[...],
-    ) raises -> IndexList[input.rank]:
-        return rebind[IndexList[input.rank]](
-            scatter_nd_shape(
-                input.to_tile_tensor[DType.int64](),
-                updates.to_tile_tensor[DType.int64](),
-                indices.to_tile_tensor[DType.int64](),
-            )
+
+@compiler.register_shape_function("mo.scatter_nd.max")
+def scatter_nd_max_shape[](
+    input: InputTensor,
+    updates: InputTensor[dtype=input.dtype, ...],
+    indices: InputTensor,
+) raises -> IndexList[input.rank]:
+    return rebind[IndexList[input.rank]](
+        scatter_nd_shape(
+            input.to_tile_tensor[DType.int64](),
+            updates.to_tile_tensor[DType.int64](),
+            indices.to_tile_tensor[DType.int64](),
         )
+    )
 
 
 @compiler.register("mo.scatter_set_constant")
@@ -519,14 +549,16 @@ struct Scatter:
     @staticmethod
     def execute[
         target: StaticString,
+        axis: Int,
     ](
-        output: OutputTensor[...],
+        output: OutputTensor,
         input: InputTensor[dtype=output.dtype, rank=output.rank, ...],
         updates: InputTensor[dtype=output.dtype, rank=output.rank, ...],
         indices: InputTensor[rank=output.rank, ...],
-        axis: Scalar,
         ctx: DeviceContext,
     ) raises:
+        check_axis_in_range[output.rank](axis)
+
         @always_inline
         @parameter
         def reduce_func[
@@ -540,26 +572,28 @@ struct Scatter:
             input,
             indices,
             updates,
-            normalize_neg_index(Int(axis), output.rank),
+            normalize_neg_index(axis, output.rank),
             output,
             ctx,
         )
 
-    @staticmethod
-    def shape(
-        input: InputTensor[...],
-        updates: InputTensor[dtype=input.dtype, rank=input.rank, ...],
-        indices: InputTensor[rank=input.rank, ...],
-        axis: Scalar,
-    ) raises -> IndexList[input.rank]:
-        return rebind[IndexList[input.rank]](
-            scatter_elements_shape(
-                input.to_tile_tensor[DType.int64](),
-                updates.to_tile_tensor[DType.int64](),
-                indices.to_tile_tensor[DType.int64](),
-                Int(axis),
-            )
+
+@compiler.register_shape_function("mo.scatter")
+def scatter_shape_fn[
+    axis: Int,
+](
+    input: InputTensor,
+    updates: InputTensor[dtype=input.dtype, rank=input.rank, ...],
+    indices: InputTensor[rank=input.rank, ...],
+) raises -> IndexList[input.rank]:
+    return rebind[IndexList[input.rank]](
+        scatter_elements_shape(
+            input.to_tile_tensor[DType.int64](),
+            updates.to_tile_tensor[DType.int64](),
+            indices.to_tile_tensor[DType.int64](),
+            axis,
         )
+    )
 
 
 @compiler.register("mo.scatter.add")
@@ -568,13 +602,15 @@ struct ScatterAdd:
     def execute[
         target: StaticString,
     ](
-        output: OutputTensor[...],
+        output: OutputTensor,
         input: InputTensor[dtype=output.dtype, rank=output.rank, ...],
         updates: InputTensor[dtype=output.dtype, rank=output.rank, ...],
         indices: InputTensor[rank=output.rank, ...],
         axis: Scalar,
         ctx: DeviceContext,
     ) raises:
+        check_axis_in_range[output.rank](Int(axis))
+
         @always_inline
         @parameter
         def reduce_func[
@@ -593,21 +629,22 @@ struct ScatterAdd:
             ctx,
         )
 
-    @staticmethod
-    def shape(
-        input: InputTensor[...],
-        updates: InputTensor[dtype=input.dtype, rank=input.rank, ...],
-        indices: InputTensor[rank=input.rank, ...],
-        axis: Scalar,
-    ) raises -> IndexList[input.rank]:
-        return rebind[IndexList[input.rank]](
-            scatter_elements_shape(
-                input.to_tile_tensor[DType.int64](),
-                updates.to_tile_tensor[DType.int64](),
-                indices.to_tile_tensor[DType.int64](),
-                Int(axis),
-            )
+
+@compiler.register_shape_function("mo.scatter.add")
+def scatter_add_shape_fn(
+    input: InputTensor,
+    updates: InputTensor[dtype=input.dtype, rank=input.rank, ...],
+    indices: InputTensor[rank=input.rank, ...],
+    axis: Scalar,
+) raises -> IndexList[input.rank]:
+    return rebind[IndexList[input.rank]](
+        scatter_elements_shape(
+            input.to_tile_tensor[DType.int64](),
+            updates.to_tile_tensor[DType.int64](),
+            indices.to_tile_tensor[DType.int64](),
+            Int(axis),
         )
+    )
 
 
 @compiler.register("mo.scatter.max")
@@ -616,13 +653,15 @@ struct ScatterMax:
     def execute[
         target: StaticString,
     ](
-        output: OutputTensor[...],
+        output: OutputTensor,
         input: InputTensor[dtype=output.dtype, rank=output.rank, ...],
         updates: InputTensor[dtype=output.dtype, rank=output.rank, ...],
         indices: InputTensor[rank=output.rank, ...],
         axis: Scalar,
         ctx: DeviceContext,
     ) raises:
+        check_axis_in_range[output.rank](Int(axis))
+
         @always_inline
         @parameter
         def reduce_func[
@@ -641,21 +680,22 @@ struct ScatterMax:
             ctx,
         )
 
-    @staticmethod
-    def shape(
-        input: InputTensor[...],
-        updates: InputTensor[dtype=input.dtype, rank=input.rank, ...],
-        indices: InputTensor[rank=input.rank, ...],
-        axis: Scalar,
-    ) raises -> IndexList[input.rank]:
-        return rebind[IndexList[input.rank]](
-            scatter_elements_shape(
-                input.to_tile_tensor[DType.int64](),
-                updates.to_tile_tensor[DType.int64](),
-                indices.to_tile_tensor[DType.int64](),
-                Int(axis),
-            )
+
+@compiler.register_shape_function("mo.scatter.max")
+def scatter_max_shape_fn(
+    input: InputTensor,
+    updates: InputTensor[dtype=input.dtype, rank=input.rank, ...],
+    indices: InputTensor[rank=input.rank, ...],
+    axis: Scalar,
+) raises -> IndexList[input.rank]:
+    return rebind[IndexList[input.rank]](
+        scatter_elements_shape(
+            input.to_tile_tensor[DType.int64](),
+            updates.to_tile_tensor[DType.int64](),
+            indices.to_tile_tensor[DType.int64](),
+            Int(axis),
         )
+    )
 
 
 @compiler.register("mo.scatter.min")
@@ -664,13 +704,15 @@ struct ScatterMin:
     def execute[
         target: StaticString,
     ](
-        output: OutputTensor[...],
+        output: OutputTensor,
         input: InputTensor[dtype=output.dtype, rank=output.rank, ...],
         updates: InputTensor[dtype=output.dtype, rank=output.rank, ...],
         indices: InputTensor[rank=output.rank, ...],
         axis: Scalar,
         ctx: DeviceContext,
     ) raises:
+        check_axis_in_range[output.rank](Int(axis))
+
         @always_inline
         @parameter
         def reduce_func[
@@ -689,21 +731,22 @@ struct ScatterMin:
             ctx,
         )
 
-    @staticmethod
-    def shape(
-        input: InputTensor[...],
-        updates: InputTensor[dtype=input.dtype, rank=input.rank, ...],
-        indices: InputTensor[rank=input.rank, ...],
-        axis: Scalar,
-    ) raises -> IndexList[input.rank]:
-        return rebind[IndexList[input.rank]](
-            scatter_elements_shape(
-                input.to_tile_tensor[DType.int64](),
-                updates.to_tile_tensor[DType.int64](),
-                indices.to_tile_tensor[DType.int64](),
-                Int(axis),
-            )
+
+@compiler.register_shape_function("mo.scatter.min")
+def scatter_min_shape_fn(
+    input: InputTensor,
+    updates: InputTensor[dtype=input.dtype, rank=input.rank, ...],
+    indices: InputTensor[rank=input.rank, ...],
+    axis: Scalar,
+) raises -> IndexList[input.rank]:
+    return rebind[IndexList[input.rank]](
+        scatter_elements_shape(
+            input.to_tile_tensor[DType.int64](),
+            updates.to_tile_tensor[DType.int64](),
+            indices.to_tile_tensor[DType.int64](),
+            Int(axis),
         )
+    )
 
 
 @compiler.register("mo.scatter.mul")
@@ -712,13 +755,15 @@ struct ScatterMul:
     def execute[
         target: StaticString,
     ](
-        output: OutputTensor[...],
+        output: OutputTensor,
         input: InputTensor[dtype=output.dtype, rank=output.rank, ...],
         updates: InputTensor[dtype=output.dtype, rank=output.rank, ...],
         indices: InputTensor[rank=output.rank, ...],
         axis: Scalar,
         ctx: DeviceContext,
     ) raises:
+        check_axis_in_range[output.rank](Int(axis))
+
         @always_inline
         @parameter
         def reduce_func[
@@ -737,21 +782,22 @@ struct ScatterMul:
             ctx,
         )
 
-    @staticmethod
-    def shape(
-        input: InputTensor[...],
-        updates: InputTensor[dtype=input.dtype, rank=input.rank, ...],
-        indices: InputTensor[rank=input.rank, ...],
-        axis: Scalar,
-    ) raises -> IndexList[input.rank]:
-        return rebind[IndexList[input.rank]](
-            scatter_elements_shape(
-                input.to_tile_tensor[DType.int64](),
-                updates.to_tile_tensor[DType.int64](),
-                indices.to_tile_tensor[DType.int64](),
-                Int(axis),
-            )
+
+@compiler.register_shape_function("mo.scatter.mul")
+def scatter_mul_shape_fn(
+    input: InputTensor,
+    updates: InputTensor[dtype=input.dtype, rank=input.rank, ...],
+    indices: InputTensor[rank=input.rank, ...],
+    axis: Scalar,
+) raises -> IndexList[input.rank]:
+    return rebind[IndexList[input.rank]](
+        scatter_elements_shape(
+            input.to_tile_tensor[DType.int64](),
+            updates.to_tile_tensor[DType.int64](),
+            indices.to_tile_tensor[DType.int64](),
+            Int(axis),
         )
+    )
 
 
 @compiler.register("mo.broadcast_to")
@@ -761,7 +807,7 @@ struct BroadcastTo:
     #
     # Sometimes with a call to the below shape function.
     @staticmethod
-    def execute(input: InputTensor[...], shape: InputTensor) raises:
+    def execute(input: InputTensor, shape: InputTensor) raises:
         raise Error("Should never be called!")
 
     @staticmethod
@@ -805,14 +851,15 @@ struct BroadcastTo:
                 )
         return output_shape
 
-    @staticmethod
-    def shape[
-        input_rank: Int, output_rank: Int
-    ](
-        input: InputTensor[rank=input_rank, ...],
-        shape: InputTensor[rank=1, ...],
-    ) raises -> IndexList[output_rank]:
-        return BroadcastTo.shape_impl[output_rank=output_rank](input, shape)
+
+@compiler.register_shape_function("mo.broadcast_to")
+def broadcast_to_shape_fn[
+    input_rank: Int, output_rank: Int
+](
+    input: InputTensor[rank=input_rank, ...],
+    shape: InputTensor[rank=1, ...],
+) raises -> IndexList[output_rank]:
+    return BroadcastTo.shape_impl[output_rank=output_rank](input, shape)
 
 
 @compiler.register("mo.broadcast_shape")
@@ -870,13 +917,14 @@ struct BroadcastShape:
             )
         return BroadcastShape.broadcast_shape_impl(out_buf, lhs_buf, rhs_buf)
 
-    @staticmethod
-    def shape(
-        lhs_buf: InputTensor[rank=1, ...], rhs_buf: InputTensor[rank=1, ...]
-    ) raises -> IndexList[1]:
-        var lhs_dim = lhs_buf.dim_size[0]()
-        var rhs_dim = rhs_buf.dim_size[0]()
-        return IndexList[1](max(lhs_dim, rhs_dim))
+
+@compiler.register_shape_function("mo.broadcast_shape")
+def broadcast_shape_fn(
+    lhs_buf: InputTensor[rank=1, ...], rhs_buf: InputTensor[rank=1, ...]
+) raises -> IndexList[1]:
+    var lhs_dim = lhs_buf.dim_size[0]()
+    var rhs_dim = rhs_buf.dim_size[0]()
+    return IndexList[1](max(lhs_dim, rhs_dim))
 
 
 @compiler.register("mo.static.broadcast_to")
@@ -886,7 +934,7 @@ struct StaticBroadcastTo:
     @staticmethod
     def build_view[
         out_rank: Int,
-    ](x: InputTensor[...],) -> IndexList[out_rank]:
+    ](x: InputTensor,) -> IndexList[out_rank]:
         var new_strides = IndexList[out_rank]()
         comptime delta = out_rank - x.rank
 
@@ -1037,19 +1085,20 @@ struct Reshape:
     #
     # Sometimes with a call to the below shape function.
     @staticmethod
-    def execute(input: InputTensor[...], shape: InputTensor) raises:
+    def execute(input: InputTensor, shape: InputTensor) raises:
         raise Error("Should never be called!")
 
-    @staticmethod
-    def shape[
-        output_rank: Int
-    ](
-        input: InputTensor[...], shape: InputTensor[rank=1, ...]
-    ) raises -> IndexList[output_rank]:
-        return reshape_shape[output_rank=output_rank](
-            input.to_tile_tensor[DType.int64](),
-            shape.to_tile_tensor[DType.int64](),
-        )
+
+@compiler.register_shape_function("mo.reshape")
+def reshape_shape_fn[
+    output_rank: Int
+](input: InputTensor, shape: InputTensor[rank=1, ...]) raises -> IndexList[
+    output_rank
+]:
+    return reshape_shape[output_rank=output_rank](
+        input.to_tile_tensor[DType.int64](),
+        shape.to_tile_tensor[DType.int64](),
+    )
 
 
 @compiler.register("mo.transpose")
@@ -1058,7 +1107,7 @@ struct Transpose:
     @always_inline
     @staticmethod
     def transpose_in_place(
-        input: InputTensor[...],
+        input: InputTensor,
         permutations: InputTensor[rank=1, ...],
         out result: Tuple[IndexList[input.rank], IndexList[input.rank]],
     ):
@@ -1127,7 +1176,7 @@ struct Transpose:
     @no_inline
     @staticmethod
     def shape_impl(
-        input: InputTensor[...],
+        input: InputTensor,
         permutations: InputTensor[rank=1, ...],
     ) raises -> IndexList[input.rank]:
         if permutations.dim_size[0]() != input.rank:
@@ -1149,12 +1198,13 @@ struct Transpose:
 
         return out
 
-    @staticmethod
-    def shape(
-        input: InputTensor[...],
-        permutations: InputTensor[rank=1, ...],
-    ) raises -> IndexList[input.rank]:
-        return Self.shape_impl(input, permutations)
+
+@compiler.register_shape_function("mo.transpose")
+def transpose_shape_fn(
+    input: InputTensor,
+    permutations: InputTensor[rank=1, ...],
+) raises -> IndexList[input.rank]:
+    return Transpose.shape_impl(input, permutations)
 
 
 @compiler.register("mo.slice")
@@ -1182,17 +1232,20 @@ struct Slice:
             ].static_value < 0:
                 return 1
 
-            # The offset for dimension `i` is `start[i] * strides[i]`
-            comptime if not start_types[i].is_static_value or not stride_types[
-                i
-            ].is_static_value:
+            # The offset for dimension `i` is `start[i] * strides[i]`. If the
+            # start is not statically known the offset is unknown.
+            comptime if not start_types[i].is_static_value:
                 return 1
-            alignment = gcd(
-                alignment,
-                start_types[i].static_value
-                * stride_types[i].static_value
-                * align_of[dtype](),
-            )
+
+            comptime if start_types[i].static_value != 0:
+                comptime if not stride_types[i].is_static_value:
+                    return 1
+                alignment = gcd(
+                    alignment,
+                    start_types[i].static_value
+                    * stride_types[i].static_value
+                    * align_of[dtype](),
+                )
 
         return alignment
 
@@ -1275,21 +1328,22 @@ struct Slice:
             target=target,
         ](output, view_tensor, ctx)
 
-    @staticmethod
-    def shape(
-        input: InputTensor[...],
-        starts: InputTensor[rank=1, ...],
-        stops: InputTensor[rank=1, ...],
-        steps: InputTensor[rank=1, ...],
-    ) raises -> IndexList[input.rank]:
-        return rebind[IndexList[input.rank]](
-            slice_shape(
-                input.to_tile_tensor[DType.int64](),
-                starts.to_tile_tensor[DType.int64](),
-                stops.to_tile_tensor[DType.int64](),
-                steps.to_tile_tensor[DType.int64](),
-            )
+
+@compiler.register_shape_function("mo.slice")
+def slice_shape_fn(
+    input: InputTensor,
+    starts: InputTensor[rank=1, ...],
+    stops: InputTensor[rank=1, ...],
+    steps: InputTensor[rank=1, ...],
+) raises -> IndexList[input.rank]:
+    return rebind[IndexList[input.rank]](
+        slice_shape(
+            input.to_tile_tensor[DType.int64](),
+            starts.to_tile_tensor[DType.int64](),
+            stops.to_tile_tensor[DType.int64](),
+            steps.to_tile_tensor[DType.int64](),
         )
+    )
 
 
 @compiler.register("mo.mutable.store")
@@ -1306,8 +1360,8 @@ struct MutableStore(ElementwiseUnaryOp):
         target: StaticString,
         _trace_name: StaticString,
     ](
-        buffer: MutableInputTensor[...],
-        tensor: FusedInputTensor[...],
+        buffer: MutableInputTensor,
+        tensor: FusedInputTensor,
         ctx: DeviceContext,
     ) capturing raises:
         # TODO: Remove the execute method (GEX-2453).
@@ -1347,9 +1401,9 @@ struct GatherND:
         target: StaticString,
         _trace_name: StaticString,
     ](
-        output: OutputTensor[...],
+        output: OutputTensor,
         data: InputTensor[dtype=output.dtype, ...],
-        indices: InputTensor[...],
+        indices: InputTensor,
         ctx: DeviceContext,
     ) raises:
         gather_nd[batch_dims=batchDims, target=target](
@@ -1359,22 +1413,18 @@ struct GatherND:
             ctx,
         )
 
-    @staticmethod
-    def shape[
-        batch_dims: Int, output_rank: Int
+
+@compiler.register_shape_function("mo.gather_nd")
+def gather_nd_shape_fn[
+    batch_dims: Int, output_rank: Int
+](data: InputTensor, indices: InputTensor,) raises -> IndexList[output_rank]:
+    return gather_nd_shape[
+        batch_dims=batch_dims,
+        output_rank=output_rank,
     ](
-        data: InputTensor[...],
-        indices: InputTensor[...],
-    ) raises -> IndexList[
-        output_rank
-    ]:
-        return gather_nd_shape[
-            batch_dims=batch_dims,
-            output_rank=output_rank,
-        ](
-            data.to_tile_tensor[DType.int64](),
-            indices.to_tile_tensor[DType.int64](),
-        )
+        data.to_tile_tensor[DType.int64](),
+        indices.to_tile_tensor[DType.int64](),
+    )
 
 
 @compiler.register("mo.gather")
@@ -1383,11 +1433,11 @@ struct Gather:
     def execute[
         target: StaticString,
         _trace_name: StaticString,
+        axis: Int,
     ](
-        output: FusedOutputTensor[...],
+        output: FusedOutputTensor,
         input: FusedInputTensor[dtype=output.dtype, ...],
-        indices: FusedInputTensor[...],
-        axis: Scalar,
+        indices: FusedInputTensor,
         ctx: DeviceContext,
     ) capturing raises:
         @always_inline
@@ -1424,7 +1474,7 @@ struct Gather:
             indices.dtype,
             target=target,
         ](
-            Axis(Int(axis), input.rank),
+            Axis(axis, input.rank),
             input.shape(),
             indices.shape(),
             output.shape(),
@@ -1434,19 +1484,17 @@ struct Gather:
             context=ctx,
         )
 
-    @staticmethod
-    def shape[
-        output_rank: Int,
-    ](
-        input: InputTensor[...],
-        indices: InputTensor[...],
-        axis: Scalar,
-    ) raises -> IndexList[output_rank]:
-        return gather_shape[output_rank=output_rank](
-            input.to_tile_tensor[DType.int64](),
-            indices.to_tile_tensor[DType.int64](),
-            Int(axis),
-        )
+
+@compiler.register_shape_function("mo.gather")
+def gather_shape_fn[
+    output_rank: Int,
+    axis: Int,
+](input: InputTensor, indices: InputTensor,) raises -> IndexList[output_rank]:
+    return gather_shape[output_rank=output_rank](
+        input.to_tile_tensor[DType.int64](),
+        indices.to_tile_tensor[DType.int64](),
+        axis,
+    )
 
 
 @compiler.register("mo.gather_sum")
@@ -1455,7 +1503,7 @@ struct GatherSum:
     def execute[
         target: StaticString,
     ](
-        output: OutputTensor[...],
+        output: OutputTensor,
         input: InputTensor[dtype=output.dtype, ...],
         indices: InputTensor[dtype=DType.int32, ...],
         ctx: DeviceContext,
@@ -1486,7 +1534,7 @@ struct Tile:
     ](
         output: OutputTensor[dtype=dtype, rank=rank, ...],
         input: InputTensor[dtype=dtype, rank=rank, ...],
-        repeats: InputTensor[...],
+        repeats: InputTensor,
     ) raises:
         tile(
             input.to_tile_tensor[DType.int64](),
@@ -1494,19 +1542,18 @@ struct Tile:
             output.to_tile_tensor[DType.int64](),
         )
 
-    @staticmethod
-    def shape(
-        input: InputTensor[...],
-        repeats: InputTensor[rank=1, ...],
-    ) raises -> IndexList[input.rank]:
-        # rebind is required because mojo can't figure out that
-        # input.static_spec.to_layout_tensor().rank == input.rank
-        return rebind[IndexList[input.rank]](
-            tile_shape(
-                input.to_tile_tensor[DType.int64](),
-                repeats.to_tile_tensor[DType.int64](),
-            )
+
+@compiler.register_shape_function("mo.tile")
+def tile_shape_fn(
+    input: InputTensor,
+    repeats: InputTensor[rank=1, ...],
+) raises -> IndexList[input.rank]:
+    return rebind[IndexList[input.rank]](
+        tile_shape(
+            input.to_tile_tensor[DType.int64](),
+            repeats.to_tile_tensor[DType.int64](),
         )
+    )
 
 
 @compiler.register("mo.shard_and_stack")
@@ -1541,6 +1588,8 @@ struct Concat:
     ) capturing raises:
         var input_shapes = StaticTuple[IndexList[rank], inputs.size]()
 
+        check_axis_in_range[axis, output.rank]()
+
         comptime for i in range(inputs.size):
             input_shapes[i] = inputs[i].shape()
 
@@ -1571,26 +1620,27 @@ struct Concat:
             rank,
             inputs_lambda,
             epilogue_wrapper,
+            axis=normalize_neg_index(axis, rank),
             target=target,
         ](
-            normalize_neg_index(axis, rank),
             input_shapes,
             output.to_tile_tensor[DType.int64](),
             ctx,
         )
 
-    @staticmethod
-    def shape[
-        dtype: DType,
-        rank: Int,
-        axis: Int,
-    ](
-        inputs: InputVariadicTensors[dtype=dtype, rank=rank, ...]
-    ) raises -> IndexList[rank]:
-        return concat_shape_impl(axis, inputs)
+
+@compiler.register_shape_function("mo.concat")
+def concat_shape_fn[
+    dtype: DType,
+    rank: Int,
+    axis: Int,
+](
+    inputs: InputVariadicTensors[dtype=dtype, rank=rank, ...]
+) raises -> IndexList[rank]:
+    return concat_shape_impl(axis, inputs)
 
 
-@compiler.register("mo.fused_concat_slice")
+@compiler.register("mo.composite.concat_slice")
 struct FusedConcatSlice:
     @staticmethod
     def execute[
@@ -1607,6 +1657,8 @@ struct FusedConcatSlice:
         ctx: DeviceContext,
     ) capturing raises:
         var input_shapes = StaticTuple[IndexList[rank], inputs.size]()
+
+        check_axis_in_range[axis, rank]()
 
         comptime for i in range(inputs.size):
             input_shapes[i] = inputs[i].shape()
@@ -1629,7 +1681,7 @@ struct FusedConcatSlice:
         @always_inline
         @parameter
         def epilogue_wrapper[
-            _dtype: DType, _rank: Int, width: Int, *, alignment: Int = 1
+            _dtype: DType, _rank: Int, width: SIMDSize, *, alignment: Int = 1
         ](indices: IndexList[_rank], value: SIMD[_dtype, width]):
             var concat_indices = rebind[IndexList[rank]](indices)
 
@@ -1686,9 +1738,9 @@ struct FusedConcatSlice:
             rank,
             inputs_lambda,
             epilogue_wrapper,
+            axis=normalize_neg_index(axis, rank),
             target=target,
         ](
-            normalize_neg_index(axis, rank),
             input_shapes,
             concat_output.to_tile_tensor[DType.int64](),
             ctx,
@@ -1717,6 +1769,7 @@ struct DualFusedConcatSlice:
         ctx: DeviceContext,
     ) capturing raises:
         comptime num_inputs_1 = inputs.size - num_inputs_0
+        check_axis_in_range[axis, rank]()
 
         var input_shapes_0 = StaticTuple[IndexList[rank], num_inputs_0]()
         comptime for i in range(num_inputs_0):
@@ -1759,7 +1812,7 @@ struct DualFusedConcatSlice:
         @always_inline
         @parameter
         def epilogue_0[
-            _dtype: DType, _rank: Int, width: Int, *, alignment: Int = 1
+            _dtype: DType, _rank: Int, width: SIMDSize, *, alignment: Int = 1
         ](indices: IndexList[_rank], value: SIMD[_dtype, width]):
             var concat_indices = rebind[IndexList[rank]](indices)
 
@@ -1812,7 +1865,7 @@ struct DualFusedConcatSlice:
         @always_inline
         @parameter
         def epilogue_1[
-            _dtype: DType, _rank: Int, width: Int, *, alignment: Int = 1
+            _dtype: DType, _rank: Int, width: SIMDSize, *, alignment: Int = 1
         ](indices: IndexList[_rank], value: SIMD[_dtype, width]):
             var concat_indices = rebind[IndexList[rank]](indices)
 
@@ -1889,17 +1942,21 @@ struct Split:
         rank: Int,
         target: StaticString,
         _trace_name: StaticString,
+        axis: Int,
     ](
         output: OutputVariadicTensors[dtype=dtype, rank=rank, ...],
         input: InputTensor[dtype=dtype, rank=rank, ...],
         split_sizes: InputTensor[rank=1, ...],
-        axis: Scalar,
         ctx: DeviceContext,
     ) raises:
         comptime shape_types = DynamicCoord[DType.int64, rank].element_types
         # Use Scalar for strides as well since make_dynamic produces all
         # runtime strides.
         comptime stride_types = DynamicCoord[DType.int64, rank].element_types
+
+        check_axis_in_range[output.rank](axis)
+
+        comptime normalized_axis = axis + rank if axis < 0 else axis
 
         var output_bufs = StaticTuple[
             TileTensor[
@@ -1913,16 +1970,20 @@ struct Split:
         comptime for i in range(output.size):
             output_bufs[i] = rebind[output_bufs.element_type](
                 TileTensor(
-                    output[i].unsafe_ptr().as_any_origin(),
+                    output[i].unsafe_ptr().as_unsafe_any_origin(),
                     output[i]
                     .to_tile_tensor[DType.int64]()
                     .layout.make_dynamic[DType.int64](),
                 ),
             )
 
-        split[dtype, target=target, trace_description=_trace_name](
+        split[
+            dtype,
+            target=target,
+            trace_description=_trace_name,
+            axis=normalized_axis,
+        ](
             input.to_tile_tensor[DType.int64](),
-            normalize_neg_index(Int(axis), rank),
             output_bufs,
             ctx,
         )
@@ -1932,49 +1993,49 @@ struct Split:
 struct SplitOutputShapeHelper:
     @staticmethod
     def execute(
-        input_buf: InputTensor[...],
-        split_sizes_buf: InputTensor[...],
+        input_buf: InputTensor,
+        split_sizes_buf: InputTensor,
         split_axis: Scalar,
         output_idx: Scalar,
     ) raises:
         raise Error("Should not be called directly.")
 
-    @staticmethod
-    @always_inline
-    def shape[
-        rank: Int,
-        input_type: DType,
-        split_size_type: DType,
-    ](
-        input_buf: InputTensor[dtype=input_type, rank=rank, ...],
-        split_sizes_buf: InputTensor[dtype=split_size_type, rank=1, ...],
-        split_axis: Scalar,
-        output_idx: Scalar,
-    ) raises -> IndexList[rank]:
-        # extract relevant hyper parameters
-        if not (0 <= Int(output_idx) < split_sizes_buf.size()):
-            raise Error(
-                "[split] output index must be within range [0,"
-                " len(split_sizes))"
-            )
-        var output_split_size = Int(split_sizes_buf[Int(output_idx)])
 
-        var normalized_split_axis = normalize_neg_index(Int(split_axis), rank)
+@compiler.register_shape_function("split_ith_output_shape")
+def split_ith_output_shape_fn[
+    rank: Int,
+    input_type: DType,
+    split_size_type: DType,
+](
+    input_buf: InputTensor[dtype=input_type, rank=rank, ...],
+    split_sizes_buf: InputTensor[dtype=split_size_type, rank=1, ...],
+    split_axis: Scalar,
+    output_idx: Scalar,
+) raises -> IndexList[rank]:
+    if not (0 <= Int(output_idx) < split_sizes_buf.size()):
+        raise Error(
+            "[split] output index must be within range [0, len(split_sizes))"
+        )
 
-        var split_sizes_sum = 0
+    check_axis_in_range[rank](Int(split_axis))
 
-        for i in range(split_sizes_buf.dim_size[0]()):
-            split_sizes_sum += Int(split_sizes_buf[i])
-        if split_sizes_sum != input_buf.dim_size(normalized_split_axis):
-            raise Error(
-                "[split] sum of split sizes must match input dimension at split"
-                " axis"
-            )
+    var output_split_size = Int(split_sizes_buf[Int(output_idx)])
 
-        # compute and return the output shape
-        var output_shape = input_buf.shape()
-        output_shape[normalized_split_axis] = output_split_size
-        return output_shape
+    var normalized_split_axis = normalize_neg_index(Int(split_axis), rank)
+
+    var split_sizes_sum = 0
+
+    for i in range(split_sizes_buf.dim_size[0]()):
+        split_sizes_sum += Int(split_sizes_buf[i])
+    if split_sizes_sum != input_buf.dim_size(normalized_split_axis):
+        raise Error(
+            "[split] sum of split sizes must match input dimension at split"
+            " axis"
+        )
+
+    var output_shape = input_buf.shape()
+    output_shape[normalized_split_axis] = output_split_size
+    return output_shape
 
 
 @compiler.register("index_tensor")
@@ -2063,25 +2124,25 @@ struct AdvancedIndexingGetItem:
             ctx,
         )
 
-    @always_inline
-    @staticmethod
-    def shape[
-        input_rank: Int,
-        index_rank: Int,
-        input_type: DType,
-        index_type: DType,
-        num_index_tensors: Int,
-        //,
-        start_axis: Int,
-    ](
-        input_tensor: InputTensor[dtype=input_type, rank=input_rank, ...],
-        indices: InputVariadicTensors[
-            dtype=index_type, rank=index_rank, size=num_index_tensors, ...
-        ],
-    ) -> IndexList[input_rank + index_rank - num_index_tensors]:
-        return advanced_indexing_getitem_shape[
-            start_axis=start_axis, num_index_tensors=num_index_tensors
-        ](input_tensor.shape(), indices[0].shape())
+
+@compiler.register_shape_function("advanced_indexing_getitem")
+def advanced_indexing_getitem_shape_fn[
+    input_rank: Int,
+    index_rank: Int,
+    input_type: DType,
+    index_type: DType,
+    num_index_tensors: Int,
+    //,
+    start_axis: Int,
+](
+    input_tensor: InputTensor[dtype=input_type, rank=input_rank, ...],
+    indices: InputVariadicTensors[
+        dtype=index_type, rank=index_rank, size=num_index_tensors, ...
+    ],
+) -> IndexList[input_rank + index_rank - num_index_tensors]:
+    return advanced_indexing_getitem_shape[
+        start_axis=start_axis, num_index_tensors=num_index_tensors
+    ](input_tensor.shape(), indices[0].shape())
 
 
 @compiler.register("advanced_indexing_setitem_inplace")
@@ -2200,8 +2261,8 @@ struct AdvancedIndexingSetItem:
             static_spec=output_tensor.static_spec,
         ](
             output_tensor._ptr,
-            output_tensor._spec,
-            output_tensor._runtime_strides,
+            output_tensor.shape(),
+            output_tensor.strides(),
         )
         AdvancedIndexingSetItemInplace.execute[
             target=target,

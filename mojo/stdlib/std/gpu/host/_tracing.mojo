@@ -57,7 +57,7 @@ def _setup_category(
     value: Int,
     name: StaticString,
 ):
-    name_category(UInt32(value), name.unsafe_ptr())
+    name_category(UInt32(value), name.unsafe_ptr().as_unsafe_any_origin())
 
 
 def _setup_categories(
@@ -214,7 +214,7 @@ struct _C_EventAttributes(TrivialRegisterPassable):
     var message_type: Int32
     """Message type specified in this attribute structure."""
 
-    var message: UnsafePointer[UInt8, ImmutAnyOrigin]
+    var message: UnsafePointer[UInt8, ImmutUntrackedOrigin]
     """Message assigned to this attribute structure."""
 
 
@@ -258,7 +258,10 @@ struct EventAttributes(TrivialRegisterPassable):
             _reserved=0,
             event_payload=0,
             message_type=ASCII,
-            message=message.unsafe_ptr(),
+            # FIXME(MSTDL-2739): Ths is is wildly unsafe. What is keeping the 'message' string alive?
+            message=message.unsafe_ptr().unsafe_origin_cast[
+                ImmutUntrackedOrigin
+            ](),
         )
 
 
@@ -342,13 +345,13 @@ struct _Mark:
         else:
             self._fn = _roctxMarkA.load()
 
-    def __call__(self, val: UnsafePointer[_C_EventAttributes, ImmutAnyOrigin]):
+    def __call__(self, val: UnsafePointer[mut=False, _C_EventAttributes, _]):
         comptime assert has_nvidia_gpu_accelerator()
-        self._fn[_nvtxMarkEx.fn_type](val)
+        self._fn[_nvtxMarkEx.fn_type](val.as_unsafe_any_origin())
 
-    def __call__(self, val: UnsafePointer[UInt8, ImmutAnyOrigin]):
+    def __call__(self, val: UnsafePointer[mut=False, UInt8, _]):
         comptime assert has_amd_gpu_accelerator()
-        self._fn[_roctxMarkA.fn_type](val)
+        self._fn[_roctxMarkA.fn_type](val.as_unsafe_any_origin())
 
 
 struct _RangeStart:
@@ -361,14 +364,14 @@ struct _RangeStart:
             self._fn = _roctxRangeStartA.load()
 
     def __call__(
-        self, val: UnsafePointer[_C_EventAttributes, ImmutAnyOrigin]
+        self, val: UnsafePointer[mut=False, _C_EventAttributes, _]
     ) -> RangeID:
         comptime assert has_nvidia_gpu_accelerator()
-        return self._fn[_nvtxRangeStartEx.fn_type](val)
+        return self._fn[_nvtxRangeStartEx.fn_type](val.as_unsafe_any_origin())
 
-    def __call__(self, val: UnsafePointer[UInt8, ImmutAnyOrigin]) -> RangeID:
+    def __call__(self, val: UnsafePointer[mut=False, UInt8, _]) -> RangeID:
         comptime assert has_amd_gpu_accelerator()
-        return self._fn[_roctxRangeStartA.fn_type](val)
+        return self._fn[_roctxRangeStartA.fn_type](val.as_unsafe_any_origin())
 
 
 struct _RangeEnd:
@@ -394,14 +397,14 @@ struct _RangePush:
             self._fn = _roctxRangePushA.load()
 
     def __call__(
-        self, val: UnsafePointer[_C_EventAttributes, ImmutAnyOrigin]
+        self, val: UnsafePointer[mut=False, _C_EventAttributes, _]
     ) -> Int32:
         comptime assert has_nvidia_gpu_accelerator()
-        return self._fn[_nvtxRangePushEx.fn_type](val)
+        return self._fn[_nvtxRangePushEx.fn_type](val.as_unsafe_any_origin())
 
-    def __call__(self, val: UnsafePointer[UInt8, ImmutAnyOrigin]) -> Int32:
+    def __call__(self, val: UnsafePointer[mut=False, UInt8, _]) -> Int32:
         comptime assert has_amd_gpu_accelerator()
-        return self._fn[_roctxRangePushA.fn_type](val)
+        return self._fn[_roctxRangePushA.fn_type](val.as_unsafe_any_origin())
 
 
 struct _RangePop:
@@ -454,7 +457,15 @@ def _start_range(
 
     comptime if has_nvidia_gpu_accelerator():
         var info = EventAttributes(message=msg, color=color, category=category)
-        return _RangeStart()(UnsafePointer(to=info._value))
+        var result = _RangeStart()(UnsafePointer(to=info._value))
+        # Keep msg alive past the _RangeStart() constructor: _get_dylib_function
+        # allocates a temporary "GPU_TRACING_LIBRARY/nvtxRangeStartEx" String on
+        # the heap to do its cache lookup. Without this lifetime extension the
+        # compiler is free to destroy msg (whose last *tracked* use is
+        # EventAttributes above), letting that allocation reuse msg's buffer
+        # before nvtxRangeStartEx reads info._value.message.
+        _ = msg
+        return result
     else:
         return _RangeStart()(msg.unsafe_ptr())
 
@@ -481,6 +492,7 @@ def _mark(
     comptime if has_nvidia_gpu_accelerator():
         var info = EventAttributes(message=msg, color=color, category=category)
         _Mark()(UnsafePointer(to=info._value))
+        _ = msg
     else:
         _Mark()(msg.unsafe_ptr())
 

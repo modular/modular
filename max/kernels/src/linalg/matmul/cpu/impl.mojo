@@ -57,7 +57,7 @@ from .vnni import Inner_matmul_vnni
 # - _run_inner_loop_i8mm()
 
 
-trait InnerMatmulKernel(ImplicitlyCopyable, ImplicitlyDestructible):
+trait InnerMatmulKernel(ImplicitlyCopyable, ImplicitlyDeletable):
     def __inner_matmul__[
         kernel_rows: Int,
         kernel_cols: Int,
@@ -456,7 +456,7 @@ def _matmul_cpu_impl[
         var kh = align_up(k, 8)
         var mh = align_up(m, 2)
         var a_packed_ptr: Optional[
-            UnsafePointer[Scalar[a.dtype], MutExternalOrigin]
+            UnsafePointer[Scalar[a.dtype], MutUntrackedOrigin]
         ] = None
         comptime if use_i8mm:
             a_packed_ptr = alloc[Scalar[a.dtype]](mh * kh, alignment=alignment)
@@ -530,7 +530,7 @@ def _matmul_cpu_impl[
                     alg,
                     c,
                     TileTensor(
-                        a.ptr.unsafe_mut_cast[True]().as_any_origin(),
+                        a.ptr.unsafe_mut_cast[True]().as_unsafe_any_origin(),
                         a.layout,
                     ),
                     b,
@@ -561,8 +561,8 @@ def matmul[
     saturated_vnni: Bool = False,
 ](
     c: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
-    a: TileTensor[address_space=AddressSpace.GENERIC, ...],
-    b: TileTensor[address_space=AddressSpace.GENERIC, ...],
+    a: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
+    b: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
     kernel_type_m: Int,
     num_threads: Int = -1,
     ctx: Optional[DeviceContext] = None,
@@ -622,9 +622,10 @@ def matmul[
 
     comptime kernel_id = select_inner_kernel[a.dtype, b.dtype, c.dtype]()
 
-    @parameter
     @always_inline
-    def dispatch_on_kernel_type[kernel_type: Bool]() raises:
+    def dispatch_on_kernel_type[
+        kernel_type: Bool
+    ]() raises {c, a, b, num_threads, ctx}:
         comptime config = get_kernel_config[
             a.dtype,
             b.dtype,
@@ -698,7 +699,7 @@ def matmul[
     var shape = GemmShape.get[transpose_b](c, a, b)
     var n = shape.N
     var k = shape.K
-    dispatch_get_kernel_type[dispatch_on_kernel_type](kernel_type_m, n, k)
+    dispatch_get_kernel_type(dispatch_on_kernel_type, kernel_type_m, n, k)
 
 
 def _submatmul_sequential_sync[
@@ -711,8 +712,8 @@ def _submatmul_sequential_sync[
 ](
     alg: algorithm,
     c: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
-    a: TileTensor[address_space=AddressSpace.GENERIC, ...],
-    b: TileTensor[address_space=AddressSpace.GENERIC, ...],
+    a: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
+    b: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
     sub_matrix_shape: GemmShape,
     sub_matrix_offset: GemmShape,
 ):
@@ -763,8 +764,8 @@ def _submatmul_sequential_sync[
     saturated_vnni: Bool,
 ](
     c: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
-    a: TileTensor[address_space=AddressSpace.GENERIC, ...],
-    b: TileTensor[address_space=AddressSpace.GENERIC, ...],
+    a: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
+    b: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
     sub_matrix_shape: GemmShape,
     sub_matrix_offset: GemmShape,
 ):

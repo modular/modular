@@ -246,10 +246,7 @@ Constraints:
 - `{read name^}`, `{mut name^}`, and `{ref name^}` are
   rejected.
 - A bare `name^` is equivalent to `var name^`. Both produce the
-  same `kConventionMove` entry. The compiler accepts both forms,
-  but `mojo format` currently rejects the bare form. Use
-  `{var name^}` in code that must round-trip through the
-  formatter.
+  same `kConventionMove` entry.
 
 ## Copyable closures: `var^`
 

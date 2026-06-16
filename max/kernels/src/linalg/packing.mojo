@@ -560,7 +560,7 @@ def _pack_matmul_b_shape_func_impl[
     c_type: DType,
     transpose_in_0: Bool,
 ](
-    b_input: TileTensor[address_space=AddressSpace.GENERIC, ...],
+    b_input: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
     kernel_type_m: Int = 0,
 ) -> IndexList[2]:
     """Computes the padded shape required by `pack_b` directly from TileTensor
@@ -579,9 +579,8 @@ def _pack_matmul_b_shape_func_impl[
     var k = dim1 if transpose_in_0 else dim0
     var tile_n_k = IndexList[2]()
 
-    @parameter
     @always_inline
-    def dispatch_on_kernel_type[kernel_type: Bool]():
+    def dispatch_on_kernel_type[kernel_type: Bool]() {mut tile_n_k, b_input}:
         comptime config = get_kernel_config[
             a_type,
             b_input.dtype,
@@ -592,7 +591,7 @@ def _pack_matmul_b_shape_func_impl[
             a_type, b_input.dtype, c_type, config.kernel_cols, transpose_in_0
         ](b_input)
 
-    dispatch_get_kernel_type[dispatch_on_kernel_type](kernel_type_m, n, k)
+    dispatch_get_kernel_type(dispatch_on_kernel_type, kernel_type_m, n, k)
 
     comptime if transpose_in_0:
         output[0] = dim1
@@ -624,7 +623,7 @@ def pack_b[
     c_type: DType,
 ](
     dst: TileTensor[mut=True, b_type, address_space=AddressSpace.GENERIC, ...],
-    src: TileTensor[b_type, address_space=AddressSpace.GENERIC, ...],
+    src: TileTensor[mut=False, b_type, address_space=AddressSpace.GENERIC, ...],
     tile_n: Int,
     tile_k: Int,
 ):
@@ -790,9 +789,10 @@ def _pack_b_ndbuffer_impl[
                 memcpy(dest=output_buffer.ptr, src=b_input.ptr, count=n * k)
             return
 
-        @parameter
         @always_inline
-        def dispatch_on_kernel_type[kernel_type: Bool]():
+        def dispatch_on_kernel_type[
+            kernel_type: Bool
+        ]() {output_buffer, b_input}:
             comptime config = get_kernel_config[
                 a_type,
                 b_type,
@@ -811,7 +811,7 @@ def _pack_b_ndbuffer_impl[
                 c_type,
             ](output_buffer, b_input, tile_n_k[0], tile_n_k[1])
 
-        dispatch_get_kernel_type[dispatch_on_kernel_type](kernel_type_m, n, k)
+        dispatch_get_kernel_type(dispatch_on_kernel_type, kernel_type_m, n, k)
 
 
 @always_inline
@@ -820,7 +820,7 @@ def pack_matmul_b_shape_func[
     c_type: DType,
     transpose_in_0: Bool,
 ](
-    b_input: TileTensor[address_space=AddressSpace.GENERIC, ...],
+    b_input: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
     kernel_type_m: Int = 0,
 ) -> IndexList[2]:
     """TileTensor primary implementation of `pack_matmul_b_shape_func`.
@@ -903,7 +903,7 @@ struct BTileGenerator[
     var b: TileTensor[
         Self.b_type, Self.b_layout, Self.origin
     ]  # packed layout if b_packed is True
-    var b_tile_stack_ptr: UnsafePointer[Scalar[Self.b_type], MutAnyOrigin]
+    var b_tile_stack_ptr: UnsafePointer[Scalar[Self.b_type], MutUntrackedOrigin]
     var tile_n_k: IndexList[2]
 
     # needs to be always_inline so b_tile_stack_ptr gets allocated on caller's stack
@@ -923,7 +923,7 @@ struct BTileGenerator[
         Self.origin,
     ]:
         var b_tile_stack_ptr = UnsafePointer[
-            Scalar[Self.b_type], MutAnyOrigin
+            Scalar[Self.b_type], MutUntrackedOrigin
         ].unsafe_dangling()
 
         assert not (
@@ -1014,7 +1014,7 @@ struct BTileGenerator[
                 # Valid amount of input from the starting offset.
                 Index(valid_data_dim_nk[0], valid_data_dim_nk[1]),
             )
-            return packed_b.as_immut().as_any_origin()
+            return packed_b.as_immut().as_unsafe_any_origin()
         elif (not Self.transpose_b) and (not Self.b_packed):
             PackMatrixCols[
                 Self.b_type,
@@ -1073,9 +1073,9 @@ struct BTileGenerator[
                     )
                 ),
             )
-            return b_tile_view.as_any_origin()
+            return b_tile_view.as_unsafe_any_origin()
 
         else:
             assert False, "unreachable, b_packed not supported with transpose_b"
 
-        return packed_b.as_immut().as_any_origin()
+        return packed_b.as_immut().as_unsafe_any_origin()

@@ -25,15 +25,19 @@ from typing import Any
 import numpy as np
 import numpy.typing as npt
 from max.pipelines.architectures.qwen2_5vl.nn.qwen_vl_utils import to_rgb
-from max.pipelines.core.context import GrammarEnforcementState
+from max.pipelines.context import (
+    ImageMetadata,
+    TokenBuffer,
+)
+from max.pipelines.context.context import GrammarEnforcementState
+from max.pipelines.context.exceptions import PromptTooLongError
 from max.pipelines.lib import TextAndVisionTokenizer, max_tokens_to_generate
 from max.pipelines.lib.config import PipelineConfig
+from max.pipelines.lib.tokenizer import resolve_single_special_token
 from max.pipelines.modeling.types import (
-    ImageMetadata,
     TextGenerationRequest,
     TextGenerationRequestMessage,
     TextGenerationRequestTool,
-    TokenBuffer,
 )
 from max.support.image import find_contiguous_ranges, hash_image
 from PIL import Image
@@ -212,6 +216,27 @@ class Gemma4Tokenizer(TextAndVisionTokenizer):
             set(self.delegate.all_special_ids) - tool_token_ids
         )
 
+        # ReasoningPipelineTokenizer surface — Gemma 4 wraps reasoning in
+        # ``<|channel>thought\n...<channel|>`` blocks; expose the delimiter
+        # ids so the overlap pipeline's thinking-mode temperature scaling
+        # can find them without hardcoding ``<think>``/``</think>``.
+        self._reasoning_start_token_id: int = resolve_single_special_token(
+            self.delegate, "<|channel>"
+        )
+        self._reasoning_end_token_id: int = resolve_single_special_token(
+            self.delegate, "<channel|>"
+        )
+
+    @property
+    def reasoning_start_token_id(self) -> int:
+        """Token id of ``<|channel>`` (opens a Gemma 4 reasoning span)."""
+        return self._reasoning_start_token_id
+
+    @property
+    def reasoning_end_token_id(self) -> int:
+        """Token id of ``<channel|>`` (closes a Gemma 4 reasoning span)."""
+        return self._reasoning_end_token_id
+
     def _patch_chat_template_for_video(self) -> None:
         """Patch the chat template to handle ``type == 'video'`` if missing.
 
@@ -265,7 +290,7 @@ class Gemma4Tokenizer(TextAndVisionTokenizer):
         return templated_message
 
     async def decode(
-        self, encoded: npt.NDArray[np.integer[Any]], **kwargs
+        self, encoded: npt.NDArray[np.integer[Any]] | int, **kwargs
     ) -> str:
         """Decode tokens, preserving tool-related special tokens.
 
@@ -273,6 +298,10 @@ class Gemma4Tokenizer(TextAndVisionTokenizer):
         to selectively preserve them when skip_special_tokens=True by filtering
         unwanted special tokens before decoding.
         """
+        # Log-probability responses decode one token id (a plain int) at a
+        # time; match the text tokenizer's handling.
+        if isinstance(encoded, int):
+            encoded = np.array(encoded)
         skip_special_tokens = kwargs.get("skip_special_tokens", True)
 
         if not skip_special_tokens:
@@ -444,9 +473,7 @@ class Gemma4Tokenizer(TextAndVisionTokenizer):
         )
 
         if self.max_length and encoded_prompt.shape[0] > self.max_length:
-            raise ValueError(
-                "encoded_prompt is greater than the max_length of the tokenizer"
-            )
+            raise PromptTooLongError(encoded_prompt.shape[0], self.max_length)
 
         # Build ImageMetadata for images only (not videos).
         # Find contiguous ranges of *image* tokens only.
@@ -496,9 +523,12 @@ class Gemma4Tokenizer(TextAndVisionTokenizer):
             json_schema=json_schema,
             grammar=grammar,
             grammar_state=grammar_state,
+            log_probabilities=request.logprobs,
+            log_probabilities_echo=request.echo,
             sampling_params=request.sampling_params,
             images=image_metadata,
             vision_token_ids=self.vision_token_ids,
+            vocab_size=self.tokenizer_vocab_size,
         )
 
         return context

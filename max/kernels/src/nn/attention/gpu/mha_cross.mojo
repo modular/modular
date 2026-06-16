@@ -43,8 +43,10 @@ def _bmm0_bs[
     p_ptr: UnsafePointer[Scalar[p_type], MutAnyOrigin],
     q_ptr: UnsafePointer[Scalar[q_type], ImmutAnyOrigin],
     k_cache: cache_t,
-    q_input_row_offsets: TileTensor[DType.uint32, QLayoutType, MutAnyOrigin],
-    kv_input_row_offsets: TileTensor[DType.uint32, KVLayoutType, MutAnyOrigin],
+    q_input_row_offsets: TileTensor[DType.uint32, QLayoutType, ImmutAnyOrigin],
+    kv_input_row_offsets: TileTensor[
+        DType.uint32, KVLayoutType, ImmutAnyOrigin
+    ],
     scale: Float32,
     batch_size: Int,
     q_max_seq_len: Int,
@@ -151,8 +153,10 @@ def _bmm1_bs[
     output_ptr: UnsafePointer[Scalar[output_type], MutAnyOrigin],
     p_ptr: UnsafePointer[Scalar[p_type], ImmutAnyOrigin],
     v_cache: cache_t,
-    q_input_row_offsets: TileTensor[DType.uint32, QLayoutType, MutAnyOrigin],
-    kv_input_row_offsets: TileTensor[DType.uint32, KVLayoutType, MutAnyOrigin],
+    q_input_row_offsets: TileTensor[DType.uint32, QLayoutType, ImmutAnyOrigin],
+    kv_input_row_offsets: TileTensor[
+        DType.uint32, KVLayoutType, ImmutAnyOrigin
+    ],
     q_max_seq_len: Int,
     kv_max_seq_len: Int,
     max_cache_size: Int,
@@ -226,12 +230,12 @@ def mha_cross_gpu_naive[
     rank: Int,
 ](
     output: TileTensor[address_space=AddressSpace.GENERIC, ...],
-    q: TileTensor[dtype, address_space=AddressSpace.GENERIC, ...],
-    q_input_row_offsets: TileTensor[DType.uint32, ...],
+    q: TileTensor[mut=False, dtype, address_space=AddressSpace.GENERIC, ...],
+    q_input_row_offsets: TileTensor[mut=False, DType.uint32, ...],
     q_max_seq_len: Int,
     k: cache_t,
     v: cache_t,
-    kv_input_row_offsets: TileTensor[DType.uint32, ...],
+    kv_input_row_offsets: TileTensor[mut=False, DType.uint32, ...],
     mask_functor: mask_t,
     scale: Float32,
     ctx: DeviceContext,
@@ -335,14 +339,13 @@ def mha_cross_gpu_naive[
     @parameter
     @__copy_capture(p_buffer)
     def input_fn_device[
-        _simd_width: Int, _rank: Int
-    ](coords: IndexList[_rank]) -> SIMD[p_type, _simd_width]:
-        var p_coord = Coord(coords)
-        comptime assert p_buffer.flat_rank >= p_coord.flat_rank
-        return p_buffer.load[width=_simd_width](p_coord)
+        _simd_width: Int
+    ](coords: Coord) -> SIMD[p_type, _simd_width]:
+        comptime assert p_buffer.flat_rank >= coords.flat_rank
+        return p_buffer.load[width=_simd_width](coords)
 
     _softmax_gpu[p_type, 1, 3, input_fn_device](
-        Index(batch_size * num_heads, q_max_seq_len, num_keys),
+        Coord(batch_size * num_heads, q_max_seq_len, num_keys),
         p_buffer,
         2,
         ctx,

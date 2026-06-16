@@ -12,7 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 from max.graph.weights import WeightsFormat
-from max.pipelines.core import TextContext
+from max.pipelines.context import TextContext
+from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
 from max.pipelines.lib import (
     SupportedArchitecture,
     TextTokenizer,
@@ -43,4 +44,5 @@ deepseekV2_arch = SupportedArchitecture(
     },
     requires_max_batch_context_length=True,
     config=DeepseekV2Config,
+    memory_planner=PagedMemoryPlanner,
 )

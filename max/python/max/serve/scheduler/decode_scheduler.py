@@ -19,7 +19,11 @@ import uuid
 from collections import OrderedDict
 from dataclasses import dataclass, field
 
-from max.pipelines.core import TextAndVisionContext, TextContext
+from max.pipelines.context import (
+    TextAndVisionContext,
+    TextContext,
+    TextGenerationOutput,
+)
 from max.pipelines.kv_cache import (
     InsufficientBlocksError,
     KVTransferEngine,
@@ -32,7 +36,6 @@ from max.pipelines.modeling.types import (
     Pipeline,
     RequestID,
     TextGenerationInputs,
-    TextGenerationOutput,
 )
 from max.profiler import Tracer, traced
 from max.serve.config import Settings
@@ -58,7 +61,6 @@ from .dp_padding import DPBatchPadder
 from .utils import (
     SchedulerLogger,
     get_cancelled_reqs,
-    reshape_flat_kv_blocks_to_grid,
 )
 
 logger = logging.getLogger("max.serve")
@@ -122,21 +124,6 @@ class DecodeScheduler(Scheduler):
             name=f"decode_agent_{uuid.uuid4()}",
             kv_cache=self.kv_cache,
         )
-
-        # Register draft KV cache blocks for speculative decoding so that
-        # target and draft KV are bundled into a single NIXL transfer.
-        draft_kv_blocks = getattr(pipeline, "draft_kv_blocks", None)
-        if isinstance(draft_kv_blocks, list):
-            self.transfer_engine.register_tensor_group(
-                name="draft",
-                tensors=reshape_flat_kv_blocks_to_grid(
-                    draft_kv_blocks,
-                    dp=scheduler_config.data_parallel_degree,
-                    group_name="draft",
-                ),
-                total_num_pages=self.kv_cache.get_num_pages(replica_idx=0),
-            )
-
         self.batch_constructor = TextBatchConstructor(
             scheduler_config=scheduler_config,
             pipeline=pipeline,
@@ -627,8 +614,8 @@ class DecodeScheduler(Scheduler):
             num_pending_reqs=len(self.pending_reqs) + len(self.prefill_reqs),
             num_terminated_reqs=num_terminated_reqs,
             total_preemption_count=self.batch_constructor.total_preemption_count,
-            speculative_decoding_metrics=self.pipeline.spec_decode_metrics()
-            if hasattr(self.pipeline, "spec_decode_metrics")
+            batch_spec_decode_metrics=self.pipeline.batch_spec_decode_metrics()
+            if hasattr(self.pipeline, "batch_spec_decode_metrics")
             else None,
         )
 

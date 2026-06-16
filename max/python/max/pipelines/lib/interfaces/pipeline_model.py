@@ -33,19 +33,19 @@ from max.graph import DeviceRef, Value
 from max.graph.weights import Weights, WeightsAdapter
 from max.nn.kv_cache import (
     KVCacheInputs,
+    KVCacheInputsInterface,
     KVCacheParamInterface,
     PagedCacheValues,
 )
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
-from max.pipelines.lib.lora import LoRAManager
+from max.pipelines.context import BaseContextType, LogProbabilities
+from max.pipelines.kv_cache.config import KVCacheConfig
+from max.pipelines.lora import LoRAInputs, LoRAManager
 from max.pipelines.modeling.config_enums import supported_encoding_dtype
-from max.pipelines.modeling.kv_cache_config import KVCacheConfig
-from max.pipelines.modeling.types import BaseContextType, LogProbabilities
 from transformers import AutoConfig
 
 if TYPE_CHECKING:
     from max.pipelines.lib.config import PipelineConfig
-    from max.pipelines.lib.interfaces.arch_config import ArchConfig
 
 logger = logging.getLogger("max.pipelines")
 
@@ -108,30 +108,6 @@ class AlwaysSignalBuffersMixin:
             )
             for dev in self.devices
         ]
-
-    @classmethod
-    def estimate_signal_buffer_memory(
-        cls,
-        pipeline_config: PipelineConfig,
-        arch_config: ArchConfig | None = None,
-    ) -> int:
-        """Account for the mixin's always-allocate behaviour at single-GPU.
-
-        For multi-GPU, returns the same default as :class:`PipelineModel`.
-        For single-GPU, allocates one set on the lone device.
-
-        Note: this implementation calls ``pipeline_config.estimate_signal_buffer_memory()``
-        directly rather than chaining through ``super()``, mirroring the
-        :attr:`signal_buffers` property on this mixin. If a concrete model
-        needs custom signal-buffer accounting, override on the model class
-        itself — MRO ensures it wins over this method.
-        """
-        if len(pipeline_config.model.device_specs) > 1:
-            return pipeline_config.estimate_signal_buffer_memory(arch_config)
-        # Import here to avoid circular dependency
-        from max.nn.comm import Signals
-
-        return Signals.NUM_BYTES
 
 
 @dataclass
@@ -208,13 +184,13 @@ class ModelInputs:
         list(inputs) == [tokens, input_row_offsets]  # Output: True
     """
 
-    kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None
+    kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None
+    """KV cache graph inputs holding every (DP replica x TP shard) device's
+    inputs: a ``KVCacheInputs`` leaf, or a ``MultiKVCacheInputs`` tree for
+    multi-cache models. ``flatten()`` yields the full positional input list."""
 
-    lora_ids: Buffer | None = None
-    """Buffer containing the LoRA ids."""
-
-    lora_ranks: Buffer | None = None
-    """Buffer containing the LoRA ranks"""
+    lora: LoRAInputs | None = None
+    """Per-batch LoRA adapter buffers, or ``None`` when LoRA is disabled."""
 
     hidden_states: Buffer | list[Buffer] | None = None
     """Hidden states for a variable number of tokens per sequence.
@@ -257,6 +233,9 @@ class UnifiedEagleOutputs(ModelOutputs):
 
 class PipelineModel(ABC, Generic[BaseContextType]):
     """A pipeline model with setup, input preparation and execution methods."""
+
+    #: Config class used to delegate ``calculate_max_seq_len`` and KV params.
+    model_config_cls: ClassVar[type[Any] | None] = None
 
     def __init__(
         self,
@@ -375,31 +354,32 @@ class PipelineModel(ABC, Generic[BaseContextType]):
         return supported_encoding_dtype(quantization_encoding)
 
     @classmethod
-    @abstractmethod
+    def _calculate_max_seq_len_from_config(
+        cls,
+        pipeline_config: PipelineConfig,
+        huggingface_config: AutoConfig,
+    ) -> int:
+        """Delegates to ``model_config_cls.calculate_max_seq_len`` or ``initialize().get_max_seq_len()``."""
+        model_config_cls = cls.model_config_cls
+        if model_config_cls is None:
+            raise NotImplementedError(
+                f"{cls.__qualname__} must set `model_config_cls` "
+                "or override `calculate_max_seq_len()`."
+            )
+        calculate = getattr(model_config_cls, "calculate_max_seq_len", None)
+        if calculate is not None:
+            return calculate(pipeline_config, huggingface_config)
+        return model_config_cls.initialize(pipeline_config).get_max_seq_len()
+
+    @classmethod
     def calculate_max_seq_len(
         cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
     ) -> int:
         """Calculates the optimal max sequence length for the model.
 
-        Models are expected to implement this method. The following example
-        shows how to implement it for a Mistral model:
-
-        .. code-block:: python
-
-            class MistralModel(PipelineModel):
-                @classmethod
-                def calculate_max_seq_len(cls, pipeline_config, huggingface_config) -> int:
-                    try:
-                        return upper_bounded_default(
-                            upper_bound=huggingface_config.max_seq_len,
-                            default=pipeline_config.model.max_length,
-                        )
-                    except ValueError as e:
-                        raise ValueError(
-                            "Unable to infer max_length for Mistral, the provided "
-                            f"max_length ({pipeline_config.model.max_length}) exceeds the "
-                            f"model's max_seq_len ({huggingface_config.max_seq_len})."
-                        ) from e
+        Default implementation delegates to ``model_config_cls``. Override when
+        pipeline-model semantics differ from the config (for example, bounding
+        ``max_length`` where the config is permissive).
 
         Args:
             pipeline_config: Configuration for the pipeline.
@@ -408,64 +388,9 @@ class PipelineModel(ABC, Generic[BaseContextType]):
         Returns:
             int: The maximum sequence length to use.
         """
-        raise NotImplementedError(
-            "PipelineModel must implement calculate_max_seq_len"
+        return cls._calculate_max_seq_len_from_config(
+            pipeline_config, huggingface_config
         )
-
-    @classmethod
-    def estimate_weights_size(cls, pipeline_config: PipelineConfig) -> int:
-        """Calculates the estimated memory consumption of our model."""
-        # TODO move this logic to the PipelineModel instead of PipelineConfig class.
-        # Better yet, make this more accurate by loading and measuring memory consumption
-        # after we load the model
-        return pipeline_config.model.weights_size()
-
-    @classmethod
-    def estimate_activation_memory(
-        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
-    ) -> int:
-        """Estimates the activation memory required for model execution.
-
-        This accounts for temporary memory buffers used during model execution,
-        such as intermediate activations and working buffers.
-
-        The default implementation returns 0 for backward compatibility.
-        Models with significant activation memory requirements should override
-        this method to provide accurate estimates.
-
-        Args:
-            pipeline_config: Pipeline configuration
-            huggingface_config: Hugging Face model configuration
-
-        Returns:
-            Estimated activation memory in bytes
-        """
-        del pipeline_config, huggingface_config  # Unused.
-        return 0
-
-    @classmethod
-    def estimate_signal_buffer_memory(
-        cls,
-        pipeline_config: PipelineConfig,
-        arch_config: ArchConfig | None = None,
-    ) -> int:
-        """Estimates total signal-buffer memory for this model across all devices.
-
-        Defaults to :meth:`PipelineConfig.estimate_signal_buffer_memory`, which
-        covers the main model graph and :class:`BlockOffloadEngine`. Models with
-        additional allocation sites (always-allreduce mixins, diffusion
-        component graphs, separate vision encoders) should override.
-
-        Args:
-            pipeline_config: Pipeline configuration
-            arch_config: Optional architecture config used to tighten estimates
-                (e.g. gate :class:`BlockOffloadEngine` signal-buffer accounting
-                on whether the KV cache actually replicates across TP).
-
-        Returns:
-            Estimated total signal-buffer memory in bytes (across all devices).
-        """
-        return pipeline_config.estimate_signal_buffer_memory(arch_config)
 
     @abstractmethod
     def execute(
@@ -489,7 +414,7 @@ class PipelineModel(ABC, Generic[BaseContextType]):
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[BaseContextType]],
-        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
+        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> ModelInputs:
         """Prepares the initial inputs to be passed to ``execute()``.
@@ -499,19 +424,6 @@ class PipelineModel(ABC, Generic[BaseContextType]):
         a KV cache manager, and ``kv_cache_inputs`` (or None if the model does
         not use KV cache). This method typically batches encoded tensors,
         claims a KV cache slot if needed, and returns the inputs and caches.
-        """
-        ...
-
-    @abstractmethod
-    def prepare_next_token_inputs(
-        self,
-        next_tokens: Buffer,
-        prev_model_inputs: ModelInputs,
-    ) -> ModelInputs:
-        """Prepares the secondary inputs to be passed to ``execute()``.
-
-        While ``prepare_initial_token_inputs`` is responsible for managing the initial inputs.
-        This function is responsible for updating the inputs, for each step in a multi-step execution pattern.
         """
         ...
 
@@ -551,9 +463,6 @@ class PipelineModelWithKVCache(PipelineModel[BaseContextType]):
 
     kv_params: KVCacheParamInterface
 
-    #: Config class implementing ``construct_kv_params`` for this model.
-    model_config_cls: ClassVar[type[Any] | None] = None
-
     def __init__(
         self,
         pipeline_config: PipelineConfig,
@@ -586,11 +495,11 @@ class PipelineModelWithKVCache(PipelineModel[BaseContextType]):
     def _unflatten_kv_inputs(
         self, kv_inputs_flat: Sequence[Value[Any]]
     ) -> list[PagedCacheValues]:
-        return list(
-            self.kv_params.get_symbolic_inputs()
-            .unflatten(iter(kv_inputs_flat))
-            .inputs
-        )
+        # This helper supports single-cache (leaf) models; multi-cache trees
+        # are unflattened by the architecture itself.
+        kv_inputs = self.kv_params.unflatten_kv_inputs(iter(kv_inputs_flat))
+        assert isinstance(kv_inputs, KVCacheInputs)
+        return list(kv_inputs.inputs)
 
     @classmethod
     def get_kv_params(

@@ -517,6 +517,72 @@ class TestReaderMigration:
         assert any(name.endswith(".mlir") for name in files), (
             f"Expected at least one .mlir file in {ir_dir}, got {files}"
         )
+        # Regression test for GEX-3810: the `mogg-emit-mojo` stage must also
+        # honor `ir-output-dir` and write the emitted Mojo text, not just the
+        # MLIR files. Prior to the fix the `.mojo` dump only landed when the
+        # legacy `max.temps_dir` key was set.
+        assert any(name.endswith(".mojo") for name in files), (
+            f"Expected an emitted .mojo file in {ir_dir}, got {files}"
+        )
+
+    def test_source_tracebacks_appear_in_ir_dump(self, tmp_path: Path) -> None:
+        """With source-tracebacks and ir-output-dir both on, the post-fusion
+        dump carries the Python call site that built each op.
+
+        Builds a one-op graph inside a distinctively named function and
+        asserts that name shows up in the mogg-pre-mgp dump. This covers
+        the two pieces the kernel-map extractor depends on: the dump is
+        printed with debug info, and the OpaqueLoc tracebacks are converted
+        to printable form before that dump is written.
+        """
+        ir_dir = tmp_path / "traceback-ir-dump"
+        ir_dir.mkdir()
+        result = _run_script(
+            """\
+            from max.driver import CPU
+            from max.dtype import DType
+            from max.engine import InferenceSession
+            from max.graph import DeviceRef, Graph, TensorType
+
+            def build_add_op_for_traceback_check(x, y):
+                return x + y
+
+            graph = Graph(
+                "tiny_add_traceback_dump",
+                forward=build_add_op_for_traceback_check,
+                input_types=[
+                    TensorType(
+                        dtype=DType.float32,
+                        shape=(4,),
+                        device=DeviceRef.CPU(),
+                    ),
+                    TensorType(
+                        dtype=DType.float32,
+                        shape=(4,),
+                        device=DeviceRef.CPU(),
+                    ),
+                ],
+            )
+            session = InferenceSession(devices=[CPU()])
+            session.load(graph)
+            print("PASS")
+            """,
+            env_overrides={
+                "MODULAR_DEBUG": f"source-tracebacks,ir-output-dir={ir_dir}",
+                "MODULAR_MAX_ENABLE_MODEL_IR_CACHE": "false",
+            },
+        )
+        _assert_pass(result)
+        dumps = sorted(ir_dir.glob("*.mogg-pre-mgp.mlir"))
+        assert dumps, (
+            f"Expected a mogg-pre-mgp dump in {ir_dir}, got "
+            f"{sorted(p.name for p in ir_dir.iterdir())}"
+        )
+        text = "".join(p.read_text() for p in dumps)
+        assert "build_add_op_for_traceback_check" in text, (
+            "Expected the op-building function name in the dump's location "
+            "tracebacks, but it was not found."
+        )
 
     def test_ir_output_dir_via_legacy_temps_dir_still_works(
         self, tmp_path: Path
@@ -575,4 +641,9 @@ class TestReaderMigration:
         )
         assert any(name.endswith(".mlir") for name in files), (
             f"Expected at least one .mlir file in {ir_dir}, got {files}"
+        )
+        # The legacy temps key has always emitted the Mojo text; keep it
+        # covered so the two paths stay at parity (see GEX-3810).
+        assert any(name.endswith(".mojo") for name in files), (
+            f"Expected an emitted .mojo file in {ir_dir}, got {files}"
         )

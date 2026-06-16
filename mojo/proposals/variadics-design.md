@@ -15,8 +15,8 @@ lists can bundle types or values into lists (`TypeList`, `ParameterList`, and
 related metaprogramming patterns). At runtime call sites, homogeneous variadic
 arguments let a single argument accept an arbitrary number of
 same-shaped values, backed by `VariadicList`, an arbitrary number of mixed-type
-values (backed by `VariadicPack`) and even a set of otherwise unhandled keyword
-arguments (TBD).
+values (backed by `VariadicPack`), and a set of otherwise unhandled keyword
+arguments (backed by `OwnedKwargsDict`).
 
 These are expressed with Python-style syntax: variadic lists (`*args`) and
 variadic keyword arguments (`**kwargs`) are familiar ergonomically. The variadic
@@ -285,6 +285,128 @@ struct Tuple[*element_types: Movable](...):
         ...
 ```
 
-## Variadic Keyword Arguments
+## Variadic keyword arguments
 
-TBD. This still needs substantial work.
+Variadic **keyword** arguments are the runtime counterpart to Python's
+`**kwargs`. A callee can accept any number of extra keyword arguments whose
+**values** all share one type `V`. Keys are always runtime `String`s (the
+keyword names written at the call site). Unlike variadic packs, there is no
+heterogeneous value-type list: `**kwargs: Int` means every passed value must be
+an `Int`, not a mixed tuple of types.
+
+The surface syntax is a leading `**` on the argument name, which must be at the
+end of the signature after other arguments:
+
+```mojo
+def variadic_kwargs(a: Int, b: Int, *args: Int, c: Int, d: Int, **kwargs: Int):
+    pass
+
+def print_nicely(**kwargs: Int):
+    for item in kwargs.items():
+        print(item.key, "=", item.value)
+
+def main():
+    print_nicely(a=7, y=8)
+```
+
+Only one `**` parameter is allowed per function, and a type annotation is
+required: for example `**kwargs: Int`, not bare `**kwargs`.
+
+### The callee receives `OwnedKwargsDict`
+
+The `**kwargs: V` syntax is passes as `var kwargs: OwnedKwargsDict[V]`. The type
+behaves like a `Dict[String, V]` for most user-facing operations: `len`,
+`in`, `__getitem__`, `keys()`, `values()`, `items()`, `find`, and `pop`.
+Users should not construct it directly; the compiler builds it at call sites
+and passes it into the callee.
+
+Keyword variadics are passed as **owned** (`var`) arguments, because the
+dictionary is typically built by for one call site. You cannot write an explicit
+`read` or `mut` convention on them:
+
+```mojo
+# Not supported yet.
+def borrowed_kwargs(mut **kwargs: Int): ...
+```
+
+Inside the callee, `kwargs` owns the dictionary and its inserted values. That
+matches how call lowering transfers each keyword operand into the dict with
+`_insert`.
+
+### Call lowering
+
+Rough lowering picture (names only, not exact MLIR):
+
+```text
+// Caller:  foo(x=9, stuff=8)   with   def foo(**kwargs: Int)
+
+1. Allocate an empty OwnedKwargsDict[Int] (local temporary).
+
+2. For each keyword operand at the call site:
+   - Materialize the key as a compile-time String literal.
+   - Evaluate the value expression.
+   - Call OwnedKwargsDict::_insert(dict, key, value), transferring ownership
+     of the value into the dictionary.
+
+3. Pass the filled dict to foo as an owned **kwargs argument.
+```
+
+Overload resolution collects any keyword operands that do not bind to earlier
+named arguments and routes them to the `kw_vararg` slot. If the callee has no
+`**kwargs` argument, those operands are erroroneous. Positional `*args` and
+`**kwargs` can appear in the same signature; each eats the operands of its kind.
+
+### Forwarding with `**kwargs^`
+
+To forward an entire keyword bundle to another variadic-kwargs callee, use the
+double-star unpack form and transfer ownership with `^`:
+
+```mojo
+def pass_kwargs(**kwargs: Int):
+    takes_int_variadic_kwargs_multiline(**kwargs^)
+```
+
+Without `^`, forwarding tries to copy the dict and fails because
+`OwnedKwargsDict` is not implicitly copyable. With `^`, the caller's dict is
+moved into the inner call. This is the keyword analogue of splatting a
+variadic pack with `callee(*args)`.
+
+Dictionary unpacking from an ordinary `Dict[String, V]` (for example
+`print_nicely(**my_dict)`) is not supported yet; only forwarding from another
+`**kwargs` binding works today.
+
+### Generic inference
+
+When a function is generic in the value type, keyword arguments can drive type
+inference the same way positional arguments do:
+
+```mojo
+def infers_from_kwargs[T: SomeTrait](**kwargs: T):
+    pass
+
+# T is inferred as MemOnly from the keyword values.
+infers_from_kwargs(y=MemOnly(), z=s)
+```
+
+The inferred element type must satisfy the stated trait bounds and must be
+compatible with transfer into `OwnedKwargsDict::_insert` (owned, movable
+values).
+
+### Current limitations
+
+The following gaps are intentional for the first release; see also the
+[variadic keyword arguments](/docs/manual/functions#variadic-keyword-arguments)
+section of the Mojo manual:
+
+- Homogeneous values only: all keywords share one value type `V`.
+- Keys are always `String`; there is no typed-key variant.
+- Always owned: no `read **kwargs` or `mut **kwargs`.
+- No unpacking from a plain `Dict` at call sites.
+- No compile-time variadic keyword **parameters** (`**kwparams: ...` on
+  declarations).
+- Values must be `Movable` (and satisfy the `OwnedKwargsDict` constraints);
+  non-owned linear values follow the same transfer rules as other owned call
+  arguments.
+
+Examples in `stdlib/test/collections/test_dict.mojo` (`test_owned_kwargs_dict`)
+exercise the dict API surface that variadic kwargs expose inside callees.

@@ -75,7 +75,7 @@ def test_kv_cache_paged_mla_prefill(gpu_session: InferenceSession) -> None:
                 input_row_offsets_type,
                 k_buffer_type,
                 v_buffer_type,
-                *kv_params.get_symbolic_inputs().flatten(),
+                *kv_params.flattened_kv_inputs(),
             ],
         ) as g:
             (
@@ -134,7 +134,7 @@ def test_kv_cache_paged_mla_prefill(gpu_session: InferenceSession) -> None:
     input_row_offsets[batch_size] = running_sum
     input_row_offsets = input_row_offsets.to(device)
 
-    kv_runtime_inputs = kv_manager.runtime_inputs([batch])
+    kv_runtime_inputs = kv_manager.runtime_inputs_for_leaf([batch])
     model = session.load(g)
 
     input_tensor = Buffer.zeros(

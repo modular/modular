@@ -25,9 +25,9 @@ from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType
 from max.graph.weights import Weights, WeightsAdapter
 from max.nn.comm import Signals
-from max.nn.kv_cache import KVCacheInputs
+from max.nn.kv_cache import KVCacheInputsInterface
 from max.nn.transformer import ReturnLogits
-from max.pipelines.core import TextContext
+from max.pipelines.context import TextContext
 from max.pipelines.lib import (
     AlwaysSignalBuffersMixin,
     CompilationTimer,
@@ -38,7 +38,7 @@ from max.pipelines.lib import (
     PipelineModelWithKVCache,
 )
 from max.pipelines.lib.log_probabilities import LogProbabilitiesMixin
-from max.pipelines.lib.quant import parse_quant_config
+from max.pipelines.weights.quant import parse_quant_config
 from transformers import AutoConfig
 
 from .gemma3 import Gemma3
@@ -123,29 +123,6 @@ class Gemma3Model(
         self._is_multimodal = hasattr(self.huggingface_config, "text_config")
 
         self.model = self.load_model(session)
-
-    @staticmethod
-    def calculate_max_seq_len(
-        pipeline_config: PipelineConfig, huggingface_config: AutoConfig
-    ) -> int:
-        """Calculates the maximum sequence length for the Gemma 3 model.
-
-        Uses the `max_length` from the :obj:`max.pipelines.config.PipelineConfig`
-        if provided, otherwise falls back to the `max_position_embeddings` from
-        the HuggingFace configuration's text config.
-
-        Args:
-            pipeline_config: The MAX Engine pipeline configuration.
-            huggingface_config: The HuggingFace model configuration object
-                (:obj:`transformers.AutoConfig`).
-
-        Returns:
-            The calculated maximum sequence length.
-        """
-        max_seq_len = pipeline_config.model.max_length
-        if max_seq_len:
-            return max_seq_len
-        return huggingface_config.max_position_embeddings
 
     @classmethod
     def get_num_layers(cls, huggingface_config: AutoConfig) -> int:
@@ -347,7 +324,7 @@ class Gemma3Model(
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
+        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> ModelInputs:
         """Prepares the initial inputs for the first execution pass of the Gemma 3 model.
@@ -386,30 +363,4 @@ class Gemma3Model(
             ),
             signal_buffers=self.signal_buffers,
             kv_cache_inputs=kv_cache_inputs,
-        )
-
-    def prepare_next_token_inputs(
-        self, next_tokens: Buffer, prev_model_inputs: ModelInputs
-    ) -> ModelInputs:
-        """Prepares the inputs for subsequent execution steps in a multi-step generation.
-
-        Args:
-            next_tokens: The tensor containing the token IDs generated in the previous step.
-            prev_model_inputs: The :obj:`ModelInputs` used in the previous execution step.
-
-        Returns:
-            The prepared :obj:`ModelInputs` object for the next execution step.
-        """
-        assert isinstance(prev_model_inputs, Gemma3Inputs)
-
-        row_offsets_size = prev_model_inputs.input_row_offsets.shape[0]
-
-        return Gemma3Inputs(
-            tokens=next_tokens,
-            input_row_offsets=self._input_row_offsets_prealloc[
-                :row_offsets_size
-            ],
-            return_n_logits=prev_model_inputs.return_n_logits,
-            signal_buffers=self.signal_buffers,
-            kv_cache_inputs=prev_model_inputs.kv_cache_inputs,
         )

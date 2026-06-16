@@ -19,8 +19,8 @@ from unittest.mock import patch
 
 import pytest
 from max.benchmark.benchmark_shared.metrics import (
+    BenchmarkResult,
     RatePercentileMetrics,
-    ServingBenchmarkMetrics,
     SpecDecodeMetrics,
     SpecDecodeStats,
     StandardPercentileMetrics,
@@ -76,9 +76,9 @@ maxserve_batch_execution_time_milliseconds_count{batch_type="TG"} 100.0
 
 def _make_metrics(
     metrics_by_endpoint: dict[str, ParsedMetrics],
-) -> ServingBenchmarkMetrics:
-    """Minimal text-gen ServingBenchmarkMetrics carrying only the fields under test."""
-    return ServingBenchmarkMetrics(
+) -> BenchmarkResult:
+    """Minimal text-gen BenchmarkResult carrying only the fields under test."""
+    return BenchmarkResult(
         task_type="text",
         max_concurrency=10,
         peak_gpu_memory_mib=[],

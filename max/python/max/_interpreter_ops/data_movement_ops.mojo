@@ -24,6 +24,7 @@ from std.python.bindings import PythonModuleBuilder
 from std.sys.info import has_accelerator, simd_width_of
 
 from std.algorithm.functional import elementwise, IndexList
+from std.utils.coord import Coord
 
 from extensibility import ManagedTensorSlice
 from extensibility import Input, MutableInput, Output
@@ -53,7 +54,7 @@ from op_utils import (
 
 
 @export
-def PyInit_data_movement_ops() -> PythonObject:
+def PyInit_data_movement_ops() abi("C") -> PythonObject:
     """Create a Python module with data movement kernel function bindings."""
     try:
         var b = PythonModuleBuilder("data_movement_ops")
@@ -106,8 +107,8 @@ def _pad_shape_to_max_rank(
 def static_broadcast_to_op[
     dtype: DType
 ](
-    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    in_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    out_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    in_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     in_shape: IndexList[MAX_RANK],
     out_shape: IndexList[MAX_RANK],
     ctx: DeviceContext,
@@ -236,8 +237,8 @@ def static_broadcast_to_dispatcher(
 def transpose_op[
     dtype: DType
 ](
-    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    in_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    out_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    in_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     in_shape: IndexList[MAX_RANK],
     out_shape: IndexList[MAX_RANK],
     perm_data: InlineArray[Int64, MAX_RANK],
@@ -456,8 +457,8 @@ def memcpy_dispatcher(
 def memcpy_op[
     dtype: DType
 ](
-    dst_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    src_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    dst_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    src_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     dst_offset: Int,
     src_offset: Int,
     count: Int,
@@ -482,21 +483,17 @@ def memcpy_op[
     @always_inline
     @parameter
     @__copy_capture(d, s)
-    def func[width: Int, rank: Int, alignment: Int = 1](idx: IndexList[rank]):
-        var i = rebind[IndexList[1]](idx)[0]
+    def func[width: Int, alignment: Int = 1](idx: Coord):
+        var i = Int(idx[0].value())
         d.store[width=width](i, s.load[width=width](i))
 
     if ctx.api() == "cpu":
-        elementwise[func, simd_width=simd_width_of[dtype]()](
-            IndexList[1](count), ctx
-        )
+        elementwise[func, simd_width=simd_width_of[dtype]()](Coord(count), ctx)
     else:
         # GPU execution
         comptime if has_accelerator():
             comptime if dtype != DType.float64:
-                elementwise[func, simd_width=1, target="gpu"](
-                    IndexList[1](count), ctx
-                )
+                elementwise[func, simd_width=1, target="gpu"](Coord(count), ctx)
             else:
                 raise Error(
                     "GPU execution not supported for memcpy with dtype float64"
@@ -514,13 +511,13 @@ def memcpy_op[
 def slice_op[
     dtype: DType
 ](
-    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    in_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    out_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    in_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     in_shape: IndexList[MAX_RANK],
     out_shape: IndexList[MAX_RANK],
-    starts_ptr: UnsafePointer[Scalar[DType.int64], MutExternalOrigin],
-    stops_ptr: UnsafePointer[Scalar[DType.int64], MutExternalOrigin],
-    steps_ptr: UnsafePointer[Scalar[DType.int64], MutExternalOrigin],
+    starts_ptr: UnsafePointer[Scalar[DType.int64], MutUntrackedOrigin],
+    stops_ptr: UnsafePointer[Scalar[DType.int64], MutUntrackedOrigin],
+    steps_ptr: UnsafePointer[Scalar[DType.int64], MutUntrackedOrigin],
     ctx: DeviceContext,
 ) raises:
     """Call Slice.execute with MAX_RANK tensors.
@@ -613,9 +610,9 @@ struct _SliceBody(Dispatchable):
     var in_addr: Int
     var in_shape: IndexList[MAX_RANK]
     var out_shape: IndexList[MAX_RANK]
-    var starts_ptr: UnsafePointer[Scalar[DType.int64], MutExternalOrigin]
-    var stops_ptr: UnsafePointer[Scalar[DType.int64], MutExternalOrigin]
-    var steps_ptr: UnsafePointer[Scalar[DType.int64], MutExternalOrigin]
+    var starts_ptr: UnsafePointer[Scalar[DType.int64], MutUntrackedOrigin]
+    var stops_ptr: UnsafePointer[Scalar[DType.int64], MutUntrackedOrigin]
+    var steps_ptr: UnsafePointer[Scalar[DType.int64], MutUntrackedOrigin]
     var ctx: DeviceContext
 
     def call[t: DType](self) raises -> None:
@@ -706,8 +703,8 @@ def slice_dispatcher(
 def mutable_store_slice_op[
     dtype: DType
 ](
-    dst_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    src_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    dst_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    src_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     dst_shape: IndexList[MAX_RANK],
     src_shape: IndexList[MAX_RANK],
     starts: InlineArray[Int64, MAX_RANK],

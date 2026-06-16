@@ -14,5 +14,4 @@ model:
   model_path: nvidia/Gemma-4-26B-A4B-NVFP4
 
 runtime:
-  max_num_steps: 1
   device_graph_capture: false

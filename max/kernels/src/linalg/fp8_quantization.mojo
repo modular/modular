@@ -56,7 +56,7 @@ from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
     MatmulConfig,
     GEMMKind,
 )
-from .fp8_utils import compute_dynamic_fp8_scale, fp8_quantize
+from internal_utils.fp8_utils import compute_dynamic_fp8_scale, fp8_quantize
 from std.gpu.primitives.grid_controls import PDLLevel
 
 comptime logger = Logger()
@@ -74,7 +74,7 @@ def quantize_static_scaled_fp8[
     scale_is_inverted: Bool = True,
 ](
     out_tensor: TileTensor[mut=True, dtype=out_dtype, ...],
-    in_tensor: TileTensor[dtype=in_dtype, ...],
+    in_tensor: TileTensor[mut=False, dtype=in_dtype, ...],
     scale: Float32,
     context: DeviceContext,
 ) raises:
@@ -113,7 +113,10 @@ def quantize_static_scaled_fp8[
     def scaled_fp8_quant_unified[width: Int, alignment: Int = 1](idx: Coord) {}:
         scaled_fp8_quant[width, idx.rank, alignment](coord_to_index_list(idx))
 
-    _elementwise_impl_gpu[simd_width=target_simd_width](
+    _elementwise_impl_gpu[
+        simd_width=target_simd_width,
+        trace_description="scaled_fp8_quant",
+    ](
         scaled_fp8_quant_unified,
         shape=(Int(in_tensor.dim[0]()), Int(in_tensor.dim[1]())),
         ctx=context,
@@ -594,17 +597,17 @@ def quantize_fp8_kernel_per_tensor[
                 )
                 max_scale = max(max_scale, s)
 
-        # Derive the per-tensor reciprocal scale from the max group scale.
-        # The per-group scales are already scale_factor = group_max / fp8_max,
-        # so the tensor-wide scale is simply the largest of those.
-        comptime fp8_max = max_finite[out_type]()
-        var scale_factor = (
-            min(max_scale, scale_ub) / fp8_max.cast[scale_ub.dtype]()
-        )
-        var scale_factor_recip = (
-            0.0 if scale_factor
-            == 0.0 else 1.0 / scale_factor.cast[accum_type]()
-        )
+        # `max_scale` is the tensor-wide max-abs: compute_scales_fp8_kernel writes
+        # each group's RAW max, and the scan above takes the largest. Route the
+        # scale and its reciprocal through the shared compute_dynamic_fp8_scale so
+        # the per-tensor path gets the SAME finite-reciprocal guard as the
+        # per-group kernels: a near-zero/denormal tensor max makes scale_factor
+        # underflow to a nonzero f32 denormal and 1/scale_factor overflow to +Inf,
+        # which NaNs the fp8 cast on a zero lane (0*Inf). The guard treats a
+        # non-finite reciprocal as zero scale, so the group quantizes to fp8 zero.
+        var scale_factor, scale_factor_recip = compute_dynamic_fp8_scale[
+            out_type
+        ](max_scale.cast[accum_type](), scale_ub)
 
         # Write the per-tensor scale to every position so downstream
         # readers that index scales[group_idx, row] see the correct value.
@@ -782,13 +785,13 @@ def matmul_dynamic_scaled_fp8[
     target: StaticString = "cpu",
 ](
     c: TileTensor[mut=True, c_type, address_space=AddressSpace.GENERIC, ...],
-    a: TileTensor[a_type, address_space=AddressSpace.GENERIC, ...],
-    b: TileTensor[b_type, address_space=AddressSpace.GENERIC, ...],
+    a: TileTensor[mut=False, a_type, address_space=AddressSpace.GENERIC, ...],
+    b: TileTensor[mut=False, b_type, address_space=AddressSpace.GENERIC, ...],
     a_scales: TileTensor[
-        a_scales_type, address_space=AddressSpace.GENERIC, ...
+        mut=False, a_scales_type, address_space=AddressSpace.GENERIC, ...
     ],
     b_scales: TileTensor[
-        b_scales_type, address_space=AddressSpace.GENERIC, ...
+        mut=False, b_scales_type, address_space=AddressSpace.GENERIC, ...
     ],
     ctx: DeviceContext,
 ) raises:
@@ -857,13 +860,13 @@ def _matmul_dynamic_scaled_fp8_impl[
     target: StaticString = "cpu",
 ](
     c: TileTensor[mut=True, c_type, address_space=AddressSpace.GENERIC, ...],
-    a: TileTensor[a_type, address_space=AddressSpace.GENERIC, ...],
-    b: TileTensor[b_type, address_space=AddressSpace.GENERIC, ...],
+    a: TileTensor[mut=False, a_type, address_space=AddressSpace.GENERIC, ...],
+    b: TileTensor[mut=False, b_type, address_space=AddressSpace.GENERIC, ...],
     a_scales: TileTensor[
-        a_scales_type, address_space=AddressSpace.GENERIC, ...
+        mut=False, a_scales_type, address_space=AddressSpace.GENERIC, ...
     ],
     b_scales: TileTensor[
-        b_scales_type, address_space=AddressSpace.GENERIC, ...
+        mut=False, b_scales_type, address_space=AddressSpace.GENERIC, ...
     ],
     ctx: DeviceContext,
 ) raises:
@@ -1577,16 +1580,14 @@ def naive_blockwise_scaled_fp8_grouped_matmul_kernel[
         var a_row_ptr = a.ptr + m_global * K
         var b_expert_ptr = b.ptr + expert * N * K
         for k in range(K):
-            var a_val = rebind[Scalar[a_type]](a_row_ptr[k]).cast[accum_type]()
+            var a_val = a_row_ptr[k].cast[accum_type]()
             var a_scale = rebind[Scalar[a_scales_type]](
                 a_scales[
                     k // MAT_A_ROWS_SCALE_SIZE,
                     m_global // MAT_A_COLS_SCALE_SIZE,
                 ]
             ).cast[accum_type]()
-            var b_val = rebind[Scalar[b_type]](b_expert_ptr[n * K + k]).cast[
-                accum_type
-            ]()
+            var b_val = b_expert_ptr[n * K + k].cast[accum_type]()
             var b_scale = rebind[Scalar[b_scales_type]](
                 b_scales[
                     expert,
@@ -1611,7 +1612,7 @@ def naive_blockwise_scaled_fp8_grouped_matmul_kernel[
 
 @always_inline
 def convert_e4m3fn_to_e4m3fnuz(
-    input_buffer: TileTensor[dtype=DType.float8_e4m3fn, ...],
+    input_buffer: TileTensor[mut=False, dtype=DType.float8_e4m3fn, ...],
     output_buffer: TileTensor[mut=True, dtype=DType.float8_e4m3fnuz, ...],
     context: DeviceContext,
 ) raises:
@@ -1659,7 +1660,10 @@ def convert_e4m3fn_to_e4m3fnuz(
     def convert_kernel_unified[width: Int, alignment: Int = 1](idx: Coord) {}:
         convert_kernel[width, idx.rank, alignment](coord_to_index_list(idx))
 
-    _elementwise_impl_gpu[simd_width=target_simd_width](
+    _elementwise_impl_gpu[
+        simd_width=target_simd_width,
+        trace_description="fp8_e4m3fn_to_e4m3fnuz_convert",
+    ](
         convert_kernel_unified,
         shape=(
             Int(input_buffer.dim[0]()),
@@ -1687,13 +1691,13 @@ def blockwise_scaled_fp8_with_epilogue[
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: TileTensor[mut=True, c_type, address_space=AddressSpace.GENERIC, ...],
-    a: TileTensor[a_type, address_space=AddressSpace.GENERIC, ...],
-    b: TileTensor[b_type, address_space=AddressSpace.GENERIC, ...],
+    a: TileTensor[mut=False, a_type, address_space=AddressSpace.GENERIC, ...],
+    b: TileTensor[mut=False, b_type, address_space=AddressSpace.GENERIC, ...],
     a_scales: TileTensor[
-        a_scales_type, address_space=AddressSpace.GENERIC, ...
+        mut=False, a_scales_type, address_space=AddressSpace.GENERIC, ...
     ],
     b_scales: TileTensor[
-        b_scales_type, address_space=AddressSpace.GENERIC, ...
+        mut=False, b_scales_type, address_space=AddressSpace.GENERIC, ...
     ],
     ctx: DeviceContext,
 ) raises:
@@ -1761,12 +1765,11 @@ def blockwise_scaled_fp8_with_epilogue[
             @parameter
             @__copy_capture(c)
             def epilogue_wrapper[
-                simd_width: Int, rank: Int, alignment: Int = 1
-            ](idx: IndexList[rank]):
-                var c_coord = Index(idx[0], idx[1])
-                var c_val = c.load_linear[simd_width](idx)
+                simd_width: Int, alignment: Int = 1
+            ](idx: Coord):
+                var c_val = c.load[simd_width](idx)
                 epilogue[c_type, simd_width, alignment=alignment](
-                    c_coord, c_val
+                    Index(idx[0].value(), idx[1].value()), c_val
                 )
 
             blockwise_fp8_matmul[
@@ -1777,7 +1780,7 @@ def blockwise_scaled_fp8_with_epilogue[
                 n_scale_granularity=scales_granularity_mnk[1],
             ](c, a, b, a_scales, b_scales, ctx)
             elementwise[epilogue_wrapper, simd_size, target="gpu"](
-                Index(m, n), ctx
+                Coord(m, n), ctx
             )
 
     else:

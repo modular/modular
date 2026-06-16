@@ -59,9 +59,9 @@ def _all_trivial_del[*Ts: AnyType]() -> Bool:
     """Check if all types have trivial destructors."""
 
     comptime for i in range(Ts.size):
-        comptime if conforms_to(Ts[i], ImplicitlyDestructible):
+        comptime if conforms_to(Ts[i], ImplicitlyDeletable):
             if not is_trivially_destructible[
-                downcast[Ts[i], ImplicitlyDestructible]
+                downcast[Ts[i], ImplicitlyDeletable]
             ]():
                 return False
         else:
@@ -246,15 +246,15 @@ struct UnsafeUnion[*Ts: AnyType](ImplicitlyCopyable, Movable, Writable):
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
         self._storage = copy._storage
 
-    def __init__(out self, *, deinit take: Self):
+    def __init__(out self, *, deinit move: Self):
         """Move initializer for the union.
 
         Args:
-            take: The union to move from.
+            move: The union to move from.
         """
         # Bitwise move of the raw storage
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
-        self._storage = take._storage
+        self._storage = move._storage
 
     # Note: No __del__ - UnsafeUnion doesn't know what type is stored, so it
     # cannot call destructors. Users must manually manage destruction if needed.

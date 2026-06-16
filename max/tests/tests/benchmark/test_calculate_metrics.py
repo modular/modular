@@ -22,9 +22,11 @@ import pytest
 from max.benchmark.benchmark_shared.request import (
     PixelGenerationRequestFuncOutput,
     RequestFuncOutput,
+    ServerTokenStats,
 )
 from max.benchmark.benchmark_shared.serving_metrics import (
     _compute_steady_state_result,
+    _per_turn_cache_retentions,
     calculate_metrics,
     calculate_pixel_generation_metrics,
 )
@@ -75,6 +77,7 @@ def test_per_chunk_tpot_collected_from_outputs() -> None:
         max_concurrency=None,
         max_concurrent_conversations=None,
         collect_gpu_stats=False,
+        kv_block_size=128,
     )
 
     assert metrics.text_data is not None
@@ -127,6 +130,7 @@ def test_tpot_both_definitions() -> None:
         max_concurrency=None,
         max_concurrent_conversations=None,
         collect_gpu_stats=False,
+        kv_block_size=128,
     )
 
     assert metrics.text_data is not None
@@ -168,6 +172,7 @@ def test_tpot_zero_decode_tokens() -> None:
         max_concurrency=None,
         max_concurrent_conversations=None,
         collect_gpu_stats=False,
+        kv_block_size=128,
     )
 
     assert metrics.text_data is not None
@@ -191,6 +196,7 @@ def test_empty_outputs_no_crash() -> None:
         max_concurrency=None,
         max_concurrent_conversations=None,
         collect_gpu_stats=False,
+        kv_block_size=128,
     )
 
     assert metrics.text_data is not None
@@ -226,6 +232,7 @@ def test_itl_metrics_unchanged() -> None:
         max_concurrency=None,
         max_concurrent_conversations=None,
         collect_gpu_stats=False,
+        kv_block_size=128,
     )
 
     assert metrics.text_data is not None
@@ -266,6 +273,7 @@ def test_failed_requests_excluded() -> None:
         max_concurrency=None,
         max_concurrent_conversations=None,
         collect_gpu_stats=False,
+        kv_block_size=128,
     )
 
     assert metrics.text_data is not None
@@ -325,6 +333,7 @@ def test_skip_last_n_requests() -> None:
         max_concurrency=None,
         max_concurrent_conversations=None,
         collect_gpu_stats=False,
+        kv_block_size=128,
     )
 
     metrics_skip_last = calculate_metrics(
@@ -338,6 +347,7 @@ def test_skip_last_n_requests() -> None:
         max_concurrency=None,
         max_concurrent_conversations=None,
         collect_gpu_stats=False,
+        kv_block_size=128,
     )
 
     assert metrics_all.text_data is not None
@@ -398,6 +408,7 @@ def test_skip_first_and_last_n_requests() -> None:
         max_concurrency=None,
         max_concurrent_conversations=None,
         collect_gpu_stats=False,
+        kv_block_size=128,
     )
 
     assert metrics.text_data is not None
@@ -457,6 +468,7 @@ def test_skip_last_with_cancelled_requests() -> None:
         max_concurrency=None,
         max_concurrent_conversations=None,
         collect_gpu_stats=False,
+        kv_block_size=128,
     )
 
     assert metrics.text_data is not None
@@ -499,6 +511,7 @@ def test_skip_all_requests_warns() -> None:
             max_concurrency=None,
             max_concurrent_conversations=None,
             collect_gpu_stats=False,
+            kv_block_size=128,
         )
         assert len(w) == 1
         assert "excluded" in str(w[0].message).lower()
@@ -575,6 +588,7 @@ def test_request_submit_time_set_on_output() -> None:
         max_concurrency=None,
         max_concurrent_conversations=None,
         collect_gpu_stats=False,
+        kv_block_size=128,
     )
     assert metrics.text_data is not None
     # Metrics are computed normally regardless of submit time
@@ -644,6 +658,7 @@ def test_measured_duration_uses_measured_window() -> None:
         max_concurrency=None,
         max_concurrent_conversations=None,
         collect_gpu_stats=False,
+        kv_block_size=128,
     )
 
     assert metrics.text_data is not None
@@ -693,6 +708,7 @@ def test_measured_duration_falls_back_when_no_timestamps() -> None:
         max_concurrency=None,
         max_concurrent_conversations=None,
         collect_gpu_stats=False,
+        kv_block_size=128,
     )
     assert metrics.text_data is not None
     assert math.isclose(metrics.text_data.duration, 3.0, rel_tol=1e-9)
@@ -748,6 +764,7 @@ def test_skipped_tokens_excluded_from_totals() -> None:
         max_concurrency=None,
         max_concurrent_conversations=None,
         collect_gpu_stats=False,
+        kv_block_size=128,
     )
 
     assert metrics.text_data is not None
@@ -881,6 +898,7 @@ def test_skip_uses_submit_time_for_head_complete_time_for_tail() -> None:
         max_concurrency=None,
         max_concurrent_conversations=None,
         collect_gpu_stats=False,
+        kv_block_size=128,
     )
 
     assert metrics.text_data is not None
@@ -952,6 +970,7 @@ def test_skip_distinguishes_dispatch_order_from_timing() -> None:
         max_concurrency=None,
         max_concurrent_conversations=None,
         collect_gpu_stats=False,
+        kv_block_size=128,
     )
 
     assert metrics.text_data is not None
@@ -1021,6 +1040,7 @@ def test_skip_first_overlaps_with_skip_last_drops_both() -> None:
         max_concurrency=None,
         max_concurrent_conversations=None,
         collect_gpu_stats=False,
+        kv_block_size=128,
     )
 
     assert metrics.text_data is not None
@@ -1167,3 +1187,120 @@ def test_compute_steady_state_result_detected() -> None:
     assert result["steady_state_warning"] is None
     # With ttft=0.05 s the mean should be ≈50 ms.
     assert result["steady_state_mean_ttft_ms"] == pytest.approx(50.0, rel=0.05)
+
+
+def _turn(
+    session_id: str,
+    turn_index: int,
+    prompt_tokens: int,
+    completion_tokens: int,
+    cached_tokens: int,
+) -> RequestFuncOutput:
+    """A successful multi-turn output carrying server token stats."""
+    return RequestFuncOutput(
+        success=True,
+        latency=1.0,
+        ttft=0.1,
+        prompt_len=prompt_tokens,
+        generated_text="x",
+        itl=[0.1],
+        tpot=[0.1],
+        session_id=session_id,
+        turn_index=turn_index,
+        server_token_stats=ServerTokenStats(
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            cached_tokens=cached_tokens,
+        ),
+    )
+
+
+class TestPerTurnCacheRetention:
+    """`_per_turn_cache_retentions` block-aligns vs the prior turn's context."""
+
+    def test_clean_hit_is_full_retention(self) -> None:
+        # prev context = 500 + 100 = 600. expected_cacheable =
+        # (600 // 128 - 1) * 128 = 3 * 128 = 384. cached(turn1) == 384 -> 1.0.
+        turns = [
+            _turn(
+                "s",
+                0,
+                prompt_tokens=500,
+                completion_tokens=100,
+                cached_tokens=0,
+            ),
+            _turn(
+                "s",
+                1,
+                prompt_tokens=600,
+                completion_tokens=100,
+                cached_tokens=384,
+            ),
+        ]
+        assert _per_turn_cache_retentions(turns, 128) == [pytest.approx(1.0)]
+
+    def test_partial_drop(self) -> None:
+        # cached(turn1) == 192 of a 384 ceiling -> 0.5.
+        turns = [
+            _turn(
+                "s",
+                0,
+                prompt_tokens=500,
+                completion_tokens=100,
+                cached_tokens=0,
+            ),
+            _turn(
+                "s",
+                1,
+                prompt_tokens=600,
+                completion_tokens=100,
+                cached_tokens=192,
+            ),
+        ]
+        assert _per_turn_cache_retentions(turns, 128) == [pytest.approx(0.5)]
+
+    def test_first_turn_excluded_and_sessions_isolated(self) -> None:
+        # Two sessions, each 2 turns; only the second turn of each is checked,
+        # and a session's retention is computed against its own prior turn.
+        turns = [
+            _turn("a", 0, 500, 100, 0),
+            _turn("a", 1, 600, 100, 384),  # clean -> 1.0
+            _turn("b", 0, 500, 100, 0),
+            _turn("b", 1, 600, 100, 0),  # full miss -> 0.0
+        ]
+        result = sorted(_per_turn_cache_retentions(turns, 128))
+        assert result == [pytest.approx(0.0), pytest.approx(1.0)]
+
+    def test_sub_block_context_skipped(self) -> None:
+        # prev context 100 -> (100 // 128 - 1) clamps to 0 blocks -> skipped.
+        turns = [
+            _turn("s", 0, 60, 40, 0),
+            _turn("s", 1, 100, 40, 0),
+        ]
+        assert _per_turn_cache_retentions(turns, 128) == []
+
+    def test_single_turn_outputs_have_no_retention_metric(self) -> None:
+        # No session_id/turn_index (single-turn) -> per_turn_cache_retention None.
+        output = RequestFuncOutput(
+            success=True,
+            latency=1.0,
+            ttft=0.1,
+            prompt_len=10,
+            generated_text="x",
+            itl=[0.1],
+        )
+        metrics = calculate_metrics(
+            outputs=[output],
+            dur_s=1.0,
+            tokenizer=_make_mock_tokenizer({"x": 3}),
+            gpu_metrics=None,
+            cpu_metrics=_EMPTY_CPU_METRICS,
+            skip_first_n_requests=0,
+            skip_last_n_requests=0,
+            max_concurrency=None,
+            max_concurrent_conversations=None,
+            collect_gpu_stats=False,
+            kv_block_size=128,
+        )
+        assert metrics.text_data is not None
+        assert metrics.text_data.per_turn_cache_retention is None

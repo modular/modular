@@ -2273,6 +2273,29 @@ class ToStringDeferredAttr(max._core.Attribute):
     @property
     def need_elide_type(self) -> max._core.dialects.builtin.UnitAttr: ...
 
+class TraitInstanceRefAttr(max._core.Attribute):
+    """
+    This is a symbolic reference to a trait instance. Its type is the metatype
+    of the trait.
+    """
+
+    @overload
+    def __init__(
+        self,
+        symbols: Sequence[max._core.dialects.builtin.SymbolRefAttr],
+        type: max._core.Type,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        symbols: Sequence[max._core.dialects.builtin.SymbolRefAttr],
+        type: max._core.Type,
+    ) -> None: ...
+    @property
+    def symbols(self) -> Sequence[max._core.dialects.builtin.SymbolRefAttr]: ...
+    @property
+    def type(self) -> max._core.Type | None: ...
+
 class TypeConformsToTraitAttr(max._core.Attribute):
     """
     This represents a flag to indicate the type, specified by `typeValue`,
@@ -2930,7 +2953,7 @@ class CostOfOp(max._core.Operation):
     Example:
 
     ```mlir
-    %loads, %stores, %additions, %comparisions, %divisions, %multiplications,
+    %loads, %stores, %additions, %comparisons, %divisions, %multiplications,
     %multiply_adds, %other = kgen.cost_of[(si8) -> si8: @foo]
     ```
     """
@@ -3474,7 +3497,7 @@ class IsRunInComptimeInterpreterOp(max._core.Operation):
     Example:
 
     ```mlir
-      kgen.is_run_in_comptime_interpreter : i1
+      kgen.is_run_in_comptime_interpreter : !kgen.scalar<bool>
     ```
     """
 
@@ -3482,7 +3505,7 @@ class IsRunInComptimeInterpreterOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        result: max._core.dialects.builtin.IntegerType,
+        result: max._core.Type,
     ) -> None: ...
 
 class ParamApplyOp(max._core.Operation):
@@ -4478,8 +4501,8 @@ class VariantGetOp(max._core.Operation):
 class VariantIsOp(max._core.Operation):
     """
     The `kgen.variant.is` operation checks whether the given variant contains
-    a particular type. Returns an `i1` that indicates whether the variant is the
-    particular type.
+    a particular type. Returns a `!kgen.scalar<bool>` that indicates whether the
+    variant is the particular type.
 
     Example:
 
@@ -4493,7 +4516,7 @@ class VariantIsOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        result: max._core.dialects.builtin.IntegerType,
+        result: max._core.Type,
         variant: max._core.Value[VariantType],
         index: max._core.dialects.builtin.IntegerAttr,
     ) -> None: ...

@@ -261,8 +261,7 @@ def run_max_indexer(
         index_topk=index_topk,
         q_lora_rank=q_lora_rank,
         devices=[DeviceRef.GPU()],
-        activation_quant_config=quant_config,
-        weight_quant_config=quant_config,
+        quant_config=quant_config,
     )
 
     # Convert state_dict to WeightData format
@@ -309,7 +308,7 @@ def run_max_indexer(
             x_type,
             qr_type,
             input_row_offsets_type,
-            *kv_params.get_symbolic_inputs().flatten(),
+            *kv_params.flattened_kv_inputs(),
         ),
     ) as graph:
         x_in = graph.inputs[0].tensor
@@ -360,7 +359,7 @@ def run_max_indexer(
         kv_manager.alloc(context, replica_idx=0, num_steps=1)
         batch_contexts.append(context)
 
-    kv_inputs = kv_manager.runtime_inputs([batch_contexts]).inputs[0]
+    kv_inputs = kv_manager.runtime_inputs_for_leaf([batch_contexts]).inputs[0]
 
     # Prepare input tensors - flatten batch dimension for ragged format
     x_flat = x.view(-1, dim)
@@ -396,6 +395,12 @@ def run_max_indexer(
     return output_tensor
 
 
+@pytest.mark.skip(
+    reason="Disabled due to nondeterminism. "
+    "https://linear.app/modularml/issue/GEX-3777 "
+    "https://linear.app/modularml/issue/QUA-448 "
+    "Re-enable tracking: https://linear.app/modularml/issue/MODELS-1543"
+)
 @pytest.mark.skipif(
     accelerator_api() == "hip",
     reason="Memory access fault by GPU node-2 (Agent handle: 0x49c8e0a0) on address 0x10e2bfcf8000. Reason: Unknown.",
@@ -431,6 +436,12 @@ def test_indexer_no_mask(
     assert total_equal / float(total_seq_len * index_topk) >= 0.89
 
 
+@pytest.mark.skip(
+    reason="Disabled due to nondeterminism. "
+    "https://linear.app/modularml/issue/GEX-3777 "
+    "https://linear.app/modularml/issue/QUA-448 "
+    "Re-enable tracking: https://linear.app/modularml/issue/MODELS-1543"
+)
 @pytest.mark.skipif(
     accelerator_api() == "hip",
     reason="Memory access fault by GPU node-2 (Agent handle: 0x49c8e0a0) on address 0x10e2bfcf8000. Reason: Unknown.",

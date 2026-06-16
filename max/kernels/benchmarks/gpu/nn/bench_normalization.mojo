@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.random import random_float64
-from std.sys import get_defined_dtype
+from std.sys import align_of, get_defined_dtype
 
 from std.benchmark import Bench, BenchConfig, Bencher, BenchId
 from std.gpu.host import DeviceContext
@@ -150,7 +150,12 @@ def bench_rms_norm_gpu[
     ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
         var idx = data_buf.layout(Coord(coords))
 
-        return data_buf.raw_load[width=width](idx)
+        # Match the MOGG lambda contract (reductions.mojo passes
+        # `element_alignment=width` to `_lambda_load`): vector loads are
+        # aligned to the full SIMD width.
+        return data_buf.raw_load[
+            width=width, alignment=align_of[SIMD[dtype, width]]()
+        ](idx)
 
     @always_inline
     @__copy_capture(data_buf)

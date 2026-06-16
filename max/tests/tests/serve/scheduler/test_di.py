@@ -24,8 +24,13 @@ import numpy as np
 import pytest
 from max.driver import CPU, Device
 from max.nn.kv_cache import KVConnectorType
-from max.pipelines.core import TextContext
-from max.pipelines.core.context import FUTURE_TOKEN
+from max.pipelines.context import (
+    GenerationStatus,
+    TextContext,
+    TextGenerationOutput,
+    TokenBuffer,
+)
+from max.pipelines.context.context import FUTURE_TOKEN
 from max.pipelines.kv_cache.paged_kv_cache.transfer_engine import (
     KVTransferEngineMetadata,
 )
@@ -34,11 +39,8 @@ from max.pipelines.lib.pipeline_variants.utils import (
     update_spec_decode_context_and_prepare_responses,
 )
 from max.pipelines.modeling.types import (
-    GenerationStatus,
     RequestID,
     TextGenerationInputs,
-    TextGenerationOutput,
-    TokenBuffer,
 )
 from max.pipelines.speculative.config import SpeculativeConfig
 from max.serve.scheduler.base import (
@@ -137,7 +139,6 @@ def create_di_scheduler(
     num_blocks: int = 9999,
     max_batch_size: int = 512,
     page_size: int = 128,
-    max_forward_steps_tg: int = 10,
     target_tokens_per_batch_ce: int = 8192,
     enable_prefix_caching: bool = False,
     enable_in_flight_batching: bool = False,
@@ -216,7 +217,6 @@ def create_di_scheduler(
     ) -> TokenGenerationSchedulerConfig:
         return TokenGenerationSchedulerConfig(
             max_batch_size=max_batch_size,
-            max_forward_steps_tg=max_forward_steps_tg,
             target_tokens_per_batch_ce=target_tokens_per_batch_ce,
             max_seq_len=max_seq_len,
             enable_chunked_prefill=enable_chunked_prefill,
@@ -302,12 +302,12 @@ def create_di_scheduler(
     )
 
 
-def create_default_di_scheduler_and_submit_one_request() -> tuple[
-    DecodeScheduler, PrefillScheduler, DIQueues, TextContext
-]:
+def create_default_di_scheduler_and_submit_one_request(
+    output_len: int = 5,
+) -> tuple[DecodeScheduler, PrefillScheduler, DIQueues, TextContext]:
     decode, prefill, server_addr, q = create_di_scheduler()
     ctx = create_text_context(
-        target_endpoint=server_addr, prompt_len=100, output_len=5
+        target_endpoint=server_addr, prompt_len=100, output_len=output_len
     )
     q.request_queue.put(ctx)
     return decode, prefill, q, ctx
@@ -370,27 +370,21 @@ def test_one_req_end_to_end() -> None:
     # Stream token 99 to frontend
     # Execute decode with num_steps=4, generating token 42, 43, 44, 45
     # Stream tokens 42, 43, 44, 45 to frontend
-    decode.run_iteration()
+    for _ in range(4):
+        decode.run_iteration()
 
-    # Check that the first token is 99
-    output1 = q.response_queue.get()
-    assert len(output1) == 1
-    sch_output1 = output1[req_id]
-    assert not sch_output1.is_done
-    single_token = sch_output1.result
-    assert isinstance(single_token, TextGenerationOutput)
-    assert single_token.request_id == req_id
-    assert single_token.tokens == [99]
-
-    # Check that the rest of the tokens are 42, 43, 44, 45
-    output2 = q.response_queue.get()
-    assert len(output2) == 1
-    sch_output2 = output2[req_id]
-    assert sch_output2.is_done
-    rest_of_tokens = sch_output2.result
-    assert isinstance(rest_of_tokens, TextGenerationOutput)
-    assert rest_of_tokens.request_id == req_id
-    assert rest_of_tokens.tokens == [42, 43, 44, 45]
+    # The expected output tokens are 99, 42, 43, 44, 45
+    # The 99 comes from prefill, the rest from decode
+    expected = [99, 42, 43, 44, 45]
+    for i, tok in enumerate(expected):
+        output = q.response_queue.get()
+        assert len(output) == 1
+        sch_output = output[req_id]
+        is_last = i == len(expected) - 1
+        assert sch_output.is_done == is_last
+        single_token = sch_output.result
+        assert isinstance(single_token, TextGenerationOutput)
+        assert single_token.tokens == [tok]
 
 
 def test_heterogeneous_mla_prefill_tp2_to_decode_dp2_end_to_end() -> None:
@@ -431,7 +425,8 @@ def test_heterogeneous_mla_prefill_tp2_to_decode_dp2_end_to_end() -> None:
     prefill.run_iteration()
     # decode picks up the transferred KV + the first generated token, then
     # runs token generation.
-    decode.run_iteration()
+    for _ in range(4):
+        decode.run_iteration()
 
     # First response: prefill-generated token.
     output1 = q.response_queue.get()
@@ -441,13 +436,15 @@ def test_heterogeneous_mla_prefill_tp2_to_decode_dp2_end_to_end() -> None:
     assert isinstance(single_token, TextGenerationOutput)
     assert single_token.tokens == [99]
 
-    # Second response: decode-generated tokens.
-    output2 = q.response_queue.get()
-    sch_output2 = output2[req_id]
-    assert sch_output2.is_done
-    rest_of_tokens = sch_output2.result
-    assert isinstance(rest_of_tokens, TextGenerationOutput)
-    assert rest_of_tokens.tokens == [42, 43, 44, 45]
+    # Rest of responses: decode-generated tokens.
+    expected = [42, 43, 44, 45]
+    for i, tok in enumerate(expected):
+        sch_output = q.response_queue.get()[req_id]
+        is_last = i == len(expected) - 1
+        assert sch_output.is_done == is_last
+        single_token = sch_output.result
+        assert isinstance(single_token, TextGenerationOutput)
+        assert single_token.tokens == [tok]
 
     # One more prefill iteration drains cleanup_active_transfers — verify the
     # flattened-engine send transfer was released symmetrically.
@@ -549,7 +546,8 @@ def test_di_with_dp2_end_to_end() -> None:
     # Execute prefill, generating tokens 99 and 100 for the two requests respectively
     prefill.run_iteration()
     # Stream tokens to frontend and execute decode
-    decode.run_iteration()
+    for _ in range(4):
+        decode.run_iteration()
 
     # Collect all outputs from the queue - there should be 4 total:
     # 2 prefill responses and 2 decode responses
@@ -566,22 +564,24 @@ def test_di_with_dp2_end_to_end() -> None:
             else:
                 raise ValueError(f"Unexpected request ID: {req_id}")
 
-    # Check req1: first token from prefill (99), then decode tokens
-    assert len(req1_outputs) == 2
-    assert req1_outputs[0].tokens == [99]  # From prefill
-    assert req1_outputs[1].tokens == [42, 43, 44, 45]  # From decode
+    # First token (99 & 100) is from prefill, the rest are from decode
+    expected_tokens_req_a = [99, 42, 44, 46, 48]
+    expected_tokens_req_b = [100, 43, 45, 47, 49]
 
-    # Check req2: first token from prefill (100), then decode tokens
-    assert len(req2_outputs) == 2
-    assert req2_outputs[0].tokens == [100]  # From prefill
-    assert req2_outputs[1].tokens == [46, 47, 48, 49]  # From decode
+    for i, tok in enumerate(expected_tokens_req_a):
+        assert req1_outputs[i].tokens == [tok]
+        is_last = i == len(expected_tokens_req_a) - 1
+        assert req1_outputs[i].is_done == is_last
+
+    for i, tok in enumerate(expected_tokens_req_b):
+        assert req2_outputs[i].tokens == [tok]
+        is_last = i == len(expected_tokens_req_b) - 1
+        assert req2_outputs[i].is_done == is_last
 
 
 def test_overlap_di_schedule_filters_stale_responses() -> None:
     """Verify schedule() drops responses for request IDs not in batch_constructor."""
-    decode, prefill, server_addr, q = create_di_scheduler(
-        max_forward_steps_tg=1
-    )
+    decode, prefill, server_addr, q = create_di_scheduler()
     ctx = create_text_context(
         target_endpoint=server_addr, prompt_len=100, output_len=10
     )
@@ -633,7 +633,7 @@ def test_overlap_di_has_pending_outputs_prevents_no_progress() -> None:
     mock_pipeline = MagicMock(spec=OverlapTextGenerationPipeline)
     mock_pipeline.has_pending_outputs.return_value = True
     mock_pipeline.execute.return_value = {}
-    mock_pipeline.spec_decode_metrics.return_value = None
+    mock_pipeline.batch_spec_decode_metrics.return_value = None
     decode.pipeline = mock_pipeline
 
     result = decode.run_iteration()
@@ -753,9 +753,7 @@ def test_prefix_caching_marks_cached_blocks_in_prefill_request() -> None:
     page_size = 32
     prompt_len = 256  # 8 full pages
     decode, prefill, server_addr, q = create_di_scheduler(
-        page_size=page_size,
-        enable_prefix_caching=True,
-        max_forward_steps_tg=10,
+        page_size=page_size, enable_prefix_caching=True
     )
 
     # Request 1 -> run end-to-end so blocks are committed to prefix cache
@@ -796,9 +794,7 @@ def test_prefix_caching_prefill_skips_cached_blocks_in_transfer() -> None:
     page_size = 32
     prompt_len = 256  # 8 full pages
     decode, prefill, server_addr, q = create_di_scheduler(
-        page_size=page_size,
-        enable_prefix_caching=True,
-        max_forward_steps_tg=10,
+        page_size=page_size, enable_prefix_caching=True
     )
     num_total_pages = prompt_len // page_size
 
@@ -833,8 +829,8 @@ def test_prefix_caching_prefill_skips_cached_blocks_in_transfer() -> None:
 def test_completed_request_cleans_up_all_state() -> None:
     """After one request completes end-to-end, all transfer state and KV pages
     are released on both decode and prefill sides."""
-    decode, prefill, _q, _ = (
-        create_default_di_scheduler_and_submit_one_request()
+    decode, prefill, _q, _ = create_default_di_scheduler_and_submit_one_request(
+        output_len=1
     )
 
     # Initially no KV pages allocated on decode
@@ -988,12 +984,11 @@ def test_chunked_prefill_completes_across_multiple_iterations() -> None:
         target_tokens_per_batch_ce=target_tokens_per_batch_ce,
         page_size=page_size,
         enable_chunked_prefill=True,
-        max_forward_steps_tg=10,
         max_batch_size=target_tokens_per_batch_ce,
     )
 
     ctx = create_text_context(
-        target_endpoint=server_addr, prompt_len=prompt_len, output_len=5
+        target_endpoint=server_addr, prompt_len=prompt_len, output_len=1
     )
     req_id = ctx.request_id
     q.request_queue.put(ctx)
@@ -1027,7 +1022,7 @@ def test_chunked_prefill_completes_across_multiple_iterations() -> None:
             if isinstance(output, TextGenerationOutput):
                 outputs.append(output)
 
-    assert len(outputs) >= 2, f"Expected at least 2 outputs, got {len(outputs)}"
+    assert len(outputs) == 2, f"Expected exactly 2 outputs, got {len(outputs)}"
     # First output is the prefill-generated token
     assert len(outputs[0].tokens) == 1
     # Last output should be done
@@ -1043,7 +1038,6 @@ def test_chunked_prefill_with_multiple_requests() -> None:
         target_tokens_per_batch_ce=target_tokens_per_batch_ce,
         page_size=page_size,
         enable_chunked_prefill=True,
-        max_forward_steps_tg=10,
         max_batch_size=target_tokens_per_batch_ce,
     )
 
@@ -1066,7 +1060,10 @@ def test_chunked_prefill_with_multiple_requests() -> None:
         if prefill.run_iteration() == SchedulerProgress.NO_PROGRESS:
             break
 
-    decode.run_iteration()
+    # Run decode iterations until both requests are done
+    for _ in range(30):
+        if decode.run_iteration() == SchedulerProgress.NO_PROGRESS:
+            break
 
     # Collect outputs per request
     req1_tokens: list[int] = []
@@ -1331,9 +1328,7 @@ def test_overlap_di_e2e_correct_token_streaming_order() -> None:
     sides simultaneously, the 1 batch lag must not drop or reorder tokens."""
     for overlap_prefill in (False, True):
         decode, prefill, server_addr, q = create_di_scheduler(
-            overlap_prefill=overlap_prefill,
-            overlap_decode=True,
-            max_forward_steps_tg=1,
+            overlap_prefill=overlap_prefill, overlap_decode=True
         )
         ctx = create_text_context(
             target_endpoint=server_addr, prompt_len=100, output_len=5
@@ -1370,7 +1365,7 @@ def test_overlap_di_both_sides_multiple_concurrent_requests() -> None:
     """Multiple concurrent requests with overlap on both sides: all complete
     with exact expected tokens and no FUTURE_TOKEN sentinel leaks."""
     decode, prefill, server_addr, q = create_di_scheduler(
-        overlap_prefill=True, overlap_decode=True, max_forward_steps_tg=1
+        overlap_prefill=True, overlap_decode=True
     )
 
     ctx1 = create_text_context(
@@ -1423,7 +1418,7 @@ def test_overlap_di_both_sides_kv_cache_fully_released() -> None:
     """After all requests complete with overlap on both sides, all KV cache
     pages on both decode and prefill are fully released — no resource leaks."""
     decode, prefill, server_addr, q = create_di_scheduler(
-        overlap_prefill=True, overlap_decode=True, max_forward_steps_tg=1
+        overlap_prefill=True, overlap_decode=True
     )
 
     num_requests = 3
@@ -1464,7 +1459,7 @@ def test_overlap_di_both_sides_staggered_arrivals_e2e() -> None:
     complete with correct tokens and no drops or misordering.
     """
     decode, prefill, server_addr, q = create_di_scheduler(
-        overlap_prefill=True, overlap_decode=True, max_forward_steps_tg=1
+        overlap_prefill=True, overlap_decode=True
     )
 
     ctx1 = create_text_context(
@@ -1534,7 +1529,7 @@ def test_overlap_di_both_sides_minimal_output() -> None:
     1 from prefill + 1 from decode's first step.
     """
     decode, prefill, server_addr, q = create_di_scheduler(
-        overlap_prefill=True, overlap_decode=True, max_forward_steps_tg=1
+        overlap_prefill=True, overlap_decode=True
     )
 
     ctx = create_text_context(
@@ -1630,25 +1625,20 @@ def test_spec_decode_prefill_end_to_end() -> None:
     # Full lifecycle: decode sends to prefill, prefill executes, decode runs
     decode.run_iteration()
     prefill.run_iteration()
-    decode.run_iteration()
+    for _ in range(4):
+        decode.run_iteration()
 
-    # First response should be the prefill token (99)
-    output1 = q.response_queue.get()
-    assert len(output1) == 1
-    sch_output1 = output1[req_id]
-    assert not sch_output1.is_done
-    single_token = sch_output1.result
-    assert isinstance(single_token, TextGenerationOutput)
-    assert single_token.tokens == [99]
-
-    # Second response should be decode tokens
-    output2 = q.response_queue.get()
-    assert len(output2) == 1
-    sch_output2 = output2[req_id]
-    assert sch_output2.is_done
-    rest_of_tokens = sch_output2.result
-    assert isinstance(rest_of_tokens, TextGenerationOutput)
-    assert rest_of_tokens.tokens == [42, 43, 44, 45]
+    # Check expected outputs
+    expected = [99, 42, 43, 44, 45]
+    for i, tok in enumerate(expected):
+        output = q.response_queue.get()
+        assert len(output) == 1
+        sch_output = output[req_id]
+        is_last = i == len(expected) - 1
+        assert sch_output.is_done == is_last
+        single_token = sch_output.result
+        assert isinstance(single_token, TextGenerationOutput)
+        assert single_token.tokens == [tok]
 
 
 def test_spec_decode_prefill_does_not_accumulate_pending_first_token() -> None:
@@ -1726,17 +1716,6 @@ def test_spec_decode_prefill_decode_receives_draft_tokens() -> None:
         len(pending.context.spec_decoding_state.draft_tokens_to_verify)
         == num_spec_tokens
     )
-
-
-def test_load_prefill_scheduler_rejects_standalone_spec_decode() -> None:
-    """load_prefill_scheduler must raise for standalone speculative decoding."""
-    pipeline = MagicMock()
-    pipeline.kv_manager = MagicMock()
-    config = MagicMock()
-    config.speculative = SpeculativeConfig(speculative_method="standalone")
-
-    with pytest.raises(ValueError, match="Standalone speculative decoding"):
-        load_prefill_scheduler(pipeline, config, MagicMock())
 
 
 def test_load_prefill_scheduler_accepts_eagle_spec_decode() -> None:
@@ -1863,21 +1842,19 @@ def test_overlap_spec_decode_end_to_end() -> None:
     decode.run_iteration()
     prefill.run_iteration()  # defer
     prefill.run_iteration()  # flush
-    decode.run_iteration()
+    for _ in range(4):
+        decode.run_iteration()
 
-    output1 = q.response_queue.get()
-    sch1 = output1[req_id]
-    assert not sch1.is_done
-    tok1 = sch1.result
-    assert isinstance(tok1, TextGenerationOutput)
-    assert tok1.tokens == [99]
-
-    output2 = q.response_queue.get()
-    sch2 = output2[req_id]
-    assert sch2.is_done
-    tok2 = sch2.result
-    assert isinstance(tok2, TextGenerationOutput)
-    assert tok2.tokens == [42, 43, 44, 45]
+    tokens = [99, 42, 43, 44, 45]
+    for i, tok in enumerate(tokens):
+        output = q.response_queue.get()
+        assert len(output) == 1
+        sch_output = output[req_id]
+        is_last = i == len(tokens) - 1
+        assert sch_output.is_done == is_last
+        single_token = sch_output.result
+        assert isinstance(single_token, TextGenerationOutput)
+        assert single_token.tokens == [tok]
 
 
 def test_overlap_spec_decode_cancel_between_defer_and_resolve() -> None:
@@ -2024,6 +2001,63 @@ def test_update_spec_decode_without_skip_fsm_advance_calls_advance_fsm() -> (
     # advance_fsm called for the first token (realize_future_token path)
     # and subsequent tokens go through update() which also calls advance_fsm
     assert mock_advance_fsm.call_count >= 1
+
+
+def test_update_spec_decode_early_stops_near_max_seq_len() -> None:
+    """update_spec_decode_context_and_prepare_responses marks contexts as
+    MAXIMUM_LENGTH when they would exceed max_seq_len in the next TG step.
+
+    Regression test for MAX-615: with speculative decoding, the next step can
+    add up to (num_spec_tokens + 1) tokens. If this would exceed max_seq_len,
+    the sequence is early-stopped to prevent a KV cache overflow crash.
+    """
+    num_spec_tokens = 3
+    # Max growth per step = num_spec_tokens + 1 = 4
+    max_growth = num_spec_tokens + 1
+
+    # Create a context where:
+    # - After realize_future_token, processed_length = prompt_len
+    # - current_length = processed_length + 1 = prompt_len + 1
+    # - Early-stop if: current_length + max_growth > max_seq_len
+    #   i.e., prompt_len + 1 + max_growth > max_seq_len
+    #   i.e., prompt_len > max_seq_len - max_growth - 1
+    #
+    # For max_seq_len=100, max_growth=4: prompt_len > 95, so prompt_len=96
+    # triggers early-stop.
+    max_seq_len = 100
+    prompt_len = max_seq_len - max_growth  # = 96
+    output_len = max_seq_len - prompt_len  # = 4
+
+    ctx = create_text_context(
+        target_endpoint="ipc:///tmp/test",
+        prompt_len=prompt_len,
+        output_len=output_len,
+    )
+    assert ctx.max_length == max_seq_len
+
+    # Prepare the context for spec dec: add future token placeholder
+    ctx.update_with_future_token()
+    assert not ctx.is_done, "Context should not be done before the test"
+
+    update_spec_decode_context_and_prepare_responses(
+        draft_tokens=np.array([[1, 2, 3]], dtype=np.int32),
+        next_draft_tokens=np.array([[4, 5, 6]], dtype=np.int32),
+        num_accepted_draft_tokens=np.array([0], dtype=np.int32),
+        next_tokens=np.array([99], dtype=np.int32),
+        context_batch=[ctx],
+        max_seq_len=max_seq_len,
+    )
+
+    # After realize_future_token: processed_length = 96, current_length = 97
+    # Check: 97 + 4 = 101 > 100 → MAXIMUM_LENGTH
+    assert ctx.status == GenerationStatus.MAXIMUM_LENGTH, (
+        "Context should be marked as MAXIMUM_LENGTH when next step would "
+        f"exceed max_seq_len. current_length={ctx.tokens.processed_length + 1}, "
+        f"max_growth={max_growth}, max_seq_len={max_seq_len}"
+    )
+    assert ctx.spec_decoding_state.draft_tokens_to_verify == [], (
+        "draft_tokens_to_verify must be empty when ctx.is_done=True"
+    )
 
 
 # ---------------------------------------------------------------------------

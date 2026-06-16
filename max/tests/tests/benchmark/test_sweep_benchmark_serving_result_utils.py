@@ -20,9 +20,9 @@ from unittest.mock import MagicMock
 
 import pytest
 from max.benchmark.benchmark_shared.metrics import (
+    BenchmarkResult,
     PixelGenAggregates,
     RatePercentileMetrics,
-    ServingBenchmarkMetrics,
     StandardPercentileMetrics,
     TextGenAggregates,
     ThroughputMetrics,
@@ -121,12 +121,12 @@ def test_t2i_result_default_total_generated_outputs() -> None:
     assert r.total_generated_outputs == 0
 
 
-def _make_llm_metrics() -> ServingBenchmarkMetrics:
+def _make_llm_metrics() -> BenchmarkResult:
     ttfts = [0.048, 0.050, 0.060, 0.080]
     itls = [0.0095, 0.010, 0.012, 0.018]
     latencies = [0.390, 0.400, 0.450, 0.550]
     per_turn_cache_rates = [0.30, 0.35, 0.40, 0.45]
-    return ServingBenchmarkMetrics(
+    return BenchmarkResult(
         task_type="text",
         max_concurrency=4,
         peak_gpu_memory_mib=[8000.0],
@@ -219,9 +219,9 @@ def test_llm_zeros_all_fields_zero() -> None:
     assert r.req_latency_percentiles == {50: 0.0, 99: 0.0}
 
 
-def _make_t2i_metrics() -> ServingBenchmarkMetrics:
+def _make_t2i_metrics() -> BenchmarkResult:
     latencies = [1.4, 1.5, 1.7, 1.9]
-    return ServingBenchmarkMetrics(
+    return BenchmarkResult(
         task_type="pixel",
         max_concurrency=2,
         peak_gpu_memory_mib=[8000.0],

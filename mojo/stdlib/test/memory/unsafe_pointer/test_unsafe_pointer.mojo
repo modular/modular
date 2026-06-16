@@ -44,14 +44,6 @@ def _immutable_pointer(p: ImmutUnsafePointer[Int, ...]) raises:
     assert_equal(p[], 42)
 
 
-def _mutable_any_pointer(p: UnsafePointer[Int, MutAnyOrigin, ...]) raises:
-    assert_equal(p[], 42)
-
-
-def _immutable_any_pointer(p: UnsafePointer[Int, ImmutAnyOrigin, ...]) raises:
-    assert_equal(p[], 42)
-
-
 def _parameterized_pointer(p: UnsafePointer[Int, ...]) raises:
     assert_equal(p[], 42)
 
@@ -68,8 +60,6 @@ def test_mutable_conversions() raises:
     _named_origin[origin_of(x)](p)
     _mutable_pointer(p)
     _immutable_pointer(p)
-    _mutable_any_pointer(p)
-    _immutable_any_pointer(p)
     _parameterized_pointer(p)
 
 
@@ -78,25 +68,21 @@ def test_immutable_conversions() raises:
     var p = UnsafePointer(to=x).as_immutable()
     _named_origin[mut=False, origin_of(x)](p)
     _immutable_pointer(p)
-    _immutable_any_pointer(p)
     _parameterized_pointer(p)
 
 
 def test_mutable_any_conversions() raises:
     var x = 42
-    var p = UnsafePointer(to=x).as_any_origin()
+    var p = UnsafePointer(to=x).as_unsafe_any_origin()
     _mutable_pointer(p)
     _immutable_pointer(p)
-    _mutable_any_pointer(p)
-    _immutable_any_pointer(p)
     _parameterized_pointer(p)
 
 
 def test_immutable_any_conversions() raises:
     var x = 42
-    var p = UnsafePointer(to=x).as_immutable().as_any_origin()
+    var p = UnsafePointer(to=x).as_immutable().as_unsafe_any_origin()
     _immutable_pointer(p)
-    _immutable_any_pointer(p)
     _parameterized_pointer(p)
 
 
@@ -287,7 +273,7 @@ def test_unsafepointer_alloc_origin() raises:
     var did_del_1 = False
 
     # Allocate pointer with MutAnyOrigin.
-    var ptr_1 = alloc[Int](1).as_any_origin()
+    var ptr_1 = alloc[Int](1).as_unsafe_any_origin()
 
     var obj_1 = ObservableDel(UnsafePointer(to=did_del_1))
 
@@ -479,8 +465,8 @@ def test_merge() raises:
 
 def test_swap_pointees_trivial_move() raises:
     var a = 42
-    UnsafePointer(to=a).as_any_origin().swap_pointees(
-        UnsafePointer(to=a).as_any_origin()
+    UnsafePointer(to=a).as_unsafe_any_origin().swap_pointees(
+        UnsafePointer(to=a).as_unsafe_any_origin()
     )
     assert_equal(a, 42)
 
@@ -493,8 +479,8 @@ def test_swap_pointees_trivial_move() raises:
 
 def test_swap_pointees_non_trivial_move() raises:
     var counter = MoveCounter[Int](42)
-    UnsafePointer(to=counter).as_any_origin().swap_pointees(
-        UnsafePointer(to=counter).as_any_origin()
+    UnsafePointer(to=counter).as_unsafe_any_origin().swap_pointees(
+        UnsafePointer(to=counter).as_unsafe_any_origin()
     )
     # Pointers point to the same object, so no move should be performed
     assert_equal(counter.value, 42)
@@ -511,12 +497,12 @@ def test_swap_pointees_non_trivial_move() raises:
     assert_equal(counterB.move_count, 2)
 
 
-def test_as_any_origin_mutable() raises:
+def test_as_unsafe_any_origin_mutable() raises:
     var deleted = False
     var observer = ObservableDel[origin_of(deleted)](UnsafePointer(to=deleted))
     var x = 42
 
-    var mutable = UnsafePointer(to=x).as_any_origin()
+    var mutable = UnsafePointer(to=x).as_unsafe_any_origin()
     assert_true(mutable.mut)
     assert_false(deleted)
 
@@ -524,12 +510,12 @@ def test_as_any_origin_mutable() raises:
     assert_true(deleted)  # AnyOrigin extends all lifetimes
 
 
-def test_as_any_origin_immutable() raises:
+def test_as_unsafe_any_origin_immutable() raises:
     var deleted = False
     var observer = ObservableDel[origin_of(deleted)](UnsafePointer(to=deleted))
     var x = 42
 
-    var immutable = UnsafePointer(to=x).as_any_origin().as_immutable()
+    var immutable = UnsafePointer(to=x).as_unsafe_any_origin().as_immutable()
     assert_false(immutable.mut)
     assert_false(deleted)
 
@@ -566,7 +552,7 @@ def test_unsafe_origin_cast() raises:
     _ref_to[origin_of(y)](ptr.unsafe_origin_cast[origin_of(y)]()[])
 
 
-def _ptr_to_int(ptr: UnsafePointer[Int, MutExternalOrigin]) -> Int:
+def _ptr_to_int(ptr: UnsafePointer[Int, MutUntrackedOrigin]) -> Int:
     return Int(ptr)
 
 
@@ -579,7 +565,7 @@ def test_ptr_to_int_llvm_lowering() raises:
     assert_false("ptrtoaddr" in info.asm)
 
 
-def _from_address(x: Int, out result: UnsafePointer[Int, MutExternalOrigin]):
+def _from_address(x: Int, out result: UnsafePointer[Int, MutUntrackedOrigin]):
     result = type_of(result)(unsafe_from_address=x)
 
 
@@ -608,7 +594,7 @@ def test_write_repr_to() raises:
     check_write_to(
         UnsafePointer(to=x),
         contains=(
-            "UnsafePointer[mut=True, Int,"
+            "UnsafePointer[mut=True, SIMD[DType.int, 1],"
             " address_space=AddressSpace.GENERIC](0x"
         ),
         is_repr=True,
@@ -616,7 +602,7 @@ def test_write_repr_to() raises:
     check_write_to(
         UnsafePointer(to=x).as_immutable(),
         contains=(
-            "UnsafePointer[mut=False, Int,"
+            "UnsafePointer[mut=False, SIMD[DType.int, 1],"
             " address_space=AddressSpace.GENERIC](0x"
         ),
         is_repr=True,
@@ -624,7 +610,8 @@ def test_write_repr_to() raises:
     check_write_to(
         UnsafePointer(to=x).address_space_cast[AddressSpace.SHARED](),
         contains=(
-            "UnsafePointer[mut=True, Int, address_space=AddressSpace.SHARED](0x"
+            "UnsafePointer[mut=True, SIMD[DType.int, 1],"
+            " address_space=AddressSpace.SHARED](0x"
         ),
         is_repr=True,
     )
@@ -654,10 +641,10 @@ def test_unsafe_pointer_niche() raises:
 
 
 def test_unsafe_pointer_dangling() raises:
-    var int_ptr = UnsafePointer[Int, MutExternalOrigin].unsafe_dangling()
+    var int_ptr = UnsafePointer[Int, MutUntrackedOrigin].unsafe_dangling()
     assert_equal(Int(int_ptr) % align_of[Int](), 0)
 
-    var str_ptr = UnsafePointer[String, MutExternalOrigin].unsafe_dangling()
+    var str_ptr = UnsafePointer[String, MutUntrackedOrigin].unsafe_dangling()
     assert_equal(Int(str_ptr) % align_of[String](), 0)
 
 

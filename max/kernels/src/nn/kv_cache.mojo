@@ -63,8 +63,12 @@ def generic_fused_qkv_matmul_kv_cache_bshd_continuous_batch[
     dtype: DType,
     target: StaticString = "cpu",
 ](
-    hidden_state: LayoutTensor[dtype, address_space=AddressSpace.GENERIC, ...],
-    weight: LayoutTensor[dtype, address_space=AddressSpace.GENERIC, ...],
+    hidden_state: LayoutTensor[
+        mut=False, dtype, address_space=AddressSpace.GENERIC, ...
+    ],
+    weight: LayoutTensor[
+        mut=False, dtype, address_space=AddressSpace.GENERIC, ...
+    ],
     kv_collection: ContinuousBatchingKVCacheCollection,
     layer_idx: UInt32,
     valid_lengths: LayoutTensor[
@@ -140,8 +144,12 @@ def generic_fused_qkv_matmul_kv_cache_bshd_paged[
     dtype: DType,
     target: StaticString = "cpu",
 ](
-    hidden_state: LayoutTensor[dtype, address_space=AddressSpace.GENERIC, ...],
-    weight: LayoutTensor[dtype, address_space=AddressSpace.GENERIC, ...],
+    hidden_state: LayoutTensor[
+        mut=False, dtype, address_space=AddressSpace.GENERIC, ...
+    ],
+    weight: LayoutTensor[
+        mut=False, dtype, address_space=AddressSpace.GENERIC, ...
+    ],
     kv_collection: PagedKVCacheCollection,
     layer_idx: UInt32,
     valid_lengths: LayoutTensor[
@@ -221,8 +229,12 @@ def _fused_qkv_matmul_kv_cache[
     *,
     target: StaticString,
 ](
-    hidden_state: LayoutTensor[dtype, address_space=AddressSpace.GENERIC, ...],
-    weight: LayoutTensor[dtype, address_space=AddressSpace.GENERIC, ...],
+    hidden_state: LayoutTensor[
+        mut=False, dtype, address_space=AddressSpace.GENERIC, ...
+    ],
+    weight: LayoutTensor[
+        mut=False, dtype, address_space=AddressSpace.GENERIC, ...
+    ],
     kv_collection: collection_t,
     layer_idx: UInt32,
     valid_lengths: LayoutTensor[
@@ -273,8 +285,12 @@ def _fused_qkv_matmul_kv_cache_impl[
     *,
     target: StaticString,
 ](
-    hidden_state: LayoutTensor[dtype, address_space=AddressSpace.GENERIC, ...],
-    weight: LayoutTensor[dtype, address_space=AddressSpace.GENERIC, ...],
+    hidden_state: LayoutTensor[
+        mut=False, dtype, address_space=AddressSpace.GENERIC, ...
+    ],
+    weight: LayoutTensor[
+        mut=False, dtype, address_space=AddressSpace.GENERIC, ...
+    ],
     kv_collection: collection_t,
     layer_idx: UInt32,
     valid_lengths: LayoutTensor[
@@ -381,8 +397,12 @@ def _matmul_common[
     target: StaticString,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    hidden_state: LayoutTensor[dtype, address_space=AddressSpace.GENERIC, ...],
-    weight: LayoutTensor[dtype, address_space=AddressSpace.GENERIC, ...],
+    hidden_state: LayoutTensor[
+        mut=False, dtype, address_space=AddressSpace.GENERIC, ...
+    ],
+    weight: LayoutTensor[
+        mut=False, dtype, address_space=AddressSpace.GENERIC, ...
+    ],
     context: Optional[DeviceContext],
 ) raises:
     var BS = hidden_state.dim[0]()
@@ -408,7 +428,7 @@ def _matmul_common[
 
     comptime if is_cpu[target]():
         var c_ptr = alloc[Scalar[dtype]](BS * SEQ_LEN * N)
-        var c_nd = LayoutTensor[dtype, c_layout, MutAnyOrigin](
+        var c_nd = LayoutTensor[dtype, c_layout](
             c_ptr,
             RuntimeLayout[c_layout].row_major(IndexList[2](BS * SEQ_LEN, N)),
         )
@@ -427,7 +447,7 @@ def _matmul_common[
         var c_device_buffer = context.value().enqueue_create_buffer[dtype](
             BS * SEQ_LEN * N
         )
-        var c_nd = LayoutTensor[dtype, c_layout, MutAnyOrigin](
+        var c_nd = LayoutTensor[dtype, c_layout](
             c_device_buffer.unsafe_ptr(),
             RuntimeLayout[c_layout].row_major(IndexList[2](BS * SEQ_LEN, N)),
         )
@@ -452,11 +472,11 @@ def generic_fused_qk_rope_bshd_continuous_batch[
     interleaved: Bool,
     target: StaticString,
 ](
-    q_proj: TileTensor[dtype, ...],
+    q_proj: TileTensor[mut=False, dtype, ...],
     kv_collection: ContinuousBatchingKVCacheCollection,
-    freqs_cis: TileTensor[dtype, ...],
+    freqs_cis: TileTensor[mut=False, dtype, ...],
     layer_idx: UInt32,
-    valid_lengths: TileTensor[DType.uint32, ...],
+    valid_lengths: TileTensor[mut=False, DType.uint32, ...],
     output: TileTensor[mut=True, dtype, ...],
     context: DeviceContext,
 ) raises:
@@ -541,11 +561,11 @@ def generic_fused_qk_rope_bshd_paged[
     interleaved: Bool,
     target: StaticString,
 ](
-    q_proj: TileTensor[dtype, ...],
+    q_proj: TileTensor[mut=False, dtype, ...],
     kv_collection: PagedKVCacheCollection,
-    freqs_cis: TileTensor[dtype, ...],
+    freqs_cis: TileTensor[mut=False, dtype, ...],
     layer_idx: UInt32,
-    valid_lengths: TileTensor[DType.uint32, ...],
+    valid_lengths: TileTensor[mut=False, DType.uint32, ...],
     output: TileTensor[mut=True, dtype, ...],
     context: DeviceContext,
 ) raises:
@@ -913,12 +933,12 @@ def rms_norm_kv_cache_ragged_paged[
         params,
         page_size,
     ],
-    gamma: TileTensor[dtype, ...],
+    gamma: TileTensor[mut=False, dtype, ...],
     epsilon: Scalar[dtype],
     weight_offset: Scalar[dtype],
     layer_idx: UInt32,
     total_seq_len: UInt32,
-    input_row_offsets: TileTensor[DType.uint32, ...],
+    input_row_offsets: TileTensor[mut=False, DType.uint32, ...],
     context: DeviceContext,
 ) raises:
     """Performs RMSNorm in place on new entries in the key cache.
@@ -1081,12 +1101,12 @@ def rms_norm_value_cache_ragged_paged[
         params,
         page_size,
     ],
-    gamma: TileTensor[dtype, ...],
+    gamma: TileTensor[mut=False, dtype, ...],
     epsilon: Scalar[dtype],
     weight_offset: Scalar[dtype],
     layer_idx: UInt32,
     total_seq_len: UInt32,
-    input_row_offsets: TileTensor[DType.uint32, ...],
+    input_row_offsets: TileTensor[mut=False, DType.uint32, ...],
     context: DeviceContext,
 ) raises:
     """Performs RMSNorm in place on new entries in the value cache.
@@ -1225,7 +1245,7 @@ def _print_cache[
 ](
     cache: collection_t.CacheType,
     kv_collection: collection_t,
-    valid_lengths: LayoutTensor[DType.uint32, ...],
+    valid_lengths: LayoutTensor[mut=False, DType.uint32, ...],
     is_print_compact: Bool,
 ) raises -> None:
     """Prints a cache buffer, abbreviating output with ellipses."""
@@ -1264,7 +1284,7 @@ def _print_cache[
 def print_kv_cache_cont_batch_generic_cpu[
     target: StaticString, dtype: DType, kv_params: KVCacheStaticParams
 ](
-    valid_lengths: LayoutTensor[DType.uint32, ...],
+    valid_lengths: LayoutTensor[mut=False, DType.uint32, ...],
     kv_collection: ContinuousBatchingKVCacheCollection[dtype, kv_params],
     layer_idx: UInt32,
     is_print_compact: Bool,
@@ -1296,7 +1316,7 @@ def print_kv_cache_paged_generic_cpu[
     kv_params: KVCacheStaticParams,
     page_size: Int,
 ](
-    valid_lengths: LayoutTensor[DType.uint32, ...],
+    valid_lengths: LayoutTensor[mut=False, DType.uint32, ...],
     kv_collection: PagedKVCacheCollection[dtype, kv_params, page_size],
     layer_idx: UInt32,
     is_print_compact: Bool,
@@ -1326,7 +1346,7 @@ def print_kv_cache_cont_batch_generic_gpu[
     target: StaticString, dtype: DType, kv_params: KVCacheStaticParams
 ](
     valid_lengths: LayoutTensor[
-        DType.uint32, address_space=AddressSpace.GENERIC, ...
+        mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
     kv_collection: ContinuousBatchingKVCacheCollection[dtype, kv_params],
     layer_idx: UInt32,
@@ -1340,7 +1360,8 @@ def print_kv_cache_cont_batch_generic_gpu[
     var blocks_ptr = alloc[Scalar[dtype]](n_blocks)
     dev_ctx.enqueue_copy(blocks_ptr, kv_collection.blocks.ptr, n_blocks)
     var blocks_host = type_of(kv_collection.blocks)(
-        ptr=blocks_ptr, layout=kv_collection.blocks.layout
+        ptr=blocks_ptr.as_unsafe_any_origin(),
+        layout=kv_collection.blocks.layout,
     )
 
     var n_cache_lengths = kv_collection.cache_lengths.num_elements()
@@ -1349,7 +1370,8 @@ def print_kv_cache_cont_batch_generic_gpu[
         cache_lengths_ptr, kv_collection.cache_lengths.ptr, n_cache_lengths
     )
     var cache_lengths_host = type_of(kv_collection.cache_lengths)(
-        ptr=cache_lengths_ptr, layout=kv_collection.cache_lengths.layout
+        ptr=cache_lengths_ptr.as_immutable().as_unsafe_any_origin(),
+        layout=kv_collection.cache_lengths.layout,
     )
 
     var n_lookup_table = kv_collection.lookup_table.num_elements()
@@ -1358,7 +1380,8 @@ def print_kv_cache_cont_batch_generic_gpu[
         lookup_table_ptr, kv_collection.lookup_table.ptr, n_lookup_table
     )
     var lookup_table_host = type_of(kv_collection.lookup_table)(
-        ptr=lookup_table_ptr, layout=kv_collection.lookup_table.layout
+        ptr=lookup_table_ptr.as_immutable().as_unsafe_any_origin(),
+        layout=kv_collection.lookup_table.layout,
     )
 
     var host_kv_collection = type_of(kv_collection)(
@@ -1419,7 +1442,7 @@ def print_kv_cache_paged_generic_gpu[
     page_size: Int,
 ](
     valid_lengths: LayoutTensor[
-        DType.uint32, address_space=AddressSpace.GENERIC, ...
+        mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
     kv_collection: PagedKVCacheCollection[dtype, kv_params, page_size],
     layer_idx: UInt32,
@@ -1433,7 +1456,8 @@ def print_kv_cache_paged_generic_gpu[
     var blocks_ptr = alloc[Scalar[dtype]](n_blocks)
     dev_ctx.enqueue_copy(blocks_ptr, kv_collection.blocks.ptr, n_blocks)
     var blocks_host = type_of(kv_collection.blocks)(
-        ptr=blocks_ptr, layout=kv_collection.blocks.layout
+        ptr=blocks_ptr.as_unsafe_any_origin(),
+        layout=kv_collection.blocks.layout,
     )
 
     var n_cache_lengths = kv_collection.cache_lengths.num_elements()
@@ -1442,7 +1466,8 @@ def print_kv_cache_paged_generic_gpu[
         cache_lengths_ptr, kv_collection.cache_lengths.ptr, n_cache_lengths
     )
     var cache_lengths_host = type_of(kv_collection.cache_lengths)(
-        ptr=cache_lengths_ptr, layout=kv_collection.cache_lengths.layout
+        ptr=cache_lengths_ptr.as_immutable().as_unsafe_any_origin(),
+        layout=kv_collection.cache_lengths.layout,
     )
 
     var n_lookup_table = kv_collection.lookup_table.num_elements()
@@ -1451,7 +1476,8 @@ def print_kv_cache_paged_generic_gpu[
         lookup_table_ptr, kv_collection.lookup_table.ptr, n_lookup_table
     )
     var lookup_table_host = type_of(kv_collection.lookup_table)(
-        ptr=lookup_table_ptr, layout=kv_collection.lookup_table.layout
+        ptr=lookup_table_ptr.as_immutable().as_unsafe_any_origin(),
+        layout=kv_collection.lookup_table.layout,
     )
 
     var host_kv_collection = type_of(kv_collection)(
@@ -1521,9 +1547,9 @@ def _continuous_batch_kv_cache_collection[
     # Marshal LayoutTensor into arguments expected by the
     # ContinuousKVCacheCollection constructor.
     return {
-        blocks = blocks.as_any_origin(),
-        cache_lengths = cache_lengths.get_immutable().as_any_origin(),
-        lookup_table = lookup_table.get_immutable().as_any_origin(),
+        blocks = blocks.as_unsafe_any_origin(),
+        cache_lengths = cache_lengths.get_immutable().as_unsafe_any_origin(),
+        lookup_table = lookup_table.get_immutable().as_unsafe_any_origin(),
         max_seq_length = max_lengths[0, 0][0],
         max_cache_length = max_lengths[0, 1][0],
     }
@@ -1606,9 +1632,9 @@ def generic_get_paged_cache[
     out result: PagedKVCacheCollection[dtype, kv_params, page_size],
 ):
     return {
-        blocks = blocks.as_any_origin(),
-        cache_lengths = cache_lengths.get_immutable().as_any_origin(),
-        lookup_table = lookup_table.get_immutable().as_any_origin(),
+        blocks = blocks.as_unsafe_any_origin(),
+        cache_lengths = cache_lengths.get_immutable().as_unsafe_any_origin(),
+        lookup_table = lookup_table.get_immutable().as_unsafe_any_origin(),
         max_seq_length = max_lengths[0, 0][0],
         max_cache_length = max_lengths[0, 1][0],
     }
@@ -1640,12 +1666,12 @@ def generic_get_paged_cache_with_scales[
         scales: Scales tensor [num_blocks, kv_dim, num_layers, page_size, num_heads, head_dim_granularity].
     """
     return {
-        blocks = blocks.as_any_origin(),
-        cache_lengths = cache_lengths.get_immutable().as_any_origin(),
-        lookup_table = lookup_table.get_immutable().as_any_origin(),
+        blocks = blocks.as_unsafe_any_origin(),
+        cache_lengths = cache_lengths.get_immutable().as_unsafe_any_origin(),
+        lookup_table = lookup_table.get_immutable().as_unsafe_any_origin(),
         max_seq_length = max_lengths[0, 0][0],
         max_cache_length = max_lengths[0, 1][0],
-        scales = scales.as_any_origin(),
+        scales = scales.as_unsafe_any_origin(),
     }
 
 

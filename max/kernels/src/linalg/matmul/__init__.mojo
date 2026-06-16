@@ -55,19 +55,11 @@ def matmul[
     saturated_vnni: Bool = False,
     _trace_description: StaticString = "",
     target: StaticString = "cpu",
-    has_epilogue_tensor: Bool = False,
 ](
     c: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
     a: TileTensor[address_space=AddressSpace.GENERIC, ...],
     b: TileTensor[address_space=AddressSpace.GENERIC, ...],
     ctx: Optional[DeviceContext] = None,
-    epilogue_tensor: OptionalReg[
-        TileTensor[
-            c.dtype,
-            RowMajorLayout[Int64, Int64],
-            ImmutAnyOrigin,
-        ]
-    ] = None,
 ) raises:
     """Primary TileTensor matmul implementation. Routes GPU directly, delegates
     CPU path to cpu.matmul."""
@@ -117,7 +109,6 @@ def matmul[
                 transpose_b=transpose_b,
                 elementwise_lambda_fn=elementwise_lambda_fn,
                 elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                has_epilogue_tensor=has_epilogue_tensor,
             ](c, a, b, ctx.value())
     else:
         # CPU path: handle tracing and compute lambda wrapping, then

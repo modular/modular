@@ -587,7 +587,7 @@ def test_indexing() raises:
 def test_list_dtor() raises:
     var dtor_count = 0
 
-    var ptr = UnsafePointer(to=dtor_count).as_immutable().as_any_origin()
+    var ptr = UnsafePointer(to=dtor_count).as_immutable().as_unsafe_any_origin()
     var l = LinkedList[DelCounter[ptr.origin]]()
     assert_equal(dtor_count, 0)
 
@@ -632,7 +632,9 @@ def test_iter() raises:
 
 def test_repr_wrap() raises:
     var l1 = LinkedList[Int](1, 2, 3)
-    assert_equal(repr(l1), "LinkedList[Int]([Int(1), Int(2), Int(3)])")
+    assert_equal(
+        repr(l1), "LinkedList[SIMD[DType.int, 1]]([Int(1), Int(2), Int(3)])"
+    )
 
 
 def test_write_to() raises:
@@ -648,14 +650,18 @@ def test_write_repr_to() raises:
     """Test write_repr_to implementation."""
     check_write_to(
         LinkedList[Int](1, 2, 3),
-        expected="LinkedList[Int]([Int(1), Int(2), Int(3)])",
+        expected="LinkedList[SIMD[DType.int, 1]]([Int(1), Int(2), Int(3)])",
         is_repr=True,
     )
     check_write_to(
-        LinkedList[Int](1), expected="LinkedList[Int]([Int(1)])", is_repr=True
+        LinkedList[Int](1),
+        expected="LinkedList[SIMD[DType.int, 1]]([Int(1)])",
+        is_repr=True,
     )
     check_write_to(
-        LinkedList[Int](), expected="LinkedList[Int]([])", is_repr=True
+        LinkedList[Int](),
+        expected="LinkedList[SIMD[DType.int, 1]]([])",
+        is_repr=True,
     )
 
 
@@ -699,7 +705,7 @@ def test_linked_list_iter_owned() raises:
 
 def test_linked_list_iter_owned_destroys_elements_if_not_consumed() raises:
     var dtor_count = 0
-    var ptr = UnsafePointer(to=dtor_count).as_immutable().as_any_origin()
+    var ptr = UnsafePointer(to=dtor_count).as_immutable().as_unsafe_any_origin()
     var ll = LinkedList[DelCounter[ptr.origin]]()
     ll.append(DelCounter(ptr))
     ll.append(DelCounter(ptr))
@@ -714,7 +720,7 @@ def test_linked_list_iter_owned_destroys_elements_if_not_consumed() raises:
 
 def test_linked_list_iter_owned_destroys_elements_if_partially_consumed() raises:
     var dtor_count = 0
-    var ptr = UnsafePointer(to=dtor_count).as_immutable().as_any_origin()
+    var ptr = UnsafePointer(to=dtor_count).as_immutable().as_unsafe_any_origin()
     var ll = LinkedList[DelCounter[ptr.origin]]()
     ll.append(DelCounter(ptr))
     ll.append(DelCounter(ptr))
@@ -743,7 +749,7 @@ def test_linked_list_iter_owned_bounds() raises:
 
 def test_linked_list_move_only() raises:
     # `MoveOnly[Int]` is not `Copyable`; this exercises the conditional
-    # conformance path of `LinkedList[T: Movable & ImplicitlyDestructible]`.
+    # conformance path of `LinkedList[T: Movable & ImplicitlyDeletable]`.
     assert_false(conforms_to(LinkedList[MoveOnly[Int]], Copyable))
 
     var l = LinkedList[MoveOnly[Int]]()

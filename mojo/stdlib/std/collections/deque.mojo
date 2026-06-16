@@ -27,14 +27,14 @@ from std.builtin.rebind import downcast
 import std.format._utils as fmt
 from std.hashlib import Hasher
 from std.collections import check_bounds
-from std.memory.alloc import alloc, free, Layout
+from std.memory.alloc import alloc, dealloc, ThinAllocation, Layout
 
 # ===-----------------------------------------------------------------------===#
 # Deque
 # ===-----------------------------------------------------------------------===#
 
 
-struct Deque[ElementType: Movable & ImplicitlyDestructible](
+struct Deque[ElementType: Movable & ImplicitlyDeletable](
     Boolable,
     Copyable where conforms_to(ElementType, Copyable),
     Equatable where conforms_to(ElementType, Equatable),
@@ -52,15 +52,15 @@ struct Deque[ElementType: Movable & ImplicitlyDestructible](
 
     Parameters:
         ElementType: The type of the elements in the deque. Must implement
-            `Movable` and `ImplicitlyDestructible`.
+            `Movable` and `ImplicitlyDeletable`.
     """
 
-    # TODO(MOCO-4060): drop the redundant `& ImplicitlyDestructible` from the
+    # TODO(MOCO-4060): drop the redundant `& ImplicitlyDeletable` from the
     # `downcast`s below — it is already implied by `ElementType`'s bound.
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = _DequeIter[
-        downcast[Self.ElementType, Copyable & ImplicitlyDestructible],
+        downcast[Self.ElementType, Copyable & ImplicitlyDeletable],
         iterable_origin,
     ]
     """The iterator type for this deque.
@@ -71,7 +71,7 @@ struct Deque[ElementType: Movable & ImplicitlyDestructible](
     """
 
     comptime IteratorOwnedType: Iterator = _DequeIterOwned[
-        downcast[Self.ElementType, Copyable & ImplicitlyDestructible]
+        downcast[Self.ElementType, Copyable & ImplicitlyDeletable]
     ]
     """The owned iterator type for this deque."""
 
@@ -86,7 +86,7 @@ struct Deque[ElementType: Movable & ImplicitlyDestructible](
     # Fields
     # ===-------------------------------------------------------------------===#
 
-    var _data: UnsafePointer[Self.ElementType, MutExternalOrigin]
+    var _data: UnsafePointer[Self.ElementType, MutUntrackedOrigin]
     """The underlying storage for the deque."""
 
     var _head: Int
@@ -153,7 +153,9 @@ struct Deque[ElementType: Movable & ImplicitlyDestructible](
             deque_capacity = min(deque_capacity, max_deque_capacity)
 
         self._capacity = deque_capacity
-        self._data = alloc(Layout[Self.ElementType](count=deque_capacity))
+        self._data = alloc(
+            Layout[Self.ElementType](count=deque_capacity)
+        ).unsafe_leak()
         self._head = 0
         self._tail = 0
         self._min_capacity = min_deque_capacity
@@ -207,7 +209,7 @@ struct Deque[ElementType: Movable & ImplicitlyDestructible](
             shrink=copy._shrink,
         )
         comptime UnsafePointerType = UnsafePointer[
-            downcast[Self.ElementType, Copyable], MutExternalOrigin
+            downcast[Self.ElementType, Copyable], MutUntrackedOrigin
         ]
         for i in range(len(copy)):
             offset = copy._physical_index(copy._head + i)
@@ -222,7 +224,11 @@ struct Deque[ElementType: Movable & ImplicitlyDestructible](
         for i in range(len(self)):
             offset = self._physical_index(self._head + i)
             (self._data + offset).destroy_pointee()
-        free(self._data, {count = self._capacity})
+        dealloc(
+            ThinAllocation(
+                unsafe_assume_ownership=self._data
+            ).unsafe_with_layout({count = self._capacity})
+        )
 
     # ===-------------------------------------------------------------------===#
     # Operator dunders
@@ -364,9 +370,7 @@ struct Deque[ElementType: Movable & ImplicitlyDestructible](
         return {
             rebind_var[
                 Deque[
-                    downcast[
-                        Self.ElementType, Copyable & ImplicitlyDestructible
-                    ]
+                    downcast[Self.ElementType, Copyable & ImplicitlyDeletable]
                 ]
             ](self^),
             0,
@@ -390,7 +394,7 @@ struct Deque[ElementType: Movable & ImplicitlyDestructible](
                 Pointer[
                     Deque[
                         downcast[
-                            Self.ElementType, Copyable & ImplicitlyDestructible
+                            Self.ElementType, Copyable & ImplicitlyDeletable
                         ]
                     ],
                     origin_of(self),
@@ -398,12 +402,12 @@ struct Deque[ElementType: Movable & ImplicitlyDestructible](
             ](Pointer(to=self)),
         )
 
-    # TODO(MOCO-4060): drop the redundant `& ImplicitlyDestructible` from the
+    # TODO(MOCO-4060): drop the redundant `& ImplicitlyDeletable` from the
     # `downcast` below — it is already implied by `ElementType`'s bound.
     def __reversed__(
         ref self,
     ) -> _DequeIter[
-        downcast[Self.ElementType, Copyable & ImplicitlyDestructible],
+        downcast[Self.ElementType, Copyable & ImplicitlyDeletable],
         origin_of(self),
         False,
     ]:
@@ -422,7 +426,7 @@ struct Deque[ElementType: Movable & ImplicitlyDestructible](
                 Pointer[
                     Deque[
                         downcast[
-                            Self.ElementType, Copyable & ImplicitlyDestructible
+                            Self.ElementType, Copyable & ImplicitlyDeletable
                         ]
                     ],
                     origin_of(self),
@@ -575,9 +579,15 @@ struct Deque[ElementType: Movable & ImplicitlyDestructible](
         for i in range(len(self)):
             offset = self._physical_index(self._head + i)
             (self._data + offset).destroy_pointee()
-        free(self._data, {count = self._capacity})
+        dealloc(
+            ThinAllocation(
+                unsafe_assume_ownership=self._data
+            ).unsafe_with_layout({count = self._capacity})
+        )
         self._capacity = self._min_capacity
-        self._data = alloc(Layout[Self.ElementType](count=self._capacity))
+        self._data = alloc(
+            Layout[Self.ElementType](count=self._capacity)
+        ).unsafe_leak()
         self._head = 0
         self._tail = 0
 
@@ -633,7 +643,11 @@ struct Deque[ElementType: Movable & ImplicitlyDestructible](
             self._tail = self._physical_index(self._tail + 1)
 
         # free the list backing buffer
-        free(values_data, {count = values_capacity})
+        dealloc(
+            ThinAllocation(
+                unsafe_assume_ownership=values_data
+            ).unsafe_with_layout({count = values_capacity})
+        )
 
     def extendleft(mut self, var values: List[Self.ElementType]):
         """Extends the left side of the deque by consuming elements from the list argument.
@@ -670,7 +684,11 @@ struct Deque[ElementType: Movable & ImplicitlyDestructible](
             self._head = self._physical_index(self._head - 1)
             (self._data + self._head).init_pointee_move_from(src + i)
 
-        free(values_data, {count = values_capacity})
+        dealloc(
+            ThinAllocation(
+                unsafe_assume_ownership=values_data
+            ).unsafe_with_layout({count = values_capacity})
+        )
 
     def index(
         self,
@@ -976,14 +994,20 @@ struct Deque[ElementType: Movable & ImplicitlyDestructible](
         if new_capacity == n_total:
             new_capacity <<= 1
 
-        new_data = alloc(Layout[Self.ElementType](count=new_capacity))
+        new_data = alloc(
+            Layout[Self.ElementType](count=new_capacity)
+        ).unsafe_leak()
 
         for i in range(n_retain):
             offset = self._physical_index(self._head + i)
             (new_data + i).init_pointee_move_from(self._data + offset)
 
         if self._capacity > 0:
-            free(self._data, {count = self._capacity})
+            dealloc(
+                ThinAllocation(
+                    unsafe_assume_ownership=self._data
+                ).unsafe_with_layout({count = self._capacity})
+            )
 
         self._data = new_data
         self._capacity = new_capacity
@@ -1008,7 +1032,9 @@ struct Deque[ElementType: Movable & ImplicitlyDestructible](
             head_len = deque_len
             tail_len = 0
 
-        new_data = alloc(Layout[Self.ElementType](count=new_capacity))
+        new_data = alloc(
+            Layout[Self.ElementType](count=new_capacity)
+        ).unsafe_leak()
 
         src = self._data + self._head
         dsc = new_data
@@ -1024,7 +1050,11 @@ struct Deque[ElementType: Movable & ImplicitlyDestructible](
         self._tail = deque_len
 
         if self._capacity > 0:
-            free(self._data, {count = self._capacity})
+            dealloc(
+                ThinAllocation(
+                    unsafe_assume_ownership=self._data
+                ).unsafe_with_layout({count = self._capacity})
+            )
         self._data = new_data
         self._capacity = new_capacity
 
@@ -1033,7 +1063,7 @@ struct Deque[ElementType: Movable & ImplicitlyDestructible](
 struct _DequeIter[
     mut: Bool,
     //,
-    T: Copyable & ImplicitlyDestructible,
+    T: Copyable & ImplicitlyDeletable,
     origin: Origin[mut=mut],
     forward: Bool = True,
 ](ImplicitlyCopyable, Iterable, Iterator):
@@ -1086,7 +1116,7 @@ struct _DequeIter[
 
 
 @fieldwise_init
-struct _DequeIterOwned[T: Copyable & ImplicitlyDestructible](
+struct _DequeIterOwned[T: Copyable & ImplicitlyDeletable](
     IterableOwned, Iterator, Movable
 ):
     """An owning iterator for Deque.

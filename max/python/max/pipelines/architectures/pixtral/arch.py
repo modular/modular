@@ -12,19 +12,18 @@
 # ===----------------------------------------------------------------------=== #
 
 from max.graph.weights import WeightsFormat
-from max.pipelines.core import TextAndVisionContext
-from max.pipelines.core.context_validators import (
+from max.pipelines.context import TextAndVisionContext
+from max.pipelines.context.context_validators import (
     validate_requires_vision_context,
 )
-from max.pipelines.lib import (
-    SupportedArchitecture,
-    TextAndVisionTokenizer,
-)
+from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
+from max.pipelines.lib import SupportedArchitecture
 from max.pipelines.modeling.types import InputModality, PipelineTask
 
 from . import weight_adapters
 from .model import PixtralModel
 from .model_config import PixtralConfig
+from .tokenizer import PixtralTokenizer
 
 pixtral_arch = SupportedArchitecture(
     name="LlavaForConditionalGeneration",
@@ -36,7 +35,7 @@ pixtral_arch = SupportedArchitecture(
         "bfloat16",
     },
     pipeline_model=PixtralModel,
-    tokenizer=TextAndVisionTokenizer,
+    tokenizer=PixtralTokenizer,
     context_type=TextAndVisionContext,
     default_weights_format=WeightsFormat.safetensors,
     weight_adapters={
@@ -50,4 +49,5 @@ pixtral_arch = SupportedArchitecture(
         validate_requires_vision_context,
     ],
     config=PixtralConfig,
+    memory_planner=PagedMemoryPlanner,
 )

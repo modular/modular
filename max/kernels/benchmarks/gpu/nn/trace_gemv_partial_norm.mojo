@@ -106,7 +106,7 @@ def main() raises:
             b_tensor,
             gamma_tensor,
             eps,
-            counter_buf.unsafe_ptr(),
+            counter_buf.unsafe_ptr().as_unsafe_any_origin(),
             ctx,
         )
         ctx.synchronize()
@@ -125,7 +125,7 @@ def main() raises:
             b_tensor,
             gamma_tensor,
             eps,
-            counter_buf.unsafe_ptr(),
+            counter_buf.unsafe_ptr().as_unsafe_any_origin(),
             ctx,
             trace_buf=GmemTrace(trace_buf.unsafe_ptr()),
         )

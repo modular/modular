@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.math import ceildiv, iota
+from std.math import ceildiv, iota, nan
 from std.random import random_float64
 
 from std.algorithm.reduction import max as reduce_max
@@ -27,7 +27,7 @@ from std.gpu.host import DeviceContext
 from layout import Coord, Idx, TileTensor, coord_to_index_list, row_major
 
 from nn.topk import _top_k_cpu, _topk_gpu, topk_gpu
-from std.testing import assert_almost_equal, assert_equal
+from std.testing import assert_almost_equal, assert_equal, assert_true
 
 from std.utils import IndexList
 
@@ -178,7 +178,7 @@ def test_case_batched[
                 device_local_topk_idxs_tt,
                 device_out_vals_tt,
                 device_out_idxs_tt,
-                k=k_tt.as_any_origin().as_immut(),
+                k=k_tt.as_unsafe_any_origin().as_immut(),
                 block_size=block_size,
                 num_blocks_per_input=num_blocks_per_input,
             )
@@ -197,7 +197,7 @@ def test_case_batched[
         device_local_topk_idxs_tt,
         device_out_vals_tt,
         device_out_idxs_tt,
-        k=k_tt.as_any_origin().as_immut(),
+        k=k_tt.as_unsafe_any_origin().as_immut(),
         block_size=block_size,
         num_blocks_per_input=num_blocks_per_input,
     )
@@ -214,6 +214,18 @@ def test_case_batched[
         )
         print(_msg1, "and", _msg2, "output available in host pointers")
 
+    # Regression check for sampled token must be in [0, N).
+    # Catches the p==-1 sentinel leaking through as an invalid token id.
+    comptime if sampling:
+        for b in range(batch_size):
+            var tok = Int(topk_idxs_host_ptr[b])
+            assert_true(
+                tok >= 0 and tok < N,
+                "token out of range [0, N): got "
+                + String(tok)
+                + " for N="
+                + String(N),
+            )
     # ASSERT equality with CPU topk kernel reference
     comptime if not sampling:
         var topk_vals_cpu_ptr = ctx.enqueue_create_host_buffer[dtype](
@@ -250,7 +262,7 @@ def test_case_batched[
                     topk_idxs_cpu_tt,
                     1,
                     True,
-                    k=k_host_tt.as_any_origin().as_immut(),
+                    k=k_host_tt.as_unsafe_any_origin().as_immut(),
                 )
 
             time_kernel[run_func_cpu](m, ctx, "topk-cpu")
@@ -263,7 +275,7 @@ def test_case_batched[
             topk_idxs_cpu_tt,
             1,
             True,
-            k=k_host_tt.as_any_origin().as_immut(),
+            k=k_host_tt.as_unsafe_any_origin().as_immut(),
         )
 
         for i in range(out_vals_shape.flattened_length()):
@@ -391,7 +403,7 @@ def test_case_multi_rank[
         device_in_tt,
         device_out_vals_tt,
         device_out_idxs_tt,
-        k=k_tt.as_any_origin().as_immut(),
+        k=k_tt.as_unsafe_any_origin().as_immut(),
         block_size=block_size,
         num_blocks_per_input=num_blocks_per_input,
     )
@@ -428,7 +440,7 @@ def test_case_multi_rank[
             topk_idxs_cpu_tt,
             1,
             True,
-            k=k_host_tt.as_any_origin().as_immut(),
+            k=k_host_tt.as_unsafe_any_origin().as_immut(),
         )
 
         for i in range(out_vals_shape.flattened_length()):
@@ -471,6 +483,16 @@ def fill_constant[dtype: DType](buffer: TileTensor[mut=True, dtype, ...]):
 
 
 @parameter
+def fill_nan[dtype: DType](buffer: TileTensor[mut=True, dtype, ...]):
+    """Fill all elements with NaN — regression guard for Bug 1 (all-NaN row
+    emits invalid token) and Bug 3 (p==-1 sentinel causes OOB read/write)."""
+    var nan_val = nan[dtype]()
+    var total_elements = buffer.num_elements()
+    for i in range(total_elements):
+        buffer.raw_store(i, nan_val)
+
+
+@parameter
 def fill_iota[dtype: DType](buf: TileTensor[mut=True, dtype, ...]):
     iota(
         buf.ptr,
@@ -481,6 +503,7 @@ def fill_iota[dtype: DType](buf: TileTensor[mut=True, dtype, ...]):
 struct TestCase[_sampling: Bool, _largest: Bool = True](ImplicitlyCopyable):
     comptime sampling = Self._sampling
     comptime largest = Self._largest
+    var name: String
     var N: Int
     var K: Int
     var block_size: Int
@@ -494,7 +517,9 @@ struct TestCase[_sampling: Bool, _largest: Bool = True](ImplicitlyCopyable):
         block_size: Int,
         batch_size: Int,
         num_blocks_per_input: Optional[Int] = None,
+        name: String = "",
     ):
+        self.name = name
         self.N = N
         self.K = K
         self.block_size = block_size
@@ -530,7 +555,9 @@ def print_test_case(test_case: TestCase):
     if test_case.num_blocks_per_input:
         num_blocks_per_in_msg = String(test_case.num_blocks_per_input.value())
     print(
-        "==== Running Top-K sampling=",
+        "==== Running Top-K "
+        + (test_case.name + " " if test_case.name else "")
+        + "sampling=",
         test_case.sampling,
         ", N=",
         test_case.N,
@@ -914,6 +941,39 @@ def main() raises:
 
         # Run minimum top-k tests
         test_min_topk[dtype](ctx)
+
+        # Test all NaN input
+        comptime test_nan_256 = TestCase[_sampling=True](
+            name="[All NaN]",
+            N=256,
+            K=1,
+            block_size=256,
+            batch_size=1,
+        )
+        print_test_case(test_nan_256)
+        test_case_batched[dtype, fill_nan](ctx, test_nan_256)
+
+        # Test OOB (N=257) + All NaN
+        comptime test_nan_257 = TestCase[_sampling=True](
+            name="[All NaN + OOB]",
+            N=257,
+            K=1,
+            block_size=256,
+            batch_size=1,
+        )
+        print_test_case(test_nan_257)
+        test_case_batched[dtype, fill_nan](ctx, test_nan_257)
+
+        # All NaN + Batch=4
+        comptime test_nan_batch = TestCase[_sampling=True](
+            name="[All NaN + Batch=4]",
+            N=256,
+            K=1,
+            block_size=256,
+            batch_size=4,
+        )
+        print_test_case(test_nan_batch)
+        test_case_batched[dtype, fill_nan](ctx, test_nan_batch)
 
         # Run multi-rank tests
         test_multi_rank[dtype, False](ctx)

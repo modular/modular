@@ -111,7 +111,10 @@ struct Depth512SM100Config[
         self.group = group
         self.qk_depth = qk_depth
         self.ov_depth = ov_depth
-        self.swizzle_mode = swizzle_mode
+        comptime if Self.qkv_dtype.is_float8():
+            self.swizzle_mode = TensorMapSwizzle.SWIZZLE_64B
+        else:
+            self.swizzle_mode = swizzle_mode
 
         # Depth-dependent MMA geometry.
         # depth>256: MMA_M=128, BM=64, split O into O_lo/O_hi (each MMA_N=ov_depth/2)
@@ -193,6 +196,9 @@ struct Depth512SM100Config[
 
         remaining = Self.sm100_smem_carveout - smem_use
         self.num_kv_stages = remaining // bytes_per_slot
+        self.num_kv_stages = min(
+            self.num_kv_stages, (32 - misc_mbars_fixed) // 2
+        )
         smem_use += self.num_kv_stages * bytes_per_slot
 
         self.smem_used = smem_use

@@ -27,6 +27,7 @@ fragment / scale word the MFMA needs at its `(lane_nlane, lane_klane)` slot.
 """
 
 from std.gpu.intrinsics import AMDBufferResource
+from std.gpu.memory import CacheOperation
 from std.memory.unsafe import bitcast
 
 from layout import Coord, Idx, TileTensor
@@ -35,7 +36,11 @@ from layout._utils import make_amd_buffer_resource
 from .mxfp4_preshuffle_layouts import Shuffler
 
 
-struct PreshuffledBLoader[N: Int, K_BYTES: Int](TrivialRegisterPassable):
+struct PreshuffledBLoader[
+    N: Int,
+    K_BYTES: Int,
+    cache_policy: CacheOperation = CacheOperation.ALWAYS,
+](TrivialRegisterPassable):
     """Per-lane B fragment loader from preshuffled GMEM (DRAM -> VGPR direct).
 
     The 5D layout places each lane's 16-byte fragment at a contiguous DRAM
@@ -46,6 +51,9 @@ struct PreshuffledBLoader[N: Int, K_BYTES: Int](TrivialRegisterPassable):
     Parameters:
         N: Per-expert N dimension (rows of the logical [N, K_BYTES] tile).
         K_BYTES: Per-expert FP4-packed K dimension (= K // 2).
+        cache_policy: Cache hint for the B load. Defaults to `ALWAYS` (normal
+            cached, flydsl `b_nt=0`); set `STREAMING` (NT=1, flydsl `b_nt=2`)
+            to skip caching B fragments that are streamed once and never reused.
     """
 
     var bc: AMDBufferResource
@@ -68,7 +76,9 @@ struct PreshuffledBLoader[N: Int, K_BYTES: Int](TrivialRegisterPassable):
                 Coord(Idx[0], n, k_byte)
             )
         )
-        return self.bc.load[DType.uint8, 16](byte_off)
+        return self.bc.load[DType.uint8, 16, cache_policy=Self.cache_policy](
+            byte_off
+        )
 
 
 struct PreshuffledScaleLoader[MN_padded: Int, K_SCALES: Int](
@@ -102,12 +112,12 @@ struct PreshuffledScaleLoader[MN_padded: Int, K_SCALES: Int](
 
         Per-lane usage:
             mn       = warp_mn_off + lane % 16            # mn_lane within block
-            k_scale  = scale_pack_idx * 8 + (lane // 16)  # k_lane within block
+            k_scale  = k_pair_idx * 8 + (lane // 16)      # k_lane within block
         """
         var byte_off = Int32(
-            Shuffler[1].scale_4d_grouped_layout[
-                MN_padded=Self.MN_padded, K_SCALES=Self.K_SCALES
-            ](Coord(Idx[0], mn, k_scale))
+            Shuffler[1].scale_4d_byte_off[
+                K_SCALES=Self.K_SCALES, packed_mode=True
+            ](mn, k_scale)
         )
         var v = self.bc.load[DType.uint8, 4](byte_off)
         return bitcast[DType.int32, 1](v)[0]

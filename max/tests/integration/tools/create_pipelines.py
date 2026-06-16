@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import subprocess
 import tempfile
 
 # Standard library
@@ -37,23 +38,12 @@ from idefics3 import torch_utils as idefics3_torch_utils
 from internvl import torch_utils as internvl_torch_utils
 from max import driver, pipelines
 from max.pipelines import TextGenerationPipelineInterface
-from max.pipelines.architectures.flux2.flux2_executor import Flux2Executor
-from max.pipelines.architectures.flux2.flux2_klein_executor import (
-    Flux2KleinExecutor,
-)
-from max.pipelines.architectures.flux2.tokenizer import Flux2Tokenizer
 from max.pipelines.architectures.internvl.tokenizer import InternVLProcessor
 from max.pipelines.architectures.qwen3.text_encoder import (
     Qwen3TextEncoderKleinModel,
 )
-from max.pipelines.architectures.wan.context import WanContext
-from max.pipelines.architectures.wan.tokenizer import WanTokenizer
-from max.pipelines.architectures.wan.wan_executor import WanExecutor
-from max.pipelines.core import PixelContext
-from max.pipelines.lib import (
-    PipelineRuntimeConfig,
-    PixelGenerationPipeline,
-)
+from max.pipelines.diffusion.cache import DenoisingCacheConfig
+from max.pipelines.lib import PipelineRuntimeConfig
 from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.modeling.types import PipelineTask, PipelineTokenizer
 from peft.peft_model import PeftModel
@@ -119,6 +109,41 @@ class TorchModelAndDataProcessor:
         | transformers.PixtralProcessor
         | InternVLProcessor
     )
+
+
+# Local cache root for model weights synced from S3 (see
+# `_sync_s3_model_to_local`).
+_S3_MODEL_CACHE_ROOT = os.path.expanduser("~/.cache/modular/s3-models")
+
+
+def _sync_s3_model_to_local(model_path: str) -> str:
+    """Resolve a model path to a local directory, syncing from S3 if needed.
+
+    If ``model_path`` is an ``s3://bucket/prefix`` URI, mirror that prefix to a
+    local cache directory with ``aws s3 sync`` and return the local path;
+    otherwise return ``model_path`` unchanged. The sync is idempotent (only
+    changed objects are transferred) and uses the ambient AWS credentials
+    (the standard AWS credential chain, e.g. an ``AWS_PROFILE`` with an active
+    ``aws sso login`` session).
+
+    Args:
+        model_path: A local path, Hugging Face repo id, or ``s3://`` URI.
+
+    Returns:
+        A local filesystem path (the cache dir for ``s3://`` URIs, otherwise
+        the input unchanged).
+    """
+    if not model_path.startswith("s3://"):
+        return model_path
+    rel = model_path[len("s3://") :].strip("/")
+    local_dir = os.path.join(_S3_MODEL_CACHE_ROOT, rel)
+    os.makedirs(local_dir, exist_ok=True)
+    print(
+        f"Syncing model weights from s3://{rel} to {local_dir} ...",
+        flush=True,
+    )
+    subprocess.run(["aws", "s3", "sync", f"s3://{rel}", local_dir], check=True)
+    return local_dir
 
 
 @dataclass
@@ -279,10 +304,10 @@ def _create_vision_max_pipeline(
     )
     if enable_chunked_prefill is not None:
         runtime = PipelineRuntimeConfig(
-            max_num_steps=1, enable_chunked_prefill=enable_chunked_prefill
+            enable_chunked_prefill=enable_chunked_prefill
         )
     else:
-        runtime = PipelineRuntimeConfig(max_num_steps=1)
+        runtime = PipelineRuntimeConfig()
     config = pipelines.PipelineConfig(
         models=ModelManifest({"main": model}),
         runtime=runtime,
@@ -685,7 +710,7 @@ class PixtralPipelineOracle(PipelineOracle):
                     )
                 }
             ),
-            runtime=PipelineRuntimeConfig(max_num_steps=1),
+            runtime=PipelineRuntimeConfig(),
         )
         hf_repo_lock.apply_to_config(config)
         tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
@@ -747,24 +772,19 @@ class _KimiK2_5BaseOracle(PipelineOracle):
         device_specs: list[driver.DeviceSpec],
     ) -> MaxPipelineAndTokenizer:
         revision = hf_repo_lock.revision_for_hf_repo(self.model_path)
-        config = pipelines.PipelineConfig.model_validate(
-            {
-                "defer_resolve": True,
-                "device_specs": device_specs,
-                "quantization_encoding": encoding,
-                "model_path": self.model_path,
-                "huggingface_model_revision": revision,
-                "huggingface_weight_revision": revision,
-                "max_num_steps": 1,
-                "max_length": 4096,
-                "trust_remote_code": self.trust_remote_code,
-                "max_batch_input_tokens": 4096,
-                "ep_size": 8,
-                "data_parallel_degree": 8,
-            }
+        config = pipelines.PipelineConfig.from_flat_kwargs(
+            device_specs=device_specs,
+            quantization_encoding=encoding,
+            model_path=self.model_path,
+            huggingface_model_revision=revision,
+            huggingface_weight_revision=revision,
+            max_length=4096,
+            trust_remote_code=self.trust_remote_code,
+            max_batch_input_tokens=4096,
+            ep_size=8,
+            data_parallel_degree=8,
         )
         hf_repo_lock.apply_to_config(config)
-        config.resolve()
         tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
         assert isinstance(pipeline, TextGenerationPipelineInterface)
         return MaxPipelineAndTokenizer(pipeline, tokenizer)
@@ -834,8 +854,6 @@ class KimiK2_5DeepseekV3PipelineOracle(_KimiK2_5BaseOracle):
     # aborts during the second decode step.
     num_steps = 1
 
-    # TODO(MXSERV-7): replace ``austinpowers`` personal namespace with the
-    # official Modular HF org once the checkpoint is republished.
     @property
     def inputs(self) -> list[MockTextGenerationRequest]:
         return [
@@ -878,24 +896,19 @@ class AmdKimiK2_5MXFP4PipelineOracle(PipelineOracle):
         gpu_count = max(
             1, sum(1 for d in device_specs if d.device_type == "gpu")
         )
-        config = pipelines.PipelineConfig.model_validate(
-            {
-                "defer_resolve": True,
-                "device_specs": device_specs,
-                "quantization_encoding": encoding,
-                "model_path": self.model_path,
-                "huggingface_model_revision": revision,
-                "huggingface_weight_revision": revision,
-                "max_num_steps": 1,
-                "max_length": 4096,
-                "trust_remote_code": self.trust_remote_code,
-                "max_batch_input_tokens": 4096,
-                "ep_size": gpu_count,
-                "data_parallel_degree": gpu_count,
-            }
+        config = pipelines.PipelineConfig.from_flat_kwargs(
+            device_specs=device_specs,
+            quantization_encoding=encoding,
+            model_path=self.model_path,
+            huggingface_model_revision=revision,
+            huggingface_weight_revision=revision,
+            max_length=4096,
+            trust_remote_code=self.trust_remote_code,
+            max_batch_input_tokens=4096,
+            ep_size=gpu_count,
+            data_parallel_degree=gpu_count,
         )
         hf_repo_lock.apply_to_config(config)
-        config.resolve()
         tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
         assert isinstance(pipeline, TextGenerationPipelineInterface)
         return MaxPipelineAndTokenizer(pipeline, tokenizer)
@@ -918,11 +931,19 @@ class AmdKimiK2_5MXFP4PipelineOracle(PipelineOracle):
         device_specs: list[driver.DeviceSpec],
     ) -> VLLMPipeline:
         gpu_count = sum(1 for d in device_specs if d.device_type == "gpu")
+        # vLLM's kimi_k25 plugin exposes its multimodal input under the
+        # vision_chunk modality, so the image must be keyed and limited under
+        # vision_chunk to reach the model.
         return VLLMPipeline(
             model_path=self.model_path,
             trust_remote_code=self.trust_remote_code,
             encoding=encoding,
             tensor_parallel_size=max(1, gpu_count),
+            extra_kwargs={
+                "mm_encoder_tp_mode": "data",
+                "limit_mm_per_prompt": {"vision_chunk": 1},
+            },
+            mm_data_key="vision_chunk",
         )
 
 
@@ -957,13 +978,10 @@ class KimiK2_5DeepseekV3LocalPathPipelineOracle(
                 }
             ),
             runtime=PipelineRuntimeConfig(
-                defer_resolve=True,
-                max_num_steps=1,
                 max_batch_input_tokens=4096,
                 ep_size=8,
             ),
         )
-        config.resolve()
         tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
         assert isinstance(pipeline, TextGenerationPipelineInterface)
         return MaxPipelineAndTokenizer(pipeline, tokenizer)
@@ -978,27 +996,45 @@ class GenericOracle(PipelineOracle):
         weight_path_map: dict[str, str] | None = None,
         config_params: dict[str, Any] = {},  # noqa: B006
         prompts: list[str] | None = None,
+        apply_chat_template: bool = False,
         use_cache: bool = True,
         auto_model_cls: Any = transformers.AutoModelForCausalLM,
         auto_processor_cls: Any = transformers.AutoTokenizer,
         task: PipelineTask = PipelineTask.TEXT_GENERATION,
         batch_size: int | list[int] | None = None,
+        add_bos_token: bool | None = None,
     ) -> None:
         self.model_path = model_path
+        # Memoized local path: an ``s3://`` model_path is synced to a local
+        # cache dir on first use (see `_local_model_path`).
+        self._resolved_model_path: str | None = None
         self._device_encoding_map = device_encoding_map
         self._weight_path_map = weight_path_map
         self.config_params = config_params
         self._prompts = prompts
+        self._apply_chat_template = apply_chat_template
         self.auto_model_cls = auto_model_cls
         self.auto_processor_cls = auto_processor_cls
         self.task = task
         self._use_cache = use_cache
         self.default_batch_size = batch_size
+        self.add_bos_token = add_bos_token
         self.trust_remote_code = config_params.get("trust_remote_code", False)
 
     @property
     def device_encoding_map(self) -> dict[str, list[str]] | None:
         return self._device_encoding_map
+
+    def _local_model_path(self) -> str:
+        """Return a local model directory, syncing from S3 once if needed.
+
+        For an ``s3://`` ``model_path`` the weights are mirrored to a local
+        cache dir on first call and reused thereafter; for any other path the
+        value is returned unchanged.
+        """
+        if self._resolved_model_path is None:
+            self._resolved_model_path = _sync_s3_model_to_local(self.model_path)
+        return self._resolved_model_path
 
     def weight_path(self, encoding: pipelines.SupportedEncoding) -> str | None:
         if self._weight_path_map and encoding in self._weight_path_map:
@@ -1021,7 +1057,18 @@ class GenericOracle(PipelineOracle):
         encoding: pipelines.SupportedEncoding,
         device_specs: list[driver.DeviceSpec],
     ) -> MaxPipelineAndTokenizer:
-        model_revision = hf_repo_lock.revision_for_hf_repo(self.model_path)
+        # A local model directory (e.g. a trimmed checkpoint at /home/... or an
+        # `s3://` checkpoint synced to a local cache) is not an HF repo id, so
+        # it has no entry in hf-repo-lock.tsv. Skip the revision lookup /
+        # apply_to_config for it (both would raise/ warn), and don't pass a None
+        # revision through to the config.
+        model_path = self._local_model_path()
+        is_local_model = os.path.isdir(model_path)
+        model_revision = (
+            None
+            if is_local_model
+            else hf_repo_lock.revision_for_hf_repo(model_path)
+        )
         weight_path = self.weight_path(encoding) if encoding else None
 
         weight_filename: str | None = None
@@ -1035,23 +1082,22 @@ class GenericOracle(PipelineOracle):
         # validation runs.  Without this, PipelineConfig.resolve() would
         # look for weight files in the model repo (meta-llama) instead of
         # the weights repo (bartowski).
-        config = pipelines.PipelineConfig.model_validate(
-            {
-                "defer_resolve": True,
-                "device_specs": device_specs if device_specs else None,
-                "quantization_encoding": encoding,
-                "model_path": self.model_path,
-                "huggingface_model_revision": model_revision,
-                "huggingface_weight_revision": model_revision,
-                "weight_path": [] if weight_path is None else [weight_filename],
-                "max_num_steps": 1,
-                **self.config_params,
-            }
-        )
-        if weight_repo_id and weight_repo_id != self.model_path:
+        config_kwargs = {
+            "task": self.task,
+            "device_specs": device_specs if device_specs else None,
+            "quantization_encoding": encoding,
+            "model_path": model_path,
+            "weight_path": [] if weight_path is None else [weight_filename],
+            **self.config_params,
+        }
+        if not is_local_model:
+            config_kwargs["huggingface_model_revision"] = model_revision
+            config_kwargs["huggingface_weight_revision"] = model_revision
+        config = pipelines.PipelineConfig.from_flat_kwargs(**config_kwargs)
+        if weight_repo_id and weight_repo_id != model_path:
             config.model._weights_repo_id = weight_repo_id
-        hf_repo_lock.apply_to_config(config)
-        config.resolve()
+        if not is_local_model:
+            hf_repo_lock.apply_to_config(config)
         tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(
             config, task=self.task
         )
@@ -1060,6 +1106,11 @@ class GenericOracle(PipelineOracle):
             pipelines.TextGenerationPipelineInterface
             | pipelines.EmbeddingsPipeline,
         )
+        if self.add_bos_token is not None and hasattr(tokenizer, "delegate"):
+            # transformers v5 stopped honoring add_bos_token from
+            # tokenizer_config.json for some tokenizers, so raw-prompt encoding
+            # drops the leading BOS the reference goldens were generated with.
+            tokenizer.delegate.add_bos_token = self.add_bos_token
         return MaxPipelineAndTokenizer(pipeline, tokenizer)
 
     def create_torch_pipeline(
@@ -1068,9 +1119,15 @@ class GenericOracle(PipelineOracle):
         encoding: pipelines.SupportedEncoding | None,
         device: torch.device,
     ) -> TorchModelAndDataProcessor:
-        model_revision = hf_repo_lock.revision_for_hf_repo(self.model_path)
+        model_path = self._local_model_path()
+        is_local_model = os.path.isdir(model_path)
+        model_revision = (
+            None
+            if is_local_model
+            else hf_repo_lock.revision_for_hf_repo(model_path)
+        )
         processor = self.auto_processor_cls.from_pretrained(
-            self.model_path,
+            model_path,
             revision=model_revision,
             trust_remote_code=self.trust_remote_code,
         )
@@ -1116,8 +1173,8 @@ class GenericOracle(PipelineOracle):
                     ENCODING_TO_TORCH_DTYPE[encoding] if encoding else None
                 )
             model = self.auto_model_cls.from_pretrained(
-                self.model_path,
-                revision=hf_repo_lock.revision_for_hf_repo(self.model_path),
+                model_path,
+                revision=model_revision,
                 device_map=device,
                 trust_remote_code=self.trust_remote_code,
                 torch_dtype=torch_dtype,
@@ -1126,14 +1183,22 @@ class GenericOracle(PipelineOracle):
 
     @property
     def inputs(self) -> list[MockTextGenerationRequest]:
-        return (
-            [
-                MockTextGenerationRequest.text_only(prompt=prompt)
-                for prompt in self._prompts
+        prompts = self._prompts if self._prompts else test_data.DEFAULT_PROMPTS
+        if self._apply_chat_template:
+            # Wrap each prompt in a chat message so the MAX tokenizer applies
+            # the model's chat template, matching a templated reference golden.
+            return [
+                MockTextGenerationRequest.with_messages(
+                    prompt=prompt,
+                    messages=[{"role": "user", "content": prompt}],
+                    is_multimodal=False,
+                )
+                for prompt in prompts
             ]
-            if self._prompts
-            else test_data.DEFAULT_TEXT_ONLY
-        )
+        return [
+            MockTextGenerationRequest.text_only(prompt=prompt)
+            for prompt in prompts
+        ]
 
     @property
     def use_cache(self) -> bool:
@@ -1269,21 +1334,18 @@ class LoRAOracle(PipelineOracle):
         revision = hf_repo_lock.revision_for_hf_repo(self.model_path)
         lora_path = self._get_shared_adapter()
 
-        config = pipelines.PipelineConfig.model_validate(
-            {
-                "device_specs": device_specs,
-                "quantization_encoding": encoding,
-                "model_path": self.model_path,
-                "huggingface_model_revision": revision,
-                "max_num_steps": 1,
-                "enable_lora": True,
-                "lora_paths": [lora_path],
-                "max_num_loras": 1,
-                "max_lora_rank": self.lora_rank,
-                "enable_prefix_caching": False,  # LoRA requires prefix caching disabled
-                "trust_remote_code": True,
-                **self.config_params,
-            }
+        config = pipelines.PipelineConfig.from_flat_kwargs(
+            device_specs=device_specs,
+            quantization_encoding=encoding,
+            model_path=self.model_path,
+            huggingface_model_revision=revision,
+            enable_lora=True,
+            lora_paths=[lora_path],
+            max_num_loras=1,
+            max_lora_rank=self.lora_rank,
+            enable_prefix_caching=False,
+            trust_remote_code=True,
+            **self.config_params,
         )
         tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
 
@@ -1401,27 +1463,26 @@ class ImageGenerationOracle(PipelineOracle):
                 quantization_encoding=encoding,
             )
 
+        runtime_kwargs: dict[str, Any] = {
+            "prefer_module_v3": prefer_module_v3,
+        }
+
+        # Optional denoising-cache overrides (e.g. TaylorSeer / FBCache).
+        denoising_cache = self.config_params.get("denoising_cache")
+        if denoising_cache is not None:
+            runtime_kwargs["denoising_cache"] = DenoisingCacheConfig(
+                **denoising_cache
+            )
+
         config = pipelines.PipelineConfig(
             models=models,
-            runtime=PipelineRuntimeConfig(
-                prefer_module_v3=prefer_module_v3,
-            ),
+            runtime=PipelineRuntimeConfig(**runtime_kwargs),
         )
 
-        pipeline_model_cls = (
-            Flux2KleinExecutor
-            if self.model_path.startswith("black-forest-labs/FLUX.2-klein")
-            else Flux2Executor
-        )
-        tokenizer = Flux2Tokenizer(
-            model_path=self.model_path,
-            pipeline_config=config,
-            subfolder="tokenizer",
-            max_length=512,
-        )
-        pipeline = PixelGenerationPipeline[PixelContext](
-            pipeline_config=config,
-            pipeline_model=pipeline_model_cls,
+        # retrieve resolves the manifest and picks the tokenizer/executor
+        # from the arch registry, like production serving.
+        tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(
+            config, task=self.task
         )
 
         return MaxPipelineAndTokenizer(
@@ -1500,15 +1561,10 @@ class WanGenerationOracle(ImageGenerationOracle):
             device_specs=device_specs,
         )
         config = pipelines.PipelineConfig(models=models)
-        tokenizer = WanTokenizer(
-            model_path=self.model_path,
-            pipeline_config=config,
-            subfolder="tokenizer",
-            max_length=512,
-        )
-        pipeline = PixelGenerationPipeline[WanContext](
-            pipeline_config=config,
-            pipeline_model=WanExecutor,
+        # retrieve resolves the manifest and picks the tokenizer/executor
+        # from the arch registry (see ImageGenerationOracle).
+        tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(
+            config, task=self.task
         )
         return MaxPipelineAndTokenizer(
             pipeline=pipeline,  # type: ignore
@@ -1583,7 +1639,6 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         config_params={
             "max_vision_cache_entries": 256,
             "max_batch_size": 128,
-            "max_num_steps": 1,
         },
         device_encoding_map={"gpu": ["bfloat16"]},
     ),
@@ -1592,7 +1647,6 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         config_params={
             "max_vision_cache_entries": 256,
             "max_batch_size": 128,
-            "max_num_steps": 1,
         },
         device_encoding_map={"gpu": ["bfloat16"]},
     ),
@@ -2064,6 +2118,7 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
             "use_subgraphs": False,
         },
         device_encoding_map={"gpu": ["float8_e4m3fn"]},
+        add_bos_token=True,
     ),
     "deepseek-ai/DeepSeek-R1": GenericOracle(
         model_path="deepseek-ai/DeepSeek-R1",
@@ -2075,6 +2130,7 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
             "data_parallel_degree": 8,
         },
         device_encoding_map={"gpu": ["float8_e4m3fn"]},
+        add_bos_token=True,
     ),
     "deepseek-ai/DeepSeek-V3.1-Terminus": GenericOracle(
         model_path="deepseek-ai/DeepSeek-V3.1-Terminus",
@@ -2086,6 +2142,7 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
             "data_parallel_degree": 8,
         },
         device_encoding_map={"gpu": ["float8_e4m3fn"]},
+        add_bos_token=True,
     ),
     "deepseek-ai/DeepSeek-V3.2-Exp": GenericOracle(
         model_path="deepseek-ai/DeepSeek-V3.2-Exp",
@@ -2099,6 +2156,7 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
             "kv_cache_format": "float8_e4m3fn",
         },
         device_encoding_map={"gpu": ["float8_e4m3fn"]},
+        add_bos_token=True,
     ),
     "nvidia/DeepSeek-R1-0528-NVFP4-v2": GenericOracle(
         model_path="nvidia/DeepSeek-R1-0528-NVFP4-v2",
@@ -2110,13 +2168,11 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
             "data_parallel_degree": 8,
         },
         device_encoding_map={"gpu": ["float4_e2m1fnx2"]},
+        add_bos_token=True,
     ),
     "nvidia/Kimi-K2.5-NVFP4": KimiK2_5PipelineOracle("nvidia/Kimi-K2.5-NVFP4"),
     "amd/Kimi-K2.5-MXFP4": AmdKimiK2_5MXFP4PipelineOracle(
         "amd/Kimi-K2.5-MXFP4"
-    ),
-    "austinpowers/Kimi-K2.5-NVFP4-DeepseekV3": KimiK2_5DeepseekV3PipelineOracle(
-        "austinpowers/Kimi-K2.5-NVFP4-DeepseekV3"
     ),
     # NVFP4 weights pre-staged on the dedicated prod-2 8xB200 runner. Loaded
     # as a vanilla DeepseekV3 checkpoint (same bytes as Kimi-K2.5-NVFP4 with
@@ -2125,6 +2181,19 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
     # on that runner via the +prod-2-8xb200 tag filter.
     "nvidia/Kimi-K2.5-NVFP4__internal": KimiK2_5DeepseekV3LocalPathPipelineOracle(
         "/mnt/local/data/quantized/v4"
+    ),
+    # Trimmed MiniMax-M3 (dense-only layers) for logit verification. The prompts
+    # are pinned and apply_chat_template is off so the input_ids match those the
+    # reference logits were generated from.
+    "minimax/minimax3-dense-only": GenericOracle(
+        model_path="s3://modular-kadabra-weights/minimax-m3-3L-fp8",
+        config_params={"trust_remote_code": True},
+        device_encoding_map={"gpu": ["float8_e4m3fn"]},
+        prompts=[
+            "The capital of France is",
+            "Quantum computing is",
+        ],
+        apply_chat_template=False,
     ),
     "MiniMaxAI/MiniMax-M2.7": GenericOracle(
         model_path="MiniMaxAI/MiniMax-M2.7",
@@ -2151,13 +2220,17 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
     "amd/MiniMax-M2.7-MXFP4": GenericOracle(
         model_path="amd/MiniMax-M2.7-MXFP4",
         config_params={
-            "max_length": 516,
+            # Chat-templating adds the system prompt and role markers, so the
+            # longest prompt grows past the raw 516-token budget to ~530.
+            "max_length": 640,
             "trust_remote_code": True,
-            "max_batch_input_tokens": 512,
+            "max_batch_input_tokens": 640,
             "ep_size": 4,
             "data_parallel_degree": 4,
         },
         device_encoding_map={"gpu": ["float4_e2m1fnx2"]},
+        # The reference golden is chat-templated, so template the MAX side too.
+        apply_chat_template=True,
     ),
     "HKUSTAudio/Llasa-8B": GenericOracle(
         model_path="HKUSTAudio/Llasa-8B",

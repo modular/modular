@@ -11,12 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.collections import OptionalReg, Set
+from std.collections import OptionalReg
 from std.math import rsqrt
 from std.memory import memcpy
 from std.random import random_ui64, seed
 
 from std.gpu.host import DeviceContext
+from kv_cache_test_utils import random_distinct
 from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
     KVCacheStaticParams,
@@ -221,15 +222,12 @@ def execute_ragged_flash_attention[
 
     # Initialize lookup table with random block indices
     var lookup_table_host = lookup_table_managed.tensor[update=False]()
-    var block_idx_set = Set[Int]()
-    var idx = 0
-    while idx < batch_size:
-        var randval = Int(random_ui64(0, num_blocks - 1))
-        if randval in block_idx_set:
-            continue
-        block_idx_set.add(randval)
-        lookup_table_host[idx] = UInt32(randval)
-        idx += 1
+    # Assign each batch entry a distinct block. `random_ui64` is inclusive, so
+    # the original draw range `[0, num_blocks - 1]` is a population of
+    # `num_blocks` blocks.
+    var lut_blocks = random_distinct(num_blocks, batch_size)
+    for idx in range(batch_size):
+        lookup_table_host[idx] = UInt32(lut_blocks[idx])
 
     # Create layout tensors for GPU operations
     var input_row_offsets_tensor = input_row_offsets.device_tensor()

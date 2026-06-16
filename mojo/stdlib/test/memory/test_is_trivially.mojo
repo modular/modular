@@ -39,8 +39,8 @@ struct NoneTrivial(Copyable):
     def __init__(out self, *, copy: Self):
         self.value = copy.value
 
-    def __init__(out self, *, deinit take: Self):
-        self.value = take.value
+    def __init__(out self, *, deinit move: Self):
+        self.value = move.value
 
     def __del__(deinit self):
         pass

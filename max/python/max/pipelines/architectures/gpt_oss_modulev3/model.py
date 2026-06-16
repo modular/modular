@@ -25,9 +25,9 @@ from max.engine import InferenceSession
 from max.experimental import functional as F
 from max.graph import DeviceRef, TensorType
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn.kv_cache import KVCacheInputs
+from max.nn.kv_cache import KVCacheInputsInterface
 from max.nn.transformer import ReturnLogits
-from max.pipelines.core import TextContext
+from max.pipelines.context import TextContext
 from max.pipelines.lib import (
     KVCacheConfig,
     ModelInputs,
@@ -35,7 +35,6 @@ from max.pipelines.lib import (
     PipelineConfig,
     PipelineModelWithKVCache,
 )
-from transformers import AutoConfig
 
 from .gpt_oss import GptOss
 from .model_config import GptOssConfig
@@ -107,29 +106,6 @@ class GptOssModel(PipelineModelWithKVCache[TextContext]):
         )
 
         self.model = self.load_model()
-
-    @staticmethod
-    def calculate_max_seq_len(
-        pipeline_config: PipelineConfig, huggingface_config: AutoConfig
-    ) -> int:
-        """Calculates the maximum sequence length for the GPT OSS model.
-
-        Uses the `max_length` from the :obj:`max.pipelines.config.PipelineConfig`
-        if provided, otherwise falls back to the `max_position_embeddings` from
-        the HuggingFace configuration's text config.
-
-        Args:
-            pipeline_config: The MAX Engine pipeline configuration.
-            huggingface_config: The HuggingFace model configuration object
-                (:obj:`transformers.AutoConfig`).
-
-        Returns:
-            The calculated maximum sequence length.
-        """
-        max_seq_len = pipeline_config.model.max_length
-        if max_seq_len:
-            return max_seq_len
-        return huggingface_config.max_position_embeddings
 
     def load_model(self) -> Callable[..., Any]:
         """Loads the compiled GPT OSS model into the MAX Engine session.
@@ -244,7 +220,7 @@ class GptOssModel(PipelineModelWithKVCache[TextContext]):
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
+        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> ModelInputs:
         """Prepares the initial inputs for the first execution pass of the GPT OSS model.
@@ -286,30 +262,4 @@ class GptOssModel(PipelineModelWithKVCache[TextContext]):
                 np.array([return_n_logits], dtype=np.int64)
             ),
             kv_cache_inputs=kv_cache_inputs,
-        )
-
-    def prepare_next_token_inputs(
-        self, next_tokens: Buffer, prev_model_inputs: ModelInputs
-    ) -> ModelInputs:
-        """Prepares the inputs for subsequent execution steps in a multi-step generation.
-
-        Args:
-            next_tokens: The tensor containing the token IDs generated in the previous step.
-            prev_model_inputs: The :obj:`ModelInputs` used in the previous execution step.
-
-        Returns:
-            The prepared :obj:`ModelInputs` object for the next execution step.
-        """
-        prev_model_inputs = cast(GptOssInputs, prev_model_inputs)
-        row_offsets_size = prev_model_inputs.input_row_offsets.shape[0]
-
-        next_row_offsets = self._input_row_offsets_prealloc[
-            :row_offsets_size
-        ].to(self.devices[0])
-
-        return GptOssInputs(
-            tokens=next_tokens,
-            input_row_offsets=next_row_offsets,
-            return_n_logits=prev_model_inputs.return_n_logits,
-            kv_cache_inputs=prev_model_inputs.kv_cache_inputs,
         )

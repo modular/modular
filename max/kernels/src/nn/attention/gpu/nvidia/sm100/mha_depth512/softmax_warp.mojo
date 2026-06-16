@@ -102,6 +102,7 @@ def depth512_scale_write_output[
     is_lower: Bool,
     inv_row_sum: Float32,
     smem: Depth512AttentionSMem[config=config],
+    tmem_addr: UInt32,
     ragged_tma_store: RaggedTMA3DTile[
         output_type,
         config.swizzle_mode,
@@ -130,7 +131,8 @@ def depth512_scale_write_output[
     comptime num_batches = o_cols_per_phase // batch_size
     comptime assert o_cols_per_phase % batch_size == 0
 
-    var tmem_addr = smem.tmem_addr_ptr()[]
+    # `tmem_addr` passed in by register (read once post-`cluster_sync` in the
+    # kernel prologue); do NOT re-read `smem.tmem_addr_ptr()` here.
 
     # Output SMEM base (reuses Q buffer).
     var o_smem = smem.o_smem[output_type]()
@@ -232,6 +234,8 @@ def depth512_softmax[
     page_size: Int,
 ](
     smem: Depth512AttentionSMem[config=config],
+    tmem_addr: UInt32,
+    seq_id: UInt32,
     score_row: UInt32,
     num_keys: UInt32,
     mask: MaskType,
@@ -292,7 +296,8 @@ def depth512_softmax[
     var col_offset: UInt32 = 0 if is_lower else UInt32(effective_bn)
 
     # ---- TMEM addresses --------------------------------------------------
-    var tmem_addr = smem.tmem_addr_ptr()[]
+    # `tmem_addr` passed in by register (read once post-`cluster_sync` in the
+    # kernel prologue); do NOT re-read `smem.tmem_addr_ptr()` here.
     var s_even_tmem = tmem_addr + UInt32(config.TMEM_S_even)
     var s_odd_tmem = tmem_addr + UInt32(config.TMEM_S_odd)
 
@@ -323,7 +328,7 @@ def depth512_softmax[
 
     # ---- Iteration bounds (must match MMA and load warps) ----------------
     var kv_row: UInt32 = mask.start_column[PairBM_mask, BN, page_size](
-        score_row
+        seq_id, score_row
     )
 
     comptime mask_sets = MaskType.nonfull_sets[PairBM_mask, BN]()
@@ -335,7 +340,7 @@ def depth512_softmax[
     comptime if mask_sets[0] != TileMaskStatus.UNKNOWN_MASK:
         mask_ends = mask.masked_set_ends[
             BM=PairBM_mask, BN=BN, page_size=page_size
-        ](score_row, num_keys)
+        ](seq_id, score_row, num_keys)
         mask_iters[0] = mask_ends[0]
         comptime for i in range(1, num_sets):
             mask_iters[i] = mask_ends[i] - mask_ends[i - 1]
@@ -542,21 +547,30 @@ def depth512_softmax[
         comptime assert num_p_batches >= 1
 
         # Helper to write a range of exp values from s[] to P SMEM.
+        comptime p_elems_per_store: Int = 16 // size_of[qkv_dtype]()
+        comptime assert (
+            16 % size_of[qkv_dtype]() == 0
+        ), "P store byte width (16) must be a multiple of dtype size"
+
         @parameter
         @always_inline
         def write_p_batch[start_elem: Int, num_elems: Int]():
-            comptime for c in range(0, num_elems, 8):
+            comptime assert num_elems % p_elems_per_store == 0, (
+                "write_p_batch num_elems must be a multiple of the per-store"
+                " element count (16/size_of[dtype])"
+            )
+            comptime for c in range(0, num_elems, p_elems_per_store):
                 comptime base = start_elem + c
-                var vals = SIMD[accum_dtype, 8](
-                    s[base],
-                    s[base + 1],
-                    s[base + 2],
-                    s[base + 3],
-                    s[base + 4],
-                    s[base + 5],
-                    s[base + 6],
-                    s[base + 7],
-                ).cast[qkv_dtype]()
+
+                @parameter
+                @always_inline
+                def pack_vals[n: Int]() -> SIMD[qkv_dtype, n]:
+                    var vec = SIMD[accum_dtype, n](0)
+                    comptime for k in range(n):
+                        vec[k] = s[base + k]
+                    return vec.cast[qkv_dtype]()
+
+                var vals = pack_vals[p_elems_per_store]()
                 var col = Int(col_offset) + base
                 var p_k_block = col // p_sw_K
                 comptime assert effective_bn % p_sw_K == 0
@@ -728,6 +742,7 @@ def depth512_softmax[
             if kv_row >= num_keys:
                 break
             cur_mask_status = mask.status(
+                seq_id,
                 Index[dtype=DType.int32](Int(score_row), Int(kv_row)),
                 Index[dtype=DType.int32](PairBM_mask, BN),
             )
@@ -765,6 +780,7 @@ def depth512_softmax[
             is_lower,
             inv_row_sum,
             smem,
+            tmem_addr,
             ragged_tma_store,
             num_output_rows,
             out_head_idx,

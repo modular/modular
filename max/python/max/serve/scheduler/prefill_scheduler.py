@@ -18,7 +18,7 @@ import time
 import uuid
 from dataclasses import dataclass
 
-from max.pipelines.core import TextContext
+from max.pipelines.context import TextContext, TextGenerationOutput
 from max.pipelines.kv_cache import (
     KVTransferEngine,
     KVTransferEngineMetadata,
@@ -33,7 +33,6 @@ from max.pipelines.modeling.types import (
     Pipeline,
     RequestID,
     TextGenerationInputs,
-    TextGenerationOutput,
 )
 from max.profiler import Tracer, traced
 from max.serve.config import Settings
@@ -50,7 +49,7 @@ from .batch_constructor import TextBatchConstructor
 from .batch_constructor.text_batch_constructor import BatchSchedulingStrategy
 from .config import TokenGenerationSchedulerConfig
 from .di_dispatchers import PrefillDispatcherServer
-from .utils import SchedulerLogger, reshape_flat_kv_blocks_to_grid
+from .utils import SchedulerLogger
 
 logger = logging.getLogger("max.serve")
 
@@ -95,20 +94,6 @@ class PrefillScheduler(Scheduler):
             name=f"prefill_agent_{uuid.uuid4()}",
             kv_cache=kv_cache,
         )
-
-        # Register draft KV cache blocks for speculative decoding so that
-        # target and draft KV are bundled into a single NIXL transfer.
-        draft_kv_blocks = getattr(pipeline, "draft_kv_blocks", None)
-        if isinstance(draft_kv_blocks, list):
-            self.transfer_engine.register_tensor_group(
-                name="draft",
-                tensors=reshape_flat_kv_blocks_to_grid(
-                    draft_kv_blocks,
-                    dp=scheduler_config.data_parallel_degree,
-                    group_name="draft",
-                ),
-                total_num_pages=kv_cache.get_num_pages(replica_idx=0),
-            )
 
         self.outstanding_cancelled_requests: set[RequestID] = set()
 
@@ -436,12 +421,6 @@ def load_prefill_scheduler(
     # Validate speculative decoding configuration for prefill-only mode.
     spec_config = pipeline_config.speculative
     if spec_config is not None:
-        if spec_config.is_standalone():
-            raise ValueError(
-                "Standalone speculative decoding is not supported with "
-                "pipeline_role='prefill_only'. Use 'eagle' or 'mtp' "
-                "speculative methods instead."
-            )
         if not (spec_config.is_eagle() or spec_config.is_mtp()):
             raise ValueError(
                 f"Unsupported speculative method "

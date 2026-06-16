@@ -78,16 +78,15 @@ def matmul[
 
         @parameter
         @__copy_capture(c_tt)
-        def epilogue_wrapper[
-            simd_width: Int, rank: Int, alignment: Int = 1
-        ](idx: IndexList[rank]):
-            var c_coord = Index(idx[0], idx[1])
-            var c_val = c_tt.load_linear[
+        def epilogue_wrapper[simd_width: Int, alignment: Int = 1](idx: Coord):
+            var c_val = c_tt.load[
                 width=simd_width,
                 # Load takes alignment in bytes, lambda takes number of elements
                 alignment=alignment * size_of[c_type](),
             ](idx)
-            epilogue[c_type, simd_width, alignment=alignment](c_coord, c_val)
+            epilogue[c_type, simd_width, alignment=alignment](
+                Index(idx[0].value(), idx[1].value()), c_val
+            )
 
         var m = Int(c.dim[0]())
         var n = Int(c.dim[1]())
@@ -102,4 +101,4 @@ def matmul[
             c_row_major=True,
             transpose_b=transpose_b,
         )
-        elementwise[epilogue_wrapper, simd_size, target="gpu"](Index(m, n), ctx)
+        elementwise[epilogue_wrapper, simd_size, target="gpu"]((m, n), ctx)

@@ -27,9 +27,13 @@ from max.engine import InferenceSession, Model
 from max.graph import BufferValue, Graph, TensorValue, Value
 from max.graph.weights import WeightData
 from max.nn.comm.ep import EPCommInitializer
-from max.nn.kv_cache import KVCacheInputs, KVCacheParams, PagedCacheValues
+from max.nn.kv_cache import (
+    KVCacheInputsInterface,
+    KVCacheParams,
+    MultiKVCacheParams,
+)
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
-from max.pipelines.core import TextContext
+from max.pipelines.context import TextContext
 from max.pipelines.lib import CompilationTimer, ModelInputs, UnifiedEagleOutputs
 from typing_extensions import override
 
@@ -45,7 +49,6 @@ class UnifiedMTPDeepseekV3Inputs(DeepseekV3Inputs):
     """Inputs for the UnifiedMTPDeepseekV3 model."""
 
     draft_tokens: Buffer | None = None
-    draft_kv_blocks: list[Buffer] | None = None
     seed: Buffer | None = None
     temperature: Buffer | None = None
     top_k: Buffer | None = None
@@ -81,8 +84,6 @@ class UnifiedMTPDeepseekV3Inputs(DeepseekV3Inputs):
         buffers = super().buffers
         if self.draft_tokens is not None:
             buffers += (self.draft_tokens,)
-        if self.draft_kv_blocks is not None:
-            buffers += tuple(self.draft_kv_blocks)
         assert self.seed is not None
         buffers += (self.seed,)
         if self.draft_tokens is not None:
@@ -220,6 +221,9 @@ class UnifiedMTPDeepseekV3Model(DeepseekV3Model):
             # TODO: don't hard code number of layers
             assert isinstance(self.kv_params, KVCacheParams)
             self._draft_kv_params = replace(self.kv_params, num_layers=1)
+            self.kv_params = MultiKVCacheParams.from_params(
+                {"target": self.kv_params, "draft": self._draft_kv_params}
+            )
 
             draft_config.return_hidden_states = ReturnHiddenStates.LAST
 
@@ -277,9 +281,7 @@ class UnifiedMTPDeepseekV3Model(DeepseekV3Model):
 
             with Graph(
                 "deepseekV3_with_mtp_graph",
-                input_types=nn_model.input_types(
-                    self.kv_params, self._draft_kv_params
-                ),
+                input_types=nn_model.input_types(self.kv_params),
             ) as graph:
                 (
                     tokens,
@@ -296,12 +298,8 @@ class UnifiedMTPDeepseekV3Model(DeepseekV3Model):
                     for _ in range(len(self.devices))
                 ]
 
-                fetch_types = (
-                    self.kv_params.get_symbolic_inputs().inputs[0].flatten()
-                )
-                len_of_kv_inputs = len(list(fetch_types)) * len(self.devices)
-                kv_caches_per_dev = self._unflatten_kv_inputs(
-                    [next(variadic_args_iter) for _ in range(len_of_kv_inputs)]
+                kv_caches_per_dev, draft_kv_collections = (
+                    self.kv_params.unflatten_basic_kv_tree(variadic_args_iter)
                 )
 
                 batch_context_lengths = [
@@ -317,30 +315,6 @@ class UnifiedMTPDeepseekV3Model(DeepseekV3Model):
                     ]
 
                 draft_tokens = next(variadic_args_iter).tensor
-
-                # Draft KV: only kv_blocks per device; cache_lengths, lookup_table,
-                # max_lengths, and dispatch_metadata are shared from target.
-                draft_kv_collections: list[PagedCacheValues] = []
-                for dev_idx in range(len(self.devices)):
-                    draft_kv_blocks = next(variadic_args_iter).buffer
-                    draft_kv_collections.append(
-                        PagedCacheValues(
-                            kv_blocks=draft_kv_blocks,
-                            cache_lengths=kv_caches_per_dev[
-                                dev_idx
-                            ].cache_lengths,
-                            lookup_table=kv_caches_per_dev[
-                                dev_idx
-                            ].lookup_table,
-                            max_lengths=kv_caches_per_dev[dev_idx].max_lengths,
-                            attention_dispatch_metadata=kv_caches_per_dev[
-                                dev_idx
-                            ].attention_dispatch_metadata,
-                            draft_attention_dispatch_metadata=kv_caches_per_dev[
-                                dev_idx
-                            ].draft_attention_dispatch_metadata,
-                        )
-                    )
 
                 seed = next(variadic_args_iter).tensor
                 temperature = next(variadic_args_iter).tensor
@@ -414,7 +388,7 @@ class UnifiedMTPDeepseekV3Model(DeepseekV3Model):
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
+        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
         draft_tokens: Buffer | None = None,
         draft_kv_cache_buffers: list[Buffer] | None = None,
@@ -439,15 +413,7 @@ class UnifiedMTPDeepseekV3Model(DeepseekV3Model):
             data_parallel_splits=base.data_parallel_splits,
             ep_inputs=base.ep_inputs,
             draft_tokens=draft_tokens,
-            draft_kv_blocks=draft_kv_cache_buffers,
         )
-
-    def prepare_next_token_inputs(
-        self,
-        next_tokens: Buffer,
-        prev_model_inputs: ModelInputs,
-    ) -> UnifiedMTPDeepseekV3Inputs:
-        raise NotImplementedError("MTP does not support Multistep execution")
 
     def _create_draft_config(
         self, draft_state_dict: dict[str, WeightData]

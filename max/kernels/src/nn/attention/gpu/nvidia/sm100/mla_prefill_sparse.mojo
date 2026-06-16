@@ -59,7 +59,8 @@ from nn.attention.mha_operand import MHAOperand, KVCacheMHAOperand
 from nn.attention.mha_mask import MHAMask
 from kv_cache.types import KVCacheT
 from nn.attention.mha_utils import OptionallyStaticInt, MHAPartitionScheme
-from nn.attention.gpu.nvidia.sm90.attention import (
+from nn.attention.gpu.nvidia.common import (
+    elect,
     OptionalPointer,
     NullPointer,
     NonNullPointer,
@@ -70,12 +71,12 @@ from nn.attention.gpu.nvidia.sm100.correction_warp import fa4_correction
 from nn.attention.gpu.mha import q_num_matrix_view_rows
 
 from nn.attention.gpu.nvidia.sm100.attention_utils import (
-    SM100TensorAccumulatorSS,
-    SM100TensorAccumulatorTS,
+    SM100TensorAccumulator,
     add_ftz,
     sub_ftz,
     mul_ftz,
     fma_ftz,
+    exp2_emulation,
 )
 from std.gpu.compute.arch.mma_nvidia_sm100 import (
     MMASmemDescriptorPair,
@@ -297,12 +298,13 @@ struct MLASparseSharedMemoryFP8[config: MLASparseConfig, scale_block_size: Int]:
 
 
 struct QKMMAOp[dtype: DType, accum_dtype: DType, config: MLASparseConfig]:
-    comptime SSMMAType = SM100TensorAccumulatorSS[
+    comptime SSMMAType = SM100TensorAccumulator[
         Self.dtype,
         Self.accum_dtype,
         MMA_M=Self.config.num_q_heads,
         MMA_N=Self.config.B_TOPK,
         BK=Self.config.q_smem_depth,
+        a_tmem=False,
         mma_kind=UMMAKind.KIND_F16,
         cta_group=Self.config.cta_group,
     ]
@@ -311,12 +313,13 @@ struct QKMMAOp[dtype: DType, accum_dtype: DType, config: MLASparseConfig]:
     # k-mmas each keeps every issued instruction inside the limit. Each
     # `.mma[stage_idx=i]` call issues its share; stages 1+ always
     # accumulate (c_scale forced to 1 internally).
-    comptime TSMMAType = SM100TensorAccumulatorTS[
+    comptime TSMMAType = SM100TensorAccumulator[
         Self.dtype,
         Self.accum_dtype,
         MMA_M=Self.config.num_q_heads,
         MMA_N=Self.config.B_TOPK,
         BK=Self.config.q_tmem_depth,
+        a_tmem=True,
         mma_kind=UMMAKind.KIND_F16,
         cta_group=Self.config.cta_group,
         num_stages=3,
@@ -391,24 +394,26 @@ struct SVMMAType[dtype: DType, accum_dtype: DType, config: MLASparseConfig]:
     # gather4 with SWIZZLE_128B, producing col-group-blocked smem the
     # SW128 MMA descriptor reads correctly (same pattern as
     # `DecodeSM100PVSS.descriptor_v_block`).
-    comptime SS_P0MMAType = SM100TensorAccumulatorSS[
+    comptime SS_P0MMAType = SM100TensorAccumulator[
         Self.dtype,
         Self.accum_dtype,
         MMA_M=Self.config.num_q_heads,
         MMA_N=Self.config.v_depth // Self.config.cta_group,
         BK=Self.config.B_TOPK // 2,
+        a_tmem=False,
         mma_kind=UMMAKind.KIND_F16,
         swizzle_a=TensorMapSwizzle.SWIZZLE_NONE,
         swizzle_b=TensorMapSwizzle.SWIZZLE_128B,
         transpose_b=False,
         cta_group=Self.config.cta_group,
     ]
-    comptime SS_P1MMAType = SM100TensorAccumulatorSS[
+    comptime SS_P1MMAType = SM100TensorAccumulator[
         Self.dtype,
         Self.accum_dtype,
         MMA_M=Self.config.num_q_heads,
         MMA_N=Self.config.v_depth // Self.config.cta_group,
         BK=Self.config.B_TOPK // 2,
+        a_tmem=False,
         mma_kind=UMMAKind.KIND_F16,
         swizzle_a=TensorMapSwizzle.SWIZZLE_NONE,
         swizzle_b=TensorMapSwizzle.SWIZZLE_128B,
@@ -516,6 +521,11 @@ struct MLAPrefillSparse[
     comptime v_tile_shape = Index(Self.v_tile_height, Self.v_gather_box)
     comptime v_desc_shape = Index(1, Self.v_gather_box)
 
+    # desc_shape inner dim 64×2=128B satisfies the ≤256B SWIZZLE_NONE constraint.
+    # SMEM is written in column-group order to match TMA's sub-copy layout.
+    comptime o_tile_shape = Index(Self.NUM_Q_HEADS_PER_CTA, Self.config.v_depth)
+    comptime o_desc_shape = Index(Self.NUM_Q_HEADS_PER_CTA, 64)
+
     # FP8 TMA swizzle modes. SWIZZLE_NONE paired with INT64 packing means one
     # gather4 descriptor covers the full row without inner col-tiling.
     comptime FP8_K_SWIZZLE = TensorMapSwizzle.SWIZZLE_NONE
@@ -585,6 +595,7 @@ struct MLAPrefillSparse[
     @__llvm_arg_metadata(q_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(k_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(v_tma_op, `nvvm.grid_constant`)
+    @__llvm_arg_metadata(o_tma_op, `nvvm.grid_constant`)
     @__llvm_metadata(`nvvm.cluster_dim`=StaticTuple[Int32, 3](2, 1, 1))
     @__llvm_metadata(
         MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
@@ -617,17 +628,18 @@ struct MLAPrefillSparse[
             Self.v_tile_shape,
             Self.v_desc_shape,
         ],
+        o_tma_op: TMATensorTile[
+            Self.output_dtype,
+            2,
+            Self.o_tile_shape,
+            Self.o_desc_shape,
+        ],
         topk_lengths: TileTensor[DType.uint32, TopKLengthLayout, MutAnyOrigin],
         indices: TileTensor[DType.uint32, IndicesLayout, MutAnyOrigin],
         kv_lut: Self.KVLUTType,
         scale: Float32,
         attn_sink_ptr: Optional[UnsafePointer[Float32, ImmutAnyOrigin]],
         indices_stride: Int32,
-        # Raw gmem output pointer. Used for the per-thread output store in
-        # the WG0 epilogue. RaggedTMA3DTile's box-along-dim-2 stride is
-        # `num_heads*v_depth`, which writes BM SEQ positions per call —
-        # but our cluster produces 1 seq * BM heads, the wrong shape for
-        # that descriptor. Direct global store sidesteps that.
         output_gmem_ptr: UnsafePointer[Scalar[Self.output_dtype], MutAnyOrigin],
     ) where (topk_lengths.flat_rank == 1 and indices.flat_rank == 1):
         var cta_id = UInt32(block_idx.x % Self.config.cta_group)
@@ -766,15 +778,18 @@ struct MLAPrefillSparse[
                 Self.V_DEPTH_PER_CTA // O_RESCALE_CHUNK
             )
 
-            # Per-thread base offset (in units of bf16x8 = uint128) into
-            # the scores smem, matching the K-major SW128B layout the
-            # subsequent SV MMA expects. See phase1.cuh:166-167 — base =
-            # (idx%64) + 64*((idx/64)*8). Upper-half threads write the
-            # left half of S; lower-half threads write the right half.
-            var s_smem_uint128_base = (
-                scores_ptr.bitcast[SIMD[Self.qkv_dtype, 8]]()
-                + (idx_in_wg % UInt32(64))
-                + UInt32(64) * ((idx_in_wg / UInt32(64)) * UInt32(8))
+            # Per-thread base bf16 element offset into the scores smem,
+            # matching the K-major SW128B layout the subsequent SV MMA
+            # expects. See phase1.cuh:166-167 — uint128 base =
+            # (idx%64) + 64*((idx/64)*8); ×8 converts uint128 units to bf16
+            # elements. Upper-half threads write the left half of S;
+            # lower-half threads write the right half.
+            var s_smem_bf16_elem_base = Int(
+                (
+                    (idx_in_wg % UInt32(64))
+                    + UInt32(512) * (idx_in_wg / UInt32(64))
+                )
+                * UInt32(8)
             )
 
             for k in range(num_k_blocks):
@@ -833,7 +848,7 @@ struct MLAPrefillSparse[
                     min_or_neg_inf[DType.float32]()
                 )
                 comptime for i in range(P_PER_THREAD):
-                    cur_pi_max = max(cur_pi_max, rebind[Float32](p[i]))
+                    cur_pi_max = max(cur_pi_max, p[i])
                 cur_pi_max = mul_ftz(cur_pi_max, scale_log2e)
 
                 # Cross-thread max reduction: threads t and t^64 own the
@@ -869,16 +884,25 @@ struct MLAPrefillSparse[
 
                 # S = exp2(P * scale_log2e - new_max), accumulate li, and
                 # convert to bf16 ready for the SV MMA.
+                #
+                # Emulate exp2 on the FMA pipe instead of calling hardware
+                # `ex2`: the SM100 softmax warpgroup is MUFU-bound on the
+                # critical path, so this is ~14% faster here. Don't replace
+                # with `exp2(d)`.
                 var s_bf16 = InlineArray[Scalar[Self.qkv_dtype], P_PER_THREAD](
                     uninitialized=True
                 )
-                comptime for i in range(P_PER_THREAD):
-                    var d: Float32 = (
-                        rebind[Float32](p[i]) * scale_log2e - new_max
+                var vscale = SIMD[DType.float32, 2](scale_log2e)
+                var vneg_max = SIMD[DType.float32, 2](-new_max)
+                comptime for j in range(P_PER_THREAD // 2):
+                    var pj = SIMD[DType.float32, 2](
+                        p[2 * j],
+                        p[2 * j + 1],
                     )
-                    var ed: Float32 = exp2(d)
-                    li = li + ed
-                    s_bf16[i] = ed.cast[Self.qkv_dtype]()
+                    var ed2 = exp2_emulation(fma_ftz(pj, vscale, vneg_max))
+                    li = li + ed2[0] + ed2[1]
+                    s_bf16[2 * j] = ed2[0].cast[Self.qkv_dtype]()
+                    s_bf16[2 * j + 1] = ed2[1].cast[Self.qkv_dtype]()
 
                 # Wait until the previous SV MMA has drained the scores
                 # smem before overwriting it. (sv_p1_done implies the
@@ -891,25 +915,61 @@ struct MLAPrefillSparse[
                     ) & 1
                     sv_p1_done_ptr[prev_buf].wait(prev_phase)
 
-                # Write S to scores smem as 8 bf16 per uint128, stride 64
-                # uint128 between writes — exactly the SS-MMA layout.
-                comptime for i in range(P_PER_THREAD // 8):
-                    s_smem_uint128_base[i * 64] = SIMD[Self.qkv_dtype, 8](
-                        rebind[Scalar[Self.qkv_dtype]](s_bf16[i * 8 + 0]),
-                        rebind[Scalar[Self.qkv_dtype]](s_bf16[i * 8 + 1]),
-                        rebind[Scalar[Self.qkv_dtype]](s_bf16[i * 8 + 2]),
-                        rebind[Scalar[Self.qkv_dtype]](s_bf16[i * 8 + 3]),
-                        rebind[Scalar[Self.qkv_dtype]](s_bf16[i * 8 + 4]),
-                        rebind[Scalar[Self.qkv_dtype]](s_bf16[i * 8 + 5]),
-                        rebind[Scalar[Self.qkv_dtype]](s_bf16[i * 8 + 6]),
-                        rebind[Scalar[Self.qkv_dtype]](s_bf16[i * 8 + 7]),
-                    )
-
-                # Rescale O (in TMEM) if mi changed materially. The first
-                # iteration (k==0) has no O to scale yet.
+                var o_chunk_prefetch = InlineArray[
+                    Scalar[DType.float32], O_RESCALE_CHUNK
+                ](uninitialized=True)
                 if k > 0 and should_scale_o:
                     tcgen05_fence_after()
-                    comptime for chunk_idx in range(NUM_O_RESCALE_CHUNKS):
+                    o_chunk_prefetch = tcgen05_ld[
+                        datapaths=32,
+                        bits=32,
+                        repeat=O_RESCALE_CHUNK,
+                        dtype=DType.float32,
+                        pack=False,
+                        width=O_RESCALE_CHUNK,
+                    ](UInt32(Self.O_TMEM_ADDR))
+
+                # Write S to scores smem as 8 bf16 per uint128, stride 64
+                # uint128 between writes--exactly the K-major SW128B layout
+                # the SS-MMA reads. Keep the packed 128-bit store: a plain
+                # SIMD[bf16, 8] store scalarizes into bank-conflicting
+                # half-word stores.
+                comptime for i in range(P_PER_THREAD // 8):
+                    var s_vec = SIMD[Self.qkv_dtype, 8](
+                        s_bf16[i * 8 + 0],
+                        s_bf16[i * 8 + 1],
+                        s_bf16[i * 8 + 2],
+                        s_bf16[i * 8 + 3],
+                        s_bf16[i * 8 + 4],
+                        s_bf16[i * 8 + 5],
+                        s_bf16[i * 8 + 6],
+                        s_bf16[i * 8 + 7],
+                    )
+                    st_shared_v4_b32_at_bf16_elem_off[out_dtype=Self.qkv_dtype](
+                        scores_ptr,
+                        s_smem_bf16_elem_base + i * 512,
+                        bitcast[DType.uint32, 4](s_vec),
+                    )
+
+                # Rescale O (in TMEM) if mi changed materially; chunk 0
+                # was prefetched above, chunks 1..N-1 load sequentially.
+                if k > 0 and should_scale_o:
+                    tcgen05_load_wait()
+                    var o_scaled_0 = InlineArray[
+                        Scalar[DType.float32], O_RESCALE_CHUNK
+                    ](uninitialized=True)
+                    comptime for j in range(O_RESCALE_CHUNK):
+                        o_scaled_0[j] = mul_ftz(
+                            o_chunk_prefetch[j],
+                            scale_for_old,
+                        )
+                    tcgen05_st[
+                        datapaths=32,
+                        bits=32,
+                        repeat=O_RESCALE_CHUNK,
+                        pack=False,
+                    ](UInt32(Self.O_TMEM_ADDR), o_scaled_0)
+                    comptime for chunk_idx in range(1, NUM_O_RESCALE_CHUNKS):
                         var o_chunk = tcgen05_ld[
                             datapaths=32,
                             bits=32,
@@ -927,7 +987,7 @@ struct MLAPrefillSparse[
                         ](uninitialized=True)
                         comptime for j in range(O_RESCALE_CHUNK):
                             o_scaled[j] = mul_ftz(
-                                rebind[Float32](o_chunk[j]),
+                                o_chunk[j],
                                 scale_for_old,
                             )
                         tcgen05_st[
@@ -1011,39 +1071,26 @@ struct MLAPrefillSparse[
             #   - Warp 3: heads 32..63,                    cluster cols 128..255
             # Atom1 writes those cols to v_depth offsets 0..255; atom2
             # adds V_DEPTH_PER_CTA=256 to land in 256..511.
-            var local_warp_idx_wg0 = UInt32(warp_idx)  # 0..3 for WG0
-            var head_row_block = local_warp_idx_wg0 % UInt32(2)
-            var depth_col_block = local_warp_idx_wg0 // UInt32(2)
-
-            var local_lane = UInt32(lane_idx)  # 0..31 within a warp
+            var head_row_block = UInt32(warp_idx) % UInt32(2)
+            var depth_col_block = UInt32(warp_idx) // UInt32(2)
+            var local_lane = UInt32(lane_idx)
             var head_local = head_row_block * UInt32(32) + local_lane
-            var head_global = (
-                cta_id * UInt32(Self.NUM_Q_HEADS_PER_CTA) + head_local
-            )
-            var depth_col_start = depth_col_block * UInt32(Self.V_BMN_PER_ATOM)
 
-            # gmem byte offset for the start of this thread's row.
-            var gmem_row_stride: Int = (
-                Self.config.num_q_heads * Self.config.v_depth
-            )
-            var gmem_row_offset_base: Int = (
-                Int(seq_idx) * gmem_row_stride
-                + Int(head_global) * Self.config.v_depth
-                + Int(depth_col_start)
-            )
+            # SMEM layout: [8_col_groups, 64_heads, 64_cols] so each 64-column
+            # group is contiguous — matches the TMA desc_shape=[64, 64] sub-copies.
+            # col_group = depth_col_block*2 + atom_idx*4 + chunk tiles v_depth=512.
+            comptime GROUP_STRIDE = Self.NUM_Q_HEADS_PER_CTA * 64
 
             comptime for atom_idx in range(Self.NUM_SV_ATOMS):
-                # Atom 0: TMEM addr=0,   gmem depth offset = 0
-                # Atom 1: TMEM addr=128, gmem depth offset = +V_DEPTH_PER_CTA
                 comptime atom_o_tmem_addr = (
                     Self.O_TMEM_ADDR + atom_idx * Self.V_BMN_PER_ATOM
-                )
-                comptime atom_gmem_depth_shift = (
-                    atom_idx * Self.V_DEPTH_PER_CTA
                 )
 
                 comptime for chunk in range(2):
                     comptime CHUNK = 64
+                    var col_group = (
+                        Int(depth_col_block) * 2 + atom_idx * 4 + chunk
+                    )
                     var c_chunk: InlineArray[Scalar[DType.float32], CHUNK]
                     c_chunk = tcgen05_ld[
                         datapaths=32,
@@ -1055,32 +1102,40 @@ struct MLAPrefillSparse[
                     ](UInt32(atom_o_tmem_addr + chunk * CHUNK))
                     tcgen05_load_wait()
 
-                    # This chunk holds elements 2*(chunk*32) ..
-                    # 2*(chunk*32)+63 of the per-thread fragment.  Scale
-                    # in fp32 and cast to bf16 ONCE — phase1.cuh:332-334
-                    # uses `float2_mul(o, scale)` then a single
-                    # `__float22bfloat162_rn`.  Casting first and then
-                    # multiplying in bf16 (the old code path) doubled the
-                    # rounding count and showed up in `max_err`.
                     comptime for i in range(CHUNK // 2):
-                        var v0_f32 = (
-                            rebind[Scalar[DType.float32]](c_chunk[2 * i])
-                            * output_scale
+                        var v0_f32 = c_chunk[2 * i] * output_scale
+                        var v1_f32 = c_chunk[2 * i + 1] * output_scale
+                        var v = SIMD[Self.qkv_dtype, 2](
+                            v0_f32.cast[Self.qkv_dtype](),
+                            v1_f32.cast[Self.qkv_dtype](),
                         )
-                        var v1_f32 = (
-                            rebind[Scalar[DType.float32]](c_chunk[2 * i + 1])
-                            * output_scale
+                        var smem_offset = (
+                            col_group * GROUP_STRIDE
+                            + Int(head_local) * 64
+                            + i * 2
                         )
-                        var v = SIMD[Self.output_dtype, 2](
-                            v0_f32.cast[Self.output_dtype](),
-                            v1_f32.cast[Self.output_dtype](),
-                        )
-                        var gmem_offset = (
-                            gmem_row_offset_base
-                            + atom_gmem_depth_shift
-                            + (chunk * (CHUNK // 2) + i) * 2
-                        )
-                        (output_gmem_ptr + gmem_offset).store[width=2](v)
+                        (o_ptr + smem_offset).store[width=2](v)
+
+            named_barrier[Int32(WARPGROUP_SIZE)](Int32(0))
+            if warp_idx == 0:
+                if elect_one_sync():
+                    fence_async_view_proxy()
+                    var o_smem_tile = TileTensor(
+                        o_ptr.bitcast[Scalar[Self.output_dtype]](),
+                        row_major[
+                            Self.NUM_Q_HEADS_PER_CTA, Self.config.v_depth
+                        ](),
+                    )
+                    o_tma_op.async_store(
+                        o_smem_tile,
+                        (
+                            0,  # col (depth, innermost in TMA coords)
+                            Int(seq_idx) * Self.config.num_q_heads
+                            + Int(cta_id) * Self.NUM_Q_HEADS_PER_CTA,
+                        ),
+                    )
+                    cp_async_bulk_commit_group()
+            cp_async_bulk_wait_group[0]()
 
             if warp_idx == 0:
                 tcgen05_dealloc[Self.config.cta_group](
@@ -1257,6 +1312,11 @@ struct MLAPrefillSparse[
         k: UInt32,
         num_k_blocks: UInt32,
     ):
+        # The caller runs this method under an `elect_one_sync()` guard (a single
+        # lane of warp 12), so `elect()` returns 1 here. Forward it to every MMA
+        # below instead of a hard-coded `1`, keeping the predicate
+        # `elect.sync`-derived (and self-protecting if that guard is widened).
+        var e = elect()
         if k < num_k_blocks:
             # QK^T MMA
             # wait for k load p0
@@ -1294,7 +1354,7 @@ struct MLAPrefillSparse[
                 k_p0_smem_desc,
                 Self.P_TMEM_ADDR,
                 c_scale=0,
-                elect=1,
+                elect=e,
             )
             mma_arrive_multicast[cta_group=Self.config.cta_group](
                 qk_ss_done[cur_buf].unsafe_ptr(),
@@ -1326,7 +1386,7 @@ struct MLAPrefillSparse[
                     k_p1_smem_desc,
                     Self.P_TMEM_ADDR,
                     c_scale=1,
-                    elect=1,
+                    elect=e,
                 )
             mma_arrive_multicast[cta_group=Self.config.cta_group](
                 qk_ts_done[cur_buf].unsafe_ptr(),
@@ -1400,14 +1460,14 @@ struct MLAPrefillSparse[
                 v_atom1_p0_desc,
                 Self.O_TMEM_ADDR,
                 c_scale=sv_p0_c_scale,
-                elect=1,
+                elect=e,
             )
             Self.SVMMAType.SS_P0MMAType.mma(
                 s_p0_smem_desc,
                 v_atom2_p0_desc,
                 UInt32(Self.O_TMEM_ADDR_ATOM2),
                 c_scale=sv_p0_c_scale,
-                elect=1,
+                elect=e,
             )
             mma_arrive_multicast[cta_group=Self.config.cta_group](
                 sv_p0_done[curr_buf].unsafe_ptr(),
@@ -1433,14 +1493,14 @@ struct MLAPrefillSparse[
                 v_atom1_p1_desc,
                 Self.O_TMEM_ADDR,
                 c_scale=1,
-                elect=1,
+                elect=e,
             )
             Self.SVMMAType.SS_P1MMAType.mma(
                 s_p1_smem_desc,
                 v_atom2_p1_desc,
                 UInt32(Self.O_TMEM_ADDR_ATOM2),
                 c_scale=1,
-                elect=1,
+                elect=e,
             )
             mma_arrive_multicast[cta_group=Self.config.cta_group](
                 sv_p1_done[curr_buf].unsafe_ptr(),
@@ -2594,6 +2654,7 @@ struct MLAPrefillSparse[
     @__llvm_arg_metadata(q_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(k_tma_op_fp8, `nvvm.grid_constant`)
     @__llvm_arg_metadata(v_tma_op_fp8, `nvvm.grid_constant`)
+    @__llvm_arg_metadata(o_tma_op, `nvvm.grid_constant`)
     @__llvm_metadata(`nvvm.cluster_dim`=StaticTuple[Int32, 3](2, 1, 1))
     @__llvm_metadata(`nvvm.minctasm`=SIMDSize(1))
     @__name(
@@ -2621,6 +2682,12 @@ struct MLAPrefillSparse[
             2,
             Self.v_tma_tile_shape_fp8,
             Self.v_tma_desc_shape_fp8,
+        ],
+        o_tma_op: TMATensorTile[
+            Self.output_dtype,
+            2,
+            Self.o_tile_shape,
+            Self.o_desc_shape,
         ],
         topk_lengths: TileTensor[DType.uint32, TopKLengthLayout, MutAnyOrigin],
         indices: TileTensor[DType.uint32, IndicesLayout, MutAnyOrigin],
@@ -2773,10 +2840,18 @@ struct MLAPrefillSparse[
                 Self.V_DEPTH_PER_CTA // O_RESCALE_CHUNK
             )
 
-            var s_smem_uint128_base = (
-                scores_ptr.bitcast[SIMD[Self.qkv_dtype, 8]]()
-                + (idx_in_wg % UInt32(64))
-                + UInt32(64) * ((idx_in_wg / UInt32(64)) * UInt32(8))
+            # Per-thread base bf16 element offset into the scores smem,
+            # matching the K-major SW128B layout the subsequent SV MMA
+            # expects. See phase1.cuh:166-167 — uint128 base =
+            # (idx%64) + 64*((idx/64)*8); ×8 converts uint128 units to bf16
+            # elements. Upper-half threads write the left half of S;
+            # lower-half threads write the right half.
+            var s_smem_bf16_elem_base = Int(
+                (
+                    (idx_in_wg % UInt32(64))
+                    + UInt32(512) * (idx_in_wg / UInt32(64))
+                )
+                * UInt32(8)
             )
 
             for k in range(num_k_blocks):
@@ -2817,7 +2892,7 @@ struct MLAPrefillSparse[
                     min_or_neg_inf[DType.float32]()
                 )
                 comptime for i in range(P_PER_THREAD):
-                    cur_pi_max = max(cur_pi_max, rebind[Float32](p[i]))
+                    cur_pi_max = max(cur_pi_max, p[i])
                 cur_pi_max = mul_ftz(cur_pi_max, scale_log2e)
 
                 named_barrier[Int32(WARPGROUP_SIZE)](Int32(0))
@@ -2848,9 +2923,7 @@ struct MLAPrefillSparse[
                     uninitialized=True
                 )
                 comptime for i in range(P_PER_THREAD):
-                    var d: Float32 = (
-                        rebind[Float32](p[i]) * scale_log2e - new_max
-                    )
+                    var d: Float32 = p[i] * scale_log2e - new_max
                     var ed: Float32 = exp2(d)
                     li = li + ed
                     s_bf16[i] = ed.cast[Self.qkv_dtype]()
@@ -2862,21 +2935,61 @@ struct MLAPrefillSparse[
                     ) & 1
                     sv_p1_done_ptr[prev_buf].wait(prev_phase)
 
-                comptime for i in range(P_PER_THREAD // 8):
-                    s_smem_uint128_base[i * 64] = SIMD[Self.qkv_dtype, 8](
-                        rebind[Scalar[Self.qkv_dtype]](s_bf16[i * 8 + 0]),
-                        rebind[Scalar[Self.qkv_dtype]](s_bf16[i * 8 + 1]),
-                        rebind[Scalar[Self.qkv_dtype]](s_bf16[i * 8 + 2]),
-                        rebind[Scalar[Self.qkv_dtype]](s_bf16[i * 8 + 3]),
-                        rebind[Scalar[Self.qkv_dtype]](s_bf16[i * 8 + 4]),
-                        rebind[Scalar[Self.qkv_dtype]](s_bf16[i * 8 + 5]),
-                        rebind[Scalar[Self.qkv_dtype]](s_bf16[i * 8 + 6]),
-                        rebind[Scalar[Self.qkv_dtype]](s_bf16[i * 8 + 7]),
-                    )
-
+                var o_chunk_prefetch = InlineArray[
+                    Scalar[DType.float32], O_RESCALE_CHUNK
+                ](uninitialized=True)
                 if k > 0 and should_scale_o:
                     tcgen05_fence_after()
-                    comptime for chunk_idx in range(NUM_O_RESCALE_CHUNKS):
+                    o_chunk_prefetch = tcgen05_ld[
+                        datapaths=32,
+                        bits=32,
+                        repeat=O_RESCALE_CHUNK,
+                        dtype=DType.float32,
+                        pack=False,
+                        width=O_RESCALE_CHUNK,
+                    ](UInt32(Self.O_TMEM_ADDR))
+
+                # Write S to scores smem as 8 bf16 per uint128, stride 64
+                # uint128 between writes--exactly the K-major SW128B layout
+                # the SS-MMA reads. Keep the packed 128-bit store: a plain
+                # SIMD[bf16, 8] store scalarizes into bank-conflicting
+                # half-word stores.
+                comptime for i in range(P_PER_THREAD // 8):
+                    var s_vec = SIMD[Self.qkv_dtype, 8](
+                        s_bf16[i * 8 + 0],
+                        s_bf16[i * 8 + 1],
+                        s_bf16[i * 8 + 2],
+                        s_bf16[i * 8 + 3],
+                        s_bf16[i * 8 + 4],
+                        s_bf16[i * 8 + 5],
+                        s_bf16[i * 8 + 6],
+                        s_bf16[i * 8 + 7],
+                    )
+                    st_shared_v4_b32_at_bf16_elem_off[out_dtype=Self.qkv_dtype](
+                        scores_ptr,
+                        s_smem_bf16_elem_base + i * 512,
+                        bitcast[DType.uint32, 4](s_vec),
+                    )
+
+                # Rescale O (in TMEM) if mi changed materially; chunk 0
+                # was prefetched above, chunks 1..N-1 load sequentially.
+                if k > 0 and should_scale_o:
+                    tcgen05_load_wait()
+                    var o_scaled_0 = InlineArray[
+                        Scalar[DType.float32], O_RESCALE_CHUNK
+                    ](uninitialized=True)
+                    comptime for j in range(O_RESCALE_CHUNK):
+                        o_scaled_0[j] = mul_ftz(
+                            o_chunk_prefetch[j],
+                            scale_for_old,
+                        )
+                    tcgen05_st[
+                        datapaths=32,
+                        bits=32,
+                        repeat=O_RESCALE_CHUNK,
+                        pack=False,
+                    ](UInt32(Self.O_TMEM_ADDR), o_scaled_0)
+                    comptime for chunk_idx in range(1, NUM_O_RESCALE_CHUNKS):
                         var o_chunk = tcgen05_ld[
                             datapaths=32,
                             bits=32,
@@ -2894,7 +3007,7 @@ struct MLAPrefillSparse[
                         ](uninitialized=True)
                         comptime for j in range(O_RESCALE_CHUNK):
                             o_scaled[j] = mul_ftz(
-                                rebind[Float32](o_chunk[j]),
+                                o_chunk[j],
                                 scale_for_old,
                             )
                         tcgen05_st[
@@ -2946,36 +3059,23 @@ struct MLAPrefillSparse[
             if not have_valid_indices:
                 output_scale = 1.0
 
-            var local_warp_idx_wg0 = UInt32(warp_idx)
-            var head_row_block = local_warp_idx_wg0 % UInt32(2)
-            var depth_col_block = local_warp_idx_wg0 // UInt32(2)
-
+            var head_row_block = UInt32(warp_idx) % UInt32(2)
+            var depth_col_block = UInt32(warp_idx) // UInt32(2)
             var local_lane = UInt32(lane_idx)
             var head_local = head_row_block * UInt32(32) + local_lane
-            var head_global = (
-                cta_id * UInt32(Self.NUM_Q_HEADS_PER_CTA) + head_local
-            )
-            var depth_col_start = depth_col_block * UInt32(Self.V_BMN_PER_ATOM)
 
-            var gmem_row_stride: Int = (
-                Self.config.num_q_heads * Self.config.v_depth
-            )
-            var gmem_row_offset_base: Int = (
-                Int(seq_idx) * gmem_row_stride
-                + Int(head_global) * Self.config.v_depth
-                + Int(depth_col_start)
-            )
+            comptime GROUP_STRIDE = Self.NUM_Q_HEADS_PER_CTA * 64
 
             comptime for atom_idx in range(Self.NUM_SV_ATOMS):
                 comptime atom_o_tmem_addr = (
                     Self.O_TMEM_ADDR + atom_idx * Self.V_BMN_PER_ATOM
                 )
-                comptime atom_gmem_depth_shift = (
-                    atom_idx * Self.V_DEPTH_PER_CTA
-                )
 
                 comptime for chunk in range(2):
                     comptime CHUNK = 64
+                    var col_group = (
+                        Int(depth_col_block) * 2 + atom_idx * 4 + chunk
+                    )
                     var c_chunk: InlineArray[Scalar[DType.float32], CHUNK]
                     c_chunk = tcgen05_ld[
                         datapaths=32,
@@ -2988,24 +3088,39 @@ struct MLAPrefillSparse[
                     tcgen05_load_wait()
 
                     comptime for i in range(CHUNK // 2):
-                        var v0_f32 = (
-                            rebind[Scalar[DType.float32]](c_chunk[2 * i])
-                            * output_scale
+                        var v0_f32 = c_chunk[2 * i] * output_scale
+                        var v1_f32 = c_chunk[2 * i + 1] * output_scale
+                        var v = SIMD[Self.qkv_dtype, 2](
+                            v0_f32.cast[Self.qkv_dtype](),
+                            v1_f32.cast[Self.qkv_dtype](),
                         )
-                        var v1_f32 = (
-                            rebind[Scalar[DType.float32]](c_chunk[2 * i + 1])
-                            * output_scale
+                        var smem_offset = (
+                            col_group * GROUP_STRIDE
+                            + Int(head_local) * 64
+                            + i * 2
                         )
-                        var v = SIMD[Self.output_dtype, 2](
-                            v0_f32.cast[Self.output_dtype](),
-                            v1_f32.cast[Self.output_dtype](),
-                        )
-                        var gmem_offset = (
-                            gmem_row_offset_base
-                            + atom_gmem_depth_shift
-                            + (chunk * (CHUNK // 2) + i) * 2
-                        )
-                        (output_gmem_ptr + gmem_offset).store[width=2](v)
+                        (o_ptr + smem_offset).store[width=2](v)
+
+            named_barrier[Int32(WARPGROUP_SIZE)](Int32(0))
+            if warp_idx == 0:
+                if elect_one_sync():
+                    fence_async_view_proxy()
+                    var o_smem_tile = TileTensor(
+                        o_ptr.bitcast[Scalar[Self.output_dtype]](),
+                        row_major[
+                            Self.NUM_Q_HEADS_PER_CTA, Self.config.v_depth
+                        ](),
+                    )
+                    o_tma_op.async_store(
+                        o_smem_tile,
+                        (
+                            0,
+                            Int(seq_idx) * Self.config.num_q_heads
+                            + Int(cta_id) * Self.NUM_Q_HEADS_PER_CTA,
+                        ),
+                    )
+                    cp_async_bulk_commit_group()
+            cp_async_bulk_wait_group[0]()
 
             if warp_idx == 0:
                 tcgen05_dealloc[Self.config.cta_group](
@@ -3297,11 +3412,17 @@ def mla_prefill_sparse[
         tile_height=config.B_TOPK // 2,
     ](ctx)
 
-    # Output is laid out as [num_q_rows, num_q_heads, v_depth]. Each CTA
-    # Output is written via direct gmem store from WG0's epilogue, not
-    # TMA — `RaggedTMA3DTile`'s box-along-dim-2 stride is `num_heads *
-    # v_depth`, which writes BM SEQ positions per call, but our cluster
-    # produces 1 seq * BM heads, the wrong shape for that descriptor.
+    # Output viewed 2D as [num_q_rows * num_q_heads, v_depth] so per-cluster
+    # TMA stores address the right head range with a single [row, col] coord.
+    var output_2d = TileTensor(
+        output.ptr,
+        row_major(num_q_rows * config.num_q_heads, config.v_depth),
+    )
+    o_tma_op = create_tensor_tile[
+        Index(config.num_q_heads // config.cta_group, config.v_depth),
+        swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE,
+        __desc_shape=Index(config.num_q_heads // config.cta_group, 64),
+    ](ctx, output_2d)
 
     comptime assert type_of(topk_lengths).flat_rank == 1
     comptime assert type_of(indices).flat_rank == 1
@@ -3320,6 +3441,7 @@ def mla_prefill_sparse[
         q_tma_op,
         k_tma_op,
         v_tma_op,
+        o_tma_op,
         topk_lengths,
         indices,
         kv_operand,
@@ -3397,6 +3519,16 @@ def mla_prefill_sparse_fp8[
         tma_dtype=DType.int64,
     ](ctx)
 
+    var output_2d_fp8 = TileTensor(
+        output.ptr,
+        row_major(num_q_rows * config.num_q_heads, config.v_depth),
+    )
+    o_tma_op_fp8 = create_tensor_tile[
+        Index(config.num_q_heads // config.cta_group, config.v_depth),
+        swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE,
+        __desc_shape=Index(config.num_q_heads // config.cta_group, 64),
+    ](ctx, output_2d_fp8)
+
     comptime assert type_of(topk_lengths).flat_rank == 1
     comptime assert type_of(indices).flat_rank == 1
     comptime kernel = MLAPrefillSparse[
@@ -3417,6 +3549,7 @@ def mla_prefill_sparse_fp8[
         q_tma_op,
         k_tma_op_fp8,
         v_tma_op_fp8,
+        o_tma_op_fp8,
         topk_lengths,
         indices,
         kv_operand,

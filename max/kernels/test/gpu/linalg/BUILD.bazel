@@ -49,6 +49,7 @@ _EXTRA_CONSTRAINTS = {
     "test_grouped_matmul_small_k.mojo": ["//:b200_gpu"],
     "test_block_scaled_mma_amd.mojo": ["//:mi355_gpu"],
     "test_block_scaled_mma_amd_pack_k.mojo": ["//:mi355_gpu"],
+    "test_mfma_32x32x64_f8f6f4.mojo": ["//:mi355_gpu"],
     "test_mxfp4_moe_matmul_amd_routed.mojo": ["//:mi355_gpu"],
     "test_matmul_amd.mojo": ["//:amd_gpu"],  # TODO: Disabled FIXME: KERN-1377
     "test_ping_pong.mojo": ["//:amd_gpu"],
@@ -72,8 +73,8 @@ _EXTRA_CONSTRAINTS = {
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     "test_mxfp4_dequant_matmul_amd.mojo": ["//:amd_gpu"],
-    "test_mxfp4_dequant_grouped_matmul_amd.mojo": ["//:amd_gpu"],
     "test_mxfp4_matmul_amd.mojo": ["//:amd_gpu"],
+    "test_mxfp4_matmul_amd_preb.mojo": ["//:mi355_gpu"],
     "test_mxfp4_quant_amd.mojo": ["//:amd_gpu"],
     "test_mxfp4_grouped_matmul_amd.mojo": ["//:amd_gpu"],
     "test_mxfp4_grouped_matmul_amd_kernels.mojo": ["//:amd_gpu"],
@@ -161,6 +162,7 @@ _B200_SMOKE_TESTS = [
 
 _B200_TESTS = [
     "test_bulk_mma_pair_cta_sm100.mojo",
+    "test_mma_ws_partial_sm100.mojo",
     "test_tma_mma_sm100.mojo",
     "test_tma_mma_sm100_fp8.mojo",
     "test_tma_mma_sm100_fp8_cast.mojo",
@@ -212,6 +214,7 @@ _B200_TESTS = [
     "test_matmul_sm100_1sm_fp8_normal_epilogue.mojo",
     "test_matmul_sm100_1sm_bf16_normal_epilogue.mojo",
     "test_matmul_sm100_block_scaled_mxfp8_small_bn.mojo",
+    "test_block_scaled_matmul_mxfp8_dispatch.mojo",
     "test_matmul_sm100_block_scaled_fp4_small_bn.mojo",
     "test_matmul_sm100_block_scaled_fp4_small_bn_2sm.mojo",
     "test_matmul_sm100_1sm_bf16_ctype_fp8.mojo",
@@ -221,6 +224,8 @@ _B200_TESTS = [
     "test_matmul_sm100_1sm_bf16_rmsnorm.mojo",
     "test_matmul_sm100_1sm_bf16_bias.mojo",
     "test_matmul_sm100_2sm_bf16_bias.mojo",
+    "test_matmul_sm100_fused_bias_residual_dispatch.mojo",
+    "test_small_mn_gemms_row_oob.mojo",
 ]
 
 _GPU_MEMORY = {
@@ -228,13 +233,13 @@ _GPU_MEMORY = {
     "test_grouped_matmul.mojo": "16",
     "test_block_scaled_mma_amd.mojo": "1",
     "test_block_scaled_mma_amd_pack_k.mojo": "1",
+    "test_mfma_32x32x64_f8f6f4.mojo": "1",
     "test_mxfp4_moe_matmul_amd_routed.mojo": "8",
     "test_gemv2.mojo": "2",
     "test_matmul.mojo": "3",
     "test_matmul_amd.mojo": "2",
     "test_matmul_dispatching_amd.mojo": "8",
     "test_mxfp4_matmul_amd.mojo": "2",
-    "test_mxfp4_dequant_grouped_matmul_amd.mojo": "2",
     "test_matmul_custom.mojo": "4",
     "test_matmul_sm90_bf16_multicast.mojo": "2",
     "test_matmul_sm90_deepseek_scheduler.mojo": "1",
@@ -262,6 +267,7 @@ _GPU_MEMORY = {
     "test_matmul_sm100_1sm_fp8_normal_epilogue.mojo": "3",
     "test_matmul_sm100_1sm_bf16_normal_epilogue.mojo": "3",
     "test_matmul_sm100_block_scaled_mxfp8_small_bn.mojo": "3",
+    "test_block_scaled_matmul_mxfp8_dispatch.mojo": "4",
     "test_matmul_sm100_block_scaled_fp4_small_bn.mojo": "3",
     "test_matmul_sm100_block_scaled_fp4_small_bn_2sm.mojo": "3",
     "test_matmul_sm100_1sm_bf16_ctype_fp8.mojo": "3",
@@ -272,6 +278,8 @@ _GPU_MEMORY = {
     "test_ping_pong_shapes.mojo": "2",
     "test_matmul_sm100_1sm_bf16_bias.mojo": "3",
     "test_matmul_sm100_2sm_bf16_bias.mojo": "3",
+    "test_matmul_sm100_fused_bias_residual_dispatch.mojo": "3",
+    "test_small_mn_gemms_row_oob.mojo": "3",
 }
 
 [
@@ -427,6 +435,59 @@ mojo_test(
     ],
 )
 
+# S5 byte-exact test for the fused MXFP8 SwiGLU dispatch (in-tile
+# fused epilogue end-to-end vs unfused reference chain). gpu-memory:8
+# matches the NVFP4 dispatch test sibling — MXFP8 stores 2× the bytes
+# per output element than packed NVFP4, so the test's working set
+# is at least as large.
+mojo_test(
+    name = "test_grouped_matmul_swiglu_mxfp8_dispatch.mojo.test",
+    size = "large",
+    srcs = ["test_grouped_matmul_swiglu_mxfp8_dispatch.mojo"],
+    exec_properties = {
+        "test.resources:gpu-memory": "8",
+    },
+    tags = ["gpu"],
+    target_compatible_with = [
+        "//:has_gpu",
+        "//:b200_gpu",
+    ],
+    deps = [
+        "//max:internal_utils",
+        "//max:linalg",
+        "//max:nn",
+        "//max:shmem",
+        "//max:structured_kernels",
+        "@mojo//:std",
+        "@mojo//:test_utils",
+    ],
+)
+
+# S1 byte-exact test for the standalone MXFP8 fused-silu reference kernel.
+# Same deps as the NVFP4 interleave test (kernel lives in //max:shmem).
+mojo_test(
+    name = "test_fused_silu_mxfp8_interleave.mojo.test",
+    size = "large",
+    srcs = ["test_fused_silu_mxfp8_interleave.mojo"],
+    exec_properties = {
+        "test.resources:gpu-memory": "4",
+    },
+    tags = ["gpu"],
+    target_compatible_with = [
+        "//:has_gpu",
+        "//:b200_gpu",
+    ],
+    deps = [
+        "//max:internal_utils",
+        "//max:linalg",
+        "//max:nn",
+        "//max:shmem",
+        "//max:structured_kernels",
+        "@mojo//:std",
+        "@mojo//:test_utils",
+    ],
+)
+
 # Explicit rule for PDL race test - needs MODULAR_DISABLE_VENDOR_FALLBACK to avoid cuBLAS fallback
 mojo_test(
     name = "test_matmul_pdl_race.mojo.test",
@@ -474,6 +535,8 @@ mojo_test(
             "test_matmul_pdl_race.mojo",
             "test_grouped_matmul_swiglu_nvfp4_interleave.mojo",
             "test_grouped_matmul_swiglu_nvfp4_dispatch.mojo",
+            "test_fused_silu_mxfp8_interleave.mojo",
+            "test_grouped_matmul_swiglu_mxfp8_dispatch.mojo",
         ],
     )
 ]

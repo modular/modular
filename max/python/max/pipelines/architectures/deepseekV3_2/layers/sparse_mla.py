@@ -24,10 +24,13 @@ from max.graph import (
     ops,
 )
 from max.nn.attention.mask_config import MHAMaskVariant
-from max.nn.attention.multi_latent_attention import MLAPrefillMetadata
+from max.nn.attention.multi_latent_attention import (
+    MLAPrefillMetadata,
+)
 from max.nn.attention.multi_latent_attention_fp8 import (
     LatentAttentionWithRopeFp8,
 )
+from max.nn.comm import Allreduce
 from max.nn.kernels import (
     mla_decode_graph,
     mla_prefill_decode_graph,
@@ -96,15 +99,15 @@ class SparseLatentAttentionWithRopeFp8(LatentAttentionWithRopeFp8):
             index_topk=index_topk,
             q_lora_rank=q_lora_rank,
             devices=self.devices,
-            activation_quant_config=self.quant_config,
-            weight_quant_config=self.quant_config,
+            quant_config=self.quant_config,
+            k_norm_dtype=norm_dtype,
         )
 
     @LatentAttentionWithRopeFp8.sharding_strategy.setter  # type: ignore[attr-defined]
     def sharding_strategy(self, strategy: ShardingStrategy) -> None:
-        """Extends the base setter so indexer weights participate in replicate DP."""
+        """Extends the base setter so the indexer participates in sharding."""
         LatentAttentionWithRopeFp8.sharding_strategy.fset(self, strategy)  # type: ignore[attr-defined]
-        if strategy.is_replicate:
+        if strategy.is_replicate or strategy.is_tensor_parallel:
             rep = ShardingStrategy.replicate(strategy.num_devices)
             for linear in (
                 self.indexer.wq_b,
@@ -148,6 +151,7 @@ class SparseLatentAttentionWithRopeFp8(LatentAttentionWithRopeFp8):
             "scale": self.scale,
             "v_head_dim": self.v_head_dim,
             "quant_config": self.quant_config,
+            "scale_granularity_override": self._b_scale_granularity,
         }
 
         w_k, w_k_scale = self.w_k
@@ -181,6 +185,10 @@ class SparseLatentAttentionWithRopeFp8(LatentAttentionWithRopeFp8):
             assert kv_collection.attention_dispatch_metadata is not None
             attn_kwargs["scalar_args"] = (
                 kv_collection.attention_dispatch_metadata
+            )
+            assert kv_collection.mla_num_partitions is not None
+            attn_kwargs["num_partitions_scalar"] = (
+                kv_collection.mla_num_partitions
             )
 
         sparse_kw: dict[str, Any] = {}
@@ -294,22 +302,30 @@ class SparseLatentAttentionWithRopeFp8(LatentAttentionWithRopeFp8):
     def shard(  # type: ignore[override]
         self, devices: Iterable[DeviceRef]
     ) -> list[SparseLatentAttentionWithRopeFp8]:
-        """Replicate full weights across devices (data parallel)."""
+        """Creates sharded views of this module across devices.
+
+        Supports `replicate` or `tensor_parallel` sharding strategies.
+        """
         if not self.sharding_strategy:
             raise ValueError(
                 "SparseLatentAttentionWithRopeFp8 cannot be sharded because no "
                 "sharding strategy was provided."
             )
-        if self.sharding_strategy.is_tensor_parallel:
+        if not (
+            self.sharding_strategy.is_replicate
+            or self.sharding_strategy.is_tensor_parallel
+        ):
             raise ValueError(
-                "SparseLatentAttentionWithRopeFp8 only supports replicate "
-                "sharding for data parallelism."
+                "Only replicate or tensor parallel sharding strategies are "
+                "supported for SparseLatentAttentionWithRopeFp8"
             )
-        if not self.sharding_strategy.is_replicate:
-            raise ValueError(
-                "Only replicate sharding is supported for "
-                "SparseLatentAttentionWithRopeFp8"
-            )
+
+        is_tp = self.sharding_strategy.is_tensor_parallel
+        local_heads = (
+            self.n_heads // self.sharding_strategy.num_devices
+            if is_tp
+            else self.n_heads
+        )
 
         q_a_proj_shards = self.q_a_proj.shard(devices)
         q_a_proj_scale_shards = self.q_a_proj_scale.shard(devices)
@@ -340,7 +356,7 @@ class SparseLatentAttentionWithRopeFp8(LatentAttentionWithRopeFp8):
         for shard_idx, device in enumerate(devices):
             replica = SparseLatentAttentionWithRopeFp8(
                 rope=self.rope,
-                num_attention_heads=self.n_heads,
+                num_attention_heads=local_heads,
                 num_key_value_heads=self.num_key_value_heads,
                 hidden_size=self.hidden_size,
                 kv_params=self.kv_params,
@@ -489,3 +505,96 @@ class DataParallelSparseLatentAttentionWithRopeFp8(
                 )
             )
         return outs
+
+
+class TensorParallelSparseLatentAttentionWithRopeFp8(
+    SparseLatentAttentionWithRopeFp8
+):
+    """Tensor-parallel sparse FP8 MLA."""
+
+    def __init__(self, *, skip_allreduce: bool = False, **kwargs) -> None:
+        super().__init__(**kwargs)
+        if not self.devices:
+            raise ValueError("devices cannot be None or empty")
+
+        num_devices = len(self.devices)
+        self.skip_allreduce = skip_allreduce
+        self.sharding_strategy = ShardingStrategy.tensor_parallel(num_devices)
+        self.allreduce = Allreduce(num_devices)
+        self.list_of_attentions = self.shard(self.devices)
+
+    def create_mla_prefill_metadata(  # type: ignore[override]
+        self,
+        input_row_offsets_: list[TensorValue],
+        kv_collections: list[PagedCacheValues],
+    ) -> list[MLAPrefillMetadata]:
+        """Creates per-device FP8 MLA prefill metadata for tensor-parallel execution."""
+        multi_mla_prefill_metadata: list[MLAPrefillMetadata] = []
+
+        for input_row_offsets, kv_collection in zip(
+            input_row_offsets_, kv_collections, strict=True
+        ):
+            multi_mla_prefill_metadata.append(
+                super().create_mla_prefill_metadata(
+                    input_row_offsets, kv_collection
+                )
+            )
+
+        return multi_mla_prefill_metadata
+
+    def __call__(  # type: ignore[override]
+        self,
+        layer_idx: TensorValue,
+        xs: Sequence[TensorValue],
+        signal_buffers: Sequence[BufferValue],
+        kv_collections: Sequence[PagedCacheValues],
+        indexer_kv_collections: Sequence[PagedCacheValues],
+        freqs_cis: list[TensorValue],
+        input_row_offsets: Sequence[TensorValue],
+        mla_prefill_metadata: list[MLAPrefillMetadata] | None = None,
+    ) -> list[TensorValue]:
+        if not self.devices:
+            raise ValueError("devices cannot be None or empty")
+
+        n = len(self.devices)
+        if not (
+            len(xs)
+            == len(kv_collections)
+            == len(indexer_kv_collections)
+            == len(freqs_cis)
+            == len(input_row_offsets)
+            == n
+        ):
+            raise ValueError(
+                "xs, kv_collections, indexer_kv_collections, freqs_cis, and "
+                f"input_row_offsets must all have length equal to number of devices "
+                f"({n})"
+            )
+
+        outs: list[TensorValue] = []
+        for i in range(n):
+            mla_prefill_metadata_i: MLAPrefillMetadata | None
+            if (
+                mla_prefill_metadata is not None
+                and len(mla_prefill_metadata) == n
+            ):
+                mla_prefill_metadata_i = mla_prefill_metadata[i]
+            else:
+                mla_prefill_metadata_i = None
+
+            outs.append(
+                self.list_of_attentions[i](
+                    layer_idx=layer_idx,
+                    x=xs[i],
+                    kv_collection=kv_collections[i],
+                    indexer_kv_collection=indexer_kv_collections[i],
+                    freqs_cis=freqs_cis[i],
+                    input_row_offsets=input_row_offsets[i],
+                    mla_prefill_metadata=mla_prefill_metadata_i,
+                )
+            )
+
+        if self.skip_allreduce:
+            return outs
+
+        return self.allreduce(inputs=outs, signal_buffers=signal_buffers)

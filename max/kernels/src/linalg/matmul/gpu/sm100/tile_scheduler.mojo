@@ -120,9 +120,9 @@ struct TileScheduler[
         self.log_cluster_dim_m = FastDiv[DType.uint32](Int(cluster_dim[0]))
         self.log_cluster_dim_n = FastDiv[DType.uint32](Int(cluster_dim[1]))
         self.log_cluster_dim_k = FastDiv[DType.uint32](Int(cluster_dim[2]))
-        self.clc_response = clc_response_ptr
-        self.full_mbar = full_mbar_ptr
-        self.empty_mbar = empty_mbar_ptr
+        self.clc_response = clc_response_ptr.as_unsafe_any_origin()
+        self.full_mbar = full_mbar_ptr.as_unsafe_any_origin()
+        self.empty_mbar = empty_mbar_ptr.as_unsafe_any_origin()
 
     @always_inline
     @staticmethod

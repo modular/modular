@@ -1717,7 +1717,7 @@ def test_conv_gpu_residual_with_bias[
     @always_inline
     @__copy_capture(out_tt)
     def add_bias_epilogue[
-        _dtype: DType, _rank: Int, _width: Int, _alignment: Int = 1
+        _dtype: DType, _rank: Int, _width: SIMDSize, _alignment: Int = 1
     ](coords: IndexList[_rank], val: SIMD[_dtype, _width]):
         var coord = Coord(coords[0], coords[1], coords[2], coords[3])
         var existing = out_tt.load[

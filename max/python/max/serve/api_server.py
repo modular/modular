@@ -24,19 +24,14 @@ from collections.abc import AsyncGenerator, Callable
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
-from fastapi import FastAPI, Response
+from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
-from max.pipelines.core import TTSContext
-from max.pipelines.lib import (
-    PIPELINE_REGISTRY,
-    AudioGenerationConfig,
-    PipelineConfig,
-)
+from max.pipelines.context import BaseContext
+from max.pipelines.lib import PIPELINE_REGISTRY, PipelineConfig
 from max.pipelines.modeling.types import (
-    AudioGenerationOutput,
-    BaseContext,
     PipelineOutput,
     PipelinesFactory,
     PipelineTask,
@@ -45,10 +40,7 @@ from max.pipelines.modeling.types import (
 from max.serve.config import APIType, MetricRecordingMethod, Settings
 from max.serve.media import GeneratedMediaStore
 from max.serve.pipelines.general_handler import GeneralPipelineHandler
-from max.serve.pipelines.llm import (
-    AudioGeneratorPipeline,
-    TokenGeneratorPipeline,
-)
+from max.serve.pipelines.llm import TokenGeneratorPipeline
 from max.serve.pipelines.model_worker import start_model_worker
 from max.serve.pipelines.reset_prefix_cache import ResetPrefixCacheFrontend
 from max.serve.pipelines.telemetry_worker import start_telemetry_consumer
@@ -61,9 +53,9 @@ from max.serve.router import (
     openresponses_routes,
     sagemaker_routes,
 )
+from max.serve.schemas.openai import Error, ErrorResponse
 from max.serve.telemetry.common import send_telemetry_log
 from max.serve.telemetry.metrics import METRICS
-from max.serve.worker_interface import ModelWorkerProxy
 from max.serve.worker_interface.lora_queue import LoRAQueue
 from max.serve.worker_interface.zmq_interface import ZmqModelWorkerInterface
 from max.serve.worker_interface.zmq_queue import generate_zmq_ipc_path
@@ -98,7 +90,7 @@ class ServingTokenGeneratorSettings:
     model_factory: PipelinesFactory  # type: ignore
     pipeline_config: PipelineConfig
     tokenizer: PipelineTokenizer[Any, Any, Any]
-    pipeline_task: PipelineTask = PipelineTask.TEXT_GENERATION
+    task: PipelineTask = PipelineTask.TEXT_GENERATION
     reasoning_parser_name: str | None = None
     temperature: float | None = None
     thinking_temperature: float | None = None
@@ -149,22 +141,15 @@ async def lifespan(
         # start model worker
 
         override_architecture: str | None = None
-        if serving_settings.pipeline_task == PipelineTask.AUDIO_GENERATION:
-            if isinstance(
-                serving_settings.pipeline_config, AudioGenerationConfig
-            ):
-                override_architecture = (
-                    serving_settings.pipeline_config.audio_decoder
-                )
 
         model_worker_interface = ZmqModelWorkerInterface[
             BaseContext, PipelineOutput
         ](
-            serving_settings.pipeline_task,
+            serving_settings.task,
             PIPELINE_REGISTRY.retrieve_context_type(
                 serving_settings.pipeline_config,
                 override_architecture=override_architecture,
-                task=serving_settings.pipeline_task,
+                task=serving_settings.task,
             ),
         )
         model_worker = await exit_stack.enter_async_context(
@@ -205,15 +190,6 @@ async def lifespan(
                 lora_queue=lora_queue,
                 model_worker=model_worker,
             ),
-            PipelineTask.AUDIO_GENERATION: lambda: AudioGeneratorPipeline(
-                model_name=serving_settings.pipeline_config.models.model_name,
-                tokenizer=serving_settings.tokenizer,
-                lora_queue=lora_queue,
-                model_worker=cast(
-                    ModelWorkerProxy[TTSContext, AudioGenerationOutput],
-                    model_worker,
-                ),
-            ),
             # Pixel generation uses only the OpenResponses API via GeneralPipelineHandler
             PipelineTask.PIXEL_GENERATION: lambda: GeneralPipelineHandler(
                 model_name=serving_settings.pipeline_config.models.model_name,
@@ -221,7 +197,7 @@ async def lifespan(
                 model_worker=model_worker,
                 lora_queue=lora_queue,
             ),
-        }[serving_settings.pipeline_task]()
+        }[serving_settings.task]()
 
         # Store pipeline (may be GeneralPipelineHandler or modality-specific wrapper)
         # Legacy API routes (OpenAI, KServe, SageMaker) use modality-specific wrappers
@@ -233,7 +209,7 @@ async def lifespan(
         # Also store as handler for OpenResponses API route compatibility
         # For pixel generation, this is the same as pipeline
         # For other tasks, we also create a separate handler instance
-        if serving_settings.pipeline_task == PipelineTask.PIXEL_GENERATION:
+        if serving_settings.task == PipelineTask.PIXEL_GENERATION:
             app.state.handler = pipeline
         else:
             app.state.handler = GeneralPipelineHandler(
@@ -276,6 +252,48 @@ def make_metrics_app() -> Callable[..., Any]:
 
     disable_created_metrics()
     return make_asgi_app()
+
+
+_OPENAI_ERROR_TYPES: dict[int, str] = {
+    400: "invalid_request_error",
+    401: "authentication_error",
+    403: "permission_error",
+    404: "not_found_error",
+    409: "conflict_error",
+    422: "invalid_request_error",
+    429: "rate_limit_error",
+}
+
+
+def _openai_error_body(status_code: int, message: str) -> dict[str, Any]:
+    error_type = _OPENAI_ERROR_TYPES.get(
+        status_code,
+        "invalid_request_error" if status_code < 500 else "api_error",
+    )
+    return ErrorResponse(
+        error=Error(
+            code=str(status_code), message=message, param="", type=error_type
+        )
+    ).model_dump()
+
+
+async def _openai_http_exception_handler(
+    request: Request, exc: Exception
+) -> JSONResponse:
+    assert isinstance(exc, HTTPException)
+    return JSONResponse(
+        status_code=exc.status_code,
+        content=_openai_error_body(exc.status_code, str(exc.detail)),
+        headers=getattr(exc, "headers", None),
+    )
+
+
+async def _openai_validation_exception_handler(
+    request: Request, exc: Exception
+) -> JSONResponse:
+    return JSONResponse(
+        status_code=422, content=_openai_error_body(422, str(exc))
+    )
 
 
 def fastapi_app(
@@ -352,6 +370,11 @@ def fastapi_app(
 
     app.state.settings = settings
     register_request(app)
+
+    app.add_exception_handler(HTTPException, _openai_http_exception_handler)
+    app.add_exception_handler(
+        RequestValidationError, _openai_validation_exception_handler
+    )
 
     return app
 

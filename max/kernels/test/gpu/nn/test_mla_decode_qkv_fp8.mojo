@@ -42,7 +42,6 @@ from layout import (
     RuntimeLayout,
     TileTensor,
     UNKNOWN_VALUE,
-    lt_to_tt,
     row_major,
 )
 from nn.attention.gpu.mha import mha_gpu_naive
@@ -293,7 +292,7 @@ def test[
         seq_len,
         ctx,
     )
-    var scalar_args_buf_lt = mla_args.gpu_layout_tensor()
+    var scalar_args_buf_tt = mla_args.gpu_tile_tensor()
 
     @parameter
     @always_inline
@@ -301,29 +300,29 @@ def test[
         q_fp8_tt,
         k_fp8_tt,
         out_tt,
-        scalar_args_buf_lt,
+        scalar_args_buf_tt,
     )
     def kernel_launch(ctx: DeviceContext) raises:
         comptime config = MHAConfig[q_type](num_heads, depth)
         comptime if mla_mask_type == MLAMaskType.CAUSAL:
             flare_mla_decoding[config=config](
-                out_tt.as_any_origin(),
+                out_tt.as_unsafe_any_origin(),
                 q_fp8_tt,
                 k_fp8_tt,
                 CausalMask(),
                 scale,
                 ctx,
-                lt_to_tt(scalar_args_buf_lt),
+                scalar_args_buf_tt,
             )
         elif mla_mask_type == MLAMaskType.NO_MASK:
             flare_mla_decoding[config=config](
-                out_tt.as_any_origin(),
+                out_tt.as_unsafe_any_origin(),
                 q_fp8_tt,
                 k_fp8_tt,
                 NullMask(),
                 scale,
                 ctx,
-                lt_to_tt(scalar_args_buf_lt),
+                scalar_args_buf_tt,
             )
 
     kernel_launch(ctx)
@@ -355,10 +354,13 @@ def test[
 
     # Create BF16 K operand for reference
     var k_bf16_operand = LayoutTensorMHAOperand(
-        LayoutTensor[output_type, k_layout, MutAnyOrigin](
-            k_bf16_device.ptr,
-            RuntimeLayout[k_layout].row_major(
-                k_bf16_device.runtime_layout.shape.value.canonicalize()
+        TileTensor(
+            k_bf16_device.ptr.as_unsafe_any_origin(),
+            row_major(
+                Int(batch_size),
+                Int(num_keys),
+                Idx[kv_num_heads],
+                Idx[depth],
             ),
         )
     )
@@ -531,7 +533,7 @@ def bench[
         seq_len,
         ctx,
     )
-    var scalar_args_buf_lt = mla_args.gpu_layout_tensor()
+    var scalar_args_buf_tt = mla_args.gpu_tile_tensor()
 
     @parameter
     @always_inline
@@ -539,18 +541,18 @@ def bench[
         q_fp8_tt,
         k_fp8_tt,
         out_tt,
-        scalar_args_buf_lt,
+        scalar_args_buf_tt,
     )
     def kernel_launch(ctx: DeviceContext) raises:
         comptime config = MHAConfig[q_type](num_heads, depth)
         flare_mla_decoding[config=config](
-            out_tt.as_any_origin(),
+            out_tt.as_unsafe_any_origin(),
             q_fp8_tt,
             k_fp8_tt,
             NullMask(),
             scale,
             ctx,
-            lt_to_tt(scalar_args_buf_lt),
+            scalar_args_buf_tt,
         )
 
     comptime nrun = 200
@@ -788,7 +790,7 @@ def test_sw[
         seq_len,
         ctx,
     )
-    var scalar_args_buf_lt = mla_args.gpu_layout_tensor()
+    var scalar_args_buf_tt = mla_args.gpu_tile_tensor()
 
     @parameter
     @always_inline
@@ -796,18 +798,18 @@ def test_sw[
         q_fp8_tt,
         k_fp8_tt,
         out_tt,
-        scalar_args_buf_lt,
+        scalar_args_buf_tt,
     )
     def kernel_launch(ctx: DeviceContext) raises:
         comptime config = MHAConfig[q_type](num_heads, depth)
         flare_mla_decoding[config=config](
-            out_tt.as_any_origin(),
+            out_tt.as_unsafe_any_origin(),
             q_fp8_tt,
             k_fp8_tt,
             SlidingWindowCausalMask[window_size](),
             scale,
             ctx,
-            lt_to_tt(scalar_args_buf_lt),
+            scalar_args_buf_tt,
         )
 
     kernel_launch(ctx)
@@ -833,10 +835,13 @@ def test_sw[
     )
 
     var k_bf16_operand = LayoutTensorMHAOperand(
-        LayoutTensor[output_type, k_layout, MutAnyOrigin](
-            k_bf16_device.ptr,
-            RuntimeLayout[k_layout].row_major(
-                k_bf16_device.runtime_layout.shape.value.canonicalize()
+        TileTensor(
+            k_bf16_device.ptr.as_unsafe_any_origin(),
+            row_major(
+                Int(batch_size),
+                Int(num_keys),
+                Idx[kv_num_heads],
+                Idx[depth],
             ),
         )
     )
@@ -964,6 +969,44 @@ def main() raises:
             test_decoding[1, MLAMaskType.NO_MASK](ctx, 1, 9600)
             test_decoding[1, MLAMaskType.NO_MASK](ctx, 1, 32768)
             test_decoding[1, MLAMaskType.NO_MASK](ctx, 1, 65536)
+
+            # Two-wave split-K coverage (num_heads=16 latency-bound heuristic):
+            # bs=4 now dispatches np=128 and bs=8 np=64 across this band. Verify
+            # split-K correctness at the elevated partition counts the
+            # two-wave heuristic selects (the bs=1 cases above only exercise
+            # the unchanged bs=1 path). num_heads=16 only — that is the path
+            # the two-wave heuristic touches.
+            print("=== Two-wave split-K coverage (bs=4/8, num_heads=16) ===")
+            test[
+                MLAMaskType.NO_MASK,
+                DType.float8_e4m3fn,
+                DType.float8_e4m3fn,
+                DType.bfloat16,
+                576,
+                16,
+                group=16,
+                batch_size=4,
+            ](1, 40960, ctx)
+            test[
+                MLAMaskType.CAUSAL,
+                DType.float8_e4m3fn,
+                DType.float8_e4m3fn,
+                DType.bfloat16,
+                576,
+                16,
+                group=16,
+                batch_size=4,
+            ](1, 73728, ctx)
+            test[
+                MLAMaskType.NO_MASK,
+                DType.float8_e4m3fn,
+                DType.float8_e4m3fn,
+                DType.bfloat16,
+                576,
+                16,
+                group=16,
+                batch_size=8,
+            ](1, 32768, ctx)
 
             # fold-path configs.  num_q_heads * q_len <= BM(64) and
             # q_len > 1 triggers fold_q=True in the dispatcher.  BM=64 packs

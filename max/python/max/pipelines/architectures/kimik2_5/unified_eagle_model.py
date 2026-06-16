@@ -33,12 +33,7 @@ from max.nn.kernels import (
     inplace_memcpy,
     wait_host_value_with_dep,
 )
-from max.nn.kv_cache import (
-    KVCacheInputsPerDevice,
-    KVCacheParamInterface,
-    KVCacheParams,
-    PagedCacheValues,
-)
+from max.nn.kv_cache import MultiKVCacheParams, PagedCacheValues
 from max.nn.layer import Module
 from max.nn.sampling.rejection_sampler import (
     AcceptanceSampler,
@@ -453,6 +448,7 @@ class Eagle3KimiK25Unified(Module):
                 kv,
                 max_lengths=max_lengths,
                 attention_dispatch_metadata=kv.draft_attention_dispatch_metadata,
+                mla_num_partitions=kv.draft_mla_num_partitions,
             )
             for kv, max_lengths in zip(
                 draft_kv_collections, new_max_lengths, strict=True
@@ -516,18 +512,19 @@ class Eagle3KimiK25Unified(Module):
         )
 
     def input_types(
-        self,
-        kv_params: KVCacheParamInterface,
-        draft_kv_params: KVCacheParams | None = None,
+        self, kv_params: MultiKVCacheParams
     ) -> tuple[TensorType | BufferType, ...]:
         """Input types for the Eagle3 unified graph.
 
+        ``kv_params`` is the unified ``{"target", "draft"}`` tree; the draft
+        leaf carries its own blocks and dispatch metadata.
+
         Order: tokens, image_embeddings_per_dev, image_token_indices_per_dev,
                device_offsets, host_offsets, return_n_logits,
-               data_parallel_splits, signal_buffers, target_kv_cache,
-               batch_context_lengths, target_ep_inputs, draft_tokens,
-               draft_kv_blocks_per_device, seed, temperature, top_k,
-               max_k, top_p, min_top_p, in_thinking_phase.
+               data_parallel_splits, signal_buffers, kv_cache_tree (target then
+               draft, flattened), batch_context_lengths, target_ep_inputs,
+               draft_tokens, seed, temperature, top_k, max_k, top_p, min_top_p,
+               in_thinking_phase.
         """
         devices = self.config.devices
         device_ref = devices[0]
@@ -593,7 +590,7 @@ class Eagle3KimiK25Unified(Module):
             ]
         )
         all_input_types.extend(signal_buffer_types)
-        all_input_types.extend(kv_params.get_symbolic_inputs().flatten())
+        all_input_types.extend(kv_params.flattened_kv_inputs())
 
         batch_context_length_type = TensorType(
             DType.int32, shape=[1], device=DeviceRef.CPU()
@@ -606,10 +603,6 @@ class Eagle3KimiK25Unified(Module):
             all_input_types.extend(self.target.ep_manager.input_types())
 
         all_input_types.append(draft_tokens_type)
-        if draft_kv_params is not None:
-            for sym in draft_kv_params.get_symbolic_inputs().inputs:
-                assert isinstance(sym, KVCacheInputsPerDevice)
-                all_input_types.append(sym.kv_blocks)
 
         # Per-batch device-resident seed (see
         # ``unified_mtp_deepseekV3.py:input_types`` for rationale —

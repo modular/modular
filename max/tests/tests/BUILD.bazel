@@ -15,6 +15,7 @@ modular_py_test(
             "mojo_runtime_background_thread_subprocess_asyncio.py",
             "mojo_runtime_background_thread_subprocess_thread.py",
             "mojo_runtime_foreign_thread_subprocess.py",
+            "test_executor.py",
             "test_flashinfer_cubin.py",
             "test_interpreter.py",
             "test_interpreter_ops.py",
@@ -37,7 +38,7 @@ modular_py_test(
         "//max/python/max/experimental/nn",
         "//max/python/max/graph",
         "//max/python/max/mlir",
-        "//max/python/max/pipelines/modeling",
+        "//max/python/max/pipelines/context",
         requirement("numpy"),
     ],
 )
@@ -55,6 +56,7 @@ modular_py_test(
     ],
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//:asan": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: MOCO-2411
     deps = [
@@ -156,6 +158,24 @@ modular_py_test(
         "//max/python/max/graph",
         requirement("numpy"),
         requirement("torch"),
+    ],
+)
+
+modular_py_test(
+    name = "test_executor",
+    srcs = ["test_executor.py"],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2411
+    deps = [
+        "//max/python/max:_core",
+        "//max/python/max:interpreter",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/experimental",
+        "//max/python/max/graph",
     ],
 )
 

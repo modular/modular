@@ -18,7 +18,7 @@ managed and destroyed in Mojo:
 - `AnyType`: The most basic trait that all types extend by default.
    Types with this trait have no destructor and no lifetime management.
 
-- `ImplicitlyDestructible`: The base trait for types that require lifetime
+- `ImplicitlyDeletable`: The base trait for types that require lifetime
    management through destructors. Any type that needs cleanup when it goes out
    of scope should implement this trait.
 
@@ -39,10 +39,10 @@ trait AnyType:
     requirements on the types that conform to it, not even that they provide
     a `__del__()` implicit destructor.
 
-    A type that conforms to `AnyType` but not to `ImplicitlyDestructible` is
+    A type that conforms to `AnyType` but not to `ImplicitlyDeletable` is
     called a linear type, also known as a non-implicitly-destructible type.
 
-    Generic code will commonly want to use `T: ImplicitlyDestructible` instead
+    Generic code will commonly want to use `T: ImplicitlyDeletable` instead
     of `T: AnyType`.
 
     **`AnyType`, Object Destructors, and Linear Types**
@@ -71,7 +71,7 @@ trait AnyType:
 
     * A `__del__()` destructor method that the compiler may call implicitly
       whenever an owned object instances has no further uses. Such types
-      conform to `ImplicitlyDestructible`.
+      conform to `ImplicitlyDeletable`.
 
     * Named destructor methods that type user must choose to call explicitly.
       Failing to explicitly destroy such a type will lead to a compile-time
@@ -130,16 +130,24 @@ trait AnyType:
     pass
 
 
-trait ImplicitlyDestructible:
+@deprecated(use=ImplicitlyDeletable)
+comptime ImplicitlyDestructible = ImplicitlyDeletable
+"""Deprecated: A trait for types that require lifetime management through destructors.
+
+This trait has been renamed to `ImplicitlyDeletable`. This alias will be removed
+in a future version of Mojo."""
+
+
+trait ImplicitlyDeletable:
     """A trait for types that require lifetime management through destructors.
 
-    The `ImplicitlyDestructible` trait is fundamental to Mojo's memory
+    The `ImplicitlyDeletable` trait is fundamental to Mojo's memory
     management system. It indicates that a type has a destructor that needs to
     be called when instances go out of scope. This is essential for types that
     own resources like memory, file handles, or other system resources that need
     proper cleanup.
 
-    By default, all Mojo types implement `ImplicitlyDestructible`, unless they
+    By default, all Mojo types implement `ImplicitlyDeletable`, unless they
     opt-in to explicit named destructor methods using `@explicit_destroy`.
 
     Key aspects:
@@ -153,20 +161,17 @@ trait ImplicitlyDestructible:
     Example:
 
     ```mojo
-    from std.memory import UnsafePointer
-    from std.memory.alloc import alloc, free, Layout
+    from std.memory.alloc import alloc, dealloc, Layout, Allocation
 
-    struct ResourceOwner(ImplicitlyDestructible):
-        var ptr: UnsafePointer[Int, MutExternalOrigin]
-        var size: Int
+    struct ResourceOwner(ImplicitlyDeletable):
+        var allocation: Allocation[Int]
 
         def __init__(out self, size: Int):
-            self.size = size
-            self.ptr = alloc(Layout[Int](count=size))
+            self.allocation = alloc(Layout[Int](count=size))
 
         def __del__(deinit self):
             # Clean up owned resources
-            free(self.ptr, Layout[Int](count=self.size))
+            dealloc(self.allocation^)
     ```
 
     Best practices:

@@ -50,7 +50,12 @@ from std.gpu.primitives.grid_controls import PDLLevel
 from std.utils.index import Index
 from layout import TileTensor
 
-from linalg.fp4_utils import NVFP4_SF_DTYPE, MXFP4_SF_DTYPE, MXFP8_SF_DTYPE
+from linalg.fp4_utils import (
+    MXFP4_SF_DTYPE,
+    MXFP8_SF_DTYPE,
+    MXFP8_SF_VECTOR_SIZE,
+    NVFP4_SF_DTYPE,
+)
 from structured_kernels.trace_buf import NullTrace, TraceBuf
 from ..structured_kernels.config import BlockScaledMatmulConfig, GEMMKind
 from .grouped_1d1d_matmul import grouped_matmul_block_scaled
@@ -89,26 +94,26 @@ def _launch_grouped_block_scaled[
     num_pipeline_stages: Optional[Int] = None,
     scaling_kind: UMMAKind = UMMAKind.KIND_MXF4NVF4,
     pdl_level: PDLLevel = PDLLevel.ON,
-    fuse_swiglu_nvfp4: Bool = False,
-    SwiGLUOutputT: SwiGLUOutput = NullSwiGLUOutput,
+    fuse_swiglu: Bool = False,
+    SwiGLUOutputT: SwiGLUOutput = NullSwiGLUOutput[],
     swiglu_match_bf16: Bool = True,
     swiglu_disable_compute: Bool = False,
     swiglu_enable_trace: Bool = False,
     TraceBufT: TraceBuf = NullTrace,
     swiglu_use_inplace: Bool = False,
 ](
-    c: TileTensor[...],
-    a: TileTensor[...],
-    b: TileTensor[...],
-    a_scales: TileTensor[...],
-    b_scales: TileTensor[...],
-    a_offsets: TileTensor[...],
-    a_scale_offsets: TileTensor[...],
-    expert_ids: TileTensor[...],
-    expert_scales: TileTensor[...],
+    c: TileTensor,
+    a: TileTensor,
+    b: TileTensor,
+    a_scales: TileTensor,
+    b_scales: TileTensor,
+    a_offsets: TileTensor,
+    a_scale_offsets: TileTensor,
+    expert_ids: TileTensor,
+    expert_scales: TileTensor,
     num_active_experts: Int,
     ctx: DeviceContext,
-    swiglu_out: SwiGLUOutputT = NullSwiGLUOutput(),
+    swiglu_out: SwiGLUOutputT = NullSwiGLUOutput[](),
     trace_buf: TraceBufT = NullTrace(),
 ) raises:
     """Build config and launch grouped block-scaled matmul kernel.
@@ -121,23 +126,25 @@ def _launch_grouped_block_scaled[
         num_pipeline_stages: Pipeline depth override. None = auto-compute.
         scaling_kind: Block-scaling format (NVFP4, MXFP4, or MXFP8).
         pdl_level: Programmatic dependent launch level.
-        fuse_swiglu_nvfp4: When True, the kernel fuses SwiGLU + NVFP4 quant
-            into the epilogue (caller pre-permutes W with σ).
+        fuse_swiglu: When True, the kernel fuses SwiGLU + block-scaled
+            quant (NVFP4 or MXFP8) into the epilogue. Caller pre-permutes
+            W on the N axis with sigma so adjacent N columns hold the
+            (gate, up) pair.
         SwiGLUOutputT: Trait impl for the fused-output sink. Defaults to
-            zero-sized `NullSwiGLUOutput` when `fuse_swiglu_nvfp4=False`.
-        swiglu_match_bf16: When True, the SwiGLU+NVFP4 epilogue applies an
-            fp32 -> bf16 -> fp32 round-trip on the SMEM scratchpad to match
-            the chained reference's BF16 GMEM precision (byte-exact).
-        swiglu_disable_compute: Diagnostic only. When True, the cooperative
-            SwiGLU+quant body is skipped while keeping the EPI structure
-            intact. Output is invalid; do not use in production.
+            zero-sized `NullSwiGLUOutput` when `fuse_swiglu=False`.
+        swiglu_match_bf16: When True, the SwiGLU epilogue applies an
+            fp32 -> bf16 -> fp32 round-trip on the SMEM scratchpad to
+            match the chained reference's BF16 GMEM precision.
+        swiglu_disable_compute: Diagnostic only. When True, the
+            cooperative SwiGLU+quant body is skipped while keeping the
+            EPI structure intact. Output is invalid; do not use in
+            production.
         swiglu_enable_trace: When True, the kernel records per-tile
             timestamps into `trace_buf`. DCEs to a no-op when False.
-        TraceBufT: Trait impl for the per-CTA timestamp buffer. Defaults to
-            zero-sized `NullTrace` when `swiglu_enable_trace=False`.
-        swiglu_use_inplace: When True, the fused SwiGLU+NVFP4 epilogue
-            uses the in-place register-only path (no SMEM scratch).
-            Default False keeps the original scatter+cooperative path.
+        TraceBufT: Trait impl for the per-CTA timestamp buffer.
+        swiglu_use_inplace: When True, the fused epilogue uses the
+            in-place register path (no SMEM scratch) on decode shapes.
+            Default False keeps the cooperative path.
     """
     comptime a_type = a.dtype
     comptime b_type = b.dtype
@@ -175,7 +182,7 @@ def _launch_grouped_block_scaled[
         transpose_b=transpose_b,
         config=config,
         pdl_level=pdl_level,
-        fuse_swiglu_nvfp4=fuse_swiglu_nvfp4,
+        fuse_swiglu=fuse_swiglu,
         SwiGLUOutputT=SwiGLUOutputT,
         swiglu_match_bf16=swiglu_match_bf16,
         swiglu_disable_compute=swiglu_disable_compute,
@@ -209,26 +216,26 @@ def _dispatch_regime[
     stages_7168_2048: Optional[Int],
     stages_7168_256: Optional[Int],
     pdl_level: PDLLevel = PDLLevel.ON,
-    fuse_swiglu_nvfp4: Bool = False,
-    SwiGLUOutputT: SwiGLUOutput = NullSwiGLUOutput,
+    fuse_swiglu: Bool = False,
+    SwiGLUOutputT: SwiGLUOutput = NullSwiGLUOutput[],
     swiglu_match_bf16: Bool = True,
     swiglu_disable_compute: Bool = False,
     swiglu_enable_trace: Bool = False,
     TraceBufT: TraceBuf = NullTrace,
     swiglu_use_inplace: Bool = False,
 ](
-    c: TileTensor[...],
-    a: TileTensor[...],
-    b: TileTensor[...],
-    a_scales: TileTensor[...],
-    b_scales: TileTensor[...],
-    a_offsets: TileTensor[...],
-    a_scale_offsets: TileTensor[...],
-    expert_ids: TileTensor[...],
-    expert_scales: TileTensor[...],
+    c: TileTensor,
+    a: TileTensor,
+    b: TileTensor,
+    a_scales: TileTensor,
+    b_scales: TileTensor,
+    a_offsets: TileTensor,
+    a_scale_offsets: TileTensor,
+    expert_ids: TileTensor,
+    expert_scales: TileTensor,
     num_active_experts: Int,
     ctx: DeviceContext,
-    swiglu_out: SwiGLUOutputT = NullSwiGLUOutput(),
+    swiglu_out: SwiGLUOutputT = NullSwiGLUOutput[](),
     trace_buf: TraceBufT = NullTrace(),
 ) raises:
     """Dispatch with shape-specific pipeline stages.
@@ -249,7 +256,7 @@ def _dispatch_regime[
         cta_group,
         num_pipeline_stages=stages,
         pdl_level=pdl_level,
-        fuse_swiglu_nvfp4=fuse_swiglu_nvfp4,
+        fuse_swiglu=fuse_swiglu,
         SwiGLUOutputT=SwiGLUOutputT,
         swiglu_match_bf16=swiglu_match_bf16,
         swiglu_disable_compute=swiglu_disable_compute,
@@ -282,27 +289,27 @@ def grouped_matmul_nvfp4_dispatch[
     cta_group: Int = 1,
     num_pipeline_stages: Int = -1,
     pdl_level: PDLLevel = PDLLevel.ON,
-    fuse_swiglu_nvfp4: Bool = False,
-    SwiGLUOutputT: SwiGLUOutput = NullSwiGLUOutput,
+    fuse_swiglu: Bool = False,
+    SwiGLUOutputT: SwiGLUOutput = NullSwiGLUOutput[],
     swiglu_match_bf16: Bool = True,
     swiglu_disable_compute: Bool = False,
     swiglu_enable_trace: Bool = False,
     TraceBufT: TraceBuf = NullTrace,
     swiglu_use_inplace: Bool = False,
 ](
-    c: TileTensor[...],
-    a: TileTensor[...],
-    b: TileTensor[...],
-    a_scales: TileTensor[...],
-    b_scales: TileTensor[...],
-    a_offsets: TileTensor[...],
-    a_scale_offsets: TileTensor[...],
-    expert_ids: TileTensor[...],
-    expert_scales: TileTensor[...],
+    c: TileTensor,
+    a: TileTensor,
+    b: TileTensor,
+    a_scales: TileTensor,
+    b_scales: TileTensor,
+    a_offsets: TileTensor,
+    a_scale_offsets: TileTensor,
+    expert_ids: TileTensor,
+    expert_scales: TileTensor,
     num_active_experts: Int,
     estimated_total_m: Int,
     ctx: DeviceContext,
-    swiglu_out: SwiGLUOutputT = NullSwiGLUOutput(),
+    swiglu_out: SwiGLUOutputT = NullSwiGLUOutput[](),
     trace_buf: TraceBufT = NullTrace(),
 ) raises:
     """Dispatch grouped NVFP4 matmul with shape-tuned configuration.
@@ -325,10 +332,10 @@ def grouped_matmul_nvfp4_dispatch[
         num_pipeline_stages: Pipeline depth (only used when override=True).
             -1 = auto-compute.
         pdl_level: Programmatic dependent launch level.
-        fuse_swiglu_nvfp4: When True, the kernel fuses SwiGLU + NVFP4 quant
+        fuse_swiglu: When True, the kernel fuses SwiGLU + NVFP4 quant
             into the epilogue (caller pre-permutes W with σ).
         SwiGLUOutputT: Trait impl for the fused-output sink. Defaults to
-            zero-sized `NullSwiGLUOutput` when `fuse_swiglu_nvfp4=False`.
+            zero-sized `NullSwiGLUOutput` when `fuse_swiglu=False`.
         swiglu_match_bf16: When True, the SwiGLU+NVFP4 epilogue applies an
             fp32 -> bf16 -> fp32 round-trip on the SMEM scratchpad to match
             the chained reference's BF16 GMEM precision (byte-exact).
@@ -356,7 +363,7 @@ def grouped_matmul_nvfp4_dispatch[
         num_active_experts: Number of active experts.
         estimated_total_m: Estimated number of total non-padded tokens.
         ctx: Device context.
-        swiglu_out: Sink carrier when `fuse_swiglu_nvfp4=True` (packed
+        swiglu_out: Sink carrier when `fuse_swiglu=True` (packed
             NVFP4 + E4M3 SF tile). `NullSwiGLUOutput()` otherwise.
         trace_buf: Per-CTA timestamp buffer when `swiglu_enable_trace=True`.
             `NullTrace()` otherwise.
@@ -373,7 +380,7 @@ def grouped_matmul_nvfp4_dispatch[
             cta_group,
             num_pipeline_stages=_stages,
             pdl_level=pdl_level,
-            fuse_swiglu_nvfp4=fuse_swiglu_nvfp4,
+            fuse_swiglu=fuse_swiglu,
             SwiGLUOutputT=SwiGLUOutputT,
             swiglu_match_bf16=swiglu_match_bf16,
             swiglu_disable_compute=swiglu_disable_compute,
@@ -415,7 +422,7 @@ def grouped_matmul_nvfp4_dispatch[
                     2,
                     num_pipeline_stages=6,
                     pdl_level=pdl_level,
-                    fuse_swiglu_nvfp4=fuse_swiglu_nvfp4,
+                    fuse_swiglu=fuse_swiglu,
                     SwiGLUOutputT=SwiGLUOutputT,
                     swiglu_match_bf16=swiglu_match_bf16,
                     swiglu_disable_compute=swiglu_disable_compute,
@@ -445,7 +452,7 @@ def grouped_matmul_nvfp4_dispatch[
                     2,
                     num_pipeline_stages=6,
                     pdl_level=pdl_level,
-                    fuse_swiglu_nvfp4=fuse_swiglu_nvfp4,
+                    fuse_swiglu=fuse_swiglu,
                     SwiGLUOutputT=SwiGLUOutputT,
                     swiglu_match_bf16=swiglu_match_bf16,
                     swiglu_disable_compute=swiglu_disable_compute,
@@ -479,7 +486,7 @@ def grouped_matmul_nvfp4_dispatch[
                     stages_7168_2048=4,
                     stages_7168_256=None,
                     pdl_level=pdl_level,
-                    fuse_swiglu_nvfp4=fuse_swiglu_nvfp4,
+                    fuse_swiglu=fuse_swiglu,
                     SwiGLUOutputT=SwiGLUOutputT,
                     swiglu_match_bf16=swiglu_match_bf16,
                     swiglu_disable_compute=swiglu_disable_compute,
@@ -512,7 +519,7 @@ def grouped_matmul_nvfp4_dispatch[
                     stages_7168_2048=6,
                     stages_7168_256=None,
                     pdl_level=pdl_level,
-                    fuse_swiglu_nvfp4=fuse_swiglu_nvfp4,
+                    fuse_swiglu=fuse_swiglu,
                     SwiGLUOutputT=SwiGLUOutputT,
                     swiglu_match_bf16=swiglu_match_bf16,
                     swiglu_disable_compute=swiglu_disable_compute,
@@ -545,7 +552,7 @@ def grouped_matmul_nvfp4_dispatch[
                     stages_7168_2048=6,
                     stages_7168_256=6,
                     pdl_level=pdl_level,
-                    fuse_swiglu_nvfp4=fuse_swiglu_nvfp4,
+                    fuse_swiglu=fuse_swiglu,
                     SwiGLUOutputT=SwiGLUOutputT,
                     swiglu_match_bf16=swiglu_match_bf16,
                     swiglu_disable_compute=swiglu_disable_compute,
@@ -569,20 +576,201 @@ def grouped_matmul_nvfp4_dispatch[
                 )
 
 
+def grouped_matmul_mxfp8_dispatch[
+    transpose_b: Bool = True,
+    target: StaticString = "cpu",
+    pdl_level: PDLLevel = PDLLevel.ON,
+    fuse_swiglu: Bool = False,
+    SwiGLUOutputT: SwiGLUOutput = NullSwiGLUOutput[
+        MXFP8_SF_DTYPE, MXFP8_SF_VECTOR_SIZE
+    ],
+    swiglu_match_bf16: Bool = True,
+    swiglu_disable_compute: Bool = False,
+    swiglu_enable_trace: Bool = False,
+    TraceBufT: TraceBuf = NullTrace,
+    swiglu_use_inplace: Bool = False,
+](
+    c: TileTensor,
+    a: TileTensor,
+    b: TileTensor,
+    a_scales: TileTensor,
+    b_scales: TileTensor,
+    a_offsets: TileTensor,
+    a_scale_offsets: TileTensor,
+    expert_ids: TileTensor,
+    expert_scales: TileTensor,
+    num_active_experts: Int,
+    estimated_total_m: Int,
+    ctx: DeviceContext,
+    swiglu_out: SwiGLUOutputT = NullSwiGLUOutput[](),
+    trace_buf: TraceBufT = NullTrace(),
+) raises:
+    """Dispatch grouped MXFP8 matmul with regime-classified configs.
+
+    Mirror of `grouped_matmul_nvfp4_dispatch` for MXFP8 (E4M3 elements,
+    E8M0 per-32-element scales). Hands off to the `KIND_MXF8F6F4`
+    launcher with `AB_swapped=True` and the same avg-tokens-per-expert
+    regime split as NVFP4:
+
+        decode (avg_m <= 8):         mma_bn=8,   cta_group=1
+        small prefill (avg_m <= 64): mma_bn=64,  cta_group=2
+        large prefill:               mma_bn=128, cta_group=2
+
+    Both the non-fused (BF16-output) and fused paths classify
+    identically, so the fused-SwiGLU epilogue sees the same matmul
+    output as the non-fused reference chain. Pipeline stages are
+    auto-computed; per-(N, K) stage tuning like NVFP4's is a
+    follow-up. Note: the dtype-routing dispatch
+    `grouped_matmul_block_scaled_sm100_dispatch` still uses
+    `AB_swapped=False, cta_group=1` for MXFP8; reconciling the two is
+    a follow-up.
+
+    When `fuse_swiglu=True`, the kernel emits packed MXFP8 plus a 5D
+    E8M0 scale tile in place of the BF16 C store. Caller must
+    pre-permute `W` on the N axis with `sigma(2i)=i, sigma(2i+1)=H+i`
+    (same permutation pattern as the NVFP4 fused path).
+
+    Parameters:
+        transpose_b: Whether B is transposed (must be True).
+        target: Target device (unused, MOGG interface compatibility).
+        pdl_level: Programmatic dependent launch level.
+        fuse_swiglu: When True, the kernel fuses SwiGLU + MXFP8 quant
+            into the epilogue.
+        SwiGLUOutputT: Trait impl for the fused-output sink. Defaults
+            to the MXFP8-flavored `NullSwiGLUOutput` so the kernel ABI
+            is byte-identical to the non-fused MXFP8 path when off.
+        swiglu_match_bf16: When True, the SwiGLU+MXFP8 epilogue rounds
+            through bf16 to match the chained reference's precision.
+        swiglu_disable_compute: Diagnostic only.
+        swiglu_enable_trace: When True, records per-tile timestamps.
+        TraceBufT: Trait impl for the per-CTA timestamp buffer.
+        swiglu_use_inplace: When True, the fused epilogue takes the
+            in-place register path on the decode regime (honored only
+            where mma_bn <= 8, same gating as NVFP4).
+
+    Args:
+        c: Output tensor (total_tokens, N).
+        a: Input A tensor (total_tokens, K). MXFP8 (one fp8 per byte).
+        b: Weight tensor B (num_experts, N, K). MXFP8.
+        a_scales: Scale factors for A (5D, E8M0).
+        b_scales: Scale factors for B (6D, E8M0).
+        a_offsets: Per-expert token offsets (num_active_experts + 1).
+        a_scale_offsets: Per-expert scale offsets (num_active_experts).
+        expert_ids: Active expert IDs (num_active_experts).
+        expert_scales: Per-expert output scaling (num_experts).
+        num_active_experts: Number of active experts.
+        estimated_total_m: Estimated number of total non-padded tokens.
+        ctx: Device context.
+        swiglu_out: Sink carrier when `fuse_swiglu=True`. `NullSwiGLUOutput
+            [MXFP8_SF_DTYPE, MXFP8_SF_VECTOR_SIZE]()` otherwise.
+        trace_buf: Per-CTA timestamp buffer when trace is on.
+    """
+    if estimated_total_m <= num_active_experts * DECODE_AVG_M:
+        _launch_grouped_block_scaled[
+            transpose_b,
+            AB_swapped=True,
+            mma_bn=8,
+            cta_group=1,
+            scaling_kind=UMMAKind.KIND_MXF8F6F4,
+            pdl_level=pdl_level,
+            fuse_swiglu=fuse_swiglu,
+            SwiGLUOutputT=SwiGLUOutputT,
+            swiglu_match_bf16=swiglu_match_bf16,
+            swiglu_disable_compute=swiglu_disable_compute,
+            swiglu_enable_trace=swiglu_enable_trace,
+            TraceBufT=TraceBufT,
+            swiglu_use_inplace=swiglu_use_inplace,
+        ](
+            c,
+            a,
+            b,
+            a_scales,
+            b_scales,
+            a_offsets,
+            a_scale_offsets,
+            expert_ids,
+            expert_scales,
+            num_active_experts,
+            ctx,
+            swiglu_out,
+            trace_buf,
+        )
+    elif estimated_total_m <= num_active_experts * SMALL_PREFILL_AVG_M:
+        _launch_grouped_block_scaled[
+            transpose_b,
+            AB_swapped=True,
+            mma_bn=64,
+            cta_group=2,
+            scaling_kind=UMMAKind.KIND_MXF8F6F4,
+            pdl_level=pdl_level,
+            fuse_swiglu=fuse_swiglu,
+            SwiGLUOutputT=SwiGLUOutputT,
+            swiglu_match_bf16=swiglu_match_bf16,
+            swiglu_disable_compute=swiglu_disable_compute,
+            swiglu_enable_trace=swiglu_enable_trace,
+            TraceBufT=TraceBufT,
+            swiglu_use_inplace=swiglu_use_inplace,
+        ](
+            c,
+            a,
+            b,
+            a_scales,
+            b_scales,
+            a_offsets,
+            a_scale_offsets,
+            expert_ids,
+            expert_scales,
+            num_active_experts,
+            ctx,
+            swiglu_out,
+            trace_buf,
+        )
+    else:
+        _launch_grouped_block_scaled[
+            transpose_b,
+            AB_swapped=True,
+            mma_bn=128,
+            cta_group=2,
+            scaling_kind=UMMAKind.KIND_MXF8F6F4,
+            pdl_level=pdl_level,
+            fuse_swiglu=fuse_swiglu,
+            SwiGLUOutputT=SwiGLUOutputT,
+            swiglu_match_bf16=swiglu_match_bf16,
+            swiglu_disable_compute=swiglu_disable_compute,
+            swiglu_enable_trace=swiglu_enable_trace,
+            TraceBufT=TraceBufT,
+            swiglu_use_inplace=swiglu_use_inplace,
+        ](
+            c,
+            a,
+            b,
+            a_scales,
+            b_scales,
+            a_offsets,
+            a_scale_offsets,
+            expert_ids,
+            expert_scales,
+            num_active_experts,
+            ctx,
+            swiglu_out,
+            trace_buf,
+        )
+
+
 def grouped_matmul_block_scaled_sm100_dispatch[
     transpose_b: Bool = True,
     target: StaticString = "cpu",
     pdl_level: PDLLevel = PDLLevel.ON,
 ](
-    c: TileTensor[...],
-    a: TileTensor[...],
-    b: TileTensor[...],
-    a_scales: TileTensor[...],
-    b_scales: TileTensor[...],
-    a_offsets: TileTensor[...],
-    a_scale_offsets: TileTensor[...],
-    expert_ids: TileTensor[...],
-    expert_scales: TileTensor[...],
+    c: TileTensor,
+    a: TileTensor,
+    b: TileTensor,
+    a_scales: TileTensor,
+    b_scales: TileTensor,
+    a_offsets: TileTensor,
+    a_scale_offsets: TileTensor,
+    expert_ids: TileTensor,
+    expert_scales: TileTensor,
     num_active_experts: Int,
     estimated_total_m: Int,
     ctx: DeviceContext,

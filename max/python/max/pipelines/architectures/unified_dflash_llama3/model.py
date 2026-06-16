@@ -17,6 +17,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
+from typing import Any, ClassVar
 
 import numpy as np
 from max.driver import Buffer, Device, DevicePinnedBuffer
@@ -24,9 +25,13 @@ from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph
 from max.graph.weights import Weights, WeightsAdapter, load_weights
-from max.nn.kv_cache import KVCacheInputs, KVCacheParams
+from max.nn.kv_cache import (
+    KVCacheInputsInterface,
+    KVCacheParams,
+    MultiKVCacheParams,
+)
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
-from max.pipelines.core import TextContext
+from max.pipelines.context import TextContext
 from max.pipelines.lib import (
     CompilationTimer,
     KVCacheConfig,
@@ -70,7 +75,6 @@ class UnifiedDflashLlama3Inputs(ModelInputs):
     return_n_logits: Buffer
 
     draft_tokens: Buffer | None = None
-    draft_kv_blocks: list[Buffer] | None = None
     seed: Buffer | None = None
     temperature: Buffer | None = None
     top_k: Buffer | None = None
@@ -92,8 +96,6 @@ class UnifiedDflashLlama3Inputs(ModelInputs):
         )
         if self.draft_tokens is not None:
             buffers += (self.draft_tokens,)
-        if self.draft_kv_blocks is not None:
-            buffers += tuple(self.draft_kv_blocks)
         assert self.seed is not None
         buffers += (self.seed,)
         if self.draft_tokens is not None:
@@ -133,6 +135,8 @@ class PersistentInputBuffers:
 
 class UnifiedDflashLlama3Model(PipelineModelWithKVCache[TextContext]):
     """Unified DFlash Llama3: target + draft in one compiled graph."""
+
+    model_config_cls: ClassVar[type[Any]] = Llama3Config
 
     model: Model
 
@@ -231,6 +235,7 @@ class UnifiedDflashLlama3Model(PipelineModelWithKVCache[TextContext]):
             # pin to the target's device(s) so the weights co-locate
             # whenever the target lives on a non-zero GPU.
             draft_config.devices = target_config.devices
+            draft_config.sliding_window = draft_model_config.sliding_window
             draft_config.kv_params = replace(
                 draft_config.kv_params, devices=target_config.devices
             )
@@ -276,6 +281,9 @@ class UnifiedDflashLlama3Model(PipelineModelWithKVCache[TextContext]):
             self._draft_kv_params = replace(
                 self.kv_params, num_layers=draft_config.num_hidden_layers
             )
+            self.kv_params = MultiKVCacheParams.from_params(
+                {"target": self.kv_params, "draft": self._draft_kv_params}
+            )
 
             with Graph(
                 "unified_dflash_llama3",
@@ -304,7 +312,7 @@ class UnifiedDflashLlama3Model(PipelineModelWithKVCache[TextContext]):
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
+        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> UnifiedDflashLlama3Inputs:
         context_batch = [ctx for batch in replica_batches for ctx in batch]
@@ -356,25 +364,4 @@ class UnifiedDflashLlama3Model(PipelineModelWithKVCache[TextContext]):
             return_n_logits=return_n_logits_buf,
             kv_cache_inputs=kv_cache_inputs,
             seed=self._next_seed(),
-        )
-
-    def prepare_next_token_inputs(
-        self,
-        next_tokens: Buffer,
-        prev_model_inputs: ModelInputs,
-    ) -> UnifiedDflashLlama3Inputs:
-        raise NotImplementedError(
-            "Multistep execution is not supported for"
-            " UnifiedDflashLlama3Model. The unified pipeline handles"
-            " iteration internally."
-        )
-
-    @classmethod
-    def calculate_max_seq_len(
-        cls,
-        pipeline_config: PipelineConfig,
-        huggingface_config: PretrainedConfig,
-    ) -> int:
-        return Llama3Config.calculate_max_seq_len(
-            pipeline_config, huggingface_config
         )

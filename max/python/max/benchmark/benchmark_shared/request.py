@@ -17,15 +17,15 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import contextlib
 import logging
-import math
 import os
 import sys
 import threading
 import time
 import traceback
 from abc import ABC, abstractmethod
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass, field
 from typing import Any, TypeVar
 
@@ -43,7 +43,7 @@ from .datasets.types import (
     PixelGenerationImageOptions,
 )
 from .sse import iter_events
-from .tts_workloads_utils import SampleTTSRequest
+from .utils import deadline_passed
 
 # 30 minute timeout per request session
 AIOHTTP_TIMEOUT = aiohttp.ClientTimeout(total=30 * 60)
@@ -106,8 +106,6 @@ def _apply_sampling_to_request_payload(
         payload["top_p"] = sampling.top_p
 
 
-# TODO: We shouldn't have to maintain two separate RequestFuncInput classes for
-# text generation and TTS benchmarks respectively.
 @dataclass
 class RequestFuncInput(BaseRequestFuncInput):
     """Request function input for text generation benchmarks."""
@@ -143,22 +141,6 @@ class PixelGenerationRequestFuncInput(BaseRequestFuncInput):
 
 
 @dataclass
-class TTSRequestFuncInput(BaseRequestFuncInput):
-    """Request function input for TTS (text-to-speech) benchmarks."""
-
-    sampling: SamplingConfig
-    request_index: int
-    tts_request: SampleTTSRequest
-    is_streaming_mode: bool
-    frequency_penalty: float
-    repetition_penalty: float
-    seed: int = 0
-
-    def get_output_type(self) -> type[BaseRequestFuncOutput]:
-        return TTSRequestFuncOutput
-
-
-@dataclass
 class BaseRequestFuncOutput:
     """Base class for request function output with common fields."""
 
@@ -175,6 +157,35 @@ class BaseRequestFuncOutput:
         if self.request_submit_time is None:
             return None
         return self.request_submit_time + self.latency
+
+
+def mark_cancelled_if_past_deadline(
+    output: BaseRequestFuncOutput, end_time_ns: int | None
+) -> BaseRequestFuncOutput:
+    """Reclassify an end-of-benchmark cut-off as cancelled rather than failed.
+
+    When the benchmark duration deadline cancels an in-flight request, aiohttp
+    can surface the cancellation as a swallowed error inside the request driver
+    instead of propagating the ``wait_for`` timeout, leaving a ``success=False``
+    output. If the result is not a success and the benchmark deadline has
+    passed, treat it as cancelled (cut off by benchmark end) rather than a real
+    failure. Successful results are left untouched.
+
+    Args:
+        output: The request output to (possibly) reclassify, mutated in place.
+        end_time_ns: The benchmark ``perf_counter_ns`` deadline, or ``None`` if
+            the run is unbounded.
+
+    Returns:
+        The same ``output`` instance, for convenient inline use.
+    """
+    if not output.success and deadline_passed(end_time_ns):
+        output.cancelled = True
+        logger.info(
+            "Reclassifying request as cancelled (cut off by benchmark end): %s",
+            output.error or "<no error>",
+        )
+    return output
 
 
 def measured_window_duration(
@@ -219,8 +230,6 @@ class ServerTokenStats:
     cached_tokens: int = 0
 
 
-# TODO: We shouldn't have to maintain two separate RequestFuncOutput classes for
-# text generation and TTS benchmarks respectively.
 @dataclass
 class RequestFuncOutput(BaseRequestFuncOutput):
     """Request function output for text generation benchmarks."""
@@ -235,6 +244,10 @@ class RequestFuncOutput(BaseRequestFuncOutput):
     server_token_stats: ServerTokenStats = field(
         default_factory=ServerTokenStats
     )
+    # Multi-turn provenance, set by the conversation driver so per-turn cache
+    # retention can group/order turns within a session. None for single-turn.
+    session_id: str | None = None
+    turn_index: int | None = None
 
 
 @dataclass
@@ -242,103 +255,6 @@ class PixelGenerationRequestFuncOutput(BaseRequestFuncOutput):
     """Request function output for text-to-image benchmarks."""
 
     num_generated_outputs: int = 0
-
-
-@dataclass
-class TTSRequestFuncOutput(BaseRequestFuncOutput):
-    """Request function output for TTS (text-to-speech) benchmarks."""
-
-    request_index: int = 0
-    itl: list[float] = field(default_factory=list)
-    tpot: list[float] = field(default_factory=list)
-    # TODO: We have a torch.Tensor dependency here, but our benchmark_shared
-    # package doesn't "require" torch. For better or worse, this is only used
-    # in the TTS benchmarks, so we'll leave it as Any for now.
-    generated_chunk: list[Any] = field(
-        default_factory=list
-    )  # list[torch.Tensor]
-    ttft: float | None = None  # Time to first token (can be None for TTS)
-
-    def get_chunk_lens_in_samples(self) -> list[int]:
-        """Get lengths of audio chunks in samples."""
-        return [x.shape[-1] for x in self.generated_chunk]
-
-    def get_chunk_lens_in_seconds(self, tts_config: Any) -> list[float]:
-        """Get lengths of audio chunks in seconds.
-
-        Args:
-            tts_config: TTS configuration object with decoder_sample_rate attribute.
-        """
-        lens_in_samples = self.get_chunk_lens_in_samples()
-        return [samples_to_seconds(tts_config, x) for x in lens_in_samples]
-
-    def get_chunk_lens_in_tokens(self, tts_config: Any) -> list[int]:
-        """Get lengths of audio chunks in tokens.
-
-        Args:
-            tts_config: TTS configuration object with codec_tokens_per_sec attribute.
-        """
-        lens_in_samples = self.get_chunk_lens_in_samples()
-        return [samples_to_tokens(tts_config, x) for x in lens_in_samples]
-
-    def get_real_time_factors(self, tts_config: Any) -> list[float]:
-        """Calculate real-time factors (RTF).
-
-        RTF is the inter-chunk latency divided by the playback time of the
-        previous chunk. Anything over 100% would lead to a playback error.
-
-        Args:
-            tts_config: TTS configuration object.
-        """
-        lens_in_seconds = self.get_chunk_lens_in_seconds(tts_config)
-        assert len(lens_in_seconds) == len(self.itl) + 1, (
-            "Missing or extra ITLs?"
-        )
-        return [
-            x / y for x, y in zip(self.itl, lens_in_seconds[:-1], strict=True)
-        ]
-
-    def get_output_length_in_samples(self) -> int:
-        """Get total output length in samples."""
-        return sum(self.get_chunk_lens_in_samples())
-
-    def get_output_length_in_seconds(self, tts_config: Any) -> float:
-        """Get total output length in seconds.
-
-        Args:
-            tts_config: TTS configuration object.
-        """
-        return sum(self.get_chunk_lens_in_seconds(tts_config))
-
-    def get_output_length_in_tokens(self, tts_config: Any) -> int:
-        """Get total output length in tokens.
-
-        Args:
-            tts_config: TTS configuration object.
-        """
-        return sum(self.get_chunk_lens_in_tokens(tts_config))
-
-
-def samples_to_seconds(tts_config: Any, num_samples: int) -> float:
-    """Convert number of samples to seconds.
-
-    Args:
-        tts_config: TTS configuration object with decoder_sample_rate attribute.
-        num_samples: Number of audio samples.
-    """
-    return num_samples / tts_config.decoder_sample_rate
-
-
-def samples_to_tokens(tts_config: Any, num_samples: int) -> int:
-    """Convert number of samples to tokens.
-
-    Args:
-        tts_config: TTS configuration object with decoder_sample_rate and
-                   codec_tokens_per_sec attributes.
-        num_samples: Number of audio samples.
-    """
-    playback_time = samples_to_seconds(tts_config, num_samples)
-    return math.ceil(playback_time * tts_config.codec_tokens_per_sec)
 
 
 class RequestDriver(ABC):
@@ -401,6 +317,39 @@ class ProgressBarRequestDriver(RequestDriver):
         result = await self.request_driver.request(request_func_input)
         self.pbar.update(1)
         return result
+
+
+@contextlib.contextmanager
+def progressbar_request_driver(
+    request_driver: RequestDriver,
+    total: int,
+    *,
+    disable_tqdm: bool = False,
+    desc: str | None = None,
+) -> Iterator[RequestDriver]:
+    """Yield a request driver that advances a progress bar per request.
+
+    When *disable_tqdm* is set, the driver is yielded unwrapped and no bar is
+    shown. Otherwise the driver is wrapped in a :class:`ProgressBarRequestDriver`
+    backed by a ``tqdm`` bar that is closed on exit.
+
+    Args:
+        request_driver: The underlying request driver to wrap.
+        total: Total number of requests the bar tracks.
+        disable_tqdm: If True, skip the progress bar entirely.
+        desc: Optional description shown alongside the bar.
+
+    Yields:
+        The (possibly progress-wrapped) request driver.
+    """
+    if disable_tqdm:
+        yield request_driver
+        return
+    pbar = tqdm(total=total, desc=desc)
+    try:
+        yield ProgressBarRequestDriver(request_driver, pbar)
+    finally:
+        pbar.close()
 
 
 class TRTLLMRequestDriver(RequestDriver):

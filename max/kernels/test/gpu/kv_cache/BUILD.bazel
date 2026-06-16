@@ -22,7 +22,7 @@ _EXTRA_CONSTRAINTS = {
     "test_kv_cache_store_ragged.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: MOCO-3187
     "test_kv_cache_2m_iadd.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: MOCO-3187
     "test_mha_gemma4_sink_repro.mojo": ["//:amd_gpu"],  # gfx950 AGPR-Copy-MFMA regression check
-    "test_hk_mha_prefill_ragged_gate.mojo": ["//:mi355_gpu"],  # HK is tuned for gfx950 (MI355X)
+    "test_mha_prefill_v2_ragged_gate.mojo": ["//:mi355_gpu"],  # the kernel is tuned for gfx950 (MI355X)
     # test_mha_gemma4_shapes.mojo is split into per-(page_size, mask_kind) targets below; the AMD-only crash repro is one of them.
 }
 
@@ -73,6 +73,7 @@ _EXTRA_CONSTRAINTS = {
             "test_mha_gemma4_shapes.mojo",  # Split by (page_size, mask_kind) below
             "test_paged_lut_load_boundary.mojo",  # Split by page_size below (B200 LUT-load OOB regression)
             "test_mha_paged_kv_oob_canary.mojo",  # Split by page_size below (B200 NaN canary)
+            "test_paged_kv_null_block_sentinel.mojo",  # Explicit B200-only target below (SERVOPT-1456 kernel regression)
         ],
     )
 ]
@@ -448,6 +449,38 @@ _GEMMA4_SHAPES_CONFIGS = [
     )
     for page_size in (16, 32, 64, 128, 256)
 ]
+
+# test_paged_kv_null_block_sentinel.mojo
+# Regression test for CUDA_ERROR_ILLEGAL_ADDRESS (SERVOPT-1456).
+# Verifies that `populate` with LUT tail-padding filled with `total_num_pages`
+# (the null-block index) returns in-bounds row indices on the N+1 allocation.
+# Complements the Python-layer test in test_kv_cache_manager.py.
+mojo_test(
+    name = "test_paged_kv_null_block_sentinel.mojo.test",
+    size = "small",
+    srcs = [
+        "kv_cache_test_utils.mojo",
+        "test_paged_kv_null_block_sentinel.mojo",
+    ],
+    enable_assertions = True,
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    main = "test_paged_kv_null_block_sentinel.mojo",
+    tags = ["gpu"],
+    target_compatible_with = ["//:has_gpu"] + select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//max:internal_utils",
+        "//max:kv_cache",
+        "//max:linalg",
+        "//max:nn",
+        "//max:quantization",
+        "@mojo//:std",
+    ],
+)
 
 # test_mha_paged_kv_oob_canary.mojo
 # Stress test: gemma4 production shapes with KV padding pre-filled with

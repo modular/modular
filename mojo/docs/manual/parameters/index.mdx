@@ -124,7 +124,7 @@ Here's an example:
 def my_sort[
     # infer-only parameters
     dtype: DType,
-    width: Int,
+    width: SIMDSize,
     //,
     # positional-only parameter
     values: SIMD[dtype, width],
@@ -200,8 +200,8 @@ build generic collections. For example, a generic array type might include code
 like this:
 
 ```mojo
-struct GenericArray[ElementType: Copyable & ImplicitlyDestructible]:
-    var data: UnsafePointer[Self.ElementType, MutExternalOrigin]
+struct GenericArray[ElementType: Copyable & ImplicitlyDeletable]:
+    var data: UnsafePointer[Self.ElementType, MutUntrackedOrigin]
     var size: Int
 
     def __init__(out self, var *elements: Self.ElementType):
@@ -258,7 +258,7 @@ could add a static factory method to `GenericArray` with the following
 signature:
 
 ```mojo no-test
-struct GenericArray[ElementType: Copyable & ImplicitlyDestructible]:
+struct GenericArray[ElementType: Copyable & ImplicitlyDeletable]:
     ...
 
     @staticmethod
@@ -594,7 +594,7 @@ a constructor or static method.
 For example, consider the following struct:
 
 ```mojo
-struct One[Type: Writable & Copyable & ImplicitlyDestructible]:
+struct One[Type: Writable & Copyable & ImplicitlyDeletable]:
     var value: Self.Type
 
     def __init__(out self, value: Self.Type):
@@ -613,7 +613,7 @@ You can also infer parameters from a parameterized type passed to a constructor
 or static method:
 
 ```mojo
-struct Two[Type: Writable & Copyable & ImplicitlyDestructible]:
+struct Two[Type: Writable & Copyable & ImplicitlyDeletable]:
     var val1: Self.Type
     var val2: Self.Type
 
@@ -957,7 +957,7 @@ values to express new types:
 comptime TwoOfAKind[dt: DType] = SIMD[dt, 2]
 twoFloats = TwoOfAKind[DType.float32](1.0, 2.0)
 
-comptime StringKeyDict[ValueType: Copyable & ImplicitlyDestructible] = Dict[
+comptime StringKeyDict[ValueType: Copyable & ImplicitlyDeletable] = Dict[
     String, ValueType
 ]
 var b: StringKeyDict[UInt8] = {"answer": 42}

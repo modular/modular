@@ -36,7 +36,7 @@ def paramfor_has_next[
     IteratorType: Iterator & Copyable
 ](it: IteratorType) -> Bool where conforms_to(
     IteratorType.Element,
-    Movable & ImplicitlyDestructible,
+    Movable & ImplicitlyDeletable,
 ):
     var result = it.copy()
     try:
@@ -51,7 +51,7 @@ def paramfor_next_iter[
     IteratorType: Iterator & Copyable
 ](it: IteratorType) -> IteratorType where conforms_to(
     IteratorType.Element,
-    Movable & ImplicitlyDestructible,
+    Movable & ImplicitlyDeletable,
 ):
     # NOTE: This function is called by the compiler's elaborator only when
     # paramfor_has_next will return true. This is needed because the interpreter

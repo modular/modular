@@ -4,6 +4,12 @@ sidebar_label: Model bring-up workflow
 description: Understand MAX's model architecture system and how to implement a custom architecture by mapping config fields, translating weight names, connecting to the KV cache, and extending the compute graph.
 ---
 
+:::tip
+You can automate this entire model bring-up process using AI coding agents. See
+[Bring up a model with AI agent skills](/max/develop/model-bringup-skills/) for
+details.
+:::
+
 MAX organizes model support through **architectures**: Python module directories
 that define the compute graph, map configuration, and load weights. An
 architecture connects your Hugging Face checkpoint to the
@@ -127,8 +133,11 @@ typed configuration object to build the compute graph. The general pattern is to
 subclass the reference config class and override the fields where the Hugging
 Face convention differs from MAX's representation. The **Files and versions**
 tab on a Hugging Face model page includes the `config.json` your config class
-needs to map. Use the config to identify which fields your subclass must
-override and which MAX field names they correspond to:
+needs to map. For a field-by-field guide to reading a config and sorting its
+fields into the work each implies, see
+[Read a model config](/max/develop/read-model-config). Use the config to
+identify which fields your subclass must override and which MAX field names they
+correspond to:
 
 ```json title="config.json"
 {
@@ -289,7 +298,7 @@ allocation. See [Serve custom model
 architectures](/max/develop/serve-custom-model-architectures) for a complete
 implementation with [`KVCacheConfig`][kv-cache-config] wired end-to-end.
 
-[kv-cache-config]: /max/api/python/generated/max.pipelines.lib.config.KVCacheConfig/
+[kv-cache-config]: /max/api/python/generated/max.pipelines.kv_cache.KVCacheConfig/
 
 {/* TODO(docs): Link to attention-kv-cache page once it exists. Covers
 AttentionWithRope call signature, input_row_offsets, and KV cache failure modes

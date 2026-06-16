@@ -1,5 +1,6 @@
 load("@mojo//:mojo.bzl", "PROD_MOJOPKGS")
 load("//bazel:api.bzl", "modular_py_binary", "modular_py_library", "requirement")
+load("//max/python/max/pipelines/architectures:all_arches.bzl", "ALL_ARCHITECTURES")
 
 package(default_visibility = ["//max:consumers"])
 
@@ -22,7 +23,8 @@ modular_py_library(
     deps = [
         "//max/python/max/driver",
         "//max/python/max/pipelines",
-        "//max/python/max/pipelines/core",
+        "//max/python/max/pipelines:logging_utils",
+        "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/diffusion",
         "//max/python/max/pipelines/lib",
         "//max/python/max/pipelines/modeling",
@@ -55,10 +57,11 @@ modular_py_library(
     deps = [
         "//max/python/max/entrypoints",
         "//max/python/max:_core",
+        "//max/python/max/profiler",
         "//max/python/max/serve/telemetry",
         "//max/python/max/serve:config",
-        "//max/python/max/pipelines/modeling",
         "//max/python/max/pipelines",
+        "//max/python/max/pipelines/context",
         # These all point to the symlinked version of the benchmark directory.
         "//max/python/max/benchmark:benchmark_serving_lib",
         requirement("click"),
@@ -78,13 +81,16 @@ modular_py_binary(
         "OTEL_EXPORTER_OTLP_METRICS_DEFAULT_HISTOGRAM_AGGREGATION": "base2_exponential_bucket_histogram",
         "MODULAR_SHMEM_LIB_DIR": "../+http_archive+nvshmem_prebuilt",
     },
+    # Needed since users can select arbitrary arches on the CLI
+    ignore_extra_deps = ALL_ARCHITECTURES,
     mojo_deps = PROD_MOJOPKGS,
-    deps = [
+    deps = ALL_ARCHITECTURES + [
         ":entrypoints",
         "//max/python/max:_core",
         "//max/python/max/benchmark:benchmark_serving_lib",
         "//max/python/max/pipelines",
-        "//max/python/max/pipelines/modeling",
+        "//max/python/max/pipelines/context",
+        "//max/python/max/profiler",
         "//max/python/max/serve:config",
         "//max/python/max/serve/telemetry",
         requirement("click"),

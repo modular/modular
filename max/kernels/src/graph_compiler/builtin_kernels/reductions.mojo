@@ -37,11 +37,14 @@ from nn.argsort import argsort
 from nn.cumsum import cumsum
 from nn.gather_scatter import _unsafe_normalize_neg_index, normalize_neg_index
 from nn.normalization import (
+    apply_qk_rms_norm,
     group_norm,
     layer_norm,
     rms_norm,
     rms_norm_fused_residual_add,
     rms_norm_rope_gpu,
+    row_mean_of_squares,
+    row_mean_of_squares_qk,
 )
 from nn.softmax import logsoftmax, softmax
 from nn.topk import top_k, top_k_shape_impl
@@ -57,6 +60,8 @@ from std.logger import Logger
 comptime logger = Logger()
 
 from std.utils import IndexList, StaticTuple
+from std.utils.coord import Coord
+from std.utils.index import Index
 
 # ===-----------------------------------------------------------------------===#
 from .kernels import *
@@ -68,14 +73,14 @@ struct ArgMax:
     def execute[
         target: StaticString,
         rank: Int,
+        axis: Int,
         _trace_name: StaticString,
     ](
         output: OutputTensor[rank=rank, ...],
         input: InputTensor[rank=rank, ...],
-        axis: Scalar,
         ctx: DeviceContext,
     ) raises:
-        var axis_val = normalize_neg_index(Int(axis), rank)
+        var axis_val = normalize_neg_index(axis, rank)
 
         comptime if target == "cpu":
             argmax(
@@ -105,14 +110,14 @@ struct ArgMin:
     def execute[
         target: StaticString,
         rank: Int,
+        axis: Int,
         _trace_name: StaticString,
     ](
         output: OutputTensor[rank=rank, ...],
         input: InputTensor[rank=rank, ...],
-        axis: Scalar,
         ctx: DeviceContext,
     ) raises:
-        var axis_val = normalize_neg_index(Int(axis), rank)
+        var axis_val = normalize_neg_index(axis, rank)
 
         comptime if target == "cpu":
             argmin(
@@ -139,29 +144,30 @@ struct ArgNonZero:
     @staticmethod
     def execute(
         output_buffer: OutputTensor[rank=2, ...],
-        input_buffer: InputTensor[...],
+        input_buffer: InputTensor,
     ) raises:
         arg_nonzero.arg_nonzero(
             input_buffer.to_tile_tensor[DType.int64](),
             output_buffer.to_tile_tensor[DType.int64](),
         )
 
-    @staticmethod
-    def shape(input_buffer: InputTensor) -> IndexList[2]:
-        return arg_nonzero.arg_nonzero_shape(
-            input_buffer.to_tile_tensor[DType.int64]()
-        )
+
+@compiler.register_shape_function("mo.arg_nonzero")
+def arg_nonzero_shape(input_buffer: InputTensor) -> IndexList[2]:
+    return arg_nonzero.arg_nonzero_shape(
+        input_buffer.to_tile_tensor[DType.int64]()
+    )
 
 
 @compiler.register("mo.reduce.mean")
 struct Mean:
     @staticmethod
     def execute[
-        target: StaticString
+        target: StaticString,
+        axis: Int,
     ](
-        output: FusedOutputTensor[...],
+        output: FusedOutputTensor,
         input: FusedInputTensor[dtype=output.dtype, rank=output.rank, ...],
-        axis: Scalar,
         ctx: DeviceContext,
     ) capturing raises:
         @parameter
@@ -182,36 +188,207 @@ struct Mean:
                 rebind[IndexList[output.rank]](coords),
                 rebind[SIMD[output.dtype, width]](val),
             )
-
-        var axis_val = Int(axis)
 
         mean[
             output.dtype,
             input_fn,
             output_fn,
             target=target,
-        ](input.shape(), axis_val, output.shape(), ctx)
+            reduce_dim=axis,
+        ](Coord(input.shape()), Coord(output.shape()), ctx)
+
+
+@compiler.register_shape_function("mo.reduce.mean")
+def reduce_mean_shape[
+    input_rank: Int,
+    input_type: DType,
+    axis: Int,
+](
+    input: InputTensor[dtype=input_type, rank=input_rank, ...],
+) raises -> IndexList[input_rank]:
+    return reduce_shape(input, axis)
+
+
+@compiler.register("mo.reduce.row_mean_of_squares")
+struct RowMeanOfSquares:
+    """Per-row mean of squares over the last axis, accumulated in float32.
+
+    For input `x` of shape `[M, N]` computes `out[m, 0] = sum_n(x[m,n]^2) / N`
+    and writes a `[M, 1]` `output.dtype` result (typically float32). The square
+    and accumulation always run in the input's accumulation type (float32 for
+    bfloat16/float16/float32 inputs), independent of the output dtype.
+    """
 
     @staticmethod
-    def shape[
-        input_rank: Int,
-        input_type: DType,
+    def execute[
+        target: StaticString,
     ](
-        input: InputTensor[dtype=input_type, rank=input_rank, ...],
-        axis: Scalar,
-    ) raises -> IndexList[input_rank]:
-        return reduce_shape(input, Int(axis))
+        output: OutputTensor[rank=2, ...],
+        input: FusedInputTensor[rank=2, ...],
+        ctx: DeviceContext,
+    ) capturing raises:
+        if output.shape()[0] != input.shape()[0] or output.shape()[1] != 1:
+            raise Error("output must have shape [input_rows, 1]")
+
+        @parameter
+        @always_inline
+        def input_fn[
+            width: Int, _rank: Int
+        ](coords: IndexList[_rank]) -> SIMD[input.dtype, width]:
+            return input._lambda_load[width=width](
+                rebind[IndexList[input.rank]](coords)
+            )
+
+        @parameter
+        @always_inline
+        def output_fn(row: Int, val: Scalar[output.dtype]):
+            output.store[width=1](Index(row, 0), val)
+
+        row_mean_of_squares[input_fn, output_fn, target=target](
+            input.shape(), ctx
+        )
+
+
+@compiler.register_shape_function("mo.reduce.row_mean_of_squares")
+def reduce_row_mean_of_squares_shape(
+    input: InputTensor[rank=2, ...],
+) -> IndexList[2]:
+    return Index(input.shape()[0], 1)
+
+
+@compiler.register("mo.reduce.row_mean_of_squares_qk")
+struct RowMeanOfSquaresQK:
+    """Fused per-row mean of squares for two operands Q and K.
+
+    For `q` of shape `[M, Nq]` and `k` of shape `[M, Nk]` (sharing rows but with
+    possibly different column counts), computes `out[m, 0] = mean_n(q[m,n]^2)`
+    and `out[m, 1] = mean_n(k[m,n]^2)` into a `[M, 2]` output. The square and
+    accumulation always run in float32. This is a single-launch fusion of two
+    `mo.reduce.row_mean_of_squares` ops plus a concat, used for cross-head
+    QK-RMSNorm statistics under tensor parallelism.
+    """
+
+    @staticmethod
+    def execute[
+        target: StaticString,
+    ](
+        output: OutputTensor[rank=2, ...],
+        q: InputTensor[rank=2, ...],
+        k: InputTensor[rank=2, ...],
+        ctx: DeviceContext,
+    ) capturing raises:
+        comptime assert q.dtype == k.dtype, "q and k must share a dtype"
+        if (
+            output.shape()[0] != q.shape()[0]
+            or output.shape()[0] != k.shape()[0]
+            or output.shape()[1] != 2
+        ):
+            raise Error("output must have shape [rows, 2] matching q/k rows")
+
+        # `k` is bitcast to `q.dtype` to unify the single `in_dtype` kernel
+        # parameter (q and k share a dtype, asserted above).
+        row_mean_of_squares_qk[target=target](
+            output.to_tile_tensor[DType.int64](),
+            q.to_tile_tensor[DType.int64](),
+            k.to_tile_tensor[DType.int64]().bitcast[q.dtype](),
+            q.shape()[0],
+            q.shape()[1],
+            k.shape()[1],
+            ctx,
+        )
+
+
+@compiler.register_shape_function("mo.reduce.row_mean_of_squares_qk")
+def reduce_row_mean_of_squares_qk_shape(
+    q: InputTensor[rank=2, ...],
+    k: InputTensor[rank=2, ...],
+) -> IndexList[2]:
+    return Index(q.shape()[0], 2)
+
+
+@compiler.register("mo.norm.apply_qk_rms_norm")
+struct ApplyQKRMSNorm:
+    """Fused per-element QK-RMSNorm apply for two operands Q and K.
+
+    Given the already cross-rank-reduced per-row statistics `qk_var [M, 2]`
+    (col 0 = mean(q^2), col 1 = mean(k^2), float32) and per-column float32
+    scales `gamma_q [Nq]` / `gamma_k [Nk]`, applies in a single launch:
+
+    `q_out[m,c] = cast((cast(q[m,c], f32) * rsqrt(qk_var[m,0] + eps)) * gamma_q[c], q.dtype)`
+    and likewise for K with column 1. The grouping `((x * rs) * gamma)` then
+    cast matches the unfused graph this replaces for bit-accuracy. This fuses
+    the QK-RMSNorm apply chain (~7 tiny elementwise/View kernels) into one
+    launch, used for cross-head QK-RMSNorm under tensor parallelism.
+
+    Outputs (in order): `q_out [M, Nq]`, `k_out [M, Nk]` (both q/k dtype).
+    Inputs (in order): `q [M, Nq]`, `k [M, Nk]` (activation dtype),
+    `qk_var [M, 2]` (float32), `gamma_q [Nq]` (float32),
+    `gamma_k [Nk]` (float32). Attribute: `epsilon` (float32 host scalar).
+    """
+
+    @staticmethod
+    def execute[
+        target: StaticString,
+    ](
+        q_out: OutputTensor[rank=2, ...],
+        k_out: OutputTensor[rank=2, ...],
+        q: InputTensor[rank=2, ...],
+        k: InputTensor[rank=2, ...],
+        qk_var: InputTensor[dtype=DType.float32, rank=2, ...],
+        gamma_q: InputTensor[dtype=DType.float32, rank=1, ...],
+        gamma_k: InputTensor[dtype=DType.float32, rank=1, ...],
+        epsilon: Scalar[DType.float32],
+        ctx: DeviceContext,
+    ) capturing raises:
+        comptime assert q.dtype == k.dtype, "q and k must share a dtype"
+        comptime assert (
+            q_out.dtype == q.dtype and k_out.dtype == q.dtype
+        ), "outputs must match the q/k dtype"
+        if q_out.shape()[0] != q.shape()[0] or q_out.shape()[1] != q.shape()[1]:
+            raise Error("q_out must have shape [rows, Nq] matching q")
+        if k_out.shape()[0] != k.shape()[0] or k_out.shape()[1] != k.shape()[1]:
+            raise Error("k_out must have shape [rows, Nk] matching k")
+        if (
+            qk_var.shape()[0] != q.shape()[0]
+            or qk_var.shape()[0] != k.shape()[0]
+            or qk_var.shape()[1] != 2
+        ):
+            raise Error("qk_var must have shape [rows, 2] matching q/k rows")
+        if gamma_q.shape()[0] != q.shape()[1]:
+            raise Error("gamma_q must have shape [Nq] matching q cols")
+        if gamma_k.shape()[0] != k.shape()[1]:
+            raise Error("gamma_k must have shape [Nk] matching k cols")
+
+        # `out_dtype` is inferred from `q_out`; `k_out` shares the same dtype
+        # (asserted above), so bitcast its tile tensor to `q_out.dtype` to
+        # unify the single `out_dtype` parameter. Likewise `in_dtype` is
+        # inferred from `q`, so bitcast `k` to `q.dtype`.
+        apply_qk_rms_norm[target=target,](
+            q_out.to_tile_tensor[DType.int64](),
+            k_out.to_tile_tensor[DType.int64]().bitcast[q_out.dtype](),
+            gamma_q.to_tile_tensor[DType.int64](),
+            gamma_k.to_tile_tensor[DType.int64](),
+            qk_var.to_tile_tensor[DType.int64](),
+            q.to_tile_tensor[DType.int64](),
+            k.to_tile_tensor[DType.int64]().bitcast[q.dtype](),
+            epsilon,
+            q.shape()[0],
+            q.shape()[1],
+            k.shape()[1],
+            ctx,
+        )
 
 
 @compiler.register("mo.reduce.add")
 struct ReduceAdd:
     @staticmethod
     def execute[
-        target: StaticString, _trace_name: StaticString
+        target: StaticString,
+        axis: Int,
+        _trace_name: StaticString,
     ](
-        output: FusedOutputTensor[...],
+        output: FusedOutputTensor,
         input: FusedInputTensor[dtype=output.dtype, rank=output.rank, ...],
-        axis: Scalar,
         ctx: DeviceContext,
     ) capturing raises:
         @parameter
@@ -233,24 +410,24 @@ struct ReduceAdd:
                 rebind[SIMD[output.dtype, width]](val),
             )
 
-        var axis_val = Int(axis)
-
         sum[
             output.dtype,
             input_fn,
             output_fn,
             target=target,
-        ](input.shape(), axis_val, ctx)
+            reduce_dim=axis,
+        ](Coord(input.shape()), ctx)
 
-    @staticmethod
-    def shape[
-        input_rank: Int,
-        input_type: DType,
-    ](
-        input: InputTensor[dtype=input_type, rank=input_rank, ...],
-        axis: Scalar,
-    ) raises -> IndexList[input_rank]:
-        return reduce_shape(input, Int(axis))
+
+@compiler.register_shape_function("mo.reduce.add")
+def reduce_add_shape[
+    input_rank: Int,
+    input_type: DType,
+    axis: Int,
+](
+    input: InputTensor[dtype=input_type, rank=input_rank, ...],
+) raises -> IndexList[input_rank]:
+    return reduce_shape(input, axis)
 
 
 @compiler.register("mo.reduce.mul")
@@ -258,11 +435,11 @@ struct ReduceMul:
     @staticmethod
     def execute[
         target: StaticString,
+        axis: Int,
         _trace_name: StaticString,
     ](
-        output: FusedOutputTensor[...],
+        output: FusedOutputTensor,
         input: FusedInputTensor[dtype=output.dtype, rank=output.rank, ...],
-        axis: Scalar,
         ctx: DeviceContext,
     ) capturing raises:
         @parameter
@@ -284,24 +461,24 @@ struct ReduceMul:
                 rebind[SIMD[output.dtype, width]](val),
             )
 
-        var axis_val = Int(axis)
-
         product[
             output.dtype,
             input_fn,
             output_fn,
             target=target,
-        ](input.shape(), axis_val, ctx)
+            reduce_dim=axis,
+        ](Coord(input.shape()), ctx)
 
-    @staticmethod
-    def shape[
-        input_rank: Int,
-        input_type: DType,
-    ](
-        input: InputTensor[dtype=input_type, rank=input_rank, ...],
-        axis: Scalar,
-    ) raises -> IndexList[input_rank]:
-        return reduce_shape(input, Int(axis))
+
+@compiler.register_shape_function("mo.reduce.mul")
+def reduce_mul_shape[
+    input_rank: Int,
+    input_type: DType,
+    axis: Int,
+](
+    input: InputTensor[dtype=input_type, rank=input_rank, ...],
+) raises -> IndexList[input_rank]:
+    return reduce_shape(input, axis)
 
 
 @compiler.register("mo.reduce.max")
@@ -309,11 +486,11 @@ struct ReduceMax:
     @staticmethod
     def execute[
         target: StaticString,
+        axis: Int,
         _trace_name: StaticString,
     ](
-        output: FusedOutputTensor[...],
+        output: FusedOutputTensor,
         input: FusedInputTensor[dtype=output.dtype, rank=output.rank, ...],
-        axis: Scalar,
         ctx: DeviceContext,
     ) capturing raises:
         @parameter
@@ -335,24 +512,24 @@ struct ReduceMax:
                 rebind[SIMD[output.dtype, width]](val),
             )
 
-        var axis_val = Int(axis)
-
         reduce_max[
             output.dtype,
             input_fn,
             output_fn,
             target=target,
-        ](input.shape(), axis_val, ctx)
+            reduce_dim=axis,
+        ](Coord(input.shape()), ctx)
 
-    @staticmethod
-    def shape[
-        input_rank: Int,
-        input_type: DType,
-    ](
-        input: InputTensor[dtype=input_type, rank=input_rank, ...],
-        axis: Scalar,
-    ) raises -> IndexList[input_rank]:
-        return reduce_shape(input, Int(axis))
+
+@compiler.register_shape_function("mo.reduce.max")
+def reduce_max_shape[
+    input_rank: Int,
+    input_type: DType,
+    axis: Int,
+](
+    input: InputTensor[dtype=input_type, rank=input_rank, ...],
+) raises -> IndexList[input_rank]:
+    return reduce_shape(input, axis)
 
 
 @compiler.register("mo.reduce.min")
@@ -360,11 +537,11 @@ struct ReduceMin:
     @staticmethod
     def execute[
         target: StaticString,
+        axis: Int,
         _trace_name: StaticString,
     ](
-        output: FusedOutputTensor[...],
+        output: FusedOutputTensor,
         input: FusedInputTensor[dtype=output.dtype, rank=output.rank, ...],
-        axis: Scalar,
         ctx: DeviceContext,
     ) capturing raises:
         @parameter
@@ -386,24 +563,24 @@ struct ReduceMin:
                 rebind[SIMD[output.dtype, width]](val),
             )
 
-        var axis_val = Int(axis)
-
         reduce_min[
             output.dtype,
             input_fn,
             output_fn,
             target=target,
-        ](input.shape(), axis_val, ctx)
+            reduce_dim=axis,
+        ](Coord(input.shape()), ctx)
 
-    @staticmethod
-    def shape[
-        input_rank: Int,
-        input_type: DType,
-    ](
-        input: InputTensor[dtype=input_type, rank=input_rank, ...],
-        axis: Scalar,
-    ) raises -> IndexList[input_rank]:
-        return reduce_shape(input, Int(axis))
+
+@compiler.register_shape_function("mo.reduce.min")
+def reduce_min_shape[
+    input_rank: Int,
+    input_type: DType,
+    axis: Int,
+](
+    input: InputTensor[dtype=input_type, rank=input_rank, ...],
+) raises -> IndexList[input_rank]:
+    return reduce_shape(input, axis)
 
 
 @compiler.register("mo.reduce.layer_norm")
@@ -460,17 +637,18 @@ struct LayerNorm:
             ctx,
         )
 
-    @staticmethod
-    def shape[
-        dtype: DType,
-        rank: Int,
-    ](
-        input: InputTensor[dtype=dtype, rank=rank, ...],
-        gamma: InputTensor[dtype=dtype, rank=1, ...],
-        beta: InputTensor[dtype=dtype, rank=1, ...],
-        epsilon: Scalar[dtype=dtype],
-    ) -> IndexList[rank]:
-        return input.shape()
+
+@compiler.register_shape_function("mo.reduce.layer_norm")
+def reduce_layer_norm_shape[
+    dtype: DType,
+    rank: Int,
+](
+    input: InputTensor[dtype=dtype, rank=rank, ...],
+    gamma: InputTensor[dtype=dtype, rank=1, ...],
+    beta: InputTensor[dtype=dtype, rank=1, ...],
+    epsilon: Scalar[dtype=dtype],
+) -> IndexList[rank]:
+    return input.shape()
 
 
 @compiler.register("mo.reduce.rms_norm")
@@ -526,20 +704,21 @@ struct ReduceRMSNorm:
             ctx,
         )
 
-    @staticmethod
-    def shape[
-        dtype: DType,
-        rank: Int,
-    ](
-        input: InputTensor[dtype=dtype, rank=rank, ...],
-        gamma: InputTensor[dtype=dtype, rank=1, ...],
-        epsilon: Scalar[dtype=dtype],
-        weight_offset: Scalar[dtype=dtype],
-    ) -> IndexList[rank]:
-        return input.shape()
+
+@compiler.register_shape_function("mo.reduce.rms_norm")
+def reduce_rms_norm_shape[
+    dtype: DType,
+    rank: Int,
+](
+    input: InputTensor[dtype=dtype, rank=rank, ...],
+    gamma: InputTensor[dtype=dtype, rank=1, ...],
+    epsilon: Scalar[dtype=dtype],
+    weight_offset: Scalar[dtype=dtype],
+) -> IndexList[rank]:
+    return input.shape()
 
 
-@compiler.register("mo.reduce.rms_norm.RoPE")
+@compiler.register("mo.composite.rms_norm_rope")
 struct ReduceRMSNormRoPE:
     """Fuses RMS normalization and Rotary Position Embedding (RoPE) into one operation.
 
@@ -621,20 +800,21 @@ struct ReduceRMSNormRoPE:
             ctx,
         )
 
-    @staticmethod
-    def shape[
-        dtype: DType,
-        cos_sin_dtype: DType,
-        rank: Int,
-    ](
-        input: InputTensor[dtype=dtype, rank=rank, ...],
-        weight: InputTensor[dtype=dtype, rank=1, ...],
-        epsilon: Scalar[dtype=dtype],
-        weight_offset: Scalar[dtype=dtype],
-        cos_vals: InputTensor[dtype=cos_sin_dtype, rank=rank, ...],
-        sin_vals: InputTensor[dtype=cos_sin_dtype, rank=rank, ...],
-    ) -> IndexList[rank]:
-        return input.shape()
+
+@compiler.register_shape_function("mo.composite.rms_norm_rope")
+def composite_rms_norm_rope_shape[
+    dtype: DType,
+    cos_sin_dtype: DType,
+    rank: Int,
+](
+    input: InputTensor[dtype=dtype, rank=rank, ...],
+    weight: InputTensor[dtype=dtype, rank=1, ...],
+    epsilon: Scalar[dtype=dtype],
+    weight_offset: Scalar[dtype=dtype],
+    cos_vals: InputTensor[dtype=cos_sin_dtype, rank=rank, ...],
+    sin_vals: InputTensor[dtype=cos_sin_dtype, rank=rank, ...],
+) -> IndexList[rank]:
+    return input.shape()
 
 
 @compiler.register("mo.reduce.group_norm")
@@ -680,18 +860,19 @@ struct ReduceGroupNorm:
             ctx=ctx,
         )
 
-    @staticmethod
-    def shape[
-        dtype: DType,
-        rank: Int,
-    ](
-        input: InputTensor[dtype=dtype, rank=rank, ...],
-        gamma: InputTensor[dtype=dtype, rank=1, ...],
-        beta: InputTensor[dtype=dtype, rank=1, ...],
-        epsilon: Scalar[dtype=dtype],
-        num_groups: Int32,
-    ) -> IndexList[rank]:
-        return input.shape()
+
+@compiler.register_shape_function("mo.reduce.group_norm")
+def reduce_group_norm_shape[
+    dtype: DType,
+    rank: Int,
+](
+    input: InputTensor[dtype=dtype, rank=rank, ...],
+    gamma: InputTensor[dtype=dtype, rank=1, ...],
+    beta: InputTensor[dtype=dtype, rank=1, ...],
+    epsilon: Scalar[dtype=dtype],
+    num_groups: Int32,
+) -> IndexList[rank]:
+    return input.shape()
 
 
 @compiler.register("mo.reduce.reduce_min_and_max")
@@ -702,10 +883,10 @@ struct ReduceMinAndMax:
         _trace_name: StaticString,
         dtype: DType,
         rank: Int,
+        axis: Int,
     ](
         output: OutputTensor[dtype=dtype, rank=rank, ...],
         input: InputTensor[dtype=dtype, rank=rank, ...],
-        axis0: Scalar,
         ctx: DeviceContext,
     ) raises:
         """Given a tensor of shape [A, B, C, D] and reducing along dimension 'C'
@@ -714,7 +895,10 @@ struct ReduceMinAndMax:
         """
 
         comptime num_reductions = 2
-        var axis = normalize_neg_index(Int(axis0), rank)
+        comptime norm_axis = axis + rank if axis < 0 else axis
+        comptime assert (
+            0 <= norm_axis < rank
+        ), "axis must be between [0, <input rank>)"
 
         @parameter
         @always_inline
@@ -755,13 +939,13 @@ struct ReduceMinAndMax:
             # TODO: once we support multiple outputs, change this to route to
             # TODO: multiple output tensors.
             var indices_min = indices
-            indices_min[axis] = 0
+            indices_min[norm_axis] = 0
             output_0_fn[width, rank](
                 indices_min, rebind[SIMD[dtype, width]](val[0])
             )
 
             var indices_max = indices
-            indices_max[axis] = 1
+            indices_max[norm_axis] = 1
             output_0_fn[width, rank](
                 indices_max, rebind[SIMD[dtype, width]](val[1])
             )
@@ -793,23 +977,25 @@ struct ReduceMinAndMax:
             output_0_fn_wrapper,
             reduce_fn,
             target=target,
+            reduce_dim=norm_axis,
         ](
-            input.shape(),
+            Coord(input.shape()),
             init=init,
-            reduce_dim=axis,
             context=Optional[DeviceContext](ctx),
         )
-        _ = axis
-
-    @staticmethod
-    def shape(input: InputTensor[...], axis: Scalar) -> IndexList[input.rank]:
-        var new_shape = input.shape()
-        new_shape[_unsafe_normalize_neg_index(Int(axis), input.rank)] = 2
-
-        return new_shape
 
 
-@compiler.register("mo.reduce.rms_norm_fused_residual_add")
+@compiler.register_shape_function("mo.reduce.reduce_min_and_max")
+def reduce_reduce_min_and_max_shape[
+    axis: Int,
+](input: InputTensor) -> IndexList[input.rank]:
+    var new_shape = input.shape()
+    new_shape[_unsafe_normalize_neg_index(axis, input.rank)] = 2
+
+    return new_shape
+
+
+@compiler.register("mo.composite.rms_norm_fused_residual_add")
 struct ReduceRMSNormFusedResidualAdd:
     @staticmethod
     def execute[
@@ -894,21 +1080,22 @@ struct ReduceRMSNormFusedResidualAdd:
             ctx,
         )
 
-    @staticmethod
-    def shape[
-        dtype: DType,
-        rank: Int,
-    ](
-        input: InputTensor[dtype=dtype, rank=rank, ...],
-        residual_input: InputTensor[dtype=dtype, rank=rank, ...],
-        gamma1: InputTensor[dtype=dtype, rank=1, ...],
-        gamma2: InputTensor[dtype=dtype, rank=1, ...],
-        epsilon1: Scalar[dtype=dtype],
-        epsilon2: Scalar[dtype=dtype],
-        weight_offset1: Scalar[dtype=dtype],
-        weight_offset2: Scalar[dtype=dtype],
-    ) -> IndexList[rank]:
-        return input.shape()
+
+@compiler.register_shape_function("mo.composite.rms_norm_fused_residual_add")
+def composite_rms_norm_fused_residual_add_shape[
+    dtype: DType,
+    rank: Int,
+](
+    input: InputTensor[dtype=dtype, rank=rank, ...],
+    residual_input: InputTensor[dtype=dtype, rank=rank, ...],
+    gamma1: InputTensor[dtype=dtype, rank=1, ...],
+    gamma2: InputTensor[dtype=dtype, rank=1, ...],
+    epsilon1: Scalar[dtype=dtype],
+    epsilon2: Scalar[dtype=dtype],
+    weight_offset1: Scalar[dtype=dtype],
+    weight_offset2: Scalar[dtype=dtype],
+) -> IndexList[rank]:
+    return input.shape()
 
 
 @compiler.register("mo.bottom_k")
@@ -937,20 +1124,21 @@ struct BottomK:
             ctx,
         )
 
-    @staticmethod
-    def shape(
-        input: InputTensor[...],
-        k: Scalar,
-        axis: Scalar,
-        sorted: Scalar[DType.bool],
-    ) raises -> IndexList[input.rank]:
-        return rebind[IndexList[input.rank]](
-            top_k_shape_impl(
-                input.to_tile_tensor[DType.int64](),
-                Int(k),
-                Int(axis),
-            )
+
+@compiler.register_shape_function("mo.bottom_k")
+def bottom_k_shape(
+    input: InputTensor,
+    k: Scalar,
+    axis: Scalar,
+    sorted: Scalar[DType.bool],
+) raises -> IndexList[input.rank]:
+    return rebind[IndexList[input.rank]](
+        top_k_shape_impl(
+            input.to_tile_tensor[DType.int64](),
+            Int(k),
+            Int(axis),
         )
+    )
 
 
 @compiler.register("mo.top_k")
@@ -980,42 +1168,40 @@ struct TopK:
             ctx,
         )
 
-    @staticmethod
-    def shape(
-        input: InputTensor[...],
-        k: Scalar,
-        axis: Scalar,
-        sorted: Scalar[DType.bool],
-    ) raises -> IndexList[input.rank]:
-        return rebind[IndexList[input.rank]](
-            top_k_shape_impl(
-                input.to_tile_tensor[DType.int64](),
-                Int(k),
-                Int(axis),
-            )
+
+@compiler.register_shape_function("mo.top_k")
+def top_k_shape(
+    input: InputTensor,
+    k: Scalar,
+    axis: Scalar,
+    sorted: Scalar[DType.bool],
+) raises -> IndexList[input.rank]:
+    return rebind[IndexList[input.rank]](
+        top_k_shape_impl(
+            input.to_tile_tensor[DType.int64](),
+            Int(k),
+            Int(axis),
         )
+    )
 
 
 @compiler.register("mo.reduce.softmax")
 struct Softmax:
     @staticmethod
     def execute[
-        target: StaticString
+        target: StaticString,
+        axis: Int,
+        has_prologue_fusion: Bool,
     ](
-        output: OutputTensor[...],
+        output: OutputTensor,
         input: FusedInputTensor[dtype=output.dtype, rank=output.rank, ...],
-        axis: Scalar,
         ctx: DeviceContext,
     ) capturing raises:
         # For adapting input fusion lambda required by call
         @parameter
         @always_inline
-        def input_fn[
-            width: Int, _rank: Int
-        ](coords: IndexList[_rank]) -> SIMD[output.dtype, width]:
-            return input._lambda_load[width=width](
-                rebind[IndexList[input.rank]](coords)
-            )
+        def input_fn[width: Int](coords: Coord) -> SIMD[output.dtype, width]:
+            return input._lambda_load[width=width](coords)
 
         comptime simd_width = simd_width_of[
             output.dtype, target=get_gpu_target()
@@ -1027,10 +1213,11 @@ struct Softmax:
             output.rank,
             input_fn,
             target,
+            has_prologue_fusion=has_prologue_fusion,
         ](
-            output.shape(),
+            Coord(output.shape()),
             output.to_tile_tensor[DType.int64](),
-            Int(axis),
+            axis,
             context=ctx,
         )
 
@@ -1039,22 +1226,19 @@ struct Softmax:
 struct LogSoftmax:
     @staticmethod
     def execute[
-        target: StaticString
+        target: StaticString,
+        axis: Int,
+        has_prologue_fusion: Bool,
     ](
-        output: OutputTensor[...],
+        output: OutputTensor,
         input: FusedInputTensor[dtype=output.dtype, rank=output.rank, ...],
-        axis: Scalar,
         ctx: DeviceContext,
     ) capturing raises:
         # For adapting input fusion lambda required by call
         @parameter
         @always_inline
-        def input_fn[
-            width: Int, _rank: Int
-        ](coords: IndexList[_rank]) -> SIMD[output.dtype, width]:
-            return input._lambda_load[width=width](
-                rebind[IndexList[input.rank]](coords)
-            )
+        def input_fn[width: Int](coords: Coord) -> SIMD[output.dtype, width]:
+            return input._lambda_load[width=width](coords)
 
         logsoftmax[
             output.dtype,
@@ -1062,10 +1246,11 @@ struct LogSoftmax:
             output.rank,
             input_fn,
             target,
+            has_prologue_fusion=has_prologue_fusion,
         ](
-            output.shape(),
+            Coord(output.shape()),
             output.to_tile_tensor[DType.int64](),
-            Int(axis),
+            axis,
             context=ctx,
         )
 
@@ -1078,16 +1263,15 @@ struct CumSum:
         rank: Int,
         exclusive: Int,
         reverse: Int,
+        axis: Int,
     ](
         output: OutputTensor[dtype=dtype, rank=rank, ...],
         input: InputTensor[dtype=dtype, rank=rank, ...],
-        axis: Scalar,
         ctx: DeviceContext,
     ):
-        cumsum[dtype, Bool(exclusive), Bool(reverse)](
+        cumsum[dtype, Bool(exclusive), Bool(reverse), axis=axis](
             output.to_tile_tensor[DType.int64](),
             input.to_tile_tensor[DType.int64](),
-            _unsafe_normalize_neg_index(Int(axis), rank),
         )
 
 

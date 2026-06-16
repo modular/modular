@@ -14,6 +14,7 @@ mojo_library(
         "//max:kv_cache",
         "//max:layout",
         "//max:linalg",
+        "//max:msa",
         "//max:nn",
         "//max:quantization",
         "//max:shmem",

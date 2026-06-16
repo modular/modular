@@ -32,9 +32,13 @@ from max.engine import InferenceSession, Model
 from max.graph import BufferValue, Graph, TensorValue, Value
 from max.graph.weights import Weights, WeightsAdapter, load_weights
 from max.nn.comm.ep import EPCommInitializer
-from max.nn.kv_cache import KVCacheInputs, KVCacheParams, PagedCacheValues
+from max.nn.kv_cache import (
+    KVCacheInputsInterface,
+    KVCacheParams,
+    MultiKVCacheParams,
+)
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
-from max.pipelines.core import TextContext
+from max.pipelines.context import TextContext
 from max.pipelines.lib import (
     CompilationTimer,
     KVCacheConfig,
@@ -68,7 +72,6 @@ class Eagle3MHADeepseekV3Inputs(DeepseekV3Inputs):
     """
 
     draft_tokens: Buffer | None = None
-    draft_kv_blocks: list[Buffer] | None = None
     """One persistent ``kv_blocks`` Buffer per device. Other fields
     (cache_lengths, lookup_table, max_lengths,
     attention_dispatch_metadata) are borrowed from the target's
@@ -99,8 +102,6 @@ class Eagle3MHADeepseekV3Inputs(DeepseekV3Inputs):
         buffers = super().buffers
         if self.draft_tokens is not None:
             buffers += (self.draft_tokens,)
-        if self.draft_kv_blocks is not None:
-            buffers += tuple(self.draft_kv_blocks)
         assert self.seed is not None
         buffers += (self.seed,)
         if self.draft_tokens is not None:
@@ -274,6 +275,10 @@ class Eagle3MHADeepseekV3Model(DeepseekV3Model):
             speculative_method=target_kv.speculative_method,
             num_draft_tokens=target_kv.num_draft_tokens,
         )
+        # The model owns the unified ``{"target", "draft"}`` tree
+        self.kv_params = MultiKVCacheParams.from_params(
+            {"target": target_kv, "draft": self._draft_kv_params}
+        )
 
         draft_config: Eagle3MHAKimiK25DraftConfig = _build_mha_draft_config(
             draft_hf,
@@ -334,9 +339,7 @@ class Eagle3MHADeepseekV3Model(DeepseekV3Model):
         with CompilationTimer("eagle3_mha_deepseekV3_model") as timer:
             with Graph(
                 "eagle3_mha_deepseekV3_graph",
-                input_types=nn_model.input_types(
-                    self.kv_params, self._draft_kv_params
-                ),
+                input_types=nn_model.input_types(self.kv_params),
             ) as graph:
                 (
                     tokens,
@@ -353,20 +356,9 @@ class Eagle3MHADeepseekV3Model(DeepseekV3Model):
                     for _ in range(len(self.devices))
                 ]
 
-                target_symbolic = self.kv_params.get_symbolic_inputs(
-                    draft_attention_group=self._draft_kv_params
-                )
-                fetch_types = target_symbolic.inputs[0].flatten()
-                len_of_kv_inputs = len(list(fetch_types)) * len(self.devices)
-                kv_caches_per_dev = list(
-                    target_symbolic.unflatten(
-                        iter(
-                            [
-                                next(variadic_args_iter)
-                                for _ in range(len_of_kv_inputs)
-                            ]
-                        )
-                    ).inputs
+                # Unflatten the unified KV-cache tree ``{"target", "draft"}``
+                kv_caches_per_dev, draft_kv_collections = (
+                    self.kv_params.unflatten_basic_kv_tree(variadic_args_iter)
                 )
 
                 batch_context_lengths = [
@@ -382,21 +374,6 @@ class Eagle3MHADeepseekV3Model(DeepseekV3Model):
                     ]
 
                 draft_tokens = next(variadic_args_iter).tensor
-
-                draft_kv_collections: list[PagedCacheValues] = []
-                for dev_idx in range(len(self.devices)):
-                    draft_kv_blocks = next(variadic_args_iter).buffer
-                    target_kv_dev = kv_caches_per_dev[dev_idx]
-                    draft_kv_collections.append(
-                        PagedCacheValues(
-                            kv_blocks=draft_kv_blocks,
-                            cache_lengths=target_kv_dev.cache_lengths,
-                            lookup_table=target_kv_dev.lookup_table,
-                            max_lengths=target_kv_dev.max_lengths,
-                            attention_dispatch_metadata=target_kv_dev.draft_attention_dispatch_metadata,
-                            draft_attention_dispatch_metadata=target_kv_dev.draft_attention_dispatch_metadata,
-                        )
-                    )
 
                 seed = next(variadic_args_iter).tensor
                 temperature = next(variadic_args_iter).tensor
@@ -464,10 +441,9 @@ class Eagle3MHADeepseekV3Model(DeepseekV3Model):
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
+        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
         draft_tokens: Buffer | None = None,
-        draft_kv_cache_buffers: list[Buffer] | None = None,
         **kwargs,
     ) -> Eagle3MHADeepseekV3Inputs:
         base = DeepseekV3Model.prepare_initial_token_inputs(
@@ -484,16 +460,8 @@ class Eagle3MHADeepseekV3Model(DeepseekV3Model):
             data_parallel_splits=base.data_parallel_splits,
             ep_inputs=base.ep_inputs,
             draft_tokens=draft_tokens,
-            draft_kv_blocks=draft_kv_cache_buffers,
             seed=self._next_seed(),
         )
-
-    def prepare_next_token_inputs(
-        self,
-        next_tokens: Buffer,
-        prev_model_inputs: ModelInputs,
-    ) -> Eagle3MHADeepseekV3Inputs:
-        raise NotImplementedError("Eagle does not support Multistep execution")
 
 
 def _default_aux_layer_ids(

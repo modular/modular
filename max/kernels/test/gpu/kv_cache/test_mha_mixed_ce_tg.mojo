@@ -240,9 +240,18 @@ def execute_ragged_flash_attention[
                         mixed_ce_ragged_offset + s, h, hd
                     ]
                     try:
+                        # 1 BF16 ULP tolerance: the SM100 1Q vs 2Q paths
+                        # (dispatched per-call based on max_prompt_len)
+                        # use different FP reduction orders, so cross-
+                        # dispatch comparisons here aren't bit-identical
+                        # even when both paths are correct. rtol=1e-2 /
+                        # atol=1e-5 matches the convention used in the
+                        # SM100 MHA test suite (e.g. test_mha_causal_mask).
                         assert_almost_equal(
                             true_ce_val,
                             mixed_ce_val,
+                            atol=1e-5,
+                            rtol=1e-2,
                         )
                     except e:
                         print(

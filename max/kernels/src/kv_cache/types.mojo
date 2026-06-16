@@ -34,7 +34,6 @@ from layout import (
     Coord,
     CoordLike,
     IntTuple,
-    LTToTTLayout,
     Layout,
     LayoutTensor,
     TensorLayout,
@@ -279,7 +278,7 @@ struct PagedRowIndices[
         self,
         tma_op: TMATensorTile[dtype, 3, tile_shape, desc_shape, True],
         stage_base: UnsafePointer[
-            Scalar[dtype], MutAnyOrigin, address_space=AddressSpace.SHARED
+            mut=True, Scalar[dtype], _, address_space=AddressSpace.SHARED
         ],
         ref[AddressSpace.SHARED] mbar: SharedMemBarrier,
         *,
@@ -456,7 +455,7 @@ struct PagedRowIndices[
         self,
         tma_op: TMATensorTile[dtype, 3, tile_shape, desc_shape, True],
         stage_base: UnsafePointer[
-            Scalar[dtype], MutAnyOrigin, address_space=AddressSpace.SHARED
+            mut=True, Scalar[dtype], _, address_space=AddressSpace.SHARED
         ],
         ref[AddressSpace.SHARED] mbar: SharedMemBarrier,
         *,
@@ -562,7 +561,7 @@ struct PagedRowIndices[
         self,
         tma_op: TMATensorTile[dtype, 3, tile_shape, desc_shape, True],
         stage_base: UnsafePointer[
-            Scalar[dtype], MutAnyOrigin, address_space=AddressSpace.SHARED
+            mut=True, Scalar[dtype], _, address_space=AddressSpace.SHARED
         ],
         ref[AddressSpace.SHARED] mbar: SharedMemBarrier,
         *,
@@ -1059,7 +1058,23 @@ struct ContinuousBatchingKVCache[
     )
     comptime blocks_layout = Layout.row_major(Self.blocks_shape)
 
-    comptime blocks_tt_layout = LTToTTLayout[Self.blocks_layout]
+    # Direct TileTensor layout for `blocks_shape` (row-major): leading two dims
+    # are runtime (Int64), inner dims are static. stride[0] is runtime because
+    # it folds in the runtime second dim.
+    comptime blocks_tt_layout = InternalLayout[
+        shape_types=Coord[
+            Int64,
+            Int64,
+            ComptimeInt[Self.kv_params.num_heads],
+            ComptimeInt[Self.kv_params.head_size],
+        ].element_types,
+        stride_types=Coord[
+            Int64,
+            ComptimeInt[Self.kv_params.num_heads * Self.kv_params.head_size],
+            ComptimeInt[Self.kv_params.head_size],
+            ComptimeInt[1],
+        ].element_types,
+    ]
     comptime blocks_tt_type = TileTensor[
         Self.dtype, Self.blocks_tt_layout, MutAnyOrigin
     ]
@@ -1576,8 +1591,23 @@ struct PagedKVCache[
     )
     comptime blocks_layout = Layout(Self.blocks_shape, Self.blocks_strides)
 
-    # TileTensor layout for blocks.
-    comptime blocks_tt_layout = LTToTTLayout[Self.blocks_layout]
+    # TileTensor layout for blocks, built directly from `blocks_shape` /
+    # `blocks_strides`: leading dim is a runtime view stride (Int64), inner
+    # dims are static.
+    comptime blocks_tt_layout = InternalLayout[
+        shape_types=Coord[
+            Int64,
+            ComptimeInt[Self.page_size],
+            ComptimeInt[Self.kv_params.num_heads],
+            ComptimeInt[Self.kv_params.head_size],
+        ].element_types,
+        stride_types=Coord[
+            Int64,
+            ComptimeInt[Self.kv_params.num_heads * Self.kv_params.head_size],
+            ComptimeInt[Self.kv_params.head_size],
+            ComptimeInt[1],
+        ].element_types,
+    ]
     comptime blocks_tt_type = TileTensor[
         Self.dtype, Self.blocks_tt_layout, MutAnyOrigin
     ]
@@ -2262,8 +2292,41 @@ struct PagedKVCache[
         head_dim_idx: Int,
         val: SIMD[Self.dtype, ...],
     ):
-        """Stores an element at the given index."""
-        var idx = self._get_idx(bs, head_idx, tok_idx, head_dim_idx)
+        """Stores an element at the given index.
+
+        Skips the write when the LUT entry for ``(bs, tok_idx // page_size)``
+        is the unassigned-slot sentinel — i.e. when the resolved
+        ``block_idx`` is outside ``[0, total_num_blocks)``. The cache
+        manager fills LUT columns past a request's allocated block count
+        with the sentinel value ``total_num_pages`` (see
+        ``cache_manager.py``'s ``lut_table_np.fill(self._total_num_pages)``)
+        so that SIMD over-reads of the LUT row are safe, but the *value*
+        of the sentinel times the page stride lands one page past the
+        end of the cache buffer. Without this guard a sentinel-resolved
+        store corrupts whatever device allocation happens to sit
+        immediately after the KV cache.
+        """
+        var lut_block_idx, tok_in_block_idx = divmod(tok_idx, self.page_size)
+        var block_idx = Int(self.lookup_table[bs, lut_block_idx])
+        debug_assert(
+            block_idx < Int(self.blocks.dim[0]()),
+            "KVCache block_idx resolved to sentinel/unassigned LUT entry (",
+            block_idx,
+            ")",
+        )
+        debug_assert(
+            head_idx < Self.kv_params.num_heads,
+            "KVCache head_idx out of range (",
+            head_idx,
+            ")",
+        )
+        assert (
+            head_dim_idx < Self.kv_params.head_size
+        ), "KVCache head_dim_idx is out of range"
+        assert tok_in_block_idx < Int(
+            self.blocks.dim[1]()
+        ), "KVCache tok_idx out of range"
+        var idx = Coord((block_idx, tok_in_block_idx, head_idx, head_dim_idx))
         # Bypass TileTensor.store's `where` constraint by using ptr directly.
         self.blocks.store(idx, val)
 
@@ -2309,7 +2372,23 @@ struct PagedKVCache[
                 Self.scale_dtype != DType.invalid
             ), "Valid quantization scale data type needed"
 
-        var scale_idx = self._get_scale_idx(bs, head_idx, tok_idx, head_dim_idx)
+        var lut_block_idx, tok_in_block_idx = divmod(tok_idx, self.page_size)
+        var block_idx = Int(self.lookup_table[bs, lut_block_idx])
+        debug_assert(
+            block_idx < Int(self.blocks.dim[0]()),
+            "KVCache block_idx resolved to sentinel/unassigned LUT entry (",
+            block_idx,
+            ")",
+        )
+        var scale_block_idx = head_dim_idx // Self.quantization_granularity
+        var scale_idx = Coord(
+            (
+                block_idx,
+                tok_in_block_idx,
+                head_idx,
+                scale_block_idx,
+            )
+        )
         # Bypass TileTensor.store's `where` constraint by using ptr directly.
         self.scales.value().store(scale_idx, scales)
 
@@ -2461,7 +2540,26 @@ struct ContinuousBatchingKVCacheCollection[
         Self.kv_params.head_size,
     )
     comptime blocks_layout = Layout.row_major(Self.blocks_shape)
-    comptime blocks_tt_layout = LTToTTLayout[Self.blocks_layout]
+    # Direct row-major TileTensor layout: the four leading dims are runtime
+    # (Int64), so every stride that folds one in is also runtime.
+    comptime blocks_tt_layout = InternalLayout[
+        shape_types=Coord[
+            Int64,
+            Int64,
+            Int64,
+            Int64,
+            ComptimeInt[Self.kv_params.num_heads],
+            ComptimeInt[Self.kv_params.head_size],
+        ].element_types,
+        stride_types=Coord[
+            Int64,
+            Int64,
+            Int64,
+            ComptimeInt[Self.kv_params.num_heads * Self.kv_params.head_size],
+            ComptimeInt[Self.kv_params.head_size],
+            ComptimeInt[1],
+        ].element_types,
+    ]
     comptime blocks_tt_type = TileTensor[
         Self.dtype, Self.blocks_tt_layout, MutAnyOrigin
     ]
@@ -2591,7 +2689,30 @@ struct PagedKVCacheCollection[
         Self.kv_params.head_size,
     )
     comptime blocks_layout = Layout.row_major(Self.blocks_shape)
-    comptime blocks_tt_layout = LTToTTLayout[Self.blocks_layout]
+    # Direct row-major TileTensor layout. dims 0 and 2 (total_num_blocks and
+    # num_layers) are runtime, so strides[0..1] that fold them in are runtime.
+    comptime blocks_tt_layout = InternalLayout[
+        shape_types=Coord[
+            Int64,
+            ComptimeInt[2 if not Self.kv_params.is_mla else 1],
+            Int64,
+            ComptimeInt[Self.page_size],
+            ComptimeInt[Self.kv_params.num_heads],
+            ComptimeInt[Self.kv_params.head_size],
+        ].element_types,
+        stride_types=Coord[
+            Int64,
+            Int64,
+            ComptimeInt[
+                Self.page_size
+                * Self.kv_params.num_heads
+                * Self.kv_params.head_size
+            ],
+            ComptimeInt[Self.kv_params.num_heads * Self.kv_params.head_size],
+            ComptimeInt[Self.kv_params.head_size],
+            ComptimeInt[1],
+        ].element_types,
+    ]
     comptime blocks_tt_type = TileTensor[
         Self.dtype, Self.blocks_tt_layout, MutAnyOrigin
     ]
@@ -2611,7 +2732,30 @@ struct PagedKVCacheCollection[
         Self.head_dim_granularity,  # scales per token
     )
     comptime scales_layout = Layout.row_major(Self.scales_shape)
-    comptime scales_tt_layout = LTToTTLayout[Self.scales_layout]
+    # Direct row-major TileTensor layout, mirroring `blocks_tt_layout` but with
+    # `head_dim_granularity` as the inner dim. dims 0 and 2 are runtime.
+    comptime scales_tt_layout = InternalLayout[
+        shape_types=Coord[
+            Int64,
+            ComptimeInt[2 if not Self.kv_params.is_mla else 1],
+            Int64,
+            ComptimeInt[Self.page_size],
+            ComptimeInt[Self.kv_params.num_heads],
+            ComptimeInt[Self.head_dim_granularity],
+        ].element_types,
+        stride_types=Coord[
+            Int64,
+            Int64,
+            ComptimeInt[
+                Self.page_size
+                * Self.kv_params.num_heads
+                * Self.head_dim_granularity
+            ],
+            ComptimeInt[Self.kv_params.num_heads * Self.head_dim_granularity],
+            ComptimeInt[Self.head_dim_granularity],
+            ComptimeInt[1],
+        ].element_types,
+    ]
     comptime scales_tt_type = TileTensor[
         Self.scale_dtype, Self.scales_tt_layout, MutAnyOrigin
     ]
@@ -2627,7 +2771,9 @@ struct PagedKVCacheCollection[
     var kv_cache_dynamic_shape: IndexList[4]
     var kv_cache_dynamic_strides: IndexList[4]
 
-    def __init__(
+    def __init__[
+        scales_origin: MutOrigin, //
+    ](
         out self,
         blocks: LayoutTensor[Self.dtype, Layout.row_major[6](), MutAnyOrigin],
         cache_lengths: LayoutTensor[
@@ -2639,8 +2785,12 @@ struct PagedKVCacheCollection[
         max_seq_length: UInt32,
         max_cache_length: UInt32,
         scales: OptionalReg[
-            LayoutTensor[Self.scale_dtype, Layout.row_major[6](), MutAnyOrigin]
-        ] = None,
+            LayoutTensor[Self.scale_dtype, Layout.row_major[6](), scales_origin]
+        ] = OptionalReg[
+            LayoutTensor[
+                Self.scale_dtype, Layout.row_major[6](), MutUntrackedOrigin
+            ]
+        ](),
     ):
         """Construct from LayoutTensor params (MOGG boundary)."""
         comptime assert blocks.rank == 6
@@ -2659,7 +2809,7 @@ struct PagedKVCacheCollection[
         if scales is not None:
             self.scales = lt_to_tt[ResultLayout=Self.scales_tt_layout](
                 scales.value()
-            )
+            ).as_unsafe_any_origin()
             self.kv_cache_scales_dynamic_shape, self.kv_cache_scales_dynamic_strides = _compute_kv_cache_dynamic_shape_strides[
                 4, (1, 2)
             ](

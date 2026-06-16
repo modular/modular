@@ -3112,6 +3112,52 @@ struct TMATensorTile[
         )
 
     @always_inline
+    def async_multicast_load_partitioned[
+        tma_rows: Int,
+        tma_load_size: Int,
+    ](
+        self,
+        dst: TileTensor[
+            mut=True,
+            dtype=Self.dtype,
+            address_space=AddressSpace.SHARED,
+            ...,
+        ],
+        ref[AddressSpace.SHARED] mem_barrier: SharedMemBarrier,
+        cta_rank: Int,
+        coords: Tuple[Int, Int],
+        multicast_mask: UInt16,
+    ):
+        """Perform a partitioned multicast load into a TileTensor.
+
+        Each CTA rank loads a distinct contiguous slice of the source tensor.
+        The source coordinate in the second dimension is offset by
+        `cta_rank * tma_rows`, and the destination pointer is offset by
+        `cta_rank * tma_load_size` elements.
+
+        Parameters:
+            tma_rows: Number of source rows loaded by each CTA rank.
+            tma_load_size: Number of elements in each destination slice.
+
+        Args:
+            dst: Destination shared-memory TileTensor for the multicast load.
+            mem_barrier: Shared-memory barrier that tracks transfer completion.
+            cta_rank: CTA rank that selects the source and destination slice.
+            coords: Base 2D coordinates in the source tensor.
+            multicast_mask: Bit mask specifying CTAs that receive the data.
+        """
+        var dst_slice = type_of(dst)(
+            dst.ptr + cta_rank * tma_load_size, dst.layout
+        )
+
+        self.async_multicast_load(
+            dst_slice,
+            mem_barrier,
+            (coords[0], coords[1] + cta_rank * tma_rows),
+            multicast_mask,
+        )
+
+    @always_inline
     def async_store(
         self,
         src: LayoutTensor[
@@ -5050,7 +5096,7 @@ struct TMATensorTileArray[
             to accommodate hardware requirements like WGMMA.
     """
 
-    var tensormaps_ptr: UnsafePointer[UInt8, MutAnyOrigin]
+    var tensormaps_ptr: UnsafePointer[UInt8, MutUntrackedOrigin]
     """A static tuple of pointers to TMA descriptors.
 
     This field stores an array of pointers to `TMATensorTile` instances, where each pointer
@@ -5130,11 +5176,15 @@ struct TMATensorTileArray[
         Returns:
             `UnsafePointer` to the `TMATensorTile` at the specified index.
         """
-        return (self.tensormaps_ptr + index * self.descriptor_bytes).bitcast[
-            TMATensorTile[
-                Self.dtype, Self.rank, Self.cta_tile_shape, Self.desc_shape
-            ]
-        ]()
+        return (
+            (self.tensormaps_ptr + index * self.descriptor_bytes)
+            .bitcast[
+                TMATensorTile[
+                    Self.dtype, Self.rank, Self.cta_tile_shape, Self.desc_shape
+                ]
+            ]()
+            .as_unsafe_any_origin()
+        )
 
 
 struct RaggedTMA3DTile[
@@ -5835,7 +5885,7 @@ struct RaggedTensorMap[
         # starting us at (75 + 32) - 64 = 43, and allowing us to only load 32 sequences
 
         comptime if using_max_descriptor_size:
-            # if the max length is the same as the descriptor size we dont need to do
+            # if the max length is the same as the descriptor size we don't need to do
             # multiple stores and generate multiple coords so we can avoid unnecessary
             # branching in this case.
             var cumulative_length = preceding_cumulative_length + store_length

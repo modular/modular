@@ -22,8 +22,7 @@ from __future__ import annotations
 
 import logging
 
-from max.driver import Buffer
-from max.nn.kv_cache import KVCacheParams
+from max.nn.kv_cache.cache_params import KVCacheMemory
 from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.pipelines.kv_cache.memory_tier import MemoryTier
 from max.profiler import traced
@@ -44,29 +43,19 @@ class LocalConnector:
     @traced
     def __init__(
         self,
-        params: KVCacheParams,
-        device_buffers: list[Buffer],
+        kv_memory: list[KVCacheMemory],
         total_num_host_blocks: int,
-        non_replicated_device_buffers_to_offload: list[Buffer] | None = None,
     ) -> None:
         """Initialize the local host memory connector."""
-        if not params.enable_prefix_caching:
-            raise ValueError(
-                "LocalConnector requires prefix caching to be enabled"
-            )
         if total_num_host_blocks <= 0:
             raise ValueError("LocalConnector requires host blocks")
-
-        self._block_size = params.page_size
 
         self._total_num_host_blocks = total_num_host_blocks
 
         # Create BlockOffloadEngine for memory transfers
         self._block_copy_engine = BlockOffloadEngine(
             total_num_host_blocks,
-            device_buffers,
-            replicate_kv_across_tp=params.replicates_kv_across_tp,
-            non_replicated_device_buffers_to_offload=non_replicated_device_buffers_to_offload,
+            kv_memory,
         )
 
         # Host block pool for managing host memory
@@ -139,10 +128,18 @@ class LocalConnector:
         self,
         block_ids: list[int],
         block_hashes: list[int],
+        parent_seq_hash: int = 0,
     ) -> None:
-        """Offload the device blocks to the external cache."""
-        self._block_copy_engine.wait_for_completion()
+        """Offload the device blocks to the external cache.
 
+        ``parent_seq_hash`` is ignored: host blocks are keyed by hash.
+
+        Kicks off the D2H copies on the auxiliary stream without synchronizing.
+        The main/aux stream sync runs once per forward pass in
+        ``wait_for_loads``; ``offload`` is now called once per request
+        (multiple times per forward pass), so syncing here would re-serialize
+        the copies against the forward pass and destroy the overlap.
+        """
         for block_id, block_hash in zip(block_ids, block_hashes, strict=True):
             self._maybe_offload_to_host(block_id, block_hash)
 
@@ -151,10 +148,25 @@ class LocalConnector:
         """Wait for pending loads/offloads to complete."""
         self._block_copy_engine.wait_for_completion()
 
+    def wait_for_loads(self) -> None:
+        """Synchronize the main and auxiliary streams once per forward pass.
+
+        Called once before the forward pass and before the per-request
+        ``offload`` calls. This duplex sync makes the forward pass wait for
+        in-flight H2D loads and the previous step's D2H offloads (so reused
+        blocks are safe), and orders subsequent D2H copies after the forward
+        pass. Doing it here once — rather than at the head of every ``offload``
+        — keeps the forward pass overlapping with the D2H transfers.
+        """
+        self._block_copy_engine.wait_for_completion()
+
+    def wait_for_offloads(self) -> None:
+        """No-op: offloads complete in ``sync``."""
+
     def shutdown(self) -> None:
         """Clean shutdown of connector resources."""
-        # Wait for any pending transfers
-        self._block_copy_engine.wait_for_completion()
+        # Syncs the copy streams and frees the (non-GC-freed) host buffer.
+        self._block_copy_engine.close()
 
     def reset_prefix_cache(self) -> None:
         """Reset the host prefix cache."""

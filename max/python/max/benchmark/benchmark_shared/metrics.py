@@ -390,7 +390,7 @@ class BaseBenchmarkMetrics(BaseModel, Metrics):
         return len(errors) == 0, errors
 
 
-# Workload-specific aggregates. ``ServingBenchmarkMetrics`` (below) holds at
+# Workload-specific aggregates. ``BenchmarkResult`` (below) holds at
 # most one per record, selected by ``task_type``; failed runs leave both
 # ``None``. Composing them as nested pydantic objects (rather than
 # mostly-Optional flat fields on the parent) lets consumers narrow once and
@@ -493,6 +493,10 @@ class TextGenAggregates(_CompletedRunBase):
     # Per-turn cached_tokens / prompt_tokens; None when usage data is
     # unavailable.
     per_turn_cached_token_rate: RatePercentileMetrics | None = None
+    # Turn-by-turn KV cache retention: cached_tokens(turn N) vs the
+    # block-aligned context carried from turn N-1 in the same session. Catches
+    # cached-token drop between turns. None for single-turn / no usage data.
+    per_turn_cache_retention: RatePercentileMetrics | None = None
 
     # ``skip_first_n_requests`` / ``skip_last_n_requests`` are inputs and
     # shouldn't be part of the output metrics, but are included for
@@ -510,6 +514,9 @@ class TextGenAggregates(_CompletedRunBase):
     ttfts: list[float] = Field(default_factory=list)
     # Empty when the server did not report per-request cached_tokens.
     per_turn_cached_token_rates: list[float] = Field(default_factory=list)
+    # Per-turn cache retention fractions (one per checked turn, N>=2). Empty
+    # for single-turn workloads or when usage data is unavailable.
+    per_turn_cache_retentions: list[float] = Field(default_factory=list)
 
     def to_result_dict(self) -> dict[str, object]:
         d = super().to_result_dict()
@@ -529,6 +536,7 @@ class TextGenAggregates(_CompletedRunBase):
         d["output_lens"] = self.output_lens
         d["ttfts"] = self.ttfts
         d["per_turn_cached_token_rates"] = self.per_turn_cached_token_rates
+        d["per_turn_cache_retentions"] = self.per_turn_cache_retentions
         d["global_cached_token_rate"] = self.global_cached_token_rate
         for name, pm in [
             ("input_throughput", self.input_throughput),
@@ -555,6 +563,17 @@ class TextGenAggregates(_CompletedRunBase):
             d.update(
                 self.per_turn_cached_token_rate.confidence_to_flat_dict(
                     "per_turn_cached_token_rate"
+                )
+            )
+        if self.per_turn_cache_retention is not None:
+            d.update(
+                self.per_turn_cache_retention.to_flat_dict(
+                    "per_turn_cache_retention"
+                )
+            )
+            d.update(
+                self.per_turn_cache_retention.confidence_to_flat_dict(
+                    "per_turn_cache_retention"
                 )
             )
         return d
@@ -584,6 +603,12 @@ class TextGenAggregates(_CompletedRunBase):
             if not ok:
                 errors.extend(
                     f"per_turn_cached_token_rate: {e}" for e in sub_errors
+                )
+        if self.per_turn_cache_retention is not None:
+            ok, sub_errors = self.per_turn_cache_retention.validate_metrics()
+            if not ok:
+                errors.extend(
+                    f"per_turn_cache_retention: {e}" for e in sub_errors
                 )
         # Prefill-only workloads (max 1 output token per request) produce
         # no decode data, so decode-phase metrics are expected to be
@@ -643,19 +668,59 @@ class PixelGenAggregates(_CompletedRunBase):
 BenchmarkType = Literal["text", "pixel"]
 
 
-class ServingBenchmarkMetrics(BaseModel):
-    """Per-iteration serving benchmark metrics.
+@dataclass(kw_only=True)
+class SteadyStateResult:
+    """Steady-state detection outcome and its per-window metrics."""
 
-    The workload-specific aggregates (latencies, throughput, etc.) are nested
-    in :attr:`text_data` / :attr:`pixel_data` so a successful run carries all
-    of its required fields together. :attr:`task_type` discriminates which
-    one is expected; both stay ``None`` for iterations that failed before
-    producing metrics, in which case only the always-collected GPU/CPU
-    sampling fields are populated.
-    """
+    detected: bool
+    start_index: int | None
+    end_index: int | None
+    count: int
+    warning: str | None
+    mode: str | None = None
+    # ``TextGenAggregates`` rather than ``BenchmarkResult``: steady
+    # state is text-only, and using the parent type would self-contain once
+    # steady-state data moves into ``BenchmarkResult`` for result
+    # publication.
+    metrics: TextGenAggregates | None = None
 
-    model_config = ConfigDict(arbitrary_types_allowed=True)
+    def to_result_dict(self) -> dict[str, object]:
+        """Return a flat dict of steady-state keys with the same layout as the full-run result dict."""
+        d: dict[str, object] = {
+            "steady_state_detected": self.detected,
+            "steady_state_start_index": self.start_index,
+            "steady_state_end_index": self.end_index,
+            "steady_state_count": self.count,
+            "steady_state_warning": self.warning,
+        }
+        if self.mode is not None:
+            d["steady_state_mode"] = self.mode
+        if self.metrics is not None:
+            t = self.metrics
+            for suffix, value in [
+                ("request_throughput", t.request_throughput),
+                ("mean_ttft_ms", t.ttft_ms.mean),
+                ("p99_ttft_ms", t.ttft_ms.p99),
+                ("mean_tpot_ms", t.tpot_ms.mean),
+                ("p99_tpot_ms", t.tpot_ms.p99),
+                ("mean_itl_ms", t.itl_ms.mean),
+                ("p99_itl_ms", t.itl_ms.p99),
+                ("mean_latency_ms", t.latency_ms.mean),
+                ("p99_latency_ms", t.latency_ms.p99),
+            ]:
+                d[f"steady_state_{suffix}"] = value
+            for name in ("ttft_ms", "tpot_ms", "itl_ms", "latency_ms"):
+                pm = getattr(t, name)
+                d.update(pm.confidence_to_flat_dict(f"steady_state_{name}"))
+        return d
 
+
+class BenchmarkResult(BaseModel):
+    """Per-iteration benchmark result for text- and pixel-generation tasks."""
+
+    model_config = ConfigDict(
+        arbitrary_types_allowed=True, extra="forbid", strict=True
+    )
     task_type: BenchmarkType
     max_concurrency: int
 
@@ -667,18 +732,47 @@ class ServingBenchmarkMetrics(BaseModel):
     metrics_by_endpoint: Mapping[str, ParsedMetrics] = Field(
         default_factory=dict
     )
+    lora_metrics: LoRAMetrics | None = None
 
     # Workload aggregates. Exactly the one matching ``task_type`` is set on
     # success; both stay ``None`` for failed iterations / dry runs.
+    #
+    # IMPORTANT: keep these as two *separate* Optional fields, NOT a combined
+    # union ``aggregates: TextGenAggregates | PixelGenAggregates | None``.
+    # The generic CSV reporter in
+    # ``utils/benchmarking/results_publication/reporters/csv.py`` can only
+    # expand ``Optional[SingleStructuredType]`` recursively into per-field
+    # columns.  A two-type union returns ``None`` from
+    # ``_unwrap_optional_structured_type``, causing ``_flatten_model`` to fall
+    # through to ``json.dumps`` and emit a single opaque JSON-blob column —
+    # making the CSV output difficult to work with in spreadsheet tools.
     text_data: TextGenAggregates | None = None
     pixel_data: PixelGenAggregates | None = None
 
+    # Text-generation-only fields. Stay ``None`` for pixel workloads.
+    steady_state_result: SteadyStateResult | None = None
+    spec_decode_stats: SpecDecodeStats | None = None
+    session_server_stats: dict[str, list[ServerTokenStats]] | None = None
+    aggregate_server_stats: list[ServerTokenStats] | None = None
+
     @model_validator(mode="after")
-    def _check_data_matches_task_type(self) -> ServingBenchmarkMetrics:
+    def _check_data_matches_task_type(self) -> BenchmarkResult:
         if self.text_data is not None and self.task_type != "text":
             raise ValueError(f"text_data set but task_type={self.task_type!r}")
         if self.pixel_data is not None and self.task_type != "pixel":
             raise ValueError(f"pixel_data set but task_type={self.task_type!r}")
+        text_only_fields = (
+            self.steady_state_result,
+            self.spec_decode_stats,
+            self.session_server_stats,
+            self.aggregate_server_stats,
+        )
+        if self.task_type != "text" and any(
+            field is not None for field in text_only_fields
+        ):
+            raise ValueError(
+                f"text-only result fields set but task_type={self.task_type!r}"
+            )
         return self
 
     @property
@@ -764,6 +858,22 @@ class ServingBenchmarkMetrics(BaseModel):
                         "decode_batch_count": self.decode_batch_count,
                     }
                 )
+
+        if self.lora_metrics is not None:
+            d["lora_metrics"] = self.lora_metrics.to_result_dict()
+        if self.steady_state_result is not None:
+            d.update(self.steady_state_result.to_result_dict())
+        if self.spec_decode_stats is not None:
+            d.update(self.spec_decode_stats.to_result_dict())
+        if self.session_server_stats is not None:
+            d["session_server_stats"] = {
+                sid: [dataclasses.asdict(s) for s in stats]
+                for sid, stats in self.session_server_stats.items()
+            }
+        if self.aggregate_server_stats is not None:
+            d["aggregate_server_stats"] = [
+                dataclasses.asdict(s) for s in self.aggregate_server_stats
+            ]
         return d
 
     def validate_metrics(self) -> tuple[bool, list[str]]:
@@ -787,102 +897,6 @@ class ServingBenchmarkMetrics(BaseModel):
         if agg is None:
             return []
         return agg.confidence_warnings()
-
-
-@dataclass(kw_only=True)
-class SteadyStateResult:
-    """Steady-state detection outcome and its per-window metrics."""
-
-    detected: bool
-    start_index: int | None
-    end_index: int | None
-    count: int
-    warning: str | None
-    mode: str | None = None
-    # ``TextGenAggregates`` rather than ``ServingBenchmarkMetrics``: steady
-    # state is text-only, and using the parent type would self-contain once
-    # steady-state data moves into ``ServingBenchmarkMetrics`` for result
-    # publication.
-    metrics: TextGenAggregates | None = None
-
-    def to_result_dict(self) -> dict[str, object]:
-        """Return a flat dict of steady-state keys with the same layout as the full-run result dict."""
-        d: dict[str, object] = {
-            "steady_state_detected": self.detected,
-            "steady_state_start_index": self.start_index,
-            "steady_state_end_index": self.end_index,
-            "steady_state_count": self.count,
-            "steady_state_warning": self.warning,
-        }
-        if self.mode is not None:
-            d["steady_state_mode"] = self.mode
-        if self.metrics is not None:
-            t = self.metrics
-            for suffix, value in [
-                ("request_throughput", t.request_throughput),
-                ("mean_ttft_ms", t.ttft_ms.mean),
-                ("p99_ttft_ms", t.ttft_ms.p99),
-                ("mean_tpot_ms", t.tpot_ms.mean),
-                ("p99_tpot_ms", t.tpot_ms.p99),
-                ("mean_itl_ms", t.itl_ms.mean),
-                ("p99_itl_ms", t.itl_ms.p99),
-                ("mean_latency_ms", t.latency_ms.mean),
-                ("p99_latency_ms", t.latency_ms.p99),
-            ]:
-                d[f"steady_state_{suffix}"] = value
-            for name in ("ttft_ms", "tpot_ms", "itl_ms", "latency_ms"):
-                pm = getattr(t, name)
-                d.update(pm.confidence_to_flat_dict(f"steady_state_{name}"))
-        return d
-
-
-@dataclass(kw_only=True)
-class BaseBenchmarkResult:
-    """Base class for benchmark result objects."""
-
-    metrics: ServingBenchmarkMetrics
-    lora_metrics: LoRAMetrics | None = None
-
-    def to_result_dict(self) -> dict[str, object]:
-        d = self.metrics.to_result_dict()
-        if self.lora_metrics is not None:
-            d["lora_metrics"] = self.lora_metrics.to_result_dict()
-        return d
-
-    def validate_metrics(self) -> tuple[bool, list[str]]:
-        return self.metrics.validate_metrics()
-
-
-@dataclass(kw_only=True)
-class TextGenerationBenchmarkResult(BaseBenchmarkResult):
-    """Result from a text-generation benchmark iteration."""
-
-    steady_state_result: SteadyStateResult | None = None
-    spec_decode_stats: SpecDecodeStats | None = None
-    session_server_stats: dict[str, list[ServerTokenStats]] | None = None
-    aggregate_server_stats: list[ServerTokenStats] | None = None
-
-    def to_result_dict(self) -> dict[str, object]:
-        d = super().to_result_dict()
-        if self.steady_state_result is not None:
-            d.update(self.steady_state_result.to_result_dict())
-        if self.spec_decode_stats is not None:
-            d.update(self.spec_decode_stats.to_result_dict())
-        if self.session_server_stats is not None:
-            d["session_server_stats"] = {
-                sid: [dataclasses.asdict(s) for s in stats]
-                for sid, stats in self.session_server_stats.items()
-            }
-        if self.aggregate_server_stats is not None:
-            d["aggregate_server_stats"] = [
-                dataclasses.asdict(s) for s in self.aggregate_server_stats
-            ]
-        return d
-
-
-@dataclass(kw_only=True)
-class PixelGenerationBenchmarkResult(BaseBenchmarkResult):
-    """Result from a pixel generation benchmark iteration."""
 
 
 @dataclass
@@ -917,65 +931,6 @@ class ChunkTimingMetrics:
             f"p99_{name}": self.p99,
             f"max_{name}": self.max,
         }
-
-
-class TTSBenchmarkMetrics(BaseBenchmarkMetrics):
-    """Container for TTS (text-to-speech) serving benchmark metrics.
-
-    Extends BaseBenchmarkMetrics with TTS-specific fields: real-time factor,
-    chunk timing, audio quality scores, and output length statistics.
-    """
-
-    total_input: int
-    total_output: float
-    nonempty_response_chunks: int
-
-    ttft_ms: StandardPercentileMetrics
-    tpot_ms: StandardPercentileMetrics
-    itl_ms: StandardPercentileMetrics
-    rtf_perc: StandardPercentileMetrics
-    first_chunk: ChunkTimingMetrics
-    nth_chunk: ChunkTimingMetrics
-
-    word_error_rate: float
-    noise_suppression_score: float
-
-    min_output: float
-    mean_output: float
-    median_output: float
-    max_output: float
-
-    startup_time: float
-
-    def to_result_dict(self) -> dict[str, object]:
-        d = super().to_result_dict()
-        d["total_input"] = self.total_input
-        d["total_output"] = self.total_output
-        d["nonempty_response_chunks"] = self.nonempty_response_chunks
-        d["word_error_rate"] = self.word_error_rate
-        d["noise_suppression_score"] = self.noise_suppression_score
-        d["min_output"] = self.min_output
-        d["mean_output"] = self.mean_output
-        d["median_output"] = self.median_output
-        d["max_output"] = self.max_output
-        d["startup_time"] = self.startup_time
-        return d
-
-    def confidence_warnings(self) -> list[str]:
-        warns: list[str] = []
-        for name, metric in [
-            ("ttft_ms", self.ttft_ms),
-            ("tpot_ms", self.tpot_ms),
-            ("rtf_perc", self.rtf_perc),
-        ]:
-            ci = getattr(metric, "confidence_info", None)
-            if ci and ci.confidence in ("low", "insufficient_data"):
-                warns.append(
-                    f"{name}: {ci.confidence} confidence"
-                    f" (CI width {ci.ci_relative_width:.0%} of mean,"
-                    f" n={ci.sample_size})"
-                )
-        return warns
 
 
 # ---------------------------------------------------------------------------
@@ -1198,5 +1153,4 @@ from max.profiler.cpu import CPUMetrics
 from .server_metrics import ParsedMetrics
 
 BaseBenchmarkMetrics.model_rebuild()
-ServingBenchmarkMetrics.model_rebuild()
-TTSBenchmarkMetrics.model_rebuild()
+BenchmarkResult.model_rebuild()

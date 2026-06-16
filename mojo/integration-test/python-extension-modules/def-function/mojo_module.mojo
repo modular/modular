@@ -20,7 +20,7 @@ from std.python.bindings import PythonModuleBuilder
 
 
 @export
-def PyInit_mojo_module() -> PythonObject:
+def PyInit_mojo_module() abi("C") -> PythonObject:
     try:
         var b = PythonModuleBuilder("mojo_module")
 
@@ -62,7 +62,6 @@ def PyInit_mojo_module() -> PythonObject:
         abort(String("failed to create Python module: ", e))
 
 
-@export
 def takes_zero_raises_returns() raises -> PythonObject:
     var s = Python().evaluate("getattr(sys.modules['test_module'], 's')")
     if s != "just a python string":
@@ -71,14 +70,14 @@ def takes_zero_raises_returns() raises -> PythonObject:
     return PythonObject("just another python string")
 
 
-@export
-def takes_one_raises_returns(a: PythonObject) raises -> PythonObject:
+def takes_one_raises_returns(
+    a: PythonObject,
+) raises -> PythonObject:
     if a != PythonObject("foo"):
         raise Error("input must be 'foo'")
     return a
 
 
-@export
 def takes_two_raises_returns(
     a: PythonObject, b: PythonObject
 ) raises -> PythonObject:
@@ -87,7 +86,6 @@ def takes_two_raises_returns(
     return a + b
 
 
-@export
 def takes_three_raises_returns(
     a: PythonObject, b: PythonObject, c: PythonObject
 ) raises -> PythonObject:
@@ -96,7 +94,6 @@ def takes_three_raises_returns(
     return a + b + c
 
 
-@export
 def takes_seven_raises_returns(
     a: PythonObject,
     b: PythonObject,
@@ -111,7 +108,6 @@ def takes_seven_raises_returns(
     return a + b + c + d + e + f + g
 
 
-@export
 def takes_eight_raises_returns(
     a: PythonObject,
     b: PythonObject,
@@ -127,7 +123,6 @@ def takes_eight_raises_returns(
     return a + b + c + d + e + f + g + h
 
 
-@export
 def takes_zero_returns() -> PythonObject:
     try:
         return takes_zero_raises_returns()
@@ -135,7 +130,6 @@ def takes_zero_returns() -> PythonObject:
         abort(String("Unexpected Python error: ", e))
 
 
-@export
 def takes_one_returns(a: PythonObject) -> PythonObject:
     try:
         return takes_one_raises_returns(a)
@@ -143,7 +137,6 @@ def takes_one_returns(a: PythonObject) -> PythonObject:
         abort(String("Unexpected Python error: ", e))
 
 
-@export
 def takes_two_returns(a: PythonObject, b: PythonObject) -> PythonObject:
     try:
         return takes_two_raises_returns(a, b)
@@ -151,7 +144,6 @@ def takes_two_returns(a: PythonObject, b: PythonObject) -> PythonObject:
         abort(String("Unexpected Python error: ", e))
 
 
-@export
 def takes_three_returns(
     a: PythonObject, b: PythonObject, c: PythonObject
 ) -> PythonObject:
@@ -161,7 +153,6 @@ def takes_three_returns(
         abort(String("Unexpected Python error: ", e))
 
 
-@export
 def takes_zero_raises() raises:
     var s = Python().evaluate("getattr(sys.modules['test_module'], 's')")
     if s != "just a python string":
@@ -173,21 +164,18 @@ def takes_zero_raises() raises:
     )
 
 
-@export
 def takes_one_raises(list_obj: PythonObject) raises:
     if len(list_obj) != 3:
         raise Error("list_obj must have length 3")
     list_obj[PythonObject(0)] = PythonObject("baz")
 
 
-@export
 def takes_two_raises(list_obj: PythonObject, obj: PythonObject) raises:
     if len(list_obj) != 3:
         raise Error("list_obj must have length 3")
     list_obj[PythonObject(0)] = obj
 
 
-@export
 def takes_three_raises(
     list_obj: PythonObject, obj: PythonObject, obj2: PythonObject
 ) raises:
@@ -196,7 +184,6 @@ def takes_three_raises(
     list_obj[PythonObject(0)] = obj + obj2
 
 
-@export
 def takes_zero():
     try:
         takes_zero_raises()
@@ -204,7 +191,6 @@ def takes_zero():
         abort(String("Unexpected Python error: ", e))
 
 
-@export
 def takes_one(list_obj: PythonObject):
     try:
         takes_one_raises(list_obj)
@@ -212,7 +198,6 @@ def takes_one(list_obj: PythonObject):
         abort(String("Unexpected Python error: ", e))
 
 
-@export
 def takes_two(list_obj: PythonObject, obj: PythonObject):
     try:
         takes_two_raises(list_obj, obj)
@@ -220,7 +205,6 @@ def takes_two(list_obj: PythonObject, obj: PythonObject):
         abort(String("Unexpected Python error: ", e))
 
 
-@export
 def takes_three(list_obj: PythonObject, obj: PythonObject, obj2: PythonObject):
     try:
         takes_three_raises(list_obj, obj, obj2)
@@ -233,7 +217,6 @@ def takes_three(list_obj: PythonObject, obj: PythonObject, obj2: PythonObject):
 # ===----------------------------------------------------------------------=== #
 
 
-@export
 def sum_kwargs_ints(
     kwargs: OwnedKwargsDict[PythonObject],
 ) raises -> PythonObject:
@@ -247,7 +230,6 @@ def sum_kwargs_ints(
     return PythonObject(total)
 
 
-@export
 def sum_pos_arg_and_kwargs(
     arg1: PythonObject, kwargs: OwnedKwargsDict[PythonObject]
 ) raises -> PythonObject:
@@ -256,7 +238,7 @@ def sum_pos_arg_and_kwargs(
 
 def fastcall_concat(
     py_self: PyObjectPtr,
-    args: UnsafePointer[PyObjectPtr, MutExternalOrigin],
+    args: UnsafePointer[PyObjectPtr, MutUntrackedOrigin],
     nargs: Py_ssize_t,
 ) abi("C") -> PyObjectPtr:
     """Hand-written METH_FASTCALL wrapper that concatenates `nargs` strings.

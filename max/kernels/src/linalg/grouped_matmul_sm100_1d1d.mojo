@@ -59,6 +59,7 @@ from layout import (
     IntTuple,
     Layout,
     LayoutTensor,
+    LTToTTLayout,
     RuntimeLayout,
     RuntimeTuple,
     TileTensor,
@@ -344,10 +345,10 @@ def copy_accum_to_gmem[
                     c_smem_warp_tt.tile[data_paths, stageN](1, 0),
                 )
 
-            var c_smem_warp_tile_upper = c_smem_warp_tile.tile[
+            var c_smem_warp_tile_upper = c_smem_warp_tt.tile[
                 data_paths, stageN
             ](0, 0)
-            var c_smem_warp_tile_lower = c_smem_warp_tile.tile[
+            var c_smem_warp_tile_lower = c_smem_warp_tt.tile[
                 data_paths, stageN
             ](1, 0)
 
@@ -365,8 +366,6 @@ def copy_accum_to_gmem[
                         c_smem_warp_tile_upper.dtype,
                         c_smem_tile.shape[1](),
                         simd_size,
-                        c_smem_warp_tile_upper.layout,
-                        c_smem_warp_tile_lower.layout,
                         swizzle,
                         elementwise_compute_lambda_fn.value(),
                         num_output_warps,
@@ -628,7 +627,7 @@ def multi_stage_store_C[
     scale_c_coord: Bool = True,
 ](
     c_smem_base: UnsafePointer[
-        Scalar[c_type], MutAnyOrigin, address_space=AddressSpace.SHARED
+        mut=True, Scalar[c_type], _, address_space=AddressSpace.SHARED
     ],
     c_tma_op: TMATensorTile[c_type, c_tile_rank, c_tile_shape, c_desc_shape],
     c: LayoutTensor[c_type, c_tensor_layout, MutAnyOrigin],
@@ -708,7 +707,7 @@ def multi_stage_store_C[
         transpose_c=transpose_c,
         scale_c_coord=scale_c_coord,
     ](
-        c_smem_base,
+        c_smem_base.as_unsafe_any_origin(),
         c_tma_op,
         c,
         mma_output_pipeline,
@@ -834,16 +833,16 @@ def load_AB[
         sfb_dtype, sfb_tile_rank, sfb_tile_shape, sfb_desc_shape
     ],
     a_smem_base: UnsafePointer[
-        Scalar[a_type], MutAnyOrigin, address_space=AddressSpace.SHARED
+        mut=True, Scalar[a_type], _, address_space=AddressSpace.SHARED
     ],
     b_smem_base: UnsafePointer[
-        Scalar[b_type], MutAnyOrigin, address_space=AddressSpace.SHARED
+        mut=True, Scalar[b_type], _, address_space=AddressSpace.SHARED
     ],
     sfa_smem_base: UnsafePointer[
-        Scalar[sfa_dtype], MutAnyOrigin, address_space=AddressSpace.SHARED
+        mut=True, Scalar[sfa_dtype], _, address_space=AddressSpace.SHARED
     ],
     sfb_smem_base: UnsafePointer[
-        Scalar[sfb_dtype], MutAnyOrigin, address_space=AddressSpace.SHARED
+        mut=True, Scalar[sfb_dtype], _, address_space=AddressSpace.SHARED
     ],
     load_mma_pipeline: ProducerConsumerPipeline[num_pipeline_stages],
     peer_cta_coord: Tuple[Int, Int, Int],
@@ -915,28 +914,24 @@ def load_AB[
             var a_smem_tile = LayoutTensor[
                 a_type,
                 a_smem_layout,
-                MutAnyOrigin,
                 address_space=AddressSpace.SHARED,
                 alignment=128,
             ](a_smem_base + offset * a_smem_tile_size)
             var b_smem_tile = LayoutTensor[
                 b_type,
                 b_smem_layout,
-                MutAnyOrigin,
                 address_space=AddressSpace.SHARED,
                 alignment=128,
             ](b_smem_base + offset * b_smem_tile_size)
             var sfa_smem_tile = LayoutTensor[
                 sfa_dtype,
                 sfa_smem_layout,
-                MutAnyOrigin,
                 address_space=AddressSpace.SHARED,
                 alignment=128,
             ](sfa_smem_base + offset * sfa_smem_tile_size)
             var sfb_smem_tile = LayoutTensor[
                 sfb_dtype,
                 sfb_smem_layout,
-                MutAnyOrigin,
                 address_space=AddressSpace.SHARED,
                 alignment=128,
             ](sfb_smem_base + offset * sfb_smem_tile_size)
@@ -1041,16 +1036,16 @@ def consumer_main_loop[
     sfa_tmem: UInt32,
     sfb_tmem: UInt32,
     a_smem_base: UnsafePointer[
-        Scalar[a_type], MutAnyOrigin, address_space=AddressSpace.SHARED
+        mut=True, Scalar[a_type], _, address_space=AddressSpace.SHARED
     ],
     b_smem_base: UnsafePointer[
-        Scalar[b_type], MutAnyOrigin, address_space=AddressSpace.SHARED
+        mut=True, Scalar[b_type], _, address_space=AddressSpace.SHARED
     ],
     sfa_smem_base: UnsafePointer[
-        Scalar[sfa_dtype], MutAnyOrigin, address_space=AddressSpace.SHARED
+        mut=True, Scalar[sfa_dtype], _, address_space=AddressSpace.SHARED
     ],
     sfb_smem_base: UnsafePointer[
-        Scalar[sfb_dtype], MutAnyOrigin, address_space=AddressSpace.SHARED
+        mut=True, Scalar[sfb_dtype], _, address_space=AddressSpace.SHARED
     ],
     load_mma_pipeline: ProducerConsumerPipeline[pipeline_stages],
     mma_op: MmaOpSM100_BlockScaled_SS[
@@ -1095,30 +1090,26 @@ def consumer_main_loop[
     if elect_one_sync():
         for j in range(UInt32(k_group_size)):
             var offset = Int(stage * UInt32(k_group_size) + j)
-            var a_smem_tile = LayoutTensor[
-                a_type,
-                a_smem_layout,
-                MutAnyOrigin,
-                address_space=AddressSpace.SHARED,
-                alignment=128,
-            ](a_smem_base + offset * a_smem_tile_size)
-            var b_smem_tile = LayoutTensor[
-                b_type,
-                b_smem_layout,
-                MutAnyOrigin,
-                address_space=AddressSpace.SHARED,
-                alignment=128,
-            ](b_smem_base + offset * b_smem_tile_size)
+            var a_smem_tile = TileTensor(
+                a_smem_base + offset * a_smem_tile_size,
+                LTToTTLayout[a_smem_layout](),
+            )
+            var b_smem_tile = TileTensor(
+                b_smem_base + offset * b_smem_tile_size,
+                LTToTTLayout[b_smem_layout](),
+            )
             var sfa_smem_tile = SMemTile[
                 sfa_dtype, internal_sf_k_major[sfa_d0, sfa_d1]
             ](
-                sfa_smem_base + offset * sfa_smem_tile_size,
+                sfa_smem_base.as_unsafe_any_origin()
+                + offset * sfa_smem_tile_size,
                 internal_sf_k_major[sfa_d0, sfa_d1],
             )
             var sfb_smem_tile = SMemTile[
                 sfb_dtype, internal_sf_k_major[sfb_d0, sfb_d1]
             ](
-                sfb_smem_base + offset * sfb_smem_tile_size,
+                sfb_smem_base.as_unsafe_any_origin()
+                + offset * sfb_smem_tile_size,
                 internal_sf_k_major[sfb_d0, sfb_d1],
             )
 
@@ -1139,8 +1130,8 @@ def consumer_main_loop[
                 sfb_tmem_adj = UInt32(0)
 
             mma_op.mma(
-                lt_to_tt(a_smem_tile),
-                lt_to_tt(b_smem_tile),
+                a_smem_tile,
+                b_smem_tile,
                 sfa_smem_tile,
                 sfb_smem_tile,
                 tmem_addr,
@@ -1292,7 +1283,7 @@ def blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         b_type,
         flat_b_layout,
         address_space=AddressSpace.GENERIC,
-    ](b_device.ptr.as_any_origin())
+    ](b_device.ptr.as_unsafe_any_origin())
 
     comptime assert (
         sfb_layout.shape[0].value() == num_experts
@@ -1411,12 +1402,12 @@ def _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     max_profiled_tiles_per_SM: Optional[UInt32] = None,
 ](
     c_device: LayoutTensor[c_type, c_layout, ...],
-    a_device: LayoutTensor[a_type, a_layout, ...],
+    a_device: LayoutTensor[mut=False, a_type, a_layout, ...],
     group_offsets: LayoutTensor[DType.uint32, group_offsets_layout, ...],
     group_scale_offsets: LayoutTensor[
         DType.uint32, group_scale_offsets_layout, ...
     ],
-    b_device: LayoutTensor[b_type, b_layout, ...],
+    b_device: LayoutTensor[mut=False, b_type, b_layout, ...],
     expert_ids: LayoutTensor[DType.int32, expert_ids_layout, ...],
     a_scales: LayoutTensor[sfa_dtype, sfa_layout, MutAnyOrigin],
     b_scales: LayoutTensor[sfb_dtype, sfb_layout, MutAnyOrigin],
@@ -1909,7 +1900,9 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
     var load_mma_pipeline = ProducerConsumerPipeline[
         config.num_pipeline_stages // config.k_group_size
     ](
-        tma_mma_mbars_storage.unsafe_ptr(),
+        tma_mma_mbars_storage.unsafe_ptr().unsafe_origin_cast[
+            MutUntrackedOrigin
+        ](),
     )
 
     # MMA warp as producer and Output warp as consumer.
@@ -1917,7 +1910,9 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
     var mma_output_pipeline = ProducerConsumerPipeline[
         config.num_accum_pipeline_stages
     ](
-        accum_mbars_storage.unsafe_ptr(),
+        accum_mbars_storage.unsafe_ptr().unsafe_origin_cast[
+            MutUntrackedOrigin
+        ](),
     )
 
     var ptr_tmem_addr = tmem_addr_storage.unsafe_ptr()
