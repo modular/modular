@@ -35,10 +35,28 @@ from max.pipelines.lib.interfaces.arch_config import (
 )
 from max.pipelines.modeling.config_enums import supported_encoding_dtype
 from max.pipelines.weights.quant import parse_quant_config
-from transformers import AutoConfig
+from transformers import AutoConfig, PretrainedConfig
 from typing_extensions import Self, override
 
 from .layers.rotary_embedding import ProportionalScalingParams
+
+
+def _resolve_num_global_kv_heads(text_config: PretrainedConfig) -> int:
+    """Returns the number of KV heads used by full-attention layers.
+
+    The Gemma 4 E*B checkpoints ship ``"num_global_key_value_heads": null``;
+    the transformers ``configuration_gemma4.py`` docstring defines null/absent
+    as "defaults to ``num_key_value_heads``". Note transformers never applies
+    that fallback in code -- its modeling only consults the field when
+    ``attention_k_eq_v`` is true (false on E*B), so resolving here matches the
+    HF runtime behavior.
+    """
+    num_global_kv_heads = getattr(
+        text_config, "num_global_key_value_heads", None
+    )
+    if num_global_kv_heads is None:
+        return text_config.num_key_value_heads
+    return num_global_kv_heads
 
 
 @dataclass(kw_only=True)
@@ -245,7 +263,9 @@ class Gemma4TextConfig(Gemma3Config):
             # Gemma4-specific fields
             vocab_size_per_layer_input=huggingface_config.vocab_size_per_layer_input,
             hidden_size_per_layer_input=huggingface_config.hidden_size_per_layer_input,
-            num_global_key_value_heads=huggingface_config.num_global_key_value_heads,
+            num_global_key_value_heads=_resolve_num_global_kv_heads(
+                huggingface_config
+            ),
             global_head_dim=huggingface_config.global_head_dim,
             attention_k_eq_v=huggingface_config.attention_k_eq_v,
             num_kv_shared_layers=huggingface_config.num_kv_shared_layers,
@@ -479,7 +499,9 @@ class Gemma4ForConditionalGenerationConfig(ArchConfigWithKVCache):
         )
         global_kv_params = kv_cache_config.to_params(
             dtype=cache_dtype,
-            n_kv_heads=huggingface_config.text_config.num_global_key_value_heads,
+            n_kv_heads=_resolve_num_global_kv_heads(
+                huggingface_config.text_config
+            ),
             head_dim=huggingface_config.text_config.global_head_dim,
             num_layers=global_layers,
             devices=devices,
