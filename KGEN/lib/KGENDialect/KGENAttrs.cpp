@@ -5008,7 +5008,19 @@ int64_t DTypeValue::getIndexVal() const {
 namespace M::KGEN {
 /// Provide the ability to hash values for attribute uniquing.
 inline llvm::hash_code hash_value(const DTypeValue &value) {
-  return hash_combine(value.getData(), value.getDType().getValue());
+  // This must be consistent with `DTypeValue::operator==`, which compares the
+  // data with `APInt::isSameValue` (ignoring bit width) so that the same
+  // logical value stored with different bit widths compares equal. This happens
+  // for index values, whose bit width differs across targets (e.g. a 64-bit
+  // host vs. a 32-bit offload target). `llvm::hash_value(APInt)` folds in the
+  // bit width, so hashing the raw data would give two equal values different
+  // hashes, breaking the storage uniquer's invariant and yielding two distinct
+  // attribute instances for the same value. Normalize to the minimal-width
+  // unsigned representation (matching `isSameValue`'s zero-extension semantics)
+  // so equal values always hash equally regardless of their stored width.
+  const APInt &data = value.getData();
+  APInt normalized = data.zextOrTrunc(std::max(data.getActiveBits(), 1u));
+  return hash_combine(normalized, value.getDType().getValue());
 }
 } // namespace M::KGEN
 
