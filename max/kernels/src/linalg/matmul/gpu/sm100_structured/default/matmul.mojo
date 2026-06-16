@@ -256,8 +256,9 @@ def _blackwell_matmul_tma_umma_warp_specialized[
     # fmt: on
 
     comptime assert (not config.use_tma_epilogue_load) or (
-        config.use_tma_epilogue_load and c_type == DType.bfloat16
-    ), "TMA epilogue load is only supported for bfloat16 output type"
+        c_type == DType.bfloat16
+        or (config.epilogue_is_1d and c_type == DType.float32)
+    ), "TMA epilogue load is only supported for bfloat16 (2D) or float32 (1D)"
 
     # Epilogue tensor TMA descriptor (2D only; 1D uses cp.async.bulk).
     # 2D bias: epilogue tensor is 2D (M, N) in GMEM.

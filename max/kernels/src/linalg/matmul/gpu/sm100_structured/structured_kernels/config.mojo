@@ -207,6 +207,18 @@ def _compute_output_tile_shape(
         return Index(output_tile_n, output_tile_m) if AB_swapped else Index(
             output_tile_m, output_tile_n
         )
+    elif c_type == DType.float32:
+        var c_tile_n = mma_shape[1] if (
+            mma_shape[0] == 256 or cta_group == 1
+        ) else (mma_shape[1] // 2)
+        var output_tile_n = 8
+        if c_tile_n % 32 == 0 and not AB_swapped:
+            output_tile_n = 32
+        elif c_tile_n % 16 == 0:
+            output_tile_n = 16
+        return Index(output_tile_n, output_tile_m) if AB_swapped else Index(
+            output_tile_m, output_tile_n
+        )
     else:  # FP8 output tile shape
         var output_tile_n = 16  # no swizzle for fp8 output dtype
         return Index(output_tile_n, output_tile_m) if AB_swapped else Index(
@@ -225,19 +237,22 @@ def _compute_swizzle_modes(
     var b_swizzle = TensorMapSwizzle.SWIZZLE_128B
     var c_swizzle = TensorMapSwizzle.SWIZZLE_NONE
 
-    if c_type == DType.bfloat16:
+    if c_type == DType.bfloat16 or c_type == DType.float32:
         if AB_swapped:
             c_swizzle = (
                 TensorMapSwizzle.SWIZZLE_32B if is_gmm else TensorMapSwizzle.SWIZZLE_128B
             )
         else:
-            # When not swapped, output_tile_shape[1] is the N dimension
-            var tile_n = output_tile_shape[1]
-            if tile_n == 64:
+            # When not swapped, output_tile_shape[1] is the N dimension.
+            # Key the swizzle off bytes so it is dtype-generic: bf16 tile_n
+            # {64,32,16} and fp32 tile_n {32,16,8} both map to {128B,64B,32B}.
+            var elem_size = 2 if c_type == DType.bfloat16 else 4
+            var row_bytes = output_tile_shape[1] * elem_size
+            if row_bytes == 128:
                 c_swizzle = TensorMapSwizzle.SWIZZLE_128B
-            elif tile_n == 32:
+            elif row_bytes == 64:
                 c_swizzle = TensorMapSwizzle.SWIZZLE_64B
-            elif tile_n == 16:
+            elif row_bytes == 32:
                 c_swizzle = TensorMapSwizzle.SWIZZLE_32B
     else:
         c_swizzle = TensorMapSwizzle.SWIZZLE_NONE
@@ -592,6 +607,9 @@ struct MatmulConfig[
         epilogue_is_1d: Bool = False,
     ):
         comptime assert Self.a_type == Self.b_type
+        comptime assert (
+            Self.a_type != DType.float32 or Self.c_type == DType.float32
+        ), "float32 input only supports float32 output"
 
         self.cta_group = cta_group
         self.mma_shape = mma_shape
