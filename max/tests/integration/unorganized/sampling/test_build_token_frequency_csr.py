@@ -580,7 +580,6 @@ class TestFusedSamplingProcessorInit:
             sampler=MagicMock(),
             pipeline_config=config,
             context_batch=[context],
-            num_steps=1,
             device=device,
         )
 
@@ -607,7 +606,6 @@ class TestFusedSamplingProcessorAsyncCopy:
             sampler=MagicMock(),
             pipeline_config=config,
             context_batch=[context],
-            num_steps=1,
             device=device,
             pinned_new_tokens=pinned_new_tokens,
         )
@@ -706,7 +704,6 @@ class TestFusedSamplingProcessorAsyncCopyGPU:
             sampler=MagicMock(),
             pipeline_config=config,
             context_batch=[context],
-            num_steps=1,
             device=device,
             pinned_new_tokens=pinned_new_tokens,
         )

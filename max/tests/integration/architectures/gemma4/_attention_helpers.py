@@ -309,7 +309,7 @@ def execute_max_attention(
     batch = [create_text_context(np.empty(input_seq_len))]
     kv_manager.claim(batch[0].request_id, replica_idx=0)
     try:
-        kv_manager.alloc(batch[0], replica_idx=0, num_steps=1)
+        kv_manager.alloc(batch[0], replica_idx=0)
         kv_runtime_inputs = kv_manager.runtime_inputs([batch])
 
         # Under fp8 KV the kv_params.get_symbolic_inputs() expands with

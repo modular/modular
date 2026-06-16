@@ -293,7 +293,6 @@ class DecodeScheduler(Scheduler):
                 self.kv_cache.alloc(
                     context,
                     replica_idx=replica_idx,
-                    num_steps=1,
                 )
             except InsufficientBlocksError:
                 # If we don't have enough space, we will return this to the request queue.

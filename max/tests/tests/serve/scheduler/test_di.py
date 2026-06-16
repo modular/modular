@@ -2170,7 +2170,6 @@ def test_decode_request_ttl_propagates_from_pipeline_config() -> None:
     """``decode_request_ttl_s`` flows through ``from_pipeline_config``."""
     pipeline_config = MagicMock()
     pipeline_config.runtime.max_batch_size = 1
-    pipeline_config.runtime.max_num_steps = 1
     pipeline_config.runtime.max_batch_input_tokens = 8192
     pipeline_config.runtime.max_batch_total_tokens = 8192
     pipeline_config.runtime.enable_chunked_prefill = True

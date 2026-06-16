@@ -27,7 +27,6 @@ def _make_metrics(**overrides: Any) -> BatchMetrics:
         batch_type=BatchType.CE,
         batch_size=1,
         max_batch_size=2,
-        num_steps=3,
         terminated_reqs=4,
         num_pending_reqs=5,
         num_input_tokens=6,
@@ -74,7 +73,6 @@ def test_metric_to_string() -> None:
         batch_type=BatchType.CE,
         batch_size=1,
         max_batch_size=2,
-        num_steps=3,
         terminated_reqs=4,
         num_pending_reqs=5,
         num_input_tokens=6,
@@ -172,7 +170,6 @@ def test_metric_to_string_overlap_scheduler() -> None:
         batch_type=BatchType.TG,
         batch_size=1,
         max_batch_size=2,
-        num_steps=3,
         terminated_reqs=4,
         num_pending_reqs=5,
         num_input_tokens=6,
@@ -231,7 +228,6 @@ def test_metric_to_string_continuation_only_ce_batch() -> None:
         batch_type=BatchType.CE,
         batch_size=1,
         max_batch_size=2,
-        num_steps=1,
         terminated_reqs=0,
         num_pending_reqs=0,
         num_input_tokens=1862,
@@ -542,12 +538,9 @@ def test_spec_decode_metrics_properties() -> None:
 # ---------------------------------------------------------------------------
 
 
-def _mock_inputs(
-    batch_size: int, num_steps: int, batch_type: BatchType
-) -> MagicMock:
+def _mock_inputs(batch_size: int, batch_type: BatchType) -> MagicMock:
     inputs = MagicMock()
     inputs.input_tokens = 100
-    inputs.num_steps = num_steps
     inputs.batch_type = batch_type
     inputs.context_tokens = 500
     inputs.flat_batch = [MagicMock()] * batch_size
@@ -565,7 +558,7 @@ def _mock_sch_config() -> MagicMock:
 
 def test_batch_metrics_create_tg_with_spec_decode() -> None:
     """TG batch with spec decode uses output_tokens / time for generation throughput."""
-    inputs = _mock_inputs(batch_size=4, num_steps=1, batch_type=BatchType.TG)
+    inputs = _mock_inputs(batch_size=4, batch_type=BatchType.TG)
     spec_metrics = _make_spec_metrics(
         num_speculative_tokens=3,
         accepted_per_position=[4, 3, 1],
@@ -598,7 +591,7 @@ def test_batch_metrics_create_ce_with_spec_decode_uses_standard_formula() -> (
     None
 ):
     """CE batch uses standard throughput formula even when stale spec_metrics leak from a previous TG batch."""
-    inputs = _mock_inputs(batch_size=2, num_steps=1, batch_type=BatchType.CE)
+    inputs = _mock_inputs(batch_size=2, batch_type=BatchType.CE)
     spec_metrics = _make_spec_metrics(
         num_speculative_tokens=3,
         accepted_per_position=[4, 3, 1],
@@ -620,7 +613,7 @@ def test_batch_metrics_create_ce_with_spec_decode_uses_standard_formula() -> (
 
 def test_batch_metrics_create_no_spec_decode() -> None:
     """Without spec decode metrics, standard throughput formula and zero draft fields."""
-    inputs = _mock_inputs(batch_size=4, num_steps=1, batch_type=BatchType.TG)
+    inputs = _mock_inputs(batch_size=4, batch_type=BatchType.TG)
     metrics = BatchMetrics.create(
         sch_config=_mock_sch_config(),
         inputs=inputs,

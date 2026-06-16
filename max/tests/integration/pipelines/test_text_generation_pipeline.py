@@ -152,7 +152,7 @@ def test_text_generation_pipeline(monkeypatch: MonkeyPatch) -> None:
         while True:
             # This will generate a list[dict[request_id, TextGenerationOutput]] for each step
             inputs: TextGenerationInputs[TextContext] = TextGenerationInputs(
-                batches=[list(context_batch.values())], num_steps=1
+                batches=[list(context_batch.values())]
             )
             output = pipeline.execute(inputs)
             assert len(output) == len(context_batch)

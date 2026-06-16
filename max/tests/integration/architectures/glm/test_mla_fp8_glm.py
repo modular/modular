@@ -279,7 +279,7 @@ def _run_layer(
     )
     ctx = create_text_context(np.empty(SEQ_LEN))
     kv_manager.claim(ctx.request_id, replica_idx=0)
-    kv_manager.alloc(ctx, replica_idx=0, num_steps=1)
+    kv_manager.alloc(ctx, replica_idx=0)
     kv_inputs = kv_manager.runtime_inputs_for_leaf([[ctx]]).inputs[0]
     row_offsets_buf = Buffer(DType.uint32, [2])
     row_offsets_buf[0] = 0

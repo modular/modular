@@ -105,7 +105,7 @@ def _claim_and_alloc(
     """Claims and allocates KV cache entries for *contexts* on a replica."""
     for ctx in contexts:
         kv_manager.claim(ctx.request_id, replica_idx=replica_idx)
-        kv_manager.alloc(ctx, replica_idx=replica_idx, num_steps=1)
+        kv_manager.alloc(ctx, replica_idx=replica_idx)
 
 
 def _simulate_execute(contexts: list[TextContext]) -> None:
@@ -140,7 +140,7 @@ def _make_inputs(
     num_steps: int = 1,
     batch_type: BatchType = BatchType.CE,
 ) -> TextGenerationInputs[TextContext]:
-    inputs = TextGenerationInputs(batches=batches, num_steps=num_steps)
+    inputs = TextGenerationInputs(batches=batches)
     inputs.batch_type = batch_type
     return inputs
 

@@ -303,7 +303,7 @@ def run_max_indexer(
     for prompt_len in prompt_lens:
         context = create_text_context(np.empty(prompt_len, dtype=np.int64))
         kv_manager.claim(context.request_id, replica_idx=0)
-        kv_manager.alloc(context, replica_idx=0, num_steps=1)
+        kv_manager.alloc(context, replica_idx=0)
         batch_contexts.append(context)
 
     kv_inputs = kv_manager.runtime_inputs_for_leaf([batch_contexts]).inputs[0]

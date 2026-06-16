@@ -110,15 +110,11 @@ class ReplicaRequests:
 class ReplicaBatch:
     """This class represents a batch of requests for a single replica.
 
-    This class mainly serves as a container for batch and num_steps. This is nicer
-    than passing around Tuple[dict[RequestID, TextContext], int] everywhere.
-
     This class is an implementation detail of TextBatchConstructor and should not be
     used outside of this file.
     """
 
     batch: dict[RequestID, TextContext]
-    num_steps: int
     token_budget: TokenBudgetCollection
 
     def __len__(self) -> int:
@@ -318,13 +314,12 @@ class TextBatchConstructor:
     considered for that iteration, even if token budgets or cache capacity
     would allow more.
 
-    **4. Decode step limits**
+    **4. Sequence length limits**
 
-    The number of decode steps per TG iteration is bounded by
-    ``max_forward_steps_tg``. When ``max_seq_len`` is provided, the final
-    number of decode steps for an iteration is the *minimum* of
-    ``max_forward_steps_tg`` and the number of steps each request can run
-    before reaching ``max_seq_len``.
+    ``max_seq_len`` is enforced at request completion: once a request's
+    generated tokens reach ``max_seq_len``, it is marked complete and
+    removed from the TG queue. All requests present in the TG queue at
+    batch construction time therefore have remaining capacity.
 
     **5. KV cache watermark and memory pressure**
 
@@ -787,9 +782,7 @@ class TextBatchConstructor:
                     break
 
                 try:
-                    self.kv_cache.alloc(
-                        ctx, replica_idx=replica_idx, num_steps=1
-                    )
+                    self.kv_cache.alloc(ctx, replica_idx=replica_idx)
                 except InsufficientBlocksError:
                     if (
                         len(replica_requests.tg_reqs) == 0
@@ -802,14 +795,13 @@ class TextBatchConstructor:
 
             # Check if it fits within the token budget
             match batch.token_budget.status_after_context(
-                ctx, num_steps=1, request_type=RequestType.CE
+                ctx, request_type=RequestType.CE
             ):
                 case BudgetStatus.BUDGET_EXHAUSTED:
                     self._return_to_request_queue(ctx, replica_idx)
                     return
                 case BudgetStatus.BUDGET_REACHED:
                     batch.batch[req_id] = ctx
-                    batch.num_steps = 1
                     replica_requests.add_active_lora(ctx, self._lora_manager)
                     batch.token_budget.add_to_budget(
                         ctx, request_type=RequestType.CE
@@ -817,7 +809,6 @@ class TextBatchConstructor:
                     break
                 case BudgetStatus.BUDGET_AVAILABLE:
                     batch.batch[req_id] = ctx
-                    batch.num_steps = 1
                     batch.token_budget.add_to_budget(
                         ctx, request_type=RequestType.CE
                     )
@@ -834,21 +825,10 @@ class TextBatchConstructor:
         # Add based on the oldest request, respecting KV cache limits and token budgets.
         candidate_ids = deque(replica_requests.tg_reqs.keys())
         max_batch_size = self.scheduler_config.max_batch_size
-        max_seq_len = self.scheduler_config.max_seq_len
         while len(batch) < max_batch_size and len(candidate_ids) > 0:
             # Pop the oldest request
             candidate_id = candidate_ids.popleft()
             candidate_context = replica_requests.tg_reqs[candidate_id]
-
-            # Determine the number of steps to schedule based on the max_seq_len
-            # of the pipeline model.
-            if max_seq_len is not None:
-                batch.num_steps = min(
-                    batch.num_steps,
-                    candidate_context.compute_num_available_steps(
-                        max_seq_len,
-                    ),
-                )
 
             # Verify LoRA is active for TG requests
             # LoRA requests should have been activated during CE
@@ -867,7 +847,6 @@ class TextBatchConstructor:
             # So we can do it first.
             status = batch.token_budget.status_after_context(
                 candidate_context,
-                num_steps=batch.num_steps,
                 request_type=RequestType.TG,
             )
             if status == BudgetStatus.BUDGET_EXHAUSTED:
@@ -879,7 +858,6 @@ class TextBatchConstructor:
                     self.kv_cache.alloc(
                         candidate_context,
                         replica_idx=replica_idx,
-                        num_steps=batch.num_steps,
                     )
                     break
                 except InsufficientBlocksError:
@@ -917,27 +895,6 @@ class TextBatchConstructor:
                 case _:
                     raise ValueError(f"Unexpected budget status: {status}")
 
-    def _shrink_num_steps(self, batch: ReplicaBatch) -> None:
-        """Shrinks the number of steps for a batch to fit within the token budget."""
-        # If we are already running for 1 step, we cannot shrink further.
-        if batch.num_steps == 1:
-            return
-
-        # Otherwise, we need to find the maximum number of steps that can be run for any request in the batch
-        max_num_steps = 1
-        for ctx in batch.batch.values():
-            if ctx.max_length is None:
-                return
-
-            candidate_num_steps = ctx.compute_num_available_steps(
-                ctx.max_length
-            )
-            if candidate_num_steps > max_num_steps:
-                max_num_steps = candidate_num_steps
-
-        if max_num_steps < batch.num_steps:
-            batch.num_steps = max_num_steps
-
     @traced
     def _construct_replica_batch(
         self, replica_idx: int, priority_override: RequestType | None = None
@@ -954,7 +911,6 @@ class TextBatchConstructor:
         # Initialize batch
         batch = ReplicaBatch(
             batch={},
-            num_steps=self.scheduler_config.max_forward_steps_tg,
             token_budget=self._create_new_token_budget(),
         )
 
@@ -981,9 +937,6 @@ class TextBatchConstructor:
                     and priority_override is None
                 ):
                     self._add_ce_requests(batch, replica_idx)
-
-        # Shrink the number of steps
-        self._shrink_num_steps(batch)
 
         return batch
 
@@ -1034,17 +987,6 @@ class TextBatchConstructor:
             batches=[
                 list(batch.batch.values()) for batch in batches_per_replica
             ],
-            # Take the min num_steps across all replicas that have a non-empty batch.
-            # This ensures that when there is a single request and DP>1, we run with
-            # the full num_steps and not num_steps=1.
-            num_steps=min(
-                (
-                    batch.num_steps
-                    for batch in batches_per_replica
-                    if len(batch.batch) > 0
-                ),
-                default=0,
-            ),
         )
 
         # Pad short replicas for device graph capture when DP > 1.

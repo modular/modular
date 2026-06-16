@@ -132,7 +132,7 @@ def test_kv_cache_ragged_attention(
     for context in batch:
         kv_manager.claim(context.request_id, replica_idx=0)
         assert isinstance(kv_manager, PagedKVCacheManager)
-        kv_manager.alloc(context, replica_idx=0, num_steps=1)
+        kv_manager.alloc(context, replica_idx=0)
 
     input_row_offsets = Buffer(
         DType.uint32,

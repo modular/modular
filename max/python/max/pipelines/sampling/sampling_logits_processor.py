@@ -128,7 +128,6 @@ class FusedSamplingProcessor:
         sampler: Model,
         pipeline_config: PipelineConfig,
         context_batch: list[Any],
-        num_steps: int,
         device: Device,
         bitmask: npt.NDArray[np.int32] | None = None,
         vocab_size: int | None = None,
@@ -212,9 +211,7 @@ class FusedSamplingProcessor:
 
         self.penalty_inputs: PenaltyInputs | None = None
         if pipeline_config.sampling.enable_penalties:
-            self.penalty_inputs = PenaltyInputs.create(
-                context_batch, device, num_steps
-            )
+            self.penalty_inputs = PenaltyInputs.create(context_batch, device)
         else:
             needs_penalties = any(
                 context.sampling_params.needs_penalties
@@ -227,7 +224,7 @@ class FusedSamplingProcessor:
 
         self.min_tokens_masks = _build_min_tokens_masks(
             context_batch,
-            num_steps,
+            1,
             device,
             pipeline_config.sampling.enable_min_tokens,
         )

@@ -49,7 +49,6 @@ class BatchMetrics:
     batch_type: BatchType
     batch_size: int
     max_batch_size: int
-    num_steps: int
     terminated_reqs: int
     num_pending_reqs: int
     num_input_tokens: int
@@ -133,9 +132,7 @@ class BatchMetrics:
                 batch_spec_decode_metrics.output_tokens / batch_execution_time_s
             )
         else:
-            generation_throughput = (
-                batch_size * inputs.num_steps / batch_execution_time_s
-            )
+            generation_throughput = batch_size / batch_execution_time_s
 
         total_kv_blocks = 0
         used_kv_pct = 0.0
@@ -269,7 +266,6 @@ class BatchMetrics:
             batch_type=inputs.batch_type,
             batch_size=batch_size,
             max_batch_size=sch_config.max_batch_size,
-            num_steps=inputs.num_steps,
             terminated_reqs=num_terminated_reqs,
             num_pending_reqs=num_pending_reqs,
             num_input_tokens=num_input_tokens,
@@ -424,7 +420,6 @@ class BatchMetrics:
             "batch_type": self.batch_type.value,
             "batch_size": self.batch_size,
             "max_batch_size": self.max_batch_size,
-            "num_steps": self.num_steps,
             "terminated_reqs": self.terminated_reqs,
             "num_pending_reqs": self.num_pending_reqs,
             "num_input_tokens": self.num_input_tokens,

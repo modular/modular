@@ -200,13 +200,11 @@ class PagedKVCacheManager:
         kv_manager.claim(ctx2.request_id, replica_idx=1)
 
         # Allocate blocks for these requests
-        kv_manager.alloc(ctx1, replica_idx=0, num_steps=10)
-        kv_manager.alloc(ctx2, replica_idx=1, num_steps=10)
+        kv_manager.alloc(ctx1, replica_idx=0)
+        kv_manager.alloc(ctx2, replica_idx=1)
 
         # Get KVCache inputs to feed to graph
-        kv_cache_inputs = kv_manager.runtime_inputs(
-            [[ctx1, ctx2]], num_steps=10
-        )
+        kv_cache_inputs = kv_manager.runtime_inputs([[ctx1, ctx2]])
 
         # Run model...
         # Update requests with newly generated tokens
@@ -308,14 +306,13 @@ class PagedKVCacheManager:
             )
 
     def get_pct_used_blocks_after_allocation(
-        self, ctx: TextContext, replica_idx: int, num_steps: int = 1
+        self, ctx: TextContext, replica_idx: int
     ) -> float:
         """Gets the percentage of blocks used after allocating for a request.
 
         Args:
             ctx: The request context containing sequence information and token indices.
             replica_idx: Index of the replica to query.
-            num_steps: Number of additional steps to allocate blocks for. Defaults to 1.
 
         Returns:
             The percentage of total blocks used after allocating for the request.
@@ -325,7 +322,6 @@ class PagedKVCacheManager:
             self.get_num_used_pages(replica_idx)
             + block_manager.num_blocks_to_allocate(
                 ctx,
-                num_steps,
                 self.params.num_draft_tokens,
                 self.params.num_draft_tokens_per_step,
             )
@@ -340,9 +336,8 @@ class PagedKVCacheManager:
         self,
         data: TextContext,
         replica_idx: int,
-        num_steps: int = 1,
     ) -> None:
-        """Allocates blocks for a request to run for N steps.
+        """Allocates blocks for a request.
 
         When prefix caching is enabled, some of the allocated blocks may be
         retrieved from the prefix cache and the context's active token window
@@ -352,7 +347,6 @@ class PagedKVCacheManager:
             data: The text generation context for the request. The request ID
                 must already be assigned to a replica via ``claim``.
             replica_idx: Index of the replica to allocate on.
-            num_steps: The number of steps to reserve blocks for. Default: 1.
 
         Raises:
             InsufficientBlocksError: If there are insufficient free blocks to
@@ -362,7 +356,6 @@ class PagedKVCacheManager:
         replica.block_manager.reuse_blocks_from_prefix_cache(data)
         replica.block_manager.allocate_new_blocks(
             data,
-            num_steps,
             self.params.num_draft_tokens,
             self.params.num_draft_tokens_per_step,
         )
@@ -370,7 +363,6 @@ class PagedKVCacheManager:
     def _does_req_need_more_blocks(
         self,
         ctx: TextContext,
-        num_steps: int,
         replica_idx: int,
     ) -> bool:
         """Determines if a request needs additional blocks."""
@@ -378,7 +370,6 @@ class PagedKVCacheManager:
         block_manager = replica.block_manager
         seq_len = _compute_seq_len(
             ctx,
-            num_steps,
             self.params.num_draft_tokens,
             self.params.num_draft_tokens_per_step,
         )
@@ -390,7 +381,6 @@ class PagedKVCacheManager:
         self,
         replica_idx: int,
         batch: Sequence[TextContext],
-        num_steps: int = 1,
         *,
         max_cache_length: int | None = None,
         batch_characteristics: BatchCharacteristics | None = None,
@@ -400,7 +390,6 @@ class PagedKVCacheManager:
         Args:
             replica_idx: Index of the replica to get runtime inputs for.
             batch: Batch of request contexts.
-            num_steps: Number of decode steps for the fetch.
             max_cache_length: Optional explicit max cache length to size LUT
                 views. If not provided, uses request-derived runtime length.
             batch_characteristics: Optional upper-bound batch shape used to
@@ -424,7 +413,6 @@ class PagedKVCacheManager:
             # Allocate blocks for request if we need more.
             if self._does_req_need_more_blocks(
                 ctx,
-                num_steps,
                 replica_idx=replica_idx,
             ):
                 raise ValueError(
@@ -434,7 +422,6 @@ class PagedKVCacheManager:
             # Compute the total sequence length
             seq_len = _compute_seq_len(
                 ctx,
-                num_steps,
                 self.params.num_draft_tokens,
                 self.params.num_draft_tokens_per_step,
             )
@@ -531,7 +518,6 @@ class PagedKVCacheManager:
             # Sanity check that we have enough blocks.
             seq_len = _compute_seq_len(
                 ctx,
-                num_steps,
                 self.params.num_draft_tokens,
                 self.params.num_draft_tokens_per_step,
             )
@@ -591,7 +577,6 @@ class PagedKVCacheManager:
             absolute_max_cached_len = bc.max_cache_valid_length
 
         max_lengths_host = build_max_lengths_tensor(
-            num_steps,
             max_prompt_len,
             absolute_max_cached_len,
         )
@@ -620,7 +605,6 @@ class PagedKVCacheManager:
     def runtime_inputs(
         self,
         batches: Sequence[Sequence[TextContext]],
-        num_steps: int = 1,
         *,
         max_cache_length: int | None = None,
         batch_characteristics: BatchCharacteristics | None = None,
@@ -632,11 +616,10 @@ class PagedKVCacheManager:
         ``(DP replica, TP shard)`` device's inputs.
 
         This method will raise a RuntimeError if any request has insufficient blocks
-        already allocated to it to run for the given number of steps.
+        already allocated to it.
 
         Args:
             batches: Per-replica batches of requests
-            num_steps: Number of steps to run for
             max_cache_length: Optional explicit max cache length to size LUT
                 views. If not provided, uses request-derived runtime length.
             batch_characteristics: Optional upper-bound batch shape applied
@@ -656,7 +639,6 @@ class PagedKVCacheManager:
             self._compute_kv_cache_assignments(
                 replica_idx=replica_idx,
                 batch=ctxs,
-                num_steps=num_steps,
                 max_cache_length=max_cache_length,
                 batch_characteristics=batch_characteristics,
             )
@@ -667,7 +649,6 @@ class PagedKVCacheManager:
     def runtime_inputs_for_leaf(
         self,
         batches: Sequence[Sequence[TextContext]],
-        num_steps: int = 1,
         *,
         max_cache_length: int | None = None,
         batch_characteristics: BatchCharacteristics | None = None,
@@ -682,7 +663,6 @@ class PagedKVCacheManager:
         """
         inputs = self.runtime_inputs(
             batches,
-            num_steps,
             max_cache_length=max_cache_length,
             batch_characteristics=batch_characteristics,
         )
@@ -731,8 +711,6 @@ class PagedKVCacheManager:
     def reserve(
         self,
         replica_batches: Sequence[Sequence[TextContext]],
-        *,
-        num_steps: int = 1,
     ) -> Iterator[None]:
         """Claims, allocates, and releases contexts within a scope.
 
@@ -741,7 +719,6 @@ class PagedKVCacheManager:
 
         Args:
             replica_batches: Per-replica lists of contexts to reserve.
-            num_steps: Number of steps to allocate for each context.
         """
         claimed: list[tuple[RequestID, int]] = []
         try:
@@ -757,9 +734,7 @@ class PagedKVCacheManager:
                         )
                     self.claim(context.request_id, replica_idx=replica_idx)
                     claimed.append((context.request_id, replica_idx))
-                    self.alloc(
-                        context, replica_idx=replica_idx, num_steps=num_steps
-                    )
+                    self.alloc(context, replica_idx=replica_idx)
             yield
         finally:
             for request_id, replica_idx in claimed:

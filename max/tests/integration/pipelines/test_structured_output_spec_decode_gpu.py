@@ -152,9 +152,9 @@ def test_eagle_structured_output_json_schema_gpu(
 
     for _ in range(max_iterations):
         inputs: TextGenerationInputs[TextContext] = TextGenerationInputs(
-            batches=[[context]], num_steps=1
+            batches=[[context]]
         )
-        kv_manager.alloc(context, replica_idx=0, num_steps=1)
+        kv_manager.alloc(context, replica_idx=0)
         response = pipeline.execute(inputs)
 
         if request_id in response:
@@ -165,7 +165,7 @@ def test_eagle_structured_output_json_schema_gpu(
 
     # Flush any remaining outputs
     empty_inputs: TextGenerationInputs[TextContext] = TextGenerationInputs(
-        batches=[[]], num_steps=1
+        batches=[[]]
     )
     response = pipeline.execute(empty_inputs)
     if request_id in response:
@@ -320,10 +320,10 @@ def test_eagle_structured_output_heterogeneous_batch_gpu(
         # Allocate KV cache for all contexts in the batch.
         # Even done contexts need consistent allocation for spec decode.
         for ctx in contexts:
-            kv_manager.alloc(ctx, replica_idx=0, num_steps=1)
+            kv_manager.alloc(ctx, replica_idx=0)
 
         inputs: TextGenerationInputs[TextContext] = TextGenerationInputs(
-            batches=[contexts], num_steps=1
+            batches=[contexts]
         )
         response = pipeline.execute(inputs)
 
@@ -341,7 +341,7 @@ def test_eagle_structured_output_heterogeneous_batch_gpu(
 
     # Flush remaining outputs
     empty_inputs: TextGenerationInputs[TextContext] = TextGenerationInputs(
-        batches=[[]], num_steps=1
+        batches=[[]]
     )
     response = pipeline.execute(empty_inputs)
     if structured_request_id in response:

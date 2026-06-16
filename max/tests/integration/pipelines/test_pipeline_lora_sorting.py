@@ -292,7 +292,6 @@ def execute_pipeline(
     patch_base = "max.pipelines.lib.pipeline_variants.text_generation"
     inputs: TextGenerationInputs[TextContext] = TextGenerationInputs(
         batches=[list(batch.values())],
-        num_steps=1,
     )
     with (
         patch(

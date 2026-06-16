@@ -99,90 +99,79 @@ def test_token_budget__total_context_budget_with_cost_alignment_alignment() -> (
         cost_alignment=8,  # token cost is aligned to 8 for this test
     )
 
-    # current_length = 10, num_steps = 3 => total_length = 10 + (3 - 1) = 12
-    # aligned cost = align_up(12, 8) = 16
+    # current_length = 10 => aligned cost = align_up(10, 8) = 16
     context = TextContext(
         tokens=TokenBuffer(np.ones(10, dtype=np.int64)), max_length=100
     )
     status = total_context_budget.status_after_context(
-        context, num_steps=3, request_type=RequestType.CE
+        context, request_type=RequestType.CE
     )
     assert status == BudgetStatus.BUDGET_AVAILABLE
 
     # Commit the aligned length to the budget:
     # used = 16, remaining = 30 - 16 = 14.
-    total_context_budget.add_to_budget(
-        context, num_steps=3, request_type=RequestType.CE
-    )
+    total_context_budget.add_to_budget(context, request_type=RequestType.CE)
     assert total_context_budget.remaining == 14
 
-    # Now with remaining=14, a new 10-token context and num_steps=4 gives
-    # total_length = 10 + (4 - 1) = 13, aligned cost = align_up(13, 8) = 16
+    # Now with remaining=14, a new 10-token context gives
+    # aligned cost = align_up(10, 8) = 16
     # which is greater than remaining=14, so it should be rejected.
     context2 = TextContext(
         tokens=TokenBuffer(np.ones(10, dtype=np.int64)), max_length=100
     )
     status2 = total_context_budget.status_after_context(
-        context2, num_steps=4, request_type=RequestType.CE
+        context2, request_type=RequestType.CE
     )
     assert status2 == BudgetStatus.BUDGET_EXHAUSTED
 
 
-def test_token_budget__total_context_budget_num_steps_available_and_reached() -> (
-    None
-):
-    """TotalContextTokenBudget should account for num_steps when checking capacity."""
-    # Capacity large enough to admit two 10-token contexts, accounting for
-    # num_steps and page-size alignment.
+def test_token_budget__total_context_budget_available_and_reached() -> None:
+    """TotalContextTokenBudget should check capacity against context length."""
     total_budget = TotalContextTokenBudget(
         capacity=25,
         allow_chunking=False,
         applicable_types=[RequestType.CE, RequestType.TG, RequestType.MIXED],
-        cost_alignment=1,  # no alignment needed for this test
+        cost_alignment=1,
     )
 
-    # current_length = 10, num_steps = 3 => total_length = 10 + (3 - 1) = 12 < 25
+    # current_length = 10 < 25: fits
     context = TextContext(
         tokens=TokenBuffer(np.ones(10, dtype=np.int64)), max_length=100
     )
     status = total_budget.status_after_context(
-        context, num_steps=3, request_type=RequestType.CE
+        context, request_type=RequestType.CE
     )
     assert status == BudgetStatus.BUDGET_AVAILABLE
 
-    # Commit the current length plus (num_steps - 1) to the budget:
-    # used = 10 + (3 - 1) = 12, remaining = 25 - 12 = 13.
-    total_budget.add_to_budget(
-        context, num_steps=3, request_type=RequestType.CE
-    )
-    assert total_budget.remaining == 13
+    # Commit 10 tokens: remaining = 25 - 10 = 15.
+    total_budget.add_to_budget(context, request_type=RequestType.CE)
+    assert total_budget.remaining == 15
 
-    # Now with remaining=13, a new 10-token context and num_steps=4 gives
-    # total_length = 10 + (4 - 1) = 13, which should exactly reach the budget.
+    # A second 15-token context exactly reaches the budget.
     context2 = TextContext(
-        tokens=TokenBuffer(np.ones(10, dtype=np.int64)), max_length=100
+        tokens=TokenBuffer(np.ones(15, dtype=np.int64)), max_length=100
     )
     status2 = total_budget.status_after_context(
-        context2, num_steps=4, request_type=RequestType.CE
+        context2, request_type=RequestType.CE
     )
     assert status2 == BudgetStatus.BUDGET_REACHED
 
 
-def test_token_budget__total_context_budget_num_steps_exhausted() -> None:
-    """TotalContextTokenBudget should reject contexts that would overflow with num_steps > 1."""
+def test_token_budget__total_context_budget_exhausted() -> None:
+    """TotalContextTokenBudget should reject contexts that would overflow."""
     total_budget = TotalContextTokenBudget(
         capacity=14,
         allow_chunking=False,
         applicable_types=[RequestType.CE],
-        cost_alignment=1,  # no alignment needed for this test
+        cost_alignment=1,
     )
 
-    # current_length = 10, num_steps = 6 => total_length = 10 + (6 - 1) = 15 > 14
+    # current_length = 15 > 14: exceeds capacity
     context = TextContext(
-        tokens=TokenBuffer(np.ones(10, dtype=np.int64)), max_length=100
+        tokens=TokenBuffer(np.ones(15, dtype=np.int64)), max_length=100
     )
     status = total_budget.status_after_context(
-        context, num_steps=6, request_type=RequestType.CE
+        context, request_type=RequestType.CE
     )
     assert status == BudgetStatus.BUDGET_EXHAUSTED
 
@@ -205,7 +194,7 @@ def test_token_budget__total_context_budget_with_chunking_exhausts_overage() -> 
     assert context.tokens.active_length == 30
 
     status = total_budget.status_after_context(
-        context, num_steps=1, request_type=RequestType.CE
+        context, request_type=RequestType.CE
     )
     assert status == BudgetStatus.BUDGET_EXHAUSTED
     assert len(context.tokens) == 30
@@ -232,7 +221,7 @@ def test_token_budget__total_context_budget_overage_does_not_chunk() -> None:
     assert context.tokens.active_length == 10
 
     status = total_budget.status_after_context(
-        context, num_steps=1, request_type=RequestType.CE
+        context, request_type=RequestType.CE
     )
     assert status == BudgetStatus.BUDGET_EXHAUSTED
 
@@ -259,7 +248,7 @@ def test_token_budget__total_context_budget_chunking_disabled_for_unit_active_le
     assert len(context.tokens) == 50
 
     status = total_budget.status_after_context(
-        context, num_steps=1, request_type=RequestType.CE
+        context, request_type=RequestType.CE
     )
     # Since active_length == 1, TotalContextTokenBudget should not attempt
     # chunking and must report the budget as exhausted.
@@ -286,14 +275,12 @@ def test_token_budget__total_context_budget__ce_after_tg() -> None:
 
     # This should still show as available, as its a TG request, and this budget does not apply
     status = total_budget.status_after_context(
-        context, num_steps=1, request_type=RequestType.TG
+        context, request_type=RequestType.TG
     )
     assert status == BudgetStatus.BUDGET_AVAILABLE
 
     # Add to budget
-    total_budget.add_to_budget(
-        context, num_steps=1, request_type=RequestType.TG
-    )
+    total_budget.add_to_budget(context, request_type=RequestType.TG)
 
     # Create a new CE request with a small number of tokens
     context = TextContext(
@@ -302,6 +289,6 @@ def test_token_budget__total_context_budget__ce_after_tg() -> None:
 
     # This should be rejected, as we already have a TG object in batch that is beyond the threshold.
     status = total_budget.status_after_context(
-        context, num_steps=1, request_type=RequestType.CE
+        context, request_type=RequestType.CE
     )
     assert status == BudgetStatus.BUDGET_EXHAUSTED

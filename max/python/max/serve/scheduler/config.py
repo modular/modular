@@ -30,9 +30,6 @@ class TokenGenerationSchedulerConfig:
     target_tokens_per_batch_ce: int
     """The target total number of tokens to encode in the context encoding batch."""
 
-    max_forward_steps_tg: int = 1
-    """The maximum number of steps to generate for each request in the token generation iteration."""
-
     max_seq_len: int | None = None
     """The maximum sequence length of the model."""
 
@@ -86,10 +83,6 @@ class TokenGenerationSchedulerConfig:
             raise ValueError(
                 "Need set `target_tokens_per_batch_ce` for the scheduler to enable chunked prefill."
             )
-        if self.max_forward_steps_tg <= 0:
-            raise ValueError(
-                f"`max_forward_steps_tg` must be greater than 0, found {self.max_forward_steps_tg}"
-            )
         if (
             self.max_batch_total_tokens is not None
             and self.max_seq_len is not None
@@ -114,7 +107,6 @@ class TokenGenerationSchedulerConfig:
 
         return cls(
             max_batch_size=pipeline_config.runtime.max_batch_size,
-            max_forward_steps_tg=pipeline_config.runtime.max_num_steps,
             target_tokens_per_batch_ce=pipeline_config.runtime.max_batch_input_tokens,
             max_seq_len=pipeline_config.model.max_length,
             max_batch_total_tokens=pipeline_config.runtime.max_batch_total_tokens,

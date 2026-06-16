@@ -460,12 +460,7 @@ class BatchType(Enum):
 
 @dataclass(eq=True)
 class TextGenerationInputs(PipelineInputs, Generic[TextGenerationContextType]):
-    """Input parameters for text generation pipeline operations.
-
-    This class encapsulates the batch of contexts and number of steps required
-    for token generation in a single input object, replacing the previous
-    pattern of passing batch and num_steps as separate parameters.
-    """
+    """Input parameters for text generation pipeline operations."""
 
     batches: list[list[TextGenerationContextType]]
     """Variable list of batches, with each batch being a list of contexts.
@@ -473,9 +468,6 @@ class TextGenerationInputs(PipelineInputs, Generic[TextGenerationContextType]):
     There can be multiple batches when using data parallelism, in which each
     batch is mapped to a different device replica.
     """
-
-    num_steps: int
-    """Number of steps to run for."""
 
     input_tokens: int = -1
     """Number of input tokens."""
@@ -508,7 +500,6 @@ class TextGenerationInputs(PipelineInputs, Generic[TextGenerationContextType]):
         return (
             "TextGenerationInputs("
             f"batch_size={len(self.flat_batch)}, "
-            f"num_steps={self.num_steps}, "
             f"batch_type={self.batch_type.value}"
             ")"
         )
