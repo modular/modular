@@ -37,6 +37,17 @@ This version is still a work in progress.
   unhandled error. Image payloads are now decoded tolerantly and validated with
   a full pixel decode that the tokenizer reuses (so each image is decoded only
   once), and undecodable content fails fast as a clean 400.
+- Fixed intermittently-dropped Kimi K2.5 tool calls under reasoning-enabled
+  `tool_choice="auto"`. The model often opens a tool-call section directly from
+  inside its `<think>` block without emitting a closing `</think>` (an implicit
+  end-of-reasoning, part of Kimi's interleaved-thinking design). The reasoning
+  parser previously ended a reasoning span only on `</think>`, so the entire
+  tool-call section was misclassified as reasoning and never reached the tool
+  parser, so the response came back with empty `content` and the tool-call
+  payload stranded in `reasoning`. Because whether the model emits `</think>`
+  is sampling-dependent, the failure was flaky. The reasoning parser now also
+  ends the span at `<|tool_calls_section_begin|>`, leaving the marker as
+  content so the tool call is parsed correctly.
 - Fixed a structured-output runaway: a `response_format` JSON schema that omits
   the root `"type"` (for example `{"properties": {"x": {}}}`, valid JSON Schema)
   previously compiled to a grammar that permitted a bare, unbounded top-level
