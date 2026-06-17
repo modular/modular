@@ -122,8 +122,8 @@ def merge_per_device_buffers(
                 dtype=a.dtype,
                 device=a.device,
             )
-            combined[:a_rows].inplace_copy_from(a)
-            combined[a_rows:].inplace_copy_from(b)
+            combined[:a_rows, :].inplace_copy_from(a)
+            combined[a_rows:, :].inplace_copy_from(b)
             merged.append(combined)
     return merged
 
