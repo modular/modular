@@ -46,6 +46,28 @@ This version is still a work in progress.
 - `ImplicitlyDestructible` has been renamed to `ImplicitlyDeletable`, for better
   name consistency with its required `__del__()` "delete" special method.
 
+- `InlineArray[ElementType, size]` now conditionally conforms to
+  `ImplicitlyDeletable`, only when its `ElementType` does. This lets an
+  `InlineArray` hold `@explicit_destroy` elements without leaking them when the
+  array is dropped.
+
+  As a result, generic code that takes an `InlineArray` by value with only a
+  `Movable` element bound now fails to compile for every `ElementType`
+  (previously the error was deferred until `ElementType` was a non-deletable
+  type). Add `& ImplicitlyDeletable` to the element bound:
+
+  ```mojo
+  def foo[T: Movable & ImplicitlyDeletable, //](var arr: InlineArray[T, 3]):
+      pass
+  ```
+
+  To consume an `InlineArray` of explicitly-destroyed elements, drain it with
+  the new `destroy_with()` method, which calls a closure on each element:
+
+  ```mojo
+  arr^.destroy_with(my_destroy_closure)
+  ```
+
 - The implicit conversion constructors that cast an `UnsafePointer` to
   `MutUnsafeAnyOrigin` or `ImmutUnsafeAnyOrigin` are now deprecated and emit a
   deprecation warning when used. `UnsafeAnyOrigin` is an unsafe escape hatch
