@@ -544,7 +544,7 @@ LogicalResult Decorators::validateCompilerDecorator(TypedAttr attr) {
   if (auto call = dyn_cast<ParamOperatorAttr>(attr)) {
     return success(call.getOpcode() == POC::Apply &&
                    llvm::is_contained(plainDre, *symbolName) &&
-                   call.getOperands().size() <= 3);
+                   call.getOperands().size() <= 6);
   }
 
   return success(llvm::is_contained(plainDre, *symbolName));
