@@ -136,17 +136,6 @@ def create_i1_async(
     external_call["MGP_RT_CreateAsync_bool", NoneType](value, async_ptr)
 
 
-@no_inline
-def create_buffer_ref_async(
-    buffer: MutByteBuffer,
-    async_ptr: OpaquePointer[MutAnyOrigin],
-    call_ctx: DeviceContext,
-):
-    external_call["MGP_RT_CreateAsyncDeviceBufferRef", NoneType](
-        buffer.unsafe_ptr(), buffer.size(), async_ptr, call_ctx._handle
-    )
-
-
 struct OwnedByteBuffer(Movable):
     """Owning composite produced by `mgp.buffer.alloc`.
 
@@ -1082,18 +1071,6 @@ struct MoggAsyncPackHelper:
         Calls create_tensor_spec_async to handle the packing.
         """
         create_tensor_spec_async(data, async_ptr)
-
-    def __init__(
-        out self,
-        data: MutByteBuffer,
-        device_ctx_ptr: DeviceContext,
-        async_ptr: AnyAsyncValueRefPtr,
-    ):
-        """
-        Packs a MutByteBuffer into the asynchronous context.
-        Calls create_buffer_ref_async to handle the packing.
-        """
-        create_buffer_ref_async(data, async_ptr, device_ctx_ptr)
 
     def __init__(
         out self,
