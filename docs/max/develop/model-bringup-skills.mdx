@@ -19,7 +19,7 @@ decisions and verifying the final inference results.
 To equip your AI coding agent with the model bring-up workflow, you must install
 the MAX skills.
 
-### Install via npx
+### Install with npx
 
 If you have Node.js installed, you can add all Modular agent skills to your
 assistant with a single command:
@@ -41,7 +41,7 @@ Keep your skills up to date with the latest best practices by running:
 npx skills update
 ```
 
-### Manual installation
+### Install manually
 
 If you prefer to install the skills manually, clone the official repository:
 
@@ -65,7 +65,7 @@ directory.
 To begin, open your AI coding agent in your project workspace and instruct it to
 import the model using its Hugging Face model ID.
 
-Here are a few example prompts you can use to start the workflow:
+Here are three example prompts you can use to start the workflow:
 
 ```text
 Import the Hugging Face model "Qwen/Qwen2.5-7B-Instruct" into MAX.
@@ -84,8 +84,8 @@ presents the bring-up plan for your review.
 
 ## How agent-driven model bring-up works
 
-The `import-model` skill drives a three-phase workflow—decide and plan,
-implement, then verify—while you remain the coordinator and validator at each
+The `import-model` skill drives a three-phase workflow (decide and plan,
+implement, then verify), and you remain the coordinator and validator at each
 checkpoint. The sections below describe what the agent delivers in each phase
 and how you steer it. For the full procedure, see the skill's
 [`README.md`](https://github.com/modular/skills/blob/main/import-model/README.md).
