@@ -45,9 +45,9 @@ def test_async_host_func_signals_flag(
     accelerator: Accelerator, cpu: CPU
 ) -> None:
     """Round-trip: callable runs on a different thread, flag goes 0->1."""
-    if accelerator.api != "cuda":
+    if accelerator.api not in ("cuda", "hip"):
         pytest.skip(
-            "__unsafe_enqueue_async_py_host_func is only supported on CUDA"
+            "__unsafe_enqueue_async_py_host_func is only supported on CUDA/HIP"
         )
 
     flag = CompletionFlag(accelerator)
@@ -91,9 +91,9 @@ def test_async_host_func_replays_clear_flag(
     accelerator: Accelerator, cpu: CPU
 ) -> None:
     """Second invocation resets the flag and signals it again."""
-    if accelerator.api != "cuda":
+    if accelerator.api not in ("cuda", "hip"):
         pytest.skip(
-            "__unsafe_enqueue_async_py_host_func is only supported on CUDA"
+            "__unsafe_enqueue_async_py_host_func is only supported on CUDA/HIP"
         )
 
     flag = CompletionFlag(accelerator)
@@ -124,9 +124,9 @@ def test_async_host_func_callback_exception_does_not_deadlock(
     The trampoline catches the exception (prints it via PySys_WriteStderr)
     and still proceeds with the flag store.
     """
-    if accelerator.api != "cuda":
+    if accelerator.api not in ("cuda", "hip"):
         pytest.skip(
-            "__unsafe_enqueue_async_py_host_func is only supported on CUDA"
+            "__unsafe_enqueue_async_py_host_func is only supported on CUDA/HIP"
         )
 
     flag = CompletionFlag(accelerator)
