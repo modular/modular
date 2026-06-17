@@ -60,6 +60,12 @@ class SpecialToken(str, Enum):
     TURN_END = "<turn|>"
 
 
+# Reasoning-block opener Gemma 4 prefills on the generation turn (see
+# apply_chat_template). Single source of truth — the reasoning parser derives
+# its prefix from this too.
+REASONING_OPEN = "<|channel>thought\n"
+
+
 class Gemma4Tokenizer(TextAndVisionTokenizer):
     """Gemma4-specific tokenizer handling text and vision inputs.
 
@@ -285,6 +291,23 @@ class Gemma4Tokenizer(TextAndVisionTokenizer):
             **chat_template_options,
         )
         assert isinstance(templated_message, str)
+
+        # When thinking is on, force the reasoning channel open on the
+        # generation turn so the model reasons on *every* assistant turn,
+        # including after a tool result. Gemma otherwise only hints via
+        # <|think|> and skips thinking post-tool, which fails OpenRouter's
+        # reasoning+tool-call test and makes OR auto-disable tools.
+        # Match the chat template, which only reads ``enable_thinking``.
+        thinking_enabled = bool(chat_template_options.get("enable_thinking"))
+        if (
+            thinking_enabled
+            and chat_template_options.get("add_generation_prompt")
+            and not templated_message.rstrip("\n").endswith(
+                REASONING_OPEN.rstrip("\n")
+            )
+        ):
+            templated_message += REASONING_OPEN
+
         return templated_message
 
     async def decode(
