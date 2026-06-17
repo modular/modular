@@ -37,6 +37,10 @@ modular_py_test(
     env = {
         "MODULAR_KERNEL_VERIFICATION_OPS_PATH": "$(rootpath //max/tests/integration/Inputs/kernel_verification_ops)",
     },
+    ignore_extra_deps = [
+        # lazy import
+        "//max/python/max/_interpreter_ops",
+    ],
     imports = ["."],
     per_test_shard_count = {
         "test_functional_other.py": 10,
@@ -51,6 +55,7 @@ modular_py_test(
     deps = [
         ":conftest",
         "//max/python/max:tensor",
+        "//max/python/max/_interpreter_ops",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
