@@ -226,11 +226,11 @@ class UnifiedMTPGemma4Model(
 
             # -- 6. Create draft model and share embed_tokens/lm_head --
             assert isinstance(self.kv_params, MultiKVCacheParams)
-            target_sliding_kv_params = self.kv_params.params[
+            target_sliding_kv_params = self.kv_params.children[
                 "sliding_attention"
             ]
             assert isinstance(target_sliding_kv_params, KVCacheParams)
-            target_global_kv_params = self.kv_params.params["full_attention"]
+            target_global_kv_params = self.kv_params.children["full_attention"]
             assert isinstance(target_global_kv_params, KVCacheParams)
             target_layer_types = config.text_config.layer_types
 

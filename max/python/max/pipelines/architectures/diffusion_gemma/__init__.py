@@ -10,14 +10,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Imports the respective loader if its dependency is available, or adds a stub if not."""
+"""DiffusionGemma block-diffusion architecture."""
 
-try:
-    import gguf  # type: ignore # noqa: F401
+from .arch import diffusion_gemma_arch
+from .model import DiffusionGemmaForBlockDiffusionModel
+from .model_config import DiffusionGemmaForBlockDiffusionConfig
 
-    from .load_gguf import GGUFWeights
-except ImportError:
-
-    class GGUFWeights:  # type: ignore
-        def __init__(self, *args, **kwargs):
-            raise ImportError("Unable to load gguf file, gguf not installed")
+__all__ = [
+    "DiffusionGemmaForBlockDiffusionConfig",
+    "DiffusionGemmaForBlockDiffusionModel",
+    "diffusion_gemma_arch",
+]

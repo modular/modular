@@ -49,7 +49,6 @@ logger = logging.getLogger("max.pipelines")
 
 def _compute_seq_len(
     ctx: TextContext,
-    num_steps: int,
     num_draft_tokens: int,
     num_draft_tokens_per_step: int = 1,
 ) -> int:
@@ -61,7 +60,7 @@ def _compute_seq_len(
     #                                   conservative: assume all are accepted
     #   2 * num_draft_tokens          : drafts to verify *next* batch
     #                                   + drafts written *during* that batch
-    #   num_steps                     : regular decode steps
+    #   1                             : one regular decode step
     #   -1                            : the last generated token has no KV entry
     #
     # Block-draft correction (DFlash): the draft model's ``forward_block``
@@ -80,7 +79,7 @@ def _compute_seq_len(
         len(ctx.tokens)
         + len(ctx.spec_decoding_state.maybe_accepted_draft_tokens)
         + 2 * num_draft_tokens
-        + num_steps
+        + 1
         + block_draft_extra
         - 1
     )
@@ -554,20 +553,18 @@ class BlockManager:
     def allocate_new_blocks(
         self,
         ctx: TextContext,
-        num_steps: int = 1,
         num_draft_tokens: int = 0,
         num_draft_tokens_per_step: int = 1,
     ) -> None:
         """Allocate new blocks for a request to accommodate additional tokens.
 
         Calculates the number of additional blocks needed based on the current sequence
-        length and number of steps, then allocates them from the device block pool.
+        length, then allocates them from the device block pool.
         Validates that there are sufficient free blocks available and that the current
         blocks can accommodate the completed tokens.
 
         Args:
             ctx: The request context containing sequence information and token indices.
-            num_steps: Number of additional steps to allocate blocks for. Defaults to 1.
             num_draft_tokens: Total draft tokens generated per speculative
                 iteration. Zero for non-speculative decode.
             num_draft_tokens_per_step: Number of draft KV positions written
@@ -605,7 +602,6 @@ class BlockManager:
         # Determine number of new blocks to allocate.
         num_new_blocks = self.num_blocks_to_allocate(
             ctx,
-            num_steps,
             num_draft_tokens,
             num_draft_tokens_per_step,
         )
@@ -643,7 +639,6 @@ class BlockManager:
     def num_blocks_to_allocate(
         self,
         ctx: TextContext,
-        num_steps: int = 1,
         num_draft_tokens: int = 0,
         num_draft_tokens_per_step: int = 1,
     ) -> int:
@@ -651,7 +646,6 @@ class BlockManager:
 
         Args:
             ctx: The request context containing sequence information and token indices.
-            num_steps: Number of additional steps to allocate blocks for. Defaults to 1.
             num_draft_tokens: Total draft tokens generated per speculative
                 iteration. Zero for non-speculative decode.
             num_draft_tokens_per_step: Number of draft KV positions written
@@ -669,7 +663,6 @@ class BlockManager:
         num_current_blocks = len(current_blocks)
         current_seq_len = _compute_seq_len(
             ctx,
-            num_steps,
             num_draft_tokens,
             num_draft_tokens_per_step,
         )

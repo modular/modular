@@ -322,6 +322,21 @@ class SupportedArchitecture:
     diffusion pipelines that skip KV cache estimation entirely).
     """
 
+    pipeline_cls: type | None = None
+    """Optional pipeline class overriding the task-based default from
+    :func:`get_pipeline_for_task`.
+
+    Most architectures leave this ``None`` and are driven by the standard
+    task pipelines. Set it when an architecture needs a bespoke generation
+    loop that the stock one-token-per-step
+    :class:`~max.pipelines.lib.pipeline_variants.text_generation.TextGenerationPipeline`
+    cannot express — for example block-diffusion text generation, which runs
+    an encoder pass plus an inner denoising loop and emits a whole token
+    block per scheduler step. The value must be a
+    :class:`~max.pipelines.lib.pipeline_variants.text_generation.TextGenerationPipeline`
+    subclass (or compatible) selected after ``pipeline_config.resolve()``.
+    """
+
     @property
     def tokenizer_cls(self) -> type[PipelineTokenizer[Any, Any, Any]]:
         """Returns the tokenizer class for this architecture."""
@@ -937,6 +952,12 @@ class PipelineRegistry:
         # enable_overlap_scheduler is set correctly (e.g. forced True when
         # --device-graph-capture is explicitly passed).
         pipeline_class = get_pipeline_for_task(task, pipeline_config)
+
+        # An architecture may declare a custom pipeline class that overrides
+        # the task-based default (e.g. block-diffusion text generation).
+        # ``arch`` is already finalized above, so its choice wins.
+        if arch.pipeline_cls is not None:
+            pipeline_class = arch.pipeline_cls
 
         arch_config = arch.config.initialize(pipeline_config)
         max_length = arch_config.get_max_seq_len()

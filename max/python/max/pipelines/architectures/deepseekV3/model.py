@@ -127,12 +127,6 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
                     f" n_gpus_per_node * n_nodes. For a single-node deployment"
                     f" set ep_size={len(self.devices)}."
                 )
-            # TODO: Support TP attention for FP8 Deepseek-V3 models.
-            if quant_config is not None and not quant_config.is_nvfp4:
-                if ep_size > data_parallel_degree:
-                    raise ValueError(
-                        "TP attention is not supported for FP8 Deepseek-V3 models."
-                    )
 
             n_nodes = ep_size // len(self.devices)
 
@@ -297,6 +291,7 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
             nn_model.load_state_dict(
                 state_dict, weight_alignment=1, strict=True
             )
+
             self.state_dict = nn_model.state_dict()
 
             # Create the graph

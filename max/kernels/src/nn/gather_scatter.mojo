@@ -112,7 +112,7 @@ struct Axis(Indexer, Intable, TrivialRegisterPassable):
         Returns:
             The corresponding __mlir_type.index value.
         """
-        return self.axis._int_mlir_index()
+        return self.axis.__mlir_index__()
 
 
 @always_inline

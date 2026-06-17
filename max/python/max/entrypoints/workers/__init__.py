@@ -26,8 +26,8 @@ from max.serve.config import Settings
 from max.serve.pipelines.model_worker import start_model_worker
 from max.serve.pipelines.telemetry_worker import start_telemetry_consumer
 from max.serve.telemetry.metrics import METRICS
+from max.serve.worker_interface._zmq_queue import generate_zmq_ipc_path
 from max.serve.worker_interface.zmq_interface import ZmqModelWorkerInterface
-from max.serve.worker_interface.zmq_queue import generate_zmq_ipc_path
 
 logger = logging.getLogger("max.entrypoints")
 

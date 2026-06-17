@@ -218,6 +218,7 @@ def create_lora_manager(
         n_heads=32,
         n_kv_heads=8,
         head_dim=128,
+        max_lora_seq_len=128,
     )
 
     for name in lora_names:
@@ -292,7 +293,6 @@ def execute_pipeline(
     patch_base = "max.pipelines.lib.pipeline_variants.text_generation"
     inputs: TextGenerationInputs[TextContext] = TextGenerationInputs(
         batches=[list(batch.values())],
-        num_steps=1,
     )
     with (
         patch(

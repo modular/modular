@@ -56,9 +56,9 @@ from max.serve.router import (
 from max.serve.schemas.openai import Error, ErrorResponse
 from max.serve.telemetry.common import send_telemetry_log
 from max.serve.telemetry.metrics import METRICS
+from max.serve.worker_interface._zmq_queue import generate_zmq_ipc_path
 from max.serve.worker_interface.lora_queue import LoRAQueue
 from max.serve.worker_interface.zmq_interface import ZmqModelWorkerInterface
-from max.serve.worker_interface.zmq_queue import generate_zmq_ipc_path
 from uvicorn import Config
 
 ROUTES = {

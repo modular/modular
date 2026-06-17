@@ -838,6 +838,19 @@ class KimiK2_5PipelineOracle(_KimiK2_5BaseOracle):
         return test_data.KIMIK2_5_REQUESTS + text_only_requests
 
 
+class KimiK2_6PipelineOracle(KimiK2_5PipelineOracle):
+    """Pipeline oracle for Kimi-K2.6-NVFP4 (vLLM only).
+
+    K2.6 reuses the Kimi-K2.5 MAX architecture — same TEXT+IMAGE modalities,
+    parsers, tokenizer, and NVFP4 / 8x EP-DP pipeline config (see
+    ``architectures/kimik2_5/arch.py``, which lists K2.6 as an example repo).
+    It therefore shares K2.5's vLLM golden setup verbatim: multimodal
+    (``KIMIK2_5_REQUESTS``) + text inputs and the vision ``_vllm_extra_kwargs``
+    (``mm_encoder_tp_mode`` / ``limit_mm_per_prompt`` on the ``vision_chunk``
+    mm-data key).
+    """
+
+
 class KimiK2_5DeepseekV3PipelineOracle(_KimiK2_5BaseOracle):
     """Oracle for the text-only DeepseekV3 conversion of Kimi-K2.5-NVFP4.
 
@@ -2171,6 +2184,7 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         add_bos_token=True,
     ),
     "nvidia/Kimi-K2.5-NVFP4": KimiK2_5PipelineOracle("nvidia/Kimi-K2.5-NVFP4"),
+    "nvidia/Kimi-K2.6-NVFP4": KimiK2_6PipelineOracle("nvidia/Kimi-K2.6-NVFP4"),
     "amd/Kimi-K2.5-MXFP4": AmdKimiK2_5MXFP4PipelineOracle(
         "amd/Kimi-K2.5-MXFP4"
     ),

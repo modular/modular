@@ -183,7 +183,6 @@ def test_text_batch_constructor__batch_construction_without_chunked_prefill_no_p
     # 9 * 4 = 36 tokens, since no max_batch_total_tokens is set, we should have 4 requests in the batch
     assert len(inputs.batches[0]) == 4
     # since this is CE, we should have 1 step
-    assert inputs.num_steps == 1
 
     # test that we have 2 requests remaining in the queue
     assert len(batch_constructor.replicas[0].ce_reqs) == 2
@@ -228,7 +227,6 @@ def test_text_batch_constructor__batch_construction_without_chunked_prefill_no_p
 
     inputs = batch_constructor.construct_batch()
     assert len(inputs.batches[0]) == 2
-    assert inputs.num_steps == 1
 
     for batch in inputs.batches:
         for context in batch:
@@ -244,7 +242,6 @@ def test_text_batch_constructor__batch_construction_without_chunked_prefill_no_p
     assert batch_constructor._identify_priority(0) == RequestType.TG
     inputs = batch_constructor.construct_batch()
     assert len(inputs.batches[0]) == 4
-    assert inputs.num_steps == 1
 
 
 def test_text_batch_constructor__batch_construction_no_requests(
@@ -274,7 +271,6 @@ def test_text_batch_constructor__batch_construction_no_requests(
     inputs = batch_constructor.construct_batch()
     assert len(inputs.batches) == 1
     assert len(inputs.batches[0]) == 0
-    assert inputs.num_steps == 0
 
 
 def test_text_batch_constructor__batch_construction_no_room_in_cache(
@@ -1605,4 +1601,3 @@ def test_batch_scheduling_strategy__all_replicas_empty() -> None:
         # All batches should be empty
         assert len(inputs.batches) == data_parallel_degree
         assert all(len(batch) == 0 for batch in inputs.batches)
-        assert inputs.num_steps == 0

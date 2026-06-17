@@ -1882,14 +1882,13 @@ class OverlapTextGenerationPipeline(
                     for idx in range(batch_size)
                 ]
             )
-        with self._kv_manager.reserve(replica_batches, num_steps=1):
+        with self._kv_manager.reserve(replica_batches):
             max_cache_length = self._effective_max_cache_length
             # Prepare dispatch metadata for the probed characteristics so the
             # captured graph matches what replay produces for the same aligned
             # cache length.
             kv_cache_inputs = self._kv_manager.runtime_inputs(
                 replica_batches,
-                num_steps=1,
                 max_cache_length=max_cache_length,
                 batch_characteristics=batch_characteristics,
             )
@@ -2245,14 +2244,11 @@ class OverlapTextGenerationPipeline(
             )
             kv_cache_inputs = self._kv_manager.runtime_inputs(
                 inputs.batches,
-                num_steps=1,
                 max_cache_length=self._graph_capture_runner._max_cache_length_upper_bound,
                 batch_characteristics=aligned_characteristics,
             )
         else:
-            kv_cache_inputs = self._kv_manager.runtime_inputs(
-                inputs.batches, num_steps=1
-            )
+            kv_cache_inputs = self._kv_manager.runtime_inputs(inputs.batches)
 
         return_n_logits = (
             num_draft_tokens_to_verify + 1 if draft_tokens is not None else 0
@@ -2270,9 +2266,7 @@ class OverlapTextGenerationPipeline(
             # runtime-shaped KV inputs used for debug verification.
             debug_verify_model_inputs = copy.copy(model_inputs)
             debug_verify_model_inputs.update(
-                kv_cache_inputs=self._kv_manager.runtime_inputs(
-                    inputs.batches, num_steps=1
-                )
+                kv_cache_inputs=self._kv_manager.runtime_inputs(inputs.batches)
             )
 
         if not isinstance(model_inputs, _HasRaggedTokens):
@@ -2414,7 +2408,6 @@ class OverlapTextGenerationPipeline(
                     sampler=self._sampler_with_bitmask,
                     pipeline_config=self._pipeline_config,
                     context_batch=flat_batch,
-                    num_steps=1,
                     device=device0,
                     pinned_new_tokens=self._pinned_new_tokens,
                     identity_logit_offsets=self._identity_logit_offsets,
@@ -2428,7 +2421,6 @@ class OverlapTextGenerationPipeline(
                     sampler=self._sampler_without_bitmask,
                     pipeline_config=self._pipeline_config,
                     context_batch=flat_batch,
-                    num_steps=1,
                     device=device0,
                     pinned_new_tokens=self._pinned_new_tokens,
                     identity_logit_offsets=self._identity_logit_offsets,
@@ -2509,7 +2501,6 @@ class OverlapTextGenerationPipeline(
                 [ctx for ctx in replica_batch]
                 for replica_batch in inputs.batches
             ],
-            num_steps=inputs.num_steps,
         )
 
         return AsyncBatch(
@@ -3342,12 +3333,6 @@ class OverlapTextGenerationPipeline(
         if inputs.enable_log_probs:
             raise ValueError(
                 "Log probabilities are not supported with overlap pipeline"
-            )
-
-        if inputs.num_steps > 1:
-            raise ValueError(
-                f"num_steps > 1 is not supported by the overlap pipeline, "
-                f"got {inputs.num_steps}."
             )
 
         # Initialize variables that may be set conditionally below.

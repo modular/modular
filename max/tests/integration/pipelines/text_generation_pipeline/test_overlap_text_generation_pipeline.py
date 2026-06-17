@@ -125,29 +125,6 @@ def test_rejection_diagnostics_never_raises() -> None:
     assert diag.startswith("<diagnostics unavailable")
 
 
-def test_throws_if_num_steps_gt_1() -> None:
-    """Overlap pipeline should reject num_steps > 1."""
-    pipeline = OverlapTextGenerationPipeline.__new__(
-        OverlapTextGenerationPipeline
-    )
-    pipeline._pipeline_config = MagicMock()
-    request_id = RequestID()
-    ctx = TextContext(
-        request_id=request_id,
-        max_length=1000,
-        tokens=TokenBuffer(np.array([42, 67, 21])),
-    )
-    inputs: TextGenerationInputs[TextContext] = TextGenerationInputs(
-        batches=[[ctx]],
-        num_steps=2,
-    )
-    with pytest.raises(
-        ValueError,
-        match=r"num_steps > 1 is not supported by the overlap pipeline",
-    ):
-        pipeline.execute(inputs)
-
-
 def test_throws_if_enable_log_probs() -> None:
     pipeline = OverlapTextGenerationPipeline.__new__(
         OverlapTextGenerationPipeline
@@ -161,7 +138,6 @@ def test_throws_if_enable_log_probs() -> None:
     )
     inputs: TextGenerationInputs[TextContext] = TextGenerationInputs(
         batches=[[ctx]],
-        num_steps=1,
     )
     with pytest.raises(
         ValueError,
@@ -315,7 +291,6 @@ def test_effective_max_cache_length_covers_compute_seq_len(
     )
     required = _compute_seq_len(
         cast(TextContext, boundary_ctx),
-        num_steps=1,
         num_draft_tokens=num_draft_tokens,
         num_draft_tokens_per_step=num_draft_tokens_per_step,
     )

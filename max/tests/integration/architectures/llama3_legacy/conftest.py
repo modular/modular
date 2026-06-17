@@ -133,7 +133,7 @@ def make_kv_inputs(
         for i in range(num_replicas):
             ctx = create_text_context(np.empty(input_seq_len, dtype=np.int64))
             kv_manager.claim(ctx.request_id, replica_idx=i)
-            kv_manager.alloc(ctx, replica_idx=i, num_steps=1)
+            kv_manager.alloc(ctx, replica_idx=i)
             contexts.append(ctx)
             batches.append([ctx])
 

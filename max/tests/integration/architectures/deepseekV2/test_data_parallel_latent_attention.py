@@ -160,7 +160,7 @@ def generate_latent_attention_max_outputs_dp(
         all_outputs = []
         for tok_idx in range(total_tokens):
             for ctx in batch:
-                kv_manager.alloc(ctx, replica_idx=0, num_steps=1)
+                kv_manager.alloc(ctx, replica_idx=0)
             kv_inputs = kv_manager.runtime_inputs_for_leaf([batch]).inputs[0]
             input_tensor_device = (
                 Buffer.from_numpy(
@@ -184,7 +184,7 @@ def generate_latent_attention_max_outputs_dp(
         return torch.concat(all_outputs, dim=1)
 
     for ctx in batch:
-        kv_manager.alloc(ctx, replica_idx=0, num_steps=1)
+        kv_manager.alloc(ctx, replica_idx=0)
     kv_inputs = kv_manager.runtime_inputs_for_leaf([batch]).inputs[0]
     input_tensor_device = (
         Buffer.from_numpy(input_tensor[0, :, :].view(torch.float16).numpy())
