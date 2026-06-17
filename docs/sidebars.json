@@ -72,6 +72,7 @@
           "label": "Overview"
         },
         "max/develop/model-bringup-skills",
+        "max/develop/serve-custom-model-architectures",
         {
           "label": "Graphs",
           "type": "category",
@@ -89,7 +90,6 @@
             "max/develop/model-bringup-workflow",
             "max/develop/read-model-config",
             "max/develop/pipelines",
-            "max/develop/serve-custom-model-architectures",
             "max/graph/quantize"
           ]
         },
