@@ -87,6 +87,16 @@ You can also see the
       <td className='gpus'>Yes</td>
     </tr>
     <tr>
+      <td className='arch'><a href="https://github.com/modular/modular/tree/main/max/python/max/pipelines/architectures/diffusion_gemma"><code>DiffusionGemmaForBlockDiffusion</code></a></td>
+      <td className='models'>
+        <a href="https://huggingface.co/nvidia/diffusiongemma-26B-A4B-it-NVFP4">nvidia/diffusiongemma-26B-A4B-it-NVFP4</a>,<br/>
+        <a href="https://huggingface.co/google/diffusiongemma-26B-A4B-it">google/diffusiongemma-26B-A4B-it</a>
+      </td>
+      <td className='modality'>text-to-text</td>
+      <td className='encodings'>bfloat16, float4_e2m1fnx2</td>
+      <td className='gpus'>No</td>
+    </tr>
+    <tr>
       <td className='arch'><a href="https://github.com/modular/modular/tree/main/max/python/max/pipelines/architectures/exaone"><code>ExaoneForCausalLM</code></a></td>
       <td className='models'>
         <a href="https://huggingface.co/LGAI-EXAONE/EXAONE-3.5-2.4B-Instruct">LGAI-EXAONE/EXAONE-3.5-2.4B-Instruct</a>,<br/>
@@ -161,7 +171,7 @@ You can also see the
         <a href="https://huggingface.co/nvidia/Gemma-4-31B-IT-NVFP4">nvidia/Gemma-4-31B-IT-NVFP4</a>
       </td>
       <td className='modality'>image-to-text,<br/>text-to-text,<br/>video-to-text</td>
-      <td className='encodings'>bfloat16, float4_e2m1fnx2</td>
+      <td className='encodings'>bfloat16, float16, float4_e2m1fnx2</td>
       <td className='gpus'>Yes</td>
     </tr>
     <tr>

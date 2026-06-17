@@ -897,7 +897,7 @@ class Module(Generic[_P, _R]):
             )
 
             def as_weight(name: str, tensor: Tensor):  # noqa: ANN202
-                return tensor._as_constant_external(name)
+                return tensor._as_constant_external(name, align=1)
 
             # Temporarily replace the parameters with external constants
             # while building the graph.

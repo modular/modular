@@ -13,6 +13,7 @@
 
 
 import asyncio
+import base64
 import io
 import json
 import logging
@@ -23,6 +24,7 @@ from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
+import numpy as np
 import pytest
 import pytest_asyncio
 from async_asgi_testclient import TestClient as AsyncTestClient
@@ -41,6 +43,7 @@ from max.pipelines.lib import (
     PipelineConfig,
     PipelineRuntimeConfig,
 )
+from max.pipelines.lib.tokenizer import open_image
 from max.pipelines.modeling.types import (
     PipelineTask,
     RequestID,
@@ -55,6 +58,11 @@ from max.serve.pipelines.echo_gen import (
     EchoTokenGenerator,
 )
 from max.serve.pipelines.llm import TokenGeneratorOutput, TokenGeneratorPipeline
+from max.serve.router._image_resolution import (
+    _decode_data_uri_base64,
+    decode_and_validate_images,
+    resolve_image_from_url,
+)
 from max.serve.router.openai_routes import (
     CompletionStreamResponse,
     OpenAIChatResponseGenerator,
@@ -62,7 +70,6 @@ from max.serve.router.openai_routes import (
     _create_response_format,
     _process_chat_log_probabilities,
     _resolve_grammar_constraints,
-    _validate_decodable_images,
     get_tool_parser,
     openai_create_chat_completion,
 )
@@ -79,6 +86,7 @@ from openai.types.chat.chat_completion_stream_options_param import (
     ChatCompletionStreamOptionsParam,
 )
 from PIL import Image
+from pydantic import AnyUrl
 
 if sys.version_info >= (3, 11):
     from asyncio import TaskGroup
@@ -335,19 +343,114 @@ async def test_chat_completion_schema_validation_error_uses_openai_envelope(
         assert "wizard" in body["error"]["message"]
 
 
-def test_validate_decodable_images_rejects_bad_bytes() -> None:
+def test_decode_and_validate_images_rejects_bad_bytes() -> None:
     # Empty / non-image bytes must raise (the request handler maps this to a
     # 400), not reach the worker and crash it later with an unhandled
     # PIL.UnidentifiedImageError (HTTP 500).
     for bad in (b"", b"tiny", b"\x00\x01\x02\x03"):
         with pytest.raises(InputError):
-            _validate_decodable_images([bad])
+            decode_and_validate_images([bad])
 
 
-def test_validate_decodable_images_accepts_valid_image() -> None:
+def test_decode_and_validate_images_returns_decoded_images() -> None:
+    # The validator decodes each image once and returns the decoded PIL images
+    # so the tokenizer can reuse them (decode-once); it must not discard them.
     buf = io.BytesIO()
-    Image.new("RGB", (1, 1)).save(buf, format="PNG")
-    _validate_decodable_images([buf.getvalue()])  # must not raise
+    Image.new("RGB", (7, 11)).save(buf, format="PNG")
+    decoded = decode_and_validate_images([buf.getvalue()])
+    assert len(decoded) == 1
+    assert decoded[0].size == (7, 11)
+    # Must be fully decoded (load() already called), usable without the source.
+    assert decoded[0].convert("RGB").size == (7, 11)
+
+
+def test_decode_and_validate_images_rejects_truncated_image() -> None:
+    # A header-valid but truncated image passes the lazy ``Image.open`` header
+    # parse, but its pixel decode fails. Before the fix this slipped through
+    # validation and crashed the worker with an unhandled OSError (HTTP 500)
+    # in the tokenizer's decode; the validator must now force the decode and
+    # turn it into a clean 400 (InputError). (MXSERV-162, bug 2.)
+    buf = io.BytesIO()
+    Image.effect_noise((256, 256), 80).convert("RGB").save(
+        buf, format="JPEG", quality=90
+    )
+    full = buf.getvalue()
+    # Sanity-check the precondition: a header parse alone does not raise.
+    with Image.open(io.BytesIO(full[: int(len(full) * 0.88)])):
+        pass
+    with pytest.raises(InputError):
+        decode_and_validate_images([full[: int(len(full) * 0.88)]])
+
+
+def test_decode_and_validate_images_rejects_decompression_bomb(
+    monkeypatch,  # noqa: ANN001
+) -> None:
+    # An image whose pixel count blows past PIL's decompression-bomb guard must
+    # become a clean 400 (InputError), not an unhandled DecompressionBombError
+    # (which is not an OSError/ValueError, so it would otherwise escape as 500).
+    # (MXSERV-162.)
+    buf = io.BytesIO()
+    Image.new("RGB", (64, 64)).save(buf, format="PNG")
+    data = buf.getvalue()
+    # Lower the limit *after* building the bytes so 64*64 px trips the guard
+    # (DecompressionBombError fires above 2x MAX_IMAGE_PIXELS).
+    monkeypatch.setattr(Image, "MAX_IMAGE_PIXELS", 16)
+    with pytest.raises(InputError):
+        decode_and_validate_images([data])
+
+
+def test_open_image_carry_path_matches_bytes_path() -> None:
+    # Decode-once invariant: a pre-decoded image (carry path,
+    # request.decoded_images) and the raw bytes (fallback path) must yield
+    # byte-identical pixels, so reusing the validator's decode in the tokenizer
+    # cannot change model inputs. (MXSERV-162 follow-up: decode-once.)
+    buf = io.BytesIO()
+    Image.effect_noise((48, 32), 64).convert("RGBA").save(buf, format="PNG")
+    data = buf.getvalue()
+
+    # The validator decodes once and hands the image to the tokenizer.
+    pre_decoded = decode_and_validate_images([data])[0]
+    # open_image passes an already-decoded image through untouched (no re-decode)
+    # and decodes raw bytes on the fallback path.
+    assert open_image(pre_decoded) is pre_decoded
+    carry = np.asarray(open_image(pre_decoded).convert("RGB"))
+    fallback = np.asarray(open_image(data).convert("RGB"))
+    assert np.array_equal(carry, fallback)
+
+
+def test_decode_data_uri_base64_padded_unpadded_and_urlsafe() -> None:
+    # Real clients and the OpenRouter relay send unpadded and/or url-safe
+    # base64; the decoder must accept all three and yield identical bytes.
+    # (MXSERV-162, bug 1.)
+    raw = bytes(range(256))  # contains bytes that map to +/ and -_
+    std = base64.b64encode(raw).decode()
+    assert _decode_data_uri_base64(f"data:image/png;base64,{std}") == raw
+    assert (
+        _decode_data_uri_base64(f"data:image/png;base64,{std.rstrip('=')}")
+        == raw
+    )
+    urlsafe = base64.urlsafe_b64encode(raw).decode().rstrip("=")
+    assert _decode_data_uri_base64(f"data:image/png;base64,{urlsafe}") == raw
+
+
+def test_decode_data_uri_base64_rejects_empty_payload() -> None:
+    with pytest.raises(ValueError, match="no base64 payload"):
+        _decode_data_uri_base64("data:image/png;base64,")
+
+
+@pytest.mark.asyncio
+async def test_resolve_image_from_url_data_uri_unpadded() -> None:
+    # End-to-end through resolve_image_from_url: an unpadded data URI used to
+    # raise binascii.Error (surfaced as a 400); it must now round-trip.
+    buf = io.BytesIO()
+    Image.new("RGB", (4, 4), color="red").save(buf, format="PNG")
+    png = buf.getvalue()
+    b64 = base64.b64encode(png).decode().rstrip("=")
+    out = await resolve_image_from_url(
+        AnyUrl(f"data:image/png;base64,{b64}"),
+        settings=None,  # type: ignore[arg-type]
+    )
+    assert out == png
 
 
 def test_vllm_response_deserialization() -> None:

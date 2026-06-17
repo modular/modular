@@ -75,7 +75,6 @@ class DKVConnector:
         # or by non-dKV pipelines) does not require the optional, runtime-
         # provided dkv_connector extension to be installed.
         from dkv_connector import DkvConnector as _DkvConnectorClient
-        from dkv_connector import ThroughputLogger
 
         if not kv_memory:
             raise ValueError(
@@ -135,11 +134,6 @@ class DKVConnector:
             main_stream=main_stream,
         )
 
-        # Periodically DEBUG-log achieved transfer throughput (GB/s). Logging
-        # lives in Python so it shares MAX's logging configuration; the thread
-        # is a daemon and is stopped in ``shutdown``.
-        self._throughput_logger = ThroughputLogger(self._client).start()
-
     @property
     def name(self) -> str:
         return "dkv"
@@ -173,10 +167,11 @@ class DKVConnector:
         pass
 
     def shutdown(self) -> None:
-        # Stop the background throughput logger; the Rust client releases its
-        # NIXL agent and RPC connection when the object is dropped (at process
-        # teardown).
-        self._throughput_logger.stop()
+        # No-op: the Rust client releases its NIXL agent, heartbeat poller, and
+        # RPC connection when the object is dropped (at process teardown).
+        # Per-batch transfer throughput is surfaced by the scheduler from
+        # ``metrics`` below, so no background logger is needed here.
+        pass
 
     def reset_prefix_cache(self) -> None:
         # No-op: dKV manages its own external block lifecycle server-side.

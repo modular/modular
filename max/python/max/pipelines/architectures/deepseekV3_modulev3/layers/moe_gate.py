@@ -42,6 +42,7 @@ class DeepseekV3TopKRouter(MoEGate):
         n_group: int,
         topk_group: int,
         norm_topk_prob: bool,
+        correction_bias_dtype: DType | None,
     ) -> None:
         """
         Args:
@@ -55,6 +56,7 @@ class DeepseekV3TopKRouter(MoEGate):
             n_group: Number of expert groups.
             topk_group: Number of expert groups selected per token.
             norm_topk_prob: Whether to normalize the top-k probabilities.
+            correction_bias_dtype: Data type of the correction bias.
         """
         super().__init__(
             hidden_dim=hidden_dim,
@@ -86,8 +88,12 @@ class DeepseekV3TopKRouter(MoEGate):
         self.routed_scaling_factor = routed_scaling_factor
         self.norm_topk_prob = norm_topk_prob
 
+        if correction_bias_dtype is None:
+            raise ValueError(
+                "correction_bias_dtype must be set for noaux_tc router"
+            )
         self.e_score_correction_bias = Tensor.zeros(
-            [num_experts], dtype=DType.float32
+            [num_experts], dtype=correction_bias_dtype
         )
 
     def forward(self, hidden_states: Tensor) -> tuple[Tensor, Tensor]:

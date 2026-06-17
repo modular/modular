@@ -20,7 +20,7 @@ from typing import Any
 
 import psutil
 
-from ._types import CPUMetrics
+from .types import CPUMetrics
 
 
 def collect_pids_for_port(port: int) -> list[int]:

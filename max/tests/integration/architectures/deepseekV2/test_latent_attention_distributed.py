@@ -147,7 +147,7 @@ def _single_gpu_baseline(
     batch = []
     ctx = create_text_context(np.empty(prompt_lens[0]))
     kv_manager.claim(ctx.request_id, replica_idx=0)
-    kv_manager.alloc(ctx, replica_idx=0, num_steps=1)
+    kv_manager.alloc(ctx, replica_idx=0)
     batch.append(ctx)
 
     # Row offsets on host to avoid GPU __setitem__
@@ -169,7 +169,7 @@ def _single_gpu_baseline(
     outs = []
     for tok_idx in range(total_tokens):
         for ctx in batch:
-            kv_manager.alloc(ctx, replica_idx=0, num_steps=1)
+            kv_manager.alloc(ctx, replica_idx=0)
         kv_inputs = kv_manager.runtime_inputs([batch]).inputs[0]
         tok = (
             Buffer.from_numpy(
@@ -369,7 +369,7 @@ def _run_distributed_dp(
     for replica_idx in range(dp_degree):
         ctx = create_text_context(np.empty(seq_len))
         kv_manager.claim(ctx.request_id, replica_idx=replica_idx)
-        kv_manager.alloc(ctx, replica_idx=replica_idx, num_steps=1)
+        kv_manager.alloc(ctx, replica_idx=replica_idx)
         batch.append(ctx)
     batches_by_replica = [[ctx] for ctx in batch]
 
@@ -401,7 +401,7 @@ def _run_distributed_dp(
     outs = []
     for tok_idx in range(total_tokens):
         for ctx in batch:
-            kv_manager.alloc(ctx, replica_idx=replica_idx, num_steps=1)
+            kv_manager.alloc(ctx, replica_idx=replica_idx)
         fetch_list = kv_manager.runtime_inputs(batches_by_replica)
         kv_args = _flatten_kv_kv_inputs(fetch_list)
 

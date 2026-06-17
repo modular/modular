@@ -24,6 +24,7 @@ from std.memory import (
 from test_utils import (
     CopyCounter,
     DelRecorder,
+    ExplicitDestroy,
     MoveCounter,
     MoveOnly,
     check_write_to,
@@ -518,6 +519,10 @@ def test_inline_array_conditional_conformances() raises:
     assert_true(conforms_to(InlineArray[Int, 3], Copyable))
     assert_true(conforms_to(InlineArray[Int, 3], ImplicitlyCopyable))
     assert_true(conforms_to(InlineArray[Int, 3], ImplicitlyDeletable))
+    # An array of explicitly-destroyed elements is not implicitly deletable.
+    assert_false(
+        conforms_to(InlineArray[ExplicitDestroy, 3], ImplicitlyDeletable)
+    )
     assert_false(conforms_to(InlineArray[NonWritable, 3], Writable))
 
 
@@ -582,6 +587,24 @@ def test_inline_array_move_only() raises:
 
     # `unsafe_get` is a non-copying accessor.
     assert_equal(arr.unsafe_get(2), MoveOnly[Int](2))
+
+
+def test_inline_array_with_explicit_destroy_type() raises:
+    var arr: InlineArray[ExplicitDestroy, 3] = [
+        ExplicitDestroy(0),
+        ExplicitDestroy(1),
+        ExplicitDestroy(2),
+    ]
+
+    var destroyed = List[Int]()
+
+    def destroy_closure(var e: ExplicitDestroy) {mut}:
+        destroyed.append(e.value)
+        e^.destroy()
+
+    arr^.destroy_with(destroy_closure)
+
+    assert_equal(destroyed, [0, 1, 2])
 
 
 def main() raises:

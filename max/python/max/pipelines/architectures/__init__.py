@@ -94,6 +94,11 @@ def register_all_models() -> None:
         ),
         _LazyArch("DFlashDraftModel", ".dflash_llama3", "dflash_llama_arch"),
         _LazyArch(
+            "DiffusionGemmaForBlockDiffusion",
+            ".diffusion_gemma",
+            "diffusion_gemma_arch",
+        ),
+        _LazyArch(
             "Eagle3DeepseekV3ForCausalLM",
             ".eagle3_deepseekV3",
             "eagle3_deepseekV3_arch",

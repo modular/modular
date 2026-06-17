@@ -48,6 +48,23 @@ weight data and passes it to `M_initModel()`.
 
 This example runs on CPU and does not require a GPU.
 
+## Loading weights from a Safetensors file
+
+The `safetensors_example.c` file builds on the weights registry by loading the
+weight data directly from a Safetensors file instead of an in-memory array.
+
+The Python script `test_safetensors_capi.py` builds the same
+`ops.constant_external()` graph, compiles it to a MEF file, and writes a
+`weights.safetensors` file containing the `weight` tensor. The C program loads
+the file with `M_loadSafetensors()`, inspects the tensors it contains, and
+builds a `M_WeightsRegistry` from every tensor in one step with
+`M_newWeightsRegistryFromSafetensors()` before passing it to `M_initModel()`.
+
+The tensor names in the file must match the external weight names in the graph;
+this example performs no name translation. Weights are loaded onto a host
+device, and the runtime copies them to the model's device during
+initialization.
+
 ## Device graph capture and replay
 
 `graph_capture.c` demonstrates using device graph capture (e.g. CUDA graphs) to

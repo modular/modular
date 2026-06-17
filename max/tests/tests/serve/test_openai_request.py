@@ -49,18 +49,24 @@ async def test_openai_extract_image_from_requests() -> None:
     )
 
     settings = Settings()
-    messages, images, _videos = await openai_parse_chat_completion_request(
-        request, False, settings
-    )
+    (
+        messages,
+        images,
+        _videos,
+        _decoded,
+    ) = await openai_parse_chat_completion_request(request, False, settings)
     assert len(messages) == 2
     assert len(images) == 0
     assert isinstance(messages[0].content, str)
     assert isinstance(messages[1].content, list)
     assert hasattr(messages[1].content[0], "text")
 
-    messages, images, _videos = await openai_parse_chat_completion_request(
-        request, True, settings
-    )
+    (
+        messages,
+        images,
+        _videos,
+        _decoded,
+    ) = await openai_parse_chat_completion_request(request, True, settings)
     assert len(messages) == 2
     assert len(images) == 0
     assert isinstance(messages[0].content, list)
@@ -80,7 +86,12 @@ async def test_openai_extract_image_from_requests() -> None:
     request = CreateChatCompletionRequest.model_validate(
         {"model": "test", "messages": [user_message_image_with_url]}
     )
-    messages, images, _videos = await openai_parse_chat_completion_request(
+    (
+        messages,
+        images,
+        _videos,
+        _decoded,
+    ) = await openai_parse_chat_completion_request(
         request,
         False,
         settings,
@@ -93,7 +104,12 @@ async def test_openai_extract_image_from_requests() -> None:
     assert "image_url" in messages[0].content[1]
     assert images[0] == AnyUrl(request_images["boardwark_url"])
 
-    messages, images = await openai_parse_chat_completion_request(
+    (
+        messages,
+        images,
+        _videos,
+        _decoded,
+    ) = await openai_parse_chat_completion_request(
         request,
         True,
         settings,
@@ -118,7 +134,12 @@ async def test_openai_extract_image_from_requests() -> None:
             },
         ],
     }
-    messages, images = await openai_parse_chat_completion_request(
+    (
+        messages,
+        images,
+        _videos,
+        _decoded,
+    ) = await openai_parse_chat_completion_request(
         CreateChatCompletionRequest(
             model="test", messages=[system_message, user_message_image_two_urls]
         ),
@@ -147,17 +168,23 @@ async def test_openai_extract_image_from_requests() -> None:
     request = CreateChatCompletionRequest(
         model="test", messages=[user_message_mixed_url_b64]
     )
-    messages, images = await openai_parse_chat_completion_request(
-        request, False, settings
-    )
+    (
+        messages,
+        images,
+        _videos,
+        _decoded,
+    ) = await openai_parse_chat_completion_request(request, False, settings)
     assert len(messages) == 1
     assert len(images) == 2
     assert images[0] == AnyUrl(request_images["smily_b64"])
     assert images[1] == AnyUrl(request_images["mountain_url"])
 
-    messages, images = await openai_parse_chat_completion_request(
-        request, True, settings
-    )
+    (
+        messages,
+        images,
+        _videos,
+        _decoded,
+    ) = await openai_parse_chat_completion_request(request, True, settings)
     assert len(messages) == 1
     assert len(images) == 2
     assert isinstance(messages[0].content, list)
@@ -178,9 +205,12 @@ async def test_openai_user_message_with_null_content() -> None:
         {"model": "test", "messages": [user_message_null_content]}
     )
     settings = Settings()
-    messages, _images, _videos = await openai_parse_chat_completion_request(
-        request, False, settings
-    )
+    (
+        messages,
+        _images,
+        _videos,
+        _decoded,
+    ) = await openai_parse_chat_completion_request(request, False, settings)
     assert len(messages) == 1
     assert messages[0].role == "user"
     assert messages[0].content == ""
@@ -192,9 +222,12 @@ async def test_openai_user_message_with_null_content() -> None:
     request = CreateChatCompletionRequest.model_validate(
         {"model": "test", "messages": [user_message_no_content]}
     )
-    messages, _images, _videos = await openai_parse_chat_completion_request(
-        request, False, settings
-    )
+    (
+        messages,
+        _images,
+        _videos,
+        _decoded,
+    ) = await openai_parse_chat_completion_request(request, False, settings)
     assert len(messages) == 1
     assert messages[0].role == "user"
     assert messages[0].content == ""
@@ -220,7 +253,12 @@ async def test_openai_parse_normalizes_developer_role_to_system() -> None:
     request = CreateChatCompletionRequest.model_validate(request_data)
     settings = Settings()
 
-    messages, _images, _videos = await openai_parse_chat_completion_request(
+    (
+        messages,
+        _images,
+        _videos,
+        _decoded,
+    ) = await openai_parse_chat_completion_request(
         request, wrap_content=False, settings=settings
     )
 
@@ -303,7 +341,12 @@ async def test_openai_parse_forwards_tool_call_metadata() -> None:
     request = CreateChatCompletionRequest.model_validate(request_data)
     settings = Settings()
 
-    messages, _images, _videos = await openai_parse_chat_completion_request(
+    (
+        messages,
+        _images,
+        _videos,
+        _decoded,
+    ) = await openai_parse_chat_completion_request(
         request, wrap_content=False, settings=settings
     )
 
@@ -348,7 +391,12 @@ async def test_openai_parse_drops_empty_tool_calls() -> None:
     request = CreateChatCompletionRequest.model_validate(request_data)
     settings = Settings()
 
-    messages, _images, _videos = await openai_parse_chat_completion_request(
+    (
+        messages,
+        _images,
+        _videos,
+        _decoded,
+    ) = await openai_parse_chat_completion_request(
         request, wrap_content=False, settings=settings
     )
 
@@ -442,7 +490,12 @@ async def test_openai_parse_coerces_empty_tool_call_arguments() -> None:
     request = CreateChatCompletionRequest.model_validate(request_data)
     settings = Settings()
 
-    messages, _images, _videos = await openai_parse_chat_completion_request(
+    (
+        messages,
+        _images,
+        _videos,
+        _decoded,
+    ) = await openai_parse_chat_completion_request(
         request, wrap_content=False, settings=settings
     )
 

@@ -14,7 +14,6 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from max.dtype import DType
 from max.graph import DeviceRef, ShardingStrategy, TensorValue, ops
 from max.nn.attention.mask_config import MHAMaskVariant
 from max.nn.kernels import flash_attention_ragged_gpu
@@ -55,7 +54,7 @@ class Gemma4VisionAttention(Module):
         self.config = config
         vision_cfg = config.vision_config
         assert vision_cfg is not None
-        vision_dtype = DType.bfloat16
+        vision_dtype = config.unquantized_dtype
 
         self.layer_idx = layer_idx
         self.device = device if device is not None else config.devices[0]

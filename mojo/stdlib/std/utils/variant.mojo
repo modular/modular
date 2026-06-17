@@ -347,7 +347,7 @@ struct _DefaultVariantStorage[*Ts: AnyType](
         comptime idx = _get_type_index[T, *Self.Ts]()
         return __mlir_op.`pop.variant.bitcast`[
             _type=UnsafePointer[T, origin_of(self)]._mlir_type,
-            index=idx._int_mlir_index(),
+            index=idx.__mlir_index__(),
         ](UnsafePointer(to=self._impl).address)
 
 

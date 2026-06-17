@@ -97,7 +97,6 @@ def test_text_generation_pipeline__empty_batches(
     # Generate empty batches for inputs
     inputs: TextGenerationInputs[TextContext] = TextGenerationInputs(
         batches=[[], []],
-        num_steps=1,
     )
 
     # Execute the pipeline

@@ -22,10 +22,11 @@ import urllib.parse
 import uuid
 import weakref
 from collections.abc import Callable
-from typing import Any, Generic, NewType, TypeVar
+from typing import Any, Generic, NewType, TypeVar, overload
 
 import psutil
 import zmq
+import zmq.asyncio
 from max.pipelines.modeling.types import (
     msgpack_numpy_decoder,
     msgpack_numpy_encoder,
@@ -136,15 +137,31 @@ def _validate_zmq_address(address: str) -> None:
 # Adapted from:
 #  - vllm: https://github.com/vllm-project/vllm/blob/46c759c165a5a985ce62f019bf684e4a6109e41c/vllm/utils.py#L2093
 #  - sglang: https://github.com/sgl-project/sglang/blob/efc52f85e2d5c9b31545d4092f2b361b6ff04d67/python/sglang/srt/utils.py#L783
-def _open_zmq_socket(path: str, mode: int) -> zmq.Socket[bytes]:
+@overload
+def _open_zmq_socket(
+    path: str, mode: int, *, ctx: zmq.asyncio.Context
+) -> zmq.asyncio.Socket: ...
+
+
+@overload
+def _open_zmq_socket(
+    path: str, mode: int, *, ctx: None = ...
+) -> zmq.Socket[bytes]: ...
+
+
+def _open_zmq_socket(
+    path: str,
+    mode: int,
+    *,
+    ctx: zmq.asyncio.Context | None = None,
+) -> zmq.asyncio.Socket | zmq.Socket[bytes]:
     """Open a ZMQ socket with the proper bind/connect semantics."""
     mem = psutil.virtual_memory()
 
-    # Grab the singleton global zmq ctx
-    # https://zguide.zeromq.org/docs/chapter2/
-    # "one I/O thread per gigabyte of data per second"
-    zmq_ctx = zmq.Context.instance(io_threads=2)
-    socket = zmq_ctx.socket(mode)
+    resolved_ctx: zmq.asyncio.Context | zmq.Context[zmq.Socket[bytes]] = (
+        ctx if ctx is not None else zmq.Context.instance()
+    )
+    socket = resolved_ctx.socket(mode)
 
     # Enable IPv6 so that bind/connect works when hostnames resolve to
     # IPv6 addresses (e.g. Kubernetes pods with IPv6-only networking).
@@ -195,23 +212,6 @@ def _open_zmq_socket(path: str, mode: int) -> zmq.Socket[bytes]:
     return socket
 
 
-def _put_helper(func: Callable[[], Any]) -> None:
-    while True:
-        try:
-            func()
-
-            # Exit since we succeeded
-            break
-        except zmq.ZMQError as e:
-            # If we get EAGAIN, we just try again.
-            # This could be due to:
-            #   - the pull socket not being opened yet
-            #   - a full queue
-            if e.errno == zmq.EAGAIN:
-                continue
-            raise RuntimeError("Failed to put message on ZMQ socket") from e
-
-
 def _get_helper(func: Callable[[], Any]) -> Any:
     try:
         msg = func()
@@ -239,6 +239,19 @@ class ZmqConfig(Generic[T]):
 
     def pair(self) -> tuple[ZmqPushSocket[T], ZmqPullSocket[T]]:
         return self.push(), self.pull()
+
+    def async_push(self) -> ZmqAsyncPushSocket[T]:
+        return ZmqAsyncPushSocket(
+            endpoint=self._endpoint, payload_type=self._payload_type
+        )
+
+    def async_pull(self) -> ZmqAsyncPullSocket[T]:
+        return ZmqAsyncPullSocket(
+            endpoint=self._endpoint, payload_type=self._payload_type
+        )
+
+    def async_pair(self) -> tuple[ZmqAsyncPushSocket[T], ZmqAsyncPullSocket[T]]:
+        return self.async_push(), self.async_pull()
 
 
 class ZmqSocket:
@@ -276,13 +289,19 @@ class ZmqPushSocket(Generic[T], ZmqSocket, MAXPushQueue[T]):
         )
         super().__init__(endpoint=endpoint, mode=zmq.PUSH)
 
-    def put_nowait(self, msg: T) -> None:
+    def put(self, msg: T) -> None:
+        """Send a message, blocking until the peer is ready."""
         if self._is_closed:
             raise RuntimeError("Socket is closed")
         serialized_msg = self._serialize(msg)
-        _put_helper(
-            lambda: self._socket.send(serialized_msg, flags=zmq.NOBLOCK)
-        )
+        self._socket.send(serialized_msg)
+
+    def put_nowait(self, msg: T) -> None:
+        """Send a message without blocking; raises zmq.Again if peer isn't connected."""
+        if self._is_closed:
+            raise RuntimeError("Socket is closed")
+        serialized_msg = self._serialize(msg)
+        self._socket.send(serialized_msg, flags=zmq.NOBLOCK)
 
 
 class ZmqPullSocket(Generic[T], ZmqSocket, MAXPullQueue[T]):
@@ -313,14 +332,20 @@ class ZmqRouterSocket(Generic[Request, Reply], ZmqSocket):
         self._deserialize = msgpack_numpy_decoder(request_type)
         super().__init__(endpoint=endpoint, mode=zmq.ROUTER)
 
-    def send_reply_nowait(self, msg: Reply, identity: ClientIdentity) -> None:
+    def send_reply(self, msg: Reply, identity: ClientIdentity) -> None:
+        """Send a reply, blocking until the peer is ready."""
         if self._is_closed:
             raise RuntimeError("Socket is closed")
         serialized_msg = self._serialize(msg)
-        _put_helper(
-            lambda: self._socket.send_multipart(
-                [identity, serialized_msg], flags=zmq.NOBLOCK
-            )
+        self._socket.send_multipart([identity, serialized_msg])
+
+    def send_reply_nowait(self, msg: Reply, identity: ClientIdentity) -> None:
+        """Send a reply without blocking; raises zmq.Again if peer isn't connected."""
+        if self._is_closed:
+            raise RuntimeError("Socket is closed")
+        serialized_msg = self._serialize(msg)
+        self._socket.send_multipart(
+            [identity, serialized_msg], flags=zmq.NOBLOCK
         )
 
     def recv_request_nowait(self) -> tuple[Request, ClientIdentity]:
@@ -343,13 +368,19 @@ class ZmqDealerSocket(Generic[Request, Reply], ZmqSocket):
         self._deserialize = msgpack_numpy_decoder(reply_type)
         super().__init__(endpoint=endpoint, mode=zmq.DEALER)
 
-    def send_request_nowait(self, msg: Request) -> None:
+    def send_request(self, msg: Request) -> None:
+        """Send a request, blocking until the peer is ready."""
         if self._is_closed:
             raise RuntimeError("Socket is closed")
         serialized_msg = self._serialize(msg)
-        _put_helper(
-            lambda: self._socket.send(serialized_msg, flags=zmq.NOBLOCK)
-        )
+        self._socket.send(serialized_msg)
+
+    def send_request_nowait(self, msg: Request) -> None:
+        """Send a request without blocking; raises zmq.Again if peer isn't connected."""
+        if self._is_closed:
+            raise RuntimeError("Socket is closed")
+        serialized_msg = self._serialize(msg)
+        self._socket.send(serialized_msg, flags=zmq.NOBLOCK)
 
     def recv_reply_nowait(self) -> Reply:
         if self._is_closed:
@@ -359,3 +390,84 @@ class ZmqDealerSocket(Generic[Request, Reply], ZmqSocket):
         )
         msg = self._deserialize(serialized_msg)
         return msg
+
+
+class ZmqAsyncSocket:
+    """Base class for async ZMQ sockets using zmq.asyncio."""
+
+    def __init__(
+        self,
+        *,
+        endpoint: str,
+        mode: int,
+    ) -> None:
+        _validate_zmq_address(endpoint)
+        self._endpoint = endpoint
+        self._socket: zmq.asyncio.Socket = _open_zmq_socket(
+            endpoint, mode, ctx=zmq.asyncio.Context.instance()
+        )
+        self._finalize = weakref.finalize(self, self.close)
+        self._is_closed = False
+
+    def close(self) -> None:
+        if not self._is_closed:
+            self._is_closed = True
+            self._socket.close()
+
+
+class ZmqAsyncPushSocket(Generic[T], ZmqAsyncSocket):
+    """Async ZMQ PUSH socket using zmq.asyncio for native event loop integration."""
+
+    def __init__(
+        self,
+        *,
+        endpoint: str,
+        payload_type: type[T] | object,
+        use_shared_memory: bool = True,
+    ) -> None:
+        self._serialize = (
+            DEFAULT_MSGPACK_NUMPY_ENCODER
+            if use_shared_memory
+            else NON_SHARED_MSGPACK_NUMPY_ENCODER
+        )
+        super().__init__(endpoint=endpoint, mode=zmq.PUSH)
+
+    async def put(self, msg: T) -> None:
+        """Send a message, awaiting until the socket is ready."""
+        if self._is_closed:
+            raise RuntimeError("Socket is closed")
+        serialized_msg = self._serialize(msg)
+        await self._socket.send(serialized_msg)
+
+    def put_nowait(self, msg: T) -> None:
+        """Send a message without blocking; raises on EAGAIN."""
+        if self._is_closed:
+            raise RuntimeError("Socket is closed")
+        serialized_msg = self._serialize(msg)
+        self._socket.send(serialized_msg, flags=zmq.NOBLOCK)
+
+
+class ZmqAsyncPullSocket(Generic[T], ZmqAsyncSocket):
+    """Async ZMQ PULL socket using zmq.asyncio for native event loop integration."""
+
+    def __init__(
+        self, *, endpoint: str, payload_type: type[T] | object
+    ) -> None:
+        self._deserialize = msgpack_numpy_decoder(payload_type)
+        super().__init__(endpoint=endpoint, mode=zmq.PULL)
+
+    async def get(self) -> T:
+        """Receive a message, awaiting until one is available."""
+        if self._is_closed:
+            raise RuntimeError("Socket is closed")
+        serialized_msg = await self._socket.recv()
+        return self._deserialize(serialized_msg)
+
+    def get_nowait(self) -> T:
+        """Receive a message without blocking; raises queue.Empty if none available."""
+        if self._is_closed:
+            raise RuntimeError("Socket is closed")
+        serialized_msg = _get_helper(
+            lambda: self._socket.recv(flags=zmq.NOBLOCK)
+        )
+        return self._deserialize(serialized_msg)

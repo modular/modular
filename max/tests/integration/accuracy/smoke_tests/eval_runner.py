@@ -182,6 +182,7 @@ def call_eval(
             "kimi-k2",
             "minimax-m2",
             "step-3.5",
+            "glm-5",
         )
     )
     # Reasoning models needs extra tokens for .. reasoning

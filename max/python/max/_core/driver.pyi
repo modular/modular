@@ -166,6 +166,25 @@ class Device:
         """
 
     @property
+    def model_name(self) -> str:
+        """
+        Returns the model name of the device.
+
+        Examples of possible values:
+
+        - ``NVIDIA H100 80GB HBM3`` for an H100.
+        - ``NVIDIA B200`` for a B200.
+        - ``AMD Instinct MI300X`` for an MI300X.
+
+        .. code-block:: python
+
+            from max import driver
+
+            device = driver.Accelerator()
+            device.model_name
+        """
+
+    @property
     def id(self) -> int:
         """
         Returns a zero-based device id.

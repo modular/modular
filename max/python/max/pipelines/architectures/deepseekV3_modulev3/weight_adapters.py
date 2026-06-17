@@ -13,7 +13,6 @@
 
 from __future__ import annotations
 
-from max.dtype import DType
 from max.graph.weights import WeightData, Weights
 from transformers.configuration_utils import PretrainedConfig
 
@@ -186,14 +185,4 @@ def convert_safetensor_state_dict(
     for key in list(new_state_dict.keys()):
         if key.startswith(mtp_prefix):
             del new_state_dict[key]
-
-    # The MoE router correction bias is float32 in the layer (matching the
-    # DeepSeek-V3 ``noaux_tc`` router convention). Real checkpoints store it
-    # in float32, but some (e.g. minimized/random test checkpoints) store it
-    # in the model's main dtype; upcast so it loads into the float32 param
-    # without requiring weight auto-casting.
-    for key, weight_data in new_state_dict.items():
-        if key.endswith("e_score_correction_bias"):
-            new_state_dict[key] = weight_data.astype(DType.float32)
-
     return new_state_dict
