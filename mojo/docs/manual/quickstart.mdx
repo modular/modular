@@ -242,6 +242,14 @@ What changed:
 - You add the check for an empty list.
 - You raise an `Error` if it's empty.
 
+:::note
+
+After this change, your app won't compile yet. Because `calculate_average()`
+can now raise, the call to it in `main()` must handle the error. You add that
+handling in the next step.
+
+:::
+
 ## Handle errors
 
 In `main()`, wrap your code in `try-except` for error handling:
