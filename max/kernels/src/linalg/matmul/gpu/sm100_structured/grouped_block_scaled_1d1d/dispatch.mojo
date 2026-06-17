@@ -483,7 +483,15 @@ def grouped_matmul_nvfp4_dispatch[
                     mma_bn=8,
                     cta_group=1,
                     stages_4096_7168=6,
-                    stages_7168_2048=4,
+                    # (N=7168, K=2048) down-proj decode: B200 ablation
+                    # (bench_grouped_matmul, decode mma_bn=8/cta_group=1) shows
+                    # stages 4->6 is a no-regret win that grows with the active
+                    # expert count: ~0% at 8 active experts (grid too small to
+                    # benefit), +11% at 12, +5% at 16. The down-proj only has
+                    # 8 K-iters (K=2048), so the deeper pipeline overlaps the
+                    # cold-weight loads under more concurrent CTAs once the grid
+                    # widens. up-proj (stages_4096_7168) is already optimal at 6.
+                    stages_7168_2048=6,
                     stages_7168_256=None,
                     pdl_level=pdl_level,
                     fuse_swiglu=fuse_swiglu,
