@@ -122,6 +122,8 @@ public:
   /// This is set when an error is encountered.
   std::optional<MatchFailure> failureReason;
 
+  static TypedAttr preAlignParam(TypedAttr attr);
+
   LogicalResult matchTypes(Type actualType, Type expectedType);
   LogicalResult matchParams(TypedAttr actualAttr, TypedAttr expectedAttr);
   LogicalResult matchFunctionTypes(FnTypeGeneratorType actual,
