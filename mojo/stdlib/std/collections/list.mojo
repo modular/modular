@@ -151,7 +151,7 @@ struct List[T: Movable](
     Hashable where conforms_to(T, Hashable),
     ImplicitlyDeletable where conforms_to(T, ImplicitlyDeletable),
     Iterable,
-    IterableOwned,
+    IterableOwned where conforms_to(T, Copyable & ImplicitlyDeletable),
     Movable,
     Sized,
     Writable where conforms_to(T, Writable),
@@ -656,16 +656,16 @@ struct List[T: Movable](
         """
         self.extend(other^)
 
-    def __iter__(var self) -> Self.IteratorOwnedType:
+    def __iter__(
+        var self,
+    ) -> Self.IteratorOwnedType where conforms_to(
+        Self.T, Copyable & ImplicitlyDeletable
+    ):
         """Consume `self`, returning an owned iterator over its elements.
 
         Returns:
             An iterator of owned elements.
         """
-        comptime assert conforms_to(Self.T, Copyable & ImplicitlyDeletable), (
-            "Owned List iteration requires the element to be `Copyable &"
-            " ImplicitlyDeletable`."
-        )
         return {
             rebind_var[List[downcast[Self.T, Copyable & ImplicitlyDeletable]]](
                 self^

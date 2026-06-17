@@ -1013,6 +1013,11 @@ def test_list_conditional_conformances() raises:
     assert_true(conforms_to(List[Int], Writable))
     assert_false(conforms_to(List[NonEquatable], Writable))
 
+    # Owned iteration requires `Copyable & ImplicitlyDeletable` elements.
+    assert_true(conforms_to(List[Int], IterableOwned))
+    assert_false(conforms_to(List[ExplicitDestroy], IterableOwned))
+    assert_false(conforms_to(List[MoveOnly[Int]], IterableOwned))
+
 
 def test_list_init_span() raises:
     var l = [String("a"), "bb", "cc", "def"]

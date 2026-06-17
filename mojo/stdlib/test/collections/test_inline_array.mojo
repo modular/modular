@@ -524,6 +524,10 @@ def test_inline_array_conditional_conformances() raises:
         conforms_to(InlineArray[ExplicitDestroy, 3], ImplicitlyDeletable)
     )
     assert_false(conforms_to(InlineArray[NonWritable, 3], Writable))
+    # Owned iteration requires `Copyable & ImplicitlyDeletable` elements.
+    assert_true(conforms_to(InlineArray[Int, 3], IterableOwned))
+    assert_false(conforms_to(InlineArray[ExplicitDestroy, 3], IterableOwned))
+    assert_false(conforms_to(InlineArray[MoveOnly[Int], 2], IterableOwned))
 
 
 def test_inline_array_iter_bounds() raises:

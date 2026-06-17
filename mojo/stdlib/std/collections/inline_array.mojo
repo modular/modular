@@ -220,7 +220,9 @@ struct InlineArray[ElementType: Movable, size: Int](
     ImplicitlyCopyable where conforms_to(ElementType, ImplicitlyCopyable),
     ImplicitlyDeletable where conforms_to(ElementType, ImplicitlyDeletable),
     Iterable,
-    IterableOwned,
+    IterableOwned where conforms_to(
+        ElementType, Copyable & ImplicitlyDeletable
+    ),
     Movable,
     Sized,
     Writable where conforms_to(ElementType, Writable),
@@ -901,19 +903,17 @@ struct InlineArray[ElementType: Movable, size: Int](
             Self.size,
         ).fields[FieldsFn=write_fields]()
 
-    def __iter__(var self) -> Self.IteratorOwnedType:
+    def __iter__(
+        var self,
+    ) -> Self.IteratorOwnedType where conforms_to(
+        Self.ElementType, Copyable & ImplicitlyDeletable
+    ):
         """Consume the array and return an iterator over its elements.
 
         Returns:
             An iterator that owns the array's elements.
         """
         # TODO(MSTDL-2390): Remove `Copyable` constraint once we have better iter traits.
-        comptime assert conforms_to(
-            Self.ElementType, Copyable & ImplicitlyDeletable
-        ), (
-            "Owned `InlineArray` iteration requires the element to be `Copyable"
-            " & ImplicitlyDeletable`."
-        )
         return Self.IteratorOwnedType(
             rebind_var[
                 InlineArray[
