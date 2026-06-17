@@ -76,6 +76,34 @@ modular_py_test(
     ],
 )
 
+modular_cc_binary(
+    name = "safetensors_example",
+    testonly = True,
+    srcs = ["safetensors_example.c"],
+    deps = [
+        "//max:CAPI.headers",
+        "//max/internal:max",
+    ],
+)
+
+modular_py_test(
+    name = "test_safetensors",
+    srcs = ["test_safetensors_capi.py"],
+    data = [
+        ":safetensors_example",
+    ],
+    env = {
+        "SAFETENSORS_EXECUTOR": "$(location :safetensors_example)",
+    },
+    deps = [
+        requirement("numpy"),
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+    ],
+)
+
 modular_py_test(
     name = "test_graph_capture",
     srcs = ["test_graph_capture.py"],
