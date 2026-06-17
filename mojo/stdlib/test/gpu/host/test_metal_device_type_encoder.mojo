@@ -32,9 +32,15 @@ from std.testing import assert_equal, assert_true, TestSuite
 # `DevicePassable` `DevicePointer` members. Encoding a closure that captures it
 # must recurse through the struct into each pointer (the behavior under test).
 @fieldwise_init
-struct PtrPair(ImplicitlyCopyable, TrivialRegisterPassable):
-    var first: DevicePointer[DType.float32]
-    var second: DevicePointer[DType.float32]
+struct PtrPair[
+    first_mut: Bool,
+    second_mut: Bool,
+    //,
+    first_origin: Origin[mut=first_mut],
+    second_origin: Origin[mut=second_mut],
+](ImplicitlyCopyable, TrivialRegisterPassable):
+    var first: DevicePointer[DType.float32, Self.first_origin]
+    var second: DevicePointer[DType.float32, Self.second_origin]
 
 
 def test_closure_registers_captured_buffers() raises:
