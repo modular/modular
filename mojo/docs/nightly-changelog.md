@@ -82,6 +82,13 @@ This version is still a work in progress.
 
 ## GPU programming
 
+- Added an 8x8 `simdgroup_matrix` matrix multiply-accumulate primitive
+  (`_mma_apple_8x8()`) with `apple_mma_load_8x8()` / `apple_mma_store_8x8()`
+  fragment helpers for Apple Silicon GPUs in `std.gpu.compute.arch`. Unlike
+  the 16x16 path (Apple M5 only), the 8x8 primitive is available on all Apple
+  GPU generations (M1-M5). It accepts `Float16`, `BFloat16`, and `Float32`
+  inputs with a `Float32` accumulator.
+
 - Apple M5 `simdgroup_matrix` MMA now accepts FP8 (`float8_e4m3fn`,
   `float8_e5m2`) inputs with an F32 accumulator, alongside the existing
   F16/BF16/F32 and 8-bit integer types.
