@@ -107,7 +107,7 @@ leave no asm trace.
 ```mojo
 from linalg.matmul import matmul
 from layout import TileTensor, row_major
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 ```
 
 #### Test Files
