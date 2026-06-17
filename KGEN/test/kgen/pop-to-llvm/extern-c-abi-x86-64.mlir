@@ -336,7 +336,7 @@ llvm.func @arg_mixed_16(%arg0: !llvm.struct<(i32, i32, f64)>) {
 module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @arg_large_indirect
 llvm.func @arg_large_indirect(%arg0: !llvm.struct<(i64, i64, i64)>) {
-  // CHECK: llvm.call @c_c1(%{{.*}}) : (!llvm.ptr) -> ()
+  // CHECK: llvm.call @c_c1(%{{.*}}) : (!llvm.ptr {llvm.byval = !llvm.struct<(i64, i64, i64)>}) -> ()
   pop.external_call @c_c1(%arg0) : (!llvm.struct<(i64, i64, i64)>) -> ()
   llvm.return
 }
@@ -507,7 +507,7 @@ llvm.func @arg_dense_int_16(%arg0: !llvm.struct<(i8, i8, i16, i32, i64)>) {
 module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @arg_padded_indirect
 llvm.func @arg_padded_indirect(%arg0: !llvm.struct<(i8, f32, i8, f64)>) {
-  // CHECK: llvm.call @c_c2(%{{.*}}) : (!llvm.ptr) -> ()
+  // CHECK: llvm.call @c_c2(%{{.*}}) : (!llvm.ptr {llvm.byval = !llvm.struct<(i8, f32, i8, f64)>}) -> ()
   pop.external_call @c_c2(%arg0) : (!llvm.struct<(i8, f32, i8, f64)>) -> ()
   llvm.return
 }
@@ -699,4 +699,94 @@ llvm.func @arg_nested_int_and_i64(%arg0: !llvm.struct<(!llvm.struct<(i32, i32)>,
   llvm.return
 }
 // CHECK: llvm.func @c_n5(i64, i64)
+}
+
+//===----------------------------------------------------------------------===//
+// Group R: Rollback-to-stack (register exhaustion)
+//
+// A two-eightbyte struct needs two integer registers. When preceding integer
+// args leave fewer than two free, the System V ABI passes the whole struct in
+// memory (byval) rather than splitting it across a register and the stack.
+//===----------------------------------------------------------------------===//
+
+// -----
+
+// R1: two ptrs + three i32 consume all but one integer register, so the
+// trailing {i32,i32,i32} (would be IntegerPair) rolls back to memory (byval).
+module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", simd_bit_width=128>} {
+// CHECK-LABEL: @arg_rollback_after_five
+llvm.func @arg_rollback_after_five(%p0: !llvm.ptr, %p1: !llvm.ptr, %a: i32, %b: i32, %c: i32, %s: !llvm.struct<(i32, i32, i32)>) {
+  // CHECK: llvm.call @c_r1(%{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}) : (!llvm.ptr, !llvm.ptr, i32, i32, i32, !llvm.ptr {llvm.byval = !llvm.struct<(i32, i32, i32)>}) -> ()
+  pop.external_call @c_r1(%p0, %p1, %a, %b, %c, %s) : (!llvm.ptr, !llvm.ptr, i32, i32, i32, !llvm.struct<(i32, i32, i32)>) -> ()
+  llvm.return
+}
+// CHECK: llvm.func @c_r1(!llvm.ptr, !llvm.ptr, i32, i32, i32, !llvm.ptr {llvm.byval = !llvm.struct<(i32, i32, i32)>})
+}
+
+// -----
+
+// R2: control - one ptr + three i32 leave two integer registers free, so the
+// same struct fits and stays a two-register IntegerPair (i64, i32).
+module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", simd_bit_width=128>} {
+// CHECK-LABEL: @arg_no_rollback_after_four
+llvm.func @arg_no_rollback_after_four(%p0: !llvm.ptr, %a: i32, %b: i32, %c: i32, %s: !llvm.struct<(i32, i32, i32)>) {
+  // CHECK: llvm.call @c_r2(%{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}) : (!llvm.ptr, i32, i32, i32, i64, i32) -> ()
+  pop.external_call @c_r2(%p0, %a, %b, %c, %s) : (!llvm.ptr, i32, i32, i32, !llvm.struct<(i32, i32, i32)>) -> ()
+  llvm.return
+}
+// CHECK: llvm.func @c_r2(!llvm.ptr, i32, i32, i32, i64, i32)
+}
+
+// -----
+
+// R3: sret control - the hidden result pointer takes one integer register;
+// three i32 leave two free, so the struct still fits as IntegerPair (i64, i32).
+module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", simd_bit_width=128>} {
+// CHECK-LABEL: @arg_sret_no_rollback
+llvm.func @arg_sret_no_rollback(%a: i32, %b: i32, %c: i32, %s: !llvm.struct<(i32, i32, i32)>) {
+  %r = pop.external_call @c_r3(%a, %b, %c, %s) : (i32, i32, i32, !llvm.struct<(i32, i32, i32)>) -> !llvm.struct<(i64, i64, i64)>
+  llvm.return
+}
+// CHECK: llvm.func @c_r3(!llvm.ptr {llvm.sret = !llvm.struct<(i64, i64, i64)>}, i32, i32, i32, i64, i32)
+}
+
+// -----
+
+// R4: one extra i32 over R3 tips it over the edge - sret + four i32 leave only
+// one integer register, so the struct rolls back to memory (byval).
+module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", simd_bit_width=128>} {
+// CHECK-LABEL: @arg_sret_rollback
+llvm.func @arg_sret_rollback(%a: i32, %b: i32, %c: i32, %d: i32, %s: !llvm.struct<(i32, i32, i32)>) {
+  %r = pop.external_call @c_r4(%a, %b, %c, %d, %s) : (i32, i32, i32, i32, !llvm.struct<(i32, i32, i32)>) -> !llvm.struct<(i64, i64, i64)>
+  llvm.return
+}
+// CHECK: llvm.func @c_r4(!llvm.ptr {llvm.sret = !llvm.struct<(i64, i64, i64)>}, i32, i32, i32, i32, !llvm.ptr {llvm.byval = !llvm.struct<(i32, i32, i32)>})
+}
+
+// -----
+
+// R5: SSE control - six f64 leave two SSE registers free, so the {f64,f64}
+// struct still fits and stays a two-register SSEPair (f64, f64).
+module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", simd_bit_width=128>} {
+// CHECK-LABEL: @arg_sse_no_rollback
+llvm.func @arg_sse_no_rollback(%a: f64, %b: f64, %c: f64, %d: f64, %e: f64, %f: f64, %s: !llvm.struct<(f64, f64)>) {
+  // CHECK: llvm.call @c_r5(%{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}) : (f64, f64, f64, f64, f64, f64, f64, f64) -> ()
+  pop.external_call @c_r5(%a, %b, %c, %d, %e, %f, %s) : (f64, f64, f64, f64, f64, f64, !llvm.struct<(f64, f64)>) -> ()
+  llvm.return
+}
+// CHECK: llvm.func @c_r5(f64, f64, f64, f64, f64, f64, f64, f64)
+}
+
+// -----
+
+// R6: one extra f64 over R5 exhausts the SSE registers - seven f64 leave only
+// one, so the {f64,f64} struct rolls back to memory (byval).
+module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", simd_bit_width=128>} {
+// CHECK-LABEL: @arg_sse_rollback
+llvm.func @arg_sse_rollback(%a: f64, %b: f64, %c: f64, %d: f64, %e: f64, %f: f64, %g: f64, %s: !llvm.struct<(f64, f64)>) {
+  // CHECK: llvm.call @c_r6(%{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}) : (f64, f64, f64, f64, f64, f64, f64, !llvm.ptr {llvm.byval = !llvm.struct<(f64, f64)>}) -> ()
+  pop.external_call @c_r6(%a, %b, %c, %d, %e, %f, %g, %s) : (f64, f64, f64, f64, f64, f64, f64, !llvm.struct<(f64, f64)>) -> ()
+  llvm.return
+}
+// CHECK: llvm.func @c_r6(f64, f64, f64, f64, f64, f64, f64, !llvm.ptr {llvm.byval = !llvm.struct<(f64, f64)>})
 }

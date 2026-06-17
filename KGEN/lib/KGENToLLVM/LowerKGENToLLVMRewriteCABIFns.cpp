@@ -141,12 +141,12 @@ void processCABIFunctionDefinition(LLVMFuncOp func, CABIInfo &abiInfo) {
   SmallVector<Type> origArgTypes = llvm::to_vector(func.getArgumentTypes());
   Type origRetType = func.getFunctionType().getReturnType();
 
-  // Classify each argument and return type per platform C ABI rules.
-  SmallVector<CoercionInfo> argInfos;
-  for (Type argTy : origArgTypes)
-    argInfos.push_back(
-        abiInfo.classifyArgumentType(argTy, loc, /*isVariadic=*/false));
-  CoercionInfo retInfo = abiInfo.classifyReturnType(origRetType, loc);
+  // Classify the whole signature per platform C ABI rules. The arg/return
+  // types are already LLVM types here.
+  SignatureClassification sigClass =
+      abiInfo.computeSignatureInfo(origArgTypes, origRetType, loc);
+  SmallVector<CoercionInfo> &argInfos = sigClass.args;
+  CoercionInfo &retInfo = sigClass.ret;
 
   bool anyArgCoercion = llvm::any_of(
       argInfos, [](const CoercionInfo &ci) { return !ci.isIdentity(); });

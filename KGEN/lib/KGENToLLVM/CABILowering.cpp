@@ -10,6 +10,7 @@
 #include "LLVMLoweringUtils.h"
 #include "mlir/Dialect/LLVMIR/LLVMTypes.h"
 #include "mlir/IR/BuiltinTypes.h"
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/ManagedStatic.h"
 
@@ -27,6 +28,24 @@ struct CABIOptions {
 } // namespace
 
 static llvm::ManagedStatic<CABIOptions> CABIOpts;
+
+//===----------------------------------------------------------------------===//
+// CABIInfo base implementation
+//===----------------------------------------------------------------------===//
+
+SignatureClassification
+CABIInfo::computeSignatureInfo(mlir::TypeRange argTypes, mlir::Type retType,
+                               mlir::Location loc, size_t numFixedArgs) const {
+  SignatureClassification result;
+  if (retType)
+    result.ret = classifyReturnType(retType, loc);
+  result.args.reserve(argTypes.size());
+  for (auto [idx, type] : llvm::enumerate(argTypes)) {
+    bool isVariadicArg = idx >= numFixedArgs;
+    result.args.push_back(classifyArgumentType(type, loc, isVariadicArg));
+  }
+  return result;
+}
 
 //===----------------------------------------------------------------------===//
 // Factory Function

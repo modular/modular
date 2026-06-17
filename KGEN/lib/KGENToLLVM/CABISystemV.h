@@ -26,6 +26,15 @@ class SystemVABIInfo : public CABIInfo {
 public:
   SystemVABIInfo(mlir::MLIRContext *ctx, const LLVMDataLayout &dataLayout);
 
+  /// Classify a whole signature, applying the rollback-to-stack rule: an
+  /// aggregate that does not fit in the remaining argument registers is
+  /// passed entirely in memory rather than split.
+  SignatureClassification
+  computeSignatureInfo(mlir::TypeRange argTypes, mlir::Type retType,
+                       mlir::Location loc,
+                       size_t numFixedArgs = SIZE_MAX) const override;
+
+protected:
   CoercionInfo classifyArgumentType(mlir::Type type, mlir::Location loc,
                                     bool isVariadicArg) const override;
 
@@ -33,6 +42,11 @@ public:
                                   mlir::Location loc) const override;
 
 private:
+  /// Number of integer and SSE argument registers a classified argument
+  /// consumes. Identity (scalar/pointer) args are derived from their type.
+  std::pair<unsigned, unsigned> argRegisterUsage(const CoercionInfo &info,
+                                                 mlir::Type llvmType) const;
+
   /// Common classification logic for both arguments and return values.
   /// \param useSRet If true, >16 byte structs use sret; otherwise indirect.
   CoercionInfo classifyStructType(mlir::Type type, mlir::Location loc,
