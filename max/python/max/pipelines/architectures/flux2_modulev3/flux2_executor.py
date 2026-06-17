@@ -26,6 +26,7 @@ from max.graph import TensorType
 from max.pipelines.architectures.flux2.flux2_executor import (
     Flux2ExecutorOutputs,
 )
+from max.pipelines.architectures.flux_modulev3 import Vae
 from max.pipelines.context import PixelContext
 from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.modeling.config_enums import supported_encoding_dtype
@@ -37,7 +38,7 @@ from .flux2_inputs import Flux2ModuleV3Inputs
 logger = logging.getLogger("max.pipelines")
 
 
-class FLUXModule(Module[[Tensor], Tensor]):
+class FLUXModule(Module[[Tensor, Tensor], tuple[Tensor, Tensor]]):
     """Single-``Module`` implementation of the FLUX.2 pipeline.
 
     Expresses the entire FLUX.2 forward pass -- text encode, optional
@@ -110,20 +111,44 @@ class FLUXModule(Module[[Tensor], Tensor]):
             device_specs=text_encoder_config.device_specs,
         )
 
+        vae_manifest_config = manifest["vae"]
+        self._vae_device: Device = load_devices(
+            vae_manifest_config.device_specs
+        )[0]
+        self.vae = Vae(
+            huggingface_config=vae_manifest_config.huggingface_config.to_dict(),
+            quantization_encoding=vae_manifest_config.quantization_encoding,
+            device_specs=vae_manifest_config.device_specs,
+        )
+
     # -- Module forward + compile surface -------------------------------------
 
-    def forward(self, tokens: Tensor) -> Tensor:
+    def forward(
+        self, tokens: Tensor, input_image: Tensor
+    ) -> tuple[Tensor, Tensor]:
         """Forward pass through the Module tree.
 
-        Currently wired only as far as the text encoder; additional
-        components (image encoder, denoiser, VAE decoder) will plug in
-        here as they are ported.
+        Runs both the text encoder and the VAE image encoder
+        unconditionally: ``input_image`` is always passed (a
+        ``(0, 0, 3)`` placeholder for text-to-image requests), and the
+        zero spatial dims propagate through to a ``(1, 0, num_channels)``
+        latent that the downstream denoiser concatenates as a no-op.
+        Additional components (denoiser, VAE decoder) will plug in here
+        as they are ported.
+
+        Returns:
+            ``(text_embeddings, image_latents)``.
         """
-        return self.text_encoder(tokens)
+        text_embeddings = self.text_encoder(tokens)
+        image_latents = self.vae.encode(input_image)
+        return text_embeddings, image_latents
 
     def input_types(self) -> tuple[TensorType, ...]:
         """Input tensor types for compilation, sourced from sub-Modules."""
-        return self.text_encoder.input_types()
+        return (
+            *self.text_encoder.input_types(),
+            *self.vae.input_types(),
+        )
 
     # -- Pipeline I/O contract -----------------------------------------------
 
@@ -190,9 +215,14 @@ class FLUXModule(Module[[Tensor], Tensor]):
             np.array([image_seq_len], dtype=np.int64)
         )
 
-        input_image: Buffer | None = None
+        # Always stage an input_image buffer on the VAE's device.  When
+        # the request is text-only the placeholder has shape ``(0, 0, 3)``
+        # so the encoder runs without contributing to the denoiser.
         if context.input_image is not None:
-            input_image = Buffer.from_dlpack(context.input_image)
+            input_image_array = context.input_image
+        else:
+            input_image_array = np.empty((0, 0, 3), dtype=np.uint8)
+        input_image = Buffer.from_dlpack(input_image_array).to(self._vae_device)
 
         return Flux2ModuleV3Inputs(
             tokens=tokens,

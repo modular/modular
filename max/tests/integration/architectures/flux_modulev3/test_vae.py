@@ -45,6 +45,7 @@ from max.experimental.tensor import Tensor
 from max.graph import DeviceRef, TensorType
 from max.graph.weights import WeightData
 from max.pipelines.architectures.flux_modulev3 import Vae
+from max.pipelines.lib.weight_loader import dict_loader
 
 # The compile test below needs an NVIDIA GPU: Conv2d's FCRS filter
 # layout has no CPU implementation, and the FCRS path /
@@ -214,64 +215,58 @@ def test_vae_shared_bn_parameters(vae: Vae) -> None:
 
 
 # ---------------------------------------------------------------------------
-# 6-9. adapt_state_dict key translation
+# 6-9. adapt_loader key translation
 # ---------------------------------------------------------------------------
 
 
-def test_vae_adapt_state_dict_encoder_keys() -> None:
+def test_vae_adapt_loader_encoder_keys() -> None:
     src = {
         "encoder.conv_in.weight": _fake_weight("encoder.conv_in.weight"),
         "quant_conv.weight": _fake_weight("quant_conv.weight"),
     }
-    out = Vae.adapt_state_dict(src)
-    assert "encoder.conv_in.weight" in out
-    assert "encoder.quant_conv.weight" in out
-    assert "quant_conv.weight" not in out
-    # Pure key translation -- values are preserved by identity.
-    assert out["encoder.conv_in.weight"] is src["encoder.conv_in.weight"]
-    assert out["encoder.quant_conv.weight"] is src["quant_conv.weight"]
+    loader = Vae.adapt_loader(dict_loader(src))
+    # Canonical Module names resolve to the source weights by identity.
+    assert loader("encoder.conv_in.weight") is src["encoder.conv_in.weight"]
+    # ``encoder.quant_conv.*`` queries route to the un-prefixed source.
+    assert loader("encoder.quant_conv.weight") is src["quant_conv.weight"]
 
 
-def test_vae_adapt_state_dict_decoder_keys() -> None:
+def test_vae_adapt_loader_decoder_keys() -> None:
     src = {
         "decoder.conv_out.weight": _fake_weight("decoder.conv_out.weight"),
         "post_quant_conv.weight": _fake_weight("post_quant_conv.weight"),
     }
-    out = Vae.adapt_state_dict(src)
-    assert "decoder.conv_out.weight" in out
-    assert "decoder.post_quant_conv.weight" in out
-    assert "post_quant_conv.weight" not in out
-    assert out["decoder.conv_out.weight"] is src["decoder.conv_out.weight"]
+    loader = Vae.adapt_loader(dict_loader(src))
+    assert loader("decoder.conv_out.weight") is src["decoder.conv_out.weight"]
     assert (
-        out["decoder.post_quant_conv.weight"] is src["post_quant_conv.weight"]
+        loader("decoder.post_quant_conv.weight")
+        is src["post_quant_conv.weight"]
     )
 
 
-def test_vae_adapt_state_dict_bn_keys() -> None:
+def test_vae_adapt_loader_bn_keys() -> None:
     src = {
         "bn.running_mean": _fake_weight("bn.running_mean"),
         "bn.running_var": _fake_weight("bn.running_var"),
     }
-    out = Vae.adapt_state_dict(src)
-    assert set(out.keys()) == {"bn_mean", "bn_var"}
-    assert out["bn_mean"] is src["bn.running_mean"]
-    assert out["bn_var"] is src["bn.running_var"]
+    loader = Vae.adapt_loader(dict_loader(src))
+    assert loader("bn_mean") is src["bn.running_mean"]
+    assert loader("bn_var") is src["bn.running_var"]
 
 
-def test_vae_adapt_state_dict_drops_unknown() -> None:
-    src = {
-        # Unknown keys -- should be dropped.
-        "text_encoder.foo": _fake_weight("text_encoder.foo"),
-        "random.key": _fake_weight("random.key"),
-        "encoder": _fake_weight("encoder"),  # no trailing dot, no match
-        # A known key, to confirm the dropper isn't dropping everything.
-        "encoder.conv_in.weight": _fake_weight("encoder.conv_in.weight"),
-    }
-    out = Vae.adapt_state_dict(src)
-    assert "text_encoder.foo" not in out
-    assert "random.key" not in out
-    assert "encoder" not in out
-    assert "encoder.conv_in.weight" in out
+def test_vae_adapt_loader_unmapped_queries_raise() -> None:
+    # The adapter only translates the parameters the Module declares; it
+    # never invents weights, so a query with no backing source key
+    # raises ``KeyError`` (the Module simply never issues such queries).
+    src = {"encoder.conv_in.weight": _fake_weight("encoder.conv_in.weight")}
+    loader = Vae.adapt_loader(dict_loader(src))
+    # A known canonical key resolves.
+    assert loader("encoder.conv_in.weight") is src["encoder.conv_in.weight"]
+    # Unknown / absent canonical names have no source backing.
+    with pytest.raises(KeyError):
+        loader("text_encoder.foo")
+    with pytest.raises(KeyError):
+        loader("bn_mean")  # bn.running_mean absent from this source
 
 
 # ---------------------------------------------------------------------------

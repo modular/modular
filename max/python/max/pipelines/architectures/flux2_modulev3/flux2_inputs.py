@@ -84,11 +84,13 @@ class Flux2ModuleV3Inputs(TensorStruct):
     num_images_per_prompt: Buffer
     """Number of images to generate per prompt as a 1-element int64 tensor."""
 
-    # -- Optional features ----------------------------------------------------
+    # -- Image-conditioning input ---------------------------------------------
 
-    input_image: Buffer | None = None
-    """Input image for image-to-image generation, shape ``(H, W, C)`` uint8.
-    ``None`` when running in text-to-image mode."""
+    input_image: Buffer
+    """Input image, shape ``(H, W, C)`` uint8.  Always populated by
+    :meth:`FLUXModule.prepare_inputs`: a real image for image-to-image
+    requests, or a ``(0, 0, 3)`` placeholder for text-to-image so the
+    VAE encoder can run unconditionally inside the compiled graph."""
 
     # -- Device transfer -------------------------------------------------------
 
@@ -115,7 +117,3 @@ class Flux2ModuleV3Inputs(TensorStruct):
             if isinstance(val, (Tensor, Buffer)):
                 updates[f.name] = val.to(device)
         return replace(self, **updates)
-
-    def with_image(self, input_image: Buffer) -> Self:
-        """Enable image-to-image mode with the given input image."""
-        return replace(self, input_image=input_image)
