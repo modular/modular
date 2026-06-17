@@ -329,6 +329,68 @@ def empty[T: Movable]() -> _Empty[T]:
 
 
 # ===-----------------------------------------------------------------------===#
+# once-with
+# ===-----------------------------------------------------------------------===#
+
+
+struct _OnceWith[T: Movable, //, F: def() thin -> T](
+    ImplicitlyCopyable,
+    Iterable,
+    IterableOwned,
+    Iterator,
+):
+    """Iterator that lazily generates an element exactly once by invoking
+    a function pointer.
+    """
+
+    comptime Element = Self.T
+    comptime IteratorType[
+        iterable_mut: Bool,
+        //,
+        iterable_origin: Origin[mut=iterable_mut],
+    ]: Iterator = Self
+    comptime IteratorOwnedType: Iterator = Self
+
+    var _generated: Bool
+
+    def __init__(out self):
+        self._generated = False
+
+    def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
+        return self.copy()
+
+    def __iter__(var self) -> Self.IteratorOwnedType:
+        return self^
+
+    def __next__(mut self) raises StopIteration -> Self.Element:
+        if not self._generated:
+            var element = Self.F()
+            self._generated = True
+            return element^
+
+        raise StopIteration()
+
+    def bounds(self) -> Tuple[Int, Optional[Int]]:
+        var bound = Int(not self._generated)
+        return Tuple(bound, Optional(bound))
+
+
+def once_with[T: Movable, //, F: def() thin -> T]() -> _OnceWith[F]:
+    """Creates an iterator that lazily generates a value exactly once by
+    invoking the provided function pointer.
+
+    Parameters:
+        T: Type of the iterator's element.
+        F: The function that generates the iterator's element.
+
+    Returns:
+        An iterator that lazily generates a value exactly once by invoking
+        the provided function pointer.
+    """
+    return _OnceWith[F]()
+
+
+# ===-----------------------------------------------------------------------===#
 # enumerate
 # ===-----------------------------------------------------------------------===#
 
