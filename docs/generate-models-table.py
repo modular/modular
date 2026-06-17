@@ -56,6 +56,14 @@ OUTPUT_LABELS: dict[str, str] = {
     "PIXEL_GENERATION": "image",
 }
 
+# Per-architecture label overrides for cases where the task enum does not
+# capture the output type precisely enough (e.g. video vs. image generation
+# both use PIXEL_GENERATION at runtime).
+ARCH_LABEL_OVERRIDES: dict[str, list[str]] = {
+    "WanPipeline": ["text-to-video"],
+    "WanImageToVideoPipeline": ["image-to-video"],
+}
+
 
 def derive_modality_labels(
     task: str | None, input_modalities: Set[str]
@@ -409,13 +417,19 @@ def format_table(archs: list[dict[str, Any]]) -> str:
             )
         examples_inner = ",<br/>\n".join(repo_links)
 
-        # Derive modality labels from all (task, input_modalities) pairs
-        all_labels: set[str] = set()
-        for task, input_mods in sorted(
-            arch["modality_input_pairs"],
-            key=lambda p: (p[0] or ""),
-        ):
-            all_labels.update(derive_modality_labels(task, input_mods))
+        # Derive modality labels from all (task, input_modalities) pairs,
+        # with a name-based override for architectures whose runtime task enum
+        # does not precisely reflect the output type (e.g. video pipelines that
+        # share PIXEL_GENERATION with image pipelines).
+        if display_name in ARCH_LABEL_OVERRIDES:
+            all_labels: set[str] = set(ARCH_LABEL_OVERRIDES[display_name])
+        else:
+            all_labels = set()
+            for task, input_mods in sorted(
+                arch["modality_input_pairs"],
+                key=lambda p: (p[0] or ""),
+            ):
+                all_labels.update(derive_modality_labels(task, input_mods))
         modality_cell = (
             ",<br/>".join(sorted(all_labels)) if all_labels else "Unknown"
         )
