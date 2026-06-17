@@ -109,6 +109,18 @@ This version is still a work in progress.
 
 - Added `F.print`, which supports both single-device and multi-device tensors.
 
+### C API
+
+- Fixed `M_borrowTensorInto()` copying instead of borrowing a GPU input. When
+  the borrowed pointer already lived on the target accelerator, the call
+  allocated a fresh device buffer and copied into it, so in-place mutation of a
+  `BufferType` model input was applied to the engine's private copy and never
+  reflected back into the caller's buffer. Such pointers are now borrowed in
+  place (zero-copy) on CUDA devices, matching the documented borrow semantics
+  and the existing behavior for host inputs. Host pointers passed with a device
+  spec are still staged via a host-to-device copy, as are device pointers on
+  backends that do not yet implement in-place borrowing (AMD and Apple).
+
 ## MAX kernels
 
 - Sped up GPU RMS norm on AMD CDNA4 (MI355X) for prefill-sized shapes. The
