@@ -273,10 +273,19 @@ class VisionEncoderCache(Generic[VLMContextType]):
         for count, img_hash, req_id in zip(
             per_image_token_counts, image_hashes, request_ids, strict=True
         ):
-            per_device = [
-                dev_tensor[offset : offset + count, :]
-                for dev_tensor in vision_outputs
-            ]
+            # Allocate owned copies rather than views so the cache entry does
+            # not pin the (variable-size) vision-encoder output buffer.  This
+            # prevents GPU allocator fragmentation caused by mismatched holes
+            # left behind when the output buffer is freed.
+            per_device = []
+            for dev_tensor in vision_outputs:
+                slot = Buffer.zeros(
+                    shape=[count, int(dev_tensor.shape[1])],
+                    dtype=dev_tensor.dtype,
+                    device=dev_tensor.device,
+                )
+                slot.inplace_copy_from(dev_tensor[offset : offset + count, :])
+                per_device.append(slot)
             offset += count
             if img_hash is not None:
                 self.insert(img_hash, per_device, count)
