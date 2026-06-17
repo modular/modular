@@ -19,6 +19,7 @@ ALL_ARCHITECTURES = [
     "//max/python/max/pipelines/architectures/exaone",
     "//max/python/max/pipelines/architectures/exaone_modulev3",
     "//max/python/max/pipelines/architectures/flux2",
+    "//max/python/max/pipelines/architectures/flux2_modulev3",
     "//max/python/max/pipelines/architectures/flux_modulev3",
     "//max/python/max/pipelines/architectures/gemma3",
     "//max/python/max/pipelines/architectures/gemma3_modulev3",

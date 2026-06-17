@@ -1200,6 +1200,10 @@ class PixelContext:
     """
     output_format: str = field(default="jpeg")
     """Image encoding format for the output (e.g., 'jpeg', 'png', 'webp')."""
+    seed: int | None = field(default=None)
+    """Optional RNG seed from the request. Preserved here so executors that
+    sample noise inside the compiled graph can consume the scalar directly,
+    rather than relying on tokenizer-baked random latents."""
     status: GenerationStatus = field(default=GenerationStatus.ACTIVE)
 
     @property
