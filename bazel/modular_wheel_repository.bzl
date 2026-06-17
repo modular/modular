@@ -36,6 +36,15 @@ def _rebuild_wheel(rctx):
             strip_prefix = "{}-{}.data/platlib/".format(name, version),
         )
 
+    # Platform-agnostic max mojo libs
+    rctx.download_and_extract(
+        url = "{base_url}/max-mojo-libs/max_mojo_libs-{version}-py3-none-any.whl".format(
+            base_url = rctx.attr.base_url,
+            version = rctx.attr.max_version,
+        ),
+        strip_prefix = "max_mojo_libs-{version}.data/platlib/".format(version = rctx.attr.max_version),
+    )
+
     rctx.execute(["bash", "-c", "mv */platlib/max/_core.*.so max/"])
     rctx.execute(["mkdir", "-p", "max/_mlir/_mlir_libs"])
     rctx.execute(["bash", "-c", "mv */platlib/max/_mlir/_mlir_libs/_mlir.*.so max/_mlir/_mlir_libs/"])
@@ -45,6 +54,7 @@ def _rebuild_wheel(rctx):
         """
 load("@rules_python//python:defs.bzl", "py_library")
 load("@rules_cc//cc:defs.bzl", "cc_import")
+load("@rules_mojo//mojo:mojo_import.bzl", "mojo_import")
 
 # Subdirectories of the wheel that are part of this repo and therefore should
 # be removed so that they're not accidentally used when testing changes that
@@ -107,6 +117,12 @@ cc_import(
         "//conditions:default": [],
     })
 )
+
+mojo_import(
+    name = "msa_lib",
+    mojodeps = ["modular/lib/mojo/msa.mojoc"],
+    visibility = ["//visibility:public"],
+)
 """,
     )
 
@@ -161,6 +177,16 @@ alias(
         "@//:linux_aarch64": "@module_platlib_linux_aarch64//:max_lib",
         "@//:linux_x86_64": "@module_platlib_linux_x86_64//:max_lib",
         "@platforms//os:macos": "@module_platlib_macos_arm64//:max_lib",
+    }),
+    visibility = ["//visibility:public"],
+)
+
+alias(
+    name = "msa_lib",
+    actual = select({
+        "@//:linux_aarch64": "@module_platlib_linux_aarch64//:msa_lib",
+        "@//:linux_x86_64": "@module_platlib_linux_x86_64//:msa_lib",
+        "@platforms//os:macos": "@module_platlib_macos_arm64//:msa_lib",
     }),
     visibility = ["//visibility:public"],
 )

@@ -224,7 +224,7 @@ struct Tuple[*element_types: Movable](
 
         # KGenPointer to the element.
         var elt_kgen_ptr = __mlir_op.`kgen.struct.gep`[
-            index=idx._int_mlir_index(),
+            index=idx.__mlir_index__(),
             _type=UnsafePointer[Self.element_types[idx]]._mlir_type,
         ](storage_kgen_ptr)
         return UnsafePointer[_, origin_of(self)](elt_kgen_ptr)[]

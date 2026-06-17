@@ -114,6 +114,7 @@ from max.benchmark.benchmark_shared.single_turn import (
 )
 from max.benchmark.benchmark_shared.utils import (
     argmedian,
+    fetch_server_max_model_len,
     get_tokenizer,
     is_castable_to_int,
     print_section,
@@ -1165,11 +1166,26 @@ def _build_session(args: ServingBenchmarkConfig) -> BenchmarkSession:
     tokenizer: PreTrainedTokenizerBase | None = None
 
     if benchmark_task == "text-generation":
+        model_max_length = args.model_max_length
+        if model_max_length is None and not args.dry_run:
+            # Best-effort: when the server is already up (e.g. benchmarking a
+            # running deployment), adopt its real context limit so the
+            # context-length guards derived from tokenizer.model_max_length
+            # bind even when the tokenizer reports the HF unbounded sentinel.
+            model_max_length = fetch_server_max_model_len(
+                base_url, model_id, timeout_s=2.0
+            )
+            if model_max_length is not None:
+                logger.info(
+                    "Using server-reported max_model_len=%d from %s/v1/models",
+                    model_max_length,
+                    base_url,
+                )
         logger.info(f"getting tokenizer. api url: {api_url}")
         tokenizer = get_tokenizer(
             tokenizer_id,
             revision=resolve_revision(tokenizer_id),
-            model_max_length=args.model_max_length,
+            model_max_length=model_max_length,
             trust_remote_code=args.trust_remote_code,
         )
 
@@ -1411,6 +1427,26 @@ def main_with_parsed_args(
         backend=args.backend,
         liveness_check=server_liveness,
     )
+
+    # The server may not have been up during session build (it is launched
+    # concurrently with dataset sampling). Now that it is ready, adopt its
+    # context limit when it is tighter than the tokenizer's, so the
+    # multi-turn max_chat_len guards bind to the real bound.
+    if args.model_max_length is None and session.tokenizer is not None:
+        max_model_len = fetch_server_max_model_len(
+            session.base_url, session.model_id
+        )
+        if (
+            max_model_len is not None
+            and max_model_len < session.tokenizer.model_max_length
+        ):
+            logger.info(
+                "Clamping tokenizer model_max_length %d to server-reported"
+                " max_model_len %d",
+                session.tokenizer.model_max_length,
+                max_model_len,
+            )
+            session.tokenizer.model_max_length = max_model_len
 
     yield from _run_benchmark_sweep(args, session, use_dynamic_num_prompts)
 

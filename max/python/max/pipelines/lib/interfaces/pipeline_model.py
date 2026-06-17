@@ -270,6 +270,8 @@ class PipelineModel(ABC, Generic[BaseContextType]):
                 self.huggingface_config.num_attention_heads,
                 self.huggingface_config.num_key_value_heads,
                 self.huggingface_config.head_dim,
+                self.max_seq_len
+                * (pipeline_config.runtime.max_batch_size or 1),
             )
             if pipeline_config.lora
             else None

@@ -205,7 +205,7 @@ class NvMxf4f8Strategy:
         group_size: int,
     ) -> tuple[TensorValue, TensorValue]:
         raise NotImplementedError(
-            "To quantize to NVFP4, use grouped_quantize instead"
+            "To quantize to NVFP4/MXFP4/MXFP8, use grouped_quantize instead"
         )
 
     def grouped_quantize(
@@ -309,7 +309,7 @@ class NvMxf4f8Strategy:
         input_scales: TensorValue | None = None,
         expert_inputs: tuple[TensorValue, ...] = (),
     ) -> tuple[TensorValue, TensorValue]:
-        """Applies SiLU gate then NVFP4 quantizes the result."""
+        """Applies SiLU gate then quantizes the result."""
         _, _, expert_start_indices, scales_offsets, _, _ = expert_inputs
         return fused_silu_quantized(
             gate_up_projs,
@@ -333,7 +333,7 @@ class NvMxf4f8Strategy:
         swiglu_alpha: float = 0.0,
         swiglu_limit: float = 0.0,
     ) -> tuple[TensorValue, TensorValue]:
-        """Runs the fused NVFP4 grouped matmul + SwiGLU + NVFP4 quant kernel.
+        """Runs the fused quantized grouped matmul + SwiGLU + quant kernel.
 
         Equivalent to ``grouped_matmul`` followed by ``fused_silu_quantize``,
         but folds both into a single SM100 kernel. The caller must pass a
@@ -392,6 +392,11 @@ class NvMxf4f8Strategy:
         c_input_scales = (
             (1.0 / input_scales).to(hidden.device)
             if input_scales is not None
+            else None
+        )
+        expert_scales = (
+            expert_scales.to(hidden.device)
+            if expert_scales is not None
             else None
         )
 

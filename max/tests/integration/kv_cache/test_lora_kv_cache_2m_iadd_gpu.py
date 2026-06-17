@@ -157,7 +157,7 @@ def run_kv_cache_2m_iadd(
     for prompt_len in prompt_lens:
         context = create_text_context(np.empty(prompt_len))
         kv_manager.claim(context.request_id, replica_idx=0)
-        kv_manager.alloc(context, replica_idx=0, num_steps=1)
+        kv_manager.alloc(context, replica_idx=0)
         batch.append(context)
 
     # Zero the KV cache before iadd test (since iadd adds to existing values)

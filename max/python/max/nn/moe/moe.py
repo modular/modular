@@ -445,6 +445,16 @@ class MoE(Module, Shardable):
         if self.has_shared_experts:
             shared_experts_shards = self.shared_experts.shard(devices)
 
+        # Replicate the pre-expert norm; the per-shard constructor would
+        # otherwise register duplicate weights under one name.
+        pre_expert_norm_shards = None
+        if self.pre_expert_norm is not None:
+            assert isinstance(self.pre_expert_norm, Shardable)
+            self.pre_expert_norm.sharding_strategy = ShardingStrategy.replicate(
+                self._sharding_strategy.num_devices
+            )
+            pre_expert_norm_shards = self.pre_expert_norm.shard(devices)
+
         shards = []
         num_devices = self._sharding_strategy.num_devices
         sharded_moe_dim = self.moe_dim // num_devices
@@ -485,6 +495,8 @@ class MoE(Module, Shardable):
             sharded.gate = gate_shards[shard_idx]
             if self.has_shared_experts:
                 sharded.shared_experts = shared_experts_shards[shard_idx]
+            if pre_expert_norm_shards is not None:
+                sharded.pre_expert_norm = pre_expert_norm_shards[shard_idx]
 
             if self._sharding_strategy.is_tensor_parallel:
                 sharded.shard_index = shard_idx

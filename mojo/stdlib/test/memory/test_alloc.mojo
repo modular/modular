@@ -18,6 +18,7 @@ from std.sys import align_of, size_of
 from test_utils import ObservableDel, check_write_to
 from std.testing import (
     assert_equal,
+    assert_not_equal,
     assert_false,
     assert_true,
     TestSuite,
@@ -176,6 +177,84 @@ def test_destroy_n_runs_pointee_destructors_before_dealloc() raises:
     var ran = deleted
     dealloc(a^)
     assert_true(ran)
+
+
+def test_alloc_free_single_zst() raises:
+    comptime ZST = InlineArray[Int, 0]
+    comptime assert (
+        size_of[ZST]() == 0
+    ), "Please find a ZST to use for this test."
+
+    var layout = Layout[ZST](count=1)
+    var ptr = alloc(layout).unsafe_leak()
+
+    assert_equal(
+        ptr.bitcast[Int]().as_unsafe_any_origin(),
+        ptr[].unsafe_ptr().as_unsafe_any_origin(),
+    )
+
+    dealloc(
+        ThinAllocation(unsafe_assume_ownership=ptr).unsafe_with_layout(layout)
+    )
+
+
+def test_single_zst_lifecycle() raises:
+    comptime ZST = InlineArray[Int, 0]
+    comptime assert (
+        size_of[ZST]() == 0
+    ), "Please find a ZST to use for this test."
+
+    var layout = Layout[ZST](count=1)
+    var alloc = alloc(layout)
+    var ptr = alloc^.unsafe_leak()
+
+    ptr.init_pointee_move(ZST(fill=0))
+    assert_equal(0, len(ptr[]))
+    ptr.destroy_pointee()
+    dealloc(
+        ThinAllocation(unsafe_assume_ownership=ptr).unsafe_with_layout(layout)
+    )
+
+
+def test_alloc_free_many_zst() raises:
+    comptime ZST = InlineArray[Int, 0]
+    comptime assert (
+        size_of[ZST]() == 0
+    ), "Please find a ZST to use for this test."
+
+    var layout = Layout[ZST](
+        count=Int.MAX
+    )  # It's a ZST, it doesn't take memory
+    var ptr = alloc(layout).unsafe_leak()
+
+    assert_equal(ptr.bitcast[Int](), ptr[].unsafe_ptr())
+
+    dealloc(
+        ThinAllocation(unsafe_assume_ownership=ptr).unsafe_with_layout(layout)
+    )
+
+
+def test_many_zst_lifecycle() raises:
+    comptime ZST = InlineArray[Int, 0]
+    comptime assert (
+        size_of[ZST]() == 0
+    ), "Please find a ZST to use for this test."
+
+    var layout = Layout[ZST](count=Int.MAX)
+    var ptr = alloc(layout).unsafe_leak()
+
+    ptr.bitcast[InlineArray[ZST, Int.MAX]]().init_pointee_move(
+        {fill = ZST(fill=0)}
+    )
+
+    assert_equal(0, len(ptr[]))
+    assert_equal(0, len(ptr[Int.MAX]))
+
+    ptr.bitcast[InlineArray[ZST, Int.MAX]]().destroy_pointee()
+
+    dealloc(
+        ThinAllocation(unsafe_assume_ownership=ptr).unsafe_with_layout(layout)
+    )
 
 
 def main() raises:

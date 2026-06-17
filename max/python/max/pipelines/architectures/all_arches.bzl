@@ -13,6 +13,7 @@ ALL_ARCHITECTURES = [
     "//max/python/max/pipelines/architectures/deepseekV3_nextn",
     "//max/python/max/pipelines/architectures/dflash_kimi_k25",
     "//max/python/max/pipelines/architectures/dflash_llama3",
+    "//max/python/max/pipelines/architectures/diffusion_gemma",
     "//max/python/max/pipelines/architectures/eagle3_deepseekV3",
     "//max/python/max/pipelines/architectures/eagle_llama3",
     "//max/python/max/pipelines/architectures/exaone",

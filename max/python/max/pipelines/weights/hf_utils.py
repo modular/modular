@@ -589,6 +589,8 @@ class HuggingFaceRepo:
             if weight_dtype := weight_value.get("dtype", None):
                 if weight_dtype == "F32":
                     supported_encodings.add("float32")
+                elif weight_dtype == "F16":
+                    supported_encodings.add("float16")
                 elif weight_dtype == "BF16":
                     supported_encodings.add("bfloat16")
                 elif weight_dtype == "F8_E4M3":

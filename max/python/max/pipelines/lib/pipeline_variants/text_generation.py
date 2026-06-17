@@ -346,7 +346,6 @@ class TextGenerationPipeline(
     def prepare_batch(
         self,
         batches: list[list[TextGenerationContextType]],
-        num_steps: int,
     ) -> tuple[
         Any,
         npt.NDArray[np.int32] | None,
@@ -360,7 +359,6 @@ class TextGenerationPipeline(
 
         Args:
             batches: Per-replica list of contexts.
-            num_steps: Number of decode steps reserved in the KV cache.
 
         Returns:
             A tuple of:
@@ -386,9 +384,7 @@ class TextGenerationPipeline(
                 self.update_for_structured_output(context, bitmask, i)
 
         # Retrieve the KV Cache Inputs.
-        kv_cache_inputs = self._kv_manager.runtime_inputs(
-            replica_batches, num_steps
-        )
+        kv_cache_inputs = self._kv_manager.runtime_inputs(replica_batches)
 
         # Log batch details
         if self.batch_info_output_fname is not None:
@@ -460,18 +456,10 @@ class TextGenerationPipeline(
         Executes the graph for a single decode step, samples the next token,
         then decodes and returns the generated tokens.
         """
-        if inputs.num_steps > 1:
-            raise ValueError(
-                f"num_steps > 1 is not supported by the text generation pipeline, "
-                f"got {inputs.num_steps}."
-            )
-
         device0 = self._devices[0]
         pinned = not device0.is_host
         # Prepare the batch.
-        model_inputs, bitmask, flat_batch = self.prepare_batch(
-            inputs.batches, inputs.num_steps
-        )
+        model_inputs, bitmask, flat_batch = self.prepare_batch(inputs.batches)
 
         batch_processors: list[BatchLogitsProcessor] = []
         if len(flat_batch) > 0:
@@ -491,7 +479,6 @@ class TextGenerationPipeline(
                     sampler=sampler,
                     pipeline_config=self._pipeline_config,
                     context_batch=flat_batch,
-                    num_steps=1,
                     device=device0,
                     pinned_new_tokens=self._pinned_new_tokens,
                     identity_logit_offsets=self._identity_logit_offsets,

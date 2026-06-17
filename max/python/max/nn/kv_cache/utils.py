@@ -227,32 +227,19 @@ class AttentionDispatchResolver:
 
 
 def build_max_lengths_tensor(
-    num_steps: int, max_seq_length: int, max_cache_length: int
+    max_seq_length: int, max_cache_length: int
 ) -> Buffer:
-    """Builds a ``[num_steps, 2]`` uint32 buffer of per-step maximum lengths.
-
-    Each row encodes the maximum sequence length and maximum cache length for
-    that decode step. The first step uses ``max_seq_length``; subsequent steps
-    use 1 (one new token per step). Cache length increases by 1 each step.
+    """Builds a ``[1, 2]`` uint32 buffer of maximum lengths for a single decode step.
 
     Args:
-        num_steps: The number of decode steps to pre-compute lengths for.
-        max_seq_length: The maximum sequence length for the first step.
-        max_cache_length: The maximum cache length for the first step.
+        max_seq_length: The maximum sequence length.
+        max_cache_length: The maximum cache length.
 
     Returns:
-        A :class:`~max.driver.Buffer` of shape ``[num_steps, 2]`` and dtype
-        ``uint32`` containing ``(max_seq_length, max_cache_length)`` pairs.
+        A :class:`~max.driver.Buffer` of shape ``[1, 2]`` and dtype
+        ``uint32`` containing ``(max_seq_length, max_cache_length)``.
     """
-    # Build a tensor of maximum lengths. Each step slices the first row to
-    # advance to the values for the next row.
-    max_lengths_np = np.empty((num_steps, 2), np.uint32)
-    step_max_seq_length = max_seq_length
-    step_max_cache_length = max_cache_length
-    for step in range(num_steps):
-        max_lengths_np[step, 0] = step_max_seq_length
-        max_lengths_np[step, 1] = step_max_cache_length
-        step_max_seq_length = 1
-        step_max_cache_length += 1
-
+    max_lengths_np = np.empty((1, 2), np.uint32)
+    max_lengths_np[0, 0] = max_seq_length
+    max_lengths_np[0, 1] = max_cache_length
     return Buffer.from_numpy(max_lengths_np)

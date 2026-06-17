@@ -225,14 +225,12 @@ class FakeTokenGeneratorPipeline(
         self, inputs: TextGenerationInputs[TextContext]
     ) -> dict[RequestID, TextGenerationOutput]:
         max_seq_len = self.max_seq_len
-        # Truncate num steps based on the max seq len
-        num_steps = inputs.num_steps
+        num_steps = 1
         for context in inputs.flat_batch:
             num_available_steps = context.compute_num_available_steps(
                 max_seq_len
             )
             assert num_available_steps > 0
-            num_steps = min(num_steps, num_available_steps)
 
         # Claim cache rows for context.
         for replica_idx, batch in enumerate(inputs.batches):
@@ -246,10 +244,8 @@ class FakeTokenGeneratorPipeline(
 
         for replica_idx, batch in enumerate(inputs.batches):
             for ctx in batch:
-                self.kv_manager.alloc(
-                    ctx, replica_idx=replica_idx, num_steps=num_steps
-                )
-        self.kv_manager.runtime_inputs(inputs.batches, num_steps=num_steps)
+                self.kv_manager.alloc(ctx, replica_idx=replica_idx)
+        self.kv_manager.runtime_inputs(inputs.batches)
 
         # Generate the responses
         responses = {}
@@ -348,7 +344,6 @@ class FakeOverlapPipeline(FakeTokenGeneratorPipeline):
         self._pending_contexts = []
 
         if inputs:
-            num_steps = 1
             for replica_idx, batch in enumerate(inputs.batches):
                 for context in batch:
                     if not self.kv_manager.contains(
@@ -359,10 +354,8 @@ class FakeOverlapPipeline(FakeTokenGeneratorPipeline):
                         )
             for replica_idx, batch in enumerate(inputs.batches):
                 for ctx in batch:
-                    self.kv_manager.alloc(
-                        ctx, replica_idx=replica_idx, num_steps=num_steps
-                    )
-            self.kv_manager.runtime_inputs(inputs.batches, num_steps=num_steps)
+                    self.kv_manager.alloc(ctx, replica_idx=replica_idx)
+            self.kv_manager.runtime_inputs(inputs.batches)
 
             # Generate real tokens now but defer their release to the next call.
             new_outputs: dict[RequestID, TextGenerationOutput] = {}
@@ -493,7 +486,6 @@ def create_batch_and_execute(scheduler: TokenGenerationScheduler) -> BatchInfo:
     batch_size = len(inputs.flat_batch)
     batch_type = inputs.batch_type
     input_tokens = inputs.input_tokens
-    num_steps = inputs.num_steps
     batch_context_length = sum(
         context.tokens.processed_length for context in inputs.flat_batch
     )
@@ -508,7 +500,7 @@ def create_batch_and_execute(scheduler: TokenGenerationScheduler) -> BatchInfo:
         batch_type=batch_type,
         batch_size=batch_size,
         terminated=num_terminated_reqs,
-        steps=num_steps,
+        steps=1,
         preempted=num_preempted,
         input_toks=input_tokens,
         cached_toks=batch_context_length,
