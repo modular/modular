@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %parse-mojo-isolated %s | FileCheck %s
+# RUN: %parse-mojo-isolated -split-input-file %s | FileCheck %s
 
 
 @fieldwise_init
@@ -70,3 +70,21 @@ struct MySpan[
     origin: Origin[mut=mut],
 ]():
     pass
+
+
+# // -----
+
+comptime KE = Movable & ImplicitlyDeletable
+
+
+struct Entry[K: KE]:
+    var key: Self.K
+
+    def __init__(out self, var key: Self.K):
+        self.key = key^
+
+
+def use[K: KE & Copyable](e: Entry[K]):
+    # Make sure we can look through sugar rebind due to `KE`.
+    # CHECK: lit.call{{.*}}#kgen.get_witness<:!{{.*}} K, "{{.*}}Copyable", "copy($0)">
+    var _k = (e.key).copy()

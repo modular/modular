@@ -681,6 +681,22 @@ LogicalResult ParamMatcher::matchTypes(Type actualType, Type expectedType) {
   return error(MatchFailure::Unclassified{});
 }
 
+TypedAttr ParamMatcher::preAlignParam(TypedAttr attr) {
+  // Look through type upcasts to the more derived type.
+  attr = UpcastAttr::strip(attr);
+
+  // If one or the other is a rebind, look through it if just processing sugar.
+  auto actualOp = dyn_cast<ParamOperatorAttr>(attr);
+  if (actualOp && actualOp.getOpcode() == POC::Rebind &&
+      ASTType(actualOp.getType())
+          .isEqualCanon(actualOp.getOperand(0).getType()))
+    return preAlignParam(actualOp.getOperand(0));
+
+  // TODO: we should move some of the fixableByUpcast logic here as well, such
+  // that type-refinement, etc, handling can be reused.
+  return attr;
+}
+
 LogicalResult ParamMatcher::matchParams(TypedAttr actualAttr,
                                         TypedAttr expectedAttr) {
   // Rebind expected attr such that a dependent parameter is updated properly in
@@ -695,9 +711,8 @@ LogicalResult ParamMatcher::matchParams(TypedAttr actualAttr,
   if (isEqualCanon(actualAttr, expectedAttr))
     return success();
 
-  // Look through type upcasts to the more derived type.
-  actualAttr = UpcastAttr::strip(actualAttr);
-  expectedAttr = UpcastAttr::strip(expectedAttr);
+  actualAttr = preAlignParam(actualAttr);
+  expectedAttr = preAlignParam(expectedAttr);
 
   auto getTargetMetaTypeForTypeValue = [](Type targetMetaTp) -> Type {
     if (auto vaTp = sugarDynCast<ParamListType>(targetMetaTp))
@@ -862,16 +877,6 @@ LogicalResult ParamMatcher::matchParams(TypedAttr actualAttr,
     }
     return success();
   }
-
-  // If one or the other is a rebind, look through it if just processing sugar.
-  if (actualOp && actualOp.getOpcode() == POC::Rebind &&
-      ASTType(actualOp.getType())
-          .isEqualCanon(actualOp.getOperand(0).getType()))
-    return matchParams(actualOp.getOperand(0), expectedAttr);
-  if (expectedOp && expectedOp.getOpcode() == POC::Rebind &&
-      ASTType(expectedOp.getType())
-          .isEqualCanon(expectedOp.getOperand(0).getType()))
-    return matchParams(actualAttr, expectedOp.getOperand(0));
 
   // If both parameters are GetWitnessAttrs, match up the insides.
   if (auto actualGetWitness = dyn_cast<GetWitnessAttr>(actualAttr)) {

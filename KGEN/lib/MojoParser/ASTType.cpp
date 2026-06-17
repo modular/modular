@@ -430,7 +430,9 @@ ASTDecl *ASTType::getDecl(SharedState &shared) const {
   // We get the declaration from the metatype of the type.  For example, if we
   // have a parametric type like "T" where "T: AnyType", we can know that T has
   // AnyType bound.
-  Type type = SugarAttr::strip(extractMetaType());
+  // Canonicalize the type first to strip sugar rebind which could hide things
+  // like `upcast` which would otherwise be looked through.
+  Type type = ASTType(getCanonicalType(*this)).extractMetaType();
   if (!isMetaTypeForUserDefinedType(type))
     return nullptr;
 
