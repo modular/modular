@@ -1527,20 +1527,76 @@ def rms_norm_gpu[
         WARP_SIZE * max_warps_per_block,
     )
 
-    # Launch the multi-chunk warp-tiling kernel: one block per row,
-    # `threads_per_block` threads, each owning `eff_simd * chunks` columns.
-    # `exact_fit` (every thread fully active, no ragged tail) is decided at
-    # runtime and selects the unguarded instantiation.
+    # Warp-tiling launch geometry for a given per-thread (`eff_simd`, `chunks`):
+    # one block per row, `_wt_threads_per_block` threads (rounded to whole
+    # warps, capped at the device max), each owning `eff_simd * chunks` columns.
+    # Single source of truth for both the launcher and the warp-per-row gate
+    # below.
     @parameter
     @always_inline
-    def _launch_warp_tiling[eff_simd: Int, chunks: Int]() raises:
+    def _wt_threads_per_block[eff_simd: Int, chunks: Int]() -> Int:
         var threads = ceildiv(ceildiv(cols, eff_simd), chunks)
-        # Round up to a whole warp; the cheaper block_reduce wants few warps.
-        var threads_per_block = min(
+        return min(
             ceildiv(threads, WARP_SIZE) * WARP_SIZE,
             WARP_SIZE * max_warps_per_block,
         )
-        var exact = (threads_per_block * eff_simd * chunks) == cols
+
+    # `exact` means every thread is fully active (the block tiles the row with
+    # no ragged tail), so the unguarded kernel can be used.
+    @parameter
+    @always_inline
+    def _wt_exact[eff_simd: Int, chunks: Int]() -> Bool:
+        return (
+            _wt_threads_per_block[eff_simd, chunks]() * eff_simd * chunks
+        ) == cols
+
+    # Within the warp-tiling column range, warp-tiling (register-cached chunks)
+    # beats the barrier-free warp-per-row kernel on SM100 (B200) whenever it
+    # tiles the row exactly *and* the row is wide enough to amortize the
+    # inter-warp block reduction: a measured 1.1-1.4x at 2048..8192 cols.
+    # Warp-per-row wins in two cases, both of which must stay on it:
+    #   1. ragged tail (e.g. 8192x2880, cols not a clean multiple of the
+    #      per-thread tile -> wasted threads + per-chunk bounds guards), and
+    #   2. narrow rows (cols <= 1024), where the one-warp-per-row kernel has no
+    #      inter-warp barrier to pay and warp-tiling's block reduce dominates
+    #      (measured: 8192x256 1.9x, 8192x512 1.7x, 8192x1024 1.3x slower under
+    #      warp-tiling).
+    # So prefer warp-tiling only for exact-fit rows past the narrow-row floor;
+    # everything else keeps warp-per-row. Uses the native-width chunk count the
+    # dispatch below would pick (1 up to one warp-row, 2 up to two, else 4) and
+    # the shared geometry.
+    #
+    # This is only consulted to gate warp-per-row, which itself only runs for
+    # `cols <= WARP_SIZE * simd_width * max_warps_per_block`. Within that range
+    # the dispatch always launches at native `simd_width` with these same chunk
+    # counts, so the gate matches the kernel that runs. The wider-row branch
+    # below (`simd_width * 2`) lies entirely past the warp-per-row bound, so the
+    # native-width value computed here is never read against it.
+    #
+    # `warp_tiling_min_cols` is the narrow-row floor: warp-tiling is preferred
+    # only above it. 1024 = WARP_SIZE * simd_width * 4 (= one max-width
+    # per-thread tile across a single warp) is the measured crossover on B200
+    # bf16 -- the largest exact-fit width that still loses to warp-per-row.
+    var warp_tiling_min_cols = WARP_SIZE * simd_width * 4
+    var warp_tiling_exact_fit: Bool
+    if cols <= (WARP_SIZE * simd_width):
+        warp_tiling_exact_fit = _wt_exact[simd_width, 1]()
+    elif cols <= (WARP_SIZE * simd_width * 2):
+        warp_tiling_exact_fit = _wt_exact[simd_width, 2]()
+    else:
+        warp_tiling_exact_fit = _wt_exact[simd_width, 4]()
+    var warp_tiling_exact = warp_tiling_exact_fit and (
+        cols > warp_tiling_min_cols
+    )
+
+    # Launch the multi-chunk warp-tiling kernel. `exact_fit` (every thread
+    # fully active, no ragged tail) is decided at runtime and selects the
+    # unguarded instantiation.
+    @parameter
+    @always_inline
+    def _launch_warp_tiling[eff_simd: Int, chunks: Int]() raises:
+        var threads_per_block = _wt_threads_per_block[eff_simd, chunks]()
+        var exact = _wt_exact[eff_simd, chunks]()
 
         @parameter
         @always_inline
@@ -1608,6 +1664,7 @@ def rms_norm_gpu[
             cols > 128
             and cols <= (WARP_SIZE * simd_width * max_warps_per_block)
             and warp_per_row_region
+            and not warp_tiling_exact
         ):
             comptime rows_per_block = warp_per_row_rows_per_block
             block_dim = rows_per_block * WARP_SIZE
