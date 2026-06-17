@@ -177,12 +177,10 @@ def bench_rms_norm_fused_fp8[
             # Input function for FP8 quant (reads from RMS norm output)
             var rms_ptr_offset = cb_rms_output.offset_ptr(iteration)
 
-            @__copy_capture(rms_ptr_offset)
             @always_inline
-            @parameter
             def fp8_input_fn[
                 width: Int, alignment: Int
-            ](row: Int, col: Int) -> SIMD[in_dtype, width]:
+            ](row: Int, col: Int) {var rms_ptr_offset} -> SIMD[in_dtype, width]:
                 var idx = row * cols + col
                 return rms_ptr_offset.load[width=width](idx)
 
@@ -196,10 +194,10 @@ def bench_rms_norm_fused_fp8[
             )
 
             quantize_dynamic_scaled_fp8[
-                input_fn=fp8_input_fn,
+                in_dtype=in_dtype,
                 group_size_or_per_token=-1,  # Per-token quantization
                 num_cols=cols,
-            ](fp8_output_tt, scales_tt, Float32(448.0), ctx, rows)
+            ](fp8_input_fn, fp8_output_tt, scales_tt, Float32(448.0), ctx, rows)
 
         b.iter_custom[kernel_launch](ctx)
 
@@ -334,12 +332,10 @@ def bench_rms_norm_fused_fp8[
     ](shape, gamma_tensor, epsilon, weight_offset, ctx)
 
     # Run FP8 quantization on RMS norm output
-    @__copy_capture(rms_verify_base_ptr)
     @always_inline
-    @parameter
     def fp8_input_fn_verify[
         width: Int, alignment: Int
-    ](row: Int, col: Int) -> SIMD[in_dtype, width]:
+    ](row: Int, col: Int) {var rms_verify_base_ptr} -> SIMD[in_dtype, width]:
         var rms_ptr = rms_verify_base_ptr
         var idx = row * cols + col
         return rms_ptr.load[width=width](idx)
@@ -354,10 +350,17 @@ def bench_rms_norm_fused_fp8[
     )
 
     quantize_dynamic_scaled_fp8[
-        input_fn=fp8_input_fn_verify,
+        in_dtype=in_dtype,
         group_size_or_per_token=-1,
         num_cols=cols,
-    ](fp8_output_tt_verify, scales_tt_verify, Float32(448.0), ctx, rows)
+    ](
+        fp8_input_fn_verify,
+        fp8_output_tt_verify,
+        scales_tt_verify,
+        Float32(448.0),
+        ctx,
+        rows,
+    )
 
     # Run fused kernel
     var data_base_ptr_verify = cb_data.unsafe_ptr()
