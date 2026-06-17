@@ -2433,10 +2433,9 @@ def matmul_dispatch_sm90_bf16_fp32[
                     16,
                 )
 
-                @parameter
                 def config_fn(
                     m: Int,
-                ) -> MatmulConfigSM90[a_type, b_type, c_type, transpose_b]:
+                ) {} -> MatmulConfigSM90[a_type, b_type, c_type, transpose_b]:
                     return swapAB_smallM[
                         a_type,
                         b_type,
@@ -2456,7 +2455,15 @@ def matmul_dispatch_sm90_bf16_fp32[
                         16,
                     )
 
-                comptime configs = build_configs_generic[1, 32, config_fn]()
+                comptime configs = build_configs_generic[
+                    a_type,
+                    b_type,
+                    c_type,
+                    transpose_b,
+                    1,
+                    32,
+                    config_fn=config_fn,
+                ]()
 
                 comptime for config in configs:
                     if runtime_config == config:
@@ -3094,16 +3101,21 @@ def matmul_dispatch_sm90_bf16_fp32[
                     a_type, b_type, c_type, transpose_b
                 ](m, pdl_level)
 
-                @parameter
                 def config_fn_small(
                     m_val: Int,
-                ) -> MatmulConfigSM90[a_type, b_type, c_type, transpose_b]:
+                ) {} -> MatmulConfigSM90[a_type, b_type, c_type, transpose_b]:
                     return swapAB_smallM_ceildiv[
                         a_type, b_type, c_type, transpose_b
                     ](m_val, pdl_level)
 
                 comptime configs_small = build_configs_generic[
-                    1, 41, config_fn_small
+                    a_type,
+                    b_type,
+                    c_type,
+                    transpose_b,
+                    1,
+                    41,
+                    config_fn=config_fn_small,
                 ]()
 
                 comptime for config in configs_small:
@@ -3128,16 +3140,21 @@ def matmul_dispatch_sm90_bf16_fp32[
                     a_type, b_type, c_type, transpose_b
                 ](m, pdl_level)
 
-                @parameter
                 def config_fn_mid(
                     m_val: Int,
-                ) -> MatmulConfigSM90[a_type, b_type, c_type, transpose_b]:
+                ) {} -> MatmulConfigSM90[a_type, b_type, c_type, transpose_b]:
                     return swapAB_midM_linear[
                         a_type, b_type, c_type, transpose_b
                     ](m_val, pdl_level)
 
                 comptime configs_mid = build_configs_generic[
-                    65, 129, config_fn_mid
+                    a_type,
+                    b_type,
+                    c_type,
+                    transpose_b,
+                    65,
+                    129,
+                    config_fn=config_fn_mid,
                 ]()
 
                 comptime for config in configs_mid:
@@ -3159,16 +3176,21 @@ def matmul_dispatch_sm90_bf16_fp32[
                     a_type, b_type, c_type, transpose_b
                 ](m, pdl_level)
 
-                @parameter
                 def config_fn_large(
                     m_val: Int,
-                ) -> MatmulConfigSM90[a_type, b_type, c_type, transpose_b]:
+                ) {} -> MatmulConfigSM90[a_type, b_type, c_type, transpose_b]:
                     return swapAB_largeM_clustered[
                         a_type, b_type, c_type, transpose_b
                     ](m_val, pdl_level)
 
                 comptime configs_large = build_configs_generic[
-                    129, 241, config_fn_large
+                    a_type,
+                    b_type,
+                    c_type,
+                    transpose_b,
+                    129,
+                    241,
+                    config_fn=config_fn_large,
                 ]()
 
                 comptime for config in configs_large:
