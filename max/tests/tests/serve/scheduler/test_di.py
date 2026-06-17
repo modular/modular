@@ -64,7 +64,7 @@ from max.serve.scheduler.prefill_scheduler import (
     load_prefill_scheduler,
 )
 from max.serve.scheduler_result import SchedulerResult
-from max.serve.worker_interface.zmq_queue import (
+from max.serve.worker_interface._zmq_queue import (
     ClientIdentity,
     generate_zmq_ipc_path,
 )

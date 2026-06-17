@@ -42,7 +42,7 @@ from max.serve.scheduler.base import (
     PrefillResponse,
 )
 from max.serve.scheduler.interface import Scheduler
-from max.serve.worker_interface.zmq_queue import ClientIdentity
+from max.serve.worker_interface._zmq_queue import ClientIdentity
 
 from .base import SchedulerProgress
 from .batch_constructor import TextBatchConstructor

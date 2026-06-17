@@ -32,7 +32,7 @@ from max.pipelines.modeling.types import (
     msgpack_numpy_decoder,
     msgpack_numpy_encoder,
 )
-from max.serve.worker_interface.zmq_queue import (
+from max.serve.worker_interface._zmq_queue import (
     ZmqConfig,
     ZmqPullSocket,
     ZmqPushSocket,
@@ -108,7 +108,7 @@ def test_serialization_and_deserialization_through_queue_with_msgpack() -> None:
         ),
     )
 
-    push_socket.put_nowait(context)
+    push_socket.put(context)
     time.sleep(1)
     received_context = pull_socket.get_nowait()
 
@@ -194,12 +194,10 @@ def test_vision_context_shared_memory_fallback(mocker: MockerFixture) -> None:
 
 
 def test_zmq_push_pull_queue_basic_functionality() -> None:
-    """Test basic put_nowait and get_nowait functionality."""
+    """Test basic put and get_nowait functionality."""
     push_queue, pull_queue = ZmqConfig[int](int).pair()
 
-    time.sleep(1)
-    push_queue.put_nowait(42)
-    # Give it some time to send appropriately.
+    push_queue.put(42)
     time.sleep(1)
     result = pull_queue.get_nowait()
     assert result == 42
@@ -219,7 +217,7 @@ def test_zmq_push_pull_queue_with_complex_data() -> None:
         tuple[str, TextContext]
     ).pair()
 
-    push_queue.put_nowait(test_data)
+    push_queue.put(test_data)
     time.sleep(1)
     result = pull_queue.get_nowait()
 
@@ -241,7 +239,7 @@ def test_zmq_push_pull_queue_with_custom_serialization() -> None:
     ).pair()
 
     try:
-        push_queue.put_nowait(test_data)
+        push_queue.put(test_data)
         time.sleep(1)
         result = pull_queue.get_nowait()
 
@@ -268,7 +266,7 @@ def test_zmq_push_pull_queue_multiple_items() -> None:
 
     # Put all items
     for item in test_items:
-        push_queue.put_nowait(item)
+        push_queue.put(item)
         time.sleep(1)
 
     # Get all items and verify order
@@ -383,7 +381,7 @@ def test_zmq_push_pull_queue_with_vision_context() -> None:
         tuple[str, TextAndVisionContext]
     ).pair()
 
-    push_queue.put_nowait(test_data)
+    push_queue.put(test_data)
     time.sleep(1)
     result = pull_queue.get_nowait()
 
