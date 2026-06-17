@@ -2242,7 +2242,7 @@ LogicalResult RefPackCreateOp::verify() {
   for (auto [i, expected, provided] :
        llvm::enumerate(elementTypes, getOperandTypes())) {
     Type type = packType.getElementRefTypeFor(ParamType::get(expected));
-    if (type == provided)
+    if (isEqualCanon(type, provided))
       continue;
     return emitOpError() << "operand #" << i << " should have type " << type
                          << " but got " << provided;
