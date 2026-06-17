@@ -451,6 +451,50 @@ class TestReaderMigration:
         )
         _assert_pass(result)
 
+    def test_module_to_mlir_source_locations(self) -> None:
+        """Module._to_mlir_str(source_locations=True) annotates each op with the
+        Python frames it was built from, and leaves the module unchanged."""
+        result = _run_script(
+            """\
+            from max.dtype import DType
+            from max.graph import DeviceRef, Graph, TensorType
+
+            graph = Graph(
+                "tiny_add_source_locations",
+                forward=lambda x, y: x + y,
+                input_types=[
+                    TensorType(
+                        dtype=DType.float32,
+                        shape=(4,),
+                        device=DeviceRef.CPU(),
+                    ),
+                    TensorType(
+                        dtype=DType.float32,
+                        shape=(4,),
+                        device=DeviceRef.CPU(),
+                    ),
+                ],
+            )
+            module = graph.module
+
+            before = module.mlir_module.asm(enable_debug_info=True)
+            with_locs = module._to_mlir_str(source_locations=True)
+            after = module.mlir_module.asm(enable_debug_info=True)
+
+            # The serialized text traces ops back to the building Python code.
+            assert ".py" in with_locs, with_locs
+            # The flag gates it: the plain form carries no source locations.
+            assert ".py" not in module._to_mlir_str(source_locations=False)
+            # Serializing does not mutate the module: its own locations are
+            # untouched and still carry no materialized Python frames.
+            assert before == after
+            assert ".py" not in after
+            print("PASS")
+            """,
+            env_overrides={"MODULAR_DEBUG": "source-tracebacks"},
+        )
+        _assert_pass(result)
+
     def test_ir_output_dir_via_modular_debug_dumps_ir(
         self, tmp_path: Path
     ) -> None:

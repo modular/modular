@@ -449,6 +449,26 @@ class Module:
                 names.append(op.sym_name)
         return names
 
+    def _to_mlir_str(self, *, source_locations: bool = False) -> str:
+        """Serializes this module to MLIR assembly text.
+
+        Internal helper used by graph-dump tooling.
+
+        Args:
+            source_locations: When ``True``, annotates each op with the Python
+                call stack it was built from. This requires source-traceback
+                capture to have been enabled during graph construction (see
+                :attr:`max.graph.Graph.debug`); without it the ops carry no
+                Python frames and the annotations are empty. The wrapped module
+                is left unchanged either way.
+
+        Returns:
+            The module's MLIR assembly text.
+        """
+        if source_locations:
+            return _graph.to_mlir_with_source_locations(self.mlir_module)
+        return self.mlir_module.asm()
+
 
 class GraphDebugConfig:
     """Narrow view of :class:`max.engine.DebugConfig` exposed through :attr:`Graph.debug`.
