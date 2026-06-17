@@ -138,11 +138,14 @@ private:
       unusedParamsAttr.insert(decl.getName());
 
     unusedParamsIndex = llvm::BitVector(unusedParamsAttr.size(), true);
-
     // Walk over all parameter uses.
     mlir::AttrTypeWalker walker;
     walker.addWalk(
         [&](ParamDeclRefAttr ref) { unusedParamsAttr.erase(ref.getName()); });
+
+    // We can not remove result type dependent parameters.
+    for (auto res : oldFunction.getResultTypes())
+      walker.walk(res);
 
     oldFunction.walk([&](Operation *op) {
       if (unusedParamsAttr.empty())
