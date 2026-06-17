@@ -770,6 +770,9 @@ struct AMD4WaveMatmul[
             Int32(Self.config.num_threads())
         )
     )
+    @__name(
+        t"amd_4wave_matmul_{Self.a_type}_{Self.b_type}_{Self.c_type}_BM{Self.BM}_BN{Self.BN}_BK{Self.BK}_WM{Self.WM}_WN{Self.WN}_SK{num_splits}"
+    )
     @staticmethod
     def run[
         a_layout: TensorLayout,
@@ -1228,6 +1231,9 @@ struct AMD4WaveMatmul[
         MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
             Int32(Self.config.num_threads())
         )
+    )
+    @__name(
+        t"amd_4wave_conv2d_{Self.a_type}_{Self.b_type}_{Self.c_type}_BM{Self.BM}_BN{Self.BN}_BK{Self.BK}_WM{Self.WM}_WN{Self.WN}_res{has_residual}"
     )
     @staticmethod
     def run_conv2d[

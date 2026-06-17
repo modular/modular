@@ -588,6 +588,7 @@ struct PreShuffledBGroupedGEMM[
         )
     )
 )
+@__name(t"mxfp4_grouped_{out_dtype}_BM{BM}_BN{BN}_WM{WM}_WN{WN}_BK{BK_ELEMS}")
 def mxfp4_grouped_matmul_amd_kernel[
     BM: Int,
     BN: Int,
