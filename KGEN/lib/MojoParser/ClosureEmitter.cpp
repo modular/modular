@@ -3215,7 +3215,6 @@ LogicalResult ClosureEmitter::isCompatibleWith(ASTType structType,
 void ClosureEmitter::addConformanceToDevicePassable(
     ASTDecl &structDecl, StructFieldOp devicePassedField, ParamDeclAttr impl,
     ParamDeclAttr originSet) {
-  Type paramType = ParamType::get(ParamDeclRefAttr::get(impl));
   ASTDecl &fileModule = *structDecl.getNearestDeclOfType<FileModuleOp>();
   ASTDecl *devicePassableTrait =
       shared.getBuiltinDevicePassableTrait(structDecl.getLoc());
@@ -3286,57 +3285,32 @@ void ClosureEmitter::addConformanceToDevicePassable(
             pushBackTraitFunctionImpl(function, structDecl);
         b.setInsertionPointToStart(&toDevice.getBodyRegion().front());
         assert(toDevice.getBodyRegion().getNumArguments() == 3);
-        // get address
-        Value targetArgument = toDevice.getBodyRegion().front().getArgument(2);
-        StructType structType = cast<StructType>(targetArgument.getType());
-        assert(structType.getParamValues().size() > 2 &&
-               "expected pointer to be parameterized on element type");
-        // UnsafePointer parameters:
-        //   [mut: Bool, mlir_origin, type: AnyType, origin, ...]
-        // The element type is at index 2.
-        auto pointerElementType =
-            dyn_cast<KGEN::TypeParamAttr>(structType.getParamValues()[2]);
-        assert(pointerElementType &&
-               "expected the pointer type's second parameter to "
-               "indicate its element type");
-        Value addressRef =
-            StructExtractOp::create(
-                b, KGEN::PointerType::get(pointerElementType.getTypeValue()),
-                targetArgument, StringAttr::get(ctx, "address"))
-                ->getResults()
-                .front();
-        Value address = POP::PointerBitcastOp::create(
-            b, PointerType::get(paramType), addressRef);
 
-        // Build a byref destination from the target address pointer
-        auto immortal = b.getAttr<AnyOriginAttr>(/*isMut=*/true);
-        Value targetRef = RefFromPointerOp::create(b, address, immortal,
-                                                   /*startUninit=*/true,
-                                                   /*endUninit=*/false);
-
-        // get closure value
         Value selfArgument = toDevice.getBodyRegion().front().getArgument(0);
+        Value encoderRef = toDevice.getBodyRegion().front().getArgument(1);
+        Value targetArgument = toDevice.getBodyRegion().front().getArgument(2);
+
+        // self.<impl-field> — a ref to the wrapped closure value (Impl).
         Value closureMemberRef =
             RefStructGEROp::create(b, selfArgument, devicePassedField)
                 ->getResults()
                 .front();
 
-        // Invoke T(copy=value)
-        ASTDecl &moduleDecl = *structDecl.getNearestDeclOfType<FileModuleOp>();
-        FnOp copyFn = copyParent.getDefiningOp(moduleDecl);
-        FnTypeGeneratorType copySignature =
-            specializeSignature(copyFn, paramType, *shared.declResolver);
-        StringAttr parentName = copyParent.getFullSymbolName(moduleDecl);
-        TypedAttr copySymbol =
-            GetWitnessAttr::get(ctx, ParamDeclRefAttr::get(impl), parentName,
-                                copyFn.getSymNameAttr(), copySignature);
-        SmallVector<Value> operands{closureMemberRef, targetRef};
-        SmallVector<TypedAttr> origins;
-        origins.push_back(
-            cast<RefType>(closureMemberRef.getType()).getOrigin());
-        origins.push_back(cast<RefType>(targetRef.getType()).getOrigin());
-        LIT::CallOp::create(b, copySignature.getResultType(), copySymbol,
-                            origins, operands);
+        // Forward to `encoder.encode_fields(closureMemberRef, target)` which
+        // walks the fields and invokes `DevicePassable._to_device_type()`.
+        IREmitter emitter(structDecl, b);
+        SyntheticNode syntheticNode(structDecl.getLoc());
+        ExprDest dest(EC_ReturnValue);
+        CallOperands callOperands(CallSyntax::kMethodCall, &syntheticNode,
+                                  std::move(dest));
+        callOperands.add({CValue::getMValueForRef(encoderRef), &syntheticNode});
+        callOperands.add(
+            {CValue::getMValueForRef(closureMemberRef), &syntheticNode});
+        callOperands.add({SRValue(targetArgument), &syntheticNode});
+        CValue callResult = emitter.emitNamedMethodCall(
+            "encode_fields", std::move(callOperands));
+        if (!callResult)
+          return;
         auto noneAttr = KGEN::ParamConstantOp::create(
             b, KGEN::NoneAttr::get(b.getContext()));
         IREmitter::emitNormalReturn(b, noneAttr);
