@@ -20,56 +20,55 @@ import numpy as np
 import numpy.typing as npt
 from max.driver import Buffer, Device, load_devices
 from max.dtype import DType
-from max.engine import InferenceSession
 from max.experimental.nn import Module
 from max.experimental.tensor import Tensor
+from max.graph import TensorType
 from max.pipelines.architectures.flux2.flux2_executor import (
     Flux2ExecutorOutputs,
 )
 from max.pipelines.context import PixelContext
 from max.pipelines.lib.model_manifest import ModelManifest
-from max.pipelines.lib.pipeline_executor import PipelineExecutor
-from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
 from max.pipelines.modeling.config_enums import supported_encoding_dtype
 from max.profiler import traced
 
+from .components import TextEncoder
 from .flux2_inputs import Flux2ModuleV3Inputs
 
 logger = logging.getLogger("max.pipelines")
 
 
-class FLUXModule(
-    Module[..., Tensor],
-    PipelineExecutor[PixelContext, Flux2ModuleV3Inputs, Flux2ExecutorOutputs],
-):
+class FLUXModule(Module[[Tensor], Tensor]):
     """Single-``Module`` implementation of the FLUX.2 pipeline.
 
-    This is the ModuleV3 counterpart to
-    :class:`max.pipelines.architectures.flux2.Flux2Executor`.  The intent
-    is to express the entire FLUX.2 forward pass -- text encode, optional
+    Expresses the entire FLUX.2 forward pass -- text encode, optional
     image encode, denoising loop, and VAE decode -- inside a single
-    :class:`~max.experimental.nn.Module`, rather than as four separately
-    compiled graphs glued together by an executor.
+    :class:`~max.experimental.nn.Module` tree, with sub-Modules placed
+    on the device specified by their corresponding manifest entry (for
+    example, ``text_encoder`` on
+    ``manifest["text_encoder"].device_specs[0]``).
 
-    The :class:`PipelineExecutor` mix-in is temporary: it lets
-    :class:`~max.pipelines.lib.pipeline_variants.pixel_generation.PixelGenerationPipeline`
-    discover and instantiate this class through the existing
-    ``manifest``/``session``/``runtime_config`` entry point.  Once the
-    serving layer can drive a bare ``Module``, the mix-in can be dropped.
+    No graph construction, weight binding, or session compilation lives
+    on this class.  The caller (typically
+    :class:`~max.pipelines.diffusion.pipeline.PixelGenerationPipeline`)
+    is responsible for:
+
+    1. Wrapping construction in :func:`max.experimental.functional.lazy`.
+    2. Composing ``manifest.loader()`` through
+       :func:`~max.pipelines.lib.weight_loader.adapt_module_loader` and
+       materialising the Module's declared parameters into a
+       compile-ready ``weights`` mapping (the walker descends into every
+       ``HasLoaderAdapter`` sub-Module automatically).
+    3. Calling :meth:`~max.experimental.nn.Module.compile` with
+       :meth:`input_types` and the materialised weights.
+    4. Driving the resulting ``CompiledModel`` against
+       :meth:`prepare_inputs` and :meth:`from_outputs` for each batch.
     """
 
     # Fallback VAE scale factor when not derivable from the manifest.
     _DEFAULT_VAE_SCALE_FACTOR: int = 8
 
-    def __init__(
-        self,
-        manifest: ModelManifest,
-        session: InferenceSession,
-        runtime_config: PipelineRuntimeConfig,
-    ) -> None:
+    def __init__(self, manifest: ModelManifest) -> None:
         self._manifest = manifest
-        self._session = session
-        self._runtime_config = runtime_config
 
         # Derive VAE scale factor from manifest config, falling back to 8.
         vae_config = (
@@ -84,7 +83,7 @@ class FLUXModule(
             else self._DEFAULT_VAE_SCALE_FACTOR
         )
 
-        # Extract transformer config for input-staging helpers.
+        # Extract transformer config for input-staging dtype.
         transformer_config = manifest["transformer"]
         encoding = transformer_config.quantization_encoding or "bfloat16"
         # For NVFP4, weights are stored as FP4 but compute stays bfloat16.
@@ -93,14 +92,40 @@ class FLUXModule(
             if encoding == "float4_e2m1fnx2"
             else supported_encoding_dtype(encoding)
         )
-        self._model_device: Device = load_devices(
-            transformer_config.device_specs
-        )[0]
 
-    def forward(self, *args: Tensor, **kwargs: Tensor) -> Tensor:
-        raise NotImplementedError(
-            "FLUXModule (ModuleV3) forward() is not implemented yet."
+        # Sub-Modules: built up component-by-component.  Each component
+        # receives its own ``device_specs`` from the corresponding
+        # manifest entry and is responsible for placing itself on the
+        # appropriate device inside its own constructor.  Their
+        # devices are also cached on this Module so :meth:`prepare_inputs`
+        # can stage Buffers onto the matching device before the
+        # compiled graph runs.
+        text_encoder_config = manifest["text_encoder"]
+        self._text_encoder_device: Device = load_devices(
+            text_encoder_config.device_specs
+        )[0]
+        self.text_encoder = TextEncoder(
+            huggingface_config=text_encoder_config.huggingface_config.to_dict(),
+            quantization_encoding=text_encoder_config.quantization_encoding,
+            device_specs=text_encoder_config.device_specs,
         )
+
+    # -- Module forward + compile surface -------------------------------------
+
+    def forward(self, tokens: Tensor) -> Tensor:
+        """Forward pass through the Module tree.
+
+        Currently wired only as far as the text encoder; additional
+        components (image encoder, denoiser, VAE decoder) will plug in
+        here as they are ported.
+        """
+        return self.text_encoder(tokens)
+
+    def input_types(self) -> tuple[TensorType, ...]:
+        """Input tensor types for compilation, sourced from sub-Modules."""
+        return self.text_encoder.input_types()
+
+    # -- Pipeline I/O contract -----------------------------------------------
 
     @traced(message="prepare_inputs")
     def prepare_inputs(
@@ -123,7 +148,7 @@ class FLUXModule(
             )
         if context.seed is None:
             raise ValueError(
-                "FLUXModule (ModuleV3) requires a seed on PixelContext; "
+                "FLUXModule requires a seed on PixelContext; "
                 "pass `seed` on the request body so the graph can sample "
                 "initial noise deterministically."
             )
@@ -134,7 +159,9 @@ class FLUXModule(
         packed_w = latent_w // 2
         image_seq_len = packed_h * packed_w
 
-        tokens = Buffer.from_dlpack(context.tokens.array)
+        tokens = Buffer.from_dlpack(context.tokens.array).to(
+            self._text_encoder_device
+        )
         text_ids = Buffer.from_dlpack(context.text_ids)
         seed = Buffer.from_dlpack(np.array([context.seed], dtype=np.int64))
         latent_image_ids = Buffer.from_dlpack(context.latent_image_ids)
@@ -185,9 +212,21 @@ class FLUXModule(
             input_image=input_image,
         )
 
-    def execute(self, inputs: Flux2ModuleV3Inputs) -> Flux2ExecutorOutputs:
+    def from_outputs(self, tensors: list[Tensor]) -> Flux2ExecutorOutputs:
+        """Translate compiled-call output tensors into pipeline-facing outputs.
+
+        The pipeline invokes the compiled :class:`~max.experimental.nn.Module`
+        and receives a flat list of output tensors; this method packs them
+        into a :class:`Flux2ExecutorOutputs` so the
+        :class:`~max.pipelines.lib.pipeline_variants.pixel_generation.PixelGenerationPipeline`
+        can keep its post-processing logic uniform across the legacy
+        executor and ModuleV3 paths.
+
+        Stubbed until :meth:`forward` produces a decoded image; today
+        ``forward`` only runs the text encoder.
+        """
         raise NotImplementedError(
-            "FLUXModule (ModuleV3) execute() is not implemented yet."
+            "FLUXModule.from_outputs() is not implemented yet."
         )
 
     # -- Input staging helpers ------------------------------------------------
