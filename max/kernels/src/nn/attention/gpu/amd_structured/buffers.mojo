@@ -778,6 +778,17 @@ struct PRegisterBuffer[
 
     @always_inline
     def copy_to_shared(self):
+        # When P is not SMEM-backed there is no P SMEM region and `mma_tile`
+        # reads P from registers, but the decode driver calls this
+        # unconditionally — so no-op the register-resident path. This fires only
+        # for a BN==WN config that is NOT warp-local. Warp-local also has
+        # BN==WN, but is deliberately forced SMEM-backed (see `_warp_local_p` in
+        # attention.mojo) because the register-resident 16x16x128 P→PV path does
+        # not compile, so warp-local does NOT take this no-op. Comptime-dead on
+        # every shipping MLA-decode config (byte-identical).
+        comptime if not Self.shared_memory_backed:
+            return
+
         comptime frag_w = Self.output_frag_size
         var warp_row, warp_col = get_warp_coords[Self.BN, Self.WN]()
 
