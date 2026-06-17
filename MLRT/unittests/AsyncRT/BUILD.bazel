@@ -105,14 +105,3 @@ modular_cc_test(
         "//Support:Globals",
     ],
 )
-
-modular_cc_test(
-    name = "cppzmqTest",
-    size = "small",
-    srcs = ["cppzmq.cpp"],
-    # Requires two machines to run
-    tags = ["manual"],
-    deps = [
-        "//MLRT:AsyncRT/cppzmq",
-    ],
-)
