@@ -1,0 +1,18 @@
+load("//bazel:api.bzl", "mojo_test")
+
+package(default_visibility = ["//visibility:private"])
+
+# Metal-only: `MetalDeviceTypeEncoder._buffers` is Metal-specific state, so this
+# test is compatible only with the Apple GPU toolchain.
+mojo_test(
+    name = "test_metal_device_type_encoder.mojo.test",
+    srcs = ["test_metal_device_type_encoder.mojo"],
+    tags = ["gpu"],
+    target_compatible_with = select({
+        "//:apple_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "@mojo//:std",
+    ],
+)
