@@ -105,6 +105,12 @@ class ImageContentPart(_MessageContentPart):
         default="image", description="Content type identifier"
     )
 
+    # Optional vendor sizing hint; ``None`` means unset and models may ignore it.
+    max_long_side_pixel: int | None = Field(
+        default=None,
+        description="Max long-side length in pixels for image preprocessing",
+    )
+
 
 class VideoContentPart(_MessageContentPart):
     """A video content part of a message."""
@@ -116,7 +122,10 @@ class VideoContentPart(_MessageContentPart):
 
 MessageContent = TextContentPart | ImageContentPart | VideoContentPart
 
-_MessageRole = Literal["system", "user", "assistant", "tool", "function"]
+# ``root`` is a vendor role; supporting chat templates order it above ``system``.
+_MessageRole = Literal[
+    "system", "user", "assistant", "tool", "function", "root"
+]
 
 
 class TextGenerationRequestMessage(BaseModel):

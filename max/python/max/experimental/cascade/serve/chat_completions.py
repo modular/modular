@@ -107,9 +107,10 @@ def build_router(
             for message in request.messages
         ]
         req = GenerateRequest(
-            num_tokens=request.max_tokens,
             ignore_eos=request.ignore_eos,
         )
+        if request.max_tokens is not None:
+            req.num_tokens = request.max_tokens
         response = pipeline.generate_text(req, messages)
 
         if request.stream:
