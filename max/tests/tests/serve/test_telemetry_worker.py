@@ -106,3 +106,15 @@ async def test_metric_process_client_filtering() -> None:
     # basic metrics are allowed
     client.send_measurement(MaxMeasurement("foo", 1), level=MetricLevel.BASIC)
     assert q.put_nowait.call_count == 1
+
+
+def test_process_telemetry_controller_close_detaches_queue_feeder() -> None:
+    q = mock.MagicMock()
+    controller = process_controller.ProcessTelemetryController(q)
+
+    controller.close()
+
+    assert q.mock_calls == [
+        mock.call.cancel_join_thread(),
+        mock.call.close(),
+    ]
