@@ -318,7 +318,7 @@ struct DeviceContext(
         declared_arg_types: TypeList[Trait=AnyType, ...],
         //,
         func: def(* args: * declared_arg_types) thin -> None,
-    ](self) raises -> DeviceFunction[func, declared_arg_types.values]:
+    ](self) raises -> DeviceFunction[func, declared_arg_types]:
         """Compiles the provided function for execution on this device.
 
         Parameters:
@@ -331,7 +331,7 @@ struct DeviceContext(
         Raises:
             If the operation fails.
         """
-        return DeviceFunction[func, declared_arg_types.values](self)
+        return DeviceFunction[func, declared_arg_types](self)
 
     @parameter
     @always_inline
@@ -467,7 +467,7 @@ struct DeviceContext(
             block_dim, location=call_location()
         )
         var gpu_kernel = DeviceFunction[
-            FuncType.__call__, TypeList.of[Trait=AnyType]().values
+            FuncType.__call__, TypeList.of[Trait=AnyType]()
         ](self)
         gpu_kernel._call_with_pack(
             self,
@@ -1053,7 +1053,7 @@ struct DeviceFunction[
     func_type: TrivialRegisterPassable,
     //,
     func: func_type,
-    declared_arg_types: TypeList.of[Trait=AnyType]()._mlir_type,
+    declared_arg_types: TypeList[Trait=AnyType, ...],
 ](ImplicitlyCopyable, Movable):
     """Represents a compiled device function ready for execution on a GPU.
 
@@ -1119,7 +1119,7 @@ struct DeviceFunction[
         *Ts: DevicePassable,
         num_args: Int,
     ]() -> Tuple[Int, InlineArray[Int, num_args]]:
-        comptime declared_num_args = TypeList[Self.declared_arg_types].size
+        comptime declared_num_args = Self.declared_arg_types.size
 
         comptime assert (
             declared_num_args == num_args
@@ -1135,7 +1135,7 @@ struct DeviceFunction[
         var num_translated_args = 0
 
         comptime for i in range(num_args):
-            comptime declared_arg_type = TypeList[Self.declared_arg_types]()[i]
+            comptime declared_arg_type = Self.declared_arg_types[i]
             comptime actual_arg_type = Ts[i]
 
             def declared_arg_type_name() -> String:
@@ -1852,7 +1852,7 @@ struct DeviceStream(ImplicitlyCopyable, Movable, _HALFunctionEnqueuer):
             block_dim, location=call_location()
         )
         var gpu_kernel = DeviceFunction[
-            FuncType.__call__, TypeList.of[Trait=AnyType]().values
+            FuncType.__call__, TypeList.of[Trait=AnyType]()
         ](self._ctx)
         gpu_kernel._call_with_pack(
             self,

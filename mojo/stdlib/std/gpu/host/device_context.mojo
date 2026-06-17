@@ -2614,7 +2614,7 @@ struct DeviceFunction[
     func_type: TrivialRegisterPassable,
     //,
     func: func_type,
-    declared_arg_types: TypeList.of[Trait=AnyType]()._mlir_type,
+    declared_arg_types: TypeList[Trait=AnyType, ...],
     *,
     target: _TargetType = get_gpu_target(),
     compile_options: StaticString = CompilationTarget[
@@ -3128,7 +3128,7 @@ struct DeviceFunction[
         *Ts: DevicePassable,
         num_args: Int,
     ]() -> Tuple[Int, InlineArray[Int, num_args]]:
-        comptime declared_num_args = TypeList[Self.declared_arg_types].size
+        comptime declared_num_args = Self.declared_arg_types.size
 
         comptime assert (
             declared_num_args == num_args
@@ -3144,7 +3144,7 @@ struct DeviceFunction[
         var num_translated_args = 0
 
         comptime for i in range(num_args):
-            comptime declared_arg_type = TypeList[Self.declared_arg_types]()[i]
+            comptime declared_arg_type = Self.declared_arg_types[i]
             comptime actual_arg_type = Ts[i]
 
             def declared_arg_type_name() -> String:
@@ -4171,7 +4171,7 @@ struct DeviceGraphBuilder(Movable):
         )
         var compiled = DeviceFunction[
             FuncType.__call__,
-            TypeList.of[Trait=AnyType]().values,
+            TypeList.of[Trait=AnyType](),
             target=DeviceContext.default_device_info.target(),
             _ptxas_info_verbose=_ptxas_info_verbose,
         ](self._ctx)
@@ -5147,7 +5147,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         func_attribute: OptionalReg[FuncAttribute] = None,
         out result: DeviceFunction[
             func,
-            declared_arg_types.values,
+            declared_arg_types,
             compile_options=compile_options,
             link_options=link_options,
             _ptxas_info_verbose=_ptxas_info_verbose,
@@ -5225,7 +5225,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         func_attribute: OptionalReg[FuncAttribute] = None,
         out result: DeviceFunction[
             func,
-            declared_arg_types.values,
+            declared_arg_types,
             target=Self.default_device_info.target(),
             compile_options=compile_options,
             link_options=link_options,
@@ -5301,7 +5301,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         func_attribute: OptionalReg[FuncAttribute] = None,
         out result: DeviceFunction[
             func,
-            declared_arg_types.values,
+            declared_arg_types,
             target=Self.default_device_info.target(),
             compile_options=compile_options,
             link_options=link_options,
@@ -5362,7 +5362,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         func_attribute: OptionalReg[FuncAttribute] = None,
         out result: DeviceFunction[
             func,
-            declared_arg_types.values,
+            declared_arg_types,
             target=Self.default_device_info.target(),
             compile_options=compile_options,
             link_options=link_options,
@@ -5441,7 +5441,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         func_attribute: OptionalReg[FuncAttribute] = None,
         out result: DeviceFunction[
             func,
-            declared_arg_types.values,
+            declared_arg_types,
             target=Self.default_device_info.target(),
             compile_options=compile_options,
             link_options=link_options,
@@ -5517,7 +5517,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         func_attribute: OptionalReg[FuncAttribute] = None,
         out result: DeviceFunction[
             func,
-            declared_arg_types.values,
+            declared_arg_types,
             target=Self.default_device_info.target(),
             compile_options=compile_options,
             link_options=link_options,
@@ -6342,7 +6342,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
 
         var gpu_kernel = DeviceFunction[
             FuncType.__call__,
-            TypeList.of[Trait=AnyType]().values,
+            TypeList.of[Trait=AnyType](),
             target=Self.default_device_info.target(),
             _ptxas_info_verbose=_ptxas_info_verbose,
         ](self)
