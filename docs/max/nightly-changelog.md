@@ -78,6 +78,14 @@ This version is still a work in progress.
 
 ### Python API
 
+- Added `max.driver.set_virtual_cpu_target()` and `get_virtual_cpu_target()`.
+  Set a fixed CPU codegen target (for example `"x86-64-v3"`, `"neoverse-n1"`,
+  or `"generic"` for the most-portable baseline of the host arch family) before
+  importing `max._interpreter_ops` so the eager interpreter's CPU kernel cache
+  is compiled host-independently and can be shipped and reused across hosts of
+  the same architecture family. Mirrors `set_virtual_device_target_arch()` for
+  GPUs. Leaving it unset compiles for the build host's CPU, as before.
+
 - **Preview (no-op today)**: `InferenceSession.profiling` is a new namespace
   that will control the libkineto-backed MAX profiler. The lifecycle methods
   are callable but do not yet produce trace files; the libkineto-backed
