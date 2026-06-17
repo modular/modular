@@ -424,6 +424,38 @@ def M_DeviceRefAttr : MAttr<"DeviceRef", "device_ref"> {
 def M_DeviceRefArrayAttr : TypedArrayAttrBase<M_DeviceRefAttr, "A list of devicerefs">;
 
 //===----------------------------------------------------------------------===//
+// DeviceInfoAttr
+//===----------------------------------------------------------------------===//
+
+def M_DeviceInfoAttr : MAttr<"DeviceInfo", "device_info"> {
+  let summary = "Runtime-probed information about a physical device";
+  let description = [{
+    The `#M.device_info` attribute captures runtime-probed properties of a
+    physical device: its label (e.g. `"gpu"`), the underlying API
+    (e.g. `"cuda"`, `"hip"`), the architecture name
+    (e.g. `"sm_100a"`, `"gfx942"`), and the model name
+    (e.g. `"NVIDIA B200"`). This is used to drive per-kernel device
+    registration and specialization.
+
+    Example:
+    ```mlir
+      #M.device_info<"gpu", "cuda", "sm_100a", "NVIDIA B200">
+    ```
+  }];
+
+  let parameters = (ins
+    StringRefParameter<>:$label,
+    StringRefParameter<>:$api,
+    StringRefParameter<>:$arch,
+    StringRefParameter<>:$model
+  );
+
+  let assemblyFormat = [{
+    `<` $label `,` $api `,` $arch `,` $model `>`
+  }];
+}
+
+//===----------------------------------------------------------------------===//
 // DeviceSpecAttr
 //===----------------------------------------------------------------------===//
 
