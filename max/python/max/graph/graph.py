@@ -36,6 +36,8 @@ from max._core import graph as _graph
 from max._core.dialects import builtin, kgen
 from max._core.dialects import kgen as _kgen
 from max._core.dialects import mo as _mo
+from max._core.dialects.m import DeviceInfoAttr as _DeviceInfoAttr
+from max._core.driver import CPU, Accelerator, Device, accelerator_count
 from max._core.engine import InferenceSession as _InferenceSession
 from max._mlir_context import (
     default_mlir_context,
@@ -66,6 +68,7 @@ from .weight import Weight
 _SOURCE_TRACEBACKS_ENABLED = _InferenceSession.debug.source_tracebacks
 CURRENT_GRAPH: ContextVar[Graph] = ContextVar("CURRENT_GRAPH")
 _KERNEL_LIBRARY_PATHS_ATTR_NAME = "_kernel_library_paths"
+_DEVICE_INFO_MAPPING_ATTR_NAME = "mo.device_info_mapping"
 
 T = TypeVar("T")
 
@@ -656,6 +659,7 @@ class Graph:
             self._mlir_op = mlir.Operation._CAPICreate(op._CAPIPtr)
             self._current_block = self._mlir_op.regions[0].blocks[0]
             self._graph_body = self._current_block
+            self._populate_device_info_mapping()
 
         self._weights = {}
         self._has_chain_input = False
@@ -1073,6 +1077,32 @@ class Graph:
             ]
 
         return results, staged_op
+
+    def _populate_device_info_mapping(self) -> None:
+        """Attaches mo.device_info_mapping to the module if not already present."""
+        module = self._mlir_op.block.owner
+        if _DEVICE_INFO_MAPPING_ATTR_NAME in module.attributes:
+            return
+        devices: list[Device] = [CPU()]
+        if accelerator_count() > 0:
+            devices.append(Accelerator())
+        entries = {}
+        for dev in devices:
+            try:
+                arch = dev.architecture_name
+            except Exception:
+                arch = "unknown"
+            try:
+                model = dev.model_name
+            except Exception:
+                model = "unknown"
+            info = _DeviceInfoAttr(
+                label=dev.label, api=dev.api, arch=arch, model=model
+            )
+            entries[dev.label] = mlir.Attribute._CAPICreate(info._CAPIPtr)  # type: ignore[attr-defined]
+        module.attributes[_DEVICE_INFO_MAPPING_ATTR_NAME] = mlir.DictAttr.get(
+            entries
+        )
 
     def output(self, *outputs: Value[Any] | TensorValueLike) -> None:
         """Sets the output values of the graph and finalizes construction.
