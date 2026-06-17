@@ -100,6 +100,20 @@ def _check_same_dtype(**tensors: TensorValue | BufferValue) -> None:
             )
 
 
+def _check_same_device(**tensors: TensorValue | BufferValue) -> None:
+    """Raises ``ValueError`` unless all tensor kwargs share the same device;
+
+    Note: The kwarg names are used in the error message, so naming matters.
+    """
+    first_name, first = next(iter(tensors.items()))
+    for name, t in list(tensors.items())[1:]:
+        if t.device != first.device:
+            raise ValueError(
+                f"expected {first_name} and {name} to have the same device, "
+                f"but got {first.device} and {t.device}, respectively."
+            )
+
+
 def _mask_str(mask_variant: MHAMaskVariant) -> str:
     return _MHA_MASK_VARIANT_TO_ATTENTION_MASK[mask_variant].value
 
@@ -4270,12 +4284,42 @@ def grouped_matmul_block_scaled(
     Returns:
         The matmul result with shape ``[total_tokens, N]`` and dtype ``out_type``.
     """
-    if weight.rank != 3:
-        raise ValueError(f"expected weight of rank 3 but got {weight.rank}")
 
-    if hidden_states.rank != 2:
-        raise ValueError(
-            f"expected hidden_states of rank 2 but got {hidden_states.rank}"
+    _check_rank(2, hidden_states=hidden_states)
+    _check_rank(3, weight=weight)
+    _check_rank(5, a_scales=a_scales)
+    _check_rank(6, b_scales=b_scales)
+    _check_rank(1, expert_start_indices=expert_start_indices)
+    _check_rank(1, a_scale_offsets=a_scale_offsets)
+    _check_rank(1, expert_ids=expert_ids)
+
+    _check_dtype(DType.int32, expert_ids=expert_ids)
+    _check_dtype(DType.uint32, expert_start_indices=expert_start_indices)
+
+    _check_same_dtype(hidden_states=hidden_states, weight=weight)
+    _check_same_dtype(a_scales=a_scales, b_scales=b_scales)
+
+    _check_same_device(
+        hidden_states=hidden_states,
+        weight=weight,
+        a_scales=a_scales,
+        b_scales=b_scales,
+        expert_start_indices=expert_start_indices,
+        a_scale_offsets=a_scale_offsets,
+        expert_ids=expert_ids,
+        expert_scales=expert_scales,
+    )
+
+    if hidden_states.dtype not in (DType.uint8, DType.float8_e4m3fn):
+        raise TypeError(
+            "hidden_states dtype must be uint8 (NVFP4/MXFP4) or "
+            f"float8_e4m3fn (MXFP8), but got {hidden_states.dtype}"
+        )
+
+    if a_scales.dtype not in (DType.float8_e4m3fn, DType.float8_e8m0fnu):
+        raise TypeError(
+            "a_scales dtype must be float8_e4m3fn (NVFP4) or "
+            f"float8_e8m0fnu (MXFP4/MXFP8), but got {a_scales.dtype}"
         )
 
     weight_k = weight.shape[2]
@@ -4284,63 +4328,6 @@ def grouped_matmul_block_scaled(
         raise ValueError(
             "expected weight is of shape [num_experts, *, "
             f"{hidden_k}] but got {weight.shape}"
-        )
-
-    if hidden_states.dtype != weight.dtype or hidden_states.dtype not in (
-        DType.uint8,
-        DType.float8_e4m3fn,
-    ):
-        raise TypeError(
-            "hidden_states and weight dtypes must be uint8 (NVFP4/MXFP4) or "
-            "float8_e4m3fn (MXFP8), but got "
-            f"{hidden_states.dtype}, {weight.dtype}"
-        )
-
-    if a_scales.dtype != b_scales.dtype:
-        raise TypeError(
-            "a_scales and b_scales dtypes must match, "
-            f"but got {a_scales.dtype}, {b_scales.dtype}"
-        )
-    if a_scales.dtype not in (DType.float8_e4m3fn, DType.float8_e8m0fnu):
-        raise TypeError(
-            "a_scales dtype must be float8_e4m3fn (NVFP4) or"
-            f" float8_e8m0fnu (MXFP4), but got {a_scales.dtype}"
-        )
-
-    if expert_ids.dtype != DType.int32:
-        raise TypeError(
-            f"expert_ids dtype must be int32, but got {expert_ids.dtype}"
-        )
-
-    if expert_ids.rank != 1:
-        raise ValueError(
-            f"expected expert_ids of rank 1 but got {expert_ids.rank}"
-        )
-    if expert_start_indices.dtype != DType.uint32:
-        raise TypeError(
-            "expert_start_indices dtype must be uint32, but got"
-            f" {expert_start_indices.dtype}"
-        )
-    if expert_start_indices.rank != 1:
-        raise ValueError(
-            "expected expert_start_indices of rank 1 but got"
-            f" {expert_start_indices.rank}"
-        )
-
-    if a_scales.rank != 5 or b_scales.rank != 6:
-        raise ValueError(
-            "expected a_scales of rank 5 and b_scales of rank 6 but got"
-            f" {a_scales.rank} and {b_scales.rank}"
-        )
-
-    if expert_scales.dtype != DType.float32:
-        raise TypeError(
-            "expert_scales dtype must be float32, but got"
-            f" {expert_scales.dtype}"
-        )
-    if expert_scales.rank != 1:
-        raise ValueError(
-            f"expected expert_scales of rank 1 but got {expert_scales.rank}"
         )
 
     SF_ATOM_M = [32, 4]
@@ -4468,12 +4455,52 @@ def grouped_matmul_blocked_swiglu(
         first dim matches ``a_scales``'s first dim since the kernel re-uses
         ``a_scale_offsets`` as the per-expert SF offset for the output.
     """
-    if weight.rank != 3:
-        raise ValueError(f"expected weight of rank 3 but got {weight.rank}")
 
-    if hidden_states.rank != 2:
-        raise ValueError(
-            f"expected hidden_states of rank 2 but got {hidden_states.rank}"
+    _check_rank(2, hidden_states=hidden_states)
+    _check_rank(3, weight=weight)
+    _check_rank(5, a_scales=a_scales)
+    _check_rank(6, b_scales=b_scales)
+    _check_rank(1, expert_start_indices=expert_start_indices)
+    _check_rank(1, a_scale_offsets=a_scale_offsets)
+    _check_rank(1, expert_ids=expert_ids)
+
+    _check_dtype(DType.int32, expert_ids=expert_ids)
+    _check_dtype(DType.uint32, expert_start_indices=expert_start_indices)
+
+    _check_same_dtype(hidden_states=hidden_states, weight=weight)
+    _check_same_dtype(a_scales=a_scales, b_scales=b_scales)
+
+    dummy_scale = ops.broadcast_to(
+        ops.constant(1.0, DType.float32, device=hidden_states.device),
+        expert_ids.shape,
+    )
+    if expert_scales is None:
+        expert_scales = dummy_scale
+    if c_input_scales is None:
+        c_input_scales = dummy_scale
+
+    _check_same_device(
+        hidden_states=hidden_states,
+        weight=weight,
+        a_scales=a_scales,
+        b_scales=b_scales,
+        expert_start_indices=expert_start_indices,
+        a_scale_offsets=a_scale_offsets,
+        expert_ids=expert_ids,
+        expert_scales=expert_scales,
+        c_input_scales=c_input_scales,
+    )
+
+    if hidden_states.dtype not in (DType.uint8, DType.float8_e4m3fn):
+        raise TypeError(
+            "hidden_states dtype must be uint8 (NVFP4/MXFP4) or "
+            f"float8_e4m3fn (MXFP8), but got {hidden_states.dtype}"
+        )
+
+    if a_scales.dtype not in (DType.float8_e4m3fn, DType.float8_e8m0fnu):
+        raise TypeError(
+            "a_scales dtype must be float8_e4m3fn (NVFP4) or "
+            f"float8_e8m0fnu (MXFP4/MXFP8), but got {a_scales.dtype}"
         )
 
     weight_k = weight.shape[2]
@@ -4484,65 +4511,11 @@ def grouped_matmul_blocked_swiglu(
             f"{hidden_k}] but got {weight.shape}"
         )
 
-    if hidden_states.dtype != weight.dtype or hidden_states.dtype not in (
-        DType.uint8,
-        DType.float8_e4m3fn,
-    ):
-        raise TypeError(
-            "hidden_states and weight dtypes must be uint8 (NVFP4) or "
-            "float8_e4m3fn (MXFP8), but got "
-            f"{hidden_states.dtype}, {weight.dtype}"
-        )
-
-    if a_scales.dtype != b_scales.dtype or a_scales.dtype not in (
-        DType.float8_e4m3fn,
-        DType.float8_e8m0fnu,
-    ):
-        raise TypeError(
-            "a_scales and b_scales must match and be float8_e4m3fn (NVFP4) "
-            "or float8_e8m0fnu (MXFP8), but got "
-            f"{a_scales.dtype}, {b_scales.dtype}"
-        )
-
-    if expert_ids.dtype != DType.int32:
-        raise TypeError(
-            f"expert_ids dtype must be int32, but got {expert_ids.dtype}"
-        )
-    if expert_ids.rank != 1:
-        raise ValueError(
-            f"expected expert_ids of rank 1 but got {expert_ids.rank}"
-        )
-    if expert_start_indices.dtype != DType.uint32:
-        raise TypeError(
-            "expert_start_indices dtype must be uint32, but got"
-            f" {expert_start_indices.dtype}"
-        )
-    if expert_start_indices.rank != 1:
-        raise ValueError(
-            "expected expert_start_indices of rank 1 but got"
-            f" {expert_start_indices.rank}"
-        )
-
-    if a_scales.rank != 5 or b_scales.rank != 6:
-        raise ValueError(
-            "expected a_scales of rank 5 and b_scales of rank 6 but got"
-            f" {a_scales.rank} and {b_scales.rank}"
-        )
-
     if clamp_activation:
         if swiglu_alpha == 0.0 or swiglu_limit == 0.0:
             raise ValueError(
                 "swiglu_alpha and swiglu_limit must be set when clamp_activation is True"
             )
-
-    dummy_scale = ops.broadcast_to(
-        ops.constant(1.0, DType.float32, device=hidden_states.device),
-        expert_ids.shape,
-    )
-    if expert_scales is None:
-        expert_scales = dummy_scale
-    if c_input_scales is None:
-        c_input_scales = dummy_scale
 
     # N = 2D, so weight.shape[1] must be even and D = N // 2.
     n_dim = weight.shape[1]

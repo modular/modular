@@ -425,23 +425,23 @@ def test_grouped_matmul_block_scaled_valid(
     [
         (
             {"hidden_dtype": DType.bfloat16},
-            TypeError,
-            "hidden_states and weight dtypes must be uint8",
+            ValueError,
+            "expected hidden_states and weight to have the same dtype",
         ),
         (
             {"a_scales_dtype": DType.float32},
-            TypeError,
-            "a_scales and b_scales dtypes must match",
+            ValueError,
+            "expected a_scales and b_scales to have the same dtype",
         ),
         (
             {"scales_dtype": DType.float32},
             TypeError,
-            "a_scales dtype must be float8_e4m3fn \\(NVFP4\\) or float8_e8m0fnu \\(MXFP4\\)",
+            "a_scales dtype must be float8_e4m3fn \\(NVFP4\\) or float8_e8m0fnu \\(MXFP4/MXFP8\\)",
         ),
         (
             {"a_scales_shape": (1, 8)},
             ValueError,
-            "expected a_scales of rank 5 and b_scales of rank 6",
+            "expected a_scales to have rank 5, was 2",
         ),
     ],
 )
@@ -451,4 +451,20 @@ def test_grouped_matmul_block_scaled_invalid(
     """Tests grouped_matmul_block_scaled rejects invalid inputs."""
     input_types = _get_fp4_input_types(DeviceRef.CPU(), **kwargs)
     with pytest.raises(error_type, match=error_match):
+        _call_fp4_matmul(input_types)
+
+
+def test_grouped_matmul_block_scaled_rejects_misplaced_scales() -> None:
+    """Tests grouped_matmul_block_scaled rejects scales on another device."""
+    input_types = _get_fp4_input_types(DeviceRef.CPU())
+    input_types[2] = TensorType(
+        DType.float8_e4m3fn,
+        shape=(1, 8, _SF_ATOM_M[0], _SF_ATOM_M[1], _SF_ATOM_K),
+        device=DeviceRef.GPU(),
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="expected hidden_states and a_scales to have the same device",
+    ):
         _call_fp4_matmul(input_types)
