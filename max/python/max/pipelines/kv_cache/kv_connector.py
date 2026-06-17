@@ -29,10 +29,11 @@ class KVConnector(Protocol):
     via load/offload methods.
 
     Required call ordering per inference step:
-      1. connector.load() # on main stream
-      1. connector.offload() # sync main + aux stream, kick off prev batch offloads
-      2. [model executes]
-      3. connector.sync() # sync main + aux stream
+      1. connector.load()            # post loads on the main stream
+      2. connector.wait_for_loads()  # block until loads have landed
+      3. connector.offload()         # kick off this step's offloads
+      4. [model executes]
+      5. connector.wait_for_offloads()  # drain offloads posted this step
     """
 
     @property
@@ -75,10 +76,6 @@ class KVConnector(Protocol):
             parent_seq_hash: Hash of the block preceding ``block_hashes[0]`` in
                 the prefix, or ``0`` if it begins at the root.
         """
-        ...
-
-    def sync(self) -> None:
-        """Wait for pending loads/offloads to complete."""
         ...
 
     def wait_for_loads(self) -> None:

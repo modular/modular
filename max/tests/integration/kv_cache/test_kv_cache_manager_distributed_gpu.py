@@ -197,7 +197,7 @@ def test_get_metrics_aggregated_h2d_d2h() -> None:
         connector = manager._replica[replica_idx].connector
         hashes = [100 + replica_idx * 100, 200 + replica_idx * 100]
         connector.offload([0, 1], hashes)
-        connector.sync()
+        connector.wait_for_offloads()
 
     metrics = manager.get_metrics_aggregated()
     assert metrics.d2h_blocks_copied == 4  # 2 per replica x 2 replicas
@@ -263,9 +263,9 @@ def test_get_metrics_aggregated_disk_ops() -> None:
             assert isinstance(connector, TieredConnector)
             hashes = [100 + replica_idx * 100, 200 + replica_idx * 100]
             connector.offload([0, 1], hashes)
-            connector.sync()
+            connector.wait_for_offloads()
             connector._disk_tier.wait_for_writes()
-            connector.sync()  # drain write-locked host blocks
+            connector.wait_for_offloads()  # drain write-locked host blocks
 
         metrics = manager.get_metrics_aggregated()
         assert metrics.d2h_blocks_copied == 4  # 2 per replica x 2 replicas
@@ -278,9 +278,9 @@ def test_get_metrics_aggregated_disk_ops() -> None:
             assert isinstance(connector, TieredConnector)
             new_hashes = [300 + replica_idx * 100, 400 + replica_idx * 100]
             connector.offload([2, 3], new_hashes)
-            connector.sync()
+            connector.wait_for_offloads()
             connector._disk_tier.wait_for_writes()
-            connector.sync()
+            connector.wait_for_offloads()
 
         # Load the first pair back → must be promoted from disk (not in host).
         for replica_idx in range(data_parallel_degree):

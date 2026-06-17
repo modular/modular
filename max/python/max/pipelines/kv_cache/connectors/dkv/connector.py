@@ -161,11 +161,6 @@ class DKVConnector:
     def wait_for_offloads(self) -> None:
         self._client.wait_for_offloads()
 
-    def sync(self) -> None:
-        # dKV uses wait_for_loads/wait_for_offloads as its barriers; the
-        # per-step sync() is a no-op for this connector.
-        pass
-
     def shutdown(self) -> None:
         # No-op: the Rust client releases its NIXL agent, heartbeat poller, and
         # RPC connection when the object is dropped (at process teardown).

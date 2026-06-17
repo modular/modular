@@ -44,9 +44,6 @@ class NullConnector:
     ) -> None:
         pass
 
-    def sync(self) -> None:
-        pass
-
     def wait_for_loads(self) -> None:
         pass
 

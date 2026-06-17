@@ -270,10 +270,11 @@ class TieredConnector:
         return num_loaded
 
     @traced
-    def sync(self) -> None:
-        """Wait for pending loads/offloads to complete and post disk writes.
+    def wait_for_offloads(self) -> None:
+        """Drain offloads posted this step and post disk writes.
 
-        Uses zero-copy: host blocks are kept pinned (ref_cnt=1) from D2H
+        Called after the forward pass. Waits for in-flight D2H copies, then
+        uses zero-copy: host blocks are kept pinned (ref_cnt=1) from D2H
         through disk write completion.  Numpy views (no ``.copy()``) are
         passed to the disk writer thread — safe because the block can't be
         evicted while pinned.  Blocks are released on the *main* thread in
@@ -305,9 +306,6 @@ class TieredConnector:
         — keeps the forward pass overlapping with the D2H transfers.
         """
         self._block_copy_engine.wait_for_completion()
-
-    def wait_for_offloads(self) -> None:
-        """No-op: offloads complete in ``sync``."""
 
     @traced
     def _drain_completed_writes(self) -> None:

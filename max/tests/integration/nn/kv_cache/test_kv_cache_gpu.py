@@ -96,14 +96,14 @@ def test_multi_cache_connector_offloads_all_caches() -> None:
     _write_block(global_cache, 0, 2.0)
 
     connector.offload([0], [42])
-    connector.sync()
+    connector.wait_for_offloads()
 
     _write_block(sliding_cache, 0, 0.0)
     _write_block(global_cache, 0, 0.0)
 
     loaded = connector.load([0], [42])
     assert loaded == 1
-    connector.sync()
+    connector.wait_for_offloads()
 
     np.testing.assert_array_equal(sliding_cache.to_numpy()[0], 1.0)
     np.testing.assert_array_equal(global_cache.to_numpy()[0], 2.0)

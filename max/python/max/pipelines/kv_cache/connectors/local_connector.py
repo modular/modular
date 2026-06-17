@@ -143,11 +143,6 @@ class LocalConnector:
         for block_id, block_hash in zip(block_ids, block_hashes, strict=True):
             self._maybe_offload_to_host(block_id, block_hash)
 
-    @traced
-    def sync(self) -> None:
-        """Wait for pending loads/offloads to complete."""
-        self._block_copy_engine.wait_for_completion()
-
     def wait_for_loads(self) -> None:
         """Synchronize the main and auxiliary streams once per forward pass.
 
@@ -160,8 +155,14 @@ class LocalConnector:
         """
         self._block_copy_engine.wait_for_completion()
 
+    @traced
     def wait_for_offloads(self) -> None:
-        """No-op: offloads complete in ``sync``."""
+        """Drain offloads posted this step by syncing the copy streams.
+
+        Called after the forward pass. Waits for in-flight D2H copies on the
+        auxiliary stream to complete.
+        """
+        self._block_copy_engine.wait_for_completion()
 
     def shutdown(self) -> None:
         """Clean shutdown of connector resources."""
