@@ -968,7 +968,9 @@ class Tensor(DLPackArray, HasTensorValue):
         instance._mapping = PlacementMapping(mesh, placements)
         return instance
 
-    def _as_constant_external(self, name: str) -> Tensor:
+    def _as_constant_external(
+        self, name: str, align: int | None = None
+    ) -> Tensor:
         """Creates graph external constant(s) matching ``self``'s layout.
 
         For unsharded tensors, creates a single ``constant_external`` and
@@ -977,10 +979,19 @@ class Tensor(DLPackArray, HasTensorValue):
         Tensor preserving ``self``'s mesh, placements, and global shape.
 
         Shard constants are named ``name._shard.0``, ``name._shard.1``, etc.
+
+        Args:
+            name: The name of the constant.
+            align: The alignment of the constant. If not provided,
+                the default alignment for the tensor's dtype will be used.
+
+        Returns:
+            A tensor on the requested placement initialized from the
+            external data.
         """
         if not self.is_distributed:
             stype = TensorType(self.dtype, self.shape, CPU())
-            return F.constant_external(name, stype).to(self.device)
+            return F.constant_external(name, stype, align=align).to(self.device)
         assert self._mapping is not None
         _mesh = self._mapping.mesh
         values = []
@@ -988,7 +999,7 @@ class Tensor(DLPackArray, HasTensorValue):
         for i in range(_mesh.num_devices):
             local = local_shape_at(shape, i)
             stype = TensorType(self.dtype, local, CPU())
-            t = F.constant_external(f"{name}._shard.{i}", stype)
+            t = F.constant_external(f"{name}._shard.{i}", stype, align=align)
             t = t.to(_mesh.devices[i])
             values.append(t._graph_value)
         return current_realization_context().create_unrealized(

@@ -23,8 +23,15 @@ from max.experimental import functional as F
 from max.experimental.nn.common_layers.functional_kernels import (
     grouped_matmul_ragged,
 )
-from max.experimental.sharding.action import ActionSet
-from max.experimental.sharding.cost import force_replicated_action_set
+from max.experimental.sharding import PlacementMapping
+from max.experimental.sharding.action import Action, ActionSet, AxisAssignment
+from max.experimental.sharding.cost import (
+    P,
+    R,
+    build_action_set,
+    force_replicated_action_set,
+)
+from max.experimental.sharding.placements import Placement, Sharded
 from max.experimental.sharding.types import TensorLayout
 from max.experimental.tensor import Tensor
 from max.nn.kernels import (
@@ -50,18 +57,98 @@ QuantAwareTensor: TypeAlias = Tensor | FP8BlockTensor
 
 
 def _replicated_rule(*layout_args: Any) -> ActionSet:
-    """Per-shard ``(R,…,R) -> R`` rule for FP8 kernels."""
+    """Per-shard ``(R,…,R) -> R`` rule for FP8 kernels.
+
+    Used for the grouped (MoE) matmul, which is always dispatched per-device
+    inside :func:`~max.experimental.nn.common_layers.functional_kernels.local_map`
+    (so its inputs are never distributed and this rule never actually runs).
+    """
     layouts = [a for a in layout_args if isinstance(a, TensorLayout)]
     return force_replicated_action_set(*layouts)
+
+
+def _transpose2d_placement(p: Placement) -> Placement:
+    """Map a rank-2 tensor placement to its transpose (swap axes 0 and 1).
+
+    The activation block scales produced by
+    :func:`quantize_dynamic_scaled_float8` are laid out transposed relative to
+    the activations they describe (``[K / block_k, M]`` vs ``[M, K]``), so a
+    shard of the activations on tensor axis ``a`` corresponds to a shard of the
+    scales on axis ``1 - a``. :class:`~max.experimental.sharding.Replicated`
+    and :class:`~max.experimental.sharding.Partial` placements are unchanged.
+    """
+    if isinstance(p, Sharded):
+        return Sharded(axis=1 - p.axis)
+    return p
+
+
+def _quantize_finalize(action: Action) -> Action:
+    """Expand the picked output into ``(data, scales)`` mappings.
+
+    The picker derives one output placement, which we use for the FP8 data
+    output (same layout as the input). This restores the second, transposed
+    mapping for the block-scale output (see :func:`_transpose2d_placement`).
+    """
+    (data_mapping,) = action.outputs
+    scales_mapping = PlacementMapping(
+        data_mapping.mesh,
+        tuple(_transpose2d_placement(p) for p in data_mapping.placements),
+    )
+    return Action(inputs=action.inputs, outputs=(data_mapping, scales_mapping))
+
+
+def _quantize_rule(x: TensorLayout, *extras: Any) -> ActionSet:
+    """Sharding rule for dynamic FP8 activation quantization.
+
+    The FP8 data output follows the input placement; the block-scale output is
+    its transpose (handled by :func:`_quantize_finalize`). Covers a replicated
+    input (the common case), a contraction-sharded input (``o_proj`` under
+    tensor parallelism), and a row-sharded input (sequence / data parallel).
+    """
+    rows = [
+        AxisAssignment((R,), R),
+        AxisAssignment((Sharded(0),), Sharded(0)),
+        AxisAssignment((Sharded(1),), Sharded(1)),
+    ]
+    return build_action_set(rows, layouts=(x,), finalize=_quantize_finalize)
+
+
+def _scaled_matmul_rule(
+    a: TensorLayout,
+    b: TensorLayout,
+    a_scales: TensorLayout,
+    b_scales: TensorLayout,
+    *extras: Any,
+) -> ActionSet:
+    """Sharding rule for the block-scaled FP8 matmul ``a @ b.T``.
+
+    ``a`` is ``[M, K]`` and ``b`` (Linear-convention weight) is ``[N, K]``, so
+    the output is ``[M, N]``. The activation scales ``a_scales`` are
+    ``[K / block_k, M]`` (transposed) while the weight scales ``b_scales`` are
+    ``[N / block_m, K / block_k]``. The rows mirror the bf16 matmul strategies:
+    column-parallel weights (shard ``N``), row-parallel weights (shard the
+    ``K`` contraction, producing a partial sum), and row-sharded activations.
+    """
+    layouts = (a, b, a_scales, b_scales)
+    rows = [
+        AxisAssignment((R, R, R, R), R),
+        # Column-parallel: weight rows (N) sharded -> output columns (N).
+        AxisAssignment((R, Sharded(0), R, Sharded(0)), Sharded(1)),
+        # Row-parallel: contraction (K) sharded on every operand -> partial.
+        AxisAssignment((Sharded(1), Sharded(1), Sharded(0), Sharded(1)), P),
+        # Row-sharded activations (sequence / data parallel) -> output rows.
+        AxisAssignment((Sharded(0), R, Sharded(1), R), Sharded(0)),
+    ]
+    return build_action_set(rows, layouts=layouts)
 
 
 # Wrap raw graph ops so they accept ``Tensor`` and run inside an
 # ``ensure_context()``.
 quantize_dynamic_scaled_float8 = F.functional(
-    _quantize_dynamic_scaled_float8, rule=_replicated_rule
+    _quantize_dynamic_scaled_float8, rule=_quantize_rule
 )
 dynamic_scaled_matmul = F.functional(
-    _dynamic_scaled_matmul, rule=_replicated_rule
+    _dynamic_scaled_matmul, rule=_scaled_matmul_rule
 )
 grouped_dynamic_scaled_fp8_matmul = F.functional(
     _grouped_dynamic_scaled_fp8_matmul, rule=_replicated_rule

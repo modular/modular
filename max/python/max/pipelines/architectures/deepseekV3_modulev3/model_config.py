@@ -18,7 +18,9 @@ from dataclasses import dataclass
 from typing import Any
 
 from max.dtype import DType
+from max.experimental.sharding import DeviceMesh
 from max.graph import DeviceRef
+from max.nn.comm.ep import EPConfig
 from max.nn.kv_cache import KVCacheParams
 from max.nn.quant_config import QuantConfig
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
@@ -38,6 +40,19 @@ class DeepseekV3Config(ArchConfigWithKVCache):
     dtype: DType
     kv_params: KVCacheParams
     devices: list[DeviceRef]
+
+    mesh: DeviceMesh | None = None
+    """Device mesh for sharding across multiple devices."""
+
+    ep_config: EPConfig | None = None
+    """Expert-parallel configuration, or ``None`` for replicated/TP experts.
+
+    Set in :meth:`DeepseekV3Model.load_model` when ``--ep-size > 1``.
+    """
+
+    data_parallel_degree: int = 1
+    """Number of data-parallel attention replicas. Selects the decoder layer's
+    parallelism mode together with :attr:`ep_config`."""
 
     vocab_size: int = 129280
     hidden_size: int = 7168
@@ -77,6 +92,7 @@ class DeepseekV3Config(ArchConfigWithKVCache):
     attention_bias: bool = False
     attention_dropout: float = 0.0
 
+    correction_bias_dtype: DType | None = None
     max_batch_context_length: int = 131072
     graph_mode: str = "auto"  # "auto" | "prefill" | "decode"
 
@@ -148,9 +164,10 @@ class DeepseekV3Config(ArchConfigWithKVCache):
         config = model_config.huggingface_config
         if config is None:
             raise ValueError(
-                f"HuggingFace config is required for '{model_config.model_path}', "
-                "but config could not be loaded. "
-                "Please ensure the model repository contains a valid config.json file."
+                "HuggingFace config is required for"
+                f" '{model_config.model_path}', but config could not be loaded."
+                " Please ensure the model repository contains a valid"
+                " config.json file."
             )
         kv_cache_config = model_config.kv_cache
         quantization_encoding = model_config.quantization_encoding
@@ -222,4 +239,5 @@ class DeepseekV3Config(ArchConfigWithKVCache):
             attention_bias=config.attention_bias,
             attention_dropout=config.attention_dropout,
             graph_mode=graph_mode,
+            data_parallel_degree=model_config.data_parallel_degree,
         )

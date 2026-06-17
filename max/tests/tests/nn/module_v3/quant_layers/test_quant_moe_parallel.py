@@ -17,7 +17,6 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-import pytest
 from max.driver import CPU, Device
 from max.dtype import DType
 from max.experimental import functional as F
@@ -152,8 +151,7 @@ def test_tensor_parallel_moe_fp8_weights(
     mock_accelerator: MagicMock, fp8_quant_config: QuantConfig
 ) -> None:
     """FP8 TP shards both the packed data and the block-scale grid."""
-    # TODO(MXF-296): Add distributed support for FP8 TP MoE.
-    with F.lazy(), pytest.raises(AttributeError):
+    with F.lazy():
         devices = [mock_accelerator(0), mock_accelerator(1)]
         num_devices = len(devices)
         mesh = DeviceMesh(tuple(devices), (num_devices,), (TP,))
@@ -167,27 +165,29 @@ def test_tensor_parallel_moe_fp8_weights(
         ).to(mesh)
 
         gate_up = layer.gate_up_proj
-        assert isinstance(gate_up, FP8BlockTensor)
-        assert list(gate_up.data.shape) == [
+        assert isinstance(gate_up, list)
+        assert isinstance(gate_up[0], FP8BlockTensor)
+        assert list(gate_up[0].data.shape) == [
             _NUM_EXPERTS,
             2 * _FP8_MOE_DIM // num_devices,
             _FP8_HIDDEN_DIM,
         ]
         # Scale grid is the (128, 128)-block count of the sharded data.
-        assert list(gate_up.scale_inv.shape) == [
+        assert list(gate_up[0].scale_inv.shape) == [
             _NUM_EXPERTS,
             2 * _FP8_MOE_DIM // num_devices // 128,
             _FP8_HIDDEN_DIM // 128,
         ]
 
         down = layer.down_proj
-        assert isinstance(down, FP8BlockTensor)
-        assert list(down.data.shape) == [
+        assert isinstance(down, list)
+        assert isinstance(down[0], FP8BlockTensor)
+        assert list(down[0].data.shape) == [
             _NUM_EXPERTS,
             _FP8_HIDDEN_DIM,
             _FP8_MOE_DIM // num_devices,
         ]
-        assert list(down.scale_inv.shape) == [
+        assert list(down[0].scale_inv.shape) == [
             _NUM_EXPERTS,
             _FP8_HIDDEN_DIM // 128,
             _FP8_MOE_DIM // num_devices // 128,

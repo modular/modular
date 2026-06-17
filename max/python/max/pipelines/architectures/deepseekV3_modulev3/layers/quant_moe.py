@@ -22,6 +22,7 @@ from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental.nn import Module
 from max.experimental.nn.common_layers.functional_kernels import (
+    fused_silu,
     local_map,
     moe_create_indices,
     shard_and_stack,
@@ -38,7 +39,6 @@ from max.experimental.sharding import (
 from max.experimental.tensor import Tensor
 from max.graph import DimLike, TensorValue
 from max.nn.comm.ep import EPBatchManager
-from max.nn.comm.ep.ep_kernels import fused_silu as _ep_fused_silu
 from max.nn.quant_config import QuantConfig
 from typing_extensions import Self
 
@@ -57,7 +57,7 @@ def _mesh(target: Device | DeviceMesh | DeviceMapping) -> DeviceMesh:
     return DeviceMesh.single(target)
 
 
-def stack_experts(
+def _stack_experts(
     per_expert: list[QuantAwareTensor],
     *,
     shard_axis: int | None,
@@ -84,6 +84,32 @@ def stack_experts(
         return stacked.shard(shard_axis, mesh)
     assert isinstance(stacked, Tensor)
     return stacked.to(PlacementMapping(mesh, (Sharded(axis=shard_axis),)))
+
+
+def _local_expert_matmul(
+    tokens: Tensor,
+    gate_up: QuantAwareTensor,
+    down: QuantAwareTensor,
+    expert_start: Tensor,
+    expert_ids: Tensor,
+    usage_stats: Tensor,
+) -> Tensor:
+    """Runs local expert matmuls on dispatched tokens."""
+    gate_up_out = quant_ops.grouped_matmul(
+        tokens,
+        gate_up,
+        expert_start,
+        expert_ids,
+        usage_stats,
+    )
+    silu_out = fused_silu(gate_up_out, expert_start)
+    return quant_ops.grouped_matmul(
+        silu_out,
+        down,
+        expert_start,
+        expert_ids,
+        usage_stats,
+    )
 
 
 class QuantizedMoE(Module[[Tensor], Tensor]):
@@ -151,7 +177,7 @@ class QuantizedMoE(Module[[Tensor], Tensor]):
                 )
             )
         return [
-            stack_experts(
+            _stack_experts(
                 per_expert,
                 shard_axis=None,
                 mesh=DeviceMesh.single(self.device),
@@ -166,63 +192,38 @@ class QuantizedMoE(Module[[Tensor], Tensor]):
             assert isinstance(expert, QuantizedMLP)
             per_expert.append(expert.down_proj.weight)
         return [
-            stack_experts(
+            _stack_experts(
                 per_expert,
                 shard_axis=None,
                 mesh=DeviceMesh.single(self.device),
             )
         ]
 
-    def _local_expert_matmul(
-        self,
-        tokens: Tensor,
-        gate_up: QuantAwareTensor,
-        down: QuantAwareTensor,
-        expert_start: Tensor,
-        expert_ids: Tensor,
-        usage_stats: Tensor,
-    ) -> Tensor:
-        """Runs local expert matmuls on dispatched tokens."""
-        usage_cpu = usage_stats.to(CPU())
-
-        gate_up_out = quant_ops.grouped_matmul(
-            tokens,
-            gate_up,
-            expert_start,
-            expert_ids,
-            usage_cpu,
-        )
-        silu_out = Tensor.from_graph_value(
-            _ep_fused_silu(TensorValue(gate_up_out), TensorValue(expert_start))
-        )
-        return quant_ops.grouped_matmul(
-            silu_out,
-            down,
-            expert_start,
-            expert_ids,
-            usage_cpu,
-        )
-
-    def _local_routed_output(
+    def apply_experts(
         self,
         permuted_states: Tensor,
-        gate_up: QuantAwareTensor,
-        down: QuantAwareTensor,
-        expert_start: Tensor,
+        gate_up: QuantAwareTensor | list[QuantAwareTensor],
+        down: QuantAwareTensor | list[QuantAwareTensor],
+        expert_start_indices: Tensor,
         expert_ids: Tensor,
-        usage_stats: Tensor,
+        expert_usage_stats: Tensor,
         restore_token_order: Tensor,
         router_weight: Tensor,
-        dtype: DType,
     ) -> Tensor:
         """Compute a single-device output for the routed experts."""
-        down_projs = self._local_expert_matmul(
+        if isinstance(gate_up, list):
+            gate_up = gate_up[0]
+        if isinstance(down, list):
+            down = down[0]
+        dtype = permuted_states.dtype
+
+        down_projs = _local_expert_matmul(
             permuted_states,
             gate_up,
             down,
-            expert_start,
+            expert_start_indices,
             expert_ids,
-            usage_stats,
+            expert_usage_stats,
         )
 
         # Restore the original token order and weight-combine the per-token
@@ -236,14 +237,6 @@ class QuantizedMoE(Module[[Tensor], Tensor]):
             return F.squeeze(out, axis=1).cast(dtype)
         out = down_projs.transpose(1, 2)
         return F.squeeze(F.sum(out, axis=2), axis=2).cast(dtype)
-
-    def _routed_output_mapping(self, permuted_states: Tensor) -> DeviceMapping:
-        """Placement of the routed output.
-
-        This function is overridden by `TensorParallelMoE` to return a `Partial`
-        mapping.
-        """
-        return permuted_states.mapping
 
     def forward(self, x: Tensor) -> Tensor:
         """Forward pass for the MoE layer.
@@ -280,30 +273,21 @@ class QuantizedMoE(Module[[Tensor], Tensor]):
                 router_weight.reshape([-1, 1]), token_expert_order, axis=0
             ).cast(x.dtype)
 
-        # Apply the expert matmuls per device, then reassemble.
-        # Note: Using `local_map` to run the local experts is not needed for
-        # `QuantizedMoE`, but is used in `TensorParallelMoE` to run the sharded
-        # experts separately across devices.
-        out = local_map(
-            self._local_routed_output,
-            {
-                "permuted_states": permuted_states,
-                "gate_up": self.gate_up_proj,
-                "down": self.down_proj,
-                "expert_start": expert_start_indices,
-                "expert_ids": expert_ids,
-                "usage_stats": expert_usage_stats,
-                "restore_token_order": restore_token_order,
-                "router_weight": router_weight,
-            },
-            {"dtype": x.dtype},
+        expert_usage_stats = expert_usage_stats.to(CPU())
+
+        routed_expert_out = self.apply_experts(
+            permuted_states,
+            self.gate_up_proj,
+            self.down_proj,
+            expert_start_indices,
+            expert_ids,
+            expert_usage_stats,
+            restore_token_order,
+            router_weight,
         )
-        routed_expert_out = Tensor.from_shard_values(
-            [TensorValue(s) for s in out],
-            mapping=self._routed_output_mapping(permuted_states),
-        )
+
         if self.shared_experts is not None:
-            routed_expert_out = routed_expert_out + self.shared_experts(x)
+            routed_expert_out += self.shared_experts(x)
         return routed_expert_out
 
 
@@ -400,13 +384,42 @@ class TensorParallelMoE(QuantizedMoE):
             assert isinstance(e, QuantizedMLP)
             down_list.append(e.down_proj.weight)
 
-        distributed = stack_experts(down_list, shard_axis=-1, mesh=self.mesh)
+        distributed = _stack_experts(down_list, shard_axis=-1, mesh=self.mesh)
         return list(distributed.local_shards)
 
-    def _routed_output_mapping(self, permuted_states: Tensor) -> DeviceMapping:
-        if self.mesh.num_devices == 1:
-            return super()._routed_output_mapping(permuted_states)
-        return PlacementMapping(self.mesh, (Partial(),))
+    def apply_experts(
+        self,
+        permuted_states: Tensor,
+        gate_up: QuantAwareTensor | list[QuantAwareTensor],
+        down: QuantAwareTensor | list[QuantAwareTensor],
+        expert_start_indices: Tensor,
+        expert_ids: Tensor,
+        expert_usage_stats: Tensor,
+        restore_token_order: Tensor,
+        router_weight: Tensor,
+    ) -> Tensor:
+        """Compute a single-device output for the routed experts."""
+        assert isinstance(gate_up, list)
+        assert isinstance(down, list)
+        out = local_map(
+            super().apply_experts,
+            {
+                "permuted_states": permuted_states,
+                "gate_up": self.gate_up_proj,
+                "down": self.down_proj,
+                "expert_start_indices": expert_start_indices,
+                "expert_ids": expert_ids,
+                "expert_usage_stats": expert_usage_stats,
+                "restore_token_order": restore_token_order,
+                "router_weight": router_weight,
+            },
+            {},
+        )
+        out_tensor = Tensor.from_shard_values(
+            [TensorValue(s) for s in out],
+            mapping=PlacementMapping(self.mesh, (Partial(),)),
+        )
+        return out_tensor
 
 
 class ExpertParallelMoE(QuantizedMoE):
@@ -461,23 +474,13 @@ class ExpertParallelMoE(QuantizedMoE):
         ]
 
         config = self.ep_batch_manager.config
-        if config.fused_shared_expert:
-            assert self.shared_experts is not None, (
-                "Shared experts must be present if fused shared expert is "
-                "enabled"
-            )
-            if quant_ops.is_block_quantized(self.quant_config):
-                raise NotImplementedError(
-                    "fused_shared_expert is not yet supported with FP8 expert "
-                    "parallelism"
-                )
+        if config.fused_shared_expert and self.shared_experts is not None:
+            gate_w = self.shared_experts.gate_proj.weight
+            up_w = self.shared_experts.up_proj.weight
             for i in range(self.mesh.num_devices):
-                gate_w = self.shared_experts.gate_proj.weight
-                up_w = self.shared_experts.up_proj.weight
-                assert isinstance(gate_w, Tensor) and isinstance(up_w, Tensor)
                 per_device[i].append(
-                    F.concat(
-                        [gate_w.local_shards[i], up_w.local_shards[i]], axis=0
+                    quant_ops.concat_weights(
+                        gate_w.local_shards[i], up_w.local_shards[i], axis=0
                     )
                 )
 
@@ -546,8 +549,10 @@ class ExpertParallelMoE(QuantizedMoE):
             [Tensor.from_graph_value(v) for v in column]
             for column in zip(*dispatch_results, strict=True)
         )
+        for stat in usage_stats:
+            assert stat.device.is_host
         down_bundle = local_map(
-            self._local_expert_matmul,
+            _local_expert_matmul,
             {
                 "tokens": tokens,
                 "gate_up": self.gate_up_proj,

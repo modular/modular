@@ -20,7 +20,12 @@ from typing import TypeGuard
 
 from max.dtype import DType
 from max.experimental.nn import Module
-from max.experimental.sharding import DeviceMesh, PlacementMapping, Sharded
+from max.experimental.sharding import (
+    DeviceMapping,
+    DeviceMesh,
+    PlacementMapping,
+    Sharded,
+)
 from max.experimental.tensor import Tensor
 
 
@@ -118,6 +123,19 @@ class FP8BlockTensor(QTensor):
             )
             for i in range(self.data.num_shards)
         )
+
+    @property
+    def mesh(self) -> DeviceMesh:
+        return self.data.mesh
+
+    @property
+    def _mapping(self) -> DeviceMapping:
+        return self.data.mapping
+
+    @_mapping.setter
+    def _mapping(self, mapping: DeviceMapping) -> None:
+        self.data._mapping = mapping
+        self.scale_inv._mapping = mapping
 
 
 def all_fp8_block(

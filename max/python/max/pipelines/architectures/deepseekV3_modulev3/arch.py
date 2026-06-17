@@ -35,7 +35,7 @@ deepseekV3_modulev3_arch = SupportedArchitecture(
         "bfloat16",
         "float8_e4m3fn",
     },
-    multi_gpu_supported=False,
+    multi_gpu_supported=True,
     pipeline_model=DeepseekV3Model,
     tokenizer=TextTokenizer,
     context_type=TextContext,
