@@ -73,7 +73,7 @@ struct StaticTuple[element_type: _StaticTupleTraits, size: Int](
     """
 
     comptime _mlir_type = __mlir_type[
-        `!pop.array<`, Self.size._int_mlir_index(), `, `, Self.element_type, `>`
+        `!pop.array<`, Self.size.__mlir_index__(), `, `, Self.element_type, `>`
     ]
 
     comptime _DeviceElementType: _StaticTupleTraits = ConditionalType[
@@ -149,7 +149,7 @@ struct StaticTuple[element_type: _StaticTupleTraits, size: Int](
         self._mlir_value = __mlir_op.`pop.array.repeat`[
             _type=__mlir_type[
                 `!pop.array<`,
-                Self.size._int_mlir_index(),
+                Self.size.__mlir_index__(),
                 `, `,
                 Self.element_type,
                 `>`,
@@ -244,14 +244,14 @@ struct StaticTuple[element_type: _StaticTupleTraits, size: Int](
         comptime assert index < Self.size
         var val = __mlir_op.`pop.array.get`[
             _type=Self.element_type,
-            index=index._int_mlir_index(),
+            index=index.__mlir_index__(),
         ](self._mlir_value)
         return val
 
     @always_inline("nodebug")
     def _unsafe_ref(ref self, idx: Int) -> ref[self] Self.element_type:
         var ptr = __mlir_op.`pop.array.gep`(
-            UnsafePointer(to=self._mlir_value).address, idx._int_mlir_index()
+            UnsafePointer(to=self._mlir_value).address, idx.__mlir_index__()
         )
         return UnsafePointer[origin=origin_of(self)](ptr)[]
 
@@ -273,12 +273,12 @@ struct StaticTuple[element_type: _StaticTupleTraits, size: Int](
         var array = __mlir_op.`pop.array.replace`[
             _type=__mlir_type[
                 `!pop.array<`,
-                Self.size._int_mlir_index(),
+                Self.size.__mlir_index__(),
                 `, `,
                 Self.element_type,
                 `>`,
             ],
-            index=idx._int_mlir_index(),
+            index=idx.__mlir_index__(),
         ](val, self._mlir_value)
 
         return Self(mlir_value=array)

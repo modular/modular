@@ -130,7 +130,6 @@ class DPBatchPadder:
         padded_inputs: TextGenerationInputs[TextGenerationContextType] = (
             TextGenerationInputs(
                 batches=padded_batches,
-                num_steps=inputs.num_steps,
             )
         )
         # __post_init__ infers batch_type from contexts; override to

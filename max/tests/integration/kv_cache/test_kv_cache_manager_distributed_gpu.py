@@ -124,9 +124,7 @@ def test_step() -> None:
     # Update these values a few times
     for j in range(3):
         for i, ctx in enumerate(batch):
-            kv_manager.alloc(
-                ctx, replica_idx=i % data_parallel_degree, num_steps=1
-            )
+            kv_manager.alloc(ctx, replica_idx=i % data_parallel_degree)
         kv_manager.runtime_inputs(batches_by_replica)
         for ctx in batch:
             ctx.update(42)
@@ -349,7 +347,7 @@ def test_runtime_inputs_mha_primary_mla_secondary_matches_graph() -> None:
 
     context = create_text_context(np.empty(4))
     manager.claim(context.request_id, replica_idx=0)
-    manager.alloc(context, replica_idx=0, num_steps=1)
+    manager.alloc(context, replica_idx=0)
 
     kv_cache_inputs = manager.runtime_inputs([[context]])
     assert isinstance(kv_cache_inputs, MultiKVCacheInputs)

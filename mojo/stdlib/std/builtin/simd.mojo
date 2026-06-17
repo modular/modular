@@ -968,7 +968,7 @@ struct SIMD[dtype: DType, size: SIMDSize](
         """
         return Scalar[Self.dtype](
             mlir_value=__mlir_op.`pop.simd.extractelement`(
-                self._mlir_value, idx._int_mlir_index()
+                self._mlir_value, idx.__mlir_index__()
             )
         )
 
@@ -981,7 +981,7 @@ struct SIMD[dtype: DType, size: SIMDSize](
             val: The value to set.
         """
         self._mlir_value = __mlir_op.`pop.simd.insertelement`(
-            self._mlir_value, val._mlir_value, idx._int_mlir_index()
+            self._mlir_value, val._mlir_value, idx.__mlir_index__()
         )
 
     def __contains__(self, value: Scalar[Self.dtype]) -> Bool:
@@ -1959,14 +1959,6 @@ struct SIMD[dtype: DType, size: SIMDSize](
             __mlir_op.`pop.cast`[
                 _type=SIMD[DType.int, 1]._mlir_type, fast=__mlir_attr.unit
             ](rebind[SIMD[Self.dtype, SIMDSize(1)]](self)._mlir_value)
-        )
-
-    # NOTE: this is no longer needed.
-    @always_inline("builtin")
-    def _int_mlir_index(self: Int) -> __mlir_type.index:
-        comptime assert Self.dtype == DType.int and Self.size == SIMDSize(1)
-        return __mlir_op.`pop.cast_to_builtin`[_type=__mlir_type.index](
-            self._mlir_value
         )
 
     @always_inline("nodebug")

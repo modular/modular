@@ -90,6 +90,7 @@
             "max/develop/model-bringup-workflow",
             "max/develop/read-model-config",
             "max/develop/pipelines",
+            "max/develop/logit-comparison",
             "max/graph/quantize"
           ]
         },
@@ -416,6 +417,7 @@
                 "max/api/python/pipelines.architectures.deepseekV3_2",
                 "max/api/python/pipelines.architectures.deepseekV3_nextn",
                 "max/api/python/pipelines.architectures.dflash_llama3",
+                "max/api/python/pipelines.architectures.diffusion_gemma",
                 "max/api/python/pipelines.architectures.eagle3_deepseekV3",
                 "max/api/python/pipelines.architectures.eagle_llama3",
                 "max/api/python/pipelines.architectures.exaone",

@@ -33,11 +33,15 @@ from dataclasses import dataclass, field
 from enum import Enum
 from functools import cached_property
 from typing import (
+    TYPE_CHECKING,
     Any,
     Generic,
     Literal,
     TypedDict,
 )
+
+if TYPE_CHECKING:
+    from PIL.Image import Image as PILImage
 
 from max.pipelines.context import (
     SamplingParams,
@@ -320,6 +324,16 @@ class TextGenerationRequest:
     A list of video byte arrays that can be included as part of the request.
     Each video is decoded into frames during preprocessing.
     """
+    decoded_images: list[PILImage] = field(default_factory=list)
+    """
+    Decoded ``PIL.Image`` objects corresponding 1:1 to :attr:`images`, decoded
+    once at request admission (the API server validates images by fully
+    decoding them, so the decoded result is carried here to avoid a second
+    decode in the tokenizer). API-process-only: this is never serialized across
+    the worker boundary, so it must stay populated only for the in-process
+    tokenization step. Empty when images were not pre-decoded (offline/test
+    callers); tokenizers fall back to decoding :attr:`images` in that case.
+    """
     tools: list[TextGenerationRequestTool] | None = None
     """
     A list of tools that can be invoked during the generation process. This
@@ -379,6 +393,17 @@ class TextGenerationRequest:
 
     def __str__(self) -> str:
         return str(self.request_id)
+
+    def images_for_processing(self) -> list[bytes | PILImage]:
+        """Return the images for tokenizer preprocessing, decoded once.
+
+        Prefers the pre-decoded :attr:`decoded_images` (decoded and validated
+        once at the API server) and falls back to the raw :attr:`images` bytes
+        for offline and test callers. Tokenizers consume images through this so
+        the decode-once policy lives in one place rather than being repeated at
+        every per-model decode site.
+        """
+        return self.decoded_images or self.images
 
     def __post_init__(self) -> None:
         """Validates mutual exclusivity, image-messaging constraints, and message-image consistency after object initialization."""
@@ -460,12 +485,7 @@ class BatchType(Enum):
 
 @dataclass(eq=True)
 class TextGenerationInputs(PipelineInputs, Generic[TextGenerationContextType]):
-    """Input parameters for text generation pipeline operations.
-
-    This class encapsulates the batch of contexts and number of steps required
-    for token generation in a single input object, replacing the previous
-    pattern of passing batch and num_steps as separate parameters.
-    """
+    """Input parameters for text generation pipeline operations."""
 
     batches: list[list[TextGenerationContextType]]
     """Variable list of batches, with each batch being a list of contexts.
@@ -473,9 +493,6 @@ class TextGenerationInputs(PipelineInputs, Generic[TextGenerationContextType]):
     There can be multiple batches when using data parallelism, in which each
     batch is mapped to a different device replica.
     """
-
-    num_steps: int
-    """Number of steps to run for."""
 
     input_tokens: int = -1
     """Number of input tokens."""
@@ -508,7 +525,6 @@ class TextGenerationInputs(PipelineInputs, Generic[TextGenerationContextType]):
         return (
             "TextGenerationInputs("
             f"batch_size={len(self.flat_batch)}, "
-            f"num_steps={self.num_steps}, "
             f"batch_type={self.batch_type.value}"
             ")"
         )

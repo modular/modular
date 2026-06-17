@@ -15,6 +15,8 @@ from std.compile import compile_info
 from std.ffi import external_call
 from std.memory import UnsafeMaybeUninit
 from std.sys import align_of, size_of
+from std.sys.intrinsics import _type_is_eq
+import std.memory.alloc
 
 from test_utils import (
     ExplicitCopyOnly,
@@ -680,6 +682,43 @@ def test_optional_unsafe_pointer_llvm_lowering() raises:
             return
 
     raise Error("did not find _test_lower function")
+
+
+def test_alloc_free_single_zst() raises:
+    comptime ZST = InlineArray[Int, 0]
+    comptime assert (
+        size_of[ZST]() == 0
+    ), "Please find a ZST to use for this test."
+
+    var layout = std.memory.alloc.Layout[ZST](count=1)
+    var ptr = alloc(layout).unsafe_leak()
+
+    assert_equal(0, len(ptr[0]))  # dereference the pointer
+
+    std.memory.alloc.dealloc(
+        std.memory.alloc.ThinAllocation(
+            unsafe_assume_ownership=ptr
+        ).unsafe_with_layout(layout)
+    )
+
+
+def test_alloc_free_many_zst() raises:
+    comptime ZST = InlineArray[Int, 0]
+    comptime assert (
+        size_of[ZST]() == 0
+    ), "Please find a ZST to use for this test."
+
+    var layout = std.memory.alloc.Layout[ZST](count=Int.MAX)
+    var ptr = alloc(layout).unsafe_leak()
+
+    assert_equal(0, len(ptr[0]))  # dereference the pointer
+    assert_equal(0, len(ptr[Int.MAX]))
+
+    std.memory.alloc.dealloc(
+        std.memory.alloc.ThinAllocation(
+            unsafe_assume_ownership=ptr
+        ).unsafe_with_layout(layout)
+    )
 
 
 def main() raises:

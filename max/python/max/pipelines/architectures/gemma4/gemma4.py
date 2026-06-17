@@ -110,7 +110,7 @@ class Gemma4TextModel(DistributedLogitsPostprocessMixin, Module):
         # keyed by layer-type name ("sliding_attention" / "full_attention").
         assert isinstance(config.kv_params, MultiKVCacheParams)
         kv_params_by_layer_type: dict[str, KVCacheParams] = {}
-        for _k, _p in config.kv_params.params.items():
+        for _k, _p in config.kv_params.children.items():
             assert isinstance(_p, KVCacheParams)
             kv_params_by_layer_type[_k] = _p
 
@@ -238,6 +238,9 @@ class Gemma4TextModel(DistributedLogitsPostprocessMixin, Module):
         self.layers = LayerList(layers)
         self.kv_params = config.kv_params
         self.return_logits = text_config.return_logits
+        # Final logit softcapping: matches the reference and bounds logits to
+        # (-cap, cap), keeping them finite under float16.
+        self.logit_softcapping = text_config.final_logit_softcapping
 
     def __call__(
         self,

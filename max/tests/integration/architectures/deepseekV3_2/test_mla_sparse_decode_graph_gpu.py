@@ -662,8 +662,8 @@ def test_mla_decode_graph_sparse_multi_step_smoke() -> None:
     kv_manager.claim(context.request_id, replica_idx=0)
     batch = [context]
 
-    kv_manager.alloc(context, replica_idx=0, num_steps=prefill_len)
-    kv_ri_pref = kv_manager.runtime_inputs([batch], num_steps=prefill_len)
+    kv_manager.alloc(context, replica_idx=0)
+    kv_ri_pref = kv_manager.runtime_inputs([batch])
     assert isinstance(kv_ri_pref, MultiKVCacheInputs)
     mla_pref = kv_ri_pref.children["mla"]
     idx_pref = kv_ri_pref.children["indexer"]
@@ -685,8 +685,8 @@ def test_mla_decode_graph_sparse_multi_step_smoke() -> None:
         context.update(42)
     kv_manager.step([batch])
 
-    kv_manager.alloc(context, replica_idx=0, num_steps=1)
-    kv_ri_dec = kv_manager.runtime_inputs([batch], num_steps=1)
+    kv_manager.alloc(context, replica_idx=0)
+    kv_ri_dec = kv_manager.runtime_inputs([batch])
     assert isinstance(kv_ri_dec, MultiKVCacheInputs)
     mla_dec = kv_ri_dec.children["mla"]
     idx_dec = kv_ri_dec.children["indexer"]

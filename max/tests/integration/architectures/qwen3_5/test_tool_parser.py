@@ -261,9 +261,9 @@ def test_parse_delta_partial_tag_held_back() -> None:
     assert len(out1) == 1
     assert out1[0].content == "hello "
 
+    # parse_delta should accumulate tokens; return [] to indicate parser is actively buffering and raw tokens shouldn't be used yet.
     out2 = parser.parse_delta("<tool_")
-    # Held back as it could become <tool_call>.
-    assert out2 is None
+    assert out2 == []
 
     out3 = parser.parse_delta(
         "call>\n<function=fn>\n<parameter=k>\nv\n</parameter>\n"

@@ -528,9 +528,10 @@ class Qwen3VLTokenizer(TextAndVisionTokenizer):
         # Step 2: Load and process images
         image_inputs = None
         if request.images:
+            # _load_image accepts both a PIL.Image and raw bytes.
             image_inputs = [
-                _load_image({"image": image_data})
-                for image_data in request.images
+                _load_image({"image": image})
+                for image in request.images_for_processing()
             ]
 
         # Check for BOS token BEFORE image expansion

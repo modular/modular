@@ -15,7 +15,6 @@
 
 from __future__ import annotations
 
-import io
 import json
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
@@ -29,6 +28,7 @@ from max.pipelines.context import (
 )
 from max.pipelines.context.exceptions import PromptTooLongError
 from max.pipelines.lib import TextAndVisionTokenizer
+from max.pipelines.lib.tokenizer import open_image
 from max.pipelines.modeling.types import (
     ImageContentPart,
     TextContentPart,
@@ -37,7 +37,6 @@ from max.pipelines.modeling.types import (
     TextGenerationRequestTool,
 )
 from max.support.image import find_contiguous_ranges, hash_image
-from PIL import Image
 from PIL.Image import Image as ImageType
 from transformers import AutoProcessor, AutoTokenizer
 
@@ -190,12 +189,13 @@ class Idefics3Tokenizer(TextAndVisionTokenizer):
         else:
             raise ValueError(f"{request} does not provide messages or prompt.")
 
-        # Convert image bytes to PIL Image objects.
+        # Convert image bytes to PIL Image objects (open_image reuses the
+        # API server's decode-once result, or decodes raw bytes as a fallback).
         if request.images:
             images = []
-            for image_bytes in request.images:
+            for image in request.images_for_processing():
                 try:
-                    img: ImageType = Image.open(io.BytesIO(image_bytes))
+                    img: ImageType = open_image(image)
                     # Ensure image is in RGB format to avoid channel format issues
                     if img.mode != "RGB":
                         img = img.convert("RGB")

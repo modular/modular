@@ -465,6 +465,9 @@ struct MXFP4MoERoutedMatmul[
         Int32(MXFP4MoERoutedMatmul[].num_threads)
     )
 )
+@__name(
+    t"mxfp4_moe_routed_{out_dtype}_BM{BM}_BN{BN}_BK{BK_ELEMS}_N{N}_KS{K_SCALES}_topk{topk}"
+)
 def _mxfp4_moe_matmul_routed_kernel[
     out_dtype: DType,
     CLayout: TensorLayout,

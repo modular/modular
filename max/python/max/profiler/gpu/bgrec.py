@@ -39,8 +39,8 @@ if sys.version_info >= (3, 11):
 else:
     from taskgroup import TaskGroup
 
-from ._multi import GPUDiagContext
-from ._types import GPUStats
+from .multi import GPUDiagContext
+from .types import GPUStats
 
 _T = TypeVar("_T")
 
@@ -413,6 +413,14 @@ class _KeepableTempFile(io.RawIOBase, BinaryIO):
 
 
 async def recorder_async_main() -> None:
+    """Runs the background GPU diagnostics recorder event loop.
+
+    Expects the sampling interval in seconds as ``sys.argv[1]``. Communicates
+    with the parent process over ``stdin`` and ``stdout`` using msgspec-encoded
+    requests and replies, samples GPU statistics at the configured interval,
+    and writes JSON snapshots to a temporary file until a stop request is
+    received.
+    """
     interval = float(sys.argv[1])
     inch = _InputChannel(sys.stdin.buffer, _AllRequests)
     outch = _OutputChannel[_AllReplies | _AllNotifications](sys.stdout.buffer)
@@ -462,6 +470,7 @@ async def recorder_async_main() -> None:
 
 
 def recorder_main() -> None:
+    """Starts the background GPU diagnostics recorder subprocess."""
     try:
         asyncio.run(recorder_async_main())
     except KeyboardInterrupt:
