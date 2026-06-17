@@ -133,6 +133,14 @@ def _blackwell_matmul_tma_umma_warp_specialized[
             MMA_M == 128 or MMA_M == 64
         ), "Only support MMA_M == 128 or 64 when cta_group == 1"
 
+    comptime if c_type == DType.float32:
+        comptime assert (
+            a_type == b_type == DType.float32
+        ), "Only support float32 input types is tested for float32 output dtype"
+        comptime assert (
+            register_based_epilogue
+        ), "only register-based epilogue is supported for float32 output dtype"
+
     # requirements for float8_e4m3fn output dtype
     comptime if c_type == DType.float8_e4m3fn:
         comptime assert a_type == b_type == DType.bfloat16, (
