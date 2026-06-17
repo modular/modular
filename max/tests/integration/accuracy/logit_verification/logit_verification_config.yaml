@@ -786,6 +786,21 @@ logit_verification_pipelines:
     kl_div_threshold: 5.0e+00
     timeout: 1800
 
+  nvidia/Kimi-K2.6-NVFP4:
+    pre_submit_agents: []
+    pipeline: "nvidia/Kimi-K2.6-NVFP4"
+    compatible_with: [gpu]
+    encoding: float4_e2m1fnx2
+    tags: [nvidia-multi, 8xb200]
+    pregenerated_torch_goldens:
+      tar_file: "s3://modular-bazel-artifacts-public/artifacts/nvidia_Kimi-K2.6-NVFP4_golden/1/2c622ad15c9b307bc2b02493c65479ef192232b546a46ec528df0d8b02c672f6/nvidia_Kimi-K2.6-NVFP4_golden.tar.gz"
+      json_file: "vllm_nvidia_Kimi-K2.6-NVFP4_float4_e2m1fnx2_golden.json"
+    absolute_tolerance: 5.2e+00
+    relative_tolerance: 1.7e-01
+    cos_dist_threshold: 1.0e-03
+    kl_div_threshold: 5.0e-02
+    timeout: 1800
+
   amd/Kimi-K2.5-MXFP4:
     pre_submit_agents: []
     pipeline: "amd/Kimi-K2.5-MXFP4"
