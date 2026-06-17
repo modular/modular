@@ -41,7 +41,9 @@ from layout.tile_layout import (
     Layout,
     blocked_product,
     col_major,
+    col_major_nested,
     row_major,
+    row_major_nested,
     zipped_divide,
 )
 ```
@@ -50,6 +52,14 @@ from layout.tile_layout import (
 
 A layout is a function that maps a set of logical coordinates to a single linear
 index value.
+
+Mojo's layout system is modeled on the layout abstraction in
+[CuTe](https://github.com/NVIDIA/cutlass/blob/main/media/docs/cpp/cute/01_layout.md),
+part of NVIDIA's CUTLASS library. CuTe defines a small set of fundamental
+operations—composition, complement, product, and division—that combine
+algebraically into higher-level tiling operations. Mojo's `Layout` provides
+several of those higher-level operations directly, such as `blocked_product()`
+and `zipped_divide()`.
 
 For example, a layout could describe a 2x4 row-major matrix, or a 6x6
 column-major matrix.
@@ -506,6 +516,95 @@ values from the top-left corner of the base layout (0, 4, 1, 5). However, in
 this case, the tiled layout is reshaped so that each column holds a single tile
 worth of data. This layout makes it very easy to address individual tiles of
 data.
+
+## Nested layouts
+
+The tiled layouts shown above derive a nested layout from simpler ones using
+`blocked_product()` and `zipped_divide()`. You can also construct a nested
+layout directly from a nested shape using
+[`row_major_nested()`](/docs/layout/tile_layout/row_major_nested/) and
+[`col_major_nested()`](/docs/layout/tile_layout/col_major_nested/). These
+constructors compute row-major (or column-major) strides over the *flattened*
+shape, then re-nest the strides to match the input shape.
+
+Nested layouts are useful when a tensor's logical structure is itself a grid of
+fragments—for example, the per-thread register tiles consumed by GPU
+matrix-multiply instructions (NVIDIA's MMA, *matrix multiply-accumulate*, and
+AMD's MFMA, *matrix fused multiply-add*), or the outputs of `blocked_product()`.
+The outer sub of each mode indexes the grid of fragments, and the inner sub
+indexes within a fragment.
+
+For a nested shape `((a, b), (c, d))`:
+
+- `row_major_nested()` produces strides `((b*c*d, c*d), (d, 1))`.
+- `col_major_nested()` produces strides `((1, a), (a*b, a*b*c))`.
+
+The following example builds a 2x2 outer grid of 3x4 inner fragments in both
+orderings:
+
+```mojo
+# A re-nested row-major layout: a 2x2 outer grid of 3x4 inner
+# fragments. Shape ((2, 3), (2, 4)) flattens to (2, 3, 2, 4),
+# producing row-major strides (24, 8, 4, 1), re-nested as
+# ((24, 8), (4, 1)).
+var nested = row_major_nested(
+    Coord(Coord(Idx[2], Idx[3]), Coord(Idx[2], Idx[4]))
+)
+print_layout(nested.to_layout())
+
+# The column-major variant re-nests col-major strides over the same
+# flattened shape: (1, 2, 6, 12), re-nested as ((1, 2), (6, 12)).
+var nested_col = col_major_nested(
+    Coord(Coord(Idx[2], Idx[3]), Coord(Idx[2], Idx[4]))
+)
+print_layout(nested_col.to_layout())
+```
+
+Output:
+
+```plaintext
+(((2, 3), (2, 4)):((24, 8), (4, 1)))
+       0    1    2    3    4    5    6    7
+    +----+----+----+----+----+----+----+----+
+ 0  |  0 |  4 |  1 |  5 |  2 |  6 |  3 |  7 |
+    +----+----+----+----+----+----+----+----+
+ 1  | 24 | 28 | 25 | 29 | 26 | 30 | 27 | 31 |
+    +----+----+----+----+----+----+----+----+
+ 2  |  8 | 12 |  9 | 13 | 10 | 14 | 11 | 15 |
+    +----+----+----+----+----+----+----+----+
+ 3  | 32 | 36 | 33 | 37 | 34 | 38 | 35 | 39 |
+    +----+----+----+----+----+----+----+----+
+ 4  | 16 | 20 | 17 | 21 | 18 | 22 | 19 | 23 |
+    +----+----+----+----+----+----+----+----+
+ 5  | 40 | 44 | 41 | 45 | 42 | 46 | 43 | 47 |
+    +----+----+----+----+----+----+----+----+
+(((2, 3), (2, 4)):((1, 2), (6, 12)))
+       0    1    2    3    4    5    6    7
+    +----+----+----+----+----+----+----+----+
+ 0  |  0 |  6 | 12 | 18 | 24 | 30 | 36 | 42 |
+    +----+----+----+----+----+----+----+----+
+ 1  |  1 |  7 | 13 | 19 | 25 | 31 | 37 | 43 |
+    +----+----+----+----+----+----+----+----+
+ 2  |  2 |  8 | 14 | 20 | 26 | 32 | 38 | 44 |
+    +----+----+----+----+----+----+----+----+
+ 3  |  3 |  9 | 15 | 21 | 27 | 33 | 39 | 45 |
+    +----+----+----+----+----+----+----+----+
+ 4  |  4 | 10 | 16 | 22 | 28 | 34 | 40 | 46 |
+    +----+----+----+----+----+----+----+----+
+ 5  |  5 | 11 | 17 | 23 | 29 | 35 | 41 | 47 |
+    +----+----+----+----+----+----+----+----+
+```
+
+The result types are the `RowMajorNestedLayout` and `ColMajorNestedLayout`
+aliases. These constructors are currently restricted to all-static
+(compile-time) leaf dimensions and a single level of nesting. For flat shapes,
+use [`row_major()`](/docs/layout/tile_layout/row_major/) or
+[`col_major()`](/docs/layout/tile_layout/col_major/) instead.
+
+Once you have a nested layout, you can build a `TileTensor` from it and use
+`tile()` to extract individual fragments. See
+[Extracting a tile](/docs/manual/tile-tensor/tensors/#extracting-a-tile)
+in the tensors guide.
 
 ## Non-contiguous layouts
 
