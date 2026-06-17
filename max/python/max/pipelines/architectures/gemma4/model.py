@@ -223,6 +223,7 @@ class Gemma3_MultiModalModel(
             state_dict=raw_state_dict,
             return_logits=self.return_logits,
         )
+
         self.config = model_config
 
         input_row_offsets_prealloc_host = Buffer.from_numpy(
@@ -299,7 +300,8 @@ class Gemma3_MultiModalModel(
 
         image_embeddings_types = [
             TensorType(
-                DType.bfloat16,
+                # Match the vision tower's output dtype.
+                config.unquantized_dtype,
                 shape=[
                     "num_image_tokens",
                     config.text_config.hidden_size,
@@ -668,6 +670,7 @@ class Gemma3_MultiModalModel(
                 pooling_kernel_size=k,
                 ve_cache=self._ve_cache,
                 empty_embeddings=self._empty_embeddings(),
+                dtype=self.config.unquantized_dtype,
             )
         else:
             image_inputs = None
@@ -685,6 +688,7 @@ class Gemma3_MultiModalModel(
                 context_batch=context_batch,
                 devices=self.devices,
                 pooling_kernel_size=k,
+                dtype=self.config.unquantized_dtype,
             )
         else:
             video_inputs = None
@@ -706,6 +710,7 @@ class Gemma3_MultiModalModel(
             self._cached_empty_embeddings = create_empty_embeddings(
                 self.devices,
                 self.huggingface_config.text_config.hidden_size,
+                self.config.unquantized_dtype,
             )
         return self._cached_empty_embeddings
 

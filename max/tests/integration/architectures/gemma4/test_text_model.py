@@ -724,7 +724,11 @@ def test_text_model_execution_matches_torch(seq_len: int) -> None:
     with torch.no_grad():
         torch_hidden = torch_model(tokens)
     embed_w = shared_weights["embed_tokens.weight"].to(TORCH_DTYPE)
-    torch_logits = (torch_hidden @ embed_w.T).float()
+    torch_logits = torch_hidden @ embed_w.T
+    # Match the model's final logit softcapping (cap * tanh(logits / cap)),
+    # applied in the compute dtype as DistributedLogitsPostprocessMixin does.
+    cap = TEXT_FINAL_LOGIT_SOFTCAPPING
+    torch_logits = (torch.tanh(torch_logits / cap) * cap).float()
 
     # -- Build and run MAX graph --
     signals = Signals([device_ref])
@@ -752,7 +756,11 @@ def test_text_model_execution_matches_torch(seq_len: int) -> None:
             return_n_logits=return_n_logits_in,
             input_row_offsets=[row_offsets_in],
             image_embeddings=[
-                ops.constant(create_empty_embeddings([device], _EXEC_HIDDEN)[0])
+                ops.constant(
+                    create_empty_embeddings(
+                        [device], _EXEC_HIDDEN, DType.bfloat16
+                    )[0]
+                )
             ],
             image_token_indices=[
                 ops.constant(create_empty_indices([device])[0])

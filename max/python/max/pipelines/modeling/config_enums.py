@@ -40,6 +40,7 @@ PipelineRole = Literal["prefill_and_decode", "prefill_only", "decode_only"]
 
 SupportedEncoding = Literal[
     "float32",
+    "float16",
     "bfloat16",
     "q4_k",
     "q4_0",
@@ -53,6 +54,7 @@ SupportedEncoding = Literal[
 
 _SUPPORTED_ENCODING_TO_DTYPE: dict[SupportedEncoding, DType] = {
     "float32": DType.float32,
+    "float16": DType.float16,
     "bfloat16": DType.bfloat16,
     "float8_e4m3fn": DType.float8_e4m3fn,
     "float4_e2m1fnx2": DType.uint8,
@@ -66,6 +68,7 @@ _SUPPORTED_ENCODING_TO_QUANTIZATION_ENCODING: dict[
     SupportedEncoding, QuantizationEncoding | None
 ] = {
     "float32": None,
+    "float16": None,
     "bfloat16": None,
     "float8_e4m3fn": None,
     "float4_e2m1fnx2": None,
@@ -78,6 +81,7 @@ _SUPPORTED_ENCODING_TO_QUANTIZATION_ENCODING: dict[
 # Basic validation for supported devices for each type of encoding.
 _SUPPORTED_DEVICES: dict[SupportedEncoding, tuple[str, ...]] = {
     "float32": ("cpu", "gpu"),
+    "float16": ("gpu",),
     "bfloat16": ("gpu",),
     "float8_e4m3fn": ("gpu",),
     "float4_e2m1fnx2": ("gpu",),
@@ -128,7 +132,10 @@ def parse_supported_encoding_from_file_name(
     if "f32" in name or "fp32" in name or "float32" in name:
         return "float32"
     elif "bf16" in name or "bfloat16" in name:
+        # Check bf16 before f16 so "bf16" doesn't match the float16 patterns.
         return "bfloat16"
+    elif "fp16" in name or "float16" in name:
+        return "float16"
     elif "q4_k_m" in name:
         return "q4_k"
     elif "q4_0" in name:

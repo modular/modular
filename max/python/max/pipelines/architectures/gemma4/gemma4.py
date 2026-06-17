@@ -238,6 +238,9 @@ class Gemma4TextModel(DistributedLogitsPostprocessMixin, Module):
         self.layers = LayerList(layers)
         self.kv_params = config.kv_params
         self.return_logits = text_config.return_logits
+        # Final logit softcapping: matches the reference and bounds logits to
+        # (-cap, cap), keeping them finite under float16.
+        self.logit_softcapping = text_config.final_logit_softcapping
 
     def __call__(
         self,

@@ -1477,6 +1477,7 @@ class MAXModelConfig(MAXModelConfigBase):
         # Otherwise select the default KV cache dtype based on the quantization encoding.
         supported_encoding_to_cache_dtype = {
             "float32": DType.float32,
+            "float16": DType.float16,
             "bfloat16": DType.bfloat16,
             "float8_e4m3fn": DType.bfloat16,
             "float4_e2m1fnx2": DType.bfloat16,
