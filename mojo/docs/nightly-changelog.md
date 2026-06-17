@@ -70,9 +70,11 @@ This version is still a work in progress.
 
 - The `IterableOwned` conformance on `List` and `InlineArray` (consuming
   iteration via `for x in collection^`) is now conditional, requiring the
-  element type to be `Copyable & ImplicitlyDeletable`. Generic code bounded on
-  `IterableOwned` now rejects a collection of non-conforming elements at the
-  bound, rather than failing later inside `__iter__()`.
+  element type to be `Movable & ImplicitlyDeletable`. Consuming iteration moves
+  elements out of the collection rather than copying them, so it no longer
+  requires `Copyable`. Generic code bounded on `IterableOwned` now rejects a
+  collection of non-conforming elements at the bound, rather than failing later
+  inside `__iter__()`.
 
 - The implicit conversion constructors that cast an `UnsafePointer` to
   `MutUnsafeAnyOrigin` or `ImmutUnsafeAnyOrigin` are now deprecated and emit a

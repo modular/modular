@@ -97,7 +97,7 @@ struct _ListIter[
 
 
 @fieldwise_init
-struct _ListIterOwned[T: Copyable & ImplicitlyDeletable](
+struct _ListIterOwned[T: Movable & ImplicitlyDeletable](
     IterableOwned, Iterator, Movable
 ):
     """An owning iterator for List.
@@ -151,7 +151,7 @@ struct List[T: Movable](
     Hashable where conforms_to(T, Hashable),
     ImplicitlyDeletable where conforms_to(T, ImplicitlyDeletable),
     Iterable,
-    IterableOwned where conforms_to(T, Copyable & ImplicitlyDeletable),
+    IterableOwned where conforms_to(T, ImplicitlyDeletable),
     Movable,
     Sized,
     Writable where conforms_to(T, Writable),
@@ -344,7 +344,7 @@ struct List[T: Movable](
     """
 
     comptime IteratorOwnedType: Iterator = _ListIterOwned[
-        downcast[Self.T, Copyable & ImplicitlyDeletable]
+        downcast[Self.T, ImplicitlyDeletable]
     ]
     """The owned iterator type for this list."""
 
@@ -658,18 +658,14 @@ struct List[T: Movable](
 
     def __iter__(
         var self,
-    ) -> Self.IteratorOwnedType where conforms_to(
-        Self.T, Copyable & ImplicitlyDeletable
-    ):
+    ) -> Self.IteratorOwnedType where conforms_to(Self.T, ImplicitlyDeletable):
         """Consume `self`, returning an owned iterator over its elements.
 
         Returns:
             An iterator of owned elements.
         """
         return {
-            rebind_var[List[downcast[Self.T, Copyable & ImplicitlyDeletable]]](
-                self^
-            ),
+            rebind_var[List[downcast[Self.T, ImplicitlyDeletable]]](self^),
             0,
         }
 
