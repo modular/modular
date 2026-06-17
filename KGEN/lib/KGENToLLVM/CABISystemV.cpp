@@ -6,8 +6,10 @@
 
 #include "CABISystemV.h"
 #include "LLVMLoweringUtils.h"
+#include "mlir/Dialect/LLVMIR/LLVMTypes.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Diagnostics.h"
+#include "llvm/ADT/STLExtras.h"
 
 using namespace M;
 using namespace M::KGEN;
@@ -250,4 +252,94 @@ mlir::Type SystemVABIInfo::getEightbyteType(EightbyteClass eightbyteClass,
 
   // Integer class (or NoClass): use integer types
   return CabiUtils::getIntegerTypeForSize(size, ctx);
+}
+
+//===----------------------------------------------------------------------===//
+// Whole-signature classification (rollback-to-stack)
+//===----------------------------------------------------------------------===//
+
+std::pair<unsigned, unsigned>
+SystemVABIInfo::argRegisterUsage(const CoercionInfo &info,
+                                 mlir::Type llvmType) const {
+  switch (info.argClass) {
+  case ABIArgClass::Integer:
+    return {1, 0};
+  case ABIArgClass::SSE:
+    return {0, 1};
+  case ABIArgClass::IntegerPair:
+    return {2, 0};
+  case ABIArgClass::SSEPair:
+    return {0, 2};
+  case ABIArgClass::Mixed:
+    return {1, 1};
+  case ABIArgClass::Memory:
+    // Passed in memory; consumes no argument registers.
+    return {0, 0};
+  case ABIArgClass::NoClass:
+    break; // Identity arg: derive usage from the LLVM type below.
+  }
+
+  if (isa<mlir::LLVM::LLVMPointerType>(llvmType))
+    return {1, 0};
+  if (auto intTy = dyn_cast<mlir::IntegerType>(llvmType)) {
+    unsigned regs = (intTy.getWidth() + 63) / 64;
+    return {std::max(regs, 1u), 0};
+  }
+  if (auto floatTy = dyn_cast<mlir::FloatType>(llvmType)) {
+    // f32/f64 use one SSE register; wider x87/quad types are not register args.
+    if (floatTy.getWidth() <= 64)
+      return {0, 1};
+    return {0, 0};
+  }
+  if (auto vecTy = dyn_cast<mlir::VectorType>(llvmType)) {
+    unsigned bytes = dataLayout.getTypeStoreSize(vecTy);
+    unsigned regs = (bytes + 15) / 16;
+    return {0, std::max(regs, 1u)};
+  }
+
+  // pointer / integer / float / vector are handled above; an identity arg of
+  // any other type means the register accounting is incomplete. Guessing a
+  // count here would silently mis-budget and break rollback decisions.
+  assert(false && "unhandled identity argument type in register accounting");
+  return {0, 0};
+}
+
+SignatureClassification
+SystemVABIInfo::computeSignatureInfo(mlir::TypeRange argTypes,
+                                     mlir::Type retType, mlir::Location loc,
+                                     size_t numFixedArgs) const {
+  SignatureClassification result;
+  if (retType)
+    result.ret = classifyReturnType(retType, loc);
+
+  // SysV provides 6 GP and 8 SSE argument registers. An sret return reserves
+  // one GP register for the hidden result pointer.
+  unsigned freeInt = 6;
+  unsigned freeSSE = 8;
+  if (result.ret.useSRet)
+    freeInt -= 1;
+
+  result.args.reserve(argTypes.size());
+  for (auto [idx, type] : llvm::enumerate(argTypes)) {
+    bool isVariadicArg = idx >= numFixedArgs;
+    CoercionInfo info = classifyArgumentType(type, loc, isVariadicArg);
+
+    // Only fixed args take part in register accounting; variadic args keep
+    // their classification.
+    if (!isVariadicArg) {
+      auto [needInt, needSSE] = argRegisterUsage(info, type);
+      if (needInt <= freeInt && needSSE <= freeSSE) {
+        freeInt -= needInt;
+        freeSSE -= needSSE;
+      } else if (!info.isIdentity() && !info.useIndirect) {
+        // An in-register aggregate that does not fit rolls back to memory
+        // rather than being split across registers and stack.
+        info = CoercionInfo::indirectArgument(/*useByval=*/true);
+      }
+      // A scalar that does not fit stays direct; the backend places it on the
+      // stack.
+    }
+    result.args.push_back(info);
+  }
+  return result;
 }

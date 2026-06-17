@@ -9,7 +9,9 @@
 
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Location.h"
+#include "mlir/IR/TypeRange.h"
 #include "mlir/IR/Types.h"
+#include "llvm/ADT/SmallVector.h"
 #include <memory>
 
 namespace llvm {
@@ -114,6 +116,13 @@ struct CoercionInfo {
   }
 };
 
+/// ABI classification for a whole call signature: one CoercionInfo per
+/// argument plus the return value.
+struct SignatureClassification {
+  llvm::SmallVector<CoercionInfo> args;
+  CoercionInfo ret;
+};
+
 //===----------------------------------------------------------------------===//
 // Platform ABI Interface
 //===----------------------------------------------------------------------===//
@@ -129,49 +138,36 @@ class CABIInfo {
 public:
   virtual ~CABIInfo() = default;
 
-  /// Classify a type for argument passing.
+  /// Classify a whole signature at once. This is the entry point for callers.
+  /// Types must be LLVM dialect types (convert POP types first). Args at index
+  /// >= numFixedArgs are variadic (SIZE_MAX for non-variadic).
   ///
-  /// IMPORTANT: The type parameter must be an LLVM dialect type (not POP type).
-  /// Callers should convert POP types to LLVM types before classification to
-  /// ensure the ABI rules are applied to the actual LLVM layout, which may
-  /// include padding from alignment requirements.
-  ///
-  /// For struct types, applies C ABI classification rules.
-  /// For non-struct types (scalars, pointers), returns identity (no coercion).
-  ///
-  /// \param type The LLVM type to classify (LLVM::LLVMStructType, scalar, etc.)
-  /// \param loc Source location for diagnostics
-  /// \param isVariadicArg True if this is a variadic argument (...)
-  /// \return CoercionInfo describing how to pass this argument
-  ///
-  /// Note: On x86-64, variadic arguments always use stack (MEMORY class).
-  /// On ARM64, variadic arguments follow the same rules as fixed arguments.
-  virtual CoercionInfo classifyArgumentType(mlir::Type type, mlir::Location loc,
-                                            bool isVariadicArg) const = 0;
-
-  /// Classify a type for return value.
-  ///
-  /// IMPORTANT: The type parameter must be an LLVM dialect type (not POP type).
-  /// Callers should convert POP types to LLVM types before classification.
-  ///
-  /// For struct types, applies C ABI classification rules.
-  /// For non-struct types (scalars, pointers), returns identity (no coercion).
-  ///
-  /// Return values have slightly different rules than arguments:
-  /// - x86-64: RAX+RDX for two registers, sret for >16 bytes
-  /// - ARM64: X0+X1 for two registers, X8 for sret
-  ///
-  /// \param type The LLVM type to classify
-  /// \param loc Source location for diagnostics
-  /// \return CoercionInfo describing how to return this value
-  virtual CoercionInfo classifyReturnType(mlir::Type type,
-                                          mlir::Location loc) const = 0;
+  /// The base implementation classifies each argument and the return value
+  /// independently. Targets whose register assignment depends on argument
+  /// order (e.g. System V rollback-to-stack) override this to thread a
+  /// register budget across the signature.
+  virtual SignatureClassification
+  computeSignatureInfo(mlir::TypeRange argTypes, mlir::Type retType,
+                       mlir::Location loc,
+                       size_t numFixedArgs = SIZE_MAX) const;
 
   const LLVMDataLayout &getDataLayout() const { return dataLayout; }
 
 protected:
   CABIInfo(mlir::MLIRContext *ctx, const LLVMDataLayout &dataLayout)
       : ctx(ctx), dataLayout(dataLayout) {}
+
+  /// Classify a single argument type. Internal building block for
+  /// computeSignatureInfo; not safe to call on its own because it cannot apply
+  /// ordering-dependent rules such as rollback-to-stack. Type must be an LLVM
+  /// dialect type. isVariadicArg marks a variadic (...) argument.
+  virtual CoercionInfo classifyArgumentType(mlir::Type type, mlir::Location loc,
+                                            bool isVariadicArg) const = 0;
+
+  /// Classify a return type. Internal building block for computeSignatureInfo.
+  /// Type must be an LLVM dialect type.
+  virtual CoercionInfo classifyReturnType(mlir::Type type,
+                                          mlir::Location loc) const = 0;
 
   mlir::MLIRContext *ctx;
   const LLVMDataLayout &dataLayout;
@@ -191,6 +187,7 @@ public:
   DefaultCABIInfo(mlir::MLIRContext *ctx, const LLVMDataLayout &dataLayout)
       : CABIInfo(ctx, dataLayout) {}
 
+protected:
   CoercionInfo classifyArgumentType(mlir::Type type, mlir::Location loc,
                                     bool isVariadicArg) const override {
     // Pass through all types unchanged

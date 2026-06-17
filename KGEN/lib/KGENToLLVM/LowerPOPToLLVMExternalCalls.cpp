@@ -329,17 +329,14 @@ public:
     // Step 7: Create call
     LLVM::CallOp call = createLLVMCall(rewriter, loc, func, prep.callArgs);
 
-    // Add byval on call for variadic indirect args (x86-64 only).
-    // Fixed-arg byval is baked into the function declaration's argAttrs via
-    // buildLLVMArgAttrs; variadic args aren't in the signature, so they must
-    // go on the call itself.
-    if (op.getFnType().has_value()) {
-      SmallVector<Type> llvmArgTypes;
-      for (Type t : op.getOperandTypes())
-        llvmArgTypes.push_back(getTypeConverter()->convertType(t));
-      cabi.applyByvalAttrsToCall(call, argClassifications, llvmArgTypes,
-                                 usesSRet, rewriter, numFixedArgs);
-    }
+    // Mirror byval onto the call args. A direct call lowers from the call-site
+    // attributes, so the declaration attribute alone does not make the caller
+    // emit the by-memory copy. This covers both fixed and variadic args.
+    SmallVector<Type> llvmArgTypes;
+    for (Type t : op.getOperandTypes())
+      llvmArgTypes.push_back(getTypeConverter()->convertType(t));
+    cabi.applyByvalAttrsToCall(call, argClassifications, llvmArgTypes, usesSRet,
+                               rewriter, /*startArgIdx=*/0);
 
     // Step 8: Handle return value
     if (op.getResults().empty()) {

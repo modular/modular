@@ -25,54 +25,12 @@ std::unique_ptr<CABIInfo> CABICallHelper::createABIHandler() const {
   return M::KGEN::createCABIInfo(triple, ctx, dataLayout);
 }
 
-SmallVector<CoercionInfo> CABICallHelper::classifyArgs(CABIInfo *handler,
-                                                       ValueRange originalArgs,
-                                                       Location loc) const {
-  SmallVector<CoercionInfo> result;
-  for (Value arg : originalArgs) {
-    Type llvmType = tc->convertType(arg.getType());
-    result.push_back(
-        handler->classifyArgumentType(llvmType, loc, /*isVariadicArg=*/false));
-  }
-  return result;
-}
-
-SmallVector<CoercionInfo>
-CABICallHelper::classifyArgs(CABIInfo *handler, TypeRange types, Location loc,
-                             size_t numFixedArgs) const {
-  SmallVector<CoercionInfo> result;
-
-  for (auto [idx, type] : llvm::enumerate(types)) {
-    bool isVariadicArg = (idx >= numFixedArgs);
-
-    // Convert POP type to LLVM type BEFORE classification.
-    // This ensures classification uses the actual LLVM layout (with padding)
-    // that the C compiler will see, not the POP-level representation.
-    // LLVMTypeConverter::convertType caches results (via
-    // cachedDirectConversions), so repeated calls with the same type are O(1).
-    Type llvmType = tc->convertType(type);
-    auto coercion = handler->classifyArgumentType(llvmType, loc, isVariadicArg);
-    result.push_back(coercion);
-  }
-
-  return result;
-}
-
-CoercionInfo CABICallHelper::classifyReturn(CABIInfo *handler, Type retTy,
-                                            Location loc) const {
-  if (!retTy || !handler)
-    return CoercionInfo{}; // Identity
-
-  // Convert POP type to LLVM type BEFORE classification
-  Type llvmType = tc->convertType(retTy);
-  return handler->classifyReturnType(llvmType, loc);
-}
-
 std::pair<LLVMFunctionType, bool>
-CABICallHelper::buildFunctionType(ArrayRef<CoercionInfo> argClass,
-                                  const CoercionInfo &retClass,
+CABICallHelper::buildFunctionType(const SignatureClassification &sigClass,
                                   ValueRange originalArgs, Type origRetTy,
                                   size_t numFixedArgs, bool isVariadic) const {
+  ArrayRef<CoercionInfo> argClass = sigClass.args;
+  const CoercionInfo &retClass = sigClass.ret;
   SmallVector<Type> paramTypes;
   Type resultType;
   bool usesSRet = retClass.useSRet;
@@ -311,16 +269,25 @@ CABICallPrep CABICallHelper::prepareCall(TypeRange argTypes,
                                          size_t numFixedArgs,
                                          bool isVariadic) const {
   auto handler = createABIHandler();
-  auto argClass = classifyArgs(handler.get(), argTypes, loc, numFixedArgs);
-  CoercionInfo retClass;
-  if (origRetTy)
-    retClass = classifyReturn(handler.get(), origRetTy, loc);
-  auto [sig, usesSRet] = buildFunctionType(argClass, retClass, argValues,
-                                           origRetTy, numFixedArgs, isVariadic);
-  auto [callArgs, sretPtr] =
-      buildCallArgs(argClass, retClass, argValues, origRetTy, loc, rewriter);
-  return {sig,     std::move(argClass), retClass, std::move(callArgs), sretPtr,
-          usesSRet};
+
+  // Classification runs on LLVM types so register/layout rules see the same
+  // shape the C compiler does.
+  SmallVector<Type> llvmArgTypes;
+  llvmArgTypes.reserve(argTypes.size());
+  for (Type t : argTypes)
+    llvmArgTypes.push_back(tc->convertType(t));
+  Type llvmRetTy = origRetTy ? tc->convertType(origRetTy) : Type();
+
+  SignatureClassification sigClass =
+      handler->computeSignatureInfo(llvmArgTypes, llvmRetTy, loc, numFixedArgs);
+
+  auto [sig, usesSRet] = buildFunctionType(sigClass, argValues, origRetTy,
+                                           numFixedArgs, isVariadic);
+  auto [callArgs, sretPtr] = buildCallArgs(sigClass.args, sigClass.ret,
+                                           argValues, origRetTy, loc, rewriter);
+  return {sig,          std::move(sigClass.args),
+          sigClass.ret, std::move(callArgs),
+          sretPtr,      usesSRet};
 }
 
 void CABICallHelper::applySRetAttrIfNeeded(CallOp call, Type origRetTy,

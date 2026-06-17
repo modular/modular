@@ -75,33 +75,14 @@ struct CABICallHelper {
   /// is disabled or the platform is unsupported.
   std::unique_ptr<CABIInfo> createABIHandler() const;
 
-  /// Classify arguments from Values (uses LLVM-level types for accurate
-  /// layout).
-  llvm::SmallVector<CoercionInfo> classifyArgs(CABIInfo *handler,
-                                               mlir::ValueRange originalArgs,
-                                               mlir::Location loc) const;
-
-  /// Classify arguments from a TypeRange. Args at index >= numFixedArgs are
-  /// treated as variadic. Pass SIZE_MAX (the default) for non-variadic calls.
-  llvm::SmallVector<CoercionInfo>
-  classifyArgs(CABIInfo *handler, mlir::TypeRange types, mlir::Location loc,
-               size_t numFixedArgs = SIZE_MAX) const;
-
-  /// Classify the return value according to C ABI rules.
-  /// Converts POP type to LLVM type first to ensure classification uses
-  /// the actual LLVM layout. Returns identity (NoClass) for non-ABI path.
-  CoercionInfo classifyReturn(CABIInfo *handler, mlir::Type retTy,
-                              mlir::Location loc) const;
-
   /// Build LLVM function type with C ABI type coercion applied.
   /// Returns the function type and whether sret is used.
   /// For variadic functions, only fixed parameters are included in the
   /// function type.
   std::pair<mlir::LLVM::LLVMFunctionType, bool>
-  buildFunctionType(llvm::ArrayRef<CoercionInfo> argClass,
-                    const CoercionInfo &retClass, mlir::ValueRange originalArgs,
-                    mlir::Type origRetTy, size_t numFixedArgs,
-                    bool isVariadic) const;
+  buildFunctionType(const SignatureClassification &sigClass,
+                    mlir::ValueRange originalArgs, mlir::Type origRetTy,
+                    size_t numFixedArgs, bool isVariadic) const;
 
   /// Create an alloca in the entry block of the enclosing function.
   /// This ensures stack allocations don't grow unboundedly when the

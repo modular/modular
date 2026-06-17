@@ -34,6 +34,7 @@ public:
   AAPCSABIInfo(mlir::MLIRContext *ctx, const LLVMDataLayout &dataLayout,
                bool isDarwinOS);
 
+protected:
   CoercionInfo classifyArgumentType(mlir::Type type, mlir::Location loc,
                                     bool isVariadicArg) const override;
 
