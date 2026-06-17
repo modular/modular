@@ -125,7 +125,8 @@ class ToolArgumentsJsonStability(BaseScenario):
         "Repeated identical forced tool_choice requests; every tool "
         "call arguments string must be valid JSON"
     )
-    tags = ["tools", "function_calling", "json", "flaky"]
+    tags = ["validation", "tools", "function_calling", "json", "flaky"]
+    scenario_type = "validation"
 
     async def run(
         self, client: FuzzClient, config: RunConfig

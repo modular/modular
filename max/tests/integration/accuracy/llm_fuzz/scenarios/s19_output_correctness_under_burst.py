@@ -527,8 +527,8 @@ def _summarize_error_types(error_types: list[str], limit: int = 3) -> str:
 
 
 @register_scenario
-class OutputCorrectnessScenario(BaseScenario):
-    name = "output_correctness"
+class OutputCorrectnessUnderBurstScenario(BaseScenario):
+    name = "output_correctness_under_burst"
     description = "Concurrent diverse prompts with output quality validation"
     tags = ["correctness", "concurrency", "quality", "crash"]
 

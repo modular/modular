@@ -128,7 +128,8 @@ class StreamingReasoningMonotonicity(BaseScenario):
         "30x streaming + thinking: reasoning_content must not reappear after "
         "content (chunk order); LLM_FUZZ_STREAMING_REASONING_MONOTONICITY_RUNS to override"
     )
-    tags = ["streaming", "reasoning", "thinking"]
+    tags = ["validation", "streaming", "reasoning", "thinking"]
+    scenario_type = "validation"
 
     async def run(
         self, client: FuzzClient, config: RunConfig

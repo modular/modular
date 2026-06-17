@@ -381,7 +381,8 @@ class ProviderBaseline(BaseScenario):
         "OpenRouter provider endpoint baseline: validates functional "
         "correctness of standard OpenAI API features"
     )
-    tags = ["baseline", "compliance", "functional"]
+    tags = ["validation", "baseline", "compliance", "functional"]
+    scenario_type = "validation"
 
     # -- request builders --------------------------------------------------
 
