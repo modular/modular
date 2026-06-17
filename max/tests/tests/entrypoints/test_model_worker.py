@@ -13,6 +13,7 @@
 # Unit tests for model_worker
 from __future__ import annotations
 
+import asyncio
 import time
 from dataclasses import dataclass
 from typing import Any
@@ -244,3 +245,38 @@ async def test_lifespan_propagates_worker_exception(
             generate_zmq_ipc_path(),
         ):
             pass
+
+
+@pytest.mark.asyncio
+async def test_lifespan_startup_crash_skips_server(
+    mock_pipeline_config: PipelineConfig,
+) -> None:
+    """A worker that crashes on startup must not start the server.
+
+    This mirrors the production entrypoint, which enters ``lifespan`` and then
+    awaits ``server.serve()`` in the same task (uvicorn runs with
+    ``lifespan="off"``). When the model worker fails to come up, entering the
+    context manager raises directly, so the server body is never reached and
+    the worker exception propagates -- no self-SIGINT required.
+    """
+    settings = Settings()
+    serving_settings = api_server.ServingTokenGeneratorSettings(
+        model_factory=MockInvalidTokenGenerator,
+        pipeline_config=mock_pipeline_config,
+        tokenizer=MockTokenizer(),
+    )
+
+    server_started = False
+
+    with pytest.raises(ValueError, match="CRASH TEST DUMMY"):
+        async with api_server.lifespan(
+            FastAPI(),
+            settings,
+            serving_settings,
+            generate_zmq_ipc_path(),
+        ):
+            # Stand-in for ``await server.serve()``.
+            server_started = True
+            await asyncio.Event().wait()
+
+    assert not server_started, "server must not start when the worker crashes"
