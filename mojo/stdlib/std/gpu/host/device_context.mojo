@@ -2614,7 +2614,7 @@ struct DeviceFunction[
     func_type: TrivialRegisterPassable,
     //,
     func: func_type,
-    declared_arg_types: Optional[TypeList.of[Trait=AnyType]()._mlir_type],
+    declared_arg_types: TypeList.of[Trait=AnyType]()._mlir_type,
     *,
     target: _TargetType = get_gpu_target(),
     compile_options: StaticString = CompilationTarget[
@@ -2631,7 +2631,7 @@ struct DeviceFunction[
     Parameters:
         func_type: The dtype of the function to compile.
         func: The function to compile for GPU execution.
-        declared_arg_types: An optional containing a variadic of the declared dtypes of the kernel signature.
+        declared_arg_types: A variadic of the declared dtypes of the kernel signature (empty when the function is compiled without a checked signature).
         target: The target architecture for compilation. Defaults to the current GPU target.
         compile_options: The string of compilation options to pass to the compiler.
         link_options: The string of linker options to pass to the linker.
@@ -3128,9 +3128,7 @@ struct DeviceFunction[
         *Ts: DevicePassable,
         num_args: Int,
     ]() -> Tuple[Int, InlineArray[Int, num_args]]:
-        comptime declared_num_args = TypeList[
-            Self.declared_arg_types.value()
-        ].size
+        comptime declared_num_args = TypeList[Self.declared_arg_types].size
 
         comptime assert (
             declared_num_args == num_args
@@ -3146,9 +3144,7 @@ struct DeviceFunction[
         var num_translated_args = 0
 
         comptime for i in range(num_args):
-            comptime declared_arg_type = TypeList[
-                Self.declared_arg_types.value()
-            ]()[i]
+            comptime declared_arg_type = TypeList[Self.declared_arg_types]()[i]
             comptime actual_arg_type = Ts[i]
 
             def declared_arg_type_name() -> String:
@@ -3228,20 +3224,14 @@ struct DeviceFunction[
         # We need to keep track of both the number of arguments pushed by the
         # caller and the number of translated arguments expected by the kernel.
         comptime num_passed_args = Ts.size
-        var num_translated_args = 0
-
-        var translated_arg_offsets = InlineArray[Int, num_passed_args](
-            uninitialized=True
-        )
 
         # Validate that all actual arguments do remap to the declared device
         # dtype in the kernel.
-        comptime if Self.declared_arg_types:
-            var validated_args = Self._validate_arguments[
-                *Ts, num_args=num_passed_args
-            ]()
-            num_translated_args = validated_args[0]
-            translated_arg_offsets = validated_args[1].copy()
+        var validated_args = Self._validate_arguments[
+            *Ts, num_args=num_passed_args
+        ]()
+        var num_translated_args = validated_args[0]
+        var translated_arg_offsets = validated_args[1].copy()
 
         var num_captures = max(0, self._func_impl.num_captures)
         comptime populate = type_of(self._func_impl).populate
@@ -4070,9 +4060,6 @@ struct DeviceGraphBuilder(Movable):
         _check_dim["DeviceGraphBuilder.add_function", "block_dim"](
             block_dim, location=call_location()
         )
-        comptime assert Bool(
-            f.declared_arg_types
-        ), "Calling a non-checked DeviceFunction; use the unchecked overload."
         # Build a transient enqueuer that pairs the builder handle with the
         # caller-supplied deps. It implements `_FunctionEnqueuer` so the
         # trait machinery in `_call_with_pack_checked` routes the call into
@@ -4184,7 +4171,7 @@ struct DeviceGraphBuilder(Movable):
         )
         var compiled = DeviceFunction[
             FuncType.__call__,
-            None,
+            TypeList.of[Trait=AnyType]().values,
             target=DeviceContext.default_device_info.target(),
             _ptxas_info_verbose=_ptxas_info_verbose,
         ](self._ctx)
@@ -5695,9 +5682,6 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
             block_dim, location=call_location()
         )
 
-        comptime assert Bool(
-            f.declared_arg_types
-        ), "Calling a non-checked function."
         f._call_with_pack_checked(
             self,
             *args,
@@ -6358,7 +6342,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
 
         var gpu_kernel = DeviceFunction[
             FuncType.__call__,
-            None,
+            TypeList.of[Trait=AnyType]().values,
             target=Self.default_device_info.target(),
             _ptxas_info_verbose=_ptxas_info_verbose,
         ](self)
@@ -6659,9 +6643,6 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
             block_dim, location=call_location()
         )
 
-        comptime assert Bool(
-            f.declared_arg_types
-        ), "Calling a non-checked function."
         f._call_with_pack_checked(
             self,
             *args,
