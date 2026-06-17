@@ -114,7 +114,12 @@ def use_pointer():
 ### Origin sets
 
 An `OriginSet` is not a type of origin, it represents a group of origins. Origin
-sets are used for tracking the lifetimes of values captured in closures.
+sets are used for tracking the lifetimes of values captured in parametric
+closures.
+
+An `OriginSet` **isn't** a general-purpose mechanism for expressing a
+combination of multiple origins. Instead, you can use `origin_of()` to express
+an [origin union](#origin-unions).
 
 ### Origin values
 
@@ -131,8 +136,9 @@ few ways to specify origin values:
 - Untracked origins. The untracked origins, `MutUntrackedOrigin` and
   `ImmutUntrackedOrigin` represent values that are not tracked by the lifetime
   checker, such as dynamically-allocated memory.
-- Wildcard origins. The `ImmutAnyOrigin` and `MutAnyOrigin` `comptime` values
-  are special cases indicating a reference that might access any live value.
+- Wildcard origins. The `ImmutUnsafeAnyOrigin` and `MutUnsafeAnyOrigin`
+  `comptime` values are special cases indicating a reference that might access
+  any live value.
 
 #### Static origins
 
@@ -199,12 +205,16 @@ of two or more origins:
 
 #### Origin unions
 
-The union of two or more origins creates a new origin that references all of
-the original origins for the purposes of lifetime extension (so a union of the
-origins of `a` and `b` extends both lifetimes).
+When a function returns a reference or pointer that can have one of several
+different origins, you can express the referenced origin as a union of all
+of the possible origin values.
 
-An origin union is mutable if and only if all of its constituent origins are
-mutable. For an example, see
+The union of two or more origins creates a new origin that references all of the
+original origins for the purposes of lifetime extension (so a union of the
+origins of `a` and `b` extends both lifetimes). An origin union is mutable if
+and only if all of its constituent origins are mutable. Use an origin union
+
+For an example, see
 [Return values with union origins](#return-values-with-union-origins).
 
 #### Inferred origins
@@ -233,12 +243,17 @@ should generally free that memory in its destructor.
 
 #### Wildcard origins
 
-The wildcard origins, `ImmutAnyOrigin` and `MutAnyOrigin`, are special cases
-indicating a reference that might access any live value. These were previously
-widely used for unsafe pointers. Using a pointer with a wildcard origin into a
-scope effectively disables Mojo's ASAP destruction for any values in that scope,
-as long as the pointer is live. Accordingly, the use of wildcard origins is
-discouraged, and should be used as a last resort.
+The wildcard origins, `ImmutUnsafeAnyOrigin` and `MutUnsafeAnyOrigin`, are
+special cases indicating a reference that might access any live value. These
+were previously widely used for unsafe pointers. Using a pointer with a wildcard
+origin into a scope effectively disables Mojo's ASAP destruction for any values
+in that scope, as long as the pointer is live. It also prevents Mojo from
+enforcing
+[argument exclusivity](/docs/manual/values/ownership/#argument-exclusivity) and
+hides unused variable warnings.
+
+Accordingly, the use of wildcard origins is discouraged, and should be used as a
+last resort.
 
 ## Working with references
 
