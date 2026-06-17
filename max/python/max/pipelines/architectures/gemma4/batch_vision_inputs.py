@@ -21,7 +21,7 @@ from typing import Any
 
 import numpy as np
 import numpy.typing as npt
-from max.driver import CPU, Buffer, Device, DevicePinnedBuffer
+from max.driver import Buffer, Device, DevicePinnedBuffer
 from max.dtype import DType
 from max.graph.buffer_utils import cast_tensor_to
 from max.pipelines.lib.vision_encoder_cache import VisionEncoderCache
@@ -117,8 +117,8 @@ def merge_per_device_buffers(
             merged.append(a)
         else:
             dev = a.device
-            a_np = a.to(CPU()).to_numpy()
-            b_np = b.to(CPU()).to_numpy()
+            a_np = a.to_numpy()
+            b_np = b.to_numpy()
             combined = np.concatenate([a_np, b_np], axis=0)
             merged.append(Buffer.from_numpy(combined).to(dev))
     return merged
