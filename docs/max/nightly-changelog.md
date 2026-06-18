@@ -113,6 +113,12 @@ This version is still a work in progress.
   `EagerRealizationContext(use_interpreter=...)` argument is deprecated in
   favor of `EagerRealizationContext(executor=...)`.
 
+- The eager interpreter precompiles its matmul and unary-elementwise
+  graph-compiler models for the full `(device, dtype)` matrix at import by
+  default. Set `MAX_EAGER_OP_PRECOMPILE=0` to skip the import-time sweep and
+  compile each target lazily on first dispatch instead, bounding compile cost to
+  the targets a program actually uses.
+
 - `max.nn.hooks.PrintHook` now supports `max.experimental.nn.Module`.
 
 - Added `F.print`, which supports both single-device and multi-device tensors.

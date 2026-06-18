@@ -128,6 +128,7 @@ modular_py_test(
         "//conditions:default": [],
     }),  # FIXME: MOCO-2411
     deps = [
+        "//max/python/max:_core",
         "//max/python/max:tensor",
         "//max/python/max/_interpreter_ops",
         "//max/python/max/driver",

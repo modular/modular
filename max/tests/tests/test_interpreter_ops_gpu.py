@@ -329,7 +329,9 @@ class TestElementwiseGPU:
 
         a = Tensor.from_dlpack(a_torch)
 
-        with pytest.raises(Exception, match="No pre-compiled unary model"):
+        with pytest.raises(
+            Exception, match="Unsupported unary op/device/dtype"
+        ):
             with (
                 rc.EagerRealizationContext() as ctx,
                 realization_context(ctx),
