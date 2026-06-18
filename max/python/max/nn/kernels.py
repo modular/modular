@@ -2013,7 +2013,7 @@ def msa_sparse_indexer(
         index_q,
         input_row_offsets,
         prefix_lens,
-        *index_kv_collection.flatten_without_attention_dispatch_metadata(),
+        *index_kv_collection.flatten(),
         layer_idx,
         score_scratch,
         ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU()),
@@ -2108,7 +2108,7 @@ def msa_sparse_attention_ragged(
     values: list[Value[Any]] = [
         input,
         input_row_offsets,
-        *kv_collection.flatten_without_attention_dispatch_metadata(),
+        *kv_collection.flatten(),
         layer_idx,
         block_indices,
         ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU()),

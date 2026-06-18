@@ -100,6 +100,7 @@ struct Struct_msa_indexer_ragged_paged:
         k_cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
         k_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
         k_max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
+        msa_scalar_args: InputTensor[dtype=DType.int64, rank=1, ...],
         layer_idx: UInt32,
         score_scratch: MutableInputTensor[dtype=DType.float32, rank=3, ...],
         scale: Float32,
@@ -133,6 +134,9 @@ struct Struct_msa_indexer_ragged_paged:
             k_cache_lengths: Index-K cache lengths `[batch]` uint32.
             k_lookup_table: Index-K page table `[batch, max_pages]` uint32.
             k_max_lengths: Index-K max lengths `[1, 2]` uint32.
+            msa_scalar_args: On-device scalar arguments for the decode indexer
+                msa_scalar_args[0] = batch_size
+                msa_scalar_args[1] = max_cache_valid_length.
             layer_idx: Layer index for the index-K cache.
             score_scratch: Persistent decode score scratch
                 `[num_index_heads, max_batch, MAX_NUM_BLOCKS]`.
@@ -241,6 +245,7 @@ struct Struct_msa_attention_ragged_paged:
         cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
         kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
         max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
+        msa_scalar_args: InputTensor[dtype=DType.int64, rank=1, ...],
         layer_idx: UInt32,
         d_indices: InputTensor[dtype=DType.int32, rank=3, ...],
         scale: Float32,
@@ -279,6 +284,9 @@ struct Struct_msa_attention_ragged_paged:
             cache_lengths: Main-KV cache lengths `[batch]` uint32.
             kv_lookup_table: Main-KV page table `[batch, max_pages]` uint32.
             max_lengths: Main-KV max lengths `[1, 2]` uint32.
+            msa_scalar_args: On-device scalar arguments for the MSA decode
+                msa_scalar_args[0] = batch_size
+                msa_scalar_args[1] = max_cache_valid_length.
             layer_idx: Layer index for the main-KV cache.
             d_indices: Selected block ids `[n_kv_heads, num_rows, topk]` int32.
             scale: QK scale.
