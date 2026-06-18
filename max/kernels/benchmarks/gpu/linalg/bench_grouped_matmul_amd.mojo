@@ -21,7 +21,7 @@ Runs the MXFP4 preshuffled-B grouped matmul (mxfp4_grouped_matmul_amd_preb:
 preshuffled B, direct VGPR loads).
 """
 
-from std.math import align_up
+from std.math import align_up, ceildiv
 from std.os import abort
 from std.sys import (
     get_defined_int,
@@ -36,8 +36,8 @@ from std.benchmark import (
     ThroughputMeasure,
 )
 from std.gpu.host import DeviceContext
-from internal_utils import arg_parse
-from internal_utils._utils import InitializationType, init_vector_launch
+from internal_utils import arg_parse, CacheBustingBuffer, CACHE_BUST_BYTES
+from internal_utils._utils import InitializationType
 from layout import Coord, Idx, TileTensor, row_major
 from linalg.matmul.gpu.amd import mxfp4_grouped_matmul_amd_preb
 
@@ -119,6 +119,8 @@ def bench_preb[
     expert_id_pool: List[Int],
     skew_spec: String,
     init_type: InitializationType,
+    cache_bust: Bool = True,
+    cache_bust_gb: Float64 = 0.0,
     max_tokens_capacity: Int = 0,
     estimated_total_m: Int = 0,
 ) raises:
@@ -132,26 +134,13 @@ def bench_preb[
         total_routes += target_counts[i]
     var total_flops = 2 * total_routes * N * K
 
-    var a_dev = ctx.enqueue_create_buffer[DType.uint8](total_routes * packed_K)
-    # B buffer is the preshuffled layout, same total bytes as raw B. We don't
-    # actually preshuffle here (no correctness check in the bench); the bytes
-    # are random and the kernel times the same regardless of content.
-    var b_pre_dev = ctx.enqueue_create_buffer[DType.uint8](
-        num_experts * N * packed_K
-    )
-    var c_dev = ctx.enqueue_create_buffer[DType.float32](total_routes * N)
+    # Routing tables are tiny metadata read once per launch; keep them as plain
+    # single buffers (not cache-busted).
     var a_offsets_dev = ctx.enqueue_create_buffer[DType.uint32](
         num_active_experts + 1
     )
     var expert_ids_dev = ctx.enqueue_create_buffer[DType.int32](
         num_active_experts
-    )
-
-    init_vector_launch[DType.uint8](
-        a_dev, total_routes * packed_K, init_type, ctx
-    )
-    init_vector_launch[DType.uint8](
-        b_pre_dev, num_experts * N * packed_K, init_type, ctx
     )
 
     var a_off_h = ctx.enqueue_create_host_buffer[DType.uint32](
@@ -174,66 +163,110 @@ def bench_preb[
     ctx.enqueue_copy(expert_ids_dev, ei_h)
     ctx.synchronize()
 
-    # Preshuffled scale buffers (uint8 — the dispatcher reads these in
-    # scale-4d byte order via PreshuffledScaleLoader). The bench skips
-    # the actual preshuffle and just fills both with a valid E8M0 byte
-    # (0x7F = magnitude 1) — kernel timing is content-independent, same
-    # as the b_pre random-bytes approach above.
-    var a_sc_pre_dev = ctx.enqueue_create_buffer[DType.uint8](
-        num_experts * max_padded_M * scale_K
+    comptime simd_size = 4
+    # B is the dominant operand. A single full copy is num_experts*N*packed_K
+    # bytes; the kernel only reads the active experts' slices, so at decode
+    # (few active experts) that working set stays resident unless we rotate
+    # through many full-B copies. CACHE_BUST_BYTES is 2x the GPU cache, so
+    # CACHE_BUST_BYTES * num_experts gives enough windows to evict even a
+    # single-expert (M=1) read with a 2x margin (= 24 GiB at 48 experts). The
+    # max() keeps >=2 windows if one full copy is itself larger than that.
+    # Override with cache_bust_gb to set an explicit footprint.
+    var b_full_bytes = num_experts * N * packed_K
+    var b_budget = Int(
+        cache_bust_gb * (1024.0 * 1024.0 * 1024.0)
+    ) if cache_bust_gb > 0.0 else max(
+        CACHE_BUST_BYTES * num_experts, 2 * b_full_bytes
     )
-    var b_sc_pre_dev = ctx.enqueue_create_buffer[DType.uint8](
-        num_experts * N * scale_K
+    var b_windows = ceildiv(b_budget, align_up(b_full_bytes, simd_size))
+    print(
+        "  cache_bust=",
+        cache_bust,
+        " B full=",
+        b_full_bytes // (1024 * 1024),
+        "MiB budget=",
+        b_budget // (1024 * 1024),
+        "MiB windows=",
+        b_windows,
     )
-    ctx.enqueue_memset(a_sc_pre_dev, UInt8(127))
-    ctx.enqueue_memset(b_sc_pre_dev, UInt8(127))
+    var cb_a = CacheBustingBuffer[DType.uint8](
+        total_routes * packed_K, simd_size, ctx, cache_bust
+    )
+    var cb_b = CacheBustingBuffer[DType.uint8](
+        num_experts * N * packed_K,
+        simd_size,
+        ctx,
+        cache_bust,
+        budget_bytes=b_budget,
+    )
+    var cb_c = CacheBustingBuffer[DType.float32](
+        total_routes * N, simd_size, ctx, cache_bust
+    )
+    # Scale buffers (uint8 — the dispatcher reads these in scale-4d byte order
+    # via PreshuffledScaleLoader). Fill the whole buffer with a valid E8M0 byte
+    # (0x7F = magnitude 1).
+    var cb_a_sc = CacheBustingBuffer[DType.uint8](
+        num_experts * max_padded_M * scale_K, simd_size, ctx, cache_bust
+    )
+    var cb_b_sc = CacheBustingBuffer[DType.uint8](
+        num_experts * N * scale_K, simd_size, ctx, cache_bust
+    )
 
-    var a_tt = TileTensor[mut=False](
-        a_dev, row_major(Coord(total_routes, Idx[packed_K]))
-    )
-    var b_pre_tt = TileTensor[mut=False](
-        b_pre_dev, row_major[num_experts, N * packed_K]()
-    )
-    # Bitcast uint8 → float8_e8m0fnu at the TileTensor wrap to match the
-    # dispatcher signature. The kernel internally re-bitcasts to uint8
-    # for V# construction; the dtype is a wrapping convention.
-    var sfa_tt = TileTensor[mut=False](
-        a_sc_pre_dev.unsafe_ptr().bitcast[Scalar[DType.float8_e8m0fnu]](),
-        row_major(Coord(num_experts * max_padded_M, Idx[scale_K])),
-    )
-    var sfb_tt = TileTensor[mut=False](
-        b_sc_pre_dev.unsafe_ptr().bitcast[Scalar[DType.float8_e8m0fnu]](),
-        row_major[num_experts, N, scale_K](),
-    )
+    cb_a.init_on_device(init_type, ctx)
+    cb_b.init_on_device(init_type, ctx)
+    ctx.enqueue_memset(cb_a_sc.device_buffer(), UInt8(127))
+    ctx.enqueue_memset(cb_b_sc.device_buffer(), UInt8(127))
+
     var aoff_tt = TileTensor(
         a_offsets_dev, row_major(Coord(num_active_experts + 1))
     )
     var ei_tt = TileTensor(expert_ids_dev, row_major(Coord(num_active_experts)))
-    var c_tt = TileTensor[mut=True](
-        c_dev, row_major(Coord(total_routes, Idx[N]))
-    )
 
     @parameter
-    @__copy_capture(c_tt, a_tt, b_pre_tt, sfa_tt, sfb_tt, aoff_tt, ei_tt)
+    @always_inline
+    def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+        var a_tt = TileTensor[mut=False](
+            cb_a.offset_ptr(iteration),
+            row_major(Coord(total_routes, Idx[packed_K])),
+        )
+        var b_pre_tt = TileTensor[mut=False](
+            cb_b.offset_ptr(iteration), row_major[num_experts, N * packed_K]()
+        )
+        # Bitcast uint8 → float8_e8m0fnu at the TileTensor wrap to match the
+        # dispatcher signature. The kernel internally re-bitcasts to uint8 for
+        # V# construction; the dtype is a wrapping convention.
+        var sfa_tt = TileTensor[mut=False](
+            cb_a_sc.offset_ptr(iteration).bitcast[
+                Scalar[DType.float8_e8m0fnu]
+            ](),
+            row_major(Coord(num_experts * max_padded_M, Idx[scale_K])),
+        )
+        var sfb_tt = TileTensor[mut=False](
+            cb_b_sc.offset_ptr(iteration).bitcast[
+                Scalar[DType.float8_e8m0fnu]
+            ](),
+            row_major[num_experts, N, scale_K](),
+        )
+        var c_tt = TileTensor[mut=True](
+            cb_c.offset_ptr(iteration), row_major(Coord(total_routes, Idx[N]))
+        )
+        mxfp4_grouped_matmul_amd_preb(
+            c_tt,
+            a_tt,
+            b_pre_tt,
+            sfa_tt,
+            sfb_tt,
+            aoff_tt,
+            ei_tt,
+            max_tokens_for_kernel,
+            num_active_experts,
+            ctx,
+            estimated_total_m,
+        )
+
+    @parameter
     @always_inline
     def bench_func(mut bencher: Bencher):
-        @parameter
-        @always_inline
-        def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
-            mxfp4_grouped_matmul_amd_preb(
-                c_tt,
-                a_tt,
-                b_pre_tt,
-                sfa_tt,
-                sfb_tt,
-                aoff_tt,
-                ei_tt,
-                max_tokens_for_kernel,
-                num_active_experts,
-                ctx,
-                estimated_total_m,
-            )
-
         bencher.iter_custom[kernel_launch](ctx)
 
     bench.bench_function[bench_func](
@@ -252,11 +285,11 @@ def bench_preb[
         [ThroughputMeasure(BenchMetric.flops, total_flops)],
     )
 
-    _ = a_dev^
-    _ = b_pre_dev^
-    _ = a_sc_pre_dev^
-    _ = b_sc_pre_dev^
-    _ = c_dev^
+    _ = cb_a^
+    _ = cb_b^
+    _ = cb_a_sc^
+    _ = cb_b_sc^
+    _ = cb_c^
     _ = a_offsets_dev^
     _ = expert_ids_dev^
 
@@ -293,6 +326,11 @@ def main() raises:
     # routing. When >0 this override is forwarded to the kernel instead of
     # the routing-derived max. Default 0 = use actual.
     var max_tokens_capacity = Int(arg_parse("max_tokens_capacity", 0))
+    var cache_bust = Bool(arg_parse("cache_bust", True))
+    # Buffer footprint (GiB) for the B-weights cache-busting buffer. 0 = auto:
+    # 512 MiB * num_experts (enough windows to evict even a single-expert M=1
+    # read; = 24 GiB at 48 experts). Set explicitly to cap or raise the budget.
+    var cache_bust_gb = Float64(arg_parse("cache_bust_gb", 0.0))
     # Replay a literal serve routing: pass comma-separated per-slot token
     # counts and expert IDs. Both must be set together and both must have
     # length == num_active_experts. Bypasses skew synthesis.
@@ -416,6 +454,8 @@ def main() raises:
             expert_id_pool,
             skew_spec,
             init_type,
+            cache_bust,
+            cache_bust_gb,
             max_tokens_capacity,
             estimated_total_m,
         )
