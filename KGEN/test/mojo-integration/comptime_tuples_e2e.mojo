@@ -51,7 +51,6 @@ struct MTuple[T: ImplicitlyCopyable](ImplicitlyCopyable, Writable):
         move._len = 0
         move._cap = 0
 
-    @always_inline
     def __init__(out self, *, copy: Self):
         self._len = copy._len
         self._cap = copy._len
