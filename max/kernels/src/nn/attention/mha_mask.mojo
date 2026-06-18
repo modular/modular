@@ -1693,6 +1693,8 @@ struct MaterializedMask[
     comptime check_mask_during_decoding: Bool = True
 
     var mask_tensor: LayoutTensor[Self.dtype_, Self.layout_, Self.origin_]
+
+    @__allow_legacy_any_origin_fields
     var start_pos: OptionalReg[
         LayoutTensor[
             DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin

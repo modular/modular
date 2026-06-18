@@ -78,16 +78,21 @@ struct TileScheduler[
     var log_cluster_dim_n: FastDiv[DType.uint32]
     var log_cluster_dim_k: FastDiv[DType.uint32]
 
+    @__allow_legacy_any_origin_fields
     var clc_response: UnsafePointer[
         UInt128,
         MutAnyOrigin,
         address_space=AddressSpace.SHARED,
     ]
+
+    @__allow_legacy_any_origin_fields
     var full_mbar: UnsafePointer[
         SharedMemBarrier,
         MutAnyOrigin,
         address_space=AddressSpace.SHARED,
     ]
+
+    @__allow_legacy_any_origin_fields
     var empty_mbar: UnsafePointer[
         SharedMemBarrier,
         MutAnyOrigin,

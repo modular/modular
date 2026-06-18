@@ -146,6 +146,7 @@ struct NonNullPointer[
         Scalar[Self.dtype], ImmutAnyOrigin, address_space=Self.address_space
     ]
 
+    @__allow_legacy_any_origin_fields
     var ptr: Self.PtrType
 
     @always_inline

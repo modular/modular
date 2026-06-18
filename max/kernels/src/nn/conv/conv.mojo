@@ -3363,12 +3363,21 @@ def check_cudnn_error(stat: cudnnStatus_t) raises:
 
 
 struct CuDNNConvMeta(ImplicitlyCopyable, RegisterPassable):
+    @__allow_legacy_any_origin_fields
     var ptr_handle: UnsafePointer[cudnnContext, AnyOrigin[mut=True]]
+
+    @__allow_legacy_any_origin_fields
     var ptr_input_desc: UnsafePointer[cudnnTensorStruct, AnyOrigin[mut=True]]
+
+    @__allow_legacy_any_origin_fields
     var ptr_filter_desc: UnsafePointer[cudnnFilterStruct, AnyOrigin[mut=True]]
+
+    @__allow_legacy_any_origin_fields
     var ptr_conv_desc: UnsafePointer[
         cudnnConvolutionStruct, AnyOrigin[mut=True]
     ]
+
+    @__allow_legacy_any_origin_fields
     var ptr_output_desc: UnsafePointer[cudnnTensorStruct, AnyOrigin[mut=True]]
 
     def __init__(out self) raises:
@@ -3483,12 +3492,21 @@ def get_cudnn_dtype[dtype: DType]() raises -> cudnnDataType_t:
 
 
 struct CachedCuDNNMetaNHWCFull(ImplicitlyCopyable):
+    @__allow_legacy_any_origin_fields
     var ptr_handle: UnsafePointer[cudnnContext, AnyOrigin[mut=True]]
+
+    @__allow_legacy_any_origin_fields
     var ptr_input_desc: UnsafePointer[cudnnTensorStruct, AnyOrigin[mut=True]]
+
+    @__allow_legacy_any_origin_fields
     var ptr_filter_desc: UnsafePointer[cudnnFilterStruct, AnyOrigin[mut=True]]
+
+    @__allow_legacy_any_origin_fields
     var ptr_conv_desc: UnsafePointer[
         cudnnConvolutionStruct, AnyOrigin[mut=True]
     ]
+
+    @__allow_legacy_any_origin_fields
     var ptr_output_desc: UnsafePointer[cudnnTensorStruct, AnyOrigin[mut=True]]
 
     # Workspace size cache (actual buffer is allocated per-call via ctx)

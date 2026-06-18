@@ -320,6 +320,7 @@ struct KVBuffer[
         address_space=AddressSpace.SHARED,
     ]
 
+    @__allow_legacy_any_origin_fields
     var smem_tile: Self.SmemParentType
 
     var kv_cache_iter: KVCacheIterator[
@@ -832,6 +833,8 @@ struct DecodeStreamingKVBuffer[
     ]
 
     var kv_mma_op: Self.KVMmaOpType
+
+    @__allow_legacy_any_origin_fields
     var smem_ptr: UnsafePointer[
         Scalar[Self.kv_t.dtype],
         MutAnyOrigin,
@@ -1267,6 +1270,8 @@ struct DecodeKVBuffer[
         MutAnyOrigin,
         address_space=AddressSpace.SHARED,
     ]
+
+    @__allow_legacy_any_origin_fields
     var smem_tile: Self.SmemTile
 
     # DRAM tile and loader.
@@ -1279,6 +1284,8 @@ struct DecodeKVBuffer[
         row_major[Self._thread_rows, Self._thread_cols](),
         Self.num_threads,
     ]
+
+    @__allow_legacy_any_origin_fields
     var gmem_tile: Self.GmemTileType
     var reg_loader: Self.RegLoaderType
     var tile_idx: Int

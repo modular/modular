@@ -449,7 +449,10 @@ struct TMAtoCvtPipeline[
     num_producer: Int,
     num_consumer: Int,
 ](TrivialRegisterPassable):
+    @__allow_legacy_any_origin_fields
     var consumer_mbars: MBarType
+
+    @__allow_legacy_any_origin_fields
     var producer_mbars: MBarType
     var state: PipelineState[Self.num_kv_stages]
 
@@ -503,7 +506,10 @@ struct CvtToMMAPipeline[
     num_producer: Int,
     num_consumer: Int,
 ](TrivialRegisterPassable):
+    @__allow_legacy_any_origin_fields
     var producer_mbars: MBarType
+
+    @__allow_legacy_any_origin_fields
     var consumer_mbars: MBarType
     var state: PipelineState[Self.num_stages]
 

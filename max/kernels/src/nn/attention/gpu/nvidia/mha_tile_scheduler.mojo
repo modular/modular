@@ -128,6 +128,8 @@ struct MHASchedulerSynchronization(TrivialRegisterPassable):
 struct MHATileState(TrivialRegisterPassable):
     # Linear work tile index i.e. idx-th work among all possible workload.
     var idx: UInt32
+
+    @__allow_legacy_any_origin_fields
     var sidx_ptr: UnsafePointer[
         UInt32, MutAnyOrigin, address_space=AddressSpace.SHARED
     ]
@@ -658,6 +660,7 @@ struct QueuedTileScheduler[
     """
 
     # Linear work tile index i.e. idx-th work among all possible workload.
+    @__allow_legacy_any_origin_fields
     var gidx_ptr: UnsafePointer[
         UInt32, MutAnyOrigin, address_space=AddressSpace.GLOBAL
     ]

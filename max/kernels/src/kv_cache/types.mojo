@@ -1089,8 +1089,13 @@ struct ContinuousBatchingKVCache[
         DType.uint32, Self.lookup_table_tt_layout, ImmutAnyOrigin
     ]
 
+    @__allow_legacy_any_origin_fields
     var blocks: Self.blocks_tt_type
+
+    @__allow_legacy_any_origin_fields
     var cache_lengths: Self.cache_lengths_tt_type
+
+    @__allow_legacy_any_origin_fields
     var lookup_table: Self.lookup_table_tt_type
 
     # The length of the longest sequence in the current request.
@@ -1622,8 +1627,13 @@ struct PagedKVCache[
         DType.uint32, Self.lookup_table_tt_layout, ImmutAnyOrigin
     ]
 
+    @__allow_legacy_any_origin_fields
     var blocks: Self.blocks_tt_type
+
+    @__allow_legacy_any_origin_fields
     var cache_lengths: Self.cache_lengths_tt_type
+
+    @__allow_legacy_any_origin_fields
     var lookup_table: Self.lookup_table_tt_type
 
     # The length of the longest sequence in the current request.
@@ -1670,6 +1680,7 @@ struct PagedKVCache[
     ]
 
     # KV Cache quantization scales
+    @__allow_legacy_any_origin_fields
     var scales: OptionalReg[Self.scales_tt_type]
 
     comptime device_type: AnyType = Self
@@ -2564,8 +2575,13 @@ struct ContinuousBatchingKVCacheCollection[
         Self.dtype, Self.blocks_tt_layout, MutAnyOrigin
     ]
 
+    @__allow_legacy_any_origin_fields
     var blocks: Self.blocks_tt_type
+
+    @__allow_legacy_any_origin_fields
     var cache_lengths: Self.CacheType.cache_lengths_tt_type
+
+    @__allow_legacy_any_origin_fields
     var lookup_table: Self.CacheType.lookup_table_tt_type
     var max_seq_length: UInt32
     var max_cache_length: UInt32
@@ -2759,12 +2775,19 @@ struct PagedKVCacheCollection[
     comptime scales_tt_type = TileTensor[
         Self.scale_dtype, Self.scales_tt_layout, MutAnyOrigin
     ]
+
+    @__allow_legacy_any_origin_fields
     var scales: OptionalReg[Self.scales_tt_type]
     var kv_cache_scales_dynamic_shape: IndexList[4]
     var kv_cache_scales_dynamic_strides: IndexList[4]
 
+    @__allow_legacy_any_origin_fields
     var blocks: Self.blocks_tt_type
+
+    @__allow_legacy_any_origin_fields
     var cache_lengths: Self.CacheType.cache_lengths_tt_type
+
+    @__allow_legacy_any_origin_fields
     var lookup_table: Self.CacheType.lookup_table_tt_type
     var max_seq_length: UInt32
     var max_cache_length: UInt32

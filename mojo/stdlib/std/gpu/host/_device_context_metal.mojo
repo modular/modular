@@ -36,6 +36,7 @@ struct MetalEnqueueFunctionArgs:
     """Passes through Metal specific kernel launch data through to the
     driver."""
 
+    @__allow_legacy_any_origin_fields
     var args: UnsafePointer[OpaquePointer[MutAnyOrigin], MutUntrackedOrigin]
     var arg_sizes: UnsafePointer[UInt64, ImmutUntrackedOrigin]
     var arg_is_device_ptr: UnsafePointer[Bool, MutUntrackedOrigin]

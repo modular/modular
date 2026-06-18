@@ -119,6 +119,7 @@ struct Depth512MBars[
     comptime size: Int = Self.num_fixed + Self.KV_barriers
 
     # ---- storage --------------------------------------------------------------
+    @__allow_legacy_any_origin_fields
     var mbar_base: MBarType
 
     # ---- construction ---------------------------------------------------------

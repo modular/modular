@@ -22,6 +22,7 @@ from std.sys.info import size_of
 
 @fieldwise_init
 struct Handle(Defaultable, Equatable, TrivialRegisterPassable):
+    @__allow_legacy_any_origin_fields
     var _value: OptionalReg[OpaquePointer[MutAnyOrigin]]
 
     def __init__(out self):
@@ -30,6 +31,7 @@ struct Handle(Defaultable, Equatable, TrivialRegisterPassable):
 
 @fieldwise_init
 struct TensorDescriptor(Defaultable, Equatable, TrivialRegisterPassable):
+    @__allow_legacy_any_origin_fields
     var _value: OptionalReg[OpaquePointer[MutAnyOrigin]]
 
     def __init__(out self):
@@ -38,6 +40,7 @@ struct TensorDescriptor(Defaultable, Equatable, TrivialRegisterPassable):
 
 @fieldwise_init
 struct ConvolutionDescriptor(Defaultable, Equatable, TrivialRegisterPassable):
+    @__allow_legacy_any_origin_fields
     var _value: OptionalReg[OpaquePointer[MutAnyOrigin]]
 
     def __init__(out self):
@@ -223,6 +226,7 @@ struct ConvSolution(RegisterPassable):
 
 @fieldwise_init
 struct Problem(Defaultable, Equatable, TrivialRegisterPassable):
+    @__allow_legacy_any_origin_fields
     var _value: OptionalReg[OpaquePointer[MutAnyOrigin]]
 
     def __init__(out self):
@@ -231,6 +235,7 @@ struct Problem(Defaultable, Equatable, TrivialRegisterPassable):
 
 @fieldwise_init
 struct Solution(Defaultable, Equatable, TrivialRegisterPassable):
+    @__allow_legacy_any_origin_fields
     var _value: OptionalReg[OpaquePointer[MutAnyOrigin]]
 
     def __init__(out self):
@@ -239,6 +244,7 @@ struct Solution(Defaultable, Equatable, TrivialRegisterPassable):
 
 @fieldwise_init
 struct FindOptions(Defaultable, Equatable, TrivialRegisterPassable):
+    @__allow_legacy_any_origin_fields
     var _value: OptionalReg[OpaquePointer[MutAnyOrigin]]
 
     def __init__(out self):

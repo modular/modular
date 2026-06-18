@@ -1275,6 +1275,8 @@ struct RaggedMHAOperand[
     comptime page_size = 0
     comptime quantization_granularity = 0
     var buffer: TileTensor[Self.dtype, Self.layout, Self.origin]
+
+    @__allow_legacy_any_origin_fields
     var scale_buffer: TileTensor[
         Self.scale_dtype, Self.scale_layout, ImmutAnyOrigin
     ]

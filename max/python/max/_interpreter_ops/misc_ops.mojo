@@ -90,6 +90,8 @@ struct _RangeShapeBody(Dispatchable):
     var start_addr: Int
     var stop_addr: Int
     var step_addr: Int
+
+    @__allow_legacy_any_origin_fields
     var result_ptr: UnsafePointer[Int, MutAnyOrigin]
 
     def call[t: DType](self) raises -> None:

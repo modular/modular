@@ -19,6 +19,35 @@ This version is still a work in progress.
     takes_them(**kwargs^)
   ```
 
+- Struct fields are no longer allowed to hide `UnsafeAnyOrigin` within a
+  struct, e.g. this is no longer accepted:
+
+  ```mojo
+  struct Example:
+    # error: cannot use UnsafeAnyOrigin in a struct field.
+    var ptr: UnsafePointer[Int, MutUnsafeAnyOrigin]
+  ```
+
+  This is because Mojo doesn't know that uses of `Example` contain an
+  `UnsafeAnyOrigin` and therefore doesn't do lifetime extension for values in
+  its context. The typical solution for this is to add an `Origin` parameter but
+  you can also use `UntrackedOrigin` if you explicitly manage the lifetime of
+  the underlying data:
+
+  ```mojo
+  struct Example[origin: Origin]:
+    var ptr: UnsafePointer[Int, Self.origin]
+
+  # OR
+
+  struct Example:
+    var ptr: UnsafePointer[Int, MutUntrackedOrigin]
+  ```
+
+  As a temporary workaround, you can decorate fields with
+  `@__allow_legacy_any_origin_fields` to ignore the compiler error, however this
+  decorator is not stable and will eventually be removed.
+
 ## Language changes
 
 ## Library changes

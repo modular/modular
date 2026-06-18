@@ -79,6 +79,8 @@ struct StateContext(TrivialRegisterPassable):
     This is currently meant as a mojo-side container for GML::StateContext."""
 
     var num_slots: Int
+
+    @__allow_legacy_any_origin_fields
     var ctx_ptr: OpaquePointer[MutAnyOrigin]
 
     @always_inline

@@ -242,6 +242,7 @@ struct SM100AttentionSMem[
     )
 
     # ---- storage -------------------------------------------------------------
+    @__allow_legacy_any_origin_fields
     var base: SharedMemPointer[Scalar[DType.uint8]]
 
     # ---- construction --------------------------------------------------------

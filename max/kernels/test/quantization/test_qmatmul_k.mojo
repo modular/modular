@@ -502,10 +502,19 @@ def reference_gemm[
 
 
 struct GemmContext[qgemm: QuantizedGemm]:
+    @__allow_legacy_any_origin_fields
     var a: LayoutTensor[DType.float32, Layout.row_major[2](), MutAnyOrigin]
+
+    @__allow_legacy_any_origin_fields
     var b: LayoutTensor[DType.uint8, Layout.row_major[2](), MutAnyOrigin]
+
+    @__allow_legacy_any_origin_fields
     var b_packed: LayoutTensor[DType.uint8, Layout.row_major[2](), MutAnyOrigin]
+
+    @__allow_legacy_any_origin_fields
     var c: LayoutTensor[DType.float32, Layout.row_major[2](), MutAnyOrigin]
+
+    @__allow_legacy_any_origin_fields
     var c_golden: LayoutTensor[
         DType.float32, Layout.row_major[2](), MutAnyOrigin
     ]
