@@ -550,6 +550,13 @@ class KVCacheParams(KVCacheParamInterface):
     data_parallel_degree: int = 1
     """Degree of data parallelism. Must be 1 or equal to n_devices (DP+TP not yet supported)."""
 
+    allow_kv_head_replication: bool = False
+    """Allow TP wider than ``n_kv_heads``: when set and ``n_devices`` is a
+    multiple of ``n_kv_heads``, replicate each KV head across a group of devices
+    (``n_kv_heads_per_device == 1``). Only opt in from architectures whose
+    attention shards K/V projections to match; otherwise the divisibility check
+    stays strict."""
+
     n_kv_heads_per_device: int = 0
     """Number of KV heads allocated to each device. Computed automatically in __post_init__."""
 
@@ -611,15 +618,22 @@ class KVCacheParams(KVCacheParamInterface):
             # First, resolve the number of KV heads per device
             if self.is_mla:
                 self.n_kv_heads_per_device = 1
-            else:
-                if self.n_kv_heads % self.n_devices != 0:
-                    raise ValueError(
-                        f"Number of KV heads ({self.n_kv_heads}) must be"
-                        " divisible by the number of devices"
-                        f" ({self.n_devices})"
-                    )
+            elif self.n_kv_heads % self.n_devices == 0:
+                # Heads split evenly across devices.
                 self.n_kv_heads_per_device = max(
                     self.n_kv_heads // self.n_devices, 1
+                )
+            elif (
+                self.allow_kv_head_replication
+                and self.n_devices % self.n_kv_heads == 0
+            ):
+                # Fewer heads than devices: replicate each across a device group.
+                self.n_kv_heads_per_device = 1
+            else:
+                raise ValueError(
+                    f"Number of KV heads ({self.n_kv_heads}) must be"
+                    " divisible by the number of devices"
+                    f" ({self.n_devices})"
                 )
 
             # Then, resolve the number of query heads per device if it

@@ -234,6 +234,58 @@ def test_tensor_parallel_odd_division_fails() -> None:
         )
 
 
+def test_tensor_parallel_kv_head_replication() -> None:
+    """TP wider than the KV head count replicates heads when opted in."""
+    params = KVCacheParams(
+        dtype=DType.bfloat16,
+        n_kv_heads=4,
+        head_dim=128,
+        num_layers=1,
+        devices=[DeviceRef.GPU(i) for i in range(8)],
+        data_parallel_degree=1,
+        page_size=16,
+        allow_kv_head_replication=True,
+    )
+    # Each KV head is replicated across 8 // 4 == 2 devices, so every device
+    # owns exactly one head.
+    assert params.n_kv_heads_per_device == 1
+
+
+def test_tensor_parallel_kv_head_replication_requires_opt_in() -> None:
+    """Replication stays disabled (and errors) unless explicitly enabled."""
+    with pytest.raises(
+        ValueError,
+        match=r"Number of KV heads \(4\) must be divisible by the number of devices \(8\)",
+    ):
+        KVCacheParams(
+            dtype=DType.bfloat16,
+            n_kv_heads=4,
+            head_dim=128,
+            num_layers=1,
+            devices=[DeviceRef.GPU(i) for i in range(8)],
+            data_parallel_degree=1,
+            page_size=16,
+        )
+
+
+def test_tensor_parallel_kv_head_replication_non_multiple_fails() -> None:
+    """Replication needs n_devices to be a multiple of n_kv_heads."""
+    with pytest.raises(
+        ValueError,
+        match=r"Number of KV heads \(4\) must be divisible by the number of devices \(6\)",
+    ):
+        KVCacheParams(
+            dtype=DType.bfloat16,
+            n_kv_heads=4,
+            head_dim=128,
+            num_layers=1,
+            devices=[DeviceRef.GPU(i) for i in range(6)],
+            data_parallel_degree=1,
+            page_size=16,
+            allow_kv_head_replication=True,
+        )
+
+
 def test_mla_bypasses_divisibility_check() -> None:
     """Test MLA mode bypasses tensor parallel head divisibility check."""
     # This would fail for non-MLA due to 1 head not being divisible by 4 devices
