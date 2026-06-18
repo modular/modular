@@ -22,7 +22,7 @@ are spelled as `reflect[T].method()` (no parens after `[T]`).
 - `field_names()` - `InlineArray[StaticString, N]` of field names.
 - `field_types()` - a `TypeList` of field types.
 - `field_index[name]()` - index of the named field.
-- `field_type[name]` - `Reflected[FieldT]` for the named field's type.
+- `field[name]` - `Reflected[FieldT]` for the named field's type.
 - `field_offset[name=...]()` / `field_offset[index=...]()` - byte offset.
 - `field_ref[idx](s)` - reference to field at index `idx` in value `s`.
 
@@ -47,11 +47,11 @@ def main():
 ```
 
 The wrapped type is exposed as the `T` parameter, so the result of
-`field_type[name]` can be used as a type directly:
+`field[name]` can be used as a type directly:
 
 ```mojo
 def main():
-    comptime y_type = reflect[Point].field_type["y"]
+    comptime y_type = reflect[Point].field["y"]
     var v: y_type.T = 3.14  # y_type.T is Float64
 ```
 """
@@ -135,8 +135,8 @@ struct Reflected[T: AnyType]:
 
     - A member that returns a **type** (e.g. `Reflected[FieldT]`) is a
       `comptime` member alias and is spelled without `()`. This keeps it
-      composable in type position: `reflect[T].field_type["x"].T` reads as a
-      type. `field_type[name]` is the only such member today.
+      composable in type position: `reflect[T].field["x"].T` reads as a
+      type. `field[name]` is the only such member today.
     - A member that returns a **value** (an `Int`, `StaticString`,
       `InlineArray`, a `TypeList`, a typed `ref`, etc.) is an
       `@staticmethod` and is spelled with `()` — e.g.
@@ -347,11 +347,11 @@ struct Reflected[T: AnyType]:
             ]
         )
 
-    # `field_type` is a parametric `comptime` member alias rather than a
-    # static method, so callers spell `reflect[T].field_type["y"]` (no
+    # `field` is a parametric `comptime` member alias rather than a
+    # static method, so callers spell `reflect[T].field["y"]` (no
     # parens) and get back `Reflected[FieldT]` directly. The result is
     # itself a reflection handle type — fully composable.
-    comptime field_type[name: StringLiteral] = Reflected[
+    comptime field[name: StringLiteral] = Reflected[
         __mlir_attr[
             `#kgen.struct_field_type_by_name<`,
             Self.T,
@@ -363,7 +363,7 @@ struct Reflected[T: AnyType]:
     ]
     """A reflection handle type for the named field's type.
 
-    The result is `Reflected[FieldT]`, so `reflect[T].field_type["x"].T` can
+    The result is `Reflected[FieldT]`, so `reflect[T].field["x"].T` can
     be used in type position and `.name()`, `.field_count()`, etc. compose
     directly without an additional `()`.
 
@@ -380,7 +380,7 @@ struct Reflected[T: AnyType]:
             var y: Float64
 
         def main():
-            comptime y_type = reflect[Point].field_type["y"]
+            comptime y_type = reflect[Point].field["y"]
             var v: y_type.T = 3.14  # y_type.T is Float64
         ```
     """

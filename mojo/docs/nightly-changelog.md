@@ -75,6 +75,13 @@ This version is still a work in progress.
 - `ImplicitlyDestructible` has been renamed to `ImplicitlyDeletable`, for better
   name consistency with its required `__del__()` "delete" special method.
 
+- The `Reflected.field_type[name]` reflection member has been renamed to
+  `Reflected.field[name]`, because it returns a chainable `Reflected` handle
+  for the named field rather than the field's bare type, so the old name was
+  not accurate. Retrieve the field's type from the handle's `.T` member, as in
+  `reflect[T].field["x"].T`. Update call sites such as
+  `reflect[T].field_type["x"]` to `reflect[T].field["x"]`.
+
 - `InlineArray[ElementType, size]` now conditionally conforms to
   `ImplicitlyDeletable`, only when its `ElementType` does. This lets an
   `InlineArray` hold `@explicit_destroy` elements without leaking them when the
