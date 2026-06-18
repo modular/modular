@@ -187,3 +187,38 @@ TEST(CachedTransformTest, BufferReturn) {
   EXPECT_EQ(hashKey, initialHash)
       << "Hash should persist through hit function changes";
 }
+
+// The cache key must be relocatable: two operations that are identical except
+// for the absolute file paths in their source locations must produce byte-for-
+// byte identical key buffers. Otherwise a cache warmed under one install path
+// (e.g. one venv's site-packages) misses under a different install path even
+// for byte-identical IR, forcing a full recompile of every kernel.
+TEST(CachedTransformTest, KeyIgnoresSourceLocations) {
+  MLIRContext ctx;
+  ctx.getOrLoadDialect<mlir::func::FuncDialect>();
+
+  // Same IR, parsed identically, then re-located against two different
+  // absolute paths to simulate two different package install locations.
+  constexpr StringLiteral kIR = "func.func @k() { return }";
+
+  auto buildKey = [&](StringRef path) -> std::string {
+    OwningOpRef<ModuleOp> module = parseSourceString<ModuleOp>(kIR, &ctx);
+    EXPECT_TRUE(module) << "failed to parse test IR";
+    // Stamp every op with a FileLineColLoc rooted at `path`, mirroring how
+    // kernel `.mojo` files are parsed with their on-disk absolute paths.
+    auto fileLoc = FileLineColLoc::get(&ctx, path, /*line=*/1, /*column=*/1);
+    module->walk([&](Operation *op) { op->setLoc(fileLoc); });
+
+    WriteableBufferRef key = WriteableBuffer::get();
+    EXPECT_FALSE(failed(writeOperationToCacheKey(module.get(), key)));
+    auto buf = key->getBuffer();
+    return std::string(buf.data(), buf.size());
+  };
+
+  std::string keyA = buildKey("/install/a/lib/python3.14/site-packages/k.mojo");
+  std::string keyB = buildKey("/install/b/lib/python3.14/site-packages/k.mojo");
+
+  EXPECT_FALSE(keyA.empty());
+  EXPECT_EQ(keyA, keyB)
+      << "Cache key must not depend on absolute source-location paths";
+}

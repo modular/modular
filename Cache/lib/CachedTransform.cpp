@@ -66,9 +66,29 @@ std::string TransformCacheKey::hashKey(TransformCacheKey::KeyTy key) {
 LogicalResult Cache::writeOperationToCacheKey(Operation *op,
                                               const WriteableBufferRef &key) {
   TimeTraceScope scope(CacheProfilerEntry::create("writeOperationToCacheKey"));
+
+  // Strip source locations before hashing so the key is relocatable: kernel
+  // `.mojo` files are parsed with their on-disk absolute paths baked into
+  // `FileLineColLoc`, so without this a cache warmed under one install path
+  // (e.g. one venv's site-packages) misses under a different install path even
+  // for byte-identical IR. Locations carry no semantic meaning for the
+  // transform result, so dropping them is safe and matches what the MOGG
+  // semantic hash already does (see ModuleHasher::setGeneratorHash). Clone
+  // first: the live `op` is the pre-transform IR and still needs its locations
+  // for diagnostics.
+  OwningOpRef<Operation *> clone(op->clone());
+  mlir::AttrTypeReplacer replacer;
+  auto unknownLoc = mlir::UnknownLoc::get(op->getContext());
+  replacer.addReplacement(
+      [unknownLoc](mlir::LocationAttr) -> mlir::LocationAttr {
+        return unknownLoc;
+      });
+  replacer.recursivelyReplaceElementsIn(clone.get(), /*replaceAttrs=*/false,
+                                        /*replaceLocs=*/true);
+
   // Use bytecode when writing cache keys to ensure determinism across different
   // builds.
-  return mlir::writeBytecodeToFile(op, *key);
+  return mlir::writeBytecodeToFile(clone.get(), *key);
 }
 
 /// Encode the given set of diagnostics in the provided buffer.
