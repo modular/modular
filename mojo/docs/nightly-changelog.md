@@ -82,27 +82,39 @@ This version is still a work in progress.
   `reflect[T].field["x"].T`. Update call sites such as
   `reflect[T].field_type["x"]` to `reflect[T].field["x"]`.
 
-- `InlineArray[ElementType, size]` now conditionally conforms to
-  `ImplicitlyDeletable`, only when its `ElementType` does. This lets an
-  `InlineArray` hold `@explicit_destroy` elements without leaking them when the
-  array is dropped.
+- Several collection types now *conditionally* conform to `ImplicitlyDeletable`,
+  conforming only when their element type does. This lets a collection hold
+  non-`ImplicitlyDeletable` elements at all (previously such a collection failed
+  to compile); a collection of non-deletable elements is itself linear and must
+  be drained explicitly with the new `destroy_with()` method, which calls a
+  closure on each element:
 
-  As a result, generic code that takes an `InlineArray` by value with only a
-  `Movable` element bound now fails to compile for every `ElementType`
-  (previously the error was deferred until `ElementType` was a non-deletable
-  type). Add `& ImplicitlyDeletable` to the element bound:
+  ```mojo
+  collection^.destroy_with(my_destroy_closure)
+  ```
+
+  Generic code that takes one of these collections by value may now need
+  `& ImplicitlyDeletable` added to its element bound so the collection can be
+  dropped:
 
   ```mojo
   def foo[T: Movable & ImplicitlyDeletable, //](var arr: InlineArray[T, 3]):
       pass
   ```
 
-  To consume an `InlineArray` of explicitly-destroyed elements, drain it with
-  the new `destroy_with()` method, which calls a closure on each element:
+  Affected types:
 
-  ```mojo
-  arr^.destroy_with(my_destroy_closure)
-  ```
+  - `InlineArray[ElementType, size]`.
+  - `Deque[ElementType]`
+    - Element-destroying operations (`append`, `appendleft`, `extend`,
+      `extendleft`, `insert`, `clear`, `remove`, etc.) still require
+      `ElementType` to be `ImplicitlyDeletable`.
+    - Consuming iteration (`for x in deque^`, the `IterableOwned` conformance)
+      is likewise conditional, requiring `ElementType` to be
+      `ImplicitlyDeletable`; generic code bounded on `IterableOwned` now rejects
+      a non-conforming element type at the bound rather than failing later
+      inside `__iter__()`. For deletable element types (the common case) this is
+      transparent.
 
 - The `IterableOwned` conformance on `List` and `InlineArray` (consuming
   iteration via `for x in collection^`) is now conditional, requiring the
