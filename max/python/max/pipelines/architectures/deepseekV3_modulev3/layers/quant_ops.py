@@ -18,6 +18,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any, TypeAlias
 
+from max.driver import CPU
 from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental.nn.common_layers.functional_kernels import (
@@ -360,7 +361,9 @@ def grouped_matmul(
         expert_start_indices: Ragged group offsets, ``uint32``.
         expert_ids: Per-group expert id, ``int32``.
         expert_usage_stats: ``[max_tokens_per_expert, num_active_experts]``
-            on the host.
+            device tensor. The bf16 fallback requires it on-device (the SM100
+            kernel reads ``num_active_experts`` there); the FP8 branch copies it
+            to CPU itself.
     """
     if isinstance(weight, FP8BlockTensor):
         return _grouped_matmul_fp8_block(
@@ -392,6 +395,8 @@ def _grouped_matmul_fp8_block(
         out_type=DType.float8_e4m3fn,
     )
 
+    # This kernel reads the usage stats host-side, so copy to CPU here rather
+    # than at the call site (the bf16 path needs them on-device).
     return grouped_dynamic_scaled_fp8_matmul(
         x_fp8,
         weight.data,
@@ -399,7 +404,7 @@ def _grouped_matmul_fp8_block(
         weight.scale_inv,
         expert_start_indices,
         expert_ids,
-        expert_usage_stats,
+        expert_usage_stats.to(CPU()),
         input_spec,
         weight_spec,
         out_type=DType.bfloat16,

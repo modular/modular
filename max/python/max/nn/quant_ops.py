@@ -593,14 +593,14 @@ def quantized_grouped_matmul(
         weight_scale: The weight scale tensor in storage layout.
         expert_start_indices: Starting index of each expert's token group.
         expert_ids: Expert identifier for each token group.
-        usage_stats: Per-expert usage statistics (will be moved to CPU).
+        usage_stats: Per-expert usage statistics. The MXFP4 path passes it
+            straight to ``grouped_matmul_ragged``, currently the FP8 path
+            copies it to CPU.
         quant_config: The quantization configuration.
 
     Returns:
         The grouped matmul output tensor in bf16.
     """
-    cpu_usage_stats = usage_stats.to(DeviceRef.CPU())
-
     match quant_config.format:
         case QuantFormat.MXFP4:
             dequanted = mxfp4_dequant(
@@ -611,7 +611,7 @@ def quantized_grouped_matmul(
                 dequanted,
                 expert_start_indices,
                 expert_ids,
-                cpu_usage_stats,
+                usage_stats,
             )
         case (
             QuantFormat.COMPRESSED_TENSORS_FP8
@@ -640,7 +640,7 @@ def quantized_grouped_matmul(
                 scale_t,
                 expert_start_indices,
                 expert_ids,
-                cpu_usage_stats,
+                usage_stats.to(DeviceRef.CPU()),
                 quant_config.input_scale,
                 quant_config.weight_scale,
             )

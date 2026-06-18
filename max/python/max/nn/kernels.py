@@ -3998,7 +3998,7 @@ def grouped_matmul_ragged(
     weight: TensorValue,
     expert_start_indices: TensorValue,
     expert_ids: TensorValue,
-    expert_usage_stats_host: TensorValue,
+    expert_usage_stats: TensorValue,
 ) -> TensorValue:
     """Grouped matmul used in MoE layer.
 
@@ -4008,9 +4008,9 @@ def grouped_matmul_ragged(
 
     `expert_ids` is the id of the expert for each group in `hidden_states`
 
-    `expert_usage_stats_host` is the maximum number of tokens assigned to any
-    expert, and the number of active experts.
-
+    `expert_usage_stats` is a rank-1 ``uint32`` tensor laid out as
+    ``[max_tokens_per_expert, num_active_experts]`` (the output of
+    ``moe_create_indices``).
     """
     if weight.rank != 3:
         raise ValueError(f"expected weight of rank 3 but got {weight.rank}")
@@ -4037,8 +4037,7 @@ def grouped_matmul_ragged(
             weight,
             expert_start_indices,
             expert_ids,
-            expert_usage_stats_host[0],
-            expert_usage_stats_host[1],
+            expert_usage_stats,
         ],
         out_types=[
             TensorType(

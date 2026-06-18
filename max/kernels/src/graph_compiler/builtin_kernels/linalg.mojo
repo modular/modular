@@ -388,8 +388,7 @@ struct Struct_grouped_matmul_ragged:
         b: InputTensor[dtype=b_type, rank=3, ...],
         expert_start_indices: InputTensor[dtype=DType.uint32, rank=1, ...],
         expert_ids: InputTensor[dtype=DType.int32, rank=1, ...],
-        max_num_tokens_per_expert: UInt32,
-        num_active_experts: UInt32,
+        expert_usage_stats: InputTensor[dtype=DType.uint32, rank=1, ...],
         context: DeviceContext,
     ) raises:
         comptime assert is_gpu[target](), "grouped matmul only support GPUs"
@@ -400,8 +399,7 @@ struct Struct_grouped_matmul_ragged:
             b.to_tile_tensor[DType.int64](),
             expert_start_indices.to_tile_tensor[DType.int64](),
             expert_ids.to_tile_tensor[DType.int64](),
-            Int(max_num_tokens_per_expert),
-            Int(num_active_experts),
+            expert_usage_stats.to_tile_tensor[DType.int64](),
             cuda_ctx,
         )
 

@@ -15,7 +15,6 @@
 
 from __future__ import annotations
 
-from max.driver import CPU
 from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental.nn import Linear
@@ -198,7 +197,7 @@ class GptOssMoE(Module[[Tensor], Tensor]):
             self.gate_up_proj,
             expert_start_indices,
             expert_ids,
-            expert_usage_stats.to(CPU()),
+            expert_usage_stats,
         )
 
         # Apply bias based on expert assignment
@@ -228,7 +227,7 @@ class GptOssMoE(Module[[Tensor], Tensor]):
             self.down_proj,
             expert_start_indices,
             expert_ids,
-            expert_usage_stats.to(CPU()),
+            expert_usage_stats,
         )
 
         # Apply bias based on expert assignment

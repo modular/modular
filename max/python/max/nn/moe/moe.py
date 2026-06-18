@@ -735,7 +735,7 @@ class MoE(Module, Shardable):
             self.gate_up_proj,
             expert_start_indices,
             expert_ids,
-            expert_usage_stats.to(DeviceRef.CPU()),
+            expert_usage_stats,
         )
 
         if self.gated_activation_fn is not None:
@@ -752,7 +752,7 @@ class MoE(Module, Shardable):
             self.down_proj,
             expert_start_indices,
             expert_ids,
-            expert_usage_stats.to(DeviceRef.CPU()),
+            expert_usage_stats,
         )
 
         down_projs = ops.gather(
