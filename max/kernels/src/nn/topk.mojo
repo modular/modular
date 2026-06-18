@@ -2166,6 +2166,7 @@ def apply_gumbel_noise_kernel[
 ):
     comptime EPS = Float32(1e-20)
     comptime LOG2 = Float32(0.6931471806)
+    comptime MIN_TEMP = Float32(1e-6)
 
     comptime simd_width = simd_width_of[dtype]()
     var N = Int(input.dim(1))
@@ -2193,6 +2194,7 @@ def apply_gumbel_noise_kernel[
             var temp_val = Float32(1.0)
             if temperature:
                 temp_val = temperature.unsafe_value()[tok_idx]
+                temp_val = max(temp_val, MIN_TEMP)
 
             var seed_val = UInt64(0)
             if seed:

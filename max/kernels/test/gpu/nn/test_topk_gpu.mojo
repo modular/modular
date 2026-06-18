@@ -26,7 +26,7 @@ from std.gpu.host import DeviceContext
 
 from layout import Coord, Idx, TileTensor, coord_to_index_list, row_major
 
-from nn.topk import _top_k_cpu, _topk_gpu, topk_gpu
+from nn.topk import _top_k_cpu, _topk_gpu, gumbel_sampling_gpu, topk_gpu
 from std.testing import assert_almost_equal, assert_equal, assert_true
 
 from std.utils import IndexList
@@ -673,6 +673,54 @@ def test_multi_rank[dtype: DType, sampling: Bool](ctx: DeviceContext) raises:
     test_case_multi_rank[dtype, fill_iota](ctx, test_case_multi_rank3)
 
 
+def test_gumbel_zero_temperature[dtype: DType](ctx: DeviceContext) raises:
+    """Regression: temperature == 0 must not cause NaN or an out-of-range token.
+
+    Without the clamp, 0.0 / 0.0 = NaN (all-zero logits at temp=0), causing
+    the argmax to return an undefined token.  With `max(temp, 1e-6)` the
+    division is safe and the token stays in [0, N).
+    """
+    print("==== Running gumbel temp=0 regression: N=256 batch_size=2")
+    comptime N = 256
+    comptime batch_size = 2
+
+    var device_in = ctx.enqueue_create_buffer[dtype](batch_size * N)
+    var device_temp = ctx.enqueue_create_buffer[DType.float32](batch_size)
+    var device_out = ctx.enqueue_create_buffer[DType.int32](batch_size)
+
+    # All-zero logits at temperature 0: the case that divides by zero without
+    # the clamp.
+    with device_in.map_to_host() as in_host:
+        for i in range(batch_size * N):
+            in_host[i] = Scalar[dtype](0)
+    with device_temp.map_to_host() as temp_host:
+        for i in range(batch_size):
+            temp_host[i] = Float32(0)
+
+    var in_tt = TileTensor(device_in, row_major(batch_size, N))
+    var temp_tt = TileTensor(device_temp, row_major(batch_size))
+    var out_tt = TileTensor(device_out, row_major(batch_size, 1))
+
+    gumbel_sampling_gpu(
+        ctx,
+        in_tt.as_unsafe_any_origin().as_immut(),
+        out_tt,
+        temperature=temp_tt.as_unsafe_any_origin().as_immut(),
+    )
+
+    with device_out.map_to_host() as out_host:
+        for b in range(batch_size):
+            var tok = Int(out_host[b])
+            assert_true(
+                tok >= 0 and tok < N,
+                "gumbel temp=0: token out of range [0, N), got "
+                + String(tok)
+                + " (N="
+                + String(N)
+                + ")",
+            )
+
+
 def main() raises:
     comptime llama3_vocab_size = 128256
     with DeviceContext() as ctx:
@@ -980,3 +1028,6 @@ def main() raises:
         test_multi_rank[dtype, True](ctx)
         test_multi_rank[bf16_type, False](ctx)
         test_multi_rank[bf16_type, True](ctx)
+
+        # Regression: temperature == 0 in gumbel path must not yield NaN or -1.
+        test_gumbel_zero_temperature[dtype](ctx)
