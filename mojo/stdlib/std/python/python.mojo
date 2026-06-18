@@ -19,7 +19,6 @@ from std.python import Python
 ```
 """
 
-from std.collections.dict import OwnedKwargsDict
 from std.os import abort
 from std.ffi import _Global
 

@@ -593,7 +593,7 @@ def test_mojo_issue_1729() raises:
         assert_equal(i, d[DummyKey(key)])
 
 
-def _test_taking_owned_kwargs_dict(var kwargs: OwnedKwargsDict[Int]) raises:
+def _test_taking_owned_kwargs_dict(**kwargs: Int) raises:
     assert_equal(len(kwargs), 2)
 
     assert_true("fruit" in kwargs)
@@ -639,7 +639,7 @@ def test_owned_kwargs_dict() raises:
     var owned_kwargs = OwnedKwargsDict[Int]()
     owned_kwargs._insert("fruit", 8)
     owned_kwargs._insert("dessert", 9)
-    _test_taking_owned_kwargs_dict(owned_kwargs^)
+    _test_taking_owned_kwargs_dict(**owned_kwargs^)
 
 
 def test_find_get() raises:

@@ -22,6 +22,7 @@ and Python code.
 
 from std.ffi import _Global, _CPointer, c_int
 from std.sys.info import size_of
+from std.collections import OwnedKwargsDict
 
 from std.builtin._startup import _ensure_runtime_init
 from std.reflection import reflect
@@ -1198,6 +1199,34 @@ def _py_c_function_wrapper[
         return PyObjectPtr()
 
 
+def _convert_kwargs(
+    py_kwargs: PythonObject,
+) raises -> OwnedKwargsDict[PythonObject]:
+    """Convert a Python dictionary to an OwnedKwargsDict.
+
+    Args:
+        py_kwargs: Python dictionary containing keyword arguments.
+
+    Returns:
+        An OwnedKwargsDict containing the keyword arguments.
+    """
+    var result = OwnedKwargsDict[PythonObject]()
+
+    # Handle the case where kwargs is None or empty
+    if not py_kwargs._obj_ptr:
+        return result^
+
+    # Iterate through the Python dictionary and populate OwnedKwargsDict
+    var items = py_kwargs.items()
+    for item in items:
+        var key = item[0]
+        var value = item[1]
+        var key_str = String(key)
+        result[key_str] = value
+
+    return result^
+
+
 @always_inline
 def _py_kwargs_function_wrapper[
     method_type: TrivialRegisterPassable,
@@ -1224,9 +1253,9 @@ def _py_kwargs_function_wrapper[
         mut py_args: PythonObject,
         mut py_kwargs: PythonObject,
     ) raises -> PythonObject:
-        var kwargs = FuncT._convert_kwargs(py_kwargs)
+        var kwargs = _convert_kwargs(py_kwargs)
         return FuncT._dispatch_kwargs[is_method](
-            func._func, py_self, py_args, kwargs^
+            func._func, py_self, py_args, **kwargs^
         )
 
     return GenericPyFunction(wrapper_with_kwargs)

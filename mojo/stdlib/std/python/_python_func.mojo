@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.collections import OwnedKwargsDict
 from std.ffi import _CPointer
 from std.os import abort
 from std.sys.intrinsics import _type_is_eq
@@ -1797,34 +1796,6 @@ struct PyObjectFunction[
                 )
             )
 
-    @staticmethod
-    def _convert_kwargs(
-        py_kwargs: PythonObject,
-    ) raises -> OwnedKwargsDict[PythonObject]:
-        """Convert a Python dictionary to an OwnedKwargsDict.
-
-        Args:
-            py_kwargs: Python dictionary containing keyword arguments.
-
-        Returns:
-            An OwnedKwargsDict containing the keyword arguments.
-        """
-        var result = OwnedKwargsDict[PythonObject]()
-
-        # Handle the case where kwargs is None or empty
-        if not py_kwargs._obj_ptr:
-            return result^
-
-        # Iterate through the Python dictionary and populate OwnedKwargsDict
-        var items = py_kwargs.items()
-        for item in items:
-            var key = item[0]
-            var value = item[1]
-            var key_str = String(key)
-            result[key_str] = value
-
-        return result^
-
     # ===-------------------------------------------------------------------===#
     # Compile-time check utilities
     # ===-------------------------------------------------------------------===#
@@ -2463,7 +2434,7 @@ struct PyObjectFunction[
         func: Self.func_type,
         py_self: PO,
         py_args: PO,
-        var kwargs: OwnedKwargsDict[PO],
+        **kwargs: PO,
     ) raises -> PO:
         """Compile-time dispatch for kwargs function/method calls."""
         comptime assert Self.has_kwargs, "only for kwargs functions"
