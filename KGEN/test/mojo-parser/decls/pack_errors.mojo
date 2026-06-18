@@ -51,6 +51,49 @@ def test_splat_into_fixed_arity[*Ts: AnyType](*pack: *Ts):
     takes_two_ints(*pack)
 
 
+# Resolved-pack splats: even when the operand's `VariadicPack` element list
+# is statically known (here, by spelling concrete element types into the
+# pack-typed parameter), splatting a pack into a fixed-arity callee is not
+# supported. As with the symbolic case above, the call is diagnosed with
+# the dispatcher-pattern hint regardless of whether the resolved element
+# count is too few, too many, or an exact match for the callee's arity;
+# `*pack`-to-positional expansion is follow-up work (MOCO-2210).
+# expected-note @+1 {{function declared here}}
+def takes_three_ints(a: Int, b: Int, c: Int):
+    pass
+
+
+def test_resolved_pack_too_few(
+    pack: VariadicPack[origin=_, element_trait=AnyType, _, Int, Int]
+):
+    # expected-error @+1 {{unpack is only supported when the callee accepts a variadic; to forward a runtime pack to a fixed-arity callee, route the call through a dispatcher whose argument is itself a variadic pack (e.g. `def shim[Ts: TypeList[Trait=AnyType, ...], //, callee: def(*args: *Ts) thin](...): callee(*pack)`)}}
+    takes_three_ints(*pack)
+
+
+# expected-note @+1 {{function declared here}}
+def takes_one_int(a: Int):
+    pass
+
+
+def test_resolved_pack_too_many(
+    pack: VariadicPack[origin=_, element_trait=AnyType, _, Int, Int]
+):
+    # expected-error @+1 {{unpack is only supported when the callee accepts a variadic; to forward a runtime pack to a fixed-arity callee, route the call through a dispatcher whose argument is itself a variadic pack (e.g. `def shim[Ts: TypeList[Trait=AnyType, ...], //, callee: def(*args: *Ts) thin](...): callee(*pack)`)}}
+    takes_one_int(*pack)
+
+
+# expected-note @+1 {{function declared here}}
+def takes_int_and_float(x: Int, y: Float64):
+    pass
+
+
+def test_resolved_pack_matched_arity(
+    pack: VariadicPack[origin=_, element_trait=AnyType, _, Int, Float64]
+):
+    # expected-error @+1 {{unpack is only supported when the callee accepts a variadic; to forward a runtime pack to a fixed-arity callee, route the call through a dispatcher whose argument is itself a variadic pack (e.g. `def shim[Ts: TypeList[Trait=AnyType, ...], //, callee: def(*args: *Ts) thin](...): callee(*pack)`)}}
+    takes_int_and_float(*pack)
+
+
 # Unpacking into a *args (pos-vararg) function instead of a typed pack.
 # Users may confuse *args-style variadics with typed packs.
 # expected-note @+1 {{function declared here}}
