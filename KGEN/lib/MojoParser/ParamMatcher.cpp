@@ -398,8 +398,13 @@ LogicalResult ParamMatcher::matchFunctionTypes(FnTypeGeneratorType actual,
         expectedArgVariadicPackType.getVariadicPackInfo(shared);
     ASTType variadicElType = refPackType.getParamListElementType();
 
-    // This works because VariadicPack's element type is always a trait.
-    auto expectedTraitType = cast<TraitType>(variadicElType.mlirType);
+    // VariadicPack's element type is typically a `TraitType` (AnyType,
+    // Copyable, ...) but it can also be a parametric `StructMetaType`
+    // — for example `type_of(PythonObject)` for a variadic that takes
+    // metatypes of a specific struct. The covariant trait-conversion
+    // branch below only applies in the trait case; otherwise argument
+    // types must line up directly via `matchTypes`.
+    auto expectedTraitType = dyn_cast<TraitType>(variadicElType.mlirType);
 
     TypedAttr variadic = refPackType.getVariadic();
     // As we do our checks, we'll also be calculating the actual kgen.variadic
@@ -427,6 +432,8 @@ LogicalResult ParamMatcher::matchFunctionTypes(FnTypeGeneratorType actual,
       // argument, as long as that struct conforms to that trait.
       // In other words, here we're handling function conversions with covariant
       // arguments (see TTSMFS).
+      if (!expectedTraitType)
+        return error(MatchFailure::Unclassified{});
       IREmitter emitter(state.getDeclScope(), EC_TypeParamValue);
       // Now, check if the actual arg can be converted to the expected trait.
       PValue actualAstTypeAsVariadicElTrait =

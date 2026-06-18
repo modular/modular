@@ -396,3 +396,33 @@ def test_abi_c_capturing():
 def test_duplicate_thin_with_abi_c():
     # expected-error @below {{function effect 'thin' was already specified; remove the duplicate}}
     var _: def(Int) thin thin abi("C") -> Int
+
+
+# // -----
+
+
+# Function-type conversion where the expected callee's variadic element
+# type is a metatype rather than a trait (MOCO-2210). Surfaces as a
+# regular conversion error instead of crashing in `matchFunctionTypes`.
+
+
+struct MyStruct:
+    pass
+
+
+# expected-note @below {{function declared here}}
+def infer_meta_variadic[
+    ArgTypes: TypeList[Trait=type_of(MyStruct), ...],
+    //,
+    func: def(* args: * ArgTypes) thin -> None,
+]():
+    pass
+
+
+def plain_func(i: Int):
+    pass
+
+
+def test_infer_meta_variadic():
+    # expected-error @below {{value passed to 'func' cannot be converted from 'def plain_func(i: Int) -> None'}}
+    infer_meta_variadic[plain_func]()
