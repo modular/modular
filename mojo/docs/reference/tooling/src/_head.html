@@ -32,6 +32,7 @@
     --c-lit:#c08bff;
     background:#020c13;
   }
+  html.dark{background:#020c13;}
   body.dark .panel{background:#1e242a;}
   body.dark table td,body.dark table.dec td{border-bottom-color:#2a3036;}
   body.dark .panel.tr h2{color:#5cc2d4;background:#15262b;}
@@ -41,8 +42,7 @@
   html,body{margin:0;padding:0;background:#eceef1;color:var(--ink);
     font-family:'Inter',-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
     font-size:11px;line-height:1.45;}
-  .sheet{background:var(--bg);max-width:1100px;margin:14px auto;padding:18px 20px 14px;
-    box-shadow:0 1px 6px rgba(0,0,0,.08);}
+  .sheet{background:var(--bg);max-width:900px;margin:14px auto;padding:18px 20px 14px;}
   header{display:flex;align-items:baseline;justify-content:space-between;
     border-bottom:2px solid var(--brand);padding-bottom:7px;margin-bottom:12px;}
   header h1{font-size:21px;margin:0;letter-spacing:-.01em;}
@@ -53,7 +53,7 @@
   .legend{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:9.5px;color:var(--muted);
     margin:-4px 0 12px;}
   .legend span b{font-weight:600;}
-  .cols{column-count:3;column-gap:16px;}
+  .cols{column-count:2;column-gap:16px;}
   @media (max-width:840px){.cols{column-count:2;}}
   @media (max-width:560px){.cols{column-count:1;}}
   .panel{break-inside:avoid;margin:0 0 12px;border:1px solid var(--line);border-radius:6px;
@@ -70,6 +70,8 @@
   .panel .body{padding:7px 9px 8px;}
   p.note{margin:6px 0 0;font-size:10px;color:var(--muted);}
   p.note b{color:var(--ink);font-weight:600;}
+  .sublabel{margin:9px 0 3px;font-size:10px;font-weight:700;color:var(--ink);}
+  .body > .sublabel:first-child{margin-top:0;}
   code{font-family:'Roboto Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:0.92em;
     background:var(--code-bg);border:1px solid var(--code-line);border-radius:3px;padding:0 2px;}
   p.lead{margin:0;font-size:11px;}
@@ -115,12 +117,12 @@
   .d{color:var(--c-deco);font-weight:600;}
   .l{color:var(--c-lit);font-weight:600;}
   .o{color:var(--c-op);}
-  @page{size:letter;margin:0.4in;}
+  @page{size:letter;margin:0;}
   @media print{
     html,body{background:#fff;font-size:9.3px;}
     body.dark{background:#020c13;}
-    .sheet{box-shadow:none;margin:0;max-width:none;padding:0;}
-    .cols{column-count:3;column-gap:12px;}
+    .sheet{box-shadow:none;margin:0;max-width:none;padding:0.35in;}
+    .cols{column-count:2;column-gap:12px;}
     .panel{break-inside:avoid;}
   }
 </style>
