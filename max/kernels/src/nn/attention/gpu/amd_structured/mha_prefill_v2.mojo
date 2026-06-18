@@ -1308,6 +1308,9 @@ struct MhaPrefillV2[config: MhaConfigV2]:
             Int32(Self.NUM_THREADS)
         )
     )
+    @__name(
+        t"mha_prefill_v2_amd_{q_dtype}_{output_dtype}_BM{Self.BM}_KV{Self.KV_BLOCK}_D{Self.DEPTH}"
+    )
     @staticmethod
     def run[
         k_t: MHAOperand,
@@ -2209,6 +2212,9 @@ struct MhaPrefillV2[config: MhaConfigV2]:
         MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
             Int32(Self.NUM_THREADS)
         )
+    )
+    @__name(
+        t"mha_prefill_v2_ragged_amd_{qkv_dtype}_{output_dtype}_BM{Self.BM}_KV{Self.KV_BLOCK}_D{Self.DEPTH}"
     )
     @staticmethod
     def ragged_kernel[

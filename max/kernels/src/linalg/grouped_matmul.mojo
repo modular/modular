@@ -626,6 +626,7 @@ def grouped_matmul_sm100[
     )
 
 
+@__name(t"grouped_matmul_amd_{a_type}_{b_type}_{c_type}")
 def grouped_matmul_amd_kernel_launcher[
     c_type: DType,
     a_type: DType,
