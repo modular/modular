@@ -39,6 +39,7 @@ modular_py_test(
         "//max/python/max/experimental/nn",
         "//max/python/max/graph",
         "//max/python/max/nn/hooks:print_hook",
+        requirement("numpy"),
         requirement("torch"),
         requirement("typing-extensions"),
     ],
