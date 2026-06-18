@@ -1054,7 +1054,7 @@ def _softmax_gpu[
                 unswitch[dispatch](
                     simd_width > 1
                     and shape_il[axis] % simd_width == 0
-                    and shape_il[axis] >= 4 * BLOCK_SIZE * simd_width
+                    and shape_il[axis] >= BLOCK_SIZE * simd_width
                 )
 
         unswitch[dispatch_warp_or_block](shape_il[axis] <= WARP_SIZE)
