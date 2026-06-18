@@ -241,6 +241,9 @@ class EagerRealizationContext(RealizationContext):
         self.unrealized = []
         self.signal_buffers = None
 
+        # Inherits process-global default custom extensions (see
+        # max.graph.default_custom_extensions), so a backend's kernel overlays
+        # are reachable by ops staged for eager realization.
         self.graph = Graph("main", input_types=[])
 
         with realization_context(self), self.graph:

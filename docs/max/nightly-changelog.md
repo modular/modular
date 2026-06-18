@@ -117,6 +117,13 @@ This version is still a work in progress.
 
 - Added `F.print`, which supports both single-device and multi-device tensors.
 
+- Added `max.graph.default_custom_extensions()` and the
+  `default_custom_extensions_scope()` context manager. Paths registered as
+  defaults are merged into the `custom_extensions` of every new `Graph`, so a
+  backend can make its custom-op kernel library reachable from graphs built
+  without an explicit `custom_extensions=` — including the eager-realization
+  graph that backs `max.experimental` tensors. Empty by default.
+
 ### C API
 
 - Fixed `M_borrowTensorInto()` copying instead of borrowing a GPU input. When
