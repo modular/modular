@@ -457,7 +457,7 @@ struct PythonModuleBuilder:
 
         Accepts functions with PythonObject arguments (up to 8), can optionally
         return a PythonObject, and can raise. Functions can also accept keyword
-        arguments if their last parameter is OwnedKwargsDict[PythonObject].
+        arguments via `**kwargs: PythonObject`.
 
         Non-kwargs callables register through CPython's `METH_FASTCALL`
         calling convention; kwargs-accepting callables use
@@ -466,12 +466,11 @@ struct PythonModuleBuilder:
         Example signatures:
         ```mojo
         from std.python import PythonObject
-        from std.collections.dict import OwnedKwargsDict
 
         def func(arg1: PythonObject) -> PythonObject: ...
         def func(arg1: PythonObject, arg2: PythonObject) raises: ...
-        def func(kwargs: OwnedKwargsDict[PythonObject]) -> PythonObject: ...
-        def func(arg1: PythonObject, kwargs: OwnedKwargsDict[PythonObject]) raises: ...
+        def func(**kwargs: PythonObject) -> PythonObject: ...
+        def func(arg1: PythonObject, **kwargs: PythonObject) raises: ...
         ```
 
         Parameters:
@@ -1227,7 +1226,7 @@ def _py_kwargs_function_wrapper[
     ) raises -> PythonObject:
         var kwargs = FuncT._convert_kwargs(py_kwargs)
         return FuncT._dispatch_kwargs[is_method](
-            func._func, py_self, py_args, kwargs
+            func._func, py_self, py_args, kwargs^
         )
 
     return GenericPyFunction(wrapper_with_kwargs)
