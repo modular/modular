@@ -315,6 +315,22 @@ func.func @one_value_one_deref_to_addr_op_and_kill() -> !llvm.ptr {
   return %value : !llvm.ptr
 }
 
+// CHECK-LABEL: func @one_arg_one_deref_to_addr_op_and_kill
+// CHECK-SAME: (%[[ARG:.*]]: !llvm.ptr
+func.func @one_arg_one_deref_to_addr_op_and_kill(%arg: !llvm.ptr) -> !llvm.ptr {
+  // PRESERVE: %[[COUNT:.*]] = llvm.mlir.constant(1 : i32) : i32 loc(#[[LOC_UNKNOWN]])
+  // PRESERVE: %[[ALLOC:.*]] = llvm.alloca %[[COUNT]] x !llvm.ptr {alignment = 1 : i64} : (i32) -> !llvm.ptr loc(#[[LOC_UNKNOWN]])
+  // PRESERVE: llvm.intr.dbg.value #[[VARIABLE:.*]] #llvm.di_expression<[DW_OP_deref, DW_OP_deref]> = %[[ALLOC]] : !llvm.ptr
+  // PRESERVE: llvm.store volatile %[[ARG]], %[[ALLOC]] {alignment = 1 : i64} : !llvm.ptr, !llvm.ptr
+  // PRESERVE: %[[UNDEF:.*]] = llvm.mlir.undef
+  // PRESERVE: llvm.intr.dbg.value #[[VARIABLE]] = %[[UNDEF]]
+  // PRESERVE: return %[[ARG]] : !llvm.ptr
+
+  debuginfo.value #local_variable_2 #deref_expr = %arg : !llvm.ptr
+  debuginfo.kill #local_variable_2
+  return %arg : !llvm.ptr
+}
+
 // CHECK-LABEL: func @one_deref_one_value_to_addr_op
 func.func @one_deref_one_value_to_addr_op() -> !llvm.ptr {
   // PRESERVE: %[[COUNT:.*]] = llvm.mlir.constant(1 : i32) : i32 loc(#[[LOC_UNKNOWN]])
