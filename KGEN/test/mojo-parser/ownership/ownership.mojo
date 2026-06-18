@@ -1161,10 +1161,10 @@ def handleAnyLifetime4():
   # CHECK: lit.var.lifetime.end %str
 
 
-struct A:
-    var data: UnsafePointer[Int, AnyOrigin[mut=True]]
+struct A[origin: MutOrigin]:
+    var data: UnsafePointer[Int, Self.origin]
     def __init__(out self):
-        self.data = UnsafePointer[Int, AnyOrigin[mut=True]].unsafe_dangling()
+        self.data = UnsafePointer[Int, Self.origin].unsafe_dangling()
     def __del__(deinit self): pass
 
 def use_int(a: Int): pass
@@ -1172,7 +1172,7 @@ def use_int(a: Int): pass
 # CHECK-LABEL: lit.fn @"handleAnyLifetime5
 def handleAnyLifetime5():
     # lit.ref.load needs to extend the lifetime of A.
-    a = A()
+    a = A[AnyOrigin[mut=True]]()
     # CHECK: [[INT_REF:%.*]] = {{.*}}UnsafePointer::@"__getitem__
     # CHECK-NOT: lit.call {{.*}}__del__
     # CHECK: lit.ref.load [[INT_REF]]
@@ -1185,16 +1185,16 @@ def handleAnyLifetime5():
 # to reason about these.
 
 # CHECK-LABEL: lit.fn @"test_origin_ctor_folding
-def test_origin_ctor_folding[orig1: Origin](abcdef: A):
-    # CHECK-NEXT: lit.alias.decl *"x{{.*}}:origin<false> *"abcdef`2">>
+def test_origin_ctor_folding[orig1: MutOrigin](abcdef: A[orig1]):
+    # CHECK-NEXT: lit.alias.decl *"x{{.*}}:origin<false> *"abcdef`1">>
     comptime x = origin_of(abcdef)
 
     # MOCO-1467: Origin type equality problem.
-    # CHECK-NEXT: lit.alias.decl *"y{{.*}}:origin<#lit.struct.extract<:!Bool *"orig1.mut`", "_mlir_value">> *"orig1._mlir_origin`1">>
+    # CHECK-NEXT: lit.alias.decl *"y{{.*}}:origin<true> *"orig1._mlir_origin`{{.*}}>>
     comptime y = Origin[_mlir_origin = orig1._mlir_origin]()
 
     # Check that origin_of works on origins as well as MValues.
-    # CHECK-NEXT: lit.alias.decl *"o2{{.*}}:origin<false> {*"abcdef`2", (mutcast mut={{.*}}, *"orig1._mlir_origin`1")}>>
+    # CHECK-NEXT: lit.alias.decl *"o2{{.*}}:origin<false> {*"abcdef`1", (mutcast mut *"orig1._mlir_origin`"){{.*}}>>
     comptime o2 = origin_of(orig1, abcdef)
 
 def useMemory(a: MemExample): pass

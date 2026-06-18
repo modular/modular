@@ -38,6 +38,7 @@ struct my_iter:
 
 @fieldwise_init
 struct MyList(ImplicitlyCopyable):
+    @__allow_legacy_any_origin_fields
     var start: UnsafePointer[Int, MutAnyOrigin]
     var size: Int
 
