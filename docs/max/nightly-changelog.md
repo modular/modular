@@ -144,6 +144,11 @@ This version is still a work in progress.
 
 ## MAX kernels
 
+- Apple silicon GPU support for running MAX models has been extended to M1 and
+  M2 systems. Previously, the optimized matrix multiplication kernels for Apple
+  silicon GPUs only returned correct results on M3 and newer systems. That has
+  now been fixed for M1 and M2 systems, allowing many common MAX models to run
+  correctly on them.
 - The split-K decode attention kernel for Apple GPUs is now the default for
   token-generation attention, covering paged-KV-cache MHA and GQA decode for
   head dims that are a multiple of 32. It was previously opt-in;
