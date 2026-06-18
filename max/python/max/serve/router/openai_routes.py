@@ -701,6 +701,24 @@ class OpenAIChatResponseGenerator(
             if self.parse_tool_calls:
                 try:
                     parsed = self.parser.parse_complete(response_message)
+                    # Schema-aware argument coercion (parsers that opt in, e.g.
+                    # MiniMax-M3, whose bare-text XML loses scalar types).
+                    # No-op for parsers without `coerce_arguments`.
+                    coerce_args = getattr(self.parser, "coerce_arguments", None)
+                    if coerce_args is not None and self._tool_schemas:
+                        for tc in parsed.tool_calls:
+                            tc_schema = self._tool_schemas.get(tc.name)
+                            if not tc_schema:
+                                continue
+                            try:
+                                tc_args = json.loads(tc.arguments)
+                            except (JSONDecodeError, ValueError):
+                                continue
+                            if isinstance(tc_args, dict):
+                                tc.arguments = json.dumps(
+                                    coerce_args(tc_args, tc_schema),
+                                    ensure_ascii=False,
+                                )
                     if parsed.tool_calls:
                         if self._tool_schemas:
                             log_tool_call_conformance(
