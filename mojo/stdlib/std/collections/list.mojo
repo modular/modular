@@ -240,11 +240,12 @@ struct List[T: Movable](
       ```
 
     - **Out of bounds access**: Accessing elements with invalid indices will
-      cause undefined behavior:
+      abort:
 
       ```mojo
       var my_list = [1, 2, 3]
-      # print(my_list[5])  # Undefined behavior (out of bounds)
+      print(my_list[5])  # Aborts with an Assert Error: index 5 is
+                         # out of bounds, valid range is 0 to 2
       ```
 
       For safe access, you should manually check bounds or use methods that
