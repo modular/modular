@@ -131,6 +131,11 @@ This version is still a work in progress.
 
 ## MAX kernels
 
+- The split-K decode attention kernel for Apple GPUs is now the default for
+  token-generation attention, covering paged-KV-cache MHA and GQA decode for
+  head dims that are a multiple of 32. It was previously opt-in;
+  `MODULAR_ENABLE_APPLE_NAIVE_FA_DECODE=0` now opts out, falling back to
+  `mha_gpu_naive`.
 - Sped up GPU RMS norm on AMD CDNA4 (MI355X) for prefill-sized shapes. The
   warp-tiling path runs one row per block, so the per-thread SIMD width sets
   how many warps a row needs; on CDNA4, when there are enough rows to keep the
