@@ -85,8 +85,7 @@ struct ContainerWithNonCopyable:
         self.count = count
 
 
-# Struct with a wrapped (`Optional[T]`) field, mirroring the serializer use case
-# in issue #6645: recovering the wrapper's inner concrete type by index.
+# Struct with a wrapped (`Optional[T]`) field, for inner-type peeling by index.
 struct WrappedFields:
     var a: Int64
     var b: Optional[Int64]
@@ -305,11 +304,7 @@ def test_field_type_at_usable_as_type_annotation() raises:
 
 
 def _field_base_names_generic[T: AnyType]() -> String:
-    """Peel each field's concrete type by index in a `comptime for` over a
-    generic type parameter's fields. This exercises the headline capability of
-    issue #6645: `T` is a real `[T: AnyType]` parameter, not a concrete type,
-    and `field_type_at[i].base_name()` recovers a concrete type the erased
-    `field_types()[i]` cannot expose."""
+    """Recover each field's concrete type by index through a generic `T`."""
     comptime r = reflect[T]
     var seen = String("")
     comptime for i in range(r.field_count()):
@@ -325,10 +320,7 @@ def test_field_type_at_through_generic() raises:
 
 
 def test_field_type_at_peels_wrapper() raises:
-    """The issue #6645 serializer pattern: find a wrapped field by index,
-    confirm it is an `Optional`, and peel its inner concrete type via `.T`. A
-    reflection-derived serializer reflects on its own concrete message type
-    (`reflect[Self]`), which is what this mirrors."""
+    """Find a wrapped field by index and peel its inner concrete type."""
     comptime opt = reflect[WrappedFields].field_type_at[1]
     assert_equal(opt.base_name(), "Optional")
     # `opt.T` is `Optional[Int64]`; peel its inner type to `Int64`.

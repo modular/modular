@@ -386,21 +386,15 @@ struct Reflected[T: AnyType]:
         ```
     """
 
-    # `field_type_at[idx]` is the by-index dual of `field_type[name]`. It peels
-    # the concrete field type at `idx` — the same per-index type already used by
-    # `field_ref` — so it composes in type position where only the index is
-    # available, such as inside a `comptime for` over a struct's fields. A
-    # separate name (not an overload of `field_type`) is required because
-    # `comptime` member aliases cannot be overloaded on parameter type.
+    # A separate name (not an overload of `field_type`) because `comptime`
+    # member aliases cannot be overloaded on parameter type.
     comptime field_type_at[idx: Int] = Reflected[_field_types_of[Self.T]()[idx]]
     """A reflection handle type for the type of the field at the given index.
 
-    The result is `Reflected[FieldT]`, so `reflect[T].field_type_at[idx].T` can
-    be used in type position and `.name()`, `.base_name()`, `.field_count()`,
-    etc. compose directly without an additional `()`. This is the by-index dual
-    of `field_type[name]`: unlike the by-name form, it works when only the field
-    index is available, such as inside a `comptime for` over a struct's fields
-    in generic code, and `T` may be a generic type parameter.
+    The by-index dual of `field_type[name]`. Unlike the by-name form, it works
+    when only the field index is available, such as inside a `comptime for` over
+    a struct's fields, and `T` may be a generic type parameter. The result is
+    `Reflected[FieldT]`, so `reflect[T].field_type_at[idx].T` reads as a type.
 
     Parameters:
         idx: The zero-based index of the field.
