@@ -1385,7 +1385,12 @@ def mla_prefill_decode_graph_fp8[
         return
 
     # When running verification with MTP we want to use the decode branch.
-    if max_seq_len <= mla_decode_max_seq_len[collection_t.CacheType.dtype]():
+    if (
+        max_seq_len
+        <= mla_decode_max_seq_len[
+            collection_t.CacheType.dtype, q.static_shape[1]
+        ]()
+    ):
         mla_decode_branch_fp8[
             m_scale_granularity=m_scale_granularity,
             n_scale_granularity=n_scale_granularity,
@@ -2043,10 +2048,17 @@ def mla_prefill_decode_graph_bf16[
 
     # The fold runs in the cache dtype (the decode branch quantizes Q to
     # `collection_t.CacheType.dtype`), so the decode-vs-prefill threshold keys on
-    # the cache dtype, not the BF16 compute dtype: an FP8 cache routes S>1 to the
-    # decode fold (prefill can't serve MTP), a BF16 cache returns 1 and routes
-    # S>1 to prefill. Mirrors `mla_prefill_decode_graph_fp8`.
-    if max_seq_len <= mla_decode_max_seq_len[collection_t.CacheType.dtype]():
+    # the cache dtype, not the BF16 compute dtype: an FP8 cache with
+    # num_heads<=AMD_MLA_DECODE_FOLD_MAX_NUM_HEADS routes S>1 to the decode fold
+    # (prefill can't serve MTP); a BF16 cache or num_heads>16 returns 1 and routes
+    # S>1 to prefill (no large-head decode fold exists). Mirrors
+    # `mla_prefill_decode_graph_fp8`.
+    if (
+        max_seq_len
+        <= mla_decode_max_seq_len[
+            collection_t.CacheType.dtype, q.static_shape[1]
+        ]()
+    ):
         mla_decode_branch_bf16[
             mask_str=mask_str,
             kv_input_fn=kv_input_fn,

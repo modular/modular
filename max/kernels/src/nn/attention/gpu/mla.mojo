@@ -151,17 +151,30 @@ from .nvidia.sm100.mla_prefill_per_token_scale import (
 comptime MLA_DECODE_MAX_SEQ_LEN = 8
 
 
-@always_inline
-def mla_decode_max_seq_len[dtype: DType]() -> Int:
-    """Max query tokens (S) the MLA *decode* branch can fold for this Q dtype.
+# AMD MLA decode S>1 (MTP) token-fold is wired only in the num_heads<=16 dispatch
+# arm of `flare_mla_decoding_dispatch`; the larger-head arms hardcode q_seq_len=1.
+# Both the host-side fold gate and the `mla_graph` decode-vs-prefill router key on
+# this, so an S>1 batch with num_heads>16 (e.g. DP-attention Kimi: 64 heads/rank)
+# routes to MLA prefill instead of the nonexistent large-head decode fold.
+comptime AMD_MLA_DECODE_FOLD_MAX_NUM_HEADS = 16
 
-    The fold is FP8-only on AMD, so AMD BF16 decode is S=1 only (a BF16 S>1 batch
-    routes to MLA prefill); NVIDIA folds up to `MLA_DECODE_MAX_SEQ_LEN` for both.
-    Keeps `mla_graph` decode-vs-prefill routing in lockstep with the host-side
-    fold gate in `flare_mla_decoding_dispatch`.
+
+@always_inline
+def mla_decode_max_seq_len[dtype: DType, num_heads: Int]() -> Int:
+    """Max query tokens (S) the MLA *decode* branch can fold for this config.
+
+    On AMD the S>1 fold is FP8-only AND num_heads<=AMD_MLA_DECODE_FOLD_MAX_NUM_HEADS
+    only (the larger-head dispatch arm is S=1-only), so a BF16 cache or num_heads>16
+    routes S>1 to MLA prefill; NVIDIA folds up to `MLA_DECODE_MAX_SEQ_LEN` for both.
+    Mirrors the host-side fold gate in `flare_mla_decoding_dispatch` so the router
+    never hands the gate an S>1 batch it would reject.
     """
     return 1 if (
-        has_amd_gpu_accelerator() and not dtype.is_float8()
+        has_amd_gpu_accelerator()
+        and (
+            not dtype.is_float8()
+            or num_heads > AMD_MLA_DECODE_FOLD_MAX_NUM_HEADS
+        )
     ) else MLA_DECODE_MAX_SEQ_LEN
 
 
@@ -587,7 +600,7 @@ def flare_mla_decoding_dispatch[
         # ladder's backstop raise instead of failing here.
         if max_prompt_len > 1 and (
             not dtype.is_float8()
-            or num_heads > 16
+            or num_heads > AMD_MLA_DECODE_FOLD_MAX_NUM_HEADS
             or max_prompt_len > MLA_DECODE_MAX_SEQ_LEN
             or num_heads * max_prompt_len > AMD_MLA_DECODE_FOLD_M_MAX
         ):
