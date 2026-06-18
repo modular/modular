@@ -101,6 +101,7 @@ struct Struct_msa_indexer_ragged_paged:
         k_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
         k_max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
         layer_idx: UInt32,
+        score_scratch: MutableInputTensor[dtype=DType.float32, rank=3, ...],
         scale: Float32,
         ctx: DeviceContext,
     ) raises:
@@ -133,6 +134,8 @@ struct Struct_msa_indexer_ragged_paged:
             k_lookup_table: Index-K page table `[batch, max_pages]` uint32.
             k_max_lengths: Index-K max lengths `[1, 2]` uint32.
             layer_idx: Layer index for the index-K cache.
+            score_scratch: Persistent decode score scratch
+                `[num_index_heads, max_batch, MAX_NUM_BLOCKS]`.
             scale: QK scale.
             ctx: Device context.
         """
@@ -156,15 +159,8 @@ struct Struct_msa_indexer_ragged_paged:
         # anything larger is a prefill / context-encoding step.
         if Int(k_collection.max_seq_length) == 1:
             var batch = total_q  # 1 token/seq on decode
-
-            # Caller-owned score scratch [num_index_heads, batch, max_num_blocks].
-            var score_size = num_index_heads * batch * max_num_blocks
-            var score_buf = ctx.enqueue_create_buffer[DType.float32](score_size)
-            score_buf.enqueue_fill(Float32(0))
-            var score = TileTensor(
-                score_buf,
-                tt_row_major(num_index_heads, batch, max_num_blocks),
-            )
+            # Use persistent score scratch. This is required for graph capture.
+            var score = score_scratch.to_tile_tensor[DType.int64]()
 
             sparse_indexer_decode[
                 DType.bfloat16,
@@ -186,7 +182,6 @@ struct Struct_msa_indexer_ragged_paged:
                 scale,
                 ctx,
             )
-            _ = score_buf^
         else:
             var batch = Int(input_row_offsets.dim_size[0]()) - 1
 
