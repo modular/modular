@@ -113,6 +113,9 @@ This version is still a work in progress.
   if you must discard it, make the cast explicit with the
   `as_unsafe_any_origin()` method.
 
+- The traits `ImplicitlyDeletable`, `Movable`, `Copyable`, and
+  `ImplicitlyCopyable` are now stable.
+
 ## Tooling changes
 
 - Added a `--lld-path` CLI flag. This overrides the LLD path that Mojo uses.
