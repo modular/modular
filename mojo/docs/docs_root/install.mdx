@@ -20,36 +20,52 @@ macOS and Linux (see the [system requirements](/docs/requirements/)).
 <Tabs groupId="install">
 <TabItem value="uv" label="uv">
 
-    ```sh
-    uv pip install mojo \
-      --index https://whl.modular.com/nightly/simple/ \
-      --prerelease allow
-    ```
+1. If needed, install `uv`:
 
-Or add Mojo to a project:
+   ```sh
+   curl -LsSf https://astral.sh/uv/install.sh | sh
+   ```
 
-    ```sh
-    uv init hello-world
-    cd hello-world
-    uv add mojo \
-      --index https://whl.modular.com/nightly/simple/ \
-      --prerelease allow
-    ```
+2. Install Mojo:
+
+   ```sh
+   uv pip install mojo \
+     --index https://whl.modular.com/nightly/simple/ \
+     --prerelease allow
+   ```
+
+   Or create a project and install Mojo:
+
+   ```sh
+   uv init hello-world
+   cd hello-world
+   uv add mojo \
+       --index https://whl.modular.com/nightly/simple/ \
+       --prerelease allow
+   ```
 
 </TabItem>
 <TabItem value="pixi" label="pixi">
 
+1. If needed, install `pixi`:
+
     ```sh
-    pixi init hello-world \
-      -c https://conda.modular.com/max-nightly/ -c conda-forge
-    cd hello-world
-    pixi add mojo
+    curl -fsSL https://pixi.sh/install.sh | sh
     ```
+
+2. Create a project and install Mojo:
+
+   ```sh
+   pixi init hello-world \
+     -c https://conda.modular.com/max-nightly/ -c conda-forge
+   cd hello-world
+   pixi add mojo
+   ```
 
 </TabItem>
 </Tabs>
 
-This installs the nightly build, which isn't complete and might have new bugs.
+These commands install the nightly build, which isn't complete and might have new bugs.
 If you instead want the stable build, <Link href="/install/">switch to the stable
 docs</Link>.
 
@@ -59,28 +75,46 @@ docs</Link>.
 
 <Tabs groupId="install">
 <TabItem value="uv" label="uv">
+1. If needed, install `uv`:
 
-    ```sh
-    uv pip install mojo
-    ```
+   ```sh
+   curl -LsSf https://astral.sh/uv/install.sh | sh
+   ```
 
-Or add Mojo to a project:
+2. Install Mojo:
 
-    ```sh
-    uv init hello-world
-    cd hello-world
-    uv add mojo
-    ```
+   ```sh
+   uv pip install mojo --prerelease allow
+   ```
+
+   Or create a project and install Mojo:
+
+   ```sh
+   uv init hello-world
+   cd hello-world
+   uv add mojo --prerelease allow
+   ```
+
+Note that the `--prerelease allow` flag is required only when installing beta
+(or dev) builds.
 
 </TabItem>
 <TabItem value="pixi" label="pixi">
 
-    ```sh
-    pixi init hello-world \
-      -c https://conda.modular.com/max/ -c conda-forge
-    cd hello-world
-    pixi add mojo
-    ```
+1. If needed, install `pixi`:
+
+   ```sh
+   curl -fsSL https://pixi.sh/install.sh | sh
+   ```
+
+2. Create a project and install Mojo:
+
+   ```sh
+   pixi init hello-world \
+     -c https://conda.modular.com/max/ -c conda-forge
+   cd hello-world
+   pixi add mojo
+   ```
 
 </TabItem>
 </Tabs>
