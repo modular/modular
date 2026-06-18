@@ -872,6 +872,33 @@ def get_virtual_device_target_arch() -> str:
         str: The target GPU architecture string, or empty string if not set.
     """
 
+def set_virtual_cpu_target(cpu: str) -> None:
+    """
+    Sets the CPU target for host-independent kernel codegen.
+
+    When set before any CPU kernel compilation (e.g. before importing
+    ``max._interpreter_ops``), CPU kernels compile for this fixed target
+    instead of the build host's CPU, so the kernel cache can ship to and be
+    reused on a different host. Mirrors
+    :func:`set_virtual_device_target_arch` for GPUs.
+
+    Args:
+        cpu (str): An LLVM target-CPU name (e.g. "x86-64-v3",
+            "neoverse-n1"), or "generic" for the most-portable baseline of
+            the host arch family ("x86-64" on x86_64, the armv8-a baseline
+            on AArch64; other families raise an error). Empty string
+            restores host-CPU codegen. "native" is rejected because it
+            would re-leak the build host's CPU.
+    """
+
+def get_virtual_cpu_target() -> str:
+    """
+    Gets the current virtual CPU target.
+
+    Returns:
+        str: The CPU target string, or empty string if not set (host CPU).
+    """
+
 class Buffer:
     """
     Device-resident buffer representation.

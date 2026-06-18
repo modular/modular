@@ -799,17 +799,18 @@ def mla_prefill_branch_fp8[
         ),
     )
 
-    @__copy_capture(k_latent)
     @always_inline
-    @parameter
     def input_fn[
         width: Int, alignment: Int
-    ](row: Int, col: Int) -> SIMD[k_latent.dtype, width]:
+    ](row: Int, col: Int) {var k_latent} -> SIMD[k_latent.dtype, width]:
         return k_latent.load[width=width]((row, col))
 
     quantize_dynamic_scaled_fp8[
-        input_fn, k_scale_granularity, k_latent.static_shape[1]
+        in_dtype=k_latent.dtype,
+        group_size_or_per_token=k_scale_granularity,
+        num_cols=k_latent.static_shape[1],
     ](
+        input_fn,
         fp8_k_latent,
         fp8_k_latent_scale,
         1200.0,
@@ -963,21 +964,20 @@ def quantize_and_bmm_fp8_helper[
         ),
     )
 
-    @parameter
-    @__copy_capture(a)
     @always_inline
     def input_fn[
         width: Int, alignment: Int
-    ](batch: Int, row: Int, col: Int) capturing -> SIMD[dtype, width]:
+    ](batch: Int, row: Int, col: Int) {var a} -> SIMD[dtype, width]:
         # First transpose the q_nope tensor from [row, batch, col] to [batch, row, col].
         comptime assert a.flat_rank == 3
         return a.load[width=width]((row, batch, col))
 
     batched_quantize_dynamic_scaled_fp8[
-        input_fn=input_fn,
+        in_dtype=dtype,
         group_size_or_per_token=k_scale_granularity,
         num_cols=K,
     ](
+        input_fn,
         fp8_a,
         fp8_a_scale,
         1200.0,

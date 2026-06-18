@@ -124,15 +124,18 @@ def test_dynamic_scaled_fp8_quant[
     var out_tensor = TileTensor(out_device, shape)
     var scales_tensor = TileTensor(scales_device, scales_shape)
 
-    @__copy_capture(in_tensor)
     @always_inline
-    @parameter
     def input_fn[
         width: Int, alignment: Int
-    ](row: Int, col: Int) -> SIMD[in_dtype, width]:
+    ](row: Int, col: Int) {var in_tensor} -> SIMD[in_dtype, width]:
         return in_tensor.load[width=width, alignment=alignment]((row, col))
 
-    quantize_tensor_dynamic_scaled_fp8[input_fn, -1, in_tensor.static_shape[1]](
+    quantize_tensor_dynamic_scaled_fp8[
+        in_dtype=in_dtype,
+        group_size_or_per_token=-1,
+        num_cols=in_tensor.static_shape[1],
+    ](
+        input_fn,
         out_tensor,
         scales_tensor,
         1200.0,
@@ -226,17 +229,18 @@ def test_dynamic_fp8_quant[
     var out_tensor = TileTensor(out_device, shape)
     var scales_tensor = TileTensor(scales_device, scales_shape)
 
-    @__copy_capture(in_tensor)
     @always_inline
-    @parameter
     def input_fn[
         width: Int, alignment: Int
-    ](row: Int, col: Int) -> SIMD[in_dtype, width]:
+    ](row: Int, col: Int) {var in_tensor} -> SIMD[in_dtype, width]:
         return in_tensor.load[width=width, alignment=alignment]((row, col))
 
     quantize_dynamic_scaled_fp8[
-        input_fn, group_size_or_per_token, in_tensor.static_shape[1]
+        in_dtype=in_dtype,
+        group_size_or_per_token=group_size_or_per_token,
+        num_cols=in_tensor.static_shape[1],
     ](
+        input_fn,
         out_tensor,
         scales_tensor,
         1200.0,
@@ -340,21 +344,20 @@ def test_batched_dynamic_fp8_quant[
     var out_tensor = TileTensor(out_device, shape)
     var scales_tensor = TileTensor(scales_device, scales_shape)
 
-    @parameter
-    @__copy_capture(in_tensor)
     @always_inline
     def input_fn[
         width: Int, alignment: Int
-    ](batch: Int, row: Int, col: Int) capturing -> SIMD[in_dtype, width]:
+    ](batch: Int, row: Int, col: Int) {var in_tensor} -> SIMD[in_dtype, width]:
         return in_tensor.load[width=width, alignment=alignment](
             (batch, row, col)
         )
 
     batched_quantize_dynamic_scaled_fp8[
-        input_fn=input_fn,
+        in_dtype=in_dtype,
         group_size_or_per_token=group_size_or_per_token,
         num_cols=in_tensor.static_shape[2],
     ](
+        input_fn,
         out_tensor,
         scales_tensor,
         1200.0,
@@ -468,17 +471,17 @@ def test_dynamic_fp8_quant_near_zero[
     var out_tensor = TileTensor(out_device, shape)
     var scales_tensor = TileTensor(scales_device, scales_shape)
 
-    @__copy_capture(in_tensor)
     @always_inline
-    @parameter
     def input_fn[
         width: Int, alignment: Int
-    ](row: Int, col: Int) -> SIMD[in_dtype, width]:
+    ](row: Int, col: Int) {var in_tensor} -> SIMD[in_dtype, width]:
         return in_tensor.load[width=width, alignment=alignment]((row, col))
 
     quantize_dynamic_scaled_fp8[
-        input_fn, group_size, in_tensor.static_shape[1]
-    ](out_tensor, scales_tensor, 1200.0, ctx, Int(in_tensor.dim[0]()))
+        in_dtype=in_dtype,
+        group_size_or_per_token=group_size,
+        num_cols=in_tensor.static_shape[1],
+    ](input_fn, out_tensor, scales_tensor, 1200.0, ctx, Int(in_tensor.dim[0]()))
 
     ctx.enqueue_copy(out_host_ptr, out_device)
     ctx.synchronize()
@@ -563,17 +566,17 @@ def test_dynamic_tensor_fp8_quant_near_zero[
     var out_tensor = TileTensor(out_device, shape)
     var scales_tensor = TileTensor(scales_device, scales_shape)
 
-    @__copy_capture(in_tensor)
     @always_inline
-    @parameter
     def input_fn[
         width: Int, alignment: Int
-    ](row: Int, col: Int) -> SIMD[in_dtype, width]:
+    ](row: Int, col: Int) {var in_tensor} -> SIMD[in_dtype, width]:
         return in_tensor.load[width=width, alignment=alignment]((row, col))
 
     quantize_tensor_dynamic_scaled_fp8[
-        input_fn, group_size, in_tensor.static_shape[1]
-    ](out_tensor, scales_tensor, 1200.0, ctx, Int(in_tensor.dim[0]()))
+        in_dtype=in_dtype,
+        group_size_or_per_token=group_size,
+        num_cols=in_tensor.static_shape[1],
+    ](input_fn, out_tensor, scales_tensor, 1200.0, ctx, Int(in_tensor.dim[0]()))
 
     ctx.enqueue_copy(out_host_ptr, out_device)
     ctx.synchronize()

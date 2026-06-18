@@ -68,6 +68,14 @@ This version is still a work in progress.
   arr^.destroy_with(my_destroy_closure)
   ```
 
+- The `IterableOwned` conformance on `List` and `InlineArray` (consuming
+  iteration via `for x in collection^`) is now conditional, requiring the
+  element type to be `Movable & ImplicitlyDeletable`. Consuming iteration moves
+  elements out of the collection rather than copying them, so it no longer
+  requires `Copyable`. Generic code bounded on `IterableOwned` now rejects a
+  collection of non-conforming elements at the bound, rather than failing later
+  inside `__iter__()`.
+
 - The implicit conversion constructors that cast an `UnsafePointer` to
   `MutUnsafeAnyOrigin` or `ImmutUnsafeAnyOrigin` are now deprecated and emit a
   deprecation warning when used. `UnsafeAnyOrigin` is an unsafe escape hatch
@@ -81,6 +89,13 @@ This version is still a work in progress.
 - Added a `--lld-path` CLI flag. This overrides the LLD path that Mojo uses.
 
 ## GPU programming
+
+- Added an 8x8 `simdgroup_matrix` matrix multiply-accumulate primitive
+  (`_mma_apple_8x8()`) with `apple_mma_load_8x8()` / `apple_mma_store_8x8()`
+  fragment helpers for Apple Silicon GPUs in `std.gpu.compute.arch`. Unlike
+  the 16x16 path (Apple M5 only), the 8x8 primitive is available on all Apple
+  GPU generations (M1-M5). It accepts `Float16`, `BFloat16`, and `Float32`
+  inputs with a `Float32` accumulator.
 
 - Apple M5 `simdgroup_matrix` MMA now accepts FP8 (`float8_e4m3fn`,
   `float8_e5m2`) inputs with an F32 accumulator, alongside the existing

@@ -238,6 +238,38 @@ struct Shuffler[E: Int]:
         else:
             return packed_byte_off + tile_byte_off + atom_byte_off
 
+    @staticmethod
+    @always_inline
+    def scale_4d_slot_byte_off[
+        K_SCALES: Int, packed_mode: Bool = False
+    ](expert_slot: Int, mn: Int, k_scale: Int, max_padded_M: Int) -> Int:
+        """Byte offset of an E8M0 scale within the per-expert `scale_4d` slot.
+
+        Single source of truth for the offset shared by (1) the standalone
+        `_preshuffle_grouped_scale_4d_kernel`, (2) the `fused_silu` KS64 fold,
+        and (3) the `ep_wait` KS224 fold. Each expert owns a fixed-stride slot
+        of `max_padded_M * K_SCALES` bytes; within it the scale lands at
+        `scale_4d_byte_off(mn, k_scale)`.
+
+        Parameters:
+            K_SCALES: Number of E8M0 scales along K (`K // 32`).
+            packed_mode: Byte index of the next packed scale (used by the
+                standalone preshuffle's i32-cell gather); otherwise the byte
+                index of the scale itself.
+
+        Args:
+            expert_slot: Per-expert slot index (`expert_id + shared_offset`).
+            mn: Local row within the expert (token row, 0-based).
+            k_scale: Scale index along K.
+            max_padded_M: Per-expert slot stride in rows (= `align_up(max, 32)`).
+
+        Returns:
+            Byte offset into the flat `scale_4d` buffer.
+        """
+        return expert_slot * max_padded_M * K_SCALES + Self.scale_4d_byte_off[
+            K_SCALES=K_SCALES, packed_mode=packed_mode
+        ](mn, k_scale)
+
     # ---- Wrapped TileTensor types — what the preshuffle functions return ----
     comptime BTileTensor[N: Int, K_BYTES: Int] = TileTensor[
         mut=True,
@@ -468,8 +500,9 @@ struct Shuffler[E: Int]:
     # Fixed-stride slot layout. Each expert e occupies a slot of
     # `max_padded_M` rows starting at `e * max_padded_M`, regardless of
     # its actual `num_tokens[e]`. Real preshuffled scales fill the first
-    # `num_tokens[e]` rows of the slot; the remaining rows up to
-    # `max_padded_M` are zero-filled by the kernel.
+    # `num_tokens[e]` rows of the slot; the kernel does NOT zero the rows
+    # past `align_up(num_tokens[e], 32)` (they are left uninitialized) —
+    # the matmul's tight per-expert V# bound clamps those OOB reads to 0.
     #
     # No metadata array: the matmul dispatcher derives the per-expert
     # start as `expert_slot * max_padded_M` from a single runtime int.
@@ -546,8 +579,9 @@ struct Shuffler[E: Int]:
 
             # Slot base in bytes — fixed-stride per expert. Trailing
             # m_blocks past uceildiv(num_tokens, 32) are NOT written; the
-            # matmul's tight per-expert V# clamps OOB reads to 0.
-            var slot_byte_off = expert_slot * max_padded_M * K_SCALES
+            # matmul's tight per-expert V# clamps OOB reads to 0. The
+            # slot + cell offset is folded into `scale_4d_slot_byte_off`
+            # (shared with the fused_silu / ep_wait folds).
 
             while target_tile < expert_end:
                 var local_tile = target_tile - current_tile
@@ -574,12 +608,12 @@ struct Shuffler[E: Int]:
                                 k_pack * Self.S_MN_PACK + mn_pack
                             ] = sfa_raw[Coord((token_start + src_mn), src_k)]
 
-                var cell_byte_off = Self.scale_4d_byte_off[
+                var cell_byte_off = Self.scale_4d_slot_byte_off[
                     K_SCALES=K_SCALES, packed_mode=True
-                ](cell_mn_base, cell_k_base)
-                var dst_ptr = (
-                    sfa_pre.ptr + slot_byte_off + cell_byte_off
-                ).bitcast[Scalar[DType.int32]]()
+                ](expert_slot, cell_mn_base, cell_k_base, max_padded_M)
+                var dst_ptr = (sfa_pre.ptr + cell_byte_off).bitcast[
+                    Scalar[DType.int32]
+                ]()
                 dst_ptr[0] = bitcast[DType.int32, 1](cell_bytes)[0]
 
                 target_tile += total_wg

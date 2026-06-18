@@ -1097,23 +1097,52 @@ def rms_norm_gpu_warp_per_row[
                 col += stride
 
 
-@__name(t"rms_norm_gpu_warp_tiling_{dtype}_{multiply_before_cast}")
+# SM100 (B200) primary target; portable (only uses `block_reduce`, warp
+# shuffle, and a per-thread grid-stride column loop — no arch intrinsics).
+#
+# Warp-tiling RMSNorm tuned to cut instruction overhead. Three structural
+# choices vs the old single-chunk-per-thread form (which was instruction-issue
+# bound on B200, not bandwidth bound -- high SM issue but low L2/HBM
+# throughput):
+#
+#   1. The rank-N row -> base-coords translation
+#      (`_get_start_indices_of_nth_subvolume`) is hoisted and run ONCE per
+#      thread, then reused for every chunk's load AND store. The old 2D
+#      wrappers ran that divmod chain twice per thread (once in `input_fn_2d`,
+#      once in `output_fn_2d`); we now take the rank-N `input_fn`/`output_fn`
+#      directly and only mutate `base[rank - 1]` per chunk.
+#   2. Each thread processes `chunks_per_thread` independent vector chunks
+#      (unrolled LDGs cached in registers), so the launch uses fewer threads
+#      per block -> fewer warps -> a cheaper two-barrier `block_reduce`, and
+#      the loads pipeline (ILP). Data stays in registers between the reduction
+#      and the normalize pass (still a single global read).
+#   3. When `exact_fit` (block_dim * simd_width * chunks_per_thread == cols),
+#      every thread is fully active, so the per-chunk `col < num_cols` guards
+#      (the ISETP/SEL bloat) are dropped at comptime. A guarded variant
+#      (`exact_fit=False`) handles ragged tails.
+@__name(
+    t"rms_norm_gpu_warp_tiling_{dtype}_{chunks_per_thread}_{exact_fit}_{multiply_before_cast}"
+)
 def rms_norm_gpu_warp_tiling[
     mut: Bool,
     LayoutType: TensorLayout,
     origin: Origin[mut=mut],
     dtype: DType,
+    rank: Int,
     //,
     simd_width: Int,
     max_warps_per_block: Int,
-    input_fn: def[width: Int](row: Int, col: Int) capturing -> SIMD[
+    chunks_per_thread: Int,
+    exact_fit: Bool,
+    input_fn: def[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
         dtype, width
     ],
     output_fn: def[width: SIMDSize, alignment: Int](
-        row: Int, col: Int, val: SIMD[dtype, width]
+        IndexList[rank], SIMD[dtype, width]
     ) capturing -> None,
     multiply_before_cast: Bool,
 ](
+    shape: IndexList[rank],
     gamma: TileTensor[dtype, LayoutType, origin],
     epsilon: Scalar[dtype],
     weight_offset: Scalar[dtype],
@@ -1128,33 +1157,81 @@ def rms_norm_gpu_warp_tiling[
     var eps_accum = epsilon.cast[accum_type]()
     var weight_offset_accum = weight_offset.cast[accum_type]()
 
-    var vec_data = SIMD[accum_type, simd_width](0)
-    var tid = thread_idx.x
-    var row = block_idx.x
-    var idx = tid * simd_width
+    var tid = Int(thread_idx.x)
+    var row = Int(block_idx.x)
+    var bdim = Int(block_dim.x)
+
+    # Hoist the rank-N row translation ONCE; reuse the base for load and store.
+    var base = _get_start_indices_of_nth_subvolume(row, shape)
+
+    # Per-chunk register-cached input (in accum precision) and gamma weights,
+    # carried across the reduction so the normalize pass needs no re-read.
+    var vec_data = InlineArray[SIMD[accum_type, simd_width], chunks_per_thread](
+        fill=SIMD[accum_type, simd_width](0)
+    )
+    var gamma_val = InlineArray[SIMD[dtype, simd_width], chunks_per_thread](
+        fill=SIMD[dtype, simd_width](0)
+    )
 
     with PDL():
-        var gamma_val = SIMD[dtype, simd_width](0)
-        if idx < num_cols:
-            vec_data = input_fn[simd_width](row, idx).cast[accum_type]()
-            # Prefetch gamma before reduction to overlap load with compute.
-            gamma_val = gamma.load[width=simd_width, alignment=align](
-                Coord(idx)
-            )
+        var thread_m2 = Scalar[accum_type](0)
 
-        var norm_val = _rms_norm_warp_tiling_subkernel[
-            max_warps_per_block, multiply_before_cast
-        ](
-            row,
-            idx,
-            vec_data,
-            gamma_val,
-            eps_accum,
-            weight_offset_accum,
-            num_cols,
+        comptime for c in range(chunks_per_thread):
+            var col = (c * bdim + tid) * simd_width
+            comptime if exact_fit:
+                base[rank - 1] = col
+                vec_data[c] = input_fn[simd_width](base.canonicalize()).cast[
+                    accum_type
+                ]()
+                gamma_val[c] = gamma.load[width=simd_width, alignment=align](
+                    Coord(col)
+                )
+                thread_m2 += (vec_data[c] ** 2).reduce_add()
+            else:
+                if col < num_cols:
+                    base[rank - 1] = col
+                    vec_data[c] = input_fn[simd_width](
+                        base.canonicalize()
+                    ).cast[accum_type]()
+                    gamma_val[c] = gamma.load[
+                        width=simd_width, alignment=align
+                    ](Coord(col))
+                    thread_m2 += (vec_data[c] ** 2).reduce_add()
+
+        var row_m2 = block_reduce[max_warps_per_block=max_warps_per_block](
+            thread_m2
         )
-        if idx < num_cols:
-            output_fn[simd_width, align](row, idx, norm_val)
+        var norm_factor = rsqrt(
+            (row_m2 / Scalar[accum_type](num_cols)) + eps_accum
+        )
+
+        comptime for c in range(chunks_per_thread):
+            var col = (c * bdim + tid) * simd_width
+
+            @always_inline
+            @parameter
+            def _normalize() -> SIMD[dtype, simd_width]:
+                comptime if multiply_before_cast:
+                    var gamma_accum = (
+                        gamma_val[c].cast[accum_type]() + weight_offset_accum
+                    )
+                    return (vec_data[c] * norm_factor * gamma_accum).cast[
+                        dtype
+                    ]()
+                else:
+                    return (vec_data[c] * norm_factor).cast[dtype]() * (
+                        gamma_val[c] + weight_offset
+                    )
+
+            comptime if exact_fit:
+                base[rank - 1] = col
+                output_fn[simd_width, align](base.canonicalize(), _normalize())
+            else:
+                if col < num_cols:
+                    base[rank - 1] = col
+                    output_fn[simd_width, align](
+                        base.canonicalize(), _normalize()
+                    )
 
 
 @always_inline
@@ -1450,6 +1527,108 @@ def rms_norm_gpu[
         WARP_SIZE * max_warps_per_block,
     )
 
+    # Warp-tiling launch geometry for a given per-thread (`eff_simd`, `chunks`):
+    # one block per row, `_wt_threads_per_block` threads (rounded to whole
+    # warps, capped at the device max), each owning `eff_simd * chunks` columns.
+    # Single source of truth for both the launcher and the warp-per-row gate
+    # below.
+    @parameter
+    @always_inline
+    def _wt_threads_per_block[eff_simd: Int, chunks: Int]() -> Int:
+        var threads = ceildiv(ceildiv(cols, eff_simd), chunks)
+        return min(
+            ceildiv(threads, WARP_SIZE) * WARP_SIZE,
+            WARP_SIZE * max_warps_per_block,
+        )
+
+    # `exact` means every thread is fully active (the block tiles the row with
+    # no ragged tail), so the unguarded kernel can be used.
+    @parameter
+    @always_inline
+    def _wt_exact[eff_simd: Int, chunks: Int]() -> Bool:
+        return (
+            _wt_threads_per_block[eff_simd, chunks]() * eff_simd * chunks
+        ) == cols
+
+    # Within the warp-tiling column range, warp-tiling (register-cached chunks)
+    # beats the barrier-free warp-per-row kernel on SM100 (B200) whenever it
+    # tiles the row exactly *and* the row is wide enough to amortize the
+    # inter-warp block reduction: a measured 1.1-1.4x at 2048..8192 cols.
+    # Warp-per-row wins in two cases, both of which must stay on it:
+    #   1. ragged tail (e.g. 8192x2880, cols not a clean multiple of the
+    #      per-thread tile -> wasted threads + per-chunk bounds guards), and
+    #   2. narrow rows (cols <= 1024), where the one-warp-per-row kernel has no
+    #      inter-warp barrier to pay and warp-tiling's block reduce dominates
+    #      (measured: 8192x256 1.9x, 8192x512 1.7x, 8192x1024 1.3x slower under
+    #      warp-tiling).
+    # So prefer warp-tiling only for exact-fit rows past the narrow-row floor;
+    # everything else keeps warp-per-row. Uses the native-width chunk count the
+    # dispatch below would pick (1 up to one warp-row, 2 up to two, else 4) and
+    # the shared geometry.
+    #
+    # This is only consulted to gate warp-per-row, which itself only runs for
+    # `cols <= WARP_SIZE * simd_width * max_warps_per_block`. Within that range
+    # the dispatch always launches at native `simd_width` with these same chunk
+    # counts, so the gate matches the kernel that runs. The wider-row branch
+    # below (`simd_width * 2`) lies entirely past the warp-per-row bound, so the
+    # native-width value computed here is never read against it.
+    #
+    # `warp_tiling_min_cols` is the narrow-row floor: warp-tiling is preferred
+    # only above it. 1024 = WARP_SIZE * simd_width * 4 (= one max-width
+    # per-thread tile across a single warp) is the measured crossover on B200
+    # bf16 -- the largest exact-fit width that still loses to warp-per-row.
+    var warp_tiling_min_cols = WARP_SIZE * simd_width * 4
+    var warp_tiling_exact_fit: Bool
+    if cols <= (WARP_SIZE * simd_width):
+        warp_tiling_exact_fit = _wt_exact[simd_width, 1]()
+    elif cols <= (WARP_SIZE * simd_width * 2):
+        warp_tiling_exact_fit = _wt_exact[simd_width, 2]()
+    else:
+        warp_tiling_exact_fit = _wt_exact[simd_width, 4]()
+    var warp_tiling_exact = warp_tiling_exact_fit and (
+        cols > warp_tiling_min_cols
+    )
+
+    # Launch the multi-chunk warp-tiling kernel. `exact_fit` (every thread
+    # fully active, no ragged tail) is decided at runtime and selects the
+    # unguarded instantiation.
+    @parameter
+    @always_inline
+    def _launch_warp_tiling[eff_simd: Int, chunks: Int]() raises:
+        var threads_per_block = _wt_threads_per_block[eff_simd, chunks]()
+        var exact = _wt_exact[eff_simd, chunks]()
+
+        @parameter
+        @always_inline
+        def _enqueue[exact_fit: Bool]() raises:
+            comptime kernel = rms_norm_gpu_warp_tiling[
+                mut=gamma.mut,
+                LayoutType=gamma.LayoutType,
+                origin=gamma.origin,
+                eff_simd,
+                max_warps_per_block,
+                chunks,
+                exact_fit,
+                input_fn,
+                output_fn,
+                multiply_before_cast=multiply_before_cast,
+            ]
+            ctx.enqueue_function[kernel](
+                shape.canonicalize(),
+                gamma,
+                epsilon,
+                weight_offset,
+                cols,
+                grid_dim=rows,
+                block_dim=threads_per_block,
+                attributes=pdl_launch_attributes(pdl_level),
+            )
+
+        if exact:
+            _enqueue[True]()
+        else:
+            _enqueue[False]()
+
     if cols % simd_width == 0:
         # When the number of columns are less enough that they can be placed in
         # registers we do warp tiling which is a single pass to do mean/var
@@ -1485,6 +1664,7 @@ def rms_norm_gpu[
             cols > 128
             and cols <= (WARP_SIZE * simd_width * max_warps_per_block)
             and warp_per_row_region
+            and not warp_tiling_exact
         ):
             comptime rows_per_block = warp_per_row_rows_per_block
             block_dim = rows_per_block * WARP_SIZE
@@ -1515,80 +1695,33 @@ def rms_norm_gpu[
             # use a 2x-wider per-thread SIMD so each row's block needs half the
             # warps. This halves the inter-warp block reduction cost and
             # doubles blocks-per-CU, lifting achieved HBM bandwidth by ~15-30%
-            # on prefill-sized shapes (the warp-tiling kernel does one row per
-            # block, so threads-per-row == cols / per-thread-width). It is gated
-            # on row count because the smaller block lowers total occupancy when
-            # rows are few (a net loss below ~8x the CU count).
+            # on prefill-sized shapes. It is gated on row count because the
+            # smaller block lowers total occupancy when rows are few (a net loss
+            # below ~8x the CU count).
             comptime sw_wide = simd_width * 2
             comptime widen_ok = sm_version == "CDNA4"
             var enough_rows = rows >= 8 * sm_count
             if widen_ok and enough_rows and cols % sw_wide == 0:
-                var block_dim_wide = min(
-                    ceildiv(ceildiv(cols, sw_wide), WARP_SIZE) * WARP_SIZE,
-                    WARP_SIZE * max_warps_per_block,
-                )
-                comptime kernel_wide = rms_norm_gpu_warp_tiling[
-                    mut=gamma.mut,
-                    LayoutType=gamma.LayoutType,
-                    origin=gamma.origin,
-                    sw_wide,
-                    max_warps_per_block,
-                    input_fn_2d,
-                    output_fn_2d,
-                    multiply_before_cast=multiply_before_cast,
-                ]
-                ctx.enqueue_function[kernel_wide](
-                    gamma,
-                    epsilon,
-                    weight_offset,
-                    cols,
-                    grid_dim=grid_dim,
-                    block_dim=block_dim_wide,
-                    attributes=pdl_launch_attributes(pdl_level),
-                )
+                _launch_warp_tiling[sw_wide, 1]()
             else:
-                comptime kernel = rms_norm_gpu_warp_tiling[
-                    mut=gamma.mut,
-                    LayoutType=gamma.LayoutType,
-                    origin=gamma.origin,
-                    simd_width,
-                    max_warps_per_block,
-                    input_fn_2d,
-                    output_fn_2d,
-                    multiply_before_cast=multiply_before_cast,
-                ]
-                ctx.enqueue_function[kernel](
-                    gamma,
-                    epsilon,
-                    weight_offset,
-                    cols,
-                    grid_dim=grid_dim,
-                    block_dim=block_dim,
-                    attributes=pdl_launch_attributes(pdl_level),
-                )
+                # Narrow rows: a single full-width pass keeps the block small;
+                # split into independent chunks (ILP + smaller block_reduce)
+                # once there are enough columns to fill ~2+ chunks/thread.
+                if cols <= (WARP_SIZE * simd_width):
+                    _launch_warp_tiling[simd_width, 1]()
+                elif cols <= (WARP_SIZE * simd_width * 2):
+                    _launch_warp_tiling[simd_width, 2]()
+                else:
+                    _launch_warp_tiling[simd_width, 4]()
         elif (
             cols <= (WARP_SIZE * (simd_width * 2) * max_warps_per_block)
             and cols % (simd_width * 2) == 0
         ):
-            comptime kernel = rms_norm_gpu_warp_tiling[
-                mut=gamma.mut,
-                LayoutType=gamma.LayoutType,
-                origin=gamma.origin,
-                simd_width * 2,
-                max_warps_per_block,
-                input_fn_2d,
-                output_fn_2d,
-                multiply_before_cast=multiply_before_cast,
-            ]
-            ctx.enqueue_function[kernel](
-                gamma,
-                epsilon,
-                weight_offset,
-                cols,
-                grid_dim=grid_dim,
-                block_dim=block_dim,
-                attributes=pdl_launch_attributes(pdl_level),
-            )
+            # Wider rows: double the vector width and split into chunks.
+            if cols <= (WARP_SIZE * simd_width * 2 * 2):
+                _launch_warp_tiling[simd_width * 2, 2]()
+            else:
+                _launch_warp_tiling[simd_width * 2, 4]()
         else:
             comptime kernel = rms_norm_gpu_block[
                 mut=gamma.mut,

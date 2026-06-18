@@ -73,8 +73,10 @@ def cpu() -> CPU:
 
 @pytest.fixture
 def state(accelerator: Accelerator, cpu: CPU) -> StructuredOutputOverlapState:
-    if accelerator.api != "cuda":
-        pytest.skip("StructuredOutputOverlapState requires a CUDA accelerator")
+    if accelerator.api not in ("cuda", "hip"):
+        pytest.skip(
+            "StructuredOutputOverlapState requires a CUDA/HIP accelerator"
+        )
     return StructuredOutputOverlapState(
         device=accelerator,
         cpu=cpu,

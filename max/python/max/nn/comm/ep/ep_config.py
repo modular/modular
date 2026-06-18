@@ -94,6 +94,16 @@ class EPConfig:
     use_allreduce: bool = False
     """Whether to use allreduce for the cross-device communication."""
 
+    mxfp4_a_scales_preshuffled: bool = False
+    """When True (KS224 up-proj fusion, MXFP4 preshuffled-B path on
+    AMD), the dispatch-wait kernel writes the per-token E8M0 activation scale
+    directly into the up-proj grouped-matmul's per-expert fixed-stride
+    ``scale_4d`` slot layout, so the standalone preshuffle kernel is dropped from
+    the decode critical path. The dispatch scales output is then slot-sized
+    (``n_local_experts * align_up(max_recv_tokens_per_expert, 32)`` rows)
+    instead of ``max_recv_tokens`` rows. Set by ``MoEQuantized`` when the MXFP4
+    strategy uses preshuffled B. Only valid for MXFP4 dispatch."""
+
     def estimate_memory_usage(self) -> int:
         """Estimate the EP communication memory usage per device per buffer group.
 

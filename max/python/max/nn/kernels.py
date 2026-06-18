@@ -2031,7 +2031,6 @@ def msa_sparse_attention_ragged(
     kv_collection: PagedCacheValues,
     layer_idx: TensorValue,
     block_indices: TensorValue,
-    q_positions: TensorValue,
     *,
     group: int,
     topk: int,
@@ -2054,8 +2053,6 @@ def msa_sparse_attention_ragged(
         layer_idx: Layer index, uint32, on CPU.
         block_indices: Selected block ids. Prefill: ``[n_kv_heads, total_q,
             topk]``; decode: ``[n_kv_heads, batch, topk]``. int32.
-        q_positions: Per-token logical query position ``[total_q]`` (prefill) or
-            ``[batch]`` (decode), int32, used for causal masking.
         group: Query heads per kv-head (``n_heads // n_kv_heads``).
         topk: Number of gathered KV blocks per token.
         scale: QK scale.
@@ -2093,13 +2090,6 @@ def msa_sparse_attention_ragged(
         device=input.device,
     )
     _validate_argument_tensor(
-        "q_positions",
-        q_positions,
-        dtype=DType.int32,
-        rank=1,
-        device=input.device,
-    )
-    _validate_argument_tensor(
         "layer_idx", layer_idx, dtype=DType.uint32, device=DeviceRef.CPU()
     )
     if topk <= 0:
@@ -2111,7 +2101,6 @@ def msa_sparse_attention_ragged(
         *kv_collection.flatten_without_attention_dispatch_metadata(),
         layer_idx,
         block_indices,
-        q_positions,
         ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU()),
     ]
 
@@ -4009,7 +3998,7 @@ def grouped_matmul_ragged(
     weight: TensorValue,
     expert_start_indices: TensorValue,
     expert_ids: TensorValue,
-    expert_usage_stats_host: TensorValue,
+    expert_usage_stats: TensorValue,
 ) -> TensorValue:
     """Grouped matmul used in MoE layer.
 
@@ -4019,9 +4008,9 @@ def grouped_matmul_ragged(
 
     `expert_ids` is the id of the expert for each group in `hidden_states`
 
-    `expert_usage_stats_host` is the maximum number of tokens assigned to any
-    expert, and the number of active experts.
-
+    `expert_usage_stats` is a rank-1 ``uint32`` tensor laid out as
+    ``[max_tokens_per_expert, num_active_experts]`` (the output of
+    ``moe_create_indices``).
     """
     if weight.rank != 3:
         raise ValueError(f"expected weight of rank 3 but got {weight.rank}")
@@ -4048,8 +4037,7 @@ def grouped_matmul_ragged(
             weight,
             expert_start_indices,
             expert_ids,
-            expert_usage_stats_host[0],
-            expert_usage_stats_host[1],
+            expert_usage_stats,
         ],
         out_types=[
             TensorType(
@@ -4074,6 +4062,8 @@ def grouped_dynamic_scaled_mxfp4_matmul(
     out_type: DType = DType.bfloat16,
     estimated_total_m: TensorValue | None = None,
     preshuffled_b: bool = False,
+    a_scales_preshuffled: bool = False,
+    a_scales_max_padded_m: int = 0,
 ) -> TensorValue:
     """Performs grouped NVFP4 matmul for MoE layers.
 
@@ -4199,7 +4189,12 @@ def grouped_dynamic_scaled_mxfp4_matmul(
     # (i32 cells of 2x2 E8M0 bytes). Activations are quantized row-major by
     # `quantize_dynamic_block_scaled_mxfp4` upstream, so insert the per-step
     # preshuffle here. B-scales are static and preshuffled once at load.
-    if preshuffled_b:
+    #
+    # When `a_scales_preshuffled=True` (KS64 down-proj fusion), the
+    # upstream `ep.fused_silu.mxfp4` kernel already wrote the scale directly
+    # into the slot layout, so we skip the standalone preshuffle entirely.
+    # Preshuffle must run exactly once: non-EP + up-proj keep `a_scales_preshuffled=False`.
+    if preshuffled_b and not a_scales_preshuffled:
         a_scales = mxfp4_preshuffle_grouped_scale_4d(
             a_scales,
             expert_start_indices,
@@ -4207,6 +4202,29 @@ def grouped_dynamic_scaled_mxfp4_matmul(
             expert_usage_stats_host[1].cast(DType.uint32),
             num_experts=int(weight.shape[0]),
         )
+
+    # The matmul derives the A-scale per-expert slot stride as
+    # `align_up(max_num_tokens_per_expert, 32)`. On the non-fused path the
+    # standalone preshuffle used the same runtime `expert_usage_stats[0]`, so
+    # the writer and reader slot strides agree. On the fused path
+    # (`a_scales_preshuffled`), the producer (`ep.fused_silu.mxfp4`) wrote the
+    # slots with the *graph-build-time* stride `align_up(a_scales_max_padded_m,
+    # 32)`; the matmul MUST read with that same constant — NOT the runtime max
+    # — or, when the runtime max is below the build-time bound (the common
+    # decode case), it reads the wrong expert's scale slot.
+    if a_scales_preshuffled:
+        if a_scales_max_padded_m <= 0:
+            raise ValueError(
+                "a_scales_max_padded_m must be > 0 when"
+                " a_scales_preshuffled=True"
+            )
+        max_num_tokens_arg = ops.constant(
+            a_scales_max_padded_m,
+            dtype=expert_usage_stats_host.dtype,
+            device=expert_usage_stats_host.device,
+        )
+    else:
+        max_num_tokens_arg = expert_usage_stats_host[0]
 
     output = ops.custom(
         "mo.grouped.matmul.block.scaled.mxfp4",
@@ -4218,7 +4236,7 @@ def grouped_dynamic_scaled_mxfp4_matmul(
             b_scales,
             expert_start_indices,
             expert_ids,
-            expert_usage_stats_host[0],
+            max_num_tokens_arg,
             expert_usage_stats_host[1],
             estimated_total_m_arg,
         ],

@@ -101,7 +101,9 @@ def bench_compile_time[
                 keep(s.unsafe_ptr())
             elif emission_kind == "ptx":
                 with DeviceContext() as ctx:
-                    var func = DeviceFunction[func, None](ctx)
+                    var func = DeviceFunction[
+                        func, TypeList.of[Trait=AnyType]()
+                    ](ctx)
                     # Ensure that the compilation step is not optimized away.
                     keep(UnsafePointer(to=func))
                     clobber_memory()

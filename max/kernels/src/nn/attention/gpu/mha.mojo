@@ -538,7 +538,7 @@ def q_num_matrix_view_rows[
 
 
 def _apple_naive_fa_decode_enabled() -> Bool:
-    return getenv("MODULAR_ENABLE_APPLE_NAIVE_FA_DECODE", "0") == "1"
+    return getenv("MODULAR_ENABLE_APPLE_NAIVE_FA_DECODE", "1") != "0"
 
 
 @always_inline
@@ -1564,9 +1564,9 @@ def flash_attention_dispatch[
     else:
         # Assumes BSHD.
         comptime if has_apple_gpu_accelerator():
-            # Apple decode-only opt-in. The warp producer splits the head dim
+            # Apple decode default. The warp producer splits the head dim
             # across lanes, hence the `% WARP_SIZE` gate; anything else (prefill,
-            # flag-off, oversized/odd head_dim) falls to mha_gpu_naive.
+            # opt-out, oversized/odd head_dim) falls to mha_gpu_naive.
             if (
                 is_token_generation
                 and _apple_naive_fa_decode_enabled()

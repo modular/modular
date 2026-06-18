@@ -16,7 +16,8 @@ Target: NVIDIA SM100 (B200), BF16, head_dim 128, paged KV with page_size 128
 (== block size BN), single index-K head.  Two ops:
 
   * `mo.msa.indexer.ragged.paged`   -> `sparse_indexer_{prefill,decode}`
-  * `mo.msa.attention.ragged.paged` -> `msa_sm100_{prefill_,}dispatch`
+  * `mo.msa.attention.ragged.paged` -> `msa_sm100_decode` (decode) /
+    `msa_sm100_prefill_{plan,run}` (prefill)
 
 Each op takes the same arguments for prefill and decode and picks the kernel at
 runtime from `kv_collection.max_seq_length` (the max number of *new* query tokens
@@ -35,20 +36,25 @@ Modeled on the MLA FP8 indexer registration in `attention.mojo`
 (`mo.mla.indexer.ragged.float8.paged`) for the comptime cache-param extraction
 + paged-collection build, and on the in-tree MSA tests
 (`Kernels/test/msa/test_msa_sm100_d128_decode_paged.mojo`,
-`test_msa_sm100_d128_prefill_b.mojo`) for the exact dispatch call shapes.
+`test_msa_sm100_d128_prefill_device_csr.mojo`) for the exact call shapes.
 
-TODO(causal): the forward op passes `q_positions` (per-token logical query
-position) and leaves `kv_logical_pos=None` for the first cut -- the indexer
-already restricts selection to causal-valid blocks, so the only residual
-causal work is the diagonal (partial) block, which we validate with a logit
-check later before enabling in-kernel `kv_logical_pos` masking.
+Causal masking is a no-op for `seq_len==1` decode: the single query sits at the
+END of the sequence, so every selected (past) KV position is causal-valid and
+nothing is masked.  The op therefore passes `kv_logical_pos=None` (in-kernel
+causal masking OFF) and only carries `q_positions` for the future spec-decode
+path.  In-kernel `kv_logical_pos` masking is only meaningful for `seq_len>1`
+spec decode (multiple query tokens, where a query can precede some selected KV).
+
+TODO(seq_len>1): enable in-kernel `kv_logical_pos` masking when spec decode
+(`seq_len>1`) is supported -- validate the diagonal (partial) block with a logit
+check before wiring `kv_logical_pos` through.
 """
 
 import extensibility as compiler
 
 from std.collections import OptionalReg
 from std.gpu.host import DeviceContext, DeviceBuffer
-from std.math import ceildiv
+from std.math import ceildiv, min
 from std.memory import UnsafePointer
 
 from layout import row_major, TileTensor
@@ -60,13 +66,12 @@ from extensibility import _MutableInputTensor as MutableInputTensor
 from nn.kv_cache import generic_get_paged_cache
 from nn.attention.mha_operand import KVCacheMHAOperand
 from nn.attention.mha_mask import NullMask
-from nn.attention.mha_utils import MHAConfig, NoPartition, StaticInt
-from std.utils.numerics import get_accum_type
+from nn.attention.mha_utils import MHAConfig, StaticInt
 
 from msa.sparse_indexer_prefill import sparse_indexer_prefill
 from msa.sparse_indexer_decode import sparse_indexer_decode
-from msa.msa_1q import msa_sm100_dispatch
-from msa.msa_2q import msa_sm100_prefill_b_device_csr_dispatch
+from msa.msa_1q import msa_sm100_decode
+from msa.msa_2q import msa_sm100_prefill_plan, msa_sm100_prefill_run
 
 
 # ===-----------------------------------------------------------------------===#
@@ -243,7 +248,6 @@ struct Struct_msa_attention_ragged_paged:
         max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
         layer_idx: UInt32,
         d_indices: InputTensor[dtype=DType.int32, rank=3, ...],
-        q_positions: InputTensor[dtype=DType.int32, rank=1, ...],
         scale: Float32,
         ctx: DeviceContext,
     ) raises:
@@ -254,10 +258,15 @@ struct Struct_msa_attention_ragged_paged:
         `kv_collection.max_seq_length == 1` (one query token per sequence) and to
         the prefill kernel otherwise.
 
-        Decode uses `NullMask` + `NoPartition` (no split-K).  Prefill uses the
-        device-CSR path (`msa_sm100_prefill_b_device_csr_dispatch`) which
-        requires cumulative sequence lengths copied to host.  Both paths pass
-        `q_positions` for causal with `kv_logical_pos=None` (see module TODO).
+        Decode uses `NullMask` + an SM-fill split-K heuristic
+        (`get_mha_decoding_max_num_partitions` clamped by `topk`): `num_partitions
+        > 1` runs the block-major fwd over partitioned KV bands then combines via
+        the shared `mha_splitk_reduce`; `num_partitions == 1` takes the no-combine
+        `NoPartition` path.  Prefill uses the
+        device-CSR plan/run path (`msa_sm100_prefill_plan` +
+        `msa_sm100_prefill_run`): the run is pure-device, but the plan sizes its
+        buffers from the per-batch cu-seqlens on host, so one D2H readback +
+        sync per call is unavoidable while this stays a single stateless op.
 
         Parameters:
             group: Query heads per kv-head (`n_heads // n_kv_heads`); asserts
@@ -277,8 +286,6 @@ struct Struct_msa_attention_ragged_paged:
             max_lengths: Main-KV max lengths `[1, 2]` uint32.
             layer_idx: Layer index for the main-KV cache.
             d_indices: Selected block ids `[n_kv_heads, num_rows, topk]` int32.
-            q_positions: Per-token logical query position `[num_rows]` int32
-                (used for causal; see module TODO).
             scale: QK scale.
             ctx: Device context.
         """
@@ -298,7 +305,6 @@ struct Struct_msa_attention_ragged_paged:
         comptime page_size = Int(kv_blocks.static_spec.shape_tuple[3])
         comptime num_heads = group * k_num_heads
         comptime config = MHAConfig[DType.bfloat16](num_heads, head_dim)
-        comptime accum_type = get_accum_type[DType.bfloat16]()
         comptime KVPtrT = UnsafePointer[Int32, MutAnyOrigin]
 
         # `num_rows` == total query tokens (== batch on decode, 1 token/seq).
@@ -314,8 +320,6 @@ struct Struct_msa_attention_ragged_paged:
             ctx, q_lt.ptr, num_rows * num_heads * head_dim, owning=False
         )
 
-        var q_positions_ptr = rebind[KVPtrT](q_positions.to_layout_tensor().ptr)
-
         # Decode == one query token per sequence (`max_seq_length == 1`).
         if Int(kv_collection.max_seq_length) == 1:
             var iro_lt = input_row_offsets.to_layout_tensor()
@@ -327,11 +331,26 @@ struct Struct_msa_attention_ragged_paged:
             )
             var d_indices_ptr = rebind[KVPtrT](d_indices.to_layout_tensor().ptr)
             var topk_tokens = topk * page_size
-            msa_sm100_dispatch[
+
+            # `msa_sm100_decode` OWNS the split-K partition count: it computes
+            # `np` itself from the args below (`batch_size=num_rows`,
+            # `max_cache_valid_length=topk_tokens`, cap `indices_stride=topk`) via
+            # the dense-MHA decode heuristic, so this op passes none.
+            #
+            # `mask_unselected=True`: the indexer `-1`-pads `d_indices` when the
+            # sequence has fewer than `topk` selectable blocks (e.g. a short
+            # first decode step). The kernel must poison those `-1` slots' columns
+            # to -inf (and `block_base_row` redirects their load to block 0 to
+            # avoid an OOB page lookup). Without this the `-1` blocks attend
+            # phantom rows, and -- with split-K at the production count (np ==
+            # topk) -- each `-1` lands in its own fully-masked partition, whose
+            # NaN exp-sum poisons the combine and NaNs the whole decode row.
+            msa_sm100_decode[
                 config=config,
                 group=group,
                 ragged=True,
                 _is_cache_length_accurate=False,
+                mask_unselected=True,
             ](
                 output_buf,
                 q_buf,
@@ -347,10 +366,7 @@ struct Struct_msa_attention_ragged_paged:
                 scale,
                 None,  # kv_input_row_offsets
                 num_rows,  # batch_size
-                NoPartition[accum_type](),
                 ctx,
-                kv_logical_pos=None,  # TODO(causal): see module docstring
-                q_positions=OptionalReg[KVPtrT](q_positions_ptr),
             )
         else:
             var batch = Int(input_row_offsets.dim_size[0]()) - 1
@@ -364,6 +380,14 @@ struct Struct_msa_attention_ragged_paged:
                 ctx, d_lt.ptr, k_num_heads * num_rows * topk, owning=False
             )
 
+            # TODO(graph-capture): drop this D2H when the plan moves on-device.
+            # The plan sizes its buffers from the per-batch cu-seqlens on host
+            # (`k2q_csr_sizes` sums per-batch K-block counts), so one D2H of the
+            # ragged offsets is unavoidable in a single-op execute -- the op is
+            # stateless across calls, so there is no persisted plan (unlike the
+            # MLA prefill, whose plan is a *device* op writing graph tensors).
+            # Keep it to ONE sync: read offsets back, fill the host + int32 run
+            # cu-seqlens in the same window, then enqueue the H2D under it.
             var iro_lt = input_row_offsets.to_layout_tensor()
             var iro_dev = DeviceBuffer[DType.uint32](
                 ctx, iro_lt.ptr, batch + 1, owning=False
@@ -379,11 +403,17 @@ struct Struct_msa_attention_ragged_paged:
             )
             var cl_host = ctx.enqueue_create_host_buffer[DType.uint32](batch)
             ctx.enqueue_copy(cl_host, cl_dev)
+
+            # Run cu-seqlens are int32 (the CSR/fwd/combine read `Int32`); alloc
+            # before the sync so they fill in the same window.
+            var cuq_h = ctx.enqueue_create_host_buffer[DType.int32](batch + 1)
+            var cuk_h = ctx.enqueue_create_host_buffer[DType.int32](batch + 1)
             ctx.synchronize()
 
             var cu_seqlens_q = List[Int32](length=batch + 1, fill=Int32(0))
             for i in range(batch + 1):
                 cu_seqlens_q[i] = iro_host[i].cast[DType.int32]()
+                cuq_h[i] = cu_seqlens_q[i]
 
             var cu_seqlens_k = List[Int32](length=batch + 1, fill=Int32(0))
             for i in range(batch):
@@ -394,23 +424,38 @@ struct Struct_msa_attention_ragged_paged:
                 cu_seqlens_k[i + 1] = (
                     cu_seqlens_k[i] + cl_host[i].cast[DType.int32]() + seq_len_q
                 )
+            for i in range(batch + 1):
+                cuk_h[i] = cu_seqlens_k[i]
 
-            msa_sm100_prefill_b_device_csr_dispatch[
+            var plan = msa_sm100_prefill_plan[
+                output_type=DType.bfloat16,
                 config=config,
                 group=group,
                 topk=topk,
+            ](cu_seqlens_q, cu_seqlens_k, ctx)
+
+            var cuq_d = ctx.enqueue_create_buffer[DType.int32](batch + 1)
+            var cuk_d = ctx.enqueue_create_buffer[DType.int32](batch + 1)
+            ctx.enqueue_copy(cuq_d, cuq_h)
+            ctx.enqueue_copy(cuk_d, cuk_h)
+
+            msa_sm100_prefill_run[
+                config=config,
+                group=group,
+                topk=topk,
+                use_causal=True,
             ](
+                plan,
                 output_buf,
                 lse_buf,
                 q_buf,
                 k_op,
                 v_op,
                 d_indices_buf,
-                cu_seqlens_q,
-                cu_seqlens_k,
+                cuq_d,
+                cuk_d,
                 scale,
                 ctx,
-                q_positions=OptionalReg[KVPtrT](q_positions_ptr),
             )
 
             _ = lse_buf^
