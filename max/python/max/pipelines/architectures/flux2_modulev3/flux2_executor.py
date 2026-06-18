@@ -18,11 +18,12 @@ import logging
 
 import numpy as np
 import numpy.typing as npt
-from max.driver import Buffer, Device, load_devices
+from max.driver import CPU, Buffer, Device, load_devices
 from max.dtype import DType
+from max.experimental import functional, random
 from max.experimental.nn import Module
 from max.experimental.tensor import Tensor
-from max.graph import TensorType
+from max.graph import DeviceRef, TensorType, TensorValue, ops
 from max.pipelines.architectures.flux2.flux2_executor import (
     Flux2ExecutorOutputs,
 )
@@ -32,13 +33,13 @@ from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.modeling.config_enums import supported_encoding_dtype
 from max.profiler import traced
 
-from .components import TextEncoder
+from .components import Denoiser, TextEncoder
 from .flux2_inputs import Flux2ModuleV3Inputs
 
 logger = logging.getLogger("max.pipelines")
 
 
-class FLUXModule(Module[[Tensor, Tensor], tuple[Tensor, Tensor]]):
+class FLUXModule(Module[..., tuple[Tensor, Tensor, Tensor]]):
     """Single-``Module`` implementation of the FLUX.2 pipeline.
 
     Expresses the entire FLUX.2 forward pass -- text encode, optional
@@ -121,33 +122,103 @@ class FLUXModule(Module[[Tensor, Tensor], tuple[Tensor, Tensor]]):
             device_specs=vae_manifest_config.device_specs,
         )
 
+        transformer_config = manifest["transformer"]
+        self._transformer_device: Device = load_devices(
+            transformer_config.device_specs
+        )[0]
+        self.denoiser = Denoiser(
+            huggingface_config=transformer_config.huggingface_config.to_dict(),
+            quantization_encoding=transformer_config.quantization_encoding,
+            device_specs=transformer_config.device_specs,
+        )
+
     # -- Module forward + compile surface -------------------------------------
 
     def forward(
-        self, tokens: Tensor, input_image: Tensor
-    ) -> tuple[Tensor, Tensor]:
+        self,
+        tokens: Tensor,
+        input_image: Tensor,
+        seed: Tensor,
+        num_inference_steps: Tensor,
+        h_carrier: Tensor,
+        w_carrier: Tensor,
+    ) -> tuple[Tensor, Tensor, Tensor]:
         """Forward pass through the Module tree.
 
-        Runs both the text encoder and the VAE image encoder
-        unconditionally: ``input_image`` is always passed (a
-        ``(0, 0, 3)`` placeholder for text-to-image requests), and the
-        zero spatial dims propagate through to a ``(1, 0, num_channels)``
-        latent that the downstream denoiser concatenates as a no-op.
-        Additional components (denoiser, VAE decoder) will plug in here
-        as they are ported.
+        Runs the text encoder and VAE image encoder unconditionally,
+        seeds the graph's RNG from ``seed``, samples initial latent
+        noise on the transformer device, then drives the denoising
+        loop via :func:`~max.graph.ops.while_loop` for exactly
+        ``num_inference_steps`` iterations.  The denoiser is a stub
+        today (returns latents unchanged), so the final latents equal
+        the initial Gaussian noise; the loop machinery, RNG, and
+        carry are exercised end-to-end.
+
+        ``h_carrier`` and ``w_carrier`` carry the latent grid shape:
+        ``packed_h = h_carrier.shape[0]``,
+        ``packed_w = w_carrier.shape[0]``.  Their contents are
+        irrelevant -- only their dimensions are read.
 
         Returns:
-            ``(text_embeddings, image_latents)``.
+            ``(text_embeddings, image_latents, final_latents)``.
         """
         text_embeddings = self.text_encoder(tokens)
         image_latents = self.vae.encode(input_image)
-        return text_embeddings, image_latents
+
+        # Initial latent noise sampled directly on the transformer
+        # device from the runtime seed.  ``set_seed`` runs once at
+        # compile time; the per-execution seed flows in as a graph
+        # input and drives the rotated seed values baked into each
+        # downstream random op.
+        ops.random.set_seed(TensorValue(seed))
+        packed_h = h_carrier.shape[0]
+        packed_w = w_carrier.shape[0]
+        seq = packed_h * packed_w
+        initial_latents = random.gaussian(
+            shape=[1, seq, self.vae.num_channels],
+            dtype=self._model_dtype,
+            device=self._transformer_device,
+        )
+
+        # Denoising loop.  Carry: (latents, step).  Step lives on CPU
+        # so the predicate's bool scalar lands on CPU as
+        # ``ops.while_loop`` requires.  ``functional.while_loop``
+        # exposes a Tensor-only surface: predicate and body take and
+        # return experimental Tensors; the wrapper handles the
+        # underlying TensorValue plumbing.
+        zero_step = Tensor.zeros([1], dtype=DType.int64, device=CPU())
+
+        def predicate(latents: Tensor, step: Tensor) -> Tensor:
+            return step[0] < num_inference_steps[0]
+
+        def body(latents: Tensor, step: Tensor) -> list[Tensor]:
+            return [self.denoiser(latents), step + 1]
+
+        results = functional.while_loop(
+            initial_values=[initial_latents, zero_step],
+            predicate=predicate,
+            body=body,
+        )
+        # ``functional.while_loop`` returns experimental Tensors; the
+        # wrapper handles the underlying TensorValue plumbing on both
+        # the callback and result sides.
+        final_latents = results[0]
+
+        return text_embeddings, image_latents, final_latents
 
     def input_types(self) -> tuple[TensorType, ...]:
         """Input tensor types for compilation, sourced from sub-Modules."""
+        transformer_ref = DeviceRef.from_device(self._transformer_device)
         return (
             *self.text_encoder.input_types(),
             *self.vae.input_types(),
+            # seed (uint64, [1]) on the transformer device.
+            TensorType(DType.uint64, [1], device=transformer_ref),
+            # num_inference_steps (int64, [1]) on CPU for the predicate.
+            TensorType(DType.int64, [1], device=DeviceRef.CPU()),
+            # h_carrier, w_carrier: shape carriers on the transformer device.
+            TensorType(DType.float32, ["packed_h"], device=transformer_ref),
+            TensorType(DType.float32, ["packed_w"], device=transformer_ref),
         )
 
     # -- Pipeline I/O contract -----------------------------------------------
@@ -188,7 +259,12 @@ class FLUXModule(Module[[Tensor, Tensor], tuple[Tensor, Tensor]]):
             self._text_encoder_device
         )
         text_ids = Buffer.from_dlpack(context.text_ids)
-        seed = Buffer.from_dlpack(np.array([context.seed], dtype=np.int64))
+        # Seed is uint64 to match ``ops.random.SeedType``; placed on
+        # the transformer device so the in-graph RNG can read it
+        # without a CPU->GPU transfer per execution.
+        seed = Buffer.from_dlpack(np.array([context.seed], dtype=np.uint64)).to(
+            self._transformer_device
+        )
         latent_image_ids = Buffer.from_dlpack(context.latent_image_ids)
         timesteps, dts = self._prepare_scheduler(context.sigmas)
 
@@ -200,11 +276,20 @@ class FLUXModule(Module[[Tensor, Tensor], tuple[Tensor, Tensor]]):
             )
         )
 
-        h_carrier = Buffer.from_dlpack(np.empty(packed_h, dtype=np.float32))
-        w_carrier = Buffer.from_dlpack(np.empty(packed_w, dtype=np.float32))
+        # ``h_carrier`` / ``w_carrier`` give the graph the latent grid
+        # shape via their dimensions; placed on the transformer device
+        # because ``initial_latents`` is sampled there.
+        h_carrier = Buffer.from_dlpack(np.empty(packed_h, dtype=np.float32)).to(
+            self._transformer_device
+        )
+        w_carrier = Buffer.from_dlpack(np.empty(packed_w, dtype=np.float32)).to(
+            self._transformer_device
+        )
 
         height = Buffer.from_dlpack(np.array([context.height], dtype=np.int64))
         width = Buffer.from_dlpack(np.array([context.width], dtype=np.int64))
+        # ``num_inference_steps`` stays on CPU because the while-loop
+        # predicate compares CPU bool tensors.
         num_inference_steps = Buffer.from_dlpack(
             np.array([context.num_inference_steps], dtype=np.int64)
         )

@@ -46,8 +46,11 @@ class Flux2ModuleV3Inputs(TensorStruct):
     """Text position IDs for the transformer, shape ``(1, S, 4)`` int64."""
 
     seed: Buffer
-    """RNG seed as a 1-element int64 tensor. The graph samples initial
-    latent noise from this seed."""
+    """RNG seed as a 1-element ``uint64`` tensor on the transformer
+    device, matching :func:`max.graph.ops.random.SeedType`. The graph
+    samples initial latent noise from this seed via
+    :func:`max.experimental.random.set_seed` +
+    :func:`max.experimental.random.gaussian`."""
 
     latent_image_ids: Buffer
     """Latent positional identifiers, shape ``(B, seq, 4)`` int64."""

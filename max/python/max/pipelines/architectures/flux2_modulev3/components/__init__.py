@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Sub-``Module`` components for the FLUX.2 ModuleV3 executor."""
 
+from .denoiser import Denoiser
 from .text_encoder import TextEncoder
 
-__all__ = ["TextEncoder"]
+__all__ = ["Denoiser", "TextEncoder"]
