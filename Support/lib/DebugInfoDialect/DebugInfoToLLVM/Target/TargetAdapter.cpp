@@ -421,6 +421,16 @@ void DebugInfo::convertDbgValueToDeclare(ModuleOp module) {
                llvm::dwarf::DW_OP_deref;
       };
 
+      auto hasUnstableDebugStorage = [](Value value) -> bool {
+        // TODO: Make this more precise by recognizing stable address
+        //       producers, e.g. value.getDefiningOp<LLVM::AllocaOp>(),
+        //       LLVM::AddressOfOp, or constant GEPs rooted in those ops.
+        // If this is a block argument that happens to be a pointer, it's not
+        // a stable debug pointer location, because the argument register may be
+        // reused after lowering to machine code.
+        return isa<BlockArgument>(value);
+      };
+
       // The converted alloca op that will hold the value if it is converted
       // to a stack allocation.  In the useDbgValue case, we need a separate
       // alloca for each value that is not already in memory.
@@ -496,8 +506,11 @@ void DebugInfo::convertDbgValueToDeclare(ModuleOp module) {
       for (LLVM::DbgValueOp valueOp : processable.valueOps) {
         if (useDbgValueMode) {
           // If we are keeping dbg.value ops and it is already a pointer, there
-          // is nothing to do.
-          if (valueOpHasDeref(valueOp))
+          // is usually nothing to do. Unstable debug addresses need a local
+          // slot so the value has a stable location while preserving later
+          // dbg.value(undef) kills.
+          if (valueOpHasDeref(valueOp) &&
+              !hasUnstableDebugStorage(valueOp.getValue()))
             continue;
           ArrayRef<LLVM::DIExpressionElemAttr> location =
               valueOp.getLocationExpr().getOperations();
