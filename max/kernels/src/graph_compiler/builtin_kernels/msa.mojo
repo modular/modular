@@ -248,7 +248,6 @@ struct Struct_msa_attention_ragged_paged:
         max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
         layer_idx: UInt32,
         d_indices: InputTensor[dtype=DType.int32, rank=3, ...],
-        q_positions: InputTensor[dtype=DType.int32, rank=1, ...],
         scale: Float32,
         ctx: DeviceContext,
     ) raises:
@@ -268,8 +267,6 @@ struct Struct_msa_attention_ragged_paged:
         `msa_sm100_prefill_run`): the run is pure-device, but the plan sizes its
         buffers from the per-batch cu-seqlens on host, so one D2H readback +
         sync per call is unavoidable while this stays a single stateless op.
-        Both paths pass `q_positions` for causal with `kv_logical_pos=None`
-        (see module TODO).
 
         Parameters:
             group: Query heads per kv-head (`n_heads // n_kv_heads`); asserts
@@ -289,8 +286,6 @@ struct Struct_msa_attention_ragged_paged:
             max_lengths: Main-KV max lengths `[1, 2]` uint32.
             layer_idx: Layer index for the main-KV cache.
             d_indices: Selected block ids `[n_kv_heads, num_rows, topk]` int32.
-            q_positions: Per-token logical query position `[num_rows]` int32
-                (used for causal; see module TODO).
             scale: QK scale.
             ctx: Device context.
         """
@@ -324,8 +319,6 @@ struct Struct_msa_attention_ragged_paged:
         var q_buf = DeviceBuffer[DType.bfloat16](
             ctx, q_lt.ptr, num_rows * num_heads * head_dim, owning=False
         )
-
-        var q_positions_ptr = rebind[KVPtrT](q_positions.to_layout_tensor().ptr)
 
         # Decode == one query token per sequence (`max_seq_length == 1`).
         if Int(kv_collection.max_seq_length) == 1:
@@ -374,12 +367,6 @@ struct Struct_msa_attention_ragged_paged:
                 None,  # kv_input_row_offsets
                 num_rows,  # batch_size
                 ctx,
-                # Causal is a no-op for seq_len==1 decode (query at sequence end
-                # masks nothing); in-kernel kv_logical_pos masking is only
-                # meaningful for seq_len>1 spec decode (not yet supported).
-                # TODO(seq_len>1): see module docstring.
-                kv_logical_pos=None,
-                q_positions=OptionalReg[KVPtrT](q_positions_ptr),
             )
         else:
             var batch = Int(input_row_offsets.dim_size[0]()) - 1
@@ -456,6 +443,7 @@ struct Struct_msa_attention_ragged_paged:
                 config=config,
                 group=group,
                 topk=topk,
+                use_causal=True,
             ](
                 plan,
                 output_buf,
@@ -468,7 +456,6 @@ struct Struct_msa_attention_ragged_paged:
                 cuk_d,
                 scale,
                 ctx,
-                q_positions=OptionalReg[KVPtrT](q_positions_ptr),
             )
 
             _ = lse_buf^

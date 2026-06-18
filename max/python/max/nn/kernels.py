@@ -2031,7 +2031,6 @@ def msa_sparse_attention_ragged(
     kv_collection: PagedCacheValues,
     layer_idx: TensorValue,
     block_indices: TensorValue,
-    q_positions: TensorValue,
     *,
     group: int,
     topk: int,
@@ -2054,8 +2053,6 @@ def msa_sparse_attention_ragged(
         layer_idx: Layer index, uint32, on CPU.
         block_indices: Selected block ids. Prefill: ``[n_kv_heads, total_q,
             topk]``; decode: ``[n_kv_heads, batch, topk]``. int32.
-        q_positions: Per-token logical query position ``[total_q]`` (prefill) or
-            ``[batch]`` (decode), int32, used for causal masking.
         group: Query heads per kv-head (``n_heads // n_kv_heads``).
         topk: Number of gathered KV blocks per token.
         scale: QK scale.
@@ -2093,13 +2090,6 @@ def msa_sparse_attention_ragged(
         device=input.device,
     )
     _validate_argument_tensor(
-        "q_positions",
-        q_positions,
-        dtype=DType.int32,
-        rank=1,
-        device=input.device,
-    )
-    _validate_argument_tensor(
         "layer_idx", layer_idx, dtype=DType.uint32, device=DeviceRef.CPU()
     )
     if topk <= 0:
@@ -2111,7 +2101,6 @@ def msa_sparse_attention_ragged(
         *kv_collection.flatten_without_attention_dispatch_metadata(),
         layer_idx,
         block_indices,
-        q_positions,
         ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU()),
     ]
 
