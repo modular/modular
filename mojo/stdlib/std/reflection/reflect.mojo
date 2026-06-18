@@ -137,7 +137,8 @@ struct Reflected[T: AnyType]:
     - A member that returns a **type** (e.g. `Reflected[FieldT]`) is a
       `comptime` member alias and is spelled without `()`. This keeps it
       composable in type position: `reflect[T].field_type["x"].T` reads as a
-      type. `field_type[name]` is the only such member today.
+      type. `field_type[name]` and `field_type_at[idx]` are the type-returning
+      members today.
     - A member that returns a **value** (an `Int`, `StaticString`,
       `InlineArray`, a `TypeList`, a typed `ref`, etc.) is an
       `@staticmethod` and is spelled with `()` — e.g.
