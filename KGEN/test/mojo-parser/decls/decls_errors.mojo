@@ -1018,6 +1018,33 @@ trait Shape(ImplicitlyCopyable):
 struct ShapeContainer:
     var shape: Shape # expected-error {{struct fields do not support trait types; 'Shape' is a trait, use a concrete type or compile-time generic}}
 
+# MSTDL-2267: Structs with "AnyOrigin" fields stop keeping things alive when passed to a function
+struct SwallowAnyOrigin:
+    # expected-error @below {{struct fields cannot expose AnyOrigin in their type; foo has type 'UnsafePointer[Int, MutAnyOrigin]'}}
+    # expected-note @below {{consider parameterizing enclosing struct with an Origin}}
+    # expected-note @below {{alternatively, use UntrackedOrigin if lifetime is managed explicitly}}
+    var foo: UnsafePointer[Int, MutAnyOrigin]
+
+# A field that opts into the legacy behavior with the
+# @__allow_legacy_any_origin_fields decorator is accepted without error.
+struct AllowedLegacyAnyOrigin:
+    @__allow_legacy_any_origin_fields
+    var foo: UnsafePointer[Int, MutAnyOrigin]
+
+# A function-pointer field whose signature mentions AnyOrigin in an argument or
+# result position does not expose AnyOrigin in the struct's own storage (the
+# struct holds a function, not a reference into that memory), so it is accepted
+# without the decorator.
+struct FnPtrAnyOriginArg:
+    var cb_arg: def(UnsafePointer[Int, MutAnyOrigin]) thin -> None
+    var cb_ret: def() thin -> UnsafePointer[Int, MutAnyOrigin]
+
+# A struct parameter bound by a function type that mentions AnyOrigin, with a
+# field of that parameter type, is likewise accepted: the AnyOrigin lives in the
+# parameter's bound, not in the field's own storage type.
+struct FnTypeParamBound[T: def(UnsafePointer[Int, MutAnyOrigin])]:
+    var t: Self.T
+
 ##===----------------------------------------------------------------------===##
 # Struct/Trait conformance check failure
 ##===----------------------------------------------------------------------===##

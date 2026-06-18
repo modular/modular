@@ -10,11 +10,15 @@ from debug_test_utils import keep_alive
 @fieldwise_init
 struct Foo:
     var x: Int
+
+    @__allow_legacy_any_origin_fields
     var ptr: UnsafePointer[Foo, MutAnyOrigin]
 
 
 struct Bar:
     var x: Int
+
+    @__allow_legacy_any_origin_fields
     var ptr: UnsafePointer[Bar, MutAnyOrigin]
 
     def __init__(out self, x: Int, ptr: UnsafePointer[Bar, MutAnyOrigin]):

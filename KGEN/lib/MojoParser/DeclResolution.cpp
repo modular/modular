@@ -3987,6 +3987,30 @@ LogicalResult DeclResolver::resolveSignature(StructFieldOp fieldOp,
 
 ParseResult DeclResolver::resolveBody(StructFieldOp op, Lexer &lexer,
                                       ASTDecl &decl) {
+  // Perform additional semantic analysis of the fields. Erasing an AnyOrigin is
+  // not allowed because Mojo won't know that the enclosing struct contains it,
+  // and therefore won't do lifetime extension.
+  //
+  // Fields explicitly annotated with @__allow_legacy_any_origin_fields opt out
+  // of this check: the author takes responsibility for keeping the referenced
+  // memory alive, since the enclosing struct will not extend its lifetime.
+  if (op.getAllowLegacyAnyOrigin())
+    return success();
+
+  ASTType fieldType = op.getType();
+  for (TypedAttr origin :
+       shared.cachedOriginFinder.findOriginsIn(getCanonicalType(fieldType))) {
+    if (sugarIsa<AnyOriginAttr>(OriginType::stripMutCastAndRebind(origin))) {
+      auto diag = emitError(decl.getLoc())
+                  << "struct fields cannot expose AnyOrigin in their type; "
+                  << op.getNameAttr().getValue() << " has type " << fieldType;
+      diag.attachNote(decl)
+          << "consider parameterizing enclosing struct with an Origin";
+      diag.attachNote(op.getLoc()) << "alternatively, use UntrackedOrigin if "
+                                      "lifetime is managed explicitly";
+      return failure();
+    }
+  }
   return success();
 }
 
