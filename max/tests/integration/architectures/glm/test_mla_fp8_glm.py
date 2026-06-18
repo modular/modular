@@ -254,7 +254,7 @@ def _run_layer(
         input_types=(
             hidden_state_type,
             input_row_offsets_type,
-            *kv_params.get_symbolic_inputs().flatten(),
+            *kv_params.flattened_kv_inputs(),
         ),
     ) as graph:
         hidden_states = graph.inputs[0].tensor
@@ -279,8 +279,8 @@ def _run_layer(
     )
     ctx = create_text_context(np.empty(SEQ_LEN))
     kv_manager.claim(ctx.request_id, replica_idx=0)
-    kv_manager.alloc(ctx, replica_idx=0, num_steps=1)
-    kv_inputs = kv_manager.runtime_inputs([[ctx]]).inputs[0]
+    kv_manager.alloc(ctx, replica_idx=0)
+    kv_inputs = kv_manager.runtime_inputs_for_leaf([[ctx]]).inputs[0]
     row_offsets_buf = Buffer(DType.uint32, [2])
     row_offsets_buf[0] = 0
     row_offsets_buf[1] = SEQ_LEN

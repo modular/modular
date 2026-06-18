@@ -133,14 +133,11 @@ def make_kv_inputs(
         for i in range(num_replicas):
             ctx = create_text_context(np.empty(input_seq_len, dtype=np.int64))
             kv_manager.claim(ctx.request_id, replica_idx=i)
-            kv_manager.alloc(ctx, replica_idx=i, num_steps=1)
+            kv_manager.alloc(ctx, replica_idx=i)
             contexts.append(ctx)
             batches.append([ctx])
 
-        runtime_inputs = kv_manager.runtime_inputs(batches)
-        kv_inputs: KVCacheInputs[Buffer, Buffer] = runtime_inputs
-
-        return kv_inputs
+        return kv_manager.runtime_inputs_for_leaf(batches)
 
     return _make
 

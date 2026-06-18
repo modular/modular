@@ -1388,7 +1388,7 @@ def split_k_reduce[
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: TileTensor[mut=True, ...],
-    work_space: TileTensor,
+    work_space: TileTensor[mut=False, ...],
     ctx: DeviceContext,
 ) raises:
     comptime c_type = c.dtype

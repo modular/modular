@@ -20,13 +20,14 @@ from typing import Optional
 
 import uvloop
 from max.pipelines import PIPELINE_REGISTRY, PipelineConfig
+from max.pipelines.logging_utils import log_basic_config, log_pipeline_info
 from max.pipelines.modeling.types import PipelineTask
 from max.serve.config import Settings
 from max.serve.pipelines.model_worker import start_model_worker
 from max.serve.pipelines.telemetry_worker import start_telemetry_consumer
 from max.serve.telemetry.metrics import METRICS
+from max.serve.worker_interface._zmq_queue import generate_zmq_ipc_path
 from max.serve.worker_interface.zmq_interface import ZmqModelWorkerInterface
-from max.serve.worker_interface.zmq_queue import generate_zmq_ipc_path
 
 logger = logging.getLogger("max.entrypoints")
 
@@ -89,6 +90,8 @@ def start_workers(
             pipeline_config,
             task=pipeline_config.task,
         )
+        log_basic_config(pipeline_config)
+        log_pipeline_info(pipeline_config)
 
         try:
             async with AsyncExitStack() as exit_stack:

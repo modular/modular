@@ -61,6 +61,7 @@ def distributed_logits_postprocess(
     norm_shards: Sequence[Callable[[TensorValue], TensorValue]] | None = None,
     return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
     logits_scaling: float = 1.0,
+    logit_softcapping: float | None = None,
 ) -> tuple[TensorValue, ...]:
     """Common logits postprocessing for multi-device sharded models.
 
@@ -151,6 +152,14 @@ def distributed_logits_postprocess(
         if logits is not None:
             logits = logits / logits_scaling
 
+    if logit_softcapping is not None:
+        # Softcap: cap * tanh(logits / cap), bounding logits to (-cap, cap).
+        last_logits = ops.tanh(last_logits / logit_softcapping) * (
+            logit_softcapping
+        )
+        if logits is not None:
+            logits = ops.tanh(logits / logit_softcapping) * logit_softcapping
+
     ret_val: tuple[TensorValue, ...] = (last_logits,)
     if offsets is not None:
         assert logits is not None
@@ -180,6 +189,7 @@ class DistributedLogitsPostprocessMixin:
     devices: list[DeviceRef]
     return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE
     logits_scaling: float = 1.0
+    logit_softcapping: float | None = None
 
     def _postprocess_logits(
         self,
@@ -199,6 +209,7 @@ class DistributedLogitsPostprocessMixin:
             device=self.devices[0],
             return_hidden_states=self.return_hidden_states,
             logits_scaling=self.logits_scaling,
+            logit_softcapping=self.logit_softcapping,
         )
 
 

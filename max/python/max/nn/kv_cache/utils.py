@@ -25,14 +25,20 @@ from max.graph import DeviceRef
 
 
 @dataclass(frozen=True)
-class AttnKey:
+class AttnKeyInterface:
+    """Common base for resolved attention keys."""
+
+
+@dataclass(frozen=True)
+class AttnKey(AttnKeyInterface):
     """A resolved decode-attention dispatch shape.
 
     The resolved ``num_partitions`` (the kernel grid) plus the batch and prompt
     dimensions. The runtime ``max_cache_valid_length`` is supplied to
     :meth:`pack_into_buffer` rather than stored, so dispatches that differ only
-    in cache length share one key. Concrete subclasses (:class:`MHAAttnKey`,
-    :class:`MLAAttnKey`) implement the kernel-specific buffer layout.
+    in cache length share one identity. Concrete subclasses
+    (:class:`MHAAttnKey`, :class:`MLAAttnKey`)
+    implement the kernel-specific buffer layout.
     """
 
     batch_size: int
@@ -42,18 +48,17 @@ class AttnKey:
     def pack_into_buffer(
         self, device: Device, max_cache_valid_length: int
     ) -> Buffer:
-        """Packs this key into a kernel dispatch-metadata buffer.
+        """Packs this into a kernel dispatch-metadata buffer.
 
         ``max_cache_valid_length`` is the runtime cache length; it is supplied
-        here rather than stored on the key so the key's identity is independent
-        of it.
+        here rather than stored so the identity is independent of it.
         """
         raise NotImplementedError
 
 
 @dataclass(frozen=True)
 class MHAAttnKey(AttnKey):
-    """Decode dispatch key for multi-head attention (MHA)."""
+    """Decode dispatch metadata for multi-head attention (MHA)."""
 
     def pack_into_buffer(
         self, device: Device, max_cache_valid_length: int
@@ -77,7 +82,7 @@ class MHAAttnKey(AttnKey):
 
 @dataclass(frozen=True)
 class MLAAttnKey(AttnKey):
-    """Decode dispatch key for multi-latent attention (MLA)."""
+    """Decode dispatch metadata for multi-latent attention (MLA)."""
 
     def pack_into_buffer(
         self, device: Device, max_cache_valid_length: int
@@ -97,6 +102,23 @@ class MLAAttnKey(AttnKey):
             )
         )
         return metadata.to(device)
+
+
+@dataclass(frozen=True)
+class MultiAttnKey(AttnKeyInterface):
+    """A tree of resolved dispatch metadata mirroring a ``MultiKVCacheParams``
+    tree.
+
+    ``children`` is a tuple of ``(name, key)`` pairs (rather than a dict) so it
+    stays a frozen, hashable identity for the graph-capture key map.
+    """
+
+    children: tuple[tuple[str, AttnKeyInterface], ...]
+
+    @classmethod
+    def from_dict(cls, children: dict[str, AttnKeyInterface]) -> MultiAttnKey:
+        """Builds a :class:`MultiAttnKey` from a name -> key mapping."""
+        return cls(children=tuple(children.items()))
 
 
 class AttentionDispatchResolver:
@@ -205,32 +227,19 @@ class AttentionDispatchResolver:
 
 
 def build_max_lengths_tensor(
-    num_steps: int, max_seq_length: int, max_cache_length: int
+    max_seq_length: int, max_cache_length: int
 ) -> Buffer:
-    """Builds a ``[num_steps, 2]`` uint32 buffer of per-step maximum lengths.
-
-    Each row encodes the maximum sequence length and maximum cache length for
-    that decode step. The first step uses ``max_seq_length``; subsequent steps
-    use 1 (one new token per step). Cache length increases by 1 each step.
+    """Builds a ``[1, 2]`` uint32 buffer of maximum lengths for a single decode step.
 
     Args:
-        num_steps: The number of decode steps to pre-compute lengths for.
-        max_seq_length: The maximum sequence length for the first step.
-        max_cache_length: The maximum cache length for the first step.
+        max_seq_length: The maximum sequence length.
+        max_cache_length: The maximum cache length.
 
     Returns:
-        A :class:`~max.driver.Buffer` of shape ``[num_steps, 2]`` and dtype
-        ``uint32`` containing ``(max_seq_length, max_cache_length)`` pairs.
+        A :class:`~max.driver.Buffer` of shape ``[1, 2]`` and dtype
+        ``uint32`` containing ``(max_seq_length, max_cache_length)``.
     """
-    # Build a tensor of maximum lengths. Each step slices the first row to
-    # advance to the values for the next row.
-    max_lengths_np = np.empty((num_steps, 2), np.uint32)
-    step_max_seq_length = max_seq_length
-    step_max_cache_length = max_cache_length
-    for step in range(num_steps):
-        max_lengths_np[step, 0] = step_max_seq_length
-        max_lengths_np[step, 1] = step_max_cache_length
-        step_max_seq_length = 1
-        step_max_cache_length += 1
-
+    max_lengths_np = np.empty((1, 2), np.uint32)
+    max_lengths_np[0, 0] = max_seq_length
+    max_lengths_np[0, 1] = max_cache_length
     return Buffer.from_numpy(max_lengths_np)

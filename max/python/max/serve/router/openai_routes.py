@@ -14,8 +14,6 @@
 from __future__ import annotations
 
 import asyncio
-import base64
-import io
 import json
 import logging
 import queue
@@ -26,15 +24,20 @@ from collections.abc import AsyncGenerator, Iterable, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from json.decoder import JSONDecodeError
-from pathlib import Path
 from random import randint
-from typing import Any, Generic, Literal, TypeGuard, TypeVar, cast, overload
-from urllib.parse import unquote, urlparse
+from typing import (
+    Any,
+    Generic,
+    Literal,
+    NamedTuple,
+    TypeGuard,
+    TypeVar,
+    cast,
+    overload,
+)
 
-import aiofiles
 from fastapi import APIRouter, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
-from httpx import AsyncClient, HTTPStatusError
 from jinja2.exceptions import UndefinedError
 from llguidance import LLMatcher
 from max.pipelines.context import (
@@ -82,6 +85,10 @@ from max.serve.parser.tool_call_validation import log_tool_call_conformance
 from max.serve.pipelines.llm import (
     TokenGeneratorOutput,
     TokenGeneratorPipeline,
+)
+from max.serve.router._image_resolution import (
+    decode_and_validate_images,
+    resolve_image_from_url,
 )
 from max.serve.schemas.openai import (
     ChatCompletionLogprobs,
@@ -140,7 +147,7 @@ from openai.types.shared_params import (
     ResponseFormatJSONSchema as ResponseFormatJsonSchema,
 )
 from openai.types.shared_params import ResponseFormatText as ResponseFormatText
-from PIL import Image, UnidentifiedImageError
+from PIL import Image
 from pydantic import AnyUrl, BaseModel, Field, ValidationError
 from sse_starlette.sse import EventSourceResponse
 from starlette.datastructures import State
@@ -532,14 +539,6 @@ class OpenAIChatResponseGenerator(
                 n_reasoning_tokens + n_tokens,
             )
 
-            if request.response_format is not None:
-                logger.info(
-                    "Tool/constrained request %s succeeded (stream=true): type=%s, tool_calls_emitted=%s",
-                    request.request_id,
-                    request.response_format.type,
-                    has_emitted_tool_calls,
-                )
-
             # If `include_usage=True`, send a final chunk with usage statistics
             if self.stream_options and self.stream_options.get("include_usage"):
                 final_usage = CompletionUsage(
@@ -767,15 +766,7 @@ class OpenAIChatResponseGenerator(
                 service_tier=None,
                 usage=usage,
             )
-            if request.response_format is not None:
-                logger.info(
-                    "Tool/constrained request %s succeeded (stream=false): type=%s, tool_calls_emitted=%s",
-                    request.request_id,
-                    request.response_format.type,
-                    any(
-                        choice.message.tool_calls for choice in response_choices
-                    ),
-                )
+
             return response
         finally:
             record_request_end(
@@ -928,25 +919,25 @@ def _normalize_openai_role(role: str) -> Any:
     return "system" if role == "developer" else role
 
 
-def _validate_decodable_images(images: list[bytes]) -> None:
-    # Identify each image (a cheap header parse, not a full pixel decode) so
-    # empty or non-image base64 fails here as a clean 400 instead of reaching
-    # the model worker and crashing it with an unhandled
-    # PIL.UnidentifiedImageError (HTTP 500). The actual decode still happens
-    # once, later, in the tokenizer.
-    for image_bytes in images:
-        try:
-            with Image.open(io.BytesIO(image_bytes)):
-                pass
-        except (UnidentifiedImageError, OSError, ValueError, SyntaxError) as e:
-            raise InputError("invalid or unreadable image content") from e
+class _ParsedChatRequest(NamedTuple):
+    """The parsed pieces of a chat-completion request.
+
+    ``decoded_images`` are the validated, decoded images (decoded once); they
+    are carried on the request so the tokenizer does not decode the same bytes
+    a second time. See :func:`decode_and_validate_images`.
+    """
+
+    messages: list[TextGenerationRequestMessage]
+    images: list[bytes]
+    videos: list[bytes]
+    decoded_images: list[Image.Image]
 
 
 async def openai_parse_chat_completion_request(
     completion_request: CreateChatCompletionRequest,
     wrap_content: bool,
     settings: Settings,
-) -> tuple[list[TextGenerationRequestMessage], list[bytes], list[bytes]]:
+) -> _ParsedChatRequest:
     """Parse the OpenAI ChatCompletionRequest to build TextGenerationRequestMessages.
     These will be used as inputs to the chat template to build the prompt.
     Also extract the list of image/video references while we are here so they
@@ -1037,107 +1028,23 @@ async def openai_parse_chat_completion_request(
     ]
     request_images = await asyncio.gather(*resolve_image_tasks)
 
-    _validate_decodable_images(request_images)
+    # Fully decoding every image is CPU-bound (a few ms to tens of ms each), so
+    # run it off the event loop to avoid blocking concurrent requests. PIL's C
+    # codecs release the GIL during decode, so this is genuinely concurrent.
+    # The decoded images are carried on the request and reused by the tokenizer
+    # (decode-once), so this is the only place a request's images are decoded.
+    decoded_images = await asyncio.to_thread(
+        decode_and_validate_images, request_images
+    )
 
     resolve_video_tasks = [
         resolve_image_from_url(video_url, settings) for video_url in video_refs
     ]
     request_videos = await asyncio.gather(*resolve_video_tasks)
 
-    return messages, request_images, list(request_videos)
-
-
-async def resolve_image_from_url(
-    image_ref: AnyUrl, settings: Settings
-) -> bytes:
-    if image_ref.scheme == "http" or image_ref.scheme == "https":
-        # TODO: Evaluate creating a single AsyncClient for the app.
-        async with AsyncClient() as client:
-            try:
-                response = await client.get(
-                    str(image_ref), follow_redirects=True
-                )
-                response.raise_for_status()
-            except HTTPStatusError as e:
-                raise ValueError(
-                    f"Failed to fetch image: HTTP {e.response.status_code}"
-                ) from None
-            images_bytes = await response.aread()
-            logger.debug(
-                "ResolvedImageUrl: %s -> %d bytes", image_ref, len(images_bytes)
-            )
-            return images_bytes
-    elif image_ref.scheme == "data":
-        image_b64 = image_ref.unicode_string().split(",")[1]
-        images_bytes = base64.decodebytes(image_b64.encode())
-        logger.debug(
-            "ResolvedImageB64: %s -> %d bytes",
-            str(image_ref)[:16],
-            len(images_bytes),
-        )
-        return images_bytes
-    elif image_ref.scheme == "file":
-        if settings is None:
-            raise ValueError("Settings required for file URI resolution")
-
-        # Parse the file URI.
-        parsed = urlparse(str(image_ref))
-
-        # Check host - only allow empty or localhost.
-        if parsed.netloc and parsed.netloc not in ("", "localhost"):
-            raise ValueError(
-                f"File URI with remote host '{parsed.netloc}' is not supported"
-            )
-
-        # Extract and decode the path.
-        file_path = Path(unquote(parsed.path))
-
-        # Validate against allowed roots.
-        allowed_roots = [Path(root) for root in settings.allowed_image_roots]
-        if not allowed_roots:
-            raise ValueError(
-                "File URI access denied: no allowed roots configured"
-            )
-
-        # Resolve the path, following symlinks.
-        try:
-            resolved_path = file_path.resolve(strict=True)
-        except (OSError, RuntimeError) as e:
-            raise ValueError(f"File not found: {file_path}") from e
-
-        # Check if it's a directory.
-        if resolved_path.is_dir():
-            raise ValueError(f"Path is a directory: {resolved_path}")
-
-        # Check if path is within allowed roots.
-        path_allowed = False
-        for root in allowed_roots:
-            try:
-                resolved_path.relative_to(root)
-                path_allowed = True
-                break
-            except ValueError:
-                continue
-
-        if not path_allowed:
-            raise ValueError(
-                f"Path forbidden: {resolved_path} is outside allowed roots"
-            )
-
-        # Read the file with size limit.
-        max_bytes = settings.max_local_image_bytes
-
-        async with aiofiles.open(resolved_path, "rb") as f:
-            images_bytes = await f.read(max_bytes + 1)
-            if len(images_bytes) > max_bytes:
-                raise ValueError(
-                    f"File exceeds size limit of {max_bytes} bytes"
-                )
-        logger.debug(
-            "ResolvedFileUri: %s -> %d bytes", resolved_path, len(images_bytes)
-        )
-        return images_bytes
-    raise ValueError(f"Invalid image ref '{image_ref}'")
+    return _ParsedChatRequest(
+        messages, request_images, list(request_videos), decoded_images
+    )
 
 
 def _convert_stop(stop: str | list[str] | None) -> list[str] | None:
@@ -1296,6 +1203,7 @@ async def openai_create_chat_completion(
             request_messages,
             request_images,
             request_videos,
+            request_decoded_images,
         ) = await openai_parse_chat_completion_request(
             completion_request,
             pipeline.tokenizer.expects_content_wrapping,
@@ -1464,6 +1372,23 @@ async def openai_create_chat_completion(
                     " field."
                 )
 
+        # Map OpenRouter's ``reasoning`` toggle onto the chat-template thinking
+        # flags. Templates are inconsistent about the key name, so set both
+        # ``enable_thinking`` and ``thinking``.
+        if completion_request.reasoning is not None:
+            reasoning = completion_request.reasoning
+            enable_thinking = (
+                reasoning.enabled
+                if reasoning.enabled is not None
+                else reasoning.effort is not None
+            )
+            chat_template_kwargs = dict(
+                completion_request.chat_template_kwargs or {}
+            )
+            chat_template_kwargs.setdefault("enable_thinking", enable_thinking)
+            chat_template_kwargs.setdefault("thinking", enable_thinking)
+            completion_request.chat_template_kwargs = chat_template_kwargs
+
         # When the orchestrator has already tokenized the prompt for
         # KV cache-aware routing, pass the token IDs directly so MAX Serve
         # skips re-tokenization. ``messages`` and ``prompt`` are mutually
@@ -1476,6 +1401,7 @@ async def openai_create_chat_completion(
             prompt=prompt_token_ids if prompt_token_ids else None,
             messages=[] if prompt_token_ids else request_messages,
             images=request_images,
+            decoded_images=request_decoded_images,
             videos=request_videos,
             tools=tools,
             timestamp_ns=request.state.request_timer.start_ns,

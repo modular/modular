@@ -1,6 +1,7 @@
 load("@aspect_bazel_lib//lib:write_source_files.bzl", "write_source_files")
 load("//bazel:api.bzl", "modular_generate_stubfiles", "modular_nanobind_extension", "modular_py_library", "requirement")
 load("//bazel:config.bzl", "TOP_LEVEL_TAG")
+load("//max/python/max/pipelines/architectures:all_arches.bzl", "ALL_ARCHITECTURES")
 
 package(default_visibility = ["//max:consumers"])
 
@@ -35,10 +36,12 @@ modular_generate_stubfiles(
     name = "_core",
     additional_update_targets = [
         "//max/python/max/_mlir/_mlir_libs:_mlir.sync-stubfiles",
+    ] + select({
         # nixl.pyi is diff-tested separately (linux-x86_64 only, see below); keep
         # it in the one-shot `./utils/sync-stubfiles.sh` update flow.
-        ":_core.sync-stubfiles.nixl",
-    ],
+        "//:linux_x86_64": [":_core.sync-stubfiles.nixl"],
+        "//conditions:default": [],
+    }),
     # nixl.pyi is platform-specific: the upstream NIXL library ships prebuilt
     # binaries for linux-x86_64 only, so the _core.nixl binding -- and its
     # generated stub -- is empty elsewhere. Exclude it from the cross-platform
@@ -137,7 +140,7 @@ modular_py_library(
     name = "max",
     srcs = [],
     tags = ["no-pydeps"],  # All deps are unused
-    deps = [
+    deps = ALL_ARCHITECTURES + [
         ":_core",
         ":tensor",
         "//max/python/max/_core_mojo",

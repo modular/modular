@@ -50,11 +50,9 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
-    ModelWrapValidatorHandler,
     PrivateAttr,
     TypeAdapter,
     field_validator,
-    model_validator,
 )
 from typing_extensions import Self
 
@@ -249,13 +247,7 @@ class PipelineConfig(ConfigFileModel):
     variables, or internal defaults.
     """
 
-    # PipelineConfig intentionally accepts kwargs that belong to sub-configs
-    # (MAXModelConfig, KVCacheConfig, etc.) and routes them via the
-    # _preprocess_kwargs wrap validator.  Allow extras so pydantic (and its
-    # mypy plugin) don't reject those unmatched kwargs.
-    # TODO: This should be removed though, but only after we've fully unrolled
-    # the weird monkeypatching to instantiate MAXModelConfig, KVCacheConfig, etc.
-    model_config = ConfigDict(extra="ignore", arbitrary_types_allowed=True)
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
     debug_verify_replay: bool = Field(
         default=False,
@@ -434,10 +426,6 @@ class PipelineConfig(ConfigFileModel):
     """The section name to use when loading this config from a MAXConfig file.
     This is used to differentiate between different config sections in a single
     MAXConfig file."""
-
-    _unmatched_kwargs: dict[str, Any] = PrivateAttr(default_factory=dict)
-    """Temporary storage for unmatched kwargs during initialization.
-    This is used to pass unmatched kwargs from the before validator to the after validator."""
 
     def configure_session(self, session: InferenceSession) -> None:
         """Configures a :class:`~max.engine.InferenceSession` with standard pipeline settings."""
@@ -900,39 +888,31 @@ class PipelineConfig(ConfigFileModel):
             else:
                 setattr(self, config_name, config_class(**matched_kwargs))
 
-    # This has to be mode="wrap" instead of mode="before" to be able to pass
-    # state of self._unmatched_kwargs to be used in the mode="after" validator
-    # function given it's a PrivateAttr.
-    @model_validator(mode="wrap")
     @classmethod
-    def _preprocess_kwargs(
-        cls, data: Any, handler: ModelWrapValidatorHandler[Self]
-    ) -> Self:
-        """Preprocess kwargs before Pydantic validation.
+    def from_flat_kwargs(cls, **kwargs: Any) -> Self:
+        """Construct a :class:`PipelineConfig` from a flat CLI kwargs namespace.
 
-        We need to separate kwargs for nested configs *and* pass the unmatched
-        kwargs through to the post-processing validator. Since `_unmatched_kwargs`
-        is a `PrivateAttr`, it cannot be set via normal model input, so we use a
-        wrap validator and stash the unmatched values onto the instance after
-        Pydantic has created it.
+        Accepts the flat kwargs produced by ``pipeline_config_options`` (for
+        example ``model_path``, ``kv_cache_size``, ``enable_lora``) and routes
+        them into the appropriate sub-configs before constructing the instance.
+
+        This is the entry point for CLI and legacy callers. Direct construction
+        via ``PipelineConfig(models=..., runtime=..., ...)`` with properly typed
+        sub-configs is also supported and requires no routing.
         """
-        if not isinstance(data, dict):
-            return handler(data)
-
-        kwargs = data.copy()
-        # Merge config file values before separating pydantic vs unmatched
-        # kwargs, so sub-config fields (e.g. model_path) from the YAML are
-        # visible to _postprocess_configs.
+        # Merge YAML config file values before routing, then clear config_file
+        # so the Pydantic model_validator on ConfigFileModel doesn't reload it
+        # when cls(**pydantic_kwargs) is called below.
         kwargs = cls.load_config_file(kwargs)  # type: ignore[operator]
+        kwargs.pop("config_file", None)
 
-        # Intercept model/draft_model before field separation — these are
-        # no longer Pydantic fields but consumers still pass them directly.
+        # Intercept legacy model/draft_model kwargs — these are no longer
+        # Pydantic fields but some callers still pass them directly.
         model_kwarg = kwargs.pop("model", None)
         draft_model_kwarg = kwargs.pop("draft_model", None)
 
         # If a MAXModelConfig (or plain dict from config file) was passed
-        # directly, wrap it in a manifest.  Coerce dicts so that callers
-        # loading from YAML/JSON (which produce plain dicts) work correctly.
+        # directly, wrap it in a manifest.
         if model_kwarg is not None:
             if isinstance(model_kwarg, dict) and not isinstance(
                 model_kwarg, MAXModelConfig
@@ -940,26 +920,18 @@ class PipelineConfig(ConfigFileModel):
                 model_kwarg = MAXModelConfig(**model_kwarg)
             kwargs["models"] = ModelManifest({"main": model_kwarg})
 
-        unmatched_kwargs: dict[str, Any] = {}
-        # Use getattr to safely access model_fields in case it's not yet available
-        # during class construction.
-        model_fields = getattr(cls, "model_fields", {})
-
-        # Separate kwargs that belong to this class vs other config classes.
+        # Separate PipelineConfig-own fields from sub-config fields.
         pydantic_kwargs: dict[str, Any] = {}
-        for key, value in list(kwargs.items()):
-            if key in model_fields:
+        unmatched_kwargs: dict[str, Any] = {}
+        for key, value in kwargs.items():
+            if key in cls.model_fields:
                 pydantic_kwargs[key] = value
-                logger.debug("pydantic_kwargs key: %s, value: %s", key, value)
             else:
                 unmatched_kwargs[key] = value
-                logger.debug("unmatched_kwargs key: %s, value: %s", key, value)
 
-        instance = handler(pydantic_kwargs)
-        # `_unmatched_kwargs` is a PrivateAttr, so set it on the instance.
-        instance._unmatched_kwargs = unmatched_kwargs
+        instance = cls(**pydantic_kwargs)
 
-        # Add draft model via with_override
+        # Add draft model via with_override.
         if draft_model_kwarg is not None:
             if isinstance(draft_model_kwarg, dict) and not isinstance(
                 draft_model_kwarg, MAXModelConfig
@@ -969,47 +941,21 @@ class PipelineConfig(ConfigFileModel):
                 "draft", config=draft_model_kwarg
             )
 
-        return instance
-
-    @model_validator(mode="after")
-    def __postprocess_configs(self) -> Self:
-        """Process nested configs after Pydantic validation.
-
-        This runs after all fields have been validated and set.
-        """
-        # Get unmatched kwargs that were stored during preprocessing
-        try:
-            unmatched_kwargs = self._unmatched_kwargs
-        except AttributeError:
-            # Pydantic re-validates 'after' validators when placed inside
-            # another model, at which point _postprocess_configs will have
-            # already run once and _unmatched_kwargs won't be set.  We don't
-            # need to run again in this case.
-            return self
-        delattr(self, "_unmatched_kwargs")
-
-        # Process specialized config creation
-        self._create_lora_config_if_needed(unmatched_kwargs)
-
-        # Build model manifest from kwargs — must come before sampling
-        # (which needs model's generation_config) and speculative
-        # (which needs draft_model).
-        self._build_models_from_kwargs(unmatched_kwargs)
-        self._create_speculative_config_if_needed(unmatched_kwargs)
-
-        # Process remaining config classes (runtime, sampling, profiling)
+        # Route unmatched kwargs into sub-configs.  Ordering matters:
+        # - models before sampling (sampling needs generation_config from model)
+        # - models before speculative (speculative needs draft_model)
+        # - runtime before denoising_cache (denoising_cache is set on runtime)
+        instance._create_lora_config_if_needed(unmatched_kwargs)
+        instance._build_models_from_kwargs(unmatched_kwargs)
+        instance._create_speculative_config_if_needed(unmatched_kwargs)
         if unmatched_kwargs:
-            self._process_remaining_config_classes(unmatched_kwargs)
-
-        # Set denoising_cache on runtime AFTER runtime is constructed by
-        # _process_remaining_config_classes; otherwise the runtime
-        # replacement there clobbers the cache fields set here.
-        self._create_denoising_cache_config_if_needed(unmatched_kwargs)
+            instance._process_remaining_config_classes(unmatched_kwargs)
+        instance._create_denoising_cache_config_if_needed(unmatched_kwargs)
 
         if unmatched_kwargs:
             raise ValueError(f"Unmatched kwargs: {unmatched_kwargs}")
 
-        return self
+        return instance
 
     def _validate_required_arguments_against_architecture(
         self, architecture: Any

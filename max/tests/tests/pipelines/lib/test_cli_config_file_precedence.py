@@ -204,7 +204,7 @@ def test_cli_overrides_yaml_recipe_values(tmp_path: Path) -> None:
         encoding="utf-8",
     )
 
-    config = PipelineConfig(  # type: ignore[call-arg]
+    config = PipelineConfig.from_flat_kwargs(
         config_file=str(config_path),
         device_specs=[DeviceSpec(i, "gpu") for i in range(4)],
         data_parallel_degree=4,

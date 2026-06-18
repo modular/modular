@@ -73,6 +73,7 @@ def create_test_lora_manager(
         n_heads=32,
         n_kv_heads=8,
         head_dim=128,
+        max_lora_seq_len=128,
     )
 
     if lora_configs:

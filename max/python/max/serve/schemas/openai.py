@@ -268,6 +268,21 @@ def _model_from_typeddict(name: str, td: type) -> type[BaseModel]:
     return create_model(name, __config__=_FORBID_EXTRA, **fields)
 
 
+class ReasoningConfig(BaseModel):
+    """OpenRouter's ``reasoning`` object (OpenAI only has ``reasoning_effort``).
+
+    Only ``enabled`` is used (mapped to ``enable_thinking`` in the route);
+    the rest are accepted but ignored for now.
+    """
+
+    model_config = _FORBID_EXTRA
+
+    enabled: bool | None = None
+    effort: str | None = None
+    max_tokens: int | None = None
+    exclude: bool | None = None
+
+
 class _MaxRequestExtensions(BaseModel):
     """MAX-specific request fields shared by chat and text completions.
 
@@ -292,6 +307,9 @@ class _MaxRequestExtensions(BaseModel):
     # Routing / cache hints used by disaggregated serving.
     target_endpoint: str | None = None
     dkv_cache_hint: dict[str, Any] | None = None
+
+    # OpenRouter reasoning object; mapped to enable_thinking in the route.
+    reasoning: ReasoningConfig | None = None
 
 
 # ---- Auto-generated request bases from OpenAI's TypedDict params ----------

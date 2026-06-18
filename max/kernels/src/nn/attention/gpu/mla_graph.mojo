@@ -61,7 +61,7 @@ from nn.kv_cache_ragged import (
     generic_flare_mla_decode_kv_cache_ragged,
     generic_flare_mla_prefill_kv_cache_ragged,
 )
-from nn.attention.gpu.mla import _k_cache_to_buffer, MLA_DECODE_MAX_SEQ_LEN
+from nn.attention.gpu.mla import _k_cache_to_buffer, mla_decode_max_seq_len
 from nn.normalization import _rms_norm_warp_tiling_subkernel
 
 
@@ -458,10 +458,10 @@ def mla_fused_rope_rmsnorm_quantization[
     ],
 ](
     q_rope_output: TileTensor[mut=True, out_rope_dtype, ...],
-    q_rope: TileTensor[dtype, ...],
-    input_row_offsets: TileTensor[DType.uint32, ...],
-    freqs_cis: TileTensor[freq_dtype, ...],
-    gamma: TileTensor[gamma_dtype, ...],
+    q_rope: TileTensor[mut=False, dtype, ...],
+    input_row_offsets: TileTensor[mut=False, DType.uint32, ...],
+    freqs_cis: TileTensor[mut=False, freq_dtype, ...],
+    gamma: TileTensor[mut=False, gamma_dtype, ...],
     kv_collection: collection_t,
     layer_idx: UInt32,
     epsilon: Float32,
@@ -1385,7 +1385,7 @@ def mla_prefill_decode_graph_fp8[
         return
 
     # When running verification with MTP we want to use the decode branch.
-    if max_seq_len <= MLA_DECODE_MAX_SEQ_LEN:
+    if max_seq_len <= mla_decode_max_seq_len[collection_t.CacheType.dtype]():
         mla_decode_branch_fp8[
             m_scale_granularity=m_scale_granularity,
             n_scale_granularity=n_scale_granularity,
@@ -2041,8 +2041,12 @@ def mla_prefill_decode_graph_bf16[
     if seq_len == 0:
         return
 
-    # When running verification with MTP we want to use the decode branch.
-    if max_seq_len <= MLA_DECODE_MAX_SEQ_LEN:
+    # The fold runs in the cache dtype (the decode branch quantizes Q to
+    # `collection_t.CacheType.dtype`), so the decode-vs-prefill threshold keys on
+    # the cache dtype, not the BF16 compute dtype: an FP8 cache routes S>1 to the
+    # decode fold (prefill can't serve MTP), a BF16 cache returns 1 and routes
+    # S>1 to prefill. Mirrors `mla_prefill_decode_graph_fp8`.
+    if max_seq_len <= mla_decode_max_seq_len[collection_t.CacheType.dtype]():
         mla_decode_branch_bf16[
             mask_str=mask_str,
             kv_input_fn=kv_input_fn,

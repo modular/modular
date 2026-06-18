@@ -463,7 +463,7 @@ def syncwarp(mask: Int = -1):
     comptime if is_nvidia_gpu():
         __mlir_op.`nvvm.bar.warp.sync`(
             __mlir_op.`index.casts`[_type=__mlir_type.i32](
-                mask._int_mlir_index()
+                mask.__mlir_index__()
             )
         )
     elif is_amd_gpu():

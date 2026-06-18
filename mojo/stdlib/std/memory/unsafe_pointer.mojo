@@ -220,7 +220,6 @@ def alloc[
     """
     comptime size_of_t = size_of[type]()
     comptime type_name = reflect[type].name()
-    comptime assert size_of_t > 0, "size must be greater than zero"
     debug_assert(
         count >= 0,
         "alloc[",
@@ -734,7 +733,7 @@ struct UnsafePointer[
             An offset pointer.
         """
         return __mlir_op.`pop.offset`(
-            self.address, index(offset)._int_mlir_index()
+            self.address, index(offset).__mlir_index__()
         )
 
     @always_inline
@@ -1268,7 +1267,7 @@ struct UnsafePointer[
             # intentionally don't unroll, otherwise the compiler vectorizes
             for i in range(width):
                 v[i] = __mlir_op.`pop.load`[
-                    alignment=alignment._int_mlir_index(),
+                    alignment=alignment.__mlir_index__(),
                     isVolatile=volatile.__mlir_i1__(),
                     isInvariant=invariant.__mlir_i1__(),
                     isNonTemporal=non_temporal.__mlir_i1__(),
@@ -1295,7 +1294,7 @@ struct UnsafePointer[
         var address = self.bitcast[SIMD[dtype, width]]().address
 
         var result = __mlir_op.`pop.load`[
-            alignment=alignment._int_mlir_index(),
+            alignment=alignment.__mlir_index__(),
             isVolatile=volatile.__mlir_i1__(),
             isInvariant=invariant.__mlir_i1__(),
             isNonTemporal=non_temporal.__mlir_i1__(),
@@ -1543,7 +1542,7 @@ struct UnsafePointer[
             ](val.cast[DType.uint8]())
         else:
             __mlir_op.`pop.store`[
-                alignment=alignment._int_mlir_index(),
+                alignment=alignment.__mlir_index__(),
                 isVolatile=volatile.__mlir_i1__(),
                 isNonTemporal=non_temporal.__mlir_i1__(),
             ](val, self.bitcast[SIMD[dtype, width]]().address)

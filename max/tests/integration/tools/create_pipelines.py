@@ -38,21 +38,12 @@ from idefics3 import torch_utils as idefics3_torch_utils
 from internvl import torch_utils as internvl_torch_utils
 from max import driver, pipelines
 from max.pipelines import TextGenerationPipelineInterface
-from max.pipelines.architectures.flux2.flux2_executor import Flux2Executor
-from max.pipelines.architectures.flux2.flux2_klein_executor import (
-    Flux2KleinExecutor,
-)
-from max.pipelines.architectures.flux2.tokenizer import Flux2Tokenizer
 from max.pipelines.architectures.internvl.tokenizer import InternVLProcessor
 from max.pipelines.architectures.qwen3.text_encoder import (
     Qwen3TextEncoderKleinModel,
 )
-from max.pipelines.architectures.wan.context import WanContext
-from max.pipelines.architectures.wan.tokenizer import WanTokenizer
-from max.pipelines.architectures.wan.wan_executor import WanExecutor
-from max.pipelines.context import PixelContext
 from max.pipelines.diffusion.cache import DenoisingCacheConfig
-from max.pipelines.lib import PipelineRuntimeConfig, PixelGenerationPipeline
+from max.pipelines.lib import PipelineRuntimeConfig
 from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.modeling.types import PipelineTask, PipelineTokenizer
 from peft.peft_model import PeftModel
@@ -781,19 +772,17 @@ class _KimiK2_5BaseOracle(PipelineOracle):
         device_specs: list[driver.DeviceSpec],
     ) -> MaxPipelineAndTokenizer:
         revision = hf_repo_lock.revision_for_hf_repo(self.model_path)
-        config = pipelines.PipelineConfig.model_validate(
-            {
-                "device_specs": device_specs,
-                "quantization_encoding": encoding,
-                "model_path": self.model_path,
-                "huggingface_model_revision": revision,
-                "huggingface_weight_revision": revision,
-                "max_length": 4096,
-                "trust_remote_code": self.trust_remote_code,
-                "max_batch_input_tokens": 4096,
-                "ep_size": 8,
-                "data_parallel_degree": 8,
-            }
+        config = pipelines.PipelineConfig.from_flat_kwargs(
+            device_specs=device_specs,
+            quantization_encoding=encoding,
+            model_path=self.model_path,
+            huggingface_model_revision=revision,
+            huggingface_weight_revision=revision,
+            max_length=4096,
+            trust_remote_code=self.trust_remote_code,
+            max_batch_input_tokens=4096,
+            ep_size=8,
+            data_parallel_degree=8,
         )
         hf_repo_lock.apply_to_config(config)
         tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
@@ -847,6 +836,19 @@ class KimiK2_5PipelineOracle(_KimiK2_5BaseOracle):
             for prompt in test_data.SHORT_TEXT_PROMPTS
         ]
         return test_data.KIMIK2_5_REQUESTS + text_only_requests
+
+
+class KimiK2_6PipelineOracle(KimiK2_5PipelineOracle):
+    """Pipeline oracle for Kimi-K2.6-NVFP4 (vLLM only).
+
+    K2.6 reuses the Kimi-K2.5 MAX architecture — same TEXT+IMAGE modalities,
+    parsers, tokenizer, and NVFP4 / 8x EP-DP pipeline config (see
+    ``architectures/kimik2_5/arch.py``, which lists K2.6 as an example repo).
+    It therefore shares K2.5's vLLM golden setup verbatim: multimodal
+    (``KIMIK2_5_REQUESTS``) + text inputs and the vision ``_vllm_extra_kwargs``
+    (``mm_encoder_tp_mode`` / ``limit_mm_per_prompt`` on the ``vision_chunk``
+    mm-data key).
+    """
 
 
 class KimiK2_5DeepseekV3PipelineOracle(_KimiK2_5BaseOracle):
@@ -907,19 +909,17 @@ class AmdKimiK2_5MXFP4PipelineOracle(PipelineOracle):
         gpu_count = max(
             1, sum(1 for d in device_specs if d.device_type == "gpu")
         )
-        config = pipelines.PipelineConfig.model_validate(
-            {
-                "device_specs": device_specs,
-                "quantization_encoding": encoding,
-                "model_path": self.model_path,
-                "huggingface_model_revision": revision,
-                "huggingface_weight_revision": revision,
-                "max_length": 4096,
-                "trust_remote_code": self.trust_remote_code,
-                "max_batch_input_tokens": 4096,
-                "ep_size": gpu_count,
-                "data_parallel_degree": gpu_count,
-            }
+        config = pipelines.PipelineConfig.from_flat_kwargs(
+            device_specs=device_specs,
+            quantization_encoding=encoding,
+            model_path=self.model_path,
+            huggingface_model_revision=revision,
+            huggingface_weight_revision=revision,
+            max_length=4096,
+            trust_remote_code=self.trust_remote_code,
+            max_batch_input_tokens=4096,
+            ep_size=gpu_count,
+            data_parallel_degree=gpu_count,
         )
         hf_repo_lock.apply_to_config(config)
         tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
@@ -1106,7 +1106,7 @@ class GenericOracle(PipelineOracle):
         if not is_local_model:
             config_kwargs["huggingface_model_revision"] = model_revision
             config_kwargs["huggingface_weight_revision"] = model_revision
-        config = pipelines.PipelineConfig.model_validate(config_kwargs)
+        config = pipelines.PipelineConfig.from_flat_kwargs(**config_kwargs)
         if weight_repo_id and weight_repo_id != model_path:
             config.model._weights_repo_id = weight_repo_id
         if not is_local_model:
@@ -1347,20 +1347,18 @@ class LoRAOracle(PipelineOracle):
         revision = hf_repo_lock.revision_for_hf_repo(self.model_path)
         lora_path = self._get_shared_adapter()
 
-        config = pipelines.PipelineConfig.model_validate(
-            {
-                "device_specs": device_specs,
-                "quantization_encoding": encoding,
-                "model_path": self.model_path,
-                "huggingface_model_revision": revision,
-                "enable_lora": True,
-                "lora_paths": [lora_path],
-                "max_num_loras": 1,
-                "max_lora_rank": self.lora_rank,
-                "enable_prefix_caching": False,  # LoRA requires prefix caching disabled
-                "trust_remote_code": True,
-                **self.config_params,
-            }
+        config = pipelines.PipelineConfig.from_flat_kwargs(
+            device_specs=device_specs,
+            quantization_encoding=encoding,
+            model_path=self.model_path,
+            huggingface_model_revision=revision,
+            enable_lora=True,
+            lora_paths=[lora_path],
+            max_num_loras=1,
+            max_lora_rank=self.lora_rank,
+            enable_prefix_caching=False,
+            trust_remote_code=True,
+            **self.config_params,
         )
         tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
 
@@ -1494,20 +1492,10 @@ class ImageGenerationOracle(PipelineOracle):
             runtime=PipelineRuntimeConfig(**runtime_kwargs),
         )
 
-        pipeline_model_cls = (
-            Flux2KleinExecutor
-            if self.model_path.startswith("black-forest-labs/FLUX.2-klein")
-            else Flux2Executor
-        )
-        tokenizer = Flux2Tokenizer(
-            model_path=self.model_path,
-            pipeline_config=config,
-            subfolder="tokenizer",
-            max_length=512,
-        )
-        pipeline = PixelGenerationPipeline[PixelContext](
-            pipeline_config=config,
-            pipeline_model=pipeline_model_cls,
+        # retrieve resolves the manifest and picks the tokenizer/executor
+        # from the arch registry, like production serving.
+        tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(
+            config, task=self.task
         )
 
         return MaxPipelineAndTokenizer(
@@ -1586,15 +1574,10 @@ class WanGenerationOracle(ImageGenerationOracle):
             device_specs=device_specs,
         )
         config = pipelines.PipelineConfig(models=models)
-        tokenizer = WanTokenizer(
-            model_path=self.model_path,
-            pipeline_config=config,
-            subfolder="tokenizer",
-            max_length=512,
-        )
-        pipeline = PixelGenerationPipeline[WanContext](
-            pipeline_config=config,
-            pipeline_model=WanExecutor,
+        # retrieve resolves the manifest and picks the tokenizer/executor
+        # from the arch registry (see ImageGenerationOracle).
+        tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(
+            config, task=self.task
         )
         return MaxPipelineAndTokenizer(
             pipeline=pipeline,  # type: ignore
@@ -2201,6 +2184,7 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         add_bos_token=True,
     ),
     "nvidia/Kimi-K2.5-NVFP4": KimiK2_5PipelineOracle("nvidia/Kimi-K2.5-NVFP4"),
+    "nvidia/Kimi-K2.6-NVFP4": KimiK2_6PipelineOracle("nvidia/Kimi-K2.6-NVFP4"),
     "amd/Kimi-K2.5-MXFP4": AmdKimiK2_5MXFP4PipelineOracle(
         "amd/Kimi-K2.5-MXFP4"
     ),

@@ -315,8 +315,10 @@ async def test_ttft_recorded_once_per_chunk() -> None:
     for chunk in chunks:
         assert chunk.prompt_token_count == 10
 
-    # Verify METRICS.input_tokens was called with prompt_length
-    mock_metrics.input_tokens.assert_called_once_with(10)
+    # next_token_chunk must not emit the input-token counter; that is owned
+    # by record_request_end so the counter stays consistent with the
+    # per-request histogram and the API usage field.
+    mock_metrics.input_tokens.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -369,6 +371,7 @@ async def test_tpot_not_recorded_for_single_token() -> None:
 
 THINK_START_TOKEN_ID = 1
 THINK_END_TOKEN_ID = 2
+TOOL_SECTION_START_TOKEN_ID = 3
 
 
 async def _run_reasoning_pipeline(
@@ -414,6 +417,7 @@ async def _run_reasoning_pipeline(
         return_value=KimiK2_5ReasoningParser(
             think_start_token_id=THINK_START_TOKEN_ID,
             think_end_token_id=THINK_END_TOKEN_ID,
+            tool_section_start_token_id=TOOL_SECTION_START_TOKEN_ID,
         )
     )
     if top_log_probs is not None:
@@ -571,6 +575,48 @@ async def test_next_token_chunk_stop_sequence_ignores_reasoning() -> None:
     assert chunks[0].decoded_reasoning_tokens == "STOP"
     assert chunks[0].decoded_tokens is None
     assert chunks[1].decoded_tokens == "hello"
+
+
+@pytest.mark.asyncio
+async def test_next_token_chunk_tool_section_without_think_end_to_content() -> (
+    None
+):
+    """Kimi K2.5 can open a tool-call section from inside ``<think>`` with no
+    closing ``</think>``. The tool section must route to *content* (where the
+    tool parser runs), not leak into the reasoning channel.
+
+    Regression for the intermittent OpenRouter ``tool-choice-auto`` failure:
+    the tool-call payload landed in ``reasoning`` and ``content`` was empty,
+    so no tool call was ever emitted. Sampling-dependent, hence flaky.
+    """
+
+    async def mock_decode(token_array: Any, **kwargs: Any) -> str:
+        tokens = token_array.tolist()
+        if tokens == [10]:
+            return "thinking"
+        if tokens == [TOOL_SECTION_START_TOKEN_ID, 40]:
+            # The tool markers are non-special tokens, so they survive
+            # detokenization and reach the tool parser verbatim.
+            return "<|tool_calls_section_begin|>...args..."
+        return "unknown"
+
+    chunks = await _run_reasoning_pipeline(
+        _make_responses(
+            [[THINK_START_TOKEN_ID, 10], [TOOL_SECTION_START_TOKEN_ID, 40]]
+        ),
+        decode=mock_decode,
+    )
+
+    assert len(chunks) == 2
+    # First chunk is pure reasoning (still inside <think>).
+    assert chunks[0].decoded_reasoning_tokens == "thinking"
+    assert chunks[0].decoded_tokens is None
+    # Second chunk: the tool section ends reasoning and routes to content,
+    # NOT reasoning — so the tool parser downstream actually sees it.
+    assert chunks[1].decoded_reasoning_tokens is None
+    assert chunks[1].reasoning_token_count == 0
+    assert chunks[1].decoded_tokens == "<|tool_calls_section_begin|>...args..."
+    assert chunks[1].token_count == 2
 
 
 @pytest.mark.asyncio

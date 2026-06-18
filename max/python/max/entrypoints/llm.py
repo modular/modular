@@ -41,9 +41,9 @@ from max.serve.config import Settings
 from max.serve.pipelines.llm import TokenGeneratorPipeline
 from max.serve.pipelines.model_worker import start_model_worker
 from max.serve.pipelines.telemetry_worker import start_telemetry_consumer
+from max.serve.worker_interface._zmq_queue import generate_zmq_ipc_path
 from max.serve.worker_interface.lora_queue import LoRAQueue
 from max.serve.worker_interface.zmq_interface import ZmqModelWorkerInterface
-from max.serve.worker_interface.zmq_queue import generate_zmq_ipc_path
 
 T = TypeVar("T")
 U = TypeVar("U")
@@ -86,7 +86,7 @@ class LLM:
         from max.entrypoints.llm import LLM
         from max.pipelines import PipelineConfig
 
-        pipeline_config = PipelineConfig(model_path="LiquidAI/LFM2.5-350M")
+        pipeline_config = PipelineConfig.from_flat_kwargs(model_path="LiquidAI/LFM2.5-350M")
         llm = LLM(pipeline_config)
 
         prompts = [

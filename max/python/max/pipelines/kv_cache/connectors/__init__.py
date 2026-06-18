@@ -26,7 +26,7 @@ from collections.abc import Sequence
 
 from max.driver import Device
 from max.nn.kv_cache.cache_params import (
-    KVCacheBuffer,
+    KVCacheBufferInterface,
     KVCacheMemory,
     KVConnectorType,
 )
@@ -44,7 +44,7 @@ def create_connector(
     kv_connector: KVConnectorType | None,
     kv_connector_config: KVConnectorConfig | None,
     devices: Sequence[Device],
-    kv_buffers: list[KVCacheBuffer],
+    kv_buffers: KVCacheBufferInterface,
     total_num_host_blocks: int,
 ) -> KVConnector:
     """Create a KV cache connector instance based on ``kv_connector``.
@@ -53,16 +53,15 @@ def create_connector(
         kv_connector: Connector type to instantiate (or None for no-op).
         kv_connector_config: Connector-specific configuration object.
         devices: Devices for the KV cache tensors.
-        kv_buffers: KVCacheBuffer objects describing all caches to offload.
+        kv_buffers: The replica's KV buffer (a single leaf or a tree of
+            leaves) describing all caches to offload.
         total_num_host_blocks: Total number of host blocks for swapping.
 
     Returns:
         A connector instance implementing the KVConnector protocol.
     """
     connector = kv_connector
-    kv_memory: list[KVCacheMemory] = [
-        m for kvb in kv_buffers for m in kvb.to_memory()
-    ]
+    kv_memory: list[KVCacheMemory] = kv_buffers.to_memory()
 
     if connector == KVConnectorType.dkv:
         from .dkv import DKVConnector
@@ -79,19 +78,11 @@ def create_connector(
             "Creating DKVConnector: endpoint=%s",
             kv_connector_config.block_store_endpoint,
         )
-        # DKVConnector is temporarily disabled. We need to implement proper support
-        # later down the line. For now, we raise an error.
-        # Note that maintaining backward compatibility is hard since we are
-        # changing the core KVConnector protocol in order to better support
-        # the other connectors.
-        raise NotImplementedError("DKVConnector is not implemented")
-        # return DKVConnector(
-        #     params=params,
-        #     devices=devices,
-        #     device_buffers=device_buffers,
-        #     total_num_blocks=total_num_blocks,
-        #     local_block_store_endpoint=cfg.block_store_endpoint,
-        # )
+        return DKVConnector(
+            devices=devices,
+            kv_memory=kv_memory,
+            local_block_store_endpoint=kv_connector_config.block_store_endpoint,
+        )
 
     if connector == KVConnectorType.tiered:
         cfg = kv_connector_config

@@ -32,12 +32,7 @@ from max.nn.kernels import (
     inplace_memcpy,
     wait_host_value_with_dep,
 )
-from max.nn.kv_cache import (
-    KVCacheInputsPerDevice,
-    KVCacheParamInterface,
-    KVCacheParams,
-    PagedCacheValues,
-)
+from max.nn.kv_cache import KVCacheParamInterface, PagedCacheValues
 from max.nn.layer import Module
 from max.nn.sampling.rejection_sampler import (
     AcceptanceSampler,
@@ -435,16 +430,13 @@ class UnifiedMTPGemma4(Module):
         )
 
     def input_types(
-        self,
-        kv_params: KVCacheParamInterface,
-        draft_kv_params: KVCacheParams | None = None,
+        self, kv_params: KVCacheParamInterface
     ) -> tuple[TensorType | BufferType, ...]:
         """Input types for the unified MTP Gemma4 graph.
 
         Order: tokens, device_offsets, host_offsets, return_n_logits,
                data_parallel_splits, signal_buffers, target_kv_cache,
-               batch_context_lengths, draft_tokens,
-               draft_kv_blocks_per_device, seed, temperature, top_k,
+               batch_context_lengths, draft_tokens, seed, temperature, top_k,
                max_k, top_p, min_top_p, in_thinking_phase.
         """
         devices = self.config.devices
@@ -488,7 +480,7 @@ class UnifiedMTPGemma4(Module):
             data_parallel_splits_type,
         ]
         all_input_types.extend(signal_buffer_types)
-        all_input_types.extend(kv_params.get_symbolic_inputs().flatten())
+        all_input_types.extend(kv_params.flattened_kv_inputs())
 
         batch_context_length_type = TensorType(
             DType.int32, shape=[1], device=DeviceRef.CPU()
@@ -498,10 +490,6 @@ class UnifiedMTPGemma4(Module):
         )
 
         all_input_types.append(draft_tokens_type)
-        if draft_kv_params is not None:
-            for sym in draft_kv_params.get_symbolic_inputs().inputs:
-                assert isinstance(sym, KVCacheInputsPerDevice)
-                all_input_types.append(sym.kv_blocks)
 
         # Per-batch device-resident seed.
         seed_type = TensorType(

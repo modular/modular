@@ -764,8 +764,8 @@ def gemv_gpu_dispatch[
 ](
     kernel_func: GEMVAlgorithm,
     c: TileTensor[mut=True, ...],
-    a: TileTensor,
-    b: TileTensor,
+    a: TileTensor[mut=False, ...],
+    b: TileTensor[mut=False, ...],
     ctx: DeviceContext,
 ) raises:
     comptime assert c.rank == 2, "c must be of rank 2"
@@ -1066,8 +1066,8 @@ def gemv_gpu[
     pdl_level: PDLLevel = PDLLevel.ON,
 ](
     c: TileTensor[mut=True, ...],
-    a: TileTensor,
-    b: TileTensor,
+    a: TileTensor[mut=False, ...],
+    b: TileTensor[mut=False, ...],
     ctx: DeviceContext,
 ) raises:
     comptime assert c.rank == 2, "c must be of rank 2"
@@ -1145,8 +1145,8 @@ def gemv[
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c_buf: TileTensor[mut=True, ...],
-    a_buf: TileTensor,
-    b_buf: TileTensor,
+    a_buf: TileTensor[mut=False, ...],
+    b_buf: TileTensor[mut=False, ...],
 ) raises:
     comptime c_type = c_buf.dtype
     comptime simd_width = simd_width_of[c_type]()
@@ -1199,8 +1199,8 @@ def gemv[
 
 def naive_gemv(
     c_buf: TileTensor[mut=True, ...],
-    a_buf: TileTensor,
-    b_buf: TileTensor,
+    a_buf: TileTensor[mut=False, ...],
+    b_buf: TileTensor[mut=False, ...],
 ):
     comptime c_type = c_buf.dtype
     var M = Int(a_buf.dim[0]())

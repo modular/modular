@@ -30,9 +30,7 @@ from max.graph import (
     Value,
     ops,
 )
-from max.nn.attention.multi_latent_attention import (
-    MLAPrefillMetadata,
-)
+from max.nn.attention.multi_latent_attention import MLAPrefillMetadata
 from max.nn.comm import Signals
 from max.nn.comm.ep import EPBatchManager
 from max.nn.data_parallelism import split_batch_replicated
@@ -58,11 +56,7 @@ from max.nn.transformer.distributed_transformer import (
     forward_sharded_layers,
 )
 
-from .layers import (
-    DeepseekV3_2MLP,
-    DeepseekV3_2MoE,
-    DeepseekV3_2TopKRouter,
-)
+from .layers import DeepseekV3_2MLP, DeepseekV3_2MoE, DeepseekV3_2TopKRouter
 from .layers.sparse_mla import (
     DataParallelSparseLatentAttentionWithRopeFp8,
     TensorParallelSparseLatentAttentionWithRopeFp8,
@@ -169,7 +163,8 @@ class DeepseekV3_2DecoderLayer(Module):
             )
 
         assert isinstance(config.kv_params, MultiKVCacheParams)
-        mla_kv_params, _indexer_kv_params = config.kv_params.params
+        mla_kv_params = config.kv_params.children["mla"]
+        _indexer_kv_params = config.kv_params.children["indexer"]
 
         sparse_attn_kwargs: dict[str, Any] = dict(
             rope=rope,
@@ -879,7 +874,7 @@ class DeepseekV3_2(Module):
             data_parallel_splits_type,
         ]
         all_input_types.extend(signal_buffer_types)
-        all_input_types.extend(kv_params.get_symbolic_inputs().flatten())
+        all_input_types.extend(kv_params.flattened_kv_inputs())
 
         # Add batch context lengths
         batch_context_length_type = TensorType(

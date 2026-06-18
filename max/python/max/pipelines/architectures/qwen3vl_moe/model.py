@@ -41,7 +41,7 @@ from max.graph.weights import (
     WeightsAdapter,
 )
 from max.nn.comm import Signals
-from max.nn.kv_cache import KVCacheInputs
+from max.nn.kv_cache import KVCacheInputsInterface
 from max.nn.layer import Module
 from max.nn.parallel import ParallelArrayOps
 from max.nn.transformer import ReturnLogits
@@ -89,7 +89,9 @@ class Qwen3VLInputs(ModelInputs):
     return_n_logits: Buffer
     """Number of logits to return, used by speculative decoding for example."""
 
-    kv_cache_inputs: KVCacheInputs[Buffer, Buffer] = field(kw_only=True)
+    kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] = field(
+        kw_only=True
+    )
     """KV cache inputs for the model."""
 
     image_token_indices: list[Buffer] | None = None
@@ -817,7 +819,7 @@ class Qwen3VLModel(
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[Qwen3VLTextAndVisionContext]],
-        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
+        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> Qwen3VLInputs:
         """Prepares the initial inputs for the first execution pass of the Qwen3VL model."""

@@ -24,7 +24,6 @@ from max.engine import InferenceSession, Model
 from max.graph import Graph
 from max.graph.weights import WeightData
 from max.nn.comm.ep import EPCommInitializer, EPConfig
-from max.nn.kv_cache import MultiKVCacheParams
 from max.pipelines.lib import CompilationTimer, PipelineConfig
 from max.pipelines.weights.quant import parse_quant_config
 from typing_extensions import override
@@ -235,28 +234,9 @@ class DeepseekV3_2Model(DeepseekV3Model):
                     for _ in range(len(self.devices))
                 ]
 
-                # Unmarshal the KV cache arguments.
-                assert isinstance(self.kv_params, MultiKVCacheParams)
-                len_of_mla_kv_inputs = len(
-                    self.kv_params.params[0].get_symbolic_inputs().flatten()
-                )
-                mla_kv_caches_per_dev = self._unflatten_kv_inputs(
-                    [
-                        next(variadic_args_iter)
-                        for _ in range(len_of_mla_kv_inputs)
-                    ],
-                    self.kv_params.params[0],
-                )
-
-                len_of_indexer_kv_inputs = len(
-                    self.kv_params.params[1].get_symbolic_inputs().flatten()
-                )
-                indexer_kv_caches_per_dev = self._unflatten_kv_inputs(
-                    [
-                        next(variadic_args_iter)
-                        for _ in range(len_of_indexer_kv_inputs)
-                    ],
-                    self.kv_params.params[1],
+                # Unflatten the whole {mla, indexer} tree.
+                mla_kv_caches_per_dev, indexer_kv_caches_per_dev = (
+                    self.kv_params.unflatten_basic_kv_tree(variadic_args_iter)
                 )
 
                 # Unmarshal the batch context lengths

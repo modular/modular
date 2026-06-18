@@ -74,8 +74,8 @@ from ...structuring import SMemTile
 def distance[
     dtype: DType, //
 ](
-    arg0: UnsafePointer[Scalar[dtype], _],
-    arg1: UnsafePointer[Scalar[dtype], _],
+    arg0: UnsafePointer[mut=False, Scalar[dtype], _],
+    arg1: UnsafePointer[mut=False, Scalar[dtype], _],
 ) -> Int:
     return (Int(arg0) - Int(arg1)) // size_of[dtype]()
 

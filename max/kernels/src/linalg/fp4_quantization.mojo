@@ -1534,10 +1534,10 @@ def block_scaled_matmul_with_epilogue[
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: TileTensor[mut=True, c_type, ...],
-    a: TileTensor[a_type, ...],
-    b: TileTensor[b_type, ...],
-    a_scales: TileTensor[scales_dtype, ...],
-    b_scales: TileTensor[scales_dtype, ...],
+    a: TileTensor[mut=False, a_type, ...],
+    b: TileTensor[mut=False, b_type, ...],
+    a_scales: TileTensor[mut=False, scales_dtype, ...],
+    b_scales: TileTensor[mut=False, scales_dtype, ...],
     tensor_sf: Float32,
     ctx: DeviceContext,
 ) raises:
@@ -1555,13 +1555,23 @@ def block_scaled_matmul_with_epilogue[
 
     comptime assert transpose_b, "Only support transposed B"
 
+    # The vendor (cuBLASLt) block-scaled backend supports both NVFP4
+    # (float8_e4m3fn scales, 16-vector) and MXFP8 (float8_e8m0fnu scales,
+    # 32-vector); see `_cublasLt_matmul` in `linalg.matmul.vendor.blas`.
+    comptime is_mxfp8_scaling = (
+        scales_dtype == MXFP8_SF_DTYPE
+        and SF_VECTOR_SIZE == MXFP8_SF_VECTOR_SIZE
+    )
+    comptime assert scales_dtype == NVFP4_SF_DTYPE or is_mxfp8_scaling, (
+        "Only NVFP4 (float8_e4m3fn scales, SF_VECTOR_SIZE=16) or MXFP8"
+        " (float8_e8m0fnu scales, SF_VECTOR_SIZE=32) scales are supported."
+    )
     comptime assert (
-        scales_dtype == NVFP4_SF_DTYPE
-    ), "Only support NVFP4_SF_DTYPE (float8_e4m3fn) for scales for now."
-
-    comptime assert SF_VECTOR_SIZE in (
-        NVFP4_SF_VECTOR_SIZE,
-    ), "SF_VECTOR_SIZE must be equal to NVFP4_SF_VECTOR_SIZE (16 for NVFP4)"
+        SF_VECTOR_SIZE == NVFP4_SF_VECTOR_SIZE or is_mxfp8_scaling
+    ), (
+        "SF_VECTOR_SIZE must be NVFP4_SF_VECTOR_SIZE (16) for NVFP4 or"
+        " MXFP8_SF_VECTOR_SIZE (32) for MXFP8"
+    )
 
     comptime assert (
         a_scales.static_shape[1] == b_scales.static_shape[1]
@@ -1899,8 +1909,10 @@ def block_scaled_matmul[
             static_K == 7168 and static_N in (18432, 36864)
         )
         comptime mojo_m_cap = 256 if is_widened_shape else 128
-        # MXFP8 always uses the Mojo block-scaled kernel: the vendor/epilogue
-        # fallback below is NVFP4-only.
+        # MXFP8 always tries the Mojo block-scaled kernel first (its heuristic
+        # config table is tuned for the shapes we serve). On a dispatch miss it
+        # falls through to the vendor (cuBLASLt) block-scaled matmul below, the
+        # same fallback NVFP4 uses for large M.
         if m <= mojo_m_cap or is_mxfp8_scaling:
             var status = heuristic_and_outliers_dispatch[
                 SF_VECTOR_SIZE=SF_VECTOR_SIZE,
@@ -1920,30 +1932,27 @@ def block_scaled_matmul[
             if status == DISPATCH_HIT:
                 return
 
-        # The vendor/epilogue fallback is NVFP4-only, so it must not even be
-        # instantiated for MXFP8 (its `comptime assert` would fail to compile).
-        # Gate it with `comptime if`; for MXFP8 the heuristic dispatch above is
-        # the only path, so a miss is a hard error rather than a fallback.
-        comptime if is_mxfp8_scaling:
-            raise Error(
-                "MXFP8 block-scaled matmul: heuristic dispatch found no config"
-                " for this shape (the vendor fallback is NVFP4-only)."
-            )
-        else:
-            # vendor matmul only supports epilogue lambda, so we wrap it around an epilogue lambda instead.
-            block_scaled_matmul_with_epilogue[
-                SF_VECTOR_SIZE=SF_VECTOR_SIZE,
-                transpose_b=transpose_b,
-                elementwise_lambda_fn=elementwise_lambda_wrapper,
-            ](
-                c,
-                a,
-                b,
-                a_scales,
-                b_scales,
-                tensor_sf,
-                ctx,
-            )
+        # Vendor (cuBLASLt) block-scaled fallback, used whenever the Mojo
+        # heuristic dispatch above has no config for this shape. This covers
+        # NVFP4 large-M shapes as well as MXFP8 shapes the heuristic config
+        # table does not enumerate (e.g. the 30k-token prefill in KERN-3024,
+        # whose M exceeds the table's M<=8192 build range).
+        #
+        # vendor matmul only supports epilogue lambda, so we wrap it around an
+        # epilogue lambda instead.
+        block_scaled_matmul_with_epilogue[
+            SF_VECTOR_SIZE=SF_VECTOR_SIZE,
+            transpose_b=transpose_b,
+            elementwise_lambda_fn=elementwise_lambda_wrapper,
+        ](
+            c,
+            a,
+            b,
+            a_scales,
+            b_scales,
+            tensor_sf,
+            ctx,
+        )
 
 
 @always_inline

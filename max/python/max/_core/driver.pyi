@@ -166,6 +166,25 @@ class Device:
         """
 
     @property
+    def model_name(self) -> str:
+        """
+        Returns the model name of the device.
+
+        Examples of possible values:
+
+        - ``NVIDIA H100 80GB HBM3`` for an H100.
+        - ``NVIDIA B200`` for a B200.
+        - ``AMD Instinct MI300X`` for an MI300X.
+
+        .. code-block:: python
+
+            from max import driver
+
+            device = driver.Accelerator()
+            device.model_name
+        """
+
+    @property
     def id(self) -> int:
         """
         Returns a zero-based device id.
@@ -722,6 +741,21 @@ class DeviceStream:
     @property
     def device(self) -> Device:
         """The device this stream is executing on."""
+
+    @property
+    def native_stream_handle(self) -> int:
+        """
+        The native stream handle as an integer, or ``0`` if there is none.
+
+        The handle is the CUDA ``CUstream`` / HIP ``hipStream_t``; ``0`` means
+        the stream has no native handle (e.g. a CPU device). Lets native code
+        outside MLRT order its own work against this stream -- for example,
+        record a CUDA event on it. The handle remains owned by this stream; do
+        not destroy it.
+
+        Returns:
+            int: The native stream handle, or ``0`` if there is none.
+        """
 
     def __str__(self) -> str: ...
     def __repr__(self) -> str: ...
@@ -1283,3 +1317,60 @@ class DevicePinnedBuffer(Buffer):
 
 def _release_buffers_to_borrowed(buffers: Sequence[Buffer]) -> list[Buffer]:
     """Convert owning buffers into borrowed wrappers over the same storage."""
+
+def _unsafe_alloc_fast_pinned_buffer(
+    dtype: max._core.dtype.DType,
+    shape: Sequence[int],
+    device: Device,
+    threads: int = 16,
+    chunk_bytes: int = 536870912,
+) -> DevicePinnedBuffer:
+    """
+    Fast page-locked host allocation for very large host KV-cache buffers.
+
+    Maps one contiguous region and faults it in across ``threads`` parallel
+    workers while a single consumer registers it with the device in
+    ``chunk_bytes`` chunks, overlapping the two phases. Far faster than the
+    per-call ``cuMemAllocHost`` path, and it avoids the ``cuMemAllocHost``
+    failure on single >1 TiB allocations.
+
+    UNSAFE / low-level (host KV-cache offloading). The returned buffer is
+    NOT garbage-collected: it must be freed explicitly via
+    :func:`_unsafe_free_fast_pinned_buffer`, and forgetting to do so leaks
+    the mapping. No host/device synchronization is performed -- before
+    reading the region on the host (or freeing it) the caller must ensure
+    the GPU is done accessing it (host-synchronize the relevant streams).
+
+    Args:
+        dtype (DType): Data type of buffer elements (typically ``uint8``).
+        shape (Sequence[int]): Buffer shape, e.g. ``[num_blocks, bytes_per_block]``.
+        device (Device): GPU/Accelerator device the memory is registered against. Must not be CPU.
+        threads (int, optional): Number of parallel page-touch workers. Defaults to 16.
+        chunk_bytes (int, optional): Per-call host-register granularity in bytes. Defaults to 512 MiB.
+
+    Returns:
+        DevicePinnedBuffer: A pinned host buffer over the mapping. Must be
+        freed with :func:`_unsafe_free_fast_pinned_buffer`.
+
+    Raises:
+        ValueError: If ``device`` is a CPU device.
+    """
+
+def _unsafe_free_fast_pinned_buffer(buffer: DevicePinnedBuffer) -> None:
+    """
+    Free a buffer from :func:`_unsafe_alloc_fast_pinned_buffer` (unregister + munmap).
+
+    UNSAFE / low-level. The caller MUST first host-synchronize every GPU
+    stream that issued copies into the region -- the buffer does not track
+    them, and unmapping a region a stream is still copying to/from is a
+    use-after-free. After this call the buffer (and any view/slice of it)
+    must not be used.
+
+    Args:
+        buffer (DevicePinnedBuffer): A buffer from
+            :func:`_unsafe_alloc_fast_pinned_buffer`.
+
+    Raises:
+        ValueError: If the buffer was not produced by
+            :func:`_unsafe_alloc_fast_pinned_buffer`, or was already freed.
+    """

@@ -24,14 +24,13 @@ import socket
 import time
 from collections import defaultdict
 from collections.abc import Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Literal, TypeVar
 from uuid import uuid4
 
 import msgspec
 from max._core import nixl
 from max.driver import Buffer, Device
-from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams
 
 from .cache_manager import PagedKVCacheManager
 
@@ -235,30 +234,6 @@ class TensorAgentMetadata(
     device_id: int
     """Device ID for this tensor."""
 
-    extra_groups: dict[str, tuple[int, int]] | None = None
-    """Additional tensor groups: maps name → (base_addr, bytes_per_page).
-
-    Present when the agent has registered extra tensor groups (e.g. draft
-    KV cache for speculative decoding).
-    """
-
-
-@dataclass
-class TensorGroupInfo:
-    """Metadata for an additional tensor group registered on a TensorAgent."""
-
-    name: str
-    """Group name (e.g. ``"draft"``)."""
-
-    base_addr: int
-    """Base memory address for this group's buffer."""
-
-    bytes_per_page: int
-    """Bytes per page for this group."""
-
-    reg_dlist: nixl.RegistrationDescriptorList
-    """NIXL registration descriptor list for this group's memory."""
-
 
 @dataclass
 class TensorAgent:
@@ -266,11 +241,6 @@ class TensorAgent:
 
     This class holds both the runtime state (live objects) and can generate
     the serializable metadata for communication between engines.
-
-    Additional tensor groups (e.g. draft KV cache) can be registered via
-    :meth:`register_extra_group`.  Their descriptors are appended to
-    transfer requests alongside the primary tensor's descriptors so that
-    all groups are bundled into a single NIXL transfer.
     """
 
     agent: nixl.Agent
@@ -296,9 +266,6 @@ class TensorAgent:
 
     reg_dlist: nixl.RegistrationDescriptorList
     """Registration descriptor list for this tensor."""
-
-    extra_groups: dict[str, TensorGroupInfo] = field(default_factory=dict)
-    """Additional registered tensor groups keyed by name."""
 
     @classmethod
     def create_agent(
@@ -396,73 +363,13 @@ class TensorAgent:
             reg_dlist=reg_dlist,
         )
 
-    def register_extra_group(
-        self,
-        name: str,
-        tensor: Buffer,
-        total_num_pages: int,
-        memory_type: nixl.MemoryType,
-    ) -> None:
-        """Register an additional tensor group on this agent.
-
-        The tensor is registered as a new memory region on the existing
-        NIXL agent.  Transfer descriptors for this group will be appended
-        to future transfer requests alongside the primary tensor's
-        descriptors.
-
-        Args:
-            name: Group name (e.g. ``"draft"``).
-            tensor: Buffer to register.
-            total_num_pages: Number of pages in the buffer.
-            memory_type: NIXL memory type (DRAM or VRAM).
-        """
-        if name in self.extra_groups:
-            raise ValueError(
-                f"Extra group '{name}' already registered on agent "
-                f"{self.agent_name}"
-            )
-
-        base_addr = tensor._data_ptr()
-        num_bytes = tensor.num_elements * tensor.dtype.size_in_bytes
-        bytes_per_page = num_bytes // total_num_pages
-
-        descs = [(base_addr, num_bytes, self.device_id, "")]
-        reg_dlist = nixl.RegistrationDescriptorList(
-            type=memory_type, descs=descs
-        )
-
-        status = self.agent.register_memory(reg_dlist, [self.backend])
-        if status != nixl.Status.SUCCESS:
-            raise ValueError(
-                f"Failed to register extra group '{name}' memory for "
-                f"{self.agent_name}: {status}"
-            )
-
-        # Re-fetch metadata after new registration so remote agents
-        # can see the newly registered memory region.
-        self.agent_metadata = self.agent.get_local_metadata()
-
-        self.extra_groups[name] = TensorGroupInfo(
-            name=name,
-            base_addr=base_addr,
-            bytes_per_page=bytes_per_page,
-            reg_dlist=reg_dlist,
-        )
-
     def to_metadata(self) -> TensorAgentMetadata:
         """Convert to serializable metadata for communication."""
-        extra_groups_meta: dict[str, tuple[int, int]] | None = None
-        if self.extra_groups:
-            extra_groups_meta = {
-                name: (info.base_addr, info.bytes_per_page)
-                for name, info in self.extra_groups.items()
-            }
         return TensorAgentMetadata(
             agent_name=self.agent_name,
             metadata=self.agent_metadata,
             base_addr=self.base_addr,
             device_id=self.device_id,
-            extra_groups=extra_groups_meta,
         )
 
 
@@ -784,20 +691,16 @@ class KVTransferEngine:
         """Construct an engine wired to a ``PagedKVCacheManager``.
 
         Pulls the per-replica device buffers, sets ``total_num_pages``, and
-        derives ``replicate_kv_across_tp`` from ``is_mla`` on the primary
-        cache params. Equivalent to constructing the engine manually but
-        consolidates the boilerplate that prefill/decode schedulers share.
+        derives ``replicate_kv_across_tp`` from the cache params. Equivalent to
+        constructing the engine manually but consolidates the boilerplate that
+        prefill/decode schedulers share.
         """
         cache_params = kv_cache.params
-        if isinstance(cache_params, MultiKVCacheParams):
-            primary_params = cache_params.params[0]
-        else:
-            assert isinstance(cache_params, KVCacheParams)
-            primary_params = cache_params
-        dp = primary_params.data_parallel_degree
-        # TODO: Also support scales tensors.
+        dp = cache_params.data_parallel_degree
+        # Flattens every leaf cache's buffers for the replica (values, plus
+        # scales when present).
         tensors: list[list[Buffer]] = [
-            list(kv_cache.get_device_buffer(replica_idx).values)
+            list(kv_cache.get_device_buffer(replica_idx).all_buffers)
             for replica_idx in range(dp)
         ]
         return cls(
@@ -805,55 +708,7 @@ class KVTransferEngine:
             tensors=tensors,
             # Need to add 1 for the null block
             total_num_pages=kv_cache.get_num_pages(replica_idx=0) + 1,
-            replicate_kv_across_tp=primary_params.is_mla,
-        )
-
-    def register_tensor_group(
-        self,
-        name: str,
-        tensors: Sequence[Sequence[Buffer]],
-        total_num_pages: int,
-    ) -> None:
-        """Register an additional tensor group on all agents.
-
-        The new buffers are registered as extra memory regions on the
-        existing NIXL agents.  Future ``initiate_send_transfer`` calls
-        will automatically include descriptors for this group alongside
-        the primary tensor, bundling both into a single NIXL transfer.
-
-        Args:
-            name: Group name (e.g. ``"draft"``).
-            tensors: 2D buffer grid ``[replica][tp_shard]`` matching the
-                primary tensor layout.
-            total_num_pages: Number of pages in each buffer (same page
-                count as the primary tensor — page *size* may differ).
-        """
-        if len(tensors) != self.dp:
-            raise ValueError(
-                f"Extra group '{name}' has {len(tensors)} replicas, "
-                f"expected {self.dp}"
-            )
-        for replica_idx, replica_tensors in enumerate(tensors):
-            if len(replica_tensors) != self.tp:
-                raise ValueError(
-                    f"Extra group '{name}' replica {replica_idx} has "
-                    f"{len(replica_tensors)} TP shards, expected {self.tp}"
-                )
-
-        for replica_idx, replica_tensors in enumerate(tensors):
-            for tp_idx, tensor in enumerate(replica_tensors):
-                self.tensor_agents[replica_idx][tp_idx].register_extra_group(
-                    name=name,
-                    tensor=tensor,
-                    total_num_pages=total_num_pages,
-                    memory_type=self.memory_type,
-                )
-
-        logger.info(
-            "Registered extra tensor group '%s' on %s: %d agent(s).",
-            name,
-            self.name,
-            self.dp * self.tp,
+            replicate_kv_across_tp=cache_params.replicates_kv_across_tp,
         )
 
     @property
@@ -1279,26 +1134,6 @@ class KVTransferEngine:
                     (dst_addr, self.bytes_per_page, remote_agent_meta.device_id)
                 )
 
-            # Append descriptors for extra tensor groups (e.g. draft KV).
-            # Both sides must have the same groups registered.
-            remote_extra = remote_agent_meta.extra_groups or {}
-            for group_name, group_info in ta.extra_groups.items():
-                if group_name not in remote_extra:
-                    raise ValueError(
-                        f"Extra group '{group_name}' registered locally but "
-                        f"not on remote agent {remote_agent_meta.agent_name}"
-                    )
-                remote_base, remote_bpp = remote_extra[group_name]
-                local_bpp = group_info.bytes_per_page
-                for src_idx in src_idxs:
-                    src_addr = group_info.base_addr + src_idx * local_bpp
-                    descs_src.append((src_addr, local_bpp, ta.device_id))
-                for dst_idx in dst_idxs:
-                    dst_addr = remote_base + dst_idx * remote_bpp
-                    descs_dst.append(
-                        (dst_addr, remote_bpp, remote_agent_meta.device_id)
-                    )
-
             transfer_dlist_src = nixl.TransferDescriptorList(
                 type=self.memory_type, descs=descs_src
             )
@@ -1448,25 +1283,6 @@ class KVTransferEngine:
                         remote_agent_meta.device_id,
                     )
                 )
-
-            # Append descriptors for extra tensor groups.
-            remote_extra = remote_agent_meta.extra_groups or {}
-            for group_name, group_info in ta.extra_groups.items():
-                if group_name not in remote_extra:
-                    raise ValueError(
-                        f"Extra group '{group_name}' registered locally but "
-                        f"not on remote agent {remote_agent_meta.agent_name}"
-                    )
-                remote_base, remote_bpp = remote_extra[group_name]
-                local_bpp = group_info.bytes_per_page
-                for dst_idx in dst_idxs:
-                    local_addr = group_info.base_addr + dst_idx * local_bpp
-                    descs_local.append((local_addr, local_bpp, ta.device_id))
-                for src_idx in src_idxs:
-                    remote_addr = remote_base + src_idx * remote_bpp
-                    descs_remote.append(
-                        (remote_addr, remote_bpp, remote_agent_meta.device_id)
-                    )
 
             local_dlist = nixl.TransferDescriptorList(
                 type=self.memory_type, descs=descs_local
@@ -1791,16 +1607,6 @@ class KVTransferEngine:
         # Deregister NIXL memory for all tensors (all replicas)
         for replica_agents in self.tensor_agents:
             for ta in replica_agents:
-                # Deregister extra groups first
-                for group_info in ta.extra_groups.values():
-                    status = ta.agent.deregister_memory(
-                        group_info.reg_dlist, [ta.backend]
-                    )
-                    if status != nixl.Status.SUCCESS:
-                        raise ValueError(
-                            f"Failed to deregister extra group "
-                            f"'{group_info.name}' memory: {status}"
-                        )
                 # Deregister primary tensor
                 status = ta.agent.deregister_memory(ta.reg_dlist, [ta.backend])
                 if status != nixl.Status.SUCCESS:

@@ -487,7 +487,7 @@ def test_architecture_context_types_are_msgspec_compatible() -> None:
 
     import msgspec
 
-    for arch in PIPELINE_REGISTRY.architectures.values():
+    for arch in PIPELINE_REGISTRY.all_architectures():
         context_type = arch.context_type
 
         # context_type must not be a Protocol (msgspec can't deserialize them)

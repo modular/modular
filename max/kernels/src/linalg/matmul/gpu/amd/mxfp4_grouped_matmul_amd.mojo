@@ -35,6 +35,29 @@ from .mxfp4_matmul_amd_preb import MXFP4MatmulAMD_PreB as _MXFP4MatmulAMD_PreB
 # globally, so leave it off unless a specific band shows a win.
 
 
+@always_inline
+def _waves_per_eu_attr[waves_per_eu: Int]() -> __mlir_type.`!kgen.string`:
+    # `amdgpu-waves-per-eu` "1,MAX" cap (avoids EU over-subscription); 0 => "1,8"
+    # (CDNA4 max waves/SIMD) = non-binding default. Literal per branch: the LLVM
+    # passthrough attr needs a StringLiteral, not a computed string.
+    comptime if waves_per_eu == 1:
+        return "1,1".value
+    elif waves_per_eu == 2:
+        return "1,2".value
+    elif waves_per_eu == 3:
+        return "1,3".value
+    elif waves_per_eu == 4:
+        return "1,4".value
+    elif waves_per_eu == 5:
+        return "1,5".value
+    elif waves_per_eu == 6:
+        return "1,6".value
+    elif waves_per_eu == 7:
+        return "1,7".value
+    else:
+        return "1,8".value
+
+
 struct PreShuffledBGroupedGEMM[
     cu_count: Int,
     wg_per_cu: Int = 2,
@@ -87,6 +110,9 @@ struct PreShuffledBGroupedGEMM[
     @__name(
         t"mxfp4_preb_pers_BM{BM}_BN{BN}_WN{WN}_BK{BK_ELEMS}_N{N}_KB{K_BYTES}"
     )
+    @__llvm_metadata(
+        `llvm.amdgpu-waves-per-eu`=_waves_per_eu_attr[waves_per_eu]()
+    )
     def persistent_kernel[
         BM: Int,
         BN: Int,
@@ -107,6 +133,7 @@ struct PreShuffledBGroupedGEMM[
         cluster_drain_sched: Bool = False,
         mfma_cluster: Int = 4,
         deep_prime: Bool = False,
+        waves_per_eu: Int = 0,
     ](
         c_tensor: TileTensor[mut=True, out_dtype, LayoutC, MutAnyOrigin],
         a_tensor: TileTensor[DType.uint8, LayoutA, ImmutAnyOrigin],
@@ -278,6 +305,9 @@ struct PreShuffledBGroupedGEMM[
         )
     )
     @__name(t"mxfp4_preb_BM{BM}_BN{BN}_WN{WN}_BK{BK_ELEMS}_N{N}_KB{K_BYTES}")
+    @__llvm_metadata(
+        `llvm.amdgpu-waves-per-eu`=_waves_per_eu_attr[waves_per_eu]()
+    )
     def kernel[
         BM: Int,
         BN: Int,
@@ -298,6 +328,7 @@ struct PreShuffledBGroupedGEMM[
         cluster_drain_sched: Bool = False,
         mfma_cluster: Int = 4,
         deep_prime: Bool = False,
+        waves_per_eu: Int = 0,
     ](
         c_tensor: TileTensor[mut=True, out_dtype, LayoutC, MutAnyOrigin],
         a_tensor: TileTensor[DType.uint8, LayoutA, ImmutAnyOrigin],
@@ -401,6 +432,7 @@ struct PreShuffledBGroupedGEMM[
         cluster_drain_sched: Bool = False,
         mfma_cluster: Int = 4,
         deep_prime: Bool = False,
+        waves_per_eu: Int = 0,
     ](
         c: TileTensor[mut=True, ...],
         a: TileTensor[DType.uint8, ...],
@@ -490,6 +522,7 @@ struct PreShuffledBGroupedGEMM[
                 cluster_drain_sched,
                 mfma_cluster,
                 deep_prime,
+                waves_per_eu,
             ]
             ctx.enqueue_function[kernel](
                 c,
@@ -525,6 +558,7 @@ struct PreShuffledBGroupedGEMM[
                 cluster_drain_sched,
                 mfma_cluster,
                 deep_prime,
+                waves_per_eu,
             ]
             ctx.enqueue_function[kernel](
                 c,
@@ -554,6 +588,7 @@ struct PreShuffledBGroupedGEMM[
         )
     )
 )
+@__name(t"mxfp4_grouped_{out_dtype}_BM{BM}_BN{BN}_WM{WM}_WN{WN}_BK{BK_ELEMS}")
 def mxfp4_grouped_matmul_amd_kernel[
     BM: Int,
     BN: Int,

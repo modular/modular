@@ -15,9 +15,9 @@
 Flow:
 - Model worker creates the runner and executes pre-ready warmup.
 - Warmup probes a set of cache lengths (``KVCacheParams.graph_capture_probe_
-  cache_lengths``); for each ``(batch_size, q, cache_length)`` it resolves an
-  ``AttnKey`` (via ``KVCacheParams.resolve_attn_key``), captures one device
-  graph per distinct key, and records the
+  cache_lengths``); for each ``(batch_size, q, cache_length)`` it resolves the
+  dispatch metadata (via ``KVCacheParams.resolve_attn_key``), captures one
+  device graph per distinct key, and records the
   ``BatchCharacteristics -> GraphKey`` mapping plus the set of recorded cache
   lengths.
 - Attention dispatch metadata is prepared exactly once, by the KV cache
@@ -41,7 +41,8 @@ from dataclasses import replace
 from max._core.driver import _release_buffers_to_borrowed
 from max.driver import Buffer
 from max.engine import Model
-from max.nn.kv_cache import AttnKey, BatchCharacteristics, KVCacheParams
+from max.nn.kv_cache import BatchCharacteristics, KVCacheParamInterface
+from max.nn.kv_cache.utils import AttnKeyInterface, MultiAttnKey
 from max.profiler import traced
 from tqdm import tqdm
 
@@ -51,9 +52,6 @@ logger = logging.getLogger("max.pipelines")
 
 
 # Captured device graphs are keyed by
-# ``(batch_size, q_max_seq_len, target_num_partitions, draft_num_partitions)``.
-# ``draft_num_partitions`` is ``0`` without speculative decoding.
-GraphKey = tuple[int, int, int, int]
 GraphEntry = tuple[tuple[Buffer, ...], ModelOutputs]
 # Builds warmup model inputs for a ``(batch_size, batch_characteristics)`` pair.
 # The characteristics drive the KV manager so dispatch metadata is prepared for
@@ -97,8 +95,8 @@ def _release_graph_capture_outputs_to_borrowed(
     )
 
 
-def _pack_model_graph_key(key: GraphKey) -> int:
-    """Maps a GraphKey tuple to a uint64 for the C++ capture layer."""
+def _pack_model_graph_key(key: AttnKeyInterface) -> int:
+    """Maps a capture key to a uint64 for the C++ capture layer."""
     return hash(key) & 0xFFFFFFFFFFFFFFFF
 
 
@@ -109,12 +107,11 @@ class ServeGraphCaptureRunner:
         self,
         *,
         model: Model,
-        kv_params: KVCacheParams,
+        kv_params: KVCacheParamInterface,
         warmup_model_inputs: WarmupModelInputs,
         max_cache_length_upper_bound: int,
         max_batch_size: int,
         num_speculative_tokens: int = 0,
-        draft_kv_params: KVCacheParams | None = None,
     ) -> None:
         self._model = model
         self._warmup_model_inputs = warmup_model_inputs
@@ -133,8 +130,7 @@ class ServeGraphCaptureRunner:
         self._max_batch_size = max_batch_size
 
         # Dispatch resolution + probe lengths live on the KV cache params.
-        self._target_kv_params = kv_params
-        self._draft_kv_params = draft_kv_params or kv_params
+        self._kv_params = kv_params
         self._is_spec_decode = num_speculative_tokens > 0
 
         # The query (prompt) width every captured decode graph runs at.
@@ -143,14 +139,14 @@ class ServeGraphCaptureRunner:
         # drafts (eagle/mtp) run at q=1.
         self._draft_q_at_capture = kv_params.num_draft_tokens_per_step
 
-        self.graph_entries: dict[GraphKey, GraphEntry] = {}
+        self.graph_entries: dict[AttnKeyInterface, GraphEntry] = {}
         # Maps a probed ``(batch_size, q, cache_length)`` to the captured graph.
         # Many cache lengths can map to one ``GraphKey`` (one captured graph).
-        self._records: dict[BatchCharacteristics, GraphKey] = {}
+        self._records: dict[BatchCharacteristics, AttnKeyInterface] = {}
         # Sorted, distinct cache lengths recorded during capture (the snap set).
         self._recorded_cache_lengths: list[int] = []
 
-    def release_graph(self, key: GraphKey) -> None:
+    def release_graph(self, key: AttnKeyInterface) -> None:
         """Releases a single captured graph and its working memory.
 
         Drops the runner's entry for ``key`` (input + output buffer handles)
@@ -162,35 +158,30 @@ class ServeGraphCaptureRunner:
         self.graph_entries.pop(key, None)
         self._model.release_captured_graph(_pack_model_graph_key(key))
 
-    def _graph_key(
-        self, target_key: AttnKey, draft_key: AttnKey | None
-    ) -> GraphKey:
-        """Builds the device-graph key from resolved attention keys."""
-        return (
-            target_key.batch_size,
-            target_key.max_prompt_length,
-            target_key.num_partitions,
-            draft_key.num_partitions if draft_key is not None else 0,
-        )
-
     def _resolve_graph_key(
         self, batch_size: int, cache_length: int
-    ) -> GraphKey:
+    ) -> AttnKeyInterface:
         """Resolves the ``GraphKey`` for a ``(batch_size, cache_length)`` shape.
 
-        Resolves the target (and, under speculative decoding, draft) attention
-        keys via the KV cache params and folds them into a device-graph key.
-        Calls the resolver kernel op, so it is used at warmup only.
+        Resolves the verify-width dispatch metadata tree and, under speculative
+        decoding, the draft-width tree via the KV cache params, then folds them
+        into one capture key. Each tree is a leaf :class:`AttnKey` or a
+        ``MultiAttnKey`` mirroring the cache tree. Calls the
+        resolver kernel op, so it is used at warmup only.
         """
-        target_key = self._target_kv_params.resolve_attn_key(
+        children: dict[str, AttnKeyInterface] = {}
+        children["verify"] = self._kv_params.resolve_attn_key(
             batch_size, self._q_max_seq_len, cache_length
         )
-        draft_key: AttnKey | None = None
         if self._is_spec_decode:
-            draft_key = self._draft_kv_params.resolve_attn_key(
+            # Block drafts (DFlash) run the draft at q=num_draft_tokens_per_step;
+            # autoregressive drafts (eagle/mtp) run at q=1. Resolve the draft
+            # dispatch key at that width so the captured-graph identity matches
+            # the shape actually executed.
+            children["draft"] = self._kv_params.resolve_attn_key(
                 batch_size, self._draft_q_at_capture, cache_length
             )
-        return self._graph_key(target_key, draft_key)
+        return MultiAttnKey.from_dict(children)
 
     @traced
     def warmup_pre_ready(self) -> None:
@@ -200,10 +191,8 @@ class ServeGraphCaptureRunner:
             "with num_steps=1.",
             self._max_batch_size,
         )
-        probe_lengths = (
-            self._target_kv_params.graph_capture_probe_cache_lengths(
-                self._max_cache_length_upper_bound, self._q_max_seq_len
-            )
+        probe_lengths = self._kv_params.graph_capture_probe_cache_lengths(
+            self._max_cache_length_upper_bound, self._q_max_seq_len
         )
         recorded_lengths: set[int] = set()
         # Capture largest-first (largest batch, then largest cache length, which

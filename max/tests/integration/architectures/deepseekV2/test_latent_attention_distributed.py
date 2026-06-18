@@ -117,16 +117,14 @@ def _single_gpu_baseline(
             input_types=(
                 hidden_state_type,
                 input_row_offsets_type,
-                *kv_params.get_symbolic_inputs().flatten(),
+                *kv_params.flattened_kv_inputs(),
             ),
         ) as graph:
             hidden_states = graph.inputs[0].tensor
             input_row_offsets = graph.inputs[1].tensor
-            kv_collection = (
-                kv_params.get_symbolic_inputs()
-                .unflatten(iter(graph.inputs[2:]))
-                .inputs[0]
-            )
+            kv_collection = kv_params.unflatten_kv_inputs(
+                iter(graph.inputs[2:])
+            ).inputs[0]
             out_list = attn(
                 ops.constant(0, DType.uint32, device=DeviceRef.CPU()),
                 xs=[hidden_states],
@@ -149,7 +147,7 @@ def _single_gpu_baseline(
     batch = []
     ctx = create_text_context(np.empty(prompt_lens[0]))
     kv_manager.claim(ctx.request_id, replica_idx=0)
-    kv_manager.alloc(ctx, replica_idx=0, num_steps=1)
+    kv_manager.alloc(ctx, replica_idx=0)
     batch.append(ctx)
 
     # Row offsets on host to avoid GPU __setitem__
@@ -171,7 +169,7 @@ def _single_gpu_baseline(
     outs = []
     for tok_idx in range(total_tokens):
         for ctx in batch:
-            kv_manager.alloc(ctx, replica_idx=0, num_steps=1)
+            kv_manager.alloc(ctx, replica_idx=0)
         kv_inputs = kv_manager.runtime_inputs([batch]).inputs[0]
         tok = (
             Buffer.from_numpy(
@@ -371,7 +369,7 @@ def _run_distributed_dp(
     for replica_idx in range(dp_degree):
         ctx = create_text_context(np.empty(seq_len))
         kv_manager.claim(ctx.request_id, replica_idx=replica_idx)
-        kv_manager.alloc(ctx, replica_idx=replica_idx, num_steps=1)
+        kv_manager.alloc(ctx, replica_idx=replica_idx)
         batch.append(ctx)
     batches_by_replica = [[ctx] for ctx in batch]
 
@@ -403,7 +401,7 @@ def _run_distributed_dp(
     outs = []
     for tok_idx in range(total_tokens):
         for ctx in batch:
-            kv_manager.alloc(ctx, replica_idx=replica_idx, num_steps=1)
+            kv_manager.alloc(ctx, replica_idx=replica_idx)
         fetch_list = kv_manager.runtime_inputs(batches_by_replica)
         kv_args = _flatten_kv_kv_inputs(fetch_list)
 

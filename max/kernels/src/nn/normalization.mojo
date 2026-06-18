@@ -509,7 +509,7 @@ def layer_norm_gpu[
     ) capturing -> None,
 ](
     shape: IndexList[rank, ...],
-    beta: TileTensor[dtype, ...],
+    beta: TileTensor[mut=False, dtype, ...],
     epsilon: Scalar[dtype],
     *,
     ctx: DeviceContext,
@@ -673,7 +673,7 @@ def layer_norm_cpu[
 ](
     num_rows: Int,
     num_cols: Int,
-    beta: TileTensor[dtype, ...],
+    beta: TileTensor[mut=False, dtype, ...],
     epsilon: Scalar[dtype],
 ) raises:
     """Computes layernorm(elementwise_fn(x)) across the last dimension of x, where layernorm is
@@ -766,7 +766,7 @@ def layer_norm_cpu[
     ) capturing -> None,
 ](
     shape: IndexList[rank],
-    beta: TileTensor[dtype, ...],
+    beta: TileTensor[mut=False, dtype, ...],
     epsilon: Scalar[dtype],
     ctx: Optional[DeviceContext] = None,
 ):
@@ -838,7 +838,7 @@ def layer_norm[
 ](
     shape: IndexList[rank],
     gamma_shape: IndexList[1],
-    beta: TileTensor[dtype, ...],
+    beta: TileTensor[mut=False, dtype, ...],
     epsilon: Scalar[dtype],
     ctx: DeviceContext,
 ) raises:
@@ -882,9 +882,9 @@ def layer_norm[
 def layer_norm_shape[
     dtype: DType
 ](
-    input: TileTensor[dtype, ...],
-    gamma: TileTensor[dtype, ...],
-    beta: TileTensor[dtype, ...],
+    input: TileTensor[mut=False, dtype, ...],
+    gamma: TileTensor[mut=False, dtype, ...],
+    beta: TileTensor[mut=False, dtype, ...],
     epsilon: Scalar[dtype],
 ) -> IndexList[input.rank]:
     """
@@ -1020,6 +1020,83 @@ def rms_norm_gpu_warp_tiling_128[
             output_fn[simd_width, align](row, idx, norm_val)
 
 
+@__name(t"rms_norm_gpu_warp_per_row_{dtype}_{multiply_before_cast}")
+def rms_norm_gpu_warp_per_row[
+    mut: Bool,
+    LayoutType: TensorLayout,
+    origin: Origin[mut=mut],
+    dtype: DType,
+    //,
+    simd_width: Int,
+    rows_per_block: Int,
+    input_fn: def[width: Int](row: Int, col: Int) capturing -> SIMD[
+        dtype, width
+    ],
+    output_fn: def[width: SIMDSize, alignment: Int](
+        row: Int, col: Int, val: SIMD[dtype, width]
+    ) capturing -> None,
+    multiply_before_cast: Bool,
+](
+    gamma: TileTensor[dtype, LayoutType, origin],
+    epsilon: Scalar[dtype],
+    weight_offset: Scalar[dtype],
+    num_rows: Int,
+    num_cols: Int,
+):
+    comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
+    comptime assert gamma.flat_rank >= 1
+
+    comptime align = align_of[SIMD[dtype, simd_width]]()
+    comptime accum_type = get_accum_type[dtype]()
+
+    var eps_accum = epsilon.cast[accum_type]()
+    var weight_offset_accum = weight_offset.cast[accum_type]()
+
+    var tid = thread_idx.x
+    var warp_in_block = ufloordiv(tid, WARP_SIZE)
+    var lane = umod(tid, WARP_SIZE)
+    var row = block_idx.x * rows_per_block + Int(warp_in_block)
+
+    comptime stride = WARP_SIZE * simd_width
+
+    with PDL():
+        # Pass 1: accumulate the per-thread mean-of-squares scalar only.
+        var thread_m2 = Scalar[accum_type](0)
+        if row < num_rows:
+            var col = Int(lane) * simd_width
+            while col < num_cols:
+                var v = input_fn[simd_width](row, col).cast[accum_type]()
+                thread_m2 += (v**2).reduce_add()
+                col += stride
+
+        # Barrier-free, SMEM-free warp reduction (shuffle butterfly).
+        var row_m2 = warp.sum(thread_m2)
+        var norm_factor = rsqrt(
+            (row_m2 / Scalar[accum_type](num_cols)) + eps_accum
+        )
+
+        # Pass 2: reload from L2 and normalize.
+        if row < num_rows:
+            var col = Int(lane) * simd_width
+            while col < num_cols:
+                var v = input_fn[simd_width](row, col).cast[accum_type]()
+                var gamma_val = gamma.load[width=simd_width, alignment=align](
+                    Coord(col)
+                )
+                var norm_val: SIMD[dtype, simd_width]
+                comptime if multiply_before_cast:
+                    var gamma_accum = (
+                        gamma_val.cast[accum_type]() + weight_offset_accum
+                    )
+                    norm_val = (v * norm_factor * gamma_accum).cast[dtype]()
+                else:
+                    norm_val = (v * norm_factor).cast[dtype]() * (
+                        gamma_val + weight_offset
+                    )
+                output_fn[simd_width, align](row, col, norm_val)
+                col += stride
+
+
 @__name(t"rms_norm_gpu_warp_tiling_{dtype}_{multiply_before_cast}")
 def rms_norm_gpu_warp_tiling[
     mut: Bool,
@@ -1094,7 +1171,7 @@ def _rms_norm_gpu_block_subkernel[
     ) capturing -> None,
     multiply_before_cast: Bool,
 ](
-    gamma: TileTensor[dtype, ...],
+    gamma: TileTensor[mut=False, dtype, ...],
     epsilon: Scalar[dtype],
     weight_offset: Scalar[dtype],
     num_cols: Int,
@@ -1319,7 +1396,7 @@ def rms_norm_gpu[
     pdl_level: PDLLevel = PDLLevel.ON,
 ](
     shape: IndexList[rank, ...],
-    gamma: TileTensor[dtype, ...],
+    gamma: TileTensor[mut=False, dtype, ...],
     epsilon: Scalar[dtype],
     weight_offset: Scalar[dtype],
     ctx: DeviceContext,
@@ -1359,6 +1436,13 @@ def rms_norm_gpu[
 
     comptime simd_width = simd_width_of[dtype, target=get_gpu_target()]()
     comptime max_warps_per_block = ctx.default_device_info.max_thread_block_size // WARP_SIZE
+    comptime sm_version = ctx.default_device_info.version
+    comptime sm_count = ctx.default_device_info.sm_count
+    comptime warp_per_row_rows_per_block = 8
+    var warp_per_row_min_grid = 3 * sm_count
+    var warp_per_row_region = (
+        ceildiv(rows, warp_per_row_rows_per_block) >= warp_per_row_min_grid
+    )
 
     var grid_dim = rows
     var block_dim = min(
@@ -1397,13 +1481,21 @@ def rms_norm_gpu[
                 block_dim=block_dim,
                 attributes=pdl_launch_attributes(pdl_level),
             )
-        elif cols <= (WARP_SIZE * simd_width * max_warps_per_block):
-            comptime kernel = rms_norm_gpu_warp_tiling[
+        elif (
+            cols > 128
+            and cols <= (WARP_SIZE * simd_width * max_warps_per_block)
+            and warp_per_row_region
+        ):
+            comptime rows_per_block = warp_per_row_rows_per_block
+            block_dim = rows_per_block * WARP_SIZE
+            grid_dim = ceildiv(rows, rows_per_block)
+
+            comptime kernel = rms_norm_gpu_warp_per_row[
                 mut=gamma.mut,
                 LayoutType=gamma.LayoutType,
                 origin=gamma.origin,
                 simd_width,
-                max_warps_per_block,
+                rows_per_block,
                 input_fn_2d,
                 output_fn_2d,
                 multiply_before_cast=multiply_before_cast,
@@ -1412,11 +1504,68 @@ def rms_norm_gpu[
                 gamma,
                 epsilon,
                 weight_offset,
+                rows,
                 cols,
                 grid_dim=grid_dim,
                 block_dim=block_dim,
                 attributes=pdl_launch_attributes(pdl_level),
             )
+        elif cols <= (WARP_SIZE * simd_width * max_warps_per_block):
+            # CDNA4 (MI355X): when there are enough rows to keep the GPU busy,
+            # use a 2x-wider per-thread SIMD so each row's block needs half the
+            # warps. This halves the inter-warp block reduction cost and
+            # doubles blocks-per-CU, lifting achieved HBM bandwidth by ~15-30%
+            # on prefill-sized shapes (the warp-tiling kernel does one row per
+            # block, so threads-per-row == cols / per-thread-width). It is gated
+            # on row count because the smaller block lowers total occupancy when
+            # rows are few (a net loss below ~8x the CU count).
+            comptime sw_wide = simd_width * 2
+            comptime widen_ok = sm_version == "CDNA4"
+            var enough_rows = rows >= 8 * sm_count
+            if widen_ok and enough_rows and cols % sw_wide == 0:
+                var block_dim_wide = min(
+                    ceildiv(ceildiv(cols, sw_wide), WARP_SIZE) * WARP_SIZE,
+                    WARP_SIZE * max_warps_per_block,
+                )
+                comptime kernel_wide = rms_norm_gpu_warp_tiling[
+                    mut=gamma.mut,
+                    LayoutType=gamma.LayoutType,
+                    origin=gamma.origin,
+                    sw_wide,
+                    max_warps_per_block,
+                    input_fn_2d,
+                    output_fn_2d,
+                    multiply_before_cast=multiply_before_cast,
+                ]
+                ctx.enqueue_function[kernel_wide](
+                    gamma,
+                    epsilon,
+                    weight_offset,
+                    cols,
+                    grid_dim=grid_dim,
+                    block_dim=block_dim_wide,
+                    attributes=pdl_launch_attributes(pdl_level),
+                )
+            else:
+                comptime kernel = rms_norm_gpu_warp_tiling[
+                    mut=gamma.mut,
+                    LayoutType=gamma.LayoutType,
+                    origin=gamma.origin,
+                    simd_width,
+                    max_warps_per_block,
+                    input_fn_2d,
+                    output_fn_2d,
+                    multiply_before_cast=multiply_before_cast,
+                ]
+                ctx.enqueue_function[kernel](
+                    gamma,
+                    epsilon,
+                    weight_offset,
+                    cols,
+                    grid_dim=grid_dim,
+                    block_dim=block_dim,
+                    attributes=pdl_launch_attributes(pdl_level),
+                )
         elif (
             cols <= (WARP_SIZE * (simd_width * 2) * max_warps_per_block)
             and cols % (simd_width * 2) == 0
@@ -1491,7 +1640,7 @@ def rms_norm_cpu[
     ) capturing -> None,
     multiply_before_cast: Bool,
 ](
-    gamma: TileTensor[dtype, ...],
+    gamma: TileTensor[mut=False, dtype, ...],
     epsilon: Scalar[dtype],
     weight_offset: Scalar[dtype],
     out_shape: IndexList[2],
@@ -1560,7 +1709,7 @@ def rms_norm_cpu[
     multiply_before_cast: Bool,
 ](
     shape: IndexList[rank],
-    gamma: TileTensor[dtype, ...],
+    gamma: TileTensor[mut=False, dtype, ...],
     epsilon: Scalar[dtype],
     weight_offset: Scalar[dtype],
     ctx: Optional[DeviceContext] = None,
@@ -1638,7 +1787,7 @@ def _rms_norm_impl[
     multiply_before_cast: Bool = True,
 ](
     shape: IndexList[rank],
-    gamma: TileTensor[dtype, ...],
+    gamma: TileTensor[mut=False, dtype, ...],
     epsilon: Scalar[dtype],
     weight_offset: Scalar[dtype],
     ctx: DeviceContext,
@@ -1973,10 +2122,10 @@ def rms_norm_fused_residual_add_gpu[
     multiply_before_cast: Bool,
 ](
     shape: IndexList[rank, ...],
-    gamma1: TileTensor[dtype, ...],
+    gamma1: TileTensor[mut=False, dtype, ...],
     epsilon1: Scalar[dtype],
     weight_offset1: Scalar[dtype],
-    gamma2: TileTensor[dtype, ...],
+    gamma2: TileTensor[mut=False, dtype, ...],
     epsilon2: Scalar[dtype],
     weight_offset2: Scalar[dtype],
     ctx: DeviceContext,
@@ -2172,10 +2321,10 @@ def rms_norm_fused_residual_add_cpu[
     multiply_before_cast: Bool = True,
 ](
     shape: IndexList[rank],
-    gamma1: TileTensor[dtype, ...],
+    gamma1: TileTensor[mut=False, dtype, ...],
     epsilon1: Scalar[dtype],
     weight_offset1: Scalar[dtype],
-    gamma2: TileTensor[dtype, ...],
+    gamma2: TileTensor[mut=False, dtype, ...],
     epsilon2: Scalar[dtype],
     weight_offset2: Scalar[dtype],
 ) raises:
@@ -2717,11 +2866,11 @@ def rms_norm_rope_gpu[
     pdl_level: PDLLevel = PDLLevel.ON,
 ](
     shape: IndexList[rank, ...],
-    gamma: TileTensor[input_dtype, ...],
+    gamma: TileTensor[mut=False, input_dtype, ...],
     epsilon: Scalar[input_dtype],
     weight_offset: Scalar[input_dtype],
-    cos_vals: TileTensor[cos_sin_dtype, ...],
-    sin_vals: TileTensor[cos_sin_dtype, ...],
+    cos_vals: TileTensor[mut=False, cos_sin_dtype, ...],
+    sin_vals: TileTensor[mut=False, cos_sin_dtype, ...],
     ctx: DeviceContext,
 ) raises:
     """Fused RMS normalization followed by Rotary Position Embedding (RoPE) for GPU.
@@ -2929,7 +3078,7 @@ def rms_norm[
     multiply_before_cast: Bool = True,
 ](
     shape: IndexList[rank],
-    gamma: TileTensor[dtype, ...],
+    gamma: TileTensor[mut=False, dtype, ...],
     epsilon: Scalar[dtype],
     weight_offset: Scalar[dtype],
     ctx: DeviceContext,
@@ -3117,8 +3266,8 @@ def row_mean_of_squares_qk_gpu[
     pdl_level: PDLLevel = PDLLevel.ON,
 ](
     output: TileTensor[mut=True, out_dtype, ...],
-    q: TileTensor[in_dtype, ...],
-    k: TileTensor[in_dtype, ...],
+    q: TileTensor[mut=False, in_dtype, ...],
+    k: TileTensor[mut=False, in_dtype, ...],
     rows: Int,
     q_cols: Int,
     k_cols: Int,
@@ -3206,8 +3355,8 @@ def row_mean_of_squares_qk_cpu[
     //,
 ](
     output: TileTensor[mut=True, out_dtype, ...],
-    q: TileTensor[in_dtype, ...],
-    k: TileTensor[in_dtype, ...],
+    q: TileTensor[mut=False, in_dtype, ...],
+    k: TileTensor[mut=False, in_dtype, ...],
     rows: Int,
     q_cols: Int,
     k_cols: Int,
@@ -3243,8 +3392,8 @@ def row_mean_of_squares_qk[
     target: StaticString = "cpu",
 ](
     output: TileTensor[mut=True, out_dtype, ...],
-    q: TileTensor[in_dtype, ...],
-    k: TileTensor[in_dtype, ...],
+    q: TileTensor[mut=False, in_dtype, ...],
+    k: TileTensor[mut=False, in_dtype, ...],
     rows: Int,
     q_cols: Int,
     k_cols: Int,
@@ -3421,11 +3570,11 @@ def apply_qk_rms_norm_gpu[
 ](
     q_out: TileTensor[mut=True, out_dtype, ...],
     k_out: TileTensor[mut=True, out_dtype, ...],
-    gamma_q: TileTensor[DType.float32, ...],
-    gamma_k: TileTensor[DType.float32, ...],
-    qk_var: TileTensor[DType.float32, ...],
-    q: TileTensor[in_dtype, ...],
-    k: TileTensor[in_dtype, ...],
+    gamma_q: TileTensor[mut=False, DType.float32, ...],
+    gamma_k: TileTensor[mut=False, DType.float32, ...],
+    qk_var: TileTensor[mut=False, DType.float32, ...],
+    q: TileTensor[mut=False, in_dtype, ...],
+    k: TileTensor[mut=False, in_dtype, ...],
     epsilon: Scalar[DType.float32],
     rows: Int,
     q_cols: Int,
@@ -3547,11 +3696,11 @@ def apply_qk_rms_norm_cpu[
 ](
     q_out: TileTensor[mut=True, out_dtype, ...],
     k_out: TileTensor[mut=True, out_dtype, ...],
-    gamma_q: TileTensor[DType.float32, ...],
-    gamma_k: TileTensor[DType.float32, ...],
-    qk_var: TileTensor[DType.float32, ...],
-    q: TileTensor[in_dtype, ...],
-    k: TileTensor[in_dtype, ...],
+    gamma_q: TileTensor[mut=False, DType.float32, ...],
+    gamma_k: TileTensor[mut=False, DType.float32, ...],
+    qk_var: TileTensor[mut=False, DType.float32, ...],
+    q: TileTensor[mut=False, in_dtype, ...],
+    k: TileTensor[mut=False, in_dtype, ...],
     epsilon: Scalar[DType.float32],
     rows: Int,
     q_cols: Int,
@@ -3590,11 +3739,11 @@ def apply_qk_rms_norm[
 ](
     q_out: TileTensor[mut=True, out_dtype, ...],
     k_out: TileTensor[mut=True, out_dtype, ...],
-    gamma_q: TileTensor[DType.float32, ...],
-    gamma_k: TileTensor[DType.float32, ...],
-    qk_var: TileTensor[DType.float32, ...],
-    q: TileTensor[in_dtype, ...],
-    k: TileTensor[in_dtype, ...],
+    gamma_q: TileTensor[mut=False, DType.float32, ...],
+    gamma_k: TileTensor[mut=False, DType.float32, ...],
+    qk_var: TileTensor[mut=False, DType.float32, ...],
+    q: TileTensor[mut=False, in_dtype, ...],
+    k: TileTensor[mut=False, in_dtype, ...],
     epsilon: Scalar[DType.float32],
     rows: Int,
     q_cols: Int,
@@ -3706,10 +3855,10 @@ def _rms_norm_fused_residual_add_impl[
     multiply_before_cast: Bool = True,
 ](
     shape: IndexList[rank],
-    gamma1: TileTensor[dtype, ...],
+    gamma1: TileTensor[mut=False, dtype, ...],
     epsilon1: Scalar[dtype],
     weight_offset1: Scalar[dtype],
-    gamma2: TileTensor[dtype, ...],
+    gamma2: TileTensor[mut=False, dtype, ...],
     epsilon2: Scalar[dtype],
     weight_offset2: Scalar[dtype],
     ctx: DeviceContext,
@@ -3797,10 +3946,10 @@ def rms_norm_fused_residual_add[
     multiply_before_cast: Bool = True,
 ](
     shape: IndexList[rank],
-    gamma1: TileTensor[dtype, ...],
+    gamma1: TileTensor[mut=False, dtype, ...],
     epsilon1: Scalar[dtype],
     weight_offset1: Scalar[dtype],
-    gamma2: TileTensor[dtype, ...],
+    gamma2: TileTensor[mut=False, dtype, ...],
     epsilon2: Scalar[dtype],
     weight_offset2: Scalar[dtype],
     ctx: DeviceContext,

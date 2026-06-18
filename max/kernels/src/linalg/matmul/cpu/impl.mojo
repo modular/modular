@@ -561,8 +561,8 @@ def matmul[
     saturated_vnni: Bool = False,
 ](
     c: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
-    a: TileTensor[address_space=AddressSpace.GENERIC, ...],
-    b: TileTensor[address_space=AddressSpace.GENERIC, ...],
+    a: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
+    b: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
     kernel_type_m: Int,
     num_threads: Int = -1,
     ctx: Optional[DeviceContext] = None,
@@ -712,8 +712,8 @@ def _submatmul_sequential_sync[
 ](
     alg: algorithm,
     c: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
-    a: TileTensor[address_space=AddressSpace.GENERIC, ...],
-    b: TileTensor[address_space=AddressSpace.GENERIC, ...],
+    a: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
+    b: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
     sub_matrix_shape: GemmShape,
     sub_matrix_offset: GemmShape,
 ):
@@ -764,8 +764,8 @@ def _submatmul_sequential_sync[
     saturated_vnni: Bool,
 ](
     c: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
-    a: TileTensor[address_space=AddressSpace.GENERIC, ...],
-    b: TileTensor[address_space=AddressSpace.GENERIC, ...],
+    a: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
+    b: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
     sub_matrix_shape: GemmShape,
     sub_matrix_offset: GemmShape,
 ):

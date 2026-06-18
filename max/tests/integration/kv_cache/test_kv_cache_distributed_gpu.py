@@ -50,8 +50,8 @@ async def test_kv_cache_multi_gpu() -> None:
         kv_manager.claim(context.request_id, replica_idx=0)
 
         batch = [context]
-        kv_manager.alloc(context, replica_idx=0, num_steps=1)
-        kv_inputs = kv_manager.runtime_inputs([batch])
+        kv_manager.alloc(context, replica_idx=0)
+        kv_inputs = kv_manager.runtime_inputs_for_leaf([batch])
         for i in range(num_devices):
             kv_inputs_per_device = kv_inputs.inputs[i]
             assert len(kv_inputs_per_device.flatten()) == 5
@@ -86,9 +86,9 @@ async def test_mla_runtime_inputs_keep_dispatch_metadata_on_shard_device() -> (
     )
     context = create_text_context(np.empty(1))
     kv_manager.claim(context.request_id, replica_idx=0)
-    kv_manager.alloc(context, replica_idx=0, num_steps=1)
+    kv_manager.alloc(context, replica_idx=0)
 
-    kv_inputs = kv_manager.runtime_inputs([[context]])
+    kv_inputs = kv_manager.runtime_inputs_for_leaf([[context]])
 
     for shard_idx, kv_inputs_per_device in enumerate(kv_inputs.inputs):
         assert kv_inputs_per_device.attention_dispatch_metadata is not None
@@ -198,7 +198,7 @@ async def test_swapping_to_host_multi_gpu(
             prompt_tokens = sum(ctx.tokens.active_length for ctx in batch)
 
             for ctx in batch:
-                kv_manager.alloc(ctx, replica_idx=0, num_steps=1)
+                kv_manager.alloc(ctx, replica_idx=0)
             _ = kv_manager.runtime_inputs([batch])
 
             new_prompt_tokens = sum(ctx.tokens.active_length for ctx in batch)

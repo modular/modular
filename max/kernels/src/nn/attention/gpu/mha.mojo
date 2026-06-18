@@ -123,6 +123,7 @@ from nn.attention.mha_operand import (
     RaggedMHAOperand,
 )
 from nn.attention.gpu.mha_decode_partition_heuristic import (
+    mha_decoding_max_num_partitions,
     mha_decoding_num_partitions,
 )
 from nn.attention.gpu.nvidia.sm90.mha import mha_sm90_dispatch
@@ -249,6 +250,17 @@ def get_mha_decoding_num_partitions[
     num_heads: Int, group: Int
 ](batch_size: Int, num_keys: Int, ctx: DeviceContext) raises -> Int:
     return mha_decoding_num_partitions(
+        batch_size,
+        num_keys,
+        num_heads // group,
+        ctx,
+    )
+
+
+def get_mha_decoding_max_num_partitions[
+    num_heads: Int, group: Int
+](batch_size: Int, num_keys: Int, ctx: DeviceContext) raises -> Int:
+    return mha_decoding_max_num_partitions(
         batch_size,
         num_keys,
         num_heads // group,
@@ -514,7 +526,9 @@ def q_num_matrix_view_rows[
 
 
 @always_inline
-def q_num_matrix_view_rows[dtype: DType, //](q: TileTensor[dtype, ...]) -> Int:
+def q_num_matrix_view_rows[
+    dtype: DType, //
+](q: TileTensor[mut=False, dtype, ...]) -> Int:
     # TileTensor overload for the same computation.
     var num_rows: Int = Int(q.dim[0]())
 
@@ -1098,17 +1112,40 @@ def flash_attention_dispatch[
                             partition_num_keys = 1
 
                 var num_partitions_value: Int
+                # Upper bound on num_partitions_value, independent of num_keys.
+                # The SM100 1Q decode grid launches this many partition CTAs so
+                # the grid shape is stable across num_keys (one CUDA graph per
+                # batch size); CTAs beyond num_partitions_value early-return.
+                # For explicit/override partition counts we do not over-launch,
+                # so max == actual.
+                var max_num_partitions_value: Int
                 if num_partitions:
                     num_partitions_value = num_partitions.value()
+                    max_num_partitions_value = num_partitions_value
                 elif (
                     dispatch_metadata.num_partitions > 0
                     and partition_num_keys == max_cache_valid_length_value
                 ):
                     num_partitions_value = dispatch_metadata.num_partitions
+                    max_num_partitions_value = num_partitions_value
                 else:
                     num_partitions_value = get_mha_decoding_num_partitions[
                         num_heads, group
                     ](batch_size, partition_num_keys, ctx)
+                    max_num_partitions_value = (
+                        get_mha_decoding_max_num_partitions[num_heads, group](
+                            batch_size, partition_num_keys, ctx
+                        )
+                    )
+
+                # The launched (max) count must bound the actual count, else the
+                # over-launched SM100 1Q grid would under-launch and silently
+                # drop partitions. (Also keeps max_num_partitions_value used on
+                # targets where the SM100 1Q construction is comptime-elided.)
+                debug_assert(
+                    max_num_partitions_value >= num_partitions_value,
+                    "max_num_partitions must be >= num_partitions",
+                )
 
                 comptime use_fa3_kernel = (
                     (is_sm90 or is_sm100)
@@ -1355,6 +1392,8 @@ def flash_attention_dispatch[
                                     SplitKPartition(
                                         exp_sum_qk_max_data.unsafe_ptr().as_unsafe_any_origin(),
                                         UInt32(num_partitions_value),
+                                        # sm90 does not over-launch: max == actual.
+                                        UInt32(num_partitions_value),
                                     ),
                                     ctx,
                                     sink_weights,
@@ -1382,6 +1421,7 @@ def flash_attention_dispatch[
                                     SplitKPartition(
                                         exp_sum_qk_max_data.unsafe_ptr().as_unsafe_any_origin(),
                                         UInt32(num_partitions_value),
+                                        UInt32(max_num_partitions_value),
                                     ),
                                     ctx,
                                     _optional_lt_to_tt(sink_weights),
@@ -1524,11 +1564,14 @@ def flash_attention_dispatch[
     else:
         # Assumes BSHD.
         comptime if has_apple_gpu_accelerator():
-            # Apple decode-only opt-in; larger head_dim/prefill/flag-off -> mha_gpu_naive.
+            # Apple decode-only opt-in. The warp producer splits the head dim
+            # across lanes, hence the `% WARP_SIZE` gate; anything else (prefill,
+            # flag-off, oversized/odd head_dim) falls to mha_gpu_naive.
             if (
                 is_token_generation
                 and _apple_naive_fa_decode_enabled()
                 and depth <= NAIVE_FA_DECODE_APPLE_MAX_HEAD_DIM
+                and depth % WARP_SIZE == 0
             ):
                 naive_fa_decode_apple[
                     ragged=ragged,
@@ -1932,7 +1975,7 @@ def mha[
     _is_cache_length_accurate: Bool = False,
     _padded_ndbuffer: Bool = False,
 ](
-    q_ptr: UnsafePointer[Scalar[q_type], MutAnyOrigin],
+    q_ptr: UnsafePointer[Scalar[q_type], ImmutAnyOrigin],
     k: k_t,
     v: v_t,
     output_ptr: UnsafePointer[Scalar[output_type], MutAnyOrigin],
@@ -4994,10 +5037,10 @@ def mha_splitk_reduce[
     intermediate_ptr: UnsafePointer[Scalar[intermediate_type], ImmutAnyOrigin],
     output_ptr: UnsafePointer[Scalar[output_type], MutAnyOrigin],
     exp_sum_ptr: UnsafePointer[
-        Scalar[get_accum_type[output_type]()], MutAnyOrigin
+        Scalar[get_accum_type[output_type]()], ImmutAnyOrigin
     ],
     qk_max_ptr: UnsafePointer[
-        Scalar[get_accum_type[output_type]()], MutAnyOrigin
+        Scalar[get_accum_type[output_type]()], ImmutAnyOrigin
     ],
     batch_size: Int,
     num_partitions: Int,

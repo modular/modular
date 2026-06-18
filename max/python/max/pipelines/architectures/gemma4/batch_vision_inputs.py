@@ -80,11 +80,11 @@ class VideoInputs:
 
 
 def create_empty_embeddings(
-    devices: list[Device], hidden_size: int
+    devices: list[Device], hidden_size: int, dtype: DType = DType.bfloat16
 ) -> list[Buffer]:
     """Create empty (zero-row) embedding buffers, one per device."""
     return [
-        Buffer.zeros(shape=[0, hidden_size], dtype=DType.bfloat16).to(dev)
+        Buffer.zeros(shape=[0, hidden_size], dtype=dtype).to(dev)
         for dev in devices
     ]
 
@@ -117,8 +117,8 @@ def merge_per_device_buffers(
             merged.append(a)
         else:
             dev = a.device
-            a_np = a.to(Device()).to_numpy()
-            b_np = b.to(Device()).to_numpy()
+            a_np = a.to_numpy()
+            b_np = b.to_numpy()
             combined = np.concatenate([a_np, b_np], axis=0)
             merged.append(Buffer.from_numpy(combined).to(dev))
     return merged
@@ -151,6 +151,7 @@ def pack_vision_buffers(
     all_pos_ids: list[npt.NDArray[np.integer[Any]]],
     patch_counts: list[int],
     soft_token_counts: list[int],
+    dtype: DType,
 ) -> VisionRawInputs:
     """Build device-replicated ``VisionRawInputs`` from numpy arrays."""
     patches_flat_np = np.concatenate(all_patches, axis=0).astype(np.float32)
@@ -170,9 +171,7 @@ def pack_vision_buffers(
     patches_flat_bufs = _pinned_to_devices(
         patches_flat_np, DType.float32, devices
     )
-    patches_flat = [
-        cast_tensor_to(buf, DType.bfloat16) for buf in patches_flat_bufs
-    ]
+    patches_flat = [cast_tensor_to(buf, dtype) for buf in patches_flat_bufs]
 
     pool_weights_bufs = _pinned_to_devices(
         pool_weights_np.astype(np.float32), DType.float32, devices
@@ -197,6 +196,7 @@ def build_image_inputs(
     pooling_kernel_size: int,
     ve_cache: VisionEncoderCache[Gemma4Context],
     empty_embeddings: list[Buffer],
+    dtype: DType,
 ) -> ImageInputs | None:
     """Assemble ``ImageInputs`` — raw or cached — for a batch."""
     k = pooling_kernel_size
@@ -248,6 +248,7 @@ def build_image_inputs(
                 all_pos_ids,
                 patch_counts,
                 soft_token_counts,
+                dtype,
             )
             if all_patches
             else None
@@ -283,6 +284,7 @@ def build_video_inputs(
     context_batch: Sequence[Gemma4Context],
     devices: list[Device],
     pooling_kernel_size: int,
+    dtype: DType,
 ) -> VideoInputs | None:
     """Assemble ``VideoInputs`` from pre-unpacked per-frame context data."""
     all_frame_patches: list[npt.NDArray[np.floating[Any]]] = []
@@ -319,6 +321,7 @@ def build_video_inputs(
         all_frame_pos_ids,
         frame_patch_counts,
         frame_soft_token_counts,
+        dtype,
     )
     scatter_np = np.concatenate(scatter_parts).astype(np.int32)
     return VideoInputs(raw=raw, token_indices_np=scatter_np)

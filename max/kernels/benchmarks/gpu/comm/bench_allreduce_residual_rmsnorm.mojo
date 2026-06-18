@@ -45,7 +45,7 @@ from comm.allreduce_residual_rmsnorm import (
     allreduce_rmsnorm,
 )
 from std.collections import Optional
-from comm.sync import is_p2p_enabled
+from comm.sync import enable_p2p, is_p2p_enabled
 from std.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from internal_utils import CacheBustingBuffer, arg_parse
 
@@ -1154,6 +1154,10 @@ def main() raises:
         )
         return
 
+    # Enable P2P access between all GPU pairs before the read-only status
+    # check below. In production this happens during model setup; the
+    # standalone bench must do it explicitly (mirrors the unit test).
+    _ = enable_p2p()
     if not is_p2p_enabled():
         print("P2P not enabled, skipping benchmark.")
         return

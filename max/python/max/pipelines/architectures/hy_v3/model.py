@@ -26,17 +26,13 @@ from max.engine import InferenceSession
 from max.graph import Graph
 from max.graph.weights import Weights, WeightsAdapter
 from max.nn.comm.ep import EPCommInitializer, EPConfig
-from max.nn.comm.ep.ep_config import (
-    calculate_ep_max_tokens_per_rank,
-)
+from max.nn.comm.ep.ep_config import calculate_ep_max_tokens_per_rank
 from max.pipelines.architectures.llama3.model import (
     Llama3Inputs,
     LlamaModelBase,
 )
 from max.pipelines.context import TextContext
-from max.pipelines.lib import (
-    CompilationTimer,
-)
+from max.pipelines.lib import CompilationTimer
 from max.pipelines.lib.interfaces import AlwaysSignalBuffersMixin
 from max.pipelines.lib.utils import (
     compute_data_parallel_splits,
@@ -314,9 +310,7 @@ class HYV3Model(AlwaysSignalBuffersMixin, LlamaModelBase):
                 next(inputs_iter).buffer for _ in range(num_devices)
             ]
 
-            num_kv_inputs = len(
-                nn_model.kv_params.get_symbolic_inputs().flatten()
-            )
+            num_kv_inputs = len(nn_model.kv_params.flattened_kv_inputs())
             kv_cache_inputs = [next(inputs_iter) for _ in range(num_kv_inputs)]
             kv_collections = self._unflatten_kv_inputs(kv_cache_inputs)
 

@@ -14,7 +14,6 @@
 from max.graph.weights import WeightsFormat
 from max.pipelines.lib import SupportedArchitecture
 from max.pipelines.modeling.types import InputModality, PipelineTask
-from transformers import AutoConfig, PretrainedConfig
 
 from . import weight_adapters
 from .context import KimiK2_5TextAndVisionContext
@@ -24,22 +23,6 @@ from .model_config import KimiK2_5Config, KimiK2_5TextConfig
 from .tokenizer import KimiK2_5VLTokenizer
 from .unified_eagle_mha_pipeline_model import Eagle3MHAKimiK25Model
 from .unified_eagle_pipeline_model import Eagle3KimiK25Model
-
-
-class _KimiK2Config(PretrainedConfig):
-    """Minimal config for the ``kimi_k2`` model type.
-
-    The Eagle3 draft checkpoint (``nvidia/Kimi-K2.5-Thinking-Eagle3``)
-    declares ``model_type: "kimi_k2"`` which is not natively registered
-    in transformers, and ships no ``auto_map``.  Registering this stub
-    lets ``AutoConfig.from_pretrained`` succeed without a manual JSON
-    fallback.
-    """
-
-    model_type = "kimi_k2"
-
-
-AutoConfig.register("kimi_k2", _KimiK2Config, exist_ok=True)
 
 kimik2_5_arch = SupportedArchitecture(
     name="KimiK25ForConditionalGeneration",

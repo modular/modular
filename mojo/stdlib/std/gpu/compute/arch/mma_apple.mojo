@@ -16,7 +16,8 @@ This module provides MMA implementations for Apple M5 GPUs using the
 simdgroup_matrix hardware instructions (Metal 4.0 / AIR 2.8.0).
 
 Supported operations:
-- Float multiply-accumulate: {F16, BF16, F32} inputs, F32 accumulator
+- Float multiply-accumulate: {F16, BF16, F32, E4M3, E5M2} inputs, F32
+  accumulator
 - Integer widening multiply-accumulate: {I8, U8} inputs, I32/U32 accumulator
 """
 
@@ -146,9 +147,17 @@ def _mma_apple_transposable(
 
     comptime assert c.dtype == d.dtype, "Apple MMA C and D types must match"
 
+    # fp8 (E4M3/E5M2) reuses the same float multiply-accumulate intrinsic;
+    # KGEN lowers the native fp8 fragment to AIR's `<8 x i8>` storage form.
+    comptime _valid_float_dtypes = (
+        DType.float16,
+        DType.bfloat16,
+        DType.float32,
+        DType.float8_e4m3fn,
+        DType.float8_e5m2,
+    )
     comptime _valid_float_input = (
-        a.dtype in (DType.float16, DType.bfloat16, DType.float32)
-        and b.dtype in (DType.float16, DType.bfloat16, DType.float32)
+        a.dtype in _valid_float_dtypes and b.dtype in _valid_float_dtypes
     )
 
     comptime _valid_int_input = (

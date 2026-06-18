@@ -209,6 +209,7 @@ struct Struct_msa_indexer_ragged_paged:
                 out_idxs.to_tile_tensor[DType.int64](),
                 batch,
                 total_q,
+                Int(k_cache.max_prompt_length()),  # max_seqlen_q
                 max_num_blocks,
                 topk,
                 init_blocks,

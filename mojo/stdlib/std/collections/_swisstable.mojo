@@ -24,7 +24,15 @@ or an h2 fingerprint (0x00-0x7F) derived from the top 7 bits of the hash.
 from std.bit import count_trailing_zeros, next_power_of_two
 from std.hashlib import Hasher, default_hasher
 from std.math import ceildiv
-from std.memory import alloc, dealloc, ThinAllocation, memcpy, memset, pack_bits
+from std.memory import (
+    alloc,
+    dealloc,
+    ThinAllocation,
+    memcpy,
+    memset,
+    pack_bits,
+    is_trivially_destructible,
+)
 from std.memory.alloc import Layout
 from std.sys.intrinsics import likely
 
@@ -385,9 +393,7 @@ struct SwissTable[
 
     def __del__(deinit self):
         """Destroy all entries and free memory."""
-        for i in range(self._capacity):
-            if is_occupied(self._ctrl[i]):
-                (self._slots + i).destroy_pointee()
+        self._destroy_occupied_entries()
 
         if self._capacity > 0:
             dealloc(
@@ -400,6 +406,24 @@ struct SwissTable[
                     unsafe_assume_ownership=self._slots
                 ).unsafe_with_layout({count = self._capacity})
             )
+
+    @always_inline
+    def _destroy_occupied_entries(mut self):
+        """Run destructors on every occupied slot.
+
+        Skips the loop entirely when the entry type is trivially destructible.
+
+        This leaves `_ctrl`, `_len`, and `_capacity` unchanged, so the table is
+        in an invalid state afterward: the caller must either reset the control
+        bytes (see `clear`) or be about to free the backing storage (see
+        `__del__`).
+        """
+        comptime if not is_trivially_destructible[
+            SwissTableEntry[Self.K, Self.V, Self.H]
+        ]():
+            for i in range(self._capacity):
+                if is_occupied(self._ctrl[i]):
+                    (self._slots + i).destroy_pointee()
 
     # ===-------------------------------------------------------------------===#
     # Core operations
@@ -558,9 +582,7 @@ struct SwissTable[
         if self._capacity == 0:
             return
 
-        for i in range(self._capacity):
-            if is_occupied(self._ctrl[i]):
-                (self._slots + i).destroy_pointee()
+        self._destroy_occupied_entries()
 
         memset(self._ctrl, CTRL_EMPTY, self._capacity + GROUP_WIDTH)
         self._len = 0

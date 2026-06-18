@@ -33,7 +33,7 @@ from max.graph.weights import (
     WeightsAdapter,
 )
 from max.nn.comm import Signals
-from max.nn.kv_cache import KVCacheInputs
+from max.nn.kv_cache import KVCacheInputsInterface
 from max.nn.transformer import ReturnLogits
 from max.pipelines.context import TextAndVisionContext
 from max.pipelines.lib import (
@@ -674,7 +674,7 @@ class InternVLModel(
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[TextAndVisionContext]],
-        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
+        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> ModelInputs:
         """Prepares the initial inputs for the first execution pass of the InternVL model."""

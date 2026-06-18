@@ -1402,12 +1402,12 @@ def _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     max_profiled_tiles_per_SM: Optional[UInt32] = None,
 ](
     c_device: LayoutTensor[c_type, c_layout, ...],
-    a_device: LayoutTensor[a_type, a_layout, ...],
+    a_device: LayoutTensor[mut=False, a_type, a_layout, ...],
     group_offsets: LayoutTensor[DType.uint32, group_offsets_layout, ...],
     group_scale_offsets: LayoutTensor[
         DType.uint32, group_scale_offsets_layout, ...
     ],
-    b_device: LayoutTensor[b_type, b_layout, ...],
+    b_device: LayoutTensor[mut=False, b_type, b_layout, ...],
     expert_ids: LayoutTensor[DType.int32, expert_ids_layout, ...],
     a_scales: LayoutTensor[sfa_dtype, sfa_layout, MutAnyOrigin],
     b_scales: LayoutTensor[sfb_dtype, sfb_layout, MutAnyOrigin],

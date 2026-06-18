@@ -34,7 +34,11 @@ from max.engine import InferenceSession, Model
 from max.graph import BufferValue, Graph, Module, TensorValue, Value
 from max.graph.weights import WeightData, load_weights
 from max.nn.comm.ep import EPCommInitializer
-from max.nn.kv_cache import KVCacheInputs, KVCacheParams, PagedCacheValues
+from max.nn.kv_cache import (
+    KVCacheInputsInterface,
+    KVCacheParams,
+    MultiKVCacheParams,
+)
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.architectures.kimik2_5.context import (
     KimiK2_5TextAndVisionContext,
@@ -66,7 +70,6 @@ class Eagle3MHAKimiK25Inputs(KimiK2_5ModelInputs):
     """
 
     draft_tokens: Buffer | None = None
-    draft_kv_blocks: list[Buffer] | None = None
     seed: Buffer | None = None
     temperature: Buffer | None = None
     top_k: Buffer | None = None
@@ -117,8 +120,6 @@ class Eagle3MHAKimiK25Inputs(KimiK2_5ModelInputs):
         )
         if self.draft_tokens is not None:
             buffers += (self.draft_tokens,)
-        if self.draft_kv_blocks is not None:
-            buffers += tuple(self.draft_kv_blocks)
         assert self.seed is not None
         buffers += (self.seed,)
         if self.draft_tokens is not None:
@@ -276,6 +277,9 @@ class Eagle3MHAKimiK25Model(KimiK2_5Model):
             speculative_method=target_kv.speculative_method,
             num_draft_tokens=target_kv.num_draft_tokens,
         )
+        self.kv_params = MultiKVCacheParams.from_params(
+            {"target": target_kv, "draft": self._draft_kv_params}
+        )
 
         draft_config = _build_mha_draft_config(
             draft_hf,
@@ -370,9 +374,7 @@ class Eagle3MHAKimiK25Model(KimiK2_5Model):
             )
             with Graph(
                 "eagle3_mha_kimik25_graph",
-                input_types=nn_model.input_types(
-                    self.kv_params, self._draft_kv_params
-                ),
+                input_types=nn_model.input_types(self.kv_params),
                 module=graph_module,
             ) as graph:
                 (
@@ -403,23 +405,8 @@ class Eagle3MHAKimiK25Model(KimiK2_5Model):
                     for _ in range(len(self.devices))
                 ]
 
-                # ``draft_attention_group`` widens the target's symbolic
-                # ``draft_attention_dispatch_metadata`` slot to MHA shape
-                # so the unflatten matches ``input_types`` exactly.
-                target_symbolic = self.kv_params.get_symbolic_inputs(
-                    draft_attention_group=self._draft_kv_params
-                )
-                fetch_types = target_symbolic.inputs[0].flatten()
-                len_of_kv_inputs = len(list(fetch_types)) * len(self.devices)
-                kv_caches_per_dev = list(
-                    target_symbolic.unflatten(
-                        iter(
-                            [
-                                next(variadic_args_iter)
-                                for _ in range(len_of_kv_inputs)
-                            ]
-                        )
-                    ).inputs
+                kv_collections, draft_kv_collections = (
+                    self.kv_params.unflatten_basic_kv_tree(variadic_args_iter)
                 )
 
                 batch_context_lengths = [
@@ -435,21 +422,6 @@ class Eagle3MHAKimiK25Model(KimiK2_5Model):
                     ]
 
                 draft_tokens = next(variadic_args_iter).tensor
-                draft_kv_collections: list[PagedCacheValues] = []
-                for dev_idx in range(len(self.devices)):
-                    draft_kv_blocks = next(variadic_args_iter).buffer
-                    target_kv_dev = kv_caches_per_dev[dev_idx]
-                    draft_kv_collections.append(
-                        PagedCacheValues(
-                            kv_blocks=draft_kv_blocks,
-                            cache_lengths=target_kv_dev.cache_lengths,
-                            lookup_table=target_kv_dev.lookup_table,
-                            max_lengths=target_kv_dev.max_lengths,
-                            attention_dispatch_metadata=target_kv_dev.draft_attention_dispatch_metadata,
-                            draft_attention_dispatch_metadata=target_kv_dev.draft_attention_dispatch_metadata,
-                        )
-                    )
-
                 seed = next(variadic_args_iter).tensor
                 temperature = next(variadic_args_iter).tensor
                 top_k = next(variadic_args_iter).tensor
@@ -473,7 +445,7 @@ class Eagle3MHAKimiK25Model(KimiK2_5Model):
                     input_row_offsets=devices_input_row_offsets.tensor,
                     draft_tokens=draft_tokens.tensor,
                     signal_buffers=signal_buffers,
-                    kv_collections=kv_caches_per_dev,
+                    kv_collections=kv_collections,
                     return_n_logits=return_n_logits.tensor,
                     host_input_row_offsets=host_input_row_offsets.tensor,
                     data_parallel_splits=data_parallel_splits.tensor,
@@ -518,7 +490,7 @@ class Eagle3MHAKimiK25Model(KimiK2_5Model):
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[KimiK2_5TextAndVisionContext]],
-        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
+        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
         draft_tokens: Buffer | None = None,
         draft_kv_cache_buffers: list[Buffer] | None = None,
@@ -552,7 +524,6 @@ class Eagle3MHAKimiK25Model(KimiK2_5Model):
             language_image_embeddings=base.language_image_embeddings,
             language_image_token_indices=base.language_image_token_indices,
             draft_tokens=draft_tokens,
-            draft_kv_blocks=draft_kv_cache_buffers,
         )
 
 

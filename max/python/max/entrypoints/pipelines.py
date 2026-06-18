@@ -233,7 +233,6 @@ def cli_serve(
     from max.entrypoints.workers import start_workers
     from max.pipelines import PipelineConfig
     from max.pipelines.context import SamplingParams, SamplingParamsInput
-    from max.pipelines.logging_utils import log_basic_config, log_pipeline_info
     from max.serve.config import Settings
     from max.serve.telemetry.common import configure_logging
 
@@ -252,13 +251,10 @@ def cli_serve(
 
     # Initialize config, and serve.
     # Load tokenizer & pipeline.
-    pipeline_config = PipelineConfig(**config_kwargs)
+    pipeline_config = PipelineConfig.from_flat_kwargs(**config_kwargs)
 
     # Log Pipeline and Sampling Configuration
     if pretty_print_config:
-        # Log Pipeline Related Info
-        log_pipeline_info(pipeline_config)
-
         # Log Default Sampling Configuration (only for single-model pipelines)
         if "main" in pipeline_config.models:
             sampling_params = SamplingParams.from_input_and_generation_config(
@@ -269,8 +265,6 @@ def cli_serve(
 
         # Log API Server Related Info
         settings.log_server_info()
-    else:
-        log_basic_config(pipeline_config)
 
     # Configure Logging Globally
     configure_logging(settings)
@@ -371,7 +365,6 @@ def cli_pipeline(
     from max.entrypoints.cli import generate_text_for_pipeline
     from max.pipelines import PipelineConfig
     from max.pipelines.context import SamplingParams, SamplingParamsInput
-    from max.pipelines.logging_utils import log_basic_config
     from max.profiler import maybe_reexec_under_nsys
 
     # When --profile is set and we have a usable nsys + NVIDIA GPU, re-exec
@@ -400,8 +393,7 @@ def cli_pipeline(
     )
 
     # Load tokenizer & pipeline.
-    pipeline_config = PipelineConfig(**config_kwargs)
-    log_basic_config(pipeline_config)
+    pipeline_config = PipelineConfig.from_flat_kwargs(**config_kwargs)
     generate_text_for_pipeline(
         pipeline_config,
         sampling_params=SamplingParams.from_input_and_generation_config(
@@ -440,7 +432,7 @@ def encode(prompt: str, num_warmups: int, **config_kwargs: Any) -> None:
     from max.pipelines import PipelineConfig
 
     # Load tokenizer & pipeline.
-    pipeline_config = PipelineConfig(**config_kwargs)
+    pipeline_config = PipelineConfig.from_flat_kwargs(**config_kwargs)
     pipeline_encode(pipeline_config, prompt=prompt, num_warmups=num_warmups)
 
 
@@ -468,7 +460,7 @@ def cli_warm_cache(target: str | None, **config_kwargs) -> None:
             f"Compiling for target: {api} ({target_arch}) using virtual devices"
         )
 
-    pipeline_config = PipelineConfig(**config_kwargs)
+    pipeline_config = PipelineConfig.from_flat_kwargs(**config_kwargs)
     _ = PIPELINE_REGISTRY.retrieve(pipeline_config)
 
 

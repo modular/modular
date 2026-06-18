@@ -543,12 +543,12 @@ def grouped_matmul_sm100[
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: TileTensor[mut=True, c_type, address_space=AddressSpace.GENERIC, ...],
-    a: TileTensor[a_type, address_space=AddressSpace.GENERIC, ...],
+    a: TileTensor[mut=False, a_type, address_space=AddressSpace.GENERIC, ...],
     a_offsets: TileTensor[
         mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
     max_num_tokens_per_expert: Int,
-    b: TileTensor[b_type, address_space=AddressSpace.GENERIC, ...],
+    b: TileTensor[mut=False, b_type, address_space=AddressSpace.GENERIC, ...],
     expert_ids: TileTensor[
         mut=False, DType.int32, address_space=AddressSpace.GENERIC, ...
     ],
@@ -1148,8 +1148,8 @@ def naive_grouped_matmul[
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
-    a: TileTensor[address_space=AddressSpace.GENERIC, ...],
-    b: TileTensor[address_space=AddressSpace.GENERIC, ...],
+    a: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
+    b: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
     a_offsets: TileTensor[
         mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
@@ -1201,8 +1201,8 @@ def grouped_matmul_vendor[
     use_tf32: Bool = False,
 ](
     c: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
-    a: TileTensor[address_space=AddressSpace.GENERIC, ...],
-    b: TileTensor[address_space=AddressSpace.GENERIC, ...],
+    a: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
+    b: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
     a_offsets: TileTensor[
         mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
