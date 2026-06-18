@@ -1687,6 +1687,16 @@ def flash_attention[
     var seq_len = q.dim[1]()
     var num_keys = k.dim[1]()
 
+    # Zero-sized attention (e.g. VAE mid-block attention on a
+    # ``(B, C, 0, 0)`` placeholder image flattens to ``seq_len=0``):
+    # nothing to compute.  The output buffer is pre-allocated zero
+    # element by the caller; softmax over an empty sequence has no
+    # defined value and the downstream readers also have zero seq.
+    # Skipping the dispatch avoids zero-grid kernel launches and
+    # undefined behavior in TMA descriptors with empty extents.
+    if batch_size == 0 or seq_len == 0 or num_keys == 0:
+        return
+
     # Whether head and depth are static. With BSHD, B and S are dynamic.
     # H and D are always known.
     # fmt: off

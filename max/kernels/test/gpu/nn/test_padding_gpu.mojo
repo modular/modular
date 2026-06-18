@@ -166,3 +166,26 @@ def main() raises:
         var input_shape_3d = IndexList[3](32, 32, 32)
         test_pad_constant_gpu[dtype](input_shape_3d, paddings_3d, ctx)
         # CHECK: PASS: rank=3
+
+        # Zero-spatial 4D test: models the FLUX.2 VAE encoder's
+        # ``Downsample2D`` pre-pad on a ``(B, C, 0, 0)`` placeholder
+        # input (text-to-image path).  Paddings ``(0, 0, 0, 0, 0, 1, 0, 1)``
+        # pad the H/W dims after, producing a ``(1, 128, 1, 1)`` output
+        # filled entirely with the constant value (no input rows to
+        # copy).  The kernel must early-return rather than dispatching
+        # with ``grid_dim=(0)``.
+        var paddings_4d_stack = InlineArray[Scalar[DType.int], 8](
+            uninitialized=True
+        )
+        var paddings_4d = TileTensor(paddings_4d_stack, row_major[8]())
+        paddings_4d[0] = 0  # N pre
+        paddings_4d[1] = 0  # N post
+        paddings_4d[2] = 0  # C pre
+        paddings_4d[3] = 0  # C post
+        paddings_4d[4] = 0  # H pre
+        paddings_4d[5] = 1  # H post
+        paddings_4d[6] = 0  # W pre
+        paddings_4d[7] = 1  # W post
+        var input_shape_4d_zero = IndexList[4](1, 128, 0, 0)
+        test_pad_constant_gpu[dtype](input_shape_4d_zero, paddings_4d, ctx)
+        # CHECK: PASS: rank=4

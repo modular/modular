@@ -383,6 +383,22 @@ def test_context_encoding(ctx: DeviceContext) raises:
             num_heads=3,
         ](119, 200, ctx)
 
+        # Zero seq_len / num_keys: the FLUX.2 VAE mid-block attention
+        # runs on a flattened spatial dim, which is zero when the
+        # encoder is invoked on a ``(0, 0, 3)`` placeholder image for
+        # the text-to-image path.  The kernel must early-return rather
+        # than launching with zero grid dims.
+        test[
+            DType.bfloat16,
+            depth=128,
+            num_heads=1,
+        ](0, 0, ctx)
+        test[
+            DType.bfloat16,
+            depth=128,
+            num_heads=3,
+        ](0, 0, ctx)
+
 
 def test_decoding[
     batch_size: Int,

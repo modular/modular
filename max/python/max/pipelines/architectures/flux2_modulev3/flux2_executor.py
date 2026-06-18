@@ -176,44 +176,42 @@ class FLUXModule(Module[..., tuple[Tensor, Tensor, Tensor]]):
             ``(text_embeddings, image_latents, final_latents)``.
         """
         text_embeddings = self.text_encoder(tokens)
-        # The VAE image encoder is not called for the text-to-image path
-        # (the only path supported by FLUXModule today).  A
-        # ``(0, 0, 3)`` placeholder image would otherwise propagate
-        # ``num_cols=0`` through ``group_norm_gpu`` inside the encoder
-        # and abort at runtime.  Img2img support is a follow-up commit;
-        # at that point :meth:`forward` will need a graph-level
-        # conditional (``functional.cond``) that routes the input image
-        # through ``self.vae`` only when it carries real pixels and
-        # produces the same ``image_latents`` shape on both branches.
-        # ``self.vae`` stays instantiated so its weights still load via
-        # the manifest, but the trace doesn't reference them and the
-        # compiler DCEs the encoder ops.
+        image_latents = self.vae.encode(input_image)
 
         # Use ``guidance``'s symbolic ``"batch"`` dim as the canonical
-        # batch dim for the whole pipeline.  The text encoder produces
-        # a hardcoded ``batch=1`` output, so rebind it onto the
-        # symbolic dim here -- this matches the broadcast that happens
-        # inside :class:`Flux2TimestepGuidanceEmbeddings` (timestep emb
-        # is ``[1, embed_dim]``, guidance emb is ``[batch, embed_dim]``;
-        # their sum is ``[batch, embed_dim]``), so every downstream
-        # tensor that touches modulation params, plus the concat with
-        # ``image_latents`` inside the denoiser, sees a consistent batch
-        # dim.  Single-context-only today; the symbolic dim resolves to
-        # ``num_images_per_prompt`` at runtime, which
+        # batch dim for the whole pipeline.  The text encoder and VAE
+        # encoder both produce hardcoded ``batch=1`` outputs (their
+        # ``unsqueeze(0)`` adds a literal batch dim), so rebind both
+        # onto the symbolic ``"batch"`` here -- this matches the
+        # broadcast that happens inside :class:`Flux2TimestepGuidanceEmbeddings`
+        # (timestep emb is ``[1, embed_dim]``, guidance emb is
+        # ``[batch, embed_dim]``; their sum is ``[batch, embed_dim]``),
+        # so every downstream tensor that touches modulation params plus
+        # the concat with ``image_latents`` inside the denoiser sees a
+        # consistent batch dim.  Single-context-only today; the symbolic
+        # dim resolves to ``num_images_per_prompt`` at runtime, which
         # :meth:`prepare_inputs` enforces to be 1.
+        #
+        # The VAE encoder runs unconditionally even for text-to-image
+        # requests: the pipeline feeds a ``(0, 0, 3)`` placeholder image
+        # whose zero spatial dims propagate through ``group_norm_gpu``,
+        # ``conv_gpu``, and ``flash_attention`` (all hardened with
+        # zero-size early-return guards) and end up as a
+        # ``(1, 0, num_channels)`` packed-latent output that the
+        # denoiser concats onto its noise latents as a no-op.
         batch = guidance.shape[0]
         text_embeddings = F.rebind(
             text_embeddings,
             [batch, text_embeddings.shape[1], text_embeddings.shape[2]],
         )
-        # Zero-seq image latents.  Denoiser's
-        # ``F.concat([latents, image_latents], axis=1)`` is a no-op
-        # because the image-latents seq dim is statically 0.
-        image_latents = F.zeros(
-            [batch, 0, self.vae.num_channels],
-            dtype=self._model_dtype,
-            device=self._transformer_device,
+        image_latents = F.rebind(
+            image_latents,
+            [batch, image_latents.shape[1], image_latents.shape[2]],
         )
+        # The encoder lives on ``self._vae_device``; the denoiser's
+        # ``F.concat([latents, image_latents], axis=1)`` runs on
+        # ``self._transformer_device``.  Move latents across.
+        image_latents = image_latents.to(self._transformer_device)
 
         # Initial latent noise sampled directly on the transformer
         # device from the runtime seed.  ``set_seed`` runs once at
