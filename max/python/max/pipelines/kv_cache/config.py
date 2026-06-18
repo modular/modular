@@ -27,6 +27,10 @@ from max.nn.kv_cache.cache_params import (
     KVConnectorType,
     SpeculativeMethod,
 )
+from max.nn.kv_cache.utils import (
+    AttentionDispatchResolver,
+    AttentionDispatchResolverInterface,
+)
 from pydantic import ConfigDict, Field, PrivateAttr
 
 
@@ -173,6 +177,9 @@ class KVCacheConfig(ConfigFileModel):
         kvcache_quant_config: KVCacheQuantizationConfig | None = None,
         speculative_method: SpeculativeMethod | None = None,
         num_draft_tokens: int = 0,
+        attn_dispatch_resolver_cls: type[
+            AttentionDispatchResolverInterface
+        ] = AttentionDispatchResolver,
     ) -> KVCacheParams:
         """Returns :class:`~max.nn.kv_cache.cache_params.KVCacheParams` built from this config.
 
@@ -192,6 +199,8 @@ class KVCacheConfig(ConfigFileModel):
                 ``None`` when speculative decoding is disabled.
             num_draft_tokens: Total draft tokens generated per
                 speculative iteration. Zero when no speculative decoding.
+            attn_dispatch_resolver_cls: Class to use for resolving attention
+                dispatch metadata.
 
         Returns:
             The constructed KV cache parameters.
@@ -216,4 +225,5 @@ class KVCacheConfig(ConfigFileModel):
             kvcache_quant_config=kvcache_quant_config,
             speculative_method=speculative_method,
             num_draft_tokens=num_draft_tokens,
+            attn_dispatch_resolver_cls=attn_dispatch_resolver_cls,
         )

@@ -21,12 +21,23 @@ from max._kv_cache_ops import (
     mla_dispatch_args_scalar,
 )
 from max.driver import Buffer, Device
-from max.graph import DeviceRef
+from max.dtype import DType
+from max.graph import DeviceRef, TensorType
 
 
 @dataclass(frozen=True)
 class AttnKeyInterface:
     """Common base for resolved attention keys."""
+
+    def pack_into_buffer(
+        self, device: Device, max_cache_valid_length: int
+    ) -> Buffer:
+        """Packs this into a kernel dispatch-metadata buffer.
+
+        ``max_cache_valid_length`` is the runtime cache length; it is supplied
+        here rather than stored so the identity is independent of it.
+        """
+        raise NotImplementedError
 
 
 @dataclass(frozen=True)
@@ -44,16 +55,6 @@ class AttnKey(AttnKeyInterface):
     batch_size: int
     max_prompt_length: int
     num_partitions: int
-
-    def pack_into_buffer(
-        self, device: Device, max_cache_valid_length: int
-    ) -> Buffer:
-        """Packs this into a kernel dispatch-metadata buffer.
-
-        ``max_cache_valid_length`` is the runtime cache length; it is supplied
-        here rather than stored so the identity is independent of it.
-        """
-        raise NotImplementedError
 
 
 @dataclass(frozen=True)
@@ -121,7 +122,40 @@ class MultiAttnKey(AttnKeyInterface):
         return cls(children=tuple(children.items()))
 
 
-class AttentionDispatchResolver:
+class AttentionDispatchResolverInterface:
+    """Interface for attention dispatch metadata resolvers."""
+
+    def __init__(
+        self,
+        devices: Sequence[DeviceRef],
+        is_mla: bool,
+        n_kv_heads_per_device: int,
+        num_q_heads_per_device: int | None = None,
+        is_fp8_kv: bool = False,
+    ) -> None:
+        raise NotImplementedError
+
+    def resolve_attn_key(
+        self,
+        batch_size: int,
+        max_prompt_length: int,
+        max_cache_valid_length: int,
+    ) -> AttnKeyInterface:
+        """Returns the resolved decode dispatch key for the given shape."""
+        raise NotImplementedError
+
+    def get_symbolic_metadata_input(self, device: DeviceRef) -> TensorType:
+        """Returns the symbolic input for this attention key."""
+        raise NotImplementedError
+
+    def probe_lengths(
+        self, max_cache_length: int, q_max_seq_len: int = 1
+    ) -> list[int]:
+        """Returns cache lengths to probe for distinct num_partitions."""
+        raise NotImplementedError
+
+
+class AttentionDispatchResolver(AttentionDispatchResolverInterface):
     """Resolves packed attention decode metadata via kernel custom ops.
 
     Supports both MHA (``mo.mha.decode.get_num_partitions``) and MLA
@@ -139,14 +173,8 @@ class AttentionDispatchResolver:
     ) -> None:
         if not devices:
             raise ValueError("devices must not be empty")
+        self.device_ref = devices[0]
         self._is_mla = is_mla
-        # The decode dispatch kernels are GPU custom ops needing a concrete
-        # ``Device``. A CPU-only resolver has no device; ``resolve_attn_key``
-        # returns the sentinel key (num_partitions=1) without invoking them.
-        first_device = devices[0]
-        self._device = (
-            None if first_device.is_cpu() else first_device.to_device()
-        )
         self._n_kv_heads_per_device = n_kv_heads_per_device
         self._num_q_heads = num_q_heads_per_device
         self._is_fp8_kv = is_fp8_kv
@@ -155,19 +183,32 @@ class AttentionDispatchResolver:
         if self._is_mla:
             assert num_q_heads_per_device is not None
 
+        # Built lazily so :meth:`get_symbolic_metadata_input()` does not require
+        # a device context for a GPU DeviceRef on a CPU-only host.
+        self._device: None | Device = None
+
+    @property
+    def device(self) -> None | Device:
+        # The decode dispatch kernels are GPU custom ops needing a concrete
+        # ``Device``. A CPU-only resolver has no device; ``resolve_attn_key``
+        # returns the sentinel key (num_partitions=1) without invoking them.
+        if self._device is None and not self.device_ref.is_cpu():
+            self._device = self.device_ref.to_device()
+        return self._device
+
     def resolve_attn_key(
         self,
         batch_size: int,
         max_prompt_length: int,
         max_cache_valid_length: int,
-    ) -> AttnKey:
+    ) -> AttnKeyInterface:
         """Returns the resolved decode dispatch key for the given shape.
 
         Empty / degenerate replicas (``batch_size <= 0`` or a CPU-only
         resolver) return a sentinel key (``num_partitions=1``) without invoking
         the dispatch kernels.
         """
-        if batch_size <= 0 or self._device is None:
+        if batch_size <= 0 or self.device is None:
             # Sentinel for empty / degenerate replicas; skip the kernels.
             num_partitions = 1
         elif self._is_mla:
@@ -181,7 +222,7 @@ class AttentionDispatchResolver:
                     max_prompt_length,
                     self._num_q_heads,
                     self._is_fp8_kv,
-                    self._device,
+                    self.device,
                 )
             )
         else:
@@ -189,7 +230,7 @@ class AttentionDispatchResolver:
                 batch_size,
                 max_cache_valid_length,
                 self._n_kv_heads_per_device,
-                self._device,
+                self.device,
             )
 
         return self._key_cls(
@@ -197,6 +238,21 @@ class AttentionDispatchResolver:
             max_prompt_length=int(max_prompt_length),
             num_partitions=int(num_partitions),
         )
+
+    def get_symbolic_metadata_input(self, device: DeviceRef) -> TensorType:
+        """Returns the symbolic input for this attention key."""
+        if self._is_mla:
+            return TensorType(
+                DType.int64,
+                shape=[3],
+                device=device,
+            )
+        else:
+            return TensorType(
+                DType.int64,
+                shape=[4],
+                device=DeviceRef.CPU(),
+            )
 
     def probe_lengths(
         self, max_cache_length: int, q_max_seq_len: int = 1

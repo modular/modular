@@ -43,8 +43,9 @@ from .input_types import (
 )
 from .utils import (
     AttentionDispatchResolver,
-    AttnKey,
+    AttentionDispatchResolverInterface,
     AttnKeyInterface,
+    MLAAttnKey,
     MultiAttnKey,
 )
 
@@ -568,6 +569,11 @@ class KVCacheParams(KVCacheParamInterface):
 
     Zero when no speculative decoding is configured."""
 
+    attn_dispatch_resolver_cls: type[AttentionDispatchResolverInterface] = (
+        AttentionDispatchResolver
+    )
+    """Class to use for resolving attention dispatch metadata."""
+
     def __post_init__(self):
         """Validates configuration and computes derived fields after initialization.
 
@@ -663,12 +669,14 @@ class KVCacheParams(KVCacheParamInterface):
         # probe lengths). Built lazily (see :meth:`_get_dispatch_resolver`) so
         # constructing params for a GPU device on a CPU-only host (e.g. unit
         # tests) does not require a device context.
-        self._dispatch_resolver: AttentionDispatchResolver | None = None
+        self._dispatch_resolver: AttentionDispatchResolverInterface | None = (
+            None
+        )
 
-    def _get_dispatch_resolver(self) -> AttentionDispatchResolver:
+    def _get_dispatch_resolver(self) -> AttentionDispatchResolverInterface:
         """Returns the attention dispatch resolver, building it on first use."""
         if self._dispatch_resolver is None:
-            self._dispatch_resolver = AttentionDispatchResolver(
+            self._dispatch_resolver = self.attn_dispatch_resolver_cls(
                 devices=self.devices,
                 is_mla=self.is_mla,
                 n_kv_heads_per_device=self.n_kv_heads_per_device,
@@ -682,7 +690,7 @@ class KVCacheParams(KVCacheParamInterface):
         batch_size: int,
         max_prompt_length: int,
         max_cache_valid_length: int,
-    ) -> AttnKey:
+    ) -> AttnKeyInterface:
         """Resolves the decode attention dispatch shape for the given shape.
 
         Args:
@@ -905,31 +913,37 @@ class KVCacheParams(KVCacheParamInterface):
                 )
                 if self.quantized_kv_cache
                 else None,
-                attention_dispatch_metadata=TensorType(
-                    DType.int64,
-                    shape=[3] if self.is_mla else [4],
-                    # MLA kernels consume 3-value dispatch metadata on GPU;
-                    # MHA reads 4-value metadata on CPU.
-                    device=device if self.is_mla else DeviceRef.CPU(),
+                attention_dispatch_metadata=self._get_dispatch_resolver().get_symbolic_metadata_input(
+                    device
                 ),
-                draft_attention_dispatch_metadata=TensorType(
-                    DType.int64,
-                    shape=[3] if self.is_mla else [4],
-                    device=device if self.is_mla else DeviceRef.CPU(),
+                draft_attention_dispatch_metadata=self._get_dispatch_resolver().get_symbolic_metadata_input(
+                    device
                 )
                 if self.speculative_method is not None
                 else None,
                 # MLA capturable-graph scalar (host-resident size-1 tensor).
                 # Only present when this attention path is MLA.
+                # HACK: Check if the dispatch resolver is an
+                # AttentionDispatchResolver before adding the mla_num_partitions
+                # to graph inputs. Currently we also set is_mla to True for a
+                # sparse attention indexer, so we need to check if the model
+                # is actually using MLA.
                 mla_num_partitions=TensorType(
                     DType.int64, shape=[1], device=DeviceRef.CPU()
                 )
                 if self.is_mla
+                and isinstance(
+                    self._get_dispatch_resolver(), AttentionDispatchResolver
+                )
                 else None,
                 draft_mla_num_partitions=TensorType(
                     DType.int64, shape=[1], device=DeviceRef.CPU()
                 )
-                if self.is_mla and self.speculative_method is not None
+                if self.is_mla
+                and self.speculative_method is not None
+                and isinstance(
+                    self._get_dispatch_resolver(), AttentionDispatchResolver
+                )
                 else None,
             )
             for device in devices
@@ -1029,14 +1043,14 @@ class KVCacheParams(KVCacheParamInterface):
                 Buffer.from_numpy(
                     np.array([target_key.num_partitions], dtype=np.int64)
                 )
-                if self.is_mla
+                if isinstance(target_key, MLAAttnKey)
                 else None
             )
             draft_mla_num_partitions = (
                 Buffer.from_numpy(
                     np.array([draft_key.num_partitions], dtype=np.int64)
                 )
-                if self.is_mla and draft_key is not None
+                if draft_key is not None and isinstance(draft_key, MLAAttnKey)
                 else None
             )
 

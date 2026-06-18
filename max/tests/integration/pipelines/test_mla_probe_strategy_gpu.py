@@ -25,7 +25,7 @@ from collections.abc import Sequence
 
 import pytest
 from max.graph import DeviceRef
-from max.nn.kv_cache.utils import AttentionDispatchResolver
+from max.nn.kv_cache.utils import AttentionDispatchResolver, MLAAttnKey
 
 NUM_HEADS = 128
 BATCH_SIZES = [1, 2, 4, 8, 16, 31, 32, 33, 63, 64, 65, 96, 128]
@@ -38,7 +38,9 @@ def _resolve_np(
     cache_length: int,
 ) -> int:
     """Returns num_partitions from the real Mojo dispatch kernel."""
-    return resolver.resolve_attn_key(batch_size, 1, cache_length).num_partitions
+    key = resolver.resolve_attn_key(batch_size, 1, cache_length)
+    assert isinstance(key, MLAAttnKey)
+    return key.num_partitions
 
 
 def _bucket_cache_length(
