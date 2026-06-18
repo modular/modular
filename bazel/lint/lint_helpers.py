@@ -32,7 +32,10 @@ def _has_jj() -> bool:
     # `git diff` can't see the working copy. `jj root` only succeeds inside a jj
     # repo, so this gracefully falls through to git in plain git checkouts.
     return (
-        subprocess.run(["bash", "-c", "command -v jj"]).returncode == 0
+        subprocess.run(
+            ["bash", "-c", "command -v jj"], capture_output=True
+        ).returncode
+        == 0
         and subprocess.run(["jj", "root"], capture_output=True).returncode == 0
     )
 
