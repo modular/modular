@@ -30,13 +30,13 @@ def test_nonexistent_field_index():
         ), "should not reach here"
 
 
-# Test that field_type produces an error for non-existent field.
+# Test that `field` produces an error for non-existent field.
 def test_nonexistent_field_type():
     comptime if get_defined_bool["TEST_NONEXISTENT_TYPE", False]():
         # CHECK-TYPE: has no field named 'missing_field'
-        comptime field_type = reflect[TestStruct].field_type["missing_field"]
+        comptime field_handle = reflect[TestStruct].field["missing_field"]
         # Force evaluation by using the type
-        comptime assert field_type.name() == "Int", "should not reach here"
+        comptime assert field_handle.name() == "Int", "should not reach here"
 
 
 # Test that field_offset[name=] produces an error for non-existent field.
