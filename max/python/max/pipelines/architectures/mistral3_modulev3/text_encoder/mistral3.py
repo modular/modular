@@ -21,6 +21,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from max.driver import CPU
 from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental.nn import Embedding, Linear, Module
@@ -115,12 +116,21 @@ class Mistral3TextEncoderTransformer(Module[[Tensor], Tensor]):
         self._hidden_state_layers = set(config.hidden_state_layers)
         self._sorted_hidden_state_layers = sorted(config.hidden_state_layers)
 
+        # Compute the rotary-embedding cos/sin lookup table on CPU to
+        # match the legacy graph API's ``max.nn.RotaryEmbedding`` (see
+        # ``max/python/max/nn/rotary_embedding.py``).  GPU and CPU fp32
+        # transcendentals can disagree by ~1 ULP, and even tiny rope
+        # offsets shift the entire denoising trajectory once they feed
+        # text conditioning into 50 FLUX.2 diffusion steps -- enough to
+        # drop V3 vs V2 SSIM well below the verify_pipelines threshold.
+        # The attention code transfers the resulting freqs to ``x.device``
+        # at use time.
         self.rope = RotaryEmbedding(
             dim=config.hidden_size,
             n_heads=config.num_attention_heads,
             theta=config.rope_theta,
             max_seq_len=config.max_seq_len,
-            device=config.device.to_device(),
+            device=CPU(),
             head_dim=config.head_dim,
             interleaved=False,
         )
