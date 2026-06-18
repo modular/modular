@@ -1003,7 +1003,11 @@ struct Grouped1D1DMatmulKernel[
         if elect_one_warp and elect_one_thread:
             a_tma_op.prefetch_descriptor()
             b_tma_op.prefetch_descriptor()
-            c_tma_op.prefetch_descriptor()
+            # On the fused path the C TMA op is an empty placeholder (results
+            # are written through `swiglu_out`), so there is no valid
+            # descriptor to prefetch.
+            comptime if not Self.fuse_swiglu:
+                c_tma_op.prefetch_descriptor()
             sfa_tma_op.prefetch_descriptor()
             sfb_tma_op.prefetch_descriptor()
 

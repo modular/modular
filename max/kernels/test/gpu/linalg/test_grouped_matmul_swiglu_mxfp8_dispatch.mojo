@@ -276,6 +276,7 @@ def _test_swiglu_mxfp8_dispatch[
     ctx: DeviceContext,
     alpha: Float32 = Float32(1.702),
     limit: Float32 = Float32(7.0),
+    est_m_override: Int = -1,
 ) raises:
     """End-to-end byte-exact compare: fused MXFP8 dispatch vs chain.
 
@@ -307,6 +308,10 @@ def _test_swiglu_mxfp8_dispatch[
     for i in range(num_active_experts):
         num_tokens += num_tokens_by_expert[i]
     var M = num_tokens
+    # `estimated_total_m` is a tuning/buffer-sizing hint, not the true token
+    # count. Default to the honest M; a test may override it (e.g. 0) to
+    # exercise the floored-estimate EP-decode path (S*top_k//n_gpus == 0).
+    var est_m = est_m_override if est_m_override >= 0 else M
     print(
         "  N=",
         N,
@@ -316,6 +321,8 @@ def _test_swiglu_mxfp8_dispatch[
         H,
         " M=",
         M,
+        " est_m=",
+        est_m,
         " active=",
         num_active_experts,
         "/",
@@ -554,7 +561,7 @@ def _test_swiglu_mxfp8_dispatch[
         expert_ids_tensor,
         expert_scales_tt,
         num_active_experts,
-        M,
+        est_m,
         ctx,
         alpha,
         limit,
@@ -648,6 +655,21 @@ def main() raises:
             [0],
             shared,
             ctx,
+        )
+
+        # A.est0: same single-token-decode layout as A, but with
+        # estimated_total_m = 0 -- the value expert_parallel.py computes for an
+        # EP8 decode step (S=1, top_k=4, n_gpus=8 -> 1*4//8 == 0). Pre-fix this
+        # sized the unused fused-path C buffer as [0, N] and the launcher
+        # encoded a zero-dim C TMA descriptor, crashing at tma.mojo:404. Output
+        # must still be byte-exact to the reference.
+        print("  A.est0: 1 active, [2] tokens, estimated_total_m=0")
+        _test_swiglu_mxfp8_dispatch[NUM_E, N, K](
+            [2],
+            [0],
+            shared,
+            ctx,
+            est_m_override=0,
         )
 
         # B: decode 8 experts, uniform.

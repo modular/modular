@@ -36,11 +36,11 @@ from std.sys import size_of
 
 from std.gpu.host import DeviceContext, Dim, FuncAttribute
 from std.gpu.host.info import B200
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from std.gpu.host.nvidia.tma import TensorMapSwizzle, TMADescriptor
 from std.gpu.primitives.grid_controls import PDLLevel, pdl_launch_attributes
 from layout import Coord, Idx, TileTensor, row_major
 from layout.tma_async import create_tensor_tile
-from structured_kernels.tile_types import create_tma_tile
+from structured_kernels.tile_types import create_tma_tile, TmaOpType
 from structured_kernels.kernel_common import WarpRole1D1D
 
 from std.utils.index import Index
@@ -376,12 +376,21 @@ def grouped_matmul_block_scaled[
             ),
             swizzle_mode=config.b_swizzle,
         ](ctx, a_device)
-        var c_tma_op = create_tma_tile[
-            KernelType.CTileLayout,
-            KernelType.CDescLayout,
-            Index(c_tma_tile_shape[0], c_tma_tile_shape_1),
-            swizzle_mode=config.c_swizzle,
-        ](ctx, c_device)
+        # C TMA descriptor is only consumed on the non-fused (BF16 store)
+        # path. When `fuse_swiglu`, the epilogue writes through `swiglu_out`
+        # and the kernel gates out the C prefetch + store, so the C TMA op is
+        # unused. Skip the encode (the caller's C tensor is a null-backed
+        # placeholder) and pass an empty descriptor.
+        var c_tma_op = TmaOpType[
+            c_device.dtype, KernelType.CTileLayout, KernelType.CDescLayout
+        ](TMADescriptor())
+        comptime if not fuse_swiglu:
+            c_tma_op = create_tma_tile[
+                KernelType.CTileLayout,
+                KernelType.CDescLayout,
+                Index(c_tma_tile_shape[0], c_tma_tile_shape_1),
+                swizzle_mode=config.c_swizzle,
+            ](ctx, c_device)
         # SF TMA: use create_tensor_tile directly with uint16 views.
         var sfa_tma_op = create_tensor_tile[
             sfa_tma_tile_shape,
@@ -448,12 +457,17 @@ def grouped_matmul_block_scaled[
             ),
             swizzle_mode=config.b_swizzle,
         ](ctx, b_device)
-        var c_tma_op = create_tma_tile[
-            KernelType.CTileLayout,
-            KernelType.CDescLayout,
-            c_tma_tile_shape,
-            swizzle_mode=config.c_swizzle,
-        ](ctx, c_device)
+        # See the AB_swapped branch: the C TMA op is unused on the fused path.
+        var c_tma_op = TmaOpType[
+            c_device.dtype, KernelType.CTileLayout, KernelType.CDescLayout
+        ](TMADescriptor())
+        comptime if not fuse_swiglu:
+            c_tma_op = create_tma_tile[
+                KernelType.CTileLayout,
+                KernelType.CDescLayout,
+                c_tma_tile_shape,
+                swizzle_mode=config.c_swizzle,
+            ](ctx, c_device)
         # SF TMA: use create_tensor_tile directly with uint16 views.
         var sfa_tma_op = create_tensor_tile[
             sfa_tma_tile_shape,
