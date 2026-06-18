@@ -222,7 +222,7 @@ class PixelGenerationPipeline(
                 compiled_outputs = self._compiled(
                     model_inputs.tokens,
                     model_inputs.input_image,
-                    model_inputs.seed,
+                    model_inputs.latents,
                     model_inputs.num_inference_steps,
                     model_inputs.h_carrier,
                     model_inputs.w_carrier,

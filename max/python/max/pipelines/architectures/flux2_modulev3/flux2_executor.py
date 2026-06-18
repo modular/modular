@@ -20,16 +20,17 @@ import numpy as np
 import numpy.typing as npt
 from max.driver import CPU, Buffer, Device, load_devices
 from max.dtype import DType
-from max.experimental import functional, random
+from max.experimental import functional
 from max.experimental import functional as F
 from max.experimental.nn import Module
 from max.experimental.tensor import Tensor
-from max.graph import DeviceRef, TensorType, TensorValue, ops
+from max.graph import DeviceRef, TensorType
 from max.pipelines.architectures.flux2.flux2_executor import (
     Flux2ExecutorOutputs,
 )
 from max.pipelines.architectures.flux_modulev3 import Vae
 from max.pipelines.context import PixelContext
+from max.pipelines.lib import float32_array_to_buffer
 from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.lib.weight_loader import WeightLoader, swap_prefix
 from max.pipelines.modeling.config_enums import supported_encoding_dtype
@@ -86,6 +87,11 @@ class FLUXModule(Module[..., tuple[Tensor, Tensor, Tensor]]):
             if block_out_channels
             else self._DEFAULT_VAE_SCALE_FACTOR
         )
+        # Latent channel count for the pre-patchify noise tensor.  The
+        # 2x2 patchify done in :meth:`_patchify_and_pack` produces a
+        # ``num_channels = latent_channels * 4`` sequence that the
+        # denoiser consumes.
+        self._latent_channels: int = int(vae_config.get("latent_channels", 32))
 
         # Extract transformer config for input-staging dtype.
         transformer_config = manifest["transformer"]
@@ -139,7 +145,7 @@ class FLUXModule(Module[..., tuple[Tensor, Tensor, Tensor]]):
         self,
         tokens: Tensor,
         input_image: Tensor,
-        seed: Tensor,
+        latents: Tensor,
         num_inference_steps: Tensor,
         h_carrier: Tensor,
         w_carrier: Tensor,
@@ -152,14 +158,16 @@ class FLUXModule(Module[..., tuple[Tensor, Tensor, Tensor]]):
         """Forward pass through the Module tree.
 
         Runs the text encoder and VAE image encoder unconditionally,
-        seeds the graph's RNG from ``seed``, samples initial latent
-        noise on the transformer device, then drives the denoising
+        threads the caller-supplied ``latents`` through the denoising
         loop via :func:`~max.graph.ops.while_loop` for exactly
-        ``num_inference_steps`` iterations.  The denoiser is a stub
-        today (returns latents unchanged), so the final latents equal
-        the initial Gaussian noise; the loop machinery, RNG,
-        conditioning capture, and per-step ``timestep`` / ``dt`` gather
-        are exercised end-to-end.
+        ``num_inference_steps`` iterations.
+
+        Initial noise is pre-generated on CPU by :meth:`prepare_inputs`
+        using ``np.random.RandomState(seed).standard_normal()``,
+        matching the legacy V2 executor.  Sampling in the graph (via
+        ``ops.random``) would diverge from V2 because MAX's in-graph
+        RNG produces different values than numpy's ``RandomState`` for
+        the same seed, breaking V2/V3 accuracy parity.
 
         ``h_carrier`` and ``w_carrier`` carry the latent grid shape:
         ``packed_h = h_carrier.shape[0]``,
@@ -213,30 +221,19 @@ class FLUXModule(Module[..., tuple[Tensor, Tensor, Tensor]]):
         # ``self._transformer_device``.  Move latents across.
         image_latents = image_latents.to(self._transformer_device)
 
-        # Initial latent noise sampled directly on the transformer
-        # device from the runtime seed.  ``set_seed`` runs once at
-        # compile time; the per-execution seed flows in as a graph
-        # input and drives the rotated seed values baked into each
-        # downstream random op.  Sampling at ``[batch, ...]`` keeps the
-        # ``while_loop`` carry shape consistent with the body output.
-        #
-        # The sequence dim is sourced from ``latent_image_ids.shape[1]``
-        # (the single symbolic ``"image_seq"`` ref declared in
-        # :meth:`input_types`) rather than the compound expression
-        # ``packed_h * packed_w``.  MOGG's Mojo-kernel lowering pass
-        # (``getTensorDynamicDimensions``) only accepts ``IntegerAttr``
-        # or a single ``ParamDeclRef`` for dynamic dims; a compound
-        # ``mul_no_wrap(packed_h, packed_w)`` trips an assertion when
-        # the inner kernels (flash-attention / RoPE) try to inspect the
-        # latent tensor's shape.  ``h_carrier`` / ``w_carrier`` stay as
-        # the per-axis shape carriers for the VAE decoder, which needs
-        # ``packed_h`` and ``packed_w`` separately for the unpatchify.
-        ops.random.set_seed(TensorValue(seed))
+        # Use the caller-supplied initial latents.  Pre-generated on
+        # CPU by :meth:`prepare_inputs` using
+        # ``np.random.RandomState(seed).standard_normal()`` and then
+        # patchified + packed to match the V2 executor's noise shape
+        # and distribution.  The ``rebind`` pins the batch dim to the
+        # canonical ``batch`` (from ``guidance``) and the sequence dim
+        # to the symbolic ``image_seq`` declared in :meth:`input_types`
+        # so MOGG's Mojo-kernel lowering pass can resolve dynamic dims
+        # via a single ``ParamDeclRef`` rather than a compound expression.
         seq = latent_image_ids.shape[1]
-        initial_latents = random.gaussian(
-            shape=[batch, seq, self.vae.num_channels],
-            dtype=self._model_dtype,
-            device=self._transformer_device,
+        initial_latents = F.rebind(
+            latents,
+            [batch, seq, self.vae.num_channels],
         )
 
         # Denoising loop.  Every tensor the body or predicate touches is
@@ -339,8 +336,16 @@ class FLUXModule(Module[..., tuple[Tensor, Tensor, Tensor]]):
         return (
             *self.text_encoder.input_types(),
             *self.vae.input_types(),
-            # seed (uint64, [1]) on the transformer device.
-            TensorType(DType.uint64, [1], device=transformer_ref),
+            # latents: pre-generated initial noise, shape
+            # ``(batch, image_seq, num_channels)`` in the model dtype.
+            # Pre-generated on CPU by :meth:`prepare_inputs` using
+            # ``np.random.RandomState(seed).standard_normal()`` to match
+            # the V2 executor's noise distribution.
+            TensorType(
+                self._model_dtype,
+                ["batch", "image_seq", self.denoiser.transformer.in_channels],
+                device=transformer_ref,
+            ),
             # num_inference_steps (int64, [1]) on CPU for the predicate.
             TensorType(DType.int64, [1], device=DeviceRef.CPU()),
             # h_carrier, w_carrier: shape carriers on the transformer device.
@@ -409,11 +414,14 @@ class FLUXModule(Module[..., tuple[Tensor, Tensor, Tensor]]):
         text_ids = Buffer.from_dlpack(context.text_ids).to(
             self._transformer_device
         )
-        # Seed is uint64 to match ``ops.random.SeedType``; placed on
-        # the transformer device so the in-graph RNG can read it
-        # without a CPU->GPU transfer per execution.
-        seed = Buffer.from_dlpack(np.array([context.seed], dtype=np.uint64)).to(
-            self._transformer_device
+        # Generate initial noise on CPU matching V2's executor:
+        # ``np.random.RandomState(seed).standard_normal()`` produces
+        # the bit-identical noise the V2 path uses (and matches the
+        # legacy tokenizer's ``_randn_tensor``).  The MAX in-graph RNG
+        # produces different values for the same seed, which is why
+        # the previous ``random.gaussian`` path broke V2/V3 parity.
+        latents = self._patchify_and_pack(
+            self._sample_latents(context),
         )
         latent_image_ids = Buffer.from_dlpack(context.latent_image_ids).to(
             self._transformer_device
@@ -466,7 +474,7 @@ class FLUXModule(Module[..., tuple[Tensor, Tensor, Tensor]]):
         return Flux2ModuleV3Inputs(
             tokens=tokens,
             text_ids=text_ids,
-            seed=seed,
+            latents=latents,
             latent_image_ids=latent_image_ids,
             timesteps=timesteps,
             dts=dts,
@@ -531,4 +539,49 @@ class FLUXModule(Module[..., tuple[Tensor, Tensor, Tensor]]):
         return (
             Buffer.from_dlpack(timesteps),
             Buffer.from_dlpack(dts),
+        )
+
+    def _sample_latents(self, context: PixelContext) -> npt.NDArray[np.float32]:
+        """Sample initial Gaussian noise on CPU using the request seed.
+
+        Prefers the latents already cooked by the FLUX.2 tokenizer
+        (``context.latents``) so V3 inherits bit-identical noise from
+        V2's :class:`Flux2Tokenizer` path.  Falls back to seeding a
+        ``np.random.RandomState`` locally when the tokenizer hasn't
+        populated the field (defensive: every production call site
+        currently sets it).
+        """
+        if context.latents.size != 0:
+            return np.ascontiguousarray(context.latents)
+
+        latent_h = context.height // self._vae_scale_factor
+        latent_w = context.width // self._vae_scale_factor
+        shape = (
+            context.num_images_per_prompt,
+            self._latent_channels,
+            latent_h,
+            latent_w,
+        )
+        rng = np.random.RandomState(context.seed)
+        return rng.standard_normal(shape).astype(np.float32)
+
+    def _patchify_and_pack(self, latents: npt.NDArray[np.float32]) -> Buffer:
+        """Patchify and pack raw latents for the transformer.
+
+        Mirrors :meth:`Flux2Executor._patchify_and_pack`: reshapes
+        ``(B, C, H, W)`` -> ``(B, H//2 * W//2, C*4)`` via 2x2
+        patchification followed by sequence packing, then casts to
+        the model dtype and uploads to the transformer device.
+        """
+        arr = latents
+        b, c, h, w = arr.shape
+        h2, w2 = h // 2, w // 2
+        arr = arr.reshape(b, c, h2, 2, w2, 2)
+        arr = arr.transpose(0, 1, 3, 5, 2, 4).reshape(b, c * 4, h2, w2)
+        arr = arr.reshape(b, c * 4, h2 * w2).transpose(0, 2, 1)
+        arr = np.ascontiguousarray(arr)
+        return float32_array_to_buffer(
+            arr,
+            dtype=self._model_dtype,
+            device=self._transformer_device,
         )
