@@ -220,11 +220,13 @@ struct PreShuffledBGroupedGEMM[
             var a_start_row = a_offsets[expert_slot]
             # Preshuffled A-scales: fixed-stride slots. Expert e's chunk
             # starts at `e * max_padded_M` rows in `sfa_tensor`; each slot
-            # is `max_padded_M * K_SCALES` bytes, with trailing rows past
-            # `num_tokens[e]` zero-filled by the preshuffle kernel. The
-            # V# bound uses the per-expert padded M (align_up(num_tokens,
-            # 32)) so OOB scale reads past real data are clamped by both
-            # the V# and the zero-fill tail.
+            # is `max_padded_M * K_SCALES` bytes. The V# bound uses the
+            # per-expert padded M (align_up(num_tokens, 32)) so scale reads
+            # never cross past this expert's real-plus-pad-to-32 rows.
+            # Producers (standalone preshuffle OR the fused ep_wait/fused_silu
+            # stores) write only real-token scales; the pad-row matmul outputs
+            # are discarded after the gather, so the slot tail is not
+            # zero-filled.
             var sfa_start_row = UInt32(expert_slot * max_padded_M)
             var sfa_padded_M = align_up(Int(M), 32)
 
@@ -238,6 +240,11 @@ struct PreShuffledBGroupedGEMM[
                 K_SCALES
             )
 
+            # C's V# bound is the real `M` (not `align_up(M, 32)`): the matmul
+            # stores only real-token rows, so the pad rows past `M` are never
+            # written. That is what makes the uninitialized pad scale cells in
+            # `sfa` (whose V# DOES extend to `sfa_padded_M`) safe — the C rows
+            # they would feed are OOB-clamped and discarded.
             var c_tile = TileTensor(c_ptr, row_major(Coord(Int(M), Idx[N])))
             var a_tile = TileTensor(
                 a_ptr, row_major(Coord(Int(M), Idx[K_BYTES]))

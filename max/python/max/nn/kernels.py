@@ -4074,6 +4074,8 @@ def grouped_dynamic_scaled_mxfp4_matmul(
     out_type: DType = DType.bfloat16,
     estimated_total_m: TensorValue | None = None,
     preshuffled_b: bool = False,
+    a_scales_preshuffled: bool = False,
+    a_scales_max_padded_m: int = 0,
 ) -> TensorValue:
     """Performs grouped NVFP4 matmul for MoE layers.
 
@@ -4199,7 +4201,12 @@ def grouped_dynamic_scaled_mxfp4_matmul(
     # (i32 cells of 2x2 E8M0 bytes). Activations are quantized row-major by
     # `quantize_dynamic_block_scaled_mxfp4` upstream, so insert the per-step
     # preshuffle here. B-scales are static and preshuffled once at load.
-    if preshuffled_b:
+    #
+    # When `a_scales_preshuffled=True` (KS64 down-proj fusion), the
+    # upstream `ep.fused_silu.mxfp4` kernel already wrote the scale directly
+    # into the slot layout, so we skip the standalone preshuffle entirely.
+    # Preshuffle must run exactly once: non-EP + up-proj keep `a_scales_preshuffled=False`.
+    if preshuffled_b and not a_scales_preshuffled:
         a_scales = mxfp4_preshuffle_grouped_scale_4d(
             a_scales,
             expert_start_indices,
@@ -4207,6 +4214,29 @@ def grouped_dynamic_scaled_mxfp4_matmul(
             expert_usage_stats_host[1].cast(DType.uint32),
             num_experts=int(weight.shape[0]),
         )
+
+    # The matmul derives the A-scale per-expert slot stride as
+    # `align_up(max_num_tokens_per_expert, 32)`. On the non-fused path the
+    # standalone preshuffle used the same runtime `expert_usage_stats[0]`, so
+    # the writer and reader slot strides agree. On the fused path
+    # (`a_scales_preshuffled`), the producer (`ep.fused_silu.mxfp4`) wrote the
+    # slots with the *graph-build-time* stride `align_up(a_scales_max_padded_m,
+    # 32)`; the matmul MUST read with that same constant — NOT the runtime max
+    # — or, when the runtime max is below the build-time bound (the common
+    # decode case), it reads the wrong expert's scale slot.
+    if a_scales_preshuffled:
+        if a_scales_max_padded_m <= 0:
+            raise ValueError(
+                "a_scales_max_padded_m must be > 0 when"
+                " a_scales_preshuffled=True"
+            )
+        max_num_tokens_arg = ops.constant(
+            a_scales_max_padded_m,
+            dtype=expert_usage_stats_host.dtype,
+            device=expert_usage_stats_host.device,
+        )
+    else:
+        max_num_tokens_arg = expert_usage_stats_host[0]
 
     output = ops.custom(
         "mo.grouped.matmul.block.scaled.mxfp4",
@@ -4218,7 +4248,7 @@ def grouped_dynamic_scaled_mxfp4_matmul(
             b_scales,
             expert_start_indices,
             expert_ids,
-            expert_usage_stats_host[0],
+            max_num_tokens_arg,
             expert_usage_stats_host[1],
             estimated_total_m_arg,
         ],

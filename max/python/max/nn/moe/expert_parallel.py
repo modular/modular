@@ -79,6 +79,22 @@ def _ep_forward(
     overlap_shared_expert = (
         has_unfused_shared and not batch_mgr.config.use_allreduce
     )
+
+    # Decide the MXFP4 EP A-scale preshuffle fold BEFORE dispatch, because the
+    # dispatch scales output shape (slot-sized vs row-major) depends on it. The
+    # fold writes the slot layout from the dispatch producer, which is only
+    # wired into the use_allreduce dispatch (`call_ep_dispatch`) and the
+    # dispatch-wait (`call_ep_dispatch_wait`) ops — not the multi-device
+    # single-op `call_distributed_ep_dispatch`. Enable it only when one of those
+    # wired paths will run; the distributed path keeps the standalone
+    # preshuffle. `MoE` defines `configure_ep_scale_fusion` as a no-op;
+    # `MoEQuantized` overrides it to enable the fold.
+    dispatch_supports_fold = (
+        batch_mgr.config.use_allreduce or overlap_shared_expert
+    )
+    for shard in moe_shards:
+        shard.configure_ep_scale_fusion(dispatch_supports_fold)
+
     shared_outs: list[TensorValue | None] | None = None
 
     if batch_mgr.config.use_allreduce:

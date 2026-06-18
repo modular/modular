@@ -382,6 +382,20 @@ class MoE(Module, Shardable):
         )
         return self._ep_batch_manager
 
+    def configure_ep_scale_fusion(self, dispatch_supports_fold: bool) -> None:
+        """Configure any EP dispatch-scale fusion before the dispatch op.
+
+        No-op on the base class; ``MoEQuantized`` overrides it to enable the
+        MXFP4 up-proj A-scale preshuffle fold. Defined here (rather than
+        duck-typed) so the EP forward driver can call it on any ``MoE`` shard:
+        non-quantized subclasses inherit this no-op and consistently skip the
+        fold (no fusion, no corruption).
+
+        Args:
+            dispatch_supports_fold: Whether the selected dispatch path wires the
+                A-scale fold params. Ignored by this base no-op.
+        """
+
     @property
     def _shared_experts_use_quant(self) -> bool:
         """Whether shared experts use the same quantized weights as routed experts."""

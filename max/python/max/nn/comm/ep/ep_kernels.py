@@ -33,6 +33,7 @@ from max.graph import (
     Value,
     ops,
 )
+from max.support.math import ceildiv
 
 from ...quant_config import QuantConfig
 from .ep_config import NUM_GROUPS, EPConfig
@@ -58,6 +59,19 @@ def _is_legacy_float8_dispatch(config: EPConfig) -> bool:
         and config.dispatch_dtype.is_float8()
         and not _uses_block_scaled_nv_ep_layout(config)
     )
+
+
+def ep_mxfp4_max_padded_m(config: EPConfig) -> int:
+    """Per-expert ``scale_4d`` slot stride in rows for the MXFP4 A-scale
+    preshuffle fold (= ``align_up(max_recv_tokens_per_expert, 32)``). 0 when the
+    fold is off. Single source of truth shared by the dispatch producer
+    (``ep_wait`` up-proj / ``fused_silu`` down-proj) and the matmul reader
+    (``a_scales_max_padded_m``)."""
+    if not config.mxfp4_a_scales_preshuffled:
+        return 0
+    n_ranks = config.n_gpus_per_node * config.n_nodes
+    max_recv_per_expert = config.max_tokens_per_rank * n_ranks
+    return ceildiv(max_recv_per_expert, 32) * 32
 
 
 def _ep_dispatch_output_types(
@@ -127,9 +141,31 @@ def _ep_dispatch_output_types(
                 expert_ids_type,
                 src_info_type,
             ]
-        elif _is_legacy_float8_dispatch(config) or quant_config.is_mxfp4:
+        elif _is_legacy_float8_dispatch(config):
             out_scales_type = quant_config.quantized_scales_type(
                 Shape([max_recv_tokens, config.hidden_size]), device_ref
+            )
+            return [
+                output_tokens_type,
+                out_scales_type,
+                expert_start_indices_type,
+                expert_ids_type,
+                src_info_type,
+            ]
+        elif quant_config.is_mxfp4:
+            # When the A-scale preshuffle fold is on, the dispatch-wait kernel
+            # writes the activation scale directly into the matmul's per-expert
+            # fixed-stride `scale_4d` slots, so the scales output is slot-sized
+            # (`n_local_experts * max_padded_M` rows; `n_local_experts` already
+            # includes the fused shared expert if present) rather than
+            # `max_recv_tokens` rows.
+            scales_rows = (
+                n_local_experts * ep_mxfp4_max_padded_m(config)
+                if config.mxfp4_a_scales_preshuffled
+                else max_recv_tokens
+            )
+            out_scales_type = quant_config.quantized_scales_type(
+                Shape([scales_rows, config.hidden_size]), device_ref
             )
             return [
                 output_tokens_type,
@@ -149,6 +185,24 @@ def _ep_dispatch_output_types(
         expert_ids_type,
         src_info_type,
     ]
+
+
+def _add_mxfp4_scale_fusion_parameters(
+    parameters: dict[str, bool | int | str | DType],
+    config: EPConfig,
+) -> None:
+    """Inject the KS224 up-proj scale-fusion op parameters.
+
+    When ``config.mxfp4_a_scales_preshuffled``, the MXFP4 dispatch-wait kernel
+    writes the activation scale directly into the up-proj grouped-matmul's
+    per-expert fixed-stride ``scale_4d`` slot layout (slot stride
+    ``max_padded_M * K_SCALES``), so the standalone preshuffle is dropped. The
+    matmul reader is told the same ``max_padded_M`` (single source of truth, see
+    ``moe_fp8._local_ep_compute``). No-op when the fusion is off.
+    """
+    if config.mxfp4_a_scales_preshuffled:
+        parameters["fuse_a_scale_preshuffle"] = True
+        parameters["max_padded_M"] = ep_mxfp4_max_padded_m(config)
 
 
 def _ep_common_parameters(
@@ -430,6 +484,7 @@ def call_ep_dispatch_wait(
             )
         elif quant_config.is_mxfp4:
             op_name += ".mxfp4"
+            _add_mxfp4_scale_fusion_parameters(parameters, config)
         else:
             raise ValueError(
                 f"Unsupported dispatch dtype: {config.dispatch_dtype}"
@@ -684,6 +739,7 @@ def call_ep_dispatch(
             )
         elif quant_config.is_mxfp4:
             op_name += ".mxfp4"
+            _add_mxfp4_scale_fusion_parameters(parameters, config)
         else:
             raise ValueError(
                 f"Unsupported dispatch dtype: {config.dispatch_dtype}"
@@ -768,6 +824,22 @@ def call_distributed_ep_dispatch(
             fused_shared_expert=config.fused_shared_expert,
         )
     elif is_mxfp4:
+        if config.mxfp4_a_scales_preshuffled:
+            # Defensive backstop: `_ep_forward` only enables the A-scale
+            # preshuffle fold for the use_allreduce dispatch and the
+            # dispatch-wait paths, so this multi-device single-op path should
+            # never see the flag set. `_ep_dispatch_output_types` above already
+            # sized the scale output for slots, but `dispatch_mxfp4` has no
+            # `fuse_a_scale_preshuffle`/`max_padded_M` params, so a row-major
+            # write into a slot-sized buffer would be silently wrong. Fail loud
+            # if the `_ep_forward` path guard and the op wiring ever diverge.
+            raise NotImplementedError(
+                "MXFP4 EP A-scale preshuffle fusion is not supported on the "
+                "multi-device single-op dispatch path "
+                "(`call_distributed_ep_dispatch`); it is only wired into the "
+                "use_allreduce dispatch and the dispatch-wait paths. The "
+                "`_ep_forward` driver should have left the fold disabled here."
+            )
         return ops.distributed_ep.dispatch_mxfp4(
             input_tokens,
             topk_ids,
@@ -1026,6 +1098,7 @@ def fused_silu_quantized(
     out_type: DType,
     input_scales: TensorValue | None = None,
     scales_offsets: TensorValue | None = None,
+    max_padded_M: int = 0,
 ) -> tuple[TensorValue, TensorValue]:
     """Perform fused SILU operation for all the MLPs in the EP MoE module.
 
@@ -1047,6 +1120,13 @@ def fused_silu_quantized(
         out_type: Output dtype.
         input_scales: Optional input scales tensor. Needed by NVFP4.
         scales_offsets: Optional scales offsets tensor. Needed by NVFP4.
+        max_padded_M: When > 0 (MXFP4 EP down-proj fusion), the
+            kernel writes the E8M0 activation scale directly into the
+            grouped-matmul per-expert slot layout.  Must equal
+            ``align_up(max_recv_tokens_per_expert, 32)``.  The output
+            scales tensor will have shape
+            ``[n_local_experts * max_padded_M, K_SCALES]`` instead of
+            ``[max_recv_tokens, K_SCALES]``.  Only valid for MXFP4.
 
     Returns:
         A tuple containing:
@@ -1094,12 +1174,32 @@ def fused_silu_quantized(
     elif quant_config.is_mxfp4:
         op_name += ".mxfp4"
         hidden_size //= 2  # Two FP4 elements are packed into one uint8 element
+        if max_padded_M > 0:
+            # KS64 down-proj fusion: write the E8M0 scale directly
+            # into the grouped matmul's per-expert fixed-stride slot layout so
+            # the standalone preshuffle kernel is dropped from the critical path.
+            # Pass `n_local_experts * max_padded_M` rows and the raw hidden dim
+            # (input.shape[1] // 2) to _mxfp4_scales_type so its ceildiv(K,32)
+            # gives K_SCALES = hidden_size // 32 correctly.
+            n_local_experts = row_offsets.shape[0] - 1
+            raw_hidden = input.shape[1] // 2  # half of gate+up concat
+            out_scales_type = quant_config.quantized_scales_type(
+                Shape([n_local_experts * max_padded_M, raw_hidden]),
+                input.device,
+            )
     elif out_type.is_float8():
         op_name += ".fp8"
     else:
         raise ValueError(
             f"Unsupported quantization format: {quant_config.format}"
         )
+
+    parameters: dict[str, bool | int] = {}
+    if quant_config.is_mxfp4 and max_padded_M > 0:
+        parameters = {
+            "fuse_a_scale_preshuffle": True,
+            "max_padded_M": max_padded_M,
+        }
 
     result = ops.custom(
         op_name,
@@ -1113,6 +1213,7 @@ def fused_silu_quantized(
             ),
             out_scales_type,
         ],
+        parameters=parameters,
     )
 
     return result[0].tensor, result[1].tensor
