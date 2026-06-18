@@ -49,9 +49,6 @@ def execute_ragged_flash_attention[
     ctx: DeviceContext,
 ) raises:
     comptime num_blocks = 32
-    comptime CollectionType = ContinuousBatchingKVCacheCollection[
-        dtype, kv_params
-    ]
 
     var batch_size = len(valid_lengths)
     debug_assert(
@@ -239,7 +236,9 @@ def execute_ragged_flash_attention[
 
     var kv_block_tensor = kv_block.device_tensor()
 
-    var kv_collection_device = CollectionType(
+    var kv_collection_device = ContinuousBatchingKVCacheCollection[
+        dtype, kv_params
+    ](
         kv_block_tensor,
         cache_lengths_tensor,
         lookup_table_tensor,

@@ -43,7 +43,7 @@ def execute_ragged_flash_attention[
 ) raises:
     comptime num_blocks = 32
     comptime CollectionType = ContinuousBatchingKVCacheCollection[
-        dtype, kv_params
+        dtype, kv_params, ...
     ]
 
     var batch_size = len(valid_lengths_list)

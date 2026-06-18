@@ -70,10 +70,6 @@ def test_mla_index_fp8_paged_variable_lengths[
         max_seq_len = max(max_seq_len, seq_lens[i])
         max_cache_len = max(max_cache_len, cache_lens[i])
 
-    # max_num_keys uses static max values to match kernel's calculation
-    # (kernel uses k_cache.max_context_length() + max_prompt_length())
-    var max_num_keys = max_cache_len + max_seq_len
-
     print(
         "test_mla_index_fp8_paged_variable_lengths with params:",
         "num_heads:",
@@ -214,7 +210,11 @@ def test_mla_index_fp8_paged_variable_lengths[
         ks_shape
     )
     var k_collection = PagedKVCacheCollection[
-        DType.float8_e4m3fn, kv_params, page_size, DType.float32, 128
+        DType.float8_e4m3fn,
+        kv_params,
+        page_size,
+        scale_dtype_=DType.float32,
+        quantization_granularity_=128,
     ](
         LayoutTensor[DType.float8_e4m3fn, k_block_layout](
             k_block_device,

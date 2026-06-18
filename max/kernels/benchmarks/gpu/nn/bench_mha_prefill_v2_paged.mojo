@@ -235,13 +235,16 @@ def run_mha_prefill_v2_paged[
         ),
     )
 
-    comptime CollectionType = PagedKVCacheCollection[
+    var kv_collection = PagedKVCacheCollection[
         qkv_type,
         KVCacheStaticParams(num_heads=kv_num_heads, head_size=depth),
         page_size,
-    ]
-    var kv_collection = CollectionType(
-        kv_block_tensor,
+    ](
+        # `mha_prefill_v2` reads both the `k` and `v` cache views, which are disjoint
+        # kv_idx halves of one `blocks` buffer sharing its origin, so the
+        # nested-origin exclusivity check rejects passing both. Declare the
+        # kv_block_tensor origins as UnsafeAnyOrigin to opt out of exclusivity checking.
+        kv_block_tensor.as_unsafe_any_origin(),
         cache_lengths_tensor,
         paged_lut_tensor,
         max_seq_length,

@@ -81,6 +81,7 @@ def execute_kv_cache_ragged_rope[
     comptime CollectionType = ContinuousBatchingKVCacheCollection[
         dtype,
         KVCacheStaticParams(num_heads=num_kv_heads, head_size=head_dim),
+        ...,
     ]
     var input_row_offsets_device = ctx.enqueue_create_buffer[dtype.uint32](
         batch_size + 1
@@ -92,7 +93,6 @@ def execute_kv_cache_ragged_rope[
     var total_seq_len: UInt32 = 0
     var cache_len: UInt32 = 10
 
-    var flop_count = 0
     with cache_lengths_device.map_to_host() as cache_lengths_host:
         with input_row_offsets_device.map_to_host() as input_row_offsets_host:
             for i in range(batch_size):
@@ -192,7 +192,7 @@ def execute_kv_cache_ragged_rope[
 
     num_flops_per_elem = 6
     num_elems = Int(total_seq_len) * num_q_heads * num_kv_heads * head_dim // 2
-    flop_count = num_flops_per_elem * num_elems
+    var flop_count = num_flops_per_elem * num_elems
 
     @parameter
     @__copy_capture(
@@ -208,7 +208,7 @@ def execute_kv_cache_ragged_rope[
         @always_inline
         def kernel_launch(ctx: DeviceContext) raises:
             fused_qk_rope_ragged[
-                CollectionType.CacheType,
+                kv_collection_device.CacheType,
                 interleaved=False,
                 target="gpu",
             ](

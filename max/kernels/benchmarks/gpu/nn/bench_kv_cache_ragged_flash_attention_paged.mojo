@@ -125,6 +125,7 @@ def execute_kv_cache_ragged_flash_attention[
         dtype,
         KVCacheStaticParams(num_heads=num_kv_heads, head_size=head_dim),
         page_size,
+        ...,
     ]
 
     debug_assert(

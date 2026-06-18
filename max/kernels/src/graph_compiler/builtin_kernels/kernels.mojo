@@ -1784,7 +1784,7 @@ def print_kv_cache_paged_generic_kernel_api[
     page_size: Int,
 ](
     valid_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
-    kv_collection: PagedKVCacheCollection[dtype, kv_params, page_size],
+    kv_collection: PagedKVCacheCollection[dtype, kv_params, page_size, ...],
     layer_idx: UInt32,
     is_print_compact: InputTensor[dtype=DType.bool, rank=1, ...],
     context: DeviceContext,
