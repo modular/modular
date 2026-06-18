@@ -85,6 +85,13 @@ struct ContainerWithNonCopyable:
         self.count = count
 
 
+# Struct with a wrapped (`Optional[T]`) field, mirroring the serializer use case
+# in issue #6645: recovering the wrapper's inner concrete type by index.
+struct WrappedFields:
+    var a: Int64
+    var b: Optional[Int64]
+
+
 # ===----------------------------------------------------------------------=== #
 # `reflect` and `Reflected.T`
 # ===----------------------------------------------------------------------=== #
@@ -264,6 +271,74 @@ def test_field_type_matches_field_types_by_index() raises:
     comptime by_name = r.field_type["x"]
     comptime by_idx = r.field_types()[idx]
     assert_equal(by_name.name(), reflect[by_idx].name())
+
+
+def test_field_type_at_simple() raises:
+    comptime r = reflect[SimpleStruct]
+    comptime x_type = r.field_type_at[0]
+    assert_equal(x_type.name(), "SIMD[DType.int, 1]")
+
+    comptime y_type = r.field_type_at[1]
+    assert_equal(y_type.name(), "SIMD[DType.float64, 1]")
+
+
+def test_field_type_at_matches_by_name() raises:
+    comptime r = reflect[SimpleStruct]
+    comptime by_name = r.field_type["y"]
+    comptime by_idx = r.field_type_at[r.field_index["y"]()]
+    assert_equal(by_idx.name(), by_name.name())
+
+
+def test_field_type_at_returns_reflected_handle() raises:
+    """`field_type_at[idx]` returns a `Reflected[FieldT]`, fully composable."""
+    comptime r = reflect[Outer]
+    comptime inner_handle = r.field_type_at[1]
+    assert_equal(inner_handle.field_count(), 2)
+    assert_equal(inner_handle.field_names()[0], "a")
+    assert_equal(inner_handle.field_names()[1], "b")
+
+
+def test_field_type_at_usable_as_type_annotation() raises:
+    comptime y_type = reflect[SimpleStruct].field_type_at[1]
+    var v: y_type.T = 3.14
+    assert_true(v > 3.0)
+
+
+def _field_base_names_generic[T: AnyType]() -> String:
+    """Peel each field's concrete type by index in a `comptime for` over a
+    generic type parameter's fields. This exercises the headline capability of
+    issue #6645: `T` is a real `[T: AnyType]` parameter, not a concrete type,
+    and `field_type_at[i].base_name()` recovers a concrete type the erased
+    `field_types()[i]` cannot expose."""
+    comptime r = reflect[T]
+    var seen = String("")
+    comptime for i in range(r.field_count()):
+        comptime FT = r.field_type_at[i]
+        seen += FT.base_name()
+        seen += ","
+    return seen^
+
+
+def test_field_type_at_through_generic() raises:
+    # `Int` is `SIMD[DType.int, 1]`, so its base name is `SIMD`.
+    assert_equal(_field_base_names_generic[Outer](), "String,Inner,SIMD,")
+
+
+def test_field_type_at_peels_wrapper() raises:
+    """The issue #6645 serializer pattern: find a wrapped field by index,
+    confirm it is an `Optional`, and peel its inner concrete type via `.T`. A
+    reflection-derived serializer reflects on its own concrete message type
+    (`reflect[Self]`), which is what this mirrors."""
+    comptime opt = reflect[WrappedFields].field_type_at[1]
+    assert_equal(opt.base_name(), "Optional")
+    # `opt.T` is `Optional[Int64]`; peel its inner type to `Int64`.
+    comptime Inner = opt.T.T
+    assert_equal(reflect[Inner].name(), "SIMD[DType.int64, 1]")
+
+
+def test_field_type_at_first_index() raises:
+    comptime first = reflect[Outer].field_type_at[0]
+    assert_equal(first.name(), "String")
 
 
 # ===----------------------------------------------------------------------=== #

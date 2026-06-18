@@ -23,6 +23,7 @@ are spelled as `reflect[T].method()` (no parens after `[T]`).
 - `field_types()` - a `TypeList` of field types.
 - `field_index[name]()` - index of the named field.
 - `field_type[name]` - `Reflected[FieldT]` for the named field's type.
+- `field_type_at[idx]` - `Reflected[FieldT]` for the field at index `idx`.
 - `field_offset[name=...]()` / `field_offset[index=...]()` - byte offset.
 - `field_ref[idx](s)` - reference to field at index `idx` in value `s`.
 
@@ -381,6 +382,40 @@ struct Reflected[T: AnyType]:
 
         def main():
             comptime y_type = reflect[Point].field_type["y"]
+            var v: y_type.T = 3.14  # y_type.T is Float64
+        ```
+    """
+
+    # `field_type_at[idx]` is the by-index dual of `field_type[name]`. It peels
+    # the concrete field type at `idx` — the same per-index type already used by
+    # `field_ref` — so it composes in type position where only the index is
+    # available, such as inside a `comptime for` over a struct's fields. A
+    # separate name (not an overload of `field_type`) is required because
+    # `comptime` member aliases cannot be overloaded on parameter type.
+    comptime field_type_at[idx: Int] = Reflected[_field_types_of[Self.T]()[idx]]
+    """A reflection handle type for the type of the field at the given index.
+
+    The result is `Reflected[FieldT]`, so `reflect[T].field_type_at[idx].T` can
+    be used in type position and `.name()`, `.base_name()`, `.field_count()`,
+    etc. compose directly without an additional `()`. This is the by-index dual
+    of `field_type[name]`: unlike the by-name form, it works when only the field
+    index is available, such as inside a `comptime for` over a struct's fields
+    in generic code, and `T` may be a generic type parameter.
+
+    Parameters:
+        idx: The zero-based index of the field.
+
+    Constraints:
+        `T` must be a struct type. `idx` must be in range `[0, field_count())`.
+
+    Example:
+        ```mojo
+        struct Point:
+            var x: Int
+            var y: Float64
+
+        def main():
+            comptime y_type = reflect[Point].field_type_at[1]
             var v: y_type.T = 3.14  # y_type.T is Float64
         ```
     """
