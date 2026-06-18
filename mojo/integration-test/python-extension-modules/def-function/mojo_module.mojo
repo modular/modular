@@ -15,7 +15,7 @@ from std.os import abort
 
 from std.python import Python, PythonObject
 from std.python._cpython import PyObjectPtr, Py_ssize_t
-from std.python.bindings import PythonModuleBuilder
+from std.python.bindings import PythonModuleBuilder, raise_python_exception
 
 
 @export
@@ -250,10 +250,4 @@ def fastcall_concat(
             result = result + PythonObject(from_borrowed=args[i])
         return result.steal_data()
     except e:
-        ref cpy = Python().cpython()
-        var error_message = String(e)
-        var error_type = cpy.get_error_global("PyExc_Exception")
-        cpy.PyErr_SetString(
-            error_type, error_message.as_c_string_slice().unsafe_ptr()
-        )
-        return PyObjectPtr()
+        return raise_python_exception(e)

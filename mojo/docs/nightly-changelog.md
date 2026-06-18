@@ -135,6 +135,10 @@ This version is still a work in progress.
 - The traits `ImplicitlyDeletable`, `Movable`, `Copyable`, and
   `ImplicitlyCopyable` are now stable.
 
+- Added `raise_python_exception()` to `std.python.bindings`, which translates a
+  Mojo `Error` into a Python exception via `PyErr_SetString` and returns a null
+  `PyObjectPtr`.
+
 ## Tooling changes
 
 - Added a `--lld-path` CLI flag. This overrides the LLD path that Mojo uses.
