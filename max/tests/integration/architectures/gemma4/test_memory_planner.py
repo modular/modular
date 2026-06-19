@@ -48,7 +48,9 @@ def _hf(hidden_size: int, intermediate_size: int) -> SimpleNamespace:
 
 
 def _planner() -> Gemma4MemoryPlanner:
-    return Gemma4MemoryPlanner(MagicMock())
+    # ``estimate_activation_memory`` reads only its arguments, never ``self``,
+    # so skip ``__init__`` (and its model-config validation) entirely.
+    return Gemma4MemoryPlanner.__new__(Gemma4MemoryPlanner)
 
 
 def test_scaled_estimate_below_flat_for_small_batch() -> None:
