@@ -38,6 +38,16 @@ modular_py_binary(
     srcs = ["smoke_test.py"],
     imports = [".."],
     tags = ["no-pydeps"],  # TODO: Fix and re-enable
+    # Mirror the package default plus //max_private so private archs (e.g.
+    # //max_private/minimax_m3:smoke_test_m3) can host their own smoke-test
+    # entrypoints that reuse this driver. Mirrors verify_pipelines.
+    visibility = [
+        "//:__pkg__",
+        "//SDK/integration-test:__subpackages__",
+        "//max/tests:__subpackages__",
+        "//max_private:__subpackages__",
+        "//oss/modular/max/tests:__subpackages__",
+    ],
     deps = [
         ":eval_runner",
         ":inference_server_harness",

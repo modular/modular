@@ -139,10 +139,17 @@ MODEL_RECIPES = CaseInsensitiveDict({
 # ``MODEL_RECIPES`` don't try to open a file that isn't there.
 _OPTIONAL_MODEL_RECIPES = {
     "nvidia/Kimi-K2.5-NVFP4__internal": "max/pipelines/architectures/kimik2_5/recipes/internal/nvfp4_8x_b200.yaml",
+    "MiniMaxAI/MiniMax-M3-MXFP8": "max_private/minimax_m3/recipes/mxfp8_4x.yaml",
 }
 _max_dir = Path(__file__).resolve().parents[4]
+_repo_root = _max_dir.parent
 for _alias, _path in _OPTIONAL_MODEL_RECIPES.items():
-    if (_max_dir / "python" / _path).is_file():
+    _candidate = (
+        _repo_root / _path
+        if _path.startswith("max_private/")
+        else _max_dir / "python" / _path
+    )
+    if _candidate.is_file():
         MODEL_RECIPES[_alias] = _path
 
 
@@ -208,6 +215,7 @@ def is_vision_model(model: str) -> bool:
             "internvl",
             "kimi-k2",
             "kimi-vl",
+            "minimax-m3",
             "olmocr",
             "pixtral",
             "qwen2.5-vl",
@@ -241,10 +249,13 @@ def _resolve_recipe_path(recipe_path: str) -> str:
     Recipe paths use the ``max/pipelines/architectures/`` prefix and are
     resolved by the shared config resolver against the installed package.
     """
-    if not recipe_path.startswith("max/pipelines/architectures/"):
-        return recipe_path
     max_dir = Path(__file__).resolve().parents[4]
-    resolved = max_dir / "python" / recipe_path
+    if recipe_path.startswith("max_private/"):
+        resolved = max_dir.parent / recipe_path
+    elif recipe_path.startswith("max/pipelines/architectures/"):
+        resolved = max_dir / "python" / recipe_path
+    else:
+        return recipe_path
     if not resolved.is_file():
         raise FileNotFoundError(
             f"Built-in recipe not found: {recipe_path} (resolved to {resolved})"
@@ -398,6 +409,10 @@ def get_server_cmd(
     if recipe_path is None:
         recipe_path = MODEL_RECIPES.get(model)
     recipe = _load_recipe(recipe_path) if recipe_path else None
+    # When a recipe pins explicit device_specs, honor that device count rather
+    # than scaling to the full machine.
+    if recipe is not None and recipe.model.device_specs is not None:
+        gpu_count = len(recipe.model.device_specs)
     recipe_config: tuple[str, RecipeConfig] | None = None
     if (
         recipe is not None
