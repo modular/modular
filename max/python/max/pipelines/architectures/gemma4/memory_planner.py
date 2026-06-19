@@ -55,12 +55,17 @@ class Gemma4MemoryPlanner(PagedMemoryPlanner):
     ) -> int:
         """Estimates activation memory for Gemma4 models.
 
-        Scales the reservation with the model dimensions and the configured
-        batch size (mirroring the principled per-step estimate in
-        ``Qwen3_5MemoryPlanner``) instead of a flat constant, so a low-batch
-        NVFP4 checkpoint can fit alongside its KV cache on a 24 GB pre-Blackwell
-        card. The result is capped at the previous flat reservation, so this can
-        only *lower* the estimate, never raise the OOM risk relative to before.
+        Scales the reservation with the model dimensions and the per-step token
+        budget instead of a flat constant, so a low-concurrency NVFP4 checkpoint
+        can fit alongside its KV cache on a 24 GB pre-Blackwell card. The result
+        is capped at the previous flat reservation, so it never reserves *more*
+        than before.
+
+        Note: the scaled estimate is an uncalibrated heuristic, not a proven
+        upper bound on the activation peak. The cap only rules out extra
+        over-reservation; it does not guarantee the reservation always covers
+        the true peak, so the safety multiple still needs calibration against
+        measured peak GPU memory (MODELS-1544).
 
         Args:
             pipeline_config: Pipeline configuration.
