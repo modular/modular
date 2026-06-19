@@ -54,7 +54,6 @@ modular_py_test(
 
 # Files whose samples are known to fail `mojo build` as-of today.
 _VALIDATE_EXCLUDE = [
-    "tests/test_conditional_conformance.py",
     "tests/test_ftstrings.py",
     "tests/test_kwargs_brace_initializers.py",
     "tests/test_parametric_alias_formatting.py",

@@ -48,17 +48,25 @@ def test_simple_conditional_conformance():
 def test_multiple_conditional_conformances():
     """Test struct with multiple conditional conformances."""
     source = (
+        "trait Countable:\n"
+        "    pass\n"
+        "\n"
+        "\n"
         "struct Multi[T: Movable](\n"
         "    Copyable where conforms_to(T, Copyable),\n"
-        "    Intable where conforms_to(T, Intable),\n"
+        "    Countable where conforms_to(T, Intable),\n"
         "    Movable,\n"
         "):\n"
         "    pass\n"
     )
     expected = (
+        "trait Countable:\n"
+        "    pass\n"
+        "\n"
+        "\n"
         "struct Multi[T: Movable](\n"
         "    Copyable where conforms_to(T, Copyable),\n"
-        "    Intable where conforms_to(T, Intable),\n"
+        "    Countable where conforms_to(T, Intable),\n"
         "    Movable,\n"
         "):\n"
         "    pass\n"
@@ -69,6 +77,10 @@ def test_multiple_conditional_conformances():
 def test_conditional_conformance_with_and():
     """Test conditional conformance with 'and' operator."""
     source = (
+        "trait TraitA:\n"
+        "    pass\n"
+        "\n"
+        "\n"
         "struct Wrapper[T: Movable](\n"
         "    TraitA where conforms_to(T, Copyable) and conforms_to(T, Intable),\n"
         "    Movable,\n"
@@ -76,6 +88,10 @@ def test_conditional_conformance_with_and():
         "    pass\n"
     )
     expected = (
+        "trait TraitA:\n"
+        "    pass\n"
+        "\n"
+        "\n"
         "struct Wrapper[T: Movable](\n"
         "    Movable,\n"
         "    TraitA where conforms_to(T, Copyable) and conforms_to(T, Intable),\n"
@@ -88,6 +104,10 @@ def test_conditional_conformance_with_and():
 def test_conditional_conformance_with_or():
     """Test conditional conformance with 'or' operator."""
     source = (
+        "trait Base:\n"
+        "    pass\n"
+        "\n"
+        "\n"
         "struct Wrapper[T: Movable](\n"
         "    Base where conforms_to(T, Copyable) or conforms_to(T, Intable),\n"
         "    Movable,\n"
@@ -95,6 +115,10 @@ def test_conditional_conformance_with_or():
         "    pass\n"
     )
     expected = (
+        "trait Base:\n"
+        "    pass\n"
+        "\n"
+        "\n"
         "struct Wrapper[T: Movable](\n"
         "    Base where conforms_to(T, Copyable) or conforms_to(T, Intable),\n"
         "    Movable,\n"
@@ -106,9 +130,35 @@ def test_conditional_conformance_with_or():
 
 def test_conditional_conformance_single_line():
     """Test compact conditional conformance that fits on one line."""
-    source = "struct W[T: M](A where cond(T, B), M): pass"
+    source = (
+        "trait A:\n"
+        "    pass\n"
+        "\n"
+        "\n"
+        "trait B:\n"
+        "    pass\n"
+        "\n"
+        "\n"
+        "trait M:\n"
+        "    pass\n"
+        "\n"
+        "\n"
+        "struct W[T: M](A where conforms_to(T, B), M): pass"
+    )
     expected = (
-        "struct W[T: M](A where cond(T, B), M):\n"
+        "trait A:\n"
+        "    pass\n"
+        "\n"
+        "\n"
+        "trait B:\n"
+        "    pass\n"
+        "\n"
+        "\n"
+        "trait M:\n"
+        "    pass\n"
+        "\n"
+        "\n"
+        "struct W[T: M](A where conforms_to(T, B), M):\n"
         "    pass\n"
     )
     assert_mojo_format(source, expected)
@@ -143,6 +193,18 @@ def test_long_conditional_conformance():
 def test_multiple_long_conditional_conformances():
     """Test multiple conditional conformances that need line wrapping."""
     source = (
+        "trait Base:\n"
+        "    pass\n"
+        "\n"
+        "\n"
+        "trait DerivedA:\n"
+        "    pass\n"
+        "\n"
+        "\n"
+        "trait DerivedB:\n"
+        "    pass\n"
+        "\n"
+        "\n"
         "struct Diamond[T: Movable](\n"
         "Base where conforms_to(T, Copyable) or conforms_to(T, Intable),\n"
         "DerivedA where conforms_to(T, Copyable),\n"
@@ -151,6 +213,18 @@ def test_multiple_long_conditional_conformances():
         "): pass"
     )
     expected = (
+        "trait Base:\n"
+        "    pass\n"
+        "\n"
+        "\n"
+        "trait DerivedA:\n"
+        "    pass\n"
+        "\n"
+        "\n"
+        "trait DerivedB:\n"
+        "    pass\n"
+        "\n"
+        "\n"
         "struct Diamond[T: Movable](\n"
         "    Base where conforms_to(T, Copyable) or conforms_to(T, Intable),\n"
         "    DerivedA where conforms_to(T, Copyable),\n"
@@ -170,6 +244,14 @@ def test_multiple_long_conditional_conformances():
 def test_mixed_conditional_unconditional():
     """Test struct with both conditional and unconditional conformances."""
     source = (
+        "trait DerivedA:\n"
+        "    pass\n"
+        "\n"
+        "\n"
+        "trait DerivedB:\n"
+        "    pass\n"
+        "\n"
+        "\n"
         "struct Mixed[T: Movable](\n"
         "    DerivedA where conforms_to(T, Copyable),\n"
         "    DerivedB,\n"
@@ -178,6 +260,14 @@ def test_mixed_conditional_unconditional():
         "    pass\n"
     )
     expected = (
+        "trait DerivedA:\n"
+        "    pass\n"
+        "\n"
+        "\n"
+        "trait DerivedB:\n"
+        "    pass\n"
+        "\n"
+        "\n"
         "struct Mixed[T: Movable](\n"
         "    DerivedA where conforms_to(T, Copyable),\n"
         "    DerivedB,\n"
@@ -191,6 +281,14 @@ def test_mixed_conditional_unconditional():
 def test_explicit_ancestor_with_conditional():
     """Test explicit ancestor conformance with conditional."""
     source = (
+        "trait Base:\n"
+        "    pass\n"
+        "\n"
+        "\n"
+        "trait DerivedA:\n"
+        "    pass\n"
+        "\n"
+        "\n"
         "struct Explicit[T: Movable](\n"
         "    DerivedA where conforms_to(T, Copyable),\n"
         "    Base,\n"
@@ -200,6 +298,14 @@ def test_explicit_ancestor_with_conditional():
     )
     # Formatter sorts all conformances alphabetically, including conditional ones
     expected = (
+        "trait Base:\n"
+        "    pass\n"
+        "\n"
+        "\n"
+        "trait DerivedA:\n"
+        "    pass\n"
+        "\n"
+        "\n"
         "struct Explicit[T: Movable](\n"
         "    Base,\n"
         "    DerivedA where conforms_to(T, Copyable),\n"
@@ -210,23 +316,24 @@ def test_explicit_ancestor_with_conditional():
     assert_mojo_format(source, expected)
 
 
-# ================================== #
-# Conditional conformance with Self.T
-# ================================== #
+# ============================== #
+# Conditional conformance with T
+# ============================== #
 
 
-def test_conditional_conformance_with_self_type():
-    """Test conditional conformance using Self.T syntax."""
+def test_conditional_conformance_with_type():
+    """Test conditional conformance referencing the generic parameter.
+    """
     source = (
         "struct Wrapper[T: Movable](\n"
-        "    Copyable where conforms_to(Self.T, Copyable),\n"
+        "    Copyable where conforms_to(T, Copyable),\n"
         "    Movable,\n"
         "):\n"
         "    pass\n"
     )
     expected = (
         "struct Wrapper[T: Movable](\n"
-        "    Copyable where conforms_to(Self.T, Copyable),\n"
+        "    Copyable where conforms_to(T, Copyable),\n"
         "    Movable,\n"
         "):\n"
         "    pass\n"
@@ -268,6 +375,18 @@ def test_complex_generic_with_conditional():
 def test_whitespace_normalization_in_condition():
     """Test that extra whitespace in conditions is normalized."""
     source = (
+        "trait A:\n"
+        "    pass\n"
+        "\n"
+        "\n"
+        "trait B:\n"
+        "    pass\n"
+        "\n"
+        "\n"
+        "trait M:\n"
+        "    pass\n"
+        "\n"
+        "\n"
         "struct W[T: M](\n"
         "    A where   conforms_to(T,   B),\n"
         "    M,\n"
@@ -275,6 +394,18 @@ def test_whitespace_normalization_in_condition():
         "    pass\n"
     )
     expected = (
+        "trait A:\n"
+        "    pass\n"
+        "\n"
+        "\n"
+        "trait B:\n"
+        "    pass\n"
+        "\n"
+        "\n"
+        "trait M:\n"
+        "    pass\n"
+        "\n"
+        "\n"
         "struct W[T: M](\n"
         "    A where conforms_to(T, B),\n"
         "    M,\n"
@@ -287,6 +418,26 @@ def test_whitespace_normalization_in_condition():
 def test_condition_with_complex_expression():
     """Test conditional conformance with complex boolean expression."""
     source = (
+        "trait A:\n"
+        "    pass\n"
+        "\n"
+        "\n"
+        "trait B:\n"
+        "    pass\n"
+        "\n"
+        "\n"
+        "trait C:\n"
+        "    pass\n"
+        "\n"
+        "\n"
+        "trait D:\n"
+        "    pass\n"
+        "\n"
+        "\n"
+        "trait M:\n"
+        "    pass\n"
+        "\n"
+        "\n"
         "struct W[T: M](\n"
         "    A where (conforms_to(T, B) and conforms_to(T, C)) or conforms_to(T, D),\n"
         "    M,\n"
@@ -295,6 +446,26 @@ def test_condition_with_complex_expression():
     )
     # Expression fits on one line, so no wrapping is applied
     expected = (
+        "trait A:\n"
+        "    pass\n"
+        "\n"
+        "\n"
+        "trait B:\n"
+        "    pass\n"
+        "\n"
+        "\n"
+        "trait C:\n"
+        "    pass\n"
+        "\n"
+        "\n"
+        "trait D:\n"
+        "    pass\n"
+        "\n"
+        "\n"
+        "trait M:\n"
+        "    pass\n"
+        "\n"
+        "\n"
         "struct W[T: M](\n"
         "    A where (conforms_to(T, B) and conforms_to(T, C)) or conforms_to(T, D),\n"
         "    M,\n"
@@ -317,6 +488,14 @@ def test_sorting_keeps_where_clause_with_trait():
     where clause.
     """
     source = (
+        "trait Alpha:\n"
+        "    pass\n"
+        "\n"
+        "\n"
+        "trait Zebra:\n"
+        "    pass\n"
+        "\n"
+        "\n"
         "struct Foo[T: Movable](\n"
         "    Zebra where conforms_to(T, Copyable),\n"
         "    Alpha,\n"
@@ -326,6 +505,14 @@ def test_sorting_keeps_where_clause_with_trait():
     )
     # Alpha < Movable < Zebra — and the where clause stays on Zebra.
     expected = (
+        "trait Alpha:\n"
+        "    pass\n"
+        "\n"
+        "\n"
+        "trait Zebra:\n"
+        "    pass\n"
+        "\n"
+        "\n"
         "struct Foo[T: Movable](\n"
         "    Alpha,\n"
         "    Movable,\n"
@@ -339,6 +526,14 @@ def test_sorting_keeps_where_clause_with_trait():
 def test_sorting_multiple_conditional_conformances():
     """Multiple conditional conformances are sorted with their where clauses."""
     source = (
+        "trait Alpha:\n"
+        "    pass\n"
+        "\n"
+        "\n"
+        "trait Zebra:\n"
+        "    pass\n"
+        "\n"
+        "\n"
         "struct Foo[T: Movable](\n"
         "    Zebra where conforms_to(T, Copyable),\n"
         "    Alpha where conforms_to(T, Intable),\n"
@@ -347,6 +542,14 @@ def test_sorting_multiple_conditional_conformances():
         "    pass\n"
     )
     expected = (
+        "trait Alpha:\n"
+        "    pass\n"
+        "\n"
+        "\n"
+        "trait Zebra:\n"
+        "    pass\n"
+        "\n"
+        "\n"
         "struct Foo[T: Movable](\n"
         "    Alpha where conforms_to(T, Intable),\n"
         "    Movable,\n"
