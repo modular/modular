@@ -10,21 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Speculative decoding pipelines and configuration for MAX."""
+"""Shared Eagle3 draft components reused across target architectures."""
 
-from .config import (
-    MAGIC_DRAFT_TOKEN_ID,
-    RejectionSamplingStrategy,
-    SpeculativeConfig,
-    SpeculativeMethod,
-)
-from .ragged_token_merger import RaggedTokenMerger, ragged_token_merger
+from .eagle_mha_draft import Eagle3MHADraft, Eagle3MHADraftConfig
+from .eagle_mla_draft import Eagle3MLADraft
 
-__all__ = [
-    "MAGIC_DRAFT_TOKEN_ID",
-    "RaggedTokenMerger",
-    "RejectionSamplingStrategy",
-    "SpeculativeConfig",
-    "SpeculativeMethod",
-    "ragged_token_merger",
-]
+__all__ = ["Eagle3MHADraft", "Eagle3MHADraftConfig", "Eagle3MLADraft"]

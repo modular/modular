@@ -73,6 +73,7 @@ from .interfaces import (
     PipelineModelWithKVCache,
     RaggedBatchProcessor,
     UnifiedEagleOutputs,
+    UnifiedSpecDecodeInputs,
     process_ragged_kv_outputs,
     ragged_kv_symbolic_inputs,
 )
@@ -141,6 +142,7 @@ __all__ = [
     "TextGenerationPipeline",
     "TextTokenizer",
     "UnifiedEagleOutputs",
+    "UnifiedSpecDecodeInputs",
     "WeightPathParser",
     "build_eos_tracker_for_request",
     "convert_max_config_value",

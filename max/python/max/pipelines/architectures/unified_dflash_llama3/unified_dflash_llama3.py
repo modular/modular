@@ -19,20 +19,23 @@ from dataclasses import dataclass, replace
 from typing import Any
 
 from max.dtype import DType
-from max.graph import BufferType, DeviceRef, TensorType, TensorValue, Value, ops
+from max.graph import BufferType, TensorType, TensorValue, Value, ops
 from max.nn.kv_cache import MultiKVCacheParams, PagedCacheValues
 from max.nn.layer import Module
 from max.nn.sampling.rejection_sampler import AcceptanceSampler
+from max.pipelines.speculative.config import MAGIC_DRAFT_TOKEN_ID
 from max.pipelines.speculative.ragged_token_merger import (
     RaggedTokenMerger,
     _shape_to_scalar,
+)
+from max.pipelines.speculative.spec_input_types import (
+    SpecDecodeInputTypeSpec,
+    build_spec_decode_input_types,
 )
 
 from ..dflash_llama3 import DFlashLlama3
 from ..llama3.llama3 import Llama3
 from .model_config import UnifiedDflashLlama3Config
-
-_MAGIC_DRAFT_TOKEN_ID = 42
 
 
 @dataclass
@@ -119,55 +122,18 @@ class UnifiedDflashLlama3(Module):
         )
 
     def input_types(self) -> tuple[TensorType | BufferType, ...]:
-        device_ref = self.config.target.devices[0]
-
-        tokens_type = TensorType(
-            DType.int64, shape=["total_seq_len"], device=device_ref
-        )
-        input_row_offsets_type = TensorType(
-            DType.uint32, shape=["input_row_offsets_len"], device=device_ref
-        )
-        draft_tokens_type = TensorType(
-            DType.int64, ["batch_size", "num_steps"], device=device_ref
-        )
-        return_n_logits_type = TensorType(
-            DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
-        )
-
-        kv_params = MultiKVCacheParams.from_params(
-            {
-                "target": self.config.target.kv_params,
-                "draft": self.config.draft.kv_params,
-            }
-        )
-        kv_tree_flat = list(kv_params.flattened_kv_inputs())
-
-        temperature_type = TensorType(
-            DType.float32, shape=["batch_size"], device=device_ref
-        )
-        top_k_type = TensorType(
-            DType.int64, shape=["batch_size"], device=device_ref
-        )
-        max_k_type = TensorType(DType.int64, shape=[], device=DeviceRef.CPU())
-        top_p_type = TensorType(
-            DType.float32, shape=["batch_size"], device=device_ref
-        )
-        min_top_p_type = TensorType(
-            DType.float32, shape=[], device=DeviceRef.CPU()
-        )
-
-        return (
-            tokens_type,
-            input_row_offsets_type,
-            return_n_logits_type,
-            *kv_tree_flat,
-            draft_tokens_type,
-            TensorType(DType.uint64, shape=["batch_size"], device=device_ref),
-            temperature_type,
-            top_k_type,
-            max_k_type,
-            top_p_type,
-            min_top_p_type,
+        """Single-device dflash graph. See
+        :func:`build_spec_decode_input_types` for the canonical ordering.
+        """
+        return build_spec_decode_input_types(
+            SpecDecodeInputTypeSpec(distributed=False),
+            devices=self.config.target.devices,
+            kv_params=MultiKVCacheParams.from_params(
+                {
+                    "target": self.config.target.kv_params,
+                    "draft": self.config.draft.kv_params,
+                }
+            ),
         )
 
     def __call__(
@@ -215,7 +181,7 @@ class UnifiedDflashLlama3(Module):
         zero = ops.constant(0, DType.uint32, device=device)
         is_prefill = (num_steps_u32 == zero).broadcast_to(["batch_size"])
         magic_token = ops.constant(
-            _MAGIC_DRAFT_TOKEN_ID, DType.int64, device=device
+            MAGIC_DRAFT_TOKEN_ID, DType.int64, device=device
         )
         num_magic_tokens = ops.squeeze(
             ops.sum(

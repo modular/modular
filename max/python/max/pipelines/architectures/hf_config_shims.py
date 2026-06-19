@@ -65,6 +65,18 @@ except ValueError:
     pass
 
 
+# The gemma4_assistant MTP draft is registered lazily by its arch module,
+# too late for the gemma4 MTP recipe's draft config load; register it eagerly.
+class _Gemma4AssistantHFConfig(PretrainedConfig):
+    model_type = "gemma4_assistant"
+
+
+try:
+    AutoConfig.register("gemma4_assistant", _Gemma4AssistantHFConfig)
+except ValueError:
+    pass
+
+
 # Register custom config since "step3p5" is not in the transformers library.
 class Step3p5PretrainedConfig(PretrainedConfig):
     """Custom PretrainedConfig for Step-3.5 so AutoConfig.from_pretrained() works.

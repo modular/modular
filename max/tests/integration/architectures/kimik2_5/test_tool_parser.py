@@ -40,7 +40,7 @@ from max.pipelines.context import (
     TokenBuffer,
 )
 from max.pipelines.lib.pipeline_variants.overlap_text_generation import (
-    _MAGIC_DRAFT_TOKEN_ID,
+    MAGIC_DRAFT_TOKEN_ID,
 )
 from max.pipelines.lib.pipeline_variants.utils import StructuredOutputHelper
 from max.pipelines.lib.tool_parsing import StreamingToolCallState
@@ -1300,7 +1300,7 @@ def test_sync_fill_with_placeholder_drafts_leaves_bonus_slot_unconstrained(
 
     # Placeholder draft (what the sync path actually has): the fill breaks at
     # the invalid placeholder, leaving the bonus slot unconstrained.
-    magic = np.full((1, 1), _MAGIC_DRAFT_TOKEN_ID, dtype=np.int64)
+    magic = np.full((1, 1), MAGIC_DRAFT_TOKEN_ID, dtype=np.int64)
     bad = helper.compute_speculative_bitmasks([ctx], magic, num_positions)
     assert not bad[0, 0].all()  # slot 0 still constrained
     assert bad[0, 1].all()  # bonus slot UNCONSTRAINED -- the bug

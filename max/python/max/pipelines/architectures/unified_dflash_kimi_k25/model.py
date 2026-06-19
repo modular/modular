@@ -40,8 +40,13 @@ from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.architectures.kimik2_5.context import (
     KimiK2_5TextAndVisionContext,
 )
-from max.pipelines.lib import CompilationTimer, ModelInputs
-from max.pipelines.lib.interfaces import UnifiedEagleOutputs
+from max.pipelines.lib import CompilationTimer
+from max.pipelines.lib.interfaces import (
+    UnifiedSpecDecodeInputs,
+)
+from max.pipelines.lib.pipeline_variants.unified_spec_decode_model import (
+    _UnifiedSpecDecodeModelMixin,
+)
 from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
 from typing_extensions import override
 
@@ -59,23 +64,16 @@ logger = logging.getLogger("max.pipelines")
 
 
 @dataclass
-class UnifiedDflashKimiK25Inputs(KimiK2_5ModelInputs):
+class UnifiedDflashKimiK25Inputs(UnifiedSpecDecodeInputs, KimiK2_5ModelInputs):
     """Inputs for the unified DFlash Kimi K2.5 graph.
 
-    Same as :class:`KimiK2_5ModelInputs` plus DFlash draft buffers. The
-    draft owns its own MHA :class:`KVCacheInputs` so its dispatch
-    metadata is independent of the target's MLA cache.
+    Same as :class:`KimiK2_5ModelInputs` plus the spec-decode fields and
+    trailing buffer packing from :class:`UnifiedSpecDecodeInputs`. The draft
+    owns its own MHA :class:`KVCacheInputs` so its dispatch metadata is
+    independent of the target's MLA cache. The DFlash graph does not bind
+    ``in_thinking_phase``.
     """
 
-    draft_tokens: Buffer | None = None
-    seed: Buffer | None = None
-    temperature: Buffer | None = None
-    top_k: Buffer | None = None
-    max_k: Buffer | None = None
-    top_p: Buffer | None = None
-    min_top_p: Buffer | None = None
-
-    in_thinking_phase: Buffer | None = None
     token_bitmasks: Buffer | None = None
 
     @property
@@ -95,27 +93,12 @@ class UnifiedDflashKimiK25Inputs(KimiK2_5ModelInputs):
             *self.batch_context_lengths,
             *self.ep_inputs,
         )
-        if self.draft_tokens is not None:
-            buffers += (self.draft_tokens,)
-        assert self.seed is not None
-        buffers += (self.seed,)
-        if self.draft_tokens is not None:
-            assert self.temperature is not None
-            assert self.top_k is not None
-            assert self.max_k is not None
-            assert self.top_p is not None
-            assert self.min_top_p is not None
-            buffers += (
-                self.temperature,
-                self.top_k,
-                self.max_k,
-                self.top_p,
-                self.min_top_p,
-            )
-        return buffers
+        return buffers + self._spec_decode_tail_buffers(
+            include_in_thinking_phase=False, supports_structured_output=False
+        )
 
 
-class UnifiedDflashKimiK25Model(KimiK2_5Model):
+class UnifiedDflashKimiK25Model(_UnifiedSpecDecodeModelMixin, KimiK2_5Model):
     """Unified DFlash Kimi K2.5 pipeline model.
 
     Routed here when target HF arch is
@@ -128,12 +111,6 @@ class UnifiedDflashKimiK25Model(KimiK2_5Model):
         kwargs["return_hidden_states"] = ReturnHiddenStates.SELECTED_LAYERS
         super().__init__(*args, **kwargs)
         self._seed_counter = 0
-
-    def _next_seed(self) -> Buffer:
-        self._seed_counter += 1
-        return Buffer.from_numpy(
-            np.array([self._seed_counter], dtype=np.uint64)
-        ).to(self.devices[0])
 
     @override
     def load_model(self, session: InferenceSession) -> tuple[Model, Model]:
@@ -416,16 +393,9 @@ class UnifiedDflashKimiK25Model(KimiK2_5Model):
 
         return vision_model, language_model
 
-    def execute(self, model_inputs: ModelInputs) -> UnifiedEagleOutputs:
-        model_outputs = self.language_model.execute(*model_inputs.buffers)
-        assert len(model_outputs) == 3, (
-            f"Expected 3 outputs, got {len(model_outputs)}"
-        )
-        return UnifiedEagleOutputs(
-            num_accepted_draft_tokens=model_outputs[0],
-            next_tokens=model_outputs[1],
-            next_draft_tokens=model_outputs[2],
-        )
+    @property
+    def _spec_decode_model(self) -> Model:
+        return self.language_model
 
     def prepare_initial_token_inputs(
         self,

@@ -41,6 +41,7 @@ from .pipeline_model import (
     PipelineModel,
     PipelineModelWithKVCache,
     UnifiedEagleOutputs,
+    UnifiedSpecDecodeInputs,
 )
 
 __all__ = [
@@ -63,6 +64,7 @@ __all__ = [
     "PipelineModelWithKVCache",
     "RaggedBatchProcessor",
     "UnifiedEagleOutputs",
+    "UnifiedSpecDecodeInputs",
     "process_ragged_kv_outputs",
     "ragged_kv_symbolic_inputs",
 ]

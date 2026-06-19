@@ -42,14 +42,16 @@ from max.pipelines.context import TextContext
 from max.pipelines.lib import (
     CompilationTimer,
     KVCacheConfig,
-    ModelInputs,
     PipelineConfig,
 )
-from max.pipelines.lib.interfaces import UnifiedEagleOutputs
+from max.pipelines.lib.interfaces import UnifiedSpecDecodeInputs
+from max.pipelines.lib.pipeline_variants.unified_spec_decode_model import (
+    _UnifiedSpecDecodeModelMixin,
+)
 from typing_extensions import override
 
 from ..deepseekV3.model import DeepseekV3Inputs, DeepseekV3Model
-from ..kimik2_5.eagle3_mha_kimi_k25 import Eagle3MHAKimiK25DraftConfig
+from ..eagle_common.eagle_mha_draft import Eagle3MHADraftConfig
 from ..kimik2_5.unified_eagle_mha_model import Eagle3MHAKimiK25Unified
 from ..kimik2_5.unified_eagle_mha_pipeline_model import (
     _build_mha_draft_config,
@@ -62,80 +64,27 @@ logger = logging.getLogger("max.pipelines")
 
 
 @dataclass
-class Eagle3MHADeepseekV3Inputs(DeepseekV3Inputs):
+class Eagle3MHADeepseekV3Inputs(UnifiedSpecDecodeInputs, DeepseekV3Inputs):
     """Inputs for the Eagle3 MHA-draft + DeepseekV3 unified model.
 
-    The draft owns its own ``KVCacheInputs`` (separate from the target's
-    MLA cache) so MHA dispatch metadata can be plumbed at both prefill
+    The draft owns its own MHA ``KVCacheInputs`` (separate from the target's
+    MLA cache) as the ``"draft"`` leaf of the unified ``{"target", "draft"}``
+    KV tree, so MHA dispatch metadata is plumbed at both prefill
     (q_max_seq_len = ``1 + num_speculative_tokens``) and decode
-    (q_max_seq_len = 1) widths.
+    (q_max_seq_len = 1) widths. The spec-decode fields and trailing buffer
+    packing come from :class:`UnifiedSpecDecodeInputs`; the graph binds the
+    per-row ``in_thinking_phase`` flag and the structured-output bitmask
+    triple.
     """
-
-    draft_tokens: Buffer | None = None
-    """One persistent ``kv_blocks`` Buffer per device. Other fields
-    (cache_lengths, lookup_table, max_lengths,
-    attention_dispatch_metadata) are borrowed from the target's
-    ``kv_cache_inputs`` at graph build time."""
-    seed: Buffer | None = None
-    temperature: Buffer | None = None
-    top_k: Buffer | None = None
-    max_k: Buffer | None = None
-    top_p: Buffer | None = None
-    min_top_p: Buffer | None = None
-    in_thinking_phase: Buffer | None = None
-    """Per-batch ``bool`` flag for relaxed-acceptance gating. Not consumed
-    by the graph today but required by the ``_UnifiedEagleInputs`` protocol
-    used by ``OverlapTextGenerationPipeline``."""
-    pinned_bitmask: Buffer | None = None
-    """Pinned host bitmask for constrained decoding (None when off)."""
-
-    wait_payload: Buffer | None = None
-    """CPU ``int64[2]`` payload consumed by
-    ``mo.wait_host_value_with_dep`` (None when off)."""
-
-    device_bitmask_scratch: Buffer | None = None
-    """Device scratch buffer that receives the in-graph H2D from
-    ``pinned_bitmask`` (None when off)."""
 
     @property
     def buffers(self) -> tuple[Buffer, ...]:
-        buffers = super().buffers
-        if self.draft_tokens is not None:
-            buffers += (self.draft_tokens,)
-        assert self.seed is not None
-        buffers += (self.seed,)
-        if self.draft_tokens is not None:
-            assert self.temperature is not None
-            assert self.top_k is not None
-            assert self.max_k is not None
-            assert self.top_p is not None
-            assert self.min_top_p is not None
-            assert self.in_thinking_phase is not None
-            buffers += (
-                self.temperature,
-                self.top_k,
-                self.max_k,
-                self.top_p,
-                self.min_top_p,
-                self.in_thinking_phase,
-            )
-            # Constrained-decoding bitmask inputs are appended only on
-            # the spec-decode path. The bitmask triple's position in
-            # the tuple must match the order in ``input_types()``,
-            # which gates the bitmask inputs on both spec-decode and
-            # ``enable_structured_output``.
-            if self.pinned_bitmask is not None:
-                assert self.wait_payload is not None
-                assert self.device_bitmask_scratch is not None
-                buffers += (
-                    self.pinned_bitmask,
-                    self.wait_payload,
-                    self.device_bitmask_scratch,
-                )
-        return buffers
+        return super().buffers + self._spec_decode_tail_buffers(
+            include_in_thinking_phase=True
+        )
 
 
-class Eagle3MHADeepseekV3Model(DeepseekV3Model):
+class Eagle3MHADeepseekV3Model(_UnifiedSpecDecodeModelMixin, DeepseekV3Model):
     """Eagle3 MHA-draft + DeepseekV3: target + draft in one compiled graph."""
 
     def __init__(
@@ -160,12 +109,6 @@ class Eagle3MHADeepseekV3Model(DeepseekV3Model):
             return_hidden_states,
         )
         self._seed_counter = 0
-
-    def _next_seed(self) -> Buffer:
-        self._seed_counter += 1
-        return Buffer.from_numpy(
-            np.array([self._seed_counter], dtype=np.uint64)
-        ).to(self.devices[0])
 
     @override
     def load_model(self, session: InferenceSession) -> Model:
@@ -280,7 +223,7 @@ class Eagle3MHADeepseekV3Model(DeepseekV3Model):
             {"target": target_kv, "draft": self._draft_kv_params}
         )
 
-        draft_config: Eagle3MHAKimiK25DraftConfig = _build_mha_draft_config(
+        draft_config: Eagle3MHADraftConfig = _build_mha_draft_config(
             draft_hf,
             target_config=config,
             devices=config.devices,
@@ -423,21 +366,6 @@ class Eagle3MHADeepseekV3Model(DeepseekV3Model):
 
         return model
 
-    def execute(self, model_inputs: ModelInputs) -> UnifiedEagleOutputs:
-        assert isinstance(model_inputs, Eagle3MHADeepseekV3Inputs)
-        model_outputs = self.model.execute(*model_inputs.buffers)
-        if len(model_outputs) != 3:
-            raise RuntimeError(
-                f"Eagle3MHADeepseekV3 graph returned {len(model_outputs)} "
-                "outputs; expected 3 (num_accepted, next_tokens, "
-                "next_draft_tokens)."
-            )
-        return UnifiedEagleOutputs(
-            num_accepted_draft_tokens=model_outputs[0],
-            next_tokens=model_outputs[1],
-            next_draft_tokens=model_outputs[2],
-        )
-
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[TextContext]],
@@ -461,6 +389,7 @@ class Eagle3MHADeepseekV3Model(DeepseekV3Model):
             ep_inputs=base.ep_inputs,
             draft_tokens=draft_tokens,
             seed=self._next_seed(),
+            structured_output=self.pipeline_config.needs_bitmask_constraints,
         )
 
 
