@@ -17,13 +17,14 @@ from __future__ import annotations
 import math
 
 from max.experimental import functional as F
-from max.experimental.nn import Linear, Module
+from max.experimental.nn import Module
 from max.experimental.nn.norm import RMSNorm
 from max.experimental.tensor import Tensor
 from max.nn.attention.mask_config import MHAMaskVariant
 from max.nn.kernels import flash_attention_gpu as _flash_attention_gpu
 
 from .embeddings import apply_mrope
+from .fp8_linear import Ideogram4FP8Linear
 
 flash_attention_gpu = F.functional(_flash_attention_gpu)
 
@@ -42,10 +43,10 @@ class Ideogram4Attention(Module[..., Tensor]):
         self.num_heads = num_heads
         self.head_dim = hidden_size // num_heads
 
-        self.qkv = Linear(hidden_size, hidden_size * 3, bias=False)
+        self.qkv = Ideogram4FP8Linear(hidden_size, hidden_size * 3)
         self.norm_q = RMSNorm(self.head_dim, eps=eps)
         self.norm_k = RMSNorm(self.head_dim, eps=eps)
-        self.o = Linear(hidden_size, hidden_size, bias=False)
+        self.o = Ideogram4FP8Linear(hidden_size, hidden_size)
 
     def forward(
         self,

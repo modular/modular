@@ -32,6 +32,36 @@ from max.graph.weights import WeightData
 
 FP8_SCALE_SUFFIX = ".weight_scale"
 
+# Per-block Linear projections kept as native FP8 (weight + rowwise scale)
+# instead of being dequantized to bf16. These are the per-step GEMM hot spots
+# (run 34 layers x 2 branches x N steps); the remaining quantized linears
+# (adaLN, input_proj, llm_cond_proj, t_embedding, final_layer) run once or are
+# tiny, so they keep the simpler dequantized bf16 path.
+FP8_RUNTIME_LINEAR_SUFFIXES = (
+    ".attention.qkv",
+    ".attention.o",
+    ".feed_forward.w1",
+    ".feed_forward.w2",
+    ".feed_forward.w3",
+)
+
+
+def _is_fp8_runtime_linear(base: str) -> bool:
+    """Whether ``base`` (a weight key minus ``.weight``) is a hot FP8 Linear."""
+    return base.startswith("layers.") and base.endswith(
+        FP8_RUNTIME_LINEAR_SUFFIXES
+    )
+
+
+def _rowwise_scale(scale: WeightData, name: str) -> WeightData:
+    """Reshape a per-output-channel scale ``[N]`` to rowwise ``[N, 1]`` f32.
+
+    ``dynamic_scaled_matmul`` expects a rank-2 rowwise weight scale whose
+    trailing dimension is 1.
+    """
+    s = np.from_dlpack(scale.astype(DType.float32).data).astype(np.float32)
+    return WeightData.from_numpy(np.ascontiguousarray(s.reshape(-1, 1)), name)
+
 
 @functools.lru_cache(maxsize=1)
 def _e4m3fn_lut() -> npt.NDArray[np.float32]:
@@ -118,8 +148,40 @@ def dequantize_fp8_state_dict(
 def convert_ideogram4_transformer_state_dict(
     state_dict: dict[str, WeightData],
 ) -> dict[str, WeightData]:
-    """Apply FP8 weight-only dequantization; pass other tensors through."""
-    converted = dequantize_fp8_state_dict(state_dict)
+    """Adapt the DiT checkpoint, keeping the hot Linears as native FP8.
+
+    The per-block ``qkv``/``o``/``w1``/``w2``/``w3`` projections (see
+    :data:`FP8_RUNTIME_LINEAR_SUFFIXES`) pass their ``float8_e4m3fn`` weight
+    through unchanged and keep a rowwise ``[N, 1]`` float32 ``weight_scale``,
+    so they can run as native FP8 GEMMs. Every other quantized Linear is
+    dequantized to float32 and its scale dropped (as before). Non-quantized
+    tensors pass through unchanged.
+    """
+    scale_keys = [k for k in state_dict if k.endswith(FP8_SCALE_SUFFIX)]
+    quantized_bases = {k[: -len(FP8_SCALE_SUFFIX)] for k in scale_keys}
+
+    converted: dict[str, WeightData] = {}
+    for key, value in state_dict.items():
+        if key.endswith(FP8_SCALE_SUFFIX):
+            base = key[: -len(FP8_SCALE_SUFFIX)]
+            # Keep the scale only for the native-FP8 linears; for the rest the
+            # scale is folded into the dequantized weight below and dropped.
+            if _is_fp8_runtime_linear(base):
+                converted[key] = _rowwise_scale(value, key)
+            continue
+
+        if key.endswith(".weight"):
+            weight_base = key[: -len(".weight")]
+            if weight_base in quantized_bases:
+                if _is_fp8_runtime_linear(weight_base):
+                    converted[key] = value  # native FP8: keep packed weight
+                else:
+                    converted[key] = _dequantize_fp8(
+                        value, state_dict[weight_base + FP8_SCALE_SUFFIX], key
+                    )
+                continue
+
+        converted[key] = value
 
     required_prefixes = (
         "input_proj.",
