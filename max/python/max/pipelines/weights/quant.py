@@ -877,11 +877,12 @@ def _parse_compressed_tensors_float4_config(
         return None
 
     # NVFP4 block-scaled specs: E2M1 weights with FP8-E4M3 block scales over a
-    # 16-wide group, matching the modelopt NVFP4 path above.
-    # TODO(#6697): validate against a real checkpoint on GPU -- confirm
-    # group_size vs block_size, handle the per-tensor global scale
-    # (weight_scale_2) and the 128x4 tiled-scales layout, and reconcile
-    # weight/scale tensor names in the Gemma 4 weight_adapters.
+    # 16-wide group, matching the modelopt NVFP4 path above. Verified against
+    # RedHatAI/gemma-4-31B-it-NVFP4: group_size=16, weight_scale is a plain
+    # [N, K/16] FP8-E4M3 block-scale tensor (not pre-interleaved), and the
+    # per-tensor global scales ship as weight_global_scale / input_global_scale.
+    # The Gemma 4 weight_adapters reconcile those names (and squeeze the [1]
+    # global scales to scalar) onto weight / weight_scale_2 / input_scale.
     group_size = weight_config.get("group_size", 16)
     input_spec = InputScaleSpec(
         granularity=ScaleGranularity.BLOCK,
