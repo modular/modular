@@ -26,6 +26,13 @@ from .arch_config import (
     ArchConfigWithStoredKVParams,
     ArchVLConfigWithTextSubconfig,
 )
+from .batch_processor import (
+    BatchProcessor,
+    BatchProcessorRuntime,
+    RaggedBatchProcessor,
+    process_ragged_kv_outputs,
+    ragged_kv_symbolic_inputs,
+)
 from .generate import GenerateMixin
 from .pipeline_model import (
     AlwaysSignalBuffersMixin,
@@ -45,6 +52,8 @@ __all__ = [
     "ArchConfigWithPermissiveMaxSeqLen",
     "ArchConfigWithStoredKVParams",
     "ArchVLConfigWithTextSubconfig",
+    "BatchProcessor",
+    "BatchProcessorRuntime",
     "DiffusionPipeline",
     "DiffusionPipelineOutput",
     "GenerateMixin",
@@ -52,5 +61,8 @@ __all__ = [
     "ModelOutputs",
     "PipelineModel",
     "PipelineModelWithKVCache",
+    "RaggedBatchProcessor",
     "UnifiedEagleOutputs",
+    "process_ragged_kv_outputs",
+    "ragged_kv_symbolic_inputs",
 ]

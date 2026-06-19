@@ -341,7 +341,6 @@ class Step3p5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
             base = super().prepare_initial_token_inputs(
                 replica_batches, kv_cache_inputs, return_n_logits
             )
-            assert isinstance(base, Llama3Inputs)
             return Step3p5Inputs(
                 tokens=base.tokens,
                 input_row_offsets=base.input_row_offsets,

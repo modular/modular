@@ -21,6 +21,7 @@ from max.pipelines.lib import (
 from max.pipelines.modeling.types import PipelineTask
 
 from ..llama3 import weight_adapters
+from ..llama3.batch_processor import Llama3BatchProcessor
 from .model import Qwen2Model
 from .model_config import Qwen2Config
 
@@ -44,5 +45,6 @@ qwen2_arch = SupportedArchitecture(
         WeightsFormat.gguf: weight_adapters.convert_gguf_state_dict,
     },
     config=Qwen2Config,
+    batching=Llama3BatchProcessor,
     memory_planner=PagedMemoryPlanner,
 )

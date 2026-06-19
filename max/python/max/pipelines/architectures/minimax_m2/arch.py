@@ -17,6 +17,7 @@ from max.pipelines.lib import SupportedArchitecture
 from max.pipelines.modeling.types import PipelineTask
 
 from . import weight_adapters
+from .batch_processor import MiniMaxM2BatchProcessor
 from .memory_planner import MiniMaxM2MemoryPlanner
 from .model import MiniMaxM2Model
 from .model_config import MiniMaxM2Config
@@ -46,6 +47,7 @@ minimax_m2_arch = SupportedArchitecture(
     },
     config=MiniMaxM2Config,
     multi_gpu_supported=True,
+    batching=MiniMaxM2BatchProcessor,
     tool_parser="minimax_m2",
     reasoning_parser="minimax_m2",
     memory_planner=MiniMaxM2MemoryPlanner,

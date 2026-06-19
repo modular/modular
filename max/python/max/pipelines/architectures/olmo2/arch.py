@@ -21,6 +21,7 @@ from max.pipelines.lib import (
 from max.pipelines.modeling.types import PipelineTask
 
 from ..llama3 import weight_adapters as llama3_weight_adapters
+from ..llama3.batch_processor import Llama3BatchProcessor
 from . import weight_adapters
 from .model import Olmo2Model
 from .model_config import Olmo2Config
@@ -50,5 +51,6 @@ olmo2_arch = SupportedArchitecture(
         WeightsFormat.gguf: weight_adapters.convert_gguf_state_dict,
     },
     config=Olmo2Config,
+    batching=Llama3BatchProcessor,
     memory_planner=PagedMemoryPlanner,
 )
