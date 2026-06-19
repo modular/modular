@@ -24,7 +24,6 @@ from .quant_strategy import (
     Mxfp4Strategy,
     Nvfp4DequantStrategy,
     Nvfp4Scales,
-    Nvfp4Strategy,
     NvMxf4f8Strategy,
     QuantStrategy,
 )
@@ -43,7 +42,6 @@ __all__ = [
     "NvMxf4f8Strategy",
     "Nvfp4DequantStrategy",
     "Nvfp4Scales",
-    "Nvfp4Strategy",
     "QuantStrategy",
     "StackedMoE",
     "forward_moe_sharded_layers",
