@@ -28,7 +28,6 @@ from .kernels import (
     grouped_matmul_ragged,
     matmul_static_scaled_float8,
     mxfp4_dequant,
-    nvfp4_dequant,
     nvfp4_gemv,
     quantize_dynamic_block_scaled,
     quantize_dynamic_block_scaled_mxfp4,

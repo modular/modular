@@ -29,7 +29,6 @@ from ..kernels import (
     grouped_matmul_blocked_swiglu,
     grouped_matmul_ragged,
     grouped_quantize_dynamic_block_scaled,
-    grouped_quantize_dynamic_block_scaled_fp4,
     nvfp4_dequant,
     quantize_dynamic_block_scaled_mxfp4,
     quantize_dynamic_scaled_float8,
