@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 import std.math
-from std.math import ceildiv, sqrt
+from std.math import sqrt
 
 from std.gpu.host import DeviceContext
 from layout import (
@@ -52,7 +52,6 @@ def run_slot_indexed_gpu[
     (b) only the pool slots named in ``slot_assignments`` are mutated; the
     remaining slots must equal their initial random fill.
     """
-    comptime RECURRENCE_BLOCK_SIZE = 128
     comptime layout_2d = Layout.row_major[2]()
     comptime layout_4d = Layout.row_major[4]()
     comptime layout_1d = Layout(UNKNOWN_VALUE)
@@ -217,7 +216,8 @@ def run_slot_indexed_gpu[
     var output_seqlen_stride: UInt32 = UInt32(value_dim)
     var output_valuedim_stride: UInt32 = 1
 
-    var total_threads = batch_size * num_value_heads * VALUE_HEAD_DIM
+    # One CTA per (batch, value_head); the block has VALUE_HEAD_DIM threads.
+    var num_blocks = batch_size * num_value_heads
 
     var compiled_func = ctx.compile_function[
         gated_delta_recurrence_fwd_gpu[
@@ -225,7 +225,6 @@ def run_slot_indexed_gpu[
             state_dtype,
             KEY_HEAD_DIM,
             VALUE_HEAD_DIM,
-            RECURRENCE_BLOCK_SIZE,
             recur_out_tt.LayoutType,
             qkv_tt.LayoutType,
             decay_tt.LayoutType,
@@ -239,14 +238,10 @@ def run_slot_indexed_gpu[
     with ctx.push_context():
         ctx.enqueue_function(
             compiled_func,
-            total_threads,
             batch_size,
-            total_seq_len,
             num_value_heads,
             num_key_heads,
             key_dim,
-            value_dim,
-            conv_dim,
             recur_out_tt,
             pool_tt,
             slot_idx_tt,
@@ -264,8 +259,8 @@ def run_slot_indexed_gpu[
             pool_value_dim_stride,
             output_seqlen_stride,
             output_valuedim_stride,
-            grid_dim=(ceildiv(total_threads, RECURRENCE_BLOCK_SIZE),),
-            block_dim=(RECURRENCE_BLOCK_SIZE,),
+            grid_dim=(num_blocks,),
+            block_dim=(VALUE_HEAD_DIM,),
         )
 
     with ctx.push_context():
@@ -439,6 +434,40 @@ def test_slot_indexed_gqa_two_sequences() raises:
         max_slots=4,
         seq_lengths=Index(3, 2),
         slot_assignments=Index(3, 0),
+        ctx=ctx,
+        rtol=0.05,
+    )
+
+
+def test_decode_gqa_batch() raises:
+    """Decode shape (seq_len 1 per request), GQA ratio 2, multi-request batch
+    hitting distinct slots — mirrors Qwen3.5 decode."""
+    var ctx = DeviceContext()
+    run_slot_indexed_gpu[DType.float32, DType.bfloat16, 128, 128](
+        batch_size=4,
+        total_seq_len=4,
+        num_value_heads=8,
+        num_key_heads=4,
+        max_slots=8,
+        seq_lengths=Index(1, 1, 1, 1),
+        slot_assignments=Index(5, 1, 7, 2),
+        ctx=ctx,
+        rtol=0.05,
+    )
+
+
+def test_prefill_gqa_multi_seq() raises:
+    """Prefill shape (longer seqs), GQA ratio 2, two requests in distinct slots.
+    """
+    var ctx = DeviceContext()
+    run_slot_indexed_gpu[DType.float32, DType.bfloat16, 128, 128](
+        batch_size=2,
+        total_seq_len=24,
+        num_value_heads=8,
+        num_key_heads=4,
+        max_slots=4,
+        seq_lengths=Index(16, 8),
+        slot_assignments=Index(2, 0),
         ctx=ctx,
         rtol=0.05,
     )
