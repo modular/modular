@@ -11,8 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+import os
+
 from max.dtype import DType
-from max.graph import DeviceRef, TensorValue, ops
+from max.graph import DeviceRef, TensorType, TensorValue, ops
 
 from .kernels import (
     _fused_qkv_ragged_matmul_scaled_float4,
@@ -28,6 +30,7 @@ from .kernels import (
     grouped_matmul_ragged,
     matmul_static_scaled_float8,
     mxfp4_dequant,
+    nvfp4_dequant,
     nvfp4_gemv,
     quantize_dynamic_block_scaled,
     quantize_dynamic_block_scaled_mxfp4,
@@ -70,6 +73,14 @@ def _reshape_pre_interleaved_scales(
     )
 
 
+# Activation-row count (M) above which the pre-Blackwell NVFP4 path switches
+# from the fused dequant-GEMV (decode) to a dequant + BF16 tensor-core GEMM
+# (prefill / high-concurrency decode). Override via env var to tune.
+_NVFP4_PRE_SM100_GEMM_M_THRESHOLD = int(
+    os.environ.get("MAX_NVFP4_GEMM_M_THRESHOLD", "32")
+)
+
+
 def _matmul_float4(
     x: TensorValue,
     weight: TensorValue,
@@ -99,11 +110,19 @@ def _matmul_float4(
         The output tensor in bf16.
     """
     if _is_pre_sm100_nvidia_gpu():
-        # Fused dequant-GEMV (Marlin-style): FP4 is decoded in registers
-        # inside the kernel, so the BF16 weight is never materialized and
-        # per-token DRAM traffic is the packed bytes only. The op consumes
-        # x, so unlike dequantize-then-matmul it can never be hoisted into
-        # an init-time constant (which costs ~3x the packed size in VRAM).
+        # Pre-Blackwell has no native FP4 tensor cores, so dispatch by the
+        # number of activation rows M (= tokens in flight this step):
+        #   * Small M (single / low-concurrency decode): fused dequant-GEMV.
+        #     FP4 is decoded in registers, the BF16 weight is never
+        #     materialized, and per-token DRAM traffic is the packed bytes
+        #     only -- optimal when M is tiny and the matmul is bandwidth bound.
+        #   * Large M (prefill or high-concurrency decode): dequantize the
+        #     weight to BF16 once and run a BF16 tensor-core GEMM. The GEMV
+        #     re-reads the packed weight once per M_TILE rows and uses scalar
+        #     FMAs, so it does not scale with M; the GEMM amortizes a single
+        #     dequant over all rows and uses the tensor cores. The dequant is
+        #     transient (one weight at a time), so it never needs the ~3x VRAM
+        #     a hoisted full-BF16 weight would.
         if scales_pre_interleaved:
             raise ValueError(
                 "NVFP4 checkpoints with pre-interleaved (TCGEN 5D) scales"
@@ -112,7 +131,30 @@ def _matmul_float4(
         scales_f32 = weight_scale.to(weight.device).cast(
             DType.float32
         ) * weight_scale_2.to(weight.device)
-        return nvfp4_gemv(x.cast(DType.bfloat16), weight, scales_f32)
+        x_bf16 = x.cast(DType.bfloat16)
+
+        out_type = TensorType(
+            dtype=DType.bfloat16,
+            shape=[x_bf16.shape[0], weight.shape[0]],
+            device=x_bf16.device,
+        )
+
+        def _gemv() -> TensorValue:
+            return nvfp4_gemv(x_bf16, weight, scales_f32)
+
+        def _gemm() -> TensorValue:
+            w_bf16 = nvfp4_dequant(
+                weight, scales_f32, out_type=DType.bfloat16
+            )
+            return x_bf16 @ w_bf16.T
+
+        m = ops.shape_to_tensor(x_bf16.shape)[0]
+        use_gemm = m > ops.constant(
+            _NVFP4_PRE_SM100_GEMM_M_THRESHOLD,
+            DType.int64,
+            device=DeviceRef.CPU(),
+        )
+        return ops.cond(use_gemm, [out_type], _gemm, _gemv)[0].tensor
 
     x, x_scales = quantize_dynamic_block_scaled(
         x,
