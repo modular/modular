@@ -17,6 +17,7 @@ from std.ffi import external_call, c_size_t
 from std.sys import size_of, align_of
 
 import std.algorithm
+import std.algorithm.functional
 
 from extensibility import StaticTensorSpec
 from extensibility import (

@@ -24,7 +24,7 @@ A custom kernel's entry-point signature uses these:
 The decorators that register a kernel (`register`, `register_internal`,
 `view_kernel`) live next to this file in `register.mojo`.
 """
-import std.algorithm
+import std.algorithm.functional
 
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.collections import Optional
