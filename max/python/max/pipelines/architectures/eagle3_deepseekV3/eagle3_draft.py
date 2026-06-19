@@ -521,7 +521,7 @@ class Eagle3DeepseekV3(Module):
             data_parallel_splits_type,
         ]
         all_input_types.extend(signal_buffer_types)
-        all_input_types.extend(kv_params.get_symbolic_inputs().flatten())
+        all_input_types.extend(kv_params.flattened_kv_inputs())
 
         batch_context_length_type = TensorType(
             DType.int32, shape=[1], device=DeviceRef.CPU()

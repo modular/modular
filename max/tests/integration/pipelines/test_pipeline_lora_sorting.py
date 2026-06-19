@@ -22,7 +22,7 @@ import numpy as np
 from max.driver import CPU, Buffer, Device
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.kv_cache import KVCacheInputs, KVCacheParams
+from max.nn.kv_cache import KVCacheInputsInterface, KVCacheParams
 from max.pipelines.context import (
     TextContext,
     TextGenerationOutput,
@@ -57,7 +57,7 @@ class MockModelInputs(ModelInputs):
     def __init__(
         self,
         batch_size: int,
-        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
+        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
     ) -> None:
         self._batch_size = batch_size
         self.kv_cache_inputs = MagicMock()
@@ -133,7 +133,7 @@ class MockPipelineModel(PipelineModelWithKVCache[ContextT]):
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[ContextT]],
-        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
+        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> ModelInputs:
         if len(replica_batches) > 1:
@@ -218,6 +218,7 @@ def create_lora_manager(
         n_heads=32,
         n_kv_heads=8,
         head_dim=128,
+        max_lora_seq_len=128,
     )
 
     for name in lora_names:
@@ -292,7 +293,6 @@ def execute_pipeline(
     patch_base = "max.pipelines.lib.pipeline_variants.text_generation"
     inputs: TextGenerationInputs[TextContext] = TextGenerationInputs(
         batches=[list(batch.values())],
-        num_steps=1,
     )
     with (
         patch(

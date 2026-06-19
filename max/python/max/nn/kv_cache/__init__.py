@@ -13,12 +13,15 @@
 
 from .cache_params import (
     BatchCharacteristics,
+    KVCacheAssignments,
     KVCacheBuffer,
+    KVCacheBufferInterface,
     KVCacheMemory,
     KVCacheParamInterface,
     KVCacheParams,
     KVCacheQuantizationConfig,
     KVConnectorType,
+    MultiKVCacheBuffer,
     MultiKVCacheParams,
     ReplicatedKVCacheMemory,
     compute_max_seq_len_fitting_in_cache,
@@ -26,11 +29,18 @@ from .cache_params import (
     compute_num_host_blocks,
     estimated_memory_size,
 )
-from .input_types import KVCacheInputs, KVCacheInputsPerDevice, PagedCacheValues
+from .input_types import (
+    KVCacheInputs,
+    KVCacheInputsInterface,
+    KVCacheInputsPerDevice,
+    MultiKVCacheInputs,
+    PagedCacheValues,
+)
 from .metrics import KVCacheMetrics
 from .utils import (
     AttentionDispatchResolver,
     AttnKey,
+    AttnKeyInterface,
     MHAAttnKey,
     MLAAttnKey,
     build_max_lengths_tensor,
@@ -39,9 +49,13 @@ from .utils import (
 __all__ = [
     "AttentionDispatchResolver",
     "AttnKey",
+    "AttnKeyInterface",
     "BatchCharacteristics",
+    "KVCacheAssignments",
     "KVCacheBuffer",
+    "KVCacheBufferInterface",
     "KVCacheInputs",
+    "KVCacheInputsInterface",
     "KVCacheInputsPerDevice",
     "KVCacheMemory",
     "KVCacheMetrics",
@@ -51,6 +65,8 @@ __all__ = [
     "KVConnectorType",
     "MHAAttnKey",
     "MLAAttnKey",
+    "MultiKVCacheBuffer",
+    "MultiKVCacheInputs",
     "MultiKVCacheParams",
     "PagedCacheValues",
     "ReplicatedKVCacheMemory",

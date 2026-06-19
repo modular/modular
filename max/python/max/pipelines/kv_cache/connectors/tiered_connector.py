@@ -270,10 +270,11 @@ class TieredConnector:
         return num_loaded
 
     @traced
-    def sync(self) -> None:
-        """Wait for pending loads/offloads to complete and post disk writes.
+    def wait_for_offloads(self) -> None:
+        """Drain offloads posted this step and post disk writes.
 
-        Uses zero-copy: host blocks are kept pinned (ref_cnt=1) from D2H
+        Called after the forward pass. Waits for in-flight D2H copies, then
+        uses zero-copy: host blocks are kept pinned (ref_cnt=1) from D2H
         through disk write completion.  Numpy views (no ``.copy()``) are
         passed to the disk writer thread — safe because the block can't be
         evicted while pinned.  Blocks are released on the *main* thread in
@@ -293,6 +294,18 @@ class TieredConnector:
             self._pending_disk_writes.pop()
             for host_block in pending_disk_write.host_blocks:
                 self._write_block_to_disk(host_block)
+
+    def wait_for_loads(self) -> None:
+        """Synchronize the main and auxiliary streams once per forward pass.
+
+        Called once before the forward pass and before the per-request
+        ``offload`` calls. This duplex sync makes the forward pass wait for
+        in-flight H2D loads and the previous step's D2H offloads (so reused
+        blocks are safe), and orders subsequent D2H copies after the forward
+        pass. Doing it here once — rather than at the head of every ``offload``
+        — keeps the forward pass overlapping with the D2H transfers.
+        """
+        self._block_copy_engine.wait_for_completion()
 
     @traced
     def _drain_completed_writes(self) -> None:
@@ -316,10 +329,18 @@ class TieredConnector:
         self,
         block_ids: list[int],
         block_hashes: list[int],
+        parent_seq_hash: int = 0,
     ) -> None:
-        """Offload the device blocks to the external cache."""
-        self._block_copy_engine.wait_for_completion()
+        """Offload the device blocks to the external cache.
 
+        ``parent_seq_hash`` is ignored: blocks are keyed by hash at each tier.
+
+        Kicks off the D2H copies on the auxiliary stream without synchronizing.
+        The main/aux stream sync runs once per forward pass in
+        ``wait_for_loads``; ``offload`` is now called once per request
+        (multiple times per forward pass), so syncing here would re-serialize
+        the copies against the forward pass and destroy the overlap.
+        """
         host_blocks: list[KVCacheBlock] = []
         for device_block_id, block_hash in zip(
             block_ids, block_hashes, strict=True

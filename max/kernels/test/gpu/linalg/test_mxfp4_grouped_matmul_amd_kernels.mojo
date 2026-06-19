@@ -40,6 +40,7 @@ Usage:
 
 from std.gpu.host import DeviceBuffer, DeviceContext, HostBuffer
 from std.gpu.host.info import MI355X
+from std.gpu.memory import CacheOperation
 from std.math import align_up, ceildiv
 from std.memory import bitcast
 from std.random import random_ui64, seed
@@ -155,10 +156,13 @@ def _run_preb[
     K: Int,
     BK_ELEMS: Int,
     persistent: Bool,
-    cu_count: Int,  # struct param — `total_wg = cu_count * 2`
+    cu_count: Int,  # struct param — `total_wg = cu_count * wg_per_cu`
     BM: Int = 64,
     BN: Int = 128,
     WN: Int = 64,
+    b_cache_policy: CacheOperation = CacheOperation.ALWAYS,
+    waves_per_eu: Int = 0,
+    wg_per_cu: Int = 2,  # struct param — sizes the persistent grid
 ](
     name: String,
     num_tokens_by_expert: List[Int],
@@ -352,12 +356,14 @@ def _run_preb[
     var eid_tt = TileTensor(eid_d, row_major(Coord(num_active)))
     var c_tt = TileTensor[mut=True](c_d, row_major(Coord(total_tokens, Idx[N])))
 
-    PreShuffledBGroupedGEMM[cu_count=cu_count].launch[
+    PreShuffledBGroupedGEMM[cu_count=cu_count, wg_per_cu=wg_per_cu].launch[
         BM=BM,
         BN=BN,
         BK_ELEMS=BK_ELEMS,
         WN=WN,
         persistent=persistent,
+        b_cache_policy=b_cache_policy,
+        waves_per_eu=waves_per_eu,
     ](
         c_tt,
         a_tt,
@@ -412,6 +418,9 @@ def test_persistent[
     BM: Int = 64,
     BN: Int = 128,
     WN: Int = 64,
+    b_cache_policy: CacheOperation = CacheOperation.ALWAYS,
+    waves_per_eu: Int = 0,
+    wg_per_cu: Int = 2,
 ](
     name: String,
     num_tokens_by_expert: List[Int],
@@ -422,9 +431,10 @@ def test_persistent[
     walking a global tile counter; XCD swizzle on `block_idx.x`.
 
     `cu_count` overrides the launch grid size; default 256 = MI355X. Lower
-    values shrink `total_wg = cu_count * 2`, which lets the multi-wave test
-    trigger the per-WG `while target_tile < expert_end: target_tile +=
-    total_wg` path with a CPU-tractable workload.
+    values shrink `total_wg = cu_count * wg_per_cu`, which lets the multi-wave
+    test trigger the per-WG `while target_tile < expert_end: target_tile +=
+    total_wg` path with a CPU-tractable workload. `wg_per_cu` is a launch
+    comptime sizing param; results must be unchanged across values.
     """
     _run_preb[
         num_experts,
@@ -436,6 +446,9 @@ def test_persistent[
         BM=BM,
         BN=BN,
         WN=WN,
+        b_cache_policy=b_cache_policy,
+        waves_per_eu=waves_per_eu,
+        wg_per_cu=wg_per_cu,
     ](name, num_tokens_by_expert, expert_ids_list, ctx)
 
 
@@ -448,6 +461,9 @@ def test_direct[
     BM: Int = 64,
     BN: Int = 128,
     WN: Int = 64,
+    b_cache_policy: CacheOperation = CacheOperation.ALWAYS,
+    waves_per_eu: Int = 0,
+    wg_per_cu: Int = 2,
 ](
     name: String,
     num_tokens_by_expert: List[Int],
@@ -455,7 +471,8 @@ def test_direct[
     ctx: DeviceContext,
 ) raises:
     """`PreShuffledBGroupedGEMM.launch[persistent=False]` — 3D workload-sized
-    grid: one WG per (n_tile, m_tile, expert)."""
+    grid: one WG per (n_tile, m_tile, expert). `wg_per_cu` is accepted for
+    signature parity with `test_persistent`; the direct grid ignores it."""
     _run_preb[
         num_experts,
         N,
@@ -466,6 +483,9 @@ def test_direct[
         BM=BM,
         BN=BN,
         WN=WN,
+        b_cache_policy=b_cache_policy,
+        waves_per_eu=waves_per_eu,
+        wg_per_cu=wg_per_cu,
     ](name, num_tokens_by_expert, expert_ids_list, ctx)
 
 
@@ -898,5 +918,166 @@ def main() raises:
         ],
         ctx,
     )
+
+    # ----------------------------------------------------------------- #
+    # Production dispatch-band coverage — real kimi N/K with the EXACT
+    # (BM, BN, BK_ELEMS, WN, persistent, b_cache_policy) each band in
+    # mxfp4_grouped_matmul_amd.mojo launches. One representative token
+    # distribution per band (a few active experts + an inactive slot
+    # where useful). STREAMING vs ALWAYS is result-identical (cache hint);
+    # these cases assert the exact instantiation compiles, runs, and is
+    # correct. M values are illustrative of each band's regime, not the
+    # dispatcher's estimated_total_m selector (this path bypasses it).
+    # ----------------------------------------------------------------- #
+    print("---- production band coverage: KIMI up-proj (N=4096, K=7168) ----")
+    # band M==1 (decode)
+    test_persistent[4, 4096, 7168, BM=16, BN=64, BK_ELEMS=512, WN=16](
+        "up M==1", [1, 1, 1, 1], [0, 1, 2, 3], ctx
+    )
+    # band 2<=M<=4
+    test_persistent[4, 4096, 7168, BM=16, BN=128, BK_ELEMS=512, WN=32](
+        "up 2..4", [4, 2, 3, 4], [0, 1, 2, 3], ctx
+    )
+    # band 17<=M<=400
+    test_persistent[4, 4096, 7168, BM=32, BN=128, BK_ELEMS=512, WN=32](
+        "up 17..400", [200, 64, 128, 32], [0, 1, 2, 3], ctx
+    )
+    # default persistent fallback (M in the 5..16 / 401..4095 gaps)
+    test_persistent[4, 4096, 7168, BM=64, BN=128, BK_ELEMS=512, WN=64](
+        "up default-fallback", [512, 128, 256, 0], [0, 1, 2, 3], ctx
+    )
+    # use_direct path (persistent=False). Token count kept modest for memory;
+    # the dispatcher is bypassed so M doesn't select the band — the config does.
+    test_direct[1, 4096, 7168, BM=64, BN=128, BK_ELEMS=512, WN=64](
+        "up direct", [1024], [0], ctx
+    )
+
+    print("---- production band coverage: KIMI down-proj (N=7168, K=2048) ----")
+    # band M==1 (decode)
+    test_persistent[4, 7168, 2048, BM=16, BN=128, BK_ELEMS=512, WN=32](
+        "down M==1", [1, 1, 1, 1], [0, 1, 2, 3], ctx
+    )
+    # band 2<=M<=7 (B cached)
+    test_persistent[4, 7168, 2048, BM=16, BN=256, BK_ELEMS=256, WN=64](
+        "down 2..7 cached", [4, 2, 6, 3], [0, 1, 2, 3], ctx
+    )
+    # band 8<=M<=16 (B STREAMING)
+    test_persistent[
+        4,
+        7168,
+        2048,
+        BM=16,
+        BN=256,
+        BK_ELEMS=256,
+        WN=64,
+        b_cache_policy=CacheOperation.STREAMING,
+    ]("down 8..16 STREAMING", [12, 8, 16, 10], [0, 1, 2, 3], ctx)
+    # band 17<=M<=37 / 385<=M<=400 (same config, B cached)
+    test_persistent[4, 7168, 2048, BM=32, BN=256, BK_ELEMS=512, WN=64](
+        "down 17..37 / 385..400 cached", [32, 24, 37, 0], [0, 1, 2, 3], ctx
+    )
+    # band 38<=M<=384 (B STREAMING)
+    test_persistent[
+        4,
+        7168,
+        2048,
+        BM=32,
+        BN=256,
+        BK_ELEMS=512,
+        WN=64,
+        b_cache_policy=CacheOperation.STREAMING,
+    ]("down 38..384 STREAMING", [128, 96, 128, 64], [0, 1, 2, 3], ctx)
+    # band 401<=M<=1200 (BK_ELEMS=256, B cached)
+    test_persistent[4, 7168, 2048, BM=64, BN=256, BK_ELEMS=256, WN=64](
+        "down 401..1200 cached", [256, 256, 128, 64], [0, 1, 2, 3], ctx
+    )
+    # default persistent fallback (M in the 1201..4095 gap)
+    test_persistent[4, 7168, 2048, BM=64, BN=128, BK_ELEMS=512, WN=64](
+        "down default-fallback", [384, 128, 128, 0], [0, 1, 2, 3], ctx
+    )
+    # use_direct path (persistent=False); token count kept modest for memory.
+    test_direct[1, 7168, 2048, BM=64, BN=128, BK_ELEMS=512, WN=64](
+        "down direct", [512], [0], ctx
+    )
+
+    # waves_per_eu is a codegen hint; results must be unchanged.
+    print("---- preb waves_per_eu EU-bounding cap ----")
+    test_persistent[4, 512, 2048, waves_per_eu=1](
+        "wpe=1 persistent", [128, 96, 128, 64], [0, 1, 2, 3], ctx
+    )
+    test_persistent[4, 512, 2048, waves_per_eu=2](
+        "wpe=2 persistent", [128, 96, 128, 64], [0, 1, 2, 3], ctx
+    )
+    test_direct[
+        1, 7168, 2048, BM=64, BN=128, BK_ELEMS=512, WN=64, waves_per_eu=2
+    ]("wpe=2 direct", [512], [0], ctx)
+
+    # Each band config the retuned dispatcher selects.
+    print("---- retuned dispatcher band configs ----")
+    comptime SX = CacheOperation.STREAMING
+    test_persistent[
+        4, 4096, 7168, BM=16, BN=128, BK_ELEMS=512, WN=32, b_cache_policy=SX
+    ]("up BM16/BN128 STREAM", [128, 96, 128, 64], [0, 1, 2, 3], ctx)
+    test_persistent[
+        4, 4096, 7168, BM=32, BN=128, BK_ELEMS=512, WN=32, b_cache_policy=SX
+    ]("up BM32/BN128 STREAM", [256, 256, 256, 256], [0, 1, 2, 3], ctx)
+    test_persistent[4, 7168, 2048, BM=16, BN=64, BK_ELEMS=512, WN=16](
+        "down BN64 tiny", [2, 1, 0, 1], [0, 1, 2, 3], ctx
+    )
+    test_persistent[
+        4, 7168, 2048, BM=16, BN=128, BK_ELEMS=512, WN=32, b_cache_policy=SX
+    ]("down BM16/BN128 STREAM", [128, 96, 128, 64], [0, 1, 2, 3], ctx)
+    test_persistent[
+        4, 7168, 2048, BM=32, BN=128, BK_ELEMS=512, WN=32, b_cache_policy=SX
+    ]("down BM32/BN128 STREAM", [256, 256, 256, 256], [0, 1, 2, 3], ctx)
+    test_persistent[
+        4, 7168, 2048, BM=64, BN=128, BK_ELEMS=512, WN=64, b_cache_policy=SX
+    ]("down BM64/BN128 STREAM", [512, 512, 256, 256], [0, 1, 2, 3], ctx)
+    test_direct[1, 7168, 2048, BM=64, BN=128, BK_ELEMS=256, WN=64](
+        "down direct BK256", [512], [0], ctx
+    )
+
+    # Remaining bands the retuned dispatcher can select, plus the real
+    # EP=4 batch-1 decode point and a skewed-routing stress case.
+    # up etm<=20 ALWAYS band (16,64,512,16).
+    test_persistent[4, 4096, 7168, BM=16, BN=64, BK_ELEMS=512, WN=16](
+        "up BM16/BN64 tiny ALWAYS", [8, 4, 0, 4], [0, 1, 2, 3], ctx
+    )
+    # up etm<=4095 STREAM band (64,128,512,64). Token count kept modest to
+    # stay under the harness HBM ceiling; config is what's under test.
+    test_persistent[
+        4, 4096, 7168, BM=64, BN=128, BK_ELEMS=512, WN=64, b_cache_policy=SX
+    ]("up BM64/BN128 STREAM", [192, 192, 128, 128], [0, 1, 2, 3], ctx)
+    # up else direct band (64,128,512,64).
+    test_direct[1, 4096, 7168, BM=64, BN=128, BK_ELEMS=512, WN=64](
+        "up direct", [512], [0], ctx
+    )
+
+    # etm==1 wg_per_cu=1 variant for both shapes (16,64,512,16). wg_per_cu is
+    # a grid-sizing comptime; results must match the wg_per_cu=2 default.
+    test_persistent[
+        4, 4096, 7168, BM=16, BN=64, BK_ELEMS=512, WN=16, wg_per_cu=1
+    ]("up etm1 wg_per_cu=1", [1, 0, 0, 0], [0, 1, 2, 3], ctx)
+    test_persistent[
+        4, 7168, 2048, BM=16, BN=64, BK_ELEMS=512, WN=16, wg_per_cu=1
+    ]("down etm1 wg_per_cu=1", [1, 0, 0, 0], [0, 1, 2, 3], ctx)
+
+    # True EP=4 batch-1 decode point: 2 experts, 1 row each (M=2), tile
+    # (16,64,512,16) for both up and down.
+    test_persistent[4, 4096, 7168, BM=16, BN=64, BK_ELEMS=512, WN=16](
+        "up EP4 decode M=2", [1, 1, 0, 0], [0, 1, 2, 3], ctx
+    )
+    test_persistent[4, 7168, 2048, BM=16, BN=64, BK_ELEMS=512, WN=16](
+        "down EP4 decode M=2", [1, 1, 0, 0], [0, 1, 2, 3], ctx
+    )
+
+    # Skewed routing (one hot expert, etm~203 -> (16,128,512,32) STREAM band).
+    # Stresses persistent work-stealing under imbalance.
+    test_persistent[
+        4, 4096, 7168, BM=16, BN=128, BK_ELEMS=512, WN=32, b_cache_policy=SX
+    ]("up skewed hot expert", [200, 1, 1, 1], [0, 1, 2, 3], ctx)
+    test_persistent[
+        4, 7168, 2048, BM=16, BN=128, BK_ELEMS=512, WN=32, b_cache_policy=SX
+    ]("down skewed hot expert", [200, 1, 1, 1], [0, 1, 2, 3], ctx)
 
     print("==== all preb grouped MXFP4 kernel tests passed ====")

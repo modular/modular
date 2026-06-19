@@ -424,9 +424,10 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
     ]:
         image_inputs = None
         if request.images:
+            # fetch_image accepts both a PIL.Image and raw bytes.
             image_inputs = [
-                fetch_image({"image": image_data})
-                for image_data in request.images
+                fetch_image({"image": image})
+                for image in request.images_for_processing()
             ]
         elif request.messages:
             image_inputs, _, _ = process_vision_info(
@@ -590,6 +591,8 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
             tokens=TokenBuffer(input_ids),
             max_length=max_length,
             json_schema=json_schema,
+            log_probabilities=request.logprobs,
+            log_probabilities_echo=request.echo,
             sampling_params=request.sampling_params,
             target_endpoint=request.target_endpoint,
             images=images,

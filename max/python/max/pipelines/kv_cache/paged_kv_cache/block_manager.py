@@ -49,7 +49,6 @@ logger = logging.getLogger("max.pipelines")
 
 def _compute_seq_len(
     ctx: TextContext,
-    num_steps: int,
     num_draft_tokens: int,
     num_draft_tokens_per_step: int = 1,
 ) -> int:
@@ -61,7 +60,7 @@ def _compute_seq_len(
     #                                   conservative: assume all are accepted
     #   2 * num_draft_tokens          : drafts to verify *next* batch
     #                                   + drafts written *during* that batch
-    #   num_steps                     : regular decode steps
+    #   1                             : one regular decode step
     #   -1                            : the last generated token has no KV entry
     #
     # Block-draft correction (DFlash): the draft model's ``forward_block``
@@ -80,7 +79,7 @@ def _compute_seq_len(
         len(ctx.tokens)
         + len(ctx.spec_decoding_state.maybe_accepted_draft_tokens)
         + 2 * num_draft_tokens
-        + num_steps
+        + 1
         + block_draft_extra
         - 1
     )
@@ -136,8 +135,13 @@ class BlockManager:
         # The connector owns host memory, host block pool, and H2D/D2H transfers.
         self.connector = connector
 
-        # List of block hashes that need to be offloaded to the connector.
-        self._hashes_to_offload: set[int] = set()
+        # Ordered offload sequences pending delivery to the connector. Each
+        # entry is (parent_seq_hash, ordered block hashes): one contiguous run
+        # of newly-committed blocks, in prefix order, chaining onto
+        # parent_seq_hash (0 = root). Ordering and parentage are preserved so
+        # connectors that chain sequences (dKV) can reconstruct the prefix;
+        # hash-keyed connectors (host/disk) ignore the parent.
+        self._pending_offloads: list[tuple[int, list[int]]] = []
 
         # A pool of device blocks.
         self.device_block_pool = BlockPool(
@@ -481,8 +485,21 @@ class BlockManager:
             if new_block is not None:
                 req_blocks[block_idx] = new_block
 
-            # Add the block to the offload queue.
-            self._hashes_to_offload.add(block_hash)
+        # Queue the newly-committed blocks as one ordered offload sequence. Its
+        # parent is the block immediately before this run in the prefix (0 =
+        # root); that block was committed and offloaded in a previous step.
+        if num_computed_blocks > num_committed_blocks:
+            parent_seq_hash = (
+                req_hashes[num_committed_blocks - 1]
+                if num_committed_blocks > 0
+                else 0
+            )
+            new_block_hashes = req_hashes[
+                num_committed_blocks:num_computed_blocks
+            ]
+            self._pending_offloads.append(
+                (parent_seq_hash, list(new_block_hashes))
+            )
 
         # Bump the committed index.
         self.req_to_committed_idx[ctx.request_id] = (
@@ -490,20 +507,27 @@ class BlockManager:
         )
 
     def offload(self) -> None:
-        """Offload the blocks to the connector."""
-        block_ids = []
-        block_hashes = []
+        """Offload the pending sequences to the connector.
+
+        Each pending sequence is delivered as one ordered ``offload`` call so
+        connectors can chain it onto ``parent_seq_hash``. Hashes are re-resolved
+        to their current device blocks here; if a block was evicted since it was
+        committed, the run is truncated at that point (the remaining blocks'
+        parent would be absent), so the connector never sees a gap-chain.
+        """
         prefix_cache = self.device_block_pool.prefix_cache
-        for block_hash in self._hashes_to_offload:
-            # It is possible that the hash is no longer available in the prefix
-            # cache since the corresponding block has been evicted.
-            if block_hash not in prefix_cache:
-                continue
-            block = prefix_cache[block_hash]
-            block_ids.append(block.bid)
-            block_hashes.append(block_hash)
-        self.connector.offload(block_ids, block_hashes)
-        self._hashes_to_offload.clear()
+        for parent_seq_hash, hashes in self._pending_offloads:
+            block_ids = []
+            block_hashes = []
+            for block_hash in hashes:
+                if block_hash not in prefix_cache:
+                    # Block evicted since commit; truncate the run here.
+                    break
+                block_ids.append(prefix_cache[block_hash].bid)
+                block_hashes.append(block_hash)
+            if block_hashes:
+                self.connector.offload(block_ids, block_hashes, parent_seq_hash)
+        self._pending_offloads.clear()
 
     def release(self, request_id: RequestID) -> None:
         """Release the blocks for the request."""
@@ -529,20 +553,18 @@ class BlockManager:
     def allocate_new_blocks(
         self,
         ctx: TextContext,
-        num_steps: int = 1,
         num_draft_tokens: int = 0,
         num_draft_tokens_per_step: int = 1,
     ) -> None:
         """Allocate new blocks for a request to accommodate additional tokens.
 
         Calculates the number of additional blocks needed based on the current sequence
-        length and number of steps, then allocates them from the device block pool.
+        length, then allocates them from the device block pool.
         Validates that there are sufficient free blocks available and that the current
         blocks can accommodate the completed tokens.
 
         Args:
             ctx: The request context containing sequence information and token indices.
-            num_steps: Number of additional steps to allocate blocks for. Defaults to 1.
             num_draft_tokens: Total draft tokens generated per speculative
                 iteration. Zero for non-speculative decode.
             num_draft_tokens_per_step: Number of draft KV positions written
@@ -580,7 +602,6 @@ class BlockManager:
         # Determine number of new blocks to allocate.
         num_new_blocks = self.num_blocks_to_allocate(
             ctx,
-            num_steps,
             num_draft_tokens,
             num_draft_tokens_per_step,
         )
@@ -618,7 +639,6 @@ class BlockManager:
     def num_blocks_to_allocate(
         self,
         ctx: TextContext,
-        num_steps: int = 1,
         num_draft_tokens: int = 0,
         num_draft_tokens_per_step: int = 1,
     ) -> int:
@@ -626,7 +646,6 @@ class BlockManager:
 
         Args:
             ctx: The request context containing sequence information and token indices.
-            num_steps: Number of additional steps to allocate blocks for. Defaults to 1.
             num_draft_tokens: Total draft tokens generated per speculative
                 iteration. Zero for non-speculative decode.
             num_draft_tokens_per_step: Number of draft KV positions written
@@ -644,7 +663,6 @@ class BlockManager:
         num_current_blocks = len(current_blocks)
         current_seq_len = _compute_seq_len(
             ctx,
-            num_steps,
             num_draft_tokens,
             num_draft_tokens_per_step,
         )

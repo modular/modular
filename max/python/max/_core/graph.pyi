@@ -63,6 +63,11 @@ def frame_loc(
 ) -> max._mlir.ir.Location:
     """Creates an opaque MLIR location containing a Python stack frame."""
 
+def to_mlir_with_source_locations(op: max._core.Operation) -> str:
+    """
+    Serializes the operation to MLIR assembly text with each op's Python source location materialized into printable form. Does not mutate the operation.
+    """
+
 def _init_and_register_max_context(mlir_ctx: max._mlir.ir.Context) -> None:
     """
     Initializes a process-wide M::Context when none exists, then registers it with the given MLIR context so compiler code can use loadContext.

@@ -15,10 +15,21 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any, Generic
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Generic,
+    Protocol,
+    cast,
+    runtime_checkable,
+)
 
 import numpy as np
 from max.driver import load_devices
+from max.experimental import functional as F
+from max.experimental.nn import Module
+from max.experimental.tensor import Tensor
+from max.graph import TensorType
 from max.pipelines.context import (
     GenerationStatus,
     PixelGenerationContextType,
@@ -39,10 +50,44 @@ from .cache import DenoisingCacheConfig
 from .interface import DiffusionPipeline
 
 if TYPE_CHECKING:
+    from max.experimental.nn import CompiledModel
     from max.pipelines.lib.config import PipelineConfig
+    from max.pipelines.lib.model_manifest import ModelManifest
     from max.pipelines.lib.pipeline_executor import PipelineExecutor
 
 _logger = logging.getLogger("max.pipelines")
+
+
+@runtime_checkable
+class PixelGenerationModule(Protocol):
+    """Interface a Module-driven architecture exposes to ``PixelGenerationPipeline``.
+
+    A class satisfying this Protocol (typically also subclassing
+    :class:`~max.experimental.nn.Module`) can be driven through the
+    pipeline's ModuleV3 path: the pipeline wraps construction in
+    :func:`~max.experimental.functional.lazy`, walks the Module tree
+    via
+    :func:`~max.pipelines.lib.weight_loader.adapt_module_loader`
+    to bind weights, compiles the forward graph, and per request calls
+    :meth:`prepare_inputs` to translate a :class:`PixelContext` batch
+    into the compiled call's argument tuple and :meth:`from_outputs`
+    to translate the resulting tensors back into a pipeline-facing
+    output struct.
+    """
+
+    def __init__(self, manifest: ModelManifest) -> None: ...
+
+    def input_types(self) -> tuple[TensorType, ...]:
+        """Returns the compile-time input :class:`~max.graph.TensorType` tuple."""
+        ...
+
+    def prepare_inputs(self, contexts: list[Any]) -> Any:
+        """Translates a context batch into the compiled call's argument tuple."""
+        ...
+
+    def from_outputs(self, tensors: list[Tensor]) -> Any:
+        """Translates the compiled call's output tensors into a pipeline struct."""
+        ...
 
 
 class PixelGenerationPipeline(
@@ -62,7 +107,8 @@ class PixelGenerationPipeline(
         self,
         pipeline_config: PipelineConfig,
         pipeline_model: type[DiffusionPipeline]
-        | type[PipelineExecutor[Any, Any, Any]],
+        | type[PipelineExecutor[Any, Any, Any]]
+        | type[Module[Any, Any]],
         cache_config: DenoisingCacheConfig | None = None,
     ) -> None:
         from max.engine import InferenceSession  # local import to avoid cycles
@@ -79,23 +125,64 @@ class PixelGenerationPipeline(
         # Configure session with pipeline settings.
         self._pipeline_config.configure_session(session)
 
-        if issubclass(pipeline_model, PipelineExecutor):
+        self._use_module = False
+        self._use_executor = False
+        self._module: PixelGenerationModule | None = None
+        self._compiled: CompiledModel | None = None
+        self._executor: PipelineExecutor[Any, Any, Any] | None = None
+        self._pipeline_model: DiffusionPipeline | None = None
+
+        if issubclass(pipeline_model, Module):
+            # ModuleV3 path: construct the Module under F.lazy(), compose
+            # the manifest's loader through the Module tree's
+            # query-translating adapters, then compile.  Compilation,
+            # session lifecycle, and the CompiledModel handle all live
+            # here -- the Module itself carries only structure (forward +
+            # input_types) and the request/response I/O contract
+            # (prepare_inputs + from_outputs).
+            self._use_module = True
+            module_cls = cast(type[PixelGenerationModule], pipeline_model)
+            with F.lazy():
+                module_io = module_cls(manifest=pipeline_config.models)
+            # The Module ABC carries ``.compile()`` and the walker's
+            # ``.descendants`` traversal; the Protocol carries the I/O
+            # methods.  Bridge with one cast since mypy can't express
+            # the intersection (Module & PixelGenerationModule).
+            module_base = cast(Module[Any, Any], module_io)
+            # Compose the source loader through every Module's
+            # ``adapt_loader``, then materialise just the parameters the
+            # Module declares -- the loader stays cold for anything the
+            # tree never asks for.
+            # Imported here rather than at module scope to break a
+            # circular import: ``max.pipelines.lib`` imports this module's
+            # ``PixelGenerationPipeline``, so importing from
+            # ``max.pipelines.lib.*`` at load time re-enters a
+            # partially-initialized ``lib`` package.
+            from max.pipelines.lib.weight_loader import adapt_module_loader
+
+            loader = adapt_module_loader(
+                module_base, pipeline_config.models.loader()
+            )
+            state_dict = {
+                name: loader(name) for name, _ in module_base.parameters
+            }
+            self._compiled = module_base.compile(
+                *module_io.input_types(),
+                weights=state_dict,
+            )
+            self._module = module_io
+        elif issubclass(pipeline_model, PipelineExecutor):
             # Merge CLI-supplied cache_config into runtime so the executor
             # receives TaylorSeer / FBCache settings.
             if cache_config is not None:
                 pipeline_config.runtime.denoising_cache = cache_config
             self._use_executor = True
-            self._executor: PipelineExecutor[Any, Any, Any] | None = (
-                pipeline_model(
-                    manifest=pipeline_config.models,
-                    session=session,
-                    runtime_config=pipeline_config.runtime,
-                )
+            self._executor = pipeline_model(
+                manifest=pipeline_config.models,
+                session=session,
+                runtime_config=pipeline_config.runtime,
             )
-            self._pipeline_model: DiffusionPipeline | None = None
         else:
-            self._use_executor = False
-            self._executor = None
             # Weight paths are resolved per-component inside
             # _load_sub_models.
             self._pipeline_model = pipeline_model(
@@ -121,7 +208,37 @@ class PixelGenerationPipeline(
         if not flat_batch or model_inputs is None:
             return {}
 
-        if self._use_executor:
+        if self._use_module:
+            assert self._compiled is not None
+            assert self._module is not None
+            # ``forward`` runs the text encoder and the VAE image encoder
+            # unconditionally; push the prepared buffers through the
+            # compiled graph and surface the outputs so we can verify
+            # the compile path end-to-end before the denoiser lands.
+            # Per-input device placement is handled inside the Module's
+            # ``prepare_inputs``.
+            try:
+                compiled_outputs = self._compiled(
+                    model_inputs.tokens,
+                    model_inputs.input_image,
+                )
+            except Exception:
+                _logger.error(
+                    "Encountered an exception while executing pixel "
+                    "batch (module path, text + image encoders only): "
+                    "batch_size=%d",
+                    len(flat_batch),
+                )
+                raise
+            text_encoder_output, image_latents = compiled_outputs
+            print(f"FLUXModule text encoder output: {text_encoder_output}")
+            print(f"FLUXModule image latents: {image_latents}")
+            raise NotImplementedError(
+                "FLUXModule execute path is wired only through the "
+                "text encoder and VAE image encoder; denoiser and "
+                "VAE decoder are not yet implemented."
+            )
+        elif self._use_executor:
             assert self._executor is not None
             try:
                 executor_outputs = self._executor.execute(model_inputs)
@@ -234,7 +351,11 @@ class PixelGenerationPipeline(
                 "Batching of different requests is not supported yet."
             )
 
-        if self._use_executor:
+        if self._use_module:
+            assert self._module is not None
+            contexts = [ctx for _rid, ctx in flat_batch]
+            model_inputs = self._module.prepare_inputs(contexts)
+        elif self._use_executor:
             assert self._executor is not None
             contexts = [ctx for _rid, ctx in flat_batch]
             model_inputs = self._executor.prepare_inputs(contexts)

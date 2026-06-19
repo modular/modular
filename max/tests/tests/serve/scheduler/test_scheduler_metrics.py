@@ -15,7 +15,7 @@ import io
 import json
 import logging
 from typing import Any
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from max.pipelines.modeling.types import BatchType
 from max.serve.scheduler.utils import BatchMetrics
@@ -27,7 +27,6 @@ def _make_metrics(**overrides: Any) -> BatchMetrics:
         batch_type=BatchType.CE,
         batch_size=1,
         max_batch_size=2,
-        num_steps=3,
         terminated_reqs=4,
         num_pending_reqs=5,
         num_input_tokens=6,
@@ -74,7 +73,6 @@ def test_metric_to_string() -> None:
         batch_type=BatchType.CE,
         batch_size=1,
         max_batch_size=2,
-        num_steps=3,
         terminated_reqs=4,
         num_pending_reqs=5,
         num_input_tokens=6,
@@ -172,7 +170,6 @@ def test_metric_to_string_overlap_scheduler() -> None:
         batch_type=BatchType.TG,
         batch_size=1,
         max_batch_size=2,
-        num_steps=3,
         terminated_reqs=4,
         num_pending_reqs=5,
         num_input_tokens=6,
@@ -231,7 +228,6 @@ def test_metric_to_string_continuation_only_ce_batch() -> None:
         batch_type=BatchType.CE,
         batch_size=1,
         max_batch_size=2,
-        num_steps=1,
         terminated_reqs=0,
         num_pending_reqs=0,
         num_input_tokens=1862,
@@ -484,3 +480,153 @@ def test_publish_metrics_disk_kv_active() -> None:
     with patch("max.serve.scheduler.utils.METRICS") as mock_metrics:
         metrics.publish_metrics()
     mock_metrics.cache_used_disk_kv_pct.assert_called_once_with(30.0)
+
+
+# ---------------------------------------------------------------------------
+# _SpeculativeDecodingMetrics tests
+# ---------------------------------------------------------------------------
+
+
+def _make_spec_metrics(
+    num_speculative_tokens: int,
+    accepted_per_position: list[int],
+    num_verifications: int,
+) -> Any:
+    from max.pipelines.speculative.utils import _SpeculativeDecodingMetrics
+
+    return _SpeculativeDecodingMetrics(
+        num_speculative_tokens=num_speculative_tokens,
+        accepted_per_position=accepted_per_position,
+        num_verifications=num_verifications,
+    )
+
+
+def test_spec_decode_metrics_output_tokens() -> None:
+    metrics = _make_spec_metrics(
+        num_speculative_tokens=3,
+        accepted_per_position=[4, 3, 1],
+        num_verifications=5,
+    )
+    assert metrics.output_tokens == 13
+
+
+def test_spec_decode_metrics_output_tokens_zero_verifications() -> None:
+    metrics = _make_spec_metrics(
+        num_speculative_tokens=3,
+        accepted_per_position=[0, 0, 0],
+        num_verifications=0,
+    )
+    assert metrics.output_tokens == 0
+
+
+def test_spec_decode_metrics_properties() -> None:
+    metrics = _make_spec_metrics(
+        num_speculative_tokens=3,
+        accepted_per_position=[6, 4, 2],
+        num_verifications=8,
+    )
+    assert metrics.draft_tokens_accepted == 12
+    assert metrics.draft_tokens_generated == 24
+    assert metrics.acceptance_rate == 0.5
+    assert metrics.avg_acceptance_length == 1.5
+    assert metrics.acceptance_rate_per_position == [0.75, 0.5, 0.25]
+    assert metrics.output_tokens == 20
+
+
+# ---------------------------------------------------------------------------
+# BatchMetrics.create spec-decode tests
+# ---------------------------------------------------------------------------
+
+
+def _mock_inputs(batch_size: int, batch_type: BatchType) -> MagicMock:
+    inputs = MagicMock()
+    inputs.input_tokens = 100
+    inputs.batch_type = batch_type
+    inputs.context_tokens = 500
+    inputs.flat_batch = [MagicMock()] * batch_size
+    return inputs
+
+
+def _mock_sch_config() -> MagicMock:
+    config = MagicMock()
+    config.max_batch_size = 32
+    config.target_tokens_per_batch_ce = 4096
+    config.max_batch_total_tokens = 0
+    config.data_parallel_degree = 1
+    return config
+
+
+def test_batch_metrics_create_tg_with_spec_decode() -> None:
+    """TG batch with spec decode uses output_tokens / time for generation throughput."""
+    inputs = _mock_inputs(batch_size=4, batch_type=BatchType.TG)
+    spec_metrics = _make_spec_metrics(
+        num_speculative_tokens=3,
+        accepted_per_position=[4, 3, 1],
+        num_verifications=4,
+    )
+    # output_tokens = 8 + 4 = 12
+    metrics = BatchMetrics.create(
+        sch_config=_mock_sch_config(),
+        inputs=inputs,
+        kv_cache=None,
+        batch_creation_time_s=0.001,
+        batch_execution_time_s=0.1,
+        num_pending_reqs=0,
+        num_terminated_reqs=0,
+        total_preemption_count=0,
+        batch_spec_decode_metrics=spec_metrics,
+    )
+    assert metrics.generation_throughput == 12 / 0.1
+    assert metrics.draft_tokens_generated == spec_metrics.draft_tokens_generated
+    assert metrics.draft_tokens_accepted == spec_metrics.draft_tokens_accepted
+    assert metrics.avg_acceptance_length == spec_metrics.avg_acceptance_length
+    assert metrics.max_acceptance_length == 3
+    assert (
+        metrics.acceptance_rate_per_position
+        == spec_metrics.acceptance_rate_per_position
+    )
+
+
+def test_batch_metrics_create_ce_with_spec_decode_uses_standard_formula() -> (
+    None
+):
+    """CE batch uses standard throughput formula even when stale spec_metrics leak from a previous TG batch."""
+    inputs = _mock_inputs(batch_size=2, batch_type=BatchType.CE)
+    spec_metrics = _make_spec_metrics(
+        num_speculative_tokens=3,
+        accepted_per_position=[4, 3, 1],
+        num_verifications=4,
+    )
+    metrics = BatchMetrics.create(
+        sch_config=_mock_sch_config(),
+        inputs=inputs,
+        kv_cache=None,
+        batch_creation_time_s=0.001,
+        batch_execution_time_s=0.1,
+        num_pending_reqs=0,
+        num_terminated_reqs=0,
+        total_preemption_count=0,
+        batch_spec_decode_metrics=spec_metrics,
+    )
+    assert metrics.generation_throughput == 2 * 1 / 0.1
+
+
+def test_batch_metrics_create_no_spec_decode() -> None:
+    """Without spec decode metrics, standard throughput formula and zero draft fields."""
+    inputs = _mock_inputs(batch_size=4, batch_type=BatchType.TG)
+    metrics = BatchMetrics.create(
+        sch_config=_mock_sch_config(),
+        inputs=inputs,
+        kv_cache=None,
+        batch_creation_time_s=0.001,
+        batch_execution_time_s=0.1,
+        num_pending_reqs=0,
+        num_terminated_reqs=0,
+        total_preemption_count=0,
+    )
+    assert metrics.generation_throughput == 4 * 1 / 0.1
+    assert metrics.draft_tokens_generated == 0
+    assert metrics.draft_tokens_accepted == 0
+    assert metrics.avg_acceptance_length == 0.0
+    assert metrics.max_acceptance_length == 0
+    assert metrics.acceptance_rate_per_position == []

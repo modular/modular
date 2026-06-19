@@ -982,7 +982,11 @@ class TextAndVisionContext(TextContext):
             ):
                 if next_img.start_idx < prev_img.start_idx:
                     raise ValueError("Images must be sorted")
-                if next_img.start_idx <= prev_img.end_idx:
+                # Ranges are half-open [start_idx, end_idx), so adjacent
+                # images (next.start_idx == prev.end_idx) do not overlap.
+                # Chat templates that emit no separator token between
+                # consecutive images produce exactly such touching ranges.
+                if next_img.start_idx < prev_img.end_idx:
                     raise ValueError("Images must be non-overlapping")
 
         for img in self.images:
@@ -1196,6 +1200,10 @@ class PixelContext:
     """
     output_format: str = field(default="jpeg")
     """Image encoding format for the output (e.g., 'jpeg', 'png', 'webp')."""
+    seed: int | None = field(default=None)
+    """Optional RNG seed from the request. Preserved here so executors that
+    sample noise inside the compiled graph can consume the scalar directly,
+    rather than relying on tokenizer-baked random latents."""
     status: GenerationStatus = field(default=GenerationStatus.ACTIVE)
 
     @property

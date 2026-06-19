@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Callable
 from typing import Any
 
 from max.driver import CPU
@@ -30,6 +31,9 @@ from max.experimental.nn.common_layers.functional_kernels import (
 )
 from max.experimental.nn.common_layers.multi_latent_attention import (
     MLAPrefillMetadata,
+    assign_columnwise_mapping,
+    assign_replicated_mapping,
+    assign_rowwise_mapping,
 )
 from max.experimental.nn.norm import RMSNorm
 from max.experimental.tensor import Tensor
@@ -39,6 +43,7 @@ from max.nn.quant_config import QuantConfig
 
 from . import quant_ops
 from .quant_linear import QuantizedLinear
+from .quant_ops import QuantAwareTensor
 from .quant_tensor import FP8BlockTensor
 
 
@@ -323,11 +328,10 @@ class QuantizedLatentAttentionWithRope(Module[..., Tensor]):
         x: Tensor,
         kv_collection: PagedCacheValues,
         freqs_cis: Tensor,
+        layer_idx: Tensor,
         input_row_offsets: Tensor,
         mla_prefill_metadata: MLAPrefillMetadata | None = None,
     ) -> Tensor:
-        layer_idx = F.constant(self.layer_idx, DType.uint32, device=CPU())
-
         if self.q_lora_rank is not None:
             qkv = quant_ops.matmul(x, self.wqkv)
             xq, kv = qkv.split([self.q_lora_rank, self.cache_head_dim], axis=1)
@@ -351,3 +355,36 @@ class QuantizedLatentAttentionWithRope(Module[..., Tensor]):
         )
 
         return self.o_proj(attn_out)
+
+
+def _assign_quant_aware(
+    weight: QuantAwareTensor, assign: Callable[[Tensor], None]
+) -> None:
+    """Apply a placement-assignment to a (possibly quantized) weight."""
+    if isinstance(weight, FP8BlockTensor):
+        assign(weight.data)
+        assign(weight.scale_inv)
+    else:
+        assign(weight)
+
+
+def tensor_parallel_latent_attention_with_rope(
+    layer: QuantizedLatentAttentionWithRope,
+) -> QuantizedLatentAttentionWithRope:
+    """Modifies latent attention layer to be tensor parallel along the TP axis."""
+    # Replicated weights: q_a_proj, q_a_layernorm
+    if layer.q_lora_rank is not None:
+        assert isinstance(layer.q_a_layernorm.weight, Tensor)
+        _assign_quant_aware(layer.q_a_proj, assign_replicated_mapping)
+        assign_replicated_mapping(layer.q_a_layernorm.weight)
+        _assign_quant_aware(layer.q_b_proj, assign_rowwise_mapping)
+    else:
+        _assign_quant_aware(layer.q_proj, assign_rowwise_mapping)
+
+    assert isinstance(layer.kv_a_proj_layernorm, Tensor)
+    assign_replicated_mapping(layer.kv_a_proj_layernorm)
+    _assign_quant_aware(layer.kv_a_proj_with_mqa, assign_replicated_mapping)
+    _assign_quant_aware(layer.kv_b_proj, assign_rowwise_mapping)
+    _assign_quant_aware(layer.o_proj.weight, assign_columnwise_mapping)
+
+    return layer

@@ -15,13 +15,12 @@
 
 import functools
 import inspect
-from collections import defaultdict
-from collections.abc import Callable
+from collections.abc import Callable, Iterable, Mapping
 from typing import Any
 
 from max.experimental import functional as F
 from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
-from max.experimental.realization_context import ensure_context  # noqa: F401
+from max.experimental.realization_context import ensure_context
 from max.experimental.sharding import (
     DeviceMesh,
     Placement,
@@ -61,18 +60,14 @@ from max.nn.kernels import (
     moe_create_indices as _moe_create_indices,
 )
 from max.nn.kernels import (
+    moe_router_group_limited as _moe_router_group_limited,
+)
+from max.nn.kernels import (
     rms_norm_key_cache as _rms_norm_key_cache,
 )
 from max.nn.kernels import (
     rope_split_store_ragged as _rope_split_store_ragged,
 )
-
-# Define placement for independent tensors, representing a bundle of tensors
-# on different devices, with the same shape and dtype, but will not have the
-# same values.
-# This placement uses "replicated" operation semantics, but they are not really
-# replicated.
-Independent = Replicated
 
 
 def _preserve_orig_mappings(
@@ -91,14 +86,14 @@ def grouped_matmul_ragged_rule(
     weight: TensorLayout,
     expert_start_indices: TensorLayout,
     expert_ids: TensorLayout,
-    expert_usage_stats_host: TensorLayout,
+    expert_usage_stats: TensorLayout,
 ) -> ActionSet:
     layouts = (
         hidden_states,
         weight,
         expert_start_indices,
         expert_ids,
-        expert_usage_stats_host,
+        expert_usage_stats,
     )
     n_axes = weight.mapping.mesh.ndim
     rows = []
@@ -130,10 +125,69 @@ inplace_custom = F.functional(ops.inplace_custom)
 shard_and_stack = F.functional(ops.shard_and_stack)
 
 
-# ─── KVCache Operations ─────────────────────────────────────
+# ─── Operations that should be dispatched per-device on distributed inputs ────
 
 
-def _wrap_kvcache_op(
+def local_map(
+    fn: Callable[..., Any],
+    distributed_kwargs: Mapping[str, Any],
+    kwargs: Mapping[str, Any],
+) -> Any:
+    """Applies a single-device function independently to each device's data.
+
+    Args:
+        fn: Single-device function invoked once per device with keyword
+            arguments.
+        distributed_kwargs: Per-device arguments to unroll. A distributed
+            :class:`~max.experimental.tensor.Tensor` contributes its
+            ``local_shards[i]``; a ``list``/``tuple`` bundle contributes
+            element ``i`` (one entry per device); a non-distributed
+            ``Tensor`` broadcasts whole.
+        kwargs: Broadcast arguments passed unchanged to every ``fn`` call.
+
+    Returns:
+        A ``list`` of per-device results for a single-output ``fn``, or a
+        ``tuple`` of such lists when ``fn`` returns multiple values.
+    """
+    # Determine n based strictly on the distributed arguments
+    n = _local_map_num_devices(distributed_kwargs.values())
+
+    for k, v in distributed_kwargs.items():
+        if isinstance(v, (list, tuple)) and len(v) != n:
+            raise ValueError(
+                f"Distributed kwarg '{k}' has {len(v)} entries, "
+                f"but mesh unrolls to {n} devices."
+            )
+
+    # Execute per device
+    with ensure_context():
+        results = []
+        for i in range(n):
+            device_kwargs = {}
+            for k, v in distributed_kwargs.items():
+                if isinstance(v, Tensor):
+                    # Distributed tensors contribute their per-device shard.
+                    # A non-distributed tensor broadcasts whole so the
+                    # single-device path (e.g. the base QuantizedMoE forward,
+                    # whose router outputs live on a single-device mesh) can
+                    # route its tensors through here too; ``local_shards`` is a
+                    # 1-tuple in that case, so ``i`` is always 0.
+                    device_kwargs[k] = (
+                        v.local_shards[i] if v.is_distributed else v
+                    )
+                else:
+                    device_kwargs[k] = v[i]
+
+            results.append(fn(**device_kwargs, **kwargs))
+
+    # Transpose multi-outputs
+    if isinstance(results[0], (list, tuple)):
+        return tuple(list(x) for x in zip(*results, strict=True))
+
+    return results
+
+
+def _local_functional_op(
     op: Callable[..., Any],
     return_input_sharding: str | None = None,
 ) -> Callable[..., Any]:
@@ -154,42 +208,60 @@ def _wrap_kvcache_op(
             f"Input tensor arg {return_input_sharding} not found in {op.__name__}"
         )
 
+    def run_graph_op(**kwargs: Any) -> Any:
+        return op(
+            **{
+                k: TensorValue(v) if isinstance(v, Tensor) else v
+                for k, v in kwargs.items()
+            }
+        )
+
     @functools.wraps(op)
     def wrapped(*args: Any, **kwargs: Any) -> Any:
-        results: dict[int, list[Any]] = defaultdict(list)
-        for a, kw in _loop_distributed_args(args, kwargs):
-            output = op(*a, **kw)
-            if isinstance(output, TensorValue):
-                results[0].append(output)
-            elif isinstance(output, (list, tuple)):
-                for i, result in enumerate(output):
-                    results[i].append(result)
-            elif output is None:
-                continue
+        # Bind to parameter names so every argument can be routed through
+        # local_map by keyword, then split into per-device (distributed)
+        # and broadcast groups.
+        named = sig.bind(*args, **kwargs).arguments
+
+        num_devices = _local_map_num_devices(named.values())
+
+        distributed_kwargs: dict[str, Any] = {}
+        broadcast_kwargs: dict[str, Any] = {}
+        for k, v in named.items():
+            if isinstance(v, Tensor) and v.is_distributed:
+                distributed_kwargs[k] = v
+            elif isinstance(v, PagedCacheValues):
+                # local_map has no notion of PagedCacheValues; pre-unroll it
+                # into a per-device bundle it can index positionally.
+                distributed_kwargs[k] = [
+                    v.for_device(i) for i in range(num_devices)
+                ]
             else:
-                raise TypeError(
-                    f"Unexpected result type {type(output)} from {op.__name__}"
-                )
+                broadcast_kwargs[k] = v
 
-        if not results:
-            return None
+        per_device = local_map(
+            run_graph_op, distributed_kwargs, broadcast_kwargs
+        )
 
-        tensor_results: list[Tensor] = []
         mapping = _get_mapping(
             op.__name__, sig, return_input_sharding, args, kwargs
         )
-        for i in range(len(results)):
-            result = results[i]
-            if isinstance(result, (TensorValue, list, tuple)):
-                tensor_results.append(Tensor.from_shard_values(result, mapping))
-            else:
-                raise TypeError(f"Unexpected result type: {type(results[0])}")
-        if len(tensor_results) == 1:
-            return tensor_results[0]
-        else:
-            return tensor_results
+        # local_map returns a tuple of per-output shard lists for a
+        # multi-output op, or a single per-device shard list otherwise.
+        if isinstance(per_device, tuple):
+            return [_reassemble(out, mapping) for out in per_device]
+        return _reassemble(per_device, mapping)
 
     return wrapped
+
+
+def _reassemble(
+    shard_values: list[Any], mapping: PlacementMapping
+) -> Tensor | None:
+    """Reassembles a list of shard values into a distributed tensor."""
+    if all(s is None for s in shard_values):
+        return None
+    return Tensor.from_shard_values(shard_values, mapping)
 
 
 def _get_mapping(
@@ -213,7 +285,7 @@ def _get_mapping(
         placements = input_sharding.placements
     else:
         mesh = _find_mesh(*args, **kwargs)
-        placements = tuple(Independent() for _ in range(mesh.ndim))
+        placements = tuple(Replicated() for _ in range(mesh.ndim))
     return PlacementMapping(mesh, placements)
 
 
@@ -233,58 +305,46 @@ def _find_mesh(*args: Any, **kwargs: Any) -> DeviceMesh:
     raise ValueError("No distributed tensors found in args or kwargs")
 
 
-def _shard(a: Any, i: int) -> Any:
-    if isinstance(a, Tensor):
-        if a.is_distributed:
-            return TensorValue(a.local_shards[i])
-        else:
-            return TensorValue(a)
-    if isinstance(a, PagedCacheValues):
-        return a.for_device(i)
-    return a
+def _local_map_num_devices(values: Iterable[Any]) -> int:
+    """Infers the per-device unroll count for :func:`local_map`.
 
-
-def _loop_distributed_args(
-    args: tuple[Any, ...], kwargs: dict[str, Any]
-) -> list[tuple[tuple[Any, ...], dict[str, Any]]]:
-    """Unwrap distributed args into per-device (args, kwargs) tuples.
-
-    Tensor args are split via ``local_shards``, PagedCacheValues via
-    ``for_device``, and everything else is ooadcast unchanged.
+    Prefers the shard count of the first distributed :class:`Tensor`, then
+    the length of the first per-device ``list``/``tuple`` bundle, else 1.
     """
-    num_devices = 1
-    for a in (*args, *kwargs.values()):
+    for a in values:
         if isinstance(a, Tensor) and a.is_distributed:
-            num_devices = a.num_shards
-            break
+            return a.num_shards
+        if isinstance(a, (list, tuple)):
+            return len(a)
         if isinstance(a, PagedCacheValues) and a.n_devices > 1:
-            num_devices = a.n_devices
-            break
-
-    return [
-        (
-            tuple(_shard(a, i) for a in args),
-            {k: _shard(v, i) for k, v in kwargs.items()},
-        )
-        for i in range(num_devices)
-    ]
+            return a.n_devices
+    return 1
 
 
-flash_attention_ragged = _wrap_kvcache_op(_flash_attention_ragged, "input")
-rope_split_store_ragged = _wrap_kvcache_op(_rope_split_store_ragged, "qkv")
-rms_norm_key_cache = _wrap_kvcache_op(_rms_norm_key_cache)
-flare_mla_prefill_plan = _wrap_kvcache_op(_flare_mla_prefill_plan)
-mla_prefill_graph = _wrap_kvcache_op(_mla_prefill_graph, "q")
-mla_decode_graph = _wrap_kvcache_op(_mla_decode_graph, "q")
-mla_prefill_decode_graph = _wrap_kvcache_op(_mla_prefill_decode_graph, "q")
+flash_attention_ragged = _local_functional_op(_flash_attention_ragged, "input")
+rope_split_store_ragged = _local_functional_op(_rope_split_store_ragged, "qkv")
+rms_norm_key_cache = _local_functional_op(_rms_norm_key_cache)
+flare_mla_prefill_plan = _local_functional_op(_flare_mla_prefill_plan)
+mla_prefill_graph = _local_functional_op(_mla_prefill_graph, "q")
+mla_decode_graph = _local_functional_op(_mla_decode_graph, "q")
+mla_prefill_decode_graph = _local_functional_op(_mla_prefill_decode_graph, "q")
 
-fused_silu = _wrap_kvcache_op(_fused_silu, "input")
+fused_silu = _local_functional_op(_fused_silu, "input")
+
+# Routing decisions must match the placement of the (replicated) router
+# scores so every device agrees on expert assignment under TP/EP.
+moe_router_group_limited = _local_functional_op(
+    _moe_router_group_limited, "expert_scores"
+)
+
 
 __all__ = [
     "flash_attention_ragged",
     "fused_silu",
     "grouped_matmul_ragged",
+    "local_map",
     "moe_create_indices",
+    "moe_router_group_limited",
     "rms_norm_key_cache",
     "rope_split_store_ragged",
 ]

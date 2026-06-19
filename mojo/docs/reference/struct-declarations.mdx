@@ -429,8 +429,7 @@ struct NotWritable(ImplicitlyCopyable & ImplicitlyDeletable):
 def main():
     var not_writable = NotWritable(42)
     var pair = Pair(not_writable, not_writable)
-    print(pair) # Error: could not convert element of 'values'
-    # with type 'Pair[NotWritable]' to expected type 'Writable'
+    print(pair) # Error regarding 'Writable' nonconformance
 ```
 
 ### Mixed trait lists
@@ -545,7 +544,7 @@ def __del__(deinit self):
     print("cleaning up")
 ```
 
-Implicitly destructible structs get a default `__del__()`. A custom `__del__()`
+Implicitly deletable structs get a default `__del__()`. A custom `__del__()`
 overrides the default. `__del__()` can't be overloaded.
 
 :::note

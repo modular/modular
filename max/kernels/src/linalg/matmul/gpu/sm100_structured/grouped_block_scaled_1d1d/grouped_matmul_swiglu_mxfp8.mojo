@@ -57,16 +57,16 @@ def grouped_matmul_swiglu_mxfp8_dispatch[
     # as the runtime `alpha`/`limit` args when set to True.
     clamp_activation: Bool = False,
 ](
-    c_packed: TileTensor[...],
-    c_swiglu_scales: TileTensor[...],
-    a: TileTensor[...],
-    b: TileTensor[...],
-    a_scales: TileTensor[...],
-    b_scales: TileTensor[...],
-    a_offsets: TileTensor[...],
-    a_scale_offsets: TileTensor[...],
-    expert_ids: TileTensor[...],
-    expert_scales: TileTensor[...],
+    c_packed: TileTensor,
+    c_swiglu_scales: TileTensor,
+    a: TileTensor,
+    b: TileTensor,
+    a_scales: TileTensor,
+    b_scales: TileTensor,
+    a_offsets: TileTensor,
+    a_scale_offsets: TileTensor,
+    expert_ids: TileTensor,
+    expert_scales: TileTensor,
     num_active_experts: Int,
     estimated_total_m: Int,
     ctx: DeviceContext,
@@ -125,12 +125,18 @@ def grouped_matmul_swiglu_mxfp8_dispatch[
     comptime c_type = DType.bfloat16
     comptime N = type_of(b).static_shape[1]
 
-    # Unused on the fused path but required to infer c_type for the
-    # kernel struct.
-    var dummy_c_buffer = ctx.enqueue_create_buffer[c_type](
-        Int(estimated_total_m * N)
-    )
-    var dummy_c_shape = row_major(Coord(Int(estimated_total_m), Idx[N]))
+    # C is unused on the fused path: the epilogue writes results through
+    # `swiglu_out` into `c_packed`, and the launcher + kernel comptime-gate out
+    # the C TMA encode, prefetch, and store when `fuse_swiglu`. We still pass a
+    # real BF16 tensor so `grouped_matmul_block_scaled` can infer
+    # `c_type`/`N`/layout and satisfy the kernel ABI, but it is a fixed 1-row
+    # placeholder decoupled from `estimated_total_m` (which floors to 0 in
+    # low-concurrency EP decode and previously produced a zero-dim C TMA
+    # descriptor -> CUDA_ERROR_INVALID_VALUE). The buffer is never read or
+    # written. (Mojo's `UnsafePointer` is non-nullable, so this is a minimal
+    # 1xN allocation rather than a null view.)
+    var dummy_c_buffer = ctx.enqueue_create_buffer[c_type](N)
+    var dummy_c_shape = row_major(Coord(Idx[1], Idx[N]))
     var dummy_c_tensor = TileTensor(dummy_c_buffer, dummy_c_shape)
 
     comptime c_packed_row_stride = type_of(c_packed).static_shape[1]

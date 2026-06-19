@@ -18,10 +18,10 @@ from std.sys import align_of
 from layout import (
     Coord,
     Idx,
+    LTToTTLayout,
     Layout,
     LayoutTensor,
     TileTensor,
-    lt_to_tt,
     row_major,
 )
 from std.gpu.host import DeviceContext
@@ -270,12 +270,16 @@ def test_conv3d_gpu_dispatch[
     ctx.enqueue_copy(filter_dev, filter_host)
 
     comptime output_layout_ = Layout.row_major(N, D_out, H_out, W_out, F)
-    var input_lt = LayoutTensor[dtype, input_layout](input_dev.unsafe_ptr())
-    var filter_lt = LayoutTensor[dtype, filter_layout](filter_dev.unsafe_ptr())
     var output_lt = LayoutTensor[dtype, output_layout_](output_dev.unsafe_ptr())
-    var input_tt = lt_to_tt(input_lt)
-    var filter_tt = lt_to_tt(filter_lt)
-    var output_tt = lt_to_tt(output_lt)
+    var input_tt = TileTensor(
+        input_dev.unsafe_ptr(), LTToTTLayout[input_layout]()
+    )
+    var filter_tt = TileTensor(
+        filter_dev.unsafe_ptr(), LTToTTLayout[filter_layout]()
+    )
+    var output_tt = TileTensor(
+        output_dev.unsafe_ptr(), LTToTTLayout[output_layout_]()
+    )
 
     @parameter
     @always_inline
@@ -421,12 +425,16 @@ def test_conv3d_im2col_multi_tile[
     ctx.enqueue_copy(filter_dev, filter_host)
 
     comptime output_layout_ = Layout.row_major(N, D_out, H_out, W_out, F)
-    var input_lt = LayoutTensor[dtype, input_layout](input_dev.unsafe_ptr())
-    var filter_lt = LayoutTensor[dtype, filter_layout](filter_dev.unsafe_ptr())
     var output_lt = LayoutTensor[dtype, output_layout_](output_dev.unsafe_ptr())
-    var input_tt = lt_to_tt(input_lt)
-    var filter_tt = lt_to_tt(filter_lt)
-    var output_tt = lt_to_tt(output_lt)
+    var input_tt = TileTensor(
+        input_dev.unsafe_ptr(), LTToTTLayout[input_layout]()
+    )
+    var filter_tt = TileTensor(
+        filter_dev.unsafe_ptr(), LTToTTLayout[filter_layout]()
+    )
+    var output_tt = TileTensor(
+        output_dev.unsafe_ptr(), LTToTTLayout[output_layout_]()
+    )
 
     comptime if with_epilogue:
 
@@ -593,12 +601,16 @@ def test_conv2d_im2col_multi_tile[
     ctx.enqueue_copy(filter_dev, filter_host)
 
     comptime output_layout_ = Layout.row_major(N, H_out, W_out, F)
-    var input_lt = LayoutTensor[dtype, input_layout](input_dev.unsafe_ptr())
-    var filter_lt = LayoutTensor[dtype, filter_layout](filter_dev.unsafe_ptr())
     var output_lt = LayoutTensor[dtype, output_layout_](output_dev.unsafe_ptr())
-    var input_tt = lt_to_tt(input_lt)
-    var filter_tt = lt_to_tt(filter_lt)
-    var output_tt = lt_to_tt(output_lt)
+    var input_tt = TileTensor(
+        input_dev.unsafe_ptr(), LTToTTLayout[input_layout]()
+    )
+    var filter_tt = TileTensor(
+        filter_dev.unsafe_ptr(), LTToTTLayout[filter_layout]()
+    )
+    var output_tt = TileTensor(
+        output_dev.unsafe_ptr(), LTToTTLayout[output_layout_]()
+    )
 
     var handled: Bool
     comptime if with_epilogue:
@@ -749,12 +761,16 @@ def test_conv3d_1x1x1_matmul_direct[
     ctx.enqueue_copy(input_dev, input_host)
     ctx.enqueue_copy(filter_dev, filter_host)
 
-    var input_lt = LayoutTensor[dtype, input_layout](input_dev.unsafe_ptr())
-    var filter_lt = LayoutTensor[dtype, filter_layout](filter_dev.unsafe_ptr())
     var output_lt = LayoutTensor[dtype, output_layout_](output_dev.unsafe_ptr())
-    var input_tt = lt_to_tt(input_lt)
-    var filter_tt = lt_to_tt(filter_lt)
-    var output_tt = lt_to_tt(output_lt)
+    var input_tt = TileTensor(
+        input_dev.unsafe_ptr(), LTToTTLayout[input_layout]()
+    )
+    var filter_tt = TileTensor(
+        filter_dev.unsafe_ptr(), LTToTTLayout[filter_layout]()
+    )
+    var output_tt = TileTensor(
+        output_dev.unsafe_ptr(), LTToTTLayout[output_layout_]()
+    )
 
     comptime if with_epilogue:
 

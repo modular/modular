@@ -428,9 +428,9 @@ def test_parse_delta_accumulates() -> None:
     """Test that parse_delta accumulates tokens in buffer."""
     parser = MinimaxM2ToolParser()
 
-    # Before the section marker fully lands, the result is None.
+    # parse_delta should accumulate tokens; return [] to indicate parser is actively buffering and raw tokens shouldn't be used yet.
     result1 = parser.parse_delta("<minimax:")
-    assert result1 is None
+    assert result1 == []
 
     # Once the marker completes, returns [] (not None) so the streaming
     # path knows to suppress raw structural tokens even with no deltas yet.

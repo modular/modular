@@ -97,7 +97,7 @@ struct _ListIter[
 
 
 @fieldwise_init
-struct _ListIterOwned[T: Copyable & ImplicitlyDeletable](
+struct _ListIterOwned[T: Movable & ImplicitlyDeletable](
     IterableOwned, Iterator, Movable
 ):
     """An owning iterator for List.
@@ -151,7 +151,7 @@ struct List[T: Movable](
     Hashable where conforms_to(T, Hashable),
     ImplicitlyDeletable where conforms_to(T, ImplicitlyDeletable),
     Iterable,
-    IterableOwned,
+    IterableOwned where conforms_to(T, ImplicitlyDeletable),
     Movable,
     Sized,
     Writable where conforms_to(T, Writable),
@@ -344,7 +344,7 @@ struct List[T: Movable](
     """
 
     comptime IteratorOwnedType: Iterator = _ListIterOwned[
-        downcast[Self.T, Copyable & ImplicitlyDeletable]
+        downcast[Self.T, ImplicitlyDeletable]
     ]
     """The owned iterator type for this list."""
 
@@ -500,11 +500,7 @@ struct List[T: Movable](
     def __del__(deinit self) where conforms_to(Self.T, ImplicitlyDeletable):
         """Destroy all elements in the list and free its memory."""
         destroy_n(
-            rebind[
-                UnsafePointer[
-                    downcast[Self.T, ImplicitlyDeletable], MutUntrackedOrigin
-                ]
-            ](self._data),
+            self._data,
             count=len(self),
         )
         self^._unsafe_assume_destroyed_and_deallocate()
@@ -660,20 +656,16 @@ struct List[T: Movable](
         """
         self.extend(other^)
 
-    def __iter__(var self) -> Self.IteratorOwnedType:
+    def __iter__(
+        var self,
+    ) -> Self.IteratorOwnedType where conforms_to(Self.T, ImplicitlyDeletable):
         """Consume `self`, returning an owned iterator over its elements.
 
         Returns:
             An iterator of owned elements.
         """
-        comptime assert conforms_to(Self.T, Copyable & ImplicitlyDeletable), (
-            "Owned List iteration requires the element to be `Copyable &"
-            " ImplicitlyDeletable`."
-        )
         return {
-            rebind_var[List[downcast[Self.T, Copyable & ImplicitlyDeletable]]](
-                self^
-            ),
+            rebind_var[List[downcast[Self.T, ImplicitlyDeletable]]](self^),
             0,
         }
 
@@ -938,15 +930,9 @@ struct List[T: Movable](
         var i = self._len
         self._len = new_num_elts
 
-        comptime UnsafePointerType = UnsafePointer[
-            downcast[Self.T, Copyable], _
-        ]
         uninit_copy_n[overlapping=False](
-            dest=rebind[UnsafePointerType[origin_of(self)]](self.unsafe_ptr())
-            + i,
-            src=rebind[UnsafePointerType[elements.origin]](
-                elements.unsafe_ptr()
-            ),
+            dest=self.unsafe_ptr() + i,
+            src=elements.unsafe_ptr(),
             count=elements_len,
         )
 
@@ -1112,9 +1098,7 @@ struct List[T: Movable](
         self.reserve(new_size)
         self._annotate_increase(new_size - self._len)
         for i in range(self._len, new_size):
-            rebind[
-                UnsafePointer[downcast[Self.T, Copyable], MutUntrackedOrigin]
-            ](self._data + i).init_pointee_copy(value)
+            (self._data + i).init_pointee_copy(value)
         self._len = new_size
 
     def resize(

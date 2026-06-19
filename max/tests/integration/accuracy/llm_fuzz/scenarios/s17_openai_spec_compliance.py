@@ -328,6 +328,7 @@ class OpenAISpecCompliance(BaseScenario):
     name = "openai_spec_compliance"
     description = "Validate endpoint responses conform to the OpenAI Chat Completions API specification"
     tags = ["spec", "compliance", "validation", "openai"]
+    scenario_type = "validation"
 
     async def run(
         self, client: FuzzClient, config: RunConfig
@@ -1487,9 +1488,13 @@ class OpenAISpecCompliance(BaseScenario):
         )
 
         # ----- 25. max_tokens vs max_completion_tokens -----
+        max_token_limit = 10
         for param_name, param in [
-            ("max_tokens", {"max_tokens": 10}),
-            ("max_completion_tokens", {"max_completion_tokens": 10}),
+            ("max_tokens", {"max_tokens": max_token_limit}),
+            (
+                "max_completion_tokens",
+                {"max_completion_tokens": max_token_limit},
+            ),
         ]:
             resp_mt = await client.post_json(
                 {
@@ -1504,9 +1509,18 @@ class OpenAISpecCompliance(BaseScenario):
                 data, _ = parse_json(resp_mt.body)
                 if data:
                     errs = _validate_chat_completion(data)
+                    usage = data.get("usage", {})
+                    ct = usage.get("completion_tokens", 0)
+                    if ct > max_token_limit:
+                        errs.append(
+                            f"completion_tokens ({ct}) exceeds"
+                            f" {param_name}={max_token_limit}"
+                        )
                     verdict = Verdict.FAIL if errs else Verdict.PASS
                     detail = (
-                        "; ".join(errs) if errs else f"{param_name} accepted"
+                        "; ".join(errs)
+                        if errs
+                        else f"{param_name} honored ({ct} tokens)"
                     )
                 else:
                     verdict, detail = Verdict.FAIL, "Invalid JSON"

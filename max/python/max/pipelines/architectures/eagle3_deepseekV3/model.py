@@ -27,7 +27,11 @@ from max.engine import InferenceSession, Model
 from max.graph import BufferValue, Graph, TensorValue, Value
 from max.graph.weights import WeightData, Weights, WeightsAdapter, load_weights
 from max.nn.comm.ep import EPCommInitializer
-from max.nn.kv_cache import KVCacheInputs, KVCacheParams, PagedCacheValues
+from max.nn.kv_cache import (
+    KVCacheInputsInterface,
+    KVCacheParams,
+    MultiKVCacheParams,
+)
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.context import TextContext
 from max.pipelines.lib import (
@@ -81,7 +85,6 @@ class Eagle3DeepseekV3Inputs(DeepseekV3Inputs):
     """Inputs for the Eagle3 + DeepseekV3 unified model."""
 
     draft_tokens: Buffer | None = None
-    draft_kv_blocks: list[Buffer] | None = None
     seed: Buffer | None = None
     """Per-execute uint64 [1] seed consumed by the stochastic acceptance
     sampler (and, when enabled, the synthetic benchmarking sampler)."""
@@ -126,8 +129,6 @@ class Eagle3DeepseekV3Inputs(DeepseekV3Inputs):
         buffers = super().buffers
         if self.draft_tokens is not None:
             buffers += (self.draft_tokens,)
-        if self.draft_kv_blocks is not None:
-            buffers += tuple(self.draft_kv_blocks)
         assert self.seed is not None
         buffers += (self.seed,)
         if self.draft_tokens is not None:
@@ -270,7 +271,11 @@ class Eagle3DeepseekV3Model(DeepseekV3Model):
             draft_config.ep_config.node_id = config.ep_config.node_id
 
         assert isinstance(self.kv_params, KVCacheParams)
-        self._draft_kv_params = replace(self.kv_params, num_layers=1)
+        target_kv_params = self.kv_params
+        self._draft_kv_params = replace(target_kv_params, num_layers=1)
+        self.kv_params = MultiKVCacheParams.from_params(
+            {"target": target_kv_params, "draft": self._draft_kv_params}
+        )
 
         draft_config.return_hidden_states = ReturnHiddenStates.LAST
 
@@ -333,9 +338,7 @@ class Eagle3DeepseekV3Model(DeepseekV3Model):
         with CompilationTimer("eagle3_deepseekV3_model") as timer:
             with Graph(
                 "eagle3_deepseekV3_graph",
-                input_types=nn_model.input_types(
-                    self.kv_params, self._draft_kv_params
-                ),
+                input_types=nn_model.input_types(self.kv_params),
             ) as graph:
                 (
                     tokens,
@@ -352,12 +355,8 @@ class Eagle3DeepseekV3Model(DeepseekV3Model):
                     for _ in range(len(self.devices))
                 ]
 
-                fetch_types = (
-                    self.kv_params.get_symbolic_inputs().inputs[0].flatten()
-                )
-                len_of_kv_inputs = len(list(fetch_types)) * len(self.devices)
-                kv_caches_per_dev = self._unflatten_kv_inputs(
-                    [next(variadic_args_iter) for _ in range(len_of_kv_inputs)]
+                kv_collections, draft_kv_collections = (
+                    self.kv_params.unflatten_basic_kv_tree(variadic_args_iter)
                 )
 
                 batch_context_lengths = [
@@ -373,36 +372,6 @@ class Eagle3DeepseekV3Model(DeepseekV3Model):
                     ]
 
                 draft_tokens = next(variadic_args_iter).tensor
-
-                # Draft KV: only kv_blocks per device; cache_lengths reused
-                # from target (same token count, just fewer layers).
-                draft_kv_collections: list[PagedCacheValues] = []
-                for dev_idx in range(len(self.devices)):
-                    draft_kv_blocks = next(variadic_args_iter).buffer
-                    draft_kv_collections.append(
-                        PagedCacheValues(
-                            kv_blocks=draft_kv_blocks,
-                            cache_lengths=kv_caches_per_dev[
-                                dev_idx
-                            ].cache_lengths,
-                            lookup_table=kv_caches_per_dev[
-                                dev_idx
-                            ].lookup_table,
-                            max_lengths=kv_caches_per_dev[dev_idx].max_lengths,
-                            attention_dispatch_metadata=kv_caches_per_dev[
-                                dev_idx
-                            ].attention_dispatch_metadata,
-                            draft_attention_dispatch_metadata=kv_caches_per_dev[
-                                dev_idx
-                            ].draft_attention_dispatch_metadata,
-                            mla_num_partitions=kv_caches_per_dev[
-                                dev_idx
-                            ].mla_num_partitions,
-                            draft_mla_num_partitions=kv_caches_per_dev[
-                                dev_idx
-                            ].draft_mla_num_partitions,
-                        )
-                    )
 
                 seed = next(variadic_args_iter).tensor
                 temperature = next(variadic_args_iter).tensor
@@ -429,7 +398,7 @@ class Eagle3DeepseekV3Model(DeepseekV3Model):
                     input_row_offsets=devices_input_row_offsets.tensor,
                     draft_tokens=draft_tokens.tensor,
                     signal_buffers=signal_buffers,
-                    kv_collections=kv_caches_per_dev,
+                    kv_collections=kv_collections,
                     return_n_logits=return_n_logits.tensor,
                     host_input_row_offsets=host_input_row_offsets.tensor,
                     data_parallel_splits=data_parallel_splits.tensor,
@@ -473,7 +442,7 @@ class Eagle3DeepseekV3Model(DeepseekV3Model):
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
+        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
         draft_tokens: Buffer | None = None,
         draft_kv_cache_buffers: list[Buffer] | None = None,
@@ -493,7 +462,6 @@ class Eagle3DeepseekV3Model(DeepseekV3Model):
             data_parallel_splits=base.data_parallel_splits,
             ep_inputs=base.ep_inputs,
             draft_tokens=draft_tokens,
-            draft_kv_blocks=draft_kv_cache_buffers,
             seed=self._next_seed(),
         )
 
@@ -531,12 +499,12 @@ class Eagle3DeepseekV3Model(DeepseekV3Model):
         # Eagle3 draft has BF16 dense MLP (not quantized, not MoE)
         if (
             draft_config.quant_config is not None
-            and draft_config.quant_config.is_nvfp4
-            and not any("weight_scale_2" in key for key in draft_state_dict)
+            and draft_config.quant_config.is_fp4
+            and not any("weight_scale" in key for key in draft_state_dict)
         ):
             logger.info(
-                "Eagle3 draft weights are BF16 (no weight_scale_2 found); "
-                "disabling NVFP4 config for draft."
+                "Eagle3 draft weights are BF16 (no weight_scale found); "
+                "disabling FP4 config for draft."
             )
             draft_config.quant_config = None
             draft_config.dtype = DType.bfloat16

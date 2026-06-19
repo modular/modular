@@ -24,6 +24,7 @@ family.
    pipelines.architectures.deepseekV3_2
    pipelines.architectures.deepseekV3_nextn
    pipelines.architectures.dflash_llama3
+   pipelines.architectures.diffusion_gemma
    pipelines.architectures.eagle3_deepseekV3
    pipelines.architectures.eagle_llama3
    pipelines.architectures.exaone
@@ -37,6 +38,7 @@ family.
    pipelines.architectures.granite
    pipelines.architectures.hy_v3
    pipelines.architectures.idefics3
+   pipelines.architectures.ideogram4
    pipelines.architectures.internvl
    pipelines.architectures.kimik2_5
    pipelines.architectures.lfm2
@@ -78,6 +80,7 @@ Text generation
    ~max.pipelines.architectures.deepseekV3_2
    ~max.pipelines.architectures.deepseekV3_nextn
    ~max.pipelines.architectures.dflash_llama3
+   ~max.pipelines.architectures.diffusion_gemma
    ~max.pipelines.architectures.eagle3_deepseekV3
    ~max.pipelines.architectures.eagle_llama3
    ~max.pipelines.architectures.exaone
@@ -132,6 +135,7 @@ Image generation
    :nosignatures:
 
    ~max.pipelines.architectures.flux2
+   ~max.pipelines.architectures.ideogram4
    ~max.pipelines.architectures.qwen_image
    ~max.pipelines.architectures.qwen_image_edit
    ~max.pipelines.architectures.wan

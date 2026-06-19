@@ -264,7 +264,7 @@ def simd_to_llvm_struct[
                 +_get_kgen_string[_get_kgen_struct_fields[n, dtype]()](),
                 `)>`,
             ],
-            index=__mlir_attr[i._int_mlir_index(), `:index`],
+            index=__mlir_attr[i.__mlir_index__(), `:index`],
         ](e, st)
 
     return rebind[llvm_struct_dtype_splat_type[dtype, n]](
@@ -367,7 +367,7 @@ def llvm_struct_to_simd[
         # unrealized_conversion_cast retypes it to `!kgen.scalar<dtype>`.
         var e = __mlir_op.`builtin.unrealized_conversion_cast`[
             _type=Scalar[dtype]._mlir_type
-        ](__mlir_op.`kgen.struct.extract`[index=i._int_mlir_index()](pack))
+        ](__mlir_op.`kgen.struct.extract`[index=i.__mlir_index__()](pack))
         simd[i] = Scalar[dtype](mlir_value=e)
     return simd
 
@@ -410,7 +410,7 @@ def array_to_llvm_struct[
                 +_get_kgen_string[_get_kgen_struct_fields[n, dtype]()](),
                 `)>`,
             ],
-            index=__mlir_attr[i._int_mlir_index(), `:index`],
+            index=__mlir_attr[i.__mlir_index__(), `:index`],
         ](e, st)
 
     return rebind[llvm_struct_dtype_splat_type[dtype, n]](
@@ -446,6 +446,6 @@ def llvm_struct_to_array[
     comptime for i in range(n):
         var e = __mlir_op.`builtin.unrealized_conversion_cast`[
             _type=Scalar[dtype]._mlir_type
-        ](__mlir_op.`kgen.struct.extract`[index=i._int_mlir_index()](pack))
+        ](__mlir_op.`kgen.struct.extract`[index=i.__mlir_index__()](pack))
         array[i] = Scalar[dtype](mlir_value=e)
     return array

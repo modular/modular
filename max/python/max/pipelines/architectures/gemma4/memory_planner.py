@@ -19,16 +19,17 @@ from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
 from max.pipelines.lib.config import PipelineConfig
 from transformers import AutoConfig
 
-# 2 GiB headroom for CUDA graph capture workspace.
 _GRAPH_CAPTURE_HEADROOM_BYTES = 2 * 1024**3
 
 
 class Gemma4MemoryPlanner(PagedMemoryPlanner):
     """Memory planner for Gemma4 (vision-language) models.
 
-    Reserves a fixed 15 GiB activation budget plus optional graph-capture
-    headroom.  Also provides vision cache entry byte estimation for the
-    KV-and-vision-cache reservation path.
+    Reserves a per-device activation budget (a base sized from the KV cache
+    dtype, plus optional graph-capture headroom), scaled by the device count to
+    match the total-across-devices budget in
+    :meth:`MemoryEstimator.estimate_memory_footprint`.  Also provides vision
+    cache entry byte estimation for the KV-and-vision-cache reservation path.
     """
 
     _always_signal_buffers = True
@@ -45,7 +46,7 @@ class Gemma4MemoryPlanner(PagedMemoryPlanner):
             huggingface_config: Unused.
 
         Returns:
-            Estimated activation memory in bytes.
+            Estimated activation memory in bytes, summed across all devices.
         """
         # FIXME: We arbitrarily set some memory for activation memory to leave
         # headroom for vision processing. We should determine this in a more
@@ -60,7 +61,7 @@ class Gemma4MemoryPlanner(PagedMemoryPlanner):
         ) * 1024**3
         if pipeline_config.runtime.device_graph_capture:
             base += _GRAPH_CAPTURE_HEADROOM_BYTES
-        return base
+        return base * len(pipeline_config.model.device_specs)
 
     def estimate_vision_cache_entry_bytes(
         self,
@@ -91,6 +92,10 @@ class Gemma4MemoryPlanner(PagedMemoryPlanner):
             raise ValueError(
                 "Gemma4 requires a text_config in the HuggingFace config"
             )
+        if getattr(huggingface_config, "model_type", None) == "gemma4_unified":
+            # These checkpoints are served text-only (different vision
+            # schema); no vision cache is needed.
+            return 0
         k = vision_config.pooling_kernel_size
         max_tokens = vision_config.position_embedding_size // (k * k)
         hidden = text_config.hidden_size

@@ -559,10 +559,16 @@ class HuggingFaceRepo:
                 elif re.search(r"FP4|fp4", self.repo_id, re.IGNORECASE):
                     supported_encodings.add("float4_e2m1fnx2")
 
-            # Check quantization_config for gptq (both local and online).
+            # Check quantization_config for gptq/mxfp8 (both local and online).
             if quant_config := self._get_quantization_config():
                 if quant_config.get("quant_method") == "gptq":
                     supported_encodings.add("gptq")
+                elif quant_config.get("quant_method") == "mxfp8":
+                    # MXFP8 checkpoints store block scales as uint8, which the
+                    # tensor-header scan above misidentifies as float4_e2m1fnx2.
+                    # Discard that false-positive and keep float8_e4m3fn.
+                    supported_encodings.discard("float4_e2m1fnx2")
+                    supported_encodings.add("float8_e4m3fn")
 
         return list(supported_encodings)
 
@@ -583,6 +589,8 @@ class HuggingFaceRepo:
             if weight_dtype := weight_value.get("dtype", None):
                 if weight_dtype == "F32":
                     supported_encodings.add("float32")
+                elif weight_dtype == "F16":
+                    supported_encodings.add("float16")
                 elif weight_dtype == "BF16":
                     supported_encodings.add("bfloat16")
                 elif weight_dtype == "F8_E4M3":

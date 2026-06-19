@@ -468,11 +468,8 @@ doesn't provide and can't be composed from what's already there, see
 [Custom ops](/max/develop/custom-ops) for the interface, registration, and
 worked examples.
 
-{/*
-TODO(docs): Add a logit verification guide. The workflow is: run the same prompt
-through your MAX model and the Hugging Face reference and compare the top-5 logit
-rankings to verify numerical correctness. Link to that guide here once it exists.
-
-Reviewer note: please review this page without the logit verification content.
-That section will be addressed in a follow-up doc.
-*/}
+Once your architecture loads and generates text, verify its forward pass
+numerically against a PyTorch reference. See
+[Logit comparison](/max/develop/logit-comparison) for the full workflow, or use
+the [`debug-model`](/max/develop/model-bringup-skills/#debug-output-divergences)
+skill to run that per-layer comparison with an AI coding agent.

@@ -279,23 +279,11 @@ def run_mla_prefill_v2[
                 )
             ),
         )
-        var _klt_n = _k0.to_layout_tensor()
         var _knope0 = LayoutTensorMHAOperand(
-            LayoutTensor[_klt_n.dtype, _klt_n.layout, _klt_n.origin](
-                _klt_n.ptr,
-                RuntimeLayout[_klt_n.layout].row_major(
-                    _klt_n.runtime_layout.shape.value.canonicalize()
-                ),
-            )
+            _k0.as_immut().as_unsafe_any_origin()
         )
-        var _klt_r = _k0.to_layout_tensor()
         var _krope0 = LayoutTensorMHAOperand(
-            LayoutTensor[_klt_r.dtype, _klt_r.layout, _klt_r.origin](
-                _klt_r.ptr,
-                RuntimeLayout[_klt_r.layout].row_major(
-                    _klt_r.runtime_layout.shape.value.canonicalize()
-                ),
-            )
+            _k0.as_immut().as_unsafe_any_origin()
         )
         var _v0 = TileTensor(
             cb_v.offset_ptr(0).bitcast[Scalar[qkv_type]](),
@@ -308,14 +296,8 @@ def run_mla_prefill_v2[
                 )
             ),
         )
-        var _vlt = _v0.to_layout_tensor()
         var _vop0 = LayoutTensorMHAOperand(
-            LayoutTensor[_vlt.dtype, _vlt.layout, _vlt.origin](
-                _vlt.ptr,
-                RuntimeLayout[_vlt.layout].row_major(
-                    _vlt.runtime_layout.shape.value.canonicalize()
-                ),
-            )
+            _v0.as_immut().as_unsafe_any_origin()
         )
         comptime _kernel_run = _kernel.run[
             type_of(_knope0),
@@ -390,18 +372,18 @@ def run_mla_prefill_v2[
             @parameter
             @always_inline
             def _kernel_launch(ctx: DeviceContext, iteration: Int) raises:
-                var q_ptr: UnsafePointer[
-                    Scalar[qkv_type], ImmutAnyOrigin
-                ] = cb_q.offset_ptr(iteration).bitcast[Scalar[qkv_type]]()
-                var k_ptr: UnsafePointer[
-                    Scalar[qkv_type], ImmutAnyOrigin
-                ] = cb_k.offset_ptr(iteration).bitcast[Scalar[qkv_type]]()
-                var v_ptr: UnsafePointer[
-                    Scalar[qkv_type], ImmutAnyOrigin
-                ] = cb_v.offset_ptr(iteration).bitcast[Scalar[qkv_type]]()
-                var o_ptr: UnsafePointer[
-                    Scalar[out_type], MutAnyOrigin
-                ] = cb_o.offset_ptr(iteration).bitcast[Scalar[out_type]]()
+                var q_ptr = cb_q.offset_ptr(iteration).bitcast[
+                    Scalar[qkv_type]
+                ]()
+                var k_ptr = cb_k.offset_ptr(iteration).bitcast[
+                    Scalar[qkv_type]
+                ]()
+                var v_ptr = cb_v.offset_ptr(iteration).bitcast[
+                    Scalar[qkv_type]
+                ]()
+                var o_ptr = cb_o.offset_ptr(iteration).bitcast[
+                    Scalar[out_type]
+                ]()
 
                 var q_tt = TileTensor(
                     q_ptr,
@@ -443,27 +425,11 @@ def run_mla_prefill_v2[
                         )
                     ),
                 )
-                var k_lt_nope = k_tt.to_layout_tensor()
                 var k_nope_op = LayoutTensorMHAOperand(
-                    LayoutTensor[
-                        k_lt_nope.dtype, k_lt_nope.layout, k_lt_nope.origin
-                    ](
-                        k_lt_nope.ptr,
-                        RuntimeLayout[k_lt_nope.layout].row_major(
-                            k_lt_nope.runtime_layout.shape.value.canonicalize()
-                        ),
-                    )
+                    k_tt.as_immut().as_unsafe_any_origin()
                 )
-                var k_lt_rope = k_tt.to_layout_tensor()
                 var k_rope_op = LayoutTensorMHAOperand(
-                    LayoutTensor[
-                        k_lt_rope.dtype, k_lt_rope.layout, k_lt_rope.origin
-                    ](
-                        k_lt_rope.ptr,
-                        RuntimeLayout[k_lt_rope.layout].row_major(
-                            k_lt_rope.runtime_layout.shape.value.canonicalize()
-                        ),
-                    )
+                    k_tt.as_immut().as_unsafe_any_origin()
                 )
 
                 var v_tt = TileTensor(
@@ -477,14 +443,8 @@ def run_mla_prefill_v2[
                         )
                     ),
                 )
-                var v_lt = v_tt.to_layout_tensor()
                 var v_op = LayoutTensorMHAOperand(
-                    LayoutTensor[v_lt.dtype, v_lt.layout, v_lt.origin](
-                        v_lt.ptr,
-                        RuntimeLayout[v_lt.layout].row_major(
-                            v_lt.runtime_layout.shape.value.canonicalize()
-                        ),
-                    )
+                    v_tt.as_immut().as_unsafe_any_origin()
                 )
 
                 # Enqueue ONLY — the kernel was compiled once above and the

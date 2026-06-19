@@ -93,11 +93,8 @@ modular_py_library(
     deps = [
         "//max/python/max/driver",
         "//max/python/max/pipelines",
-        "//max/python/max/pipelines/architectures/flux2",
         "//max/python/max/pipelines/architectures/internvl",
         "//max/python/max/pipelines/architectures/qwen3",
-        "//max/python/max/pipelines/architectures/wan",
-        "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/diffusion",
         "//max/python/max/pipelines/lib",
         "//max/python/max/pipelines/modeling",
@@ -281,6 +278,10 @@ modular_py_test(
     size = "large",
     timeout = "long",
     srcs = ["test_precompile_all_pipelines_cpu.py"],
+    ignore_extra_deps = [
+        # Imported via string lookup
+        "//max/python/max/pipelines/architectures/mpnet",
+    ],
     imports = ["."],
     tags = [
         "no-sandbox",
@@ -292,6 +293,7 @@ modular_py_test(
         "//conditions:default": [],
     }),
     deps = [
+        "//max/python/max/pipelines/architectures/mpnet",
         "//max/tests/integration/tools:precompile_all_pipelines",
         "//max/tests/integration/tools:tag_filters",
     ],
@@ -447,6 +449,61 @@ PIPELINE_SPECS = [
     )
     for spec in PIPELINE_SPECS
 ]
+
+modular_py_binary(
+    name = "pipeline_to_mo_graph",
+    testonly = True,
+    srcs = ["pipeline_to_mo_graph.py"],
+    imports = ["."],
+    main = "pipeline_to_mo_graph.py",
+    deps = [
+        "//max/python/max/engine",
+        "//max/python/max/entrypoints",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines",
+        requirement("click"),
+    ],
+)
+
+modular_py_binary(
+    name = "all_pipelines_to_mo_graphs",
+    testonly = True,
+    srcs = ["all_pipelines_to_mo_graphs.py"],
+    # pipeline_to_mo_graph runs as a subprocess via runfiles, so it belongs in
+    # data: that keeps max.pipelines out of this orchestrator process and gives
+    # each dump its own import path, timeout and crash isolation.
+    data = [":pipeline_to_mo_graph"],
+    imports = ["../accuracy/smoke_tests"],
+    main = "all_pipelines_to_mo_graphs.py",
+    tags = ["no-pydeps"],  # Depends on :smoke_test binary for imports
+    deps = [
+        "//max/tests/integration/accuracy/smoke_tests:smoke_test",
+        "//max/tests/integration/accuracy/smoke_tests:smoke_test_github_matrix",
+        "@rules_python//python/runfiles",
+        requirement("click"),
+    ],
+)
+
+modular_py_test(
+    name = "test_pipeline_to_mo_graph",
+    size = "large",
+    srcs = [
+        "test_pipeline_to_mo_graph.py",
+    ],
+    data = [
+        ":pipeline_to_mo_graph",
+    ],
+    tags = [
+        "manual",
+        "no-sandbox",
+        "requires-network",
+        "run-in-hf-workflow",
+    ],
+    target_compatible_with = select({
+        "@platforms//os:linux": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
 
 modular_py_binary(
     name = "compare_tensors",

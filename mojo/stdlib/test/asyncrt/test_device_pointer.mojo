@@ -17,13 +17,11 @@ These tests exercise the host-side offset math on `DevicePointer` without
 touching the device. They run against any `DeviceContext` backend, including
 `api="cpu"`, so no GPU is required.
 
-A `DevicePointer` is a non-owning view: it is `TrivialRegisterPassable` and
-stores only a raw `UnsafePointer` to the `DeviceBuffer`, so it does *not*
-extend the buffer's lifetime. A test that uses a pointer after the buffer's
-last *textual* use must keep the buffer alive explicitly with `_ = buf^`;
-otherwise ASAP destruction would free `buf` while the pointer is still in use,
-producing a heap-use-after-free (caught by ASAN).
-`test_pointer_requires_buffer_kept_alive` documents that contract.
+A `DevicePointer` keeps its `DeviceBuffer` alive for as long as the pointer is
+live, so tests can use a pointer freely after the buffer's last *textual* use
+without manually extending the buffer's lifetime;
+`test_pointer_outlives_buffer_last_use` is the regression guard for that
+property.
 """
 
 from asyncrt_test_utils import create_test_device_context
@@ -64,7 +62,6 @@ def test_device_ptr_preserves_buffer_size() raises:
     var buf = ctx.enqueue_create_buffer[DType.float32](_LENGTH)
     var p = buf.device_ptr()
     assert_equal(len(p.buffer()), _LENGTH)
-    _ = buf^
 
 
 def test_init_zero_size_buffer_raises() raises:
@@ -107,17 +104,14 @@ def test_init_offset_past_end_raises() raises:
 # ===-----------------------------------------------------------------------===#
 
 
-def test_pointer_requires_buffer_kept_alive() raises:
-    """Contract guard: a `DevicePointer` is a non-owning view of its buffer.
+def test_pointer_outlives_buffer_last_use() raises:
+    """Regression guard: a `DevicePointer` keeps its `DeviceBuffer` alive.
 
-    `DevicePointer` is `TrivialRegisterPassable` and stores only a raw
-    `UnsafePointer` to the `DeviceBuffer`, so it does *not* extend the buffer's
-    lifetime. `buf`'s last *textual* use would otherwise be the `device_ptr()`
-    call, yet the pointer is dereferenced afterwards (`p + 8` reads the buffer
-    size, `unsafe_ptr()` reads its address). The caller must keep `buf` alive
-    past those uses with an explicit `_ = buf^`; without it, ASAP destruction
-    would free `buf` while the pointer is still in use, producing a
-    heap-use-after-free (caught by ASAN).
+    `buf`'s last *textual* use is the `device_ptr()` call, yet the pointer is
+    dereferenced afterwards (`p + 8` reads the buffer size, `unsafe_ptr()` reads
+    its address). The borrow checker must extend `buf`'s lifetime past these
+    uses; otherwise ASAP destruction would free `buf` while the pointer is
+    still in use, producing a heap-use-after-free (caught by ASAN).
     """
     var ctx = create_test_device_context()
     var buf = ctx.enqueue_create_buffer[DType.float32](_LENGTH)
@@ -125,8 +119,7 @@ def test_pointer_requires_buffer_kept_alive() raises:
     var q = p + 8
     assert_equal(q.offset(), 8)
     assert_equal(len(p.buffer()), _LENGTH)
-    assert_true(p.unsafe_ptr() == buf.unsafe_ptr())
-    _ = buf^
+    assert_true(p.unsafe_ptr() == buf.unsafe_ptr().as_unsafe_any_origin())
 
 
 # ===-----------------------------------------------------------------------===#
@@ -142,7 +135,6 @@ def test_add_advances_offset() raises:
     assert_equal(q.offset(), 8)
     # Original is unchanged.
     assert_equal(p.offset(), 0)
-    _ = buf^
 
 
 def test_add_zero_is_noop() raises:
@@ -151,7 +143,6 @@ def test_add_zero_is_noop() raises:
     var p = buf.device_ptr()
     var q = p + 0
     assert_equal(q.offset(), 0)
-    _ = buf^
 
 
 def test_add_chained() raises:
@@ -160,7 +151,6 @@ def test_add_chained() raises:
     var p = buf.device_ptr()
     var q = (p + 4) + 4
     assert_equal(q.offset(), 8)
-    _ = buf^
 
 
 def test_add_negative_offsets_backward() raises:
@@ -171,7 +161,6 @@ def test_add_negative_offsets_backward() raises:
     var q = p + 10
     var r = q + -3
     assert_equal(r.offset(), 7)
-    _ = buf^
 
 
 def test_add_below_zero_raises() raises:
@@ -202,7 +191,6 @@ def test_sub_decreases_offset() raises:
     var q = p + 16
     var r = q - 4
     assert_equal(r.offset(), 12)
-    _ = buf^
 
 
 def test_sub_zero_is_noop() raises:
@@ -211,7 +199,6 @@ def test_sub_zero_is_noop() raises:
     var p = buf.device_ptr()
     var q = (p + 8) - 0
     assert_equal(q.offset(), 8)
-    _ = buf^
 
 
 def test_sub_round_trip() raises:
@@ -221,7 +208,6 @@ def test_sub_round_trip() raises:
     var p = buf.device_ptr()
     var q = (p + 16) - 16
     assert_equal(q.offset(), p.offset())
-    _ = buf^
 
 
 def test_sub_negative_advances_forward() raises:
@@ -231,7 +217,6 @@ def test_sub_negative_advances_forward() raises:
     var p = buf.device_ptr()
     var q = p - -8
     assert_equal(q.offset(), 8)
-    _ = buf^
 
 
 def test_sub_below_zero_raises() raises:
@@ -306,7 +291,6 @@ def test_equality_same_buffer_same_offset() raises:
     var q = buf.device_ptr()
     assert_true(p == q)
     assert_false(p != q)
-    _ = buf^
 
 
 def test_equality_same_buffer_different_offset() raises:
@@ -316,7 +300,6 @@ def test_equality_same_buffer_different_offset() raises:
     var q = buf.device_ptr() + 4
     assert_false(p == q)
     assert_true(p != q)
-    _ = buf^
 
 
 def test_equality_different_buffer() raises:
@@ -327,8 +310,6 @@ def test_equality_different_buffer() raises:
     var b = bbuf.device_ptr()
     assert_false(a == b)
     assert_true(a != b)
-    _ = abuf^
-    _ = bbuf^
 
 
 def test_equality_buffer_copies_same_allocation() raises:
@@ -352,8 +333,6 @@ def test_equality_buffer_copies_same_allocation() raises:
     assert_true(p >= q)
     assert_false(p < q)
     assert_false(p > q)
-    _ = buf^
-    _ = buf_copy^
 
 
 def test_ordering_same_buffer() raises:
@@ -365,7 +344,6 @@ def test_ordering_same_buffer() raises:
     assert_true(p <= q)
     assert_true(q > p)
     assert_true(q >= p)
-    _ = buf^
 
 
 def test_lt_cross_buffer_raises() raises:
@@ -382,8 +360,6 @@ def test_lt_cross_buffer_raises() raises:
         _ = q > p
     with assert_raises(contains="DeviceBuffer does not match"):
         _ = q >= p
-    _ = buf_a^
-    _ = buf_b^
 
 
 # ===-----------------------------------------------------------------------===#
@@ -407,7 +383,6 @@ def test_unsafe_ptr_advances_by_offset() raises:
     var p = buf.device_ptr()
     var q = p + 8
     assert_true(q.unsafe_ptr() == p.unsafe_ptr() + 8)
-    _ = buf^
 
 
 # ===-----------------------------------------------------------------------===#
@@ -424,7 +399,6 @@ def test_write_to() raises:
         t" offset=5)"
     )
     assert_equal(String(p), expected)
-    _ = buf^
 
 
 def main() raises:

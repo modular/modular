@@ -2606,23 +2606,28 @@ Returns:
 def _while_loop_graph(
     initial_values: Iterable[TensorValueLike] | TensorValueLike,
     predicate: Callable[..., Tensor],
-    body: Callable[..., Tensor | list[Tensor]],
+    body: Callable[..., Tensor | Iterable[Tensor]],
 ) -> list[TensorValue]:
-    """Wraps predicate/body so :class:`Tensor` returns are unwrapped to :class:`TensorValue`."""
+    """Wrap predicate/body so callbacks see :class:`Tensor`.
 
-    def _unwrap_list(
-        vals: list[Tensor] | tuple[Tensor, ...],
-    ) -> list[TensorValue]:
-        return [v.__tensorvalue__() for v in vals]
+    ``ops.while_loop`` passes :class:`TensorValue` into its predicate/body
+    and expects :class:`TensorValue` back. This wrapper wraps callback
+    args as :class:`Tensor` and coerces callback returns back to
+    :class:`TensorValue`. The outer ``functional()`` wrapper converts the
+    returned :class:`TensorValue` list back to :class:`Tensor` for the
+    public surface.
+    """
 
     def _pred(*args: TensorValue) -> TensorValue:
-        return predicate(*args).__tensorvalue__()
+        tensors = [Tensor.from_graph_value(a) for a in args]
+        return TensorValue(predicate(*tensors))
 
     def _body(*args: TensorValue) -> list[TensorValue]:
-        result = body(*args)
+        tensors = [Tensor.from_graph_value(a) for a in args]
+        result = body(*tensors)
         if isinstance(result, Tensor):
-            return [result.__tensorvalue__()]
-        return _unwrap_list(result)
+            return [TensorValue(result)]
+        return [TensorValue(t) for t in result]
 
     if isinstance(initial_values, Iterable):
         unwrapped = [TensorValue(v) for v in initial_values]
@@ -2634,10 +2639,11 @@ def _while_loop_graph(
 while_loop = functional(_while_loop_graph, rule=while_loop_rule)
 while_loop.__doc__ = """Repeatedly executes a body function while a predicate holds.
 
-Both ``predicate`` and ``body`` take the same number and types of
-arguments as the initial values. The predicate must return a single
-boolean scalar tensor that controls loop continuation; the body must
-return updated values matching the types of ``initial_values``.
+Both ``predicate`` and ``body`` receive and return :class:`Tensor`
+values. They take the same number and types of arguments as the initial
+values. The predicate must return a single boolean scalar tensor that
+controls loop continuation; the body must return updated values matching
+the types of ``initial_values``.
 
 .. code-block:: python
 

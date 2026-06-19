@@ -945,7 +945,7 @@ def _launch_split_allreduce_rmsnorm_fp8[
     scale_output_1d: TileTensor[mut=True, scales_dtype, ...],
     rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     ctx: DeviceContext,
-    residual: TileTensor[in_dtype, ...],
+    residual: TileTensor[mut=False, in_dtype, ...],
     residual_output: TileTensor[mut=True, in_dtype, ...],
 ) raises:
     """Two-kernel fallback: allreduce+add epilogue, then rmsnorm+fp8.
@@ -1117,7 +1117,7 @@ def _dispatch_fused_kernel[
     #   MI355 4GPU: 128 KB non-res,  96 KB residual
     #   MI355 8GPU:  80 KB non-res,  96 KB residual
     #   B200  4GPU: 512 KB non-res, 256 KB residual
-    #   B200  8GPU:  80 KB non-res,  80 KB residual
+    #   B200  8GPU:  80 KB non-res, 80/100 KB residual (column-aware, see below)
     @parameter
     def _rank_4_per_rank_thresh() -> Int:
         comptime if has_amd_gpu_accelerator():
@@ -1132,7 +1132,31 @@ def _dispatch_fused_kernel[
         else:
             return 80 * 1024
 
-    comptime threshold = _rank_4_per_rank_thresh() if ngpus <= 4 else _rank_8_per_rank_thresh()
+    # B200 8-GPU residual: the 1-stage/2-stage crossover is NOT a constant
+    # per-rank byte count -- it rises with column width because the 1-stage
+    # cost is dominated by a fixed per-launch floor plus a row-count term, so
+    # for the same per-rank bytes a wider row (fewer rows) keeps 1-stage ahead
+    # longer. Measured crossovers (B200 8xGPU, bf16, residual):
+    #   cols 4096 -> ~72 KB ; cols 7168 -> ~104 KB ; cols 8192 -> ~104 KB.
+    # A flat 80 KB mis-routes the wide-column (Kimi hidden=7168) M=40..56 band
+    # onto the slower 2-stage path (e.g. M=48: 2-stage 41.2us vs 1-stage
+    # 36.3us, a 12% loss). Use a column-aware threshold: 100 KB for wide
+    # columns (>= 6144, the large-hidden regime), 80 KB otherwise (matches the
+    # validated narrow-column crossover; cols=4096 crosses near 72 KB).
+    @parameter
+    def _rank_8_residual_thresh_for_cols(c: Int) -> Int:
+        comptime if has_amd_gpu_accelerator():
+            return _rank_8_per_rank_thresh()
+        else:
+            return 100 * 1024 if c >= 6144 else 80 * 1024
+
+    var threshold: Int
+    comptime if ngpus <= 4:
+        threshold = _rank_4_per_rank_thresh()
+    elif has_residual and not has_amd_gpu_accelerator():
+        threshold = _rank_8_residual_thresh_for_cols(cols)
+    else:
+        threshold = _rank_8_per_rank_thresh()
 
     # Per-rank byte thresholds for switching to split (2-kernel) path
     # when has_residual=True. Above this, allreduce+add + rmsnorm_fp8 beats

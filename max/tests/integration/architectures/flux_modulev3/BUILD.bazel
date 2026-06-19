@@ -33,6 +33,7 @@ modular_py_test(
         "//max/python/max/experimental/nn",
         "//max/python/max/graph",
         "//max/python/max/pipelines/architectures/flux_modulev3",
+        "//max/python/max/pipelines/lib",
         requirement("numpy"),
     ],
 )

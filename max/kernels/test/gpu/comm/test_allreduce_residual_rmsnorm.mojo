@@ -1167,6 +1167,15 @@ def main() raises:
         test_fused_allreduce_residual_rmsnorm_noquant[
             num_gpus, DType.bfloat16, 8, 8192
         ](list_of_ctx)
+        # Column-aware-threshold band: on B200 8-GPU the wide-column
+        # (cols >= 6144) residual crossover is ~100 KB per-rank, so this
+        # shape (rows=48, cols=8192 -> ceildiv(48,8)*8192*2 = 96 KB) now
+        # routes to the 1-stage kernel where a flat 80 KB threshold would
+        # have used 2-stage. Locks in correctness of the 1-stage path at the
+        # newly-selected band.
+        test_fused_allreduce_residual_rmsnorm_noquant[
+            num_gpus, DType.bfloat16, 48, 8192
+        ](list_of_ctx)
         # 2-stage path (large per-rank payloads), including the persistent
         # row loop.
         test_fused_allreduce_residual_rmsnorm_noquant[

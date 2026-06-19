@@ -1127,23 +1127,20 @@ struct QuantizeTensorDynamicScaledFloat8:
     ) raises:
         comptime assert is_gpu[target](), "only valid on GPUs"
 
-        @parameter
         @always_inline
         def input_fn[
             width: Int, alignment: Int
-        ](row: Int, col: Int) capturing -> SIMD[input_type, width]:
+        ](row: Int, col: Int) {var input} -> SIMD[input_type, width]:
             return input._lambda_load[width=width, element_alignment=alignment](
                 Index(row, col)
             )
 
         quantize_tensor_dynamic_scaled_fp8[
-            out_dtype=output_type,
             in_dtype=input_type,
-            scales_dtype=scales_type,
-            input_fn,
-            group_size_or_per_token,
+            group_size_or_per_token=group_size_or_per_token,
             num_cols=Int(input.static_spec.shape_tuple[1]),
         ](
+            input_fn,
             output.to_tile_tensor[DType.int64](),
             scales.to_tile_tensor[DType.int64](),
             scale_ub,
@@ -1173,23 +1170,20 @@ struct QuantizeDynamicScaledFloat8:
     ) raises:
         comptime assert is_gpu[target](), "only valid on GPUs"
 
-        @parameter
         @always_inline
         def input_fn[
             width: Int, alignment: Int
-        ](row: Int, col: Int) capturing -> SIMD[input_type, width]:
+        ](row: Int, col: Int) {var input} -> SIMD[input_type, width]:
             return input._lambda_load[width=width, element_alignment=alignment](
                 Index(row, col)
             )
 
         quantize_dynamic_scaled_fp8[
-            out_dtype=output_type,
             in_dtype=input_type,
-            scales_dtype=scales_type,
-            input_fn,
-            group_size_or_per_token,
+            group_size_or_per_token=group_size_or_per_token,
             num_cols=Int(input.static_spec.shape_tuple[1]),
         ](
+            input_fn,
             output.to_tile_tensor[DType.int64](),
             scales.to_tile_tensor[DType.int64](),
             scale_ub,

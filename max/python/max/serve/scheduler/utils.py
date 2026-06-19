@@ -49,7 +49,6 @@ class BatchMetrics:
     batch_type: BatchType
     batch_size: int
     max_batch_size: int
-    num_steps: int
     terminated_reqs: int
     num_pending_reqs: int
     num_input_tokens: int
@@ -119,15 +118,21 @@ class BatchMetrics:
         num_pending_reqs: int,
         num_terminated_reqs: int,
         total_preemption_count: int,
-        speculative_decoding_metrics: _SpeculativeDecodingMetrics | None = None,
+        batch_spec_decode_metrics: _SpeculativeDecodingMetrics | None = None,
         batch_execution_time_is_previous: bool = False,
     ) -> BatchMetrics:
         num_input_tokens = inputs.input_tokens
         batch_size = len(inputs.flat_batch)
         prompt_throughput = num_input_tokens / batch_execution_time_s
-        generation_throughput = (
-            batch_size * inputs.num_steps / batch_execution_time_s
-        )
+        if (
+            batch_spec_decode_metrics is not None
+            and inputs.batch_type == BatchType.TG
+        ):
+            generation_throughput = (
+                batch_spec_decode_metrics.output_tokens / batch_execution_time_s
+            )
+        else:
+            generation_throughput = batch_size / batch_execution_time_s
 
         total_kv_blocks = 0
         used_kv_pct = 0.0
@@ -240,28 +245,27 @@ class BatchMetrics:
         avg_acceptance_length = 0.0
         max_acceptance_length = 0
         acceptance_rate_per_position: list[float] = []
-        if speculative_decoding_metrics is not None:
+        if batch_spec_decode_metrics is not None:
             draft_tokens_generated = (
-                speculative_decoding_metrics.draft_tokens_generated
+                batch_spec_decode_metrics.draft_tokens_generated
             )
             draft_tokens_accepted = (
-                speculative_decoding_metrics.draft_tokens_accepted
+                batch_spec_decode_metrics.draft_tokens_accepted
             )
             avg_acceptance_length = (
-                speculative_decoding_metrics.avg_acceptance_length
+                batch_spec_decode_metrics.avg_acceptance_length
             )
             max_acceptance_length = (
-                speculative_decoding_metrics.num_speculative_tokens
+                batch_spec_decode_metrics.num_speculative_tokens
             )
             acceptance_rate_per_position = (
-                speculative_decoding_metrics.acceptance_rate_per_position
+                batch_spec_decode_metrics.acceptance_rate_per_position
             )
 
         return cls(
             batch_type=inputs.batch_type,
             batch_size=batch_size,
             max_batch_size=sch_config.max_batch_size,
-            num_steps=inputs.num_steps,
             terminated_reqs=num_terminated_reqs,
             num_pending_reqs=num_pending_reqs,
             num_input_tokens=num_input_tokens,
@@ -416,7 +420,6 @@ class BatchMetrics:
             "batch_type": self.batch_type.value,
             "batch_size": self.batch_size,
             "max_batch_size": self.max_batch_size,
-            "num_steps": self.num_steps,
             "terminated_reqs": self.terminated_reqs,
             "num_pending_reqs": self.num_pending_reqs,
             "num_input_tokens": self.num_input_tokens,
@@ -515,6 +518,8 @@ class BatchMetrics:
 
         if self.total_disk_kv_blocks != 0:
             METRICS.cache_used_disk_kv_pct(self.used_disk_kv_pct * 100)
+            METRICS.cache_disk_blocks_read(self.disk_blocks_read)
+            METRICS.cache_disk_blocks_written(self.disk_blocks_written)
 
         if self.nixl_read_latency_avg_ms > 0:
             METRICS.dkv_nixl_read_latency(self.nixl_read_latency_avg_ms)
@@ -575,7 +580,7 @@ class SchedulerLogger:
         num_pending_reqs: int,
         num_terminated_reqs: int,
         total_preemption_count: int,
-        speculative_decoding_metrics: _SpeculativeDecodingMetrics | None = None,
+        batch_spec_decode_metrics: _SpeculativeDecodingMetrics | None = None,
         batch_execution_time_is_previous: bool = False,
     ) -> None:
         """Periodically logs batch-level metrics to console.
@@ -588,7 +593,8 @@ class SchedulerLogger:
             batch_execution_time_s: The time it took to execute the batch.
             num_pending_reqs: The number of pending requests.
             total_preemption_count: The total number of preemptions.
-            speculative_decoding_metrics: The speculative decoding metrics, if any.
+            batch_spec_decode_metrics: Per-batch speculative decoding metrics
+                for the most recent batch.
             batch_execution_time_is_previous: When True, ``batch_execution_time_s``
                 is the execution time of the previous batch (the overlap
                 scheduler is active); the log line will read
@@ -607,7 +613,7 @@ class SchedulerLogger:
             num_pending_reqs=num_pending_reqs,
             num_terminated_reqs=num_terminated_reqs,
             total_preemption_count=total_preemption_count,
-            speculative_decoding_metrics=speculative_decoding_metrics,
+            batch_spec_decode_metrics=batch_spec_decode_metrics,
             batch_execution_time_is_previous=batch_execution_time_is_previous,
         )
 

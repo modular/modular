@@ -15,8 +15,17 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+from typing import TypeGuard
+
 from max.dtype import DType
 from max.experimental.nn import Module
+from max.experimental.sharding import (
+    DeviceMapping,
+    DeviceMesh,
+    PlacementMapping,
+    Sharded,
+)
 from max.experimental.tensor import Tensor
 
 
@@ -83,3 +92,54 @@ class FP8BlockTensor(QTensor):
     @property
     def block_size(self) -> tuple[int, int]:
         return self._block_size
+
+    def shard(self, axis: int, mesh: DeviceMesh) -> FP8BlockTensor:
+        """Co-shard both leaves along ``axis`` onto ``mesh``.
+
+        Args:
+            axis: Tensor axis to shard along (same index into both
+                ``data.shape`` and ``scale_inv.shape``).
+            mesh: 1-D :class:`DeviceMesh` to scatter onto.
+
+        Returns:
+            A new :class:`FP8BlockTensor` whose ``data`` and ``scale_inv``
+            leaves are each distributed ``Sharded(axis=axis)`` across
+            ``mesh``.
+        """
+        mapping = PlacementMapping(mesh, (Sharded(axis=axis),))
+        return FP8BlockTensor(
+            data=self.data.to(mapping),
+            scale_inv=self.scale_inv.to(mapping),
+            block_size=self.block_size,
+        )
+
+    @property
+    def local_shards(self) -> tuple[FP8BlockTensor, ...]:
+        return tuple(
+            FP8BlockTensor(
+                data=self.data.local_shards[i],
+                scale_inv=self.scale_inv.local_shards[i],
+                block_size=self.block_size,
+            )
+            for i in range(self.data.num_shards)
+        )
+
+    @property
+    def mesh(self) -> DeviceMesh:
+        return self.data.mesh
+
+    @property
+    def _mapping(self) -> DeviceMapping:
+        return self.data.mapping
+
+    @_mapping.setter
+    def _mapping(self, mapping: DeviceMapping) -> None:
+        self.data._mapping = mapping
+        self.scale_inv._mapping = mapping
+
+
+def all_fp8_block(
+    weights: Sequence[Tensor | FP8BlockTensor],
+) -> TypeGuard[Sequence[FP8BlockTensor]]:
+    """Narrow a sequence of mixed weights to a homogeneous FP8 sequence."""
+    return all(isinstance(w, FP8BlockTensor) for w in weights)

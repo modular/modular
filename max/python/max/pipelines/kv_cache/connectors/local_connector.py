@@ -128,16 +128,40 @@ class LocalConnector:
         self,
         block_ids: list[int],
         block_hashes: list[int],
+        parent_seq_hash: int = 0,
     ) -> None:
-        """Offload the device blocks to the external cache."""
-        self._block_copy_engine.wait_for_completion()
+        """Offload the device blocks to the external cache.
 
+        ``parent_seq_hash`` is ignored: host blocks are keyed by hash.
+
+        Kicks off the D2H copies on the auxiliary stream without synchronizing.
+        The main/aux stream sync runs once per forward pass in
+        ``wait_for_loads``; ``offload`` is now called once per request
+        (multiple times per forward pass), so syncing here would re-serialize
+        the copies against the forward pass and destroy the overlap.
+        """
         for block_id, block_hash in zip(block_ids, block_hashes, strict=True):
             self._maybe_offload_to_host(block_id, block_hash)
 
+    def wait_for_loads(self) -> None:
+        """Synchronize the main and auxiliary streams once per forward pass.
+
+        Called once before the forward pass and before the per-request
+        ``offload`` calls. This duplex sync makes the forward pass wait for
+        in-flight H2D loads and the previous step's D2H offloads (so reused
+        blocks are safe), and orders subsequent D2H copies after the forward
+        pass. Doing it here once — rather than at the head of every ``offload``
+        — keeps the forward pass overlapping with the D2H transfers.
+        """
+        self._block_copy_engine.wait_for_completion()
+
     @traced
-    def sync(self) -> None:
-        """Wait for pending loads/offloads to complete."""
+    def wait_for_offloads(self) -> None:
+        """Drain offloads posted this step by syncing the copy streams.
+
+        Called after the forward pass. Waits for in-flight D2H copies on the
+        auxiliary stream to complete.
+        """
         self._block_copy_engine.wait_for_completion()
 
     def shutdown(self) -> None:

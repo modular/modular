@@ -382,6 +382,20 @@ class MoE(Module, Shardable):
         )
         return self._ep_batch_manager
 
+    def configure_ep_scale_fusion(self, dispatch_supports_fold: bool) -> None:
+        """Configure any EP dispatch-scale fusion before the dispatch op.
+
+        No-op on the base class; ``MoEQuantized`` overrides it to enable the
+        MXFP4 up-proj A-scale preshuffle fold. Defined here (rather than
+        duck-typed) so the EP forward driver can call it on any ``MoE`` shard:
+        non-quantized subclasses inherit this no-op and consistently skip the
+        fold (no fusion, no corruption).
+
+        Args:
+            dispatch_supports_fold: Whether the selected dispatch path wires the
+                A-scale fold params. Ignored by this base no-op.
+        """
+
     @property
     def _shared_experts_use_quant(self) -> bool:
         """Whether shared experts use the same quantized weights as routed experts."""
@@ -445,6 +459,16 @@ class MoE(Module, Shardable):
         if self.has_shared_experts:
             shared_experts_shards = self.shared_experts.shard(devices)
 
+        # Replicate the pre-expert norm; the per-shard constructor would
+        # otherwise register duplicate weights under one name.
+        pre_expert_norm_shards = None
+        if self.pre_expert_norm is not None:
+            assert isinstance(self.pre_expert_norm, Shardable)
+            self.pre_expert_norm.sharding_strategy = ShardingStrategy.replicate(
+                self._sharding_strategy.num_devices
+            )
+            pre_expert_norm_shards = self.pre_expert_norm.shard(devices)
+
         shards = []
         num_devices = self._sharding_strategy.num_devices
         sharded_moe_dim = self.moe_dim // num_devices
@@ -485,6 +509,8 @@ class MoE(Module, Shardable):
             sharded.gate = gate_shards[shard_idx]
             if self.has_shared_experts:
                 sharded.shared_experts = shared_experts_shards[shard_idx]
+            if pre_expert_norm_shards is not None:
+                sharded.pre_expert_norm = pre_expert_norm_shards[shard_idx]
 
             if self._sharding_strategy.is_tensor_parallel:
                 sharded.shard_index = shard_idx
@@ -709,7 +735,7 @@ class MoE(Module, Shardable):
             self.gate_up_proj,
             expert_start_indices,
             expert_ids,
-            expert_usage_stats.to(DeviceRef.CPU()),
+            expert_usage_stats,
         )
 
         if self.gated_activation_fn is not None:
@@ -726,7 +752,7 @@ class MoE(Module, Shardable):
             self.down_proj,
             expert_start_indices,
             expert_ids,
-            expert_usage_stats.to(DeviceRef.CPU()),
+            expert_usage_stats,
         )
 
         down_projs = ops.gather(

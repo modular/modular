@@ -20,7 +20,7 @@ from std.sys import (
     size_of,
 )
 from std.ffi import _get_dylib_function as _ffi_get_dylib_function
-from std.ffi import _Global, OwnedDLHandle, _try_find_dylib
+from std.ffi import CStringSlice, _Global, OwnedDLHandle, _try_find_dylib
 from std.sys.defines import get_defined_int
 
 from std.utils.variant import Variant
@@ -179,14 +179,8 @@ struct Color(Intable, TrivialRegisterPassable):
         return self._value
 
 
-def _ensure_is_null_terminated(str: String) -> String:
-    var str2 = str
-    _ = str2.as_c_string_slice()
-    return str2
-
-
 @fieldwise_init
-struct _C_EventAttributes(TrivialRegisterPassable):
+struct _C_EventAttributes[message_origin: ImmutOrigin](TrivialRegisterPassable):
     var version: UInt16
     """Version flag of the structure."""
 
@@ -214,8 +208,14 @@ struct _C_EventAttributes(TrivialRegisterPassable):
     var message_type: Int32
     """Message type specified in this attribute structure."""
 
-    var message: UnsafePointer[UInt8, ImmutUntrackedOrigin]
+    var message: CStringSlice[Self.message_origin]
     """Message assigned to this attribute structure."""
+
+
+def c_event_attrs_ffi(
+    attrs: _C_EventAttributes[_],
+) -> _C_EventAttributes[ImmutUntrackedOrigin]:
+    return rebind[_C_EventAttributes[ImmutUntrackedOrigin]](attrs)
 
 
 @always_inline
@@ -231,14 +231,14 @@ def color_from_category(category: Int) -> Color:
     return Color.PURPLE
 
 
-struct EventAttributes(TrivialRegisterPassable):
-    var _value: _C_EventAttributes
+struct EventAttributes[message_origin: ImmutOrigin](TrivialRegisterPassable):
+    var _value: _C_EventAttributes[Self.message_origin]
 
     @always_inline
     def __init__(
         out self,
         *,
-        message: String = "",
+        message: CStringSlice[Self.message_origin],
         category: Int = _TraceType_MAX,
         color: Optional[Color] = None,
     ):
@@ -250,7 +250,7 @@ struct EventAttributes(TrivialRegisterPassable):
             resolved_color = color_from_category(category)
         self._value = _C_EventAttributes(
             version=NVTXVersion,
-            size=UInt16(size_of[_C_EventAttributes]()),
+            size=UInt16(size_of[_C_EventAttributes[ImmutUntrackedOrigin]]()),
             category=UInt32(category),
             color_type=Color.FORMAT,
             color=UInt32(Int(resolved_color)),
@@ -258,10 +258,7 @@ struct EventAttributes(TrivialRegisterPassable):
             _reserved=0,
             event_payload=0,
             message_type=ASCII,
-            # FIXME(MSTDL-2739): Ths is is wildly unsafe. What is keeping the 'message' string alive?
-            message=message.unsafe_ptr().unsafe_origin_cast[
-                ImmutUntrackedOrigin
-            ](),
+            message=message,
         )
 
 
@@ -280,13 +277,17 @@ struct _dylib_function[fn_name: StaticString, fn_type: TrivialRegisterPassable](
 # NVTX_DECLSPEC void NVTX_API nvtxMarkEx(const nvtxEventAttributes_t* eventAttrib);
 comptime _nvtxMarkEx = _dylib_function[
     "nvtxMarkEx",
-    def(UnsafePointer[_C_EventAttributes, ImmutAnyOrigin]) thin -> NoneType,
+    def(
+        UnsafePointer[_C_EventAttributes[ImmutUntrackedOrigin], ImmutAnyOrigin]
+    ) thin -> NoneType,
 ]
 
 # NVTX_DECLSPEC nvtxRangeId_t NVTX_API nvtxRangeStartEx(const nvtxEventAttributes_t* eventAttrib);
 comptime _nvtxRangeStartEx = _dylib_function[
     "nvtxRangeStartEx",
-    def(UnsafePointer[_C_EventAttributes, ImmutAnyOrigin]) thin -> RangeID,
+    def(
+        UnsafePointer[_C_EventAttributes[ImmutUntrackedOrigin], ImmutAnyOrigin]
+    ) thin -> RangeID,
 ]
 
 # NVTX_DECLSPEC void NVTX_API nvtxRangeEnd(nvtxRangeId_t id);
@@ -297,7 +298,9 @@ comptime _nvtxRangeEnd = _dylib_function[
 # NVTX_DECLSPEC int NVTX_API nvtxRangePushEx(const nvtxEventAttributes_t* eventAttrib);
 comptime _nvtxRangePushEx = _dylib_function[
     "nvtxRangePushEx",
-    def(UnsafePointer[_C_EventAttributes, ImmutAnyOrigin]) thin -> Int32,
+    def(
+        UnsafePointer[_C_EventAttributes[ImmutUntrackedOrigin], ImmutAnyOrigin]
+    ) thin -> Int32,
 ]
 
 # NVTX_DECLSPEC int NVTX_API nvtxRangePop(void);
@@ -310,12 +313,12 @@ comptime _nvtxRangePop = _dylib_function["nvtxRangePop", def() thin -> Int32]
 
 # ROCTX_API void roctxMarkA(const char* message) ROCTX_VERSION_4_1;
 comptime _roctxMarkA = _dylib_function[
-    "roctxMarkA", def(UnsafePointer[UInt8, ImmutAnyOrigin]) thin -> NoneType
+    "roctxMarkA", def(CStringSlice[ImmutAnyOrigin]) thin -> NoneType
 ]
 
 # ROCTX_API int roctxRangePushA(const char* message) ROCTX_VERSION_4_1;
 comptime _roctxRangePushA = _dylib_function[
-    "roctxRangePushA", def(UnsafePointer[UInt8, ImmutAnyOrigin]) thin -> Int32
+    "roctxRangePushA", def(CStringSlice[ImmutAnyOrigin]) thin -> Int32
 ]
 
 # ROCTX_API int roctxRangePop() ROCTX_VERSION_4_1;
@@ -323,7 +326,7 @@ comptime _roctxRangePop = _dylib_function["roctxRangePop", def() thin -> Int32]
 # ROCTX_API roctx_range_id_t roctxRangeStartA(const char* message)
 comptime _roctxRangeStartA = _dylib_function[
     "roctxRangeStartA",
-    def(UnsafePointer[UInt8, ImmutAnyOrigin]) thin -> RangeID,
+    def(CStringSlice[ImmutAnyOrigin]) thin -> RangeID,
 ]
 
 # ROCTX_API void roctxRangeStop(roctx_range_id_t id) ROCTX_VERSION_4_1;
@@ -345,11 +348,14 @@ struct _Mark:
         else:
             self._fn = _roctxMarkA.load()
 
-    def __call__(self, val: UnsafePointer[mut=False, _C_EventAttributes, _]):
+    def __call__(self, val: _C_EventAttributes[_]):
         comptime assert has_nvidia_gpu_accelerator()
-        self._fn[_nvtxMarkEx.fn_type](val.as_unsafe_any_origin())
+        var attrs = c_event_attrs_ffi(val)
+        self._fn[_nvtxMarkEx.fn_type](
+            UnsafePointer(to=attrs).as_unsafe_any_origin()
+        )
 
-    def __call__(self, val: UnsafePointer[mut=False, UInt8, _]):
+    def __call__(self, val: CStringSlice[_]):
         comptime assert has_amd_gpu_accelerator()
         self._fn[_roctxMarkA.fn_type](val.as_unsafe_any_origin())
 
@@ -364,12 +370,16 @@ struct _RangeStart:
             self._fn = _roctxRangeStartA.load()
 
     def __call__(
-        self, val: UnsafePointer[mut=False, _C_EventAttributes, _]
+        self,
+        val: _C_EventAttributes[_],
     ) -> RangeID:
         comptime assert has_nvidia_gpu_accelerator()
-        return self._fn[_nvtxRangeStartEx.fn_type](val.as_unsafe_any_origin())
+        var attrs = c_event_attrs_ffi(val)
+        return self._fn[_nvtxRangeStartEx.fn_type](
+            UnsafePointer(to=attrs).as_unsafe_any_origin()
+        )
 
-    def __call__(self, val: UnsafePointer[mut=False, UInt8, _]) -> RangeID:
+    def __call__(self, val: CStringSlice[_]) -> RangeID:
         comptime assert has_amd_gpu_accelerator()
         return self._fn[_roctxRangeStartA.fn_type](val.as_unsafe_any_origin())
 
@@ -396,13 +406,14 @@ struct _RangePush:
         else:
             self._fn = _roctxRangePushA.load()
 
-    def __call__(
-        self, val: UnsafePointer[mut=False, _C_EventAttributes, _]
-    ) -> Int32:
+    def __call__(self, val: _C_EventAttributes[_]) -> Int32:
         comptime assert has_nvidia_gpu_accelerator()
-        return self._fn[_nvtxRangePushEx.fn_type](val.as_unsafe_any_origin())
+        var attrs = c_event_attrs_ffi(val)
+        return self._fn[_nvtxRangePushEx.fn_type](
+            UnsafePointer(to=attrs).as_unsafe_any_origin()
+        )
 
-    def __call__(self, val: UnsafePointer[mut=False, UInt8, _]) -> Int32:
+    def __call__(self, val: CStringSlice[_]) -> Int32:
         comptime assert has_amd_gpu_accelerator()
         return self._fn[_roctxRangePushA.fn_type](val.as_unsafe_any_origin())
 
@@ -446,20 +457,21 @@ def _is_disabled() -> Bool:
 @always_inline
 def _start_range(
     *,
-    message: String = "",
+    var message: String = "",
     category: Int = _TraceType_MAX,
     color: Optional[Color] = None,
 ) raises -> RangeID:
     comptime if _is_disabled():
         return 0
 
-    var msg = _ensure_is_null_terminated(message)
-
     comptime if has_nvidia_gpu_accelerator():
-        var info = EventAttributes(message=msg, color=color, category=category)
-        return _RangeStart()(UnsafePointer(to=info._value))
+        var info = EventAttributes(
+            message=message.as_c_string_slice(), color=color, category=category
+        )
+        var result = _RangeStart()(info._value)
+        return result
     else:
-        return _RangeStart()(msg.unsafe_ptr())
+        return _RangeStart()(message.as_c_string_slice())
 
 
 @always_inline
@@ -472,105 +484,17 @@ def _end_range(id: RangeID) raises:
 @always_inline
 def _mark(
     *,
-    message: String = "",
+    var message: String = "",
     color: Optional[Color] = None,
     category: Int = _TraceType_MAX,
 ) raises:
     comptime if _is_disabled():
         return
 
-    var msg = _ensure_is_null_terminated(message)
-
     comptime if has_nvidia_gpu_accelerator():
-        var info = EventAttributes(message=msg, color=color, category=category)
-        _Mark()(UnsafePointer(to=info._value))
+        var info = EventAttributes(
+            message=message.as_c_string_slice(), color=color, category=category
+        )
+        _Mark()(info._value)
     else:
-        _Mark()(msg.unsafe_ptr())
-
-
-struct Range:
-    var _info: EventAttributes
-    var _id: RangeID
-
-    var _start_fn: _RangeStart
-    var _end_fn: _RangeEnd
-
-    var _msg: String
-
-    def __init__(
-        out self,
-        *,
-        message: String = "",
-        color: Optional[Color] = None,
-        category: Int = _TraceType_MAX,
-    ) raises:
-        comptime assert _is_enabled(), "GPU tracing must be enabled"
-        self._msg = _ensure_is_null_terminated(message)
-        self._info = EventAttributes(
-            message=self._msg, color=color, category=category
-        )
-        self._id = 0
-        self._start_fn = _RangeStart()
-        self._end_fn = _RangeEnd()
-
-    @always_inline
-    def __enter__(mut self):
-        comptime if has_nvidia_gpu_accelerator():
-            self._id = self._start_fn(UnsafePointer(to=self._info._value))
-        else:
-            self._id = self._start_fn(self._info._value.message)
-
-    @always_inline
-    def __exit__(self):
-        self._end_fn(self._id)
-
-    @always_inline
-    def id(self) -> RangeID:
-        return self._id
-
-    @staticmethod
-    @always_inline
-    def mark(
-        *,
-        message: String = "",
-        color: Optional[Color] = None,
-        category: Int = _TraceType_MAX,
-    ) raises:
-        _mark(message=message, color=color)
-
-
-struct RangeStack:
-    var _info: EventAttributes
-
-    var _push_fn: _RangePush
-    var _pop_fn: _RangePop
-
-    var _msg: String
-
-    def __init__(
-        out self,
-        *,
-        message: String = "",
-        color: Optional[Color] = None,
-        category: Int = _TraceType_MAX,
-    ) raises:
-        comptime assert _is_enabled(), "GPU tracing must be enabled"
-
-        self._msg = _ensure_is_null_terminated(message)
-
-        self._info = EventAttributes(
-            message=self._msg, color=color, category=category
-        )
-        self._push_fn = _RangePush()
-        self._pop_fn = _RangePop()
-
-    @always_inline
-    def __enter__(mut self):
-        comptime if has_nvidia_gpu_accelerator():
-            _ = self._push_fn(UnsafePointer(to=self._info._value))
-        else:
-            _ = self._push_fn(self._info._value.message)
-
-    @always_inline
-    def __exit__(self):
-        _ = self._pop_fn()
+        _Mark()(message.as_c_string_slice())

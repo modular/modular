@@ -25,11 +25,9 @@ from typing import TYPE_CHECKING, Annotated, Any, Generic
 from max.driver import CPU, Buffer, Device, DLPackArray
 from max.engine import CompiledModel as EngineCompiledModel
 from max.engine import Model
-from max.experimental.realization_context import (
-    GraphRealizationContext,
-    _session,
-)
+from max.experimental.realization_context import GraphRealizationContext
 from max.experimental.sharding import DeviceMapping, DeviceMesh
+from max.experimental.support import _session
 from max.experimental.tensor import Tensor, realization_context
 from max.graph import DeviceRef, Graph
 from rich.pretty import pretty_repr
@@ -899,7 +897,7 @@ class Module(Generic[_P, _R]):
             )
 
             def as_weight(name: str, tensor: Tensor):  # noqa: ANN202
-                return tensor._as_constant_external(name)
+                return tensor._as_constant_external(name, align=1)
 
             # Temporarily replace the parameters with external constants
             # while building the graph.

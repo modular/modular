@@ -33,7 +33,7 @@ from layout import (
     IntTuple,
     Layout,
     LayoutTensor,
-    lt_to_tt,
+    LTToTTLayout,
     row_major,
     RuntimeLayout,
     TensorLayout,
@@ -306,20 +306,6 @@ def grouped_matmul_kernel_sm100[
     )
 
     # a_smem_layout is a description of how tile is arranged in memory, and LayoutTensor is a pointer to memory + a layout, taking in a_smem as its pointer
-    comptime a_smem_tile_t = LayoutTensor[
-        a_type,
-        a_smem_layout,
-        MutUntrackedOrigin,
-        address_space=AddressSpace.SHARED,
-        alignment=128,
-    ]
-    comptime b_smem_tile_t = LayoutTensor[
-        b_type,
-        b_smem_layout,
-        MutUntrackedOrigin,
-        address_space=AddressSpace.SHARED,
-        alignment=128,
-    ]
     comptime sub_a_smem_tile_t = LayoutTensor[
         a_type,
         sub_a_smem_layout,
@@ -345,8 +331,8 @@ def grouped_matmul_kernel_sm100[
     ) == 0, "preserve alignment"
     var b_smem = (a_smem + a_size).bitcast[Scalar[b_type]]()
 
-    var a_smem_tile = a_smem_tile_t(a_smem)
-    var b_smem_tile = b_smem_tile_t(b_smem)
+    var a_smem_tile = TileTensor(a_smem, LTToTTLayout[a_smem_layout]())
+    var b_smem_tile = TileTensor(b_smem, LTToTTLayout[b_smem_layout]())
 
     # Shared memory pointer to hold tensor memory address, after last smem pointer and expected smem size
     var ptr_tmem_addr = (b_smem + b_size).bitcast[UInt32]()
@@ -440,8 +426,8 @@ def grouped_matmul_kernel_sm100[
         if elect_one_thread:
             # Use MmaOpSM100_SS to perform the MMA operation
             mma_op.mma(
-                lt_to_tt(a_smem_tile),
-                lt_to_tt(b_smem_tile),
+                a_smem_tile,
+                b_smem_tile,
                 tmem_addr,
                 init_c=(i == 0),  # Initialize C on first iteration
             )
@@ -557,12 +543,12 @@ def grouped_matmul_sm100[
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: TileTensor[mut=True, c_type, address_space=AddressSpace.GENERIC, ...],
-    a: TileTensor[a_type, address_space=AddressSpace.GENERIC, ...],
+    a: TileTensor[mut=False, a_type, address_space=AddressSpace.GENERIC, ...],
     a_offsets: TileTensor[
         mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
     max_num_tokens_per_expert: Int,
-    b: TileTensor[b_type, address_space=AddressSpace.GENERIC, ...],
+    b: TileTensor[mut=False, b_type, address_space=AddressSpace.GENERIC, ...],
     expert_ids: TileTensor[
         mut=False, DType.int32, address_space=AddressSpace.GENERIC, ...
     ],
@@ -640,6 +626,7 @@ def grouped_matmul_sm100[
     )
 
 
+@__name(t"grouped_matmul_amd_{a_type}_{b_type}_{c_type}")
 def grouped_matmul_amd_kernel_launcher[
     c_type: DType,
     a_type: DType,
@@ -990,11 +977,25 @@ def grouped_matmul[
     expert_ids: TileTensor[
         mut=False, DType.int32, address_space=AddressSpace.GENERIC, ...
     ],
-    max_num_tokens_per_expert: Int,
-    num_active_experts: Int,
+    expert_usage_stats: TileTensor[
+        mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
+    ],
     ctx: DeviceContext,
+    host_stats: Optional[Tuple[Int, Int]] = None,
 ) raises:
-    """TileTensor primary implementation of `grouped_matmul`."""
+    """TileTensor implementation of `grouped_matmul`.
+
+    `expert_usage_stats` is a rank-1 uint32 *device* tensor laid out as
+    `[max_tokens_per_expert, num_active_experts]` (from `moe_create_indices`).
+    The SM100 persistent kernel reads `num_active_experts` from it on-device.
+    The SM90/AMD/naive paths need host scalars for their launch grid, so they
+    resolve them via `resolve_usage_stats` below.
+
+    `host_stats` is an optional `(max_tokens_per_expert, num_active_experts)`
+    pair already known on the host. When set, the SM90/AMD/naive paths use it
+    directly instead of copying `expert_usage_stats` back from the device; the
+    host-scalar overload passes it so those callers skip the copy.
+    """
     comptime assert c.rank == 2 and c.flat_rank == 2
     comptime assert a.rank == 2 and a.flat_rank == 2
     comptime assert b.rank == 3 and b.flat_rank == 3
@@ -1040,8 +1041,6 @@ def grouped_matmul[
             ";A=", Int(c.dim[0]()), "x", Int(a.dim[1]()), "x", a_type,
             ";C=", Int(c.dim[0]()), "x", Int(c.dim[1]()), "x", c_type,
             ";num_experts=", Int(b.dim[0]()),
-            ";num_active_experts=", num_active_experts,
-            ";max_num_tokens_per_expert=", max_num_tokens_per_expert,
             ")"
         )
         # fmt: on
@@ -1055,11 +1054,35 @@ def grouped_matmul[
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
         task_id=get_safe_task_id(ctx),
     ):
+        # Resolve the host scalars the SM90/AMD/naive launch grids need. Prefer
+        # caller-supplied `host_stats`; otherwise copy them from
+        # `expert_usage_stats` (device->host + sync). The SM100 persistent path
+        # reads the device tensor directly and never calls this.
+        @always_inline
+        @parameter
+        def resolve_usage_stats() raises -> Tuple[Int, Int]:
+            if host_stats:
+                return host_stats.value()
+            var host_buf = ctx.enqueue_create_host_buffer[DType.uint32](2)
+            var dev_buf = DeviceBuffer[DType.uint32](
+                ctx,
+                expert_usage_stats.ptr.as_unsafe_any_origin(),
+                2,
+                owning=False,
+            )
+            ctx.enqueue_copy(dst_buf=host_buf, src_buf=dev_buf)
+            ctx.synchronize()
+            return (Int(host_buf[0]), Int(host_buf[1]))
+
         comptime if is_sm90_kernel_applicable:
             comptime static_N = c.static_shape[1]
             comptime BN = _find_largest_bn_for_sm90_matmul[a_type, static_N]()
             comptime mma_k = 32 // size_of[a_type]()
             comptime wgmma_shape = IndexList[3](64, BN, mma_k)
+
+            var stats = resolve_usage_stats()
+            var max_num_tokens_per_expert = stats[0]
+            var num_active_experts = stats[1]
 
             grouped_matmul_sm90[
                 wgmma_shape=wgmma_shape,
@@ -1125,13 +1148,15 @@ def grouped_matmul[
                 c,
                 a,
                 a_offsets,
-                max_num_tokens_per_expert,
                 b,
                 expert_ids,
-                num_active_experts,
+                expert_usage_stats,
                 ctx,
             )
         elif is_amd_kernel_applicable:
+            var stats = resolve_usage_stats()
+            var max_num_tokens_per_expert = stats[0]
+            var num_active_experts = stats[1]
             grouped_matmul_amd[elementwise_lambda_fn=elementwise_lambda_fn](
                 c,
                 a,
@@ -1143,6 +1168,9 @@ def grouped_matmul[
                 ctx,
             )
         else:
+            var stats = resolve_usage_stats()
+            var max_num_tokens_per_expert = stats[0]
+            var num_active_experts = stats[1]
             naive_grouped_matmul[elementwise_lambda_fn=elementwise_lambda_fn](
                 c,
                 a,
@@ -1156,14 +1184,62 @@ def grouped_matmul[
 
 
 @always_inline
+def grouped_matmul[
+    *,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+](
+    c: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
+    a: TileTensor[address_space=AddressSpace.GENERIC, ...],
+    b: TileTensor[address_space=AddressSpace.GENERIC, ...],
+    a_offsets: TileTensor[
+        mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
+    ],
+    expert_ids: TileTensor[
+        mut=False, DType.int32, address_space=AddressSpace.GENERIC, ...
+    ],
+    max_num_tokens_per_expert: Int,
+    num_active_experts: Int,
+    ctx: DeviceContext,
+) raises:
+    """Host-scalar overload for callers (LoRA SGMV, tests, benchmarks) that hold
+    the usage stats as scalars rather than a `moe_create_indices` device tensor.
+
+    The SM100 persistent kernel reads the stats on-device, so the scalars are
+    staged into a 2-element device buffer. They are also forwarded via
+    `host_stats` so the SM90/AMD/naive paths read them directly rather than
+    copying the staged buffer back to the host -- i.e. no host->device->host
+    round-trip. The staged buffer is consumed only on SM100; this overload is
+    off the MoE decode path, so its small staging cost does not matter.
+    """
+    var usage_stats_buf = ctx.enqueue_create_buffer[DType.uint32](2)
+    with usage_stats_buf.map_to_host() as host:
+        host[0] = UInt32(max_num_tokens_per_expert)
+        host[1] = UInt32(num_active_experts)
+    var expert_usage_stats = TileTensor[DType.uint32](
+        usage_stats_buf, row_major(Coord(2))
+    )
+    grouped_matmul[elementwise_lambda_fn=elementwise_lambda_fn](
+        c,
+        a,
+        b,
+        a_offsets,
+        expert_ids,
+        expert_usage_stats,
+        ctx,
+        host_stats=(max_num_tokens_per_expert, num_active_experts),
+    )
+    _ = usage_stats_buf^
+
+
+@always_inline
 def naive_grouped_matmul[
     *,
     transpose_b: Bool = True,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
-    a: TileTensor[address_space=AddressSpace.GENERIC, ...],
-    b: TileTensor[address_space=AddressSpace.GENERIC, ...],
+    a: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
+    b: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
     a_offsets: TileTensor[
         mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
@@ -1215,8 +1291,8 @@ def grouped_matmul_vendor[
     use_tf32: Bool = False,
 ](
     c: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
-    a: TileTensor[address_space=AddressSpace.GENERIC, ...],
-    b: TileTensor[address_space=AddressSpace.GENERIC, ...],
+    a: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
+    b: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
     a_offsets: TileTensor[
         mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],

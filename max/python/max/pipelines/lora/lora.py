@@ -20,7 +20,7 @@ import logging
 import os
 import re
 from collections import OrderedDict
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, fields
 from pathlib import Path
 from typing import Any
@@ -41,7 +41,9 @@ from max.graph.type import DeviceRef, Shape, TensorType
 from max.graph.value import TensorValue, Value
 from max.graph.weights import WeightData, WeightsFormat, load_weights
 from max.nn.layer.layer import Module, recursive_named_layers
-from max.nn.lora import SupportsLoRA
+from max.nn.linear import Linear
+from max.nn.lora import LoRALinear, StackedLinearLoRA, SupportsLoRA
+from max.nn.stacked_linear import StackedLinear
 from max.pipelines.context import TextGenerationContextType
 from max.pipelines.modeling.types.pipeline import (
     Pipeline,
@@ -736,6 +738,7 @@ class LoRAManager:
         n_heads: int,
         n_kv_heads: int,
         head_dim: int,
+        max_lora_seq_len: int,
     ):
         """Initializes the LoRAManager with a given base weight structure and maximum number of LoRA models.
 
@@ -746,6 +749,9 @@ class LoRAManager:
             n_heads: The number of attention heads in the base model.
             n_kv_heads: The number of key-value heads in the base model.
             head_dim: The dimension of each attention head.
+            max_lora_seq_len: Upper bound on tokens any single adapter
+                processes in a batch (``max_batch_size * max_seq_len``);
+                sizes the SGMV launch grid.
         """
         self.base_model_path = base_model_path
         self.base_dtype = base_dtype
@@ -754,6 +760,7 @@ class LoRAManager:
         self.n_heads = n_heads
         self.n_kv_heads = n_kv_heads
         self.head_dim = head_dim
+        self.max_lora_seq_len = max_lora_seq_len
 
         self._loras: dict[str, LoRAModel] = dict()
         self._active_loras: _LoRALRUCache = _LoRALRUCache(
@@ -1150,6 +1157,60 @@ class LoRAManager:
         }
 
         return leaf_lora_layers
+
+    def apply(self, model: Module, target_modules: Iterable[str]) -> set[str]:
+        """Wraps the model's targeted projections with LoRA, in place.
+
+        Args:
+            model: The model to apply LoRA to. Mutated in place.
+            target_modules: Attribute names to wrap (e.g.
+                ``{"q_proj", "o_proj"}``).
+
+        Returns:
+            The matched subset of ``target_modules`` (q/k/v count as matched
+            when their fused projection is wrapped).
+        """
+        targets = set(target_modules)
+        matched: set[str] = set()
+
+        def visit(module: Module) -> None:
+            for attr, child in list(module.sublayers.items()):
+                if (
+                    attr in targets
+                    and isinstance(child, Linear)
+                    and not isinstance(child, LoRALinear)
+                ):
+                    module.replace_module(
+                        attr,
+                        LoRALinear.from_base(
+                            child,
+                            self.max_num_loras,
+                            self.max_lora_rank,
+                            self.max_lora_seq_len,
+                        ),
+                    )
+                    matched.add(attr)
+                elif isinstance(child, StackedLinear):
+                    if (
+                        not isinstance(child, StackedLinearLoRA)
+                        and not child._stacked
+                        and (hit := set(child._names) & targets)
+                    ):
+                        module.replace_module(
+                            attr,
+                            StackedLinearLoRA.from_base(
+                                child,
+                                self.max_num_loras,
+                                self.max_lora_rank,
+                                self.max_lora_seq_len,
+                            ),
+                        )
+                        matched.update(hit)
+                else:
+                    visit(child)
+
+        visit(model)
+        return matched
 
     def init_weights(
         self, model: Module, state_dict: dict[str, WeightData]
