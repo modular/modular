@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING, Any, TypeAlias, cast
 
 import numpy as np
 import numpy.typing as npt
+from max.experimental.nn import Module
 from max.graph.weights import WeightsAdapter, WeightsFormat
 from max.pipelines.context import (
     PixelContext,
@@ -70,7 +71,9 @@ logger = logging.getLogger("max.pipelines")
 PipelineTypes: TypeAlias = Pipeline[Any, Any]
 
 PipelineModelType: TypeAlias = (
-    "type[PipelineModel[Any]] | type[PipelineExecutor[Any, Any, Any]]"
+    "type[PipelineModel[Any]] "
+    "| type[PipelineExecutor[Any, Any, Any]] "
+    "| type[Module[Any, Any]]"
 )
 
 

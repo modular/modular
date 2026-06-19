@@ -291,7 +291,6 @@ struct _Empty[T: Movable](
     IterableOwned,
     Iterator,
 ):
-
     """Iterator that yields nothing."""
 
     comptime Element = Self.T
@@ -326,6 +325,64 @@ def empty[T: Movable]() -> _Empty[T]:
         An iterator that yields nothing.
     """
     return _Empty[T]()
+
+
+# ===-----------------------------------------------------------------------===#
+# once
+# ===-----------------------------------------------------------------------===#
+
+
+@fieldwise_init
+struct _Once[T: Movable](
+    Copyable where conforms_to(T, Copyable),
+    Iterable where conforms_to(T, Copyable),
+    IterableOwned,
+    Iterator,
+    Movable,
+):
+    """An iterator that yields an element exactly once."""
+
+    comptime Element = Self.T
+
+    comptime IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
+    ]: Iterator = Self
+
+    comptime IteratorOwnedType: Iterator = Self
+
+    var _inner: Optional[Self.T]
+
+    def __iter__(var self) -> Self.IteratorOwnedType:
+        return self^
+
+    def __iter__(
+        ref self,
+    ) -> Self.IteratorType[origin_of(self)] where conforms_to(
+        Self.Element, Copyable
+    ):
+        return self.copy()
+
+    def __next__(mut self) raises StopIteration -> Self.Element:
+        return next(self._inner)
+
+    def bounds(self) -> Tuple[Int, Optional[Int]]:
+        return self._inner.bounds()
+
+
+@always_inline
+def once[T: Movable, //](var element: T, /) -> _Once[T]:
+    """Creates an iterator that yields an element exactly once.
+
+    Parameters:
+        T: The type of the element to be yielded exactly once.
+
+    Args:
+        element: The element to be yielded exactly once.
+
+    Returns:
+        An iterator that yields the specified element exactly once.
+    """
+    return _Once(Optional(element^))
 
 
 # ===-----------------------------------------------------------------------===#

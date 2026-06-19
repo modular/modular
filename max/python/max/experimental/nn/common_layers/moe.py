@@ -205,13 +205,12 @@ class MoE(Module[[Tensor], Tensor]):
         tokens). The ``fused_silu`` kernel reads the runtime row offsets to
         bound the SiLU to the actually-received tokens.
         """
-        usage_cpu = usage_stats.to(CPU())
         gate_up_out = grouped_matmul_ragged(
-            tokens, gate_up, expert_start, expert_ids, usage_cpu
+            tokens, gate_up, expert_start, expert_ids, usage_stats
         )
         silu_out = fused_silu(gate_up_out, expert_start)
         return grouped_matmul_ragged(
-            silu_out, down, expert_start, expert_ids, usage_cpu
+            silu_out, down, expert_start, expert_ids, usage_stats
         )
 
     def _grouped_expert_compute(

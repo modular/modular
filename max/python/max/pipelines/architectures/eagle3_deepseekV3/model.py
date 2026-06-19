@@ -499,12 +499,12 @@ class Eagle3DeepseekV3Model(DeepseekV3Model):
         # Eagle3 draft has BF16 dense MLP (not quantized, not MoE)
         if (
             draft_config.quant_config is not None
-            and draft_config.quant_config.is_nvfp4
-            and not any("weight_scale_2" in key for key in draft_state_dict)
+            and draft_config.quant_config.is_fp4
+            and not any("weight_scale" in key for key in draft_state_dict)
         ):
             logger.info(
-                "Eagle3 draft weights are BF16 (no weight_scale_2 found); "
-                "disabling NVFP4 config for draft."
+                "Eagle3 draft weights are BF16 (no weight_scale found); "
+                "disabling FP4 config for draft."
             )
             draft_config.quant_config = None
             draft_config.dtype = DType.bfloat16

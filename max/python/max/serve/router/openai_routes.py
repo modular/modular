@@ -20,7 +20,7 @@ import queue
 import re
 import uuid
 from abc import ABC, abstractmethod
-from collections.abc import AsyncGenerator, Iterable, Sequence
+from collections.abc import AsyncGenerator, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from json.decoder import JSONDecodeError
@@ -159,8 +159,16 @@ logger = logging.getLogger("max.serve")
 
 _CLIENT_DISCONNECTED_STATUS_CODE = 499
 
-# OpenAI spec: function names must be a-z, A-Z, 0-9, underscores, or hyphens.
-_VALID_TOOL_NAME_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
+# Default tool-name charset (OpenAI's); a parser may widen it via VALID_TOOL_NAME_RE.
+_DEFAULT_VALID_TOOL_NAME_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
+
+# OpenAI's 64-char cap; checked by length so it holds even when a parser widens the charset.
+_MAX_TOOL_NAME_LEN = 64
+
+# Standard OpenAI message roles; a tokenizer may allow more via ``extra_chat_roles``.
+_STANDARD_CHAT_ROLES = frozenset(
+    {"developer", "system", "user", "assistant", "tool", "function"}
+)
 
 
 class _ClientDisconnectedError(RuntimeError):
@@ -933,17 +941,115 @@ class _ParsedChatRequest(NamedTuple):
     decoded_images: list[Image.Image]
 
 
+def _coerce_long_side_pixel(value: Any) -> int | None:
+    """Coerces a ``max_long_side_pixel`` hint to a positive int, else ``None``."""
+    if isinstance(value, bool) or value is None:
+        return None
+    try:
+        coerced = int(value)
+    except (TypeError, ValueError):
+        return None
+    return coerced if coerced > 0 else None
+
+
+def _validate_tool_message_consistency(
+    messages: Sequence[Mapping[str, Any]],
+) -> None:
+    """Rejects malformed tool exchanges (bad JSON args, unmatched/partial replies) with a 400.
+
+    A trailing assistant ``tool_calls`` message with no following turn is left untouched.
+
+    Raises:
+        InputError: On any violation.
+    """
+    n = len(messages)
+    i = 0
+    while i < n:
+        msg = messages[i]
+        tool_calls = msg.get("tool_calls")
+        if not (
+            msg.get("role") == "assistant"
+            and isinstance(tool_calls, list)
+            and tool_calls
+        ):
+            i += 1
+            continue
+
+        expected_ids: list[str] = []
+        for tc in tool_calls:
+            if not isinstance(tc, dict):
+                continue
+            fn = tc.get("function")
+            if isinstance(fn, dict):
+                args = fn.get("arguments")
+                if isinstance(args, str) and args.strip():
+                    try:
+                        json.loads(args)
+                    except json.JSONDecodeError as e:
+                        raise InputError(
+                            "tool_call arguments must be valid JSON; got "
+                            f"invalid JSON for tool call {tc.get('id')!r}."
+                        ) from e
+            tc_id = tc.get("id")
+            if tc_id is not None:
+                expected_ids.append(tc_id)
+
+        # Consume the run of ``tool`` replies answering this assistant message.
+        answered: set[str] = set()
+        j = i + 1
+        while j < n and messages[j].get("role") == "tool":
+            reply_id = messages[j].get("tool_call_id")
+            if reply_id not in expected_ids:
+                raise InputError(
+                    f"tool message tool_call_id {reply_id!r} does not match "
+                    "any tool_call in the preceding assistant message."
+                )
+            answered.add(reply_id)
+            j += 1
+
+        # Require completeness only when more messages follow this turn.
+        if i + 1 < n:
+            missing = [tid for tid in expected_ids if tid not in answered]
+            if missing:
+                raise InputError(
+                    "every tool_call must be answered by a tool message before "
+                    f"the conversation continues; missing replies for {missing}."
+                )
+        i = j
+
+
 async def openai_parse_chat_completion_request(
     completion_request: CreateChatCompletionRequest,
     wrap_content: bool,
     settings: Settings,
+    max_images_per_request: int | None = None,
+    max_image_bytes: int | None = None,
+    allowed_roles: frozenset[str] | None = None,
 ) -> _ParsedChatRequest:
     """Parse the OpenAI ChatCompletionRequest to build TextGenerationRequestMessages.
     These will be used as inputs to the chat template to build the prompt.
     Also extract the list of image/video references while we are here so they
     can be downloaded and bundled alongside the request for preprocessing by
     pipelines.
+
+    ``max_images_per_request`` and ``max_image_bytes`` are model-specific image
+    limits supplied by the caller (read off the tokenizer); ``None`` means the
+    corresponding limit is not enforced.
+
+    ``allowed_roles`` is the set of message roles the model accepts; ``None``
+    skips role validation (vendor roles are only allowed for models that
+    declare them via ``extra_chat_roles``).
     """
+    _validate_tool_message_consistency(completion_request.messages)
+    if allowed_roles is not None:
+        for m in completion_request.messages:
+            role = m.get("role")
+            if role not in allowed_roles:
+                raise InputError(
+                    f"role {role!r} is not supported by this model; "
+                    f"allowed roles are {sorted(allowed_roles)}."
+                )
+
     messages: list[TextGenerationRequestMessage] = []
     image_refs: list[AnyUrl] = []
     video_refs: list[AnyUrl] = []
@@ -985,9 +1091,17 @@ async def openai_parse_chat_completion_request(
                     )
                 part_type = content_part.get("type")
                 if part_type == "image_url":
-                    image_refs.append(AnyUrl(content_part["image_url"]["url"]))
+                    image_url = content_part["image_url"]
+                    image_refs.append(AnyUrl(image_url["url"]))
                     if wrap_content:
-                        message_content.append(ImageContentPart())
+                        # Carry the optional sizing hint onto the placeholder.
+                        message_content.append(
+                            ImageContentPart(
+                                max_long_side_pixel=_coerce_long_side_pixel(
+                                    image_url.get("max_long_side_pixel")
+                                )
+                            )
+                        )
                     else:
                         message_content.append(dict(content_part))
                 elif part_type == "video_url":
@@ -1023,6 +1137,16 @@ async def openai_parse_chat_completion_request(
                 )
             )
 
+    # Reject over-limit requests before downloading any image.
+    if (
+        max_images_per_request is not None
+        and len(image_refs) > max_images_per_request
+    ):
+        raise InputError(
+            f"too many images: {len(image_refs)} exceeds the maximum of "
+            f"{max_images_per_request} images per request"
+        )
+
     resolve_image_tasks = [
         resolve_image_from_url(image_url, settings) for image_url in image_refs
     ]
@@ -1034,7 +1158,7 @@ async def openai_parse_chat_completion_request(
     # The decoded images are carried on the request and reused by the tokenizer
     # (decode-once), so this is the only place a request's images are decoded.
     decoded_images = await asyncio.to_thread(
-        decode_and_validate_images, request_images
+        decode_and_validate_images, request_images, max_image_bytes
     )
 
     resolve_video_tasks = [
@@ -1199,6 +1323,11 @@ async def openai_create_chat_completion(
             completion_request.model,
         )
 
+        # Model-specific limits (image caps, tool-name charset) are read off the
+        # parser and tokenizer so the generic route stays model-agnostic.
+        parser = get_tool_parser(request.app)
+        tokenizer = pipeline.tokenizer
+
         (
             request_messages,
             request_images,
@@ -1206,11 +1335,23 @@ async def openai_create_chat_completion(
             request_decoded_images,
         ) = await openai_parse_chat_completion_request(
             completion_request,
-            pipeline.tokenizer.expects_content_wrapping,
+            tokenizer.expects_content_wrapping,
             request.app.state.settings,
+            max_images_per_request=getattr(
+                tokenizer, "max_images_per_request", None
+            ),
+            max_image_bytes=getattr(tokenizer, "max_image_bytes", None),
+            allowed_roles=_STANDARD_CHAT_ROLES
+            | getattr(tokenizer, "extra_chat_roles", frozenset()),
         )
 
         pipeline_config = get_app_pipeline_config(request.app)
+
+        # Tool-name charset defaults to OpenAI's; a parser may widen it via VALID_TOOL_NAME_RE.
+        valid_tool_name_re = (
+            getattr(parser, "VALID_TOOL_NAME_RE", None)
+            or _DEFAULT_VALID_TOOL_NAME_RE
+        )
 
         # Unless the user explicitly disabled tools with tool_choice='none', generate the tools list.
         tools = None
@@ -1219,7 +1360,7 @@ async def openai_create_chat_completion(
             or completion_request.tool_choice != "none"
         ):
             tools = _convert_chat_completion_tools_to_token_generator_tools(
-                completion_request.tools
+                completion_request.tools, valid_tool_name_re
             )
 
         response_format = _create_response_format(
@@ -1230,7 +1371,6 @@ async def openai_create_chat_completion(
         # For architectures with a grammar-based tool parser (e.g., Kimi),
         # generate constrained decoding grammars for tool calls and/or
         # response_format.
-        parser = get_tool_parser(request.app)
         has_grammar_parser = parser is not None and hasattr(
             parser, "generate_tool_call_grammar"
         )
@@ -1395,6 +1535,7 @@ async def openai_create_chat_completion(
         # exclusive on TextGenerationRequest, so omit ``messages`` in that
         # case. If both are sent on the wire, ``prompt_tokens`` wins.
         prompt_token_ids = completion_request.prompt_tokens
+        chat_template_options = completion_request.chat_template_kwargs
         token_request = TextGenerationRequest(
             request_id=RequestID(request_id),
             model_name=completion_request.model,
@@ -1413,7 +1554,7 @@ async def openai_create_chat_completion(
                 request, completion_request.target_endpoint
             ),
             dkv_cache_hint=completion_request.dkv_cache_hint,
-            chat_template_options=completion_request.chat_template_kwargs,
+            chat_template_options=chat_template_options,
         )
 
         if completion_request.stream:
@@ -1466,6 +1607,7 @@ async def openai_create_chat_completion(
 
 def _convert_chat_completion_tools_to_token_generator_tools(
     chat_tools: Iterable[ChatCompletionFunctionToolParam] | None,
+    valid_tool_name_re: re.Pattern[str] = _DEFAULT_VALID_TOOL_NAME_RE,
 ) -> list[TextGenerationRequestTool] | None:
     """Convert ChatCompletionTool list to TextGenerationRequestTool list."""
     if not chat_tools:
@@ -1475,7 +1617,7 @@ def _convert_chat_completion_tools_to_token_generator_tools(
     for tool in chat_tools:
         function = tool["function"]
         name = name_from_tool(tool)
-        _validate_tool_function_name(name)
+        _validate_tool_function_name(name, valid_tool_name_re)
         token_generator_tool = TextGenerationRequestTool(
             type=tool["type"],
             function=TextGenerationRequestFunction(
@@ -1489,21 +1631,27 @@ def _convert_chat_completion_tools_to_token_generator_tools(
     return token_generator_tools
 
 
-def _validate_tool_function_name(name: str) -> None:
-    """Validate that a tool function name conforms to the OpenAI spec.
+def _validate_tool_function_name(
+    name: str,
+    valid_tool_name_re: re.Pattern[str] = _DEFAULT_VALID_TOOL_NAME_RE,
+) -> None:
+    """Validate that a tool function name conforms to ``valid_tool_name_re``.
 
     Raises:
-        InputError: If the name is empty or contains invalid characters.
+        InputError: If the name is empty, too long, or contains invalid
+            characters.
     """
     if not name:
+        raise InputError("Invalid tool function name: name cannot be empty.")
+    if len(name) > _MAX_TOOL_NAME_LEN:
         raise InputError(
-            "Invalid tool function name: name cannot be empty. "
-            "Function names must contain only a-z, A-Z, 0-9, underscores, or hyphens."
+            f"Invalid tool function name: name exceeds the maximum length of "
+            f"{_MAX_TOOL_NAME_LEN} characters (was {len(name)})."
         )
-    if not _VALID_TOOL_NAME_RE.match(name):
+    if not valid_tool_name_re.match(name):
         raise InputError(
             f"Invalid tool function name: '{name}'. "
-            "Function names must contain only a-z, A-Z, 0-9, underscores, or hyphens."
+            f"Function names must match {valid_tool_name_re.pattern}."
         )
 
 

@@ -33,8 +33,8 @@ Two kernels:
     reduction.
 
 The host launcher `naive_fa_decode_apple` allocates the partials and enqueues
-both kernels; `flash_attention_dispatch` selects it for Apple decode behind the
-`MODULAR_ENABLE_APPLE_NAIVE_FA_DECODE` env flag (default off). The launcher
+both kernels; `flash_attention_dispatch` selects it for Apple decode by default
+(set `MODULAR_ENABLE_APPLE_NAIVE_FA_DECODE=0` to opt out). The launcher
 dispatches the runtime `depth` to a compile-time `Depth` specialization over the
 multiples of `WARP_SIZE` up to `NAIVE_FA_DECODE_APPLE_MAX_HEAD_DIM`; the
 dispatcher only routes here when `depth % WARP_SIZE == 0` and

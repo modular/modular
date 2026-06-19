@@ -130,7 +130,7 @@ struct _InlineArrayIter[
         return (iter_len, {iter_len})
 
 
-struct _InlineArrayIterOwned[T: Copyable & ImplicitlyDeletable, size: Int](
+struct _InlineArrayIterOwned[T: Movable & ImplicitlyDeletable, size: Int](
     IterableOwned, Iterator, Movable
 ):
     """An owning iterator for InlineArray.
@@ -220,7 +220,7 @@ struct InlineArray[ElementType: Movable, size: Int](
     ImplicitlyCopyable where conforms_to(ElementType, ImplicitlyCopyable),
     ImplicitlyDeletable where conforms_to(ElementType, ImplicitlyDeletable),
     Iterable,
-    IterableOwned,
+    IterableOwned where conforms_to(ElementType, ImplicitlyDeletable),
     Movable,
     Sized,
     Writable where conforms_to(ElementType, Writable),
@@ -308,7 +308,7 @@ struct InlineArray[ElementType: Movable, size: Int](
     """
 
     comptime IteratorOwnedType: Iterator = _InlineArrayIterOwned[
-        downcast[Self.ElementType, Copyable & ImplicitlyDeletable], Self.size
+        downcast[Self.ElementType, ImplicitlyDeletable], Self.size
     ]
     """The owned iterator type for this array."""
 
@@ -901,23 +901,20 @@ struct InlineArray[ElementType: Movable, size: Int](
             Self.size,
         ).fields[FieldsFn=write_fields]()
 
-    def __iter__(var self) -> Self.IteratorOwnedType:
+    def __iter__(
+        var self,
+    ) -> Self.IteratorOwnedType where conforms_to(
+        Self.ElementType, ImplicitlyDeletable
+    ):
         """Consume the array and return an iterator over its elements.
 
         Returns:
             An iterator that owns the array's elements.
         """
-        # TODO(MSTDL-2390): Remove `Copyable` constraint once we have better iter traits.
-        comptime assert conforms_to(
-            Self.ElementType, Copyable & ImplicitlyDeletable
-        ), (
-            "Owned `InlineArray` iteration requires the element to be `Copyable"
-            " & ImplicitlyDeletable`."
-        )
         return Self.IteratorOwnedType(
             rebind_var[
                 InlineArray[
-                    downcast[Self.ElementType, Copyable & ImplicitlyDeletable],
+                    downcast[Self.ElementType, ImplicitlyDeletable],
                     Self.size,
                 ]
             ](self^)
