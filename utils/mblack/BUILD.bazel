@@ -56,7 +56,6 @@ modular_py_test(
 _VALIDATE_EXCLUDE = [
     "tests/test_ftstrings.py",
     "tests/test_kwargs_brace_initializers.py",
-    "tests/test_where_clause.py",
 ]
 
 # Companion to `unit_tests` that compiles every sample with `mojo build`.
