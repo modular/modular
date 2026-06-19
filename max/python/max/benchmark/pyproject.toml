@@ -38,7 +38,7 @@ requires = ["hatchling"]
 [tool.hatch.build.targets.wheel]
 packages = ["."]
 
-[tool.pixi.project]
+[tool.pixi.workspace]
 channels = ["conda-forge", "https://conda.modular.com/max"]
 platforms = ["osx-arm64", "linux-64", "linux-aarch64"]
 
