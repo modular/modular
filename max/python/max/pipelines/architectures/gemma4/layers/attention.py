@@ -63,6 +63,7 @@ class Gemma4Attention(Module, Shardable):
         qk_norm_eps: float = 1e-6,
         local_window_size: int = 1024,
         quant_config: QuantConfig | None = None,
+        unquantized_dtype: DType | None = None,
     ) -> None:
         """Initializes the attention layer.
 
@@ -117,11 +118,25 @@ class Gemma4Attention(Module, Shardable):
             self.kv_params.head_dim
         )  # MultiKVCacheParams sets head dim to either local or global
 
-        self.q_norm = Gemma4RMSNorm(self.head_dim, dtype, self.qk_norm_eps)
-        self.k_norm = Gemma4RMSNorm(self.head_dim, dtype, self.qk_norm_eps)
+        # Activations stay in the unquantized compute dtype even when the
+        # q/k/v/o projections are NVFP4-quantized (``dtype`` is then the packed
+        # uint8 weight dtype). This covers the QK-norm RMSNorm scales and the
+        # flash-attention output. Fall back to ``dtype`` when no unquantized
+        # dtype is supplied (non-quantized attention).
+        self.unquantized_dtype = unquantized_dtype
+        self.compute_dtype = (
+            unquantized_dtype if unquantized_dtype is not None else dtype
+        )
+
+        self.q_norm = Gemma4RMSNorm(
+            self.head_dim, self.compute_dtype, self.qk_norm_eps
+        )
+        self.k_norm = Gemma4RMSNorm(
+            self.head_dim, self.compute_dtype, self.qk_norm_eps
+        )
         self.v_norm = Gemma4RMSNorm(
             self.head_dim,
-            dtype,
+            self.compute_dtype,
             self.qk_norm_eps,
             with_weight=False,
         )
@@ -246,7 +261,7 @@ class Gemma4Attention(Module, Shardable):
             mask_variant=mask_variant,
             scale=self.scale,
             local_window_size=self.local_window_size if self.use_local else -1,
-            output_dtype=self.dtype,
+            output_dtype=self.compute_dtype,
         )
         attn_out = ops.reshape(attn_out, shape=[total_seq_len, -1])
         ret = self.o_proj(attn_out)
@@ -369,6 +384,7 @@ class Gemma4Attention(Module, Shardable):
                 qk_norm_eps=self.qk_norm_eps,
                 local_window_size=self.local_window_size,
                 quant_config=self.quant_config,
+                unquantized_dtype=self.unquantized_dtype,
             )
 
             # Assign sharded weights

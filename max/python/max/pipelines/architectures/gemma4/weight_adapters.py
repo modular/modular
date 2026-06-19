@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import dataclasses
 
+import numpy as np
 from max.driver import Buffer
 from max.dtype import DType
 from max.graph.type import Shape
@@ -64,6 +65,7 @@ def convert_safetensor_language_state_dict(
         # the quantized Linear expects so both NVFP4 formats load through the
         # same graph weights. The shared block-scale tensor (``weight_scale``)
         # already matches and is left untouched.
+        ct_global_scale = False
         if max_name.endswith(".weight_packed"):
             max_name = max_name.removesuffix(".weight_packed") + ".weight"
         elif max_name.endswith(".weight_global_scale"):
@@ -71,26 +73,31 @@ def convert_safetensor_language_state_dict(
                 max_name.removesuffix(".weight_global_scale")
                 + ".weight_scale_2"
             )
+            ct_global_scale = True
         elif max_name.endswith(".input_global_scale"):
             max_name = (
                 max_name.removesuffix(".input_global_scale") + ".input_scale"
             )
+            ct_global_scale = True
 
         data = value.data()
 
         if max_name.endswith(".weight_scale") and data.dtype == DType.uint8:
             data = dataclasses.replace(data, dtype=DType.float8_e8m0fnu)
 
-        # modelopt stores the per-tensor NVFP4 global scales as scalars, but the
-        # compressed-tensors export ships them with shape ``[1]``. The quantized
-        # Linear registers ``weight_scale_2`` / ``input_scale`` with scalar
-        # shape, so squeeze the compressed-tensors variant to match. modelopt
-        # checkpoints already arrive scalar and skip this path.
-        if max_name.endswith((".weight_scale_2", ".input_scale")) and tuple(
-            data.shape
-        ) == (1,):
-            scalar_buf = Buffer.from_dlpack(data.data).view(data.dtype, [])
-            data = WeightData(scalar_buf, max_name, data.dtype, Shape([]))
+        # compressed-tensors stores the per-tensor global scales as the
+        # reciprocal of the modelopt convention (llm-compressor stores
+        # ``(FP4_MAX * FP8_MAX) / amax`` while modelopt stores
+        # ``amax / (FP4_MAX * FP8_MAX)``), shaped ``[1]`` rather than scalar.
+        # The NVFP4 kernels multiply activations/weights by ``input_scale`` /
+        # ``weight_scale_2``, so invert to the modelopt convention and squeeze
+        # ``[1]`` -> scalar to match the shape the quantized Linear registers.
+        # modelopt checkpoints arrive scalar under these names and skip this.
+        if ct_global_scale:
+            inv = (1.0 / np.from_dlpack(data.data).astype(np.float32)).reshape(
+                ()
+            )
+            data = WeightData(inv, max_name, data.dtype, Shape([]))
 
         # Stacked MoE expert weights: split into individual per-expert weights.
         # HF stores gate_up_proj [num_experts, 2*moe_dim, hidden_dim]
