@@ -279,6 +279,39 @@ class KernelLibrary:
             self._analysis.verify_custom_op(custom_op)
 
 
+_default_custom_extensions: tuple[Path, ...] = ()
+
+
+def default_custom_extensions() -> tuple[Path, ...]:
+    """Returns the custom-extension paths implicitly loaded by every new graph.
+
+    A backend whose ops need a kernel-overlay library  registers it here so ops
+    resolve to the overlays even on graph paths that don't thread
+    ``custom_extensions`` explicitly — notably the experimental
+    eager-realization ``Graph("main")``. Empty by default, so there is no
+    effect unless a backend registers a library.
+    """
+    return _default_custom_extensions
+
+
+@contextlib.contextmanager
+def default_custom_extensions_scope(*paths: Path) -> Generator[None]:
+    """Adds *paths* to :func:`default_custom_extensions` for the block's duration.
+
+    Paths already registered are not duplicated. The previous defaults are
+    restored on exit.
+    """
+    global _default_custom_extensions
+    previous = _default_custom_extensions
+    merged = list(previous)
+    merged.extend(path for path in paths if path not in merged)
+    _default_custom_extensions = tuple(merged)
+    try:
+        yield
+    finally:
+        _default_custom_extensions = previous
+
+
 class DevicePlacementPolicy(Enum):
     """Controls behavior when an op implicitly transfers a tensor to CPU.
 
@@ -686,8 +719,17 @@ class Graph:
                 )
 
         # Initialize the kernel library and load custom extensions paths.
+        # Process-global defaults are appended after any explicit extensions so
+        # graphs built without `custom_extensions` still reach a backend's
+        # kernel overlays (see `default_custom_extensions`).
         self._kernel_library = kernel_library or KernelLibrary()
-        self._import_kernels(custom_extensions)
+        extensions = list(custom_extensions)
+        extensions.extend(
+            path
+            for path in default_custom_extensions()
+            if path not in extensions
+        )
+        self._import_kernels(extensions)
 
         self._subgraphs = {}
 

@@ -13,8 +13,12 @@
 """Input struct for the Flux2 ModuleV3 executor.
 
 Mirrors :class:`~max.pipelines.architectures.flux2.Flux2ExecutorInputs`
-but replaces the pre-baked ``latents`` buffer with a ``seed`` scalar.
-Noise sampling is deferred into the compiled graph.
+directly: noise is pre-generated on CPU in ``prepare_inputs`` using
+``np.random.RandomState(seed).standard_normal()`` so V3 inherits bit-
+identical noise from V2.  Earlier revisions of this struct exposed a
+``seed`` scalar so the graph could sample noise in-graph via
+``ops.random``, but MAX's in-graph RNG diverges from numpy's
+``RandomState`` for the same seed, which broke V2/V3 accuracy parity.
 """
 
 from __future__ import annotations
@@ -32,9 +36,10 @@ from typing_extensions import Self
 class Flux2ModuleV3Inputs(TensorStruct):
     """Structured inputs for the Flux2 ModuleV3 executor.
 
-    Identical to :class:`Flux2ExecutorInputs` except that ``latents`` is
-    replaced by ``seed`` -- a 1-element int64 scalar buffer that the
-    compiled graph uses to sample initial noise.
+    Mirrors :class:`Flux2ExecutorInputs` directly: ``latents`` carries
+    the patchified + packed initial noise tensor.  ``prepare_inputs``
+    populates it from ``np.random.RandomState(seed).standard_normal()``
+    so V3 inherits bit-identical noise from V2.
     """
 
     # -- Core (always present) ------------------------------------------------
@@ -45,9 +50,11 @@ class Flux2ModuleV3Inputs(TensorStruct):
     text_ids: Buffer
     """Text position IDs for the transformer, shape ``(1, S, 4)`` int64."""
 
-    seed: Buffer
-    """RNG seed as a 1-element int64 tensor. The graph samples initial
-    latent noise from this seed."""
+    latents: Buffer
+    """Pre-generated packed initial noise on the transformer device,
+    shape ``(B, image_seq, num_channels)`` in the model dtype.  Sourced
+    from :meth:`PixelContext.latents` (or fallback CPU sampling) and
+    patchified + packed in :meth:`FLUXModule.prepare_inputs`."""
 
     latent_image_ids: Buffer
     """Latent positional identifiers, shape ``(B, seq, 4)`` int64."""
@@ -96,7 +103,6 @@ class Flux2ModuleV3Inputs(TensorStruct):
 
     _CPU_FIELDS: ClassVar[frozenset[str]] = frozenset(
         {
-            "seed",
             "num_inference_steps",
             "num_images_per_prompt",
             "height",

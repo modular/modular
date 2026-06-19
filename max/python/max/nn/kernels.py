@@ -1914,6 +1914,7 @@ def msa_sparse_indexer(
     prefix_lens: TensorValue,
     index_kv_collection: PagedCacheValues,
     layer_idx: TensorValue,
+    score_scratch: BufferValue,
     *,
     num_index_heads: int,
     idx_head_dim: int,
@@ -1943,6 +1944,7 @@ def msa_sparse_indexer(
             ``cache_lengths``). uint32.
         index_kv_collection: Paged index-K cache (BF16, no scales).
         layer_idx: Layer index, uint32, on CPU.
+        score_scratch: Persistent FP32 scratch buffer for decode scoring.
         num_index_heads: Number of index (query) heads.
         idx_head_dim: Index head dimension.
         block_size: KV block size in tokens (== page size).
@@ -1986,6 +1988,13 @@ def msa_sparse_indexer(
     _validate_argument_tensor(
         "layer_idx", layer_idx, dtype=DType.uint32, device=DeviceRef.CPU()
     )
+    _validate_argument_tensor(
+        "score_scratch",
+        score_scratch,
+        dtype=DType.float32,
+        rank=3,
+        device=index_q.device,
+    )
     if topk <= 0:
         raise ValueError(f"topk must be greater than 0, got {topk}")
 
@@ -2004,8 +2013,9 @@ def msa_sparse_indexer(
         index_q,
         input_row_offsets,
         prefix_lens,
-        *index_kv_collection.flatten_without_attention_dispatch_metadata(),
+        *index_kv_collection.flatten(),
         layer_idx,
+        score_scratch,
         ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU()),
     ]
 
@@ -2098,7 +2108,7 @@ def msa_sparse_attention_ragged(
     values: list[Value[Any]] = [
         input,
         input_row_offsets,
-        *kv_collection.flatten_without_attention_dispatch_metadata(),
+        *kv_collection.flatten(),
         layer_idx,
         block_indices,
         ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU()),

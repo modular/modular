@@ -237,8 +237,14 @@ struct GroupedWorkIterator1D1D[
     ]
 
     var num_active_experts: Int
+
+    @__allow_legacy_any_origin_fields
     var group_offsets: Self.OffsetsTile
+
+    @__allow_legacy_any_origin_fields
     var expert_ids: Self.ExpertIdsTile
+
+    @__allow_legacy_any_origin_fields
     var expert_scales: Self.ExpertScalesTile
 
     # Iteration state

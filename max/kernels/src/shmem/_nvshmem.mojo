@@ -151,6 +151,8 @@ comptime NVSHMEM_TEAM_INDEX_MAX: nvshmem_team_id_t = nvshmem_team_id_t.MAX
 # Structs
 struct NVSHMEMXInitAttr:
     var version: c_int
+
+    @__allow_legacy_any_origin_fields
     var mpi_comm: UnsafePointer[MPIComm, MutAnyOrigin]
     var args: NVSHMEMXInitArgs
 
@@ -179,6 +181,8 @@ struct NVSHMEMXInitArgs:
 
 struct NVSHMEMXUniqueIDArgs:
     var version: c_int
+
+    @__allow_legacy_any_origin_fields
     var id: Optional[UnsafePointer[NVSHMEMXUniqueID, MutAnyOrigin]]
     var myrank: c_int
     var nranks: c_int

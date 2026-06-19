@@ -1097,6 +1097,7 @@ struct ManagedTensorSlice[
         stride_types=Self.static_spec.static_layout._stride_types,
     ]
 
+    @__allow_legacy_any_origin_fields
     var _ptr: UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]
     var _runtime_layout: Self.RuntimeLayout
     var in_fusion: Self.InFusion

@@ -3087,6 +3087,16 @@ def conv_shape[
         var input_spatial_dim = input_lt.dim(i)
         var filter_spatial_dim = filter_lt.dim(i - 1)
 
+        # Zero input spatial -> zero output spatial.  Strided convs over a
+        # zero-spatial input would otherwise compute a negative
+        # ``output_spatial_dim`` (e.g. ``1 + (0 + 0 - 3) // 2 = -1`` for a
+        # 3x3 stride=2 pad=0 downsample) and trip the positivity check
+        # below; short-circuit here so the encoder can run unconditionally
+        # on an empty placeholder image.
+        if input_spatial_dim == 0:
+            output_shape[i] = 0
+            continue
+
         var output_spatial_dim = get_sliding_window_out_dim(
             input_spatial_dim,
             filter_spatial_dim,
@@ -3353,12 +3363,21 @@ def check_cudnn_error(stat: cudnnStatus_t) raises:
 
 
 struct CuDNNConvMeta(ImplicitlyCopyable, RegisterPassable):
+    @__allow_legacy_any_origin_fields
     var ptr_handle: UnsafePointer[cudnnContext, AnyOrigin[mut=True]]
+
+    @__allow_legacy_any_origin_fields
     var ptr_input_desc: UnsafePointer[cudnnTensorStruct, AnyOrigin[mut=True]]
+
+    @__allow_legacy_any_origin_fields
     var ptr_filter_desc: UnsafePointer[cudnnFilterStruct, AnyOrigin[mut=True]]
+
+    @__allow_legacy_any_origin_fields
     var ptr_conv_desc: UnsafePointer[
         cudnnConvolutionStruct, AnyOrigin[mut=True]
     ]
+
+    @__allow_legacy_any_origin_fields
     var ptr_output_desc: UnsafePointer[cudnnTensorStruct, AnyOrigin[mut=True]]
 
     def __init__(out self) raises:
@@ -3473,12 +3492,21 @@ def get_cudnn_dtype[dtype: DType]() raises -> cudnnDataType_t:
 
 
 struct CachedCuDNNMetaNHWCFull(ImplicitlyCopyable):
+    @__allow_legacy_any_origin_fields
     var ptr_handle: UnsafePointer[cudnnContext, AnyOrigin[mut=True]]
+
+    @__allow_legacy_any_origin_fields
     var ptr_input_desc: UnsafePointer[cudnnTensorStruct, AnyOrigin[mut=True]]
+
+    @__allow_legacy_any_origin_fields
     var ptr_filter_desc: UnsafePointer[cudnnFilterStruct, AnyOrigin[mut=True]]
+
+    @__allow_legacy_any_origin_fields
     var ptr_conv_desc: UnsafePointer[
         cudnnConvolutionStruct, AnyOrigin[mut=True]
     ]
+
+    @__allow_legacy_any_origin_fields
     var ptr_output_desc: UnsafePointer[cudnnTensorStruct, AnyOrigin[mut=True]]
 
     # Workspace size cache (actual buffer is allocated per-call via ctx)
@@ -4385,6 +4413,15 @@ def conv_gpu[
     comptime output_layout = output_lt.layout
 
     comptime assert conv_rank == input_lt.rank - 2
+
+    # Zero-sized output (e.g. a ``(B, 0, 0, C)`` input flowing through a
+    # diffusion VAE encoder for the text-to-image placeholder): nothing
+    # to compute.  The output buffer is pre-allocated zero-element by
+    # the caller -- an early return produces the correct empty output
+    # and skips downstream dispatch paths that would otherwise build
+    # zero-extent TMA descriptors or launch zero-grid kernels.
+    if output_lt.size() == 0:
+        return
 
     var has_asymmetric_padding = False
     var pad_before = IndexList[conv_rank](0)

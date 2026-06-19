@@ -16,6 +16,7 @@
 struct WeightsRegistry(ImplicitlyCopyable):
     """Bag of weights where names[i] names a weight with data weights[i]."""
 
+    @__allow_legacy_any_origin_fields
     var dict: Dict[String, OpaquePointer[MutAnyOrigin]]
 
     def __init__(out self, *, copy: Self):

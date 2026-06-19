@@ -187,6 +187,8 @@ struct Handle[backend: Backend = _resolve_backend[Backend.AUTOMATIC]()](
         Self._rocblas_type,
         Self._hipblaslt_type,
     ]
+
+    @__allow_legacy_any_origin_fields
     var _handle: Self.type
 
     def __init__(out self) raises:

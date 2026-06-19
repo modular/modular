@@ -226,3 +226,13 @@ def test_fastcall_concat_direct_overload() -> None:
         def_function.fastcall_concat("a", "b", "c", "d", "e", "f", "g", "h")
         == "abcdefgh"
     )
+
+
+def test_fastcall_concat_raises_returns() -> None:
+    # Exercises the hand-written wrapper's `except e: return
+    # raise_python_exception(e)` branch -- the documented usage pattern for
+    # the helper. Concatenating a string with a non-string raises a Mojo
+    # `Error`, which the wrapper must translate into a Python exception
+    # (a NULL return with the error indicator set) rather than crash.
+    with pytest.raises(Exception):
+        def_function.fastcall_concat("a", 5)

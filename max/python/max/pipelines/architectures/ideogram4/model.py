@@ -28,13 +28,21 @@ from __future__ import annotations
 from typing import Any
 
 from max.driver import Device
+from max.dtype import DType
 from max.graph.weights import Weights
 from max.pipelines.lib import SupportedEncoding
 from max.pipelines.modeling.base.component_model import ComponentModel
 from max.profiler import traced
 
 from .model_config import Ideogram4Config
-from .weight_adapters import convert_ideogram4_transformer_state_dict
+from .weight_adapters import (
+    FP8_SCALE_SUFFIX,
+    convert_ideogram4_transformer_state_dict,
+)
+
+# FP8 weights stay packed and their float32 rowwise scales stay float32; only
+# the genuinely bf16/float32 tensors are cast to the compute dtype.
+_FP8_DTYPES = (DType.float8_e4m3fn, DType.float8_e4m3fnuz)
 
 
 class Ideogram4TransformerModel(ComponentModel):
@@ -71,8 +79,11 @@ class Ideogram4TransformerModel(ComponentModel):
             key: value.data() for key, value in self.weights.items()
         }
         state_dict = convert_ideogram4_transformer_state_dict(raw)
-        # Cast every float tensor to the compute dtype.
+        # Cast every float tensor to the compute dtype, but leave native-FP8
+        # weights packed and their rowwise scales in float32.
         for key, weight in state_dict.items():
+            if key.endswith(FP8_SCALE_SUFFIX) or weight.dtype in _FP8_DTYPES:
+                continue
             if (
                 weight.dtype != target_dtype
                 and weight.dtype.is_float()

@@ -65,11 +65,16 @@ from .config import (
 from .embeddings_pipeline import EmbeddingsPipeline, EmbeddingsPipelineType
 from .interfaces import (
     AlwaysSignalBuffersMixin,
+    BatchProcessor,
+    BatchProcessorRuntime,
     ModelInputs,
     ModelOutputs,
     PipelineModel,
     PipelineModelWithKVCache,
+    RaggedBatchProcessor,
     UnifiedEagleOutputs,
+    process_ragged_kv_outputs,
+    ragged_kv_symbolic_inputs,
 )
 from .memory_estimation import MemoryEstimator
 from .model_manifest import ModelManifest
@@ -96,6 +101,8 @@ from .utils import CompilationTimer, upper_bounded_default
 __all__ = [
     "PIPELINE_REGISTRY",
     "AlwaysSignalBuffersMixin",
+    "BatchProcessor",
+    "BatchProcessorRuntime",
     "CompilationTimer",
     "DenoisingCacheConfig",
     "EmbeddingsPipeline",
@@ -123,6 +130,7 @@ __all__ = [
     "PixelGenerationPipeline",
     "PixelGenerationTokenizer",
     "ProfilingConfig",
+    "RaggedBatchProcessor",
     "RepoType",
     "RopeType",
     "SamplingConfig",
@@ -146,6 +154,8 @@ __all__ = [
     "max_tokens_to_generate",
     "parse_quant_config",
     "parse_supported_encoding_from_file_name",
+    "process_ragged_kv_outputs",
+    "ragged_kv_symbolic_inputs",
     "rejection_sampler",
     "rejection_sampler_with_residuals",
     "resolve_max_config_inheritance",

@@ -17,6 +17,7 @@ These are Mojo built-ins, so you don't need to import them.
 
 
 @explicit_destroy
+@stable(since="1.0")
 trait Movable:
     """The Movable trait denotes a type whose value can be moved.
 
@@ -47,6 +48,7 @@ trait Movable:
     ```
     """
 
+    @stable(since="1.0")
     def __init__(out self, *, deinit move: Self):
         """Create a new instance of the value by moving the value of another.
 
@@ -69,6 +71,7 @@ trait Movable:
 
 
 @explicit_destroy
+@stable(since="1.0")
 trait Copyable(Movable):
     """The Copyable trait denotes a type whose value can be explicitly copied.
 
@@ -103,6 +106,7 @@ trait Copyable(Movable):
     ```
     """
 
+    @stable(since="1.0")
     def __init__(out self, *, copy: Self):
         """Create a new instance of the value by copying an existing one.
 
@@ -112,9 +116,12 @@ trait Copyable(Movable):
         ...
 
     @always_inline
+    @stable(since="1.0")
     def copy(self) -> Self:
         """Explicitly construct a copy of self, a convenience method for
         `Self(copy=self)` when the type is inconvenient to write out.
+
+        Overriding this method is not allowed.
 
         Returns:
             A copy of this value.
@@ -134,6 +141,7 @@ trait Copyable(Movable):
     """
 
 
+@stable(since="1.0")
 trait ImplicitlyCopyable(Copyable):
     """A marker trait to permit compiler to insert implicit calls to the copy
     constructor in order to make a copy of the object when needed.
