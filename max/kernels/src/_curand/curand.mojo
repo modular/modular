@@ -78,7 +78,10 @@ comptime curandDistributionShift_t = UnsafePointer[
 
 
 struct curandDistributionShift_st(TrivialRegisterPassable):
+    @__allow_legacy_any_origin_fields
     var probability: curandDistribution_t
+
+    @__allow_legacy_any_origin_fields
     var host_probability: curandDistribution_t
     var shift: UInt32
     var length: UInt32
@@ -86,7 +89,10 @@ struct curandDistributionShift_st(TrivialRegisterPassable):
 
 
 struct curandDistributionM2Shift_st(TrivialRegisterPassable):
+    @__allow_legacy_any_origin_fields
     var histogram: curandHistogramM2_t
+
+    @__allow_legacy_any_origin_fields
     var host_histogram: curandHistogramM2_t
     var shift: UInt32
     var length: UInt32
@@ -94,9 +100,16 @@ struct curandDistributionM2Shift_st(TrivialRegisterPassable):
 
 
 struct curandHistogramM2_st(TrivialRegisterPassable):
+    @__allow_legacy_any_origin_fields
     var V: curandHistogramM2V_t
+
+    @__allow_legacy_any_origin_fields
     var host_V: curandHistogramM2V_t
+
+    @__allow_legacy_any_origin_fields
     var K: curandHistogramM2V_t
+
+    @__allow_legacy_any_origin_fields
     var host_K: curandHistogramM2V_t
     var host_gen: UInt32
 
@@ -105,8 +118,13 @@ comptime curandDistribution_t = UnsafePointer[Float64, MutAnyOrigin]
 
 
 struct curandDiscreteDistribution_st(TrivialRegisterPassable):
+    @__allow_legacy_any_origin_fields
     var self_host_ptr: curandDiscreteDistribution_t
+
+    @__allow_legacy_any_origin_fields
     var M2: curandDistributionM2Shift_t
+
+    @__allow_legacy_any_origin_fields
     var host_M2: curandDistributionM2Shift_t
     var stddev: Float64
     var mean: Float64

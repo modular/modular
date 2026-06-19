@@ -27,6 +27,10 @@ from max.nn.kv_cache.cache_params import (
     KVConnectorType,
     SpeculativeMethod,
 )
+from max.nn.kv_cache.utils import (
+    AttentionDispatchResolver,
+    AttentionDispatchResolverInterface,
+)
 from pydantic import ConfigDict, Field, PrivateAttr
 
 
@@ -134,6 +138,18 @@ class KVCacheConfig(ConfigFileModel):
     )
     """The fraction of available device memory the process should consume."""
 
+    allow_kv_head_replication: bool = Field(
+        default=False,
+        description=(
+            "Allow TP wider than the KV head count by replicating each KV head "
+            "across a group of devices. Used as the default for "
+            "to_params(allow_kv_head_replication=...) so it reaches base-class "
+            "paths that don't thread the flag. Only for architectures whose "
+            "attention shards K/V projections to match."
+        ),
+    )
+    """Default for :meth:`to_params`'s ``allow_kv_head_replication`` argument."""
+
     _cache_dtype: DType = PrivateAttr(default=DType.float32)
     "The data type of the KV cache. The cache dtype is determined by the model's quantization encoding, and can be overridden from CLI by the kv_cache_format parameter."
 
@@ -173,6 +189,10 @@ class KVCacheConfig(ConfigFileModel):
         kvcache_quant_config: KVCacheQuantizationConfig | None = None,
         speculative_method: SpeculativeMethod | None = None,
         num_draft_tokens: int = 0,
+        attn_dispatch_resolver_cls: type[
+            AttentionDispatchResolverInterface
+        ] = AttentionDispatchResolver,
+        allow_kv_head_replication: bool | None = None,
     ) -> KVCacheParams:
         """Returns :class:`~max.nn.kv_cache.cache_params.KVCacheParams` built from this config.
 
@@ -192,10 +212,17 @@ class KVCacheConfig(ConfigFileModel):
                 ``None`` when speculative decoding is disabled.
             num_draft_tokens: Total draft tokens generated per
                 speculative iteration. Zero when no speculative decoding.
+            attn_dispatch_resolver_cls: Class to use for resolving attention
+                dispatch metadata.
+            allow_kv_head_replication: Replicate KV heads for TP wider than the
+                KV head count. Defaults to ``None`` (falls back to the config's
+                :attr:`allow_kv_head_replication`).
 
         Returns:
             The constructed KV cache parameters.
         """
+        if allow_kv_head_replication is None:
+            allow_kv_head_replication = self.allow_kv_head_replication
         cfg = self.kv_connector_config
         return KVCacheParams(
             dtype=dtype,
@@ -216,4 +243,6 @@ class KVCacheConfig(ConfigFileModel):
             kvcache_quant_config=kvcache_quant_config,
             speculative_method=speculative_method,
             num_draft_tokens=num_draft_tokens,
+            attn_dispatch_resolver_cls=attn_dispatch_resolver_cls,
+            allow_kv_head_replication=allow_kv_head_replication,
         )

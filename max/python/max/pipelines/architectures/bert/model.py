@@ -19,15 +19,12 @@ from __future__ import annotations
 
 import logging
 import time
-from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import ClassVar
 
-import numpy as np
 from max.driver import Buffer, Device
 from max.engine import InferenceSession, Model
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn.kv_cache import KVCacheInputsInterface
 from max.nn.transformer import ReturnLogits
 from max.pipelines.context import TextContext
 from max.pipelines.lib import (
@@ -37,8 +34,8 @@ from max.pipelines.lib import (
     PipelineConfig,
     PipelineModel,
 )
-from max.pipelines.modeling.dataprocessing import collate_batch
 
+from .batch_processor import BertBatchProcessor
 from .graph import build_graph
 from .model_config import BertModelConfig
 
@@ -52,6 +49,7 @@ class BertInputs(ModelInputs):
 
 
 class BertPipelineModel(PipelineModel[TextContext]):
+    batch_processor_cls: ClassVar[type[BertBatchProcessor]] = BertBatchProcessor
     model_config_cls: ClassVar[type[BertModelConfig]] = BertModelConfig
 
     def __init__(
@@ -80,40 +78,8 @@ class BertPipelineModel(PipelineModel[TextContext]):
         model_outputs = self.model.execute(
             model_inputs.next_tokens_batch, model_inputs.attention_mask
         )
-        assert isinstance(model_outputs[0], Buffer)
-
-        return ModelOutputs(logits=model_outputs[0])
-
-    def prepare_initial_token_inputs(
-        self,
-        replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
-        return_n_logits: int = 1,
-    ) -> BertInputs:
-        if len(replica_batches) > 1:
-            raise ValueError("Model does not support DP>1")
-
-        context_batch = replica_batches[0]
-
-        tokens = [ctx.tokens.active for ctx in context_batch]
-
-        pad_value = getattr(self.huggingface_config, "pad_token_id", 0)
-        next_tokens_batch, _ = collate_batch(
-            tokens,
-            pad_value=pad_value,
-            batch_size=len(tokens),
-        )
-
-        attention_mask = (next_tokens_batch != pad_value).astype(np.float32)
-
-        return BertInputs(
-            next_tokens_batch=Buffer.from_numpy(next_tokens_batch).to(
-                self.devices[0]
-            ),
-            attention_mask=Buffer.from_numpy(attention_mask).to(
-                self.devices[0]
-            ),
-        )
+        assert self.batch_processor is not None
+        return self.batch_processor.process_outputs(model_outputs)
 
     def load_model(self, session: InferenceSession) -> Model:
         logger.info("Building and compiling model...")

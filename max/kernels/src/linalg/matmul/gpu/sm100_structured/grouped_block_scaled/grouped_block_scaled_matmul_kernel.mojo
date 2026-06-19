@@ -150,18 +150,27 @@ struct GroupedTensormapSmem(TrivialRegisterPassable):
     to ensure all warps access the same SMEM locations.
     """
 
+    @__allow_legacy_any_origin_fields
     var desc_a: UnsafePointer[
         TMADescriptor, MutAnyOrigin, address_space=AddressSpace.SHARED
     ]
+
+    @__allow_legacy_any_origin_fields
     var desc_b: UnsafePointer[
         TMADescriptor, MutAnyOrigin, address_space=AddressSpace.SHARED
     ]
+
+    @__allow_legacy_any_origin_fields
     var desc_sfa: UnsafePointer[
         TMADescriptor, MutAnyOrigin, address_space=AddressSpace.SHARED
     ]
+
+    @__allow_legacy_any_origin_fields
     var desc_sfb: UnsafePointer[
         TMADescriptor, MutAnyOrigin, address_space=AddressSpace.SHARED
     ]
+
+    @__allow_legacy_any_origin_fields
     var desc_c: UnsafePointer[
         TMADescriptor, MutAnyOrigin, address_space=AddressSpace.SHARED
     ]

@@ -4556,6 +4556,16 @@ def group_norm_gpu[
     var num_rows = output_rs.dim[0]()
     var num_cols = output_rs.dim[1]()
 
+    # Zero-sized input (e.g. a ``(B, C, 0, 0)`` tensor flowing through a
+    # diffusion VAE encoder for the text-to-image placeholder): nothing
+    # to normalize.  The output buffer is pre-allocated zero-element by
+    # the caller and the kernel's ``num_cols < simd_width`` misalignment
+    # check below would otherwise abort.  Early-return is correct because
+    # mean/var of an empty group has no defined value and the downstream
+    # readers also have zero spatial dims.
+    if num_rows == OutputLinearIdxType(0) or num_cols == OutputLinearIdxType(0):
+        return
+
     @parameter
     @always_inline
     @__copy_capture(shape, num_groups, channels_per_group)

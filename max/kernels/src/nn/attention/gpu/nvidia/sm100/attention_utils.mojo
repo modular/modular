@@ -1988,6 +1988,7 @@ struct StagedPipeline[num_kv_stages: Int, num_qk_stages: Int = 1](
     comptime num_stages: Int = Self.num_kv_stages * Self.num_qk_stages
 
     # mbars are ordered in {producer, consumer} pairs
+    @__allow_legacy_any_origin_fields
     var mbar: MBarType
     var state: PipelineState[Self.num_kv_stages]
 
@@ -2068,7 +2069,10 @@ struct TMADestination[dtype: DType, smem_elems: Int](TrivialRegisterPassable):
         address_space=AddressSpace.SHARED,
     ]
 
+    @__allow_legacy_any_origin_fields
     var mbar: MBarType
+
+    @__allow_legacy_any_origin_fields
     var smem: Self.SmemType
 
     @always_inline
@@ -2118,6 +2122,8 @@ struct TMAProducerPipeline[dtype: DType, config: FA4Config, is_k: Bool = True](
     var pipeline: StagedPipeline[
         Self.config.num_kv_stages, Self.num_qk_stages_effective
     ]
+
+    @__allow_legacy_any_origin_fields
     var smem: Self.SMemType
 
     @always_inline
@@ -2394,7 +2400,10 @@ struct RolePipeline[
 
     comptime num_stages: Int = Self.number_of_stages
 
+    @__allow_legacy_any_origin_fields
     var producer_mbar_base: MBarType
+
+    @__allow_legacy_any_origin_fields
     var consumer_mbar_base: MBarType
     var state: PipelineState[Self.num_stages]
 
@@ -2498,6 +2507,7 @@ struct MBarPipeline[number_of_stages: Int](TrivialRegisterPassable):
     comptime num_stages: Int = Self.number_of_stages
 
     # mbars are ordered in {producer, consumer} pairs
+    @__allow_legacy_any_origin_fields
     var mbar: MBarType
     var state: PipelineState[Self.num_stages]
 
@@ -2747,6 +2757,7 @@ struct FA4MiscMBars[
         **Q1Sync barriers only present when num_qo == 2
     """
 
+    @__allow_legacy_any_origin_fields
     var mbar_base: MBarType
 
     # ---- Count=128 section (first in smem) ----

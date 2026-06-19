@@ -20,6 +20,7 @@ from max.driver import DeviceSpec, load_devices
 from max.experimental.nn import Module
 from max.experimental.tensor import Tensor
 from max.graph import TensorType
+from max.pipelines.architectures.flux2.arch import FLUX2_TEXT_SEQ_LEN
 from max.pipelines.architectures.mistral3_modulev3.text_encoder.mistral3 import (
     Mistral3TextEncoderTransformer,
 )
@@ -60,6 +61,12 @@ class TextEncoder(Module[[Tensor], Tensor]):
         mistral_config = Mistral3TextEncoderConfig.initialize_from_config(
             huggingface_config, encoding, devices
         )
+        # FLUX.2 trains the joint-attention with a static padded text
+        # stream of ``FLUX2_TEXT_SEQ_LEN`` tokens; without this, image
+        # tokens index the wrong rows of the joint rope table and the
+        # generated image comes out spatially scrambled.  Mirrors V2's
+        # ``flux2/components/text_encoder.py``.
+        mistral_config.output_seq_len = FLUX2_TEXT_SEQ_LEN
 
         self.encoder = Mistral3TextEncoderTransformer(mistral_config)
         self.to(devices[0])

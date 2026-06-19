@@ -296,6 +296,16 @@ class SupportedArchitecture:
     falls back to its baseline parser.
     """
 
+    batching: type[Any] | None = None
+    """Optional batch processor for input/output handling.
+
+    When set, must be a :class:`~max.pipelines.lib.interfaces.batch_processor.BatchProcessor`
+    subclass. The processor class is applied to :attr:`pipeline_model` at
+    registration time via :attr:`~max.pipelines.lib.interfaces.pipeline_model.PipelineModel.batch_processor_cls`.
+    Ragged text models should subclass
+    :class:`~max.pipelines.lib.interfaces.batch_processor.RaggedBatchProcessor`.
+    """
+
     reasoning_parser: str | None = None
     """Optional default reasoning parser name for this architecture.
 
@@ -519,6 +529,20 @@ class PipelineRegistry:
         If multiple architectures share the same name but have different tasks,
         they are registered in a secondary lookup table keyed by (name, task).
         """
+        if architecture.batching is not None:
+            from .interfaces.pipeline_model import PipelineModel
+
+            pipeline_model_cls = architecture.pipeline_model
+            if not isinstance(pipeline_model_cls, type) or not issubclass(
+                pipeline_model_cls, PipelineModel
+            ):
+                raise TypeError(
+                    f"Architecture '{architecture.name}' sets batching= but "
+                    f"pipeline_model {pipeline_model_cls!r} is not a PipelineModel "
+                    "subclass."
+                )
+            pipeline_model_cls.batch_processor_cls = architecture.batching
+
         task_key = (architecture.name, architecture.task)
 
         if architecture.name in self.architectures:

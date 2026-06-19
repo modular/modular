@@ -32,16 +32,6 @@ struct Element(Comparable, ImplicitlyCopyable):
     def __eq__(self, other: Self) -> Bool:
         return self.c == other.c and self.r == other.r
 
-    def __init__(out self, *, deinit move: Self):
-        self.r = move.r
-        self.c = move.c
-        self.v = move.v
-
-    def __init__(out self, *, copy: Self):
-        self.r = copy.r
-        self.c = copy.c
-        self.v = copy.v
-
 
 def spmv_csc_kernel(
     cscMatrix: CSCMatrix,
