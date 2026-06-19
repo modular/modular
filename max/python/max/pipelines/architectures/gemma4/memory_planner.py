@@ -21,6 +21,20 @@ from transformers import AutoConfig
 
 _GRAPH_CAPTURE_HEADROOM_BYTES = 2 * 1024**3
 
+# Tokens processed in a single forward step for the activation estimate below.
+# Decode runs ``max_batch_size`` tokens/step; chunked prefill runs up to this
+# many. Used to right-size the reservation for low-concurrency serving (e.g. a
+# single NVFP4 checkpoint on a 24 GB pre-Blackwell card) without ever exceeding
+# the previous flat reservation.
+_PREFILL_TOKENS_PER_STEP = 8192
+
+# Safety multiple over the widest per-token transient (hidden vs MLP
+# intermediate), covering the handful of simultaneously-live layer activations,
+# attention temporaries and the LM head.
+# TODO(MODELS-1544): calibrate against measured peak GPU memory (A10G/L40S NVFP4
+# run) before relaxing the ``min(..., flat)`` cap in estimate_activation_memory.
+_ACTIVATION_SAFETY_FACTOR = 8
+
 
 class Gemma4MemoryPlanner(PagedMemoryPlanner):
     """Memory planner for Gemma4 (vision-language) models.
@@ -39,29 +53,53 @@ class Gemma4MemoryPlanner(PagedMemoryPlanner):
         pipeline_config: PipelineConfig,
         huggingface_config: AutoConfig,
     ) -> int:
-        """Estimates activation memory for Gemma4 models.
+        """Estimates activation memory, scaled by model dimensions and capped at
+        the previous flat reservation (so it never reserves more than before).
+
+        The scaled value is an uncalibrated heuristic, not a proven
+        activation-peak bound, so it can under-reserve below the cap
+        (MODELS-1544).
 
         Args:
             pipeline_config: Pipeline configuration.
-            huggingface_config: Unused.
+            huggingface_config: Provides ``hidden_size`` / ``intermediate_size``.
 
         Returns:
             Estimated activation memory in bytes, summed across all devices.
         """
-        # FIXME: We arbitrarily set some memory for activation memory to leave
-        # headroom for vision processing. We should determine this in a more
-        # principled way.
-        # Smaller KV cache dtypes (e.g. FP8) halve bytes_per_block, so the
-        # same KV budget buys ~2x more blocks.  The scheduler admits work
-        # based on available blocks, so it targets larger concurrent batches
-        # whose activation tensors need proportionally more headroom.
-        # TODO(MODELS-1544): investigate high activation memory estimates
-        base = (
+        num_devices = len(pipeline_config.model.device_specs)
+
+        # Previous behaviour, kept as a strict upper bound. Smaller KV cache
+        # dtypes (e.g. FP8) buy ~2x more blocks, so the scheduler targets larger
+        # concurrent batches whose activations need proportionally more headroom.
+        flat = (
             30 // pipeline_config.model.kv_cache.cache_dtype.size_in_bytes
         ) * 1024**3
+
+        # Peak transient activations scale with the widest per-token buffer, the
+        # tokens processed in one forward step, and a safety multiple. The
+        # widest buffer is the MLP intermediate (or hidden, whichever is larger).
+        text_config = getattr(
+            huggingface_config, "text_config", huggingface_config
+        )
+        width = max(
+            getattr(text_config, "hidden_size", 0),
+            getattr(text_config, "intermediate_size", 0),
+        )
+        if width <= 0:
+            # Dimensions unavailable: fall back to the conservative flat value.
+            base = flat
+        else:
+            max_batch = pipeline_config.runtime.max_batch_size or 1
+            tokens_per_step = max(max_batch, _PREFILL_TOKENS_PER_STEP)
+            # Activations compute in the dequantized model dtype; NVFP4 and bf16
+            # checkpoints both compute in bf16 (2 bytes).
+            principled = _ACTIVATION_SAFETY_FACTOR * tokens_per_step * width * 2
+            base = min(principled, flat)
+
         if pipeline_config.runtime.device_graph_capture:
             base += _GRAPH_CAPTURE_HEADROOM_BYTES
-        return base * len(pipeline_config.model.device_specs)
+        return base * num_devices
 
     def estimate_vision_cache_entry_bytes(
         self,
