@@ -59,24 +59,40 @@ def test_parametric_alias_with_mixed_defaults():
 def test_long_parametric_alias_line_breaking():
     """Test that long parametric aliases are properly line-broken."""
     source = (
+        "alias ComplexType[a: Int, b: String, c: Float64] = Int\n"
+        "alias ComplexExpression[a: Int, b: String, c: Float64, d: Bool,"
+        " e: DType, f: Int, g: String, h: Float64] = 0\n"
+        "\n"
         "alias VeryLongParametricAliasWithManyParameters["
-        "first_param: Int, second_param: String, third_param: Float, "
+        "first_param: Int, second_param: String, third_param: Float64, "
         "fourth_param: Bool, fifth_param: DType, sixth_param: Int = 42, "
-        'seventh_param: String = "default", eighth_param: Float = 3.14]: '
+        'seventh_param: String = "default", eighth_param: Float64 = 3.14]: '
         "ComplexType[first_param, second_param, third_param] = ComplexExpression["
         "first_param, second_param, third_param, fourth_param, "
         "fifth_param, sixth_param, seventh_param, eighth_param]"
     )
     expected = (
+        "alias ComplexType[a: Int, b: String, c: Float64] = Int\n"
+        "alias ComplexExpression[\n"
+        "    a: Int,\n"
+        "    b: String,\n"
+        "    c: Float64,\n"
+        "    d: Bool,\n"
+        "    e: DType,\n"
+        "    f: Int,\n"
+        "    g: String,\n"
+        "    h: Float64,\n"
+        "] = 0\n"
+        "\n"
         "alias VeryLongParametricAliasWithManyParameters[\n"
         "    first_param: Int,\n"
         "    second_param: String,\n"
-        "    third_param: Float,\n"
+        "    third_param: Float64,\n"
         "    fourth_param: Bool,\n"
         "    fifth_param: DType,\n"
         "    sixth_param: Int = 42,\n"
         '    seventh_param: String = "default",\n'
-        "    eighth_param: Float = 3.14,\n"
+        "    eighth_param: Float64 = 3.14,\n"
         "]: ComplexType[first_param, second_param, third_param] = ComplexExpression[\n"
         "    first_param,\n"
         "    second_param,\n"
@@ -94,10 +110,17 @@ def test_long_parametric_alias_line_breaking():
 def test_parametric_alias_with_function_calls_line_breaking():
     """Test parametric alias with function calls that need line breaking."""
     source = (
+        "def some_function(a: Int, b: Int, c: Int) -> Int:\n"
+        "    return a\n"
+        "\n"
         "alias FunctionCallAlias[param: Int]: Int = "
         "some_function(param, param * 2, param + 1)"
     )
     expected = (
+        "def some_function(a: Int, b: Int, c: Int) -> Int:\n"
+        "    return a\n"
+        "\n"
+        "\n"
         "alias FunctionCallAlias[param: Int]: Int = some_function(\n"
         "    param, param * 2, param + 1\n"
         ")\n"
@@ -212,8 +235,8 @@ def test_parametric_alias_mixed_whitespace():
 
 def test_parametric_alias_spaces_in_brackets():
     """Test parametric alias with spaces inside brackets."""
-    source = "alias SpacedBrackets[ x : Int , y : String ] = SIMD[ DType.float32 , x + y ]"
-    expected = "alias SpacedBrackets[x: Int, y: String] = SIMD[DType.float32, x + y]\n"
+    source = "alias SpacedBrackets[ x : Int , y : Int ] = SIMD[ DType.float32 , x + y ]"
+    expected = "alias SpacedBrackets[x: Int, y: Int] = SIMD[DType.float32, x + y]\n"
     assert_mojo_format(source, expected)
 
 
@@ -233,8 +256,8 @@ def test_parametric_alias_spaces_around_equals():
 
 def test_parametric_alias_spaces_in_type_annotations():
     """Test parametric alias with spaces in type annotations."""
-    source = "alias TypeSpacing[x : Int, y : String, z : Float] : Bool = x > 0"
-    expected = "alias TypeSpacing[x: Int, y: String, z: Float]: Bool = x > 0\n"
+    source = "alias TypeSpacing[x : Int, y : String, z : Float64] : Bool = x > 0"
+    expected = "alias TypeSpacing[x: Int, y: String, z: Float64]: Bool = x > 0\n"
     assert_mojo_format(source, expected)
 
 
@@ -247,8 +270,19 @@ def test_parametric_alias_spaces_in_default_values():
 
 def test_parametric_alias_spaces_in_function_calls():
     """Test parametric alias with spaces in function calls."""
-    source = "alias FunctionSpacing[x: Int] : Int = some_function( x , x * 2 , x + 1 )"
-    expected = "alias FunctionSpacing[x: Int]: Int = some_function(x, x * 2, x + 1)\n"
+    source = (
+        "def some_function(a: Int, b: Int, c: Int) -> Int:\n"
+        "    return a\n"
+        "\n"
+        "alias FunctionSpacing[x: Int] : Int = some_function( x , x * 2 , x + 1 )"
+    )
+    expected = (
+        "def some_function(a: Int, b: Int, c: Int) -> Int:\n"
+        "    return a\n"
+        "\n"
+        "\n"
+        "alias FunctionSpacing[x: Int]: Int = some_function(x, x * 2, x + 1)\n"
+    )
     assert_mojo_format(source, expected)
 
 
@@ -294,10 +328,18 @@ def test_parametric_alias_spaces_in_dict_literals():
     assert_mojo_format(source, expected)
 
 
-def test_parametric_alias_spaces_in_comprehensions():
-    """Test parametric alias with spaces in comprehensions."""
-    source = "alias ComprehensionSpacing[x: Int] = [ i * 2 for i in range( x ) if i > 0 ]"
-    expected = "alias ComprehensionSpacing[x: Int] = [i * 2 for i in range(x) if i > 0]\n"
+def test_spaces_in_comprehensions():
+    """Test spaces in comprehensions."""
+    source = (
+        "def comprehension_spacing(x: Int):\n"
+        "    var result = [ i * 2 for i in range( x ) if i > 0 ]\n"
+        "    print(len(result))"
+    )
+    expected = (
+        "def comprehension_spacing(x: Int):\n"
+        "    var result = [i * 2 for i in range(x) if i > 0]\n"
+        "    print(len(result))\n"
+    )
     assert_mojo_format(source, expected)
 
 
@@ -336,8 +378,8 @@ def test_parametric_alias_spaces_in_string_literals():
 
 def test_parametric_alias_spaces_in_numeric_literals():
     """Test parametric alias with spaces in numeric literals (should be normalized)."""
-    source = "alias NumericSpacing[x: Int = 1_000_000, y: Float = 3.141_59] : Float = x + y"
-    expected = "alias NumericSpacing[x: Int = 1_000_000, y: Float = 3.141_59]: Float = x + y\n"
+    source = "alias NumericSpacing[x: Int = 1_000_000, y: Float64 = 3.141_59] : Float64 = y"
+    expected = "alias NumericSpacing[x: Int = 1_000_000, y: Float64 = 3.141_59]: Float64 = y\n"
     assert_mojo_format(source, expected)
 
 
@@ -358,14 +400,14 @@ def test_parametric_alias_spaces_in_none_literal():
 def test_parametric_alias_spaces_in_complex_nested_whitespace():
     """Test parametric alias with complex nested whitespace scenarios."""
     source = (
-        'alias ComplexWhitespace[ x : Int = 1 + 2 , y : String = "  hello  " ] : Tuple = ('
+        'alias ComplexWhitespace[ x : Int = 1 + 2 , y : String = "  hello  " ] = ('
         "    x    *    2    ,\n"
         "    y    .    strip( )    ,\n"
         "    x    +    len( y )\n"
         ")"
     )
     expected = (
-        'alias ComplexWhitespace[x: Int = 1 + 2, y: String = "  hello  "]: Tuple = (\n'
+        'alias ComplexWhitespace[x: Int = 1 + 2, y: String = "  hello  "] = (\n'
         "    x * 2,\n"
         "    y.strip(),\n"
         "    x + len(y),\n"
@@ -377,8 +419,8 @@ def test_parametric_alias_spaces_in_complex_nested_whitespace():
 def test_parametric_alias_spaces_in_complex_whitespace_edge_cases():
     """Test parametric alias with complex whitespace edge cases."""
     source = (
-        'alias ComplexEdgeCase[ x : Int = 1 + 2 * 3 // 4 % 5 ** 6 , y : String = "  hello  world  " ] : Tuple = ('
-        "    x    +    y    .    strip( )    .    split( )    [ 0 ]    ,\n"
+        'alias ComplexEdgeCase[ x : Int = 1 + 2 * 3 // 4 % 5 ** 6 , y : String = "  hello  world  " ] = ('
+        "    x    +    len( y    .    strip( )    .    split( )    [ 0 ] )    ,\n"
         "    len( y    .    strip( )    )    ,\n"
         "    x    **    2    +    y    .    count( ' ' )    *    10\n"
         ")\n"
@@ -386,11 +428,7 @@ def test_parametric_alias_spaces_in_complex_whitespace_edge_cases():
     expected = (
         "alias ComplexEdgeCase[\n"
         '    x: Int = 1 + 2 * 3 // 4 % 5**6, y: String = "  hello  world  "\n'
-        "]: Tuple = (\n"
-        "    x + y.strip().split()[0],\n"
-        "    len(y.strip()),\n"
-        '    x**2 + y.count(" ") * 10,\n'
-        ")\n"
+        '] = (x + len(y.strip().split()[0]), len(y.strip()), x**2 + y.count(" ") * 10)\n'
     )
     assert_mojo_format(source, expected)
 
