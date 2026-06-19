@@ -184,6 +184,38 @@ def test_recipe_gpu_overrides_preserve_single_gpu_recipes() -> None:
     assert args == []
 
 
+def test_8x_recipe_auto_reduces_on_4_gpu_machine(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    """Regression: an 8-GPU recipe on a 4-GPU runner scales down to 4."""
+    monkeypatch.setattr(smoke_test, "_inside_bazel", lambda: False)
+    monkeypatch.setattr(smoke_test, "_load_hf_repo_lock", lambda: {})
+
+    # amd/MiniMax-M2.7-MXFP4 pins device_specs [0..7] and ep_size 8.
+    cmd = smoke_test.get_server_cmd(
+        "max", "amd/MiniMax-M2.7-MXFP4", gpu_spec=("AMD MI355X", 4)
+    )
+
+    assert cmd[cmd.index("--devices") + 1] == "gpu:0,1,2,3"
+    assert cmd[cmd.index("--ep-size") + 1] == "4"
+
+
+def test_no_autoscale_devices_honors_recipe(monkeypatch: MonkeyPatch) -> None:
+    """With autoscale off, the recipe's device_specs are left untouched."""
+    monkeypatch.setattr(smoke_test, "_inside_bazel", lambda: False)
+    monkeypatch.setattr(smoke_test, "_load_hf_repo_lock", lambda: {})
+
+    cmd = smoke_test.get_server_cmd(
+        "max",
+        "amd/MiniMax-M2.7-MXFP4",
+        autoscale_devices=False,
+        gpu_spec=("AMD MI355X", 4),
+    )
+
+    assert "--devices" not in cmd
+    assert "--ep-size" not in cmd
+
+
 def test_vllm_minimax_keeps_flashinfer_workaround(
     monkeypatch: MonkeyPatch,
 ) -> None:

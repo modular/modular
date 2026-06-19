@@ -139,17 +139,10 @@ MODEL_RECIPES = CaseInsensitiveDict({
 # ``MODEL_RECIPES`` don't try to open a file that isn't there.
 _OPTIONAL_MODEL_RECIPES = {
     "nvidia/Kimi-K2.5-NVFP4__internal": "max/pipelines/architectures/kimik2_5/recipes/internal/nvfp4_8x_b200.yaml",
-    "MiniMaxAI/MiniMax-M3-MXFP8": "max_private/minimax_m3/recipes/mxfp8_4x.yaml",
 }
 _max_dir = Path(__file__).resolve().parents[4]
-_repo_root = _max_dir.parent
 for _alias, _path in _OPTIONAL_MODEL_RECIPES.items():
-    _candidate = (
-        _repo_root / _path
-        if _path.startswith("max_private/")
-        else _max_dir / "python" / _path
-    )
-    if _candidate.is_file():
+    if (_max_dir / "python" / _path).is_file():
         MODEL_RECIPES[_alias] = _path
 
 
@@ -249,13 +242,10 @@ def _resolve_recipe_path(recipe_path: str) -> str:
     Recipe paths use the ``max/pipelines/architectures/`` prefix and are
     resolved by the shared config resolver against the installed package.
     """
-    max_dir = Path(__file__).resolve().parents[4]
-    if recipe_path.startswith("max_private/"):
-        resolved = max_dir.parent / recipe_path
-    elif recipe_path.startswith("max/pipelines/architectures/"):
-        resolved = max_dir / "python" / recipe_path
-    else:
+    if not recipe_path.startswith("max/pipelines/architectures/"):
         return recipe_path
+    max_dir = Path(__file__).resolve().parents[4]
+    resolved = max_dir / "python" / recipe_path
     if not resolved.is_file():
         raise FileNotFoundError(
             f"Built-in recipe not found: {recipe_path} (resolved to {resolved})"
@@ -403,16 +393,13 @@ def get_server_cmd(
     *,
     serve_extra_args: str = "",
     recipe_path: str | None = None,
+    autoscale_devices: bool = True,
     gpu_spec: tuple[str, int],
 ) -> list[str]:
     gpu_model, gpu_count = gpu_spec
     if recipe_path is None:
         recipe_path = MODEL_RECIPES.get(model)
     recipe = _load_recipe(recipe_path) if recipe_path else None
-    # When a recipe pins explicit device_specs, honor that device count rather
-    # than scaling to the full machine.
-    if recipe is not None and recipe.model.device_specs is not None:
-        gpu_count = len(recipe.model.device_specs)
     recipe_config: tuple[str, RecipeConfig] | None = None
     if (
         recipe is not None
@@ -510,11 +497,9 @@ def get_server_cmd(
     cmd = cmd + ["--port", "8000"]
     if recipe_config is not None:
         config_file_path, recipe = recipe_config
-        cmd += [
-            "--config-file",
-            config_file_path,
-            *_recipe_gpu_overrides(recipe, gpu_count),
-        ]
+        cmd += ["--config-file", config_file_path]
+        if autoscale_devices:
+            cmd += _recipe_gpu_overrides(recipe, gpu_count)
     else:
         cmd += ["--trust-remote-code", "--model", model]
 
@@ -594,6 +579,17 @@ def get_server_cmd(
     default=False,
     help="Disable all timeouts. Useful when debugging hangs.",
 )
+@click.option(
+    "--recipe-path",
+    type=str,
+    default=None,
+    help="Recipe config YAML to serve instead of one looked up by model name.",
+)
+@click.option(
+    "--autoscale-devices/--no-autoscale-devices",
+    default=True,
+    help="Scale a recipe's device count to the local machine's GPU count.",
+)
 def smoke_test(
     hf_model_path: str,
     framework: str,
@@ -604,6 +600,8 @@ def smoke_test(
     num_questions: int,
     serve_extra_args: str,
     disable_timeouts: bool,
+    recipe_path: str | None,
+    autoscale_devices: bool,
 ) -> None:
     """
     Example usage: ./bazelw run smoke-test -- meta-llama/Llama-3.2-1B-Instruct
@@ -627,7 +625,9 @@ def smoke_test(
         output_path = Path(build_workspace) / output_path
 
     model = hf_model_path.strip()
-    recipe_path = MODEL_RECIPES.get(model)
+    # --recipe-path overrides the matrix lookup.
+    if recipe_path is None:
+        recipe_path = MODEL_RECIPES.get(model)
     if recipe_path:
         recipe_model_path = _load_recipe(recipe_path).model.model_path
         if recipe_model_path is None:
@@ -641,6 +641,7 @@ def smoke_test(
         hf_model_path,
         serve_extra_args=serve_extra_args,
         recipe_path=recipe_path,
+        autoscale_devices=autoscale_devices,
         gpu_spec=get_gpu_name_and_count(),
     )
 
