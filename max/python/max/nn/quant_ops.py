@@ -30,7 +30,7 @@ from .kernels import (
     grouped_matmul_ragged,
     matmul_static_scaled_float8,
     mxfp4_dequant,
-    nvfp4_dequant,
+    nvfp4_gemm,
     nvfp4_gemv,
     quantize_dynamic_block_scaled,
     quantize_dynamic_block_scaled_mxfp4,
@@ -143,10 +143,7 @@ def _matmul_float4(
             return nvfp4_gemv(x_bf16, weight, scales_f32)
 
         def _gemm() -> TensorValue:
-            w_bf16 = nvfp4_dequant(
-                weight, scales_f32, out_type=DType.bfloat16
-            )
-            return x_bf16 @ w_bf16.T
+            return nvfp4_gemm(x_bf16, weight, scales_f32)
 
         m = ops.shape_to_tensor(x_bf16.shape)[0]
         use_gemm = m > ops.constant(
