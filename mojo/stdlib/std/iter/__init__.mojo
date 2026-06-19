@@ -53,6 +53,7 @@ for squared in map[square](values):
 ```
 """
 
+import std.memory
 from std.builtin.constrained import _constrained_conforms_to
 from std.builtin.rebind import downcast
 from std.sys.intrinsics import _type_is_eq_parse_time

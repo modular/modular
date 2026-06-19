@@ -15,6 +15,8 @@
 These are Mojo built-ins, so you don't need to import them.
 """
 
+import std.memory
+
 
 @always_inline("builtin")
 def rebind[
