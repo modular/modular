@@ -48,12 +48,13 @@ from nn.kv_cache_ragged import (
     generic_kv_cache_radd_dispatch,
     k_matmul_ragged_paged,
     k_matmul_ragged_paged_scale,
+    kv_cache_row_offsets_ragged_paged,
     kv_cache_2m_iadd_dispatch,
     kv_cache_store_ragged,
     kv_cache_store_padded,
     kv_matmul_ragged_paged,
 )
-from extensibility import InputTensor
+from extensibility import InputTensor, OutputTensor
 from extensibility import (
     _FusedInputTensor as FusedInputTensor,
 )
@@ -527,6 +528,26 @@ struct Struct_k_matmul_ragged_paged_scale:
             kv_collection,
             layer_idx,
             ctx,
+        )
+
+
+@compiler.register("mo.kv_cache.row_offsets.ragged.paged")
+struct Struct_kv_cache_row_offsets_ragged_paged:
+    @always_inline
+    @staticmethod
+    def execute[
+        target: StaticString,
+    ](
+        cache_row_offsets: OutputTensor[dtype=DType.uint32, rank=1, ...],
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        context: DeviceContext,
+    ) raises:
+        kv_cache_row_offsets_ragged_paged[target=target](
+            cache_row_offsets.to_tile_tensor[DType.int64](),
+            input_row_offsets.to_tile_tensor[DType.int64](),
+            cache_lengths.to_tile_tensor[DType.int64](),
+            context,
         )
 
 

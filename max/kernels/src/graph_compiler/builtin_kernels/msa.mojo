@@ -241,6 +241,8 @@ struct Struct_msa_attention_ragged_paged:
         output: OutputTensor[dtype=DType.bfloat16, rank=3, ...],
         q: InputTensor[dtype=DType.bfloat16, rank=3, ...],
         input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        cache_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        total_context_length: InputTensor[dtype=DType.uint32, rank=1, ...],
         kv_blocks: MutableInputTensor[dtype=DType.bfloat16, rank=6, ...],
         cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
         kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
@@ -279,6 +281,8 @@ struct Struct_msa_attention_ragged_paged:
                 on prefill, batch on decode).
             input_row_offsets: Ragged query offsets `[batch + 1]` uint32 (1
                 token/seq on decode).
+            cache_row_offsets: Ragged valid cache offsets `[batch + 1]` uint32.
+            total_context_length: Total context length of the current batch.
             kv_blocks: Main-KV paged blocks `[num_blocks, 2, num_layers,
                 page_size, n_kv_heads, head_dim]` BF16.
             cache_lengths: Main-KV cache lengths `[batch]` uint32.
@@ -383,64 +387,34 @@ struct Struct_msa_attention_ragged_paged:
                 ctx, d_lt.ptr, k_num_heads * num_rows * topk, owning=False
             )
 
-            # TODO(graph-capture): drop this D2H when the plan moves on-device.
-            # The plan sizes its buffers from the per-batch cu-seqlens on host
-            # (`k2q_csr_sizes` sums per-batch K-block counts), so one D2H of the
-            # ragged offsets is unavoidable in a single-op execute -- the op is
-            # stateless across calls, so there is no persisted plan (unlike the
-            # MLA prefill, whose plan is a *device* op writing graph tensors).
-            # Keep it to ONE sync: read offsets back, fill the host + int32 run
-            # cu-seqlens in the same window, then enqueue the H2D under it.
-            var iro_lt = input_row_offsets.to_layout_tensor()
-            var iro_dev = DeviceBuffer[DType.uint32](
-                ctx, iro_lt.ptr, batch + 1, owning=False
-            )
-            var iro_host = ctx.enqueue_create_host_buffer[DType.uint32](
-                batch + 1
-            )
-            ctx.enqueue_copy(iro_host, iro_dev)
-
-            var cl_lt = cache_lengths.to_layout_tensor()
-            var cl_dev = DeviceBuffer[DType.uint32](
-                ctx, cl_lt.ptr, batch, owning=False
-            )
-            var cl_host = ctx.enqueue_create_host_buffer[DType.uint32](batch)
-            ctx.enqueue_copy(cl_host, cl_dev)
-
-            # Run cu-seqlens are int32 (the CSR/fwd/combine read `Int32`); alloc
-            # before the sync so they fill in the same window.
-            var cuq_h = ctx.enqueue_create_host_buffer[DType.int32](batch + 1)
-            var cuk_h = ctx.enqueue_create_host_buffer[DType.int32](batch + 1)
-            ctx.synchronize()
-
-            var cu_seqlens_q = List[Int32](length=batch + 1, fill=Int32(0))
-            for i in range(batch + 1):
-                cu_seqlens_q[i] = iro_host[i].cast[DType.int32]()
-                cuq_h[i] = cu_seqlens_q[i]
-
-            var cu_seqlens_k = List[Int32](length=batch + 1, fill=Int32(0))
-            for i in range(batch):
-                var seq_len_q = (
-                    iro_host[i + 1].cast[DType.int32]()
-                    - iro_host[i].cast[DType.int32]()
-                )
-                cu_seqlens_k[i + 1] = (
-                    cu_seqlens_k[i] + cl_host[i].cast[DType.int32]() + seq_len_q
-                )
-            for i in range(batch + 1):
-                cuk_h[i] = cu_seqlens_k[i]
-
             var plan = msa_sm100_prefill_plan[
                 output_type=DType.bfloat16,
                 config=config,
                 group=group,
                 topk=topk,
-            ](cu_seqlens_q, cu_seqlens_k, ctx)
+            ](
+                num_rows,
+                Int(total_context_length[0]),
+                batch,
+                Int(kv_collection.max_seq_length),
+                Int(kv_collection.max_cache_length),
+                ctx,
+            )
 
-            var cuq_d = ctx.enqueue_create_buffer[DType.int32](batch + 1)
-            var cuk_d = ctx.enqueue_create_buffer[DType.int32](batch + 1)
-            ctx.enqueue_copy(cuq_d, cuq_h)
-            ctx.enqueue_copy(cuk_d, cuk_h)
+            # bitcast input_row_offsets and cache_row_offsets to int32, then
+            # wrap then in DeviceBuffer.
+            var cuq_d = DeviceBuffer[DType.int32](
+                ctx,
+                input_row_offsets._ptr.bitcast[Int32](),
+                batch + 1,
+                owning=False,
+            )
+            var cuk_d = DeviceBuffer[DType.int32](
+                ctx,
+                cache_row_offsets._ptr.bitcast[Int32](),
+                batch + 1,
+                owning=False,
+            )
 
             msa_sm100_prefill_run[
                 config=config,
