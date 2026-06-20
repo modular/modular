@@ -3563,21 +3563,16 @@ static void processRegisterPassableDecorator(
 ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
                                       ASTDecl &structDecl) {
   auto conformsToTrait = [&](StringRef traitName) {
-    ASTDecl *traitDecl =
-        shared.lookupBuiltinTrait(traitName, structDecl.getLoc());
-    if (!traitDecl)
-      return false;
-    auto trait = dyn_cast_or_null<TraitDeclOp>(traitDecl->getIfOperation());
-    if (!trait)
-      return false;
+    auto [conformanceResult, traitDecl] =
+        ASTType(structOp.bindReference())
+            .checkBuiltinConformance(traitName, structDecl.getLoc(), shared,
+                                     {});
     // Use optimistic conformance check - conditional conformances should still
     // trigger synthesis of the relevant methods (with matching constraints).
     // No caller scope: the struct's own parameter bindings (via concreteType)
     // are sufficient; where-clause assumptions from an enclosing function are
     // not relevant for deciding which methods to synthesize on the struct.
-    return ASTType(structOp.bindReference())
-               .checkConformance(trait.bindReference(), shared, {}) !=
-           ConformanceResult::No;
+    return conformanceResult != ConformanceResult::No;
   };
 
   // Look up the conditional conformance constraint for a specific trait from
