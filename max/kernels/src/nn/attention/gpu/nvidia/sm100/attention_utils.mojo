@@ -28,6 +28,7 @@ from std.sys._assembly import inlined_assembly
 from std.sys.intrinsics import llvm_intrinsic
 from std.bit import prev_power_of_two, pop_count
 from std.gpu.globals import WARP_SIZE
+from std.gpu.primitives.warp import broadcast
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.memory import AddressSpace
 from std.gpu.compute.arch.mma_nvidia_sm100 import (
@@ -729,7 +730,7 @@ struct SM100TensorAccumulator[
 
     # With cta_group > 1, each CTA's SMEM holds MMA_M/cta_group rows (A)
     # and MMA_N/cta_group columns (B).  The K-offset arithmetic in
-    # `build_mma` (SS path) uses these layouts, so BMN must match per-CTA
+    # `_build_mma` (SS path) uses these layouts, so BMN must match per-CTA
     # dimensions to keep addresses within each CTA's SMEM tile.
     #
     # For k_major A the outer-K stride is BMN * swizzle_width; halving BMN
@@ -794,6 +795,7 @@ struct SM100TensorAccumulator[
             32,
             64,
         ), "ws path requires MMA_M in (32, 64)"
+
         comptime if Self.num_stages == 1:
             # Original single-stage behavior
             comptime if Self.a_tmem:
@@ -1009,6 +1011,7 @@ struct SM100TensorAccumulator[
             32,
             64,
         ), "ws path requires MMA_M in (32, 64)"
+
         comptime if Self.a_tmem:
             var a_ = rebind[UInt32](a)
             comptime if Self.use_ws:
@@ -1099,7 +1102,7 @@ struct SM100TensorAccumulator[
                 )
 
 
-def build_mma[
+def _build_mma[
     *, a_tmem: Bool, ws: Bool, partial: Bool
 ](
     kind: String,
@@ -1267,7 +1270,7 @@ def bulk_mma[
 ):
     # Full-tile SS (both operands SMEM descriptors), non-ws contraction.
     comptime assert cta_group in (1, 2)
-    comptime mma_string = build_mma[a_tmem=False, ws=False, partial=False](
+    comptime mma_string = _build_mma[a_tmem=False, ws=False, partial=False](
         String(kind),
         layout_a,
         layout_b,
@@ -1278,7 +1281,7 @@ def bulk_mma[
     )
 
     inlined_assembly[mma_string, NoneType, constraints="r,r,r,r,r,r,r,r,r"](
-        c_tmem, 0, idesc, c_scale, b.lo, b.hi, elect, a.lo, a.hi
+        broadcast(c_tmem), 0, idesc, c_scale, b.lo, b.hi, elect, a.lo, a.hi
     )
 
 
@@ -1301,10 +1304,10 @@ def bulk_mma[
     elect: Int32,
 ):
     # Full-tile TS (A in TMEM, B an SMEM descriptor), non-ws contraction.
-    # `build_mma` ignores `layout_a` for TS, so `layout_b` fills that slot.
+    # `_build_mma` ignores `layout_a` for TS, so `layout_b` fills that slot.
     comptime assert num_k_mmas >= 1 and num_k_mmas <= 16
     comptime assert cta_group in (1, 2)
-    comptime mma_string = build_mma[a_tmem=True, ws=False, partial=False](
+    comptime mma_string = _build_mma[a_tmem=True, ws=False, partial=False](
         String(kind),
         layout_b,
         layout_b,
@@ -1315,7 +1318,7 @@ def bulk_mma[
     )
 
     inlined_assembly[mma_string, NoneType, constraints="r,r,r,r,r,r,r,r"](
-        c_tmem, 0, idesc, c_scale, b.lo, b.hi, elect, a
+        broadcast(c_tmem), 0, idesc, c_scale, b.lo, b.hi, elect, a
     )
 
 
@@ -1349,7 +1352,7 @@ def bulk_mma_partial[
     # (stage-0) bases; the builder applies absolute per-block offsets.
     comptime assert num_k_mmas >= 1 and num_k_mmas <= 16
     comptime assert cta_group in (1, 2)
-    comptime mma_string = build_mma[a_tmem=True, ws=False, partial=True](
+    comptime mma_string = _build_mma[a_tmem=True, ws=False, partial=True](
         String(kind),
         layout_b,
         layout_b,
@@ -1361,7 +1364,7 @@ def bulk_mma_partial[
     )
 
     inlined_assembly[mma_string, NoneType, constraints="r,r,r,r,r,r,r,r,r"](
-        c_tmem, 0, idesc, c_scale, b.lo, b.hi, elect, a, valid_k_mmas
+        broadcast(c_tmem), 0, idesc, c_scale, b.lo, b.hi, elect, a, valid_k_mmas
     )
 
 
@@ -1393,7 +1396,7 @@ def bulk_mma_ss_partial[
     # (stage-0) bases; the builder applies absolute per-block offsets.
     comptime assert num_k_mmas >= 1
     comptime assert cta_group in (1, 2)
-    comptime mma_string = build_mma[a_tmem=False, ws=False, partial=True](
+    comptime mma_string = _build_mma[a_tmem=False, ws=False, partial=True](
         String(kind),
         layout_a,
         layout_b,
@@ -1405,7 +1408,16 @@ def bulk_mma_ss_partial[
     )
 
     inlined_assembly[mma_string, NoneType, constraints="r,r,r,r,r,r,r,r,r,r"](
-        c_tmem, 0, idesc, c_scale, b.lo, b.hi, elect, a.lo, a.hi, valid_k_mmas
+        broadcast(c_tmem),
+        0,
+        idesc,
+        c_scale,
+        b.lo,
+        b.hi,
+        elect,
+        a.lo,
+        a.hi,
+        valid_k_mmas,
     )
 
 
@@ -1441,7 +1453,7 @@ def bulk_mma_ws[
     elect: Int32,
 ):
     # Full-tile SS, warp-specialized. The tile layouts are computed from the
-    # dtype/tile params (`build_mma` takes `Layout` directly).
+    # dtype/tile params (`_build_mma` takes `Layout` directly).
     comptime layout_a = tile_layout_k_major[
         a_dtype, a_BMN, a_BK, a_swizzle
     ]() if a_is_k_major else tile_layout_mn_major[
@@ -1452,7 +1464,7 @@ def bulk_mma_ws[
     ]() if b_is_k_major else tile_layout_mn_major[
         b_dtype, b_BMN, b_BK, b_swizzle
     ]()
-    comptime mma_string = build_mma[a_tmem=False, ws=True, partial=False](
+    comptime mma_string = _build_mma[a_tmem=False, ws=True, partial=False](
         String(kind),
         layout_a,
         layout_b,
@@ -1463,7 +1475,7 @@ def bulk_mma_ws[
     )
 
     inlined_assembly[mma_string, NoneType, constraints="r,r,r,r,r,r,r,r,r"](
-        c_tmem, 0, idesc, c_scale, b.lo, b.hi, elect, a.lo, a.hi
+        broadcast(c_tmem), 0, idesc, c_scale, b.lo, b.hi, elect, a.lo, a.hi
     )
 
 
@@ -1491,7 +1503,7 @@ def bulk_mma_ws_ts[
     c_scale: UInt32,
     elect: Int32,
 ):
-    # Full-tile TS, warp-specialized. `a` is a single TMEM base ($7); `build_mma`
+    # Full-tile TS, warp-specialized. `a` is a single TMEM base ($7); `_build_mma`
     # computes each k-tile's column offset in-PTX (`add.s32 %ra, $7, k*stride`),
     # so the old per-tile operand ladder is gone.
     comptime assert num_k_mmas >= 1 and num_k_mmas <= 16
@@ -1500,7 +1512,7 @@ def bulk_mma_ws_ts[
     ]() if b_is_k_major else tile_layout_mn_major[
         b_dtype, b_BMN, b_BK, b_swizzle
     ]()
-    comptime mma_string = build_mma[a_tmem=True, ws=True, partial=False](
+    comptime mma_string = _build_mma[a_tmem=True, ws=True, partial=False](
         String(kind),
         layout_b,
         layout_b,
@@ -1511,7 +1523,7 @@ def bulk_mma_ws_ts[
     )
 
     inlined_assembly[mma_string, NoneType, constraints="r,r,r,r,r,r,r,r"](
-        c_tmem, 0, idesc, c_scale, b.lo, b.hi, elect, a
+        broadcast(c_tmem), 0, idesc, c_scale, b.lo, b.hi, elect, a
     )
 
 
@@ -1561,7 +1573,7 @@ def bulk_mma_ws_partial[
     ]() if b_is_k_major else tile_layout_mn_major[
         b_dtype, b_BMN, b_BK, b_swizzle
     ]()
-    comptime mma_string = build_mma[a_tmem=False, ws=True, partial=True](
+    comptime mma_string = _build_mma[a_tmem=False, ws=True, partial=True](
         String(kind),
         layout_a,
         layout_b,
@@ -1573,7 +1585,16 @@ def bulk_mma_ws_partial[
     )
 
     inlined_assembly[mma_string, NoneType, constraints="r,r,r,r,r,r,r,r,r,r"](
-        c_tmem, 0, idesc, c_scale, b.lo, b.hi, elect, a.lo, a.hi, valid_k_mmas
+        broadcast(c_tmem),
+        0,
+        idesc,
+        c_scale,
+        b.lo,
+        b.hi,
+        elect,
+        a.lo,
+        a.hi,
+        valid_k_mmas,
     )
 
 
@@ -1601,7 +1622,7 @@ def bulk_mma_ws_ts_partial[
     valid_k_mmas: UInt32,
 ):
     # P@V contraction for a partially-loaded last KV tile, TS warp-specialized.
-    # `a` is the un-offset (stage-0) TMEM base ($7); `build_mma` computes each
+    # `a` is the un-offset (stage-0) TMEM base ($7); `_build_mma` computes each
     # block's ABSOLUTE column offset (`a_stride * (k_start + k)`) in-PTX, so the
     # old per-tile operand ladder is gone. `valid_k_mmas` rides $8 (A uses only
     # $7) and gates each block via a `%pv` guard kept SEPARATE from `elect` (no
@@ -1612,7 +1633,7 @@ def bulk_mma_ws_ts_partial[
     ]() if b_is_k_major else tile_layout_mn_major[
         b_dtype, b_BMN, b_BK, b_swizzle
     ]()
-    comptime mma_string = build_mma[a_tmem=True, ws=True, partial=True](
+    comptime mma_string = _build_mma[a_tmem=True, ws=True, partial=True](
         String(kind),
         layout_b,
         layout_b,
@@ -1624,7 +1645,7 @@ def bulk_mma_ws_ts_partial[
     )
 
     inlined_assembly[mma_string, NoneType, constraints="r,r,r,r,r,r,r,r,r"](
-        c_tmem, 0, idesc, c_scale, b.lo, b.hi, elect, a, valid_k_mmas
+        broadcast(c_tmem), 0, idesc, c_scale, b.lo, b.hi, elect, a, valid_k_mmas
     )
 
 
