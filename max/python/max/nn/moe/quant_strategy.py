@@ -506,8 +506,16 @@ class Nvfp4DequantStrategy:
 
         hidden, _, expert_start, _, expert_ids, usage_stats = expert_inputs
 
+        # Replace GPU usage stats with a dummy CPU constant rather than copying
+        # them back: the host transfer would force a device sync on the decode
+        # hot path, and grouped_matmul_ragged does not need accurate stats here
+        # (same approach as the native NvMxf4f8Strategy path above).
         if usage_stats.device.is_gpu():
-            usage_stats = usage_stats.to(DeviceRef.CPU())
+            usage_stats = ops.constant(
+                [8192, int(expert_ids.shape[0])],
+                dtype=DType.uint32,
+                device=DeviceRef.CPU(),
+            )
 
         # Pre-multiply the per-tensor scale into the block scales:
         # [E, 1, 1] * [E, N, K//16] -> float32 [E, N, K//16].
