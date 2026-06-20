@@ -28,6 +28,10 @@ This version is still a work in progress.
 
 ### Inference server
 
+- Constrained decoding (structured output) now unpacks the grammar bitmask on
+  the GPU. The packed `int32` bitmask is transferred to device as-is and
+  unpacked and applied to the logits in a single fused kernel
+  (`apply_packed_bitmask`), instead of unpacking to a `bool` tensor on the CPU.
 - Fixed image requests failing with a 400 or 500 across all vision models. Two
   bugs in the shared image-resolution layer: `data:` URIs with unpadded or
   URL-safe base64 (sent routinely by clients and relays) were rejected by the

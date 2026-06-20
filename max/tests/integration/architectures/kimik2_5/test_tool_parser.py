@@ -1200,6 +1200,20 @@ def test_parser_handles_json_content_when_no_tool_calls() -> None:
     assert result.content == json_response
 
 
+def _unpack_bitmask(packed: np.ndarray, vocab_size: int) -> np.ndarray:
+    """Unpack a packed int32 bitmask ``[..., ceil(vocab/32)]`` to bool
+    ``[..., vocab]`` so tests can index by token id and use ``.all()`` to mean
+    "fully unconstrained".
+
+    Mirrors the GPU ``apply_packed_bitmask`` layout: bit ``t`` lives in word
+    ``t >> 5`` at position ``t & 31``.
+    """
+    masks = np.int32(1) << np.arange(32, dtype=np.int32)
+    bits = (packed[..., np.newaxis] & masks) != 0
+    bits = bits.reshape(*packed.shape[:-1], -1)
+    return bits[..., :vocab_size]
+
+
 def test_sync_fill_constrains_name_only_after_section_consumed(
     ll_tokenizer: LLTokenizer,
     mock_tokenizer: PipelineTokenizer[Any, Any, Any],
@@ -1240,7 +1254,10 @@ def test_sync_fill_constrains_name_only_after_section_consumed(
 
     # Stale FSM: section opener not yet consumed -> the name slot (slot 0) is
     # left fully unconstrained, so the model could sample any name.
-    stale = helper.compute_speculative_bitmasks([ctx], drafts, num_positions)
+    stale = _unpack_bitmask(
+        helper.compute_speculative_bitmasks([ctx], drafts, num_positions),
+        _MinimalTokenizer._N_VOCAB,
+    )
     assert stale[0, 0].all()
 
     # Advance the FSM through the section/call/"functions." prefix, exactly as
@@ -1253,7 +1270,10 @@ def test_sync_fill_constrains_name_only_after_section_consumed(
 
     # Current FSM: the name slot is now constrained to the menu. The first
     # byte of "get_weather" is allowed; a byte no menu name starts with is not.
-    current = helper.compute_speculative_bitmasks([ctx], drafts, num_positions)
+    current = _unpack_bitmask(
+        helper.compute_speculative_bitmasks([ctx], drafts, num_positions),
+        _MinimalTokenizer._N_VOCAB,
+    )
     assert not current[0, 0].all()
     assert current[0, 0, ord("g")]  # tool: get_weather
     assert not current[0, 0, ord("z")]
@@ -1301,13 +1321,19 @@ def test_sync_fill_with_placeholder_drafts_leaves_bonus_slot_unconstrained(
     # Placeholder draft (what the sync path actually has): the fill breaks at
     # the invalid placeholder, leaving the bonus slot unconstrained.
     magic = np.full((1, 1), MAGIC_DRAFT_TOKEN_ID, dtype=np.int64)
-    bad = helper.compute_speculative_bitmasks([ctx], magic, num_positions)
+    bad = _unpack_bitmask(
+        helper.compute_speculative_bitmasks([ctx], magic, num_positions),
+        _MinimalTokenizer._N_VOCAB,
+    )
     assert not bad[0, 0].all()  # slot 0 still constrained
     assert bad[0, 1].all()  # bonus slot UNCONSTRAINED -- the bug
 
     # Real draft (what adopt / gather provides): the bonus slot is constrained.
     real = np.array([[ord("g")]], dtype=np.int64)  # first byte of get_weather
-    good = helper.compute_speculative_bitmasks([ctx], real, num_positions)
+    good = _unpack_bitmask(
+        helper.compute_speculative_bitmasks([ctx], real, num_positions),
+        _MinimalTokenizer._N_VOCAB,
+    )
     assert not good[0, 1].all()  # bonus slot constrained
     assert good[0, 1, ord("e")]  # "get_weather" continues with 'e'
     assert not good[0, 1, ord("z")]  # an out-of-name byte is forbidden
@@ -1385,8 +1411,11 @@ def test_spec_decode_walk_preserves_matcher_state_across_structural_tag(
     assert ctx.grammar_enforced, f"[{label}] enforcement should be on"
 
     # Sanity: the structural tag is legal at the current (pre-walk) state.
-    pre = helper.compute_speculative_bitmasks(
-        [ctx], np.zeros((1, 0), dtype=np.int64), 1
+    pre = _unpack_bitmask(
+        helper.compute_speculative_bitmasks(
+            [ctx], np.zeros((1, 0), dtype=np.int64), 1
+        ),
+        _MinimalTokenizer._N_VOCAB,
     )
     assert pre[0, 0, structural_tag], (
         f"[{label}] structural tag {structural_tag} not legal pre-walk"

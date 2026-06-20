@@ -6467,6 +6467,81 @@ def scatter_set_constant(
     )
 
 
+def apply_packed_bitmask(
+    logits: TensorValueLike,
+    packed: TensorValueLike,
+    fill_val: float = -10000.0,
+) -> TensorValue:
+    """Masks logits with a packed-int32 grammar bitmask in one fused GPU pass.
+
+    Unpacks a packed bitmask (1 bit per token, 32 tokens per ``int32`` word) and
+    applies it to ``logits`` without materializing an intermediate bool tensor:
+    a token is kept when its bit is set, otherwise its logit is replaced with
+    ``fill_val``.
+
+    Args:
+        logits: Logits tensor of shape ``[batch, vocab]`` or
+            ``[batch, num_positions, vocab]``.
+        packed: Packed ``int32`` bitmask of shape ``[..., ceil(vocab / 32)]``
+            with leading dims matching ``logits``. A set bit means the token is
+            grammar-valid. Trailing 32-bit alignment padding beyond ``vocab`` is
+            never read.
+        fill_val: Value written for masked-out (grammar-invalid) tokens.
+
+    Returns:
+        Masked logits, same shape and dtype as ``logits``.
+    """
+    logits = TensorValue(logits)
+    packed = TensorValue(packed)
+
+    if packed.dtype != DType.int32:
+        raise ValueError(
+            f"apply_packed_bitmask requires an int32 bitmask, got {packed.dtype}"
+        )
+    if logits.rank != packed.rank:
+        raise ValueError(
+            "apply_packed_bitmask requires logits and packed bitmask of equal "
+            f"rank, got {logits.rank} and {packed.rank}"
+        )
+    if logits.rank not in (2, 3):
+        raise ValueError(
+            f"apply_packed_bitmask requires 2d or 3d logits, got {logits.rank}"
+        )
+
+    # The kernel is rank-2 ([rows, vocab]); collapse any leading dims into a
+    # single row dimension so a [batch, num_positions, vocab] acceptance-sampler
+    # tensor and a [batch, vocab] token-sampler tensor share one code path.
+    orig_shape = logits.shape
+    if logits.rank == 3:
+        rows = logits.shape[0] * logits.shape[1]
+        logits_2d = ops.reshape(logits, [rows, logits.shape[2]])
+        packed_2d = ops.reshape(packed, [rows, packed.shape[2]])
+    else:
+        logits_2d = logits
+        packed_2d = packed
+
+    masked = ops.custom(
+        "mo.apply_packed_bitmask",
+        device=logits.device,
+        values=[
+            logits_2d,
+            packed_2d,
+            ops.constant(fill_val, logits.dtype, device=DeviceRef.CPU()),
+        ],
+        out_types=[
+            TensorType(
+                dtype=logits.dtype,
+                shape=logits_2d.shape,
+                device=logits.device,
+            )
+        ],
+    )[0].tensor
+
+    if logits.rank == 3:
+        return ops.reshape(masked, orig_shape)
+    return masked
+
+
 def scatter_nd_skip_oob_indices(
     input: TensorValueLike,
     updates: TensorValueLike,

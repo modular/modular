@@ -34,6 +34,7 @@ from max.pipelines.sampling import (
     build_stochastic_acceptance_sampler_graph,
     build_synthetic_acceptance_sampler_graph,
 )
+from max.support.math import ceildiv
 
 
 def _seed_buffer(value: int, device: Device | None = None) -> Buffer:
@@ -41,6 +42,27 @@ def _seed_buffer(value: int, device: Device | None = None) -> Buffer:
     if device is not None:
         buf = buf.to(device)
     return buf
+
+
+def _pack_bitmask(mask: npt.NDArray[np.bool_]) -> npt.NDArray[np.int32]:
+    """Pack a bool bitmask ``[..., vocab]`` into int32 words ``[..., ceil(vocab/32)]``.
+
+    Bit ``v`` lives in word ``v // 32`` at bit position ``v % 32`` -- the packed
+    layout ``apply_packed_bitmask`` consumes. Padding bits past ``vocab`` stay
+    zero; the kernel never reads them.
+    """
+    mask = np.asarray(mask, dtype=bool)
+    *lead, vocab = mask.shape
+    packed_vocab = ceildiv(vocab, 32)
+    pad = packed_vocab * 32 - vocab
+    if pad:
+        mask = np.concatenate(
+            [mask, np.zeros((*lead, pad), dtype=bool)], axis=-1
+        )
+    bits = mask.reshape(*lead, packed_vocab, 32).astype(np.uint32)
+    weights = np.uint32(1) << np.arange(32, dtype=np.uint32)
+    words = (bits * weights).sum(axis=-1, dtype=np.uint64).astype(np.uint32)
+    return words.view(np.int32)
 
 
 # NOTE THAT ONLY RANK 2 TENSORS
@@ -664,85 +686,6 @@ def test_relaxed_acceptance_rejects_out_of_top_n() -> None:
 # Bitmask-constrained acceptance sampling tests.
 
 
-def test_apply_grammar_mask_masks_invalid_tokens() -> None:
-    """Tests that apply_grammar_mask correctly masks logits where bitmask is False."""
-    device = Accelerator()
-    session = InferenceSession(devices=[device])
-    device_ref = DeviceRef.from_device(device)
-
-    from max.nn.sampling.rejection_sampler import (
-        _MASKED_LOGIT_VALUE,
-        apply_grammar_mask,
-    )
-
-    batch_size = 2
-    num_positions = 3
-    vocab_size = 5
-
-    input_types = [
-        TensorType(
-            DType.float32,
-            [batch_size, num_positions, vocab_size],
-            device=device_ref,
-        ),
-        TensorType(
-            DType.bool,
-            [batch_size, num_positions, vocab_size],
-            device=device_ref,
-        ),
-    ]
-    with Graph("test_apply_grammar_mask", input_types=input_types) as graph:
-        logits_in, bitmask_in = graph.inputs
-        masked_logits = apply_grammar_mask(logits_in.tensor, bitmask_in.tensor)
-        graph.output(masked_logits)
-
-    model = session.load(graph)
-
-    # Create test logits with known values
-    logits_np = np.array(
-        [
-            [
-                [1.0, 2.0, 3.0, 4.0, 5.0],
-                [2.0, 3.0, 4.0, 5.0, 6.0],
-                [3.0, 4.0, 5.0, 6.0, 7.0],
-            ],
-            [
-                [5.0, 4.0, 3.0, 2.0, 1.0],
-                [6.0, 5.0, 4.0, 3.0, 2.0],
-                [7.0, 6.0, 5.0, 4.0, 3.0],
-            ],
-        ],
-        dtype=np.float32,
-    )
-
-    # Create bitmask: True where token is valid, False where it should be masked
-    # Batch 0: allow tokens 0, 2, 4 at all positions
-    # Batch 1: allow tokens 1, 3 at all positions
-    bitmask_np = np.zeros((batch_size, num_positions, vocab_size), dtype=bool)
-    bitmask_np[0, :, [0, 2, 4]] = True
-    bitmask_np[1, :, [1, 3]] = True
-
-    result = model.execute(
-        Buffer.from_numpy(logits_np).to(device),
-        Buffer.from_numpy(bitmask_np).to(device),
-    )
-    result_np = cast(Buffer, result[0]).to_numpy()
-
-    # Check that allowed tokens retain their original values
-    np.testing.assert_allclose(result_np[0, :, 0], logits_np[0, :, 0])
-    np.testing.assert_allclose(result_np[0, :, 2], logits_np[0, :, 2])
-    np.testing.assert_allclose(result_np[0, :, 4], logits_np[0, :, 4])
-    np.testing.assert_allclose(result_np[1, :, 1], logits_np[1, :, 1])
-    np.testing.assert_allclose(result_np[1, :, 3], logits_np[1, :, 3])
-
-    # Check that masked tokens have the masked logit value
-    np.testing.assert_allclose(result_np[0, :, 1], _MASKED_LOGIT_VALUE)
-    np.testing.assert_allclose(result_np[0, :, 3], _MASKED_LOGIT_VALUE)
-    np.testing.assert_allclose(result_np[1, :, 0], _MASKED_LOGIT_VALUE)
-    np.testing.assert_allclose(result_np[1, :, 2], _MASKED_LOGIT_VALUE)
-    np.testing.assert_allclose(result_np[1, :, 4], _MASKED_LOGIT_VALUE)
-
-
 def test_stochastic_acceptance_sampler_with_bitmask_rejects_invalid_draft() -> (
     None
 ):
@@ -771,8 +714,8 @@ def test_stochastic_acceptance_sampler_with_bitmask_rejects_invalid_draft() -> (
         TensorType(DType.float32, ["batch_size"], device=device_ref),
         TensorType(DType.float32, [], device=DeviceRef.CPU()),
         TensorType(
-            DType.bool,
-            ["batch_size", "num_bitmask_positions", "vocab_size"],
+            DType.int32,
+            ["batch_size", "num_bitmask_positions", "packed_vocab_size"],
             device=device_ref,
         ),
     ]
@@ -826,7 +769,7 @@ def test_stochastic_acceptance_sampler_with_bitmask_rejects_invalid_draft() -> (
         Buffer.from_numpy(np.array(vocab_size, dtype=np.int64)),
         Buffer.from_numpy(np.ones(batch_size, dtype=np.float32)).to(device),
         Buffer.from_numpy(np.array(1.0, dtype=np.float32)),
-        Buffer.from_numpy(bitmask_np).to(device),
+        Buffer.from_numpy(_pack_bitmask(bitmask_np)).to(device),
     )
 
     first_rejected_np = cast(Buffer, result[0]).to_numpy()
@@ -867,8 +810,8 @@ def test_stochastic_acceptance_sampler_bitmask_constrains_recovered_tokens() -> 
         TensorType(DType.float32, ["batch_size"], device=device_ref),
         TensorType(DType.float32, [], device=DeviceRef.CPU()),
         TensorType(
-            DType.bool,
-            ["batch_size", "num_bitmask_positions", "vocab_size"],
+            DType.int32,
+            ["batch_size", "num_bitmask_positions", "packed_vocab_size"],
             device=device_ref,
         ),
     ]
@@ -926,7 +869,7 @@ def test_stochastic_acceptance_sampler_bitmask_constrains_recovered_tokens() -> 
         Buffer.from_numpy(np.array(vocab_size, dtype=np.int64)),
         Buffer.from_numpy(np.ones(batch_size, dtype=np.float32)).to(device),
         Buffer.from_numpy(np.array(1.0, dtype=np.float32)),
-        Buffer.from_numpy(bitmask_np).to(device),
+        Buffer.from_numpy(_pack_bitmask(bitmask_np)).to(device),
     )
 
     recovered_np = cast(Buffer, result[1]).to_numpy()
@@ -966,8 +909,8 @@ def test_stochastic_acceptance_sampler_bitmask_constrains_bonus_token() -> None:
         TensorType(DType.float32, ["batch_size"], device=device_ref),
         TensorType(DType.float32, [], device=DeviceRef.CPU()),
         TensorType(
-            DType.bool,
-            ["batch_size", "num_bitmask_positions", "vocab_size"],
+            DType.int32,
+            ["batch_size", "num_bitmask_positions", "packed_vocab_size"],
             device=device_ref,
         ),
     ]
@@ -1031,7 +974,7 @@ def test_stochastic_acceptance_sampler_bitmask_constrains_bonus_token() -> None:
         Buffer.from_numpy(np.array(vocab_size, dtype=np.int64)),
         Buffer.from_numpy(np.ones(batch_size, dtype=np.float32)).to(device),
         Buffer.from_numpy(np.array(1.0, dtype=np.float32)),
-        Buffer.from_numpy(bitmask_np).to(device),
+        Buffer.from_numpy(_pack_bitmask(bitmask_np)).to(device),
     )
 
     bonus_np = cast(Buffer, result[2]).to_numpy()
@@ -1101,8 +1044,8 @@ def test_stochastic_acceptance_sampler_all_true_bitmask_unchanged_behavior() -> 
     # Build graph WITH all-True bitmask
     input_types_with_mask = input_types_no_mask + [
         TensorType(
-            DType.bool,
-            ["batch_size", "num_bitmask_positions", "vocab_size"],
+            DType.int32,
+            ["batch_size", "num_bitmask_positions", "packed_vocab_size"],
             device=device_ref,
         ),
     ]
@@ -1160,7 +1103,8 @@ def test_stochastic_acceptance_sampler_all_true_bitmask_unchanged_behavior() -> 
 
     result_no_mask = model_no_mask.execute(*common_inputs)
     result_with_mask = model_with_mask.execute(
-        *common_inputs, Buffer.from_numpy(all_true_bitmask).to(device)
+        *common_inputs,
+        Buffer.from_numpy(_pack_bitmask(all_true_bitmask)).to(device),
     )
 
     # Results should be identical with same seed

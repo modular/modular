@@ -147,17 +147,29 @@ def build_spec_decode_input_types(
         )
 
     if spec.enable_structured_output:
+        # Packed int32 bitmask (1 bit per token, 32 tokens per word): the GPU
+        # acceptance sampler unpacks and applies it in one fused pass
+        # (apply_packed_bitmask), so the host never unpacks to bool and the
+        # in-graph H2D moves 8x less data.
         all_input_types.extend(
             [
                 TensorType(
-                    DType.bool,
-                    shape=["batch_size", "num_bitmask_positions", "vocab_size"],
+                    DType.int32,
+                    shape=[
+                        "batch_size",
+                        "num_bitmask_positions",
+                        "packed_vocab_size",
+                    ],
                     device=DeviceRef.CPU(),
                 ),
                 BufferType(DType.int64, shape=[2], device=DeviceRef.CPU()),
                 BufferType(
-                    DType.bool,
-                    shape=["batch_size", "num_bitmask_positions", "vocab_size"],
+                    DType.int32,
+                    shape=[
+                        "batch_size",
+                        "num_bitmask_positions",
+                        "packed_vocab_size",
+                    ],
                     device=device_ref,
                 ),
             ]

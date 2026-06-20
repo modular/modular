@@ -43,6 +43,7 @@ from max.pipelines.lib.tool_parsing import (
 from max.pipelines.lib.utils import upper_bounded_default
 from max.pipelines.modeling.types import RequestID
 from max.profiler import Tracer, traced
+from max.support.math import ceildiv
 from transformers import (
     AutoConfig,
     PreTrainedTokenizerBase,
@@ -1028,7 +1029,7 @@ class StructuredOutputHelper:
         context_batch: list[TextGenerationContextType],
         draft_tokens: npt.NDArray[np.int64],
         num_positions: int,
-    ) -> npt.NDArray[np.bool_]:
+    ) -> npt.NDArray[np.int32]:
         """Compute speculative bitmasks for structured output in spec decode.
 
         For each draft position i, the bitmask at position i contains valid
@@ -1038,18 +1039,25 @@ class StructuredOutputHelper:
         This method speculatively advances the FSM through draft tokens to
         compute bitmasks, then rolls back to restore the original state.
 
+        The bitmask is returned packed (1 bit per token, 32 tokens per int32
+        word); the GPU acceptance sampler unpacks and applies it in one fused
+        pass, so this method never unpacks to bool.
+
         Args:
             context_batch: List of generation contexts.
             draft_tokens: Draft tokens to verify, shape [batch, K].
             num_positions: Number of bitmask positions (K + 1, including bonus).
 
         Returns:
-            Boolean bitmask array of shape [batch_size, num_positions, vocab_size].
+            Packed int32 bitmask array of shape
+            ``[batch_size, num_positions, ceil(vocab_size / 32)]``. ``-1`` (all
+            bits set) means all tokens are valid.
         """
         if self.vocab_size is None:
             raise ValueError("vocab_size must be set for speculative bitmasks")
 
         batch_size = len(context_batch)
+        packed_vocab_size = ceildiv(self.vocab_size, 32)
 
         # Check if any context has structured output
         has_structured_output = any(
@@ -1060,9 +1068,12 @@ class StructuredOutputHelper:
         )
 
         if not has_structured_output:
-            # Fast path: all unconstrained, return all-True bitmask
-            return np.ones(
-                (batch_size, num_positions, self.vocab_size), dtype=np.bool_
+            # Fast path: all unconstrained, return all-valid packed bitmask
+            # (-1 = all bits set).
+            return np.full(
+                (batch_size, num_positions, packed_vocab_size),
+                -1,
+                dtype=np.int32,
             )
 
         # Allocate packed bitmask (int32) for llguidance
@@ -1105,10 +1116,6 @@ class StructuredOutputHelper:
                     drafts=draft_tokens[ctx_idx],
                     bitmask_window=packed_bitmask[ctx_idx],
                 )
-        # Unpack packed int32 bitmask to bool using vectorized bitwise ops.
-        bits = 2 ** np.arange(32, dtype=np.int32)
-        # Shape: [batch, num_positions, packed_vocab, 32]
-        unpacked = (packed_bitmask[..., np.newaxis] & bits) != 0
-        # Reshape to [batch, num_positions, packed_vocab * 32] and slice
-        unpacked = unpacked.reshape(batch_size, num_positions, -1)
-        return unpacked[:, :, : self.vocab_size].astype(np.bool_)
+        # Return the packed int32 bitmask directly; the GPU acceptance sampler
+        # unpacks and applies it in a single fused pass.
+        return packed_bitmask

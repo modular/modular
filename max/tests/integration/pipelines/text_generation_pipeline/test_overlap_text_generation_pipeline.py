@@ -50,6 +50,7 @@ from max.pipelines.modeling.types import (
     RequestID,
     TextGenerationInputs,
 )
+from max.support.math import ceildiv
 
 
 @pytest.mark.parametrize(
@@ -912,10 +913,9 @@ class TestBuildBitmaskCallback:
         num_acc_np = np.zeros(1, dtype=np.int64)
         draft_np = np.zeros((1, 2), dtype=np.int64)
         next_draft_np = np.zeros((1, 2), dtype=np.int64)
+        # Packed int32 bitmask the callback writes straight into; the GPU
+        # acceptance sampler unpacks and applies it, so there is no bool target.
         bitmask_np = np.full((1, 3, 2), -1, dtype=np.int32)
-        # Bool unpacked output target — populated by the callback after the
-        # int32 advance_fsm_and_compute_bitmasks call returns.
-        overlap_bool_np = np.zeros((1, 3, 64), dtype=np.bool_)
 
         done_event = threading.Event()
         callback = pipeline._build_bitmask_callback(
@@ -924,8 +924,7 @@ class TestBuildBitmaskCallback:
             num_accepted_np=num_acc_np,
             accepted_draft_tokens_np=draft_np,
             next_draft_tokens_np=next_draft_np,
-            bitmask_pinned_np=bitmask_np,
-            overlap_bool_pinned_np=overlap_bool_np,
+            overlap_pinned_np=bitmask_np,
             done_event=done_event,
         )
 
@@ -959,8 +958,7 @@ class TestBuildBitmaskCallback:
             num_accepted_np=np.array([], dtype=np.int64),
             accepted_draft_tokens_np=np.zeros((0, 0), dtype=np.int64),
             next_draft_tokens_np=np.zeros((0, 0), dtype=np.int64),
-            bitmask_pinned_np=np.zeros((0, 0, 0), dtype=np.int32),
-            overlap_bool_pinned_np=np.zeros((0, 0, 0), dtype=np.bool_),
+            overlap_pinned_np=np.zeros((0, 0, 0), dtype=np.int32),
             done_event=done_event,
         )
 
@@ -1023,7 +1021,6 @@ class TestEnqueueAsyncBitmaskCallback:
         # All persistent pinned buffers present so the prefill-only short-circuit
         # is the one that fires (not the buffer-missing one).
         for name in (
-            "persistent_bitmask_pinned",
             "persistent_bonus_tokens_pinned",
             "persistent_num_accepted_pinned",
             "persistent_accepted_draft_tokens_pinned",
@@ -1052,18 +1049,11 @@ class TestEnqueueAsyncBitmaskCallback:
         batch_size = 1
         num_draft = 2
         num_positions = num_draft + 1
-        packed_vocab = 4
         vocab_size = 64
 
         mock_spec_state = MagicMock()
         # Configure each persistent pinned buffer so `to_numpy()` returns a
         # writable numpy array of the right shape/dtype.
-        bitmask_pinned = MagicMock()
-        bitmask_pinned.to_numpy.return_value = np.full(
-            (batch_size, num_positions, packed_vocab),
-            -1,
-            dtype=np.int32,
-        )
         bonus_tokens_pinned = MagicMock()
         bonus_tokens_pinned.to_numpy.return_value = np.array(
             [5], dtype=np.int64
@@ -1079,7 +1069,6 @@ class TestEnqueueAsyncBitmaskCallback:
             (batch_size, num_draft), dtype=np.int64
         )
 
-        mock_spec_state.persistent_bitmask_pinned = bitmask_pinned
         mock_spec_state.persistent_bonus_tokens_pinned = bonus_tokens_pinned
         mock_spec_state.persistent_num_accepted_pinned = num_accepted_pinned
         mock_spec_state.persistent_accepted_draft_tokens_pinned = (
@@ -1150,16 +1139,9 @@ class TestEnqueueAsyncBitmaskCallback:
         batch_size = 3
         num_draft = 2
         num_positions = num_draft + 1
-        packed_vocab = 4
         vocab_size = 64
 
         mock_spec_state = MagicMock()
-        bitmask_pinned = MagicMock()
-        bitmask_pinned.to_numpy.return_value = np.full(
-            (batch_size, num_positions, packed_vocab),
-            -1,
-            dtype=np.int32,
-        )
         bonus_tokens_pinned = MagicMock()
         bonus_tokens_pinned.to_numpy.return_value = np.zeros(
             batch_size, dtype=np.int64
@@ -1177,7 +1159,6 @@ class TestEnqueueAsyncBitmaskCallback:
             (batch_size, num_draft), dtype=np.int64
         )
 
-        mock_spec_state.persistent_bitmask_pinned = bitmask_pinned
         mock_spec_state.persistent_bonus_tokens_pinned = bonus_tokens_pinned
         mock_spec_state.persistent_num_accepted_pinned = num_accepted_pinned
         mock_spec_state.persistent_accepted_draft_tokens_pinned = (
@@ -1491,6 +1472,7 @@ class TestAssignBitmaskInputs:
     """
 
     _VOCAB = 64
+    _PACKED_VOCAB = ceildiv(_VOCAB, 32)  # packed int32 words (1 bit per token)
     _MAX_BATCH = 4
     _K = 2  # num speculative tokens (matches num_draft_tokens_to_verify)
     _NUM_POS = _K + 1
@@ -1545,10 +1527,13 @@ class TestAssignBitmaskInputs:
         mock_structured_output = MagicMock()
         mock_structured_output.enabled = True
         # The synchronous fill is called only for the rows the callback did not
-        # cover; return a bool array sized to whatever subset it receives.
+        # cover; return a packed int32 array (-1 = all bits set = all valid)
+        # sized to whatever subset it receives.
         mock_structured_output.compute_speculative_bitmasks.side_effect = (
-            lambda context_batch, draft_tokens, num_positions: np.ones(
-                (len(context_batch), num_positions, cls._VOCAB), dtype=np.bool_
+            lambda context_batch, draft_tokens, num_positions: np.full(
+                (len(context_batch), num_positions, cls._PACKED_VOCAB),
+                -1,
+                dtype=np.int32,
             )
         )
         pipeline._structured_output = mock_structured_output
@@ -1556,10 +1541,11 @@ class TestAssignBitmaskInputs:
         mock_overlap_state = MagicMock()
         mock_overlap_state.num_positions = cls._NUM_POS
         mock_overlap_state.vocab_size = cls._VOCAB
+        mock_overlap_state.packed_vocab_size = cls._PACKED_VOCAB
         mock_overlap_state.max_batch_size = cls._MAX_BATCH
-        # Real array so gather can copy callback rows out of pinned.
+        # Real packed int32 array so gather can copy callback rows out of pinned.
         mock_overlap_state.pinned_bitmask.to_numpy.return_value = np.zeros(
-            (cls._MAX_BATCH, cls._NUM_POS, cls._VOCAB), dtype=np.bool_
+            (cls._MAX_BATCH, cls._NUM_POS, cls._PACKED_VOCAB), dtype=np.int32
         )
         # Sentinels so the assertion on ``model_inputs.*`` can compare
         # by identity.
