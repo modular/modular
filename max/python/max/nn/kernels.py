@@ -5665,12 +5665,31 @@ def nvfp4_dequant(
     return result
 
 
+def _nvidia_sm_version() -> int | None:
+    """Returns the NVIDIA SM compute capability as an int (``sm_89`` -> 89).
+
+    Returns None when the accelerator is not an NVIDIA GPU (AMD, Apple) or the
+    architecture name cannot be queried. Any non-digit suffix is stripped, so
+    arch-variant names like ``sm_90a`` parse to 90.
+    """
+    try:
+        arch = accelerator_architecture_name()
+    except Exception:
+        return None
+    if not arch.startswith("sm_"):
+        return None
+    digits = ""
+    for ch in arch[len("sm_") :]:
+        if not ch.isdigit():
+            break
+        digits += ch
+    return int(digits) if digits else None
+
+
 def _is_sm10x_gpu() -> bool:
     """Checks if the current accelerator is NVIDIA SM100+ (Blackwell)."""
-    try:
-        return accelerator_architecture_name().startswith("sm_10")
-    except Exception:
-        return False
+    sm = _nvidia_sm_version()
+    return sm is not None and sm >= 100
 
 
 def _is_pre_sm100_nvidia_gpu() -> bool:
@@ -5678,13 +5697,12 @@ def _is_pre_sm100_nvidia_gpu() -> bool:
 
     Deliberately False on AMD and Apple GPUs: the NVFP4 dequant fallback is
     only validated on NVIDIA, so other vendors keep their previous behavior
-    (erroring at the Blackwell-only kernels).
+    (erroring at the Blackwell-only kernels). A numeric compare (not a string
+    prefix) keeps future archs like ``sm_120`` on the native SM100+ path
+    instead of misclassifying them as pre-Blackwell.
     """
-    try:
-        arch = accelerator_architecture_name()
-    except Exception:
-        return False
-    return arch.startswith("sm_") and not arch.startswith("sm_10")
+    sm = _nvidia_sm_version()
+    return sm is not None and sm < 100
 
 
 def quantize_dynamic_block_scaled(
