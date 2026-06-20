@@ -12,9 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.sys.info import _current_target, simd_width_of
+from std.math import ceildiv
 from std.math.uutils import udivmod
 
 from std.algorithm.functional import elementwise, unswitch
+from std.gpu import global_idx
 from std.gpu.host import DeviceContext, get_gpu_target
 from std.gpu.host.info import is_cpu, is_gpu
 from std.collections import Optional, OptionalReg
@@ -36,6 +38,7 @@ from layout import (
     RowMajorLayout,
     RuntimeLayout,
     TileTensor,
+    TensorLayout,
     UNKNOWN_VALUE,
     coord_to_index_list,
     lt_to_tt,
@@ -3482,6 +3485,84 @@ def generic_flare_mla_prefill_ragged_paged_plan[
             buffer_token_size,
             cuda_ctx,
         )
+
+
+@always_inline
+def kv_cache_row_offsets_ragged_paged[
+    target: StaticString,
+](
+    cache_row_offsets: TileTensor[
+        mut=True, DType.uint32, address_space=AddressSpace.GENERIC, ...
+    ],
+    input_row_offsets: TileTensor[
+        mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
+    ],
+    cache_lengths: TileTensor[
+        mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
+    ],
+    ctx: DeviceContext,
+) raises:
+    """Builds cumulative valid-cache row offsets for a ragged prefill batch."""
+    comptime assert is_gpu[
+        target
+    ](), "Building cache row offsets is only supported on GPU"
+
+    var batch_size = Int(input_row_offsets.dim[0]()) - 1
+    comptime kernel = kv_cache_row_offsets_ragged_paged_kernel[
+        cache_row_offsets.LayoutType,
+        input_row_offsets.LayoutType,
+        cache_lengths.LayoutType,
+    ]
+    ctx.enqueue_function[kernel](
+        cache_row_offsets,
+        input_row_offsets,
+        cache_lengths,
+        grid_dim=max(ceildiv(batch_size, 128), 1),
+        block_dim=128,
+    )
+
+
+def kv_cache_row_offsets_ragged_paged_kernel[
+    CacheRowOffsetsLayoutType: TensorLayout,
+    InputRowOffsetsLayoutType: TensorLayout,
+    CacheLengthsLayoutType: TensorLayout,
+](
+    cache_row_offsets: TileTensor[
+        mut=True,
+        DType.uint32,
+        CacheRowOffsetsLayoutType,
+        MutUntrackedOrigin,
+    ],
+    input_row_offsets: TileTensor[
+        DType.uint32,
+        InputRowOffsetsLayoutType,
+        ImmutUntrackedOrigin,
+    ],
+    cache_lengths: TileTensor[
+        DType.uint32,
+        CacheLengthsLayoutType,
+        ImmutUntrackedOrigin,
+    ],
+):
+    comptime assert cache_row_offsets.flat_rank == 1
+    comptime assert input_row_offsets.flat_rank == 1
+    comptime assert cache_lengths.flat_rank == 1
+
+    var batch_size = Int(input_row_offsets.dim[0]()) - 1
+    var output_idx = global_idx.x
+    if output_idx > batch_size:
+        return
+
+    var running_length = 0
+    var prev_input_row_offset = Int(input_row_offsets[0])
+    for batch_idx in range(output_idx):
+        var row_offset = Int(input_row_offsets[batch_idx + 1])
+        running_length += (
+            Int(cache_lengths[batch_idx]) + row_offset - prev_input_row_offset
+        )
+        prev_input_row_offset = row_offset
+
+    cache_row_offsets[output_idx] = UInt32(running_length)
 
 
 @always_inline

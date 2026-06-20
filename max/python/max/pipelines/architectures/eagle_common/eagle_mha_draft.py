@@ -10,20 +10,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Eagle3 MHA draft model for Kimi K2.5 (target uses MLA).
+"""Eagle3 MHA draft model for DeepseekV3-shaped MLA targets.
 
-This is the Llama-style MHA counterpart to :class:`Eagle3KimiK25`. The target
-remains DeepseekV3 (MLA) and produces per-device hidden states; the draft
-swaps in a single MHA decoder block whose KV cache geometry is independent of
-the target's. The unified graph wires a separate ``PagedCacheValues`` per
-device for this draft.
+This is the Llama-style MHA counterpart to :class:`Eagle3MLADraft`. The target
+is a DeepseekV3-shaped MLA model (DeepseekV3 or Kimi K2.5) and produces
+per-device hidden states; the draft swaps in a single MHA decoder block whose
+KV cache geometry is independent of the target's. The unified graph wires a
+separate ``PagedCacheValues`` per device for this draft.
 
 The draft fuses two or three captured target hidden states via ``fc`` (width
 detected from the checkpoint) and concatenates the result with the token
 embedding before a single MHA attention block. Layout matches
 ``EagleLlama3``'s 2-way fusion when the draft checkpoint emits a
 [hidden*2, hidden] ``fc.weight``, and matches the existing
-``Eagle3KimiK25`` 3-way fusion otherwise.
+``Eagle3MLADraft`` 3-way fusion otherwise.
 """
 
 from __future__ import annotations
@@ -62,8 +62,8 @@ from max.nn.transformer.distributed_transformer import (
 
 
 @dataclass(kw_only=True)
-class Eagle3MHAKimiK25DraftConfig:
-    """Minimal config for an Eagle3 MHA draft over a Kimi K2.5 (MLA) target.
+class Eagle3MHADraftConfig:
+    """Minimal config for an Eagle3 MHA draft over a DeepseekV3-shaped MLA target.
 
     Held separate from ``DeepseekV3Config`` so MLA-specific fields
     (``kv_lora_rank``, ``v_head_dim``, etc.) and validators don't apply to
@@ -100,10 +100,10 @@ class Eagle3MHAKimiK25DraftConfig:
     return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE
 
 
-class Eagle3MHAKimiK25(Module):
-    """Eagle3 MHA draft over the Kimi K2.5 (MLA) target.
+class Eagle3MHADraft(Module):
+    """Eagle3 MHA draft over a DeepseekV3-shaped MLA target.
 
-    The ``__call__`` contract mirrors :class:`Eagle3KimiK25` so the unified
+    The ``__call__`` contract mirrors :class:`Eagle3MLADraft` so the unified
     graph can swap drafts without changing the call site:
 
     .. code-block:: python
@@ -122,7 +122,7 @@ class Eagle3MHAKimiK25(Module):
         )
     """
 
-    def __init__(self, config: Eagle3MHAKimiK25DraftConfig) -> None:
+    def __init__(self, config: Eagle3MHADraftConfig) -> None:
         super().__init__()
         self.config = config
         devices = config.devices
@@ -204,7 +204,7 @@ class Eagle3MHAKimiK25(Module):
             self.self_attn = AttentionWithRope(**attn_kwargs)
 
         # Replacement o_proj: [n_heads * head_dim] -> [hidden_size]
-        # (NOT wide_hidden_size). Same trick as ``Eagle3KimiK25``: the
+        # (NOT wide_hidden_size). Same trick as Eagle3MLADraft: the
         # attention reads a wide concat but the residual addition runs on
         # the regular hidden_size, so the output must be narrow.
         q_weight_dim = config.num_attention_heads * config.head_dim
@@ -307,7 +307,7 @@ class Eagle3MHAKimiK25(Module):
     ) -> tuple[TensorValue, ...]:
         """Forward pass.
 
-        Args mirror :meth:`Eagle3KimiK25.__call__` so the unified module can
+        Args mirror :meth:`Eagle3MLADraft.__call__` so the unified module can
         switch implementations without changing the call site.
         """
         config = self.config

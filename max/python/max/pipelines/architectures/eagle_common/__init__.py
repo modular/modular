@@ -10,11 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Provides the Apple silicon GPU backend implementations for matmuls."""
+"""Shared Eagle3 draft components reused across target architectures."""
 
-from .matmul_8x8 import gemm_kernel_apple_8x8
-from .matmul_kernel import (
-    AppleM5MatMul,
-    enqueue_apple_matmul,
-    enqueue_apple_matmul_split_k,
-)
+from .eagle_mha_draft import Eagle3MHADraft, Eagle3MHADraftConfig
+from .eagle_mla_draft import Eagle3MLADraft
+
+__all__ = ["Eagle3MHADraft", "Eagle3MHADraftConfig", "Eagle3MLADraft"]

@@ -8912,7 +8912,9 @@ class TestLazyGCModelCompilation:
         from max._interpreter_ops import gc_compile, matmul_gc
 
         # Simulate a target that the import-time sweep did not cover.
-        monkeypatch.setattr(gc_compile, "PRECOMPILE", True)
+        monkeypatch.delenv(
+            gc_compile.EAGER_OP_PRECOMPILE_ENV_VAR, raising=False
+        )
         monkeypatch.setattr(matmul_gc, "_MATMUL_MODEL_CACHE", {})
         with pytest.raises(KeyError, match="No pre-compiled matmul model"):
             matmul_gc.matmul_model(CPU(), DType.float32)
@@ -8923,7 +8925,7 @@ class TestLazyGCModelCompilation:
         """With MAX_EAGER_OP_PRECOMPILE=0, a miss compiles the target lazily."""
         from max._interpreter_ops import gc_compile, matmul_gc
 
-        monkeypatch.setattr(gc_compile, "PRECOMPILE", False)
+        monkeypatch.setenv(gc_compile.EAGER_OP_PRECOMPILE_ENV_VAR, "0")
         monkeypatch.setattr(matmul_gc, "_MATMUL_MODEL_CACHE", {})
         model = matmul_gc.matmul_model(CPU(), DType.float32)
         assert model is not None
@@ -8935,7 +8937,9 @@ class TestLazyGCModelCompilation:
         from max._core.dialects import mo
         from max._interpreter_ops import gc_compile, unary_elementwise_gc
 
-        monkeypatch.setattr(gc_compile, "PRECOMPILE", True)
+        monkeypatch.delenv(
+            gc_compile.EAGER_OP_PRECOMPILE_ENV_VAR, raising=False
+        )
         monkeypatch.setattr(unary_elementwise_gc, "_UNARY_MODEL_CACHE", {})
         # float32 Exp is supported (passes the _is_supported guard), so the miss
         # falls through to the precompile-mode hard error, not "Unsupported".
@@ -8949,7 +8953,7 @@ class TestLazyGCModelCompilation:
         from max._core.dialects import mo
         from max._interpreter_ops import gc_compile, unary_elementwise_gc
 
-        monkeypatch.setattr(gc_compile, "PRECOMPILE", False)
+        monkeypatch.setenv(gc_compile.EAGER_OP_PRECOMPILE_ENV_VAR, "0")
         monkeypatch.setattr(unary_elementwise_gc, "_UNARY_MODEL_CACHE", {})
         model = unary_elementwise_gc.unary_model(mo.ExpOp, CPU(), DType.float32)
         assert model is not None
