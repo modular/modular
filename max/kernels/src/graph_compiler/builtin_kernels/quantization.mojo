@@ -892,8 +892,8 @@ struct NVFP4Gemv:
     ](
         output: OutputTensor[dtype=c_type, rank=2, ...],
         a: InputTensor[dtype=a_type, rank=2, ...],
-        w_packed: InputTensor[dtype = DType.uint8, rank=2, ...],
-        scales: InputTensor[dtype = DType.float32, rank=2, ...],
+        w_packed: InputTensor[dtype=DType.uint8, rank=2, ...],
+        scales: InputTensor[dtype=DType.float32, rank=2, ...],
         context: DeviceContext,
     ) raises:
         comptime assert is_gpu[target](), "NVFP4 gemv only supports GPUs"
