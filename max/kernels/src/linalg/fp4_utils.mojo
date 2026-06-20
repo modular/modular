@@ -153,6 +153,35 @@ def cast_uint_to_fp4e2m1[
     )
 
 
+comptime FP4E2M1_MARLIN_BIAS = Float32(1 << 14)
+"""Exponent-bias factor (2^14) that ``decode_fp4e2m1_marlin`` defers to the
+caller: the decode returns values scaled by 2^-14, so multiply the (per-block)
+dequant scale by this constant to recover the true magnitude."""
+
+
+def decode_fp4e2m1_marlin[
+    width: SIMDSize, //
+](packed: SIMD[DType.uint8, width]) -> SIMD[DType.float32, width * 2]:
+    """Decodes packed E2M1 (two nibbles per byte) to f32 via Marlin bit
+    positioning (vLLM ``csrc/.../quantization/marlin/dequant.h``).
+
+    Each nibble is placed at bits[15:12] of an fp16 lane (two values per uint32);
+    a single mask+shift+or maps the sign and the three magnitude bits into the
+    fp16 field with NO branch -- the ``e == 0`` subnormal ({0.0, 0.5}) falls out
+    as an fp16 denormal. The 2^14 exponent-bias factor is NOT applied here: the
+    returned values are 2^-14 of the true magnitude and the caller folds
+    ``FP4E2M1_MARLIN_BIAS`` into the dequant scale (free, since that multiply
+    happens anyway). Much cheaper than the arithmetic decode in
+    ``cast_uint_to_fp4e2m1`` (the fp16 values pack two per 32-bit op and the
+    bias/subnormal handling costs nothing).
+    """
+    var x = packed.cast[DType.uint32]()
+    # lo nibble -> bits[15:12] (fp16 lane 0), hi nibble -> bits[31:28] (lane 1)
+    var q = ((x & 0x0F) << 12) | ((x & 0xF0) << 24)
+    var out = (q & 0x80008000) | ((q & 0x70007000) >> 3)
+    return bitcast[DType.float16, width * 2](out).cast[DType.float32]()
+
+
 def cast_fp_to_fp4e2m1[
     dtype: DType,
     width: SIMDSize,
