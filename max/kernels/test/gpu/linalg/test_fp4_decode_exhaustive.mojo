@@ -20,7 +20,12 @@ float32 and bfloat16 outputs. Runs on the host (no GPU needed).
 
 from std.testing import assert_equal
 
-from linalg.fp4_utils import cast_uint_to_fp4e2m1, E2M1_TO_FLOAT32
+from linalg.fp4_utils import (
+    cast_uint_to_fp4e2m1,
+    decode_fp4e2m1_marlin,
+    E2M1_TO_FLOAT32,
+    FP4E2M1_MARLIN_BIAS,
+)
 
 
 def _check_all_bytes[out_dtype: DType]() raises:
@@ -41,7 +46,26 @@ def _check_all_bytes[out_dtype: DType]() raises:
         assert_equal(decoded[b * 2 + 1], hi)
 
 
+def _check_marlin() raises:
+    # decode_fp4e2m1_marlin returns 2^-14 of the true magnitude; multiplying by
+    # FP4E2M1_MARLIN_BIAS recovers it exactly (every value is a small sum of
+    # powers of two, exact in f32). Check all 256 bytes against the LUT.
+    var bytes = SIMD[DType.uint8, 256]()
+    comptime for b in range(256):
+        bytes[b] = UInt8(b)
+
+    var decoded = decode_fp4e2m1_marlin(bytes) * FP4E2M1_MARLIN_BIAS
+
+    comptime for b in range(256):
+        assert_equal(decoded[b * 2], E2M1_TO_FLOAT32[b & 0x0F])
+        assert_equal(decoded[b * 2 + 1], E2M1_TO_FLOAT32[(b >> 4) & 0x0F])
+
+
 def main() raises:
     _check_all_bytes[DType.float32]()
     _check_all_bytes[DType.bfloat16]()
-    print("E2M1 decode exhaustive: all 256 bytes correct (f32, bf16)")
+    _check_marlin()
+    print(
+        "E2M1 decode exhaustive: all 256 bytes correct (arithmetic f32/bf16 +"
+        " Marlin)"
+    )
