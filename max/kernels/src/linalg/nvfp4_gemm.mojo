@@ -105,6 +105,7 @@ def _nvfp4_gemm_kernel[
     num_pipeline_stages: Int,
     stage_w: Bool = False,
     split_k: Int = 1,
+    b_pipeline_stages: Int = 2,
 ](
     c: LayoutTensor[mut=True, c_type, c_layout, MutAnyOrigin],
     a: LayoutTensor[mut=False, a_type, a_layout, ImmutAnyOrigin],
@@ -173,7 +174,7 @@ def _nvfp4_gemm_kernel[
     # MMAs and the next tile being decoded one iteration ahead. Using fewer B
     # stages than the A/W pipeline depth shrinks the SMEM footprint and raises
     # block occupancy (the dominant lever at M=64).
-    comptime b_stages = min(2, num_pipeline_stages)
+    comptime b_stages = min(b_pipeline_stages, num_pipeline_stages)
     comptime b_smem_size = b_stages * BN * BK
     comptime BIter = LayoutTensorIter[
         a_type,
@@ -435,6 +436,12 @@ def _nvfp4_gemm_kernel[
         async_copy_wait_group(Int32(num_pipeline_stages - 2))
         var next_k = k_iter + 1
         if next_k < num_k_iters:
+            # With a single B slot (b_stages==1) the decode overwrites the same
+            # tile the MMAs above just read, so a barrier must fence the decode
+            # writes from those in-flight reads. With >=2 B slots the decode
+            # targets the other slot and overlaps the MMAs with no extra fence.
+            comptime if b_stages == 1:
+                barrier()
             _decode_b_stage(k_tile_start + next_k, next_k % num_pipeline_stages)
         barrier()
 
@@ -548,10 +555,11 @@ def nvfp4_gemm(
         SK: Int = 1,
         SW: Bool = False,
         BK: Int = 64,
+        BS: Int = 2,
     ]() raises:
         comptime num_warps = (BM // WM) * (BN // WN)
         comptime num_threads = num_warps * WARP_SIZE
-        comptime b_stages = min(2, NS)  # B needs only 2 live slots
+        comptime b_stages = min(BS, NS)  # live decoded-B slots
         comptime a_bytes = NS * BM * BK * size_of[a.dtype]()
         comptime b_bytes = b_stages * BN * BK * size_of[a.dtype]()
         comptime w_bytes = NS * BN * (BK // 2) if SW else 0  # packed staging
@@ -572,6 +580,7 @@ def nvfp4_gemm(
             num_pipeline_stages=NS,
             split_k=SK,
             stage_w=SW,
+            b_pipeline_stages=BS,
         ]
 
         comptime if SK > 1:
@@ -641,6 +650,6 @@ def nvfp4_gemm(
     # tile is BM=64/BN=64/BK=64: the small BN keeps the grid wide (more blocks)
     # while BK=64 gives 4 MMAs/stage to hide the decode + memory latency.
     if m <= 64:
-        _launch[64, 64, 2, 4, SW=True, BK=64]()
+        _launch[64, 64, 2, 4, SW=False, BK=64, BS=1]()
     else:
         _launch[128, 64, 3, 2, SW=True, BK=32]()
