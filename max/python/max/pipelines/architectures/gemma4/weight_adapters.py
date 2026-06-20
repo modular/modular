@@ -58,10 +58,39 @@ def convert_safetensor_language_state_dict(
         for before, after in GEMMA4_LANGUAGE_SAFETENSOR_MAP.items():
             max_name = max_name.replace(before, after)
 
+        # compressed-tensors NVFP4 checkpoints (e.g. RedHatAI/gemma-4-*-NVFP4)
+        # store the same block-scaled E2M1 weights as the modelopt export but
+        # under different tensor names. Reconcile them to the modelopt names
+        # the quantized Linear expects so both NVFP4 formats load through the
+        # same graph weights. The shared block-scale tensor (``weight_scale``)
+        # already matches and is left untouched.
+        if max_name.endswith(".weight_packed"):
+            max_name = max_name.removesuffix(".weight_packed") + ".weight"
+        elif max_name.endswith(".weight_global_scale"):
+            max_name = (
+                max_name.removesuffix(".weight_global_scale")
+                + ".weight_scale_2"
+            )
+        elif max_name.endswith(".input_global_scale"):
+            max_name = (
+                max_name.removesuffix(".input_global_scale") + ".input_scale"
+            )
+
         data = value.data()
 
         if max_name.endswith(".weight_scale") and data.dtype == DType.uint8:
             data = dataclasses.replace(data, dtype=DType.float8_e8m0fnu)
+
+        # modelopt stores the per-tensor NVFP4 global scales as scalars, but the
+        # compressed-tensors export ships them with shape ``[1]``. The quantized
+        # Linear registers ``weight_scale_2`` / ``input_scale`` with scalar
+        # shape, so squeeze the compressed-tensors variant to match. modelopt
+        # checkpoints already arrive scalar and skip this path.
+        if max_name.endswith((".weight_scale_2", ".input_scale")) and tuple(
+            data.shape
+        ) == (1,):
+            scalar_buf = Buffer.from_dlpack(data.data).view(data.dtype, [])
+            data = WeightData(scalar_buf, max_name, data.dtype, Shape([]))
 
         # Stacked MoE expert weights: split into individual per-expert weights.
         # HF stores gate_up_proj [num_experts, 2*moe_dim, hidden_dim]
