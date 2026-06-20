@@ -74,7 +74,11 @@ from layout.tensor_core import TensorCore, get_fragment_size, get_mma_shape
 from std.utils import StaticTuple
 from std.utils.numerics import get_accum_type
 
-from .fp4_utils import cast_uint_to_fp4e2m1
+from .fp4_utils import (
+    cast_uint_to_fp4e2m1,
+    decode_fp4e2m1_marlin,
+    FP4E2M1_MARLIN_BIAS,
+)
 
 comptime NVFP4_GEMM_SF_VECTOR_SIZE = 16
 """Elements covered by one NVFP4 block scale (group size)."""
@@ -105,7 +109,7 @@ def _nvfp4_gemm_kernel[
     num_pipeline_stages: Int,
     stage_w: Bool = False,
     split_k: Int = 1,
-    b_pipeline_stages: Int = 2,
+    marlin_decode: Bool = True,
 ](
     c: LayoutTensor[mut=True, c_type, c_layout, MutAnyOrigin],
     a: LayoutTensor[mut=False, a_type, a_layout, ImmutAnyOrigin],
@@ -174,7 +178,7 @@ def _nvfp4_gemm_kernel[
     # MMAs and the next tile being decoded one iteration ahead. Using fewer B
     # stages than the A/W pipeline depth shrinks the SMEM footprint and raises
     # block occupancy (the dominant lever at M=64).
-    comptime b_stages = min(b_pipeline_stages, num_pipeline_stages)
+    comptime b_stages = min(2, num_pipeline_stages)
     comptime b_smem_size = b_stages * BN * BK
     comptime BIter = LayoutTensorIter[
         a_type,
@@ -306,13 +310,37 @@ def _nvfp4_gemm_kernel[
                         w_gmem + n_glob * w_packed_cols + (k0_byte + c_byte)
                     )
                     packed = src.load[width=BYTES_PER_VEC]()
-                var vals = cast_uint_to_fp4e2m1[
-                    out_dtype=DType.float32, out_width=DECODE_W
-                ](packed)
-                var s = rebind[Scalar[DType.float32]](
-                    scales[n_glob, gk // GROUP]
-                )
-                scaled = (vals * s).cast[a_type]()
+                # Two decode paths (comptime `marlin_decode`):
+                #   * Marlin bit-positioning decode returns values at 2^-14 of
+                #     the true magnitude, so the 2^14 exponent-bias factor is
+                #     folded into the (per-group) dequant scale -- free, since
+                #     the scale multiply happens anyway. Cheaper arithmetic that
+                #     shortens the decode->SMEM->ldmatrix->MMA producer chain;
+                #     wins at larger M (BM=128/BK=32 tile).
+                #   * The arithmetic decode (`cast_uint_to_fp4e2m1`) keeps a
+                #     smaller f32 transient working set, which the occupancy-
+                #     bound M<=64 tile (3 blocks/SM ceiling) needs -- there
+                #     Marlin's uint32 lanes cost a block of occupancy and
+                #     regress. So M<=64 stays on the arithmetic decode.
+                var scaled_f32: SIMD[DType.float32, DECODE_W]
+                comptime if marlin_decode:
+                    var vals = decode_fp4e2m1_marlin(packed)
+                    var s = (
+                        rebind[Scalar[DType.float32]](
+                            scales[n_glob, gk // GROUP]
+                        )
+                        * FP4E2M1_MARLIN_BIAS
+                    )
+                    scaled_f32 = vals * s
+                else:
+                    var vals = cast_uint_to_fp4e2m1[
+                        out_dtype=DType.float32, out_width=DECODE_W
+                    ](packed)
+                    var s = rebind[Scalar[DType.float32]](
+                        scales[n_glob, gk // GROUP]
+                    )
+                    scaled_f32 = vals * s
+                scaled = scaled_f32.cast[a_type]()
             # Store at swizzled 8-element-vector offsets so the ldmatrix
             # swizzle used by `load_b` reads them back correctly. The swizzle
             # operates on vector indices (units of simd_a).
@@ -434,14 +462,17 @@ def _nvfp4_gemm_kernel[
         a_smem_iter._incr()
         b_smem_iter._incr()
         async_copy_wait_group(Int32(num_pipeline_stages - 2))
+        # When staging packed weights, `_decode_b_stage` reads the W slot that
+        # was cp.async'd into SMEM THIS iteration. `async_copy_wait_group` only
+        # guarantees the copies are visible to the issuing thread; a decode
+        # thread reads bytes copied by OTHER threads, so a block-wide barrier is
+        # required between the wait and the read (the prologue already has one).
+        # Without it the decode races the staging stores -> nondeterministic
+        # results on GPUs that expose the timing (e.g. sm_86).
+        comptime if stage_w:
+            barrier()
         var next_k = k_iter + 1
         if next_k < num_k_iters:
-            # With a single B slot (b_stages==1) the decode overwrites the same
-            # tile the MMAs above just read, so a barrier must fence the decode
-            # writes from those in-flight reads. With >=2 B slots the decode
-            # targets the other slot and overlaps the MMAs with no extra fence.
-            comptime if b_stages == 1:
-                barrier()
             _decode_b_stage(k_tile_start + next_k, next_k % num_pipeline_stages)
         barrier()
 
@@ -555,11 +586,11 @@ def nvfp4_gemm(
         SK: Int = 1,
         SW: Bool = False,
         BK: Int = 64,
-        BS: Int = 2,
+        MD: Bool = True,
     ]() raises:
         comptime num_warps = (BM // WM) * (BN // WN)
         comptime num_threads = num_warps * WARP_SIZE
-        comptime b_stages = min(BS, NS)  # live decoded-B slots
+        comptime b_stages = min(2, NS)  # B needs only 2 live slots
         comptime a_bytes = NS * BM * BK * size_of[a.dtype]()
         comptime b_bytes = b_stages * BN * BK * size_of[a.dtype]()
         comptime w_bytes = NS * BN * (BK // 2) if SW else 0  # packed staging
@@ -580,7 +611,7 @@ def nvfp4_gemm(
             num_pipeline_stages=NS,
             split_k=SK,
             stage_w=SW,
-            b_pipeline_stages=BS,
+            marlin_decode=MD,
         ]
 
         comptime if SK > 1:
@@ -649,7 +680,10 @@ def nvfp4_gemm(
     # occupancy ceiling) and ~doubles throughput. With that headroom the M<=64
     # tile is BM=64/BN=64/BK=64: the small BN keeps the grid wide (more blocks)
     # while BK=64 gives 4 MMAs/stage to hide the decode + memory latency.
+    # The occupancy-bound M<=64 tile keeps the arithmetic decode (MD=False);
+    # the larger M>64 tile (BM=128/BK=32) has the register headroom to profit
+    # from the cheaper Marlin decode (MD=True). See `_decode_b_stage`.
     if m <= 64:
-        _launch[64, 64, 2, 4, SW=False, BK=64, BS=1]()
+        _launch[64, 64, 2, 4, SW=True, BK=64, MD=False]()
     else:
-        _launch[128, 64, 3, 2, SW=True, BK=32]()
+        _launch[128, 64, 3, 2, SW=True, BK=32, MD=True]()

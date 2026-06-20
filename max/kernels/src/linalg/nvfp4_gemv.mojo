@@ -33,7 +33,7 @@ from layout import TileTensor
 from layout.coord import Coord
 from layout.tile_layout import TensorLayout
 
-from .fp4_utils import cast_uint_to_fp4e2m1
+from .fp4_utils import decode_fp4e2m1_marlin, FP4E2M1_MARLIN_BIAS
 
 comptime NVFP4_GEMV_SF_VECTOR_SIZE = 16
 """Elements covered by one NVFP4 block scale."""
@@ -85,16 +85,25 @@ def _nvfp4_gemv_kernel[
                 var k_base = chunk_idx * CHUNK
 
                 var packed = w.load[BYTES_PER_CHUNK](Coord(col, k_base // 2))
-                var vals = cast_uint_to_fp4e2m1[
-                    out_dtype=DType.float32, out_width=CHUNK
-                ](packed)
-                var s0 = rebind[Scalar[DType.float32]](
-                    scales.load(Coord(col, k_base // NVFP4_GEMV_SF_VECTOR_SIZE))
-                )
-                var s1 = rebind[Scalar[DType.float32]](
-                    scales.load(
-                        Coord(col, k_base // NVFP4_GEMV_SF_VECTOR_SIZE + 1)
+                # Marlin-style decode returns values at 2^-14 of the true
+                # magnitude; the 2^14 bias is folded into the block scales below
+                # (free -- the scale multiply happens anyway).
+                var vals = decode_fp4e2m1_marlin(packed)
+                var s0 = (
+                    rebind[Scalar[DType.float32]](
+                        scales.load(
+                            Coord(col, k_base // NVFP4_GEMV_SF_VECTOR_SIZE)
+                        )
                     )
+                    * FP4E2M1_MARLIN_BIAS
+                )
+                var s1 = (
+                    rebind[Scalar[DType.float32]](
+                        scales.load(
+                            Coord(col, k_base // NVFP4_GEMV_SF_VECTOR_SIZE + 1)
+                        )
+                    )
+                    * FP4E2M1_MARLIN_BIAS
                 )
                 var w_lo = vals.slice[16, offset=0]()
                 var w_hi = vals.slice[16, offset=16]()
