@@ -519,7 +519,7 @@ def convert_eagle3_draft_state_dict(
 # Llama-style Eagle3 draft checkpoint adapter
 # ---------------------------------------------------------------------------
 
-# Llama Eagle3 checkpoint key prefix -> Eagle3MHAKimiK25 module path.
+# Llama Eagle3 checkpoint key prefix -> Eagle3MHADraft module path.
 # The MHA draft module's layer is flat (single block, no ``decoder_layer``
 # namespace), so the mapping strips the single-layer prefix and inlines
 # norms.
@@ -551,7 +551,7 @@ def convert_llama_eagle3_draft_state_dict(
     state_dict: dict[str, Weights],
     **unused_kwargs,
 ) -> dict[str, WeightData]:
-    """Convert a ``LlamaForCausalLMEagle3`` checkpoint to ``Eagle3MHAKimiK25``.
+    """Convert a ``LlamaForCausalLMEagle3`` checkpoint to ``Eagle3MHADraft``.
 
     Handles both ``model.*``-prefixed (standard HF Llama) and
     ``layers.0.*``-prefixed (EAGLE-export) checkpoints. ``fc.*``,

@@ -74,7 +74,7 @@ def _get_mpi_function[
 # ===-----------------------------------------------------------------------===#
 
 comptime MPIComm = UnsafePointer[
-    OpaquePointer[MutUntrackedOrigin], MutAnyOrigin
+    OpaquePointer[MutUntrackedOrigin], MutUntrackedOrigin
 ]
 
 comptime MPI_THREAD_SINGLE = 0
@@ -207,4 +207,4 @@ def get_mpi_comm_world() raises -> MPIComm:
     )
     if not comm_world_ptr:
         raise Error("symbol ompi_mpi_comm_world not found in MPI library")
-    return comm_world_ptr.value().as_unsafe_any_origin()
+    return comm_world_ptr.value().unsafe_origin_cast[MutUntrackedOrigin]()

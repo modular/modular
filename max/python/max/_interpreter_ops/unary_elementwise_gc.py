@@ -14,7 +14,7 @@
 """Graph-compiler unary-elementwise model cache for the MO interpreter.
 
 Compilation has two modes, selected by the ``MAX_EAGER_OP_PRECOMPILE``
-environment variable (see :data:`gc_compile.PRECOMPILE`):
+environment variable (see :func:`gc_compile.should_precompile`):
 
 - **Precompile sweep (default).** A single ``load_all`` compiles the full
   (op, device, dtype) matrix at import (see :func:`compile_unary_sweep`, invoked
@@ -289,7 +289,7 @@ def unary_model(
                 "  Supported dtypes for this op/device: "
                 f"{_supported_dtypes(_UNARY_OPS[op_type].dtype_class, device) if op_type in _UNARY_OPS else '[]'}"
             )
-        if gc_compile.PRECOMPILE:
+        if gc_compile.should_precompile():
             # TODO(MXF-510): raise UnsupportedGraphError so executors fall back.
             raise KeyError(
                 f"No pre-compiled unary model for key {key!r}."

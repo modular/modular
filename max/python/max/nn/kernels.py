@@ -2034,10 +2034,51 @@ def msa_sparse_indexer(
     )[0].tensor
 
 
+def _kv_cache_row_offsets_ragged(
+    input_row_offsets: TensorValue,
+    kv_collection: PagedCacheValues,
+) -> TensorValue:
+    """Builds cumulative valid-cache row offsets for a ragged prefill batch.
+
+    Args:
+        input_row_offsets: Ragged query offsets ``[batch + 1]`` uint32.
+        kv_collection: Paged KV cache collection.
+
+    Returns:
+        ``uint32[batch + 1]`` cumulative offsets for the valid K/V rows read by
+        sparse attention prefill.
+    """
+    _validate_argument_tensor(
+        "input_row_offsets",
+        input_row_offsets,
+        dtype=DType.uint32,
+        rank=1,
+        device_type=DeviceKind.GPU,
+    )
+
+    return ops.custom(
+        "mo.kv_cache.row_offsets.ragged.paged",
+        device=input_row_offsets.device,
+        values=[
+            input_row_offsets,
+            kv_collection.cache_lengths,
+        ],
+        out_types=[
+            TensorType(
+                dtype=DType.uint32,
+                shape=input_row_offsets.shape,
+                device=input_row_offsets.device,
+            )
+        ],
+    )[0].tensor
+
+
 def msa_sparse_attention_ragged(
     kv_params: KVCacheParams,
     input: TensorValue,
     input_row_offsets: TensorValue,
+    cache_row_offsets: TensorValue,
+    total_context_length: TensorValue,
     kv_collection: PagedCacheValues,
     layer_idx: TensorValue,
     block_indices: TensorValue,
@@ -2059,6 +2100,9 @@ def msa_sparse_attention_ragged(
         input: Query tensor ``[total_q, n_heads, head_dim]`` BF16 (prefill) or
             ``[batch, n_heads, head_dim]`` BF16 (decode).
         input_row_offsets: Ragged query offsets ``[batch + 1]`` uint32.
+        cache_row_offsets: Ragged valid-cache offsets ``[batch + 1]`` uint32.
+        total_context_length: Total padded cache length for the batch, CPU
+            scalar ``[1]`` uint32.
         kv_collection: Main paged KV cache (BF16, no scales).
         layer_idx: Layer index, uint32, on CPU.
         block_indices: Selected block ids. Prefill: ``[n_kv_heads, total_q,
@@ -2086,6 +2130,20 @@ def msa_sparse_attention_ragged(
         device=input.device,
     )
     _validate_argument_tensor(
+        "cache_row_offsets",
+        cache_row_offsets,
+        dtype=DType.uint32,
+        rank=1,
+        device=input.device,
+    )
+    _validate_argument_tensor(
+        "total_context_length",
+        total_context_length,
+        dtype=DType.uint32,
+        rank=1,
+        device=DeviceRef.CPU(),
+    )
+    _validate_argument_tensor(
         "kv_collection.kv_blocks",
         kv_collection.kv_blocks,
         dtype=DType.bfloat16,
@@ -2108,6 +2166,8 @@ def msa_sparse_attention_ragged(
     values: list[Value[Any]] = [
         input,
         input_row_offsets,
+        cache_row_offsets,
+        total_context_length,
         *kv_collection.flatten(),
         layer_idx,
         block_indices,
