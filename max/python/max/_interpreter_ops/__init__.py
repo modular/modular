@@ -127,7 +127,7 @@ from .handlers import _MO_OP_HANDLERS, lookup_handler, register_op_handler
 # unary_elementwise_gc. Wrapped in a function so the matmul_gc / unary_gc symbol
 # accesses are deferred past this module's import cycle with them.
 def _precompile_gc_models() -> None:
-    if gc_compile.PRECOMPILE:
+    if gc_compile.should_precompile():
         matmul_gc.compile_matmul_sweep()
         unary_elementwise_gc.compile_unary_sweep()
 
