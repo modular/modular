@@ -198,6 +198,20 @@ public:
   checkConformance(TraitType trait, SharedState &shared,
                    ArrayRef<ConstraintAttr> callerAssumptions) const;
 
+  /// Given a standard trait like Copyable, look up the conformance.  On
+  /// success, the ASTDecl of the trait itself is returned, it is otherwise
+  /// null.
+  std::pair<ConformanceResult, ASTDecl *>
+  checkBuiltinConformance(StringRef traitName, llvm::SMLoc loc,
+                          SharedState &shared,
+                          ArrayRef<ConstraintAttr> callerAssumptions) const;
+
+  /// This returns true if the current type unconditionally conforms to the
+  /// specified builtin trait, e.g. "Movable".
+  bool conformsToBuiltinTrait(StringRef traitName, llvm::SMLoc loc,
+                              SharedState &shared,
+                              ArrayRef<ConstraintAttr> callerAssumptions) const;
+
   /// Given a reference, return the element as an ASTType.  This aborts
   /// if the current type isn't a reference.
   ASTType getReferenceElementType() const;

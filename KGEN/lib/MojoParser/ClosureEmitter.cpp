@@ -2087,24 +2087,19 @@ ClosureEmitter::buildParamCaptureInfo(ParamType paramType,
                                fnOp.getSymNameAttr(), sig);
   };
 
-  auto conformsToBuiltinTrait = [&](StringRef traitName) {
-    TraitType trait =
-        shared.lookupBuiltinTraitType(traitName, nestedFnDecl.getLoc());
-    return trait && selfType.checkConformance(trait, shared, assumptions) ==
-                        ConformanceResult::Yes;
-  };
+  TypedAttr move;
+  if (selfType.isMovable(nestedFnDecl.getLoc(), shared, &nestedFnDecl))
+    move = makeWitness(moveParent);
 
-  TypedAttr move =
-      selfType.isMovable(nestedFnDecl.getLoc(), shared, &nestedFnDecl)
-          ? makeWitness(moveParent)
-          : nullptr;
-  TypedAttr del = conformsToBuiltinTrait("ImplicitlyDeletable")
-                      ? makeWitness(implicitlyDestructibleParent)
-                      : nullptr;
-  TypedAttr copy = selfType.isExplicitlyCopyable(nestedFnDecl.getLoc(), shared,
-                                                 &nestedFnDecl)
-                       ? makeWitness(copyParent)
-                       : nullptr;
+  TypedAttr del;
+  if (selfType.conformsToBuiltinTrait(
+          "ImplicitlyDeletable", nestedFnDecl.getLoc(), shared, assumptions))
+    del = makeWitness(implicitlyDestructibleParent);
+
+  TypedAttr copy;
+  if (selfType.isExplicitlyCopyable(nestedFnDecl.getLoc(), shared,
+                                    &nestedFnDecl))
+    copy = makeWitness(copyParent);
 
   return {validateAndBuildTriple(copy, move, del, convention, capture, isMove,
                                  nestedFnDecl),
