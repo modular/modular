@@ -34,9 +34,9 @@ from max.pipelines.lib import (
 )
 from max.pipelines.lib.pipeline_variants.overlap_text_generation import (
     _CALLBACK_LAG_WARN_S,
-    _MAGIC_DRAFT_TOKEN_ID,
     _MAX_GRAPH_CAPTURE_BATCH_SIZE,
     _OOB_IDX,
+    MAGIC_DRAFT_TOKEN_ID,
     AsyncBatch,
     _host_mirror_realized_drafts,
 )
@@ -2058,7 +2058,7 @@ class TestAssignBitmaskInputs:
         decode, ``has_precomputed_bitmask=False``) the speculative bitmask
         must be built from the real EAGLE drafts that ``realize_future_tokens``
         scattered onto the device buffer -- NOT from the
-        ``_MAGIC_DRAFT_TOKEN_ID`` placeholders left in ``draft_tokens_np``.
+        ``MAGIC_DRAFT_TOKEN_ID`` placeholders left in ``draft_tokens_np``.
 
         When the synchronous fill passes ``draft_tokens_np`` (all MAGIC) straight to
         ``compute_speculative_bitmasks``, the speculative FSM walk breaks on
@@ -2091,7 +2091,7 @@ class TestAssignBitmaskInputs:
         # ``draft_tokens_to_verify`` was reset to [] at the end of the prior
         # step, so the MAGIC fallback fires).
         magic_drafts = np.full(
-            (1, self._K), _MAGIC_DRAFT_TOKEN_ID, dtype=np.int64
+            (1, self._K), MAGIC_DRAFT_TOKEN_ID, dtype=np.int64
         )
         # The real drafts ``realize_future_tokens`` scattered onto the device
         # buffer for this row, made host-visible through the shared map.
@@ -2137,7 +2137,7 @@ class TestHostMirrorRealizedDrafts:
     def test_reorder_permutes_rows_by_map(self) -> None:
         """Prev ``[A, B]`` reordered to curr ``[B, A]``: each curr row gets the
         next drafts of the prev row that maps to it."""
-        draft_tokens_np = np.full((2, self._K), _MAGIC_DRAFT_TOKEN_ID, np.int64)
+        draft_tokens_np = np.full((2, self._K), MAGIC_DRAFT_TOKEN_ID, np.int64)
         prev_next = np.array([[10, 11, 12], [20, 21, 22]], dtype=np.int64)
         # prev A (row 0) -> curr row 1; prev B (row 1) -> curr row 0.
         prev_to_curr_map = np.array([1, 0], dtype=np.int64)
@@ -2155,7 +2155,7 @@ class TestHostMirrorRealizedDrafts:
         # Row 0 = continuing (mapped, MAGIC seed); row 1 = resumed with real
         # saved drafts and NOT in the prev batch.
         draft_tokens_np = np.array(
-            [[_MAGIC_DRAFT_TOKEN_ID] * self._K, [7, 8, 9]], dtype=np.int64
+            [[MAGIC_DRAFT_TOKEN_ID] * self._K, [7, 8, 9]], dtype=np.int64
         )
         prev_next = np.array([[10, 11, 12]], dtype=np.int64)  # prev = [A]
         prev_to_curr_map = np.array([0], dtype=np.int64)  # A -> curr row 0
@@ -2171,7 +2171,7 @@ class TestHostMirrorRealizedDrafts:
         """An unmapped curr row whose seed is MAGIC keeps MAGIC (it genuinely
         has no real drafts to verify)."""
         draft_tokens_np = np.array(
-            [[10, 11, 12], [_MAGIC_DRAFT_TOKEN_ID] * self._K], dtype=np.int64
+            [[10, 11, 12], [MAGIC_DRAFT_TOKEN_ID] * self._K], dtype=np.int64
         )
         prev_next = np.array([[10, 11, 12]], dtype=np.int64)
         prev_to_curr_map = np.array([0], dtype=np.int64)
@@ -2180,12 +2180,12 @@ class TestHostMirrorRealizedDrafts:
             draft_tokens_np, prev_to_curr_map, prev_next
         )
 
-        assert np.array_equal(out[1], [_MAGIC_DRAFT_TOKEN_ID] * self._K)
+        assert np.array_equal(out[1], [MAGIC_DRAFT_TOKEN_ID] * self._K)
 
     def test_oob_prev_row_is_skipped(self) -> None:
         """A prev row absent from the current batch (``_OOB_IDX``) writes
         nothing -- its drafts must not leak into any current row."""
-        draft_tokens_np = np.full((1, self._K), _MAGIC_DRAFT_TOKEN_ID, np.int64)
+        draft_tokens_np = np.full((1, self._K), MAGIC_DRAFT_TOKEN_ID, np.int64)
         # prev = [A, X]; A -> curr 0, X not in curr.
         prev_next = np.array([[10, 11, 12], [99, 99, 99]], dtype=np.int64)
         prev_to_curr_map = np.array([0, _OOB_IDX], dtype=np.int64)
@@ -2198,7 +2198,7 @@ class TestHostMirrorRealizedDrafts:
 
     def test_does_not_mutate_input(self) -> None:
         """The seed array is copied, not mutated in place."""
-        draft_tokens_np = np.full((1, self._K), _MAGIC_DRAFT_TOKEN_ID, np.int64)
+        draft_tokens_np = np.full((1, self._K), MAGIC_DRAFT_TOKEN_ID, np.int64)
         prev_next = np.array([[10, 11, 12]], dtype=np.int64)
         prev_to_curr_map = np.array([0], dtype=np.int64)
 
@@ -2208,7 +2208,7 @@ class TestHostMirrorRealizedDrafts:
 
         assert out is not draft_tokens_np
         assert np.array_equal(
-            draft_tokens_np, np.full((1, self._K), _MAGIC_DRAFT_TOKEN_ID)
+            draft_tokens_np, np.full((1, self._K), MAGIC_DRAFT_TOKEN_ID)
         )
 
     def test_matches_independent_device_scatter_reference(self) -> None:
@@ -2216,7 +2216,7 @@ class TestHostMirrorRealizedDrafts:
         with an in-range target, overwrite that current row -- the same thing
         the device graph does."""
         rng_curr = np.array(
-            [[1, 2, 3], [4, 5, 6], [_MAGIC_DRAFT_TOKEN_ID] * self._K],
+            [[1, 2, 3], [4, 5, 6], [MAGIC_DRAFT_TOKEN_ID] * self._K],
             dtype=np.int64,
         )
         prev_next = np.array([[70, 71, 72], [80, 81, 82]], dtype=np.int64)

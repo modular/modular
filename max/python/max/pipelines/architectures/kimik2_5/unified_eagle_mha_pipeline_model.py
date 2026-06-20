@@ -43,13 +43,18 @@ from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.architectures.kimik2_5.context import (
     KimiK2_5TextAndVisionContext,
 )
-from max.pipelines.lib import CompilationTimer, ModelInputs
-from max.pipelines.lib.interfaces import UnifiedEagleOutputs
+from max.pipelines.lib import CompilationTimer
+from max.pipelines.lib.interfaces import (
+    UnifiedSpecDecodeInputs,
+)
+from max.pipelines.lib.pipeline_variants.unified_spec_decode_model import (
+    _UnifiedSpecDecodeModelMixin,
+)
 from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
 from typing_extensions import override
 
 from ..deepseekV3.model_config import DeepseekV3Config
-from .eagle3_mha_kimi_k25 import Eagle3MHAKimiK25DraftConfig
+from ..eagle_common.eagle_mha_draft import Eagle3MHADraftConfig
 from .model import KimiK2_5Model, KimiK2_5ModelInputs
 from .model_config import _extract_eagle_aux_layer_ids
 from .unified_eagle_mha_model import Eagle3MHAKimiK25Unified
@@ -59,42 +64,16 @@ logger = logging.getLogger("max.pipelines")
 
 
 @dataclass
-class Eagle3MHAKimiK25Inputs(KimiK2_5ModelInputs):
+class Eagle3MHAKimiK25Inputs(UnifiedSpecDecodeInputs, KimiK2_5ModelInputs):
     """Inputs for the Eagle3 MHA-draft + Kimi K2.5 model.
 
-    Same as :class:`KimiK2_5ModelInputs` plus draft-specific buffers. The
-    draft owns a full :class:`KVCacheInputs` (separate from the target's
-    MLA cache) so its MHA dispatch metadata can be plumbed at both
-    prefill and decode q_max_seq_len without colliding with the target's
-    MLA slots.
+    Same as :class:`KimiK2_5ModelInputs` plus the spec-decode fields and
+    trailing buffer packing from :class:`UnifiedSpecDecodeInputs`. The draft
+    owns a full :class:`KVCacheInputs` (separate from the target's MLA cache)
+    so its MHA dispatch metadata can be plumbed at both prefill and decode
+    q_max_seq_len without colliding with the target's MLA slots. The graph
+    binds the per-row ``in_thinking_phase`` flag.
     """
-
-    draft_tokens: Buffer | None = None
-    seed: Buffer | None = None
-    temperature: Buffer | None = None
-    top_k: Buffer | None = None
-    max_k: Buffer | None = None
-    top_p: Buffer | None = None
-    min_top_p: Buffer | None = None
-
-    in_thinking_phase: Buffer | None = None
-    """Per-batch ``bool`` flag marking rows currently inside a
-    ``<think>...</think>`` block; consumed by relaxed acceptance."""
-
-    pinned_bitmask: Buffer | None = None
-    """Pinned host bitmask for constrained decoding.
-
-    Shape ``[batch_size, num_speculative_tokens + 1, vocab_size]``.
-    ``None`` when structured output is disabled.
-    """
-
-    wait_payload: Buffer | None = None
-    """CPU ``int64[2]`` payload consumed by
-    ``mo.wait_host_value_with_dep``. ``None`` when off."""
-
-    device_bitmask_scratch: Buffer | None = None
-    """Device scratch buffer that receives the in-graph H2D from
-    ``pinned_bitmask``. ``None`` when off."""
 
     @property
     def buffers(self) -> tuple[Buffer, ...]:
@@ -118,42 +97,12 @@ class Eagle3MHAKimiK25Inputs(KimiK2_5ModelInputs):
             *self.batch_context_lengths,
             *self.ep_inputs,
         )
-        if self.draft_tokens is not None:
-            buffers += (self.draft_tokens,)
-        assert self.seed is not None
-        buffers += (self.seed,)
-        if self.draft_tokens is not None:
-            assert self.temperature is not None
-            assert self.top_k is not None
-            assert self.max_k is not None
-            assert self.top_p is not None
-            assert self.min_top_p is not None
-            assert self.in_thinking_phase is not None
-            buffers += (
-                self.temperature,
-                self.top_k,
-                self.max_k,
-                self.top_p,
-                self.min_top_p,
-                self.in_thinking_phase,
-            )
-            # Constrained-decoding bitmask inputs are appended only on
-            # the spec-decode path. The bitmask triple's position in
-            # the tuple must match the order in ``input_types()``,
-            # which gates the bitmask inputs on both spec-decode and
-            # ``enable_structured_output``.
-            if self.pinned_bitmask is not None:
-                assert self.wait_payload is not None
-                assert self.device_bitmask_scratch is not None
-                buffers += (
-                    self.pinned_bitmask,
-                    self.wait_payload,
-                    self.device_bitmask_scratch,
-                )
-        return buffers
+        return buffers + self._spec_decode_tail_buffers(
+            include_in_thinking_phase=True
+        )
 
 
-class Eagle3MHAKimiK25Model(KimiK2_5Model):
+class Eagle3MHAKimiK25Model(_UnifiedSpecDecodeModelMixin, KimiK2_5Model):
     """Eagle3 MHA-draft + Kimi K2.5 (MLA target) pipeline model.
 
     The pipeline routes here when the target HF arch is
@@ -476,16 +425,9 @@ class Eagle3MHAKimiK25Model(KimiK2_5Model):
 
         return vision_model, language_model
 
-    def execute(self, model_inputs: ModelInputs) -> UnifiedEagleOutputs:
-        model_outputs = self.language_model.execute(*model_inputs.buffers)
-        assert len(model_outputs) == 3, (
-            f"Expected 3 outputs, got {len(model_outputs)}"
-        )
-        return UnifiedEagleOutputs(
-            num_accepted_draft_tokens=model_outputs[0],
-            next_tokens=model_outputs[1],
-            next_draft_tokens=model_outputs[2],
-        )
+    @property
+    def _spec_decode_model(self) -> Model:
+        return self.language_model
 
     def prepare_initial_token_inputs(
         self,
@@ -524,6 +466,7 @@ class Eagle3MHAKimiK25Model(KimiK2_5Model):
             language_image_embeddings=base.language_image_embeddings,
             language_image_token_indices=base.language_image_token_indices,
             draft_tokens=draft_tokens,
+            structured_output=self.pipeline_config.needs_bitmask_constraints,
         )
 
 
@@ -567,8 +510,8 @@ def _build_mha_draft_config(
     fc_input_multiplier: int,
     kv_params: KVCacheParams,
     sliding_window_override: int | None = None,
-) -> Eagle3MHAKimiK25DraftConfig:
-    """Build :class:`Eagle3MHAKimiK25DraftConfig` from the draft HF config.
+) -> Eagle3MHADraftConfig:
+    """Build :class:`Eagle3MHADraftConfig` from the draft HF config.
 
     ``sliding_window_override`` (typically threaded from
     ``MAXModelConfig.sliding_window`` on the draft model — settable via
@@ -598,7 +541,7 @@ def _build_mha_draft_config(
         "MAXModelConfig override" if use_override else "draft HF config",
     )
 
-    return Eagle3MHAKimiK25DraftConfig(
+    return Eagle3MHADraftConfig(
         hidden_size=int(draft_hf.hidden_size),
         num_attention_heads=int(draft_hf.num_attention_heads),
         num_key_value_heads=int(draft_hf.num_key_value_heads),

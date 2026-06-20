@@ -106,12 +106,12 @@ def get_user_path() -> Path:
 
 
 def get_current_home() -> String:
-    return std.os.env.getenv("HOME")
+    return std.os.getenv("HOME")
 
 
 def set_home(path: Path) raises:
     path_str = String(path)
-    _ = std.os.env.setenv("HOME", path_str)
+    _ = std.os.setenv("HOME", path_str)
 
 
 # More elaborate tests in `os/path/test_expanduser.mojo`

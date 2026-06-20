@@ -139,6 +139,7 @@ from max.pipelines.modeling.types import (
     TextGenerationInputs,
     TextGenerationRequest,
 )
+from max.pipelines.speculative.config import MAGIC_DRAFT_TOKEN_ID
 from max.pipelines.speculative.ragged_token_merger import _shape_to_scalar
 from max.pipelines.speculative.utils import _SpeculativeDecodingMetrics
 from max.profiler import Tracer, traced
@@ -178,7 +179,6 @@ logger = logging.getLogger("max.pipelines")
 
 _MAX_GRAPH_CAPTURE_BATCH_SIZE = 128
 _OOB_IDX = np.iinfo(np.int32).min
-_MAGIC_DRAFT_TOKEN_ID = 42
 
 
 # Log that the async bitmask callback is lagging, but keep waiting for it.
@@ -775,7 +775,7 @@ class AsyncBatch(Generic[TextGenerationContextType]):
             max_seq_len = spec_decode_batch.max_seq_len
             batch_size = len(self.inputs.flat_batch)
             is_dummy_draft_tokens: list[bool] = [
-                all(draft_tokens_np[i, :] == _MAGIC_DRAFT_TOKEN_ID)
+                all(draft_tokens_np[i, :] == MAGIC_DRAFT_TOKEN_ID)
                 for i in range(batch_size)
             ]
             outputs = update_spec_decode_context_and_prepare_responses(
@@ -3168,7 +3168,7 @@ class OverlapTextGenerationPipeline(
                 # graph which hurts perf.
                 if not ctx.spec_decoding_state.draft_tokens_to_verify:
                     ctx.spec_decoding_state.draft_tokens_to_verify = [
-                        _MAGIC_DRAFT_TOKEN_ID
+                        MAGIC_DRAFT_TOKEN_ID
                     ] * num_draft_tokens_to_verify
                 tokens = ctx.spec_decoding_state.draft_tokens_to_verify
                 assert len(tokens) == num_draft_tokens_to_verify
@@ -3437,7 +3437,7 @@ class OverlapTextGenerationPipeline(
                         # reset, step A would read tokens written by step B two
                         # iterations ago — stale by one context-advance and
                         # therefore wrong to verify.  Resetting to [] causes
-                        # _execute_spec_decode to use _MAGIC_DRAFT_TOKEN_ID as a
+                        # _execute_spec_decode to use MAGIC_DRAFT_TOKEN_ID as a
                         # placeholder (see fallback there), which keeps the
                         # draft-token tensor at shape K>0 so CUDA graph replay
                         # remains active.  Previously [_OOB_IDX] * K was used

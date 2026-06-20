@@ -744,6 +744,22 @@ class StructuredOutputHelper:
                 end_token_ids=self.tool_call_region_delimiters.end_token_ids,
             )
 
+    def _tokens_for_consume(self, token: int, was_enforced: bool) -> list[int]:
+        """Tokens to feed the matcher for one conditional-enforcement step.
+
+        Mirrors ``TextGenerationContext._tokens_for_consume`` for the async
+        spec-decode paths: on the enforcement flip-on (``was_enforced`` was
+        False), feed the whole start marker rather than just the token that
+        completed it, so multi-token / namespace-prefixed markers (e.g.
+        MiniMax-M3's ``NS<tool_call>``) align with the grammar's start rule
+        instead of rejecting into fail-open. Single-token markers have
+        ``start_token_ids == [token]``, so this is a no-op for them.
+        """
+        delims = self.tool_call_region_delimiters
+        if not was_enforced and delims and delims.start_token_ids:
+            return list(delims.start_token_ids)
+        return [token]
+
     def _speculatively_fill_bitmask_window(
         self,
         ctx: TextGenerationContextType,
@@ -806,8 +822,10 @@ class StructuredOutputHelper:
                 break
 
             consumed = False
+            was_enforced = ctx.grammar_enforced
             if ctx.update_enforcement_state(draft_token):
-                if matcher_copy.try_consume_tokens([draft_token]) == 1:
+                tokens = self._tokens_for_consume(draft_token, was_enforced)
+                if matcher_copy.try_consume_tokens(tokens) == len(tokens):
                     consumed = True
                 else:
                     break
@@ -954,39 +972,46 @@ class StructuredOutputHelper:
                 for committed_idx, token in enumerate(committed_tokens):
                     if token in ctx.eos_tracker.eos_token_ids:
                         ctx.grammar_enforced = False
-                    elif (
-                        ctx.update_enforcement_state(token)
-                        and ctx.matcher.try_consume_tokens([token]) != 1
-                    ):
-                        # ``role`` distinguishes a rejection on the bonus
-                        # token (sampled by target *with* bitmask, so a
-                        # rejection here usually means a bitmask/matcher
-                        # desync) from a rejection on an accepted draft
-                        # (produced by the draft model and verified by
-                        # target, where rejection more often reflects the
-                        # target sampling outside the matcher's allowed
-                        # set on a draft slot the speculative walk did
-                        # not constrain).
-                        role = (
-                            "bonus"
-                            if committed_idx == len(committed_tokens) - 1
-                            else f"accepted_draft[{committed_idx}]"
-                        )
-                        logger.error(
-                            "Async matcher rejected token %d "
-                            "(request %s, role=%s); disabling enforcement "
-                            "for the rest of the request. "
-                            "matcher_errors=%s matcher_warnings=%s %s",
-                            token,
-                            ctx.request_id,
-                            role,
-                            ctx.matcher.get_error(),
-                            ctx.matcher.get_grammar_warnings(),
-                            self._rejection_diagnostics(
-                                ctx, committed_tokens, committed_idx
-                            ),
-                        )
-                        ctx.grammar_enforced = False
+                        continue
+                    was_enforced = ctx.grammar_enforced
+                    if not ctx.update_enforcement_state(token):
+                        continue
+                    # On the enforcement flip-on, feed the matcher the whole
+                    # start marker (multi-token / NS-prefixed markers like
+                    # M3's NS<tool_call>), not just the completing token.
+                    tokens = self._tokens_for_consume(token, was_enforced)
+                    if ctx.matcher.try_consume_tokens(tokens) == len(tokens):
+                        continue
+                    # ``role`` distinguishes a rejection on the bonus
+                    # token (sampled by target *with* bitmask, so a
+                    # rejection here usually means a bitmask/matcher
+                    # desync) from a rejection on an accepted draft
+                    # (produced by the draft model and verified by
+                    # target, where rejection more often reflects the
+                    # target sampling outside the matcher's allowed
+                    # set on a draft slot the speculative walk did
+                    # not constrain).
+                    role = (
+                        "bonus"
+                        if committed_idx == len(committed_tokens) - 1
+                        else f"accepted_draft[{committed_idx}]"
+                    )
+                    logger.error(
+                        "Async matcher rejected %d token(s) ending at %d "
+                        "(request %s, role=%s); disabling enforcement "
+                        "for the rest of the request. "
+                        "matcher_errors=%s matcher_warnings=%s %s",
+                        len(tokens),
+                        token,
+                        ctx.request_id,
+                        role,
+                        ctx.matcher.get_error(),
+                        ctx.matcher.get_grammar_warnings(),
+                        self._rejection_diagnostics(
+                            ctx, committed_tokens, committed_idx
+                        ),
+                    )
+                    ctx.grammar_enforced = False
 
                 # Part 2: speculative window for the next batch's bitmasks.
                 # A draft that flips enforcement on mid-window causes
