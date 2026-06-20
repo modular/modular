@@ -343,8 +343,7 @@ struct ClockType(Equatable, TrivialRegisterPassable):
 
 @fieldwise_init
 struct _DeviceImpl(Defaultable, ImplicitlyCopyable, RegisterPassable):
-    @__allow_legacy_any_origin_fields
-    var handle: Optional[UnsafePointer[NoneType, MutAnyOrigin]]
+    var handle: Optional[UnsafePointer[NoneType, MutUntrackedOrigin]]
 
     @always_inline
     def __init__(out self):
