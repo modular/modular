@@ -68,7 +68,7 @@ spec:
       containers:
         - name: receiver
           image: ENGINE_IMAGE_PLACEHOLDER
-          imagePullPolicy: IfNotPresent
+          imagePullPolicy: Always
           command: ["/bin/bash", "-c"]
           args:
             - >-
