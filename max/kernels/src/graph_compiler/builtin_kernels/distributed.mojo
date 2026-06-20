@@ -133,7 +133,9 @@ struct DistributedAllReduceSum:
             UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
         ](uninitialized=True)
         comptime for i in range(num_devices):
-            rank_sigs[i] = signal_buffers[i]._ptr.bitcast[Signal]()
+            rank_sigs[i] = (
+                signal_buffers[i]._ptr.bitcast[Signal]().as_unsafe_any_origin()
+            )
 
         comptime if get_defined_bool["MODULAR_USE_VENDOR_CCL", False]():
             logger.info("Executing: Vendor CCL")
@@ -277,7 +279,9 @@ struct DistributedReduceScatterSum:
         ](uninitialized=True)
 
         comptime for i in range(num_devices):
-            rank_sigs[i] = signal_buffers[i]._ptr.bitcast[Signal]()
+            rank_sigs[i] = (
+                signal_buffers[i]._ptr.bitcast[Signal]().as_unsafe_any_origin()
+            )
 
         @always_inline
         def launch_reducescatter[
@@ -399,7 +403,9 @@ struct DistributedAllGather:
                 ),
                 row_major(inputs[i].size()),
             )
-            rank_sigs[i] = signal_buffers[i]._ptr.bitcast[Signal]()
+            rank_sigs[i] = (
+                signal_buffers[i]._ptr.bitcast[Signal]().as_unsafe_any_origin()
+            )
 
         comptime for i in range(num_devices * num_devices):
             out_tensors[i] = TileTensor(
@@ -507,7 +513,9 @@ struct DistributedBroadcast:
         ](uninitialized=True)
 
         comptime for i in range(signal_buffers.size):
-            rank_sigs[i] = signal_buffers[i]._ptr.bitcast[Signal]()
+            rank_sigs[i] = (
+                signal_buffers[i]._ptr.bitcast[Signal]().as_unsafe_any_origin()
+            )
 
         @always_inline
         def launch_broadcast[
@@ -600,7 +608,9 @@ struct DistributedScatter:
                 .make_dynamic[DType.int64]()
                 .as_immut()
             )
-            rank_sigs[i] = signal_buffers[i]._ptr.bitcast[Signal]()
+            rank_sigs[i] = (
+                signal_buffers[i]._ptr.bitcast[Signal]().as_unsafe_any_origin()
+            )
 
         @always_inline
         def launch_scatter[
@@ -705,7 +715,9 @@ struct DistributedAllReduceAddRMSNormQuantFP8:
             in_tensors[i] = rebind[InputTensorType](
                 inputs[i].to_tile_tensor[DType.int64]().as_immut()
             )
-            rank_sigs[i] = signal_buffers[i]._ptr.bitcast[Signal]()
+            rank_sigs[i] = (
+                signal_buffers[i]._ptr.bitcast[Signal]().as_unsafe_any_origin()
+            )
 
         @always_inline
         def launch_fused_allreduce[

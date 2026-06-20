@@ -2101,7 +2101,9 @@ struct BundledAllReduceSum:
             in_tensors[i] = rebind[InputTensorType](
                 inputs[i].to_tile_tensor[DType.int64]().as_immut()
             )
-            rank_sigs[i] = signal_buffers[i]._ptr.bitcast[Signal]()
+            rank_sigs[i] = (
+                signal_buffers[i]._ptr.bitcast[Signal]().as_unsafe_any_origin()
+            )
 
         @always_inline
         @parameter
@@ -2220,7 +2222,9 @@ struct BundledAllReduceAddRMSNormQuantFP8:
             in_tensors[i] = rebind[InputTensorType](
                 inputs[i].to_tile_tensor[DType.int64]().as_immut()
             )
-            rank_sigs[i] = signal_buffers[i]._ptr.bitcast[Signal]()
+            rank_sigs[i] = (
+                signal_buffers[i]._ptr.bitcast[Signal]().as_unsafe_any_origin()
+            )
 
         allreduce_residual_rmsnorm(
             in_tensors,
