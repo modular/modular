@@ -145,6 +145,9 @@ class Eagle3MHAKimiK25Model(_UnifiedSpecDecodeModelMixin, KimiK2_5Model):
                 key: value.data() for key, value in self.weights.items()
             }
 
+        # ``_create_model_config`` may mutate the state dictionary.
+        config = self._create_model_config(target_state_dict)
+
         vision_state_dict: dict[str, WeightData] = {}
         llm_state_dict: dict[str, WeightData] = {}
         for key, value in target_state_dict.items():
@@ -154,8 +157,6 @@ class Eagle3MHAKimiK25Model(_UnifiedSpecDecodeModelMixin, KimiK2_5Model):
                 "language_"
             ):
                 llm_state_dict[key] = value
-
-        config = self._create_model_config(target_state_dict)
 
         n_devices = len(self.devices)
         if n_devices > 1 and self.pipeline_config.runtime.ep_size != n_devices:

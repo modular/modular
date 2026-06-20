@@ -161,6 +161,9 @@ class Eagle3KimiK25Model(_UnifiedSpecDecodeModelMixin, KimiK2_5Model):
                 key: value.data() for key, value in self.weights.items()
             }
 
+        # ``_create_model_config`` may mutate the state dictionary.
+        config = self._create_model_config(target_state_dict)
+
         vision_state_dict: dict[str, WeightData] = {}
         llm_state_dict: dict[str, WeightData] = {}
         for key, value in target_state_dict.items():
@@ -170,8 +173,6 @@ class Eagle3KimiK25Model(_UnifiedSpecDecodeModelMixin, KimiK2_5Model):
                 "language_"
             ):
                 llm_state_dict[key] = value
-
-        config = self._create_model_config(target_state_dict)
 
         # The target HF config doesn't carry eagle_config; propagate from draft.
         if config.eagle_aux_hidden_state_layer_ids is None:
