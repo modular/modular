@@ -578,7 +578,17 @@ def compare_g16_vs_g32[
 def main() raises:
     with DeviceContext() as ctx:
         test_nvfp4[DType.uint8, group_size=32](ctx, Int(482), Idx[4096], Idx[4096])
-        # WIP group=16: weights/pipeline are correct (compare_g16_vs_g32 passes
-        # when load_b_nvfp4's scale is bypassed), but the scale register
-        # fill/read for num_scale_sub>1 is still wrong. Re-enable to debug.
+        # WIP group=16/BK=32: weights/pipeline correct; remaining bug is the
+        # scale async-copy for num_scale_sub>1 -- the fast (every-tile) reload
+        # outruns the scale cp.async pipeline, so a scale stage is read before
+        # its copy completes (reads 0.0). Fix: load NVFP4 scales synchronously
+        # (they are tiny) or deepen/wait the scale prefetch. Tool to debug:
+        # compare_g16_vs_g32 (bypassing the scale read makes g16 == g32).
+        # WIP group=16/BK=32: weights/pipeline correct (compare_g16_vs_g32
+        # passes with the scale read bypassed); remaining bug is the scale
+        # staging for num_scale_sub>1 -- with the every-tile reload a scale SMEM
+        # stage reads 0.0 at k_tile=2 (stage not ready/filled). A synchronous
+        # scale copy did NOT fix it, so the cause is the stage indexing/ordering
+        # (prologue fills stages 0,1,2 but stage 2 reads empty), not just async
+        # completion. compare_g16_vs_g32 + the k_tile debug print isolate it.
         # compare_g16_vs_g32(ctx, Int(482), Idx[4096], Idx[4096])
