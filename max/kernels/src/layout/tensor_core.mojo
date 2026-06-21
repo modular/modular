@@ -1304,10 +1304,11 @@ struct TensorCore[
             mma_tile.vectorize[1, 4]()[0, umod(thread_idx.x, WARP_SIZE)]
         )
 
+        var base = scale_sub * num_frags
         comptime for i in range(0, num_frags, 2):
             var q_int = vec[i // 2]
-            var s0 = bitcast[DType.bfloat16, 1](scales[i, scale_sub])
-            var s1 = bitcast[DType.bfloat16, 1](scales[i + 1, scale_sub])
+            var s0 = bitcast[DType.bfloat16, 1](scales[base + i, 0])
+            var s1 = bitcast[DType.bfloat16, 1](scales[base + i + 1, 0])
             var v1 = e2m1tobf16(q_int, s0)
             q_int >>= 4
             var v2 = e2m1tobf16(q_int, s0)

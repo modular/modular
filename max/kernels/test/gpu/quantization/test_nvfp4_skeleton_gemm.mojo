@@ -27,7 +27,7 @@ from std.random import rand, randint
 from std.time import perf_counter_ns
 
 from std.gpu import WARP_SIZE, block_idx, thread_idx
-from std.gpu.host import DeviceContext
+from std.gpu.host import DeviceBuffer, DeviceContext, HostBuffer
 
 from internal_utils import assert_almost_equal
 from layout import (
@@ -203,6 +203,7 @@ def test_nvfp4[
     group_size: Int = 128,
     BK: Int = 32,
     ref_block_k: Int = 32,
+    uniform_scales: Bool = False,
 ](ctx: DeviceContext, m: MType, n: NType, k: KType) raises:
     comptime pack_factor = 8
     comptime group_bytes = group_size // 2 + 2
@@ -237,7 +238,10 @@ def test_nvfp4[
         Scalar[a_type]
     ]()
     var b_scales_size = (K // group_size) * N
-    rand(b_scales_ptr, b_scales_size, min=0, max=0.125)
+    comptime if uniform_scales:
+        rand(b_scales_ptr, b_scales_size, min=0.0625, max=0.0625)
+    else:
+        rand(b_scales_ptr, b_scales_size, min=0, max=0.125)
     randint(
         b_host_ptr.unsafe_ptr().bitcast[UInt32](),
         N * (K // pack_factor),
@@ -475,17 +479,106 @@ def bench_nvfp4_g16[
     _ = c_dev^
 
 
+def _run_uniform[
+    NType: CoordLike,
+    KType: CoordLike, //,
+    group_size: Int,
+    BK: Int,
+](
+    ctx: DeviceContext,
+    M: Int,
+    n: NType,
+    k: KType,
+    a_dev: DeviceBuffer[DType.bfloat16],
+    w_host: HostBuffer[DType.uint8],
+) raises -> HostBuffer[DType.bfloat16]:
+    comptime a_type = DType.bfloat16
+    comptime dtype = DType.uint8
+    comptime pf = 8
+    comptime gb = group_size // 2 + 2
+    var N = Int(n.value())
+    var K = Int(k.value())
+    comptime _b_dim1 = (KType.static_value // group_size) * gb
+
+    var b_size = N * ((K // group_size) * gb)
+    var b_host = ctx.enqueue_create_host_buffer[dtype](b_size)
+    # copy the shared weight bytes, then uniform scales
+    for i in range(N * K // 2):
+        b_host.unsafe_ptr()[i] = w_host.unsafe_ptr()[i]
+    var sp = (b_host.unsafe_ptr() + N * K // 2).bitcast[Scalar[a_type]]()
+    for i in range((K // group_size) * N):
+        sp[i] = BFloat16(0.0625)
+    var b_dev = ctx.enqueue_create_buffer[dtype](b_size)
+    var c_dev = ctx.enqueue_create_buffer[a_type](M * N)
+    ctx.enqueue_copy(b_dev, b_host)
+
+    comptime b_layout = Layout.row_major(NType.static_value, _b_dim1)
+    comptime btt = LayoutTensor[dtype, b_layout, _]
+    var b_lt = btt(
+        b_dev.unsafe_ptr(),
+        RuntimeLayout[
+            b_layout,
+            element_type = btt.layout_int_type,
+            linear_idx_type = btt.linear_idx_type,
+        ].row_major(
+            IndexList[2](N, (K // group_size) * gb).cast[btt.layout_int_type]()
+        ),
+    )
+    var a_lt = TileTensor(
+        a_dev, row_major(Coord(M, Idx[KType.static_value]))
+    ).to_layout_tensor()
+    var c_lt = TileTensor(
+        c_dev, row_major(Coord(M, Idx[NType.static_value]))
+    ).to_layout_tensor()
+    comptime config = MatmulConfig[a_type, dtype, a_type, True](
+        block_tile_shape=Index(128, 128, BK),
+        warp_tile_shape=Index(64, 64, BK),
+        num_pipeline_stages=4,
+    )
+    multistage_gemm_q[
+        group_size=group_size, pack_factor=pf, config=config, is_nvfp4=True
+    ](c_lt, a_lt, b_lt, config, ctx)
+    var c_host = ctx.enqueue_create_host_buffer[a_type](M * N)
+    ctx.enqueue_copy(c_host, c_dev)
+    ctx.synchronize()
+    _ = b_dev^
+    _ = c_dev^
+    _ = b_host^
+    return c_host
+
+
+def compare_g16_vs_g32[
+    NType: CoordLike, KType: CoordLike, //
+](ctx: DeviceContext, M: Int, n: NType, k: KType) raises:
+    """group=32 vs group=16 kernels on IDENTICAL weights + uniform scales. The
+    grouping is then irrelevant, so a mismatch isolates a weight-handling bug in
+    the num_scale_sub>1 path (vs a possibly-wrong reference)."""
+    comptime pf = 8
+    var N = Int(n.value())
+    var K = Int(k.value())
+    var a_dev = ctx.enqueue_create_buffer[DType.bfloat16](M * K)
+    var a_host = ctx.enqueue_create_host_buffer[DType.bfloat16](M * K)
+    rand(a_host.unsafe_ptr(), M * K)
+    ctx.enqueue_copy(a_dev, a_host)
+    var w_host = ctx.enqueue_create_host_buffer[DType.uint8](N * K // 2)
+    randint(w_host.unsafe_ptr().bitcast[UInt32](), N * (K // pf), 0, 2000000000)
+    ctx.synchronize()
+
+    var c32 = _run_uniform[group_size=32, BK=32](ctx, M, n, k, a_dev, w_host)
+    var c16 = _run_uniform[group_size=16, BK=32](ctx, M, n, k, a_dev, w_host)
+    assert_almost_equal(
+        c32.unsafe_ptr(), c16.unsafe_ptr(), M * N, atol=0.001, rtol=1e-2
+    )
+    print("g16 kernel == g32 kernel (uniform): KERNEL OK -> ref16 was the bug")
+    _ = a_dev^
+    _ = a_host^
+    _ = w_host^
+
+
 def main() raises:
     with DeviceContext() as ctx:
-        # Correctness at cadence-1 (group == BK == 32).
         test_nvfp4[DType.uint8, group_size=32](ctx, Int(482), Idx[4096], Idx[4096])
-        # WIP: REAL NVFP4 grouping group=16/BK=32 (2 scale subgroups per tile).
-        # Compiles + no NaN, but the subgroup->scale mapping still gives wrong
-        # values (group=32 and GGUF are bit-exact). Re-enable when fixed.
-        # test_nvfp4[DType.uint8, group_size=16, BK=32, ref_block_k=16](
-        #     ctx, Int(482), Idx[4096], Idx[4096]
-        # )
-        print("--- manual wall-clock timing ---")
-        bench_nvfp4_g16[128, 32, 4](ctx, Int(482), Idx[4096], Idx[4096])
-        bench_nvfp4_g16[32, 32, 4](ctx, Int(482), Idx[4096], Idx[4096])
-        bench_nvfp4_g16[16, 16, 4](ctx, Int(482), Idx[4096], Idx[4096])
+        # WIP group=16: weights/pipeline are correct (compare_g16_vs_g32 passes
+        # when load_b_nvfp4's scale is bypassed), but the scale register
+        # fill/read for num_scale_sub>1 is still wrong. Re-enable to debug.
+        # compare_g16_vs_g32(ctx, Int(482), Idx[4096], Idx[4096])

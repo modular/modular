@@ -395,7 +395,10 @@ def multistage_mma_q[
         LayoutTensor[
             mut=True,
             scales_type,
-            Layout.row_major(num_n_mmas, num_scale_sub),
+            # Flattened [num_n_mmas * num_scale_sub, 1] so each subgroup's
+            # num_n_mmas scales are CONTIGUOUS (a strided column would break the
+            # vectorized copy). load_b_nvfp4 indexes [i + scale_sub*num_frags].
+            Layout.row_major(num_n_mmas * num_scale_sub, 1),
             MutAnyOrigin,
             address_space=AddressSpace.LOCAL,
         ]
@@ -436,7 +439,7 @@ def multistage_mma_q[
     # One subgroup per BK tile for GGUF (num_scale_sub == 1); NVFP4 group < BK
     # has num_scale_sub > 1 -- load each subgroup row into its reg column.
     comptime for sub in range(num_scale_sub):
-        scales_reg_tiles.tile[num_n_mmas, 1](0, sub).vectorize[
+        scales_reg_tiles.tile[num_n_mmas, 1](sub, 0).vectorize[
             simd_size, 1
         ]().copy_from(
             scales_warp_tile.tile[1, WN](sub, 0).vectorize[1, simd_size]().distribute[
@@ -479,7 +482,7 @@ def multistage_mma_q[
                         ceildiv(BK, group_size), WN
                     ](0, Int(warp_x))
                     comptime for sub in range(num_scale_sub):
-                        scales_reg_tiles.tile[num_n_mmas, 1](0, sub).vectorize[
+                        scales_reg_tiles.tile[num_n_mmas, 1](sub, 0).vectorize[
                             simd_size, 1
                         ]().copy_from(
                             scales_warp_tile.tile[1, WN](sub, 0)
