@@ -372,15 +372,19 @@ def test_nvfp4[
 
 
 def bench_nvfp4_g16[
-    NType: CoordLike, KType: CoordLike, //
+    NType: CoordLike,
+    KType: CoordLike, //,
+    group_size: Int,
+    BK: Int,
+    stages: Int,
 ](ctx: DeviceContext, M: Int, n: NType, k: KType) raises:
-    """Throughput-only de-risk at the REAL NVFP4 grouping (group=16, BK=16).
-    Timing is value-independent so random packed weights/scales are fine."""
+    """Throughput-only de-risk over (group_size, BK, stages). Timing is
+    value-independent so random packed weights/scales are fine. Only valid
+    when group_size >= BK (the int4 scale cadence assumption)."""
     comptime a_type = DType.bfloat16
     comptime dtype = DType.uint8
-    comptime group_size = 16
     comptime pack_factor = 8
-    comptime group_bytes = group_size // 2 + 2  # 10
+    comptime group_bytes = group_size // 2 + 2
 
     var N = Int(n.value())
     var K = Int(k.value())
@@ -412,9 +416,9 @@ def bench_nvfp4_g16[
     var c2 = c_tt.to_layout_tensor()
 
     comptime config = MatmulConfig[a_type, dtype, a_type, True](
-        block_tile_shape=Index(128, 128, 16),
-        warp_tile_shape=Index(64, 64, 16),
-        num_pipeline_stages=4,
+        block_tile_shape=Index(128, 128, BK),
+        warp_tile_shape=Index(64, 64, BK),
+        num_pipeline_stages=stages,
     )
 
     comptime nrun = 200
@@ -433,7 +437,19 @@ def bench_nvfp4_g16[
     var tflops = (
         2.0 * Float64(M) * Float64(N) * Float64(K) * 1e-12 / (nstime * 1e-9)
     )
-    print("  NVFP4 g16 M=", M, " N=", N, " K=", K, ": ", tflops, " TFLOP/s")
+    print(
+        "  NVFP4 group=",
+        group_size,
+        " BK=",
+        BK,
+        " stages=",
+        stages,
+        " M=",
+        M,
+        ": ",
+        tflops,
+        " TFLOP/s",
+    )
     _ = a_dev^
     _ = b_dev^
     _ = c_dev^
@@ -445,6 +461,15 @@ def main() raises:
         test_nvfp4[DType.uint8](ctx, Int(482), Idx[6144], Idx[4096])
         test_nvfp4[DType.uint8](ctx, Int(482), Idx[28672], Idx[4096])
         test_nvfp4[DType.uint8](ctx, Int(482), Idx[4096], Idx[14336])
-        print("--- group=16 (real NVFP4) throughput de-risk ---")
-        bench_nvfp4_g16(ctx, Int(482), Idx[4096], Idx[4096])
-        bench_nvfp4_g16(ctx, Int(64), Idx[4096], Idx[4096])
+        print("--- group/BK/stages throughput de-risk (N=4096 K=4096) ---")
+        # Valid configs (group >= BK): does BK=32 hold at finer groups?
+        bench_nvfp4_g16[32, 32, 4](ctx, Int(482), Idx[4096], Idx[4096])
+        bench_nvfp4_g16[64, 32, 4](ctx, Int(482), Idx[4096], Idx[4096])
+        bench_nvfp4_g16[128, 32, 4](ctx, Int(482), Idx[4096], Idx[4096])
+        # Is the group=32/64 collapse a SMEM-fallback? Try fewer stages.
+        bench_nvfp4_g16[32, 32, 2](ctx, Int(482), Idx[4096], Idx[4096])
+        bench_nvfp4_g16[32, 32, 3](ctx, Int(482), Idx[4096], Idx[4096])
+        bench_nvfp4_g16[64, 32, 2](ctx, Int(482), Idx[4096], Idx[4096])
+        # BK=16 (group=16 naive): do fewer/more stages rescue it?
+        bench_nvfp4_g16[16, 16, 2](ctx, Int(482), Idx[4096], Idx[4096])
+        bench_nvfp4_g16[16, 16, 8](ctx, Int(482), Idx[4096], Idx[4096])
