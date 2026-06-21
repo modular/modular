@@ -41,7 +41,9 @@ else:
 
 import modular_test_format
 
-config.test_format = modular_test_format.ModularShTest(execute_external)
+config.test_format = modular_test_format.ModularShTest(
+    execute_external, force_execute_external=execute_external
+)
 
 if execute_external:
     config.available_features.add("shell")
