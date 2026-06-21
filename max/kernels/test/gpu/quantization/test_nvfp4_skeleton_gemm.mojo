@@ -74,6 +74,7 @@ def create_ref_b_nvfp4[
     b_layout: Layout,
     group_size: Int,
     pack_factor: Int,
+    BLOCK_K: Int = 32,
 ](
     b_packed: LayoutTensor[type_q, b_q_layout, ImmutAnyOrigin],
     b_out: LayoutTensor[type_b, b_layout, MutAnyOrigin],
@@ -82,10 +83,11 @@ def create_ref_b_nvfp4[
 
     Mirrors `create_ref_b` in test_multistage_gemm_q.mojo exactly, but decodes
     each 4-bit code as E2M1 instead of symmetric int4 (same nibble->(n,k)
-    mapping, so the layout interpretation matches the kernel)."""
+    mapping, so the layout interpretation matches the kernel). BLOCK_K must be
+    >= group_size; set BLOCK_K == group_size for fine groups (one scale group
+    per reference block)."""
     comptime WARP_SIZE = 32
     comptime BLOCK_N = 128
-    comptime BLOCK_K = 32
     comptime repack_tile = Index(64, 16)
     comptime TILE_N = 64
     comptime TILE_K = 16
@@ -198,8 +200,10 @@ def test_nvfp4[
     KType: CoordLike,
     //,
     dtype: DType,
+    group_size: Int = 128,
+    BK: Int = 32,
+    ref_block_k: Int = 32,
 ](ctx: DeviceContext, m: MType, n: NType, k: KType) raises:
-    comptime group_size = 128
     comptime pack_factor = 8
     comptime group_bytes = group_size // 2 + 2
     comptime repack_tile = Index(64, 16)
@@ -277,8 +281,11 @@ def test_nvfp4[
 
     var c_device_ref = ctx.enqueue_create_buffer[a_type](c_size)
 
-    comptime kernels = MatmulKernels[a_type, dtype, a_type, True]()
-    comptime config = kernels.ampere_128x128_4
+    comptime config = MatmulConfig[a_type, dtype, a_type, True](
+        block_tile_shape=Index(128, 128, BK),
+        warp_tile_shape=Index(64, 64, BK),
+        num_pipeline_stages=4,
+    )
 
     var c_tt_shape = row_major(Coord(m, Idx[NType.static_value]))
     var a_tt_shape = row_major(Coord(m, Idx[KType.static_value]))
@@ -308,13 +315,16 @@ def test_nvfp4[
         b_ref_tensor.layout,
         group_size,
         pack_factor,
+        BLOCK_K=ref_block_k,
     ]
 
+    # warps = (BLOCK_N // 64) * (BLOCK_K // repack_tile_K=16)
+    comptime ref_threads = 2 * (ref_block_k // 16) * 32
     ctx.enqueue_function[dequan](
         b_tensor,
         b_ref_tensor,
-        grid_dim=(ceildiv(N, 128), ceildiv(K, 32), 1),
-        block_dim=(128, 1, 1),
+        grid_dim=(ceildiv(N, 128), ceildiv(K, ref_block_k), 1),
+        block_dim=(ref_threads, 1, 1),
     )
 
     ctx.enqueue_copy(c_host_ptr, c_device)
@@ -467,8 +477,11 @@ def bench_nvfp4_g16[
 
 def main() raises:
     with DeviceContext() as ctx:
-        print("--- manual wall-clock timing (settle the cliff artifact) ---")
+        # Correctness at cadence-1 (group == BK == 32). NOTE: BK=16 is invalid
+        # (num_k_mmas=1 breaks the mainloop prefetch); group=16 needs BK>=32 with
+        # per-subgroup scales (work in progress).
+        test_nvfp4[DType.uint8, group_size=32](ctx, Int(482), Idx[4096], Idx[4096])
+        print("--- manual wall-clock timing ---")
         bench_nvfp4_g16[128, 32, 4](ctx, Int(482), Idx[4096], Idx[4096])
-        bench_nvfp4_g16[64, 32, 4](ctx, Int(482), Idx[4096], Idx[4096])
         bench_nvfp4_g16[32, 32, 4](ctx, Int(482), Idx[4096], Idx[4096])
         bench_nvfp4_g16[16, 16, 4](ctx, Int(482), Idx[4096], Idx[4096])
