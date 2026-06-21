@@ -477,10 +477,14 @@ def bench_nvfp4_g16[
 
 def main() raises:
     with DeviceContext() as ctx:
-        # Correctness at cadence-1 (group == BK == 32). NOTE: BK=16 is invalid
-        # (num_k_mmas=1 breaks the mainloop prefetch); group=16 needs BK>=32 with
-        # per-subgroup scales (work in progress).
+        # Correctness at cadence-1 (group == BK == 32).
         test_nvfp4[DType.uint8, group_size=32](ctx, Int(482), Idx[4096], Idx[4096])
+        # WIP: REAL NVFP4 grouping group=16/BK=32 (2 scale subgroups per tile).
+        # Compiles + no NaN, but the subgroup->scale mapping still gives wrong
+        # values (group=32 and GGUF are bit-exact). Re-enable when fixed.
+        # test_nvfp4[DType.uint8, group_size=16, BK=32, ref_block_k=16](
+        #     ctx, Int(482), Idx[4096], Idx[4096]
+        # )
         print("--- manual wall-clock timing ---")
         bench_nvfp4_g16[128, 32, 4](ctx, Int(482), Idx[4096], Idx[4096])
         bench_nvfp4_g16[32, 32, 4](ctx, Int(482), Idx[4096], Idx[4096])

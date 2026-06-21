@@ -1245,6 +1245,7 @@ struct TensorCore[
         fragments: LayoutTensor[mut=True, ...],
         scales: LayoutTensor,
         mma_tile_coord_k: Int = 0,  # the k coordinate of mma tile
+        scale_sub: Int = 0,  # scale subgroup within the BK tile (group < BK)
     ):
         """Load NVFP4 (E2M1) quantized B fragments with dequantization.
 
@@ -1305,14 +1306,16 @@ struct TensorCore[
 
         comptime for i in range(0, num_frags, 2):
             var q_int = vec[i // 2]
-            var v1 = e2m1tobf16(q_int, bitcast[DType.bfloat16, 1](scales[i, 0]))
+            var s0 = bitcast[DType.bfloat16, 1](scales[i, scale_sub])
+            var s1 = bitcast[DType.bfloat16, 1](scales[i + 1, scale_sub])
+            var v1 = e2m1tobf16(q_int, s0)
             q_int >>= 4
-            var v2 = e2m1tobf16(q_int, bitcast[DType.bfloat16, 1](scales[i, 0]))
+            var v2 = e2m1tobf16(q_int, s0)
             fragments[i, 0] = rebind[frag_type](v1.join(v2))
             q_int >>= 4
-            v1 = e2m1tobf16(q_int, bitcast[DType.bfloat16, 1](scales[i + 1, 0]))
+            v1 = e2m1tobf16(q_int, s1)
             q_int >>= 4
-            v2 = e2m1tobf16(q_int, bitcast[DType.bfloat16, 1](scales[i + 1, 0]))
+            v2 = e2m1tobf16(q_int, s1)
             fragments[i + 1, 0] = rebind[frag_type](v1.join(v2))
 
     @always_inline

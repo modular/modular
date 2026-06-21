@@ -146,6 +146,12 @@ def multistage_mma_q[
     comptime num_scales_stages = ceildiv(
         (num_pipeline_stages - 1) * BK, group_size
     ) + 1
+    # NVFP4 (group < BK): a BK tile spans `num_scale_sub` scale groups; the GGUF
+    # path (group >= BK) has num_scale_sub == 1 and is unchanged. `scale_period`
+    # guards the `group_size // BK` divisions (== 0 when group < BK -> reload
+    # scales every tile).
+    comptime num_scale_sub = ceildiv(BK, group_size)
+    comptime scale_period = max(group_size // BK, 1)
     comptime repack_tile = Index(64, 16)
 
     var tid = UInt32(umod(thread_idx.x, num_threads))
@@ -297,38 +303,44 @@ def multistage_mma_q[
             # Every group_size rows share a scale
             # Only load scales when necessary
             comptime if scales_iter.address_space == AddressSpace.GENERIC:
-                if stage % (group_size // BK) == 0:
-                    comptime scales_stage = stage // (group_size // BK)
+                if stage % scale_period == 0:
+                    comptime scales_stage = stage // scale_period
                     var scales_smem_tile = scales_smem_iter.next_unsafe(
                         scales_smem_iter.linear_uint_type(scales_stage)
                     )[]
 
-                    # We only need one warp for copying scales...
+                    # `scales_iter[]` is the whole [num_scale_sub, BN] tile and
+                    # one `_incr()` advances all num_scale_sub groups; copy each
+                    # of its rows into the matching stage row (one row for GGUF).
                     if tid < UInt32(WARP_SIZE):
-                        var src_fragments = (
-                            scales_iter[]
-                            .bitcast[
-                                scales_type,
-                                target_address_space=AddressSpace.GENERIC,
-                            ]()
-                            .vectorize[1, async_copy_scales_veclen]()
-                            .distribute[async_copy_scales_layout](Int(tid))
-                        )
-                        var dst_fragments = scales_smem_tile.vectorize[
-                            1, async_copy_scales_veclen
-                        ]().distribute[async_copy_scales_layout](Int(tid))
+                        comptime for sub in range(num_scale_sub):
+                            var src_fragments = (
+                                scales_iter[]
+                                .bitcast[
+                                    scales_type,
+                                    target_address_space=AddressSpace.GENERIC,
+                                ]()
+                                .tile[1, BN](sub, 0)
+                                .vectorize[1, async_copy_scales_veclen]()
+                                .distribute[async_copy_scales_layout](Int(tid))
+                            )
+                            var dst_fragments = (
+                                scales_smem_tile.tile[1, BN](sub, 0)
+                                .vectorize[1, async_copy_scales_veclen]()
+                                .distribute[async_copy_scales_layout](Int(tid))
+                            )
 
-                        comptime element_size_bytes = size_of[
-                            scales_type
-                        ]() * async_copy_scales_veclen
-                        async_copy[element_size_bytes](
-                            src_fragments.ptr.address_space_cast[
-                                AddressSpace.GLOBAL
-                            ](),
-                            dst_fragments.ptr.address_space_cast[
-                                AddressSpace.SHARED
-                            ]().mut_cast[True](),
-                        )
+                            comptime element_size_bytes = size_of[
+                                scales_type
+                            ]() * async_copy_scales_veclen
+                            async_copy[element_size_bytes](
+                                src_fragments.ptr.address_space_cast[
+                                    AddressSpace.GLOBAL
+                                ](),
+                                dst_fragments.ptr.address_space_cast[
+                                    AddressSpace.SHARED
+                                ]().mut_cast[True](),
+                            )
 
                     scales_iter._incr()
 
@@ -383,7 +395,7 @@ def multistage_mma_q[
         LayoutTensor[
             mut=True,
             scales_type,
-            Layout.row_major(num_n_mmas, 1),
+            Layout.row_major(num_n_mmas, num_scale_sub),
             MutAnyOrigin,
             address_space=AddressSpace.LOCAL,
         ]
@@ -421,11 +433,16 @@ def multistage_mma_q[
     # load scales into regs
     # for thread 0-3, scales for col 0, 8, 16, ..., 56 are stored locally
     # thread 4-7 stores scales for col 1, 9, 17, ..., 57
-    scales_reg_tiles.vectorize[simd_size, 1]().copy_from(
-        scales_warp_tile.vectorize[1, simd_size]().distribute[
-            smem_reg_scales_layout, axis=0
-        ](Int(lane_id))
-    )
+    # One subgroup per BK tile for GGUF (num_scale_sub == 1); NVFP4 group < BK
+    # has num_scale_sub > 1 -- load each subgroup row into its reg column.
+    comptime for sub in range(num_scale_sub):
+        scales_reg_tiles.tile[num_n_mmas, 1](0, sub).vectorize[
+            simd_size, 1
+        ]().copy_from(
+            scales_warp_tile.tile[1, WN](sub, 0).vectorize[1, simd_size]().distribute[
+                smem_reg_scales_layout, axis=0
+            ](Int(lane_id))
+        )
 
     comptime if is_nvfp4:
         mma_op.load_b_nvfp4(b_warp_tile, b_reg_tiles[0], scales_reg_tiles, 0)
@@ -454,17 +471,23 @@ def multistage_mma_q[
                     b_wtile_coord0, b_wtile_coord1
                 )
 
-                # prefetch scales into regs every (group_size) rows
-                if (k_tile_id + 1) % (group_size // BK) == 0:
+                # prefetch scales into regs every `scale_period` tiles (every
+                # tile when group <= BK).
+                if (k_tile_id + 1) % scale_period == 0:
                     scales_smem_iter._incr()
                     scales_warp_tile = scales_smem_iter[].tile[
                         ceildiv(BK, group_size), WN
                     ](0, Int(warp_x))
-                    scales_reg_tiles.vectorize[simd_size, 1]().copy_from(
-                        scales_warp_tile.vectorize[1, simd_size]().distribute[
-                            smem_reg_scales_layout, axis=0
-                        ](Int(lane_id))
-                    )
+                    comptime for sub in range(num_scale_sub):
+                        scales_reg_tiles.tile[num_n_mmas, 1](0, sub).vectorize[
+                            simd_size, 1
+                        ]().copy_from(
+                            scales_warp_tile.tile[1, WN](sub, 0)
+                            .vectorize[1, simd_size]()
+                            .distribute[smem_reg_scales_layout, axis=0](
+                                Int(lane_id)
+                            )
+                        )
 
             mma_op.load_a[swizzle_a_pattern](
                 a_warp_tile,
@@ -477,6 +500,7 @@ def multistage_mma_q[
                     b_reg_tiles[next],
                     scales_reg_tiles,
                     (k_mma + 1) % num_k_mmas,
+                    (((k_mma + 1) % num_k_mmas) * MMA_K) // group_size,
                 )
             else:
                 mma_op.load_b(
@@ -536,7 +560,7 @@ def multistage_mma_q[
                         # Every group_size rows share a scale
                         # Only load scales when necessary
                         if (k_tile_id + num_pipeline_stages - 1) % (
-                            group_size // BK
+                            scale_period
                         ) == 0:
                             var scales_smem_tile = scales_smem_iter.next_unsafe(
                                 scales_smem_iter.linear_uint_type(
@@ -544,36 +568,39 @@ def multistage_mma_q[
                                 )
                             )[]
 
-                            # We only need one warp for copying scales...
                             if tid < UInt32(WARP_SIZE):
-                                var src_fragments = (
-                                    scales_iter[]
-                                    .bitcast[
-                                        scales_type,
-                                        target_address_space=AddressSpace.GENERIC,
-                                    ]()
-                                    .vectorize[1, async_copy_scales_veclen]()
-                                    .distribute[async_copy_scales_layout](
-                                        Int(tid)
+                                comptime for sub in range(num_scale_sub):
+                                    var src_fragments = (
+                                        scales_iter[]
+                                        .bitcast[
+                                            scales_type,
+                                            target_address_space=AddressSpace.GENERIC,
+                                        ]()
+                                        .tile[1, BN](sub, 0)
+                                        .vectorize[1, async_copy_scales_veclen]()
+                                        .distribute[async_copy_scales_layout](
+                                            Int(tid)
+                                        )
                                     )
-                                )
-                                var dst_fragments = scales_smem_tile.vectorize[
-                                    1, async_copy_scales_veclen
-                                ]().distribute[async_copy_scales_layout](
-                                    Int(tid)
-                                )
+                                    var dst_fragments = (
+                                        scales_smem_tile.tile[1, BN](sub, 0)
+                                        .vectorize[1, async_copy_scales_veclen]()
+                                        .distribute[async_copy_scales_layout](
+                                            Int(tid)
+                                        )
+                                    )
 
-                                comptime element_size_bytes = size_of[
-                                    scales_type
-                                ]() * async_copy_scales_veclen
-                                async_copy[element_size_bytes](
-                                    src_fragments.ptr.address_space_cast[
-                                        AddressSpace.GLOBAL
-                                    ](),
-                                    dst_fragments.ptr.address_space_cast[
-                                        AddressSpace.SHARED
-                                    ]().mut_cast[True](),
-                                )
+                                    comptime element_size_bytes = size_of[
+                                        scales_type
+                                    ]() * async_copy_scales_veclen
+                                    async_copy[element_size_bytes](
+                                        src_fragments.ptr.address_space_cast[
+                                            AddressSpace.GLOBAL
+                                        ](),
+                                        dst_fragments.ptr.address_space_cast[
+                                            AddressSpace.SHARED
+                                        ]().mut_cast[True](),
+                                    )
 
                             scales_iter._incr()
 
