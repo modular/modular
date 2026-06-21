@@ -130,7 +130,8 @@ def test_input_types_with_structured_output() -> None:
 
     # The trailing three inputs are pinned_bitmask (packed int32 tensor),
     # wait_payload (int64 buffer), and device_bitmask_scratch (packed int32
-    # buffer).
+    # buffer). The bitmask is stored as packed int32 (one bit per vocab token)
+    # so the GPU acceptance sampler unpacks and applies it in one fused pass.
     pinned_type = input_types[-3]
     payload_type = input_types[-2]
     scratch_type = input_types[-1]

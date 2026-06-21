@@ -906,29 +906,50 @@ class StructuredOutputHelper:
         bonus_tokens: npt.NDArray[np.int64],
         next_draft_tokens: npt.NDArray[np.int64],
         bitmask_out: npt.NDArray[np.int32],
+        output_context_batch: list[TextGenerationContextType] | None = None,
     ) -> None:
         """Advance FSM through accepted tokens, then compute bitmasks for the next batch.
 
         Combines FSM advancement (Part 1) with bitmask computation (Part 2) for
         use in a CUDA host callback. Must NOT call any CUDA APIs.
 
-        Part 1 permanently advances the FSM through committed tokens from the
-        current batch (accepted draft tokens followed by the bonus token). This
-        mirrors what sync_and_process_outputs would do for structured output.
+        Part 1 permanently advances the FSM of every ``context_batch`` request
+        through its committed tokens (accepted draft tokens followed by the
+        bonus token). This mirrors what sync_and_process_outputs would do for
+        structured output, and is independent of the output row order.
 
-        Part 2 speculatively advances through the next batch's draft tokens to
-        compute bitmasks, then rolls back to restore the FSM to the state after
-        Part 1.
+        Part 2 owns the **entire** ``output_context_batch`` rectangle and
+        writes each row's speculative bitmask **in that batch's row order**, by
+        speculatively advancing the already-advanced matcher through the next
+        batch's draft tokens and rolling back. Every row is first reset to -1
+        (all valid), then each constrained row is filled from its request's
+        ``next_draft_tokens``. This runs only from a callback enqueued when the
+        whole current batch verifies drafts, so every consumer row continues
+        from ``context_batch`` (the scheduler routes fresh/resumed requests
+        through the cold-start prime path instead; see the caller
+        ``_enqueue_prev_bitmask_callback`` and ``_assign_bitmask_inputs``). A
+        row absent from ``context_batch`` would break that invariant and is
+        asserted against rather than silently mis-filled. Writing directly in
+        the consumer's row order, with no second writer on the main thread, is
+        what lets the model graph consume the bitmask without an on-device
+        gather and without a host wait.
 
         Args:
-            context_batch: List of generation contexts.
+            context_batch: Requests whose FSM is advanced (the producing batch).
+                Indexes ``accepted_draft_tokens`` / ``num_accepted`` /
+                ``bonus_tokens`` / ``next_draft_tokens``.
             accepted_draft_tokens: Draft tokens verified this batch, shape [batch, K].
             num_accepted: Count of accepted draft tokens per request, shape [batch].
             bonus_tokens: Bonus (target) tokens per request, shape [batch].
             next_draft_tokens: Draft tokens for the next batch, shape [batch, K].
-            bitmask_out: Packed int32 bitmask output, shape [batch, K+1, packed_vocab].
-                Initialized to -1 (unconstrained) per context before filling.
+            bitmask_out: Packed int32 bitmask output, shape
+                [len(output_context_batch), K+1, packed_vocab]. Every row is
+                reset to -1 (unconstrained) before filling.
+            output_context_batch: Requests in the consuming batch's row order.
+                Defaults to ``context_batch`` when the batch did not change.
         """
+        if output_context_batch is None:
+            output_context_batch = context_batch
         # This method runs on an AsyncRT worker thread. The main thread
         # may try to access the same ``ctx.matcher`` via
         # ``compute_speculative_bitmasks`` for the next iter while this
@@ -936,17 +957,20 @@ class StructuredOutputHelper:
         # raises ``RuntimeError: Already borrowed`` and the worker dies.
         # See the comment on ``_matcher_lock``.
         with self._matcher_lock:
+            # Part 1: permanently advance every producing-batch matcher
+            # through its committed tokens. Order-independent of the output
+            # batch, so it always covers all of ``context_batch`` — which is
+            # what keeps the batch-level ``skip_fsm_advance`` contract intact
+            # for the producing batch's later sync.
             for ctx_idx, ctx in enumerate(context_batch):
-                bitmask_out[ctx_idx, :, :] = -1
-
                 if ctx.matcher is None:
                     continue
 
-                # Part 1: Advance the enforcement state machine through
-                # committed tokens, one at a time so special tokens (e.g.
-                # tool-call structural tags) can flip grammar enforcement
-                # mid-sequence. This mirrors the synchronous
-                # ``advance_fsm`` in ``context.py`` exactly:
+                # Advance the enforcement state machine through committed
+                # tokens, one at a time so special tokens (e.g. tool-call
+                # structural tags) can flip grammar enforcement mid-sequence.
+                # This mirrors the synchronous ``advance_fsm`` in
+                # ``context.py`` exactly:
                 #
                 #   * EOS-class tokens are not part of the grammar — they
                 #     signal end of generation. Skip the matcher so it
@@ -1014,13 +1038,45 @@ class StructuredOutputHelper:
                     )
                     ctx.grammar_enforced = False
 
-                # Part 2: speculative window for the next batch's bitmasks.
+            # Part 2: write each output row's speculative bitmask in the
+            # consuming batch's row order. ``rid_to_src`` maps a request id to
+            # its slot in the producing batch's ``next_draft_tokens``.
+            rid_to_src = {
+                ctx.request_id: i for i, ctx in enumerate(context_batch)
+            }
+            for out_idx, ctx in enumerate(output_context_batch):
+                # The callback owns every consumer row. Reset to -1 (all valid)
+                # up front so an unconstrained continuing row needs no further
+                # work and no row is ever left holding a previous iteration's
+                # bitmask for the next iter's in-graph H2D to copy.
+                bitmask_out[out_idx, :, :] = -1
+                # Invariant: the callback is only enqueued when the whole current
+                # batch verifies drafts, so every consumer row continues from the
+                # producing batch -- the scheduler routes every fresh or resumed
+                # request through the cold-start prime path, never here. A row
+                # absent from ``context_batch`` (or flagged as an initial prompt)
+                # would mean that invariant broke; assert rather than index
+                # ``next_draft_tokens`` with None and silently mis-fill. Running
+                # inside the callback's try/except, a failure here degrades to
+                # the safe blanket -1 fallback instead of corrupting the bitmask.
+                src = rid_to_src.get(ctx.request_id)
+                assert src is not None and not ctx.is_initial_prompt, (
+                    f"bitmask callback: row {ctx.request_id} is not an "
+                    "attributable continuing row (absent from the producing "
+                    "batch, or reset to an initial prompt). The callback's "
+                    "single-writer invariant is broken -- a scheduler change "
+                    "that admits new or resumed rows into a verify batch must "
+                    "restore a synchronous fill for them."
+                )
+                if ctx.matcher is None:
+                    # Continuing unconstrained row: all-valid, no fill needed.
+                    continue
                 # A draft that flips enforcement on mid-window causes
                 # downstream slots to be constrained.
                 self._speculatively_fill_bitmask_window(
                     ctx,
-                    drafts=next_draft_tokens[ctx_idx],
-                    bitmask_window=bitmask_out[ctx_idx],
+                    drafts=next_draft_tokens[src],
+                    bitmask_window=bitmask_out[out_idx],
                 )
 
     @traced
