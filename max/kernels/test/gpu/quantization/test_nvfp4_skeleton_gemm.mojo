@@ -41,7 +41,7 @@ from layout import (
 )
 from layout.layout import *
 from linalg.matmul.gpu import multistage_gemm
-from linalg.utils_gpu import MatmulKernels
+from linalg.utils_gpu import MatmulConfig, MatmulKernels
 from quantization.qmatmul_gpu import multistage_gemm_q
 from std.memory.unsafe import bitcast
 
@@ -371,9 +371,80 @@ def test_nvfp4[
     _ = b_tensor
 
 
+def bench_nvfp4_g16[
+    NType: CoordLike, KType: CoordLike, //
+](ctx: DeviceContext, M: Int, n: NType, k: KType) raises:
+    """Throughput-only de-risk at the REAL NVFP4 grouping (group=16, BK=16).
+    Timing is value-independent so random packed weights/scales are fine."""
+    comptime a_type = DType.bfloat16
+    comptime dtype = DType.uint8
+    comptime group_size = 16
+    comptime pack_factor = 8
+    comptime group_bytes = group_size // 2 + 2  # 10
+
+    var N = Int(n.value())
+    var K = Int(k.value())
+    comptime _b_dim1 = (KType.static_value // group_size) * group_bytes
+
+    var b_size = N * ((K // group_size) * group_bytes)
+    var a_dev = ctx.enqueue_create_buffer[a_type](M * K)
+    var b_dev = ctx.enqueue_create_buffer[dtype](b_size)
+    var c_dev = ctx.enqueue_create_buffer[a_type](M * N)
+    ctx.synchronize()
+
+    comptime b_layout = Layout.row_major(NType.static_value, _b_dim1)
+    comptime b_tt_type = LayoutTensor[dtype, b_layout, _]
+    var b_lt = b_tt_type(
+        b_dev.unsafe_ptr(),
+        RuntimeLayout[
+            b_layout,
+            element_type = b_tt_type.layout_int_type,
+            linear_idx_type = b_tt_type.linear_idx_type,
+        ].row_major(
+            IndexList[2](N, (K // group_size) * group_bytes).cast[
+                b_tt_type.layout_int_type
+            ]()
+        ),
+    )
+    var a_tt = TileTensor(a_dev, row_major(Coord(M, Idx[KType.static_value])))
+    var c_tt = TileTensor(c_dev, row_major(Coord(M, Idx[NType.static_value])))
+    var a2 = a_tt.to_layout_tensor()
+    var c2 = c_tt.to_layout_tensor()
+
+    comptime config = MatmulConfig[a_type, dtype, a_type, True](
+        block_tile_shape=Index(128, 128, 16),
+        warp_tile_shape=Index(64, 64, 16),
+        num_pipeline_stages=4,
+    )
+
+    comptime nrun = 200
+
+    @always_inline
+    @parameter
+    def run_func(ctx: DeviceContext) raises:
+        multistage_gemm_q[
+            group_size=group_size,
+            pack_factor=pack_factor,
+            config=config,
+            is_nvfp4=True,
+        ](c2, a2, b_lt, config, ctx)
+
+    var nstime = Float64(ctx.execution_time[run_func](nrun)) / Float64(nrun)
+    var tflops = (
+        2.0 * Float64(M) * Float64(N) * Float64(K) * 1e-12 / (nstime * 1e-9)
+    )
+    print("  NVFP4 g16 M=", M, " N=", N, " K=", K, ": ", tflops, " TFLOP/s")
+    _ = a_dev^
+    _ = b_dev^
+    _ = c_dev^
+
+
 def main() raises:
     with DeviceContext() as ctx:
         test_nvfp4[DType.uint8](ctx, Int(482), Idx[4096], Idx[4096])
         test_nvfp4[DType.uint8](ctx, Int(482), Idx[6144], Idx[4096])
         test_nvfp4[DType.uint8](ctx, Int(482), Idx[28672], Idx[4096])
         test_nvfp4[DType.uint8](ctx, Int(482), Idx[4096], Idx[14336])
+        print("--- group=16 (real NVFP4) throughput de-risk ---")
+        bench_nvfp4_g16(ctx, Int(482), Idx[4096], Idx[4096])
+        bench_nvfp4_g16(ctx, Int(64), Idx[4096], Idx[4096])
