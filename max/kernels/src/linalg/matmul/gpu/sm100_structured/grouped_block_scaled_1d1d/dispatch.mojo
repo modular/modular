@@ -673,12 +673,31 @@ def grouped_matmul_mxfp8_dispatch[
             [MXFP8_SF_DTYPE, MXFP8_SF_VECTOR_SIZE]()` otherwise.
         trace_buf: Per-CTA timestamp buffer when trace is on.
     """
+    # Per-(N, K) decode pipeline-stage override. The stage auto-maximizer picks
+    # 12 stages for the (mma_bn=8, cta_group=1) decode tile, but this thin,
+    # weight-load-BW-bound decode regime runs ~5-7% faster at 6 stages (better
+    # weight-TMA cadence; numerically identical -- stages is pipeline depth
+    # only). Scoped per-(N, K) so only the measured shapes change and all others
+    # keep auto; decode branch only, so the prefill branches below keep the
+    # classifier's stage pick; non-fused only, matching what was measured.
+    # Measured on B200 for MiniMax-M3 MXFP8 MoE at EP8-thin decode, stages=6 vs
+    # auto across M in {1, 8, 16, 32}:
+    #   gate_up N=6144 K=6144: -5.3% (M16: 110.6 -> 104.7 us)
+    #   down    N=6144 K=3072: -7.3% (M16:  59.8 ->  55.4 us)
+    comptime _decode_N = type_of(c).static_shape[1]
+    comptime _decode_K = type_of(a).static_shape[1]
+    comptime _decode_stages = Optional[Int](6) if (
+        not fuse_swiglu
+        and _decode_N == 6144
+        and (_decode_K == 6144 or _decode_K == 3072)
+    ) else Optional[Int](None)
     if estimated_total_m <= num_active_experts * DECODE_AVG_M:
         _launch_grouped_block_scaled[
             transpose_b,
             AB_swapped=True,
             mma_bn=8,
             cta_group=1,
+            num_pipeline_stages=_decode_stages,
             scaling_kind=UMMAKind.KIND_MXF8F6F4,
             pdl_level=pdl_level,
             fuse_swiglu=fuse_swiglu,
