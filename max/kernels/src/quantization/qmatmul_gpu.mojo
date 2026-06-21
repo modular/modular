@@ -101,6 +101,7 @@ def multistage_mma_q[
     /,
     *,
     swizzle_a: Bool = True,
+    is_nvfp4: Bool = False,
     static_num_iters: Int = UNKNOWN_VALUE,
     prefetch_init: Bool = True,
     continue_prefetch_b: Bool = False,
@@ -426,7 +427,10 @@ def multistage_mma_q[
         ](Int(lane_id))
     )
 
-    mma_op.load_b(b_warp_tile, b_reg_tiles[0], scales_reg_tiles, 0)
+    comptime if is_nvfp4:
+        mma_op.load_b_nvfp4(b_warp_tile, b_reg_tiles[0], scales_reg_tiles, 0)
+    else:
+        mma_op.load_b(b_warp_tile, b_reg_tiles[0], scales_reg_tiles, 0)
 
     for k_tile_id in range(num_iters):
         var a_warp_tile = a_smem_iter[].tile[WM, BK](Int(warp_y), 0)
@@ -467,12 +471,20 @@ def multistage_mma_q[
                 a_reg_tiles[next].vectorize[1, a_frag_size](),
                 (k_mma + 1) % num_k_mmas,
             )
-            mma_op.load_b(
-                b_warp_tile,
-                b_reg_tiles[next],
-                scales_reg_tiles,
-                (k_mma + 1) % num_k_mmas,
-            )
+            comptime if is_nvfp4:
+                mma_op.load_b_nvfp4(
+                    b_warp_tile,
+                    b_reg_tiles[next],
+                    scales_reg_tiles,
+                    (k_mma + 1) % num_k_mmas,
+                )
+            else:
+                mma_op.load_b(
+                    b_warp_tile,
+                    b_reg_tiles[next],
+                    scales_reg_tiles,
+                    (k_mma + 1) % num_k_mmas,
+                )
 
             mma_op.mma(
                 a_reg_tiles[current].vectorize[1, a_frag_size](),
@@ -587,6 +599,7 @@ def multistage_qgemm_kernel[
     transpose_b: Bool,
     config: MatmulConfig[a_type, b_packed_type, c_type, transpose_b],
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    is_nvfp4: Bool = False,
 ](
     c: LayoutTensor[mut=True, c_type, c_layout, MutAnyOrigin],
     a: LayoutTensor[mut=False, a_type, a_layout, ImmutAnyOrigin],
@@ -769,6 +782,7 @@ def multistage_qgemm_kernel[
         transpose_b,
         group_size,
         pack_factor,
+        is_nvfp4=is_nvfp4,
     ](
         c_reg_tile,
         a_gmem_iter,
@@ -1505,6 +1519,7 @@ def multistage_gemm_q[
     pack_factor: Int,
     config: MatmulConfig[a_type, b_type, c_type, True],
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    is_nvfp4: Bool = False,
 ](
     c: LayoutTensor[mut=True, c_type, address_space=AddressSpace.GENERIC, ...],
     a: LayoutTensor[mut=False, a_type, address_space=AddressSpace.GENERIC, ...],
@@ -1560,6 +1575,7 @@ def multistage_gemm_q[
                         True,
                         adjusted_config,
                         elementwise_lambda_fn,
+                        is_nvfp4,
                     ]
 
                     ctx.enqueue_function[gemm_kernel_type](
@@ -1588,6 +1604,7 @@ def multistage_gemm_q[
         True,
         config,
         elementwise_lambda_fn,
+        is_nvfp4,
     ]
 
     ctx.enqueue_function[gemm_kernel_type](

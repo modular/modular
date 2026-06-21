@@ -1239,6 +1239,83 @@ struct TensorCore[
             fragments[i + 1, 0] = rebind[frag_type](v1.join(v2))
 
     @always_inline
+    def load_b_nvfp4(
+        self,
+        warp_tile: LayoutTensor,
+        fragments: LayoutTensor[mut=True, ...],
+        scales: LayoutTensor,
+        mma_tile_coord_k: Int = 0,  # the k coordinate of mma tile
+    ):
+        """Load NVFP4 (E2M1) quantized B fragments with dequantization.
+
+        Mirrors `load_b` (symmetric int4) but interprets each 4-bit code as an
+        E2M1 float instead of a symmetric int4. The packing / repack layout is
+        identical (both are 4-bit, 8 codes per uint32, `repack_tile` 64x16), so
+        only the per-code decode differs -- the fragment layout is preserved.
+
+        Scales are bf16 here: the caller pre-folds the NVFP4 FP8-e4m3 block
+        scale and the per-tensor global scale into bf16 (see the NVFP4 host
+        entry). One scale per n-fragment per k-group; this path assumes
+        `BK == group_size` so each k-tile is exactly one scale group.
+        """
+        comptime assert (
+            warp_tile.address_space == AddressSpace.SHARED
+        ), "warp_tile must be in shared memory"
+        comptime assert (
+            fragments.address_space == AddressSpace.LOCAL
+        ), "fragments must be in local memory"
+        comptime assert (
+            scales.address_space == AddressSpace.LOCAL
+        ), "scales must be in local memory"
+        comptime assert self.supported_half
+
+        comptime frag_type = fragments.element_type
+        comptime num_frags = fragments.shape[0]()
+        comptime pack_factor = 8
+        comptime repack_tile = Index(64, 16)
+
+        @always_inline
+        def e2m1tobf16(
+            code_pair: Int32, scale: BFloat16
+        ) -> SIMD[DType.bfloat16, 2]:
+            # Two E2M1 nibbles at bits[3:0] and bits[19:16] (same positions as
+            # int4tobf16's MASK 0x000F000F). Marlin bit-positioning decode
+            # (cheap: place the nibble at fp16 bits[15:12], one mask+shift+or
+            # maps sign and the 3 magnitude bits into the fp16 field, NO branch
+            # -- the subnormal {0,0.5} falls out as an fp16 denormal). The 2^14
+            # exponent-bias factor is folded into the scale (free). Decoding
+            # arithmetically here instead stalls the tensor cores.
+            var n = SIMD[DType.uint16, 2](
+                (code_pair & 0xF).cast[DType.uint16](),
+                ((code_pair >> 16) & 0xF).cast[DType.uint16](),
+            )
+            var q = n << 12
+            var bits = (q & 0x8000) | ((q & 0x7000) >> 3)
+            var vals = bitcast[DType.float16, 2](bits).cast[DType.float32]()
+            var s = scale.cast[DType.float32]() * 16384.0  # fold 2^14
+            return (vals * s).cast[DType.bfloat16]()
+
+        var mma_tile = warp_tile.tile[
+            1, (repack_tile[0] * repack_tile[1]) // pack_factor
+        ](0, mma_tile_coord_k)
+
+        var vec = bitcast[DType.int32, 4](
+            mma_tile.vectorize[1, 4]()[0, umod(thread_idx.x, WARP_SIZE)]
+        )
+
+        comptime for i in range(0, num_frags, 2):
+            var q_int = vec[i // 2]
+            var v1 = e2m1tobf16(q_int, bitcast[DType.bfloat16, 1](scales[i, 0]))
+            q_int >>= 4
+            var v2 = e2m1tobf16(q_int, bitcast[DType.bfloat16, 1](scales[i, 0]))
+            fragments[i, 0] = rebind[frag_type](v1.join(v2))
+            q_int >>= 4
+            v1 = e2m1tobf16(q_int, bitcast[DType.bfloat16, 1](scales[i + 1, 0]))
+            q_int >>= 4
+            v2 = e2m1tobf16(q_int, bitcast[DType.bfloat16, 1](scales[i + 1, 0]))
+            fragments[i + 1, 0] = rebind[frag_type](v1.join(v2))
+
+    @always_inline
     def mma(
         self,
         a_frag: LayoutTensor,
