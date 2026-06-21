@@ -932,6 +932,7 @@ logit_verification_pipelines:
     pipeline: "google/gemma-3-1b-it"
     compatible_with: [gpu]
     encoding: bfloat16
+    tags: [nvidia-only]  # TODO(KERN-3014): AMD MI355 compile crash.
     pregenerated_torch_goldens:
       tar_file: "s3://modular-bazel-artifacts-public/artifacts/torch_gemma3-1b_golden/1/31d4f0ff8f50b9ab0f877d8765114f6bc4ae73677d2cd2d6ce658866fabf15d4/torch_gemma3-1b_golden.tar.gz"
       json_file: "torch_gemma3-1b_bfloat16_golden.json"
@@ -943,7 +944,7 @@ logit_verification_pipelines:
     pipeline: "google/gemma-3-12b-it"
     compatible_with: [gpu]
     encoding: bfloat16
-    tags: []
+    tags: [nvidia-only]  # TODO(KERN-3014): AMD MI355 compile crash.
     pregenerated_torch_goldens:
       tar_file: "s3://modular-bazel-artifacts-public/artifacts/torch_gemma3-multimodal_golden/1/06d0fa8ed540ae7141a42c432af1661c85d31f8584d017345992df7a52c21ccb/torch_gemma3-multimodal_golden.tar.gz"
       json_file: "torch_gemma3-multimodal_bfloat16_golden.json"
