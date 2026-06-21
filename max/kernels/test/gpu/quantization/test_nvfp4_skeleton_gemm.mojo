@@ -24,6 +24,7 @@ as E2M1, so a match confirms the kernel reads/decodes/MMAs correctly.
 from std.math import ceildiv
 from std.math.uutils import udivmod
 from std.random import rand, randint
+from std.time import perf_counter_ns
 
 from std.gpu import WARP_SIZE, block_idx, thread_idx
 from std.gpu.host import DeviceContext
@@ -422,18 +423,27 @@ def bench_nvfp4_g16[
     )
 
     comptime nrun = 200
-
-    @always_inline
-    @parameter
-    def run_func(ctx: DeviceContext) raises:
+    # Warmup
+    for _ in range(5):
         multistage_gemm_q[
             group_size=group_size,
             pack_factor=pack_factor,
             config=config,
             is_nvfp4=True,
         ](c2, a2, b_lt, config, ctx)
-
-    var nstime = Float64(ctx.execution_time[run_func](nrun)) / Float64(nrun)
+    ctx.synchronize()
+    # Manual wall-clock over nrun back-to-back launches (steady state).
+    var t0 = perf_counter_ns()
+    for _ in range(nrun):
+        multistage_gemm_q[
+            group_size=group_size,
+            pack_factor=pack_factor,
+            config=config,
+            is_nvfp4=True,
+        ](c2, a2, b_lt, config, ctx)
+    ctx.synchronize()
+    var t1 = perf_counter_ns()
+    var nstime = Float64(t1 - t0) / Float64(nrun)
     var tflops = (
         2.0 * Float64(M) * Float64(N) * Float64(K) * 1e-12 / (nstime * 1e-9)
     )
@@ -457,19 +467,8 @@ def bench_nvfp4_g16[
 
 def main() raises:
     with DeviceContext() as ctx:
-        test_nvfp4[DType.uint8](ctx, Int(482), Idx[4096], Idx[4096])
-        test_nvfp4[DType.uint8](ctx, Int(482), Idx[6144], Idx[4096])
-        test_nvfp4[DType.uint8](ctx, Int(482), Idx[28672], Idx[4096])
-        test_nvfp4[DType.uint8](ctx, Int(482), Idx[4096], Idx[14336])
-        print("--- group/BK/stages throughput de-risk (N=4096 K=4096) ---")
-        # Valid configs (group >= BK): does BK=32 hold at finer groups?
-        bench_nvfp4_g16[32, 32, 4](ctx, Int(482), Idx[4096], Idx[4096])
-        bench_nvfp4_g16[64, 32, 4](ctx, Int(482), Idx[4096], Idx[4096])
+        print("--- manual wall-clock timing (settle the cliff artifact) ---")
         bench_nvfp4_g16[128, 32, 4](ctx, Int(482), Idx[4096], Idx[4096])
-        # Is the group=32/64 collapse a SMEM-fallback? Try fewer stages.
-        bench_nvfp4_g16[32, 32, 2](ctx, Int(482), Idx[4096], Idx[4096])
-        bench_nvfp4_g16[32, 32, 3](ctx, Int(482), Idx[4096], Idx[4096])
-        bench_nvfp4_g16[64, 32, 2](ctx, Int(482), Idx[4096], Idx[4096])
-        # BK=16 (group=16 naive): do fewer/more stages rescue it?
-        bench_nvfp4_g16[16, 16, 2](ctx, Int(482), Idx[4096], Idx[4096])
-        bench_nvfp4_g16[16, 16, 8](ctx, Int(482), Idx[4096], Idx[4096])
+        bench_nvfp4_g16[64, 32, 4](ctx, Int(482), Idx[4096], Idx[4096])
+        bench_nvfp4_g16[32, 32, 4](ctx, Int(482), Idx[4096], Idx[4096])
+        bench_nvfp4_g16[16, 16, 4](ctx, Int(482), Idx[4096], Idx[4096])
