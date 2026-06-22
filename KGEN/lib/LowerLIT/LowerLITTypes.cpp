@@ -249,6 +249,30 @@ static void populateReplacer(StructDecls &decls, LowerLITReplacer &replacer,
   auto emptyStructType = KGEN::StructType::get(ctx, ArrayRef<Type>{});
   auto emptyStruct = StructAttr::get({}, emptyStructType);
 
+  replacer.addInferredDomainNonRecursiveReplacement(
+      [&replacer, evalCtxPtr = &evalContext](
+          BindParamsAttr bindParams) -> FailureOr<Attribute> {
+        // We always simplify BindParamsAttr against a evaluation context.
+        SmallVector<TypedAttr> loweredParams;
+        for (TypedAttr param : bindParams.getParamValues()) {
+          auto replaced = replacer.replace(param, TypeDomain::AsType);
+          if (failed(replaced))
+            return failure();
+          loweredParams.push_back(cast<TypedAttr>(*replaced));
+        }
+        auto generatorOr =
+            replacer.replace(bindParams.getGenerator(), TypeDomain::AsType);
+        if (failed(generatorOr))
+          return failure();
+
+        // BindParamsAttr has to be constructed with an evaluation context to
+        // fold properly.
+        TypedAttr evaluated = BindParamsAttr::get(
+            bindParams.getContext(), cast<TypedAttr>(*generatorOr),
+            loweredParams, bindParams.getDischarged(), evalCtxPtr);
+        return evaluated;
+      });
+
   // TypeParamAttr dispatches replacing to different domains.
   replacer.addInferredDomainNonRecursiveReplacement(
       [&replacer](TypeParamAttr typeValue) -> FailureOr<Attribute> {
@@ -1073,6 +1097,31 @@ LogicalResult LIT::lowerLITTypes(ModuleOp module, StructDecls &state,
   if (result.wasInterrupted())
     return failure();
 
+  // HACK: Duplicate a kgen-lowered witness entry, during lower-lit, we
+  // might have ordering issue during lit->kgen conversion, depending on whether
+  // `get_witness_attr` is evaluated before/after the referenced struct
+  // generator is lowered. It might or might not be folded correctly.
+  //
+  // Simply postpone the struct generator lowering to the last step (as we are
+  // already doing) won't help either, as the witness_op might also have a
+  // witness_attr inside for complicated cases.
+  for (StructGeneratorOp structGen : module.getOps<StructGeneratorOp>()) {
+    for (auto conformsOp : structGen.getOps<ConformanceOp>()) {
+      for (WitnessOp witnessOp : conformsOp.getOps<WitnessOp>()) {
+        b.setInsertionPoint(witnessOp);
+        Operation *kgenWitnessOp = b.clone(*witnessOp);
+        witnessOp.setSymName(std::string(witnessOp.getSymName()) + ".#lit#");
+        LogicalResult res =
+            b.replaceElementsIn(kgenWitnessOp, TypeDomain::AsType,
+                                /*replaceAttrs=*/true,
+                                /*replaceLocs=*/true,
+                                /*replaceTypes=*/true);
+        if (failed(res))
+          return failure();
+      }
+    }
+  }
+
   result = module.walk<mlir::WalkOrder::PreOrder>([&](Operation *op) {
     // Skip StructGeneratorOps and lower them the last.
     if (auto structGen = dyn_cast<StructGeneratorOp>(op))
@@ -1132,6 +1181,15 @@ LogicalResult LIT::lowerLITTypes(ModuleOp module, StructDecls &state,
       return WalkResult::advance();
     });
   }
+
+  // HACK: Erase the duplicated witness entries at the end after everything is
+  // lowered properly.
+  for (StructGeneratorOp structGen : module.getOps<StructGeneratorOp>())
+    for (auto conformsOp : structGen.getOps<ConformanceOp>())
+      for (auto witnessOp :
+           llvm::make_early_inc_range(conformsOp.getOps<WitnessOp>()))
+        if (witnessOp.getSymName().ends_with(".#lit#"))
+          witnessOp.erase();
 
   if (result.wasInterrupted())
     return failure();
