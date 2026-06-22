@@ -103,7 +103,7 @@ struct ConvertibleFromInt:
         pass
 
 
-struct MyContainer[T: ImplicitlyCopyable]:
+struct MyContainer[T: ImplicitlyCopyable & ImplicitlyDeletable]:
     var v: Self.T
 
     def foo(self, limits: ConvertibleFromInt):

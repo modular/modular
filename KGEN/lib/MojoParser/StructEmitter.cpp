@@ -720,6 +720,28 @@ FnOp StructEmitter::synthesizeEmptyDtor(ConstraintAttr conformanceConstraint) {
   builder = ImplicitLocOpBuilder::atBlockEnd(funcOp.getLoc(), funcOp.getBody());
   IREmitter::emitNormalReturn(builder);
 
+  // Perform semantic analysis to make sure all the fields are implicitly
+  // deletable. We would rather error in the parser than in check lifetimes.
+  // We do this after creating the function so we don't emit a redundant error
+  // complaining that a missing __del__ means the struct doesn't conform to
+  // ImplicitlyDeletable.
+  for (StructFieldOp fieldOp : structDeclOp.getFieldDecls()) {
+    ASTType fieldType = fieldOp.getType();
+    ConformanceResult confResult =
+        fieldType
+            .checkBuiltinConformance("ImplicitlyDeletable", structDecl.getLoc(),
+                                     shared, {})
+            .first;
+    if (confResult != ConformanceResult::Yes &&
+        !fieldType.isTrivialRegisterType(structDecl.getLoc(), shared)) {
+      emitError(fieldOp.getLoc())
+          << "field '" << fieldOp.getName()
+          << "' has non-implicitly deletable type " << fieldType;
+      funcDecl->setErroneous();
+      break;
+    }
+  }
+
   return funcOp;
 }
 

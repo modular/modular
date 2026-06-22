@@ -277,7 +277,7 @@ struct DecoratorSameLine:
 
 
 @fieldwise_init # expected-error {{'FieldwiseInitExample' has an explicitly declared fieldwise initializer}}
-struct FieldwiseInitExample[T: Movable]:
+struct FieldwiseInitExample[T: Movable & ImplicitlyDeletable]:
   var x: Int
   var y: Self.T
 

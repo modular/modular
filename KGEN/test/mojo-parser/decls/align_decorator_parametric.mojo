@@ -33,6 +33,9 @@ struct AlignedTrivialParam[n: Int](TrivialRegisterPassable):
 struct MultiParam[T: __mlir_type.`!kgen.type`, align_val: Int]:
     var value: Self.T
 
+    def __del__(deinit self):
+        pass
+
 
 # Test parametric alignment with an expression (n * 2)
 # CHECK-LABEL: lit.struct.decl @AlignedExpr

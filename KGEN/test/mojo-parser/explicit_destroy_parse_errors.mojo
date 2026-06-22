@@ -23,3 +23,12 @@ trait ExplicitDestroyOnImplicitlyDeletable(ImplicitlyDeletable):
 trait ExplicitDestroyEmptyMsgOnImplicitlyDeletable(ImplicitlyDeletable):
     def __del__(deinit self):
         ...
+
+@explicit_destroy
+@fieldwise_init
+struct Linear:
+     pass
+
+struct CantSynthDtor:
+    # expected-error @+1 {{field 'foo' has non-implicitly deletable type 'Linear'}}
+    var foo: Linear

@@ -33,7 +33,7 @@ trait DiamondDerivedB(DiamondBase):
     pass
 
 
-struct DiamondMissingExplicitBase[T: Movable](
+struct DiamondMissingExplicitBase[T: Movable & ImplicitlyDeletable](
     # expected-error @below {{ancestor trait 'DiamondBase' is reached via multiple inheritance paths with different constraints; it must be explicitly listed in the conformance list with the desired constraint}}
     DiamondDerivedA where conforms_to(T, Copyable),
     DiamondDerivedB where conforms_to(T, Intable),
@@ -60,7 +60,7 @@ trait AncestorImplicationDerived(AncestorImplicationBase):
     pass
 
 
-struct DerivedDoesNotImplyAncestor[T: Movable](
+struct DerivedDoesNotImplyAncestor[T: Movable & ImplicitlyDeletable](
     # Base requires Intable
     AncestorImplicationBase where conforms_to(T, Intable),
     # But Derived only requires Copyable - this doesn't imply Intable!
@@ -90,7 +90,7 @@ trait UnconditionalDerivedChild(UnconditionalDerivedBase):
     pass
 
 
-struct UnconditionalDerivedConditionalAncestor[T: Movable](
+struct UnconditionalDerivedConditionalAncestor[T: Movable & ImplicitlyDeletable](
     # Derived is unconditional - always conforms
     Movable,
     # But ancestor is conditional - inconsistent!
@@ -112,7 +112,7 @@ struct UnconditionalDerivedConditionalAncestor[T: Movable](
 # with field-level triviality witnesses.
 
 
-struct ConditionalTrivialRegPassable[T: Movable](
+struct ConditionalTrivialRegPassable[T: Movable & ImplicitlyDeletable](
     Movable,
     # expected-error @below {{conditional conformance to 'TrivialRegisterPassable' is not supported}}
     TrivialRegisterPassable where conforms_to(T, TrivialRegisterPassable),
@@ -130,7 +130,7 @@ struct ConditionalTrivialRegPassable[T: Movable](
 # parametric isMemoryOnly bit resolves per-instantiation during lowering.
 
 
-struct ConditionalRegPassable[T: Movable](
+struct ConditionalRegPassable[T: Movable & ImplicitlyDeletable](
     Movable,
     RegisterPassable where conforms_to(T, RegisterPassable),
 ):
@@ -145,7 +145,7 @@ struct ConditionalRegPassable[T: Movable](
 # the argument would be promoted to a register and the origin would dangle).
 # expected-error @+3 {{cannot return 'x's origin, because it might expand to a RegisterPassable type}}
 def bad_conditional_rp_origin[
-    T: Movable
+    T: Movable & ImplicitlyDeletable
 ](x: ConditionalRegPassable[T]) -> ref[x] ConditionalRegPassable[T]:
     return x
 
@@ -153,7 +153,7 @@ def bad_conditional_rp_origin[
 # Workaround: using `ref` convention forces indirect passing, so the argument
 # always has a stable memory address regardless of RP status. This must compile.
 def ok_conditional_rp_ref_origin[
-    T: Movable
+    T: Movable & ImplicitlyDeletable
 ](ref x: ConditionalRegPassable[T]) -> ref[x] ConditionalRegPassable[T]:
     return x
 
@@ -173,7 +173,7 @@ trait RPRequiringTrait(RegisterPassable):
         ...
 
 
-struct RPTraitWeakerConstraint[T: Movable](
+struct RPTraitWeakerConstraint[T: Movable & ImplicitlyDeletable](
     Movable,
     # expected-error @below {{constraint for 'RPRequiringTrait' does not imply constraint for ancestor trait 'RegisterPassable'}}
     RPRequiringTrait where conforms_to(T, Movable),
@@ -220,7 +220,7 @@ struct NoExplicitRPConformsToRPTrait[T: ImplicitlyDeletable & Movable](
 # constraint is not satisfied, so the struct would silently auto-destroy.
 
 
-struct ConditionalImplicitlyDeletable[T: Movable](
+struct ConditionalImplicitlyDeletable[T: Movable & ImplicitlyDeletable](
     # expected-error @below {{conditional conformance to 'ImplicitlyDeletable' requires @explicit_destroy}}
     ImplicitlyDeletable where conforms_to(T, ImplicitlyDeletable),
     Movable,

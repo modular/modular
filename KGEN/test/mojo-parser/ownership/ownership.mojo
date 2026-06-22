@@ -1524,12 +1524,12 @@ struct TestConditionallyLinearType[T: Movable](
 
 # CHECK-LABEL: lit.struct.decl @TestSynthesizedConditionalDtor
 @explicit_destroy
-struct TestSynthesizedConditionalDtor[T: Movable](
+struct TestSynthesizedConditionalDtor[T: Movable & ImplicitlyDeletable](
     ImplicitlyDeletable where conforms_to(T, ImplicitlyDeletable)
 ):
     var data: Self.T
 
-# CHECK: lit.fn @"__del__{{.*}}TestSynthesizedConditionalDtor{{.*}}conforms_to(:!Movable T, {{.*}}ImplicitlyDeletable{{.*}}synthetic
+# CHECK: lit.fn @"__del__{{.*}}TestSynthesizedConditionalDtor{{.*}}conforms_to(:!Movable_ImplicitlyDeletable T, {{.*}}ImplicitlyDeletable{{.*}}synthetic
 
 # MOCO-4059: Conditionally linear type with concrete struct.
 # CHECK-LABEL: lit.struct.decl @AConditionallyLinearType

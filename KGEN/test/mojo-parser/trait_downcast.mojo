@@ -33,14 +33,14 @@ def trait_downcast_anytype[T: AnyType](x: T):
     y.test()
 
 
-struct ListIterator[T: Copyable & Movable]:
+struct ListIterator[T: Copyable & ImplicitlyDeletable]:
     var t: Self.T
 
 
-struct List[T: Movable]:
+struct List[T: Movable & ImplicitlyDeletable]:
     var t: Self.T
 
-    # CHECK: lit.alias.decl *"Iterator`": meta<!lit.struct<#ListIterator <:!Copyable_Movable downcast(:!Movable T)>>>
+    # CHECK: lit.alias.decl *"Iterator`": meta<!lit.struct<#ListIterator <:{{.*}} upcast(:!Copyable_ImplicitlyDeletable_Movable downcast(:!Movable_ImplicitlyDeletable T))>>>
     comptime Iterator = ListIterator[downcast[Self.T, Copyable]]
 
     def iter(self) -> Self.Iterator:
@@ -51,7 +51,7 @@ def sink[T: ToCastInto](x: T):
     pass
 
 
-def foo[T: Movable & ToCastInto](l: List[T]):
+def foo[T: Movable & ToCastInto & ImplicitlyDeletable](l: List[T]):
     var iter = l.iter()
     # Make sure ToCastInfo conformance survives the downcast.
     # CHECK: lit.call @{{.*}}::@"sink{{.*}}

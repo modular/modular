@@ -24,12 +24,17 @@ def errorExample():
     _ = EmptyExplicit()
 
 
-# expected-error @below {{Must use consume!}}
+@explicit_destroy("Must use consume!")
 struct ImplicitlyDeletableContainerOfExplicitWithAutoDel:
     var m: EmptyExplicit
 
     def __init__(out self):
         self.m = EmptyExplicit()
+
+
+def testImplicitlyDeletableContainerOfExplicitWithAutoDel():
+    # expected-error @below {{Must use consume!}}
+    _ = ImplicitlyDeletableContainerOfExplicitWithAutoDel()
 
 
 struct ImplicitlyDeletableContainerOfExplicitWithIncompleteDel:

@@ -135,7 +135,7 @@ struct ZInt(ImplicitlyCopyable):
         pass
 
 
-struct Container[T: ImplicitlyCopyable]:
+struct Container[T: ImplicitlyCopyable & ImplicitlyDeletable]:
     var data: Self.T
 
 
@@ -150,8 +150,8 @@ __extension Container:
 # CHECK-LABEL: lit.fn @"test_self_alias_with_generic_1
 def test_self_alias_with_generic_1(container: Container[ZInt]):
     # Note how it's ZInt right here, it means the lookup worked.
-    # CHECK: lit.alias.decl *"MyElementType`1": !ImplicitlyCopyable =
-    # CHECK-SAME: <sugar_member_alias(!lit.struct<#Container <:!ImplicitlyCopyable !ZInt>>, "ElementType", !ZInt)>
+    # CHECK: lit.alias.decl *"MyElementType
+    # CHECK-SAME: <sugar_member_alias(!lit.struct<#Container <:{{.*}} !ZInt>>, "ElementType", !ZInt)>
     comptime MyElementType = Container[ZInt].ElementType
 
 
