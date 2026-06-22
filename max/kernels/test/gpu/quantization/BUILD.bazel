@@ -90,6 +90,7 @@ _EXTRA_CONSTRAINTS = {
             "test_multistage_gemm_q.mojo",
             "test_nvfp4_repack_e2e.mojo",
             "test_nvfp4_tune.mojo",
+            "test_nvfp4_tune_real.mojo",
         ] + _FP8_FP4_TESTS,
     )
 ]
@@ -115,6 +116,20 @@ mojo_test(
     srcs = ["test_nvfp4_tune.mojo"],
     exec_properties = {
         "test.resources:gpu-memory": "6",
+    },
+    tags = ["gpu"],
+    target_compatible_with = ["//:has_gpu"],
+    deps = _DEPS,
+)
+
+# REAL gemma4-31B decode-shape bake-off: bespoke nvfp4_gemm baseline vs. a
+# skeleton MatmulConfig sweep. Builds a dense ref B for the 21504-wide shapes
+# so it needs a larger GPU memory budget than the default glob rule.
+mojo_test(
+    name = "test_nvfp4_tune_real.mojo.test",
+    srcs = ["test_nvfp4_tune_real.mojo"],
+    exec_properties = {
+        "test.resources:gpu-memory": "8",
     },
     tags = ["gpu"],
     target_compatible_with = ["//:has_gpu"],
