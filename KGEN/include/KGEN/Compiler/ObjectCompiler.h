@@ -90,7 +90,7 @@ public:
   LogicalResult emitCXXHeader(ModuleOp module, StringRef filename,
                               raw_ostream &os);
 
-  ErrorOr<DenseMap<uint64_t, DenseMap<EmitAs, BufferRef>>> emitGPUKernels(
+  ErrorOr<DenseMap<uint64_t, DenseMap<EmitAs, BufferRef>>> emitOffloadKernels(
       OwningOpRef<ModuleOp> module,
       llvm::DenseMap<uint64_t, llvm::SmallSet<EmitAs, 4>> kernelEmissionKinds);
 

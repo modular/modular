@@ -2007,22 +2007,22 @@ static std::pair<AnyAsyncValueRef, AnyAsyncValueRef> lowerLLVMModuleToObject(
   return std::make_pair(std::move(resultBufs), std::move(resultKernelId));
 }
 
-// Emit GPU kernels.
-// The input module is a bundle of multiple GPU kernels.
-// Th output is a vector of compiled GPU kernels with their corresponding
+// Emit offload kernels.
+// The input module is a bundle of multiple offload kernels.
+// Th output is a vector of compiled offload kernels with their corresponding
 // kernel ids.
 // This function does the following steps:
 // - Split the input module into submodules for each kernel.
-//   We don't do per function splitting for GPU kernels since
-//   the backends are inter-procedural.
+//   We don't do per function splitting for offload kernels since
+//   some backends are inter-procedural.
 // - Extract kernel ID for each split.
 // - Run LLVM pipeline (opt + asmprint) to generate code for each kernel:
 //   PTX for Nvidia, an so lib for AMD.
 ErrorOr<DenseMap<uint64_t, DenseMap<EmitAs, BufferRef>>>
-ObjectCompiler::emitGPUKernels(
+ObjectCompiler::emitOffloadKernels(
     OwningOpRef<ModuleOp> module,
     llvm::DenseMap<uint64_t, llvm::SmallSet<EmitAs, 4>> kernelEmissionKinds) {
-  CompilerTimeTraceScope traceScope("emitGPUKernels");
+  CompilerTimeTraceScope traceScope("emitOffloadKernels");
 
   // Perform a cache aware transformation to translate the module to an
   // archive file.
