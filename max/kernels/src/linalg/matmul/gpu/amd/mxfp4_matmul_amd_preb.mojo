@@ -378,20 +378,19 @@ struct BlockScaledMmaOp_PreB[
 
     @always_inline
     def mma[mma_k_idx: Int, slot: Int = 0](self):
-        """Execute block-scaled MFMA at MFMA-K position `mma_k_idx` using B from `slot`.
+        """Block-scaled MFMA at MFMA-K position `mma_k_idx` using B from `slot`.
 
-        B→src_a, A→src_b (AMD MFMA convention).
+        B-major / n-outer / m-inner: hoist the B fragment + b_byte + b_scale
+        (VMEM-loaded `_b_reg`) once per n, then cycle A (m-inner, LDS-loaded
+        `_a_reg`). Keeping B resident across the m-loop improves MFMA ILP.
 
-        OPSEL byte selection picks the right byte from the 2x2 cell:
+        OPSEL byte selection from the 2x2 cell:
             a_byte = (mma_k_idx % 2) * 2 + (m % 2)
             b_byte = (mma_k_idx % 2) * 2 + (n % 2)
-        Scale dword lives at `_*_scale_packed[mn // 2, mma_k_idx // 2]`.
-
-        WM=16 / WN=16 case: every CTA only ever sees `m=0` / `n=0`, so
-        OPSEL is fixed at byte 0 (or 2 for k_pack=1). The constructor
-        records a `shrui` amount (`_a_scale_shift` / `_b_scale_shift`)
-        that rotates the i32 right by 0 or 8 bits so the byte OPSEL
-        selects is the one for this CTA's half of the cell.
+        Scale dword lives at `_*_scale_packed[mn // 2, mma_k_idx // 2]`. WM/WN=16
+        CTAs see only m=0 / n=0, so the constructor `shrui`
+        (`_a_scale_shift` / `_b_scale_shift`) rotates the i32 to the right OPSEL
+        byte.
         """
         comptime assert slot < Self.num_b_slots, "slot out of range"
         var a_reg_v = self._a_reg.vectorize[1, 1, Self.mma_frag_width_bytes]()
@@ -400,32 +399,31 @@ struct BlockScaledMmaOp_PreB[
         ]()
         var c_reg_v = self._c_reg.vectorize[1, Self.c_frag_size]()
 
-        comptime for m in range(Self.num_m_mmas):
-            # A-side state — invariant across the inner n loop. The
-            # cdna4_block_scaled_mfma wrapper expects A/B fragments
-            # sized to FLOAT4_E2M1.simd_width() = 16 — pass the 16-byte
-            # `*_data` lanes directly (do NOT pad to 32).
-            var a_frag = a_reg_v[mma_k_idx, m, 0]
+        # 2x2 (k_pack × mn_pack) cell -> OPSEL byte: (k%2, mn%2) row-major.
+        comptime scale_cell = row_major[2, 2]()
 
-            comptime a_byte = (mma_k_idx % 2) * 2 + (m % 2)
-            var a_scale = rebind[Int32](
-                self._a_scale_packed[m // 2, mma_k_idx // 2]
+        comptime for n in range(Self.num_n_mmas):
+            # B-side state — invariant across the inner m loop.
+            var b_frag = b_reg_v[slot, mma_k_idx, n, 0]
+
+            comptime b_byte = (mma_k_idx % 2) * 2 + (n % 2)
+            var b_scale = rebind[Int32](
+                self._b_scale_packed[n // 2, mma_k_idx // 2]
             )
+            comptime if Self.warp_tile[1] == 16:
+                b_scale = Int32(UInt32(b_scale) >> self._b_scale_shift)
 
-            comptime if Self.warp_tile[0] == 16:
-                a_scale = Int32(UInt32(a_scale) >> self._a_scale_shift)
-
-            comptime for n in range(Self.num_n_mmas):
-                var b_frag = b_reg_v[slot, mma_k_idx, n, 0]
+            comptime for m in range(Self.num_m_mmas):
+                var a_frag = a_reg_v[mma_k_idx, m, 0]
 
                 var c_frag = c_reg_v[m, n]
 
-                comptime b_byte = (mma_k_idx % 2) * 2 + (n % 2)
-                var b_scale = rebind[Int32](
-                    self._b_scale_packed[n // 2, mma_k_idx // 2]
+                comptime a_byte = (mma_k_idx % 2) * 2 + (m % 2)
+                var a_scale = rebind[Int32](
+                    self._a_scale_packed[m // 2, mma_k_idx // 2]
                 )
-                comptime if Self.warp_tile[1] == 16:
-                    b_scale = Int32(UInt32(b_scale) >> self._b_scale_shift)
+                comptime if Self.warp_tile[0] == 16:
+                    a_scale = Int32(UInt32(a_scale) >> self._a_scale_shift)
 
                 cdna4_block_scaled_mfma[
                     Int32(b_byte),
@@ -467,11 +465,14 @@ struct MXFP4MatmulAMD_PreB[
     K-heavy shapes (e.g. gate/up, K=7168) where outer-iter serialization
     dominates.
 
-    `cluster_drain_sched` (b_prefetch only) stage1 inner-loop
-    interleave: per-cluster `s_setprio` bracketing each `mfma_cluster` MFMAs
-    (not one coarse bracket) and a partial-`vmcnt` staircase that keeps the
-    prefetched B loads in flight per cluster instead of one full drain.
-    Default off — existing callers are bit-identical.
+    `cluster_drain_sched` (b_prefetch only) switches the 1-deep steady loop to
+    an interleaved B-issue schedule: the next tile's B fragments are issued
+    per-k *between* the current tile's MFMA phases (not front-loaded), each phase
+    pinned by `sched_barrier(0)` + bracketed by `s_setprio`, and the
+    end-of-tile sync is a bare `s_barrier` + `lgkmcnt`-only drain so in-flight
+    B DMAs cross it. (deep_prime / the epilogue still use the per-cluster
+    `vmcnt` staircase, `mma_chain_scheduled`.) Default off — callers
+    bit-identical unless opted in.
 
     `deep_prime` (b_prefetch only, num_tiles >= 2) deepens the A pipeline to
     2-tiles-ahead: the prologue stages BOTH tile0 -> slot0 and tile1 -> slot1
@@ -481,6 +482,9 @@ struct MXFP4MatmulAMD_PreB[
     `num_a_slots=2` LDS buffers — no extra LDS/VGPR. Composes with cluster_drain_sched/mfma_cluster
     (the MFMA chain is unchanged). Falls back to the 1-deep path when num_tiles < 2.
     Default off — existing callers are bit-identical.
+
+    MFMA consumption order is B-major (n-outer / m-inner): the B fragment is
+    held resident across the m-loop for better MFMA ILP. See `mma`.
     """
 
     # WM is locked to BM — single warp along M for the preb (no-LDS-B) path.
@@ -733,6 +737,20 @@ struct MXFP4MatmulAMD_PreB[
             # isn't preempted by memory-issuing waves; lower it for loads.
             llvm_intrinsic["llvm.amdgcn.s.setprio", NoneType](priority)
 
+        @always_inline
+        @parameter
+        def _sched_barrier_zero():
+            # Hard reorder fence: pins surrounding instrs to source order so the
+            # scheduler can't hoist the interleaved B loads back into one block.
+            llvm_intrinsic["llvm.amdgcn.sched.barrier", NoneType](Int32(0))
+
+        @always_inline
+        @parameter
+        def _s_barrier_raw():
+            # Bare s_barrier (no vmcnt/lgkmcnt release) so in-flight B DMAs
+            # cross it; stdlib barrier() forces vmcnt(0) and kills the prefetch.
+            llvm_intrinsic["llvm.amdgcn.s.barrier", NoneType]()
+
         # Per-cluster setprio + partial-vmcnt staircase.
         # Splits the num_k_mmas MFMA chain into mfma_cluster-sized groups,
         # brackets each with s_setprio[1]/[0], and drains the prefetched
@@ -892,12 +910,30 @@ struct MXFP4MatmulAMD_PreB[
                 comptime nxt_slot = (i + 1) % 2
                 var nxt_k_byte_base = (i + 1) * Self.BK_BYTES
 
-                comptime for k in range(Self.num_k_mmas):
-                    mma_op.load_b_frag_preshuffled[k, slot=nxt_slot](
-                        b_loader, warp_n_off_global, nxt_k_byte_base
-                    )
-
-                mma_chain[cur_slot]()
+                comptime if Self.cluster_drain_sched:
+                    # issue next-tile B[k] spread
+                    # between the current-tile MFMA phases, each group pinned by
+                    # sched_barrier(0) so the scheduler can't re-block the loads
+                    # into one burst (the front-load we want to break apart).
+                    var a_warp = a_smem_slot(cur_slot).tile[
+                        Self.WM, Self.BK_BYTES
+                    ](warp_m, 0)
+                    comptime for k in range(Self.num_k_mmas):
+                        mma_op.load_b_frag_preshuffled[k, slot=nxt_slot](
+                            b_loader, warp_n_off_global, nxt_k_byte_base
+                        )
+                        _sched_barrier_zero()
+                        s_setprio[1]()
+                        mma_op.load_a_frag_from_smem[k](a_warp)
+                        mma_op.mma[k, slot=cur_slot]()
+                        s_setprio[0]()
+                        _sched_barrier_zero()
+                else:
+                    comptime for k in range(Self.num_k_mmas):
+                        mma_op.load_b_frag_preshuffled[k, slot=nxt_slot](
+                            b_loader, warp_n_off_global, nxt_k_byte_base
+                        )
+                    mma_chain[cur_slot]()
 
                 # Double-buffered A: iter i reads `cur_slot` and writes the
                 # next tile into `nxt_slot`, so the old WAR barrier here is
@@ -907,7 +943,13 @@ struct MXFP4MatmulAMD_PreB[
                 load_a_tile_from_dram()
                 copy_a_tile_to_smem(nxt_slot)
                 load_scales_for_iter((i + 1) * mma_k_pair_per_tile)
-                barrier()
+                comptime if Self.cluster_drain_sched:
+                    # Publish the A LDS tile cross-wave (lgkmcnt) but let the
+                    # next-tile B DMAs keep streaming across the barrier.
+                    s_waitcnt[lgkmcnt=0]()
+                    _s_barrier_raw()
+                else:
+                    barrier()
 
             # Epilogue: MFMA the last iter from its slot.
             comptime last_slot = (num_tiles - 1) % 2
