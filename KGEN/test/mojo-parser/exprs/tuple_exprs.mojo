@@ -127,7 +127,7 @@ trait CollectionType(ImplicitlyCopyable):
     pass
 
 
-struct Container[T: CollectionType]:
+struct Container[T: CollectionType & ImplicitlyDeletable]:
     var x: Self.T
 
     def __setitem__(mut self, i: Int, var value: Self.T):

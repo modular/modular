@@ -502,12 +502,12 @@ def testSomeStructWithRefMethod[val: SomeStructWithRefMethod]():
 # COM: Avoid copies when unnecessary
 
 @fieldwise_init
-struct MyDictEntry[K: KeyElement, V: Copyable](Copyable):
+struct MyDictEntry[K: KeyElement & ImplicitlyDeletable, V: Copyable & ImplicitlyDeletable](Copyable):
     var key: Self.K
     var value: Self.V
 
 
-struct MyDict[K: KeyElement, V: Copyable](Copyable):
+struct MyDict[K: KeyElement & ImplicitlyDeletable, V: Copyable & ImplicitlyDeletable](Copyable):
     var _entries: List[MyDictEntry[Self.K, Self.V]]
 
     def __getitem__(

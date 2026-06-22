@@ -30,7 +30,7 @@ struct X_T_U(ImplicitlyCopyable):
 
 # CHECK-LABEL: lit.struct.decl @C
 #  CHECK-SAME: <X: [[X_TYPE:!.*]], Y: [[Y_TYPE:!.*]]>
-struct C[X: ImplicitlyCopyable, Y: ImplicitlyCopyable](ImplicitlyCopyable):
+struct C[X: ImplicitlyCopyable & ImplicitlyDeletable, Y: ImplicitlyCopyable & ImplicitlyDeletable](ImplicitlyCopyable):
     var x: Self.X
     var y: Self.Y
 
@@ -93,9 +93,9 @@ struct Wrapper(Copyable):
 
 
 # CHECK-LABEL: lit.struct.decl @TrivialFieldGen
-# CHECK: lit.alias.decl __del__is_trivial: !Bool = <#kgen.get_witness<:!Movable T, "{{.*}}::ImplicitlyDeletable", "__del__is_trivial">>
-# CHECK: lit.alias.decl __move_ctor_is_trivial: !Bool = <#kgen.get_witness<:!Movable T, "{{.*}}::Movable", "__move_ctor_is_trivial">>
-struct TrivialFieldGen[T: Movable](Movable):
+# CHECK: lit.alias.decl __del__is_trivial: !Bool = <#kgen.get_witness<:!Movable_ImplicitlyDeletable T, "{{.*}}::ImplicitlyDeletable", "__del__is_trivial">>
+# CHECK: lit.alias.decl __move_ctor_is_trivial: !Bool = <#kgen.get_witness<:!Movable_ImplicitlyDeletable T, "{{.*}}::Movable", "__move_ctor_is_trivial">>
+struct TrivialFieldGen[T: Movable & ImplicitlyDeletable](Movable):
     var z: Self.T
     var y: Int
     var q: Self.T

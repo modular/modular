@@ -962,7 +962,7 @@ struct ImplicitCopyableStructWithExplicitBody(ImplicitlyCopyable, RegisterPassab
 # parameter constrained only to `Copyable` must not synthesize an implicit copy
 # ctor.
 @fieldwise_init
-struct OnlyCopyableField[T: Copyable](ImplicitlyCopyable where conforms_to(T, Copyable)):
+struct OnlyCopyableField[T: Copyable & ImplicitlyDeletable](ImplicitlyCopyable where conforms_to(T, Copyable)):
     # expected-error @below {{cannot synthesize implicit copy constructor because field 'f' has non-implicitly-copyable type 'T'}}
     var f: Self.T
 
@@ -1154,7 +1154,7 @@ struct Outer(RegisterPassable): # expected-error {{all members of 'RegisterPassa
 
 
 @fieldwise_init
-struct AnyTypeMember[T: AnyType](ImplicitlyCopyable):
+struct AnyTypeMember[T: AnyType & ImplicitlyDeletable](ImplicitlyCopyable):
 # expected-error @below {{cannot synthesize fieldwise init because field 'value' has non-copyable and non-movable type 'T'}}
 # expected-error @below {{cannot synthesize move constructor because field 'value' has non-movable and non-implicitly-copyable type 'T'}}
 # expected-error @below {{cannot synthesize implicit copy constructor because field 'value' has non-implicitly-copyable type 'T'}}

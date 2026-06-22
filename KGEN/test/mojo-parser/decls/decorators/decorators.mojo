@@ -450,7 +450,7 @@ struct ParamVarArg[*I: Int](TrivialRegisterPassable):
 
 # CHECK-LABEL: lit.struct.decl @TraitMember
 @fieldwise_init
-struct TraitMember[T: ImplicitlyCopyable](ImplicitlyCopyable):
+struct TraitMember[T: ImplicitlyCopyable & ImplicitlyDeletable](ImplicitlyCopyable):
     var value: Self.T
     # CHECK: lit.fn @"__init__{{.*}}"{{.*}}(*, %move:
     # CHECK: lit.call{{.*}}__init__(move:$0$)">

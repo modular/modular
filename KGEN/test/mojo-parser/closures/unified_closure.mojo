@@ -987,7 +987,7 @@ def repro_rebind_nonref_operand[
 # // -----
 
 
-trait Coord(ImplicitlyCopyable):
+trait Coord(ImplicitlyCopyable, TrivialRegisterPassable):
     comptime Dim: Int
 
     def prettyPrint(self):
