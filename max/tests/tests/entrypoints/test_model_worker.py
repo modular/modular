@@ -43,6 +43,7 @@ from max.serve import api_server
 from max.serve.config import Settings
 from max.serve.pipelines.echo_gen import EchoTokenGenerator
 from max.serve.pipelines.model_worker import start_model_worker
+from max.serve.process_control import SubprocessExit
 from max.serve.telemetry.metrics import NoopClient
 from max.serve.worker_interface._zmq_queue import generate_zmq_ipc_path
 from max.serve.worker_interface.zmq_interface import ZmqModelWorkerInterface
@@ -144,14 +145,15 @@ class MockInvalidTokenGenerator(
 async def test_model_worker_propagates_construction_exception(
     mock_pipeline_config: PipelineConfig,
 ) -> None:
-    """Tests raising in the model worker task."""
+    """Tests that a worker that crashes during construction surfaces to the parent.
+
+    The child's :py:class:`ValueError` is logged by the subprocess itself; the
+    parent only learns that the worker exited with a non-zero code (see
+    :py:class:`SubprocessExit`).
+    """
     settings = Settings()
 
-    # The MockTokenGenerator crashes the remote subprocess
-    # then ProcessMonitor checks throw TimeoutError here
-    with pytest.raises(
-        ValueError, match=MockInvalidTokenGenerator.ERROR_MESSAGE
-    ):
+    with pytest.raises(SubprocessExit):
         async with start_model_worker(
             MockInvalidTokenGenerator,
             mock_pipeline_config,
@@ -235,9 +237,10 @@ async def test_lifespan_propagates_worker_exception(
         tokenizer=MockTokenizer(),
     )
 
-    # The MockTokenGenerator crashes the remote subprocess
-    # then ProcessMonitor checks throw TimeoutError here
-    with pytest.raises(ValueError, match="CRASH TEST DUMMY"):
+    # The child's ValueError is logged by the subprocess; the parent observes
+    # SubprocessExit (the production CLI catches this in
+    # serve_api_and_model_worker.py).
+    with pytest.raises(SubprocessExit):
         async with api_server.lifespan(
             FastAPI(),
             settings,
@@ -268,7 +271,7 @@ async def test_lifespan_startup_crash_skips_server(
 
     server_started = False
 
-    with pytest.raises(ValueError, match="CRASH TEST DUMMY"):
+    with pytest.raises(SubprocessExit):
         async with api_server.lifespan(
             FastAPI(),
             settings,

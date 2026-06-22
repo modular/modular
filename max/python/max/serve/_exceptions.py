@@ -16,6 +16,8 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Iterator
+from contextlib import contextmanager
 
 
 class OOMError(RuntimeError):
@@ -39,10 +41,11 @@ Suggested solutions:
 
 
 # TODO: include other patterns (e.g. AMD) here
-_oom_message_pattern = re.compile(".*OUT_OF_MEMORY.*")
+_oom_pattern = re.compile(".*OUT_OF_MEMORY.*")
 
 
-def detect_and_wrap_oom(exception: Exception) -> None:
+@contextmanager
+def detect_and_wrap_ooms() -> Iterator[None]:
     """
     Detect  OOM errors and wrap them in a more helpful exception.
 
@@ -55,9 +58,11 @@ def detect_and_wrap_oom(exception: Exception) -> None:
     Returns:
         OOMError if it's OOM, otherwise the original exception
     """
-    error_message = str(exception)
 
-    if isinstance(exception, ValueError) and _oom_message_pattern.match(
-        error_message
-    ):
-        raise OOMError() from exception
+    try:
+        yield
+    except Exception as exception:
+        msg = str(exception)
+        if isinstance(exception, ValueError) and _oom_pattern.match(msg):
+            raise OOMError() from exception
+        raise

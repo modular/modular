@@ -28,7 +28,7 @@ from typing import Any, TextIO
 
 import httpx
 import scipy.special
-from max.support.taskgroups import TaskGroup
+from max.support._taskgroups import TaskGroup
 
 from . import schema
 

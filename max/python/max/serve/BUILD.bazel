@@ -22,7 +22,7 @@ modular_py_library(
 
 modular_py_library(
     name = "exceptions",
-    srcs = ["exceptions.py"],
+    srcs = ["_exceptions.py"],
 )
 
 modular_py_library(
@@ -47,7 +47,7 @@ modular_py_library(
             "process_control.py",
             "config.py",
             "debug.py",
-            "exceptions.py",
+            "_exceptions.py",
             "queue.py",
             "scheduler_result.py",
         ],
