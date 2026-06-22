@@ -310,9 +310,6 @@ def _repack_scales(
             src_of(2*lane+1) = (lane%4)*16 + lane//4 + 8
     The group index g is preserved (same row of the row_major(K_groups, N)).
     """
-    BN = 128
-    BK = 1024
-    BK_groups = BK // group_size
     K_groups = K // group_size
 
     f32 = e4m3fn_to_f32(block_scales_fp8)  # [N, K_groups]

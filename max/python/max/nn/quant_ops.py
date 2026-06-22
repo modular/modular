@@ -426,7 +426,7 @@ def _matmul_float8(
 def quantized_matmul(
     x: TensorValue,
     weight: TensorValue,
-    weight_scale: TensorValue,
+    weight_scale: TensorValue | None,
     input_scale: TensorValue | None,
     quant_config: QuantConfig,
     weight_scale_2: TensorValue | None = None,
@@ -465,12 +465,16 @@ def quantized_matmul(
                 scales_pre_interleaved=quant_config.scales_pre_interleaved,
             )
         case QuantFormat.MXFP4:
+            # Only NVFP4's load-time skeleton path folds weight_scale away;
+            # every other format requires it.
+            assert weight_scale is not None
             return _matmul_float4_mxfp4(
                 x,
                 weight,
                 weight_scale,
             )
         case QuantFormat.MXFP8:
+            assert weight_scale is not None
             return _matmul_float8_mxfp8(
                 x,
                 weight,
@@ -481,6 +485,7 @@ def quantized_matmul(
             | QuantFormat.FBGEMM_FP8
             | QuantFormat.BLOCKSCALED_FP8
         ):
+            assert weight_scale is not None
             return _matmul_float8(
                 x,
                 weight,

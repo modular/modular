@@ -22,7 +22,6 @@ from max.driver import Buffer
 from max.dtype import DType
 from max.graph.type import Shape
 from max.graph.weights import WeightData, Weights
-from max.nn._nvfp4_repack_host import nvfp4_repack_host
 from max.nn.quant_ops import _NVFP4_USE_SKELETON_GEMM
 
 GEMMA4_LANGUAGE_SAFETENSOR_MAP: dict[str, str] = {
@@ -173,6 +172,10 @@ def _fuse_nvfp4_skeleton_weights(
     convention (the already-inverted modelopt value), matching the kernel which
     multiplies weights by ``weight_scale_2``.
     """
+    # Imported lazily (only at NVFP4 load, never at registration) so the numpy
+    # host-repack module stays off the `max ... --help` startup path.
+    from max.nn._nvfp4_repack_host import nvfp4_repack_host
+
     out: dict[str, WeightData] = {}
     # Identify NVFP4 layers by the presence of the modelopt-named scale tensors.
     nvfp4_prefixes: set[str] = set()
