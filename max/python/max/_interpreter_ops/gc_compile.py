@@ -16,8 +16,8 @@
 The per-op-type GC caches (``matmul_gc``, ``unary_elementwise_gc``, and any
 future one) share three process-wide singletons defined here:
 
-- :data:`PRECOMPILE` — whether to compile the full GC matrix at import (the
-  default) or compile each target lazily on first dispatch.
+- :func:`should_precompile` — whether to compile the full GC matrix at import
+  (the default) or compile each target lazily on first dispatch.
 - :data:`COMPILE_LOCK` — serializes the lazy check-compile-cache so concurrent
   first-dispatches don't race.
 - :func:`session_for` — a per-device :class:`~max.engine.InferenceSession`
@@ -37,7 +37,22 @@ from max.driver import Device
 # target lazily on first dispatch, bounding compile cost to what a program uses
 # (MXF-508). The same flag gates every op-type cache, so they toggle together.
 EAGER_OP_PRECOMPILE_ENV_VAR = "MAX_EAGER_OP_PRECOMPILE"
-PRECOMPILE = os.environ.get(EAGER_OP_PRECOMPILE_ENV_VAR, "1") != "0"
+
+
+def should_precompile() -> bool:
+    """Returns whether to eagerly precompile the full GC matrix at import.
+
+    Reads ``MAX_EAGER_OP_PRECOMPILE`` (default on) *when called* rather than
+    caching it at import. The eager sweep runs from ``__init__`` as a side
+    effect of importing this package, and that import can happen — directly or
+    transitively — before a launcher, test harness, or startup hook has set the
+    env var. Latching the value at import time made ``=0`` silently ineffective
+    in those cases (the sweep had already run), which is hard to diagnose since
+    ``os.environ`` still reports ``0`` afterward. Reading it at the point the
+    sweep is gated keeps the flag honest regardless of import order.
+    """
+    return os.environ.get(EAGER_OP_PRECOMPILE_ENV_VAR, "1") != "0"
+
 
 # Serializes the lazy check-compile-cache in the per-op-type model lookups:
 # eager dispatch gives no single-threaded guarantee, so the lock keeps

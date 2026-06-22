@@ -20,7 +20,6 @@ import time
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from max._distributed_ops import distributed_broadcast
 from max.driver import (
     Buffer,
     Device,
@@ -219,6 +218,12 @@ class BlockOffloadEngine:
 
         if not self._replicated_units:
             return
+
+        # Imported lazily: instantiating the GPU broadcast collective at module
+        # load compiles it for the active GPU target, which fails on backends
+        # without a GPUInfo entry. Only the multi-device replicated path needs
+        # it, so defer the import (and its compile) to here.
+        from max._distributed_ops import distributed_broadcast
 
         # main stream waits for completion of h2d on auxiliary stream.
         for main_stream, d2h_auxiliary_stream in zip(

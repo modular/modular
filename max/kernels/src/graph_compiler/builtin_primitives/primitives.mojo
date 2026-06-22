@@ -17,6 +17,7 @@ from std.ffi import external_call, c_size_t
 from std.sys import size_of, align_of
 
 import std.algorithm
+import std.algorithm.functional
 
 from extensibility import StaticTensorSpec
 from extensibility import (
@@ -80,12 +81,11 @@ struct StateContext(TrivialRegisterPassable):
 
     var num_slots: Int
 
-    @__allow_legacy_any_origin_fields
-    var ctx_ptr: OpaquePointer[MutAnyOrigin]
+    var ctx_ptr: OpaquePointer[MutUntrackedOrigin]
 
     @always_inline
     def __init__(
-        out self, num_slots: Int, ctx_ptr: OpaquePointer[MutAnyOrigin]
+        out self, num_slots: Int, ctx_ptr: OpaquePointer[MutUntrackedOrigin]
     ):
         self.num_slots = num_slots
         self.ctx_ptr = ctx_ptr

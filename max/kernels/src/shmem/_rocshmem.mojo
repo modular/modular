@@ -169,8 +169,7 @@ struct ROCSHMEMInitAttr(ImplicitlyCopyable):
     var nranks: Int32
     var uid: SHMEMUniqueID
 
-    @__allow_legacy_any_origin_fields
-    var mpi_comm: Optional[UnsafePointer[NoneType, ImmutAnyOrigin]]
+    var mpi_comm: Optional[UnsafePointer[NoneType, ImmutUntrackedOrigin]]
 
     def __init__(out self):
         comptime assert (
