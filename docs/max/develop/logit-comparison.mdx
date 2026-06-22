@@ -270,9 +270,9 @@ def print_report(results: list[LogitComparison]) -> None:
         )
 
 
-pipeline_config = PipelineConfig(
+pipeline_config = PipelineConfig.from_flat_kwargs(
     model_path=MODEL_PATH,
-    runtime={"custom_architectures": CUSTOM_ARCHITECTURES},
+    custom_architectures=CUSTOM_ARCHITECTURES,
 )
 _, pipeline = PIPELINE_REGISTRY.retrieve(pipeline_config)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

@@ -180,19 +180,19 @@ from max.pipelines import PIPELINE_REGISTRY, PipelineConfig
 from max.pipelines.context import TextContext
 
 # 1. Configure and retrieve the pipeline and tokenizer
-config = PipelineConfig(
+config = PipelineConfig.from_flat_kwargs(
     model_path="meta-llama/Llama-3.1-8B-Instruct",
     max_length=512,
 )
 tokenizer, pipeline = PIPELINE_REGISTRY.retrieve(config)
 
 # 2. Get the KV cache manager from the pipeline
-kv_cache_manager = pipeline.kv_managers[0]
+kv_cache_manager = pipeline.kv_manager
 
 # 3. Create a request with the text prompt
 request = TextGenerationRequest(
     request_id=RequestID(),
-    model_name=config.model_path,
+    model_name=config.model.model_path,
     prompt="Explain how neural networks work",
 )
 
@@ -200,18 +200,17 @@ request = TextGenerationRequest(
 context = asyncio.run(tokenizer.new_context(request))
 
 # 5. Allocate space in the KV cache for this request
-kv_cache_manager.claim(context.request_id)
+kv_cache_manager.claim(context.request_id, replica_idx=0)
 
 # 6. Run the generation loop
 generated_text = ""
 while True:
     # Allocate KV cache for the next token
-    kv_cache_manager.alloc(context, num_steps=1)
+    kv_cache_manager.alloc(context, replica_idx=0)
 
     # Execute the pipeline with the current context
     inputs = TextGenerationInputs[TextContext](
-        batches=[{context.request_id: context}],
-        num_steps=1,
+        batches=[[context]],
     )
     output = pipeline.execute(inputs)
 
@@ -305,7 +304,7 @@ compiled pipeline:
 from max.pipelines import PIPELINE_REGISTRY, PipelineConfig
 
 # Create configuration for a model
-config = PipelineConfig(
+config = PipelineConfig.from_flat_kwargs(
     model_path="meta-llama/Llama-3.1-8B-Instruct",
 )
 
@@ -472,7 +471,12 @@ The base class delegates the following through `model_config_cls`:
 
 - **KV cache parameters**: The `get_kv_params()` method constructs the KV cache
   configuration. The base class calls `model_config_cls.construct_kv_params()`
-  to build the appropriate `KVCacheParams` for your architecture.
+  to build the appropriate `KVCacheParams` for your architecture. Architectures
+  with multiple or hybrid caches (for example, separate sliding-window and
+  full-attention caches) return a
+  [`MultiKVCacheParams`](/max/api/python/generated/max.nn.kv_cache.MultiKVCacheParams/)
+  tree instead, which the cache manager consumes through the shared
+  [`KVCacheParamInterface`](/max/api/python/generated/max.nn.kv_cache.KVCacheParamInterface/).
 
 You can override `calculate_max_seq_len()` or `get_kv_params()` if needed.
 
@@ -541,7 +545,7 @@ When you run a model, configuration flows through several layers:
 ```python
 from max.pipelines import PipelineConfig
 
-config = PipelineConfig(
+config = PipelineConfig.from_flat_kwargs(
     # Model specification (Hugging Face repo ID or local path)
     model_path="meta-llama/Llama-3.1-8B-Instruct",
 
