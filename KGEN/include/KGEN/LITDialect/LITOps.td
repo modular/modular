@@ -2018,8 +2018,7 @@ def LIT_RefPackFromPointerPackOp : LITOp<"ref.pack.from_pointer_pack", [Pure]> {
 //===----------------------------------------------------------------------===//
 
 def LIT_ClosureInitOp : LITOp<"closure.init",
-                [FunctionLike, SingleBlock, DeclInterface,
-                DeclareOpInterfaceMethods<DebugInfo_SubprogramScoped, ["getSubprogramScope"]>,
+                [DeclInterface,
                   DeclareOpInterfaceMethods<ParamOpInterface, ["collectParameterUses"]>]>, OneParamDecl {
   let summary = "Allocate memory and store values into a closure struct.";
   let description = [{
@@ -2062,11 +2061,9 @@ def LIT_ClosureInitOp : LITOp<"closure.init",
     }];
 
   let arguments = (ins TypeAttrOf<LIT_FnTypeGeneratorType>:$funcTypeGenerator,
-                       TypeAttrOf<FunctionType>:$functionType,
                        Variadic<AnyType>:$captures,
                        ArrayAttr:$captureConventions,
                        KGEN_ParamDeclArrayAttr:$inputParams,
-                       KGEN_InlineLevelAttr:$inlineLevel,
                        KGEN_ParamDeclAttr:$paramDecl,
                        TypedAttrInterface:$typeValue,
                        DefaultValuedAttr<ArrayAttr, "{}">:$captureTypes,
@@ -2078,15 +2075,11 @@ def LIT_ClosureInitOp : LITOp<"closure.init",
                        OptionalAttr<KGEN_LinkageNameAttr>:$linkageName
                        );
   let results = (outs LIT_RefType:$result);
-  let regions = (region SizedRegion<1>:$bodyRegion);
   let assemblyFormat = [{
       `` custom<ClosureInitOpValue>($funcTypeGenerator,
-                                    $functionType,
                                     $captures,
                                     $captureConventions,
                                     $inputParams,
-                                    $inlineLevel,
-                                    $bodyRegion,
                                     type($captures),
                                     type($result),
                                     $paramDecl,
@@ -2095,17 +2088,15 @@ def LIT_ClosureInitOp : LITOp<"closure.init",
 
   let builders = [
     OpBuilder<(ins "Type":$result, "FnTypeGeneratorType":$funcTypeGenerator,
-                   "FunctionType":$functionType,
                    "ValueRange":$captures,
                    "ArrayAttr":$captureConventions,
                    "ArrayRef<ParamDeclAttr>":$inputParams,
-                   "InlineLevel":$inlineLevel,
                    "ParamDeclAttr":$paramDecl,
                    "TypedAttr":$typeValue,
                    "ArrayAttr":$captureTypes,
                    "ArrayAttr":$captureNames), [{
-      build($_builder, $_state, result, funcTypeGenerator, functionType, captures,
-            captureConventions, inputParams, inlineLevel,
+      build($_builder, $_state, result, funcTypeGenerator, captures,
+            captureConventions, inputParams,
             paramDecl, typeValue, captureTypes, captureNames,
             /*nestedFnScope=*/{},
             /*LLVMMetadataArray=*/nullptr, /*LLVMArgMetadataArray=*/nullptr,
@@ -2115,8 +2106,9 @@ def LIT_ClosureInitOp : LITOp<"closure.init",
   ];
 
   let extraClassDeclaration = [{
-    Region *getCallableRegion() { return &getBodyRegion(); }
-    ArrayRef<Type> getResultTypes() { return getFunctionType().getResults(); }
+    ArrayRef<Type> getResultTypes() {
+      return getFuncTypeGenerator().getValues().getResults();
+    }
   }];
   let hasVerifier = 1;
 }

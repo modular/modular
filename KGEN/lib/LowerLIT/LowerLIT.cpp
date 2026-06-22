@@ -229,17 +229,16 @@ void LITLowerer::lowerLITOps(FnOp func) {
       removeSingletonParamDecls(singletonTypeHelper, parameters);
       KGEN::ClosureInitOp closureInitKgen = KGEN::ClosureInitOp::create(
           b, closureInit.getLoc(), closureInit->getResults().front().getType(),
-          closureInit.getFuncTypeGenerator(), closureInit.getFunctionType(),
-          closureInit.getCaptures(),
+          closureInit.getFuncTypeGenerator(), closureInit.getCaptures(),
           ArrayAttr::get(b.getContext(), captureConventions), parameters,
-          closureInit.getInlineLevel(), closureInit.getCaptureTypesAttr(),
-          closureInit.getCaptureNamesAttr(), closureInit.getTypeValue(),
-          closureInit.getNestedFnScopeAttr(),
+          closureInit.getCaptureTypesAttr(), closureInit.getCaptureNamesAttr(),
+          closureInit.getTypeValue(), closureInit.getNestedFnScopeAttr(),
           closureInit.getLLVMMetadataArray(),
           closureInit.getLLVMArgMetadataArray(),
           closureInit.getHoistedCapturesAttr(),
           closureInit.getLinkageNameAttr());
-      closureInitKgen.getBodyRegion().takeBody(closureInit.getBodyRegion());
+      if (Attribute closureType = closureInit->getAttr("closureType"))
+        closureInitKgen->setAttr("closureType", closureType);
       b.replaceOp(closureInit, closureInitKgen);
     }
   });

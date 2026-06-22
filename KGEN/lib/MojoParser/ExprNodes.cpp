@@ -4718,7 +4718,7 @@ AnyValue MagicFunctionNode::emitFunctionsInModule(ExprDest &dest,
           continue;
 
         auto fnOp = dyn_cast_or_null<FnOp>(decl->getIfOperation());
-        if (!fnOp)
+        if (!fnOp || fnOp.isSynthetic())
           continue;
 
         // TODO(MOCO-2556): consistently allow recursive references.

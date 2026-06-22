@@ -81,10 +81,35 @@ public:
                               unsigned numPrependedCaptures,
                               SMLoc nestedFunctionOrTypeLocation);
 
-  /// Promote a stateless closure decl to a top-level function decl.
+  struct PromotedClosureSelfArg {
+    Type type;
+    ArgConvention convention;
+  };
+
+  /// Promote `nestedFnDecl` to a top-level method and wire its captured values
+  /// to the fields of the closure struct. Returns the promoted function decl.
   ASTDecl *
-  promoteStatelessClosure(ASTDecl &nestedFnDecl,
-                          ArrayRef<ParamDeclRefAttr> paramCaptures = {});
+  liftClosureIntoMethod(ASTDecl &nestedFnDecl,
+                        ArrayRef<ParamDeclAttr> concreteParams,
+                        PromotedClosureSelfArg selfArg,
+                        ArrayRef<StructDefFieldAttr> concreteFieldDecls,
+                        ArrayRef<Value> concreteFieldCaptures,
+                        ArrayRef<CaptureConvention> captureConventions,
+                        ArrayRef<Type> selfBoundFieldTypes, Location location);
+
+  /// Promote a closure decl to a top-level function decl.
+  ASTDecl *
+  promoteClosure(ASTDecl &nestedFnDecl,
+                 ArrayRef<ParamDeclAttr> prependedParams = {},
+                 std::optional<PromotedClosureSelfArg> selfArg = std::nullopt,
+                 bool forceCapturing = false);
+
+  /// Adapter overload for callsites that currently hold ParamDeclRefAttr.
+  ASTDecl *
+  promoteClosure(ASTDecl &nestedFnDecl,
+                 ArrayRef<ParamDeclRefAttr> prependedParamRefs,
+                 std::optional<PromotedClosureSelfArg> selfArg = std::nullopt,
+                 bool forceCapturing = false);
 
   Value emitClosureOp(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
                       ArrayRef<Capture> captures, TraitDeclOp trait,
@@ -211,6 +236,14 @@ public:
   static bool isTypeRebindableTo(FuncTypeGeneratorType from,
                                  FuncTypeGeneratorType to);
 
+  /// Bundles the IR artifacts produced by liftClosure.
+  struct Closure {
+    ASTDecl *structDecl;         ///< The closure storage struct.
+    ASTDecl *structGenDecl;      ///< The kgen.struct.generator.
+    ASTDecl *promotedCallMethod; ///< The lifted __call__ function.
+    TypedAttr typeAttr; ///< Type ref to the struct gen (+ witness table).
+  };
+
 private:
   /// Given a name, a list of builtin parent traits (like "Movable" for
   /// example), a location, and a populate method, return a trait declaration
@@ -223,16 +256,19 @@ private:
           void(ASTDecl &traitDecl,
                DenseSet<std::pair<StringAttr, StringAttr>> &functions)>
           populateTrait);
-  /// Generate a witness table for a closure op.
-  TypedAttr
-  addWitnessTablesToClosure(ASTDecl &moduleDecl, SMLoc smLoc,
-                            SmallVector<ClosureParent> &closureParents,
-                            SymbolRefAttr parentSymbolRef,
-                            llvm::MapVector<StringRef, Type> const &aliases,
-                            SmallVector<StructDefFieldAttr> &&fieldDecls,
-                            SmallVector<ParamDeclAttr> &&allStructParams,
-                            SmallVector<TypedAttr> &&structParamBindings,
-                            StringAttr name, bool isRegPassable);
+  /// Construct the closure struct, lift the nested function into a method, and
+  /// emit witness tables for all closure parents.
+  Closure liftClosure(ASTDecl &moduleDecl, SMLoc smLoc,
+                      SmallVector<ClosureParent> &closureParents,
+                      SymbolRefAttr parentSymbolRef,
+                      llvm::MapVector<StringRef, Type> const &aliases,
+                      SmallVector<StructDefFieldAttr> &&fieldDecls,
+                      SmallVector<Value> &&fieldCaptures,
+                      SmallVector<CaptureConvention> &&fieldCaptureConventions,
+                      SmallVector<ParamDeclAttr> &&allStructParams,
+                      SmallVector<TypedAttr> &&structParamBindings,
+                      StringAttr name, TypeConvention typeConvention,
+                      ASTDecl &nestedFnDecl);
 
   /// Given a trait function, specialize it and add it to the struct.
   /// Returns

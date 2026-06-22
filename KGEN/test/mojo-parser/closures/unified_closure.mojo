@@ -174,16 +174,10 @@ def make_closure(x: Int, mem: String) -> Int:
 
 
 def make_closure(x: Int, mem: String):
-    # CHECK: [[RAW_CLOSURE:%.*]] = lit.closure.init[{{.*}}](%x, {{.*}})(%arg0[y]: [[INT]]) capturing -> [[INT]] {
-    # CHECK-NEXT: [[BODY_OP:%.*]] = lit.call {{.*}}@Int::@"__add__{{.*}}"(%x, %arg0) : !lit.generator<("lhs": [[INT]], "rhs": [[INT]]) -> [[INT]]>
-    # CHECK-NEXT: lit.return [[BODY_OP]] : [[INT]]
-    # CHECK-NEXT: lit.end_fn
-    # CHECK-NEXT: } : ([[INT]], {{.*}}), !lit.ref<!kgen.closure<@{{.*}}::make_closure{{.*}}", "my_closure" nonescaping>, mut *"[[L0:.*]]">
-
-    # CHECK-NEXT: [[REBOUND_CLOSURE:%.*]] = kgen.rebind [[RAW_CLOSURE]] : !lit.ref<!kgen.closure<@{{.*}}::make_closure{{.*}}", "my_closure" nonescaping>, mut *"[[L0:.*]]"> to !lit.ref<struct<(!Int1, !String) memoryOnly>, mut *"[[L0]]">
+    # CHECK: [[RAW_CLOSURE:%.*]] = lit.closure.init[{{.*}}](%x, {{.*}})(%arg0[y]: [[INT]]) capturing -> [[INT]]{{.*}} {{{.*}}closureType = !kgen.closure<{{.*}}, "my_closure" nonescaping>{{.*}}}
     # CHECK-NEXT: lit.ownership.use [[RAW_CLOSURE]]
     # CHECK-NEXT: [[WRAPPER:%.*]] = lit.var.decl "my_closure" var : !lit.ref<!lit.struct<[[T:#.*]] <:[[TRAIT]] {{.*}}, :origin.set {}>>, mut *"[[L1:.*]]">
-    # CHECK-NEXT: lit.call {{.*}}::@"def(y: Int) -> Int_{{.*}}"::@"__init__($0$)"[mut *"[[L0]]", mut *"[[L1]]"]<:[[TRAIT]] {{.*}}, :origin.set {}>([[REBOUND_CLOSURE]], [[WRAPPER]]) : !lit.generator<[2]("impl": !lit.ref<struct<(!Int1, !String) memoryOnly>, mut *[0,0]> owned_in_mem, |, ?, "self": !lit.ref<!lit.struct<[[T]] <:[[TRAIT]] {{.*}}, :origin.set {}>>, mut *[0,1]> byref_result) -> !kgen.none>
+    # CHECK-NEXT: lit.call {{.*}}::@"def(y: Int) -> Int_{{.*}}"::@"__init__($0$)"{{.*}}([[RAW_CLOSURE]], [[WRAPPER]]) : !lit.generator<[2]("impl": !lit.ref<struct<(!Int1, !String) memoryOnly>, mut *[0,0]> owned_in_mem, |, ?, "self": !lit.ref<!lit.struct<[[T]] <:[[TRAIT]] {{.*}}, :origin.set {}>>, mut *[0,1]> byref_result) -> !kgen.none>
 
     def my_closure(y: Int) {var x, var mem} -> Int:
         return x + y
@@ -290,9 +284,8 @@ def bindIt(x: Int, y: Int, mem: String) -> Int:
 
 # CHECK: kgen.struct.generator @"bindIt({{.*}})::myclosure"
 # CHECK: kgen.witness "__call__{{.*}}" : !lit.generator<<"my_param": !AnyType>
-# CHECK-SAME: [1](!lit.ref<struct_inst<"bindIt(::String)::myclosure"{{.*}}memoryOnly>, mut *[0,0]> read_mem, |, "z": !Int) capturing -> !kgen.none
-# CHECK-SAME:> = #kgen.closure.symbol<@"bindIt(::String)", "myclosure", #kgen.closure_method<call>
-# CHECK-SAME:, <:!AnyType ?>>
+# CHECK-SAME: [1](!lit.ref<{{.*}}, mut *[0,0]> read_mem, |, "z": !Int) capturing -> !kgen.none>
+# CHECK-SAME: = {{.*}}<:!AnyType ?>
 
 
 # CHECK: lit.file_module
@@ -1705,8 +1698,7 @@ def demo[
 # CHECK-LABEL: lit.fn @"apply_closure
 def apply_closure[T: TrivialRegisterPassable](x: T):
     # COM: Make sure the field type is paramtric over `T`, not a plain `AnyType`.
-    # CHECK: [[CLOSURE:%[0-9a-zA-Z_]+]] = lit.closure.init
-    # CHECK: kgen.rebind [[CLOSURE]] : !lit.ref<!kgen.closure{{.*}}> to !lit.ref<struct<(:!TrivialRegisterPassable T)>
+    # CHECK: [[CLOSURE:%[0-9a-zA-Z_]+]] = lit.closure.init{{.*}}struct<(:!TrivialRegisterPassable T)>
     def f() {var x}:
         _ = x
 

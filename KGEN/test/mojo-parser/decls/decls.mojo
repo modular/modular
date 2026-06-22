@@ -1109,7 +1109,7 @@ def closureParameter[func: def () capturing -> __mlir_type.index]():
 
 # CHECK-LABEL: lit.fn @"closureParameterCaptures
 # CHECK-SAME: :*(0,0):
-# CHECK-SAME: *"func{{.*}}": !lit.generator<:origins:() capturing -> !kgen.none>
+# CHECK-SAME: func: !lit.generator<:origins:() capturing -> !kgen.none>
 def closureParameterCaptures[
     origins: OriginSet, //, func: def () capturing [origins] -> None
 ]():

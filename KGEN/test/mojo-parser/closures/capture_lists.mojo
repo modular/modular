@@ -50,7 +50,7 @@ def make_closure(x: Int, str:String):
     # CHECK: [[COPY:%.*]] = lit.var.decl "anonymous*"
     # CHECK: lit.closure.init[{{.*}}](%x, [[COPY]]
     # CHECK: [[COPY_OF_COPY:%.*]] = lit.var.decl "anonymous*"
-    # CHECK: lit.closure.init[{{.*}}](%x, [[COPY_OF_COPY]]
+    # CHECK: lit.closure.init[{{.*}}]({{.*}}, [[COPY_OF_COPY]]
     def my_closure(y: Int) {var x, var str} -> Int:
         def my_nested_closure(z: Int) {var x, var str} -> Int:
             use(str)

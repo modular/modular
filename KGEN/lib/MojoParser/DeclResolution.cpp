@@ -1449,10 +1449,6 @@ emitClosureInstance(ArrayRef<Capture> captures, ASTDecl &nestedFnDecl,
                             mlirLoc, isCopyable, closureSig, capturedRefs);
   if (!wrapperInstance)
     return {};
-
-  nestedFnDecl.getIfOperation()->erase();
-  nestedFnDecl.setIRValue(nullptr);
-  shared.deleteDecl(nestedFnDecl);
   return MLValue(wrapperInstance);
 }
 
@@ -1993,7 +1989,7 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
       // The closure body needs to be completely resolved before promotion to
       // sidestep an ordering issue.
       resolveAllWithin(decl);
-      shared.closureEmitter->promoteStatelessClosure(decl, paramCaptures);
+      shared.closureEmitter->promoteClosure(decl, paramCaptures);
       return success();
     }
 

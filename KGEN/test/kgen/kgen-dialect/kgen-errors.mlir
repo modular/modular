@@ -442,42 +442,6 @@ kgen.func @illegal_applied_struct_param_length(%arg0: !kgen.struct_inst<"Bar"[el
 
 // -----
 
-// COM: register passable closures must have closure type.
-
-kgen.generator @closure_types(%arg0 : index) {
-  // expected-error @+1 {{'kgen.closure.init' op expected escaping/nonescaping closure type if type is a pointer}}
-  %0 = kgen.closure.init(%arg0)(%arg3: index) -> index {
-	  kgen.return %arg0 : index
-  } : (index), !kgen.pointer<!kgen.closure<@closure_types, "another_closure3" trivial>>
-  kgen.return
-}
-
-// -----
-
-// COM: Escaping closures must have pointer type
-
-kgen.generator @closure_types(%arg0 : index) {
-  // expected-error @+1 {{'kgen.closure.init' op expected register passable closure type if type is not a pointer}}
-  %1 = kgen.closure.init(%arg0)(%arg3: index) -> index {
-	  kgen.return %arg0 : index
-  } : (index), !kgen.closure<@closure_types, "another_closure2" escaping>
-  kgen.return
-}
-
-// -----
-
-// COM: kgen.closure.init must have a closure type.
-
-kgen.generator @closure_types(%arg0 : index) {
-  // expected-error @+1 {{'kgen.closure.init' op expected closure type}}
-  %2 = kgen.closure.init(%arg0)(%arg3: index) -> index {
-	  kgen.return %arg0 : index
-  } : (index), !kgen.struct<(index, index)>
-  kgen.return
-}
-
-// -----
-
 // expected-error @+2 {{cannot convert to scalar dtype si32 from 'vector<2xsi32>'}}
 "some.op"() {
   a = #kgen.cast_from_builtin< #M.dense_array<2, 5> : vector<2xsi32>> : !kgen.scalar<si32>

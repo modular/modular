@@ -763,29 +763,40 @@ static void printLITFunctionSignature(OpAsmPrinter &p, Region *region,
   auto printElt = [&](unsigned i) {
     passingKindPrinter.printOptionalStarSlash(i);
 
-    // Print the SSA name first, which might have been automatically uniqued.
-    BlockArgument arg = region->getArgument(i);
-    std::string ssaName;
-    llvm::raw_string_ostream ss(ssaName);
-    p.printOperand(arg, ss);
-    p << ssaName;
-
-    // If different from the SSA name (e.g. because it was uniqued, or because
-    // it contains characters that need escaping), we also print the
-    // user-defined argument name in brackets.
     StringAttr argName = signature.getArgName(i);
-    if (StringRef(ssaName).drop_front() != argName) {
-      p << "[";
-      printParamName(p, argName);
-      p << "]";
+    Type argType = functionType.getInput(i);
+    if (region) {
+      // Print the SSA name first, which might have been automatically uniqued.
+      BlockArgument arg = region->getArgument(i);
+      std::string ssaName;
+      llvm::raw_string_ostream ss(ssaName);
+      p.printOperand(arg, ss);
+      p << ssaName;
+
+      // If different from the SSA name (e.g. because it was uniqued, or
+      // because it contains characters that need escaping), also print the
+      // user-defined argument name in brackets.
+      if (StringRef(ssaName).drop_front() != argName) {
+        p << "[";
+        printParamName(p, argName);
+        p << "]";
+      }
+      argType = arg.getType();
+    } else {
+      p << "%arg" << i;
+      std::string syntheticName = ("arg" + llvm::Twine(i)).str();
+      if (argName.getValue() != syntheticName) {
+        p << "[";
+        printParamName(p, argName);
+        p << "]";
+      }
     }
 
-    // Finally, we print the type after a colon.
+    // Print the type, then the optional location.
     p << ": ";
-    p.printType(arg.getType());
-
-    // Then we print the optional location before and input convention.
-    p.printOptionalLocationSpecifier(arg.getLoc());
+    p.printType(argType);
+    if (region)
+      p.printOptionalLocationSpecifier(region->getArgument(i).getLoc());
     auto argConv = signature.getArgConvention(i);
 
     if (argListAttr.isPack(i) || argListAttr.isPosVarArg(i))
@@ -2288,39 +2299,6 @@ void LIT::ClosureInitOp::walkDefinitions(
   walkDef(getParamDecl(), ParamDefValue());
 }
 
-static ParseResult parseRegionOnly(OpAsmParser &p,
-                                   ParamDeclArrayAttr &inputParams,
-                                   TypeAttr &funcType, TypeAttr &type,
-                                   InlineLevelAttr &inlineLevel, Region &body) {
-  FnTypeGeneratorType sigGenType;
-  llvm::SMLoc bodyLoc;
-  SmallVector<OpAsmParser::Argument> args;
-  FunctionType functionType;
-  if (parseLITFunctionSignature(p, args, inputParams, functionType,
-                                sigGenType) ||
-      parseOptionalInline(p, inlineLevel) || p.getCurrentLocation(&bodyLoc) ||
-      p.parseRegion(body, args))
-    return failure();
-
-  SmallVector<Type> argTypes;
-  for (const OpAsmParser::Argument &arg : args)
-    argTypes.push_back(arg.type);
-  funcType = TypeAttr::get(functionType);
-  type = TypeAttr::get(sigGenType);
-  return success();
-}
-
-/// The subprogram scope should represent the call lifted function.
-DebugInfo::DISubprogramAttr LIT::ClosureInitOp::getSubprogramScope() {
-  std::optional<Attribute> nestedScope = getNestedFnScope();
-  if (!nestedScope.has_value())
-    return {};
-  if (auto subprogramScope =
-          dyn_cast<DebugInfo::DISubprogramAttr>(*nestedScope))
-    return subprogramScope;
-  return {};
-}
-
 static ParseResult parseMemSymbolTripleAttr(OpAsmParser &p,
                                             MemSymbolTripleAttr &triple) {
   SmallVector<SymbolConstantAttr> symbols;
@@ -2356,10 +2334,9 @@ static ParseResult parseMemSymbolTripleAttr(OpAsmParser &p,
 }
 
 static ParseResult parseClosureInitOpValue(
-    OpAsmParser &p, TypeAttr &funcTypeGenerator, TypeAttr &functionType,
+    OpAsmParser &p, TypeAttr &funcTypeGenerator,
     SmallVectorImpl<OpAsmParser::UnresolvedOperand> &captures,
     ArrayAttr &captureConventions, KGEN::ParamDeclArrayAttr &inputParams,
-    KGEN::InlineLevelAttr &inlineLevel, Region &bodyRegion,
     SmallVectorImpl<Type> &captureTypes, Type &resultType,
     KGEN::ParamDeclAttr &paramDecl, TypedAttr &vtable, Attribute &scope) {
   if (p.parseLSquare() || p.parseAttribute(vtable) || p.parseRSquare())
@@ -2409,10 +2386,14 @@ static ParseResult parseClosureInitOpValue(
     if (p.parseRParen())
       return failure();
   }
-  // Parse the function signature and the body.
-  if (parseRegionOnly(p, inputParams, functionType, funcTypeGenerator,
-                      inlineLevel, bodyRegion))
+  // Parse the closure call signature.
+  SmallVector<OpAsmParser::Argument> args;
+  FunctionType functionTypeValue;
+  FnTypeGeneratorType sigType;
+  if (parseLITFunctionSignature(p, args, inputParams, functionTypeValue,
+                                sigType))
     return failure();
+  funcTypeGenerator = TypeAttr::get(sigType);
   if (p.parseColon() || p.parseLParen())
     return failure();
   if (p.parseOptionalRParen()) {
@@ -2440,12 +2421,14 @@ static ParseResult parseClosureInitOpValue(
   return success();
 }
 
-static void printClosureInitOpValue(
-    OpAsmPrinter &p, Operation *op, TypeAttr funcTypeGenerator,
-    TypeAttr functionType, ValueRange captures, ArrayAttr captureConventions,
-    KGEN::ParamDeclArrayAttr inputParams, KGEN::InlineLevelAttr inlineLevel,
-    Region &bodyRegion, TypeRange captureTypes, Type resultType,
-    KGEN::ParamDeclAttr paramDecl, TypedAttr vtable, Attribute scope) {
+static void printClosureInitOpValue(OpAsmPrinter &p, Operation *op,
+                                    TypeAttr funcTypeGenerator,
+                                    ValueRange captures,
+                                    ArrayAttr captureConventions,
+                                    KGEN::ParamDeclArrayAttr inputParams,
+                                    TypeRange captureTypes, Type resultType,
+                                    KGEN::ParamDeclAttr paramDecl,
+                                    TypedAttr vtable, Attribute scope) {
   auto paramPrinter = [](AsmPrinter &p, FuncTypeGeneratorType calleeType,
                          ArrayRef<TypedAttr> params) {
     LIT::FnTypeGeneratorType fnTypeGen =
@@ -2486,12 +2469,9 @@ static void printClosureInitOpValue(
       p << ", ";
   }
   p << ")";
-  printLITFunctionSignature(
-      p, &bodyRegion, inputParams, cast<FunctionType>(functionType.getValue()),
-      cast<FnTypeGeneratorType>(funcTypeGenerator.getValue()));
-  printOptionalInline(p, inlineLevel.getValue());
-  p << ' ';
-  p.printRegion(bodyRegion, /*printEntryBlockArgs=*/false);
+  auto sig = cast<FnTypeGeneratorType>(funcTypeGenerator.getValue());
+  printLITFunctionSignature(p, /*region=*/nullptr, inputParams, sig.getValues(),
+                            sig);
   p << " : ";
   p << '(';
   llvm::interleaveComma(captureTypes, p, [&](Type type) { p.printType(type); });

@@ -217,8 +217,6 @@ WholeProgramState::WholeProgramState(Operation *module,
               "ImplicitlyDeletable")
         implicitlyDestructibleDtor = funcOp;
     }
-    if (auto closureOp = dyn_cast<LIT::ClosureInitOp>(op))
-      funcList.emplace_back(closureOp);
 
     // Collect structs.
     else if (auto structOp = dyn_cast<LIT::StructDeclOp>(op)) {
@@ -1127,7 +1125,7 @@ ValueSet::ValueSet(PerThreadCache &perThreadCache, FunctionLikeOp func,
       [&](Operation *op) -> WalkResult {
         // Skip looking at nested functions, they are handled as separate
         // contexts.
-        if (isa<FnOp, LIT::ClosureInitOp>(op))
+        if (isa<FnOp>(op))
           return WalkResult::skip();
 
         // All the ops that define trackable values have a single result.
