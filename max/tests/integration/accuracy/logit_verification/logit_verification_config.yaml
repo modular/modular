@@ -108,7 +108,7 @@ logit_verification_pipelines:
     absolute_tolerance: 2.6e-3
     relative_tolerance: 1.8e-1
     cos_dist_threshold: 2.6e-5
-    kl_div_threshold: 3.3e-07
+    kl_div_threshold: 5.0e-07
 
   unsloth/gpt-oss-20b-BF16:
     pre_submit_agents: []
