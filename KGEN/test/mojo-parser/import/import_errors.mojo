@@ -297,3 +297,23 @@ def test_package_not_leaking():
     _ = test_package.test_nested_package  # OK: reference to child package
     # expected-error @+1 {{use of unknown declaration 'module'}}
     test_package.module.function()
+
+# // -----
+
+# expected-error @+1 {{relative imports must use 'from'}}
+import ....
+
+# // -----
+
+# expected-error @+1 {{relative imports must use 'from'; did you mean 'from . import test_package'?}}
+import .test_package
+
+# // -----
+
+# expected-error @+1 {{relative imports must use 'from'; did you mean 'from .. import test_package.test_nested_package'?}}
+import ..test_package.test_nested_package
+
+# // -----
+
+# expected-error @+1 {{relative imports must use 'from'; did you mean 'from ... import test_package'?}}
+import ...test_package

@@ -347,9 +347,8 @@ struct StmtParser : public ParserBase {
   /// rejected. \p kwLoc should be the location of the leading `from` or
   /// `import` keyword so the diagnostic caret lands on the keyword.
   ParseResult checkImportScope(SMLoc kwLoc);
-  ParseResult
-  parseImportModuleName(StringAttr &parsedName,
-                        StringRef *nonIdentLeafModuleName = nullptr);
+  ParseResult parseImportModuleName(StringAttr &parsedName,
+                                    bool allowRelativeImport);
   ParseResult parseDefFnStmt(LexerCursor startCursor, size_t curIndent);
   ParseResult parseStructStmt(LexerCursor startCursor, size_t curIndent);
   ParseResult parseTraitStmt(LexerCursor startCursor, size_t curIndent);
@@ -3124,7 +3123,7 @@ ParseResult StmtParser::parseFromImportStmt(bool hasStableOverride) {
 
   SMLoc importLoc = getToken().getLoc();
   StringAttr moduleAttr;
-  if (parseImportModuleName(moduleAttr) ||
+  if (parseImportModuleName(moduleAttr, /*allowRelativeImport=*/true) ||
       parseToken(Token::kw_import, "expected 'import' after module name"))
     return failure();
 
@@ -3248,7 +3247,7 @@ ParseResult StmtParser::parseImportStmt() {
   do {
     SMLoc importLoc = getToken().getLoc();
     StringAttr moduleAttr;
-    if (parseImportModuleName(moduleAttr))
+    if (parseImportModuleName(moduleAttr, /*allowRelativeImport=*/false))
       return failure();
 
     // Check for a name binding.
@@ -3278,10 +3277,9 @@ ParseResult StmtParser::parseImportStmt() {
 /// module          ::=  (identifier ".")* identifier
 /// relative_module ::=  "."* module | "."+
 ///
-/// If `leafModuleName` is provided, the name is required to be have a `module`
-/// component.
+/// Relative forms are only allowed if allowRelativeImport is 'true'.
 ParseResult StmtParser::parseImportModuleName(StringAttr &parsedName,
-                                              StringRef *leafModuleName) {
+                                              bool allowRelativeImport) {
   // The individual name components making up a module.
   SmallVector<StringRef> moduleNames;
 
@@ -3308,6 +3306,12 @@ ParseResult StmtParser::parseImportModuleName(StringAttr &parsedName,
     });
   };
 
+  // Cache whether we're parsing a relative import so we can emit a good
+  // diagnostic if we're in a context where they're not permitted.
+  SMLoc relativeErrorLoc = getToken().getLoc();
+  bool parsedRelativeImport =
+      getToken().is(Token::dot) || getToken().is(Token::dot_dot_dot);
+
   // Parse the relative '.' indicators that resolve to a parent package. These
   // push "" to the set to indicate relative resolution.
   while (true) {
@@ -3320,7 +3324,7 @@ ParseResult StmtParser::parseImportModuleName(StringAttr &parsedName,
   }
 
   // If we have a non-relative module name, or we require one, try to parse it.
-  if (leafModuleName || moduleNames.empty() || getToken().isIdentifier()) {
+  if (moduleNames.empty() || getToken().isIdentifier()) {
     // Parse the first module name.
     StringRef rootModuleName = getTokenSpelling();
     bool missingIdentifier = failed(parseIdentifier("expected module name"));
@@ -3339,15 +3343,33 @@ ParseResult StmtParser::parseImportModuleName(StringAttr &parsedName,
       if (parseIdentifier("expected module name"))
         return failure();
     }
-
-    if (leafModuleName)
-      *leafModuleName = moduleNames.back();
   } else {
     notifyListenerOfImport();
     moduleNames.push_back("");
   }
 
   parsedName = builder.getStringAttr(llvm::join(moduleNames, "."));
+
+  if (parsedRelativeImport && !allowRelativeImport) {
+    ArrayRef<StringRef> moduleNamesArr(moduleNames);
+    ptrdiff_t numLeadingDots = std::distance(
+        moduleNames.begin(),
+        llvm::find_if_not(moduleNames, [](StringRef s) { return s.empty(); }));
+    auto diag = emitError(relativeErrorLoc)
+                << "relative imports must use 'from'";
+    // If the user has provided a module name, emit a more helpful diagnostic
+    // pointing them towards "from [.]+ import foo". If they've just written
+    // "import [.]+" we can't point them towards valid syntax from here.
+    auto moduleName =
+        llvm::join(moduleNamesArr.drop_front(numLeadingDots), ".");
+    if (!moduleName.empty()) {
+      diag << "; did you mean 'from ."
+           << llvm::join(moduleNamesArr.take_front(numLeadingDots), ".")
+           << " import " << moduleName << "'?";
+    }
+    return failure();
+  }
+
   return success();
 }
 
