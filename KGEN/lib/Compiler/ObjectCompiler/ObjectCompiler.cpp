@@ -10,6 +10,7 @@
 
 #include "KGEN/Compiler/LLVMIRUtils.h"
 #include "KGEN/Compiler/LLVMOptimizationPipeline.h"
+#include "KGEN/Compiler/Target/TargetBackend.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/Support/BuildInfo.h"
 #include "KGEN/Support/CompilerProfiling.h"
@@ -1618,189 +1619,6 @@ static void attachGPUCodeGenAttributes(llvm::Function *kernelEntry) {
   kernelEntry->addFnAttr(llvm::Attribute::NoRecurse);
 }
 
-// Simple helper to adjust Metal compilation options
-static CompilationOptions
-getMetalAdjustedOptions(const CompilationOptions &options,
-                        const std::string &moduleTriple) {
-  CompilationOptions adjusted = options;
-  // Metal with air64 needs arm64 for TargetMachine
-  adjusted.targetTriple = "arm64" + moduleTriple.substr(5);
-  // Metal-specific features needs to be dropped to avoid unnecessary warnings
-  adjusted.targetFeatures = "";
-  return adjusted;
-}
-
-// Simple helper to setup Metal GPU module
-static void setupMetalModule(llvm::Module &module, llvm::TargetMachine &tm,
-                             const std::string &originalTriple) {
-  // Set data layout from TargetMachine
-  module.setDataLayout(tm.createDataLayout());
-  // Restore original air64 triple for GPU
-  module.setTargetTriple(llvm::Triple(originalTriple));
-}
-
-// Helper function to get nicer error message when `xcrun metal` command failed.
-static std::string getPrettyMetallibError(StringRef metalCompilerErrorMessage,
-                                          llvm::Module &module) {
-  if (metalCompilerErrorMessage.contains("is using language version ") ||
-      metalCompilerErrorMessage.contains("air version set to")) {
-    unsigned metalMajor = 3;
-    if (llvm::NamedMDNode *md =
-            module.getNamedMetadata("air.language_version")) {
-      if (md->getNumOperands() > 0) {
-        llvm::MDNode *node = md->getOperand(0);
-        if (node->getNumOperands() >= 2) {
-          if (auto *majorMD =
-                  dyn_cast<llvm::ConstantAsMetadata>(node->getOperand(1)))
-            metalMajor =
-                cast<llvm::ConstantInt>(majorMD->getValue())->getZExtValue();
-        }
-      }
-    }
-    if (metalMajor >= 4) {
-      return "Targeting Metal 4.0 requires Xcode with Metal 4.0 support and "
-             "macOS 26.0 or later.\nIf after update you still see compilation "
-             "error, please submit a bug report.";
-    }
-    return "Please make sure Xcode version is at least 16.0 and macOS is at "
-           "least 15.0.\nIf after update you still see compilation error, "
-           "please submit a bug report.";
-  }
-  if (metalCompilerErrorMessage.contains("unable to find utility \"metallib\""))
-    return "Please make sure Xcode is installed and setup correctly\n" +
-           metalCompilerErrorMessage.str();
-  return "Metal Compiler failed to compile metallib. Please submit a bug "
-         "report.";
-}
-
-static ErrorOr<BufferRef> compileMetalTarget(llvm::Module &module, Location loc,
-                                             CompilationOptions options) {
-  // Helper function to remove created temporary files if compilation failed.
-  auto cleanupFiles = [](ArrayRef<llvm::SmallString<256>> filesToRemove) {
-    for (const auto &file : filesToRemove)
-      if (!file.empty())
-        llvm::sys::fs::remove(file);
-  };
-
-  // Step 1: Write AIR bitcode using Metal bitcode writer
-  llvm::SmallString<256> airTempFile;
-  if (auto err =
-          llvm::sys::fs::createTemporaryFile("kernel", ".air", airTempFile)) {
-    return Error("Failed to create temporary AIR file: " + err.message());
-  }
-
-  std::error_code airEc;
-  llvm::raw_fd_ostream airOS(airTempFile, airEc, llvm::sys::fs::OF_None);
-  if (airEc) {
-    cleanupFiles({airTempFile});
-    return Error("Failed to open AIR file for writing: " + airEc.message());
-  }
-
-  // Use Metal bitcode writer to write AIR bitcode
-  M::KGEN::LLVM::WriteBitcode17ToFile(module, airOS,
-                                      /*ShouldPreserveUseListOrder = */ false,
-                                      /*ModuleSummaryIndex =*/nullptr,
-                                      /*GenerateHash = */ false,
-                                      /*ModuleHash = */ nullptr);
-
-  airOS.flush();
-  airOS.close();
-
-  if (!options.saveTempsPrefix.empty()) {
-    llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> airBuffer =
-        llvm::MemoryBuffer::getFile(airTempFile);
-    if (failed(writeBytesToTempWithHash(options.saveTempsPrefix, ".air",
-                                        *airBuffer.get()))) {
-      cleanupFiles({airTempFile});
-      return Error("failed to save air to saveTempsPrefix");
-    }
-  }
-
-  // Step 2: Convert AIR to metallib using xcrun metallib
-  llvm::SmallString<256> metallibTempFile;
-  if (auto err = llvm::sys::fs::createTemporaryFile("kernel", ".metallib",
-                                                    metallibTempFile)) {
-    cleanupFiles({airTempFile});
-    return Error("Failed to create temporary metallib file: " + err.message());
-  }
-
-  // xcrun path must always be the same on MacOS.
-  const char *xcrunPath = "/usr/bin/xcrun";
-  const std::string optLevel =
-      std::string("-O") + std::to_string(options.optimizationLevel);
-
-  // Convert AIR bitcode to metallib using xcrun metallib
-  std::vector<llvm::StringRef> metallibArgs = {
-      xcrunPath, "-sdk",      "macosx", "metal",
-      optLevel,  airTempFile, "-o",     metallibTempFile,
-  };
-
-  // Need to keep customAIR variable alive as metallibArgs reference to it.
-  std::optional<std::string> customAIR =
-      KGENPassCLOptions::objectCompilerUseCustomAIR();
-  if (customAIR) {
-    llvm::errs() << "WARNING: Using custom AIR file: " << *customAIR << '\n';
-    metallibArgs = {
-        xcrunPath, "-sdk",     "macosx", "metal",
-        optLevel,  *customAIR, "-o",     metallibTempFile,
-    };
-  }
-
-  std::string errorMsg;
-  llvm::SmallString<256> metallibErrorFile;
-  if (llvm::sys::fs::createTemporaryFile("metallib_error", "log",
-                                         metallibErrorFile)) {
-    // It's not necessary to have this file, especially
-    // if we assume most of the times metal will succeed in compilation.
-    metallibErrorFile = "";
-  }
-  int result = llvm::sys::ExecuteAndWait(
-      metallibArgs[0], metallibArgs, /*env=*/std::nullopt,
-      /*redirects=*/
-      {/*stdin=*/std::nullopt, /*stdout=*/std::nullopt,
-       /*stderr=*/metallibErrorFile.empty()
-           ? std::nullopt
-           : std::make_optional(metallibErrorFile)},
-      /*secondsToWait=*/60, /*memoryLimit=*/0, &errorMsg);
-
-  if (result != 0) {
-    if (!metallibErrorFile.empty()) {
-      auto metallibErrorBuffer = llvm::MemoryBuffer::getFile(metallibErrorFile);
-      if (metallibErrorBuffer) {
-        cleanupFiles({airTempFile, metallibTempFile, metallibErrorFile});
-        return Error(getPrettyMetallibError(
-            metallibErrorBuffer.get()->getBuffer(), module));
-      }
-    }
-    cleanupFiles({airTempFile, metallibTempFile, metallibErrorFile});
-    return Error("xcrun metallib compilation failed with code " +
-                 llvm::Twine(result).str() + ": " + errorMsg);
-  }
-
-  // Read the compiled metallib back
-  auto metallibBuffer = llvm::MemoryBuffer::getFile(metallibTempFile);
-  if (!metallibBuffer) {
-    cleanupFiles({airTempFile, metallibTempFile, metallibErrorFile});
-    return Error("Failed to read metallib file: " +
-                 metallibBuffer.getError().message());
-  }
-  if (failed(writeBytesToTempWithHash(options.saveTempsPrefix, ".metallib",
-                                      *metallibBuffer.get()))) {
-    cleanupFiles({airTempFile, metallibTempFile, metallibErrorFile});
-    return Error("failed to save metallib to saveTempsPrefix");
-  }
-
-  WriteableBufferRef buf = WriteableBuffer::get();
-
-  // Write metallib data to output buffer
-  (*buf) << (*metallibBuffer)->getBuffer();
-
-  // Clean up temporary files
-  cleanupFiles({airTempFile, metallibTempFile, metallibErrorFile});
-
-  return buf;
-}
-
 static AnyAsyncValueRef lowerLLVMModuleToObject(
     llvm::Module &inputModule, Location loc,
     RCRef<Cache::TransformCache> transformCache, size_t moduleIdx,
@@ -1893,14 +1711,13 @@ static AnyAsyncValueRef lowerLLVMModuleToObject(
 
       // Create the target machine.
       std::string moduleTriple = module.getTargetTriple().getTriple();
-      bool isMetalTarget = isMetalBackend(options);
+      const TargetBackend *backend =
+          TargetBackendRegistry::get().lookup(module.getTargetTriple());
 
-      // Adjust options for Metal targets
       CompilationOptions adjustedOptions = options;
-      if (isMetalTarget) {
-        // Temporarily adjust module to use ARM64-compatible target for
-        // TargetMachine
-        adjustedOptions = getMetalAdjustedOptions(options, moduleTriple);
+      if (backend) {
+        adjustedOptions =
+            backend->adjustOptionsForTargetMachine(options, moduleTriple);
         module.setTargetTriple(llvm::Triple(adjustedOptions.targetTriple));
       }
 
@@ -1912,13 +1729,17 @@ static AnyAsyncValueRef lowerLLVMModuleToObject(
       llvm::TargetMachine &tm = **tmOr;
 
       // Set correct data layout and restore target for GPU targets after
-      // TargetMachine creation
-      if (isMetalTarget) {
-        setupMetalModule(module, tm, moduleTriple);
-        // Note: For non-Metal emission kinds, we use the TargetMachine's data
-        // layout for compatibility. For Metal emission kinds, the MetalAIRPass
-        // will set the proper Metal layout
-      }
+      // TargetMachine creation.
+      if (backend)
+        backend->finalizeModuleForTarget(module, tm, moduleTriple);
+
+      EmitContext backendCtx{options,
+                             tm,
+                             loc,
+                             moduleIdx,
+                             /*linker=*/nullptr,
+                             /*pluginMgr=*/nullptr,
+                             /*runLlc=*/{}};
 
       // Optimize the llvm Module.
       if (failed(
@@ -1945,11 +1766,12 @@ static AnyAsyncValueRef lowerLLVMModuleToObject(
       std::unique_ptr<llvm::MCContext> mcContext;
 
       if (emissionKind == EmitAs::ASM) {
-        // For Metal (air64) targets, LLVM IR text is the closest equivalent to
-        // human-readable assembly. Emit it directly instead of running LLC,
-        // which would produce arm64 host assembly rather than GPU code.
-        if (isMetalTarget) {
-          *buf << module;
+        if (backend) {
+          ErrorOr<BufferRef> asmOr = backend->emitAssembly(module, backendCtx);
+          if (asmOr.isError())
+            return std::move(output).setToError(
+                MLRT::getMLIRDiagnostic(asmOr.takeError(), loc));
+          (*buf) << (*asmOr)->getBuffer();
           std::move(output).emplace(buf.copy());
           return;
         }
@@ -2020,8 +1842,8 @@ static AnyAsyncValueRef lowerLLVMModuleToObject(
                 MLRT::getMLIRDiagnostic(cubinOr.takeError(), loc));
           }
           (*buf) << (*cubinOr)->getBuffer();
-        } else if (isMetalBackend(options)) {
-          ErrorOr<BufferRef> bufOr = compileMetalTarget(module, loc, options);
+        } else if (backend) {
+          ErrorOr<BufferRef> bufOr = backend->emitObject(module, backendCtx);
           if (bufOr.isError()) {
             return std::move(output).setToError(
                 MLRT::getMLIRDiagnostic(bufOr.takeError(), loc));
