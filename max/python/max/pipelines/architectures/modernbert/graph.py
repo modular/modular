@@ -22,6 +22,7 @@ from max import nn
 from max.driver import DLPackArray
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
+from max.graph.dim import DimLike
 from max.graph.weights import WeightData
 from transformers import AutoConfig
 
@@ -164,7 +165,7 @@ class ModernBertAttention(nn.Module):
 
     @staticmethod
     def _local_band_mask(
-        seq_len: int,
+        seq_len: DimLike,
         window: int,
         device: DeviceRef,
     ) -> TensorValue:
@@ -334,18 +335,25 @@ class ModernBertModel(nn.Module):
         if not self.pool_outputs:
             return hidden_states
 
-        # Masked mean pooling. ``ops.sum`` reduces the innermost axis (keeping
-        # rank), so transpose to put seq_len last, reduce, then squeeze.
+        # Masked mean pooling.
+        # Compute per-sample token count from the original 2D mask [B, S]
+        # before any transpose/broadcast, to avoid shape ambiguity.
+        token_counts = ops.max(
+            ops.sum(attention_mask),
+            ops.constant(1e-9, DType.float32, device=hidden_states.device),
+        )  # [B, 1]
+
+        # ``ops.sum`` reduces the innermost axis (keeping rank), so
+        # transpose hidden states to put seq_len last.
         encoded = hidden_states.transpose(1, 2)  # [B, H, S]
         mask_expanded = ops.broadcast_to(
             ops.unsqueeze(attention_mask, 1),
             ("batch_size", encoded.shape[1], "seq_len"),
         )
-        lengths = ops.max(
-            ops.sum(mask_expanded),
-            ops.constant(1e-9, DType.float32, device=encoded.device),
-        )
-        pooled = ops.sum(encoded * mask_expanded) / lengths  # [B, H, 1]
+        summed = ops.sum(encoded * mask_expanded)  # [B, H, 1]
+
+        lengths = ops.unsqueeze(token_counts, 1)  # [B, 1, 1]
+        pooled = summed / lengths  # [B, H, 1]
         return ops.squeeze(pooled, 2)  # [B, H]
 
 
