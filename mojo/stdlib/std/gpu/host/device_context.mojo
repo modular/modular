@@ -1568,7 +1568,7 @@ struct DeviceBuffer[dtype: DType](
             view_type: The data type for elements in the new sub-buffer.
 
         Args:
-            offset: The starting offset in elements from the beginning of this buffer.
+            offset: The starting offset, in view_type elements, from the beginning of this buffer.
             size: The number of elements in the new sub-buffer.
 
         Returns:
