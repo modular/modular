@@ -670,13 +670,18 @@ struct ReduceRMSNorm:
         if output.shape() != input.shape():
             raise Error("Input and output buffers are not same shape")
 
+        # `IndexList` -> `Coord` boundary migration (mirror of softmax,
+        # `Softmax.execute` above). The input fusion lambda takes a `Coord`
+        # (the `_lambda_load` Coord overload erases to `IndexList` internally)
+        # and the shape is passed via `input.shape_coord()`, which preserves
+        # statically-known dims in the `Coord` type instead of erasing them to
+        # an all-runtime `IndexList` as `input.shape()` would. `output_fn`
+        # keeps its n-D `IndexList` form to match `rms_norm`'s `output_0_fn`.
         @parameter
         @always_inline
-        def input_fn[
-            width: Int, _rank: Int
-        ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
+        def input_fn[width: Int](coords: Coord) -> SIMD[dtype, width]:
             return input._lambda_load[width=width, element_alignment=width](
-                rebind[IndexList[input.rank]](coords)
+                coords
             )
 
         @parameter
@@ -697,7 +702,7 @@ struct ReduceRMSNorm:
             target=target,
             multiply_before_cast=multiply_before_cast,
         ](
-            input.shape(),
+            input.shape_coord(),
             gamma.to_tile_tensor[DType.int64](),
             epsilon,
             weight_offset,
