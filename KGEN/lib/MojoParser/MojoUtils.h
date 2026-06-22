@@ -61,6 +61,21 @@ TypedAttr getOriginsAccessibleByParams(PogListAttr paramList,
                                        SharedState &shared,
                                        TypedAttr captureOrigins);
 
+/// Rewrites depth-local positional parameter references to named references,
+/// using the provided declaration order.
+Type replaceIndexRefsWithNamedRefs(Type type,
+                                   ArrayRef<ParamDeclAttr> explicitParamDecls,
+                                   ArrayRef<ParamDeclAttr> implicitOriginDecls);
+Type replaceIndexRefsWithNamedRefs(Type type,
+                                   ArrayRef<ParamDeclAttr> explicitParamDecls);
+FunctionType
+replaceIndexRefsWithNamedRefs(FunctionType functionType,
+                              ArrayRef<ParamDeclAttr> explicitParamDecls,
+                              ArrayRef<ParamDeclAttr> implicitOriginDecls);
+FunctionType
+replaceIndexRefsWithNamedRefs(FunctionType functionType,
+                              ArrayRef<ParamDeclAttr> explicitParamDecls);
+
 /// The results of calls to async functions are always bound to a `Coroutine`
 /// type, or `RaisingCoroutine` type in the case of a raising function. This
 /// function looks up the corresponding coroutine type and binds its result

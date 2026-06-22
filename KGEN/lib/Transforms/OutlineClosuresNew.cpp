@@ -17,7 +17,6 @@
 #include "Support/DebugInfoDialect/IR/DIBuilder.h"
 #include "mlir/Analysis/SymbolTableAnalysis.h"
 #include "mlir/IR/BuiltinOps.h"
-#include "mlir/Transforms/RegionUtils.h"
 #include "llvm/ADT/DenseSet.h"
 
 using namespace M;
@@ -30,14 +29,12 @@ namespace M::KGEN {
 #include "KGEN/KGENPasses.h.inc"
 } // namespace M::KGEN
 
-namespace {
 struct OutlineClosuresNewPass
     : M::KGEN::impl::OutlineClosuresNewBase<OutlineClosuresNewPass> {
   using OutlineClosuresNewBase::OutlineClosuresNewBase;
 
   void runOnOperation() override;
 };
-} // namespace
 
 namespace {
 struct Capture {
@@ -89,40 +86,6 @@ getTypeValuePathData(ClosureInitOp closureInit,
   return std::make_pair(typeGeneratorRef, structInstanceType);
 }
 
-/// Stack lifetime markers are valid only for pointers produced by
-/// pop.stack_allocation. When outlining closures, captured values are rewritten
-/// to closure storage (struct fields), so any lifetime markers attached to the
-/// original capture become invalid and must be dropped from the outlined body.
-static void
-eraseStackLifetimeMarkersForCaptures(Region &region,
-                                     const llvm::DenseSet<Value> &captures) {
-  if (captures.empty())
-    return;
-
-  SmallVector<Operation *> markers;
-  region.walk([&](Operation *op) {
-    if (isa<POP::StackAllocLifetimeStartOp, POP::StackAllocLifetimeEndOp>(op))
-      markers.push_back(op);
-  });
-
-  SmallVector<Value> kept;
-  for (Operation *op : markers) {
-    kept.clear();
-    kept.reserve(op->getNumOperands());
-    for (Value value : op->getOperands())
-      if (!captures.contains(value))
-        kept.push_back(value);
-
-    if (kept.size() == op->getNumOperands())
-      continue;
-    if (kept.empty()) {
-      op->erase();
-      continue;
-    }
-    op->setOperands(kept);
-  }
-}
-
 /// Given a location, erase any parameter references by inserting unresolved
 /// type for every input type. TODO: recreate a resolved version. This change
 /// unblocks using synthesized code from parametric blocks in debug builds
@@ -165,27 +128,19 @@ namespace {
 /// (a) lifting a closure init into a top level function + capture struct and
 /// (b) storing metadata necessary to replace references to the closure.
 struct ClosureLifter {
-  ClosureLifter(SymbolTable &symtab, ParameterCollector::Analysis &paramCache,
-                bool debugBuild)
-      : counter(0), symtab(symtab), paramCache(paramCache),
-        debugBuild(debugBuild) {}
+  ClosureLifter(SymbolTable &symtab, bool debugBuild)
+      : counter(0), symtab(symtab), debugBuild(debugBuild) {}
   /// Given a closure init op, generate functions for call, copy, move, and del
   /// + struct instance to store captures.
   LogicalResult liftClosureInit(ClosureInitOp closureInit,
                                 GeneratorOp generator,
-                                StructGeneratorOp generatorOp,
-                                ParameterUseDefGraph &uses);
+                                StructGeneratorOp generatorOp);
 
   /// Symbol name uniquer requires a counter.
   unsigned counter;
 
   /// The symbol table of the module.
   SymbolTable &symtab;
-
-  /// The paramCache is an interpass cache that optimizes attribute/type walks
-  /// by halting traversals at attributes/types known to not contain any
-  /// parameters.
-  ParameterCollector::Analysis &paramCache;
 
   /// Pair a parameter value with the closure attr so that we can replace the
   /// abstraction with the calculated type. For example, we may calculate that
@@ -227,11 +182,7 @@ struct ClosureLifter {
                  ? loweredClosureType
                  : PointerType::get(loweredClosureType);
     }
-    Region &region() { return closureInit->getRegions().front(); }
     StringRef regionName() const { return closureType.getName(); }
-    ArrayRef<Type> results() {
-      return closureInit.getFunctionType().getResults();
-    }
     GeneratorOp getGenerator() const { return generator; }
     ClosureType getClosureType() const { return closureType; }
     ClosureInitOp getClosureInit() const { return closureInit; }
@@ -240,6 +191,13 @@ struct ClosureLifter {
     }
     bool isMem() const {
       return closureType.getClosureMemoryKind() != ClosureMemoryKind::TRIVIAL;
+    }
+    bool isFlattenedSingletonClosure(size_t captureCount) const {
+      return captureCount == 1 &&
+             closureType.getClosureMemoryKind() !=
+                 ClosureMemoryKind::ESCAPING &&
+             closureType.getClosureMemoryKind() !=
+                 ClosureMemoryKind::NONESCAPING;
     }
     ArrayRef<ParamDeclAttr> getCapturedParamDecls() const {
       return ArrayRef(capturedParamDecls.begin(), capturedParamDecls.end());
@@ -288,10 +246,6 @@ private:
                                   ArrayRef<Capture> captureMechanisms,
                                   Type loweredClosureType,
                                   Type loweredClosureInstType);
-  /// Given closure metadata, lift the region of the closure init into a top
-  /// level function.
-  LogicalResult liftCallFunction(OpBuilder &b, ClosureInitData &data,
-                                 Type loweredClosureType);
   void liftMoveOrCopyFunction(OpBuilder &b, Location loc, ClosureInitData &data,
                               Type loweredClosureType,
                               ArrayRef<Capture> captureMechanisms, bool isMove);
@@ -312,18 +266,10 @@ private:
                      ClosureInitData &closureInitData,
                      ArrayRef<Capture> captureMechanisms);
   /// Lift driving function. The loweredClosureType should be a kgen.struct with
-  /// the captures and the replacement function is meant to emit the IR
-  /// necessary for extracting the capture value out of the closure struct
-  /// instance.
+  /// the captures.
   Value liftClosure(OpBuilder &b, ClosureInitData &closureInitData,
                     ArrayRef<Capture> captureMechanisms,
-                    Type loweredClosureType, Type loweredClosureInstType,
-                    function_ref<Value(Capture, int, Value)> replacementFn);
-
-  llvm::SetVector<ParamDeclAttr>
-  collectCapturedParams(DenseMap<Value, Attribute> const &captures,
-                        GeneratorOp generator, Region &region,
-                        ParameterUseDefGraph &uses);
+                    Type loweredClosureType, Type loweredClosureInstType);
 };
 } // namespace
 
@@ -388,7 +334,8 @@ ClosureLifter::ClosureInitData::ClosureInitData(
       liftedLocation(FusedLoc::get(
           generator->getContext(),
           Location(DebugInfo::extractSourceLoc(closureInit->getLoc())),
-          closureInit.getSubprogramScope())) {
+          dyn_cast_or_null<DebugInfo::DISubprogramAttr>(
+              closureInit.getNestedFnScope().value_or(Attribute())))) {
   // Create the capture struct.
   SmallVector<Type> paramTypes;
   MLIRContext *cxt = generator->getContext();
@@ -417,6 +364,12 @@ ClosureSymbolAttr ClosureLifter::ClosureInitData::closureSymbolForSourceName(
 /// is necessary for lowering. Extract the closure type from the result type of
 /// the closure init.
 static ClosureType getClosureType(ClosureInitOp closureInit) {
+  if (auto closureTypeAttr =
+          closureInit->getAttrOfType<TypeAttr>("closureType")) {
+    if (auto closureType = dyn_cast<ClosureType>(closureTypeAttr.getValue()))
+      return closureType;
+  }
+
   Type resultType = closureInit->getResultTypes().front();
   ClosureType closureType;
   if (auto ptr = dyn_cast<PointerType>(closureInit->getResultTypes().front()))
@@ -486,6 +439,8 @@ void ClosureLifter::liftDelFunction(OpBuilder &b, Location loc,
                                     ClosureInitData &closureInitData,
                                     Type loweredClosureType,
                                     ArrayRef<Capture> captureMechanisms) {
+  bool isFlattenedSingletonClosure =
+      closureInitData.isFlattenedSingletonClosure(captureMechanisms.size());
   Type selfType = closureInitData.selfType(loweredClosureType);
   SmallVector<Type> argTypes;
   argTypes.push_back(selfType);
@@ -499,7 +454,9 @@ void ClosureLifter::liftDelFunction(OpBuilder &b, Location loc,
     Value source = delBlock.getArgument(0);
     for (auto [index, capture] : llvm::enumerate(captureMechanisms)) {
       if (capture.delSym.has_value()) {
-        Value field = KGEN::StructGEPOp::create(b, loc, source, index);
+        Value field = isFlattenedSingletonClosure
+                          ? source
+                          : KGEN::StructGEPOp::create(b, loc, source, index);
         TypedAttr delSym = *capture.delSym;
         auto sig = cast<FuncTypeGeneratorType>(delSym.getType());
         Type resultType = sig.getBody().getResults().front();
@@ -535,6 +492,8 @@ void ClosureLifter::liftMoveOrCopyFunction(OpBuilder &b, Location loc,
                                            Type loweredClosureType,
                                            ArrayRef<Capture> captureMechanisms,
                                            bool isMove) {
+  bool isFlattenedSingletonClosure =
+      closureInitData.isFlattenedSingletonClosure(captureMechanisms.size());
   Type selfType = closureInitData.selfType(loweredClosureType);
   SmallVector<Type> argTypes{selfType, selfType};
   FunctionType funcType = FunctionType::get(
@@ -548,8 +507,14 @@ void ClosureLifter::liftMoveOrCopyFunction(OpBuilder &b, Location loc,
     Value target = moveBlock.getArgument(1);
     unsigned symIndex = 0;
     for (auto [index, capture] : llvm::enumerate(captureMechanisms)) {
-      Value targetField = KGEN::StructGEPOp::create(b, loc, target, index);
-      Value sourceField = KGEN::StructGEPOp::create(b, loc, source, index);
+      Value targetField =
+          isFlattenedSingletonClosure
+              ? target
+              : KGEN::StructGEPOp::create(b, loc, target, index);
+      Value sourceField =
+          isFlattenedSingletonClosure
+              ? source
+              : KGEN::StructGEPOp::create(b, loc, source, index);
       if (!capture.moveOrCopySym.has_value()) {
         POP::StoreOp::create(b, loc, POP::LoadOp::create(b, loc, sourceField),
                              targetField);
@@ -572,132 +537,17 @@ void ClosureLifter::liftMoveOrCopyFunction(OpBuilder &b, Location loc,
        ArgConvention::ByRefResult});
 }
 
-LogicalResult ClosureLifter::liftCallFunction(OpBuilder &b,
-                                              ClosureInitData &closureInitData,
-                                              Type loweredClosureType) {
-  Location loc = closureInitData.getLiftedLocation();
-  Region &region = closureInitData.region();
-  GeneratorOp generator = closureInitData.getGenerator();
-  SmallVector<Type> argTypes;
-  llvm::append_range(argTypes, region.getArgumentTypes());
-  b.setInsertionPoint(generator);
-  FunctionType funcType =
-      FunctionType::get(b.getContext(), argTypes, closureInitData.results());
-  SmallVector<ParamDeclAttr> allParams;
-  for (auto capturedParam : closureInitData.getCapturedParamDecls())
-    allParams.push_back(capturedParam);
-  append_range(allParams, closureInitData.getClosureInit().getInputParams());
-
-  SmallVector<ArgConvention> conventions;
-  ArgConvention selfConvention =
-      closureInitData.isMem() ? ArgConvention::ReadMem : ArgConvention::ReadReg;
-  conventions.push_back(selfConvention);
-  for (auto argConvention : closureInitData.getClosureInit()
-                                .getFuncTypeGenerator()
-                                .getBody()
-                                .getArgConventions())
-    conventions.push_back(argConvention);
-  FnEffects effects = closureInitData.getClosureInit()
-                          .getFuncTypeGenerator()
-                          .getBody()
-                          .getFnEffects();
-  auto uniqueName = b.getStringAttr(getUniqueSymbolName(
-      (generator.getName() + "_" + closureInitData.regionName()).str(), symtab,
-      counter));
-  auto liftedWrapper = GeneratorOp::create(
-      b, loc, uniqueName, closureInitData.getClosureType().getName(),
-      FuncTypeGeneratorType::get({}, FunctionType::get(b.getContext(), {}, {})),
-      funcType, allParams);
-  liftedWrapper.setInlineLevel(
-      closureInitData.getClosureInit().getInlineLevel());
-
-  // Transfer LLVM metadata from the closure init to the lifted generator.
-  ClosureInitOp ci = closureInitData.getClosureInit();
-  if (!ci.getLLVMMetadataArray().empty())
-    liftedWrapper.setLLVMMetadataArrayAttr(ci.getLLVMMetadataArray());
-  if (!ci.getLLVMArgMetadataArray().empty()) {
-    // The lifted generator prepends a self parameter (the closure struct)
-    // Adjust metadata accordingly.
-    SmallVector<Attribute> adjusted;
-    adjusted.push_back(ArrayAttr::get(b.getContext(), {}));
-    adjusted.append(ci.getLLVMArgMetadataArray().begin(),
-                    ci.getLLVMArgMetadataArray().end());
-    liftedWrapper.setLLVMArgMetadataArrayAttr(
-        ArrayAttr::get(b.getContext(), adjusted));
-  }
-  if (LinkageNameAttr linkageName = ci.getLinkageNameAttr())
-    liftedWrapper.setLinkageNameAttr(linkageName);
-
-  // Remap the symbol to not include the self param. `boundParams` order
-  // matches `allParams`: captures are `ParamDeclRef` (enclosing values), then
-  // unbound type params for the closure's explicit parameters.
-  SmallVector<TypedAttr> boundParams;
-  for (auto capturedParam : closureInitData.getCapturedParamDecls()) {
-    boundParams.push_back(ParamDeclRefAttr::get(capturedParam.getName(),
-                                                capturedParam.getType()));
-  }
-  for (ParamDeclAttr attr : closureInitData.getClosureInit().getInputParams())
-    boundParams.push_back(UnboundAttr::get(b.getContext(), attr.getType()));
-
-  Region &body = liftedWrapper.getBodyRegion();
-  body.takeBody(region);
-  /// Scope verification is conditional on the enclosing function. If the
-  /// function carries a fused subprogram scope, every nested op must carry a
-  /// compatible scope. If the closure was pulled in from a bytecode package it
-  /// will not carry a subprogram because the dibuilder in the parser is null
-  /// for package building. Synthesis is required to pass verification in this
-  /// case.
-  DebugInfo::DIBuilder builder(b.getContext());
-  DebugInfo::DISubprogramAttr scope =
-      DebugInfo::extractScope((mlir::FunctionOpInterface)liftedWrapper);
-  builder.pushScope(scope);
-  if (scope)
-    builder.initializeCompileUnit(scope.getCompileUnit().getSourceLanguage(),
-                                  scope.getCompileUnit().getFile(),
-                                  scope.getCompileUnit().getProducer(),
-                                  scope.getCompileUnit().getIsOptimized(),
-                                  scope.getCompileUnit().getEmissionKind());
-
-  if (failed(builder.visitLexicalRegion(liftedWrapper.getBodyRegion())))
-    return failure();
-
-  liftedWrapper.setFunctionType(funcType);
-  liftedWrapper.setFuncTypeGenerator(
-      FuncTypeGeneratorType::remapToFuncTypeGenerator(
-          allParams, funcType, /*argConv=*/conventions,
-          /*effects=*/effects,
-          /*fnMetadata=*/{}, /*genMetadata=*/{}));
-
-  // The closure symbol does not have the implicit argument; remove it
-  argTypes.erase(argTypes.begin());
-  SmallVector<Type> paramsUnmapped;
-  for (Type paramType : closureInitData.getClosureInit()
-                            .getFuncTypeGenerator()
-                            .getInputParamTypes())
-    paramsUnmapped.push_back(paramType);
-  ClosureSymbolAttr closureAttr =
-      closureInitData.closureSymbolForSourceName(ClosureMethod::CALL);
-  auto sym = SymbolConstantAttr::get(
-      liftedWrapper,
-      FuncTypeGeneratorType::remapToFuncTypeGenerator(
-          closureInitData.getClosureInit().getInputParams(), funcType,
-          /*argConv=*/conventions, /*effects=*/effects,
-          /*fnMetadata=*/{}, /*genMetadata=*/{}),
-      boundParams);
-  liftedClosureSymbols[{closureAttr.getParentSymbol(),
-                        closureAttr.getNestedFuncName(),
-                        closureAttr.getMethod()}] = sym;
-  symtab.insert(liftedWrapper);
-  return success();
-}
-
 void ClosureLifter::storeCaptures(OpBuilder &b, Value captureStruct,
                                   ClosureInitData &data,
                                   ArrayRef<Capture> captureMechanisms) {
+  bool isFlattenedSingletonClosure =
+      data.isFlattenedSingletonClosure(captureMechanisms.size());
   b.setInsertionPoint(data.getClosureInit());
   Location location = data.getClosureInit()->getLoc();
   for (auto [index, captureMechanism] : llvm::enumerate(captureMechanisms)) {
-    auto slot = StructGEPOp::create(b, location, captureStruct, index);
+    Value slot = isFlattenedSingletonClosure
+                     ? captureStruct
+                     : StructGEPOp::create(b, location, captureStruct, index);
     if (captureMechanism.moveOrCopySym.has_value()) {
       TypedAttr symbol = *captureMechanism.moveOrCopySym;
       emitCopyMoveCall(b, location, symbol, captureMechanism.origin, slot);
@@ -707,33 +557,14 @@ void ClosureLifter::storeCaptures(OpBuilder &b, Value captureStruct,
   }
 }
 
-Value ClosureLifter::liftClosure(
-    OpBuilder &b, ClosureInitData &closureInitData,
-    ArrayRef<Capture> captureMechanisms, Type loweredClosureType,
-    Type loweredClosureInstType,
-    function_ref<Value(Capture, int, Value)> replacementFn) {
-  Region &region = closureInitData.region();
+Value ClosureLifter::liftClosure(OpBuilder &b, ClosureInitData &closureInitData,
+                                 ArrayRef<Capture> captureMechanisms,
+                                 Type loweredClosureType,
+                                 Type loweredClosureInstType) {
   Location loc = closureInitData.getClosureInit().getLoc();
-  // Outline Closure.
   Type selfType = closureInitData.selfType(loweredClosureType);
-  Value captureStructArg = region.insertArgument(
-      (unsigned)0, selfType,
-      DebugInfo::extractSourceLoc(closureInitData.getLiftedLocation()));
-  b.setInsertionPointToStart(&region.front());
-  llvm::DenseSet<Value> capturedOrigins;
-  capturedOrigins.reserve(captureMechanisms.size());
-  for (const Capture &capture : captureMechanisms)
-    capturedOrigins.insert(capture.origin);
-  eraseStackLifetimeMarkersForCaptures(region, capturedOrigins);
-
-  for (auto [index, capture] : llvm::enumerate(captureMechanisms)) {
-    replaceAllUsesInRegionWith(capture.origin,
-                               replacementFn(capture, index, captureStructArg),
-                               region);
-  }
-  // Synthesize methods.
-  if (failed(liftCallFunction(b, closureInitData, loweredClosureType)))
-    return {};
+  // The closure call implementation is now promoted in the parser.
+  // This pass only synthesizes memory-management methods and capture storage.
 
   // Instantiate capture struct.
   b.setInsertionPoint(closureInitData.getClosureInit());
@@ -759,16 +590,8 @@ Value ClosureLifter::liftRegPassableClosure(OpBuilder &b,
                                             ArrayRef<Capture> captureMechanisms,
                                             Type loweredClosureType,
                                             Type loweredClosureInstType) {
-  Location loc = closureInitData.getLiftedLocation();
-  auto replacementFn = [&](Capture capture, int index, Value captureStructArg) {
-    return KGEN::StructExtractOp::create(b, loc, captureStructArg,
-                                         b.getIndexAttr(index))
-        ->getResults()
-        .front();
-  };
-  Value captureStruct =
-      liftClosure(b, closureInitData, captureMechanisms, loweredClosureType,
-                  loweredClosureInstType, replacementFn);
+  Value captureStruct = liftClosure(b, closureInitData, captureMechanisms,
+                                    loweredClosureType, loweredClosureInstType);
   if (!captureStruct)
     return {};
   return POP::LoadOp::create(b, closureInitData.getClosureInit()->getLoc(),
@@ -779,17 +602,8 @@ Value ClosureLifter::liftNonRegPassableClosure(
     OpBuilder &b, ClosureInitData &closureInitData,
     ArrayRef<Capture> captureMechanisms, Type loweredClosureType,
     Type loweredClosureInstType) {
-  auto replacementFn = [&](Capture capture, int index, Value captureStructArg) {
-    Value replacement = KGEN::StructGEPOp::create(
-        b, closureInitData.getLiftedLocation(), captureStructArg, index);
-    if (!capture.moveOrCopySym.has_value())
-      replacement = POP::LoadOp::create(b, closureInitData.getLiftedLocation(),
-                                        replacement);
-    return replacement;
-  };
-  Value captureStruct =
-      liftClosure(b, closureInitData, captureMechanisms, loweredClosureType,
-                  loweredClosureInstType, replacementFn);
+  Value captureStruct = liftClosure(b, closureInitData, captureMechanisms,
+                                    loweredClosureType, loweredClosureInstType);
   Location loc = stripParameterRefsFromLoc(closureInitData.getLiftedLocation());
   if (!captureStruct)
     return {};
@@ -797,8 +611,7 @@ Value ClosureLifter::liftNonRegPassableClosure(
                          captureMechanisms, /*isMove=*/true);
   if (closureInitData.isCopyable())
     liftMoveOrCopyFunction(b, loc, closureInitData, loweredClosureType,
-                           captureMechanisms,
-                           /*isMove=*/false);
+                           captureMechanisms, /*isMove=*/false);
   liftDelFunction(b, loc, closureInitData, loweredClosureType,
                   captureMechanisms);
   return captureStruct;
@@ -809,14 +622,7 @@ Value ClosureLifter::liftThinClosure(OpBuilder &b,
                                      bool isRegisterPassable,
                                      Type loweredClosureType,
                                      Type loweredClosureInstType) {
-  Type selfType = isRegisterPassable ? loweredClosureType
-                                     : PointerType::get(loweredClosureType);
-  Region &region = closureInitData.region();
-  region.insertArgument(
-      (unsigned)0, selfType,
-      DebugInfo::extractSourceLoc(closureInitData.getLiftedLocation()));
-  if (failed(liftCallFunction(b, closureInitData, loweredClosureType)))
-    return {};
+  // The closure call implementation is now promoted in the parser.
   // TODO: create thunks for register passable closures (MOCO-2242).
   if (!isRegisterPassable) {
     Location liftedLoc =
@@ -846,127 +652,13 @@ Value ClosureLifter::liftThinClosure(OpBuilder &b,
       .getResult();
 }
 
-llvm::SetVector<ParamDeclAttr>
-ClosureLifter::collectCapturedParams(DenseMap<Value, Attribute> const &captures,
-                                     GeneratorOp generator, Region &region,
-                                     ParameterUseDefGraph &uses) {
-  llvm::SetVector<ParamDeclAttr> capturedParamDecls;
-  auto regionalUseDefGraph = uses.nestedScopes.find(&region);
-  assert(regionalUseDefGraph != uses.nestedScopes.end());
-
-  // Scan the captured values for captured parameters.
-  ParameterCollector collector(paramCache);
-  SmallVector<ParamDeclRefAttr, 16> capturedUses;
-  SmallVector<ClosureAttr> capturedClosureUses;
-
-  // Because the parameter use-def graph does not consider operands, only
-  // results and regions, explicitly collect parameter usages from the captured
-  // values.
-  for (Value capture : captures.keys()) {
-    bool unusedHasConstExpr = false;
-    size_t unusedRequiredSignatureDepth = 0;
-    collector.collectUsesFromType(
-        capture.getType(), capturedUses, unusedHasConstExpr,
-        unusedRequiredSignatureDepth, &capturedClosureUses);
-  }
-
-  if (debugBuild) {
-    region.walk<mlir::WalkOrder::PreOrder>([&](Operation *op) {
-      bool unusedHasConstExpr = false;
-      size_t unusedRequiredSignatureDepth = 0;
-      collector.collectUsesFromAttr(op->getLoc(), capturedUses,
-                                    unusedHasConstExpr,
-                                    unusedRequiredSignatureDepth);
-      return WalkResult::advance();
-    });
-
-    // Collect parameter captures from closure location.
-    bool unusedHasConstExpr = false;
-    size_t unusedRequiredSignatureDepth = 0;
-    collector.collectUsesFromAttr(region.getParentOp()->getLoc(), capturedUses,
-                                  unusedHasConstExpr,
-                                  unusedRequiredSignatureDepth);
-    if (auto closureInit = dyn_cast<ClosureInitOp>(region.getParentOp())) {
-      if (DebugInfo::DISubprogramAttr scope = closureInit.getSubprogramScope())
-        collector.collectUsesFromAttr(scope, capturedUses, unusedHasConstExpr,
-                                      unusedRequiredSignatureDepth);
-    }
-  }
-
-  Operation *regionDecl = region.getParentOp();
-  // For each use detected, identify if the definition was from an ancestor
-  // (captured param).
-  for (ParamDeclRefAttr use : capturedUses) {
-    auto declOpIter = regionalUseDefGraph->second.decls.find(use.getName());
-    // If a parameter was defined in a nested scope like kgen.param.for,
-    // it is not at or above the current region scope.
-    // Hence, parameter will not be in the map, and it is safe to ignore it.
-    if (declOpIter == regionalUseDefGraph->second.decls.end())
-      continue;
-    Operation *declOp = declOpIter->second.declOp;
-    if (!regionDecl->isAncestor(declOp))
-      regionalUseDefGraph->second.usesFromAbove.insert(use);
-  }
-
-  // Add all parameter uses that were defined above to the capture set.
-  for (ParamDeclRefAttr paramCapture :
-       regionalUseDefGraph->second.usesFromAbove) {
-    auto decl =
-        ParamDeclAttr::get(paramCapture.getName(), paramCapture.getType());
-    capturedParamDecls.insert(decl);
-  }
-
-  // Inflate unresolved closure captures: if the region references a
-  // ClosureAttr for another closure that has already been lifted, pull in
-  // its captured parameters transitively.  Skip parameters declared by the
-  // enclosing closure itself -- those already appear in getInputParams() and
-  // would be duplicated in the lifted generator's parameter list.
-  auto localParams = dyn_cast<ClosureInitOp>(regionDecl)
-                         ? cast<ClosureInitOp>(regionDecl).getInputParams()
-                         : ArrayRef<ParamDeclAttr>{};
-  std::optional<ClosureParentKey> currentClosureKey;
-  if (auto closureInit = dyn_cast<ClosureInitOp>(regionDecl)) {
-    ClosureType closureType = getClosureType(closureInit);
-    currentClosureKey =
-        ClosureParentKey{closureType.getParentSymbol(), closureType.getName()};
-  }
-  auto inflateClosureCapture = [&](ClosureAttr closureAttr) {
-    ParamClosureType pct = closureAttr.getType();
-    ClosureParentKey key{pct.getParentSymbol(), pct.getName()};
-    if (currentClosureKey && key.parent == currentClosureKey->parent &&
-        key.nestedName == currentClosureKey->nestedName)
-      return;
-    auto it = paramCaptureToStructAttr.find(key);
-    assert(it != paramCaptureToStructAttr.end() &&
-           "referenced closure must have been lifted before the enclosing "
-           "closure");
-    for (ParamDeclAttr param : it->second) {
-      if (!llvm::any_of(localParams, [&](ParamDeclAttr local) {
-            return local.getName() == param.getName();
-          }))
-        capturedParamDecls.insert(param);
-    }
-  };
-  for (ClosureAttr closureAttr : regionalUseDefGraph->second.closureCaptures)
-    inflateClosureCapture(closureAttr);
-  for (ClosureAttr closureAttr : capturedClosureUses)
-    inflateClosureCapture(closureAttr);
-
-  return capturedParamDecls;
-}
-
 LogicalResult
 ClosureLifter::liftClosureInit(ClosureInitOp closureInit, GeneratorOp generator,
-                               StructGeneratorOp structGeneratorOp,
-                               ParameterUseDefGraph &uses) {
+                               StructGeneratorOp structGeneratorOp) {
   OpBuilder b(closureInit.getContext());
   ClosureType closureType = getClosureType(closureInit);
-  StringRef regionName = closureType.getName();
   ClosureMemoryKind memoryKind = closureType.getClosureMemoryKind();
   b.setInsertionPoint(closureInit);
-  llvm::SetVector<Value> captures;
-  Region &region = closureInit->getRegions().front();
-  mlir::getUsedValuesDefinedAbove(region, captures);
   DenseMap<Value, Attribute> captureToSymbol;
   for (auto [capture, symbol] :
        llvm::zip(closureInit.getCaptures(),
@@ -976,23 +668,6 @@ ClosureLifter::liftClosureInit(ClosureInitOp closureInit, GeneratorOp generator,
   // Enforce that all captures specify a capture convention.
   SmallVector<Type> fieldTypes;
   SmallVector<Capture> captureMechanisms;
-  bool violatedCapturePolicy = false;
-  for (Value capture : captures) {
-    auto ptr = captureToSymbol.find(capture);
-    if (ptr == captureToSymbol.end()) {
-      violatedCapturePolicy = true;
-      mlir::emitError(capture.getLoc())
-          << "value is a capture of closure " << regionName
-          << " but is not in the capture list";
-      continue;
-    }
-  }
-
-  // If there are capture without capture semantic information we cannot replace
-  // them which means we cannot lift the region into a function because it is
-  // not isolated.
-  if (violatedCapturePolicy)
-    return failure();
 
   // Build capture mechanisms and copy/move symbols.
   SmallVector<TypedAttr> moveSymbols;
@@ -1053,6 +728,9 @@ ClosureLifter::liftClosureInit(ClosureInitOp closureInit, GeneratorOp generator,
       Type structType = StructType::get(
           b.getContext(), structFieldTypes,
           cast<BoolAttr>(structInstanceType.getIsMemoryOnly()).getValue());
+      if (structFieldTypes.size() == 1 &&
+          !cast<BoolAttr>(structInstanceType.getIsMemoryOnly()).getValue())
+        structType = structFieldTypes.front();
       for (TypedAttr binding : typeGeneratorRef.getParamValues())
         if (auto ref = dyn_cast<ParamDeclRefAttr>(binding))
           capturedParamDecls.insert(
@@ -1090,12 +768,11 @@ ClosureLifter::liftClosureInit(ClosureInitOp closureInit, GeneratorOp generator,
         structGeneratorOp.getSymNameAttr(),
         /*paramNames=*/{},
         /*paramValues=*/{}, fieldDecls, BoolAttr::get(ctx, isMemoryOnly));
-    Type mlirType =
-        StructType::get(b.getContext(), fieldTypes,
-                        memoryKind != ClosureMemoryKind::TRIVIAL &&
-                            memoryKind != ClosureMemoryKind::REGISTER_PASSABLE);
-    capturedParamDecls =
-        collectCapturedParams(captureToSymbol, generator, region, uses);
+    Type mlirType = StructType::get(b.getContext(), fieldTypes, isMemoryOnly);
+    if (fieldTypes.size() == 1 && !isMemoryOnly)
+      mlirType = fieldTypes.front();
+    for (ParamDeclAttr input : closureInit.getInputParams())
+      capturedParamDecls.insert(input);
     if (auto hoistedCaptures = closureInit.getHoistedCaptures())
       for (ParamDeclAttr hoisted : *hoistedCaptures)
         capturedParamDecls.insert(hoisted);
@@ -1154,16 +831,10 @@ static StringAttr getFullName(ClosureType closureType) {
   return StringAttr::get(ctx, fullName);
 }
 
-static LogicalResult
-liftClosureInit(ModuleOp theModule, ClosureLifter &lifter,
-                ClosureInitOp closureInit,
-                std::optional<ParameterUseDefGraph> &uses) {
+static LogicalResult liftClosureInit(ModuleOp theModule, ClosureLifter &lifter,
+                                     ClosureInitOp closureInit) {
   GeneratorOp parent = closureInit->getParentOfType<GeneratorOp>();
   assert(parent && "closure init should be nested within a generator");
-  if (!uses) {
-    uses.emplace(parent.getBodyRegion());
-    uses->calculate(lifter.paramCache);
-  }
 
   ClosureType closureType = getClosureType(closureInit);
   StringAttr symbol = getFullName(closureType);
@@ -1174,8 +845,7 @@ liftClosureInit(ModuleOp theModule, ClosureLifter &lifter,
         << "missing struct generator op for closure " << closureType.getName();
     return failure();
   }
-  if (failed(lifter.liftClosureInit(closureInit, parent, structGeneratorOp,
-                                    *uses)))
+  if (failed(lifter.liftClosureInit(closureInit, parent, structGeneratorOp)))
     return failure();
 
   ClosureLifter::ClosureParentKey key{closureType.getParentSymbol(),
@@ -1200,18 +870,16 @@ void OutlineClosuresNewPass::runOnOperation() {
   ModuleOp theModule = getOperation();
   SymbolTable &symtab =
       getAnalysis<mlir::SymbolTableAnalysis>().getTopLevelSymbolTable();
-  auto &paramCache = getAnalysis<ParameterCollector::Analysis>();
-  ClosureLifter lifter(symtab, paramCache, debugBuild);
+  ClosureLifter lifter(symtab, debugBuild);
   // Lift every closure init in the module. Each successful lift also lowers
   // the matching struct generator.
   for (auto generator : theModule.getOps<GeneratorOp>()) {
-    std::optional<ParameterUseDefGraph> uses;
     SmallVector<ClosureInitOp> closuresToLift;
     generator.walk<mlir::WalkOrder::PostOrder>([&](ClosureInitOp closureInit) {
       closuresToLift.push_back(closureInit);
     });
     for (ClosureInitOp closureInit : closuresToLift) {
-      if (failed(liftClosureInit(theModule, lifter, closureInit, uses)))
+      if (failed(liftClosureInit(theModule, lifter, closureInit)))
         return signalPassFailure();
     }
   }

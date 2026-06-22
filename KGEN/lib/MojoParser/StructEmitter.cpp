@@ -281,33 +281,16 @@ FnOp StructEmitter::synthesizeDefaultTraitMethodWrapper(
   // the lit.call op we later materialize in populateDefaultedTraitFunction).
   //
   // See DCRTODS in arcana/Generics.md for more details.
-  class IndexRefReplacer : public IndexParameterReplacer<IndexRefReplacer> {
-  public:
-    IndexRefReplacer(ArrayRef<ParamDeclAttr> params) : params(params) {}
-
-    Attribute tryReplace(Attribute value, size_t depth) {
-      if (auto indexRef = dyn_cast<ParamIndexRefAttr>(value)) {
-        if (indexRef.getDepth() == depth)
-          return ParamDeclRefAttr::get(params[indexRef.getIndex()]);
-      }
-      return {};
-    }
-
-    Type tryReplace(Type t, size_t depth) { return {}; }
-
-  private:
-    ArrayRef<ParamDeclAttr> params;
-  } indexRefReplacer(mangledParams);
-
   SmallVector<Type> argTypes;
   SmallVector<ArgConvention> argConventions;
   for (auto [idx, argType] : llvm::enumerate(inputTypes)) {
-    argTypes.push_back(indexRefReplacer.replace(argType));
+    argTypes.push_back(replaceIndexRefsWithNamedRefs(argType, mangledParams));
     argConventions.push_back(fnType.getArgConvention(idx));
   }
 
   // Make sure we remap any IndexRefAttrs in the result type as well
-  Type resultType = indexRefReplacer.replace(wrapperSignature.getResultType());
+  Type resultType = replaceIndexRefsWithNamedRefs(
+      wrapperSignature.getResultType(), mangledParams);
 
   InlineLevel inlineLevel = InlineLevel::Automatic;
   if (structDeclOp.getConvention() == TypeConvention::RegisterPassableTrivial)

@@ -1946,12 +1946,7 @@ def KGEN_IsRunInComptimeInterpreterOp: KGENOp<"is_run_in_comptime_interpreter",
 // ClosureInit
 //===----------------------------------------------------------------------===//
 
-def KGEN_ClosureInitOp : KGENOp<"closure.init", [
-  FunctionLike,
-  SingleBlock,
-  DeclInterface,
-  DeclareOpInterfaceMethods<DebugInfo_SubprogramScoped, ["getSubprogramScope"]>
-]> {
+def KGEN_ClosureInitOp : KGENOp<"closure.init", [DeclInterface]> {
   let summary = "Allocate memory and store values into a closure struct.";
   let description = [{
     The `kgen.closure.init` operation represents the instantiation of a closure
@@ -1984,11 +1979,9 @@ def KGEN_ClosureInitOp : KGENOp<"closure.init", [
   }];
 
   let arguments = (ins TypeAttrOf<KGEN_FuncTypeGeneratorType>:$funcTypeGenerator,
-                   TypeAttrOf<FunctionType>:$functionType,
                    Variadic<AnyType>:$captures,
                    ArrayAttr:$moveOrCopyCaptureSymbols,
                    KGEN_ParamDeclArrayAttr:$inputParams,
-                   KGEN_InlineLevelAttr:$inlineLevel,
                    DefaultValuedAttr<ArrayAttr, "{}">:$captureTypes,
                    DefaultValuedAttr<ArrayAttr, "{}">:$captureNames,
                    OptionalAttr<TypedAttrInterface>:$typeValue,
@@ -1999,27 +1992,24 @@ def KGEN_ClosureInitOp : KGENOp<"closure.init", [
                    OptionalAttr<KGEN_LinkageNameAttr>:$linkageName
                   );
 
-  let regions = (region SizedRegion<1>:$bodyRegion);
   let results = (outs AnyType: $result);
   let assemblyFormat = [{
-    `` custom<ClosureInitValue>($funcTypeGenerator, $functionType,
+    `` custom<ClosureInitValue>($funcTypeGenerator,
                                    $captures, $moveOrCopyCaptureSymbols,
-                                   $inputParams, $inlineLevel,$bodyRegion,
+                                   $inputParams,
                                    type($captures), type($result), $nestedFnScope) attr-dict
   }];
   let builders = [
     OpBuilder<(ins "Type":$result, "FuncTypeGeneratorType":$funcTypeGenerator,
-                   "FunctionType":$functionType,
                    "ValueRange":$captures,
                    "ArrayAttr":$moveOrCopyCaptureSymbols,
                    "ArrayRef<ParamDeclAttr>":$inputParams,
-                   "InlineLevel":$inlineLevel,
                    "ArrayAttr":$captureTypes,
                    "ArrayAttr":$captureNames,
                    "TypedAttr":$typeValue), [{
       build($_builder, $_state, result,
-            funcTypeGenerator, functionType, captures, moveOrCopyCaptureSymbols,
-            inputParams, inlineLevel, captureTypes, captureNames, typeValue,
+            funcTypeGenerator, captures, moveOrCopyCaptureSymbols,
+            inputParams, captureTypes, captureNames, typeValue,
             /*nestedFnScope=*/{},
             /*LLVMMetadataArray=*/nullptr, /*LLVMArgMetadataArray=*/nullptr,
             /*hoistedCaptures=*/::M::KGEN::ParamDeclArrayAttr{},
@@ -2027,8 +2017,9 @@ def KGEN_ClosureInitOp : KGENOp<"closure.init", [
     }]>
   ];
   let extraClassDeclaration = [{
-    Region *getCallableRegion() { return &getBodyRegion(); }
-    ArrayRef<Type> getResultTypes() { return getFunctionType().getResults(); }
+    ArrayRef<Type> getResultTypes() {
+      return getFuncTypeGenerator().getBody().getValues().getResults();
+    }
   }];
   let hasVerifier = 1;
 }

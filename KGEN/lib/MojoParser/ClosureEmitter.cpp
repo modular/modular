@@ -35,7 +35,6 @@
 #include "Support/Compiler/OperationUtils.h"
 
 #include "mlir/Dialect/Index/IR/IndexOps.h"
-#include "mlir/IR/IRMapping.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
 #include "mlir/Transforms/RegionUtils.h"
 #include "llvm/ADT/MapVector.h"
@@ -328,6 +327,21 @@ createStruct(SharedState &shared, ASTDecl &moduleDecl, StringAttr name,
   return {structDecl, declOp};
 }
 
+static bool isByReferenceCapture(CaptureConvention c) {
+  switch (c) {
+  case CaptureConvention::kConventionUnspecified:
+  case CaptureConvention::kConventionMut:
+  case CaptureConvention::kConventionRead:
+  case CaptureConvention::kConventionRef:
+    return true;
+  case CaptureConvention::kConventionTrivialCopy:
+  case CaptureConvention::kConventionCopy:
+  case CaptureConvention::kConventionMove:
+    return false;
+  }
+  return false;
+}
+
 /// Given a signature of a function, create a FuncType by inserting a closure
 /// argument at index 0 with the given convention.
 static FnTypeGeneratorType
@@ -436,10 +450,10 @@ populateParametersFromFnGeneratorType(FnTypeGeneratorType sig) {
   ParamRefRemapper replacer(pogNames);
   SmallVector<ParamDeclAttr> parameters;
   parameters.reserve(pogAttrs.size());
-
-  for (auto [pog, type] : llvm::zip(pogAttrs, sig.getInputParamTypes())) {
+  assert(pogAttrs.size() == sig.getInputParamTypes().size());
+  for (auto [name, type] : llvm::zip(pogNames, sig.getInputParamTypes())) {
     Type canonicalType = replacer.replace(type);
-    parameters.push_back(ParamDeclAttr::get(pog.getName(), canonicalType));
+    parameters.push_back(ParamDeclAttr::get(name, canonicalType));
   }
 
   return parameters;
@@ -564,6 +578,36 @@ buildSymbolWithBindings(FnOp impl, ArrayRef<ParamDeclAttr> structLevelParams,
   SymbolConstantAttr symbolConstant =
       SymbolConstantAttr::get(ctx, implSymbol, params, specializedSigGen);
   return symbolConstant;
+}
+
+static SymbolConstantAttr buildSymbolWithBoundPrependedParams(
+    FnOp impl, ArrayRef<ParamDeclAttr> boundPrependedParams) {
+  MLIRContext *ctx = impl.getContext();
+  SymbolRefAttr implSymbol = getFullyResolvedSymbolRef(
+      cast<mlir::SymbolOpInterface>(impl.getOperation()));
+
+  SmallVector<TypedAttr> boundParams = llvm::map_to_vector(
+      boundPrependedParams, [](ParamDeclAttr param) -> TypedAttr {
+        return ParamDeclRefAttr::get(param);
+      });
+  FnTypeGeneratorType baseSigGen = impl.getFuncTypeGenerator();
+  ArrayRef<ParamDeclAttr> explicitParams = impl.getInputParams().drop_back(
+      impl.getFuncTypeGenerator().getNumImplicitOriginDecls());
+  size_t explicitParamCount = explicitParams.size();
+  assert(boundParams.size() <= explicitParamCount &&
+         "cannot bind more prepended params than explicit function params");
+  SmallVector<TypedAttr> specializationBindings = boundParams;
+  specializationBindings.reserve(explicitParamCount);
+  ParameterEvaluator evaluator(boundParams);
+  for (ParamDeclAttr param : explicitParams.drop_front(boundParams.size())) {
+    auto unbound = UnboundAttr::get(evaluator.replace(param.getType()));
+    specializationBindings.push_back(unbound);
+    evaluator.overwriteDeclBinding(param, unbound);
+  }
+  FuncTypeGeneratorType specializedSigGen = baseSigGen.getSpecializedGenerator(
+      specializationBindings, /*evaluationContext=*/nullptr, impl.getLoc());
+  return SymbolConstantAttr::get(ctx, implSymbol, specializationBindings,
+                                 specializedSigGen);
 }
 
 std::tuple<FnOp, ArrayRef<ParamDeclAttr>, Type>
@@ -1630,76 +1674,219 @@ static bool hasCapturingParameterType(SharedState &shared,
   });
 }
 
-ASTDecl *ClosureEmitter::promoteStatelessClosure(
-    ASTDecl &nestedFnDecl, ArrayRef<ParamDeclRefAttr> paramCaptures) {
+/// Prepend a new implicit origin at index 0 in `sig`, shifting all existing
+/// depth-local ImplicitOriginRefAttrs up by one and incrementing the
+/// FnMetadata origin count. This is the implicit-origin analogue of
+/// FnTypeGeneratorType::prependParams for explicit parameters.
+static FnTypeGeneratorType prependImplicitOriginDecl(FnTypeGeneratorType sig) {
+  struct OriginIndexShifter
+      : public IndexParameterReplacer<OriginIndexShifter> {
+    Type tryReplace(Type, size_t) { return {}; }
+    Attribute tryReplace(Attribute attr, size_t depth) {
+      // Only shift refs that are scoped to this function (depth + 1 == depth
+      // after the replacer increments depth for each nesting level).
+      if (depth == 0)
+        return {};
+      if (auto ref = dyn_cast<ImplicitOriginRefAttr>(attr);
+          ref && ref.getDepth() + 1 == depth)
+        return ImplicitOriginRefAttr::get(ref.getDepth(), ref.getIndex() + 1,
+                                          ref.getType());
+      return {};
+    }
+  } shifter;
+  sig = cast<FnTypeGeneratorType>(shifter.replace(sig));
+  FnMetadataAttr oldMeta = sig.getFnMetadata();
+  FnMetadataAttr newMeta = FnMetadataAttr::get(
+      sig.getContext(), oldMeta.getNumImplicitOriginDecls() + 1,
+      oldMeta.getCaptureOrigins(),
+      oldMeta.getIsNestedOriginExclusivityCheckingDisabled());
+  return FnTypeGeneratorType::get(
+      sig.getInputParamTypes(), sig.getValues(), sig.getArgConventions(),
+      sig.getFnEffects(), newMeta, sig.getMetadata(), sig.getArgListAttrs());
+}
+
+struct PromotedSignature {
+  FnTypeGeneratorType signature;
+  FunctionType functionType;
+  Type selfRuntimeArgType;
+  SmallVector<ParamDeclAttr> newParams;
+};
+
+/// Build the promoted signature for a closure being lifted to file scope.
+static PromotedSignature buildPromotedSignature(
+    SharedState &shared, FnTypeGeneratorType sig,
+    ArrayRef<ParamDeclAttr> params, ArrayRef<ParamDeclAttr> prependedParams,
+    std::optional<ClosureEmitter::PromotedClosureSelfArg> selfArg,
+    bool forceCapturing = false) {
+  MLIRContext *ctx = shared.getContext();
+  size_t oldNumImplicitOrigins =
+      sig.getFnMetadata().getNumImplicitOriginDecls();
+  assert(oldNumImplicitOrigins <= params.size());
+
+  // Step 1: prepend a new origin slot for self and collect origin decls.
+  SmallVector<ParamDeclAttr> implicitOriginDecls;
+  ParamDeclAttr selfImplicitOriginDecl;
+  if (selfArg) {
+    selfImplicitOriginDecl = ParamDeclAttr::get(
+        StringAttr::get(ctx, "__self_origin"), OriginType::get(ctx, true));
+    implicitOriginDecls.push_back(selfImplicitOriginDecl);
+    sig = prependImplicitOriginDecl(sig);
+  }
+  llvm::append_range(implicitOriginDecls,
+                     params.take_back(oldNumImplicitOrigins));
+
+  // Step 2: prepend explicit params for each captured parameter.
+  SmallVector<ParamDeclAttr> explicitPrependedParams(prependedParams.begin(),
+                                                     prependedParams.end());
+  if (!explicitPrependedParams.empty())
+    sig = FnTypeGeneratorType::prependParams(sig, explicitPrependedParams);
+
+  // Step 3: prepend the self runtime argument so it becomes arg[0].
+  if (selfArg) {
+    Type selfRefType = RefType::get(
+        selfArg->type,
+        ImplicitOriginRefAttr::get(0, 0, selfImplicitOriginDecl.getType()));
+    sig = addClosureSelfArgToFunctionSignature(selfRefType, selfArg->convention,
+                                               sig);
+  }
+
+  // Step 4: resolve depth-local index refs to named param/origin references.
+  SmallVector<ParamDeclAttr> explicitParamDecls;
+  llvm::append_range(explicitParamDecls, explicitPrependedParams);
+  llvm::append_range(explicitParamDecls,
+                     params.drop_back(oldNumImplicitOrigins));
+  assert(explicitParamDecls.size() == sig.getInputParamTypes().size());
+  FunctionType promotedFunctionType = replaceIndexRefsWithNamedRefs(
+      sig.getValues(), explicitParamDecls, implicitOriginDecls);
+
+  // Step 5: propagate the capturing flag if any prepended param is capturing.
+  bool shouldBeCapturing =
+      forceCapturing || sig.isCapturing() ||
+      hasCapturingParameterType(shared, explicitPrependedParams);
+  FnTypeGeneratorType promotedSignature = FnTypeGeneratorType::get(
+      sig.getInputParamTypes(), sig.getValues(), sig.getArgConventions(),
+      sig.getFnEffects().setCapturing(shouldBeCapturing), sig.getFnMetadata(),
+      sig.getMetadata(), sig.getArgListAttrs());
+
+  Type selfRuntimeArgType;
+  if (selfArg)
+    selfRuntimeArgType = promotedFunctionType.getInputs().front();
+
+  // Assemble the full param list when something changed: new capture params
+  // were prepended or a self origin was inserted.
+  SmallVector<ParamDeclAttr> newParams;
+  if (!explicitPrependedParams.empty() || selfArg) {
+    ArrayRef<ParamDeclAttr> oldExplicit =
+        params.drop_back(oldNumImplicitOrigins);
+    newParams.reserve(explicitPrependedParams.size() + oldExplicit.size() +
+                      implicitOriginDecls.size());
+    llvm::append_range(newParams, explicitPrependedParams);
+    llvm::append_range(newParams, oldExplicit);
+    llvm::append_range(newParams, implicitOriginDecls);
+  }
+
+  return {promotedSignature, promotedFunctionType, selfRuntimeArgType,
+          std::move(newParams)};
+}
+
+ASTDecl *ClosureEmitter::promoteClosure(
+    ASTDecl &nestedFnDecl, ArrayRef<ParamDeclAttr> prependedParams,
+    std::optional<PromotedClosureSelfArg> selfArg, bool forceCapturing) {
   assert(nestedFnDecl.resolvedness == DeclResolvedness::body &&
          "nested decl must be fully resolved to promote");
   MLIRContext *ctx = shared.getContext();
-  FnOp nestedFn = cast<FnOp>(nestedFnDecl.getIfOperation());
+  FnOp function = cast<FnOp>(nestedFnDecl.getIfOperation());
   SMLoc loc = nestedFnDecl.getLoc();
   ASTDecl *moduleDecl = nestedFnDecl.getNearestDeclOfType<FileModuleOp>();
 
-  FnTypeGeneratorType nestedSignature = nestedFn.getFuncTypeGenerator();
-  SmallVector<ParamDeclAttr> promotedParams;
-  if (!paramCaptures.empty()) {
-    promotedParams = llvm::map_to_vector(paramCaptures, [](auto capture) {
-      return ParamDeclAttr::get(capture);
-    });
-    nestedSignature =
-        FnTypeGeneratorType::prependParams(nestedSignature, promotedParams);
-  }
-  bool shouldBeCapturing = nestedSignature.isCapturing() ||
-                           hasCapturingParameterType(shared, promotedParams);
-  // The promoted signature will not have register_passable; capturing is set
-  // from the promoted form.
-  FnTypeGeneratorType promotedSignature = FnTypeGeneratorType::get(
-      nestedSignature.getInputParamTypes(), nestedSignature.getValues(),
-      nestedSignature.getArgConventions(),
-      nestedSignature.getFnEffects().setCapturing(shouldBeCapturing),
-      nestedSignature.getFnMetadata(), nestedSignature.getMetadata(),
-      nestedSignature.getArgListAttrs());
+  auto [promotedSignature, promotedFunctionType, selfRuntimeArgType,
+        newParams] =
+      buildPromotedSignature(shared, function.getFuncTypeGenerator(),
+                             function.getParams(), prependedParams, selfArg,
+                             forceCapturing);
 
   OpBuilder builder = moduleDecl->getDeclEndBuilder();
-  nestedFn->moveBefore(builder.getInsertionBlock(),
+  function->moveBefore(builder.getInsertionBlock(),
                        builder.getInsertionPoint());
-  FnOp promotedFn = nestedFn;
   // We need to mangle the symbol name because we're lifting these into the file
   // scope - if you have two closures with the same name in different functions,
   // that's fine, but when we lift them to the file scope they need to have
   // unique names.
-  promotedFn.setSymName(
-      moduleDecl->mangleParamName(nestedFn.getSymName()->str()));
-  promotedFn.setFuncTypeGenerator(promotedSignature);
-  if (!promotedParams.empty()) {
-    SmallVector<ParamDeclAttr> allParams(promotedFn.getParams());
-    allParams.insert(allParams.begin(), promotedParams.begin(),
-                     promotedParams.end());
-    promotedFn.setParamsAttr(ParamDeclArrayAttr::get(ctx, allParams));
+  function.setSymName(
+      moduleDecl->mangleParamName(function.getSymName()->str()));
+
+  // Update function attributes and body to reflect self argument addition.
+  if (selfArg) {
+    auto &entryBlock = function.getBodyRegion().front();
+    Location selfArgLoc = function.getLoc();
+    if (FileLineColLoc sourceLoc = DebugInfo::extractSourceLoc(selfArgLoc))
+      selfArgLoc = sourceLoc;
+    entryBlock.insertArgument(static_cast<unsigned>(0), selfRuntimeArgType,
+                              selfArgLoc);
+
+    if (ArrayAttr argMeta = function.getLLVMArgMetadataArray();
+        argMeta && !argMeta.empty()) {
+      SmallVector<Attribute> newMeta;
+      newMeta.push_back(ArrayAttr::get(ctx, {}));
+      llvm::append_range(newMeta, argMeta);
+      function.setLLVMArgMetadataArrayAttr(ArrayAttr::get(ctx, newMeta));
+    }
+
+    // Augment DISubroutineType with self argument.
+    if (DebugInfo::DISubprogramAttr oldScope = function.getSubprogramScope()) {
+      auto subroutineType =
+          cast<DebugInfo::DISubroutineType>(oldScope.getType());
+      SmallVector<DebugInfo::DIType> updatedArgTypes;
+      updatedArgTypes.push_back(DebugInfo::DIUnspecifiedType::get(ctx, "self"));
+      llvm::append_range(updatedArgTypes, subroutineType.getArgumentTypes());
+      auto newSubroutineType = DebugInfo::DISubroutineType::get(
+          ctx, subroutineType.getCallingConvention(), updatedArgTypes,
+          subroutineType.getResultTypes());
+      auto newScope = DebugInfo::DISubprogramAttr::get(
+          oldScope.getCompileUnit(), oldScope.getScope(),
+          oldScope.getSourceName(), oldScope.getLinkageName(),
+          oldScope.getFile(), oldScope.getLine(), oldScope.getScopeLine(),
+          oldScope.getSubprogramFlags(),
+          cast<DebugInfo::DISubroutineType>(newSubroutineType));
+      mlir::AttrTypeReplacer replacer;
+      replacer.addReplacement(
+          [&](DebugInfo::DISubprogramAttr sp) -> DebugInfo::DISubprogramAttr {
+            if (sp == oldScope)
+              return newScope;
+            return sp;
+          });
+      replacer.recursivelyReplaceElementsIn(function, /*replaceAttrs=*/true,
+                                            /*replaceLocs=*/true);
+    }
   }
+  function.setFuncTypeGenerator(promotedSignature);
+  function.setFunctionType(promotedFunctionType);
+  if (!newParams.empty())
+    function.setParamsAttr(ParamDeclArrayAttr::get(ctx, newParams));
   // Transfer the linkage name to the promoted op: the mangled sym_name
   // above overwrites the original name, so preserve it so it survives
   // into elaboration.
-  if (auto linkageName = nestedFn.getLinkageNameAttr())
-    promotedFn.setLinkageNameAttr(linkageName);
-  promotedFn.setNoDocRequired(true);
+  if (auto linkageName = function.getLinkageNameAttr())
+    function.setLinkageNameAttr(linkageName);
+  function.setNoDocRequired(true);
+  function.setSynthetic(true);
   auto &decl = shared.declResolver->addFullyResolvedDecl(
-      promotedFn, nestedFn.getSourceNameAttr(), loc, moduleDecl);
+      function, /*name=*/StringAttr(), loc, moduleDecl);
   // Transfer child decls from the original to the promoted decl. Since the op
   // was moved (not cloned), all mlir::Value pointers are still valid.
   decl.takeDecls(nestedFnDecl);
   // Register the lifted function to the symbol table.
   [[maybe_unused]] Operation *existing =
-      shared.declResolver->finalizeFuncSignature(promotedFn, decl);
+      shared.declResolver->finalizeFuncSignature(function, decl);
   assert(!existing && "unexpected redefinition of promoted closure");
-  if (promotedParams.empty()) {
-    nestedFnDecl.setIRValue(promotedFn);
+  if (prependedParams.empty()) {
+    nestedFnDecl.setIRValue(function);
     return &decl;
   }
 
-  ArrayRef<ParamDeclAttr> promotedFnParams = promotedFn.getParams();
+  ArrayRef<ParamDeclAttr> promotedFnParams = function.getParams();
   ArrayRef<ParamDeclAttr> captureParams =
-      promotedFnParams.take_front(promotedParams.size());
-
+      promotedFnParams.take_front(prependedParams.size());
   SmallVector<TypedAttr> bindings;
   bindings.reserve(promotedFnParams.size());
   size_t captureIndex = 0;
@@ -1712,11 +1899,20 @@ ASTDecl *ClosureEmitter::promoteStatelessClosure(
   }
   assert(captureIndex == captureParams.size() &&
          "all capture params must be rebound");
-  nestedFnDecl.setIRValue(PValue(promotedFn.getFuncLiteralGenerator(
+  nestedFnDecl.setIRValue(PValue(function.getFuncLiteralGenerator(
       shared.getEvaluationContext(),
       ParameterExprArrayAttr::get(ctx, bindings))));
-
   return &decl;
+}
+
+ASTDecl *ClosureEmitter::promoteClosure(
+    ASTDecl &nestedFnDecl, ArrayRef<ParamDeclRefAttr> prependedParamRefs,
+    std::optional<PromotedClosureSelfArg> selfArg, bool forceCapturing) {
+  SmallVector<ParamDeclAttr> prependedParams =
+      llvm::map_to_vector(prependedParamRefs, [](ParamDeclRefAttr paramRef) {
+        return ParamDeclAttr::get(paramRef);
+      });
+  return promoteClosure(nestedFnDecl, prependedParams, selfArg, forceCapturing);
 }
 
 template <typename T>
@@ -1816,35 +2012,156 @@ collectPromotedOrigins(MLIRContext *ctx,
   return promotedOriginNames;
 }
 
-static KGEN::StructType getMlirType(MLIRContext *ctx,
-                                    StructInstanceType structInstType,
-                                    ArrayRef<ParamDeclAttr> structParams,
-                                    ArrayRef<TypedAttr> structBindings) {
+static SmallVector<Type>
+getConcreteStructFieldTypes(StructInstanceType structInstType,
+                            ArrayRef<ParamDeclAttr> structParams,
+                            ArrayRef<TypedAttr> structBindings) {
   ParameterEvaluator structEvaluator(structParams, structBindings);
-  SmallVector<Type> mlirFieldTypes = llvm::map_to_vector(
+  return llvm::map_to_vector(
       structInstType.getFields(), [&](StructDefFieldAttr field) -> Type {
         TypedAttr fieldType =
             structEvaluator.getReboundAttribute(field.getTypeValue());
         return ASTType(fieldType);
       });
-  bool isMemOnly = cast<BoolAttr>(structInstType.getIsMemoryOnly()).getValue();
+}
+
+static KGEN::StructType getMlirType(MLIRContext *ctx,
+                                    StructInstanceType structInstType,
+                                    ArrayRef<ParamDeclAttr> structParams,
+                                    ArrayRef<TypedAttr> structBindings,
+                                    TypeConvention convention) {
+  SmallVector<Type> mlirFieldTypes =
+      getConcreteStructFieldTypes(structInstType, structParams, structBindings);
+  bool isMemOnly = convention == TypeConvention::MemoryOnly;
   return KGEN::StructType::get(ctx, mlirFieldTypes, isMemOnly);
 }
 
-TypedAttr ClosureEmitter::addWitnessTablesToClosure(
+static TypedAttr getRefLikeOrigin(Type type) {
+  if (auto refType = dyn_cast<RefType>(type))
+    return refType.getOrigin();
+  if (auto refPackType = dyn_cast<RefPackType>(type))
+    return refPackType.getOrigin();
+  return nullptr;
+}
+
+static void
+addOriginReplacements(mlir::AttrTypeReplacer &originReplacer,
+                      const DenseMap<TypedAttr, TypedAttr> &originMap) {
+  originReplacer.addReplacement(
+      [&](TypedAttr attr) -> std::optional<TypedAttr> {
+        auto it = originMap.find(attr);
+        if (it == originMap.end())
+          return std::nullopt;
+        return it->second;
+      });
+}
+
+ASTDecl *ClosureEmitter::liftClosureIntoMethod(
+    ASTDecl &nestedFnDecl, ArrayRef<ParamDeclAttr> concreteParams,
+    PromotedClosureSelfArg selfArg,
+    ArrayRef<StructDefFieldAttr> concreteFieldDecls,
+    ArrayRef<Value> concreteFieldCaptures,
+    ArrayRef<CaptureConvention> captureConventions,
+    ArrayRef<Type> selfBoundFieldTypes, Location location) {
+  MLIRContext *ctx = shared.getContext();
+  ASTDecl *promotedDecl = promoteClosure(nestedFnDecl, concreteParams,
+                                         /*selfArg=*/selfArg,
+                                         /*forceCapturing=*/true);
+  FnOp promotedCallFunction = cast<FnOp>(promotedDecl->getIfOperation());
+  assert(concreteFieldDecls.size() == concreteFieldCaptures.size() &&
+         "expected one capture value per closure field");
+  assert(concreteFieldDecls.size() == captureConventions.size() &&
+         "expected one capture convention per closure field");
+
+  // Wire the captures in the promoted function body to the struct fields
+  // accessed via the self argument.
+  Block &callBody = promotedCallFunction.getBodyRegion().front();
+  Value selfArgValue = callBody.getArgument(0);
+  OpBuilder bodyBuilder = OpBuilder::atBlockBegin(&callBody);
+  Location promotedBodyLoc = DebugInfo::extractSourceLoc(location);
+  if (DebugInfo::DISubprogramAttr promotedScope =
+          promotedCallFunction.getSubprogramScope())
+    promotedBodyLoc = FusedLoc::get(ctx, promotedBodyLoc, promotedScope);
+
+  DenseMap<Value, Value> captureReplacements;
+  captureReplacements.reserve(concreteFieldCaptures.size());
+  DenseMap<TypedAttr, TypedAttr> originMap;
+  bool hadOriginConflict = false;
+  for (auto [index, captureAndConvention] :
+       llvm::enumerate(llvm::zip(concreteFieldCaptures, captureConventions))) {
+    auto [capture, convention] = captureAndConvention;
+    StringAttr fieldName = concreteFieldDecls[index].getName();
+    auto selfRefType = cast<RefType>(selfArgValue.getType());
+    Type fieldElementType = selfBoundFieldTypes[index];
+    Type resultRefType = RefStructGEROp::getReboundFieldType(
+        selfRefType, fieldName, fieldElementType);
+    Value extractedRef =
+        RefStructGEROp::create(bodyBuilder, promotedBodyLoc, resultRefType,
+                               fieldName, selfArgValue)
+            ->getResults()
+            .front();
+
+    Value replacement = extractedRef;
+    if (!isa<RefType>(capture.getType()) || isByReferenceCapture(convention))
+      replacement =
+          RefLoadOp::create(bodyBuilder, promotedBodyLoc, extractedRef);
+    captureReplacements[capture] = replacement;
+
+    TypedAttr oldOrigin = getRefLikeOrigin(capture.getType());
+    TypedAttr newOrigin = getRefLikeOrigin(replacement.getType());
+    if (oldOrigin && newOrigin && (newOrigin != oldOrigin)) {
+      auto [it, inserted] = originMap.try_emplace(oldOrigin, newOrigin);
+      if (!inserted && it->second != newOrigin)
+        hadOriginConflict = true;
+    }
+  }
+  if (hadOriginConflict)
+    llvm::report_fatal_error(
+        "conflicting capture origins while lifting closure into method");
+  mlir::AttrTypeReplacer originReplacer;
+  addOriginReplacements(originReplacer, originMap);
+  promotedCallFunction.getBodyRegion().walk([&](Operation *op) {
+    for (OpOperand &operand : op->getOpOperands()) {
+      auto it = captureReplacements.find(operand.get());
+      if (it == captureReplacements.end())
+        continue;
+      Value replacement = it->second;
+      Type expectedType = operand.get().getType();
+      if (expectedType != replacement.getType() &&
+          isEqualCanon(expectedType, replacement.getType())) {
+        OpBuilder rebindBuilder(op);
+        replacement = RebindOp::create(rebindBuilder, op->getLoc(),
+                                       expectedType, replacement);
+      }
+      operand.set(replacement);
+    }
+    if (!originMap.empty())
+      originReplacer.recursivelyReplaceElementsIn(op,
+                                                  /*replaceAttrs=*/true,
+                                                  /*replaceLocs=*/true,
+                                                  /*replaceTypes=*/true);
+  });
+
+  return promotedDecl;
+}
+
+ClosureEmitter::Closure ClosureEmitter::liftClosure(
     ASTDecl &moduleDecl, SMLoc smLoc,
     SmallVector<ClosureParent> &closureParents, SymbolRefAttr parentSymbolRef,
     llvm::MapVector<StringRef, Type> const &aliases,
     SmallVector<StructDefFieldAttr> &&concreteFieldDecls,
-    SmallVector<ParamDeclAttr> &&concreteStructParams,
+    SmallVector<Value> &&concreteFieldCaptures,
+    SmallVector<CaptureConvention> &&concreteFieldCaptureConventions,
+    SmallVector<ParamDeclAttr> &&concreteParams,
     SmallVector<TypedAttr> &&concreteStructBindings, StringAttr name,
-    bool isRegPassable) {
+    TypeConvention convention, ASTDecl &nestedFnDecl) {
   Location location = shared.translateLocation(smLoc);
   MLIRContext *ctx = shared.getContext();
   SmallPtrSet<StringAttr, 8> promotedOriginNames = collectPromotedOrigins(
-      ctx, concreteFieldDecls, concreteStructParams, concreteStructBindings);
+      ctx, concreteFieldDecls, concreteParams, concreteStructBindings);
 
   if (!promotedOriginNames.empty()) {
+    FnOp nestedFn = cast<FnOp>(nestedFnDecl.getIfOperation());
     mlir::AttrTypeReplacer promoteOriginRefs;
     promoteOriginRefs.addReplacement(
         [&](TypedAttr attr) -> std::optional<TypedAttr> {
@@ -1857,6 +2174,10 @@ TypedAttr ClosureEmitter::addWitnessTablesToClosure(
           return ParamDeclRefAttr::get(originRef.getName(),
                                        OriginType::get(ctx, false));
         });
+    promoteOriginRefs.recursivelyReplaceElementsIn(nestedFn,
+                                                   /*replaceAttrs=*/true,
+                                                   /*replaceLocs=*/true,
+                                                   /*replaceTypes=*/true);
     for (StructDefFieldAttr &fieldDecl : concreteFieldDecls) {
       auto promotedTypeValue =
           cast<TypedAttr>(promoteOriginRefs.replace(fieldDecl.getTypeValue()));
@@ -1864,23 +2185,68 @@ TypedAttr ClosureEmitter::addWitnessTablesToClosure(
           StructDefFieldAttr::get(fieldDecl.getName(), promotedTypeValue);
     }
   }
-
   SmallVector<TypedAttr> selfRefParamValues = llvm::map_to_vector(
-      concreteStructParams, [](ParamDeclAttr declAttr) -> TypedAttr {
+      concreteParams, [](ParamDeclAttr declAttr) -> TypedAttr {
         return ParamDeclRefAttr::get(declAttr);
       });
   SmallVector<StringAttr> paramNames = llvm::map_to_vector(
-      concreteStructParams,
+      concreteParams,
       [](ParamDeclAttr declAttr) -> StringAttr { return declAttr.getName(); });
   StructInstanceType structInstType = StructInstanceType::get(
       StringAttr::get(ctx, Twine(getFlattenedSymbolName(parentSymbolRef))
                                .concat("::")
                                .concat(name.getValue())),
       paramNames, selfRefParamValues, concreteFieldDecls,
-      BoolAttr::get(ctx, !isRegPassable));
+      BoolAttr::get(ctx, convention == TypeConvention::MemoryOnly));
+  KGEN::StructType kgenStructType = getMlirType(
+      ctx, structInstType, concreteParams, concreteStructBindings, convention);
+  SmallVector<Type> selfBoundFieldTypes = getConcreteStructFieldTypes(
+      structInstType, concreteParams, selfRefParamValues);
 
-  ParamDeclArrayAttr parameters =
-      ParamDeclArrayAttr::get(ctx, concreteStructParams);
+  // Create a StructType to serve as the self. The __call__ method will become a
+  // method on the struct this StructType references once the kgen.struct
+  // generator is folded into this struct
+  StringAttr structName =
+      StringAttr::get(ctx, Twine(getFlattenedSymbolName(parentSymbolRef))
+                               .concat("::")
+                               .concat(name.getValue())
+                               .concat("::__storage"));
+  auto [structDecl, structOp] =
+      createStruct(shared, moduleDecl, structName, concreteParams, smLoc);
+  structOp.setConvention(convention);
+  if (convention != TypeConvention::MemoryOnly) {
+    SmallVector<SymbolRefAttr> symbols;
+    llvm::append_range(symbols, structOp.getCanonicalTrait().getSymbols());
+    auto appendParent = [&](ClosureParent &parent) {
+      SymbolRefAttr symbol = parent.getSymbolRef(moduleDecl);
+      if (!llvm::is_contained(symbols, symbol))
+        symbols.push_back(symbol);
+    };
+    if (convention == TypeConvention::RegisterPassableTrivial)
+      appendParent(trivialRegisterTypeParent);
+    else if (convention == TypeConvention::RegisterPassable)
+      appendParent(registerPassableParent);
+    structOp.setCanonicalTrait(TraitType::get(ctx, symbols));
+  }
+  OpBuilder structBuilder(structOp.getRegion());
+  structBuilder.setInsertionPointToStart(&structOp.getFields().front());
+  for (auto [index, fieldDecl] : llvm::enumerate(concreteFieldDecls))
+    addFieldOpAndDecl(fieldDecl.getName(), selfBoundFieldTypes[index], structOp,
+                      structDecl, structBuilder, *shared.declResolver);
+  LIT::StructType closureStructType =
+      structOp.bindReference(selfRefParamValues);
+  assert(isa<FnOp>(nestedFnDecl.getIfOperation()) &&
+         "expected nested closure declaration to be a function");
+  PromotedClosureSelfArg selfArg{closureStructType, ArgConvention::ReadMem};
+  ASTDecl *promotedCallDecl = liftClosureIntoMethod(
+      nestedFnDecl, concreteParams, selfArg, concreteFieldDecls,
+      concreteFieldCaptures, concreteFieldCaptureConventions,
+      selfBoundFieldTypes, location);
+  FnOp promotedCallFunction = cast<FnOp>(promotedCallDecl->getIfOperation());
+
+  // Create the struct generator op. This will be moved into the struct in a
+  // follow up.
+  ParamDeclArrayAttr parameters = ParamDeclArrayAttr::get(ctx, concreteParams);
   ImplicitLocOpBuilder builder(location, ctx);
   builder.setInsertionPointToStart(
       &cast<FileModuleOp>(moduleDecl.getIfOperation()).getBodyRegion().front());
@@ -1893,8 +2259,8 @@ TypedAttr ClosureEmitter::addWitnessTablesToClosure(
   // when resolving conformance for closure types.
   SymbolRefAttr structGenSymbol = getFullyResolvedSymbolRef(
       cast<mlir::SymbolOpInterface>(structGen.getOperation()));
-  shared.declResolver->registerStructGeneratorDecl(structGen, structGenSymbol,
-                                                   smLoc, moduleDecl);
+  ASTDecl &structGenDecl = shared.declResolver->registerStructGeneratorDecl(
+      structGen, structGenSymbol, smLoc, moduleDecl);
 
   // Emit the conformance ops into the struct gen body by finding the closure
   // method and FnOp associated with the parent trait.
@@ -1917,7 +2283,7 @@ TypedAttr ClosureEmitter::addWitnessTablesToClosure(
     ClosureMethod method = closureParent.getClosureMethod();
     FnOp fnOp = closureParent.getDefiningOp(moduleDecl);
     FnTypeGeneratorType sig =
-        specializeSignature(fnOp, structInstType, *shared.declResolver);
+        specializeSignature(fnOp, closureStructType, *shared.declResolver);
     SmallVector<TypedAttr> paramValues;
     mlir::AttrTypeReplacer replacer;
     replacer.addReplacement([&](ParamDeclRefAttr parameterReference) {
@@ -1929,9 +2295,17 @@ TypedAttr ClosureEmitter::addWitnessTablesToClosure(
     for (Type paramType : sig.getInputParamTypes())
       paramValues.push_back(UnboundAttr::get(replacer.replace(paramType)));
 
-    TypedAttr symbol = ClosureSymbolAttr::get(
-        ctx, parentSymbolRef, name, ClosureMethodAttr::get(ctx, method),
-        paramValues, sig);
+    TypedAttr symbol;
+    if (method == ClosureMethod::CALL) {
+      SymbolConstantAttr callSymbol = buildSymbolWithBoundPrependedParams(
+          promotedCallFunction, concreteParams);
+      symbol = callSymbol;
+    }
+    if (!symbol) {
+      symbol = ClosureSymbolAttr::get(ctx, parentSymbolRef, name,
+                                      ClosureMethodAttr::get(ctx, method),
+                                      paramValues, sig);
+    }
     WitnessOp::create(builder, fnOp.getSymNameAttr(), symbol);
 
     // add the alias entries
@@ -1954,11 +2328,8 @@ TypedAttr ClosureEmitter::addWitnessTablesToClosure(
   auto typeValue = KGEN::TypeValueType::get(
       ctx, TypeGeneratorRefAttr::get(ctx, structGenSymbolRef,
                                      concreteStructBindings, traitType));
-  KGEN::StructType kgenStructType = getMlirType(
-      ctx, structInstType, concreteStructParams, concreteStructBindings);
-
   auto typeParamAttr = TypeParamAttr::get(typeValue, kgenStructType, traitType);
-  return typeParamAttr;
+  return Closure{&structDecl, &structGenDecl, promotedCallDecl, typeParamAttr};
 }
 
 static unsigned conventionRank(TypeConvention convention) {
@@ -2112,10 +2483,13 @@ Value ClosureEmitter::emitClosureOp(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
                                     bool isCopyable,
                                     FnTypeGeneratorType closureSig,
                                     ArrayRef<ParamDeclRefAttr> paramCaptures) {
+
   // (1) Create the closure instance.
   FnOp nestedFn = cast<FnOp>(nestedFnDecl.getIfOperation());
   FnOp parent = nestedFn->getParentOfType<FnOp>();
   assert(parent && "expected the function to be a nested function");
+  Block *closureInsertBlock = nestedFn->getBlock();
+  Operation *closureInsertBefore = nestedFn->getNextNode();
   ImplicitLocOpBuilder builder(location, shared.getContext());
   builder.setInsertionPoint(nestedFn);
   MLIRContext *ctx = builder.getContext();
@@ -2146,6 +2520,7 @@ Value ClosureEmitter::emitClosureOp(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
       ctx, ParamClosureType::get(ctx, parentSymbolRef, fnName));
   SmallVector<Attribute> captureInfo;
   SmallVector<Value> captureValues;
+  SmallVector<CaptureConvention> captureConventions;
   SmallVector<Attribute> captureTypes;
   SmallVector<Attribute> captureNames;
 
@@ -2169,6 +2544,7 @@ Value ClosureEmitter::emitClosureOp(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
   for (const Capture &capture : captures) {
     Value value = capture.getValue().getMlirValue();
     captureValues.push_back(value);
+    captureConventions.push_back(capture.getCaptureConvention());
 
     SyntheticNode synthNode(nestedFnDecl.getLoc());
     ExprDest dest(anyType, EC_Type);
@@ -2291,8 +2667,10 @@ Value ClosureEmitter::emitClosureOp(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
 
   ParamDeclAttr origin =
       ParamDeclAttr::get(originAttr, OriginType::get(ctx, true));
-  auto refType = RefType::get(closureType, ParamDeclRefAttr::get(origin));
   FnTypeGeneratorType original = nestedFn.getFuncTypeGenerator();
+  SmallVector<ParamDeclAttr> originalInputParams(nestedFn.getInputParams());
+  DebugInfo::DISubprogramAttr originalSubprogram =
+      nestedFn.getSubprogramScope();
   // TODO: Remove capturing when legacy closures are removed
   FnTypeGeneratorType closureBodySignature = FnTypeGeneratorType::get(
       original.getInputParamTypes(), original.getValues(),
@@ -2321,57 +2699,57 @@ Value ClosureEmitter::emitClosureOp(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
     structParamBindings.push_back(capturedParam);
   }
 
-  TypedAttr witnessTable = addWitnessTablesToClosure(
+  Closure liftedClosure = liftClosure(
       moduleDecl, nestedFnDecl.getLoc(), closureParents,
       SymbolRefAttr::get(
           ctx,
           getFlattenedSymbolName(getFullyResolvedSymbolRefUpTo<FileModuleOp>(
               cast<mlir::SymbolOpInterface>(parent.getOperation())))),
-      aliases, std::move(fieldDecls), std::move(allStructParams),
-      std::move(structParamBindings), closureType.getName(), isRegPassable);
+      aliases, std::move(fieldDecls), std::move(captureValues),
+      std::move(captureConventions), std::move(allStructParams),
+      std::move(structParamBindings), closureType.getName(),
+      highestCaptureConvention, nestedFnDecl);
+  TypedAttr witnessTable = liftedClosure.typeAttr;
 
-  // The nested function's DISubroutineType only reflects user-visible
-  // parameters. Add the  closure self argument.
-  DebugInfo::DISubprogramAttr originalSubprogram =
-      nestedFn.getSubprogramScope();
-  DebugInfo::DISubprogramAttr closureSubprogram = originalSubprogram;
-  if (closureSubprogram) {
-    auto subroutineType =
-        cast<DebugInfo::DISubroutineType>(closureSubprogram.getType());
-    SmallVector<DebugInfo::DIType> updatedArgTypes;
-    updatedArgTypes.push_back(
-        DebugInfo::DIUnresolvedMLIRType::get(closureType));
-    llvm::append_range(updatedArgTypes, subroutineType.getArgumentTypes());
-    auto newSubroutineType = DebugInfo::DISubroutineType::get(
-        ctx, subroutineType.getCallingConvention(), updatedArgTypes,
-        subroutineType.getResultTypes());
-    closureSubprogram = DebugInfo::DISubprogramAttr::get(
-        closureSubprogram.getCompileUnit(), closureSubprogram.getScope(),
-        closureSubprogram.getSourceName(), closureSubprogram.getLinkageName(),
-        closureSubprogram.getFile(), closureSubprogram.getLine(),
-        closureSubprogram.getScopeLine(),
-        closureSubprogram.getSubprogramFlags(),
-        cast<DebugInfo::DISubroutineType>(newSubroutineType));
-  }
+  // Promoting the nested closure function moves it to module scope.
+  // Emit closure materialization ops back in the original parent function body.
+  if (closureInsertBefore &&
+      closureInsertBefore->getBlock() == closureInsertBlock)
+    builder.setInsertionPoint(closureInsertBefore);
+  else
+    builder.setInsertionPointToEnd(closureInsertBlock);
 
-  auto closure = LIT::ClosureInitOp::create(
-      builder, opLoc, refType, closureBodySignature, nestedFn.getFunctionType(),
-      ValueRange(captureValues), ArrayAttr::get(ctx, captureInfo),
-      nestedFn.getInputParams(), nestedFn.getInlineLevel(), origin,
-      witnessTable, ArrayAttr::get(ctx, captureTypes),
-      ArrayAttr::get(ctx, captureNames));
+  // promoteClosure has already updated the FnOp's DISubprogram to include the
+  // prepended self argument. Use that updated subprogram directly for the
+  // ClosureInitOp's scope attribute.
+  DebugInfo::DISubprogramAttr closureSubprogram = nestedFn.getSubprogramScope();
+
   // TODO: remove closure type from op
   Type concreteStructType = witnessTable.getType();
-  if (auto typeParam = dyn_cast<TypeParamAttr>(witnessTable))
+  if (auto typeParam = dyn_cast<TypeParamAttr>(witnessTable)) {
     concreteStructType = typeParam.getMlirType();
+    if (highestCaptureConvention != TypeConvention::MemoryOnly &&
+        captures.size() == 1) {
+      if (auto structType = dyn_cast<KGEN::StructType>(concreteStructType)) {
+        auto elementTypes = structType.getElementTypes();
+        if (elementTypes && elementTypes->size() == 1)
+          concreteStructType = elementTypes->front();
+      }
+    }
+  }
 
-  // ClosureInitOp result type still wraps ClosureType so that
-  // OutlineClosuresNew can extract the ClosureType via getClosureType().  A
-  // RebindOp inserted after the init bridges callers that expect the explicit
-  // StructInstanceType.
   auto structRefType =
       RefType::get(concreteStructType, ParamDeclRefAttr::get(origin));
-  auto rebind = RebindOp::create(builder, structRefType, closure.getResult());
+  auto closure = LIT::ClosureInitOp::create(
+      builder, opLoc, structRefType, closureBodySignature,
+      ValueRange(captureValues), ArrayAttr::get(ctx, captureInfo),
+      originalInputParams, origin, witnessTable,
+      ArrayAttr::get(ctx, captureTypes), ArrayAttr::get(ctx, captureNames));
+  // Preserve closure identity metadata even when the result type is no longer
+  // a closure type. Downstream closure outlining uses this to resolve the
+  // associated struct generator and closure memory kind.
+  closure->setAttr("closureType", TypeAttr::get(closureType));
+  builder.setInsertionPointAfter(closure);
 
   // Transfer optional attributes from the nested function to the closure
   // op.
@@ -2392,10 +2770,9 @@ Value ClosureEmitter::emitClosureOp(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
     closure.setHoistedCapturesAttr(
         ParamDeclArrayAttr::get(ctx, hoistedDecls.getArrayRef()));
 
-  closure.getBodyRegion().takeBody(nestedFn.getBodyRegion());
-
   // The body ops still reference the original subprogram in their locations.
-  // Update them to reference the new subprogram with the closure self arg.
+  // Update them to reference the new subprogram that includes the closure self
+  // arg.
   if (closureSubprogram && closureSubprogram != originalSubprogram) {
     mlir::AttrTypeReplacer replacer;
     replacer.addReplacement(
@@ -2418,14 +2795,18 @@ Value ClosureEmitter::emitClosureOp(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
   // constructor. The wrapper struct only has impl and origin_set parameters;
   // alias values are derived via GetWitnessAttr lookups on impl.
   auto originSet = OriginSetAttr::get(ctx, ArrayRef<TypedAttr>{});
-  SmallVector<TypedAttr> paramArgs({witnessTable, originSet});
+  TypedAttr implBinding = witnessTable;
+  if (auto typeParam = dyn_cast<TypeParamAttr>(witnessTable))
+    implBinding = TypeParamAttr::get(typeParam.getTypeValue(),
+                                     concreteStructType, typeParam.getType());
+  SmallVector<TypedAttr> paramArgs({implBinding, originSet});
 
   LIT::StructType closureWrapperType = wrapper.bindReference(paramArgs);
   VarDeclOp var = VarDeclOp::create(
       builder, location, closureWrapperType, fnName.getValue(),
       nestedFnDecl.getParentDecl()->mangleParamName(fnName.getValue()),
       VarDeclKind::Var);
-  SmallVector<Value> operands({rebind.getResult(), var});
+  SmallVector<Value> operands({closure.getResult(), var});
   SmallVector<TypedAttr> implicitOrigins(
       {ParamDeclRefAttr::get(origin), var.getType().getOrigin()});
   FnOp init = getInit(wrapper);
@@ -3291,8 +3672,12 @@ void ClosureEmitter::addConformanceToDevicePassable(
                 ->getResults()
                 .front();
 
-        // Forward to `encoder.encode_fields(closureMemberRef, target)` which
-        // walks the fields and invokes `DevicePassable._to_device_type()`.
+        // Forward to `encoder.encode_closure_state(closureMemberRef, target)`,
+        // which invokes `DevicePassable._to_device_type()` for each capture.
+        // It encodes a single capture directly rather than reflecting it with
+        // `field_ref`: a one-field closure-state struct flattens to its sole
+        // field, so the reflected access would lower to an invalid identity
+        // GEP into the flattened struct.
         IREmitter emitter(structDecl, b);
         SyntheticNode syntheticNode(structDecl.getLoc());
         ExprDest dest(EC_ReturnValue);
@@ -3303,7 +3688,7 @@ void ClosureEmitter::addConformanceToDevicePassable(
             {CValue::getMValueForRef(closureMemberRef), &syntheticNode});
         callOperands.add({SRValue(targetArgument), &syntheticNode});
         CValue callResult = emitter.emitNamedMethodCall(
-            "encode_fields", std::move(callOperands));
+            "encode_closure_state", std::move(callOperands));
         if (!callResult)
           return;
         auto noneAttr = KGEN::ParamConstantOp::create(

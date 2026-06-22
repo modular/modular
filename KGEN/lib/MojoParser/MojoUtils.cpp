@@ -12,6 +12,7 @@
 
 #include "IREmitter.h"
 #include "KGEN/KGENDialect/KGENOps.h"
+#include "KGEN/KGENDialect/ParameterReplacer.h"
 #include "KGEN/LITDialect/LITAttrs.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LITDialect/LITTypes.h"
@@ -143,3 +144,66 @@ void LIT::markRegionUnreachable(Region *deadRegion, Location unreachableLoc) {
 //===----------------------------------------------------------------------===//
 
 bool LIT::isInternalName(StringRef name) { return name.starts_with('_'); }
+
+namespace {
+class IndexRefToNamedRefReplacer
+    : public IndexParameterReplacer<IndexRefToNamedRefReplacer> {
+public:
+  IndexRefToNamedRefReplacer(ArrayRef<ParamDeclAttr> explicitParamDecls,
+                             ArrayRef<ParamDeclAttr> implicitOriginDecls)
+      : explicitParamDecls(explicitParamDecls),
+        implicitOriginDecls(implicitOriginDecls) {}
+
+  Attribute tryReplace(Attribute attr, size_t depth) {
+    if (auto indexRef = dyn_cast<ParamIndexRefAttr>(attr)) {
+      if (indexRef.getDepth() == depth &&
+          indexRef.getIndex() < explicitParamDecls.size())
+        return ParamDeclRefAttr::get(explicitParamDecls[indexRef.getIndex()]);
+      return {};
+    }
+    if (auto originRef = dyn_cast<ImplicitOriginRefAttr>(attr)) {
+      if (originRef.getDepth() == depth &&
+          originRef.getIndex() < implicitOriginDecls.size())
+        return ParamDeclRefAttr::get(
+            implicitOriginDecls[originRef.getIndex()].getName(),
+            originRef.getType());
+    }
+    return {};
+  }
+
+  Type tryReplace(Type, size_t) { return {}; }
+
+private:
+  ArrayRef<ParamDeclAttr> explicitParamDecls;
+  ArrayRef<ParamDeclAttr> implicitOriginDecls;
+};
+} // namespace
+
+Type LIT::replaceIndexRefsWithNamedRefs(
+    Type type, ArrayRef<ParamDeclAttr> explicitParamDecls,
+    ArrayRef<ParamDeclAttr> implicitOriginDecls) {
+  if (explicitParamDecls.empty() && implicitOriginDecls.empty())
+    return type;
+  IndexRefToNamedRefReplacer replacer(explicitParamDecls, implicitOriginDecls);
+  return replacer.replace(type);
+}
+
+Type LIT::replaceIndexRefsWithNamedRefs(
+    Type type, ArrayRef<ParamDeclAttr> explicitParamDecls) {
+  return replaceIndexRefsWithNamedRefs(type, explicitParamDecls, {});
+}
+
+FunctionType LIT::replaceIndexRefsWithNamedRefs(
+    FunctionType functionType, ArrayRef<ParamDeclAttr> explicitParamDecls,
+    ArrayRef<ParamDeclAttr> implicitOriginDecls) {
+  if (explicitParamDecls.empty() && implicitOriginDecls.empty())
+    return functionType;
+  IndexRefToNamedRefReplacer replacer(explicitParamDecls, implicitOriginDecls);
+  return replacer.replace(functionType);
+}
+
+FunctionType
+LIT::replaceIndexRefsWithNamedRefs(FunctionType functionType,
+                                   ArrayRef<ParamDeclAttr> explicitParamDecls) {
+  return replaceIndexRefsWithNamedRefs(functionType, explicitParamDecls, {});
+}

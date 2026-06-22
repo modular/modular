@@ -680,15 +680,10 @@ lit.trait.decl @Closure<?, SELF: !Closure> {
 
 // CHECK-label: kgen.generator @make_closure
 lit.fn @make_closure[imm Y, imm Z](%y: !lit.ref<!String, imm Y> owned_in_mem, %x:index, %z: !lit.ref<!String, imm Z> owned_in_mem) -> !kgen.none {
-  // CHECK:     kgen.closure.init(%arg0, %arg1, %arg2[@"String::__copyinit__", @"String::__moveinit__", @"String::__del__"])(%arg3: index) -> index {
-  // CHECK-NEXT:    kgen.return %arg1 : index
-  // CHECK-NEXT: } : (!kgen.pointer<struct<() memoryOnly>>, index, !kgen.pointer<struct<() memoryOnly>>)
-  // CHECK-SAME: , !kgen.pointer<!kgen.closure<@make_closure, "foo" nonescaping>>
+  // CHECK:     kgen.closure.init(%arg0, %arg1, %arg2[@"String::__copyinit__", @"String::__moveinit__", @"String::__del__"])(index) -> index : (!kgen.pointer<struct<() memoryOnly>>, index, !kgen.pointer<struct<() memoryOnly>>), !kgen.pointer<!kgen.closure<@make_closure, "foo" nonescaping>>
   %impl = lit.closure.init[#Impl1](%y[ref: imm Y], %x, %z[@String::@__copyinit__ !lit.generator<[2]("existing": !lit.ref<!String, imm *[0,1]> read_mem, "self": !lit.ref<!String, mut *[0,0]> byref_result) -> !kgen.none>,
                                                   @String::@__moveinit__ !lit.generator<[2]("existing": !lit.ref<!String, imm *[0,1]> read_mem, "self": !lit.ref<!String, mut *[0,0]> byref_result) -> !kgen.none>,
-                                                  @String::@__del__ !lit.generator<[1]("self": !lit.ref<!String, mut *[0,0]> owned_in_mem) -> !kgen.none>])(%y2: index) -> index {
-   kgen.return %x : index
-  } : (!lit.ref<!String, imm Y>, index, !lit.ref<!String, imm Z>), !lit.ref<!kgen.closure<@make_closure, "foo" nonescaping>, mut C>
+                                                  @String::@__del__ !lit.generator<[1]("self": !lit.ref<!String, mut *[0,0]> owned_in_mem) -> !kgen.none>])(%y2: index) -> index : (!lit.ref<!String, imm Y>, index, !lit.ref<!String, imm Z>), !lit.ref<!kgen.closure<@make_closure, "foo" nonescaping>, mut C>
   %2 = lit.call @direct[mut C]<:!Closure #Impl1>(%impl, %x) : !lit.generator<[1]("c":!lit.ref<:!Closure #Impl1, mut *[0,0]> read_mem, "x": index) -> !kgen.none>
 
    %none = kgen.param.constant: none = <#kgen.none>
@@ -820,11 +815,8 @@ lit.trait.decl @Walks<?, SELF: !Walks>(!Walks) {}
 
 // CHECK-LABEL: kgen.generator @aThing
 lit.fn @aThing() -> !kgen.none {
-  // CHECK: kgen.closure.init()<T: type>(%arg0: !kgen.pointer<T> read_mem) -> !kgen.none
-  %0 = lit.closure.init[#type_value]()<T: !Walks>[imm O1](%arg0[a]: !lit.ref<:!Walks T, imm O1> read_mem) -> !kgen.none {
-    %none_0 = kgen.param.constant: none = <#kgen.none>
-    kgen.return %none_0 : !kgen.none
-  } : (), !lit.ref<!kgen.closure<@aThing, "aClosure" nonescaping>, mut *"aClosure`1">
+  // CHECK: kgen.closure.init()<T: type>(!kgen.pointer<*(0,0)> read_mem) -> !kgen.none
+  %0 = lit.closure.init[#type_value]()<T: !Walks>[imm O1](%arg0[a]: !lit.ref<:!Walks T, imm O1> read_mem) -> !kgen.none : (), !lit.ref<!kgen.closure<@aThing, "aClosure" nonescaping>, mut *"aClosure`1">
   %none_1 = kgen.param.constant: none = <#kgen.none>
   kgen.return %none_1 : !kgen.none
 }
@@ -839,9 +831,7 @@ lit.fn @aThing() -> !kgen.none {
 lit.fn @metadata_closure(%x: index) -> !kgen.none {
   // CHECK: LLVMArgMetadataArray = {{\[}}["nvvm.grid_constant", unit]]
   // CHECK-SAME: LLVMMetadataArray = ["nvvm.maxntid", #pop.array<256> : !pop.array<1, i32>]
-  %0 = lit.closure.init[#type_value](%x)() -> index {
-    kgen.return %x : index
-  } : (index), !lit.ref<!kgen.closure<@metadata_closure, "fn" nonescaping>, mut *"fn`1"> {LLVMMetadataArray = ["nvvm.maxntid", #pop.array<256> : !pop.array<1, i32>], LLVMArgMetadataArray = [["nvvm.grid_constant", unit]]}
+  %0 = lit.closure.init[#type_value](%x)() -> index : (index), !lit.ref<!kgen.closure<@metadata_closure, "fn" nonescaping>, mut *"fn`1"> {LLVMMetadataArray = ["nvvm.maxntid", #pop.array<256> : !pop.array<1, i32>], LLVMArgMetadataArray = [["nvvm.grid_constant", unit]]}
   %none = kgen.param.constant: none = <#kgen.none>
   kgen.return %none : !kgen.none
 }
@@ -866,9 +856,7 @@ kgen.struct.generator @"demo::fn"<o1: origin<false>, o2: origin<false>> =
 }
 
 lit.fn @demo<o1: origin<false>, o2: origin<false>>(%arg0: index) -> !kgen.none {
-  %0 = lit.closure.init[#type_value](%arg0)() -> index {
-    kgen.return %arg0 : index
-  } : (index), !lit.ref<!kgen.closure<@demo, "fn" nonescaping>, mut *"fn`1"> {captureNames = ["cap"], captureTypes = [#capture_type]}
+  %0 = lit.closure.init[#type_value](%arg0)() -> index : (index), !lit.ref<!kgen.closure<@demo, "fn" nonescaping>, mut *"fn`1"> {captureNames = ["cap"], captureTypes = [#capture_type]}
   %none = kgen.param.constant: none = <#kgen.none>
   kgen.return %none : !kgen.none
 }

@@ -119,9 +119,10 @@ ASTDecl &DeclResolver::addFullyResolvedDecl(DeclIRValue declVal, StringRef name,
                               parentDecl);
 }
 
-void DeclResolver::registerStructGeneratorDecl(StructGeneratorOp structGen,
-                                               SymbolRefAttr symbol, SMLoc loc,
-                                               ASTDecl &parentDecl) {
+ASTDecl &DeclResolver::registerStructGeneratorDecl(StructGeneratorOp structGen,
+                                                   SymbolRefAttr symbol,
+                                                   SMLoc loc,
+                                                   ASTDecl &parentDecl) {
   // Create an unlisted decl for the struct generator. It's unlisted because
   // we don't want it in the parent's name table (it's not a normal named decl),
   // but we do want it in declForTypeSymbol for lookup.
@@ -129,6 +130,7 @@ void DeclResolver::registerStructGeneratorDecl(StructGeneratorOp structGen,
                                      LexerCursor(), LexerCursor(), -1);
   decl.resolvedness = DeclResolvedness::body;
   declForTypeSymbol[symbol] = &decl;
+  return decl;
 }
 
 ASTDecl &DeclResolver::addErroneousDecl(StringRef baseName, llvm::SMLoc loc,

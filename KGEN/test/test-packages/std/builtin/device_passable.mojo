@@ -35,6 +35,11 @@ trait DeviceTypeEncoder:
     ](mut self, value: T, target: MutOpaquePointer[_]):
         ...
 
+    def encode_closure_state[
+        T: AnyType,
+    ](mut self, value: T, target: MutOpaquePointer[_]):
+        ...
+
 
 trait DevicePassable:
     comptime device_type: AnyType

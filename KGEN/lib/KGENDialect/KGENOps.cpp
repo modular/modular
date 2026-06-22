@@ -1776,10 +1776,9 @@ assembleMemSymbolTripleAttr(MemSymbolTripleParts symbolTriple,
 }
 
 static ParseResult parseClosureInitValue(
-    OpAsmParser &p, TypeAttr &funcTypeGenerator, TypeAttr &functionType,
+    OpAsmParser &p, TypeAttr &funcTypeGenerator,
     SmallVectorImpl<OpAsmParser::UnresolvedOperand> &captures,
     ArrayAttr &moveOrCopyCaptureSymbols, ParamDeclArrayAttr &inputParams,
-    InlineLevelAttr &inlineLevel, Region &body,
     SmallVectorImpl<Type> &capturesTypes, Type &resultType, Attribute &scope) {
   if (p.parseLParen())
     return failure();
@@ -1807,10 +1806,17 @@ static ParseResult parseClosureInitValue(
       return failure();
   }
 
-  // Parse the function signature and the body.
-  if (parseRegionOnly(p, inputParams, functionType, funcTypeGenerator,
-                      inlineLevel, body))
+  // Parse the closure call signature.
+  SmallVector<OpAsmParser::Argument> args;
+  FunctionType functionTypeValue;
+  FuncTypeGeneratorType sigGenType;
+  ParamDeclArrayAttr resultParams;
+  if (parseFunctionFuncTypeGenerator(p, args, inputParams, resultParams,
+                                     functionTypeValue, sigGenType))
     return failure();
+  if (!resultParams.empty())
+    return p.emitError(p.getCurrentLocation(), "invalid result parameters");
+  funcTypeGenerator = TypeAttr::get(sigGenType);
   if (p.parseColon() || p.parseLParen())
     return failure();
   if (p.parseOptionalRParen()) {
@@ -1862,10 +1868,9 @@ static void printMemSymbolTriple(OpAsmPrinter &p, MemSymbolTripleAttr triple) {
 // Print function for ClosureInitValue custom format
 static void printClosureInitValue(OpAsmPrinter &p, Operation *op,
                                   TypeAttr funcTypeGenerator,
-                                  TypeAttr functionType, ValueRange captures,
+                                  ValueRange captures,
                                   ArrayAttr moveOrCopyCaptureSymbols,
                                   ParamDeclArrayAttr inputParams,
-                                  InlineLevelAttr inlineLevel, Region &body,
                                   TypeRange capturesTypes, Type resultType,
                                   Attribute scope) {
   p << "(";
@@ -1879,8 +1884,9 @@ static void printClosureInitValue(OpAsmPrinter &p, Operation *op,
       p << ", ";
   }
   p << ")";
-  printRegionOnly(p, op, inputParams, functionType, funcTypeGenerator,
-                  inlineLevel, body);
+  auto funcSig = cast<FuncTypeGeneratorType>(funcTypeGenerator.getValue());
+  printFunctionFuncTypeGenerator(p, /*region=*/nullptr, inputParams, {},
+                                 funcSig.getBody().getValues(), funcSig);
   p << " : ";
   p << '(';
   llvm::interleaveComma(capturesTypes, p,
@@ -1908,41 +1914,7 @@ LogicalResult ClosureInitOp::verify() {
                        mlir::debugString(getCaptureNames()) +
                        ", types: " + mlir::debugString(getCaptureTypes()));
   }
-
-  // If type is pointer it must be a pointer to a closure type and it cannot
-  // be register passable.
-  if (auto ptr = dyn_cast<PointerType>(getResult().getType())) {
-    if (auto closureType = dyn_cast<ClosureType>((ptr.getElementType()))) {
-      if (closureType.getClosureMemoryKind() == ClosureMemoryKind::TRIVIAL)
-        return emitOpError("expected escaping/nonescaping closure type if "
-                           "type is a pointer");
-      else
-        return success();
-    }
-    return emitOpError("expected closure type");
-  }
-
-  // if register passable, it must be a closure type.
-  if (auto closureType = dyn_cast<ClosureType>(getResult().getType())) {
-    if (closureType.getClosureMemoryKind() != ClosureMemoryKind::TRIVIAL)
-      return emitOpError(
-          "expected register passable closure type if type is not a pointer");
-    else
-      return success();
-  }
-
-  return emitOpError("expected closure type");
-}
-
-/// The subprogram scope should represent the call lifted function.
-DebugInfo::DISubprogramAttr ClosureInitOp::getSubprogramScope() {
-  std::optional<Attribute> nestedScope = getNestedFnScope();
-  if (!nestedScope.has_value())
-    return {};
-  if (auto subprogramScope =
-          dyn_cast<DebugInfo::DISubprogramAttr>(*nestedScope))
-    return subprogramScope;
-  return {};
+  return success();
 }
 
 /// If 'value' is defined by one or more rebinds, look through them.

@@ -1922,6 +1922,8 @@ SharedState::resolveDeclFromBytecode(ASTDecl &decl,
 
   // Process the parsed region bodies, generating any necessary nested decls.
   SmallVector<Operation *> deferredOps;
+  llvm::SmallSetVector<SymbolConstantAttr, 8>
+      materializedStructGeneratorSymbols;
   for (Region &region : declOp->getRegions()) {
     for (Operation &op : region.getOps()) {
       TypeSwitch<Operation *>(&op)
@@ -1939,11 +1941,14 @@ SharedState::resolveDeclFromBytecode(ASTDecl &decl,
             structDecl.setTypeDeclSelf(ASTDecl::computeSelfTypeForStruct(op));
             for (ParamDeclAttr param : op.getParams()) {
               // Add the parameters as accessible member decls. Make sure
-              // to demangle the parameter name.
+              // to only demangle user-visible names. Synthetic closure structs
+              // use internal parameter names that should remain hidden.
+              StringRef paramName =
+                  op.isSynthetic() ? param.getName()
+                                   : demangleParameterName(param.getName());
               declResolver->addFullyResolvedDecl(
-                  PValue(ParamDeclRefAttr::get(param)),
-                  demangleParameterName(param.getName()), structDecl.getLoc(),
-                  &structDecl);
+                  PValue(ParamDeclRefAttr::get(param)), paramName,
+                  structDecl.getLoc(), &structDecl);
             }
           })
           .Case([&](StructGeneratorOp op) {
@@ -1954,6 +1959,23 @@ SharedState::resolveDeclFromBytecode(ASTDecl &decl,
                   op, [](Operation *) { return true; });
               assert(succeeded(result));
             }
+            SymbolRefAttr structGenSymbol = getFullyResolvedSymbolRef(
+                cast<mlir::SymbolOpInterface>(op.getOperation()));
+            declResolver->registerStructGeneratorDecl(
+                op, structGenSymbol, diags.convertLocToSMLoc(op.getLoc()),
+                decl);
+            // TODO: remove once kgen.struct.generator is no longer emitted
+            // into bytecode as a separate top-level op.
+            mlir::AttrTypeReplacer symCollector;
+            symCollector.addReplacement(
+                [&](SymbolConstantAttr constant) -> SymbolConstantAttr {
+                  materializedStructGeneratorSymbols.insert(constant);
+                  return constant;
+                });
+            symCollector.recursivelyReplaceElementsIn(op,
+                                                      /*replaceAttrs=*/true,
+                                                      /*replaceLocs=*/false,
+                                                      /*replaceTypes=*/true);
           })
           .Case([&](TraitDeclOp op) {
             ASTDecl &traitDecl = addDeclForOp(op, op.getSymNameAttr());
@@ -2009,7 +2031,43 @@ SharedState::resolveDeclFromBytecode(ASTDecl &decl,
           .Default([&](Operation *op) { deferredOps.push_back(op); });
     }
   }
+  DenseMap<Operation *, ASTDecl *> opToDecl;
+  if (!materializedStructGeneratorSymbols.empty())
+    for (ASTDecl *d : declResolver->parsedDeclList)
+      if (Operation *o = d->getIfOperation())
+        opToDecl[o] = d;
 
+  for (SymbolConstantAttr symbolConstant : materializedStructGeneratorSymbols) {
+    SymbolRefAttr symbolRef = symbolConstant.getSymbol();
+    if (declResolver->getDeclForFuncSymbol(symbolRef) ||
+        declResolver->getDeclForTypeSymbolIfExists(symbolRef))
+      continue;
+
+    Operation *symbolOp = mlir::SymbolTable::lookupSymbolIn(declOp, symbolRef);
+    if (!symbolOp) {
+      if (Operation *topLevelOp = getTopLevelDecl().getIfOperation())
+        symbolOp = mlir::SymbolTable::lookupSymbolIn(topLevelOp, symbolRef);
+    }
+    if (!symbolOp)
+      continue;
+
+    if (bytecodeReader->isMaterializable(symbolOp) &&
+        failed(bytecodeReader->materialize(symbolOp)))
+      return failure();
+
+    ASTDecl *existingDecl = opToDecl.lookup(symbolOp);
+    TypeSwitch<Operation *>(symbolOp)
+        .Case([&](FnOp fnOp) {
+          ASTDecl &fnDecl = existingDecl ? *existingDecl
+                                         : declResolver->addBytecodeDecl(
+                                               fnOp, fnOp.getDeclName(), &decl,
+                                               DeclResolvedness::signature);
+          fnDecl.resolvedness =
+              std::max(fnDecl.resolvedness, DeclResolvedness::signature);
+          declResolver->declForFuncSymbol[symbolRef] = &fnDecl;
+        })
+        .Default([](Operation *) {});
+  }
   // Resolve references within the deferred operations. These don't have
   // corresponding decls, so we manually resolve them now. Walk in pre-order so
   // that nested ops get visited too.
