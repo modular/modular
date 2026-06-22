@@ -2453,9 +2453,14 @@ def matmul_gpu_nvfp4[
     folded with the per-tensor global scale.
 
     NVFP4 uses group_size 16 < BK, so BK is pinned to 32 (BK=16 is invalid:
-    num_k_mmas == 1 breaks the mainloop prefetch). The config below is the one
-    validated bit-exact at ~167 TFLOP/s on L40S; per-shape autotuning is a
-    follow-up (it is the upstream lever for the last ~40% vs vLLM).
+    num_k_mmas == 1 breaks the mainloop prefetch). Configs are bucketed by M
+    (the activation rows), autotuned on L40S at gemma4 shapes: small M (batched
+    decode) is starved by the large-M tile, so it uses tiny block tiles + deep
+    split-K (num_warp_k_partitions) to spread the work across SMs -- the same
+    lever the bespoke int4 path uses. Split-K is numerically correct for NVFP4
+    (the scale staging is independent of the K partition). Measured per-M peaks:
+    M<=64 ~100-110, M<=128 ~140-156, M<=256 ~158-170, M>256 ~162-168 TFLOP/s
+    (vs ~25 TFLOP/s at M=64 for the large-M tile -- a ~4x small-M gain).
     """
     var c = c_tt.to_layout_tensor()
     var a = a_tt.to_layout_tensor()
@@ -2467,22 +2472,58 @@ def matmul_gpu_nvfp4[
     var cuda_ctx = ctx.value()
 
     comptime pack_factor = 8
+    var m = GemmShape.get[transpose_b=True](c, a, b).M
 
-    comptime config = MatmulConfig[a_type, DType.uint8, c_type, True](
-        block_tile_shape=Index(128, 128, 32),
-        warp_tile_shape=Index(64, 64, 32),
-        num_pipeline_stages=4,
-        num_k_partitions=1,
-        num_warp_k_partitions=1,
-    )
+    @parameter
+    @always_inline
+    def _run[cfg: MatmulConfig[a_type, DType.uint8, c_type, True]]() raises:
+        multistage_gemm_q[
+            group_size=group_size,
+            pack_factor=pack_factor,
+            config=cfg,
+            elementwise_lambda_fn=elementwise_lambda_fn,
+            is_nvfp4=True,
+        ](c, a, b, cfg, cuda_ctx)
 
-    multistage_gemm_q[
-        group_size=group_size,
-        pack_factor=pack_factor,
-        config=config,
-        elementwise_lambda_fn=elementwise_lambda_fn,
-        is_nvfp4=True,
-    ](c, a, b, config, cuda_ctx)
+    if m <= 64:
+        return _run[
+            MatmulConfig[a_type, DType.uint8, c_type, True](
+                block_tile_shape=Index(32, 64, 32),
+                warp_tile_shape=Index(32, 64, 32),
+                num_pipeline_stages=3,
+                num_k_partitions=1,
+                num_warp_k_partitions=4,
+            )
+        ]()
+    if m <= 128:
+        return _run[
+            MatmulConfig[a_type, DType.uint8, c_type, True](
+                block_tile_shape=Index(64, 64, 32),
+                warp_tile_shape=Index(64, 64, 32),
+                num_pipeline_stages=4,
+                num_k_partitions=1,
+                num_warp_k_partitions=4,
+            )
+        ]()
+    if m <= 256:
+        return _run[
+            MatmulConfig[a_type, DType.uint8, c_type, True](
+                block_tile_shape=Index(64, 128, 32),
+                warp_tile_shape=Index(64, 64, 32),
+                num_pipeline_stages=4,
+                num_k_partitions=1,
+                num_warp_k_partitions=2,
+            )
+        ]()
+    return _run[
+        MatmulConfig[a_type, DType.uint8, c_type, True](
+            block_tile_shape=Index(128, 128, 32),
+            warp_tile_shape=Index(64, 64, 32),
+            num_pipeline_stages=4,
+            num_k_partitions=1,
+            num_warp_k_partitions=1,
+        )
+    ]()
 
 
 def gpu_nvfp4_repack[
