@@ -336,7 +336,14 @@ def fastapi_app(
 
     async def reset_prefix_cache() -> Response:
         """Reset the prefix cache."""
-        if not serving_settings.pipeline_config.model.kv_cache.enable_prefix_caching:
+        try:
+            model_config = serving_settings.pipeline_config.model
+        except ValueError:
+            return Response(
+                status_code=400,
+                content="No main model configured (diffusion pipeline). Ignoring request",
+            )
+        if not model_config.kv_cache.enable_prefix_caching:
             return Response(
                 status_code=400,
                 content="Prefix caching is not enabled. Ignoring request",
