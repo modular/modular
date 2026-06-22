@@ -900,7 +900,10 @@ modular_cc_library(
 modular_cc_library(
     name = "Compiler",
     srcs = glob(["lib/Compiler/*.cpp"]),
-    hdrs = glob(["include/KGEN/Compiler/*.h"]),
+    hdrs = glob([
+        "include/KGEN/Compiler/*.h",
+        "include/KGEN/Compiler/Target/*.h",
+    ]),
     deps = [
         ":ExecutionEngine.headers",
         ":JIT",
@@ -1154,6 +1157,7 @@ modular_cc_library(
         "lib/Compiler/ObjectCompiler/LLVM/Transforms/*.cpp",
         "lib/Compiler/ObjectCompiler/*.cpp",
         "lib/Compiler/ObjectCompiler/*.h",
+        "lib/Compiler/ObjectCompiler/Target/**/*.cpp",
     ]),
     data = [
         "@llvm-project//lld:lld",
@@ -1168,6 +1172,10 @@ modular_cc_library(
         "//Support:Context",
         "@llvm-project//mlir:BytecodeWriter",
     ],
+    # TargetBackend implementations self-register via a
+    # static initializer and aren't referenced directly, so the linker would
+    # drop them. Force them to be linked.
+    alwayslink = True,
 )
 
 modular_cc_library(

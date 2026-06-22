@@ -11,8 +11,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef KGEN_COMPILER_TARGETBACKEND_H
-#define KGEN_COMPILER_TARGETBACKEND_H
+#ifndef KGEN_COMPILER_TARGET_TARGETBACKEND_H
+#define KGEN_COMPILER_TARGET_TARGETBACKEND_H
 
 #include "KGEN/ToolCommon/CompilationOptions.h"
 #include "Support/Buffer.h"
@@ -30,6 +30,8 @@ class Function;
 class Module;
 class TargetMachine;
 class Triple;
+template <class C>
+struct object_creator;
 } // namespace llvm
 
 namespace M::KGEN {
@@ -104,6 +106,7 @@ public:
                 llvm::StringRef moduleName, EmitContext &ctx) const = 0;
 
   virtual llvm::StringRef getAsmExtension() const = 0;
+  virtual llvm::StringRef getLLVMExtension() const = 0;
   virtual llvm::StringRef getObjectExtension() const = 0;
 };
 
@@ -122,6 +125,8 @@ public:
 
 private:
   TargetBackendRegistry() = default;
+  friend struct llvm::object_creator<TargetBackendRegistry>;
+
   std::vector<std::unique_ptr<TargetBackend>> Backends;
 };
 
@@ -136,4 +141,4 @@ struct RegisterTargetBackend {
 
 } // namespace M::KGEN
 
-#endif // KGEN_COMPILER_TARGETBACKEND_H
+#endif // KGEN_COMPILER_TARGET_TARGETBACKEND_H
