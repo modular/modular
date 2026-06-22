@@ -116,12 +116,19 @@ def smem_descriptor[
     BK: Int,
     swizzle_mode: TensorMapSwizzle,
     is_k_major: Bool,
+    page_dense: Bool = False,
 ](
     ptr: UnsafePointer[Scalar[dtype], address_space=AddressSpace.SHARED, ...]
 ) -> MMASmemDescriptorPair:
+    # `page_dense` selects the native chunk-inner (row-major atoms) layout
+    # (SM100 row-major page-fold path) for the corresponding operand frame:
+    # k-major (`is_k_major=True`, K / Q@K') and mn-major (`is_k_major=False`,
+    # V / P@V) each have their own page-dense branch in their `tile_layout_*`.
     comptime smem_layout = tile_layout_k_major[
-        dtype, BMN, BK, swizzle_mode
-    ]() if is_k_major else tile_layout_mn_major[dtype, BMN, BK, swizzle_mode]()
+        dtype, BMN, BK, swizzle_mode, page_dense=page_dense
+    ]() if is_k_major else tile_layout_mn_major[
+        dtype, BMN, BK, swizzle_mode, page_dense=page_dense
+    ]()
     comptime canonical_layout = tile_to_descriptor[
         dtype, smem_layout, is_k_major=is_k_major
     ]()

@@ -41,7 +41,7 @@ from nn.attention.mha_utils import (
     OptionallyStaticInt,
     _is_decoding,
 )
-from .attention_utils import kv_sub_tile_rows
+from .attention_utils import kv_sub_tile_rows, kv_tma_fold_chunks
 from .kernel import SM100MHA2Q
 
 comptime logger = Logger()
@@ -141,17 +141,71 @@ def mha_sm100_dispatch[
             fuse_gqa=fuse_gqa,
             num_qk_stages=fa4_config.num_qk_stages,
         ](ctx, q, num_rows_q)
+        # Depth-chunk TMA fold (SM100): fold the BK0 (K) / v_cols_per_cta (V)
+        # depth chunks into one rank-4 TMA when byte-equivalent. Each
+        # `kv_tma_fold_chunks` is the single source of truth shared with the
+        # `tma_copy_k` / `tma_copy_v` issue sites in `load_warp.mojo`; the builder
+        # and issue site must pass identical args so the baked descriptor rank and
+        # issue-coord rank agree.
+        #   K: smem_BN == k_rows_per_cta (K's per-CTA tile_rows); box_rows ==
+        #      kv_sub_tile_rows(k_rows_per_cta, page_size).
+        #   V: smem_BN == BN (V's tile_rows, num_v_sub_tiles == 1); box_rows ==
+        #      kv_sub_tile_rows(BN, page_size).
+        comptime k_sub_BN = kv_sub_tile_rows(
+            fa4_config.k_rows_per_cta(), KVType.page_size
+        )
+        comptime k_row_major = fa4_config.k_row_major()
+        comptime k_fold_chunks = kv_tma_fold_chunks[
+            KVType.dtype,
+            fa4_config.swizzle_mode,
+            BK=fa4_config.BK0,
+            head_size=fa4_config.qk_depth,
+            box_rows=k_sub_BN,
+            smem_BN=fa4_config.k_rows_per_cta(),
+            page_size=KVType.page_size,
+            row_major=k_row_major,
+        ]()
+        # Producer/consumer agreement: if the Q@K' consumer reads the page-dense
+        # (row-major) K layout, the producer MUST have actually folded it
+        # (`k_fold_chunks >= 2`). `k_row_major()` mirrors this predicate, so a
+        # mismatch here means the two drifted.
+        comptime assert (not k_row_major) or (
+            k_fold_chunks > 1
+        ), "k_row_major() implies the K row-major fold; predicate drift"
         k_tma_op = k.create_tma_tile[
             fa4_config.swizzle_mode,
-            BN=kv_sub_tile_rows(fa4_config.k_rows_per_cta(), KVType.page_size),
+            BN=k_sub_BN,
             depth=fa4_config.qk_depth,
             BK=fa4_config.BK0,
+            fold_chunks=k_fold_chunks,
+            row_major=k_row_major,
         ](ctx)
+        comptime v_sub_BN = kv_sub_tile_rows(fa4_config.BN, KVType.page_size)
+        comptime v_row_major = fa4_config.v_row_major()
+        comptime v_fold_chunks = kv_tma_fold_chunks[
+            KVType.dtype,
+            fa4_config.swizzle_mode,
+            BK=fa4_config.v_cols_per_cta(),
+            head_size=fa4_config.ov_depth,
+            box_rows=v_sub_BN,
+            smem_BN=fa4_config.BN,
+            page_size=KVType.page_size,
+            row_major=v_row_major,
+        ]()
+        # Producer/consumer agreement: if the P@V consumer reads the page-dense
+        # (row-major) V layout, the producer MUST have actually folded it
+        # (`v_fold_chunks >= 2`). `v_row_major()` mirrors this predicate, so a
+        # mismatch here means the two drifted.
+        comptime assert (not v_row_major) or (
+            v_fold_chunks > 1
+        ), "v_row_major() implies the V row-major fold; predicate drift"
         v_tma_op = v.create_tma_tile[
             fa4_config.swizzle_mode,
-            BN=kv_sub_tile_rows(fa4_config.BN, KVType.page_size),
+            BN=v_sub_BN,
             depth=fa4_config.ov_depth,
             BK=fa4_config.v_cols_per_cta(),
+            fold_chunks=v_fold_chunks,
+            row_major=v_row_major,
         ](ctx)
         comptime PairBM_eff = fa4_config.PairBM_eff()
         comptime SchedulerType = TransientScheduler[

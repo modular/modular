@@ -67,6 +67,7 @@ from nn.attention.mha_operand import (
     PagedRowIndices,
     kv_sub_tile_rows,
     kv_num_sub_tiles,
+    kv_tma_fold_chunks,
 )
 from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple
@@ -675,6 +676,7 @@ struct SM100TensorAccumulator[
     transpose_b: Bool = True,
     cta_group: Int = 1,
     num_stages: Int = 1,
+    b_page_dense: Bool = False,
 ](TrivialRegisterPassable):
     # This performs C = A @ B
     # where A is BM x BK and B is BN x BK if k major, else BK x BN.
@@ -748,9 +750,17 @@ struct SM100TensorAccumulator[
         Self.MMA_N // Self.cta_group
     )
     comptime b_layout = tile_layout_k_major[
-        Self.operand_t, Self.b_bmn, Self.padded_BK, Self.swizzle_b
+        Self.operand_t,
+        Self.b_bmn,
+        Self.padded_BK,
+        Self.swizzle_b,
+        page_dense=Self.b_page_dense,
     ]() if Self.transpose_b else tile_layout_mn_major[
-        Self.operand_t, Self.b_bmn, Self.padded_BK, Self.swizzle_b
+        Self.operand_t,
+        Self.b_bmn,
+        Self.padded_BK,
+        Self.swizzle_b,
+        page_dense=Self.b_page_dense,
     ]()
 
     comptime idesc = UMMAInsDescriptor[Self.mma_kind].create[
@@ -812,6 +822,7 @@ struct SM100TensorAccumulator[
                         operand_size=Self.operand_size,
                         tcgen05_mma_type=Self.tcgen05_mma_type,
                         mma_k=Self.MMA_K,
+                        b_page_dense=Self.b_page_dense,
                     ](Self.idesc, a_, b, c, c_scale, elect)
                 else:
                     bulk_mma[
@@ -840,6 +851,7 @@ struct SM100TensorAccumulator[
                         operand_size=Self.operand_size,
                         tcgen05_mma_type=Self.tcgen05_mma_type,
                         mma_k=Self.MMA_K,
+                        b_page_dense=Self.b_page_dense,
                     ](Self.idesc, a_, b, c, c_scale, elect)
                 else:
                     bulk_mma[
@@ -886,6 +898,7 @@ struct SM100TensorAccumulator[
                         operand_size=Self.operand_size,
                         tcgen05_mma_type=Self.tcgen05_mma_type,
                         mma_k=Self.MMA_K,
+                        b_page_dense=Self.b_page_dense,
                     ](
                         Self.idesc,
                         a_,
@@ -934,6 +947,7 @@ struct SM100TensorAccumulator[
                         operand_size=Self.operand_size,
                         tcgen05_mma_type=Self.tcgen05_mma_type,
                         mma_k=Self.MMA_K,
+                        b_page_dense=Self.b_page_dense,
                     ](
                         Self.idesc,
                         a_,
@@ -1027,6 +1041,7 @@ struct SM100TensorAccumulator[
                     tcgen05_mma_type=Self.tcgen05_mma_type,
                     mma_k=Self.MMA_K,
                     k_start=ks_start,
+                    b_page_dense=Self.b_page_dense,
                 ](
                     Self.idesc,
                     a_,
@@ -1073,6 +1088,7 @@ struct SM100TensorAccumulator[
                     tcgen05_mma_type=Self.tcgen05_mma_type,
                     mma_k=Self.MMA_K,
                     k_start=ks_start,
+                    b_page_dense=Self.b_page_dense,
                 ](
                     Self.idesc,
                     a_,
@@ -1444,6 +1460,7 @@ def bulk_mma_ws[
     operand_size: Int,
     tcgen05_mma_type: String,
     mma_k: Int = 16,
+    b_page_dense: Bool = False,
 ](
     idesc: UMMAInsDescriptor[kind],
     a: MMASmemDescriptorPair,
@@ -1453,16 +1470,19 @@ def bulk_mma_ws[
     elect: Int32,
 ):
     # Full-tile SS, warp-specialized. The tile layouts are computed from the
-    # dtype/tile params (`_build_mma` takes `Layout` directly).
+    # dtype/tile params (`_build_mma` takes `Layout` directly). `b_page_dense`
+    # selects the row-major page-fold layout for the B operand (K / Q@K' is
+    # k-major; the advance crosses a depth chunk by `_CM_NUM_ROWS*gran` instead
+    # of `BN*gran`, derived from this layout).
     comptime layout_a = tile_layout_k_major[
         a_dtype, a_BMN, a_BK, a_swizzle
     ]() if a_is_k_major else tile_layout_mn_major[
         a_dtype, a_BMN, a_BK, a_swizzle
     ]()
     comptime layout_b = tile_layout_k_major[
-        b_dtype, b_BMN, b_BK, b_swizzle
+        b_dtype, b_BMN, b_BK, b_swizzle, page_dense=b_page_dense
     ]() if b_is_k_major else tile_layout_mn_major[
-        b_dtype, b_BMN, b_BK, b_swizzle
+        b_dtype, b_BMN, b_BK, b_swizzle, page_dense=b_page_dense
     ]()
     comptime mma_string = _build_mma[a_tmem=False, ws=True, partial=False](
         String(kind),
@@ -1495,6 +1515,7 @@ def bulk_mma_ws_ts[
     operand_size: Int,
     tcgen05_mma_type: String,
     mma_k: Int = 16,
+    b_page_dense: Bool = False,
 ](
     idesc: UMMAInsDescriptor[kind],
     a: UInt32,
@@ -1510,7 +1531,7 @@ def bulk_mma_ws_ts[
     comptime layout_b = tile_layout_k_major[
         b_dtype, b_BMN, b_BK, b_swizzle
     ]() if b_is_k_major else tile_layout_mn_major[
-        b_dtype, b_BMN, b_BK, b_swizzle
+        b_dtype, b_BMN, b_BK, b_swizzle, page_dense=b_page_dense
     ]()
     comptime mma_string = _build_mma[a_tmem=True, ws=True, partial=False](
         String(kind),
@@ -1549,6 +1570,7 @@ def bulk_mma_ws_partial[
     tcgen05_mma_type: String,
     mma_k: Int = 16,
     k_start: Int = 0,
+    b_page_dense: Bool = False,
 ](
     idesc: UMMAInsDescriptor[kind],
     a: MMASmemDescriptorPair,
@@ -1569,9 +1591,9 @@ def bulk_mma_ws_partial[
         a_dtype, a_BMN, a_BK, a_swizzle
     ]()
     comptime layout_b = tile_layout_k_major[
-        b_dtype, b_BMN, b_BK, b_swizzle
+        b_dtype, b_BMN, b_BK, b_swizzle, page_dense=b_page_dense
     ]() if b_is_k_major else tile_layout_mn_major[
-        b_dtype, b_BMN, b_BK, b_swizzle
+        b_dtype, b_BMN, b_BK, b_swizzle, page_dense=b_page_dense
     ]()
     comptime mma_string = _build_mma[a_tmem=False, ws=True, partial=True](
         String(kind),
@@ -1612,6 +1634,7 @@ def bulk_mma_ws_ts_partial[
     tcgen05_mma_type: String,
     mma_k: Int = 16,
     k_start: Int = 0,
+    b_page_dense: Bool = False,
 ](
     idesc: UMMAInsDescriptor[kind],
     a: UInt32,
@@ -1631,7 +1654,7 @@ def bulk_mma_ws_ts_partial[
     comptime layout_b = tile_layout_k_major[
         b_dtype, b_BMN, b_BK, b_swizzle
     ]() if b_is_k_major else tile_layout_mn_major[
-        b_dtype, b_BMN, b_BK, b_swizzle
+        b_dtype, b_BMN, b_BK, b_swizzle, page_dense=b_page_dense
     ]()
     comptime mma_string = _build_mma[a_tmem=True, ws=True, partial=True](
         String(kind),
@@ -2300,6 +2323,12 @@ struct TMAConsumerPipeline[dtype: DType, config: FA4Config, is_k: Bool = True](
     comptime BMN: Int = Self.config.k_rows_per_cta() if Self.is_k else Self.config.v_cols_per_cta()
     comptime BK: Int = Self.config.BK0 if Self.is_k else Self.config.BK1
     comptime is_k_major: Bool = Self.is_k
+    # Page-dense (row-major) layout: K (Q@K', k-major) gated by k_row_major(),
+    # V (P@V, mn-major) by v_row_major(). `is_k_major=Self.is_k` (below) routes
+    # the flag to the matching `tile_layout_*` branch in `smem_descriptor`.
+    comptime page_dense: Bool = (
+        Self.config.k_row_major() if Self.is_k else Self.config.v_row_major()
+    )
 
     var pipeline: StagedPipeline[
         Self.config.num_kv_stages, Self.num_qk_stages_effective
@@ -2320,6 +2349,7 @@ struct TMAConsumerPipeline[dtype: DType, config: FA4Config, is_k: Bool = True](
             BK=Self.BK,
             swizzle_mode=Self.config.swizzle_mode,
             is_k_major=Self.is_k_major,
+            page_dense=Self.page_dense,
         ](smem)
 
     @always_inline

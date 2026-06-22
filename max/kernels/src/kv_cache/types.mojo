@@ -203,6 +203,117 @@ def kv_num_sub_tiles(tile_BN: Int, page_size: Int) -> Int:
     return tile_BN // kv_sub_tile_rows(tile_BN, page_size)
 
 
+# Swizzle-atom / core-matrix row count. Mirrors `_SWIZZLE_ATOM_ROWS` in
+# `layout/tma_async.mojo` and `_CM_NUM_ROWS` in `layout/tensor_core_async.mojo`
+# (module-private there): the canonical MMA core matrix is 8 rows tall and the
+# SWIZZLE_128B 8-row swizzle tile is exactly one atom. The chunk-inner
+# (row-major-atoms) rank-5 fold splits a page's `box_rows` into
+# `box_rows / _SWIZZLE_ATOM_ROWS` atom-rows.
+comptime _SWIZZLE_ATOM_ROWS = 8
+
+
+@always_inline
+def _kv_fold_base_ok(bk: Int, gran: Int, head_size: Int) -> Bool:
+    """Shared SM100 depth-chunk-fold geometry gate.
+
+    Single source of truth for the `base_ok` condition used by BOTH
+    `kv_tma_fold_chunks` (comptime) and `FA4Config.{k,v}_row_major()` (the
+    runtime config accessors). The fold is well-defined only when the contiguous
+    depth `bk` is a whole number of swizzle atoms (`gran`), spans at least two of
+    them (something to fold), and tiles the full `head_size` exactly (so the
+    folded descriptor's `[head_size // gran, gran]` chunk axis is well-formed).
+
+    Takes plain runtime `Int`s — not comptime params — so the runtime accessors
+    can call it (a `def` method cannot feed `self.field` into a comptime param);
+    when all args are comptime it folds to a comptime `Bool`."""
+    return bk % gran == 0 and bk // gran >= 2 and head_size % bk == 0
+
+
+@always_inline
+def kv_tma_fold_chunks[
+    dtype: DType,
+    swizzle_mode: TensorMapSwizzle,
+    *,
+    BK: Int,
+    head_size: Int,
+    box_rows: Int,
+    smem_BN: Int,
+    page_size: Int,
+    row_major: Bool = False,
+]() -> Int:
+    """Single source of truth for the SM100 depth-chunk TMA-fold predicate.
+
+    When a K/V tile's contiguous depth `BK` spans
+    `num_chunks = BK // swizzle_granularity >= 2` (e.g. bf16 `BK=128`,
+    `SWIZZLE_128B`, `gran=64` -> 2 chunks), the per-chunk TMA loop in
+    `PagedRowIndices._tma_copy_kv_impl` can be replaced by ONE rank-4
+    `cp.async.bulk.tensor` that folds the depth-chunk dimension into an extra,
+    non-innermost box dim. This returns `num_chunks` (the fold factor) when that
+    rewrite is byte-equivalent, and `1` (no fold = current per-chunk behavior)
+    otherwise.
+
+    The fold is byte-equivalent to the per-chunk loop ONLY when the folded box's
+    per-chunk SMEM stride (`box_rows * gran`) equals the producer chunk stride
+    (`smem_BN * gran`) — i.e. `box_rows == smem_BN` — AND the tile occupies a
+    single page (`pages_per_iter == 1`, encoded as `page_size == 0` or
+    `page_size >= box_rows`). Both conditions are checked here so a caller cannot
+    request an illegal fold. The fold is a pure producer-side instruction-count
+    rewrite: it writes byte-identical SMEM to the loop, so it is correct for both
+    the K-major (K) and mn-major (V) consumers — the caller just supplies the
+    side-correct `smem_BN` (K: `k_rows_per_cta`; V: `tile_rows = BN //
+    num_v_sub_tiles`).
+
+    The folded rank-4 descriptor reshapes the full gmem `head_size` into a
+    `[head_size // gran, gran]` chunk axis, so the fold requires
+    `head_size % BK == 0` (which implies `head_size % gran == 0`, the builder's
+    requirement, and that each per-stage `BK`-wide window tiles `head_size`
+    exactly). This rejects unaligned head dims (e.g. `head_size=127` padded to
+    `BK=128`) where the descriptor's chunk axis would be ill-defined.
+
+    Returning the same comptime value to both the descriptor builder and the issue
+    site is what keeps the baked descriptor rank and the issue-time coord rank from
+    drifting.
+
+    Parameters:
+        dtype: The KV element dtype (drives swizzle granularity).
+        swizzle_mode: The TMA swizzle mode (drives swizzle granularity).
+        BK: The tile's contiguous depth per stage (K: `BK0`; V: `v_cols_per_cta`).
+        head_size: The descriptor's full gmem depth (the cache `head_size`); the
+            fold's chunk axis spans this, so it must satisfy `head_size % BK == 0`.
+        box_rows: The TMA box's row count (`kv_sub_tile_rows(tile_rows, page_size)`).
+        smem_BN: The SMEM depth-chunk stride in rows (K: `smem_BN` arg to
+            `tma_copy_k`; V: `tile_rows`).
+        page_size: KV cache page size (`0` = non-paged).
+        row_major: When `True`, predicate the chunk-inner (row-major-atoms) rank-5
+            fold, which lets a tile span MULTIPLE pages (one TMA per page). The
+            rank-5 descriptor box sets the chunk/atom-row SMEM strides, so the
+            chunk-outer fold's `box_rows == smem_BN` and single-page requirements
+            do not apply; instead `box_rows` must split into swizzle-atom rows.
+            `False` (default) predicates today's chunk-outer rank-4 fold.
+
+    Returns:
+        The fold factor: `num_chunks` when foldable, else `1`.
+    """
+    comptime gran = swizzle_mode.bytes() // size_of[dtype]()
+    comptime num_chunks = BK // gran
+    comptime pages_per_iter_is_one = page_size == 0 or page_size >= box_rows
+    # Shared geometry gate (single source of truth, also used by
+    # `FA4Config.{k,v}_row_major()`): BK % gran == 0, >= 2 chunks, head_size % BK.
+    comptime base_ok = _kv_fold_base_ok(BK, gran, head_size)
+    # The chunk-inner (row_major) rank-5 fold drops the single-page /
+    # `box_rows == smem_BN` requirements (its descriptor box sets the SMEM
+    # strides) but needs `box_rows` to split into swizzle-atom rows; the default
+    # chunk-outer rank-4 fold needs `box_rows == smem_BN` and a single page.
+    comptime geometry_ok = (
+        box_rows % _SWIZZLE_ATOM_ROWS
+        == 0 if row_major else (box_rows == smem_BN and pages_per_iter_is_one)
+    )
+    comptime if base_ok and geometry_ok:
+        return num_chunks
+    else:
+        return 1
+
+
 struct PagedRowIndices[
     BN: Int,
     page_size: Int,
@@ -274,6 +385,8 @@ struct PagedRowIndices[
         eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
         num_iters: Int = -1,
         oob_fill_pages: Bool = False,
+        fold_chunks: Int = 1,
+        row_major: Bool = False,
     ](
         self,
         tma_op: TMATensorTile[dtype, 3, tile_shape, desc_shape, True],
@@ -352,6 +465,37 @@ struct PagedRowIndices[
         comptime smem_j_stride_rows = smem_BN if is_k else tile_rows
         comptime dispatch_start = 1 if (is_k and Self.is_leader) else 0
 
+        # Depth-chunk TMA fold (SM100 / B200, K-only). When `fold>=2`, one rank-4
+        # `cp.async.bulk.tensor` (built with a rank-4 descriptor by the matching
+        # `create_split_tma[..., fold_chunks=fold]` call) replaces the per-chunk
+        # `for j` loop. The descriptor's box already spans all `fold` chunks with a
+        # per-chunk SMEM stride of `tma_per_issue_rows * gran`, so byte-equivalence
+        # requires `tma_per_issue_rows == smem_j_stride_rows` and `pages_per_iter==1`.
+        # `fold` must also equal `num_depth_chunks` (the box covers every chunk).
+        comptime fold = fold_chunks
+        comptime assert fold == 1 or (
+            fold == num_depth_chunks
+            and (
+                # Chunk-inner rank-5 fold: the descriptor box sets the
+                # chunk/atom-row SMEM strides, so it lifts the chunk-outer
+                # fold's `box_rows == smem_j_stride_rows` + single-page
+                # requirements; it needs `box_rows` to split into atom-rows.
+                (row_major and tma_per_issue_rows % _SWIZZLE_ATOM_ROWS == 0)
+                or (
+                    not row_major
+                    and tma_per_issue_rows == smem_j_stride_rows
+                    and pages_per_iter == 1
+                )
+            )
+        ), (
+            "kv TMA fold requires fold == num_depth_chunks; the chunk-outer"
+            " (rank-4) fold additionally requires box_rows =="
+            " smem_j_stride_rows and pages_per_iter == 1 (the chunk-inner"
+            " row_major rank-5 fold lifts both but needs box_rows divisible by"
+            " the swizzle-atom row count); a folded descriptor was paired with"
+            " an unfoldable issue-site geometry"
+        )
+
         var desc_ptr = UnsafePointer(to=tma_op.descriptor).bitcast[NoneType]()
 
         comptime if needs_partial:
@@ -372,6 +516,8 @@ struct PagedRowIndices[
                             smem_BN=smem_BN,
                             eviction_policy=eviction_policy,
                             num_iters=_p,
+                            fold_chunks=fold_chunks,
+                            row_major=row_major,
                         ](
                             tma_op,
                             stage_base,
@@ -396,47 +542,170 @@ struct PagedRowIndices[
                         # `pages_per_iter * num_depth_chunks` issues.
                         comptime _OOB_ROW: Int = 1 << 30
                         comptime for _q in range(_p, pages_per_iter):
-                            comptime for j in range(num_depth_chunks):
-                                comptime smem_off_oob = (
-                                    j * smem_j_stride_rows * swizzle_gran
-                                    + _q * tma_per_issue_rows * swizzle_gran
+                            comptime if fold >= 2 and row_major:
+                                # One rank-5 chunk-inner TMA per OOB page slot.
+                                # Page-outer SMEM base spans the full per-page
+                                # chunk-inner block (num_depth_chunks *
+                                # tma_per_issue_rows * gran). Coord is fast-first
+                                # (gran, in-atom-row, chunk-base, atom_row, head);
+                                # atom_row = _OOB_ROW (>> globalDim atom-row extent)
+                                # so OOBFill.NONE zero-fills this page slot.
+                                comptime smem_off_oob_rm = (
+                                    _q
+                                    * num_depth_chunks
+                                    * tma_per_issue_rows
+                                    * swizzle_gran
                                 )
                                 cp_async_bulk_tensor_shared_cluster_global_elect[
                                     cta_group=Self.cta_group,
                                     eviction_policy=eviction_policy,
                                 ](
-                                    stage_base + smem_off_oob,
+                                    stage_base + smem_off_oob_rm,
                                     desc_ptr,
                                     mbar.unsafe_ptr(),
                                     Index(
-                                        Int(depth_offset) + j * swizzle_gran,
-                                        Int(kv_head_idx),
+                                        0,
+                                        0,
+                                        Int(depth_offset) // swizzle_gran,
                                         _OOB_ROW,
+                                        Int(kv_head_idx),
                                     ),
                                     elect,
                                 )
+                            elif fold >= 2:
+                                # One rank-4 TMA folds all `fold` depth chunks.
+                                # SMEM base for this page slot (chunk dim is the
+                                # box's slowest dim, stride tma_per_issue_rows*gran
+                                # == smem_j_stride_rows*gran). Coord is fast-first
+                                # (gran, head, row, chunk); chunk-base =
+                                # depth_offset // gran selects this stage's window
+                                # over the full-head_size chunk axis, gran coord 0.
+                                comptime smem_off_oob_f = (
+                                    _q * tma_per_issue_rows * swizzle_gran
+                                )
+                                cp_async_bulk_tensor_shared_cluster_global_elect[
+                                    cta_group=Self.cta_group,
+                                    eviction_policy=eviction_policy,
+                                ](
+                                    stage_base + smem_off_oob_f,
+                                    desc_ptr,
+                                    mbar.unsafe_ptr(),
+                                    Index(
+                                        0,
+                                        _OOB_ROW,
+                                        Int(depth_offset) // swizzle_gran,
+                                        Int(kv_head_idx),
+                                    ),
+                                    elect,
+                                )
+                            else:
+                                comptime for j in range(num_depth_chunks):
+                                    comptime smem_off_oob = (
+                                        j * smem_j_stride_rows * swizzle_gran
+                                        + _q * tma_per_issue_rows * swizzle_gran
+                                    )
+                                    cp_async_bulk_tensor_shared_cluster_global_elect[
+                                        cta_group=Self.cta_group,
+                                        eviction_policy=eviction_policy,
+                                    ](
+                                        stage_base + smem_off_oob,
+                                        desc_ptr,
+                                        mbar.unsafe_ptr(),
+                                        Index(
+                                            Int(depth_offset)
+                                            + j * swizzle_gran,
+                                            Int(kv_head_idx),
+                                            _OOB_ROW,
+                                        ),
+                                        elect,
+                                    )
                     return
         comptime for _p in range(effective_iters):
             comptime src_idx = idx_offset_ct + _p
-            comptime for j in range(num_depth_chunks):
-                comptime smem_off = (
-                    j * smem_j_stride_rows * swizzle_gran
-                    + _p * tma_per_issue_rows * swizzle_gran
+            comptime if fold >= 2 and row_major:
+                # One rank-5 chunk-inner TMA writes this whole multi-atom-row
+                # page in chunk-inner SMEM order (off(ar,c) =
+                # ar*num_chunks*CM*gran + c*CM*gran). Page-outer SMEM base spans
+                # the full per-page chunk-inner block (num_depth_chunks *
+                # tma_per_issue_rows * gran). Coord is fast-first
+                # (gran, in-atom-row, chunk-base, atom_row, head): atom_row =
+                # row // CM (row is CM-aligned by page alignment), the box covers
+                # all CM rows of each atom-row and `fold` chunks, and chunk-base =
+                # depth_offset // gran selects this stage's window over the
+                # full-head_size chunk axis. Validated by
+                # test_kv_rowmajor_fold_spike.mojo.
+                comptime smem_off_rm = (
+                    _p * num_depth_chunks * tma_per_issue_rows * swizzle_gran
+                )
+                var row_rm = Int(self.rows[src_idx]) + intra_page_row_ct
+                debug_assert(
+                    row_rm % _SWIZZLE_ATOM_ROWS == 0,
+                    (
+                        "row_major fold: page row must be swizzle-atom-aligned"
+                        " for the rank-5 atom-row coordinate"
+                    ),
                 )
                 cp_async_bulk_tensor_shared_cluster_global_elect[
                     cta_group=Self.cta_group,
                     eviction_policy=eviction_policy,
                 ](
-                    stage_base + smem_off,
+                    stage_base + smem_off_rm,
                     desc_ptr,
                     mbar.unsafe_ptr(),
                     Index(
-                        Int(depth_offset) + j * swizzle_gran,
+                        0,
+                        0,
+                        Int(depth_offset) // swizzle_gran,
+                        row_rm // _SWIZZLE_ATOM_ROWS,
                         Int(kv_head_idx),
-                        Int(self.rows[src_idx]) + intra_page_row_ct,
                     ),
                     elect,
                 )
+            elif fold >= 2:
+                # One rank-4 TMA folds all `fold` depth chunks for this page.
+                # SMEM base = _p * tma_per_issue_rows * gran (chunk dim is the
+                # box's slowest dim with stride tma_per_issue_rows*gran ==
+                # smem_j_stride_rows*gran). Coord is fast-first
+                # (gran, head, row, chunk): the descriptor's chunk axis (stride
+                # gran) spans the full head_size, so this stage's window is
+                # selected by chunk-base = depth_offset // gran while the box
+                # covers `fold` chunks; the gran coord is 0.
+                comptime smem_off_f = (_p * tma_per_issue_rows * swizzle_gran)
+                cp_async_bulk_tensor_shared_cluster_global_elect[
+                    cta_group=Self.cta_group,
+                    eviction_policy=eviction_policy,
+                ](
+                    stage_base + smem_off_f,
+                    desc_ptr,
+                    mbar.unsafe_ptr(),
+                    Index(
+                        0,
+                        Int(self.rows[src_idx]) + intra_page_row_ct,
+                        Int(depth_offset) // swizzle_gran,
+                        Int(kv_head_idx),
+                    ),
+                    elect,
+                )
+            else:
+                comptime for j in range(num_depth_chunks):
+                    comptime smem_off = (
+                        j * smem_j_stride_rows * swizzle_gran
+                        + _p * tma_per_issue_rows * swizzle_gran
+                    )
+                    cp_async_bulk_tensor_shared_cluster_global_elect[
+                        cta_group=Self.cta_group,
+                        eviction_policy=eviction_policy,
+                    ](
+                        stage_base + smem_off,
+                        desc_ptr,
+                        mbar.unsafe_ptr(),
+                        Index(
+                            Int(depth_offset) + j * swizzle_gran,
+                            Int(kv_head_idx),
+                            Int(self.rows[src_idx]) + intra_page_row_ct,
+                        ),
+                        elect,
+                    )
 
     @always_inline
     def tma_copy_v[
@@ -451,6 +720,8 @@ struct PagedRowIndices[
         eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
         num_iters: Int = -1,
         oob_fill_pages: Bool = False,
+        fold_chunks: Int = 1,
+        row_major: Bool = False,
     ](
         self,
         tma_op: TMATensorTile[dtype, 3, tile_shape, desc_shape, True],
@@ -522,6 +793,18 @@ struct PagedRowIndices[
         `v_pages_per_sub_tile * num_depth_chunks` TMA arrives at the
         mbar.
 
+        `fold_chunks` (default `1` = no fold = per-chunk loop) folds the
+        `num_depth_chunks` depth columns into ONE rank-4 `cp.async.bulk.tensor`
+        when `>= 2`. The caller MUST pass the value returned by
+        `kv_tma_fold_chunks` (with V's geometry: `BK=v_cols_per_cta`,
+        `box_rows=kv_sub_tile_rows(tile_rows, page_size)`, `smem_BN=tile_rows`
+        where `tile_rows = BN // num_v_sub_tiles`) AND build `v_tma_op` with the
+        matching `create_split_tma[..., fold_chunks=...]` so the baked descriptor
+        rank and the issue-time coord rank agree; a comptime backstop assert in
+        `_tma_copy_kv_impl` rejects a fold paired with an unfoldable geometry.
+        The fold is a producer-side rewrite that writes byte-identical SMEM, so
+        it is correct for V's mn-major consumer.
+
         `elect` is the raw `Int32` returned by `elect()`. Each
         `cp_async_bulk_tensor_shared_cluster_global_elect` call predicates
         its TMA issue in-PTX on `elect`, so no Mojo-level `if elect != 0:`
@@ -536,6 +819,8 @@ struct PagedRowIndices[
             eviction_policy=eviction_policy,
             num_iters=num_iters,
             oob_fill_pages=oob_fill_pages,
+            fold_chunks=fold_chunks,
+            row_major=row_major,
         ](
             tma_op,
             stage_base,
@@ -557,6 +842,8 @@ struct PagedRowIndices[
         smem_BN: Int = Self.BN,
         eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
         num_iters: Int = -1,
+        fold_chunks: Int = 1,
+        row_major: Bool = False,
     ](
         self,
         tma_op: TMATensorTile[dtype, 3, tile_shape, desc_shape, True],
@@ -591,6 +878,14 @@ struct PagedRowIndices[
         is `smem_BN * swizzle_gran`. Defaults to `Self.BN` (fa4 layout);
         depth512 passes `Self.BN // 2 = BK1`.
 
+        `fold_chunks` (default `1` = no fold = per-chunk loop) folds the
+        `num_depth_chunks` depth chunks into ONE rank-4 `cp.async.bulk.tensor`
+        when `>= 2`. The caller MUST pass the value returned by
+        `kv_tma_fold_chunks` AND build `k_tma_op` with the matching
+        `create_split_tma[..., fold_chunks=...]` so the baked descriptor rank
+        and the issue-time coord rank agree; a comptime backstop assert in
+        `_tma_copy_kv_impl` rejects a fold paired with an unfoldable geometry.
+
         `needs_partial=False` — comptime-unrolled over `num_iters`
         entries (default `k_pages_per_cta`); `k_num_valid_pages` is
         unused.
@@ -623,6 +918,8 @@ struct PagedRowIndices[
             smem_BN=smem_BN,
             eviction_policy=eviction_policy,
             num_iters=num_iters,
+            fold_chunks=fold_chunks,
+            row_major=row_major,
         ](
             tma_op,
             stage_base,
@@ -866,6 +1163,8 @@ trait KVCacheT(DevicePassable, TrivialRegisterPassable):
         BK: Int = padded_depth[
             Self.dtype, swizzle_mode, Self.kv_params.head_size
         ](),
+        fold_chunks: Int = 1,
+        row_major: Bool = False,
     ](self, ctx: DeviceContext) raises -> SplitLastDimTMATensorTile[
         Self.dtype,
         IndexList[3](BN, 1, BK),
@@ -873,7 +1172,12 @@ trait KVCacheT(DevicePassable, TrivialRegisterPassable):
     ]:
         """Creates a TMA tile for this KV cache.
         This is useful for `k-major` MMA operations where we don't
-        need to mask any extra rows."""
+        need to mask any extra rows.
+
+        `fold_chunks >= 2` builds a depth-chunk-folded descriptor (SM100); `1`
+        (default) keeps the original 3D descriptor. `row_major=True` (with
+        `fold_chunks >= 2`) builds the rank-5 chunk-inner box (one TMA per
+        multi-atom-row page); `False` builds the rank-4 chunk-outer box."""
         ...
 
     @always_inline
@@ -1317,6 +1621,8 @@ struct ContinuousBatchingKVCache[
         BK: Int = padded_depth[
             Self.dtype, swizzle_mode, Self.kv_params.head_size
         ](),
+        fold_chunks: Int = 1,
+        row_major: Bool = False,
     ](self, ctx: DeviceContext) raises -> SplitLastDimTMATensorTile[
         Self.dtype,
         IndexList[3](BN, 1, BK),
@@ -1346,9 +1652,13 @@ struct ContinuousBatchingKVCache[
             Self.kv_params.num_heads,
             Self.kv_params.head_size,
         )
-        return create_split_tma[smem_dim, gmem_dim, swizzle_mode](
-            ctx, self.blocks.ptr, Int(rows)
-        )
+        return create_split_tma[
+            smem_dim,
+            gmem_dim,
+            swizzle_mode,
+            fold_chunks=fold_chunks,
+            row_major=row_major,
+        ](ctx, self.blocks.ptr, Int(rows))
 
     @always_inline
     def create_gather4_tma_tile[
@@ -1961,6 +2271,8 @@ struct PagedKVCache[
         BK: Int = padded_depth[
             Self.dtype, swizzle_mode, Self.kv_params.head_size
         ](),
+        fold_chunks: Int = 1,
+        row_major: Bool = False,
     ](self, ctx: DeviceContext) raises -> SplitLastDimTMATensorTile[
         Self.dtype,
         IndexList[3](BN, 1, BK),
@@ -1992,9 +2304,13 @@ struct PagedKVCache[
             Self.kv_params.num_heads,
             Self.kv_params.head_size,
         )
-        return create_split_tma[smem_dim, gmem_dim, swizzle_mode](
-            ctx, self.blocks.ptr, Int(rows)
-        )
+        return create_split_tma[
+            smem_dim,
+            gmem_dim,
+            swizzle_mode,
+            fold_chunks=fold_chunks,
+            row_major=row_major,
+        ](ctx, self.blocks.ptr, Int(rows))
 
     @always_inline
     def create_gather4_tma_tile[

@@ -85,6 +85,14 @@ from std.utils.static_tuple import StaticTuple
 from layout.layout_tensor import LayoutTensorIter
 
 
+# Swizzle-atom / core-matrix row count. Mirrors `_CM_NUM_ROWS` in
+# `layout/tensor_core_async.mojo` (module-private there): the canonical MMA
+# core matrix is 8 rows tall and the SWIZZLE_128B 8-row swizzle tile is exactly
+# one atom. Used by the rank-5 chunk-inner (row-major-atoms) fold box, which
+# splits a page's `box_rows` into `box_rows / _SWIZZLE_ATOM_ROWS` atom-rows.
+comptime _SWIZZLE_ATOM_ROWS = 8
+
+
 def _default_desc_shape[
     rank: Int,
     dtype: DType,
@@ -4912,6 +4920,128 @@ def _split_tma_gmem_tensor[
     ret = {ptr, RuntimeLayout[ret.layout].row_major(runtime_shape)}
 
 
+def _create_split_tma_folded[
+    dtype: DType,
+    rank: Int,
+    //,
+    smem_shape: IndexList[rank],
+    gmem_shape: IndexList[rank],
+    swizzle_mode: TensorMapSwizzle,
+    fold_chunks: Int,
+    row_major: Bool = False,
+](
+    ctx: DeviceContext,
+    ptr: UnsafePointer[Scalar[dtype], _],
+    runtime_rows: Int,
+    num_heads: Int,
+    out res: SplitLastDimTMATensorTile[
+        dtype,
+        smem_shape,
+        swizzle_mode,
+    ],
+) raises:
+    """Builds the depth-chunk-folded K/V TMA descriptor (SM100 / B200).
+
+    Shared by both `create_split_tma` overloads. `smem_shape` is the rank-3 K view
+    `[box_rows, 1, BK]` and `gmem_shape` is `[rows, num_heads, head_size]`
+    (`gmem_shape[2]` = head_size). `num_heads` is supplied at runtime by the caller
+    (it may be a static or dynamic value depending on the overload). See
+    `create_split_tma` for the byte-equivalence contract.
+
+    `row_major=False` (default) builds the rank-4 **chunk-outer** box
+    `[gran, box_rows, fold_chunks, 1]` (CUDA fast->slow): all `box_rows` of chunk 0,
+    then chunk 1, ... — byte-equivalent to the per-chunk loop only for a single page
+    (`box_rows == smem_j_stride_rows`, `pages_per_iter == 1`).
+
+    `row_major=True` builds the rank-5 **chunk-inner** (row-major-atoms) box
+    `[gran, CM, fold_chunks, box_rows/CM, 1]` (CUDA fast->slow): it splits `box_rows`
+    into `(box_rows/CM)` atom-rows of `CM` rows each and nests the `fold_chunks`
+    chunk axis BETWEEN the atom-row axis and the in-atom-row (`CM`) axis, so one TMA
+    writes a whole multi-atom-row page in chunk-inner SMEM order
+    `off(ar,c) = ar*(num_chunks*CM*gran) + c*(CM*gran)`. This is the layout that lets
+    `page_size < BN` tiles fold to one TMA per page. Validated standalone by
+    `max/kernels/test/gpu/kv_cache/test_kv_rowmajor_fold_spike.mojo`.
+    """
+    comptime assert fold_chunks >= 2, "folded builder needs fold_chunks >= 2"
+    comptime assert rank == 3, "folded builder expects the rank-3 K view"
+    comptime gran = swizzle_mode.bytes() // size_of[dtype]()
+    comptime BK = smem_shape[2]
+    comptime box_rows = smem_shape[0]
+    comptime head_size = gmem_shape[2]
+    comptime assert (
+        gran * size_of[dtype]() == swizzle_mode.bytes()
+    ), "swizzled innermost box must be exactly one swizzle atom"
+    comptime assert (
+        fold_chunks * gran == BK
+    ), "fold_chunks * swizzle_granularity must equal BK"
+    comptime assert (
+        head_size % gran == 0
+    ), "head_size must be a multiple of swizzle granularity"
+    # The depth (head_size) axis is presented to the descriptor reshaped as
+    # [num_depth_dim, gran] with num_depth_dim = head_size // gran. The chunk
+    # (num_depth_dim) axis spans the FULL head_size so every per-stage window
+    # `depth_offset` (= qk_stage * BK) is in-bounds; the BOX covers only
+    # `fold_chunks` of those chunks per issue (one stage's BK worth of depth).
+    comptime num_depth_dim = head_size // gran
+    # rebind-free: the rank-4/rank-5 descriptor blob is wrapped into the rank-3
+    # `SplitLastDimTMATensorTile` via `TMATensorTile.__init__(descriptor)`.
+    # `TMADescriptor` is a fixed opaque 128 B blob independent of rank, so no
+    # cross-rank `rebind` of the tile type is needed (and would be illegal:
+    # rank-3/4/5 `TMATensorTile` are distinct nominal types).
+    var device_buf = DeviceBuffer(
+        ctx,
+        ptr.address_space_cast[AddressSpace.GENERIC](),
+        1,
+        owning=False,
+    )
+    comptime if row_major:
+        # Rank-5 chunk-inner (row-major-atoms) box. `CM` is the swizzle-atom /
+        # core-matrix row count (== `_CM_NUM_ROWS` in tensor_core_async.mojo,
+        # module-private there; the SWIZZLE_128B 8-row swizzle tile is exactly one
+        # atom). Repo order (slowest-first) -> CUDA fast->slow box
+        # [gran, CM, fold_chunks, box_rows/CM, 1]: the chunk axis (extent
+        # fold_chunks, globalDim num_depth_dim) is nested BETWEEN the atom-row axis
+        # (box_rows/CM) and the in-atom-row axis (CM), giving chunk-inner SMEM
+        # order. The row axis is split (atom_row stride = CM*num_heads*head_size,
+        # in-atom-row stride = num_heads*head_size); chunk stride stays `gran` so
+        # the issue-site coord sets chunk-base = depth_offset // gran. Validated by
+        # test_kv_rowmajor_fold_spike.mojo.
+        comptime CM = _SWIZZLE_ATOM_ROWS
+        comptime assert box_rows % CM == 0, (
+            "row_major fold: box_rows must be a multiple of the swizzle-atom"
+            " rows"
+        )
+        var desc = create_tma_descriptor[dtype, 5, swizzle_mode](
+            device_buf,
+            IndexList[5](
+                num_heads, runtime_rows // CM, num_depth_dim, CM, gran
+            ),
+            IndexList[5](
+                head_size,
+                CM * num_heads * head_size,
+                gran,
+                num_heads * head_size,
+                1,
+            ),
+            IndexList[5](1, box_rows // CM, fold_chunks, CM, gran),
+        )
+        res = SplitLastDimTMATensorTile[dtype, smem_shape, swizzle_mode](desc)
+    else:
+        # Rank-4 chunk-outer box (today's default). Repo order (slowest-first);
+        # `create_tma_descriptor` reverses into CUDA order at tma.mojo:383-388 ->
+        # CUDA boxDim[0]=gran (swizzled, 128 B), boxDim[3]=chunk (box extent =
+        # fold_chunks, globalDim = num_depth_dim). The chunk axis stride is gran, so
+        # chunk c covers depth elements [c*gran, c*gran+gran); the issue-site coord
+        # sets chunk-base = depth_offset // gran and gran coord = 0.
+        var desc = create_tma_descriptor[dtype, 4, swizzle_mode](
+            device_buf,
+            IndexList[4](num_heads, num_depth_dim, runtime_rows, gran),
+            IndexList[4](head_size, gran, num_heads * head_size, 1),
+            IndexList[4](1, fold_chunks, box_rows, gran),
+        )
+        res = SplitLastDimTMATensorTile[dtype, smem_shape, swizzle_mode](desc)
+
+
 def create_split_tma[
     rank: Int,
     dtype: DType,
@@ -4919,6 +5049,8 @@ def create_split_tma[
     smem_shape: IndexList[rank],
     gmem_shape: IndexList[rank],
     swizzle_mode: TensorMapSwizzle,
+    fold_chunks: Int = 1,
+    row_major: Bool = False,
 ](
     ctx: DeviceContext,
     ptr: UnsafePointer[Scalar[dtype], _],
@@ -4935,12 +5067,22 @@ def create_split_tma[
     of the tensor into multiples of swizzle granularity. This functionality is currently
     disabled because it was not found to improve performance.
 
+    When `fold_chunks >= 2`, the contiguous depth chunks are folded into a single
+    rank-4/rank-5 TMA (see the 2-runtime-dim overload's docstring and
+    `_create_split_tma_folded`). This overload is used by the cache-backed builders
+    where `num_heads` is the static `gmem_shape[1]`.
+
     Parameters:
         rank: The number of dimensions of the tensor.
         dtype: The data type of the tensor elements.
         smem_shape: The shape of the tile in shared memory.
         gmem_shape: The shape of the global memory tensor.
         swizzle_mode: The swizzling mode for memory access optimization.
+        fold_chunks: Number of depth chunks to fold into one rank-4 TMA (`1` =
+            original 3D behavior).
+        row_major: When `True` (and `fold_chunks >= 2`), build the rank-5
+            chunk-inner (row-major-atoms) box so one TMA writes a whole
+            multi-atom-row page; `False` (default) keeps the rank-4 chunk-outer box.
 
     Args:
         ctx: The CUDA device context used to create the TMA descriptor.
@@ -4953,15 +5095,22 @@ def create_split_tma[
     Raises:
         If TMA descriptor creation fails.
     """
-    var tensor = _split_tma_gmem_tensor[gmem_shape, swizzle_mode](
-        ptr, runtime_dim0
-    )
-    res = create_tensor_tile[
-        res.tile_shape,
-        swizzle_mode=swizzle_mode,
-        __tile_shape=res.tile_shape,
-        __desc_shape=res.desc_shape,
-    ](ctx, tensor)
+    comptime if fold_chunks >= 2:
+        comptime assert rank == 3, "fold path expects the rank-3 K view"
+        # num_heads is the static second gmem dim for the cache-backed builders.
+        res = _create_split_tma_folded[
+            smem_shape, gmem_shape, swizzle_mode, fold_chunks, row_major
+        ](ctx, ptr, runtime_dim0, gmem_shape[1])
+    else:
+        var tensor = _split_tma_gmem_tensor[gmem_shape, swizzle_mode](
+            ptr, runtime_dim0
+        )
+        res = create_tensor_tile[
+            res.tile_shape,
+            swizzle_mode=swizzle_mode,
+            __tile_shape=res.tile_shape,
+            __desc_shape=res.desc_shape,
+        ](ctx, tensor)
 
 
 def create_split_tma[
@@ -4971,6 +5120,8 @@ def create_split_tma[
     smem_shape: IndexList[rank],
     gmem_shape: IndexList[rank],
     swizzle_mode: TensorMapSwizzle,
+    fold_chunks: Int = 1,
+    row_major: Bool = False,
 ](
     ctx: DeviceContext,
     ptr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
@@ -4988,12 +5139,38 @@ def create_split_tma[
     of the tensor into multiples of swizzle granularity. This functionality is currently
     disabled because it was not found to improve performance.
 
+    When `fold_chunks >= 2`, the contiguous innermost (depth) dimension — which the
+    swizzle hardware forces to be split into `swizzle_granularity`-sized chunks — is
+    folded into an extra, non-innermost box dimension so that a *single* rank-4
+    `cp.async.bulk.tensor` copies all `fold_chunks` depth chunks at once instead of one
+    TMA per chunk. The PUBLIC return type stays rank-3 (`SplitLastDimTMATensorTile`);
+    the rank-4 CUDA descriptor is built internally and its opaque 128 B
+    `TMADescriptor` blob (which is rank-agnostic — see `TMADescriptor`) is wrapped into
+    the rank-3 tile via its `@implicit` constructor. The issue site
+    (`PagedRowIndices._tma_copy_kv_impl`) must agree by issuing rank-4 coords; the
+    shared `kv_tma_fold_chunks` predicate is the single source of truth that keeps the
+    baked rank and the issue rank from drifting. `fold_chunks == 1` reproduces exactly
+    the original 3D behavior.
+
+    Folding is byte-equivalent to the per-chunk loop ONLY when the box's per-chunk SMEM
+    stride (`box_rows * swizzle_granularity`) equals the consumer/producer chunk stride
+    (`smem_j_stride_rows * swizzle_granularity`) — i.e. `box_rows == smem_j_stride_rows`
+    — and the tile occupies a single page (`pages_per_iter == 1`). The caller is
+    responsible for only passing `fold_chunks >= 2` when those hold; here `box_rows`
+    equals `smem_shape[0]`.
+
     Parameters:
         rank: The number of dimensions of the tensor.
         dtype: The data type of the tensor elements.
         smem_shape: The shape of the tile in shared memory.
         gmem_shape: The shape of the global memory tensor.
         swizzle_mode: The swizzling mode for memory access optimization.
+        fold_chunks: Number of depth chunks to fold into one rank-4 TMA. `1`
+            (default) is the original per-chunk 3D behavior; `>= 2` builds a rank-4
+            descriptor.
+        row_major: When `True` (and `fold_chunks >= 2`), build the rank-5
+            chunk-inner (row-major-atoms) box so one TMA writes a whole
+            multi-atom-row page; `False` (default) keeps the rank-4 chunk-outer box.
 
     Args:
         ctx: The CUDA device context used to create the TMA descriptor.
@@ -5007,15 +5184,25 @@ def create_split_tma[
     Raises:
         If TMA descriptor creation fails.
     """
-    var tensor = _split_tma_gmem_tensor[gmem_shape, swizzle_mode](
-        ptr, runtime_dim0, runtime_dim1
-    )
-    res = create_tensor_tile[
-        res.tile_shape,
-        swizzle_mode=swizzle_mode,
-        __tile_shape=res.tile_shape,
-        __desc_shape=res.desc_shape,
-    ](ctx, tensor)
+    comptime if fold_chunks >= 2:
+        # SM100 (B200) rank-4 depth-chunk fold. `gmem_shape` is the rank-3 view
+        # `[rows, num_heads, head_size]` (`gmem_shape[0]`/`[1]` are UNKNOWN,
+        # `gmem_shape[2]` = head_size); `smem_shape` is `[box_rows, 1, BK]`.
+        # `num_heads` is the runtime second gmem dim here.
+        comptime assert rank == 3, "fold path expects the rank-3 K view"
+        res = _create_split_tma_folded[
+            smem_shape, gmem_shape, swizzle_mode, fold_chunks, row_major
+        ](ctx, ptr, runtime_dim0, runtime_dim1)
+    else:
+        var tensor = _split_tma_gmem_tensor[gmem_shape, swizzle_mode](
+            ptr, runtime_dim0, runtime_dim1
+        )
+        res = create_tensor_tile[
+            res.tile_shape,
+            swizzle_mode=swizzle_mode,
+            __tile_shape=res.tile_shape,
+            __desc_shape=res.desc_shape,
+        ](ctx, tensor)
 
 
 @always_inline
