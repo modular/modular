@@ -437,8 +437,13 @@ struct RealSwiGLUOutput[
 
     comptime device_type: AnyType = Self
 
+    @__allow_legacy_any_origin_fields
     var c_packed_ptr: UnsafePointer[UInt8, MutAnyOrigin]
+
+    @__allow_legacy_any_origin_fields
     var c_swiglu_scales_ptr: UnsafePointer[Scalar[Self._sf_dtype], MutAnyOrigin]
+
+    @__allow_legacy_any_origin_fields
     var c_input_scales_ptr: UnsafePointer[Float32, ImmutAnyOrigin]
     # Runtime alpha and L for the clamped activation. Always stored;
     # the 8 bytes keep the struct layout uniform across activations.

@@ -34,9 +34,9 @@ from max.pipelines.lib import (
 )
 from max.pipelines.lib.pipeline_variants.overlap_text_generation import (
     _CALLBACK_LAG_WARN_S,
-    _MAGIC_DRAFT_TOKEN_ID,
     _MAX_GRAPH_CAPTURE_BATCH_SIZE,
     _OOB_IDX,
+    MAGIC_DRAFT_TOKEN_ID,
     AsyncBatch,
     _host_mirror_realized_drafts,
 )
@@ -50,6 +50,7 @@ from max.pipelines.modeling.types import (
     RequestID,
     TextGenerationInputs,
 )
+from max.support.math import ceildiv
 
 
 @pytest.mark.parametrize(
@@ -912,10 +913,9 @@ class TestBuildBitmaskCallback:
         num_acc_np = np.zeros(1, dtype=np.int64)
         draft_np = np.zeros((1, 2), dtype=np.int64)
         next_draft_np = np.zeros((1, 2), dtype=np.int64)
+        # Packed int32 bitmask the callback writes straight into; the GPU
+        # acceptance sampler unpacks and applies it, so there is no bool target.
         bitmask_np = np.full((1, 3, 2), -1, dtype=np.int32)
-        # Bool unpacked output target — populated by the callback after the
-        # int32 advance_fsm_and_compute_bitmasks call returns.
-        overlap_bool_np = np.zeros((1, 3, 64), dtype=np.bool_)
 
         done_event = threading.Event()
         callback = pipeline._build_bitmask_callback(
@@ -924,8 +924,7 @@ class TestBuildBitmaskCallback:
             num_accepted_np=num_acc_np,
             accepted_draft_tokens_np=draft_np,
             next_draft_tokens_np=next_draft_np,
-            bitmask_pinned_np=bitmask_np,
-            overlap_bool_pinned_np=overlap_bool_np,
+            overlap_pinned_np=bitmask_np,
             done_event=done_event,
         )
 
@@ -959,8 +958,7 @@ class TestBuildBitmaskCallback:
             num_accepted_np=np.array([], dtype=np.int64),
             accepted_draft_tokens_np=np.zeros((0, 0), dtype=np.int64),
             next_draft_tokens_np=np.zeros((0, 0), dtype=np.int64),
-            bitmask_pinned_np=np.zeros((0, 0, 0), dtype=np.int32),
-            overlap_bool_pinned_np=np.zeros((0, 0, 0), dtype=np.bool_),
+            overlap_pinned_np=np.zeros((0, 0, 0), dtype=np.int32),
             done_event=done_event,
         )
 
@@ -1023,7 +1021,6 @@ class TestEnqueueAsyncBitmaskCallback:
         # All persistent pinned buffers present so the prefill-only short-circuit
         # is the one that fires (not the buffer-missing one).
         for name in (
-            "persistent_bitmask_pinned",
             "persistent_bonus_tokens_pinned",
             "persistent_num_accepted_pinned",
             "persistent_accepted_draft_tokens_pinned",
@@ -1052,18 +1049,11 @@ class TestEnqueueAsyncBitmaskCallback:
         batch_size = 1
         num_draft = 2
         num_positions = num_draft + 1
-        packed_vocab = 4
         vocab_size = 64
 
         mock_spec_state = MagicMock()
         # Configure each persistent pinned buffer so `to_numpy()` returns a
         # writable numpy array of the right shape/dtype.
-        bitmask_pinned = MagicMock()
-        bitmask_pinned.to_numpy.return_value = np.full(
-            (batch_size, num_positions, packed_vocab),
-            -1,
-            dtype=np.int32,
-        )
         bonus_tokens_pinned = MagicMock()
         bonus_tokens_pinned.to_numpy.return_value = np.array(
             [5], dtype=np.int64
@@ -1079,7 +1069,6 @@ class TestEnqueueAsyncBitmaskCallback:
             (batch_size, num_draft), dtype=np.int64
         )
 
-        mock_spec_state.persistent_bitmask_pinned = bitmask_pinned
         mock_spec_state.persistent_bonus_tokens_pinned = bonus_tokens_pinned
         mock_spec_state.persistent_num_accepted_pinned = num_accepted_pinned
         mock_spec_state.persistent_accepted_draft_tokens_pinned = (
@@ -1150,16 +1139,9 @@ class TestEnqueueAsyncBitmaskCallback:
         batch_size = 3
         num_draft = 2
         num_positions = num_draft + 1
-        packed_vocab = 4
         vocab_size = 64
 
         mock_spec_state = MagicMock()
-        bitmask_pinned = MagicMock()
-        bitmask_pinned.to_numpy.return_value = np.full(
-            (batch_size, num_positions, packed_vocab),
-            -1,
-            dtype=np.int32,
-        )
         bonus_tokens_pinned = MagicMock()
         bonus_tokens_pinned.to_numpy.return_value = np.zeros(
             batch_size, dtype=np.int64
@@ -1177,7 +1159,6 @@ class TestEnqueueAsyncBitmaskCallback:
             (batch_size, num_draft), dtype=np.int64
         )
 
-        mock_spec_state.persistent_bitmask_pinned = bitmask_pinned
         mock_spec_state.persistent_bonus_tokens_pinned = bonus_tokens_pinned
         mock_spec_state.persistent_num_accepted_pinned = num_accepted_pinned
         mock_spec_state.persistent_accepted_draft_tokens_pinned = (
@@ -1491,6 +1472,7 @@ class TestAssignBitmaskInputs:
     """
 
     _VOCAB = 64
+    _PACKED_VOCAB = ceildiv(_VOCAB, 32)  # packed int32 words (1 bit per token)
     _MAX_BATCH = 4
     _K = 2  # num speculative tokens (matches num_draft_tokens_to_verify)
     _NUM_POS = _K + 1
@@ -1545,10 +1527,13 @@ class TestAssignBitmaskInputs:
         mock_structured_output = MagicMock()
         mock_structured_output.enabled = True
         # The synchronous fill is called only for the rows the callback did not
-        # cover; return a bool array sized to whatever subset it receives.
+        # cover; return a packed int32 array (-1 = all bits set = all valid)
+        # sized to whatever subset it receives.
         mock_structured_output.compute_speculative_bitmasks.side_effect = (
-            lambda context_batch, draft_tokens, num_positions: np.ones(
-                (len(context_batch), num_positions, cls._VOCAB), dtype=np.bool_
+            lambda context_batch, draft_tokens, num_positions: np.full(
+                (len(context_batch), num_positions, cls._PACKED_VOCAB),
+                -1,
+                dtype=np.int32,
             )
         )
         pipeline._structured_output = mock_structured_output
@@ -1556,10 +1541,11 @@ class TestAssignBitmaskInputs:
         mock_overlap_state = MagicMock()
         mock_overlap_state.num_positions = cls._NUM_POS
         mock_overlap_state.vocab_size = cls._VOCAB
+        mock_overlap_state.packed_vocab_size = cls._PACKED_VOCAB
         mock_overlap_state.max_batch_size = cls._MAX_BATCH
-        # Real array so gather can copy callback rows out of pinned.
+        # Real packed int32 array so gather can copy callback rows out of pinned.
         mock_overlap_state.pinned_bitmask.to_numpy.return_value = np.zeros(
-            (cls._MAX_BATCH, cls._NUM_POS, cls._VOCAB), dtype=np.bool_
+            (cls._MAX_BATCH, cls._NUM_POS, cls._PACKED_VOCAB), dtype=np.int32
         )
         # Sentinels so the assertion on ``model_inputs.*`` can compare
         # by identity.
@@ -2058,7 +2044,7 @@ class TestAssignBitmaskInputs:
         decode, ``has_precomputed_bitmask=False``) the speculative bitmask
         must be built from the real EAGLE drafts that ``realize_future_tokens``
         scattered onto the device buffer -- NOT from the
-        ``_MAGIC_DRAFT_TOKEN_ID`` placeholders left in ``draft_tokens_np``.
+        ``MAGIC_DRAFT_TOKEN_ID`` placeholders left in ``draft_tokens_np``.
 
         When the synchronous fill passes ``draft_tokens_np`` (all MAGIC) straight to
         ``compute_speculative_bitmasks``, the speculative FSM walk breaks on
@@ -2091,7 +2077,7 @@ class TestAssignBitmaskInputs:
         # ``draft_tokens_to_verify`` was reset to [] at the end of the prior
         # step, so the MAGIC fallback fires).
         magic_drafts = np.full(
-            (1, self._K), _MAGIC_DRAFT_TOKEN_ID, dtype=np.int64
+            (1, self._K), MAGIC_DRAFT_TOKEN_ID, dtype=np.int64
         )
         # The real drafts ``realize_future_tokens`` scattered onto the device
         # buffer for this row, made host-visible through the shared map.
@@ -2137,7 +2123,7 @@ class TestHostMirrorRealizedDrafts:
     def test_reorder_permutes_rows_by_map(self) -> None:
         """Prev ``[A, B]`` reordered to curr ``[B, A]``: each curr row gets the
         next drafts of the prev row that maps to it."""
-        draft_tokens_np = np.full((2, self._K), _MAGIC_DRAFT_TOKEN_ID, np.int64)
+        draft_tokens_np = np.full((2, self._K), MAGIC_DRAFT_TOKEN_ID, np.int64)
         prev_next = np.array([[10, 11, 12], [20, 21, 22]], dtype=np.int64)
         # prev A (row 0) -> curr row 1; prev B (row 1) -> curr row 0.
         prev_to_curr_map = np.array([1, 0], dtype=np.int64)
@@ -2155,7 +2141,7 @@ class TestHostMirrorRealizedDrafts:
         # Row 0 = continuing (mapped, MAGIC seed); row 1 = resumed with real
         # saved drafts and NOT in the prev batch.
         draft_tokens_np = np.array(
-            [[_MAGIC_DRAFT_TOKEN_ID] * self._K, [7, 8, 9]], dtype=np.int64
+            [[MAGIC_DRAFT_TOKEN_ID] * self._K, [7, 8, 9]], dtype=np.int64
         )
         prev_next = np.array([[10, 11, 12]], dtype=np.int64)  # prev = [A]
         prev_to_curr_map = np.array([0], dtype=np.int64)  # A -> curr row 0
@@ -2171,7 +2157,7 @@ class TestHostMirrorRealizedDrafts:
         """An unmapped curr row whose seed is MAGIC keeps MAGIC (it genuinely
         has no real drafts to verify)."""
         draft_tokens_np = np.array(
-            [[10, 11, 12], [_MAGIC_DRAFT_TOKEN_ID] * self._K], dtype=np.int64
+            [[10, 11, 12], [MAGIC_DRAFT_TOKEN_ID] * self._K], dtype=np.int64
         )
         prev_next = np.array([[10, 11, 12]], dtype=np.int64)
         prev_to_curr_map = np.array([0], dtype=np.int64)
@@ -2180,12 +2166,12 @@ class TestHostMirrorRealizedDrafts:
             draft_tokens_np, prev_to_curr_map, prev_next
         )
 
-        assert np.array_equal(out[1], [_MAGIC_DRAFT_TOKEN_ID] * self._K)
+        assert np.array_equal(out[1], [MAGIC_DRAFT_TOKEN_ID] * self._K)
 
     def test_oob_prev_row_is_skipped(self) -> None:
         """A prev row absent from the current batch (``_OOB_IDX``) writes
         nothing -- its drafts must not leak into any current row."""
-        draft_tokens_np = np.full((1, self._K), _MAGIC_DRAFT_TOKEN_ID, np.int64)
+        draft_tokens_np = np.full((1, self._K), MAGIC_DRAFT_TOKEN_ID, np.int64)
         # prev = [A, X]; A -> curr 0, X not in curr.
         prev_next = np.array([[10, 11, 12], [99, 99, 99]], dtype=np.int64)
         prev_to_curr_map = np.array([0, _OOB_IDX], dtype=np.int64)
@@ -2198,7 +2184,7 @@ class TestHostMirrorRealizedDrafts:
 
     def test_does_not_mutate_input(self) -> None:
         """The seed array is copied, not mutated in place."""
-        draft_tokens_np = np.full((1, self._K), _MAGIC_DRAFT_TOKEN_ID, np.int64)
+        draft_tokens_np = np.full((1, self._K), MAGIC_DRAFT_TOKEN_ID, np.int64)
         prev_next = np.array([[10, 11, 12]], dtype=np.int64)
         prev_to_curr_map = np.array([0], dtype=np.int64)
 
@@ -2208,7 +2194,7 @@ class TestHostMirrorRealizedDrafts:
 
         assert out is not draft_tokens_np
         assert np.array_equal(
-            draft_tokens_np, np.full((1, self._K), _MAGIC_DRAFT_TOKEN_ID)
+            draft_tokens_np, np.full((1, self._K), MAGIC_DRAFT_TOKEN_ID)
         )
 
     def test_matches_independent_device_scatter_reference(self) -> None:
@@ -2216,7 +2202,7 @@ class TestHostMirrorRealizedDrafts:
         with an in-range target, overwrite that current row -- the same thing
         the device graph does."""
         rng_curr = np.array(
-            [[1, 2, 3], [4, 5, 6], [_MAGIC_DRAFT_TOKEN_ID] * self._K],
+            [[1, 2, 3], [4, 5, 6], [MAGIC_DRAFT_TOKEN_ID] * self._K],
             dtype=np.int64,
         )
         prev_next = np.array([[70, 71, 72], [80, 81, 82]], dtype=np.int64)

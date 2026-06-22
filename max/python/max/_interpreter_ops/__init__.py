@@ -25,6 +25,8 @@ from max._core.dialects import mo
 from max._core.driver import Buffer
 
 # Import op bindings from categorized Mojo modules
+# matmul / unary-elementwise handlers are backed by graph-compiler models
+# (compiled below), unlike the Mojo op bindings above.
 from . import (  # type: ignore[attr-defined]
     argmax_ops,
     argnonzero_ops,
@@ -37,8 +39,10 @@ from . import (  # type: ignore[attr-defined]
     elementwise_cast_ops,
     elementwise_comparison_ops,
     gather_scatter_ops,
+    gc_compile,
     group_norm_ops,
     layer_norm_ops,
+    matmul_gc,
     misc_ops,
     nms_ops,
     pad_ops,
@@ -51,12 +55,8 @@ from . import (  # type: ignore[attr-defined]
     split_ops,
     tile_ops,
     topk_ops,
+    unary_elementwise_gc,
 )
-
-# Some op handlers are backed by graph-compiler models compiled at import time
-# by these sweeps (invoked below, after the handlers import).
-from .matmul_gc import compile_matmul_sweep
-from .unary_elementwise_gc import compile_unary_sweep
 
 # Arithmetic binary ops: output dtype matches input dtype
 # Dtype dispatch is handled in Mojo
@@ -119,8 +119,20 @@ SOFTMAX: dict[
 # handlers.py uses the kernel dictionaries defined above.
 from .handlers import _MO_OP_HANDLERS, lookup_handler, register_op_handler
 
-compile_matmul_sweep()
-compile_unary_sweep()
+
+# Precompile the full GC matrix here (the default) so dispatch is a warm cache
+# lookup; with MAX_EAGER_OP_PRECOMPILE=0 each target compiles lazily on first
+# dispatch instead, so a trivial program doesn't compile the whole kernel
+# library on a cold cache (MXF-508). See gc_compile / matmul_gc /
+# unary_elementwise_gc. Wrapped in a function so the matmul_gc / unary_gc symbol
+# accesses are deferred past this module's import cycle with them.
+def _precompile_gc_models() -> None:
+    if gc_compile.should_precompile():
+        matmul_gc.compile_matmul_sweep()
+        unary_elementwise_gc.compile_unary_sweep()
+
+
+_precompile_gc_models()
 
 __all__ = [
     "BINARY_ELEMENTWISE",

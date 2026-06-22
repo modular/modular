@@ -45,6 +45,7 @@ from max.pipelines.request.open_responses import (
     OutputImageContent,
     OutputVideoContent,
 )
+from max.pipelines.weights.weight_loading import auto_cast_weights_from_env
 
 from .cache import DenoisingCacheConfig
 from .interface import DiffusionPipeline
@@ -169,6 +170,7 @@ class PixelGenerationPipeline(
             self._compiled = module_base.compile(
                 *module_io.input_types(),
                 weights=state_dict,
+                auto_cast=auto_cast_weights_from_env(),
             )
             self._module = module_io
         elif issubclass(pipeline_model, PipelineExecutor):
@@ -211,33 +213,38 @@ class PixelGenerationPipeline(
         if self._use_module:
             assert self._compiled is not None
             assert self._module is not None
-            # ``forward`` runs the text encoder and the VAE image encoder
-            # unconditionally; push the prepared buffers through the
-            # compiled graph and surface the outputs so we can verify
-            # the compile path end-to-end before the denoiser lands.
-            # Per-input device placement is handled inside the Module's
-            # ``prepare_inputs``.
+            # ``forward`` runs the text encoder, VAE image encoder, the
+            # denoising loop, and the VAE decoder end-to-end.  Per-input
+            # device placement is handled inside the Module's
+            # ``prepare_inputs``.  Input order must match
+            # ``FLUXModule.input_types()``.
             try:
                 compiled_outputs = self._compiled(
                     model_inputs.tokens,
                     model_inputs.input_image,
+                    model_inputs.latents,
+                    model_inputs.num_inference_steps,
+                    model_inputs.h_carrier,
+                    model_inputs.w_carrier,
+                    model_inputs.timesteps,
+                    model_inputs.dts,
+                    model_inputs.guidance,
+                    model_inputs.text_ids,
+                    model_inputs.latent_image_ids,
                 )
             except Exception:
                 _logger.error(
                     "Encountered an exception while executing pixel "
-                    "batch (module path, text + image encoders only): "
-                    "batch_size=%d",
+                    "batch (module path, denoise loop): batch_size=%d",
                     len(flat_batch),
                 )
                 raise
-            text_encoder_output, image_latents = compiled_outputs
-            print(f"FLUXModule text encoder output: {text_encoder_output}")
-            print(f"FLUXModule image latents: {image_latents}")
-            raise NotImplementedError(
-                "FLUXModule execute path is wired only through the "
-                "text encoder and VAE image encoder; denoiser and "
-                "VAE decoder are not yet implemented."
-            )
+            module_outputs = self._module.from_outputs(list(compiled_outputs))
+            images = np.from_dlpack(module_outputs.images)
+            num_images_per_prompt = np.from_dlpack(
+                model_inputs.num_images_per_prompt
+            ).item()
+            assert isinstance(num_images_per_prompt, int)
         elif self._use_executor:
             assert self._executor is not None
             try:

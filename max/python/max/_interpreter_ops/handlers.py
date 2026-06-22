@@ -747,12 +747,13 @@ for op_type in ops.BINARY_ELEMENTWISE_COMPARISON:
 def _handle_unary_elementwise(
     op: _core.Operation, inputs: Sequence[Buffer | None]
 ) -> Sequence[Buffer]:
-    """Dispatches an eager unary-elementwise op to its pre-compiled GC model.
+    """Dispatches an eager unary-elementwise op to its GC model.
 
-    Models are compiled once per (op, device, input dtype) at rank 1, so the
-    operand is flattened around the call and reshaped back (zero-copy views).
-    The output dtype is whatever the model produces — the same dtype for most
-    ops, ``bool`` for the ``IsNan``/``IsInf`` predicates.
+    Models are compiled once per (op, device, input dtype) at rank 1 (see
+    :func:`unary_elementwise_gc.unary_model`), so the operand is flattened
+    around the call and reshaped back (zero-copy views). The output dtype is
+    whatever the model produces — the same dtype for most ops, ``bool`` for the
+    ``IsNan``/``IsInf`` predicates.
 
     Args:
         op: The unary-elementwise operation being handled.
@@ -770,8 +771,14 @@ def _handle_unary_elementwise(
     return [out.view(out.dtype, x.shape)]
 
 
-for op_type in unary_elementwise_gc.UNARY_GC_OPS:
-    register_op_handler(op_type)(_handle_unary_elementwise)
+# Wrapped in a function so the UNARY_GC_OPS access is deferred past the import
+# cycle between this module and unary_elementwise_gc (via the package).
+def _register_unary_elementwise_handlers() -> None:
+    for op_type in unary_elementwise_gc.UNARY_GC_OPS:
+        register_op_handler(op_type)(_handle_unary_elementwise)
+
+
+_register_unary_elementwise_handlers()
 
 
 # Unary mixed-dtype operations (cast, is_nan, is_inf)
@@ -818,10 +825,10 @@ for op_type in ops.UNARY_MIXED:
 def _handle_matmul(
     op: mo.MatmulOp | mo.BatchMatmulOp, inputs: Sequence[Buffer | None]
 ) -> Sequence[Buffer]:
-    """Routes eager matmul and batch_matmul through the pre-compiled GC model.
+    """Routes eager matmul and batch_matmul through a GC model.
 
-    Looks up the import-time-compiled rank-3 batched-matmul
-    :class:`~max.engine.Model` for the realized input's device and dtype,
+    Looks up the rank-3 batched-matmul :class:`~max.engine.Model` for the
+    realized input's device and dtype (see :func:`matmul_gc.matmul_model`),
     view-shims the two operands to canonical rank 3, executes the model, and
     view-shims the output back to the result rank. All views are zero-copy.
 

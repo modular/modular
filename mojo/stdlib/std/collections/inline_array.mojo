@@ -33,6 +33,7 @@ var filled = InlineArray[Int, 5](fill=42)
 """
 
 import std.math
+import std.memory
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.builtin.rebind import downcast
 from std.collections import check_bounds

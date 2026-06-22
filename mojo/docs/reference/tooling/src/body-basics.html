@@ -1,5 +1,6 @@
 <!-- title: Mojo Basics -->
 <!-- subtitle: Syntax essentials: the core you reach for first -->
+<!-- layout: landscape -->
 
 <section class="panel">
       <h2>Hello, Mojo</h2>
@@ -53,9 +54,9 @@ comptime PI = 3.14159 # compile-time const</pre>
           <tr><td>List[T]</td><td>array, fixed size or growing</td></tr>
           <tr><td>SIMD[dt, n]</td><td>n-wide numeric vector</td></tr>
         </table>
-        <p class="note">Almost every numeric type is a <b>Scalar</b>: a length-1 <b>SIMD</b>
-          vector. It looks like one number but it is really a vector, so scaling to vector math is
-          built in. <b>Int</b> is the exception.</p>
+        <p class="note">Numeric types are <b>SIMD</b> vectors under the hood: scaling to vector
+          math is built in. <b>Int</b> is the exception.</p>
+        <p class="note">No implicit numeric conversion: cast explicitly with <b>Float64(n)</b>, <b>Int(x)</b>, <b>String(v)</b>.</p>
         <p class="note">Types are <b>PascalCase</b> (<b>Int</b>); names are <b>lower_snake_case</b>.</p>
       </div>
     </section>
@@ -139,7 +140,22 @@ def risky() raises: # may raise
 
 def nothing():
     pass # do-nothing body</pre>
-        <p class="note">No <code>-&gt;</code> means the function returns <b>None</b>. <code>def</code> can't raise unless marked <b>raises</b>.</p>
+        <p class="note">No <code>-&gt;</code> means the function returns <b>None</b>. <code>def</code> can raise only if marked <b>raises</b>, so callers can see it coming.</p>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Errors</h2>
+      <div class="body">
+<pre class="code">def risky() raises:
+    raise Error("boom")
+
+def main():
+    try:
+        risky()
+    except e:
+        print("caught:", e)</pre>
+        <p class="note">Mark a raising function <b>raises</b>; <b>raise</b> signals, <b>try</b>/<b>except</b> catches. <b>except e</b> binds the error.</p>
       </div>
     </section>
 
@@ -150,6 +166,7 @@ def nothing():
 xs.append(4)
 print(xs[0]) # 1
 print(len(xs)) # 4</pre>
+        <p class="note"><b>List[T]</b> needs its element type; omit it and inference can surprise you.</p>
       </div>
     </section>
 
@@ -171,7 +188,7 @@ struct Counter:
 def main():
     var p = Point(3, 4)
     print(p.x, p.y) # 3 4</pre>
-        <p class="note">Every instance method takes <b>self</b> as its first argument. Structs also support <b>comptime</b> constants and static methods (<b>@staticmethod</b>).</p>
+        <p class="note">Every instance method takes <b>self</b> as its first argument. The <b>out</b> convention returns the initialized <b>self</b> without a return arrow. Structs also support <b>comptime</b> constants and static methods (<b>@staticmethod</b>).</p>
       </div>
     </section>
 
@@ -193,6 +210,9 @@ from std.math import sqrt as root # aliased</pre>
             <code>Float64(n)</code>, <code>Int(x)</code>.</li>
           <li>Assignment copies the value; it is not a shared reference.</li>
           <li>String interpolation is <code>t"…"</code>, not <code>f"…"</code>.</li>
+          <li>Declare with <b>var</b> (and <b>ref</b>) rather than a bare <code>x = 5</code>.</li>
+          <li>No <b>match</b> yet: use <code>if/elif/else</code>.</li>
+          <li>A <code>def</code> with no <code>-&gt;</code> returns <b>None</b>, same as Python.</li>
         </ul>
       </div>
     </section>
@@ -206,6 +226,8 @@ from std.math import sqrt as root # aliased</pre>
             <code>std::move</code> or a Rust move); <code>__del__</code> gives RAII cleanup.</li>
           <li>Behavior comes from <b>traits</b>, not class inheritance or templates (like Rust
             traits or C++20 concepts).</li>
+          <li>No <code>?:</code> ternary or Elvis operator: write <code>a if cond else b</code>.</li>
+          <li>No <b>switch</b> yet: use <code>if/elif/else</code>.</li>
         </ul>
       </div>
     </section>

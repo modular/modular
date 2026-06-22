@@ -35,11 +35,15 @@ from max.pipelines.lib import (
     AlwaysSignalBuffersMixin,
     CompilationTimer,
     KVCacheConfig,
-    ModelInputs,
     PipelineConfig,
-    UnifiedEagleOutputs,
 )
-from max.pipelines.lib.interfaces import PipelineModelWithKVCache
+from max.pipelines.lib.interfaces import (
+    PipelineModelWithKVCache,
+    UnifiedSpecDecodeInputs,
+)
+from max.pipelines.lib.pipeline_variants.unified_spec_decode_model import (
+    _UnifiedSpecDecodeModelMixin,
+)
 from max.pipelines.lib.utils import parse_state_dict_from_weights
 from transformers import AutoConfig
 
@@ -51,8 +55,15 @@ from .weight_adapters import convert_unified_safetensor_state_dict
 
 
 @dataclass
-class UnifiedMTPGemma4Inputs(ModelInputs):
-    """Inputs for the UnifiedMTPGemma4 model."""
+class UnifiedMTPGemma4Inputs(UnifiedSpecDecodeInputs):
+    """Inputs for the UnifiedMTPGemma4 model.
+
+    The spec-decode fields and trailing buffer packing come from
+    :class:`UnifiedSpecDecodeInputs`; the fields below plus the KV cache form
+    this distributed MTP graph's prefix. The graph binds the per-row
+    ``in_thinking_phase`` flag and, when structured output is enabled, the
+    constrained-decoding bitmask triple.
+    """
 
     tokens: Buffer
     input_row_offsets: Buffer
@@ -62,37 +73,10 @@ class UnifiedMTPGemma4Inputs(ModelInputs):
     signal_buffers: list[Buffer]
     batch_context_lengths: list[Buffer]
 
-    draft_tokens: Buffer | None = None
-    seed: Buffer | None = None
-    temperature: Buffer | None = None
-    top_k: Buffer | None = None
-    max_k: Buffer | None = None
-    top_p: Buffer | None = None
-    min_top_p: Buffer | None = None
-
-    in_thinking_phase: Buffer | None = None
-    """Per-batch ``bool`` flag marking rows currently inside a
-    ``<think>...</think>`` block; consumed by relaxed acceptance."""
-
-    pinned_bitmask: Buffer | None = None
-    wait_payload: Buffer | None = None
-    device_bitmask_scratch: Buffer | None = None
-
     @property
     def buffers(self) -> tuple[Buffer, ...]:
         assert self.kv_cache_inputs is not None
-        # Fixed positional ABI: the graph always consumes draft_tokens, seed,
-        # and the sampling buffers, so assert they are present and append in
-        # graph order (a missing buffer would silently shift the ABI).
-        assert self.draft_tokens is not None
-        assert self.seed is not None
-        assert self.temperature is not None
-        assert self.top_k is not None
-        assert self.max_k is not None
-        assert self.top_p is not None
-        assert self.min_top_p is not None
-        assert self.in_thinking_phase is not None
-        buffers = (
+        prefix = (
             self.tokens,
             self.input_row_offsets,
             self.host_input_row_offsets,
@@ -101,30 +85,16 @@ class UnifiedMTPGemma4Inputs(ModelInputs):
             *self.signal_buffers,
             *self.kv_cache_inputs.flatten(),
             *self.batch_context_lengths,
-            self.draft_tokens,
         )
-        buffers += (
-            self.seed,
-            self.temperature,
-            self.top_k,
-            self.max_k,
-            self.top_p,
-            self.min_top_p,
-            self.in_thinking_phase,
+        return prefix + self._spec_decode_tail_buffers(
+            include_in_thinking_phase=True
         )
-        if self.pinned_bitmask is not None:
-            assert self.wait_payload is not None
-            assert self.device_bitmask_scratch is not None
-            buffers += (
-                self.pinned_bitmask,
-                self.wait_payload,
-                self.device_bitmask_scratch,
-            )
-        return buffers
 
 
 class UnifiedMTPGemma4Model(
-    AlwaysSignalBuffersMixin, PipelineModelWithKVCache[TextContext]
+    _UnifiedSpecDecodeModelMixin,
+    AlwaysSignalBuffersMixin,
+    PipelineModelWithKVCache[TextContext],
 ):
     """Gemma4 with MTP: merge + target + rejection + shift in one graph."""
 
@@ -346,23 +316,6 @@ class UnifiedMTPGemma4Model(
 
         return model
 
-    def execute(
-        self,
-        model_inputs: ModelInputs,
-    ) -> UnifiedEagleOutputs:
-        """Execute and return all 3 graph outputs for speculative decoding."""
-        assert isinstance(model_inputs, UnifiedMTPGemma4Inputs)
-        model_outputs = self.model.execute(*model_inputs.buffers)
-        assert len(model_outputs) == 3, (
-            f"Expected 3 outputs, got {len(model_outputs)}"
-        )
-
-        return UnifiedEagleOutputs(
-            num_accepted_draft_tokens=model_outputs[0],
-            next_tokens=model_outputs[1],
-            next_draft_tokens=model_outputs[2],
-        )
-
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[TextContext]],
@@ -431,6 +384,7 @@ class UnifiedMTPGemma4Model(
             kv_cache_inputs=kv_cache_inputs,
             batch_context_lengths=batch_context_lengths,
             draft_tokens=draft_tokens,
+            structured_output=self.pipeline_config.needs_bitmask_constraints,
         )
 
     @classmethod

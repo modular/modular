@@ -134,7 +134,7 @@ def test_prime_signals_flag_for_first_replay(
     """``prime`` writes pinned memory and drops the flag to 1."""
     assert state.bitmask_flag.load() == 0
 
-    src = np.ones(state.max_bitmask_shape, dtype=np.bool_)
+    src = np.ones(state.max_bitmask_shape, dtype=np.int32)
     state.prime(src)
 
     assert state.bitmask_flag.load() == 1
@@ -200,9 +200,9 @@ def _build_overlap_smoke_graph(
     with Graph(
         "overlap_h2d_smoke",
         input_types=[
-            TensorType(DType.bool, shape, device=DeviceRef.CPU()),
+            TensorType(DType.int32, shape, device=DeviceRef.CPU()),
             BufferType(DType.int64, [2], device=DeviceRef.CPU()),
-            BufferType(DType.bool, shape, device=device_ref),
+            BufferType(DType.int32, shape, device=device_ref),
         ],
     ) as graph:
         pinned = graph.inputs[0].tensor
@@ -246,7 +246,7 @@ def test_in_graph_h2d_preserves_pinned_row_layout(
     # Distinct per-(batch, position) pattern: row b position p is
     # all-True iff (b * num_positions + p) is even. Easy to inspect
     # by eye and easy to detect if rows are swapped or shifted.
-    expected = np.zeros(state.max_bitmask_shape, dtype=np.bool_)
+    expected = np.zeros(state.max_bitmask_shape, dtype=np.int32)
     for b in range(state.max_batch_size):
         for p in range(state.num_positions):
             expected[b, p, :] = ((b * state.num_positions + p) % 2) == 0
@@ -297,7 +297,7 @@ def test_callback_writes_propagate_to_device(
     session = InferenceSession(devices=[accelerator, CPU()])
     model = session.load(graph)
 
-    expected = np.zeros(state.max_bitmask_shape, dtype=np.bool_)
+    expected = np.zeros(state.max_bitmask_shape, dtype=np.int32)
     for b in range(state.max_batch_size):
         for p in range(state.num_positions):
             expected[b, p, :] = ((b + p) % 2) == 0
@@ -353,7 +353,7 @@ def test_stale_flag_no_race_with_default_stream_callback(
 
     # Pre-condition: leftover flag=1 + stale pinned, as if from a
     # prior iteration's callback.
-    stale = np.zeros(state.max_bitmask_shape, dtype=np.bool_)
+    stale = np.zeros(state.max_bitmask_shape, dtype=np.int32)
     state.pinned_bitmask.to_numpy()[...] = stale
     state.bitmask_flag.signal(1)
     state.device_bitmask_scratch.to_numpy()[...] = False
@@ -361,7 +361,7 @@ def test_stale_flag_no_race_with_default_stream_callback(
 
     # The "real" callback writes fresh data, deliberately slow so a
     # broken (non-gated) graph would visibly race past it.
-    fresh = np.ones(state.max_bitmask_shape, dtype=np.bool_)
+    fresh = np.ones(state.max_bitmask_shape, dtype=np.int32)
 
     def cb() -> None:
         time.sleep(0.05)
@@ -408,9 +408,9 @@ def _build_overlap_smoke_graph_with_output(
     with Graph(
         "overlap_h2d_smoke_with_output",
         input_types=[
-            TensorType(DType.bool, shape, device=DeviceRef.CPU()),
+            TensorType(DType.int32, shape, device=DeviceRef.CPU()),
             BufferType(DType.int64, [2], device=DeviceRef.CPU()),
-            BufferType(DType.bool, shape, device=device_ref),
+            BufferType(DType.int32, shape, device=device_ref),
         ],
     ) as graph:
         pinned = graph.inputs[0].tensor

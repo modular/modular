@@ -128,18 +128,18 @@ def test_input_types_with_structured_output() -> None:
         f"Expected 25 input types (with bitmask triple), got {len(input_types)}"
     )
 
-    # The trailing three inputs are pinned_bitmask (bool tensor),
-    # wait_payload (int64 buffer), and device_bitmask_scratch (bool
+    # The trailing three inputs are pinned_bitmask (packed int32 tensor),
+    # wait_payload (int64 buffer), and device_bitmask_scratch (packed int32
     # buffer).
     pinned_type = input_types[-3]
     payload_type = input_types[-2]
     scratch_type = input_types[-1]
-    assert pinned_type.dtype.to_numpy() == "bool", (
-        f"Expected pinned bitmask dtype bool, got {pinned_type.dtype}"
+    assert pinned_type.dtype.to_numpy() == "int32", (
+        f"Expected pinned bitmask dtype int32, got {pinned_type.dtype}"
     )
     assert payload_type.dtype.to_numpy() == "int64", (
         f"Expected wait_payload dtype int64, got {payload_type.dtype}"
     )
-    assert scratch_type.dtype.to_numpy() == "bool", (
-        f"Expected device_bitmask_scratch dtype bool, got {scratch_type.dtype}"
+    assert scratch_type.dtype.to_numpy() == "int32", (
+        f"Expected device_bitmask_scratch dtype int32, got {scratch_type.dtype}"
     )

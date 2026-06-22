@@ -74,5 +74,6 @@ modular_py_test(
     }),
     deps = _COMMON_DEPS + [
         "//max/python/max/pipelines/sampling",
+        "//max/python/max/support",
     ],
 )

@@ -1060,7 +1060,7 @@ logit_verification_pipelines:
     ssim_threshold: 0.90
     lpips_threshold: 0.016
     timeout: 3600
-    config_params_override: {"prefer_module_v3": false}
+    config_params_override: {"prefer_module_v3": true}
 
   # NVFP4 quantized FLUX.2-dev (two-repo layout: FLUX.2-dev base + the
   # FLUX.2-dev-NVFP4 single-file safetensors override for the transformer).

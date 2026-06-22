@@ -17,6 +17,7 @@ from std.ffi import external_call, c_size_t
 from std.sys import size_of, align_of
 
 import std.algorithm
+import std.algorithm.functional
 
 from extensibility import StaticTensorSpec
 from extensibility import (
@@ -79,11 +80,12 @@ struct StateContext(TrivialRegisterPassable):
     This is currently meant as a mojo-side container for GML::StateContext."""
 
     var num_slots: Int
-    var ctx_ptr: OpaquePointer[MutAnyOrigin]
+
+    var ctx_ptr: OpaquePointer[MutUntrackedOrigin]
 
     @always_inline
     def __init__(
-        out self, num_slots: Int, ctx_ptr: OpaquePointer[MutAnyOrigin]
+        out self, num_slots: Int, ctx_ptr: OpaquePointer[MutUntrackedOrigin]
     ):
         self.num_slots = num_slots
         self.ctx_ptr = ctx_ptr

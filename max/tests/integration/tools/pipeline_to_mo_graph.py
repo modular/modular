@@ -169,7 +169,7 @@ def main(
     out_dir = Path(output_dir).absolute()
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    pipeline_config = PipelineConfig(**config_kwargs)
+    pipeline_config = PipelineConfig.from_flat_kwargs(**config_kwargs)
     if build_only:
         with _intercept_graph_compilation(out_dir):
             PIPELINE_REGISTRY.retrieve(pipeline_config)

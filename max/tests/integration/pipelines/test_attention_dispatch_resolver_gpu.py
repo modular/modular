@@ -19,7 +19,10 @@ from max.driver import CPU, Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, ops
-from max.nn.kv_cache.utils import AttentionDispatchResolver
+from max.nn.kv_cache.utils import (
+    AttentionDispatchResolver,
+    MHAAttnKey,
+)
 
 N_KV_HEADS = 8
 MLA_NUM_HEADS = [8, 16, 64, 128]
@@ -213,6 +216,7 @@ def test_mha_dispatch_resolver_matches_reference_graph(
     key = mha_resolver.resolve_attn_key(
         batch_size, max_prompt_length, max_cache_valid_length
     )
+    assert isinstance(key, MHAAttnKey)
     assert key.num_partitions == expected_num_partitions
 
     # MHA packs a 4-int CPU buffer ending in max_cache_valid_length.

@@ -235,25 +235,30 @@ def mha_decoding_num_partitions(
     ctx: DeviceContext,
     is_mla: Bool = False,
 ) raises -> Int:
-    var sm_count = ctx.get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT)
-    if ctx.api() == "hip":
-        return hip_mha_decoding_num_partitions(
-            batch_size,
-            num_keys,
-            heads_per_group,
-            sm_count,
-            is_mla=is_mla,
-        )
-    if ctx.api() == "cuda":
+    var api = ctx.api()
+    if api == "hip" or api == "cuda":
+        # MULTIPROCESSOR_COUNT is only meaningful for the split-K heuristics,
+        # so query it lazily here rather than for every backend.
+        var sm_count = ctx.get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT)
+        if api == "hip":
+            return hip_mha_decoding_num_partitions(
+                batch_size,
+                num_keys,
+                heads_per_group,
+                sm_count,
+                is_mla=is_mla,
+            )
         return cuda_mha_decoding_num_partitions(
             batch_size,
             num_keys,
             heads_per_group,
             sm_count,
         )
-    if ctx.api() == "metal":
-        return 1
-    raise Error("Expected a CUDA, HIP, or Metal device context.")
+    # CUDA and HIP have tuned split-K decode heuristics above. Every other
+    # backend (Metal, plus accelerators with no split-K decode path) runs the
+    # decode unsplit; a single partition is always valid — the decode kernel
+    # reads this count only to bound its split-K loop.
+    return 1
 
 
 def mha_decoding_max_num_partitions(

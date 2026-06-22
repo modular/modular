@@ -37,21 +37,19 @@ from layout import Layout, RuntimeLayout, UNKNOWN_VALUE
 from layout._utils import ManagedLayoutTensor
 from kv_cache.types import (
     KVCacheStaticParams,
-    PagedKVCache,
+    KVCacheT,
     PagedKVCacheCollection,
 )
 from kv_cache_test_utils import padded_lut_cols
 
 
 def _null_block_populate_kernel[
-    dtype: DType,
-    kv_params: KVCacheStaticParams,
-    page_size: Int,
+    cache_t: KVCacheT,
     BN: Int,
     base_alignment: Int,
     num_pages: Int,
 ](
-    kv: PagedKVCache[dtype, kv_params, page_size],
+    kv: cache_t,
     output_ptr: UnsafePointer[UInt32, MutAnyOrigin],
     base_kv_row: UInt32,
 ):
@@ -146,12 +144,7 @@ def run_null_block_test[
 
     ctx.enqueue_function[
         _null_block_populate_kernel[
-            dtype,
-            kv_params,
-            page_size,
-            BN,
-            base_alignment,
-            num_pages,
+            type_of(key_cache), BN, base_alignment, num_pages
         ]
     ](
         key_cache,

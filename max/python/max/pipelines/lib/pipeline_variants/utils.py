@@ -43,6 +43,7 @@ from max.pipelines.lib.tool_parsing import (
 from max.pipelines.lib.utils import upper_bounded_default
 from max.pipelines.modeling.types import RequestID
 from max.profiler import Tracer, traced
+from max.support.math import ceildiv
 from transformers import (
     AutoConfig,
     PreTrainedTokenizerBase,
@@ -744,6 +745,22 @@ class StructuredOutputHelper:
                 end_token_ids=self.tool_call_region_delimiters.end_token_ids,
             )
 
+    def _tokens_for_consume(self, token: int, was_enforced: bool) -> list[int]:
+        """Tokens to feed the matcher for one conditional-enforcement step.
+
+        Mirrors ``TextGenerationContext._tokens_for_consume`` for the async
+        spec-decode paths: on the enforcement flip-on (``was_enforced`` was
+        False), feed the whole start marker rather than just the token that
+        completed it, so multi-token / namespace-prefixed markers (e.g.
+        MiniMax-M3's ``NS<tool_call>``) align with the grammar's start rule
+        instead of rejecting into fail-open. Single-token markers have
+        ``start_token_ids == [token]``, so this is a no-op for them.
+        """
+        delims = self.tool_call_region_delimiters
+        if not was_enforced and delims and delims.start_token_ids:
+            return list(delims.start_token_ids)
+        return [token]
+
     def _speculatively_fill_bitmask_window(
         self,
         ctx: TextGenerationContextType,
@@ -806,8 +823,10 @@ class StructuredOutputHelper:
                 break
 
             consumed = False
+            was_enforced = ctx.grammar_enforced
             if ctx.update_enforcement_state(draft_token):
-                if matcher_copy.try_consume_tokens([draft_token]) == 1:
+                tokens = self._tokens_for_consume(draft_token, was_enforced)
+                if matcher_copy.try_consume_tokens(tokens) == len(tokens):
                     consumed = True
                 else:
                     break
@@ -954,39 +973,46 @@ class StructuredOutputHelper:
                 for committed_idx, token in enumerate(committed_tokens):
                     if token in ctx.eos_tracker.eos_token_ids:
                         ctx.grammar_enforced = False
-                    elif (
-                        ctx.update_enforcement_state(token)
-                        and ctx.matcher.try_consume_tokens([token]) != 1
-                    ):
-                        # ``role`` distinguishes a rejection on the bonus
-                        # token (sampled by target *with* bitmask, so a
-                        # rejection here usually means a bitmask/matcher
-                        # desync) from a rejection on an accepted draft
-                        # (produced by the draft model and verified by
-                        # target, where rejection more often reflects the
-                        # target sampling outside the matcher's allowed
-                        # set on a draft slot the speculative walk did
-                        # not constrain).
-                        role = (
-                            "bonus"
-                            if committed_idx == len(committed_tokens) - 1
-                            else f"accepted_draft[{committed_idx}]"
-                        )
-                        logger.error(
-                            "Async matcher rejected token %d "
-                            "(request %s, role=%s); disabling enforcement "
-                            "for the rest of the request. "
-                            "matcher_errors=%s matcher_warnings=%s %s",
-                            token,
-                            ctx.request_id,
-                            role,
-                            ctx.matcher.get_error(),
-                            ctx.matcher.get_grammar_warnings(),
-                            self._rejection_diagnostics(
-                                ctx, committed_tokens, committed_idx
-                            ),
-                        )
-                        ctx.grammar_enforced = False
+                        continue
+                    was_enforced = ctx.grammar_enforced
+                    if not ctx.update_enforcement_state(token):
+                        continue
+                    # On the enforcement flip-on, feed the matcher the whole
+                    # start marker (multi-token / NS-prefixed markers like
+                    # M3's NS<tool_call>), not just the completing token.
+                    tokens = self._tokens_for_consume(token, was_enforced)
+                    if ctx.matcher.try_consume_tokens(tokens) == len(tokens):
+                        continue
+                    # ``role`` distinguishes a rejection on the bonus
+                    # token (sampled by target *with* bitmask, so a
+                    # rejection here usually means a bitmask/matcher
+                    # desync) from a rejection on an accepted draft
+                    # (produced by the draft model and verified by
+                    # target, where rejection more often reflects the
+                    # target sampling outside the matcher's allowed
+                    # set on a draft slot the speculative walk did
+                    # not constrain).
+                    role = (
+                        "bonus"
+                        if committed_idx == len(committed_tokens) - 1
+                        else f"accepted_draft[{committed_idx}]"
+                    )
+                    logger.error(
+                        "Async matcher rejected %d token(s) ending at %d "
+                        "(request %s, role=%s); disabling enforcement "
+                        "for the rest of the request. "
+                        "matcher_errors=%s matcher_warnings=%s %s",
+                        len(tokens),
+                        token,
+                        ctx.request_id,
+                        role,
+                        ctx.matcher.get_error(),
+                        ctx.matcher.get_grammar_warnings(),
+                        self._rejection_diagnostics(
+                            ctx, committed_tokens, committed_idx
+                        ),
+                    )
+                    ctx.grammar_enforced = False
 
                 # Part 2: speculative window for the next batch's bitmasks.
                 # A draft that flips enforcement on mid-window causes
@@ -1003,7 +1029,7 @@ class StructuredOutputHelper:
         context_batch: list[TextGenerationContextType],
         draft_tokens: npt.NDArray[np.int64],
         num_positions: int,
-    ) -> npt.NDArray[np.bool_]:
+    ) -> npt.NDArray[np.int32]:
         """Compute speculative bitmasks for structured output in spec decode.
 
         For each draft position i, the bitmask at position i contains valid
@@ -1013,18 +1039,25 @@ class StructuredOutputHelper:
         This method speculatively advances the FSM through draft tokens to
         compute bitmasks, then rolls back to restore the original state.
 
+        The bitmask is returned packed (1 bit per token, 32 tokens per int32
+        word); the GPU acceptance sampler unpacks and applies it in one fused
+        pass, so this method never unpacks to bool.
+
         Args:
             context_batch: List of generation contexts.
             draft_tokens: Draft tokens to verify, shape [batch, K].
             num_positions: Number of bitmask positions (K + 1, including bonus).
 
         Returns:
-            Boolean bitmask array of shape [batch_size, num_positions, vocab_size].
+            Packed int32 bitmask array of shape
+            ``[batch_size, num_positions, ceil(vocab_size / 32)]``. ``-1`` (all
+            bits set) means all tokens are valid.
         """
         if self.vocab_size is None:
             raise ValueError("vocab_size must be set for speculative bitmasks")
 
         batch_size = len(context_batch)
+        packed_vocab_size = ceildiv(self.vocab_size, 32)
 
         # Check if any context has structured output
         has_structured_output = any(
@@ -1035,9 +1068,12 @@ class StructuredOutputHelper:
         )
 
         if not has_structured_output:
-            # Fast path: all unconstrained, return all-True bitmask
-            return np.ones(
-                (batch_size, num_positions, self.vocab_size), dtype=np.bool_
+            # Fast path: all unconstrained, return all-valid packed bitmask
+            # (-1 = all bits set).
+            return np.full(
+                (batch_size, num_positions, packed_vocab_size),
+                -1,
+                dtype=np.int32,
             )
 
         # Allocate packed bitmask (int32) for llguidance
@@ -1080,10 +1116,6 @@ class StructuredOutputHelper:
                     drafts=draft_tokens[ctx_idx],
                     bitmask_window=packed_bitmask[ctx_idx],
                 )
-        # Unpack packed int32 bitmask to bool using vectorized bitwise ops.
-        bits = 2 ** np.arange(32, dtype=np.int32)
-        # Shape: [batch, num_positions, packed_vocab, 32]
-        unpacked = (packed_bitmask[..., np.newaxis] & bits) != 0
-        # Reshape to [batch, num_positions, packed_vocab * 32] and slice
-        unpacked = unpacked.reshape(batch_size, num_positions, -1)
-        return unpacked[:, :, : self.vocab_size].astype(np.bool_)
+        # Return the packed int32 bitmask directly; the GPU acceptance sampler
+        # unpacks and applies it in a single fused pass.
+        return packed_bitmask

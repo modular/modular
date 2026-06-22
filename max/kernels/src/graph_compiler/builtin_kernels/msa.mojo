@@ -38,16 +38,35 @@ Modeled on the MLA FP8 indexer registration in `attention.mojo`
 (`Kernels/test/msa/test_msa_sm100_d128_decode_paged.mojo`,
 `test_msa_sm100_d128_prefill_device_csr.mojo`) for the exact call shapes.
 
-Causal masking is a no-op for `seq_len==1` decode: the single query sits at the
-END of the sequence, so every selected (past) KV position is causal-valid and
-nothing is masked.  The op therefore passes `kv_logical_pos=None` (in-kernel
-causal masking OFF) and only carries `q_positions` for the future spec-decode
-path.  In-kernel `kv_logical_pos` masking is only meaningful for `seq_len>1`
-spec decode (multiple query tokens, where a query can precede some selected KV).
+Three attention routes, picked at runtime from `kv_collection.max_seq_length`
+(`max_q_len`, the max number of *new* query tokens; MAX draft length = 4):
 
-TODO(seq_len>1): enable in-kernel `kv_logical_pos` masking when spec decode
-(`seq_len>1`) is supported -- validate the diagonal (partial) block with a logit
-check before wiring `kv_logical_pos` through.
+  * `== 1`            -> single-token DECODE (`msa_sm100_decode`, NullMask, the
+                        SM-fill split-K heuristic).  Causal is a no-op (the
+                        single query sits at the sequence END, so every selected
+                        past KV position is causal-valid and nothing is masked).
+  * `2 / 3 / 4`        -> sparse SPECULATIVE decode (`msa_sm100_decode` with
+                        `spec_max_seq_len` bound to the matched length, which
+                        derives the spec mode in-entry): one CTA per (draft
+                        token, split-K partition), in-kernel per-token causal,
+                        capture-stable over-launched grid (`batch * spec_max_seq_len`
+                        on the token axis, `max_num_partitions` on the partition
+                        axis).  Split-K is REAL (the SM-fill heuristic picks
+                        `num_partitions` from `batch * spec_max_seq_len`, NOT
+                        NoPartition); at np>1 the partials key on the RAGGED
+                        global query row and the shared `mha_splitk_reduce`
+                        combine writes the ragged output directly (Frame R).
+                        Causal is REAL (a draft token can precede some selected
+                        KV); the kernel derives each slot's logical KV start
+                        in-kernel as `d_idx_base[blk] * BN` and each token's
+                        logical query position as `cache_lengths[batch] +
+                        tok_in_seq`, so the op never builds a `kv_logical_pos` or
+                        `q_positions` array (mirrors the prefill `use_causal`
+                        path, which derives the diagonal from cu_seqlens +
+                        cache_lengths).  A short prefill of 2-4 is correctly
+                        handled by this path, so no prefill/spec disambiguation
+                        is needed.
+  * `> 4`              -> PREFILL (`msa_sm100_prefill_{plan,run}`, device CSR).
 """
 
 import extensibility as compiler
@@ -100,7 +119,9 @@ struct Struct_msa_indexer_ragged_paged:
         k_cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
         k_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
         k_max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
+        msa_scalar_args: InputTensor[dtype=DType.int64, rank=1, ...],
         layer_idx: UInt32,
+        score_scratch: MutableInputTensor[dtype=DType.float32, rank=3, ...],
         scale: Float32,
         ctx: DeviceContext,
     ) raises:
@@ -132,7 +153,12 @@ struct Struct_msa_indexer_ragged_paged:
             k_cache_lengths: Index-K cache lengths `[batch]` uint32.
             k_lookup_table: Index-K page table `[batch, max_pages]` uint32.
             k_max_lengths: Index-K max lengths `[1, 2]` uint32.
+            msa_scalar_args: On-device scalar arguments for the decode indexer
+                msa_scalar_args[0] = batch_size
+                msa_scalar_args[1] = max_cache_valid_length.
             layer_idx: Layer index for the index-K cache.
+            score_scratch: Persistent decode score scratch
+                `[num_index_heads, max_batch, MAX_NUM_BLOCKS]`.
             scale: QK scale.
             ctx: Device context.
         """
@@ -156,15 +182,8 @@ struct Struct_msa_indexer_ragged_paged:
         # anything larger is a prefill / context-encoding step.
         if Int(k_collection.max_seq_length) == 1:
             var batch = total_q  # 1 token/seq on decode
-
-            # Caller-owned score scratch [num_index_heads, batch, max_num_blocks].
-            var score_size = num_index_heads * batch * max_num_blocks
-            var score_buf = ctx.enqueue_create_buffer[DType.float32](score_size)
-            score_buf.enqueue_fill(Float32(0))
-            var score = TileTensor(
-                score_buf,
-                tt_row_major(num_index_heads, batch, max_num_blocks),
-            )
+            # Use persistent score scratch. This is required for graph capture.
+            var score = score_scratch.to_tile_tensor[DType.int64]()
 
             sparse_indexer_decode[
                 DType.bfloat16,
@@ -186,7 +205,6 @@ struct Struct_msa_indexer_ragged_paged:
                 scale,
                 ctx,
             )
-            _ = score_buf^
         else:
             var batch = Int(input_row_offsets.dim_size[0]()) - 1
 
@@ -242,10 +260,13 @@ struct Struct_msa_attention_ragged_paged:
         output: OutputTensor[dtype=DType.bfloat16, rank=3, ...],
         q: InputTensor[dtype=DType.bfloat16, rank=3, ...],
         input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        cache_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        total_context_length: InputTensor[dtype=DType.uint32, rank=1, ...],
         kv_blocks: MutableInputTensor[dtype=DType.bfloat16, rank=6, ...],
         cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
         kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
         max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
+        msa_scalar_args: InputTensor[dtype=DType.int64, rank=1, ...],
         layer_idx: UInt32,
         d_indices: InputTensor[dtype=DType.int32, rank=3, ...],
         scale: Float32,
@@ -268,6 +289,17 @@ struct Struct_msa_attention_ragged_paged:
         buffers from the per-batch cu-seqlens on host, so one D2H readback +
         sync per call is unavoidable while this stays a single stateless op.
 
+        Routing is purely by the runtime query length
+        `max_q_len = kv_collection.max_seq_length` (the max new query tokens):
+        `== 1` decode, `2 / 3 / 4` sparse speculative decode (one CTA per draft
+        token, real per-token causal, capture-stable over-launch -- see the
+        module docstring; `spec_max_seq_len` is bound to the matched length per
+        branch), and `> 4` prefill.  A short 2-4 prefill is correctly handled by
+        the spec path, so no prefill/spec disambiguation is needed.  Spec decode
+        derives each draft token's logical query position in-kernel from
+        `cache_lengths + tok_in_seq` (mirrors the prefill `use_causal` path), so
+        no `q_positions` array is built or passed.
+
         Parameters:
             group: Query heads per kv-head (`n_heads // n_kv_heads`); asserts
                 `group <= MMA_M` in the kernel.
@@ -279,11 +311,16 @@ struct Struct_msa_attention_ragged_paged:
                 on prefill, batch on decode).
             input_row_offsets: Ragged query offsets `[batch + 1]` uint32 (1
                 token/seq on decode).
+            cache_row_offsets: Ragged valid cache offsets `[batch + 1]` uint32.
+            total_context_length: Total context length of the current batch.
             kv_blocks: Main-KV paged blocks `[num_blocks, 2, num_layers,
                 page_size, n_kv_heads, head_dim]` BF16.
             cache_lengths: Main-KV cache lengths `[batch]` uint32.
             kv_lookup_table: Main-KV page table `[batch, max_pages]` uint32.
             max_lengths: Main-KV max lengths `[1, 2]` uint32.
+            msa_scalar_args: On-device scalar arguments for the MSA decode
+                msa_scalar_args[0] = batch_size
+                msa_scalar_args[1] = max_cache_valid_length.
             layer_idx: Layer index for the main-KV cache.
             d_indices: Selected block ids `[n_kv_heads, num_rows, topk]` int32.
             scale: QK scale.
@@ -320,8 +357,14 @@ struct Struct_msa_attention_ragged_paged:
             ctx, q_lt.ptr, num_rows * num_heads * head_dim, owning=False
         )
 
-        # Decode == one query token per sequence (`max_seq_length == 1`).
-        if Int(kv_collection.max_seq_length) == 1:
+        # Route purely on the runtime query length.  MAX speculative draft
+        # length is 4; `2/3/4` route to spec decode, `> 4` to prefill (a short
+        # 2-4 prefill is correctly served by the spec path).
+        comptime MAX_SPEC_DRAFT = 4
+        var max_q_len = Int(kv_collection.max_seq_length)
+
+        # Decode == one query token per sequence (`max_q_len == 1`).
+        if max_q_len == 1:
             var iro_lt = input_row_offsets.to_layout_tensor()
             var valid_length = DeviceBuffer[DType.uint32](
                 ctx,
@@ -368,6 +411,80 @@ struct Struct_msa_attention_ragged_paged:
                 num_rows,  # batch_size
                 ctx,
             )
+        elif max_q_len <= MAX_SPEC_DRAFT:
+            # ---- Sparse SPECULATIVE decode (`2 <= max_q_len <= 4`) ----
+            # Each draft token runs on its OWN CTA via the per-token decode
+            # kernel (`spec_max_seq_len > 1` derives the spec mode in-entry =>
+            # per_token_index + causal + the over-launched
+            # `batch * spec_max_seq_len` grid).  Selection reuses the PREFILL
+            # indexer (per-token `[head_kv, total_q, topk]`), so the block ids
+            # here are per draft token.  `input_row_offsets` is the ragged Q
+            # offset array the kernel reads for the over-launch token tail and
+            # the global-query-row remap (`iro[b] + tok_in_seq`).  Causal is
+            # REAL here (a draft token can precede some selected KV): the kernel
+            # poisons slots whose logical position exceeds the token's logical
+            # query position, deriving the slot's logical start in-kernel from
+            # `d_idx_base[blk]*BN` (no `kv_logical_pos` array) and the token's
+            # logical query position in-kernel from
+            # `cache_lengths[batch_of_token] + tok_in_seq` (no `q_positions`
+            # array -- mirrors the prefill `use_causal` path, which derives the
+            # diagonal from cu_seqlens + cache_lengths).  REAL split-K:
+            # `msa_sm100_decode` feeds `batch * spec_max_seq_len` to the decode
+            # partition heuristic so the partition axis fills the SM array at
+            # low batch, and launches the shared `mha_splitk_reduce` combine
+            # when np > 1 (the causal dead-partition salvage in the partial
+            # writeback keeps the combine NaN-free).  The partials key on the
+            # ragged global query row, so the combine writes the ragged output
+            # directly (no dense intermediate / gather).
+            var iro_lt = input_row_offsets.to_layout_tensor()
+            var valid_length = DeviceBuffer[DType.uint32](
+                ctx,
+                iro_lt.ptr,
+                Int(input_row_offsets.dim_size[0]()),
+                owning=False,
+            )
+            var d_indices_ptr = rebind[KVPtrT](d_indices.to_layout_tensor().ptr)
+            var topk_tokens = topk * page_size
+            var batch = Int(input_row_offsets.dim_size[0]()) - 1
+
+            # The over-launch span `spec_max_seq_len` is a graph constant, so
+            # bind it to the matched runtime length per branch (one CTA per
+            # (draft token, partition) over `batch * spec_max_seq_len`).  The
+            # entry derives the spec mode from `spec_max_seq_len > 1`.
+            comptime for n in range(2, MAX_SPEC_DRAFT + 1):
+                if max_q_len == n:
+                    msa_sm100_decode[
+                        config=config,
+                        group=group,
+                        ragged=True,
+                        _is_cache_length_accurate=False,
+                        mask_unselected=True,
+                        spec_max_seq_len=n,  # over-launch span (graph constant)
+                    ](
+                        output_buf,
+                        q_buf,
+                        k_op,
+                        v_op,
+                        d_indices_ptr,
+                        topk,  # indices_stride (topk in BLOCKS)
+                        num_rows,  # num_rows_q (total draft tokens)
+                        NullMask(),
+                        valid_length,  # ragged Q offsets (token tail + row remap)
+                        StaticInt[1](),  # max_prompt_len: tile is decode-shaped
+                        topk_tokens,  # max_cache_valid_length
+                        scale,
+                        None,  # kv_input_row_offsets
+                        batch,  # batch_size (grid.x = batch * spec_max_seq_len)
+                        ctx,
+                        # Spec decode derives BOTH the per-block logical start
+                        # and the per-token logical query position in-kernel
+                        # (the latter from `cache_lengths + tok_in_seq`), so it
+                        # carries neither a `kv_logical_pos` nor a `q_positions`
+                        # array.  The kernel keys causal off the derived spec
+                        # mode (=> `causal`), not off the presence of a
+                        # `q_positions` pointer.
+                    )
+                    return
         else:
             var batch = Int(input_row_offsets.dim_size[0]()) - 1
 
@@ -380,64 +497,34 @@ struct Struct_msa_attention_ragged_paged:
                 ctx, d_lt.ptr, k_num_heads * num_rows * topk, owning=False
             )
 
-            # TODO(graph-capture): drop this D2H when the plan moves on-device.
-            # The plan sizes its buffers from the per-batch cu-seqlens on host
-            # (`k2q_csr_sizes` sums per-batch K-block counts), so one D2H of the
-            # ragged offsets is unavoidable in a single-op execute -- the op is
-            # stateless across calls, so there is no persisted plan (unlike the
-            # MLA prefill, whose plan is a *device* op writing graph tensors).
-            # Keep it to ONE sync: read offsets back, fill the host + int32 run
-            # cu-seqlens in the same window, then enqueue the H2D under it.
-            var iro_lt = input_row_offsets.to_layout_tensor()
-            var iro_dev = DeviceBuffer[DType.uint32](
-                ctx, iro_lt.ptr, batch + 1, owning=False
-            )
-            var iro_host = ctx.enqueue_create_host_buffer[DType.uint32](
-                batch + 1
-            )
-            ctx.enqueue_copy(iro_host, iro_dev)
-
-            var cl_lt = cache_lengths.to_layout_tensor()
-            var cl_dev = DeviceBuffer[DType.uint32](
-                ctx, cl_lt.ptr, batch, owning=False
-            )
-            var cl_host = ctx.enqueue_create_host_buffer[DType.uint32](batch)
-            ctx.enqueue_copy(cl_host, cl_dev)
-
-            # Run cu-seqlens are int32 (the CSR/fwd/combine read `Int32`); alloc
-            # before the sync so they fill in the same window.
-            var cuq_h = ctx.enqueue_create_host_buffer[DType.int32](batch + 1)
-            var cuk_h = ctx.enqueue_create_host_buffer[DType.int32](batch + 1)
-            ctx.synchronize()
-
-            var cu_seqlens_q = List[Int32](length=batch + 1, fill=Int32(0))
-            for i in range(batch + 1):
-                cu_seqlens_q[i] = iro_host[i].cast[DType.int32]()
-                cuq_h[i] = cu_seqlens_q[i]
-
-            var cu_seqlens_k = List[Int32](length=batch + 1, fill=Int32(0))
-            for i in range(batch):
-                var seq_len_q = (
-                    iro_host[i + 1].cast[DType.int32]()
-                    - iro_host[i].cast[DType.int32]()
-                )
-                cu_seqlens_k[i + 1] = (
-                    cu_seqlens_k[i] + cl_host[i].cast[DType.int32]() + seq_len_q
-                )
-            for i in range(batch + 1):
-                cuk_h[i] = cu_seqlens_k[i]
-
             var plan = msa_sm100_prefill_plan[
                 output_type=DType.bfloat16,
                 config=config,
                 group=group,
                 topk=topk,
-            ](cu_seqlens_q, cu_seqlens_k, ctx)
+            ](
+                num_rows,
+                Int(total_context_length[0]),
+                batch,
+                Int(kv_collection.max_seq_length),
+                Int(kv_collection.max_cache_length),
+                ctx,
+            )
 
-            var cuq_d = ctx.enqueue_create_buffer[DType.int32](batch + 1)
-            var cuk_d = ctx.enqueue_create_buffer[DType.int32](batch + 1)
-            ctx.enqueue_copy(cuq_d, cuq_h)
-            ctx.enqueue_copy(cuk_d, cuk_h)
+            # bitcast input_row_offsets and cache_row_offsets to int32, then
+            # wrap then in DeviceBuffer.
+            var cuq_d = DeviceBuffer[DType.int32](
+                ctx,
+                input_row_offsets._ptr.bitcast[Int32](),
+                batch + 1,
+                owning=False,
+            )
+            var cuk_d = DeviceBuffer[DType.int32](
+                ctx,
+                cache_row_offsets._ptr.bitcast[Int32](),
+                batch + 1,
+                owning=False,
+            )
 
             msa_sm100_prefill_run[
                 config=config,

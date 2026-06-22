@@ -28,6 +28,10 @@ This version is still a work in progress.
 
 ### Inference server
 
+- Constrained decoding (structured output) now unpacks the grammar bitmask on
+  the GPU. The packed `int32` bitmask is transferred to device as-is and
+  unpacked and applied to the logits in a single fused kernel
+  (`apply_packed_bitmask`), instead of unpacking to a `bool` tensor on the CPU.
 - Fixed image requests failing with a 400 or 500 across all vision models. Two
   bugs in the shared image-resolution layer: `data:` URIs with unpadded or
   URL-safe base64 (sent routinely by clients and relays) were rejected by the
@@ -113,9 +117,22 @@ This version is still a work in progress.
   `EagerRealizationContext(use_interpreter=...)` argument is deprecated in
   favor of `EagerRealizationContext(executor=...)`.
 
+- The eager interpreter precompiles its matmul and unary-elementwise
+  graph-compiler models for the full `(device, dtype)` matrix at import by
+  default. Set `MAX_EAGER_OP_PRECOMPILE=0` to skip the import-time sweep and
+  compile each target lazily on first dispatch instead, bounding compile cost to
+  the targets a program actually uses.
+
 - `max.nn.hooks.PrintHook` now supports `max.experimental.nn.Module`.
 
 - Added `F.print`, which supports both single-device and multi-device tensors.
+
+- Added `max.graph.default_custom_extensions()` and the
+  `default_custom_extensions_scope()` context manager. Paths registered as
+  defaults are merged into the `custom_extensions` of every new `Graph`, so a
+  backend can make its custom-op kernel library reachable from graphs built
+  without an explicit `custom_extensions=` — including the eager-realization
+  graph that backs `max.experimental` tensors. Empty by default.
 
 ### C API
 
@@ -131,6 +148,11 @@ This version is still a work in progress.
 
 ## MAX kernels
 
+- Apple silicon GPU support for running MAX models has been extended to M1 and
+  M2 systems. Previously, the optimized matrix multiplication kernels for Apple
+  silicon GPUs only returned correct results on M3 and newer systems. That has
+  now been fixed for M1 and M2 systems, allowing many common MAX models to run
+  correctly on them.
 - The split-K decode attention kernel for Apple GPUs is now the default for
   token-generation attention, covering paged-KV-cache MHA and GQA decode for
   head dims that are a multiple of 32. It was previously opt-in;

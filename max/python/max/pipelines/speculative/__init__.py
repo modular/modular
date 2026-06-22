@@ -13,6 +13,7 @@
 """Speculative decoding pipelines and configuration for MAX."""
 
 from .config import (
+    MAGIC_DRAFT_TOKEN_ID,
     RejectionSamplingStrategy,
     SpeculativeConfig,
     SpeculativeMethod,
@@ -20,6 +21,7 @@ from .config import (
 from .ragged_token_merger import RaggedTokenMerger, ragged_token_merger
 
 __all__ = [
+    "MAGIC_DRAFT_TOKEN_ID",
     "RaggedTokenMerger",
     "RejectionSamplingStrategy",
     "SpeculativeConfig",

@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.collections.string.string_slice import get_static_string
-from std.math import align_down, ceildiv
+from std.math import align_down, ceildiv, iota
 from std.sys import align_of, simd_width_of, size_of
 from std.sys.info import CompilationTarget, _current_target
 
@@ -1653,4 +1653,74 @@ def scatter_set_constant[
         simd_width=1,
         target=target,
         _trace_description="scatter_set_constant",
+    ](dispatch_shape, ctx)
+
+
+def apply_packed_bitmask[
+    dtype: DType,
+    //,
+    target: StaticString,
+](
+    output: TileTensor[mut=True, dtype, ...],
+    logits: TileTensor[dtype, ...],
+    packed: TileTensor[DType.int32, ...],
+    fill_value: Scalar[dtype],
+    ctx: DeviceContext,
+) raises:
+    """Apply a packed-int32 grammar bitmask to logits in a single fused pass.
+
+    Unpacks a packed bitmask (1 bit per token, 32 tokens per `int32` word) and
+    masks `logits` with it without ever materializing a bool tensor: for each
+    `(b, v)`, the token is kept when bit `v % 32` of word `packed[b, v // 32]`
+    is set, otherwise `output[b, v]` is set to `fill_value` (the masked-out
+    sentinel, e.g. a large negative number). This replaces a CPU unpack +
+    `ops.where` in constrained decoding.
+
+    Args:
+        output: Masked logits, shape `[batch, vocab]`.
+        logits: Input logits, shape `[batch, vocab]`.
+        packed: Packed `int32` bitmask, shape `[batch, ceil(vocab / 32)]`. A set
+            bit means the token is grammar-valid. Extra trailing bits beyond
+            `vocab` (32-bit alignment padding from llguidance) are never read.
+        fill_value: Value written for masked-out (grammar-invalid) tokens.
+        ctx: The device context.
+    """
+    comptime assert output.flat_rank == 2, "apply_packed_bitmask: output rank 2"
+    comptime assert logits.flat_rank == 2, "apply_packed_bitmask: logits rank 2"
+    comptime assert packed.flat_rank == 2, "apply_packed_bitmask: packed rank 2"
+
+    @always_inline
+    @parameter
+    def apply_packed_bitmask_fn[width: Int, alignment: Int = 1](idx: Coord):
+        comptime assert idx.rank == 2, "apply_packed_bitmask_fn: rank must be 2"
+        # A `width`-wide block can straddle a 32-bit word boundary (elementwise
+        # may emit an unaligned tail block), but spans at most two consecutive
+        # words for `width <= 32`, so resolve each lane's word individually.
+        comptime assert (
+            width <= 32
+        ), "apply_packed_bitmask: simd_width must be <= 32"
+        var b = Int(idx[0].value())
+        var v = Int(idx[1].value())
+        var tok = Int32(v) + iota[DType.int32, width]()
+        var base = v >> 5
+        var w0 = SIMD[DType.int32, width](packed[b, base][0])
+        # Second word only feeds the spilled lanes; clamp the index so the
+        # no-spill case never loads out of bounds.
+        var last_word = Int(packed.dim[1]()) - 1
+        var w1 = SIMD[DType.int32, width](
+            packed[b, min(base + 1, last_word)][0]
+        )
+        var word = (tok >> 5).ne(Int32(base)).select(w1, w0)
+        var keep = ((word >> (tok & 31)) & 1).ne(0)
+        var values = logits.load[width=width]((b, v))
+        var filled = SIMD[dtype, width](fill_value)
+        output.store((b, v), keep.select(values, filled))
+
+    comptime simd_width = simd_width_of[dtype]()
+    var dispatch_shape = Coord(Int(output.dim[0]()), Int(output.dim[1]()))
+    elementwise[
+        func=apply_packed_bitmask_fn,
+        simd_width=simd_width,
+        target=target,
+        _trace_description="apply_packed_bitmask",
     ](dispatch_shape, ctx)
