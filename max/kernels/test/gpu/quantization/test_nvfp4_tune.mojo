@@ -112,7 +112,8 @@ def dequant_ref_kernel[
 # configs for this shape.
 def run_one_config[
     NType: CoordLike,
-    KType: CoordLike, //,
+    KType: CoordLike,
+    //,
     config: MatmulConfig[a_type, DType.uint8, a_type, True],
 ](
     ctx: DeviceContext,
@@ -146,10 +147,10 @@ def run_one_config[
         combined_dev.unsafe_ptr(),
         RuntimeLayout[
             b_kernel_layout,
-            element_type = LayoutTensor[
+            element_type=LayoutTensor[
                 DType.uint8, b_kernel_layout, ImmutAnyOrigin
             ].layout_int_type,
-            linear_idx_type = LayoutTensor[
+            linear_idx_type=LayoutTensor[
                 DType.uint8, b_kernel_layout, ImmutAnyOrigin
             ].linear_idx_type,
         ].row_major(
@@ -245,7 +246,8 @@ def run_one_config[
 # config against it.
 def sweep_shape[
     NType: CoordLike,
-    KType: CoordLike, //,
+    KType: CoordLike,
+    //,
 ](ctx: DeviceContext, M: Int, n: NType, k: KType) raises:
     comptime _N = NType.static_value
     comptime _K = KType.static_value
@@ -293,9 +295,9 @@ def sweep_shape[
     var scales_fp8_lt = LayoutTensor[
         DType.float8_e4m3fn, scales_layout, ImmutAnyOrigin
     ](scales_dev.unsafe_ptr().bitcast[Scalar[DType.float8_e4m3fn]]())
-    var combined_lt = LayoutTensor[
-        DType.uint8, combined_layout, MutAnyOrigin
-    ](combined_dev.unsafe_ptr())
+    var combined_lt = LayoutTensor[DType.uint8, combined_layout, MutAnyOrigin](
+        combined_dev.unsafe_ptr()
+    )
 
     # ---- dense bf16 reference B ----
     comptime b_ref_layout = Layout.row_major(_N, _K)

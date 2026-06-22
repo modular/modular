@@ -56,7 +56,11 @@ _PREFIX = "model.language_model.layers.0.mlp.gate_proj."
 def test_compressed_tensors_names_remapped_to_modelopt() -> None:
     state_dict = {
         _PREFIX + "weight_packed": _FakeWeight(
-            _wd(np.zeros((8, 4), np.uint8), _PREFIX + "weight_packed", DType.uint8)
+            _wd(
+                np.zeros((8, 4), np.uint8),
+                _PREFIX + "weight_packed",
+                DType.uint8,
+            )
         ),
         _PREFIX + "weight_scale": _FakeWeight(
             _wd(
@@ -120,7 +124,11 @@ def test_modelopt_names_pass_through_unchanged() -> None:
             )
         ),
         _PREFIX + "weight_scale_2": _FakeWeight(
-            _wd(np.ones((), np.float32), _PREFIX + "weight_scale_2", DType.float32)
+            _wd(
+                np.ones((), np.float32),
+                _PREFIX + "weight_scale_2",
+                DType.float32,
+            )
         ),
         _PREFIX + "input_scale": _FakeWeight(
             _wd(np.ones((), np.float32), _PREFIX + "input_scale", DType.float32)

@@ -86,9 +86,7 @@ _NVFP4_PRE_SM100_GEMM_M_THRESHOLD = int(
 # The skeleton is bit-exact and ~2.5x faster at gemma4 shapes on L40S, but the
 # graph route is gated behind this flag until validated token-identical in
 # serving (it changes the live NVFP4 dispatch). Default off = unchanged.
-_NVFP4_USE_SKELETON_GEMM = (
-    os.environ.get("MAX_NVFP4_SKELETON_GEMM", "0") == "1"
-)
+_NVFP4_USE_SKELETON_GEMM = os.environ.get("MAX_NVFP4_SKELETON_GEMM", "0") == "1"
 
 
 def _matmul_float4(

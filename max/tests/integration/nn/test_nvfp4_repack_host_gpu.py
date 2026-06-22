@@ -89,9 +89,7 @@ def test_nvfp4_repack_host_matches_gpu(n: int, k: int) -> None:
         scale_fp8_t.cuda(),
         torch.tensor([global_scale], dtype=torch.float32).cuda(),
     )
-    gpu_combined = (
-        torch.from_dlpack(out[0]).view(torch.uint8).cpu().numpy()
-    )
+    gpu_combined = torch.from_dlpack(out[0]).view(torch.uint8).cpu().numpy()
 
     host_combined = nvfp4_repack_host(weight_np, scale_fp8_bytes, global_scale)
 

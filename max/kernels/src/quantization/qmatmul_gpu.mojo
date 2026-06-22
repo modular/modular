@@ -448,9 +448,9 @@ def multistage_mma_q[
         scales_reg_tiles.tile[num_n_mmas, 1](sub, 0).vectorize[
             simd_size, 1
         ]().copy_from(
-            scales_warp_tile.tile[1, WN](sub, 0).vectorize[1, simd_size]().distribute[
-                smem_reg_scales_layout, axis=0
-            ](Int(lane_id))
+            scales_warp_tile.tile[1, WN](sub, 0)
+            .vectorize[1, simd_size]()
+            .distribute[smem_reg_scales_layout, axis=0](Int(lane_id))
         )
 
     comptime if is_nvfp4:
@@ -586,14 +586,18 @@ def multistage_mma_q[
                                             target_address_space=AddressSpace.GENERIC,
                                         ]()
                                         .tile[1, BN](sub, 0)
-                                        .vectorize[1, async_copy_scales_veclen]()
+                                        .vectorize[
+                                            1, async_copy_scales_veclen
+                                        ]()
                                         .distribute[async_copy_scales_layout](
                                             Int(tid)
                                         )
                                     )
                                     var dst_fragments = (
                                         scales_smem_tile.tile[1, BN](sub, 0)
-                                        .vectorize[1, async_copy_scales_veclen]()
+                                        .vectorize[
+                                            1, async_copy_scales_veclen
+                                        ]()
                                         .distribute[async_copy_scales_layout](
                                             Int(tid)
                                         )
@@ -1759,12 +1763,18 @@ def repack_nvfp4_for_sm8x[
                 linear_idx_type=scales_warp_tile.linear_idx_type,
             ]()
 
-            var s0 = raw_scales_warp_tile[
-                Int(rt_scales_thread_layout(lane_id)), 0
-            ].cast[DType.float32]() * global_scale
-            var s1 = raw_scales_warp_tile[
-                Int(rt_scales_thread_layout(lane_id)) + 8, 0
-            ].cast[DType.float32]() * global_scale
+            var s0 = (
+                raw_scales_warp_tile[
+                    Int(rt_scales_thread_layout(lane_id)), 0
+                ].cast[DType.float32]()
+                * global_scale
+            )
+            var s1 = (
+                raw_scales_warp_tile[
+                    Int(rt_scales_thread_layout(lane_id)) + 8, 0
+                ].cast[DType.float32]()
+                * global_scale
+            )
             scales_warp_tile[0, 2 * lane_id] = s0.cast[scales_type]()
             scales_warp_tile[0, 2 * lane_id + 1] = s1.cast[scales_type]()
 

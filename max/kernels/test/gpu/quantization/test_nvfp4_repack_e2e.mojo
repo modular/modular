@@ -104,7 +104,8 @@ def dequant_ref_kernel[
 
 def test_repack_e2e[
     NType: CoordLike,
-    KType: CoordLike, //,
+    KType: CoordLike,
+    //,
     group_size: Int = 16,
 ](ctx: DeviceContext, M: Int, n: NType, k: KType) raises:
     comptime a_type = DType.bfloat16
@@ -174,9 +175,9 @@ def test_repack_e2e[
     var scales_fp8_lt = LayoutTensor[
         DType.float8_e4m3fn, scales_layout, ImmutAnyOrigin
     ](scales_dev.unsafe_ptr().bitcast[Scalar[DType.float8_e4m3fn]]())
-    var combined_lt = LayoutTensor[
-        DType.uint8, combined_layout, MutAnyOrigin
-    ](combined_dev.unsafe_ptr())
+    var combined_lt = LayoutTensor[DType.uint8, combined_layout, MutAnyOrigin](
+        combined_dev.unsafe_ptr()
+    )
 
     # ---- (1) build the dense bf16 reference B ---------------------------- #
     comptime b_ref_layout = Layout.row_major(_N, _K)
@@ -217,17 +218,19 @@ def test_repack_e2e[
     )
 
     # ---- (3) run the skeleton kernel ------------------------------------- #
-    comptime b_kernel_layout = Layout.row_major(_N, (_K // group_size) * group_bytes)
+    comptime b_kernel_layout = Layout.row_major(
+        _N, (_K // group_size) * group_bytes
+    )
     var b_kernel_lt = LayoutTensor[
         DType.uint8, b_kernel_layout, ImmutAnyOrigin
     ](
         combined_dev.unsafe_ptr(),
         RuntimeLayout[
             b_kernel_layout,
-            element_type = LayoutTensor[
+            element_type=LayoutTensor[
                 DType.uint8, b_kernel_layout, ImmutAnyOrigin
             ].layout_int_type,
-            linear_idx_type = LayoutTensor[
+            linear_idx_type=LayoutTensor[
                 DType.uint8, b_kernel_layout, ImmutAnyOrigin
             ].linear_idx_type,
         ].row_major(
@@ -294,7 +297,8 @@ def test_repack_e2e[
 
 def bench_repack[
     NType: CoordLike,
-    KType: CoordLike, //,
+    KType: CoordLike,
+    //,
     group_size: Int = 16,
 ](ctx: DeviceContext, M: Int, n: NType, k: KType) raises:
     """Microbenchmark the skeleton kernel at gemma4-representative shapes.
@@ -322,10 +326,10 @@ def bench_repack[
         b_dev.unsafe_ptr(),
         RuntimeLayout[
             b_layout,
-            element_type = LayoutTensor[
+            element_type=LayoutTensor[
                 DType.uint8, b_layout, ImmutAnyOrigin
             ].layout_int_type,
-            linear_idx_type = LayoutTensor[
+            linear_idx_type=LayoutTensor[
                 DType.uint8, b_layout, ImmutAnyOrigin
             ].linear_idx_type,
         ].row_major(

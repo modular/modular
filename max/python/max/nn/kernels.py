@@ -5700,7 +5700,9 @@ def nvfp4_skeleton_gemm(
         ``[M, N]`` in bfloat16.
     """
     if x.dtype != DType.bfloat16:
-        raise ValueError(f"nvfp4_skeleton_gemm requires bfloat16 x, got {x.dtype}")
+        raise ValueError(
+            f"nvfp4_skeleton_gemm requires bfloat16 x, got {x.dtype}"
+        )
     if combined_weights.dtype != DType.uint8:
         raise ValueError("nvfp4_skeleton_gemm requires uint8 combined weights")
 

@@ -35,7 +35,7 @@ from __future__ import annotations
 
 import numpy as np
 
-__all__ = ["nvfp4_repack_host", "e4m3fn_to_f32", "f32_to_bf16_bits"]
+__all__ = ["e4m3fn_to_f32", "f32_to_bf16_bits", "nvfp4_repack_host"]
 
 # --------------------------------------------------------------------------- #
 # Scalar casts, matched bit-for-bit to Mojo.
@@ -161,12 +161,7 @@ def _repacked_weight_flat_index(
     n_out = n // 64
     ku_in = ku % 2
     ku_out = ku // 2
-    return (
-        n_in * 2
-        + n_out * (128 * (uint_K // 2))
-        + ku_in * 1
-        + ku_out * 128
-    )
+    return n_in * 2 + n_out * (128 * (uint_K // 2)) + ku_in * 1 + ku_out * 128
 
 
 # --------------------------------------------------------------------------- #
@@ -278,7 +273,11 @@ def _repack_weights(weight_u8: np.ndarray, N: int, K: int) -> np.ndarray:
 
 
 def _repack_scales(
-    block_scales_fp8: np.ndarray, global_scale: float, N: int, K: int, group_size: int
+    block_scales_fp8: np.ndarray,
+    global_scale: float,
+    N: int,
+    K: int,
+    group_size: int,
 ) -> np.ndarray:
     """Produce the bf16 scale region as a flat uint8 array.
 
@@ -317,7 +316,9 @@ def _repack_scales(
     K_groups = K // group_size
 
     f32 = e4m3fn_to_f32(block_scales_fp8)  # [N, K_groups]
-    scaled = (f32 * np.float32(global_scale)).astype(np.float32)  # [N, K_groups]
+    scaled = (f32 * np.float32(global_scale)).astype(
+        np.float32
+    )  # [N, K_groups]
 
     # Build the per-64 N-permutation: dest column p (0..63) <- source row p64.
     src_of = np.empty(64, dtype=np.int64)

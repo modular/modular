@@ -60,6 +60,13 @@ class Gemma4MemoryPlanner(PagedMemoryPlanner):
         activation-peak bound, so it can under-reserve below the cap
         (MODELS-1544).
 
+        Scales the reservation with the model dimensions and the configured
+        batch size (mirroring the principled per-step estimate in
+        ``Qwen3_5MemoryPlanner``) instead of a flat constant, so a low-batch
+        NVFP4 checkpoint can fit alongside its KV cache on a 24 GB pre-Blackwell
+        card. The result is capped at the previous flat reservation, so this can
+        only *lower* the estimate, never raise the OOM risk relative to before.
+
         Args:
             pipeline_config: Pipeline configuration.
             huggingface_config: Provides ``hidden_size`` / ``intermediate_size``.

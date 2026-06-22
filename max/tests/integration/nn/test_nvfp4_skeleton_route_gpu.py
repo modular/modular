@@ -27,7 +27,7 @@ import torch
 from max.driver import Accelerator, accelerator_api, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
+from max.graph import DeviceRef, Graph, TensorType
 from max.nn.kernels import (
     nvfp4_gemm,
     nvfp4_skeleton_gemm,
@@ -65,7 +65,7 @@ def test_nvfp4_skeleton_matches_bespoke(m: int, n: int, k: int) -> None:
         torch.float8_e4m3fn
     )
     weight_scale_2 = torch.tensor([0.5], dtype=torch.float32)
-    x = (torch.randn((m, k), dtype=torch.bfloat16) * 0.1)
+    x = torch.randn((m, k), dtype=torch.bfloat16) * 0.1
 
     session = InferenceSession(devices=[device])
     with Graph(

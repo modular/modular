@@ -982,10 +982,10 @@ struct QMatmulGPURepackNVFP4_g16:
         target: StaticString,
         _trace_name: StaticString,
     ](
-        out_buffer: OutputTensor[dtype = DType.uint8, rank=2, ...],
-        weights: InputTensor[dtype = DType.uint8, rank=2, ...],
-        block_scales: InputTensor[dtype = DType.float8_e4m3fn, rank=2, ...],
-        global_scale: InputTensor[dtype = DType.float32, rank=1, ...],
+        out_buffer: OutputTensor[dtype=DType.uint8, rank=2, ...],
+        weights: InputTensor[dtype=DType.uint8, rank=2, ...],
+        block_scales: InputTensor[dtype=DType.float8_e4m3fn, rank=2, ...],
+        global_scale: InputTensor[dtype=DType.float32, rank=1, ...],
         ctx: DeviceContext,
     ) raises:
         comptime assert is_gpu[target](), "only valid on GPUs"
@@ -1008,9 +1008,9 @@ struct QMatmulGPURepackNVFP4_g16:
 
 @compiler.register_shape_function("repack_nvfp4_g16")
 def repack_nvfp4_g16_shape(
-    weights: InputTensor[dtype = DType.uint8, rank=2, ...],
-    block_scales: InputTensor[dtype = DType.float8_e4m3fn, rank=2, ...],
-    global_scale: InputTensor[dtype = DType.float32, rank=1, ...],
+    weights: InputTensor[dtype=DType.uint8, rank=2, ...],
+    block_scales: InputTensor[dtype=DType.float8_e4m3fn, rank=2, ...],
+    global_scale: InputTensor[dtype=DType.float32, rank=1, ...],
 ) -> IndexList[2]:
     # [N, K/2 (weights) + (K/16)*2 (bf16 scales)]. K = weights_cols * 2,
     # K/16 = block_scales_cols, bf16 = 2 bytes.
@@ -1031,9 +1031,9 @@ struct QMatmulGPU_nvfp4_g16:
         target: StaticString,
         _trace_name: StaticString,
     ](
-        c: OutputTensor[dtype = DType.bfloat16, rank=2, ...],
-        a: InputTensor[dtype = DType.bfloat16, rank=2, ...],
-        b: InputTensor[dtype = DType.uint8, rank=2, ...],
+        c: OutputTensor[dtype=DType.bfloat16, rank=2, ...],
+        a: InputTensor[dtype=DType.bfloat16, rank=2, ...],
+        b: InputTensor[dtype=DType.uint8, rank=2, ...],
         ctx: DeviceContext,
     ) raises:
         comptime assert is_gpu[target](), "only valid on GPUs"
@@ -1048,8 +1048,8 @@ struct QMatmulGPU_nvfp4_g16:
 
 @compiler.register_shape_function("qmatmul_nvfp4_g16")
 def qmatmul_nvfp4_g16_shape(
-    a: InputTensor[dtype = DType.bfloat16, rank=2, ...],
-    b: InputTensor[dtype = DType.uint8, rank=2, ...],
+    a: InputTensor[dtype=DType.bfloat16, rank=2, ...],
+    b: InputTensor[dtype=DType.uint8, rank=2, ...],
 ) -> IndexList[2]:
     return IndexList[2](a.dim_size[0](), b.dim_size[0]())
 

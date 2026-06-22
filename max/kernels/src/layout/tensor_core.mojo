@@ -1260,6 +1260,17 @@ struct TensorCore[
         (NVFP4 uses group_size 16 < BK 32): a BK tile spans `BK // group_size`
         scale subgroups, selected by the `scale_sub` argument (the caller passes
         the subgroup for each MMA k-sub-tile).
+
+        Args:
+            warp_tile: The packed FP4 B matrix data in shared memory.
+            fragments: The destination tensor for the dequantized bf16 B
+                fragments (in local memory).
+            scales: The per-fragment bf16 block scales in local memory (one per
+                n-fragment per k-group, with the FP8 block scale and per-tensor
+                global scale pre-folded into bf16).
+            mma_tile_coord_k: The K coordinate of the MMA tile. Defaults to 0.
+            scale_sub: The scale subgroup within the BK tile, used when
+                group_size < BK. Defaults to 0.
         """
         comptime assert (
             warp_tile.address_space == AddressSpace.SHARED

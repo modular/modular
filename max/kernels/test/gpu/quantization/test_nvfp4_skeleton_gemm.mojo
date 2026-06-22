@@ -154,7 +154,9 @@ def create_ref_b_nvfp4[
 
     var vec = bitcast[DType.int32, 4](warp_q_tile.vectorize[1, 4]()[0, lane_id])
 
-    comptime write_back_type = type_of(mma_tile_iter_1[].vectorize[1, 2]()[0, 0])
+    comptime write_back_type = type_of(
+        mma_tile_iter_1[].vectorize[1, 2]()[0, 0]
+    )
     var lane_row, lane_col = udivmod(lane_id, 4)
 
     comptime for i in range(0, TILE_N // 8, 2):
@@ -388,7 +390,8 @@ def test_nvfp4[
 
 def bench_nvfp4_g16[
     NType: CoordLike,
-    KType: CoordLike, //,
+    KType: CoordLike,
+    //,
     group_size: Int,
     BK: Int,
     stages: Int,
@@ -417,8 +420,8 @@ def bench_nvfp4_g16[
         b_dev.unsafe_ptr(),
         RuntimeLayout[
             b_layout,
-            element_type = b_tt_type.layout_int_type,
-            linear_idx_type = b_tt_type.linear_idx_type,
+            element_type=b_tt_type.layout_int_type,
+            linear_idx_type=b_tt_type.linear_idx_type,
         ].row_major(
             IndexList[2](N, (K // group_size) * group_bytes).cast[
                 b_tt_type.layout_int_type
@@ -481,7 +484,8 @@ def bench_nvfp4_g16[
 
 def _run_uniform[
     NType: CoordLike,
-    KType: CoordLike, //,
+    KType: CoordLike,
+    //,
     group_size: Int,
     BK: Int,
 ](
@@ -518,8 +522,8 @@ def _run_uniform[
         b_dev.unsafe_ptr(),
         RuntimeLayout[
             b_layout,
-            element_type = btt.layout_int_type,
-            linear_idx_type = btt.linear_idx_type,
+            element_type=btt.layout_int_type,
+            linear_idx_type=btt.linear_idx_type,
         ].row_major(
             IndexList[2](N, (K // group_size) * gb).cast[btt.layout_int_type]()
         ),
@@ -577,7 +581,9 @@ def compare_g16_vs_g32[
 
 def main() raises:
     with DeviceContext() as ctx:
-        test_nvfp4[DType.uint8, group_size=32](ctx, Int(482), Idx[4096], Idx[4096])
+        test_nvfp4[DType.uint8, group_size=32](
+            ctx, Int(482), Idx[4096], Idx[4096]
+        )
         # group=16/BK=32 (real NVFP4, num_scale_sub=2). Fixed: num_scales_stages
         # was counting scale GROUPS, but the SMEM stage packs num_scale_sub groups
         # per stage -- so the ring depth overcounted by num_scale_sub and the
