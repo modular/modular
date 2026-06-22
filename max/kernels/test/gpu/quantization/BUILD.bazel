@@ -89,6 +89,7 @@ _EXTRA_CONSTRAINTS = {
         exclude = [
             "test_multistage_gemm_q.mojo",
             "test_nvfp4_repack_e2e.mojo",
+            "test_nvfp4_tune.mojo",
         ] + _FP8_FP4_TESTS,
     )
 ]
@@ -99,6 +100,19 @@ _EXTRA_CONSTRAINTS = {
 mojo_test(
     name = "test_nvfp4_repack_e2e.mojo.test",
     srcs = ["test_nvfp4_repack_e2e.mojo"],
+    exec_properties = {
+        "test.resources:gpu-memory": "6",
+    },
+    tags = ["gpu"],
+    target_compatible_with = ["//:has_gpu"],
+    deps = _DEPS,
+)
+
+# CONFIG-SWEEP microbench: builds dense ref + repack and sweeps a list of
+# MatmulConfigs per gemma4 shape. Needs the same larger budget as repack_e2e.
+mojo_test(
+    name = "test_nvfp4_tune.mojo.test",
+    srcs = ["test_nvfp4_tune.mojo"],
     exec_properties = {
         "test.resources:gpu-memory": "6",
     },
