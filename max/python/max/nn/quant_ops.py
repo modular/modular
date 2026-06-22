@@ -33,7 +33,6 @@ from .kernels import (
     nvfp4_gemm,
     nvfp4_gemv,
     nvfp4_skeleton_gemm,
-    nvfp4_skeleton_repack,
     quantize_dynamic_block_scaled,
     quantize_dynamic_block_scaled_mxfp4,
     quantize_dynamic_scaled_float8,
@@ -95,9 +94,9 @@ _NVFP4_USE_SKELETON_GEMM = (
 def _matmul_float4(
     x: TensorValue,
     weight: TensorValue,
-    weight_scale: TensorValue,
-    input_scale: TensorValue,
-    weight_scale_2: TensorValue,
+    weight_scale: TensorValue | None,
+    input_scale: TensorValue | None,
+    weight_scale_2: TensorValue | None,
     scales_pre_interleaved: bool = False,
 ) -> TensorValue:
     """Computes x @ weight.T with modelopt NVFP4 quantization.
@@ -120,6 +119,17 @@ def _matmul_float4(
     Returns:
         The output tensor in bf16.
     """
+    if _NVFP4_USE_SKELETON_GEMM:
+        # Load-time skeleton path: ``weight`` is already the combined buffer
+        # (repacked 4-bit weights + bf16-folded block scales) produced by the
+        # host repack in the weight adapter. There are no separate scales, and
+        # no in-graph repack -- run the skeleton GEMM directly.
+        return nvfp4_skeleton_gemm(x.cast(DType.bfloat16), weight)
+
+    assert weight_scale is not None
+    assert input_scale is not None
+    assert weight_scale_2 is not None
+
     if _is_pre_sm100_nvidia_gpu():
         # Pre-Blackwell has no native FP4 tensor cores, so dispatch by the
         # number of activation rows M (= tokens in flight this step):
@@ -154,14 +164,6 @@ def _matmul_float4(
             return nvfp4_gemv(x_bf16, weight, scales_f32)
 
         def _gemm() -> TensorValue:
-            if _NVFP4_USE_SKELETON_GEMM:
-                # Repack (constant-folded at load) folds the FP8 block scale
-                # with the global scale into bf16, so pass the raw FP8 scales
-                # and weight_scale_2 -- not the pre-multiplied scales_f32.
-                combined = nvfp4_skeleton_repack(
-                    weight, weight_scale, weight_scale_2
-                )
-                return nvfp4_skeleton_gemm(x_bf16, combined)
             return nvfp4_gemm(x_bf16, weight, scales_f32)
 
         m = ops.shape_to_tensor(x_bf16.shape)[0]
@@ -450,8 +452,12 @@ def quantized_matmul(
     """
     match quant_config.format:
         case QuantFormat.NVFP4:
-            assert input_scale is not None
-            assert weight_scale_2 is not None
+            if not _NVFP4_USE_SKELETON_GEMM:
+                # The load-time skeleton path folds the scales into the
+                # combined weight buffer, so input_scale / weight_scale_2 are
+                # intentionally absent there.
+                assert input_scale is not None
+                assert weight_scale_2 is not None
             return _matmul_float4(
                 x,
                 weight,

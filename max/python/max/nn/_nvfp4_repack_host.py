@@ -209,53 +209,65 @@ def _repack_weights(weight_u8: np.ndarray, N: int, K: int) -> np.ndarray:
     lane_col = lane % 4
 
     n_row_tiles = N // 64
-    for nt in range(n_row_tiles):
-        n_base = nt * 64
-        for wgroup_idx in range(WK_groups):
-            # byte base for this WGROUP block within row (in canonical bytes)
-            byte_group_base = wgroup_idx * weights_bytes_per_group  # *64 bytes
-            ku_group_base = wgroup_idx * (WGROUP // pack_factor)  # *16 uint32
-            for i_Q_tile in range(n_q_tiles):
-                # raw_Q_tile is weights_smem.tile[64,64](warp).tile[64,8](0,iQ)
-                # In canonical byte coords that is rows [n_base, n_base+64),
-                # bytes [byte_group_base + i_Q_tile*8, +8).
-                # tmp[i_e] = raw_Q_tile[(i_e//2)*8 + lane_row, (i_e%2)*4 + lane_col]
-                # build tmp: shape [32 lanes, 16]
-                tmp = np.zeros((32, 16), dtype=np.uint8)
-                for i_e in range(16):
-                    fr = i_e // 2
-                    fc = i_e % 2
-                    rows = n_base + fr * 8 + lane_row  # [32]
-                    cols = (
-                        byte_group_base
-                        + i_Q_tile * (repack_tile[1] // 2)
-                        + fc * 4
-                        + lane_col
-                    )  # [32]
-                    tmp[:, i_e] = weight_u8[rows, cols]
 
-                packed = _pack_Q_tile(tmp)  # [32, 4]
-                ku_base = ku_group_base + i_Q_tile * q_uint
-                r0 = n_base + 2 * lane  # [32]
-                r1 = r0 + 1
-                # repack_weights[r0, ku_base+0]=packed0; [r0,ku_base+1]=packed1
-                # repack_weights[r1, ku_base+0]=packed2; [r1,ku_base+1]=packed3
-                idx_r0c0 = _repacked_weight_flat_index(
-                    r0, np.full(32, ku_base + 0), N, uint_K
-                )
-                idx_r0c1 = _repacked_weight_flat_index(
-                    r0, np.full(32, ku_base + 1), N, uint_K
-                )
-                idx_r1c0 = _repacked_weight_flat_index(
-                    r1, np.full(32, ku_base + 0), N, uint_K
-                )
-                idx_r1c1 = _repacked_weight_flat_index(
-                    r1, np.full(32, ku_base + 1), N, uint_K
-                )
-                out_u32[idx_r0c0] = packed[:, 0]
-                out_u32[idx_r0c1] = packed[:, 1]
-                out_u32[idx_r1c0] = packed[:, 2]
-                out_u32[idx_r1c1] = packed[:, 3]
+    # Fully vectorized over (nt, wgroup_idx, i_Q_tile, lane, i_e). The scalar
+    # math below is IDENTICAL to the per-iteration version above (kept in the
+    # comments); only the Python loops are replaced by broadcasting so the
+    # repack is feasible at 31B scale.
+    nt_a = np.arange(n_row_tiles)
+    wg_a = np.arange(WK_groups)
+    iq_a = np.arange(n_q_tiles)
+    ie_a = np.arange(16)
+
+    # Per-axis decompositions.
+    n_base = nt_a * 64  # [nt]
+    byte_group_base = wg_a * weights_bytes_per_group  # [wg]
+    ku_group_base = wg_a * (WGROUP // pack_factor)  # [wg]
+    fr = ie_a // 2  # [ie]
+    fc = ie_a % 2  # [ie]
+
+    # rows[nt, lane, ie] = n_base + fr*8 + lane_row
+    rows = (
+        n_base[:, None, None]
+        + (fr * 8)[None, None, :]
+        + lane_row[None, :, None]
+    )  # [nt, 32, ie]
+    # cols[wg, iq, lane, ie] = byte_group_base + iq*(repack_tile[1]//2)
+    #                          + fc*4 + lane_col
+    cols = (
+        byte_group_base[:, None, None, None]
+        + (iq_a * (repack_tile[1] // 2))[None, :, None, None]
+        + (fc * 4)[None, None, None, :]
+        + lane_col[None, None, :, None]
+    )  # [wg, iq, 32, ie]
+
+    # tmp[nt, wg, iq, lane, ie] = weight_u8[rows, cols]
+    rows_b = rows[:, None, None, :, :]  # [nt,1,1,32,ie]
+    cols_b = cols[None, :, :, :, :]  # [1,wg,iq,32,ie]
+    rows_b, cols_b = np.broadcast_arrays(rows_b, cols_b)
+    tmp = weight_u8[rows_b, cols_b]  # [nt, wg, iq, 32, 16]
+
+    packed = _pack_Q_tile(tmp)  # [nt, wg, iq, 32, 4]
+
+    # ku_base[wg, iq] = ku_group_base + iq*q_uint
+    ku_base = ku_group_base[:, None] + (iq_a * q_uint)[None, :]  # [wg, iq]
+    r0 = n_base[:, None] + 2 * lane[None, :]  # [nt, 32]
+    r1 = r0 + 1
+
+    def scatter(r_axis: np.ndarray, ku_off: int, p_idx: int) -> None:
+        # r_axis: [nt, 32]; ku: [wg, iq]. Broadcast to [nt, wg, iq, 32].
+        r_b = r_axis[:, None, None, :]
+        ku_b = (ku_base + ku_off)[None, :, :, None]
+        r_b, ku_b = np.broadcast_arrays(r_b, ku_b)
+        idx = _repacked_weight_flat_index(r_b, ku_b, N, uint_K)
+        # packed dims [nt, wg, iq, 32, 4] -> select component p_idx -> move 32
+        # to last axis to align with [nt, wg, iq, 32].
+        out_u32[idx] = packed[..., p_idx]
+
+    scatter(r0, 0, 0)
+    scatter(r0, 1, 1)
+    scatter(r1, 0, 2)
+    scatter(r1, 1, 3)
 
     return out_u32.view(np.uint8)
 

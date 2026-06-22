@@ -127,6 +127,13 @@ def head_aware_col_sharding_strategy(
     Returns:
         A :class:`~max.graph.TensorValue` representing the sharded portion for the i-th device.
     """
+    # Single device: the whole weight goes to device 0. Return it directly so
+    # this works for any column layout, including the NVFP4 skeleton combined
+    # buffer whose columns (in_dim//2 + (in_dim//16)*2) are neither in_dim nor
+    # in_dim//2 and therefore cannot be sliced by the head-aware K math below.
+    if num_devices == 1:
+        return weight[:, :]
+
     # Compute the head range for this device
     head_start, head_end = _compute_shard_range(num_heads, i, num_devices)
 

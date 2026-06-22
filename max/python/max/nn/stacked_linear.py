@@ -24,7 +24,10 @@ from max.nn.kernels import convert_weights_to_fp8_fnuz_if_needed
 from max.nn.layer import Module
 from max.nn.linear import Linear, linear
 from max.nn.quant_config import QuantConfig
-from max.nn.quant_ops import quantize_static_scaled_float8
+from max.nn.quant_ops import (
+    _NVFP4_USE_SKELETON_GEMM,
+    quantize_static_scaled_float8,
+)
 
 
 class StackedLinear(Module):
@@ -402,6 +405,25 @@ class StackedLinear(Module):
 
     def __call__(self, x: TensorValue) -> TensorValue:
         """Computes ``x @ stacked_weight.T``, with quantization and bias."""
+        if (
+            not self._stacked
+            and _NVFP4_USE_SKELETON_GEMM
+            and self._quant_config
+            and self._quant_config.is_nvfp4
+        ):
+            # Skeleton NVFP4: each child holds an independently-repacked
+            # combined buffer that cannot be concatenated along N (the
+            # repacked-tile + appended-scale layout depends on the full output
+            # dim). Run each projection's skeleton GEMM separately and concat
+            # the [M, N_i] outputs along the output axis -- exact, since the
+            # projections are independent.
+            outs = [self._child(n)(x) for n in self._names]
+            result = ops.concat(outs, axis=1)
+            bias = self.stacked_bias
+            if bias is not None:
+                result = result + bias.to(x.device)
+            return result
+
         w = self.stacked_weight.to(x.device)
 
         result = linear(

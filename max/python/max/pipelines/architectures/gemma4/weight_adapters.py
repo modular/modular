@@ -20,6 +20,8 @@ from max.driver import Buffer
 from max.dtype import DType
 from max.graph.type import Shape
 from max.graph.weights import WeightData, Weights
+from max.nn._nvfp4_repack_host import nvfp4_repack_host
+from max.nn.quant_ops import _NVFP4_USE_SKELETON_GEMM
 
 GEMMA4_LANGUAGE_SAFETENSOR_MAP: dict[str, str] = {
     "model.language_model.": "",
@@ -137,7 +139,83 @@ def convert_safetensor_language_state_dict(
 
         new_state_dict[max_name] = data
 
+    if _NVFP4_USE_SKELETON_GEMM:
+        new_state_dict = _fuse_nvfp4_skeleton_weights(new_state_dict)
+
     return new_state_dict
+
+
+def _as_uint8_numpy(data: WeightData) -> np.ndarray:
+    """Return the raw bytes of ``data`` as a 2D uint8 numpy array.
+
+    Works for both the canonical packed weight (already uint8) and the FP8
+    block scales (1 byte/element) -- ``view``-as-uint8 keeps the exact bit
+    pattern the host repack consumes.
+    """
+    buf = Buffer.from_dlpack(data.data)
+    n = int(data.shape[0])
+    row_bytes = buf.num_elements // n * buf.element_size
+    return buf.view(DType.uint8, [n, row_bytes]).to_numpy()
+
+
+def _fuse_nvfp4_skeleton_weights(
+    state_dict: dict[str, WeightData],
+) -> dict[str, WeightData]:
+    """Repack NVFP4 ``(.weight, .weight_scale, .weight_scale_2)`` triples into a
+    single combined skeleton buffer at load time.
+
+    For every NVFP4 linear (a uint8 ``.weight`` with sibling ``.weight_scale``
+    [float8_e4m3fn block scales] and ``.weight_scale_2`` [scalar global]), emit
+    the byte-exact combined buffer under ``.weight`` and DROP both scale tensors
+    so they are never registered/uploaded. The global scale uses the multiply
+    convention (the already-inverted modelopt value), matching the kernel which
+    multiplies weights by ``weight_scale_2``.
+    """
+    out: dict[str, WeightData] = {}
+    # Identify NVFP4 layers by the presence of the modelopt-named scale tensors.
+    nvfp4_prefixes: set[str] = set()
+    for name, data in state_dict.items():
+        if name.endswith(".weight_scale") and data.dtype == DType.float8_e4m3fn:
+            prefix = name.removesuffix(".weight_scale")
+            if (
+                f"{prefix}.weight" in state_dict
+                and f"{prefix}.weight_scale_2" in state_dict
+            ):
+                nvfp4_prefixes.add(prefix)
+
+    for name, data in state_dict.items():
+        # Drop the scale tensors of fused layers -- never registered/uploaded.
+        if name.endswith(".weight_scale"):
+            if name.removesuffix(".weight_scale") in nvfp4_prefixes:
+                continue
+        if name.endswith(".weight_scale_2"):
+            if name.removesuffix(".weight_scale_2") in nvfp4_prefixes:
+                continue
+
+        if name.endswith(".weight"):
+            prefix = name.removesuffix(".weight")
+            if prefix in nvfp4_prefixes:
+                weight_u8 = _as_uint8_numpy(data)  # [N, K/2]
+                scale_data = state_dict[f"{prefix}.weight_scale"]
+                scale_fp8 = _as_uint8_numpy(scale_data)  # [N, K/16]
+                gs_data = state_dict[f"{prefix}.weight_scale_2"]
+                global_scale = float(
+                    np.from_dlpack(gs_data.data).astype(np.float32).reshape(())
+                )
+                combined = nvfp4_repack_host(
+                    weight_u8, scale_fp8, global_scale, group_size=16
+                )
+                out[name] = WeightData(
+                    combined,
+                    name,
+                    DType.uint8,
+                    Shape(combined.shape),
+                )
+                continue
+
+        out[name] = data
+
+    return out
 
 
 def convert_safetensor_vision_state_dict(
