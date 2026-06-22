@@ -741,8 +741,8 @@ FailureOr<TypedAttr>
 GetWitnessAttr::simplify(ConformanceOp witnessTable,
                          ParameterEvaluator *evaluator) const {
   SmallVector<WitnessOp, 2> witnessOps;
-  // HACK: During lower-lit, we might need to recognize both the original (in
-  // `lit`) and the duplicated (in `kgen`) witness entries.
+  // FIXME(MOCO-4167): During lower-lit, we might need to recognize both the
+  // original (in `lit`) and the duplicated (in `kgen`) witness entries.
   for (WitnessOp entry : witnessTable.getOps<WitnessOp>()) {
     std::string witnessName = getWitnessName().getValue().str();
     if (entry.getName() == witnessName ||

@@ -1097,9 +1097,9 @@ LogicalResult LIT::lowerLITTypes(ModuleOp module, StructDecls &state,
   if (result.wasInterrupted())
     return failure();
 
-  // HACK: Duplicate a kgen-lowered witness entry, during lower-lit, we
-  // might have ordering issue during lit->kgen conversion, depending on whether
-  // `get_witness_attr` is evaluated before/after the referenced struct
+  // FIXME(MOCO-4167): Duplicate a kgen-lowered witness entry, during lower-lit,
+  // we might have ordering issue during lit->kgen conversion, depending on
+  // whether `get_witness_attr` is evaluated before/after the referenced struct
   // generator is lowered. It might or might not be folded correctly.
   //
   // Simply postpone the struct generator lowering to the last step (as we are
@@ -1182,8 +1182,8 @@ LogicalResult LIT::lowerLITTypes(ModuleOp module, StructDecls &state,
     });
   }
 
-  // HACK: Erase the duplicated witness entries at the end after everything is
-  // lowered properly.
+  // FIXME(MOCO-4167): Erase the duplicated witness entries at the end after
+  // everything is lowered properly.
   for (StructGeneratorOp structGen : module.getOps<StructGeneratorOp>())
     for (auto conformsOp : structGen.getOps<ConformanceOp>())
       for (auto witnessOp :
