@@ -52,6 +52,9 @@ from linalg.matmul.gpu.sm100_structured.grouped_block_scaled_1d1d import (
 from linalg.matmul.gpu.sm100_structured.default.dispatch_fused_bias_residual import (
     fused_bias_residual_matmul_dispatch_sm100,
 )
+from linalg.matmul.gpu.sm100_structured.fused_swiglu import (
+    matmul_swiglu_dispatch_sm100_bf16,
+)
 from linalg.bmm import batched_matmul_dynamic_scaled_fp8
 from linalg.grouped_matmul import grouped_matmul
 from linalg.lora import shrink_qkv_permute_3mn_sm100
@@ -1208,4 +1211,69 @@ struct Struct_lora_sgmv_qkv_shrink_ragged:
             Int(max_seq_length),
             lora_ids.dim_size[0](),
             cuda_ctx,
+        )
+
+
+@compiler.register("mo.matmul_swiglu", type="gpu")
+struct MatmulSwiGLU:
+    """Fused GEMM+SwiGLU on SM100 for BF16 inputs.
+
+    Computes ``output[m, h] = silu(x @ W_gate[h, :]) * (x @ W_up[h, :])``
+    in a single SM100 kernel. The weight ``b`` must be pre-permuted on its N
+    axis so that gate/up column pairs are adjacent (sigma permutation:
+    ``sigma(2i)=i, sigma(2i+1)=H+i`` where ``H=N/2``).
+
+    Output shape is ``[M, H]`` where ``H = N/2``, saving the slice+silu+mul
+    elementwise kernel entirely.
+    """
+
+    @always_inline
+    @staticmethod
+    def execute[
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=DType.bfloat16, rank=2, ...],
+        a: InputTensor[dtype=DType.bfloat16, rank=2, ...],
+        b: InputTensor[dtype=DType.bfloat16, rank=2, ...],
+        ctx: DeviceContext,
+    ) raises:
+        matmul_swiglu_dispatch_sm100_bf16(
+            output.to_tile_tensor[DType.int64](),
+            a.to_tile_tensor[DType.int64](),
+            b.to_tile_tensor[DType.int64](),
+            ctx,
+        )
+
+
+@compiler.register("mo.matmul_swiglu_bias", type="gpu")
+struct MatmulSwiGLUBias:
+    """Fused GEMM+SwiGLU+bias on SM100 for BF16 inputs.
+
+    Like ``mo.matmul_swiglu`` but adds a 1D bias vector before the activation.
+    The bias must be sigma-permuted to match the weight layout: even element
+    ``bias[2h]`` is added to the gate column and odd element ``bias[2h+1]`` to
+    the up column before ``silu(gate) * up`` is computed.
+    """
+
+    @always_inline
+    @staticmethod
+    def execute[
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=DType.bfloat16, rank=2, ...],
+        a: InputTensor[dtype=DType.bfloat16, rank=2, ...],
+        b: InputTensor[dtype=DType.bfloat16, rank=2, ...],
+        bias: InputTensor[dtype=DType.bfloat16, rank=1, ...],
+        ctx: DeviceContext,
+    ) raises:
+        matmul_swiglu_dispatch_sm100_bf16[has_bias=True](
+            output.to_tile_tensor[DType.int64](),
+            a.to_tile_tensor[DType.int64](),
+            b.to_tile_tensor[DType.int64](),
+            ctx,
+            OptionalReg(
+                UnsafePointer[Scalar[DType.bfloat16], ImmutAnyOrigin](
+                    unsafe_from_address=Int(bias.unsafe_ptr())
+                )
+            ),
         )
