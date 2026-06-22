@@ -32,6 +32,8 @@ from .kernels import (
     mxfp4_dequant,
     nvfp4_gemm,
     nvfp4_gemv,
+    nvfp4_skeleton_gemm,
+    nvfp4_skeleton_repack,
     quantize_dynamic_block_scaled,
     quantize_dynamic_block_scaled_mxfp4,
     quantize_dynamic_scaled_float8,
@@ -78,6 +80,15 @@ def _reshape_pre_interleaved_scales(
 # (prefill / high-concurrency decode). Override via env var to tune.
 _NVFP4_PRE_SM100_GEMM_M_THRESHOLD = int(
     os.environ.get("MAX_NVFP4_GEMM_M_THRESHOLD", "32")
+)
+
+# Opt-in: route the pre-Blackwell large-M GEMM through the multistage-skeleton
+# NVFP4 path (repack + qmatmul_nvfp4_g16) instead of the bespoke nvfp4_gemm.
+# The skeleton is bit-exact and ~2.5x faster at gemma4 shapes on L40S, but the
+# graph route is gated behind this flag until validated token-identical in
+# serving (it changes the live NVFP4 dispatch). Default off = unchanged.
+_NVFP4_USE_SKELETON_GEMM = (
+    os.environ.get("MAX_NVFP4_SKELETON_GEMM", "0") == "1"
 )
 
 
@@ -143,6 +154,14 @@ def _matmul_float4(
             return nvfp4_gemv(x_bf16, weight, scales_f32)
 
         def _gemm() -> TensorValue:
+            if _NVFP4_USE_SKELETON_GEMM:
+                # Repack (constant-folded at load) folds the FP8 block scale
+                # with the global scale into bf16, so pass the raw FP8 scales
+                # and weight_scale_2 -- not the pre-multiplied scales_f32.
+                combined = nvfp4_skeleton_repack(
+                    weight, weight_scale, weight_scale_2
+                )
+                return nvfp4_skeleton_gemm(x_bf16, combined)
             return nvfp4_gemm(x_bf16, weight, scales_f32)
 
         m = ops.shape_to_tensor(x_bf16.shape)[0]

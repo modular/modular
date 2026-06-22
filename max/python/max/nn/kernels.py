@@ -5632,6 +5632,94 @@ def nvfp4_gemm(
     )[0].tensor
 
 
+def nvfp4_skeleton_repack(
+    packed_weights: TensorValue,
+    block_scales: TensorValue,
+    weight_scale_2: TensorValue,
+) -> TensorValue:
+    """Repack canonical NVFP4 weights into the multistage-skeleton buffer.
+
+    Wraps the ``repack_nvfp4_g16`` custom op. The output is a single uint8
+    buffer ``[N, K/2 + (K/16)*2]`` holding the repacked 4-bit weights in the
+    64x16 tile layout followed by bf16 block scales (FP8 block scale folded
+    with the per-tensor global scale). This is a load-time, constant-folded
+    transform; the result feeds :func:`nvfp4_skeleton_gemm`.
+
+    Args:
+        packed_weights: Packed FP4 weight ``[N, K/2]`` uint8.
+        block_scales: FP8-e4m3 block scales ``[N, K/16]``.
+        weight_scale_2: Per-tensor global scale (scalar f32).
+
+    Returns:
+        Combined skeleton buffer ``[N, K/2 + (K/16)*2]`` uint8.
+    """
+    if packed_weights.dtype != DType.uint8:
+        raise ValueError("nvfp4_skeleton_repack requires uint8 packed weights")
+    if block_scales.dtype != DType.float8_e4m3fn:
+        raise ValueError(
+            "nvfp4_skeleton_repack requires float8_e4m3fn block scales, got"
+            f" {block_scales.dtype}"
+        )
+
+    n = packed_weights.shape[0]
+    k_half = packed_weights.shape[1]
+    scale_bytes = block_scales.shape[1] * 2
+    g = ops.reshape(weight_scale_2.cast(DType.float32), [1]).to(
+        packed_weights.device
+    )
+    return ops.custom(
+        "repack_nvfp4_g16",
+        device=packed_weights.device,
+        values=[packed_weights, block_scales.to(packed_weights.device), g],
+        out_types=[
+            TensorType(
+                dtype=DType.uint8,
+                shape=[n, k_half + scale_bytes],
+                device=packed_weights.device,
+            )
+        ],
+    )[0].tensor
+
+
+def nvfp4_skeleton_gemm(
+    x: TensorValue,
+    combined_weights: TensorValue,
+) -> TensorValue:
+    """NVFP4 GEMM on the multistage skeleton: ``x @ dequant(W).T``.
+
+    Wraps the ``qmatmul_nvfp4_g16`` custom op. ``combined_weights`` is the
+    buffer produced by :func:`nvfp4_skeleton_repack`. This is the high-M
+    sibling of :func:`nvfp4_gemm`, built on MAX's mature quantized multistage
+    mainloop (Marlin-class throughput) instead of the bespoke kernel.
+
+    Args:
+        x: Activations ``[M, K]`` in bfloat16.
+        combined_weights: Repacked ``[N, K/2 + (K/16)*2]`` uint8 buffer.
+
+    Returns:
+        ``[M, N]`` in bfloat16.
+    """
+    if x.dtype != DType.bfloat16:
+        raise ValueError(f"nvfp4_skeleton_gemm requires bfloat16 x, got {x.dtype}")
+    if combined_weights.dtype != DType.uint8:
+        raise ValueError("nvfp4_skeleton_gemm requires uint8 combined weights")
+
+    m = x.shape[0]
+    n = combined_weights.shape[0]
+    return ops.custom(
+        "qmatmul_nvfp4_g16",
+        device=x.device,
+        values=[x, combined_weights],
+        out_types=[
+            TensorType(
+                dtype=DType.bfloat16,
+                shape=[m, n],
+                device=x.device,
+            )
+        ],
+    )[0].tensor
+
+
 def nvfp4_dequant(
     packed_weights: TensorValue,
     scales: TensorValue,
