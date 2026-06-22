@@ -77,6 +77,35 @@ except ImportError as e:
     _flash_attn_varlen_func = None
 
 
+def _attention_flops(
+    batch_size: int,
+    qkv_len: int,
+    num_q_heads: int,
+    head_dim: int,
+    causal: bool,
+    window_size: int,
+) -> int:
+    """Compute effective attention FLOPs from the count of valid QK pairs.
+
+    Each valid (query, key) pair costs ``4 * head_dim`` FLOPs (``QK^T`` and
+    ``P@V`` each contribute ``2 * head_dim``). A ``window_size > 0`` selects a
+    causal sliding window, so every query attends to at most ``window_size``
+    keys (itself included); ``window_size <= 0`` falls back to full causal or
+    full bidirectional attention. Counting only the masked-in pairs keeps the
+    reported throughput meaningful and comparable across engines.
+    """
+    if window_size > 0:
+        # Causal sliding window: query q attends to keys [q - W + 1, q], so the
+        # valid pairs per (batch, head) are
+        #   sum_{q=0}^{S-1} min(q + 1, W) = S * W - W * (W - 1) / 2   (S >= W).
+        w = min(window_size, qkv_len)
+        valid_pairs = qkv_len * w - w * (w - 1) // 2
+        return batch_size * num_q_heads * head_dim * 4 * valid_pairs
+    if causal:
+        return batch_size * qkv_len * qkv_len * num_q_heads * head_dim * 2
+    return batch_size * qkv_len * qkv_len * num_q_heads * head_dim * 4
+
+
 def bench_flashinfer(
     batch_size: int,
     qkv_len: int,
@@ -86,11 +115,24 @@ def bench_flashinfer(
     causal: bool,
     dtype: torch.dtype,
     num_iters: int,
+    window_size: int = -1,
     backend: str = "cutlass",
     no_kineto: bool = False,
 ) -> tuple[float, int] | None:
     if _flashinfer is None:
         print("flashinfer not available, skipping bench_flashinfer")
+        return None
+
+    # The SM100 cutlass FMHA backend used here does not support sliding window
+    # attention: BatchPrefillWithRaggedKVCacheWrapper.run() routes cutlass
+    # through fmha_varlen(), which has no window_left argument and builds its
+    # module with use_sliding_window=False, so window_left is silently dropped.
+    # Skip rather than report full-causal numbers mislabeled as windowed.
+    if window_size > 0:
+        print(
+            "FlashInfer SM100 cutlass backend does not support sliding window"
+            " attention, skipping bench_flashinfer."
+        )
         return None
 
     # Validate backend option
@@ -172,13 +214,10 @@ def bench_flashinfer(
     )
     assert isinstance(time_s, float)  # Single kernel_name returns float
 
-    def flops() -> int:
-        if causal:
-            return batch_size * qkv_len * qkv_len * num_q_heads * head_dim * 2
-        else:
-            return batch_size * qkv_len * qkv_len * num_q_heads * head_dim * 4
-
-    return time_s, flops()
+    flops = _attention_flops(
+        batch_size, qkv_len, num_q_heads, head_dim, causal, window_size
+    )
+    return time_s, flops
 
 
 def bench_max(
@@ -190,6 +229,7 @@ def bench_max(
     causal: bool,
     dtype: torch.dtype,
     num_iters: int,
+    window_size: int = -1,
     no_kineto: bool = False,
 ) -> tuple[float, int] | None:
     """Benchmark MAX flash_attention_gpu kernel.
@@ -202,6 +242,9 @@ def bench_max(
         head_dim: Dimension of each head
         causal: Whether to use causal masking
         dtype: torch dtype for inputs (e.g., torch.bfloat16)
+        window_size: Sliding window size (number of keys each query attends
+            to, itself included). When > 0, a causal sliding window mask is
+            used; otherwise the mask is full causal or null per ``causal``.
     """
     # Convert torch dtype to MAX DType
     max_dtype = torch_dtype_to_max(dtype)
@@ -232,16 +275,23 @@ def bench_max(
     # Create inference session
     session = InferenceSession(devices=[Accelerator()])
 
-    # Construct MAX graph
-    mask_variant = (
-        MHAMaskVariant.CAUSAL_MASK if causal else MHAMaskVariant.NULL_MASK
-    )
+    # Construct MAX graph. A positive window_size selects the causal sliding
+    # window mask (SlidingWindowCausalMask[window_size], where each query
+    # attends to keys [q - window_size + 1, q]); local_window_size feeds that
+    # parameter directly. Otherwise fall back to full causal / null masking.
+    if window_size > 0:
+        mask_variant = MHAMaskVariant.SLIDING_WINDOW_CAUSAL_MASK
+    else:
+        mask_variant = (
+            MHAMaskVariant.CAUSAL_MASK if causal else MHAMaskVariant.NULL_MASK
+        )
     graph = Graph(
         "flash_attn_max",
         forward=partial(
             flash_attention_gpu,
             scale=math.sqrt(1.0 / head_dim),
             mask_variant=mask_variant,
+            local_window_size=window_size if window_size > 0 else -1,
         ),
         input_types=[q_type, kv_type, kv_type],
     )
@@ -272,13 +322,10 @@ def bench_max(
     )
     assert isinstance(time_s, float)  # Single kernel_name returns float
 
-    def flops() -> int:
-        if causal:
-            return batch_size * qkv_len * qkv_len * num_q_heads * head_dim * 2
-        else:
-            return batch_size * qkv_len * qkv_len * num_q_heads * head_dim * 4
-
-    return time_s, flops()
+    flops = _attention_flops(
+        batch_size, qkv_len, num_q_heads, head_dim, causal, window_size
+    )
+    return time_s, flops
 
 
 def bench_tridao(
@@ -290,6 +337,7 @@ def bench_tridao(
     causal: bool,
     dtype: torch.dtype,
     num_iters: int,
+    window_size: int = -1,
     no_kineto: bool = False,
 ) -> tuple[float, int] | None:
     if _flash_attn_varlen_func is None:
@@ -317,6 +365,11 @@ def bench_tridao(
         * qkv_len
     )
 
+    # tridao expresses the window as (window_size_left, window_size_right).
+    # MAX's window_size W (keys [q - W + 1, q]) maps to left = W - 1, right = 0
+    # (causal). (None, None) preserves the dense causal / non-causal behavior.
+    window_arg = (window_size - 1, 0) if window_size > 0 else (None, None)
+
     def run_kernel() -> torch.Tensor:
         assert _flash_attn_varlen_func is not None
         out, _ = _flash_attn_varlen_func(
@@ -326,6 +379,7 @@ def bench_tridao(
             cu_seqlens_q=cu_seqlens_q,
             cu_seqlens_k=cu_seqlens_k,
             causal=causal,
+            window_size=window_arg,
             pack_gqa=False,
         )
         return out
@@ -345,13 +399,10 @@ def bench_tridao(
     )
     assert isinstance(time_s, float)  # Single kernel_name returns float
 
-    def flops() -> int:
-        if causal:
-            return batch_size * qkv_len * qkv_len * num_q_heads * head_dim * 2
-        else:
-            return batch_size * qkv_len * qkv_len * num_q_heads * head_dim * 4
-
-    return time_s, flops()
+    flops = _attention_flops(
+        batch_size, qkv_len, num_q_heads, head_dim, causal, window_size
+    )
+    return time_s, flops
 
 
 def bench_prefill(
@@ -364,6 +415,7 @@ def bench_prefill(
     dtype: torch.dtype,
     engine: str,
     num_iters: int,
+    window_size: int = -1,
     no_kineto: bool = False,
 ) -> tuple[float, int] | None:
     """Run all MHA prefill benchmarks and display results side-by-side.
@@ -378,12 +430,15 @@ def bench_prefill(
         dtype: torch dtype for inputs (e.g., torch.bfloat16)
         engine: backend to run the benchmark ("flashinfer" or "tridao" or "modular_max")
         num_iters: Number of benchmark iters.
+        window_size: Sliding window size (keys per query, itself included).
+            When > 0, a causal sliding window mask is used. FlashInfer is
+            skipped in this case (its SM100 cutlass backend lacks SWA support).
     """
     print("=" * 80)
     print(
         f"MHA Prefill Benchmark (batch={batch_size}, seq_len={qkv_len},"
         f" q_heads={num_q_heads}, kv_heads={num_kv_heads},"
-        f" head_dim={head_dim}, causal={causal})"
+        f" head_dim={head_dim}, causal={causal}, window_size={window_size})"
     )
     print("=" * 80)
 
@@ -402,6 +457,7 @@ def bench_prefill(
                     causal,
                     dtype,
                     num_iters,
+                    window_size=window_size,
                     backend="cutlass",
                     no_kineto=no_kineto,
                 )
@@ -421,7 +477,8 @@ def bench_prefill(
                     causal,
                     dtype,
                     num_iters,
-                    no_kineto,
+                    window_size=window_size,
+                    no_kineto=no_kineto,
                 )
             except Exception as e:
                 print(f"Tri Dao benchmark failed: {e}")
@@ -438,7 +495,8 @@ def bench_prefill(
                 causal,
                 dtype,
                 num_iters,
-                no_kineto,
+                window_size=window_size,
+                no_kineto=no_kineto,
             )
         except Exception as e:
             print(f"MAX benchmark failed: {e}")
@@ -515,6 +573,18 @@ if __name__ == "__main__":
         help="Number of benchmark iterations",
     )
     parser.add_argument(
+        "--window_size",
+        "--window-size",
+        type=int,
+        default=-1,
+        help=(
+            "Sliding window size: number of keys each query attends to,"
+            " itself included. When > 0, a causal sliding window mask is used"
+            " (FlashInfer is skipped; its SM100 cutlass backend lacks SWA"
+            " support). <= 0 disables the window (full causal / null mask)."
+        ),
+    )
+    parser.add_argument(
         "--no-kineto",
         action="store_true",
         help="Skip kineto timing (for ncu/nsys).",
@@ -544,6 +614,7 @@ if __name__ == "__main__":
         dtype=dtype_map[args.dtype],
         engine=args.engine,
         num_iters=args.num_iters,
+        window_size=args.window_size,
         no_kineto=args.no_kineto,
     )
 
@@ -555,6 +626,7 @@ if __name__ == "__main__":
             f"num_q_heads={args.num_q_heads}/num_kv_heads={num_kv_heads}/"
             f"head_dim={args.head_dim}/"
             f"causal={args.causal}/dtype={dtype_map[args.dtype]}/"
+            f"window_size={args.window_size}/"
             f"engine={args.engine}/"
         )
 
