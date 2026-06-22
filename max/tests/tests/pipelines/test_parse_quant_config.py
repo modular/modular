@@ -33,7 +33,11 @@ from max.nn.quant_config import (
     ScaleOrigin,
     WeightScaleSpec,
 )
-from max.pipelines.weights.quant import parse_quant_config
+from max.pipelines.weights.quant import (
+    _modelopt_ignore_patterns,
+    _modelopt_shared_experts_quantized_dtype,
+    parse_quant_config,
+)
 from transformers import AutoConfig
 
 # Define a base path for test data.
@@ -833,6 +837,33 @@ def test_parse_modelopt_nvfp4_respects_ignore_patterns(
     assert quant_config.attn_quantized_layers == set()
     assert quant_config.embedding_output_dtype == DType.bfloat16
     assert quant_config.shared_experts_weight_dtype == DType.bfloat16
+
+
+def test_modelopt_ignore_normalizes_block_sparse_moe_shared_experts() -> None:
+    """``block_sparse_moe.shared_experts`` ignore globs map to ``mlp.shared_experts``."""
+    ignore_patterns = _modelopt_ignore_patterns(
+        {
+            "ignore": [
+                "model.language_model.layers.3.block_sparse_moe.shared_experts*",
+            ]
+        }
+    )
+    assert ignore_patterns == ["layers.3.mlp.shared_experts*"]
+
+    global_ignore = _modelopt_ignore_patterns(
+        {
+            "ignore": [
+                "model.language_model.layers.*.block_sparse_moe.shared_experts*"
+            ]
+        }
+    )
+    assert global_ignore == ["layers.*.mlp.shared_experts*"]
+    assert (
+        _modelopt_shared_experts_quantized_dtype(
+            global_ignore, modules_prefix=""
+        )
+        == DType.bfloat16
+    )
 
 
 def test_parse_float4_skips_gptq_quant_method(
