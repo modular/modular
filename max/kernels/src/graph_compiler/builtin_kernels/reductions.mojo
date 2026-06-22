@@ -730,12 +730,13 @@ struct ReduceRMSNormRoPE:
     @staticmethod
     def execute[
         dtype: DType,
+        output_dtype: DType,
         cos_sin_dtype: DType,
         rank: Int,
         target: StaticString,
         multiply_before_cast: Bool = True,
     ](
-        output: FusedOutputTensor[dtype=dtype, rank=rank, ...],
+        output: FusedOutputTensor[dtype=output_dtype, rank=rank, ...],
         input: FusedInputTensor[dtype=dtype, rank=rank, ...],
         weight: InputTensor[dtype=dtype, rank=1, ...],
         epsilon: Scalar[dtype=dtype],
@@ -778,7 +779,7 @@ struct ReduceRMSNormRoPE:
         @always_inline
         def output_fn[
             width: Int, alignment: Int
-        ](coords: IndexList[rank], val: SIMD[dtype, width]):
+        ](coords: IndexList[rank], val: SIMD[output_dtype, width]):
             output._lambda_store[width=width, element_alignment=alignment](
                 rebind[IndexList[output.rank]](coords),
                 rebind[SIMD[output.dtype, width]](val),

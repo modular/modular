@@ -26,6 +26,18 @@ This version is still a work in progress.
 
 ## MAX framework
 
+- The graph compiler now fuses query/key RMSNorm followed by rotate-half RoPE
+  into a single `rms_norm_rope` GPU kernel even when the RMSNorm is written "in
+  float32" — that is, when a `bfloat16`/`float16` activation is upcast to
+  `float32`, normalized, and cast back before RoPE. Previously the intervening
+  `float32`-to-`bfloat16` downcast blocked the fusion and the idiom compiled to
+  several separate elementwise kernels. The fused kernel now decouples its
+  output dtype from its input dtype, so the reduction and weight/epsilon scaling
+  stay in `float32` and only the result is produced in the activation dtype; the
+  input upcast is absorbed by ordinary prologue fusion. Numerics match the
+  unfused graph (the normalized value is rounded to the output dtype before
+  RoPE).
+
 ### Inference server
 
 - Reduced per-iteration latency for structured-output (constrained decoding)

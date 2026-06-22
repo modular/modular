@@ -23,19 +23,24 @@ from std.utils.index import Index, IndexList
 
 
 def compute_rms_norm_rope_ref[
-    dtype: DType, cos_sin_dtype: DType
+    dtype: DType, output_dtype: DType, cos_sin_dtype: DType
 ](
     input_h: UnsafePointer[Scalar[dtype], _],
     gamma_h: UnsafePointer[Scalar[dtype], _],
     cos_h: UnsafePointer[Scalar[cos_sin_dtype], _],
     sin_h: UnsafePointer[Scalar[cos_sin_dtype], _],
-    output_ref: UnsafePointer[mut=True, Scalar[dtype], _],
+    output_ref: UnsafePointer[mut=True, Scalar[output_dtype], _],
     rows: Int,
     cols: Int,
     epsilon: Scalar[dtype],
     weight_offset: Scalar[dtype],
 ) raises:
-    """CPU reference: RMS norm followed by RoPE rotation."""
+    """CPU reference: RMS norm followed by RoPE rotation.
+
+    The reduction and gamma scaling run in `dtype`'s accumulation precision and
+    the normed value is rounded to `output_dtype` *before* RoPE, mirroring the
+    fused kernel's `multiply_before_cast=True` / output-dtype rounding.
+    """
     comptime accum_type = get_accum_type[dtype]()
 
     var half_cols = cols // 2
@@ -51,14 +56,15 @@ def compute_rms_norm_rope_ref[
         )
         var inv_rms = Scalar[accum_type](1) / rms
 
-        # Apply norm with gamma (multiply_before_cast=True: all ops in accum_type).
-        var normed = List(length=cols, fill=Scalar[dtype](0))
+        # Apply norm with gamma (multiply_before_cast=True: all ops in
+        # accum_type), rounding the normed value to output_dtype before RoPE.
+        var normed = List(length=cols, fill=Scalar[output_dtype](0))
         for c in range(cols):
             var v = input_h[r * cols + c].cast[accum_type]()
             var g = (
                 gamma_h[c].cast[accum_type]() + weight_offset.cast[accum_type]()
             )
-            normed[c] = (v * inv_rms * g).cast[dtype]()
+            normed[c] = (v * inv_rms * g).cast[output_dtype]()
 
         # Apply RoPE: rotated[c] = -normed[c+half] if c < half else normed[c-half]
         for c in range(cols):
@@ -70,11 +76,15 @@ def compute_rms_norm_rope_ref[
             var rotated = -paired_val if c < half_cols else paired_val
             output_ref[r * cols + c] = (
                 normed_val * cos_val + rotated * sin_val
-            ).cast[dtype]()
+            ).cast[output_dtype]()
 
 
 def run_rms_norm_rope_gpu[
-    rank: Int, //, dtype: DType, cos_sin_dtype: DType = dtype
+    rank: Int,
+    //,
+    dtype: DType,
+    output_dtype: DType = dtype,
+    cos_sin_dtype: DType = dtype,
 ](ctx: DeviceContext, shape: IndexList[rank], rtol: Float64 = 0.01) raises:
     print("== run_rms_norm_rope_gpu")
 
@@ -85,8 +95,8 @@ def run_rms_norm_rope_gpu[
     var gamma_h = ctx.enqueue_create_host_buffer[dtype](cols)
     var cos_h = ctx.enqueue_create_host_buffer[cos_sin_dtype](rows * cols)
     var sin_h = ctx.enqueue_create_host_buffer[cos_sin_dtype](rows * cols)
-    var result_gpu = ctx.enqueue_create_host_buffer[dtype](rows * cols)
-    var result_ref = ctx.enqueue_create_host_buffer[dtype](rows * cols)
+    var result_gpu = ctx.enqueue_create_host_buffer[output_dtype](rows * cols)
+    var result_ref = ctx.enqueue_create_host_buffer[output_dtype](rows * cols)
 
     # Initialize with diverse deterministic values.
     for i in range(rows * cols):
@@ -101,7 +111,7 @@ def run_rms_norm_rope_gpu[
     var weight_offset = Scalar[dtype](0.0)
 
     # Compute CPU reference.
-    compute_rms_norm_rope_ref[dtype, cos_sin_dtype](
+    compute_rms_norm_rope_ref[dtype, output_dtype, cos_sin_dtype](
         data_h.unsafe_ptr(),
         gamma_h.unsafe_ptr(),
         cos_h.unsafe_ptr(),
@@ -118,7 +128,7 @@ def run_rms_norm_rope_gpu[
     var gamma_d = ctx.enqueue_create_buffer[dtype](cols)
     var cos_d = ctx.enqueue_create_buffer[cos_sin_dtype](rows * cols)
     var sin_d = ctx.enqueue_create_buffer[cos_sin_dtype](rows * cols)
-    var output_d = ctx.enqueue_create_buffer[dtype](rows * cols)
+    var output_d = ctx.enqueue_create_buffer[output_dtype](rows * cols)
 
     ctx.enqueue_copy(data_d, data_h)
     ctx.enqueue_copy(gamma_d, gamma_h)
@@ -163,7 +173,7 @@ def run_rms_norm_rope_gpu[
     @parameter
     def output_fn[
         width: Int, alignment: Int
-    ](coords: IndexList[rank], val: SIMD[dtype, width]) -> None:
+    ](coords: IndexList[rank], val: SIMD[output_dtype, width]) -> None:
         var idx = output_buf.layout(Coord(coords))
         output_buf.raw_store[width=width, alignment=alignment](idx, val)
 
@@ -206,3 +216,21 @@ def main() raises:
         run_rms_norm_rope_gpu[DType.bfloat16, cos_sin_dtype=DType.float32](
             ctx, Index(2, 128), rtol=5e-2
         )
+        # Decoupled output dtype: f32 input/weight, bf16 output (the JSC-32
+        # "float32 RMSNorm sandwich" the GC now fuses). Exercises the
+        # warp-tiling (cols <= regs), block (large cols), and rank>2 paths.
+        run_rms_norm_rope_gpu[
+            DType.float32,
+            output_dtype=DType.bfloat16,
+            cos_sin_dtype=DType.bfloat16,
+        ](ctx, Index(2, 256), rtol=5e-2)
+        run_rms_norm_rope_gpu[
+            DType.float32,
+            output_dtype=DType.bfloat16,
+            cos_sin_dtype=DType.bfloat16,
+        ](ctx, Index(2, 4096), rtol=5e-2)
+        run_rms_norm_rope_gpu[
+            DType.float32,
+            output_dtype=DType.bfloat16,
+            cos_sin_dtype=DType.bfloat16,
+        ](ctx, Index(2, 6, 256), rtol=5e-2)
