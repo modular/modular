@@ -734,6 +734,12 @@ class BenchmarkResult(BaseModel):
     )
     lora_metrics: LoRAMetrics | None = None
 
+    # Run-level (not per-iteration) timing, captured once after the server
+    # reports ready and stamped onto every iteration's result. ``None`` when
+    # the harness didn't launch the server (e.g. benchmarking an external
+    # endpoint) or startup capture failed.
+    server_startup_time: float | None = None
+
     # Workload aggregates. Exactly the one matching ``task_type`` is set on
     # success; both stay ``None`` for failed iterations / dry runs.
     #
