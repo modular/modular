@@ -122,8 +122,14 @@ def merge_per_device_buffers(
                 dtype=a.dtype,
                 device=a.device,
             )
-            combined[:a_rows, :].inplace_copy_from(a)
-            combined[a_rows:, :].inplace_copy_from(b)
+            # Slice the leading axis at the buffer's rank: this merges both
+            # rank-2 embeddings and rank-1 indices, and MAX requires
+            # index-count == rank.
+            n_extra = len(a.shape) - 1
+            front = (slice(None, a_rows), *(slice(None),) * n_extra)
+            back = (slice(a_rows, None), *(slice(None),) * n_extra)
+            combined[front].inplace_copy_from(a)
+            combined[back].inplace_copy_from(b)
             merged.append(combined)
     return merged
 
