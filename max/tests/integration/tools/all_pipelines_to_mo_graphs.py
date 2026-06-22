@@ -21,6 +21,12 @@ devices matching each GPU config, so no GPU is required. Graphs land in
 <output-dir>/<gpu>/<model>. Failures are recorded and summarized at the
 end instead of aborting the sweep.
 
+Models in SKIP_MODELS are dropped from the sweep before it starts. Use it for
+models that cannot dump today, either because they break the orchestrator
+itself (the AMD Kimi MXFP4 model balloons host memory during virtual compile
+and OOM-kills the pod, taking every concurrent dump down with it) or because
+they always fail their own dump and would otherwise re-fail every run.
+
 Run with:
     ./bazelw run //max/tests/integration/tools:all_pipelines_to_mo_graphs -- \\
         --output-dir /tmp/graphs
@@ -52,6 +58,28 @@ GPU_CONFIGS = tuple(r for r in RUNNERS if r != "8xB200_internal")
 
 # GPU family -> virtual device target to compile for.
 _GPU_TARGETS = {"B200": "cuda:sm_100", "MI355": "hip:gfx950"}
+
+# Case-insensitive globs (matched against the CI model name) dropped from the
+# sweep on every GPU. Use this for models that fail on every GPU they run on; a
+# model that fails only on some GPUs belongs in the per-GPU exclusion tags in
+# smoke_test_github_matrix instead.
+SKIP_MODELS: set[str] = {
+    # Balloons host memory during virtual compile and OOM-kills the pod, taking
+    # every concurrent dump down with it.
+    "amd/kimi*mxfp4",
+    # Eager device-buffer allocation aborts under the build-only virtual device
+    # (VirtualDeviceContext::memAlloc not implemented). Covers the speculative
+    # eagle/dflash recipes and the new-arch base models that hit the same path.
+    "*__*eagle*",
+    "*__dflash",
+    "nvidia/deepseek-v3.1-nvfp4__mtp",
+    "nvidia/deepseek-v3.1-nvfp4__mtp_tpep",
+    "qwen/qwen3.5-9b",
+    "qwen/qwen3.6-27b",
+    "*minimax-m2.7*",
+    # Checkpoint not supported by the installed transformers version.
+    "google/gemma-4-31b-it__mtp",
+}
 
 
 class _GpuSpec(NamedTuple):
@@ -119,6 +147,11 @@ def _serve_args(server_cmd: list[str]) -> list[str]:
 
 def _matches(name: str, globs: list[str] | None) -> bool:
     return globs is None or any(fnmatch.fnmatch(name.lower(), g) for g in globs)
+
+
+def _is_skipped(model: str) -> bool:
+    """Returns whether `model` matches a SKIP_MODELS glob."""
+    return any(fnmatch.fnmatch(model.lower(), g) for g in SKIP_MODELS)
 
 
 def _dump_one(
@@ -238,12 +271,20 @@ def main(
     if models:
         globs = [p.strip().lower() for p in models.split(",") if p.strip()]
 
-    matrix = [
-        (gpu, model)
-        for gpu in selected_gpus
-        for model in sorted(MODELS)
-        if _matches(model, globs) and not excluded("max-ci", gpu, model)
-    ]
+    matrix: list[tuple[str, str]] = []
+    skipped: set[str] = set()
+    for gpu in selected_gpus:
+        for model in sorted(MODELS):
+            if not _matches(model, globs) or excluded("max-ci", gpu, model):
+                continue
+            if _is_skipped(model):
+                skipped.add(model)
+                continue
+            matrix.append((gpu, model))
+
+    for model in sorted(skipped):
+        logger.info("skipping %s", model)
+
     if not matrix:
         raise click.UsageError(
             f"No matrix entries match gpus={gpus!r} models={models!r}."

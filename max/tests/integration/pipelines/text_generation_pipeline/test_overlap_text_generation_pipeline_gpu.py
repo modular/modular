@@ -405,7 +405,7 @@ def create_overlap_pipeline(
         pipeline_model=cast(type[PipelineModel[Any]], FakePipelineModel),
         eos_token_id=9999,
         weight_adapters=MagicMock(),
-        tokenizer=MagicMock(),
+        tokenizer=MagicMock(spec=[]),
         disable_overlap=disable_overlap,
     )
     return pipeline

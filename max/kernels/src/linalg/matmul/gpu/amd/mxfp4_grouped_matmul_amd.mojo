@@ -28,12 +28,6 @@ from std.utils import StaticTuple
 from .mxfp4_matmul_amd import MXFP4MatmulAMD as _MXFP4MatmulAMD
 from .mxfp4_matmul_amd_preb import MXFP4MatmulAMD_PreB as _MXFP4MatmulAMD_PreB
 
-# Preb perf knobs (b_cache_policy / dram_to_lds / cluster_drain_sched /
-# mfma_cluster / deep_prime) are per-launch comptime params on `launch[...]`,
-# defaulted to current behavior — tune them per (N, K, M-band) in the dispatch
-# branches, same as the tile config. kbench: cluster_drain_sched regressed -7.9%
-# globally, so leave it off unless a specific band shows a win.
-
 
 @always_inline
 def _waves_per_eu_attr[waves_per_eu: Int]() -> __mlir_type.`!kgen.string`:
@@ -959,11 +953,15 @@ def mxfp4_grouped_matmul_amd_preb(
         elif etm <= 1023:
             return run_kernel[16, 128, 512, 32, True, STREAM]()
         elif etm <= 2047:
-            return run_kernel[32, 128, 512, 32, True, STREAM]()
-        elif etm <= 4095:
-            return run_kernel[64, 128, 512, 64, True, STREAM]()
+            return run_kernel[32, 128, 512, 32, True]()
+        elif etm <= 3072:
+            return run_kernel[64, 128, 512, 64, True]()
+        elif etm <= 6144:
+            return run_kernel[128, 128, 512, 64, True]()
+        elif etm <= 9216:
+            return run_kernel[64, 128, 512, 64, True, deep_prime=True]()
         else:
-            return run_kernel[64, 128, 256, 64, False]()
+            return run_kernel[64, 128, 512, 64, False, deep_prime=True]()
 
     # Other shapes: persistent below the threshold, direct at/above it.
     if etm >= m_threshold:
