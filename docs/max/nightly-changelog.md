@@ -28,6 +28,20 @@ This version is still a work in progress.
 
 ### Inference server
 
+- Reduced per-iteration latency for structured-output (constrained decoding)
+  requests on speculative-decode models. The overlap pipeline now enqueues the
+  asynchronous FSM-advance and bitmask compute once the next iteration's batch
+  order is known, so the bitmask is written directly in the consuming batch's
+  row order. This removes both the host-synchronization point that previously
+  stalled the GPU-feeding thread when the batch composition changed between
+  iterations and the device-side gather that earlier reconciled the order. The
+  improvement applies across all six supported speculative-decode architectures
+  (Kimi K2.5 MLA and MHA, DeepseekV3 MTP and Eagle3, Gemma 4 MTP,
+  and EAGLE Llama 3).
+- Constrained decoding (structured output) now unpacks the grammar bitmask on
+  the GPU. The packed `int32` bitmask is transferred to device as-is and
+  unpacked and applied to the logits in a single fused kernel
+  (`apply_packed_bitmask`), instead of unpacking to a `bool` tensor on the CPU.
 - Fixed image requests failing with a 400 or 500 across all vision models. Two
   bugs in the shared image-resolution layer: `data:` URIs with unpadded or
   URL-safe base64 (sent routinely by clients and relays) were rejected by the

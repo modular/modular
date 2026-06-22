@@ -817,22 +817,44 @@ class TextContext:
         # a clean terminal state rather than logging a spurious rejection.
         if token in self.eos_tracker.eos_token_ids:
             self.grammar_state.grammar_enforced = False
-        elif (
-            self.grammar_state.update_enforcement_state(token)
-            and self.matcher.try_consume_tokens([token]) != 1
-        ):
-            _logger.error(
-                "Matcher rejected token %d (request %s); disabling "
-                "enforcement for the rest of the request. "
-                "matcher_errors=%s matcher_warnings=%s",
-                token,
-                self.request_id,
-                self.matcher.get_error(),
-                self.matcher.get_grammar_warnings(),
-            )
-            self.grammar_state.grammar_enforced = False
+        else:
+            was_enforced = self.grammar_state.grammar_enforced
+            if self.grammar_state.update_enforcement_state(token):
+                tokens = self._tokens_for_consume(token, was_enforced)
+                if self.matcher.try_consume_tokens(tokens) != len(tokens):
+                    _logger.error(
+                        "Matcher rejected %d token(s) ending at %d "
+                        "(request %s); disabling enforcement for the rest "
+                        "of the request. matcher_errors=%s "
+                        "matcher_warnings=%s",
+                        len(tokens),
+                        token,
+                        self.request_id,
+                        self.matcher.get_error(),
+                        self.matcher.get_grammar_warnings(),
+                    )
+                    self.grammar_state.grammar_enforced = False
 
         return True
+
+    def _tokens_for_consume(self, token: int, was_enforced: bool) -> list[int]:
+        """Tokens to feed the matcher for a conditional-enforcement step.
+
+        On the enforcement flip-on (``was_enforced`` was False and
+        ``update_enforcement_state`` just turned it True at a tool-call
+        ``SECTION_BEGIN``), the matcher is fresh and must consume the
+        ENTIRE start marker, not just the token that completed it. For
+        multi-token / namespace-prefixed markers (e.g. MiniMax-M3's
+        ``NS<tool_call>``) the grammar's ``start`` rule expects the prefix
+        first; feeding only the completing token leaves the matcher
+        expecting that prefix, so it rejects and enforcement silently
+        falls open. Single-token markers have ``start_token_ids ==
+        [token]``, so this is a no-op for them.
+        """
+        region = self.grammar_state.tool_region
+        if not was_enforced and region and region.start_token_ids:
+            return list(region.start_token_ids)
+        return [token]
 
     def update(
         self,

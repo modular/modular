@@ -24,7 +24,7 @@ A custom kernel's entry-point signature uses these:
 The decorators that register a kernel (`register`, `register_internal`,
 `view_kernel`) live next to this file in `register.mojo`.
 """
-import std.algorithm
+import std.algorithm.functional
 
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.collections import Optional
@@ -1097,8 +1097,7 @@ struct ManagedTensorSlice[
         stride_types=Self.static_spec.static_layout._stride_types,
     ]
 
-    @__allow_legacy_any_origin_fields
-    var _ptr: UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]
+    var _ptr: UnsafePointer[Scalar[Self.dtype], MutUntrackedOrigin]
     var _runtime_layout: Self.RuntimeLayout
     var in_fusion: Self.InFusion
     var out_fusion: Self.OutFusion
@@ -1192,7 +1191,7 @@ struct ManagedTensorSlice[
         instances, but instead use the ones provided by the MAX inference
         engine.
         """
-        self._ptr = ptr.as_unsafe_any_origin()
+        self._ptr = ptr.unsafe_origin_cast[MutUntrackedOrigin]()
         self._runtime_layout = Self._make_runtime_layout(
             shape, shape.get_row_major_strides()
         )
@@ -1213,7 +1212,7 @@ struct ManagedTensorSlice[
         instances, but instead use the ones provided by the MAX inference
         engine.
         """
-        self._ptr = ptr.as_unsafe_any_origin()
+        self._ptr = ptr.unsafe_origin_cast[MutUntrackedOrigin]()
         self._runtime_layout = Self._make_runtime_layout(shape, strides)
         self.in_fusion = Self._sentinel_in_fusion()
         self.out_fusion = Self._sentinel_out_fusion()
@@ -1235,7 +1234,7 @@ struct ManagedTensorSlice[
         instances, but instead use the ones provided by the MAX inference
         engine.
         """
-        self._ptr = ptr.as_unsafe_any_origin()
+        self._ptr = ptr.unsafe_origin_cast[MutUntrackedOrigin]()
         self._runtime_layout = Self.RuntimeLayout(shape, strides)
         self.in_fusion = Self._sentinel_in_fusion()
         self.out_fusion = Self._sentinel_out_fusion()
@@ -1879,7 +1878,7 @@ struct ManagedTensorSlice[
         ],
     ):
         return type_of(result)(
-            offset_ptr.or_else(self._ptr),
+            offset_ptr.or_else(self._ptr.as_unsafe_any_origin()),
             new_runtime_shape,
             new_runtime_strides,
         )
@@ -2195,7 +2194,7 @@ struct VariadicTensors[
     def __init__(
         out self,
         ptrs: StaticTuple[
-            UnsafePointer[Scalar[Self.dtype], MutAnyOrigin], Self.size
+            UnsafePointer[Scalar[Self.dtype], MutUntrackedOrigin], Self.size
         ],
         shapes: StaticTuple[IndexList[Self.rank], Self.size],
     ):
@@ -2301,7 +2300,7 @@ struct _FusedInputVariadicTensors[
     def __init__(
         out self,
         ptrs: StaticTuple[
-            UnsafePointer[Scalar[Self.dtype], origin=MutAnyOrigin],
+            UnsafePointer[Scalar[Self.dtype], origin=MutUntrackedOrigin],
             Self.size,
         ],
         shapes: StaticTuple[IndexList[Self.rank], Self.size],
@@ -2393,7 +2392,7 @@ struct _FusedOutputVariadicTensors[
     def __init__(
         out self,
         ptrs: StaticTuple[
-            UnsafePointer[Scalar[Self.dtype], origin=MutAnyOrigin],
+            UnsafePointer[Scalar[Self.dtype], origin=MutUntrackedOrigin],
             Self.size,
         ],
         shapes: StaticTuple[IndexList[Self.rank], Self.size],

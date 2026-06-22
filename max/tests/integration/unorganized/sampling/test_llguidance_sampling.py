@@ -112,12 +112,9 @@ def test_llguidance_sampling(
             size=(batch_size, vocab_size), dtype=np.float32
         )
 
-        bits = 2 ** np.arange(32, dtype=np.int32)
-        bitmask = (np.expand_dims(token_bitmask, axis=-1) & bits) != 0
-        bitmask = bitmask.reshape(
-            batch_size,
-            -1,
-        ).astype(bool)
+        # Pass the packed int32 bitmask straight through; the sampler graph
+        # unpacks and applies it on the GPU (apply_packed_bitmask).
+        bitmask = np.ascontiguousarray(token_bitmask)
 
         # Run through Sampler
         _, new_tokens = structured_output_sampler(
