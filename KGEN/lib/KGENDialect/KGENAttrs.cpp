@@ -740,10 +740,17 @@ TypedAttr GetWitnessAttr::getTypeRefIfResolved() {
 FailureOr<TypedAttr>
 GetWitnessAttr::simplify(ConformanceOp witnessTable,
                          ParameterEvaluator *evaluator) const {
+  SmallVector<WitnessOp, 2> witnessOps;
+  // HACK: During lower-lit, we might need to recognize both the original (in
+  // `lit`) and the duplicated (in `kgen`) witness entries.
   for (WitnessOp entry : witnessTable.getOps<WitnessOp>()) {
-    if (entry.getName() != getWitnessName().getValue())
-      continue;
+    std::string witnessName = getWitnessName().getValue().str();
+    if (entry.getName() == witnessName ||
+        entry.getName() == witnessName + ".#lit#")
+      witnessOps.push_back(entry);
+  }
 
+  for (auto entry : witnessOps) {
     Type entryType = entry.getValue().getType();
     if (evaluator) {
       entryType = evaluator->getReboundType(entryType);
@@ -755,7 +762,7 @@ GetWitnessAttr::simplify(ConformanceOp witnessTable,
     }
 
     if (!isEqualCanon(entryType, getType()))
-      return failure();
+      continue;
 
     auto value = evaluator ? evaluator->getReboundAttribute(entry.getValue())
                            : entry.getValue();
@@ -764,6 +771,7 @@ GetWitnessAttr::simplify(ConformanceOp witnessTable,
     // Realign sugar if needed.
     return ParamOperatorAttr::getRebind(value, getType());
   }
+
   return failure();
 }
 
@@ -1222,7 +1230,17 @@ TypedAttr BindParamsAttr::get(MLIRContext *context, TypedAttr generator,
            "bind_params simplification must preserve the requested type");
     return simplified;
   }
-  return Base::get(generator.getContext(), generator, paramValues, discharged);
+  TypedAttr result =
+      Base::get(generator.getContext(), generator, paramValues, discharged);
+
+  // The inferred type could be more concrete as a evaluation context is used
+  // for folding. When the trivially inferred type does not agree, simply
+  // rebind?
+  //
+  // TODO: does this means that we missed a case in `simplifyBindParams`.
+  if (result.getType() != type)
+    result = ParamOperatorAttr::getRebind(result, type);
+  return result;
 }
 
 TypedAttr BindParamsAttr::get(MLIRContext *context, TypedAttr generator,
