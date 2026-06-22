@@ -293,7 +293,7 @@ def build_sm100_matmul_configs[
     transpose_b: Bool = True,
     has_bias: Bool = False,
 ]() -> Set[FusedSwiGLUMatmulConfig[a_type, b_type, c_type, transpose_b]]:
-    """Build ``FusedSwiGLUMatmulConfig``\\s for SM100 fused GEMM+SwiGLU.
+    """Build ``FusedSwiGLUMatmulConfig``s for SM100 fused GEMM+SwiGLU.
 
     For (N, K) shapes covered by the SwiGLU tuning table each entry's
     ``register_swiglu`` flag selects the epilogue path:
