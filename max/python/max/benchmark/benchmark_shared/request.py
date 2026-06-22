@@ -18,6 +18,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import contextlib
+import json
 import logging
 import os
 import sys
@@ -966,6 +967,30 @@ class SglangPixelGenerationRequestDriver(RequestDriver):
                 return output
 
 
+def _add_input_reference(
+    form: aiohttp.FormData, input_image_paths: list[str] | None
+) -> None:
+    """Attach the i2v conditioning image to a multipart form as ``input_reference``.
+
+    vllm-omni (``/v1/videos[/sync]``) and sglang (``/v1/videos``) both take the
+    image-to-video conditioning image as a multipart ``input_reference`` file.
+    Only the first image is sent; both server APIs accept a single reference.
+    """
+    if not input_image_paths:
+        return
+    image_path = input_image_paths[0]
+    if not os.path.exists(image_path):
+        raise FileNotFoundError(f"Input image not found: {image_path}")
+    with open(image_path, "rb") as f:
+        image_bytes = f.read()
+    form.add_field(
+        "input_reference",
+        image_bytes,
+        filename=os.path.basename(image_path),
+        content_type="application/octet-stream",
+    )
+
+
 class SglangVideoPayload(TypedDict):
     model: str
     prompt: str
@@ -1007,6 +1032,42 @@ def _build_sglang_video_payload(
     return payload
 
 
+def _build_sglang_video_form(
+    request_func_input: PixelGenerationRequestFuncInput,
+) -> aiohttp.FormData:
+    """Build the multipart form for an image-to-video sglang ``/v1/videos`` request.
+
+    Mirrors sglang's reference ``multimodal_gen`` bench_serving: ``size=WxH``
+    and ``num_frames`` are top-level form fields, the remaining sampling knobs
+    are JSON-encoded under ``extra_body``, and the conditioning image is the
+    ``input_reference`` file.
+    """
+    form = aiohttp.FormData()
+    form.add_field("model", request_func_input.model)
+    form.add_field("prompt", request_func_input.prompt)
+
+    extra_body: dict[str, Any] = {}
+    opts = request_func_input.image_options
+    if opts is not None:
+        if opts.width is not None and opts.height is not None:
+            form.add_field("size", f"{opts.width}x{opts.height}")
+        if opts.num_frames is not None:
+            form.add_field("num_frames", str(opts.num_frames))
+        if opts.steps is not None:
+            extra_body["num_inference_steps"] = opts.steps
+        if opts.guidance_scale is not None:
+            extra_body["guidance_scale"] = opts.guidance_scale
+        if opts.seed is not None:
+            extra_body["seed"] = opts.seed
+        if opts.negative_prompt is not None:
+            extra_body["negative_prompt"] = opts.negative_prompt
+    if extra_body:
+        form.add_field("extra_body", json.dumps(extra_body))
+
+    _add_input_reference(form, request_func_input.input_image_paths)
+    return form
+
+
 _SGLANG_VIDEO_POLL_INTERVAL_S = 1.0
 
 
@@ -1030,12 +1091,21 @@ class SglangVideoRequestDriver(RequestDriver):
             raise ValueError("Sglang video URL must end with '/videos'.")
         base_url = api_url.rstrip("/")
 
-        payload = _build_sglang_video_payload(request_func_input)
-
+        # image-to-video uploads the conditioning image, which requires
+        # multipart/form-data; text-to-video stays JSON. Let aiohttp set the
+        # multipart Content-Type (with boundary) for the form path.
         headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {os.environ.get('OPENAI_API_KEY')}",
+            "Authorization": f"Bearer {os.environ.get('OPENAI_API_KEY')}"
         }
+        if request_func_input.input_image_paths:
+            post_kwargs: dict[str, Any] = {
+                "data": _build_sglang_video_form(request_func_input)
+            }
+        else:
+            headers["Content-Type"] = "application/json"
+            post_kwargs = {
+                "json": _build_sglang_video_payload(request_func_input)
+            }
 
         output = PixelGenerationRequestFuncOutput()
         start = time.perf_counter()
@@ -1044,7 +1114,7 @@ class SglangVideoRequestDriver(RequestDriver):
         async with aiohttp.ClientSession(timeout=AIOHTTP_TIMEOUT) as session:
             try:
                 async with session.post(
-                    url=base_url, json=payload, headers=headers
+                    url=base_url, headers=headers, **post_kwargs
                 ) as response:
                     if response.status != 200:
                         body = await response.text()
@@ -1277,7 +1347,18 @@ class VllmOmniVideoRequestDriver(RequestDriver):
                 "vllm-omni video generation URL must end with 'videos/sync'."
             )
 
+        # For image-to-video the conditioning image rides along as the
+        # `input_reference` file, which requires multipart/form-data. The
+        # text-to-video path keeps its existing form-encoded dict POST.
         payload = _build_vllm_omni_video_payload(request_func_input)
+        if request_func_input.input_image_paths:
+            form = aiohttp.FormData()
+            for field_name, value in payload.items():
+                form.add_field(field_name, value)
+            _add_input_reference(form, request_func_input.input_image_paths)
+            post_data: Any = form
+        else:
+            post_data = payload
 
         headers = {
             "Authorization": f"Bearer {os.environ.get('OPENAI_API_KEY')}",
@@ -1290,7 +1371,7 @@ class VllmOmniVideoRequestDriver(RequestDriver):
         async with aiohttp.ClientSession(timeout=AIOHTTP_TIMEOUT) as session:
             try:
                 async with session.post(
-                    url=api_url, data=payload, headers=headers
+                    url=api_url, data=post_data, headers=headers
                 ) as response:
                     output.latency = time.perf_counter() - start
                     if response.status != 200:
