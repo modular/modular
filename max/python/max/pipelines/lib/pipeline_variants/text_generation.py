@@ -25,6 +25,7 @@ from typing import TYPE_CHECKING, Any, Generic
 import numpy as np
 import numpy.typing as npt
 from max.driver import (
+    CPU,
     Buffer,
     Device,
     DevicePinnedBuffer,
@@ -232,6 +233,15 @@ class TextGenerationPipeline(
             available_cache_memory=available_cache_memory,
         )
 
+        # Device the sampler runs on. ``sample_on_host`` routes sampling to the
+        # host CPU.
+        self._sampler_device: Device = (
+            CPU()
+            if pipeline_config.sampling.sample_on_host
+            else self._devices[0]
+        )
+        sampler_device_ref = DeviceRef.from_device(self._sampler_device)
+
         # Load sampler. The bitmask-aware sampler is loaded when constrained
         # decoding could fire (see ``needs_bitmask_constraints``).
         self._sampler_with_bitmask: Model | None = None
@@ -241,12 +251,12 @@ class TextGenerationPipeline(
             if pipeline_config.needs_bitmask_constraints:
                 with_bitmask_graph = token_sampler(
                     pipeline_config.sampling,
-                    device=DeviceRef.from_device(self._devices[0]),
+                    device=sampler_device_ref,
                     needs_bitmask_input=True,
                 )
             without_bitmask_graph = token_sampler(
                 pipeline_config.sampling,
-                device=DeviceRef.from_device(self._devices[0]),
+                device=sampler_device_ref,
                 needs_bitmask_input=False,
             )
             sampler_timer.mark_build_complete()
@@ -262,7 +272,7 @@ class TextGenerationPipeline(
         self._pinned_new_tokens: Buffer | None = None
         if (
             pipeline_config.needs_bitmask_constraints
-            and not self._devices[0].is_host
+            and not self._sampler_device.is_host
             and not is_virtual_device_mode()
         ):
             max_batch_size = pipeline_config.runtime.max_batch_size
@@ -270,12 +280,12 @@ class TextGenerationPipeline(
             self._pinned_new_tokens = DevicePinnedBuffer(
                 shape=(max_batch_size,),
                 dtype=DType.int64,
-                device=self._devices[0],
+                device=self._sampler_device,
             )
 
         self._identity_logit_offsets = (
             FusedSamplingProcessor.allocate_identity_logit_offsets(
-                pipeline_config, self._devices[0]
+                pipeline_config, self._sampler_device
             )
         )
 
@@ -456,8 +466,6 @@ class TextGenerationPipeline(
         Executes the graph for a single decode step, samples the next token,
         then decodes and returns the generated tokens.
         """
-        device0 = self._devices[0]
-        pinned = not device0.is_host
         # Prepare the batch.
         model_inputs, bitmask, flat_batch = self.prepare_batch(inputs.batches)
 
@@ -479,7 +487,7 @@ class TextGenerationPipeline(
                     sampler=sampler,
                     pipeline_config=self._pipeline_config,
                     context_batch=flat_batch,
-                    device=device0,
+                    device=self._sampler_device,
                     pinned_new_tokens=self._pinned_new_tokens,
                     identity_logit_offsets=self._identity_logit_offsets,
                     bitmask=bitmask,
@@ -551,24 +559,27 @@ class TextGenerationPipeline(
         if len(flat_batch) == 0:
             return {}
 
-        # Do the copy to host for each token generated.
+        # Do the copy to host for each token generated. The sampler output
+        # lives on the sampler device (the model device, or the host CPU when
+        # ``sample_on_host`` is set), so stage the D2H copy from there.
+        sampler_device = self._sampler_device
         with Tracer("d2h_generated_tokens"):
             generated_tokens_device = sampling_processor.generated_tokens
             # Allocate a pinned tensor on the host for faster async d2h transfer
-            # speeds. If the model is on host, then fall back to normal pageable
-            # memory.
+            # speeds. If the sampler is on host, then fall back to normal
+            # pageable memory.
             # Note that we do not want to use `DevicePinnedBuffer` here.
             generated_tokens_host = Buffer(
                 shape=generated_tokens_device.shape,
                 dtype=generated_tokens_device.dtype,
-                device=device0,
-                pinned=pinned,
+                device=sampler_device,
+                pinned=not sampler_device.is_host,
             )
             generated_tokens_host.inplace_copy_from(generated_tokens_device)
             # We assume that the call to `.to_numpy()` will insert a device
             # synchronize to guarantee that the async d2h transfer is done.
             # However, if this API changes we will have to add an explicit
-            # device0.synchronize() here.
+            # sampler_device.synchronize() here.
             generated_tokens_np = generated_tokens_host.to_numpy()
 
         res = update_context_and_prepare_responses(
