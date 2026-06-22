@@ -18,31 +18,29 @@ from collections.abc import Mapping
 
 from max.graph.weights import WeightData, Weights
 
-MODERNBERT_SAFETENSOR_MAP: dict[str, str | None] = {
-    ".LayerNorm.": ".layer_norm.",
-    ".position_ids": None,
-    "pooler.": None,
-}
-
 
 def convert_safetensor_state_dict(
     state_dict: Mapping[str, Weights],
 ) -> dict[str, WeightData]:
+    """Convert HF ModernBERT checkpoint names to MAX graph names.
+
+    Rules:
+    - Strip leading ``model.`` from backbone weights.
+    - Drop MLM-only weights under ``head.`` and ``decoder.``.
+    """
     new_state_dict: dict[str, WeightData] = {}
-    value: Weights | None
 
     for weight_name, value in state_dict.items():
-        max_name = weight_name
+        if weight_name.startswith("head.") or weight_name.startswith(
+            "decoder."
+        ):
+            continue
 
-        for before, after in MODERNBERT_SAFETENSOR_MAP.items():
-            if after is None:
-                if before in max_name:
-                    value = None
-                    break
-            else:
-                max_name = max_name.replace(before, after)
-
-        if value is not None:
-            new_state_dict[max_name] = value.data()
+        max_name = (
+            weight_name.removeprefix("model.")
+            if weight_name.startswith("model.")
+            else weight_name
+        )
+        new_state_dict[max_name] = value.data()
 
     return new_state_dict

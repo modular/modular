@@ -14,12 +14,13 @@
 
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextContext
-from max.pipelines.lib import SupportedArchitecture, TextTokenizer
+from max.pipelines.lib import SupportedArchitecture
 from max.pipelines.modeling.types import PipelineTask
 
 from . import weight_adapters
 from .model import ModernBertPipelineModel
 from .model_config import ModernBertConfig
+from .tokenizer import ModernBertTokenizer
 
 modernbert_arch = SupportedArchitecture(
     name="ModernBertModel",
@@ -34,7 +35,7 @@ modernbert_arch = SupportedArchitecture(
         "bfloat16",
     },
     pipeline_model=ModernBertPipelineModel,
-    tokenizer=TextTokenizer,
+    tokenizer=ModernBertTokenizer,
     context_type=TextContext,
     default_weights_format=WeightsFormat.safetensors,
     weight_adapters={
@@ -57,7 +58,7 @@ modernbert_for_masked_lm_arch = SupportedArchitecture(
         "bfloat16",
     },
     pipeline_model=ModernBertPipelineModel,
-    tokenizer=TextTokenizer,
+    tokenizer=ModernBertTokenizer,
     context_type=TextContext,
     default_weights_format=WeightsFormat.safetensors,
     weight_adapters={
