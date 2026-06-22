@@ -686,8 +686,8 @@ static ElaboratorCompileOffloadRetType compileOffloads(
       }
 
       ErrorOr<DenseMap<uint64_t, DenseMap<EmitAs, BufferRef>>>
-          compiledKernelsOr =
-              compiler->emitGPUKernels(std::move(module), kernelEmissionKinds);
+          compiledKernelsOr = compiler->emitOffloadKernels(std::move(module),
+                                                           kernelEmissionKinds);
 
       if (compiledKernelsOr.isError())
         return compiledKernelsOr.takeError();
