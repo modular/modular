@@ -39,7 +39,6 @@ py_repl(
     deps = [
         "//max/python/max",
         requirement("hypothesis"),
-        requirement("notebook"),
         requirement("nvitop"),
         requirement("rich"),
         requirement("pytest"),
