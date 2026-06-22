@@ -91,9 +91,25 @@ _EXTRA_CONSTRAINTS = {
             "test_nvfp4_repack_e2e.mojo",
             "test_nvfp4_tune.mojo",
             "test_nvfp4_tune_real.mojo",
+            "test_nvfp4_cold_gemm.mojo",
         ] + _FP8_FP4_TESTS,
     )
 ]
+
+# COLD-WEIGHT microbench: round-robins a POOL of distinct weight buffers so
+# weights are read from HBM (L2 evicted between reuses), unlike the L2-warm
+# bench. The pool of P distinct gemma4-sized weights needs a large GPU memory
+# budget (per-shape pool can exceed 1 GB for the 21504-wide shapes).
+mojo_test(
+    name = "test_nvfp4_cold_gemm.mojo.test",
+    srcs = ["test_nvfp4_cold_gemm.mojo"],
+    exec_properties = {
+        "test.resources:gpu-memory": "10",
+    },
+    tags = ["gpu"],
+    target_compatible_with = ["//:has_gpu"],
+    deps = _DEPS,
+)
 
 # Runs an independent CPU/GPU dequant reference and the skeleton kernel on
 # several gemma4-sized shapes (incl. 15360-wide), so it needs a larger GPU
