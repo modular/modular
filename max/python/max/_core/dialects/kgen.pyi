@@ -2640,11 +2640,9 @@ class ClosureInitOp(max._core.Operation):
         location: Location,
         result: max._core.Type,
         func_type_generator: max._core.dialects.builtin.TypeAttr,
-        function_type: max._core.dialects.builtin.TypeAttr,
         captures: Sequence[max._core.Value[max._core.Type]],
         move_or_copy_capture_symbols: max._core.dialects.builtin.ArrayAttr,
         input_params: ParamDeclArrayAttr,
-        inline_level: InlineLevelAttr,
         capture_types: max._core.dialects.builtin.ArrayAttr,
         capture_names: max._core.dialects.builtin.ArrayAttr,
         type_value: max._core.dialects.builtin.TypedAttr,
@@ -2661,11 +2659,9 @@ class ClosureInitOp(max._core.Operation):
         location: Location,
         result: max._core.Type,
         func_type_generator: FuncTypeGeneratorType,
-        function_type: max._core.dialects.builtin.FunctionType,
         captures: Sequence[max._core.Value[max._core.Type]],
         move_or_copy_capture_symbols: max._core.dialects.builtin.ArrayAttr,
         input_params: Sequence[ParamDeclAttr],
-        inline_level: InlineLevel,
         capture_types: max._core.dialects.builtin.ArrayAttr,
         capture_names: max._core.dialects.builtin.ArrayAttr,
         type_value: max._core.dialects.builtin.TypedAttr,
@@ -2674,12 +2670,6 @@ class ClosureInitOp(max._core.Operation):
     def func_type_generator(self) -> FuncTypeGeneratorType: ...
     @func_type_generator.setter
     def func_type_generator(
-        self, arg: max._core.dialects.builtin.TypeAttr, /
-    ) -> None: ...
-    @property
-    def function_type(self) -> max._core.dialects.builtin.FunctionType: ...
-    @function_type.setter
-    def function_type(
         self, arg: max._core.dialects.builtin.TypeAttr, /
     ) -> None: ...
     @property
@@ -2696,10 +2686,6 @@ class ClosureInitOp(max._core.Operation):
     def input_params(self) -> Sequence[ParamDeclAttr]: ...
     @input_params.setter
     def input_params(self, arg: ParamDeclArrayAttr, /) -> None: ...
-    @property
-    def inline_level(self) -> InlineLevel: ...
-    @inline_level.setter
-    def inline_level(self, arg: InlineLevelAttr, /) -> None: ...
     @property
     def capture_types(self) -> max._core.dialects.builtin.ArrayAttr: ...
     @capture_types.setter
