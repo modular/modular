@@ -14,6 +14,8 @@
 from __future__ import annotations
 
 import dataclasses
+import os
+from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
 from max.driver import Buffer
@@ -183,6 +185,39 @@ def _fuse_nvfp4_skeleton_weights(
             ):
                 nvfp4_prefixes.add(prefix)
 
+    # The per-matrix host repack is the dominant load cost (~1s each x hundreds
+    # of layers). nvfp4_repack_host is a pure function over numpy arrays whose
+    # heavy ops release the GIL, so repack concurrently in a thread pool. IMPORTANT:
+    # materialize the input numpy arrays (the dlpack/Buffer reads) HERE in the main
+    # thread -- accessing WeightData.data from worker threads is not safe -- and
+    # only hand the worker the already-materialized numpy arrays + scalar.
+    inputs: list[tuple[str, np.ndarray, np.ndarray, float]] = []
+    for prefix in sorted(nvfp4_prefixes):
+        weight_u8 = _as_uint8_numpy(state_dict[f"{prefix}.weight"])  # [N, K/2]
+        scale_fp8 = _as_uint8_numpy(
+            state_dict[f"{prefix}.weight_scale"]
+        )  # [N, K/16]
+        gs_data = state_dict[f"{prefix}.weight_scale_2"]
+        global_scale = float(
+            np.from_dlpack(gs_data.data).astype(np.float32).reshape(())
+        )
+        inputs.append((f"{prefix}.weight", weight_u8, scale_fp8, global_scale))
+
+    def _repack_one(
+        arg: tuple[str, np.ndarray, np.ndarray, float],
+    ) -> tuple[str, np.ndarray]:
+        wname, weight_u8, scale_fp8, global_scale = arg
+        return wname, nvfp4_repack_host(
+            weight_u8, scale_fp8, global_scale, group_size=16
+        )
+
+    combined_by_name: dict[str, np.ndarray] = {}
+    if inputs:
+        max_workers = min(len(inputs), (os.cpu_count() or 8))
+        with ThreadPoolExecutor(max_workers=max_workers) as pool:
+            for wname, combined in pool.map(_repack_one, inputs):
+                combined_by_name[wname] = combined
+
     for name, data in state_dict.items():
         # Drop the scale tensors of fused layers -- never registered/uploaded.
         if name.endswith(".weight_scale"):
@@ -192,26 +227,12 @@ def _fuse_nvfp4_skeleton_weights(
             if name.removesuffix(".weight_scale_2") in nvfp4_prefixes:
                 continue
 
-        if name.endswith(".weight"):
-            prefix = name.removesuffix(".weight")
-            if prefix in nvfp4_prefixes:
-                weight_u8 = _as_uint8_numpy(data)  # [N, K/2]
-                scale_data = state_dict[f"{prefix}.weight_scale"]
-                scale_fp8 = _as_uint8_numpy(scale_data)  # [N, K/16]
-                gs_data = state_dict[f"{prefix}.weight_scale_2"]
-                global_scale = float(
-                    np.from_dlpack(gs_data.data).astype(np.float32).reshape(())
-                )
-                combined = nvfp4_repack_host(
-                    weight_u8, scale_fp8, global_scale, group_size=16
-                )
-                out[name] = WeightData(
-                    combined,
-                    name,
-                    DType.uint8,
-                    Shape(combined.shape),
-                )
-                continue
+        if name in combined_by_name:
+            combined = combined_by_name[name]
+            out[name] = WeightData(
+                combined, name, DType.uint8, Shape(combined.shape)
+            )
+            continue
 
         out[name] = data
 
