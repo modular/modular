@@ -1256,8 +1256,10 @@ struct TensorCore[
 
         Scales are bf16 here: the caller pre-folds the NVFP4 FP8-e4m3 block
         scale and the per-tensor global scale into bf16 (see the NVFP4 host
-        entry). One scale per n-fragment per k-group; this path assumes
-        `BK == group_size` so each k-tile is exactly one scale group.
+        entry). One scale per n-fragment per k-group. Supports group_size <= BK
+        (NVFP4 uses group_size 16 < BK 32): a BK tile spans `BK // group_size`
+        scale subgroups, selected by the `scale_sub` argument (the caller passes
+        the subgroup for each MMA k-sub-tile).
         """
         comptime assert (
             warp_tile.address_space == AddressSpace.SHARED

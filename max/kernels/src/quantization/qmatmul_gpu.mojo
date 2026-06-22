@@ -1585,6 +1585,16 @@ def repack_nvfp4_for_sm8x[
     comptime N = Int(weights_layout.shape[0])
     comptime K = Int(weights_layout.shape[1]) * 2
 
+    # NVFP4 is group_size 16; guard the shape divisibility the repack relies on
+    # (N over the 64-row repack tile, K over the 128-wide WGROUP chunk) so a
+    # non-conforming shape fails at compile time rather than OOB-reading the
+    # weight tile copy. All gemma4 NVFP4 shapes satisfy these.
+    comptime assert (
+        group_size == 16
+    ), "repack_nvfp4_for_sm8x is specialized for group_size == 16"
+    comptime assert N % 64 == 0, "repack requires N % 64 == 0 (repack tile)"
+    comptime assert K % WGROUP == 0, "repack requires K % 128 == 0 (WGROUP)"
+
     comptime K_groups = K // group_size
     comptime WK_groups = K // WGROUP
     comptime BWK_groups = BK // WGROUP
@@ -1774,9 +1784,12 @@ def q_smem_usage[config: MatmulConfig, group_size: Int]() -> Int:
     var b_usage = block_mnk[1] * block_mnk[2] * num_pipeline_stages * size_of[DType.uint32]() // pack_factor
     var c_usage = block_mnk[0] * block_mnk[1] * size_of[DType.float32]()
     var num_scales_stages = uceildiv(num_pipeline_stages - 1, max(group_size // block_mnk[2], 1)) + 1
+    # Scales are staged as bfloat16 (the kernel's scales_type), independent of
+    # the activation dtype -- size by bf16 explicitly so an fp8-activation
+    # variant would not under-allocate the scale SMEM.
     var scales_usage = block_mnk[1] * ceildiv(
         block_mnk[2], group_size
-    ) * num_scales_stages * size_of[config.a_type]()
+    ) * num_scales_stages * size_of[DType.bfloat16]()
     var slice_k_reduction = Int(block_mnk[0] * block_mnk[1] * ufloordiv(num_warp_k_partitions, 2) * size_of[DType.float32]())
     # fmt: on
 
@@ -2469,6 +2482,16 @@ def matmul_gpu_nvfp4[
     comptime assert a.rank == 2
     comptime assert b.rank == 2
     comptime assert is_gpu[target](), "unsupported target"
+    # The per-M skeleton configs use BN in {64, 128} and BK = 32; guard the
+    # static weight dims so a non-conforming shape fails loudly at compile time
+    # instead of OOB-reading at runtime (the multistage tiling assumes
+    # N % BN == 0 and K % BK == 0). N/K are static here; only M is dynamic.
+    comptime assert (
+        Int(c.layout.shape[1]) % 128 == 0
+    ), "NVFP4 skeleton GEMM requires N % 128 == 0"
+    comptime assert (
+        Int(a.layout.shape[1]) % 32 == 0
+    ), "NVFP4 skeleton GEMM requires K % 32 == 0 (BK)"
     var cuda_ctx = ctx.value()
 
     comptime pack_factor = 8
