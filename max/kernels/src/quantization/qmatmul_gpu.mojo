@@ -1525,6 +1525,243 @@ def repack_GPTQ_for_sm8x[
             raw_scales_gmem_iter._incr()
 
 
+# Repack CANONICAL NVFP4 checkpoint tensors into the combined buffer consumed by
+# `multistage_gemm_q[..., is_nvfp4=True]`.
+#
+# Canonical NVFP4 layout (the INPUT to this kernel):
+#   - weights:      [N, K // 2] uint8, row-major. 2 E2M1 codes per byte; the low
+#                   nibble is the even-k code and the high nibble is the odd-k
+#                   code. NOT tiled.
+#   - block scales: [N, K // group_size] float8_e4m3fn (passed as uint8, here
+#                   reinterpreted as float8_e4m3fn). group_size == 16.
+#   - global scale: a scalar float32 (weight_scale_2). Multiply, not divide.
+#
+# Output (the combined `b` buffer the kernel reads):
+#   [repacked 4-bit weights][bf16 scales]
+#   - The weight region is byte-identical to what `repack_GPTQ_for_sm8x`
+#     produces (same `pack_Q_tile` + `repacked_weights_layout`); NVFP4 4-bit
+#     codes repack byte-identically to int4 -- only the scales differ.
+#   - The scale region starts at `out.ptr + N * K // 2` and is laid out
+#     `Layout.row_major(K // group_size, N)` as bf16, where
+#     `scales[g, n] = bf16( f32(fp8_block_scale[n, g]) * global )`.
+#
+# The weight half intentionally mirrors the non-`has_perm` branch of
+# `repack_GPTQ_for_sm8x` byte-for-byte. The only structural differences are:
+#   1. weights and scales arrive as two SEPARATE canonical tensors (vs GGUF's
+#      interleaved fp16-scale-then-weights blocks), and
+#   2. the scale fold is `f32(fp8) * global` cast to bf16 (vs GGUF's fp16->bf16).
+@__llvm_metadata(MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](128))
+@__name(t"repack_nvfp4_for_sm8x_g{group_size}")
+def repack_nvfp4_for_sm8x[
+    weights_layout: Layout,
+    scales_layout: Layout,
+    out_layout: Layout,
+    group_size: Int,
+](
+    weights: LayoutTensor[
+        mut=False, DType.uint8, weights_layout, ImmutAnyOrigin
+    ],
+    block_scales: LayoutTensor[
+        mut=False, DType.uint8, scales_layout, ImmutAnyOrigin
+    ],
+    global_scale: Float32,
+    out_tensor: LayoutTensor[mut=True, DType.uint8, out_layout, MutAnyOrigin],
+):
+    comptime scales_type = DType.bfloat16
+    comptime pack_factor = 8
+    comptime repack_tile = Index(64, 16)
+    comptime BN = 128
+    comptime BK = 1024
+
+    # WGROUP decouples the WEIGHT repack tiling from the scale group_size. The
+    # repacked weight BYTES depend only on (N, K, repack_tile) -- not on the
+    # scale cadence -- so we always repack in 128-wide K chunks (the proven
+    # GPTQ granularity that tiles cleanly), while scales below use the true
+    # group_size. K must be divisible by WGROUP (true for all NVFP4 shapes).
+    comptime WGROUP = 128
+    comptime weights_bytes_per_group = WGROUP // 2
+
+    # Canonical weight tensor is [N, K // 2] uint8.
+    comptime N = Int(weights_layout.shape[0])
+    comptime K = Int(weights_layout.shape[1]) * 2
+
+    comptime K_groups = K // group_size
+    comptime WK_groups = K // WGROUP
+    comptime BWK_groups = BK // WGROUP
+
+    comptime uint_K = K // pack_factor
+    comptime uint_BK = BK // pack_factor
+
+    var tid = thread_idx.x
+    var warp_id = ufloordiv(tid, WARP_SIZE)
+    comptime num_warps_x = BN // repack_tile[0]
+    var warp_x = umod(warp_id, num_warps_x)
+    var warp_y = ufloordiv(warp_id, num_warps_x)
+    var lane_id: Int = umod(tid, WARP_SIZE)
+    var block_idx = Index(block_idx.x, block_idx.y)
+
+    # The canonical [N, K // 2] uint8 weights are already in the orientation
+    # `repack_GPTQ_for_sm8x` reaches via `.transpose()`: row n holds the K
+    # dimension contiguously, 2 nibble-codes per byte == one uint32 per 8 codes.
+    comptime raw_weights_layout = Layout.row_major(N, uint_K)
+    var raw_weights = LayoutTensor[DType.uint32, raw_weights_layout](
+        weights.ptr.bitcast[UInt32](),
+    )
+
+    # Canonical block scales are [N, K_groups] fp8-e4m3 (passed as uint8).
+    comptime raw_scales_layout = Layout.row_major(N, K_groups)
+    var raw_scales = LayoutTensor[DType.float8_e4m3fn, raw_scales_layout](
+        block_scales.ptr.bitcast[Scalar[DType.float8_e4m3fn]](),
+    )
+
+    # Repacked weights: identical layout to `repack_GPTQ_for_sm8x`.
+    comptime repacked_weights_layout = Layout(
+        IntTuple(
+            IntTuple(64, N // 64),
+            IntTuple(2, uint_K // 2),
+        ),
+        IntTuple(
+            IntTuple(2, 128 * (uint_K // 2)),
+            IntTuple(1, 128),
+        ),
+    )
+    var repack_weights = LayoutTensor[DType.uint32, repacked_weights_layout](
+        out_tensor.ptr.bitcast[UInt32](),
+    )
+
+    # Repacked scales: plain row_major(K_groups, N) bf16 (what the kernel reads).
+    comptime repacked_scales_layout = Layout.row_major(K_groups, N)
+    var repacked_scales_ptr = out_tensor.ptr + N * K // 2
+    var repack_scales = LayoutTensor[scales_type, repacked_scales_layout](
+        repacked_scales_ptr.bitcast[Scalar[scales_type]](),
+    )
+
+    # We keep 128x(2 WGROUP blocks) of raw 4-bit weights in smem.
+    var smem = external_memory[
+        UInt8,
+        address_space=AddressSpace.SHARED,
+        alignment=align_of[UInt8](),
+    ]()
+    var weights_smem = LayoutTensor[
+        DType.uint8,
+        Layout.row_major(BN, 2 * weights_bytes_per_group),
+        address_space=AddressSpace.SHARED,
+    ](smem.bitcast[UInt8]())
+    var weights_smem_uint4 = LayoutTensor[
+        DType.uint32,
+        Layout.row_major(BN, 2 * WGROUP // pack_factor),
+        address_space=AddressSpace.SHARED,
+    ](smem.bitcast[UInt32]())
+
+    var raw_weights_gmem_tile = raw_weights.tile[BN, uint_BK](
+        block_idx[0], block_idx[1]
+    )
+    var raw_weights_gmem_iter = raw_weights_gmem_tile.tiled_iterator[
+        BN, 2 * weights_bytes_per_group // size_of[DType.uint32](), axis=1
+    ](0, 0)
+
+    # ---- WEIGHT repack (WGROUP-tiled, scale-independent) ----------------- #
+    # `repack_weights` carries the nested `repacked_weights_layout`; `.tile`
+    # on a nested layout is rejected by current Mojo (it needs depth-1 views),
+    # so we index the destination uint32 elements directly. Each lane owns a
+    # 2x2 (rows x uint32-cols) block of one 64x(repack_tile[1]/pack_factor)
+    # Q-tile: rows {2*lane, 2*lane+1}, the two packed-uint32 columns of the
+    # Q-tile. `pack_Q_tile` returns those 4 uint32 in row-major (r0c0, r0c1,
+    # r1c0, r1c1) order.
+    comptime n_q_tiles = WGROUP // repack_tile[1]
+    comptime q_uint = repack_tile[1] // pack_factor  # uint32 per Q-tile
+
+    for i in range(ceildiv(BWK_groups, 2)):
+        barrier()
+        copy_dram_to_sram[thread_layout=Layout.row_major(128, 1)](
+            weights_smem_uint4.vectorize[1, 1](),
+            raw_weights_gmem_iter[].vectorize[1, 1](),
+        )
+        raw_weights_gmem_iter._incr()
+        barrier()
+
+        var wgroup_idx = BWK_groups * block_idx[1] + i * 2 + warp_y
+        if wgroup_idx < WK_groups:
+            # Global row base for this warp's 64 rows.
+            var n_base = block_idx[0] * BN + warp_x * repack_tile[0]
+            # Global uint32-K base for this WGROUP block.
+            var ku_group_base = wgroup_idx * (WGROUP // pack_factor)
+
+            comptime for i_Q_tile in range(n_q_tiles):
+                var tmp: SIMD[DType.uint8, 16] = 0
+                comptime thd_layout = Layout.row_major(8, 4)
+
+                var raw_weights_warp_tile = weights_smem.tile[
+                    repack_tile[0], weights_bytes_per_group
+                ](warp_x, warp_y)
+                var raw_Q_tile = raw_weights_warp_tile.tile[
+                    repack_tile[0], repack_tile[1] // 2
+                ](0, i_Q_tile)
+                # This gets elements 0, 1, 8, 9 in each mma_tile for thread 0.
+                var thread_tile = raw_Q_tile.distribute[thd_layout](lane_id)
+
+                comptime for i_e in range(16):
+                    tmp[i_e] = thread_tile.load[1](i_e // 2, i_e % 2)
+
+                var packed = pack_Q_tile(tmp)
+                var ku_base = ku_group_base + i_Q_tile * q_uint
+                var r0 = n_base + 2 * lane_id
+                var r1 = r0 + 1
+                repack_weights[r0, ku_base + 0] = packed[0]
+                repack_weights[r0, ku_base + 1] = packed[1]
+                repack_weights[r1, ku_base + 0] = packed[2]
+                repack_weights[r1, ku_base + 1] = packed[3]
+
+    # ---- SCALE repack (true group_size = 16, fp8 * global -> bf16) ------- #
+    # Each thread folds one (n, g) scale. Threads cover BN rows x 2 groups per
+    # iteration; lane/warp assignment mirrors the weight warp tiling so a 128-
+    # thread block writes a full BN-row, 2-group slab per step.
+    comptime BK_groups = BK // group_size
+    var raw_scales_gmem_tile = raw_scales.tile[BN, BK_groups](
+        block_idx[0], block_idx[1]
+    )
+    var raw_scales_gmem_iter = raw_scales_gmem_tile.tiled_iterator[
+        BN, 2, axis=1
+    ](0, 0)
+    var repacked_scales_gmem_tile = repack_scales.tile[BK_groups, BN](
+        block_idx[1], block_idx[0]
+    )
+    var repacked_scales_gmem_iter = repacked_scales_gmem_tile.tiled_iterator[
+        2, BN, axis=0
+    ](0, 0)
+
+    for i in range(ceildiv(BK_groups, 2)):
+        if (BK_groups * block_idx[1] + i * 2 + warp_y) < K_groups:
+            # warp_y selects which of the 2 groups; warp_x selects 64-row half.
+            var scales_warp_tile = repacked_scales_gmem_iter[].tile[1, 64](
+                warp_y, warp_x
+            )
+            var raw_scales_warp_tile = raw_scales_gmem_iter[].tile[64, 1](
+                warp_x, warp_y
+            )
+
+            comptime scales_thread_layout = Layout(
+                IntTuple(4, 8), IntTuple(16, 1)
+            )
+            var rt_scales_thread_layout = RuntimeLayout[
+                scales_thread_layout,
+                element_type=scales_warp_tile.layout_int_type,
+                linear_idx_type=scales_warp_tile.linear_idx_type,
+            ]()
+
+            var s0 = raw_scales_warp_tile[
+                Int(rt_scales_thread_layout(lane_id)), 0
+            ].cast[DType.float32]() * global_scale
+            var s1 = raw_scales_warp_tile[
+                Int(rt_scales_thread_layout(lane_id)) + 8, 0
+            ].cast[DType.float32]() * global_scale
+            scales_warp_tile[0, 2 * lane_id] = s0.cast[scales_type]()
+            scales_warp_tile[0, 2 * lane_id + 1] = s1.cast[scales_type]()
+
+        repacked_scales_gmem_iter._incr()
+        raw_scales_gmem_iter._incr()
+
+
 @always_inline
 def q_smem_usage[config: MatmulConfig, group_size: Int]() -> Int:
     comptime num_warp_k_partitions = config.num_warp_k_partitions

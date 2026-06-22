@@ -88,9 +88,24 @@ _EXTRA_CONSTRAINTS = {
         ["**/*.mojo"],
         exclude = [
             "test_multistage_gemm_q.mojo",
+            "test_nvfp4_repack_e2e.mojo",
         ] + _FP8_FP4_TESTS,
     )
 ]
+
+# Runs an independent CPU/GPU dequant reference and the skeleton kernel on
+# several gemma4-sized shapes (incl. 15360-wide), so it needs a larger GPU
+# memory budget than the default glob rule provides.
+mojo_test(
+    name = "test_nvfp4_repack_e2e.mojo.test",
+    srcs = ["test_nvfp4_repack_e2e.mojo"],
+    exec_properties = {
+        "test.resources:gpu-memory": "6",
+    },
+    tags = ["gpu"],
+    target_compatible_with = ["//:has_gpu"],
+    deps = _DEPS,
+)
 
 mojo_test(
     name = "test_multistage_gemm_q.mojo.test",
