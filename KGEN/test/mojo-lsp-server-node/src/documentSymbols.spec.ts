@@ -12,7 +12,7 @@ describe("document symbols", () => {
 
   it("should not crash when importing the current document", async function() {
     const doc = new Document(server, "test:///test.mojo", `
-import .test
+from . import test
 `);
     await doc.open();
     // Nothing more to do here; we just need the server to not crash.
