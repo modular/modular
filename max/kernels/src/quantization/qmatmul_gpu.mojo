@@ -1562,7 +1562,7 @@ def repack_nvfp4_for_sm8x[
         mut=False, DType.uint8, weights_layout, ImmutAnyOrigin
     ],
     block_scales: LayoutTensor[
-        mut=False, DType.uint8, scales_layout, ImmutAnyOrigin
+        mut=False, DType.float8_e4m3fn, scales_layout, ImmutAnyOrigin
     ],
     global_scale: Float32,
     out_tensor: LayoutTensor[mut=True, DType.uint8, out_layout, MutAnyOrigin],
@@ -2424,6 +2424,116 @@ def matmul_gpu_qint4_impl[
         b,
         default_config,
         cuda_ctx,
+    )
+
+
+def matmul_gpu_nvfp4[
+    c_type: DType,
+    a_type: DType,
+    //,
+    group_size: Int,
+    target: StaticString,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+](
+    c_tt: TileTensor[mut=True, c_type, address_space=AddressSpace.GENERIC, ...],
+    a_tt: TileTensor[
+        mut=False, a_type, address_space=AddressSpace.GENERIC, ...
+    ],
+    b_tt: TileTensor[
+        mut=False, DType.uint8, address_space=AddressSpace.GENERIC, ...
+    ],
+    ctx: Optional[DeviceContext] = None,
+) raises:
+    """NVFP4 (E2M1) GEMM via the multistage skeleton (`is_nvfp4=True`).
+
+    `b_tt` is the combined buffer produced by `repack_nvfp4_for_sm8x`:
+    repacked 4-bit weights in the 64x16 tile layout followed by bf16 block
+    scales in row_major(K/group_size, N). Mirrors `matmul_gpu_qint4` but the
+    skeleton interprets each 4-bit code as E2M1 and the scales are already
+    folded with the per-tensor global scale.
+
+    NVFP4 uses group_size 16 < BK, so BK is pinned to 32 (BK=16 is invalid:
+    num_k_mmas == 1 breaks the mainloop prefetch). The config below is the one
+    validated bit-exact at ~167 TFLOP/s on L40S; per-shape autotuning is a
+    follow-up (it is the upstream lever for the last ~40% vs vLLM).
+    """
+    var c = c_tt.to_layout_tensor()
+    var a = a_tt.to_layout_tensor()
+    var b = b_tt.to_layout_tensor()
+    comptime assert c.rank == 2
+    comptime assert a.rank == 2
+    comptime assert b.rank == 2
+    comptime assert is_gpu[target](), "unsupported target"
+    var cuda_ctx = ctx.value()
+
+    comptime pack_factor = 8
+
+    comptime config = MatmulConfig[a_type, DType.uint8, c_type, True](
+        block_tile_shape=Index(128, 128, 32),
+        warp_tile_shape=Index(64, 64, 32),
+        num_pipeline_stages=4,
+        num_k_partitions=1,
+        num_warp_k_partitions=1,
+    )
+
+    multistage_gemm_q[
+        group_size=group_size,
+        pack_factor=pack_factor,
+        config=config,
+        elementwise_lambda_fn=elementwise_lambda_fn,
+        is_nvfp4=True,
+    ](c, a, b, config, cuda_ctx)
+
+
+def gpu_nvfp4_repack[
+    group_size: Int,
+    target: StaticString,
+](
+    weights_tt: TileTensor[
+        mut=False, DType.uint8, address_space=AddressSpace.GENERIC, ...
+    ],
+    block_scales_tt: TileTensor[
+        mut=False, DType.float8_e4m3fn, address_space=AddressSpace.GENERIC, ...
+    ],
+    global_scale: Float32,
+    out_tt: TileTensor[
+        mut=True, DType.uint8, address_space=AddressSpace.GENERIC, ...
+    ],
+    ctx: Optional[DeviceContext] = None,
+) raises:
+    """Host launcher for `repack_nvfp4_for_sm8x`.
+
+    Canonical NVFP4 -> skeleton buffer. `weights` is [N, K/2] uint8 (E2M1),
+    `block_scales` is [N, K/group_size] FP8-e4m3 viewed as uint8, `global_scale`
+    is the per-tensor multiplier folded into the bf16 scales. `out` is the
+    combined [repacked weights][bf16 scales] buffer the skeleton GEMM consumes.
+    Grid/block mirror `repack_GPTQ_for_sm8x` (BN=128 over N, BK=1024 over K).
+    """
+    var weights = weights_tt.to_layout_tensor()
+    var block_scales = block_scales_tt.to_layout_tensor()
+    var out = out_tt.to_layout_tensor()
+    comptime assert weights.rank == 2
+    comptime assert is_gpu[target](), "unsupported target"
+    var cuda_ctx = ctx.value()
+
+    comptime N = Int(weights.layout.shape[0])
+    comptime K = Int(weights.layout.shape[1]) * 2
+
+    comptime repack = repack_nvfp4_for_sm8x[
+        weights.layout, block_scales.layout, out.layout, group_size
+    ]
+    var repack_smem = 128 * 2 * 64
+    cuda_ctx.enqueue_function[repack](
+        weights,
+        block_scales,
+        global_scale,
+        out,
+        grid_dim=(ceildiv(N, 128), ceildiv(K, 1024), 1),
+        block_dim=(128, 1, 1),
+        shared_mem_bytes=repack_smem,
+        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+            UInt32(repack_smem)
+        ),
     )
 
 

@@ -65,8 +65,10 @@ from quantization import (
 )
 from quantization.qmatmul import matmul_qint4, matmul_qint4_pack_b
 from quantization.qmatmul_gpu import (
+    gpu_nvfp4_repack,
     gpu_qint4_repack_GPTQ,
     gpu_qint4_repack_Q4_0,
+    matmul_gpu_nvfp4,
     matmul_gpu_qint4,
 )
 from quantization.qmatmul_k import (
@@ -961,6 +963,95 @@ struct NVFP4Gemm:
         var k = Int(w_tt.dim[1]()) * 2
 
         nvfp4_gemm(context, c_tt, a_tt, w_tt, s_tt, m, n, k)
+
+
+@compiler.register("repack_nvfp4_g16")
+struct QMatmulGPURepackNVFP4_g16:
+    """Repack canonical NVFP4 -> the multistage skeleton's combined buffer.
+
+    Inputs: packed weights [N, K/2] uint8 (E2M1), FP8-e4m3 block scales
+    [N, K/16] viewed as uint8, and the per-tensor global scale (a 1-element
+    f32 tensor). Output: [repacked weights][bf16 block scales] -- the layout
+    `multistage_gemm_q[is_nvfp4=True]` consumes. The global scale is read to
+    host once (this repack is a load-time, constant-folded transform).
+    """
+
+    @always_inline
+    @staticmethod
+    def execute[
+        target: StaticString,
+        _trace_name: StaticString,
+    ](
+        out_buffer: OutputTensor[dtype = DType.uint8, rank=2, ...],
+        weights: InputTensor[dtype = DType.uint8, rank=2, ...],
+        block_scales: InputTensor[dtype = DType.float8_e4m3fn, rank=2, ...],
+        global_scale: InputTensor[dtype = DType.float32, rank=1, ...],
+        ctx: DeviceContext,
+    ) raises:
+        comptime assert is_gpu[target](), "only valid on GPUs"
+
+        # One-time host read of the per-tensor global scale.
+        var g_host = ctx.enqueue_create_host_buffer[DType.float32](1)
+        var g_dev = global_scale.to_tile_tensor().to_layout_tensor()
+        ctx.enqueue_copy[DType.float32](g_host.unsafe_ptr(), g_dev.ptr, 1)
+        ctx.synchronize()
+        var g = g_host.unsafe_ptr()[0]
+
+        gpu_nvfp4_repack[16, target](
+            weights.to_tile_tensor(),
+            block_scales.to_tile_tensor(),
+            g,
+            out_buffer.to_tile_tensor(),
+            ctx,
+        )
+
+
+@compiler.register_shape_function("repack_nvfp4_g16")
+def repack_nvfp4_g16_shape(
+    weights: InputTensor[dtype = DType.uint8, rank=2, ...],
+    block_scales: InputTensor[dtype = DType.float8_e4m3fn, rank=2, ...],
+    global_scale: InputTensor[dtype = DType.float32, rank=1, ...],
+) -> IndexList[2]:
+    # [N, K/2 (weights) + (K/16)*2 (bf16 scales)]. K = weights_cols * 2,
+    # K/16 = block_scales_cols, bf16 = 2 bytes.
+    var n = weights.dim_size[0]()
+    var k_half = weights.dim_size[1]()
+    var scale_bytes = block_scales.dim_size[1]() * 2
+    return IndexList[2](n, k_half + scale_bytes)
+
+
+@compiler.register("qmatmul_nvfp4_g16")
+struct QMatmulGPU_nvfp4_g16:
+    """NVFP4 GEMM on the multistage skeleton. `b` is the combined buffer from
+    `repack_nvfp4_g16`. C[M, N] = A[M, K] @ dequant(W).T."""
+
+    @staticmethod
+    @always_inline
+    def execute[
+        target: StaticString,
+        _trace_name: StaticString,
+    ](
+        c: OutputTensor[dtype = DType.bfloat16, rank=2, ...],
+        a: InputTensor[dtype = DType.bfloat16, rank=2, ...],
+        b: InputTensor[dtype = DType.uint8, rank=2, ...],
+        ctx: DeviceContext,
+    ) raises:
+        comptime assert is_gpu[target](), "only valid on GPUs"
+
+        matmul_gpu_nvfp4[16, target](
+            c.to_tile_tensor(),
+            a.to_tile_tensor(),
+            b.to_tile_tensor(),
+            ctx,
+        )
+
+
+@compiler.register_shape_function("qmatmul_nvfp4_g16")
+def qmatmul_nvfp4_g16_shape(
+    a: InputTensor[dtype = DType.bfloat16, rank=2, ...],
+    b: InputTensor[dtype = DType.uint8, rank=2, ...],
+) -> IndexList[2]:
+    return IndexList[2](a.dim_size[0](), b.dim_size[0]())
 
 
 @compiler.register("mo.interleave.block.scales")

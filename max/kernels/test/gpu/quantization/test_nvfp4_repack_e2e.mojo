@@ -205,7 +205,7 @@ def test_repack_e2e[
     var repack_smem = 128 * 2 * 64
     ctx.enqueue_function[repack](
         weights_lt,
-        scales_lt,
+        scales_fp8_lt,
         global_scale,
         combined_lt,
         grid_dim=(ceildiv(N, 128), ceildiv(K, 1024), 1),
