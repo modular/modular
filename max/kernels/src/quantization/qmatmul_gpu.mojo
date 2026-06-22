@@ -143,8 +143,14 @@ def multistage_mma_q[
 ):
     comptime simd_size = simd_width_of[a_type]()
     comptime simd_b_size = simd_width_of[b_type]()
+    # One packed scale stage per in-flight k-tile. For group >= BK this reduces
+    # to the GGUF formula ceildiv((num_pipeline_stages-1)*BK, group_size)+1
+    # (scale_period tiles share a group). For group < BK (NVFP4) the SMEM stage
+    # packs `num_scale_sub` groups into a single [num_scale_sub, BN] tile, so the
+    # ring depth must track tiles (scale_period == 1), NOT groups -- otherwise the
+    # depth overcounts by num_scale_sub and the write-ahead aliases a live stage.
     comptime num_scales_stages = ceildiv(
-        (num_pipeline_stages - 1) * BK, group_size
+        num_pipeline_stages - 1, max(group_size // BK, 1)
     ) + 1
     # NVFP4 (group < BK): a BK tile spans `num_scale_sub` scale groups; the GGUF
     # path (group >= BK) has num_scale_sub == 1 and is unchanged. `scale_period`
@@ -738,9 +744,11 @@ def multistage_qgemm_kernel[
         IteratorTypeB.linear_uint_type(b_smem_size),
     )
 
-    # multiple stages may share the same scales
+    # multiple stages may share the same scales. One packed scale stage per
+    # in-flight k-tile: for group >= BK this is the old groups-based count; for
+    # group < BK (NVFP4) the stage packs num_scale_sub groups, so track tiles.
     comptime num_scales_stages = ceildiv(
-        (num_pipeline_stages - 1) * BK, group_size
+        num_pipeline_stages - 1, max(group_size // BK, 1)
     ) + 1
     var scales_smem = (b_smem + num_warp_k_partitions * b_smem_size).bitcast[
         Scalar[scales_type]
@@ -1528,7 +1536,7 @@ def q_smem_usage[config: MatmulConfig, group_size: Int]() -> Int:
     var a_usage = block_mnk[0] * block_mnk[2] * num_pipeline_stages * size_of[config.a_type]()
     var b_usage = block_mnk[1] * block_mnk[2] * num_pipeline_stages * size_of[DType.uint32]() // pack_factor
     var c_usage = block_mnk[0] * block_mnk[1] * size_of[DType.float32]()
-    var num_scales_stages = uceildiv((num_pipeline_stages - 1) * block_mnk[2], group_size) + 1
+    var num_scales_stages = uceildiv(num_pipeline_stages - 1, max(group_size // block_mnk[2], 1)) + 1
     var scales_usage = block_mnk[1] * ceildiv(
         block_mnk[2], group_size
     ) * num_scales_stages * size_of[config.a_type]()
