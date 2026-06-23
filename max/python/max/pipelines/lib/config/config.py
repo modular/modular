@@ -187,6 +187,7 @@ _DISABLE_AUTO_DEVICE_GRAPH_CAPTURE_ARCHITECTURES = (
     "DFlashDraftModel",
     "DeepseekV2ForCausalLM",
     "DeepseekV2ForCausalLM_ModuleV3",
+    "Ernie4_5ForCausalLM",
     "ExaoneForCausalLM",
     "ExaoneForCausalLM_ModuleV3",
     "Gemma3ForCausalLM",

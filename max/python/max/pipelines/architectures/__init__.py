@@ -112,6 +112,7 @@ def register_all_models() -> None:
             "LlamaForCausalLMEagle3", ".eagle_llama3", "eagle3_llama_arch"
         ),
         _LazyArch("LlamaForCausalLMEagle", ".eagle_llama3", "eagle_llama_arch"),
+        _LazyArch("Ernie4_5ForCausalLM", ".ernie4_5", "ernie45_arch"),
         _LazyArch("ExaoneForCausalLM", ".exaone", "exaone_arch"),
         _LazyArch(
             "ExaoneForCausalLM_ModuleV3",
