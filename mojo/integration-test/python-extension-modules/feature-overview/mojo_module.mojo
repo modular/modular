@@ -24,7 +24,7 @@ from std.python.bindings import (
 
 
 @export
-def PyInit_mojo_module() -> PythonObject:
+def PyInit_mojo_module() abi("C") -> PythonObject:
     # ----------------------------------
     # Create a Python module
     # ----------------------------------

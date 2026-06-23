@@ -42,7 +42,9 @@ from testdata.fused_qk_rope_goldens import (
 from std.utils import IndexList
 
 
-def test_fused_qk_rope[rope_dim: Int, dtype: DType]() raises -> None:
+def test_fused_qk_rope[
+    rope_dim: Int, dtype: DType
+](ctx: DeviceContext) raises -> None:
     """Verifies fused_qk_rope against golden values computed with PyTorch."""
     comptime assert (
         dtype == DType.float32
@@ -84,7 +86,7 @@ def test_fused_qk_rope[rope_dim: Int, dtype: DType]() raises -> None:
     kv_cache_block_buffer = List[Scalar[dtype]](
         length=block_shape.flattened_length(), fill=0
     )
-    kv_cache_block = LayoutTensor[dtype, Layout.row_major[6](), MutAnyOrigin](
+    kv_cache_block = LayoutTensor[dtype, Layout.row_major[6]()](
         kv_cache_block_buffer.unsafe_ptr(),
         RuntimeLayout[Layout.row_major[6]()].row_major(block_shape),
     )
@@ -112,7 +114,7 @@ def test_fused_qk_rope[rope_dim: Int, dtype: DType]() raises -> None:
     kv_collection = ContinuousBatchingKVCacheCollection[dtype, kv_params](
         blocks=kv_cache_block,
         cache_lengths=LayoutTensor[
-            DType.uint32, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
+            mut=False, DType.uint32, Layout(UNKNOWN_VALUE)
         ](
             start_positions_dyn.unsafe_ptr(),
             RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(
@@ -120,7 +122,7 @@ def test_fused_qk_rope[rope_dim: Int, dtype: DType]() raises -> None:
             ),
         ),
         lookup_table=LayoutTensor[
-            DType.uint32, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
+            mut=False, DType.uint32, Layout(UNKNOWN_VALUE)
         ](
             lookup_table.unsafe_ptr(),
             RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(
@@ -163,8 +165,8 @@ def test_fused_qk_rope[rope_dim: Int, dtype: DType]() raises -> None:
     # Note: This tensor has non-row-major strides (head_dim, 1) to select every
     # rope_dim-th element from the original head_dim-strided buffer.
     comptime freqs_cis_layout = TileLayout(
-        Coord(Idx[max_seq_len](), Idx[rope_dim]()),
-        Coord(Idx[head_dim](), Idx[1]()),
+        Coord(Idx[max_seq_len], Idx[rope_dim]),
+        Coord(Idx[head_dim], Idx[1]),
     )
     var freqs_cis_table = TileTensor(
         freqs_cis_table_buffer.unsafe_ptr() + (head_dim - rope_dim),
@@ -196,7 +198,7 @@ def test_fused_qk_rope[rope_dim: Int, dtype: DType]() raises -> None:
         position_ids=None,
         output=q_out,
         layer_idx=UInt32(0),
-        context=Optional[DeviceContext](),
+        context=ctx,
     )
 
     # Compare output and expected query tensors.
@@ -265,10 +267,13 @@ def test_fused_qk_rope[rope_dim: Int, dtype: DType]() raises -> None:
     _ = q_buffer^
     _ = k_cache_input_buffer^
     _ = kv_cache_block_buffer^
+    _ = lookup_table^
+    _ = start_positions_dyn^
 
 
 def main() raises -> None:
-    # Full head RoPE
-    test_fused_qk_rope[8, DType.float32]()
-    # Partial RoPE (last 4 elements of each head)
-    test_fused_qk_rope[4, DType.float32]()
+    with DeviceContext(api="cpu") as ctx:
+        # Full head RoPE
+        test_fused_qk_rope[8, DType.float32](ctx)
+        # Partial RoPE (last 4 elements of each head)
+        test_fused_qk_rope[4, DType.float32](ctx)

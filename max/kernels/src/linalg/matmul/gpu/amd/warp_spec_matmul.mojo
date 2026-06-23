@@ -325,7 +325,6 @@ def run_producer[
 )
 @__name(
     t"amd_warp_specialized_matmul_{in_type}_{out_type}_{BM}x{BN}x{BK}",
-    mangle=True,
 )
 def warp_specialized_matmul_kernel[
     in_type: DType,
@@ -621,7 +620,7 @@ def warp_specialized_matmul[
         AddressSpace.GLOBAL
     ]()
 
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         global_a_device_tensor,
         global_b_device_tensor,
         global_c_device_tensor,

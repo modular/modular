@@ -16,7 +16,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import Any, ClassVar, cast
 
 import numpy as np
 from max.driver import Buffer, Device
@@ -28,11 +28,10 @@ from max.experimental.sharding import (
 )
 from max.graph import DeviceRef, TensorType
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn.kv_cache import KVCacheInputs, KVCacheParams
+from max.nn.kv_cache import KVCacheInputsInterface
 from max.nn.transformer import ReturnLogits
-from max.pipelines.core import TextContext
+from max.pipelines.context import TextContext
 from max.pipelines.lib import (
-    CompilationTimer,
     KVCacheConfig,
     ModelInputs,
     ModelOutputs,
@@ -77,6 +76,8 @@ class Gemma3Model(
     infrastructure using the V3 eager compilation API.
     """
 
+    model_config_cls: ClassVar[type[Any]] = Gemma3Config
+
     def __init__(
         self,
         pipeline_config: PipelineConfig,
@@ -101,32 +102,6 @@ class Gemma3Model(
 
         self.model = self.load_model()
 
-    @staticmethod
-    def calculate_max_seq_len(
-        pipeline_config: PipelineConfig, huggingface_config: AutoConfig
-    ) -> int:
-        max_seq_len = pipeline_config.model.max_length
-        if max_seq_len:
-            return max_seq_len
-        return huggingface_config.max_position_embeddings
-
-    @classmethod
-    def get_kv_params(
-        cls,
-        huggingface_config: AutoConfig,
-        pipeline_config: PipelineConfig,
-        devices: list[DeviceRef],
-        kv_cache_config: KVCacheConfig,
-        cache_dtype: DType,
-    ) -> KVCacheParams:
-        return Gemma3Config.construct_kv_params(
-            huggingface_config,
-            pipeline_config,
-            devices,
-            kv_cache_config,
-            cache_dtype,
-        )
-
     @classmethod
     def get_num_layers(cls, huggingface_config: AutoConfig) -> int:
         return Gemma3Config.get_num_layers(huggingface_config)
@@ -143,65 +118,63 @@ class Gemma3Model(
             )
         ).to(self.devices[0])
 
-        with CompilationTimer("model") as timer:
-            n_devices = len(self.devices)
-            mesh = DeviceMesh(tuple(self.devices), (n_devices,), ("tp",))
+        n_devices = len(self.devices)
+        mesh = DeviceMesh(tuple(self.devices), (n_devices,), ("tp",))
 
-            tokens_type = TensorType(
-                DType.int64, shape=["total_seq_len"], device=self.devices[0]
-            )
+        tokens_type = TensorType(
+            DType.int64, shape=["total_seq_len"], device=self.devices[0]
+        )
 
-            input_row_offsets_type = TensorType(
-                DType.uint32,
-                shape=["input_row_offsets_len"],
-                device=self.devices[0],
-            )
+        input_row_offsets_type = TensorType(
+            DType.uint32,
+            shape=["input_row_offsets_len"],
+            device=self.devices[0],
+        )
 
-            return_n_logits_type = TensorType(
-                DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
-            )
+        return_n_logits_type = TensorType(
+            DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
+        )
 
-            text_config = (
-                self.huggingface_config.text_config
-                if self._is_multimodal
-                else self.huggingface_config
-            )
+        text_config = (
+            self.huggingface_config.text_config
+            if self._is_multimodal
+            else self.huggingface_config
+        )
 
-            if self.adapter:
-                state_dict = self.adapter(
-                    dict(self.weights.items()),
-                    huggingface_config=text_config,
-                    pipeline_config=self.pipeline_config,
-                )
-            else:
-                state_dict = {
-                    key: value.data() for key, value in self.weights.items()
-                }
-
-            model_config = Gemma3Config.initialize_from_config(
-                self.pipeline_config, text_config
-            )
-            model_config.finalize(
+        if self.adapter:
+            state_dict = self.adapter(
+                dict(self.weights.items()),
                 huggingface_config=text_config,
-                state_dict=state_dict,
-                return_logits=self.return_logits,
+                pipeline_config=self.pipeline_config,
             )
+        else:
+            state_dict = {
+                key: value.data() for key, value in self.weights.items()
+            }
 
-            with F.lazy():
-                nn_model = Gemma3(model_config, self.kv_params)
-                nn_model.to(mesh)
+        model_config = Gemma3Config.initialize_from_config(
+            self.pipeline_config, text_config
+        )
+        model_config.finalize(
+            huggingface_config=text_config,
+            state_dict=state_dict,
+            return_logits=self.return_logits,
+        )
 
-            kv_inputs = self.kv_params.get_symbolic_inputs()
-            flattened_kv_types = kv_inputs.flatten()
+        with F.lazy():
+            nn_model = Gemma3(model_config, self.kv_params)
+            nn_model.to(mesh)
 
-            timer.mark_build_complete()
-            compiled_model = nn_model.compile(
-                tokens_type,
-                return_n_logits_type,
-                input_row_offsets_type,
-                *flattened_kv_types,
-                weights=state_dict,
-            )
+        kv_inputs = self.kv_params.get_symbolic_inputs()
+        flattened_kv_types = kv_inputs.flatten()
+
+        compiled_model = nn_model.compile(
+            tokens_type,
+            return_n_logits_type,
+            input_row_offsets_type,
+            *flattened_kv_types,
+            weights=state_dict,
+        )
 
         return compiled_model
 
@@ -232,7 +205,7 @@ class Gemma3Model(
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
+        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> ModelInputs:
         if len(replica_batches) > 1:
@@ -257,20 +230,4 @@ class Gemma3Model(
                 np.array([return_n_logits], dtype=np.int64)
             ),
             kv_cache_inputs=kv_cache_inputs,
-        )
-
-    def prepare_next_token_inputs(
-        self, next_tokens: Buffer, prev_model_inputs: ModelInputs
-    ) -> ModelInputs:
-        assert isinstance(prev_model_inputs, Gemma3Inputs)
-
-        row_offsets_size = prev_model_inputs.input_row_offsets.shape[0]
-
-        return Gemma3Inputs(
-            tokens=next_tokens,
-            input_row_offsets=self._input_row_offsets_prealloc[
-                :row_offsets_size
-            ],
-            return_n_logits=prev_model_inputs.return_n_logits,
-            kv_cache_inputs=prev_model_inputs.kv_cache_inputs,
         )

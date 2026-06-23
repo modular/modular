@@ -34,10 +34,8 @@ from layout import (
     Coord,
     CoordLike,
     IntTuple,
-    LTToTTLayout,
     Layout,
     LayoutTensor,
-    RuntimeInt,
     TensorLayout,
     TileTensor,
     UNKNOWN_VALUE,
@@ -59,7 +57,7 @@ from layout.coord import DynamicCoord
 from std.collections import OptionalReg
 from std.utils import Index, IndexList
 from std.sys import size_of
-from std.builtin.device_passable import DevicePassable
+from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.math import ceildiv
 
 from std.gpu import thread_idx
@@ -113,7 +111,7 @@ def _make_cache_tt[
     ResultLayout: TensorLayout,
     rank: Int,
 ](
-    ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    ptr: UnsafePointer[mut=_, Scalar[dtype], _],
     shape: IndexList[rank],
     strides: IndexList[rank],
 ) -> TileTensor[
@@ -122,7 +120,7 @@ def _make_cache_tt[
         shape_types=ResultLayout._shape_types,
         stride_types=ResultLayout._stride_types,
     ],
-    MutAnyOrigin,
+    ptr.origin,
 ]:
     """Construct a TileTensor from a pointer and IndexList shape/strides.
 
@@ -144,7 +142,7 @@ def _make_cache_tt[
             stride_c[i] = rebind[stride_c.element_types[i]](
                 Scalar[DType.int64](strides[i])
             )
-    return TileTensor[dtype, ConcLayout, MutAnyOrigin](
+    return TileTensor[dtype, ConcLayout](
         ptr=ptr, layout=ConcLayout(shape_c, stride_c)
     )
 
@@ -175,15 +173,13 @@ struct KVCacheStaticParams(Equatable, TrivialRegisterPassable):
 # bypassing the LTToTTLayout comptime alias chain where the compiler can't
 # simplify TypeList[_Flattened[...]].size to 1.
 comptime _1d_tt_layout = InternalLayout[
-    shape_types=Coord[RuntimeInt[DType.int64]].element_types,
+    shape_types=Coord[Int64].element_types,
     stride_types=Coord[ComptimeInt[1]].element_types,
 ]
 
 comptime _2d_row_major_tt_layout = InternalLayout[
-    shape_types=Coord[
-        RuntimeInt[DType.int64], RuntimeInt[DType.int64]
-    ].element_types,
-    stride_types=Coord[RuntimeInt[DType.int64], ComptimeInt[1]].element_types,
+    shape_types=Coord[Int64, Int64].element_types,
+    stride_types=Coord[Int64, ComptimeInt[1]].element_types,
 ]
 
 
@@ -205,6 +201,117 @@ def kv_sub_tile_rows(tile_BN: Int, page_size: Int) -> Int:
 def kv_num_sub_tiles(tile_BN: Int, page_size: Int) -> Int:
     """Number of sub-tile TMA copies needed for `tile_BN` rows."""
     return tile_BN // kv_sub_tile_rows(tile_BN, page_size)
+
+
+# Swizzle-atom / core-matrix row count. Mirrors `_SWIZZLE_ATOM_ROWS` in
+# `layout/tma_async.mojo` and `_CM_NUM_ROWS` in `layout/tensor_core_async.mojo`
+# (module-private there): the canonical MMA core matrix is 8 rows tall and the
+# SWIZZLE_128B 8-row swizzle tile is exactly one atom. The chunk-inner
+# (row-major-atoms) rank-5 fold splits a page's `box_rows` into
+# `box_rows / _SWIZZLE_ATOM_ROWS` atom-rows.
+comptime _SWIZZLE_ATOM_ROWS = 8
+
+
+@always_inline
+def _kv_fold_base_ok(bk: Int, gran: Int, head_size: Int) -> Bool:
+    """Shared SM100 depth-chunk-fold geometry gate.
+
+    Single source of truth for the `base_ok` condition used by BOTH
+    `kv_tma_fold_chunks` (comptime) and `FA4Config.{k,v}_row_major()` (the
+    runtime config accessors). The fold is well-defined only when the contiguous
+    depth `bk` is a whole number of swizzle atoms (`gran`), spans at least two of
+    them (something to fold), and tiles the full `head_size` exactly (so the
+    folded descriptor's `[head_size // gran, gran]` chunk axis is well-formed).
+
+    Takes plain runtime `Int`s — not comptime params — so the runtime accessors
+    can call it (a `def` method cannot feed `self.field` into a comptime param);
+    when all args are comptime it folds to a comptime `Bool`."""
+    return bk % gran == 0 and bk // gran >= 2 and head_size % bk == 0
+
+
+@always_inline
+def kv_tma_fold_chunks[
+    dtype: DType,
+    swizzle_mode: TensorMapSwizzle,
+    *,
+    BK: Int,
+    head_size: Int,
+    box_rows: Int,
+    smem_BN: Int,
+    page_size: Int,
+    row_major: Bool = False,
+]() -> Int:
+    """Single source of truth for the SM100 depth-chunk TMA-fold predicate.
+
+    When a K/V tile's contiguous depth `BK` spans
+    `num_chunks = BK // swizzle_granularity >= 2` (e.g. bf16 `BK=128`,
+    `SWIZZLE_128B`, `gran=64` -> 2 chunks), the per-chunk TMA loop in
+    `PagedRowIndices._tma_copy_kv_impl` can be replaced by ONE rank-4
+    `cp.async.bulk.tensor` that folds the depth-chunk dimension into an extra,
+    non-innermost box dim. This returns `num_chunks` (the fold factor) when that
+    rewrite is byte-equivalent, and `1` (no fold = current per-chunk behavior)
+    otherwise.
+
+    The fold is byte-equivalent to the per-chunk loop ONLY when the folded box's
+    per-chunk SMEM stride (`box_rows * gran`) equals the producer chunk stride
+    (`smem_BN * gran`) — i.e. `box_rows == smem_BN` — AND the tile occupies a
+    single page (`pages_per_iter == 1`, encoded as `page_size == 0` or
+    `page_size >= box_rows`). Both conditions are checked here so a caller cannot
+    request an illegal fold. The fold is a pure producer-side instruction-count
+    rewrite: it writes byte-identical SMEM to the loop, so it is correct for both
+    the K-major (K) and mn-major (V) consumers — the caller just supplies the
+    side-correct `smem_BN` (K: `k_rows_per_cta`; V: `tile_rows = BN //
+    num_v_sub_tiles`).
+
+    The folded rank-4 descriptor reshapes the full gmem `head_size` into a
+    `[head_size // gran, gran]` chunk axis, so the fold requires
+    `head_size % BK == 0` (which implies `head_size % gran == 0`, the builder's
+    requirement, and that each per-stage `BK`-wide window tiles `head_size`
+    exactly). This rejects unaligned head dims (e.g. `head_size=127` padded to
+    `BK=128`) where the descriptor's chunk axis would be ill-defined.
+
+    Returning the same comptime value to both the descriptor builder and the issue
+    site is what keeps the baked descriptor rank and the issue-time coord rank from
+    drifting.
+
+    Parameters:
+        dtype: The KV element dtype (drives swizzle granularity).
+        swizzle_mode: The TMA swizzle mode (drives swizzle granularity).
+        BK: The tile's contiguous depth per stage (K: `BK0`; V: `v_cols_per_cta`).
+        head_size: The descriptor's full gmem depth (the cache `head_size`); the
+            fold's chunk axis spans this, so it must satisfy `head_size % BK == 0`.
+        box_rows: The TMA box's row count (`kv_sub_tile_rows(tile_rows, page_size)`).
+        smem_BN: The SMEM depth-chunk stride in rows (K: `smem_BN` arg to
+            `tma_copy_k`; V: `tile_rows`).
+        page_size: KV cache page size (`0` = non-paged).
+        row_major: When `True`, predicate the chunk-inner (row-major-atoms) rank-5
+            fold, which lets a tile span MULTIPLE pages (one TMA per page). The
+            rank-5 descriptor box sets the chunk/atom-row SMEM strides, so the
+            chunk-outer fold's `box_rows == smem_BN` and single-page requirements
+            do not apply; instead `box_rows` must split into swizzle-atom rows.
+            `False` (default) predicates today's chunk-outer rank-4 fold.
+
+    Returns:
+        The fold factor: `num_chunks` when foldable, else `1`.
+    """
+    comptime gran = swizzle_mode.bytes() // size_of[dtype]()
+    comptime num_chunks = BK // gran
+    comptime pages_per_iter_is_one = page_size == 0 or page_size >= box_rows
+    # Shared geometry gate (single source of truth, also used by
+    # `FA4Config.{k,v}_row_major()`): BK % gran == 0, >= 2 chunks, head_size % BK.
+    comptime base_ok = _kv_fold_base_ok(BK, gran, head_size)
+    # The chunk-inner (row_major) rank-5 fold drops the single-page /
+    # `box_rows == smem_BN` requirements (its descriptor box sets the SMEM
+    # strides) but needs `box_rows` to split into swizzle-atom rows; the default
+    # chunk-outer rank-4 fold needs `box_rows == smem_BN` and a single page.
+    comptime geometry_ok = (
+        box_rows % _SWIZZLE_ATOM_ROWS
+        == 0 if row_major else (box_rows == smem_BN and pages_per_iter_is_one)
+    )
+    comptime if base_ok and geometry_ok:
+        return num_chunks
+    else:
+        return 1
 
 
 struct PagedRowIndices[
@@ -277,11 +384,14 @@ struct PagedRowIndices[
         smem_BN: Int = Self.BN,
         eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
         num_iters: Int = -1,
+        oob_fill_pages: Bool = False,
+        fold_chunks: Int = 1,
+        row_major: Bool = False,
     ](
         self,
         tma_op: TMATensorTile[dtype, 3, tile_shape, desc_shape, True],
         stage_base: UnsafePointer[
-            Scalar[dtype], MutAnyOrigin, address_space=AddressSpace.SHARED
+            mut=True, Scalar[dtype], _, address_space=AddressSpace.SHARED
         ],
         ref[AddressSpace.SHARED] mbar: SharedMemBarrier,
         *,
@@ -301,6 +411,21 @@ struct PagedRowIndices[
         `valid_pages` (named `num_valid_pages` for V and `k_num_valid_pages`
         for K in their public signatures); it is only consulted when
         `needs_partial=True`.
+
+        `oob_fill_pages` (only consulted when `needs_partial=True`): when
+        True, after dispatching the `valid_pages` valid-block TMAs, also
+        dispatch deliberately out-of-bounds TMAs for the remaining
+        `[valid_pages, pages_per_iter)` page slots. With `OOBFill.NONE`
+        (the default for our descriptors — see
+        `mojo/stdlib/std/gpu/host/nvidia/tma.mojo:431`), OOB coordinates
+        return 0, so the corresponding SMEM rows are zero-initialized.
+        This is required by callers whose downstream MMA reads the full
+        `pages_per_iter` row range regardless of mask — e.g. depth-512
+        FA4's `O += P * V` reads the full BN V-tile so masked rows must
+        contain 0 (not stale `+inf`/`NaN` from prior compute) to avoid
+        `0 * non-finite = NaN` propagation. Callers opting in MUST set
+        `expect_bytes` to the full (non-partial) byte count, since every
+        `pages_per_iter * num_depth_chunks` TMA arrives at the mbar.
         """
         comptime swizzle_gran = desc_shape[2]
         comptime num_depth_chunks = ceildiv(tile_shape[2], swizzle_gran)
@@ -340,6 +465,37 @@ struct PagedRowIndices[
         comptime smem_j_stride_rows = smem_BN if is_k else tile_rows
         comptime dispatch_start = 1 if (is_k and Self.is_leader) else 0
 
+        # Depth-chunk TMA fold (SM100 / B200, K-only). When `fold>=2`, one rank-4
+        # `cp.async.bulk.tensor` (built with a rank-4 descriptor by the matching
+        # `create_split_tma[..., fold_chunks=fold]` call) replaces the per-chunk
+        # `for j` loop. The descriptor's box already spans all `fold` chunks with a
+        # per-chunk SMEM stride of `tma_per_issue_rows * gran`, so byte-equivalence
+        # requires `tma_per_issue_rows == smem_j_stride_rows` and `pages_per_iter==1`.
+        # `fold` must also equal `num_depth_chunks` (the box covers every chunk).
+        comptime fold = fold_chunks
+        comptime assert fold == 1 or (
+            fold == num_depth_chunks
+            and (
+                # Chunk-inner rank-5 fold: the descriptor box sets the
+                # chunk/atom-row SMEM strides, so it lifts the chunk-outer
+                # fold's `box_rows == smem_j_stride_rows` + single-page
+                # requirements; it needs `box_rows` to split into atom-rows.
+                (row_major and tma_per_issue_rows % _SWIZZLE_ATOM_ROWS == 0)
+                or (
+                    not row_major
+                    and tma_per_issue_rows == smem_j_stride_rows
+                    and pages_per_iter == 1
+                )
+            )
+        ), (
+            "kv TMA fold requires fold == num_depth_chunks; the chunk-outer"
+            " (rank-4) fold additionally requires box_rows =="
+            " smem_j_stride_rows and pages_per_iter == 1 (the chunk-inner"
+            " row_major rank-5 fold lifts both but needs box_rows divisible by"
+            " the swizzle-atom row count); a folded descriptor was paired with"
+            " an unfoldable issue-site geometry"
+        )
+
         var desc_ptr = UnsafePointer(to=tma_op.descriptor).bitcast[NoneType]()
 
         comptime if needs_partial:
@@ -351,45 +507,205 @@ struct PagedRowIndices[
             # `if` check.
             comptime for _p in range(dispatch_start, pages_per_iter):
                 if UInt32(_p) == valid_pages:
-                    self._tma_copy_kv_impl[
-                        is_k=is_k,
-                        needs_partial=False,
-                        num_v_sub_tiles=num_v_sub_tiles,
-                        v_sub_tile_idx=v_sub_tile_idx,
-                        smem_BN=smem_BN,
-                        eviction_policy=eviction_policy,
-                        num_iters=_p,
-                    ](
-                        tma_op,
-                        stage_base,
-                        mbar,
-                        kv_head_idx=kv_head_idx,
-                        elect=elect,
-                        valid_pages=valid_pages,
-                        depth_offset=depth_offset,
-                    )
+                    comptime if _p > 0:
+                        self._tma_copy_kv_impl[
+                            is_k=is_k,
+                            needs_partial=False,
+                            num_v_sub_tiles=num_v_sub_tiles,
+                            v_sub_tile_idx=v_sub_tile_idx,
+                            smem_BN=smem_BN,
+                            eviction_policy=eviction_policy,
+                            num_iters=_p,
+                            fold_chunks=fold_chunks,
+                            row_major=row_major,
+                        ](
+                            tma_op,
+                            stage_base,
+                            mbar,
+                            kv_head_idx=kv_head_idx,
+                            elect=elect,
+                            valid_pages=valid_pages,
+                            depth_offset=depth_offset,
+                        )
+                    comptime if oob_fill_pages:
+                        # Issue OOB TMAs for the remaining `[_p,
+                        # pages_per_iter)` page slots. The TMA descriptor
+                        # is built with `OOBFill.NONE`, which writes 0
+                        # for any OOB coordinate; we use a row coord
+                        # (`Int32.MAX >> 1`) that is unconditionally
+                        # past `globalDim[0]` (block-row count is
+                        # bounded by `total_blocks * stride`, well
+                        # below 2^30 for any realistic workload). Each
+                        # OOB TMA still arrives at `mbar` with its
+                        # byte count, so the caller's `expect_bytes`
+                        # MUST cover the full
+                        # `pages_per_iter * num_depth_chunks` issues.
+                        comptime _OOB_ROW: Int = 1 << 30
+                        comptime for _q in range(_p, pages_per_iter):
+                            comptime if fold >= 2 and row_major:
+                                # One rank-5 chunk-inner TMA per OOB page slot.
+                                # Page-outer SMEM base spans the full per-page
+                                # chunk-inner block (num_depth_chunks *
+                                # tma_per_issue_rows * gran). Coord is fast-first
+                                # (gran, in-atom-row, chunk-base, atom_row, head);
+                                # atom_row = _OOB_ROW (>> globalDim atom-row extent)
+                                # so OOBFill.NONE zero-fills this page slot.
+                                comptime smem_off_oob_rm = (
+                                    _q
+                                    * num_depth_chunks
+                                    * tma_per_issue_rows
+                                    * swizzle_gran
+                                )
+                                cp_async_bulk_tensor_shared_cluster_global_elect[
+                                    cta_group=Self.cta_group,
+                                    eviction_policy=eviction_policy,
+                                ](
+                                    stage_base + smem_off_oob_rm,
+                                    desc_ptr,
+                                    mbar.unsafe_ptr(),
+                                    Index(
+                                        0,
+                                        0,
+                                        Int(depth_offset) // swizzle_gran,
+                                        _OOB_ROW,
+                                        Int(kv_head_idx),
+                                    ),
+                                    elect,
+                                )
+                            elif fold >= 2:
+                                # One rank-4 TMA folds all `fold` depth chunks.
+                                # SMEM base for this page slot (chunk dim is the
+                                # box's slowest dim, stride tma_per_issue_rows*gran
+                                # == smem_j_stride_rows*gran). Coord is fast-first
+                                # (gran, head, row, chunk); chunk-base =
+                                # depth_offset // gran selects this stage's window
+                                # over the full-head_size chunk axis, gran coord 0.
+                                comptime smem_off_oob_f = (
+                                    _q * tma_per_issue_rows * swizzle_gran
+                                )
+                                cp_async_bulk_tensor_shared_cluster_global_elect[
+                                    cta_group=Self.cta_group,
+                                    eviction_policy=eviction_policy,
+                                ](
+                                    stage_base + smem_off_oob_f,
+                                    desc_ptr,
+                                    mbar.unsafe_ptr(),
+                                    Index(
+                                        0,
+                                        _OOB_ROW,
+                                        Int(depth_offset) // swizzle_gran,
+                                        Int(kv_head_idx),
+                                    ),
+                                    elect,
+                                )
+                            else:
+                                comptime for j in range(num_depth_chunks):
+                                    comptime smem_off_oob = (
+                                        j * smem_j_stride_rows * swizzle_gran
+                                        + _q * tma_per_issue_rows * swizzle_gran
+                                    )
+                                    cp_async_bulk_tensor_shared_cluster_global_elect[
+                                        cta_group=Self.cta_group,
+                                        eviction_policy=eviction_policy,
+                                    ](
+                                        stage_base + smem_off_oob,
+                                        desc_ptr,
+                                        mbar.unsafe_ptr(),
+                                        Index(
+                                            Int(depth_offset)
+                                            + j * swizzle_gran,
+                                            Int(kv_head_idx),
+                                            _OOB_ROW,
+                                        ),
+                                        elect,
+                                    )
                     return
         comptime for _p in range(effective_iters):
             comptime src_idx = idx_offset_ct + _p
-            comptime for j in range(num_depth_chunks):
-                comptime smem_off = (
-                    j * smem_j_stride_rows * swizzle_gran
-                    + _p * tma_per_issue_rows * swizzle_gran
+            comptime if fold >= 2 and row_major:
+                # One rank-5 chunk-inner TMA writes this whole multi-atom-row
+                # page in chunk-inner SMEM order (off(ar,c) =
+                # ar*num_chunks*CM*gran + c*CM*gran). Page-outer SMEM base spans
+                # the full per-page chunk-inner block (num_depth_chunks *
+                # tma_per_issue_rows * gran). Coord is fast-first
+                # (gran, in-atom-row, chunk-base, atom_row, head): atom_row =
+                # row // CM (row is CM-aligned by page alignment), the box covers
+                # all CM rows of each atom-row and `fold` chunks, and chunk-base =
+                # depth_offset // gran selects this stage's window over the
+                # full-head_size chunk axis. Validated by
+                # test_kv_rowmajor_fold_spike.mojo.
+                comptime smem_off_rm = (
+                    _p * num_depth_chunks * tma_per_issue_rows * swizzle_gran
+                )
+                var row_rm = Int(self.rows[src_idx]) + intra_page_row_ct
+                debug_assert(
+                    row_rm % _SWIZZLE_ATOM_ROWS == 0,
+                    (
+                        "row_major fold: page row must be swizzle-atom-aligned"
+                        " for the rank-5 atom-row coordinate"
+                    ),
                 )
                 cp_async_bulk_tensor_shared_cluster_global_elect[
                     cta_group=Self.cta_group,
                     eviction_policy=eviction_policy,
                 ](
-                    stage_base + smem_off,
+                    stage_base + smem_off_rm,
                     desc_ptr,
                     mbar.unsafe_ptr(),
                     Index(
-                        Int(depth_offset) + j * swizzle_gran,
+                        0,
+                        0,
+                        Int(depth_offset) // swizzle_gran,
+                        row_rm // _SWIZZLE_ATOM_ROWS,
                         Int(kv_head_idx),
-                        Int(self.rows[src_idx]) + intra_page_row_ct,
                     ),
                     elect,
                 )
+            elif fold >= 2:
+                # One rank-4 TMA folds all `fold` depth chunks for this page.
+                # SMEM base = _p * tma_per_issue_rows * gran (chunk dim is the
+                # box's slowest dim with stride tma_per_issue_rows*gran ==
+                # smem_j_stride_rows*gran). Coord is fast-first
+                # (gran, head, row, chunk): the descriptor's chunk axis (stride
+                # gran) spans the full head_size, so this stage's window is
+                # selected by chunk-base = depth_offset // gran while the box
+                # covers `fold` chunks; the gran coord is 0.
+                comptime smem_off_f = (_p * tma_per_issue_rows * swizzle_gran)
+                cp_async_bulk_tensor_shared_cluster_global_elect[
+                    cta_group=Self.cta_group,
+                    eviction_policy=eviction_policy,
+                ](
+                    stage_base + smem_off_f,
+                    desc_ptr,
+                    mbar.unsafe_ptr(),
+                    Index(
+                        0,
+                        Int(self.rows[src_idx]) + intra_page_row_ct,
+                        Int(depth_offset) // swizzle_gran,
+                        Int(kv_head_idx),
+                    ),
+                    elect,
+                )
+            else:
+                comptime for j in range(num_depth_chunks):
+                    comptime smem_off = (
+                        j * smem_j_stride_rows * swizzle_gran
+                        + _p * tma_per_issue_rows * swizzle_gran
+                    )
+                    cp_async_bulk_tensor_shared_cluster_global_elect[
+                        cta_group=Self.cta_group,
+                        eviction_policy=eviction_policy,
+                    ](
+                        stage_base + smem_off,
+                        desc_ptr,
+                        mbar.unsafe_ptr(),
+                        Index(
+                            Int(depth_offset) + j * swizzle_gran,
+                            Int(kv_head_idx),
+                            Int(self.rows[src_idx]) + intra_page_row_ct,
+                        ),
+                        elect,
+                    )
 
     @always_inline
     def tma_copy_v[
@@ -403,11 +719,14 @@ struct PagedRowIndices[
         v_sub_tile_idx: Int = 0,
         eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
         num_iters: Int = -1,
+        oob_fill_pages: Bool = False,
+        fold_chunks: Int = 1,
+        row_major: Bool = False,
     ](
         self,
         tma_op: TMATensorTile[dtype, 3, tile_shape, desc_shape, True],
         stage_base: UnsafePointer[
-            Scalar[dtype], MutAnyOrigin, address_space=AddressSpace.SHARED
+            mut=True, Scalar[dtype], _, address_space=AddressSpace.SHARED
         ],
         ref[AddressSpace.SHARED] mbar: SharedMemBarrier,
         *,
@@ -458,6 +777,34 @@ struct PagedRowIndices[
         fully unrolls exactly that many. Only the `needs_partial=True`
         wrapper sets it, when it recurses.
 
+        `oob_fill_pages` (consulted only when `needs_partial=True`):
+        when True, after dispatching the `num_valid_pages` valid TMAs,
+        also issue OOB TMAs for the remaining
+        `[num_valid_pages, v_pages_per_sub_tile)` page slots. The TMA
+        descriptor's `OOBFill.NONE` policy zero-fills SMEM for OOB
+        coordinates, ensuring the full V-tile region holds finite (0)
+        data — required by depth-512 FA4 whose `O += P * V` reads the
+        full BN V-tile and would otherwise propagate
+        `0 * non-finite = NaN` from uninitialized SMEM (the bug only
+        materializes when this is the very first write to the SMEM
+        slot — typically `seq_len <= BN` so the only iter is partial).
+        Callers opting in MUST predicate `expect_bytes` on the full
+        (non-partial) byte count; every
+        `v_pages_per_sub_tile * num_depth_chunks` TMA arrives at the
+        mbar.
+
+        `fold_chunks` (default `1` = no fold = per-chunk loop) folds the
+        `num_depth_chunks` depth columns into ONE rank-4 `cp.async.bulk.tensor`
+        when `>= 2`. The caller MUST pass the value returned by
+        `kv_tma_fold_chunks` (with V's geometry: `BK=v_cols_per_cta`,
+        `box_rows=kv_sub_tile_rows(tile_rows, page_size)`, `smem_BN=tile_rows`
+        where `tile_rows = BN // num_v_sub_tiles`) AND build `v_tma_op` with the
+        matching `create_split_tma[..., fold_chunks=...]` so the baked descriptor
+        rank and the issue-time coord rank agree; a comptime backstop assert in
+        `_tma_copy_kv_impl` rejects a fold paired with an unfoldable geometry.
+        The fold is a producer-side rewrite that writes byte-identical SMEM, so
+        it is correct for V's mn-major consumer.
+
         `elect` is the raw `Int32` returned by `elect()`. Each
         `cp_async_bulk_tensor_shared_cluster_global_elect` call predicates
         its TMA issue in-PTX on `elect`, so no Mojo-level `if elect != 0:`
@@ -471,6 +818,9 @@ struct PagedRowIndices[
             v_sub_tile_idx=v_sub_tile_idx,
             eviction_policy=eviction_policy,
             num_iters=num_iters,
+            oob_fill_pages=oob_fill_pages,
+            fold_chunks=fold_chunks,
+            row_major=row_major,
         ](
             tma_op,
             stage_base,
@@ -492,11 +842,13 @@ struct PagedRowIndices[
         smem_BN: Int = Self.BN,
         eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
         num_iters: Int = -1,
+        fold_chunks: Int = 1,
+        row_major: Bool = False,
     ](
         self,
         tma_op: TMATensorTile[dtype, 3, tile_shape, desc_shape, True],
         stage_base: UnsafePointer[
-            Scalar[dtype], MutAnyOrigin, address_space=AddressSpace.SHARED
+            mut=True, Scalar[dtype], _, address_space=AddressSpace.SHARED
         ],
         ref[AddressSpace.SHARED] mbar: SharedMemBarrier,
         *,
@@ -525,6 +877,14 @@ struct PagedRowIndices[
         `smem_BN` controls the depth-chunk stride: depth-chunk stride
         is `smem_BN * swizzle_gran`. Defaults to `Self.BN` (fa4 layout);
         depth512 passes `Self.BN // 2 = BK1`.
+
+        `fold_chunks` (default `1` = no fold = per-chunk loop) folds the
+        `num_depth_chunks` depth chunks into ONE rank-4 `cp.async.bulk.tensor`
+        when `>= 2`. The caller MUST pass the value returned by
+        `kv_tma_fold_chunks` AND build `k_tma_op` with the matching
+        `create_split_tma[..., fold_chunks=...]` so the baked descriptor rank
+        and the issue-time coord rank agree; a comptime backstop assert in
+        `_tma_copy_kv_impl` rejects a fold paired with an unfoldable geometry.
 
         `needs_partial=False` — comptime-unrolled over `num_iters`
         entries (default `k_pages_per_cta`); `k_num_valid_pages` is
@@ -558,6 +918,8 @@ struct PagedRowIndices[
             smem_BN=smem_BN,
             eviction_policy=eviction_policy,
             num_iters=num_iters,
+            fold_chunks=fold_chunks,
+            row_major=row_major,
         ](
             tma_op,
             stage_base,
@@ -754,12 +1116,20 @@ trait KVCacheT(DevicePassable, TrivialRegisterPassable):
     @always_inline
     def populate[
         BN: Int,
+        base_alignment: Int,
         pair_cta: Bool = False,
         is_leader: Bool = True,
     ](self, batch_idx: UInt32, base_kv_row: UInt32) -> PagedRowIndices[
         BN, Self.page_size_, pair_cta, is_leader
     ]:
         """Populate a full `PagedRowIndices[BN, ...]` for a BN-row tile.
+
+        `base_alignment` is a comptime promise that
+        `base_kv_row % base_alignment == 0` at runtime — typically
+        `mask.start_column_alignment[...]()`. The `PagedKVCache`
+        override uses it to pick the largest legal SIMD chunk for its
+        LUT vector load and to skip the intra-page divmod when
+        `base_alignment % page_size == 0`.
 
         Default: scalar loop over `num_pages` calls to `row_idx`. The
         `PagedKVCache` override replaces this with a single aligned
@@ -793,6 +1163,8 @@ trait KVCacheT(DevicePassable, TrivialRegisterPassable):
         BK: Int = padded_depth[
             Self.dtype, swizzle_mode, Self.kv_params.head_size
         ](),
+        fold_chunks: Int = 1,
+        row_major: Bool = False,
     ](self, ctx: DeviceContext) raises -> SplitLastDimTMATensorTile[
         Self.dtype,
         IndexList[3](BN, 1, BK),
@@ -800,7 +1172,12 @@ trait KVCacheT(DevicePassable, TrivialRegisterPassable):
     ]:
         """Creates a TMA tile for this KV cache.
         This is useful for `k-major` MMA operations where we don't
-        need to mask any extra rows."""
+        need to mask any extra rows.
+
+        `fold_chunks >= 2` builds a depth-chunk-folded descriptor (SM100); `1`
+        (default) keeps the original 3D descriptor. `row_major=True` (with
+        `fold_chunks >= 2`) builds the rank-5 chunk-inner box (one TMA per
+        multi-atom-row page); `False` builds the rank-4 chunk-outer box."""
         ...
 
     @always_inline
@@ -955,6 +1332,9 @@ trait KVCacheT(DevicePassable, TrivialRegisterPassable):
 struct ContinuousBatchingKVCache[
     dtype_: DType,
     kv_params_: KVCacheStaticParams,
+    blocks_origin: MutOrigin,
+    cache_lengths_origin: ImmutOrigin,
+    lookup_table_origin: ImmutOrigin,
 ](KVCacheT, TrivialRegisterPassable):
     """Wrapper for the ContinuousKVCache of a given layer in the transformer
     model.
@@ -962,6 +1342,9 @@ struct ContinuousBatchingKVCache[
     Parameters:
         dtype_: The dtype of the kv-cache.
         kv_params_: The kv-cache static parameters.
+        blocks_origin: Origin of the KV cache blocks buffer.
+        cache_lengths_origin: Origin of the cache lengths buffer.
+        lookup_table_origin: Origin of the lookup table buffer.
 
     This abstracts the Pointer indirection for accessing the ContinuousKVCache
     for a given batch entry.
@@ -985,19 +1368,35 @@ struct ContinuousBatchingKVCache[
     )
     comptime blocks_layout = Layout.row_major(Self.blocks_shape)
 
-    comptime blocks_tt_layout = LTToTTLayout[Self.blocks_layout]
+    # Direct TileTensor layout for `blocks_shape` (row-major): leading two dims
+    # are runtime (Int64), inner dims are static. stride[0] is runtime because
+    # it folds in the runtime second dim.
+    comptime blocks_tt_layout = InternalLayout[
+        shape_types=Coord[
+            Int64,
+            Int64,
+            ComptimeInt[Self.kv_params.num_heads],
+            ComptimeInt[Self.kv_params.head_size],
+        ].element_types,
+        stride_types=Coord[
+            Int64,
+            ComptimeInt[Self.kv_params.num_heads * Self.kv_params.head_size],
+            ComptimeInt[Self.kv_params.head_size],
+            ComptimeInt[1],
+        ].element_types,
+    ]
     comptime blocks_tt_type = TileTensor[
-        Self.dtype, Self.blocks_tt_layout, MutAnyOrigin
+        Self.dtype, Self.blocks_tt_layout, Self.blocks_origin
     ]
 
     comptime cache_lengths_tt_layout = _1d_tt_layout
     comptime cache_lengths_tt_type = TileTensor[
-        DType.uint32, Self.cache_lengths_tt_layout, ImmutAnyOrigin
+        DType.uint32, Self.cache_lengths_tt_layout, Self.cache_lengths_origin
     ]
 
     comptime lookup_table_tt_layout = _1d_tt_layout
     comptime lookup_table_tt_type = TileTensor[
-        DType.uint32, Self.lookup_table_tt_layout, ImmutAnyOrigin
+        DType.uint32, Self.lookup_table_tt_layout, Self.lookup_table_origin
     ]
 
     var blocks: Self.blocks_tt_type
@@ -1015,8 +1414,10 @@ struct ContinuousBatchingKVCache[
 
     comptime device_type: AnyType = Self
 
-    def _to_device_type(self, target: MutOpaquePointer[_]):
-        target.bitcast[Self.device_type]()[] = self
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
+        encoder.encode(self, target)
 
     @staticmethod
     def get_type_name() -> String:
@@ -1220,6 +1621,8 @@ struct ContinuousBatchingKVCache[
         BK: Int = padded_depth[
             Self.dtype, swizzle_mode, Self.kv_params.head_size
         ](),
+        fold_chunks: Int = 1,
+        row_major: Bool = False,
     ](self, ctx: DeviceContext) raises -> SplitLastDimTMATensorTile[
         Self.dtype,
         IndexList[3](BN, 1, BK),
@@ -1249,9 +1652,13 @@ struct ContinuousBatchingKVCache[
             Self.kv_params.num_heads,
             Self.kv_params.head_size,
         )
-        return create_split_tma[smem_dim, gmem_dim, swizzle_mode](
-            ctx, self.blocks.ptr, Int(rows)
-        )
+        return create_split_tma[
+            smem_dim,
+            gmem_dim,
+            swizzle_mode,
+            fold_chunks=fold_chunks,
+            row_major=row_major,
+        ](ctx, self.blocks.ptr, Int(rows))
 
     @always_inline
     def create_gather4_tma_tile[
@@ -1415,7 +1822,7 @@ struct ContinuousBatchingKVCache[
         var offset_ptr = self.blocks.ptr + Int(
             self.blocks.layout(full_block_idx)
         )
-        return offset_ptr
+        return offset_ptr.as_unsafe_any_origin()
 
     @always_inline
     def scales_block_paged_ptr(
@@ -1453,6 +1860,11 @@ struct PagedKVCache[
     dtype_: DType,
     kv_params_: KVCacheStaticParams,
     page_size: Int,
+    blocks_origin: MutOrigin,
+    cache_lengths_origin: ImmutOrigin,
+    lookup_table_origin: ImmutOrigin,
+    scales_origin: MutOrigin,
+    *,
     scale_dtype_: DType = DType.invalid,
     quantization_granularity_: Int = 1,
 ](KVCacheT, TrivialRegisterPassable):
@@ -1469,6 +1881,10 @@ struct PagedKVCache[
         dtype_: The dtype of the kv-cache.
         kv_params_: The kv-cache static parameters.
         page_size: The size of the page.
+        blocks_origin: Origin of the KV cache blocks buffer.
+        cache_lengths_origin: Origin of the cache lengths buffer.
+        lookup_table_origin: Origin of the lookup table buffer.
+        scales_origin: Origin of the quantization scales buffer.
         scale_dtype_: Dtype of the quantization scales (if quantization enabled).
         quantization_granularity_:  Block size used for quantization (e.g. 128).
     """
@@ -1500,20 +1916,35 @@ struct PagedKVCache[
     )
     comptime blocks_layout = Layout(Self.blocks_shape, Self.blocks_strides)
 
-    # TileTensor layout for blocks.
-    comptime blocks_tt_layout = LTToTTLayout[Self.blocks_layout]
+    # TileTensor layout for blocks, built directly from `blocks_shape` /
+    # `blocks_strides`: leading dim is a runtime view stride (Int64), inner
+    # dims are static.
+    comptime blocks_tt_layout = InternalLayout[
+        shape_types=Coord[
+            Int64,
+            ComptimeInt[Self.page_size],
+            ComptimeInt[Self.kv_params.num_heads],
+            ComptimeInt[Self.kv_params.head_size],
+        ].element_types,
+        stride_types=Coord[
+            Int64,
+            ComptimeInt[Self.kv_params.num_heads * Self.kv_params.head_size],
+            ComptimeInt[Self.kv_params.head_size],
+            ComptimeInt[1],
+        ].element_types,
+    ]
     comptime blocks_tt_type = TileTensor[
-        Self.dtype, Self.blocks_tt_layout, MutAnyOrigin
+        Self.dtype, Self.blocks_tt_layout, Self.blocks_origin
     ]
 
     comptime cache_lengths_tt_layout = _1d_tt_layout
     comptime cache_lengths_tt_type = TileTensor[
-        DType.uint32, Self.cache_lengths_tt_layout, ImmutAnyOrigin
+        DType.uint32, Self.cache_lengths_tt_layout, Self.cache_lengths_origin
     ]
 
     comptime lookup_table_tt_layout = _2d_row_major_tt_layout
     comptime lookup_table_tt_type = TileTensor[
-        DType.uint32, Self.lookup_table_tt_layout, ImmutAnyOrigin
+        DType.uint32, Self.lookup_table_tt_layout, Self.lookup_table_origin
     ]
 
     var blocks: Self.blocks_tt_type
@@ -1534,16 +1965,33 @@ struct PagedKVCache[
         Self.kv_params.head_size,
         Self.quantization_granularity,
     )
-    comptime scales_tt_layout = RowMajorLayout[
-        *Coord[
-            RuntimeInt[DType.int64],
+    # Scales layout for a single K-or-V cache view.
+    # Shape: [total_num_blocks, page_size, num_heads, head_dim_granularity].
+    # stride[0] is Int64 because the parent 6D scales tensor has
+    # outer stride = 2 * num_layers * page_size * num_heads * head_dim_gran,
+    # which is only known at runtime (num_layers is runtime). Using a
+    # comptime-derived stride[0] = page_size * num_heads * head_dim_gran
+    # (as RowMajorLayout would produce) silently ignores the kv_idx and
+    # num_layers multipliers, causing K-scale writes at block B to alias
+    # V-scale writes at block B-1. Making stride[0] explicit Int64 lets
+    # _make_cache_tt fill in the correct value from
+    # kv_cache_scales_dynamic_strides[0].
+    comptime scales_tt_layout = InternalLayout[
+        shape_types=Coord[
+            Int64,
             ComptimeInt[Self.page_size],
             ComptimeInt[Self.kv_params.num_heads],
             ComptimeInt[Self.head_dim_granularity],
-        ].element_types
+        ].element_types,
+        stride_types=Coord[
+            Int64,
+            ComptimeInt[Self.kv_params.num_heads * Self.head_dim_granularity],
+            ComptimeInt[Self.head_dim_granularity],
+            ComptimeInt[1],
+        ].element_types,
     ]
     comptime scales_tt_type = TileTensor[
-        Self.scale_dtype, Self.scales_tt_layout, MutAnyOrigin
+        Self.scale_dtype, Self.scales_tt_layout, Self.scales_origin
     ]
 
     # KV Cache quantization scales
@@ -1551,8 +1999,10 @@ struct PagedKVCache[
 
     comptime device_type: AnyType = Self
 
-    def _to_device_type(self, target: MutOpaquePointer[_]):
-        target.bitcast[Self.device_type]()[] = self
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
+        encoder.encode(self, target)
 
     @staticmethod
     def get_type_name() -> String:
@@ -1653,6 +2103,7 @@ struct PagedKVCache[
     @always_inline
     def populate[
         BN: Int,
+        base_alignment: Int,
         pair_cta: Bool = False,
         is_leader: Bool = True,
     ](self, batch_idx: UInt32, base_kv_row: UInt32) -> PagedRowIndices[
@@ -1670,19 +2121,21 @@ struct PagedKVCache[
             of `num_pages` uint32s starting at any valid
             `first_lut_idx` stays in bounds (see `PagedKVCacheManager`
             for the allocation-side padding).
-          - `base_kv_row` is `BN`-aligned for `num_pages > 1` (every
-            mask shipped with fa4/depth512/sm90 satisfies this). The
-            first LUT index is then a multiple of `num_pages`, giving
-            up to `chunk * 4`-byte alignment on the vector load. For
-            `num_pages == 1` the load is a scalar and alignment is
-            irrelevant.
+          - `base_kv_row % base_alignment == 0` holds at runtime
+            (typically `mask.start_column_alignment[...]()`).
+            For `num_pages > 1`, `base_alignment` must be at least
+            `page_size` — required so `tok_in_block_idx == 0` and the
+            SIMD `multiply-add` collapses to a `multiply`. Larger
+            `base_alignment` values let us pick a wider SIMD chunk
+            (`chunk * page_size` must divide `base_alignment`).
 
         The per-load width `chunk` is the largest power of two that
-        divides `num_pages`, capped at 8 — this keeps both the load
-        width and the remaining chunk offsets aligned for the common
-        `num_pages in {1, 2, 4, 8, 16}` cases and falls back to smaller
-        widths when `num_pages` has a factor like 3 (e.g. `BN=192`,
-        `page_size=16` gives `num_pages=12`, `chunk=4`).
+        divides both `num_pages` and `base_alignment / page_size`,
+        capped at 8. With `base_alignment == BN` (the historical
+        contract), this matches the previous behaviour: `chunk =
+        min(num_pages & -num_pages, 8)`. With looser alignments
+        (e.g. `ChunkedMask` providing only `page_size` alignment when
+        `BN > page_size`), the chunk degrades to 1 (scalar loads).
         """
         comptime Result = PagedRowIndices[
             BN, Self.page_size_, pair_cta, is_leader
@@ -1690,25 +2143,53 @@ struct PagedKVCache[
         comptime num_pages = Result.num_pages
         var result = Result()
         comptime if num_pages == 1:
-            result.rows[0] = self.row_idx(batch_idx, base_kv_row)
+            comptime if base_alignment % Self.page_size == 0:
+                # `base_kv_row` is page_size-aligned, so
+                # `tok_in_block_idx == 0`: skip the divmod and the
+                # `+ tok_in_block` add baked into `row_idx`.
+                debug_assert(
+                    base_kv_row % UInt32(Self.page_size) == 0,
+                    (
+                        "PagedKVCache.populate fast path requires"
+                        " base_kv_row to be page_size-aligned"
+                    ),
+                )
+                var lut_idx = base_kv_row // UInt32(Self.page_size)
+                var block_idx = self.lookup_table[Int(batch_idx), Int(lut_idx)]
+                result.rows[0] = block_idx * self._stride()
+            else:
+                result.rows[0] = self.row_idx(batch_idx, base_kv_row)
         else:
-            # `chunk` = largest power of 2 <= `min(num_pages, 8)`.
-            comptime chunk = min(num_pages & -num_pages, 8)
+            # `chunk` is the largest power of two that
+            #   1. divides `num_pages` (so the `comptime for` covers
+            #      every LUT entry exactly once), and
+            #   2. satisfies `chunk * page_size <= base_alignment` (so
+            #      `first_lut_idx = base_kv_row / page_size` is a
+            #      multiple of `chunk`, giving the natural
+            #      `chunk * 4`-byte alignment the
+            #      `ld.global.v{chunk}.u32` emitter needs).
+            # Capped at 8 by hardware. With the historical contract of
+            # `base_alignment == BN`, `alignment_chunks == num_pages`,
+            # and this collapses to `min(num_pages & -num_pages, 8)`.
+            comptime num_pages_pow2 = num_pages & -num_pages
+            comptime alignment_chunks = base_alignment // Self.page_size
+            comptime alignment_chunks_pow2 = (
+                alignment_chunks & -alignment_chunks
+            )
+            comptime chunk = min(min(num_pages_pow2, alignment_chunks_pow2), 8)
+            comptime assert (
+                chunk >= 1
+            ), "base_alignment must be >= page_size when num_pages > 1"
             comptime num_chunks = num_pages // chunk
 
             var stride = self._stride()
-            # `tok_in_block` is zero whenever `num_pages > 1` under the
-            # mask contract used by fa4/depth512/sm90 (base_kv_row is
-            # page-aligned). We compute it here — and add it to the
-            # row — so that the SIMD path produces exactly the same
-            # values as the scalar `row_idx` fallback, matching every
-            # caller's expectations.
-            # Under every mask shipped with fa4/depth512/sm90,
-            # `base_kv_row` is aligned to `BN` whenever `num_pages > 1`,
-            # so it is also `page_size`-aligned (`page_size <= BN` in
-            # this branch) — meaning the intra-page offset that
-            # `row_idx` would add is zero, and we can drop the add from
-            # the SIMD multiply-add.
+            # `tok_in_block` is zero because `base_alignment` is
+            # required to be at least `page_size` whenever
+            # `num_pages > 1` (every shipped mask satisfies this; see
+            # the chunk derivation above). With
+            # `tok_in_block_idx == 0`, `row_idx` collapses to
+            # `block_idx * stride`, so the SIMD path emits a plain
+            # multiply with no add.
             debug_assert(
                 base_kv_row % UInt32(Self.page_size) == 0,
                 (
@@ -1722,25 +2203,52 @@ struct PagedKVCache[
                 self.lookup_table.layout.stride[0]().value()
             )
             # The address passed to the `ld.global.v{chunk}.u32`
-            # emitter must be naturally aligned to `chunk * 4` bytes,
-            # i.e. the element offset from the base pointer must be a
-            # multiple of `chunk`. This holds when:
-            #   1. The base allocation is chunk-aligned (GPU allocator
-            #      returns 256-byte alignment).
-            #   2. `row_stride` is a multiple of `chunk` — guaranteed
-            #      by the LUT padding rule in
-            #      ``PagedKVCacheManager`` / the Mojo tests.
-            #   3. `first_lut_idx` is a multiple of `chunk` — which
-            #      follows from `base_kv_row` being `BN`-aligned and
-            #      `chunk` dividing `num_pages = BN / page_size`.
+            # emitter must be naturally aligned to `chunk * 4` bytes
+            # AND each `ceildiv(num_pages, chunk)`-width vector load
+            # must stay in-bounds of the LUT row. The three runtime
+            # invariants below name each independent contract:
+            #   1. `row_stride` chunk-aligned — LUT layout contract
+            #      (see `_padded_lut_cols` in `cache_manager.py` /
+            #      `padded_lut_cols` in `kv_cache_test_utils`).
+            #   2. `first_lut_idx` chunk-aligned — mask contract (the
+            #      mask's `start_column_alignment` must guarantee
+            #      `base_kv_row` is `chunk * page_size`-aligned).
+            #   3. `first_lut_idx + num_pages <= row_stride` — LUT
+            #      allocation contract (the row has enough columns
+            #      for a full SIMD sweep at the rightmost
+            #      `first_lut_idx`).
             # Catch any violation under ``MOJO_ASSERT_LEVEL=safe`` so
-            # misaligned vector loads don't silently produce garbage.
+            # misaligned or OOB vector loads don't silently produce
+            # garbage.
             debug_assert(
-                (batch_idx * row_stride + first_lut_idx) % UInt32(chunk) == 0,
+                row_stride % UInt32(chunk) == 0,
                 (
                     "PagedKVCache.populate SIMD path requires the LUT"
-                    " element offset (batch_idx * row_stride +"
-                    " first_lut_idx) to be chunk-aligned"
+                    " row stride (lookup_table.dim[1]) to be"
+                    " chunk-aligned. Production allocates via"
+                    " `_padded_lut_cols` in cache_manager.py; tests"
+                    " should use `padded_lut_cols` from"
+                    " kv_cache_test_utils."
+                ),
+            )
+            debug_assert(
+                first_lut_idx % UInt32(chunk) == 0,
+                (
+                    "PagedKVCache.populate SIMD path requires"
+                    " first_lut_idx (= base_kv_row / page_size) to be"
+                    " chunk-aligned. The mask's"
+                    " `start_column_alignment[BM, BN, page_size]()`"
+                    " must return a value such that every"
+                    " `base_kv_row` is `chunk * page_size`-aligned."
+                ),
+            )
+            debug_assert(
+                first_lut_idx + UInt32(num_pages) <= row_stride,
+                (
+                    "PagedKVCache.populate SIMD path requires the LUT"
+                    " row to have at least `first_lut_idx + num_pages`"
+                    " columns. Production adds a 16-element tail pad"
+                    " in `_padded_lut_cols`."
                 ),
             )
             var lut_row_ptr = (
@@ -1763,6 +2271,8 @@ struct PagedKVCache[
         BK: Int = padded_depth[
             Self.dtype, swizzle_mode, Self.kv_params.head_size
         ](),
+        fold_chunks: Int = 1,
+        row_major: Bool = False,
     ](self, ctx: DeviceContext) raises -> SplitLastDimTMATensorTile[
         Self.dtype,
         IndexList[3](BN, 1, BK),
@@ -1794,9 +2304,13 @@ struct PagedKVCache[
             Self.kv_params.num_heads,
             Self.kv_params.head_size,
         )
-        return create_split_tma[smem_dim, gmem_dim, swizzle_mode](
-            ctx, self.blocks.ptr, Int(rows)
-        )
+        return create_split_tma[
+            smem_dim,
+            gmem_dim,
+            swizzle_mode,
+            fold_chunks=fold_chunks,
+            row_major=row_major,
+        ](ctx, self.blocks.ptr, Int(rows))
 
     @always_inline
     def create_gather4_tma_tile[
@@ -2008,7 +2522,7 @@ struct PagedKVCache[
             head_dim_idx < Self.kv_params.head_size
         ), "KVCache head_dim_idx is out of range"
 
-        var lut_block_index, tok_in_block_idx = divmod(tok_idx, self.page_size)
+        var lut_block_idx, tok_in_block_idx = divmod(tok_idx, self.page_size)
 
         assert tok_in_block_idx < Int(
             self.blocks.dim[1]()
@@ -2016,13 +2530,13 @@ struct PagedKVCache[
 
         assert bs < self.cache_lengths.num_elements(), "batch_idx is oob"
         debug_assert(
-            lut_block_index < Int(self.blocks.dim[0]()),
-            "block_idx is OOB. Attempted to access block index ",
-            lut_block_index,
-            " with num_blocks ",
-            Int(self.blocks.dim[0]()),
+            lut_block_idx < Int(self.lookup_table.dim[1]()),
+            "lut_block_idx is OOB. Attempted to access LUT column ",
+            lut_block_idx,
+            " with lookup_table inner dim ",
+            Int(self.lookup_table.dim[1]()),
         )
-        block_idx = Int(self.lookup_table[bs, lut_block_index])
+        block_idx = Int(self.lookup_table[bs, lut_block_idx])
         return coord[DType.int64](
             Tuple(block_idx, tok_in_block_idx, head_idx, head_dim_idx)
         )
@@ -2041,8 +2555,7 @@ struct PagedKVCache[
             head_idx,
             ")",
         )
-
-        var lut_block_index, tok_in_block_idx = divmod(tok_idx, self.page_size)
+        var lut_block_idx, tok_in_block_idx = divmod(tok_idx, self.page_size)
 
         assert tok_in_block_idx < Int(
             self.blocks.dim[1]()
@@ -2050,24 +2563,26 @@ struct PagedKVCache[
 
         assert bs < self.cache_lengths.num_elements(), "batch_idx is oob"
         debug_assert(
-            lut_block_index < Int(self.blocks.dim[0]()),
-            "block_idx is OOB. Attempted to access block index ",
-            lut_block_index,
-            " with num_blocks ",
-            Int(self.blocks.dim[0]()),
+            lut_block_idx < Int(self.lookup_table.dim[1]()),
+            "lut_block_idx is OOB. Attempted to access LUT column ",
+            lut_block_idx,
+            " with lookup_table inner dim ",
+            Int(self.lookup_table.dim[1]()),
         )
-
-        block_idx = Int(self.lookup_table[bs, lut_block_index])
-        var head_dim_granularity = ceildiv(
-            head_dim_idx,
-            Self.quantization_granularity,
-        )
+        block_idx = Int(self.lookup_table[bs, lut_block_idx])
+        # floordiv: head_dim_idx is the *start* of the quantization block
+        # (e.g. 0, 64, 128, …), so we want which block slot this maps to.
+        # ceildiv would be wrong here: ceildiv(64, 64) == 1 (correct for the
+        # second block) but ceildiv(0, 64) == 0 (OK), ceildiv(63, 64) == 1
+        # (wrong — element 63 is still in block 0). floordiv correctly maps
+        # any element at position d to block d // granularity.
+        var scale_block_idx = head_dim_idx // Self.quantization_granularity
         return coord[DType.int64](
             Tuple(
                 block_idx,
                 tok_in_block_idx,
                 head_idx,
-                head_dim_granularity,
+                scale_block_idx,
             )
         )
 
@@ -2108,8 +2623,41 @@ struct PagedKVCache[
         head_dim_idx: Int,
         val: SIMD[Self.dtype, ...],
     ):
-        """Stores an element at the given index."""
-        var idx = self._get_idx(bs, head_idx, tok_idx, head_dim_idx)
+        """Stores an element at the given index.
+
+        Skips the write when the LUT entry for ``(bs, tok_idx // page_size)``
+        is the unassigned-slot sentinel — i.e. when the resolved
+        ``block_idx`` is outside ``[0, total_num_blocks)``. The cache
+        manager fills LUT columns past a request's allocated block count
+        with the sentinel value ``total_num_pages`` (see
+        ``cache_manager.py``'s ``lut_table_np.fill(self._total_num_pages)``)
+        so that SIMD over-reads of the LUT row are safe, but the *value*
+        of the sentinel times the page stride lands one page past the
+        end of the cache buffer. Without this guard a sentinel-resolved
+        store corrupts whatever device allocation happens to sit
+        immediately after the KV cache.
+        """
+        var lut_block_idx, tok_in_block_idx = divmod(tok_idx, self.page_size)
+        var block_idx = Int(self.lookup_table[bs, lut_block_idx])
+        debug_assert(
+            block_idx < Int(self.blocks.dim[0]()),
+            "KVCache block_idx resolved to sentinel/unassigned LUT entry (",
+            block_idx,
+            ")",
+        )
+        debug_assert(
+            head_idx < Self.kv_params.num_heads,
+            "KVCache head_idx out of range (",
+            head_idx,
+            ")",
+        )
+        assert (
+            head_dim_idx < Self.kv_params.head_size
+        ), "KVCache head_dim_idx is out of range"
+        assert tok_in_block_idx < Int(
+            self.blocks.dim[1]()
+        ), "KVCache tok_idx out of range"
+        var idx = Coord((block_idx, tok_in_block_idx, head_idx, head_dim_idx))
         # Bypass TileTensor.store's `where` constraint by using ptr directly.
         self.blocks.store(idx, val)
 
@@ -2155,7 +2703,23 @@ struct PagedKVCache[
                 Self.scale_dtype != DType.invalid
             ), "Valid quantization scale data type needed"
 
-        var scale_idx = self._get_scale_idx(bs, head_idx, tok_idx, head_dim_idx)
+        var lut_block_idx, tok_in_block_idx = divmod(tok_idx, self.page_size)
+        var block_idx = Int(self.lookup_table[bs, lut_block_idx])
+        debug_assert(
+            block_idx < Int(self.blocks.dim[0]()),
+            "KVCache block_idx resolved to sentinel/unassigned LUT entry (",
+            block_idx,
+            ")",
+        )
+        var scale_block_idx = head_dim_idx // Self.quantization_granularity
+        var scale_idx = Coord(
+            (
+                block_idx,
+                tok_in_block_idx,
+                head_idx,
+                scale_block_idx,
+            )
+        )
         # Bypass TileTensor.store's `where` constraint by using ptr directly.
         self.scales.value().store(scale_idx, scales)
 
@@ -2217,7 +2781,7 @@ struct PagedKVCache[
         )
 
         var ptr = self.blocks.ptr + Int(self.blocks.layout(full_block_idx))
-        return ptr
+        return ptr.as_unsafe_any_origin()
 
     @always_inline
     def scales_block_paged_ptr(
@@ -2240,7 +2804,7 @@ struct PagedKVCache[
         var scales_ptr = scales_block.ptr + Int(
             scales_block.layout(full_scale_block_idx)
         )
-        return scales_ptr
+        return scales_ptr.as_unsafe_any_origin()
 
     @always_inline
     def scales_raw_ptr(
@@ -2250,7 +2814,7 @@ struct PagedKVCache[
         dangling pointer if scales are not set."""
 
         comptime if Self.quantization_enabled:
-            return self.scales.value().ptr
+            return self.scales.value().ptr.as_unsafe_any_origin()
         # SAFETY: Only reached when quantization is disabled; callers guard
         # scales access behind comptime `quantization_enabled` checks.
         return UnsafePointer[
@@ -2279,6 +2843,9 @@ trait KVCollectionT(ImplicitlyCopyable):
 struct ContinuousBatchingKVCacheCollection[
     dtype_: DType,
     kv_params_: KVCacheStaticParams,
+    blocks_origin: MutOrigin,
+    cache_lengths_origin: ImmutOrigin,
+    lookup_table_origin: ImmutOrigin,
 ](KVCollectionT):
     """This is a "view" of the cache for the given sequences
     in the batch.
@@ -2286,6 +2853,9 @@ struct ContinuousBatchingKVCacheCollection[
     Parameters:
         dtype_: The dtype of the kv-cache.
         kv_params_: The kv-cache static parameters.
+        blocks_origin: Origin of the KV cache blocks buffer.
+        cache_lengths_origin: Origin of the cache lengths buffer.
+        lookup_table_origin: Origin of the lookup table buffer.
 
     This object does not own the underlying buffers in k_cache and v_cache,
     it's borrowing them from the BlockWrappers in our KVCacheManager.
@@ -2294,7 +2864,13 @@ struct ContinuousBatchingKVCacheCollection[
     comptime name_str = "continuous_batching"
     comptime dtype = Self.dtype_
     comptime kv_params = Self.kv_params_
-    comptime CacheType = ContinuousBatchingKVCache[Self.dtype, Self.kv_params]
+    comptime CacheType = ContinuousBatchingKVCache[
+        Self.dtype,
+        Self.kv_params,
+        Self.blocks_origin,
+        Self.cache_lengths_origin,
+        Self.lookup_table_origin,
+    ]
     comptime scale_dtype: DType = DType.invalid
 
     # Shape is [num_blocks, 2, num_layers, max_seq_len, num_heads, head_size].
@@ -2307,9 +2883,28 @@ struct ContinuousBatchingKVCacheCollection[
         Self.kv_params.head_size,
     )
     comptime blocks_layout = Layout.row_major(Self.blocks_shape)
-    comptime blocks_tt_layout = LTToTTLayout[Self.blocks_layout]
+    # Direct row-major TileTensor layout: the four leading dims are runtime
+    # (Int64), so every stride that folds one in is also runtime.
+    comptime blocks_tt_layout = InternalLayout[
+        shape_types=Coord[
+            Int64,
+            Int64,
+            Int64,
+            Int64,
+            ComptimeInt[Self.kv_params.num_heads],
+            ComptimeInt[Self.kv_params.head_size],
+        ].element_types,
+        stride_types=Coord[
+            Int64,
+            Int64,
+            Int64,
+            ComptimeInt[Self.kv_params.num_heads * Self.kv_params.head_size],
+            ComptimeInt[Self.kv_params.head_size],
+            ComptimeInt[1],
+        ].element_types,
+    ]
     comptime blocks_tt_type = TileTensor[
-        Self.dtype, Self.blocks_tt_layout, MutAnyOrigin
+        Self.dtype, Self.blocks_tt_layout, Self.blocks_origin
     ]
 
     var blocks: Self.blocks_tt_type
@@ -2322,18 +2917,17 @@ struct ContinuousBatchingKVCacheCollection[
 
     def __init__(
         out self,
-        blocks: LayoutTensor[Self.dtype, Layout.row_major[6](), MutAnyOrigin],
+        blocks: LayoutTensor[
+            Self.dtype, Layout.row_major[6](), Self.blocks_origin
+        ],
         cache_lengths: LayoutTensor[
-            DType.uint32, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
+            DType.uint32, Layout(UNKNOWN_VALUE), Self.cache_lengths_origin
         ],
         lookup_table: LayoutTensor[
-            DType.uint32, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
+            DType.uint32, Layout(UNKNOWN_VALUE), Self.lookup_table_origin
         ],
         max_seq_length: UInt32,
         max_cache_length: UInt32,
-        scales: OptionalReg[
-            LayoutTensor[Self.scale_dtype, Layout.row_major[6](), MutAnyOrigin]
-        ] = None,
     ):
         """Construct from LayoutTensor params (MOGG boundary)."""
         comptime assert blocks.rank == 6
@@ -2410,6 +3004,11 @@ struct PagedKVCacheCollection[
     dtype_: DType,
     kv_params_: KVCacheStaticParams,
     page_size: Int,
+    blocks_origin: MutOrigin,
+    cache_lengths_origin: ImmutOrigin,
+    lookup_table_origin: ImmutOrigin,
+    scales_origin: MutOrigin,
+    *,
     scale_dtype_: DType = DType.invalid,
     quantization_granularity_: Int = 1,
 ](KVCollectionT):
@@ -2421,8 +3020,12 @@ struct PagedKVCacheCollection[
         Self.dtype,
         Self.kv_params,
         Self.page_size,
-        Self.scale_dtype,
-        Self.quantization_granularity_,
+        Self.blocks_origin,
+        Self.cache_lengths_origin,
+        Self.lookup_table_origin,
+        Self.scales_origin,
+        scale_dtype_=Self.scale_dtype,
+        quantization_granularity_=Self.quantization_granularity_,
     ]
 
     # Shape is [total_num_blocks, 2, num_layers, page_size, num_heads, head_size].
@@ -2437,9 +3040,32 @@ struct PagedKVCacheCollection[
         Self.kv_params.head_size,
     )
     comptime blocks_layout = Layout.row_major(Self.blocks_shape)
-    comptime blocks_tt_layout = LTToTTLayout[Self.blocks_layout]
+    # Direct row-major TileTensor layout. dims 0 and 2 (total_num_blocks and
+    # num_layers) are runtime, so strides[0..1] that fold them in are runtime.
+    comptime blocks_tt_layout = InternalLayout[
+        shape_types=Coord[
+            Int64,
+            ComptimeInt[2 if not Self.kv_params.is_mla else 1],
+            Int64,
+            ComptimeInt[Self.page_size],
+            ComptimeInt[Self.kv_params.num_heads],
+            ComptimeInt[Self.kv_params.head_size],
+        ].element_types,
+        stride_types=Coord[
+            Int64,
+            Int64,
+            ComptimeInt[
+                Self.page_size
+                * Self.kv_params.num_heads
+                * Self.kv_params.head_size
+            ],
+            ComptimeInt[Self.kv_params.num_heads * Self.kv_params.head_size],
+            ComptimeInt[Self.kv_params.head_size],
+            ComptimeInt[1],
+        ].element_types,
+    ]
     comptime blocks_tt_type = TileTensor[
-        Self.dtype, Self.blocks_tt_layout, MutAnyOrigin
+        Self.dtype, Self.blocks_tt_layout, Self.blocks_origin
     ]
 
     # Match PagedKVCache.head_dim_granularity.
@@ -2457,14 +3083,37 @@ struct PagedKVCacheCollection[
         Self.head_dim_granularity,  # scales per token
     )
     comptime scales_layout = Layout.row_major(Self.scales_shape)
-    comptime scales_tt_layout = LTToTTLayout[Self.scales_layout]
-    comptime scales_tt_type = TileTensor[
-        Self.scale_dtype, Self.scales_tt_layout, MutAnyOrigin
+    # Direct row-major TileTensor layout, mirroring `blocks_tt_layout` but with
+    # `head_dim_granularity` as the inner dim. dims 0 and 2 are runtime.
+    comptime scales_tt_layout = InternalLayout[
+        shape_types=Coord[
+            Int64,
+            ComptimeInt[2 if not Self.kv_params.is_mla else 1],
+            Int64,
+            ComptimeInt[Self.page_size],
+            ComptimeInt[Self.kv_params.num_heads],
+            ComptimeInt[Self.head_dim_granularity],
+        ].element_types,
+        stride_types=Coord[
+            Int64,
+            Int64,
+            ComptimeInt[
+                Self.page_size
+                * Self.kv_params.num_heads
+                * Self.head_dim_granularity
+            ],
+            ComptimeInt[Self.kv_params.num_heads * Self.head_dim_granularity],
+            ComptimeInt[Self.head_dim_granularity],
+            ComptimeInt[1],
+        ].element_types,
     ]
+    comptime scales_tt_type = TileTensor[
+        Self.scale_dtype, Self.scales_tt_layout, Self.scales_origin
+    ]
+
     var scales: OptionalReg[Self.scales_tt_type]
     var kv_cache_scales_dynamic_shape: IndexList[4]
     var kv_cache_scales_dynamic_strides: IndexList[4]
-
     var blocks: Self.blocks_tt_type
     var cache_lengths: Self.CacheType.cache_lengths_tt_type
     var lookup_table: Self.CacheType.lookup_table_tt_type
@@ -2475,18 +3124,26 @@ struct PagedKVCacheCollection[
 
     def __init__(
         out self,
-        blocks: LayoutTensor[Self.dtype, Layout.row_major[6](), MutAnyOrigin],
+        blocks: LayoutTensor[
+            Self.dtype, Layout.row_major[6](), Self.blocks_origin
+        ],
         cache_lengths: LayoutTensor[
-            DType.uint32, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
+            DType.uint32, Layout(UNKNOWN_VALUE), Self.cache_lengths_origin
         ],
         lookup_table: LayoutTensor[
-            DType.uint32, Layout.row_major[2](), ImmutAnyOrigin
+            DType.uint32, Layout.row_major[2](), Self.lookup_table_origin
         ],
         max_seq_length: UInt32,
         max_cache_length: UInt32,
         scales: OptionalReg[
-            LayoutTensor[Self.scale_dtype, Layout.row_major[6](), MutAnyOrigin]
-        ] = None,
+            LayoutTensor[
+                Self.scale_dtype, Layout.row_major[6](), Self.scales_origin
+            ]
+        ] = OptionalReg[
+            LayoutTensor[
+                Self.scale_dtype, Layout.row_major[6](), MutUntrackedOrigin
+            ]
+        ](),
     ):
         """Construct from LayoutTensor params (MOGG boundary)."""
         comptime assert blocks.rank == 6

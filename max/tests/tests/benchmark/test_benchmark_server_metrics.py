@@ -19,10 +19,15 @@ from unittest.mock import patch
 
 import pytest
 from max.benchmark.benchmark_shared.metrics import (
-    BenchmarkMetrics,
+    BenchmarkResult,
+    PrefillDecodeStats,
     RatePercentileMetrics,
+    SpecDecodeMetrics,
+    SpecDecodeStats,
     StandardPercentileMetrics,
+    TextGenAggregates,
     ThroughputMetrics,
+    calculate_spec_decode_stats,
 )
 from max.benchmark.benchmark_shared.server_metrics import (
     HistogramData,
@@ -34,6 +39,7 @@ from max.benchmark.benchmark_shared.server_metrics import (
     fetch_and_parse_metrics,
     get_metrics_url,
     parse_metrics,
+    parse_spec_decode_metrics,
     print_server_metrics,
 )
 
@@ -71,34 +77,37 @@ maxserve_batch_execution_time_milliseconds_count{batch_type="TG"} 100.0
 
 def _make_metrics(
     metrics_by_endpoint: dict[str, ParsedMetrics],
-) -> BenchmarkMetrics:
-    """Minimal BenchmarkMetrics carrying only the fields under test."""
-    return BenchmarkMetrics(
-        duration=10.0,
-        completed=100,
-        failures=0,
-        total_input=1000,
-        total_output=500,
-        nonempty_response_chunks=500,
+) -> BenchmarkResult:
+    """Minimal text-gen BenchmarkResult carrying only the fields under test."""
+    return BenchmarkResult(
+        task_type="text",
         max_concurrency=10,
-        request_throughput=10.0,
-        input_throughput=ThroughputMetrics([1.0]),
-        output_throughput=ThroughputMetrics([1.0]),
-        ttft_ms=StandardPercentileMetrics([0.1]),
-        tpot_ms=StandardPercentileMetrics([0.01]),
-        itl_ms=StandardPercentileMetrics([0.01]),
-        latency_ms=StandardPercentileMetrics([1.0]),
-        max_input=100,
-        max_output=50,
-        max_total=150,
-        global_cached_token_rate=0.35,
-        per_turn_cached_token_rate=RatePercentileMetrics(
-            [0.35], as_percent=True
-        ),
         peak_gpu_memory_mib=[],
         available_gpu_memory_mib=[],
         gpu_utilization=[],
         metrics_by_endpoint=metrics_by_endpoint,
+        text_data=TextGenAggregates(
+            duration=10.0,
+            completed=100,
+            failures=0,
+            request_throughput=10.0,
+            latency_ms=StandardPercentileMetrics([1.0]),
+            total_input=1000,
+            total_output=500,
+            nonempty_response_chunks=500,
+            input_throughput=ThroughputMetrics([1.0]),
+            output_throughput=ThroughputMetrics([1.0]),
+            ttft_ms=StandardPercentileMetrics([0.1]),
+            tpot_ms=StandardPercentileMetrics([0.01]),
+            itl_ms=StandardPercentileMetrics([0.01]),
+            max_input=100,
+            max_output=50,
+            max_total=150,
+            global_cached_token_rate=0.35,
+            per_turn_cached_token_rate=RatePercentileMetrics(
+                [0.35], as_percent=True
+            ),
+        ),
     )
 
 
@@ -621,3 +630,431 @@ class TestMetricsResultOutput:
         assert isinstance(sm, dict)
         assert sm["counters"] == by_ep["orch"]["counters"]
         assert sm["counters"] != by_ep["engine-0"]["counters"]
+
+
+# ---------------------------------------------------------------------------
+# Spec decode metrics parsing and statistics
+# ---------------------------------------------------------------------------
+
+
+def test_parse_spec_decode_metrics_matches_vllm_format() -> None:
+    """Spec decode counters are parsed from vLLM Prometheus text."""
+    metrics_text = """# HELP vllm:spec_decode_num_drafts Number of spec decoding drafts.
+# TYPE vllm:spec_decode_num_drafts counter
+vllm:spec_decode_num_drafts 12
+# HELP vllm:spec_decode_num_draft_tokens Number of draft tokens.
+# TYPE vllm:spec_decode_num_draft_tokens counter
+vllm:spec_decode_num_draft_tokens 40
+# HELP vllm:spec_decode_num_accepted_tokens Number of accepted tokens.
+# TYPE vllm:spec_decode_num_accepted_tokens counter
+vllm:spec_decode_num_accepted_tokens 21
+# HELP vllm:spec_decode_num_accepted_tokens_per_pos Accepted tokens per position.
+# TYPE vllm:spec_decode_num_accepted_tokens_per_pos counter
+vllm:spec_decode_num_accepted_tokens_per_pos{position="0"} 12
+vllm:spec_decode_num_accepted_tokens_per_pos{position="1"} 7
+vllm:spec_decode_num_accepted_tokens_per_pos{position="2"} 2
+"""
+
+    parsed = parse_spec_decode_metrics(metrics_text)
+
+    assert parsed is not None
+    assert parsed.num_drafts == 12
+    assert parsed.num_draft_tokens == 40
+    assert parsed.num_accepted_tokens == 21
+    assert parsed.accepted_per_pos == {0: 12, 1: 7, 2: 2}
+
+
+def test_parse_spec_decode_metrics_returns_none_when_absent() -> None:
+    """Metrics parsing returns None when no spec decode counters exist."""
+    parsed = parse_spec_decode_metrics(
+        "# HELP requests Total requests\n# TYPE requests counter\nrequests 10\n"
+    )
+
+    assert parsed is None
+
+
+def test_parse_spec_decode_metrics_handles_maxserve_histogram() -> None:
+    """MAX Serve's per-position acceptance histogram is parsed into running sums/counts."""
+    metrics_text = """# HELP maxserve_spec_decode_acceptance_rate_per_position Per-position acceptance.
+# TYPE maxserve_spec_decode_acceptance_rate_per_position histogram
+maxserve_spec_decode_acceptance_rate_per_position_sum{position="0"} 8400.0
+maxserve_spec_decode_acceptance_rate_per_position_count{position="0"} 100
+maxserve_spec_decode_acceptance_rate_per_position_sum{position="1"} 5000.0
+maxserve_spec_decode_acceptance_rate_per_position_count{position="1"} 100
+"""
+
+    parsed = parse_spec_decode_metrics(metrics_text)
+
+    assert parsed is not None
+    assert parsed.num_drafts == 0
+    assert parsed.num_draft_tokens == 0
+    assert parsed.per_pos_rate_sum == {0: 8400.0, 1: 5000.0}
+    assert parsed.per_pos_rate_count == {0: 100, 1: 100}
+
+
+def test_parse_spec_decode_metrics_handles_maxserve_avg_acceptance_length() -> (
+    None
+):
+    """MAX Serve's avg acceptance length histogram is parsed for bench deltas."""
+    metrics_text = """# HELP maxserve_spec_decode_avg_acceptance_length Avg len.
+# TYPE maxserve_spec_decode_avg_acceptance_length histogram
+maxserve_spec_decode_avg_acceptance_length_sum 25.0
+maxserve_spec_decode_avg_acceptance_length_count 5
+"""
+
+    parsed = parse_spec_decode_metrics(metrics_text)
+
+    assert parsed is not None
+    assert parsed.avg_acceptance_length_sum == 25.0
+    assert parsed.avg_acceptance_length_count == 5.0
+
+
+def test_calculate_spec_decode_stats_from_maxserve_avg_length_histogram_only() -> (
+    None
+):
+    """Acceptance length is derived from the avg-acceptance-length histogram delta."""
+    before = SpecDecodeMetrics(
+        avg_acceptance_length_sum=10.0, avg_acceptance_length_count=2.0
+    )
+    after = SpecDecodeMetrics(
+        avg_acceptance_length_sum=30.0, avg_acceptance_length_count=5.0
+    )
+
+    stats = calculate_spec_decode_stats(before, after)
+
+    assert stats is not None
+    assert stats.acceptance_rate is None
+    assert stats.acceptance_length == pytest.approx((30.0 - 10.0) / (5.0 - 2.0))
+
+
+def test_calculate_spec_decode_stats_matches_vllm_math() -> None:
+    """Acceptance math uses benchmark-window deltas like vLLM bench serve."""
+    before = SpecDecodeMetrics(
+        num_drafts=100,
+        num_draft_tokens=320,
+        num_accepted_tokens=150,
+        accepted_per_pos={0: 100, 1: 40, 2: 10},
+    )
+    after = SpecDecodeMetrics(
+        num_drafts=112,
+        num_draft_tokens=356,
+        num_accepted_tokens=174,
+        accepted_per_pos={0: 112, 1: 48, 2: 14},
+    )
+
+    stats = calculate_spec_decode_stats(before, after)
+
+    assert stats is not None
+    assert stats.num_drafts == 12
+    assert stats.draft_tokens == 36
+    assert stats.accepted_tokens == 24
+    assert stats.acceptance_rate == pytest.approx((24 / 36) * 100)
+    assert stats.acceptance_length == pytest.approx(1 + 24 / 12)
+    assert stats.per_position_acceptance_rates == pytest.approx(
+        [12 / 12, 8 / 12, 4 / 12]
+    )
+
+
+def test_calculate_spec_decode_stats_from_maxserve_histogram_only() -> None:
+    """Without aggregate counters, per-position rates surface from histogram deltas."""
+    before = SpecDecodeMetrics(
+        per_pos_rate_sum={0: 8000.0, 1: 4000.0},
+        per_pos_rate_count={0: 100, 1: 100},
+    )
+    after = SpecDecodeMetrics(
+        per_pos_rate_sum={0: 16800.0, 1: 9000.0},
+        per_pos_rate_count={0: 200, 1: 200},
+    )
+
+    stats = calculate_spec_decode_stats(before, after)
+
+    assert stats is not None
+    # Window per-position acceptance: (8800/100)% / 100 = 0.88; (5000/100)% / 100 = 0.50
+    assert stats.per_position_acceptance_rates == pytest.approx([0.88, 0.50])
+    assert stats.num_drafts is None
+    assert stats.draft_tokens is None
+    assert stats.accepted_tokens is None
+    assert stats.acceptance_rate == pytest.approx(69.0)
+    assert stats.acceptance_length is None
+
+
+def test_spec_decode_stats_to_result_dict_uses_vllm_json_keys() -> None:
+    """Spec decode stats are serialized under vLLM-compatible keys."""
+    stats = SpecDecodeStats(
+        num_drafts=5,
+        draft_tokens=18,
+        accepted_tokens=9,
+        acceptance_rate=50.0,
+        acceptance_length=2.8,
+        per_position_acceptance_rates=[1.0, 0.6, 0.2],
+    )
+
+    assert stats.to_result_dict() == {
+        "spec_decode_acceptance_rate": 50.0,
+        "spec_decode_acceptance_length": 2.8,
+        "spec_decode_num_drafts": 5,
+        "spec_decode_draft_tokens": 18,
+        "spec_decode_accepted_tokens": 9,
+        "spec_decode_per_position_acceptance_rates": [1.0, 0.6, 0.2],
+    }
+
+
+def test_spec_decode_stats_to_result_dict_omits_missing_aggregates() -> None:
+    """JSON result only includes fields the backend actually exposed."""
+    stats = SpecDecodeStats(per_position_acceptance_rates=[0.88, 0.50])
+
+    assert stats.to_result_dict() == {
+        "spec_decode_per_position_acceptance_rates": [0.88, 0.50],
+    }
+
+
+def test_spec_decode_metrics_iadd() -> None:
+    """SpecDecodeMetrics.__iadd__ merges all fields by summation."""
+    a = SpecDecodeMetrics(
+        num_drafts=10,
+        num_draft_tokens=30,
+        num_accepted_tokens=20,
+        accepted_per_pos={0: 10, 1: 7},
+        per_pos_rate_sum={0: 800.0, 1: 500.0},
+        per_pos_rate_count={0: 10, 1: 10},
+        avg_acceptance_length_sum=5.0,
+        avg_acceptance_length_count=2.0,
+    )
+    b = SpecDecodeMetrics(
+        num_drafts=5,
+        num_draft_tokens=15,
+        num_accepted_tokens=11,
+        accepted_per_pos={0: 5, 2: 3},
+        per_pos_rate_sum={0: 400.0, 2: 300.0},
+        per_pos_rate_count={0: 5, 2: 5},
+        avg_acceptance_length_sum=3.0,
+        avg_acceptance_length_count=1.0,
+    )
+
+    a += b
+
+    assert a.num_drafts == 15
+    assert a.num_draft_tokens == 45
+    assert a.num_accepted_tokens == 31
+    assert a.accepted_per_pos == {0: 15, 1: 7, 2: 3}
+    assert a.per_pos_rate_sum == {0: 1200.0, 1: 500.0, 2: 300.0}
+    assert a.per_pos_rate_count == {0: 15, 1: 10, 2: 5}
+    assert a.avg_acceptance_length_sum == pytest.approx(8.0)
+    assert a.avg_acceptance_length_count == pytest.approx(3.0)
+
+
+def _hist(sum_: float, count: float) -> HistogramData:
+    """HistogramData with no buckets (mean is derived from sum/count)."""
+    return HistogramData(buckets=[], sum=sum_, count=count)
+
+
+def _endpoint_with_batch_histograms() -> ParsedMetrics:
+    """Endpoint exposing all five CE/TG batch histograms the validator reads.
+
+    Distinct sum/count per (metric, batch_type) so attribution of CE->prefill
+    and TG->decode is unambiguous.
+    """
+    return ParsedMetrics(
+        counters={},
+        gauges={},
+        histograms={
+            'maxserve_batch_context_tokens{batch_type="CE"}': _hist(300.0, 3.0),
+            'maxserve_batch_context_tokens{batch_type="TG"}': _hist(20.0, 2.0),
+            'maxserve_batch_creation_time_milliseconds{batch_type="CE"}': _hist(
+                50.0, 5.0
+            ),
+            'maxserve_batch_creation_time_milliseconds{batch_type="TG"}': _hist(
+                80.0, 4.0
+            ),
+            'maxserve_batch_prompt_throughput_tokens_per_second{batch_type="CE"}': _hist(
+                4000.0, 2.0
+            ),
+            'maxserve_batch_prompt_throughput_tokens_per_second{batch_type="TG"}': _hist(
+                300.0, 3.0
+            ),
+            'maxserve_batch_input_tokens{batch_type="CE"}': _hist(600.0, 3.0),
+            'maxserve_batch_input_tokens{batch_type="TG"}': _hist(40.0, 2.0),
+            'maxserve_batch_generation_throughput_tokens_per_second{batch_type="CE"}': _hist(
+                150.0, 3.0
+            ),
+            'maxserve_batch_generation_throughput_tokens_per_second{batch_type="TG"}': _hist(
+                900.0, 3.0
+            ),
+        },
+        raw_text="",
+    )
+
+
+def test_prefill_decode_stats_to_result_dict_populates_all_fields() -> None:
+    """Every histogram present -> mean/count/sum derived for all five metrics."""
+    stats = PrefillDecodeStats(
+        context_tokens=_hist(300.0, 3.0),
+        creation_time_milliseconds=_hist(50.0, 5.0),
+        prompt_throughput_tokens_per_second=_hist(4000.0, 2.0),
+        input_tokens=_hist(600.0, 3.0),
+        generation_throughput_tokens_per_second=_hist(150.0, 3.0),
+    )
+
+    d = stats.to_result_dict()
+    assert d["maxserve_batch_context_tokens_mean"] == 100.0
+    assert d["maxserve_batch_context_tokens_count"] == 3.0
+    assert d["maxserve_batch_context_tokens_sum"] == 300.0
+    assert d["maxserve_batch_creation_time_milliseconds_mean"] == 10.0
+    assert (
+        d["maxserve_batch_prompt_throughput_tokens_per_second_mean"] == 2000.0
+    )
+    assert d["maxserve_batch_input_tokens_mean"] == 200.0
+    assert d["maxserve_batch_input_tokens_sum"] == 600.0
+    assert (
+        d["maxserve_batch_generation_throughput_tokens_per_second_mean"] == 50.0
+    )
+
+
+def test_prefill_decode_stats_all_none_is_all_none() -> None:
+    """Regression: a missing batch type must not crash on ``.mean`` access.
+
+    Every histogram absent -> every derived field None (the validator leaves a
+    histogram unset when an endpoint never emitted that CE/TG metric)."""
+    stats = PrefillDecodeStats()
+
+    assert stats == PrefillDecodeStats()
+    assert all(value is None for value in stats.to_result_dict().values())
+
+
+def test_prefill_decode_stats_partial_presence() -> None:
+    """Only the histograms that exist are derived; the rest stay None."""
+    stats = PrefillDecodeStats(
+        context_tokens=_hist(300.0, 3.0),
+        input_tokens=_hist(600.0, 3.0),
+    )
+
+    d = stats.to_result_dict()
+    assert d["maxserve_batch_context_tokens_mean"] == 100.0
+    assert d["maxserve_batch_input_tokens_mean"] == 200.0
+    assert d["maxserve_batch_creation_time_milliseconds_mean"] is None
+    assert d["maxserve_batch_prompt_throughput_tokens_per_second_mean"] is None
+    assert (
+        d["maxserve_batch_generation_throughput_tokens_per_second_mean"] is None
+    )
+
+
+def test_prefill_decode_stats_to_result_dict_keys_and_values() -> None:
+    """``to_result_dict`` emits the flat 15-key layout consumers expect."""
+    stats = PrefillDecodeStats(
+        context_tokens=_hist(300.0, 3.0),
+    )
+
+    d = stats.to_result_dict()
+    assert d["maxserve_batch_context_tokens_mean"] == 100.0
+    assert d["maxserve_batch_context_tokens_count"] == 3.0
+    assert d["maxserve_batch_context_tokens_sum"] == 300.0
+    assert set(d.keys()) == {
+        "maxserve_batch_context_tokens_mean",
+        "maxserve_batch_context_tokens_count",
+        "maxserve_batch_context_tokens_sum",
+        "maxserve_batch_creation_time_milliseconds_mean",
+        "maxserve_batch_creation_time_milliseconds_count",
+        "maxserve_batch_creation_time_milliseconds_sum",
+        "maxserve_batch_generation_throughput_tokens_per_second_mean",
+        "maxserve_batch_generation_throughput_tokens_per_second_count",
+        "maxserve_batch_generation_throughput_tokens_per_second_sum",
+        "maxserve_batch_input_tokens_mean",
+        "maxserve_batch_input_tokens_count",
+        "maxserve_batch_input_tokens_sum",
+        "maxserve_batch_prompt_throughput_tokens_per_second_mean",
+        "maxserve_batch_prompt_throughput_tokens_per_second_count",
+        "maxserve_batch_prompt_throughput_tokens_per_second_sum",
+    }
+
+
+def test_derive_prefill_decode_stats_attributes_ce_to_prefill_tg_to_decode() -> (
+    None
+):
+    """Regression for the HistogramMetric enum-name mismatch that raised
+    ``AttributeError`` while building any result with server metrics.
+
+    CE histograms feed ``prefill_stats``; TG histograms feed ``decode_stats``.
+    """
+    result = _make_metrics({"server": _endpoint_with_batch_histograms()})
+
+    assert result.prefill_stats is not None
+    assert result.decode_stats is not None
+
+    prefill = result.prefill_stats.to_result_dict()
+    decode = result.decode_stats.to_result_dict()
+
+    assert prefill["maxserve_batch_context_tokens_mean"] == 100.0
+    assert prefill["maxserve_batch_input_tokens_mean"] == 200.0
+    assert (
+        prefill["maxserve_batch_prompt_throughput_tokens_per_second_mean"]
+        == 2000.0
+    )
+    assert (
+        prefill["maxserve_batch_generation_throughput_tokens_per_second_mean"]
+        == 50.0
+    )
+
+    assert decode["maxserve_batch_context_tokens_mean"] == 10.0
+    assert decode["maxserve_batch_input_tokens_mean"] == 20.0
+    assert (
+        decode["maxserve_batch_prompt_throughput_tokens_per_second_mean"]
+        == 100.0
+    )
+    assert (
+        decode["maxserve_batch_generation_throughput_tokens_per_second_mean"]
+        == 300.0
+    )
+
+
+def test_derive_prefill_decode_stats_scans_past_first_endpoint() -> None:
+    """The validator scans all endpoints, so an orchestrator with no batch
+    histograms listed first must not shadow the engine's histograms."""
+    orchestrator = ParsedMetrics(
+        counters={"requests": 1.0}, gauges={}, histograms={}, raw_text=""
+    )
+    result = _make_metrics(
+        {"orch": orchestrator, "engine-0": _endpoint_with_batch_histograms()}
+    )
+
+    assert result.prefill_stats is not None
+    assert (
+        result.prefill_stats.to_result_dict()[
+            "maxserve_batch_context_tokens_mean"
+        ]
+        == 100.0
+    )
+    assert result.decode_stats is not None
+    assert (
+        result.decode_stats.to_result_dict()[
+            "maxserve_batch_context_tokens_mean"
+        ]
+        == 10.0
+    )
+
+
+def test_derive_prefill_decode_stats_none_without_endpoints() -> None:
+    """No ``metrics_by_endpoint`` -> stats stay None (nothing to derive)."""
+    result = _make_metrics({})
+
+    assert result.prefill_stats is None
+    assert result.decode_stats is None
+
+
+def test_to_result_dict_includes_prefill_decode_stats_when_present() -> None:
+    """Derived stats surface as nested dicts in ``to_result_dict`` output."""
+    result = _make_metrics({"server": _endpoint_with_batch_histograms()})
+
+    d = result.to_result_dict()
+    assert isinstance(d["prefill_stats"], dict)
+    assert isinstance(d["decode_stats"], dict)
+    assert d["prefill_stats"]["maxserve_batch_context_tokens_mean"] == 100.0
+    assert d["decode_stats"]["maxserve_batch_context_tokens_mean"] == 10.0
+
+
+def test_to_result_dict_omits_prefill_decode_stats_when_absent() -> None:
+    """Without server metrics the keys are omitted entirely (not None)."""
+    result = _make_metrics({})
+
+    d = result.to_result_dict()
+    assert "prefill_stats" not in d
+    assert "decode_stats" not in d

@@ -1,0 +1,21 @@
+load("//bazel:api.bzl", "mojo_test")
+
+package(default_visibility = ["//max:consumers"])
+
+# Host (CPU) unit tests for the comm primitives. No GPU required.
+[
+    mojo_test(
+        name = src + ".test",
+        srcs = [src],
+        copts = [
+            "--debug-level",
+            "full",
+        ],
+        deps = [
+            "//max:comm",
+            "//max:internal_utils",
+            "@mojo//:std",
+        ],
+    )
+    for src in glob(["*.mojo"])
+]

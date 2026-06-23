@@ -31,7 +31,7 @@ from dcs_utils import GridDim, init_atoms, verify_grid
 
 def cenergy_scatter_kernel(
     energygrid: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
-    atoms: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    atoms: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
     grid_x: Int,
     grid_y: Int,
     gridspacing: Float32,
@@ -85,11 +85,11 @@ def cenergy_scatter_kernel(
 
 
 def cenergy_cpu_reference(
-    energygrid: UnsafePointer[Float32, MutAnyOrigin],
+    energygrid: UnsafePointer[mut=True, Float32, _],
     grid: GridDim,
     gridspacing: Float32,
     z: Float32,
-    atoms: UnsafePointer[Float32, MutAnyOrigin],
+    atoms: UnsafePointer[mut=False, Float32, _],
     numatoms: Int,
 ):
     """CPU reference implementation for verification."""
@@ -158,7 +158,7 @@ def main() raises:
     var block_size = 256
     var num_blocks = (numatoms + block_size - 1) // block_size
 
-    ctx.enqueue_function[cenergy_scatter_kernel, cenergy_scatter_kernel](
+    ctx.enqueue_function[cenergy_scatter_kernel](
         d_energygrid,
         d_atoms,
         vol_dim.x,

@@ -166,7 +166,10 @@ struct MMABlockSpec(ImplicitlyCopyable, Movable):
         """
         var n = 0
         if self.entry_wait.is_present():
-            n += 1
+            # entry_wait is followed by an s_barrier in the emit
+            # (cross-warp visibility fence after the vm drain). Count
+            # both ops together.
+            n += 2
         if self.entry_wait_lgkm.is_present():
             n += 1
         if self.pre_op_0.is_present():
@@ -289,6 +292,12 @@ struct MMABlockSpec(ImplicitlyCopyable, Movable):
         # (when both present) so LLVM's waitcnt-merge pass can coalesce
         # them into one `s_waitcnt vmcnt(N) lgkmcnt(M)` instruction.
         b.emit_if(self.entry_wait_lgkm)
+        # Cross-warp visibility fence — see `emit_minimal_barrier_block`
+        # for full rationale. Without this `s_barrier`, the subsequent
+        # frag-loads can race against other warps' still-pending
+        # `buffer_load_lds → LDS` writes from the previous iter.
+        if self.entry_wait.is_present():
+            b.emit(OpDesc.barrier())
         if self._entry_wait_wrap() > 0:
             b.emit(OpDesc.schedule_barrier())
 
@@ -368,6 +377,14 @@ struct MMABlockSpec(ImplicitlyCopyable, Movable):
             _e(out, self.entry_wait, phase)
         if self.entry_wait_lgkm.is_present():
             _e(out, self.entry_wait_lgkm, phase)
+        # Cross-warp visibility fence — see the matching block in
+        # `emit_minimal_barrier_block` for the full rationale. The
+        # `entry_wait` (`wait_vm[N]`) is a per-warp drain; the
+        # subsequent frag-loads can race against other warps' still-
+        # pending `buffer_load_lds → LDS` writes without an explicit
+        # `s_barrier` between them.
+        if self.entry_wait.is_present():
+            _e(out, OpDesc.barrier(), phase)
         if self._entry_wait_wrap() > 0:
             _e(out, OpDesc.schedule_barrier(), phase)
 
@@ -502,6 +519,19 @@ def emit_minimal_barrier_block(
         ops.append(block.entry_wait)
     if block.entry_wait_lgkm.is_present():
         ops.append(block.entry_wait_lgkm)
+    # Cross-warp visibility fence on top-of-half / first-cross-stage
+    # entries. The `entry_wait` (`wait_vm[N]`) only drains *this warp's*
+    # in-flight `buffer_load_lds`; it does NOT guarantee that the LDS
+    # writes from those loads are visible across the workgroup. The
+    # subsequent frag-loads (`pre_op_0/1`) read LDS regions that may
+    # have been written by other warps in the previous iter. Without an
+    # explicit `s_barrier` here, those `ds_read`s race against the
+    # other warps' still-pending LDS-write commit, producing intermittent
+    # wrong values (observed at FP8 BM=64 on a small subset of conv
+    # shapes — ~10% per-run flake in CI). Mirrors the handwritten
+    # body's top-of-iter `wait_vm + wait_lgkm + s_barrier` pattern.
+    if block.entry_wait.is_present():
+        ops.append(OpDesc.barrier())
     if wrap_waits and has_a:
         ops.append(OpDesc.schedule_barrier())
 

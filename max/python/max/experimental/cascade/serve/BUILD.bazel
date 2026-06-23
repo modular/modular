@@ -1,0 +1,18 @@
+load("//bazel:api.bzl", "modular_py_library", "requirement")
+
+package(default_visibility = ["//max:consumers"])
+
+# HTTP route adapters that expose cascade pipelines as FastAPI apps.
+modular_py_library(
+    name = "serve",
+    srcs = glob(["*.py"]),
+    deps = [
+        requirement("fastapi"),
+        requirement("pydantic"),
+        requirement("sse-starlette"),
+        requirement("uvicorn"),
+        "//max/python/max/experimental/cascade/pipelines",
+        "//max/python/max/pipelines/request",
+        "//max/python/max/serve/schemas",
+    ],
+)

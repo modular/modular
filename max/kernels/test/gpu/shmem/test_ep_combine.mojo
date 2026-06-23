@@ -96,7 +96,7 @@ def test_combine[
     comptime max_recv_num_tokens = n_experts * n_tokens_per_rank
 
     comptime output_tt_layout = row_major(
-        (Idx[max_recv_num_tokens](), Idx[hidden_size]())
+        (Idx[max_recv_num_tokens], Idx[hidden_size])
     )
     comptime token_fmt_type = BF16TokenFormat[
         output_layout=type_of(output_tt_layout), hidden_size, top_k
@@ -166,15 +166,15 @@ def test_combine[
     )
 
     var topk_ids_tensor = TileTensor[origin=ImmutAnyOrigin](
-        device_topk_buf, row_major(Idx(n_tokens_per_rank), Idx[top_k]())
+        device_topk_buf, row_major(n_tokens_per_rank, Idx[top_k])
     )
     var input_tokens_tensor = TileTensor[origin=ImmutAnyOrigin](
         device_input_buf,
-        row_major(Idx(n_tokens_per_rank), Idx[hidden_size]()),
+        row_major(n_tokens_per_rank, Idx[hidden_size]),
     )
     var output_tensor = TileTensor[origin=MutAnyOrigin](
         device_output_buf,
-        row_major(Idx[max_recv_num_tokens](), Idx[hidden_size]()),
+        row_major(Idx[max_recv_num_tokens], Idx[hidden_size]),
     )
     var row_offsets_tensor = TileTensor[origin=MutAnyOrigin](
         device_row_offsets_buf, row_major[n_local_experts + 1]()
@@ -184,11 +184,11 @@ def test_combine[
     )
     var src_token_info_tensor = TileTensor[origin=MutAnyOrigin](
         device_src_token_info_buf,
-        row_major(Idx[max_recv_num_tokens](), Idx[2]()),
+        row_major(Idx[max_recv_num_tokens], Idx[2]),
     )
     var output_2_tensor = TileTensor[origin=MutAnyOrigin](
         device_output_2_buf,
-        row_major(Idx(n_tokens_per_rank), Idx[top_k](), Idx[hidden_size]()),
+        row_major(n_tokens_per_rank, Idx[top_k], Idx[hidden_size]),
     )
 
     var format_handler = token_fmt_type(output_tensor)
@@ -207,7 +207,7 @@ def test_combine[
         1,  # p2p_world_size
         token_fmt_type,
     ]
-    var func = ctx.compile_function_experimental[dispatch_async]()
+    var func = ctx.compile_function[dispatch_async]()
     shmem_module_init(func)
 
     comptime dispatch_wait = dispatch_wait_kernel[
@@ -221,9 +221,7 @@ def test_combine[
         n_tokens_per_rank,
         type_of(format_handler),
     ]
-    var func_dispatch_wait = ctx.compile_function[
-        dispatch_wait, dispatch_wait
-    ]()
+    var func_dispatch_wait = ctx.compile_function[dispatch_wait]()
 
     comptime combine_async = combine_async_kernel[
         input_type,
@@ -238,7 +236,7 @@ def test_combine[
         n_tokens_per_rank,
         1,  # p2p_world_size
     ]
-    var func_combine_async = ctx.compile_function_experimental[combine_async]()
+    var func_combine_async = ctx.compile_function[combine_async]()
     shmem_module_init(func_combine_async)
 
     comptime combine_wait = combine_wait_kernel[
@@ -252,9 +250,7 @@ def test_combine[
         combine_msg_bytes,
         n_tokens_per_rank,
     ]
-    var func_combine_async_wait = ctx.compile_function_experimental[
-        combine_wait
-    ]()
+    var func_combine_async_wait = ctx.compile_function[combine_wait]()
 
     var num_iters: Int = 100 if is_benchmark() or is_pressure_test() else 3
     var combine_async_stat_m: Float64 = 0

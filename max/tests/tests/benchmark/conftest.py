@@ -42,6 +42,9 @@ def offline_dryrun_mocks(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         benchmark_serving, "get_tokenizer", lambda *a, **kw: mock_tokenizer
     )
+    monkeypatch.setattr(
+        benchmark_serving, "resolve_revision", lambda *a, **kw: None
+    )
 
     mock_dataset = MagicMock(spec=ShareGPTBenchmarkDataset)
     mock_dataset.has_multiturn_chat_support = False

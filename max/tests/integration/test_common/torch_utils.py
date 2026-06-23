@@ -130,6 +130,97 @@ def run_text_generation(  # noqa: ANN201
     )
 
 
+def run_text_encode(
+    model: PreTrainedModel,
+    data_processor: PreTrainedTokenizer | PreTrainedTokenizerFast,
+    device: torch.device,
+    textgen_requests: Iterable[MockTextGenerationRequest],
+    pad_to_length: int | None = None,
+) -> list[dict[str, Any]]:
+    """Run a text-encoder forward pass and return the pre-norm hidden state.
+
+    Bypasses ``model.generate()`` entirely. Registers a pre-hook on
+    ``model.model.norm`` so the captured tensor is the post-stack,
+    pre-final-norm hidden state — matching what MAX's ComponentModel text
+    encoders return.
+
+    When ``pad_to_length`` is provided, each prompt is run through
+    ``apply_chat_template`` + tokenization padded to that length. When it is
+    ``None``, the prompt is tokenized at its natural length with an all-ones
+    attention mask.
+    """
+    if pad_to_length is not None:
+        if getattr(data_processor, "pad_token", None) is None:
+            data_processor.pad_token = data_processor.eos_token
+        data_processor.padding_side = "right"
+
+    norm_module = getattr(getattr(model, "model", None), "norm", None)
+    if norm_module is None:
+        raise RuntimeError(
+            "Text-encoder verification expected model.model.norm to exist on "
+            "the Torch model so we can capture pre-norm hidden states. "
+            f"Got: {type(model).__name__}"
+        )
+
+    captured: list[torch.Tensor] = []
+
+    def _capture_pre_norm(
+        module: torch.nn.Module,
+        args: tuple[torch.Tensor, ...],
+    ) -> None:
+        captured.append(args[0].detach())
+
+    hook = norm_module.register_forward_pre_hook(_capture_pre_norm)
+    try:
+        results: list[dict[str, Any]] = []
+        for request in textgen_requests:
+            # Apply the chat template (matches diffusers + MAX Klein production).
+            chat_text = data_processor.apply_chat_template(
+                [{"role": "user", "content": request.prompt}],
+                tokenize=False,
+                add_generation_prompt=True,
+                enable_thinking=False,
+            )
+            if pad_to_length is not None:
+                encoded = data_processor(
+                    chat_text,
+                    padding="max_length",
+                    max_length=pad_to_length,
+                    truncation=True,
+                    return_tensors="pt",
+                ).to(device)
+            else:
+                encoded = data_processor(chat_text, return_tensors="pt").to(
+                    device
+                )
+            input_ids = encoded["input_ids"]
+            attention_mask = encoded["attention_mask"]
+
+            captured.clear()
+            with torch.no_grad():
+                model(
+                    input_ids=input_ids,
+                    attention_mask=attention_mask,
+                    use_cache=False,
+                )
+            if not captured:
+                raise RuntimeError(
+                    "Final-norm pre-hook did not fire during text-encoder "
+                    "verification forward pass."
+                )
+            pre_norm = captured[-1]
+            hidden_np = pre_norm[0].float().cpu().numpy()
+            results.append(
+                {
+                    "prompt": request.prompt,
+                    "embeddings": hidden_np,
+                }
+            )
+    finally:
+        hook.remove()
+    return results
+
+
 def run_text_generation_with_custom_image_processing(  # noqa: ANN201
     model: PreTrainedModel,
     data_processor: PreTrainedTokenizer | PreTrainedTokenizerFast,
@@ -477,5 +568,116 @@ def run_image_generation(
                 "images": image_np,
             }
         )
+
+    return results
+
+
+def run_wan_image_generation(
+    *,
+    pipeline: Any,
+    requests: list[MockPixelGenerationRequest],
+    num_steps: int,
+    print_outputs: bool = False,
+) -> list[dict]:  # type: ignore[type-arg]
+    """Run single-frame Wan T2V via diffusers, matching MAX latent generation.
+
+    Pre-generates 5D latents using numpy RandomState (same algorithm as
+    WanTokenizer._randn_tensor) so both backends start from identical noise.
+
+    Args:
+        pipeline: A loaded diffusers WanPipeline (embed_tokens tie already applied).
+        requests: List of MockPixelGenerationRequest objects.
+        num_steps: Number of denoising steps.
+        print_outputs: Whether to print progress.
+
+    Returns:
+        List of dicts with prompt and generated images (HWC float32 [0, 1]).
+    """
+    # Spatial scale factor matches WanTokenizer defaults.
+    _VAE_SCALE_FACTOR_SPATIAL = 8
+    _NUM_CHANNELS_LATENTS = 16
+
+    results = []
+
+    for mock_request in requests:
+        prompt = mock_request.prompt
+        seed = mock_request.seed if mock_request.seed is not None else 42
+        height = mock_request.height if mock_request.height is not None else 720
+        width = mock_request.width if mock_request.width is not None else 1280
+        guidance_scale = mock_request.guidance_scale
+        negative_prompt = mock_request.negative_prompt
+
+        if print_outputs:
+            print(
+                f"Generating Wan frame for prompt: {prompt!r}"
+                f" ({height}x{width}, steps={num_steps})"
+            )
+
+        # Generate latents with numpy RandomState to match WanTokenizer._randn_tensor.
+        # Single-frame: latent_frames = (1 - 1) // 4 + 1 = 1.
+        latent_height = height // _VAE_SCALE_FACTOR_SPATIAL
+        latent_width = width // _VAE_SCALE_FACTOR_SPATIAL
+        shape_5d = (1, _NUM_CHANNELS_LATENTS, 1, latent_height, latent_width)
+        rng = np.random.RandomState(seed)
+        latents_np = rng.standard_normal(shape_5d).astype(np.float32)
+        latents = torch.from_numpy(latents_np)
+
+        output = pipeline(
+            prompt=prompt,
+            negative_prompt=negative_prompt,
+            height=height,
+            width=width,
+            num_frames=1,
+            num_inference_steps=num_steps,
+            guidance_scale=guidance_scale,
+            latents=latents,
+        )
+
+        # Extract the single generated frame.
+        # diffusers WanPipeline returns frames in several formats depending
+        # on the version and output_type setting.
+        frames = output.frames
+        if (
+            isinstance(frames, list)
+            and len(frames) > 0
+            and isinstance(frames[0], list)
+        ):
+            # list[list[PIL.Image]] — most common diffusers format
+            pil_frame = frames[0][0]
+        elif isinstance(frames, list) and len(frames) > 0:
+            # flat list[PIL.Image]
+            pil_frame = frames[0]
+        elif isinstance(frames, np.ndarray):
+            # (B, T, H, W, C) float32 [0, 1] or uint8 [0, 255]
+            frame_np = frames[0, 0] if frames.ndim == 5 else frames[0]
+            if frame_np.dtype == np.uint8:
+                image_np = frame_np.astype(np.float32) / 255.0
+            else:
+                image_np = np.clip(frame_np.astype(np.float32), 0.0, 1.0)
+            results.append({"prompt": prompt, "images": image_np})
+            continue
+        elif isinstance(frames, torch.Tensor):
+            # (B, T, C, H, W) or (B, C, H, W)
+            frame_tensor = frames[0, 0] if frames.ndim == 5 else frames[0]
+            if frame_tensor.shape[0] in (1, 3, 4):
+                frame_tensor = frame_tensor.permute(1, 2, 0)
+            image_np = frame_tensor.cpu().float().numpy()
+            if image_np.max() > 1.0:
+                image_np = np.clip(image_np, 0.0, 255.0) / 255.0
+            results.append({"prompt": prompt, "images": image_np})
+            continue
+        else:
+            raise ValueError(f"Unexpected output.frames type: {type(frames)}")
+
+        image_np = np.array(pil_frame).astype(np.float32) / 255.0
+
+        if print_outputs:
+            print(
+                f"Generated frame shape: {image_np.shape},"
+                f" dtype: {image_np.dtype},"
+                f" range: [{image_np.min():.3f}, {image_np.max():.3f}]"
+            )
+
+        results.append({"prompt": prompt, "images": image_np})
 
     return results

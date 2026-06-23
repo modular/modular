@@ -86,9 +86,9 @@ def _load_reduce[
             consistency=Consistency.RELAXED,
             accum_type=accum_type,
         ](
-            (
-                in_tiles[0].ptr_at_offset(Coord(Idx(elem_idx)))
-            ).address_space_cast[AddressSpace.GLOBAL]()
+            (in_tiles[0].ptr_at_offset(Coord(elem_idx))).address_space_cast[
+                AddressSpace.GLOBAL
+            ]()
         )
     else:
         # Regular mode: manual accumulation
@@ -97,7 +97,7 @@ def _load_reduce[
             in_tiles[0]
             .address_space_cast[_target_address_space]()
             .load[width=simd_width, alignment=alignment, invariant=True](
-                Coord(Idx(elem_idx))
+                Coord(elem_idx)
             )
             .cast[accum_type]()
         )
@@ -107,7 +107,7 @@ def _load_reduce[
                 in_tiles[gpu_idx]
                 .address_space_cast[_target_address_space]()
                 .load[width=simd_width, alignment=alignment, invariant=True](
-                    Coord(Idx(elem_idx))
+                    Coord(elem_idx)
                 )
                 .cast[accum_type]()
             )
@@ -255,7 +255,7 @@ def _reduce_scatter_impl[
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(BLOCK_SIZE))
 )
-@__name(t"reducescatter_{dtype}_{use_multimem}", mangle=True)
+@__name(t"reducescatter_{dtype}_{use_multimem}")
 def _reducescatter_kernel[
     dtype: DType,
     in_layout: TensorLayout,
@@ -310,7 +310,7 @@ def _reducescatter_kernel[
 
         comptime if in_layout.rank == 1:
             # Flat: construct sliced 1D tiles from input TileTensors (any rank).
-            comptime FlatLayout = type_of(row_major(Idx(n_elements)))
+            comptime FlatLayout = type_of(row_major(n_elements))
             comptime FlatTile = TileTensor[dtype, FlatLayout, ImmutAnyOrigin]
             var flat_tiles = InlineArray[FlatTile, num_buffers](
                 uninitialized=True
@@ -320,7 +320,7 @@ def _reducescatter_kernel[
             comptime for i in range(num_buffers):
                 flat_tiles[i] = FlatTile(
                     reordered[i].ptr + elem_start,
-                    row_major(Idx(n_elements)),
+                    row_major(n_elements),
                 )
 
             _reduce_scatter_impl[
@@ -443,7 +443,8 @@ def _reducescatter_p2p[
     )
     comptime for i in range(num_buffers):
         kernel_in_bufs[i] = KernelInputType(
-            list_of_in_bufs[i].ptr, list_of_in_bufs[i].layout
+            list_of_in_bufs[i].ptr.as_immutable().as_unsafe_any_origin(),
+            list_of_in_bufs[i].layout,
         )
 
     comptime kernel = _reducescatter_kernel[
@@ -458,7 +459,7 @@ def _reducescatter_p2p[
     ]
 
     # Launch the kernel
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         kernel_in_bufs,
         output_buffer,
         rank_sigs,

@@ -31,6 +31,7 @@ from std.gpu import (
     lane_id,
     thread_idx,
 )
+from std.gpu.host import DeviceContext
 from std.gpu.primitives.grid_controls import (
     PDL,
     PDLLevel,
@@ -45,7 +46,6 @@ from layout import (
     row_major,
     stack_allocation as tensor_alloc,
 )
-from std.runtime.asyncrt import DeviceContextPtr
 from std.runtime.tracing import Trace, TraceLevel
 
 from std.utils.index import IndexList, StaticTuple
@@ -104,7 +104,7 @@ def _count_expert_tokens[
     //,
     expected_count: Int,
 ](
-    topk_ids: TileTensor[input_type, ...],
+    topk_ids: TileTensor[mut=False, input_type, ...],
     smem: TileTensor[mut=True, DType.uint32, ...],
     bg_params: _BucketGroupParams[num_threads, input_type],
 ) -> UInt64:
@@ -127,7 +127,7 @@ def _count_expert_tokens[
         var g_vector: SIMD[input_type, width]
 
         if idx + width <= bg_params.topk_ids_length:
-            g_vector = topk_ids.load[width=width](Coord(Idx(0), Idx(idx)))
+            g_vector = topk_ids.load[width=width](Coord(Idx[0], idx))
         else:
             g_vector = SIMD[input_type, width](bg_params.expert + 1)
 
@@ -153,7 +153,7 @@ def _count_expert_tokens[
 
             # If this token matches, store its index in shared memory
             if state and offset < UInt64(expected_count):
-                smem[0, offset] = UInt32(idx + i)
+                smem[Coord(Idx[0], offset)] = UInt32(idx + i)
 
     var expert_id = (
         topk_ids[
@@ -172,7 +172,7 @@ def _count_expert_tokens[
     total_writes += warp_writes
 
     if state and offset < UInt64(expected_count):
-        smem[0, offset] = UInt32(bg_params.remainder_start_idx)
+        smem[Coord(Idx[0], offset)] = UInt32(bg_params.remainder_start_idx)
 
     return total_writes
 
@@ -219,7 +219,7 @@ def _copy_tokens_smem_to_gmem[
 ](
     token_expert_order: TileTensor[mut=True, DType.uint32, ...],
     restore_token_order: TileTensor[mut=True, DType.uint32, ...],
-    smem: TileTensor[DType.uint32, ...],
+    smem: TileTensor[mut=False, DType.uint32, ...],
     g_offset: UInt32,
     total_writes: UInt64,
     bg_params: _BucketGroupParams[num_threads, input_type],
@@ -247,13 +247,11 @@ def _copy_tokens_smem_to_gmem[
         bg_params.start_idx, rounded_smem_reads, bg_params.reads_per_iteration
     ):
         if smem_idx + width <= Int(smem_writes):
-            var source_vector = smem.load[width=width](
-                Coord(Idx(0), Idx(smem_idx))
-            )
+            var source_vector = smem.load[width=width](Coord(Idx[0], smem_idx))
 
             comptime for i in range(width):
                 token_expert_order[
-                    g_offset_copy + UInt32(smem_idx) + UInt32(i)
+                    Coord(g_offset_copy + UInt32(smem_idx) + UInt32(i))
                 ] = source_vector[i]
                 restore_token_order[Int(source_vector[i])] = (
                     g_offset_copy + UInt32(smem_idx) + UInt32(i)
@@ -264,9 +262,9 @@ def _copy_tokens_smem_to_gmem[
     g_offset_copy += UInt32(start_idx)
 
     if UInt64(thread_idx.x) < smem_writes - start_idx:
-        var smem_val = smem[0, start_idx + UInt64(thread_idx.x)]
+        var smem_val = smem[Coord(Idx[0], start_idx + UInt64(thread_idx.x))]
         token_expert_order.store(
-            Coord(Idx(Int(g_offset_copy + UInt32(thread_idx.x)))),
+            Coord(Int(g_offset_copy + UInt32(thread_idx.x))),
             smem_val,
         )
 
@@ -282,8 +280,8 @@ def _copy_tokens_to_gmem[
     //,
     expected_count: Int,
 ](
-    topk_ids: TileTensor[input_type, ...],
-    smem: TileTensor[DType.uint32, ...],
+    topk_ids: TileTensor[mut=False, input_type, ...],
+    smem: TileTensor[mut=False, DType.uint32, ...],
     token_expert_order: TileTensor[mut=True, DType.uint32, ...],
     restore_token_order: TileTensor[mut=True, DType.uint32, ...],
     total_writes: UInt64,
@@ -312,7 +310,7 @@ def _copy_tokens_to_gmem[
         var g_vector: SIMD[input_type, width]
 
         if idx + width <= bg_params.topk_ids_length:
-            g_vector = topk_ids.load[width=width](Coord(Idx(0), Idx(idx)))
+            g_vector = topk_ids.load[width=width](Coord(Idx[0], idx))
         else:
             g_vector = SIMD[input_type, width](bg_params.expert + 1)
 
@@ -333,7 +331,7 @@ def _copy_tokens_to_gmem[
             # so we only need to write the remaining tokens to global memory.
             if thr_tokens_seen >= UInt64(expected_count) and state:
                 token_expert_order[
-                    g_offset_copy + UInt32(preceding_thread_writes)
+                    Coord(g_offset_copy + UInt32(preceding_thread_writes))
                 ] = UInt32(idx + i)
                 restore_token_order[idx + i] = g_offset_copy + UInt32(
                     preceding_thread_writes
@@ -360,7 +358,7 @@ def _copy_tokens_to_gmem[
 
     if temp_current_writes >= UInt64(expected_count) and state:
         token_expert_order[
-            g_offset_copy + UInt32(preceding_thread_writes)
+            Coord(g_offset_copy + UInt32(preceding_thread_writes))
         ] = UInt32(bg_params.remainder_start_idx)
         restore_token_order[
             bg_params.remainder_start_idx
@@ -370,9 +368,7 @@ def _copy_tokens_to_gmem[
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_threads))
 )
-@__name(
-    t"moe_create_indices_bucket_group_{input_type}_t{num_threads}", mangle=True
-)
+@__name(t"moe_create_indices_bucket_group_{input_type}_t{num_threads}")
 def moe_create_indices_bucket_group_kernel[
     input_type: DType,
     TokenExpertOrderLayoutType: TensorLayout,
@@ -402,7 +398,7 @@ def moe_create_indices_bucket_group_kernel[
     expert_usage_stats: TileTensor[
         mut=True, DType.uint32, ExpertUsageStatsLayoutType, MutAnyOrigin
     ],
-    topk_ids: TileTensor[input_type, TopkIdsLayoutType, MutAnyOrigin],
+    topk_ids: TileTensor[input_type, TopkIdsLayoutType, ImmutAnyOrigin],
     scales_offset_p: Optional[UnsafePointer[UInt32, MutAnyOrigin]],
 ):
     """Create indices for MoE routing using bucket sort algorithm.
@@ -486,15 +482,17 @@ def moe_create_indices_bucket_group_kernel[
 
     # Record which expert is active at this index
     # this signals this expert is being used
-    expert_ids[expert_idx] = Int32(bucket_group_params.expert)
+    expert_ids[Coord(expert_idx)] = Int32(bucket_group_params.expert)
 
     # Store the ending index for this expert (start of next expert)
     # NOTE: expert_start_indices must be zero-initialized for this to work correctly
-    expert_start_indices[expert_idx + 1] = g_offset + UInt32(total_writes)
+    expert_start_indices[Coord(expert_idx + 1)] = g_offset + UInt32(
+        total_writes
+    )
 
     # First expert always starts at index 0
     if expert_idx == 0:
-        expert_start_indices[expert_idx] = 0
+        expert_start_indices[Coord(expert_idx)] = 0
 
     if total_writes > 0:
         # Copy all tokens in shared memory back to global memory
@@ -539,18 +537,18 @@ def moe_create_indices[
     restore_token_order: TileTensor[mut=True, DType.uint32, ...],
     expert_ids: TileTensor[mut=True, DType.int32, ...],
     expert_usage_stats: TileTensor[mut=True, DType.uint32, ...],
-    topk_ids: TileTensor[input_type, ...],
-    context: DeviceContextPtr,
+    topk_ids: TileTensor[mut=False, input_type, ...],
+    context: DeviceContext,
     scales_offset_p: Optional[UnsafePointer[UInt32, MutAnyOrigin]] = None,
 ) raises:
     comptime assert is_gpu[
         target
     ](), "Creating MoE indices is only supported on GPU"
 
-    var cuda_ctx = context.get_device_context()
+    var cuda_ctx = context
 
     with Trace[TraceLevel.OP, target=target](
-        "mo.moe.create_indices", task_id=Int(context.get_device_context().id())
+        "mo.moe.create_indices", task_id=Int(context.id())
     ):
         var lock_buffer = cuda_ctx.enqueue_create_buffer[DType.uint64](1)
 
@@ -562,19 +560,19 @@ def moe_create_indices[
             expert_usage_stats_ptr.store(0)
             expert_usage_stats_ptr.store(1, 0)
 
-        cuda_ctx.enqueue_function[fill_zero_kernel, fill_zero_kernel](
+        cuda_ctx.enqueue_function[fill_zero_kernel](
             lock_buffer,
             expert_usage_stats.ptr,
             grid_dim=(1,),
             block_dim=(1,),
-            attributes=pdl_launch_attributes(PDLLevel(1)),
+            attributes=pdl_launch_attributes(PDLLevel.ON),
         )
 
         var lock = TileTensor(lock_buffer, row_major[1]())
 
         var topk_2D = TileTensor(
             topk_ids.ptr,
-            row_major(Coord(Idx(1), Idx(Int(topk_ids.dim(0))))),
+            row_major(Coord(Idx[1], Int(topk_ids.dim(0)))),
         )
 
         var num_experts = expert_ids.dim(0)
@@ -591,7 +589,7 @@ def moe_create_indices[
             expected_count=expected_count,
         ]
 
-        cuda_ctx.enqueue_function[kernel, kernel](
+        cuda_ctx.enqueue_function[kernel](
             token_expert_order,
             lock,
             expert_start_indices,
@@ -672,7 +670,6 @@ def _warp_bitonic_sort[
 )
 @__name(
     t"group_limited_router_{scores_type}_{bias_type}_t{num_threads}",
-    mangle=True,
 )
 def group_limited_router_kernel[
     scores_type: DType,
@@ -759,7 +756,7 @@ def group_limited_router_kernel[
     ]()
     var thread_group_id, tid_in_group = divmod(tid, group_size)
 
-    var thread_expert_bias = expert_bias.load[width=1](Coord(Idx(tid))).cast[
+    var thread_expert_bias = expert_bias.load[width=1](Coord(tid)).cast[
         scores_type
     ]()
 
@@ -770,9 +767,7 @@ def group_limited_router_kernel[
             comptime scores_fn = scores_input_fn.value()
             thread_expert_score = scores_fn[width=1]((token_idx, tid))
         else:
-            thread_expert_score = expert_scores.load[width=1](
-                (Idx(token_idx), Idx(tid))
-            )
+            thread_expert_score = expert_scores.load[width=1]((token_idx, tid))
 
         thread_expert_score += thread_expert_bias
         var thd_topk2 = TopK_2(u=thread_expert_score, p=tid)
@@ -841,7 +836,7 @@ def group_limited_router_kernel[
                 original_weight = (
                     global_topk_result.u
                     - expert_bias.load[width=1](
-                        Coord(Idx(global_topk_result.p))
+                        Coord(global_topk_result.p)
                     ).cast[scores_type]()
                 )
 
@@ -856,7 +851,7 @@ def group_limited_router_kernel[
 
             if tid < n_experts_per_tok:
                 expert_indices.store(
-                    (Idx(token_idx), Idx(tid)), Int32(global_topk_result.p)
+                    (token_idx, tid), Int32(global_topk_result.p)
                 )
                 expert_weights[token_idx, tid] = original_weight
 
@@ -878,10 +873,10 @@ def router_group_limited[
 ](
     expert_indices: TileTensor[mut=True, DType.int32, ...],
     expert_weights: TileTensor[mut=True, scores_type, ...],
-    expert_scores: TileTensor[scores_type, ...],
-    expert_bias: TileTensor[bias_type, ...],
+    expert_scores: TileTensor[mut=False, scores_type, ...],
+    expert_bias: TileTensor[mut=False, bias_type, ...],
     routed_scaling_factor: Float32,
-    context: DeviceContextPtr,
+    context: DeviceContext,
 ) raises:
     """
     A manually fused MoE router with the group-limited strategy.
@@ -908,7 +903,7 @@ def router_group_limited[
             [num_tokens, n_routed_experts].
         expert_bias: The bias for each expert. Shape: [n_routed_experts].
         routed_scaling_factor: The scaling factor for the routed expert weights.
-        context: DeviceContextPtr.
+        context: The device context.
     """
     comptime assert is_gpu[
         target
@@ -917,7 +912,7 @@ def router_group_limited[
     if expert_scores.dim(0) == 0:
         return
 
-    var gpu_ctx = context.get_device_context()
+    var gpu_ctx = context
 
     with Trace[TraceLevel.OP, target=target](
         "mo.moe.router_group_limited", task_id=Int(gpu_ctx.id())
@@ -944,7 +939,7 @@ def router_group_limited[
             scores_input_fn=scores_input_fn,
         ]
 
-        gpu_ctx.enqueue_function[kernel, kernel](
+        gpu_ctx.enqueue_function[kernel](
             expert_indices,
             expert_weights,
             expert_scores,
@@ -952,16 +947,14 @@ def router_group_limited[
             routed_scaling_factor,
             grid_dim=expert_scores.dim(0),
             block_dim=num_threads,
-            attributes=pdl_launch_attributes(PDLLevel(1)),
+            attributes=pdl_launch_attributes(PDLLevel.ON),
         )
 
 
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_threads))
 )
-@__name(
-    t"single_group_router_{scores_type}_{bias_type}_t{num_threads}", mangle=True
-)
+@__name(t"single_group_router_{scores_type}_{bias_type}_t{num_threads}")
 def single_group_router_kernel[
     scores_type: DType,
     bias_type: DType,
@@ -1071,18 +1064,16 @@ def single_group_router_kernel[
     var shared_mem_phase2 = shared_mem + phase1_candidates
 
     with PDL():
-        var thread_expert_bias = expert_bias.load[width=1](
-            Coord(Idx(tid))
-        ).cast[scores_type]()
+        var thread_expert_bias = expert_bias.load[width=1](Coord(tid)).cast[
+            scores_type
+        ]()
 
         var thread_expert_score: Scalar[scores_type]
         comptime if scores_input_fn:
             comptime scores_fn = scores_input_fn.value()
             thread_expert_score = scores_fn[width=1]((token_idx, tid))
         else:
-            thread_expert_score = expert_scores.load[width=1](
-                (Idx(token_idx), Idx(tid))
-            )
+            thread_expert_score = expert_scores.load[width=1]((token_idx, tid))
         var biased_score = thread_expert_score + thread_expert_bias
 
         var val = TopK_2(u=biased_score, p=tid)
@@ -1142,7 +1133,7 @@ def single_group_router_kernel[
                     original_weight = d_fn[width=1]((token_idx, sorted_val3.p))
                 else:
                     original_weight = expert_scores.load[width=1](
-                        (Idx(token_idx), Idx(sorted_val3.p))
+                        (token_idx, sorted_val3.p)
                     )
 
             var weights_sum = warp.lane_group_sum[num_lanes=n_experts_per_tok](
@@ -1156,9 +1147,7 @@ def single_group_router_kernel[
 
             # Write expert index and weight for this token.
             if lane_id < n_experts_per_tok:
-                expert_indices.store(
-                    (Idx(token_idx), Idx(lane_id)), Int32(sorted_val3.p)
-                )
+                expert_indices.store((token_idx, lane_id), Int32(sorted_val3.p))
                 expert_weights[token_idx, lane_id] = original_weight
 
 
@@ -1177,10 +1166,10 @@ def single_group_router[
 ](
     expert_indices: TileTensor[mut=True, DType.int32, ...],
     expert_weight: TileTensor[mut=True, scores_type, ...],
-    expert_scores: TileTensor[scores_type, ...],
-    expert_bias: TileTensor[bias_type, ...],
+    expert_scores: TileTensor[mut=False, scores_type, ...],
+    expert_bias: TileTensor[mut=False, bias_type, ...],
     routed_scaling_factor: Float32,
-    context: DeviceContextPtr,
+    context: DeviceContext,
 ) raises:
     """Launch the single-group MoE router on GPU.
 
@@ -1206,7 +1195,7 @@ def single_group_router[
         expert_scores: Input routing scores. Shape: [num_tokens, n_routed_experts].
         expert_bias: Per-expert correction bias used for selection only.
         routed_scaling_factor: Scalar multiplied into every output weight.
-        context: DeviceContextPtr.
+        context: The device context.
     """
     comptime assert is_gpu[
         target
@@ -1215,7 +1204,7 @@ def single_group_router[
     if expert_scores.dim(0) == 0:
         return
 
-    var gpu_ctx = context.get_device_context()
+    var gpu_ctx = context
 
     with Trace[TraceLevel.OP, target=target](
         "mo.moe.router_single_group", task_id=Int(gpu_ctx.id())
@@ -1242,7 +1231,7 @@ def single_group_router[
         ]
 
         # launch the kernle using gpu_ctx
-        gpu_ctx.enqueue_function[kernel, kernel](
+        gpu_ctx.enqueue_function[kernel](
             expert_indices,
             expert_weight,
             expert_scores,
@@ -1250,5 +1239,5 @@ def single_group_router[
             routed_scaling_factor,
             grid_dim=expert_scores.dim(0),
             block_dim=num_threads,
-            attributes=pdl_launch_attributes(PDLLevel(1)),
+            attributes=pdl_launch_attributes(PDLLevel.ON),
         )

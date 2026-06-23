@@ -11,16 +11,24 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+import compiler
+
+from std.gpu.host import DeviceContext
 from std.math import ceildiv
 from std.atomic import Atomic
 
-from std.gpu import MAX_THREADS_PER_BLOCK_METADATA, global_idx, thread_idx
+from std.gpu import (
+    MAX_THREADS_PER_BLOCK_METADATA,
+    barrier,
+    global_idx,
+    thread_idx,
+)
 from std.gpu.host.info import is_cpu
 from std.gpu.host import DeviceBuffer
 from std.gpu.memory import AddressSpace
 from std.memory import stack_allocation
-from std.runtime.asyncrt import DeviceContextPtr
-from tensor import InputTensor, ManagedTensorSlice, OutputTensor
+
+from extensibility import InputTensor, ManagedTensorSlice, OutputTensor
 
 from std.utils import StaticTuple
 
@@ -38,7 +46,7 @@ def _histogram_cpu(output: ManagedTensorSlice, input: ManagedTensorSlice):
 def _histogram_gpu(
     output: ManagedTensorSlice,
     input: ManagedTensorSlice,
-    ctx_ptr: DeviceContextPtr,
+    ctx_ptr: DeviceContext,
 ) raises:
     comptime bin_width = Int(UInt8.MAX) + 1
     comptime block_dim = bin_width
@@ -82,7 +90,7 @@ def _histogram_gpu(
 
     var grid_dim = ceildiv(n, block_dim)
 
-    var ctx = ctx_ptr.get_device_context()
+    var ctx = ctx_ptr
 
     var output_device = output.to_device_buffer(ctx)
     var input_device = input.to_device_buffer(ctx)
@@ -90,7 +98,7 @@ def _histogram_gpu(
     # Zero initialize the output buffer
     ctx.enqueue_memset(output_device, 0)
 
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         output_device,
         input_device,
         n,
@@ -107,7 +115,7 @@ struct Histogram:
     ](
         output: OutputTensor[dtype=DType.int64, rank=1, ...],
         input: InputTensor[dtype=DType.uint8, rank=1, ...],
-        ctx: DeviceContextPtr,
+        ctx: DeviceContext,
     ) raises:
         comptime if is_cpu[target]():
             _histogram_cpu(output, input)

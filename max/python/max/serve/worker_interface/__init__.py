@@ -20,13 +20,14 @@ from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from typing import Generic
 
-from max.interfaces import (
-    BaseContextType,
+from max.pipelines.context import BaseContextType
+from max.pipelines.modeling.types import (
     PipelineOutputType,
     RequestID,
-    SchedulerResult,
 )
-from max.interfaces.queue import MAXPullQueue, MAXPushQueue
+from max.serve.queue import MAXPullQueue, MAXPushQueue
+from max.serve.scheduler_result import SchedulerResult
+from max.serve.telemetry.metrics import METRICS
 
 logger = logging.getLogger("max.serve")
 
@@ -48,6 +49,28 @@ async def sleep_with_backoff(count_no_progress: int) -> None:
 
 class ModelWorkerProxy(ABC, Generic[BaseContextType, PipelineOutputType]):
     """Held by API worker to communicate with model worker"""
+
+    # Running count of requests accepted by the API server but not yet handed
+    # off to this worker (the ingress backlog: tokenization / pre-submit).
+    # Maintained by ``note_awaiting_admission``; implementations with a
+    # periodic loop (e.g. the zmq proxy's response worker) sample it into the
+    # ``maxserve.requests_awaiting_admission`` histogram. Declared as a
+    # class-level default; the ``+=`` in ``note_awaiting_admission`` rebinds it
+    # as a per-instance attribute on first use (int is immutable, so instances
+    # never share state).
+    _awaiting_admission_count: int = 0
+
+    def note_awaiting_admission(self, delta: int) -> None:
+        """Adjust the ingress backlog (API-side, not yet handed to the worker).
+
+        Call with ``1`` when a request is accepted by the API server (before
+        tokenization) and ``-1`` once it is handed off to the worker. Updates
+        both the live ``maxserve.num_requests_awaiting_admission`` up/down
+        counter and the running count that implementations sample into the
+        ``maxserve.requests_awaiting_admission`` histogram.
+        """
+        self._awaiting_admission_count += delta
+        METRICS.reqs_awaiting_admission(delta)
 
     @abstractmethod
     def stream(

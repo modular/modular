@@ -56,8 +56,8 @@ def compare[
     Returns:
         A SIMD vector containing [atol_min, atol_max, rtol_min, rtol_max].
     """
-    var atol = alloc[Scalar[dtype]](num_elements)
-    var rtol = alloc[Scalar[dtype]](num_elements)
+    var atol = List(length=num_elements, fill=Scalar[dtype](0))
+    var rtol = List(length=num_elements, fill=Scalar[dtype](0))
 
     for i in range(num_elements):
         var d = abs(x[i] - y[i])
@@ -65,16 +65,14 @@ def compare[
         atol[i] = d
         rtol[i] = e
 
-    var atol_minmax = _minmax(atol, num_elements)
-    var rtol_minmax = _minmax(rtol, num_elements)
+    var atol_minmax = _minmax(atol.unsafe_ptr(), num_elements)
+    var rtol_minmax = _minmax(rtol.unsafe_ptr(), num_elements)
     if verbose:
         if msg:
             print(msg)
         print("AbsErr-Min/Max", atol_minmax[0], atol_minmax[1])
         print("RelErr-Min/Max", rtol_minmax[0], rtol_minmax[1])
         print("==========================================================")
-    atol.free()
-    rtol.free()
     return SIMD[dtype, 4](
         atol_minmax[0], atol_minmax[1], rtol_minmax[0], rtol_minmax[1]
     )

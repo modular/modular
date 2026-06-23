@@ -1034,17 +1034,14 @@ struct AMDBufferResource(TrivialRegisterPassable):
             var shared_ptr3 = __mlir_op.`builtin.unrealized_conversion_cast`[
                 _type=__mlir_type.`!llvm.ptr<3>`
             ](shared_ptr)
-            __mlir_op.`rocdl.raw.ptr.buffer.load.lds`[
-                alias_scopes=__mlir_attr.`[#llvm.alias_scope<id= "amdgpu.AsyncCopies", domain=#llvm.alias_scope_domain<id = "amdgpu.AsyncOps">>]`,
-                _type=None,
-            ](
+            comptime async_copies_scope = __mlir_attr.`[#llvm.alias_scope<id= "amdgpu.AsyncCopies", domain=#llvm.alias_scope_domain<id = "amdgpu.AsyncOps">>]`
+            _raw_ptr_buffer_load_lds[async_copies_scope, Int(aux)](
                 desc_ptr_llvm,
                 shared_ptr3,
                 to_i32(Int32(bytes)),
                 to_i32(vector_offset_bytes),
                 to_i32(scalar_offset_bytes),
                 to_i32(Int32(0)),
-                to_i32(aux),
             )
 
     @always_inline("nodebug")
@@ -1140,6 +1137,41 @@ def _cache_operation_to_amd_aux[cache_policy: CacheOperation]() -> Int32:
     # CacheOperation.WORKGROUP -> 0x01 (SC=01, NT=0) - Workgroup/CU-level coherency
     # CacheOperation.GLOBAL_STREAMING -> 0x12 (SC=10, NT=1) - Global + streaming
     # CacheOperation.VOLATILE_STREAMING -> 0x13 (SC=11, NT=1) - Volatile + streaming
+
+
+@always_inline("nodebug")
+def _raw_ptr_buffer_load_lds[
+    scopes: __mlir_type.`!kgen.deferred`, aux: Int
+](
+    desc_ptr_llvm: __mlir_type.`!llvm.ptr<8>`,
+    shared_ptr3: __mlir_type.`!llvm.ptr<3>`,
+    size: __mlir_type.i32,
+    voffset: __mlir_type.i32,
+    soffset: __mlir_type.i32,
+    offset: __mlir_type.i32,
+):
+    # The cache-policy `aux` slot is an `I32Attr`, i.e. a plain signless
+    # builtin `i32` IntegerAttr literal (`N : i32`). It cannot be fed a value
+    # expression (`to_i32(...)`) nor an `int_literal_convert` /
+    # `cast_to_builtin` attribute — both produce non-builtin attrs the
+    # `non-atomic AMDGPU buffer cache policy` verifier rejects. Splicing the
+    # comptime-constant `aux` with a builtin type annotation
+    # (`__mlir_attr[..., `: i32`]`) folds to the same builtin `N : i32`
+    # IntegerAttr literal the verifier accepts. `scopes` (the `alias_scopes`
+    # attribute) is threaded through unchanged so its identity is preserved.
+    comptime assert aux in (
+        0x00,
+        0x02,
+        0x03,
+        0x10,
+        0x11,
+        0x12,
+    ), "unsupported AMD buffer cache-policy aux bitmask"
+    __mlir_op.`rocdl.raw.ptr.buffer.load.lds`[
+        alias_scopes=scopes,
+        aux=__mlir_attr[aux.__mlir_index__(), `: i32`],
+        _type=None,
+    ](desc_ptr_llvm, shared_ptr3, size, voffset, soffset, offset)
 
 
 def _get_buffer_intrinsic_simd_dtype[bytes: Int]() -> DType:
@@ -1253,6 +1285,63 @@ def ds_read_tr8_b64[
         has_side_effect=True,
     ](shared_ptr)
     return bitcast[dtype, 8](raw)
+
+
+# ===-----------------------------------------------------------------------===#
+# AMD f32 -> fp8 raw packed conversion (no clamp / NaN scrub)
+# ===-----------------------------------------------------------------------===#
+
+
+@always_inline
+def cvt_pk_fp8_f32_raw[
+    dtype: DType,
+](src: SIMD[DType.float32, 4]) -> SIMD[dtype, 4]:
+    """Packs 4 f32 into 4 fp8 via 2 chained `v_cvt_pk_fp8_f32` ops.
+
+    Unlike `SIMD.cast[fp8]()`, this bypasses the compiler's clamp + NaN
+    scrub wrapper (`v_med3_f32` + `v_cmp_u_f32` + `v_cndmask_b32`) that the
+    `pop.cast` lowering emits on AMDGPU. The caller is responsible for
+    ensuring inputs are in the FP8 representable range; finite
+    out-of-range values are NOT saturated by the hardware instruction.
+    NaN/Inf inputs produce implementation-defined FP8 outputs.
+
+    Parameters:
+        dtype: The FP8 destination type, `float8_e4m3fn` or `float8_e5m2`.
+
+    Args:
+        src: Four f32 values to pack.
+
+    Returns:
+        SIMD of 4 fp8 values, bitcast from the packed i32 result.
+
+    Notes:
+        - Only supported on AMD CDNA4+ GPUs.
+        - Maps to two `v_cvt_pk_fp8_f32` (or `.pk.bf8.f32`) instructions.
+        - Use only when input domain is provably bounded (e.g. softmax
+          output, where values are in (0, 1]).
+    """
+    comptime assert (
+        is_amd_gpu()
+    ), "cvt_pk_fp8_f32_raw is only supported on AMDGPU hardware."
+    comptime assert (
+        _cdna_4_or_newer()
+    ), "cvt_pk_fp8_f32_raw is only supported on CDNA4+"
+    comptime assert (
+        dtype == DType.float8_e4m3fn or dtype == DType.float8_e5m2
+    ), "cvt_pk_fp8_f32_raw requires E4M3FN or E5M2 destination dtype."
+
+    comptime intrinsic_name = (
+        "llvm.amdgcn.cvt.pk.fp8.f32" if dtype
+        == DType.float8_e4m3fn else "llvm.amdgcn.cvt.pk.bf8.f32"
+    )
+
+    var lo = llvm_intrinsic[intrinsic_name, UInt32, has_side_effect=False](
+        src[0], src[1], UInt32(0), False
+    )
+    var packed = llvm_intrinsic[intrinsic_name, UInt32, has_side_effect=False](
+        src[2], src[3], lo, True
+    )
+    return bitcast[dtype, 4](packed)
 
 
 # ===-----------------------------------------------------------------------===#

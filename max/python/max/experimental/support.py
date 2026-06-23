@@ -16,14 +16,70 @@
 from __future__ import annotations
 
 import contextlib
-from collections.abc import Generator
+import threading
+from collections.abc import Callable, Generator
 from contextvars import ContextVar
-from typing import TypeVar
+from types import TracebackType
+from typing import Generic, TypeVar
 
-from max import driver
+from max import driver, engine
 from max.graph import DeviceRef, TensorType
 
 T = TypeVar("T")
+
+_SESSION_LOCK = threading.Lock()
+_SESSION: engine.api.InferenceSession | None = None
+
+
+def _session() -> engine.api.InferenceSession:
+    """Returns the module-global inference session, creating it on first call."""
+    global _SESSION
+    with _SESSION_LOCK:
+        if _SESSION is None:
+            device_specs = driver.scan_available_devices()
+            if (cpu := driver.DeviceSpec.cpu()) not in device_specs:
+                device_specs.append(cpu)
+            devices = driver.load_devices(device_specs)
+            _SESSION = engine.api.InferenceSession(devices=devices)
+        return _SESSION
+
+
+class SetterContext(Generic[T], contextlib.AbstractContextManager[T]):
+    """An optional undo handle returned by eager setters.
+
+    The set has already happened by the time this object exists. Use it as
+    a context manager for scoped semantics -- the previous value is
+    restored on exit -- or discard it to keep the new value:
+
+    .. code-block:: python
+
+        set_thing(value)            # permanent: return value ignored
+
+        with set_thing(value):      # scoped: previous restored on exit
+            ...
+
+    Restoration is value-based (the previous value is captured when the
+    setter runs), so out-of-LIFO-order exits restore stale values; nest
+    scopes in stack order.
+    """
+
+    def __init__(
+        self, value: T, previous: T, restore: Callable[[T], None]
+    ) -> None:
+        self._value = value
+        self._previous = previous
+        self._restore = restore
+
+    def __enter__(self) -> T:
+        return self._value
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
+        self._restore(self._previous)
 
 
 @contextlib.contextmanager

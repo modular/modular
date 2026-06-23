@@ -23,4 +23,6 @@ params:
 - shape: 1024x3072
 - shape: 4096x3072
 - shape: 5072x256
-- shape: 4096x6144 # from FLUX
+- shape: 4096x6144 # from FLUX (DiT32B img-stream)
+- shape: 4416x6144 # DiT32B single-stream (img⊕txt)
+- shape: 320x6144 # DiT32B txt-stream

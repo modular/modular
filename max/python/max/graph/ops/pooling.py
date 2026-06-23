@@ -14,10 +14,8 @@
 
 from __future__ import annotations
 
-from max._core.dialects import builtin, kgen
-from max._core.dialects import rmo as _rmo
+from max._core.dialects import kgen, rmo
 from max.dtype import DType
-from max.mlir.dialects import rmo
 
 from ..dim import DimLike
 from ..graph import Graph
@@ -74,13 +72,13 @@ def avg_pool2d(
     else:
         _padding = (padding[0], padding[0], padding[1], padding[1])
 
-    return Graph.current._add_op(
-        rmo.avg_pool,
+    return Graph.current._add_op_generated(
+        rmo.AvgPoolOp,
         input=input,
-        filter_shape=Shape(kernel_size).to_mlir(),
-        strides=Shape(stride).to_mlir(),
-        dilations=Shape(dilation).to_mlir(),
-        paddings=Shape(_padding).to_mlir(),
+        filter_shape=Shape(kernel_size),
+        strides=Shape(stride),
+        dilations=Shape(dilation),
+        paddings=Shape(_padding),
         ceil_mode=ceil_mode,
         count_boundary=count_boundary,
     )[0].tensor
@@ -130,13 +128,13 @@ def max_pool2d(
     else:
         _padding = (padding[0], padding[0], padding[1], padding[1])
 
-    return Graph.current._add_op(
-        rmo.max_pool,
+    return Graph.current._add_op_generated(
+        rmo.MaxPoolOp,
         input=input,
-        filter_shape=Shape(kernel_size).to_mlir(),
-        strides=Shape(stride).to_mlir(),
-        dilations=Shape(dilation).to_mlir(),
-        paddings=Shape(_padding).to_mlir(),
+        filter_shape=Shape(kernel_size),
+        strides=Shape(stride),
+        dilations=Shape(dilation),
+        paddings=Shape(_padding),
         ceil_mode=ceil_mode,
     )[0].tensor
 
@@ -209,7 +207,7 @@ def roi_align(
     ratio_val = constant(sampling_ratio, DType.float32, device)
 
     return Graph.current._add_op_generated(
-        _rmo.MoRoiAlignOp,
+        rmo.MoRoiAlignOp,
         result_type,
         input,
         rois,
@@ -217,7 +215,7 @@ def roi_align(
         ow_val,
         scale_val,
         ratio_val,
-        builtin.BoolAttr(aligned),
-        builtin.StringAttr(mode),
+        aligned,
+        mode,
         kgen.ParamDeclArrayAttr([]),
     )[0].tensor

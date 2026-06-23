@@ -159,6 +159,9 @@ guarantees:
 
 ## Documentation
 
+For how the API docs are generated from Bazel, see
+[`docs/README.md`](docs/README.md#standard-library-api-doc-generation).
+
 When adding or updating public APIs, always add or revise the docstring to
 concisely describe what the API does and how users should use it, including at
 least one simple code example.

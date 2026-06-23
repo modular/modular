@@ -35,7 +35,8 @@ MAX provides three ways to call operations on tensors:
 
 Python operations and tensor methods cover most arithmetic and shape
 operations. You'll need the functional API for activation functions,
-multi-tensor operations, and operations with no tensor method equivalent:
+multi-tensor operations, and operations with no tensor method equivalent. Here
+are a few examples of each:
 
 - **Activation functions**:
   [`F.relu()`](/max/api/python/experimental.functional#max.experimental.functional.relu),
@@ -50,28 +51,6 @@ multi-tensor operations, and operations with no tensor method equivalent:
   [`F.min()`](/max/api/python/experimental.functional#max.experimental.functional.min)
   is functional-only; `sum`, `mean`, and `max` have both tensor method and
   functional forms.
-
-## How operations execute
-
-When you call an operation like `F.relu(x)`, MAX doesn't execute it
-immediately. Instead, MAX records nearby operations together and compiles them
-as a group, which lets the compiler fuse and optimize them. This happens behind
-the scenes; you write normal Python code and MAX handles the compilation and
-execution for you.
-
-This strategy is *lazy*: MAX defers work until your code actually needs a
-concrete value. By waiting, MAX can see multiple operations at once and
-optimize them together rather than executing each one individually.
-
-MAX produces concrete values immediately when your code requires them:
-
-- **Printing tensors**: `print(x)` needs real values to display.
-- **Accessing scalar values**:
-  [`item()`](/max/api/python/generated/max.experimental.tensor.Tensor#max.experimental.tensor.Tensor.item)
-  returns a concrete Python number.
-- **Indexing tensors**: `x[0]` extracts the actual value at that position.
-- **Converting to other formats**: `np.from_dlpack(x)` requires a real memory
-  buffer.
 
 ## Perform arithmetic operations
 

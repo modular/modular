@@ -126,18 +126,16 @@ def tma_umma_kernel_pair_cta[
     var a_smem_tile = LayoutTensor[
         a_type,
         a_smem_layout,
-        MutAnyOrigin,
         address_space=AddressSpace.SHARED,
         alignment=128,
-    ](a_smem)
+    ](a_smem.as_unsafe_any_origin())
 
     var b_smem_tile = LayoutTensor[
         b_type,
         b_smem_layout,
-        MutAnyOrigin,
         address_space=AddressSpace.SHARED,
         alignment=128,
-    ](b_smem)
+    ](b_smem.as_unsafe_any_origin())
 
     comptime accum_type = get_accum_type[a_type]()
 
@@ -511,7 +509,7 @@ def test_tma_umma_pair_cta[
         cta_group=cta_group,
     ]
 
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         a_tma_op,
         b_tma_op,
         c.device_tensor(),

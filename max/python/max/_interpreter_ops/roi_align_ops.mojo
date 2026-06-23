@@ -16,19 +16,20 @@
 Implements ROI Align pooling over NHWC input with configurable spatial scale,
 sampling ratio, alignment mode (aligned/unaligned), and pooling mode (AVG/MAX).
 
-CPU-only via the elementwise + DeviceContextPtr pattern.
+CPU-only via the elementwise + DeviceContext pattern.
 """
 
 from std.math import ceil
 from std.os import abort
+from std.gpu.host import DeviceContext
 from std.python import PythonObject
 from std.python.bindings import PythonModuleBuilder
 from std.sys.info import has_accelerator
+from std.utils.coord import Coord
 from std.utils.numerics import min_or_neg_inf
 
 from std.algorithm.functional import elementwise, IndexList
-from std.memory import OpaquePointer
-from std.runtime.asyncrt import DeviceContextPtr
+
 
 from op_utils import (
     _get_dtype,
@@ -40,7 +41,7 @@ from op_utils import (
 
 
 @export
-def PyInit_roi_align_ops() -> PythonObject:
+def PyInit_roi_align_ops() abi("C") -> PythonObject:
     """Create a Python module with ROI Align kernel function bindings."""
     try:
         var b = PythonModuleBuilder("roi_align_ops")
@@ -61,9 +62,9 @@ def PyInit_roi_align_ops() -> PythonObject:
 def roi_align_op[
     dtype: DType, //
 ](
-    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    in_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    rois_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    out_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    in_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    rois_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     n_regions: Int,
     height: Int,
     width: Int,
@@ -74,7 +75,7 @@ def roi_align_op[
     sampling_ratio_val: Float32,
     aligned_flag: Int,
     mode_flag: Int,
-    ctx: Optional[OpaquePointer[MutExternalOrigin]],
+    ctx: DeviceContext,
 ) raises:
     """Compute ROI Align pooling over NHWC input.
 
@@ -98,7 +99,7 @@ def roi_align_op[
         sampling_ratio_val: Sampling points per bin (0 = adaptive).
         aligned_flag: 1 = apply half-pixel offset, 0 = no offset.
         mode_flag: 0 = average pooling, 1 = max pooling.
-        ctx: Device context pointer (null for CPU).
+        ctx: Device context.
     """
     var total = n_regions * out_h * out_w * channels
     var offset = Float32(0.5) if aligned_flag else Float32(0.0)
@@ -121,10 +122,8 @@ def roi_align_op[
         mode_flag,
         offset,
     )
-    def func[
-        width_param: Int, rank: Int, alignment: Int = 1
-    ](idx: IndexList[rank],):
-        var i = idx[0]
+    def func[width_param: Int, alignment: Int = 1](idx: Coord):
+        var i = Int(idx[0].value())
         var rem, c = divmod(i, channels)
         var rem2, pw = divmod(rem, out_w)
         var ri, ph = divmod(rem2, out_h)
@@ -260,14 +259,11 @@ def roi_align_op[
         else:
             out_ptr[i] = pool_val
 
-    if not ctx:
-        elementwise[func, simd_width=1](IndexList[1](total))
+    if ctx.api() == "cpu":
+        elementwise[func, simd_width=1](Coord(total), ctx)
     else:
         comptime if has_accelerator():
-            var device_ctx = DeviceContextPtr(ctx.unsafe_value())
-            elementwise[func, simd_width=1, target="gpu"](
-                IndexList[1](total), device_ctx
-            )
+            elementwise[func, simd_width=1, target="gpu"](Coord(total), ctx)
         else:
             raise Error("No GPU accelerator available")
 
@@ -294,7 +290,7 @@ struct _RoiAlignBody(Dispatchable):
     var sampling_ratio_val: Float32
     var aligned_flag: Int
     var mode_flag: Int
-    var ctx: Optional[OpaquePointer[MutExternalOrigin]]
+    var ctx: DeviceContext
 
     def call[t: DType](self) raises -> None:
         comptime if t.is_floating_point():

@@ -16,6 +16,7 @@ MODULAR_CONFIGS = [
     "default",
     "debug_modular",
     "debug_everything",
+    "dev",
     "ci_build",
     "release",
     "production",
