@@ -20,16 +20,31 @@ the operation, and input buffers, and returns output buffers.
 Handlers are registered using the @register_op_handler decorator.
 """
 
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Sequence
 from math import ceil, prod
-from typing import Any
+from typing import Any, Protocol, cast
 
 import max._interpreter_ops as ops
 import numpy as np
 from max import _core, graph
 from max._core.dialects import builtin, kgen, mo, mosh
+from max._interpreter_ops import matmul_gc, unary_elementwise_gc
 from max.driver import CPU, Buffer, Device
 from max.dtype import DType
+
+
+class _HasAxis(Protocol):
+    """Structural type for ops carrying a compile-time ``axis`` int attribute.
+
+    The reduce/softmax handlers are written against the generic
+    ``_core.Operation`` base (a single handler serves several concrete op
+    types), but every such op exposes an ``axis`` int property. Casting to
+    this protocol lets the handlers read ``op.axis`` in a type-safe way.
+    """
+
+    @property
+    def axis(self) -> int: ...
+
 
 # Type alias for op handlers
 # Signature: (op, input_buffers) -> output_buffers
@@ -227,45 +242,6 @@ def _handle_constant_scalar(
     return [Buffer.from_numpy(np_val)]
 
 
-# Module-level weights registry set by MOInterpreter during execution.
-_weights_registry: Mapping[str, Buffer] | None = None
-
-
-@register_op_handler(mo.ConstantExternalOp)
-def _handle_constant_external(
-    op: mo.ConstantExternalOp, inputs: Sequence[Buffer | None]
-) -> Sequence[Buffer]:
-    """Handle mo.constant.external by looking up the named weight.
-
-    External constants reference named weights whose backing data is provided
-    at runtime via the weights registry.  The interpreter stashes the registry
-    in the module-level ``_weights_registry`` for the duration of execution.
-
-    Args:
-        op: The constant external operation.
-        inputs: Input buffers (empty for constants).
-
-    Returns:
-        List containing the looked-up weight buffer.
-
-    Raises:
-        RuntimeError: If no weights registry is available or the name is
-            not found.
-    """
-    name = op.name
-    if _weights_registry is None:
-        raise RuntimeError(
-            f"No weights registry provided to interpreter, cannot resolve "
-            f"external constant '{name}'"
-        )
-    if name not in _weights_registry:
-        raise RuntimeError(
-            f"Weight '{name}' not found in weights registry. "
-            f"Available: {list(_weights_registry.keys())}"
-        )
-    return [_weights_registry[name]]
-
-
 # Mutable load operations
 
 
@@ -353,7 +329,7 @@ def _handle_mutable_store_slice(
     dtype = in_buffer.dtype
     if dtype is DType.float4_e2m1fn:
         raise NotImplementedError(
-            f"mo.mutable.store.slice interpreter handler does not yet "
+            "mo.mutable.store.slice interpreter handler does not yet "
             f"support dtype {dtype}"
         )
 
@@ -768,33 +744,41 @@ for op_type in ops.BINARY_ELEMENTWISE_COMPARISON:
 # Unary elementwise operations
 
 
-def unary_elementwise_handler(op_type: type) -> OpHandler:
-    op_binding = ops.UNARY_ELEMENTWISE[op_type]
+def _handle_unary_elementwise(
+    op: _core.Operation, inputs: Sequence[Buffer | None]
+) -> Sequence[Buffer]:
+    """Dispatches an eager unary-elementwise op to its GC model.
 
-    def handler(
-        op: _core.Operation,
-        inputs: Sequence[Buffer | None],
-    ) -> Sequence[Buffer]:
-        assert isinstance(inputs[0], Buffer)
+    Models are compiled once per (op, device, input dtype) at rank 1 (see
+    :func:`unary_elementwise_gc.unary_model`), so the operand is flattened
+    around the call and reshaped back (zero-copy views). The output dtype is
+    whatever the model produces — the same dtype for most ops, ``bool`` for the
+    ``IsNan``/``IsInf`` predicates.
 
-        target_device = _get_target_device(op)
-        _check_buffers_on_device(inputs, target_device)
+    Args:
+        op: The unary-elementwise operation being handled.
+        inputs: The realized input buffers; the first is the operand.
 
-        output = Buffer(
-            shape=inputs[0].shape,
-            dtype=inputs[0].dtype,
-            device=target_device,
-        )
+    Returns:
+        A single-element list holding the result buffer.
+    """
+    x = inputs[0]
+    assert isinstance(x, Buffer)
 
-        op_binding(output, inputs[0], target_device._device_context_ptr())
+    model = unary_elementwise_gc.unary_model(type(op), x.device, x.dtype)
+    x_view = x.view(x.dtype, unary_elementwise_gc.canonical_shape(x.shape))
+    (out,) = model(x_view)
+    return [out.view(out.dtype, x.shape)]
 
-        return [output]
 
-    return handler
+# Wrapped in a function so the UNARY_GC_OPS access is deferred past the import
+# cycle between this module and unary_elementwise_gc (via the package).
+def _register_unary_elementwise_handlers() -> None:
+    for op_type in unary_elementwise_gc.UNARY_GC_OPS:
+        register_op_handler(op_type)(_handle_unary_elementwise)
 
 
-for op_type in ops.UNARY_ELEMENTWISE:
-    register_op_handler(op_type)(unary_elementwise_handler(op_type))
+_register_unary_elementwise_handlers()
 
 
 # Unary mixed-dtype operations (cast, is_nan, is_inf)
@@ -837,59 +821,45 @@ for op_type in ops.UNARY_MIXED:
 
 
 @register_op_handler(mo.MatmulOp)
-def _handle_matmul(
-    op: mo.MatmulOp, inputs: Sequence[Buffer | None]
-) -> Sequence[Buffer]:
-    """Handle mo.matmul by dispatching to Mojo matmul kernel."""
-    result_type = graph.Type.from_mlir(list(op.results)[0].type)
-    assert isinstance(result_type, graph.TensorType)
-    target_device = result_type.device.to_device()
-    _check_buffers_on_device(inputs, target_device)
-
-    lhs = inputs[0]
-    rhs = inputs[1]
-    assert isinstance(lhs, Buffer)
-    assert isinstance(rhs, Buffer)
-
-    # Calculate output shape: (M, K) @ (K, N) -> (M, N)
-    m = lhs.shape[0]
-    n = rhs.shape[1]
-
-    output = Buffer(shape=(m, n), dtype=lhs.dtype, device=target_device)
-
-    ops.matmul_ops.Matmul(output, lhs, rhs, target_device._device_context_ptr())
-    return [output]
-
-
 @register_op_handler(mo.BatchMatmulOp)
-def _handle_batch_matmul(
-    op: mo.BatchMatmulOp, inputs: Sequence[Buffer | None]
+def _handle_matmul(
+    op: mo.MatmulOp | mo.BatchMatmulOp, inputs: Sequence[Buffer | None]
 ) -> Sequence[Buffer]:
-    """Handle mo.batch_matmul by dispatching to Mojo batched matmul kernel."""
-    result_type = graph.Type.from_mlir(list(op.results)[0].type)
-    assert isinstance(result_type, graph.TensorType)
-    target_device = result_type.device.to_device()
-    _check_buffers_on_device(inputs, target_device)
+    """Routes eager matmul and batch_matmul through a GC model.
 
-    lhs = inputs[0]
-    rhs = inputs[1]
+    Looks up the rank-3 batched-matmul :class:`~max.engine.Model` for the
+    realized input's device and dtype (see :func:`matmul_gc.matmul_model`),
+    view-shims the two operands to canonical rank 3, executes the model, and
+    view-shims the output back to the result rank. All views are zero-copy.
+
+    The same handler serves both ``mo.matmul`` (rank 2) and ``mo.batch_matmul``
+    (rank 3+). The RMO->MO lowering already casts both operands to a common
+    dtype and broadcasts them to equal batch/rank before these ops are created,
+    so reading device, dtype, and the equal-batch shape from ``lhs`` is exact.
+
+    Args:
+        op: The ``mo.matmul`` or ``mo.batch_matmul`` operation being handled.
+        inputs: The two realized operand buffers (``lhs``, ``rhs``).
+
+    Returns:
+        A single-element list holding the matmul result buffer.
+    """
+    lhs, rhs = inputs
     assert isinstance(lhs, Buffer)
     assert isinstance(rhs, Buffer)
 
-    # Compute output shape - try static first, fall back to Mojo shape fn
-    shape = result_type.shape
-    if graph.Shape.is_static(shape):
-        output_shape = graph.Shape(shape).static_dims
-    else:
-        shape_result = ops.matmul_ops.BatchMatmulShape(lhs, rhs)
-        output_shape = [int(shape_result[i]) for i in range(len(shape_result))]
+    model = matmul_gc.matmul_model(lhs.device, lhs.dtype)
 
-    output = Buffer(shape=output_shape, dtype=lhs.dtype, device=target_device)
+    # Forward rank shim: flatten leading dims to one batch dim (zero-copy).
+    lhs_view = lhs.view(lhs.dtype, matmul_gc.canonical_shape(lhs.shape))
+    rhs_view = rhs.view(rhs.dtype, matmul_gc.canonical_shape(rhs.shape))
 
-    ops.matmul_ops.BatchMatmul(
-        output, lhs, rhs, target_device._device_context_ptr()
-    )
-    return [output]
+    (out,) = model(lhs_view, rhs_view)
+
+    # Inverse rank shim: restore the original leading dims.
+    m, n = lhs.shape[-2], rhs.shape[-1]
+    result_shape = (*lhs.shape[:-2], m, n)
+    return [out.view(out.dtype, result_shape)]
 
 
 # Shape manipulation operations
@@ -1342,7 +1312,8 @@ def _handle_param_to_value(
                         )
                 else:
                     raise NotImplementedError(
-                        f"Unsupported dimension attr in param.to_value: {dim_attr}"
+                        "Unsupported dimension attr in param.to_value:"
+                        f" {dim_attr}"
                     )
             # Create a 1D tensor of si64 values
             result_np = np.array(shape_values, dtype=np.int64)
@@ -1363,7 +1334,8 @@ def _handle_param_to_value(
             return [output]
 
     raise NotImplementedError(
-        f"Unsupported param.to_value result type: {result_type}, attr: {value_attr}"
+        f"Unsupported param.to_value result type: {result_type}, attr:"
+        f" {value_attr}"
     )
 
 
@@ -1382,14 +1354,11 @@ def reduce_handler(op_type: type) -> OpHandler:
         target_device = result_type.device.to_device()
 
         assert isinstance(inputs[0], Buffer)
-        assert isinstance(inputs[1], Buffer)
 
         input_buffer = inputs[0]
-        axis_buffer = inputs[1]
 
-        # Extract axis value from the axis tensor (scalar si64)
-        axis_np = axis_buffer.to_numpy()
-        axis = int(axis_np.item())
+        # `axis` is a compile-time `index` attribute, not an operand.
+        axis = cast(_HasAxis, op).axis
 
         # Calculate output shape (same as input with reduced axis dim = 1)
         output_shape = list(input_buffer.shape)
@@ -1424,12 +1393,12 @@ def _argmax_min_handler(
 ) -> Sequence[Buffer]:
     """Shared implementation for ArgMaxOp and ArgMinOp.
 
-    Both ops reduce along an axis and return int64 indices. The axis operand
-    is always on host (MO_SingleDeviceWithHostOperands<["axis"]>).
+    Both ops reduce along an axis and return int64 indices. ``axis`` is a
+    compile-time ``index`` attribute carried on the op (not an operand).
 
     Args:
         op: The argmax/argmin operation.
-        inputs: Input buffers - input tensor and axis (scalar si64 on CPU).
+        inputs: Input buffers - the input tensor.
         kernel_fn: The Mojo kernel to call (ArgMax or ArgMin).
 
     Returns:
@@ -1440,12 +1409,10 @@ def _argmax_min_handler(
     target_device = result_type.device.to_device()
 
     assert isinstance(inputs[0], Buffer)
-    assert isinstance(inputs[1], Buffer)
 
     input_buffer = inputs[0]
-    axis_buffer = inputs[1]
 
-    axis = int(axis_buffer.to_numpy().item())
+    axis = cast(_HasAxis, op).axis
     in_shape = list(input_buffer.shape)
     ndim = len(in_shape)
 
@@ -1503,13 +1470,11 @@ def softmax_handler(op_type: type) -> OpHandler:
         target_device = result_type.device.to_device()
 
         assert isinstance(inputs[0], Buffer)
-        assert isinstance(inputs[1], Buffer)
 
         input_buffer = inputs[0]
-        axis_buffer = inputs[1]
 
-        # Extract axis value from the axis tensor (scalar si64)
-        axis = int(axis_buffer.to_numpy().item())
+        # `axis` is a compile-time `index` attribute.
+        axis = cast(_HasAxis, op).axis
 
         # Output shape is the same as input (not reduced)
         output = Buffer(
@@ -1542,22 +1507,18 @@ def _handle_cumsum(
 
     Args:
         op: The cumsum operation.
-        inputs: Input buffers - first is the input tensor, second is the
-            axis tensor (scalar int64).
+        inputs: Input buffers - the input tensor. ``axis`` is a compile-time
+            ``index`` attribute.
 
     Returns:
         List containing the cumsum tensor buffer.
     """
     assert isinstance(inputs[0], Buffer)  # input tensor
-    assert isinstance(inputs[1], Buffer)  # axis (scalar int64)
 
     input_buffer = inputs[0]
-    axis_buffer = inputs[1]
 
-    # Extract axis value from the axis tensor (scalar si64)
-    axis = int(axis_buffer.to_numpy().item())
-
-    # Extract exclusive and reverse from op attributes
+    # Extract axis, exclusive and reverse from op attributes
+    axis = op.axis
     exclusive = op.exclusive
     reverse = op.reverse
 
@@ -1998,12 +1959,12 @@ def _handle_gather(
 ) -> Sequence[Buffer]:
     """Handle mo.gather by dispatching to Mojo gather kernel.
 
-    Operands: input (tensor), indices (tensor), axis (scalar int64 on CPU).
-    Output shape: input[:axis] + indices.shape + input[axis+1:]
+    Operands: input (tensor), indices (tensor). ``axis`` is a compile-time
+    ``index`` attribute. Output shape: input[:axis] + indices.shape + input[axis+1:]
 
     Args:
         op: The gather operation.
-        inputs: Input buffers - input tensor, indices tensor, axis scalar.
+        inputs: Input buffers - input tensor, indices tensor.
 
     Returns:
         List containing the gathered tensor buffer.
@@ -2012,12 +1973,11 @@ def _handle_gather(
 
     assert isinstance(inputs[0], Buffer)  # input
     assert isinstance(inputs[1], Buffer)  # indices
-    assert isinstance(inputs[2], Buffer)  # axis (scalar int64, always CPU)
 
     input_buffer = inputs[0]
     indices_buffer = inputs[1]
 
-    axis = int(inputs[2].to_numpy().item())
+    axis = op.axis
     if axis < 0:
         axis += len(input_buffer.shape)
 
@@ -2398,19 +2358,18 @@ def _handle_split(
 ) -> Sequence[Buffer]:
     """Handle mo.split by copying each chunk via the Mojo split kernel.
 
-    Operands: input (device tensor), splitSizes (host int64 rank-1),
-    axis (host scalar int64).
+    Operands: input (device tensor), splitSizes (host int64 rank-1).
+    ``axis`` is a compile-time ``index`` attribute.
     Returns N output buffers where N = len(splitSizes).
     """
     target_device = _get_target_device(op)
 
     assert isinstance(inputs[0], Buffer)  # input
     assert isinstance(inputs[1], Buffer)  # splitSizes (host)
-    assert isinstance(inputs[2], Buffer)  # axis (host)
 
     input_buffer = inputs[0]
     split_sizes = [int(s) for s in inputs[1].to_numpy().flatten()]
-    axis = int(inputs[2].to_numpy().item())
+    axis = op.axis
 
     in_shape = list(input_buffer.shape)
     ndim = len(in_shape)
@@ -2458,13 +2417,13 @@ def _handle_scatter(
 ) -> Sequence[Buffer]:
     """Handle mo.scatter by copying input then scattering updates via Mojo.
 
-    Operands: input, updates, indices, axis (scalar int64 on CPU),
-    outputParamDecls.
-    Output: same shape/dtype as input with updates scattered along axis.
+    Operands: input, updates, indices. ``axis`` is a compile-time ``index``
+    attribute. Output: same shape/dtype as input with updates scattered along
+    axis.
 
     Args:
         op: The scatter operation.
-        inputs: Input buffers - input, updates, indices, axis.
+        inputs: Input buffers - input, updates, indices.
 
     Returns:
         List containing the scattered tensor buffer.
@@ -2474,13 +2433,12 @@ def _handle_scatter(
     assert isinstance(inputs[0], Buffer)  # input
     assert isinstance(inputs[1], Buffer)  # updates
     assert isinstance(inputs[2], Buffer)  # indices
-    assert isinstance(inputs[3], Buffer)  # axis (scalar int64, always CPU)
 
     input_buffer = inputs[0]
     updates_buffer = inputs[1]
     indices_buffer = inputs[2]
 
-    axis = int(inputs[3].to_numpy().item())
+    axis = op.axis
     in_shape = list(input_buffer.shape)
     ndim = len(in_shape)
     if axis < 0:
@@ -3981,7 +3939,7 @@ def _handle_distributed_scatter(
     results = list(op.results)
     num_outputs = len(results) - 1  # exclude trailing chain
     assert num_outputs == num_inputs, (
-        f"scatter expects N inputs and N outputs, "
+        "scatter expects N inputs and N outputs, "
         f"got {num_inputs} inputs and {num_outputs} outputs"
     )
 
@@ -4027,7 +3985,7 @@ def _handle_distributed_broadcast(
     results = list(op.results)
     num_outputs = len(results) - 1  # exclude trailing chain
     assert num_outputs == num_signal_bufs, (
-        f"broadcast expects one output per signal buffer, "
+        "broadcast expects one output per signal buffer, "
         f"got {num_outputs} outputs and {num_signal_bufs} signal buffers"
     )
 
@@ -4174,7 +4132,7 @@ def _handle_distributed_reducescatter_sum(
     results = list(op.results)
     num_outputs = len(results) - 1  # exclude trailing chain
     assert num_outputs == num_inputs, (
-        f"reducescatter expects N inputs and N outputs, "
+        "reducescatter expects N inputs and N outputs, "
         f"got {num_inputs} inputs and {num_outputs} outputs"
     )
 

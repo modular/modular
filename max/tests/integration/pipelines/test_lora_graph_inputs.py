@@ -19,8 +19,7 @@ from typing import Any
 import numpy as np
 from max.driver import CPU
 from max.dtype import DType
-from max.pipelines.lib.config.lora_config import LoRAConfig
-from max.pipelines.lib.lora import LoRAManager
+from max.pipelines.lora import LoRAConfig, LoRAManager
 
 
 class MockTextContext:
@@ -74,6 +73,7 @@ def create_test_lora_manager(
         n_heads=32,
         n_kv_heads=8,
         head_dim=128,
+        max_lora_seq_len=128,
     )
 
     if lora_configs:

@@ -49,19 +49,15 @@ Text generation
    :template: autosummary/class.rst
 
    BatchType
+   ImageContentPart
    MessageContent
-   SpecDecodingState
    TextContentPart
-   TextGenerationContext
-   TextGenerationContextType
    TextGenerationInputs
-   TextGenerationOutput
    TextGenerationRequest
    TextGenerationRequestFunction
    TextGenerationRequestMessage
    TextGenerationRequestTool
-   TextGenerationResponseFormat
-   VLMTextGenerationContext
+   VideoContentPart
 
 Embeddings
 ----------
@@ -76,20 +72,6 @@ Embeddings
    EmbeddingsGenerationInputs
    EmbeddingsGenerationOutput
 
-Audio generation
-----------------
-
-.. autosummary::
-   :nosignatures:
-   :toctree: generated
-   :template: autosummary/class.rst
-
-   AudioGenerationContextType
-   AudioGenerationInputs
-   AudioGenerationMetadata
-   AudioGenerationOutput
-   AudioGenerationRequest
-
 Image generation
 ----------------
 
@@ -98,12 +80,7 @@ Image generation
    :toctree: generated
    :template: autosummary/class.rst
 
-   ImageContentPart
-   ImageMetadata
-   PixelGenerationContext
-   PixelGenerationContextType
    PixelGenerationInputs
-   VideoContentPart
 
 Reasoning
 ---------
@@ -115,6 +92,7 @@ Reasoning
 
    ParsedReasoningDelta
    ReasoningParser
+   ReasoningPipelineTokenizer
    ReasoningSpan
 
 Tool parsing
@@ -129,23 +107,6 @@ Tool parsing
    ParsedToolCallDelta
    ParsedToolResponse
    ToolParser
-
-Context and sampling
---------------------
-
-.. autosummary::
-   :nosignatures:
-   :toctree: generated
-   :template: autosummary/class.rst
-
-   BaseContext
-   BaseContextType
-   EOSTracker
-   GenerationOutput
-   GenerationStatus
-   SamplingParams
-   SamplingParamsGenerationConfigDefaults
-   SamplingParamsInput
 
 Requests
 --------
@@ -167,19 +128,6 @@ Requests
 
    DUMMY_REQUEST_ID
 
-Tokens
-------
-
-.. autosummary::
-   :nosignatures:
-   :toctree: generated
-   :template: autosummary/class.rst
-
-   LogProbabilities
-   Range
-   TokenBuffer
-   TokenSlice
-
 Logit processors
 ----------------
 
@@ -192,28 +140,6 @@ Logit processors
    BatchProcessorInputs
    LogitsProcessor
    ProcessorInputs
-
-LoRA
-----
-
-.. autosummary::
-   :nosignatures:
-   :toctree: generated
-   :template: autosummary/class.rst
-
-   LoRAOperation
-   LoRARequest
-   LoRAResponse
-   LoRAStatus
-   LoRAType
-
-.. autosummary::
-   :nosignatures:
-   :toctree: generated
-   :template: autosummary/data.rst
-
-   LORA_REQUEST_ENDPOINT
-   LORA_RESPONSE_ENDPOINT
 
 Utilities
 ---------
@@ -232,4 +158,3 @@ Utilities
 
    msgpack_numpy_decoder
    msgpack_numpy_encoder
-

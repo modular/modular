@@ -23,8 +23,9 @@ from max.nn.kv_cache import (
 )
 from max.pipelines.lib import MAXModelConfig, PipelineConfig
 from max.pipelines.lib.interfaces.arch_config import (
-    ArchConfigWithDecoderSubconfigKVParams,
-    ArchConfigWithKVAndVisionCache,
+    ArchConfigWithKVCache,
+    ArchConfigWithStoredKVParams,
+    ArchVLConfigWithTextSubconfig,
 )
 from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
 from max.pipelines.lib.utils import upper_bounded_default
@@ -166,20 +167,13 @@ class KimiK2_5TextConfig(DeepseekV3Config):
         cls,
         pipeline_config: PipelineConfig,
         huggingface_config: AutoConfig,
+        model_config: MAXModelConfig | None = None,
     ) -> int:
-        """Calculates the maximum sequence length for the Kimi K2.5 language model."""
-        try:
-            return upper_bounded_default(
-                upper_bound=huggingface_config.max_position_embeddings,
-                default=pipeline_config.model.max_length,
-            )
-        except ValueError as e:
-            raise ValueError(
-                "Unable to infer max_length for Kimi K2.5, the provided "
-                f"max_length ({pipeline_config.model.max_length}) exceeds the "
-                f"model's max_position_embeddings "
-                f"({huggingface_config.max_position_embeddings})."
-            ) from e
+        # DeepseekV3Config does not inherit ArchConfigWithStoredKVParams, so the
+        # VLM mixin cannot delegate max_seq_len to this class directly.
+        return ArchConfigWithStoredKVParams.calculate_max_seq_len(
+            pipeline_config, huggingface_config, model_config
+        )
 
 
 @dataclass
@@ -328,9 +322,7 @@ class VisionConfig:
 
 
 @dataclass(kw_only=True)
-class KimiK2_5Config(
-    ArchConfigWithDecoderSubconfigKVParams, ArchConfigWithKVAndVisionCache
-):
+class KimiK2_5Config(ArchVLConfigWithTextSubconfig, ArchConfigWithKVCache):
     """Configuration for Kimi-K2.5 models."""
 
     devices: list[DeviceRef]
@@ -374,52 +366,6 @@ class KimiK2_5Config(
         """Returns the KV cache parameters from the embedded LLM config."""
         return self.llm_config.get_kv_params()
 
-    def get_max_seq_len(self) -> int:
-        """Returns the maximum sequence length from the embedded LLM config."""
-        return self.llm_config.get_max_seq_len()
-
-    @staticmethod
-    def estimate_vision_cache_entry_bytes(
-        huggingface_config: AutoConfig,
-    ) -> int:
-        """Estimate per-entry bytes for the vision encoder cache.
-
-        Max tokens per image = pos_emb_height * pos_emb_width / merge_sq,
-        multiplied by the text hidden size and 2 bytes (bfloat16).
-        """
-        vision_config = getattr(huggingface_config, "vision_config", None)
-        if vision_config is None:
-            raise ValueError(
-                "KimiK2.5 requires a vision_config in the HuggingFace config"
-            )
-        text_config = getattr(huggingface_config, "text_config", None)
-        if text_config is None:
-            raise ValueError(
-                "KimiK2.5 requires a text_config in the HuggingFace config"
-            )
-        hidden = getattr(text_config, "hidden_size", 0)
-        if hidden <= 0:
-            raise ValueError(
-                "KimiK2.5 text_config.hidden_size must be positive"
-            )
-        merge_kernel_size = getattr(vision_config, "merge_kernel_size", [2, 2])
-        merge_sq = 1
-        for k in (
-            merge_kernel_size
-            if isinstance(merge_kernel_size, (list, tuple))
-            else [merge_kernel_size]
-        ):
-            merge_sq *= k
-        pos_h = getattr(vision_config, "init_pos_emb_height", 0)
-        pos_w = getattr(vision_config, "init_pos_emb_width", 0)
-        if pos_h <= 0 or pos_w <= 0:
-            raise ValueError(
-                "KimiK2.5 vision_config must provide "
-                "init_pos_emb_height and init_pos_emb_width"
-            )
-        max_tokens = (pos_h * pos_w) // merge_sq
-        return max_tokens * hidden * 2
-
     @staticmethod
     def get_num_layers(huggingface_config: AutoConfig) -> int:
         # Delegate to KimiK2_5TextConfig for language model parameters.
@@ -427,19 +373,6 @@ class KimiK2_5Config(
             huggingface_config, "text_config", huggingface_config
         )
         return KimiK2_5TextConfig.get_num_layers(llm_config)
-
-    @staticmethod
-    def calculate_max_seq_len(
-        pipeline_config: PipelineConfig, huggingface_config: AutoConfig
-    ) -> int:
-        # Delegate to KimiK2_5TextConfig for language model parameters.
-        llm_config = getattr(
-            huggingface_config, "text_config", huggingface_config
-        )
-        return KimiK2_5TextConfig.calculate_max_seq_len(
-            pipeline_config=pipeline_config,
-            huggingface_config=llm_config,
-        )
 
     @override
     @classmethod

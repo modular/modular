@@ -24,7 +24,7 @@ from std.testing import assert_true
 
 from comm import Signal, MAX_GPUS
 from comm.broadcast import broadcast
-from comm.sync import enable_p2p
+from comm.sync import enable_p2p, init_signal_buffer
 
 
 @always_inline
@@ -122,7 +122,9 @@ def broadcast_test[
         var ctx = list_of_ctxs[i]
         var out_ptr = ctx.enqueue_create_buffer[dtype](length)
         out_dev_list.append(out_ptr)
-        out_tiles[i] = OutputTileType(out_ptr.unsafe_ptr(), row_major(length))
+        out_tiles[i] = OutputTileType(
+            out_ptr.unsafe_ptr().as_unsafe_any_origin(), row_major(length)
+        )
 
     # Signal buffers need payload space for 2-stage broadcast
     var num_bytes = length * size_of[dtype]()
@@ -134,8 +136,13 @@ def broadcast_test[
         signal_buffers.append(
             list_of_ctxs[i].create_buffer_sync[DType.uint8](signal_buf_size)
         )
-        list_of_ctxs[i].enqueue_memset[DType.uint8](signal_buffers[i], 0)
-        rank_sigs[i] = signal_buffers[i].unsafe_ptr().bitcast[Signal]()
+        init_signal_buffer(signal_buffers[i], list_of_ctxs[i])
+        rank_sigs[i] = (
+            signal_buffers[i]
+            .unsafe_ptr()
+            .bitcast[Signal]()
+            .as_unsafe_any_origin()
+        )
 
     for i in range(ngpus):
         list_of_ctxs[i].synchronize()

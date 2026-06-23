@@ -56,11 +56,10 @@ def matrix_band_part[
     comptime rank = input.rank
     var input_shape: IndexList[rank] = to_index_list[rank](input.layout.shape)
 
-    @parameter
     def input_fn[
         width: Int,
         _rank: Int,
-    ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
+    ](coords: IndexList[_rank]) {var input} -> SIMD[dtype, width]:
         return input.load[width=width](rebind[IndexList[rank]](coords))
 
     # Create TileTensors for scalar parameters.
@@ -82,9 +81,9 @@ def matrix_band_part[
         int_type,
         cond_type,
         rank,
-        input_fn,
         simd_width=1,
     ](
+        input_fn,
         input_shape,
         num_lower_tt,
         num_upper_tt,

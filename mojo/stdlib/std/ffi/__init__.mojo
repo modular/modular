@@ -56,7 +56,7 @@ from std.sys._libc import dlclose, dlerror, dlopen, dlsym
 from std.sys._libc_errno import ErrNo, get_errno, set_errno
 
 from std.memory import OwnedPointer
-from std.memory.alloc import free
+from std.memory.alloc import dealloc, ThinAllocation
 from std.memory.unsafe_pointer import unsafe_cast
 
 from std.sys.info import CompilationTarget, is_32bit, is_64bit, size_of
@@ -368,7 +368,7 @@ struct OwnedDLHandle(Movable):
     def get_symbol[
         result_type: AnyType,
     ](self, name: StringSlice) -> Optional[
-        UnsafePointer[result_type, MutAnyOrigin]
+        UnsafePointer[result_type, MutUntrackedOrigin]
     ]:
         """Returns a pointer to the symbol with the given name in the dynamic
         library, or `None` if the symbol is not found.
@@ -387,7 +387,7 @@ struct OwnedDLHandle(Movable):
     def get_symbol[
         result_type: AnyType
     ](self, *, cstr_name: UnsafePointer[mut=False, Int8, _]) -> Optional[
-        UnsafePointer[result_type, MutAnyOrigin]
+        UnsafePointer[result_type, MutUntrackedOrigin]
     ]:
         """Returns a pointer to the symbol with the given name in the dynamic
         library, or `None` if the symbol is not found.
@@ -462,7 +462,7 @@ struct _DLHandle(Boolable, ImplicitlyCopyable, RegisterPassable):
         library. For safer usage, prefer `OwnedDLHandle`.
     """
 
-    var handle: _CPointer[NoneType, MutExternalOrigin]
+    var handle: _CPointer[NoneType, MutUntrackedOrigin]
     """The handle to the dynamic library."""
 
     @always_inline
@@ -481,7 +481,7 @@ struct _DLHandle(Boolable, ImplicitlyCopyable, RegisterPassable):
             If `dlopen(nullptr, flags)` fails.
         """
         self = Self._dlopen(
-            Optional[UnsafePointer[c_char, ExternalOrigin[mut=False]]](), flags
+            Optional[UnsafePointer[c_char, UntrackedOrigin[mut=False]]](), flags
         )
 
     def __init__[
@@ -640,7 +640,7 @@ struct _DLHandle(Boolable, ImplicitlyCopyable, RegisterPassable):
     def get_symbol[
         result_type: AnyType,
     ](self, name: StringSlice) -> Optional[
-        UnsafePointer[result_type, MutAnyOrigin]
+        UnsafePointer[result_type, MutUntrackedOrigin]
     ]:
         """Returns a pointer to the symbol with the given name in the dynamic
         library, or `None` if the symbol is not found.
@@ -662,7 +662,7 @@ struct _DLHandle(Boolable, ImplicitlyCopyable, RegisterPassable):
     def get_symbol[
         result_type: AnyType
     ](self, *, cstr_name: UnsafePointer[mut=False, Int8, _]) -> Optional[
-        UnsafePointer[result_type, MutAnyOrigin]
+        UnsafePointer[result_type, MutUntrackedOrigin]
     ]:
         """Returns a pointer to the symbol with the given name in the dynamic
         library, or `None` if the symbol is not found.
@@ -713,8 +713,7 @@ struct _DLHandle(Boolable, ImplicitlyCopyable, RegisterPassable):
                 t"{StringSlice(unsafe_from_utf8=CStringSlice(unsafe_from_ptr=cstr_name))}"
             )
 
-        var ptr: UnsafePointer[result_type, MutAnyOrigin] = res.value()
-        return ptr
+        return res.value()
 
     @always_inline
     def call[
@@ -769,7 +768,7 @@ def _get_dylib_function[
     external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
         StringSlice(func_cache_name),
         UnsafePointer(to=new_func).bitcast[
-            OpaquePointer[MutExternalOrigin]
+            OpaquePointer[MutUntrackedOrigin]
         ]()[],
     )
 
@@ -906,13 +905,13 @@ struct _Global[
     init_fn: def() thin -> StorageType,
     on_error_msg: Optional[def() thin -> Error] = None,
 ](Defaultable):
-    comptime ResultType = UnsafePointer[Self.StorageType, MutExternalOrigin]
+    comptime ResultType = UnsafePointer[Self.StorageType, MutUntrackedOrigin]
 
     def __init__(out self):
         pass
 
     @staticmethod
-    def _init_wrapper() -> _CPointer[NoneType, ExternalOrigin[mut=True]]:
+    def _init_wrapper() -> _CPointer[NoneType, UntrackedOrigin[mut=True]]:
         # Heap allocate space to store this "global"
         # TODO:
         #   Any way to avoid the move, e.g. by calling this function
@@ -923,11 +922,17 @@ struct _Global[
 
     @staticmethod
     def _deinit_wrapper(
-        opaque_ptr: _CPointer[NoneType, ExternalOrigin[mut=True]]
+        opaque_ptr: _CPointer[NoneType, UntrackedOrigin[mut=True]]
     ):
         # Deinitialize and deallocate the storage.
         if opaque_ptr:
-            free(opaque_ptr.value(), {count = 1})
+            dealloc(
+                ThinAllocation(
+                    unsafe_assume_ownership=opaque_ptr.unsafe_value().bitcast[
+                        Self.StorageType
+                    ]()
+                ).unsafe_with_layout({count = 1})
+            )
 
     @staticmethod
     def get_or_create_ptr() raises -> Self.ResultType:
@@ -956,7 +961,7 @@ struct _Global[
     def get_or_create_indexed_ptr(idx: Int) raises -> Self.ResultType:
         var ptr = external_call[
             "KGEN_CompilerRT_GetOrCreateGlobalIndexed",
-            _CPointer[NoneType, ExternalOrigin[mut=True]],
+            _CPointer[NoneType, UntrackedOrigin[mut=True]],
         ](
             idx,
             Self._init_wrapper,
@@ -973,12 +978,14 @@ struct _Global[
 @always_inline
 def _get_global[
     name: StaticString,
-    init_fn: def() thin -> _CPointer[NoneType, ExternalOrigin[mut=True]],
-    destroy_fn: def(_CPointer[NoneType, ExternalOrigin[mut=True]]) thin -> None,
-]() -> _CPointer[NoneType, ExternalOrigin[mut=True]]:
+    init_fn: def() thin -> _CPointer[NoneType, UntrackedOrigin[mut=True]],
+    destroy_fn: def(
+        _CPointer[NoneType, UntrackedOrigin[mut=True]]
+    ) thin -> None,
+]() -> _CPointer[NoneType, UntrackedOrigin[mut=True]]:
     return external_call[
         "KGEN_CompilerRT_GetOrCreateGlobal",
-        _CPointer[NoneType, ExternalOrigin[mut=True]],
+        _CPointer[NoneType, UntrackedOrigin[mut=True]],
     ](
         name,
         init_fn,
@@ -989,10 +996,10 @@ def _get_global[
 @always_inline
 def _get_global_or_null(
     name: StringSlice,
-) -> _CPointer[NoneType, ExternalOrigin[mut=True]]:
+) -> _CPointer[NoneType, UntrackedOrigin[mut=True]]:
     return external_call[
         "KGEN_CompilerRT_GetGlobalOrNull",
-        _CPointer[NoneType, ExternalOrigin[mut=True]],
+        _CPointer[NoneType, UntrackedOrigin[mut=True]],
     ](name.unsafe_ptr(), name.byte_length())
 
 
@@ -1035,7 +1042,7 @@ def external_call[
         __mlir_op.`pop.external_call`[func=callee_kgen_string, _type=None](
             loaded_pack
         )
-        return rebind_var[return_type](None)
+        return rebind_var[return_type](NoneType())
     else:
         return __mlir_op.`pop.external_call`[
             func=callee_kgen_string,

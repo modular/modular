@@ -49,8 +49,8 @@ environment variable:
 
 3. Start the container and an endpoint for Gemma 3:
 
-    <Tabs>
-      <TabItem value="nvidia" label="NVIDIA">
+   <Tabs>
+   <TabItem value="nvidia" label="NVIDIA">
 
         ```bash
         docker run --gpus=1 \
@@ -61,8 +61,8 @@ environment variable:
           --model google/gemma-3-27b-it
         ```
 
-      </TabItem>
-      <TabItem value="amd" label="AMD">
+   </TabItem>
+   <TabItem value="amd" label="AMD">
 
         ```bash
         docker run \
@@ -77,8 +77,8 @@ environment variable:
           --model google/gemma-3-27b-it
         ```
 
-      </TabItem>
-    </Tabs>
+   </TabItem>
+   </Tabs>
 
         It can take a few minutes to pull the container and then download and
         compile the model.
@@ -92,8 +92,8 @@ environment variable:
 4. Open a new terminal and send a request using the `openai` Python API or
 `curl`:
 
-    <Tabs>
-      <TabItem value="python" label="Python">
+   <Tabs>
+   <TabItem value="python" label="Python">
 
         1. Create a new virtual environment:
 
@@ -149,10 +149,10 @@ environment variable:
             It was a unique World Series as it was played in a neutral site (Globe Life Field in Arlington, Texas) due to the COVID-19 pandemic.
             ```
 
-      </TabItem>
-      <TabItem value="curl" label="cURL">
+   </TabItem>
+   <TabItem value="curl" label="cURL">
 
-        Run this command:
+   Run this command:
 
         ```sh
         curl -N http://0.0.0.0:8000/v1/chat/completions \
@@ -166,7 +166,7 @@ environment variable:
         }' | grep -o '"content":"[^"]*"' | sed 's/"content":"//g' | sed 's/"//g' | tr -d '\n' | sed 's/\\n/\n/g'
         ```
 
-        You should see results like this:
+   You should see results like this:
 
         ```output
         The **Los Angeles Dodgers** won the World Series in 2020!
@@ -176,8 +176,8 @@ environment variable:
         It was a unique World Series as it was played in a neutral site (Globe Life Field in Arlington, Texas) due to the COVID-19 pandemic.
         ```
 
-      </TabItem>
-    </Tabs>
+   </TabItem>
+   </Tabs>
 
 For details about the OpenAI-compatible endpoint, see [our Serve API
 docs](/max/rest-api/).
@@ -496,6 +496,8 @@ Here are all the available metrics:
   generation time (OGT), in milliseconds.
 - `maxserve_time_to_first_token_milliseconds`: Histogram of time to first
   token (TTFT), in milliseconds.
+- `maxserve_time_per_output_token_milliseconds`: Histogram of mean
+  decode-phase latency per generated token (TPOT), in milliseconds.
 - `maxserve_num_input_tokens_total`: Total number of input tokens processed
   so far.
 - `maxserve_num_output_tokens_total`: Total number of output tokens processed
@@ -504,6 +506,10 @@ Here are all the available metrics:
 - `maxserve_output_tokens_per_request`: Histogram of output tokens per request.
 - `maxserve_request_count_total`: Total requests since start.
 - `maxserve_num_requests_running`: Number of requests currently running.
+- `maxserve_model_load_time_milliseconds`: Histogram of model-worker startup
+  duration, in milliseconds. Recorded as an untagged aggregate and also split
+  by a `component` tag (`build`, `compile`, `init`, `graph_capture`,
+  `pinned_memory`, `spawn`, `total`).
 
 ### Telemetry
 

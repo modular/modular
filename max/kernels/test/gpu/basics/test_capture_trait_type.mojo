@@ -25,13 +25,14 @@ trait BaseT(TrivialRegisterPassable):
 
 @fieldwise_init
 struct ImplT(BaseT):
+    @__allow_legacy_any_origin_fields
     var values: LayoutTensor[DType.float32, Layout(UNKNOWN_VALUE), MutAnyOrigin]
 
     def __init__(
         out self,
         buf: LayoutTensor[mut=True, DType.float32, Layout(UNKNOWN_VALUE), _],
     ) raises:
-        self.values = buf.as_any_origin()
+        self.values = buf.as_unsafe_any_origin()
 
     def get_val(self, idx: Int) -> Float32:
         return self.values[idx][0]

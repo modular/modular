@@ -16,7 +16,11 @@ import logging
 import os
 import time
 
-from max.pipelines.core import TextAndVisionContext, TextContext
+from max.pipelines.context import (
+    TextAndVisionContext,
+    TextContext,
+    TextGenerationOutput,
+)
 from max.pipelines.kv_cache import PagedKVCacheManager
 from max.pipelines.lib import (
     OverlapTextGenerationPipeline,
@@ -27,7 +31,6 @@ from max.pipelines.modeling.types import (
     Pipeline,
     RequestID,
     TextGenerationInputs,
-    TextGenerationOutput,
 )
 from max.profiler import Tracer, traced
 from max.serve.queue import (
@@ -174,8 +177,8 @@ class TokenGenerationScheduler(Scheduler):
             num_pending_reqs=len(self.batch_constructor.all_ce_reqs),
             num_terminated_reqs=num_terminated_reqs,
             total_preemption_count=self.batch_constructor.total_preemption_count,
-            speculative_decoding_metrics=self.pipeline.spec_decode_metrics()
-            if hasattr(self.pipeline, "spec_decode_metrics")
+            batch_spec_decode_metrics=self.pipeline.batch_spec_decode_metrics()
+            if hasattr(self.pipeline, "batch_spec_decode_metrics")
             else None,
             batch_execution_time_is_previous=is_overlap_active,
         )

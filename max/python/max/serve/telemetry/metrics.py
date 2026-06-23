@@ -120,34 +120,109 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
         "maxserve.num_requests_running",
         description="Count of requests currently being processed",
     ),  # type: ignore
+    "maxserve.num_requests_awaiting_admission": _meter.create_up_down_counter(
+        "maxserve.num_requests_awaiting_admission",
+        description=(
+            "Count of requests received by the API server but not yet handed "
+            "off to the model worker (i.e. still in tokenization / pre-submit "
+            "on the API side). Incremented on arrival and decremented just "
+            "before the request is enqueued to the model worker, so a "
+            "persistently high value indicates a backlog stuck in the API "
+            "server rather than in the scheduler."
+        ),
+    ),  # type: ignore
+    "maxserve.requests_awaiting_admission": _meter.create_histogram(
+        "maxserve.requests_awaiting_admission",
+        description=(
+            "Distribution of the ingress backlog (requests accepted by the "
+            "API server but not yet handed off to the model worker), sampled "
+            "periodically. Companion to the "
+            "'maxserve.num_requests_awaiting_admission' up/down counter: the "
+            "counter is the live value for dashboards, while this histogram "
+            "captures the distribution / tail (p50/p99) over time."
+        ),
+    ),  # type: ignore
+    "maxserve.num_responses_buffered": _meter.create_gauge(
+        "maxserve.num_responses_buffered",
+        description=(
+            "Egress backlog: model-worker responses received by the API "
+            "server but not yet consumed by the streaming layer (sum of the "
+            "per-request output-queue depths), sampled periodically. A "
+            "persistently high value means the API server is shipping tokens "
+            "back to clients (detokenize + serialize + network) slower than "
+            "the model produces them, and the unbounded output queues are "
+            "accumulating in API-process memory."
+        ),
+    ),  # type: ignore
+    "maxserve.responses_buffered": _meter.create_histogram(
+        "maxserve.responses_buffered",
+        description=(
+            "Distribution of the egress backlog (responses received by the "
+            "API server but not yet streamed to clients), sampled "
+            "periodically. Companion to the 'maxserve.num_responses_buffered' "
+            "gauge: the gauge shows the latest value for live dashboards, "
+            "while this histogram captures the distribution / tail (p50/p99) "
+            "over time, which a scrape-interval gauge sample would miss."
+        ),
+    ),  # type: ignore
+    "maxserve.response_queue_time": _meter.create_histogram(
+        "maxserve.response_queue_time",
+        unit="ms",
+        description=(
+            "Time a model-worker response waits in the API server's "
+            "per-request output queue before the streaming layer consumes it. "
+            "Sampled at the head of line (once per consumer wake), so it "
+            "tracks the egress-side delay the user experiences when the API "
+            "server falls behind the model on decode."
+        ),
+    ),  # type: ignore
     "maxserve.model_load_time": _meter.create_histogram(
         "maxserve.model_load_time",
         unit="ms",
-        description="Time to load a model",
+        description=(
+            "Time to load a model. Recorded once per model-worker startup, "
+            "both as an untagged aggregate and split by the 'component' tag "
+            "(build, compile, init, graph_capture, pinned_memory, spawn, "
+            "total), mirroring the per-phase breakdown in the model worker's "
+            "startup log lines."
+        ),
     ),  # type: ignore
     "maxserve.itl": _meter.create_histogram(
         "maxserve.itl", unit="ms", description="inter token latency"
+    ),  # type: ignore
+    "maxserve.time_per_output_token": _meter.create_histogram(
+        "maxserve.time_per_output_token",
+        unit="ms",
+        description=(
+            "Mean decode-phase latency per generated token, emitted once per "
+            "request: decode_time / (num_generated_tokens - 1). Excludes the "
+            "first token and prefill/TTFT; accounts for speculative decoding."
+        ),
     ),  # type: ignore
     "maxserve.pipeline_load": _meter.create_counter(
         "maxserve.pipeline_load",
         description="Count of pipelines loaded for each model",
     ),  # type: ignore
     "maxserve.batch_size": _meter.create_histogram(
-        "maxserve.batch_size", description="Distribution of batch sizes"
+        "maxserve.batch_size",
+        description=(
+            "Distribution of batch sizes (number of requests), labeled by "
+            "'batch_type' (CE prefill or TG decode). For TG this is the "
+            "decode batch size; for CE see 'batch_input_tokens' for the "
+            "token-count view."
+        ),
     ),  # type: ignore
     "maxserve.batch_execution_time": _meter.create_histogram(
         "maxserve.batch_execution_time",
         unit="ms",
         description="Distribution of batch execution time",
     ),  # type: ignore
-    # semantically, this should be a gauge, but it seems unimplemented in the OTEL SDK
-    "maxserve.cache.num_used_blocks": _meter.create_counter(
+    "maxserve.cache.num_used_blocks": _meter.create_gauge(
         "maxserve.cache.num_used_blocks",
         unit="blocks",
         description="Number of used blocks or pages, measured at the scheduler after batch work.",
     ),  # type: ignore
-    # semantically, this should be a gauge, but it seems unimplemented in the OTEL SDK
-    "maxserve.cache.num_total_blocks": _meter.create_counter(
+    "maxserve.cache.num_total_blocks": _meter.create_gauge(
         "maxserve.cache.num_total_blocks",
         unit="blocks",
         description="Total number of blocks or pages, measured at the scheduler after batch work.",
@@ -179,11 +254,6 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
             "Cumulative KV cache miss tokens across all CE batches "
             "(prompt tokens actually prefilled by the model)."
         ),
-    ),  # type: ignore
-    "maxserve.tts.audio_output_length": _meter.create_counter(
-        "maxserve.tts.audio_output_length",
-        unit="ms",
-        description="Audio output length in milliseconds",
     ),  # type: ignore
     "maxserve.input_tokens_per_request": _meter.create_histogram(
         "maxserve.input_tokens_per_request",
@@ -274,6 +344,16 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
         "maxserve.cache.d2h_blocks_copied",
         unit="blocks",
         description="Cumulative device->host KV block copies.",
+    ),  # type: ignore
+    "maxserve.cache.disk_blocks_read": _meter.create_counter(
+        "maxserve.cache.disk_blocks_read",
+        unit="blocks",
+        description="Cumulative KV blocks read from the disk cache tier.",
+    ),  # type: ignore
+    "maxserve.cache.disk_blocks_written": _meter.create_counter(
+        "maxserve.cache.disk_blocks_written",
+        unit="blocks",
+        description="Cumulative KV blocks written to the disk cache tier.",
     ),  # type: ignore
     "maxserve.spec_decode.avg_acceptance_length": _meter.create_histogram(
         "maxserve.spec_decode.avg_acceptance_length",
@@ -527,17 +607,112 @@ class _AsyncMetrics:
             MetricLevel.BASIC,
         )
 
-    def model_load_time(self, ms: float) -> None:
+    def reqs_awaiting_admission(self, value: int) -> None:
+        """Adjust the count of API-side requests not yet handed to the worker.
+
+        ``maxserve.num_requests_awaiting_admission`` is an up/down counter:
+        call with ``1`` when a request is accepted by the API server (before
+        tokenization) and ``-1`` just before it is enqueued to the model
+        worker. A persistently high value means requests are backing up in the
+        API server (e.g. tokenization) rather than in the scheduler queue.
+        """
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.model_load_time", ms, self.extra_attributes
+                "maxserve.num_requests_awaiting_admission",
+                value,
+                self.extra_attributes,
             ),
+            MetricLevel.BASIC,
+        )
+
+    def requests_awaiting_admission_dist(self, value: int) -> None:
+        """Record a sample of the ingress backlog for distribution analysis.
+
+        Companion to :meth:`reqs_awaiting_admission` (the live up/down
+        counter): a periodic sample of the same running count is fed into the
+        ``maxserve.requests_awaiting_admission`` histogram so p50/p99 ingress
+        backlog over time can be recovered.
+        """
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.requests_awaiting_admission",
+                value,
+                self.extra_attributes,
+            ),
+            MetricLevel.BASIC,
+        )
+
+    def responses_buffered(self, value: int) -> None:
+        """Publish the current egress backlog (sum of output-queue depths).
+
+        ``maxserve.num_responses_buffered`` is a synchronous gauge: every call
+        replaces the previously reported value. The API server should sample
+        it periodically with the total number of model-worker responses
+        received but not yet consumed by the streaming layer.
+        """
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.num_responses_buffered",
+                value,
+                self.extra_attributes,
+            ),
+            MetricLevel.BASIC,
+        )
+
+    def responses_buffered_dist(self, value: int) -> None:
+        """Record a sample of the egress backlog for distribution analysis.
+
+        Companion to :meth:`responses_buffered` (the live gauge): the same
+        periodic sample is also fed into the ``maxserve.responses_buffered``
+        histogram so p50/p99 backlog over time can be recovered, which a
+        scrape-interval gauge sample alone cannot provide.
+        """
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.responses_buffered", value, self.extra_attributes
+            ),
+            MetricLevel.BASIC,
+        )
+
+    def response_queue_time(self, ms: float) -> None:
+        """Record how long a response waited in the API output queue (ms)."""
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.response_queue_time", ms, self.extra_attributes
+            ),
+            MetricLevel.BASIC,
+        )
+
+    def model_load_time(self, ms: float, component: str | None = None) -> None:
+        """Record a model-worker startup duration in milliseconds.
+
+        Args:
+            ms: The duration in milliseconds.
+            component: Optional phase name (e.g. ``"build"``, ``"compile"``,
+                ``"init"``, ``"graph_capture"``, ``"pinned_memory"``,
+                ``"spawn"``, ``"total"``). Recorded as the ``component`` tag
+                so a single metric can be split by startup phase. When
+                omitted, records the untagged model-load aggregate.
+        """
+        attributes = self.extra_attributes
+        if component is not None:
+            attributes = {**attributes, "component": component}
+        self.client.send_measurement(
+            MaxMeasurement("maxserve.model_load_time", ms, attributes),
             MetricLevel.BASIC,
         )
 
     def itl(self, ms: float) -> None:
         self.client.send_measurement(
             MaxMeasurement("maxserve.itl", ms, self.extra_attributes),
+            MetricLevel.BASIC,
+        )
+
+    def time_per_output_token(self, ms: float) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.time_per_output_token", ms, self.extra_attributes
+            ),
             MetricLevel.BASIC,
         )
 
@@ -551,9 +726,13 @@ class _AsyncMetrics:
             MetricLevel.BASIC,
         )
 
-    def batch_size(self, size: int) -> None:
+    def batch_size(self, size: int, batch_type: str) -> None:
         self.client.send_measurement(
-            MaxMeasurement("maxserve.batch_size", size, self.extra_attributes),
+            MaxMeasurement(
+                "maxserve.batch_size",
+                size,
+                {**self.extra_attributes, "batch_type": batch_type},
+            ),
             MetricLevel.BASIC,
         )
 
@@ -615,16 +794,6 @@ class _AsyncMetrics:
         self.client.send_measurement(
             MaxMeasurement(
                 "maxserve.cache.preemption_count", 1, self.extra_attributes
-            ),
-            MetricLevel.DETAILED,
-        )
-
-    def audio_output_length(self, length_ms: int) -> None:
-        self.client.send_measurement(
-            MaxMeasurement(
-                "maxserve.tts.audio_output_length",
-                length_ms,
-                self.extra_attributes,
             ),
             MetricLevel.DETAILED,
         )
@@ -809,6 +978,26 @@ class _AsyncMetrics:
         self.client.send_measurement(
             MaxMeasurement(
                 "maxserve.cache.d2h_blocks_copied",
+                count,
+                self.extra_attributes,
+            ),
+            MetricLevel.DETAILED,
+        )
+
+    def cache_disk_blocks_read(self, count: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.cache.disk_blocks_read",
+                count,
+                self.extra_attributes,
+            ),
+            MetricLevel.DETAILED,
+        )
+
+    def cache_disk_blocks_written(self, count: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.cache.disk_blocks_written",
                 count,
                 self.extra_attributes,
             ),

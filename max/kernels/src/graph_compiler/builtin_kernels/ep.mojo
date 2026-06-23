@@ -67,7 +67,7 @@ from shmem.ep_comm import (
     BlockwiseFP8TokenFormat,
     EPLocalSyncCounters,
     MXFP4TokenFormat,
-    NVFP4TokenFormat,
+    NVBlockScaledTokenFormat,
     elementwise_epilogue_type,
     fused_silu_kernel,
     fused_silu_fp8_kernel,
@@ -146,9 +146,9 @@ struct Struct_ep_init:
             ]
             dispatch_msg_size = token_fmt_type.msg_size()
 
-        elif dispatch_fmt_str == "NVFP4":
-            comptime token_fmt_type = NVFP4TokenFormat[
-                fp4_dtype=dispatch_dtype,
+        elif dispatch_fmt_str == "BLOCK_SCALED_NV":
+            comptime token_fmt_type = NVBlockScaledTokenFormat[
+                quant_dtype=dispatch_dtype,
                 scales_dtype=dispatch_scale_dtype,
                 output_layout=RT_LAYOUT_2D,
                 scales_offset_layout=RT_LAYOUT_2D,
@@ -206,13 +206,13 @@ struct Struct_ep_init:
         var atomic_counters_1_buf = atomic_counters_1.to_device_buffer(gpu_ctx)
         gpu_ctx.enqueue_memset(atomic_counters_1_buf, Int32(0))
 
-        var dispatch_send_p: UnsafePointer[UInt8, MutAnyOrigin]
-        var dispatch_recv_p: UnsafePointer[UInt8, MutAnyOrigin]
-        var dispatch_recv_count_p: UnsafePointer[UInt64, MutAnyOrigin]
+        var dispatch_send_p: UnsafePointer[UInt8, MutUntrackedOrigin]
+        var dispatch_recv_p: UnsafePointer[UInt8, MutUntrackedOrigin]
+        var dispatch_recv_count_p: UnsafePointer[UInt64, MutUntrackedOrigin]
 
-        var combine_send_p: Optional[UnsafePointer[UInt8, MutAnyOrigin]]
-        var combine_recv_p: UnsafePointer[UInt8, MutAnyOrigin]
-        var combine_recv_count_p: UnsafePointer[UInt64, MutAnyOrigin]
+        var combine_send_p: Optional[UnsafePointer[UInt8, MutUntrackedOrigin]]
+        var combine_recv_p: UnsafePointer[UInt8, MutUntrackedOrigin]
+        var combine_recv_count_p: UnsafePointer[UInt64, MutUntrackedOrigin]
 
         comptime if n_nodes > 1:
             # Initialize the SHMEM library for this GPU
@@ -294,6 +294,7 @@ struct Struct_ep_dispatch_async:
     def execute[
         input_dtype: DType,
         dispatch_dtype: DType,
+        dispatch_scale_dtype: DType,
         hidden_size: Int,
         top_k: Int,
         n_experts: Int,
@@ -368,14 +369,15 @@ struct Struct_ep_dispatch_async:
             raise Error("Invalid dispatch format string: ", dispatch_fmt_str)
 
 
-@compiler.register("ep.dispatch_async.nvfp4")
-struct Struct_ep_dispatch_async_nvfp4:
+@compiler.register("ep.dispatch_async.block.scaled.nv")
+struct Struct_ep_dispatch_async_block_scaled_nv:
     @always_inline
     @staticmethod
     @parameter
     def execute[
         input_dtype: DType,
         dispatch_dtype: DType,
+        dispatch_scale_dtype: DType,
         hidden_size: Int,
         top_k: Int,
         n_experts: Int,
@@ -407,9 +409,9 @@ struct Struct_ep_dispatch_async_nvfp4:
             # Currently only use one global input scale for all experts
             return rebind[Scalar[dtype]](input_scales_tensor[0].cast[dtype]())
 
-        comptime token_fmt_type = NVFP4TokenFormat[
-            fp4_dtype=dispatch_dtype,
-            scales_dtype=DType.float8_e4m3fn,
+        comptime token_fmt_type = NVBlockScaledTokenFormat[
+            quant_dtype=dispatch_dtype,
+            scales_dtype=dispatch_scale_dtype,
             output_layout=RT_LAYOUT_2D,
             scales_offset_layout=RT_LAYOUT_2D,
             hidden_size,
@@ -608,8 +610,8 @@ struct Struct_ep_dispatch_wait_fp8:
         )
 
 
-@compiler.register("ep.dispatch_wait.nvfp4")
-struct Struct_ep_dispatch_wait_nvfp4:
+@compiler.register("ep.dispatch_wait.block.scaled.nv")
+struct Struct_ep_dispatch_wait_block_scaled_nv:
     @always_inline
     @staticmethod
     def execute[
@@ -647,7 +649,7 @@ struct Struct_ep_dispatch_wait_nvfp4:
             output_tokens_tensor.static_shape[1] * 2 == hidden_size
         ), "EP dispatch_wait: output tokens shape doesn't match hidden size."
 
-        var format_handler = NVFP4TokenFormat[hidden_size, top_k](
+        var format_handler = NVBlockScaledTokenFormat[hidden_size, top_k](
             output_tokens_tensor,
             output_scales_tensor,
             scales_offsets_tensor,
@@ -689,6 +691,9 @@ struct Struct_ep_dispatch_wait_mxfp4:
         //,
         target: StaticString,
         num_input_tokens: Int = -1,
+        *,
+        fuse_a_scale_preshuffle: Bool = False,
+        max_padded_M: Int = 0,
     ](
         output_tokens: OutputTensor[dtype=dispatch_dtype, rank=2, ...],
         output_scales: OutputTensor[dtype=dispatch_scale_dtype, rank=2, ...],
@@ -703,6 +708,14 @@ struct Struct_ep_dispatch_wait_mxfp4:
         """Execute the Expert Parallelism dispatch completion kernel. Received
         tokens are in MXFP4 format: two FP4 elements packed per ``uint8`` in
         ``output_tokens`` with per-token even-mode scales in ``output_scales``.
+
+        When ``fuse_a_scale_preshuffle=True`` (KS224 up-proj fusion), the
+        kernel writes the E8M0 activation scale directly into the up-proj
+        grouped matmul's per-expert fixed-stride ``scale_4d`` slot layout (slot
+        stride ``max_padded_M * K_SCALES``), so the standalone
+        ``preshuffle_grouped_scale_4d_gpu`` can be dropped from the decode
+        critical path. The scales output tensor must then have shape
+        ``[n_local_experts * max_padded_M, K_SCALES]``.
         """
         var output_tokens_tensor = output_tokens.to_tile_tensor[DType.int64]()
         var output_scales_tensor = output_scales.to_tile_tensor[DType.int64]()
@@ -711,9 +724,12 @@ struct Struct_ep_dispatch_wait_mxfp4:
             output_tokens_tensor.static_shape[1] * 2 == hidden_size
         ), "EP dispatch_wait: output tokens shape doesn't match hidden size."
 
-        var format_handler = MXFP4TokenFormat[hidden_size, top_k](
+        var format_handler = MXFP4TokenFormat[
+            hidden_size, top_k, fuse_a_scale_preshuffle=fuse_a_scale_preshuffle
+        ](
             output_tokens_tensor,
             output_scales_tensor,
+            max_padded_M,
         )
 
         ep_dispatch_wait_kernel_api[
@@ -866,8 +882,8 @@ struct Struct_ep_dispatch_fp8:
         )
 
 
-@compiler.register("ep.dispatch.nvfp4")
-struct Struct_ep_dispatch_nvfp4:
+@compiler.register("ep.dispatch.block.scaled.nv")
+struct Struct_ep_dispatch_block_scaled_nv:
     @always_inline
     @staticmethod
     @parameter
@@ -918,7 +934,7 @@ struct Struct_ep_dispatch_nvfp4:
             # Currently only use one global input scale for all experts
             return rebind[Scalar[dtype]](input_scales_tensor[0].cast[dtype]())
 
-        var format_handler = NVFP4TokenFormat[hidden_size, top_k](
+        var format_handler = NVBlockScaledTokenFormat[hidden_size, top_k](
             output_tokens_tensor,
             output_scales_tensor,
             scales_offsets_tensor,
@@ -950,8 +966,90 @@ struct Struct_ep_dispatch_nvfp4:
         )
 
 
-@compiler.register("mo.distributed.ep.dispatch.nvfp4")
-struct DistributedEPDispatchNVFP4:
+@compiler.register("ep.dispatch.mxfp4")
+struct Struct_ep_dispatch_mxfp4:
+    @always_inline
+    @staticmethod
+    @parameter
+    def execute[
+        input_dtype: DType,
+        dispatch_dtype: DType,
+        dispatch_scale_dtype: DType,
+        hidden_size: Int,
+        top_k: Int,
+        n_experts: Int,
+        max_token_per_rank: Int,
+        n_gpus_per_node: Int,
+        n_nodes: Int,
+        fused_shared_expert: Bool,
+        skip_a2a: Bool,
+        allreduce_world_size: Int,
+        //,
+        target: StaticString,
+        *,
+        fuse_a_scale_preshuffle: Bool = False,
+        max_padded_M: Int = 0,
+    ](
+        output_tokens: OutputTensor[dtype=dispatch_dtype, rank=2, ...],
+        output_scales: OutputTensor[dtype=dispatch_scale_dtype, rank=2, ...],
+        row_offsets: OutputTensor[dtype=DType.uint32, rank=1, ...],
+        expert_ids: OutputTensor[dtype=DType.int32, rank=1, ...],
+        src_info: OutputTensor[dtype=DType.int32, rank=2, ...],
+        atomic_counters: MutableInputTensor[dtype=DType.int32, rank=1, ...],
+        input_tokens: InputTensor[dtype=input_dtype, rank=2, ...],
+        topk_ids: InputTensor[dtype=DType.int32, rank=2, ...],
+        send_ptrs: InputTensor[dtype=DType.uint64, rank=1, ...],
+        recv_ptrs: InputTensor[dtype=DType.uint64, rank=1, ...],
+        recv_count_ptrs: InputTensor[dtype=DType.uint64, rank=1, ...],
+        context: DeviceContext,
+    ) raises:
+        """Execute the fused Expert Parallelism MXFP4 dispatch kernel. Tokens
+        are dispatched in MXFP4 format.
+
+        When ``fuse_a_scale_preshuffle=True`` (KS224 up-proj fusion), the
+        wait-side copy writes the E8M0 activation scale directly into the
+        up-proj grouped matmul's per-expert fixed-stride ``scale_4d`` slot
+        layout (slot stride ``max_padded_M * K_SCALES``), dropping the standalone
+        preshuffle. The scales output tensor must then be slot-sized
+        (``[n_local_experts * max_padded_M, K_SCALES]``).
+        """
+        var output_tokens_tensor = output_tokens.to_tile_tensor[DType.int64]()
+        var output_scales_tensor = output_scales.to_tile_tensor[DType.int64]()
+
+        var format_handler = MXFP4TokenFormat[
+            hidden_size, top_k, fuse_a_scale_preshuffle=fuse_a_scale_preshuffle
+        ](
+            output_tokens_tensor,
+            output_scales_tensor,
+            max_padded_M,
+        )
+
+        ep_fused_dispatch_kernel_api[
+            n_experts,
+            max_token_per_rank,
+            n_gpus_per_node,
+            n_nodes,
+            fused_shared_expert,
+            target,
+            skip_a2a=skip_a2a,
+            allreduce_world_size=allreduce_world_size,
+        ](
+            format_handler,
+            row_offsets.to_tile_tensor[DType.int64](),
+            expert_ids.to_tile_tensor[DType.int64](),
+            src_info.to_tile_tensor[DType.int64](),
+            atomic_counters.to_tile_tensor[DType.int64](),
+            input_tokens.to_tile_tensor[DType.int64](),
+            topk_ids.to_tile_tensor[DType.int64](),
+            send_ptrs.to_tile_tensor[DType.int64](),
+            recv_ptrs.to_tile_tensor[DType.int64](),
+            recv_count_ptrs.to_tile_tensor[DType.int64](),
+            context,
+        )
+
+
+@compiler.register("mo.distributed.ep.dispatch.block.scaled.nv")
+struct DistributedEPDispatchBlockScaledNV:
     @staticmethod
     def execute[
         input_dtype: DType,
@@ -1029,7 +1127,7 @@ struct DistributedEPDispatchNVFP4:
             def input_scales_fn[dtype: DType](expert_id: Int) -> Scalar[dtype]:
                 return rebind[Scalar[dtype]](in_scales[0].cast[dtype]())
 
-            var format_handler = NVFP4TokenFormat[hidden_size, top_k](
+            var format_handler = NVBlockScaledTokenFormat[hidden_size, top_k](
                 out_tokens,
                 out_scales,
                 sc_offsets,
@@ -1336,7 +1434,7 @@ struct DistributedEPCombine:
         n_gpus_per_node: Int,
         n_nodes: Int,
         fused_shared_expert: Bool,
-        lambdas_have_fusion: Bool,
+        has_epilogue_fusion: Bool,
         //,
         target: StaticString,
         _trace_name: StaticString,
@@ -1411,7 +1509,7 @@ struct DistributedEPCombine:
                 router_weights_wrapper=router_weights_fn,
                 epilogue_fn=Optional[elementwise_epilogue_type](
                     output_fn
-                ) if lambdas_have_fusion else None,
+                ) if has_epilogue_fusion else None,
                 fused_shared_expert=fused_shared_expert,
             ](
                 output_tokens[index].to_tile_tensor[DType.int64](),
@@ -1487,7 +1585,7 @@ struct Struct_ep_combine_wait:
         max_token_per_rank: Int,
         n_gpus_per_node: Int,
         n_nodes: Int,
-        lambdas_have_fusion: Bool,
+        has_epilogue_fusion: Bool,
         target: StaticString,
     ](
         output_tokens: FusedOutputTensor[dtype=combine_dtype, rank=2, ...],
@@ -1540,7 +1638,7 @@ struct Struct_ep_combine_wait:
             router_weights_wrapper=router_weights_fn,
             epilogue_fn=Optional[elementwise_epilogue_type](
                 output_fn
-            ) if lambdas_have_fusion else None,
+            ) if has_epilogue_fusion else None,
         ](
             output_tokens_tensor,
             atomic_counters.to_tile_tensor[DType.int64](),
@@ -1566,7 +1664,7 @@ struct Struct_ep_combine:
         n_gpus_per_node: Int,
         n_nodes: Int,
         fused_shared_expert: Bool,
-        lambdas_have_fusion: Bool,
+        has_epilogue_fusion: Bool,
         skip_a2a: Bool,
         //,
         target: StaticString,
@@ -1619,7 +1717,7 @@ struct Struct_ep_combine:
             router_weights_wrapper=router_weights_fn,
             epilogue_fn=Optional[elementwise_epilogue_type](
                 output_fn
-            ) if lambdas_have_fusion else None,
+            ) if has_epilogue_fusion else None,
             fused_shared_expert=fused_shared_expert,
             skip_a2a=skip_a2a,
         ](
@@ -1649,7 +1747,7 @@ struct Struct_ep_combine_skip_a2a:
         n_gpus_per_node: Int,
         n_nodes: Int,
         fused_shared_expert: Bool,
-        lambdas_have_fusion: Bool,
+        has_epilogue_fusion: Bool,
         skip_a2a: Bool,
         allreduce_world_size: Int,
         //,
@@ -1704,7 +1802,7 @@ struct Struct_ep_combine_skip_a2a:
             router_weights_wrapper=router_weights_fn,
             epilogue_fn=Optional[elementwise_epilogue_type](
                 output_fn
-            ) if lambdas_have_fusion else None,
+            ) if has_epilogue_fusion else None,
             fused_shared_expert=fused_shared_expert,
             skip_a2a=skip_a2a,
             allreduce_world_size=allreduce_world_size,
@@ -1718,7 +1816,7 @@ struct Struct_ep_combine_skip_a2a:
             recv_count_ptrs.to_tile_tensor[DType.int64](),
             context,
             topk_ids._ptr.as_immutable().unsafe_origin_cast[
-                ImmutExternalOrigin
+                ImmutUntrackedOrigin
             ](),
         )
 
@@ -1889,6 +1987,9 @@ struct Struct_ep_fused_silu_mxfp4:
         scales_dtype: DType,
         input_dtype: DType,
         target: StaticString,
+        *,
+        fuse_a_scale_preshuffle: Bool = False,
+        max_padded_M: Int = 0,
     ](
         output: OutputTensor[dtype=fp4_dtype, rank=2, ...],
         scales: OutputTensor[dtype=scales_dtype, rank=2, ...],
@@ -1906,6 +2007,13 @@ struct Struct_ep_fused_silu_mxfp4:
         received tokens in the input tensor, and then only perform the SILU
         operation on the received tokens. Once the SILU operation is performed,
         the output will be quantized to the MXFP4 format.
+
+        When `fuse_a_scale_preshuffle=True` (KS64 fusion), the kernel
+        writes the E8M0 scale directly into the grouped matmul's per-expert
+        fixed-stride `scale_4d` slot layout (slot stride `max_padded_M *
+        K_SCALES`), so the standalone `preshuffle_grouped_scale_4d_gpu` can be
+        omitted from the critical path.  The scales output tensor must then have
+        shape `[n_local_experts * max_padded_M, K_SCALES]`.
         """
         # Ensure this kernel only runs on GPU targets
         comptime assert is_gpu[target](), "EP is only supported on GPU."
@@ -1930,6 +2038,7 @@ struct Struct_ep_fused_silu_mxfp4:
             row_offsets_tensor.LayoutType,
             hw_info.max_thread_block_size,
             hw_info.sm_count,
+            fuse_a_scale_preshuffle=fuse_a_scale_preshuffle,
         ]
 
         @always_inline
@@ -1940,6 +2049,7 @@ struct Struct_ep_fused_silu_mxfp4:
                 "fp4_dtype=", fp4_dtype,
                 ";scales_dtype=", scales_dtype,
                 ";input_dtype=", input_dtype,
+                ";fuse_a_scale_preshuffle=", fuse_a_scale_preshuffle,
             )
             # fmt: on
 
@@ -1953,6 +2063,7 @@ struct Struct_ep_fused_silu_mxfp4:
                 scales_tensor,
                 input_tensor,
                 row_offsets_tensor,
+                max_padded_M,
                 grid_dim=hw_info.sm_count,
                 block_dim=hw_info.max_thread_block_size,
                 attributes=pdl_launch_attributes(PDLLevel.ON),

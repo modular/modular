@@ -1143,7 +1143,7 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
 
 # =============================================================================
 # TMA + Kernel Launch: operates on already-reshaped 3D TileTensors (A/B/C)
-# and 5D LayoutTensors (scale factors)
+# and 5D TileTensors (scale factors)
 # =============================================================================
 
 

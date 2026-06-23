@@ -19,7 +19,7 @@ import logging
 import math
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import Any, ClassVar, cast
 
 import numpy as np
 from max.driver import Buffer, Device
@@ -32,9 +32,9 @@ from max.experimental.nn.embedding import Embedding
 from max.experimental.nn.norm import RMSNorm
 from max.graph import DeviceRef, TensorType
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn.kv_cache import KVCacheInputs
+from max.nn.kv_cache import KVCacheInputsInterface
 from max.nn.transformer import ReturnLogits
-from max.pipelines.core import TextContext
+from max.pipelines.context import TextContext
 from max.pipelines.lib import (
     KVCacheConfig,
     ModelInputs,
@@ -42,7 +42,6 @@ from max.pipelines.lib import (
     PipelineConfig,
     PipelineModel,
 )
-from transformers import AutoConfig
 
 from .layers import (
     Qwen3AttentionNoCache,
@@ -78,6 +77,8 @@ class Qwen3EmbeddingModel(PipelineModel[TextContext]):
     - Flash attention without cache operations
     - Last token pooling with L2 normalization
     """
+
+    model_config_cls: ClassVar[type[Any]] = Qwen3EmbeddingConfig
 
     model: Callable[..., Any]
     """Compiled model callable."""
@@ -241,7 +242,7 @@ class Qwen3EmbeddingModel(PipelineModel[TextContext]):
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
+        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> Qwen3EmbeddingInputs:
         if len(replica_batches) > 1:
@@ -271,21 +272,4 @@ class Qwen3EmbeddingModel(PipelineModel[TextContext]):
             tokens=tokens_buffer.to(device),
             input_row_offsets=row_offsets_buffer,
             return_n_logits=return_n_logits_buffer,
-        )
-
-    def prepare_next_token_inputs(
-        self,
-        next_tokens: Buffer,
-        prev_model_inputs: ModelInputs,
-    ) -> Qwen3EmbeddingInputs:
-        raise NotImplementedError(
-            "Qwen3 embedding model does not support autoregressive generation"
-        )
-
-    @staticmethod
-    def calculate_max_seq_len(
-        pipeline_config: PipelineConfig, huggingface_config: AutoConfig
-    ) -> int:
-        return Qwen3EmbeddingConfig.calculate_max_seq_len(
-            pipeline_config, huggingface_config
         )

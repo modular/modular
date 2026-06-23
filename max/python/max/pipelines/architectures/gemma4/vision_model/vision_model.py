@@ -56,6 +56,7 @@ class Gemma4VisionModel(Module):
         self.config = config
         self.device = config.devices[0]
         vision_config = config.vision_config
+        assert vision_config is not None
         self.patch_embedder = Gemma4VisionPatchEmbedder(
             config, device=self.device
         )
@@ -164,7 +165,7 @@ class Gemma4VisionModel(Module):
                 head_dim=self.head_dim,
                 ndim=2,
                 theta=self.rope_theta,
-                dtype=DType.bfloat16,
+                dtype=self.config.unquantized_dtype,
                 device=pos_ids.device,  # or hidden_states.device
             )
             for pos_ids in pixel_position_ids
@@ -193,8 +194,11 @@ class Gemma4VisionModel(Module):
         ]
 
         if self.standardize:
+            # `pooled` may be float32 (the pooler defers its float16 downcast);
+            # match the params to its dtype (a no-op otherwise).
             pooled_list = [
-                (pooled - std_bias) * std_scale
+                (pooled - std_bias.cast(pooled.dtype))
+                * std_scale.cast(pooled.dtype)
                 for std_bias, std_scale, pooled in zip(
                     self.std_bias_shards,
                     self.std_scale_shards,
@@ -222,12 +226,13 @@ class Gemma4VisionModel(Module):
         * ``max_seq_len``         — scalar uint32, on CPU (one shared tensor)
         """
         vision_config = self.config.vision_config
+        assert vision_config is not None
         patch_dim = 3 * vision_config.patch_size**2
         devices = self.config.devices
 
         patches_flat_types = [
             TensorType(
-                DType.bfloat16,
+                self.config.unquantized_dtype,
                 shape=["total_patches", patch_dim],
                 device=device,
             )

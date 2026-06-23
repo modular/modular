@@ -12,36 +12,15 @@
 # ===----------------------------------------------------------------------=== #
 
 from max.graph.weights import WeightsFormat
-from max.pipelines.core import TextContext
+from max.pipelines.context import TextContext
+from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
 from max.pipelines.lib import SupportedArchitecture, TextTokenizer
 from max.pipelines.modeling.types import PipelineTask
-from transformers import AutoConfig, PretrainedConfig
 
 from ..llama3_modulev3 import weight_adapters
 from ..llama3_modulev3.model import Llama3Model
 from ..llama3_modulev3.model_config import Llama3Config
 from .weight_adapters import convert_exaone_safetensor_state_dict
-
-
-class ExaoneConfig(PretrainedConfig):
-    """Local config class for EXAONE 3.5 models.
-
-    The ``exaone`` model type is not natively registered in transformers, and the
-    remote ``configuration_exaone.py`` shipped in EXAONE 3.5 HuggingFace repos is
-    incompatible with the pinned transformers version.  Registering this minimal
-    subclass lets ``AutoConfig.from_pretrained`` load the repo's ``config.json``
-    without requiring ``trust_remote_code``.
-    """
-
-    model_type = "exaone"
-
-    @property
-    def num_hidden_layers(self) -> int:
-        """Aliases ``num_layers`` to the standard ``num_hidden_layers`` name."""
-        return self.num_layers
-
-
-AutoConfig.register("exaone", ExaoneConfig)
 
 exaone_modulev3_arch = SupportedArchitecture(
     name="ExaoneForCausalLM_ModuleV3",
@@ -67,4 +46,5 @@ exaone_modulev3_arch = SupportedArchitecture(
         WeightsFormat.gguf: weight_adapters.convert_gguf_state_dict,
     },
     config=Llama3Config,
+    memory_planner=PagedMemoryPlanner,
 )

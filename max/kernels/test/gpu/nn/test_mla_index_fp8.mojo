@@ -70,10 +70,6 @@ def test_mla_index_fp8_paged_variable_lengths[
         max_seq_len = max(max_seq_len, seq_lens[i])
         max_cache_len = max(max_cache_len, cache_lens[i])
 
-    # max_num_keys uses static max values to match kernel's calculation
-    # (kernel uses k_cache.max_context_length() + max_prompt_length())
-    var max_num_keys = max_cache_len + max_seq_len
-
     print(
         "test_mla_index_fp8_paged_variable_lengths with params:",
         "num_heads:",
@@ -214,21 +210,29 @@ def test_mla_index_fp8_paged_variable_lengths[
         ks_shape
     )
     var k_collection = PagedKVCacheCollection[
-        DType.float8_e4m3fn, kv_params, page_size, DType.float32, 128
+        DType.float8_e4m3fn,
+        kv_params,
+        page_size,
+        scale_dtype_=DType.float32,
+        quantization_granularity_=128,
     ](
-        LayoutTensor[DType.float8_e4m3fn, k_block_layout, MutAnyOrigin](
-            k_block_device.unsafe_ptr(), k_block_runtime_layout
+        LayoutTensor[DType.float8_e4m3fn, k_block_layout](
+            k_block_device,
+            k_block_runtime_layout,
         ),
-        LayoutTensor[DType.uint32, cache_lengths_layout, ImmutAnyOrigin](
-            cache_lengths_device.unsafe_ptr(), cache_lengths_runtime_layout
+        LayoutTensor[mut=False, DType.uint32, cache_lengths_layout](
+            cache_lengths_device,
+            cache_lengths_runtime_layout,
         ),
-        LayoutTensor[DType.uint32, paged_lut_layout, ImmutAnyOrigin](
-            k_lut_device.unsafe_ptr(), paged_lut_runtime_layout
+        LayoutTensor[mut=False, DType.uint32, paged_lut_layout](
+            k_lut_device,
+            paged_lut_runtime_layout,
         ),
         UInt32(max_seq_len),  # max_seq_length (new tokens)
         UInt32(max_cache_len),  # max_cache_length (cached tokens)
-        LayoutTensor[DType.float32, ks_block_layout, MutAnyOrigin](
-            ks_block_device.unsafe_ptr(), ks_block_runtime_layout
+        LayoutTensor[DType.float32, ks_block_layout](
+            ks_block_device,
+            ks_block_runtime_layout,
         ),
     )
 

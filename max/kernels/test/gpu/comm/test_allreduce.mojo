@@ -17,7 +17,7 @@ from std.itertools import product
 
 from layout import Coord, Idx, TileTensor, coord_to_index_list, row_major
 from comm import Signal, MAX_GPUS, group_start, group_end
-from comm.sync import enable_p2p
+from comm.sync import enable_p2p, init_signal_buffer
 from comm.allreduce import (
     _allreduce_naive_single,
     allreduce,
@@ -78,7 +78,7 @@ def allreduce_test[
     # Create device buffers for all GPUs
     var in_dev = List[DeviceBuffer[dtype]](capacity=ngpus)
     var out_dev = List[DeviceBuffer[dtype]](capacity=ngpus)
-    var host_buffers = List[UnsafePointer[Scalar[dtype], MutExternalOrigin]](
+    var host_buffers = List[UnsafePointer[Scalar[dtype], MutUntrackedOrigin]](
         capacity=ngpus
     )
 
@@ -112,8 +112,12 @@ def allreduce_test[
                 size_of[Signal]() + temp_buffer_num_bytes
             )
         )
-        list_of_ctx[i].enqueue_memset[DType.uint8](signal_buffers[i], 0)
-        rank_sigs[i] = signal_buffers[i].unsafe_ptr().bitcast[Signal]()
+        rank_sigs[i] = (
+            signal_buffers[i]
+            .unsafe_ptr()
+            .bitcast[Signal]()
+            .as_unsafe_any_origin()
+        )
 
         # Copy data to device for non-multimem path
         if not use_multimem:
@@ -155,6 +159,11 @@ def allreduce_test[
     for i in range(ngpus):
         out_tensors[i] = TileTensor(out_dev[i], row_major(length))
 
+    # One-time init of the signal buffers: zero the barrier counters / state,
+    # then set the embedded Lamport region to the -0.0 sentinel. Synchronize so
+    # every rank's buffer is initialized before any rank's first push.
+    for i in range(ngpus):
+        init_signal_buffer(signal_buffers[i], list_of_ctx[i])
     for i in range(ngpus):
         list_of_ctx[i].synchronize()
 
@@ -303,7 +312,7 @@ def allreduce_naive_test() raises -> None:
     # Allocate input/output buffers and initialize inputs
     var in_dev = List[DeviceBuffer[DType.float32]](capacity=ngpus)
     var out_dev = List[DeviceBuffer[DType.float32]](capacity=ngpus)
-    var host_ptrs = List[UnsafePointer[Float32, MutExternalOrigin]](
+    var host_ptrs = List[UnsafePointer[Float32, MutUntrackedOrigin]](
         capacity=ngpus
     )
 

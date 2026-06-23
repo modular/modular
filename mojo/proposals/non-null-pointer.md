@@ -165,7 +165,7 @@ For example, `malloc` returns `NULL` on allocation failure:
 ```mojo
 def c_malloc(
     size: Int
-    out result: Optional[UnsafePointer[UInt8], ExternalOrigin[mut=True]],
+    out result: Optional[UnsafePointer[UInt8], UntrackedOrigin[mut=True]],
 ):
     return external_call["malloc", type_of(result)](size)
 
@@ -241,17 +241,17 @@ Before:
 
 ```mojo
 struct MyBuffer:
-    var data: UnsafePointer[UInt8, ExternalOrigin[mut=True]]
+    var data: UnsafePointer[UInt8, UntrackedOrigin[mut=True]]
 
     def __init__(out self):
-        self.data = UnsafePointer[UInt8, ExternalOrigin[mut=True]]()
+        self.data = UnsafePointer[UInt8, UntrackedOrigin[mut=True]]()
 ```
 
 After:
 
 ```mojo
 struct MyBuffer:
-    var data: Optional[UnsafePointer[UInt8, ExternalOrigin[mut=True]]]
+    var data: Optional[UnsafePointer[UInt8, UntrackedOrigin[mut=True]]]
 
     def __init__(out self):
         self.data = None

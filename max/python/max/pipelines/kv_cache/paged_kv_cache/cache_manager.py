@@ -21,27 +21,27 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 
 import numpy as np
-from max.driver import CPU, Buffer, Device, DevicePinnedBuffer
+from max.driver import Buffer, Device, DevicePinnedBuffer
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import DeviceRef
 from max.nn.kv_cache import (
-    KVCacheBuffer,
+    BatchCharacteristics,
     KVCacheInputs,
+    KVCacheInputsInterface,
     KVCacheParamInterface,
-    KVCacheParams,
-    MultiKVCacheParams,
 )
 from max.nn.kv_cache import KVCacheInputsPerDevice as _KVCacheInputsPerDevice
+from max.nn.kv_cache.cache_params import (
+    KVCacheAssignments,
+    KVCacheBufferInterface,
+)
 from max.nn.kv_cache.data_parallelism_utils import split_into_groups
 from max.nn.kv_cache.metrics import KVCacheMetrics
-from max.nn.kv_cache.utils import (
-    AttentionDispatchResolver,
-    build_max_lengths_tensor,
-)
+from max.nn.kv_cache.utils import build_max_lengths_tensor
+from max.pipelines.context import TextContext
 from max.pipelines.kv_cache.kv_connector import KVConnector
 from max.pipelines.kv_cache.memory_tier import MemoryTier
-from max.pipelines.modeling.types import RequestID, TextGenerationContext
+from max.pipelines.modeling.types import RequestID
 from max.profiler import traced
 from max.support.math import ceildiv
 
@@ -60,6 +60,36 @@ KVCacheInputsPerDevice = _KVCacheInputsPerDevice[Buffer, Buffer]
 #: a multiple of 8 so the inner-dim stride stays 32-byte aligned for the
 #: ``ld.global.v{N}.u32`` vector loads.
 _LUT_TAIL_PAD = 16
+
+
+def prompt_tokens_for_context(ctx: TextContext) -> int:
+    """Returns the per-step query (prompt) width for ``ctx``.
+
+    The new tokens processed this step plus any draft tokens to verify. Matches
+    the decode kernel's ``q_max_seq_len`` (prefill: full prompt; decode:
+    ``1 + num_draft_tokens_to_verify``).
+    """
+    return ctx.tokens.active_length + len(
+        ctx.spec_decoding_state.draft_tokens_to_verify
+    )
+
+
+def cache_valid_length_for_context(
+    ctx: TextContext, num_draft_tokens: int
+) -> int:
+    """Returns the maximum valid cache length this forward reads for ``ctx``.
+
+    Already-cached tokens (processed + accepted draft) plus this step's query
+    width (:func:`prompt_tokens_for_context`) plus the draft tokens written this
+    step (``num_draft_tokens``). Shared with the graph-capture replay path so
+    its upper-bound characteristics match what this manager prepares.
+    """
+    return (
+        ctx.tokens.processed_length
+        + len(ctx.spec_decoding_state.maybe_accepted_draft_tokens)
+        + prompt_tokens_for_context(ctx)
+        + num_draft_tokens
+    )
 
 
 def _padded_lut_cols(cols: int) -> int:
@@ -149,18 +179,8 @@ class _ReplicaMetadata:
     persistent_kv_device_input_buffers: _PersistentKVDeviceInputBuffers
     """Persistent device input buffers for the KV cache."""
 
-    device_buffers: list[KVCacheBuffer]
-    """Device buffers for each KV cache (length 1 for single-cache models)."""
-
     devices: Sequence[Device]
     """Devices for the replica."""
-
-    attention_dispatch_resolver: AttentionDispatchResolver
-    """Attention dispatch resolver for the replica's target attention."""
-
-    draft_attention_dispatch_resolver: AttentionDispatchResolver | None = None
-    """Optional draft resolver, used when the drafter's attention type differs
-    from the target's. Falls back to the target resolver when ``None``."""
 
     claimed_requests: set[RequestID] = field(default_factory=set)
     """Set of request IDs claimed on this replica."""
@@ -180,13 +200,11 @@ class PagedKVCacheManager:
         kv_manager.claim(ctx2.request_id, replica_idx=1)
 
         # Allocate blocks for these requests
-        kv_manager.alloc(ctx1, replica_idx=0, num_steps=10)
-        kv_manager.alloc(ctx2, replica_idx=1, num_steps=10)
+        kv_manager.alloc(ctx1, replica_idx=0)
+        kv_manager.alloc(ctx2, replica_idx=1)
 
         # Get KVCache inputs to feed to graph
-        kv_cache_inputs = kv_manager.runtime_inputs(
-            [[ctx1, ctx2]], num_steps=10
-        )
+        kv_cache_inputs = kv_manager.runtime_inputs([[ctx1, ctx2]])
 
         # Run model...
         # Update requests with newly generated tokens
@@ -210,12 +228,6 @@ class PagedKVCacheManager:
         enable_runtime_checks: bool = False,
         *,
         max_batch_size: int,
-        other_kv_managers_device_buffers_per_replica: list[list[Buffer]]
-        | None = None,
-        other_kv_managers_device_buffers_per_replica_not_replicated: list[
-            list[Buffer]
-        ]
-        | None = None,
     ) -> None:
         """Initialize the multi-device paged KV cache manager.
 
@@ -228,35 +240,18 @@ class PagedKVCacheManager:
             max_batch_size: Maximum runtime batch size used to preallocate
                 per-replica runtime lookup-table/cache-length row capacity.
             enable_runtime_checks: Whether to enable runtime checks.
-            other_kv_managers_device_buffers_per_replica:
-                A list of lists of device buffers for other KV managers that should
-                be offloaded by this KV manager's KVConnectors. This is a massive
-                hack due to the lack of unified KVCache that handles multiple KVs.
-            other_kv_managers_device_buffers_per_replica_not_replicated:
-                A list of lists of device buffers for other KV managers that should
-                be offloaded by this KV manager's KVConnectors. This is a massive
-                hack due to the lack of unified KVCache that handles multiple KVs.
-                This is only present for mla target and mha draft.
         """
         if max_batch_size < 1:
             raise ValueError("max_batch_size must be positive")
 
         self.params = params
 
-        if isinstance(params, MultiKVCacheParams):
-            self._cache_params: list[KVCacheParams] = list(params.params)
-        else:
-            assert isinstance(params, KVCacheParams)
-            self._cache_params = [params]
-        self._num_caches = len(self._cache_params)
-
-        primary_params = self._cache_params[0]
-        devices = [d.to_device() for d in primary_params.devices]
+        devices = [d.to_device() for d in params.devices]
         self._total_num_pages = total_num_pages
         self._total_num_host_pages = total_num_host_pages
         self._max_batch_size = max_batch_size
 
-        num_replicas = primary_params.data_parallel_degree
+        num_replicas = params.data_parallel_degree
         assert len(devices) % num_replicas == 0, (
             "Number of devices must be divisible by number of replicas"
         )
@@ -268,67 +263,20 @@ class PagedKVCacheManager:
             else MemoryTier.MEMORY_TIER_GPU
         )
 
-        all_device_buffers: list[list[KVCacheBuffer]] = [
-            cp.allocate_buffers(total_num_pages) for cp in self._cache_params
-        ]
+        # Allocate one extra page for the null block.
+        self._kv_buffers: Sequence[KVCacheBufferInterface] = (
+            params.allocate_buffers(total_num_pages + 1)
+        )
 
         self._replica: list[_ReplicaMetadata] = []
         for replica_idx in range(num_replicas):
             replica_devices = devices_per_replica[replica_idx]
-
-            replica_device_buffers = [
-                cache_bufs[replica_idx] for cache_bufs in all_device_buffers
-            ]
-            dispatch_resolver = AttentionDispatchResolver(
-                devices=[DeviceRef.from_device(d) for d in replica_devices],
-                is_mla=primary_params.is_mla,
-                n_kv_heads_per_device=primary_params.n_kv_heads_per_device,
-                num_q_heads_per_device=primary_params.num_q_heads_per_device,
-                # TODO(SERVOPT-1094): Replace with quantized_kv_cache
-                # once SnapMLA uses a valid scale_dtype.
-                is_fp8_kv=primary_params.is_fp8_kv_dtype,
-            )
-
-            draft_dispatch_resolver: AttentionDispatchResolver | None = None
-            if self._num_caches > 1:
-                draft_params = self._cache_params[1]
-                if draft_params.is_mla != primary_params.is_mla:
-                    draft_dispatch_resolver = AttentionDispatchResolver(
-                        devices=[
-                            DeviceRef.from_device(d) for d in replica_devices
-                        ],
-                        is_mla=draft_params.is_mla,
-                        n_kv_heads_per_device=draft_params.n_kv_heads_per_device,
-                        num_q_heads_per_device=draft_params.num_q_heads_per_device,
-                        is_fp8_kv=draft_params.is_fp8_kv_dtype,
-                    )
-
-            # TODO(SERVOPT-1254): Connector uses primary cache buffer only.
-            replica_params = primary_params.copy_as_dp_1(
-                replica_idx=replica_idx
-            )
-            device_buffers_to_offload = replica_device_buffers[0].all_buffers
-            if other_kv_managers_device_buffers_per_replica is not None:
-                device_buffers_to_offload.extend(
-                    other_kv_managers_device_buffers_per_replica[replica_idx]
-                )
-            non_replicated_device_buffers_to_offload = []
-            if (
-                other_kv_managers_device_buffers_per_replica_not_replicated
-                is not None
-            ):
-                non_replicated_device_buffers_to_offload.extend(
-                    other_kv_managers_device_buffers_per_replica_not_replicated[
-                        replica_idx
-                    ]
-                )
             connector = create_connector(
-                params=replica_params,
+                kv_connector=params.kv_connector,
+                kv_connector_config=params.kv_connector_config,
                 devices=replica_devices,
-                device_buffers=device_buffers_to_offload,
+                kv_buffers=self._kv_buffers[replica_idx],
                 total_num_host_blocks=total_num_host_pages,
-                total_num_blocks=total_num_pages,
-                non_replicated_device_buffers_to_offload=non_replicated_device_buffers_to_offload,
             )
 
             persistent_kv_device_input_buffers = (
@@ -342,9 +290,9 @@ class PagedKVCacheManager:
             block_manager = BlockManager(
                 device_memory_tier=device_memory_tier,
                 total_num_blocks=total_num_pages,
-                block_size=primary_params.page_size,
+                block_size=params.page_size,
                 connector=connector,
-                enable_prefix_caching=primary_params.enable_prefix_caching,
+                enable_prefix_caching=params.enable_prefix_caching,
                 enable_runtime_checks=enable_runtime_checks,
             )
 
@@ -353,37 +301,18 @@ class PagedKVCacheManager:
                     block_manager=block_manager,
                     connector=connector,
                     persistent_kv_device_input_buffers=persistent_kv_device_input_buffers,
-                    device_buffers=replica_device_buffers,
                     devices=replica_devices,
-                    attention_dispatch_resolver=dispatch_resolver,
-                    draft_attention_dispatch_resolver=draft_dispatch_resolver,
                 )
             )
 
-    @property
-    def num_caches(self) -> int:
-        """Number of KV caches managed (1 for single-cache, N for multi)."""
-        return self._num_caches
-
-    def cache_params(self, cache_idx: int = 0) -> KVCacheParams:
-        """Returns the ``KVCacheParams`` for a specific cache."""
-        return self._cache_params[cache_idx]
-
-    def dispatch_resolver(
-        self, replica_idx: int = 0
-    ) -> AttentionDispatchResolver:
-        """Returns the attention dispatch resolver for a replica."""
-        return self._replica[replica_idx].attention_dispatch_resolver
-
     def get_pct_used_blocks_after_allocation(
-        self, ctx: TextGenerationContext, replica_idx: int, num_steps: int = 1
+        self, ctx: TextContext, replica_idx: int
     ) -> float:
         """Gets the percentage of blocks used after allocating for a request.
 
         Args:
             ctx: The request context containing sequence information and token indices.
             replica_idx: Index of the replica to query.
-            num_steps: Number of additional steps to allocate blocks for. Defaults to 1.
 
         Returns:
             The percentage of total blocks used after allocating for the request.
@@ -391,7 +320,11 @@ class PagedKVCacheManager:
         block_manager = self._replica[replica_idx].block_manager
         num_needed_blocks = (
             self.get_num_used_pages(replica_idx)
-            + block_manager.num_blocks_to_allocate(ctx, num_steps)
+            + block_manager.num_blocks_to_allocate(
+                ctx,
+                self.params.num_draft_tokens,
+                self.params.num_draft_tokens_per_step,
+            )
             - block_manager.count_full_blocks_from_prefix_caches(ctx)
         )
         return min(
@@ -401,11 +334,10 @@ class PagedKVCacheManager:
 
     def alloc(
         self,
-        data: TextGenerationContext,
+        data: TextContext,
         replica_idx: int,
-        num_steps: int = 1,
     ) -> None:
-        """Allocates blocks for a request to run for N steps.
+        """Allocates blocks for a request.
 
         When prefix caching is enabled, some of the allocated blocks may be
         retrieved from the prefix cache and the context's active token window
@@ -415,7 +347,6 @@ class PagedKVCacheManager:
             data: The text generation context for the request. The request ID
                 must already be assigned to a replica via ``claim``.
             replica_idx: Index of the replica to allocate on.
-            num_steps: The number of steps to reserve blocks for. Default: 1.
 
         Raises:
             InsufficientBlocksError: If there are insufficient free blocks to
@@ -425,14 +356,13 @@ class PagedKVCacheManager:
         replica.block_manager.reuse_blocks_from_prefix_cache(data)
         replica.block_manager.allocate_new_blocks(
             data,
-            num_steps,
             self.params.num_draft_tokens,
+            self.params.num_draft_tokens_per_step,
         )
 
     def _does_req_need_more_blocks(
         self,
-        ctx: TextGenerationContext,
-        num_steps: int,
+        ctx: TextContext,
         replica_idx: int,
     ) -> bool:
         """Determines if a request needs additional blocks."""
@@ -440,34 +370,41 @@ class PagedKVCacheManager:
         block_manager = replica.block_manager
         seq_len = _compute_seq_len(
             ctx,
-            num_steps,
             self.params.num_draft_tokens,
+            self.params.num_draft_tokens_per_step,
         )
         num_blocks = len(block_manager.req_to_blocks[ctx.request_id])
         return seq_len > num_blocks * self.params.page_size
 
     @traced
-    def _runtime_inputs_for_replica(
+    def _compute_kv_cache_assignments(
         self,
         replica_idx: int,
-        batch: Sequence[TextGenerationContext],
-        num_steps: int = 1,
+        batch: Sequence[TextContext],
         *,
         max_cache_length: int | None = None,
-    ) -> list[KVCacheInputsPerDevice]:
-        """Gets runtime inputs for a batch of requests.
+        batch_characteristics: BatchCharacteristics | None = None,
+    ) -> KVCacheAssignments:
+        """Computes KV cache assignments for a batch of requests.
 
         Args:
             replica_idx: Index of the replica to get runtime inputs for.
             batch: Batch of request contexts.
-            num_steps: Number of decode steps for the fetch.
             max_cache_length: Optional explicit max cache length to size LUT
                 views. If not provided, uses request-derived runtime length.
+            batch_characteristics: Optional upper-bound batch shape used to
+                prepare attention dispatch metadata. When provided, the dispatch
+                metadata (and ``max_lengths``) is resolved from these
+                (e.g. graph-capture-aligned) values rather than the batch's real
+                values, so the resolved key matches a captured graph. The batch's
+                real values must not exceed these. When ``None``, the metadata is
+                prepared from the real per-replica values.
 
         Raises:
             ValueError: If a request in ``batch`` is missing allocated blocks,
-                if ``batch`` exceeds preallocated runtime capacity, or if
-                ``max_cache_length`` implies a LUT shape that is invalid.
+                if ``batch`` exceeds preallocated runtime capacity, if
+                ``max_cache_length`` implies a LUT shape that is invalid, or if
+                the real batch shape exceeds ``batch_characteristics``.
         """
         replica = self._replica[replica_idx]
 
@@ -476,7 +413,6 @@ class PagedKVCacheManager:
             # Allocate blocks for request if we need more.
             if self._does_req_need_more_blocks(
                 ctx,
-                num_steps,
                 replica_idx=replica_idx,
             ):
                 raise ValueError(
@@ -486,8 +422,8 @@ class PagedKVCacheManager:
             # Compute the total sequence length
             seq_len = _compute_seq_len(
                 ctx,
-                num_steps,
                 self.params.num_draft_tokens,
+                self.params.num_draft_tokens_per_step,
             )
             max_seq_len = max(max_seq_len, seq_len)
 
@@ -528,28 +464,16 @@ class PagedKVCacheManager:
         # ``first_lut_idx``. [0, total_num_pages) are the valid block ids
         # and total_num_pages denotes an unassigned block.
         padded_lut_num_pages = _padded_lut_cols(lut_num_pages)
-        if device0.is_host:
-            lut_table_host: Buffer = Buffer(
-                shape=(batch_size, padded_lut_num_pages),
-                dtype=DType.uint32,
-                device=device0,
-            )
-            cache_lengths_host: Buffer = Buffer(
-                shape=(batch_size,),
-                dtype=DType.uint32,
-                device=device0,
-            )
-        else:
-            lut_table_host = DevicePinnedBuffer(
-                shape=(batch_size, padded_lut_num_pages),
-                dtype=DType.uint32,
-                device=device0,
-            )
-            cache_lengths_host = DevicePinnedBuffer(
-                shape=(batch_size,),
-                dtype=DType.uint32,
-                device=device0,
-            )
+        shape = (batch_size, padded_lut_num_pages)
+        dtype = DType.uint32
+        device = device0
+        buffer_cls = Buffer if device0.is_host else DevicePinnedBuffer
+        lut_table_host: Buffer = buffer_cls(
+            shape=shape, dtype=dtype, device=device
+        )
+        cache_lengths_host = buffer_cls(
+            shape=(batch_size,), dtype=dtype, device=device
+        )
 
         runtime_inputs = replica.persistent_kv_device_input_buffers
         # Take a contiguous view of the LUT buffer, which is written to below.
@@ -571,13 +495,22 @@ class PagedKVCacheManager:
         assert all(buffer.is_contiguous for buffer in lut_table_by_device)
 
         lut_table_np = lut_table_host.to_numpy()
+        # Fill value is load-bearing: must be exactly `total_num_pages` (the
+        # null-block index). The SIMD `populate` path in `PagedKVCache`
+        # (types.mojo) multiplies every LUT entry by `page_stride` with no
+        # sentinel check, including tail-padding columns it over-reads for
+        # SIMD alignment. `total_num_pages * page_stride` resolves to the
+        # null-block page, which is in-bounds because `allocate_buffers`
+        # allocates N+1 pages. Any other fill value (e.g. a magic constant)
+        # computes an out-of-bounds GPU address → CUDA_ERROR_ILLEGAL_ADDRESS.
         lut_table_np.fill(self._total_num_pages)
+
         cache_lengths_np = cache_lengths_host.to_numpy()
         cache_lengths_np.fill(0)
 
         # Update cache_lengths and max_lengths.
         max_prompt_len = 0
-        max_cached_len = 0
+        absolute_max_cached_len = 0
         for batch_idx, ctx in enumerate(batch):
             # Get the blocks for this request.
             blocks = self.get_req_blocks(ctx.request_id, replica_idx)
@@ -585,8 +518,8 @@ class PagedKVCacheManager:
             # Sanity check that we have enough blocks.
             seq_len = _compute_seq_len(
                 ctx,
-                num_steps,
                 self.params.num_draft_tokens,
+                self.params.num_draft_tokens_per_step,
             )
             num_required_blocks = ceildiv(seq_len, self.params.page_size)
             assert len(blocks) >= num_required_blocks
@@ -604,23 +537,46 @@ class PagedKVCacheManager:
             )
             cache_lengths_np[batch_idx] = cache_length
 
-            # Update the maximum lengths seen so far.
-            prompt_tokens = ctx.tokens.active_length + len(
-                ctx.spec_decoding_state.draft_tokens_to_verify
+            # Update the maximum lengths seen so far. The shared helpers keep
+            # this in lockstep with the graph-capture replay path's
+            # upper-bound characteristics.
+            max_prompt_len = max(max_prompt_len, prompt_tokens_for_context(ctx))
+            absolute_max_cached_len = max(
+                absolute_max_cached_len,
+                cache_valid_length_for_context(
+                    ctx, self.params.num_draft_tokens
+                ),
             )
-            max_prompt_len = max(max_prompt_len, prompt_tokens)
-            max_cached_len = max(max_cached_len, cache_length + prompt_tokens)
+
+        # Barrier for in-flight loads before the forward pass: connectors whose
+        # loads complete off the device stream (dKV's NIXL READs) must land here,
+        # since this runs before the model executes. No-op for host/disk tiers.
+        replica.connector.wait_for_loads()
 
         # Initiate saves to external cache tiers.
         replica.block_manager.offload()
 
-        # Build a tensor of maximum lengths. Each step slices the first row to
-        # advance to the values for the next row. This should not be allocated
-        # on pinned memory since it is exclusively accessed on the CPU and never
-        # copied to the GPU.
-        absolute_max_cached_len = max_cached_len + self.params.num_draft_tokens
+        # Choose the shape used to prepare attention dispatch metadata. When
+        # ``batch_characteristics`` is provided (e.g. graph-capture replay), the
+        # dispatch key is resolved once from those (aligned, upper-bound) values
+        # so it matches a captured graph; otherwise the real per-replica values
+        # are used. LUT / cache_lengths always use the real values; only the
+        # dispatch metadata and ``max_lengths`` follow ``dispatch_*``.
+        if batch_characteristics is not None:
+            bc = batch_characteristics
+            if (
+                batch_size > bc.batch_size
+                or max_prompt_len > bc.max_prompt_length
+                or absolute_max_cached_len > bc.max_cache_valid_length
+            ):
+                raise ValueError(
+                    f"Real batch size ({batch_size}) exceeds the requested dispatch batch size ({bc.batch_size})."
+                )
+            batch_size = bc.batch_size
+            max_prompt_len = bc.max_prompt_length
+            absolute_max_cached_len = bc.max_cache_valid_length
+
         max_lengths_host = build_max_lengths_tensor(
-            num_steps,
             max_prompt_len,
             absolute_max_cached_len,
         )
@@ -635,138 +591,89 @@ class PagedKVCacheManager:
         replica.last_lut_table_host = lut_table_host
         replica.last_cache_lengths_host = cache_lengths_host
 
-        # Keep metadata aligned with kernel-side dispatch inputs.
-        # `k.max_context_length()` in flash attention corresponds to the
-        # max cached context length for this step (including active prompt
-        # tokens), i.e. `max_cached_len` here.
-        resolved_metadata = (
-            replica.attention_dispatch_resolver.resolve_for_replica(
-                batch_size,
-                max_prompt_len,
-                absolute_max_cached_len,
-            )
+        return KVCacheAssignments(
+            cache_lengths_by_device=cache_lengths_by_device,
+            lookup_table_by_device=lut_table_by_device,
+            max_lengths=max_lengths_host,
+            batch_characteristics=BatchCharacteristics(
+                batch_size=batch_size,
+                max_prompt_length=max_prompt_len,
+                max_cache_valid_length=absolute_max_cached_len,
+            ),
         )
-
-        if self.params.num_draft_tokens > 0:
-            draft_resolver = (
-                replica.draft_attention_dispatch_resolver
-                or replica.attention_dispatch_resolver
-            )
-            draft_resolved_metadata: list[Buffer] | None = (
-                draft_resolver.resolve_for_replica(
-                    batch_size,
-                    self.params.num_draft_tokens_per_step,
-                    absolute_max_cached_len,
-                )
-            )
-        else:
-            draft_resolved_metadata = None
-
-        ret_list: list[KVCacheInputsPerDevice] = []
-        for cache_idx in range(self._num_caches):
-            device_buffer = replica.device_buffers[cache_idx]
-
-            for tp_shard in range(num_tp_shards):
-                metadata = resolved_metadata[tp_shard]
-                draft_metadata = (
-                    draft_resolved_metadata[tp_shard]
-                    if draft_resolved_metadata is not None
-                    else None
-                )
-                block_device = device_buffer.values[tp_shard].device
-                if metadata.device not in (CPU(), block_device):
-                    raise AssertionError(
-                        "attention_dispatch_metadata must be host-resident "
-                        "or on the shard device; got "
-                        f"{metadata.device} for cache {cache_idx}, shard "
-                        f"{tp_shard} on {block_device}."
-                    )
-
-                ret_list.append(
-                    KVCacheInputsPerDevice(
-                        kv_blocks=device_buffer.values[tp_shard],
-                        cache_lengths=cache_lengths_by_device[tp_shard],
-                        lookup_table=lut_table_by_device[tp_shard],
-                        max_lengths=max_lengths_host,
-                        kv_scales=(
-                            device_buffer.scales[tp_shard]
-                            if device_buffer.scales is not None
-                            else None
-                        ),
-                        attention_dispatch_metadata=metadata,
-                        draft_attention_dispatch_metadata=draft_metadata,
-                    )
-                )
-
-        return ret_list
 
     def runtime_inputs(
         self,
-        batches: Sequence[Sequence[TextGenerationContext]],
-        num_steps: int = 1,
+        batches: Sequence[Sequence[TextContext]],
         *,
         max_cache_length: int | None = None,
-    ) -> KVCacheInputs[Buffer, Buffer]:
+        batch_characteristics: BatchCharacteristics | None = None,
+    ) -> KVCacheInputsInterface[Buffer, Buffer]:
         """Gets the graph inputs for per-replica batches of requests.
 
+        Returns a single ``KVCacheInputs`` leaf (or ``MultiKVCacheInputs``
+        tree for multi-cache models) whose leaves hold every
+        ``(DP replica, TP shard)`` device's inputs.
+
         This method will raise a RuntimeError if any request has insufficient blocks
-        already allocated to it to run for the given number of steps.
+        already allocated to it.
 
         Args:
             batches: Per-replica batches of requests
-            num_steps: Number of steps to run for
             max_cache_length: Optional explicit max cache length to size LUT
                 views. If not provided, uses request-derived runtime length.
+            batch_characteristics: Optional upper-bound batch shape applied
+                uniformly across every replica when preparing attention dispatch
+                metadata. When provided (e.g. graph-capture replay, where every
+                DP replica must run the identical captured graph), the dispatch
+                key is resolved once from these aligned values; the real
+                per-replica values must not exceed them. When ``None``, each
+                replica prepares metadata from its own real values (which may
+                differ per replica).
         """
         if len(batches) != len(self._replica):
             raise ValueError(
                 f"Number of batches must match number of replicas. Expected {len(self._replica)}, got {len(batches)}"
             )
-        ret_list: list[KVCacheInputsPerDevice] = []
-        for replica_idx, ctxs in enumerate(batches):
-            ret_list.extend(
-                self._runtime_inputs_for_replica(
-                    replica_idx,
-                    ctxs,
-                    num_steps,
-                    max_cache_length=max_cache_length,
-                )
+        assignments = [
+            self._compute_kv_cache_assignments(
+                replica_idx=replica_idx,
+                batch=ctxs,
+                max_cache_length=max_cache_length,
+                batch_characteristics=batch_characteristics,
             )
-        return KVCacheInputs(inputs=ret_list)
+            for replica_idx, ctxs in enumerate(batches)
+        ]
+        return self.params.build_runtime_inputs(assignments, self._kv_buffers)
 
-    @contextmanager
-    def scalar_metadata_on_host(self) -> Iterator[None]:
-        """Temporarily keep scalar dispatch metadata on CPU.
-
-        Within this context the attention dispatch resolvers return host
-        buffers so that graph-capture replay can perform a single
-        CPU-to-GPU ``inplace_copy_from`` instead of a redundant
-        GPU-to-GPU copy.
-        """
-        for replica in self._replica:
-            replica.attention_dispatch_resolver.host_only = True
-            if replica.draft_attention_dispatch_resolver is not None:
-                replica.draft_attention_dispatch_resolver.host_only = True
-        try:
-            yield
-        finally:
-            for replica in self._replica:
-                replica.attention_dispatch_resolver.host_only = False
-                if replica.draft_attention_dispatch_resolver is not None:
-                    replica.draft_attention_dispatch_resolver.host_only = False
-
-    def alloc_dummy(
+    def runtime_inputs_for_leaf(
         self,
-        request_id: RequestID,
-        replica_idx: int,
-        sentinel_request_id: RequestID,
-    ) -> None:
-        """Claims a dummy request and shares the sentinel's block on a replica."""
+        batches: Sequence[Sequence[TextContext]],
+        *,
+        max_cache_length: int | None = None,
+        batch_characteristics: BatchCharacteristics | None = None,
+    ) -> KVCacheInputs[Buffer, Buffer]:
+        """Returns :meth:`runtime_inputs` narrowed to a single leaf cache.
+
+        Convenience wrapper for single-cache (non-tree) models: it asserts the
+        result is a :class:`KVCacheInputs` leaf and returns it, so callers can
+        access ``.inputs`` directly without narrowing the
+        :class:`KVCacheInputsInterface` themselves. Raises ``AssertionError``
+        for tree (``MultiKVCacheInputs``) models.
+        """
+        inputs = self.runtime_inputs(
+            batches,
+            max_cache_length=max_cache_length,
+            batch_characteristics=batch_characteristics,
+        )
+        assert isinstance(inputs, KVCacheInputs)
+        return inputs
+
+    def alloc_dummy(self, request_id: RequestID, replica_idx: int) -> None:
+        """Claims a dummy request and maps it to the replica's null block."""
         self.claim(request_id, replica_idx)
         replica = self._replica[replica_idx]
-        replica.block_manager.register_dummy_request(
-            request_id, sentinel_request_id
-        )
+        replica.block_manager.register_dummy_request(request_id)
 
     def num_free_blocks(self, replica_idx: int = 0) -> int:
         """Returns the number of free KV cache blocks on the given replica."""
@@ -803,9 +710,7 @@ class PagedKVCacheManager:
     @contextmanager
     def reserve(
         self,
-        replica_batches: Sequence[Sequence[TextGenerationContext]],
-        *,
-        num_steps: int = 1,
+        replica_batches: Sequence[Sequence[TextContext]],
     ) -> Iterator[None]:
         """Claims, allocates, and releases contexts within a scope.
 
@@ -814,7 +719,6 @@ class PagedKVCacheManager:
 
         Args:
             replica_batches: Per-replica lists of contexts to reserve.
-            num_steps: Number of steps to allocate for each context.
         """
         claimed: list[tuple[RequestID, int]] = []
         try:
@@ -830,18 +734,19 @@ class PagedKVCacheManager:
                         )
                     self.claim(context.request_id, replica_idx=replica_idx)
                     claimed.append((context.request_id, replica_idx))
-                    self.alloc(
-                        context, replica_idx=replica_idx, num_steps=num_steps
-                    )
+                    self.alloc(context, replica_idx=replica_idx)
             yield
         finally:
             for request_id, replica_idx in claimed:
                 self.release(request_id, replica_idx=replica_idx)
 
-    def step(self, batches: Sequence[Sequence[TextGenerationContext]]) -> None:
+    def step(self, batches: Sequence[Sequence[TextContext]]) -> None:
         """Commits new tokens into the prefix cache for per-replica batches."""
         for replica, ctxs in zip(self._replica, batches, strict=True):
-            replica.connector.sync()
+            # Drain offloads posted this iteration (post-forward-pass): the
+            # host/disk tiers wait on their D2H copies and post disk writes; the
+            # dKV connector awaits its NIXL WRITEs and registers the blocks.
+            replica.connector.wait_for_offloads()
             for ctx in ctxs:
                 replica.block_manager.step(ctx)
 
@@ -861,10 +766,12 @@ class PagedKVCacheManager:
             replica.block_manager.reset_prefix_cache()
             replica.connector.reset_prefix_cache()
 
-    def get_metrics(self, replica_idx: int) -> KVCacheMetrics:
-        """Returns metrics for the given replica."""
-        replica = self._replica[replica_idx]
-        return replica.block_manager.metrics
+    def get_metrics_aggregated(self) -> KVCacheMetrics:
+        """Returns aggregated metrics across all replicas."""
+        return sum(
+            (replica.block_manager.metrics for replica in self._replica),
+            start=KVCacheMetrics(),
+        )
 
     def get_req_blocks(
         self, request_id: RequestID, replica_idx: int
@@ -903,14 +810,10 @@ class PagedKVCacheManager:
         replica = self._replica[replica_idx]
         return replica.connector.num_used_disk_blocks
 
-    def get_device_buffer(
-        self, replica_idx: int, cache_idx: int = 0
-    ) -> KVCacheBuffer:
-        """Returns device buffer for a specific cache on a replica.
+    def get_device_buffer(self, replica_idx: int) -> KVCacheBufferInterface:
+        """Returns the replica's KV buffer (single leaf or tree).
 
-        Args:
-            replica_idx: Index of the replica.
-            cache_idx: Index of the cache (default 0 = primary cache).
+        HACK: this exists only for the transfer engine; callers flatten via
+        :attr:`KVCacheBufferInterface.all_buffers`.
         """
-        replica = self._replica[replica_idx]
-        return replica.device_buffers[cache_idx]
+        return self._kv_buffers[replica_idx]

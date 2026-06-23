@@ -28,12 +28,13 @@ from max.graph.weights import SafetensorWeights, Weights, WeightsAdapter
 from max.nn.comm import Signals
 from max.nn.kv_cache import (
     KVCacheInputs,
+    KVCacheInputsInterface,
     KVCacheParamInterface,
     PagedCacheValues,
 )
 from max.nn.layer import Module
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
-from max.pipelines.core import TextContext
+from max.pipelines.context import TextContext
 from max.pipelines.lib import (
     CompilationTimer,
     KVCacheConfig,
@@ -41,10 +42,8 @@ from max.pipelines.lib import (
     ModelOutputs,
     PipelineConfig,
     PipelineModelWithKVCache,
-    upper_bounded_default,
 )
 from max.pipelines.lib.log_probabilities import LogProbabilitiesMixin
-from transformers import AutoConfig
 
 from .deepseekV2 import DeepseekV2
 from .distributed_deepseekV2 import DistributedDeepseekV2
@@ -72,7 +71,8 @@ class DeepseekV2Inputs(ModelInputs):
 
 
 class DeepseekV2Model(
-    LogProbabilitiesMixin, PipelineModelWithKVCache[TextContext]
+    LogProbabilitiesMixin,
+    PipelineModelWithKVCache[TextContext],
 ):
     model_config_cls: ClassVar[type[Any]] = DeepseekV2Config
 
@@ -137,7 +137,7 @@ class DeepseekV2Model(
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
+        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> DeepseekV2Inputs:
         if len(replica_batches) > 1:
@@ -166,39 +166,6 @@ class DeepseekV2Model(
             ).to(self.devices[0]),
         )
 
-    def prepare_next_token_inputs(
-        self,
-        next_tokens: Buffer,
-        prev_model_inputs: ModelInputs,
-    ) -> DeepseekV2Inputs:
-        assert isinstance(prev_model_inputs, DeepseekV2Inputs)
-        row_offsets_size = prev_model_inputs.input_row_offsets.shape[0]
-        next_row_offsets = self._input_row_offsets_prealloc[:row_offsets_size]
-        return DeepseekV2Inputs(
-            tokens=next_tokens,
-            input_row_offsets=next_row_offsets,
-            signal_buffers=self.signal_buffers,
-            kv_cache_inputs=prev_model_inputs.kv_cache_inputs,
-            return_n_logits=prev_model_inputs.return_n_logits,
-        )
-
-    @classmethod
-    def calculate_max_seq_len(
-        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
-    ) -> int:
-        try:
-            return upper_bounded_default(
-                upper_bound=huggingface_config.max_position_embeddings,
-                default=pipeline_config.model.max_length,
-            )
-        except ValueError as e:
-            raise ValueError(
-                "Unable to infer max_length for DeepseekV2, the provided "
-                f"max_length ({pipeline_config.model.max_length}) exceeds the "
-                f"model's max_seq_len "
-                f"({huggingface_config.max_position_embeddings})."
-            ) from e
-
     def graph_inputs(self) -> tuple[TensorType | BufferType, ...]:
         # Generate DeviceRef
         device_ref = DeviceRef.from_device(self.devices[0])
@@ -224,14 +191,14 @@ class DeepseekV2Model(
                 input_row_offsets_type,
                 return_n_logits_type,
                 *signals.input_types(),
-                *self.kv_params.get_symbolic_inputs().flatten(),
+                *self.kv_params.flattened_kv_inputs(),
             )
         else:
             return (
                 tokens_type,
                 input_row_offsets_type,
                 return_n_logits_type,
-                *self.kv_params.get_symbolic_inputs().flatten(),
+                *self.kv_params.flattened_kv_inputs(),
             )
 
     def _unflatten_kv_inputs(
@@ -246,11 +213,9 @@ class DeepseekV2Model(
             kv_cache_config=self.kv_cache_config,
             cache_dtype=self.pipeline_config.model.kv_cache.cache_dtype,
         )
-        return list(
-            kv_params.get_symbolic_inputs()
-            .unflatten(iter(kv_inputs_flat))
-            .inputs
-        )
+        symbolic_inputs = kv_params.unflatten_kv_inputs(iter(kv_inputs_flat))
+        assert isinstance(symbolic_inputs, KVCacheInputs)
+        return list(symbolic_inputs.inputs)
 
     def _build_graph(self) -> Graph:
         # Pre-allocate a buffer for input_row_offsets in multistep execution.

@@ -193,7 +193,10 @@ def bench_allgather[
             signal_buffers[gpu_idx], 0
         )
         rank_sigs[gpu_idx] = (
-            signal_buffers[gpu_idx].unsafe_ptr().bitcast[Signal]()
+            signal_buffers[gpu_idx]
+            .unsafe_ptr()
+            .bitcast[Signal]()
+            .as_unsafe_any_origin()
         )
 
     # Build TileTensor arrays for allgather.

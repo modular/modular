@@ -30,10 +30,7 @@ from max.graph import (
     Value,
     ops,
 )
-from max.nn.attention.multi_latent_attention import (
-    DataParallelLatentAttentionWithRope,
-    MLAPrefillMetadata,
-)
+from max.nn.attention.multi_latent_attention import MLAPrefillMetadata
 from max.nn.comm import Signals
 from max.nn.comm.ep import EPBatchManager
 from max.nn.data_parallelism import split_batch_replicated
@@ -59,14 +56,10 @@ from max.nn.transformer.distributed_transformer import (
     forward_sharded_layers,
 )
 
-from .layers import (
-    DeepseekV3_2MLP,
-    DeepseekV3_2MoE,
-    DeepseekV3_2TopKRouter,
-    Indexer,
-)
+from .layers import DeepseekV3_2MLP, DeepseekV3_2MoE, DeepseekV3_2TopKRouter
 from .layers.sparse_mla import (
     DataParallelSparseLatentAttentionWithRopeFp8,
+    TensorParallelSparseLatentAttentionWithRopeFp8,
 )
 from .model_config import DeepseekV3_2Config
 
@@ -152,34 +145,26 @@ class DeepseekV3_2DecoderLayer(Module):
         self.ep_manager = ep_manager
         num_devices = len(config.devices)
 
-        self.self_attn: (
-            DataParallelSparseLatentAttentionWithRopeFp8
-            | DataParallelLatentAttentionWithRope
-        )
         self.mlp: DeepseekV3_2MLP | DeepseekV3_2MoE | MoE
         self.mlp_shards: list[DeepseekV3_2MLP | DeepseekV3_2MoE | Module]
 
+        nvfp4_enabled = (
+            config.quant_config is not None and config.quant_config.is_nvfp4
+        )
+        use_fp8_mla = config.quant_config is not None and not nvfp4_enabled
         if config.quant_config is None:
             raise ValueError(
                 "DeepSeekV3.2 sparse attention requires a quantization config."
             )
 
-        num_hidden_layers = config.num_hidden_layers
-        attn_quantized_layers = config.quant_config.attn_quantized_layers
-        if attn_quantized_layers and len(attn_quantized_layers) not in (
-            0,
-            num_hidden_layers,
-        ):
+        if not use_fp8_mla:
             raise ValueError(
-                "DeepSeekV3.2 sparse attention requires uniform attention "
-                "quantization across layers."
+                "DeepSeekV3.2 must be executed with fp8 (due to fp8 indexer)."
             )
-        self.use_fp8_mla_sparse = (
-            len(attn_quantized_layers) == num_hidden_layers
-        )
 
         assert isinstance(config.kv_params, MultiKVCacheParams)
-        mla_kv_params, _indexer_kv_params = config.kv_params.params
+        mla_kv_params = config.kv_params.children["mla"]
+        _indexer_kv_params = config.kv_params.children["indexer"]
 
         sparse_attn_kwargs: dict[str, Any] = dict(
             rope=rope,
@@ -193,37 +178,29 @@ class DeepseekV3_2DecoderLayer(Module):
             qk_rope_head_dim=config.qk_rope_head_dim,
             v_head_dim=config.v_head_dim,
             devices=config.devices,
-            graph_mode=config.graph_mode,
+            graph_mode="decode",
             buffer_size=config.max_batch_context_length,
+            index_n_heads=config.index_n_heads,
+            index_head_dim=config.index_head_dim,
+            index_topk=config.index_topk,
         )
 
-        if not self.use_fp8_mla_sparse:
-            # BF16 MLA (e.g. NVFP4 with ``self_attn*`` in modelopt ignore).
-            # Dense decode for now (no FP8 sparse kernel); indexer weights load
-            # but are not executed in forward.
-            self.self_attn = DataParallelLatentAttentionWithRope(
-                dtype=DType.bfloat16,
+        self.tp_attention = num_devices > 1 and config.data_parallel_degree == 1
+        self.self_attn: (
+            DataParallelSparseLatentAttentionWithRopeFp8
+            | TensorParallelSparseLatentAttentionWithRopeFp8
+        )
+        if self.tp_attention:
+            self.self_attn = TensorParallelSparseLatentAttentionWithRopeFp8(
+                skip_allreduce=True,
                 norm_dtype=config.norm_dtype,
+                quant_config=config.quant_config,
                 **sparse_attn_kwargs,
-            )
-            self.self_attn.indexer = Indexer(
-                dim=config.hidden_size,
-                index_n_heads=config.index_n_heads,
-                index_head_dim=config.index_head_dim,
-                qk_rope_head_dim=config.qk_rope_head_dim,
-                index_topk=config.index_topk,
-                q_lora_rank=config.q_lora_rank,
-                devices=config.devices,
-                activation_quant_config=config.quant_config,
-                weight_quant_config=None,
             )
         else:
             self.self_attn = DataParallelSparseLatentAttentionWithRopeFp8(
-                norm_dtype=DType.float32,
+                norm_dtype=config.norm_dtype,
                 quant_config=config.quant_config,
-                index_n_heads=config.index_n_heads,
-                index_head_dim=config.index_head_dim,
-                index_topk=config.index_topk,
                 **sparse_attn_kwargs,
             )
 
@@ -344,9 +321,14 @@ class DeepseekV3_2DecoderLayer(Module):
                 devices=config.devices,
                 quant_config=layer_quant_config,
             )
-            mlp.sharding_strategy = ShardingStrategy.replicate(
-                len(config.devices)
-            )
+            if config.ep_config is not None and config.ep_config.use_allreduce:
+                mlp.sharding_strategy = ShardingStrategy.tensor_parallel(
+                    len(config.devices)
+                )
+            else:
+                mlp.sharding_strategy = ShardingStrategy.replicate(
+                    len(config.devices)
+                )
             return mlp
 
     def __call__(
@@ -368,6 +350,7 @@ class DeepseekV3_2DecoderLayer(Module):
         mla_prefill_metadata_flat: list[TensorValue],
         input_row_offsets: list[TensorValue],
         mla_decode_scalar_args: list[TensorValue] | None = None,
+        mla_num_partitions_scalars: list[TensorValue] | None = None,
         ep_inputs: list[Value[Any]] | None = None,
     ) -> list[TensorValue]:
         # We have to unpack our PagedCacheValues into constituent parts so
@@ -383,6 +366,9 @@ class DeepseekV3_2DecoderLayer(Module):
                 mla_kv_cache_scales[i] if mla_kv_cache_scales else None,
                 attention_dispatch_metadata=mla_decode_scalar_args[i]
                 if mla_decode_scalar_args is not None
+                else None,
+                mla_num_partitions=mla_num_partitions_scalars[i]
+                if mla_num_partitions_scalars is not None
                 else None,
             )
             for i in range(num_devices)
@@ -415,35 +401,19 @@ class DeepseekV3_2DecoderLayer(Module):
 
         # Apply input layer norm to each shard
         norm_xs = forward_sharded_layers(self.input_layernorm_shards, xs)
-        if self.use_fp8_mla_sparse:
-            assert isinstance(
-                self.self_attn, DataParallelSparseLatentAttentionWithRopeFp8
-            )
-            attn_outs = self.self_attn(
-                layer_idx,
-                norm_xs,
-                signal_buffers,
-                mla_kv_collections,
-                indexer_kv_collections,
-                freqs_cis=freqs_cis,
-                input_row_offsets=input_row_offsets,
-                mla_prefill_metadata=mla_prefill_metadata,
-            )
-        else:
-            assert isinstance(
-                self.self_attn, DataParallelLatentAttentionWithRope
-            )
-            attn_outs = self.self_attn(
-                layer_idx,
-                norm_xs,
-                signal_buffers,
-                mla_kv_collections,
-                freqs_cis=freqs_cis,
-                input_row_offsets=input_row_offsets,
-                mla_prefill_metadata=mla_prefill_metadata,
-            )
 
-        hs = [x + attn_out for x, attn_out in zip(xs, attn_outs, strict=True)]
+        attn_outs = self.self_attn(
+            layer_idx,
+            norm_xs,
+            signal_buffers,
+            mla_kv_collections,
+            indexer_kv_collections,
+            freqs_cis=freqs_cis,
+            input_row_offsets=input_row_offsets,
+            mla_prefill_metadata=mla_prefill_metadata,
+        )
+
+        hs = self._post_attention(xs, attn_outs, signal_buffers)
 
         # Post-attention norm (per-device)
         norm_outs = forward_sharded_layers(
@@ -457,9 +427,52 @@ class DeepseekV3_2DecoderLayer(Module):
 
         mlp_outs = forward_moe_sharded_layers(self.mlp_shards, norm_outs)
 
-        hs = [h + mlp_out for h, mlp_out in zip(hs, mlp_outs, strict=True)]
+        hs = self._post_mlp(hs, mlp_outs, signal_buffers)
+
+        # In TP mode the reduce-scatter/all-gather round trip can lose the
+        # static shape; rebind to the original per-device input shape.
+        if self.tp_attention:
+            hs = [ops.rebind(h, x.shape) for h, x in zip(hs, xs, strict=True)]
 
         return hs
+
+    def _post_attention(
+        self,
+        xs: list[TensorValue],
+        attn_outs: list[TensorValue],
+        signal_buffers: list[BufferValue],
+    ) -> list[TensorValue]:
+        """Residual connection and collective after attention."""
+        if not self.tp_attention:
+            return [x + a for x, a in zip(xs, attn_outs, strict=True)]
+
+        assert self.config.ep_config is not None
+        if self.config.ep_config.use_allreduce:
+            attn_outs = ops.allreduce.sum(attn_outs, signal_buffers)
+            return [x + a for x, a in zip(xs, attn_outs, strict=True)]
+
+        # The residual is replicated across devices, so add it only on device 0
+        # to avoid counting it once per device after the reduce-scatter sum.
+        hs = [xs[0] + attn_outs[0], *attn_outs[1:]]
+        return ops.reducescatter.sum(hs, signal_buffers, axis=0)
+
+    def _post_mlp(
+        self,
+        hs: list[TensorValue],
+        mlp_outs: list[TensorValue],
+        signal_buffers: list[BufferValue],
+    ) -> list[TensorValue]:
+        """Residual connection and collective after the MoE/MLP."""
+        if not self.tp_attention:
+            return [h + m for h, m in zip(hs, mlp_outs, strict=True)]
+
+        assert self.config.ep_config is not None
+        if self.config.ep_config.use_allreduce:
+            mlp_outs = ops.allreduce.sum(mlp_outs, signal_buffers)
+            return [h + m for h, m in zip(hs, mlp_outs, strict=True)]
+
+        hs = [h + m for h, m in zip(hs, mlp_outs, strict=True)]
+        return ops.allgather(hs, signal_buffers, axis=0)
 
 
 class DeepseekV3_2(Module):
@@ -521,7 +534,7 @@ class DeepseekV3_2(Module):
                 theta=config.rope_theta,
                 max_seq_len=config.max_position_embeddings,
                 head_dim=config.qk_rope_head_dim,
-                interleaved=False,  # config.rope_interleave,
+                interleaved=config.rope_interleave,
             )
 
         self.ep_manager: EPBatchManager | None = None
@@ -681,6 +694,14 @@ class DeepseekV3_2(Module):
                 if kv.attention_dispatch_metadata is not None
             ]
 
+        mla_num_partitions_scalars: list[TensorValue] | None = None
+        if mla_kv_collections[0].mla_num_partitions is not None:
+            mla_num_partitions_scalars = [
+                kv.mla_num_partitions
+                for kv in mla_kv_collections
+                if kv.mla_num_partitions is not None
+            ]
+
         def inputs_for_layer(
             idx: int, h: list[TensorValue]
         ) -> list[Value[Any] | Sequence[Value[Any]]]:
@@ -704,6 +725,8 @@ class DeepseekV3_2(Module):
             ]
             if mla_decode_scalar_args is not None:
                 values.append(mla_decode_scalar_args)
+            if mla_num_partitions_scalars is not None:
+                values.append(mla_num_partitions_scalars)
             if ep_inputs is not None:
                 values.append(ep_inputs)
             return values
@@ -851,7 +874,7 @@ class DeepseekV3_2(Module):
             data_parallel_splits_type,
         ]
         all_input_types.extend(signal_buffer_types)
-        all_input_types.extend(kv_params.get_symbolic_inputs().flatten())
+        all_input_types.extend(kv_params.flattened_kv_inputs())
 
         # Add batch context lengths
         batch_context_length_type = TensorType(

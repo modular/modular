@@ -270,7 +270,7 @@ def memcpy[
         # A fast version for the interpreter to evaluate
         # this function during compile time.
         llvm_intrinsic["llvm.memcpy", NoneType](
-            dest_bytes, src_bytes, n._int_mlir_index()
+            dest_bytes, src_bytes, n.__mlir_index__()
         )
     else:
         _memcpy_impl(dest_bytes, src_bytes, n)
@@ -400,7 +400,7 @@ def _malloc[
     out result: Optional[
         UnsafePointer[
             type,
-            MutExternalOrigin,
+            MutUntrackedOrigin,
             address_space=AddressSpace.GENERIC,
         ]
     ],
@@ -421,7 +421,7 @@ def _malloc[
         mlir_pointer = external_call["malloc", MlirPointerType](size)
     else:
         mlir_pointer = __mlir_op.`pop.aligned_alloc`[_type=MlirPointerType](
-            alignment._int_mlir_index(), size._int_mlir_index()
+            alignment.__mlir_index__(), size.__mlir_index__()
         )
 
     # SAFETY: Due to the niche optimization, `Optional[UnsafePointer]` is
@@ -445,7 +445,7 @@ def _free(ptr: UnsafePointer[mut=True, ...]):
 @always_inline
 def _free(ptr: OptionalUnsafePointer[mut=True, ...]):
     comptime if is_gpu():
-        libc.free(unsafe_cast[Type=NoneType, origin=MutExternalOrigin](ptr))
+        libc.free(unsafe_cast[Type=NoneType, origin=MutUntrackedOrigin](ptr))
     else:
         comptime KgenPointerType = type_of(ptr).T._mlir_type
         # SAFETY: Due to the niche optimization, `Optional[UnsafePointer]` is
@@ -496,7 +496,7 @@ def is_trivially_copyable[T: Copyable]() -> Bool:
 
 
 @always_inline("nodebug")
-def is_trivially_destructible[T: ImplicitlyDestructible]() -> Bool:
+def is_trivially_destructible[T: ImplicitlyDeletable]() -> Bool:
     """Returns whether `T` has a trivial destructor.
 
     A destructor is trivial when the compiler generates it and all of `T`'s
@@ -644,7 +644,7 @@ def uninit_copy_n[
 
 @always_inline
 def destroy_n[
-    T: ImplicitlyDestructible
+    T: ImplicitlyDeletable
 ](pointer: UnsafePointer[mut=True, T, _], count: Int):
     """Destroy `count` initialized values at `pointer`.
 
@@ -655,7 +655,7 @@ def destroy_n[
     Otherwise, it calls `destroy_pointee()` on each element.
 
     Parameters:
-        T: The type of values to destroy, which must be `ImplicitlyDestructible`.
+        T: The type of values to destroy, which must be `ImplicitlyDeletable`.
 
     Args:
         pointer: Pointer to the memory region containing values to destroy.

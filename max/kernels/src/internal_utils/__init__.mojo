@@ -35,4 +35,3 @@ from ._utils import (
 from .amd_configs import TuningConfigAMD, TuningTableAMD
 from .dispatch_utils import Table, TuningConfig
 from .nvidia_configs import TuningConfigNvidia, TuningTableNvidia
-from .scalar_array import ScalarArray

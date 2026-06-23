@@ -15,7 +15,7 @@
 from collections.abc import Callable
 
 from max._core import Operation
-from max._core.dialects import kgen, rmo
+from max._core.dialects import builtin, kgen, rmo
 from max.dtype import DType
 
 from .. import dtype_promotion
@@ -23,7 +23,6 @@ from ..graph import Graph
 from ..type import DeviceRef, TensorType
 from ..value import TensorValue, TensorValueLike
 from .cast import cast
-from .constant import constant
 from .custom import custom
 from .validation import assert_same_device
 
@@ -489,6 +488,23 @@ def _elementwise_unary_predicate(
     return elementwise_op
 
 
+def _activation(x: TensorValueLike, op_type: type[Operation]) -> TensorValue:
+    """Builds a single fused activation op of the given type.
+
+    Each elementwise activation function (``relu``, ``gelu`` and its
+    approximations, ``sigmoid``, ``silu``) has its own dedicated op, backed by a
+    hardware-optimized fused Mojo kernel, rather than a Python-level composition
+    of ``exp``/``erf``/etc.
+    """
+    x = dtype_promotion._restrict_to_strong_dtypes(x)
+    return Graph.current._add_op_generated(
+        op_type,
+        result=x.type,
+        input=x,
+        output_param_decls=kgen.ParamDeclArrayAttr([]),
+    )[0].tensor
+
+
 abs = _elementwise_unary(rmo.MoAbsOp, "abs")
 abs.__doc__ = """Computes the absolute value of a tensor element-wise.
 
@@ -557,59 +573,6 @@ Raises:
 """
 
 
-def _gelu_exact(x: TensorValue):  # noqa: ANN202
-    r"""Computes the exact GELU function element-wise.
-
-    ``gelu`` is defined as ``$$gelu(x) = x \\Phi(x)$$`` where ``$$\\Phi$$``
-    is the cumulative distribution function of the Gaussian distribution.
-
-    Args:
-        x: The input to the GELU function.
-
-    Returns:
-        A tensor value of the same shape and dtype with GELU applied element-wise.
-    """
-    sqrt2 = 1.4142135623730951
-    x_cast = x.cast(_accum_type(x))
-    return (0.5 * x_cast * (1 + erf(x_cast / sqrt2))).cast(x.dtype)
-
-
-def _gelu_quick(x: TensorValue):  # noqa: ANN202
-    """Computes the quick-GELU approximation element-wise.
-
-    ``quick gelu`` is defined as ``gelu_quick(x) = sigmoid(1.702 * x) * x``.
-    Learn more in
-    [Gaussian Error Linear Units (GELUs)](https://arxiv.org/abs/1606.08415).
-
-    Args:
-        x: The input to the quick-GELU computation.
-
-    Returns:
-        A tensor value of the same shape and dtype with the quick-GELU
-        approximation applied element-wise.
-    """
-    x_cast = x.cast(_accum_type(x))
-    return (x_cast * sigmoid(x_cast * 1.702)).cast(x.dtype)
-
-
-def _gelu_tanh(x: TensorValue):  # noqa: ANN202
-    """Computes the tanh-GELU approximation element-wise.
-
-    Args:
-        x: The input to the tanh-GELU computation.
-
-    Returns:
-        A tensor value of the same shape and dtype with the tanh-GELU
-        approximation applied element-wise.
-    """
-    x_cast = x.cast(_accum_type(x))
-    return (
-        x_cast
-        * 0.5
-        * (1.0 + tanh(0.7978845608028654 * (x_cast + 0.044715 * x_cast**3)))
-    ).cast(x.dtype)
-
-
 def gelu(x: TensorValue, approximate: str = "none"):  # noqa: ANN201
     """Applies the GELU (Gaussian Error Linear Unit) activation element-wise.
 
@@ -641,11 +604,11 @@ def gelu(x: TensorValue, approximate: str = "none"):  # noqa: ANN201
         ValueError: If the approximation method is invalid.
     """
     if approximate == "none":
-        return _gelu_exact(x)
+        return _activation(x, rmo.MoGeluOp)
     if approximate == "tanh":
-        return _gelu_tanh(x)
+        return _activation(x, rmo.MoGeluTanhOp)
     if approximate == "quick":
-        return _gelu_quick(x)
+        return _activation(x, rmo.MoGeluQuickOp)
 
     raise ValueError(f"Invalid approximation method: {approximate}")
 
@@ -714,7 +677,7 @@ def _softmax_like(op_type: type[Operation], name: str):  # noqa: ANN202
             op_type,
             result=value.type,
             input=value,
-            axis=constant(axis, DType.int64, DeviceRef.CPU()),
+            axis=builtin.IntegerAttr(builtin.IndexType(), axis),
             output_param_decls=kgen.ParamDeclArrayAttr([]),
         )[0].tensor
 
@@ -794,8 +757,7 @@ def sigmoid(x: TensorValue) -> TensorValue:
     Raises:
         Error: If the input doesn't represent a tensor.
     """
-    x_cast = x.cast(_accum_type(x))
-    return (1 / (1 + exp(-x_cast))).cast(x.dtype)
+    return _activation(x, rmo.MoSigmoidOp)
 
 
 def silu(x: TensorValue):  # noqa: ANN201
@@ -819,8 +781,7 @@ def silu(x: TensorValue):  # noqa: ANN201
     Raises:
         Error: If the input doesn't represent a tensor.
     """
-    x_cast = x.cast(_accum_type(x))
-    return mul(x_cast, sigmoid(x_cast)).cast(x.dtype)
+    return _activation(x, rmo.MoSiluOp)
 
 
 softmax = _softmax_like(rmo.MoReduceSoftmaxOp, "softmax")
@@ -864,6 +825,26 @@ Args:
 
 Returns:
     A tensor value of the same shape and dtype with the cosine of each element.
+
+Raises:
+    Error: If the input doesn't represent a tensor or has a non-floating-point dtype.
+"""
+
+ceil = _elementwise_unary(rmo.MoCeilOp, "ceil")
+ceil.__doc__ = """Computes the ceil of a tensor element-wise.
+
+.. code-block:: python
+
+    x = ops.constant([1.5, -1.5, 2.7, -2.7], DType.float32, device=device)
+    result = ops.ceil(x)
+    # result: [2.0, -1.0, 3.0, -2.0]
+
+Args:
+    x: The input tensor. Must have a floating-point dtype.
+
+Returns:
+    A tensor value of the same shape and dtype rounded up toward positive
+    infinity.
 
 Raises:
     Error: If the input doesn't represent a tensor or has a non-floating-point dtype.

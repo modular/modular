@@ -12,7 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 from max.graph.weights import WeightsFormat
-from max.pipelines.core import TextContext
+from max.pipelines.context import TextContext
+from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
 from max.pipelines.lib import (
     SupportedArchitecture,
     TextTokenizer,
@@ -20,6 +21,7 @@ from max.pipelines.lib import (
 from max.pipelines.modeling.types import PipelineTask
 
 from . import weight_adapters
+from .batch_processor import MistralBatchProcessor
 from .model import MistralModel
 from .model_config import MistralConfig
 
@@ -38,4 +40,6 @@ mistral_arch = SupportedArchitecture(
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
     },
     config=MistralConfig,
+    batching=MistralBatchProcessor,
+    memory_planner=PagedMemoryPlanner,
 )

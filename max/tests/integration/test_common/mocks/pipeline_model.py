@@ -22,9 +22,9 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn.kv_cache import KVCacheInputs, KVCacheParams
+from max.nn.kv_cache import KVCacheInputsInterface, KVCacheParams
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
-from max.pipelines.core import TextContext
+from max.pipelines.context import TextContext
 from max.pipelines.lib import (
     KVCacheConfig,
     LoRAManager,
@@ -41,7 +41,7 @@ class MockModelInputs(ModelInputs):
         self,
         active_batch_size: int,
         eos_prob: float,
-        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
+        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
         return_n_logits: int | Buffer = 1,
     ) -> None:
         self.active_batch_size = active_batch_size
@@ -53,7 +53,7 @@ class MockModelInputs(ModelInputs):
             np.array([0, max(active_batch_size, 1)], dtype=np.uint32)
         )
         self.signal_buffers: list[Buffer] = []
-        self.kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = (
+        self.kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = (
             kv_cache_inputs
         )
         if isinstance(return_n_logits, Buffer):
@@ -118,6 +118,7 @@ class MockPipelineModel(PipelineModelWithKVCache):  # type: ignore[type-arg]
                 n_heads=self.huggingface_config.num_attention_heads,
                 n_kv_heads=self.huggingface_config.num_key_value_heads,
                 head_dim=self.huggingface_config.head_dim,
+                max_lora_seq_len=self.max_seq_len,
             )
             if self.pipeline_config.lora
             and self.pipeline_config.lora.enable_lora
@@ -204,7 +205,7 @@ class MockPipelineModel(PipelineModelWithKVCache):  # type: ignore[type-arg]
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
+        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> ModelInputs:
         actual_batch_size = sum(len(batch) for batch in replica_batches)
@@ -213,17 +214,4 @@ class MockPipelineModel(PipelineModelWithKVCache):  # type: ignore[type-arg]
             eos_prob=self.eos_prob,
             kv_cache_inputs=kv_cache_inputs,
             return_n_logits=return_n_logits,
-        )
-
-    def prepare_next_token_inputs(
-        self,
-        next_tokens: Buffer,
-        prev_model_inputs: ModelInputs,
-    ) -> ModelInputs:
-        prev_model_inputs = cast(MockModelInputs, prev_model_inputs)
-        return MockModelInputs(
-            active_batch_size=prev_model_inputs.active_batch_size,
-            eos_prob=self.eos_prob,
-            kv_cache_inputs=prev_model_inputs.kv_cache_inputs,
-            return_n_logits=prev_model_inputs.return_n_logits,
         )

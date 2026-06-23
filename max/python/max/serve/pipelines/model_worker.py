@@ -31,19 +31,18 @@ from max.driver import Device, DevicePinnedBuffer
 from max.driver.driver import load_device
 from max.dtype import DType
 from max.experimental.nn._compilation_timer import collect_compilation_stats
+from max.pipelines.context import BaseContextType
 from max.pipelines.kv_cache import DummyKVCache, PagedKVCacheManager
 from max.pipelines.lib import PipelineConfig, PipelineModel
-from max.pipelines.lib.lora_request_processor import LoRARequestProcessor
 from max.pipelines.modeling.types import (
-    BaseContextType,
     Pipeline,
     PipelineInputsType,
     PipelineOutputType,
     PipelinesFactory,
 )
 from max.profiler import Tracer, traced
+from max.serve._exceptions import detect_and_wrap_ooms
 from max.serve.config import MetricRecordingMethod, Settings
-from max.serve.exceptions import detect_and_wrap_oom
 from max.serve.pipelines.reset_prefix_cache import ResetPrefixCacheBackend
 from max.serve.pipelines.telemetry_worker import MetricClient
 from max.serve.process_control import subprocess_manager
@@ -56,6 +55,9 @@ from max.serve.worker_interface import (
     ModelWorkerInterface,
     ModelWorkerProxy,
     sleep_with_backoff,
+)
+from max.serve.worker_interface.lora_request_processor import (
+    LoRARequestProcessor,
 )
 
 logger = logging.getLogger("max.serve")
@@ -116,10 +118,7 @@ def get_reset_prefix_cache_backend(
 def get_pipeline_model(
     pipeline: Pipeline[Any, Any],
 ) -> PipelineModel[Any] | None:
-    if pipeline.__class__.__name__ == "AudioGeneratorPipeline":
-        return pipeline.speech_lm_pipeline._pipeline_model  # type: ignore
-    else:
-        return getattr(pipeline, "_pipeline_model", None)
+    return getattr(pipeline, "_pipeline_model", None)
 
 
 class ModelWorker:
@@ -212,6 +211,9 @@ class ModelWorker:
             )
 
             ModelWorker._configure_metrics(settings, metric_client)
+
+            # improves diagnostic messages for gpu out-of-memory errors
+            exit_stack.enter_context(detect_and_wrap_ooms())
 
             # Prime the pinned memory cache in the model worker process.
             # The first DevicePinnedBuffer allocation per GPU triggers
@@ -317,6 +319,25 @@ class ModelWorker:
                 warmup_duration_s,
             )
 
+            # Emit the same per-phase breakdown on the model_load_time
+            # histogram so pod startup time can be tracked in production.
+            # One metric split by the 'component' tag keeps the dashboard
+            # aligned with the logs above; the untagged record_ms() above
+            # remains the model-factory aggregate. Values are converted to
+            # milliseconds to match the metric's unit.
+            METRICS.model_load_time(compile_stats.build_seconds * 1e3, "build")
+            METRICS.model_load_time(
+                compile_stats.compile_seconds * 1e3, "compile"
+            )
+            METRICS.model_load_time(compile_stats.init_seconds * 1e3, "init")
+            METRICS.model_load_time(warmup_duration_s * 1e3, "graph_capture")
+            METRICS.model_load_time(prime_duration_s * 1e3, "pinned_memory")
+            if spawn_duration_s is not None:
+                METRICS.model_load_time(spawn_duration_s * 1e3, "spawn")
+            METRICS.model_load_time(
+                ((spawn_duration_s or 0.0) + total_in_run_s) * 1e3, "total"
+            )
+
             # Boot up the api worker comms
             worker_queues = await exit_stack.enter_async_context(
                 model_worker_interface.model_worker_queues()
@@ -420,10 +441,6 @@ class ModelWorker:
             )
         except KeyboardInterrupt:
             pass  # suppress noisy stack traces for user abort
-        except Exception as e:
-            logger.exception("Model worker crashed")
-            detect_and_wrap_oom(e)
-            raise
 
 
 @asynccontextmanager

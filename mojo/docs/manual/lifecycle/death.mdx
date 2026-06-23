@@ -158,7 +158,7 @@ memory allocated by its
 
 ```mojo
 struct HeapArray(Writable):
-    var data: UnsafePointer[Int, MutExternalOrigin]
+    var data: UnsafePointer[Int, MutUntrackedOrigin]
     var size: Int
 
     def __init__(out self, *values: Int):
@@ -369,8 +369,8 @@ struct BatchProcessor:
 
 ### Explicit destruction in generic code
 
-Generic code parameterized over `AnyType` can accept both implicitly and
-explicitly destructible values. However, it cannot automatically destroy
+Generic code parameterized over `AnyType` can accept both implicitly deletable
+and explicitly destructible values. However, it cannot automatically destroy
 values that require explicit destruction.
 
 Because explicit destructors are type-specific, generic code has no way
@@ -382,7 +382,7 @@ def generic_function_1[T: AnyType](var value: T):
     #        Unhandled explicitly destroyed type AnyType
     pass  # value abandoned here
 
-def generic_function_2[T: ImplicitlyDestructible](var value: T):
+def generic_function_2[T: ImplicitlyDeletable](var value: T):
     # OK: T can be implicitly destroyed
     pass  # value.__del__() called automatically
 ```
@@ -395,12 +395,12 @@ Choose one of the following approaches:
 - Accept the value by mutable or immutable reference instead of by ownership,
   so the function does not consume it.
 - Return the value or transfer ownership instead of consuming it.
-- Require implicit destruction with the ImplicitlyDestructible trait, which
+- Require implicit destruction with the ImplicitlyDeletable trait, which
   guarantees that a `__del__()` destructor is available and can be called
   automatically:
 
   ```mojo
-  def generic_function_3[T: ImplicitlyDestructible](var value: T):
+  def generic_function_3[T: ImplicitlyDeletable](var value: T):
       pass  # value.__del__() called automatically
   ```
 

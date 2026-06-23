@@ -80,7 +80,7 @@ def _host_matmul_ref[
 
 
 def _verify_fragments(
-    out_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    out_ptr: UnsafePointer[mut=True, Scalar[DType.float32], _],
 ) -> Bool:
     """Verify 32 threads' fragment outputs against the canonical layout.
 

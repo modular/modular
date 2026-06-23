@@ -17,6 +17,7 @@ from test_utils import (
     CopyCountedStruct,
     CopyCounter,
     DelCounter,
+    ExplicitDestroy,
     MoveCounter,
     MoveOnly,
     Observable,
@@ -763,6 +764,18 @@ def test_list_iter_owned_destroys_elements_if_partially_consumed() raises:
     assert_equal(dels, 2)
 
 
+def test_list_iter_owned_move_only() raises:
+    # Consuming iteration only requires `Movable & ImplicitlyDeletable`, not
+    # `Copyable`: each element is moved out of the list, not copied.
+    var list = [MoveOnly[Int](0), MoveOnly[Int](1), MoveOnly[Int](2)]
+
+    var total = 0
+    for elem in list^:
+        total += elem.data
+
+    assert_equal(total, 3)
+
+
 def test_list_iter_owned_bounds() raises:
     var iter = iter([1, 2, 3])
     for i in range(3, 0, -1):
@@ -777,9 +790,7 @@ def _test_list_iter_bounds[I: Iterator](var list_iter: I, list_len: Int) raises:
         var lower, upper = iter.bounds()
         assert_equal(list_len - i, lower)
         assert_equal(list_len - i, upper.value())
-        _ = trait_downcast_var[Movable & ImplicitlyDestructible](
-            iter.__next__()
-        )
+        _ = trait_downcast_var[Movable & ImplicitlyDeletable](iter.__next__())
 
     var lower, upper = iter.bounds()
     assert_equal(0, lower)
@@ -1014,6 +1025,16 @@ def test_list_conditional_conformances() raises:
     assert_true(conforms_to(List[Int], Writable))
     assert_false(conforms_to(List[NonEquatable], Writable))
 
+    # Owned iteration requires `Movable & ImplicitlyDeletable` elements, but
+    # not `Copyable`: a consuming iterator moves elements out rather than
+    # copying them.
+    assert_true(conforms_to(List[Int], IterableOwned))
+    # `MoveOnly[Int]` is movable and implicitly deletable but not copyable.
+    assert_true(conforms_to(List[MoveOnly[Int]], IterableOwned))
+    # `ExplicitDestroy` is not implicitly deletable, so the consuming iterator
+    # cannot destroy any unconsumed elements.
+    assert_false(conforms_to(List[ExplicitDestroy], IterableOwned))
+
 
 def test_list_init_span() raises:
     var l = [String("a"), "bb", "cc", "def"]
@@ -1073,10 +1094,16 @@ def test_destructor_trivial_elements() raises:
 
 def test_list_write_repr_to() raises:
     check_write_to(
-        [1, 2, 3], expected="List[Int]([Int(1), Int(2), Int(3)])", is_repr=True
+        [1, 2, 3],
+        expected="List[SIMD[DType.int, 1]]([Int(1), Int(2), Int(3)])",
+        is_repr=True,
     )
-    check_write_to([1], expected="List[Int]([Int(1)])", is_repr=True)
-    check_write_to(List[Int](), expected="List[Int]([])", is_repr=True)
+    check_write_to(
+        [1], expected="List[SIMD[DType.int, 1]]([Int(1)])", is_repr=True
+    )
+    check_write_to(
+        List[Int](), expected="List[SIMD[DType.int, 1]]([])", is_repr=True
+    )
 
 
 def test_list_fill_constructor() raises:
@@ -1209,6 +1236,49 @@ def test_list_move_only() raises:
 
     l.clear()
     assert_equal(len(l), 0)
+
+
+def test_list_with_explicit_destroy_type() raises:
+    var list = [ExplicitDestroy(0), ExplicitDestroy(1)]
+
+    var destroyed = List[Int]()
+
+    def destroy_closure(var e: ExplicitDestroy) {mut}:
+        destroyed.append(e.value)
+        e^.destroy()
+
+    list^.destroy_with(destroy_closure)
+
+    assert_equal(destroyed, [0, 1])
+
+
+def test_empty_list_with_explicit_destroy_type() raises:
+    var list = List[ExplicitDestroy]()
+
+    var destroyed = 0
+
+    def destroy_closure(var e: ExplicitDestroy) {mut}:
+        destroyed += 1
+        e^.destroy()
+
+    list^.destroy_with(destroy_closure)
+
+    assert_equal(destroyed, 0)
+
+
+def test_extend_list_with_explicit_destroy_type() raises:
+    var list1 = [ExplicitDestroy(0)]
+    var list2 = [ExplicitDestroy(1), ExplicitDestroy(2)]
+    list1.extend(list2^)
+
+    var destroyed = List[Int]()
+
+    def destroy_closure(var e: ExplicitDestroy) {mut}:
+        destroyed.append(e.value)
+        e^.destroy()
+
+    list1^.destroy_with(destroy_closure)
+    assert_equal(destroyed, [0, 1, 2])
 
 
 # ===-------------------------------------------------------------------===#

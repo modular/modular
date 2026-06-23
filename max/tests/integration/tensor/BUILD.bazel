@@ -24,9 +24,12 @@ modular_py_test(
         ["*.py"],
         exclude = [
             "conftest.py",
+            "test_cond_symbolic_dim_gpu.py",
             "test_flashinfer_fp4_gemm.py",
+            "test_from_dim.py",
             "test_functional_custom_gpu.py",
             "test_philox_torch_divergence.py",
+            "test_reduce_add_rmsnorm_fusion.py",
         ],
     ),
     data = [
@@ -35,9 +38,13 @@ modular_py_test(
     env = {
         "MODULAR_KERNEL_VERIFICATION_OPS_PATH": "$(rootpath //max/tests/integration/Inputs/kernel_verification_ops)",
     },
+    ignore_extra_deps = [
+        # lazy import
+        "//max/python/max/_interpreter_ops",
+    ],
     imports = ["."],
     per_test_shard_count = {
-        "test_functional_other.py": 8,
+        "test_functional_other.py": 10,
     },
     target_compatible_with = select({
         # Takes too long, this is mostly just testing plumbing into other code so low value.
@@ -49,12 +56,15 @@ modular_py_test(
     deps = [
         ":conftest",
         "//max/python/max:tensor",
+        "//max/python/max/_interpreter_ops",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/experimental",
+        "//max/python/max/experimental/nn",
         "//max/python/max/graph",
         "//max/python/max/nn",
+        requirement("ml-dtypes"),
         requirement("numpy"),
     ],
 )
@@ -111,6 +121,25 @@ modular_py_test(
 )
 
 modular_py_test(
+    name = "test_reduce_add_rmsnorm_fusion",
+    srcs = ["test_reduce_add_rmsnorm_fusion.py"],
+    gpu_constraints = ["//:b200_gpu"],
+    imports = ["."],
+    tags = [
+        "gpu",
+    ],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        requirement("ml-dtypes"),
+        requirement("numpy"),
+        requirement("torch"),
+    ],
+)
+
+modular_py_test(
     name = "test_flashinfer_fp4_gemm",
     srcs = ["test_flashinfer_fp4_gemm.py"],
     data = ["//max/tests/integration/Inputs/flashinfer_fp4_gemm_ops"],
@@ -130,5 +159,48 @@ modular_py_test(
         requirement("flashinfer-python"),
         requirement("ninja"),
         requirement("torch"),
+    ],
+)
+
+modular_py_test(
+    name = "test_cond_symbolic_dim_gpu",
+    srcs = ["test_cond_symbolic_dim_gpu.py"],
+    gpu_constraints = ["//:b200_gpu"],
+    imports = ["."],
+    tags = [
+        "gpu",
+        "no-mypy",
+    ],
+    deps = [
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/experimental",
+        "//max/python/max/experimental/nn",
+        "//max/python/max/graph",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "test_from_dim",
+    srcs = ["test_from_dim.py"],
+    imports = ["."],
+    tags = [
+        "no-mypy",
+    ],
+    target_compatible_with = select({
+        "//:asan": ["@platforms//:incompatible"],
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/experimental",
+        "//max/python/max/experimental/nn",
+        "//max/python/max/graph",
+        requirement("numpy"),
     ],
 )

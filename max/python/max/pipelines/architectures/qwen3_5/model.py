@@ -33,18 +33,17 @@ from max.graph import (
 from max.graph.buffer_utils import cast_tensors_to
 from max.graph.weights import Weights, WeightsAdapter
 from max.nn.comm import Signals
-from max.nn.kv_cache import KVCacheInputs
+from max.nn.kv_cache import KVCacheInputsInterface
 from max.pipelines.architectures.qwen3vl_moe.context import (
     Qwen3VLTextAndVisionContext,
     VisionEncodingData,
 )
-from max.pipelines.core import TextContext
+from max.pipelines.context import TextContext
 from max.pipelines.lib import (
     CompilationTimer,
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
-    supported_encoding_dtype,
 )
 from max.pipelines.lib.interfaces import AlwaysSignalBuffersMixin
 from max.pipelines.lib.utils import parse_state_dict_from_weights
@@ -191,53 +190,6 @@ class Qwen3_5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
     ) -> int:
         text_config = Qwen3_5Config._get_text_config(huggingface_config)
         return Qwen3_5Config.calculate_max_seq_len(pipeline_config, text_config)
-
-    @classmethod
-    def estimate_activation_memory(
-        cls,
-        pipeline_config: PipelineConfig,
-        huggingface_config: AutoConfig,
-    ) -> int:
-        """Reserve GPU memory for the GatedDeltaNet state pool.
-
-        The slot-indexed SSM kernels mutate the conv and recurrent pools in
-        place; there are no working buffers and no graph-output pool, so
-        peak footprint is a single ``max_batch x per_req`` allocation.
-
-        ``Qwen3_5Config.initialize_from_config`` pre-sets ``max_batch_size``
-        before this method runs, so it is always known here.
-        """
-        text_config = Qwen3_5Config._get_text_config(huggingface_config)
-        layer_types = Qwen3_5Config._get_layer_types(text_config)
-        num_linear = sum(1 for lt in layer_types if lt == "linear_attention")
-
-        nk = getattr(text_config, "linear_num_key_heads", 16)
-        nv = getattr(text_config, "linear_num_value_heads", 48)
-        kd = getattr(text_config, "linear_key_head_dim", 128)
-        vd = getattr(text_config, "linear_value_head_dim", 128)
-        kernel = getattr(text_config, "linear_conv_kernel_dim", 4)
-
-        conv_dim = 2 * kd * nk + vd * nv
-        # Determine state dtype bytes: states stored in model dtype (typically bfloat16).
-        encoding = pipeline_config.model.quantization_encoding
-        state_dtype = (
-            supported_encoding_dtype(encoding)
-            if encoding is not None
-            else DType.bfloat16
-        )
-        dtype_bytes = state_dtype.size_in_bytes
-        bytes_per_layer = (
-            conv_dim * (kernel - 1) * dtype_bytes + nv * kd * vd * dtype_bytes
-        )
-        per_req = num_linear * bytes_per_layer
-
-        max_batch = pipeline_config.runtime.max_batch_size
-        assert max_batch is not None, (
-            "Qwen3_5Config.initialize_from_config must set max_batch_size "
-            "before estimate_activation_memory runs"
-        )
-        # 1x: single in-place pool — kernels mutate it via slot_idx.
-        return max_batch * per_req if num_linear > 0 else 0
 
     @traced
     def load_model(self, session: InferenceSession) -> Model:
@@ -602,7 +554,7 @@ class Qwen3_5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
         if self.vision_model is not None:
             # Multimodal model: always pass image embeddings to the LM graph.
             # For decode/text-only steps, lm_image_embeddings is already the
-            # pre-allocated empty buffer from prepare_next_token_inputs.
+            # pre-allocated empty buffer for decode-step LM vision inputs.
             # For prefill steps with images, run the vision encoder and update.
             if model_inputs.has_vision_inputs:
                 assert model_inputs.pixel_values is not None
@@ -659,7 +611,7 @@ class Qwen3_5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
+        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> Qwen3_5Inputs:
         # Get base Llama3Inputs from parent
@@ -803,58 +755,6 @@ class Qwen3_5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
             grid_thw=grid_thw,
             cu_seqlens=cu_seqlens,
             max_seqlen=max_seqlen,
-        )
-
-    def prepare_next_token_inputs(
-        self,
-        next_tokens: Buffer,
-        prev_model_inputs: ModelInputs,
-    ) -> Qwen3_5Inputs:
-        assert isinstance(prev_model_inputs, Qwen3_5Inputs)
-        assert self._input_row_offsets_prealloc is not None
-        row_offsets_size = prev_model_inputs.input_row_offsets.shape[0]
-        next_row_offsets = self._input_row_offsets_prealloc[:row_offsets_size]
-
-        # Build slot_idx for this decode step. The pools live on the cache
-        # and are mutated in place by the slot-indexed SSM kernels, so the
-        # only per-step transfer is the small uint32 slot_idx tensor written
-        # into a pre-allocated buffer (no per-step device allocation).
-        request_ids = prev_model_inputs.request_ids
-        assert self._state_cache is not None
-        assert self._slot_idx_prealloc is not None
-        assert request_ids is not None
-        slot_idx = self._state_cache.slot_idx_for(
-            request_ids, self._slot_idx_prealloc
-        )
-        conv_pools = self._state_cache.conv_pools
-        recurrent_pools = self._state_cache.rec_pools
-
-        # For multimodal models, include pre-allocated empty LM vision inputs so
-        # that buffers() returns the correct input count for CUDA graph capture.
-        lm_image_embeddings = self._empty_lm_image_embeddings
-        lm_image_token_indices = self._empty_lm_image_token_indices
-
-        return Qwen3_5Inputs(
-            tokens=next_tokens,
-            input_row_offsets=next_row_offsets,
-            signal_buffers=self.signal_buffers,
-            kv_cache_inputs=prev_model_inputs.kv_cache_inputs,
-            return_n_logits=prev_model_inputs.return_n_logits,
-            slot_idx=slot_idx,
-            conv_pools=conv_pools,
-            recurrent_pools=recurrent_pools,
-            request_ids=request_ids,
-            lm_image_embeddings=lm_image_embeddings,
-            # No vision encoder inputs on decode steps
-            image_token_indices=lm_image_token_indices,
-            pixel_values=None,
-            vision_position_ids=None,
-            weights=None,
-            indices=None,
-            max_grid_size=None,
-            grid_thw=None,
-            cu_seqlens=None,
-            max_seqlen=None,
         )
 
     def release(self, request_id: RequestID) -> None:

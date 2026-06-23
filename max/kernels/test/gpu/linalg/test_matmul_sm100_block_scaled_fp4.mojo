@@ -273,7 +273,9 @@ def _test_blackwell_block_scaled_matmul_tma_umma_warp_specialized_impl[
         alignment: Int = 1,
     ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> None:
         var scaled = rebind[SIMD[c_type, width]](val) * Scalar[c_type](2)
-        c_device_lt.store[alignment=alignment * size_of[c_type](),](idx, scaled)
+        c_device_lt.store[store_alignment=alignment * size_of[c_type](),](
+            idx, scaled
+        )
 
     comptime epi = Optional[elementwise_epilogue_type](
         epilogue_fn
@@ -313,11 +315,11 @@ def _test_blackwell_block_scaled_matmul_tma_umma_warp_specialized_impl[
     else:
         vendor_blas.matmul(
             ctx,
-            c_ref_tensor_lt.as_any_origin(),
+            c_ref_tensor_lt.as_unsafe_any_origin(),
             a_lt,
             b_lt,
-            a_scales=a_scales_lt.get_immutable().as_any_origin(),
-            b_scales=b_scales_lt.get_immutable().as_any_origin(),
+            a_scales=a_scales_lt.get_immutable().as_unsafe_any_origin(),
+            b_scales=b_scales_lt.get_immutable().as_unsafe_any_origin(),
             transpose_b=transpose_b,
             c_row_major=True,
             alpha=alpha,

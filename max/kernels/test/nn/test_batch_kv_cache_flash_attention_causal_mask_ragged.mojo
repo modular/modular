@@ -43,7 +43,7 @@ def execute_ragged_flash_attention[
 ) raises:
     comptime num_blocks = 32
     comptime CollectionType = ContinuousBatchingKVCacheCollection[
-        dtype, kv_params
+        dtype, kv_params, ...
     ]
 
     var batch_size = len(valid_lengths_list)
@@ -219,23 +219,21 @@ def execute_ragged_flash_attention[
         idx += 1
 
     var kv_collection = CollectionType(
-        LayoutTensor[kv_block.dtype, Layout.row_major[6](), MutAnyOrigin](
+        LayoutTensor[kv_block.dtype, Layout.row_major[6]()](
             kv_block.ptr,
             RuntimeLayout[Layout.row_major[6]()](
                 kv_block.runtime_layout.shape.value,
                 kv_block.runtime_layout.stride.value,
             ),
         ),
-        LayoutTensor[
-            cache_lengths.dtype, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
-        ](
+        LayoutTensor[mut=False, cache_lengths.dtype, Layout(UNKNOWN_VALUE)](
             cache_lengths.ptr,
             RuntimeLayout[Layout(UNKNOWN_VALUE)](
                 cache_lengths.runtime_layout.shape.value,
                 cache_lengths.runtime_layout.stride.value,
             ),
         ),
-        LayoutTensor[lookup_table.dtype, Layout(UNKNOWN_VALUE), ImmutAnyOrigin](
+        LayoutTensor[mut=False, lookup_table.dtype, Layout(UNKNOWN_VALUE)](
             lookup_table.ptr,
             RuntimeLayout[Layout(UNKNOWN_VALUE)](
                 lookup_table.runtime_layout.shape.value,

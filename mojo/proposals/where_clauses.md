@@ -16,6 +16,12 @@ Status: Original feature implemented. Added `__comptime_assert` statement.
 **Feb 3, 2026**
 Status: `__comptime_assert` syntax finalized as `comptime assert`
 
+**May 27, 2026**
+Status: Inline `where` constraints in parameter lists deprecated in favor of
+trailing `where` clauses. Trailing `where` extended to struct and `comptime`
+alias declarations. Auto-predication allows trailing `where` clauses to
+discharge constraints from constrained types appearing in a signature.
+
 This document explores adding “where” clauses to Mojo, a major missing
 feature that will allow more safety, expressivity, and APIs that work better
 for our users.
@@ -105,82 +111,129 @@ remove many uses of `constrained` , directly improving QoI for each one.
 
 ## Concrete syntax design
 
-We support `where` constraints in two places. Each serves different use cases.
+`where` constraints are expressed as trailing clauses on a declaration,
+written after the parameter list and any other signature components (parent
+types, return type) and before the colon or `=`. Multiple `where` clauses can
+be chained on the same declaration. They are always checked at parameter
+binding time.
 
-### Inline parameter declaration constraints
+### Trailing where clauses
 
-Inline constraints are written next to parameter declarations. They are checked
-as each parameter is bound, and immediately become part of the in-scope
-assumptions that later parameter declarations can rely on them. This is
-especially useful when constraints on earlier parameters enable later
-parameters to take advantage of those assumptions.
+Trailing `where` clauses are supported on function/method declarations, struct
+declarations, and `comptime` alias declarations.
 
-Example:
-
-```mojo
-struct Matrix[
-  m: Int where m > 0,
-  n: Int where n > 0
-]:
-  ...
-
-def solve_linear_system[
-  n: Int where n > 0,
-  a: Matrix[n, n],       # can assume n > 0 here
-  b: Vector[n],
-]() -> Vector[n]:
-  ...
-```
-
-Another example that references earlier parameters from the argument list:
-
-```mojo
-def matmul[
-  m: Int where m > 0,
-  n: Int where n > 0,
-  k: Int where k > 0,
-](a: Matrix[m, k], b: Matrix[k, n]) -> Matrix[m, n]:
-    ...
-```
-
-Inline constraints keep requirements next to their parameters, improving
-readability and enabling left-to-right dependencies among parameters. You can
-also use inline constraints on type parameters for structs:
-
-```mojo
-struct SIMD[
-  dtype: DType where dtype is not DType.invalid,
-  size: Int where size.is_power_of_two(),
-]:
-  ...
-```
-
-### Function-level trailing constraints
-
-A trailing `where` clause after the result type and before the colon attaches
-to the function type and is checked at overload resolution time. For the scope
-of this design, we limit support to statically evaluatable constraints. That
-means the trailing constraint is expressed in terms of parameter declarations,
-but may also reference runtime arguments as long as only static components of
-those arguments are accessed (e.g., member aliases and parameters). This is
-useful when the constraint is only needed by the function itself and no other
-parameter in the parameter signature depends on it.
-
-Example:
+**Functions and methods**: a trailing `where` attaches to the function and is
+checked at parameter binding time (i.e., when an overload candidate is being
+evaluated). This is what enables algorithm selection by type properties:
 
 ```mojo
 struct SIMD[dtype: DType, size: Int]:
   @implicit
   def __init__(out self, value: FloatLiteral)
-    requires dtype.is_floating_point():
+    where dtype.is_floating_point():
       <actual code>
 ```
 
-In both forms, a constraint takes a boolean expression.
+Multiple `where` clauses can be chained and each takes a boolean expression:
+
+```mojo
+def matmul[m: Int, n: Int, k: Int](
+    a: Matrix[m, k], b: Matrix[k, n]
+) -> Matrix[m, n]
+    where m > 0 where n > 0 where k > 0:
+    ...
+```
+
+**Structs**: a trailing `where` attaches constraints to the struct type and is
+checked at parameter binding time:
+
+```mojo
+struct SIMD[
+  dtype: DType,
+  size: Int,
+](Defaultable)
+  where dtype != DType.invalid
+  where size.is_power_of_two():
+  ...
+```
+
+**`comptime` alias declarations**: the same trailing form applies:
+
+```mojo
+comptime PositiveOnly[N: Int]: AnyType where N > 0 = ...
+```
+
+All three forms accept boolean expressions and can chain multiple `where`
+clauses with an implicit `and`.
 
 Notice how this puts the constraints where they belong - put the constraints
 for the SIMD type as a whole on the struct, and put the constraints for the
 method on the method itself.
+
+### Constraints in the type system
+
+A parameterized entity (struct, function, or comptime expression) that has not
+yet had all of its parameters bound is called a **generator type**. The `where`
+constraints on a declaration become part of that generator type — they travel
+with it and are checked at every binding site.
+
+**Specialization** is the process of turning a generator type into a more
+concrete one by supplying arguments for its parameters. Two things can happen
+during specialization:
+
+- **Parameter binding** — a parameter is given a concrete value (e.g.
+  `Matrix[m=3, n=4]`). This has always been possible.
+- **Constraint discharge** — a constraint from the generator type's `where`
+  clause is *proved satisfied* given the current context, and therefore drops
+  out of the specialized type entirely. The resulting type no longer carries
+  that constraint.
+
+For example, specializing `Matrix[n, n]` inside a scope that already has the
+assumption `n > 0` discharges both of `Matrix`'s constraints (`m > 0` and
+`n > 0`) — because both collapse to the same already-known fact. The
+specialized type is concrete and carries no residual constraints.
+
+### Auto-predication
+
+When a constrained type appears as a type expression in a signature (e.g. as a
+parameter declaration type, a function argument type, a return type, etc.), the
+compiler must verify that the type's constraints are always satisfied by the
+signature's own constraints.
+
+Auto-predication resolves this: the compiler collects any unprovable parametric
+constraints encountered in the signature and requires they be discharged by the
+declaration's own trailing `where` clause. This means a single trailing `where`
+simultaneously constrains the declaration *and* satisfies the requirements of
+constrained types used within the same signature:
+
+```mojo
+struct Matrix[m: Int, n: Int] where m > 0 where n > 0:
+  ...
+
+# Matrix[n, n]'s constraints (n > 0) are deferred and discharged by the
+# trailing 'where n > 0'.
+def solve_linear_system[
+  n: Int,
+  a: Matrix[n, n],       # trailing where n > 0 makes this valid
+  b: Vector[n],
+]() -> Vector[n]
+    where n > 0:
+  ...
+```
+
+The same discharge mechanism applies to struct parameter lists:
+
+```mojo
+struct LinearSystem[n: Int, a: Matrix[n, n]] where n > 0: ...
+```
+
+If no trailing `where` discharges a deferred constraint, the compiler reports
+an error and suggests the missing clause:
+
+```text
+error: invalid bindings in signature: lacking evidence to prove correctness
+note: add a trailing 'where' clause that requires '(n > 0)'
+```
 
 This capability is an “obviously good” thing, but all the questions revolve
 around the implementation - how invasive is this, what are the limitations, and
@@ -196,32 +249,21 @@ message if the only candidate fails the boolean predicate) at parser time
 **without interpreting the code** (because the Mojo parser has no interpreter).
 For the sake of this discussion, we only consider simple boolean expressions.
 
-This has four main parts: 1) enable inline parameter constraints, 2) collect
-function/method requirements, 3) propagate assumptions across declarations
-(contextual invariants), and 4) perform symbolic checking during overload
-resolution.
+This has three main parts: 1) collect function/method/struct/alias
+requirements, 2) propagate assumptions across declarations (contextual
+invariants), and 3) perform symbolic checking during overload resolution.
 
-### Part #1: Inline Parameter Constraints
-
-We extend parameter parsing and binding to accept and record `where`
-constraints on parameters. These constraints are evaluated at parameter binding
-time and are immediately added to the local invariant set so that subsequent
-parameters can assume them. We store these constraints alongside the parameter
-declaration (e.g., as a list of `TypedAttr`), and thread them into the current
-context used by later parameters and nested regions.
-
-### Part #2: Function/Method Constraints
+### Part #1: Function/Method/Struct/Alias Constraints
 
 Method constraints are pretty simple - the constraints for a function are the
 union (with an ‘and’) of the function constraints and the enclosing struct
-constraints:
+constraints. The `where` constraints become part of the type itself, checked at
+every binding site:
 
 ```mojo
-struct SomeThing[
-  size: Int
-    where size.is_odd()
-    where size != 233,
-]:
+struct SomeThing[size: Int]
+  where size.is_odd()
+  where size != 233:
 
   def thing(self) -> Int
      where size.is_prime():
@@ -248,7 +290,7 @@ list of `TypedAttr` on both function and struct declarations. This ensures
 they’re serialized to modules etc. This is parser time only behavior, so these
 do not need to be lowered to KGEN or later.
 
-### Part #3: Contextual Invariants
+### Part #2: Contextual Invariants
 
 Contextual invariants - something known true at the point in some code - is a
 question asked by overload set resolution at some point in the program.
@@ -256,11 +298,11 @@ Consider an overly complicated example like:
 
 ```mojo
 struct S[
-  a: Int where pred1(a),
+  a: Int,
   b: Int,
   c: Int,
   d: Int,
-]:
+] where pred1(a):
 
     def some_method(self)
        where pred2(b):
@@ -281,7 +323,7 @@ this case, we know that the contextual invariant is `pred1(a) and pred2(b) and
 pred3(c) and pred4(d)` because of the invariants on the struct, functions, and
 parameter if.
 
-### Part #4: *Symbolic* constraint checking at overload resolution time
+### Part #3: *Symbolic* constraint checking at overload resolution time
 
 Finally, given we have these two bits of information, we can use it at overload
 resolution time. Overload resolution has to do a bunch of stuff (parameter
@@ -314,14 +356,15 @@ the following definition:
 
 ```mojo
 struct SIMD[
-    dtype: DType where dtype is not DType.invalid,
-    size: Int where size.is_power_of_two(),
-]:
+    dtype: DType,
+    size: Int,
+] where dtype != DType.invalid
+  where size.is_power_of_two():
 ```
 
 The logical way for the compiler to check this is to build up a big conjunction
-`(size.is_power_of_two() and dtype is not DType.invalid)` (and the
-`is_power_of_two()` function will be inlined into subexpressions so it was be
+`(dtype != DType.invalid and size.is_power_of_two())` (and the
+`is_power_of_two()` function will be inlined into subexpressions so it will be
 much lower level) and then fold it and fail the whole expression - we want
 overload checking to be efficient, because it is normal for some overload set
 candidates to fail without the expression type checker failing overall.
@@ -339,7 +382,7 @@ Often-times, users know that a given condition is satisfiable, but it’s not
 directly provable from the code. E.g.
 
 ```python
-def needs_prime[x: Int where x.is_prime()]:
+def needs_prime[x: Int]() where x.is_prime():
   ...
 
 def main():
@@ -408,8 +451,6 @@ comptime assert 2.is_prime(), "2 should be a prime"
 comptime assert x > 2, "x should be greater than 2, got " + x + " instead"
 ```
 
-The leading underscores indicate that this is not its final name.
-
 #### Semantics
 
 **Checking**:
@@ -436,7 +477,7 @@ parameter scope, and allow users to use this assumption when binding parameters
 / invoking functions in this parameter scope.
 
 ```python
-def needs_prime[x: Int where is_prime(x)]():
+def needs_prime[x: Int]() where is_prime(x):
   ...
 
 def main():

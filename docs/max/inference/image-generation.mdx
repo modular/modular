@@ -218,8 +218,8 @@ This is not an exhaustive list. For the complete reference, see
 
 | Parameter         | Type    | Default       | Description                                                                                                                                    |
 |-------------------|---------|---------------|------------------------------------------------------------------------------------------------------------------------------------------------|
-| `height`          | integer | model default | Output height in pixels. Must be at least 128 and a multiple of 16.                                                                            |
-| `width`           | integer | model default | Output width in pixels. Must be at least 128 and a multiple of 16.                                                                             |
+| `height`          | integer | model default | Output height in pixels. Must be at least 128 and a multiple of 8.                                                                             |
+| `width`           | integer | model default | Output width in pixels. Must be at least 128 and a multiple of 8.                                                                              |
 | `steps`           | integer | model default | Number of denoising steps. More steps generally produce higher quality but take longer.                                                        |
 | `guidance_scale`  | number  | `3.5`         | How closely the output follows the prompt. Higher values (7–10) increase prompt adherence; lower values (1–3) allow more creative variation.   |
 | `negative_prompt` | string  | `null`        | Content to avoid in the output.                                                                                                                |
@@ -237,12 +237,18 @@ dual-encoder prompts, and CFG controls, see
 [`provider_options`](/max/rest-api/#POST/v1/responses.body.provider_options).
 
 **Height and width**: You can generate images at different aspect ratios. Image
-dimensions must be a multiple of 16 and at least 128 pixels in each dimension.
+dimensions must be a multiple of 8 and at least 128 pixels in each dimension.
+Some models may further round dimensions down to the nearest multiple of 16
+internally to satisfy patchification constraints; see the model documentation
+for details.
 
 **Steps**: `steps` has the greatest effect on generation time.
 Diffusion models work by iteratively refining a noisy image. More steps
 produce higher-quality results but take proportionally longer. You can
 experiment with `steps` when considering the tradeoffs of speed and quality.
+Distilled FLUX.2-Klein models are an exception: they're trained for exactly 4
+steps and reject any other value, so set `steps` to 4 for those models.
+Non-distilled Klein variants accept other step counts.
 
 **Prompt adherence**: `guidance_scale` determines how literally the model
 interprets your prompt. Higher values (7-10) produce results that closely

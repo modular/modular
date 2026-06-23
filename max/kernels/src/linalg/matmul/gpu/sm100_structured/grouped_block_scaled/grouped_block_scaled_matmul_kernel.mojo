@@ -150,18 +150,27 @@ struct GroupedTensormapSmem(TrivialRegisterPassable):
     to ensure all warps access the same SMEM locations.
     """
 
+    @__allow_legacy_any_origin_fields
     var desc_a: UnsafePointer[
         TMADescriptor, MutAnyOrigin, address_space=AddressSpace.SHARED
     ]
+
+    @__allow_legacy_any_origin_fields
     var desc_b: UnsafePointer[
         TMADescriptor, MutAnyOrigin, address_space=AddressSpace.SHARED
     ]
+
+    @__allow_legacy_any_origin_fields
     var desc_sfa: UnsafePointer[
         TMADescriptor, MutAnyOrigin, address_space=AddressSpace.SHARED
     ]
+
+    @__allow_legacy_any_origin_fields
     var desc_sfb: UnsafePointer[
         TMADescriptor, MutAnyOrigin, address_space=AddressSpace.SHARED
     ]
+
+    @__allow_legacy_any_origin_fields
     var desc_c: UnsafePointer[
         TMADescriptor, MutAnyOrigin, address_space=AddressSpace.SHARED
     ]
@@ -1283,11 +1292,11 @@ struct GroupedBlockScaledMatmulKernel[
             # Tensormap manager for SMEM descriptor updates
             var tensormap_mgr = Self.TensormapManagerType(
                 smem=GroupedTensormapSmem.from_smem(
-                    UnsafePointer(to=smem.tensormap_a),
-                    UnsafePointer(to=smem.tensormap_b),
-                    UnsafePointer(to=smem.tensormap_sfa),
-                    UnsafePointer(to=smem.tensormap_sfb),
-                    UnsafePointer(to=smem.tensormap_c),
+                    UnsafePointer(to=smem.tensormap_a).as_unsafe_any_origin(),
+                    UnsafePointer(to=smem.tensormap_b).as_unsafe_any_origin(),
+                    UnsafePointer(to=smem.tensormap_sfa).as_unsafe_any_origin(),
+                    UnsafePointer(to=smem.tensormap_sfb).as_unsafe_any_origin(),
+                    UnsafePointer(to=smem.tensormap_c).as_unsafe_any_origin(),
                 ),
             )
 
@@ -1364,11 +1373,11 @@ struct GroupedBlockScaledMatmulKernel[
             # Initialize SMEM tensormaps from templates (MMA warp, per CuTe DSL)
             var tensormap_mgr = Self.TensormapManagerType(
                 smem=GroupedTensormapSmem.from_smem(
-                    UnsafePointer(to=smem.tensormap_a),
-                    UnsafePointer(to=smem.tensormap_b),
-                    UnsafePointer(to=smem.tensormap_sfa),
-                    UnsafePointer(to=smem.tensormap_sfb),
-                    UnsafePointer(to=smem.tensormap_c),
+                    UnsafePointer(to=smem.tensormap_a).as_unsafe_any_origin(),
+                    UnsafePointer(to=smem.tensormap_b).as_unsafe_any_origin(),
+                    UnsafePointer(to=smem.tensormap_sfa).as_unsafe_any_origin(),
+                    UnsafePointer(to=smem.tensormap_sfb).as_unsafe_any_origin(),
+                    UnsafePointer(to=smem.tensormap_c).as_unsafe_any_origin(),
                 ),
             )
             tensormap_mgr.init_ab_tensormaps(
@@ -1432,11 +1441,11 @@ struct GroupedBlockScaledMatmulKernel[
             # Tensormap manager for C descriptor updates
             var tensormap_mgr = Self.TensormapManagerType(
                 smem=GroupedTensormapSmem.from_smem(
-                    UnsafePointer(to=smem.tensormap_a),
-                    UnsafePointer(to=smem.tensormap_b),
-                    UnsafePointer(to=smem.tensormap_sfa),
-                    UnsafePointer(to=smem.tensormap_sfb),
-                    UnsafePointer(to=smem.tensormap_c),
+                    UnsafePointer(to=smem.tensormap_a).as_unsafe_any_origin(),
+                    UnsafePointer(to=smem.tensormap_b).as_unsafe_any_origin(),
+                    UnsafePointer(to=smem.tensormap_sfa).as_unsafe_any_origin(),
+                    UnsafePointer(to=smem.tensormap_sfb).as_unsafe_any_origin(),
+                    UnsafePointer(to=smem.tensormap_c).as_unsafe_any_origin(),
                 ),
             )
 
@@ -1804,11 +1813,11 @@ struct GroupedBlockScaledMatmulKernel[
             # Tensormap manager for SMEM descriptor updates
             var tensormap_mgr = Self.TensormapManagerType(
                 smem=GroupedTensormapSmem.from_smem(
-                    UnsafePointer(to=smem.tensormap_a),
-                    UnsafePointer(to=smem.tensormap_b),
-                    UnsafePointer(to=smem.tensormap_sfa),
-                    UnsafePointer(to=smem.tensormap_sfb),
-                    UnsafePointer(to=smem.tensormap_c),
+                    UnsafePointer(to=smem.tensormap_a).as_unsafe_any_origin(),
+                    UnsafePointer(to=smem.tensormap_b).as_unsafe_any_origin(),
+                    UnsafePointer(to=smem.tensormap_sfa).as_unsafe_any_origin(),
+                    UnsafePointer(to=smem.tensormap_sfb).as_unsafe_any_origin(),
+                    UnsafePointer(to=smem.tensormap_c).as_unsafe_any_origin(),
                 ),
             )
 
@@ -1917,11 +1926,11 @@ struct GroupedBlockScaledMatmulKernel[
             # Initialize SMEM tensormaps from templates (MMA warp, per CuTe DSL)
             var tensormap_mgr = Self.TensormapManagerType(
                 smem=GroupedTensormapSmem.from_smem(
-                    UnsafePointer(to=smem.tensormap_a),
-                    UnsafePointer(to=smem.tensormap_b),
-                    UnsafePointer(to=smem.tensormap_sfa),
-                    UnsafePointer(to=smem.tensormap_sfb),
-                    UnsafePointer(to=smem.tensormap_c),
+                    UnsafePointer(to=smem.tensormap_a).as_unsafe_any_origin(),
+                    UnsafePointer(to=smem.tensormap_b).as_unsafe_any_origin(),
+                    UnsafePointer(to=smem.tensormap_sfa).as_unsafe_any_origin(),
+                    UnsafePointer(to=smem.tensormap_sfb).as_unsafe_any_origin(),
+                    UnsafePointer(to=smem.tensormap_c).as_unsafe_any_origin(),
                 ),
             )
             tensormap_mgr.init_ab_tensormaps(
@@ -2004,11 +2013,11 @@ struct GroupedBlockScaledMatmulKernel[
             # Tensormap manager for C descriptor updates
             var tensormap_mgr = Self.TensormapManagerType(
                 smem=GroupedTensormapSmem.from_smem(
-                    UnsafePointer(to=smem.tensormap_a),
-                    UnsafePointer(to=smem.tensormap_b),
-                    UnsafePointer(to=smem.tensormap_sfa),
-                    UnsafePointer(to=smem.tensormap_sfb),
-                    UnsafePointer(to=smem.tensormap_c),
+                    UnsafePointer(to=smem.tensormap_a).as_unsafe_any_origin(),
+                    UnsafePointer(to=smem.tensormap_b).as_unsafe_any_origin(),
+                    UnsafePointer(to=smem.tensormap_sfa).as_unsafe_any_origin(),
+                    UnsafePointer(to=smem.tensormap_sfb).as_unsafe_any_origin(),
+                    UnsafePointer(to=smem.tensormap_c).as_unsafe_any_origin(),
                 ),
             )
 

@@ -31,6 +31,12 @@ from max.pipelines.architectures.qwen2_5vl.nn.qwen_vl_utils import (
     fetch_image,
     process_vision_info,
 )
+from max.pipelines.context import (
+    EOSTracker,
+    ImageMetadata,
+    TokenBuffer,
+)
+from max.pipelines.context.exceptions import PromptTooLongError
 from max.pipelines.lib import (
     TextAndVisionTokenizer,
     float32_to_bfloat16_as_uint16,
@@ -38,12 +44,9 @@ from max.pipelines.lib import (
 )
 from max.pipelines.lib.config import PipelineConfig
 from max.pipelines.modeling.types import (
-    EOSTracker,
-    ImageMetadata,
     TextGenerationRequest,
     TextGenerationRequestMessage,
     TextGenerationRequestTool,
-    TokenBuffer,
 )
 from max.support.image import find_contiguous_ranges, hash_image
 from PIL import Image
@@ -421,9 +424,10 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
     ]:
         image_inputs = None
         if request.images:
+            # fetch_image accepts both a PIL.Image and raw bytes.
             image_inputs = [
-                fetch_image({"image": image_data})
-                for image_data in request.images
+                fetch_image({"image": image})
+                for image in request.images_for_processing()
             ]
         elif request.messages:
             image_inputs, _, _ = process_vision_info(
@@ -468,9 +472,7 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
         # Expand input_ids/attention_mask for image token ids
         if image_grid_thw is None:
             if self.max_length and input_ids.shape[0] > self.max_length:
-                raise ValueError(
-                    "input_ids is greater than the max_length of the tokenizer"
-                )
+                raise PromptTooLongError(input_ids.shape[0], self.max_length)
 
             return input_ids, attention_mask
 
@@ -500,9 +502,7 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
             )
 
         if self.max_length and input_ids.shape[0] > self.max_length:
-            raise ValueError(
-                "input_ids is greater than the max_length of the tokenizer"
-            )
+            raise PromptTooLongError(input_ids.shape[0], self.max_length)
 
         return input_ids, attention_mask
 
@@ -591,6 +591,8 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
             tokens=TokenBuffer(input_ids),
             max_length=max_length,
             json_schema=json_schema,
+            log_probabilities=request.logprobs,
+            log_probabilities_echo=request.echo,
             sampling_params=request.sampling_params,
             target_endpoint=request.target_endpoint,
             images=images,
@@ -604,6 +606,7 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
             image_token_indices=image_token_indices,
             decoder_position_ids=decoder_position_ids,
             vision_data=vision_data,
+            vocab_size=self.tokenizer_vocab_size,
         )
 
     def new_context_blocking(

@@ -25,7 +25,7 @@ _EXTRA_CONSTRAINTS = {
         "//conditions:default": [],
     }),  # No multi-GPU Metal machines exist
     "gpu/comm/bench_allreduce.mojo": ["//:nvidia_gpu"],  # FIXME: KERN-1377
-    "gpu/comm/bench_allreduce_residual_rmsnorm_fp8.mojo": select({
+    "gpu/comm/bench_allreduce_residual_rmsnorm.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # No multi-GPU Metal machines exist
@@ -41,7 +41,7 @@ _EXTRA_CONSTRAINTS = {
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: PRDT-506
-    "gpu/linalg/bench_apple_gpu_matmul.mojo": ["//:apple_gpu"],  # Apple M5 simdgroup matmul — Metal only
+    "gpu/linalg/bench_apple_gpu_matmul.mojo": ["//:apple_gpu"],  # Apple M5 simdgroup matmul (incl. split-K) — Metal only
     "gpu/linalg/bench_matmul.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
@@ -76,10 +76,9 @@ _EXTRA_CONSTRAINTS = {
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # Kernel uses NVIDIA SM90 TMA primitives; Metal AIR codegen crashes.
-    "gpu/nn/attention/bench_mha_sm100_fp8_kv.mojo": ["//:b200_gpu"],  # SM100 fp8 KV dequant + bf16 MHA
     "gpu/nn/bench_conv2d_sm100.mojo": ["//:b200_gpu"],  # SM100-specific TMA im2col
-    "gpu/nn/bench_hk_mha_prefill.mojo": ["//:mi355_gpu"],  # gfx950 MFMA 32x32x16 BF16 + from_expcnt
-    "gpu/nn/bench_hk_mha_prefill_paged.mojo": ["//:mi355_gpu"],  # gfx950 MFMA 32x32x16 BF16 + paged KV operand
+    "gpu/nn/bench_mha_prefill_v2.mojo": ["//:mi355_gpu"],  # gfx950 MFMA 32x32x16 BF16 + from_expcnt
+    "gpu/nn/bench_mha_prefill_v2_paged.mojo": ["//:mi355_gpu"],  # gfx950 MFMA 32x32x16 BF16 + paged KV operand
     "gpu/linalg/bench_block_scaled_matmul.mojo": ["//:b200_gpu"],  # SM100-specific block-scaled matmul
     "gpu/linalg/bench_matmul_tma_epilogue.mojo": ["//:b200_gpu"],  # SM100-specific TMA epilogue matmul
     "gpu/linalg/bench_matmul_1d_tma_epilogue.mojo": ["//:b200_gpu"],  # SM100-specific 1D bias TMA epilogue matmul
@@ -192,6 +191,9 @@ _CPU_TESTS = glob(
             "gpu/nn/bench_conv2d.mojo",
             "gpu/layout/bench_tile_io_copy.mojo",
             "gpu/nn/bench_conv3d.mojo",
+            # Needs `-D fp32_scores/cadence` (gated FP32-scores path);
+            # the generic glob can't pass them. Dedicated target below.
+            "gpu/nn/bench_mla_prefill_v2.mojo",
         ],
     )
 ]
@@ -208,9 +210,45 @@ _CPU_TESTS = glob(
             "gpu/nn/bench_conv2d.mojo",
             "gpu/layout/bench_tile_io_copy.mojo",
             "gpu/nn/bench_conv3d.mojo",
+            # Needs `-D fp32_scores/cadence` (gated FP32-scores path);
+            # the generic glob can't pass them. Dedicated target below.
+            "gpu/nn/bench_mla_prefill_v2.mojo",
         ],
     )
 ]
+
+# MlaPrefillV2 device-timed TFLOPS bench.
+# Delegates numeric steps to the gated MlaPrefillV2Core FP32-scores / reference-cadence
+# path, so it MUST compile with `-D fp32_scores=true -D cadence=true`
+# (enables the gated path for THIS compile only; no kernel source is modified).
+# gfx950 / MFMA 32x32x64 FP8. Excluded from the generic gpu/** glob above.
+mojo_binary(
+    name = "gpu/nn/bench_mla_prefill_v2",
+    srcs = ["gpu/nn/bench_mla_prefill_v2.mojo"],
+    copts = [
+        "-D",
+        "fp32_scores=true",
+        "-D",
+        "cadence=true",
+    ],
+    enable_assertions = False,
+    target_compatible_with = ["//:mi355_gpu"],
+    deps = [
+        "//max:comm",
+        "//max:internal_utils",
+        "//max:layout",
+        "//max:nn",
+        "//max:shmem",
+        "//max:structured_kernels",
+        "@mojo//:std",
+    ],
+)
+
+build_test(
+    name = "gpu/nn/bench_mla_prefill_v2.test",
+    tags = ["gpu"],
+    targets = ["gpu/nn/bench_mla_prefill_v2"],
+)
 
 # Runnable GPU benchmark targets (mojo_test wrappers so they execute on the
 # remote GPU via `bazel test --config=remote-b200 ...`).

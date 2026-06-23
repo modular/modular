@@ -13,6 +13,8 @@
 
 
 import asyncio
+import base64
+import io
 import json
 import logging
 import sys
@@ -22,26 +24,30 @@ from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
+import numpy as np
 import pytest
 import pytest_asyncio
 from async_asgi_testclient import TestClient as AsyncTestClient
 from fastapi import FastAPI
 from fastapi.testclient import TestClient as SyncTestClient
 from max.pipelines.architectures.kimik2_5.tool_parser import KimiToolParser
-from max.pipelines.core import TextContext
-from max.pipelines.core.exceptions import InputError
+from max.pipelines.context import (
+    BaseContext,
+    GenerationStatus,
+    TextContext,
+    TextGenerationResponseFormat,
+)
+from max.pipelines.context.exceptions import InputError, PromptTooLongError
 from max.pipelines.lib import (
     PIPELINE_REGISTRY,
     PipelineConfig,
     PipelineRuntimeConfig,
 )
+from max.pipelines.lib.tokenizer import open_image
 from max.pipelines.modeling.types import (
-    BaseContext,
-    GenerationStatus,
     PipelineTask,
     RequestID,
     TextGenerationRequestTool,
-    TextGenerationResponseFormat,
 )
 from max.serve.api_server import ServingTokenGeneratorSettings, fastapi_app
 from max.serve.config import APIType, Settings
@@ -52,10 +58,17 @@ from max.serve.pipelines.echo_gen import (
     EchoTokenGenerator,
 )
 from max.serve.pipelines.llm import TokenGeneratorOutput, TokenGeneratorPipeline
+from max.serve.router._image_resolution import (
+    _decode_data_uri_base64,
+    decode_and_validate_images,
+    resolve_image_from_url,
+)
 from max.serve.router.openai_routes import (
     CompletionStreamResponse,
     OpenAIChatResponseGenerator,
     OpenAICompletionResponseGenerator,
+    _coerce_positive_float,
+    _coerce_positive_int,
     _create_response_format,
     _process_chat_log_probabilities,
     _resolve_grammar_constraints,
@@ -74,6 +87,8 @@ from max.serve.worker_interface.zmq_interface import ZmqModelWorkerProxy
 from openai.types.chat.chat_completion_stream_options_param import (
     ChatCompletionStreamOptionsParam,
 )
+from PIL import Image
+from pydantic import AnyUrl
 
 if sys.version_info >= (3, 11):
     from asyncio import TaskGroup
@@ -233,6 +248,32 @@ async def test_openai_chat_completion_empty_model_name(app) -> None:  # noqa: AN
 
 
 @pytest.mark.asyncio
+async def test_openai_chat_completion_prompt_too_long_returns_400(
+    app: FastAPI,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A ``PromptTooLongError`` from the tokenizer must surface as 400."""
+
+    async def _raise(self, request) -> None:  # noqa: ANN001
+        raise PromptTooLongError(num_tokens=4096, max_length=2048)
+
+    monkeypatch.setattr(EchoPipelineTokenizer, "new_context", _raise)
+
+    async with AsyncTestClient(app) as client:
+        response = await client.post(
+            "/v1/chat/completions",
+            json=simple_openai_request(model_name="echo", content="anything"),
+        )
+
+    assert response.status_code == 400
+    body = response.json()
+    assert body["error"]["message"].startswith("Prompt is too long")
+    assert "4096 tokens" in body["error"]["message"]
+    assert "2048 tokens" in body["error"]["message"]
+    assert body["error"]["type"] == "invalid_request_error"
+
+
+@pytest.mark.asyncio
 async def test_openai_chat_completion_input_error_returns_400(app) -> None:  # noqa: ANN001
     async with AsyncTestClient(app) as client:
         app.state.pipeline.all_tokens = AsyncMock(
@@ -245,7 +286,198 @@ async def test_openai_chat_completion_input_error_returns_400(app) -> None:  # n
         )
 
         assert response_json.status_code == 400
-        assert response_json.json()["detail"] == "invalid image input"
+        assert response_json.json()["error"]["message"] == "invalid image input"
+        assert response_json.json()["error"]["type"] == "invalid_request_error"
+
+
+@pytest.mark.asyncio
+async def test_openai_error_envelope_shape(app) -> None:  # noqa: ANN001
+    """HTTP errors are returned in the OpenAI ``{"error": {...}}`` envelope."""
+    async with AsyncTestClient(app) as client:
+        app.state.pipeline.all_tokens = AsyncMock(
+            side_effect=InputError("bad request")
+        )
+
+        response = await client.post(
+            "/v1/chat/completions",
+            json=simple_openai_request(model_name="echo", content="test data"),
+        )
+
+        assert response.status_code == 400
+        body = response.json()
+        assert body["error"]["message"] == "bad request"
+        assert body["error"]["type"] == "invalid_request_error"
+        assert body["error"]["code"] == "400"
+        assert "detail" not in body
+
+
+@pytest.mark.asyncio
+async def test_chat_completion_schema_validation_error_uses_openai_envelope(
+    app,  # noqa: ANN001
+) -> None:
+    """Pydantic ``ValidationError`` from the chat schema surfaces as the OpenAI envelope.
+
+    Regression that composes SERVSYS-1257 (strongly-typed ``messages`` field,
+    so unknown roles raise ``pydantic.ValidationError`` at
+    ``CreateChatCompletionRequest.model_validate_json`` time) with the
+    ``HTTPException`` handler from #87521. The chat route catches
+    ``ValidationError`` and re-raises as ``HTTPException(status_code=400)``,
+    which the registered ``_openai_http_exception_handler`` turns into the
+    ``{"error": {"message", "type", "code", "param"}}`` body that
+    OpenAI/OpenRouter clients expect - not the raw FastAPI ``{"detail": ...}``.
+    """
+    async with AsyncTestClient(app) as client:
+        response = await client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "echo",
+                "messages": [{"role": "wizard", "content": "abracadabra"}],
+            },
+        )
+
+        assert response.status_code == 400
+        body = response.json()
+        assert "detail" not in body
+        assert body["error"]["type"] == "invalid_request_error"
+        assert body["error"]["code"] == "400"
+        # ``str(ValidationError)`` includes the offending input, so the
+        # rejected role makes it into the user-facing message.
+        assert "wizard" in body["error"]["message"]
+
+
+def test_decode_and_validate_images_rejects_bad_bytes() -> None:
+    # Empty / non-image bytes must raise (the request handler maps this to a
+    # 400), not reach the worker and crash it later with an unhandled
+    # PIL.UnidentifiedImageError (HTTP 500).
+    for bad in (b"", b"tiny", b"\x00\x01\x02\x03"):
+        with pytest.raises(InputError):
+            decode_and_validate_images([bad])
+
+
+def test_decode_and_validate_images_returns_decoded_images() -> None:
+    # The validator decodes each image once and returns the decoded PIL images
+    # so the tokenizer can reuse them (decode-once); it must not discard them.
+    buf = io.BytesIO()
+    Image.new("RGB", (7, 11)).save(buf, format="PNG")
+    decoded = decode_and_validate_images([buf.getvalue()])
+    assert len(decoded) == 1
+    assert decoded[0].size == (7, 11)
+    # Must be fully decoded (load() already called), usable without the source.
+    assert decoded[0].convert("RGB").size == (7, 11)
+
+
+def test_decode_and_validate_images_rejects_truncated_image() -> None:
+    # A header-valid but truncated image passes the lazy ``Image.open`` header
+    # parse, but its pixel decode fails. Before the fix this slipped through
+    # validation and crashed the worker with an unhandled OSError (HTTP 500)
+    # in the tokenizer's decode; the validator must now force the decode and
+    # turn it into a clean 400 (InputError). (MXSERV-162, bug 2.)
+    buf = io.BytesIO()
+    Image.effect_noise((256, 256), 80).convert("RGB").save(
+        buf, format="JPEG", quality=90
+    )
+    full = buf.getvalue()
+    # Sanity-check the precondition: a header parse alone does not raise.
+    with Image.open(io.BytesIO(full[: int(len(full) * 0.88)])):
+        pass
+    with pytest.raises(InputError):
+        decode_and_validate_images([full[: int(len(full) * 0.88)]])
+
+
+def test_decode_and_validate_images_rejects_decompression_bomb(
+    monkeypatch,  # noqa: ANN001
+) -> None:
+    # An image whose pixel count blows past PIL's decompression-bomb guard must
+    # become a clean 400 (InputError), not an unhandled DecompressionBombError
+    # (which is not an OSError/ValueError, so it would otherwise escape as 500).
+    # (MXSERV-162.)
+    buf = io.BytesIO()
+    Image.new("RGB", (64, 64)).save(buf, format="PNG")
+    data = buf.getvalue()
+    # Lower the limit *after* building the bytes so 64*64 px trips the guard
+    # (DecompressionBombError fires above 2x MAX_IMAGE_PIXELS).
+    monkeypatch.setattr(Image, "MAX_IMAGE_PIXELS", 16)
+    with pytest.raises(InputError):
+        decode_and_validate_images([data])
+
+
+def test_open_image_carry_path_matches_bytes_path() -> None:
+    # Decode-once invariant: a pre-decoded image (carry path,
+    # request.decoded_images) and the raw bytes (fallback path) must yield
+    # byte-identical pixels, so reusing the validator's decode in the tokenizer
+    # cannot change model inputs. (MXSERV-162 follow-up: decode-once.)
+    buf = io.BytesIO()
+    Image.effect_noise((48, 32), 64).convert("RGBA").save(buf, format="PNG")
+    data = buf.getvalue()
+
+    # The validator decodes once and hands the image to the tokenizer.
+    pre_decoded = decode_and_validate_images([data])[0]
+    # open_image passes an already-decoded image through untouched (no re-decode)
+    # and decodes raw bytes on the fallback path.
+    assert open_image(pre_decoded) is pre_decoded
+    carry = np.asarray(open_image(pre_decoded).convert("RGB"))
+    fallback = np.asarray(open_image(data).convert("RGB"))
+    assert np.array_equal(carry, fallback)
+
+
+def test_decode_data_uri_base64_padded_unpadded_and_urlsafe() -> None:
+    # Real clients and the OpenRouter relay send unpadded and/or url-safe
+    # base64; the decoder must accept all three and yield identical bytes.
+    # (MXSERV-162, bug 1.)
+    raw = bytes(range(256))  # contains bytes that map to +/ and -_
+    std = base64.b64encode(raw).decode()
+    assert _decode_data_uri_base64(f"data:image/png;base64,{std}") == raw
+    assert (
+        _decode_data_uri_base64(f"data:image/png;base64,{std.rstrip('=')}")
+        == raw
+    )
+    urlsafe = base64.urlsafe_b64encode(raw).decode().rstrip("=")
+    assert _decode_data_uri_base64(f"data:image/png;base64,{urlsafe}") == raw
+
+
+def test_decode_data_uri_base64_rejects_empty_payload() -> None:
+    with pytest.raises(ValueError, match="no base64 payload"):
+        _decode_data_uri_base64("data:image/png;base64,")
+
+
+def test_coerce_positive_int() -> None:
+    # Positive ints (incl. numeric strings) pass through; everything else,
+    # including bool and non-positive values, becomes None.
+    assert _coerce_positive_int(1008) == 1008
+    assert _coerce_positive_int("512") == 512
+    assert _coerce_positive_int(None) is None
+    assert _coerce_positive_int(0) is None
+    assert _coerce_positive_int(-4) is None
+    assert _coerce_positive_int(True) is None
+    assert _coerce_positive_int("not-a-number") is None
+
+
+def test_coerce_positive_float() -> None:
+    # Positive floats (incl. ints and numeric strings) pass through; bool,
+    # None, non-positive, and garbage become None.
+    assert _coerce_positive_float(1.0) == 1.0
+    assert _coerce_positive_float(2) == 2.0
+    assert _coerce_positive_float("0.5") == 0.5
+    assert _coerce_positive_float(None) is None
+    assert _coerce_positive_float(0) is None
+    assert _coerce_positive_float(-1.0) is None
+    assert _coerce_positive_float(True) is None
+    assert _coerce_positive_float("nope") is None
+
+
+@pytest.mark.asyncio
+async def test_resolve_image_from_url_data_uri_unpadded() -> None:
+    # End-to-end through resolve_image_from_url: an unpadded data URI used to
+    # raise binascii.Error (surfaced as a 400); it must now round-trip.
+    buf = io.BytesIO()
+    Image.new("RGB", (4, 4), color="red").save(buf, format="PNG")
+    png = buf.getvalue()
+    b64 = base64.b64encode(png).decode().rstrip("=")
+    out = await resolve_image_from_url(
+        AnyUrl(f"data:image/png;base64,{b64}"),
+        settings=None,  # type: ignore[arg-type]
+    )
+    assert out == png
 
 
 def test_vllm_response_deserialization() -> None:
@@ -841,6 +1073,65 @@ async def test_openai_chat_completion_reasoning(
     assert response.usage.completion_tokens == expected_completion_tokens
 
 
+def _all_reasoning_chunks(
+    status: GenerationStatus,
+) -> list[TokenGeneratorOutput]:
+    """A turn whose entire output is reasoning (no content tokens).
+
+    Mirrors Kimi K2.5 answering inside the prefilled ``<think>`` block and
+    stopping without ever emitting ``</think>`` — the parser routes everything
+    to reasoning and content stays empty.
+    """
+    return [
+        TokenGeneratorOutput(
+            status=status,
+            decoded_reasoning_tokens="The weather is 22F and Sunny.",
+            reasoning_token_count=7,
+            decoded_tokens=None,
+            token_count=0,
+            prompt_token_count=5,
+        ),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_reasoning_promoted_to_content_on_stop(
+    patch_openai_metrics: None,
+) -> None:
+    """A1: all-reasoning + voluntary stop surfaces as content (not null)."""
+    mock_pipeline = Mock()
+    mock_pipeline.model_name = "test-model"
+    mock_pipeline.all_tokens = AsyncMock(
+        return_value=_all_reasoning_chunks(GenerationStatus.END_OF_SEQUENCE)
+    )
+
+    response = await OpenAIChatResponseGenerator(mock_pipeline).complete(
+        [_make_mock_request()]
+    )
+    message = response.choices[0].message
+    assert message.content == "The weather is 22F and Sunny."
+    assert message.reasoning is None
+
+
+@pytest.mark.asyncio
+async def test_reasoning_not_promoted_on_length(
+    patch_openai_metrics: None,
+) -> None:
+    """A1 gate: a length-truncated thought stays reasoning, not content."""
+    mock_pipeline = Mock()
+    mock_pipeline.model_name = "test-model"
+    mock_pipeline.all_tokens = AsyncMock(
+        return_value=_all_reasoning_chunks(GenerationStatus.MAXIMUM_LENGTH)
+    )
+
+    response = await OpenAIChatResponseGenerator(mock_pipeline).complete(
+        [_make_mock_request()]
+    )
+    message = response.choices[0].message
+    assert message.reasoning == "The weather is 22F and Sunny."
+    assert not message.content
+
+
 async def _run_stream(
     chunks: list[TokenGeneratorOutput],
     *,
@@ -869,6 +1160,8 @@ async def _run_stream(
 
 async def _run_completion_stream(
     chunks: list[TokenGeneratorOutput],
+    *,
+    stream_options: ChatCompletionStreamOptionsParam | None = None,
 ) -> list[CompletionStreamResponse]:
     """Run legacy text-completion streaming generator and parse chunks."""
     mock_pipeline = Mock()
@@ -882,7 +1175,9 @@ async def _run_completion_stream(
     mock_request = _make_mock_request()
     mock_request.request_path = "/v1/completions"
 
-    generator = OpenAICompletionResponseGenerator(mock_pipeline)
+    generator = OpenAICompletionResponseGenerator(
+        mock_pipeline, stream_options=stream_options
+    )
     return [
         CompletionStreamResponse.model_validate_json(p)
         async for p in generator.stream(mock_request)
@@ -1136,6 +1431,94 @@ async def test_openai_completion_non_stream_accounts_reasoning_tokens_for_metric
     assert args[1] == "/v1/completions"
     assert args[3] == 3  # 2 reasoning + 1 completion tokens
     assert args[4] == 4
+
+
+@pytest.mark.asyncio
+async def test_openai_completion_non_stream_includes_usage(
+    patch_openai_metrics: None,
+) -> None:
+    """Legacy /completions non-streaming response populates the usage block."""
+    chunks = [
+        TokenGeneratorOutput(
+            status=GenerationStatus.ACTIVE,
+            decoded_reasoning_tokens="thinking",
+            reasoning_token_count=2,
+            decoded_tokens="par",
+            token_count=1,
+            prompt_token_count=5,
+            cached_token_count=3,
+        ),
+        TokenGeneratorOutput(
+            status=GenerationStatus.END_OF_SEQUENCE,
+            decoded_reasoning_tokens=None,
+            reasoning_token_count=0,
+            decoded_tokens="tial",
+            token_count=1,
+            prompt_token_count=5,
+            cached_token_count=3,
+        ),
+    ]
+
+    mock_pipeline = Mock()
+    mock_pipeline.model_name = "test-model"
+    mock_pipeline.all_tokens = AsyncMock(return_value=chunks)
+    mock_request = _make_mock_request()
+    mock_request.request_path = "/v1/completions"
+
+    generator = OpenAICompletionResponseGenerator(mock_pipeline)
+    response = await generator.complete([mock_request])
+
+    assert response.usage is not None
+    assert response.usage.prompt_tokens == 5
+    assert response.usage.completion_tokens == 4  # 2 reasoning + 2 completion
+    assert response.usage.total_tokens == 9
+    assert response.usage.prompt_tokens_details is not None
+    assert response.usage.prompt_tokens_details.cached_tokens == 3
+
+
+@pytest.mark.asyncio
+async def test_openai_completion_stream_usage_includes_reasoning_tokens(
+    patch_openai_metrics: None,
+) -> None:
+    """Streaming /completions with include_usage emits a final usage chunk."""
+    chunks = [
+        TokenGeneratorOutput(
+            status=GenerationStatus.ACTIVE,
+            decoded_reasoning_tokens="thinking",
+            reasoning_token_count=2,
+            decoded_tokens="partial",
+            token_count=1,
+            prompt_token_count=5,
+            cached_token_count=3,
+        ),
+        TokenGeneratorOutput(
+            status=GenerationStatus.END_OF_SEQUENCE,
+            decoded_reasoning_tokens=None,
+            reasoning_token_count=0,
+            decoded_tokens=" answer",
+            token_count=1,
+            prompt_token_count=5,
+            cached_token_count=3,
+        ),
+    ]
+
+    responses = await _run_completion_stream(
+        chunks, stream_options={"include_usage": True}
+    )
+
+    # Final chunk carries usage with an empty choices list.
+    final = responses[-1]
+    assert final.choices == []
+    assert final.usage is not None
+    assert final.usage.prompt_tokens == 5
+    assert final.usage.completion_tokens == 4  # 2 reasoning + 2 completion
+    assert final.usage.total_tokens == 9
+    assert final.usage.prompt_tokens_details is not None
+    assert final.usage.prompt_tokens_details.cached_tokens == 3
+
+    # Without include_usage, no usage chunk is appended.
+    responses_no_usage = await _run_completion_stream(chunks)
+    assert all(r.usage is None for r in responses_no_usage)
 
 
 @pytest.mark.asyncio
@@ -1628,7 +2011,7 @@ async def test_chat_completion_logprobs_with_overlap_scheduler_rejected_by_defau
         response = await client.post("/v1/chat/completions", json=body)
 
     assert response.status_code == 400
-    assert "overlap" in response.json()["detail"].lower()
+    assert "overlap" in response.json()["error"]["message"].lower()
 
 
 @pytest.mark.asyncio
@@ -1669,7 +2052,7 @@ async def test_chat_completion_extra_field_rejected_by_default(
         response = await client.post("/v1/chat/completions", json=body)
 
     assert response.status_code == 400
-    assert "dynamic_temperature" in response.json()["detail"]
+    assert "dynamic_temperature" in response.json()["error"]["message"]
 
 
 @pytest.mark.asyncio
@@ -1709,7 +2092,7 @@ async def test_completion_logprobs_with_overlap_scheduler_rejected_by_default(
         )
 
     assert response.status_code == 400
-    assert "overlap" in response.json()["detail"].lower()
+    assert "overlap" in response.json()["error"]["message"].lower()
 
 
 @pytest.mark.asyncio
@@ -1757,7 +2140,7 @@ async def test_completion_extra_field_rejected_by_default(
         )
 
     assert response.status_code == 400
-    assert "dynamic_temperature" in response.json()["detail"]
+    assert "dynamic_temperature" in response.json()["error"]["message"]
 
 
 @pytest.mark.asyncio

@@ -16,14 +16,16 @@ from std.ffi import external_call, _CPointer, _get_global
 from std.sys.compile import SanitizeAddress
 
 
-def _init_global_runtime() -> _CPointer[NoneType, ExternalOrigin[mut=True]]:
+def _init_global_runtime() -> _CPointer[NoneType, UntrackedOrigin[mut=True]]:
     return external_call[
         "KGEN_CompilerRT_AsyncRT_GetOrCreateCPUDevice",
-        _CPointer[NoneType, ExternalOrigin[mut=True]],
+        _CPointer[NoneType, UntrackedOrigin[mut=True]],
     ]()
 
 
-def _destroy_global_runtime(ptr: _CPointer[NoneType, ExternalOrigin[mut=True]]):
+def _destroy_global_runtime(
+    ptr: _CPointer[NoneType, UntrackedOrigin[mut=True]]
+):
     """Destroy the global runtime if ever used."""
     external_call["KGEN_CompilerRT_AsyncRT_ReleaseCPUDevice", NoneType](ptr)
 
@@ -32,7 +34,7 @@ def _destroy_global_runtime(ptr: _CPointer[NoneType, ExternalOrigin[mut=True]]):
 def _ensure_runtime_init():
     var current_runtime = external_call[
         "KGEN_CompilerRT_AsyncRT_GetCurrentCPUDevice",
-        _CPointer[NoneType, ExternalOrigin[mut=True]],
+        _CPointer[NoneType, UntrackedOrigin[mut=True]],
     ]()
     if current_runtime:
         return

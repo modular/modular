@@ -21,6 +21,8 @@ from std.sys._hal.queue import Queue as HALQueue
 from std.sys._hal.stream import Stream as HALStream
 
 from .buffer import Buffer
+from .bundle import Bundle
+from .function import Function
 from .queue import Queue
 from .stream import Stream
 
@@ -96,6 +98,28 @@ struct Context(Movable, Writable):
         var buf_ptr = buf_obj.downcast_value_ptr[Buffer]()
         return PythonObject(
             Int(self_ptr[]._arc[].memory_get_address(buf_ptr[]._hal))
+        )
+
+    @staticmethod
+    def load_function(
+        py_self: PythonObject,
+        bundle_obj: PythonObject,
+        name_obj: PythonObject,
+    ) raises -> PythonObject:
+        var self_ptr = Self._self_ptr(py_self)
+        var bundle_ptr = bundle_obj.downcast_value_ptr[Bundle]()
+        var name = String(py=name_obj)
+        var func_handle = (
+            self_ptr[]._arc[].load_function(bundle_ptr[]._arc[], name)
+        )
+        var ctx_arc = self_ptr[]._arc
+        var bundle_arc = bundle_ptr[]._arc
+        return PythonObject(
+            alloc=Function(
+                _ctx=ctx_arc^,
+                _bundle=bundle_arc^,
+                _handle=func_handle,
+            )
         )
 
     def write_to(self, mut writer: Some[Writer]):

@@ -55,11 +55,10 @@ comptime input_shape = row_major[N, W, C]()
 comptime filter_shape = row_major[num_micro_tile, S, C, micro_kernel_f_size]()
 
 
-@export
 def conv1d_register_tiling(
-    output: UnsafePointer[Scalar[type], MutAnyOrigin],
-    input: UnsafePointer[Scalar[type], MutAnyOrigin],
-    filter: UnsafePointer[Scalar[type], MutAnyOrigin],
+    output: UnsafePointer[mut=True, Scalar[type], _],
+    input: UnsafePointer[mut=False, Scalar[type], _],
+    filter: UnsafePointer[mut=False, Scalar[type], _],
     c_tile_size: Int,
     f_tile_offset: Int,
     f_tile_size: Int,

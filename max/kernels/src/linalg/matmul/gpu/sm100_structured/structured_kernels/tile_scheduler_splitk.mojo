@@ -294,6 +294,7 @@ struct TileScheduler[
     comptime ClcBarrierArray = Self.UnderlyingScheduler.ClcBarrierArray
     comptime ThrottleBarrierArray = Self.UnderlyingScheduler.ThrottleBarrierArray
 
+    @__allow_legacy_any_origin_fields
     var locks_ptr: UnsafePointer[Int32, MutAnyOrigin]
     var scheduler: Self.UnderlyingScheduler
     var total_k_tiles: UInt32

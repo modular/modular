@@ -64,7 +64,7 @@ def test_mla_prefill_plan() -> None:
             "call_mla_prefill_plan",
             input_types=[
                 input_row_offsets_type,
-                *kv_params.get_symbolic_inputs().flatten(),
+                *kv_params.flattened_kv_inputs(),
             ],
         ) as g:
             input_row_offsets = g.inputs[0].tensor
@@ -97,7 +97,7 @@ def test_mla_prefill_plan() -> None:
     for i in range(batch_size):
         context = create_text_context(np.empty(prompt_lens[i]))
         kv_manager.claim(context.request_id, replica_idx=0)
-        kv_manager.alloc(context, replica_idx=0, num_steps=1)
+        kv_manager.alloc(context, replica_idx=0)
         batch.append(context)
 
     # Compute input row offsets for ragged tensors.
@@ -108,7 +108,7 @@ def test_mla_prefill_plan() -> None:
         running_sum += prompt_lens[i]
     input_row_offsets[batch_size] = running_sum
 
-    kv_inputs = kv_manager.runtime_inputs([batch]).inputs[0]
+    kv_inputs = kv_manager.runtime_inputs_for_leaf([batch]).inputs[0]
 
     results = model.execute(input_row_offsets.to(device0), *kv_inputs.flatten())
 
@@ -179,7 +179,7 @@ def test_mla_decompress_k_cache() -> None:
             input_types=[
                 input_row_offsets_type,
                 weight_type,
-                *kv_params.get_symbolic_inputs().flatten(),
+                *kv_params.flattened_kv_inputs(),
             ],
         ) as g:
             input_row_offsets = g.inputs[0].tensor
@@ -231,7 +231,7 @@ def test_mla_decompress_k_cache() -> None:
     for i in range(batch_size):
         context = create_text_context(np.empty(prompt_lens[i]))
         kv_manager.claim(context.request_id, replica_idx=0)
-        kv_manager.alloc(context, replica_idx=0, num_steps=1)
+        kv_manager.alloc(context, replica_idx=0)
         batch.append(context)
 
     # Compute input row offsets for ragged tensors.
@@ -242,7 +242,7 @@ def test_mla_decompress_k_cache() -> None:
         running_sum += prompt_lens[i]
     input_row_offsets[batch_size] = running_sum
 
-    kv_runtime_inputs = kv_manager.runtime_inputs([batch])
+    kv_runtime_inputs = kv_manager.runtime_inputs_for_leaf([batch])
 
     new_blocks = torch.randn(
         size=kv_runtime_inputs.inputs[0].kv_blocks.shape, dtype=torch.float32
@@ -319,7 +319,7 @@ def test_mla_decompress_k_cache_only_k() -> None:
             input_types=[
                 input_row_offsets_type,
                 weight_type,
-                *kv_params.get_symbolic_inputs().flatten(),
+                *kv_params.flattened_kv_inputs(),
             ],
         ) as g:
             input_row_offsets = g.inputs[0].tensor

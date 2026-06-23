@@ -41,7 +41,6 @@ from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType
 from max.nn.kernels import KVCacheParams
-from max.nn.kv_cache import KVCacheQuantizationConfig
 from max.nn.rotary_embedding import Llama3RotaryEmbedding
 from max.pipelines.architectures.gemma4.layers.attention import (
     Gemma4Attention as MaxGemma4Attention,
@@ -165,7 +164,6 @@ def build_max_attention(
     layer_idx: int,
     *,
     cache_dtype: DType | None = None,
-    quantization_granularity: int = 64,
 ) -> CompiledAttention:
     """Builds and compiles the MAX Gemma4 attention graph.
 
@@ -178,26 +176,15 @@ def build_max_attention(
     `RoPE` is used.
 
     `cache_dtype` controls the KV cache storage dtype.  Pass
-    `DType.float8_e4m3fn` to exercise the fp8-KV path.  Defaults to
-    `dtype` (= bf16).
+    `DType.float8_e4m3fn` to exercise the fp8-KV path (automatically routed
+    to the native pure-fp8 MHA op).  Defaults to `dtype` (= bf16).
     """
     state_dict = {
         weight_name: value.cpu()
         for weight_name, value in attention_weights.items()
     }
 
-    # When `cache_dtype` selects fp8, attach a per-block quantization
-    # config matching Gemma4's production wiring
-    # (`gemma4/model_config.py:524-527`).  This drives the fp8 quantize
-    # + dequant path inside `Gemma4Attention` end-to-end.
     cache_dtype_eff = cache_dtype if cache_dtype is not None else dtype
-    quant_cfg: KVCacheQuantizationConfig | None = None
-    if cache_dtype_eff in (DType.float8_e4m3fn, DType.float8_e4m3fnuz):
-        quant_cfg = KVCacheQuantizationConfig(
-            scale_dtype=DType.float32,
-            quantization_granularity=quantization_granularity,
-        )
-
     kv_params_local = KVCacheParams(
         dtype=cache_dtype_eff,
         devices=[device_ref],
@@ -207,7 +194,6 @@ def build_max_attention(
             [lt for lt in text_config.layer_types if lt == "sliding_attention"]
         ),
         page_size=256,
-        kvcache_quant_config=quant_cfg,
     )
 
     kv_params_global = KVCacheParams(
@@ -219,7 +205,6 @@ def build_max_attention(
             [lt for lt in text_config.layer_types if lt == "full_attention"]
         ),
         page_size=256,
-        kvcache_quant_config=quant_cfg,
     )
 
     kv_params = (
@@ -261,14 +246,6 @@ def build_max_attention(
         devices=[device_ref],
         qk_norm_eps=text_config.rms_norm_eps,
         local_window_size=text_config.sliding_window,
-        # Mirror gemma4.py's production wiring
-        # (`use_interleaved_rope=kv_params.quantized_kv_cache`).
-        # `attention.py` ignores `use_interleaved_rope` and uses
-        # `rope.interleaved` directly; if a future change ever flips
-        # `interleaved=True` under fp8 (which would change the rotation
-        # pairing against trained weights and corrupt attention), this
-        # test would catch it.
-        use_interleaved_rope=kv_params.quantized_kv_cache,
     )
     attention.load_state_dict(state_dict)
 
@@ -289,7 +266,7 @@ def build_max_attention(
     input_row_offsets_type = TensorType(
         DType.uint32, shape=["input_row_offsets_len"], device=device_ref
     )
-    flattened_kv_types = kv_params.get_symbolic_inputs().flatten()
+    flattened_kv_types = kv_params.flattened_kv_inputs()
 
     # Build graph.
     with Graph(
@@ -301,9 +278,7 @@ def build_max_attention(
         ),
     ) as graph:
         inputs, input_row_offsets, *kv_cache = graph.inputs
-        kv_collection = (
-            kv_params.get_symbolic_inputs().unflatten(iter(kv_cache)).inputs[0]
-        )
+        kv_collection = kv_params.unflatten_kv_inputs(iter(kv_cache)).inputs[0]
 
         graph.output(
             attention(
@@ -334,9 +309,8 @@ def execute_max_attention(
     batch = [create_text_context(np.empty(input_seq_len))]
     kv_manager.claim(batch[0].request_id, replica_idx=0)
     try:
-        kv_manager.alloc(batch[0], replica_idx=0, num_steps=1)
-        kv_runtime_inputs = kv_manager.runtime_inputs([batch]).inputs[0]
-        assert kv_runtime_inputs.attention_dispatch_metadata is not None
+        kv_manager.alloc(batch[0], replica_idx=0)
+        kv_runtime_inputs = kv_manager.runtime_inputs([batch])
 
         # Under fp8 KV the kv_params.get_symbolic_inputs() expands with
         # `kv_scales` buffer inputs.  Mirror that on the runtime side by
@@ -346,14 +320,8 @@ def execute_max_attention(
             Buffer.from_numpy(np.array([0, input_seq_len], dtype=np.uint32)).to(
                 device
             ),
-            kv_runtime_inputs.kv_blocks.to(device),
-            kv_runtime_inputs.cache_lengths.to(device),
-            kv_runtime_inputs.lookup_table.to(device),
-            kv_runtime_inputs.max_lengths,
+            *kv_runtime_inputs.flatten(),
         ]
-        if kv_runtime_inputs.kv_scales is not None:
-            execute_args.append(kv_runtime_inputs.kv_scales)
-        execute_args.append(kv_runtime_inputs.attention_dispatch_metadata)
         output = compiled.execute(*execute_args)[0]
     finally:
         kv_manager.release(batch[0].request_id, replica_idx=0)
@@ -397,7 +365,7 @@ def assert_fp8_matches_bf16(
         f"cosine={cos:.6f} max_abs_diff={max_abs_diff:.4f}"
     )
     assert cos >= 0.99, (
-        f"fp8 KV attention output diverged from bf16 baseline: "
+        "fp8 KV attention output diverged from bf16 baseline: "
         f"cosine={cos:.4f} < 0.99 (layer_idx={layer_idx} "
         f"head_dim={head_dim_for_log})"
     )

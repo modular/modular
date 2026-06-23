@@ -31,7 +31,6 @@ Warning:
 
 import std.math
 from std.math import floor
-from std.memory.alloc import alloc, free, Layout
 from std.time import perf_counter_ns
 
 from ._rng import _get_global_random_state

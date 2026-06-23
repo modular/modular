@@ -23,9 +23,9 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import Graph
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn.kv_cache import KVCacheInputs
+from max.nn.kv_cache import KVCacheInputsInterface
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
-from max.pipelines.core import TextContext
+from max.pipelines.context import TextContext
 from max.pipelines.lib import (
     KVCacheConfig,
     ModelInputs,
@@ -35,7 +35,6 @@ from max.pipelines.lib import (
 from max.pipelines.lib.utils import parse_state_dict_from_weights
 from max.pipelines.modeling.types import RequestID
 from max.support.algorithm import flatten2d
-from transformers import AutoConfig
 
 from ..llama3.model import Llama3Inputs, LlamaModelBase
 from .lfm2 import LFM2
@@ -240,14 +239,6 @@ class LFM2Model(LlamaModelBase):
             device=self.devices[0],
         )
 
-    @classmethod
-    def calculate_max_seq_len(
-        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
-    ) -> int:
-        return LFM2Config.calculate_max_seq_len(
-            pipeline_config, huggingface_config
-        )
-
     def _build_graph(
         self,
         weights: Weights,
@@ -273,9 +264,7 @@ class LFM2Model(LlamaModelBase):
             strict=True,
         )
         self.state_dict = model.state_dict()
-        self._num_kv_inputs = len(
-            self.kv_params.get_symbolic_inputs().flatten()
-        )
+        self._num_kv_inputs = len(self.kv_params.flattened_kv_inputs())
 
         with Graph(
             "lfm2",
@@ -343,7 +332,7 @@ class LFM2Model(LlamaModelBase):
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
+        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> LFM2Inputs:
         base = super().prepare_initial_token_inputs(
@@ -358,20 +347,6 @@ class LFM2Model(LlamaModelBase):
             **{f.name: getattr(base, f.name) for f in dataclasses.fields(base)},
             conv_states=conv_states,
             request_ids=request_ids,
-        )
-
-    def prepare_next_token_inputs(
-        self,
-        next_tokens: Buffer,
-        prev_model_inputs: ModelInputs,
-    ) -> LFM2Inputs:
-        assert isinstance(prev_model_inputs, LFM2Inputs)
-        base = super().prepare_next_token_inputs(next_tokens, prev_model_inputs)
-        conv_states = self._conv_cache.get_states(prev_model_inputs.request_ids)
-        return LFM2Inputs(
-            **{f.name: getattr(base, f.name) for f in dataclasses.fields(base)},
-            conv_states=conv_states,
-            request_ids=prev_model_inputs.request_ids,
         )
 
     def release(self, request_id: RequestID) -> None:

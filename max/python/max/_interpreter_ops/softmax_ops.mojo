@@ -21,7 +21,7 @@ from std.sys.info import has_accelerator, simd_width_of
 
 from std.math import exp, log
 from std.algorithm.functional import IndexList
-from layout import Idx, TileTensor, row_major
+from layout import Coord, Idx, TileTensor, coord_to_index_list, row_major
 from nn.softmax import softmax as nn_softmax, logsoftmax as nn_logsoftmax
 
 
@@ -34,7 +34,7 @@ from op_utils import _get_dtype, _get_buffer_ptr, _get_ctx, _get_shape, MAX_RANK
 
 
 @export
-def PyInit_softmax_ops() -> PythonObject:
+def PyInit_softmax_ops() abi("C") -> PythonObject:
     """Create a Python module with softmax kernel function bindings."""
     try:
         var b = PythonModuleBuilder("softmax_ops")
@@ -60,8 +60,8 @@ def _softmax_cpu[
     dtype: DType,
     is_logsoftmax: Bool,
 ](
-    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    in_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    out_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    in_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     batch_dim: Int,
     axis_dim: Int,
 ) where dtype.is_floating_point():
@@ -113,8 +113,8 @@ def softmax_op[
     dtype: DType,
     is_logsoftmax: Bool,
 ](
-    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    in_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    out_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    in_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     shape: IndexList[2],
     ctx: DeviceContext,
 ) raises where dtype.is_floating_point():
@@ -148,10 +148,8 @@ def softmax_op[
                 @always_inline
                 @parameter
                 @__copy_capture(in_ptr, axis_dim)
-                def input_fn[
-                    width: Int, rank: Int
-                ](coords: IndexList[rank]) -> SIMD[dtype, width]:
-                    var c = rebind[IndexList[2]](coords)
+                def input_fn[width: Int](coords: Coord) -> SIMD[dtype, width]:
+                    var c = rebind[IndexList[2]](coord_to_index_list(coords))
                     var flat_idx = c[0] * axis_dim + c[1]
                     return in_ptr.load[width=width](flat_idx)
 
@@ -167,7 +165,7 @@ def softmax_op[
                         2,
                         input_fn,
                         target="gpu",
-                    ](shape, output_tensor, 1, ctx)
+                    ](Coord(shape), output_tensor, 1, ctx)
                 else:
                     nn_softmax[
                         dtype,
@@ -175,7 +173,7 @@ def softmax_op[
                         2,
                         input_fn,
                         target="gpu",
-                    ](shape, output_tensor, 1, ctx)
+                    ](Coord(shape), output_tensor, 1, ctx)
 
             else:
                 raise Error(

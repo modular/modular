@@ -3,9 +3,19 @@ load("//bazel:api.bzl", "mojo_filecheck_test", "mojo_test")
 package(default_visibility = ["//max:consumers"])
 
 _EXTRA_CONSTRAINTS = {
+    # Bounded masked DRAM->SRAM copy proof; the masked `cp.async` zero-fill
+    # is NVIDIA-specific and verified on B200 only.
+    "scout_tt_bounded_copy.mojo": ["//:nvidia_gpu"],
     "test_mma_ws_ts.mojo": select({
         "//:b200_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    # No SM100/B200-specific code; runs on any GPU. Apple is excluded because
+    # `_block_reduce_topk` uses MAX_BLOCK_SIZE == WARP_SIZE there, which the
+    # 128-thread block in the test would exceed.
+    "test_sparse_indexer_common.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
     }),
     "test_cudnn_conv.mojo": ["//:nvidia_gpu"],
     "test_miopen_conv.mojo": ["//:amd_gpu"],
@@ -46,6 +56,12 @@ _EXTRA_CONSTRAINTS = {
         "//conditions:default": [],
     }),
     "test_mla_decode_blockwise_fp8.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    # Drives the SM100 MLA FP8-KV decode kernel (MLA_SM100_Decode_KV_FP8).
+    # SM100-only.
+    "test_mla_decode_kv_fp8_magnitude_stress.mojo": select({
         "//:b200_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
@@ -91,6 +107,14 @@ _EXTRA_CONSTRAINTS = {
         "//:b200_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
+    "test_mla_decode_sparse_kv_bf16_smoke.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "test_mla_decode_sparse_kv_bf16.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     "test_mla_index_fp8.mojo": select({
         "//:h100_gpu": [],
         "//:b200_gpu": [],
@@ -100,6 +124,14 @@ _EXTRA_CONSTRAINTS = {
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: PRDT-506
+    "test_rms_norm_fused_residual_add.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: KERN-2651 — Metal threadgroup memory limit (33032 > 32768)
+    "test_mha_chunked_causal_mask.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: KERN-3062 — flash attention numerically diverges on Metal
     "test_argmaxmin_gpu.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
@@ -156,20 +188,41 @@ _EXTRA_CONSTRAINTS = {
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
-    # FP8 quantize+store path is SM100-only (uses float8_e4m3fn).
-    "test_rope_split_store_fp8.mojo": select({
+    # SM100 FA4 1Q attention-sink double-count regression. SM100-only
+    # (exercises the FA4 `fa4_softmax` 1Q warp-specialized path).
+    "attention/test_mha_sm100_1q_sink.mojo": select({
         "//:b200_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    # SM100 MHA with fp8 KV via dequant-staging + existing bf16 FA4 path.
-    # SM100-only.
-    "attention/test_mha_sm100_fp8_kv_d256.mojo": select({
+    "attention/test_mha_sm100_qkv_fp8_d256_prefill.mojo": select({
         "//:b200_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    # Same dequant-staging path at head_dim=512 (Gemma4-global shape).
-    # SM100-only.
-    "attention/test_mha_sm100_fp8_kv_d512.mojo": select({
+    "attention/test_mha_sm100_qkv_fp8_d256_paged.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "attention/test_mha_sm100_qkv_fp8_d512_prefill.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "attention/test_mha_sm100_qkv_fp8_d128_decode.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "attention/test_mha_sm100_qkv_fp8_d256_decode.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "attention/test_mha_sm100_qkv_fp8_d512_decode.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "attention/test_mha_sm100_qkv_fp8_d64_prefill.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "attention/test_mha_sm100_qkv_fp8_d128_prefill.mojo": select({
         "//:b200_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
@@ -200,6 +253,10 @@ _EXTRA_CONSTRAINTS = {
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: PRDT-506
+    "test_apply_packed_bitmask.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     "test_tpool_patch_merger.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
@@ -225,6 +282,8 @@ _EXTRA_CONSTRAINTS = {
         "//conditions:default": [],
     }),  # FIXME: MOCO-2411 — segfaults on Apple GPU remote workers
 }
+
+_EXTRA_DEPS = {}
 
 _FILECHECK_TESTS = [
     "test_mha_tile_scheduler.mojo",
@@ -286,7 +345,7 @@ _FILECHECK_TESTS = [
             "//max:nn",
             "//max:testdata",
             "@mojo//:std",
-        ],
+        ] + _EXTRA_DEPS.get(src, []),
     )
     for src in glob(
         ["**/*.mojo"],
@@ -296,14 +355,39 @@ _FILECHECK_TESTS = [
             "test_mla_decode_paged_variable.mojo",
             "test_mla_prefill_generic_paged.mojo",
             "test_mla_prefill_blockscale_paged.mojo",
+            "test_mla_prefill_blockscale_large_cache.mojo",
             "test_mla_prefill_per_token_scale_paged.mojo",
             "_paged_prefill_test_utils.mojo",
             # Dtype-parameterized 4-wave conv test (explicit per-dtype
             # targets are declared below).
             "test_amd_4wave_conv_dtypes.mojo",
+            # Apple-only decode-attention correctness gate (needs the
+            # //max:kv_cache dep and an Apple-GPU-only constraint; declared
+            # explicitly below).
+            "attention/test_naive_fa_decode_apple.mojo",
         ],
     )
 ]
+
+# Ensure `naive_fa_decode_apple` matches `mha_gpu_naive` on a paged KV cache.
+# Apple GPU only; needs //max:kv_cache for the operand construction.
+mojo_test(
+    name = "attention/test_naive_fa_decode_apple.mojo.test",
+    srcs = ["attention/test_naive_fa_decode_apple.mojo"],
+    tags = ["gpu"],
+    target_compatible_with = [
+        "//:has_gpu",
+        "//:apple_gpu",
+    ],
+    deps = [
+        "//max:internal_utils",
+        "//max:kv_cache",
+        "//max:linalg",
+        "//max:nn",
+        "//max:testdata",
+        "@mojo//:std",
+    ],
+)
 
 # Dtype-parameterized 4-wave conv correctness tests. Single source
 # file (`test_amd_4wave_conv_dtypes.mojo`); one `mojo_test` target per
@@ -355,8 +439,24 @@ _FILECHECK_TESTS = [
 #   *_pair_cta:    B200 only (SM100-only feature)
 _MHA_CAUSAL_MASK_CONFIGS = [
     # (depth, pair_cta, extra_constraints)
-    ("64", False, []),
-    ("128", False, []),
+    # FIXME: KERN-3062 — flash attention numerically diverges on Metal; the
+    # depth-64 and depth-128 configs are the only ones that target Apple GPU.
+    (
+        "64",
+        False,
+        select({
+            "//:apple_gpu": ["@platforms//:incompatible"],
+            "//conditions:default": [],
+        }),
+    ),
+    (
+        "128",
+        False,
+        select({
+            "//:apple_gpu": ["@platforms//:incompatible"],
+            "//conditions:default": [],
+        }),
+    ),
     (
         "128",
         True,
@@ -504,7 +604,11 @@ _MHA_CAUSAL_MASK_AMD_DTYPES = {
 ]
 
 # test_mla_decode_paged_variable.mojo split by page_size. Each page_size
-# gets its own target. MLA decode is B200-only (SM100).
+# gets its own target. The test runs the SM100 paged decode suite on B200
+# and the AMD MLA decode suite (S=1 paged decode + the FP8 MTP token fold
+# through the paged + ragged-layout path, including uniform multi-Q and M6
+# variable per-sequence query length, across single-partition and split-K)
+# on MI355 (gfx950); both page_size 128 and 256 are verified on AMD.
 #
 # page_size < 64 (the decode tile row count BK1=64) would exercise
 # multi-sub-tile TMA emission, but the decode TMA descriptor's `BN` is
@@ -527,12 +631,21 @@ _MLA_DECODE_PAGED_CONFIGS = [
             "-D",
             "page_size={}".format(page_size),
         ],
+        # The gfx950 backend crashes compiling the warp-local MLA-decode fold
+        # kernel with assertions enabled (machine scheduler emits illegal MIR
+        # -> "Found N machine code errors"); the no-assert / JIT build is fine.
+        # Mirrors test_flash_attention_amd.mojo (MSTDL-2240). NVIDIA keeps asserts.
+        enable_assertions = select({
+            "//:amd_gpu": False,
+            "//conditions:default": True,
+        }),
         exec_properties = {
             "test.resources:gpu-memory": "5",
         },
         tags = ["gpu"],
         target_compatible_with = ["//:has_gpu"] + select({
             "//:b200_gpu": [],
+            "//:mi355_gpu": [],
             "//conditions:default": ["@platforms//:incompatible"],
         }),
         deps = [
@@ -576,19 +689,38 @@ _MLA_PREFILL_PAGED_PAGE_SIZES = [
     "256",
 ]
 
-# (test_file_basename, test_label_prefix) — paged-prefill tests share
-# the same ``_paged_prefill_test_utils.mojo`` helper and the same
-# ``page_size`` parameterisation. Each variant has its own entry so
-# the BUILD rule only needs to differ by srcs/name prefix.
+# (test_file, test_label_prefix, page_sizes, gpu_memory) — paged-prefill
+# tests share the same ``_paged_prefill_test_utils.mojo`` helper and the
+# same ``page_size`` parameterisation. Each variant has its own entry so
+# the BUILD rule only differs by srcs/name/page_sizes/memory.
 _MLA_PREFILL_PAGED_VARIANTS = [
-    ("test_mla_prefill_generic_paged.mojo", "test_mla_prefill_generic_paged"),
+    (
+        "test_mla_prefill_generic_paged.mojo",
+        "test_mla_prefill_generic_paged",
+        _MLA_PREFILL_PAGED_PAGE_SIZES,
+        "5",
+    ),
     (
         "test_mla_prefill_blockscale_paged.mojo",
         "test_mla_prefill_blockscale_paged",
+        _MLA_PREFILL_PAGED_PAGE_SIZES,
+        "5",
     ),
     (
         "test_mla_prefill_per_token_scale_paged.mojo",
         "test_mla_prefill_per_token_scale_paged",
+        _MLA_PREFILL_PAGED_PAGE_SIZES,
+        "5",
+    ),
+    # Large-cache_length finiteness sweep: production page_size (256) only,
+    # targeting the softmax-accumulator / scale-range / partition-count axis at
+    # cache_length up to 94715 (not the partial-page page_size < BN bug). Needs
+    # more GPU memory than the partial-page variants.
+    (
+        "test_mla_prefill_blockscale_large_cache.mojo",
+        "test_mla_prefill_blockscale_large_cache",
+        ["256"],
+        "10",
     ),
 ]
 
@@ -605,7 +737,7 @@ _MLA_PREFILL_PAGED_VARIANTS = [
             "page_size={}".format(page_size),
         ],
         exec_properties = {
-            "test.resources:gpu-memory": "5",
+            "test.resources:gpu-memory": gpu_memory,
         },
         main = src,
         tags = ["gpu"],
@@ -621,6 +753,6 @@ _MLA_PREFILL_PAGED_VARIANTS = [
             "@mojo//:std",
         ],
     )
-    for (src, label) in _MLA_PREFILL_PAGED_VARIANTS
-    for page_size in _MLA_PREFILL_PAGED_PAGE_SIZES
+    for (src, label, page_sizes, gpu_memory) in _MLA_PREFILL_PAGED_VARIANTS
+    for page_size in page_sizes
 ]

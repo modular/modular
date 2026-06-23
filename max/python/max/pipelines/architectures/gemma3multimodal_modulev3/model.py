@@ -33,9 +33,9 @@ from max.experimental.tensor import Tensor
 from max.graph import DeviceRef, TensorType
 from max.graph.buffer_utils import cast_dlpack_to
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn.kv_cache import KVCacheInputs
+from max.nn.kv_cache import KVCacheInputsInterface
 from max.nn.transformer import ReturnLogits
-from max.pipelines.core import TextAndVisionContext
+from max.pipelines.context import TextAndVisionContext
 from max.pipelines.lib import (
     KVCacheConfig,
     ModelInputs,
@@ -143,21 +143,6 @@ class Gemma3MultiModalModelV3(
 
         self._stacker = _VisionStacker()
         self.vision_model, self.language_model = self._load_models()
-
-    @classmethod
-    def estimate_activation_memory(
-        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
-    ) -> int:
-        del pipeline_config, huggingface_config
-        return 15 * 1024 * 1024 * 1024  # 15 GiB
-
-    @classmethod
-    def calculate_max_seq_len(
-        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
-    ) -> int:
-        return Gemma3ForConditionalGenerationConfig.calculate_max_seq_len(
-            pipeline_config, huggingface_config
-        )
 
     @classmethod
     def get_num_layers(cls, huggingface_config: AutoConfig) -> int:
@@ -318,7 +303,7 @@ class Gemma3MultiModalModelV3(
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[TextAndVisionContext]],
-        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
+        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> ModelInputs:
         if len(replica_batches) > 1:
@@ -349,22 +334,6 @@ class Gemma3MultiModalModelV3(
             kv_cache_inputs=kv_cache_inputs,
             pixel_values=pixel_values,
             image_token_indices=image_token_indices,
-        )
-
-    def prepare_next_token_inputs(
-        self, next_tokens: Buffer, prev_model_inputs: ModelInputs
-    ) -> ModelInputs:
-        prev_model_inputs = cast(Gemma3MultiModalModelInputs, prev_model_inputs)
-        row_offsets_size = prev_model_inputs.input_row_offsets.shape[0]
-
-        return Gemma3MultiModalModelInputs(
-            tokens=next_tokens,
-            input_row_offsets=self._input_row_offsets_prealloc[
-                :row_offsets_size
-            ],
-            return_n_logits=prev_model_inputs.return_n_logits,
-            kv_cache_inputs=prev_model_inputs.kv_cache_inputs,
-            pixel_values=None,
         )
 
     def _prepare_vision_inputs(

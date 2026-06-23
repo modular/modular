@@ -89,6 +89,8 @@ struct KBufferRDNA[
         MutAnyOrigin,
         address_space=AddressSpace.LOCAL,
     ]
+
+    @__allow_legacy_any_origin_fields
     var load_tile: Self.LoadTileType
 
     comptime mma_tile_layout = row_major[Self.num_mmas, RDNA_AB_FRAG_SIZE]()
@@ -98,6 +100,8 @@ struct KBufferRDNA[
         MutAnyOrigin,
         address_space=AddressSpace.LOCAL,
     ]
+
+    @__allow_legacy_any_origin_fields
     var mma_tile: Self.MMATileType
 
     # K SMEM holds one BN x BK strip at a time; double-buffering happens
@@ -109,9 +113,12 @@ struct KBufferRDNA[
         MutAnyOrigin,
         address_space=AddressSpace.SHARED,
     ]
+
+    @__allow_legacy_any_origin_fields
     var smem_tile: Self.SmemTileType
 
     # DRAM tile + strip iterator state.
+    @__allow_legacy_any_origin_fields
     var gmem_tile: TileTensor[
         Self.cache_dtype, Self.gmem_layout, ImmutAnyOrigin
     ]
@@ -270,6 +277,8 @@ struct VBufferRDNA[
         MutAnyOrigin,
         address_space=AddressSpace.LOCAL,
     ]
+
+    @__allow_legacy_any_origin_fields
     var load_tile: Self.LoadTileType
 
     comptime mma_tile_layout = row_major[
@@ -281,6 +290,8 @@ struct VBufferRDNA[
         MutAnyOrigin,
         address_space=AddressSpace.LOCAL,
     ]
+
+    @__allow_legacy_any_origin_fields
     var mma_tile: Self.MMATileType
 
     # V SMEM: num_repeats column-blocks of (pad(depth) × simd_width)
@@ -298,10 +309,13 @@ struct VBufferRDNA[
         MutAnyOrigin,
         address_space=AddressSpace.SHARED,
     ]
+
+    @__allow_legacy_any_origin_fields
     var smem_tile: Self.SmemTileType
 
     # The DRAM tile spans (BK x depth) per call; the buffer iterates
     # `strip_idx` over BK strips internally on each load_from_dram.
+    @__allow_legacy_any_origin_fields
     var gmem_tile: TileTensor[
         Self.cache_dtype, Self.gmem_layout, ImmutAnyOrigin
     ]
@@ -544,6 +558,7 @@ struct QRegisterBufferRDNA[
         address_space=AddressSpace.LOCAL,
     ]
 
+    @__allow_legacy_any_origin_fields
     var reg_tile: Self.RegisterTileType
 
     @staticmethod
@@ -657,6 +672,7 @@ struct OutputRegisterBufferRDNA[
         address_space=AddressSpace.LOCAL,
     ]
 
+    @__allow_legacy_any_origin_fields
     var reg_tile: Self.RegisterTileType
 
     @always_inline
@@ -725,8 +741,10 @@ struct PRegisterBufferRDNA[
         address_space=AddressSpace.LOCAL,
     ]
 
+    @__allow_legacy_any_origin_fields
     var reg_tile: Self.RegisterTileType
 
+    @__allow_legacy_any_origin_fields
     var shared_memory_ptr: UnsafePointer[
         Scalar[Self.dtype], MutAnyOrigin, address_space=AddressSpace.SHARED
     ]

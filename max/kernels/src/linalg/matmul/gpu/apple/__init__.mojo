@@ -10,14 +10,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Apple M5 simdgroup-tiled matmul (Layer 3).
+"""Provides the Apple silicon GPU backend implementations for matmuls."""
 
-Not yet on the public dispatcher path (MXF-369). Callers must gate on
-`compute_capability() == 5`; M1-M4 belong on the naive path.
-"""
-
+from .matmul_8x8 import gemm_kernel_apple_8x8
 from .matmul_kernel import (
-    apple_matmul_kernel,
+    AppleM5MatMul,
     enqueue_apple_matmul,
-    morton_decode_2d,
+    enqueue_apple_matmul_split_k,
 )

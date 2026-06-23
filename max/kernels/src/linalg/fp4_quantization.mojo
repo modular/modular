@@ -32,6 +32,7 @@ from layout import (
     RuntimeLayout,
     TileTensor,
     row_major,
+    coord_to_index_list,
 )
 from layout.tile_layout import TensorLayout
 from std.logger import Logger
@@ -620,6 +621,63 @@ def naive_block_scaled_matmul[
     )
 
 
+def naive_block_scaled_matmul[
+    c_type: DType,
+    a_type: DType,
+    b_type: DType,
+    a_scales_type: DType,
+    b_scales_type: DType,
+    //,
+    *,
+    scaling_kind: UMMAKind,
+    SF_VECTOR_SIZE: Int,
+    accum_type: DType = DType.float32,
+    transpose_b: Bool = True,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    BLOCK_DIM: Int = 16,
+](
+    c: TileTensor[mut=True, c_type, address_space=AddressSpace.GENERIC, ...],
+    a: TileTensor[a_type, address_space=AddressSpace.GENERIC, ...],
+    b: TileTensor[b_type, address_space=AddressSpace.GENERIC, ...],
+    a_scales: TileTensor[
+        a_scales_type, address_space=AddressSpace.GENERIC, ...
+    ],
+    b_scales: TileTensor[
+        b_scales_type, address_space=AddressSpace.GENERIC, ...
+    ],
+    ctx: DeviceContext,
+    alpha: Float32 = 1.0,
+) raises:
+    """TileTensor overload for the naive reference block-scaled matmul.
+
+    The reference implementation remains LayoutTensor-based outside SM100.
+    Keep that compatibility shim here so the SM100 testbed can stay
+    TileTensor-native.
+    """
+    var c_lt = c.to_layout_tensor()
+    var a_lt = a.to_layout_tensor()
+    var b_lt = b.to_layout_tensor()
+    var a_scales_lt = a_scales.to_layout_tensor()
+    var b_scales_lt = b_scales.to_layout_tensor()
+
+    naive_block_scaled_matmul[
+        scaling_kind=scaling_kind,
+        SF_VECTOR_SIZE=SF_VECTOR_SIZE,
+        accum_type=accum_type,
+        transpose_b=transpose_b,
+        elementwise_lambda_fn=elementwise_lambda_fn,
+        BLOCK_DIM=BLOCK_DIM,
+    ](
+        c_lt,
+        a_lt,
+        b_lt,
+        a_scales_lt,
+        b_scales_lt,
+        ctx,
+        alpha,
+    )
+
+
 @__name(t"naive_block_scaled_matmul")
 def naive_block_scaled_matmul_kernel[
     c_type: DType,
@@ -687,14 +745,10 @@ def naive_block_scaled_matmul_kernel[
             ).cast[accum_type]()
 
             comptime for k_idx in range(K_STEPS):
-                var a_val = rebind[Scalar[accum_type]](a_val_fp16x2[k_idx])
-                var b_val = rebind[Scalar[accum_type]](b_val_fp16x2[k_idx])
-                var a_scale_val = abs(
-                    rebind[Scalar[accum_type]](a_scale.cast[accum_type]())
-                )
-                var b_scale_val = abs(
-                    rebind[Scalar[accum_type]](b_scale.cast[accum_type]())
-                )
+                var a_val = a_val_fp16x2[k_idx]
+                var b_val = b_val_fp16x2[k_idx]
+                var a_scale_val = abs(a_scale.cast[accum_type]())
+                var b_scale_val = abs(b_scale.cast[accum_type]())
                 accum += a_val * b_val * a_scale_val * b_scale_val
         else:
             # MXFP8: one float8 value per byte.
@@ -1072,7 +1126,7 @@ def quantize_dynamic_scaled_fp4_async[
     )
 
     var scales_4d_tensor = LayoutTensor[
-        scales_dtype, scales_4d_layout[scales_layout], MutAnyOrigin
+        scales_dtype, scales_4d_layout[scales_layout]
     ](
         scales_tensor.ptr,
         RuntimeLayout[scales_4d_layout[scales_layout]].row_major(
@@ -1275,9 +1329,17 @@ def grouped_quantize_dynamic_scaled_fp4_async_kernel[
             == DType.uint8 else input_col
         )
 
+        # The k_idx grid covers whole SF_K_GROUP_SIZE column blocks, so when
+        # num_cols is not a multiple of SF_K_GROUP_SIZE the last block extends
+        # past the input. Lanes in that tail must not touch the payload
+        # tensors; they contribute a zero group max so their scale lanes store
+        # a clean zero.
+        var num_cols = input_tensor.dim(1)
+        var col_is_valid = Int(input_col) < Int(num_cols)
+
         comptime for iter_idx in range(num_iters):
             var local_row = iter_idx * rows_per_iter + row_in_iter
-            var is_valid = local_row < num_tokens
+            var is_valid = local_row < num_tokens and col_is_valid
 
             var input_vector = SIMD[input_dtype, ELEMENTS_PER_THREAD](0)
             if is_valid:
@@ -1376,6 +1438,14 @@ def grouped_quantize_dynamic_scaled_fp4_async[
     ],
     ctx: DeviceContext,
 ) raises:
+    # The kernel masks columns at 8-element lane granularity, so a column
+    # count that is not a multiple of 8 would still load and store partially
+    # out of bounds within the straddling lane.
+    debug_assert(
+        Int(input_tensor.dim(1)) % 8 == 0,
+        "num_cols must be a multiple of ELEMENTS_PER_THREAD (8 for NVFP4)",
+    )
+
     var scales_tensor_lt = scales_tensor.to_layout_tensor()
     comptime scales_lt_layout = scales_tensor_lt.layout
 
@@ -1387,7 +1457,7 @@ def grouped_quantize_dynamic_scaled_fp4_async[
     )
 
     var scales_4d_tensor = LayoutTensor[
-        scales_dtype, scales_4d_layout[scales_lt_layout], MutAnyOrigin
+        scales_dtype, scales_4d_layout[scales_lt_layout]
     ](
         scales_tensor.ptr,
         RuntimeLayout[scales_4d_layout[scales_lt_layout]].row_major(
@@ -1464,10 +1534,10 @@ def block_scaled_matmul_with_epilogue[
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: TileTensor[mut=True, c_type, ...],
-    a: TileTensor[a_type, ...],
-    b: TileTensor[b_type, ...],
-    a_scales: TileTensor[scales_dtype, ...],
-    b_scales: TileTensor[scales_dtype, ...],
+    a: TileTensor[mut=False, a_type, ...],
+    b: TileTensor[mut=False, b_type, ...],
+    a_scales: TileTensor[mut=False, scales_dtype, ...],
+    b_scales: TileTensor[mut=False, scales_dtype, ...],
     tensor_sf: Float32,
     ctx: DeviceContext,
 ) raises:
@@ -1485,13 +1555,23 @@ def block_scaled_matmul_with_epilogue[
 
     comptime assert transpose_b, "Only support transposed B"
 
+    # The vendor (cuBLASLt) block-scaled backend supports both NVFP4
+    # (float8_e4m3fn scales, 16-vector) and MXFP8 (float8_e8m0fnu scales,
+    # 32-vector); see `_cublasLt_matmul` in `linalg.matmul.vendor.blas`.
+    comptime is_mxfp8_scaling = (
+        scales_dtype == MXFP8_SF_DTYPE
+        and SF_VECTOR_SIZE == MXFP8_SF_VECTOR_SIZE
+    )
+    comptime assert scales_dtype == NVFP4_SF_DTYPE or is_mxfp8_scaling, (
+        "Only NVFP4 (float8_e4m3fn scales, SF_VECTOR_SIZE=16) or MXFP8"
+        " (float8_e8m0fnu scales, SF_VECTOR_SIZE=32) scales are supported."
+    )
     comptime assert (
-        scales_dtype == NVFP4_SF_DTYPE
-    ), "Only support NVFP4_SF_DTYPE (float8_e4m3fn) for scales for now."
-
-    comptime assert SF_VECTOR_SIZE in (
-        NVFP4_SF_VECTOR_SIZE,
-    ), "SF_VECTOR_SIZE must be equal to NVFP4_SF_VECTOR_SIZE (16 for NVFP4)"
+        SF_VECTOR_SIZE == NVFP4_SF_VECTOR_SIZE or is_mxfp8_scaling
+    ), (
+        "SF_VECTOR_SIZE must be NVFP4_SF_VECTOR_SIZE (16) for NVFP4 or"
+        " MXFP8_SF_VECTOR_SIZE (32) for MXFP8"
+    )
 
     comptime assert (
         a_scales.static_shape[1] == b_scales.static_shape[1]
@@ -1561,14 +1641,11 @@ def block_scaled_matmul_with_epilogue[
             @parameter
             @__copy_capture(c, n)
             def epilogue_wrapper[
-                simd_width: Int, rank: Int, alignment: Int = 1
-            ](idx: IndexList[rank]):
-                var c_coord = Index(idx[0], idx[1])
-                var c_val = rebind[SIMD[c_type, simd_width]](
-                    c.raw_load[width=simd_width](idx[0] * n + idx[1])
-                )
+                simd_width: Int, alignment: Int = 1
+            ](idx: Coord):
+                var c_val = c.load[width=simd_width](idx)
                 epilogue[c_type, simd_width, alignment=alignment](
-                    c_coord, c_val
+                    Index(idx[0].value(), idx[1].value()), c_val
                 )
 
             matmul[scales_type=scales_dtype](
@@ -1582,9 +1659,7 @@ def block_scaled_matmul_with_epilogue[
                 transpose_b=True,
                 c_row_major=True,
             )
-            elementwise[epilogue_wrapper, simd_size, target="gpu"](
-                Index(m, n), ctx
-            )
+            elementwise[epilogue_wrapper, simd_size, target="gpu"]((m, n), ctx)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -1641,19 +1716,31 @@ def block_scaled_matmul[
 
     comptime assert transpose_b, "Only support transposed B"
 
-    comptime assert (
-        scales_dtype == NVFP4_SF_DTYPE
-    ), "Only support NVFP4_SF_DTYPE (float8_e4m3fn) for scales for now."
+    # NVFP4 (float8_e4m3fn scales, 16-vector) and MXFP8 (float8_e8m0fnu scales,
+    # 32-vector) are both lowered to the SM100 block-scaled MMA below. The
+    # vendor/epilogue fallback path is still NVFP4-only, so MXFP8 is routed to
+    # the Mojo `heuristic_and_outliers_dispatch` kernel (see below).
+    comptime is_mxfp8_scaling = (
+        scales_dtype == MXFP8_SF_DTYPE
+        and SF_VECTOR_SIZE == MXFP8_SF_VECTOR_SIZE
+    )
+    comptime assert scales_dtype == NVFP4_SF_DTYPE or is_mxfp8_scaling, (
+        "Only NVFP4 (float8_e4m3fn scales, SF_VECTOR_SIZE=16) or MXFP8"
+        " (float8_e8m0fnu scales, SF_VECTOR_SIZE=32) are supported."
+    )
 
     comptime assert (
-        SF_VECTOR_SIZE == NVFP4_SF_VECTOR_SIZE
-    ), "SF_VECTOR_SIZE must be equal to NVFP4_SF_VECTOR_SIZE (16 for NVFP4)"
+        SF_VECTOR_SIZE == NVFP4_SF_VECTOR_SIZE or is_mxfp8_scaling
+    ), (
+        "SF_VECTOR_SIZE must be NVFP4_SF_VECTOR_SIZE (16) for NVFP4 or"
+        " MXFP8_SF_VECTOR_SIZE (32) for MXFP8"
+    )
 
-    var c = c_device.as_any_origin()
-    var a = a_device.as_any_origin()
-    var b = b_device.as_any_origin()
-    var a_scales = a_scales_device.as_any_origin()
-    var b_scales = b_scales_device.as_any_origin()
+    var c = c_device.as_unsafe_any_origin()
+    var a = a_device.as_unsafe_any_origin()
+    var b = b_device.as_unsafe_any_origin()
+    var a_scales = a_scales_device.as_unsafe_any_origin()
+    var b_scales = b_scales_device.as_unsafe_any_origin()
 
     comptime assert (
         a_scales.static_shape[1] == b_scales.static_shape[1]
@@ -1822,7 +1909,11 @@ def block_scaled_matmul[
             static_K == 7168 and static_N in (18432, 36864)
         )
         comptime mojo_m_cap = 256 if is_widened_shape else 128
-        if m <= mojo_m_cap:
+        # MXFP8 always tries the Mojo block-scaled kernel first (its heuristic
+        # config table is tuned for the shapes we serve). On a dispatch miss it
+        # falls through to the vendor (cuBLASLt) block-scaled matmul below, the
+        # same fallback NVFP4 uses for large M.
+        if m <= mojo_m_cap or is_mxfp8_scaling:
             var status = heuristic_and_outliers_dispatch[
                 SF_VECTOR_SIZE=SF_VECTOR_SIZE,
                 transpose_b=transpose_b,
@@ -1841,7 +1932,14 @@ def block_scaled_matmul[
             if status == DISPATCH_HIT:
                 return
 
-        # vendor matmul only supports epilogue lambda, so we wrap it around an epilogue lambda instead.
+        # Vendor (cuBLASLt) block-scaled fallback, used whenever the Mojo
+        # heuristic dispatch above has no config for this shape. This covers
+        # NVFP4 large-M shapes as well as MXFP8 shapes the heuristic config
+        # table does not enumerate (e.g. the 30k-token prefill in KERN-3024,
+        # whose M exceeds the table's M<=8192 build range).
+        #
+        # vendor matmul only supports epilogue lambda, so we wrap it around an
+        # epilogue lambda instead.
         block_scaled_matmul_with_epilogue[
             SF_VECTOR_SIZE=SF_VECTOR_SIZE,
             transpose_b=transpose_b,
@@ -1907,9 +2005,9 @@ def quantize_dynamic_block_scaled[
         " MXFP8_SF_VECTOR_SIZE (32 for MXFP8)"
     )
 
-    var input_tensor = input_device.as_any_origin()
-    var output_tensor = output_device.as_any_origin()
-    var scales_tensor = scales_device.as_any_origin()
+    var input_tensor = input_device.as_unsafe_any_origin()
+    var output_tensor = output_device.as_unsafe_any_origin()
+    var scales_tensor = scales_device.as_unsafe_any_origin()
 
     var num_rows = input_tensor.dim(0)
     var num_cols = input_tensor.dim(1)
@@ -2008,8 +2106,8 @@ def block_scales_interleave[
         MXFP4_SF_DTYPE,
     ), "scales dtype should be float8_e4m3fn (NVFP4) or float8_e8m0fnu (MXFP4)."
 
-    var output = output_scales_device.as_any_origin()
-    var input = input_scales_device.as_any_origin()
+    var output = output_scales_device.as_unsafe_any_origin()
+    var input = input_scales_device.as_unsafe_any_origin()
 
     block_scales_interleave_fp4[SF_VECTOR_SIZE=SF_VECTOR_SIZE,](
         ctx, input, output
@@ -2079,9 +2177,7 @@ def _quantize_mxfp4_amd_kernel[
             var scale_f32 = e8m0_scale.cast[DType.float32]()
 
             # 5. Pack 8 BF16 -> 8 FP4 nibbles using AMD hardware intrinsic.
-            var packed = cast_float_to_fp4e2m1_amd(
-                rebind[SIMD[DType.bfloat16, 8]](input_vector), scale_f32
-            )
+            var packed = cast_float_to_fp4e2m1_amd(input_vector, scale_f32)
 
             # 6. Store packed output.
             var packed_bytes = bitcast[DType.uint8, 4](packed)

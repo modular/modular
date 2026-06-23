@@ -29,7 +29,7 @@ from std.benchmark import (
     ThroughputMeasure,
 )
 from layout import Idx, TileTensor, row_major
-from comm.sync import enable_p2p
+from comm.sync import enable_p2p, init_signal_buffer
 from comm.allreduce import allreduce
 from comm import MAX_GPUS, Signal
 import comm.vendor.ccl as vendor_ccl
@@ -148,11 +148,12 @@ def bench_reduce[
                 size_of[Signal]() + temp_buffer_num_bytes
             )
         )
-        list_of_ctx[gpu_idx].enqueue_memset[DType.uint8](
-            signal_buffers[gpu_idx], 0
-        )
+        init_signal_buffer(signal_buffers[gpu_idx], list_of_ctx[gpu_idx])
         rank_sigs[gpu_idx] = (
-            signal_buffers[gpu_idx].unsafe_ptr().bitcast[Signal]()
+            signal_buffers[gpu_idx]
+            .unsafe_ptr()
+            .bitcast[Signal]()
+            .as_unsafe_any_origin()
         )
 
     # Create and initialize input and output buffers.

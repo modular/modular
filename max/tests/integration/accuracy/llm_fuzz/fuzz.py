@@ -437,6 +437,29 @@ async def run(args: argparse.Namespace) -> int:
             validator.close()
 
 
+async def _clear_prefix_cache(client: FuzzClient) -> None:
+    """Best-effort clear of the server KV/prefix cache between repeats.
+
+    Lets each ``--repeat`` run start from a clean cache so runs are independent:
+    prefix caching otherwise makes a repeated identical request hit the cache
+    and take a different path. Requires the server (or orchestrator) to expose
+    ``POST /reset_prefix_cache`` with prefix caching enabled; otherwise this is
+    a no-op with a note. Never fails the run.
+    """
+    try:
+        resp = await client.post_to_path("/reset_prefix_cache", {})
+    except Exception as exc:
+        print(f"  {DIM}prefix-cache reset skipped ({exc}){RESET}")
+        return
+    if 200 <= resp.status < 300:
+        print(f"  {DIM}cleared prefix cache before run{RESET}")
+    else:
+        print(
+            f"  {DIM}prefix-cache reset not applied "
+            f"(HTTP {resp.status or 'no response'}); continuing{RESET}"
+        )
+
+
 async def _run_body(
     args: argparse.Namespace,
     config: RunConfig,
@@ -530,6 +553,11 @@ async def _run_body(
                 print(
                     f"\n  {BOLD}{CYAN}--- Run {run_idx + 1}/{repeat} ---{RESET}\n"
                 )
+                # Clear the server KV/prefix cache between repeats so each run
+                # is an independent sample (prefix caching otherwise carries
+                # state across runs).
+                if run_idx > 0:
+                    await _clear_prefix_cache(client)
 
             for scenario_cls in scenario_classes:
                 if circuit_breaker.tripped:

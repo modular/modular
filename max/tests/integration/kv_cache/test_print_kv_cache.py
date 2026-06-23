@@ -96,7 +96,7 @@ def test_print_kv_cache(dtype: DType) -> None:
             TensorType(
                 dtype=DType.uint32, shape=[batch_size], device=DeviceRef.CPU()
             ),
-            *kv_params.get_symbolic_inputs().flatten(),
+            *kv_params.flattened_kv_inputs(),
         ],
     )
 

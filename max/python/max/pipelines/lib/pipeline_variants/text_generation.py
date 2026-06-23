@@ -25,6 +25,7 @@ from typing import TYPE_CHECKING, Any, Generic
 import numpy as np
 import numpy.typing as npt
 from max.driver import (
+    CPU,
     Buffer,
     Device,
     DevicePinnedBuffer,
@@ -41,25 +42,25 @@ from max.graph.weights import (
     weights_format,
 )
 from max.nn import ReturnLogits
-from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams
-from max.pipelines.core.exceptions import (
-    InputError,  # noqa: F401 (for docstring)
+from max.pipelines.context import (
+    BatchLogitsProcessor,
+    LogProbabilities,
+    TextGenerationContextType,
+    TextGenerationOutput,
+)
+from max.pipelines.context.exceptions import (  # noqa: F401 (for docstring)
+    InputError,
 )
 from max.pipelines.kv_cache import (
-    IncrementCacheLengthsProcessor,
     PagedKVCacheManager,
     load_kv_manager,
 )
 from max.pipelines.modeling.types import (
-    BatchLogitsProcessor,
-    LogProbabilities,
     Pipeline,
     PipelineOutputsDict,
     PipelineTokenizer,
     RequestID,
-    TextGenerationContextType,
     TextGenerationInputs,
-    TextGenerationOutput,
     TextGenerationRequest,
 )
 from max.profiler import Tracer, traced
@@ -67,13 +68,18 @@ from max.support.algorithm import flatten2d
 
 from .utils import (
     StructuredOutputHelper,
-    calculate_num_steps,
     get_eos_tokens,
     update_context_and_prepare_responses,
 )
 
 if TYPE_CHECKING:
     from ..config import MAXModelConfig, PipelineConfig
+
+from max.pipelines.sampling import (
+    FusedSamplingProcessor,
+    apply_logits_processors,
+    token_sampler,
+)
 
 from ..interfaces import (
     ModelInputs,
@@ -82,11 +88,6 @@ from ..interfaces import (
     PipelineModelWithKVCache,
 )
 from ..interfaces.generate import GenerateMixin
-from ..sampling import (
-    FusedSamplingProcessor,
-    apply_logits_processors,
-    token_sampler,
-)
 from ..utils import CompilationTimer
 
 logger = logging.getLogger("max.pipelines")
@@ -101,9 +102,6 @@ class BatchInfo:
 
     seq_lens: list[int]
     """Coordinated list of sequence lengths, i.e. prompt_len or 1"""
-
-    num_steps: int
-    """Number of steps to do in the pipeline"""
 
 
 class TextGenerationPipelineInterface(
@@ -235,19 +233,14 @@ class TextGenerationPipeline(
             available_cache_memory=available_cache_memory,
         )
 
-        # Use the model's kv_params (not the manager's) because in
-        # compile-only mode the manager is a Mock.
-        if isinstance(kv_params, MultiKVCacheParams):
-            # In case of multiple KV caches, multiple KV cache inputs are passed to `IncrementCacheLengthsProcessor.execute`, params only used for metadata.
-            primary_params = kv_params.params[0]
-        else:
-            assert isinstance(kv_params, KVCacheParams)
-            primary_params = kv_params
-        self._increment_cache_lengths_processor = (
-            IncrementCacheLengthsProcessor(
-                session=session, params=primary_params
-            )
+        # Device the sampler runs on. ``sample_on_host`` routes sampling to the
+        # host CPU.
+        self._sampler_device: Device = (
+            CPU()
+            if pipeline_config.sampling.sample_on_host
+            else self._devices[0]
         )
+        sampler_device_ref = DeviceRef.from_device(self._sampler_device)
 
         # Load sampler. The bitmask-aware sampler is loaded when constrained
         # decoding could fire (see ``needs_bitmask_constraints``).
@@ -258,12 +251,12 @@ class TextGenerationPipeline(
             if pipeline_config.needs_bitmask_constraints:
                 with_bitmask_graph = token_sampler(
                     pipeline_config.sampling,
-                    device=DeviceRef.from_device(self._devices[0]),
+                    device=sampler_device_ref,
                     needs_bitmask_input=True,
                 )
             without_bitmask_graph = token_sampler(
                 pipeline_config.sampling,
-                device=DeviceRef.from_device(self._devices[0]),
+                device=sampler_device_ref,
                 needs_bitmask_input=False,
             )
             sampler_timer.mark_build_complete()
@@ -279,7 +272,7 @@ class TextGenerationPipeline(
         self._pinned_new_tokens: Buffer | None = None
         if (
             pipeline_config.needs_bitmask_constraints
-            and not self._devices[0].is_host
+            and not self._sampler_device.is_host
             and not is_virtual_device_mode()
         ):
             max_batch_size = pipeline_config.runtime.max_batch_size
@@ -287,12 +280,12 @@ class TextGenerationPipeline(
             self._pinned_new_tokens = DevicePinnedBuffer(
                 shape=(max_batch_size,),
                 dtype=DType.int64,
-                device=self._devices[0],
+                device=self._sampler_device,
             )
 
         self._identity_logit_offsets = (
             FusedSamplingProcessor.allocate_identity_logit_offsets(
-                pipeline_config, self._devices[0]
+                pipeline_config, self._sampler_device
             )
         )
 
@@ -363,27 +356,23 @@ class TextGenerationPipeline(
     def prepare_batch(
         self,
         batches: list[list[TextGenerationContextType]],
-        num_steps: int,
     ) -> tuple[
         Any,
-        int,
         npt.NDArray[np.int32] | None,
         list[TextGenerationContextType],
     ]:
-        """Prepare model inputs and ancillary state for multi-step execution.
+        """Prepare model inputs and ancillary state for execution.
 
         This flattens replica batches, optionally initializes constrained
-        decoding bitmasks, ensures KV-cache reservations, clamps ``num_steps``
-        per context, and builds initial model inputs.
+        decoding bitmasks, ensures KV-cache reservations, and builds
+        initial model inputs.
 
         Args:
             batches: Per-replica list of contexts.
-            num_steps: Desired number of steps to run.
 
         Returns:
             A tuple of:
-                - ModelInputs: Prepared inputs for the first step.
-                - int: The clamped number of steps to run.
+                - ModelInputs: Prepared inputs for the step.
                 - Optional[np.ndarray]: The structured decoding bitmask or None.
                 - list[TextGenerationContextType]: The flattened context batch.
         """
@@ -404,30 +393,18 @@ class TextGenerationPipeline(
             if bitmask is not None:
                 self.update_for_structured_output(context, bitmask, i)
 
-            # Update num_steps.
-            num_steps = calculate_num_steps(
-                context, num_steps, self._pipeline_model.max_seq_len
-            )
-
-        # Note: Multi-step execution with structured output is supported.
-        # The bitmask is updated after each step in the
-        # TextGenerationPipeline.execute loop.
-
         # Retrieve the KV Cache Inputs.
-        kv_cache_inputs = self._kv_manager.runtime_inputs(
-            replica_batches, num_steps
-        )
+        kv_cache_inputs = self._kv_manager.runtime_inputs(replica_batches)
 
         # Log batch details
         if self.batch_info_output_fname is not None:
-            self._record_batch_info(flat_batch, num_steps)
+            self._record_batch_info(flat_batch)
 
         return (
             self._pipeline_model.prepare_initial_token_inputs(
                 replica_batches=replica_batches,
                 kv_cache_inputs=kv_cache_inputs,
             ),
-            num_steps,
             bitmask,
             flat_batch,
         )
@@ -445,60 +422,12 @@ class TextGenerationPipeline(
 
         return self._pipeline_model._lora_manager.sort_lora_batch(batch)
 
-    def _update_bitmask_for_next_step(
-        self,
-        flat_batch: list[TextGenerationContextType],
-        bitmask: npt.NDArray[np.int32],
-        sampling_processor: FusedSamplingProcessor,
-    ) -> None:
-        """Update FSM state and bitmask for the next step in multi-step execution.
-
-        After each token is sampled during multi-step execution with guided
-        decoding, this method advances the FSM state for each context's matcher
-        and recomputes the bitmask to reflect valid next tokens.
-
-        Args:
-            flat_batch: The batch of generation contexts.
-            bitmask: The packed bitmask array to update in-place.
-            sampling_processor: The sampling processor with the GPU bitmask
-                and async token copy methods.
-        """
-        with Tracer("get_new_tokens"):
-            # Wait for async D2H copy (started after sampling) and get tokens
-            new_tokens_np = sampling_processor.get_new_tokens_numpy()
-
-        for batch_idx, context in enumerate(flat_batch):
-            if context.is_done or context.matcher is None:
-                continue
-
-            # Advance FSM with the sampled token (token buffer updated later)
-            # new_tokens has shape (batch_size,) - 1D array
-            token = int(new_tokens_np[batch_idx])
-
-            with Tracer("advance_fsm"):
-                if not context.advance_fsm(token):
-                    raise RuntimeError(
-                        f"FSM rejected token {token} during multi-step update. "
-                        f"This indicates a mismatch between the bitmask and FSM state."
-                    )
-
-            # Fill the updated bitmask for this context
-            with Tracer("fill_next_token_bitmask"):
-                self._structured_output.fill_bitmask(
-                    context, bitmask, batch_idx
-                )
-
-        with Tracer("sampling_processor_update_bitmask"):
-            # Transfer updated bitmask to GPU
-            sampling_processor.update_bitmask(bitmask)
-
-    def _record_batch_info(self, contexts: Any, num_steps: int) -> None:
+    def _record_batch_info(self, contexts: Any) -> None:
         """Record per-step batch statistics for diagnostics.
 
         Args:
             contexts: Contexts in the step, providing ``start_idx`` and
                 ``active_length``.
-            num_steps: Number of steps processed in this batch.
 
         Side Effects:
             Appends a ``BatchInfo`` entry to ``self.batch_infos``.
@@ -507,7 +436,6 @@ class TextGenerationPipeline(
             BatchInfo(
                 past_seq_lens=[x.tokens.processed_length for x in contexts],
                 seq_lens=[x.tokens.active_length for x in contexts],
-                num_steps=num_steps,
             )
         )
 
@@ -535,16 +463,11 @@ class TextGenerationPipeline(
     ) -> PipelineOutputsDict[TextGenerationOutput]:
         """Processes the batch and returns decoded tokens.
 
-        Given a batch, executes the graph for num_steps in a multi-step
-        scenario, then decodes the tokens and returns the list of decoded
-        tokens.
+        Executes the graph for a single decode step, samples the next token,
+        then decodes and returns the generated tokens.
         """
-        device0 = self._devices[0]
-        pinned = not device0.is_host
         # Prepare the batch.
-        model_inputs, num_steps, bitmask, flat_batch = self.prepare_batch(
-            inputs.batches, inputs.num_steps
-        )
+        model_inputs, bitmask, flat_batch = self.prepare_batch(inputs.batches)
 
         batch_processors: list[BatchLogitsProcessor] = []
         if len(flat_batch) > 0:
@@ -564,8 +487,7 @@ class TextGenerationPipeline(
                     sampler=sampler,
                     pipeline_config=self._pipeline_config,
                     context_batch=flat_batch,
-                    num_steps=num_steps,
-                    device=device0,
+                    device=self._sampler_device,
                     pinned_new_tokens=self._pinned_new_tokens,
                     identity_logit_offsets=self._identity_logit_offsets,
                     bitmask=bitmask,
@@ -576,30 +498,25 @@ class TextGenerationPipeline(
 
         curr_step_inputs = model_inputs
         batch_log_probabilities: list[list[LogProbabilities | None]] = []
-        # Launch first forward pass before entering the loop.
+        # Launch the forward pass.
         model_outputs = self._launch_forward_pass(
-            curr_step_inputs, flat_batch, num_steps, step=0
+            curr_step_inputs, flat_batch, step=0
         )
-        for i in range(num_steps):
-            # model_outputs is always valid here - either from initial launch
-            # (i=0) or from pre-launch at end of previous iteration (i>0).
 
-            # Validate output. This is more of an internal check that the model
-            # is implemented correctly.
-            if (
-                self._pipeline_config.sampling.enable_variable_logits
-                and model_outputs.logit_offsets is None
-            ):
-                raise ValueError(
-                    "Model must return logit_offsets when enable_variable_logits is True."
-                )
+        # Validate output. This is more of an internal check that the model
+        # is implemented correctly.
+        if (
+            self._pipeline_config.sampling.enable_variable_logits
+            and model_outputs.logit_offsets is None
+        ):
+            raise ValueError(
+                "Model must return logit_offsets when enable_variable_logits is True."
+            )
 
-            # Continue and execute the next step if the batch.
-            if len(flat_batch) == 0:
-                continue
-
+        # Execute the single step if the batch is not empty.
+        if len(flat_batch) > 0:
             # Sample next token.
-            with Tracer("sample_next_token_step_{i}"):
+            with Tracer("sample_next_token"):
                 sample_logits, sample_offsets = (
                     sampling_processor.logits_for_sampling(
                         logits=model_outputs.logits,
@@ -616,15 +533,8 @@ class TextGenerationPipeline(
                 new_tokens = sampling_processor.new_tokens
                 assert new_tokens is not None
 
-            # Start async D2H copy of tokens for FSM update (if needed).
-            # This overlaps the transfer with log probs computation and other work.
-            # Skip on last iteration since _update_bitmask_for_next_step won't be called.
-            if bitmask is not None and i < num_steps - 1:
-                with Tracer(f"start_async_token_copy_step_{i}"):
-                    sampling_processor.start_async_token_copy()
-
             if inputs.enable_log_probs:
-                with Tracer("compute_log_probabilities_step_{i}"):
+                with Tracer("compute_log_probabilities"):
                     try:
                         batch_log_probabilities.append(
                             self._pipeline_model.compute_log_probabilities(
@@ -645,77 +555,38 @@ class TextGenerationPipeline(
                             [None for _ in flat_batch]
                         )
 
-            # Check if we're on our last iteration. If so, skip preparing the next batch
-            if i == num_steps - 1:
-                break
-
-            # Prepare inputs for next iteration before bitmask update.
-            # This allows us to launch the next forward pass early.
-            curr_step_inputs.kv_cache_inputs = (
-                self._increment_cache_lengths_processor.execute(
-                    curr_step_inputs.kv_cache_inputs,
-                    curr_step_inputs,
-                )
-            )
-
-            with Tracer(f"prepare_next_token_inputs_{i}"):
-                curr_step_inputs = (
-                    self._pipeline_model.prepare_next_token_inputs(
-                        new_tokens, curr_step_inputs
-                    )
-                )
-
-            # Launch next forward pass before bitmask update (if any).
-            # For guided decoding, this overlaps GPU forward pass with CPU-side
-            # FSM update and the cuStreamSynchronize wait in get_new_tokens_numpy().
-            model_outputs = self._launch_forward_pass(
-                curr_step_inputs, flat_batch, num_steps, step=i + 1
-            )
-
-            # Update FSM state and bitmask for next step (multi-step guided decoding).
-            # This blocks on cuStreamSynchronize but GPU is busy with forward pass.
-            if bitmask is not None:
-                with Tracer(f"update_bitmask_step_{i}"):
-                    self._update_bitmask_for_next_step(
-                        flat_batch, bitmask, sampling_processor
-                    )
-
         # Return early if the batch is empty.
         if len(flat_batch) == 0:
             return {}
 
-        # Do the copy to host for each token generated.
+        # Do the copy to host for each token generated. The sampler output
+        # lives on the sampler device (the model device, or the host CPU when
+        # ``sample_on_host`` is set), so stage the D2H copy from there.
+        sampler_device = self._sampler_device
         with Tracer("d2h_generated_tokens"):
             generated_tokens_device = sampling_processor.generated_tokens
             # Allocate a pinned tensor on the host for faster async d2h transfer
-            # speeds. If the model is on host, then fall back to normal pageable
-            # memory.
+            # speeds. If the sampler is on host, then fall back to normal
+            # pageable memory.
             # Note that we do not want to use `DevicePinnedBuffer` here.
             generated_tokens_host = Buffer(
                 shape=generated_tokens_device.shape,
                 dtype=generated_tokens_device.dtype,
-                device=device0,
-                pinned=pinned,
+                device=sampler_device,
+                pinned=not sampler_device.is_host,
             )
             generated_tokens_host.inplace_copy_from(generated_tokens_device)
             # We assume that the call to `.to_numpy()` will insert a device
             # synchronize to guarantee that the async d2h transfer is done.
             # However, if this API changes we will have to add an explicit
-            # device0.synchronize() here.
+            # sampler_device.synchronize() here.
             generated_tokens_np = generated_tokens_host.to_numpy()
 
-        # Update the context object.
-        # During multi-step execution with guided decoding, the FSM was already
-        # advanced for steps 0..num_steps-2 in _update_bitmask_for_next_step.
-        # Only the last step needs FSM advancement here.
-        fsm_already_advanced = (num_steps - 1) if bitmask is not None else 0
         res = update_context_and_prepare_responses(
             generated_tokens_np,
             flat_batch,
-            num_steps,
             batch_log_probabilities=batch_log_probabilities,
             enable_log_probs=inputs.enable_log_probs,
-            fsm_already_advanced_steps=fsm_already_advanced,
         )
 
         # Update the cache lengths in our kv_cache manager.
@@ -728,10 +599,9 @@ class TextGenerationPipeline(
         self,
         curr_step_inputs: ModelInputs,
         flat_batch: list[TextGenerationContextType],
-        num_steps: int,
         step: int,
     ) -> ModelOutputs:
-        with Tracer(f"multistep_execution_loop_step_{step}"):
+        with Tracer(f"forward_pass_step_{step}"):
             try:
                 model_outputs = self._pipeline_model.execute(
                     model_inputs=curr_step_inputs
@@ -747,7 +617,7 @@ class TextGenerationPipeline(
                 )
                 logger.error(
                     "Encountered an exception while executing batch: "
-                    f"{batch_size=:}, {cache_tokens=:}, {input_tokens=:}, {num_steps=:}"
+                    f"{batch_size=:}, {cache_tokens=:}, {input_tokens=:}"
                 )
                 raise  # re-raise the original exception
 

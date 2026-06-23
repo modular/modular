@@ -177,22 +177,22 @@ and a ready-to-use pipeline instance.
 import asyncio
 from max.pipelines.modeling.types import RequestID, TextGenerationInputs, TextGenerationRequest
 from max.pipelines import PIPELINE_REGISTRY, PipelineConfig
-from max.pipelines.core import TextContext
+from max.pipelines.context import TextContext
 
 # 1. Configure and retrieve the pipeline and tokenizer
-config = PipelineConfig(
+config = PipelineConfig.from_flat_kwargs(
     model_path="meta-llama/Llama-3.1-8B-Instruct",
     max_length=512,
 )
 tokenizer, pipeline = PIPELINE_REGISTRY.retrieve(config)
 
 # 2. Get the KV cache manager from the pipeline
-kv_cache_manager = pipeline.kv_managers[0]
+kv_cache_manager = pipeline.kv_manager
 
 # 3. Create a request with the text prompt
 request = TextGenerationRequest(
     request_id=RequestID(),
-    model_name=config.model_path,
+    model_name=config.model.model_path,
     prompt="Explain how neural networks work",
 )
 
@@ -200,18 +200,17 @@ request = TextGenerationRequest(
 context = asyncio.run(tokenizer.new_context(request))
 
 # 5. Allocate space in the KV cache for this request
-kv_cache_manager.claim(context.request_id)
+kv_cache_manager.claim(context.request_id, replica_idx=0)
 
 # 6. Run the generation loop
 generated_text = ""
 while True:
     # Allocate KV cache for the next token
-    kv_cache_manager.alloc(context, num_steps=1)
+    kv_cache_manager.alloc(context, replica_idx=0)
 
     # Execute the pipeline with the current context
     inputs = TextGenerationInputs[TextContext](
-        batches=[{context.request_id: context}],
-        num_steps=1,
+        batches=[[context]],
     )
     output = pipeline.execute(inputs)
 
@@ -278,13 +277,13 @@ The key interfaces are:
 
 - [`PipelineModel`](/max/api/python/generated/max.pipelines.PipelineModel):
   Abstract base class for model implementations. Defines methods like
-  `execute()`, `calculate_max_seq_len()`, and input preparation methods that all
-  architectures must implement.
+  `execute()` and input preparation methods that all architectures must
+  implement.
 
 These interfaces are task-agnostic. Specialized variants like
 [`TextGenerationInputs`](/max/api/python/generated/max.pipelines.modeling.types.TextGenerationInputs)
 and
-[`TextGenerationOutput`](/max/api/python/generated/max.pipelines.modeling.types.TextGenerationOutput)
+[`TextGenerationOutput`](/max/api/python/generated/max.pipelines.context.TextGenerationOutput)
 extend them for specific use cases.
 
 ### Pipeline registry
@@ -305,7 +304,7 @@ compiled pipeline:
 from max.pipelines import PIPELINE_REGISTRY, PipelineConfig
 
 # Create configuration for a model
-config = PipelineConfig(
+config = PipelineConfig.from_flat_kwargs(
     model_path="meta-llama/Llama-3.1-8B-Instruct",
 )
 
@@ -429,17 +428,14 @@ accordingly.
 The
 [`PipelineModel`](/max/api/python/generated/max.pipelines.PipelineModel)
 abstract class defines the interface for model implementations. Every model
-architecture must implement these methods:
+architecture must implement certain methods:
 
 ```python
 from max.pipelines.lib import PipelineModel, ModelInputs, ModelOutputs
 
 class MyModel(PipelineModel):
-
-    @classmethod
-    def calculate_max_seq_len(cls, pipeline_config, huggingface_config) -> int:
-        """Return the maximum sequence length this model supports."""
-        ...
+    # Link to your architecture config class for max_seq_len and KV params
+    model_config_cls = MyModelConfig
 
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
         """Run inference on the compiled model."""
@@ -450,22 +446,39 @@ class MyModel(PipelineModel):
     ) -> ModelInputs:
         """Prepare inputs for the first forward pass (prefill)."""
         ...
-
-    def prepare_next_token_inputs(
-        self, next_tokens, prev_model_inputs
-    ) -> ModelInputs:
-        """Prepare inputs for subsequent forward passes (decode)."""
-        ...
 ```
 
-In this example, these methods define the interface that all model
-implementations must provide. The `execute()` method runs your model's forward
-pass on the compiled executable. The separation between
-`prepare_initial_token_inputs` and `prepare_next_token_inputs` reflects the two
-phases of autoregressive generation:
+The `execute()` method runs your model's forward pass on the compiled
+executable. `prepare_initial_token_inputs()` builds the tensors for each
+scheduled batch (prefill and decode steps share this path in the serving
+pipeline):
 
 1. **Prefill**: Process the entire prompt at once, building up the KV cache.
 2. **Decode**: Generate tokens one at a time, reusing the cached keys/values.
+
+#### Linking to the architecture config
+
+The `model_config_cls` class variable links your pipeline model to the
+architecture configuration class. This connection enables the base
+`PipelineModel` to delegate key behaviors to the config.
+
+The base class delegates the following through `model_config_cls`:
+
+- **Maximum sequence length**: The `calculate_max_seq_len()` method determines
+  the model's sequence length limit. The base class calls
+  `model_config_cls.calculate_max_seq_len()` or initializes the config and
+  calls `get_max_seq_len()`.
+
+- **KV cache parameters**: The `get_kv_params()` method constructs the KV cache
+  configuration. The base class calls `model_config_cls.construct_kv_params()`
+  to build the appropriate `KVCacheParams` for your architecture. Architectures
+  with multiple or hybrid caches (for example, separate sliding-window and
+  full-attention caches) return a
+  [`MultiKVCacheParams`](/max/api/python/generated/max.nn.kv_cache.MultiKVCacheParams/)
+  tree instead, which the cache manager consumes through the shared
+  [`KVCacheParamInterface`](/max/api/python/generated/max.nn.kv_cache.KVCacheParamInterface/).
+
+You can override `calculate_max_seq_len()` or `get_kv_params()` if needed.
 
 ### When to customize `ModelInputs`
 
@@ -532,7 +545,7 @@ When you run a model, configuration flows through several layers:
 ```python
 from max.pipelines import PipelineConfig
 
-config = PipelineConfig(
+config = PipelineConfig.from_flat_kwargs(
     # Model specification (Hugging Face repo ID or local path)
     model_path="meta-llama/Llama-3.1-8B-Instruct",
 

@@ -30,13 +30,10 @@ from collections import defaultdict
 from collections.abc import Iterable
 
 from max.nn.kv_cache.metrics import KVCacheMetrics
+from max.pipelines.context import TextAndVisionContext, TextContext
 from max.pipelines.kv_cache.kv_connector import KVConnector
 from max.pipelines.kv_cache.memory_tier import MemoryTier
-from max.pipelines.modeling.types import (
-    RequestID,
-    TextGenerationContext,
-    VLMTextGenerationContext,
-)
+from max.pipelines.modeling.types import RequestID
 from max.profiler import traced
 from max.support.math import ceildiv
 
@@ -51,9 +48,9 @@ logger = logging.getLogger("max.pipelines")
 
 
 def _compute_seq_len(
-    ctx: TextGenerationContext,
-    num_steps: int,
+    ctx: TextContext,
     num_draft_tokens: int,
+    num_draft_tokens_per_step: int = 1,
 ) -> int:
     # Each term accounts for one category of tokens that need a KV slot:
     #
@@ -63,14 +60,27 @@ def _compute_seq_len(
     #                                   conservative: assume all are accepted
     #   2 * num_draft_tokens          : drafts to verify *next* batch
     #                                   + drafts written *during* that batch
-    #   num_steps                     : regular decode steps
+    #   1                             : one regular decode step
     #   -1                            : the last generated token has no KV entry
     #
+    # Block-draft correction (DFlash): the draft model's ``forward_block``
+    # writes ``num_draft_tokens_per_step + 1`` positions in a single batched
+    # call, starting at ``bumped_cache_length = pre_cache_length +
+    # commit_lengths``. Compared to the autoregressive-draft accounting above
+    # (which assumes one draft KV per step), that's an extra position past the
+    # bonus token — exactly the slot the ``- 1`` here was reclaiming under the
+    # "last generated token has no KV entry" optimization. For block drafts
+    # that bonus position *does* get a KV entry (forward_block writes it as
+    # part of the speculative tail), so we add it back.
+    block_draft_extra = (
+        1 if num_draft_tokens_per_step == num_draft_tokens else 0
+    )
     seq_len = (
         len(ctx.tokens)
         + len(ctx.spec_decoding_state.maybe_accepted_draft_tokens)
         + 2 * num_draft_tokens
-        + num_steps
+        + 1
+        + block_draft_extra
         - 1
     )
     return seq_len
@@ -125,8 +135,13 @@ class BlockManager:
         # The connector owns host memory, host block pool, and H2D/D2H transfers.
         self.connector = connector
 
-        # List of block hashes that need to be offloaded to the connector.
-        self._hashes_to_offload: set[int] = set()
+        # Ordered offload sequences pending delivery to the connector. Each
+        # entry is (parent_seq_hash, ordered block hashes): one contiguous run
+        # of newly-committed blocks, in prefix order, chaining onto
+        # parent_seq_hash (0 = root). Ordering and parentage are preserved so
+        # connectors that chain sequences (dKV) can reconstruct the prefix;
+        # hash-keyed connectors (host/disk) ignore the parent.
+        self._pending_offloads: list[tuple[int, list[int]]] = []
 
         # A pool of device blocks.
         self.device_block_pool = BlockPool(
@@ -168,7 +183,7 @@ class BlockManager:
         )
 
     @traced
-    def step(self, ctx: TextGenerationContext) -> None:
+    def step(self, ctx: TextContext) -> None:
         """Step the block manager by committing blocks into prefix cache."""
         self.assert_runtime_invariants(ctx)
 
@@ -187,7 +202,7 @@ class BlockManager:
     @traced
     def compute_hashes_for_request(
         self,
-        ctx: TextGenerationContext,
+        ctx: TextContext,
     ) -> None:
         """Computes the block hashes for the request."""
         hashes = self.req_to_hashes[ctx.request_id]
@@ -207,7 +222,7 @@ class BlockManager:
 
         unhashed_tokens = ctx.tokens[num_hashed_tokens:num_hashable_tokens]
 
-        images = ctx.images if isinstance(ctx, VLMTextGenerationContext) else []
+        images = ctx.images if isinstance(ctx, TextAndVisionContext) else []
         new_hashes = hash_request_tokens(
             token_ids=unhashed_tokens,
             block_size=self.block_size,
@@ -220,7 +235,7 @@ class BlockManager:
     @traced
     def reuse_blocks_from_prefix_cache(
         self,
-        ctx: TextGenerationContext,
+        ctx: TextContext,
         skip_tokens: bool = True,
     ) -> int:
         """Reuses blocks from prefix cache.
@@ -292,7 +307,7 @@ class BlockManager:
 
     @traced
     def _count_full_blocks_from_prefix_cache(
-        self, ctx: TextGenerationContext, desired_hashes: list[int]
+        self, ctx: TextContext, desired_hashes: list[int]
     ) -> int:
         """Returns the count of device and host blocks with the desired hashes."""
         # Count the number of device block hashes that are in the device prefix cache.
@@ -381,9 +396,7 @@ class BlockManager:
         return loaded_blocks
 
     @traced
-    def count_full_blocks_from_prefix_caches(
-        self, ctx: TextGenerationContext
-    ) -> int:
+    def count_full_blocks_from_prefix_caches(self, ctx: TextContext) -> int:
         """Returns the number of computed (cached) blocks related to this request.
 
         Note that only full blocks are counted.
@@ -404,7 +417,7 @@ class BlockManager:
 
     @traced
     def get_full_blocks_from_prefix_cache(
-        self, ctx: TextGenerationContext
+        self, ctx: TextContext
     ) -> list[KVCacheBlock]:
         """Gets the computed (cached) blocks for the request.
 
@@ -439,14 +452,14 @@ class BlockManager:
     @traced
     def commit_to_prefix_cache(
         self,
-        ctx: TextGenerationContext,
+        ctx: TextContext,
     ) -> None:
         """Commits all blocks whose hashes are known for prefix caching.
 
         This increments the committed_idx.
 
         Args:
-            ctx: TextGenerationContext.
+            ctx: TextContext.
         """
         req_blocks = self.req_to_blocks[ctx.request_id]
         req_hashes = self.req_to_hashes[ctx.request_id]
@@ -472,8 +485,21 @@ class BlockManager:
             if new_block is not None:
                 req_blocks[block_idx] = new_block
 
-            # Add the block to the offload queue.
-            self._hashes_to_offload.add(block_hash)
+        # Queue the newly-committed blocks as one ordered offload sequence. Its
+        # parent is the block immediately before this run in the prefix (0 =
+        # root); that block was committed and offloaded in a previous step.
+        if num_computed_blocks > num_committed_blocks:
+            parent_seq_hash = (
+                req_hashes[num_committed_blocks - 1]
+                if num_committed_blocks > 0
+                else 0
+            )
+            new_block_hashes = req_hashes[
+                num_committed_blocks:num_computed_blocks
+            ]
+            self._pending_offloads.append(
+                (parent_seq_hash, list(new_block_hashes))
+            )
 
         # Bump the committed index.
         self.req_to_committed_idx[ctx.request_id] = (
@@ -481,20 +507,27 @@ class BlockManager:
         )
 
     def offload(self) -> None:
-        """Offload the blocks to the connector."""
-        block_ids = []
-        block_hashes = []
+        """Offload the pending sequences to the connector.
+
+        Each pending sequence is delivered as one ordered ``offload`` call so
+        connectors can chain it onto ``parent_seq_hash``. Hashes are re-resolved
+        to their current device blocks here; if a block was evicted since it was
+        committed, the run is truncated at that point (the remaining blocks'
+        parent would be absent), so the connector never sees a gap-chain.
+        """
         prefix_cache = self.device_block_pool.prefix_cache
-        for block_hash in self._hashes_to_offload:
-            # It is possible that the hash is no longer available in the prefix
-            # cache since the corresponding block has been evicted.
-            if block_hash not in prefix_cache:
-                continue
-            block = prefix_cache[block_hash]
-            block_ids.append(block.bid)
-            block_hashes.append(block_hash)
-        self.connector.offload(block_ids, block_hashes)
-        self._hashes_to_offload.clear()
+        for parent_seq_hash, hashes in self._pending_offloads:
+            block_ids = []
+            block_hashes = []
+            for block_hash in hashes:
+                if block_hash not in prefix_cache:
+                    # Block evicted since commit; truncate the run here.
+                    break
+                block_ids.append(prefix_cache[block_hash].bid)
+                block_hashes.append(block_hash)
+            if block_hashes:
+                self.connector.offload(block_ids, block_hashes, parent_seq_hash)
+        self._pending_offloads.clear()
 
     def release(self, request_id: RequestID) -> None:
         """Release the blocks for the request."""
@@ -519,22 +552,28 @@ class BlockManager:
     @traced
     def allocate_new_blocks(
         self,
-        ctx: TextGenerationContext,
-        num_steps: int = 1,
+        ctx: TextContext,
         num_draft_tokens: int = 0,
+        num_draft_tokens_per_step: int = 1,
     ) -> None:
         """Allocate new blocks for a request to accommodate additional tokens.
 
         Calculates the number of additional blocks needed based on the current sequence
-        length and number of steps, then allocates them from the device block pool.
+        length, then allocates them from the device block pool.
         Validates that there are sufficient free blocks available and that the current
         blocks can accommodate the completed tokens.
 
         Args:
             ctx: The request context containing sequence information and token indices.
-            num_steps: Number of additional steps to allocate blocks for. Defaults to 1.
             num_draft_tokens: Total draft tokens generated per speculative
                 iteration. Zero for non-speculative decode.
+            num_draft_tokens_per_step: Number of draft KV positions written
+                per draft forward. One for autoregressive drafts
+                (``eagle``, ``mtp``); equal to
+                ``num_draft_tokens`` for block drafts (``dflash``). Used by
+                ``_compute_seq_len`` to size the cache for block drafts,
+                whose ``forward_block`` writes one extra position past the
+                bonus token.
 
         Raises:
             InsufficientBlocksError: If there are insufficient free blocks to
@@ -563,8 +602,8 @@ class BlockManager:
         # Determine number of new blocks to allocate.
         num_new_blocks = self.num_blocks_to_allocate(
             ctx,
-            num_steps,
             num_draft_tokens,
+            num_draft_tokens_per_step,
         )
 
         # Verify that committed tokens fit within the currently allocated
@@ -599,17 +638,23 @@ class BlockManager:
     @traced
     def num_blocks_to_allocate(
         self,
-        ctx: TextGenerationContext,
-        num_steps: int = 1,
+        ctx: TextContext,
         num_draft_tokens: int = 0,
+        num_draft_tokens_per_step: int = 1,
     ) -> int:
         """Calculates the number of new blocks to allocate for a request.
 
         Args:
             ctx: The request context containing sequence information and token indices.
-            num_steps: Number of additional steps to allocate blocks for. Defaults to 1.
             num_draft_tokens: Total draft tokens generated per speculative
                 iteration. Zero for non-speculative decode.
+            num_draft_tokens_per_step: Number of draft KV positions written
+                per draft forward. One for autoregressive drafts
+                (``eagle``, ``mtp``); equal to
+                ``num_draft_tokens`` for block drafts (``dflash``). Used by
+                ``_compute_seq_len`` to size the cache for block drafts,
+                whose ``forward_block`` writes one extra position past the
+                bonus token.
 
         Returns:
             The number of new blocks to allocate.
@@ -618,8 +663,8 @@ class BlockManager:
         num_current_blocks = len(current_blocks)
         current_seq_len = _compute_seq_len(
             ctx,
-            num_steps,
             num_draft_tokens,
+            num_draft_tokens_per_step,
         )
         num_required_blocks = ceildiv(current_seq_len, self.block_size)
         num_new_blocks = num_required_blocks - num_current_blocks
@@ -634,7 +679,7 @@ class BlockManager:
 
     def release_uncommitted_blocks(
         self,
-        ctx: TextGenerationContext,
+        ctx: TextContext,
         skip_tokens: bool = True,
     ) -> None:
         """Release the uncommitted blocks for the request."""
@@ -657,15 +702,10 @@ class BlockManager:
             elif delta < 0:
                 ctx.tokens.skip_processing(-delta)
 
-    def register_dummy_request(
-        self, request_id: RequestID, sentinel_request_id: RequestID
-    ) -> None:
-        """Maps a dummy request to the sentinel's block via ref-count sharing."""
-        sentinel_blocks = self.req_to_blocks[sentinel_request_id]
-        assert len(sentinel_blocks) == 1
-        sentinel_block = sentinel_blocks[0]
-        self.device_block_pool.touch(sentinel_block)
-        self.req_to_blocks[request_id] = [sentinel_block]
+    def register_dummy_request(self, request_id: RequestID) -> None:
+        """Maps a dummy request to the pool's reserved null block."""
+        assert self.req_to_blocks[request_id] == []
+        self.req_to_blocks[request_id] = [self.device_block_pool.null_block]
 
     @traced
     def get_req_blocks(self, request_id: RequestID) -> list[int]:
@@ -690,7 +730,7 @@ class BlockManager:
         self._metrics = KVCacheMetrics()
 
     @traced
-    def assert_runtime_invariants(self, ctx: TextGenerationContext) -> None:
+    def assert_runtime_invariants(self, ctx: TextContext) -> None:
         """Asserts runtime invariants when runtime checks are enabled."""
         if not self.enable_runtime_checks:
             return

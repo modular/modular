@@ -24,7 +24,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from typing import Any
 
 from max import driver, graph
-from max.driver import Accelerator, Buffer, DLPackArray
+from max.driver import CPU, Accelerator, Buffer, DLPackArray
 from max.dtype import DType
 from max.engine import Model
 from max.experimental.functional import transfer_to
@@ -32,7 +32,6 @@ from max.experimental.sharding import (
     DeviceMapping,
     DistributedType,
     PlacementMapping,
-    global_shape_from_local,
 )
 from max.experimental.tensor import GraphValue, Tensor
 from max.graph import DeviceRef, Value
@@ -140,7 +139,6 @@ def _wrap_graph_inputs(
                     mapping=PlacementMapping(
                         slot.dist.mesh, slot.dist.placements
                     ),
-                    global_shape=slot.dist.shape,
                 )
             )
         else:
@@ -213,17 +211,11 @@ def _reconstruct_outputs(
             buffers = tuple(
                 raw_results[slot.start + i] for i in range(slot.count)
             )
-            gshape = global_shape_from_local(
-                [buf.shape for buf in buffers],
-                _mesh,
-                _placements,
-            )
             results.append(
                 Tensor._from_shards(
                     buffers,
                     _mesh,
                     _placements,
-                    global_shape=gshape,
                 )
             )
         else:
@@ -235,14 +227,22 @@ def _reconstruct_outputs(
 def _flatten_named_buffers(
     named_tensors: Iterable[tuple[str, Tensor]],
 ) -> dict[str, DLPackArray]:
-    """Flattens named parameters to a ``name -> DLPackArray`` mapping."""
+    """Flattens named parameters to a ``name -> DLPackArray`` mapping.
+
+    The registry must contain host-resident buffers: ``Tensor._as_constant_external``
+    declares every parameter's external constant on CPU and the lowering emits
+    a ``host_to_device`` op to copy it to the target device, so the runtime
+    reads the registered pointer as a host pointer. Copy any non-CPU-resident
+    buffer to CPU here to honor that contract.
+    """
+    cpu = CPU()
     result: dict[str, DLPackArray] = {}
     for name, t in named_tensors:
         if t.real:
             bufs = t.buffers
             for i, buf in enumerate(bufs):
                 key = f"{name}._shard.{i}" if len(bufs) > 1 else name
-                result[key] = buf
+                result[key] = buf if buf.device == cpu else buf.to(cpu)
         else:
             result[name] = t
     return result

@@ -1,5 +1,5 @@
 ---
-title: Nightly (v26.4)
+title: Nightly (v26.5)
 ---
 
 This version is still a work in progress.
@@ -10,277 +10,217 @@ This version is still a work in progress.
 
 ## MAX models
 
-- Added NVFP4 quantization support for Gemma 4.
-- Added MXFP4 quantization support for MiniMax-M2.
+- Added DiffusionGemma (`DiffusionGemmaForBlockDiffusion`), an
+  encoder/decoder block-diffusion text model that generates 256-token
+  blocks per step via an inner denoising loop. Supports NVFP4 and bfloat16
+  weights; text-only for now.
+- Added tool-calling and reasoning support to Qwen 3.5 / 3.6.
+- Added support for the Ideogram 4 (`Ideogram4Pipeline`) text-to-image
+  flow-matching diffusion transformer. The pipeline pairs a Qwen3-VL text
+  encoder (run text-only, emitting concatenated intermediate hidden states)
+  with a single-stream DiT that uses QK-RMSNorm, 3D MRoPE, SwiGLU, and AdaLN,
+  and an asymmetric dual-branch classifier-free guidance scheme. FP8
+  (`float8_e4m3fn`) checkpoint weights are dequantized to `bfloat16` at load.
+  Serve via `/v1/responses`; benchmark with
+  `--benchmark-task text-to-image`.
 
 ## MAX framework
 
+- The graph compiler now fuses query/key RMSNorm followed by rotate-half RoPE
+  into a single `rms_norm_rope` GPU kernel even when the RMSNorm is written "in
+  float32" — that is, when a `bfloat16`/`float16` activation is upcast to
+  `float32`, normalized, and cast back before RoPE. Previously the intervening
+  `float32`-to-`bfloat16` downcast blocked the fusion and the idiom compiled to
+  several separate elementwise kernels. The fused kernel now decouples its
+  output dtype from its input dtype, so the reduction and weight/epsilon scaling
+  stay in `float32` and only the result is produced in the activation dtype; the
+  input upcast is absorbed by ordinary prologue fusion. Numerics match the
+  unfused graph (the normalized value is rounded to the output dtype before
+  RoPE).
+
 ### Inference server
 
-- MAX Serve now accepts `role: "developer"` on `/v1/chat/completions`,
-  normalizing it to `system` at the OpenAI-compat route layer. The OpenAI
-  o1/o3 chat-completion spec uses `developer` in place of `system`, and
-  recent OpenAI SDKs emit it by default. The previous behavior rejected
-  the request with a 422 (`literal_error` on the message role).
-
-- Fixed `CreateChatCompletionRequest` rejecting explicit `null` values for
-  optional fields such as `tool_choice`, `tools`, and `response_format`.
-  OpenAI-compatible clients (LangChain, JS SDKs, anything that serializes
-  a dataclass with a `None` field) that emit `"tool_choice": null` instead
-  of omitting the key are now accepted, matching the behavior of other
-  OpenAI-compatible inference servers.
-
-- Added two opt-in server flags for accepting OpenAI-compatible requests
-  that the strict default behavior would reject:
-
-  - `--allow-unsupported-logprobs`: when a request asks for `logprobs`
-    against a runtime that cannot honor them (today, the overlap
-    scheduler), MAX Serve logs a warning and serves the request without
-    logprobs instead of returning a `400`.
-
-  - `--allow-extra-request-fields`: unknown top-level fields on
-    `/v1/chat/completions` and `/v1/completions` request bodies are
-    dropped (with a warning) before pydantic validation, instead of
-    returning a `400`. Useful when an upstream proxy sends vendor-specific
-    fields that MAX Serve does not need to honor.
-
-  Both flags default to `False`; the existing strict behavior is
-  unchanged. The corresponding `400` error messages now reference the new
-  flags. As a side effect, the legacy `/v1/completions` route now surfaces
-  `InputError` detail strings to the client instead of the generic
-  `"Value error."` message.
-
-- MAX Serve now emits the `maxserve.num_requests_queued` OTel/Prometheus
-  metric (changed from an `UpDownCounter` to a synchronous `Gauge`). The
-  gauge is sampled once per scheduler iteration from
-  `BatchMetrics.publish_metrics` and reports the depth of the scheduler's
-  CE / prefill queue (the same value as the `Pending: N reqs` line in
-  scheduler logs). It is published by every text-path scheduler that
-  drives `BatchMetrics`: `TokenGenerationScheduler` and `PrefillScheduler`
-  (via `TextBatchConstructor`), and `DecodeScheduler` (via
-  `len(pending_reqs) + len(prefill_reqs)`). Operators can use this metric
-  to observe queue buildup during overload conditions.
-
-- Added a `"none"` option for `runtime.tool_parser` and
-  `runtime.reasoning_parser` in `PipelineConfig` (CLI flags `--tool-parser`
-  and `--reasoning-parser`). Pass `none` (case-insensitive) to explicitly
-  disable the parser, overriding any architecture-declared default. Leaving
-  the field unset still applies the architecture default as before.
-
-- Added the `nemotron-opencode` benchmark dataset backed by
-  `nvidia/Nemotron-SFT-OpenCode-v1`. Each row is a full Qwen3-Coder OpenCode
-  trace (system prompt, multi-turn user/assistant/tool messages, and tool
-  schemas). Multi-GB per subset, so the loader streams via
-  `datasets.load_dataset(..., streaming=True)` and pulls only enough rows to
-  satisfy `--num-prompts`. Tool definitions per row are surfaced on
-  `NemotronOpenCodeBenchmarkDataset.last_loaded_tool_schemas` and (for
-  single-turn) attached to `SampledRequest.tools`.
-
-- Benchmark request payloads now forward an OpenAI-style `tools=[...]` field
-  on chat-completions requests. `SampledRequest` and `RequestFuncInput` gained
-  a `tools: list[dict] | None = None` field;
-  `OpenAIChatCompletionsRequestDriver` serialises it into the POST body when
-  set. Datasets that supply per-row tool schemas (currently
-  `nemotron-opencode`) now exercise the server's tool-call grammar /
-  structured-output path end-to-end. Pass `enable_tool_calls=False` on
-  Nemotron-OpenCode to suppress forwarding.
+- Reduced per-iteration latency for structured-output (constrained decoding)
+  requests on speculative-decode models. The overlap pipeline now enqueues the
+  asynchronous FSM-advance and bitmask compute once the next iteration's batch
+  order is known, so the bitmask is written directly in the consuming batch's
+  row order. This removes both the host-synchronization point that previously
+  stalled the GPU-feeding thread when the batch composition changed between
+  iterations and the device-side gather that earlier reconciled the order. The
+  improvement applies across all six supported speculative-decode architectures
+  (Kimi K2.5 MLA and MHA, DeepseekV3 MTP and Eagle3, Gemma 4 MTP,
+  and EAGLE Llama 3).
+- Constrained decoding (structured output) now unpacks the grammar bitmask on
+  the GPU. The packed `int32` bitmask is transferred to device as-is and
+  unpacked and applied to the logits in a single fused kernel
+  (`apply_packed_bitmask`), instead of unpacking to a `bool` tensor on the CPU.
+- Fixed image requests failing with a 400 or 500 across all vision models. Two
+  bugs in the shared image-resolution layer: `data:` URIs with unpadded or
+  URL-safe base64 (sent routinely by clients and relays) were rejected by the
+  strict decoder, and truncated, animated, or content-negotiated images (for
+  example a `.jpg` URL that a host serves as WebP) passed the lazy header-only
+  validation and then crashed later in the tokenizer's pixel decode with an
+  unhandled error. Image payloads are now decoded tolerantly and validated with
+  a full pixel decode that the tokenizer reuses (so each image is decoded only
+  once), and undecodable content fails fast as a clean 400.
+- Fixed intermittently-dropped Kimi K2.5 tool calls under reasoning-enabled
+  `tool_choice="auto"`. The model often opens a tool-call section directly from
+  inside its `<think>` block without emitting a closing `</think>` (an implicit
+  end-of-reasoning, part of Kimi's interleaved-thinking design). The reasoning
+  parser previously ended a reasoning span only on `</think>`, so the entire
+  tool-call section was misclassified as reasoning and never reached the tool
+  parser, so the response came back with empty `content` and the tool-call
+  payload stranded in `reasoning`. Because whether the model emits `</think>`
+  is sampling-dependent, the failure was flaky. The reasoning parser now also
+  ends the span at `<|tool_calls_section_begin|>`, leaving the marker as
+  content so the tool call is parsed correctly.
+- Fixed a structured-output runaway: a `response_format` JSON schema that omits
+  the root `"type"` (for example `{"properties": {"x": {}}}`, valid JSON Schema)
+  previously compiled to a grammar that permitted a bare, unbounded top-level
+  value, so a model that looped inside that value could never emit a terminator
+  and generated until `max_length` (`finish_reason="length"`). Such schemas with
+  an object-implying keyword (`properties`, `required`, `additionalProperties`,
+  `patternProperties`) are now normalized to `"type": "object"` before grammar
+  compilation, matching the behavior of xgrammar-based engines. A genuinely
+  empty `{}` schema is still treated as "any value".
+- Retuned the Prometheus/OpenTelemetry histogram buckets for MAX Serve metrics.
+  Previously every histogram shared one millisecond-latency bucket range, which
+  was inaccurate for non-latency metrics. Each histogram now uses bucket
+  boundaries matched to its actual range (percentages bucket 0–100, token and
+  occupancy counts use power-of-two buckets, batch size is fine-grained up to
+  512, throughput and time metrics use appropriately wide ranges, and time
+  metrics now extend out to 30 minutes). Quantile queries become more accurate;
+  dashboards that hardcoded specific bucket boundaries may need updating.
+- Changed `maxserve.cache.num_used_blocks` and `maxserve.cache.num_total_blocks`
+  from counters to gauges. These report an instantaneous level, so a gauge is
+  correct; as counters their exported values were meaningless. The Prometheus
+  type changes to `gauge` and the exported series drops the counter `_total`
+  suffix.
+- Added `maxserve.cache.disk_blocks_read` and
+  `maxserve.cache.disk_blocks_written` counters, reporting KV blocks read from
+  and written to the disk cache tier when tiered (disk) KV caching is enabled.
 
 ### `max` CLI
 
-- Added `--devices=gpu:all` to use every visible GPU (including MAX Serve).
-- Removed the `default` value for `--devices`; omit `--devices` to use the model
-  or config default.
-
 ### Python API
 
-- Reduced default signal buffer size from 1025 to 257 MiB per GPU and fixed
-  miscalculation of required space in `MOGGKernelAPI.mojo`. Calculation was
-  wrong by a factor of `1/num_devices` since each device only needs scratch
-  for its own portion of the collective problem. Reduces footprint for current
-  heaviest workload (Kimi-K2.5 with `BlockCopyEngine`) from 16GB to 4GB.
+- Added `max.driver.set_virtual_cpu_target()` and `get_virtual_cpu_target()`.
+  Set a fixed CPU codegen target (for example `"x86-64-v3"`, `"neoverse-n1"`,
+  or `"generic"` for the most-portable baseline of the host arch family) before
+  importing `max._interpreter_ops` so the eager interpreter's CPU kernel cache
+  is compiled host-independently and can be shipped and reused across hosts of
+  the same architecture family. Mirrors `set_virtual_device_target_arch()` for
+  GPUs. Leaving it unset compiles for the build host's CPU, as before.
 
-- Added `max.driver.CompletionFlag`, an 8-byte completion flag in pinned host
-  memory mapped into a device's address space. Lets host code signal a GPU
-  stream (or peer host observer) by writing a 64-bit value to a single
-  location visible to both. Currently CUDA-only; constructing against any
-  other backend raises `RuntimeError`.
+- **Preview (no-op today)**: `InferenceSession.profiling` is a new namespace
+  that will control the libkineto-backed MAX profiler. The lifecycle methods
+  are callable but do not yet produce trace files; the libkineto-backed
+  Chrome-trace JSON output (compatible with
+  [HTA](https://github.com/facebookresearch/HolisticTraceAnalysis)) and the
+  `session.debug.profiling_*` setter mirrors land in subsequent nightlies.
+  The control surface is final: `session.profiling.start()` / `.stop()` /
+  `.wait_for_trace()` and the read-only `.state` and `.is_enabled` properties.
+  This API is orthogonal to the existing `session.gpu_profiling()` (NVTX/Nsight)
+  path.
 
-- Added `Device.__unsafe_enqueue_async_py_host_func(fn, flag, value, cpu)`
-  and `DeviceStream.wait_for_host_value(flag, value)` for dispatching a
-  Python callable onto an explicit AsyncRT worker pool from a host-function
-  node and gating the GPU stream on its completion (via the
-  `CompletionFlag`). The kickoff trampoline returns immediately, letting
-  the GPU stream proceed concurrently with the worker; a downstream
-  `wait_for_host_value` blocks the stream until the worker stores `value`.
-  The `__unsafe_` prefix marks that the API has no safety net for
-  callbacks that capture state outliving the compiled graph.
+- `ProfilingConfig` gains six new fields for the libkineto profiler:
+  `profiling_enabled`, `profiling_output_path`, `profiling_dynolog_enabled`,
+  `profiling_warmup_steps`, `profiling_active_steps`, and
+  `profiling_periodic_flush_seconds`.
 
-- Added the `mo.wait_host_value` graph op and the
-  `max.nn.kernels.wait_host_value()` Python helper that wraps it. Stalls
-  the device stream until a 64-bit host-visible flag reaches a given
-  value; lowers to CUDA's `cuStreamWaitValue64` and captures cleanly into
-  a CUDA graph as a wait-value node. Lets a captured forward graph gate
-  a downstream consumer kernel on CPU-produced data while the rest of
-  the forward body runs concurrently. Pair with `mo.launch_host_func`
-  or `Device.__unsafe_enqueue_async_py_host_func` to issue the host
-  work whose completion the consumer waits on.
+- Eager execution in `max.experimental` now routes every realization through
+  the `max.experimental.executor.Executor` abstraction. The out-of-the-box
+  path is unchanged — graphs within the `MAX_INTERPRETER_MAX_OPS` threshold run
+  on the interpreter and fall back to a cached compile otherwise — but it is
+  now expressed as a new `CompositeExecutor` selected by
+  `MAX_EAGER_EXECUTOR=composite` (the new default). The
+  `MAX_USE_EAGER_INTERPRETER` environment variable has been removed; force
+  compilation with `MAX_EAGER_EXECUTOR=compile` instead. The
+  `EagerRealizationContext(use_interpreter=...)` argument is deprecated in
+  favor of `EagerRealizationContext(executor=...)`.
 
-- Added two new nanobind types to `max._core.engine` that split the
-  compile-and-load pipeline at the type level:
+- The eager interpreter precompiles its matmul and unary-elementwise
+  graph-compiler models for the full `(device, dtype)` matrix at import by
+  default. Set `MAX_EAGER_OP_PRECOMPILE=0` to skip the import-time sweep and
+  compile each target lazily on first dispatch instead, bounding compile cost to
+  the targets a program actually uses.
 
-  - `CompiledModels` represents the compile artifact returned by
-    `compile_from_path` / `compile_from_object` on the
-    `max._core.engine.InferenceSession` binding (these methods don't exist on
-    the public `max.engine.InferenceSession` class). It holds the MEF bytes
-    and one or more sub-models; it is not directly executable.
-  - `ModelMetadata` exposes per-sub-model metadata (`name`,
-    `input_metadata`, `output_metadata`) and is yielded by iterating a
-    `CompiledModels` or indexing it with `[i]`.
+- `max.nn.hooks.PrintHook` now supports `max.experimental.nn.Module`.
 
-  `Model` continues to represent the runnable, post-init handle (still
-  produced by `InferenceSession._load_all`). The high-level
-  `max.engine.CompiledModel` wrapper now holds a `CompiledModels` instance
-  internally.
-- Increased the default allreduce signal buffer size from 513 MiB to 1025 MiB
-  per GPU (`max.nn.comm.allreduce.Signals.NUM_BYTES` and the matching constant
-  in `max.experimental.realization_context`). The previous 512 MiB scratch
-  could not hold the per-peer allgather intermediate for models with large
-  hidden dimensions (for example, Kimi-K2.5 at `hidden_dim=20480` with
-  `max-batch-input-tokens=16384` needs 640 MiB in bf16). This adds ~512 MiB
-  of per-GPU memory use for any multi-GPU model.
+- Added `F.print`, which supports both single-device and multi-device tensors.
 
-- `max.experimental.functional.while_loop` now passes `Tensor` (not
-  `TensorValue`) into its `predicate` and `body` callbacks. Callbacks can
-  use ordinary `Tensor` operations directly, without wrapping arguments
-  via `Tensor.from_graph_value(...)` or reaching for the
-  underscore-prefixed `_graph_value` attribute on returns.
+- Added `max.graph.default_custom_extensions()` and the
+  `default_custom_extensions_scope()` context manager. Paths registered as
+  defaults are merged into the `custom_extensions` of every new `Graph`, so a
+  backend can make its custom-op kernel library reachable from graphs built
+  without an explicit `custom_extensions=` — including the eager-realization
+  graph that backs `max.experimental` tensors. Empty by default.
 
-- `max.experimental.nn.Module.compile()` now emits the same
-  `Building and compiling {ClassName}... / Still building... / Building
-  {ClassName} graph took Ns / Compiling {ClassName} took Ms / Building and
-  compiling {ClassName} took Ts` log sequence that pipeline-level
-  `CompilationTimer` produces today, and wraps the compile body in
-  `max.profiler.Tracer` spans (`Module.compile({ClassName})`,
-  `Module.compile.trace`, `Module.compile.session_load`) so an `nsys` capture
-  with `MODULAR_ENABLE_PROFILING=1` shows compilation as named ranges.
-  Every ModuleV3 caller — including pixel-generation pipelines that previously
-  compiled silently — now gets this observability for free. The outer
-  `CompilationTimer("model")` wrappers in `*_modulev3` architectures have been
-  removed to avoid nested timing logs.
+### C API
 
-- `max.experimental.nn.Module.load_state_dict` and
-  `Module.compile(weights=...)` now accept an `auto_cast` keyword
-  (default `False`). The framework remains strict by default. When
-  `auto_cast=True` is passed, loaded weights are automatically cast
-  between `float32` and `bfloat16` when shapes match, logging a single
-  summary message per load instead of raising. Other dtype mismatches
-  (`float16`, `fp8`, `fp4`, integers, etc.) continue to raise as before.
-  This removes the need for per-adapter `astype` shims when checkpoint
-  dtypes differ from the module's declared parameter dtype. MAX
-  pipelines opt in via the `MODULAR_AUTO_CAST_WEIGHTS` environment
-  variable (default `true`, parsed by
-  `max.pipelines.lib.weight_loading.auto_cast_weights_from_env`).
-
-- `CPUMetricsCollector` in `max.diagnostics.cpu` is now used as a context
-  manager instead of `start`/`stop` and now exposes `get_stats()` instead of
-  `dump_stats()`, matching the interface of `GPUDiagContext`.
-
-- `max.graph.Module` is now a public class for grouping multiple `Graph`
-  instances into a single compilation unit, replacing the previous alias
-  for the underlying MLIR module. Construct one with `Module()` and pass
-  it as the `module=` argument to each `Graph`; the resulting `Module` is
-  what you hand to `InferenceSession.load_all` to compile every graph
-  together. `Graph.empty_module()` has been removed in favor of `Module()`,
-  and `Graph` now exposes a `module` property returning the `Module` it
-  belongs to.
-
-- `InferenceSession.load_all` now returns a `dict[str, Model]` keyed by each
-  model's `sym_name` (the name of its `mo.graph` op), instead of a
-  `list[Model]` ordered by MEF position. The accepted input type also gained
-  `max.graph.Module`, so callers can compile a pre-built module containing
-  multiple `mo.graph` ops directly. `Model` now exposes a `name` property.
-
-  Migrate positional unpacking call sites by indexing the returned dict:
-
-  ```python
-  # Before
-  module = Graph.empty_module()
-  with Graph("vision", input_types=..., module=module): ...
-  with Graph("language", input_types=..., module=module): ...
-  vision_model, language_model = session.load_all(graph, ...)
-
-  # After
-  module = Module()
-  with Graph("vision", input_types=..., module=module) as vision_graph: ...
-  with Graph("language", input_types=..., module=module) as language_graph: ...
-  models = session.load_all(module, ...)
-  vision_model = models[vision_graph.name]
-  language_model = models[language_graph.name]
-  ```
+- Fixed `M_borrowTensorInto()` copying instead of borrowing a GPU input. When
+  the borrowed pointer already lived on the target accelerator, the call
+  allocated a fresh device buffer and copied into it, so in-place mutation of a
+  `BufferType` model input was applied to the engine's private copy and never
+  reflected back into the caller's buffer. Such pointers are now borrowed in
+  place (zero-copy) on CUDA devices, matching the documented borrow semantics
+  and the existing behavior for host inputs. Host pointers passed with a device
+  spec are still staged via a host-to-device copy, as are device pointers on
+  backends that do not yet implement in-place borrowing (AMD and Apple).
 
 ## MAX kernels
 
-- The `use_blocking_impl` parameter has been removed from the `foreach` custom
-  op helper (and the underlying `elementwise` primitive), and the analogous
-  `single_thread_blocking_override` parameter has been removed from the `concat`
-  and `concat_shape` kernels and the reduction-based kernels. Work is always
-  dispatched the same way, with a single worker used automatically when the
-  problem size is small. The dedicated small-tensor `concat` fast path has been
-  removed in favor of the existing serial/parallel dispatch.
+- Apple silicon GPU support for running MAX models has been extended to M1 and
+  M2 systems. Previously, the optimized matrix multiplication kernels for Apple
+  silicon GPUs only returned correct results on M3 and newer systems. That has
+  now been fixed for M1 and M2 systems, allowing many common MAX models to run
+  correctly on them.
+- The split-K decode attention kernel for Apple GPUs is now the default for
+  token-generation attention, covering paged-KV-cache MHA and GQA decode for
+  head dims that are a multiple of 32. It was previously opt-in;
+  `MODULAR_ENABLE_APPLE_NAIVE_FA_DECODE=0` now opts out, falling back to
+  `mha_gpu_naive`.
+- Sped up GPU RMS norm on AMD CDNA4 (MI355X) for prefill-sized shapes. The
+  warp-tiling path runs one row per block, so the per-thread SIMD width sets
+  how many warps a row needs; on CDNA4, when there are enough rows to keep the
+  GPU busy, using a 2x-wider per-thread SIMD halves the warps per row, which
+  cheapens the block reduction and raises blocks-per-CU. This improves
+  throughput by roughly 15-31% on shapes such as 8192x{2880,4096,5120,8192}
+  and 4096x4096 (bfloat16), with no change to small-row shapes or other
+  architectures.
+- Fixed a rare illegal-instruction crash in the SM100 (Blackwell)
+  flash-attention prefill kernels under chunked prefill with tensor
+  parallelism. When the attention grid shared SMs with the tensor-parallel
+  all-reduce collective under device graph capture, a consumer warp could read
+  a stale tensor-memory base address and issue a tensor-core MMA against an
+  invalid operand. The kernels now read the tensor-memory base once after it
+  is published and carry it in a register, so there is no in-loop re-read to
+  race.
 
 ## Breaking changes
 
-- KV cache management has moved from `max.kv_cache` to `max.pipelines.kv_cache`.
-  Update imports accordingly:
-
-  ```python
-  # Before
-  from max.kv_cache import PagedKVCacheManager, DummyKVCache
-
-  # After
-  from max.pipelines.kv_cache import PagedKVCacheManager, DummyKVCache
-  ```
-
-  Deprecation shims with `DeprecationWarning` remain at the old path.
-
-- Custom Mojo ops used through `max.experimental.torch.CustomOpLibrary` (and
-  the rest of the graph-compiler custom-op path) must now declare their
-  `ctx` parameter as `DeviceContext` instead of `DeviceContextPtr`. The
-  `DeviceContextPtr` type has been removed from the Mojo standard library;
-  see the [Mojo nightly
-  changelog](https://docs.modular.com/mojo/changelog/) entry under
-  *Removed* for the full migration. Multi-device ops should declare their
-  variadic context argument as `DeviceContextList[N]` (also new — see the
-  Mojo changelog *GPU programming* section).
-
-- GPU and CPU diagnostic tooling has moved from `max.diagnostics` to
-  `max.profiler`: `max.diagnostics.gpu` → `max.profiler.gpu` and
-  `max.diagnostics.cpu` → `max.profiler.cpu`. Update imports accordingly.
-  Deprecation shims with `DeprecationWarning` remain at the old paths.
-
-- `max/python/max/benchmark/benchmark_throughput.py`, deprecated in v0.26.3,
-  has been removed.
-
 ## Fixes
 
-- Fixed an expert-parallelism dispatch assertion (`Cannot dispatch EP
-  kernel with N input tokens when the maximum tokens per rank is N-1`)
-  that fired whenever `--max-batch-input-tokens` was not evenly
-  divisible by the tensor-parallel degree. The EP per-rank cap now uses
-  ceiling division to match the ragged binning of `reducescatter` in
-  TP-attention + EP-MoE mode, so the largest shard fits in the
-  dispatch buffer. Affects DeepSeek-V3, Kimi-K2.5, MiniMax-M2, Qwen3,
-  and Step3.5 deployments configured with non-divisible batch sizes.
+- Fixed `max.nn.WeightNormConvTranspose1d` raising `AttributeError` when
+  constructed with its default `has_bias=False`. The constructor
+  unconditionally deleted the wrapped conv's `bias` attribute, which is only
+  set when `has_bias=True`; the delete is now guarded.
+- Fixed a GPU memory fault when benchmarking GPU layer norm: the benchmark's
+  output lambda copy-captured the wrong tensor, so the actual output tensor was
+  captured by reference and dereferenced as a host pointer on the device. This
+  faulted on AMD GPUs (and was undefined behavior elsewhere). The lambda now
+  captures the output tensor it writes to.
+- Fixed `max.experimental.nn.Conv2d.forward` moving the weight to the
+  input's device but leaving the bias behind, which failed with a device
+  mismatch when the bias started on a different device than the input. The
+  bias is now moved alongside the weight.
 
-- `MODULAR_DEBUG=ir-output-dir=<dir>` (and the equivalent
-  `[max-debug] ir-output-dir = <dir>` config-file entry and
-  `InferenceSession.debug.ir_output_dir = <dir>` Python setter) now
-  actually dumps per-stage MLIR files to the configured directory. The
-  option was previously parsed but no compiler stage consulted it, so
-  users had to fall back to the legacy `MODULAR_MAX_TEMPS_DIR` env var.
-  Both spellings are now honored.
+- Fixed a constrained-decoding bug that could intermittently drop grammar
+  enforcement during speculative decoding with grammar-guided tool calling.
+  The speculative bitmask walk advanced the matcher through draft tokens and
+  restored it with `rollback`, but `rollback` does not correctly restore the
+  matcher across certain tool-call structural tags (e.g.
+  `<|tool_call_begin|>`). The walk now runs on a deep copy of the matcher,
+  leaving the real matcher untouched.
 
 ## Mojo language
-
-For all the updates to the Mojo language, standard library, and tools,
-see the [Mojo release notes](https://mojolang.org/releases).
