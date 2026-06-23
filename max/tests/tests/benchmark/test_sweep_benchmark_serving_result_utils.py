@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -22,11 +23,13 @@ import pytest
 from max.benchmark.benchmark_shared.metrics import (
     BenchmarkResult,
     PixelGenAggregates,
+    PrefillDecodeStats,
     RatePercentileMetrics,
     StandardPercentileMetrics,
     TextGenAggregates,
     ThroughputMetrics,
 )
+from max.benchmark.benchmark_shared.server_metrics import HistogramData
 from max.benchmark.sweep_benchmark_serving_result_utils import (
     SUPPORTED_SWEEP_SERVING_PERCENTILES,
     LLMBenchmarkResult,
@@ -345,6 +348,32 @@ def test_format_row_values_llm() -> None:
         itl_mean=20.0,
         ttft_percentiles={50: 99.0},
         itl_percentiles={50: 19.0},
+        prefill_stats=PrefillDecodeStats(
+            context_tokens=HistogramData(count=10, sum=1000.0, buckets=[]),
+            creation_time_milliseconds=HistogramData(
+                count=10, sum=1000.0, buckets=[]
+            ),
+            generation_throughput_tokens_per_second=HistogramData(
+                count=10, sum=1000.0, buckets=[]
+            ),
+            input_tokens=HistogramData(count=10, sum=1000.0, buckets=[]),
+            prompt_throughput_tokens_per_second=HistogramData(
+                count=10, sum=1000.0, buckets=[]
+            ),
+        ),
+        decode_stats=PrefillDecodeStats(
+            context_tokens=HistogramData(count=10, sum=1000.0, buckets=[]),
+            creation_time_milliseconds=HistogramData(
+                count=10, sum=1000.0, buckets=[]
+            ),
+            generation_throughput_tokens_per_second=HistogramData(
+                count=10, sum=1000.0, buckets=[]
+            ),
+            input_tokens=HistogramData(count=10, sum=1000.0, buckets=[]),
+            prompt_throughput_tokens_per_second=HistogramData(
+                count=10, sum=1000.0, buckets=[]
+            ),
+        ),
     )
     row = w._format_row_values(
         max_concurrency=4,
@@ -352,6 +381,10 @@ def test_format_row_values_llm() -> None:
         num_prompts=1000,
         result=result,
     )
+    assert result.prefill_stats is not None
+    assert result.decode_stats is not None
+    prefill_cell = json.dumps(result.prefill_stats.to_result_dict())
+    decode_cell = json.dumps(result.decode_stats.to_result_dict())
     assert row == [
         "4",
         "inf",
@@ -361,6 +394,8 @@ def test_format_row_values_llm() -> None:
         "100.0",
         "20.0",
         "500.0",
+        prefill_cell,
+        decode_cell,
         "99.0",
         "19.0",
         "490.0",
