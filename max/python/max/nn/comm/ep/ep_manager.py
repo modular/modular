@@ -342,6 +342,9 @@ class EPBatchManager:
             self.recv_buf_ptrs[DISPATCH_GROUP],
             self.recv_count_ptrs[DISPATCH_GROUP],
             self.config,
+            # Forward the per-rank input token dim so the kernel can pick
+            # a smaller grid when num_tokens is statically known (decode).
+            num_tokens=self._dispatch_dim.get(device_id),
         )
 
         # The last element is the src_info, we need to store it for the

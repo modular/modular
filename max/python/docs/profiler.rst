@@ -11,6 +11,15 @@ max.profiler
 
 .. currentmodule:: max.profiler
 
+Submodules
+----------
+
+.. toctree::
+   :maxdepth: 1
+
+   profiler.cpu
+   profiler.gpu
+
 Tracing
 -------
 

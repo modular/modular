@@ -14,9 +14,10 @@
 
 def repeat[MsgType: Writable, //, count: Int](msg: MsgType):
     comptime for i in range(count):
-        print(String(msg))
+        print(msg)
 
 
 def main():
-    # MsgType is always inferred, so first positional keyword `2` is passed to `count`
+    # MsgType is always inferred, so first positional keyword `2` is
+    # passed to `count`
     repeat[2](42)

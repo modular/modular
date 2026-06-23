@@ -13,21 +13,26 @@
 
 from __future__ import annotations
 
+from typing import Any, ClassVar
+
 from max.driver import Device
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn.kv_cache import KVCacheParams
+from max.nn.kv_cache import KVCacheParamInterface
 from max.nn.transformer import ReturnLogits
 from max.pipelines.lib import KVCacheConfig, PipelineConfig
 from transformers import AutoConfig
 
 from ..mistral.model import MistralModel
+from .model_config import Mistral3Config
 
 
 class Mistral3Model(MistralModel):
     """Text-only Mistral3 pipeline model implementation."""
+
+    model_config_cls: ClassVar[type[Any]] = Mistral3Config
 
     def __init__(
         self,
@@ -57,7 +62,7 @@ class Mistral3Model(MistralModel):
         devices: list[DeviceRef],
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
-    ) -> KVCacheParams:
+    ) -> KVCacheParamInterface:
         return super().get_kv_params(
             huggingface_config.text_config,
             pipeline_config,

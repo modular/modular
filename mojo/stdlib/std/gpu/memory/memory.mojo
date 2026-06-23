@@ -845,7 +845,7 @@ def external_memory[
     address_space: AddressSpace,
     alignment: Int,
     name: StaticString = "extern_ptr_syml",
-]() -> UnsafePointer[dtype, MutAnyOrigin, address_space=address_space]:
+]() -> UnsafePointer[dtype, MutUntrackedOrigin, address_space=address_space]:
     """Gets a pointer to dynamically allocated external memory.
 
     This function returns a pointer to external memory that can be used for dynamic
@@ -870,17 +870,14 @@ def external_memory[
     - The pointer is only valid within the GPU kernel execution context.
     - Care must be taken to respect alignment requirements when accessing the memory.
     """
-    var extern_ptr_symbol = UnsafePointer[
-        StaticTuple[dtype, 0], MutAnyOrigin, address_space=address_space
-    ](
+    comptime PtrTy = UnsafePointer[
+        StaticTuple[dtype, 0], MutUntrackedOrigin, address_space=address_space
+    ]
+    var extern_ptr_symbol = PtrTy(
         __mlir_op.`pop.extern_ptr_symbol`[
-            _type=UnsafePointer[
-                StaticTuple[dtype, 0],
-                MutAnyOrigin,
-                address_space=address_space,
-            ]._mlir_type,
+            _type=PtrTy._mlir_type,
             name=_get_kgen_string[name](),
-            alignment=alignment._int_mlir_index(),
+            alignment=alignment.__mlir_index__(),
         ]()
     )
     return extern_ptr_symbol.bitcast[dtype]()
@@ -1194,7 +1191,7 @@ def cp_async_bulk_reduce_global_shared_cta[
     Parameters:
         dtype: Element data type of the reduction. Supported floating-point
             types are `float16`, `bfloat16`, `float32`, and `float64`.
-        reduction_kind: The reduction operation to apply. Curently only `ADD` is supported.
+        reduction_kind: The reduction operation to apply. Currently only `ADD` is supported.
         eviction_policy: Cache eviction policy for the L2 cache.
             Defaults to `EVICT_NORMAL`.
 
@@ -1533,17 +1530,15 @@ def cp_async_bulk_tensor_shared_cluster_global_elect[
     comptime pred_prefix = String(
         "{ .reg .pred %p_el; setp.eq.s32 %p_el, $",
         elect_idx,
-        ", 0; @%p_el bra L_el_tma; ",
+        ", 0; @!%p_el ",
     )
-    comptime pred_suffix = " L_el_tma: }"
 
     comptime if cache_hint:
         comptime if rank == 3:
             inlined_assembly[
                 pred_prefix
                 + tma_asm
-                + " [$0], [$1, {$3, $4, $5}], [$2], $6;"
-                + pred_suffix,
+                + " [$0], [$1, {$3, $4, $5}], [$2], $6; }",
                 NoneType,
                 constraints="r,l,r,r,r,r,l,r",
             ](
@@ -1558,10 +1553,7 @@ def cp_async_bulk_tensor_shared_cluster_global_elect[
             )
         elif rank == 2:
             inlined_assembly[
-                pred_prefix
-                + tma_asm
-                + " [$0], [$1, {$3, $4}], [$2], $5;"
-                + pred_suffix,
+                pred_prefix + tma_asm + " [$0], [$1, {$3, $4}], [$2], $5; }",
                 NoneType,
                 constraints="r,l,r,r,r,l,r",
             ](
@@ -1575,10 +1567,7 @@ def cp_async_bulk_tensor_shared_cluster_global_elect[
             )
         elif rank == 1:
             inlined_assembly[
-                pred_prefix
-                + tma_asm
-                + " [$0], [$1, {$3}], [$2], $4;"
-                + pred_suffix,
+                pred_prefix + tma_asm + " [$0], [$1, {$3}], [$2], $4; }",
                 NoneType,
                 constraints="r,l,r,r,l,r",
             ](
@@ -1593,8 +1582,7 @@ def cp_async_bulk_tensor_shared_cluster_global_elect[
             inlined_assembly[
                 pred_prefix
                 + tma_asm
-                + " [$0], [$1, {$3, $4, $5, $6}], [$2], $7;"
-                + pred_suffix,
+                + " [$0], [$1, {$3, $4, $5, $6}], [$2], $7; }",
                 NoneType,
                 constraints="r,l,r,r,r,r,r,l,r",
             ](
@@ -1612,8 +1600,7 @@ def cp_async_bulk_tensor_shared_cluster_global_elect[
             inlined_assembly[
                 pred_prefix
                 + tma_asm
-                + " [$0], [$1, {$3, $4, $5, $6, $7}], [$2], $8;"
-                + pred_suffix,
+                + " [$0], [$1, {$3, $4, $5, $6, $7}], [$2], $8; }",
                 NoneType,
                 constraints="r,l,r,r,r,r,r,r,l,r",
             ](
@@ -1631,10 +1618,7 @@ def cp_async_bulk_tensor_shared_cluster_global_elect[
     else:
         comptime if rank == 3:
             inlined_assembly[
-                pred_prefix
-                + tma_asm
-                + " [$0], [$1, {$3, $4, $5}], [$2];"
-                + pred_suffix,
+                pred_prefix + tma_asm + " [$0], [$1, {$3, $4, $5}], [$2]; }",
                 NoneType,
                 constraints="r,l,r,r,r,r,r",
             ](
@@ -1648,10 +1632,7 @@ def cp_async_bulk_tensor_shared_cluster_global_elect[
             )
         elif rank == 2:
             inlined_assembly[
-                pred_prefix
-                + tma_asm
-                + " [$0], [$1, {$3, $4}], [$2];"
-                + pred_suffix,
+                pred_prefix + tma_asm + " [$0], [$1, {$3, $4}], [$2]; }",
                 NoneType,
                 constraints="r,l,r,r,r,r",
             ](
@@ -1664,10 +1645,7 @@ def cp_async_bulk_tensor_shared_cluster_global_elect[
             )
         elif rank == 1:
             inlined_assembly[
-                pred_prefix
-                + tma_asm
-                + " [$0], [$1, {$3}], [$2];"
-                + pred_suffix,
+                pred_prefix + tma_asm + " [$0], [$1, {$3}], [$2]; }",
                 NoneType,
                 constraints="r,l,r,r,r",
             ](
@@ -1681,8 +1659,7 @@ def cp_async_bulk_tensor_shared_cluster_global_elect[
             inlined_assembly[
                 pred_prefix
                 + tma_asm
-                + " [$0], [$1, {$3, $4, $5, $6}], [$2];"
-                + pred_suffix,
+                + " [$0], [$1, {$3, $4, $5, $6}], [$2]; }",
                 NoneType,
                 constraints="r,l,r,r,r,r,r,r",
             ](
@@ -1699,8 +1676,7 @@ def cp_async_bulk_tensor_shared_cluster_global_elect[
             inlined_assembly[
                 pred_prefix
                 + tma_asm
-                + " [$0], [$1, {$3, $4, $5, $6, $7}], [$2];"
-                + pred_suffix,
+                + " [$0], [$1, {$3, $4, $5, $6, $7}], [$2]; }",
                 NoneType,
                 constraints="r,l,r,r,r,r,r,r,r",
             ](
@@ -3197,17 +3173,22 @@ def multimem_st[
 
     Example:
 
-    ```text
-    from std.gpu.memory.memory import *
+    ```mojo
+    from std.gpu.memory.memory import multimem_st, Consistency
+    from std.gpu.intrinsics import Scope
+    from std.utils import StaticTuple
+    var addr = UnsafePointer[Float32, MutAnyOrigin, address_space=AddressSpace.GLOBAL].unsafe_dangling()
+    %# val1, val2 = Float32(0), Float32(0)
+    %# vec1, vec2, vec3, vec4 = Float16(0), Float16(0), Float16(0), Float16(0)
 
     # Store 2 float32 values to multimem address.
     multimem_st[DType.float32, count=2, scope=Scope.BLOCK, consistency=Consistency.RELAXED](
-        addr, StaticTuple[DType.float32, 2](val1, val2)
+        addr, StaticTuple[Float32, 2](val1, val2)
     )
 
     # Vector store of 4 float16x2 values.
-    multimem_st[DType.float16, count=4, scope=Scope.CLUSTER, consistency=Consistency.RELEASE, width=2](
-        addr, StaticTuple[DType.float16, 4](vec1, vec2, vec3, vec4)
+    multimem_st[DType.float16, count=4, scope=Scope.CLUSTER, consistency=Consistency.RELEASE](
+        addr.bitcast[Float16](), StaticTuple[Float16, 4](vec1, vec2, vec3, vec4)
     )
     ```
 

@@ -28,51 +28,30 @@ def concat(
 ) -> TensorValue:
     """Concatenates a list of symbolic tensors along an axis.
 
-    Joins multiple tensors along a specified dimension. This operation requires
-    the functional API since it operates on multiple tensors. All input tensors
-    must have the same rank and the same size in all dimensions except the
-    concatenation axis.
-
     .. code-block:: python
 
-        import max.experimental.functional as F
-        from max.experimental.tensor import Tensor
-
-        # Create two 2x2 matrices
-        a = Tensor.constant([[1, 2], [3, 4]])
-        b = Tensor.constant([[5, 6], [7, 8]])
-
-        # Concatenate along axis 0 (rows) - stacks vertically
-        vertical = F.concat([a, b], axis=0)
-        print(f"Concatenated along axis 0: {vertical.shape}")
-        # Output: Concatenated along axis 0: [Dim(4), Dim(2)]
-        print(vertical)
-        # [[1, 2],
-        #  [3, 4],
-        #  [5, 6],
-        #  [7, 8]]
-
-        # Concatenate along axis 1 (columns) - joins horizontally
-        horizontal = F.concat([a, b], axis=1)
-        print(f"Concatenated along axis 1: {horizontal.shape}")
-        # Output: Concatenated along axis 1: [Dim(2), Dim(4)]
-        print(horizontal)
-        # [[1, 2, 5, 6],
-        #  [3, 4, 7, 8]]
+        a = ops.constant([[1, 2], [3, 4]], DType.int32, device=device)
+        b = ops.constant([[5, 6], [7, 8]], DType.int32, device=device)
+        vertical = ops.concat([a, b], axis=0)
+        # vertical has shape (4, 2):
+        # [[1, 2], [3, 4], [5, 6], [7, 8]]
+        horizontal = ops.concat([a, b], axis=1)
+        # horizontal has shape (2, 4):
+        # [[1, 2, 5, 6], [3, 4, 7, 8]]
 
     Args:
-        original_vals: The list of symbolic tensor values to concatenate. Each tensor must have the same
-            dtype and rank, and must have the same dimension size for each
-            dimension other than ``axis``.
-        axis: The axis to concatenate along. If negative, indexes relative
-            to the end of the tensor shape. For instance, ``concat(vs, -1)``
-            will concatenate along the last dimension.
+        original_vals: The list of symbolic tensor values to concatenate.
+            All input tensors must have the same rank and the same size in all
+            dimensions except the concatenation axis.
+        axis: The dimension along which to concatenate. Negative values
+            index relative to the end of the tensor shape. For instance,
+            ``concat(vs, -1)`` concatenates along the last dimension.
+            Defaults to ``0``.
 
     Returns:
-        A new symbolic tensor representing the concatenation result. It will
-        have the same rank as each input tensor, and its dimensions will be the same
-        as each input tensor's for each dimension other than `axis`, which will
-        have size equal to the sum of all tensor's size for that dimension.
+        A symbolic tensor with the same rank, dtype, and device as the inputs,
+        whose size along ``axis`` is the sum of the inputs' sizes along that
+        axis. Every other dimension matches the inputs.
     """
     vals = [TensorValue(v) for v in original_vals]
 

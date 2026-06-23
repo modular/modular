@@ -26,16 +26,14 @@ from std.sys.info import simd_width_of
 from std.algorithm import elementwise
 from std.gpu.host import DeviceContext
 
-from std.utils.index import IndexList
+from std.utils.coord import Coord
 
 
 def test_trace_description_elementwise(ctx: DeviceContext) raises:
     var len = 1024
 
     @parameter
-    def func[
-        simd_width: Int, rank: Int, alignment: Int = 1
-    ](idx: IndexList[rank]):
+    def func[simd_width: Int, alignment: Int = 1](idx: Coord):
         pass
 
     # Verify the PTX entry point has the expected sanitized+hashed name.

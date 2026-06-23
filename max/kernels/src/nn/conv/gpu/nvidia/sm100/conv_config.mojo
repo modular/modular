@@ -378,9 +378,12 @@ struct Conv2dConfig[
     def _maximize_pipeline_stages_by_default(mut self):
         """Dynamically compute optimal pipeline stages based on SMEM budget.
 
-        This mirrors MatmulConfig._maximize_pipeline_stages_by_default() since
-        the SMEM layout is identical (activation/filter tiles, output tiles,
-        pipeline barriers, CLC storage).
+        This mirrors MatmulConfig._maximize_pipeline_stages_by_default() with
+        one conv-specific addition: source SMEM for the residual TMA loads.
+        Conv's epi_load warp pre-fetches `num_inner_stages = MMA_N / OutputN`
+        source sub-tiles per work item (see `conv_smem.mojo` SourceTiles),
+        so source SMEM has to be subtracted from the input-pipeline budget
+        or the kernel will overshoot the per-SM limit.
         """
         # B200 has 228KB SMEM per SM; reserve 1KB for misc overhead
         comptime b200_smem = B200.shared_memory_per_multiprocessor - 1024
@@ -394,6 +397,18 @@ struct Conv2dConfig[
         )
         # Add tmem addr (4 bytes) and tmem dealloc mbar (8 bytes)
         var output_smem_bytes = c_smem_bytes + 12
+
+        # Source SMEM for the residual path. The epilogue-load pipeline
+        # holds one (BM x OutputN) sub-tile per inner epilogue stage; sized
+        # for the worst case (residual enabled) so a single config works for
+        # both the residual and non-residual entry points.
+        var num_inner_stages = self.mma_shape[1] // self.output_tile_shape[1]
+        var source_smem_bytes = (
+            self.output_tile_shape[0]
+            * self.output_tile_shape[1]
+            * num_inner_stages
+            * size_of[Self.out_type]()
+        )
 
         # CLC pipeline: response 128B + clc mbar 16B + clc-load mbar 16B = 160B per stage
         var clc_smem_bytes = 160 * self.num_clc_pipeline_stages
@@ -421,6 +436,7 @@ struct Conv2dConfig[
         self.num_pipeline_stages = (
             b200_smem
             - output_smem_bytes
+            - source_smem_bytes
             - clc_smem_bytes
             - mma_output_smem_bytes
         ) // input_smem_per_stage

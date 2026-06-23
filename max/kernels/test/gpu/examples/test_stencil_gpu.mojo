@@ -91,50 +91,42 @@ def test_stencil_avg_pool(ctx: DeviceContext) raises:
 
     def map_fn_gpu(
         point: IndexList[stencil_rank, ...],
-    ) register_passable {} -> Tuple[
-        IndexList[stencil_rank], IndexList[stencil_rank]
-    ]:
+    ) {} -> Tuple[IndexList[stencil_rank], IndexList[stencil_rank]]:
         var lower_bound = IndexList[stencil_rank](point[0], point[1])
         var upper_bound = IndexList[stencil_rank](
             point[0] + pool_window_h, point[1] + pool_window_w
         )
         return lower_bound, upper_bound
 
-    def dilation_fn_gpu(dim: Int) register_passable {} -> Int:
+    def dilation_fn_gpu(dim: Int) {} -> Int:
         return 1
 
     @always_inline
     def load_fn_gpu[
         simd_width: Int, dtype: DType
-    ](point: IndexList[rank, ...]) register_passable {
-        var d_input,
-    } -> SIMD[
-        dtype, simd_width
-    ]:
+    ](point: IndexList[rank, ...]) {var d_input,} -> SIMD[dtype, simd_width]:
         return rebind[SIMD[dtype, simd_width]](
             d_input.load_linear[width=simd_width](point)
         )
 
     def avg_pool_compute_init_gpu[
         simd_width: Int
-    ]() register_passable {} -> SIMD[dtype, simd_width]:
+    ]() {} -> SIMD[dtype, simd_width]:
         return SIMD[dtype, simd_width](0)
 
     def avg_pool_compute_gpu[
-        simd_width: Int
+        simd_width: SIMDSize
     ](
         point: IndexList[rank, ...],
         val: SIMD[dtype, simd_width],
         result: SIMD[dtype, simd_width],
-    ) register_passable {} -> SIMD[dtype, simd_width]:
+    ) {} -> SIMD[dtype, simd_width]:
         return val + result
 
     @always_inline
     def avg_pool_compute_finalize_gpu[
-        simd_width: Int
-    ](
-        point: IndexList[rank, ...], val: SIMD[dtype, simd_width]
-    ) register_passable {
+        simd_width: SIMDSize
+    ](point: IndexList[rank, ...], val: SIMD[dtype, simd_width]) {
         var d_output,
     }:
         var res = val / (pool_window_h * pool_window_w)
@@ -195,7 +187,7 @@ def test_stencil_avg_pool(ctx: DeviceContext) raises:
         return SIMD[dtype, simd_width](0)
 
     def avg_pool_compute_cpu[
-        simd_width: Int
+        simd_width: SIMDSize
     ](
         point: IndexList[rank, ...],
         val: SIMD[dtype, simd_width],
@@ -205,7 +197,7 @@ def test_stencil_avg_pool(ctx: DeviceContext) raises:
 
     @always_inline
     def avg_pool_compute_finalize_ref[
-        simd_width: Int
+        simd_width: SIMDSize
     ](point: IndexList[rank, ...], val: SIMD[dtype, simd_width]) {
         var h_output_ref,
     }:
@@ -293,9 +285,7 @@ def test_stencil_avg_pool_padded(ctx: DeviceContext) raises:
 
     def map_fn_gpu(
         point: IndexList[stencil_rank, ...],
-    ) register_passable {} -> Tuple[
-        IndexList[stencil_rank], IndexList[stencil_rank]
-    ]:
+    ) {} -> Tuple[IndexList[stencil_rank], IndexList[stencil_rank]]:
         var lower_bound = IndexList[stencil_rank](
             point[0] - pad_h, point[1] - pad_w
         )
@@ -304,41 +294,35 @@ def test_stencil_avg_pool_padded(ctx: DeviceContext) raises:
         )
         return lower_bound, upper_bound
 
-    def dilation_fn_gpu(dim: Int) register_passable {} -> Int:
+    def dilation_fn_gpu(dim: Int) {} -> Int:
         return 1
 
     @always_inline
     def load_fn_gpu[
         simd_width: Int, dtype: DType
-    ](point: IndexList[rank, ...]) register_passable {
-        var d_input,
-    } -> SIMD[
-        dtype, simd_width
-    ]:
+    ](point: IndexList[rank, ...]) {var d_input,} -> SIMD[dtype, simd_width]:
         return rebind[SIMD[dtype, simd_width]](
             d_input.load_linear[width=simd_width](point)
         )
 
     def avg_pool_compute_init_gpu[
         simd_width: Int
-    ]() register_passable {} -> SIMD[dtype, simd_width]:
+    ]() {} -> SIMD[dtype, simd_width]:
         return SIMD[dtype, simd_width](0)
 
     def avg_pool_compute_gpu[
-        simd_width: Int
+        simd_width: SIMDSize
     ](
         point: IndexList[rank, ...],
         val: SIMD[dtype, simd_width],
         result: SIMD[dtype, simd_width],
-    ) register_passable {} -> SIMD[dtype, simd_width]:
+    ) {} -> SIMD[dtype, simd_width]:
         return val + result
 
     @always_inline
     def avg_pool_compute_finalize_gpu[
-        simd_width: Int
-    ](
-        point: IndexList[rank, ...], val: SIMD[dtype, simd_width]
-    ) register_passable {
+        simd_width: SIMDSize
+    ](point: IndexList[rank, ...], val: SIMD[dtype, simd_width]) {
         var d_output,
     }:
         var res = val / (pool_window_h * pool_window_w)
@@ -401,7 +385,7 @@ def test_stencil_avg_pool_padded(ctx: DeviceContext) raises:
         return SIMD[dtype, simd_width](0)
 
     def avg_pool_compute_cpu[
-        simd_width: Int
+        simd_width: SIMDSize
     ](
         point: IndexList[rank, ...],
         val: SIMD[dtype, simd_width],
@@ -411,7 +395,7 @@ def test_stencil_avg_pool_padded(ctx: DeviceContext) raises:
 
     @always_inline
     def avg_pool_compute_finalize_ref[
-        simd_width: Int
+        simd_width: SIMDSize
     ](point: IndexList[rank, ...], val: SIMD[dtype, simd_width]) {
         var h_output_ref,
     }:
@@ -498,9 +482,7 @@ def test_stencil_avg_pool_stride_2(ctx: DeviceContext) raises:
 
     def map_fn_gpu(
         point: IndexList[stencil_rank, ...],
-    ) register_passable {} -> Tuple[
-        IndexList[stencil_rank], IndexList[stencil_rank]
-    ]:
+    ) {} -> Tuple[IndexList[stencil_rank], IndexList[stencil_rank]]:
         var lower_bound = IndexList[stencil_rank](
             point[0] * stride, point[1] * stride
         )
@@ -510,41 +492,35 @@ def test_stencil_avg_pool_stride_2(ctx: DeviceContext) raises:
         )
         return lower_bound, upper_bound
 
-    def dilation_fn_gpu(dim: Int) register_passable {} -> Int:
+    def dilation_fn_gpu(dim: Int) {} -> Int:
         return 1
 
     @always_inline
     def load_fn_gpu[
         simd_width: Int, dtype: DType
-    ](point: IndexList[rank, ...]) register_passable {
-        var d_input,
-    } -> SIMD[
-        dtype, simd_width
-    ]:
+    ](point: IndexList[rank, ...]) {var d_input,} -> SIMD[dtype, simd_width]:
         return rebind[SIMD[dtype, simd_width]](
             d_input.load_linear[width=simd_width](point)
         )
 
     def avg_pool_compute_init_gpu[
         simd_width: Int
-    ]() register_passable {} -> SIMD[dtype, simd_width]:
+    ]() {} -> SIMD[dtype, simd_width]:
         return SIMD[dtype, simd_width](0)
 
     def avg_pool_compute_gpu[
-        simd_width: Int
+        simd_width: SIMDSize
     ](
         point: IndexList[rank, ...],
         val: SIMD[dtype, simd_width],
         result: SIMD[dtype, simd_width],
-    ) register_passable {} -> SIMD[dtype, simd_width]:
+    ) {} -> SIMD[dtype, simd_width]:
         return val + result
 
     @always_inline
     def avg_pool_compute_finalize_gpu[
-        simd_width: Int
-    ](
-        point: IndexList[rank, ...], val: SIMD[dtype, simd_width]
-    ) register_passable {
+        simd_width: SIMDSize
+    ](point: IndexList[rank, ...], val: SIMD[dtype, simd_width]) {
         var d_output,
     }:
         var res = val / (pool_window_h * pool_window_w)
@@ -608,7 +584,7 @@ def test_stencil_avg_pool_stride_2(ctx: DeviceContext) raises:
         return SIMD[dtype, simd_width](0)
 
     def avg_pool_compute_cpu[
-        simd_width: Int
+        simd_width: SIMDSize
     ](
         point: IndexList[rank, ...],
         val: SIMD[dtype, simd_width],
@@ -618,7 +594,7 @@ def test_stencil_avg_pool_stride_2(ctx: DeviceContext) raises:
 
     @always_inline
     def avg_pool_compute_finalize_ref[
-        simd_width: Int
+        simd_width: SIMDSize
     ](point: IndexList[rank, ...], val: SIMD[dtype, simd_width]) {
         var h_output_ref,
     }:
@@ -712,9 +688,7 @@ def test_stencil_gpu_max_pool(ctx: DeviceContext) raises:
 
     def map_fn_gpu(
         point: IndexList[stencil_rank, ...],
-    ) register_passable {} -> Tuple[
-        IndexList[stencil_rank], IndexList[stencil_rank]
-    ]:
+    ) {} -> Tuple[IndexList[stencil_rank], IndexList[stencil_rank]]:
         var lower_bound = IndexList[stencil_rank](
             point[0] * stride, point[1] * stride
         )
@@ -724,41 +698,35 @@ def test_stencil_gpu_max_pool(ctx: DeviceContext) raises:
         )
         return lower_bound, upper_bound
 
-    def dilation_fn_gpu(dim: Int) register_passable {} -> Int:
+    def dilation_fn_gpu(dim: Int) {} -> Int:
         return dilation
 
     @always_inline
     def load_fn_gpu[
         simd_width: Int, dtype: DType
-    ](point: IndexList[rank, ...]) register_passable {
-        var d_input,
-    } -> SIMD[
-        dtype, simd_width
-    ]:
+    ](point: IndexList[rank, ...]) {var d_input,} -> SIMD[dtype, simd_width]:
         return rebind[SIMD[dtype, simd_width]](
             d_input.load_linear[width=simd_width](point)
         )
 
     def max_pool_compute_init_gpu[
         simd_width: Int
-    ]() register_passable {} -> SIMD[dtype, simd_width]:
+    ]() {} -> SIMD[dtype, simd_width]:
         return min_or_neg_inf[dtype]()
 
     def max_pool_compute_gpu[
-        simd_width: Int
+        simd_width: SIMDSize
     ](
         point: IndexList[rank, ...],
         val: SIMD[dtype, simd_width],
         result: SIMD[dtype, simd_width],
-    ) register_passable {} -> SIMD[dtype, simd_width]:
+    ) {} -> SIMD[dtype, simd_width]:
         return max(val, result)
 
     @always_inline
     def max_pool_compute_finalize_gpu[
-        simd_width: Int
-    ](
-        point: IndexList[rank, ...], val: SIMD[dtype, simd_width]
-    ) register_passable {
+        simd_width: SIMDSize
+    ](point: IndexList[rank, ...], val: SIMD[dtype, simd_width]) {
         var d_output,
     }:
         d_output.store_linear(point, val)
@@ -821,7 +789,7 @@ def test_stencil_gpu_max_pool(ctx: DeviceContext) raises:
         return min_or_neg_inf[dtype]()
 
     def max_pool_compute_cpu[
-        simd_width: Int
+        simd_width: SIMDSize
     ](
         point: IndexList[rank, ...],
         val: SIMD[dtype, simd_width],
@@ -831,7 +799,7 @@ def test_stencil_gpu_max_pool(ctx: DeviceContext) raises:
 
     @always_inline
     def max_pool_compute_finalize_ref[
-        simd_width: Int
+        simd_width: SIMDSize
     ](point: IndexList[rank, ...], val: SIMD[dtype, simd_width]) {
         var h_output_ref,
     }:

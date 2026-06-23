@@ -74,13 +74,13 @@ def dynamic_dimensions():
     print("dynamic dimensions")
     comptime columns = 8
     var rows = 4
-    comptime comptime_int = Idx[columns]()  # Compile-time int
-    comptime comptime_int2 = Idx(4)  # Compile-time int from Int literal
-    var runtime_int = Idx(rows)  # Run-time int from dynamic value
-    var mixed_shape = Coord((Idx(rows), Idx[columns]()))  # Define a mixed Coord
-    var mixed_layout = row_major((Idx(rows), Idx[columns]()))
+    comptime comptime_int = Idx[columns]  # Compile-time int
+    comptime comptime_int2 = Idx[4]  # Compile-time int from Int literal
+    var runtime_int = rows  # Run-time int from dynamic value
+    var mixed_shape = Coord((rows, Idx[columns]))  # Define a mixed Coord
+    var mixed_layout = row_major((rows, Idx[columns]))
     print_layout(mixed_layout.to_layout())
-    var shape = Coord(Idx(rows), Idx[columns]())
+    var shape = Coord(rows, Idx[columns])
     var stride = coord[8, 1]()
     var layout2 = Layout(shape, stride)
     print_layout(layout2.to_layout())
@@ -93,7 +93,7 @@ def dynamic_dimensions():
     var row_major_runtime = row_major(coord[DType.int32]((a, b)))
 
     # Mixed layout with one run-time dimension and one compile-time dimension
-    var row_major_mixed = row_major((Idx(rows), Idx[columns]()))
+    var row_major_mixed = row_major((rows, Idx[columns]))
     # end-runtime-layout-example
     _, _, _, _, _ = (
         runtime_int,
@@ -111,7 +111,7 @@ def nested_coords():
     _ = runtime_coord
 
     # start-nested-coord-example
-    var shape1 = Coord((Idx[6](), Idx[8]()))
+    var shape1 = Coord((Idx[6], Idx[8]))
     var shape2 = Coord((coord[2, 2](), coord[3, 4]()))
     var shape3 = Coord((shape1, shape2))
     print(shape3)

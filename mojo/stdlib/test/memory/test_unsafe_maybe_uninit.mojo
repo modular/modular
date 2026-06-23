@@ -11,7 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.memory import UnsafeMaybeUninit, memcmp
+from std.memory import (
+    UnsafeMaybeUninit,
+    is_trivially_copyable,
+    is_trivially_destructible,
+    is_trivially_movable,
+    memcmp,
+)
 from std.sys import size_of
 from test_utils import (
     AbortOnDel,
@@ -101,14 +107,14 @@ def test_triviality() raises:
         ]
     ]
 
-    assert_true(Trivial.__copy_ctor_is_trivial)
-    assert_true(Trivial.__move_ctor_is_trivial)
-    assert_true(Trivial.__del__is_trivial)
+    assert_true(is_trivially_copyable[Trivial]())
+    assert_true(is_trivially_movable[Trivial]())
+    assert_true(is_trivially_destructible[Trivial]())
 
-    assert_false(NotTrivial.__copy_ctor_is_trivial)
-    assert_false(NotTrivial.__move_ctor_is_trivial)
+    assert_false(is_trivially_copyable[NotTrivial]())
+    assert_false(is_trivially_movable[NotTrivial]())
     # UnsafeMaybeUninit always has a trivial destructor
-    assert_true(NotTrivial.__del__is_trivial)
+    assert_true(is_trivially_destructible[NotTrivial]())
 
 
 def test_conditional_register_passable() raises:

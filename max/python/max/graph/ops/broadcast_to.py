@@ -17,7 +17,6 @@ from __future__ import annotations
 from collections.abc import Iterable
 
 from max._core.dialects import kgen, rmo
-from max.mlir.dialects import rmo as _rmo
 
 from ..dim import DimLike
 from ..graph import Graph
@@ -67,6 +66,7 @@ def broadcast_to(
             kgen.ParamDeclArrayAttr([]),
         )[0].tensor
 
-    return Graph.current._add_op(
-        _rmo.broadcast_to, x, new_shape=Shape(shape).to_mlir()
+    new_shape = Shape(shape)
+    return Graph.current._add_op_generated(
+        rmo.BroadcastToOp, input=x, new_shape=new_shape
     )[0].tensor

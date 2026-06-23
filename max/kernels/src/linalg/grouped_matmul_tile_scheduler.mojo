@@ -86,6 +86,7 @@ struct WorkInfo(TrivialRegisterPassable, Writable):
 # UMMA instructions need alignment on only the M dimension. When we use it, we
 # ought to enable swapAB for grouped matmul.
 struct TileScheduler[
+    group_offsets_origin: ImmutOrigin,
     offsets_layout: Layout,
     //,
     *,
@@ -100,7 +101,7 @@ struct TileScheduler[
 ](TrivialRegisterPassable):
     var num_active_experts: Int
     var group_offsets: LayoutTensor[
-        DType.uint32, Self.offsets_layout, ImmutAnyOrigin
+        DType.uint32, Self.offsets_layout, Self.group_offsets_origin
     ]
     var current_iter: Int32  # Tracks the scheduler's progress across kernel launches
     var current_group_idx: UInt32
@@ -125,7 +126,7 @@ struct TileScheduler[
         out self,
         num_active_experts: Int,
         group_offsets: LayoutTensor[
-            DType.uint32, Self.offsets_layout, ImmutAnyOrigin
+            DType.uint32, Self.offsets_layout, Self.group_offsets_origin
         ],
     ):
         comptime assert (
@@ -170,9 +171,6 @@ struct TileScheduler[
         var start_idx = rebind[Scalar[DType.uint32]](
             self.group_offsets[Int(self.current_group_idx)]
         )
-        var end_idx: UInt32 = 0
-        var num_dynamic_dim_blocks: UInt32 = 0
-        var current_dynamic_dim: UInt32 = 0
 
         # Trim to the next group
         while True:
@@ -286,10 +284,8 @@ struct TileScheduler[
         )
         comptime uint_type2 = div_num_blocks_in_group.uint_type
         m_block_idx = first_block_idx + UInt32(
-            rebind[Scalar[uint_type2]](in_group_idx) % div_num_blocks_in_group
+            in_group_idx % div_num_blocks_in_group
         )
-        n_block_idx = UInt32(
-            rebind[Scalar[uint_type2]](in_group_idx) / div_num_blocks_in_group
-        )
+        n_block_idx = UInt32(in_group_idx / div_num_blocks_in_group)
 
         return (m_block_idx, n_block_idx)

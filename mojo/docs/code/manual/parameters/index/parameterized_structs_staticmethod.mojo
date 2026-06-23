@@ -12,8 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 
-struct GenericArray[ElementType: Copyable & ImplicitlyDestructible]:
-    var data: UnsafePointer[Self.ElementType, MutExternalOrigin]
+struct GenericArray[ElementType: Copyable & ImplicitlyDeletable]:
+    var data: UnsafePointer[Self.ElementType, MutUntrackedOrigin]
     var size: Int
 
     def __init__(out self, var *elements: Self.ElementType):
@@ -46,7 +46,9 @@ struct GenericArray[ElementType: Copyable & ImplicitlyDestructible]:
 
 
 def main() raises:
+    # start-splat-usage
     var array = GenericArray[Float64].splat(8, 0)
+    # end-splat-usage
     for i in range(array.size):
         end = ", " if i < array.size - 1 else "\n"
         print(array[i], end=end)

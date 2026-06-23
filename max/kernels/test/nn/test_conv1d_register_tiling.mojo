@@ -55,16 +55,15 @@ comptime input_shape = row_major[N, W, C]()
 comptime filter_shape = row_major[num_micro_tile, S, C, micro_kernel_f_size]()
 
 
-@export(ABI="C")
 def conv1d_register_tiling(
-    output: UnsafePointer[Scalar[type], MutAnyOrigin],
-    input: UnsafePointer[Scalar[type], MutAnyOrigin],
-    filter: UnsafePointer[Scalar[type], MutAnyOrigin],
+    output: UnsafePointer[mut=True, Scalar[type], _],
+    input: UnsafePointer[mut=False, Scalar[type], _],
+    filter: UnsafePointer[mut=False, Scalar[type], _],
     c_tile_size: Int,
     f_tile_offset: Int,
     f_tile_size: Int,
     wo: Int,
-):
+) abi("C"):
     var conv_shape = ConvShape[2](
         n=N,
         input_dims=Index(H, W),
@@ -143,20 +142,18 @@ def test_conv1d_register_tiling() raises:
         wo,
     )
 
-    var actual = output.load[width=simd_size](
-        (Idx(0), Idx(wo), Idx(f_tile_size))
-    )
+    var actual = output.load[width=simd_size]((Idx[0], wo, f_tile_size))
     var expect = SIMD[type, simd_size](R * S * c_tile_size)
     assert_equal(expect, actual)
 
     actual = output.load[width=simd_size](
-        (Idx(0), Idx(wo + micro_kernel_height - 1), Idx(f_tile_size))
+        (Idx[0], wo + micro_kernel_height - 1, f_tile_size)
     )
 
     assert_equal(expect, actual)
 
     actual = output.load[width=simd_size](
-        (Idx(0), Idx(wo + micro_kernel_height), Idx(f_tile_size))
+        (Idx[0], wo + micro_kernel_height, f_tile_size)
     )
 
     assert_equal(SIMD[type, simd_size](0), actual)

@@ -266,7 +266,7 @@ def run_mma_fp32_tf32(
     @parameter
     def run_func_mma(ctx: DeviceContext) raises:
         comptime kernel = mma_kernel_fp32_tf32
-        ctx.enqueue_function_experimental[kernel](
+        ctx.enqueue_function[kernel](
             c_device,
             a_device,
             b_device,
@@ -295,23 +295,23 @@ def run_mma_fp32_tf32(
 
     # Create TileTensors for the naive kernel.
     # a/b are constructed as immutable to match the ImmutAnyOrigin
-    # parameters that matmul_kernel_naive expects (enqueue_function_experimental
+    # parameters that matmul_kernel_naive expects (enqueue_function
     # requires exact type matches).
     var c_tt = TileTensor(
         c_device_ref,
-        row_major(Coord(Idx(M), Idx(N))),
+        row_major(Coord(M, N)),
     )
     var a_tt = TileTensor(
         UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin](
             unsafe_from_address=Int(a_device_ref.unsafe_ptr())
         ),
-        row_major(Coord(Idx(M), Idx(K))),
+        row_major(Coord(M, K)),
     )
     var b_tt = TileTensor(
         UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin](
             unsafe_from_address=Int(b_device_ref.unsafe_ptr())
         ),
-        row_major(Coord(Idx(K), Idx(N))),
+        row_major(Coord(K, N)),
     )
 
     @always_inline
@@ -326,7 +326,7 @@ def run_mma_fp32_tf32(
             type_of(b_tt).LayoutType,
             BLOCK_DIM,
         ]
-        ctx.enqueue_function_experimental[kernel](
+        ctx.enqueue_function[kernel](
             c_tt,
             a_tt,
             b_tt,
@@ -437,7 +437,7 @@ def run_mma_fp32_bf16(
     @parameter
     def run_func_mma(ctx: DeviceContext) raises:
         comptime kernel = mma_kernel_fp32_bf16
-        ctx.enqueue_function_experimental[kernel](
+        ctx.enqueue_function[kernel](
             c_device,
             a_device,
             b_device,
@@ -467,19 +467,19 @@ def run_mma_fp32_bf16(
     # Create TileTensors for the naive kernel.
     var c_tt = TileTensor(
         c_device_ref,
-        row_major(Coord(Idx(M), Idx(N))),
+        row_major(Coord(M, N)),
     )
     var a_tt = TileTensor(
         UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin](
             unsafe_from_address=Int(a_device_ref.unsafe_ptr())
         ),
-        row_major(Coord(Idx(M), Idx(K))),
+        row_major(Coord(M, K)),
     )
     var b_tt = TileTensor(
         UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin](
             unsafe_from_address=Int(b_device_ref.unsafe_ptr())
         ),
-        row_major(Coord(Idx(K), Idx(N))),
+        row_major(Coord(K, N)),
     )
 
     @always_inline
@@ -494,7 +494,7 @@ def run_mma_fp32_bf16(
             type_of(b_tt).LayoutType,
             BLOCK_DIM,
         ]
-        ctx.enqueue_function_experimental[kernel](
+        ctx.enqueue_function[kernel](
             c_tt,
             a_tt,
             b_tt,
@@ -603,7 +603,7 @@ def run_mma_fp32_bf16_2(
     @parameter
     def run_func_mma(ctx: DeviceContext) raises:
         comptime kernel = mma_kernel_fp32_bf16_2
-        ctx.enqueue_function_experimental[kernel](
+        ctx.enqueue_function[kernel](
             c_device,
             a_device,
             b_device,
@@ -633,19 +633,19 @@ def run_mma_fp32_bf16_2(
     # Create TileTensors for the naive kernel.
     var c_tt = TileTensor(
         c_device_ref,
-        row_major(Coord(Idx(M), Idx(N))),
+        row_major(Coord(M, N)),
     )
     var a_tt = TileTensor(
         UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin](
             unsafe_from_address=Int(a_device_ref.unsafe_ptr())
         ),
-        row_major(Coord(Idx(M), Idx(K))),
+        row_major(Coord(M, K)),
     )
     var b_tt = TileTensor(
         UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin](
             unsafe_from_address=Int(b_device_ref.unsafe_ptr())
         ),
-        row_major(Coord(Idx(K), Idx(N))),
+        row_major(Coord(K, N)),
     )
 
     @always_inline
@@ -660,7 +660,7 @@ def run_mma_fp32_bf16_2(
             type_of(b_tt).LayoutType,
             BLOCK_DIM,
         ]
-        ctx.enqueue_function_experimental[kernel](
+        ctx.enqueue_function[kernel](
             c_tt,
             a_tt,
             b_tt,
@@ -769,7 +769,7 @@ def run_mma_fp32_fp16(
     @parameter
     def run_func_mma(ctx: DeviceContext) raises:
         comptime kernel = mma_kernel_fp32_fp16
-        ctx.enqueue_function_experimental[kernel](
+        ctx.enqueue_function[kernel](
             c_device,
             a_device,
             b_device,
@@ -799,19 +799,19 @@ def run_mma_fp32_fp16(
     # Create TileTensors for the naive kernel.
     var c_tt = TileTensor(
         c_device_ref,
-        row_major(Coord(Idx(M), Idx(N))),
+        row_major(Coord(M, N)),
     )
     var a_tt = TileTensor(
         UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin](
             unsafe_from_address=Int(a_device_ref.unsafe_ptr())
         ),
-        row_major(Coord(Idx(M), Idx(K))),
+        row_major(Coord(M, K)),
     )
     var b_tt = TileTensor(
         UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin](
             unsafe_from_address=Int(b_device_ref.unsafe_ptr())
         ),
-        row_major(Coord(Idx(K), Idx(N))),
+        row_major(Coord(K, N)),
     )
 
     @always_inline
@@ -826,7 +826,7 @@ def run_mma_fp32_fp16(
             type_of(b_tt).LayoutType,
             BLOCK_DIM,
         ]
-        ctx.enqueue_function_experimental[kernel](
+        ctx.enqueue_function[kernel](
             c_tt,
             a_tt,
             b_tt,
@@ -935,7 +935,7 @@ def run_mma_fp16_fp16(
     @parameter
     def run_func_mma(ctx: DeviceContext) raises:
         comptime kernel = mma_kernel_fp16_fp16
-        ctx.enqueue_function_experimental[kernel](
+        ctx.enqueue_function[kernel](
             c_device,
             a_device,
             b_device,
@@ -965,19 +965,19 @@ def run_mma_fp16_fp16(
     # Create TileTensors for the naive kernel.
     var c_tt = TileTensor(
         c_device_ref,
-        row_major(Coord(Idx(M), Idx(N))),
+        row_major(Coord(M, N)),
     )
     var a_tt = TileTensor(
         UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin](
             unsafe_from_address=Int(a_device_ref.unsafe_ptr())
         ),
-        row_major(Coord(Idx(M), Idx(K))),
+        row_major(Coord(M, K)),
     )
     var b_tt = TileTensor(
         UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin](
             unsafe_from_address=Int(b_device_ref.unsafe_ptr())
         ),
-        row_major(Coord(Idx(K), Idx(N))),
+        row_major(Coord(K, N)),
     )
 
     @always_inline
@@ -992,7 +992,7 @@ def run_mma_fp16_fp16(
             type_of(b_tt).LayoutType,
             BLOCK_DIM,
         ]
-        ctx.enqueue_function_experimental[kernel](
+        ctx.enqueue_function[kernel](
             c_tt,
             a_tt,
             b_tt,

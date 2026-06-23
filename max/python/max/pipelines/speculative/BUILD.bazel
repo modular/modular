@@ -1,0 +1,15 @@
+load("//bazel:api.bzl", "modular_py_library", "requirement")
+
+package(default_visibility = ["//max:consumers"])
+
+modular_py_library(
+    name = "speculative",
+    srcs = glob(["**/*.py"]),
+    deps = [
+        "//max/python/max/config",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        requirement("pydantic"),
+    ],
+)

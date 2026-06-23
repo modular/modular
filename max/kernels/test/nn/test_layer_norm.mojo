@@ -66,14 +66,14 @@ def run_layer_norm_cpu[
     def gamma_fn[
         width: Int, rank: Int, alignment: Int
     ](coords: IndexList[rank]) -> SIMD[dtype, width]:
-        var idx = gamma.layout(Idx(coords[0]))
+        var idx = gamma.layout(coords[0])
         return gamma.raw_load[width=width, alignment=alignment](idx)
 
     @__copy_capture(output_buf)
     @always_inline
     @parameter
     def output_fn[
-        width: Int, _rank: Int, alignment: Int
+        width: SIMDSize, _rank: Int, alignment: Int
     ](coords: IndexList[_rank], val: SIMD[dtype, width]):
         var idx = output_buf.layout(Coord(coords))
         output_buf.raw_store[width=width, alignment=alignment](
@@ -85,7 +85,7 @@ def run_layer_norm_cpu[
     for r, c in product(range(rows), range(cols)):
         var vec = TileTensor(
             input_ptr.unsafe_ptr() + r * cols,
-            row_major(Idx(cols)),
+            row_major(cols),
         )
         var mean_ref = mean(vec)
         var var_ref = variance(vec, correction=0)

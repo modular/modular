@@ -10,6 +10,7 @@ package(default_visibility = [
 _QUANTIZED_TESTS = [
     "test_ep_moe_fp4.py",
     "test_ep_moe_fp8.py",
+    "test_ep_moe_mxfp8.py",
 ]
 
 _COMMON_ENV = select({
@@ -76,7 +77,7 @@ modular_py_test(
     srcs = _QUANTIZED_TESTS + ["conftest.py"],
     env = _COMMON_ENV,
     exec_properties = {
-        "test.resources:gpu-memory": "12",
+        "test.resources:gpu-memory": "18",
     },
     gpu_constraints = [
         "//:has_multi_gpu",

@@ -64,7 +64,7 @@ from std.gpu.host.info import _is_sm10x_gpu
 
 from std.utils import StaticTuple
 
-from .device_query import dispatch_max_num_blocks, CommTuningConfig
+from .device_query import dispatch_select_comm_config, DefaultCommTuningConfig
 from internal_utils import Table
 
 from .reducescatter import _target_address_space
@@ -79,28 +79,28 @@ from .sync import (
 # Tuning table to get num_blocks for allgather.
 # Arch-specific defaults use ngpus=-1, num_bytes=-1 with the arch's sm_version.
 # The global default (sm_version="default") is the ultimate fallback for
-# unknown architectures -- dispatch_max_num_blocks prefers arch-specific
+# unknown architectures -- dispatch_select_comm_config prefers arch-specific
 # defaults when available.
 comptime allgather_tuning_table = Table(
     [
         # default for sm90 (encoded with ngpus=-1, num_bytes=-1)
-        CommTuningConfig(
+        DefaultCommTuningConfig(
             ngpus=-1, num_bytes=-1, sm_version="sm_90a", num_blocks=216
         ),
         # default for sm100 (encoded with ngpus=-1, num_bytes=-1)
-        CommTuningConfig(
+        DefaultCommTuningConfig(
             ngpus=-1, num_bytes=-1, sm_version="sm_100a", num_blocks=512
         ),
         # default for sm103 (B300, encoded with ngpus=-1, num_bytes=-1)
-        CommTuningConfig(
+        DefaultCommTuningConfig(
             ngpus=-1, num_bytes=-1, sm_version="sm_103a", num_blocks=512
         ),
         # default for CDNA4 (MI355X, encoded with ngpus=-1, num_bytes=-1)
-        CommTuningConfig(
+        DefaultCommTuningConfig(
             ngpus=-1, num_bytes=-1, sm_version="CDNA4", num_blocks=216
         ),
         # global default for unknown architectures
-        CommTuningConfig(
+        DefaultCommTuningConfig(
             ngpus=-1, num_bytes=-1, sm_version="default", num_blocks=512
         ),
     ],
@@ -162,7 +162,7 @@ def _allgather_naive[
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(BLOCK_SIZE))
 )
-@__name(t"allgather_p2p_{dtype}", mangle=True)
+@__name(t"allgather_p2p_{dtype}")
 def _allgather_p2p_kernel[
     dtype: DType,
     rank: Int,
@@ -247,7 +247,7 @@ def _allgather_p2p_kernel[
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(BLOCK_SIZE))
 )
-@__name(t"allgather_p2p_tma_{dtype}", mangle=True)
+@__name(t"allgather_p2p_tma_{dtype}")
 def _allgather_tma_kernel[
     dtype: DType,
     ngpus: Int,
@@ -387,7 +387,7 @@ def _allgather_p2p_tma[
         BLOCK_SIZE=TMA_BLOCK_SIZE,
         BYTES_PER_COPY=TMA_BYTES_PER_COPY,
     ]
-    ctx.enqueue_function_experimental[tma_kernel](
+    ctx.enqueue_function[tma_kernel](
         output_ptrs,
         list_of_in_ptrs,
         rank_sigs,
@@ -396,7 +396,7 @@ def _allgather_p2p_tma[
         grid_dim=tma_grid,
         block_dim=TMA_BLOCK_SIZE,
         shared_mem_bytes=tma_smem,
-        attributes=pdl_launch_attributes(PDLLevel(1)),
+        attributes=pdl_launch_attributes(PDLLevel.ON),
     )
     return
 
@@ -472,9 +472,9 @@ def _allgather_p2p[
 
     comptime sm_version = ctx.default_device_info.version
     var max_num_blocks = _max_num_blocks.or_else(
-        dispatch_max_num_blocks[ngpus, sm_version, allgather_tuning_table](
+        dispatch_select_comm_config[ngpus, sm_version, allgather_tuning_table](
             max_length * size_of[dtype]()
-        )
+        ).get_num_blocks()
     )
 
     comptime simd_width = simd_width_of[dtype, target=get_gpu_target()]()
@@ -491,7 +491,7 @@ def _allgather_p2p[
         ngpus,
         BLOCK_SIZE=BLOCK_SIZE,
     ]
-    ctx.enqueue_function[allgather_p2p_kernel, allgather_p2p_kernel](
+    ctx.enqueue_function[allgather_p2p_kernel](
         output_ptrs,
         list_of_in_ptrs,
         rank_sigs,
@@ -500,7 +500,7 @@ def _allgather_p2p[
         my_rank,
         grid_dim=grid_size,
         block_dim=BLOCK_SIZE,
-        attributes=pdl_launch_attributes(PDLLevel(1)),
+        attributes=pdl_launch_attributes(PDLLevel.ON),
     )
 
 

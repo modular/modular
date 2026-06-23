@@ -12,15 +12,15 @@
 # ===----------------------------------------------------------------------=== #
 """FlashInfer FP4 GEMM custom op for loading TVM FFI modules."""
 
-import compiler_internal as compiler
+import extensibility as compiler
 import std.format
 from std.gpu.host import DeviceContext
 from std.gpu.host._nvidia_cuda import CUstream
 from std.memory import Span, stack_allocation
 from std.os import abort
-from std.runtime.asyncrt import DeviceContextPtr
+
 from std.ffi import OwnedDLHandle
-from tensor import InputTensor, OutputTensor, ManagedTensorSlice
+from extensibility import InputTensor, OutputTensor, ManagedTensorSlice
 from std.utils import IndexList
 
 from .dlpack import DLTensor
@@ -108,7 +108,7 @@ struct FlashInferFP4Gemm[lib_path: StaticString]:
         mat2_scale: InputTensor[dtype=DType.uint8, rank=1, ...],
         global_scale: InputTensor[dtype=DType.float32, rank=1, ...],
         workspace: InputTensor[dtype=DType.int8, rank=1, ...],
-        ctx: DeviceContextPtr,
+        ctx: DeviceContext,
     ) raises:
         """Execute the FP4 GEMM operation by calling FlashInfer."""
         comptime assert [target == "gpu"]

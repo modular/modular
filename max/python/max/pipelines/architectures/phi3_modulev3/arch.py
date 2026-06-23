@@ -12,12 +12,13 @@
 # ===----------------------------------------------------------------------=== #
 
 from max.graph.weights import WeightsFormat
-from max.interfaces import PipelineTask
-from max.pipelines.core import TextContext
+from max.pipelines.context import TextContext
+from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
 from max.pipelines.lib import (
     SupportedArchitecture,
     TextTokenizer,
 )
+from max.pipelines.modeling.types import PipelineTask
 
 from ..llama3.model_config import Llama3Config
 from ..llama3.weight_adapters import convert_gguf_state_dict
@@ -44,4 +45,5 @@ phi3_modulev3_arch = SupportedArchitecture(
         WeightsFormat.gguf: convert_gguf_state_dict,
     },
     config=Llama3Config,
+    memory_planner=PagedMemoryPlanner,
 )

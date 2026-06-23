@@ -22,7 +22,8 @@ from std.algorithm.reduction import _reduce_generator, max, min
 from std.math.math import max as _max, min as _min
 from std.testing import TestSuite
 
-from std.utils.index import Index, IndexList, StaticTuple
+from std.utils.index import IndexList, StaticTuple
+from std.utils.coord import Coord
 
 
 # CHECK-LABEL: test_reductions
@@ -118,14 +119,13 @@ def test_fused_reductions_inner() raises:
     var init = StaticTuple[Scalar[test_type], num_reductions](
         init_min, init_max, 0
     )
-    var shape = Index(size)
+    var shape = Coord((size,))
 
     _reduce_generator[
-        num_reductions, test_type, input_fn, output_fn, reduce_fn
+        num_reductions, test_type, input_fn, output_fn, reduce_fn, reduce_dim=0
     ](
         shape,
         init=init,
-        reduce_dim=0,
     )
 
     # CHECK: 1.0
@@ -187,7 +187,7 @@ def test_fused_reductions_outer() raises:
     var init = StaticTuple[Scalar[test_type], num_reductions](
         init_min, init_max, 0
     )
-    var shape = IndexList[2](50, 2)
+    var shape = Coord((50, 2))
 
     @always_inline
     @parameter
@@ -211,11 +211,10 @@ def test_fused_reductions_outer() raises:
         )
 
     _reduce_generator[
-        num_reductions, test_type, input_fn, output_fn, reduce_fn
+        num_reductions, test_type, input_fn, output_fn, reduce_fn, reduce_dim=0
     ](
         shape,
         init=init,
-        reduce_dim=0,
     )
 
 

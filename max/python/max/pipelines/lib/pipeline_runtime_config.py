@@ -18,14 +18,17 @@ from __future__ import annotations
 import os
 
 from max.config import ConfigFileModel
-from max.serve.worker_interface.zmq_queue import generate_zmq_ipc_path
+from max.pipelines.diffusion.cache import DenoisingCacheConfig
+from max.pipelines.modeling.config_enums import PipelineRole
 from pydantic import Field, PrivateAttr
-
-from .config.config_enums import PipelineRole
-from .interfaces.cache_mixin import DenoisingCacheConfig
 
 # Default max batch input tokens for chunked prefill and memory estimation.
 DEFAULT_MAX_BATCH_INPUT_TOKENS = 8192
+
+# Sentinel value users can pass to ``reasoning_parser`` / ``tool_parser`` to
+# explicitly disable the parser, overriding any architecture default. The value
+# is matched case-insensitively (e.g. ``"none"``, ``"None"``, ``"NONE"``).
+DISABLE_PARSER_SENTINEL = "none"
 
 
 class PipelineRuntimeConfig(ConfigFileModel):
@@ -66,8 +69,7 @@ class PipelineRuntimeConfig(ConfigFileModel):
             "Soft floor on the decode batch size. If the TG batch size is "
             "larger, the scheduler continues TG batches; if it falls below, the "
             "scheduler prioritizes CE. This is not a strict minimum. By "
-            "default, this is ``max_queue_size_tg``. Experimental for the TTS "
-            "scheduler."
+            "default, this is ``max_queue_size_tg``."
         ),
     )
 
@@ -90,8 +92,7 @@ class PipelineRuntimeConfig(ConfigFileModel):
     ce_delay_ms: float = Field(
         default=0.0,
         description=(
-            "Duration of scheduler sleep prior to starting a prefill batch. "
-            "Experimental for the TTS scheduler."
+            "Duration of scheduler sleep prior to starting a prefill batch."
         ),
     )
 
@@ -100,7 +101,7 @@ class PipelineRuntimeConfig(ConfigFileModel):
         description=(
             "When enabled, the scheduler always runs a TG batch immediately "
             "after a CE batch with the same requests. This may reduce "
-            "time-to-first-chunk latency. Experimental for the TTS scheduler."
+            "time-to-first-chunk latency."
         ),
     )
 
@@ -121,12 +122,12 @@ class PipelineRuntimeConfig(ConfigFileModel):
     )
 
     max_num_steps: int = Field(
-        default=-1,
+        default=1,
         description=(
-            "The number of steps to run for multi-step scheduling. ``-1`` "
-            "specifies a default value based on configuration and platform. "
-            "Ignored for models which are not auto-regressive (for example, "
-            "embedding models)."
+            "Deprecated. Multi-step pipeline execution is no longer supported; "
+            "the pipeline always runs single-step decode. Values other than "
+            "``1`` (including the legacy default ``-1``) are ignored after "
+            "logging a warning."
         ),
     )
 
@@ -166,20 +167,11 @@ class PipelineRuntimeConfig(ConfigFileModel):
     custom_architectures: list[str] = Field(
         default_factory=list,
         description=(
-            "Custom architecture implementations to register. Each input can "
-            "either be a raw module name or an import path followed by a colon "
-            "and the module name. Each module must expose an ``ARCHITECTURES`` list "
-            "of architectures to register."
-        ),
-    )
-
-    zmq_endpoint_base: str = Field(
-        default_factory=generate_zmq_ipc_path,
-        description=(
-            "Prefix for ZMQ endpoints used for IPC. This ensures unique "
-            "endpoints across MAX Serve instances on the same host. Example: "
-            "``lora_request_zmq_endpoint = "
-            'f"{zmq_endpoint_base}-lora_request"``.'
+            "Custom architecture implementations to register. Each input is "
+            "either a path to a single custom-architecture module directory "
+            "or an ``IMPORT_PATH:MODULE_NAME`` colon-form. Each module must "
+            "expose a top-level ``ARCHITECTURES`` list of "
+            "``SupportedArchitecture`` instances."
         ),
     )
 
@@ -237,6 +229,20 @@ class PipelineRuntimeConfig(ConfigFileModel):
         ),
     )
 
+    decode_request_ttl_s: float | None = Field(
+        default=float(os.environ["MODULAR_DECODE_REQUEST_TTL_S"])
+        if "MODULAR_DECODE_REQUEST_TTL_S" in os.environ
+        else None,
+        description=(
+            "Per-request TTL in seconds for the decode-side ``prefill_reqs`` "
+            "and ``inflight_transfers`` dicts. Entries older than this are "
+            "evicted individually (KV blocks released, failure surfaced to "
+            "the client) before the stall watchdog fires. ``None`` (the "
+            "default) disables eviction. Set with the "
+            "``MODULAR_DECODE_REQUEST_TTL_S`` environment variable."
+        ),
+    )
+
     enable_overlap_scheduler: bool = Field(
         default=False,
         description=(
@@ -246,6 +252,26 @@ class PipelineRuntimeConfig(ConfigFileModel):
             "This feature will be enabled by default for some selected architectures. "
             "You can forcibly disable this by setting "
             "``--no-enable-overlap-scheduler --force``."
+        ),
+    )
+
+    allow_unsupported_logprobs: bool = Field(
+        default=False,
+        description=(
+            "When ``True``, OpenAI-compatible requests that ask for "
+            "``logprobs`` against a runtime configuration that cannot honor "
+            "them will raise a warning, and served as if ``logprobs`` were not "
+            "requested. Each response chunk carries ``logprobs: null``. "
+            "When ``False`` (default), such requests are rejected with a 400."
+        ),
+    )
+
+    allow_extra_request_fields: bool = Field(
+        default=False,
+        description=(
+            "When ``True``, unknown top-level fields on OpenAI-compatible "
+            "request bodies are dropped with a warning before pydantic "
+            " validation, instead of producing a 400."
         ),
     )
 
@@ -264,15 +290,44 @@ class PipelineRuntimeConfig(ConfigFileModel):
         description=(
             "Name of the reasoning output parser. The parser extracts "
             "thinking blocks to populate the ``reasoning`` field in chat "
-            "completion responses."
+            "completion responses. When unset, the server applies the "
+            "architecture's default reasoning parser, if any. Pass "
+            '``"none"`` (case-insensitive) to explicitly disable reasoning '
+            "parsing even when the architecture declares a default."
         ),
     )
 
-    # TODO(SERVSYS-1096): Remove this field once we've reworked how required
-    # config fields are validated.
-    defer_resolve: bool = Field(
-        default=False,
-        description="Whether to defer resolving the pipeline config.",
+    tool_parser: str | None = Field(
+        default=None,
+        description=(
+            "Name of the tool call parser. The parser extracts tool calls "
+            "from model output in chat completion responses. When unset, "
+            "the server applies the architecture's default tool parser, "
+            'if any. Pass ``"none"`` (case-insensitive) to explicitly '
+            "disable tool parsing even when the architecture declares a "
+            "default."
+        ),
+    )
+
+    temperature: float | None = Field(
+        default=None,
+        description=(
+            "Default sampling temperature. Controls randomness of token selection—"
+            "higher values (e.g. 1.0) produce more random outputs, lower values "
+            "(e.g. 0.2) produce more deterministic outputs. When set, this "
+            "server-level default applies to all requests that do not explicitly "
+            "provide ``temperature``."
+        ),
+    )
+
+    thinking_temperature: float | None = Field(
+        default=None,
+        description=(
+            "Default temperature override for tokens inside ``<think>...</think>`` "
+            "blocks. When set, this server-level default applies to all requests "
+            "that do not explicitly provide ``thinking_temperature``. Requires "
+            "a reasoning parser to be configured; ignored otherwise."
+        ),
     )
 
     max_vision_cache_entries: int = Field(
@@ -289,7 +344,7 @@ class PipelineRuntimeConfig(ConfigFileModel):
         default_factory=DenoisingCacheConfig,
         description=(
             "Cache configuration for diffusion model denoising "
-            "(FBCache, TaylorSeer, TeaCache)."
+            "(FBCache, TaylorSeer)."
         ),
     )
 

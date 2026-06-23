@@ -22,7 +22,6 @@ def test_fp8_constructor(ctx: DeviceContext) raises:
     # CHECK: store i8 85, ptr %{{.*}}, align 1
     _ = ctx.compile_function[
         kernel,
-        kernel,
         dump_llvm=True,
         dump_asm=True,
     ]()
