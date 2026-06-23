@@ -1240,6 +1240,16 @@ class MAXModelConfig(MAXModelConfigBase):
                     encoding=self._applied_dtype_cast_from
                 )
 
+            if not weight_files and self.quantization_encoding in (
+                "float16",
+                "bfloat16",
+            ):
+                # A float16/bfloat16 graph can load float32 weights cast at
+                # load time by the architecture's weight adapter.
+                weight_files = self.huggingface_weight_repo.files_for_encoding(
+                    encoding="float32"
+                )
+
             if default_weight_files := weight_files.get(
                 default_weights_format, []
             ):

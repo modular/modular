@@ -24,6 +24,7 @@ from kv_cache.types import (
     PagedKVCacheCollection,
 )
 from layout import (
+    Coord,
     Layout,
     LayoutTensor,
     RuntimeLayout,
@@ -1071,15 +1072,38 @@ def rms_norm_kv_cache_ragged_paged[
         + String(kv_collection.kv_params.head_size),
         task_id=get_safe_task_id(context),
     ):
+        # `_rms_norm_impl` migrated to a `Coord` boundary (softmax PR #88203).
+        # The cache lambdas do runtime `idx[0]/idx[1]/idx[2]` subscripts, which
+        # `Coord` cannot express, so they stay IndexList-form; wrap them to the
+        # `Coord` interface here (`coord_to_index_list` recovers the runtime
+        # IndexList the cache logic subscripts) and pass `Coord(shape)`.
+        @parameter
+        @always_inline
+        def key_cache_input_fn_coord[
+            width: Int
+        ](coords: Coord) -> SIMD[dtype, width]:
+            return key_cache_input_fn[width, rank](
+                rebind[IndexList[rank]](coord_to_index_list(coords))
+            )
+
+        @parameter
+        @always_inline
+        def key_cache_output_fn_coord[
+            width: SIMDSize, alignment: Int
+        ](coords: Coord, val: SIMD[dtype, width]) -> None:
+            key_cache_output_fn[width, alignment](
+                rebind[IndexList[rank]](coord_to_index_list(coords)), val
+            )
+
         _rms_norm_impl[
             dtype,
             rank,
-            key_cache_input_fn,
-            key_cache_output_fn,
+            key_cache_input_fn_coord,
+            key_cache_output_fn_coord,
             target=target,
             multiply_before_cast=multiply_before_cast,
         ](
-            shape,
+            Coord(shape),
             gamma,
             epsilon,
             weight_offset,
@@ -1220,15 +1244,36 @@ def rms_norm_value_cache_ragged_paged[
         + String(kv_collection.kv_params.head_size),
         task_id=get_safe_task_id(context),
     ):
+        # See `rms_norm_key_cache_ragged_paged` above: cache lambdas stay
+        # IndexList-form (runtime index subscripts) and are wrapped to the
+        # `Coord` boundary `_rms_norm_impl` now expects.
+        @parameter
+        @always_inline
+        def value_cache_input_fn_coord[
+            width: Int
+        ](coords: Coord) -> SIMD[dtype, width]:
+            return value_cache_input_fn[width, rank](
+                rebind[IndexList[rank]](coord_to_index_list(coords))
+            )
+
+        @parameter
+        @always_inline
+        def value_cache_output_fn_coord[
+            width: SIMDSize, alignment: Int
+        ](coords: Coord, val: SIMD[dtype, width]) -> None:
+            value_cache_output_fn[width, alignment](
+                rebind[IndexList[rank]](coord_to_index_list(coords)), val
+            )
+
         _rms_norm_impl[
             dtype,
             rank,
-            value_cache_input_fn,
-            value_cache_output_fn,
+            value_cache_input_fn_coord,
+            value_cache_output_fn_coord,
             target=target,
             multiply_before_cast=multiply_before_cast,
         ](
-            shape,
+            Coord(shape),
             gamma,
             epsilon,
             weight_offset,

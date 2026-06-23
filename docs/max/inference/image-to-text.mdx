@@ -91,6 +91,17 @@ Use `video_url` to pass a video:
 Both `image_url` and `video_url` also accept base64-encoded data URIs
 (such as `data:image/jpeg;base64,...` or `data:video/mp4;base64,...`).
 
+The `image_url` object also accepts an optional `max_long_side_pixel` integer
+sizing hint, which downscales the image so its longest side is at most that many
+pixels before the model processes it:
+
+```json
+"image_url": {
+  "url": "https://example.com/path/to/image.jpg",
+  "max_long_side_pixel": 1024
+}
+```
+
 ### Local file input
 
 To use local images or videos, you must configure allowed directories before

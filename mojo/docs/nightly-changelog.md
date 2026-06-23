@@ -50,6 +50,9 @@ This version is still a work in progress.
 
 ## Language changes
 
+- Relative imports must now use `from` (`from . import foo`); the `import .foo`
+  form is no longer accepted.
+
 ## Library changes
 
 - `Int` is now an alias for `Scalar[DType.int]` and integer literals materialize

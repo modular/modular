@@ -39,7 +39,7 @@ from std.testing import assert_true
 
 from comm import Signal, MAX_GPUS
 from comm.scatter import scatter
-from comm.sync import enable_p2p
+from comm.sync import enable_p2p, init_signal_buffer
 
 comptime dtype = DType.uint32
 
@@ -116,7 +116,7 @@ def _test_pull[
     )
     for i in range(ngpus):
         var sig_buf = ctxs[i].create_buffer_sync[DType.uint8](size_of[Signal]())
-        ctxs[i].enqueue_memset[DType.uint8](sig_buf, 0)
+        init_signal_buffer(sig_buf, ctxs[i])
         ctxs[i].synchronize()
         rank_sigs[i] = (
             sig_buf.unsafe_ptr().bitcast[Signal]().as_unsafe_any_origin()
