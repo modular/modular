@@ -3668,13 +3668,15 @@ parseAliasDeclTargetsExpr(ParserBase &p,
   if (p.getLexer().getToken().isIdentifier()) {
     LexerCursor cursor(p.getLexer());
     result = p.consumeIdentifier().getSpelling();
-    // One of three cases below:
+    // One of the cases below:
     // 1. alias P[a: Int, //, ..]
     // 2. alias P = ...
-    // 2. alias P : Bool ...
-    if (p.getLexer().getToken().is(Token::l_square) ||
-        p.getLexer().getToken().is(Token::equal) ||
-        p.getLexer().getToken().is(Token::colon))
+    // 3. alias P : Bool ...
+    // 4. alias P where ... = ...  ('where' is a soft keyword)
+    Token nextTok = p.getLexer().getToken();
+    if (nextTok.is(Token::l_square) || nextTok.is(Token::equal) ||
+        nextTok.is(Token::colon) ||
+        (nextTok.isIdentifier() && nextTok.getSpelling() == "where"))
       return success();
 
     // Not a parametric alias, restored the consumed token and parse a target
