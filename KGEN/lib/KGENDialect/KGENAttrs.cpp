@@ -679,11 +679,29 @@ TypedAttr TypeConformsToTraitAttr::getTypeRefIfResolved() {
   return getTypeRefForTypeValueIfResolved(getTypeValue());
 }
 
+std::optional<ArrayRef<SymbolRefAttr>>
+TypeConformsToTraitAttr::getTraitSymbols() const {
+  if (auto traitType = sugarDynCast<TypeParamAttr>(getTraitType())) {
+    Type traitTypeValue = traitType.getTypeValue();
+    if (auto traitSymType = sugarDynCast<TraitSymbolInterface>(traitTypeValue))
+      return traitSymType.getTraitSymbols();
+  }
+
+  // Else, return nullopt; the trait value itself is not yet concrete, it
+  // proves nothing.
+  return std::nullopt;
+}
+
 FailureOr<TypedAttr>
 TypeConformsToTraitAttr::simplify(const SymbolTable &traitTableOp,
                                   ParameterEvaluator &evaluator) const {
+  std::optional<ArrayRef<SymbolRefAttr>> traitSymbols = getTraitSymbols();
+  // Trait value is not yet concrete, don't fold.
+  if (!traitSymbols)
+    return failure();
+
   SmallVector<TypedAttr> props;
-  for (SymbolRefAttr traitSym : getTraitSymbols()) {
+  for (SymbolRefAttr traitSym : *traitSymbols) {
     auto conformOp = cast_or_null<ConformanceOp>(
         traitTableOp.lookup(getFlattenedSymbolName(traitSym)));
 
@@ -693,17 +711,13 @@ TypeConformsToTraitAttr::simplify(const SymbolTable &traitTableOp,
     props.push_back(evaluator.replace(
         getCanonicalAttr(conformOp.getConstraint().getProposition())));
   }
-
-  if (props.empty())
-    return {SIMDAttr::getScalarBool(getContext(), true)};
-
+  assert(!props.empty() && "concrete trait should have a AnyType symbol?");
   return {ParamOperatorAttr::get(POC::And, props)};
 }
 
 LogicalResult
 TypeConformsToTraitAttr::verify(function_ref<InFlightDiagnostic()> emitError,
-                                TypedAttr typeValue,
-                                ArrayRef<SymbolRefAttr> traitSymbols) {
+                                TypedAttr typeValue, TypedAttr traitType) {
   return success();
 }
 

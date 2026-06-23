@@ -494,6 +494,10 @@ void LIT::canonicalizeTraitCompositionSymbols(
 FailureOr<TypedAttr> LIT::simplifyConformsToAgainstTypeValue(
     TypeConformsToTraitAttr conformsTo,
     llvm::function_ref<TraitDeclOp(SymbolRefAttr)> traitDeclResolver) {
+  auto symOr = conformsTo.getTraitSymbols();
+  if (!symOr)
+    return failure();
+
   TypedAttr typeValue = UpcastAttr::strip(conformsTo.getTypeValue());
 
   TraitType traitType;
@@ -516,7 +520,7 @@ FailureOr<TypedAttr> LIT::simplifyConformsToAgainstTypeValue(
   // type value, but we can prove correctness if the type variable has
   // a tighter trait bound.
   DenseSet<SymbolRefAttr> symbolSet(symbols.begin(), symbols.end());
-  for (SymbolRefAttr toCheck : conformsTo.getTraitSymbols()) {
+  for (SymbolRefAttr toCheck : *symOr) {
     if (!symbolSet.contains(toCheck))
       return failure();
   }
@@ -698,19 +702,28 @@ static TypedAttr decomposeConformsTo(TypedAttr prop) {
 
   TypedAttr typeValue = stripIdentityWrappers(conformsTo.getTypeValue());
 
-  ArrayRef<SymbolRefAttr> traitSymbols = conformsTo.getTraitSymbols();
-  if (traitSymbols.size() <= 1) {
+  std::optional<ArrayRef<SymbolRefAttr>> symOr = conformsTo.getTraitSymbols();
+  // Not yet resolved.
+  if (!symOr)
+    return {};
+
+  ArrayRef<SymbolRefAttr> traitSymbols = *symOr;
+  assert(!traitSymbols.empty());
+  if (traitSymbols.size() == 1) {
     // Nothing to split. Only rebuild when stripping changed the type value;
     // otherwise report "not decomposable" so callers use the prop unchanged.
-    if (traitSymbols.empty() || typeValue == conformsTo.getTypeValue())
+    if (typeValue == conformsTo.getTypeValue())
       return {};
-    return TypeConformsToTraitAttr::get(typeValue, traitSymbols);
+    return TypeConformsToTraitAttr::get(typeValue, conformsTo.getTraitType());
   }
 
   SmallVector<TypedAttr> operands;
   operands.reserve(traitSymbols.size());
-  for (SymbolRefAttr sym : traitSymbols)
-    operands.push_back(TypeConformsToTraitAttr::get(typeValue, {sym}));
+  for (SymbolRefAttr sym : traitSymbols) {
+    auto singleTrait = TraitType::get(conformsTo.getContext(), {sym});
+    operands.push_back(
+        TypeConformsToTraitAttr::get(typeValue, singleTrait.getPValue()));
+  }
   return ParamOperatorAttr::get(POC::And, operands);
 }
 
@@ -905,7 +918,10 @@ TraitType LIT::getTraitBoundFromAssumptions(
               stripIdentityWrappers(getCanonicalAttr(ct.getTypeValue()));
           if (!isEqualCanon(ctStripped, targetStripped))
             return;
-          for (SymbolRefAttr symbol : ct.getTraitSymbols()) {
+          std::optional<ArrayRef<SymbolRefAttr>> symOr = ct.getTraitSymbols();
+          if (!symOr)
+            return;
+          for (SymbolRefAttr symbol : *symOr) {
             if (!llvm::is_contained(allTraits, symbol))
               allTraits.push_back(symbol);
           }

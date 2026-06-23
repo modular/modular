@@ -1201,17 +1201,13 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type,
         if (parseParamValue(p, operand, operandType))
           return failure();
 
-        SmallVector<SymbolRefAttr> traitSymbols;
-        auto parseSymbol = [&]() -> ParseResult {
-          return p.parseAttribute(traitSymbols.emplace_back());
-        };
-        if (p.parseComma() ||
-            p.parseCommaSeparatedList(AsmParser::Delimiter::Square,
-                                      parseSymbol) ||
+        // The trait type is encoded as a `:<metatype> <value>` parameter value.
+        TypedAttr traitType;
+        if (p.parseComma() || parseColonTypeParamValue(p, traitType) ||
             p.parseRParen())
           return failure();
 
-        value = TypeConformsToTraitAttr::get(operand, traitSymbols);
+        value = TypeConformsToTraitAttr::get(operand, traitType);
         return success();
       }
 
@@ -1583,10 +1579,9 @@ void KGEN::printParamValue(AsmPrinter &p, TypedAttr value, Type type) {
     printKGENType(p, conformsTo.getTypeValue().getType());
     p << ' ';
     printParamValue(p, conformsTo.getTypeValue());
-    p << ", [";
-    llvm::interleaveComma(conformsTo.getTraitSymbols(), p,
-                          [&](SymbolRefAttr sym) { p.printAttribute(sym); });
-    p << "])";
+    p << ", ";
+    printColonTypeParamValue(p, conformsTo.getTraitType());
+    p << ")";
     return;
   }
 

@@ -430,7 +430,7 @@ def LinkageNameAttr : DialectAttribute<(attr
 
 def TypeConformsToTraitAttr : DialectAttribute<(attr
   TypedAttr:$typeValue,
-  ConcreteAttrArray<"SymbolRefAttr">:$traitSymbols
+  ConcreteAttribute<"TypedAttr">:$traitType
 )>;
 
 def DowncastAttr : DialectAttribute<(attr

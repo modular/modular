@@ -69,7 +69,8 @@ def KGEN_ParamType : KGENType<"Param", "param", [
 // TypeValueType
 //===----------------------------------------------------------------------===//
 
-def KGEN_TypeValueType : KGENType<"TypeValue", "typevalue"> {
+def KGEN_TypeValueType : KGENType<"TypeValue", "typevalue",
+    [DeclareTypeInterfaceMethods<TraitSymbolInterface>]> {
   let summary = "Type specified by a parameter expression (value domain)";
   let description = [{
     This is the value domain counterpart to KGEN ParamType. It allows

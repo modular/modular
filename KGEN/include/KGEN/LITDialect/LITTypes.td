@@ -255,7 +255,9 @@ def LIT_StructType : LITType<"Struct", "struct", [
 //===----------------------------------------------------------------------===//
 
 def LIT_TraitType: LITType<"Trait", "trait",
-    [DeclareTypeInterfaceMethods<ParameterTypeInterface>, OpAsmTypeInterface]> {
+    [OpAsmTypeInterface,
+     DeclareTypeInterfaceMethods<ParameterTypeInterface>,
+     DeclareTypeInterfaceMethods<TraitSymbolInterface>]> {
   let summary = "Type of a trait value.";
   let description = [{
     The `!lit.trait` type represents the type of some lit.trait.decl values.
