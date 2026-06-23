@@ -39,6 +39,7 @@ from layout import (
 from nn._ragged_utils import get_batch_from_row_offsets
 from nn.kv_cache import (
     copy_kv_pages_d2h,
+    fused_qk_rms_norm_ragged_paged,
     generic_get_paged_cache,
     generic_get_paged_cache_with_scales,
     rms_norm_kv_cache_ragged_paged,
@@ -329,6 +330,54 @@ struct Struct_rms_norm_kv_cache_ragged_paged:
             layer_idx,
             total_seq_len,
             input_row_offsets.to_tile_tensor[DType.int64](),
+            context,
+        )
+
+
+@compiler.register("mo.fused_qk_rms_norm.ragged.paged")
+struct Struct_fused_qk_rms_norm_ragged_paged:
+    @always_inline
+    @staticmethod
+    def execute[
+        dtype: DType,
+        multiply_before_cast: Bool,
+        cache_dtype: DType,
+        //,
+        target: StaticString,
+    ](
+        q_output: OutputTensor[dtype=dtype, rank=3, ...],
+        q_proj: InputTensor[dtype=dtype, rank=3, ...],
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_blocks: MutableInputTensor[dtype=cache_dtype, rank=6, ...],
+        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
+        q_gamma: InputTensor[dtype=dtype, rank=1, ...],
+        k_gamma: InputTensor[dtype=dtype, rank=1, ...],
+        epsilon: Scalar[dtype],
+        layer_idx: UInt32,
+        weight_offset: Scalar[dtype=dtype],
+        context: DeviceContext,
+    ) raises:
+        var kv_collection = generic_get_paged_cache(
+            kv_blocks,
+            cache_lengths,
+            kv_lookup_table,
+            max_lengths,
+        )
+        fused_qk_rms_norm_ragged_paged[
+            target=target,
+            multiply_before_cast=multiply_before_cast,
+        ](
+            q_proj.to_tile_tensor[DType.int64](),
+            kv_collection,
+            q_gamma.to_tile_tensor[DType.int64](),
+            k_gamma.to_tile_tensor[DType.int64](),
+            epsilon,
+            weight_offset,
+            layer_idx,
+            input_row_offsets.to_tile_tensor[DType.int64](),
+            q_output.to_tile_tensor[DType.int64](),
             context,
         )
 
