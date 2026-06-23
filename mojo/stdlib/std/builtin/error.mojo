@@ -49,7 +49,7 @@ struct StackTrace(Copyable, Movable, Writable):
     def __init__(
         out self,
         *,
-        unsafe_from_raw_pointer: UnsafePointer[UInt8, MutExternalOrigin],
+        unsafe_from_raw_pointer: UnsafePointer[UInt8, MutUntrackedOrigin],
     ):
         """Construct a StackTrace from a raw pointer to a C string.
 
@@ -74,17 +74,9 @@ struct StackTrace(Copyable, Movable, Writable):
         # Copy the null-terminated string
         var src_ptr = copy._data.unsafe_ptr()
         var str_len = Int(_unsafe_strlen(src_ptr))
-        var new_ptr = alloc(Layout[UInt8](count=str_len + 1))
+        var new_ptr = alloc(Layout[UInt8](count=str_len + 1)).unsafe_leak()
         memcpy(dest=new_ptr, src=src_ptr, count=str_len + 1)
         self._data = OwnedPointer(unsafe_from_raw_pointer=new_ptr)
-
-    def __init__(out self, *, deinit take: Self):
-        """Move constructor.
-
-        Args:
-            take: The existing StackTrace to move from.
-        """
-        self._data = take._data^
 
     @staticmethod
     @no_inline
@@ -112,7 +104,7 @@ struct StackTrace(Copyable, Movable, Writable):
         if depth < 0:
             return None
 
-        var buffer = Optional[UnsafePointer[UInt8, MutExternalOrigin]]()
+        var buffer = Optional[UnsafePointer[UInt8, MutUntrackedOrigin]]()
         var num_bytes = external_call[
             "KGEN_CompilerRT_GetStackTrace", SIMDSize
         ](UnsafePointer(to=buffer), depth)

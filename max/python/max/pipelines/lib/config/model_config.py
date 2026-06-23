@@ -32,12 +32,13 @@ from max.graph.weights import (
     weights_format,
 )
 from max.nn.kv_cache.cache_params import KVConnectorType
+from max.pipelines.context import SamplingParamsGenerationConfigDefaults
+from max.pipelines.kv_cache.config import KVCacheConfig
 from max.pipelines.lib._hf_config import load_huggingface_config
 from max.pipelines.lib.device_specs import (
     _default_device_specs,
     coerce_device_specs_input,
 )
-from max.pipelines.lib.memory_estimation import to_human_readable_bytes
 from max.pipelines.lib.weight_loader import (
     WeightLoader,
     _loader_over_weights,
@@ -51,15 +52,14 @@ from max.pipelines.modeling.config_enums import (
     supported_encoding_supported_devices,
     supported_encoding_supported_on,
 )
-from max.pipelines.modeling.kv_cache_config import KVCacheConfig
-from max.pipelines.modeling.types import SamplingParamsGenerationConfigDefaults
-from max.pipelines.modeling.weights.hf_utils import (
+from max.pipelines.weights.hf_utils import (
     HuggingFaceRepo,
     download_weight_files,
     try_to_load_from_cache,
     validate_hf_repo_access,
 )
-from max.pipelines.modeling.weights.weight_path_parser import WeightPathParser
+from max.pipelines.weights.weight_path_parser import WeightPathParser
+from max.support.human_readable_formatter import to_human_readable_bytes
 from pydantic import (
     ConfigDict,
     Field,
@@ -573,7 +573,7 @@ class MAXModelConfig(MAXModelConfigBase):
         architecture validation.
 
         For LLM models that later go through
-        ``_validate_and_resolve_architecture()``, the fields resolved
+        ``_validate_model_config_against_arch()``, the fields resolved
         here are consumed as-is (the downstream methods are idempotent
         when these fields are already set).
 
@@ -1240,6 +1240,16 @@ class MAXModelConfig(MAXModelConfigBase):
                     encoding=self._applied_dtype_cast_from
                 )
 
+            if not weight_files and self.quantization_encoding in (
+                "float16",
+                "bfloat16",
+            ):
+                # A float16/bfloat16 graph can load float32 weights cast at
+                # load time by the architecture's weight adapter.
+                weight_files = self.huggingface_weight_repo.files_for_encoding(
+                    encoding="float32"
+                )
+
             if default_weight_files := weight_files.get(
                 default_weights_format, []
             ):
@@ -1477,6 +1487,7 @@ class MAXModelConfig(MAXModelConfigBase):
         # Otherwise select the default KV cache dtype based on the quantization encoding.
         supported_encoding_to_cache_dtype = {
             "float32": DType.float32,
+            "float16": DType.float16,
             "bfloat16": DType.bfloat16,
             "float8_e4m3fn": DType.bfloat16,
             "float4_e2m1fnx2": DType.bfloat16,
@@ -1582,6 +1593,7 @@ class MAXModelConfig(MAXModelConfigBase):
         logger.info("  %s KV Cache %s", sub_separator, sub_separator)
 
         entries: list[tuple[str, Any]] = [
+            ("cache_dtype", kv_config.cache_dtype),
             ("page_size", f"{kv_config.kv_cache_page_size} tokens"),
             ("prefix_caching", kv_config.enable_prefix_caching),
             ("kv_connector", kv_config.kv_connector or "null"),

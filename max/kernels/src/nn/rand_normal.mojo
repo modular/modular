@@ -17,6 +17,7 @@ from std.random import NormalRandom
 from extensibility import _dot_prod
 
 from std.utils import IndexList
+from std.utils.coord import Coord, coord_to_index_list
 
 
 def random_normal[
@@ -96,19 +97,19 @@ def random_normal[
     @parameter
     @always_inline
     @__copy_capture(strides, seed_ptr, grid_block)
-    def generate[
-        width: Int, _rank: Int, alignment: Int = 1
-    ](idx: IndexList[_rank]):
+    def generate[width: Int, alignment: Int = 1](idx: Coord):
         comptime assert (
             width == 1
         ), "PyTorch-compat normal kernel uses scalar lanes"
-        var i = _dot_prod(rebind[type_of(strides)](idx), strides)
+        var i = _dot_prod(
+            rebind[type_of(strides)](coord_to_index_list(idx)), strides
+        )
         var thread_id = UInt64(i % grid_block)
         var within_thread = i // grid_block
 
         var rng = NormalRandom(seed=seed_ptr[0], subsequence=thread_id)
         var four = rng.step_normal_4(mean=mean, stddev=stddev)
         var value = four[within_thread].cast[dtype]()
-        output_fn[width=1](idx, SIMD[dtype, 1](value))
+        output_fn[width=1](coord_to_index_list(idx), SIMD[dtype, 1](value))
 
-    elementwise[generate, simd_width=1, target=target](shape, ctx)
+    elementwise[generate, simd_width=1, target=target](Coord(shape), ctx)

@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+import json
 import resource
 import time
 import urllib.error
@@ -46,6 +47,11 @@ def exceeds_deadline(seconds: float, deadline_ns: int | None) -> bool:
     return time.perf_counter_ns() + int(seconds * 1e9) > deadline_ns
 
 
+def deadline_passed(end_time_ns: int | None) -> bool:
+    """Return True if the ``perf_counter_ns`` deadline has been reached."""
+    return end_time_ns is not None and time.perf_counter_ns() >= end_time_ns
+
+
 def wait_for_server_ready(
     host: str,
     port: int,
@@ -54,6 +60,7 @@ def wait_for_server_ready(
     timeout_s: int = 120 * 60,
     interval_s: float = 5.0,
     backend: str,
+    liveness_check: Callable[[], bool] | None = None,
 ) -> float:
     """Polls ``http://<host>:<port>/<path>`` until it responds with HTTP 200.
 
@@ -65,6 +72,13 @@ def wait_for_server_ready(
 
     When *backend* is ``"mcloud"``, the server is externally managed and
     assumed ready, so the function returns ``0.0`` immediately.
+
+    When *liveness_check* is provided, it is invoked after each failed poll;
+    if it returns ``False`` the server process is assumed to have exited and
+    a :class:`RuntimeError` is raised immediately rather than blocking until
+    *timeout_s*. This lets an orchestrator that launched the server abort
+    promptly on a crashed/failed bring-up instead of hanging for the full
+    timeout.
     """
     # TODO: remove once BENTO-168 is fixed
     if backend == "mcloud":
@@ -79,9 +93,48 @@ def wait_for_server_ready(
                     return time.monotonic() - start
         except (urllib.error.URLError, ConnectionError, OSError):
             pass
+        if liveness_check is not None and not liveness_check():
+            raise RuntimeError(
+                f"Server process exited before {url} became ready"
+            )
         if time.monotonic() >= deadline:
             raise RuntimeError(f"Server at {url} not ready after {timeout_s}s")
         time.sleep(interval_s)
+
+
+def fetch_server_max_model_len(
+    base_url: str,
+    model_id: str,
+    *,
+    timeout_s: float = 5.0,
+) -> int | None:
+    """Fetch the served model's max context length from ``/v1/models``.
+
+    MAX, vLLM, and SGLang all report ``max_model_len`` on their model cards.
+    Returns the value for ``model_id`` (or the first listed model when no id
+    matches), or ``None`` when the server is unreachable or does not report
+    the field, so callers can fall back to the tokenizer's own limit.
+    """
+    url = f"{base_url}/v1/models"
+    try:
+        with urllib.request.urlopen(url, timeout=timeout_s) as resp:
+            if resp.status != 200:
+                return None
+            models = json.load(resp).get("data") or []
+        card = next((m for m in models if m.get("id") == model_id), None)
+        if card is None and models:
+            card = models[0]
+        max_model_len = (card or {}).get("max_model_len")
+    except (
+        urllib.error.URLError,
+        ConnectionError,
+        OSError,
+        ValueError,
+        AttributeError,
+        TypeError,
+    ):
+        return None
+    return max_model_len if isinstance(max_model_len, int) else None
 
 
 def resolve_revision(pretrained_model_name_or_path: str) -> str | None:

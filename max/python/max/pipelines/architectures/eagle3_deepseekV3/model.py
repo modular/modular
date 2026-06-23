@@ -27,16 +27,24 @@ from max.engine import InferenceSession, Model
 from max.graph import BufferValue, Graph, TensorValue, Value
 from max.graph.weights import WeightData, Weights, WeightsAdapter, load_weights
 from max.nn.comm.ep import EPCommInitializer
-from max.nn.kv_cache import KVCacheInputs, KVCacheParams, PagedCacheValues
+from max.nn.kv_cache import (
+    KVCacheInputsInterface,
+    KVCacheParams,
+    MultiKVCacheParams,
+)
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
-from max.pipelines.core import TextContext
+from max.pipelines.context import TextContext
 from max.pipelines.lib import (
     CompilationTimer,
     KVCacheConfig,
-    ModelInputs,
     PipelineConfig,
 )
-from max.pipelines.lib.interfaces import UnifiedEagleOutputs
+from max.pipelines.lib.interfaces import (
+    UnifiedSpecDecodeInputs,
+)
+from max.pipelines.lib.pipeline_variants.unified_spec_decode_model import (
+    _UnifiedSpecDecodeModelMixin,
+)
 from transformers import AutoConfig
 from typing_extensions import override
 
@@ -54,7 +62,7 @@ def extract_eagle_aux_layer_ids(
     """Extract ``eagle_aux_hidden_state_layer_ids`` from a HuggingFace config.
 
     The IDs live inside an ``eagle_config`` sub-dict/object that is present on
-    the *draft* checkpoint's config (e.g. ``nvidia/Kimi-K2.5-Thinking-Eagle3``).
+    the *draft* checkpoint's config.
     """
     eagle_config = getattr(hf_config, "eagle_config", None)
     if eagle_config is None:
@@ -64,92 +72,36 @@ def extract_eagle_aux_layer_ids(
         if isinstance(eagle_config, dict)
         else getattr(eagle_config, "eagle_aux_hidden_state_layer_ids", [])
     )
-    return list(raw) or None
+    raw_list = list(raw)
+    if not raw_list:
+        return None
+    if any(i <= 0 for i in raw_list):
+        raise ValueError(
+            "eagle_aux_hidden_state_layer_ids must contain positive ids "
+            "(capturing layer-0's input = raw token embeddings is not yet "
+            f"wired in MAX). Got {raw_list}."
+        )
+    return [i - 1 for i in raw_list]
 
 
 @dataclass
-class Eagle3DeepseekV3Inputs(DeepseekV3Inputs):
-    """Inputs for the Eagle3 + DeepseekV3 unified model."""
+class Eagle3DeepseekV3Inputs(UnifiedSpecDecodeInputs, DeepseekV3Inputs):
+    """Inputs for the Eagle3 + DeepseekV3 unified model.
 
-    draft_tokens: Buffer | None = None
-    draft_kv_blocks: list[Buffer] | None = None
-    seed: Buffer | None = None
-    """Per-execute uint64 [1] seed consumed by the stochastic acceptance
-    sampler (and, when enabled, the synthetic benchmarking sampler)."""
-
-    temperature: Buffer | None = None
-    top_k: Buffer | None = None
-    max_k: Buffer | None = None
-    top_p: Buffer | None = None
-    min_top_p: Buffer | None = None
-    """Per-batch sampling parameters consumed by the stochastic acceptance
-    sampler. ``max_k`` and ``min_top_p`` are 0-d CPU scalars; the rest are
-    ``[batch_size]`` tensors on the primary device."""
-
-    in_thinking_phase: Buffer | None = None
-    """Per-batch ``bool`` flag set by the pipeline for relaxed acceptance
-    during thinking. Not consumed by the eagle3_deepseekV3 graph today, but
-    the field is required to satisfy the ``_UnifiedSpecDecodeInputs`` protocol
-    used by ``OverlapTextGenerationPipeline``."""
-
-    pinned_bitmask: Buffer | None = None
-    """Pinned host bitmask for constrained decoding.
-
-    Shape ``[batch_size, num_speculative_tokens + 1, vocab_size]``.
-    Position i contains the valid-token mask given the FSM state
-    after consuming draft[0:i-1]; position ``num_speculative_tokens``
-    is for the bonus token. ``None`` when structured output is
-    disabled.
+    Target-prefix fields come from :class:`DeepseekV3Inputs`; the spec-decode
+    fields and trailing buffer packing come from
+    :class:`UnifiedSpecDecodeInputs`. The eagle3_deepseekV3 graph does not bind
+    ``in_thinking_phase``.
     """
-
-    wait_payload: Buffer | None = None
-    """CPU ``int64[2]`` payload = ``[flag._unsafe_ptr, 1]`` consumed by
-    the in-graph ``mo.wait_host_value_with_dep`` op. Only set when
-    structured output is enabled."""
-
-    device_bitmask_scratch: Buffer | None = None
-    """Device scratch buffer that receives the in-graph H2D from
-    ``pinned_bitmask``; the acceptance sampler reads from it. Only
-    set when structured output is enabled."""
 
     @property
     def buffers(self) -> tuple[Buffer, ...]:
-        buffers = super().buffers
-        if self.draft_tokens is not None:
-            buffers += (self.draft_tokens,)
-        if self.draft_kv_blocks is not None:
-            buffers += tuple(self.draft_kv_blocks)
-        assert self.seed is not None
-        buffers += (self.seed,)
-        if self.draft_tokens is not None:
-            # Sampling params are only required when the spec-decode path
-            # is active (i.e. draft_tokens was bound).
-            assert self.temperature is not None
-            assert self.top_k is not None
-            assert self.max_k is not None
-            assert self.top_p is not None
-            assert self.min_top_p is not None
-            buffers += (
-                self.temperature,
-                self.top_k,
-                self.max_k,
-                self.top_p,
-                self.min_top_p,
-            )
-            # Constrained-decoding bitmask inputs are only included
-            # when structured output is enabled.
-            if self.pinned_bitmask is not None:
-                assert self.wait_payload is not None
-                assert self.device_bitmask_scratch is not None
-                buffers += (
-                    self.pinned_bitmask,
-                    self.wait_payload,
-                    self.device_bitmask_scratch,
-                )
-        return buffers
+        return super().buffers + self._spec_decode_tail_buffers(
+            include_in_thinking_phase=False
+        )
 
 
-class Eagle3DeepseekV3Model(DeepseekV3Model):
+class Eagle3DeepseekV3Model(_UnifiedSpecDecodeModelMixin, DeepseekV3Model):
     """Eagle3 + DeepseekV3: target + draft in one compiled graph.
 
     Loads target weights from a DeepseekV3-shaped main checkpoint and draft
@@ -179,13 +131,6 @@ class Eagle3DeepseekV3Model(DeepseekV3Model):
             return_hidden_states,
         )
         self._seed_counter = 0
-
-    def _next_seed(self) -> Buffer:
-        """Monotonically advancing uint64 [1] seed, fresh per execute."""
-        self._seed_counter += 1
-        return Buffer.from_numpy(
-            np.array([self._seed_counter], dtype=np.uint64)
-        ).to(self.devices[0])
 
     @override
     def load_model(self, session: InferenceSession) -> Model:
@@ -261,7 +206,11 @@ class Eagle3DeepseekV3Model(DeepseekV3Model):
             draft_config.ep_config.node_id = config.ep_config.node_id
 
         assert isinstance(self.kv_params, KVCacheParams)
-        self._draft_kv_params = replace(self.kv_params, num_layers=1)
+        target_kv_params = self.kv_params
+        self._draft_kv_params = replace(target_kv_params, num_layers=1)
+        self.kv_params = MultiKVCacheParams.from_params(
+            {"target": target_kv_params, "draft": self._draft_kv_params}
+        )
 
         draft_config.return_hidden_states = ReturnHiddenStates.LAST
 
@@ -298,7 +247,8 @@ class Eagle3DeepseekV3Model(DeepseekV3Model):
         extra = draft_provided - draft_expected
         if missing:
             raise ValueError(
-                f"Draft model has unloaded non-shared weights: {sorted(missing)}"
+                "Draft model has unloaded non-shared weights:"
+                f" {sorted(missing)}"
             )
         if extra:
             logger.warning(f"Draft state_dict has unused keys: {sorted(extra)}")
@@ -323,9 +273,7 @@ class Eagle3DeepseekV3Model(DeepseekV3Model):
         with CompilationTimer("eagle3_deepseekV3_model") as timer:
             with Graph(
                 "eagle3_deepseekV3_graph",
-                input_types=nn_model.input_types(
-                    self.kv_params, self._draft_kv_params
-                ),
+                input_types=nn_model.input_types(self.kv_params),
             ) as graph:
                 (
                     tokens,
@@ -342,12 +290,8 @@ class Eagle3DeepseekV3Model(DeepseekV3Model):
                     for _ in range(len(self.devices))
                 ]
 
-                fetch_types = (
-                    self.kv_params.get_symbolic_inputs().inputs[0].flatten()
-                )
-                len_of_kv_inputs = len(list(fetch_types)) * len(self.devices)
-                kv_caches_per_dev = self._unflatten_kv_inputs(
-                    [next(variadic_args_iter) for _ in range(len_of_kv_inputs)]
+                kv_collections, draft_kv_collections = (
+                    self.kv_params.unflatten_basic_kv_tree(variadic_args_iter)
                 )
 
                 batch_context_lengths = [
@@ -363,30 +307,6 @@ class Eagle3DeepseekV3Model(DeepseekV3Model):
                     ]
 
                 draft_tokens = next(variadic_args_iter).tensor
-
-                # Draft KV: only kv_blocks per device; cache_lengths reused
-                # from target (same token count, just fewer layers).
-                draft_kv_collections: list[PagedCacheValues] = []
-                for dev_idx in range(len(self.devices)):
-                    draft_kv_blocks = next(variadic_args_iter).buffer
-                    draft_kv_collections.append(
-                        PagedCacheValues(
-                            kv_blocks=draft_kv_blocks,
-                            cache_lengths=kv_caches_per_dev[
-                                dev_idx
-                            ].cache_lengths,
-                            lookup_table=kv_caches_per_dev[
-                                dev_idx
-                            ].lookup_table,
-                            max_lengths=kv_caches_per_dev[dev_idx].max_lengths,
-                            attention_dispatch_metadata=kv_caches_per_dev[
-                                dev_idx
-                            ].attention_dispatch_metadata,
-                            draft_attention_dispatch_metadata=kv_caches_per_dev[
-                                dev_idx
-                            ].draft_attention_dispatch_metadata,
-                        )
-                    )
 
                 seed = next(variadic_args_iter).tensor
                 temperature = next(variadic_args_iter).tensor
@@ -413,7 +333,7 @@ class Eagle3DeepseekV3Model(DeepseekV3Model):
                     input_row_offsets=devices_input_row_offsets.tensor,
                     draft_tokens=draft_tokens.tensor,
                     signal_buffers=signal_buffers,
-                    kv_collections=kv_caches_per_dev,
+                    kv_collections=kv_collections,
                     return_n_logits=return_n_logits.tensor,
                     host_input_row_offsets=host_input_row_offsets.tensor,
                     data_parallel_splits=data_parallel_splits.tensor,
@@ -437,27 +357,10 @@ class Eagle3DeepseekV3Model(DeepseekV3Model):
 
         return model
 
-    def execute(self, model_inputs: ModelInputs) -> UnifiedEagleOutputs:
-        """Execute and return all graph outputs for speculative decoding."""
-        assert isinstance(model_inputs, Eagle3DeepseekV3Inputs)
-        model_outputs = self.model.execute(*model_inputs.buffers)
-        if len(model_outputs) != 3:
-            raise RuntimeError(
-                f"Eagle3DeepseekV3 graph returned {len(model_outputs)} "
-                "outputs; expected 3 (num_accepted, next_tokens, "
-                "next_draft_tokens)."
-            )
-
-        return UnifiedEagleOutputs(
-            num_accepted_draft_tokens=model_outputs[0],
-            next_tokens=model_outputs[1],
-            next_draft_tokens=model_outputs[2],
-        )
-
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
+        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
         draft_tokens: Buffer | None = None,
         draft_kv_cache_buffers: list[Buffer] | None = None,
@@ -477,16 +380,9 @@ class Eagle3DeepseekV3Model(DeepseekV3Model):
             data_parallel_splits=base.data_parallel_splits,
             ep_inputs=base.ep_inputs,
             draft_tokens=draft_tokens,
-            draft_kv_blocks=draft_kv_cache_buffers,
             seed=self._next_seed(),
+            structured_output=self.pipeline_config.needs_bitmask_constraints,
         )
-
-    def prepare_next_token_inputs(
-        self,
-        next_tokens: Buffer,
-        prev_model_inputs: ModelInputs,
-    ) -> Eagle3DeepseekV3Inputs:
-        raise NotImplementedError("Eagle does not support Multistep execution")
 
     def _create_draft_config(
         self,
@@ -522,12 +418,12 @@ class Eagle3DeepseekV3Model(DeepseekV3Model):
         # Eagle3 draft has BF16 dense MLP (not quantized, not MoE)
         if (
             draft_config.quant_config is not None
-            and draft_config.quant_config.is_nvfp4
-            and not any("weight_scale_2" in key for key in draft_state_dict)
+            and draft_config.quant_config.is_fp4
+            and not any("weight_scale" in key for key in draft_state_dict)
         ):
             logger.info(
-                "Eagle3 draft weights are BF16 (no weight_scale_2 found); "
-                "disabling NVFP4 config for draft."
+                "Eagle3 draft weights are BF16 (no weight_scale found); "
+                "disabling FP4 config for draft."
             )
             draft_config.quant_config = None
             draft_config.dtype = DType.bfloat16

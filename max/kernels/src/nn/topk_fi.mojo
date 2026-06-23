@@ -210,7 +210,9 @@ def TopKMaskLogitsKernel[
     masked_logits: TileTensor[
         dtype, MaskedLogitsLayoutType, masked_logits_origin
     ],
-    top_k_arr: Optional[UnsafePointer[Scalar[out_idx_type], MutExternalOrigin]],
+    top_k_arr: Optional[
+        UnsafePointer[Scalar[out_idx_type], MutUntrackedOrigin]
+    ],
     top_k_val: Int,
     d: Int,
 ):
@@ -353,11 +355,11 @@ def topk_mask_logits[
     ],
 ](
     ctx: DeviceContext,
-    logits: TileTensor[dtype, ...],
+    logits: TileTensor[mut=False, dtype, ...],
     masked_logits: TileTensor[mut=True, dtype, ...],
     top_k_val: Int,
     top_k_arr: Optional[
-        TileTensor[out_idx_type, TopKArrLayoutType, MutExternalOrigin]
+        TileTensor[out_idx_type, TopKArrLayoutType, MutUntrackedOrigin]
     ] = None,
 ) raises:
     comptime assert logits.rank == 2, "logits rank must be 2"
@@ -396,7 +398,7 @@ def topk_mask_logits[
         var vec_size = gcd(8, d)
 
         var top_k_ptr: Optional[
-            UnsafePointer[Scalar[out_idx_type], MutExternalOrigin]
+            UnsafePointer[Scalar[out_idx_type], MutUntrackedOrigin]
         ] = None
         if top_k_arr:
             top_k_ptr = top_k_arr.value().ptr
@@ -684,8 +686,10 @@ def TopKSamplingFromProbKernel[
 ](
     probs: TileTensor[dtype, ProbsLayoutType, probs_origin],
     output: TileTensor[out_idx_type, OutputLayoutType, output_origin],
-    indices: Optional[UnsafePointer[Scalar[out_idx_type], MutExternalOrigin]],
-    top_k_arr: Optional[UnsafePointer[Scalar[out_idx_type], MutExternalOrigin]],
+    indices: Optional[UnsafePointer[Scalar[out_idx_type], MutUntrackedOrigin]],
+    top_k_arr: Optional[
+        UnsafePointer[Scalar[out_idx_type], MutUntrackedOrigin]
+    ],
     top_k_val: Int,
     d: Int,
     rng_seed: UInt64,
@@ -886,17 +890,17 @@ def topk_sampling_from_prob[
     ],
 ](
     ctx: DeviceContext,
-    probs: TileTensor[dtype, ...],
+    probs: TileTensor[mut=False, dtype, ...],
     output: TileTensor[mut=True, out_idx_type, ...],
     top_k_val: Int,
     deterministic: Bool = False,
     rng_seed: UInt64 = 0,
     rng_offset: UInt64 = 0,
     indices: Optional[
-        TileTensor[out_idx_type, IndicesLayoutType, MutExternalOrigin]
+        TileTensor[out_idx_type, IndicesLayoutType, MutUntrackedOrigin]
     ] = None,
     top_k_arr: Optional[
-        TileTensor[out_idx_type, TopKArrLayoutType, MutExternalOrigin]
+        TileTensor[out_idx_type, TopKArrLayoutType, MutUntrackedOrigin]
     ] = None,
 ) raises:
     """Top-K sampling from probability distribution.
@@ -954,13 +958,13 @@ def topk_sampling_from_prob[
         var vec_size = gcd(8, d)
 
         var indices_ptr: Optional[
-            UnsafePointer[Scalar[out_idx_type], MutExternalOrigin]
+            UnsafePointer[Scalar[out_idx_type], MutUntrackedOrigin]
         ] = None
         if indices:
             indices_ptr = indices.value().ptr
 
         var top_k_ptr: Optional[
-            UnsafePointer[Scalar[out_idx_type], MutExternalOrigin]
+            UnsafePointer[Scalar[out_idx_type], MutUntrackedOrigin]
         ] = None
         if top_k_arr:
             top_k_ptr = top_k_arr.value().ptr
@@ -1011,8 +1015,8 @@ def apply_min_p_mask_kernel[
     dtype: DType,
     block_size: Int,
 ](
-    probs: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    min_p_arr: UnsafePointer[Float32, ImmutExternalOrigin],
+    probs: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    min_p_arr: UnsafePointer[Float32, ImmutUntrackedOrigin],
     d: Int,
 ):
     """Zero out probabilities below the per-row min_p threshold.
@@ -1297,7 +1301,7 @@ def topk_topp_sampling_from_prob[
     ],
 ](
     ctx: DeviceContext,
-    probs: TileTensor[dtype, ...],
+    probs: TileTensor[mut=False, dtype, ...],
     output: TileTensor[mut=True, out_idx_type, ...],
     top_k_val: Int,
     top_p_val: Float32 = 1.0,
@@ -1450,12 +1454,14 @@ def topk_softmax_sample_kernel[
     sampled_indices: TileTensor[
         out_idx_type, SampledLayoutType, sampled_origin
     ],
-    top_k_arr: Optional[UnsafePointer[Scalar[out_idx_type], MutExternalOrigin]],
+    top_k_arr: Optional[
+        UnsafePointer[Scalar[out_idx_type], MutUntrackedOrigin]
+    ],
     top_k_val: Int,
     temperature_val: Float32,
-    temperature: Optional[UnsafePointer[Float32, MutExternalOrigin]],
+    temperature: Optional[UnsafePointer[Float32, MutUntrackedOrigin]],
     seed_val: UInt64,
-    seed: Optional[UnsafePointer[UInt64, MutExternalOrigin]],
+    seed: Optional[UnsafePointer[UInt64, MutUntrackedOrigin]],
     d: Int,
 ):
     comptime assert sampled_indices.flat_rank == 1
@@ -1665,7 +1671,9 @@ def topk_softmax_sample[
     ],
 ](
     ctx: DeviceContext,
-    logits: TileTensor[dtype, address_space=AddressSpace.GENERIC, ...],
+    logits: TileTensor[
+        mut=False, dtype, address_space=AddressSpace.GENERIC, ...
+    ],
     sampled_indices: TileTensor[
         mut=True, out_idx_type, address_space=AddressSpace.GENERIC, ...
     ],
@@ -1673,13 +1681,13 @@ def topk_softmax_sample[
     temperature_val: Float32 = 1.0,
     seed_val: UInt64 = 0,
     top_k_arr: Optional[
-        TileTensor[out_idx_type, TopKArrLayoutType, MutExternalOrigin]
+        TileTensor[out_idx_type, TopKArrLayoutType, MutUntrackedOrigin]
     ] = None,
     temperature: Optional[
-        TileTensor[DType.float32, TemperatureLayoutType, MutExternalOrigin]
+        TileTensor[DType.float32, TemperatureLayoutType, MutUntrackedOrigin]
     ] = None,
     seed: Optional[
-        TileTensor[DType.uint64, SeedLayoutType, MutExternalOrigin]
+        TileTensor[DType.uint64, SeedLayoutType, MutUntrackedOrigin]
     ] = None,
 ) raises:
     """Samples token indices from top-K logits using softmax probabilities.
@@ -1769,16 +1777,18 @@ def topk_softmax_sample[
                 )
 
         var top_k_ptr: Optional[
-            UnsafePointer[Scalar[out_idx_type], MutExternalOrigin]
+            UnsafePointer[Scalar[out_idx_type], MutUntrackedOrigin]
         ] = None
         if top_k_arr:
             top_k_ptr = top_k_arr.unsafe_value().ptr
 
-        var temp_ptr: Optional[UnsafePointer[Float32, MutExternalOrigin]] = None
+        var temp_ptr: Optional[
+            UnsafePointer[Float32, MutUntrackedOrigin]
+        ] = None
         if temperature:
             temp_ptr = temperature.unsafe_value().ptr
 
-        var seed_ptr: Optional[UnsafePointer[UInt64, MutExternalOrigin]] = None
+        var seed_ptr: Optional[UnsafePointer[UInt64, MutUntrackedOrigin]] = None
         if seed:
             seed_ptr = seed.unsafe_value().ptr
 

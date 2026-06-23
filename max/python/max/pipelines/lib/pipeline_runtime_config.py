@@ -69,8 +69,7 @@ class PipelineRuntimeConfig(ConfigFileModel):
             "Soft floor on the decode batch size. If the TG batch size is "
             "larger, the scheduler continues TG batches; if it falls below, the "
             "scheduler prioritizes CE. This is not a strict minimum. By "
-            "default, this is ``max_queue_size_tg``. Experimental for the TTS "
-            "scheduler."
+            "default, this is ``max_queue_size_tg``."
         ),
     )
 
@@ -93,8 +92,7 @@ class PipelineRuntimeConfig(ConfigFileModel):
     ce_delay_ms: float = Field(
         default=0.0,
         description=(
-            "Duration of scheduler sleep prior to starting a prefill batch. "
-            "Experimental for the TTS scheduler."
+            "Duration of scheduler sleep prior to starting a prefill batch."
         ),
     )
 
@@ -103,7 +101,7 @@ class PipelineRuntimeConfig(ConfigFileModel):
         description=(
             "When enabled, the scheduler always runs a TG batch immediately "
             "after a CE batch with the same requests. This may reduce "
-            "time-to-first-chunk latency. Experimental for the TTS scheduler."
+            "time-to-first-chunk latency."
         ),
     )
 
@@ -124,12 +122,12 @@ class PipelineRuntimeConfig(ConfigFileModel):
     )
 
     max_num_steps: int = Field(
-        default=-1,
+        default=1,
         description=(
-            "The number of steps to run for multi-step scheduling. ``-1`` "
-            "specifies a default value based on configuration and platform. "
-            "Ignored for models which are not auto-regressive (for example, "
-            "embedding models)."
+            "Deprecated. Multi-step pipeline execution is no longer supported; "
+            "the pipeline always runs single-step decode. Values other than "
+            "``1`` (including the legacy default ``-1``) are ignored after "
+            "logging a warning."
         ),
     )
 
@@ -330,13 +328,6 @@ class PipelineRuntimeConfig(ConfigFileModel):
             "that do not explicitly provide ``thinking_temperature``. Requires "
             "a reasoning parser to be configured; ignored otherwise."
         ),
-    )
-
-    # TODO(SERVSYS-1096): Remove this field once we've reworked how required
-    # config fields are validated.
-    defer_resolve: bool = Field(
-        default=False,
-        description="Whether to defer resolving the pipeline config.",
     )
 
     max_vision_cache_entries: int = Field(

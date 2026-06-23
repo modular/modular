@@ -14,7 +14,7 @@
 
 Provides the fused RMSNorm + FP8 quantization primitive used by both the
 standalone normalization layer and the fused allreduce + RMSNorm + FP8 kernel.
-Lives in comm/ so that allreduce_residual_rmsnorm_fp8 can depend on it without
+Lives in comm/ so that allreduce_residual_rmsnorm can depend on it without
 introducing a comm → nn → comm circular dependency.
 """
 
@@ -36,7 +36,7 @@ from std.utils.numerics import get_accum_type
 
 from std.runtime.tracing import Trace, TraceLevel, trace_arg
 
-from .fp8_utils import compute_dynamic_fp8_scale, fp8_quantize
+from internal_utils.fp8_utils import compute_dynamic_fp8_scale, fp8_quantize
 
 
 @always_inline

@@ -28,9 +28,9 @@ from max.pipelines.lib import (
     parse_quant_config,
 )
 from max.pipelines.lib.interfaces.arch_config import (
-    ArchConfigWithDecoderSubconfigKVParams,
     ArchConfigWithKVCache,
     ArchConfigWithStoredKVParams,
+    ArchVLConfigWithTextSubconfig,
 )
 from max.pipelines.modeling.config_enums import supported_encoding_dtype
 from transformers import AutoConfig
@@ -110,7 +110,7 @@ class Gemma3VisionConfig:
 
 @dataclass(kw_only=True)
 class Gemma3ForConditionalGenerationConfig(
-    ArchConfigWithDecoderSubconfigKVParams,
+    ArchVLConfigWithTextSubconfig,
     ArchConfigWithStoredKVParams,
     ArchConfigWithKVCache,
 ):
@@ -178,22 +178,9 @@ class Gemma3ForConditionalGenerationConfig(
     converting a multi-head checkpoint to a GQA checkpoint, each group key and value head should be constructed"
     """
 
-    def get_max_seq_len(self) -> int:
-        """Returns the maximum sequence length from the embedded text config."""
-        return self.text_config.get_max_seq_len()
-
     @staticmethod
     def get_num_layers(huggingface_config: AutoConfig) -> int:
         return huggingface_config.text_config.num_hidden_layers
-
-    @staticmethod
-    def calculate_max_seq_len(
-        pipeline_config: PipelineConfig, huggingface_config: AutoConfig
-    ) -> int:
-        max_seq_len = pipeline_config.model.max_length
-        if max_seq_len:
-            return max_seq_len
-        return huggingface_config.text_config.max_position_embeddings
 
     @override
     @classmethod

@@ -75,6 +75,25 @@ def make_concatenated_gated_activation_fn(
     return _concatenated_gated_activation_fn
 
 
+def _swigluoai_activation(
+    gate_up: TensorValue,
+    moe_dim: int,
+    alpha: float,
+    limit: float,
+) -> TensorValue:
+    """Applies the OAI-style clamped SwiGLU activation."""
+    gate = gate_up[:, :moe_dim]
+    up = gate_up[:, moe_dim:]
+
+    lim = ops.constant(limit, gate.dtype, device=gate.device)
+    neg_lim = ops.constant(-limit, up.dtype, device=up.device)
+    alpha_value = ops.constant(alpha, gate.dtype, device=gate.device)
+
+    gate = ops.min(gate, lim)
+    up = ops.min(ops.max(up, neg_lim), lim)
+    return (up + 1.0) * gate * ops.sigmoid(gate * alpha_value)
+
+
 class MoEGate(Module):
     """Gate module for MoE."""
 
@@ -204,6 +223,12 @@ class MoE(Module, Shardable):
             ``None``.
         quant_config: The scaled quantization configuration. Defaults to
             ``None``.
+        use_swigluoai: Whether to use the OAI-style clamped SwiGLU activation
+            function. Defaults to ``False``.
+        swiglu_alpha: The alpha value for the clamped SwiGLU activation function.
+            Defaults to ``0.0``.
+        swiglu_limit: The limit value for the clamped SwiGLU activation function.
+            Defaults to ``0.0``.
         gated_activation_fn: Activation applied to the concatenated
             ``[gate | up]`` projection. ``None`` (default) uses a fused
             SiLU kernel; use
@@ -213,7 +238,12 @@ class MoE(Module, Shardable):
             equal to ``dtype`` (routed experts) and ``quant_config`` is set,
             shared experts use the same quantization as routed experts. When
             different (e.g. BF16 shared weights with packed NVFP4 routed experts),
-            shared linears omit ``quant_config``. Defaults to ``dtype``.
+            shared linears omit ``quant_config`` unless
+            ``shared_experts_quant_config`` is set. Defaults to ``dtype``.
+        shared_experts_quant_config: Optional separate :class:`QuantConfig` for
+            shared-expert MLPs when their storage dtype differs from routed
+            experts (e.g. MXFP8 shared with NVFP4 routed). Defaults to
+            ``None``.
         pre_expert_norm_cls: A callable that returns a normalization
             module to apply before expert computation. Defaults to
             ``None``.
@@ -248,17 +278,22 @@ class MoE(Module, Shardable):
         moe_dim: int,
         gate_cls: Callable[..., MoEGate] = MoEGate,
         mlp_cls: Callable[..., MLP] = MLP,
+        shared_mlp_cls: Callable[..., MLP] | None = None,
         has_shared_experts: bool = False,
         shared_experts_dim: int = 0,
         ep_size: int = 1,
         dtype: DType = DType.bfloat16,
         apply_router_weight_first: bool = False,
+        use_swigluoai: bool = False,
+        swiglu_alpha: float = 0.0,
+        swiglu_limit: float = 0.0,
         gated_activation_fn: Callable[[TensorValue, int], TensorValue]
         | None = None,
         pre_expert_norm_cls: Callable[[], Module] | None = None,
         ep_batch_manager: EPBatchManager | None = None,
         quant_config: QuantConfig | None = None,
         shared_experts_dtype: DType | None = None,
+        shared_experts_quant_config: QuantConfig | None = None,
         is_sharding: bool = False,
     ):
         super().__init__()
@@ -269,11 +304,15 @@ class MoE(Module, Shardable):
         self.moe_dim = moe_dim
         self.gate_cls = gate_cls
         self.mlp_cls = mlp_cls
+        self.shared_mlp_cls = shared_mlp_cls
         self.has_shared_experts = has_shared_experts
         self.shared_experts_dim = shared_experts_dim
         self.ep_size = ep_size
         self.dtype = dtype
         self.apply_router_weight_first = apply_router_weight_first
+        self.use_swigluoai = use_swigluoai
+        self.swiglu_alpha = swiglu_alpha
+        self.swiglu_limit = swiglu_limit
         self.gated_activation_fn = gated_activation_fn
         self.pre_expert_norm_cls = pre_expert_norm_cls
         self.pre_expert_norm = (
@@ -291,16 +330,34 @@ class MoE(Module, Shardable):
         self.shared_experts_dtype = (
             shared_experts_dtype if shared_experts_dtype is not None else dtype
         )
+        self.shared_experts_quant_config = shared_experts_quant_config
+
+        if use_swigluoai:
+            assert swiglu_alpha != 0.0 and swiglu_limit != 0.0, (
+                "swiglu_alpha and swiglu_limit must be set when use_swigluoai is True"
+            )
+
+        assert not (use_swigluoai and gated_activation_fn is not None), (
+            "use_swigluoai and gated_activation_fn cannot be set at the same time"
+        )
 
         if has_shared_experts:
             assert shared_experts_dim > 0, (
                 "shared_experts_dim must be greater than 0"
             )
-            shared_use_quant = (
+            if shared_experts_quant_config is not None:
+                shared_quant = shared_experts_quant_config
+            elif (
                 quant_config is not None and self.shared_experts_dtype == dtype
-            )
-            shared_quant = quant_config if shared_use_quant else None
-            self.shared_experts = mlp_cls(
+            ):
+                shared_quant = quant_config
+            else:
+                shared_quant = None
+            self.shared_experts = (
+                self.shared_mlp_cls
+                if self.shared_mlp_cls is not None
+                else mlp_cls
+            )(
                 dtype=self.shared_experts_dtype,
                 quantization_encoding=None,
                 hidden_dim=self.hidden_dim,
@@ -342,9 +399,25 @@ class MoE(Module, Shardable):
         )
         return self._ep_batch_manager
 
+    def configure_ep_scale_fusion(self, dispatch_supports_fold: bool) -> None:
+        """Configure any EP dispatch-scale fusion before the dispatch op.
+
+        No-op on the base class; ``MoEQuantized`` overrides it to enable the
+        MXFP4 up-proj A-scale preshuffle fold. Defined here (rather than
+        duck-typed) so the EP forward driver can call it on any ``MoE`` shard:
+        non-quantized subclasses inherit this no-op and consistently skip the
+        fold (no fusion, no corruption).
+
+        Args:
+            dispatch_supports_fold: Whether the selected dispatch path wires the
+                A-scale fold params. Ignored by this base no-op.
+        """
+
     @property
     def _shared_experts_use_quant(self) -> bool:
-        """Whether shared experts use the same quantized weights as routed experts."""
+        """Whether shared experts use quantized weights in the MoE path."""
+        if self.shared_experts_quant_config is not None:
+            return True
         return (
             self.quant_config is not None
             and self.shared_experts_dtype == self.dtype
@@ -405,6 +478,16 @@ class MoE(Module, Shardable):
         if self.has_shared_experts:
             shared_experts_shards = self.shared_experts.shard(devices)
 
+        # Replicate the pre-expert norm; the per-shard constructor would
+        # otherwise register duplicate weights under one name.
+        pre_expert_norm_shards = None
+        if self.pre_expert_norm is not None:
+            assert isinstance(self.pre_expert_norm, Shardable)
+            self.pre_expert_norm.sharding_strategy = ShardingStrategy.replicate(
+                self._sharding_strategy.num_devices
+            )
+            pre_expert_norm_shards = self.pre_expert_norm.shard(devices)
+
         shards = []
         num_devices = self._sharding_strategy.num_devices
         sharded_moe_dim = self.moe_dim // num_devices
@@ -423,15 +506,21 @@ class MoE(Module, Shardable):
                 num_experts_per_token=self.num_experts_per_token,
                 moe_dim=sharded_moe_dim,
                 gate_cls=self.gate_cls,
+                mlp_cls=self.mlp_cls,
+                shared_mlp_cls=self.shared_mlp_cls,
                 has_shared_experts=self.has_shared_experts,
                 shared_experts_dim=sharded_shared_experts_dim,
                 ep_size=self.ep_size,
                 dtype=self.dtype,
                 apply_router_weight_first=self.apply_router_weight_first,
+                use_swigluoai=self.use_swigluoai,
+                swiglu_alpha=self.swiglu_alpha,
+                swiglu_limit=self.swiglu_limit,
                 gated_activation_fn=self.gated_activation_fn,
                 pre_expert_norm_cls=self.pre_expert_norm_cls,
                 quant_config=self.quant_config,
                 shared_experts_dtype=self.shared_experts_dtype,
+                shared_experts_quant_config=self.shared_experts_quant_config,
                 is_sharding=True,
             )
 
@@ -442,6 +531,8 @@ class MoE(Module, Shardable):
             sharded.gate = gate_shards[shard_idx]
             if self.has_shared_experts:
                 sharded.shared_experts = shared_experts_shards[shard_idx]
+            if pre_expert_norm_shards is not None:
+                sharded.pre_expert_norm = pre_expert_norm_shards[shard_idx]
 
             if self._sharding_strategy.is_tensor_parallel:
                 sharded.shard_index = shard_idx
@@ -472,7 +563,7 @@ class MoE(Module, Shardable):
 
         return shards
 
-    def _uses_fused_swiglu_nvfp4_layout(self) -> bool:
+    def _uses_fused_swiglu_layout(self) -> bool:
         # True when gate_up weights and scales are sigma-permuted to the
         # (gate, up) interleaved N-axis layout that the fused
         # SwiGLU+NVFP4 grouped-matmul kernel consumes. The kernel runs a
@@ -480,7 +571,7 @@ class MoE(Module, Shardable):
         # only makes sense under expert parallelism.
         return (
             self.quant_config is not None
-            and self.quant_config.can_use_fused_swiglu_nvfp4
+            and self.quant_config.can_use_fused_swiglu
             and self._ep_batch_manager is not None
             and self.gated_activation_fn is None
         )
@@ -528,7 +619,7 @@ class MoE(Module, Shardable):
         # innermost rows are now interleaved (g_0, u_0, g_1, u_1, ...). One
         # bulk permute replaces E per-expert stacks to keep the graph small
         # and the constant-folding tractable.
-        if self._uses_fused_swiglu_nvfp4_layout():
+        if self._uses_fused_swiglu_layout():
             shard = shard.reshape([len(gate_list), 2, -1, k_dim])
             shard = ops.permute(shard, [0, 2, 1, 3])
             return shard.reshape([len(gate_list), -1, k_dim])
@@ -569,6 +660,15 @@ class MoE(Module, Shardable):
         """
         return None
 
+    def _swigluoai_activation(self, gate_up: TensorValue) -> TensorValue:
+        """Applies the configured OAI-style clamped SwiGLU activation."""
+        return _swigluoai_activation(
+            gate_up,
+            self.moe_dim,
+            self.swiglu_alpha,
+            self.swiglu_limit,
+        )
+
     def _local_ep_compute(
         self,
         expert_inputs: tuple[TensorValue, ...],
@@ -594,6 +694,8 @@ class MoE(Module, Shardable):
         )
         if self.gated_activation_fn is not None:
             activated = self.gated_activation_fn(gate_up_projs, self.moe_dim)
+        elif self.use_swigluoai:
+            activated = self._swigluoai_activation(gate_up_projs)
         else:
             activated = fused_silu(gate_up_projs, expert_inputs[1])
         return grouped_matmul_ragged(
@@ -655,13 +757,15 @@ class MoE(Module, Shardable):
             self.gate_up_proj,
             expert_start_indices,
             expert_ids,
-            expert_usage_stats.to(DeviceRef.CPU()),
+            expert_usage_stats,
         )
 
         if self.gated_activation_fn is not None:
             gate_up_projs = self.gated_activation_fn(
                 gate_up_projs, self.moe_dim
             )
+        elif self.use_swigluoai:
+            gate_up_projs = self._swigluoai_activation(gate_up_projs)
         else:
             gate_up_projs = fused_silu(gate_up_projs, expert_start_indices)
 
@@ -670,7 +774,7 @@ class MoE(Module, Shardable):
             self.down_proj,
             expert_start_indices,
             expert_ids,
-            expert_usage_stats.to(DeviceRef.CPU()),
+            expert_usage_stats,
         )
 
         down_projs = ops.gather(

@@ -20,9 +20,18 @@ from max.pipelines.diffusion.interface import (
 from .arch_config import (
     ArchConfig,
     ArchConfigWithAttentionKVCache,
-    ArchConfigWithKVAndVisionCache,
+    ArchConfigWithBoundedMaxSeqLen,
     ArchConfigWithKVCache,
+    ArchConfigWithPermissiveMaxSeqLen,
     ArchConfigWithStoredKVParams,
+    ArchVLConfigWithTextSubconfig,
+)
+from .batch_processor import (
+    BatchProcessor,
+    BatchProcessorRuntime,
+    RaggedBatchProcessor,
+    process_ragged_kv_outputs,
+    ragged_kv_symbolic_inputs,
 )
 from .generate import GenerateMixin
 from .pipeline_model import (
@@ -32,15 +41,20 @@ from .pipeline_model import (
     PipelineModel,
     PipelineModelWithKVCache,
     UnifiedEagleOutputs,
+    UnifiedSpecDecodeInputs,
 )
 
 __all__ = [
     "AlwaysSignalBuffersMixin",
     "ArchConfig",
     "ArchConfigWithAttentionKVCache",
-    "ArchConfigWithKVAndVisionCache",
+    "ArchConfigWithBoundedMaxSeqLen",
     "ArchConfigWithKVCache",
+    "ArchConfigWithPermissiveMaxSeqLen",
     "ArchConfigWithStoredKVParams",
+    "ArchVLConfigWithTextSubconfig",
+    "BatchProcessor",
+    "BatchProcessorRuntime",
     "DiffusionPipeline",
     "DiffusionPipelineOutput",
     "GenerateMixin",
@@ -48,5 +62,9 @@ __all__ = [
     "ModelOutputs",
     "PipelineModel",
     "PipelineModelWithKVCache",
+    "RaggedBatchProcessor",
     "UnifiedEagleOutputs",
+    "UnifiedSpecDecodeInputs",
+    "process_ragged_kv_outputs",
+    "ragged_kv_symbolic_inputs",
 ]

@@ -16,7 +16,7 @@
 from __future__ import annotations
 
 from max.experimental import functional as F
-from max.experimental.sharding.rules import normalization_rule
+from max.experimental.sharding.rules import rms_norm_rule
 from max.experimental.tensor import Tensor
 from max.graph import Dim, ops
 
@@ -27,7 +27,7 @@ from ..module import Module
 #: See :func:`max.graph.ops.rms_norm` for the underlying op, including the
 #: ``weight_offset`` and ``multiply_before_cast`` knobs used to switch
 #: between Llama-style and Gemma-style normalization.
-rms_norm = F.functional(ops.rms_norm, rule=normalization_rule)
+rms_norm = F.functional(ops.rms_norm, rule=rms_norm_rule)
 
 
 class RMSNorm(Module[[Tensor], Tensor]):

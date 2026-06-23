@@ -22,6 +22,7 @@ and Python code.
 
 from std.ffi import _Global, _CPointer, c_int
 from std.sys.info import size_of
+from std.collections import OwnedKwargsDict
 
 from std.builtin._startup import _ensure_runtime_init
 from std.reflection import reflect
@@ -133,7 +134,7 @@ def lookup_py_type_object[T: AnyType]() raises -> PythonObject:
 # https://docs.python.org/3/c-api/typeobj.html#slot-type-typedefs
 
 
-struct PyMojoObject[T: ImplicitlyDestructible]:
+struct PyMojoObject[T: ImplicitlyDeletable]:
     """Storage backing a PyObject* wrapping a Mojo value.
 
     This struct represents the C-level layout of a Python object that contains
@@ -169,9 +170,7 @@ struct PyMojoObject[T: ImplicitlyDestructible]:
     """Whether the Mojo value has been initialized."""
 
 
-def _tp_dealloc_wrapper[
-    T: ImplicitlyDestructible
-](py_self: PyObjectPtr) abi("C"):
+def _tp_dealloc_wrapper[T: ImplicitlyDeletable](py_self: PyObjectPtr) abi("C"):
     """Python-compatible wrapper for deallocating a `PyMojoObject`.
 
     This function serves as the tp_dealloc slot for Python type objects that
@@ -198,7 +197,7 @@ def _tp_dealloc_wrapper[
 
 
 def _tp_repr_wrapper[
-    T: ImplicitlyDestructible
+    T: ImplicitlyDeletable
 ](py_self: PyObjectPtr) abi("C") -> PyObjectPtr:
     """Python-compatible wrapper for generating string representation of a
     `PyMojoObject`.
@@ -337,7 +336,7 @@ struct PythonModuleBuilder:
     # ===-------------------------------------------------------------------===#
 
     def add_type[
-        T: ImplicitlyDestructible
+        T: ImplicitlyDeletable
     ](mut self, type_name: StaticString) -> ref[
         self.type_builders
     ] PythonTypeBuilder:
@@ -459,7 +458,7 @@ struct PythonModuleBuilder:
 
         Accepts functions with PythonObject arguments (up to 8), can optionally
         return a PythonObject, and can raise. Functions can also accept keyword
-        arguments if their last parameter is OwnedKwargsDict[PythonObject].
+        arguments via `**kwargs: PythonObject`.
 
         Non-kwargs callables register through CPython's `METH_FASTCALL`
         calling convention; kwargs-accepting callables use
@@ -468,12 +467,11 @@ struct PythonModuleBuilder:
         Example signatures:
         ```mojo
         from std.python import PythonObject
-        from std.collections.dict import OwnedKwargsDict
 
         def func(arg1: PythonObject) -> PythonObject: ...
         def func(arg1: PythonObject, arg2: PythonObject) raises: ...
-        def func(kwargs: OwnedKwargsDict[PythonObject]) -> PythonObject: ...
-        def func(arg1: PythonObject, kwargs: OwnedKwargsDict[PythonObject]) raises: ...
+        def func(**kwargs: PythonObject) -> PythonObject: ...
+        def func(arg1: PythonObject, **kwargs: PythonObject) raises: ...
         ```
 
         Parameters:
@@ -564,7 +562,7 @@ struct PythonTypeBuilder(Copyable):
     var basicsize: Int
     """The required allocation size to hold an instance of this type as a Python object."""
 
-    var _slots: Dict[Int, _CPointer[NoneType, MutAnyOrigin]]
+    var _slots: Dict[Int, _CPointer[NoneType, MutUntrackedOrigin]]
     """Dictionary of Python type slots that define the behavior of the type, mapping slot number to function pointer."""
 
     var methods: List[PyMethodDef]
@@ -591,7 +589,7 @@ struct PythonTypeBuilder(Copyable):
 
     @staticmethod
     def bind[
-        T: ImplicitlyDestructible
+        T: ImplicitlyDeletable
     ](type_name: StaticString) -> PythonTypeBuilder:
         """Construct a new builder for a Python type that binds a Mojo type.
 
@@ -670,7 +668,7 @@ struct PythonTypeBuilder(Copyable):
             0,
             Py_TPFLAGS_DEFAULT,
             # Note: This pointer is only "read-only" by PyType_FromSpec.
-            slots.unsafe_ptr(),
+            slots.unsafe_ptr().unsafe_origin_cast[MutUntrackedOrigin](),
         )
 
         # Construct a Python 'type' object from our type spec.
@@ -706,7 +704,7 @@ struct PythonTypeBuilder(Copyable):
         self._slots[Int(slot.slot)] = slot.pfunc
 
     def def_init_defaultable[
-        T: Defaultable & Movable & ImplicitlyDestructible,
+        T: Defaultable & Movable & ImplicitlyDeletable,
     ](mut self) raises -> ref[self] Self:
         """Declare a binding for the `__init__` method of the type which
         initializes the type with a default value.
@@ -735,7 +733,7 @@ struct PythonTypeBuilder(Copyable):
         return self
 
     def def_py_init[
-        T: Movable & ImplicitlyDestructible,
+        T: Movable & ImplicitlyDeletable,
         //,
         init_func: def(out T, args: PythonObject, kwargs: PythonObject) thin,
     ](mut self) raises -> ref[self] Self:
@@ -754,7 +752,7 @@ struct PythonTypeBuilder(Copyable):
         return self.def_py_init[_raising_py_init_wrapper[T, init_func]]()
 
     def def_py_init[
-        T: Movable & ImplicitlyDestructible,
+        T: Movable & ImplicitlyDeletable,
         //,
         init_func: def(
             out T, args: PythonObject, kwargs: PythonObject
@@ -1046,6 +1044,91 @@ struct PythonTypeBuilder(Copyable):
 
 
 # ===-----------------------------------------------------------------------===#
+# Error Translation
+# ===-----------------------------------------------------------------------===#
+
+
+@fieldwise_init
+struct ExceptionType(TrivialRegisterPassable):
+    """A CPython global exception type used to translate a Mojo `Error` into a
+    Python exception.
+    """
+
+    var global_name: StaticString
+    """The name of the backing CPython global, for example `PyExc_TypeError`."""
+
+    comptime Exception = Self("PyExc_Exception")
+    """The base `Exception` type."""
+
+    comptime TypeError = Self("PyExc_TypeError")
+    """The `TypeError` type."""
+
+    comptime ValueError = Self("PyExc_ValueError")
+    """The `ValueError` type."""
+
+
+def _set_python_error(
+    e: Error, exc_type: ExceptionType = ExceptionType.Exception
+):
+    """Set the active Python exception from a Mojo `Error`.
+
+    Translates `e` into a Python exception of type `exc_type` via
+    `PyErr_SetString`, leaving the CPython error indicator set so the
+    enclosing `PyCFunction` wrapper can signal the failure to CPython.
+
+    Args:
+        e: The Mojo error to translate.
+        exc_type: The CPython global exception type to set. Defaults to
+            `ExceptionType.Exception`.
+    """
+    ref cpython = Python().cpython()
+    var error_message = String(e)
+    var error_type = cpython.get_error_global(exc_type.global_name)
+    cpython.PyErr_SetString(
+        error_type, error_message.as_c_string_slice().unsafe_ptr()
+    )
+
+
+def raise_python_exception(
+    e: Error, exc_type: ExceptionType = ExceptionType.Exception
+) -> PyObjectPtr:
+    """Translate a Mojo `Error` into a Python exception and return NULL.
+
+    Sets the active Python exception via `PyErr_SetString` so that the
+    calling `PyCFunction` wrapper can return the resulting null `PyObjectPtr`
+    to signal the error to CPython.
+
+    Example:
+
+    ```mojo
+    from std.python import PythonObject
+    from std.python._cpython import PyObjectPtr
+    from std.python.bindings import raise_python_exception
+
+    def do_work(args: PyObjectPtr) -> PythonObject:
+        # Your wrapper's real work, which may raise a Mojo `Error`.
+        return PythonObject(from_borrowed=args)
+
+    def my_wrapper(py_self: PyObjectPtr, args: PyObjectPtr) -> PyObjectPtr:
+        try:
+            return do_work(args).steal_data()
+        except e:
+            return raise_python_exception(e)
+    ```
+
+    Args:
+        e: The Mojo error to translate.
+        exc_type: The CPython global exception type to set. Defaults to
+            `ExceptionType.Exception`.
+
+    Returns:
+        A null `PyObjectPtr`, which signals the error to CPython.
+    """
+    _set_python_error(e, exc_type)
+    return PyObjectPtr()
+
+
+# ===-----------------------------------------------------------------------===#
 # PyCFunction Wrappers
 # ===-----------------------------------------------------------------------===#
 
@@ -1067,21 +1150,14 @@ def _py_new_function_wrapper[
 ](subtype: PyTypeObjectPtr, args_ptr: PyObjectPtr, kwargs_ptr: PyObjectPtr) abi(
     "C"
 ) -> PyObjectPtr:
-    ref cpython = Python().cpython()
-
     try:
         return _unsafe_alloc[T](subtype)
     except e:
-        var error_message = String(e)
-        var error_type = cpython.get_error_global("PyExc_TypeError")
-        cpython.PyErr_SetString(
-            error_type, error_message.as_c_string_slice().unsafe_ptr()
-        )
-        return {}
+        return raise_python_exception(e, ExceptionType.TypeError)
 
 
 def _py_init_function_wrapper[
-    T: Movable & ImplicitlyDestructible,
+    T: Movable & ImplicitlyDeletable,
     init_func: def(out T, args: PythonObject, kwargs: PythonObject) thin raises,
 ](py_self: PyObjectPtr, args_ptr: PyObjectPtr, kwargs_ptr: PyObjectPtr) abi(
     "C"
@@ -1093,8 +1169,6 @@ def _py_init_function_wrapper[
     var kwargs = PythonObject(from_borrowed=kwargs_ptr)
     var args = PythonObject(from_borrowed=args_ptr)
 
-    ref cpython = Python().cpython()
-
     try:
         var value = init_func(args, kwargs)
         _unsafe_init(py_self, value^)
@@ -1102,17 +1176,13 @@ def _py_init_function_wrapper[
 
     except e:
         # TODO(MSTDL-933): Add custom 'MojoError' type, and raise it here.
-        var error_message = String(e)
-        var error_type = cpython.get_error_global("PyExc_ValueError")
-        cpython.PyErr_SetString(
-            error_type, error_message.as_c_string_slice().unsafe_ptr()
-        )
+        _set_python_error(e, ExceptionType.ValueError)
         return -1
 
 
 @always_inline
 def _raising_py_init_wrapper[
-    T: Movable & ImplicitlyDestructible,
+    T: Movable & ImplicitlyDeletable,
     init_func: def(args: PythonObject, kwargs: PythonObject) thin -> T,
 ](out t: T, args: PythonObject, kwargs: PythonObject) raises:
     t = init_func(args, kwargs)
@@ -1175,8 +1245,6 @@ def _py_c_function_wrapper[
     # held), so we do not acquire it here. Acquiring it would just cost
     # an extra PyGILState_Ensure/Release round-trip per call.
 
-    ref cpython = Python().cpython()
-
     try:
         comptime if user_func.isa[PyFunctionRaising]():
             return user_func.unsafe_get[PyFunctionRaising]()(
@@ -1190,21 +1258,42 @@ def _py_c_function_wrapper[
         else:
             comptime assert False, "unknown `GenericPyFunction` variant"
     except e:
-        var error_message = String(e)
-        var error_type = cpython.get_error_global("PyExc_Exception")
+        # Return a NULL `PyObject*`, with the Python error indicator set.
+        return raise_python_exception(e)
 
-        cpython.PyErr_SetString(
-            error_type, error_message.as_c_string_slice().unsafe_ptr()
-        )
 
-        # Return a NULL `PyObject*`.
-        return PyObjectPtr()
+def _convert_kwargs(
+    py_kwargs: PythonObject,
+) raises -> OwnedKwargsDict[PythonObject]:
+    """Convert a Python dictionary to an OwnedKwargsDict.
+
+    Args:
+        py_kwargs: Python dictionary containing keyword arguments.
+
+    Returns:
+        An OwnedKwargsDict containing the keyword arguments.
+    """
+    var result = OwnedKwargsDict[PythonObject]()
+
+    # Handle the case where kwargs is None or empty
+    if not py_kwargs._obj_ptr:
+        return result^
+
+    # Iterate through the Python dictionary and populate OwnedKwargsDict
+    var items = py_kwargs.items()
+    for item in items:
+        var key = item[0]
+        var value = item[1]
+        var key_str = String(key)
+        result[key_str] = value
+
+    return result^
 
 
 @always_inline
 def _py_kwargs_function_wrapper[
     method_type: TrivialRegisterPassable,
-    self_type: ImplicitlyDestructible,
+    self_type: ImplicitlyDeletable,
     //,
     func: PyObjectFunction[method_type, self_type, has_kwargs=_],
     *,
@@ -1227,9 +1316,9 @@ def _py_kwargs_function_wrapper[
         mut py_args: PythonObject,
         mut py_kwargs: PythonObject,
     ) raises -> PythonObject:
-        var kwargs = FuncT._convert_kwargs(py_kwargs)
+        var kwargs = _convert_kwargs(py_kwargs)
         return FuncT._dispatch_kwargs[is_method](
-            func._func, py_self, py_args, kwargs
+            func._func, py_self, py_args, **kwargs^
         )
 
     return GenericPyFunction(wrapper_with_kwargs)
@@ -1243,7 +1332,7 @@ def _py_kwargs_function_wrapper[
 @always_inline
 def _py_function_fastcall_wrapper[
     method_type: TrivialRegisterPassable,
-    self_type: ImplicitlyDestructible,
+    self_type: ImplicitlyDeletable,
     //,
     func: PyObjectFunction[method_type, self_type, has_kwargs=_],
     *,
@@ -1282,11 +1371,10 @@ def _py_function_fastcall_wrapper[
     @always_inline
     def fastcall(
         py_self_ptr: PyObjectPtr,
-        args: UnsafePointer[PyObjectPtr, MutExternalOrigin],
+        args: UnsafePointer[PyObjectPtr, MutUntrackedOrigin],
         nargs: Py_ssize_t,
     ) abi("C") -> PyObjectPtr:
         var py_self = PythonObject(from_borrowed=py_self_ptr)
-        ref cpython = Python().cpython()
 
         # CPython's vectorcall protocol (PEP 590) guarantees `args` is
         # non-null for every METH_FASTCALL invocation, including the
@@ -1298,13 +1386,8 @@ def _py_function_fastcall_wrapper[
                 func._func, py_self, args, Int(nargs)
             ).steal_data()
         except e:
-            var error_message = String(e)
-            var error_type = cpython.get_error_global("PyExc_Exception")
-            cpython.PyErr_SetString(
-                error_type, error_message.as_c_string_slice().unsafe_ptr()
-            )
-            # Return a NULL `PyObject*`.
-            return PyObjectPtr()
+            # Return a NULL `PyObject*`, with the Python error indicator set.
+            return raise_python_exception(e)
 
     return fastcall
 
@@ -1453,7 +1536,7 @@ def check_arguments_arity(
 
 
 def check_and_get_arg[
-    T: ImplicitlyDestructible
+    T: ImplicitlyDeletable
 ](
     func_name: StaticString, py_args: PythonObject, index: Int
 ) raises -> UnsafePointer[T, MutAnyOrigin]:
@@ -1481,6 +1564,29 @@ def _try_convert_arg[
     T: ConvertibleFromPython
 ](
     func_name: StringSlice, py_args: PythonObject, argidx: Int, out result: T
+) raises:
+    try:
+        result = T(py=py_args[argidx])
+    except convert_err:
+        raise Error(
+            "TypeError: ",
+            func_name,
+            "() expected argument at position ",
+            argidx,
+            " to be instance of (or convertible to) Mojo '",
+            reflect[T].name(),
+            "'; got '",
+            _get_type_name(py_args[argidx]),
+            "'. (Note: attempted conversion failed due to: ",
+            convert_err,
+            ")",
+        )
+
+
+def _try_convert_arg[
+    T: type_of(Int)
+](
+    func_name: StringSlice, py_args: PythonObject, argidx: Int, out result: Int
 ) raises:
     try:
         result = T(py=py_args[argidx])
@@ -1533,15 +1639,58 @@ def check_and_get_or_convert_arg[
     """
 
     # Stack space to hold a converted value for this argument, if needed.
-    var converted_arg_ptr: UnsafePointer[
-        mut=True, T, MutAnyOrigin
-    ] = stack_allocation[1, T]()
+    var converted_arg_ptr = stack_allocation[1, T]().as_unsafe_any_origin()
 
     try:
         return check_and_get_arg[T](func_name, py_args, index)
     except e:
         converted_arg_ptr.init_pointee_move(
             _try_convert_arg[T](
+                func_name,
+                py_args,
+                index,
+            )
+        )
+        # Return a pointer to stack data. Only valid because this function is
+        # @always_inline.
+        return converted_arg_ptr
+
+
+@always_inline
+def check_and_get_or_convert_arg[
+    T: type_of(Int)
+](
+    func_name: StaticString, py_args: PythonObject, index: Int
+) raises -> UnsafePointer[Int, MutAnyOrigin]:
+    """Get the argument at the given index and convert it to a given Mojo type.
+
+    If the argument cannot be directly downcast to the given type, it will be
+    converted to it.
+
+    Parameters:
+        T: The Mojo type to downcast or convert the argument to.
+
+    Args:
+        func_name: The name of the function referenced in the error message if
+            the downcast fails.
+        py_args: The Python tuple object containing the arguments.
+        index: The index of the argument.
+
+    Returns:
+        A pointer to the Mojo value contained in or converted from the argument.
+
+    Raises:
+        If the argument cannot be downcast or converted to the given type.
+    """
+
+    # Stack space to hold a converted value for this argument, if needed.
+    var converted_arg_ptr = stack_allocation[1, Int]().as_unsafe_any_origin()
+
+    try:
+        return check_and_get_arg[Int](func_name, py_args, index)
+    except e:
+        converted_arg_ptr.init_pointee_move(
+            _try_convert_arg[Int](
                 func_name,
                 py_args,
                 index,

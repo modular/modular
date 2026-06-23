@@ -17,6 +17,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
+from typing import Any, ClassVar
 
 import numpy as np
 from max.driver import Buffer, Device, DevicePinnedBuffer
@@ -24,19 +25,27 @@ from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph
 from max.graph.weights import Weights, WeightsAdapter, load_weights
-from max.nn.kv_cache import KVCacheInputs, KVCacheParams
+from max.nn.kv_cache import (
+    KVCacheInputsInterface,
+    KVCacheParams,
+    MultiKVCacheParams,
+)
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
-from max.pipelines.core import TextContext
+from max.pipelines.context import TextContext
 from max.pipelines.lib import (
     CompilationTimer,
     KVCacheConfig,
-    ModelInputs,
     PipelineConfig,
     PipelineRuntimeConfig,
-    UnifiedEagleOutputs,
 )
 from max.pipelines.lib._hf_config import PretrainedConfig
-from max.pipelines.lib.interfaces import PipelineModelWithKVCache
+from max.pipelines.lib.interfaces import (
+    PipelineModelWithKVCache,
+    UnifiedSpecDecodeInputs,
+)
+from max.pipelines.lib.pipeline_variants.unified_spec_decode_model import (
+    _UnifiedSpecDecodeModelMixin,
+)
 from max.pipelines.lib.utils import parse_state_dict_from_weights
 
 from ..llama3.model_config import Llama3Config
@@ -56,31 +65,18 @@ logger = logging.getLogger("max.pipelines")
 
 
 @dataclass
-class UnifiedDflashLlama3Inputs(ModelInputs):
+class UnifiedDflashLlama3Inputs(UnifiedSpecDecodeInputs):
     """Inputs for the unified DFlash Llama3 graph.
 
-    Carries the buffers consumed by a single execute of the unified graph:
-    the merged tokens / ragged offsets, the draft tokens to verify
-    (None on prefill), the persistent draft KV pool, and the sampling
-    parameters used by the in-graph acceptance sampler.
+    The spec-decode fields and trailing buffer packing come from
+    :class:`UnifiedSpecDecodeInputs`; ``tokens`` / ``input_row_offsets`` /
+    ``return_n_logits`` plus the KV cache form this single-device graph's
+    prefix. The DFlash graph does not bind ``in_thinking_phase``.
     """
 
     tokens: Buffer
     input_row_offsets: Buffer
     return_n_logits: Buffer
-
-    draft_tokens: Buffer | None = None
-    draft_kv_blocks: list[Buffer] | None = None
-    seed: Buffer | None = None
-    temperature: Buffer | None = None
-    top_k: Buffer | None = None
-    max_k: Buffer | None = None
-    top_p: Buffer | None = None
-    min_top_p: Buffer | None = None
-    # Set by ``OverlapTextGenerationPipeline`` and required by the
-    # ``_UnifiedSpecDecodeInputs`` runtime-checkable Protocol; not consumed
-    # by the DFlash graph today.
-    in_thinking_phase: Buffer | None = None
 
     @property
     def buffers(self) -> tuple[Buffer, ...]:
@@ -90,26 +86,9 @@ class UnifiedDflashLlama3Inputs(ModelInputs):
             self.return_n_logits,
             *(self.kv_cache_inputs.flatten() if self.kv_cache_inputs else ()),
         )
-        if self.draft_tokens is not None:
-            buffers += (self.draft_tokens,)
-        if self.draft_kv_blocks is not None:
-            buffers += tuple(self.draft_kv_blocks)
-        assert self.seed is not None
-        buffers += (self.seed,)
-        if self.draft_tokens is not None:
-            assert self.temperature is not None
-            assert self.top_k is not None
-            assert self.max_k is not None
-            assert self.top_p is not None
-            assert self.min_top_p is not None
-            buffers += (
-                self.temperature,
-                self.top_k,
-                self.max_k,
-                self.top_p,
-                self.min_top_p,
-            )
-        return buffers
+        return buffers + self._spec_decode_tail_buffers(
+            include_in_thinking_phase=False, supports_structured_output=False
+        )
 
 
 @dataclass
@@ -131,8 +110,12 @@ class PersistentInputBuffers:
         return cls(tokens, input_row_offsets)
 
 
-class UnifiedDflashLlama3Model(PipelineModelWithKVCache[TextContext]):
+class UnifiedDflashLlama3Model(
+    _UnifiedSpecDecodeModelMixin, PipelineModelWithKVCache[TextContext]
+):
     """Unified DFlash Llama3: target + draft in one compiled graph."""
+
+    model_config_cls: ClassVar[type[Any]] = Llama3Config
 
     model: Model
 
@@ -167,12 +150,6 @@ class UnifiedDflashLlama3Model(PipelineModelWithKVCache[TextContext]):
             device=devices[0],
         )
         self._seed_counter = 0
-
-    def _next_seed(self) -> Buffer:
-        self._seed_counter += 1
-        return Buffer.from_numpy(
-            np.array([self._seed_counter], dtype=np.uint64)
-        ).to(self.devices[0])
 
     @classmethod
     def get_kv_params(
@@ -231,6 +208,7 @@ class UnifiedDflashLlama3Model(PipelineModelWithKVCache[TextContext]):
             # pin to the target's device(s) so the weights co-locate
             # whenever the target lives on a non-zero GPU.
             draft_config.devices = target_config.devices
+            draft_config.sliding_window = draft_model_config.sliding_window
             draft_config.kv_params = replace(
                 draft_config.kv_params, devices=target_config.devices
             )
@@ -276,6 +254,9 @@ class UnifiedDflashLlama3Model(PipelineModelWithKVCache[TextContext]):
             self._draft_kv_params = replace(
                 self.kv_params, num_layers=draft_config.num_hidden_layers
             )
+            self.kv_params = MultiKVCacheParams.from_params(
+                {"target": self.kv_params, "draft": self._draft_kv_params}
+            )
 
             with Graph(
                 "unified_dflash_llama3",
@@ -290,21 +271,10 @@ class UnifiedDflashLlama3Model(PipelineModelWithKVCache[TextContext]):
 
         return model
 
-    def execute(
-        self,
-        model_inputs: ModelInputs,
-    ) -> UnifiedEagleOutputs:
-        model_outputs = self.model.execute(*model_inputs.buffers)
-        return UnifiedEagleOutputs(
-            num_accepted_draft_tokens=model_outputs[0],
-            next_tokens=model_outputs[1],
-            next_draft_tokens=model_outputs[2],
-        )
-
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
+        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> UnifiedDflashLlama3Inputs:
         context_batch = [ctx for batch in replica_batches for ctx in batch]
@@ -356,25 +326,4 @@ class UnifiedDflashLlama3Model(PipelineModelWithKVCache[TextContext]):
             return_n_logits=return_n_logits_buf,
             kv_cache_inputs=kv_cache_inputs,
             seed=self._next_seed(),
-        )
-
-    def prepare_next_token_inputs(
-        self,
-        next_tokens: Buffer,
-        prev_model_inputs: ModelInputs,
-    ) -> UnifiedDflashLlama3Inputs:
-        raise NotImplementedError(
-            "Multistep execution is not supported for"
-            " UnifiedDflashLlama3Model. The unified pipeline handles"
-            " iteration internally."
-        )
-
-    @classmethod
-    def calculate_max_seq_len(
-        cls,
-        pipeline_config: PipelineConfig,
-        huggingface_config: PretrainedConfig,
-    ) -> int:
-        return Llama3Config.calculate_max_seq_len(
-            pipeline_config, huggingface_config
         )

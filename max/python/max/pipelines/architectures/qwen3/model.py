@@ -28,19 +28,16 @@ from max.graph.weights import Weights, WeightsAdapter
 from max.nn.comm.ep import EPCommInitializer, EPConfig
 from max.nn.comm.ep.ep_config import calculate_ep_max_tokens_per_rank
 from max.nn.comm.ep.ep_manager import EPBatchManager
-from max.nn.kv_cache import KVCacheInputs
-from max.pipelines.core import TextContext
-from max.pipelines.lib import (
-    CompilationTimer,
-    ModelInputs,
-)
+from max.nn.kv_cache import KVCacheInputsInterface
+from max.pipelines.context import TextContext
+from max.pipelines.lib import CompilationTimer
 from max.pipelines.lib.interfaces import AlwaysSignalBuffersMixin
-from max.pipelines.lib.quant import parse_quant_config
 from max.pipelines.lib.utils import (
     compute_data_parallel_splits,
     parse_state_dict_from_weights,
 )
 from max.pipelines.modeling.config_enums import supported_encoding_dtype
+from max.pipelines.weights.quant import parse_quant_config
 from max.support.algorithm import flatten2d
 from typing_extensions import override
 
@@ -275,9 +272,7 @@ class Qwen3Model(AlwaysSignalBuffersMixin, LlamaModelBase):
                     next(variadic_args_iter).buffer for _ in range(num_devices)
                 ]
 
-                kv_input_count = len(
-                    self.kv_params.get_symbolic_inputs().flatten()
-                )
+                kv_input_count = len(self.kv_params.flattened_kv_inputs())
                 kv_cache_inputs = [
                     next(variadic_args_iter) for _ in range(kv_input_count)
                 ]
@@ -323,7 +318,7 @@ class Qwen3Model(AlwaysSignalBuffersMixin, LlamaModelBase):
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
+        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> Llama3Inputs | Qwen3Inputs:
         dp = self.pipeline_config.model.data_parallel_degree
@@ -405,34 +400,3 @@ class Qwen3Model(AlwaysSignalBuffersMixin, LlamaModelBase):
             kv_cache_inputs=kv_cache_inputs,
             ep_inputs=ep_inputs,
         )
-
-    @override
-    def prepare_next_token_inputs(
-        self,
-        next_tokens: Buffer,
-        prev_model_inputs: ModelInputs,
-    ) -> Llama3Inputs | Qwen3Inputs:
-        if isinstance(prev_model_inputs, Qwen3Inputs):
-            assert self._input_row_offsets_prealloc is not None
-            row_offsets_size = prev_model_inputs.input_row_offsets.shape[0]
-            next_row_offsets = self._input_row_offsets_prealloc[
-                :row_offsets_size
-            ]
-
-            assert self._host_input_row_offsets_prealloc is not None
-            next_host_offsets = self._host_input_row_offsets_prealloc[
-                :row_offsets_size
-            ]
-
-            return Qwen3Inputs(
-                tokens=next_tokens,
-                input_row_offsets=next_row_offsets,
-                return_n_logits=prev_model_inputs.return_n_logits,
-                host_input_row_offsets=next_host_offsets,
-                data_parallel_splits=prev_model_inputs.data_parallel_splits,
-                signal_buffers=self.signal_buffers,
-                kv_cache_inputs=prev_model_inputs.kv_cache_inputs,
-                ep_inputs=prev_model_inputs.ep_inputs,
-            )
-
-        return super().prepare_next_token_inputs(next_tokens, prev_model_inputs)

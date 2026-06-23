@@ -46,7 +46,7 @@ def sort_kernel(
             hasChanged[0] = 1
 
 
-def cpu_odd_even_sort(data: UnsafePointer[UInt32, MutAnyOrigin], N: Int):
+def cpu_odd_even_sort(data: UnsafePointer[mut=True, UInt32, _], N: Int):
     """CPU reference implementation of odd-even sort.
 
     Args:

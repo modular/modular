@@ -85,7 +85,7 @@ def llvm_intrinsic[
 @always_inline("nodebug")
 def gather[
     dtype: DType,
-    size: Int,
+    size: SIMDSize,
     //,
     *,
     invariant: Bool = False,
@@ -140,17 +140,21 @@ def gather[
     """
 
     comptime if size == 1:
-        return UnsafePointer[Scalar[dtype], MutExternalOrigin](
+        return UnsafePointer[Scalar[dtype], MutUntrackedOrigin](
             unsafe_from_address=Int(base[0])
-        ).load[invariant=invariant]() if mask else passthrough[0]
+        ).load[invariant=invariant]() if mask else SIMD[dtype, size](
+            passthrough[0]
+        )
 
     comptime if is_gpu() and invariant:
         var result = SIMD[dtype, size]()
 
         comptime for i in range(size):
-            result[i] = UnsafePointer[Scalar[dtype], MutExternalOrigin](
+            result[i] = UnsafePointer[Scalar[dtype], MutUntrackedOrigin](
                 unsafe_from_address=Int(base[i])
-            ).load[invariant=invariant]() if mask[i] else passthrough[i]
+            ).load[invariant=invariant]() if mask[i] else Scalar[dtype](
+                passthrough[i]
+            )
         return result
 
     var result = llvm_intrinsic[
@@ -238,7 +242,7 @@ def scatter[
 
     comptime if size == 1:
         if mask:
-            var ptr = UnsafePointer[Scalar[dtype], MutExternalOrigin](
+            var ptr = UnsafePointer[Scalar[dtype], MutUntrackedOrigin](
                 unsafe_from_address=Int(base[0])
             )
             ptr.store(value[0])
@@ -547,7 +551,7 @@ def masked_load[
       The loaded memory stored in a vector of type SIMD[dtype, size].
     """
     comptime if size == 1:
-        return addr.load() if mask else passthrough[0]
+        return addr.load() if mask else SIMD[dtype, size](passthrough[0])
 
     var result = llvm_intrinsic["llvm.masked.load", SIMD[dtype, size]](
         addr.bitcast[NoneType]().address,
@@ -645,7 +649,7 @@ def compressed_store[
 
 @always_inline("nodebug")
 def strided_load[
-    dtype: DType, //, simd_width: Int, *, invariant: Bool = False
+    dtype: DType, //, simd_width: SIMDSize, *, invariant: Bool = False
 ](
     addr: UnsafePointer[mut=False, Scalar[dtype], ...],
     stride: Int,
@@ -757,7 +761,7 @@ def _type_is_eq[t1: AnyType, t2: AnyType]() -> Bool:
         `#kgen.type<`,
         +t2,
         `> : !kgen.type`,
-        `> : i1`,
+        `> : !kgen.scalar<bool>`,
     ]
 
 
@@ -781,7 +785,7 @@ def _type_is_eq_parse_time[t1: AnyType, t2: AnyType]() -> Bool:
         `#kgen.type<`,
         +t2,
         `> : !kgen.type`,
-        `> : i1`,
+        `> : !kgen.scalar<bool>`,
     ]
 
 
@@ -807,7 +811,7 @@ struct _RegisterPackType[*a: TrivialRegisterPassable](TrivialRegisterPassable):
         Returns:
             The tuple element at the requested index.
         """
-        return __mlir_op.`kgen.struct.extract`[index=i._int_mlir_index()](
+        return __mlir_op.`kgen.struct.extract`[index=i.__mlir_index__()](
             self._mlir_value
         )
 
@@ -906,7 +910,7 @@ def assume(val: Bool):
 @always_inline
 def implicitarg_ptr(
     out result: UnsafePointer[
-        UInt8, MutExternalOrigin, address_space=AddressSpace.CONSTANT
+        UInt8, MutUntrackedOrigin, address_space=AddressSpace.CONSTANT
     ]
 ):
     """

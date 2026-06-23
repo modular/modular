@@ -48,15 +48,15 @@ from .device import DeviceSpec
 
 
 @fieldwise_init
-struct M_driver_slice(TrivialRegisterPassable):
-    var data: ImmutPointer[UInt8, ImmutAnyOrigin]
+struct M_driver_slice[origin: ImmutOrigin](TrivialRegisterPassable):
+    var data: ImmutPointer[UInt8, Self.origin]
     var size: UInt64
 
 
 @fieldwise_init
-struct M_driver_static_bundle(TrivialRegisterPassable):
-    var mapped_data: M_driver_slice
-    var file_type: ImmutPointer[Int8, ImmutAnyOrigin]
+struct M_driver_static_bundle[origin: ImmutOrigin](TrivialRegisterPassable):
+    var mapped_data: M_driver_slice[Self.origin]
+    var file_type: ImmutPointer[Int8, StaticConstantOrigin]
     var file_type_len: UInt64
 
 
@@ -72,7 +72,7 @@ struct M_driver_queue_execute_config_gpu(TrivialRegisterPassable):
     var grid: M_driver_dim
     var block: M_driver_dim
     var shared_mem_bytes: UInt32
-    var attributes: OptionalReg[OpaquePointer[MutExternalOrigin]]
+    var attributes: OptionalReg[OpaquePointer[MutUntrackedOrigin]]
     var num_attributes: UInt32
 
 
@@ -91,7 +91,7 @@ struct M_driver_queue_execute_config:
 
 @fieldwise_init
 struct M_driver_bundle_compilation_options(TrivialRegisterPassable):
-    var debug_level: ImmutPointer[Int8, ImmutAnyOrigin]
+    var debug_level: ImmutPointer[Int8, ImmutUntrackedOrigin]
     var debug_level_len: UInt64
     var optimization_level: Int32
 
@@ -155,7 +155,7 @@ struct DriverVersion(TrivialRegisterPassable):
 # C API function pointer types
 # ===-----------------------------------------------------------------------===#
 
-comptime Handle[T: AnyType] = UnsafePointer[T, MutExternalOrigin]
+comptime Handle[T: AnyType] = UnsafePointer[T, MutUntrackedOrigin]
 comptime OutParam[T: TrivialRegisterPassable] = UnsafePointer[
     UnsafeMaybeUninit[T], MutAnyOrigin
 ]
@@ -167,7 +167,11 @@ comptime QueueHandle = Handle[M_driver_queue]
 comptime EventHandle = Handle[M_driver_event]
 comptime FunctionHandle = Handle[M_driver_function]
 comptime MemoryHandle = Handle[M_driver_memory]
-comptime StaticBundleHandle = Handle[M_driver_static_bundle]
+# Pick a sensible nominal origin for the plugin function pointer. `load_bundle` rebinds the
+# concrete bundle (whatever its asm origin) into this for the FFI call. See MOCO-3661.
+comptime StaticBundleHandle = Handle[
+    M_driver_static_bundle[StaticConstantOrigin]
+]
 comptime RuntimeBundleHandle = Handle[M_driver_runtime_bundle]
 comptime ExecuteConfigHandle = Handle[M_driver_queue_execute_config]
 comptime CompilationOptionsHandle = Handle[M_driver_bundle_compilation_options]
@@ -414,7 +418,9 @@ struct RawDriver(Movable):
         src: UnsafePointer[mut=False, UInt8, _],
         size: UInt64,
     ) raises HALError:
-        var status = self._raw.queue_copy_to_device.f(queue, dst, src, size)
+        var status = self._raw.queue_copy_to_device.f(
+            queue, dst, src.as_unsafe_any_origin(), size
+        )
         if status != STATUS_SUCCESS:
             var err = self.get_status_message(status)
             raise HALError(
@@ -429,7 +435,9 @@ struct RawDriver(Movable):
         src: MemoryHandle,
         size: UInt64,
     ) raises HALError:
-        var status = self._raw.queue_copy_from_device.f(queue, dst, src, size)
+        var status = self._raw.queue_copy_from_device.f(
+            queue, dst.as_unsafe_any_origin(), src, size
+        )
         if status != STATUS_SUCCESS:
             var err = self.get_status_message(status)
             raise HALError(
@@ -537,7 +545,7 @@ struct RawDriver(Movable):
         num_events: UInt32,
     ) raises HALError:
         var status = self._raw.queue_wait_for_events.f(
-            queue, handles, num_events
+            queue, handles.as_unsafe_any_origin(), num_events
         )
         if status != STATUS_SUCCESS:
             var err = self.get_status_message(status)
@@ -595,7 +603,7 @@ struct RawDriver(Movable):
         func: FunctionHandle,
         grid: Tuple[UInt32, UInt32, UInt32],
         block: Tuple[UInt32, UInt32, UInt32],
-        args: UnsafePointer[mut=True, OpaquePointer[MutExternalOrigin], _],
+        args: UnsafePointer[mut=True, OpaquePointer[MutUntrackedOrigin], _],
         arg_sizes: UnsafePointer[mut=True, UInt64, _],
         num_args: UInt32,
         shared_mem_bytes: UInt32 = 0,
@@ -616,8 +624,8 @@ struct RawDriver(Movable):
             queue,
             func,
             rebind[ExecuteConfigHandle](UnsafePointer(to=config)),
-            args,
-            arg_sizes,
+            args.as_unsafe_any_origin(),
+            arg_sizes.as_unsafe_any_origin(),
             num_args,
         )
         if status != STATUS_SUCCESS:
@@ -637,9 +645,7 @@ struct RawDriver(Movable):
         var ret = self._raw.status_message.f(
             self._driver_handle,
             status,
-            MutPointer(
-                to=UnsafePointer[Int8, MutAnyOrigin](buf.unsafe_ptr())[]
-            ),
+            MutPointer(to=buf.unsafe_ptr().as_unsafe_any_origin()[]),
             Int64(len(buf)),
         )
 
@@ -700,7 +706,7 @@ struct RawPlugin(Movable):
         def(
             handle: DriverHandle,
             property_name: CStringSlice[ImmutAnyOrigin],
-            value: OutParam[OpaquePointer[ImmutExternalOrigin]],
+            value: OutParam[OpaquePointer[ImmutUntrackedOrigin]],
         ) thin -> PluginResultCode,
     ]
     var device_count: HALFunction[
@@ -887,7 +893,9 @@ struct RawPlugin(Movable):
             queue: QueueHandle,
             function: FunctionHandle,
             config: ExecuteConfigHandle,
-            args: UnsafePointer[OpaquePointer[MutExternalOrigin], MutAnyOrigin],
+            args: UnsafePointer[
+                OpaquePointer[MutUntrackedOrigin], MutAnyOrigin
+            ],
             arg_sizes: UnsafePointer[UInt64, MutAnyOrigin],
             num_args: UInt32,
         ) thin -> PluginResultCode,
@@ -1007,11 +1015,7 @@ struct RawPlugin(Movable):
         )
 
         var status = self.create.f(
-            ImmutPointer(
-                to=UnsafePointer[DriverVersion, ImmutAnyOrigin](
-                    UnsafePointer(to=version)
-                )[]
-            ),
+            ImmutPointer(to=UnsafePointer(to=version).as_unsafe_any_origin()[]),
             OutParam[DriverHandle](to=handle),
         )
         if status != STATUS_SUCCESS:

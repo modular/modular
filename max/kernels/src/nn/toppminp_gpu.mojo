@@ -29,77 +29,12 @@ from nn.topk import (
     TopK_2,
     _block_reduce_topk,
     _topk_dead_val,
-    _warp_reduce_topk,
 )
 
 from std.utils import IndexList
 
 comptime DEBUG_FILE = False
 comptime SEED = 42
-
-
-@__name(t"topk_wrapper_no_shmem_{input_type}_{index_type}_{is_top_p}")
-def topk_wrapper_no_shmem[
-    input_type: DType,
-    index_type: DType,
-    *,
-    is_top_p: Bool,
-    block_size: Int,
-    largest: Bool = True,
-    _test_sort: Bool = False,
-](
-    K: Int,
-    num_elements: Int,
-    num_blocks_per_input: Int,
-    in_buffer: UnsafePointer[Scalar[input_type], ImmutExternalOrigin],
-    local_topk_vals: UnsafePointer[Scalar[input_type], MutExternalOrigin],
-    local_topk_idxs: UnsafePointer[Scalar[index_type], MutExternalOrigin],
-    p_threshold: UnsafePointer[Scalar[input_type], MutExternalOrigin],
-    skip_sort: UnsafePointer[Scalar[DType.bool], MutExternalOrigin],
-):
-    """Shared-memory-free variant of topk_wrapper for Apple GPUs.
-
-    Uses warp-level reduction and register-based invalidation instead of
-    shared memory. Only correct when block_size <= WARP_SIZE.
-    """
-    var tid = thread_idx.x
-    var bid = block_idx.x
-
-    var batch_id, block_lane = divmod(bid, num_blocks_per_input)
-
-    var _in_buffer = in_buffer + batch_id * num_elements
-
-    # Each thread finds its local best element in registers.
-    var block_offset = block_lane * block_size
-    var stride = block_size * num_blocks_per_input
-    var partial = TopK_2[input_type, largest]()
-    for i in range(tid + block_offset, num_elements, stride):
-        partial.insert(_in_buffer[i], i)
-
-    for k in range(K):
-        var total = _warp_reduce_topk[input_type, largest](partial)
-
-        var winner_p = warp.broadcast(total.p)
-
-        if tid == 0:
-            local_topk_vals[bid * K + k] = total.u
-            local_topk_idxs[bid * K + k] = Scalar[DType.int](total.p).cast[
-                index_type
-            ]()
-
-            comptime if is_top_p:
-                skip_sort[batch_id] = (
-                    total.u > p_threshold[batch_id]
-                ) and not _test_sort
-            else:
-                var p_threshold_val = p_threshold[batch_id] * total.u
-                p_threshold[batch_id] = p_threshold_val
-                skip_sort[batch_id] = False
-
-        # The thread that owned the winning element invalidates it.
-        if partial.p == winner_p:
-            partial.u = _topk_dead_val[input_type, largest]()
-            partial.p = -1
 
 
 @__name(t"topk_wrapper_{input_type}_{index_type}_{is_top_p}")
@@ -115,15 +50,15 @@ def topk_wrapper[
     K: Int,
     num_elements: Int,
     num_blocks_per_input: Int,
-    in_buffer: UnsafePointer[Scalar[input_type], ImmutExternalOrigin],
+    in_buffer: UnsafePointer[Scalar[input_type], ImmutUntrackedOrigin],
     local_topk_vals: UnsafePointer[
-        Scalar[input_type], MutExternalOrigin
+        Scalar[input_type], MutUntrackedOrigin
     ],  # Output buffer of size num_blocks_per_input * K
     local_topk_idxs: UnsafePointer[
-        Scalar[index_type], MutExternalOrigin
+        Scalar[index_type], MutUntrackedOrigin
     ],  # Output buffer of size num_blocks_per_input * K
-    p_threshold: UnsafePointer[Scalar[input_type], MutExternalOrigin],
-    skip_sort: UnsafePointer[Scalar[DType.bool], MutExternalOrigin],
+    p_threshold: UnsafePointer[Scalar[input_type], MutUntrackedOrigin],
+    skip_sort: UnsafePointer[Scalar[DType.bool], MutUntrackedOrigin],
 ):
     """
     Copy of `Kernels/mojo/nn/topk.mojo:_topk_stage1` with the addition of
@@ -313,15 +248,15 @@ def radix_sort_pairs_kernel[
     NUM_BITS_PER_PASS: Int = 4,
 ](
     input_keys_: UnsafePointer[
-        Scalar[dtype], MutExternalOrigin
+        Scalar[dtype], MutUntrackedOrigin
     ],  # modifies input
-    output_keys_: UnsafePointer[mut=True, Scalar[dtype], MutExternalOrigin],
+    output_keys_: UnsafePointer[mut=True, Scalar[dtype], MutUntrackedOrigin],
     input_key_ids_: UnsafePointer[
-        Scalar[out_idx_type], MutExternalOrigin
+        Scalar[out_idx_type], MutUntrackedOrigin
     ],  # modifies input
-    output_key_ids_: UnsafePointer[Scalar[out_idx_type], MutExternalOrigin],
+    output_key_ids_: UnsafePointer[Scalar[out_idx_type], MutUntrackedOrigin],
     num_keys: Int,
-    skip_sort: UnsafePointer[Scalar[DType.bool], MutExternalOrigin],
+    skip_sort: UnsafePointer[Scalar[DType.bool], MutUntrackedOrigin],
 ):
     """
     Radix pair sort kernel for (default) descending order.
@@ -521,7 +456,7 @@ def radix_sort_pairs_kernel[
 
 struct DoubleBuffer[dtype: DType](ImplicitlyCopyable):
     var _d_buffers: InlineArray[
-        Optional[UnsafePointer[Scalar[Self.dtype], MutExternalOrigin]], 2
+        Optional[UnsafePointer[Scalar[Self.dtype], MutUntrackedOrigin]], 2
     ]
     var _selection: Int32
     var _size: Int
@@ -533,8 +468,8 @@ struct DoubleBuffer[dtype: DType](ImplicitlyCopyable):
 
     def __init__(
         out self,
-        current: UnsafePointer[Scalar[Self.dtype], MutExternalOrigin],
-        alternate: UnsafePointer[Scalar[Self.dtype], MutExternalOrigin],
+        current: UnsafePointer[Scalar[Self.dtype], MutUntrackedOrigin],
+        alternate: UnsafePointer[Scalar[Self.dtype], MutUntrackedOrigin],
         size: Int,
     ):
         self._d_buffers = [current, alternate]
@@ -627,11 +562,11 @@ def topp_minp_sampling_kernel[
     out_idx_type: DType,
     is_top_p: Bool,
 ](
-    p_thresholds_: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    sorted_probs_: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    sorted_ids_: UnsafePointer[Scalar[out_idx_type], MutExternalOrigin],
-    out_token_ids: UnsafePointer[Scalar[out_idx_type], MutExternalOrigin],
-    skip_sort: UnsafePointer[Scalar[DType.bool], MutExternalOrigin],
+    p_thresholds_: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    sorted_probs_: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    sorted_ids_: UnsafePointer[Scalar[out_idx_type], MutUntrackedOrigin],
+    out_token_ids: UnsafePointer[Scalar[out_idx_type], MutUntrackedOrigin],
+    skip_sort: UnsafePointer[Scalar[DType.bool], MutUntrackedOrigin],
     vocab_size: Int,
 ):
     """
@@ -801,9 +736,9 @@ def _topp_minp_sampling_gpu[
     @parameter
     @__copy_capture(input_logits)
     def apply_temperature[
-        _simd_width: Int, _rank: Int
-    ](coords: IndexList[_rank]) -> SIMD[dtype, _simd_width]:
-        var val = input_logits.load[width=_simd_width](Coord(coords))
+        _simd_width: Int
+    ](coords: Coord) -> SIMD[dtype, _simd_width]:
+        var val = input_logits.load[width=_simd_width](coords)
         return val / temperature
 
     var input_size = input_logits.num_elements()
@@ -819,7 +754,7 @@ def _topp_minp_sampling_gpu[
         1,
         input_logits.rank,
         apply_temperature,
-    ](input_shape, input_probs, input_logits.rank - 1, ctx)
+    ](Coord(input_shape), input_probs, input_logits.rank - 1, ctx)
 
     # Step 2: Do a Top K=1 search on each vocab_size row of the
     #   probabilities tensor. This is to check if the most probable
@@ -831,61 +766,39 @@ def _topp_minp_sampling_gpu[
 
     comptime K = 1
     comptime num_blocks_per_input = 1
-    comptime if has_apple_gpu_accelerator():
-        comptime topk_kernel = topk_wrapper_no_shmem[
-            input_type=dtype,
-            index_type=out_idx_type,
-            is_top_p=is_top_p,
-            block_size=BLOCK_SIZE,
-            _test_sort=_test_sort,
-        ]
+    comptime topk_kernel = topk_wrapper[
+        input_type=dtype,
+        index_type=out_idx_type,
+        is_top_p=is_top_p,
+        block_size=BLOCK_SIZE,
+        _test_sort=_test_sort,
+    ]
 
-        ctx.enqueue_function[topk_kernel](
-            K,
-            vocab_size,
-            num_blocks_per_input,
-            probs_buf,
-            max_vals,
-            out_token_ids.to_device_buffer(ctx),
-            p_thresholds.to_device_buffer(ctx),
-            skip_sort,
-            grid_dim=batch_size,
-            block_dim=BLOCK_SIZE,
-        )
-    else:
-        comptime topk_kernel = topk_wrapper[
-            input_type=dtype,
-            index_type=out_idx_type,
-            is_top_p=is_top_p,
-            block_size=BLOCK_SIZE,
-            _test_sort=_test_sort,
-        ]
-
-        ctx.enqueue_function[topk_kernel](
-            K,
-            vocab_size,
-            num_blocks_per_input,
-            probs_buf,
-            max_vals,
-            out_token_ids.to_device_buffer(ctx),
-            p_thresholds.to_device_buffer(ctx),
-            skip_sort,
-            grid_dim=batch_size,
-            block_dim=BLOCK_SIZE,
-        )
+    ctx.enqueue_function[topk_kernel](
+        K,
+        vocab_size,
+        num_blocks_per_input,
+        probs_buf,
+        max_vals,
+        out_token_ids.to_device_buffer(ctx),
+        p_thresholds.to_device_buffer(ctx),
+        skip_sort,
+        grid_dim=batch_size,
+        block_dim=BLOCK_SIZE,
+    )
 
     # Step 3: Apply a global sort on the input tensor of probs
     # Create the input_ids buffer
     var ids_buf = ctx.enqueue_create_buffer[out_idx_type](input_size * 2)
     var probs_double_buffer = DoubleBuffer(
-        probs_buf.unsafe_ptr().unsafe_origin_cast[MutExternalOrigin](),
-        probs_buf.unsafe_ptr().unsafe_origin_cast[MutExternalOrigin]()
+        probs_buf.unsafe_ptr().unsafe_origin_cast[MutUntrackedOrigin](),
+        probs_buf.unsafe_ptr().unsafe_origin_cast[MutUntrackedOrigin]()
         + input_size,
         input_size,
     )
     var keys_double_buffer = DoubleBuffer(
-        ids_buf.unsafe_ptr().unsafe_origin_cast[MutExternalOrigin](),
-        ids_buf.unsafe_ptr().unsafe_origin_cast[MutExternalOrigin]()
+        ids_buf.unsafe_ptr().unsafe_origin_cast[MutUntrackedOrigin](),
+        ids_buf.unsafe_ptr().unsafe_origin_cast[MutUntrackedOrigin]()
         + input_size,
         input_size,
     )

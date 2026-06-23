@@ -40,10 +40,14 @@ class NullConnector:
         self,
         block_ids: list[int],
         block_hashes: list[int],
+        parent_seq_hash: int = 0,
     ) -> None:
         pass
 
-    def sync(self) -> None:
+    def wait_for_loads(self) -> None:
+        pass
+
+    def wait_for_offloads(self) -> None:
         pass
 
     def shutdown(self) -> None:

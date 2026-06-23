@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Tests SM100 pair-CTA (cta_group=2) MMA for both SS and TS modes.
 
-SS tests exercise build_mma_ss -> bulk_mma -> SM100TensorAccumulatorSS.mma.
+SS tests exercise build_mma_ss -> bulk_mma -> SM100TensorAccumulator.mma.
 TS tests exercise build_mma_ts -> bulk_mma (TS overload) with A in TMEM
 via tcgen05_cp and B in SMEM, validating the TMEM layout for pair-CTA.
 """
@@ -69,7 +69,7 @@ from layout.tma_async import (
 )
 from layout.swizzle import make_swizzle
 from nn.attention.gpu.nvidia.sm100.attention_utils import (
-    SM100TensorAccumulatorSS,
+    SM100TensorAccumulator,
     TMemTile,
     bulk_mma,
     elect,
@@ -142,18 +142,16 @@ def bulk_mma_pair_cta_kernel[
     var a_smem_tile = LayoutTensor[
         ab_type,
         a_smem_layout,
-        MutAnyOrigin,
         address_space=AddressSpace.SHARED,
         alignment=128,
-    ](a_smem)
+    ](a_smem.as_unsafe_any_origin())
 
     var b_smem_tile = LayoutTensor[
         ab_type,
         b_smem_layout,
-        MutAnyOrigin,
         address_space=AddressSpace.SHARED,
         alignment=128,
-    ](b_smem)
+    ](b_smem.as_unsafe_any_origin())
 
     comptime accum_type = get_accum_type[ab_type]()
 
@@ -218,14 +216,15 @@ def bulk_mma_pair_cta_kernel[
         b_smem_tile.ptr
     )
 
-    # The SM100TensorAccumulatorSS handles the k-loop (num_k_mmas) internally
+    # The SM100TensorAccumulator handles the k-loop (num_k_mmas) internally
     # via bulk_mma, generating all k-step MMA instructions in one assembly block.
-    comptime Acc = SM100TensorAccumulatorSS[
+    comptime Acc = SM100TensorAccumulator[
         ab_type,
         accum_type,
         MMA_M,
         MMA_N,
         BK,
+        a_tmem=False,
         mma_kind=UMMAKind.KIND_F16,
         swizzle_a=a_swizzle,
         swizzle_b=b_swizzle,
@@ -439,18 +438,16 @@ def bulk_mma_pair_cta_ts_kernel[
     var a_smem_tile = LayoutTensor[
         ab_type,
         a_smem_layout,
-        MutAnyOrigin,
         address_space=AddressSpace.SHARED,
         alignment=128,
-    ](a_smem)
+    ](a_smem.as_unsafe_any_origin())
 
     var b_smem_tile = LayoutTensor[
         ab_type,
         b_smem_layout,
-        MutAnyOrigin,
         address_space=AddressSpace.SHARED,
         alignment=128,
-    ](b_smem)
+    ](b_smem.as_unsafe_any_origin())
 
     comptime accum_type = get_accum_type[ab_type]()
 

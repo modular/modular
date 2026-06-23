@@ -58,7 +58,6 @@ class ProviderOptions(BaseModel):
 
     # Add more modality fields here as needed:
     # text: TextModalityOptions | None = None
-    # tts: TTSModalityOptions | None = None
 
 
 __all__ = [

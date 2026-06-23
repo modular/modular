@@ -22,6 +22,8 @@ from std.sys.info import has_accelerator
 from std.algorithm.functional import IndexList
 from std.math import sqrt
 
+from layout import Coord, coord_to_index_list
+
 from extensibility import ManagedTensorSlice
 from extensibility import Input
 from extensibility import StaticTensorSpec
@@ -36,7 +38,7 @@ from op_utils import _get_dtype, _get_buffer_ptr, _get_ctx, _get_shape, MAX_RANK
 
 
 @export
-def PyInit_rms_norm_ops() -> PythonObject:
+def PyInit_rms_norm_ops() abi("C") -> PythonObject:
     """Create a Python module with rms_norm kernel function bindings."""
     try:
         var b = PythonModuleBuilder("rms_norm_ops")
@@ -58,9 +60,9 @@ def PyInit_rms_norm_ops() -> PythonObject:
 def _rms_norm_cpu[
     dtype: DType,
 ](
-    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    in_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    gamma_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    out_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    in_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    gamma_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     batch_dim: Int,
     feature_dim: Int,
     epsilon: Scalar[dtype],
@@ -110,9 +112,9 @@ def rms_norm_op[
     dtype: DType,
     multiply_before_cast: Bool,
 ](
-    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    in_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    gamma_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    out_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    in_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    gamma_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     shape: IndexList[2],
     gamma_shape: IndexList[1],
     epsilon: Scalar[dtype],
@@ -152,14 +154,15 @@ def rms_norm_op[
     else:
         comptime if has_accelerator():
             comptime if dtype in (DType.float32, DType.float16, DType.bfloat16):
-
+                # `rms_norm` migrated to a `Coord` input/shape boundary
+                # (softmax PR #88203). This lambda does runtime index
+                # subscripts, so recover the `IndexList` via
+                # `coord_to_index_list` before computing the flat offset.
                 @always_inline
                 @parameter
                 @__copy_capture(in_ptr, feature_dim)
-                def input_fn[
-                    width: Int, rank: Int
-                ](coords: IndexList[rank]) -> SIMD[dtype, width]:
-                    var c = rebind[IndexList[2]](coords)
+                def input_fn[width: Int](coords: Coord) -> SIMD[dtype, width]:
+                    var c = rebind[IndexList[2]](coord_to_index_list(coords))
                     var flat_idx = c[0] * feature_dim + c[1]
                     return in_ptr.load[width=width](flat_idx)
 
@@ -188,7 +191,7 @@ def rms_norm_op[
                     target="gpu",
                     multiply_before_cast=multiply_before_cast,
                 ](
-                    shape,
+                    Coord(shape),
                     gamma_tensor.to_tile_tensor[DType.int64](),
                     epsilon,
                     weight_offset,

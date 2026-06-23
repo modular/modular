@@ -13,6 +13,18 @@
 
 from .attention_lora import AttentionWithRopeAndLoRA
 from .interfaces import SupportsLoRA
-from .linear_lora import LinearLoRA
+from .linear_lora import (
+    LinearLoRA,
+    LoRALinear,
+    LoRAMixin,
+    StackedLinearLoRA,
+)
 
-__all__ = ["AttentionWithRopeAndLoRA", "LinearLoRA", "SupportsLoRA"]
+__all__ = [
+    "AttentionWithRopeAndLoRA",
+    "LinearLoRA",
+    "LoRALinear",
+    "LoRAMixin",
+    "StackedLinearLoRA",
+    "SupportsLoRA",
+]

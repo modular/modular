@@ -1,0 +1,71 @@
+Last Modified: April 12th, 2025
+
+These Modular Community License Terms (these "Terms") are entered into by and between Modular, Inc. ("Modular") and the individual or entity agreeing to these terms ("Licensee"), and form part of Modular’s Terms of Use. Capitalized terms used herein but not otherwise defined have the meanings set forth in the Terms of Use. By clicking the "Agree" button or by downloading, installing, copying, or otherwise using any software development kits made available by Modular as part of the Modular Platform (each, the "SDK"), or otherwise developing software using Modular’s MAX Framework, Magic tooling or Mojo programming language, Licensee agrees to be bound by these Terms. If Licensee does not agree to these Terms, Licensee should not proceed with the download, installation, or use of the applicable SDK. If Licensee is an individual downloading the SDK on behalf of an entity or organization, Licensee represents and warrants that it has the requisite authority to bind that entity (and any applicable Affiliates) to these Terms.
+1. SDK AND DOCUMENTATION LICENSE GRANT
+
+Subject to Licensee’s compliance with these Terms, Modular hereby grants Licensee a non-exclusive, non-transferable license to use the SDK and accompanying Documentation (as defined below), as made available at https://docs.modular.com, solely for use in developed software applications ("Applications") that meet the Usage and Distribution Requirements and Solely in accordance with the Permitted Capacity as specified in this Agreement. This license does not grant Licensee the right to distribute the SDK or any part thereof to third parties, except as expressly stated otherwise herein. For the avoidance of doubt, Licensee may under no circumstances redistribute the SDK itself outside of any Applications. Nothing herein shall be construed as a grant of a license or any other rights with respect to Modular’s trademarks, logos, or other branding for Mojo or any other Modular offerings (collectively, the “Marks”). Licensee shall seek prior written consent for the use of the Marks in connection with its use of the SDK, and agrees and acknowledges that Modular is under no obligation to grant any such requests.
+2. MODULAR PLATFORM RESTRICTIONS AND USAGE
+
+Modular software is licensed on a discrete physical per-device basis, and the Section 1 license applies to each discrete device accessible by the software in any computing environment, including cloud computing environments where devices are attached to a compute instance. The Section 1 license applies to the Licensee’, its affiliates and partners in respect to:
+
+2.1 Usage for non-production, non-commercial usage
+No capacity restrictions for any usage, on any physical devices.
+
+2.2 Usage for production, commercial usage
+No capacity restrictions for any physical devices that are marketed as CPUs with X86 or ARM instruction set architectures, and/or NVIDIA-manufactured hardware products. However, for other device types not aforementioned, capacity restrictions are limited to the aggregate of no more than eight (8) other discrete physical accelerator devices in any computing environment regardless of type or configuration (the “Permitted Capacity”). For a license for usage exceeding Permitted Capacity, please contact Modular at licensing@modular.com.
+
+2.3 Licensee name & logo
+If Licensee is an entity, and deploys Modular’s infrastructure for production, commercial usage, Licensee hereby agrees (a) to notify Modular of such usage via usage@modular.com and, (b) grants Modular a worldwide license to display and use Licensee’s trademark(s), service mark(s), trade name(s) and/or logo(s) (collectively, the “Licensee Marks”) for the purpose of identifying Licensee as a user of the SDK and a reasonable description of the Licensee’s use case of the SDK in Modular’s business, marketing and promotional materials. As between the parties, Licensee owns and shall retain all rights in and to the Licensee Marks.
+
+Licensee shall not:
+
+(a) modify, adapt, translate, reverse engineer, decompile, or disassemble the SDK or any part thereof, or otherwise attempt to derive or gain access to SDK source code;
+(b) remove, alter, or obscure any proprietary notices, labels, or marks from the SDK;
+(c) use the SDK in an Application or standalone, or otherwise develop an Application in Mojo, for any Competitive Activity; or
+(d) use the SDK in any manner that violates any applicable laws, the Distribution Requirements, regulations, third-party rights, or other Modular terms or agreements by which Licensee is bound.
+
+Licensee acknowledges and understands that its use of the SDK may be subject to the collection of certain telemetry, usage, and other data which captures Licensee's interactions with and use of the SDK (collectively, the "Usage Data"). Licensee agrees that Modular may freely use, modify, copy, and/or distribute the Usage Data for any purpose, including but not limited to improving the SDK or any other component or aspect of the Modulars products.
+3. REDISTRIBUTABLE COMPONENTS & LIMITATIONS
+
+Modular hereby grants Licensee the limited right to redistribute certain components of the SDK as part of Licensee's Applications, subject to the conditions and limitations set forth in this clause, including the Distribution Requirements. The redistributable components of the SDK ("Redistributable Components") are specified in the accompanying SDK documentation or materials provided by Modular (the “Documentation”). Licensee shall only redistribute the Redistributable Components as expressly permitted in these Terms and in any Documentation, in accordance with the Distribution Requirements.
+
+“Distribution Requirements” means each of the following requirements:
+
+(a) The Application must have material additional functionality, beyond the included portions of the SDK;
+(b) The distributable portions of the SDK shall only be accessed by the Application;
+(c) The terms under which Licensee distributes an Application must be consistent with the terms of this Agreement, including (without limitation) terms relating to the license grant and license restrictions and protection of Modular’s intellectual property rights;
+(d) Licensee shall not redistribute the Redistributable Components as standalone components, libraries, or tools in any way that would enable third parties to violate the terms of this License;
+(e) Licensee shall not modify, reverse engineer, decompile, disassemble, or attempt to derive the source code of the Redistributable Components, except to the extent expressly permitted by applicable law;
+(f) Licensee shall include all proprietary notices, labels, and marks provided by Modular in the Documentation (or elsewhere) in connection with the Redistributable Components in all copies of Applications that incorporate the Redistributable Components;
+(g) The text of this Agreement shall be conspicuously displayed in each original or modified copy of the SDK; and
+(h) The Application must only be run on hardware expressly supported by MAX. If Licensee wishes to run the Application on custom hardware it is developing or has developed, Licensee must contact Modular with a written request to secure appropriate rights to do so. Modular reserves the right to approve or deny such requests in its sole discretion.
+
+Licensee agrees to notify Modular in writing of any known or suspected violation of the Distribution Requirements and to reasonably enforce the terms of its Application. If Licensee receives the SDK in original or modified form from any third party, Licensee agrees and accepts that the terms of this Agreement are still binding upon Licensee.
+4. OWNERSHIP & PERSONAL INFORMATION
+
+Modular and its applicable licensors retain all right, title, and interest in and to the SDK (including any Redistributable Components) and Documentation, including all intellectual property rights therein. Licensee acknowledges and agrees that, other than as explicitly stated herein, nothing in these Terms grants it any rights to or ownership interest in the SDK or Documentation. As between the parties, Licensee acknowledges that Modular owns all right, title, and interest in and to the Usage Data and may use or exploit it for any purpose it deems fit, including but not limited to the purposes of improving the SDK or any other component or aspect of the Max Platform. Any collection, storage, or use of Licensee personal information is governed by Modular’s Privacy Policy (https://www.modular.com/legal/privacy), which Licensee hereby acknowledges upon acceptance of these Terms.
+5. SUPPORT AND UPDATES
+
+Modular is not obligated to provide any support, patches, fixes or updates for the SDK. However, Modular may, at its sole discretion, provide updates, patches, fixes or support at any time.
+6. FEES
+
+The community license variant of the SDK is provided free of charge. Licensee acknowledges that Modular may at any time change its provision of its community variant of the SDK for free or generally. In the event Modular does the foregoing, it will make commercially reasonable efforts to provide Licensee of advanced notice of its plans to either change its provision of the SDK or offer the applicable, commercial variant of the SDK for a fee to the contact information provided by Licensee to Modular.
+7. WARRANTY DISCLAIMER
+
+THE SDK IS PROVIDED "AS IS" AND TO THE EXTENT PERMITTED BY APPLICABLE LAW, MODULAR MAKES NO OTHER WARRANTIES, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, OR NON-INFRINGEMENT. LICENSEE ACKNOWLEDGES AND AGREES THAT THE USE OF THE SDK IS AT THEIR OWN RISK, AND MODULAR DOES NOT MAKE ANY REPRESENTATIONS OR WARRANTIES REGARDING THE ACCURACY, RELIABILITY, OR COMPLETENESS OF THE SDK, OR INFORMATION OBTAINED THROUGH THE SDK. MODULAR DOES NOT WARRANT OR GUARANTEE THAT THE SDK WILL MEET LICENSEE'S REQUIREMENTS OR EXPECTATIONS FOR ITS APPLICATIONS OR GENERALLY, OR THAT ANY ERRORS OR DEFECTS IN THE SDK WILL BE CORRECTED. FURTHERMORE, MODULAR DOES NOT WARRANT OR MAKE ANY REPRESENTATIONS REGARDING THE RESULTS THAT MAY BE OBTAINED FROM THE USE OF THE SDK OR THE SUITABILITY OF THE SDK FOR ANY PARTICULAR PURPOSE. MODULAR MAKES NO WARRANTIES OR REPRESENTATIONS THAT THE SDK WILL BE COMPATIBLE WITH LICENSEE'S SYSTEMS, SOFTWARE, OR APPLICATIONS, OR THAT THE SDK WILL BE SECURE FROM UNAUTHORIZED ACCESS, HACKING, OR OTHER POTENTIAL SECURITY THREATS. MODULAR DISCLAIMS ANY LIABILITY ARISING OUT OF OR IN CONNECTION WITH THE USE OF THE SDK. LICENSEE ASSUMES ALL RISKS AND RESPONSIBILITIES FOR USING THE SDK TO ACHIEVE THEIR INTENDED RESULTS AND FOR THE INSTALLATION, USE, AND RESULTS OBTAINED FROM THE SDK. ADDITIONALLY, VERSIONS OF THE SDK IDENTIFIED AS ‘PREVIEW VERSIONS’ MAY HAVE ADDITIONAL BUGS OR DESIGN FLAWS. MODULAR MAKES NO WARRANTIES ABOUT THE PREVIEW VERSIONS WHATSOEVER, AND LICENSEE’S USE OF THE SDK IN COMMERCIAL, PRODUCTION ENVIRONMENTS IN VIOLATION OF THIS AGREEMENT IS AT ITS OWN RISK.
+8. INDEMNIFICATION
+
+Licensee shall defend, indemnify and hold harmless Modular, its affiliates and their respective officers, directors, employees, agents and representatives from any and all third party claims, damages, liabilities, costs and fees (including reasonable attorneys’ fees) arising from: (i) its material breach of these Terms; or (ii) an allegation that any Application violates, misappropriates, or infringes any third party intellectual, contractual or proprietary right.
+9. LIMITATION OF LIABILITY
+
+TO THE EXTENT PERMITTED BY APPLICABLE LAW, IN NO EVENT SHALL MODULAR BE RESPONSIBLE OR LIABLE WITH RESPECT TO ANY SUBJECT MATTER OF THIS AGREEMENT UNDER ANY CONTRACT, NEGLIGENCE, STRICT LIABILITY OR OTHER THEORY FOR: (I) LOSS OR INACCURACY OF DATA OR COST OF PROCUREMENT OF SUBSTITUTE GOODS, SERVICES, OR TECHNOLOGY; OR (II) ANY INDIRECT, INCIDENTAL, OR CONSEQUENTIAL DAMAGES INCLUDING, BUT NOT LIMITED TO LOSS OF REVENUES OR PROFITS; (III) ANY MATTER BEYOND ITS REASONABLE CONTROL; OR (IV) ANY AMOUNT IN THE AGGREGATE OVER $100. SOME JURISDICTIONS DO NOT ALLOW CERTAIN WARRANTY DISCLAIMERS OR LIMITATIONS ON LIABILITY. ONLY DISCLAIMERS OR LIMITATIONS THAT ARE LAWFUL IN THE APPLICABLE JURISDICTION WILL APPLY TO YOU, AND MODULAR’S LIABILITY WILL BE LIMITED TO THE MAXIMUM EXTENT PERMITTED BY LAW.
+10. TERMINATION
+
+Licensee may terminate these Terms by ceasing all use of the SDK. Modular may terminate these Terms immediately upon Licensee’s breach of any provision or if Licensee initiates or participates in legal action against Modular.
+
+Modular may also discontinue the SDK at any time if, at Modular’s sole discretion, continued provision becomes commercially non-viable, upon reasonable advance notice via Modular's website or other contact methods. 
+
+Upon any termination or discontinuation, all provisions of this Agreement survive, except for the original license grant. If Modular discontinues the SDK for reasons unrelated to Licensee’s breach or legal action, Licensee may continue use of the SDK under a perpetual, royalty-free, non-exclusive license, excluding any resale, redistribution, sublicensing, or other commercial exploitation of the SDK, and without warranties, guarantees, or liabilities from Modular.
+11. EXPORT CONTROL
+
+Licensee shall comply with, and shall, at Modular’s request, demonstrate compliance with all applicable export laws, restrictions, and regulations of any United States or foreign agency or authority. Licensee shall not export or re-export, or allow the export or re-export of any product, technology or information it obtains pursuant to these Terms (including but not limited to the SDK) in violation of any such laws, embargoes, restrictions or regulations. Licensee shall obtain and bear all expenses relating to any licenses and/or exemptions required to comply with foregoing.

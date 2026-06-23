@@ -247,23 +247,6 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
             unsafe_from_utf8=Span(ptr=self.unsafe_ptr() + idx, length=1)
         )
 
-    # TODO(MSTDL-1327): Reduce pain when string literals can't be
-    # nonmaterializable by making them merge into StaticString.  They should
-    # eventually merge into String through nonmaterialization.
-    @always_inline("nodebug")
-    def __merge_with__[
-        other_type: type_of(StringLiteral[_]),
-    ](self) -> StaticString:
-        """Returns a StaticString after merging with another string literal.
-
-        Parameters:
-            other_type: The type of the string literal to merge with.
-
-        Returns:
-            A StaticString after merging with the specified `other_type`.
-        """
-        return self
-
     # ===-------------------------------------------------------------------===#
     # Methods
     # ===-------------------------------------------------------------------===#
@@ -278,7 +261,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         Notes:
             This does not include the trailing null terminator in the count.
         """
-        return Int(mlir_value=__mlir_op.`pop.string.size`(self.value))
+        return Int(SIMDSize(mlir_value=__mlir_op.`pop.string.size`(self.value)))
 
     @always_inline
     def count_codepoints(self) -> Int:

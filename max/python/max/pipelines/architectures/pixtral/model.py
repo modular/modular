@@ -22,16 +22,16 @@ import numpy as np
 from max.driver import Buffer, Device, DLPackArray
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import BufferType, DeviceRef, Graph, TensorType
+from max.graph import BufferType, DeviceRef, Graph, Module, TensorType
 from max.graph.weights import (
     SafetensorWeights,
     WeightData,
     Weights,
     WeightsAdapter,
 )
-from max.nn.kv_cache import KVCacheInputs
+from max.nn.kv_cache import KVCacheInputsInterface
 from max.nn.transformer import ReturnLogits
-from max.pipelines.core import TextAndVisionContext
+from max.pipelines.context import TextAndVisionContext
 from max.pipelines.lib import (
     CompilationTimer,
     KVCacheConfig,
@@ -39,9 +39,11 @@ from max.pipelines.lib import (
     ModelOutputs,
     PipelineConfig,
     PipelineModelWithKVCache,
+)
+from max.pipelines.lib.utils import (
+    parse_state_dict_from_weights,
     upper_bounded_default,
 )
-from max.pipelines.lib.utils import parse_state_dict_from_weights
 from max.profiler import traced
 from transformers import AutoConfig
 
@@ -74,6 +76,26 @@ class PixtralModel(PipelineModelWithKVCache[TextAndVisionContext]):
     """Pixtral pipeline model with separate vision and language graphs."""
 
     model_config_cls: ClassVar[type[Any]] = PixtralConfig
+
+    @classmethod
+    def calculate_max_seq_len(
+        cls,
+        pipeline_config: PipelineConfig,
+        huggingface_config: AutoConfig,
+    ) -> int:
+        """Bounds ``max_length`` by ``text_config.max_position_embeddings`` (config is permissive)."""
+        upper_bound = huggingface_config.text_config.max_position_embeddings
+        try:
+            return upper_bounded_default(
+                upper_bound=upper_bound,
+                default=pipeline_config.model.max_length,
+            )
+        except ValueError as e:
+            raise ValueError(
+                f"Unable to infer max_length for {cls.__qualname__}, "
+                f"the provided max_length ({pipeline_config.model.max_length}) "
+                f"exceeds the model's max_position_embeddings ({upper_bound})."
+            ) from e
 
     vision_model: Model
     language_model: Model
@@ -154,7 +176,7 @@ class PixtralModel(PipelineModelWithKVCache[TextAndVisionContext]):
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[TextAndVisionContext]],
-        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
+        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> PixtralInputs:
         if len(replica_batches) > 1:
@@ -274,42 +296,6 @@ class PixtralModel(PipelineModelWithKVCache[TextAndVisionContext]):
             kv_cache_inputs=kv_cache_inputs,
         )
 
-    def prepare_next_token_inputs(
-        self,
-        next_tokens: Buffer,
-        prev_model_inputs: ModelInputs,
-    ) -> PixtralInputs:
-        assert isinstance(prev_model_inputs, PixtralInputs)
-
-        old_row_offsets = prev_model_inputs.input_row_offsets
-        row_offsets_size = old_row_offsets.shape[0]
-        next_row_offsets = self._input_row_offsets_prealloc[:row_offsets_size]
-
-        # Next-token steps have no vision inputs.
-        return PixtralInputs(
-            tokens=next_tokens,
-            input_row_offsets=next_row_offsets,
-            return_n_logits=prev_model_inputs.return_n_logits,
-            kv_cache_inputs=prev_model_inputs.kv_cache_inputs,
-        )
-
-    @classmethod
-    def calculate_max_seq_len(
-        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
-    ) -> int:
-        try:
-            return upper_bounded_default(
-                upper_bound=huggingface_config.text_config.max_position_embeddings,
-                default=pipeline_config.model.max_length,
-            )
-        except ValueError as e:
-            raise ValueError(
-                "Unable to infer max_length for Pixtral, the provided "
-                f"max_length ({pipeline_config.model.max_length}) exceeds the "
-                f"model's max_position_embeddings "
-                f"({huggingface_config.text_config.max_position_embeddings})."
-            ) from e
-
     def _create_empty_image_embeddings(self) -> Buffer:
         return Buffer.zeros(
             shape=[0, self.huggingface_config.text_config.hidden_size],
@@ -367,7 +353,7 @@ class PixtralModel(PipelineModelWithKVCache[TextAndVisionContext]):
                 shape=["total_image_tokens"],
                 device=device_ref,
             ),
-            *self.kv_params.get_symbolic_inputs().flatten(),
+            *self.kv_params.flattened_kv_inputs(),
         )
 
     @traced
@@ -376,10 +362,12 @@ class PixtralModel(PipelineModelWithKVCache[TextAndVisionContext]):
         config: PixtralConfig,
         state_dict: dict[str, WeightData],
         patch_dim: int,
+        module: Module | None = None,
     ) -> tuple[Graph, dict[str, DLPackArray]]:
         with Graph(
             "pixtral_vision",
             input_types=self._vision_graph_input_types(patch_dim),
+            module=module,
         ) as graph:
             vision_nn = PixtralVision(config)
             vision_nn.load_state_dict(
@@ -400,10 +388,12 @@ class PixtralModel(PipelineModelWithKVCache[TextAndVisionContext]):
         self,
         config: PixtralConfig,
         state_dict: dict[str, WeightData],
+        module: Module | None = None,
     ) -> tuple[Graph, dict[str, DLPackArray]]:
         with Graph(
             "pixtral_language",
             input_types=self._language_graph_input_types(),
+            module=module,
         ) as graph:
             language_nn = PixtralLanguage(config)
             language_nn.load_state_dict(
@@ -490,24 +480,21 @@ class PixtralModel(PipelineModelWithKVCache[TextAndVisionContext]):
         model_config = PixtralConfig.initialize(self.pipeline_config)
         model_config.return_logits = self.return_logits
 
-        # Build and compile vision model.
-        with CompilationTimer("vision model") as timer:
+        # Build and compile vision + language models in parallel.
+        with CompilationTimer("vision + language model") as timer:
+            module = Module()
             vision_graph, vision_weights = self._build_vision_graph(
-                model_config, vision_state_dict, patch_dim
+                model_config, vision_state_dict, patch_dim, module=module
             )
-            timer.mark_build_complete()
-            vision_model = session.load(
-                vision_graph, weights_registry=vision_weights
-            )
-
-        # Build and compile language model.
-        with CompilationTimer("language model") as timer:
             language_graph, language_weights = self._build_language_graph(
-                model_config, language_state_dict
+                model_config, language_state_dict, module=module
             )
             timer.mark_build_complete()
-            language_model = session.load(
-                language_graph, weights_registry=language_weights
+            combined_registry = {**vision_weights, **language_weights}
+            models = session.load_all(
+                module, weights_registry=combined_registry
             )
+            vision_model = models[vision_graph.name]
+            language_model = models[language_graph.name]
 
         return vision_model, language_model

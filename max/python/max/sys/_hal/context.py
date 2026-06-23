@@ -14,9 +14,12 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 
 from .buffer import Buffer
+from .bundle import Bundle
+from .function import Function
 from .queue import Queue
 from .stream import Stream
 
@@ -55,8 +58,31 @@ class Context:
         return Buffer._wrap(self._inner.alloc_host_pinned(byte_size))
 
     def memory_get_address(self, buf: Buffer) -> int:
-        """Return the (device-side) address of ``buf`` as an integer."""
         return self._inner.memory_get_address(buf._inner)
+
+    def compile(self, compile_fn: Callable[[Any], Any]) -> Bundle:
+        """Compile a Mojo kernel for this context, returning a ``Bundle``.
+
+        Invokes the compile thunk associated with a kernel and returns
+        a ``Bundle``. Each thunk is a Python callable exported by a
+        kernel module's shared library and corresponds to a single
+        kernel whose GPU bytecode was emitted at build time.
+
+        Args:
+            compile_fn: A callable taking the inner Mojo ``Context``
+                ``PythonObject`` and returning the inner Mojo
+                ``Bundle`` ``PythonObject``. In practice, a Mojo
+                function instantiated from
+                ``compile_to_python_bundle[type_of(func), func]``.
+
+        Returns:
+            A ``Bundle`` containing the loaded device module.
+        """
+        return Bundle._wrap(compile_fn(self._inner))
+
+    def load_function(self, bundle: Bundle, name: str) -> Function:
+        """Resolve a symbol inside ``bundle`` into a launchable Function."""
+        return Function._wrap(self._inner.load_function(bundle._inner, name))
 
     def __repr__(self) -> str:
         return "Context()"

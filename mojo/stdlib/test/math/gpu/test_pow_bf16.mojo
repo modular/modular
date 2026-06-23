@@ -18,6 +18,7 @@ from std.gpu import *
 from std.gpu.host import DeviceContext, get_gpu_target
 from std.testing import assert_almost_equal, TestSuite
 
+from std.utils.coord import Coord
 from std.utils import Index, IndexList
 
 comptime type = DType.float32
@@ -44,14 +45,12 @@ def run_elementwise[
     @always_inline
     @__copy_capture(out_buffer, in_buffer, exponent)
     @parameter
-    def func[
-        simd_width: Int, rank: Int, alignment: Int = 1
-    ](idx0: IndexList[rank]):
-        var idx = rebind[IndexList[1]](idx0)
+    def func[simd_width: Int, alignment: Int = 1](idx0: Coord):
+        var idx = Int(idx0[0].value())
 
         var val = (
             in_buffer.unsafe_ptr()
-            .load[width=simd_width](idx[0])
+            .load[width=simd_width](idx)
             .cast[DType.bfloat16]()
         )
         var result: SIMD[DType.bfloat16, simd_width]
@@ -61,10 +60,10 @@ def run_elementwise[
         else:
             result = val**exponent
         out_buffer.unsafe_ptr().store[width=simd_width](
-            idx[0], result.cast[DType.float32]()
+            idx, result.cast[DType.float32]()
         )
 
-    elementwise[func, pack_size, target="gpu"](IndexList[1](length), ctx)
+    elementwise[func, pack_size, target="gpu"](Coord(length), ctx)
 
     with in_device.map_to_host() as in_host, out_device.map_to_host() as out_host:
         for i in range(length):

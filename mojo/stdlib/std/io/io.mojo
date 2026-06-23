@@ -24,6 +24,7 @@ from std.ffi import (
     c_size_t,
     c_ssize_t,
     external_call,
+    CStringSlice,
     _CPointer,
 )
 from std.memory.unsafe_pointer import unsafe_cast
@@ -49,6 +50,15 @@ from std.sys.intrinsics import _type_is_eq
 from std.memory import bitcast
 
 from .file_descriptor import FileDescriptor
+
+
+# FIXME(MOCO-3871): Alias is to workaround function type comparison bug.
+comptime _PrintEmitPluginHookFnType = def[O: Origin](
+    cstr: CStringSlice[O],
+    file_value: FileDescriptor,
+) thin -> None
+"""Plugin-hook signature for `PluginHooks.print_emit_fn`; keep in sync with the `print` emit path."""
+
 
 # ===----------------------------------------------------------------------=== #
 #  _file_handle
@@ -136,7 +146,7 @@ struct _fdopen[mode: StaticString = "a"](ImplicitlyCopyable, RegisterPassable):
         ```
         """
         # getdelim will allocate the buffer using malloc().
-        var buffer = _CPointer[UInt8, MutExternalOrigin]()
+        var buffer = _CPointer[UInt8, MutUntrackedOrigin]()
         var n = c_size_t(0)
         # ssize_t getdelim(char **restrict lineptr, size_t *restrict n,
         #                  int delimiter, FILE *restrict stream);
@@ -156,7 +166,7 @@ struct _fdopen[mode: StaticString = "a"](ImplicitlyCopyable, RegisterPassable):
             raise Error("EOF")
         # Copy the buffer (excluding the delimiter itself) into a Mojo String.
         var s = String(
-            StringSlice[MutExternalOrigin](
+            StringSlice[MutUntrackedOrigin](
                 unsafe_from_utf8=Span(
                     ptr=buffer.unsafe_value(), length=bytes_read - 1
                 )
@@ -293,9 +303,10 @@ def _printf[
         # print buffer. Metal doesn't support printf-style variadic args.
         var buf = _WriteBufferHeap()
         buf.write_string(fmt)
-        _ = buf.nul_terminate()
-        var s = buf.as_string_slice()
-        _metal_print_write(s)
+        var cstr = buf.nul_terminate()
+        _metal_print_write(
+            StringSlice(unsafe_from_utf8=cstr.as_bytes_with_nul())
+        )
     elif not is_gpu():
         _printf_cpu[fmt](*args, file=file)
     else:
@@ -367,8 +378,8 @@ def print[
     *Ts: Writable
 ](
     *values: *Ts,
-    sep: StaticString = " ",
-    end: StaticString = "\n",
+    sep: StringSlice = " ",
+    end: StringSlice = "\n",
     flush: Bool = False,
     var file: FileDescriptor = stdout,
 ):
@@ -437,17 +448,19 @@ def print[
         var buffer = _WriteBufferHeap()
         values._write_to(buffer, sep=sep, end=end)
 
-        _ = buffer.nul_terminate()
-
-        var slice = buffer.as_string_slice()
+        var cstr = buffer.nul_terminate()
 
         comptime if is_nvidia_gpu():
-            _printf["%s"](slice.unsafe_ptr())
+            _printf["%s"](cstr.unsafe_ptr())
         elif is_amd_gpu():
             var msg = printf_begin()
-            _ = printf_append_string_n(msg, slice.as_bytes(), is_last=True)
+            _ = printf_append_string_n(
+                msg, cstr.as_bytes_with_nul(), is_last=True
+            )
         elif is_apple_gpu():
-            _metal_print_write(slice)
+            _metal_print_write(
+                StringSlice(unsafe_from_utf8=cstr.as_bytes_with_nul())
+            )
         else:
             CompilationTarget.unsupported_target_error[
                 operation=__get_current_function_name()

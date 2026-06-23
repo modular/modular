@@ -19,6 +19,7 @@ from std.gpu.host import DeviceContext
 from std.testing import assert_equal, assert_true
 from std.testing import TestSuite
 
+from std.utils.coord import Coord, coord_to_index_list
 from std.utils.index import IndexList, Index
 
 
@@ -62,10 +63,8 @@ def test_elementwise() raises:
         @always_inline
         @__copy_capture(buffer1, buffer2, out_buffer, shape)
         @parameter
-        def func[
-            simd_width: Int, rank: Int, alignment: Int = 1
-        ](idx: IndexList[rank]):
-            var index = rebind[IndexList[outer_rank]](idx)
+        def func[simd_width: Int, alignment: Int = 1](idx: Coord):
+            var index = rebind[IndexList[outer_rank]](coord_to_index_list(idx))
             var linear_idx = _linear_index(index, shape)
             var in1 = buffer1.unsafe_ptr().load[width=simd_width](linear_idx)
             var in2 = buffer2.unsafe_ptr().load[width=simd_width](linear_idx)
@@ -74,7 +73,7 @@ def test_elementwise() raises:
             )
 
         elementwise[func, simd_width=1](
-            shape,
+            Coord(shape),
             ctx,
         )
 
@@ -102,10 +101,8 @@ def test_elementwise_implicit_runtime() raises:
     @always_inline
     @__copy_capture(vector)
     @parameter
-    def func[
-        simd_width: Int, rank: Int, alignment: Int = 1
-    ](idx: IndexList[rank]):
-        vector.unsafe_ptr()[idx[0]] = 42
+    def func[simd_width: Int, alignment: Int = 1](idx: Coord):
+        vector.unsafe_ptr()[idx[0].value()] = 42
 
     elementwise[func, simd_width=1](20, ctx)
 

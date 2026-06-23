@@ -62,6 +62,10 @@ modular_py_test(
         "functional/test_*_simulated_cpu.py",
         "module/test_*_simulated_cpu.py",
     ]),
+    ignore_extra_deps = [
+        # lazy import
+        "//max/python/max/_interpreter_ops",
+    ],
     imports = ["."],
     per_test_shard_count = {
         "module/test_compiled_simulated_cpu.py": 9,
@@ -76,6 +80,7 @@ modular_py_test(
         ":test_base",
         ":test_helpers",
         "//max/python/max:tensor",
+        "//max/python/max/_interpreter_ops",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
@@ -119,9 +124,13 @@ modular_py_test(
         "module/test_*_simulated_gpu.py",
     ]),
     exec_properties = {
-        "test.resources:gpu-memory": "1",
+        "test.resources:gpu-memory": "2",
     },
     gpu_constraints = ["//:has_gpu"],
+    ignore_extra_deps = [
+        # lazy import
+        "//max/python/max/_interpreter_ops",
+    ],
     imports = ["."],
     tags = ["gpu"],
     target_compatible_with = select({
@@ -132,6 +141,7 @@ modular_py_test(
     deps = [
         ":test_base",
         ":test_helpers",
+        "//max/python/max/_interpreter_ops",
         "//max/python/max/driver",
         "//max/python/max/experimental",
     ],

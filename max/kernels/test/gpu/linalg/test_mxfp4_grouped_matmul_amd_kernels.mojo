@@ -29,7 +29,8 @@ Coverage matrix per kernel:
   - Inactive slot: expert_id=-1
   - More tiles than total_wg (persistent multi-wave per WG)
   - Kimi-decode / Kimi-prefill scale at L2 dimensions
-  - Both BK_ELEMS=512 (K_BYTES % 256 == 0) and BK_ELEMS=128 paths
+  - BK_ELEMS=512 only — the preshuffled-scales preb path requires
+    num_k_mmas % 2 == 0 (i.e. BK_ELEMS >= 256)
 
 Currently MI355X-only.
 
@@ -39,7 +40,8 @@ Usage:
 
 from std.gpu.host import DeviceBuffer, DeviceContext, HostBuffer
 from std.gpu.host.info import MI355X
-from std.math import ceildiv
+from std.gpu.memory import CacheOperation
+from std.math import align_up, ceildiv
 from std.memory import bitcast
 from std.random import random_ui64, seed
 
@@ -154,7 +156,15 @@ def _run_preb[
     K: Int,
     BK_ELEMS: Int,
     persistent: Bool,
-    cu_count: Int,  # struct param — `total_wg = cu_count * 2`
+    cu_count: Int,  # struct param — `total_wg = cu_count * wg_per_cu`
+    BM: Int = 64,
+    BN: Int = 128,
+    WN: Int = 64,
+    b_cache_policy: CacheOperation = CacheOperation.ALWAYS,
+    cluster_drain_sched: Bool = False,
+    mfma_cluster: Int = 4,
+    waves_per_eu: Int = 0,
+    wg_per_cu: Int = 2,  # struct param — sizes the persistent grid
 ](
     name: String,
     num_tokens_by_expert: List[Int],
@@ -187,8 +197,14 @@ def _run_preb[
         num_active,
         " total_tokens=",
         total_tokens,
+        " BM=",
+        BM,
+        " BN=",
+        BN,
         " BK_ELEMS=",
         BK_ELEMS,
+        " WN=",
+        WN,
     )
 
     # Host buffers + random init.
@@ -214,6 +230,10 @@ def _run_preb[
     _fill_random_e8m0(b_sc_h, num_experts * N * scale_K)
     _build_routing(a_off_h, eid_h, num_tokens_by_expert, expert_ids_list)
 
+    # Per-expert preshuffled-A-scale slot stride: align_up(max, 32).
+    # Caller-supplied bound; in production this is a model-config constant.
+    var max_padded_M = align_up(max_tokens, 32)
+
     # Device buffers + upload.
     var a_d = ctx.enqueue_create_buffer[DType.uint8](total_tokens * packed_K)
     var b_d = ctx.enqueue_create_buffer[DType.uint8](num_experts * N * packed_K)
@@ -224,6 +244,15 @@ def _run_preb[
         total_tokens * scale_K
     )
     var b_sc_d = ctx.enqueue_create_buffer[DType.float8_e8m0fnu](
+        num_experts * N * scale_K
+    )
+    # Preshuffled scale buffers (uint8 — opaque bytes). The dispatcher
+    # expects scale tensors in scale-4d byte order; we produce them
+    # below via the GPU launcher (A) and CPU helper (B, static weights).
+    var a_sc_pre_d = ctx.enqueue_create_buffer[DType.uint8](
+        num_experts * max_padded_M * scale_K
+    )
+    var b_sc_pre_d = ctx.enqueue_create_buffer[DType.uint8](
         num_experts * N * scale_K
     )
     var a_off_d = ctx.enqueue_create_buffer[DType.uint32](num_active + 1)
@@ -256,7 +285,45 @@ def _run_preb[
         b_raw_tt, b_pre_dst_tt, ctx
     )
 
-    # Reference: per-expert ungrouped matmul against raw B.
+    # GPU preshuffle of A-scales into per-expert fixed-stride slots.
+    var a_sc_raw_u8_tt = TileTensor[mut=False](
+        a_sc_d.unsafe_ptr().bitcast[Scalar[DType.uint8]](),
+        row_major(Coord(total_tokens, Idx[scale_K])),
+    )
+    var a_sc_pre_tt = TileTensor[mut=True](
+        a_sc_pre_d,
+        row_major(Coord(num_experts * max_padded_M, Idx[scale_K])),
+    )
+    var a_off_tt_for_pre = TileTensor[mut=False](
+        a_off_d, row_major(Coord(num_active + 1))
+    )
+    Shuffler[1].preshuffle_grouped_scale_4d_gpu[K_SCALES=scale_K](
+        a_sc_raw_u8_tt,
+        a_sc_pre_tt,
+        a_off_tt_for_pre,
+        num_active,
+        max_tokens,
+        ctx.default_device_info.sm_count * 2,
+        ctx,
+    )
+
+    # CPU preshuffle of B-scales. B-scales are static weights — in
+    # production this runs once at session.load. Done here on host since
+    # the existing helper takes comptime MN; for B that's the static N.
+    var b_sc_pre_h = ctx.enqueue_create_host_buffer[DType.uint8](
+        num_experts * N * scale_K
+    )
+    ctx.synchronize()
+    var b_sc_raw_u8_tt = TileTensor(
+        b_sc_h.unsafe_ptr().bitcast[Scalar[DType.uint8]](),
+        row_major(Coord(Idx[num_experts], Idx[N], Idx[scale_K])),
+    )
+    Shuffler[num_experts].preshuffle_scale_4d[MN=N, K_SCALES=scale_K](
+        b_sc_raw_u8_tt, b_sc_pre_h
+    )
+    ctx.enqueue_copy(b_sc_pre_d, b_sc_pre_h)
+
+    # Reference: per-expert ungrouped matmul against raw B (raw scales).
     _gpu_per_expert_reference[num_experts, N, K](
         ctx,
         num_active,
@@ -269,7 +336,10 @@ def _run_preb[
         c_ref_d,
     )
 
-    # Run the preb kernel under test.
+    # Run the preb kernel under test. Scales are the preshuffled
+    # buffers; bitcast uint8 ptr → float8_e8m0fnu to match the dispatcher
+    # signature (the kernel internally bitcasts back to uint8 for V#
+    # construction; the dtype here is a wrapping convention).
     var a_tt = TileTensor[mut=False](
         a_d, row_major(Coord(total_tokens, Idx[packed_K]))
     )
@@ -277,21 +347,27 @@ def _run_preb[
         b_pre_d, row_major[num_experts, N * packed_K]()
     )
     var a_sc_tt = TileTensor[mut=False](
-        a_sc_d, row_major(Coord(total_tokens, Idx[scale_K]))
+        a_sc_pre_d.unsafe_ptr().bitcast[Scalar[DType.float8_e8m0fnu]](),
+        row_major(Coord(num_experts * max_padded_M, Idx[scale_K])),
     )
     var b_sc_tt = TileTensor[mut=False](
-        b_sc_d, row_major[num_experts, N, scale_K]()
+        b_sc_pre_d.unsafe_ptr().bitcast[Scalar[DType.float8_e8m0fnu]](),
+        row_major[num_experts, N, scale_K](),
     )
     var a_off_tt = TileTensor(a_off_d, row_major(Coord(num_active + 1)))
     var eid_tt = TileTensor(eid_d, row_major(Coord(num_active)))
     var c_tt = TileTensor[mut=True](c_d, row_major(Coord(total_tokens, Idx[N])))
 
-    PreShuffledBGroupedGEMM[cu_count=cu_count].launch[
-        BM=64,
-        BN=128,
+    PreShuffledBGroupedGEMM[cu_count=cu_count, wg_per_cu=wg_per_cu].launch[
+        BM=BM,
+        BN=BN,
         BK_ELEMS=BK_ELEMS,
-        WN=64,
+        WN=WN,
         persistent=persistent,
+        b_cache_policy=b_cache_policy,
+        cluster_drain_sched=cluster_drain_sched,
+        mfma_cluster=mfma_cluster,
+        waves_per_eu=waves_per_eu,
     ](
         c_tt,
         a_tt,
@@ -329,6 +405,8 @@ def _run_preb[
     _ = b_pre_d^
     _ = a_sc_d^
     _ = b_sc_d^
+    _ = a_sc_pre_d^
+    _ = b_sc_pre_d^
     _ = a_off_d^
     _ = eid_d^
     _ = c_d^
@@ -341,6 +419,14 @@ def test_persistent[
     K: Int,
     BK_ELEMS: Int = 512,
     cu_count: Int = 256,  # default = MI355X
+    BM: Int = 64,
+    BN: Int = 128,
+    WN: Int = 64,
+    b_cache_policy: CacheOperation = CacheOperation.ALWAYS,
+    cluster_drain_sched: Bool = False,
+    mfma_cluster: Int = 4,
+    waves_per_eu: Int = 0,
+    wg_per_cu: Int = 2,
 ](
     name: String,
     num_tokens_by_expert: List[Int],
@@ -351,9 +437,10 @@ def test_persistent[
     walking a global tile counter; XCD swizzle on `block_idx.x`.
 
     `cu_count` overrides the launch grid size; default 256 = MI355X. Lower
-    values shrink `total_wg = cu_count * 2`, which lets the multi-wave test
-    trigger the per-WG `while target_tile < expert_end: target_tile +=
-    total_wg` path with a CPU-tractable workload.
+    values shrink `total_wg = cu_count * wg_per_cu`, which lets the multi-wave
+    test trigger the per-WG `while target_tile < expert_end: target_tile +=
+    total_wg` path with a CPU-tractable workload. `wg_per_cu` is a launch
+    comptime sizing param; results must be unchanged across values.
     """
     _run_preb[
         num_experts,
@@ -362,6 +449,14 @@ def test_persistent[
         BK_ELEMS=BK_ELEMS,
         persistent=True,
         cu_count=cu_count,
+        BM=BM,
+        BN=BN,
+        WN=WN,
+        b_cache_policy=b_cache_policy,
+        cluster_drain_sched=cluster_drain_sched,
+        mfma_cluster=mfma_cluster,
+        waves_per_eu=waves_per_eu,
+        wg_per_cu=wg_per_cu,
     ](name, num_tokens_by_expert, expert_ids_list, ctx)
 
 
@@ -371,6 +466,14 @@ def test_direct[
     K: Int,
     BK_ELEMS: Int = 512,
     cu_count: Int = 256,
+    BM: Int = 64,
+    BN: Int = 128,
+    WN: Int = 64,
+    b_cache_policy: CacheOperation = CacheOperation.ALWAYS,
+    cluster_drain_sched: Bool = False,
+    mfma_cluster: Int = 4,
+    waves_per_eu: Int = 0,
+    wg_per_cu: Int = 2,
 ](
     name: String,
     num_tokens_by_expert: List[Int],
@@ -378,7 +481,8 @@ def test_direct[
     ctx: DeviceContext,
 ) raises:
     """`PreShuffledBGroupedGEMM.launch[persistent=False]` — 3D workload-sized
-    grid: one WG per (n_tile, m_tile, expert)."""
+    grid: one WG per (n_tile, m_tile, expert). `wg_per_cu` is accepted for
+    signature parity with `test_persistent`; the direct grid ignores it."""
     _run_preb[
         num_experts,
         N,
@@ -386,6 +490,14 @@ def test_direct[
         BK_ELEMS=BK_ELEMS,
         persistent=False,
         cu_count=cu_count,
+        BM=BM,
+        BN=BN,
+        WN=WN,
+        b_cache_policy=b_cache_policy,
+        cluster_drain_sched=cluster_drain_sched,
+        mfma_cluster=mfma_cluster,
+        waves_per_eu=waves_per_eu,
+        wg_per_cu=wg_per_cu,
     ](name, num_tokens_by_expert, expert_ids_list, ctx)
 
 
@@ -418,22 +530,26 @@ def main() raises:
     print("---- preb persistent kernel ----")
 
     # Structural edge cases (L2 decode shape: N=512, K=2048).
-    test_persistent[1, 512, 2048]("single-tiny", [16], [0], ctx)
-    test_persistent[1, 512, 2048]("single-mid", [128], [0], ctx)
-    test_persistent[4, 512, 2048](
+    test_persistent[1, 512, 2048, cluster_drain_sched=True](
+        "single-tiny", [16], [0], ctx
+    )
+    test_persistent[1, 512, 2048, cluster_drain_sched=True](
+        "single-mid", [128], [0], ctx
+    )
+    test_persistent[4, 512, 2048, cluster_drain_sched=True](
         "multi-mixed", [32, 64, 128, 256], [0, 1, 2, 3], ctx
     )
-    test_persistent[4, 512, 2048](
+    test_persistent[4, 512, 2048, cluster_drain_sched=True](
         "inactive-M0", [64, 0, 128, 32], [0, 1, 2, 3], ctx
     )
-    test_persistent[4, 512, 2048](
+    test_persistent[4, 512, 2048, cluster_drain_sched=True](
         "inactive-eid-1", [64, 64, 128, 32], [0, -1, 2, 3], ctx
     )
 
     # More tiles than total_wg (= 512 on MI355X) — exercise multi-wave per WG.
     # 9 experts × m_count=4 × gx_n(N=1024)=8 = 288 tiles? need >512.
     # 9 × m_count=8 × gx_n=8 = 576 → M=512 per expert.
-    test_persistent[9, 1024, 512](
+    test_persistent[9, 1024, 512, cluster_drain_sched=True](
         "multi-wave",
         [512, 512, 512, 512, 512, 512, 512, 512, 512],
         [0, 1, 2, 3, 4, 5, 6, 7, 8],
@@ -443,7 +559,7 @@ def main() raises:
     # Kimi-decode-like: 49 active experts, very few tokens each, mixed
     # inactive slots (slot 40: M=0; slot 47: expert_id=-1) — matches the
     # L2.2 / L2.3 pattern from test_mxfp4_moe_matmul_amd_routed.
-    test_persistent[49, 512, 2048](
+    test_persistent[49, 512, 2048, cluster_drain_sched=True](
         "kimi-decode-49experts",
         [
             3,
@@ -551,7 +667,7 @@ def main() raises:
     )
 
     # Kimi-prefill scaled (L2.4): 49 active experts, ~40 tokens each.
-    test_persistent[49, 512, 2048](
+    test_persistent[49, 512, 2048, cluster_drain_sched=True](
         "kimi-prefill-49experts",
         [
             40,
@@ -658,32 +774,67 @@ def main() raises:
         ctx,
     )
 
-    # BK_ELEMS=128 path (K=256 → packed_K=128, not divisible by 256).
-    test_persistent[4, 128, 256, BK_ELEMS=128](
-        "bk128-multi", [32, 64, 128, 32], [0, 1, 2, 3], ctx
-    )
+    # Tile-size variants on the persistent path. Cover the kernel's
+    # supported BM/WN matrix (BM ∈ {16} ∪ multiples of 32, same for WN).
+    print("---- preb persistent kernel — tile-size variants ----")
+
+    # BM=16 path: 1-row-per-sub-MMA M, shrui scale rotation on odd-parity CTAs.
+    test_persistent[
+        4, 512, 2048, BM=16, BN=128, WN=64, cluster_drain_sched=True
+    ]("bm16-default-wn", [16, 32, 8, 48], [0, 1, 2, 3], ctx)
+
+    # WN=16 path: N-side shrui rotation; BM unchanged.
+    test_persistent[
+        4, 512, 2048, BM=64, BN=64, WN=16, cluster_drain_sched=True
+    ]("wn16-default-bm", [64, 32, 16, 48], [0, 1, 2, 3], ctx)
+
+    # Both BM=16 and WN=16 — exercises both shrui paths simultaneously.
+    test_persistent[
+        4, 256, 2048, BM=16, BN=64, WN=16, cluster_drain_sched=True
+    ]("bm16-wn16", [16, 32, 8, 24], [0, 1, 2, 3], ctx)
+
+    # Smaller BN=64 with default BM/WN — exercises the N-tile dispatcher
+    # at a non-default BN.
+    test_persistent[
+        4, 256, 2048, BM=64, BN=64, WN=64, cluster_drain_sched=True
+    ]("bn64", [64, 128, 32, 96], [0, 1, 2, 3], ctx)
 
     # ----------------------------------------------------------------- #
     # Preb direct kernel — launch[persistent=False]
     # ----------------------------------------------------------------- #
     print("---- preb direct kernel ----")
-    test_direct[1, 512, 2048]("single-tiny", [16], [0], ctx)
-    test_direct[1, 512, 2048]("single-mid", [128], [0], ctx)
-    test_direct[4, 512, 2048](
+    test_direct[1, 512, 2048, cluster_drain_sched=True](
+        "single-tiny", [16], [0], ctx
+    )
+    test_direct[1, 512, 2048, cluster_drain_sched=True](
+        "single-mid", [128], [0], ctx
+    )
+    test_direct[4, 512, 2048, cluster_drain_sched=True](
         "multi-mixed", [32, 64, 128, 256], [0, 1, 2, 3], ctx
     )
-    test_direct[4, 512, 2048](
+    test_direct[4, 512, 2048, cluster_drain_sched=True](
         "inactive-M0", [64, 0, 128, 32], [0, 1, 2, 3], ctx
     )
-    test_direct[4, 512, 2048](
+    test_direct[4, 512, 2048, cluster_drain_sched=True](
         "inactive-eid-1", [64, 64, 128, 32], [0, -1, 2, 3], ctx
     )
 
     # Large single-expert prefill (where direct typically wins over persistent).
-    test_direct[1, 1024, 512]("single-large", [8192], [0], ctx)
+    test_direct[1, 1024, 512, cluster_drain_sched=True](
+        "single-large", [8192], [0], ctx
+    )
+
+    # Tile-size variants on the direct path.
+    print("---- preb direct kernel — tile-size variants ----")
+    test_direct[4, 256, 2048, BM=16, BN=64, WN=16, cluster_drain_sched=True](
+        "bm16-wn16", [3, 7, 1, 5], [0, 1, 2, 3], ctx
+    )
+    test_direct[4, 512, 2048, BM=64, BN=64, WN=16, cluster_drain_sched=True](
+        "wn16-default-bm", [128, 64, 32, 48], [0, 1, 2, 3], ctx
+    )
 
     # Kimi-prefill scaled.
-    test_direct[49, 512, 2048](
+    test_direct[49, 512, 2048, cluster_drain_sched=True](
         "kimi-prefill-49experts",
         [
             40,
@@ -790,9 +941,373 @@ def main() raises:
         ctx,
     )
 
-    # BK_ELEMS=128 path.
-    test_direct[4, 128, 256, BK_ELEMS=128](
-        "bk128-multi", [32, 64, 128, 32], [0, 1, 2, 3], ctx
+    # ----------------------------------------------------------------- #
+    # Production dispatch-band coverage — real kimi N/K with the EXACT
+    # (BM, BN, BK_ELEMS, WN, persistent, b_cache_policy) each band in
+    # mxfp4_grouped_matmul_amd.mojo launches. One representative token
+    # distribution per band (a few active experts + an inactive slot
+    # where useful). STREAMING vs ALWAYS is result-identical (cache hint);
+    # these cases assert the exact instantiation compiles, runs, and is
+    # correct. M values are illustrative of each band's regime, not the
+    # dispatcher's estimated_total_m selector (this path bypasses it).
+    # ----------------------------------------------------------------- #
+    print("---- production band coverage: KIMI up-proj (N=4096, K=7168) ----")
+    # band M==1 (decode)
+    test_persistent[
+        4,
+        4096,
+        7168,
+        BM=16,
+        BN=64,
+        BK_ELEMS=512,
+        WN=16,
+        cluster_drain_sched=True,
+    ]("up M==1", [1, 1, 1, 1], [0, 1, 2, 3], ctx)
+    # band 2<=M<=4
+    test_persistent[
+        4,
+        4096,
+        7168,
+        BM=16,
+        BN=128,
+        BK_ELEMS=512,
+        WN=32,
+        cluster_drain_sched=True,
+    ]("up 2..4", [4, 2, 3, 4], [0, 1, 2, 3], ctx)
+    # band 17<=M<=400
+    test_persistent[
+        4,
+        4096,
+        7168,
+        BM=32,
+        BN=128,
+        BK_ELEMS=512,
+        WN=32,
+        cluster_drain_sched=True,
+    ]("up 17..400", [200, 64, 128, 32], [0, 1, 2, 3], ctx)
+    # default persistent fallback (M in the 5..16 / 401..4095 gaps)
+    test_persistent[
+        4,
+        4096,
+        7168,
+        BM=64,
+        BN=128,
+        BK_ELEMS=512,
+        WN=64,
+        cluster_drain_sched=True,
+    ]("up default-fallback", [512, 128, 256, 0], [0, 1, 2, 3], ctx)
+    # use_direct path (persistent=False). Token count kept modest for memory;
+    # the dispatcher is bypassed so M doesn't select the band — the config does.
+    test_direct[
+        1,
+        4096,
+        7168,
+        BM=64,
+        BN=128,
+        BK_ELEMS=512,
+        WN=64,
+        cluster_drain_sched=True,
+    ]("up direct", [1024], [0], ctx)
+
+    print("---- production band coverage: KIMI down-proj (N=7168, K=2048) ----")
+    # band M==1 (decode)
+    test_persistent[
+        4,
+        7168,
+        2048,
+        BM=16,
+        BN=128,
+        BK_ELEMS=512,
+        WN=32,
+        cluster_drain_sched=True,
+    ]("down M==1", [1, 1, 1, 1], [0, 1, 2, 3], ctx)
+    # band 2<=M<=7 (B cached)
+    test_persistent[
+        4,
+        7168,
+        2048,
+        BM=16,
+        BN=256,
+        BK_ELEMS=256,
+        WN=64,
+        cluster_drain_sched=True,
+    ]("down 2..7 cached", [4, 2, 6, 3], [0, 1, 2, 3], ctx)
+    # band 8<=M<=16 (B STREAMING)
+    test_persistent[
+        4,
+        7168,
+        2048,
+        BM=16,
+        BN=256,
+        BK_ELEMS=256,
+        WN=64,
+        b_cache_policy=CacheOperation.STREAMING,
+        cluster_drain_sched=True,
+    ]("down 8..16 STREAMING", [12, 8, 16, 10], [0, 1, 2, 3], ctx)
+    # band 17<=M<=37 / 385<=M<=400 (same config, B cached)
+    test_persistent[
+        4,
+        7168,
+        2048,
+        BM=32,
+        BN=256,
+        BK_ELEMS=512,
+        WN=64,
+        cluster_drain_sched=True,
+    ]("down 17..37 / 385..400 cached", [32, 24, 37, 0], [0, 1, 2, 3], ctx)
+    # band 38<=M<=384 (B STREAMING)
+    test_persistent[
+        4,
+        7168,
+        2048,
+        BM=32,
+        BN=256,
+        BK_ELEMS=512,
+        WN=64,
+        b_cache_policy=CacheOperation.STREAMING,
+        cluster_drain_sched=True,
+    ]("down 38..384 STREAMING", [128, 96, 128, 64], [0, 1, 2, 3], ctx)
+    # band 401<=M<=1200 (BK_ELEMS=256, B cached)
+    test_persistent[
+        4,
+        7168,
+        2048,
+        BM=64,
+        BN=256,
+        BK_ELEMS=256,
+        WN=64,
+        cluster_drain_sched=True,
+    ]("down 401..1200 cached", [256, 256, 128, 64], [0, 1, 2, 3], ctx)
+    # default persistent fallback (M in the 1201..4095 gap)
+    test_persistent[
+        4,
+        7168,
+        2048,
+        BM=64,
+        BN=128,
+        BK_ELEMS=512,
+        WN=64,
+        cluster_drain_sched=True,
+    ]("down default-fallback", [384, 128, 128, 0], [0, 1, 2, 3], ctx)
+    # use_direct path (persistent=False); token count kept modest for memory.
+    test_direct[
+        1,
+        7168,
+        2048,
+        BM=64,
+        BN=128,
+        BK_ELEMS=512,
+        WN=64,
+        cluster_drain_sched=True,
+    ]("down direct", [512], [0], ctx)
+
+    print("---- preb waves_per_eu EU-bounding cap ----")
+    test_persistent[4, 512, 2048, waves_per_eu=1, cluster_drain_sched=True](
+        "wpe=1 persistent", [128, 96, 128, 64], [0, 1, 2, 3], ctx
     )
+    test_persistent[4, 512, 2048, waves_per_eu=2, cluster_drain_sched=True](
+        "wpe=2 persistent", [128, 96, 128, 64], [0, 1, 2, 3], ctx
+    )
+    test_direct[
+        1,
+        7168,
+        2048,
+        BM=64,
+        BN=128,
+        BK_ELEMS=512,
+        WN=64,
+        waves_per_eu=2,
+        cluster_drain_sched=True,
+    ]("wpe=2 direct", [512], [0], ctx)
+
+    # Each band config the retuned dispatcher selects.
+    print("---- retuned dispatcher band configs ----")
+    comptime SX = CacheOperation.STREAMING
+    test_persistent[
+        4,
+        4096,
+        7168,
+        BM=16,
+        BN=128,
+        BK_ELEMS=512,
+        WN=32,
+        b_cache_policy=SX,
+        cluster_drain_sched=True,
+    ]("up BM16/BN128 STREAM", [128, 96, 128, 64], [0, 1, 2, 3], ctx)
+    test_persistent[
+        4,
+        4096,
+        7168,
+        BM=32,
+        BN=128,
+        BK_ELEMS=512,
+        WN=32,
+        b_cache_policy=SX,
+        cluster_drain_sched=True,
+    ]("up BM32/BN128 STREAM", [256, 256, 256, 256], [0, 1, 2, 3], ctx)
+    test_persistent[
+        4,
+        7168,
+        2048,
+        BM=16,
+        BN=64,
+        BK_ELEMS=512,
+        WN=16,
+        cluster_drain_sched=True,
+    ]("down BN64 tiny", [2, 1, 0, 1], [0, 1, 2, 3], ctx)
+    test_persistent[
+        4,
+        7168,
+        2048,
+        BM=16,
+        BN=128,
+        BK_ELEMS=512,
+        WN=32,
+        b_cache_policy=SX,
+        cluster_drain_sched=True,
+    ]("down BM16/BN128 STREAM", [128, 96, 128, 64], [0, 1, 2, 3], ctx)
+    test_persistent[
+        4,
+        7168,
+        2048,
+        BM=32,
+        BN=128,
+        BK_ELEMS=512,
+        WN=32,
+        b_cache_policy=SX,
+        cluster_drain_sched=True,
+    ]("down BM32/BN128 STREAM", [256, 256, 256, 256], [0, 1, 2, 3], ctx)
+    test_persistent[
+        4,
+        7168,
+        2048,
+        BM=64,
+        BN=128,
+        BK_ELEMS=512,
+        WN=64,
+        b_cache_policy=SX,
+        cluster_drain_sched=True,
+    ]("down BM64/BN128 STREAM", [512, 512, 256, 256], [0, 1, 2, 3], ctx)
+    test_direct[
+        1,
+        7168,
+        2048,
+        BM=64,
+        BN=128,
+        BK_ELEMS=256,
+        WN=64,
+        cluster_drain_sched=True,
+    ]("down direct BK256", [512], [0], ctx)
+
+    # Remaining bands the retuned dispatcher can select, plus the real
+    # EP=4 batch-1 decode point and a skewed-routing stress case.
+    # up etm<=20 ALWAYS band (16,64,512,16).
+    test_persistent[
+        4,
+        4096,
+        7168,
+        BM=16,
+        BN=64,
+        BK_ELEMS=512,
+        WN=16,
+        cluster_drain_sched=True,
+    ]("up BM16/BN64 tiny ALWAYS", [8, 4, 0, 4], [0, 1, 2, 3], ctx)
+    # up etm<=4095 STREAM band (64,128,512,64). Token count kept modest to
+    # stay under the harness HBM ceiling; config is what's under test.
+    test_persistent[
+        4,
+        4096,
+        7168,
+        BM=64,
+        BN=128,
+        BK_ELEMS=512,
+        WN=64,
+        b_cache_policy=SX,
+        cluster_drain_sched=True,
+    ]("up BM64/BN128 STREAM", [192, 192, 128, 128], [0, 1, 2, 3], ctx)
+    # up else direct band (64,128,512,64).
+    test_direct[
+        1,
+        4096,
+        7168,
+        BM=64,
+        BN=128,
+        BK_ELEMS=512,
+        WN=64,
+        cluster_drain_sched=True,
+    ]("up direct", [512], [0], ctx)
+
+    # etm==1 wg_per_cu=1 variant for both shapes (16,64,512,16). wg_per_cu is
+    # a grid-sizing comptime; results must match the wg_per_cu=2 default.
+    test_persistent[
+        4,
+        4096,
+        7168,
+        BM=16,
+        BN=64,
+        BK_ELEMS=512,
+        WN=16,
+        wg_per_cu=1,
+        cluster_drain_sched=True,
+    ]("up etm1 wg_per_cu=1", [1, 0, 0, 0], [0, 1, 2, 3], ctx)
+    test_persistent[
+        4,
+        7168,
+        2048,
+        BM=16,
+        BN=64,
+        BK_ELEMS=512,
+        WN=16,
+        wg_per_cu=1,
+        cluster_drain_sched=True,
+    ]("down etm1 wg_per_cu=1", [1, 0, 0, 0], [0, 1, 2, 3], ctx)
+
+    # True EP=4 batch-1 decode point: 2 experts, 1 row each (M=2), tile
+    # (16,64,512,16) for both up and down.
+    test_persistent[
+        4,
+        4096,
+        7168,
+        BM=16,
+        BN=64,
+        BK_ELEMS=512,
+        WN=16,
+        cluster_drain_sched=True,
+    ]("up EP4 decode M=2", [1, 1, 0, 0], [0, 1, 2, 3], ctx)
+    test_persistent[
+        4,
+        7168,
+        2048,
+        BM=16,
+        BN=64,
+        BK_ELEMS=512,
+        WN=16,
+        cluster_drain_sched=True,
+    ]("down EP4 decode M=2", [1, 1, 0, 0], [0, 1, 2, 3], ctx)
+
+    # Skewed routing (one hot expert, etm~203 -> (16,128,512,32) STREAM band).
+    # Stresses persistent work-stealing under imbalance.
+    test_persistent[
+        4,
+        4096,
+        7168,
+        BM=16,
+        BN=128,
+        BK_ELEMS=512,
+        WN=32,
+        b_cache_policy=SX,
+        cluster_drain_sched=True,
+    ]("up skewed hot expert", [200, 1, 1, 1], [0, 1, 2, 3], ctx)
+    test_persistent[
+        4,
+        7168,
+        2048,
+        BM=16,
+        BN=128,
+        BK_ELEMS=512,
+        WN=32,
+        b_cache_policy=SX,
+        cluster_drain_sched=True,
+    ]("down skewed hot expert", [200, 1, 1, 1], [0, 1, 2, 3], ctx)
 
     print("==== all preb grouped MXFP4 kernel tests passed ====")

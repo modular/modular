@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.collections import Set
 from std.math import ceildiv, rsqrt
 from std.random import random_ui64, seed
 from std.sys.defines import get_defined_int
@@ -22,7 +21,11 @@ from kv_cache.types import (
     KVCacheStaticParams,
     PagedKVCacheCollection,
 )
-from kv_cache_test_utils import assert_no_nan_inf, padded_lut_cols
+from kv_cache_test_utils import (
+    assert_no_nan_inf,
+    padded_lut_cols,
+    random_distinct,
+)
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._fillers import random
 from std.memory import memcpy, memset_zero
@@ -211,17 +214,12 @@ def execute_ragged_flash_attention[
     random(kv_block_continuous_tensor)
     var lookup_table_host = lookup_table.tensor[update=False]()
 
-    # Hacky way to select random blocks for continuous batching
-    var block_idx_set = Set[Int]()
-    var idx = 0
-    while idx < batch_size:
-        var randval = Int(random_ui64(0, UInt64(num_continuous_blocks - 1)))
-        if randval in block_idx_set:
-            continue
-
-        block_idx_set.add(randval)
-        lookup_table_host[idx] = UInt32(randval)
-        idx += 1
+    # Assign each batch entry a distinct continuous block. `random_ui64` is
+    # inclusive, so the original draw range `[0, num_continuous_blocks - 1]`
+    # is a population of `num_continuous_blocks` blocks.
+    var continuous_blocks = random_distinct(num_continuous_blocks, batch_size)
+    for idx in range(batch_size):
+        lookup_table_host[idx] = UInt32(continuous_blocks[idx])
 
     # Create LayoutTensors for KV collection
     var kv_block_continuous_lt = kv_block_continuous.device_tensor()
@@ -245,17 +243,22 @@ def execute_ragged_flash_attention[
     )
     var paged_lut_tensor = paged_lut.tensor[update=False]()
 
-    paged_lut_set = Set[Int]()
+    # Sample one distinct paged block per page across the whole batch up
+    # front, then hand them out in iteration order. Total pages needed is the
+    # sum of per-sequence page counts and is <= num_paged_blocks by
+    # construction.
+    var total_pages = 0
+    for bs in range(batch_size):
+        total_pages += ceildiv(cache_lengths[bs] + valid_lengths[bs], page_size)
+    var paged_blocks = random_distinct(num_paged_blocks, total_pages)
+    var page_pos = 0
     for bs in range(batch_size):
         seq_len = cache_lengths[bs] + valid_lengths[bs]
         continuous_idx = Int(lookup_table_host[bs])
 
         for block_idx in range(0, ceildiv(seq_len, page_size)):
-            var randval = Int(random_ui64(0, UInt64(num_paged_blocks - 1)))
-            while randval in paged_lut_set:
-                randval = Int(random_ui64(0, UInt64(num_paged_blocks - 1)))
-
-            paged_lut_set.add(randval)
+            var randval = paged_blocks[page_pos]
+            page_pos += 1
             paged_lut_tensor[bs, block_idx] = UInt32(randval)
             block_sz = min(page_size, seq_len - block_idx * page_size)
 

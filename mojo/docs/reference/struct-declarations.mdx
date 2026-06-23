@@ -130,7 +130,7 @@ struct Unsound:
     var item: Writable  # Error because dynamic traits not supported
 
 @fieldwise_init
-struct Sound[T: Writable & Copyable & ImplicitlyDestructible]:
+struct Sound[T: Writable & Copyable & ImplicitlyDeletable]:
     var item: Self.T    # OK: concrete at compile time
 
 def main():
@@ -196,7 +196,7 @@ valid in the struct body:
 
 ```mojo
 @fieldwise_init
-struct Pair[T: Copyable & ImplicitlyDestructible]:
+struct Pair[T: Copyable & ImplicitlyDeletable]:
     var first: Self.T
     var second: Self.T
 ```
@@ -237,7 +237,7 @@ A conformance list accepts traits and conditional `where` clauses:
 
 ```mojo
 @fieldwise_init
-struct Pair[T: Copyable & ImplicitlyDestructible](
+struct Pair[T: Copyable & ImplicitlyDeletable](
     Equatable where conforms_to(T, Equatable)
 ):
     var first: Self.T
@@ -247,13 +247,13 @@ struct Pair[T: Copyable & ImplicitlyDestructible](
 ### Implicit conformances
 
 The compiler automatically conforms every struct to `AnyType` and
-`ImplicitlyDestructible` when all members are also implicitly destructible.
-With generics, the parameter's traits must include `ImplicitlyDestructible`
+`ImplicitlyDeletable` when all members are also implicitly deletable.
+With generics, the parameter's traits must include `ImplicitlyDeletable`
 for this to apply:
 
 ```mojo
 @fieldwise_init
-struct Box[T: Copyable & ImplicitlyDestructible](
+struct Box[T: Copyable & ImplicitlyDeletable](
     Equatable where conforms_to(T, Equatable)
 ):
     var item: Self.T
@@ -263,7 +263,7 @@ def main():
     print(box.item)  # OK
 ```
 
-Without `ImplicitlyDestructible`, the compiler can't verify that the struct
+Without `ImplicitlyDeletable`, the compiler can't verify that the struct
 is safe to destroy using the built-in `__del__()` destructor:
 
 ```mojo
@@ -279,7 +279,7 @@ def main():
     # Error: 'box' abandoned without being explicitly
     # destroyed: Unhandled explicit_destroy type Copyable
     # Note: consider adding trait conformance to
-    # ImplicitlyDestructible
+    # ImplicitlyDeletable
 ```
 
 ### Synthesized lifecycle methods
@@ -395,7 +395,7 @@ Consider a generic version of this `Pair` type:
 
 ```mojo
 @fieldwise_init
-struct Pair[T: Copyable & ImplicitlyDestructible]:
+struct Pair[T: Copyable & ImplicitlyDeletable]:
     var first: Self.T
     var second: Self.T
 ```
@@ -411,7 +411,7 @@ conforms to `Writable` only when its fields do. Test the `T` type with
 
 ```mojo
 @fieldwise_init
-struct Pair[T: Copyable & ImplicitlyDestructible](
+struct Pair[T: Copyable & ImplicitlyDeletable](
     Writable where conforms_to(T, Writable)
 ):
     var first: Self.T
@@ -423,14 +423,13 @@ You can print `Pair[Int]` because `Int` is `Writable`, but not
 
 ```mojo
 @fieldwise_init
-struct NotWritable(ImplicitlyCopyable & ImplicitlyDestructible):
+struct NotWritable(ImplicitlyCopyable & ImplicitlyDeletable):
     var item: Int
 
 def main():
     var not_writable = NotWritable(42)
     var pair = Pair(not_writable, not_writable)
-    print(pair) # Error: could not convert element of 'values'
-    # with type 'Pair[NotWritable]' to expected type 'Writable'
+    print(pair) # Error regarding 'Writable' nonconformance
 ```
 
 ### Mixed trait lists
@@ -440,7 +439,7 @@ conformance list:
 
 ```mojo
 @fieldwise_init
-struct Pair[T: Copyable & ImplicitlyDestructible](
+struct Pair[T: Copyable & ImplicitlyDeletable](
     Equatable where conforms_to(T, Equatable),
     Writable where conforms_to(T, Writable),
     Copyable
@@ -545,7 +544,7 @@ def __del__(deinit self):
     print("cleaning up")
 ```
 
-Implicitly destructible structs get a default `__del__()`. A custom `__del__()`
+Implicitly deletable structs get a default `__del__()`. A custom `__del__()`
 overrides the default. `__del__()` can't be overloaded.
 
 :::note

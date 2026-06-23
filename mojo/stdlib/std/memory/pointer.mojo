@@ -20,6 +20,7 @@ from std.memory import Pointer
 """
 
 from std.format._utils import FormatStruct, Named, TypeNames
+from std.builtin.simd_size import SIMDSize
 from std.memory import UnsafeMaybeUninit
 from std.utils._nicheable import UnsafeSingleNicheable, NicheIndex
 
@@ -43,16 +44,20 @@ struct AddressSpace(
     performance characteristics.
     """
 
-    var _value: Int
+    var _value: SIMDSize
 
     # CPU address space
-    comptime GENERIC = AddressSpace(0)
+    comptime GENERIC = AddressSpace(
+        __mlir_attr[`#lit.struct<{_mlir_value = 0}> : `, SIMDSize]
+    )
     """Generic address space. Used for CPU memory and default GPU memory."""
 
     # GPU address spaces
     # See https://docs.nvidia.com/cuda/nvvm-ir-spec/#address-space
     # And https://llvm.org/docs/AMDGPUUsage.html#address-spaces
-    comptime GLOBAL = AddressSpace(1)
+    comptime GLOBAL = AddressSpace(
+        __mlir_attr[`#lit.struct<{_mlir_value = 1}> : `, SIMDSize]
+    )
     """Global GPU memory address space."""
     comptime SHARED = AddressSpace(3)
     """Shared GPU memory address space (per thread block/workgroup)."""
@@ -66,7 +71,7 @@ struct AddressSpace(
     """Buffer resource GPU memory address space (AMD-specific)."""
 
     @always_inline("builtin")
-    def __init__(out self, value: Int):
+    def __init__(out self, value: SIMDSize):
         """Initializes the address space from the underlying integral value.
 
         Args:
@@ -75,7 +80,7 @@ struct AddressSpace(
         self._value = value
 
     @always_inline("builtin")
-    def value(self) -> Int:
+    def value(self) -> SIMDSize:
         """The integral value of the address space.
 
         Returns:
@@ -90,7 +95,7 @@ struct AddressSpace(
         Returns:
           The integral value of the address space.
         """
-        return self._value
+        return Int(self._value)
 
     @always_inline("builtin")
     def __eq__(self, other: Self) -> Bool:
@@ -124,7 +129,7 @@ struct AddressSpace(
         elif self == AddressSpace.SHARED_CLUSTER:
             writer.write("AddressSpace.SHARED_CLUSTER")
         else:
-            writer.write("AddressSpace(", self.value(), ")")
+            writer.write("AddressSpace(", Int(self.value()), ")")
 
     def write_repr_to(self, mut writer: Some[Writer]):
         """Write the string representation of the AddressSpace.
@@ -389,7 +394,7 @@ struct Pointer[
 
     comptime _NonNull = UnsafePointer[
         Self.type,
-        ExternalOrigin[mut=Self.mut],
+        UntrackedOrigin[mut=Self.mut],
         address_space=Self.address_space,
     ]
 

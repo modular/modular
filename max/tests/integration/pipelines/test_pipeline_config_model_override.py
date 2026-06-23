@@ -24,9 +24,7 @@ from unittest.mock import patch
 
 from max.pipelines import PipelineConfig
 
-GENERATE_LOCAL_PATH = (
-    "max.pipelines.modeling.weights.hf_utils.generate_local_model_path"
-)
+GENERATE_LOCAL_PATH = "max.pipelines.weights.hf_utils.generate_local_model_path"
 HF_OFFLINE = "huggingface_hub.constants.HF_HUB_OFFLINE"
 
 PINNED_SHA = "abcdef123"
@@ -44,7 +42,7 @@ def test_main_override_revision_used_for_offline_cache_lookup() -> None:
         # from the fake path; what we care about is which revisions were
         # asked for during HuggingFaceRepo construction.
         try:
-            PipelineConfig(  # type: ignore[call-arg]
+            PipelineConfig.from_flat_kwargs(
                 model_path="some/repo",
                 model_override=[
                     f"main.huggingface_model_revision={PINNED_SHA}",

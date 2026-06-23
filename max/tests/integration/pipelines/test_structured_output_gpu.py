@@ -20,7 +20,11 @@ import hf_repo_lock
 import numpy as np
 from max.driver import DeviceSpec
 from max.pipelines import PipelineConfig, TextGenerationPipeline
-from max.pipelines.core import TextContext
+from max.pipelines.context import (
+    SamplingParams,
+    TextContext,
+    TextGenerationResponseFormat,
+)
 from max.pipelines.lib import (
     MAXModelConfig,
     OverlapTextGenerationPipeline,
@@ -32,11 +36,9 @@ from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
 from max.pipelines.lib.registry import PipelineRegistry
 from max.pipelines.modeling.types import (
     RequestID,
-    SamplingParams,
     TextGenerationInputs,
     TextGenerationRequest,
     TextGenerationRequestMessage,
-    TextGenerationResponseFormat,
 )
 
 pytest_plugins = "test_common.registry"
@@ -128,9 +130,9 @@ def test_smollm_with_structured_output_gpu(
     max_iterations = 60
     for _ in range(max_iterations):
         inputs: TextGenerationInputs[TextContext] = TextGenerationInputs(
-            batches=[[context]], num_steps=1
+            batches=[[context]]
         )
-        kv_manager.alloc(context, replica_idx=0, num_steps=1)
+        kv_manager.alloc(context, replica_idx=0)
         response = pipeline.execute(inputs)
 
         # Handle overlap pipeline which may return empty response on first iteration
@@ -144,7 +146,7 @@ def test_smollm_with_structured_output_gpu(
     # Flush remaining outputs with empty batch (for overlap pipeline)
     if isinstance(pipeline, OverlapTextGenerationPipeline):
         empty_inputs: TextGenerationInputs[TextContext] = TextGenerationInputs(
-            batches=[[]], num_steps=1
+            batches=[[]]
         )
         response = pipeline.execute(empty_inputs)
         if request_id in response:
@@ -164,7 +166,7 @@ def test_smollm_with_structured_output_gpu(
 def test_multistep_structured_output_gpu(
     pipeline_registry: PipelineRegistry,
 ) -> None:
-    """Test that multi-step execution (num_steps > 1) produces valid JSON."""
+    """Test structured output over multiple single-step pipeline invocations."""
     revision = hf_repo_lock.revision_for_hf_repo(
         "HuggingFaceTB/SmolLM2-135M-Instruct"
     )
@@ -235,12 +237,11 @@ def test_multistep_structured_output_gpu(
     kv_manager.claim(context.request_id, replica_idx=0)
 
     tokens = []
-    num_steps = 4  # Use multi-step execution
     while True:
         inputs: TextGenerationInputs[TextContext] = TextGenerationInputs(
-            batches=[[context]], num_steps=num_steps
+            batches=[[context]]
         )
-        kv_manager.alloc(context, replica_idx=0, num_steps=num_steps)
+        kv_manager.alloc(context, replica_idx=0)
         response = pipeline.execute(inputs)
 
         for token in response[request_id].tokens:
@@ -264,7 +265,7 @@ def test_multistep_structured_output_gpu(
 def test_multi_step_guided_decoding_gpu(
     pipeline_registry: PipelineRegistry,
 ) -> None:
-    """Test that multi-step execution works correctly with guided decoding."""
+    """Test that guided decoding works over repeated single-step invocations."""
     revision = hf_repo_lock.revision_for_hf_repo(
         "HuggingFaceTB/SmolLM2-135M-Instruct"
     )
@@ -328,15 +329,14 @@ def test_multi_step_guided_decoding_gpu(
     kv_manager = pipeline.kv_manager
     kv_manager.claim(context.request_id, replica_idx=0)
 
-    # Use multi-step execution (num_steps > 1) with guided decoding
-    num_steps = 3
+    # Single-step execution with guided decoding per scheduler iteration.
     max_iterations = 20
 
     for _ in range(max_iterations):
         inputs: TextGenerationInputs[TextContext] = TextGenerationInputs(
-            batches=[[context]], num_steps=num_steps
+            batches=[[context]]
         )
-        kv_manager.alloc(context, replica_idx=0, num_steps=num_steps)
+        kv_manager.alloc(context, replica_idx=0)
         response = pipeline.execute(inputs)
 
         if response[request_id].is_done:
@@ -416,14 +416,13 @@ def test_overlap_pipeline_structured_output_gpu(
     kv_manager.claim(context.request_id, replica_idx=0)
 
     tokens: list[int] = []
-    num_steps = 1  # Single-step execution for overlap pipeline
-    max_iterations = 60  # More iterations needed with single-step
+    max_iterations = 60  # More iterations needed with single-step execution
 
     for _ in range(max_iterations):
         inputs: TextGenerationInputs[TextContext] = TextGenerationInputs(
-            batches=[[context]], num_steps=num_steps
+            batches=[[context]]
         )
-        kv_manager.alloc(context, replica_idx=0, num_steps=num_steps)
+        kv_manager.alloc(context, replica_idx=0)
 
         # For structured output, overlap pipeline syncs immediately (no overlap)
         # so results are returned in the same call, not delayed.
@@ -438,7 +437,7 @@ def test_overlap_pipeline_structured_output_gpu(
     # For normal overlap (non-structured-output), this would flush pending outputs.
     # For structured output with immediate sync, there are no pending outputs.
     empty_inputs: TextGenerationInputs[TextContext] = TextGenerationInputs(
-        batches=[[]], num_steps=1
+        batches=[[]]
     )
     response = pipeline.execute(empty_inputs)
     if request_id in response:
@@ -577,10 +576,10 @@ def test_heterogeneous_batch_structured_output_gpu(
 
         # Allocate KV cache for active contexts
         for ctx in active_contexts:
-            kv_manager.alloc(ctx, replica_idx=0, num_steps=1)
+            kv_manager.alloc(ctx, replica_idx=0)
 
         inputs: TextGenerationInputs[TextContext] = TextGenerationInputs(
-            batches=[active_contexts], num_steps=1
+            batches=[active_contexts]
         )
         response = pipeline.execute(inputs)
 

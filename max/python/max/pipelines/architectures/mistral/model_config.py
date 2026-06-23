@@ -24,6 +24,7 @@ from max.nn.transformer import ReturnLogits
 from max.pipelines.lib import MAXModelConfig, PipelineConfig
 from max.pipelines.lib.interfaces.arch_config import (
     ArchConfigWithKVCache,
+    ArchConfigWithPermissiveMaxSeqLen,
     ArchConfigWithStoredKVParams,
 )
 from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
@@ -33,7 +34,11 @@ from typing_extensions import Self, override
 
 
 @dataclass(kw_only=True)
-class MistralConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
+class MistralConfig(
+    ArchConfigWithPermissiveMaxSeqLen,
+    ArchConfigWithStoredKVParams,
+    ArchConfigWithKVCache,
+):
     """Configuration for Mistral models."""
 
     # Required fields
@@ -59,16 +64,6 @@ class MistralConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
 
     def get_max_seq_len(self) -> int:
         return self.max_seq_len
-
-    @staticmethod
-    def calculate_max_seq_len(
-        pipeline_config: PipelineConfig, huggingface_config: AutoConfig
-    ) -> int:
-        """Calculates the maximum sequence length for the model."""
-        max_seq_len = pipeline_config.model.max_length
-        if max_seq_len:
-            return max_seq_len
-        return huggingface_config.max_position_embeddings
 
     @override
     @classmethod

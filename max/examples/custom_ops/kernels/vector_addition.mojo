@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 # DOC: max/develop/build-custom-ops.mdx
+import compiler
 
 from std.gpu.host import DeviceContext
 from std.math import ceildiv

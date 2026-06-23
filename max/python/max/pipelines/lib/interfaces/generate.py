@@ -23,16 +23,18 @@ import numpy.typing as npt
 if TYPE_CHECKING:
     from ..config import PipelineConfig
 
+from max.pipelines.context import (
+    GenerationStatus,
+    TextGenerationContextType,
+    TextGenerationOutput,
+)
 from max.pipelines.kv_cache.paged_kv_cache import PagedKVCacheManager
 from max.pipelines.modeling.types import (
-    GenerationStatus,
     PipelineOutputsDict,
     PipelineTokenizer,
     RequestID,
     RequestType,
-    TextGenerationContextType,
     TextGenerationInputs,
-    TextGenerationOutput,
 )
 
 from .pipeline_model import PipelineModelWithKVCache
@@ -126,10 +128,8 @@ class GenerateMixin(Protocol[TextGenerationContextType, RequestType]):
             batches[replica_idx].append(context)
             batch_to_replica_idx[req_id] = replica_idx
 
-        num_steps = self.pipeline_config.runtime.max_num_steps
         inputs = TextGenerationInputs(
             batches=batches,
-            num_steps=num_steps,
         )
 
         # Generate outputs until all requests are done.
@@ -144,7 +144,6 @@ class GenerateMixin(Protocol[TextGenerationContextType, RequestType]):
                         self.kv_manager.alloc(
                             ctx,
                             replica_idx=replica_idx,
-                            num_steps=num_steps,
                         )
 
                 step_outputs = self.execute(inputs)

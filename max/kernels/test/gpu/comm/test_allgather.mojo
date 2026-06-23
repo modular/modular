@@ -16,7 +16,7 @@ from std.sys import size_of, has_amd_gpu_accelerator
 
 from comm.allgather import allgather
 from comm import MAX_GPUS, Signal
-from comm.sync import enable_p2p
+from comm.sync import enable_p2p, init_signal_buffer
 import comm.vendor.ccl as vendor_ccl
 from std.gpu.host import DeviceBuffer, DeviceContext, HostBuffer
 from layout import (
@@ -77,8 +77,13 @@ def all_gather_test[
                 size_of[Signal]() + temp_buffer_num_bytes
             )
         )
-        list_of_ctx[i].enqueue_memset[DType.uint8](signal_buffers[i], 0)
-        rank_sigs[i] = signal_buffers[i].unsafe_ptr().bitcast[Signal]()
+        init_signal_buffer(signal_buffers[i], list_of_ctx[i])
+        rank_sigs[i] = (
+            signal_buffers[i]
+            .unsafe_ptr()
+            .bitcast[Signal]()
+            .as_unsafe_any_origin()
+        )
 
         # Copy to device.
         list_of_ctx[i].enqueue_copy(in_bufs_list[i], host_buffer)

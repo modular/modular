@@ -180,9 +180,9 @@ def mla_indexer_ragged_float8_paged[
     mask_str: StaticString,
 ](
     output_indices: TileTensor[DType.int32, ...],
-    q: TileTensor[dtype, ...],
+    q: TileTensor[mut=False, dtype, ...],
     q_s: TileTensor[DType.float32, ...],
-    input_row_offsets: TileTensor[DType.uint32, ...],
+    input_row_offsets: TileTensor[mut=False, DType.uint32, ...],
     k_collection: KCollectionT,
     layer_idx: UInt32,
     ctx: DeviceContext,
@@ -229,6 +229,8 @@ def mla_indexer_ragged_float8_paged[
 
     var batch_size = Int(input_row_offsets.dim[0]()) - 1
     var total_seq_len = Int(q.dim[0]())
+    if total_seq_len == 0:
+        return
 
     var k_cache = k_collection.get_key_cache(Int(layer_idx))
 

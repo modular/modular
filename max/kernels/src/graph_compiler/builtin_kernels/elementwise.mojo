@@ -39,13 +39,22 @@ import extensibility as compiler
 # ===-----------------------------------------------------------------------===#
 from std.builtin.simd import _pow
 
-from nn.activations import relu
+from nn.activations import (
+    gelu,
+    gelu_quick,
+    gelu_tanh,
+    relu,
+    sigmoid,
+    silu,
+)
 from extensibility import (
     ElementwiseBinaryComparisonOp,
     ElementwiseBinaryOp,
     ElementwiseUnaryMixedOp,
     ElementwiseUnaryOp,
 )
+from layout import TileTensor
+from layout.tile_layout import TensorLayout
 from std.logger import Logger
 
 comptime logger = Logger()
@@ -64,6 +73,18 @@ struct Add(ElementwiseBinaryOp):
         width: SIMDSize,
     ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return lhs + rhs
+
+    @staticmethod
+    def elementwise[
+        dtype: DType,
+        LayoutType: TensorLayout,
+    ](
+        lhs: TileTensor[dtype, LayoutType, MutAnyOrigin],
+        rhs: TileTensor[dtype, LayoutType, MutAnyOrigin],
+    ) -> TileTensor[dtype, LayoutType, MutAnyOrigin]:
+        # TODO(GEX-3799): implement TileTensor element-wise add.
+        _ = rhs
+        return lhs
 
 
 @compiler.register("mo.sub")
@@ -249,6 +270,68 @@ struct ReLU(ElementwiseUnaryOp):
         width: SIMDSize,
     ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return relu(x)
+
+    @staticmethod
+    def elementwise[
+        dtype: DType,
+        LayoutType: TensorLayout,
+    ](
+        x: TileTensor[dtype, LayoutType, MutAnyOrigin],
+    ) -> TileTensor[
+        dtype, LayoutType, MutAnyOrigin
+    ]:
+        # TODO(GEX-3799): implement TileTensor element-wise relu.
+        return x
+
+
+@compiler.register("mo.gelu")
+struct Gelu(ElementwiseUnaryOp):
+    @staticmethod
+    def elementwise[
+        dtype: DType,
+        width: SIMDSize,
+    ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
+        return gelu(x)
+
+
+@compiler.register("mo.gelu_tanh")
+struct GeluTanh(ElementwiseUnaryOp):
+    @staticmethod
+    def elementwise[
+        dtype: DType,
+        width: SIMDSize,
+    ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
+        return gelu_tanh(x)
+
+
+@compiler.register("mo.gelu_quick")
+struct GeluQuick(ElementwiseUnaryOp):
+    @staticmethod
+    def elementwise[
+        dtype: DType,
+        width: SIMDSize,
+    ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
+        return gelu_quick(x)
+
+
+@compiler.register("mo.sigmoid")
+struct Sigmoid(ElementwiseUnaryOp):
+    @staticmethod
+    def elementwise[
+        dtype: DType,
+        width: SIMDSize,
+    ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
+        return sigmoid(x)
+
+
+@compiler.register("mo.silu")
+struct Silu(ElementwiseUnaryOp):
+    @staticmethod
+    def elementwise[
+        dtype: DType,
+        width: SIMDSize,
+    ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
+        return silu(x)
 
 
 @compiler.register("mo.ceil")

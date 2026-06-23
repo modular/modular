@@ -155,6 +155,16 @@ def conv2d_fprop[
     var N = problem.gemm_n()  # out_channels
     var K = problem.gemm_k()  # in_channels * filter_h * filter_w
 
+    # Zero-sized GEMM (e.g. zero output spatial from a ``(B, 0, 0, C)``
+    # input flowing through a diffusion VAE encoder): nothing to
+    # compute.  The output buffer is pre-allocated zero-element by the
+    # caller, and a TMA im2col descriptor built with a zero ``M`` or
+    # ``N`` extent is undefined behavior (the descriptor format has a
+    # 128-element alignment requirement on the spatial axes).  Early
+    # return defends every downstream descriptor builder + kernel launch.
+    if M == 0 or N == 0:
+        return
+
     # Im2col corner offsets for stride=1, dilation=1
     # CUTLASS formula from detail.hpp (compute_upper_corner_whd):
     #   lower_corner = -lower_padding  (negative for padding region)

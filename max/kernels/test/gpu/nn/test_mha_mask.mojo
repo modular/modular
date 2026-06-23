@@ -19,10 +19,14 @@ from std.gpu.host.compile import _compile_code
 from nn.attention.mha_mask import (
     AndMask,
     CausalMask,
+    MaskName,
+    MHAMask,
     NullMask,
     SlidingWindowCausalMask,
+    SlidingWindowNonCausalMask,
     TileMaskStatus,
 )
+from nn.attention.mha_utils import dispatch_mask
 from std.testing import assert_equal, assert_true
 
 from std.utils.index import Index, IndexList
@@ -50,27 +54,40 @@ def test_causal_mask() raises:
 
     # Check tile status.
     assert_true(
-        mask.status(Index(4, 4), Index(4, 4)) == TileMaskStatus.PARTIAL_MASK
+        mask.status(UInt32(0), Index(4, 4), Index(4, 4))
+        == TileMaskStatus.PARTIAL_MASK
     )
     assert_true(
-        mask.status(Index(0, 2), Index(2, 2)) == TileMaskStatus.FULL_MASK
-    )
-    assert_true(mask.status(Index(2, 0), Index(2, 2)) == TileMaskStatus.NO_MASK)
-    assert_true(mask.status(Index(2, 1), Index(2, 2)) == TileMaskStatus.NO_MASK)
-    assert_true(
-        mask.status(Index(1, 5), Index(2, 2)) == TileMaskStatus.FULL_MASK
+        mask.status(UInt32(0), Index(0, 2), Index(2, 2))
+        == TileMaskStatus.FULL_MASK
     )
     assert_true(
-        mask.status(Index(64, 0), Index(64, 128)) == TileMaskStatus.PARTIAL_MASK
+        mask.status(UInt32(0), Index(2, 0), Index(2, 2))
+        == TileMaskStatus.NO_MASK
     )
     assert_true(
-        mask.status(Index(64, 128), Index(64, 128)) == TileMaskStatus.FULL_MASK
+        mask.status(UInt32(0), Index(2, 1), Index(2, 2))
+        == TileMaskStatus.NO_MASK
     )
     assert_true(
-        mask.status(Index(64, 256), Index(64, 128)) == TileMaskStatus.FULL_MASK
+        mask.status(UInt32(0), Index(1, 5), Index(2, 2))
+        == TileMaskStatus.FULL_MASK
     )
     assert_true(
-        mask.status(Index(64, 384), Index(64, 128)) == TileMaskStatus.FULL_MASK
+        mask.status(UInt32(0), Index(64, 0), Index(64, 128))
+        == TileMaskStatus.PARTIAL_MASK
+    )
+    assert_true(
+        mask.status(UInt32(0), Index(64, 128), Index(64, 128))
+        == TileMaskStatus.FULL_MASK
+    )
+    assert_true(
+        mask.status(UInt32(0), Index(64, 256), Index(64, 128))
+        == TileMaskStatus.FULL_MASK
+    )
+    assert_true(
+        mask.status(UInt32(0), Index(64, 384), Index(64, 128))
+        == TileMaskStatus.FULL_MASK
     )
 
 
@@ -91,6 +108,7 @@ def test_causal_mask_asm() raises:
         )
         if (
             mask.status(
+                UInt32(0),
                 Index[dtype=DType.uint32](q_idx, k_idx),
                 Index[dtype=DType.uint32](4, 5),
             )
@@ -132,19 +150,30 @@ def test_and_mask() raises:
     assert_equal(masked_vec, SIMD[type, 4](0))
 
     # Check tile status.
-    assert_true(mask.status(Index(4, 4), Index(4, 4)) == TileMaskStatus.NO_MASK)
-    assert_true(mask.status(Index(0, 2), Index(2, 2)) == TileMaskStatus.NO_MASK)
-    assert_true(mask.status(Index(2, 0), Index(2, 2)) == TileMaskStatus.NO_MASK)
+    assert_true(
+        mask.status(UInt32(0), Index(4, 4), Index(4, 4))
+        == TileMaskStatus.NO_MASK
+    )
+    assert_true(
+        mask.status(UInt32(0), Index(0, 2), Index(2, 2))
+        == TileMaskStatus.NO_MASK
+    )
+    assert_true(
+        mask.status(UInt32(0), Index(2, 0), Index(2, 2))
+        == TileMaskStatus.NO_MASK
+    )
 
     var mask2 = AndMask[CausalMask(), CausalMask()]()
     assert_true(
-        mask2.status(Index(4, 4), Index(4, 4)) == TileMaskStatus.PARTIAL_MASK
+        mask2.status(UInt32(0), Index(4, 4), Index(4, 4))
+        == TileMaskStatus.PARTIAL_MASK
     )
     assert_true(
-        mask2.status(Index(64, 384), Index(64, 128))
+        mask2.status(UInt32(0), Index(64, 384), Index(64, 128))
         == TileMaskStatus.FULL_MASK,
         msg=String(
-            t"lhs = {mask2.status(Index(0, 0), Index(0, 0))} rhs ="
+            t"lhs ="
+            t" {mask2.status(UInt32(0), Index(0, 0), Index(0, 0))} rhs ="
             t" {TileMaskStatus.FULL_MASK}"
         ),
     )
@@ -161,7 +190,7 @@ def test_sliding_window_causal_mask() raises:
         size: type_of(offset),
         expected: TileMaskStatus,
     ) raises:
-        var status = mask.status(offset, size)
+        var status = mask.status(UInt32(0), offset, size)
         assert_equal(
             status,
             expected,
@@ -209,6 +238,7 @@ def test_sliding_window_causal_mask_asm() raises:
         )
         if (
             mask.status(
+                UInt32(0),
                 Index[dtype=DType.uint32](q_idx, k_idx),
                 Index[dtype=DType.uint32](64, 32),
             )
@@ -234,9 +264,88 @@ def test_sliding_window_causal_mask_asm() raises:
         ]()
 
 
+def test_sliding_window_noncausal_mask() raises:
+    print("test_sliding_window_noncausal_mask")
+
+    comptime type = DType.int32
+    var mask_val = -10000
+
+    comptime window = 4
+    comptime mask = SlidingWindowNonCausalMask[window]()
+
+    # Predicate: visible iff `k + window > q` (window=4). Future keys (k > q)
+    # are always visible since there is no causal upper bound.
+
+    # q=6, lanes k in {0,1,2,3}: only k=3 visible.
+    var masked_vec = mask.mask(Index(0, 0, 6, 0), SIMD[type, 4](0, 1, 2, 3))
+    assert_equal(
+        masked_vec,
+        SIMD[type, 4](Int32(mask_val), Int32(mask_val), Int32(mask_val), 3),
+    )
+
+    # q=6, lanes k in {3,4,5,6}: all visible (k=6 is the diagonal).
+    masked_vec = mask.mask(Index(0, 0, 6, 3), SIMD[type, 4](0, 1, 2, 3))
+    assert_equal(masked_vec, SIMD[type, 4](0, 1, 2, 3))
+
+    # q=6, lanes k in {5,6,7,8}: all visible, including FUTURE keys 7 and 8.
+    masked_vec = mask.mask(Index(0, 0, 6, 5), SIMD[type, 4](0, 1, 2, 3))
+    assert_equal(masked_vec, SIMD[type, 4](0, 1, 2, 3))
+
+    # q=2 (small query): window lower bound is below 0, so all keys visible.
+    masked_vec = mask.mask(Index(0, 0, 2, 0), SIMD[type, 4](0, 1, 2, 3))
+    assert_equal(masked_vec, SIMD[type, 4](0, 1, 2, 3))
+
+    @always_inline
+    def check_status(
+        offset: IndexList[2, ...],
+        size: type_of(offset),
+        expected: TileMaskStatus,
+    ) raises:
+        var status = mask.status(UInt32(0), offset, size)
+        assert_equal(
+            status,
+            expected,
+            msg=String(t"  {offset}, {size} > {status} (expected: {expected})"),
+        )
+
+    # FULL_MASK: tile entirely below the window band.
+    check_status(Index(8, 0), Index(2, 2), TileMaskStatus.FULL_MASK)
+    check_status(Index(6, 0), Index(2, 2), TileMaskStatus.FULL_MASK)
+
+    # NO_MASK: tile fully visible, including future-key tiles (k > q).
+    check_status(Index(0, 0), Index(4, 4), TileMaskStatus.NO_MASK)
+    check_status(Index(2, 4), Index(2, 2), TileMaskStatus.NO_MASK)
+    check_status(Index(6, 6), Index(2, 2), TileMaskStatus.NO_MASK)
+
+    # PARTIAL_MASK: tile straddling the window lower edge.
+    check_status(Index(4, 0), Index(4, 4), TileMaskStatus.PARTIAL_MASK)
+    check_status(Index(6, 2), Index(2, 2), TileMaskStatus.PARTIAL_MASK)
+
+
+def test_sliding_window_noncausal_mask_dispatch() raises:
+    """The `"sliding_window_noncausal"` string (emitted by Python's
+    `AttentionMaskVariant`) resolves through `dispatch_mask` to
+    `SlidingWindowNonCausalMask`.
+    """
+    print("test_sliding_window_noncausal_mask_dispatch")
+
+    var dispatched_name = String("")
+
+    @parameter
+    def capture[mask_t: MHAMask](mask: mask_t) raises:
+        dispatched_name = mask_t.get_type_name()
+
+    dispatch_mask[
+        MaskName.SLIDING_WINDOW_NONCAUSAL.name, capture, local_window_size=4
+    ]()
+    assert_equal(dispatched_name, "SlidingWindowNonCausalMask")
+
+
 def main() raises:
     test_causal_mask()
     test_causal_mask_asm()
     test_and_mask()
     test_sliding_window_causal_mask()
     test_sliding_window_causal_mask_asm()
+    test_sliding_window_noncausal_mask()
+    test_sliding_window_noncausal_mask_dispatch()

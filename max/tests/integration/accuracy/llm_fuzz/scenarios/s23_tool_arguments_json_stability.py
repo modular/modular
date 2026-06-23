@@ -69,7 +69,10 @@ def _forced_search_payload(model: str) -> dict[str, Any]:
             },
         ],
         "tool_choice": {"type": "function", "function": {"name": "search"}},
-        "max_tokens": 128,
+        # Reasoning models take a variable-length <think> block before the
+        # forced tool call; 128 truncated the longer path mid-reasoning (no
+        # tool_calls emitted). 512 lets it finish and reach the tool call.
+        "max_tokens": 512,
         "temperature": 0,
     }
 
@@ -122,7 +125,8 @@ class ToolArgumentsJsonStability(BaseScenario):
         "Repeated identical forced tool_choice requests; every tool "
         "call arguments string must be valid JSON"
     )
-    tags = ["tools", "function_calling", "json", "flaky"]
+    tags = ["validation", "tools", "function_calling", "json", "flaky"]
+    scenario_type = "validation"
 
     async def run(
         self, client: FuzzClient, config: RunConfig

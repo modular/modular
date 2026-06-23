@@ -57,7 +57,7 @@ def test_reflect_field_types() raises:
     """Returns field types iterable with reflect."""
     comptime types = reflect[Point].field_types()
     comptime first_type_name = reflect[types[0]].name()
-    assert_equal(first_type_name, "Int")
+    assert_equal(first_type_name, "SIMD[DType.int, 1]")
 
 
 # --- base_name ---
@@ -71,7 +71,7 @@ def test_base_name_parameterized() raises:
 
 def test_base_name_simple() raises:
     """Returns simple name for non-parameterized type."""
-    assert_equal(reflect[Int].base_name(), "Int")
+    assert_equal(reflect[Int].base_name(), "SIMD")
 
 
 # --- is_struct ---
@@ -180,9 +180,9 @@ def test_trait_downcast_inequality() raises:
     assert_true(not equal)
 
 
-struct ConditionalCopyableWrapper[T: ImplicitlyDestructible & Movable](
+struct ConditionalCopyableWrapper[T: ImplicitlyDeletable & Movable](
     Copyable where conforms_to(T, Copyable),
-    ImplicitlyDestructible,
+    ImplicitlyDeletable,
     Movable,
 ):
     var value: Self.T
@@ -198,7 +198,7 @@ struct ConditionalCopyableWrapper[T: ImplicitlyDestructible & Movable](
         )
 
 
-# All structs are inherently `ImplicitlyDestructible`
+# All structs are inherently `ImplicitlyDeletable`
 @fieldwise_init
 struct NotCopyable(Movable):
     pass
@@ -248,11 +248,9 @@ trait MakeCopyable:
                 continue
 
             ref p_value = reflect[Self].field_ref[idx](self)
-            trait_downcast[Copyable & ImplicitlyDestructible](
+            trait_downcast[Copyable & ImplicitlyDeletable](
                 reflect[Self].field_ref[idx](other)
-            ) = trait_downcast[Copyable & ImplicitlyDestructible](
-                p_value
-            ).copy()
+            ) = trait_downcast[Copyable & ImplicitlyDeletable](p_value).copy()
 
 
 @fieldwise_init
@@ -289,9 +287,9 @@ def test_copy_to_independent() raises:
 # --- Accessing fields by name ---
 
 
-def test_field_type_by_name() raises:
+def test_field_by_name() raises:
     """Returns a Reflected handle for the field; .T is usable."""
-    comptime host_handle = reflect[Config].field_type["host"]
+    comptime host_handle = reflect[Config].field["host"]
     var default_host: host_handle.T = "localhost"
     assert_equal(default_host, "localhost")
 
@@ -482,7 +480,7 @@ def main() raises:
     test_copy_to_independent()
 
     # Accessing fields by name
-    test_field_type_by_name()
+    test_field_by_name()
     test_field_index_by_name()
 
     # Field layout

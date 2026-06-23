@@ -12,7 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 from max.graph.weights import WeightsFormat
-from max.pipelines.core import TextContext
+from max.pipelines.context import TextContext
+from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
 from max.pipelines.lib import (
     SupportedArchitecture,
 )
@@ -44,4 +45,5 @@ mamba_arch = SupportedArchitecture(
     },
     task=PipelineTask.TEXT_GENERATION,
     config=MambaConfig,
+    memory_planner=PagedMemoryPlanner,
 )

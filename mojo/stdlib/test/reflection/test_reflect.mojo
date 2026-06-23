@@ -189,7 +189,7 @@ def test_field_names_simple() raises:
 
 def test_field_types_match_get_type_name() raises:
     comptime types = reflect[SimpleStruct].field_types()
-    assert_equal(reflect[types[0]].name(), "Int")
+    assert_equal(reflect[types[0]].name(), "SIMD[DType.int, 1]")
     assert_equal(reflect[types[1]].name(), "SIMD[DType.float64, 1]")
 
 
@@ -216,7 +216,7 @@ def test_field_count_through_generic() raises:
 
 
 # ===----------------------------------------------------------------------=== #
-# `field_index` / `field_type` (lookup by name)
+# `field_index` / `field` (lookup by name)
 # ===----------------------------------------------------------------------=== #
 
 
@@ -233,35 +233,35 @@ def test_field_index_nested() raises:
     assert_equal(r.field_index["count"](), 2)
 
 
-def test_field_type_by_name_simple() raises:
+def test_field_by_name_simple() raises:
     comptime r = reflect[SimpleStruct]
-    comptime x_type = r.field_type["x"]
-    assert_equal(x_type.name(), "Int")
+    comptime x_type = r.field["x"]
+    assert_equal(x_type.name(), "SIMD[DType.int, 1]")
 
-    comptime y_type = r.field_type["y"]
+    comptime y_type = r.field["y"]
     assert_equal(y_type.name(), "SIMD[DType.float64, 1]")
 
 
-def test_field_type_returns_reflected_handle() raises:
-    """`field_type[name]()` returns a `Reflected[FieldT]`, fully composable."""
+def test_field_returns_reflected_handle() raises:
+    """`field[name]` returns a `Reflected[FieldT]`, fully composable."""
     comptime r = reflect[Outer]
-    comptime inner_handle = r.field_type["inner"]
+    comptime inner_handle = r.field["inner"]
     # The returned handle is itself a Reflected, with its own field_count etc.
     assert_equal(inner_handle.field_count(), 2)
     assert_equal(inner_handle.field_names()[0], "a")
     assert_equal(inner_handle.field_names()[1], "b")
 
 
-def test_field_type_usable_as_type_annotation() raises:
-    comptime y_type = reflect[SimpleStruct].field_type["y"]
+def test_field_usable_as_type_annotation() raises:
+    comptime y_type = reflect[SimpleStruct].field["y"]
     var v: y_type.T = 3.14
     assert_true(v > 3.0)
 
 
-def test_field_type_matches_field_types_by_index() raises:
+def test_field_matches_field_types_by_index() raises:
     comptime r = reflect[SimpleStruct]
     comptime idx = r.field_index["x"]()
-    comptime by_name = r.field_type["x"]
+    comptime by_name = r.field["x"]
     comptime by_idx = r.field_types()[idx]
     assert_equal(by_name.name(), reflect[by_idx].name())
 

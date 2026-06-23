@@ -14,10 +14,10 @@
 
 import pytest
 from max.pipelines import TextGenerationPipeline
-from max.pipelines.core.context import TextContext
+from max.pipelines.context import SamplingParams
+from max.pipelines.context.context import TextContext
 from max.pipelines.modeling.types import (
     RequestID,
-    SamplingParams,
     TextGenerationInputs,
     TextGenerationRequest,
 )
@@ -51,11 +51,9 @@ def generate_tokens_from_contexts(
 
     while active_contexts:
         for context in active_contexts.values():
-            kv_manager.alloc(context, replica_idx=0, num_steps=1)
+            kv_manager.alloc(context, replica_idx=0)
         response = pipeline.execute(
-            TextGenerationInputs(
-                batches=[list(active_contexts.values())], num_steps=1
-            )
+            TextGenerationInputs(batches=[list(active_contexts.values())])
         )
         for req_id, resp in response.items():
             all_tokens[req_id].extend(resp.tokens)

@@ -38,6 +38,7 @@ from max.nn.attention.multi_latent_attention import (
 )
 from max.nn.attention.multi_latent_attention_fp8 import (
     DataParallelLatentAttentionWithRopeFp8,
+    TensorParallelLatentAttentionWithRopeFp8,
 )
 from max.nn.comm import Signals
 from max.nn.comm.ep import EPBatchManager
@@ -336,16 +337,27 @@ class DeepseekV3DecoderLayer(Module):
             type[DataParallelLatentAttentionWithRope]
             | type[DataParallelLatentAttentionWithRopeFp8]
             | type[TensorParallelLatentAttentionWithRope]
+            | type[TensorParallelLatentAttentionWithRopeFp8]
         )
         match self.mode:
             case ParallelismMode.TP_EP:
-                mla_kwargs["dtype"] = DType.bfloat16
+                # TP attention + EP MoE: the cross-device communication is
+                # handled by the EP MoE, so skip the attention all-reduce.
                 mla_kwargs["skip_allreduce"] = True
-                mla_cls = TensorParallelLatentAttentionWithRope
+                if use_fp8_mla:
+                    mla_kwargs["quant_config"] = config.quant_config
+                    mla_cls = TensorParallelLatentAttentionWithRopeFp8
+                else:
+                    mla_kwargs["dtype"] = DType.bfloat16
+                    mla_cls = TensorParallelLatentAttentionWithRope
             case ParallelismMode.TP_TP:
-                mla_kwargs["dtype"] = DType.bfloat16
                 mla_kwargs["skip_allreduce"] = False
-                mla_cls = TensorParallelLatentAttentionWithRope
+                if use_fp8_mla:
+                    mla_kwargs["quant_config"] = config.quant_config
+                    mla_cls = TensorParallelLatentAttentionWithRopeFp8
+                else:
+                    mla_kwargs["dtype"] = DType.bfloat16
+                    mla_cls = TensorParallelLatentAttentionWithRope
             case ParallelismMode.DP_EP:
                 if use_fp8_mla:
                     mla_kwargs["quant_config"] = config.quant_config
@@ -512,6 +524,7 @@ class DeepseekV3DecoderLayer(Module):
         mla_prefill_metadata_flat: list[TensorValue],
         input_row_offsets: list[TensorValue],
         mla_decode_scalar_args: list[TensorValue] | None = None,
+        mla_num_partitions_scalars: list[TensorValue] | None = None,
         ep_inputs: list[Value[Any]] | None = None,
     ) -> list[TensorValue]:
         # We have to unpack our PagedCacheValues into constituent parts so
@@ -527,6 +540,9 @@ class DeepseekV3DecoderLayer(Module):
                 kv_scales=kv_scales[i] if kv_scales else None,
                 attention_dispatch_metadata=mla_decode_scalar_args[i]
                 if mla_decode_scalar_args is not None
+                else None,
+                mla_num_partitions=mla_num_partitions_scalars[i]
+                if mla_num_partitions_scalars is not None
                 else None,
             )
             for i in range(num_devices)
@@ -858,6 +874,17 @@ class DeepseekV3(Module):
                 if kv.attention_dispatch_metadata is not None
             ]
 
+        # MLA capturable-graph scalar; same per-device list shape as
+        # mla_decode_scalar_args. When set, the SM100 dispatcher uses this
+        # to align grid-time partition decisions with the kernel's divmod.
+        mla_num_partitions_scalars: list[TensorValue] | None = None
+        if kv_collections[0].mla_num_partitions is not None:
+            mla_num_partitions_scalars = [
+                kv.mla_num_partitions
+                for kv in kv_collections
+                if kv.mla_num_partitions is not None
+            ]
+
         # For EAGLE3 mode, capture hidden states
         eagle3_captured: list[list[TensorValue]] = []
         eagle3_capture_ids: set[int] = set()
@@ -890,6 +917,8 @@ class DeepseekV3(Module):
 
             if mla_decode_scalar_args is not None:
                 values.append(mla_decode_scalar_args)
+            if mla_num_partitions_scalars is not None:
+                values.append(mla_num_partitions_scalars)
 
             if ep_inputs is not None:
                 values.append(ep_inputs)
@@ -973,7 +1002,7 @@ class DeepseekV3(Module):
             data_parallel_splits_type,
         ]
         all_input_types.extend(signal_buffer_types)
-        all_input_types.extend(kv_params.get_symbolic_inputs().flatten())
+        all_input_types.extend(kv_params.flattened_kv_inputs())
 
         # Add batch context lengths
         batch_context_length_type = TensorType(

@@ -399,15 +399,15 @@ comptime STACK_BUFFER_BYTES = UInt(
 
 
 struct _WriteBufferHeap(Writable, Writer):
-    var _data: UnsafePointer[Byte, MutExternalOrigin]
+    var _data: UnsafePointer[Byte, MutUntrackedOrigin]
     var _pos: Int
 
     def __init__(out self):
         comptime alignment: Int = align_of[Byte]()
         self._data = __mlir_op.`pop.stack_allocation`[
-            count=HEAP_BUFFER_BYTES._int_mlir_index(),
+            count=HEAP_BUFFER_BYTES.__mlir_index__(),
             _type=type_of(self._data)._mlir_type,
-            alignment=alignment._int_mlir_index(),
+            alignment=alignment.__mlir_index__(),
         ]()
         self._pos = 0
 
@@ -604,7 +604,9 @@ def _hex_digits_to_hex_chars(
     comptime size = size_of[decimal.dtype]()
     var bytes = bitcast[DType.uint8, size](byte_swap(decimal))
     var nibbles = (bytes >> 4).interleave(bytes & 0xF)
-    return _hex_table._dynamic_shuffle(nibbles)
+    return SIMD[DType.uint8, size_of[decimal.dtype]() * 2](
+        _hex_table._dynamic_shuffle(nibbles)
+    )
 
 
 @always_inline

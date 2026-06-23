@@ -17,7 +17,7 @@ This module contains generic SM100 (Blackwell) GPU primitives including:
 - Pipeline synchronization (StagedPipeline, RolePipeline, etc.)
 - FTZ arithmetic (add_ftz, sub_ftz, mul_ftz, etc.)
 - Barrier helpers (FA4MiscMBars)
-- MMA building blocks (bulk_mma, SM100TensorAccumulatorSS/TS)
+- MMA building blocks (bulk_mma, SM100TensorAccumulator)
 - Masking utilities (apply_mask, apply_oob_mask)
 """
 
@@ -28,6 +28,7 @@ from std.sys._assembly import inlined_assembly
 from std.sys.intrinsics import llvm_intrinsic
 from std.bit import prev_power_of_two, pop_count
 from std.gpu.globals import WARP_SIZE
+from std.gpu.primitives.warp import broadcast
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.memory import AddressSpace
 from std.gpu.compute.arch.mma_nvidia_sm100 import (
@@ -53,13 +54,20 @@ from layout.tile_layout import (
 )
 from layout.tma_async import PipelineState, SharedMemBarrier
 from std.memory import bitcast
+from std.utils.type_functions import ConditionalType
 from nn.attention.gpu.nvidia.sm100.attention import FA4Config
+
+# `elect` is defined in the shared NVIDIA module so SM90 and SM100 can both use
+# it without a cross-architecture import. Re-exported here for the many SM100
+# callers (and tests) that import it from `attention_utils`.
+from nn.attention.gpu.nvidia.common import elect
 from nn.attention.mha_mask import MHAMask, MASK_VALUE, MaskStrategy
 from nn.attention.mha_operand import (
     MHAOperand,
     PagedRowIndices,
     kv_sub_tile_rows,
     kv_num_sub_tiles,
+    kv_tma_fold_chunks,
 )
 from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple
@@ -83,7 +91,7 @@ comptime LocalTensor[
         shape_types=layout.shape_types,
         stride_types=layout.stride_types,
     ],
-    MutExternalOrigin,
+    MutUntrackedOrigin,
     address_space=AddressSpace.LOCAL,
 ]
 comptime SharedMemTensor[dtype: DType, layout: InternalLayout] = TileTensor[
@@ -92,7 +100,7 @@ comptime SharedMemTensor[dtype: DType, layout: InternalLayout] = TileTensor[
         shape_types=layout.shape_types,
         stride_types=layout.stride_types,
     ],
-    MutExternalOrigin,
+    MutUntrackedOrigin,
     address_space=AddressSpace.SHARED,
 ]
 
@@ -654,57 +662,105 @@ struct TMemTile[
         break_into_powers_of_two[func=store_fn, N=Self.BN, max_value=128]()
 
 
-struct SM100TensorAccumulatorSS[
+struct SM100TensorAccumulator[
     operand_type: DType,
     accum_dtype: DType,
     MMA_M: Int,
     MMA_N: Int,
     BK: Int,
     *,
+    a_tmem: Bool,
     mma_kind: UMMAKind = UMMAKind.KIND_F16,
     swizzle_a: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     swizzle_b: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     transpose_b: Bool = True,
     cta_group: Int = 1,
     num_stages: Int = 1,
+    b_page_dense: Bool = False,
 ](TrivialRegisterPassable):
     # This performs C = A @ B
     # where A is BM x BK and B is BN x BK if k major, else BK x BN.
     # `BK` is broken into `num_stages` and pipelined.
     #
-    # The complete multiplication of all stages produces an unweighted
-    # score, which is the input of the `softmax`.
+    # The A operand is either an SMEM tile referenced through an
+    # `MMASmemDescriptorPair` (`a_tmem=False`, the "SS" contraction, e.g.
+    # Q@K' producing the unweighted score input of the `softmax`) or a
+    # TMEM tile referenced through a raw TMEM address (`a_tmem=True`, the
+    # "TS" contraction, e.g. P@V). B is always an SMEM descriptor.
+    # `swizzle_a` is meaningful only for `a_tmem=False`.
     # The benefit of setting `stages > 1` is that this can hide latency.
+    #
+    # When `cta_group == 1 and MMA_M <= 64`, MMAs are issued as
+    # `tcgen05.mma.ws` (warp-specialized), which uses the packed-TMEM
+    # (1x4 / Layout G) datapath: the hardware subpartition folds
+    # `m_pack = 128 // MMA_M` row-groups onto the same physical TMEM
+    # columns, so the accumulator occupies only `MMA_N / m_pack` physical
+    # columns and all 128 datapath lanes stay busy. For MMA_M == 64 the
+    # non-ws form is also legal in hardware but uses only half the
+    # datapaths, so this struct ALWAYS chooses ws there. The A (P) operand
+    # in TMEM (`a_tmem=True`) follows the same packed convention -- its
+    # producer must write it accordingly -- and consumers must read the
+    # accumulator with the packed layout: all `m_pack` warps issue
+    # tcgen05_ld/st against the SAME TMEM column address (no per-warp
+    # column offsets) -- see sm100/CLAUDE.md.
+    comptime use_ws = Self.cta_group == 1 and Self.MMA_M <= 64
+    comptime tcgen05_mma_type = "tcgen05.mma.ws.cta_group::1."
     comptime operand_t = Self.operand_type
     comptime operand_size = size_of[Self.operand_t]()
     comptime accum_t = Self.accum_dtype
     comptime MMA_K = 16 if Self.operand_type.is_half_float() else 32
-    comptime num_k_mmas = ceildiv(Self.BK, Self.MMA_K)
-    comptime swizzle_granularity = max(
-        Self.swizzle_a.bytes(), Self.swizzle_b.bytes()
+    # The TS quadrant requires BK % MMA_K == 0 (P columns are produced in
+    # whole MMA_K blocks); the SS quadrant counts a ragged tail block.
+    comptime num_k_mmas = (Self.BK // Self.MMA_K) if Self.a_tmem else ceildiv(
+        Self.BK, Self.MMA_K
+    )
+    comptime swizzle_granularity = (
+        Self.swizzle_b.bytes() if Self.a_tmem else max(
+            Self.swizzle_a.bytes(), Self.swizzle_b.bytes()
+        )
     ) // size_of[Self.operand_t]()
-    comptime padded_BK = align_up(Self.BK, Self.swizzle_granularity)
+    # TMEM A (P) is written at exactly BK columns, so no swizzle padding
+    # applies; SMEM A/B tiles are padded to the swizzle granularity.
+    comptime padded_BK = Self.BK if Self.a_tmem else align_up(
+        Self.BK, Self.swizzle_granularity
+    )
     comptime num_k_blocks = Self.padded_BK // Self.MMA_K
-    comptime num_k_blocks_per_stage = Self.num_k_blocks // Self.num_stages
+    comptime use_3_then_1_split: Bool = Self.a_tmem and Self.num_stages == 2 and Self.num_k_blocks % 4 == 0
+    comptime num_k_blocks_per_stage = Self.num_k_blocks // (
+        4 if Self.use_3_then_1_split else Self.num_stages
+    )
 
     # With cta_group > 1, each CTA's SMEM holds MMA_M/cta_group rows (A)
     # and MMA_N/cta_group columns (B).  The K-offset arithmetic in
-    # build_mma_ss uses these layouts, so BMN must match per-CTA dimensions
-    # to keep addresses within each CTA's SMEM tile.
+    # `_build_mma` (SS path) uses these layouts, so BMN must match per-CTA
+    # dimensions to keep addresses within each CTA's SMEM tile.
     #
     # For k_major A the outer-K stride is BMN * swizzle_width; halving BMN
     # halves that stride so K offsets stay in the per-CTA buffer.
     # For k_major B (transpose_b) the K stride doesn't depend on BMN,
     # but using per-CTA BMN is harmless and keeps the rule uniform.
+    #
+    # The TS quadrant historically builds b_layout with the full MMA_N
+    # (no cta_group division); preserved as-is.
     comptime a_bmn: Int = align_up(Self.MMA_M // Self.cta_group, 8)
     comptime a_layout = tile_layout_k_major[
         Self.operand_t, Self.a_bmn, Self.padded_BK, Self.swizzle_a
     ]()
-    comptime b_bmn: Int = Self.MMA_N // Self.cta_group
+    comptime b_bmn: Int = Self.MMA_N if Self.a_tmem else (
+        Self.MMA_N // Self.cta_group
+    )
     comptime b_layout = tile_layout_k_major[
-        Self.operand_t, Self.b_bmn, Self.padded_BK, Self.swizzle_b
+        Self.operand_t,
+        Self.b_bmn,
+        Self.padded_BK,
+        Self.swizzle_b,
+        page_dense=Self.b_page_dense,
     ]() if Self.transpose_b else tile_layout_mn_major[
-        Self.operand_t, Self.b_bmn, Self.padded_BK, Self.swizzle_b
+        Self.operand_t,
+        Self.b_bmn,
+        Self.padded_BK,
+        Self.swizzle_b,
+        page_dense=Self.b_page_dense,
     ]()
 
     comptime idesc = UMMAInsDescriptor[Self.mma_kind].create[
@@ -715,7 +771,21 @@ struct SM100TensorAccumulatorSS[
         transpose_b=Self.transpose_b,
     ]()
 
-    comptime AType = MMASmemDescriptorPair
+    comptime AType = ConditionalType[
+        Trait=TrivialRegisterPassable,
+        If=Self.a_tmem,
+        Then=TMemTile[Self.operand_type, Self.MMA_M, Self.BK],
+        Else=MMASmemDescriptorPair,
+    ]
+    # The runtime argument type of `a` in `mma`/`mma_maybe_partial_k`:
+    # a raw TMEM address for the TS quadrant, an SMEM descriptor pair
+    # for the SS quadrant.
+    comptime AInput = ConditionalType[
+        Trait=TrivialRegisterPassable,
+        If=Self.a_tmem,
+        Then=UInt32,
+        Else=MMASmemDescriptorPair,
+    ]
     comptime BType = MMASmemDescriptorPair
     comptime CType = TMemTile[Self.accum_t, Self.MMA_M, Self.MMA_N]
 
@@ -724,126 +794,74 @@ struct SM100TensorAccumulatorSS[
     def mma[
         *, stage_idx: Int = 0
     ](
-        a: Self.AType,
+        a: Self.AInput,
         b: Self.BType,
         c: UInt32,
         *,
         c_scale: UInt32,
         elect: Int32,
     ):
+        comptime assert (not Self.use_ws) or Self.MMA_M in (
+            32,
+            64,
+        ), "ws path requires MMA_M in (32, 64)"
+
         comptime if Self.num_stages == 1:
             # Original single-stage behavior
-            bulk_mma[
-                Self.a_layout,
-                Self.b_layout,
-                num_k_mmas=Self.num_k_mmas,
-                mma_k=Self.MMA_K,
-                operand_size=Self.operand_size,
-                cta_group=Self.cta_group,
-            ](Self.idesc, a, b, c, c_scale, elect)
-        else:
-            comptime k_batch_start = Self.num_k_blocks_per_stage * stage_idx
-            comptime k_batch_end = min(
-                Self.num_k_blocks_per_stage * (stage_idx + 1), Self.num_k_mmas
-            )
-            comptime k_offset = k_batch_start * Self.MMA_K
-            # Offset both A and B descriptors by k_offset
-            comptime a_byte_offset = (
-                Self.a_layout(IntTuple(0, k_offset)) * Self.operand_size
-            )
-            comptime b_byte_offset = (
-                Self.b_layout(IntTuple(0, k_offset)) * Self.operand_size
-            )
-            var scale: UInt32
-
-            comptime if stage_idx == 0:
-                scale = c_scale
+            comptime if Self.a_tmem:
+                var a_ = rebind[UInt32](a)
+                comptime if Self.use_ws:
+                    bulk_mma_ws_ts[
+                        Self.mma_kind,
+                        Self.operand_t,
+                        b_BMN=Self.MMA_N,
+                        b_BK=Self.padded_BK,
+                        b_swizzle=Self.swizzle_b,
+                        b_is_k_major=Self.transpose_b,
+                        num_k_mmas=Self.num_k_mmas,
+                        operand_size=Self.operand_size,
+                        tcgen05_mma_type=Self.tcgen05_mma_type,
+                        mma_k=Self.MMA_K,
+                        b_page_dense=Self.b_page_dense,
+                    ](Self.idesc, a_, b, c, c_scale, elect)
+                else:
+                    bulk_mma[
+                        Self.b_layout,
+                        mma_k=Self.MMA_K,
+                        num_k_mmas=Self.num_k_mmas,
+                        operand_size=Self.operand_size,
+                        cta_group=Self.cta_group,
+                    ](Self.idesc, a_, b, c, c_scale, elect)
             else:
-                scale = 1
-            bulk_mma[
-                Self.a_layout,
-                Self.b_layout,
-                num_k_mmas=k_batch_end - k_batch_start,
-                mma_k=Self.MMA_K,
-                operand_size=Self.operand_size,
-                cta_group=Self.cta_group,
-            ](
-                Self.idesc,
-                a + UInt32(a_byte_offset),
-                b + UInt32(b_byte_offset),
-                c,
-                scale,
-                elect,
-            )
-
-
-struct SM100TensorAccumulatorTS[
-    operand_type: DType,
-    accum_dtype: DType,
-    MMA_M: Int,
-    MMA_N: Int,
-    BK: Int,
-    swizzle_b: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
-    *,
-    mma_kind: UMMAKind = UMMAKind.KIND_F16,
-    transpose_b: Bool = True,
-    cta_group: Int = 1,
-    num_stages: Int = 1,
-    padded_BK: Int = BK,
-](TrivialRegisterPassable):
-    comptime operand_t: DType = Self.operand_type
-    comptime accum_t: DType = Self.accum_dtype
-
-    comptime operand_size = size_of[Self.operand_type]()
-    comptime swizzle_granularity = Self.swizzle_b.bytes() // Self.operand_size
-    # BN here is depth
-    comptime b_layout = tile_layout_k_major[
-        Self.operand_t, Self.MMA_N, Self.BK, Self.swizzle_b
-    ]() if Self.transpose_b else tile_layout_mn_major[
-        Self.operand_t, Self.MMA_N, Self.BK, Self.swizzle_b
-    ]()
-
-    comptime MMA_K = 16 if Self.operand_type.is_half_float() else 32
-    comptime num_k_mmas = Self.BK // Self.MMA_K
-    comptime num_k_blocks = Self.padded_BK // Self.MMA_K
-    comptime use_3_then_1_split: Bool = Self.num_stages == 2 and Self.num_k_blocks % 4 == 0
-    comptime num_k_blocks_per_stage = Self.num_k_blocks // (
-        4 if Self.use_3_then_1_split else Self.num_stages
-    )
-
-    comptime AType = TMemTile[Self.operand_type, Self.MMA_M, Self.BK]
-    comptime BType = MMASmemDescriptorPair
-    comptime CType = TMemTile[Self.accum_t, Self.MMA_M, Self.MMA_N]
-
-    # B's descriptor contains stride info, so we should be
-    # able to use `BN` here instead of `BN_padded`
-    comptime idesc = UMMAInsDescriptor[Self.mma_kind].create[
-        Self.accum_t,
-        Self.operand_t,
-        Self.operand_t,
-        Index[dtype=DType.uint32](Self.MMA_M, Self.MMA_N),
-        transpose_b=Self.transpose_b,
-    ]()
-
-    @staticmethod
-    @always_inline
-    def descriptor_a(a_tmem: UInt32) -> Self.AType:
-        return {a_tmem}
-
-    @staticmethod
-    @always_inline("nodebug")
-    def mma[
-        *, stage_idx: Int = 0
-    ](a: UInt32, b: Self.BType, c: UInt32, *, c_scale: UInt32, elect: Int32):
-        comptime if Self.num_stages == 1:
-            # Original single-stage behavior
-            bulk_mma[
-                Self.b_layout,
-                mma_k=Self.MMA_K,
-                num_k_mmas=Self.num_k_mmas,
-                operand_size=Self.operand_size,
-                cta_group=Self.cta_group,
-            ](Self.idesc, a, b, c, c_scale, elect)
+                var a_ = rebind[MMASmemDescriptorPair](a)
+                comptime if Self.use_ws:
+                    bulk_mma_ws[
+                        Self.mma_kind,
+                        Self.operand_t,
+                        Self.operand_t,
+                        a_BMN=Self.a_bmn,
+                        a_BK=Self.padded_BK,
+                        a_swizzle=Self.swizzle_a,
+                        a_is_k_major=True,
+                        b_BMN=Self.b_bmn,
+                        b_BK=Self.padded_BK,
+                        b_swizzle=Self.swizzle_b,
+                        b_is_k_major=Self.transpose_b,
+                        num_k_mmas=Self.num_k_mmas,
+                        operand_size=Self.operand_size,
+                        tcgen05_mma_type=Self.tcgen05_mma_type,
+                        mma_k=Self.MMA_K,
+                        b_page_dense=Self.b_page_dense,
+                    ](Self.idesc, a_, b, c, c_scale, elect)
+                else:
+                    bulk_mma[
+                        Self.a_layout,
+                        Self.b_layout,
+                        num_k_mmas=Self.num_k_mmas,
+                        mma_k=Self.MMA_K,
+                        operand_size=Self.operand_size,
+                        cta_group=Self.cta_group,
+                    ](Self.idesc, a_, b, c, c_scale, elect)
         else:
             comptime start = 3 * stage_idx if Self.use_3_then_1_split else stage_idx
             comptime end = stage_idx + 3 if Self.use_3_then_1_split else stage_idx + 1
@@ -852,37 +870,257 @@ struct SM100TensorAccumulatorTS[
                 Self.num_k_blocks_per_stage * end, Self.num_k_mmas
             )
             comptime k_offset = k_batch_start * Self.MMA_K
-            # P (tmem) offset: move by stage_idx * k_per_stage columns
-            # P is MMA_M x BK, so column offset is k_per_stage * dtype_size / 4 (in tmem units)
-            comptime a_tmem_offset = (k_offset * Self.operand_size) // 4
-            # V (smem) offset: move by stage_idx * k_per_stage rows
+            # Offset both A and B operands by k_offset.
+            # B (smem) offset: move by k_offset rows of the descriptor.
             comptime b_byte_offset = (
                 Self.b_layout(IntTuple(0, k_offset)) * Self.operand_size
             )
-
             var scale: UInt32
 
             comptime if stage_idx == 0:
                 scale = c_scale
             else:
                 scale = 1
-            bulk_mma[
-                Self.b_layout,
-                mma_k=Self.MMA_K,
-                num_k_mmas=k_batch_end - k_batch_start,
-                operand_size=Self.operand_size,
-                cta_group=Self.cta_group,
-            ](
-                Self.idesc,
-                a + UInt32(a_tmem_offset),
-                b + UInt32(b_byte_offset),
-                c,
-                scale,
-                elect,
-            )
+            comptime if Self.a_tmem:
+                # A (tmem) offset: P is MMA_M x BK, so the column offset is
+                # k_offset * dtype_size / 4 (in tmem units).
+                comptime a_tmem_offset = (k_offset * Self.operand_size) // 4
+                var a_ = rebind[UInt32](a) + UInt32(a_tmem_offset)
+                comptime if Self.use_ws:
+                    bulk_mma_ws_ts[
+                        Self.mma_kind,
+                        Self.operand_t,
+                        b_BMN=Self.MMA_N,
+                        b_BK=Self.padded_BK,
+                        b_swizzle=Self.swizzle_b,
+                        b_is_k_major=Self.transpose_b,
+                        num_k_mmas=k_batch_end - k_batch_start,
+                        operand_size=Self.operand_size,
+                        tcgen05_mma_type=Self.tcgen05_mma_type,
+                        mma_k=Self.MMA_K,
+                        b_page_dense=Self.b_page_dense,
+                    ](
+                        Self.idesc,
+                        a_,
+                        b + UInt32(b_byte_offset),
+                        c,
+                        scale,
+                        elect,
+                    )
+                else:
+                    bulk_mma[
+                        Self.b_layout,
+                        mma_k=Self.MMA_K,
+                        num_k_mmas=k_batch_end - k_batch_start,
+                        operand_size=Self.operand_size,
+                        cta_group=Self.cta_group,
+                    ](
+                        Self.idesc,
+                        a_,
+                        b + UInt32(b_byte_offset),
+                        c,
+                        scale,
+                        elect,
+                    )
+            else:
+                # A (smem) offset: move by k_offset rows of the descriptor.
+                comptime a_byte_offset = (
+                    Self.a_layout(IntTuple(0, k_offset)) * Self.operand_size
+                )
+                var a_ = rebind[MMASmemDescriptorPair](a) + UInt32(
+                    a_byte_offset
+                )
+                comptime if Self.use_ws:
+                    bulk_mma_ws[
+                        Self.mma_kind,
+                        Self.operand_t,
+                        Self.operand_t,
+                        a_BMN=Self.a_bmn,
+                        a_BK=Self.padded_BK,
+                        a_swizzle=Self.swizzle_a,
+                        a_is_k_major=True,
+                        b_BMN=Self.b_bmn,
+                        b_BK=Self.padded_BK,
+                        b_swizzle=Self.swizzle_b,
+                        b_is_k_major=Self.transpose_b,
+                        num_k_mmas=k_batch_end - k_batch_start,
+                        operand_size=Self.operand_size,
+                        tcgen05_mma_type=Self.tcgen05_mma_type,
+                        mma_k=Self.MMA_K,
+                        b_page_dense=Self.b_page_dense,
+                    ](
+                        Self.idesc,
+                        a_,
+                        b + UInt32(b_byte_offset),
+                        c,
+                        scale,
+                        elect,
+                    )
+                else:
+                    bulk_mma[
+                        Self.a_layout,
+                        Self.b_layout,
+                        num_k_mmas=k_batch_end - k_batch_start,
+                        mma_k=Self.MMA_K,
+                        operand_size=Self.operand_size,
+                        cta_group=Self.cta_group,
+                    ](
+                        Self.idesc,
+                        a_,
+                        b + UInt32(b_byte_offset),
+                        c,
+                        scale,
+                        elect,
+                    )
+
+    @staticmethod
+    @always_inline("nodebug")
+    def mma_maybe_partial_k[
+        *, stage_idx: Int = 0
+    ](
+        a: Self.AInput,
+        b: Self.BType,
+        c: UInt32,
+        *,
+        c_scale: UInt32,
+        elect: Int32,
+        valid_k_mmas: UInt32,
+    ):
+        # Contraction for the last KV tile, where only `valid_k_mmas`
+        # MMA_K-blocks hold real data (for TS, the loaded V pages; requires
+        # page_size % MMA_K == 0 so the loaded boundary is MMA_K-aligned --
+        # enforced by FA4Config.supported()). Skipping the unloaded tail
+        # blocks is bit-identical to the full contraction (for TS their P is
+        # exactly 0 after masking) AND avoids reading uninitialized SMEM
+        # (the `0 * NaN = NaN` bug). For a full last tile, calling with
+        # `valid_k_mmas = num_k_mmas` degenerates to the plain contraction
+        # (every `@!%pv` validity guard is never-true).
+
+        # comptime k-block range owned by this stage -- mirror `mma`'s stage
+        # split as top-scope ternaries (NOT a `comptime if` block, whose
+        # branch scope would hide ks_start/ks_end).
+        comptime _multi = Self.num_stages != 1
+        comptime _start = 3 * stage_idx if Self.use_3_then_1_split else stage_idx
+        comptime _end = (
+            stage_idx + 3
+        ) if Self.use_3_then_1_split else stage_idx + 1
+        comptime ks_start = (
+            Self.num_k_blocks_per_stage * _start
+        ) if _multi else 0
+        comptime ks_end = min(
+            Self.num_k_blocks_per_stage * _end, Self.num_k_mmas
+        ) if _multi else Self.num_k_mmas
+
+        # Issue this stage's k-blocks as one fused inline-asm sequence. The
+        # partial primitives predicate each block `jj` on a SEPARATE,
+        # warp-uniform validity guard (`@!%pv`, run iff `jj < valid_k_mmas`)
+        # while passing `elect` through UNMODIFIED, so the elect codegen
+        # matches the full-tile path (no BSYNC.RECONVERGENT). `a`/`b` are the
+        # stage-0 bases (unlike `mma`'s multi-stage path, no offsets are
+        # applied here); the builders apply absolute per-block offsets, so no
+        # stage-offset swizzle-linearity is assumed. `c_scale` initializes
+        # the accumulator on stage 0's first block (jj 0; always valid since
+        # valid_k_mmas >= 1); every later block accumulates.
+        comptime assert (not Self.use_ws) or Self.MMA_M in (
+            32,
+            64,
+        ), "ws path requires MMA_M in (32, 64)"
+
+        comptime if Self.a_tmem:
+            var a_ = rebind[UInt32](a)
+            comptime if Self.use_ws:
+                bulk_mma_ws_ts_partial[
+                    Self.mma_kind,
+                    Self.operand_t,
+                    b_BMN=Self.MMA_N,
+                    b_BK=Self.padded_BK,
+                    b_swizzle=Self.swizzle_b,
+                    b_is_k_major=Self.transpose_b,
+                    num_k_mmas=ks_end - ks_start,
+                    operand_size=Self.operand_size,
+                    tcgen05_mma_type=Self.tcgen05_mma_type,
+                    mma_k=Self.MMA_K,
+                    k_start=ks_start,
+                    b_page_dense=Self.b_page_dense,
+                ](
+                    Self.idesc,
+                    a_,
+                    b,
+                    c,
+                    c_scale,
+                    elect,
+                    valid_k_mmas,
+                )
+            else:
+                bulk_mma_partial[
+                    Self.b_layout,
+                    mma_k=Self.MMA_K,
+                    num_k_mmas=ks_end - ks_start,
+                    operand_size=Self.operand_size,
+                    k_start=ks_start,
+                    cta_group=Self.cta_group,
+                ](
+                    Self.idesc,
+                    a_,
+                    b,
+                    c,
+                    c_scale,
+                    elect,
+                    valid_k_mmas,
+                )
+        else:
+            var a_ = rebind[MMASmemDescriptorPair](a)
+            comptime if Self.use_ws:
+                bulk_mma_ws_partial[
+                    Self.mma_kind,
+                    Self.operand_t,
+                    Self.operand_t,
+                    a_BMN=Self.a_bmn,
+                    a_BK=Self.padded_BK,
+                    a_swizzle=Self.swizzle_a,
+                    a_is_k_major=True,
+                    b_BMN=Self.b_bmn,
+                    b_BK=Self.padded_BK,
+                    b_swizzle=Self.swizzle_b,
+                    b_is_k_major=Self.transpose_b,
+                    num_k_mmas=ks_end - ks_start,
+                    operand_size=Self.operand_size,
+                    tcgen05_mma_type=Self.tcgen05_mma_type,
+                    mma_k=Self.MMA_K,
+                    k_start=ks_start,
+                    b_page_dense=Self.b_page_dense,
+                ](
+                    Self.idesc,
+                    a_,
+                    b,
+                    c,
+                    c_scale,
+                    elect,
+                    valid_k_mmas,
+                )
+            else:
+                bulk_mma_ss_partial[
+                    Self.a_layout,
+                    Self.b_layout,
+                    num_k_mmas=ks_end - ks_start,
+                    mma_k=Self.MMA_K,
+                    operand_size=Self.operand_size,
+                    k_start=ks_start,
+                    cta_group=Self.cta_group,
+                ](
+                    Self.idesc,
+                    a_,
+                    b,
+                    c,
+                    c_scale,
+                    elect,
+                    valid_k_mmas,
+                )
 
 
-def build_mma_ss(
+def _build_mma[
+    *, a_tmem: Bool, ws: Bool, partial: Bool
+](
     kind: String,
     layout_a: Layout,
     layout_b: Layout,
@@ -890,104 +1128,140 @@ def build_mma_ss(
     operand_size: Int,
     mma_k: Int,
     num_k_mmas: Int,
+    k_start: Int = 0,
     cta_group: Int = 1,
+    tcgen05_mma_type: String = "",
 ) -> String:
-    # Our code tries to extensively re-use registers so that the upper half
-    # of the descriptors can be re-used.
+    # Unified PTX builder for the tcgen05 MMA contraction, parameterized over the
+    # three axes that previously spawned eight near-duplicate builders:
+    #   * `a_tmem`  -- A operand source: TS (TMEM address, `[$7]`/`[%rab]`) vs
+    #                  SS (SMEM descriptor pair in `%rda` from `$7`/`$8`).
+    #   * `ws`      -- warp-specialized datapath: `tcgen05_mma_type` instruction
+    #                  with NO zero-column mask, vs non-ws
+    #                  `tcgen05.mma.cta_group::N.` with the `{$1,...}` mask.
+    #   * `partial` -- partial-K tail: each block carries a SEPARATE warp-uniform
+    #                  validity guard `%pv = (valid_k_mmas <= jj)`.
     #
-    # rda and rdb are the 64-bit smem descriptors.
-    # %pj the jump-predicate.
-    # %ps the scale-prediate.
-    mma = """{
-.reg .b64 %rda;
-.reg .b64 %rdb;
-.reg .s32 %ra;
-.reg .s32 %rb;
-.reg .pred %pj;
-.reg .pred %ps;
-setp.eq.s32 %pj, $6, 0;
-"""
-    tcgen05_mma = "tcgen05.mma.cta_group::" + String(cta_group) + "." + kind
+    # `layout_a` is consulted only for SS (`a_tmem=False`); TS computes the A
+    # column stride directly. `cta_group` matters only for non-ws (`ws=False`);
+    # `tcgen05_mma_type` only for ws; `k_start` only for partial.
+    #
+    # PREDICATION (the one rule that protects elect codegen): the form depends
+    # ONLY on `partial`, never on `ws`.
+    #   * full    -> single-instruction predication `@!%pj <instr>`. Keeping the
+    #                MMA a straight-line predicated instruction is what lets the
+    #                compiler recognize the single-lane `elect` and avoid emitting
+    #                a `BSYNC.RECONVERGENT` into the SASS.
+    #   * partial -> `@%pj bra skip{k}` + a SEPARATE `@!%pv` guard on the MMA. Two
+    #                guards are needed (elect AND validity) and PTX allows one
+    #                predicate per instruction, so elect uses the branch form
+    #                while validity rides `%pv`. `%pv` is warp-uniform, so it never
+    #                diverges and needs no reconvergence; `%pj` stays a pure
+    #                function of the unmodified `elect`, preserving the codegen.
+    # Blocks use ABSOLUTE k-index `jj = k_start + k` (for full, `k_start=0`).
+    #
+    # Plain `if` (not `comptime if`) is used throughout: the whole function is
+    # comptime-evaluated, and plain `if` is function-scoped (Python-like) so
+    # bindings like `operands` survive past the branch -- a `comptime if` branch
+    # scope would hide them.
+    # Pre-reserve so `mma` is heap-backed from the start: the comptime
+    # interpreter cannot memcpy into a String's inline (SSO) buffer, so
+    # appending a small fragment to a still-small string fails to interpret
+    # ("can't get dst memory"). A heap-backed destination interprets fine.
+    var mma = String(capacity=64)
+    mma += "{\n"
+    if not a_tmem:
+        mma += ".reg .b64 %rda;\n"
+    mma += ".reg .b64 %rdb;\n"
+    mma += ".reg .s32 %ra;\n"
+    if a_tmem:
+        mma += ".reg .b32 %rab;\n"
+    mma += ".reg .s32 %rb;\n"
+    mma += ".reg .pred %pj;\n"
+    mma += ".reg .pred %ps;\n"
+    if partial:
+        mma += ".reg .pred %pv;\n"
+    mma += "setp.eq.s32 %pj, $6, 0;\n"
+
+    # Instruction mnemonic (no predicate prefix; that is applied per-block below).
+    instr = tcgen05_mma_type + kind if ws else (
+        "tcgen05.mma.cta_group::" + String(cta_group) + "." + kind
+    )
+    # Non-ws zero-column mask operand; absent for ws.
     mask = (
         "{$1, $1, $1, $1}" if cta_group
         == 1 else "{$1, $1, $1, $1, $1, $1, $1, $1}"
     )
+    # TMEM A column stride per k-mma (TS only).
+    a_stride = mma_k * operand_size // 4
+    # Operand slot holding the warp-uniform `valid_k_mmas` (partial only): A
+    # consumes `$7,$8` for SS but only `$7` for TS, so the next free slot differs.
+    valid_op = 8 if a_tmem else 9
+
     for k in range(num_k_mmas):
-        if k == 0:  # set predicate based on c-scale
-            mma += "mov.b64 %rda, {$7, $8};\n"
+        jj = k_start + k
+        # Warp-uniform validity guard: true once an absolute k-index lands past
+        # the loaded region. Block jj == 0 is always loaded (valid_k_mmas >= 1).
+        if partial and jj != 0:
+            mma += String("setp.le.u32 %pv, $", valid_op, ", ", jj, ";\n")
+
+        # A/B descriptor setup + the enable-input-d (`%ps`) scale predicate.
+        if jj == 0:
+            if not a_tmem:
+                mma += "mov.b64 %rda, {$7, $8};\n"
             mma += "mov.b64 %rdb, {$4, $5};\n"
+            # Absolute first block initializes the accumulator from c_scale ($3).
             mma += "setp.ne.b32 %ps, $3, 0;\n"
         else:
-            # define rda and rdb
-            a_offset = (layout_a(IntTuple(0, mma_k * k)) * operand_size) >> 4
-            mma += String("add.s32 %ra, $7, ", a_offset, ";\n")
-            b_offset = (layout_b(IntTuple(0, mma_k * k)) * operand_size) >> 4
-            mma += String("add.s32 %rb, $4, ", b_offset, ";\n")
-            mma += "mov.b64 %rda, {%ra, $8};\n"
-            mma += "mov.b64 %rdb, {%rb, $5};\n"
-            if k == 1:  # set predicate to 1
+            b_offset = (layout_b(IntTuple(0, mma_k * jj)) * operand_size) >> 4
+            if a_tmem:
+                a_offset = a_stride * jj
+                mma += String("add.s32 %ra, $7, ", a_offset, ";\n")
+                mma += "mov.b32 %rab, %ra;\n"
+                mma += String("add.s32 %rb, $4, ", b_offset, ";\n")
+                mma += "mov.b64 %rdb, {%rb, $5};\n"
+            elif partial:
+                # SS-partial interleaving: A descriptor, then B descriptor.
+                a_offset = (
+                    layout_a(IntTuple(0, mma_k * jj)) * operand_size
+                ) >> 4
+                mma += String("add.s32 %ra, $7, ", a_offset, ";\n")
+                mma += "mov.b64 %rda, {%ra, $8};\n"
+                mma += String("add.s32 %rb, $4, ", b_offset, ";\n")
+                mma += "mov.b64 %rdb, {%rb, $5};\n"
+            else:
+                # SS-full interleaving: both `add`s first, then both `mov`s.
+                a_offset = (
+                    layout_a(IntTuple(0, mma_k * jj)) * operand_size
+                ) >> 4
+                mma += String("add.s32 %ra, $7, ", a_offset, ";\n")
+                mma += String("add.s32 %rb, $4, ", b_offset, ";\n")
+                mma += "mov.b64 %rda, {%ra, $8};\n"
+                mma += "mov.b64 %rdb, {%rb, $5};\n"
+            # First accumulate block (of the whole tile, or of a later stage)
+            # pins %ps = 1; it then stays set for every subsequent block.
+            if k == 0 or jj == 1:
                 mma += "setp.ne.b32 %ps, 1, 0;\n"
-        mma += String("@%pj bra skip", k, ";\n")
-        mma += tcgen05_mma + " [$0], %rda, %rdb, $2, " + mask + ", %ps;\n"
-        mma += String("skip", k, ":\n")
-    return mma + "}"
 
-
-def build_mma_ts(
-    kind: String,
-    layout_b: Layout,
-    *,
-    operand_size: Int,
-    mma_k: Int,
-    num_k_mmas: Int,
-    cta_group: Int = 1,
-) -> String:
-    # Our code tries to extensively re-use registers so that the upper half
-    # of the descriptors can be re-used.
-    #
-    # %ra holds the tmem A offset (computed inside the loop from base $7).
-    # %rb/%rdb hold the smem B descriptor (computed inside the loop from $4/$5).
-    # %pj the jump-predicate.
-    # %ps the scale-predicate.
-    mma = """{
-.reg .b64 %rdb;
-.reg .s32 %ra;
-.reg .b32 %rab;
-.reg .s32 %rb;
-.reg .pred %pj;
-.reg .pred %ps;
-setp.eq.s32 %pj, $6, 0;
-"""
-    tcgen05_mma = "tcgen05.mma.cta_group::" + String(cta_group) + "." + kind
-    mask = (
-        "{$1, $1, $1, $1}" if cta_group
-        == 1 else "{$1, $1, $1, $1, $1, $1, $1, $1}"
-    )
-    a_stride = mma_k * operand_size // 4  # tmem column stride per k-mma
-    for k in range(num_k_mmas):
-        if k == 0:  # set predicate based on c-scale
-            mma += "mov.b64 %rdb, {$4, $5};\n"
-            mma += "setp.ne.b32 %ps, $3, 0;\n"
+        # Result + operand list.
+        if a_tmem:
+            a_op = "$7" if jj == 0 else "%rab"
+            operands = String(" [$0], [", a_op, "], %rdb, $2, ")
         else:
-            a_offset = a_stride * k
-            mma += String("add.s32 %ra, $7, ", a_offset, ";\n")
-            mma += String("mov.b32 %rab, %ra;\n")
-            b_offset = (layout_b(IntTuple(0, mma_k * k)) * operand_size) >> 4
-            mma += String("add.s32 %rb, $4, ", b_offset, ";\n")
-            mma += "mov.b64 %rdb, {%rb, $5};\n"
-            if k == 1:  # set predicate to 1
-                mma += "setp.ne.b32 %ps, 1, 0;\n"
-        a_operand = "$7" if k == 0 else "%rab"
-        mma += String("@%pj bra skip", k, ";\n")
-        mma += String(
-            tcgen05_mma,
-            " [$0], [",
-            a_operand,
-            "], %rdb, $2, ",
-            mask,
-            ", %ps;\n",
-        )
-        mma += String("skip", k, ":\n")
+            operands = String(" [$0], %rda, %rdb, $2, ")
+        if not ws:
+            operands += mask + ", "
+        operands += "%ps;\n"
+
+        # Predication (form depends ONLY on `partial`; see header).
+        if partial:
+            mma += String("@%pj bra skip", k, ";\n")
+            if jj != 0:
+                mma += "@!%pv "
+            mma += instr + operands
+            mma += String("skip", k, ":\n")
+        else:
+            mma += "@!%pj " + instr + operands
     return mma + "}"
 
 
@@ -1010,8 +1284,9 @@ def bulk_mma[
     c_scale: UInt32,
     elect: Int32,
 ):
+    # Full-tile SS (both operands SMEM descriptors), non-ws contraction.
     comptime assert cta_group in (1, 2)
-    comptime mma_string = build_mma_ss(
+    comptime mma_string = _build_mma[a_tmem=False, ws=False, partial=False](
         String(kind),
         layout_a,
         layout_b,
@@ -1022,7 +1297,7 @@ def bulk_mma[
     )
 
     inlined_assembly[mma_string, NoneType, constraints="r,r,r,r,r,r,r,r,r"](
-        c_tmem, 0, idesc, c_scale, b.lo, b.hi, elect, a.lo, a.hi
+        broadcast(c_tmem), 0, idesc, c_scale, b.lo, b.hi, elect, a.lo, a.hi
     )
 
 
@@ -1044,10 +1319,13 @@ def bulk_mma[
     c_scale: UInt32,
     elect: Int32,
 ):
+    # Full-tile TS (A in TMEM, B an SMEM descriptor), non-ws contraction.
+    # `_build_mma` ignores `layout_a` for TS, so `layout_b` fills that slot.
     comptime assert num_k_mmas >= 1 and num_k_mmas <= 16
     comptime assert cta_group in (1, 2)
-    comptime mma_string = build_mma_ts(
+    comptime mma_string = _build_mma[a_tmem=True, ws=False, partial=False](
         String(kind),
+        layout_b,
         layout_b,
         operand_size=operand_size,
         mma_k=mma_k,
@@ -1056,25 +1334,342 @@ def bulk_mma[
     )
 
     inlined_assembly[mma_string, NoneType, constraints="r,r,r,r,r,r,r,r"](
-        c_tmem, 0, idesc, c_scale, b.lo, b.hi, elect, a
+        broadcast(c_tmem), 0, idesc, c_scale, b.lo, b.hi, elect, a
+    )
+
+
+@always_inline("nodebug")
+def bulk_mma_partial[
+    kind: UMMAKind,
+    //,
+    layout_b: Layout,
+    *,
+    mma_k: Int,
+    num_k_mmas: Int,
+    operand_size: Int,
+    k_start: Int = 0,
+    cta_group: Int = 1,
+](
+    idesc: UMMAInsDescriptor[kind],
+    a: UInt32,
+    b: MMASmemDescriptorPair,
+    c_tmem: UInt32,
+    c_scale: UInt32,
+    elect: Int32,
+    valid_k_mmas: UInt32,
+):
+    # P@V contraction for a partially-loaded last KV tile (TS, non-ws). Issues
+    # this stage's `num_k_mmas` k-blocks (absolute indices
+    # `k_start ..< k_start + num_k_mmas`) as a SINGLE fused inline-asm sequence.
+    # Each block's MMA carries a warp-uniform validity guard derived from
+    # `valid_k_mmas` (the count of loaded MMA_K blocks) kept entirely SEPARATE
+    # from the `elect` predicate -- so the elect codegen is identical to the
+    # full-tile `bulk_mma` (no BSYNC.RECONVERGENT). `a`/`b` are the un-offset
+    # (stage-0) bases; the builder applies absolute per-block offsets.
+    comptime assert num_k_mmas >= 1 and num_k_mmas <= 16
+    comptime assert cta_group in (1, 2)
+    comptime mma_string = _build_mma[a_tmem=True, ws=False, partial=True](
+        String(kind),
+        layout_b,
+        layout_b,
+        operand_size=operand_size,
+        mma_k=mma_k,
+        num_k_mmas=num_k_mmas,
+        k_start=k_start,
+        cta_group=cta_group,
+    )
+
+    inlined_assembly[mma_string, NoneType, constraints="r,r,r,r,r,r,r,r,r"](
+        broadcast(c_tmem), 0, idesc, c_scale, b.lo, b.hi, elect, a, valid_k_mmas
+    )
+
+
+@always_inline("nodebug")
+def bulk_mma_ss_partial[
+    kind: UMMAKind,
+    //,
+    layout_a: Layout,
+    layout_b: Layout,
+    *,
+    num_k_mmas: Int,
+    mma_k: Int,
+    operand_size: Int,
+    k_start: Int = 0,
+    cta_group: Int = 1,
+](
+    idesc: UMMAInsDescriptor[kind],
+    a: MMASmemDescriptorPair,
+    b: MMASmemDescriptorPair,
+    c_tmem: UInt32,
+    c_scale: UInt32,
+    elect: Int32,
+    valid_k_mmas: UInt32,
+):
+    # Contraction over a partially-loaded last KV tile, SS (non-ws) variant:
+    # both A and B come from SMEM descriptors. Each block's MMA carries a
+    # warp-uniform validity guard derived from `valid_k_mmas` kept entirely
+    # SEPARATE from `elect` (no BSYNC.RECONVERGENT). `a`/`b` are the un-offset
+    # (stage-0) bases; the builder applies absolute per-block offsets.
+    comptime assert num_k_mmas >= 1
+    comptime assert cta_group in (1, 2)
+    comptime mma_string = _build_mma[a_tmem=False, ws=False, partial=True](
+        String(kind),
+        layout_a,
+        layout_b,
+        operand_size=operand_size,
+        mma_k=mma_k,
+        num_k_mmas=num_k_mmas,
+        k_start=k_start,
+        cta_group=cta_group,
+    )
+
+    inlined_assembly[mma_string, NoneType, constraints="r,r,r,r,r,r,r,r,r,r"](
+        broadcast(c_tmem),
+        0,
+        idesc,
+        c_scale,
+        b.lo,
+        b.hi,
+        elect,
+        a.lo,
+        a.hi,
+        valid_k_mmas,
+    )
+
+
+# ------------------------------------------------------------------------------
+# SM100 warp-specialized (.ws) MMA building blocks
+# ------------------------------------------------------------------------------
+
+
+@always_inline
+def bulk_mma_ws[
+    kind: UMMAKind,
+    a_dtype: DType,
+    b_dtype: DType,
+    *,
+    a_BMN: Int,
+    a_BK: Int,
+    a_swizzle: TensorMapSwizzle,
+    a_is_k_major: Bool,
+    b_BMN: Int,
+    b_BK: Int,
+    b_swizzle: TensorMapSwizzle,
+    b_is_k_major: Bool,
+    num_k_mmas: Int,
+    operand_size: Int,
+    tcgen05_mma_type: String,
+    mma_k: Int = 16,
+    b_page_dense: Bool = False,
+](
+    idesc: UMMAInsDescriptor[kind],
+    a: MMASmemDescriptorPair,
+    b: MMASmemDescriptorPair,
+    c_tmem: UInt32,
+    c_scale: UInt32,
+    elect: Int32,
+):
+    # Full-tile SS, warp-specialized. The tile layouts are computed from the
+    # dtype/tile params (`_build_mma` takes `Layout` directly). `b_page_dense`
+    # selects the row-major page-fold layout for the B operand (K / Q@K' is
+    # k-major; the advance crosses a depth chunk by `_CM_NUM_ROWS*gran` instead
+    # of `BN*gran`, derived from this layout).
+    comptime layout_a = tile_layout_k_major[
+        a_dtype, a_BMN, a_BK, a_swizzle
+    ]() if a_is_k_major else tile_layout_mn_major[
+        a_dtype, a_BMN, a_BK, a_swizzle
+    ]()
+    comptime layout_b = tile_layout_k_major[
+        b_dtype, b_BMN, b_BK, b_swizzle, page_dense=b_page_dense
+    ]() if b_is_k_major else tile_layout_mn_major[
+        b_dtype, b_BMN, b_BK, b_swizzle, page_dense=b_page_dense
+    ]()
+    comptime mma_string = _build_mma[a_tmem=False, ws=True, partial=False](
+        String(kind),
+        layout_a,
+        layout_b,
+        operand_size=operand_size,
+        mma_k=mma_k,
+        num_k_mmas=num_k_mmas,
+        tcgen05_mma_type=tcgen05_mma_type,
+    )
+
+    inlined_assembly[mma_string, NoneType, constraints="r,r,r,r,r,r,r,r,r"](
+        broadcast(c_tmem), 0, idesc, c_scale, b.lo, b.hi, elect, a.lo, a.hi
+    )
+
+
+# ---- TS (TMEM-SMEM) .ws MMA building blocks ----
+
+
+@always_inline
+def bulk_mma_ws_ts[
+    kind: UMMAKind,
+    b_dtype: DType,
+    *,
+    b_BMN: Int,
+    b_BK: Int,
+    b_swizzle: TensorMapSwizzle,
+    b_is_k_major: Bool,
+    num_k_mmas: Int,
+    operand_size: Int,
+    tcgen05_mma_type: String,
+    mma_k: Int = 16,
+    b_page_dense: Bool = False,
+](
+    idesc: UMMAInsDescriptor[kind],
+    a: UInt32,
+    b: MMASmemDescriptorPair,
+    c_tmem: UInt32,
+    c_scale: UInt32,
+    elect: Int32,
+):
+    # Full-tile TS, warp-specialized. `a` is a single TMEM base ($7); `_build_mma`
+    # computes each k-tile's column offset in-PTX (`add.s32 %ra, $7, k*stride`),
+    # so the old per-tile operand ladder is gone.
+    comptime assert num_k_mmas >= 1 and num_k_mmas <= 16
+    comptime layout_b = tile_layout_k_major[
+        b_dtype, b_BMN, b_BK, b_swizzle
+    ]() if b_is_k_major else tile_layout_mn_major[
+        b_dtype, b_BMN, b_BK, b_swizzle, page_dense=b_page_dense
+    ]()
+    comptime mma_string = _build_mma[a_tmem=True, ws=True, partial=False](
+        String(kind),
+        layout_b,
+        layout_b,
+        operand_size=operand_size,
+        mma_k=mma_k,
+        num_k_mmas=num_k_mmas,
+        tcgen05_mma_type=tcgen05_mma_type,
+    )
+
+    inlined_assembly[mma_string, NoneType, constraints="r,r,r,r,r,r,r,r"](
+        broadcast(c_tmem), 0, idesc, c_scale, b.lo, b.hi, elect, a
+    )
+
+
+# ---- partial-K (.ws) MMA building blocks ----
+
+
+@always_inline
+def bulk_mma_ws_partial[
+    kind: UMMAKind,
+    a_dtype: DType,
+    b_dtype: DType,
+    *,
+    a_BMN: Int,
+    a_BK: Int,
+    a_swizzle: TensorMapSwizzle,
+    a_is_k_major: Bool,
+    b_BMN: Int,
+    b_BK: Int,
+    b_swizzle: TensorMapSwizzle,
+    b_is_k_major: Bool,
+    num_k_mmas: Int,
+    operand_size: Int,
+    tcgen05_mma_type: String,
+    mma_k: Int = 16,
+    k_start: Int = 0,
+    b_page_dense: Bool = False,
+](
+    idesc: UMMAInsDescriptor[kind],
+    a: MMASmemDescriptorPair,
+    b: MMASmemDescriptorPair,
+    c_tmem: UInt32,
+    c_scale: UInt32,
+    elect: Int32,
+    valid_k_mmas: UInt32,
+):
+    # P@V contraction for a partially-loaded last KV tile, SS warp-specialized:
+    # both A and B come from SMEM descriptors. Each block's MMA carries a
+    # warp-uniform validity guard derived from `valid_k_mmas` kept entirely
+    # SEPARATE from `elect` (no BSYNC.RECONVERGENT). `a`/`b` are the un-offset
+    # (stage-0) bases; the builder applies absolute per-block offsets.
+    comptime layout_a = tile_layout_k_major[
+        a_dtype, a_BMN, a_BK, a_swizzle
+    ]() if a_is_k_major else tile_layout_mn_major[
+        a_dtype, a_BMN, a_BK, a_swizzle
+    ]()
+    comptime layout_b = tile_layout_k_major[
+        b_dtype, b_BMN, b_BK, b_swizzle, page_dense=b_page_dense
+    ]() if b_is_k_major else tile_layout_mn_major[
+        b_dtype, b_BMN, b_BK, b_swizzle, page_dense=b_page_dense
+    ]()
+    comptime mma_string = _build_mma[a_tmem=False, ws=True, partial=True](
+        String(kind),
+        layout_a,
+        layout_b,
+        operand_size=operand_size,
+        mma_k=mma_k,
+        num_k_mmas=num_k_mmas,
+        k_start=k_start,
+        tcgen05_mma_type=tcgen05_mma_type,
+    )
+
+    inlined_assembly[mma_string, NoneType, constraints="r,r,r,r,r,r,r,r,r,r"](
+        broadcast(c_tmem),
+        0,
+        idesc,
+        c_scale,
+        b.lo,
+        b.hi,
+        elect,
+        a.lo,
+        a.hi,
+        valid_k_mmas,
     )
 
 
 @always_inline
-def elect() -> Int32:
-    # CAUTION: This function cannot be used to guard a `print`, else it will
-    # introduce a deadlock!
-    return inlined_assembly[
-        """{
-            .reg .b32 %re;
-            .reg .pred %pa;
-            mov.s32 $0, 0;
-            elect.sync %re|%pa, $1;
-            @%pa mov.s32 $0, 1;
-        }""",
-        Int32,
-        constraints="=r,r",
-    ](-1)
+def bulk_mma_ws_ts_partial[
+    kind: UMMAKind,
+    b_dtype: DType,
+    *,
+    b_BMN: Int,
+    b_BK: Int,
+    b_swizzle: TensorMapSwizzle,
+    b_is_k_major: Bool,
+    num_k_mmas: Int,
+    operand_size: Int,
+    tcgen05_mma_type: String,
+    mma_k: Int = 16,
+    k_start: Int = 0,
+    b_page_dense: Bool = False,
+](
+    idesc: UMMAInsDescriptor[kind],
+    a: UInt32,
+    b: MMASmemDescriptorPair,
+    c_tmem: UInt32,
+    c_scale: UInt32,
+    elect: Int32,
+    valid_k_mmas: UInt32,
+):
+    # P@V contraction for a partially-loaded last KV tile, TS warp-specialized.
+    # `a` is the un-offset (stage-0) TMEM base ($7); `_build_mma` computes each
+    # block's ABSOLUTE column offset (`a_stride * (k_start + k)`) in-PTX, so the
+    # old per-tile operand ladder is gone. `valid_k_mmas` rides $8 (A uses only
+    # $7) and gates each block via a `%pv` guard kept SEPARATE from `elect` (no
+    # BSYNC.RECONVERGENT).
+    comptime assert num_k_mmas >= 1 and num_k_mmas <= 16
+    comptime layout_b = tile_layout_k_major[
+        b_dtype, b_BMN, b_BK, b_swizzle
+    ]() if b_is_k_major else tile_layout_mn_major[
+        b_dtype, b_BMN, b_BK, b_swizzle, page_dense=b_page_dense
+    ]()
+    comptime mma_string = _build_mma[a_tmem=True, ws=True, partial=True](
+        String(kind),
+        layout_b,
+        layout_b,
+        operand_size=operand_size,
+        mma_k=mma_k,
+        num_k_mmas=num_k_mmas,
+        k_start=k_start,
+        tcgen05_mma_type=tcgen05_mma_type,
+    )
+
+    inlined_assembly[mma_string, NoneType, constraints="r,r,r,r,r,r,r,r,r"](
+        broadcast(c_tmem), 0, idesc, c_scale, b.lo, b.hi, elect, a, valid_k_mmas
+    )
 
 
 @always_inline
@@ -1250,13 +1845,11 @@ def elect_mma_arrive[
 
     inlined_assembly[
         """{
-        .reg .pred %pb;
-        setp.eq.s32  %pb, $1, 0;
-        @%pb bra skip;
-        tcgen05.commit.cta_group::"""
+        .reg .pred %p;
+        setp.eq.s32  %p, $1, 0;
+        @!%p tcgen05.commit.cta_group::"""
         + String(cta_group)
         + """.mbarrier::arrive::one.shared::cluster.b64 [$0];
-        skip:
         }""",
         NoneType,
         constraints="r, r",
@@ -1439,6 +2032,7 @@ struct StagedPipeline[num_kv_stages: Int, num_qk_stages: Int = 1](
     comptime num_stages: Int = Self.num_kv_stages * Self.num_qk_stages
 
     # mbars are ordered in {producer, consumer} pairs
+    @__allow_legacy_any_origin_fields
     var mbar: MBarType
     var state: PipelineState[Self.num_kv_stages]
 
@@ -1519,7 +2113,10 @@ struct TMADestination[dtype: DType, smem_elems: Int](TrivialRegisterPassable):
         address_space=AddressSpace.SHARED,
     ]
 
+    @__allow_legacy_any_origin_fields
     var mbar: MBarType
+
+    @__allow_legacy_any_origin_fields
     var smem: Self.SmemType
 
     @always_inline
@@ -1569,6 +2166,8 @@ struct TMAProducerPipeline[dtype: DType, config: FA4Config, is_k: Bool = True](
     var pipeline: StagedPipeline[
         Self.config.num_kv_stages, Self.num_qk_stages_effective
     ]
+
+    @__allow_legacy_any_origin_fields
     var smem: Self.SMemType
 
     @always_inline
@@ -1724,6 +2323,12 @@ struct TMAConsumerPipeline[dtype: DType, config: FA4Config, is_k: Bool = True](
     comptime BMN: Int = Self.config.k_rows_per_cta() if Self.is_k else Self.config.v_cols_per_cta()
     comptime BK: Int = Self.config.BK0 if Self.is_k else Self.config.BK1
     comptime is_k_major: Bool = Self.is_k
+    # Page-dense (row-major) layout: K (Q@K', k-major) gated by k_row_major(),
+    # V (P@V, mn-major) by v_row_major(). `is_k_major=Self.is_k` (below) routes
+    # the flag to the matching `tile_layout_*` branch in `smem_descriptor`.
+    comptime page_dense: Bool = (
+        Self.config.k_row_major() if Self.is_k else Self.config.v_row_major()
+    )
 
     var pipeline: StagedPipeline[
         Self.config.num_kv_stages, Self.num_qk_stages_effective
@@ -1744,6 +2349,7 @@ struct TMAConsumerPipeline[dtype: DType, config: FA4Config, is_k: Bool = True](
             BK=Self.BK,
             swizzle_mode=Self.config.swizzle_mode,
             is_k_major=Self.is_k_major,
+            page_dense=Self.page_dense,
         ](smem)
 
     @always_inline
@@ -1845,7 +2451,10 @@ struct RolePipeline[
 
     comptime num_stages: Int = Self.number_of_stages
 
+    @__allow_legacy_any_origin_fields
     var producer_mbar_base: MBarType
+
+    @__allow_legacy_any_origin_fields
     var consumer_mbar_base: MBarType
     var state: PipelineState[Self.num_stages]
 
@@ -1949,6 +2558,7 @@ struct MBarPipeline[number_of_stages: Int](TrivialRegisterPassable):
     comptime num_stages: Int = Self.number_of_stages
 
     # mbars are ordered in {producer, consumer} pairs
+    @__allow_legacy_any_origin_fields
     var mbar: MBarType
     var state: PipelineState[Self.num_stages]
 
@@ -2026,68 +2636,33 @@ def apply_mask[
     comptime simd_size = 2
     comptime F32x2 = SIMD[DType.float32, simd_size]
 
-    comptime if (
-        MaskStrategy.LOWER_TRIANGULAR in mask_strategy
-        or MaskStrategy.UPPER_TRIANGULAR in mask_strategy
-        or (
-            MaskStrategy.OUT_OF_BOUNDS in mask_strategy
-            and MaskStrategy.COMPUTED not in mask_strategy
-        )
+    comptime if MaskStrategy.BITMASK in mask_strategy or (
+        MaskStrategy.OUT_OF_BOUNDS in mask_strategy
+        and MaskStrategy.COMPUTED not in mask_strategy
     ):
+        # Mask-driven bitmask path: each 32-col batch is masked by a 32-bit
+        # visibility pattern. Either the mask provides it via `mask_bits()`
+        # (`BITMASK`), or the kernel hardcodes "clip at num_keys" by setting
+        # `OUT_OF_BOUNDS` alone — used by softmax warps that fast-path the
+        # runtime-`NO_MASK` case.
         comptime num_batches = BN // 32
         comptime assert (BN % 32) == 0
 
-        # when score_row == kv_tile_start_row, 1 is valid
-        var n_valid: Int32 = max(1 + score_row - kv_tile_start_row, 0)
-        # OOB counter: number of in-bound columns (score_col < num_keys)
-        # remaining from the start of the current batch.
-        var n_valid_oob: Int32 = max(num_keys - kv_tile_start_row, 0)
-
         comptime for batch in range(num_batches):
-            var mask_bits: UInt32 = 0xFFFF_FFFF
+            var col_start: Int32 = kv_tile_start_row + Int32(32 * batch)
+            var mask_bits: UInt32
 
-            comptime if MaskStrategy.LOWER_TRIANGULAR in mask_strategy:
-                # Causal Mask
-                # score_row >= kv_tile_start_row
-                # 1 + score_row - kv_tile_start_row > 0
-                # n_valid > 0
-                mask_bits = (UInt32(1) << UInt32(n_valid)) - UInt32(
-                    1
-                ) if n_valid < 32 else mask_bits
-
-            comptime if MaskStrategy.UPPER_TRIANGULAR in mask_strategy:
-                # SlidingWindowCausalMask sliding window part
-                # score_row - kv_tile_start_row < window_size
-                # window_size + kv_tile_start_row - score_row > 0
-                # window_size + 1 - (1 + score_row - kv_tile_start_row) > 0
-                # window_size + 1 - n_valid > 0
-                #
-                # ex window_size = 1, score_row == kv_tile_start_row
-                #    n_valid = 1
-                # We should turn off `0`: first is on, and all the rest
-                # ex window_size = 4, score_row == kv_tile_start_row + 5
-                #    n_valid = 6
-                # We should turn off `2`: first two off, all the rest on
-                var mask_off_count: Int32 = (
-                    n_valid - mask_strategy._upper_triangular_window_size
+            comptime if MaskStrategy.BITMASK in mask_strategy:
+                mask_bits = mask.mask_bits(
+                    prompt_idx, score_row, col_start, num_keys
                 )
-                # we want mask_off_count `1`s
+            else:
+                # OUT_OF_BOUNDS alone: low `n_valid_oob` bits set, where
+                # n_valid_oob = max(num_keys - col_start, 0).
+                var n_valid_oob: Int32 = max(num_keys - col_start, 0)
                 mask_bits = (
-                    (
-                        mask_bits & (0xFFFF_FFFF << UInt32(mask_off_count))
-                    ) if mask_off_count
-                    < 32 else 0
-                ) if mask_off_count > 0 else mask_bits
-
-            comptime if MaskStrategy.OUT_OF_BOUNDS in mask_strategy:
-                # Bit i (0..31) of this batch corresponds to global column
-                # `kv_tile_start_row + 32*batch + i`. It is in-bounds iff
-                # that column is `< num_keys`, i.e. iff `i < n_valid_oob`.
-                # When `n_valid_oob >= 32`, all 32 columns are in-bound and
-                # the AND is a no-op.
-                mask_bits = (
-                    mask_bits & ((UInt32(1) << UInt32(n_valid_oob)) - UInt32(1))
-                ) if n_valid_oob < 32 else mask_bits
+                    (UInt32(1) << UInt32(n_valid_oob)) - UInt32(1)
+                ) if n_valid_oob < 32 else UInt32(0xFFFF_FFFF)
 
             comptime for n in range(32 // simd_size):
                 comptime frag_col_simd = n + 32 * batch // simd_size
@@ -2108,16 +2683,11 @@ def apply_mask[
                     var val: Float32 = s[i]
                     s[i] = val if in_bound else MASK_VALUE
 
-                # OOB is now folded into `mask_bits` above (when applicable),
-                # so we only need the optional log2e multiply that
-                # `apply_oob_mask` would otherwise perform.
                 comptime if MaskType.apply_log2e_after_mask:
                     s = mul_ftz(s, log2e)
 
                 srow[frag_col] = s[0]
                 srow[frag_col + 1] = s[1]
-            n_valid = max(n_valid - 32, 0)
-            n_valid_oob = max(n_valid_oob - 32, 0)
 
     else:
         comptime block_size = BN // simd_size
@@ -2208,6 +2778,7 @@ struct FA4MiscMBars[
     use_order_barriers: Bool = True,
     use_fused_kv: Bool = False,
     pair_cta: Bool = False,
+    num_qo: Int = 2,
 ](TrivialRegisterPassable):
     """Manages all mbarrier resources for FA4.
 
@@ -2227,12 +2798,17 @@ struct FA4MiscMBars[
             warp group overlap. When False, order barriers are omitted.
         use_fused_kv: Whether the K and V share the same pipeline, or separate.
         pair_cta: Whether to use 1-cta or 2-cta implementation.
+        num_qo: Number of Q tiles per CTA. When 1, the `Q1Sync` slot is
+            collapsed and `K_offset` shifts down by `num_qk_stages`. Must
+            be 2 for any caller of `q1_wait_mbar()`.
 
     Memory layout (count=128 first, then count=1):
-        [S0_cons] [S1_cons] [C0] [C1] [Order*] | [S0_prod] [S1_prod] [Q1Sync] [K] [V] [O_prod]
+        [S0_cons] [S1_cons] [C0] [C1] [Order*] | [S0_prod] [S1_prod] [Q1Sync**] [K] [V] [O_prod]
         *Order barriers only present when use_order_barriers=True
+        **Q1Sync barriers only present when num_qo == 2
     """
 
+    @__allow_legacy_any_origin_fields
     var mbar_base: MBarType
 
     # ---- Count=128 section (first in smem) ----
@@ -2249,10 +2825,12 @@ struct FA4MiscMBars[
     # S producer barriers: 1 per warp group
     comptime S0_producer_offset = Self.order_offset + Self.num_order_barriers
     comptime S1_producer_offset = Self.S0_producer_offset + 1
-    # Q1Sync barriers
+    # Q1Sync barriers (collapsed when num_qo == 1; q1_wait_mbar() is
+    # then unsafe to call — see the comptime assert in q1_wait_mbar().)
     comptime Q1SyncIdx = Self.S1_producer_offset + 1
+    comptime Q1Sync_count: Int = Self.num_qk_stages if Self.num_qo == 2 else 0
     # K pipeline barriers
-    comptime K_offset = Self.Q1SyncIdx + Self.num_qk_stages
+    comptime K_offset = Self.Q1SyncIdx + Self.Q1Sync_count
     comptime K_barriers: Int = 2 * Self.num_qk_stages * Self.num_kv_stages
     # V pipeline barriers (separate from K, only in split mode)
     comptime V_offset: Int = Self.K_offset + Self.K_barriers
@@ -2368,6 +2946,10 @@ struct FA4MiscMBars[
 
     @always_inline
     def q1_wait_mbar(self) -> MBarType:
+        comptime assert Self.num_qo == 2, (
+            "q1_wait_mbar() requires num_qo == 2; the Q1Sync slot is"
+            " collapsed when num_qo == 1."
+        )
         return self.mbar_base + Self.Q1SyncIdx
 
     # K/V/O barrier accessors

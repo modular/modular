@@ -1,4 +1,5 @@
 load("//bazel:api.bzl", "modular_py_binary", "modular_py_library", "modular_py_test", "requirement")
+load("//max/python/max/pipelines/architectures:all_arches.bzl", "ALL_ARCHITECTURES")
 
 package(default_visibility = [
     "//:__pkg__",
@@ -95,11 +96,25 @@ modular_py_binary(
         # required by models that use Expert Parallelism.
         "MODULAR_SHMEM_LIB_DIR": "../+http_archive+nvshmem_prebuilt",
     },
-    ignore_extra_deps = [
+    ignore_extra_deps = ALL_ARCHITECTURES + [
         # accelerate isn't imported here directly, but transformers v5
         # requires it at from_pretrained time in the child process this
         # binary spawns (see deps comment below).
         requirement("accelerate"),
+    ],
+    # Expose this package as an import root so out-of-package entrypoints
+    # (e.g. //max_private/minimax_m3:verify_minimax_m3) can `from
+    # verify_pipelines import main`.
+    imports = ["."],
+    # Target-level visibility (the package default cannot list //max_private).
+    # Mirrors the package default plus //max_private so private archs can host
+    # their own logit-verification entrypoints that reuse this driver.
+    visibility = [
+        "//:__pkg__",
+        "//SDK/integration-test:__subpackages__",
+        "//max/tests:__subpackages__",
+        "//max_private:__subpackages__",
+        "//oss/modular/max/tests:__subpackages__",
     ],
     deps = [
         ":verify",
@@ -120,7 +135,7 @@ modular_py_binary(
         requirement("accelerate"),
         requirement("numpy"),
         requirement("pillow"),
-    ],
+    ] + ALL_ARCHITECTURES,
 )
 
 modular_py_test(
@@ -217,6 +232,29 @@ modular_py_test(
     srcs = ["test_check_logit_flakes.py"],
     deps = [
         ":check_logit_flakes",
+    ],
+)
+
+modular_py_binary(
+    name = "check_logit_verification_eligibility",
+    testonly = True,
+    srcs = ["check_logit_verification_eligibility.py"],
+    data = ["logit_verification_ignore_list.yaml"],
+    imports = ["."],
+    deps = [
+        requirement("click"),
+        requirement("pyyaml"),
+    ],
+)
+
+modular_py_test(
+    name = "test_check_logit_verification_eligibility",
+    size = "small",
+    srcs = ["test_check_logit_verification_eligibility.py"],
+    imports = ["."],
+    deps = [
+        ":check_logit_verification_eligibility",
+        requirement("click"),
     ],
 )
 

@@ -2273,6 +2273,29 @@ class ToStringDeferredAttr(max._core.Attribute):
     @property
     def need_elide_type(self) -> max._core.dialects.builtin.UnitAttr: ...
 
+class TraitInstanceRefAttr(max._core.Attribute):
+    """
+    This is a symbolic reference to a trait instance. Its type is the metatype
+    of the trait.
+    """
+
+    @overload
+    def __init__(
+        self,
+        symbols: Sequence[max._core.dialects.builtin.SymbolRefAttr],
+        type: max._core.Type,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        symbols: Sequence[max._core.dialects.builtin.SymbolRefAttr],
+        type: max._core.Type,
+    ) -> None: ...
+    @property
+    def symbols(self) -> Sequence[max._core.dialects.builtin.SymbolRefAttr]: ...
+    @property
+    def type(self) -> max._core.Type | None: ...
+
 class TypeConformsToTraitAttr(max._core.Attribute):
     """
     This represents a flag to indicate the type, specified by `typeValue`,
@@ -2617,11 +2640,9 @@ class ClosureInitOp(max._core.Operation):
         location: Location,
         result: max._core.Type,
         func_type_generator: max._core.dialects.builtin.TypeAttr,
-        function_type: max._core.dialects.builtin.TypeAttr,
         captures: Sequence[max._core.Value[max._core.Type]],
         move_or_copy_capture_symbols: max._core.dialects.builtin.ArrayAttr,
         input_params: ParamDeclArrayAttr,
-        inline_level: InlineLevelAttr,
         capture_types: max._core.dialects.builtin.ArrayAttr,
         capture_names: max._core.dialects.builtin.ArrayAttr,
         type_value: max._core.dialects.builtin.TypedAttr,
@@ -2638,11 +2659,9 @@ class ClosureInitOp(max._core.Operation):
         location: Location,
         result: max._core.Type,
         func_type_generator: FuncTypeGeneratorType,
-        function_type: max._core.dialects.builtin.FunctionType,
         captures: Sequence[max._core.Value[max._core.Type]],
         move_or_copy_capture_symbols: max._core.dialects.builtin.ArrayAttr,
         input_params: Sequence[ParamDeclAttr],
-        inline_level: InlineLevel,
         capture_types: max._core.dialects.builtin.ArrayAttr,
         capture_names: max._core.dialects.builtin.ArrayAttr,
         type_value: max._core.dialects.builtin.TypedAttr,
@@ -2651,12 +2670,6 @@ class ClosureInitOp(max._core.Operation):
     def func_type_generator(self) -> FuncTypeGeneratorType: ...
     @func_type_generator.setter
     def func_type_generator(
-        self, arg: max._core.dialects.builtin.TypeAttr, /
-    ) -> None: ...
-    @property
-    def function_type(self) -> max._core.dialects.builtin.FunctionType: ...
-    @function_type.setter
-    def function_type(
         self, arg: max._core.dialects.builtin.TypeAttr, /
     ) -> None: ...
     @property
@@ -2673,10 +2686,6 @@ class ClosureInitOp(max._core.Operation):
     def input_params(self) -> Sequence[ParamDeclAttr]: ...
     @input_params.setter
     def input_params(self, arg: ParamDeclArrayAttr, /) -> None: ...
-    @property
-    def inline_level(self) -> InlineLevel: ...
-    @inline_level.setter
-    def inline_level(self, arg: InlineLevelAttr, /) -> None: ...
     @property
     def capture_types(self) -> max._core.dialects.builtin.ArrayAttr: ...
     @capture_types.setter
@@ -2930,7 +2939,7 @@ class CostOfOp(max._core.Operation):
     Example:
 
     ```mlir
-    %loads, %stores, %additions, %comparisions, %divisions, %multiplications,
+    %loads, %stores, %additions, %comparisons, %divisions, %multiplications,
     %multiply_adds, %other = kgen.cost_of[(si8) -> si8: @foo]
     ```
     """
@@ -3474,7 +3483,7 @@ class IsRunInComptimeInterpreterOp(max._core.Operation):
     Example:
 
     ```mlir
-      kgen.is_run_in_comptime_interpreter : i1
+      kgen.is_run_in_comptime_interpreter : !kgen.scalar<bool>
     ```
     """
 
@@ -3482,7 +3491,7 @@ class IsRunInComptimeInterpreterOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        result: max._core.dialects.builtin.IntegerType,
+        result: max._core.Type,
     ) -> None: ...
 
 class ParamApplyOp(max._core.Operation):
@@ -4478,8 +4487,8 @@ class VariantGetOp(max._core.Operation):
 class VariantIsOp(max._core.Operation):
     """
     The `kgen.variant.is` operation checks whether the given variant contains
-    a particular type. Returns an `i1` that indicates whether the variant is the
-    particular type.
+    a particular type. Returns a `!kgen.scalar<bool>` that indicates whether the
+    variant is the particular type.
 
     Example:
 
@@ -4493,7 +4502,7 @@ class VariantIsOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        result: max._core.dialects.builtin.IntegerType,
+        result: max._core.Type,
         variant: max._core.Value[VariantType],
         index: max._core.dialects.builtin.IntegerAttr,
     ) -> None: ...
