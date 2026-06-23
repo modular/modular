@@ -21,7 +21,7 @@ from pathlib import Path
 import torch
 import tvm_ffi
 from flashinfer.aot import gen_gemm_sm100_module_cutlass_fp4
-from flashinfer.fp4_quantization import (
+from flashinfer.quantization.fp4_quantization import (
     SfLayout,
     e2m1_and_ufp8sf_scale_to_float,
     nvfp4_quantize,

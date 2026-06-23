@@ -14,9 +14,8 @@ You should use `nsys` when you need to understand _where_ time is being spent
 across your application, such as which kernels are slow. You can then deep-dive
 into specific kernel performance
 [Nsight Compute](https://github.com/modular/modular/blob/main/max/docs/kernel-profiling.md),
-or our purpose-built
-[`kbench` tool](https://github.com/modular/modular/tree/main/max/kernels/benchmarks/autotune#readme)
-that helps you benchmark, autotune, and analyze Mojo kernel performance.
+or our purpose-built [`kbench` tool](https://modul.ar/kbench) that helps you
+benchmark, autotune, and analyze Mojo kernel performance.
 
 <img src={require('./images/nsight-systems.png').default} alt="" />
 
@@ -52,6 +51,59 @@ or install it with your package manager. For example, on Ubuntu/Debian:
 ```bash
 sudo apt-get install nsight-systems
 ```
+
+## Quickly profile with `--profile`
+
+For a one-command introduction to profiling, [`max generate`](/max/cli/generate)
+and [`max benchmark`](/max/cli/benchmark) accept a `--profile` flag. When
+Nsight Systems is available, the timed run is captured into an `.nsys-rep`
+file and a ranked top-N GPU kernel summary is printed to your terminal:
+
+```bash
+max generate \
+  --model modularai/Llama-3.1-8B-Instruct-GGUF \
+  --prompt "hello" \
+  --num-warmups 1 \
+  --profile
+```
+
+You'll get output like this at the end of the run:
+
+```output
+=== Top 15 GPU kernels (98.6% of GPU time, 30.50 ms total) ===
+     %       total     calls  kernel
+ 29.1%     8.87 ms       256  gemv_split_k_bfloat16_bfloat16_bfloat16_256_…
+ 18.4%     5.61 ms       248  gemv_split_k_bfloat16_bfloat16_bfloat16_128_…
+  6.7%     2.05 ms       288  elementwise_View_mo_slice_…
+  4.1%     1.25 ms       256  sm100_mha_1q_depth128_bfloat16_bfloat16_…
+  …
+
+Full profile saved to: ./max-profile.nsys-rep
+Open with: nsys-ui ./max-profile.nsys-rep
+```
+
+A Python/CPU summary is also printed using `cProfile`. The capture window
+is bounded by `cudaProfilerStart`/`cudaProfilerStop` so warmup and graph
+compile time are excluded — you only see the actual inference work. NVTX
+ranges from MAX's runtime tracing are also captured into the `.nsys-rep`
+(visible in `nsys-ui`); the terminal summary table covers GPU kernels only.
+
+Useful options:
+
+- `--profile-output PATH` overrides the default `.nsys-rep` location
+  (defaults to `$BUILD_WORKSPACE_DIRECTORY/max-profile.nsys-rep`, or
+  `./max-profile.nsys-rep`).
+- `--profile-top-n N` controls the number of rows in both summary tables
+  (default `15`).
+
+If `nsys` is not installed or you're not on an NVIDIA GPU, `--profile` falls
+back to a Python/CPU-only summary so the flag still produces something
+useful. The full GPU breakdown requires Nsight Systems — see [Verify your
+`nsys` installation](#verify-your-nsys-installation) below.
+
+For finer control over the trace (selecting trace categories, NUMA binding,
+attaching to a separately running server, etc.), use `nsys` directly as
+described in the rest of this page.
 
 ## Profile a MAX model
 
@@ -329,8 +381,7 @@ Detailed instructions for analyzing the `nsys` profile results.
 Compute](https://github.com/modular/modular/blob/main/max/docs/kernel-profiling.md):
 A companion to Nsight Systems for kernel-level profiling on NVIDIA GPUs.
 
-- [`kbench`
-tool](https://github.com/modular/modular/tree/main/max/kernels/benchmarks/autotune#readme):
+- [`kbench` tool](https://modul.ar/kbench):
 A Python-based toolkit that builds and executes Mojo kernel benchmarks across a
 grid of parameter combinations to help you autotune and analyze Mojo kernel
 performance on any hardware.

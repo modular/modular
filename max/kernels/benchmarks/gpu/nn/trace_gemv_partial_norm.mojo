@@ -54,11 +54,11 @@ def main() raises:
     var N_NORMED = 1536
     var N_UNNORMED = N - N_NORMED
 
-    comptime a_shape = row_major(Coord(Idx[1](), Idx[7168]()))
-    comptime b_shape = row_major(Coord(Idx[2112](), Idx[7168]()))
-    comptime normed_shape = row_major(Coord(Idx[1](), Idx[1536]()))
-    var unnormed_shape = row_major(Coord(Idx(1), Idx(N_UNNORMED)))
-    comptime gamma_shape = row_major(Idx[1536]())
+    comptime a_shape = row_major(Coord(Idx[1], Idx[7168]))
+    comptime b_shape = row_major(Coord(Idx[2112], Idx[7168]))
+    comptime normed_shape = row_major(Coord(Idx[1], Idx[1536]))
+    var unnormed_shape = row_major(Coord(Idx[1], N_UNNORMED))
+    comptime gamma_shape = row_major(Idx[1536])
 
     var num_blocks = (N + tile_n - 1) // tile_n
 
@@ -106,7 +106,7 @@ def main() raises:
             b_tensor,
             gamma_tensor,
             eps,
-            counter_buf.unsafe_ptr(),
+            counter_buf.unsafe_ptr().as_unsafe_any_origin(),
             ctx,
         )
         ctx.synchronize()
@@ -125,7 +125,7 @@ def main() raises:
             b_tensor,
             gamma_tensor,
             eps,
-            counter_buf.unsafe_ptr(),
+            counter_buf.unsafe_ptr().as_unsafe_any_origin(),
             ctx,
             trace_buf=GmemTrace(trace_buf.unsafe_ptr()),
         )

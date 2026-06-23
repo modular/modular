@@ -106,14 +106,12 @@ def test_grouped_conv2d[
     ctx.enqueue_copy(input_dev, input_host)
     ctx.enqueue_copy(filter_dev, filter_host)
 
-    comptime input_tt_layout = row_major(
-        (Idx[N](), Idx[H](), Idx[W](), Idx[C_in]())
-    )
+    comptime input_tt_layout = row_major((Idx[N], Idx[H], Idx[W], Idx[C_in]))
     comptime filter_tt_layout = row_major(
-        (Idx[R](), Idx[S](), Idx[C_per_group](), Idx[C_out]())
+        (Idx[R], Idx[S], Idx[C_per_group], Idx[C_out])
     )
     comptime output_tt_layout = row_major(
-        (Idx[N](), Idx[H_out](), Idx[W_out](), Idx[C_out]())
+        (Idx[N], Idx[H_out], Idx[W_out], Idx[C_out])
     )
     var input_tt = TileTensor(input_dev, input_tt_layout)
     var filter_tt = TileTensor(filter_dev, filter_tt_layout)

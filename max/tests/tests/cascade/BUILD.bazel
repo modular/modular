@@ -24,6 +24,16 @@ modular_py_library(
 )
 
 modular_py_test(
+    name = "test_local_runtime",
+    size = "small",
+    srcs = ["test_local_runtime.py"],
+    deps = [
+        "//max/python/max/experimental/cascade",
+        requirement("pytest-asyncio"),
+    ],
+)
+
+modular_py_test(
     name = "test_contexts",
     size = "small",
     srcs = ["test_contexts.py"],
@@ -40,6 +50,35 @@ modular_py_test(
     deps = [
         ":test_helpers",
         "//max/python/max/experimental/cascade",
+        requirement("pytest-asyncio"),
+    ],
+)
+
+modular_py_test(
+    name = "test_chat_completions",
+    size = "small",
+    srcs = ["test_chat_completions.py"],
+    deps = [
+        ":test_helpers",
+        "//max/python/max/experimental/cascade",
+        "//max/python/max/experimental/cascade/serve",
+        requirement("fastapi"),
+        requirement("httpx"),
+        requirement("pytest-asyncio"),
+    ],
+)
+
+modular_py_test(
+    name = "test_open_responses",
+    size = "small",
+    srcs = ["test_open_responses.py"],
+    deps = [
+        ":test_helpers",
+        "//max/python/max/experimental/cascade",
+        "//max/python/max/experimental/cascade/serve",
+        requirement("fastapi"),
+        requirement("httpx"),
+        requirement("pillow"),
         requirement("pytest-asyncio"),
     ],
 )

@@ -120,12 +120,12 @@ def main() raises:
             N_NORMED,
         )
 
-    comptime a_shape = row_major(Coord(Idx[1](), Idx[7168]()))
-    comptime b_shape = row_major(Coord(Idx[2112](), Idx[7168]()))
-    comptime c_shape = row_major(Coord(Idx[1](), Idx[2112]()))
-    comptime normed_shape = row_major(Coord(Idx[1](), Idx[1536]()))
-    var unnormed_shape = row_major(Coord(Idx(1), Idx(N_UNNORMED)))
-    comptime gamma_shape = row_major(Idx[1536]())
+    comptime a_shape = row_major(Coord(Idx[1], Idx[7168]))
+    comptime b_shape = row_major(Coord(Idx[2112], Idx[7168]))
+    comptime c_shape = row_major(Coord(Idx[1], Idx[2112]))
+    comptime normed_shape = row_major(Coord(Idx[1], Idx[1536]))
+    var unnormed_shape = row_major(Coord(Idx[1], N_UNNORMED))
+    comptime gamma_shape = row_major(Idx[1536])
 
     comptime variant: String = "fused" if fused else "unfused"
     comptime run_name: String = "gemv_partial_norm/" + variant
@@ -245,7 +245,7 @@ def main() raises:
                     b_tensor,
                     gamma_tensor,
                     eps,
-                    counter_buf.unsafe_ptr(),
+                    counter_buf.unsafe_ptr().as_unsafe_any_origin(),
                     ctx,
                 )
             else:
@@ -255,7 +255,7 @@ def main() raises:
                     b_tensor,
                     gamma_tensor,
                     eps,
-                    cb_y.offset_ptr(iteration),
+                    cb_y.offset_ptr(iteration).as_unsafe_any_origin(),
                     ctx,
                 )
 
@@ -302,10 +302,10 @@ def main() raises:
         ctx.synchronize()
 
         _host_reference[c_type, a_type](
-            y_ref_host_ptr.unsafe_ptr(),
-            gamma_host_ptr.unsafe_ptr(),
-            normed_ref_ptr.unsafe_ptr(),
-            unnormed_ref_ptr.unsafe_ptr(),
+            y_ref_host_ptr.unsafe_ptr().as_unsafe_any_origin(),
+            gamma_host_ptr.unsafe_ptr().as_unsafe_any_origin(),
+            normed_ref_ptr.unsafe_ptr().as_unsafe_any_origin(),
+            unnormed_ref_ptr.unsafe_ptr().as_unsafe_any_origin(),
             N,
             N_NORMED,
             eps,

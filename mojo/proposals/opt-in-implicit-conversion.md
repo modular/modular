@@ -60,7 +60,7 @@ let foo: Foo = 10
 ### `@implicit_conversion` decorator for conversion constructors
 
 - Constructors *not* decorated may not be used as conversions (this is an
-    **opt-in** design)
+  **opt-in** design)
 - Since we know which conversion we’re inserting at a call-site at compile time,
   we can correctly mark it as `raises` or not. Implicit conversion constructors
   are therefore allowed to be `raises`.

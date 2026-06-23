@@ -31,6 +31,7 @@ from nn.attention.mha_operand import MHAOperand
 from std.utils.numerics import get_accum_type
 
 from .attention import Attention
+from .iglp import _iglp_opt, AMDIGLPStrategy
 from .kv_buffer import KVBuffer
 from .mha_prefill import barrier, block_sync_lds_direct_load
 from .mma import TiledMmaOp
@@ -91,16 +92,28 @@ __extension Attention:
             self.k,
             self.batch_idx,
             self.kv_head_idx(),
-            KBufT.SmemParentType(self.k_smem_ptr, KBufT._SmemParentLayout()),
+            KBufT.SmemParentType(
+                self.k_smem_ptr.as_unsafe_any_origin(),
+                KBufT._SmemParentLayout(),
+            ),
             self.num_keys,
             warp_id,
         )
 
         # V buffer: depth=128, double-buffered gfx950 style.
+        # FP8 V uses Swizzle(3, 0, 4) (same as K) to eliminate the
+        # ds_read_tr8_b64 bank conflicts inherent to BK=64 row stride
+        # (4 lane-quads per 32-bank LDS row → 4-way conflict). Both the
+        # SubTileLoaderLDS writer and the load_v_fp8_strip reader honor
+        # the same XOR so the data is read back correctly.
+        comptime v_swizzle = (
+            Swizzle(3, 0, 4) if Self.v_t.dtype.is_float8()
+            and Self.mma_shape[0] == 32 else Optional[Swizzle](None)
+        )
         comptime VBufT = KVBuffer[
             kv_t=Self.v_t,
             mma_shape=Self.mma_shape,
-            swizzle=None,
+            swizzle=v_swizzle,
             BN=Self.BN,
             WN=Self.WN,
             BK=Self.BK,
@@ -113,7 +126,10 @@ __extension Attention:
             self.v,
             self.batch_idx,
             self.kv_head_idx(),
-            VBufT.SmemParentType(self.v_smem_ptr, VBufT._SmemParentLayout()),
+            VBufT.SmemParentType(
+                self.v_smem_ptr.as_unsafe_any_origin(),
+                VBufT._SmemParentLayout(),
+            ),
             self.num_keys,
             warp_id,
         )
@@ -149,7 +165,8 @@ __extension Attention:
             self.batch_idx,
             ufloordiv(Int(self.kv_head_idx()), cache_group),
             KRopeBufT.SmemParentType(
-                k_rope_smem_ptr, KRopeBufT._SmemParentLayout()
+                k_rope_smem_ptr.as_unsafe_any_origin(),
+                KRopeBufT._SmemParentLayout(),
             ),
             self.num_keys,
             warp_id,
@@ -217,10 +234,12 @@ __extension Attention:
 
         # Calculate iteration bounds using mask helpers.
         var score_row = UInt32(self.mask_block_row + UInt32(self.start_pos))
-        var start_col = self.mask.start_column[Self.BM, Self.BN, 1](score_row)
+        var start_col = self.mask.start_column[Self.BM, Self.BN, 1](
+            UInt32(self.batch_idx), score_row
+        )
         var num_tiles = Int(
             self.mask.last_masked_set_end[Self.BM, Self.BN, 1](
-                score_row, UInt32(self.num_keys)
+                UInt32(self.batch_idx), score_row, UInt32(self.num_keys)
             )
         )
 
@@ -259,6 +278,10 @@ __extension Attention:
                 block_sync_lds_direct_load[vmcnt=0]()
             barrier()
 
+            # IGroupLP: co-issue the softmax exp with the next tile's QK MMA to
+            # hide the online-softmax latency on this overlap-bound kernel.
+            _iglp_opt[AMDIGLPStrategy.MFMA_EXP_INTERLEAVE]()
+
             # Skip fully masked tiles for non-causal masks.
             comptime if has_interior_full_mask:
                 var tile_status = self.mask_status(self.kv_start_row)
@@ -286,10 +309,13 @@ __extension Attention:
                 _ = k_rope_buffer.load_from_dram[next_slot]()
                 _ = v_buffer.load_from_dram[next_slot]()
 
-            # Online softmax step 0: scale + mask + max + exp(even)
-            self.online_softmax_step_0[0]()
-            # Online softmax step 1: exp(odd) + sum + correction + updates
-            self.online_softmax_step_1[0]()
+            # Online softmax: deferred-scale variant that emits packed FMAs
+            # (`v_pk_fma_f32 score, scale, neg_scaled_max`) instead of the
+            # separate `v_pk_add (score - max)` + `v_pk_mul (* scale)` pair.
+            # Saves ~16 VALU ops per warp per tile and matches aiter's
+            # softmax inner loop.
+            self.online_softmax_step_0_pkfma[0]()
+            self.online_softmax_step_1_pkfma[0]()
 
             # Wait for V loads from current slot before reading.
             comptime if has_next:

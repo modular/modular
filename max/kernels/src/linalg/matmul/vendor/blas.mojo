@@ -79,6 +79,12 @@ from _rocblas.hipblaslt import (
     hipblasOperation_t,
     hipDataType_t,
 )
+from _rocblas.rocblas import (
+    rocblas_set_stream,
+    rocblas_gemm_ex,
+    rocblas_create_handle,
+    rocblas_destroy_handle,
+)
 from std.gpu.host import DeviceContext
 from std.gpu.host._amdgpu_hip import HIP
 from std.gpu.host._nvidia_cuda import CUDA
@@ -187,6 +193,8 @@ struct Handle[backend: Backend = _resolve_backend[Backend.AUTOMATIC]()](
         Self._rocblas_type,
         Self._hipblaslt_type,
     ]
+
+    @__allow_legacy_any_origin_fields
     var _handle: Self.type
 
     def __init__(out self) raises:
@@ -197,7 +205,7 @@ struct Handle[backend: Backend = _resolve_backend[Backend.AUTOMATIC]()](
         elif Self.resolved_backend is Backend.ROCBLAS:
             var handle = Self._rocblas_type()
             _rocblas.check_error(
-                _rocblas.rocblas.rocblas_create_handle(UnsafePointer(to=handle))
+                rocblas_create_handle(UnsafePointer(to=handle))
             )
             self._handle = handle
         elif Self.resolved_backend is Backend.HIPBLASLT:
@@ -222,9 +230,7 @@ struct Handle[backend: Backend = _resolve_backend[Backend.AUTOMATIC]()](
             self._handle = Self._cublas_type()
             return
         elif Self.resolved_backend is Backend.ROCBLAS:
-            _rocblas.check_error(
-                _rocblas.rocblas.rocblas_destroy_handle(self._get_rocblas())
-            )
+            _rocblas.check_error(rocblas_destroy_handle(self._get_rocblas()))
             self._handle = Self._rocblas_type()
             return
         elif Self.resolved_backend is Backend.HIPBLASLT:
@@ -324,9 +330,7 @@ def _attach_handle_to_stream(ctx: DeviceContext, handle: Handle) raises:
 
     elif handle.resolved_backend is Backend.ROCBLAS:
         _rocblas.check_error(
-            _rocblas.rocblas.rocblas_set_stream(
-                handle._get_rocblas(), HIP(ctx.stream())
-            )
+            rocblas_set_stream(handle._get_rocblas(), HIP(ctx.stream()))
         )
 
 
@@ -426,15 +430,15 @@ def matmul[
 ) raises:
     var c_tt = TileTensor(
         rebind[UnsafePointer[Scalar[c_type], MutAnyOrigin]](c_tensor.ptr),
-        row_major(Coord(Idx(c_tensor.dim(0)), Idx(c_tensor.dim(1)))),
+        row_major(Coord(c_tensor.dim(0), c_tensor.dim(1))),
     )
     var a_tt = TileTensor(
         rebind[UnsafePointer[Scalar[a_type], ImmutAnyOrigin]](a_tensor.ptr),
-        row_major(Coord(Idx(a_tensor.dim(0)), Idx(a_tensor.dim(1)))),
+        row_major(Coord(a_tensor.dim(0), a_tensor.dim(1))),
     )
     var b_tt = TileTensor(
         rebind[UnsafePointer[Scalar[b_type], ImmutAnyOrigin]](b_tensor.ptr),
-        row_major(Coord(Idx(b_tensor.dim(0)), Idx(b_tensor.dim(1)))),
+        row_major(Coord(b_tensor.dim(0), b_tensor.dim(1))),
     )
     with ctx.push_context() as cur_ctx:
         return matmul[use_tf32=use_tf32, scales_type=scales_type](
@@ -749,14 +753,20 @@ def _cublas_matmul[
                 Int32(N),
                 Int32(M),
                 Int32(K),
-                UnsafePointer(to=alpha).bitcast[NoneType](),
+                UnsafePointer(to=alpha)
+                .bitcast[NoneType]()
+                .as_immutable()
+                .as_unsafe_any_origin(),
                 _ffi_void_ptr(b.ptr),
                 _convert_to_cublas_datatype[b_type](),
                 Int32(K) if transpose_b else Int32(N),
                 _ffi_void_ptr(a.ptr),
                 _convert_to_cublas_datatype[a_type](),
                 Int32(M) if transpose_a else Int32(K),
-                UnsafePointer(to=beta).bitcast[NoneType](),
+                UnsafePointer(to=beta)
+                .bitcast[NoneType]()
+                .as_immutable()
+                .as_unsafe_any_origin(),
                 _ffi_void_ptr(c.ptr),
                 _convert_to_cublas_datatype[c_type](),
                 Int32(N),
@@ -787,14 +797,20 @@ def _cublas_matmul[
             Int32(M),
             Int32(N),
             Int32(K),
-            UnsafePointer(to=alpha).bitcast[NoneType](),
+            UnsafePointer(to=alpha)
+            .bitcast[NoneType]()
+            .as_immutable()
+            .as_unsafe_any_origin(),
             _ffi_void_ptr(a.ptr),
             _convert_to_cublas_datatype[a_type](),
             Int32(M),
             _ffi_void_ptr(b.ptr),
             _convert_to_cublas_datatype[b_type](),
             Int32(N) if transpose_b else Int32(K),
-            UnsafePointer(to=beta).bitcast[NoneType](),
+            UnsafePointer(to=beta)
+            .bitcast[NoneType]()
+            .as_immutable()
+            .as_unsafe_any_origin(),
             _ffi_void_ptr(c.ptr),
             _convert_to_cublas_datatype[c_type](),
             Int32(M),
@@ -852,7 +868,7 @@ def _rocblas_matmul[
     var N = Int(c.dim[1]())
     var K = Int(a.dim[1]()) if not transpose_a else Int(a.dim[0]())
 
-    var compute_type = _rocblas.types.DataType(DType.float32)
+    var compute_type = _rocblas.DataType(DType.float32)
 
     # Cublas is by default column-major but we like to have the output in row-major
     # to compare with our results. To do this without an explicit transpose, we
@@ -866,14 +882,14 @@ def _rocblas_matmul[
     # transformation. To be rigorous though, we should set `c_is_row_major = True`
     # for accuracy validations and uses default column-major in benchmark.
 
-    def _convert_to_rocblas_transpose(tr: Bool) -> _rocblas.types.Operation:
+    def _convert_to_rocblas_transpose(tr: Bool) -> _rocblas.Operation:
         if tr:
-            return _rocblas.types.Operation.TRANSPOSE
-        return _rocblas.types.Operation.NONE
+            return _rocblas.Operation.TRANSPOSE
+        return _rocblas.Operation.NONE
 
     if c_row_major:
         return _rocblas.check_error(
-            _rocblas.rocblas.rocblas_gemm_ex(
+            rocblas_gemm_ex(
                 handle,
                 _convert_to_rocblas_transpose(transpose_b),
                 _convert_to_rocblas_transpose(transpose_a),
@@ -882,27 +898,27 @@ def _rocblas_matmul[
                 Int32(K),
                 UnsafePointer(to=alpha).bitcast[NoneType](),
                 _ffi_void_ptr(b.ptr),
-                _rocblas.types.DataType(b_type),
+                _rocblas.DataType(b_type),
                 Int32(K) if transpose_b else Int32(N),
                 _ffi_void_ptr(a.ptr),
-                _rocblas.types.DataType(a_type),
+                _rocblas.DataType(a_type),
                 Int32(K),
                 UnsafePointer(to=beta).bitcast[NoneType](),
                 _ffi_void_ptr(c.ptr),
-                _rocblas.types.DataType(c_type),
+                _rocblas.DataType(c_type),
                 Int32(N),
                 _ffi_void_ptr(c.ptr),
-                _rocblas.types.DataType(c_type),
+                _rocblas.DataType(c_type),
                 Int32(N),
                 compute_type,
-                _rocblas.rocblas.types.Algorithm.STANDARD,
+                _rocblas.Algorithm.STANDARD,
                 0,
                 0,
             )
         )
     # Default column-major.
     _rocblas.check_error(
-        _rocblas.rocblas.rocblas_gemm_ex(
+        rocblas_gemm_ex(
             handle,
             _convert_to_rocblas_transpose(transpose_a),
             _convert_to_rocblas_transpose(transpose_b),
@@ -911,20 +927,20 @@ def _rocblas_matmul[
             Int32(K),
             UnsafePointer(to=alpha).bitcast[NoneType](),
             _ffi_void_ptr(a.ptr),
-            _rocblas.types.DataType(a_type),
+            _rocblas.DataType(a_type),
             Int32(M),
             _ffi_void_ptr(b.ptr),
-            _rocblas.types.DataType(b_type),
+            _rocblas.DataType(b_type),
             Int32(N) if transpose_b else Int32(K),
             UnsafePointer(to=beta).bitcast[NoneType](),
             _ffi_void_ptr(c.ptr),
-            _rocblas.types.DataType(c_type),
+            _rocblas.DataType(c_type),
             Int32(M),
             _ffi_void_ptr(c.ptr),
-            _rocblas.types.DataType(c_type),
+            _rocblas.DataType(c_type),
             Int32(M),
             compute_type,
-            _rocblas.rocblas.types.Algorithm.STANDARD,
+            _rocblas.Algorithm.STANDARD,
             0,
             0,
         )
@@ -1027,7 +1043,7 @@ def _cublasLt_matmul[
     var compute_desc = cublasLtMatmulDesc_t()
     check_cublas_error(
         cublasLtMatmulDescCreate(
-            UnsafePointer(to=compute_desc),
+            UnsafePointer(to=compute_desc).as_unsafe_any_origin(),
             ComputeType.COMPUTE_32F,
             DataType.R_32F,
         ),
@@ -1038,7 +1054,10 @@ def _cublasLt_matmul[
         cublasLtMatmulDescSetAttribute(
             compute_desc,
             cublasLtMatmulDescAttributes_t.CUBLASLT_MATMUL_DESC_TRANSA,
-            UnsafePointer(to=transa).bitcast[NoneType](),
+            UnsafePointer(to=transa)
+            .bitcast[NoneType]()
+            .as_immutable()
+            .as_unsafe_any_origin(),
             size_of[cublasOperation_t](),
         ),
         msg="failed to set cublasLtMatmulDescAttribute for transa",
@@ -1047,7 +1066,10 @@ def _cublasLt_matmul[
         cublasLtMatmulDescSetAttribute(
             compute_desc,
             cublasLtMatmulDescAttributes_t.CUBLASLT_MATMUL_DESC_TRANSB,
-            UnsafePointer(to=transb).bitcast[NoneType](),
+            UnsafePointer(to=transb)
+            .bitcast[NoneType]()
+            .as_immutable()
+            .as_unsafe_any_origin(),
             size_of[cublasOperation_t](),
         ),
         msg="failed to set cublasLtMatmulDescAttribute for transb",
@@ -1141,7 +1163,10 @@ def _cublasLt_matmul[
                 cublasLtMatmulDescSetAttribute(
                     compute_desc,
                     cublasLtMatmulDescAttributes_t.CUBLASLT_MATMUL_DESC_A_SCALE_MODE,
-                    UnsafePointer(to=a_scale_mode).bitcast[NoneType](),
+                    UnsafePointer(to=a_scale_mode)
+                    .bitcast[NoneType]()
+                    .as_immutable()
+                    .as_unsafe_any_origin(),
                     size_of[Int32](),
                 ),
                 msg=(
@@ -1153,7 +1178,10 @@ def _cublasLt_matmul[
                 cublasLtMatmulDescSetAttribute(
                     compute_desc,
                     cublasLtMatmulDescAttributes_t.CUBLASLT_MATMUL_DESC_B_SCALE_MODE,
-                    UnsafePointer(to=b_scale_mode).bitcast[NoneType](),
+                    UnsafePointer(to=b_scale_mode)
+                    .bitcast[NoneType]()
+                    .as_immutable()
+                    .as_unsafe_any_origin(),
                     size_of[Int32](),
                 ),
                 msg=(
@@ -1166,8 +1194,11 @@ def _cublasLt_matmul[
                 cublasLtMatmulDescSetAttribute(
                     compute_desc,
                     cublasLtMatmulDescAttributes_t.CUBLASLT_MATMUL_DESC_A_SCALE_POINTER,
-                    UnsafePointer(to=a_scale_ptr).bitcast[NoneType](),
-                    size_of[OpaquePointer[ExternalOrigin[mut=True]]](),
+                    UnsafePointer(to=a_scale_ptr)
+                    .bitcast[NoneType]()
+                    .as_immutable()
+                    .as_unsafe_any_origin(),
+                    size_of[OpaquePointer[UntrackedOrigin[mut=True]]](),
                 ),
                 msg=(
                     "failed to set cublasLtMatmulDescAttribute for Matrix A"
@@ -1178,8 +1209,11 @@ def _cublasLt_matmul[
                 cublasLtMatmulDescSetAttribute(
                     compute_desc,
                     cublasLtMatmulDescAttributes_t.CUBLASLT_MATMUL_DESC_B_SCALE_POINTER,
-                    UnsafePointer(to=b_scale_ptr).bitcast[NoneType](),
-                    size_of[OpaquePointer[ExternalOrigin[mut=True]]](),
+                    UnsafePointer(to=b_scale_ptr)
+                    .bitcast[NoneType]()
+                    .as_immutable()
+                    .as_unsafe_any_origin(),
+                    size_of[OpaquePointer[UntrackedOrigin[mut=True]]](),
                 ),
                 msg=(
                     "failed to set cublasLtMatmulDescAttribute for Matrix B"
@@ -1195,7 +1229,7 @@ def _cublasLt_matmul[
     var _adesc = cublasLtMatrixLayout_t()
     check_cublas_error(
         cublasLtMatrixLayoutCreate(
-            UnsafePointer(to=_adesc),
+            UnsafePointer(to=_adesc).as_unsafe_any_origin(),
             _convert_to_cublas_datatype[a_type](),
             UInt64(K),
             UInt64(N) if c_row_major else UInt64(M),
@@ -1207,7 +1241,7 @@ def _cublasLt_matmul[
     var _bdesc = cublasLtMatrixLayout_t()
     check_cublas_error(
         cublasLtMatrixLayoutCreate(
-            UnsafePointer(to=_bdesc),
+            UnsafePointer(to=_bdesc).as_unsafe_any_origin(),
             _convert_to_cublas_datatype[b_type](),
             UInt64(K),
             UInt64(M) if c_row_major else UInt64(N),
@@ -1219,7 +1253,7 @@ def _cublasLt_matmul[
     var _ddesc = cublasLtMatrixLayout_t()
     check_cublas_error(
         cublasLtMatrixLayoutCreate(
-            UnsafePointer(to=_ddesc),
+            UnsafePointer(to=_ddesc).as_unsafe_any_origin(),
             _convert_to_cublas_datatype[d_type](),
             UInt64(N) if c_row_major else UInt64(M),
             UInt64(M) if c_row_major else UInt64(N),
@@ -1231,7 +1265,7 @@ def _cublasLt_matmul[
     var _cdesc = cublasLtMatrixLayout_t()
     check_cublas_error(
         cublasLtMatrixLayoutCreate(
-            UnsafePointer(to=_cdesc),
+            UnsafePointer(to=_cdesc).as_unsafe_any_origin(),
             _convert_to_cublas_datatype[d_type](),
             UInt64(N) if c_row_major else UInt64(M),
             UInt64(M) if c_row_major else UInt64(N),
@@ -1242,7 +1276,9 @@ def _cublasLt_matmul[
 
     var preference = cublasLtMatmulPreference_t()
     check_cublas_error(
-        cublasLtMatmulPreferenceCreate(UnsafePointer(to=preference)),
+        cublasLtMatmulPreferenceCreate(
+            UnsafePointer(to=preference).as_unsafe_any_origin()
+        ),
         msg="failed to create cublasLtMatmulPreference",
     )
 
@@ -1251,7 +1287,10 @@ def _cublasLt_matmul[
         cublasLtMatmulPreferenceSetAttribute(
             preference,
             Preference.MAX_WORKSPACE_BYTES,
-            UnsafePointer(to=workspace_size).bitcast[NoneType](),
+            UnsafePointer(to=workspace_size)
+            .bitcast[NoneType]()
+            .as_immutable()
+            .as_unsafe_any_origin(),
             size_of[Int64](),
         ),
         msg=(
@@ -1272,8 +1311,8 @@ def _cublasLt_matmul[
             _ddesc,
             preference,
             1,
-            UnsafePointer(to=heuristic_result),
-            UnsafePointer(to=algorithm_count),
+            UnsafePointer(to=heuristic_result).as_unsafe_any_origin(),
+            UnsafePointer(to=algorithm_count).as_unsafe_any_origin(),
         ),
         msg="failed to get cublasLtMatmulAlgoGetHeuristic",
     )
@@ -1290,18 +1329,28 @@ def _cublasLt_matmul[
             cublasLtMatmul(
                 handle,  # light_handle
                 compute_desc,  # compute_desc
-                UnsafePointer(to=alpha).bitcast[NoneType](),
+                UnsafePointer(to=alpha)
+                .bitcast[NoneType]()
+                .as_immutable()
+                .as_unsafe_any_origin(),
                 _ffi_void_ptr(b.ptr),
                 _adesc,  # _adesc
                 _ffi_void_ptr(a.ptr),  # _b
                 _bdesc,  # _bdesc
-                UnsafePointer(to=beta).bitcast[NoneType](),  # beta
+                UnsafePointer(to=beta)
+                .bitcast[NoneType]()
+                .as_immutable()
+                .as_unsafe_any_origin(),  # beta
                 None,  # _c
                 _cdesc,  # _cdesc
                 _ffi_void_ptr(d.ptr),  # _d
                 _ddesc,  # _ddesc
-                UnsafePointer(to=heuristic_result.algo),  # algo
-                matmul_workspace.unsafe_ptr().bitcast[NoneType](),  # workspace
+                UnsafePointer(to=heuristic_result.algo)
+                .as_immutable()
+                .as_unsafe_any_origin(),  # algo
+                matmul_workspace.unsafe_ptr()
+                .bitcast[NoneType]()
+                .as_unsafe_any_origin(),  # workspace
                 workspace_size,  # workspace_size_in_bytes
                 cuda_stream.value()[],  # stream
             ),
@@ -1312,18 +1361,28 @@ def _cublasLt_matmul[
             cublasLtMatmul(
                 handle,  # light_handle
                 compute_desc,  # compute_desc
-                UnsafePointer(to=alpha).bitcast[NoneType](),  # alpha
+                UnsafePointer(to=alpha)
+                .bitcast[NoneType]()
+                .as_immutable()
+                .as_unsafe_any_origin(),  # alpha
                 _ffi_void_ptr(a.ptr),  # _a
                 _adesc,  # _adesc
                 _ffi_void_ptr(b.ptr),  # _b
                 _bdesc,  # _bdesc
-                UnsafePointer(to=beta).bitcast[NoneType](),  # beta
+                UnsafePointer(to=beta)
+                .bitcast[NoneType]()
+                .as_immutable()
+                .as_unsafe_any_origin(),  # beta
                 None,  # _c
                 _cdesc,  # _cdesc
                 _ffi_void_ptr(d.ptr),  # _d
                 _ddesc,  # _ddesc
-                UnsafePointer(to=heuristic_result.algo),  # algo
-                matmul_workspace.unsafe_ptr().bitcast[NoneType](),  # workspace
+                UnsafePointer(to=heuristic_result.algo)
+                .as_immutable()
+                .as_unsafe_any_origin(),  # algo
+                matmul_workspace.unsafe_ptr()
+                .bitcast[NoneType]()
+                .as_unsafe_any_origin(),  # workspace
                 workspace_size,  # workspace_size_in_bytes
                 cuda_stream.value()[],  # stream
             ),
@@ -1518,7 +1577,7 @@ def _hipblasLt_matmul[
                 operationDesc,
                 hipblasLtMatmulDescAttributes_t.A_SCALE_POINTER,
                 UnsafePointer(to=a_scale_ptr).bitcast[NoneType](),
-                size_of[OpaquePointer[ExternalOrigin[mut=True]]](),
+                size_of[OpaquePointer[UntrackedOrigin[mut=True]]](),
             )
         )
         _check_hipblas_error(
@@ -1526,7 +1585,7 @@ def _hipblasLt_matmul[
                 operationDesc,
                 hipblasLtMatmulDescAttributes_t.B_SCALE_POINTER,
                 UnsafePointer(to=b_scale_ptr).bitcast[NoneType](),
-                size_of[OpaquePointer[ExternalOrigin[mut=True]]](),
+                size_of[OpaquePointer[UntrackedOrigin[mut=True]]](),
             )
         )
 

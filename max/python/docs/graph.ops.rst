@@ -1,4 +1,5 @@
 :title: max.graph.ops
+:sidebar_label: ops
 :type: module
 :lang: python
 

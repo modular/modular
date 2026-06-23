@@ -26,9 +26,9 @@ from layout import (
     CoordLike,
     Idx,
     RowMajorLayout,
-    RuntimeInt,
     TensorLayout,
     TileTensor,
+    coord_to_index_list,
 )
 from nn._ragged_utils import get_batch_from_row_offsets
 
@@ -210,7 +210,7 @@ def fused_qk_rope[
     layer_idx: UInt32,
     valid_lengths: TileTensor[DType.uint32, ...],
     output: TileTensor[mut=True, dtype, ...],
-    context: Optional[DeviceContext],
+    context: DeviceContext,
 ) raises:
     """Applies RoPE to query and key tensors.
 
@@ -242,18 +242,14 @@ def fused_qk_rope[
     @always_inline
     @parameter
     @__copy_capture(k_cache, valid_lengths)
-    def rope_fn[
-        width: Int, rank: Int, alignment: Int = 1
-    ](idx_arg: IndexList[rank]):
-        comptime assert rank == 4, "Invalid rank passed to rope kernel"
-        comptime assert freqs_cis.flat_rank >= 2
+    def rope_fn[width: Int, alignment: Int = 1](idx: Coord):
+        comptime assert idx.rank == 4, "Invalid rank passed to rope kernel"
 
         comptime if width == 1:
             return
         else:
-            var idx = rebind[IndexList[4]](idx_arg)
-            var bs_idx = idx[0]
-            var seq_idx = idx[1]
+            var bs_idx = Int(idx[0].value())
+            var seq_idx = Int(idx[1].value())
 
             # Check if this position is within the valid length for this batch
             var valid_len = Int(valid_lengths[bs_idx])
@@ -263,8 +259,8 @@ def fused_qk_rope[
             # post_seq_idx: sum of start_pos (cache_lengths[batch_idx]) and
             # seq_idx (idx[1]).
             var post_seq_idx = k_cache.cache_length(bs_idx) + seq_idx
-            var head_idx = idx[2]
-            var head_dim_idx = idx[3]
+            var head_idx = Int(idx[2].value())
+            var head_dim_idx = Int(idx[3].value())
 
             # WARN assumes head_size % simd_width == 0
             # guarded by constrained statement below
@@ -273,12 +269,16 @@ def fused_qk_rope[
                 SIMD[dtype, width]
             ]()
             var f_c_temp = freqs_cis.load[width=width, alignment=_alignment](
-                (Idx(post_seq_idx), Idx(head_dim_idx))
+                (post_seq_idx, head_dim_idx)
             )
 
             if is_q_proj:
                 rope_q_proj[interleaved=interleaved, alignment=_alignment](
-                    q_proj, output, idx, f_c_temp, head_size
+                    q_proj,
+                    output,
+                    coord_to_index_list(idx),
+                    f_c_temp,
+                    head_size,
                 )
             else:
                 head_idx -= num_q_heads
@@ -292,7 +292,7 @@ def fused_qk_rope[
                     head_size,
                 )
 
-    var launch_shape = IndexList[4](
+    var launch_shape = (
         batch_size,
         new_seq_len,
         num_q_heads + num_k_heads,  # concat q and k along head dim
@@ -307,11 +307,11 @@ def fused_qk_rope[
 
     comptime if is_cpu[target]():
         elementwise[func=rope_fn, simd_width=kernel_simd_width, target=target](
-            launch_shape
+            launch_shape, context
         )
     else:
         elementwise[func=rope_fn, simd_width=kernel_simd_width, target=target](
-            launch_shape, context.value()
+            launch_shape, context
         )
 
 
@@ -330,7 +330,7 @@ def fused_qk_rope_ragged[
     ](),
     mrope_section: Optional[Coord[*mrope_types]] = None,
     PositionIdsLayoutType: TensorLayout = RowMajorLayout[
-        *Coord[RuntimeInt[DType.int64], RuntimeInt[DType.int64]].element_types
+        *Coord[Int64, Int64].element_types
     ],
 ](
     q_proj: TileTensor[dtype, ...],
@@ -342,7 +342,7 @@ def fused_qk_rope_ragged[
     ],
     layer_idx: UInt32,
     output: TileTensor[mut=True, dtype, ...],
-    context: Optional[DeviceContext],
+    context: DeviceContext,
 ) raises:
     """Applies RoPE (Rotary Position Embedding) to query and key tensors.
 
@@ -393,18 +393,13 @@ def fused_qk_rope_ragged[
     @always_inline
     @parameter
     @__copy_capture(k_cache, batch_size, input_row_offsets, position_ids)
-    def rope_fn[
-        width: Int, rank: Int, alignment: Int = 1
-    ](idx_arg: IndexList[rank]):
-        comptime assert rank == 3, "Invalid rank passed to rope kernel"
-        comptime assert freqs_cis.flat_rank >= 2
+    def rope_fn[width: Int, alignment: Int = 1](idx: Coord):
+        comptime assert idx.rank == 3, "Invalid rank passed to rope kernel"
 
         comptime if width == 1:
             return
         else:
-            var idx = rebind[IndexList[3]](idx_arg)
-
-            var global_token_idx = idx[0]
+            var global_token_idx = Int(idx[0].value())
 
             var batch_idx: Int = get_batch_from_row_offsets(
                 input_row_offsets, global_token_idx
@@ -412,8 +407,8 @@ def fused_qk_rope_ragged[
             var token_idx = Int(
                 UInt32(global_token_idx) - input_row_offsets[batch_idx]
             )
-            var head_idx = idx[1]
-            var head_dim_idx = idx[2]
+            var head_idx = Int(idx[1].value())
+            var head_dim_idx = Int(idx[2].value())
 
             # Use position_ids if provided, otherwise fall back to cache calculation
             var post_seq_idx = k_cache.cache_length(batch_idx) + token_idx
@@ -454,17 +449,17 @@ def fused_qk_rope_ragged[
                 else:
                     f_c_temp = freqs_cis.load[
                         width=width, alignment=_alignment
-                    ]((Idx(position_ids_idx), Idx(head_dim_idx)))
+                    ]((position_ids_idx, head_dim_idx))
             elif has_nope:
                 if head_dim_idx < unroped_dim:
                     f_c_temp = get_identity_rope_coeff[width, freq_dtype]()
                 else:
                     f_c_temp = freqs_cis.load[
                         width=width, alignment=_alignment
-                    ]((Idx(position_ids_idx), Idx(head_dim_idx - unroped_dim)))
+                    ]((position_ids_idx, head_dim_idx - unroped_dim))
             else:
                 f_c_temp = freqs_cis.load[width=width, alignment=_alignment](
-                    (Idx(position_ids_idx), Idx(head_dim_idx))
+                    (position_ids_idx, head_dim_idx)
                 )
 
             if is_q_proj:
@@ -473,7 +468,13 @@ def fused_qk_rope_ragged[
                     has_nope_prefix=has_nope_prefix,
                     rope_dim=rope_dim,
                     alignment=_alignment,
-                ](q_proj, output, idx, f_c_temp, q_head_size)
+                ](
+                    q_proj,
+                    output,
+                    coord_to_index_list(idx),
+                    f_c_temp,
+                    q_head_size,
+                )
             else:
                 comptime if has_nope_prefix:
                     if head_dim_idx >= rope_dim:
@@ -499,7 +500,7 @@ def fused_qk_rope_ragged[
                     k_head_size,
                 )
 
-    var launch_shape = IndexList[3](
+    var launch_shape = (
         Int(q_proj.dim[0]()),
         num_q_heads + num_k_heads,  # concat q and k along head dim
         q_head_size,
@@ -520,9 +521,9 @@ def fused_qk_rope_ragged[
 
     comptime if is_cpu[target]():
         elementwise[func=rope_fn, simd_width=kernel_simd_width, target=target](
-            launch_shape
+            launch_shape, context
         )
     else:
         elementwise[func=rope_fn, simd_width=kernel_simd_width, target=target](
-            launch_shape, context.value()
+            launch_shape, context
         )

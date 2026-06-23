@@ -17,7 +17,11 @@ import pytest
 from max.serve.config import Settings
 from max.serve.telemetry import common, metrics
 from opentelemetry.metrics import get_meter_provider
-from opentelemetry.metrics._internal.instrument import _ProxyInstrument
+from opentelemetry.metrics._internal.instrument import (
+    _ProxyGauge,
+    _ProxyHistogram,
+    _ProxyInstrument,
+)
 
 _meter = get_meter_provider().get_meter("testing")
 
@@ -33,6 +37,13 @@ def test_correct_metric_names() -> None:
 def test_max_measurement() -> None:
     m = metrics.MaxMeasurement("maxserve.itl", 1)
     m.commit()
+
+
+def test_time_per_output_token_measurement() -> None:
+    common.configure_metrics(Settings())
+    assert "maxserve.time_per_output_token" in metrics.SERVE_METRICS
+    m = metrics.MaxMeasurement("maxserve.time_per_output_token", 1.5)
+    m.commit()  # Should not raise
 
 
 def test_serialization() -> None:
@@ -76,6 +87,28 @@ def test_instrument_called() -> None:
         assert mock_consumer.consume_measurement.call_count == 1
 
 
+def test_model_load_time_with_component_attribute() -> None:
+    """Pins down the ``component`` tag on the model_load_time histogram.
+
+    The model worker records the per-phase startup breakdown (build, compile,
+    init, ...) on the same histogram as the untagged model-load aggregate,
+    split by the ``component`` tag.
+    """
+    common.configure_metrics(Settings())
+    assert "maxserve.model_load_time" in metrics.SERVE_METRICS
+
+    # Untagged aggregate.
+    metrics.MaxMeasurement("maxserve.model_load_time", 1234.5).commit()
+
+    # Per-phase records, tagged by component.
+    for component in ("build", "compile", "total"):
+        metrics.MaxMeasurement(
+            "maxserve.model_load_time",
+            100.0,
+            attributes={"component": component},
+        ).commit()  # Should not raise
+
+
 def test_batch_execution_time_with_attributes() -> None:
     """Test that batch_execution_time metric works with batch_type attribute."""
     common.configure_metrics(Settings())
@@ -108,6 +141,69 @@ def test_tokens_per_request_histograms() -> None:
     # Test recording output tokens per request
     m_output = metrics.MaxMeasurement("maxserve.output_tokens_per_request", 128)
     m_output.commit()  # Should not raise
+
+
+def _is_histogram(inst: object) -> bool:
+    """True if a SERVE_METRICS instrument is a Histogram.
+
+    Entries in SERVE_METRICS are created at import time (before any real meter
+    provider is configured), so they are always proxy instruments.
+    """
+    return isinstance(inst, _ProxyHistogram)
+
+
+def test_all_histograms_have_explicit_buckets() -> None:
+    """Every histogram must have tuned bucket boundaries.
+
+    The default latency-ms buckets are wrong for non-latency histograms
+    (percentages, token counts, throughput, ...), so common.py assigns
+    per-metric buckets by exact instrument name. Guard against a new histogram
+    being added without a matching bucket View (which would silently fall back
+    to the SDK default buckets), and against stale map entries.
+    """
+    histogram_names = {
+        name
+        for name, inst in metrics.SERVE_METRICS.items()
+        if _is_histogram(inst)
+    }
+    mapped = set(common.HISTOGRAM_BUCKETS_BY_METRIC)
+
+    missing = histogram_names - mapped
+    assert not missing, (
+        f"Histograms missing explicit bucket Views: {sorted(missing)}"
+    )
+
+    stale = mapped - histogram_names
+    assert not stale, (
+        f"HISTOGRAM_BUCKETS_BY_METRIC references non-histograms: {sorted(stale)}"
+    )
+
+
+def test_block_level_metrics_are_gauges() -> None:
+    """num_used_blocks / num_total_blocks are instantaneous levels (gauges).
+
+    Emitting an absolute level into a counter would sum the levels into a
+    meaningless running total, so these must be gauges (LastValue).
+    """
+    for name in (
+        "maxserve.cache.num_used_blocks",
+        "maxserve.cache.num_total_blocks",
+    ):
+        inst = metrics.SERVE_METRICS[name]
+        assert isinstance(inst, _ProxyGauge), (
+            f"{name} should be a gauge, got {type(inst)}"
+        )
+
+
+def test_disk_block_counters_record() -> None:
+    """The disk-tier block transfer counters exist and record without raising."""
+    common.configure_metrics(Settings())
+    for name in (
+        "maxserve.cache.disk_blocks_read",
+        "maxserve.cache.disk_blocks_written",
+    ):
+        assert name in metrics.SERVE_METRICS
+        metrics.MaxMeasurement(name, 7).commit()  # Should not raise
 
 
 def test_batch_metrics_with_batch_type_attribute() -> None:

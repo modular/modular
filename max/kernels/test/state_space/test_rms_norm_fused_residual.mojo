@@ -90,7 +90,7 @@ def run_rms_norm_fused_residual_cpu[
         residual_output_ptr,
         RuntimeLayout[layout_nd].row_major(shape),
     )
-    var gamma_tensor = TileTensor(gamma_ptr, row_major(Idx(cols)))
+    var gamma_tensor = TileTensor(gamma_ptr, row_major(cols))
 
     var epsilon = Scalar[dtype](1e-5)
     var weight_offset = Scalar[dtype](0.0)
@@ -119,7 +119,7 @@ def run_rms_norm_fused_residual_cpu[
     @always_inline
     @parameter
     def output_fn[
-        width: Int, alignment: Int
+        width: SIMDSize, alignment: Int
     ](coords: IndexList[rank], val: SIMD[dtype, width]) -> None:
         output_tensor.store[width=width](coords, val)
 
@@ -127,7 +127,7 @@ def run_rms_norm_fused_residual_cpu[
     @always_inline
     @parameter
     def residual_output_fn[
-        width: Int, alignment: Int
+        width: SIMDSize, alignment: Int
     ](coords: IndexList[rank], val: SIMD[dtype, width]) -> None:
         residual_output_tensor.store[width=width](coords, val)
 

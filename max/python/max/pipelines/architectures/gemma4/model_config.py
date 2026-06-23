@@ -14,7 +14,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
 
 from max.dtype import DType
 from max.graph import DeviceRef
@@ -29,43 +28,35 @@ from max.pipelines.lib import (
     KVCacheConfig,
     MAXModelConfig,
     PipelineConfig,
-    upper_bounded_default,
 )
-from max.pipelines.lib.config.config_enums import supported_encoding_dtype
 from max.pipelines.lib.interfaces.arch_config import (
-    ArchConfigWithKVAndVisionCache,
+    ArchConfigWithKVCache,
+    ArchConfigWithStoredKVParams,
 )
+from max.pipelines.modeling.config_enums import supported_encoding_dtype
+from max.pipelines.weights.quant import parse_quant_config
 from transformers import AutoConfig, PretrainedConfig
 from typing_extensions import Self, override
 
 from .layers.rotary_embedding import ProportionalScalingParams
 
-# Use the native Gemma4Config if available (transformers >= 5.5.0.dev0),
-# otherwise fall back to our shim for older versions.
-try:
-    from transformers import Gemma4Config as Gemma4HFConfig
-except ImportError:
 
-    class Gemma4HFConfig(PretrainedConfig):  # type: ignore[no-redef]
-        model_type = "gemma4"
+def _resolve_num_global_kv_heads(text_config: PretrainedConfig) -> int:
+    """Returns the number of KV heads used by full-attention layers.
 
-        def __init__(
-            self,
-            vision_config: Any = None,
-            text_config: Any = None,
-            *args,
-            **kwargs,
-        ):
-            vision_config = vision_config if vision_config is not None else {}
-            text_config = text_config if text_config is not None else {}
-            self.vision_config = PretrainedConfig(**vision_config)
-            self.text_config = PretrainedConfig(**text_config)
-            super().__init__(*args, **kwargs)
-
-    try:
-        AutoConfig.register("gemma4", Gemma4HFConfig)
-    except ValueError:
-        pass
+    The Gemma 4 E*B checkpoints ship ``"num_global_key_value_heads": null``;
+    the transformers ``configuration_gemma4.py`` docstring defines null/absent
+    as "defaults to ``num_key_value_heads``". Note transformers never applies
+    that fallback in code -- its modeling only consults the field when
+    ``attention_k_eq_v`` is true (false on E*B), so resolving here matches the
+    HF runtime behavior.
+    """
+    num_global_kv_heads = getattr(
+        text_config, "num_global_key_value_heads", None
+    )
+    if num_global_kv_heads is None:
+        return text_config.num_key_value_heads
+    return num_global_kv_heads
 
 
 @dataclass(kw_only=True)
@@ -137,7 +128,8 @@ class Gemma4TextConfig(Gemma3Config):
     @property  # type: ignore[misc]
     def rope_theta(self) -> float:
         raise ValueError(
-            "rope_theta is not supported for Gemma4TextConfig. Use global_rope_theta or sliding_window_rope_theta instead."
+            "rope_theta is not supported for Gemma4TextConfig. Use"
+            " global_rope_theta or sliding_window_rope_theta instead."
         )
 
     @rope_theta.setter
@@ -147,7 +139,8 @@ class Gemma4TextConfig(Gemma3Config):
     @property  # type: ignore[misc, override]
     def rope_scaling(self) -> ProportionalScalingParams | None:
         raise ValueError(
-            "rope_scaling is not supported for Gemma4TextConfig. Use global_rope_scaling or sliding_window_rope_scaling instead."
+            "rope_scaling is not supported for Gemma4TextConfig. Use"
+            " global_rope_scaling or sliding_window_rope_scaling instead."
         )
 
     @rope_scaling.setter
@@ -157,25 +150,18 @@ class Gemma4TextConfig(Gemma3Config):
     def get_max_seq_len(self) -> int:
         return self.max_seq_len
 
-    @staticmethod
+    @classmethod
     def calculate_max_seq_len(
+        cls,
         pipeline_config: PipelineConfig,
         huggingface_config: AutoConfig,
         model_config: MAXModelConfig | None = None,
     ) -> int:
-        model_config = model_config or pipeline_config.model
-        try:
-            return upper_bounded_default(
-                upper_bound=huggingface_config.max_position_embeddings,
-                default=model_config.max_length,
-            )
-        except ValueError as e:
-            raise ValueError(
-                "Unable to infer max_length for Gemma4, the provided "
-                f"max_length ({model_config.max_length}) exceeds the "
-                f"model's max_position_embeddings "
-                f"({huggingface_config.max_position_embeddings})."
-            ) from e
+        # Gemma3Config (parent) is permissive; Gemma4 text uses upper-bounded
+        # max_length semantics instead.
+        return ArchConfigWithStoredKVParams.calculate_max_seq_len(
+            pipeline_config, huggingface_config, model_config
+        )
 
     @classmethod
     def initialize_from_config(
@@ -277,7 +263,9 @@ class Gemma4TextConfig(Gemma3Config):
             # Gemma4-specific fields
             vocab_size_per_layer_input=huggingface_config.vocab_size_per_layer_input,
             hidden_size_per_layer_input=huggingface_config.hidden_size_per_layer_input,
-            num_global_key_value_heads=huggingface_config.num_global_key_value_heads,
+            num_global_key_value_heads=_resolve_num_global_kv_heads(
+                huggingface_config
+            ),
             global_head_dim=huggingface_config.global_head_dim,
             attention_k_eq_v=huggingface_config.attention_k_eq_v,
             num_kv_shared_layers=huggingface_config.num_kv_shared_layers,
@@ -416,7 +404,7 @@ class Gemma4VisionConfig:
 
 
 @dataclass(kw_only=True)
-class Gemma4ForConditionalGenerationConfig(ArchConfigWithKVAndVisionCache):
+class Gemma4ForConditionalGenerationConfig(ArchConfigWithKVCache):
     """Base configuration for Gemma 4 multimodal models.
 
     This is the top-level config that composes text and vision sub-configs.
@@ -428,6 +416,9 @@ class Gemma4ForConditionalGenerationConfig(ArchConfigWithKVAndVisionCache):
 
     dtype: DType
     """DType of the model weights and input."""
+
+    unquantized_dtype: DType = DType.bfloat16
+    """DType of unquantized weights."""
 
     kv_params: MultiKVCacheParams
     """KV cache parameters."""
@@ -441,37 +432,13 @@ class Gemma4ForConditionalGenerationConfig(ArchConfigWithKVAndVisionCache):
     text_config: Gemma4TextConfig
     """The config object of the text backbone."""
 
-    vision_config: Gemma4VisionConfig
-    """The config object of the vision encoder."""
+    vision_config: Gemma4VisionConfig | None
+    """The config object of the vision encoder, or ``None`` for checkpoints
+    served text-only (the ``gemma4_unified`` line)."""
 
     tie_word_embeddings: bool = False
     """Whether to tie weight embeddings. When true, the output linear layer
     uses the same weight as the embedding layer."""
-
-    @staticmethod
-    def estimate_vision_cache_entry_bytes(
-        huggingface_config: AutoConfig,
-    ) -> int:
-        """Estimate per-entry bytes for the vision encoder cache.
-
-        Worst-case tokens per image is
-        ``position_embedding_size / pooling_kernel_size²``, stored at the
-        text hidden size in bfloat16.
-        """
-        vision_config = getattr(huggingface_config, "vision_config", None)
-        if vision_config is None:
-            raise ValueError(
-                "Gemma4 requires a vision_config in the HuggingFace config"
-            )
-        text_config = getattr(huggingface_config, "text_config", None)
-        if text_config is None:
-            raise ValueError(
-                "Gemma4 requires a text_config in the HuggingFace config"
-            )
-        k = vision_config.pooling_kernel_size
-        max_tokens = vision_config.position_embedding_size // (k * k)
-        hidden = text_config.hidden_size
-        return max_tokens * hidden * 2  # bfloat16
 
     def get_kv_params(self) -> MultiKVCacheParams:
         """Returns the KV cache parameters."""
@@ -510,6 +477,12 @@ class Gemma4ForConditionalGenerationConfig(ArchConfigWithKVAndVisionCache):
                 global_layers += 1
             else:
                 raise ValueError(f"Unknown attention type: {attention_type}")
+
+        num_spec_tokens = (
+            pipeline_config.speculative.num_speculative_tokens
+            if pipeline_config.speculative
+            else 0
+        )
         sliding_window_kv_params = kv_cache_config.to_params(
             dtype=cache_dtype,
             n_kv_heads=huggingface_config.text_config.num_key_value_heads,
@@ -517,17 +490,34 @@ class Gemma4ForConditionalGenerationConfig(ArchConfigWithKVAndVisionCache):
             num_layers=sliding_window_layers,
             devices=devices,
             data_parallel_degree=pipeline_config.model.data_parallel_degree,
+            speculative_method=(
+                pipeline_config.speculative.speculative_method
+                if pipeline_config.speculative
+                else None
+            ),
+            num_draft_tokens=num_spec_tokens,
         )
         global_kv_params = kv_cache_config.to_params(
             dtype=cache_dtype,
-            n_kv_heads=huggingface_config.text_config.num_global_key_value_heads,
+            n_kv_heads=_resolve_num_global_kv_heads(
+                huggingface_config.text_config
+            ),
             head_dim=huggingface_config.text_config.global_head_dim,
             num_layers=global_layers,
             devices=devices,
             data_parallel_degree=pipeline_config.model.data_parallel_degree,
+            speculative_method=(
+                pipeline_config.speculative.speculative_method
+                if pipeline_config.speculative
+                else None
+            ),
+            num_draft_tokens=num_spec_tokens,
         )
         return MultiKVCacheParams.from_params(
-            sliding_window_kv_params, global_kv_params
+            {
+                "sliding_attention": sliding_window_kv_params,
+                "full_attention": global_kv_params,
+            }
         )
 
     @staticmethod
@@ -559,9 +549,10 @@ class Gemma4ForConditionalGenerationConfig(ArchConfigWithKVAndVisionCache):
         huggingface_config = model_config.huggingface_config
         if huggingface_config is None:
             raise ValueError(
-                f"HuggingFace config is required for '{model_config.model_path}', "
-                "but config could not be loaded. "
-                "Please ensure the model repository contains a valid config.json file."
+                "HuggingFace config is required for"
+                f" '{model_config.model_path}', but config could not be loaded."
+                " Please ensure the model repository contains a valid"
+                " config.json file."
             )
         return cls.initialize_from_config(pipeline_config, huggingface_config)
 
@@ -600,9 +591,18 @@ class Gemma4ForConditionalGenerationConfig(ArchConfigWithKVAndVisionCache):
         hf_vision_config = getattr(huggingface_config, "vision_config", None)
         if hf_vision_config is None:
             raise ValueError("vision_config not found in huggingface_config")
-        vision_config = Gemma4VisionConfig.initialize_from_config(
-            hf_vision_config
-        )
+        vision_config: Gemma4VisionConfig | None
+        if getattr(huggingface_config, "model_type", None) == "gemma4_unified":
+            # These checkpoints (e.g. google/gemma-4-12b-it) carry a
+            # lightweight vision_embedder with a different schema that is not
+            # implemented yet; serve text-only. Keyed on model_type so a
+            # genuinely malformed full-vision config fails loudly below
+            # instead of silently degrading to text-only.
+            vision_config = None
+        else:
+            vision_config = Gemma4VisionConfig.initialize_from_config(
+                hf_vision_config
+            )
 
         hf_text_config = getattr(huggingface_config, "text_config", None)
         if hf_text_config is None:
@@ -653,8 +653,28 @@ class Gemma4ForConditionalGenerationConfig(ArchConfigWithKVAndVisionCache):
         hf_text_config = getattr(huggingface_config, "text_config", None)
         if hf_text_config is None:
             raise ValueError("text_config not found in huggingface_config")
+
+        quant_config = parse_quant_config(
+            huggingface_config,
+            state_dict,
+            self.dtype,
+            # Gemma 4 checkpoints nest the language tower under
+            # "model.language_model."; without these prefixes the per-layer
+            # quantized/ignored classification looks up "model.layers.*"
+            # keys that never exist, so ignore-listed (BF16) attention in
+            # modelopt 12B quants was never recognized as ignored.
+            state_dict_name_prefix="model.language_model.",
+            ignored_modules_prefix="model.language_model.",
+        )
+
+        for k, v in state_dict.items():
+            if k.endswith("layers.0.input_layernorm.weight"):
+                self.unquantized_dtype = v.dtype
+                break
+
         self.text_config.finalize(
             huggingface_config=hf_text_config,
             state_dict=state_dict,
             return_logits=return_logits,
+            quant_config=quant_config,
         )

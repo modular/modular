@@ -16,8 +16,9 @@ from std.random import randn, seed, random_float64
 
 import std.gpu.primitives.warp as warp
 from std.gpu import WARP_SIZE
-from std.gpu.host import DeviceContext
-from linalg.gemv import gemv_kernel, gevm_kernel
+from std.gpu.host import DeviceContext, get_gpu_target
+from std.sys import simd_width_of
+from linalg.gemv import gemv_kernel, gemv_split_k, gevm_kernel
 from linalg.matmul.gpu import matmul_kernel
 import linalg.matmul.vendor.blas as vendor_blas
 
@@ -77,7 +78,7 @@ def run_matvec[
     def run_func_gemv(ctx: DeviceContext) raises:
         comptime kernel = gemv_kernel[c_type, a_type, b_type]
 
-        ctx.enqueue_function_experimental[kernel](
+        ctx.enqueue_function[kernel](
             c_device,
             a_device,
             b_device,
@@ -98,7 +99,7 @@ def run_matvec[
             tile_size=WARP_SIZE * WARPS_PER_BLOCK,
         ]
 
-        ctx.enqueue_function_experimental[kernel](
+        ctx.enqueue_function[kernel](
             c_device,
             a_device,
             b_device,
@@ -138,9 +139,9 @@ def run_matvec[
     # Create tensors for vendor_blas
     # For GEMV (N=1): A is MxK, B is Kx1, C is Mx1
     # For GEVM (M=1): A is 1xK, B is KxN, C is 1xN
-    var a_nd = TileTensor(a_device, row_major(Idx(M), Idx(K)))
-    var b_nd = TileTensor(b_device, row_major(Idx(K), Idx(N)))
-    var c_ref_nd = TileTensor(c_device_naive, row_major(Idx(M), Idx(N)))
+    var a_nd = TileTensor(a_device, row_major(M, K))
+    var b_nd = TileTensor(b_device, row_major(K, N))
+    var c_ref_nd = TileTensor(c_device_naive, row_major(M, N))
 
     vendor_blas.matmul(
         ctx,
@@ -207,7 +208,7 @@ def run_matvec_with_epilogue_fn(
     var c_device = ctx.enqueue_create_buffer[DType.float32](M * N * c_stride)
 
     var c_device_nd = TileTensor(
-        c_device, Layout((Idx(M), Idx(N)), (Idx(N * c_stride), Idx(c_stride)))
+        c_device, Layout((M, N), (N * c_stride, c_stride))
     )
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
@@ -218,7 +219,7 @@ def run_matvec_with_epilogue_fn(
     @always_inline
     @__copy_capture(c_device_nd, const_val)
     def epilogue_fn[
-        dtype: DType, width: Int, *, alignment: Int = 1
+        dtype: DType, width: SIMDSize, *, alignment: Int = 1
     ](idx: IndexList[2], val: SIMD[dtype, width]):
         c_device_nd.store[width=width](
             Coord(idx),
@@ -238,7 +239,7 @@ def run_matvec_with_epilogue_fn(
             DType.float32,
             elementwise_lambda_fn=epilogue_fn,
         ]
-        var func = ctx.compile_function_experimental[kernel]()
+        var func = ctx.compile_function[kernel]()
         ctx.enqueue_function(
             func,
             c_device,
@@ -261,7 +262,7 @@ def run_matvec_with_epilogue_fn(
             tile_size=WARP_SIZE * WARPS_PER_BLOCK,
             elementwise_lambda_fn=epilogue_fn,
         ]
-        var func = ctx.compile_function_experimental[kernel]()
+        var func = ctx.compile_function[kernel]()
         ctx.enqueue_function(
             func,
             c_device,
@@ -315,7 +316,7 @@ def run_matvec_with_epilogue_fn(
             BLOCK_DIM,
             elementwise_lambda_fn=epilogue_fn,
         ]
-        var func = ctx.compile_function_experimental[kernel]()
+        var func = ctx.compile_function[kernel]()
         ctx.enqueue_function(
             func,
             c_device,
@@ -350,6 +351,156 @@ def run_matvec_with_epilogue_fn(
     )
 
 
+def run_split_k_gemm[
+    M: Int,
+    N: Int,
+    K: Int,
+    with_epilogue: Bool,
+    tile_n: Int = 2,
+    tile_m: Int = 1,
+](*, ctx: DeviceContext) raises:
+    comptime a_type = DType.float32
+    comptime num_threads = 128
+    comptime simd_width = simd_width_of[a_type, target=get_gpu_target()]()
+    comptime check_bounds_n = N % tile_n != 0
+    # The grid covers ceildiv(M, tile_m) * tile_m rows, so tile_m > 1 needs
+    # the row guard (tile_m == 1 covers M exactly).
+    comptime check_bounds_m = tile_m > 1
+    comptime seed_val = 42
+    comptime row_pad = 8
+    comptime const_val = Float32(4.0)  # added by the epilogue
+
+    seed(seed_val)
+
+    var a_host = alloc[Float32](M * K)
+    var w_host = alloc[Float32](N * K)
+    randn(a_host, M * K)
+    randn(w_host, N * K)
+
+    var row_stride = N + row_pad
+    var c_elems = M * row_stride
+    var c_host = alloc[Float32](c_elems)
+    var c_expected = alloc[Float32](c_elems)
+    for i in range(c_elems):
+        c_host[i] = 0
+        c_expected[i] = 0
+
+    var a_device = ctx.enqueue_create_buffer[a_type](M * K)
+    var w_device = ctx.enqueue_create_buffer[a_type](N * K)
+    var c_device = ctx.enqueue_create_buffer[a_type](c_elems)
+
+    ctx.enqueue_copy(a_device, a_host)
+    ctx.enqueue_copy(w_device, w_host)
+    ctx.enqueue_copy(c_device, c_host)
+
+    var a_nd = TileTensor(a_device, row_major(M, K)).as_immut()
+    var w_nd = TileTensor(w_device, row_major(N, K)).as_immut()
+    var c_nd = TileTensor(c_device, Layout((M, N), (row_stride, 1)))
+
+    comptime if with_epilogue:
+
+        @parameter
+        @always_inline
+        @__copy_capture(c_nd)
+        def epilogue_fn[
+            dtype: DType, width: SIMDSize, *, alignment: Int = 1
+        ](idx: IndexList[2], val: SIMD[dtype, width]):
+            c_nd.store[width=width](
+                Coord(idx),
+                rebind[SIMD[a_type, width]](
+                    val + SIMD[dtype, width](const_val)
+                ),
+            )
+
+        comptime kernel = gemv_split_k[
+            a_type,
+            a_type,
+            a_type,
+            type_of(c_nd).LayoutType,
+            type_of(a_nd).LayoutType,
+            type_of(w_nd).LayoutType,
+            simd_width=simd_width,
+            tile_m=tile_m,
+            tile_n=tile_n,
+            num_threads=num_threads,
+            elementwise_lambda_fn=epilogue_fn,
+            check_bounds_m=check_bounds_m,
+            check_bounds_n=check_bounds_n,
+        ]
+        var func = ctx.compile_function[kernel]()
+        ctx.enqueue_function(
+            func,
+            c_nd,
+            a_nd,
+            w_nd,
+            M,
+            N,
+            K,
+            grid_dim=(ceildiv(M, tile_m), ceildiv(N, tile_n)),
+            block_dim=num_threads,
+        )
+    else:
+        comptime kernel = gemv_split_k[
+            a_type,
+            a_type,
+            a_type,
+            type_of(c_nd).LayoutType,
+            type_of(a_nd).LayoutType,
+            type_of(w_nd).LayoutType,
+            simd_width=simd_width,
+            tile_m=tile_m,
+            tile_n=tile_n,
+            num_threads=num_threads,
+            check_bounds_m=check_bounds_m,
+            check_bounds_n=check_bounds_n,
+        ]
+        ctx.enqueue_function[kernel](
+            c_nd,
+            a_nd,
+            w_nd,
+            M,
+            N,
+            K,
+            grid_dim=(ceildiv(M, tile_m), ceildiv(N, tile_n)),
+            block_dim=num_threads,
+        )
+
+    ctx.enqueue_copy(c_host, c_device)
+    ctx.synchronize()
+
+    print(
+        "== run_split_k_gemm with_epilogue=",
+        with_epilogue,
+        " M=",
+        M,
+        " N=",
+        N,
+        " K=",
+        K,
+    )
+
+    # Host reference: out[m, n] = sum_k a[m, k] * w[n, k] (+ const_val with the
+    # epilogue), written into the padded layout.
+    for m in range(M):
+        for n in range(N):
+            var acc = Float32(0)
+            for kk in range(K):
+                acc += a_host[m * K + kk] * w_host[n * K + kk]
+            comptime if with_epilogue:
+                c_expected[m * row_stride + n] = acc + const_val
+            else:
+                c_expected[m * row_stride + n] = acc
+
+    comptime errorTolerance = 1e-2
+    assert_almost_equal(
+        c_host,
+        c_expected,
+        num_elements=c_elems,
+        atol=1e-4,
+        rtol=errorTolerance,
+    )
+
+
 def main() raises:
     with DeviceContext() as ctx:
         # gemv for matrix vector multiply - FP32
@@ -379,4 +530,23 @@ def main() raises:
         # gevm for vector matrix multiply - BF16 input, BF16 output
         run_matvec[DType.bfloat16, DType.bfloat16, DType.bfloat16](
             1, 4096, 4096, ctx=ctx
+        )
+
+        # gemv_split_k GEMM (M > 1, N > 1), with and without an epilogue.
+        # Covers both check_bounds_n=False (N % tile_n == 0) and the
+        # column-bounds-checked path (N % tile_n != 0).
+        run_split_k_gemm[4, 128, 2048, with_epilogue=True, tile_n=2](ctx=ctx)
+        run_split_k_gemm[33, 126, 2048, with_epilogue=True, tile_n=4](ctx=ctx)
+        run_split_k_gemm[4, 128, 2048, with_epilogue=False, tile_n=2](ctx=ctx)
+        run_split_k_gemm[33, 126, 2048, with_epilogue=False, tile_n=4](ctx=ctx)
+
+        # tile_m > 1 with M % tile_m != 0 and N % tile_n != 0: both row and
+        # column guards on (check_bounds_m and check_bounds_n). No tuning
+        # config reaches this combination today, but it is what the kernel's
+        # parameter defaults give a direct caller.
+        run_split_k_gemm[5, 126, 2048, with_epilogue=True, tile_n=4, tile_m=2](
+            ctx=ctx
+        )
+        run_split_k_gemm[5, 126, 2048, with_epilogue=False, tile_n=4, tile_m=2](
+            ctx=ctx
         )

@@ -40,6 +40,7 @@ mojo_library(
     srcs = [
         ":std_srcs",
     ],
+    docs_hosted_on_mojolang = True,
     docs_title = "Mojo standard library",
     validate_missing_docs = True,
 )

@@ -204,7 +204,22 @@ typedef enum M_ValueType {
 /// When you're done, call `M_freeWeightsRegistry()`.
 typedef struct M_WeightsRegistry M_WeightsRegistry;
 
-/// Represents the type of device.
+/// Holds the tensors parsed from one or more safetensors files.
+///
+/// The tensor data is borrowed from the loaded files and stays valid for the
+/// lifetime of this object. You can enumerate tensors, read their data and
+/// metadata, or build a `M_WeightsRegistry` from all of them with
+/// `M_newWeightsRegistryFromSafetensors()`.
+///
+/// You can create this with `M_loadSafetensors()`.
+/// When you're done, call `M_freeSafetensors()`.
+typedef struct M_Safetensors M_Safetensors;
+
+/// Represents the type of device. `M_HOST` is the CPU; `M_ACCELERATOR`
+/// is any non-CPU compute device (GPU or NPU). The closed set of valid
+/// device labels is enforced by `EngineContext::create` -- see
+/// `Support/DeviceSpecs.h` for the label constants and
+/// `max/internal/lib/API/c/EngineContext.cpp` for the validating guard.
 #ifdef __cplusplus
 typedef enum M_DeviceType : int {
 #else

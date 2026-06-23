@@ -23,6 +23,8 @@ from typing import Any, TypeVar, overload
 
 from max._core.profiler import Trace, is_profiling_enabled
 
+__all__ = ["Tracer", "traced"]
+
 _FuncType = TypeVar("_FuncType", bound=Callable[..., Any])
 
 # For the list of valid colors, take a look at the struct `Color` in:

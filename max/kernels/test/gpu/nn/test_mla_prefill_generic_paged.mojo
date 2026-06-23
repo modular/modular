@@ -245,28 +245,22 @@ def run_test_paged_prefill[
     # ------------------------------------------------------------------
     var q_device = TileTensor(
         q_device_buf,
-        row_major((Idx(batch_size * seq_len), Idx[num_heads](), Idx[depth]())),
+        row_major((batch_size * seq_len, Idx[num_heads], Idx[depth])),
     )
     var k_device = TileTensor(
         k_device_buf,
-        row_major(
-            (Idx(batch_size * num_keys), Idx[num_heads](), Idx[kv_depth]())
-        ),
+        row_major((batch_size * num_keys, Idx[num_heads], Idx[kv_depth])),
     )
     var v_device = TileTensor(
         v_device_buf,
-        row_major(
-            (Idx(batch_size * num_keys), Idx[num_heads](), Idx[kv_depth]())
-        ),
+        row_major((batch_size * num_keys, Idx[num_heads], Idx[kv_depth])),
     )
     var output_device = TileTensor(
         output_device_buf,
-        row_major(
-            (Idx(batch_size * seq_len), Idx[num_heads](), Idx[kv_depth]())
-        ),
+        row_major((batch_size * seq_len, Idx[num_heads], Idx[kv_depth])),
     )
-    var input_ro_tt = TileTensor(input_ro_buf, row_major(Idx(batch_size + 1)))
-    var cache_ro_tt = TileTensor(cache_ro_buf, row_major(Idx(batch_size + 1)))
+    var input_ro_tt = TileTensor(input_ro_buf, row_major(batch_size + 1))
+    var cache_ro_tt = TileTensor(cache_ro_buf, row_major(batch_size + 1))
 
     # ------------------------------------------------------------------
     # Step 6: Build the PagedKVCacheCollection for K_rope.
@@ -306,21 +300,21 @@ def run_test_paged_prefill[
         k_rope_type, kv_params, page_size
     ](
         LayoutTensor[k_rope_type, Layout.row_major[6](), MutAnyOrigin](
-            blocks_lt.ptr,
+            blocks_lt.ptr.as_unsafe_any_origin(),
             RuntimeLayout[Layout.row_major[6]()](
                 blocks_lt.runtime_layout.shape.value,
                 blocks_lt.runtime_layout.stride.value,
             ),
         ),
         LayoutTensor[DType.uint32, cl_layout, ImmutAnyOrigin](
-            cache_lengths_lt.ptr,
+            cache_lengths_lt.ptr.as_unsafe_any_origin(),
             RuntimeLayout[cl_layout](
                 cache_lengths_lt.runtime_layout.shape.value,
                 cache_lengths_lt.runtime_layout.stride.value,
             ),
         ),
         LayoutTensor[DType.uint32, lt_layout_2d, ImmutAnyOrigin](
-            lookup_table_lt.ptr,
+            lookup_table_lt.ptr.as_unsafe_any_origin(),
             RuntimeLayout[lt_layout_2d](
                 lookup_table_lt.runtime_layout.shape.value,
                 lookup_table_lt.runtime_layout.stride.value,
@@ -380,7 +374,11 @@ def run_test_paged_prefill[
 
     for b in range(batch_size):
         extract_k_rope_for_batch[k_rope_type](
-            blocks_host, k_rope_one_batch, b, num_keys, page_size
+            blocks_host.as_unsafe_any_origin(),
+            k_rope_one_batch.as_unsafe_any_origin(),
+            b,
+            num_keys,
+            page_size,
         )
         for s in range(num_keys):
             for h in range(num_heads):
@@ -417,27 +415,19 @@ def run_test_paged_prefill[
 
     var q_device_rank4 = TileTensor(
         q_device_buf,
-        row_major(
-            (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
-        ),
+        row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
     var k_ref_device = TileTensor(
         k_ref_device_buf,
-        row_major(
-            (Idx(batch_size), Idx(num_keys), Idx[num_heads](), Idx[depth]())
-        ),
+        row_major((batch_size, num_keys, Idx[num_heads], Idx[depth])),
     )
     var v_ref_device = TileTensor(
         v_ref_device_buf,
-        row_major(
-            (Idx(batch_size), Idx(num_keys), Idx[num_heads](), Idx[depth]())
-        ),
+        row_major((batch_size, num_keys, Idx[num_heads], Idx[depth])),
     )
     var output_ref_device = TileTensor(
         output_ref_device_buf,
-        row_major(
-            (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
-        ),
+        row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
 
     var null_valid_length = LayoutTensor[
@@ -447,8 +437,12 @@ def run_test_paged_prefill[
         RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(Index(0)),
     )
 
-    var k_ref_operand = LayoutTensorMHAOperand(k_ref_device.to_layout_tensor())
-    var v_ref_operand = LayoutTensorMHAOperand(v_ref_device.to_layout_tensor())
+    var k_ref_operand = LayoutTensorMHAOperand(
+        k_ref_device.as_immut().as_unsafe_any_origin()
+    )
+    var v_ref_operand = LayoutTensorMHAOperand(
+        v_ref_device.as_immut().as_unsafe_any_origin()
+    )
 
     mha_gpu_naive[_is_cache_length_accurate=True](
         q_device_rank4.to_layout_tensor(),
@@ -583,3 +577,36 @@ def main() raises:
                     page_size=PAGE_SIZE,
                     batch_size=2,
                 ](num_keys, num_keys, ctx)
+
+            # 1Q multi-tile coverage: 657 keys / 16 heads / batch 1 keeps
+            # the unclamped 2Q grid at 3 * 16 = 48 blocks <= SMs/2, so
+            # the dispatch heuristic picks the 1Q (num_qo=1) kernel.
+            # 657 = 5 * 128 + 17 exercises the 1Q producer main loop,
+            # tail, and partial last page in one shot. (The short shapes
+            # in `num_keys_to_test()` also route to 1Q on B200, but only
+            # cover T <= 2.)
+            seed(0)
+            run_test_paged_prefill[
+                qkv_type=DType.bfloat16,
+                k_rope_type=DType.bfloat16,
+                output_type=DType.bfloat16,
+                depth=192,
+                num_heads=16,
+                kv_depth=128,
+                page_size=PAGE_SIZE,
+                batch_size=1,
+            ](657, 657, ctx)
+            # 2Q coverage retention: 1088 keys -> 5 BM=256 tiles, so the
+            # unclamped 2Q grid is 5 * 16 = 80 blocks > SMs/2 and the
+            # dispatch keeps the 2Q kernel (with a partial 2Q last tile).
+            seed(0)
+            run_test_paged_prefill[
+                qkv_type=DType.bfloat16,
+                k_rope_type=DType.bfloat16,
+                output_type=DType.bfloat16,
+                depth=192,
+                num_heads=16,
+                kv_depth=128,
+                page_size=PAGE_SIZE,
+                batch_size=1,
+            ](1088, 1088, ctx)

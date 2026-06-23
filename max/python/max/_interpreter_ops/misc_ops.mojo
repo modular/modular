@@ -17,6 +17,7 @@ Contains range and random operations.
 """
 
 from std.os import abort
+from std.gpu.host import DeviceContext
 from std.python import PythonObject
 from std.python.bindings import PythonModuleBuilder
 from std.sys.info import has_accelerator
@@ -24,15 +25,15 @@ from std.sys.info import has_accelerator
 from std.math import iota
 from std.random import NormalRandom, Random
 from std.algorithm.functional import elementwise, IndexList
-from std.memory import OpaquePointer
-from std.runtime.asyncrt import DeviceContextPtr
-from tensor.managed_tensor_slice import (
+
+from extensibility import (
     ManagedTensorSlice,
 )
-from tensor.io_spec import FusedOutput
-from compiler_internal import StaticTensorSpec
-from MOGGKernelAPI.MOGGKernelAPI import Range
+from extensibility import FusedOutput
+from extensibility import StaticTensorSpec
+from builtin_kernels import Range, range_shape
 
+from std.utils.coord import Coord
 from std.utils.numerics import get_accum_type
 
 from op_utils import (
@@ -54,7 +55,7 @@ from op_utils import (
 
 
 @export
-def PyInit_misc_ops() -> PythonObject:
+def PyInit_misc_ops() abi("C") -> PythonObject:
     """Create a Python module with miscellaneous kernel function bindings."""
     try:
         var b = PythonModuleBuilder("misc_ops")
@@ -89,6 +90,8 @@ struct _RangeShapeBody(Dispatchable):
     var start_addr: Int
     var stop_addr: Int
     var step_addr: Int
+
+    @__allow_legacy_any_origin_fields
     var result_ptr: UnsafePointer[Int, MutAnyOrigin]
 
     def call[t: DType](self) raises -> None:
@@ -111,7 +114,7 @@ struct _RangeBody(Dispatchable):
     var stop_addr: Int
     var step_addr: Int
     var size: Int
-    var ctx: Optional[OpaquePointer[MutExternalOrigin]]
+    var ctx: DeviceContext
 
     def call[t: DType](self) raises -> None:
         comptime if t == DType.bool:
@@ -143,7 +146,7 @@ def range_dispatcher(
         start_buffer: Scalar buffer containing the start value.
         stop_buffer: Scalar buffer containing the stop value.
         step_buffer: Scalar buffer containing the step value.
-        device_context_ptr: Device context pointer (null for CPU).
+        device_context_ptr: Device context pointer.
     """
     var dtype = _get_dtype(out_buffer)
     var size = _get_size(out_buffer)
@@ -164,14 +167,14 @@ def range_dispatcher(
 def range_op[
     dtype: DType
 ](
-    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    start_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    stop_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    step_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    out_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    start_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    stop_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    step_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     size: Int,
-    ctx: Optional[OpaquePointer[MutExternalOrigin]],
+    ctx: DeviceContext,
 ) raises:
-    """Range operation using Range.execute from MOGGKernelAPI.
+    """Range operation using Range.execute from the `kernels` package.
 
     Parameters:
         dtype: The data type of the arrays.
@@ -182,7 +185,7 @@ def range_op[
         stop_ptr: Pointer to the stop scalar value.
         step_ptr: Pointer to the step scalar value.
         size: Number of elements to produce.
-        ctx: Device context pointer (null for CPU).
+        ctx: Device context.
     """
     var start = start_ptr.load()
     var stop = stop_ptr.load()
@@ -193,12 +196,12 @@ def range_op[
         io_spec=FusedOutput, static_spec=out_spec
     ](out_ptr, IndexList[1](size))
 
-    if not ctx:
+    if ctx.api() == "cpu":
         Range.execute[
             dtype=dtype,
             target="cpu",
             _trace_name="interpreter.range",
-        ](output_tensor, start, stop, step, DeviceContextPtr())
+        ](output_tensor, start, stop, step, ctx)
     else:
         comptime if has_accelerator():
             comptime if dtype != DType.float64:
@@ -209,18 +212,15 @@ def range_op[
                 @always_inline
                 @parameter
                 @__copy_capture(out_ptr, start, step)
-                def range_func[
-                    width: Int, rank: Int, alignment: Int = 1
-                ](idx: IndexList[rank]):
-                    var i = rebind[IndexList[1]](idx)[0]
+                def range_func[width: Int, alignment: Int = 1](idx: Coord):
+                    var i = Int(idx[0].value())
                     var result = start + (
                         iota[dtype, width](Scalar[dtype](i)) * step
                     )
                     out_ptr.store[width=width](i, result)
 
-                var device_ctx = DeviceContextPtr(ctx.unsafe_value())
                 elementwise[range_func, simd_width=1, target="gpu"](
-                    IndexList[1](size), device_ctx
+                    Coord(size), ctx
                 )
             else:
                 raise Error(
@@ -238,11 +238,11 @@ def range_op[
 def range_shape_op[
     dtype: DType
 ](
-    start_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    stop_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    step_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    start_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    stop_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    step_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
 ) raises -> Int:
-    """Compute range output size using Range.shape from MOGGKernelAPI.
+    """Compute range output size using Range.shape from the `kernels` package.
 
     Parameters:
         dtype: The data type of the scalars.
@@ -258,7 +258,7 @@ def range_shape_op[
     var start = start_ptr.load()
     var stop = stop_ptr.load()
     var step = step_ptr.load()
-    var shape = Range.shape[dtype](start, stop, step)
+    var shape = range_shape[dtype](start, stop, step)
     return shape[0]
 
 
@@ -287,7 +287,10 @@ def range_shape_dispatcher(
     var result: Int = 0
     dispatch_dtype(
         _RangeShapeBody(
-            start_addr, stop_addr, step_addr, UnsafePointer(to=result)
+            start_addr,
+            stop_addr,
+            step_addr,
+            UnsafePointer(to=result).as_unsafe_any_origin(),
         ),
         dtype,
     )
@@ -302,14 +305,28 @@ def range_shape_dispatcher(
 def random_normal_op[
     dtype: DType
 ](
-    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    out_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     size: Int,
     mean: Float32,
     variance: Float32,
     seed_value: UInt64,
-    ctx: Optional[OpaquePointer[MutExternalOrigin]],
+    ctx: DeviceContext,
 ) raises:
     """Random normal operation: fill output with normally distributed values.
+
+    Mirrors PyTorch CUDA `torch.randn`'s element-to-counter mapping. For
+    element `i`:
+
+        thread_id     = i mod GRID_BLOCK
+        within_thread = i div GRID_BLOCK   (0..3)
+
+    where `GRID_BLOCK = 256 * min(num_SMs * blocks_per_sm, ceil(size/256))`.
+    The per-element Box-Muller math is in
+    :func:`std.random.NormalRandom.step_normal_4`. This op contributes the
+    PyTorch-specific layout: which thread the element belongs to and which
+    of the four normals from that thread's Philox step lands at `output[i]`.
+
+    On CPU, `GRID_BLOCK = size` collapses every element to within_thread=0.
 
     Parameters:
         dtype: The data type of the output array.
@@ -320,29 +337,28 @@ def random_normal_op[
         mean: Mean of the normal distribution.
         variance: Standard deviation of the normal distribution.
         seed_value: Seed for the random number generator.
-        ctx: Device context pointer (null for CPU).
+        ctx: Device context.
     """
     if variance <= 0:
         raise Error("stddev must be positive")
+    if size == 0:
+        return
 
-    @always_inline
-    @parameter
-    @__copy_capture(out_ptr, mean, variance, seed_value)
-    def func[width: Int, rank: Int, alignment: Int = 1](idx: IndexList[rank]):
-        var i = rebind[IndexList[1]](idx)[0]
-        var generator = NormalRandom(seed=seed_value, offset=UInt64(i))
-        var values = generator.step_normal(mean=mean, stddev=variance)
-        out_ptr.store[width=width](i, values.cast[dtype]().slice[width]())
+    comptime BLOCK_SIZE: Int = 256
+    var grid_block: Int
 
-    if not ctx:
-        elementwise[func, simd_width=8](IndexList[1](size))
+    if ctx.api() == "cpu":
+        grid_block = size
     else:
         comptime if has_accelerator():
             comptime if dtype != DType.float64:
-                var device_ctx = DeviceContextPtr(ctx.unsafe_value())
-                elementwise[func, simd_width=8, target="gpu"](
-                    IndexList[1](size), device_ctx
+                comptime info = DeviceContext.default_device_info
+                comptime MAX_GRID = info.sm_count * (
+                    info.threads_per_multiprocessor // BLOCK_SIZE
                 )
+                var nblocks = (size + BLOCK_SIZE - 1) // BLOCK_SIZE
+                var grid_x = MAX_GRID if nblocks > MAX_GRID else nblocks
+                grid_block = grid_x * BLOCK_SIZE
             else:
                 raise Error(
                     "GPU execution not supported for random_normal"
@@ -350,6 +366,29 @@ def random_normal_op[
                 )
         else:
             raise Error("No GPU accelerator available")
+
+    @always_inline
+    @parameter
+    @__copy_capture(out_ptr, mean, variance, seed_value, grid_block)
+    def func[width: Int, alignment: Int = 1](idx: Coord):
+        comptime assert (
+            width == 1
+        ), "PyTorch-compat normal kernel uses scalar lanes"
+        var i = Int(idx[0].value())
+        var thread_id = UInt64(i % grid_block)
+        var within_thread = i // grid_block
+
+        var rng = NormalRandom(seed=seed_value, subsequence=thread_id)
+        var four = rng.step_normal_4(mean=mean, stddev=variance)
+        var value = four[within_thread].cast[dtype]()
+        out_ptr.store[width=1](i, SIMD[dtype, 1](value))
+
+    if ctx.api() == "cpu":
+        elementwise[func, simd_width=1](Coord(size), ctx)
+    else:
+        comptime if has_accelerator():
+            comptime if dtype != DType.float64:
+                elementwise[func, simd_width=1, target="gpu"](Coord(size), ctx)
 
 
 def random_normal_dispatcher(
@@ -366,7 +405,7 @@ def random_normal_dispatcher(
         mean_val: Python float for the mean.
         variance_val: Python float for the standard deviation.
         seed_val: Python int for the seed.
-        device_context_ptr: Device context pointer (null for CPU).
+        device_context_ptr: Device context pointer.
     """
     var dtype = _get_dtype(out_buffer)
     var size = _get_size(out_buffer)
@@ -423,12 +462,12 @@ def random_normal_dispatcher(
 def random_uniform_op[
     dtype: DType
 ](
-    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    out_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     size: Int,
     lower_bound: Float32,
     upper_bound: Float32,
     seed_value: UInt64,
-    ctx: Optional[OpaquePointer[MutExternalOrigin]],
+    ctx: DeviceContext,
 ) raises:
     """Random uniform operation: fill output with uniformly distributed values.
 
@@ -441,7 +480,7 @@ def random_uniform_op[
         lower_bound: Lower bound of the uniform distribution.
         upper_bound: Upper bound of the uniform distribution.
         seed_value: Seed for the random number generator.
-        ctx: Device context pointer (null for CPU).
+        ctx: Device context.
     """
     if lower_bound > upper_bound:
         raise Error("lower_bound must be less than or equal to upper_bound")
@@ -451,22 +490,19 @@ def random_uniform_op[
     @always_inline
     @parameter
     @__copy_capture(out_ptr, lower_bound, delta, seed_value)
-    def func[width: Int, rank: Int, alignment: Int = 1](idx: IndexList[rank]):
-        var i = rebind[IndexList[1]](idx)[0]
+    def func[width: Int, alignment: Int = 1](idx: Coord):
+        var i = Int(idx[0].value())
         var generator = Random(seed=seed_value, offset=UInt64(i))
         var values: SIMD[DType.float32, 4] = generator.step_uniform()
         values = values * delta + lower_bound
         out_ptr.store[width=width](i, values.cast[dtype]().slice[width]())
 
-    if not ctx:
-        elementwise[func, simd_width=4](IndexList[1](size))
+    if ctx.api() == "cpu":
+        elementwise[func, simd_width=4](Coord(size), ctx)
     else:
         comptime if has_accelerator():
             comptime if dtype != DType.float64:
-                var device_ctx = DeviceContextPtr(ctx.unsafe_value())
-                elementwise[func, simd_width=4, target="gpu"](
-                    IndexList[1](size), device_ctx
-                )
+                elementwise[func, simd_width=4, target="gpu"](Coord(size), ctx)
             else:
                 raise Error(
                     "GPU execution not supported for random_uniform"
@@ -490,7 +526,7 @@ def random_uniform_dispatcher(
         lower_val: Python float for the lower bound.
         upper_val: Python float for the upper bound.
         seed_val: Python int for the seed.
-        device_context_ptr: Device context pointer (null for CPU).
+        device_context_ptr: Device context pointer.
     """
     var dtype = _get_dtype(out_buffer)
     var size = _get_size(out_buffer)
@@ -547,8 +583,8 @@ def random_uniform_dispatcher(
 def _cumsum_cpu[
     dtype: DType,
 ](
-    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    in_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    out_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    in_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     dim0: Int,
     dim1: Int,
     dim2: Int,

@@ -135,9 +135,20 @@ struct Conv2dSmem[
         Self.num_output_stages,
     ]
 
-    # Source tile storage for residual operations (D = Conv + beta*C)
-    # Double-buffered to overlap C loading with MMA computation
-    comptime num_epi_load_stages: Int = 2
+    # Source tile storage for residual operations (D = Conv + beta*C).
+    #
+    # The epilogue iterates `num_inner_stages = MMA_N / OutputN` sub-tiles
+    # per block tile (e.g. 4 for the 1-SM default: BN=128 / OutputN=32).
+    # Each sub-tile of source must be present before the matching
+    # epilogue stage runs. To match the CUTLASS
+    # `sm100_epilogue_tma_warpspecialized` pattern (one TMA load per
+    # sub-tile, pipelined across `StagesC` SMEM buffers), size the
+    # source SMEM as `num_inner_stages` buffers of `(OutputM, OutputN)`.
+    # A previous (BM, OutputN) single-buffer layout caused stages > 0 to
+    # read uninitialized SMEM (MODELS-1484).
+    comptime num_epi_load_stages: Int = (
+        Self.config.mma_shape[1] // Self.OutputN
+    )
     comptime SourceTiles = SourceTileStorage[
         Self.out_type,  # Source C has same type as output D
         IndexList[2](Self.OutputM, Self.OutputN),

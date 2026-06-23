@@ -32,8 +32,8 @@ def _validate_bytes(slice: Span[Byte, _]) raises:
 struct CStringSlice[origin: ImmutOrigin](
     Equatable,
     ImplicitlyCopyable,
-    RegisterPassable,
     Sized,
+    TrivialRegisterPassable,
     UnsafeNicheable,
     Writable,
 ):
@@ -247,6 +247,10 @@ struct CStringSlice[origin: ImmutOrigin](
             ptr=self._data.bitcast[Byte](),
             length=len(self) + 1,
         )
+
+    @doc_hidden
+    def as_unsafe_any_origin(self) -> CStringSlice[ImmutAnyOrigin]:
+        return {unsafe_from_ptr = self._data.as_unsafe_any_origin()}
 
     @staticmethod
     @doc_hidden

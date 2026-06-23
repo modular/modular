@@ -19,7 +19,8 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/graph",
         "//max/python/max/nn",
-        "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/architectures/deepseekV3",
+        "//max/python/max/pipelines/architectures/eagle3_deepseekV3",
     ],
 )
 
@@ -27,17 +28,36 @@ modular_py_test(
     name = "test_tool_parser",
     srcs = ["test_tool_parser.py"],
     deps = [
-        "//max/python/max/interfaces",
-        "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/architectures/kimik2_5",
+        "//max/python/max/pipelines/context",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
+        requirement("llguidance"),
+        requirement("numpy"),
     ],
 )
 
 modular_py_test(
     name = "test_reasoning",
     srcs = ["test_reasoning.py"],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2411
     deps = [
-        "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/architectures/kimik2_5",
         requirement("numpy"),
+        requirement("pytest-asyncio"),
+    ],
+)
+
+modular_py_test(
+    name = "test_tokenizer",
+    srcs = ["test_tokenizer.py"],
+    deps = [
+        "//max/python/max/pipelines/architectures/kimik2_5",
+        "//max/python/max/pipelines/context",
+        "//max/python/max/pipelines/modeling",
         requirement("pytest-asyncio"),
     ],
 )

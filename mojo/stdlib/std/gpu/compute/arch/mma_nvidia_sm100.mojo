@@ -1268,6 +1268,15 @@ struct MMASmemDescriptorPair(TrivialRegisterPassable):
         """
         return Self(self.hi, self.lo + ((offset >> 4) & Self.mask_14_bits))
 
+    @always_inline
+    def descriptor(self) -> MMASmemDescriptor:
+        """Get the descriptor for the shared memory operand.
+
+        Returns:
+            The descriptor for the shared memory operand as a `MMASmemDescriptor`.
+        """
+        return MMASmemDescriptor(UInt64(self.hi) << 32 | UInt64(self.lo))
+
 
 # ===----------------------------------------------------------------------=== #
 # UMMA

@@ -185,7 +185,7 @@ def test_config__update_weight_paths(
         assert config.model.weight_path == [Path("model.safetensors")]
 
         with pytest.raises(ValueError):
-            # This example, should raise as we dont have q4_k listed as supported.
+            # This example, should raise as we don't have q4_k listed as supported.
             config = PipelineConfig(
                 models=ModelManifest(
                     {
