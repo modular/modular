@@ -1,6 +1,6 @@
 // RUN: kgen-opt -allow-unregistered-dialect %s -verify-parameters -verify-diagnostics -split-input-file
 
-// This tests verifcation errors which are not enabled in production builds
+// This tests verification errors which are not enabled in production builds
 // UNSUPPORTED: production
 
 // expected-error @below {{type of index reference #kgen.param.index.ref<0, 0> : index does not match parameter type 'ui32'}}

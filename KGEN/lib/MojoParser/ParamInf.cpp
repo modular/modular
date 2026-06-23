@@ -1640,7 +1640,7 @@ VerifiedParamBindings CallParamInf::inferForCall() {
       auto refValType = RefType::getAnyOrigin(valTy, /*isMut=*/true);
       for (auto operandIdx : pogAssignment.kwVariadicIdxs) {
         // KWVarArg values are passed to OwnedKwargsDict::_insert, which takes
-        // the argument as an owned value (they are transfered into the dict).
+        // the argument as an owned value (they are transferred into the dict).
         if (failed(inferOneOperand(callOperands[operandIdx], operandIdx,
                                    expectedArgIdx, refValType,
                                    ArgConvention::OwnedMem)))
