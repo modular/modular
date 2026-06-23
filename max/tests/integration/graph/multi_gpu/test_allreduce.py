@@ -260,7 +260,9 @@ def test_allreduce_signal_buffer_too_small_error_message(
     ]
 
     # Execute and expect error.
-    error_regex = r"Expected signal buffer to be at least \d+ bytes, but got \d+\. This error can appear when running large requests through MAX serve without chunked prefill\. If so, try enabling chunked prefill with --enable-chunked-prefill\. Otherwise, consider increasing the signal buffer size\."
+    error_regex = (
+        r"Expected signal buffer to be at least \d+ bytes, but got \d+\."
+    )
 
     with pytest.raises(ValueError, match=error_regex):
         compiled.execute(*input_tensors, *signals.buffers())

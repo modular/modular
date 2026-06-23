@@ -1178,6 +1178,10 @@ class TestValidateTaskAndEndpoint:
     def test_pixel_gen_videos_sync_ok(self) -> None:
         validate_task_and_endpoint("text-to-video", "/v1/videos/sync")
 
+    def test_image_to_video_videos_sync_ok(self) -> None:
+        # i2v is a video task and may use the video endpoints.
+        validate_task_and_endpoint("image-to-video", "/v1/videos/sync")
+
     def test_text_gen_videos_sync_rejected(self) -> None:
         with pytest.raises(ValueError, match="does not support"):
             validate_task_and_endpoint("text-generation", "/v1/videos/sync")
@@ -1192,6 +1196,9 @@ class TestValidateTaskAndEndpoint:
 
     def test_pixel_gen_videos_ok(self) -> None:
         validate_task_and_endpoint("text-to-video", "/v1/videos")
+
+    def test_image_to_video_videos_ok(self) -> None:
+        validate_task_and_endpoint("image-to-video", "/v1/videos")
 
     def test_text_gen_videos_rejected(self) -> None:
         with pytest.raises(ValueError, match="does not support"):

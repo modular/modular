@@ -262,6 +262,11 @@ def create_pipeline_with_lora(
         self._pipeline_config = pipeline_config
         self._pipeline_model = pipeline_model
         self._devices = [CPU()]
+        self._sampler_device = (
+            CPU()
+            if pipeline_config.sampling.sample_on_host
+            else self._devices[0]
+        )
         self._eos_token_id = {999}
         self._tokenizer = MagicMock()
         self.batch_info_output_fname = None

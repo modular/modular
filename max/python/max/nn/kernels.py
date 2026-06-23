@@ -787,6 +787,113 @@ def _fused_qkv_ragged_matmul_scaled_float4(
     )[0].tensor
 
 
+def _fused_qkv_ragged_matmul_scaled_mxfp8(
+    kv_params: KVCacheParams,
+    input: TensorValue,
+    input_row_offsets: TensorValue,
+    wqkv: TensorValue,
+    kv_collection: PagedCacheValues,
+    layer_idx: TensorValue,
+    n_heads: int,
+    input_scale: TensorValue,
+    weight_scale: TensorValue,
+    _output_dim: int | None = None,
+) -> TensorValue:
+    """Computes fused QKV projections with MXFP8 block-scaled input and weights.
+
+    The MXFP8 sibling of :func:`_fused_qkv_ragged_matmul_scaled_float4`:
+    ``input`` and ``wqkv`` carry ``float8_e4m3fn`` data with E8M0
+    (``float8_e8m0fnu``) block scales over 32-element K blocks. The Q
+    projection is returned, while K and V are written in place into
+    ``kv_collection``.
+
+    Args:
+        kv_params: KVCacheParams object containing key-value cache parameters.
+        input: Activation tensor, ``float8_e4m3fn`` with shape
+            [M=total_seq_len, K=hidden_dim].
+        input_row_offsets: TensorValue indicating the start and end of each
+            batch in the input tensor with shape [batch_size + 1].
+        wqkv: Weight tensor, ``float8_e4m3fn`` with shape
+            [N=(num_heads + 2 * num_kv_heads) * head_dim, K=hidden_dim].
+        kv_collection: PagedCacheValues object for managing key-value cache.
+        layer_idx: Layer index, expected to have dtype uint32 and live on CPU.
+        n_heads: Number of attention heads.
+        input_scale: E8M0 input block scales in the rank-5 SF-atom layout.
+        weight_scale: E8M0 weight block scales in the rank-5 SF-atom layout.
+        _output_dim: Optional output dimension. Defaults to
+            ``n_heads * head_dim``.
+
+    Raises:
+        ValueError: on input shapes/dtypes that are invalid for the kernel.
+    """
+    _check_same_dtype(input=input, wqkv=wqkv)
+
+    input_rank_expected = 2
+    _check_rank(input_rank_expected, input=input)
+
+    _check_dtype(
+        DType.uint32, input_row_offsets=input_row_offsets, layer_idx=layer_idx
+    )
+
+    tensors_to_check = [wqkv, input_row_offsets, input_scale, weight_scale]
+    if not all(t.device == input.device for t in tensors_to_check):
+        raise ValueError(
+            "expected all tensors to be on the same device as input"
+            f" ({input.device}), but got:\n  wqkv={wqkv.device}\n "
+            f" input_row_offsets={input_row_offsets.device}\n "
+            f" input_scale={input_scale.device}\n "
+            f" weight_scale={weight_scale.device}"
+        )
+
+    if layer_idx.device != DeviceRef.CPU():
+        raise ValueError(
+            "expected layer_idx to be on CPU device, but got"
+            f" {layer_idx.device}"
+        )
+
+    # MXFP8 block scales fully describe the quantization, but the kernel still
+    # multiplies by a per-tensor scale, so pass an identity scale on CPU.
+    tensor_sf = ops.constant(1.0, DType.float32, device=DeviceRef.CPU())
+
+    assert kv_params.page_size is not None
+    parameters: dict[str, int | str | DType] = {
+        "dtype": DType.float8_e4m3fn,
+        "scale_type": DType.float8_e8m0fnu,
+        "kv_type": kv_params.dtype,
+        "SF_VECTOR_SIZE": 32,
+    }
+
+    op_name = "mo.fused_qkv_matmul.ragged.paged.scale.mxfp8"
+    values = [
+        input,
+        input_row_offsets,
+        wqkv,
+        input_scale,
+        weight_scale,
+        tensor_sf,
+        *kv_collection.flatten_without_attention_dispatch_metadata(),
+        layer_idx,
+    ]
+
+    output_dim = (
+        _output_dim if _output_dim is not None else n_heads * kv_params.head_dim
+    )
+
+    return ops.inplace_custom(
+        op_name,
+        device=input.device,
+        values=values,
+        out_types=[
+            TensorType(
+                dtype=DType.bfloat16,
+                shape=input.shape[:-1] + [output_dim],
+                device=input.device,
+            )
+        ],
+        parameters=parameters,
+    )[0].tensor
+
+
 def unfused_qkv_ragged_matmul_gguf_quantized(
     kv_params: KVCacheParams,
     input: TensorValue,

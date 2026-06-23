@@ -45,6 +45,26 @@ def test_merge_concatenates_rank2_buffers() -> None:
     np.testing.assert_array_equal(out[2:], b_np)
 
 
+def _buf1d(rows: int) -> Buffer:
+    """A rank-1 [rows] CPU buffer (the scatter-index shape)."""
+    data = np.arange(rows, dtype=np.int32)
+    return Buffer.from_numpy(data).to(CPU())
+
+
+def test_merge_concatenates_rank1_buffers() -> None:
+    # Scatter indices are rank-1; regression for the rank-2-only slice that
+    # crashed this caller with "indices (2) != tensor rank (1)".
+    a, b = _buf1d(2), _buf1d(3)
+    a_np, b_np = a.to_numpy().copy(), b.to_numpy().copy()
+
+    [merged] = merge_per_device_buffers([a], [b])
+
+    out = merged.to_numpy()
+    assert out.shape == (5,)
+    np.testing.assert_array_equal(out[:2], a_np)
+    np.testing.assert_array_equal(out[2:], b_np)
+
+
 def test_merge_is_elementwise_across_devices() -> None:
     # Two per-device replicas must be concatenated pairwise.
     a0, a1 = _buf(1), _buf(2)

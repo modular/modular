@@ -29,6 +29,7 @@ modular_py_test(
             "test_from_dim.py",
             "test_functional_custom_gpu.py",
             "test_philox_torch_divergence.py",
+            "test_reduce_add_rmsnorm_fusion.py",
         ],
     ),
     data = [
@@ -115,6 +116,25 @@ modular_py_test(
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/experimental",
+        requirement("torch"),
+    ],
+)
+
+modular_py_test(
+    name = "test_reduce_add_rmsnorm_fusion",
+    srcs = ["test_reduce_add_rmsnorm_fusion.py"],
+    gpu_constraints = ["//:b200_gpu"],
+    imports = ["."],
+    tags = [
+        "gpu",
+    ],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        requirement("ml-dtypes"),
+        requirement("numpy"),
         requirement("torch"),
     ],
 )

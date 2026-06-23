@@ -142,13 +142,12 @@ def bench_rms_norm_gpu[
     ctx.enqueue_copy(data_d, data_h)
     ctx.enqueue_copy(gamma_d, gamma_h)
 
+    # `rms_norm_gpu` migrated to a `Coord` shape boundary (softmax PR #88203).
     @__copy_capture(data_buf)
     @always_inline
     @parameter
-    def input_fn[
-        width: Int, _rank: Int
-    ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
-        var idx = data_buf.layout(Coord(coords))
+    def input_fn[width: Int](coords: Coord) -> SIMD[dtype, width]:
+        var idx = data_buf.layout(coords)
 
         # Match the MOGG lambda contract (reductions.mojo passes
         # `element_alignment=width` to `_lambda_load`): vector loads are
@@ -162,8 +161,8 @@ def bench_rms_norm_gpu[
     @parameter
     def identity_output_fn[
         width: SIMDSize, alignment: Int
-    ](coords: IndexList[rank], val: SIMD[dtype, width]) -> None:
-        var idx = data_buf.layout(Coord(coords))
+    ](coords: Coord, val: SIMD[dtype, width]) -> None:
+        var idx = data_buf.layout(coords)
         data_buf.raw_store[width=width, alignment=alignment](idx, val)
 
     @always_inline
@@ -174,8 +173,8 @@ def bench_rms_norm_gpu[
         @always_inline
         def kernel_launch(ctx: DeviceContext) raises:
             rms_norm_gpu[
-                input_fn, identity_output_fn, multiply_before_cast=True
-            ](shape, gamma, epsilon, weight_offset, ctx)
+                rank, input_fn, identity_output_fn, multiply_before_cast=True
+            ](Coord(shape), gamma, epsilon, weight_offset, ctx)
 
         b.iter_custom[kernel_launch](ctx)
 
