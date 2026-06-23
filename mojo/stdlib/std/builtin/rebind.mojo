@@ -139,6 +139,7 @@ def trait_downcast[
     Returns:
         The downcasted value.
     """
+    comptime assert conforms_to(T, Trait), "Invalid downcast"
     return rebind[downcast[T, Trait]](src)
 
 
@@ -162,6 +163,7 @@ def trait_downcast_var[
     Returns:
         The downcasted value.
     """
+    comptime assert conforms_to(T, Trait), "Invalid downcast"
     return rebind_var[downcast[T, Trait]](src^)
 
 
@@ -184,4 +186,5 @@ def trait_downcast[
     Returns:
         The downcasted value.
     """
+    comptime assert conforms_to(T, Trait), "Invalid downcast"
     return rebind[downcast[T, Trait]](src)

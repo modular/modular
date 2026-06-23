@@ -27,7 +27,7 @@ struct HasBadField(Equatable):
     var field: NotEquatable
 
 
-# CHECK: Could not derive Equatable for HasBadField - member field `field: NotEquatable` does not implement Equatable
+# CHECK: constraint failed: Invalid downcast
 def main() raises:
     var a = HasBadField(NotEquatable(1))
     var b = HasBadField(NotEquatable(1))

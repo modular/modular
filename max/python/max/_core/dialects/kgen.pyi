@@ -2299,13 +2299,13 @@ class TraitInstanceRefAttr(max._core.Attribute):
 class TypeConformsToTraitAttr(max._core.Attribute):
     """
     This represents a flag to indicate the type, specified by `typeValue`,
-    conforms to specific traits, specified by a list of trait symbol references.
+    conforms to the specified traits.
 
     Example:
 
     ```mlir
-    #kgen.type_conforms_to_trait<#kgen.param.decl.ref<"T"> : !kgen.type,
-                                 [@Movable, @Copyable]>
+    #kgen.type_conforms_to_trait<T,
+        #kgen.type<typevalue<#kgen.trait_ref<@Movable, @Copyable>>, type> : !kgen.type>
     ```
     """
 
@@ -2313,20 +2313,18 @@ class TypeConformsToTraitAttr(max._core.Attribute):
     def __init__(
         self,
         type_value: max._core.dialects.builtin.TypedAttr,
-        trait_symbols: Sequence[max._core.dialects.builtin.SymbolRefAttr],
+        trait_type: max._core.dialects.builtin.TypedAttr,
     ) -> None: ...
     @overload
     def __init__(
         self,
         type_value: max._core.dialects.builtin.TypedAttr,
-        trait_symbols: Sequence[max._core.dialects.builtin.SymbolRefAttr],
+        trait_type: max._core.dialects.builtin.TypedAttr,
     ) -> None: ...
     @property
     def type_value(self) -> max._core.dialects.builtin.TypedAttr: ...
     @property
-    def trait_symbols(
-        self,
-    ) -> Sequence[max._core.dialects.builtin.SymbolRefAttr]: ...
+    def trait_type(self) -> max._core.dialects.builtin.TypedAttr: ...
 
 class TypeGeneratorRefAttr(max._core.Attribute):
     """
@@ -4595,6 +4593,20 @@ class SugaredTypeInterface(Protocol):
     def get_cached_canonical_type(
         self, arg: max._core.Type, /
     ) -> max._core.Type | None: ...
+
+class TraitSymbolInterface(Protocol):
+    """
+    Interface for types that carry a list of trait symbol references, such as
+    the `!lit.trait` type, or a `!kgen.typevalue<trait_ref<...>>`.
+
+    The practical reason why we need the interface is to avoid cyclic build
+    dependencies.
+    """
+
+    @property
+    def trait_symbols(
+        self,
+    ) -> Sequence[max._core.dialects.builtin.SymbolRefAttr]: ...
 
 class BuildInfoType(max._core.Type):
     """
