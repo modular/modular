@@ -28,7 +28,7 @@ from max.nn.quant_config import (
     WeightScaleSpec,
 )
 from max.pipelines.lib import MAXModelConfigBase, SupportedEncoding
-from max.pipelines.lib.config.config_enums import supported_encoding_dtype
+from max.pipelines.modeling.config_enums import supported_encoding_dtype
 from pydantic import Field
 from typing_extensions import Self
 
@@ -122,9 +122,12 @@ def _make_nvfp4_config(num_layers: int, num_single_layers: int) -> QuantConfig:
         attn_quantized_layers=all_layers,
         embedding_output_dtype=DType.bfloat16,
         format=QuantFormat.NVFP4,
-        # BFL FLUX.2-NVFP4 ships scales already in the 5D TCGEN-interleaved
-        # layout, so quantized_matmul skips the runtime interleave pass.
-        scales_pre_interleaved=True,
+        # BFL ships scales in 5D TCGEN5 interleaved layout flattened to 2D,
+        # but that storage can't be K-sharded by slicing axis 1 (the 5D dims
+        # mix rows and K-blocks). The weight adapter deinterleaves to true
+        # ``[M, K//16]`` at load time and lets the runtime
+        # ``block_scales_interleave`` op rebuild the 5D layout per-shard.
+        scales_pre_interleaved=False,
     )
 
 
@@ -145,7 +148,12 @@ class Flux2Config(MAXModelConfigBase):
     guidance_embeds: bool = True
     """If False (Klein/distilled), no guidance embedder weights are expected."""
     dtype: DType = DType.bfloat16
-    device: DeviceRef = Field(default_factory=DeviceRef.GPU)
+    devices: list[DeviceRef] = Field(default_factory=lambda: [DeviceRef.GPU()])
+    """Devices for tensor parallelism. ``len(devices) == 1`` (default) runs
+    single-GPU; larger lengths shard the denoiser across the listed devices.
+    The first device hosts replicated components and any sub-models that
+    stay single-device (text encoder, VAE, etc.).
+    """
     quant_config: QuantConfig | None = None
     """NVFP4 quantization config, populated when encoding is float4_e2m1fnx2."""
 
@@ -186,7 +194,7 @@ class Flux2Config(MAXModelConfigBase):
         init_dict.update(
             {
                 "dtype": raw_dtype,
-                "device": DeviceRef.from_device(devices[0]),
+                "devices": [DeviceRef.from_device(d) for d in devices],
                 "quant_config": quant_config,
             }
         )

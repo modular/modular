@@ -20,3 +20,4 @@ Offline inference
    :template: autosummary/class.rst
 
    ~max.entrypoints.llm.LLM
+   PipelineConfig

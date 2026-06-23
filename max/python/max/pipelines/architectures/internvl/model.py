@@ -18,14 +18,14 @@ import math
 from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, ClassVar
 
 import numpy as np
 import numpy.typing as npt
 from max.driver import Buffer, Device, DLPackArray
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import DeviceRef, Graph, TensorType, Type
+from max.graph import DeviceRef, Graph, Module, TensorType, Type
 from max.graph.weights import (
     SafetensorWeights,
     WeightData,
@@ -33,9 +33,9 @@ from max.graph.weights import (
     WeightsAdapter,
 )
 from max.nn.comm import Signals
-from max.nn.kv_cache import KVCacheInputs, KVCacheParams
+from max.nn.kv_cache import KVCacheInputsInterface
 from max.nn.transformer import ReturnLogits
-from max.pipelines.core import TextAndVisionContext
+from max.pipelines.context import TextAndVisionContext
 from max.pipelines.lib import (
     AlwaysSignalBuffersMixin,
     CompilationTimer,
@@ -51,7 +51,6 @@ from .internvl import InternVLLanguageModel, InternVLVisionModel
 from .model_config import InternVLConfig
 from .tokenizer import (
     IMAGE_NDIMS,
-    InternVLImageConfig,
     _get_image_context_token_id,
 )
 from .weight_adapters import (
@@ -180,9 +179,27 @@ def assert_image_embeddings_invariant(
 
 
 class InternVLModel(
-    AlwaysSignalBuffersMixin, PipelineModelWithKVCache[TextAndVisionContext]
+    AlwaysSignalBuffersMixin,
+    PipelineModelWithKVCache[TextAndVisionContext],
 ):
     """An InternVL pipeline model for multimodal text generation."""
+
+    model_config_cls: ClassVar[type[Any]] = InternVLConfig
+
+    @classmethod
+    def calculate_max_seq_len(
+        cls,
+        pipeline_config: PipelineConfig,
+        huggingface_config: AutoConfig,
+    ) -> int:
+        """Uses ``max_length`` when set, else ``llm_config.max_position_embeddings`` (config bounds)."""
+        max_seq_len = pipeline_config.model.max_length
+        if max_seq_len:
+            return max_seq_len
+        llm_config = getattr(
+            huggingface_config, "llm_config", huggingface_config
+        )
+        return getattr(llm_config, "max_position_embeddings", 4096)
 
     vision_model: Model
     """The compiled vision model for processing images."""
@@ -219,114 +236,6 @@ class InternVLModel(
 
         # Initialize vision stacker for optimized parallel stacking.
         self._stacker = _VisionStacker()
-
-    @staticmethod
-    def calculate_max_seq_len(
-        pipeline_config: PipelineConfig, huggingface_config: AutoConfig
-    ) -> int:
-        """Calculates the maximum sequence length for the InternVL model."""
-        max_seq_len = pipeline_config.model.max_length
-        if max_seq_len:
-            return max_seq_len
-
-        # Get `max_position_embeddings` from the `llm_config`.
-        llm_config = getattr(
-            huggingface_config, "llm_config", huggingface_config
-        )
-        return getattr(llm_config, "max_position_embeddings", 4096)
-
-    @classmethod
-    def get_kv_params(
-        cls,
-        huggingface_config: AutoConfig,
-        pipeline_config: PipelineConfig,
-        devices: list[DeviceRef],
-        kv_cache_config: KVCacheConfig,
-        cache_dtype: DType,
-    ) -> KVCacheParams:
-        """Gets the parameters required to configure the KV cache for InternVL."""
-        return InternVLConfig.construct_kv_params(
-            huggingface_config,
-            pipeline_config,
-            devices,
-            kv_cache_config,
-            cache_dtype,
-        )
-
-    @classmethod
-    def estimate_activation_memory(
-        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
-    ) -> int:
-        """Estimates the activation memory required for InternVL model execution.
-
-        This accounts for the temporary memory buffers used during model execution,
-        particularly for the vision encoder and language model activations.
-
-        Based on empirical analysis of MGP buffer plans (GEX-2365):
-        - Vision encoder uses ~128MiB per image.
-        - Language model uses ~100KB per token for intermediate activations.
-
-        These values come from printing the high water mark from the
-        `mgp.buffer.plan` op, and verifying with GPU free memory at runtime.
-
-        The vision encoder memory scales with the number of images that can be
-        processed concurrently, which is limited by max_batch_input_tokens / num_image_tokens
-        where num_image_tokens=256 for InternVL.
-
-        TODO(GEX-2365): Replace this with a more general solution that analyzes
-        the compiled graph's memory requirements directly.
-
-        Args:
-            pipeline_config: Pipeline configuration
-            huggingface_config: HuggingFace model configuration
-
-        Returns:
-            Estimated activation memory in bytes
-        """
-        # Vision encoder memory estimation.
-        vision_memory_per_image = 128 * 1024 * 1024  # 128 MiB per image
-
-        image_config = InternVLImageConfig(
-            huggingface_config,
-            pipeline_config.model.vision_config_overrides,
-        )
-
-        # Maximum number of images that can be processed is limited by
-        # how many image tokens fit in the target new tokens
-        max_images = (
-            pipeline_config.runtime.max_batch_input_tokens
-            // image_config.num_image_token
-        )
-        # Ensure at least 1 image worth of memory.
-        max_images = max(1, max_images)
-
-        # Note: Each image can use up to max_dynamic_patch patches (default 12)
-        # plus 1 for thumbnail if applicable.
-        if not pipeline_config.runtime.enable_chunked_prefill:
-            # When there's no chunked prefill, the number of images may overhang
-            # by the maximum in a single request.
-            # Since we only support a single image per request for now,
-            # TODO(MODELS-638, E2EOPT-350): Adjust this after supporting
-            # multi-image requests.
-            max_images += image_config.max_dynamic_patch + 1
-
-        vision_activation_memory = max_images * vision_memory_per_image
-
-        # Language model memory estimation
-        # ~100KB per token for intermediate activations
-        llm_memory_per_token = 100 * 1024  # 100 KiB
-        llm_activation_memory = (
-            pipeline_config.runtime.max_batch_input_tokens
-            * llm_memory_per_token
-        )
-
-        total_activation_memory = (
-            vision_activation_memory + llm_activation_memory
-        )
-
-        # Multiply by the number of devices since the above analysis is per
-        # device, but memory estimation uses total memory across all devices.
-        return len(pipeline_config.model.device_specs) * total_activation_memory
 
     def load_model(self, session: InferenceSession) -> tuple[Model, Model]:
         """Loads the compiled InternVL models into the MAX Engine session.
@@ -375,30 +284,35 @@ class InternVLModel(
             return_logits=self.return_logits,
         )
 
-        # Build and compile vision model
-        with CompilationTimer("vision model") as timer:
+        # Build and compile vision + language models in parallel
+        with CompilationTimer("vision + language model") as timer:
+            module = Module()
             vision_graph, vision_model_state_dict = self._build_vision_graph(
-                internvl_config, vision_model_weights_dict
+                internvl_config, vision_model_weights_dict, module=module
             )
-            timer.mark_build_complete()
-            vision_model = session.load(
-                vision_graph, weights_registry=vision_model_state_dict
-            )
-
-        # Build and compile language model
-        with CompilationTimer("language model") as timer:
             language_graph, language_model_state_dict = (
-                self._build_language_graph(internvl_config, llm_weights_dict)
+                self._build_language_graph(
+                    internvl_config, llm_weights_dict, module=module
+                )
             )
             timer.mark_build_complete()
-            language_model = session.load(
-                language_graph, weights_registry=language_model_state_dict
+            combined_registry = {
+                **vision_model_state_dict,
+                **language_model_state_dict,
+            }
+            models = session.load_all(
+                module, weights_registry=combined_registry
             )
+            vision_model = models[vision_graph.name]
+            language_model = models[language_graph.name]
 
         return vision_model, language_model
 
     def _build_vision_graph(
-        self, config: InternVLConfig, state_dict: dict[str, WeightData]
+        self,
+        config: InternVLConfig,
+        state_dict: dict[str, WeightData],
+        module: Module | None = None,
     ) -> tuple[Graph, dict[str, DLPackArray]]:
         """Build the vision model graph for processing images."""
         # Define input types for the vision model
@@ -436,6 +350,7 @@ class InternVLModel(
         with Graph(
             "internvl_vision",
             input_types=[*pixel_values_types, *signals.input_types()],
+            module=module,
         ) as graph:
             # Build vision model architecture.
             vision_model = InternVLVisionModel(config)
@@ -528,12 +443,17 @@ class InternVLModel(
         )
 
     def _build_language_graph(
-        self, config: InternVLConfig, state_dict: dict[str, WeightData]
+        self,
+        config: InternVLConfig,
+        state_dict: dict[str, WeightData],
+        module: Module | None = None,
     ) -> tuple[Graph, dict[str, DLPackArray]]:
         """Build the language model graph for text generation with image embeddings."""
         # Initialize graph with input types.
         with Graph(
-            "internvl_language", input_types=self._language_graph_input_types()
+            "internvl_language",
+            input_types=self._language_graph_input_types(),
+            module=module,
         ) as graph:
             image_context_token_id = _get_image_context_token_id(
                 self.huggingface_config
@@ -548,7 +468,7 @@ class InternVLModel(
             )
 
             # Unpack inputs.
-            (tokens, return_n_logits, *variadic_args) = graph.inputs
+            tokens, return_n_logits, *variadic_args = graph.inputs
 
             # Extract input_row_offsets (one per device).
             input_row_offsets = [
@@ -754,7 +674,7 @@ class InternVLModel(
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[TextAndVisionContext]],
-        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
+        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> ModelInputs:
         """Prepares the initial inputs for the first execution pass of the InternVL model."""
@@ -796,30 +716,4 @@ class InternVLModel(
             pixel_values=pixel_values,
             kv_cache_inputs=kv_cache_inputs,
             image_token_indices=image_token_indices,
-        )
-
-    def prepare_next_token_inputs(
-        self, next_tokens: Buffer, prev_model_inputs: ModelInputs
-    ) -> ModelInputs:
-        """Prepares the inputs for subsequent execution steps in a multi-step generation."""
-        assert isinstance(prev_model_inputs, InternVLInputs)
-        prev_inputs = prev_model_inputs
-
-        # Use pre-allocated row offsets for next token.
-        # Since the pre-allocated array has length max_batch_size, slice out
-        # only the current step's batch size.
-        offset = prev_inputs.input_row_offsets[0].shape[0]
-        next_row_offsets = [
-            offsets_prealloc[:offset]
-            for offsets_prealloc in self._input_row_offsets_prealloc
-        ]
-
-        return InternVLInputs(
-            tokens=next_tokens,
-            input_row_offsets=next_row_offsets,
-            signal_buffers=self.signal_buffers,
-            return_n_logits=prev_model_inputs.return_n_logits,
-            # Set vision model inputs to None after the first step
-            pixel_values=None,
-            kv_cache_inputs=prev_inputs.kv_cache_inputs,
         )

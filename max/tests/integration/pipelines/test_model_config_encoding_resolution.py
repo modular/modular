@@ -28,7 +28,7 @@ from unittest.mock import patch
 import pytest
 from max.driver import DeviceSpec
 from max.pipelines.lib import MAXModelConfig
-from max.pipelines.lib.hf_utils import HuggingFaceRepo
+from max.pipelines.weights.hf_utils import HuggingFaceRepo
 
 GPU_DEVICE_SPEC = DeviceSpec(id=0, device_type="gpu")
 CPU_DEVICE_SPEC = DeviceSpec(id=0, device_type="cpu")
@@ -124,7 +124,7 @@ def _resolve_mocks(
             "max.pipelines.lib.config.model_config.WeightPathParser.parse",
             return_value=weight_path_return,
         ),
-        patch("max.pipelines.lib.hf_utils.validate_hf_repo_access"),
+        patch("max.pipelines.lib.config.model_config.validate_hf_repo_access"),
     ):
         yield
 

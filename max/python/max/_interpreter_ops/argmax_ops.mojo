@@ -20,20 +20,19 @@ index of the extreme value.
 """
 
 from std.os import abort
+from std.gpu.host import DeviceContext
 from std.python import PythonObject
 from std.python.bindings import PythonModuleBuilder
-from std.sys.info import has_accelerator
+from std.sys.info import has_accelerator, has_apple_gpu_accelerator
 
 from std.algorithm.functional import elementwise, IndexList
-from std.memory import OpaquePointer
-from std.runtime.asyncrt import DeviceContextPtr
-from std.sys.info import has_apple_gpu_accelerator
+from std.utils.coord import Coord
 
 from op_utils import _get_dtype, _get_ctx, _make_ptr
 
 
 @export
-def PyInit_argmax_ops() -> PythonObject:
+def PyInit_argmax_ops() abi("C") -> PythonObject:
     """Create a Python module with argmax/argmin kernel function bindings."""
     try:
         var b = PythonModuleBuilder("argmax_ops")
@@ -57,12 +56,12 @@ def PyInit_argmax_ops() -> PythonObject:
 def argminmax_reduce_op[
     dtype: DType, //, is_max: Bool
 ](
-    out_ptr: UnsafePointer[Scalar[DType.int64], MutExternalOrigin],
-    in_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    out_ptr: UnsafePointer[Scalar[DType.int64], MutUntrackedOrigin],
+    in_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     dim0: Int,
     dim1: Int,
     dim2: Int,
-    ctx: Optional[OpaquePointer[MutExternalOrigin]],
+    ctx: DeviceContext,
 ) raises:
     """Scan the reduction axis for each output element to find extreme index.
 
@@ -81,7 +80,7 @@ def argminmax_reduce_op[
         dim0: Product of dimensions before the reduction axis.
         dim1: Size of the reduction axis.
         dim2: Product of dimensions after the reduction axis.
-        ctx: Device context pointer (null for CPU).
+        ctx: Device context.
     """
     var total = dim0 * dim2
     var in_stride0 = dim1 * dim2
@@ -89,8 +88,8 @@ def argminmax_reduce_op[
     @always_inline
     @parameter
     @__copy_capture(out_ptr, in_ptr, dim1, dim2, in_stride0)
-    def func[width: Int, rank: Int, alignment: Int = 1](idx: IndexList[rank]):
-        var i = idx[0]
+    def func[width: Int, alignment: Int = 1](idx: Coord):
+        var i = Int(idx[0].value())
         var i0, i2 = divmod(i, dim2)
         var base = i0 * in_stride0 + i2
 
@@ -111,13 +110,12 @@ def argminmax_reduce_op[
 
         out_ptr[i] = best_idx
 
-    if not ctx:
-        elementwise[func, simd_width=1](IndexList[1](total))
+    if ctx.api() == "cpu":
+        elementwise[func, simd_width=1](Coord(IndexList[1](total)), ctx)
     else:
         comptime if has_accelerator():
-            var device_ctx = DeviceContextPtr(ctx.unsafe_value())
             elementwise[func, simd_width=1, target="gpu"](
-                IndexList[1](total), device_ctx
+                Coord(IndexList[1](total)), ctx
             )
         else:
             raise Error("No GPU accelerator available")
@@ -140,7 +138,7 @@ def argmax_dispatcher(
         out_buffer: Output buffer (int64).
         in_buffer: Input data buffer.
         params: Python tuple (dim0, dim1, dim2).
-        device_context_ptr: Device context pointer (null for CPU).
+        device_context_ptr: Device context pointer.
     """
     _arg_dispatch[True](out_buffer, in_buffer, params, device_context_ptr)
 
@@ -157,7 +155,7 @@ def argmin_dispatcher(
         out_buffer: Output buffer (int64).
         in_buffer: Input data buffer.
         params: Python tuple (dim0, dim1, dim2).
-        device_context_ptr: Device context pointer (null for CPU).
+        device_context_ptr: Device context pointer.
     """
     _arg_dispatch[False](out_buffer, in_buffer, params, device_context_ptr)
 

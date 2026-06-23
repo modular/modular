@@ -99,11 +99,11 @@ def _test_blackwell_block_scaled_matmul_tma_umma_warp_specialized_impl[
         t" swapAB={swapAB} k_group_size={k_group_size} SF_VECTOR_SIZE={SF_VECTOR_SIZE} alpha={alpha}"
     )
 
-    var a_shape = row_major(Coord(m, Idx[KType.static_value // 2]()))
+    var a_shape = row_major(Coord(m, Idx[KType.static_value // 2]))
     var b_shape = row_major(
-        Coord(Idx[NType.static_value](), Idx[KType.static_value // 2]())
+        Coord(Idx[NType.static_value], Idx[KType.static_value // 2])
     )
-    var c_shape = row_major(Coord(m, Idx[NType.static_value]()))
+    var c_shape = row_major(Coord(m, Idx[NType.static_value]))
 
     var a_size = Int(m.value()) * (KType.static_value // 2)
     var b_size = Int(n.value()) * (KType.static_value // 2)
@@ -129,20 +129,20 @@ def _test_blackwell_block_scaled_matmul_tma_umma_warp_specialized_impl[
 
     var a_scales_shape = row_major(
         Coord(
-            Idx(ceildiv(Int(m.value()), SF_MN_GROUP_SIZE)),
-            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)](),
-            Idx[SF_ATOM_M[0]](),
-            Idx[SF_ATOM_M[1]](),
-            Idx[SF_ATOM_K](),
+            ceildiv(Int(m.value()), SF_MN_GROUP_SIZE),
+            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1]],
+            Idx[SF_ATOM_K],
         )
     )
     var b_scales_shape = row_major(
         Coord(
-            Idx[ceildiv(NType.static_value, SF_MN_GROUP_SIZE)](),
-            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)](),
-            Idx[SF_ATOM_M[0]](),
-            Idx[SF_ATOM_M[1]](),
-            Idx[SF_ATOM_K](),
+            Idx[ceildiv(NType.static_value, SF_MN_GROUP_SIZE)],
+            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1]],
+            Idx[SF_ATOM_K],
         )
     )
 
@@ -178,12 +178,12 @@ def _test_blackwell_block_scaled_matmul_tma_umma_warp_specialized_impl[
     if simple_init():
         for m in range(Int(m.value())):
             for k in range(Int(k.value()) // 2):
-                comptime assert a_host.flat_rank >= 2
-                a_host[(Idx(m), Idx(k))] = UInt8(m).cast[a_type]()
+                comptime assert a_host.flat_rank == 2
+                a_host[m, k] = UInt8(m).cast[a_type]()
         for n in range(Int(n.value())):
             for k in range(Int(k.value()) // 2):
-                comptime assert b_host.flat_rank >= 2
-                b_host[(Idx(n), Idx(k))] = UInt8(n).cast[b_type]()
+                comptime assert b_host.flat_rank == 2
+                b_host[n, k] = UInt8(n).cast[b_type]()
     else:
         rand(a_host.ptr, a_host.num_elements(), min=0, max=255)
         rand(b_host.ptr, b_host.num_elements(), min=0, max=255)
@@ -268,12 +268,14 @@ def _test_blackwell_block_scaled_matmul_tma_umma_warp_specialized_impl[
     @__copy_capture(c_device_lt)
     def epilogue_fn[
         _dtype: DType,
-        width: Int,
+        width: SIMDSize,
         *,
         alignment: Int = 1,
     ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> None:
         var scaled = rebind[SIMD[c_type, width]](val) * Scalar[c_type](2)
-        c_device_lt.store[alignment=alignment * size_of[c_type](),](idx, scaled)
+        c_device_lt.store[store_alignment=alignment * size_of[c_type](),](
+            idx, scaled
+        )
 
     comptime epi = Optional[elementwise_epilogue_type](
         epilogue_fn
@@ -313,11 +315,11 @@ def _test_blackwell_block_scaled_matmul_tma_umma_warp_specialized_impl[
     else:
         vendor_blas.matmul(
             ctx,
-            c_ref_tensor_lt.as_any_origin(),
+            c_ref_tensor_lt.as_unsafe_any_origin(),
             a_lt,
             b_lt,
-            a_scales=a_scales_lt.get_immutable().as_any_origin(),
-            b_scales=b_scales_lt.get_immutable().as_any_origin(),
+            a_scales=a_scales_lt.get_immutable().as_unsafe_any_origin(),
+            b_scales=b_scales_lt.get_immutable().as_unsafe_any_origin(),
             transpose_b=transpose_b,
             c_row_major=True,
             alpha=alpha,
@@ -451,9 +453,9 @@ def run_matmul_sm100_block_scaled_fp4_suite[
                         SF_VECTOR_SIZE=SF_VECTOR_SIZE,
                     ](
                         ctx,
-                        Idx(Int(1000)),
-                        Idx(1024),
-                        Idx[1024 + 32](),
+                        Int(1000),
+                        Idx[1024],
+                        Idx[1024 + 32],
                     )
 
                     test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
@@ -472,9 +474,9 @@ def run_matmul_sm100_block_scaled_fp4_suite[
                         k_group_size=2,
                     ](
                         ctx,
-                        Idx(Int(500)),
-                        Idx(2048),
-                        Idx(4096),
+                        Int(500),
+                        Idx[2048],
+                        Idx[4096],
                     )
 
                     test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
@@ -492,9 +494,9 @@ def run_matmul_sm100_block_scaled_fp4_suite[
                         SF_VECTOR_SIZE=SF_VECTOR_SIZE,
                     ](
                         ctx,
-                        Idx(Int(777)),
-                        Idx(2560),
-                        Idx(8192),
+                        Int(777),
+                        Idx[2560],
+                        Idx[8192],
                         alpha=0.225,
                     )
 
@@ -513,9 +515,9 @@ def run_matmul_sm100_block_scaled_fp4_suite[
                         SF_VECTOR_SIZE=SF_VECTOR_SIZE,
                     ](
                         ctx,
-                        Idx(Int(1)),
-                        Idx(576),
-                        Idx(7168),
+                        Int(1),
+                        Idx[576],
+                        Idx[7168],
                         alpha=0.5,
                     )
 
@@ -537,9 +539,9 @@ def run_matmul_sm100_block_scaled_fp4_suite[
                         SF_VECTOR_SIZE=SF_VECTOR_SIZE,
                     ](
                         ctx,
-                        Idx(Int(16)),
-                        Idx(1024),
-                        Idx(1024 + 32),
+                        Int(16),
+                        Idx[1024],
+                        Idx[1024 + 32],
                     )
 
                     test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
@@ -558,9 +560,9 @@ def run_matmul_sm100_block_scaled_fp4_suite[
                         k_group_size=2,
                     ](
                         ctx,
-                        Idx(Int(100)),
-                        Idx(2560),
-                        Idx(8192),
+                        Int(100),
+                        Idx[2560],
+                        Idx[8192],
                     )
 
         # Llama 3.1 405B TP8 shape tests (matching tuning configs)
@@ -589,9 +591,9 @@ def run_matmul_sm100_block_scaled_fp4_suite[
                 num_clc_pipeline_stages=0,
             ](
                 ctx,
-                Idx(Int(128)),
-                Idx[n_val](),
-                Idx[16384](),
+                Int(128),
+                Idx[n_val],
+                Idx[16384],
             )
 
         # cluster(2,1,1), accum_stages=2, N=7168, K=16384
@@ -613,9 +615,9 @@ def run_matmul_sm100_block_scaled_fp4_suite[
             num_clc_pipeline_stages=0,
         ](
             ctx,
-            Idx(Int(128)),
-            Idx[7168](),
-            Idx[16384](),
+            Int(128),
+            Idx[7168],
+            Idx[16384],
         )
 
         # cluster(2,1,1), accum_stages=4, N=16384
@@ -638,9 +640,9 @@ def run_matmul_sm100_block_scaled_fp4_suite[
                 num_clc_pipeline_stages=0,
             ](
                 ctx,
-                Idx(Int(128)),
-                Idx[16384](),
-                Idx[k_val](),
+                Int(128),
+                Idx[16384],
+                Idx[k_val],
             )
 
         # Epilogue fusion tests: verify TileWriter's elementwise_lambda_fn path.
@@ -666,9 +668,9 @@ def run_matmul_sm100_block_scaled_fp4_suite[
                     normal_epilogue=True,
                 ](
                     ctx,
-                    Idx(Int(16)),
-                    Idx(1024),
-                    Idx[1024 + 32](),
+                    Int(16),
+                    Idx[1024],
+                    Idx[1024 + 32],
                 )
 
         # swapAB + epilogue fusion
@@ -690,9 +692,9 @@ def run_matmul_sm100_block_scaled_fp4_suite[
             normal_epilogue=True,
         ](
             ctx,
-            Idx(Int(16)),
-            Idx(1024),
-            Idx[1024 + 32](),
+            Int(16),
+            Idx[1024],
+            Idx[1024 + 32],
         )
 
 

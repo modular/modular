@@ -61,8 +61,13 @@ def test_parallel_relu(
         ],
     ) as graph:
         inputs = [inp.tensor for inp in graph.inputs]
-        results = ops.parallel(inputs, lambda x: ops.relu(x))
-        assert isinstance(results, list)
+        bundles = ops.parallel(
+            [inputs],
+            lambda x: ops.relu(x),
+            result_types=[[t.type for t in inputs]],
+        )
+        assert isinstance(bundles, list)
+        [results] = bundles
         graph.output(*[r.to(DeviceRef.CPU()) for r in results])
 
     compiled = session.load(graph)
@@ -107,8 +112,13 @@ def test_parallel_relu_symbolic_dim(
         ],
     ) as graph:
         inputs = [inp.tensor for inp in graph.inputs]
-        results = ops.parallel(inputs, lambda x: ops.relu(x))
-        assert isinstance(results, list)
+        bundles = ops.parallel(
+            [inputs],
+            lambda x: ops.relu(x),
+            result_types=[[t.type for t in inputs]],
+        )
+        assert isinstance(bundles, list)
+        [results] = bundles
         graph.output(*[r.to(DeviceRef.CPU()) for r in results])
 
     compiled = session.load(graph)

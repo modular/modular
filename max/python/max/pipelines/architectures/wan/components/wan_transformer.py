@@ -40,6 +40,7 @@ from ..wan_transformer import (
     WanTransformerPostProcess,
     WanTransformerPreProcess,
 )
+from ..weight_adapters import adapt_wan_fp8_weights
 
 logger = logging.getLogger("max.pipelines")
 
@@ -53,8 +54,13 @@ class WanTransformer(CompiledComponent):
     Supports MoE (dual expert) by compiling both transformers on device.
     """
 
-    # Diffusers pads to 512 but trims embeddings to 226 for cross-attn.
-    embed_seq_len: int = 226
+    # Wan-AI's reference implementation feeds 512-length text-encoder
+    # context to cross-attention. See:
+    # - diffusers WanPipeline.__call__ default:
+    #   https://github.com/huggingface/diffusers/blob/v0.38.0/src/diffusers/pipelines/wan/pipeline_wan.py#L403
+    # - cache-dit hardcoded 512:
+    #   https://github.com/vipshop/cache-dit/blob/v1.3.9/src/cache_dit/distributed/transformers/wan.py#L80
+    embed_seq_len: int = 512
 
     # Default resolution for block graph compilation (height, width, frames).
     default_resolution: tuple[int, int, int] = (720, 1280, 81)
@@ -93,10 +99,16 @@ class WanTransformer(CompiledComponent):
         self._post_graph: Graph | None = None
         self._cfg_unpack_model: Any = None
 
-        # Load and remap weights.
+        # Load and remap weights. FP8 (Comfy-Org ``fp8_scaled``) checkpoints
+        # use native Wan-AI naming with per-tensor weight/input scales and a
+        # dedicated adapter; the bfloat16 path uses the diffusers remap.
+        self._fp8 = self.config.quant_config is not None
         paths = config_entry.resolved_weight_paths()
         weights = load_weights(paths)
-        state_dict = _remap_state_dict(weights, target_dtype=DType.bfloat16)
+        if self._fp8:
+            state_dict = adapt_wan_fp8_weights(weights)
+        else:
+            state_dict = _remap_state_dict(weights, target_dtype=DType.bfloat16)
 
         # MoE: load secondary transformer weights.
         state_dict_2 = self._load_moe_weights(manifest)
@@ -124,7 +136,12 @@ class WanTransformer(CompiledComponent):
         config_entry_2 = manifest["transformer_2"]
         paths_2 = config_entry_2.resolved_weight_paths()
         weights_2 = load_weights(paths_2)
-        state_dict_2 = _remap_state_dict(weights_2, target_dtype=DType.bfloat16)
+        if self._fp8:
+            state_dict_2 = adapt_wan_fp8_weights(weights_2)
+        else:
+            state_dict_2 = _remap_state_dict(
+                weights_2, target_dtype=DType.bfloat16
+            )
 
         return state_dict_2
 
@@ -183,6 +200,7 @@ class WanTransformer(CompiledComponent):
                         added_kv_proj_dim=self.config.added_kv_proj_dim,
                         dtype=dtype,
                         device=dev_ref,
+                        quant_config=self.config.quant_config,
                     )
                     for _ in range(self.config.num_layers)
                 ]
@@ -211,7 +229,7 @@ class WanTransformer(CompiledComponent):
             # primary/secondary compiles also skips the Python-side
             # traversal of the 40-layer combined block graph.
             if self._pre_graph is None:
-                self._graphs_module = Graph.empty_module()
+                self._graphs_module = Module()
                 # Pre-processor graph. Latents and timestep are pinned to
                 # B=1 (the executor enforces single-prompt batches) so
                 # that the pre module can ``ops.broadcast_to`` them up to
@@ -220,12 +238,25 @@ class WanTransformer(CompiledComponent):
                 #   * non-CFG (text emb is also B=1; broadcast is identity)
                 #   * batched CFG (text emb is B=2; broadcast expands
                 #     without a separate pack graph).
+                # I2V models concatenate a VAE-encoded conditioning latent
+                # (in_channels - out_channels channels) onto the noise latent
+                # inside the pre module, so the noise input carries
+                # out_channels and a 4th i2v_condition input supplies the
+                # rest. T2V (in_channels == out_channels) has no condition.
+                cond_channels = (
+                    self.config.in_channels - self.config.out_channels
+                )
+                latent_in_channels = (
+                    self.config.out_channels
+                    if cond_channels > 0
+                    else self.config.in_channels
+                )
                 pre_input_types = [
                     TensorType(
                         DType.float32,
                         [
                             1,
-                            self.config.in_channels,
+                            latent_in_channels,
                             "frames",
                             "height",
                             "width",
@@ -239,6 +270,24 @@ class WanTransformer(CompiledComponent):
                         device=dev,
                     ),
                 ]
+                if cond_channels > 0:
+                    # The condition is concatenated onto the noise latent
+                    # *after* it is broadcast to the text embedding's batch
+                    # axis, so the condition shares the same symbolic
+                    # ``"batch"`` dim (1 for the sequential I2V path).
+                    pre_input_types.append(
+                        TensorType(
+                            dtype,
+                            [
+                                "batch",
+                                cond_channels,
+                                "frames",
+                                "height",
+                                "width",
+                            ],
+                            device=dev,
+                        )
+                    )
                 with Graph(
                     "wan_pre",
                     input_types=pre_input_types,
@@ -350,20 +399,24 @@ class WanTransformer(CompiledComponent):
 
             # Load all three weight-bearing Models in one parallel
             # compile pass. The combined registry covers every GraphOp in
-            # the shared module; ``load_all`` returns one Model per
-            # GraphOp in MEF (insertion) order.
+            # the shared module; ``load_all`` returns a dict keyed by
+            # each graph's sym_name.
             combined_registry: dict[str, Any] = {
                 **pre_module.state_dict(),
                 **block_sequence.state_dict(),
                 **post_module.state_dict(),
             }
-            assert self._pre_graph is not None
+            assert self._graphs_module is not None
             with Tracer("dit_compile_load_all"):
-                pre_model, combined_blocks_model, post_model = (
-                    self._session.load_all(
-                        self._pre_graph, weights_registry=combined_registry
-                    )
+                models = self._session.load_all(
+                    self._graphs_module, weights_registry=combined_registry
                 )
+                assert self._pre_graph is not None
+                assert self._blocks_graph is not None
+                assert self._post_graph is not None
+                pre_model = models[self._pre_graph.name]
+                combined_blocks_model = models[self._blocks_graph.name]
+                post_model = models[self._post_graph.name]
             self._model = BlockLevelModel(
                 pre_model,
                 post_model,

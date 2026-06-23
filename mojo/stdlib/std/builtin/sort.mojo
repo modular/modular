@@ -20,6 +20,7 @@ from std.math import ceil
 from std.sys import bit_width_of
 from std.bit import count_leading_zeros
 from std.memory import Span
+from std.memory.alloc import alloc, dealloc, Layout
 
 # ===-----------------------------------------------------------------------===#
 # sort
@@ -37,7 +38,7 @@ def _insertion_sort[
     cmp_fn: def(T, T) capturing[_] -> Bool,
 ](span: Span[T, origin]):
     """Sort the array[start:end] slice"""
-    var array = span.unsafe_ptr().as_any_origin()
+    var array = span.unsafe_ptr().as_unsafe_any_origin()
     var size = len(span)
 
     for i in range(1, size):
@@ -54,7 +55,7 @@ def _insertion_sort[
         (array + j).init_pointee_move(value^)
 
 
-# put everything thats "<" to the left of pivot
+# put everything that's "<" to the left of pivot
 @always_inline
 def _quicksort_partition_right[
     T: Copyable,
@@ -83,7 +84,7 @@ def _quicksort_partition_right[
         right -= 1
 
 
-# put everything thats "<=" to the left of pivot
+# put everything that's "<=" to the left of pivot
 @always_inline
 def _quicksort_partition_left[
     T: Copyable,
@@ -363,10 +364,11 @@ def _stable_sort[
     //,
     cmp_fn: def(T, T) capturing[_] -> Bool,
 ](span: Span[T, origin]):
-    var temp_buff = alloc[T](len(span))
-    var temp_buff_span = Span(ptr=temp_buff, length=len(span))
+    var layout = Layout[T](count=len(span))
+    var temp_buff = alloc(layout)
+    var temp_buff_span = temp_buff.unsafe_span()
     _stable_sort_impl[cmp_fn](span, temp_buff_span)
-    temp_buff.free()
+    dealloc(temp_buff^)
 
 
 # ===-----------------------------------------------------------------------===#

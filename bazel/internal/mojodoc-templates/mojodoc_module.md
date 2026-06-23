@@ -97,7 +97,7 @@ description: {% if decl.summary
         {%- for trait in param.traits -%}
             {# Trait names should never contain backticks, so no double backticks here. #}
             {%- if trait.path -%}
-                [`{{ trait.type }}`]({{ api_path }}{{ trait.path }})
+                [`{{ trait.type }}`]({{ api_href(trait.path) }})
             {%- else -%}
                 `{{ trait.type }}`
             {%- endif -%}
@@ -105,7 +105,7 @@ description: {% if decl.summary
         {%- endfor -%}
     {%- else -%}
         {%- if param.path -%}
-            [``{{ param.type | pad_backticks }}``]({{ api_path }}{{ param.path }})
+            [``{{ param.type | pad_backticks }}``]({{ api_href(param.path) }})
         {%- else -%}
             ``{{ param.type | pad_backticks }}``
         {%- endif -%}

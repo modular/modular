@@ -90,7 +90,7 @@ def gemv_tma_kernel[
         UnsafePointer[
             Scalar[dtype],
             address_space=AddressSpace.SHARED,
-            ExternalOrigin[mut=True],
+            UntrackedOrigin[mut=True],
         ]
     ](
         external_memory[
@@ -112,24 +112,22 @@ def gemv_tma_kernel[
     var a_smem = LayoutTensorIter[
         dtype,
         a_smem_layout,
-        MutAnyOrigin,
         address_space=AddressSpace.SHARED,
         alignment=128,
         circular=False,
     ](
-        a_smem_base,
+        a_smem_base.as_unsafe_any_origin(),
         a_size * NUM_PIPELINE_STAGES,
     )
 
     var b_smem = LayoutTensorIter[
         dtype,
         b_smem_layout,
-        MutAnyOrigin,
         address_space=AddressSpace.SHARED,
         alignment=128,
         circular=False,
     ](
-        b_smem_base,
+        b_smem_base.as_unsafe_any_origin(),
         b_size * NUM_PIPELINE_STAGES,
     )
 
@@ -284,7 +282,7 @@ def gemv_tma[
         NUM_PIPELINE_STAGES,
     ]
 
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         tma_desc_a,
         tma_desc_b,
         c,
@@ -340,9 +338,9 @@ def test_gemv_tma[
     var c_device = ctx.enqueue_create_buffer[dtype](c_size)
     var c_device_ref = ctx.enqueue_create_buffer[dtype](c_size)
 
-    var a_tt = TileTensor(a_device, row_major(a_shape)).as_any_origin()
-    var b_tt = TileTensor(b_device, row_major(b_shape)).as_any_origin()
-    var c_tt = TileTensor(c_device, row_major(c_shape)).as_any_origin()
+    var a_tt = TileTensor(a_device, row_major(a_shape)).as_unsafe_any_origin()
+    var b_tt = TileTensor(b_device, row_major(b_shape)).as_unsafe_any_origin()
+    var c_tt = TileTensor(c_device, row_major(c_shape)).as_unsafe_any_origin()
 
     ctx.enqueue_copy(a_device, a_host_ptr)
     ctx.enqueue_copy(b_device, b_host_ptr)
@@ -404,7 +402,7 @@ def test_gemv_tma[
         )
     else:
         # Compare with vendor BLAS for correctness.
-        var b_2d_shape = Coord(Idx(K), Idx[1]())
+        var b_2d_shape = Coord(K, Idx[1])
         var b_2d = TileTensor(b_device, row_major(b_2d_shape))
         var c_ref_tt = TileTensor(c_device_ref, row_major(c_shape))
         vendor_blas.matmul(
@@ -436,15 +434,15 @@ def main() raises:
     with DeviceContext() as ctx:
         var benchmark = is_benchmark()
         test_gemv_tma[DType.bfloat16](
-            ctx, Idx(256), Idx[1](), Idx[256](), benchmark=benchmark
+            ctx, Idx[256], Idx[1], Idx[256], benchmark=benchmark
         )
         test_gemv_tma[DType.bfloat16](
-            ctx, Idx(4096), Idx[1](), Idx[4096](), benchmark=benchmark
+            ctx, Idx[4096], Idx[1], Idx[4096], benchmark=benchmark
         )
 
         test_gemv_tma[DType.float32](
-            ctx, Idx(256), Idx[1](), Idx[256](), benchmark=benchmark
+            ctx, Idx[256], Idx[1], Idx[256], benchmark=benchmark
         )
         test_gemv_tma[DType.float32](
-            ctx, Idx(4096), Idx[1](), Idx[4096](), benchmark=benchmark
+            ctx, Idx[4096], Idx[1], Idx[4096], benchmark=benchmark
         )

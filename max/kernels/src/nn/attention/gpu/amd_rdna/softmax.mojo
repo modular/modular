@@ -67,7 +67,7 @@ struct SoftmaxRDNA[
     comptime RowMaxTensorType = TileTensor[
         Self.dtype,
         type_of(Self.row_layout),
-        MutExternalOrigin,
+        MutUntrackedOrigin,
         address_space=AddressSpace.LOCAL,
     ]
     comptime RowSumTensorType = Self.RowMaxTensorType
@@ -81,7 +81,7 @@ struct SoftmaxRDNA[
     comptime ScoreFragTensorType = TileTensor[
         Self.dtype,
         type_of(Self.score_frag_layout),
-        MutExternalOrigin,
+        MutUntrackedOrigin,
         address_space=AddressSpace.LOCAL,
     ]
 

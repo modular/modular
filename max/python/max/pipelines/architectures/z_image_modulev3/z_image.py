@@ -23,7 +23,7 @@ from max.experimental.nn.norm import LayerNorm, RMSNorm
 from max.experimental.nn.sequential import ModuleList
 from max.experimental.tensor import Tensor
 from max.graph import TensorType
-from max.pipelines.lib.interfaces.cache_mixin import (
+from max.pipelines.diffusion.cache import (
     DenoisingCacheConfig,
     fbcache_conditional_execution,
 )

@@ -20,13 +20,12 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 from max.graph.weights import WeightsFormat
-from max.pipelines import PIPELINE_REGISTRY
 from max.pipelines.lib import (
     MAXModelConfig,
     PipelineConfig,
 )
-from max.pipelines.lib.hf_utils import HuggingFaceRepo
 from max.pipelines.lib.model_manifest import ModelManifest
+from max.pipelines.weights.hf_utils import HuggingFaceRepo
 from test_common.mocks import (
     mock_pipeline_config_resolve,
 )
@@ -90,18 +89,17 @@ class TestMAXModelConfigSubfolder:
         )
         with (
             patch("os.path.exists", return_value=True),
-            patch.object(
-                PIPELINE_REGISTRY,
-                "get_active_huggingface_config",
-                return_value=mock_auto_config,
-            ) as mock_get_config,
             patch(
-                "max.pipelines.lib.hf_utils.validate_hf_repo_access",
+                "max.pipelines.lib._hf_config.load_huggingface_config",
+                return_value=mock_auto_config,
+            ) as mock_load,
+            patch(
+                "max.pipelines.lib.config.model_config.validate_hf_repo_access",
             ),
         ):
             _ = model_config.huggingface_config
-            mock_get_config.assert_called_once()
-            repo_arg = mock_get_config.call_args.kwargs["huggingface_repo"]
+            mock_load.assert_called_once()
+            repo_arg = mock_load.call_args.args[0]
             assert repo_arg.subfolder == "vae"
 
     @mock_pipeline_config_resolve
@@ -111,18 +109,17 @@ class TestMAXModelConfigSubfolder:
         model_config = MAXModelConfig(model_path="test/model")
         with (
             patch("os.path.exists", return_value=True),
-            patch.object(
-                PIPELINE_REGISTRY,
-                "get_active_huggingface_config",
-                return_value=mock_auto_config,
-            ) as mock_get_config,
             patch(
-                "max.pipelines.lib.hf_utils.validate_hf_repo_access",
+                "max.pipelines.lib._hf_config.load_huggingface_config",
+                return_value=mock_auto_config,
+            ) as mock_load,
+            patch(
+                "max.pipelines.lib.config.model_config.validate_hf_repo_access",
             ),
         ):
             _ = model_config.huggingface_config
-            mock_get_config.assert_called_once()
-            repo_arg = mock_get_config.call_args.kwargs["huggingface_repo"]
+            mock_load.assert_called_once()
+            repo_arg = mock_load.call_args.args[0]
             assert repo_arg.subfolder is None
 
 
@@ -221,7 +218,7 @@ class TestMAXModelConfigSubfolderWeightPathPrefixing:
                 return_value=True,
             ),
             patch(
-                "max.pipelines.lib.hf_utils.validate_hf_repo_access",
+                "max.pipelines.lib.config.model_config.validate_hf_repo_access",
             ),
         ):
             config.resolve()
@@ -245,7 +242,7 @@ class TestMAXModelConfigSubfolderWeightPathPrefixing:
                 return_value=True,
             ),
             patch(
-                "max.pipelines.lib.hf_utils.validate_hf_repo_access",
+                "max.pipelines.lib.config.model_config.validate_hf_repo_access",
             ),
         ):
             config.resolve()
@@ -291,7 +288,7 @@ class TestMAXModelConfigSubfolderWeightPathPrefixing:
                 return_value=True,
             ),
             patch(
-                "max.pipelines.lib.hf_utils.validate_hf_repo_access",
+                "max.pipelines.lib.config.model_config.validate_hf_repo_access",
             ),
         ):
             config.resolve()

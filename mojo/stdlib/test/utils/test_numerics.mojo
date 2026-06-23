@@ -250,6 +250,23 @@ def test_isinf_float4_e2m1fn() raises:
     assert_false(isinf(Scalar[DType.float4_e2m1fn](Float32(-6.0))))
 
 
+def test_isinf_float8_e4m3fn() raises:
+    # E4M3FN has no Inf encoding (0x7F / 0xFF are NaN, not Inf).
+    assert_false(isinf(Scalar[DType.float8_e4m3fn](from_bits=UInt8(0x00))))
+    assert_false(isinf(Scalar[DType.float8_e4m3fn](from_bits=UInt8(0x7E))))
+    assert_false(isinf(Scalar[DType.float8_e4m3fn](from_bits=UInt8(0x7F))))
+    assert_false(isinf(Scalar[DType.float8_e4m3fn](from_bits=UInt8(0x80))))
+    assert_false(isinf(Scalar[DType.float8_e4m3fn](from_bits=UInt8(0xFF))))
+
+
+def test_isinf_float8_e8m0fnu() raises:
+    # E8M0FNU has no Inf encoding (0xFF is NaN, all others are finite).
+    assert_false(isinf(Scalar[DType.float8_e8m0fnu](from_bits=UInt8(0x00))))
+    assert_false(isinf(Scalar[DType.float8_e8m0fnu](from_bits=UInt8(0x7F))))
+    assert_false(isinf(Scalar[DType.float8_e8m0fnu](from_bits=UInt8(0xFE))))
+    assert_false(isinf(Scalar[DType.float8_e8m0fnu](from_bits=UInt8(0xFF))))
+
+
 def test_isfinite_float8_e3m4() raises:
     # Zero and other finite encodings.
     assert_true(isfinite(Scalar[DType.float8_e3m4](from_bits=UInt8(0x00))))

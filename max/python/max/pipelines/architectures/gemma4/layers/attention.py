@@ -100,6 +100,7 @@ class Gemma4Attention(Module, Shardable):
         self.has_bias = has_bias
         self.devices = devices
         self._sharding_strategy: ShardingStrategy | None = None
+        self.dtype = dtype
         self.scale = 1.0
         self.local_window_size = local_window_size
         self.qk_norm_eps = qk_norm_eps
@@ -116,15 +117,11 @@ class Gemma4Attention(Module, Shardable):
             self.kv_params.head_dim
         )  # MultiKVCacheParams sets head dim to either local or global
 
-        self.q_norm = Gemma4RMSNorm(
-            self.head_dim, DType.bfloat16, self.qk_norm_eps
-        )
-        self.k_norm = Gemma4RMSNorm(
-            self.head_dim, DType.bfloat16, self.qk_norm_eps
-        )
+        self.q_norm = Gemma4RMSNorm(self.head_dim, dtype, self.qk_norm_eps)
+        self.k_norm = Gemma4RMSNorm(self.head_dim, dtype, self.qk_norm_eps)
         self.v_norm = Gemma4RMSNorm(
             self.head_dim,
-            DType.bfloat16,
+            dtype,
             self.qk_norm_eps,
             with_weight=False,
         )
@@ -230,6 +227,7 @@ class Gemma4Attention(Module, Shardable):
             layer_idx,
             n_heads=self.n_heads,
             interleaved=rope.interleaved,
+            q_out_dtype=self.kv_params.dtype,
         )
         xq = xq.reshape((-1, self.n_heads, self.head_dim))
 
@@ -248,6 +246,7 @@ class Gemma4Attention(Module, Shardable):
             mask_variant=mask_variant,
             scale=self.scale,
             local_window_size=self.local_window_size if self.use_local else -1,
+            output_dtype=self.dtype,
         )
         attn_out = ops.reshape(attn_out, shape=[total_seq_len, -1])
         ret = self.o_proj(attn_out)
@@ -294,7 +293,8 @@ class Gemma4Attention(Module, Shardable):
 
         else:
             raise ValueError(
-                "Gemma3Attention only supports tensor parallel and replicate sharding strategy"
+                "Gemma3Attention only supports tensor parallel and replicate"
+                " sharding strategy"
             )
 
         self._sharding_strategy = sharding_strategy
@@ -312,7 +312,8 @@ class Gemma4Attention(Module, Shardable):
         """
         if not self.sharding_strategy:
             raise ValueError(
-                "Gemma3Attention layer cannot be sharded because no sharding strategy was provided."
+                "Gemma3Attention layer cannot be sharded because no sharding"
+                " strategy was provided."
             )
 
         # Get sharded weights
@@ -345,8 +346,10 @@ class Gemma4Attention(Module, Shardable):
                 num_devices=self.sharding_strategy.num_devices,
             )
 
-            # Create new attention instance with sharded configuration
-            sharded = Gemma4Attention(
+            # Create new attention instance with sharded configuration.
+            # Construct via type(self) so subclasses (e.g. a noncausal-mask
+            # decoder variant) shard into their own type rather than the base.
+            sharded = type(self)(
                 rope_global=self.rope_global,
                 rope_local=self.rope_local,
                 num_attention_heads=sharded_num_heads,

@@ -44,11 +44,11 @@ def bench_argsort[
 
     var device_input_tensor = TileTensor(
         device_input,
-        row_major(Idx(N)),
+        row_major(N),
     )
     var device_indices_tensor = TileTensor(
         device_indices,
-        row_major(Idx(N)),
+        row_major(N),
     )
 
     # Warm up and verify.

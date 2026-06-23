@@ -20,7 +20,7 @@ from std.python._cpython import PyObjectPtr
 
 
 @export
-def PyInit_mojo_module() -> PythonObject:
+def PyInit_mojo_module() abi("C") -> PythonObject:
     """Create a Python module with function bindings for `mojo_block_hasher`."""
     try:
         var b = PythonModuleBuilder("mojo_module")
@@ -43,9 +43,14 @@ struct PyArrayObject[dtype: DType](ImplicitlyCopyable):
     See: https://numpy.org/doc/2.1/reference/c-api/types-and-structures.html#c.PyArrayObject
     """
 
+    @__allow_legacy_any_origin_fields
     var data: UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]
     var nd: Int
+
+    @__allow_legacy_any_origin_fields
     var dimensions: UnsafePointer[Int, MutAnyOrigin]
+
+    @__allow_legacy_any_origin_fields
     var strides: UnsafePointer[Int, MutAnyOrigin]
     var base: PyObjectPtr
     var descr: PyObjectPtr
@@ -101,7 +106,6 @@ def _mojo_block_hasher[
     return PythonObject(from_owned=result_py_list)
 
 
-@export
 def mojo_block_hasher(
     py_array_object: PythonObject,
     block_size_obj: PythonObject,

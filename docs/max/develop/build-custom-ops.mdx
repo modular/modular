@@ -27,7 +27,7 @@ Before you begin, you should have a basic understanding of MAX graphs, which
 are computation graphs written in Python. These graphs are the foundation for
 high-performance AI models that run on MAX. To learn more, see [build a model
 graph with Module](/max/develop/modules). It also helps to know the [Mojo
-language basics](https://www.mojolang.org/docs/manual/basics).
+language basics](https://mojolang.org/docs/manual/basics).
 
 ## Requirements
 
@@ -95,7 +95,7 @@ available.
 
 Take a look at the custom op defined in
 [`custom_ops/kernels/add_one.mojo`](https://github.com/modular/modular/tree/main/max/examples/custom_ops/kernels/add_one.mojo).
-You'll see a Mojo [struct](https://www.mojolang.org/docs/manual/structs) called
+You'll see a Mojo [struct](https://mojolang.org/docs/manual/structs) called
 `AddOne` with an `execute()` function. Every custom op must be defined with this
 general format, as described below.
 
@@ -114,7 +114,7 @@ struct AddOne:
     ](
         output: OutputTensor,
         x: InputTensor[dtype=output.dtype, rank=output.rank, ...],
-        ctx: DeviceContextPtr,
+        ctx: DeviceContext,
     ) raises:
         # See below for the rest
 ```
@@ -131,17 +131,17 @@ as the first runtime argument; the graph compiler uses this order to identify
 the op's hardware target and output slots:
 
 - There's one [compile-time
-parameter](https://www.mojolang.org/docs/manual/parameters/#parameterized-functions),
+parameter](https://mojolang.org/docs/manual/parameters/#parameterized-functions),
 `target`, which tells the function what kind of hardware it's being compiled for
 (either `"cpu"` or `"gpu"`; we'll use this in the next example).
 
 - The runtime arguments include the op's inputs and outputs, which take the form
 of
-[`InputTensor`](/max/api/kernels/extensibility/tensor/managed_tensor_slice/#inputtensor)
+[`InputTensor`](/max/api/kernels/extensibility/managed_tensor_slice/#inputtensor)
 and
-[`OutputTensor`](/max/api/kernels/extensibility/tensor/managed_tensor_slice/#outputtensor),
+[`OutputTensor`](/max/api/kernels/extensibility/managed_tensor_slice/#outputtensor),
 respectively. These are specialized versions of the
-[`ManagedTensorSlice`](/max/api/kernels/extensibility/tensor/managed_tensor_slice/ManagedTensorSlice)
+[`ManagedTensorSlice`](/max/api/kernels/extensibility/managed_tensor_slice/ManagedTensorSlice)
 type, which represents a tensor of a specific rank and datatype whose memory is
 managed outside of the operation.
 
@@ -158,20 +158,20 @@ struct AddOne:
     ](
         output: OutputTensor,
         x: InputTensor[dtype=output.dtype, rank=output.rank, ...],
-        ctx: DeviceContextPtr,
+        ctx: DeviceContext,
     ) raises:
         @parameter
         @always_inline
         def elementwise_add_one[
             width: Int
-        ](idx: IndexList[x.rank]) -> SIMD[x.dtype, width]:
+        ](idx: Coord) -> SIMD[x.dtype, width]:
             return x.load[width](idx) + 1
 
         foreach[elementwise_add_one, target=target](output, ctx)
 ```
 
 We call `elementwise_add_one()` using
-[`foreach()`](/max/api/kernels/extensibility/tensor/managed_tensor_slice/foreach/),
+[`foreach()`](/max/api/kernels/extensibility/managed_tensor_slice/foreach/),
 which distributes an elementwise computation in parallel across all elements in
 the output tensor. At compile time, `foreach()` optimizes the computation for
 the hardware its running on, optimally distributing parallel workloads to make
@@ -181,6 +181,18 @@ code runs with optimal performance on CPU or GPU with no changes required.
 Also notice that we pass the `target` parameter to the `foreach()` function,
 which allows it to optimize for the hardware device. (We'll do this ourselves in
 the [next example](#example-2-write-device-specific-kernels).)
+
+### Declare the output shape
+
+If you don't annotate output shapes manually in the Python graph, you must tell
+the compiler how to infer them by registering a shape function with
+[`@compiler.register_shape_function()`](/max/api/mojo-decorators/compiler-register):
+
+```mojo title="kernels/add_one.mojo"
+@compiler.register_shape_function("add_one")
+def add_one_shape(x: InputTensor) -> IndexList[x.rank]:
+    return x.shape()
+```
 
 ### Add the custom op to a Python graph
 
@@ -243,7 +255,8 @@ session = InferenceSession(
     devices=[device],
 )
 
-model = session.load(graph)
+compiled = session.compile(graph)
+model = session.init(compiled)
 ```
 
 Finally, we generate some random data and pass it as input:
@@ -277,7 +290,7 @@ pixi run python addition.py
 
 ## Example 2: Write device-specific kernels
 
-[`foreach()`](/max/api/kernels/extensibility/tensor/managed_tensor_slice/foreach/)
+[`foreach()`](/max/api/kernels/extensibility/managed_tensor_slice/foreach/)
 is a device-independent abstraction designed for elementwise computation: it
 handles hardware dispatch and achieves excellent performance for that class of
 operation. When you need direct control over thread dispatch, block sizes, or
@@ -285,7 +298,7 @@ GPU-specific memory patterns, you write separate code paths for CPU and GPU
 using Mojo's `comptime if` and the GPU thread model.
 
 The `add_one` custom op above uses
-[`foreach()`](/max/api/kernels/extensibility/tensor/managed_tensor_slice/foreach/)
+[`foreach()`](/max/api/kernels/extensibility/managed_tensor_slice/foreach/)
 to run our custom op computation. This function is a device-independent
 abstraction to perform calculations on each element of a tensor, and it offers
 great out-of-the-box performance for a range of CPUs and GPUs. However, there
@@ -313,7 +326,7 @@ struct VectorAddition:
         output: OutputTensor[rank=1, ...],
         lhs: InputTensor[dtype=output.dtype, rank=output.rank, ...],
         rhs: InputTensor[dtype=output.dtype, rank=output.rank, ...],
-        ctx: DeviceContextPtr,
+        ctx: DeviceContext,
     ) raises:
         comptime if target == "cpu":
             _vector_addition_cpu(output, lhs, rhs, ctx)
@@ -324,7 +337,7 @@ struct VectorAddition:
 ```
 
 Using the
-[`comptime if`](https://www.mojolang.org/docs/manual/metaprogramming/comptime-evaluation/#comptime-if)
+[`comptime if`](https://mojolang.org/docs/manual/metaprogramming/comptime-evaluation/#comptime-if)
 statement, Mojo checks at compile time if the target device has a GPU or not. If
 it does, it uses the `_vector_addition_gpu()` function; otherwise, it uses
 `_vector_addition_cpu()`. Compile-time specialization like this is a unique and
@@ -338,22 +351,20 @@ def _vector_addition_gpu(
     output: ManagedTensorSlice[mut=True, ...],
     lhs: ManagedTensorSlice[dtype=output.dtype, rank=output.rank, ...],
     rhs: ManagedTensorSlice[dtype=output.dtype, rank=output.rank, ...],
-    ctx: DeviceContextPtr,
+    ctx: DeviceContext,
 ) raises:
     alias BLOCK_SIZE = 16
-    var gpu_ctx = ctx.get_device_context()
     var vector_length = output.dim_size(0)
 
     @parameter
     def vector_addition_gpu_kernel(length: Int):
         var tid = block_dim.x * block_idx.x + thread_idx.x
         if tid < length:
-            var idx = IndexList[output.rank](tid)
-            var result = lhs.load[1](idx) + rhs.load[1](idx)
+            var result = lhs[tid] + rhs[tid]
             output.store[1](idx, result)
 
     var num_blocks = ceildiv(vector_length, BLOCK_SIZE)
-    gpu_ctx.enqueue_function_experimental[vector_addition_gpu_kernel](
+    ctx.enqueue_function[vector_addition_gpu_kernel](
         vector_length, grid_dim=num_blocks, block_dim=BLOCK_SIZE
     )
 ```

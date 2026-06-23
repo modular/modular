@@ -13,6 +13,7 @@
 # Unit tests for model_worker
 from __future__ import annotations
 
+import asyncio
 import time
 from dataclasses import dataclass
 from typing import Any
@@ -20,27 +21,31 @@ from unittest.mock import Mock
 
 import pytest
 from fastapi import FastAPI
-from max.interfaces import (
+from max.pipelines.context import (
     GenerationStatus,
-    Pipeline,
-    PipelineTask,
-    PipelineTokenizer,
-    RequestID,
-    TextGenerationInputs,
+    TextContext,
     TextGenerationOutput,
 )
-from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     PIPELINE_REGISTRY,
     MAXModelConfig,
     PipelineConfig,
     PipelineRuntimeConfig,
 )
+from max.pipelines.modeling.types import (
+    Pipeline,
+    PipelineTask,
+    PipelineTokenizer,
+    RequestID,
+    TextGenerationInputs,
+)
 from max.serve import api_server
 from max.serve.config import Settings
 from max.serve.pipelines.echo_gen import EchoTokenGenerator
 from max.serve.pipelines.model_worker import start_model_worker
+from max.serve.process_control import SubprocessExit
 from max.serve.telemetry.metrics import NoopClient
+from max.serve.worker_interface._zmq_queue import generate_zmq_ipc_path
 from max.serve.worker_interface.zmq_interface import ZmqModelWorkerInterface
 
 
@@ -114,6 +119,7 @@ async def test_model_worker_propagates_exception(
                 PipelineTask.TEXT_GENERATION,
                 context_type=TextContext,
             ),
+            zmq_endpoint_base=generate_zmq_ipc_path(),
         ):
             raise ValueError("kaboom")
 
@@ -139,14 +145,15 @@ class MockInvalidTokenGenerator(
 async def test_model_worker_propagates_construction_exception(
     mock_pipeline_config: PipelineConfig,
 ) -> None:
-    """Tests raising in the model worker task."""
+    """Tests that a worker that crashes during construction surfaces to the parent.
+
+    The child's :py:class:`ValueError` is logged by the subprocess itself; the
+    parent only learns that the worker exited with a non-zero code (see
+    :py:class:`SubprocessExit`).
+    """
     settings = Settings()
 
-    # The MockTokenGenerator crashes the remote subprocess
-    # then ProcessMonitor checks throw TimeoutError here
-    with pytest.raises(
-        ValueError, match=MockInvalidTokenGenerator.ERROR_MESSAGE
-    ):
+    with pytest.raises(SubprocessExit):
         async with start_model_worker(
             MockInvalidTokenGenerator,
             mock_pipeline_config,
@@ -156,6 +163,7 @@ async def test_model_worker_propagates_construction_exception(
                 context_type=TextContext,
             ),
             metric_client=NoopClient(),
+            zmq_endpoint_base=generate_zmq_ipc_path(),
         ):
             pass
 
@@ -193,6 +201,7 @@ async def test_model_worker_start_timeout(
             model_worker_interface=ZmqModelWorkerInterface(
                 PipelineTask.TEXT_GENERATION, context_type=TextContext
             ),
+            zmq_endpoint_base=generate_zmq_ipc_path(),
         ):
             pass
 
@@ -228,12 +237,49 @@ async def test_lifespan_propagates_worker_exception(
         tokenizer=MockTokenizer(),
     )
 
-    # The MockTokenGenerator crashes the remote subprocess
-    # then ProcessMonitor checks throw TimeoutError here
-    with pytest.raises(ValueError, match="CRASH TEST DUMMY"):
+    # The child's ValueError is logged by the subprocess; the parent observes
+    # SubprocessExit (the production CLI catches this in
+    # serve_api_and_model_worker.py).
+    with pytest.raises(SubprocessExit):
         async with api_server.lifespan(
             FastAPI(),
             settings,
             serving_settings,
+            generate_zmq_ipc_path(),
         ):
             pass
+
+
+@pytest.mark.asyncio
+async def test_lifespan_startup_crash_skips_server(
+    mock_pipeline_config: PipelineConfig,
+) -> None:
+    """A worker that crashes on startup must not start the server.
+
+    This mirrors the production entrypoint, which enters ``lifespan`` and then
+    awaits ``server.serve()`` in the same task (uvicorn runs with
+    ``lifespan="off"``). When the model worker fails to come up, entering the
+    context manager raises directly, so the server body is never reached and
+    the worker exception propagates -- no self-SIGINT required.
+    """
+    settings = Settings()
+    serving_settings = api_server.ServingTokenGeneratorSettings(
+        model_factory=MockInvalidTokenGenerator,
+        pipeline_config=mock_pipeline_config,
+        tokenizer=MockTokenizer(),
+    )
+
+    server_started = False
+
+    with pytest.raises(SubprocessExit):
+        async with api_server.lifespan(
+            FastAPI(),
+            settings,
+            serving_settings,
+            generate_zmq_ipc_path(),
+        ):
+            # Stand-in for ``await server.serve()``.
+            server_started = True
+            await asyncio.Event().wait()
+
+    assert not server_started, "server must not start when the worker crashes"

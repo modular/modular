@@ -51,18 +51,14 @@ modular_py_test(
             "shared_mlp_impl.py",
         ],
     ),
-    args = [
-        "-n",
-        "auto",
-    ],
-    ignore_extra_deps = [
-        # Used for parallelization (-n auto above)
-        requirement("pytest-xdist"),
-    ],
     imports = ["."],
+    per_test_shard_count = {
+        "test_mlp.py": 20,
+        "test_conv.py": 8,
+    },
     per_test_tags = {
         "test_conv.py": ["skip-external-ci"],
-        "test_mlp.py": ["manual"],
+        "test_mlp.py": ["skip-external-ci"],
     },
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],  # FIXME: MOCO-2411
@@ -83,27 +79,46 @@ modular_py_test(
         requirement("torch"),
         requirement("hypothesis"),
         requirement("pytest-mock"),
-        requirement("pytest-xdist"),
     ],
 )
+
+_NN_LIGHT_GPU_TESTS = [
+    "test_async_host_func_gpu.py",
+    "test_completion_flag_gpu.py",
+    "test_host_func_gpu.py",
+    "test_moe_gpu.py",
+    "test_sleep_gpu.py",
+    "test_slice_gpu.py",
+    "test_stacked_moe_gpu.py",
+    "test_wait_host_value_gpu.py",
+]
+
+_NN_MEDIUM_GPU_TESTS = [
+    "test_linear_gpu.py",
+    "test_mlp_float8_gpu.py",
+]
 
 modular_py_test(
     name = "nn_gpu_tests",
     size = "large",
     srcs = glob(
         ["*_gpu.py"],
-        exclude = [
+        exclude = _NN_LIGHT_GPU_TESTS + _NN_MEDIUM_GPU_TESTS + [
             "*_distributed_gpu.py",
+            "bench_row_mean_of_squares_gpu.py",
             "test_conv_transpose_gpu.py",
+            "test_grouped_matmul_swiglu_nvfp4_gpu.py",
             "test_linear_fp8_amd_gpu.py",
             "test_lora_kernels_gpu.py",
             "test_mlp_fp4_gpu.py",
             "test_moe_nvfp4_gpu.py",
+            "test_mxfp4_fused_silu_scale_fusion_gpu.py",
             "test_sgmv_kernels_gpu.py",
+            "test_swiglu_nvfp4_graph_capture_mwe_gpu.py",
         ],
     ) + ["conftest.py"],
     exec_properties = {
-        "test.resources:gpu-memory": "3",
+        "test.resources:gpu-memory": "4",
     },
     gpu_constraints = ["//:has_gpu"] + select({
         "//:apple_gpu": ["@platforms//:incompatible"],
@@ -115,11 +130,15 @@ modular_py_test(
     ],
     deps = [
         ":shared_conv_impl",
+        "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
         "//max/python/max/nn",
+        "//max/python/max/pipelines/kv_cache",
+        "//max/python/max/pipelines/lib",
+        "//max/tests/integration/test_common:context_utils",
         "//max/tests/integration/test_common:graph_utils",
         "//max/tests/integration/test_common:numerics",
         requirement("llguidance"),
@@ -127,6 +146,87 @@ modular_py_test(
         requirement("torch"),
         requirement("triton"),
         requirement("hypothesis"),
+    ],
+)
+
+modular_py_test(
+    name = "nn_light_gpu_tests",
+    size = "large",
+    srcs = _NN_LIGHT_GPU_TESTS + ["conftest.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "1",
+    },
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2411
+    imports = ["."],
+    tags = [
+        "gpu",
+    ],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        requirement("numpy"),
+        requirement("torch"),
+        requirement("hypothesis"),
+    ],
+)
+
+modular_py_test(
+    name = "nn_medium_gpu_tests",
+    size = "large",
+    srcs = _NN_MEDIUM_GPU_TESTS + ["conftest.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2411
+    imports = ["."],
+    tags = [
+        "gpu",
+    ],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        requirement("numpy"),
+        requirement("torch"),
+        requirement("hypothesis"),
+    ],
+)
+
+modular_py_test(
+    name = "bench_row_mean_of_squares_gpu",
+    size = "large",
+    srcs = ["bench_row_mean_of_squares_gpu.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "4",
+    },
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    imports = ["."],
+    main = "bench_row_mean_of_squares_gpu.py",
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        requirement("torch"),
     ],
 )
 
@@ -242,6 +342,30 @@ modular_py_test(
 )
 
 modular_py_test(
+    name = "mxfp4_scale_fusion_tests",
+    size = "large",
+    srcs = [
+        "test_mxfp4_fused_silu_scale_fusion_gpu.py",
+    ],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    tags = [
+        "gpu",
+    ],
+    target_compatible_with = ["//:mi355_gpu"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        requirement("numpy"),
+        requirement("torch"),
+    ],
+)
+
+modular_py_test(
     name = "sgmv_tests",
     size = "large",
     srcs = [
@@ -340,6 +464,33 @@ modular_py_test(
         "//max/python/max/graph",
         "//max/python/max/nn",
         requirement("hypothesis"),
+        requirement("torch"),
+    ],
+)
+
+modular_py_test(
+    name = "grouped_matmul_swiglu_nvfp4_tests",
+    size = "large",
+    srcs = [
+        "conftest.py",
+        "test_grouped_matmul_swiglu_nvfp4_gpu.py",
+        "test_swiglu_nvfp4_graph_capture_mwe_gpu.py",
+    ],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    tags = [
+        "gpu",
+    ],
+    target_compatible_with = ["//:b200_gpu"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        requirement("hypothesis"),
+        requirement("numpy"),
         requirement("torch"),
     ],
 )

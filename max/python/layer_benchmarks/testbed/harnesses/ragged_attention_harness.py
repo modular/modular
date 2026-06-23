@@ -30,10 +30,10 @@ from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef
-from max.interfaces import RequestID, TextGenerationContext, TokenBuffer
-from max.kv_cache import PagedKVCacheManager
 from max.nn.kv_cache import KVCacheParams
-from max.pipelines.core import TextContext
+from max.pipelines.context import TextContext, TokenBuffer
+from max.pipelines.kv_cache import PagedKVCacheManager
+from max.pipelines.modeling.types import RequestID
 from typing_extensions import TypeVar
 
 from testbed.harness import CompiledLayerBundle, LayerTestHarness
@@ -76,7 +76,7 @@ class RaggedAttentionHarness(
     LayerTestHarness[
         AttentionStaticParamsT,
         AttentionDynamicParams,
-        list[TextGenerationContext],
+        list[TextContext],
     ]
 ):
     """ABC for single-GPU ragged attention harnesses.
@@ -135,11 +135,11 @@ class RaggedAttentionHarness(
         self,
         bundle: CompiledLayerBundle,
         dynamic_params: AttentionDynamicParams,
-    ) -> tuple[list[Buffer], list[TextGenerationContext]]:
+    ) -> tuple[list[Buffer], list[TextContext]]:
         device = bundle.device
         total_len = dynamic_params.ctx_len + dynamic_params.seq_len
 
-        batch: list[TextGenerationContext] = []
+        batch: list[TextContext] = []
         for _ in range(dynamic_params.batch_size):
             ctx = TextContext(
                 request_id=RequestID(),
@@ -153,9 +153,8 @@ class RaggedAttentionHarness(
             batch.append(ctx)
 
         kv_runtime = self._kv_manager.runtime_inputs(
-            cast(list[list[TextGenerationContext]], [batch])
-        ).inputs[0]
-        assert kv_runtime.attention_dispatch_metadata is not None
+            cast(list[list[TextContext]], [batch])
+        )
 
         total_tokens = dynamic_params.batch_size * dynamic_params.seq_len
         torch_input = torch.randn(
@@ -175,11 +174,7 @@ class RaggedAttentionHarness(
         execute_args: list[Buffer] = [
             input_tensor,
             row_offsets,
-            kv_runtime.kv_blocks.to(device),
-            kv_runtime.cache_lengths.to(device),
-            kv_runtime.lookup_table.to(device),
-            kv_runtime.max_lengths,
-            kv_runtime.attention_dispatch_metadata,
+            *kv_runtime.flatten(),
         ]
 
         return execute_args, batch
@@ -187,7 +182,7 @@ class RaggedAttentionHarness(
     def cleanup_inputs(
         self,
         bundle: CompiledLayerBundle,
-        context: list[TextGenerationContext],
+        context: list[TextContext],
     ) -> None:
         for ctx in context:
             self._kv_manager.release(ctx.request_id, replica_idx=0)

@@ -33,7 +33,9 @@ def copy_via_shared(
     var thread_id = thread_idx.x
     var mem_buff: UnsafePointer[
         Float32, MutAnyOrigin, address_space=AddressSpace.SHARED
-    ] = stack_allocation[16, Float32, address_space=AddressSpace.SHARED]()
+    ] = stack_allocation[
+        16, Float32, address_space=AddressSpace.SHARED
+    ]().as_unsafe_any_origin()
     var src_global: UnsafePointer[
         Float32, ImmutAnyOrigin, address_space=AddressSpace.GLOBAL
     ] = src.address_space_cast[AddressSpace.GLOBAL]()
@@ -63,7 +65,7 @@ def run_copy_via_shared(ctx: DeviceContext) raises:
     ctx.enqueue_copy(in_data_device, in_data)
     ctx.enqueue_copy(out_data_device, out_data)
 
-    ctx.enqueue_function_experimental[copy_via_shared](
+    ctx.enqueue_function[copy_via_shared](
         in_data_device,
         out_data_device,
         grid_dim=(1,),
@@ -163,7 +165,7 @@ def test_copy_with_src_size(ctx: DeviceContext) raises:
     comptime kernel = copy_with_src_size
     comptime src_size = 3 * size_of[DType.float32]()
 
-    ctx.enqueue_function_experimental[kernel](
+    ctx.enqueue_function[kernel](
         a_device,
         b_device,
         src_size,
@@ -212,7 +214,7 @@ def test_copy_with_non_zero_fill(ctx: DeviceContext) raises:
 
     comptime src_size = 3 * size_of[DType.bfloat16]()
 
-    ctx.enqueue_function_experimental[kernel](
+    ctx.enqueue_function[kernel](
         a_device,
         b_device,
         grid_dim=(1, 1, 1),

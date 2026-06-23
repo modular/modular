@@ -54,7 +54,6 @@ from layout import (
     IntTuple,
     Layout,
     LayoutTensor,
-    RuntimeInt,
     RuntimeLayout,
     UNKNOWN_VALUE,
 )
@@ -149,7 +148,7 @@ def load_AB[
     mma_shape: IndexList[3],
     cta_group: Int = 1,
 ](
-    expert_ids: UnsafePointer[Scalar[DType.int32], ImmutAnyOrigin],
+    expert_ids: UnsafePointer[mut=False, Scalar[DType.int32], _],
     a_tma_op: TMATensorTile[a_type, a_tile_rank, a_tile_shape, a_desc_shape],
     b_tma_op: TMATensorTile[b_type, b_tile_rank, b_tile_shape, b_desc_shape],
     a_smem_tiles: SMemTileArray2D[
@@ -159,10 +158,10 @@ def load_AB[
         b_type, b_dim0, b_dim1, b_num_tiles, b_swizzle_bytes
     ],
     mma_mbar: UnsafePointer[
-        SharedMemBarrier, MutAnyOrigin, address_space=AddressSpace.SHARED
+        mut=True, SharedMemBarrier, _, address_space=AddressSpace.SHARED
     ],
     tma_mbar: UnsafePointer[
-        SharedMemBarrier, MutAnyOrigin, address_space=AddressSpace.SHARED
+        mut=True, SharedMemBarrier, _, address_space=AddressSpace.SHARED
     ],
     producer_phase: PipelineState[num_pipeline_stages],
     peer_cta_coord: Tuple[Int, Int, Int],
@@ -260,7 +259,7 @@ def load_AB_cuda_core[
 ](
     a_gmem: LayoutTensor[a_type, a_gmem_layout, ImmutAnyOrigin],
     b_gmem: LayoutTensor[b_type, b_gmem_layout, ImmutAnyOrigin],
-    expert_ids: UnsafePointer[Scalar[DType.int32], ImmutAnyOrigin],
+    expert_ids: UnsafePointer[mut=False, Scalar[DType.int32], _],
     a_smem_tiles: SMemTileArray2D[
         a_type, a_dim0, a_dim1, a_num_tiles, a_swizzle_bytes
     ],
@@ -268,10 +267,10 @@ def load_AB_cuda_core[
         b_type, b_dim0, b_dim1, b_num_tiles, b_swizzle_bytes
     ],
     mma_mbar: UnsafePointer[
-        SharedMemBarrier, MutAnyOrigin, address_space=AddressSpace.SHARED
+        mut=True, SharedMemBarrier, _, address_space=AddressSpace.SHARED
     ],
     tma_mbar: UnsafePointer[
-        SharedMemBarrier, MutAnyOrigin, address_space=AddressSpace.SHARED
+        mut=True, SharedMemBarrier, _, address_space=AddressSpace.SHARED
     ],
     producer_phase: PipelineState[num_pipeline_stages],
     peer_cta_coord: Tuple[Int, Int, Int],
@@ -326,14 +325,10 @@ def load_AB_cuda_core[
     comptime a_sw = make_swizzle[a_type, a_swizzle]()
     var a_smem_ptr = a_smem_tiles[stage].ptr
     comptime a_rows_per_thread = BM // WARP_SIZE
-    comptime a_tv = tl_col_major(
-        Coord(Idx[WARP_SIZE](), Idx[a_rows_per_thread]())
-    )
+    comptime a_tv = tl_col_major(Coord(Idx[WARP_SIZE], Idx[a_rows_per_thread]))
 
     comptime for v in range(a_rows_per_thread):
-        var m = a_tv[linear_idx_type=DType.int32](
-            Coord(RuntimeInt[DType.int32](tid), Idx[v]())
-        )
+        var m = a_tv[linear_idx_type=DType.int32](Coord(Int32(tid), Idx[v]))
         var vec = a_gmem.load[K_actual, a_row_align](
             Int(a_row0 + m), Int(a_col0)
         )
@@ -348,14 +343,10 @@ def load_AB_cuda_core[
     comptime b_sw = make_swizzle[b_type, b_swizzle]()
     var b_smem_ptr = b_smem_tiles[stage].ptr
     comptime b_rows_per_thread = BN // WARP_SIZE
-    comptime b_tv = tl_col_major(
-        Coord(Idx[WARP_SIZE](), Idx[b_rows_per_thread]())
-    )
+    comptime b_tv = tl_col_major(Coord(Idx[WARP_SIZE], Idx[b_rows_per_thread]))
 
     comptime for v in range(b_rows_per_thread):
-        var n = b_tv[linear_idx_type=DType.int32](
-            Coord(RuntimeInt[DType.int32](tid), Idx[v]())
-        )
+        var n = b_tv[linear_idx_type=DType.int32](Coord(Int32(tid), Idx[v]))
         var vec = b_gmem.load[K_actual, b_row_align](
             Int(b_row0 + n), Int(b_col0)
         )
@@ -406,10 +397,10 @@ def consumer_main_loop[
         b_type, b_dim0, b_dim1, b_num_tiles, b_swizzle_bytes
     ],
     mma_mbar: UnsafePointer[
-        SharedMemBarrier, MutAnyOrigin, address_space=AddressSpace.SHARED
+        mut=True, SharedMemBarrier, _, address_space=AddressSpace.SHARED
     ],
     tma_mbar: UnsafePointer[
-        SharedMemBarrier, MutAnyOrigin, address_space=AddressSpace.SHARED
+        mut=True, SharedMemBarrier, _, address_space=AddressSpace.SHARED
     ],
     consumer_phase: PipelineState[pipeline_stages],
     mma_op: MmaOpSM100_SS[
@@ -497,9 +488,7 @@ def stsm_helper[
         comptime for k in range(stsmx4_lane_size // cast_width):
             var src = SIMD[vec_dtype, cast_width]()
             comptime for _j in range(cast_width):
-                src[_j] = rebind[Scalar[vec_dtype]](
-                    vec[i * stsmx4_lane_size + k * cast_width + _j]
-                )
+                src[_j] = vec[i * stsmx4_lane_size + k * cast_width + _j]
             var casted = src.cast[dst.dtype]()
             comptime for _j in range(cast_width):
                 v[k * cast_width + _j] = casted[_j]
@@ -531,16 +520,16 @@ def multi_stage_store_C[
     transpose_c: Bool = False,
 ](
     c_smem_base: UnsafePointer[
-        Scalar[c_type], MutAnyOrigin, address_space=AddressSpace.SHARED
+        mut=True, Scalar[c_type], _, address_space=AddressSpace.SHARED
     ],
     c_tma_op: TMATensorTile[c_type, c_tile_rank, c_tile_shape, c_desc_shape],
-    c_ptr: UnsafePointer[Scalar[c_type], MutAnyOrigin],
+    c_ptr: UnsafePointer[mut=True, Scalar[c_type], _],
     accum_pipeline_consumer_state: PipelineState[num_accum_pipeline_stages],
     accum_full_mbar: UnsafePointer[
-        SharedMemBarrier, MutAnyOrigin, address_space=AddressSpace.SHARED
+        mut=True, SharedMemBarrier, _, address_space=AddressSpace.SHARED
     ],
     accum_empty_mbar: UnsafePointer[
-        SharedMemBarrier, MutAnyOrigin, address_space=AddressSpace.SHARED
+        mut=True, SharedMemBarrier, _, address_space=AddressSpace.SHARED
     ],
     tmem_addr: UInt32,
     work_tile_coord: Tuple[Int, Int],
@@ -632,7 +621,6 @@ def multi_stage_store_C[
         var c_smem_tile = LayoutTensor[
             c_type,
             c_smem_layout,
-            MutAnyOrigin,
             address_space=AddressSpace.SHARED,
             alignment=128,
         ](c_smem_base + (stage % 2) * c_smem_tile_size)
@@ -860,9 +848,7 @@ def zero_output[
 @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)
-@__name(
-    t"grouped_matmul_sm100_{a_type}_{b_type}_{c_type}_em{expert_m}", mangle=True
-)
+@__name(t"grouped_matmul_sm100_{a_type}_{b_type}_{c_type}_em{expert_m}")
 def blackwell_tma_umma_warp_specialized_kernel[
     a_type: DType,
     b_type: DType,
@@ -896,7 +882,7 @@ def blackwell_tma_umma_warp_specialized_kernel[
     a_gmem_layout: Layout = Layout.row_major(1, 1),
     b_gmem_layout: Layout = Layout.row_major(1, 1),
 ](
-    num_active_experts: Int,
+    expert_usage_stats: UnsafePointer[Scalar[DType.uint32], ImmutAnyOrigin],
     a_tma_op: TMATensorTile[a_type, a_tile_rank, a_tile_shape, a_desc_shape],
     expert_ids: UnsafePointer[Scalar[DType.int32], ImmutAnyOrigin],
     b_tma_op: TMATensorTile[b_type, b_tile_rank, b_tile_shape, b_desc_shape],
@@ -1067,6 +1053,11 @@ def blackwell_tma_umma_warp_specialized_kernel[
         b_swizzle=b_swizzle,
         transpose_b=transpose_b,
     ]()
+
+    # num_active_experts is a TileScheduler loop bound, and the persistent grid
+    # is fixed at one CTA per SM, so it can be read from the device tensor
+    # rather than taken as a host scalar. (`[0]` = max tokens, unused here.)
+    var num_active_experts = Int(expert_usage_stats[1])
 
     comptime _offsets_layout = Layout.row_major(UNKNOWN_VALUE)
     b_offsets_tensor = LayoutTensor[
@@ -1342,12 +1333,13 @@ def grouped_matmul_sm100_persistent[
     a_offsets: TileTensor[
         mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
-    max_num_tokens_per_expert: Int,
     b: TileTensor[mut=False, b_type, address_space=AddressSpace.GENERIC, ...],
     expert_ids: TileTensor[
         mut=False, DType.int32, address_space=AddressSpace.GENERIC, ...
     ],
-    num_active_experts: Int,
+    expert_usage_stats: TileTensor[
+        mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
+    ],
     ctx: DeviceContext,
 ) raises:
     # swapAB by default
@@ -1373,12 +1365,12 @@ def grouped_matmul_sm100_persistent[
         b_swizzle=b_swizzle,
         elementwise_lambda_fn=elementwise_lambda_fn,
     ](
-        c.ptr.as_any_origin(),
-        b.ptr.as_any_origin(),  # weights (a after swapAB)
-        expert_ids.ptr.as_any_origin(),
-        a.ptr.as_any_origin(),  # activations (b after swapAB)
-        a_offsets.ptr.as_any_origin(),
-        num_active_experts,
+        c.ptr.as_unsafe_any_origin(),
+        b.ptr.as_unsafe_any_origin(),  # weights (a after swapAB)
+        expert_ids.ptr.as_unsafe_any_origin(),
+        a.ptr.as_unsafe_any_origin(),  # activations (b after swapAB)
+        a_offsets.ptr.as_unsafe_any_origin(),
+        expert_usage_stats.ptr.as_unsafe_any_origin(),
         Int(c.dim[0]()),
         ctx,
     )
@@ -1406,7 +1398,7 @@ def _grouped_matmul_sm100_persistent[
     expert_ids: UnsafePointer[Scalar[DType.int32], ImmutAnyOrigin],
     b_ptr: UnsafePointer[Scalar[b_type], ImmutAnyOrigin],
     b_offsets: UnsafePointer[Scalar[DType.uint32], ImmutAnyOrigin],
-    num_active_experts: Int,
+    expert_usage_stats: UnsafePointer[Scalar[DType.uint32], ImmutAnyOrigin],
     M_runtime: Int,
     ctx: DeviceContext,
 ) raises:
@@ -1631,8 +1623,8 @@ def _grouped_matmul_sm100_persistent[
 
     var mnk = StaticTuple[UInt32, 3](UInt32(M), UInt32(N), UInt32(K))
 
-    ctx.enqueue_function[kernel, kernel](
-        num_active_experts,
+    ctx.enqueue_function[kernel](
+        expert_usage_stats,
         a_tma_op,
         expert_ids,
         b_tma_op,

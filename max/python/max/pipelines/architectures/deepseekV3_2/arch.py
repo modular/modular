@@ -12,12 +12,12 @@
 # ===----------------------------------------------------------------------=== #
 
 from max.graph.weights import WeightsFormat
-from max.interfaces import PipelineTask
-from max.pipelines.core import TextContext
+from max.pipelines.context import TextContext
 from max.pipelines.lib import SupportedArchitecture, TextTokenizer
-from transformers import AutoConfig, DeepseekV3Config
+from max.pipelines.modeling.types import PipelineTask
 
 from . import weight_adapters
+from .memory_planner import DeepseekV3_2MemoryPlanner
 from .model import DeepseekV3_2Model
 from .model_config import DeepseekV3_2Config
 
@@ -43,37 +43,5 @@ deepseekV3_2_arch = SupportedArchitecture(
     supports_empty_batches=True,
     requires_max_batch_context_length=True,
     config=DeepseekV3_2Config,
+    memory_planner=DeepseekV3_2MemoryPlanner,
 )
-
-
-class DeepseekV32HFConfig(DeepseekV3Config):
-    """HuggingFace configuration class for DeepSeek-V3.2 models.
-
-    The ``deepseek_v32`` model type is not natively registered in transformers.
-    This subclass of ``DeepseekV3Config`` adds the V3.2-specific fields for
-    sparse attention (indexer) and registers itself so that
-    ``AutoConfig.from_pretrained`` can load DeepSeek-V3.2 repos.
-    """
-
-    model_type = "deepseek_v32"
-
-    def __init__(
-        self,
-        index_head_dim: int = 128,
-        index_n_heads: int = 64,
-        index_topk: int = 2048,
-        **kwargs,
-    ):
-        super().__init__(**kwargs)
-        self.index_head_dim = index_head_dim
-        self.index_n_heads = index_n_heads
-        self.index_topk = index_topk
-
-
-# Register the config with AutoConfig if not already registered.
-# This allows AutoConfig.from_pretrained() to work with deepseek_v32 models.
-try:
-    AutoConfig.register("deepseek_v32", DeepseekV32HFConfig)
-except ValueError:
-    # Already registered, which is fine.
-    pass

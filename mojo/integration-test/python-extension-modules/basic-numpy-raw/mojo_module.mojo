@@ -19,7 +19,7 @@ from std.python.bindings import PythonModuleBuilder
 
 
 @export
-def PyInit_mojo_module() -> PythonObject:
+def PyInit_mojo_module() abi("C") -> PythonObject:
     """Create a Python module with a function binding for `mojo_incr_np_array`.
     """
 
@@ -42,9 +42,14 @@ struct PyArrayObject[dtype: DType](ImplicitlyCopyable):
     See: https://numpy.org/doc/2.1/reference/c-api/types-and-structures.html#c.PyArrayObject
     """
 
+    @__allow_legacy_any_origin_fields
     var data: UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]
     var nd: Int
+
+    @__allow_legacy_any_origin_fields
     var dimensions: UnsafePointer[Int, MutAnyOrigin]
+
+    @__allow_legacy_any_origin_fields
     var strides: UnsafePointer[Int, MutAnyOrigin]
     var base: PyObjectPtr
     var descr: PyObjectPtr
@@ -55,8 +60,9 @@ struct PyArrayObject[dtype: DType](ImplicitlyCopyable):
     # ...
 
 
-@export
-def mojo_incr_np_array(py_array_object: PythonObject) raises -> PythonObject:
+def mojo_incr_np_array(
+    py_array_object: PythonObject,
+) raises -> PythonObject:
     comptime dtype = DType.int32
 
     print("Hello from mojo_incr_np_array")

@@ -16,7 +16,7 @@ from std.sys import size_of, has_amd_gpu_accelerator
 
 from comm.allgather import allgather
 from comm import MAX_GPUS, Signal
-from comm.sync import enable_p2p
+from comm.sync import enable_p2p, init_signal_buffer
 import comm.vendor.ccl as vendor_ccl
 from std.gpu.host import DeviceBuffer, DeviceContext, HostBuffer
 from layout import (
@@ -77,8 +77,13 @@ def all_gather_test[
                 size_of[Signal]() + temp_buffer_num_bytes
             )
         )
-        list_of_ctx[i].enqueue_memset[DType.uint8](signal_buffers[i], 0)
-        rank_sigs[i] = signal_buffers[i].unsafe_ptr().bitcast[Signal]()
+        init_signal_buffer(signal_buffers[i], list_of_ctx[i])
+        rank_sigs[i] = (
+            signal_buffers[i]
+            .unsafe_ptr()
+            .bitcast[Signal]()
+            .as_unsafe_any_origin()
+        )
 
         # Copy to device.
         list_of_ctx[i].enqueue_copy(in_bufs_list[i], host_buffer)
@@ -97,16 +102,16 @@ def all_gather_test[
 
     # Build TileTensor arrays directly.
     comptime InTileType = type_of(
-        TileTensor(in_bufs_list[0], row_major(Idx(lengths[0]))).as_immut()
+        TileTensor(in_bufs_list[0], row_major(lengths[0])).as_immut()
     )
     var tt_in_bufs = InlineArray[InTileType, ngpus](uninitialized=True)
     comptime for i in range(ngpus):
         tt_in_bufs[i] = TileTensor(
-            in_bufs_list[i], row_major(Idx(lengths[i]))
+            in_bufs_list[i], row_major(lengths[i])
         ).as_immut()
 
     comptime OutTileType = type_of(
-        TileTensor(out_bufs_list[0][0], row_major(Idx(lengths[0])))
+        TileTensor(out_bufs_list[0][0], row_major(lengths[0]))
     )
     var tt_out_bufs = InlineArray[OutTileType, ngpus * ngpus](
         uninitialized=True
@@ -116,7 +121,7 @@ def all_gather_test[
         comptime input_idx = i % ngpus
         tt_out_bufs[i] = TileTensor(
             out_bufs_list[device_idx][input_idx],
-            row_major(Idx(lengths[input_idx])),
+            row_major(lengths[input_idx]),
         )
 
     # Optional: vendor CCL (only if all lengths are equal; NCCL/RCCL requires uniform count).

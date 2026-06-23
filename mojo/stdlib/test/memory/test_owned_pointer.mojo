@@ -37,7 +37,7 @@ def test_from_unsafe_pointer_constructor() raises:
     var deleted = False
     var unsafe_ptr = alloc[ObservableDel[]](1)
     unsafe_ptr.init_pointee_move(
-        ObservableDel(UnsafePointer(to=deleted).as_any_origin())
+        ObservableDel(UnsafePointer(to=deleted).as_unsafe_any_origin())
     )
 
     var ptr = OwnedPointer(unsafe_from_raw_pointer=unsafe_ptr)
@@ -150,7 +150,9 @@ def test_write_to() raises:
 
 def test_write_repr_to() raises:
     check_write_to(
-        OwnedPointer(42), expected="OwnedPointer[Int](Int(42))", is_repr=True
+        OwnedPointer(42),
+        expected="OwnedPointer[SIMD[DType.int, 1]](Int(42))",
+        is_repr=True,
     )
     check_write_to(
         OwnedPointer("hello"),

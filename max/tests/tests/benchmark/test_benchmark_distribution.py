@@ -17,6 +17,7 @@ import numpy as np
 import pytest
 from max.benchmark.benchmark_shared.datasets.distribution import (
     BaseDistribution,
+    Burr12Distribution,
     ConstantDistribution,
     ContinuousDistribution,
     DiscreteDistribution,
@@ -277,12 +278,84 @@ def test_unrecognized_string_raises() -> None:
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# Burr12Distribution
+# ---------------------------------------------------------------------------
+
+
+def test_burr12_non_positive_c_raises() -> None:
+    with pytest.raises(ValueError, match="c"):
+        Burr12Distribution(c=0.0, d=1.0, scale=1.0)
+
+
+def test_burr12_non_positive_d_raises() -> None:
+    with pytest.raises(ValueError, match="d"):
+        Burr12Distribution(c=1.0, d=-0.5, scale=1.0)
+
+
+def test_burr12_non_positive_scale_raises() -> None:
+    with pytest.raises(ValueError, match="scale"):
+        Burr12Distribution(c=1.0, d=1.0, scale=0.0)
+
+
+def test_burr12_string() -> None:
+    dist = BaseDistribution.from_distribution_parameter(
+        "Burr12(2.389, 0.569, 214.8)"
+    )
+    assert isinstance(dist, Burr12Distribution)
+    assert dist.c == pytest.approx(2.389)
+    assert dist.d == pytest.approx(0.569)
+    assert dist.scale == pytest.approx(214.8)
+
+
+def test_burr12_string_lowercase() -> None:
+    dist = BaseDistribution.from_distribution_parameter("burr12(2, 1, 5)")
+    assert isinstance(dist, Burr12Distribution)
+
+
+def test_burr12_string_missing_param_raises() -> None:
+    with pytest.raises(ValueError, match="Burr12"):
+        BaseDistribution.from_distribution_parameter("Burr12(1, 2)")
+
+
+def test_burr12_sample_is_stable_for_tiny_u(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # For u below ~2^-53, (1 - u) rounds to 1.0 and the naive form
+    # (1 - u)**(-1/d) - 1.0 collapses to 0.0. The expm1/log1p form preserves
+    # precision: the true value is ~u/d for small u.
+    tiny_u = 1e-18
+    d = 0.569
+    monkeypatch.setattr(np.random, "uniform", lambda low=0.0, high=1.0: tiny_u)
+
+    # Sanity check: the naive form is broken at this u.
+    assert (1.0 - tiny_u) ** (-1.0 / d) - 1.0 == 0.0
+
+    dist = Burr12Distribution(c=2.389, d=d, scale=214.8)
+    sample = dist.sample_value()
+    assert sample > 0.0
+    # Expected: scale * (u/d)**(1/c). Within 1% of the analytic small-u limit.
+    expected = dist.scale * (tiny_u / d) ** (1.0 / dist.c)
+    assert abs(sample - expected) / expected < 0.01
+
+
+def test_burr12_samples_positive_and_match_median() -> None:
+    np.random.seed(0)
+    c, d, scale = 2.389, 0.569, 214.8
+    dist = Burr12Distribution(c=c, d=d, scale=scale)
+    samples = np.array([dist.sample_value() for _ in range(20_000)])
+    assert (samples > 0).all()
+    expected_median = scale * (2.0 ** (1.0 / d) - 1.0) ** (1.0 / c)
+    assert abs(np.median(samples) - expected_median) / expected_median < 0.05
+
+
 def test_continuous_distributions_are_continuous() -> None:
     for dist_cls in (
         NormalDistribution,
         UniformDistribution,
         GammaDistribution,
         LogNormalDistribution,
+        Burr12Distribution,
     ):
         assert issubclass(dist_cls, ContinuousDistribution)
 
