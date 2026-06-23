@@ -91,7 +91,20 @@ class Step3p5PretrainedConfig(PretrainedConfig):
     model_type = "step3p5"
 
     def __init__(self, **kwargs: object) -> None:
+        # >=5.4 requires len(layer_types) == num_hidden_layers, trim MTP tail.
+        # >=5.5 reads max_position_embeddings in __post_init__, so defer rope.
+        num_layers = kwargs.get("num_hidden_layers")
+        layer_types = kwargs.get("layer_types")
+        if isinstance(layer_types, list) and isinstance(num_layers, int):
+            kwargs["layer_types"] = layer_types[:num_layers]
+        deferred_rope = {
+            key: kwargs.pop(key)
+            for key in ("rope_scaling", "rope_parameters", "rope_theta")
+            if key in kwargs
+        }
         super().__init__(**kwargs)
+        for key, value in deferred_rope.items():
+            setattr(self, key, value)
         for k, v in kwargs.items():
             if not hasattr(self, k):
                 setattr(self, k, v)
