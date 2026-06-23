@@ -44,6 +44,14 @@ def test_stats() -> None:
     assert cpu.stats["free_memory"] <= cpu.stats["total_memory"]
 
 
+def test_max_single_alloc_size() -> None:
+    # Default implementation returns the device's total memory; should be a
+    # positive integer.
+    cpu = CPU()
+    assert isinstance(cpu.max_single_alloc_size, int)
+    assert cpu.max_single_alloc_size > 0
+
+
 def test_api() -> None:
     # We should be to check the API used for programming the device.
     # This is more relevant for accelerators, for the host device, expect "cpu".

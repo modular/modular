@@ -77,15 +77,15 @@ struct _RefIter[
 # ===-----------------------------------------------------------------------===#
 
 
-struct MoveOnlyList[T: Movable & ImplicitlyDestructible]:
+struct MoveOnlyList[T: Movable & ImplicitlyDeletable]:
     """A simple list that holds move-only types."""
 
-    var _data: UnsafePointer[Self.T, MutExternalOrigin]
+    var _data: UnsafePointer[Self.T, MutUntrackedOrigin]
     var _len: Int
     var _capacity: Int
 
     def __init__(out self):
-        self._data = UnsafePointer[Self.T, MutExternalOrigin].unsafe_dangling()
+        self._data = UnsafePointer[Self.T, MutUntrackedOrigin].unsafe_dangling()
         self._len = 0
         self._capacity = 0
 

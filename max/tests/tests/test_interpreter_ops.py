@@ -16,7 +16,7 @@ These tests verify that the Mojo op implementations produce correct results
 by comparing against numpy reference implementations.
 """
 
-from collections.abc import Sequence
+from collections.abc import Generator, Sequence
 from typing import Any
 
 import numpy as np
@@ -26,6 +26,12 @@ from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental import random as max_random
 from max.experimental import realization_context as rc
+from max.experimental.executor import (
+    CompilingExecutor,
+    InterpreterExecutor,
+    UnsupportedGraphError,
+    set_default_executor,
+)
 from max.experimental.functional import (
     reduce_scatter,
 )
@@ -40,6 +46,15 @@ from max.experimental.sharding import (
     Sharded,
 )
 from max.experimental.tensor import Tensor, realization_context
+
+
+@pytest.fixture(autouse=True)
+def _interpreter_only() -> Generator[None]:
+    """All tests in this module run on the interpreter -- it is the unit
+    under test.  Graphs it cannot execute raise UnsupportedGraphError."""
+    with set_default_executor(InterpreterExecutor()):
+        yield
+
 
 # DTypes to test for elementwise operations
 # Note: bfloat16 is excluded since NumPy doesn't support it natively
@@ -66,7 +81,7 @@ class TestBinaryElementwiseOps:
         a = Tensor.from_dlpack(a_np)
         b = Tensor.from_dlpack(b_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             c = a + b
@@ -85,7 +100,7 @@ class TestBinaryElementwiseOps:
         a = Tensor.from_dlpack(a_np)
         b = Tensor.from_dlpack(b_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             c = a - b
@@ -104,7 +119,7 @@ class TestBinaryElementwiseOps:
         a = Tensor.from_dlpack(a_np)
         b = Tensor.from_dlpack(b_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             c = a * b
@@ -123,7 +138,7 @@ class TestBinaryElementwiseOps:
         a = Tensor.from_dlpack(a_np)
         b = Tensor.from_dlpack(b_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             c = a / b
@@ -143,7 +158,7 @@ class TestBinaryElementwiseOps:
         a = Tensor.from_dlpack(a_np)
         b = Tensor.from_dlpack(b_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             c = a**b
@@ -162,7 +177,7 @@ class TestBinaryElementwiseOps:
         a = Tensor.from_dlpack(a_np)
         b = Tensor.from_dlpack(b_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             c = F.max(a, b)
@@ -181,7 +196,7 @@ class TestBinaryElementwiseOps:
         a = Tensor.from_dlpack(a_np)
         b = Tensor.from_dlpack(b_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             c = F.min(a, b)
@@ -202,7 +217,7 @@ class TestBinaryElementwiseOps:
         lower_bound = Tensor.from_dlpack(lower_bound_np)
         upper_bound = Tensor.from_dlpack(upper_bound_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             c = F.clamp(a, lower_bound, upper_bound)
@@ -224,7 +239,7 @@ class TestBinaryComparisonOps:
         a = Tensor.from_dlpack(a_np)
         b = Tensor.from_dlpack(b_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             c = a == b
@@ -244,7 +259,7 @@ class TestBinaryComparisonOps:
         a = Tensor.from_dlpack(a_np)
         b = Tensor.from_dlpack(b_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             c = a != b
@@ -264,7 +279,7 @@ class TestBinaryComparisonOps:
         a = Tensor.from_dlpack(a_np)
         b = Tensor.from_dlpack(b_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             c = a > b
@@ -284,7 +299,7 @@ class TestBinaryComparisonOps:
         a = Tensor.from_dlpack(a_np)
         b = Tensor.from_dlpack(b_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             c = a >= b
@@ -307,7 +322,7 @@ class TestUnaryElementwiseOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = -x
@@ -324,7 +339,7 @@ class TestUnaryElementwiseOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = abs(x)
@@ -342,7 +357,7 @@ class TestUnaryElementwiseOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = abs(x)
@@ -359,7 +374,7 @@ class TestUnaryElementwiseOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.exp(x)
@@ -378,7 +393,7 @@ class TestUnaryElementwiseOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.log(x)
@@ -397,7 +412,7 @@ class TestUnaryElementwiseOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.sqrt(x)
@@ -416,7 +431,7 @@ class TestUnaryElementwiseOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.tanh(x)
@@ -426,6 +441,11 @@ class TestUnaryElementwiseOps:
             np.from_dlpack(y), expected, decimal=5
         )
 
+    @pytest.mark.xfail(
+        raises=UnsupportedGraphError,
+        reason="mo.relu has no interpreter handler",
+        strict=True,
+    )
     @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
     def test_relu(self, dtype: DType) -> None:
         """Test relu op matches numpy maximum(x, 0)."""
@@ -435,7 +455,7 @@ class TestUnaryElementwiseOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.relu(x)
@@ -452,7 +472,7 @@ class TestUnaryElementwiseOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.sin(x)
@@ -471,7 +491,7 @@ class TestUnaryElementwiseOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.cos(x)
@@ -490,7 +510,7 @@ class TestUnaryElementwiseOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.floor(x)
@@ -524,7 +544,7 @@ class TestUnaryMixedOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.cast(out_dtype)
@@ -542,7 +562,7 @@ class TestUnaryMixedOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.is_nan(x)
@@ -562,7 +582,7 @@ class TestUnaryMixedOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.is_inf(x)
@@ -578,7 +598,7 @@ class TestUnaryMixedOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.cast(DType.float32)
@@ -591,7 +611,7 @@ class TestUnaryMixedOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.cast(DType.int32)
@@ -605,7 +625,7 @@ class TestUnaryMixedOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.is_nan(x)
@@ -637,7 +657,7 @@ class TestUnaryMixedOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.cast(out_dtype)
@@ -669,7 +689,7 @@ class TestUnaryMixedOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.cast(out_dtype)
@@ -691,7 +711,7 @@ class TestUnaryMixedOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.cast(DType.float32)
@@ -710,7 +730,7 @@ class TestUnaryMixedOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.cast(DType.int32)
@@ -732,7 +752,7 @@ class TestBooleanLogicOps:
         a = Tensor.from_dlpack(a_np)
         b = Tensor.from_dlpack(b_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             c = a & b
@@ -748,7 +768,7 @@ class TestBooleanLogicOps:
         a = Tensor.from_dlpack(a_np)
         b = Tensor.from_dlpack(b_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             c = a | b
@@ -764,7 +784,7 @@ class TestBooleanLogicOps:
         a = Tensor.from_dlpack(a_np)
         b = Tensor.from_dlpack(b_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             c = a ^ b
@@ -778,7 +798,7 @@ class TestBooleanLogicOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = ~x
@@ -797,7 +817,7 @@ class TestChainedOperations:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             # (x + 1) * 2 - 3
@@ -815,7 +835,7 @@ class TestChainedOperations:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             # Compare (x * 2) > 5
@@ -841,7 +861,7 @@ class TestBasicOpExecution:
             np.array([[5.0, 6.0], [7.0, 8.0]], dtype=np.float32)
         )
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             c = a + b
@@ -854,7 +874,7 @@ class TestBasicOpExecution:
         a = Tensor.from_dlpack(np.array([2.0, 3.0, 4.0], dtype=np.float32))
         b = Tensor.from_dlpack(np.array([5.0, 6.0, 7.0], dtype=np.float32))
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             c = a * b
@@ -866,7 +886,7 @@ class TestBasicOpExecution:
         """Test unary operations like exp, sqrt, tanh."""
         x = Tensor.from_dlpack(np.array([0.0, 1.0, 2.0], dtype=np.float32))
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             result = F.exp(x)
@@ -888,7 +908,7 @@ class TestDataPassthrough:
         x = Tensor.from_dlpack(input_np)
         z = Tensor.from_dlpack(zeros_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             result = x + z
@@ -904,7 +924,7 @@ class TestDataPassthrough:
             x = Tensor.from_dlpack(input_np)
             z = Tensor.from_dlpack(zeros_np)
             with (
-                rc.EagerRealizationContext(use_interpreter=True) as ctx,
+                rc.EagerRealizationContext() as ctx,
                 realization_context(ctx),
             ):
                 result = x + z
@@ -923,7 +943,7 @@ class TestDataPassthrough:
             x = Tensor.from_dlpack(input_np)
             z = Tensor.from_dlpack(zeros_np)
             with (
-                rc.EagerRealizationContext(use_interpreter=True) as ctx,
+                rc.EagerRealizationContext() as ctx,
                 realization_context(ctx),
             ):
                 result = x + z
@@ -942,7 +962,7 @@ class TestShapeOps:
 
         x = Tensor.from_dlpack(input_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.broadcast_to(shape=[2, 3])
@@ -958,7 +978,7 @@ class TestShapeOps:
 
         x = Tensor.from_dlpack(input_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.broadcast_to(shape=[2, 3, 4])
@@ -972,7 +992,7 @@ class TestShapeOps:
 
         x = Tensor.from_dlpack(input_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.broadcast_to(shape=[3, 2, 2])
@@ -990,7 +1010,7 @@ class TestShapeOps:
         x = Tensor.from_dlpack(x_np)
         y = Tensor.from_dlpack(y_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             x_broadcast = x.broadcast_to(shape=[2, 3])
@@ -1119,7 +1139,7 @@ class TestNonMaximumSuppressionOp:
         score_t = Tensor.from_dlpack(np.array(score_thresh, dtype=np.float32))
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             result = F.non_maximum_suppression(
@@ -1160,7 +1180,7 @@ class TestNonMaximumSuppressionOp:
         score_t = Tensor.from_dlpack(np.array(score_thresh, dtype=np.float32))
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             result = F.non_maximum_suppression(
@@ -1204,7 +1224,7 @@ class TestNonMaximumSuppressionOp:
         score_t = Tensor.from_dlpack(np.array(score_thresh, dtype=np.float32))
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             result = F.non_maximum_suppression(
@@ -1245,7 +1265,7 @@ class TestNonMaximumSuppressionOp:
         score_t = Tensor.from_dlpack(np.array(score_thresh, dtype=np.float32))
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             result = F.non_maximum_suppression(
@@ -1287,7 +1307,7 @@ class TestNonMaximumSuppressionOp:
         score_t = Tensor.from_dlpack(np.array(score_thresh, dtype=np.float32))
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             result = F.non_maximum_suppression(
@@ -1329,7 +1349,7 @@ class TestNonMaximumSuppressionOp:
         score_t = Tensor.from_dlpack(np.array(score_thresh, dtype=np.float32))
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             result = F.non_maximum_suppression(
@@ -1370,7 +1390,7 @@ class TestNonMaximumSuppressionOp:
         score_t = Tensor.from_dlpack(np.array(score_thresh, dtype=np.float32))
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             result = F.non_maximum_suppression(
@@ -1394,7 +1414,7 @@ class TestInterpreterVsCompiled:
 
         # Execute via interpreter
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             interp_result = a + b
@@ -1420,7 +1440,7 @@ class TestInterpreterVsCompiled:
         b = Tensor.from_dlpack(b_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             interp_result = a * b
@@ -1447,7 +1467,7 @@ class TestInterpreterVsCompiled:
 
         # x * 2 + 1
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             interp_result = x * two + one
@@ -1487,15 +1507,17 @@ class TestInterpreterVsCompiled:
 
         # Execute via interpreter path
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             interp_result = F.non_maximum_suppression(
                 boxes, scores, max_out_t, iou_t, score_t
             )
 
-        # Execute via compiled path
+        # Execute via a compiling executor: deterministic, where the jit
+        # may interpreter-serve while its background compile is pending.
         with (
+            set_default_executor(CompilingExecutor()),
             rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
@@ -1520,7 +1542,7 @@ class TestStaticBroadcastToOp:
 
         x = Tensor.from_dlpack(input_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.broadcast_to(shape=[2, 3])
@@ -1537,7 +1559,7 @@ class TestStaticBroadcastToOp:
 
         x = Tensor.from_dlpack(input_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.broadcast_to(shape=[2, 3, 4])
@@ -1554,7 +1576,7 @@ class TestStaticBroadcastToOp:
 
         x = Tensor.from_dlpack(input_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.broadcast_to(shape=[3, 2, 2])
@@ -1572,7 +1594,7 @@ class TestStaticBroadcastToOp:
 
         x = Tensor.from_dlpack(input_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.broadcast_to(shape=[4, 3])
@@ -1590,7 +1612,7 @@ class TestStaticBroadcastToOp:
 
         x = Tensor.from_dlpack(input_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.broadcast_to(shape=[2, 3, 4])
@@ -1607,7 +1629,7 @@ class TestStaticBroadcastToOp:
 
         x = Tensor.from_dlpack(input_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.broadcast_to(shape=[2, 3, 4])
@@ -1624,7 +1646,7 @@ class TestStaticBroadcastToOp:
 
         x = Tensor.from_dlpack(input_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.broadcast_to(shape=[2, 2])
@@ -1641,7 +1663,7 @@ class TestStaticBroadcastToOp:
 
         x = Tensor.from_dlpack(input_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.broadcast_to(shape=[2, 3, 1, 2])
@@ -1658,7 +1680,7 @@ class TestStaticBroadcastToOp:
 
             x = Tensor.from_dlpack(input_np)
             with (
-                rc.EagerRealizationContext(use_interpreter=True) as ctx,
+                rc.EagerRealizationContext() as ctx,
                 realization_context(ctx),
             ):
                 y = x.broadcast_to(shape=[2, 3])
@@ -1674,7 +1696,7 @@ class TestStaticBroadcastToOp:
 
         x = Tensor.from_dlpack(input_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             # Broadcast then add
@@ -1703,7 +1725,7 @@ class TestMatmulOp:
         a = Tensor.from_dlpack(a_np)
         b = Tensor.from_dlpack(b_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             c = a @ b
@@ -1721,7 +1743,7 @@ class TestMatmulOp:
         a = Tensor.from_dlpack(a_np)
         b = Tensor.from_dlpack(b_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             c = a @ b
@@ -1740,7 +1762,7 @@ class TestMatmulOp:
         a = Tensor.from_dlpack(a_np)
         b = Tensor.from_dlpack(b_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             c = a @ b
@@ -1758,7 +1780,7 @@ class TestMatmulOp:
         a = Tensor.from_dlpack(a_np)
         b = Tensor.from_dlpack(b_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             c = a @ b
@@ -1780,7 +1802,7 @@ class TestBatchMatmulOp:
         a = Tensor.from_dlpack(a_np)
         b = Tensor.from_dlpack(b_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             c = a @ b
@@ -1798,7 +1820,7 @@ class TestBatchMatmulOp:
         a = Tensor.from_dlpack(a_np)
         b = Tensor.from_dlpack(b_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             c = a @ b
@@ -1817,7 +1839,7 @@ class TestBatchMatmulOp:
         a = Tensor.from_dlpack(a_np)
         b = Tensor.from_dlpack(b_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             c = a @ b
@@ -1835,7 +1857,7 @@ class TestBatchMatmulOp:
         a = Tensor.from_dlpack(a_np)
         b = Tensor.from_dlpack(b_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             c = a @ b
@@ -1856,7 +1878,7 @@ class TestRangeOp:
         step_t = Tensor.from_dlpack(np.array(1, dtype=np_dtype))
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             t = Tensor.arange(
@@ -1880,7 +1902,7 @@ class TestRangeOp:
         step_t = Tensor.from_dlpack(np.array(2, dtype=np_dtype))
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             t = Tensor.arange(
@@ -1904,7 +1926,7 @@ class TestRangeOp:
         step_t = Tensor.from_dlpack(np.array(0.25, dtype=np_dtype))
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             t = Tensor.arange(
@@ -1928,7 +1950,7 @@ class TestRangeOp:
         step_t = Tensor.from_dlpack(np.array(-1, dtype=np_dtype))
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             t = Tensor.arange(
@@ -1952,7 +1974,7 @@ class TestRangeOp:
         step_t = Tensor.from_dlpack(np.array(1, dtype=np_dtype))
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             t = Tensor.arange(
@@ -1974,7 +1996,7 @@ class TestRangeOp:
         step_t = Tensor.from_dlpack(np.array(2, dtype=np.float32))
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             t = Tensor.arange(
@@ -2002,7 +2024,7 @@ class TestReduceOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.max(axis=-1)
@@ -2019,7 +2041,7 @@ class TestReduceOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.max(axis=0)
@@ -2036,7 +2058,7 @@ class TestReduceOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.max(axis=1)
@@ -2053,7 +2075,7 @@ class TestReduceOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.max(axis=-1)
@@ -2072,7 +2094,7 @@ class TestReduceOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.min(axis=-1)
@@ -2089,7 +2111,7 @@ class TestReduceOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.min(axis=0)
@@ -2106,7 +2128,7 @@ class TestReduceOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.min(axis=1)
@@ -2123,7 +2145,7 @@ class TestReduceOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.min(axis=-1)
@@ -2145,7 +2167,7 @@ class TestReduceOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.sum(axis=-1)
@@ -2162,7 +2184,7 @@ class TestReduceOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.sum(axis=0)
@@ -2179,7 +2201,7 @@ class TestReduceOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.sum(axis=1)
@@ -2196,7 +2218,7 @@ class TestReduceOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.sum(axis=-1)
@@ -2215,7 +2237,7 @@ class TestReduceOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.mean(axis=-1)
@@ -2232,7 +2254,7 @@ class TestReduceOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.mean(axis=0)
@@ -2249,7 +2271,7 @@ class TestReduceOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.mean(axis=1)
@@ -2266,7 +2288,7 @@ class TestReduceOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.mean(axis=-1)
@@ -2290,7 +2312,7 @@ class TestReduceOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.prod(axis=-1)
@@ -2307,7 +2329,7 @@ class TestReduceOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.prod(axis=0)
@@ -2324,7 +2346,7 @@ class TestReduceOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.prod(axis=1)
@@ -2342,7 +2364,7 @@ class TestReduceOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.prod(axis=-1)
@@ -2360,7 +2382,7 @@ class TestReduceOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.max(axis=-1)
@@ -2376,7 +2398,7 @@ class TestReduceOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.min(axis=-1)
@@ -2392,7 +2414,7 @@ class TestReduceOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.max(axis=0)
@@ -2406,7 +2428,7 @@ class TestReduceOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.max(axis=-1)
@@ -2420,7 +2442,7 @@ class TestReduceOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.max(axis=-1)
@@ -2436,7 +2458,7 @@ class TestReduceOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.min(axis=-1)
@@ -2450,7 +2472,7 @@ class TestReduceOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.min(axis=-1)
@@ -2475,7 +2497,7 @@ class TestReduceOps:
             ]:
                 x = Tensor.from_dlpack(x_np)
                 with (
-                    rc.EagerRealizationContext(use_interpreter=True) as ctx,
+                    rc.EagerRealizationContext() as ctx,
                     realization_context(ctx),
                 ):
                     y = op_fn(x, axis=axis)
@@ -2498,7 +2520,7 @@ class TestReduceOps:
             ]:
                 x = Tensor.from_dlpack(x_np)
                 with (
-                    rc.EagerRealizationContext(use_interpreter=True) as ctx,
+                    rc.EagerRealizationContext() as ctx,
                     realization_context(ctx),
                 ):
                     y = op_fn(x, axis=axis)
@@ -2516,7 +2538,7 @@ class TestReduceOps:
         ]:
             x = Tensor.from_dlpack(x_np)
             with (
-                rc.EagerRealizationContext(use_interpreter=True) as ctx,
+                rc.EagerRealizationContext() as ctx,
                 realization_context(ctx),
             ):
                 y = op_fn(x, axis=1)
@@ -2553,7 +2575,7 @@ class TestSoftmaxOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.softmax(x, axis=-1)
@@ -2571,7 +2593,7 @@ class TestSoftmaxOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.softmax(x, axis=-1)
@@ -2589,7 +2611,7 @@ class TestSoftmaxOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.logsoftmax(x, axis=-1)
@@ -2607,7 +2629,7 @@ class TestSoftmaxOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.logsoftmax(x, axis=-1)
@@ -2634,7 +2656,7 @@ class TestBroadcastBinaryOps:
         a = Tensor.from_dlpack(a_np)
         b = Tensor.from_dlpack(b_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             c = a + b
@@ -2650,7 +2672,7 @@ class TestBroadcastBinaryOps:
         a = Tensor.from_dlpack(a_np)
         b = Tensor.from_dlpack(b_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             c = a * b
@@ -2666,7 +2688,7 @@ class TestBroadcastBinaryOps:
         a = Tensor.from_dlpack(a_np)
         b = Tensor.from_dlpack(b_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             c = a - b
@@ -2684,7 +2706,7 @@ class TestBroadcastBinaryOps:
         a = Tensor.from_dlpack(a_np)
         b = Tensor.from_dlpack(b_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             c = a + b
@@ -2700,7 +2722,7 @@ class TestRandomNormalOp:
         """Test that random normal produces correct shape and dtype."""
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             set_seed(42)
@@ -2716,7 +2738,7 @@ class TestRandomNormalOp:
         """Test that same seed produces identical results."""
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             set_seed(42)
@@ -2725,7 +2747,7 @@ class TestRandomNormalOp:
             )
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             set_seed(42)
@@ -2741,7 +2763,7 @@ class TestRandomNormalOp:
         """Test that random normal has approximately correct mean and std."""
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             set_seed(123)
@@ -2763,7 +2785,7 @@ class TestRandomNormalOp:
         """Test random normal with different float dtypes."""
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             set_seed(42)
@@ -2781,7 +2803,7 @@ class TestRandomUniformOp:
         """Test that random uniform produces correct shape and dtype."""
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             set_seed(42)
@@ -2797,7 +2819,7 @@ class TestRandomUniformOp:
         """Test that same seed produces identical results."""
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             set_seed(42)
@@ -2806,7 +2828,7 @@ class TestRandomUniformOp:
             )
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             set_seed(42)
@@ -2822,7 +2844,7 @@ class TestRandomUniformOp:
         """Test that random uniform has approximately correct statistics."""
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             set_seed(123)
@@ -2844,7 +2866,7 @@ class TestRandomUniformOp:
         """Test random uniform with different float dtypes."""
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             set_seed(42)
@@ -2872,7 +2894,7 @@ class TestShapeChangeOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.squeeze(axis=1)
@@ -2890,7 +2912,7 @@ class TestShapeChangeOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.squeeze(axis=0)
@@ -2908,7 +2930,7 @@ class TestShapeChangeOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.squeeze(axis=-1)
@@ -2926,7 +2948,7 @@ class TestShapeChangeOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.unsqueeze(axis=0)
@@ -2944,7 +2966,7 @@ class TestShapeChangeOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.unsqueeze(axis=1)
@@ -2962,7 +2984,7 @@ class TestShapeChangeOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.unsqueeze(axis=-1)
@@ -2983,7 +3005,7 @@ class TestShapeChangeOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.reshape([3, 4, 3])
@@ -3004,7 +3026,7 @@ class TestShapeChangeOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.reshape([6, 4])
@@ -3025,7 +3047,7 @@ class TestShapeChangeOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.reshape([3, 1, 4])
@@ -3041,7 +3063,7 @@ class TestShapeChangeOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             squeezed = x.squeeze(axis=1)
@@ -3059,7 +3081,7 @@ class TestShapeChangeOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.squeeze(axis=0)
@@ -3077,7 +3099,7 @@ class TestShapeChangeOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = x.unsqueeze(axis=0)
@@ -3105,7 +3127,7 @@ class TestSelectOp:
         x = Tensor.from_dlpack(x_np)
         y = Tensor.from_dlpack(y_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             result = F.where(cond, x, y)
@@ -3127,7 +3149,7 @@ class TestSelectOp:
         x = Tensor.from_dlpack(x_np)
         y = Tensor.from_dlpack(y_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             result = F.where(cond, x, y)
@@ -3147,7 +3169,7 @@ class TestSelectOp:
         x = Tensor.from_dlpack(x_np)
         y = Tensor.from_dlpack(y_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             result = F.where(cond, x, y)
@@ -3165,7 +3187,7 @@ class TestSelectOp:
         x = Tensor.from_dlpack(x_np)
         y = Tensor.from_dlpack(y_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             result = F.where(cond, x, y)
@@ -3182,7 +3204,7 @@ class TestSelectOp:
         x = Tensor.from_dlpack(x_np)
         y = Tensor.from_dlpack(y_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             result = F.where(cond, x, y)
@@ -3203,7 +3225,7 @@ class TestConcatOp:
         a = Tensor.from_dlpack(a_np)
         b = Tensor.from_dlpack(b_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             result = F.concat([a, b], axis=0)
@@ -3221,7 +3243,7 @@ class TestConcatOp:
         a = Tensor.from_dlpack(a_np)
         b = Tensor.from_dlpack(b_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             result = F.concat([a, b], axis=1)
@@ -3239,7 +3261,7 @@ class TestConcatOp:
         a = Tensor.from_dlpack(a_np)
         b = Tensor.from_dlpack(b_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             result = F.concat([a, b], axis=-1)
@@ -3257,7 +3279,7 @@ class TestConcatOp:
         a = Tensor.from_dlpack(a_np)
         b = Tensor.from_dlpack(b_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             result = F.concat([a, b], axis=0)
@@ -3275,7 +3297,7 @@ class TestConcatOp:
         b = Tensor.from_dlpack(b_np)
         c = Tensor.from_dlpack(c_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             result = F.concat([a, b, c], axis=0)
@@ -3289,7 +3311,7 @@ class TestConcatOp:
 
         a = Tensor.from_dlpack(a_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             result = F.concat([a], axis=0)
@@ -3304,7 +3326,7 @@ class TestConcatOp:
         a = Tensor.from_dlpack(a_np)
         b = Tensor.from_dlpack(b_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             result = F.concat([a, b], axis=0)
@@ -3339,7 +3361,7 @@ class TestLayerNormOps:
         gamma = Tensor.from_dlpack(gamma_np)
         beta = Tensor.from_dlpack(beta_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.layer_norm(x, gamma, beta, epsilon=1e-5)
@@ -3361,7 +3383,7 @@ class TestLayerNormOps:
         gamma = Tensor.from_dlpack(gamma_np)
         beta = Tensor.from_dlpack(beta_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.layer_norm(x, gamma, beta, epsilon=1e-5)
@@ -3383,7 +3405,7 @@ class TestLayerNormOps:
         gamma = Tensor.from_dlpack(gamma_np)
         beta = Tensor.from_dlpack(beta_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.layer_norm(x, gamma, beta, epsilon=1e-5)
@@ -3403,7 +3425,7 @@ class TestLayerNormOps:
         gamma = Tensor.from_dlpack(gamma_np)
         beta = Tensor.from_dlpack(beta_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.layer_norm(x, gamma, beta, epsilon=1e-5)
@@ -3425,7 +3447,7 @@ class TestLayerNormOps:
         gamma = Tensor.from_dlpack(gamma_np)
         beta = Tensor.from_dlpack(beta_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.layer_norm(x, gamma, beta, epsilon=1e-5)
@@ -3471,7 +3493,7 @@ class TestRmsNormOp:
         x = Tensor.from_dlpack(x_np)
         w = Tensor.from_dlpack(w_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.rms_norm(x, w, epsilon=1e-5)
@@ -3490,7 +3512,7 @@ class TestRmsNormOp:
         x = Tensor.from_dlpack(x_np)
         w = Tensor.from_dlpack(w_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.rms_norm(x, w, epsilon=1e-5)
@@ -3509,7 +3531,7 @@ class TestRmsNormOp:
         x = Tensor.from_dlpack(x_np)
         w = Tensor.from_dlpack(w_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.rms_norm(x, w, epsilon=1e-5, multiply_before_cast=True)
@@ -3530,7 +3552,7 @@ class TestRmsNormOp:
         x = Tensor.from_dlpack(x_np)
         w = Tensor.from_dlpack(w_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.rms_norm(x, w, epsilon=1e-5, weight_offset=1.0)
@@ -3549,7 +3571,7 @@ class TestRmsNormOp:
         x = Tensor.from_dlpack(x_np)
         w = Tensor.from_dlpack(w_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.rms_norm(x, w, epsilon=1e-6)
@@ -3607,7 +3629,7 @@ class TestGroupNormOp:
         gamma = Tensor.from_dlpack(gamma_np)
         beta = Tensor.from_dlpack(beta_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.group_norm(x, gamma, beta, num_groups=2, epsilon=1e-5)
@@ -3628,7 +3650,7 @@ class TestGroupNormOp:
         gamma = Tensor.from_dlpack(gamma_np)
         beta = Tensor.from_dlpack(beta_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.group_norm(x, gamma, beta, num_groups=3, epsilon=1e-5)
@@ -3649,7 +3671,7 @@ class TestGroupNormOp:
         gamma = Tensor.from_dlpack(gamma_np)
         beta = Tensor.from_dlpack(beta_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.group_norm(x, gamma, beta, num_groups=1, epsilon=1e-5)
@@ -3670,7 +3692,7 @@ class TestGroupNormOp:
         gamma = Tensor.from_dlpack(gamma_np)
         beta = Tensor.from_dlpack(beta_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.group_norm(x, gamma, beta, num_groups=4, epsilon=1e-5)
@@ -3691,7 +3713,7 @@ class TestGroupNormOp:
         gamma = Tensor.from_dlpack(gamma_np)
         beta = Tensor.from_dlpack(beta_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.group_norm(x, gamma, beta, num_groups=4, epsilon=1e-6)
@@ -3713,7 +3735,7 @@ class TestSliceOp:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             result = F.slice_tensor(x, [slice(2, 7)])
@@ -3729,7 +3751,7 @@ class TestSliceOp:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             result = F.slice_tensor(x, [slice(0, 2), slice(1, 3)])
@@ -3743,7 +3765,7 @@ class TestSliceOp:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             result = F.slice_tensor(x, [slice(0, 10, 2)])
@@ -3757,7 +3779,7 @@ class TestSliceOp:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             result = F.slice_tensor(x, [slice(0, 2), slice(1, 3), slice(0, 2)])
@@ -3773,7 +3795,7 @@ class TestSliceOp:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             result = F.slice_tensor(x, [slice(1, 3), slice(0, 2)])
@@ -3787,7 +3809,7 @@ class TestSliceOp:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             result = F.slice_tensor(x, [slice(1, 2), slice(2, 3)])
@@ -3801,7 +3823,7 @@ class TestSliceOp:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             result = F.slice_tensor(x, [slice(0, 3), slice(0, 4)])
@@ -3821,7 +3843,7 @@ class TestCumsumOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.cumsum(x, axis=0)
@@ -3838,7 +3860,7 @@ class TestCumsumOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.cumsum(x, axis=-1)
@@ -3855,7 +3877,7 @@ class TestCumsumOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.cumsum(x, axis=0)
@@ -3872,7 +3894,7 @@ class TestCumsumOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.cumsum(x, axis=1)
@@ -3889,7 +3911,7 @@ class TestCumsumOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.cumsum(x, axis=2)
@@ -3906,7 +3928,7 @@ class TestCumsumOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.cumsum(x, axis=3)
@@ -3922,7 +3944,7 @@ class TestCumsumOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.cumsum(x, axis=0, exclusive=True)
@@ -3939,7 +3961,7 @@ class TestCumsumOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.cumsum(x, axis=0, reverse=True)
@@ -3956,7 +3978,7 @@ class TestCumsumOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.cumsum(x, axis=0, exclusive=True, reverse=True)
@@ -3973,7 +3995,7 @@ class TestCumsumOps:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.cumsum(x, axis=0)
@@ -3995,7 +4017,7 @@ class TestGatherOp:
         x = Tensor.from_dlpack(x_np)
         idx = Tensor.from_dlpack(idx_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.gather(x, idx, axis=0)
@@ -4013,7 +4035,7 @@ class TestGatherOp:
         x = Tensor.from_dlpack(x_np)
         idx = Tensor.from_dlpack(idx_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.gather(x, idx, axis=1)
@@ -4029,7 +4051,7 @@ class TestGatherOp:
         x = Tensor.from_dlpack(x_np)
         idx = Tensor.from_dlpack(idx_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.gather(x, idx, axis=-1)
@@ -4045,7 +4067,7 @@ class TestGatherOp:
         x = Tensor.from_dlpack(x_np)
         idx = Tensor.from_dlpack(idx_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.gather(x, idx, axis=1)
@@ -4061,7 +4083,7 @@ class TestGatherOp:
         x = Tensor.from_dlpack(x_np)
         idx = Tensor.from_dlpack(idx_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.gather(x, idx, axis=2)
@@ -4077,7 +4099,7 @@ class TestGatherOp:
         x = Tensor.from_dlpack(x_np)
         idx = Tensor.from_dlpack(idx_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.gather(x, idx, axis=0)
@@ -4093,7 +4115,7 @@ class TestGatherOp:
         x = Tensor.from_dlpack(x_np)
         idx = Tensor.from_dlpack(idx_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.gather(x, idx, axis=0)
@@ -4111,7 +4133,7 @@ class TestGatherOp:
         x = Tensor.from_dlpack(x_np)
         idx = Tensor.from_dlpack(idx_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.gather(x, idx, axis=0)
@@ -4131,7 +4153,7 @@ class TestGatherNdOp:
         x = Tensor.from_dlpack(x_np)
         idx = Tensor.from_dlpack(idx_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.gather_nd(x, idx)
@@ -4150,7 +4172,7 @@ class TestGatherNdOp:
         x = Tensor.from_dlpack(x_np)
         idx = Tensor.from_dlpack(idx_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.gather_nd(x, idx)
@@ -4168,7 +4190,7 @@ class TestGatherNdOp:
         x = Tensor.from_dlpack(x_np)
         idx = Tensor.from_dlpack(idx_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.gather_nd(x, idx, batch_dims=1)
@@ -4185,7 +4207,7 @@ class TestGatherNdOp:
         x = Tensor.from_dlpack(x_np)
         idx = Tensor.from_dlpack(idx_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.gather_nd(x, idx)
@@ -4202,7 +4224,7 @@ class TestGatherNdOp:
         x = Tensor.from_dlpack(x_np)
         idx = Tensor.from_dlpack(idx_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.gather_nd(x, idx)
@@ -4221,7 +4243,7 @@ class TestGatherNdOp:
         x = Tensor.from_dlpack(x_np)
         idx = Tensor.from_dlpack(idx_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.gather_nd(x, idx)
@@ -4237,7 +4259,7 @@ class TestGatherNdOp:
         x = Tensor.from_dlpack(x_np)
         idx = Tensor.from_dlpack(idx_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.gather_nd(x, idx)
@@ -4365,7 +4387,7 @@ class TestArgMaxMinOp:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = f_op(x, axis=axis)
@@ -4383,7 +4405,7 @@ class TestArgMaxMinOp:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = f_op(x, axis=1)
@@ -4407,7 +4429,7 @@ class TestArgMaxMinOp:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = f_op(x, axis=0)
@@ -4428,7 +4450,7 @@ class TestArgMaxMinOp:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = f_op(x, axis=1)
@@ -4445,7 +4467,7 @@ class TestArgMaxMinOp:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = f_op(x, axis=0)
@@ -4463,7 +4485,7 @@ class TestArgMaxMinOp:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = f_op(x, axis=2)
@@ -4495,7 +4517,7 @@ class TestSplitOp:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             results = F.split(x, split_sizes, axis=axis)
@@ -4510,7 +4532,7 @@ class TestSplitOp:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             results = F.split(x, [1, 2, 1], axis=1)
@@ -4524,7 +4546,7 @@ class TestSplitOp:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             results = F.split(x, [1, 3], axis=-1)
@@ -4538,7 +4560,7 @@ class TestSplitOp:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             results = F.split(x, [1, 2, 3], axis=1)
@@ -4554,7 +4576,7 @@ class TestSplitOp:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             results = F.split(x, [1, 2], axis=0)
@@ -4569,7 +4591,7 @@ class TestSplitOp:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             results = F.split(x, [2, 1, 3], axis=1)
@@ -4583,7 +4605,7 @@ class TestSplitOp:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             results = F.split(x, 2, axis=0)
@@ -4625,7 +4647,7 @@ class TestScatterOp:
         updates = Tensor.from_dlpack(updates_np)
         indices = Tensor.from_dlpack(indices_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.scatter(x, updates, indices, axis=axis)
@@ -4652,7 +4674,7 @@ class TestScatterOp:
         updates = Tensor.from_dlpack(updates_np)
         indices = Tensor.from_dlpack(indices_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.scatter(x, updates, indices, axis=-1)
@@ -4672,7 +4694,7 @@ class TestScatterOp:
         updates = Tensor.from_dlpack(updates_np)
         indices = Tensor.from_dlpack(indices_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.scatter(x, updates, indices, axis=1)
@@ -4691,7 +4713,7 @@ class TestScatterOp:
         updates = Tensor.from_dlpack(updates_np)
         indices = Tensor.from_dlpack(indices_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.scatter(x, updates, indices, axis=2)
@@ -4716,7 +4738,7 @@ class TestScatterOp:
         updates = Tensor.from_dlpack(updates_np)
         indices = Tensor.from_dlpack(indices_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.scatter(x, updates, indices, axis=1)
@@ -4734,7 +4756,7 @@ class TestScatterOp:
         updates = Tensor.from_dlpack(updates_np)
         indices = Tensor.from_dlpack(indices_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.scatter(x, updates, indices, axis=0)
@@ -4757,7 +4779,7 @@ class TestScatterOp:
         updates = Tensor.from_dlpack(updates_np)
         indices = Tensor.from_dlpack(indices_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.scatter(x, updates, indices, axis=0)
@@ -4784,7 +4806,7 @@ class TestScatterOp:
         updates = Tensor.from_dlpack(updates_np)
         indices = Tensor.from_dlpack(indices_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.scatter(x, updates, indices, axis=1)
@@ -4840,7 +4862,7 @@ class TestScatterAddOp:
         indices = Tensor.from_dlpack(indices_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.scatter_add(x, updates, indices, axis=axis)
@@ -4862,7 +4884,7 @@ class TestScatterAddOp:
         indices = Tensor.from_dlpack(indices_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.scatter_add(x, updates, indices, axis=-1)
@@ -4883,7 +4905,7 @@ class TestScatterAddOp:
         indices = Tensor.from_dlpack(indices_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.scatter_add(x, updates, indices, axis=1)
@@ -4903,7 +4925,7 @@ class TestScatterAddOp:
         indices = Tensor.from_dlpack(indices_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.scatter_add(x, updates, indices, axis=0)
@@ -4928,7 +4950,7 @@ class TestScatterAddOp:
         indices = Tensor.from_dlpack(indices_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.scatter_add(x, updates, indices, axis=0)
@@ -4947,7 +4969,7 @@ class TestScatterAddOp:
         indices = Tensor.from_dlpack(indices_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.scatter_add(x, updates, indices, axis=0)
@@ -4997,7 +5019,7 @@ class TestScatterMaxOp:
         indices = Tensor.from_dlpack(indices_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.scatter_max(x, updates, indices, axis=axis)
@@ -5016,7 +5038,7 @@ class TestScatterMaxOp:
         indices = Tensor.from_dlpack(indices_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.scatter_max(x, updates, indices, axis=0)
@@ -5038,7 +5060,7 @@ class TestScatterMaxOp:
         indices = Tensor.from_dlpack(indices_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.scatter_max(x, updates, indices, axis=-1)
@@ -5060,7 +5082,7 @@ class TestScatterMaxOp:
         indices = Tensor.from_dlpack(indices_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.scatter_max(x, updates, indices, axis=0)
@@ -5110,7 +5132,7 @@ class TestScatterMinOp:
         indices = Tensor.from_dlpack(indices_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.scatter_min(x, updates, indices, axis=axis)
@@ -5129,7 +5151,7 @@ class TestScatterMinOp:
         indices = Tensor.from_dlpack(indices_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.scatter_min(x, updates, indices, axis=0)
@@ -5151,7 +5173,7 @@ class TestScatterMinOp:
         indices = Tensor.from_dlpack(indices_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.scatter_min(x, updates, indices, axis=-1)
@@ -5175,7 +5197,7 @@ class TestScatterMinOp:
         indices = Tensor.from_dlpack(indices_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.scatter_min(x, updates, indices, axis=0)
@@ -5225,7 +5247,7 @@ class TestScatterMulOp:
         indices = Tensor.from_dlpack(indices_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.scatter_mul(x, updates, indices, axis=axis)
@@ -5244,7 +5266,7 @@ class TestScatterMulOp:
         indices = Tensor.from_dlpack(indices_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.scatter_mul(x, updates, indices, axis=0)
@@ -5266,7 +5288,7 @@ class TestScatterMulOp:
         indices = Tensor.from_dlpack(indices_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.scatter_mul(x, updates, indices, axis=-1)
@@ -5289,7 +5311,7 @@ class TestScatterMulOp:
         indices = Tensor.from_dlpack(indices_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.scatter_mul(x, updates, indices, axis=0)
@@ -5335,7 +5357,7 @@ class TestScatterNdOp:
         indices = Tensor.from_dlpack(indices_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.scatter_nd(x, updates, indices)
@@ -5359,7 +5381,7 @@ class TestScatterNdOp:
         indices = Tensor.from_dlpack(indices_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.scatter_nd(x, updates, indices)
@@ -5381,7 +5403,7 @@ class TestScatterNdOp:
         indices = Tensor.from_dlpack(indices_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.scatter_nd(x, updates, indices)
@@ -5400,7 +5422,7 @@ class TestScatterNdOp:
         indices = Tensor.from_dlpack(indices_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.scatter_nd(x, updates, indices)
@@ -5419,7 +5441,7 @@ class TestScatterNdOp:
         indices = Tensor.from_dlpack(indices_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.scatter_nd(x, updates, indices)
@@ -5437,7 +5459,7 @@ class TestScatterNdOp:
         indices = Tensor.from_dlpack(indices_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.scatter_nd(x, updates, indices)
@@ -5482,7 +5504,7 @@ class TestScatterNdAddOp:
         indices = Tensor.from_dlpack(indices_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.scatter_nd_add(x, updates, indices)
@@ -5503,7 +5525,7 @@ class TestScatterNdAddOp:
         indices = Tensor.from_dlpack(indices_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.scatter_nd_add(x, updates, indices)
@@ -5522,7 +5544,7 @@ class TestScatterNdAddOp:
         indices = Tensor.from_dlpack(indices_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.scatter_nd_add(x, updates, indices)
@@ -5542,7 +5564,7 @@ class TestScatterNdAddOp:
         indices = Tensor.from_dlpack(indices_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.scatter_nd_add(x, updates, indices)
@@ -5567,7 +5589,7 @@ class TestScatterNdAddOp:
         indices = Tensor.from_dlpack(indices_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.scatter_nd_add(x, updates, indices)
@@ -5587,7 +5609,7 @@ class TestScatterNdAddOp:
         indices = Tensor.from_dlpack(indices_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.scatter_nd_add(x, updates, indices)
@@ -5632,7 +5654,7 @@ class TestScatterNdMaxOp:
         indices = Tensor.from_dlpack(indices_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.scatter_nd_max(x, updates, indices)
@@ -5653,7 +5675,7 @@ class TestScatterNdMaxOp:
         indices = Tensor.from_dlpack(indices_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.scatter_nd_max(x, updates, indices)
@@ -5672,7 +5694,7 @@ class TestScatterNdMaxOp:
         indices = Tensor.from_dlpack(indices_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.scatter_nd_max(x, updates, indices)
@@ -5691,7 +5713,7 @@ class TestScatterNdMaxOp:
         indices = Tensor.from_dlpack(indices_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.scatter_nd_max(x, updates, indices)
@@ -5715,7 +5737,7 @@ class TestScatterNdMaxOp:
         indices = Tensor.from_dlpack(indices_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.scatter_nd_max(x, updates, indices)
@@ -5760,7 +5782,7 @@ class TestScatterNdMinOp:
         indices = Tensor.from_dlpack(indices_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.scatter_nd_min(x, updates, indices)
@@ -5781,7 +5803,7 @@ class TestScatterNdMinOp:
         indices = Tensor.from_dlpack(indices_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.scatter_nd_min(x, updates, indices)
@@ -5800,7 +5822,7 @@ class TestScatterNdMinOp:
         indices = Tensor.from_dlpack(indices_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.scatter_nd_min(x, updates, indices)
@@ -5819,7 +5841,7 @@ class TestScatterNdMinOp:
         indices = Tensor.from_dlpack(indices_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.scatter_nd_min(x, updates, indices)
@@ -5843,7 +5865,7 @@ class TestScatterNdMinOp:
         indices = Tensor.from_dlpack(indices_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.scatter_nd_min(x, updates, indices)
@@ -5888,7 +5910,7 @@ class TestScatterNdMulOp:
         indices = Tensor.from_dlpack(indices_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.scatter_nd_mul(x, updates, indices)
@@ -5909,7 +5931,7 @@ class TestScatterNdMulOp:
         indices = Tensor.from_dlpack(indices_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.scatter_nd_mul(x, updates, indices)
@@ -5928,7 +5950,7 @@ class TestScatterNdMulOp:
         indices = Tensor.from_dlpack(indices_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.scatter_nd_mul(x, updates, indices)
@@ -5947,7 +5969,7 @@ class TestScatterNdMulOp:
         indices = Tensor.from_dlpack(indices_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.scatter_nd_mul(x, updates, indices)
@@ -5971,7 +5993,7 @@ class TestScatterNdMulOp:
         indices = Tensor.from_dlpack(indices_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.scatter_nd_mul(x, updates, indices)
@@ -6037,7 +6059,7 @@ class TestConv2dOp:
         x = Tensor.from_dlpack(x_np)
         f = Tensor.from_dlpack(f_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.conv2d(x, f)
@@ -6055,7 +6077,7 @@ class TestConv2dOp:
         x = Tensor.from_dlpack(x_np)
         f = Tensor.from_dlpack(f_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.conv2d(x, f, stride=(2, 2))
@@ -6074,7 +6096,7 @@ class TestConv2dOp:
         x = Tensor.from_dlpack(x_np)
         f = Tensor.from_dlpack(f_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.conv2d(x, f, padding=padding)
@@ -6092,7 +6114,7 @@ class TestConv2dOp:
         x = Tensor.from_dlpack(x_np)
         f = Tensor.from_dlpack(f_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.conv2d(x, f, dilation=(2, 2))
@@ -6110,7 +6132,7 @@ class TestConv2dOp:
         x = Tensor.from_dlpack(x_np)
         f = Tensor.from_dlpack(f_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.conv2d(x, f, groups=2)
@@ -6128,7 +6150,7 @@ class TestConv2dOp:
         x = Tensor.from_dlpack(x_np)
         f = Tensor.from_dlpack(f_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.conv2d(x, f)
@@ -6146,7 +6168,7 @@ class TestConv2dOp:
         x = Tensor.from_dlpack(x_np)
         f = Tensor.from_dlpack(f_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.conv2d(x, f)
@@ -6221,7 +6243,7 @@ class TestConvTranspose2dOp:
         x = Tensor.from_dlpack(x_np)
         f = Tensor.from_dlpack(f_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.conv2d_transpose(x, f)
@@ -6241,7 +6263,7 @@ class TestConvTranspose2dOp:
         x = Tensor.from_dlpack(x_np)
         f = Tensor.from_dlpack(f_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.conv2d_transpose(x, f, stride=(2, 2))
@@ -6262,7 +6284,7 @@ class TestConvTranspose2dOp:
         x = Tensor.from_dlpack(x_np)
         f = Tensor.from_dlpack(f_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.conv2d_transpose(x, f, padding=padding)
@@ -6282,7 +6304,7 @@ class TestConvTranspose2dOp:
         x = Tensor.from_dlpack(x_np)
         f = Tensor.from_dlpack(f_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.conv2d_transpose(x, f, dilation=(2, 2))
@@ -6348,7 +6370,7 @@ class TestMaxPoolOp:
         x_np = np.arange(16, dtype=np_dtype).reshape(1, 4, 4, 1)
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.max_pool2d(x, kernel_size=(2, 2))
@@ -6363,7 +6385,7 @@ class TestMaxPoolOp:
         x_np = np.arange(36, dtype=np.float32).reshape(1, 6, 6, 1)
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.max_pool2d(x, kernel_size=(2, 2), stride=2)
@@ -6378,7 +6400,7 @@ class TestMaxPoolOp:
         x_np = np.arange(16, dtype=np.float32).reshape(1, 4, 4, 1)
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.max_pool2d(x, kernel_size=(3, 3), padding=1)
@@ -6393,7 +6415,7 @@ class TestMaxPoolOp:
         x_np = np.arange(49, dtype=np.float32).reshape(1, 7, 7, 1)
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.max_pool2d(x, kernel_size=(3, 3), dilation=2)
@@ -6409,7 +6431,7 @@ class TestMaxPoolOp:
         x = Tensor.from_dlpack(x_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y_floor = F.max_pool2d(
@@ -6438,7 +6460,7 @@ class TestMaxPoolOp:
         x_np = np.arange(24, dtype=np.float32).reshape(1, 4, 6, 1)
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.max_pool2d(x, kernel_size=(2, 3), stride=(1, 2))
@@ -6454,7 +6476,7 @@ class TestMaxPoolOp:
         x_np = rng.standard_normal((2, 8, 8, 3)).astype(np.float32)
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.max_pool2d(x, kernel_size=(3, 3), stride=2, padding=1)
@@ -6471,7 +6493,7 @@ class TestMaxPoolOp:
         x_np = np.arange(16, dtype=np_dtype).reshape(1, 4, 4, 1)
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.max_pool2d(x, kernel_size=(2, 2), stride=2)
@@ -6493,7 +6515,7 @@ class TestTileOp:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.tile(x, reps)
@@ -6510,7 +6532,7 @@ class TestTileOp:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.tile(x, reps)
@@ -6524,7 +6546,7 @@ class TestTileOp:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.tile(x, reps)
@@ -6538,7 +6560,7 @@ class TestTileOp:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.tile(x, reps)
@@ -6552,7 +6574,7 @@ class TestTileOp:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.tile(x, reps)
@@ -6571,7 +6593,7 @@ class TestTileOp:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.tile(x, reps)
@@ -6610,7 +6632,7 @@ class TestBandPartOp:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.band_part(x, num_lower=None, num_upper=0)
@@ -6624,7 +6646,7 @@ class TestBandPartOp:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.band_part(x, num_lower=0, num_upper=None)
@@ -6638,7 +6660,7 @@ class TestBandPartOp:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.band_part(x, num_lower=0, num_upper=0)
@@ -6652,7 +6674,7 @@ class TestBandPartOp:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.band_part(x, num_lower=1, num_upper=1)
@@ -6666,7 +6688,7 @@ class TestBandPartOp:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.band_part(x, num_lower=None, num_upper=0, exclude=True)
@@ -6680,7 +6702,7 @@ class TestBandPartOp:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.band_part(x, num_lower=1, num_upper=0)
@@ -6696,7 +6718,7 @@ class TestBandPartOp:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.band_part(x, num_lower=None, num_upper=None)
@@ -6766,7 +6788,7 @@ class TestAvgPool2dOp:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.avg_pool2d(x, kernel_size=(2, 2))
@@ -6782,7 +6804,7 @@ class TestAvgPool2dOp:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.avg_pool2d(
@@ -6802,7 +6824,7 @@ class TestAvgPool2dOp:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.avg_pool2d(x, kernel_size=(2, 2), dilation=2)
@@ -6818,7 +6840,7 @@ class TestAvgPool2dOp:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.avg_pool2d(x, kernel_size=(3, 3), stride=2, ceil_mode=True)
@@ -6836,7 +6858,7 @@ class TestAvgPool2dOp:
 
         x = Tensor.from_dlpack(x_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.avg_pool2d(
@@ -7004,7 +7026,7 @@ class TestRoiAlignOp:
         x = Tensor.from_dlpack(x_np)
         rois = Tensor.from_dlpack(rois_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.roi_align(x, rois, output_height=3, output_width=3)
@@ -7022,7 +7044,7 @@ class TestRoiAlignOp:
         x = Tensor.from_dlpack(x_np)
         rois = Tensor.from_dlpack(rois_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.roi_align(
@@ -7042,7 +7064,7 @@ class TestRoiAlignOp:
         x = Tensor.from_dlpack(x_np)
         rois = Tensor.from_dlpack(rois_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.roi_align(
@@ -7062,7 +7084,7 @@ class TestRoiAlignOp:
         x = Tensor.from_dlpack(x_np)
         rois = Tensor.from_dlpack(rois_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.roi_align(
@@ -7082,7 +7104,7 @@ class TestRoiAlignOp:
         x = Tensor.from_dlpack(x_np)
         rois = Tensor.from_dlpack(rois_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.roi_align(
@@ -7109,7 +7131,7 @@ class TestRoiAlignOp:
         x = Tensor.from_dlpack(x_np)
         rois = Tensor.from_dlpack(rois_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.roi_align(
@@ -7129,7 +7151,7 @@ class TestRoiAlignOp:
         x = Tensor.from_dlpack(x_np)
         rois = Tensor.from_dlpack(rois_np)
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             y = F.roi_align(x, rois, output_height=3, output_width=3)
@@ -7167,7 +7189,7 @@ class TestTopKOp:
         x = Tensor.from_dlpack(x_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             vals, idxs = F.top_k(x, k=2, axis=axis)
@@ -7183,7 +7205,7 @@ class TestTopKOp:
         x = Tensor.from_dlpack(x_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             vals, idxs = F.top_k(x, k=3, axis=1)
@@ -7200,7 +7222,7 @@ class TestTopKOp:
         x = Tensor.from_dlpack(x_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             vals, idxs = F.top_k(x, k=1, axis=0)
@@ -7217,7 +7239,7 @@ class TestTopKOp:
         x = Tensor.from_dlpack(x_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             vals, idxs = F.top_k(x, k=4, axis=1)
@@ -7239,7 +7261,7 @@ class TestTopKOp:
         x = Tensor.from_dlpack(x_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             vals, idxs = F.top_k(x, k=2, axis=1)
@@ -7275,7 +7297,7 @@ class TestBottomKOp:
         x = Tensor.from_dlpack(x_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             vals, idxs = F.bottom_k(x, k=2, axis=axis)
@@ -7291,7 +7313,7 @@ class TestBottomKOp:
         x = Tensor.from_dlpack(x_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             vals, idxs = F.bottom_k(x, k=3, axis=1)
@@ -7308,7 +7330,7 @@ class TestBottomKOp:
         x = Tensor.from_dlpack(x_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             vals, idxs = F.bottom_k(x, k=1, axis=0)
@@ -7325,7 +7347,7 @@ class TestBottomKOp:
         x = Tensor.from_dlpack(x_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             vals, idxs = F.bottom_k(x, k=4, axis=1)
@@ -7347,7 +7369,7 @@ class TestBottomKOp:
         x = Tensor.from_dlpack(x_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             vals, idxs = F.bottom_k(x, k=2, axis=1)
@@ -7380,7 +7402,7 @@ class TestArgNonzeroOp:
         x = Tensor.from_dlpack(x_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             result = F.nonzero(x, out_dim="nnz")
@@ -7394,7 +7416,7 @@ class TestArgNonzeroOp:
         x = Tensor.from_dlpack(x_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             result = F.nonzero(x, out_dim="nnz")
@@ -7411,7 +7433,7 @@ class TestArgNonzeroOp:
         x = Tensor.from_dlpack(x_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             result = F.nonzero(x, out_dim="nnz")
@@ -7425,7 +7447,7 @@ class TestArgNonzeroOp:
         x = Tensor.from_dlpack(x_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             result = F.nonzero(x, out_dim="nnz")
@@ -7440,7 +7462,7 @@ class TestArgNonzeroOp:
         x = Tensor.from_dlpack(x_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             result = F.nonzero(x, out_dim="nnz")
@@ -7468,7 +7490,7 @@ class TestArgNonzeroOp:
         x = Tensor.from_dlpack(x_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             result = F.nonzero(x, out_dim="nnz")
@@ -7503,7 +7525,7 @@ class TestPadConstantOp:
         x = Tensor.from_dlpack(x_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             out = F.pad(x, [1, 2])
@@ -7518,7 +7540,7 @@ class TestPadConstantOp:
         x = Tensor.from_dlpack(x_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             out = F.pad(x, [1, 1, 2, 0], value=7.0)
@@ -7534,7 +7556,7 @@ class TestPadConstantOp:
         x = Tensor.from_dlpack(x_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             out = F.pad(x, [0, 1, 2, 0, 1, 3])
@@ -7549,7 +7571,7 @@ class TestPadConstantOp:
         x = Tensor.from_dlpack(x_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             out = F.pad(x, [0, 0, 0, 0])
@@ -7566,7 +7588,7 @@ class TestPadConstantOp:
         x = Tensor.from_dlpack(x_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             out = F.pad(x, [1, 1, 0, 2])
@@ -7594,7 +7616,7 @@ class TestPadReflectOp:
         x = Tensor.from_dlpack(x_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             out = F.pad(x, [1, 1, 0, 1], mode="reflect")
@@ -7609,7 +7631,7 @@ class TestPadReflectOp:
         x = Tensor.from_dlpack(x_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             out = F.pad(x, [2, 2, 1, 1], mode="reflect")
@@ -7624,7 +7646,7 @@ class TestPadReflectOp:
         x = Tensor.from_dlpack(x_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             out = F.pad(x, [1, 0, 1, 1, 0, 1], mode="reflect")
@@ -7639,7 +7661,7 @@ class TestPadReflectOp:
         x = Tensor.from_dlpack(x_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             out = F.pad(x, [0, 0, 0, 0], mode="reflect")
@@ -7665,7 +7687,7 @@ class TestPadRepeatOp:
         x = Tensor.from_dlpack(x_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             out = F.pad(x, [2, 1, 1, 0], mode="edge")
@@ -7680,7 +7702,7 @@ class TestPadRepeatOp:
         x = Tensor.from_dlpack(x_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             out = F.pad(x, [3, 0, 2, 0], mode="edge")
@@ -7695,7 +7717,7 @@ class TestPadRepeatOp:
         x = Tensor.from_dlpack(x_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             out = F.pad(x, [1, 2, 0, 1, 2, 0], mode="edge")
@@ -7710,7 +7732,7 @@ class TestPadRepeatOp:
         x = Tensor.from_dlpack(x_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             out = F.pad(x, [0, 0, 0, 0], mode="edge")
@@ -7727,7 +7749,7 @@ class TestPadRepeatOp:
         x = Tensor.from_dlpack(x_np)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             out = F.pad(x, [1, 1, 2, 0], mode="edge")
@@ -7956,7 +7978,7 @@ class TestMutableStoreOps:
 
         buf = Buffer.zeros([4], DType.float32, CPU())
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             a = Tensor(storage=buf)
@@ -7975,7 +7997,7 @@ class TestMutableStoreOps:
         slice_np = np.array([[1.0, 2.0], [3.0, 4.0]], dtype=np.float32)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             a = Tensor(storage=buf)
@@ -7994,7 +8016,7 @@ class TestMutableStoreOps:
         slice_np = np.array([5.0, 6.0, 7.0, 8.0], dtype=np.float32)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             a = Tensor(storage=buf)
@@ -8013,7 +8035,7 @@ class TestMutableStoreOps:
         slice_np = np.arange(6, dtype=np.float32).reshape(3, 2) + 1.0
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             a = Tensor(storage=buf)
@@ -8032,7 +8054,7 @@ class TestMutableStoreOps:
         slice_np = np.array([100.0, 200.0, 300.0], dtype=np.float32)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             a = Tensor(storage=buf)
@@ -8058,7 +8080,7 @@ class TestMutableStoreOps:
         src_buf = Buffer.from_numpy(src_u16).view(DType.bfloat16)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             a = Tensor(storage=buf)
@@ -8085,7 +8107,7 @@ class TestMutableStoreOps:
         src_buf = Buffer.from_numpy(src_bytes).view(DType.float8_e4m3fn)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             a = Tensor(storage=buf)
@@ -8110,7 +8132,7 @@ class TestMutableStoreOps:
         src_buf = Buffer.from_numpy(src_bytes).view(DType.float8_e5m2)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             a = Tensor(storage=buf)
@@ -8134,7 +8156,7 @@ class TestMutableStoreOps:
         # must wrap the whole context.
         with pytest.raises(NotImplementedError, match="float4_e2m1fn"):
             with (
-                rc.EagerRealizationContext(use_interpreter=True) as ctx,
+                rc.EagerRealizationContext() as ctx,
                 realization_context(ctx),
             ):
                 a = Tensor(storage=buf)
@@ -8291,7 +8313,7 @@ class TestResizeLinearOp:
         out_shape = [1, 1, 8, 8]
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             out = F.resize_linear(x, out_shape, coordinate_transform_mode=0)
@@ -8311,7 +8333,7 @@ class TestResizeLinearOp:
         out_shape = [1, 3, 4, 4]
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             out = F.resize_linear(x, out_shape, coordinate_transform_mode=0)
@@ -8331,7 +8353,7 @@ class TestResizeLinearOp:
         out_shape = [1, 2, 7, 7]
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             out = F.resize_linear(x, out_shape, coordinate_transform_mode=1)
@@ -8351,7 +8373,7 @@ class TestResizeLinearOp:
         out_shape = [1, 1, 3, 3]
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             out = F.resize_linear(
@@ -8379,7 +8401,7 @@ class TestResizeLinearOp:
         out_shape = [1, 2, 6, 6]
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             out = F.resize_linear(x, out_shape)
@@ -8396,7 +8418,7 @@ class TestResizeLinearOp:
         out_shape = [1, 4, 16]
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             out = F.resize_linear(x, out_shape)
@@ -8519,7 +8541,7 @@ class TestResizeNearestOp:
         out_shape = [1, 1, 8, 8]
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             out = F.resize_nearest(x, out_shape, coordinate_transform_mode=0)
@@ -8537,7 +8559,7 @@ class TestResizeNearestOp:
         out_shape = [1, 3, 4, 4]
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             out = F.resize_nearest(x, out_shape, coordinate_transform_mode=0)
@@ -8559,7 +8581,7 @@ class TestResizeNearestOp:
         out_shape = [1, 1, 6, 6]
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             out = F.resize_nearest(
@@ -8579,7 +8601,7 @@ class TestResizeNearestOp:
         out_shape = [1, 2, 7, 7]
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             out = F.resize_nearest(x, out_shape, coordinate_transform_mode=1)
@@ -8599,7 +8621,7 @@ class TestResizeNearestOp:
         out_shape = [1, 2, 6, 6]
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             out = F.resize_nearest(x, out_shape)
@@ -8615,7 +8637,7 @@ class TestResizeNearestOp:
         out_shape = [1, 4, 16]
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             out = F.resize_nearest(x, out_shape)
@@ -8689,7 +8711,7 @@ class TestResizeBicubicOp:
         out_shape = [1, 1, 8, 8]
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             out = F.resize_bicubic(x, out_shape)
@@ -8705,7 +8727,7 @@ class TestResizeBicubicOp:
         out_shape = [1, 1, 4, 4]
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             out = F.resize_bicubic(x, out_shape)
@@ -8721,7 +8743,7 @@ class TestResizeBicubicOp:
         out_shape = [2, 3, 10, 10]
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             out = F.resize_bicubic(x, out_shape)
@@ -8739,7 +8761,7 @@ class TestResizeBicubicOp:
         out_shape = [1, 1, 6, 6]
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             out = F.resize_bicubic(x, out_shape)
@@ -8769,7 +8791,7 @@ class TestDistributedScatterSimulated:
         mapping = PlacementMapping(mesh, (Sharded(0),))
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             result = df_shard(Tensor(data), mapping)
@@ -8796,7 +8818,7 @@ class TestDistributedBroadcastSimulated:
         mapping = PlacementMapping(mesh, (Replicated(),))
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             result = df_shard(t, mapping)
@@ -8824,7 +8846,7 @@ class TestDistributedReducescatterSumSimulated:
         data_b = np.arange(8, 16, dtype=np.float32).reshape(4, 2)
 
         with (
-            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
             # Build a Partial tensor with different data per shard.
@@ -8841,3 +8863,97 @@ class TestDistributedReducescatterSumSimulated:
         total = data_a + data_b
         np.testing.assert_allclose(result.local_shards[0].to_numpy(), total[:2])
         np.testing.assert_allclose(result.local_shards[1].to_numpy(), total[2:])
+
+
+class TestLazyGCModelCompilation:
+    """Direct tests for the per-(op, device, dtype) GC model caches.
+
+    These cover the cache behavior the dispatch handlers depend on but do not
+    assert themselves: a target is compiled exactly once and reused, an
+    unsupported unary target still raises rather than handing an uncompilable
+    graph to the backend, and the ``MAX_EAGER_OP_PRECOMPILE`` env var selects
+    between the default precompile sweep (cache miss is a hard error) and lazy
+    per-target compilation on first dispatch.
+    """
+
+    def test_matmul_model_compiles_once_and_reuses(self) -> None:
+        """A second call for the same (device, dtype) returns the cached model."""
+        from max._interpreter_ops import matmul_gc
+
+        cpu = CPU()
+        first = matmul_gc.matmul_model(cpu, DType.float32)
+        second = matmul_gc.matmul_model(cpu, DType.float32)
+        assert first is second
+
+    def test_unary_model_compiles_once_and_reuses(self) -> None:
+        """A second call for the same unary target returns the cached model."""
+        from max._core.dialects import mo
+        from max._interpreter_ops import unary_elementwise_gc
+
+        cpu = CPU()
+        first = unary_elementwise_gc.unary_model(mo.ExpOp, cpu, DType.float32)
+        second = unary_elementwise_gc.unary_model(mo.ExpOp, cpu, DType.float32)
+        assert first is second
+
+    def test_unary_model_unsupported_dtype_raises(self) -> None:
+        """A transcendental op on an int dtype is outside the supported set."""
+        from max._core.dialects import mo
+        from max._interpreter_ops import unary_elementwise_gc
+
+        # Exp only sweeps float dtypes; int32 is unsupported and must not be
+        # handed to load_all as an uncompilable graph.
+        with pytest.raises(KeyError, match="Unsupported unary op/device/dtype"):
+            unary_elementwise_gc.unary_model(mo.ExpOp, CPU(), DType.int32)
+
+    def test_matmul_model_precompile_default_raises_on_miss(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """In precompile mode (the default) a cache miss is a hard error."""
+        from max._interpreter_ops import gc_compile, matmul_gc
+
+        # Simulate a target that the import-time sweep did not cover.
+        monkeypatch.delenv(
+            gc_compile.EAGER_OP_PRECOMPILE_ENV_VAR, raising=False
+        )
+        monkeypatch.setattr(matmul_gc, "_MATMUL_MODEL_CACHE", {})
+        with pytest.raises(KeyError, match="No pre-compiled matmul model"):
+            matmul_gc.matmul_model(CPU(), DType.float32)
+
+    def test_matmul_model_lazy_compiles_on_miss(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """With MAX_EAGER_OP_PRECOMPILE=0, a miss compiles the target lazily."""
+        from max._interpreter_ops import gc_compile, matmul_gc
+
+        monkeypatch.setenv(gc_compile.EAGER_OP_PRECOMPILE_ENV_VAR, "0")
+        monkeypatch.setattr(matmul_gc, "_MATMUL_MODEL_CACHE", {})
+        model = matmul_gc.matmul_model(CPU(), DType.float32)
+        assert model is not None
+
+    def test_unary_model_precompile_default_raises_on_miss(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """In precompile mode a supported-but-unswept target is a hard error."""
+        from max._core.dialects import mo
+        from max._interpreter_ops import gc_compile, unary_elementwise_gc
+
+        monkeypatch.delenv(
+            gc_compile.EAGER_OP_PRECOMPILE_ENV_VAR, raising=False
+        )
+        monkeypatch.setattr(unary_elementwise_gc, "_UNARY_MODEL_CACHE", {})
+        # float32 Exp is supported (passes the _is_supported guard), so the miss
+        # falls through to the precompile-mode hard error, not "Unsupported".
+        with pytest.raises(KeyError, match="No pre-compiled unary model"):
+            unary_elementwise_gc.unary_model(mo.ExpOp, CPU(), DType.float32)
+
+    def test_unary_model_lazy_compiles_on_miss(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """With MAX_EAGER_OP_PRECOMPILE=0, a supported miss compiles lazily."""
+        from max._core.dialects import mo
+        from max._interpreter_ops import gc_compile, unary_elementwise_gc
+
+        monkeypatch.setenv(gc_compile.EAGER_OP_PRECOMPILE_ENV_VAR, "0")
+        monkeypatch.setattr(unary_elementwise_gc, "_UNARY_MODEL_CACHE", {})
+        model = unary_elementwise_gc.unary_model(mo.ExpOp, CPU(), DType.float32)
+        assert model is not None

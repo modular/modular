@@ -136,7 +136,7 @@ struct MyStruct(Sized, Writable):
 
     def __init__(...)
     def __init__(out self, *, copy: Self)
-    def __init__(out self, *, deinit take: Self)
+    def __init__(out self, *, deinit move: Self)
 
     def __del__(...)
 
@@ -465,5 +465,5 @@ For example `test_sort.mojo`.
 
 #### Integration with build system
 
-- See the [bazel usage docs](../../../bazel/docs/usage.md) for more detaiils
+- See the [bazel usage docs](../../../bazel/docs/usage.md) for more details
   on how to run tests.

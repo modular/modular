@@ -29,7 +29,7 @@ from layout import TileTensor
 def _argn[
     is_max: Bool
 ](
-    input: TileTensor,
+    input: TileTensor[mut=False, ...],
     axis: Int,
     output: TileTensor[mut=True, ...],
     ctx: Optional[DeviceContext] = None,
@@ -190,7 +190,7 @@ def _argn[
 
 
 def argmax(
-    input: TileTensor,
+    input: TileTensor[mut=False, ...],
     axis: Int,
     output: TileTensor[mut=True, ...],
     ctx: Optional[DeviceContext] = None,
@@ -209,8 +209,8 @@ def argmax(
 
 
 def argmax(
-    input: TileTensor,
-    axis_buf: TileTensor,
+    input: TileTensor[mut=False, ...],
+    axis_buf: TileTensor[mut=False, ...],
     output: TileTensor[mut=True, ...],
     ctx: Optional[DeviceContext] = None,
 ) raises where axis_buf.flat_rank == 1:
@@ -233,7 +233,7 @@ def argmax(
 
 
 def argmin(
-    input: TileTensor,
+    input: TileTensor[mut=False, ...],
     axis: Int,
     output: TileTensor[mut=True, ...],
     ctx: Optional[DeviceContext] = None,
@@ -252,8 +252,8 @@ def argmin(
 
 
 def argmin(
-    input: TileTensor,
-    axis_buf: TileTensor,
+    input: TileTensor[mut=False, ...],
+    axis_buf: TileTensor[mut=False, ...],
     output: TileTensor[mut=True, ...],
     ctx: Optional[DeviceContext] = None,
 ) raises where axis_buf.flat_rank == 1:

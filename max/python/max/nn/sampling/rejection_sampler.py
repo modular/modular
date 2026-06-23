@@ -15,35 +15,12 @@
 import numpy as np
 from max.dtype import DType
 from max.graph import DeviceRef, Dim, TensorType, TensorValue, ops
-from max.nn.kernels import topk_fused_sampling
+from max.nn.kernels import apply_packed_bitmask, topk_fused_sampling
 from max.nn.layer import Module
 
 # Constant for masking invalid tokens in logits.
 # Using -10000 to match the existing sampling code pattern.
 _MASKED_LOGIT_VALUE = -10000.0
-
-
-def apply_grammar_mask(
-    logits: TensorValue,
-    bitmask: TensorValue,
-) -> TensorValue:
-    """Apply a grammar constraint bitmask to logits.
-
-    Masks invalid tokens to a large negative value so they have
-    ~zero probability after softmax.
-
-    Args:
-        logits: Logits tensor of shape [batch, num_positions, vocab_size].
-        bitmask: Boolean mask of shape [batch, num_positions, vocab_size].
-            True means the token is valid, False means it should be masked.
-
-    Returns:
-        Masked logits with invalid positions set to _MASKED_LOGIT_VALUE.
-    """
-    mask_value = ops.constant(
-        _MASKED_LOGIT_VALUE, dtype=logits.dtype, device=logits.device
-    )
-    return ops.where(bitmask, logits, mask_value)
 
 
 def _multinomial(
@@ -119,7 +96,6 @@ class RejectionSampler(Module):
         top_k: int = 1,
         top_p: float = 1,
         temperature: float = 1.0,
-        seed: int = 0,
         eps: float = 1e-5,
     ) -> None:
         self.device = device
@@ -127,7 +103,6 @@ class RejectionSampler(Module):
         self.top_p = top_p
         self.temperature = temperature
         self.eps = eps
-        self.seed = seed
 
     def __call__(
         self,
@@ -135,6 +110,7 @@ class RejectionSampler(Module):
         draft_logits_for_sampled_tokens: TensorValue,
         target_logits: TensorValue,
         target_logit_offsets: TensorValue,
+        seed: TensorValue,
     ) -> tuple[TensorValue, TensorValue]:
         broadcasted_range = ops.broadcast_to(
             ops.range(
@@ -189,13 +165,15 @@ class RejectionSampler(Module):
             target_logit_offsets[:-1], shape=[Dim("batch_size")]
         ) + ops.squeeze(first_rejected_token, axis=1)
 
+        batch_size = draft_tokens.shape[0]
+        seed_per_batch = ops.broadcast_to(seed, [batch_size])
         sampled_target_tokens = topk_fused_sampling(
             logits=ops.gather(target_logits, rejected_offsets, axis=0),
             top_k=self.top_k,
             max_k=self.top_k,
             temperature=self.temperature,
             top_p=self.top_p,
-            seed=self.seed,
+            seed=seed_per_batch,
         )
 
         return first_rejected_token, sampled_target_tokens
@@ -284,7 +262,7 @@ def synthetic_acceptance_sampler(
     target_logits: TensorValue,
     base_acceptance_rate: float,
     num_draft_steps: int,
-    seed: TensorValue | None = None,
+    seed: TensorValue,
 ) -> tuple[TensorValue, TensorValue, TensorValue]:
     """Synthetic sampler for speculative decoding benchmarking.
 
@@ -299,11 +277,7 @@ def synthetic_acceptance_sampler(
         target_logits: Verified target logits.
         base_acceptance_rate: Per-position acceptance probability.
         num_draft_steps: Number of speculative draft steps.
-        seed: Optional per-execute seed tensor (scalar int64 on CPU).
-            When provided, RNG varies per graph execution and the caller
-            controls reproducibility. When ``None``, the graph falls back
-            to a static seed. It is preferred to pass a seed rather than
-            relying on a static seed.
+        seed: Per-execute seed tensor.
 
     Returns ``(first_rejected_idx, recovered_tokens, bonus_tokens)``
     """
@@ -311,10 +285,7 @@ def synthetic_acceptance_sampler(
         draft_tokens, target_logits
     )
 
-    if seed is None:
-        ops.random.set_seed(42)
-    else:
-        ops.random.set_seed(seed)
+    ops.random.set_seed(seed)
 
     float_type = TensorType(
         DType.float32, draft_tokens.type.shape, device=device
@@ -420,8 +391,8 @@ class AcceptanceSampler:
         Args:
             draft_tokens: Draft token ids from the draft model.
             target_logits: Verified target logits.
-            seed: Optional per-execute seed tensor. Consumed by the
-                synthetic and stochastic paths; ignored by greedy.
+            seed: Per-execute seed tensor. Required by the synthetic and
+                stochastic paths; ignored by greedy.
             temperature, top_k, max_k, top_p, min_top_p: Per-row
                 sampling params. Required when the sampler was built
                 with ``use_stochastic=True`` and synthetic mode is off;
@@ -432,11 +403,12 @@ class AcceptanceSampler:
                 ``relaxed_topk`` / ``relaxed_delta``; rows where this is
                 True use the relaxed acceptance rule, others use the
                 strict stochastic rule.
-            token_bitmasks: Optional grammar constraint bitmask
-                ``[batch, num_steps+1, vocab_size]``. Only used in
+            token_bitmasks: Optional packed int32 grammar constraint bitmask
+                ``[batch, num_steps+1, ceil(vocab_size/32)]``. Only used in
                 stochastic mode (not in synthetic and greedy modes).
         """
         if self._base_rate is not None:
+            assert seed is not None, "synthetic acceptance requires a seed"
             return synthetic_acceptance_sampler(
                 draft_tokens,
                 target_logits,
@@ -445,6 +417,7 @@ class AcceptanceSampler:
                 seed=seed,
             )
         if self._use_stochastic:
+            assert seed is not None, "stochastic acceptance requires a seed"
             assert temperature is not None
             assert top_k is not None
             assert max_k is not None
@@ -475,7 +448,7 @@ def stochastic_acceptance_sampler(
     max_k: TensorValue,
     top_p: TensorValue,
     min_top_p: TensorValue,
-    seed: int | TensorValue | None = 0,
+    seed: TensorValue,
     in_thinking_phase: TensorValue | None = None,
     relaxed_topk: int | None = None,
     relaxed_delta: float | None = None,
@@ -506,10 +479,7 @@ def stochastic_acceptance_sampler(
         - recovered_tokens: Tokens sampled from target distribution ``[batch, num_steps]``
         - bonus_tokens: Bonus token from final position ``[batch, 1]``
     """
-    if seed is None:
-        ops.random.set_seed(42)
-    else:
-        ops.random.set_seed(seed)
+    ops.random.set_seed(seed)
 
     device = draft_tokens.device
 
@@ -522,12 +492,20 @@ def stochastic_acceptance_sampler(
 
     # Apply grammar mask if provided
     if token_bitmasks is not None:
-        # Rebind bitmask to match logits shape (num_steps + 1)
+        # ``token_bitmasks`` is a packed int32 bitmask
+        # ``[batch, num_steps+1, ceil(vocab/32)]``. Unpack and mask the logits
+        # in one fused GPU pass instead of CPU-unpacking to a bool tensor.
         bitmask_rebound = ops.rebind(
             token_bitmasks,
-            shape=[Dim("batch_size"), Dim("num_steps") + 1, Dim("vocab_size")],
+            shape=[
+                Dim("batch_size"),
+                Dim("num_steps") + 1,
+                Dim("packed_vocab_size"),
+            ],
         )
-        target_logits_3d = apply_grammar_mask(target_logits_3d, bitmask_rebound)
+        target_logits_3d = apply_packed_bitmask(
+            target_logits_3d, bitmask_rebound, fill_val=_MASKED_LOGIT_VALUE
+        )
 
     draft_verification_logits = target_logits_3d[:, :-1]
     bonus_logits = ops.rebind(
@@ -676,6 +654,7 @@ def stochastic_acceptance_sampler(
         _find_first_rejected(rejected, device), axis=-1
     )
 
+    seed_per_batch = ops.broadcast_to(seed, [batch_size])
     bonus_token_ids = topk_fused_sampling(
         logits=bonus_logits,
         top_k=top_k,
@@ -683,6 +662,7 @@ def stochastic_acceptance_sampler(
         temperature=temperature,
         top_p=top_p,
         min_top_p=min_top_p,
+        seed=seed_per_batch,
     )
 
     return first_rejected_idx, recovered_token_ids, bonus_token_ids.tensor
@@ -697,7 +677,6 @@ class RejectionSamplerWithResiduals(Module):
         top_k: int = 1,
         temperature: float = 1.0,
         eps: float = 1e-10,
-        seed: int = 0,
         debug: bool = False,
     ) -> None:
         self.device = device
@@ -705,7 +684,6 @@ class RejectionSamplerWithResiduals(Module):
         self.temperature = temperature
         self.eps = eps
         self.debug = debug
-        ops.random.set_seed(seed)
 
     def _get_first_rejected_token_idx(
         self,

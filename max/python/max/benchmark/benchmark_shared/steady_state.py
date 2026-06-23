@@ -32,56 +32,59 @@ from typing import Literal
 
 import numpy as np
 
-from .request import RequestFuncOutput, TTSRequestFuncOutput
+from .request import RequestFuncOutput
 
 DEFAULT_WINDOW_SIZE = 50
 DEFAULT_TTFT_THRESHOLD = 0.5
 DEFAULT_TPOT_THRESHOLD = 0.3
 DEFAULT_SUSTAINED_COUNT = DEFAULT_WINDOW_SIZE // 2
 
-
 DetectionMode = Literal["full", "ttft_only"]
 
 
 @dataclass
 class SteadyStateWindow:
-    """Result of steady-state auto-detection on a benchmark run.
-
-    Attributes:
-        detected: Whether a steady-state window was found.
-        start_index: Min original index in the steady-state window.
-            None if not detected.
-        end_index: Max original index + 1 (exclusive) in the window.
-            None if not detected. For multi-turn benchmarks where requests
-            interleave across sessions, use ``steady_state_indices`` for
-            the exact set of requests in the window.
-        steady_state_indices: Original output indices of all requests in
-            the steady-state window. Empty if not detected. Use this
-            instead of start_index/end_index when requests may not be
-            contiguous in dispatch order (e.g., multi-turn benchmarks).
-        total_requests: Number of valid requests considered for detection
-            (successful, non-cancelled, with timestamps and TPOT data).
-        steady_state_count: Number of requests in the detected window.
-        warning: Human-readable explanation when detection fails.
-        window_size: Rolling window size used for detection.
-        ttft_threshold: Threshold for TTFT stabilization.
-        tpot_threshold: Threshold for TPOT stabilization.
-        mode: ``"full"`` uses TTFT for ramp-up and TPOT for ramp-down.
-            ``"ttft_only"`` uses TTFT for both, when TPOT is absent
-            (e.g., prefill-only workloads).
-    """
+    """Result of steady-state auto-detection on a benchmark run."""
 
     detected: bool
+    """Whether a steady-state window was found."""
     start_index: int | None
+    """Min original index in the steady-state window. None if not detected."""
     end_index: int | None
+    """Max original index + 1 (exclusive) in the window. None if not detected.
+
+    For multi-turn benchmarks where requests interleave across sessions, use
+    ``steady_state_indices`` for the exact set of requests in the window.
+    """
     steady_state_indices: list[int]
+    """Original output indices of all requests in the steady-state window.
+
+    Empty if not detected. Use this instead of start_index/end_index when
+    requests may not be contiguous in dispatch order (e.g., multi-turn
+    benchmarks).
+    """
     total_requests: int
+    """Number of valid requests considered for detection.
+
+    Filters out cancelled, failed, requests missing timestamps or TPOT data.
+    """
     steady_state_count: int
+    """Number of requests in the detected window."""
     warning: str | None
+    """Human-readable explanation when detection fails."""
     window_size: int
+    """Rolling window size used for detection."""
     ttft_threshold: float
+    """Threshold for TTFT stabilization."""
     tpot_threshold: float
+    """Threshold for TPOT stabilization."""
     mode: DetectionMode = "full"
+    """Detection mode.
+
+    ``"full"`` uses TTFT for ramp-up and TPOT for ramp-down.
+    ``"ttft_only"`` uses TTFT for both, when TPOT is absent
+    (e.g., prefill-only workloads).
+    """
 
 
 def _rolling_mad_over_median(values: list[float], window: int) -> list[float]:
@@ -163,7 +166,7 @@ def _empty_result(
 
 
 def detect_steady_state(
-    outputs: Sequence[RequestFuncOutput | TTSRequestFuncOutput],
+    outputs: Sequence[RequestFuncOutput],
     window_size: int = DEFAULT_WINDOW_SIZE,
     ttft_threshold: float = DEFAULT_TTFT_THRESHOLD,
     tpot_threshold: float = DEFAULT_TPOT_THRESHOLD,

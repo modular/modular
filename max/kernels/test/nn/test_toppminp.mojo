@@ -154,8 +154,8 @@ def test_case_sampling[
     comptime is_top_p = test_case.is_top_p
     var batch_size = test_case.batch_size
     var vocab_size = test_case.vocab_size
-    var temperature = rebind[Scalar[dtype]](test_case.temperature)
-    var p_threshold = rebind[Scalar[dtype]](test_case.p_threshold)
+    var temperature = test_case.temperature
+    var p_threshold = test_case.p_threshold
 
     var m = Bench()
 
@@ -165,19 +165,19 @@ def test_case_sampling[
     )
     var in_logits = TileTensor(
         in_logits_ptr,
-        row_major(Coord(Idx(batch_size), Idx(vocab_size))),
+        row_major(Coord(batch_size, vocab_size)),
     )
     var token_ids_ptr = List(
         length=batch_size * 1, fill=Scalar[out_idx_type](0)
     )
     var token_ids = TileTensor(
         token_ids_ptr,
-        row_major(Coord(Idx(batch_size), Idx(1))),
+        row_major(Coord(batch_size, Idx[1])),
     )
     var p_thresholds_ptr = List(length=batch_size, fill=Scalar[dtype](0))
     var p_thresholds = TileTensor(
         p_thresholds_ptr,
-        row_major(Idx(batch_size)),
+        row_major(batch_size),
     )
 
     # Fill tensors

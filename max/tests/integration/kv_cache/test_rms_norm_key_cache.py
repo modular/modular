@@ -19,13 +19,13 @@ from max.driver import Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Dim, Graph, TensorType, TensorValue, ops
-from max.kv_cache import PagedKVCacheManager
 from max.nn.kernels import rms_norm_key_cache
 from max.nn.kv_cache import (
     KVCacheInputsPerDevice,
     KVCacheParams,
     PagedCacheValues,
 )
+from max.pipelines.kv_cache import PagedKVCacheManager
 from test_common.context_utils import create_text_context
 
 
@@ -117,7 +117,7 @@ def test_rms_norm_key_cache(session: InferenceSession, dtype: DType) -> None:
         input_types=[
             gamma_type,
             input_row_offsets_type,
-            *kv_params.get_symbolic_inputs().flatten(),
+            *kv_params.flattened_kv_inputs(),
         ],
     )
 
@@ -129,10 +129,11 @@ def test_rms_norm_key_cache(session: InferenceSession, dtype: DType) -> None:
     for i in range(batch_size):
         context = create_text_context(np.empty(seq_lens[i]))
         kv_manager.claim(context.request_id, replica_idx=0)
-        kv_manager.alloc(context, replica_idx=0, num_steps=1)
+        kv_manager.alloc(context, replica_idx=0)
         batch.append(context)
 
-    graph_inputs = kv_manager.runtime_inputs([batch]).inputs[0]
+    graph_inputs = kv_manager.runtime_inputs_for_leaf([batch]).inputs[0]
+
     # First set KV blocks to all ones so that RMSNorm changes them.
     kv_blocks = graph_inputs.kv_blocks
     all_ones = np.ones(kv_blocks.shape, dtype=kv_blocks.dtype.to_numpy())
@@ -198,7 +199,7 @@ def test_partial_rms_norm_key_cache(
         input_types=[
             gamma_type,
             input_row_offsets_type,
-            *kv_params.get_symbolic_inputs().flatten(),
+            *kv_params.flattened_kv_inputs(),
         ],
     )
 
@@ -210,10 +211,11 @@ def test_partial_rms_norm_key_cache(
     for i in range(batch_size):
         context = create_text_context(np.empty(seq_lens[i]))
         kv_manager.claim(context.request_id, replica_idx=0)
-        kv_manager.alloc(context, replica_idx=0, num_steps=1)
+        kv_manager.alloc(context, replica_idx=0)
         batch.append(context)
 
-    graph_inputs = kv_manager.runtime_inputs([batch]).inputs[0]
+    graph_inputs = kv_manager.runtime_inputs_for_leaf([batch]).inputs[0]
+
     # First set KV blocks to all ones so that RMSNorm changes them.
     kv_blocks = graph_inputs.kv_blocks
     all_ones = np.ones(kv_blocks.shape, dtype=kv_blocks.dtype.to_numpy())
@@ -292,7 +294,7 @@ def test_rms_norm_new_key_cache(
         input_types=[
             gamma_type,
             input_row_offsets_type,
-            *kv_params.get_symbolic_inputs().flatten(),
+            *kv_params.flattened_kv_inputs(),
         ],
     )
 
@@ -304,16 +306,18 @@ def test_rms_norm_new_key_cache(
     for i in range(batch_size):
         context = create_text_context(np.empty(seq_lens[i]))
         kv_manager.claim(context.request_id, replica_idx=0)
-        kv_manager.alloc(context, replica_idx=0, num_steps=1)
+        kv_manager.alloc(context, replica_idx=0)
         batch.append(context)
 
     # note that unlike previous tests, we step the kv cache by 10 tokens
     # this is to test that we only operate on the new tokens
-    graph_inputs = kv_manager.runtime_inputs([batch]).inputs[0]
+    _ = kv_manager.runtime_inputs([batch])
+
     for ctx in batch:
         ctx.update(42)
     kv_manager.step([batch])
-    graph_inputs = kv_manager.runtime_inputs([batch]).inputs[0]
+
+    graph_inputs = kv_manager.runtime_inputs_for_leaf([batch]).inputs[0]
 
     # First set KV blocks to all ones so that RMSNorm changes them.
     kv_blocks = graph_inputs.kv_blocks
@@ -394,7 +398,7 @@ def test_rms_norm_key_cache_dtype_mismatch(
             input_types=[
                 gamma_type,
                 input_row_offsets_type,
-                *kv_params.get_symbolic_inputs().flatten(),
+                *kv_params.flattened_kv_inputs(),
             ],
         )
 
@@ -443,7 +447,7 @@ def test_rms_norm_key_cache_per_token_norm(session: InferenceSession) -> None:
         input_types=[
             gamma_type,
             input_row_offsets_type,
-            *kv_params.get_symbolic_inputs().flatten(),
+            *kv_params.flattened_kv_inputs(),
         ],
     )
 
@@ -455,10 +459,10 @@ def test_rms_norm_key_cache_per_token_norm(session: InferenceSession) -> None:
     for i in range(batch_size):
         context = create_text_context(np.empty(seq_lens[i]))
         kv_manager.claim(context.request_id, replica_idx=0)
-        kv_manager.alloc(context, replica_idx=0, num_steps=1)
+        kv_manager.alloc(context, replica_idx=0)
         batch.append(context)
 
-    graph_inputs = kv_manager.runtime_inputs([batch]).inputs[0]
+    graph_inputs = kv_manager.runtime_inputs_for_leaf([batch]).inputs[0]
 
     # First set KV blocks to all ones so that RMSNorm changes them.
     kv_blocks = graph_inputs.kv_blocks

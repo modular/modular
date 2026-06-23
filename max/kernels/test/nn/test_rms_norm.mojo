@@ -78,7 +78,7 @@ def run_rms_norm_cpu[
     @__copy_capture(output_buf)
     @parameter
     def identity_output_fn[
-        width: Int, alignment: Int
+        width: SIMDSize, alignment: Int
     ](coords: IndexList[rank], val: SIMD[dtype, width]) -> None:
         var idx = output_buf.layout(Coord(coords))
         output_buf.raw_store[width=width, alignment=alignment](idx, val)
@@ -93,7 +93,7 @@ def run_rms_norm_cpu[
     for r, c in product(range(rows), range(cols)):
         var vec = TileTensor(
             input_ptr.unsafe_ptr() + r * cols,
-            row_major(Idx(cols)),
+            row_major(cols),
         )
         var rms_ref = compute_rms(vec, cols, epsilon)
         var idx = r * cols + c

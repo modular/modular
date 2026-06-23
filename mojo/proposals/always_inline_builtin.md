@@ -64,8 +64,8 @@ problems:
 3. ✅ We have complicated and fragile logic to work around this in the case when
    the operands are “simple constants” (see
    `inlineFunctionCallIntoPValueIfPossible` and transitive code it calls,
-    *shudder*) which has lots of problems, e.g. it completely fails on
-    parametric function calls.
+   *shudder*) which has lots of problems, e.g. it completely fails on
+   parametric function calls.
 4. ✅ Because that doesn’t work on parametric function calls, we get further
    hacks like `tryOriginInitFold` which special cases `Origin.__init__` because
    Origin is a parametric struct, and we need low-level canonical `!lit.origin`

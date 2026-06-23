@@ -10,13 +10,16 @@ package_group(
     name = "consumers",
     packages = [
         "//",  # root BUILD.bazel file
+        "//Faux/...",
         "//GraphCompiler/...",
         "//Kernels/...",
         "//SDK/...",
         "//bazel/...",
         "//docs/...",
         "//examples/...",  # OSS only
+        "//mach/tools/...",  # mach engine's Python benchmark/MEF tooling
         "//max/...",
+        "//max_private/...",  # private-only entrypoints + tool parsers
         "//oss/...",
         "//oss/modular/max/...",
         "//utils/...",
@@ -31,18 +34,11 @@ alias(
     tags = [TOP_LEVEL_TAG],
 )
 
-alias(
-    name = "lmcache",
-    actual = "//max/python/max/entrypoints:pipelines_lmcache",
-    tags = [TOP_LEVEL_TAG],
-)
-
 py_repl(
     name = "repl",
     deps = [
         "//max/python/max",
         requirement("hypothesis"),
-        requirement("notebook"),
         requirement("nvitop"),
         requirement("rich"),
         requirement("pytest"),

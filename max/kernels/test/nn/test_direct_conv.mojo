@@ -89,16 +89,6 @@ def test[
     comptime micro_kernel_height = get_direct_conv_micro_kernel_height()
     comptime micro_kernel_width = get_direct_conv_micro_kernel_width()
 
-    var num_threads = num_physical_cores()
-    var num_tasks = get_conv_num_tasks(num_threads, conv_shape)
-    var num_partitions = get_conv_num_partitions[
-        micro_kernel_height, micro_kernel_width * simd_size
-    ](num_tasks, conv_shape)
-
-    # Rounded C and F size for pre-packed filter.
-    var micro_kernel_f_size = get_direct_conv_micro_kernel_width() * simd_size
-    var rounded_F = ceildiv(F, micro_kernel_f_size) * micro_kernel_f_size
-
     comptime layout_4d = Layout.row_major[4]()
     comptime layout_5d = Layout.row_major[5]()
     var input = LayoutTensor[dtype, layout_4d](

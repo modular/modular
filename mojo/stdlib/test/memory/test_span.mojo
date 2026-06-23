@@ -587,11 +587,13 @@ def test_iter() raises:
     var data = [1, 2, 3, 4, 5]
     var span = Span(data)
     var it = iter(span)
+    assert_equal(len(it), len(span))
     assert_equal(next(it), 1)
     assert_equal(next(it), 2)
     assert_equal(next(it), 3)
     assert_equal(next(it), 4)
     assert_equal(next(it), 5)
+    assert_equal(len(it), 0)
     with assert_raises():
         _ = it.__next__()  # raises StopIteration
 
@@ -637,14 +639,20 @@ def test_span_write_to() raises:
 def test_span_write_repr_to() raises:
     check_write_to(
         Span([1, 2, 3]),
-        expected="Span[mut=False, Int]([Int(1), Int(2), Int(3)])",
+        expected=(
+            "Span[mut=False, SIMD[DType.int, 1]]([Int(1), Int(2), Int(3)])"
+        ),
         is_repr=True,
     )
     check_write_to(
-        Span(List[Int]()), expected="Span[mut=False, Int]([])", is_repr=True
+        Span(List[Int]()),
+        expected="Span[mut=False, SIMD[DType.int, 1]]([])",
+        is_repr=True,
     )
     check_write_to(
-        Span([42]), expected="Span[mut=False, Int]([Int(42)])", is_repr=True
+        Span([42]),
+        expected="Span[mut=False, SIMD[DType.int, 1]]([Int(42)])",
+        is_repr=True,
     )
 
 
@@ -671,7 +679,7 @@ def test_span_hashable() raises:
 
 
 @fieldwise_init
-struct HashableOnly(Hashable, ImplicitlyDestructible, Movable):
+struct HashableOnly(Hashable, ImplicitlyDeletable, Movable):
     var value: Int
 
     def __hash__(self, mut hasher: Some[Hasher]):

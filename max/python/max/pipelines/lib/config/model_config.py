@@ -26,19 +26,40 @@ from max.config import ConfigFileModel
 from max.driver import DeviceSpec, devices_exist, scan_available_devices
 from max.dtype import DType
 from max.graph.quantization import QuantizationConfig, QuantizationEncoding
-from max.graph.weights import WeightsFormat, weights_format
-from max.interfaces import SamplingParamsGenerationConfigDefaults
+from max.graph.weights import (
+    WeightsFormat,
+    load_weights,
+    weights_format,
+)
 from max.nn.kv_cache.cache_params import KVConnectorType
-from max.pipelines.lib.device_specs import coerce_device_specs_input
-from max.pipelines.lib.hf_utils import (
+from max.pipelines.context import SamplingParamsGenerationConfigDefaults
+from max.pipelines.kv_cache.config import KVCacheConfig
+from max.pipelines.lib._hf_config import load_huggingface_config
+from max.pipelines.lib.device_specs import (
+    _default_device_specs,
+    coerce_device_specs_input,
+)
+from max.pipelines.lib.weight_loader import (
+    WeightLoader,
+    _loader_over_weights,
+    dict_loader,
+)
+from max.pipelines.modeling.config_enums import (
+    RopeType,
+    SupportedEncoding,
+    parse_supported_encoding_from_file_name,
+    supported_encoding_quantization,
+    supported_encoding_supported_devices,
+    supported_encoding_supported_on,
+)
+from max.pipelines.weights.hf_utils import (
     HuggingFaceRepo,
     download_weight_files,
     try_to_load_from_cache,
     validate_hf_repo_access,
 )
-from max.pipelines.lib.memory_estimation import to_human_readable_bytes
-from max.pipelines.lib.registry import PIPELINE_REGISTRY
-from max.pipelines.lib.weight_path_parser import WeightPathParser
+from max.pipelines.weights.weight_path_parser import WeightPathParser
+from max.support.human_readable_formatter import to_human_readable_bytes
 from pydantic import (
     ConfigDict,
     Field,
@@ -49,18 +70,7 @@ from pydantic import (
 from transformers import PretrainedConfig
 from transformers.generation import GenerationConfig
 
-from .config_enums import (
-    RopeType,
-    SupportedEncoding,
-    parse_supported_encoding_from_file_name,
-    supported_encoding_quantization,
-    supported_encoding_supported_devices,
-    supported_encoding_supported_on,
-)
-from .kv_cache_config import KVCacheConfig
-
 logger = logging.getLogger("max.pipelines")
-
 
 # Encodings that can be casted to/from each other.
 # We currently only support float32 <-> bfloat16 weight type casting.
@@ -150,7 +160,10 @@ class MAXModelConfig(MAXModelConfigBase):
 
     weight_path: list[Path] = Field(
         default_factory=list,
-        description="Optional path or URL of the model weights to use.",
+        description=(
+            "Optional path or URL of the model weights to use. "
+            "Overrides default weight discovery."
+        ),
     )
     """The path or URL of the model weights to use."""
 
@@ -204,7 +217,7 @@ class MAXModelConfig(MAXModelConfigBase):
     """Subdirectory within the HuggingFace repo to load config and weights from."""
 
     device_specs: list[DeviceSpec] = Field(
-        default_factory=scan_available_devices,
+        default_factory=_default_device_specs,
         description=(
             "Devices to run inference upon. This option should not be used "
             "directly via the CLI entrypoint."
@@ -242,6 +255,18 @@ class MAXModelConfig(MAXModelConfigBase):
         ),
     )
     """The RoPE type to use, forced regardless of model defaults."""
+
+    sliding_window: int | None = Field(
+        default=None,
+        description=(
+            "If set, overrides the model's attention to use a "
+            "sliding-window causal mask of this many tokens. ``None`` "
+            "(the default) defers to the HuggingFace config's "
+            "``sliding_window`` field, or full causal attention if the "
+            "model doesn't advertise one."
+        ),
+    )
+    """Override the attention sliding-window size in tokens."""
 
     enable_echo: bool = Field(
         default=False,
@@ -548,7 +573,7 @@ class MAXModelConfig(MAXModelConfigBase):
         architecture validation.
 
         For LLM models that later go through
-        ``_validate_and_resolve_architecture()``, the fields resolved
+        ``_validate_model_config_against_arch()``, the fields resolved
         here are consumed as-is (the downstream methods are idempotent
         when these fields are already set).
 
@@ -852,13 +877,11 @@ class MAXModelConfig(MAXModelConfigBase):
                 model repo/subfolder.
         """
         # Note: For multiprocessing, __getstate__ clears _huggingface_config
-        # before pickling. Each worker process will reload the config fresh,
-        # which properly handles trust_remote_code dynamic class loading.
+        # before pickling. Each worker process reloads fresh, which correctly
+        # handles trust_remote_code dynamic class loading.
         if self._huggingface_config is None:
-            self._huggingface_config = (
-                PIPELINE_REGISTRY.get_active_huggingface_config(
-                    huggingface_repo=self.huggingface_model_repo,
-                )
+            self._huggingface_config = load_huggingface_config(
+                self.huggingface_model_repo
             )
         return self._huggingface_config
 
@@ -1217,6 +1240,16 @@ class MAXModelConfig(MAXModelConfigBase):
                     encoding=self._applied_dtype_cast_from
                 )
 
+            if not weight_files and self.quantization_encoding in (
+                "float16",
+                "bfloat16",
+            ):
+                # A float16/bfloat16 graph can load float32 weights cast at
+                # load time by the architecture's weight adapter.
+                weight_files = self.huggingface_weight_repo.files_for_encoding(
+                    encoding="float32"
+                )
+
             if default_weight_files := weight_files.get(
                 default_weights_format, []
             ):
@@ -1371,6 +1404,32 @@ class MAXModelConfig(MAXModelConfigBase):
             local_path = Path(weight_repo.repo_id)
             return [local_path / x for x in self.weight_path]
 
+    def loader(self) -> WeightLoader:
+        """Returns a :class:`WeightLoader` over this config's weights.
+
+        The loader's namespace is the raw parameter names from the source
+        files (un-prefixed). Pass this directly to a single-model
+        pipeline's Module tree; for multi-component pipelines, use
+        :meth:`~max.pipelines.lib.model_manifest.ModelManifest.loader`
+        which exposes the role-prefixed union across configs.
+
+        Resolution is lazy: the safetensors mmap stays cold for
+        parameters the Module never asks for. Inherits the HuggingFace
+        download side-effect from :meth:`resolved_weight_paths` for
+        online repos.
+
+        Returns an empty loader when there are no weight paths -- common
+        for components in a diffusion manifest that are config-only
+        (for example, the scheduler).
+
+        Returns:
+            A :class:`WeightLoader` over this config's source namespace.
+        """
+        paths = self.resolved_weight_paths()
+        if not paths:
+            return dict_loader({})
+        return _loader_over_weights(load_weights(paths))
+
     @property
     def default_device_spec(self) -> DeviceSpec:
         """Returns the default device spec for the model.
@@ -1428,6 +1487,7 @@ class MAXModelConfig(MAXModelConfigBase):
         # Otherwise select the default KV cache dtype based on the quantization encoding.
         supported_encoding_to_cache_dtype = {
             "float32": DType.float32,
+            "float16": DType.float16,
             "bfloat16": DType.bfloat16,
             "float8_e4m3fn": DType.bfloat16,
             "float4_e2m1fnx2": DType.bfloat16,
@@ -1533,6 +1593,7 @@ class MAXModelConfig(MAXModelConfigBase):
         logger.info("  %s KV Cache %s", sub_separator, sub_separator)
 
         entries: list[tuple[str, Any]] = [
+            ("cache_dtype", kv_config.cache_dtype),
             ("page_size", f"{kv_config.kv_cache_page_size} tokens"),
             ("prefix_caching", kv_config.enable_prefix_caching),
             ("kv_connector", kv_config.kv_connector or "null"),

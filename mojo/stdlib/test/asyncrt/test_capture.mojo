@@ -66,7 +66,7 @@ def run_captured_func(ctx: DeviceContext, captured: Float32) raises:
     var block_dim = 32
 
     comptime kernel = vec_func[add_with_captured]
-    var kernel_func = ctx.compile_function_experimental[kernel]()
+    var kernel_func = ctx.compile_function[kernel]()
     ctx.enqueue_function(
         kernel_func,
         in0,

@@ -20,10 +20,11 @@ This module registers operations for variable-length causal 1D convolution:
 
 from std.math import ceildiv
 
-import compiler_internal as compiler
+import extensibility as compiler
+from std.gpu.host import DeviceContext
 from std.gpu.host.info import is_cpu, is_gpu
-from std.runtime.asyncrt import DeviceContextPtr
-from tensor import InputTensor, OutputTensor
+
+from extensibility import InputTensor, OutputTensor
 from std.utils.index import IndexList
 
 from state_space.varlen_causal_conv1d import (
@@ -76,7 +77,7 @@ struct CausalConv1DVarlenFwd[activation: StaticString]:
         query_start_loc: InputTensor[dtype=DType.int32, rank=1, ...],
         cache_indices: InputTensor[dtype=DType.int32, rank=1, ...],
         has_initial_state: InputTensor[dtype=DType.bool, rank=1, ...],
-        ctx: DeviceContextPtr,
+        ctx: DeviceContext,
     ) capturing raises:
         var dim = x.dim_size(0)
         var total_seqlen = x.dim_size(1)
@@ -165,7 +166,7 @@ struct CausalConv1DVarlenFwd[activation: StaticString]:
                 has_bias,
             )
         elif is_gpu[target]():
-            var gpu_ctx = ctx.get_device_context()
+            var gpu_ctx = ctx
             comptime BLOCK_DIM = 128
             comptime BLOCK_SEQ = 1
             var silu_activation_int8 = Int8(silu_activation)
@@ -193,28 +194,7 @@ struct CausalConv1DVarlenFwd[activation: StaticString]:
                         has_initial_state_tt.LayoutType,
                         conv_states_tt.LayoutType,
                         output_tt.LayoutType,
-                    ],
-                    causal_conv1d_varlen_fwd_gpu[
-                        x_tt.dtype,
-                        weight_tt.dtype,
-                        bias_tt.dtype,
-                        output_tt.dtype,
-                        query_start_loc_tt.dtype,
-                        cache_indices_tt.dtype,
-                        has_initial_state_tt.dtype,
-                        conv_states_tt.dtype,
-                        kWidth,
-                        BLOCK_DIM,
-                        BLOCK_SEQ,
-                        x_tt.LayoutType,
-                        weight_tt.LayoutType,
-                        bias_tt.LayoutType,
-                        query_start_loc_tt.LayoutType,
-                        cache_indices_tt.LayoutType,
-                        has_initial_state_tt.LayoutType,
-                        conv_states_tt.LayoutType,
-                        output_tt.LayoutType,
-                    ],
+                    ]
                 ]()
                 gpu_ctx.enqueue_function(
                     compiled_func,
@@ -270,28 +250,7 @@ struct CausalConv1DVarlenFwd[activation: StaticString]:
                         has_initial_state_tt.LayoutType,
                         conv_states_tt.LayoutType,
                         output_tt.LayoutType,
-                    ],
-                    causal_conv1d_varlen_fwd_gpu[
-                        x_tt.dtype,
-                        weight_tt.dtype,
-                        bias_tt.dtype,
-                        output_tt.dtype,
-                        query_start_loc_tt.dtype,
-                        cache_indices_tt.dtype,
-                        has_initial_state_tt.dtype,
-                        conv_states_tt.dtype,
-                        kWidth,
-                        BLOCK_DIM,
-                        BLOCK_SEQ,
-                        x_tt.LayoutType,
-                        weight_tt.LayoutType,
-                        bias_tt.LayoutType,
-                        query_start_loc_tt.LayoutType,
-                        cache_indices_tt.LayoutType,
-                        has_initial_state_tt.LayoutType,
-                        conv_states_tt.LayoutType,
-                        output_tt.LayoutType,
-                    ],
+                    ]
                 ]()
                 gpu_ctx.enqueue_function(
                     compiled_func,
@@ -347,28 +306,7 @@ struct CausalConv1DVarlenFwd[activation: StaticString]:
                         has_initial_state_tt.LayoutType,
                         conv_states_tt.LayoutType,
                         output_tt.LayoutType,
-                    ],
-                    causal_conv1d_varlen_fwd_gpu[
-                        x_tt.dtype,
-                        weight_tt.dtype,
-                        bias_tt.dtype,
-                        output_tt.dtype,
-                        query_start_loc_tt.dtype,
-                        cache_indices_tt.dtype,
-                        has_initial_state_tt.dtype,
-                        conv_states_tt.dtype,
-                        kWidth,
-                        BLOCK_DIM,
-                        BLOCK_SEQ,
-                        x_tt.LayoutType,
-                        weight_tt.LayoutType,
-                        bias_tt.LayoutType,
-                        query_start_loc_tt.LayoutType,
-                        cache_indices_tt.LayoutType,
-                        has_initial_state_tt.LayoutType,
-                        conv_states_tt.LayoutType,
-                        output_tt.LayoutType,
-                    ],
+                    ]
                 ]()
                 gpu_ctx.enqueue_function(
                     compiled_func,
@@ -424,28 +362,7 @@ struct CausalConv1DVarlenFwd[activation: StaticString]:
                         has_initial_state_tt.LayoutType,
                         conv_states_tt.LayoutType,
                         output_tt.LayoutType,
-                    ],
-                    causal_conv1d_varlen_fwd_gpu[
-                        x_tt.dtype,
-                        weight_tt.dtype,
-                        bias_tt.dtype,
-                        output_tt.dtype,
-                        query_start_loc_tt.dtype,
-                        cache_indices_tt.dtype,
-                        has_initial_state_tt.dtype,
-                        conv_states_tt.dtype,
-                        kWidth,
-                        BLOCK_DIM,
-                        BLOCK_SEQ,
-                        x_tt.LayoutType,
-                        weight_tt.LayoutType,
-                        bias_tt.LayoutType,
-                        query_start_loc_tt.LayoutType,
-                        cache_indices_tt.LayoutType,
-                        has_initial_state_tt.LayoutType,
-                        conv_states_tt.LayoutType,
-                        output_tt.LayoutType,
-                    ],
+                    ]
                 ]()
                 gpu_ctx.enqueue_function(
                     compiled_func,
@@ -486,18 +403,19 @@ struct CausalConv1DVarlenFwd[activation: StaticString]:
         else:
             raise Error("Unsupported target device")
 
-    @staticmethod
-    def shape[
-        dtype: DType,
-    ](
-        x: InputTensor[dtype=dtype, rank=2, ...],
-        weight: InputTensor[dtype=dtype, rank=2, ...],
-        bias: InputTensor[dtype=dtype, rank=1, ...],
-        query_start_loc: InputTensor[dtype=DType.int32, rank=1, ...],
-        cache_indices: InputTensor[dtype=DType.int32, rank=1, ...],
-        has_initial_state: InputTensor[dtype=DType.bool, rank=1, ...],
-    ) -> IndexList[2]:
-        return x.shape()
+
+@compiler.register_shape_function("causal_conv1d_varlen_fwd")
+def causal_conv1d_varlen_fwd_shape[
+    dtype: DType,
+](
+    x: InputTensor[dtype=dtype, rank=2, ...],
+    weight: InputTensor[dtype=dtype, rank=2, ...],
+    bias: InputTensor[dtype=dtype, rank=1, ...],
+    query_start_loc: InputTensor[dtype=DType.int32, rank=1, ...],
+    cache_indices: InputTensor[dtype=DType.int32, rank=1, ...],
+    has_initial_state: InputTensor[dtype=DType.bool, rank=1, ...],
+) -> IndexList[2]:
+    return x.shape()
 
 
 # ============================================================================
@@ -537,7 +455,7 @@ struct CausalConv1DVarlenUpdate[activation: StaticString]:
         bias: InputTensor[dtype=dtype, rank=1, ...],
         cache_seqlens: InputTensor[dtype=DType.int32, rank=1, ...],
         conv_state_indices: InputTensor[dtype=DType.int32, rank=1, ...],
-        ctx: DeviceContextPtr,
+        ctx: DeviceContext,
     ) capturing raises:
         var batch = x.dim_size(0)
         var dim = x.dim_size(1)
@@ -619,7 +537,7 @@ struct CausalConv1DVarlenUpdate[activation: StaticString]:
                 has_bias,
             )
         elif is_gpu[target]():
-            var gpu_ctx = ctx.get_device_context()
+            var gpu_ctx = ctx
             comptime BLOCK_DIM = 128
             var silu_activation_int8 = Int8(silu_activation)
 
@@ -643,25 +561,7 @@ struct CausalConv1DVarlenUpdate[activation: StaticString]:
                         cache_seqlens_tt.LayoutType,
                         conv_state_indices_tt.LayoutType,
                         output_tt.LayoutType,
-                    ],
-                    causal_conv1d_varlen_update_gpu[
-                        x_tt.dtype,
-                        weight_tt.dtype,
-                        bias_tt.dtype,
-                        output_tt.dtype,
-                        conv_state_tt.dtype,
-                        cache_seqlens_tt.dtype,
-                        conv_state_indices_tt.dtype,
-                        kWidth,
-                        BLOCK_DIM,
-                        x_tt.LayoutType,
-                        weight_tt.LayoutType,
-                        bias_tt.LayoutType,
-                        conv_state_tt.LayoutType,
-                        cache_seqlens_tt.LayoutType,
-                        conv_state_indices_tt.LayoutType,
-                        output_tt.LayoutType,
-                    ],
+                    ]
                 ]()
                 gpu_ctx.enqueue_function(
                     compiled_func,
@@ -715,25 +615,7 @@ struct CausalConv1DVarlenUpdate[activation: StaticString]:
                         cache_seqlens_tt.LayoutType,
                         conv_state_indices_tt.LayoutType,
                         output_tt.LayoutType,
-                    ],
-                    causal_conv1d_varlen_update_gpu[
-                        x_tt.dtype,
-                        weight_tt.dtype,
-                        bias_tt.dtype,
-                        output_tt.dtype,
-                        conv_state_tt.dtype,
-                        cache_seqlens_tt.dtype,
-                        conv_state_indices_tt.dtype,
-                        kWidth,
-                        BLOCK_DIM,
-                        x_tt.LayoutType,
-                        weight_tt.LayoutType,
-                        bias_tt.LayoutType,
-                        conv_state_tt.LayoutType,
-                        cache_seqlens_tt.LayoutType,
-                        conv_state_indices_tt.LayoutType,
-                        output_tt.LayoutType,
-                    ],
+                    ]
                 ]()
                 gpu_ctx.enqueue_function(
                     compiled_func,
@@ -787,25 +669,7 @@ struct CausalConv1DVarlenUpdate[activation: StaticString]:
                         cache_seqlens_tt.LayoutType,
                         conv_state_indices_tt.LayoutType,
                         output_tt.LayoutType,
-                    ],
-                    causal_conv1d_varlen_update_gpu[
-                        x_tt.dtype,
-                        weight_tt.dtype,
-                        bias_tt.dtype,
-                        output_tt.dtype,
-                        conv_state_tt.dtype,
-                        cache_seqlens_tt.dtype,
-                        conv_state_indices_tt.dtype,
-                        kWidth,
-                        BLOCK_DIM,
-                        x_tt.LayoutType,
-                        weight_tt.LayoutType,
-                        bias_tt.LayoutType,
-                        conv_state_tt.LayoutType,
-                        cache_seqlens_tt.LayoutType,
-                        conv_state_indices_tt.LayoutType,
-                        output_tt.LayoutType,
-                    ],
+                    ]
                 ]()
                 gpu_ctx.enqueue_function(
                     compiled_func,
@@ -859,25 +723,7 @@ struct CausalConv1DVarlenUpdate[activation: StaticString]:
                         cache_seqlens_tt.LayoutType,
                         conv_state_indices_tt.LayoutType,
                         output_tt.LayoutType,
-                    ],
-                    causal_conv1d_varlen_update_gpu[
-                        x_tt.dtype,
-                        weight_tt.dtype,
-                        bias_tt.dtype,
-                        output_tt.dtype,
-                        conv_state_tt.dtype,
-                        cache_seqlens_tt.dtype,
-                        conv_state_indices_tt.dtype,
-                        kWidth,
-                        BLOCK_DIM,
-                        x_tt.LayoutType,
-                        weight_tt.LayoutType,
-                        bias_tt.LayoutType,
-                        conv_state_tt.LayoutType,
-                        cache_seqlens_tt.LayoutType,
-                        conv_state_indices_tt.LayoutType,
-                        output_tt.LayoutType,
-                    ],
+                    ]
                 ]()
                 gpu_ctx.enqueue_function(
                     compiled_func,
@@ -919,17 +765,18 @@ struct CausalConv1DVarlenUpdate[activation: StaticString]:
         else:
             raise Error("Unsupported target device")
 
-    @staticmethod
-    def shape[
-        dtype: DType,
-    ](
-        x: InputTensor[dtype=dtype, rank=3, ...],
-        weight: InputTensor[dtype=dtype, rank=2, ...],
-        bias: InputTensor[dtype=dtype, rank=1, ...],
-        cache_seqlens: InputTensor[dtype=DType.int32, rank=1, ...],
-        conv_state_indices: InputTensor[dtype=DType.int32, rank=1, ...],
-    ) -> IndexList[3]:
-        return x.shape()
+
+@compiler.register_shape_function("causal_conv1d_varlen_update")
+def causal_conv1d_varlen_update_shape[
+    dtype: DType,
+](
+    x: InputTensor[dtype=dtype, rank=3, ...],
+    weight: InputTensor[dtype=dtype, rank=2, ...],
+    bias: InputTensor[dtype=dtype, rank=1, ...],
+    cache_seqlens: InputTensor[dtype=DType.int32, rank=1, ...],
+    conv_state_indices: InputTensor[dtype=DType.int32, rank=1, ...],
+) -> IndexList[3]:
+    return x.shape()
 
 
 # ============================================================================
@@ -958,7 +805,7 @@ struct CausalConv1DVarlenStates:
         states: OutputTensor[dtype=dtype, rank=3, ...],
         x: InputTensor[dtype=dtype, rank=2, ...],
         cu_seqlens: InputTensor[dtype=DType.int32, rank=1, ...],
-        ctx: DeviceContextPtr,
+        ctx: DeviceContext,
     ) capturing raises:
         var total_tokens = x.dim_size(0)
         var dim = x.dim_size(1)
@@ -998,7 +845,7 @@ struct CausalConv1DVarlenStates:
                 states_seqlen_stride,
             )
         elif is_gpu[target]():
-            var gpu_ctx = ctx.get_device_context()
+            var gpu_ctx = ctx
             comptime BLOCK_DIM = 128
             var compiled_func = gpu_ctx.compile_function[
                 causal_conv1d_varlen_states_gpu[
@@ -1010,17 +857,7 @@ struct CausalConv1DVarlenStates:
                     x_tt.LayoutType,
                     cu_seqlens_tt.LayoutType,
                     states_tt.LayoutType,
-                ],
-                causal_conv1d_varlen_states_gpu[
-                    x_tt.dtype,
-                    cu_seqlens_tt.dtype,
-                    states_tt.dtype,
-                    BLOCK_DIM,
-                    BLOCK_DIM,
-                    x_tt.LayoutType,
-                    cu_seqlens_tt.LayoutType,
-                    states_tt.LayoutType,
-                ],
+                ]
             ]()
             gpu_ctx.enqueue_function(
                 compiled_func,
@@ -1042,15 +879,16 @@ struct CausalConv1DVarlenStates:
         else:
             raise Error("Unsupported target device")
 
-    @staticmethod
-    def shape[
-        dtype: DType,
-    ](
-        x: InputTensor[dtype=dtype, rank=2, ...],
-        cu_seqlens: InputTensor[dtype=DType.int32, rank=1, ...],
-    ) -> IndexList[3]:
-        var batch = cu_seqlens.dim_size(0) - 1
-        var dim = x.dim_size(1)
-        # state_len is derived from the output tensor shape at runtime
-        # Return a placeholder shape; actual shape determined by output allocation
-        return IndexList[3](batch, dim, 0)
+
+@compiler.register_shape_function("causal_conv1d_varlen_states")
+def causal_conv1d_varlen_states_shape[
+    dtype: DType,
+](
+    x: InputTensor[dtype=dtype, rank=2, ...],
+    cu_seqlens: InputTensor[dtype=DType.int32, rank=1, ...],
+) -> IndexList[3]:
+    var batch = cu_seqlens.dim_size(0) - 1
+    var dim = x.dim_size(1)
+    # state_len is derived from the output tensor shape at runtime
+    # Return a placeholder shape; actual shape determined by output allocation
+    return IndexList[3](batch, dim, 0)

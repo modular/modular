@@ -22,23 +22,47 @@ import pytest
 from max.driver import CPU, Accelerator, Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import DeviceRef, Graph, TensorType
+from max.graph import DeviceRef, Graph, TensorType, ops
 from max.nn.sampling import (
     MinPSampler,
     compute_synthetic_acceptance_base_rate,
+    stochastic_acceptance_sampler,
 )
-from max.nn.sampling.rejection_sampler import stochastic_acceptance_sampler
-from max.pipelines.lib.sampling import (
+from max.pipelines.sampling import (
     SyntheticRunner,
     build_greedy_acceptance_sampler_graph,
     build_stochastic_acceptance_sampler_graph,
     build_synthetic_acceptance_sampler_graph,
 )
+from max.support.math import ceildiv
 
 
-def _seed_buffer(value: int) -> Buffer:
-    """Constructs a CPU int64 scalar Buffer matching ``ops.random.SeedType``."""
-    return Buffer.from_numpy(np.array(value, dtype=np.int64))
+def _seed_buffer(value: int, device: Device | None = None) -> Buffer:
+    buf = Buffer.from_numpy(np.array([value], dtype=np.uint64))
+    if device is not None:
+        buf = buf.to(device)
+    return buf
+
+
+def _pack_bitmask(mask: npt.NDArray[np.bool_]) -> npt.NDArray[np.int32]:
+    """Pack a bool bitmask ``[..., vocab]`` into int32 words ``[..., ceil(vocab/32)]``.
+
+    Bit ``v`` lives in word ``v // 32`` at bit position ``v % 32`` -- the packed
+    layout ``apply_packed_bitmask`` consumes. Padding bits past ``vocab`` stay
+    zero; the kernel never reads them.
+    """
+    mask = np.asarray(mask, dtype=bool)
+    *lead, vocab = mask.shape
+    packed_vocab = ceildiv(vocab, 32)
+    pad = packed_vocab * 32 - vocab
+    if pad:
+        mask = np.concatenate(
+            [mask, np.zeros((*lead, pad), dtype=bool)], axis=-1
+        )
+    bits = mask.reshape(*lead, packed_vocab, 32).astype(np.uint32)
+    weights = np.uint32(1) << np.arange(32, dtype=np.uint32)
+    words = (bits * weights).sum(axis=-1, dtype=np.uint64).astype(np.uint32)
+    return words.view(np.int32)
 
 
 # NOTE THAT ONLY RANK 2 TENSORS
@@ -189,6 +213,7 @@ def test_typical_acceptance_sampler(device: Device) -> None:
             Buffer.from_numpy(np.array(vocab_size, dtype=np.int64)),
             Buffer.from_numpy(np.ones(batch_size, dtype=np.float32)).to(device),
             Buffer.from_numpy(np.array(1.0, dtype=np.float32)),
+            _seed_buffer(1, device),
         ]
 
     vocab_size = 5
@@ -262,7 +287,7 @@ def test_synthetic_acceptance_sampler_degenerate(
     first_rejected, _, _ = model.execute(
         Buffer.from_numpy(draft_tokens_np).to(device),
         Buffer.from_numpy(target_logits).to(device),
-        _seed_buffer(1),
+        _seed_buffer(1, device),
     )
     first_rejected_np = cast(Buffer, first_rejected).to_numpy()
     expected = num_steps if expected_first_rejected == "num_steps" else 0
@@ -291,7 +316,7 @@ def test_synthetic_acceptance_sampler_zero_draft_tokens(
     first_rejected, _, _ = model.execute(
         Buffer.from_numpy(draft_tokens_np).to(device),
         Buffer.from_numpy(target_logits).to(device),
-        _seed_buffer(1),
+        _seed_buffer(1, device),
     )
     first_rejected_np = cast(Buffer, first_rejected).to_numpy()
     np.testing.assert_array_equal(first_rejected_np, [0] * batch_size)
@@ -337,7 +362,7 @@ def test_synthetic_acceptance_sampler_mean_rate(
         first_rejected, _, _ = model.execute(
             Buffer.from_numpy(draft_tokens_np).to(device),
             Buffer.from_numpy(target_logits).to(device),
-            _seed_buffer(run_idx + 1),
+            _seed_buffer(run_idx + 1, device),
         )
         accepted = cast(Buffer, first_rejected).to_numpy()
         total_accepted += accepted.sum()
@@ -412,6 +437,7 @@ def _stochastic_sampler_inputs(
     temperature_np: npt.NDArray[np.float32],
     top_k_np: npt.NDArray[np.int64] | None = None,
     top_p_np: npt.NDArray[np.float32] | None = None,
+    seed: int = 1,
 ) -> list[Buffer]:
     if top_k_np is None:
         top_k_np = np.full(batch_size, vocab_size, dtype=np.int64)
@@ -425,77 +451,8 @@ def _stochastic_sampler_inputs(
         Buffer.from_numpy(np.array(int(top_k_np.max()), dtype=np.int64)),
         Buffer.from_numpy(top_p_np).to(device),
         Buffer.from_numpy(np.array(float(top_p_np.min()), dtype=np.float32)),
+        _seed_buffer(seed, device),
     ]
-
-
-def test_stochastic_acceptance_sampler_seed_none() -> None:
-    """Guards the ``if seed is None`` branch: the exported graph builder
-    only accepts ``int``, so the ``None`` path is exercised inline."""
-    device = Accelerator()
-    session = InferenceSession(devices=[device])
-    device_ref = DeviceRef.from_device(device)
-
-    vocab_size = 5
-    num_steps = 2
-    batch_size = 1
-
-    input_types = [
-        TensorType(DType.int64, ["batch_size", "num_steps"], device=device_ref),
-        TensorType(
-            DType.float32,
-            ["total_output_len", "vocab_size"],
-            device=device_ref,
-        ),
-        TensorType(DType.float32, ["batch_size"], device=device_ref),
-        TensorType(DType.int64, ["batch_size"], device=device_ref),
-        TensorType(DType.int64, [], device=DeviceRef.CPU()),
-        TensorType(DType.float32, ["batch_size"], device=device_ref),
-        TensorType(DType.float32, [], device=DeviceRef.CPU()),
-    ]
-    with Graph("stochastic_seed_none", input_types=input_types) as graph:
-        (
-            draft_tokens,
-            target_logits,
-            temperature,
-            top_k,
-            max_k,
-            top_p,
-            min_top_p,
-        ) = graph.inputs
-        first_rejected_out, recovered_out, bonus_out = (
-            stochastic_acceptance_sampler(
-                draft_tokens=draft_tokens.tensor,
-                target_logits=target_logits.tensor,
-                temperature=temperature.tensor,
-                top_k=top_k.tensor,
-                max_k=max_k.tensor,
-                top_p=top_p.tensor,
-                min_top_p=min_top_p.tensor,
-                seed=None,
-            )
-        )
-        graph.output(first_rejected_out, recovered_out, bonus_out)
-
-    model = session.load(graph)
-
-    argmax_token = 2
-    logits = np.full((num_steps + 1, vocab_size), -100.0, dtype=np.float32)
-    logits[:, argmax_token] = 100.0
-    draft = np.full((batch_size, num_steps), argmax_token, dtype=np.int64)
-
-    first_rejected, recovered, bonus = model.execute(
-        *_stochastic_sampler_inputs(
-            device,
-            batch_size,
-            vocab_size,
-            draft,
-            logits,
-            np.ones(batch_size, dtype=np.float32),
-        )
-    )
-    assert cast(Buffer, first_rejected).to_numpy()[0] == num_steps
-    assert np.isfinite(cast(Buffer, recovered).to_numpy()).all()
-    assert np.isfinite(cast(Buffer, bonus).to_numpy()).all()
 
 
 def test_stochastic_acceptance_sampler_mixed_per_row_params() -> None:
@@ -542,6 +499,53 @@ def test_stochastic_acceptance_sampler_mixed_per_row_params() -> None:
     assert np.isfinite(cast(Buffer, bonus).to_numpy()).all()
 
 
+def test_stochastic_acceptance_sampler_bonus_token_uses_seed() -> None:
+    """Bonus token sampling must honor the per-execute seed.
+
+    With num_steps=0 the bonus token is the only varying output, so distinct
+    seeds must produce different draws and a repeated seed must reproduce them.
+    """
+    device = Accelerator()
+    session = InferenceSession(devices=[device])
+    graph = build_stochastic_acceptance_sampler_graph(
+        device=DeviceRef.from_device(device)
+    )
+    model = session.load(graph)
+
+    # Flat logits + temperature=1.0 give a near-uniform draw, so different
+    # seeds diverge.
+    batch_size = 16
+    vocab_size = 64
+    num_steps = 0
+    draft_tokens_np = np.zeros((batch_size, num_steps), dtype=np.int64)
+    logits = np.zeros((batch_size, vocab_size), dtype=np.float32)
+    temperature_np = np.ones(batch_size, dtype=np.float32)
+
+    def _bonus_for_seed(seed: int) -> npt.NDArray[np.int64]:
+        _, _, bonus = model.execute(
+            *_stochastic_sampler_inputs(
+                device,
+                batch_size,
+                vocab_size,
+                draft_tokens_np,
+                logits,
+                temperature_np,
+                seed=seed,
+            )
+        )
+        return cast(Buffer, bonus).to_numpy()
+
+    bonus_seed_1 = _bonus_for_seed(1)
+    bonus_seed_2 = _bonus_for_seed(2)
+    bonus_seed_1_again = _bonus_for_seed(1)
+
+    assert bonus_seed_1.shape == (batch_size, 1)
+    assert ((bonus_seed_1 >= 0) & (bonus_seed_1 < vocab_size)).all()
+
+    assert not np.array_equal(bonus_seed_1, bonus_seed_2)
+    np.testing.assert_array_equal(bonus_seed_1, bonus_seed_1_again)
+
+
 def _build_relaxed_acceptance_graph(
     device_ref: DeviceRef,
     *,
@@ -563,6 +567,7 @@ def _build_relaxed_acceptance_graph(
         TensorType(DType.int64, [], device=DeviceRef.CPU()),
         TensorType(DType.float32, ["batch_size"], device=device_ref),
         TensorType(DType.float32, [], device=DeviceRef.CPU()),
+        ops.random.SeedType(device_ref),
         TensorType(DType.bool, ["batch_size"], device=device_ref),
     ]
     with Graph("stochastic_relaxed", input_types=input_types) as graph:
@@ -574,6 +579,7 @@ def _build_relaxed_acceptance_graph(
             max_k,
             top_p,
             min_top_p,
+            seed,
             in_thinking_phase,
         ) = graph.inputs
         first_rejected_out, recovered_out, bonus_out = (
@@ -585,7 +591,7 @@ def _build_relaxed_acceptance_graph(
                 max_k=max_k.tensor,
                 top_p=top_p.tensor,
                 min_top_p=min_top_p.tensor,
-                seed=0,
+                seed=seed.tensor,
                 in_thinking_phase=in_thinking_phase.tensor,
                 relaxed_topk=relaxed_topk,
                 relaxed_delta=relaxed_delta,
@@ -680,85 +686,6 @@ def test_relaxed_acceptance_rejects_out_of_top_n() -> None:
 # Bitmask-constrained acceptance sampling tests.
 
 
-def test_apply_grammar_mask_masks_invalid_tokens() -> None:
-    """Tests that apply_grammar_mask correctly masks logits where bitmask is False."""
-    device = Accelerator()
-    session = InferenceSession(devices=[device])
-    device_ref = DeviceRef.from_device(device)
-
-    from max.nn.sampling.rejection_sampler import (
-        _MASKED_LOGIT_VALUE,
-        apply_grammar_mask,
-    )
-
-    batch_size = 2
-    num_positions = 3
-    vocab_size = 5
-
-    input_types = [
-        TensorType(
-            DType.float32,
-            [batch_size, num_positions, vocab_size],
-            device=device_ref,
-        ),
-        TensorType(
-            DType.bool,
-            [batch_size, num_positions, vocab_size],
-            device=device_ref,
-        ),
-    ]
-    with Graph("test_apply_grammar_mask", input_types=input_types) as graph:
-        logits_in, bitmask_in = graph.inputs
-        masked_logits = apply_grammar_mask(logits_in.tensor, bitmask_in.tensor)
-        graph.output(masked_logits)
-
-    model = session.load(graph)
-
-    # Create test logits with known values
-    logits_np = np.array(
-        [
-            [
-                [1.0, 2.0, 3.0, 4.0, 5.0],
-                [2.0, 3.0, 4.0, 5.0, 6.0],
-                [3.0, 4.0, 5.0, 6.0, 7.0],
-            ],
-            [
-                [5.0, 4.0, 3.0, 2.0, 1.0],
-                [6.0, 5.0, 4.0, 3.0, 2.0],
-                [7.0, 6.0, 5.0, 4.0, 3.0],
-            ],
-        ],
-        dtype=np.float32,
-    )
-
-    # Create bitmask: True where token is valid, False where it should be masked
-    # Batch 0: allow tokens 0, 2, 4 at all positions
-    # Batch 1: allow tokens 1, 3 at all positions
-    bitmask_np = np.zeros((batch_size, num_positions, vocab_size), dtype=bool)
-    bitmask_np[0, :, [0, 2, 4]] = True
-    bitmask_np[1, :, [1, 3]] = True
-
-    result = model.execute(
-        Buffer.from_numpy(logits_np).to(device),
-        Buffer.from_numpy(bitmask_np).to(device),
-    )
-    result_np = cast(Buffer, result[0]).to_numpy()
-
-    # Check that allowed tokens retain their original values
-    np.testing.assert_allclose(result_np[0, :, 0], logits_np[0, :, 0])
-    np.testing.assert_allclose(result_np[0, :, 2], logits_np[0, :, 2])
-    np.testing.assert_allclose(result_np[0, :, 4], logits_np[0, :, 4])
-    np.testing.assert_allclose(result_np[1, :, 1], logits_np[1, :, 1])
-    np.testing.assert_allclose(result_np[1, :, 3], logits_np[1, :, 3])
-
-    # Check that masked tokens have the masked logit value
-    np.testing.assert_allclose(result_np[0, :, 1], _MASKED_LOGIT_VALUE)
-    np.testing.assert_allclose(result_np[0, :, 3], _MASKED_LOGIT_VALUE)
-    np.testing.assert_allclose(result_np[1, :, 0], _MASKED_LOGIT_VALUE)
-    np.testing.assert_allclose(result_np[1, :, 2], _MASKED_LOGIT_VALUE)
-    np.testing.assert_allclose(result_np[1, :, 4], _MASKED_LOGIT_VALUE)
-
-
 def test_stochastic_acceptance_sampler_with_bitmask_rejects_invalid_draft() -> (
     None
 ):
@@ -787,8 +714,8 @@ def test_stochastic_acceptance_sampler_with_bitmask_rejects_invalid_draft() -> (
         TensorType(DType.float32, ["batch_size"], device=device_ref),
         TensorType(DType.float32, [], device=DeviceRef.CPU()),
         TensorType(
-            DType.bool,
-            ["batch_size", "num_bitmask_positions", "vocab_size"],
+            DType.int32,
+            ["batch_size", "num_bitmask_positions", "packed_vocab_size"],
             device=device_ref,
         ),
     ]
@@ -812,7 +739,7 @@ def test_stochastic_acceptance_sampler_with_bitmask_rejects_invalid_draft() -> (
             max_k=max_k.tensor,
             top_p=top_p.tensor,
             min_top_p=min_top_p.tensor,
-            seed=42,
+            seed=ops.constant(42, dtype=DType.uint64, device=device_ref),
             token_bitmasks=token_bitmasks.tensor,
         )
         graph.output(first_rejected, recovered, bonus)
@@ -842,7 +769,7 @@ def test_stochastic_acceptance_sampler_with_bitmask_rejects_invalid_draft() -> (
         Buffer.from_numpy(np.array(vocab_size, dtype=np.int64)),
         Buffer.from_numpy(np.ones(batch_size, dtype=np.float32)).to(device),
         Buffer.from_numpy(np.array(1.0, dtype=np.float32)),
-        Buffer.from_numpy(bitmask_np).to(device),
+        Buffer.from_numpy(_pack_bitmask(bitmask_np)).to(device),
     )
 
     first_rejected_np = cast(Buffer, result[0]).to_numpy()
@@ -883,8 +810,8 @@ def test_stochastic_acceptance_sampler_bitmask_constrains_recovered_tokens() -> 
         TensorType(DType.float32, ["batch_size"], device=device_ref),
         TensorType(DType.float32, [], device=DeviceRef.CPU()),
         TensorType(
-            DType.bool,
-            ["batch_size", "num_bitmask_positions", "vocab_size"],
+            DType.int32,
+            ["batch_size", "num_bitmask_positions", "packed_vocab_size"],
             device=device_ref,
         ),
     ]
@@ -910,7 +837,7 @@ def test_stochastic_acceptance_sampler_bitmask_constrains_recovered_tokens() -> 
             max_k=max_k.tensor,
             top_p=top_p.tensor,
             min_top_p=min_top_p.tensor,
-            seed=42,
+            seed=ops.constant(42, dtype=DType.uint64, device=device_ref),
             token_bitmasks=token_bitmasks.tensor,
         )
         graph.output(first_rejected, recovered, bonus)
@@ -942,7 +869,7 @@ def test_stochastic_acceptance_sampler_bitmask_constrains_recovered_tokens() -> 
         Buffer.from_numpy(np.array(vocab_size, dtype=np.int64)),
         Buffer.from_numpy(np.ones(batch_size, dtype=np.float32)).to(device),
         Buffer.from_numpy(np.array(1.0, dtype=np.float32)),
-        Buffer.from_numpy(bitmask_np).to(device),
+        Buffer.from_numpy(_pack_bitmask(bitmask_np)).to(device),
     )
 
     recovered_np = cast(Buffer, result[1]).to_numpy()
@@ -982,8 +909,8 @@ def test_stochastic_acceptance_sampler_bitmask_constrains_bonus_token() -> None:
         TensorType(DType.float32, ["batch_size"], device=device_ref),
         TensorType(DType.float32, [], device=DeviceRef.CPU()),
         TensorType(
-            DType.bool,
-            ["batch_size", "num_bitmask_positions", "vocab_size"],
+            DType.int32,
+            ["batch_size", "num_bitmask_positions", "packed_vocab_size"],
             device=device_ref,
         ),
     ]
@@ -1009,7 +936,7 @@ def test_stochastic_acceptance_sampler_bitmask_constrains_bonus_token() -> None:
             max_k=max_k.tensor,
             top_p=top_p.tensor,
             min_top_p=min_top_p.tensor,
-            seed=42,
+            seed=ops.constant(42, dtype=DType.uint64, device=device_ref),
             token_bitmasks=token_bitmasks.tensor,
         )
         graph.output(first_rejected, recovered, bonus)
@@ -1047,7 +974,7 @@ def test_stochastic_acceptance_sampler_bitmask_constrains_bonus_token() -> None:
         Buffer.from_numpy(np.array(vocab_size, dtype=np.int64)),
         Buffer.from_numpy(np.ones(batch_size, dtype=np.float32)).to(device),
         Buffer.from_numpy(np.array(1.0, dtype=np.float32)),
-        Buffer.from_numpy(bitmask_np).to(device),
+        Buffer.from_numpy(_pack_bitmask(bitmask_np)).to(device),
     )
 
     bonus_np = cast(Buffer, result[2]).to_numpy()
@@ -1107,7 +1034,7 @@ def test_stochastic_acceptance_sampler_all_true_bitmask_unchanged_behavior() -> 
             max_k=max_k.tensor,
             top_p=top_p.tensor,
             min_top_p=min_top_p.tensor,
-            seed=42,
+            seed=ops.constant(42, dtype=DType.uint64, device=device_ref),
             token_bitmasks=None,
         )
         graph.output(first_rejected, recovered, bonus)
@@ -1117,8 +1044,8 @@ def test_stochastic_acceptance_sampler_all_true_bitmask_unchanged_behavior() -> 
     # Build graph WITH all-True bitmask
     input_types_with_mask = input_types_no_mask + [
         TensorType(
-            DType.bool,
-            ["batch_size", "num_bitmask_positions", "vocab_size"],
+            DType.int32,
+            ["batch_size", "num_bitmask_positions", "packed_vocab_size"],
             device=device_ref,
         ),
     ]
@@ -1144,7 +1071,7 @@ def test_stochastic_acceptance_sampler_all_true_bitmask_unchanged_behavior() -> 
             max_k=max_k.tensor,
             top_p=top_p.tensor,
             min_top_p=min_top_p.tensor,
-            seed=42,
+            seed=ops.constant(42, dtype=DType.uint64, device=device_ref),
             token_bitmasks=token_bitmasks.tensor,
         )
         graph.output(first_rejected, recovered, bonus)
@@ -1176,7 +1103,8 @@ def test_stochastic_acceptance_sampler_all_true_bitmask_unchanged_behavior() -> 
 
     result_no_mask = model_no_mask.execute(*common_inputs)
     result_with_mask = model_with_mask.execute(
-        *common_inputs, Buffer.from_numpy(all_true_bitmask).to(device)
+        *common_inputs,
+        Buffer.from_numpy(_pack_bitmask(all_true_bitmask)).to(device),
     )
 
     # Results should be identical with same seed

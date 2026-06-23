@@ -14,7 +14,7 @@
 """Diagnostics API for MAX platform.
 
 This module provides diagnostic utilities for monitoring and analyzing
-system performance, including GPU utilization and memory usage.
+system performance, including CPU utilization.
 """
 
 from . import cpu, gpu

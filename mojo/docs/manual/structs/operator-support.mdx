@@ -97,7 +97,7 @@ struct Grid[T: Copyable]:
 
 Custom subscripts can support slicing as well as indices, such as
 `obj[1:5]`. Implement `__getitem__()` with a
-[`Slice`](/docs/std/builtin/builtin_slice/Slice) parameter instead of
+[`Slice`](/docs/std/builtin/builtin_slice/Slice/) parameter instead of
 `Int`.
 
 Each `Slice` has three optional fields: `start`, `end`, and `step`. You
@@ -128,7 +128,7 @@ assignment, equality comparison, and subscript access.
 
 :::note
 The standard library includes
-[`ComplexSIMD`](/docs/std/complex/complex/ComplexSIMD),
+[`ComplexSIMD`](/docs/std/complex/complex/ComplexSIMD/),
 a parameterized complex number type with basic arithmetic
 support. The `Complex` type in this example is independent
 and not based on `ComplexSIMD`.

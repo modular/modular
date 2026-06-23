@@ -40,7 +40,7 @@ struct Person(Movable, Writable):
 
 
 @export
-def PyInit_person_module() -> PythonObject:
+def PyInit_person_module() abi("C") -> PythonObject:
     try:
         var mb = PythonModuleBuilder("person_module")
 

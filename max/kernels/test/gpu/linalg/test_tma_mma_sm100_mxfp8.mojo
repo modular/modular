@@ -209,10 +209,14 @@ def block_scaled_mxfp8_kernel[
         Scalar[b_scales_type]
     ]()
 
-    var a_smem_tile = a_smem_tile_t(a_smem)
-    var b_smem_tile = b_smem_tile_t(b_smem)
-    var a_scales_smem_tile = a_scales_smem_tile_t(a_scales_smem)
-    var b_scales_smem_tile = b_scales_smem_tile_t(b_scales_smem)
+    var a_smem_tile = a_smem_tile_t(a_smem.as_unsafe_any_origin())
+    var b_smem_tile = b_smem_tile_t(b_smem.as_unsafe_any_origin())
+    var a_scales_smem_tile = a_scales_smem_tile_t(
+        a_scales_smem.as_unsafe_any_origin()
+    )
+    var b_scales_smem_tile = b_scales_smem_tile_t(
+        b_scales_smem.as_unsafe_any_origin()
+    )
 
     # Shared memory pointer to hold tensor memory address
     var ptr_tmem_addr = (b_scales_smem + b_scales_size).bitcast[UInt32]()
@@ -563,9 +567,7 @@ def sm100_block_scaled_mxfp8[
     comptime a_scales_4d_layout = scales_4d_layout[a_scales_layout]
     comptime b_scales_4d_layout = scales_4d_layout[b_scales_layout]
 
-    var a_scales_4d = LayoutTensor[
-        a_scales_type, a_scales_4d_layout, MutAnyOrigin
-    ](
+    var a_scales_4d = LayoutTensor[a_scales_type, a_scales_4d_layout](
         a_scales.ptr,
         RuntimeLayout[a_scales_4d_layout].row_major(
             IndexList[4](
@@ -577,7 +579,8 @@ def sm100_block_scaled_mxfp8[
         ),
     )
     var b_scales_4d = LayoutTensor[
-        b_scales_type, b_scales_4d_layout, MutAnyOrigin
+        b_scales_type,
+        b_scales_4d_layout,
     ](
         b_scales.ptr,
         RuntimeLayout[b_scales_4d_layout].row_major(
@@ -644,7 +647,7 @@ def sm100_block_scaled_mxfp8[
         b_swizzle=b_swizzle,
         num_threads=block_dim,
     ]
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         a_tma_op,
         b_tma_op,
         a_scales_tma_op,
@@ -696,10 +699,10 @@ def test_block_scaled_mxfp8[
     # Initialize reference scales
     comptime REF_BLOCK_SCALE = 128
 
-    var ref_a_scales_shape = Coord(Idx[ceildiv(k, REF_BLOCK_SCALE)](), m)
+    var ref_a_scales_shape = Coord(Idx[ceildiv(k, REF_BLOCK_SCALE)], m)
     var ref_b_scales_shape = Coord(
-        Idx(ceildiv(N, REF_BLOCK_SCALE)),
-        Idx[ceildiv(k, REF_BLOCK_SCALE)](),
+        ceildiv(N, REF_BLOCK_SCALE),
+        Idx[ceildiv(k, REF_BLOCK_SCALE)],
     )
 
     var ref_a_scales_size = ceildiv(k, REF_BLOCK_SCALE) * M
@@ -742,9 +745,9 @@ def test_block_scaled_mxfp8[
 
     for i in range(ceildiv(N, REF_BLOCK_SCALE)):
         for j in range(ceildiv(K, REF_BLOCK_SCALE)):
-            b_scales_host_ref[Coord(Idx(i), Idx(j))] = (
-                1 << random_ui64(0, 3)
-            ).cast[ref_scales_type]()
+            b_scales_host_ref[Coord(i, j)] = (1 << random_ui64(0, 3)).cast[
+                ref_scales_type
+            ]()
 
     ctx.enqueue_copy(a_scales_device_ref, a_scales_host_ref_ptr)
     ctx.enqueue_copy(b_scales_device_ref, b_scales_host_ref_ptr)
@@ -763,8 +766,8 @@ def test_block_scaled_mxfp8[
         + String(umma_shape)
     )
 
-    var a_shape = Coord(m, Idx[k]())
-    var b_shape = Coord(n, Idx[k]())
+    var a_shape = Coord(m, Idx[k])
+    var b_shape = Coord(n, Idx[k])
     var c_shape = Coord(m, n)
 
     comptime SF_VECTOR_SIZE = 32
@@ -773,18 +776,18 @@ def test_block_scaled_mxfp8[
     comptime sf_k = ceildiv(k, SF_VECTOR_SIZE)
 
     var a_scales_shape = Coord(
-        Idx(ceildiv(M, atom_m[0] * atom_m[1])),
-        Idx[ceildiv(sf_k, atom_k)](),
-        Idx[atom_m[0]](),
-        Idx[atom_m[1]](),
-        Idx[atom_k](),
+        ceildiv(M, atom_m[0] * atom_m[1]),
+        Idx[ceildiv(sf_k, atom_k)],
+        Idx[atom_m[0]],
+        Idx[atom_m[1]],
+        Idx[atom_k],
     )
     var b_scales_shape = Coord(
-        Idx(ceildiv(N, atom_m[0] * atom_m[1])),
-        Idx[ceildiv(sf_k, atom_k)](),
-        Idx[atom_m[0]](),
-        Idx[atom_m[1]](),
-        Idx[atom_k](),
+        ceildiv(N, atom_m[0] * atom_m[1]),
+        Idx[ceildiv(sf_k, atom_k)],
+        Idx[atom_m[0]],
+        Idx[atom_m[1]],
+        Idx[atom_k],
     )
 
     var a_scales_total = (
@@ -833,7 +836,7 @@ def test_block_scaled_mxfp8[
     ](
         m,
         n,
-        Idx[k](),
+        Idx[k],
         a_scales_host_ref.to_layout_tensor(),
         b_scales_host_ref.to_layout_tensor(),
         a_scales_host.to_layout_tensor(),
@@ -874,7 +877,7 @@ def test_block_scaled_mxfp8[
         block_tile_shape=block_tile_shape,
         SF_VECTOR_SIZE=SF_VECTOR_SIZE,
     ](
-        c.to_layout_tensor().as_any_origin(),
+        c.to_layout_tensor().as_unsafe_any_origin(),
         a.to_layout_tensor(),
         b.to_layout_tensor(),
         a_scales.to_layout_tensor(),
@@ -924,7 +927,7 @@ def main() raises:
             Index(MMA_M, 256, MMA_K),
             transpose_b=True,
             k=BK * 3,
-        ](ctx, Idx(256), Idx[256]())
+        ](ctx, Idx[256], Idx[256])
         test_block_scaled_mxfp8[
             dtype,
             dtype,
@@ -933,7 +936,7 @@ def main() raises:
             Index(MMA_M, 256, MMA_K),
             transpose_b=True,
             k=BK * 3,
-        ](ctx, Idx(256), Idx[256 * 2]())
+        ](ctx, Idx[256], Idx[256 * 2])
         test_block_scaled_mxfp8[
             dtype,
             dtype,
@@ -942,7 +945,7 @@ def main() raises:
             Index(MMA_M, 256, MMA_K),
             transpose_b=True,
             k=BK * 3,
-        ](ctx, Idx(1000), Idx[256 * 4]())
+        ](ctx, Idx[1000], Idx[256 * 4])
 
         test_block_scaled_mxfp8[
             dtype,
@@ -952,7 +955,7 @@ def main() raises:
             Index(MMA_M, 128, MMA_K),
             transpose_b=True,
             k=BK * 3,
-        ](ctx, Idx(256), Idx[2 * 128]())
+        ](ctx, Idx[256], Idx[2 * 128])
         test_block_scaled_mxfp8[
             dtype,
             dtype,
@@ -961,7 +964,7 @@ def main() raises:
             Index(MMA_M, 128, MMA_K),
             transpose_b=True,
             k=BK * 2,
-        ](ctx, Idx(256), Idx[3 * 128]())
+        ](ctx, Idx[256], Idx[3 * 128])
         test_block_scaled_mxfp8[
             dtype,
             dtype,
@@ -970,4 +973,4 @@ def main() raises:
             Index(MMA_M, 128, MMA_K),
             transpose_b=True,
             k=BK * 3,
-        ](ctx, Idx(1000), Idx[3 * 128]())
+        ](ctx, Idx[1000], Idx[3 * 128])

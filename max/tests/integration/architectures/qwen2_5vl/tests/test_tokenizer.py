@@ -16,14 +16,14 @@
 from unittest.mock import MagicMock, NonCallableMock
 
 import pytest
-from max.interfaces import (
+from max.pipelines.architectures.qwen2_5vl.tokenizer import Qwen2_5VLTokenizer
+from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
+from max.pipelines.lib.model_manifest import ModelManifest
+from max.pipelines.modeling.types import (
     RequestID,
     TextGenerationRequest,
     TextGenerationRequestMessage,
 )
-from max.pipelines.architectures.qwen2_5vl.tokenizer import Qwen2_5VLTokenizer
-from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
-from max.pipelines.lib.model_manifest import ModelManifest
 from pytest_mock import MockerFixture
 from transformers import Qwen2_5_VLConfig
 

@@ -21,15 +21,15 @@ from typing import Any
 from unittest.mock import MagicMock, NonCallableMock
 
 import numpy as np
-from max.interfaces import (
+from max.pipelines.architectures.qwen3vl_moe.tokenizer import Qwen3VLTokenizer
+from max.pipelines.lib import KVCacheConfig
+from max.pipelines.modeling.types import (
     ImageContentPart,
     RequestID,
     TextContentPart,
     TextGenerationRequest,
     TextGenerationRequestMessage,
 )
-from max.pipelines.architectures.qwen3vl_moe.tokenizer import Qwen3VLTokenizer
-from max.pipelines.lib import KVCacheConfig
 from PIL import Image
 from transformers import AutoConfig, AutoProcessor
 

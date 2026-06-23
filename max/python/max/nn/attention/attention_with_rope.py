@@ -76,6 +76,8 @@ class AttentionWithRope(Module, Shardable):
         clip_qkv: float | None = None,
         use_qk_norm: bool = False,
         rms_norm_eps: float = 1e-6,
+        mask_variant: MHAMaskVariant = MHAMaskVariant.CAUSAL_MASK,
+        sliding_window: int | None = None,
         _fuse_rope_and_store: bool = True,
     ) -> None:
         """Initializes the attention layer.
@@ -98,6 +100,7 @@ class AttentionWithRope(Module, Shardable):
             clip_qkv: If provided, clamp Q/K/V weights to [-clip_qkv, clip_qkv].
             use_qk_norm: Whether to use RMSNorm on Q/K.
             rms_norm_eps: Value to use for numerical stability in RMSNorm.
+
             _fuse_rope_and_store: If True (default), emit a single fused
                 rope+split+store custom op. If False, emit separate rope, split,
                 and store ops to test graph compiler fusion.
@@ -120,6 +123,8 @@ class AttentionWithRope(Module, Shardable):
         self.stacked_qkv = stacked_qkv
         self.use_qk_norm = use_qk_norm
         self.rms_norm_eps = rms_norm_eps
+        self.mask_variant = mask_variant
+        self.sliding_window = sliding_window
         self._fuse_rope_and_store = _fuse_rope_and_store
         self._sharding_strategy: ShardingStrategy | None = None
 
@@ -280,6 +285,8 @@ class AttentionWithRope(Module, Shardable):
                     has_bias=self.has_bias,
                     quant_config=self.quant_config,
                     clip_qkv=self.clip_qkv,
+                    mask_variant=self.mask_variant,
+                    sliding_window=self.sliding_window,
                 )
 
                 layer.qkv_proj = qkv_proj_shards[n]
@@ -330,6 +337,8 @@ class AttentionWithRope(Module, Shardable):
                     has_bias=self.has_bias,
                     quant_config=self.quant_config,
                     clip_qkv=self.clip_qkv,
+                    mask_variant=self.mask_variant,
+                    sliding_window=self.sliding_window,
                 )
                 replica.qkv_proj = qkv_proj_replicas[i]
                 replica.o_proj = o_proj_replicas[i]
@@ -528,19 +537,61 @@ class AttentionWithRope(Module, Shardable):
         )
         xq = xq.reshape((-1, self.n_heads, self.kv_params.head_dim))
 
+        local_window_size = -1
+        if self.sliding_window is not None:
+            local_window_size = self.sliding_window
+
         attn_out = flash_attention_ragged(
             self.kv_params,
             input=xq,
             kv_collection=kv_collection,
             layer_idx=layer_idx,
             input_row_offsets=input_row_offsets,
-            mask_variant=MHAMaskVariant.CAUSAL_MASK,
+            mask_variant=self.mask_variant,
             scale=self.scale,
+            local_window_size=local_window_size,
         )
         attn_out = ops.reshape(
             attn_out, shape=[total_seq_len, self.q_weight_dim]
         )
         return self.o_proj(attn_out)
+
+    def materialize_kv_from_hidden(
+        self,
+        layer_idx: TensorValue,
+        hidden: TensorValue,
+        kv_collection: PagedCacheValues,
+        freqs_cis: TensorValue,
+        input_row_offsets: TensorValue,
+    ) -> None:
+        """Project ``hidden`` to K/V and write into the paged KV cache.
+
+        Used by speculative-decoding draft models that build their KV cache
+        from external (e.g. target) hidden states.
+        """
+        qkv = self.qkv_proj(hidden)
+
+        if self.use_qk_norm:
+            head_dim = self.kv_params.head_dim
+            q_dim = self.n_heads * head_dim
+            kv_dim = self.num_key_value_heads * head_dim
+            x_q, x_k, x_v = ops.split(qkv, [q_dim, kv_dim, kv_dim], axis=-1)
+            x_q = self.q_norm(x_q.reshape((-1, head_dim))).reshape(x_q.shape)
+            x_k = self.k_norm(x_k.reshape((-1, head_dim))).reshape(x_k.shape)
+            qkv = ops.concat((x_q, x_k, x_v), axis=-1)
+
+        freqs_cis_cast = ops.cast(freqs_cis, qkv.dtype).to(qkv.device)
+        _ = rope_split_store_ragged(
+            kv_params=self.kv_params,
+            qkv=qkv,
+            input_row_offsets=input_row_offsets,
+            freqs_cis=freqs_cis_cast,
+            kv_collection=kv_collection,
+            layer_idx=layer_idx,
+            n_heads=self.n_heads,
+            interleaved=self.rope.interleaved,
+            fuse=self._fuse_rope_and_store,
+        )
 
 
 class GGUFQAttentionWithRope(AttentionWithRope):
@@ -565,6 +616,7 @@ class GGUFQAttentionWithRope(AttentionWithRope):
         scale: float | None = None,
         has_bias: bool = False,
         clip_qkv: float | None = None,
+        mask_variant: MHAMaskVariant = MHAMaskVariant.CAUSAL_MASK,
     ) -> None:
         """Initializes the GGUF attention layer.
 
@@ -586,9 +638,12 @@ class GGUFQAttentionWithRope(AttentionWithRope):
             has_bias: Whether to use an attention bias.
             clip_qkv: If provided, the QKV weights are clamped between
                 `[-clip_qkv, clip_qkv]`
+            mask_variant: Attention mask used by the flash-attention kernel.
+                Defaults to ``MHAMaskVariant.CAUSAL_MASK``.
         """
         # Skip AttentionWithRope.__init__ because the weights are created differently.
         Module.__init__(self)
+        self.mask_variant = mask_variant
 
         if dtype != DType.uint8:
             raise ValueError(
@@ -711,7 +766,7 @@ class GGUFQAttentionWithRope(AttentionWithRope):
             kv_collection=kv_collection,
             layer_idx=layer_idx,
             input_row_offsets=input_row_offsets,
-            mask_variant=MHAMaskVariant.CAUSAL_MASK,
+            mask_variant=self.mask_variant,
             scale=self.scale,
         )
 
@@ -750,6 +805,7 @@ class GPTQAttentionWithRope(AttentionWithRope):
         dtype: DType = DType.float32,
         scale: float | None = None,
         linear_cls: Callable[..., Linear] = Linear,
+        mask_variant: MHAMaskVariant = MHAMaskVariant.CAUSAL_MASK,
     ) -> None:
         # Skip AttentionWithRope.__init__ because the weights are created differently.
         Module.__init__(self)
@@ -764,6 +820,7 @@ class GPTQAttentionWithRope(AttentionWithRope):
             if scale is not None
             else math.sqrt(1.0 / self.kv_params.head_dim)
         )
+        self.mask_variant = mask_variant
 
         self.kv_weight_dim = (
             hidden_size // num_attention_heads
@@ -904,7 +961,7 @@ class GPTQAttentionWithRope(AttentionWithRope):
             kv_collection=kv_collection,
             layer_idx=layer_idx,
             input_row_offsets=input_row_offsets,
-            mask_variant=MHAMaskVariant.CAUSAL_MASK,
+            mask_variant=self.mask_variant,
             scale=self.scale,
         )
         attn_out = ops.reshape(attn_out, shape=[total_seq_len, -1])
@@ -935,6 +992,8 @@ class TensorParallelAttentionWithRope(
         clip_qkv: float | None = None,
         use_qk_norm: bool = False,
         rms_norm_eps: float = 1e-6,
+        mask_variant: MHAMaskVariant = MHAMaskVariant.CAUSAL_MASK,
+        sliding_window: int | None = None,
     ) -> None:
         """Initializes the distributed (tensor parallel) attention layer.
 
@@ -956,6 +1015,8 @@ class TensorParallelAttentionWithRope(
                 `[-clip_qkv, clip_qkv]`.
             use_qk_norm: Whether to use RMSNorm on Q/K.
             rms_norm_eps: Value to use for numerical stability in RMSNorm.
+            mask_variant: Attention mask used by the flash-attention kernel.
+                Defaults to ``MHAMaskVariant.CAUSAL_MASK``.
         """
         super().__init__(
             rope=rope,
@@ -973,6 +1034,8 @@ class TensorParallelAttentionWithRope(
             clip_qkv=clip_qkv,
             use_qk_norm=use_qk_norm,
             rms_norm_eps=rms_norm_eps,
+            mask_variant=mask_variant,
+            sliding_window=sliding_window,
         )
         if DeviceRef.CPU() in self.devices:
             raise ValueError(
@@ -1025,6 +1088,35 @@ class TensorParallelAttentionWithRope(
             inputs=attn_outputs, signal_buffers=signal_buffers
         )
 
+    def materialize_kv_from_hidden(  # type: ignore[override]
+        self,
+        layer_idx: TensorValue,
+        hiddens: Sequence[TensorValue],
+        kv_collections: Sequence[PagedCacheValues],
+        freqs_cis: Sequence[TensorValue],
+        input_row_offsets: Sequence[TensorValue],
+    ) -> None:
+        n = len(self.devices)
+        if not (
+            len(hiddens)
+            == len(kv_collections)
+            == len(freqs_cis)
+            == len(input_row_offsets)
+            == n
+        ):
+            raise ValueError(
+                "All per-device inputs to materialize_kv_from_hidden must "
+                f"have length equal to the number of devices ({n})."
+            )
+        for i in range(n):
+            self.list_of_attentions[i].materialize_kv_from_hidden(
+                layer_idx=layer_idx,
+                hidden=hiddens[i],
+                kv_collection=kv_collections[i],
+                freqs_cis=freqs_cis[i],
+                input_row_offsets=input_row_offsets[i],
+            )
+
 
 class DataParallelAttentionWithRope(AttentionWithRope):
     """Data-parallel implementation of Attention with RoPE.
@@ -1057,6 +1149,8 @@ class DataParallelAttentionWithRope(AttentionWithRope):
         clip_qkv: float | None = None,
         use_qk_norm: bool = False,
         rms_norm_eps: float = 1e-6,
+        mask_variant: MHAMaskVariant = MHAMaskVariant.CAUSAL_MASK,
+        sliding_window: int | None = None,
     ) -> None:
         super().__init__(
             rope=rope,
@@ -1075,6 +1169,8 @@ class DataParallelAttentionWithRope(AttentionWithRope):
             clip_qkv=clip_qkv,
             use_qk_norm=use_qk_norm,
             rms_norm_eps=rms_norm_eps,
+            mask_variant=mask_variant,
+            sliding_window=sliding_window,
         )
         if not self.devices:
             raise ValueError("devices cannot be None or empty")
@@ -1123,6 +1219,8 @@ class DataParallelAttentionWithRope(AttentionWithRope):
                 has_bias=self.has_bias,
                 quant_config=self.quant_config,
                 clip_qkv=self.clip_qkv,
+                mask_variant=self.mask_variant,
+                sliding_window=self.sliding_window,
             )
             replica.qkv_proj = qkv_proj_replicas[i]
             replica.o_proj = o_proj_replicas[i]
@@ -1178,3 +1276,33 @@ class DataParallelAttentionWithRope(AttentionWithRope):
                 )
             )
         return outs
+
+    def materialize_kv_from_hidden(  # type: ignore[override]
+        self,
+        layer_idx: TensorValue,
+        hiddens: Sequence[TensorValue],
+        kv_collections: Sequence[PagedCacheValues],
+        freqs_cis: Sequence[TensorValue],
+        input_row_offsets: Sequence[TensorValue],
+    ) -> None:
+        """Data-parallel KV materialization from external hidden states."""
+        n = len(self.devices)
+        if not (
+            len(hiddens)
+            == len(kv_collections)
+            == len(freqs_cis)
+            == len(input_row_offsets)
+            == n
+        ):
+            raise ValueError(
+                "All per-device inputs to materialize_kv_from_hidden must "
+                f"have length equal to the number of devices ({n})."
+            )
+        for i in range(n):
+            self.replicated_attentions[i].materialize_kv_from_hidden(
+                layer_idx=layer_idx,
+                hidden=hiddens[i],
+                kv_collection=kv_collections[i],
+                freqs_cis=freqs_cis[i],
+                input_row_offsets=input_row_offsets[i],
+            )

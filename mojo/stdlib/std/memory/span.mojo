@@ -23,7 +23,13 @@ from std.builtin.builtin_slice import ContiguousSlice
 from std.reflection import call_location, reflect
 from std.bit.mask import splat
 from std.bit import pop_count
-from std.memory import memcmp, pack_bits, uninit_copy_n
+from std.memory import (
+    is_trivially_copyable,
+    is_trivially_destructible,
+    memcmp,
+    pack_bits,
+    uninit_copy_n,
+)
 from std.collections import check_bounds
 from std.builtin.rebind import downcast
 from std.sys import align_of, size_of
@@ -32,7 +38,7 @@ from std.sys.intrinsics import _type_is_eq
 
 from std.algorithm import vectorize
 from std.hashlib import Hasher
-from std.builtin.device_passable import DevicePassable
+from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 import std.format._utils as fmt
 
 
@@ -94,7 +100,7 @@ struct _SpanIter[
     T: Copyable,
     origin: Origin[mut=mut],
     forward: Bool = True,
-](ImplicitlyCopyable, Iterable, IterableOwned, Iterator):
+](ImplicitlyCopyable, Iterable, IterableOwned, Iterator, Sized):
     """Iterator for Span.
 
     Parameters:
@@ -146,6 +152,29 @@ struct _SpanIter[
                 raise StopIteration()
             self.index -= 1
             return self.src._data[self.index]
+
+    @always_inline
+    def __len__(self) -> Int:
+        """Returns the number of elements remaining in this iterator.
+
+        Returns:
+            The number of elements remaining in this iterator.
+        """
+        comptime if Self.forward:
+            return len(self.src) - self.index
+        else:
+            return self.index
+
+    @always_inline
+    def bounds(self) -> Tuple[Int, Optional[Int]]:
+        """Returns bounds `[lower, upper]` for the remaining iterator length.
+
+        Returns:
+            The lower and upper bound of this iterator. For `_SpanIter` both
+            bounds are exact and equal to `len(self)`.
+        """
+        var n = len(self)
+        return (n, {n})
 
 
 struct Span[
@@ -202,9 +231,11 @@ struct Span[
     comptime device_type: AnyType = Self
     """The device-side type for this `Span`."""
 
-    def _to_device_type(self, target: MutOpaquePointer[_]):
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
         """Device type mapping is the identity function."""
-        target.bitcast[Self.device_type]()[] = self
+        encoder.encode(self, target)
 
     @staticmethod
     def get_type_name() -> String:
@@ -217,7 +248,7 @@ struct Span[
         """
         return String(
             "Span[",
-            reflect[Self.T]().name(),
+            reflect[Self.T].name(),
             "]",
         )
 
@@ -260,7 +291,7 @@ struct Span[
     @always_inline
     @implicit
     def __init__(
-        out self, ref[Self.origin] list: List[downcast[Self.T, Copyable]]
+        out self, ref[Self.origin] list: List[downcast[Self.T, Movable]]
     ):
         """Construct a `Span` from a `List`.
 
@@ -575,7 +606,7 @@ struct Span[
 
     @always_inline
     def copy_from[
-        _T: Copyable & ImplicitlyDestructible, _origin: MutOrigin, //
+        _T: Copyable & ImplicitlyDeletable, _origin: MutOrigin, //
     ](self: Span[_T, _origin], other: Span[_T, _]):
         """
         Performs an element wise copy from all elements of `other` into all elements of `self`.
@@ -592,7 +623,9 @@ struct Span[
         # needed). For non-trivial types, we keep the single-pass assignment
         # loop rather than destroy_n + uninit_copy_n, which would be two
         # passes over memory with worse cache locality.
-        comptime if _T.__copy_ctor_is_trivial and _T.__del__is_trivial:
+        comptime if is_trivially_copyable[_T]() and is_trivially_destructible[
+            _T
+        ]():
             uninit_copy_n[overlapping=False](
                 dest=self.unsafe_ptr(),
                 src=other.unsafe_ptr(),
@@ -673,7 +706,7 @@ struct Span[
         return not self == rhs
 
     def fill[
-        _T: Copyable & ImplicitlyDestructible, //
+        _T: Copyable & ImplicitlyDeletable, //
     ](self: Span[mut=True, _T, _], value: _T):
         """
         Fill the memory that a span references with a given value.
@@ -894,7 +927,7 @@ struct Span[
         """
 
         comptime simdwidth = simd_width_of[dtype]()
-        var ptr = self.unsafe_ptr()
+        var ptr = self.unsafe_ptr().as_immutable()
         var length = len(self)
         var count = 0
 

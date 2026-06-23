@@ -48,7 +48,7 @@ from layout.tma_async import (
 )
 from layout import ComptimeInt, CoordLike, Layout, RowMajorLayout, TileTensor
 from layout.tile_layout import row_major as tt_row_major
-from nn.attention.gpu.nvidia.sm90.attention import (
+from nn.attention.gpu.nvidia.common import (
     OptionalPointer,
     KVTMATile,
 )
@@ -109,11 +109,11 @@ struct MLA_SM100_Decode_QKV_FP8[
     comptime fp8_type = DType.float8_e4m3fn
     comptime AccumType = get_accum_type[Self.q_type]()
     # 576 / 64 = 9
-    comptime NumQKBlocks = Self.config.padded_q_depth // Self.config.BN
+    comptime NumQKBlocks = Self.config.padded_q_depth // Self.config.BN_QK
     # 512 / 64 = 8
-    comptime NumVOBlocks = Self.config.padded_depth // Self.config.BN
+    comptime NumVOBlocks = Self.config.padded_depth // Self.config.BN_QK
     # 64 * 64 = 4096
-    comptime BlockElems = Self.config.BM * Self.config.BN
+    comptime BlockElems = Self.config.BM * Self.config.BN_QK
     # FP8: 1 byte per element for all SMEM operands (Q, K, V, P)
     comptime fp8_bytes_per_element = size_of[Self.fp8_type]()
     # BF16: 2 bytes per element for output/accumulator
@@ -122,7 +122,7 @@ struct MLA_SM100_Decode_QKV_FP8[
     comptime KVStageElems = Self.NumQKBlocks * Self.BlockElems
     # P stage element count (FP8): 1 block * 4096 elems = 4096
     comptime PStageElems = Self.BlockElems
-    comptime output_tile_width = (Self.config.BN // 2) * (
+    comptime output_tile_width = (Self.config.BN_QK // 2) * (
         4 // size_of[Self.output_type]()
     )
 
@@ -162,7 +162,7 @@ struct MLA_SM100_Decode_QKV_FP8[
     # For SlidingWindowCausalMask with window_size W:
     #   global_lo = max(cache_len + 1 - W, 0)   # 0-based key index
     #   local_lo  = max(global_lo - kv_start_row, 0)
-    #   tile_skip = local_lo // BN
+    #   tile_skip = local_lo // BN_QK
     # --------------------------------------------------------------------------
     @staticmethod
     @always_inline
@@ -176,14 +176,10 @@ struct MLA_SM100_Decode_QKV_FP8[
             Self.config.decoding_warp_split_k,
         ],
     ) -> Int:
-        comptime _W: Int = Int(
-            Self.MaskType.mask_strategies[Self.config.BM, Self.config.BN]()[
-                0
-            ]._upper_triangular_window_size
-        )
+        comptime _W: Int = Self.MaskType.sliding_window_size()
         var global_lo = max(offset_position.cache_len() + 1 - _W, 0)
         var local_lo = max(global_lo - offset_position.kv_start_row, 0)
-        return local_lo // Self.config.BN
+        return local_lo // Self.config.BN_QK
 
     # --------------------------------------------------------------------------
     # Main kernel function — 3 Warpgroups, 384 threads
@@ -215,26 +211,26 @@ struct MLA_SM100_Decode_QKV_FP8[
     )
     @__name(
         t"sm100_mla_decode_qkv_fp8_{Self.q_type}_{Self.kv_type}_{Self.output_type}_nqh{Self.config.num_q_heads}_nkvh{Self.config.num_kv_heads}",
-        mangle=True,
     )
     def kernel(
         # Q TMA is FP8 with SWIZZLE_64B (same as KV)
         q_tma: QOTMATile[
             dtype=Self.kv_type,
             BM=Self.config.BM,  # tile_m =64
-            BK=Self.config.BK0,  # tile_n =576
+            BK=Self.config.BK_QK,  # tile_n =576
             swizzle_mode=Self.config.kv_tma_swizzle_mode,  # SWIZZLE_64B
         ],
         k_tma: KVTMATile[
             dtype=Self.kv_type,
             swizzle_mode=Self.config.kv_tma_swizzle_mode,
-            BN=Self.config.BK1,  # tile_m =64
-            BK=Self.config.BK0,  # tile_n =576
+            BN=Self.config.BK_PV,  # tile_m =64
+            BK=Self.config.BK_QK,  # tile_n =576
         ],
         o_tma: QOTMATile[
             dtype=Self.output_type,
             BM=Self.config.out_rows,
-            BK=Self.config.BN,
+            # Per-warp output stripe (= BN_PV/4), not BN_QK.
+            BK=Self.config.BN_PV // 4,
             swizzle_mode=Self.config.swizzle_mode,
         ],
         kv_lut: Self.KVLUTType,
@@ -338,7 +334,7 @@ struct MLA_SM100_Decode_QKV_FP8[
         )
         comptime if _sliding_window_mask and Self.config.decoding_warp_split_k:
             var _num_k_tiles_total = ceildiv(
-                offset_position.num_keys_this_split, Self.config.BN
+                offset_position.num_keys_this_split, Self.config.BN_QK
             )
             var _tile_skip = Self.sliding_window_tile_skip(offset_position)
             if _tile_skip >= _num_k_tiles_total:
@@ -435,9 +431,11 @@ struct MLA_SM100_Decode_QKV_FP8[
 
         # ---- Barrier layout (6N+11 fixed for N-stage pipelines) ----
         # bar_q(1) + kv(2N) + s(2N) + p(2N) + o(4) + c(2) + corr_done(4)
-        var mbar_base: MBarType = (li_smem + WARPGROUP_SIZE).bitcast[
-            SharedMemBarrier
-        ]()
+        var mbar_base: MBarType = (
+            (li_smem + WARPGROUP_SIZE)
+            .bitcast[SharedMemBarrier]()
+            .as_unsafe_any_origin()
+        )
 
         var mbar_q: MBarType = mbar_base
         var mbar_kv_base: MBarType = mbar_base + 1
@@ -522,10 +520,12 @@ struct MLA_SM100_Decode_QKV_FP8[
                 ptr_tmem_addr[0],
                 s_bars,
                 p_bars,
-                p_smem.bitcast[Scalar[Self.Common_MLA_Op.q_type]](),
-                max_smem,
-                li_smem,
-                out_smem,
+                p_smem.bitcast[
+                    Scalar[Self.Common_MLA_Op.q_type]
+                ]().as_unsafe_any_origin(),
+                max_smem.as_unsafe_any_origin(),
+                li_smem.as_unsafe_any_origin(),
+                out_smem.as_unsafe_any_origin(),
                 c_bars,
                 corr_done_bars,
                 out_pipeline,
@@ -552,8 +552,8 @@ struct MLA_SM100_Decode_QKV_FP8[
                     q_tma,
                     k_tma,
                     kv_lut,
-                    q_smem,
-                    kv_smem,
+                    q_smem.as_unsafe_any_origin(),
+                    kv_smem.as_unsafe_any_origin(),
                     mbar_q,
                     kv_pipeline,
                     offset_position,
@@ -561,8 +561,8 @@ struct MLA_SM100_Decode_QKV_FP8[
             elif warp_idx == 9:
                 Self.mmaQK(
                     ptr_tmem_addr[0],
-                    q_smem,
-                    kv_smem,
+                    q_smem.as_unsafe_any_origin(),
+                    kv_smem.as_unsafe_any_origin(),
                     mbar_q,
                     s_bars,
                     kv_pipeline,
@@ -571,8 +571,8 @@ struct MLA_SM100_Decode_QKV_FP8[
             elif warp_idx == 10:
                 Self.mmaPV(
                     ptr_tmem_addr[0],
-                    kv_smem,
-                    p_smem,
+                    kv_smem.as_unsafe_any_origin(),
+                    p_smem.as_unsafe_any_origin(),
                     p_bars,
                     o_bars,
                     kv_pipeline,
@@ -581,7 +581,12 @@ struct MLA_SM100_Decode_QKV_FP8[
             elif warp_idx == 11:
                 Self.Common_MLA_Op.store[
                     fold_q=Self.fold_q, q_len_fold=Self.q_len_fold
-                ](out_pipeline, out_smem, o_tma, offset_position)
+                ](
+                    out_pipeline,
+                    out_smem.as_unsafe_any_origin(),
+                    o_tma,
+                    offset_position,
+                )
         barrier()
 
         # PDL: Signal that this CTA is done
@@ -603,14 +608,14 @@ struct MLA_SM100_Decode_QKV_FP8[
         q_tma: QOTMATile[
             dtype=Self.kv_type,
             BM=Self.config.BM,
-            BK=Self.config.BK0,
+            BK=Self.config.BK_QK,
             swizzle_mode=Self.config.kv_tma_swizzle_mode,  # SWIZZLE_64B
         ],
         k_tma: KVTMATile[
             dtype=Self.kv_type,
             swizzle_mode=Self.config.kv_tma_swizzle_mode,
-            BN=Self.config.BK1,
-            BK=Self.config.BK0,
+            BN=Self.config.BK_PV,
+            BK=Self.config.BK_QK,
         ],
         kv_lut: Self.KVLUTType,
         q_smem: SharedMemPointer[Scalar[Self.fp8_type]],
@@ -635,8 +640,13 @@ struct MLA_SM100_Decode_QKV_FP8[
             return
 
         num_k_tiles = ceildiv(
-            offset_position.num_keys_this_split, Self.config.BN
+            offset_position.num_keys_this_split, Self.config.BN_QK
         )
+
+        # Alignment of `kv_row` produced by mask-driven iteration.
+        comptime base_alignment: Int = Self.MaskType.start_column_alignment[
+            Self.config.BM, Self.config.BN_QK, Self.KVLUTType.page_size
+        ]()
 
         # Sliding-window early exit + leading-tile skip (comptime-gated;
         # entire block compiles away for non-sliding masks).
@@ -660,10 +670,10 @@ struct MLA_SM100_Decode_QKV_FP8[
         var kv_row: UInt32 = UInt32(offset_position.kv_start_row)
         # Advance the starting KV row past skipped sliding-window tiles.
         comptime if _sliding_window_mask:
-            kv_row += UInt32(_tile_skip * Self.config.BN)
+            kv_row += UInt32(_tile_skip * Self.config.BN_QK)
         var num_keys_u32 = UInt32(offset_position.num_keys)
         kv_row = min(kv_row, max(num_keys_u32, UInt32(1)) - 1)
-        var paged_rows = kv_lut.populate[Self.config.BN](
+        var paged_rows = kv_lut.populate[Self.config.BN_QK, base_alignment](
             UInt32(offset_position.batch_idx), kv_row
         )
 
@@ -696,7 +706,7 @@ struct MLA_SM100_Decode_QKV_FP8[
         expect_bytes_pred(
             k0_bar,
             Int32(
-                Self.config.BN
+                Self.config.BN_QK
                 * Self.config.q_depth
                 * Self.fp8_bytes_per_element
             ),
@@ -711,7 +721,7 @@ struct MLA_SM100_Decode_QKV_FP8[
             elect=elect_mask,
         )
         kv_prod.commit_step()
-        kv_row += UInt32(Self.config.BN)
+        kv_row += UInt32(Self.config.BN_QK)
 
         # Wait for Q TMA to complete. Q arrives as FP8, ready for MMA.
         mbar_q[].wait(0)
@@ -723,14 +733,14 @@ struct MLA_SM100_Decode_QKV_FP8[
             var stage_ptr = kv_prod.stage_base_ptr[qk_stage=0]()
             var k_mbar = kv_prod.producer_mbar[qk_stage=0]()
             kv_row = min(kv_row, max(num_keys_u32, UInt32(1)) - 1)
-            var paged_rows = kv_lut.populate[Self.config.BN](
+            var paged_rows = kv_lut.populate[Self.config.BN_QK, base_alignment](
                 UInt32(offset_position.batch_idx), kv_row
             )
 
             expect_bytes_pred(
                 k_mbar,
                 Int32(
-                    Self.config.BN
+                    Self.config.BN_QK
                     * Self.config.q_depth
                     * Self.fp8_bytes_per_element
                 ),
@@ -744,7 +754,7 @@ struct MLA_SM100_Decode_QKV_FP8[
                 elect=elect_mask,
             )
 
-            kv_row += UInt32(Self.config.BN)
+            kv_row += UInt32(Self.config.BN_QK)
             kv_prod.commit_step()
             tile_idx += 1
 
@@ -782,7 +792,7 @@ struct MLA_SM100_Decode_QKV_FP8[
         var elect_mask = elect()
 
         num_k_tiles = ceildiv(
-            offset_position.num_keys_this_split, Self.config.BN
+            offset_position.num_keys_this_split, Self.config.BN_QK
         )
 
         if num_k_tiles == 0:
@@ -873,7 +883,7 @@ struct MLA_SM100_Decode_QKV_FP8[
         var o_tmem = tmem_addr + UInt32(Self.config.TMEM_O)
         var elect_mask = elect()
         num_k_tiles = ceildiv(
-            offset_position.num_keys_this_split, Self.config.BN
+            offset_position.num_keys_this_split, Self.config.BN_QK
         )
 
         if num_k_tiles == 0:
@@ -903,7 +913,7 @@ struct MLA_SM100_Decode_QKV_FP8[
         var p_descriptor = Self.UMMAPVSS.descriptor_p_block(p_smem)
         # V descriptor: points to the KV SMEM (V data is first 512 cols of KV)
         var v_descriptor = Self.UMMAPVSS.descriptor_v_block(kv_smem)
-        comptime block_step = Self.config.MMA_PV_N // Self.config.BN
+        comptime block_step = Self.config.MMA_PV_N // Self.config.BN_QK
         # FP8: 1 byte per element
         comptime kv_stage_stride_in_bytes = Self.KVStageElems * Self.fp8_bytes_per_element
         comptime p_stage_stride_in_bytes = Self.PStageElems * Self.fp8_bytes_per_element
@@ -925,7 +935,7 @@ struct MLA_SM100_Decode_QKV_FP8[
                     b=v_descriptor
                     + v_slot_index * UInt32(kv_stage_stride_in_bytes)
                     + UInt32(block * block_stride_in_bytes),
-                    c=o_tmem + UInt32(block) * UInt32(Self.config.BN // 2),
+                    c=o_tmem + UInt32(block) * UInt32(Self.config.BN_QK // 2),
                     c_scale=c_scale,
                     elect=elect_mask,
                 )

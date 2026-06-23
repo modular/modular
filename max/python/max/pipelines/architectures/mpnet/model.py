@@ -20,15 +20,15 @@ from __future__ import annotations
 import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import ClassVar
 
 import numpy as np
 from max.driver import Buffer, Device
 from max.engine import InferenceSession, Model
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn.kv_cache import KVCacheInputs
+from max.nn.kv_cache import KVCacheInputsInterface
 from max.nn.transformer import ReturnLogits
-from max.pipelines.core import TextContext
-from max.pipelines.dataprocessing import collate_batch
+from max.pipelines.context import TextContext
 from max.pipelines.lib import (
     CompilationTimer,
     KVCacheConfig,
@@ -36,9 +36,8 @@ from max.pipelines.lib import (
     ModelOutputs,
     PipelineConfig,
     PipelineModel,
-    upper_bounded_default,
 )
-from transformers import AutoConfig
+from max.pipelines.modeling.dataprocessing import collate_batch
 
 from .graph import build_graph
 from .model_config import MPNetConfig
@@ -62,6 +61,8 @@ class MPNetInputs(ModelInputs):
 
 
 class MPNetPipelineModel(PipelineModel[TextContext]):
+    model_config_cls: ClassVar[type[MPNetConfig]] = MPNetConfig
+
     def __init__(
         self,
         pipeline_config: PipelineConfig,
@@ -83,23 +84,6 @@ class MPNetPipelineModel(PipelineModel[TextContext]):
         )
         self.model = self.load_model(session)
 
-    @classmethod
-    def calculate_max_seq_len(
-        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
-    ) -> int:
-        try:
-            return upper_bounded_default(
-                upper_bound=huggingface_config.max_position_embeddings,
-                default=pipeline_config.model.max_length,
-            )
-        except ValueError as e:
-            raise ValueError(
-                "Unable to infer max_length for MPNet, the provided "
-                f"max_length ({pipeline_config.model.max_length}) exceeds the "
-                f"model's max_position_embeddings "
-                f"({huggingface_config.max_position_embeddings})."
-            ) from e
-
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
         assert isinstance(model_inputs, MPNetInputs)
         model_outputs = self.model.execute(
@@ -112,7 +96,7 @@ class MPNetPipelineModel(PipelineModel[TextContext]):
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
+        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> MPNetInputs:
         if len(replica_batches) > 1:
@@ -141,13 +125,6 @@ class MPNetPipelineModel(PipelineModel[TextContext]):
             attention_mask=Buffer.from_numpy(attention_mask).to(
                 self.devices[0]
             ),
-        )
-
-    def prepare_next_token_inputs(
-        self, next_tokens: Buffer, prev_model_inputs: ModelInputs
-    ) -> MPNetInputs:
-        raise NotImplementedError(
-            "MPNet does not support preparing next tokens inputs."
         )
 
     def load_model(self, session: InferenceSession) -> Model:

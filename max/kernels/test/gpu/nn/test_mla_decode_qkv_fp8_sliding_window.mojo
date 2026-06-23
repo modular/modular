@@ -50,7 +50,6 @@ from layout import (
     RuntimeLayout,
     TileTensor,
     UNKNOWN_VALUE,
-    lt_to_tt,
     row_major,
 )
 from nn.attention.gpu.mha import mha_gpu_naive
@@ -166,26 +165,22 @@ def test[
 
     var q_fp8_tt = TileTensor(
         q_fp8_device_ptr,
-        row_major(
-            (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
-        ),
+        row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
     var k_fp8_tt = TileTensor(
         k_fp8_device_ptr,
         row_major(
             (
-                Idx(batch_size),
-                Idx(num_keys),
-                Idx[kv_num_heads](),
-                Idx[depth](),
+                batch_size,
+                num_keys,
+                Idx[kv_num_heads],
+                Idx[depth],
             )
         ),
     )
     var out_tt = TileTensor(
         output_device_ptr,
-        row_major(
-            (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[v_depth]())
-        ),
+        row_major((batch_size, seq_len, Idx[num_heads], Idx[v_depth])),
     )
 
     comptime k_layout = Layout.row_major(
@@ -240,7 +235,7 @@ def test[
         seq_len,
         ctx,
     )
-    var scalar_args_buf_lt = mla_args.gpu_layout_tensor()
+    var scalar_args_buf_tt = mla_args.gpu_tile_tensor()
 
     @parameter
     @always_inline
@@ -248,18 +243,18 @@ def test[
         q_fp8_tt,
         k_fp8_tt,
         out_tt,
-        scalar_args_buf_lt,
+        scalar_args_buf_tt,
     )
     def kernel_launch(ctx: DeviceContext) raises:
         comptime config = MHAConfig[q_type](num_heads, depth)
         flare_mla_decoding[config=config](
-            out_tt.as_any_origin(),
+            out_tt.as_unsafe_any_origin(),
             q_fp8_tt,
             k_fp8_tt,
             SlidingWindowCausalMask[window_size](),
             scale,
             ctx,
-            lt_to_tt(scalar_args_buf_lt),
+            scalar_args_buf_tt,
         )
 
     kernel_launch(ctx)
@@ -285,10 +280,13 @@ def test[
     )
 
     var k_bf16_operand = LayoutTensorMHAOperand(
-        LayoutTensor[output_type, k_layout, MutAnyOrigin](
+        TileTensor(
             k_bf16_device.ptr,
-            RuntimeLayout[k_layout].row_major(
-                k_bf16_device.runtime_layout.shape.value.canonicalize()
+            row_major(
+                Int(batch_size),
+                Int(num_keys),
+                Idx[kv_num_heads],
+                Idx[depth],
             ),
         )
     )

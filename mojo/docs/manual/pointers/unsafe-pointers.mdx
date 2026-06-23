@@ -3,7 +3,7 @@ title: Unsafe pointers
 description: Using unsafe pointers to access dynamically-allocated memory.
 ---
 
-The [`UnsafePointer`](/docs/std/memory/unsafe_pointer/UnsafePointer) type
+The [`UnsafePointer`](/docs/std/memory/unsafe_pointer/UnsafePointer/) type
 is one of several pointer types available in the standard library to indirectly
 reference locations in memory.
 
@@ -34,7 +34,6 @@ var ptr = alloc[Int](1)
 ptr.init_pointee_copy(100)
 ```
 
-<!-- markdownlint-disable MD033 MD045 -->
 <figure>
 
 ![](../images/pointer-diagram.png#light)
@@ -42,7 +41,6 @@ ptr.init_pointee_copy(100)
 
 <figcaption><b>Figure 1.</b> Pointer and pointee</figcaption>
 </figure>
-<!-- markdownlint-enable MD033 MD045 -->
 
 Accessing the memory—to retrieve or update a value—is called
 *dereferencing* the pointer. You can dereference a pointer by following the
@@ -73,7 +71,7 @@ or point to a memory location:
   be declared but uninitialized.
 
   ```mojo
-  var ptr: UnsafePointer[Int, MutExternalOrigin]
+  var ptr: UnsafePointer[Int, MutUntrackedOrigin]
   ```
 
 - Pointing to allocated, uninitialized memory. The `alloc()` function
@@ -120,7 +118,6 @@ or point to a memory location:
 
 The following diagram shows the lifecycle of an `UnsafePointer`:
 
-<!-- markdownlint-disable MD033 MD045 -->
 <figure>
 
 ![](../images/pointer-lifecycle.png#light)
@@ -128,7 +125,6 @@ The following diagram shows the lifecycle of an `UnsafePointer`:
 
 <figcaption><b>Figure 2.</b> Lifecycle of an <code>UnsafePointer</code></figcaption>
 </figure>
-<!-- markdownlint-enable MD033 MD045 -->
 
 ### Allocating memory
 
@@ -137,7 +133,7 @@ pointer pointing to the requested memory. You can allocate space for one or
 more values of the pointee's type. Allocation failure traps the program.
 The `alloc()` function always returns a valid, non-null pointer:
 
-```mojo
+```mojo no-test
 var ptr = alloc[Int](10) # Allocate space for 10 Int values
 ```
 
@@ -147,19 +143,19 @@ not initialized.
 ### Initializing the pointee
 
 To initialize allocated memory, `UnsafePointer` provides the
-[`init_pointee_copy()`](/docs/std/memory/unsafe_pointer/UnsafePointer#init_pointee_copy)
+[`init_pointee_copy()`](/docs/std/memory/unsafe_pointer/UnsafePointer/#init_pointee_copy)
 and
-[`init_pointee_move()`](/docs/std/memory/unsafe_pointer/UnsafePointer#init_pointee_move)
+[`init_pointee_move()`](/docs/std/memory/unsafe_pointer/UnsafePointer/#init_pointee_move)
 methods. For example:
 
-```mojo
+```mojo no-test
 ptr.init_pointee_copy(my_value)
 ```
 
 To move a value into the pointer's memory location, use
 `init_pointee_move()`:
 
-```mojo
+```mojo no-test
 str_ptr.init_pointee_move(my_string^)
 ```
 
@@ -226,13 +222,13 @@ str_ptr[] += " pointers" # Works now
 ### Destroying or removing values
 
 The
-[`take_pointee()`](/docs/std/memory/unsafe_pointer/UnsafePointer#take_pointee)
+[`take_pointee()`](/docs/std/memory/unsafe_pointer/UnsafePointer/#take_pointee)
 method moves a pointee from the memory location pointed to by `ptr`. This is a
 consuming move. It invokes `__init__(take=)` on the destination value. It leaves
 the memory location uninitialized.
 
 The
-[`destroy_pointee()`](/docs/std/memory/unsafe_pointer/UnsafePointer#destroy_pointee)
+[`destroy_pointee()`](/docs/std/memory/unsafe_pointer/UnsafePointer/#destroy_pointee)
 method calls the destructor on the pointee, and leaves the memory location
 pointed to by `ptr` uninitialized.
 
@@ -255,11 +251,11 @@ It does not destroy existing contents before writing the value from `src`.
 
 ### Freeing memory
 
-Calling [`free()`](/docs/std/memory/unsafe_pointer/UnsafePointer#free) on a
+Calling [`free()`](/docs/std/memory/unsafe_pointer/UnsafePointer/#free) on a
 pointer frees the memory allocated by the pointer. It doesn't call the
 destructors on any values stored in the memory—you need to do that explicitly
 (for example, using
-[`destroy_pointee()`](/docs/std/memory/unsafe_pointer/UnsafePointer#destroy_pointee)
+[`destroy_pointee()`](/docs/std/memory/unsafe_pointer/UnsafePointer/#destroy_pointee)
 or one of the other functions described in
 [Destroying or removing values](#destroying-or-removing-values)).
 
@@ -294,7 +290,6 @@ Pointers also support subtraction, as well as in-place addition and subtraction:
 ptr += 1
 ```
 
-<!-- markdownlint-disable MD033 MD045 -->
 <figure>
 
 ![](../images/pointer-offset.png#light)
@@ -302,7 +297,6 @@ ptr += 1
 
 <figcaption><b>Figure 3.</b> Pointer arithmetic</figcaption>
 </figure>
-<!-- markdownlint-enable MD033 MD045 -->
 
 For example, the following example allocates memory to store 6 `Float64`
 values, and initializes them all to zero.
@@ -327,12 +321,24 @@ for offset in range(6):
 
 ## `UnsafePointer` and origins
 
-The `UnsafePointer` struct has an `origin` parameter to track the
-origin of the memory it points to.
+The `UnsafePointer` struct has an `origin` parameter to track the origin of the
+memory it points to. The full parameter signature for `UnsafePointer` looks like
+this:
 
-For pointers initialized with the `to` keyword argument, the origin is set to
-the origin of the pointee. For example, in the following code, `s_ptr.origin` is
-the same as the origin of `s`:
+```mojo
+struct UnsafePointer[
+    mut: Bool,
+    //,
+    type: AnyType,
+    origin: Origin[mut=mut],
+    *,
+    address_space: AddressSpace = AddressSpace.GENERIC,
+]
+```
+
+For pointers initialized with the `to` keyword argument, the origin is inferred
+from the origin of the pointee. For example, in the following code,
+`s_ptr.origin` is the same as the origin of `s`:
 
 ```mojo
 s = "Testing"
@@ -340,10 +346,9 @@ s_ptr = UnsafePointer(to=s)
 ```
 
 When allocating memory with the `alloc()` function, the returned pointer has an
-`origin` value of `MutExternalOrigin`. This value represents an origin that is
+`origin` value of `MutUntrackedOrigin`. This value represents an origin that is
 mutable and doesn't *alias* existing values. For example, it doesn't point to
-the memory allocated for any other variable. That means the compiler won't
-unnecessarily extend the lifetimes of unrelated values. This memory isn't
+the memory allocated for any other variable. This memory isn't
 tracked by Mojo's lifetime checker and you're responsible for freeing it.
 
 If you're using a pointer in the implementation of a struct, you usually don't
@@ -352,15 +357,15 @@ of the struct. For example, if you implement a static array type that allocates
 memory in its constructor, deallocates it in its destructor, and doesn't expose
 the pointer outside of the struct, the default origin is fine.
 
-But if the struct exposes a pointer to that memory, you need to set the origin
-appropriately. For example, the `List` type has an `unsafe_ptr()` method that
-returns an `UnsafePointer` to the underlying storage. In this case, the returned
-pointer should share the origin of the list, since the list is the logical owner
-of the storage.
+But if the struct exposes a pointer or reference to that memory, you need to set
+the origin appropriately. For example, the `List` type has an `unsafe_ptr()`
+method that returns an `UnsafePointer` to the underlying storage. In this case,
+the returned pointer should share the origin of the list, since the list is the
+logical owner of the storage.
 
 That method looks something like this:
 
-```mojo
+```mojo no-test
 def unsafe_ptr(
     ref self,
 ) -> UnsafePointer[T, origin_of(self)]:
@@ -375,13 +380,29 @@ A method like this is unsafe, but setting the correct origin makes it safer,
 since the compiler knows that the pointer is referring to data owned by the
 list.
 
+When taking a pointer as a function argument, you often want to require either
+a mutable or immutable origin, but otherwise allow the compiler to infer the
+origin. Here's an example:
+
+```mojo
+def print_bytes(bytes: UnsafePointer[mut=False, Byte, _], count: Int):
+    for i in range(count):
+        print(hex(bytes[i]), end=" ")
+    print()
+
+By binding the infer-only `mut` parameter to `False`, and leaving the origin
+unbound (using `_`), this signature lets the compiler infer the origin, but
+forces the origin to be immutable. Mojo can implicitly cast a mutable pointer to
+an immutable pointer, so you can pass a mutable pointer into `print_bytes()`,
+but the function can't mutate the data.
+
 ## Working with nullability
 
 `UnsafePointer` is a non-nullable type. To model a null pointer, wrap it
 in `Optional`:
 
 ```mojo
-  var ptr = Optional[UnsafePointer[Int, MutExternalOrigin]]()
+var ptr = Optional[UnsafePointer[Int, MutUntrackedOrigin]]()
 ```
 
 This creates an `Optional` with a value of `None`, which is equivalent
@@ -396,15 +417,15 @@ if ptr:
     var p = ptr.value()
 ```
 
-When you need a non-null sentinel for deferred initialization, use
+When you need a non-null value for deferred initialization, use
 `unsafe_dangling()` instead:
 
 ```mojo
-  var ptr = UnsafePointer[Int, MutExternalOrigin].unsafe_dangling()
+var ptr = UnsafePointer[Int, MutUntrackedOrigin].unsafe_dangling()
 ```
 
 For a practical example of optional pointers in a data structure, see
-[Self-referential structs](/docs/manual/pointers/reference).
+[Self-referential structs](/docs/manual/structs/reference/).
 
 ## Working with foreign pointers
 
@@ -434,13 +455,13 @@ You can create a `UnsafePointer` from a raw memory address using the
 
 ```mojo
 def write_to_address(mmio_address: Int, value: Int32):
-    var ptr = UnsafePointer[Int32, MutExternalOrigin](
+    var ptr = UnsafePointer[Int32, MutUntrackedOrigin](
       unsafe_from_address=mmio_address
     )
 
-     # Writing to a raw memory address may require a volatile load/store as the
-     # operation may have side effects not visible to the compiler.
-     # You can specify this using the `volatile` parameter.
+    # Writing to a raw memory address may require a volatile load/store as the
+    # operation may have side effects not visible to the compiler.
+    # You can specify this using the `volatile` parameter.
     ptr.store[volatile = True](value)
 ```
 
@@ -462,9 +483,9 @@ data using a Mojo pointer:
 from std.python import Python
 
 def share_array() raises:
-    np = Python.import_module("numpy")
-    arr = np.array(Python.list(1, 2, 3, 4, 5, 6, 7, 8, 9))
-    ptr = arr.ctypes.data.unsafe_get_as_pointer[DType.int64]()
+    var np = Python.import_module("numpy")
+    var arr = np.array(Python.list(1, 2, 3, 4, 5, 6, 7, 8, 9))
+    var ptr = arr.ctypes.data.unsafe_get_as_pointer[DType.int64]()
     for i in range(9):
         print(ptr[i], end=", ")
     print()
@@ -486,21 +507,21 @@ attribute to access the raw pointer to the underlying storage
 ### Working with C/C++ pointers
 
 If you call a C/C++ function that returns a pointer using the
-[`external_call`](/docs/std/sys/ffi/external_call) function, you can specify
+[`external_call`](/docs/std/ffi/external_call/) function, you can specify
 the return type as an `UnsafePointer`, and Mojo will handle the type conversion
 for you.
 
 Notably, the `origin` parameter when working across FFI boundaries should often
-be set to `(Mut/Immut)ExternalOrigin`, since the pointer points to memory
-external to the mojo program.
+be set to `(Mut/Immut)UntrackedOrigin`, since the pointer points to memory
+allocated outside of the Mojo program.
 
-```mojo
+```mojo no-test
 from std.ffi import external_call
 
-def get_foreign_pointer() -> UnsafePointer[Int, MutExternalOrigin]:
+def get_foreign_pointer() -> UnsafePointer[Int, MutUntrackedOrigin]:
     var ptr = external_call[
         "my_c_function", # external function name
-        UnsafePointer[Int, MutExternalOrigin] # return type
+        UnsafePointer[Int, MutUntrackedOrigin] # return type
     ]()
     return ptr
 ```
@@ -540,24 +561,25 @@ in the chunk.
 
 ```mojo
 def read_chunks(
-  var ptr: UnsafePointer[mut=False, UInt8],
+  var ptr: UnsafePointer[mut=False, UInt8, _],
 ) -> List[List[UInt32]]:
-    chunks = List[List[UInt32]]()
+    var chunks = List[List[UInt32]]()
     # A chunk size of 0 indicates the end of the data
-    chunk_size = Int(ptr[])
+    var chunk_size = Int(ptr[])
     while (chunk_size > 0):
         # Skip the 1 byte chunk_size and get a pointer to the first
         # UInt32 in the chunk
-        ui32_ptr = (ptr + 1).bitcast[UInt32]()
-        chunk = List[UInt32](capacity=chunk_size)
+        var ui32_ptr = (ptr + 1).bitcast[UInt32]()
+        var chunk = List[UInt32](capacity=chunk_size)
         for i in range(chunk_size):
             chunk.append(ui32_ptr[i])
-        chunks.append(chunk)
+        # list is not implicitly copyable, so it needs the transfer sigil (^)
+        chunks.append(chunk^)
         # Move our pointer to the next byte after the current chunk
         ptr += (1 + 4 * chunk_size)
         # Read the size of the next chunk
         chunk_size = Int(ptr[])
-    return chunks
+    return chunks^
 ```
 
 When dealing with data read in from a file or from the network, you may also
@@ -571,20 +593,20 @@ integer, it would be represented as E9 03 00 00.
 Big-endian or most-significant byte (MSB) ordering is the opposite: in the
 32-bit case, 00 00 03 E9. MSB ordering is frequently used in file formats and
 when transmitting data over the network. You can use the
-[`byte_swap()`](/docs/std/bit/bit/byte_swap) function to swap the byte
+[`byte_swap()`](/docs/std/bit/bit/byte_swap/) function to swap the byte
 order of a SIMD value from big-endian to little-endian or the reverse. For
 example, if the method above was reading big-endian data, you'd just need to
 change a single line:
 
-```mojo
+```mojo no-test
 chunk.append(byte_swap(ui32_ptr[i]))
 ```
 
 ## Working with SIMD vectors
 
 The `UnsafePointer` type includes
-[`load()`](/docs/std/memory/unsafe_pointer/UnsafePointer#load) and
-[`store()`](/docs/std/memory/unsafe_pointer/UnsafePointer#store) methods for
+[`load()`](/docs/std/memory/unsafe_pointer/UnsafePointer/#load) and
+[`store()`](/docs/std/memory/unsafe_pointer/UnsafePointer/#store) methods for
 performing aligned loads and stores of scalar values. It also has methods
 supporting strided load/store and gather/scatter.
 
@@ -595,7 +617,6 @@ values from structured data. For example, consider the data for an RGB image,
 where each pixel is made up of three 8-bit values, for red, green, and blue. If
 you want to access just the red values, you can use a strided load or store.
 
-<!-- markdownlint-disable MD033 MD045 -->
 <figure>
 
 ![](../images/strided-load-storage.png#light)
@@ -603,36 +624,33 @@ you want to access just the red values, you can use a strided load or store.
 
 <figcaption><b>Figure 4.</b> Strided load</figcaption>
 </figure>
-<!-- markdownlint-enable MD033 MD045 -->
 
 The following function uses the
-[`strided_load()`](/docs/std/memory/unsafe_pointer/UnsafePointer#strided_load)
+[`strided_load()`](/docs/std/memory/unsafe_pointer/UnsafePointer/#strided_load)
 and
-[`strided_store()`](/docs/std/memory/unsafe_pointer/UnsafePointer#strided_store)
+[`strided_store()`](/docs/std/memory/unsafe_pointer/UnsafePointer/#strided_store)
 methods to invert the red pixel values in an image, 8 values at a time. (Note
 that this function only handles images where the number of pixels is evenly
 divisible by eight.)
 
 ```mojo
-def invert_red_channel(ptr: UnsafePointer[mut=True, UInt8], pixel_count: Int):
+def invert_red_channel(ptr: UnsafePointer[mut=True, UInt8, _], pixel_count: Int):
     # number of values loaded or stored at a time
     comptime simd_width = 8
     # bytes per pixel, which is also the stride size
-    bpp = 3
+    comptime bpp = 3
     for i in range(0, pixel_count * bpp, simd_width * bpp):
-        red_values = (ptr + i).strided_load[width=simd_width](bpp)
+        var red_values = (ptr + i).strided_load[width=simd_width](bpp)
         # Invert values and store them in their original locations
         (ptr + i).strided_store[width=simd_width](~red_values, bpp)
 ```
 
-The [`gather()`](/docs/std/memory/unsafe_pointer/UnsafePointer#gather) and
-[`scatter()`](/docs/std/memory/unsafe_pointer/UnsafePointer#scatter) methods
+The [`gather()`](/docs/std/memory/unsafe_pointer/UnsafePointer/#gather) and
+[`scatter()`](/docs/std/memory/unsafe_pointer/UnsafePointer/#scatter) methods
 let you load or store a set of values that are stored in arbitrary locations.
 You do this by passing in a SIMD vector of *offsets* to the current pointer. For
-<!-- markdownlint-disable MD033 -->
 example, when using `gather()`, the <var>n</var>th value in the vector is loaded
 from (pointer address) + <var>offset[n]</var>.
-<!-- markdownlint-enable MD033 -->
 
 ## Safety
 
