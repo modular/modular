@@ -85,7 +85,7 @@ from .repr import repr
 # ===-----------------------------------------------------------------------===#
 
 
-trait Writer(ImplicitlyDestructible):
+trait Writer:
     """A destination for formatted text output.
 
     `Writer` is implemented by types that can accept UTF-8 formatted text, such
@@ -275,7 +275,7 @@ def _reflection_write_to[
     //,
     f: def[FieldType: Writable](field: FieldType, mut writer: W) thin,
 ](this: T, mut writer: W,):
-    comptime r = reflect[T]()
+    comptime r = reflect[T]
     comptime names = r.field_names()
     comptime types = r.field_types()
     comptime type_name = _unqualified_type_name[T]()

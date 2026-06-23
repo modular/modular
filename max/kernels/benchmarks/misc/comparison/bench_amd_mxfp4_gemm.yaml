@@ -1,0 +1,110 @@
+##===----------------------------------------------------------------------===##
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+##===----------------------------------------------------------------------===##
+
+# AMD MXFP4 dense GEMM benchmark: MAX vs aiter (gemm_afp4wfp4 Triton kernel).
+# Computes Y = A @ B^T with both operands MXFP4 (E2M1 + per-32-block E8M0),
+# where B is the weight [N=out_features, K=in_features] and A is [M, K].
+# Each params block fixes a (N, K) weight shape and sweeps M (small M = decode
+# weight-streaming, large M = prefill). Shapes mirror the canonical per-model
+# shape sets:
+#   Llama-3.1-405B (hidden=16384): attention QKV/O + MLP up/down, at tp=8 & tp=4.
+#   Kimi-K2.5 (hidden=7168, moe_inter=2048, shared_inter=18432): routed +
+#     shared expert GEMMs at tp=8/ep=8 (per-GPU shapes).
+
+name: bench_amd_mxfp4_gemm
+file: $BUILD_WORKSPACE_DIRECTORY/max/kernels/benchmarks/misc/comparison/bench_amd_mxfp4_gemm.py
+
+commons: &commons
+  $dtype: ["mxfp4"]
+  $engine: ["modular_max", "aiter"]
+  $M: [1, 4, 8, 16, 32, 64]
+
+params:
+# ---------------------------------------------------------------------------
+# Llama-3.1-405B, tp=8
+# ---------------------------------------------------------------------------
+# Attn QKV proj
+- <<: *commons
+  $N: [2304]
+  $K: [16384]
+
+# Attn O proj
+- <<: *commons
+  $N: [16384]
+  $K: [2048]
+
+# MLP up proj
+- <<: *commons
+  $N: [13312]
+  $K: [16384]
+
+# MLP down proj
+- <<: *commons
+  $N: [16384]
+  $K: [6656]
+
+# ---------------------------------------------------------------------------
+# Llama-3.1-405B, tp=4 (halved tp doubles the sharded dim vs tp=8)
+# ---------------------------------------------------------------------------
+# Attn QKV proj
+- <<: *commons
+  $N: [4608]
+  $K: [16384]
+
+# Attn O proj
+- <<: *commons
+  $N: [16384]
+  $K: [4096]
+
+# MLP up proj
+- <<: *commons
+  $N: [26624]
+  $K: [16384]
+
+# MLP down proj
+- <<: *commons
+  $N: [16384]
+  $K: [13312]
+
+# ---------------------------------------------------------------------------
+# Kimi-K2.5 MoE, tp=8 / ep=8 (per-GPU expert GEMMs)
+# ---------------------------------------------------------------------------
+# Routed expert down
+- <<: *commons
+  $N: [7168]
+  $K: [2048]
+
+# Routed expert up
+- <<: *commons
+  $N: [2048]
+  $K: [7168]
+
+# Routed expert gate+up combined
+- <<: *commons
+  $N: [4096]
+  $K: [7168]
+
+# Shared expert down
+- <<: *commons
+  $N: [7168]
+  $K: [18432]
+
+# Shared expert up
+- <<: *commons
+  $N: [18432]
+  $K: [7168]
+
+# Shared expert gate+up combined
+- <<: *commons
+  $N: [36864]
+  $K: [7168]

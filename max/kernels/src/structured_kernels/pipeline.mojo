@@ -83,7 +83,7 @@ from std.gpu.memory import AddressSpace
 from layout.tma_async import SharedMemBarrier
 
 comptime MbarPtr = UnsafePointer[
-    SharedMemBarrier, MutAnyOrigin, address_space=AddressSpace.SHARED
+    SharedMemBarrier, MutUntrackedOrigin, address_space=AddressSpace.SHARED
 ]
 
 

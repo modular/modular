@@ -152,27 +152,19 @@ def test[
     # Construct device buffers.
     var q_device = TileTensor(
         q_device_ptr,
-        row_major(
-            (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
-        ),
+        row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
     var k_device = TileTensor(
         k_device_ptr,
-        row_major(
-            (Idx(batch_size), Idx(num_keys), Idx[kv_num_heads](), Idx[depth]())
-        ),
+        row_major((batch_size, num_keys, Idx[kv_num_heads], Idx[depth])),
     )
     var v_device = TileTensor(
         v_device_ptr,
-        row_major(
-            (Idx(batch_size), Idx(num_keys), Idx[kv_num_heads](), Idx[depth]())
-        ),
+        row_major((batch_size, num_keys, Idx[kv_num_heads], Idx[depth])),
     )
     var output_device = TileTensor(
         output_device_ptr,
-        row_major(
-            (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
-        ),
+        row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
 
     @parameter
@@ -212,9 +204,7 @@ def test[
     var output_ref_device_ptr = ctx.enqueue_create_buffer[qkv_type](o_size)
     var output_ref_device = TileTensor(
         output_ref_device_ptr,
-        row_major(
-            (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
-        ),
+        row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
     ctx.enqueue_copy(output_ref_device_ptr, output_ptr)
 
@@ -393,6 +383,22 @@ def test_context_encoding(ctx: DeviceContext) raises:
             num_heads=3,
         ](119, 200, ctx)
 
+        # Zero seq_len / num_keys: the FLUX.2 VAE mid-block attention
+        # runs on a flattened spatial dim, which is zero when the
+        # encoder is invoked on a ``(0, 0, 3)`` placeholder image for
+        # the text-to-image path.  The kernel must early-return rather
+        # than launching with zero grid dims.
+        test[
+            DType.bfloat16,
+            depth=128,
+            num_heads=1,
+        ](0, 0, ctx)
+        test[
+            DType.bfloat16,
+            depth=128,
+            num_heads=3,
+        ](0, 0, ctx)
+
 
 def test_decoding[
     batch_size: Int,
@@ -523,9 +529,7 @@ def test_flash_attention_sink_kernel(ctx: DeviceContext, seq_len: Int) raises:
 
     var out_host = TileTensor(
         out_ptr,
-        row_major(
-            (Idx[batch_size](), Idx(seq_len), Idx[num_heads](), Idx[depth]())
-        ),
+        row_major((Idx[batch_size], seq_len, Idx[num_heads], Idx[depth])),
     )
 
     var q_dev = ctx.enqueue_create_buffer[qkv_type](
@@ -549,27 +553,19 @@ def test_flash_attention_sink_kernel(ctx: DeviceContext, seq_len: Int) raises:
 
     var q_device = TileTensor(
         q_dev,
-        row_major(
-            (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
-        ),
+        row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
     var k_device = TileTensor(
         k_dev,
-        row_major(
-            (Idx(batch_size), Idx[num_keys](), Idx[kv_heads](), Idx[depth]())
-        ),
+        row_major((batch_size, Idx[num_keys], Idx[kv_heads], Idx[depth])),
     )
     var v_device = TileTensor(
         v_dev,
-        row_major(
-            (Idx(batch_size), Idx[num_keys](), Idx[kv_heads](), Idx[depth]())
-        ),
+        row_major((batch_size, Idx[num_keys], Idx[kv_heads], Idx[depth])),
     )
     var out_device = TileTensor(
         out_dev,
-        row_major(
-            (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
-        ),
+        row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
     comptime sinks_layout = Layout.row_major(UNKNOWN_VALUE)
     var sinks_device = LayoutTensor[qkv_type, sinks_layout](
@@ -588,7 +584,7 @@ def test_flash_attention_sink_kernel(ctx: DeviceContext, seq_len: Int) raises:
             scale,  # 0.0 -> all QK logits are exactly zero
             ctx,
             None,
-            sink_weights=sinks_device.get_immutable(),
+            sink_weights=sinks_device.get_immutable().as_unsafe_any_origin(),
         )
 
     launch(ctx)

@@ -67,7 +67,7 @@ with `kbench`.
     ```
 
 1. Verify your environment is set up correctly by running the following command
-    from the top-level `modular` directory:
+   from the top-level `modular` directory:
 
     ```bash
     ./bazelw run //max/kernels/benchmarks/autotune:kbench -- --help
@@ -131,9 +131,9 @@ Within the Mojo file, you'll need to import the Mojo
 [`benchmark`](https://docs.modular.com/mojo/std/benchmark/) package.
 
 ```mojo
-from sys import get_defined_dtype, get_defined_int, get_defined_string
+from std.sys import get_defined_dtype, get_defined_int, get_defined_string
 from internal_utils import get_defined_shape, int_list_to_tuple
-from benchmark import (
+from std.benchmark import (
     BenchConfig,
     Bench,
     Bencher,

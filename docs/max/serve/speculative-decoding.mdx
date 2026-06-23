@@ -37,14 +37,12 @@ requirements](/max/packages#system-requirements).
 ## Supported methods
 
 MAX supports common speculative-decoding methods like EAGLE, EAGLE3, and
-MTP. For experimenting with arbitrary target/draft pairs, use
-`standalone`.
+MTP.
 
 | Method             | Draft source                                                           | Supported targets and hardware                                    |
 |--------------------|------------------------------------------------------------------------|-------------------------------------------------------------------|
-| `eagle` / `eagle3` | A trained EAGLE draft that shares the target's embedding and `lm_head` | Llama 3 (1 GPU), Kimi K2.5 (8× B200).                             |
-| `mtp`              | A native multi-token prediction head inside the target checkpoint      | DeepSeek V3 and derivatives (8× B200).                            |
-| `standalone`       | A separate small model you pass with `--draft-model-path`              | Any target with a same-family draft, on any GPU the pair fits on. |
+| `eagle` / `eagle3` | A trained EAGLE draft that shares the target's embedding and `lm_head` | Llama 3 (1 GPU), Kimi K2.5 and K2.6 (8× B200).                    |
+| `mtp`              | A native multi-token prediction head inside the target checkpoint      | DeepSeek V3 and derivatives (8× B200), Gemma 4 (1 GPU).           |
 
 ## Serve with speculative decoding
 
@@ -138,54 +136,14 @@ print(response.choices[0].message.content)
 ```
 
   </TabItem>
-  <TabItem value="standalone" label="Standalone">
-
-Serve `Llama 3.1 8B Instruct` with `Llama 3.2 1B Instruct` as the
-draft:
-
-```sh
-max serve \
-  --model meta-llama/Llama-3.1-8B-Instruct \
-  --speculative-method standalone \
-  --draft-model-path meta-llama/Llama-3.2-1B-Instruct \
-  --num-speculative-tokens 2 \
-  --devices gpu
-```
-
-Once the server prints `Server ready on http://0.0.0.0:8000`, send a
-chat-completion request:
-
-```python
-from openai import OpenAI
-
-client = OpenAI(
-    base_url="http://localhost:8000/v1",
-    api_key="EMPTY",
-)
-
-response = client.chat.completions.create(
-    model="meta-llama/Llama-3.1-8B-Instruct",
-    messages=[
-        {"role": "system", "content": "You are a helpful assistant."},
-        {"role": "user", "content": "What are the benefits of speculative decoding?"},
-    ],
-    max_tokens=500,
-)
-
-print(response.choices[0].message.content)
-```
-
-  </TabItem>
 </Tabs>
 
 ## Read the startup architecture name
 
 For EAGLE and MTP, MAX reports a unified architecture at startup, for
-example `UnifiedEagleLlama3ForCausalLM` or
-`UnifiedMTPDeepseekV3ForCausalLM`. That's expected: MAX compiles the
-target, draft, and verifier into a single graph. `standalone` runs the
-target and draft as separate models and reports the target's normal
-architecture.
+example `UnifiedEagleLlama3ForCausalLM`, `UnifiedMTPDeepseekV3ForCausalLM`,
+or `UnifiedMTPGemma4ForCausalLM`. That's expected: MAX compiles the
+target, draft, and verifier into a single graph.
 
 ## Monitor acceptance rates
 
@@ -212,11 +170,12 @@ better-matched draft checkpoint.
 
 ## Tune speculative decoding
 
-The following flags control how MAX drafts tokens and how verification
-decides to accept them. The first three map to fields on
+The following flags control how MAX drafts tokens and how verification decides
+to accept them. The first three map to fields on
 [`SpeculativeConfig`](/max/api/python/generated/max.pipelines.SpeculativeConfig)
-when you configure a pipeline programmatically. The last two live on
-the draft model's config and on `KVCacheConfig`.
+when you configure a pipeline programmatically. The last two live on the draft
+model's config and on
+[`KVCacheConfig`](/max/api/python/generated/max.pipelines.kv_cache.KVCacheConfig/).
 
 - `--num-speculative-tokens`: number of tokens the draft proposes per
   step. Default is `2`. Larger values raise peak speedup but hurt
@@ -224,7 +183,7 @@ the draft model's config and on `KVCacheConfig`.
 - `--rejection-sampling-strategy`: how the target verifies drafted
   tokens. Accepts `greedy`, `residual`, `typical-acceptance`, or
   `logit-comparison`. When unset, EAGLE and MTP default to
-  `typical-acceptance`; `standalone` defaults to `residual`.
+  `typical-acceptance`.
 - `--synthetic-acceptance-rate`: benchmarking-only knob that accepts
   each drafted token with a calibrated probability, ignoring real logits.
   Use this to model hypothetical speedups without changing the draft.
@@ -242,17 +201,14 @@ flags.
 
 These restrictions apply when speculative decoding is enabled:
 
-- `--max-num-steps` must be `1`. Speculative-decoding pipelines manage
-  multi-step KV allocation internally, and any other value raises a
-  configuration error.
 - `--enable-echo` isn't supported alongside speculative decoding.
 - Structured output (JSON-schema-constrained generation) isn't supported
   alongside speculative decoding.
 - The target and draft must share the same `max_length`.
 - Repetition, frequency, and presence penalties are disabled when a
-  separate draft model is configured (`--draft-model-path`). That covers
-  EAGLE and `standalone`. MTP keeps the draft head inside the target
-  checkpoint, so it supports penalties.
+  separate draft model is configured (`--draft-model-path`), which covers
+  EAGLE. MTP keeps the draft head inside the target checkpoint, so it
+  supports penalties.
 
 ## Next steps
 

@@ -11,12 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+import compiler
+
+from std.gpu.host import DeviceContext
 from std.math import iota
 from std.sys import align_of, size_of
 
 from std.algorithm import parallelize_over_rows
 from std.bit import log2_floor
-from compiler import register
 from std.gpu import (
     WARP_SIZE,
     barrier,
@@ -27,8 +29,8 @@ from std.gpu import (
 from std.gpu.primitives import warp
 from std.gpu.memory import AddressSpace, external_memory
 from std.memory import Span
-from std.runtime.asyncrt import DeviceContextPtr
-from tensor import InputTensor, OutputTensor
+
+from extensibility import InputTensor, OutputTensor
 
 from std.utils.numerics import min_or_neg_inf
 
@@ -47,7 +49,7 @@ struct TopKElement[T: DType](Comparable, TrivialRegisterPassable):
         return self.val < rhs.val
 
 
-@register("top_k_custom")
+@compiler.register("top_k_custom")
 struct TopK:
     """Registers the `top_k_custom` op, allowing python to use it from the `max`
     package. This is a simplified version without bottom_k and sorting options,
@@ -67,7 +69,7 @@ struct TopK:
         out_vals: OutputTensor[dtype=dtype, rank=rank, ...],
         out_idxs: OutputTensor[dtype=DType.int32, rank=rank, ...],
         in_vals: InputTensor[dtype=dtype, rank=rank, ...],
-        ctx: DeviceContextPtr,
+        ctx: DeviceContext,
     ) raises:
         comptime assert rank == 2, "rank must be 2"
         comptime assert not (
@@ -76,7 +78,7 @@ struct TopK:
 
         var shape = in_vals.shape()
         var batch_size = shape[0]
-        var dev_ctx = ctx.get_device_context()
+        var dev_ctx = ctx
 
         var out_vals_tensor = out_vals.to_layout_tensor()
         var out_idxs_tensor = out_idxs.to_layout_tensor()
@@ -135,7 +137,7 @@ struct TopK:
                     top_k_sram[index].val = min_or_neg_inf[dtype]()
 
         comptime if target == "gpu":
-            dev_ctx.enqueue_function_experimental[top_k_gpu[K]](
+            dev_ctx.enqueue_function[top_k_gpu[K]](
                 out_vals_tensor,
                 out_idxs_tensor,
                 in_vals_tensor,

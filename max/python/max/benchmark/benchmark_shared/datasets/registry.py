@@ -19,15 +19,12 @@ from dataclasses import dataclass
 
 @dataclass
 class DatasetRegistryEntry:
-    """Registry entry for a benchmark dataset.
-
-    Attributes:
-        class_name: The name of the BenchmarkDataset subclass that implements this dataset.
-        has_multiturn_chat_support: Whether this dataset supports multiturn chat scenarios.
-    """
+    """Registry entry for a benchmark dataset."""
 
     class_name: str
+    """The name of the BenchmarkDataset subclass that implements this dataset."""
     has_multiturn_chat_support: bool
+    """Whether this dataset supports multiturn chat scenarios."""
 
 
 """Registry mapping dataset names to their implementation metadata and capabilities.
@@ -59,6 +56,10 @@ Adding New Datasets:
            has_multiturn_chat_support=True,  # or False
        )
 
+    3. Document the dataset in max/python/docs/cli/benchmark.rst (Datasets
+       section): name, source, required flags, and any dataset-specific CLI
+       options.
+
 Notes:
     - The registry is loaded at module import time and should not be modified
       at runtime unless you understand the implications for ongoing benchmarks
@@ -82,6 +83,10 @@ DATASET_REGISTRY: Mapping[str, DatasetRegistryEntry] = {
     ),
     "code_debug": DatasetRegistryEntry(
         class_name="CodeDebugBenchmarkDataset",
+        has_multiturn_chat_support=True,
+    ),
+    "chat-judge": DatasetRegistryEntry(
+        class_name="ChatJudgeBenchmarkDataset",
         has_multiturn_chat_support=True,
     ),
     "obfuscated-conversations": DatasetRegistryEntry(
@@ -122,6 +127,10 @@ DATASET_REGISTRY: Mapping[str, DatasetRegistryEntry] = {
     ),
     "instruct-coder": DatasetRegistryEntry(
         class_name="InstructCoderBenchmarkDataset",
+        has_multiturn_chat_support=True,
+    ),
+    "nemotron-opencode": DatasetRegistryEntry(
+        class_name="NemotronOpenCodeBenchmarkDataset",
         has_multiturn_chat_support=True,
     ),
 }

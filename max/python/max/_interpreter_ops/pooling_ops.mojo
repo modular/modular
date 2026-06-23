@@ -14,14 +14,15 @@
 """Mojo kernel wrappers for pooling MO interpreter operations."""
 
 from std.os import abort
+from std.gpu.host import DeviceContext
 from std.python import PythonObject
 from std.python.bindings import PythonModuleBuilder
 from std.sys.info import has_accelerator
+from std.utils.coord import Coord
 from std.utils.numerics import min_or_neg_inf
 
 from std.algorithm.functional import elementwise, IndexList
-from std.memory import OpaquePointer
-from std.runtime.asyncrt import DeviceContextPtr
+
 
 from op_utils import (
     _get_dtype,
@@ -33,7 +34,7 @@ from op_utils import (
 
 
 @export
-def PyInit_pooling_ops() -> PythonObject:
+def PyInit_pooling_ops() abi("C") -> PythonObject:
     """Create a Python module with pooling kernel function bindings."""
     try:
         var b = PythonModuleBuilder("pooling_ops")
@@ -62,8 +63,8 @@ def PyInit_pooling_ops() -> PythonObject:
 def max_pool_op[
     dtype: DType, //
 ](
-    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    in_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    out_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    in_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     batch: Int,
     in_h: Int,
     in_w: Int,
@@ -78,7 +79,7 @@ def max_pool_op[
     dilation_w: Int,
     pad_h: Int,
     pad_w: Int,
-    ctx: Optional[OpaquePointer[MutExternalOrigin]],
+    ctx: DeviceContext,
 ) raises:
     var total = batch * out_h * out_w * channels
     var in_row_stride = in_w * channels
@@ -107,8 +108,8 @@ def max_pool_op[
         out_row_stride,
         out_batch_stride,
     )
-    def func[width: Int, rank: Int, alignment: Int = 1](idx: IndexList[rank]):
-        var i = idx[0]
+    def func[width: Int, alignment: Int = 1](idx: Coord):
+        var i = Int(idx[0].value())
         var n, r = divmod(i, out_batch_stride)
         var oh, r2 = divmod(r, out_row_stride)
         var ow, c = divmod(r2, channels)
@@ -131,14 +132,11 @@ def max_pool_op[
 
         out_ptr[i] = max_val
 
-    if not ctx:
-        elementwise[func, simd_width=1](IndexList[1](total))
+    if ctx.api() == "cpu":
+        elementwise[func, simd_width=1](Coord(total), ctx)
     else:
         comptime if has_accelerator():
-            var device_ctx = DeviceContextPtr(ctx.unsafe_value())
-            elementwise[func, simd_width=1, target="gpu"](
-                IndexList[1](total), device_ctx
-            )
+            elementwise[func, simd_width=1, target="gpu"](Coord(total), ctx)
         else:
             raise Error("No GPU accelerator available")
 
@@ -168,7 +166,7 @@ struct _MaxPoolBody(Dispatchable):
     var dilation_w: Int
     var pad_h: Int
     var pad_w: Int
-    var ctx: Optional[OpaquePointer[MutExternalOrigin]]
+    var ctx: DeviceContext
 
     def call[t: DType](self) raises -> None:
         max_pool_op(
@@ -259,7 +257,7 @@ def max_pool_dispatcher(
         out_buffer: Output buffer [N, out_h, out_w, C].
         in_buffer: Input buffer [N, H, W, C].
         params: Python tuple of pooling parameters.
-        device_context_ptr: Device context pointer (null for CPU).
+        device_context_ptr: Device context pointer.
     """
     _unpack_and_dispatch(out_buffer, in_buffer, params, device_context_ptr)
 
@@ -276,6 +274,6 @@ def max_pool_ceil_dispatcher(
         out_buffer: Output buffer [N, out_h, out_w, C].
         in_buffer: Input buffer [N, H, W, C].
         params: Python tuple of pooling parameters.
-        device_context_ptr: Device context pointer (null for CPU).
+        device_context_ptr: Device context pointer.
     """
     _unpack_and_dispatch(out_buffer, in_buffer, params, device_context_ptr)

@@ -774,7 +774,7 @@ Alternatives:
 
 - Option A: All of them
 - Option B: Allowlist some of them, starting with `@inline`, `@no_inline`,
-   `@implicit`, `@staticmethod`.
+  `@implicit`, `@staticmethod`.
 
 Recommended: Option A. IMO, struct extensions should be decoupled from methods'
 APIs and details.

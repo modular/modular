@@ -84,6 +84,26 @@ def test_constructors() raises:
     some_func_mut(StringSlice(a))
 
 
+def test_string_slice_from_string_static_repr() raises:
+    """Tests special case of StringSlice from String pointing to static data."""
+
+    def is_static_string(s: String) -> Bool:
+        return not s._is_inline() and not s._is_ref_counted()
+
+    var s1 = String("foo")
+    assert_true(is_static_string(s1))
+
+    # Borrowing as immutable doesn't change `s1`
+    var str1 = StringSlice[mut=False, ...](s1)
+    assert_equal(str1, "foo")
+    assert_true(is_static_string(s1))
+
+    # Borrowing as mutable changes `s1` to a different representation
+    var str2 = StringSlice[mut=True, ...](s1)
+    assert_equal(str2, "foo")
+    assert_false(is_static_string(s1))
+
+
 def test_string_literal_byte_span() raises:
     comptime slc = "Hello".as_bytes()
 
@@ -97,7 +117,7 @@ def test_string_literal_byte_span() raises:
 
 def test_string_byte_span() raises:
     var string = "Hello"
-    var str_slice = string.as_bytes_mut()
+    var str_slice = string.unsafe_as_bytes_mut()
 
     assert_equal(len(str_slice), 5)
     assert_equal(str_slice[0], Byte(ord("H")))
@@ -966,24 +986,6 @@ def test_count() raises:
     assert_equal(StringSlice("aaaaaa").count("aa"), 3)
 
 
-def test_string_slice_from_pointer() raises:
-    var a = StringSlice("AAA")
-    var b = StaticString(unsafe_from_utf8_ptr=a.unsafe_ptr())
-    assert_equal(3, a.byte_length())
-    assert_equal(3, b.byte_length())
-    var c = "ABCD"
-    var d = StringSlice(unsafe_from_utf8_ptr=c.as_c_string_slice().unsafe_ptr())
-    var e = StringSlice(unsafe_from_utf8_ptr=c.unsafe_ptr())
-    assert_equal(4, c.byte_length())
-    assert_equal(4, d.byte_length())
-    assert_equal(4, e.byte_length())
-    assert_equal("A", d[byte=0])
-    assert_equal("B", d[byte=1])
-    assert_equal("C", d[byte=2])
-    assert_equal("D", d[byte=3])
-    assert_equal("D", d[byte=d.byte_length() - 1])
-
-
 def test_replace() raises:
     assert_equal(StringSlice("").replace("", "hello world"), "")
     assert_equal(
@@ -1134,6 +1136,68 @@ def test_title() raises:
     assert_equal(StringSlice("123abc def").title(), "123Abc Def")
     # Single word
     assert_equal(StringSlice("hello").title(), "Hello")
+
+
+def test_codepoint_indexing() raises:
+    assert_equal(StringSlice("abc")[codepoint=0], "a")
+    assert_equal(StringSlice("abc")[codepoint=2], "c")
+    assert_equal(EVERY_CODEPOINT_LENGTH_STR[codepoint=0], "߷")
+    assert_equal(EVERY_CODEPOINT_LENGTH_STR[codepoint=1], "ക")
+    assert_equal(EVERY_CODEPOINT_LENGTH_STR[codepoint=2], "ൈ")
+    assert_equal(EVERY_CODEPOINT_LENGTH_STR[codepoint=3], "🔄")
+    assert_equal(EVERY_CODEPOINT_LENGTH_STR[codepoint=4], "!")
+    assert_equal(StringSlice("🔄🔥🔄")[codepoint=0], "🔄")
+    assert_equal(StringSlice("🔄🔥🔄")[codepoint=1], "🔥")
+    assert_equal(StringSlice("🔄🔥🔄")[codepoint=2], "🔄")
+
+
+def test_codepoint_slicing() raises:
+    assert_equal(StringSlice("abc")[codepoint=0:1], "a")
+    assert_equal(StringSlice("abc")[codepoint=2:3], "c")
+    assert_equal(EVERY_CODEPOINT_LENGTH_STR[codepoint=0:1], "߷")
+    assert_equal(EVERY_CODEPOINT_LENGTH_STR[codepoint=1:2], "ക")
+    assert_equal(EVERY_CODEPOINT_LENGTH_STR[codepoint=2:3], "ൈ")
+    assert_equal(EVERY_CODEPOINT_LENGTH_STR[codepoint=3:4], "🔄")
+    assert_equal(EVERY_CODEPOINT_LENGTH_STR[codepoint=4:5], "!")
+
+    var elems = StringSlice("🔄🔥🔄")
+    assert_equal(elems[codepoint=0:1], "🔄")
+    assert_equal(elems[codepoint=1:2], "🔥")
+    assert_equal(elems[codepoint=2:3], "🔄")
+
+    assert_equal(elems[codepoint=:1], "🔄")
+    assert_equal(elems[codepoint=:2], "🔄🔥")
+    assert_equal(elems[codepoint=:3], "🔄🔥🔄")
+
+    assert_equal(elems[codepoint=:], "🔄🔥🔄")
+
+    assert_equal(elems[codepoint=0:], "🔄🔥🔄")
+    assert_equal(elems[codepoint=1:], "🔥🔄")
+    assert_equal(elems[codepoint=2:], "🔄")
+
+    assert_equal(elems[codepoint=0:3], "🔄🔥🔄")
+    assert_equal(elems[codepoint=1:3], "🔥🔄")
+    assert_equal(elems[codepoint=0:2], "🔄🔥")
+
+    assert_equal(elems[codepoint=0:0], "")
+    assert_equal(elems[codepoint=1:1], "")
+    assert_equal(elems[codepoint=2:2], "")
+
+    assert_equal(elems[codepoint=3:], "")
+    assert_equal(elems[codepoint=3:2], "")
+    assert_equal(elems[codepoint=2:1], "")
+
+
+def test_grapheme_indexing() raises:
+    assert_equal(StringSlice("abc")[grapheme=0], "a")
+    assert_equal(StringSlice("abc")[grapheme=1], "b")
+    assert_equal(StringSlice("abc")[grapheme=2], "c")
+    assert_equal(StringSlice("🔄🔥🔄")[grapheme=0], "🔄")
+    assert_equal(StringSlice("🔄🔥🔄")[grapheme=1], "🔥")
+    assert_equal(StringSlice("🔄🔥🔄")[grapheme=2], "🔄")
+    assert_equal(StringSlice("👨‍🚀🧑‍🌾क्षि")[grapheme=0], "👨‍🚀")
+    assert_equal(StringSlice("👨‍🚀🧑‍🌾क्षि")[grapheme=1], "🧑‍🌾")
+    assert_equal(StringSlice("👨‍🚀🧑‍🌾क्षि")[grapheme=2], "क्षि")
 
 
 def main() raises:

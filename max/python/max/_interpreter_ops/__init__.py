@@ -25,6 +25,8 @@ from max._core.dialects import mo
 from max._core.driver import Buffer
 
 # Import op bindings from categorized Mojo modules
+# matmul / unary-elementwise handlers are backed by graph-compiler models
+# (compiled below), unlike the Mojo op bindings above.
 from . import (  # type: ignore[attr-defined]
     argmax_ops,
     argnonzero_ops,
@@ -36,11 +38,11 @@ from . import (  # type: ignore[attr-defined]
     elementwise_binary_ops,
     elementwise_cast_ops,
     elementwise_comparison_ops,
-    elementwise_unary_ops,
     gather_scatter_ops,
+    gc_compile,
     group_norm_ops,
     layer_norm_ops,
-    matmul_ops,
+    matmul_gc,
     misc_ops,
     nms_ops,
     pad_ops,
@@ -53,6 +55,7 @@ from . import (  # type: ignore[attr-defined]
     split_ops,
     tile_ops,
     topk_ops,
+    unary_elementwise_gc,
 )
 
 # Arithmetic binary ops: output dtype matches input dtype
@@ -85,30 +88,6 @@ BINARY_ELEMENTWISE_COMPARISON: dict[
     mo.NotEqualOp: elementwise_comparison_ops.NotEqual,
 }
 
-# Unary elementwise ops: output dtype matches input dtype
-UNARY_ELEMENTWISE: dict[
-    type[_core.Operation], Callable[[Buffer, Buffer, int], None]
-] = {
-    mo.NegativeOp: elementwise_unary_ops.Negative,
-    mo.AbsOp: elementwise_unary_ops.Abs,
-    mo.ReluOp: elementwise_unary_ops.ReLU,
-    mo.CeilOp: elementwise_unary_ops.Ceil,
-    mo.FloorOp: elementwise_unary_ops.Floor,
-    mo.RoundOp: elementwise_unary_ops.Round,
-    mo.ExpOp: elementwise_unary_ops.Exp,
-    mo.LogOp: elementwise_unary_ops.Log,
-    mo.Log1pOp: elementwise_unary_ops.Log1p,
-    mo.SqrtOp: elementwise_unary_ops.Sqrt,
-    mo.RsqrtOp: elementwise_unary_ops.Rsqrt,
-    mo.TanhOp: elementwise_unary_ops.Tanh,
-    mo.AtanhOp: elementwise_unary_ops.ATanh,
-    mo.TruncOp: elementwise_unary_ops.Trunc,
-    mo.SinOp: elementwise_unary_ops.Sin,
-    mo.CosOp: elementwise_unary_ops.Cos,
-    mo.ErfOp: elementwise_unary_ops.Erf,
-    mo.NotOp: elementwise_unary_ops.Not,
-}
-
 # Reduce ops: reduce along an axis, output shape has reduced dim = 1
 REDUCE: dict[
     type[_core.Operation], Callable[[Buffer, Buffer, int, int], None]
@@ -120,15 +99,12 @@ REDUCE: dict[
     mo.ReduceMulOp: reduce_ops.ReduceMul,
 }
 
-# Unary mixed-dtype ops: output dtype differs from input dtype
-# IsNan, IsInf: float input -> bool output
-# Cast: any dtype input -> any dtype output
+# Cast: any dtype input -> any dtype output. (IsNan/IsInf now route through the
+# graph compiler; see unary_elementwise_gc.)
 UNARY_MIXED: dict[
     type[_core.Operation], Callable[[Buffer, Buffer, int], None]
 ] = {
     mo.CastOp: elementwise_cast_ops.Cast,
-    mo.IsNanOp: elementwise_unary_ops.IsNan,
-    mo.IsInfOp: elementwise_unary_ops.IsInf,
 }
 
 # Softmax ops: output shape matches input, applied along an axis
@@ -143,12 +119,26 @@ SOFTMAX: dict[
 # handlers.py uses the kernel dictionaries defined above.
 from .handlers import _MO_OP_HANDLERS, lookup_handler, register_op_handler
 
+
+# Precompile the full GC matrix here (the default) so dispatch is a warm cache
+# lookup; with MAX_EAGER_OP_PRECOMPILE=0 each target compiles lazily on first
+# dispatch instead, so a trivial program doesn't compile the whole kernel
+# library on a cold cache (MXF-508). See gc_compile / matmul_gc /
+# unary_elementwise_gc. Wrapped in a function so the matmul_gc / unary_gc symbol
+# accesses are deferred past this module's import cycle with them.
+def _precompile_gc_models() -> None:
+    if gc_compile.should_precompile():
+        matmul_gc.compile_matmul_sweep()
+        unary_elementwise_gc.compile_unary_sweep()
+
+
+_precompile_gc_models()
+
 __all__ = [
     "BINARY_ELEMENTWISE",
     "BINARY_ELEMENTWISE_COMPARISON",
     "REDUCE",
     "SOFTMAX",
-    "UNARY_ELEMENTWISE",
     "UNARY_MIXED",
     "_MO_OP_HANDLERS",
     "lookup_handler",

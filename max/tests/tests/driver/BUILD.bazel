@@ -17,6 +17,9 @@ modular_py_test(
             "test_host_func.py",
         ],
     ),
+    tags = [
+        "enable-sanitizers",
+    ],
     deps = [
         "//max/python/max/driver",
         "//max/python/max/dtype",

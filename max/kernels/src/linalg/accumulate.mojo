@@ -52,7 +52,7 @@ struct _Accumulator[
     comptime _size = Self.num_rows * Self.num_cols * Self.simd_width
 
     # The output buffer, should have num_rows x num_cols x simd_width.
-    var _storage: UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]
+    var _storage: UnsafePointer[Scalar[Self.dtype], MutUntrackedOrigin]
 
     @always_inline
     def __init__(out self):
@@ -64,7 +64,7 @@ struct _Accumulator[
         comptime alignment = align_of[SIMD[Self.dtype, Self.simd_width]]()
         self._storage = stack_allocation[
             Self._size, Self.dtype, alignment=alignment
-        ]().unsafe_origin_cast[MutAnyOrigin]()
+        ]()
 
     @always_inline
     def __init__(
@@ -76,7 +76,7 @@ struct _Accumulator[
             and (Self.num_rows > 0)
             and (Self.simd_width > 0)
         )
-        self._storage = other_storage
+        self._storage = other_storage.unsafe_origin_cast[MutUntrackedOrigin]()
 
     # NOTE: This is NOT a deepcopy; self uses the same _storage as copy.
     @always_inline
@@ -134,15 +134,21 @@ struct _Accumulator[
         )
 
     @always_inline
+    @staticmethod
     def _transfer[
-        func: def(
+        FuncType: ImplicitlyCopyable
+        & def(
             # TODO: Ideally `ptr` should have same origin as `base_ptr`, but I cannot
             # get it to compile successfully.
             m: Int,
             n: Int,
             ptr: UnsafePointer[Scalar[Self.dtype], MutAnyOrigin],
-        ) capturing -> None
-    ](mut self, base_ptr: UnsafePointer[Scalar[Self.dtype], _], stride: Int):
+        ) -> None,
+    ](
+        func: FuncType,
+        base_ptr: UnsafePointer[Scalar[Self.dtype], _],
+        stride: Int,
+    ):
         var row_ptr = base_ptr
 
         comptime for m in range(Self.num_rows):
@@ -150,7 +156,9 @@ struct _Accumulator[
                 func(
                     m,
                     n,
-                    (row_ptr + n * Self.simd_width).unsafe_mut_cast[True](),
+                    (row_ptr + n * Self.simd_width)
+                    .unsafe_mut_cast[True]()
+                    .as_unsafe_any_origin(),
                 )
             row_ptr += stride
 
@@ -161,15 +169,14 @@ struct _Accumulator[
         base_ptr: UnsafePointer[mut=False, Scalar[Self.dtype], _],
         stride: Int,
     ):
-        @parameter
         @always_inline
         def do_transfer(
             m: Int, n: Int, ptr: UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]
-        ):
+        ) {mut self}:
             # TODO: Ideally `ptr` should be immutable, but origins aren't inferring correctly.
             self[m, n] = ptr.load[width=Self.simd_width]()
 
-        self._transfer[do_transfer](base_ptr, stride)
+        Self._transfer(do_transfer, base_ptr, stride)
 
     @always_inline
     def load(
@@ -226,7 +233,9 @@ struct _Accumulator[
             ](uninitialized=True)
 
             comptime for row in range(Self.num_rows):
-                row_ptrs[row] = (c_ptr_loc + row * c_stride).as_any_origin()
+                row_ptrs[row] = (
+                    c_ptr_loc + row * c_stride
+                ).as_unsafe_any_origin()
 
             self._transfer_loop[0, is_load](
                 transfer_count, row_ptrs.unsafe_ptr(), c_stride
@@ -388,14 +397,13 @@ struct _Accumulator[
         base_ptr: UnsafePointer[mut=True, Scalar[Self.dtype], _],
         stride: Int,
     ):
-        @parameter
         @always_inline
         def do_transfer(
             m: Int, n: Int, ptr: UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]
-        ):
+        ) {mut self}:
             ptr.store(self[m, n])
 
-        self._transfer[do_transfer](base_ptr, stride)
+        Self._transfer(do_transfer, base_ptr, stride)
 
     # ===-------------------------------------------------------------------===#
     # Init/Load/Store register tiles
@@ -422,7 +430,7 @@ struct _Accumulator[
         partial_load: Bool = False,
     ](
         mut self,
-        input: UnsafePointer[Scalar[dt], ...],
+        input: UnsafePointer[mut=False, Scalar[dt], ...],
         input_stride: Int,
         partial_load_size: Optional[Int] = None,
     ):
@@ -502,9 +510,9 @@ struct _Accumulator[
     ](
         mut self,
         length: Int,
-        a: UnsafePointer[Scalar[a_type], ...],
+        a: UnsafePointer[mut=False, Scalar[a_type], ...],
         a_stride: Int,
-        b: UnsafePointer[Scalar[b_type], ...],
+        b: UnsafePointer[mut=False, Scalar[b_type], ...],
         b_stride: Int,
         partial_load_b_size: Optional[Int] = None,
     ):
@@ -560,10 +568,10 @@ struct _Accumulator[
     ](
         mut self,
         length: Int,
-        a: UnsafePointer[Scalar[a_type], ...],
-        a_base_offsets: TileTensor[DType.int32, ...],
+        a: UnsafePointer[mut=False, Scalar[a_type], ...],
+        a_base_offsets: TileTensor[mut=False, DType.int32, ...],
         a_offset: Int,
-        b: UnsafePointer[Scalar[b_type], ...],
+        b: UnsafePointer[mut=False, Scalar[b_type], ...],
         b_stride: Int,
         partial_load_b_size: Optional[Int] = None,
     ):
@@ -676,9 +684,9 @@ struct _Accumulator[
     ](
         mut self,
         length: Int,
-        a: UnsafePointer[Scalar[a_type], ...],
+        a: UnsafePointer[mut=False, Scalar[a_type], ...],
         a_stride: Int,
-        b: UnsafePointer[Scalar[b_type], ...],
+        b: UnsafePointer[mut=False, Scalar[b_type], ...],
         b_stride: Int,
         partial_load_b_size: Optional[Int] = None,
     ):
@@ -736,10 +744,10 @@ struct _Accumulator[
     ](
         mut self,
         length: Int,
-        a: UnsafePointer[Scalar[a_type], ...],
-        a_base_offsets: TileTensor[DType.int32, ...],
+        a: UnsafePointer[mut=False, Scalar[a_type], ...],
+        a_base_offsets: TileTensor[mut=False, DType.int32, ...],
         a_offset: Int,
-        b: UnsafePointer[Scalar[b_type], ...],
+        b: UnsafePointer[mut=False, Scalar[b_type], ...],
         b_stride: Int,
         partial_load_b_size: Optional[Int] = None,
     ):
@@ -838,9 +846,9 @@ struct _Accumulator[
     ](
         mut self,
         length: Int,
-        a: UnsafePointer[Scalar[a_type], ...],
+        a: UnsafePointer[mut=False, Scalar[a_type], ...],
         a_stride: Int,
-        b: UnsafePointer[Scalar[b_type], ...],
+        b: UnsafePointer[mut=False, Scalar[b_type], ...],
         b_stride: Int,
         partial_load_b_size: Optional[Int] = None,
     ):
@@ -893,10 +901,10 @@ struct _Accumulator[
     ](
         mut self,
         length: Int,
-        a: UnsafePointer[Scalar[a_type], ...],
-        a_base_offsets: TileTensor[DType.int32, ...],
+        a: UnsafePointer[mut=False, Scalar[a_type], ...],
+        a_base_offsets: TileTensor[mut=False, DType.int32, ...],
         a_offset: Int,
-        b: UnsafePointer[Scalar[b_type], ...],
+        b: UnsafePointer[mut=False, Scalar[b_type], ...],
         b_stride: Int,
         partial_load_b_size: Optional[Int] = None,
     ):

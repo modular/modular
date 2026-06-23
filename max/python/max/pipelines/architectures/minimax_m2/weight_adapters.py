@@ -19,9 +19,11 @@ for the MoE container, with sigmoid routing and e_score_correction_bias.
 
 from __future__ import annotations
 
+import dataclasses
 import re
 
 import numpy as np
+from max.dtype import DType
 from max.graph.weights import WeightData, Weights
 from max.pipelines.lib import PipelineConfig
 from transformers import AutoConfig
@@ -122,6 +124,12 @@ def convert_safetensor_state_dict(
         for before, after in MINIMAX_M2_SAFETENSOR_MAP.items():
             max_name = max_name.replace(before, after)
 
-        new_state_dict[max_name] = value.data()
+        data = value.data()
+
+        # Safetensors stores E8M0 scales as uint8; reinterpret.
+        if max_name.endswith(".weight_scale") and data.dtype == DType.uint8:
+            data = dataclasses.replace(data, dtype=DType.float8_e8m0fnu)
+
+        new_state_dict[max_name] = data
 
     return new_state_dict

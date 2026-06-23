@@ -34,7 +34,9 @@ class Device:
 
     This is the base class for :class:`CPU` and :class:`Accelerator`.
     Do not instantiate this class directly; use :class:`CPU` for host
-    devices or :class:`Accelerator` for GPU devices.
+    devices, :class:`Accelerator` for any hardware accelerator (GPU
+    by default), or :class:`NPU` to explicitly select the NPU
+    dispatch path. :class:`NPU` is a subclass of :class:`Accelerator`.
 
     .. code-block:: python
 
@@ -42,6 +44,7 @@ class Device:
 
         cpu = driver.CPU()
         gpu = driver.Accelerator()
+        npu = driver.NPU()
     """
 
     def can_access(self, other: Device) -> bool:
@@ -103,6 +106,10 @@ class Device:
         """
 
     @property
+    def max_single_alloc_size(self) -> int:
+        """Largest single contiguous allocation, in bytes."""
+
+    @property
     def label(self) -> str:
         """
         Returns device label.
@@ -156,6 +163,25 @@ class Device:
 
             device = driver.Accelerator()
             device.architecture_name
+        """
+
+    @property
+    def model_name(self) -> str:
+        """
+        Returns the model name of the device.
+
+        Examples of possible values:
+
+        - ``NVIDIA H100 80GB HBM3`` for an H100.
+        - ``NVIDIA B200`` for a B200.
+        - ``AMD Instinct MI300X`` for an MI300X.
+
+        .. code-block:: python
+
+            from max import driver
+
+            device = driver.Accelerator()
+            device.model_name
         """
 
     @property
@@ -222,12 +248,53 @@ class Device:
                 callbacks, or if the driver rejects the enqueue.
         """
 
+    def __unsafe_enqueue_async_py_host_func(
+        self, fn: Callable, flag: CompletionFlag, value: int, cpu: CPU
+    ) -> None:
+        """
+        Async kickoff variant of ``__unsafe_enqueue_py_host_func``.
+
+        Like ``__unsafe_enqueue_py_host_func``, except the kickoff host
+        node dispatches ``fn`` onto ``cpu``'s AsyncRT worker pool and
+        returns immediately, so the GPU stream can proceed to
+        subsequent nodes concurrently with ``fn`` running on an
+        AsyncRT worker thread.
+
+        When ``fn`` finishes, the worker atomic-stores ``value``
+        (release ordering) to the 64-bit memory at ``flag``. Pair with
+        ``DeviceStream.wait_for_host_value(flag, value)`` on the same
+        stream to gate the downstream consumer kernel.
+
+        The trampoline keeps refcounts on ``flag``'s underlying MLRT
+        allocation AND on ``cpu``'s AsyncRT CPUDevice, so neither can
+        be released out from under the in-flight task even if the
+        Python wrappers are GC'd between enqueue and signal.
+
+        Args:
+            fn (Callable[[], None]): A zero-argument callable.
+            flag (CompletionFlag): The completion flag the worker will
+                signal when ``fn`` returns.
+            value (int): The 64-bit value to store on completion
+                (matched against the
+                ``wait_for_host_value(flag, value)`` consumer).
+            cpu (CPU): The CPU device whose AsyncRT worker pool will
+                execute ``fn``. Typically just ``max.driver.CPU()``;
+                callers needing fine-grained scheduling can pass a
+                specific CPU device.
+
+        Raises:
+            RuntimeError: If the underlying device does not support
+                host callbacks, if the supplied ``cpu`` has no
+                associated AsyncRT CPUDevice, or if the driver rejects
+                the enqueue.
+        """
+
     def __str__(self) -> str: ...
     def __repr__(self) -> str: ...
     def __eq__(self, arg: object, /) -> bool: ...
     def __hash__(self) -> int: ...
     def _device_context_ptr(self) -> int:
-        """Gets the device context pointer. Returns 0 for host devices."""
+        """Gets the device context pointer."""
 
     @staticmethod
     def cpu(id: int = -1) -> CPU:
@@ -238,7 +305,18 @@ class Accelerator(Device):
         """
         Creates an accelerator device with the specified ID and memory limit.
 
-        Provides access to GPU or other hardware accelerators in the system.
+        Represents any hardware accelerator (GPU or NPU) attached to the
+        host. Constructing ``Accelerator()`` directly produces a GPU-labeled
+        device, which is the dispatch path the graph compiler uses for
+        CUDA, HIP, Metal and any other GPU-class backend. Use the
+        :class:`NPU` subclass to explicitly select the NPU dispatch path
+        instead.
+
+        :class:`NPU` is a subclass of ``Accelerator``, so any
+        ``isinstance(device, Accelerator)`` check is satisfied by both GPU
+        and NPU devices. Treat ``Accelerator`` as "any non-CPU device"
+        when writing isinstance checks; use the concrete subclass when
+        you specifically need the GPU or NPU dispatch path.
 
         Repeated instantiations with a previously-used device-id will still
         refer to the first such instance that was created. This is especially
@@ -256,6 +334,8 @@ class Accelerator(Device):
           device = driver.Accelerator(id=1)  # Second GPU
           # Get device id
           device_id = device.id
+          # NPU is also an Accelerator
+          isinstance(driver.NPU(), driver.Accelerator)  # True
 
         Args:
             id (int, optional): The device ID to use. Defaults to -1, which selects
@@ -263,6 +343,37 @@ class Accelerator(Device):
 
         Returns:
             Accelerator: A new Accelerator device object.
+        """
+
+class NPU(Accelerator):
+    def __init__(self, id: int = -1) -> None:
+        """
+        Creates an NPU accelerator device.
+
+        ``NPU`` is a subclass of :class:`Accelerator`: an NPU **is an**
+        accelerator, and ``isinstance(device, Accelerator)`` returns
+        ``True`` for any ``NPU`` instance. The reason to construct an
+        ``NPU`` instead of a bare ``Accelerator`` is to select the NPU
+        dispatch path: the graph compiler stamps an ``"npu"`` device
+        label, emits ``target="npu"`` Mojo kernels, and routes through
+        the NPU plugin hook rather than the default GPU dispatch path.
+
+        On platforms without an NPU backend the device will still be
+        created, but downstream graph compilation will fail with an
+        unsupported target error.
+
+        .. code-block:: python
+
+            from max import driver
+            device = driver.NPU()
+            device = driver.NPU(id=0)
+
+        Args:
+            id (int, optional): The device ID to use. Defaults to -1, which
+                selects the first available NPU.
+
+        Returns:
+            NPU: A new NPU device object.
         """
 
 class CPU(Device):
@@ -284,6 +395,103 @@ class CPU(Device):
 
         Returns:
             CPU: A new CPU device object.
+        """
+
+class CompletionFlag:
+    """
+    An 8-byte completion flag in pinned host memory mapped into a device's address space.
+
+    Lets a CPU thread signal a GPU stream (or vice versa) by
+    writing a 64-bit value to a single location that's visible to
+    both. Pair with ``DeviceStream.wait_for_host_value`` (added in
+    a follow-on PR) or the ``mo.wait_host_value`` graph op to gate
+    downstream GPU work on a host-produced result without a
+    second stream or a blocking host callback.
+
+    Currently requires a CUDA-backed ``Device``; constructing
+    against any other backend raises ``RuntimeError``.
+
+    .. code-block:: python
+
+        from max.driver import Accelerator, CompletionFlag
+
+        accel = Accelerator()
+        flag = CompletionFlag(accel)
+        assert flag.load() == 0  # initialized to zero
+
+        # Subsequent PRs add the producer/consumer methods that
+        # actually use the flag's device pointer.
+    """
+
+    def __init__(self, device: Device) -> None:
+        """
+        Allocates a fresh device-mapped pinned u64 bound to ``device``.
+
+        Args:
+            device: A CUDA-backed device. Other backends raise
+                ``RuntimeError``.
+        """
+
+    @property
+    def device_ptr(self) -> int:
+        """
+        Device-visible 64-bit address of the 8-byte slot.
+
+        Suitable for passing to graph ops or stream APIs that wait
+        on a memory value.
+        """
+
+    def reset(self) -> None:
+        """
+        Clears the flag back to ``0`` with a relaxed atomic store.
+
+        Safe to call before any consumer has observed the address.
+        """
+
+    def signal(self, value: int) -> None:
+        """
+        Release-ordered store of ``value`` to the flag.
+
+        Pairs with the GPU-side ``cuStreamWaitValue64`` (or a
+        host-side acquire ``load``).
+
+        Primary intended use is priming the flag at setup time so
+        the first captured-graph replay's ``mo.wait_host_value``
+        passes immediately, before any async kickoff has run.
+        Direct Python signalling on the hot path is usually a
+        mistake -- prefer the async-host-func trampoline which
+        signals from its AsyncRT worker.
+
+        Args:
+            value: The 64-bit value to store.
+        """
+
+    def load(self) -> int:
+        """
+        Acquire-ordered load of the current flag value.
+
+        Pairs with a release-ordered store on the producer side.
+
+        Returns:
+            int: Current 64-bit flag value.
+        """
+
+    @property
+    def _unsafe_ptr(self) -> int:
+        """
+        Raw 64-bit address of the underlying ``M::Driver::CompletionFlag``.
+
+        Intended for packing into a graph-op payload buffer
+        (e.g. for ``mo.wait_host_value``); parallels the
+        trampoline/user_data pointers returned by
+        ``__unsafe_pack_py_host_func`` for ``mo.launch_host_func``.
+
+        The caller must keep this ``CompletionFlag`` Python object
+        alive for the duration of any graph execution that
+        references the pointer; the underlying allocation is
+        freed when the last ref to the wrapper is dropped. The
+        leading underscore marks this as an escape hatch with no
+        safety net.
         """
 
 class DeviceEvent:
@@ -467,9 +675,87 @@ class DeviceStream:
             device (Device): The device whose default stream to wait for.
         """
 
+    def wait_for_host_value(self, flag: CompletionFlag, value: int) -> None:
+        """
+        Stalls the stream until ``flag``'s 64-bit value equals ``value``.
+
+        Wraps the MLRT ``DeviceStream::enqueueWaitOnHostValue`` primitive
+        (CUDA's ``cuStreamWaitValue64``). Typically paired with
+        ``Device.__unsafe_enqueue_async_py_host_func`` to gate
+        downstream GPU work on a host-side AsyncRT task that signals
+        ``flag`` when it finishes -- a stream-internal sync that
+        avoids a host ``synchronize()`` and captures cleanly into a
+        CUDA graph as a wait-value node.
+
+        Args:
+            flag (CompletionFlag): The completion flag to wait on.
+                The stream observes ``flag.device_ptr`` via the
+                pinned device-mapped alias.
+            value (int): The 64-bit value to wait for (equality).
+
+        Raises:
+            RuntimeError: If the underlying device does not support
+                stream memory ops, or if the driver rejects the
+                enqueue.
+        """
+
+    def __unsafe_enqueue_async_py_host_func(
+        self, fn: Callable, flag: CompletionFlag, value: int, cpu: CPU
+    ) -> None:
+        """
+        Stream-targeted variant of ``Device.__unsafe_enqueue_async_py_host_func``.
+
+        Enqueues a kickoff host node on **this** stream that dispatches ``fn``
+        onto ``cpu``'s AsyncRT worker pool and returns immediately. When ``fn``
+        finishes, the worker atomic-stores ``value`` (release ordering) to the
+        64-bit memory at ``flag``. Pair with
+        ``DeviceStream.wait_for_host_value(flag, value)`` on a consumer stream
+        to gate downstream GPU work.
+
+        Use this overload when you need the host callback to run on a side
+        stream concurrently with the model stream's forward pass; the
+        ``Device`` overload always targets the default stream and therefore
+        serializes against any other default-stream work. As of this
+        writing no production caller dispatches via this stream
+        overload -- ``StructuredOutputOverlapState.enqueue_async_callback``
+        intentionally lands on the device default stream so the
+        trampoline's ``flag.reset()`` is naturally ordered against the
+        next iter's captured-graph wait. The stream variant is exposed
+        as future-facing API and exercised by the GPU integration test
+        (``test_structured_output_overlap_gpu.py``).
+
+        Args:
+            fn (Callable[[], None]): A zero-argument callable.
+            flag (CompletionFlag): The completion flag the worker will
+                signal when ``fn`` returns.
+            value (int): The 64-bit value to store on completion.
+            cpu (CPU): The CPU device whose AsyncRT worker pool will
+                execute ``fn``.
+
+        Raises:
+            RuntimeError: If the underlying device does not support host
+                callbacks, if the supplied ``cpu`` has no associated AsyncRT
+                CPUDevice, or if the driver rejects the enqueue.
+        """
+
     @property
     def device(self) -> Device:
         """The device this stream is executing on."""
+
+    @property
+    def native_stream_handle(self) -> int:
+        """
+        The native stream handle as an integer, or ``0`` if there is none.
+
+        The handle is the CUDA ``CUstream`` / HIP ``hipStream_t``; ``0`` means
+        the stream has no native handle (e.g. a CPU device). Lets native code
+        outside MLRT order its own work against this stream -- for example,
+        record a CUDA event on it. The handle remains owned by this stream; do
+        not destroy it.
+
+        Returns:
+            int: The native stream handle, or ``0`` if there is none.
+        """
 
     def __str__(self) -> str: ...
     def __repr__(self) -> str: ...
@@ -584,6 +870,33 @@ def get_virtual_device_target_arch() -> str:
 
     Returns:
         str: The target GPU architecture string, or empty string if not set.
+    """
+
+def set_virtual_cpu_target(cpu: str) -> None:
+    """
+    Sets the CPU target for host-independent kernel codegen.
+
+    When set before any CPU kernel compilation (e.g. before importing
+    ``max._interpreter_ops``), CPU kernels compile for this fixed target
+    instead of the build host's CPU, so the kernel cache can ship to and be
+    reused on a different host. Mirrors
+    :func:`set_virtual_device_target_arch` for GPUs.
+
+    Args:
+        cpu (str): An LLVM target-CPU name (e.g. "x86-64-v3",
+            "neoverse-n1"), or "generic" for the most-portable baseline of
+            the host arch family ("x86-64" on x86_64, the armv8-a baseline
+            on AArch64; other families raise an error). Empty string
+            restores host-CPU codegen. "native" is rejected because it
+            would re-leak the build host's CPU.
+    """
+
+def get_virtual_cpu_target() -> str:
+    """
+    Gets the current virtual CPU target.
+
+    Returns:
+        str: The CPU target string, or empty string if not set (host CPU).
     """
 
 class Buffer:
@@ -1031,3 +1344,60 @@ class DevicePinnedBuffer(Buffer):
 
 def _release_buffers_to_borrowed(buffers: Sequence[Buffer]) -> list[Buffer]:
     """Convert owning buffers into borrowed wrappers over the same storage."""
+
+def _unsafe_alloc_fast_pinned_buffer(
+    dtype: max._core.dtype.DType,
+    shape: Sequence[int],
+    device: Device,
+    threads: int = 16,
+    chunk_bytes: int = 536870912,
+) -> DevicePinnedBuffer:
+    """
+    Fast page-locked host allocation for very large host KV-cache buffers.
+
+    Maps one contiguous region and faults it in across ``threads`` parallel
+    workers while a single consumer registers it with the device in
+    ``chunk_bytes`` chunks, overlapping the two phases. Far faster than the
+    per-call ``cuMemAllocHost`` path, and it avoids the ``cuMemAllocHost``
+    failure on single >1 TiB allocations.
+
+    UNSAFE / low-level (host KV-cache offloading). The returned buffer is
+    NOT garbage-collected: it must be freed explicitly via
+    :func:`_unsafe_free_fast_pinned_buffer`, and forgetting to do so leaks
+    the mapping. No host/device synchronization is performed -- before
+    reading the region on the host (or freeing it) the caller must ensure
+    the GPU is done accessing it (host-synchronize the relevant streams).
+
+    Args:
+        dtype (DType): Data type of buffer elements (typically ``uint8``).
+        shape (Sequence[int]): Buffer shape, e.g. ``[num_blocks, bytes_per_block]``.
+        device (Device): GPU/Accelerator device the memory is registered against. Must not be CPU.
+        threads (int, optional): Number of parallel page-touch workers. Defaults to 16.
+        chunk_bytes (int, optional): Per-call host-register granularity in bytes. Defaults to 512 MiB.
+
+    Returns:
+        DevicePinnedBuffer: A pinned host buffer over the mapping. Must be
+        freed with :func:`_unsafe_free_fast_pinned_buffer`.
+
+    Raises:
+        ValueError: If ``device`` is a CPU device.
+    """
+
+def _unsafe_free_fast_pinned_buffer(buffer: DevicePinnedBuffer) -> None:
+    """
+    Free a buffer from :func:`_unsafe_alloc_fast_pinned_buffer` (unregister + munmap).
+
+    UNSAFE / low-level. The caller MUST first host-synchronize every GPU
+    stream that issued copies into the region -- the buffer does not track
+    them, and unmapping a region a stream is still copying to/from is a
+    use-after-free. After this call the buffer (and any view/slice of it)
+    must not be used.
+
+    Args:
+        buffer (DevicePinnedBuffer): A buffer from
+            :func:`_unsafe_alloc_fast_pinned_buffer`.
+
+    Raises:
+        ValueError: If the buffer was not produced by
+            :func:`_unsafe_alloc_fast_pinned_buffer`, or was already freed.
+    """

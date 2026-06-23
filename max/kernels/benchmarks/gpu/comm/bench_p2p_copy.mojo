@@ -173,32 +173,32 @@ def bench_p2p[
             # Push: each GPU reads local, writes remote.
             # Pull: each GPU reads remote, writes local.
             var dst: UnsafePointer[Scalar[dtype], MutAnyOrigin]
-            var src: UnsafePointer[Scalar[dtype], MutAnyOrigin]
+            var src: UnsafePointer[Scalar[dtype], ImmutAnyOrigin]
 
             comptime if is_bidir:
                 comptime if is_push:
                     if ctx_idx == 0:
-                        dst = buf1_write.unsafe_ptr()
-                        src = buf0_read.unsafe_ptr()
+                        dst = buf1_write.unsafe_ptr().as_unsafe_any_origin()
+                        src = buf0_read.unsafe_ptr().as_unsafe_any_origin()
                     else:
-                        dst = buf0_write.unsafe_ptr()
-                        src = buf1_read.unsafe_ptr()
+                        dst = buf0_write.unsafe_ptr().as_unsafe_any_origin()
+                        src = buf1_read.unsafe_ptr().as_unsafe_any_origin()
                 else:
                     if ctx_idx == 0:
-                        dst = buf0_write.unsafe_ptr()
-                        src = buf1_read.unsafe_ptr()
+                        dst = buf0_write.unsafe_ptr().as_unsafe_any_origin()
+                        src = buf1_read.unsafe_ptr().as_unsafe_any_origin()
                     else:
-                        dst = buf1_write.unsafe_ptr()
-                        src = buf0_read.unsafe_ptr()
+                        dst = buf1_write.unsafe_ptr().as_unsafe_any_origin()
+                        src = buf0_read.unsafe_ptr().as_unsafe_any_origin()
             else:
                 comptime if is_push:
-                    dst = buf1_write.unsafe_ptr()
-                    src = buf0_write.unsafe_ptr()
+                    dst = buf1_write.unsafe_ptr().as_unsafe_any_origin()
+                    src = buf0_write.unsafe_ptr().as_unsafe_any_origin()
                 else:
-                    dst = buf0_write.unsafe_ptr()
-                    src = buf1_write.unsafe_ptr()
+                    dst = buf0_write.unsafe_ptr().as_unsafe_any_origin()
+                    src = buf1_write.unsafe_ptr().as_unsafe_any_origin()
 
-            ctx_inner.enqueue_function[copy_kernel, copy_kernel](
+            ctx_inner.enqueue_function[copy_kernel](
                 dst,
                 src,
                 num_elements,
@@ -226,14 +226,14 @@ def bench_p2p[
 
         comptime if is_push:
             # GPU 0: buf0_read(10) -> buf1_write, GPU 1: buf1_read(20) -> buf0_write
-            ctx0.enqueue_function[copy_kernel, copy_kernel](
+            ctx0.enqueue_function[copy_kernel](
                 buf1_write,
                 buf0_read,
                 num_elements,
                 grid_dim=grid_size,
                 block_dim=BLOCK_SIZE,
             )
-            ctx1.enqueue_function[copy_kernel, copy_kernel](
+            ctx1.enqueue_function[copy_kernel](
                 buf0_write,
                 buf1_read,
                 num_elements,
@@ -242,14 +242,14 @@ def bench_p2p[
             )
         else:
             # GPU 0: buf1_read(20) -> buf0_write, GPU 1: buf0_read(10) -> buf1_write
-            ctx0.enqueue_function[copy_kernel, copy_kernel](
+            ctx0.enqueue_function[copy_kernel](
                 buf0_write,
                 buf1_read,
                 num_elements,
                 grid_dim=grid_size,
                 block_dim=BLOCK_SIZE,
             )
-            ctx1.enqueue_function[copy_kernel, copy_kernel](
+            ctx1.enqueue_function[copy_kernel](
                 buf1_write,
                 buf0_read,
                 num_elements,
@@ -281,7 +281,7 @@ def bench_p2p[
             # src=buf0_write(1) -> dst=buf1_write
             ctx1.enqueue_memset(buf1_write, Scalar[dtype](0))
             ctx1.synchronize()
-            ctx0.enqueue_function[copy_kernel, copy_kernel](
+            ctx0.enqueue_function[copy_kernel](
                 buf1_write,
                 buf0_write,
                 num_elements,
@@ -298,7 +298,7 @@ def bench_p2p[
             # src=buf1_write(2) -> dst=buf0_write
             ctx0.enqueue_memset(buf0_write, Scalar[dtype](0))
             ctx0.synchronize()
-            ctx0.enqueue_function[copy_kernel, copy_kernel](
+            ctx0.enqueue_function[copy_kernel](
                 buf0_write,
                 buf1_write,
                 num_elements,
@@ -324,7 +324,7 @@ def bench_p2p[
 def _verify[
     dtype: DType
 ](
-    host: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    host: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     expected: Scalar[dtype],
     num_elements: Int,
     gpu: Int,

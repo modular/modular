@@ -13,7 +13,7 @@
 
 from __future__ import annotations
 
-from max.pipelines.core import TextContext
+from max.pipelines.context import TextContext
 from max.pipelines.lib import LoRAManager
 
 

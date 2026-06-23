@@ -66,7 +66,7 @@ struct TString[
             var literal_start = encoded_bytes.unsafe_ptr() + offset
             var literal_length = _strlen(literal_start)
             var string_literal = StringSlice(
-                ptr=literal_start, length=literal_length
+                unsafe_from_utf8=Span(ptr=literal_start, length=literal_length)
             )
             writer.write_string(string_literal)
             return literal_length
@@ -225,9 +225,11 @@ def _encode_format_string(format: StringSlice) raises -> List[Byte]:
     var bytes = format.as_bytes()
     var i = 0
 
+    var immut_bytes = bytes.get_immutable()
+
     @always_inline
     def peek_next_is(byte: Byte) {read} -> Bool:
-        return i + 1 < len(bytes) and bytes[i + 1] == byte
+        return i + 1 < len(immut_bytes) and immut_bytes[i + 1] == byte
 
     while i < len(bytes):
         var byte = bytes[i]

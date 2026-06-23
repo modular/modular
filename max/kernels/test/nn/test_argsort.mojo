@@ -27,10 +27,10 @@ def test_argsort[
     comptime n = 16384
 
     var input_ptr = List(length=n, fill=Float32(0))
-    var input = TileTensor(input_ptr, row_major(Idx(n)))
+    var input = TileTensor(input_ptr, row_major(n))
 
     var indices_ptr = List(length=n, fill=Int32(0))
-    var indices = TileTensor(indices_ptr, row_major(Idx(n)))
+    var indices = TileTensor(indices_ptr, row_major(n))
 
     for i in range(n):
         input[i] = filler(i, n)

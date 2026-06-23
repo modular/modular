@@ -397,13 +397,13 @@ specifically, if the values are movable, copyable, or implicitly copyable.
 
 You don't have to digest all of these details now: copyability and movability
 are discussed in more detail in the section on
-[making structs copyable and movable](/docs/manual/structs#making-a-struct-copyable-and-movable)
-and in the section on the [value lifecycle](/docs/manual/lifecycle/life).
+[making structs copyable and movable](/docs/manual/structs/#making-a-struct-copyable-and-movable)
+and in the section on the [value lifecycle](/docs/manual/lifecycle/life/).
 
 ## Reference bindings
 
 Some APIs return
-[references](/docs/manual/values/lifetimes#working-with-references) to values
+[references](/docs/manual/values/lifetimes/#working-with-references) to values
 owned elsewhere. References can be useful to avoid copying values. For example,
 when you retrieve a value from a collection, the collection returns a reference,
 instead of a copy.
@@ -435,7 +435,7 @@ Here, the name `item_ref` is bound to the reference to `items[1]`. All reads and
 writes to `item_ref` go to the referenced item.
 
 Reference bindings can also be used when iterating through collections with
-[`for` loops](/docs/manual/control-flow#iterating-using-references).
+[`for` loops](/docs/manual/control-flow/#iterating-using-references).
 
 Once a reference binding is assigned, it can't be re-bound to a different
 location. For example:
@@ -445,4 +445,4 @@ ref item_ref = items[2]  # error: invalid redefinition of item_ref
 ```
 
 For more information on references, see
-[Working with references](/docs/manual/values/lifetimes#working-with-references).
+[Working with references](/docs/manual/values/lifetimes/#working-with-references).

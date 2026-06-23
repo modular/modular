@@ -192,9 +192,9 @@ def test_call_chain_updates() -> None:
             subgraph.output()
         buffer = main_graph.inputs[0]
         tensor = main_graph.inputs[1]
-        chain_before = main_graph._current_chain
+        chain_before = main_graph.device_chains[DeviceRef.CPU()]
         ops.call(subgraph, buffer, tensor)
-        chain_after = main_graph._current_chain
+        chain_after = main_graph.device_chains[DeviceRef.CPU()]
         assert isinstance(chain_before, _ChainValue)
         assert isinstance(chain_after, _ChainValue)
         assert chain_before != chain_after
@@ -216,7 +216,10 @@ def test_call_tuple_operands_with_add_op() -> None:
             mo.call_,
             callee=subgraph.name,
             results=(input_type, _ChainType()),
-            operands=(main_graph.inputs[0], main_graph._current_chain),
+            operands=(
+                main_graph.inputs[0],
+                main_graph.device_chains[DeviceRef.CPU()],
+            ),
         )
 
         assert len(call_results) == 2
@@ -324,8 +327,9 @@ def test_call_registers_device_chains_at_call_time() -> None:
             )
             subgraph.output(*outs)
 
-        # Parent hasn't seen any device-specific ops yet.
-        assert not main_graph.device_chains
+        # Parent only has the host chain at ``DeviceRef.CPU()`` so far —
+        # no GPU device chains have been touched yet.
+        assert list(main_graph.device_chains) == [DeviceRef.CPU()]
 
         res0, res1 = ops.call(subgraph, *main_graph.inputs)
         main_graph.output(res0, res1)
@@ -339,7 +343,7 @@ def test_call_registers_device_chains_at_call_time() -> None:
     assert call_match is not None, ir
     _, operands, results = call_match.groups()
 
-    # Expect one global chain plus one per device (two GPUs).
+    # Expect the host chain plus one per device (two GPUs).
     expected = 1 + 2
     assert operands.count("!mo.chain") == expected, operands
     assert results.count("!mo.chain") == expected, results
@@ -368,20 +372,24 @@ def test_device_chain_map_sorted_iteration() -> None:
     tensor = TensorType(DType.float32, [4], device=DeviceRef.GPU(0))
 
     with Graph("sorted_device_chain_map", input_types=[tensor]) as graph:
-        # Touch out-of-order devices to populate the map.
+        # Touch out-of-order devices to populate the map. The host chain
+        # at ``DeviceRef.CPU()`` is always present from graph construction.
         _ = graph.device_chains[DeviceRef.GPU(5)]
         _ = graph.device_chains[DeviceRef.CPU(2)]
         _ = graph.device_chains[DeviceRef.GPU(1)]
 
         ordered_devices = list(graph.device_chains)
         assert ordered_devices == [
+            DeviceRef.CPU(),
             DeviceRef.CPU(2),
             DeviceRef.GPU(1),
             DeviceRef.GPU(5),
         ]
 
         repr_devices = str(graph.device_chains)
+        assert "cpu:0" in repr_devices
         assert "cpu:2" in repr_devices
+        assert repr_devices.index("cpu:0") < repr_devices.index("cpu:2")
         assert repr_devices.index("cpu:2") < repr_devices.index("gpu:1")
         assert repr_devices.index("gpu:1") < repr_devices.index("gpu:5")
 

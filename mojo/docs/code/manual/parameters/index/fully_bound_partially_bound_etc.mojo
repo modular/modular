@@ -12,6 +12,16 @@
 # ===----------------------------------------------------------------------=== #
 
 
+# start-has-default
+@fieldwise_init
+struct HasDefault[x: Int, y: Int = 0]:
+    pass
+
+
+comptime UseDefault = HasDefault[10]
+# end-has-default
+
+
 @fieldwise_init
 struct MyType[s: String, i: Int, i2: Int, b: Bool = True]:
     pass
@@ -70,6 +80,11 @@ def use_kw_struct(k: KeyWordStruct[...]):
 
 
 def main():
+    # start-has-default-usage
+    var instance1 = UseDefault()  # instance of HasDefault[10, 0]
+    # end-has-default-usage
+    _ = instance1
+
     # start-partially-bound-example
     comptime StringKeyDict = Dict[String, _]
     var b: StringKeyDict[UInt8] = {"answer": 42}

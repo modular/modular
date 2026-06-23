@@ -173,9 +173,7 @@ struct Inner_matmul_i8mm(InnerMatmulKernel, Movable):
         var n_outer_idx = tile_n_k_idx[0] // (kernel_cols // 2)
         var kl = tile_n_k_idx[1]
 
-        var b_ptr = b_packed.ptr_at_offset(
-            Coord(Idx(n_outer_idx), Idx(kl // 8), Idx(0))
-        )
+        var b_ptr = b_packed.ptr_at_offset(Coord(n_outer_idx, kl // 8, Idx[0]))
 
         # This inner kernels works with non-transposed A.
         var K = Int(a.dim[1]())
@@ -197,9 +195,11 @@ struct Inner_matmul_i8mm(InnerMatmulKernel, Movable):
         comptime for idx0 in range(kernel_rows):
             comptime for idx1 in range(kernel_cols // simd_size):
                 comptime alignment = align_of[SIMD[c_local.dtype, simd_size]]()
-                var a_val = a_ptr.load[width=simd_size * 4](2 * idx0 * K)
+                var a_val = a_ptr.load[width=SIMDSize(simd_size) * 4](
+                    2 * idx0 * K
+                )
                 var b_val = (b_ptr + 16 * idx1).load[
-                    width=simd_size * 4, alignment=alignment
+                    width=SIMDSize(simd_size) * 4, alignment=alignment
                 ]()
                 var c_val = c_local[idx0, idx1]
                 c_val = _neon_matmul(c_val, a_val, b_val)

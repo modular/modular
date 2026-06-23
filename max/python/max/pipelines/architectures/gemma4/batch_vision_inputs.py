@@ -80,11 +80,11 @@ class VideoInputs:
 
 
 def create_empty_embeddings(
-    devices: list[Device], hidden_size: int
+    devices: list[Device], hidden_size: int, dtype: DType = DType.bfloat16
 ) -> list[Buffer]:
     """Create empty (zero-row) embedding buffers, one per device."""
     return [
-        Buffer.zeros(shape=[0, hidden_size], dtype=DType.bfloat16).to(dev)
+        Buffer.zeros(shape=[0, hidden_size], dtype=dtype).to(dev)
         for dev in devices
     ]
 
@@ -100,27 +100,37 @@ def merge_per_device_buffers(
     a_bufs: list[Buffer],
     b_bufs: list[Buffer],
 ) -> list[Buffer]:
-    """Concatenate two per-device buffer lists element-wise.
+    """Concatenate two per-device buffer lists element-wise along axis 0.
 
-    When either side is empty the other is returned directly, avoiding
-    unnecessary round-trips through NumPy.
+    When either side is empty the other is returned directly. Otherwise the
+    concat stays on-device: allocate the combined buffer and copy each half
+    into a contiguous leading-axis slice, avoiding a GPU->host->GPU round-trip.
     """
     merged: list[Buffer] = []
     for a, b in zip(a_bufs, b_bufs, strict=True):
-        a_empty = a.shape[0] == 0
-        b_empty = b.shape[0] == 0
-        if a_empty and b_empty:
+        a_rows = a.shape[0]
+        b_rows = b.shape[0]
+        if a_rows == 0 and b_rows == 0:
             merged.append(a)
-        elif a_empty:
+        elif a_rows == 0:
             merged.append(b)
-        elif b_empty:
+        elif b_rows == 0:
             merged.append(a)
         else:
-            dev = a.device
-            a_np = a.to(Device()).to_numpy()
-            b_np = b.to(Device()).to_numpy()
-            combined = np.concatenate([a_np, b_np], axis=0)
-            merged.append(Buffer.from_numpy(combined).to(dev))
+            combined = Buffer(
+                shape=(a_rows + b_rows, *a.shape[1:]),
+                dtype=a.dtype,
+                device=a.device,
+            )
+            # Slice the leading axis at the buffer's rank: this merges both
+            # rank-2 embeddings and rank-1 indices, and MAX requires
+            # index-count == rank.
+            n_extra = len(a.shape) - 1
+            front = (slice(None, a_rows), *(slice(None),) * n_extra)
+            back = (slice(a_rows, None), *(slice(None),) * n_extra)
+            combined[front].inplace_copy_from(a)
+            combined[back].inplace_copy_from(b)
+            merged.append(combined)
     return merged
 
 
@@ -151,6 +161,7 @@ def pack_vision_buffers(
     all_pos_ids: list[npt.NDArray[np.integer[Any]]],
     patch_counts: list[int],
     soft_token_counts: list[int],
+    dtype: DType,
 ) -> VisionRawInputs:
     """Build device-replicated ``VisionRawInputs`` from numpy arrays."""
     patches_flat_np = np.concatenate(all_patches, axis=0).astype(np.float32)
@@ -170,9 +181,7 @@ def pack_vision_buffers(
     patches_flat_bufs = _pinned_to_devices(
         patches_flat_np, DType.float32, devices
     )
-    patches_flat = [
-        cast_tensor_to(buf, DType.bfloat16) for buf in patches_flat_bufs
-    ]
+    patches_flat = [cast_tensor_to(buf, dtype) for buf in patches_flat_bufs]
 
     pool_weights_bufs = _pinned_to_devices(
         pool_weights_np.astype(np.float32), DType.float32, devices
@@ -197,6 +206,7 @@ def build_image_inputs(
     pooling_kernel_size: int,
     ve_cache: VisionEncoderCache[Gemma4Context],
     empty_embeddings: list[Buffer],
+    dtype: DType,
 ) -> ImageInputs | None:
     """Assemble ``ImageInputs`` — raw or cached — for a batch."""
     k = pooling_kernel_size
@@ -248,6 +258,7 @@ def build_image_inputs(
                 all_pos_ids,
                 patch_counts,
                 soft_token_counts,
+                dtype,
             )
             if all_patches
             else None
@@ -283,6 +294,7 @@ def build_video_inputs(
     context_batch: Sequence[Gemma4Context],
     devices: list[Device],
     pooling_kernel_size: int,
+    dtype: DType,
 ) -> VideoInputs | None:
     """Assemble ``VideoInputs`` from pre-unpacked per-frame context data."""
     all_frame_patches: list[npt.NDArray[np.floating[Any]]] = []
@@ -319,6 +331,7 @@ def build_video_inputs(
         all_frame_pos_ids,
         frame_patch_counts,
         frame_soft_token_counts,
+        dtype,
     )
     scatter_np = np.concatenate(scatter_parts).astype(np.int32)
     return VideoInputs(raw=raw, token_indices_np=scatter_np)
