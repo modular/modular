@@ -298,9 +298,7 @@ class Gemma3AttentionHarness(
         swp = p.sliding_window_pattern
         use_local = bool((layer_idx + 1) % swp)
         layer_type = "sliding_attention" if use_local else "full_attention"
-        rotary_emb = Gemma3RotaryEmbedding(
-            config=self._hf_config, device=device
-        )
+        rotary_emb = Gemma3RotaryEmbedding(config=self._hf_config).to(device)
         position_ids = torch.arange(
             seq_len, dtype=torch.long, device=device
         ).unsqueeze(0)

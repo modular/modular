@@ -29,10 +29,11 @@ from max.pipelines.architectures.deepseekV3_2.deepseekV3_2 import DeepseekV3_2
 from max.pipelines.architectures.deepseekV3_2.model_config import (
     DeepseekV3_2Config,
 )
-from transformers import PretrainedConfig
+from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
+from transformers import DeepseekV32Config
 
 
-def make_test_huggingface_config() -> PretrainedConfig:
+def make_test_huggingface_config() -> DeepseekV32Config:
     """Create a minimal HuggingFace config for testing DeepSeekV3.2."""
     config_dict = {
         "architectures": ["DeepseekV32ForCausalLM"],
@@ -87,7 +88,7 @@ def make_test_huggingface_config() -> PretrainedConfig:
         "v_head_dim": 64,
         "vocab_size": 1024,
     }
-    return PretrainedConfig.from_dict(config_dict)
+    return DeepseekV32Config.from_dict(config_dict)
 
 
 def make_test_config() -> DeepseekV3_2Config:
@@ -161,7 +162,7 @@ def make_test_config() -> DeepseekV3_2Config:
         max_position_embeddings=hf_config.max_position_embeddings,
         rms_norm_eps=hf_config.rms_norm_eps,
         tie_word_embeddings=hf_config.tie_word_embeddings,
-        rope_theta=hf_config.rope_theta,
+        rope_theta=get_rope_theta(hf_config),
         rope_scaling=hf_config.rope_scaling,
         scoring_func=hf_config.scoring_func,
         attention_bias=hf_config.attention_bias,

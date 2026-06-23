@@ -34,6 +34,7 @@ import hf_repo_lock
 import huggingface_hub
 import torch
 import transformers
+import transformers.integrations.peft as peft_integration
 from idefics3 import torch_utils as idefics3_torch_utils
 from internvl import torch_utils as internvl_torch_utils
 from max import driver, pipelines
@@ -65,15 +66,12 @@ from typing_extensions import NotRequired
 # since it is always taken when `peft` is available in the env.
 @contextmanager
 def disable_peft() -> Generator[None, None, None]:
-    original_peft_available = transformers.utils.import_utils._peft_available
-
-    transformers.utils.import_utils._peft_available = False
+    original_is_peft_available = peft_integration.is_peft_available
+    peft_integration.is_peft_available = lambda: False
     try:
         yield
     finally:
-        transformers.utils.import_utils._peft_available = (
-            original_peft_available
-        )
+        peft_integration.is_peft_available = original_is_peft_available
 
 
 ENCODING_TO_TORCH_DTYPE: dict[str, torch.dtype] = {
@@ -450,8 +448,9 @@ class Idefics3PipelineOracle(PipelineOracle):
         processor = transformers.AutoProcessor.from_pretrained(
             self.model_path, revision=revision
         )
-        # Use AutoModelForVision2Seq instead of AutoModel for Idefics3
-        model = transformers.AutoModelForVision2Seq.from_pretrained(
+        # Use AutoModelForImageTextToText instead of AutoModel for Idefics3
+        # (transformers 5.12 removed AutoModelForVision2Seq).
+        model = transformers.AutoModelForImageTextToText.from_pretrained(
             self.model_path,
             revision=revision,
             config=config,
@@ -639,7 +638,7 @@ class Qwen3VLPipelineOracle(PipelineOracle):
             torch_dtype = (
                 ENCODING_TO_TORCH_DTYPE[encoding] if encoding else None
             )
-        model = transformers.AutoModelForVision2Seq.from_pretrained(
+        model = transformers.AutoModelForImageTextToText.from_pretrained(
             self.model_path,
             revision=revision,
             config=config,

@@ -38,7 +38,7 @@ from max.engine import InferenceSession
 from max.graph import DeviceRef
 from test_common.graph_utils import is_b100_b200
 from torch.utils.dlpack import from_dlpack
-from transformers.models.gemma3.configuration_gemma3 import Gemma3TextConfig
+from transformers.models.gemma4.configuration_gemma4 import Gemma4TextConfig
 
 # Fixtures (`text_config`, `input_tensor`, `attention_weights_*`,
 # `session`, `device`) are defined in conftest.py and auto-discovered
@@ -53,7 +53,7 @@ from transformers.models.gemma3.configuration_gemma3 import Gemma3TextConfig
 @pytest.fixture(scope="module")
 def compiled_local_bf16(
     session: InferenceSession,
-    text_config: Gemma3TextConfig,
+    text_config: Gemma4TextConfig,
     attention_weights_local: dict[str, torch.Tensor],
 ) -> CompiledAttention:
     return build_max_attention(
@@ -69,7 +69,7 @@ def compiled_local_bf16(
 @pytest.fixture(scope="module")
 def compiled_global_bf16(
     session: InferenceSession,
-    text_config: Gemma3TextConfig,
+    text_config: Gemma4TextConfig,
     attention_weights_global: dict[str, torch.Tensor],
 ) -> CompiledAttention:
     return build_max_attention(
@@ -90,7 +90,7 @@ def compiled_global_bf16(
 @pytest.fixture(scope="module")
 def compiled_local_native_fp8(
     session: InferenceSession,
-    text_config: Gemma3TextConfig,
+    text_config: Gemma4TextConfig,
     attention_weights_local: dict[str, torch.Tensor],
 ) -> CompiledAttention:
     if not is_b100_b200():
@@ -109,7 +109,7 @@ def compiled_local_native_fp8(
 @pytest.fixture(scope="module")
 def compiled_global_native_fp8(
     session: InferenceSession,
-    text_config: Gemma3TextConfig,
+    text_config: Gemma4TextConfig,
     attention_weights_global: dict[str, torch.Tensor],
 ) -> CompiledAttention:
     if not is_b100_b200():
@@ -131,7 +131,7 @@ def compiled_global_native_fp8(
 
 
 def test_attention_local(
-    text_config: Gemma3TextConfig,
+    text_config: Gemma4TextConfig,
     input_tensor: torch.Tensor,
     attention_weights_local: dict[str, torch.Tensor],
     compiled_local_bf16: CompiledAttention,
@@ -154,7 +154,7 @@ def test_attention_local(
 
 
 def test_attention_global(
-    text_config: Gemma3TextConfig,
+    text_config: Gemma4TextConfig,
     input_tensor: torch.Tensor,
     attention_weights_global: dict[str, torch.Tensor],
     compiled_global_bf16: CompiledAttention,
@@ -192,7 +192,7 @@ def test_attention_global(
 
 
 def test_attention_native_fp8_matches_bf16_local(
-    text_config: Gemma3TextConfig,
+    text_config: Gemma4TextConfig,
     input_tensor: torch.Tensor,
     compiled_local_bf16: CompiledAttention,
     compiled_local_native_fp8: CompiledAttention,
@@ -210,7 +210,7 @@ def test_attention_native_fp8_matches_bf16_local(
 
 
 def test_attention_native_fp8_matches_bf16_global(
-    text_config: Gemma3TextConfig,
+    text_config: Gemma4TextConfig,
     input_tensor: torch.Tensor,
     compiled_global_bf16: CompiledAttention,
     compiled_global_native_fp8: CompiledAttention,

@@ -154,6 +154,20 @@ class _KimiK2Config(PretrainedConfig):
 
     model_type = "kimi_k2"
 
+    def __init__(
+        self, max_position_embeddings: int = 262144, **kwargs: object
+    ) -> None:
+        # transformers >= 5.12 standardizes RoPE params in ``__post_init__``.
+        # For scaling rope types (the draft uses ``yarn``) it eagerly reads
+        # ``self.max_position_embeddings`` as the ``setdefault`` fallback for
+        # ``original_max_position_embeddings``. ``max_position_embeddings`` is
+        # not a declared field on the base config, so on this bare stub it is
+        # never set before ``__post_init__`` runs, raising ``AttributeError``.
+        # Bind it explicitly (from config.json, with a sane default) before
+        # delegating to ``super().__init__``.
+        self.max_position_embeddings = max_position_embeddings
+        super().__init__(**kwargs)
+
 
 AutoConfig.register("kimi_k2", _KimiK2Config, exist_ok=True)
 

@@ -25,7 +25,7 @@ import random
 import re
 import struct
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import cached_property, lru_cache
 from pathlib import Path
 from typing import Any, BinaryIO, cast
@@ -383,13 +383,24 @@ class HuggingFaceRepo:
     subfolder: str | None = None
     """Optional subdirectory within the repo to scope weight discovery to."""
 
+    _hub_repo_id: str | None = field(default=None, compare=False, repr=False)
+    """Original Hugging Face hub id, preserved only when ``repo_id`` is
+    rewritten to a local snapshot directory under ``HF_HUB_OFFLINE``. Used by
+    :attr:`config_repo_id`; not part of equality/hashing."""
+
     def __post_init__(self) -> None:
         # Get repo type.
         if not self.repo_type:
             if os.path.exists(self.repo_id):
                 object.__setattr__(self, "repo_type", "local")
             elif huggingface_hub.constants.HF_HUB_OFFLINE:
-                # Respect HF_HUB_OFFLINE, resolve from local cache
+                # Respect HF_HUB_OFFLINE, resolve from local cache. Preserve the
+                # original hub id first: transformers 5.12's trust_remote_code
+                # loader breaks when handed a local HF-cache snapshot directory
+                # (it resolves the snapshot symlink into ``blobs/`` and then
+                # cannot find sibling relative imports), so config loading uses
+                # the hub id instead via `config_repo_id`.
+                object.__setattr__(self, "_hub_repo_id", self.repo_id)
                 local_path = generate_local_model_path(
                     self.repo_id, self.revision
                 )
@@ -419,6 +430,19 @@ class HuggingFaceRepo:
                 self.subfolder,
             )
         )
+
+    @property
+    def config_repo_id(self) -> str:
+        """Identifier to pass to transformers ``*.from_pretrained``.
+
+        For repos resolved from the offline HF cache, ``repo_id`` was rewritten
+        to a local snapshot directory; this returns the original hub id instead,
+        keeping transformers on its hub/cache code path. transformers 5.12's
+        ``trust_remote_code`` loader otherwise resolves the snapshot symlink into
+        ``blobs/`` and fails to find sibling relative imports. For all other
+        repos this is just ``repo_id``.
+        """
+        return self._hub_repo_id or self.repo_id
 
     @cached_property
     def info(self) -> huggingface_hub.ModelInfo:

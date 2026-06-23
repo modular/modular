@@ -862,7 +862,6 @@ class MAXModelConfig(MAXModelConfigBase):
                 return architectures[0]
         return None
 
-    @computed_field  # type: ignore[prop-decorator]
     @property
     def huggingface_config(self) -> PretrainedConfig:
         """Returns the Hugging Face model config (loaded on first access).
@@ -885,7 +884,6 @@ class MAXModelConfig(MAXModelConfigBase):
             )
         return self._huggingface_config
 
-    @computed_field  # type: ignore[prop-decorator]
     @cached_property
     def generation_config(self) -> GenerationConfig:
         """Retrieves the Hugging Face ``GenerationConfig`` for this model.

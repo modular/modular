@@ -446,3 +446,39 @@ class TestGenerateLocalModelPath:
             revision="abc123",
             local_files_only=True,
         )
+
+
+class TestConfigRepoId:
+    def test_online_repo_uses_repo_id(self) -> None:
+        # A normal (non-offline) repo is not rewritten, so config_repo_id is
+        # just repo_id and no original hub id is stashed.
+        with (
+            patch.object(hf_hub_constants, "HF_HUB_OFFLINE", False),
+            patch("max.pipelines.weights.hf_utils.validate_hf_repo_access"),
+        ):
+            repo = HuggingFaceRepo(repo_id="org/model")
+
+        assert repo.repo_type == "online"
+        assert repo._hub_repo_id is None
+        assert repo.config_repo_id == "org/model"
+
+    def test_offline_repo_recovers_hub_id(self) -> None:
+        # Under HF_HUB_OFFLINE, repo_id is rewritten to the local snapshot
+        # directory, but config_repo_id recovers the original hub id so
+        # transformers stays on its hub/cache code path (avoiding the 5.12
+        # trust_remote_code snapshot-symlink loader bug).
+        snapshot_dir = "/tmp/hub/models--org--model/snapshots/abc123"
+        with (
+            patch.object(hf_hub_constants, "HF_HUB_OFFLINE", True),
+            patch(
+                "max.pipelines.weights.hf_utils.huggingface_hub.snapshot_download",
+                return_value=snapshot_dir,
+            ),
+        ):
+            repo = HuggingFaceRepo(repo_id="org/model", revision="abc123")
+
+        assert repo.repo_type == "local"
+        assert repo.repo_id == snapshot_dir
+        assert repo._hub_repo_id == "org/model"
+        assert repo.config_repo_id == "org/model"
+        assert repo.config_repo_id != repo.repo_id

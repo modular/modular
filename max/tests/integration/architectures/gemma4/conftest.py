@@ -37,7 +37,7 @@ from pathlib import Path
 from max.driver import Accelerator, Device
 from max.dtype import DType
 from max.engine import InferenceSession
-from transformers.models.gemma3.configuration_gemma3 import Gemma3TextConfig
+from transformers.models.gemma4.configuration_gemma4 import Gemma4TextConfig
 
 if TYPE_CHECKING:
     from max.pipelines.architectures.gemma4.model_config import (
@@ -1443,29 +1443,29 @@ def session(device: Device) -> InferenceSession:
 
 
 @pytest.fixture(scope="module")
-def text_config() -> Gemma3TextConfig:
+def text_config() -> Gemma4TextConfig:
     path = os.environ["PIPELINES_TESTDATA"]
     config_path = Path(path) / "config.json"
     with open(config_path) as file:
         data = json.load(file)
     # Use "text_config" for the multimodal variants
     if "text_config" in data:
-        return Gemma3TextConfig(
+        return Gemma4TextConfig(
             **data["text_config"], attn_implementation="eager"
         )
     else:
-        return Gemma3TextConfig(**data, attn_implementation="eager")
+        return Gemma4TextConfig(**data, attn_implementation="eager")
 
 
 @pytest.fixture(scope="module")
-def input_tensor(text_config: Gemma3TextConfig) -> torch.Tensor:
+def input_tensor(text_config: Gemma4TextConfig) -> torch.Tensor:
     torch.manual_seed(42)
     return _attention_test_tensor((1, 11, text_config.hidden_size)).to("cuda")
 
 
 @pytest.fixture(scope="module")
 def attention_weights_local(
-    text_config: Gemma3TextConfig,
+    text_config: Gemma4TextConfig,
 ) -> dict[str, torch.Tensor]:
     torch.manual_seed(42)
 
@@ -1499,7 +1499,7 @@ def attention_weights_local(
 
 @pytest.fixture(scope="module")
 def attention_weights_global(
-    text_config: Gemma3TextConfig,
+    text_config: Gemma4TextConfig,
 ) -> dict[str, torch.Tensor]:
     torch.manual_seed(42)
 
