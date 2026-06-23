@@ -18,7 +18,7 @@ import math
 from collections.abc import Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import Any, ClassVar, cast
 
 import numpy as np
 import numpy.typing as npt
@@ -33,11 +33,10 @@ from max.experimental.tensor import Tensor
 from max.graph import DeviceRef, TensorType
 from max.graph.buffer_utils import cast_dlpack_to
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn.kv_cache import KVCacheInputs, KVCacheParams
+from max.nn.kv_cache import KVCacheInputsInterface
 from max.nn.transformer import ReturnLogits
-from max.pipelines.core import TextAndVisionContext
+from max.pipelines.context import TextAndVisionContext
 from max.pipelines.lib import (
-    CompilationTimer,
     KVCacheConfig,
     ModelInputs,
     ModelOutputs,
@@ -117,6 +116,8 @@ class Gemma3MultiModalModelV3(
 ):
     """Gemma 3 multimodal pipeline model using the ModuleV3 API."""
 
+    model_config_cls: ClassVar[type[Any]] = Gemma3ForConditionalGenerationConfig
+
     language_model: Callable[..., Any]
     vision_model: Callable[..., Any]
 
@@ -142,38 +143,6 @@ class Gemma3MultiModalModelV3(
 
         self._stacker = _VisionStacker()
         self.vision_model, self.language_model = self._load_models()
-
-    @classmethod
-    def estimate_activation_memory(
-        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
-    ) -> int:
-        del pipeline_config, huggingface_config
-        return 15 * 1024 * 1024 * 1024  # 15 GiB
-
-    @classmethod
-    def calculate_max_seq_len(
-        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
-    ) -> int:
-        return Gemma3ForConditionalGenerationConfig.calculate_max_seq_len(
-            pipeline_config, huggingface_config
-        )
-
-    @classmethod
-    def get_kv_params(
-        cls,
-        huggingface_config: AutoConfig,
-        pipeline_config: PipelineConfig,
-        devices: list[DeviceRef],
-        kv_cache_config: KVCacheConfig,
-        cache_dtype: DType,
-    ) -> KVCacheParams:
-        return Gemma3ForConditionalGenerationConfig.construct_kv_params(
-            huggingface_config,
-            pipeline_config,
-            devices,
-            kv_cache_config,
-            cache_dtype,
-        )
 
     @classmethod
     def get_num_layers(cls, huggingface_config: AutoConfig) -> int:
@@ -217,74 +186,70 @@ class Gemma3MultiModalModelV3(
         mesh = DeviceMesh(tuple(self.devices), (n_devices,), ("tp",))
 
         # ---- Build and compile vision model ----
-        with CompilationTimer("vision model") as timer:
-            with F.lazy():
-                vision_nn = Gemma3VisionModel(model_config)
-                vision_nn.to(self.devices[0])
+        with F.lazy():
+            vision_nn = Gemma3VisionModel(model_config)
+            vision_nn.to(self.devices[0])
 
-            pixel_values_type = TensorType(
-                DType.bfloat16,
-                shape=[
-                    "batch_size",
-                    3,
-                    model_config.vision_config.image_size,
-                    model_config.vision_config.image_size,
-                ],
-                device=device_ref,
-            )
+        pixel_values_type = TensorType(
+            DType.bfloat16,
+            shape=[
+                "batch_size",
+                3,
+                model_config.vision_config.image_size,
+                model_config.vision_config.image_size,
+            ],
+            device=device_ref,
+        )
 
-            timer.mark_build_complete()
-            compiled_vision = vision_nn.compile(
-                pixel_values_type,
-                weights=vision_weights_dict,
-            )
+        compiled_vision = vision_nn.compile(
+            pixel_values_type,
+            weights=vision_weights_dict,
+        )
 
         # ---- Build and compile language model ----
-        with CompilationTimer("language model") as timer:
-            with F.lazy():
-                language_nn = Gemma3LanguageModel(model_config, self.kv_params)
-                language_nn.to(mesh)
+        with F.lazy():
+            language_nn = Gemma3LanguageModel(model_config, self.kv_params)
+            language_nn.to(mesh)
 
-            tokens_type = TensorType(
-                DType.int64,
-                shape=["total_seq_len"],
-                device=device_ref,
-            )
-            image_embeddings_type = TensorType(
-                DType.bfloat16,
-                shape=[
-                    "num_image_tokens",
-                    model_config.text_config.hidden_size,
-                ],
-                device=device_ref,
-            )
-            image_token_indices_type = TensorType(
-                DType.int32,
-                shape=["total_image_tokens"],
-                device=device_ref,
-            )
-            input_row_offsets_type = TensorType(
-                DType.uint32,
-                shape=["input_row_offsets_len"],
-                device=device_ref,
-            )
-            return_n_logits_type = TensorType(
-                DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
-            )
+        tokens_type = TensorType(
+            DType.int64,
+            shape=["total_seq_len"],
+            device=device_ref,
+        )
+        image_embeddings_type = TensorType(
+            DType.bfloat16,
+            shape=[
+                "num_image_tokens",
+                model_config.text_config.hidden_size,
+            ],
+            device=device_ref,
+        )
+        image_token_indices_type = TensorType(
+            DType.int32,
+            shape=["total_image_tokens"],
+            device=device_ref,
+        )
+        input_row_offsets_type = TensorType(
+            DType.uint32,
+            shape=["input_row_offsets_len"],
+            device=device_ref,
+        )
+        return_n_logits_type = TensorType(
+            DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
+        )
 
-            kv_inputs = self.kv_params.get_symbolic_inputs()
-            flattened_kv_types = kv_inputs.flatten()
+        kv_inputs = self.kv_params.get_symbolic_inputs()
+        flattened_kv_types = kv_inputs.flatten()
 
-            timer.mark_build_complete()
-            compiled_language = language_nn.compile(
-                tokens_type,
-                return_n_logits_type,
-                input_row_offsets_type,
-                image_embeddings_type,
-                image_token_indices_type,
-                *flattened_kv_types,
-                weights=language_weights_dict,
-            )
+        compiled_language = language_nn.compile(
+            tokens_type,
+            return_n_logits_type,
+            input_row_offsets_type,
+            image_embeddings_type,
+            image_token_indices_type,
+            *flattened_kv_types,
+            weights=language_weights_dict,
+        )
 
         return compiled_vision, compiled_language
 
@@ -338,7 +303,7 @@ class Gemma3MultiModalModelV3(
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[TextAndVisionContext]],
-        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
+        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> ModelInputs:
         if len(replica_batches) > 1:
@@ -369,22 +334,6 @@ class Gemma3MultiModalModelV3(
             kv_cache_inputs=kv_cache_inputs,
             pixel_values=pixel_values,
             image_token_indices=image_token_indices,
-        )
-
-    def prepare_next_token_inputs(
-        self, next_tokens: Buffer, prev_model_inputs: ModelInputs
-    ) -> ModelInputs:
-        prev_model_inputs = cast(Gemma3MultiModalModelInputs, prev_model_inputs)
-        row_offsets_size = prev_model_inputs.input_row_offsets.shape[0]
-
-        return Gemma3MultiModalModelInputs(
-            tokens=next_tokens,
-            input_row_offsets=self._input_row_offsets_prealloc[
-                :row_offsets_size
-            ],
-            return_n_logits=prev_model_inputs.return_n_logits,
-            kv_cache_inputs=prev_model_inputs.kv_cache_inputs,
-            pixel_values=None,
         )
 
     def _prepare_vision_inputs(

@@ -20,7 +20,7 @@ from std.memory import bitcast
 """
 
 from std.sys import bit_width_of, is_amd_gpu, is_nvidia_gpu
-
+from std.builtin.simd_size import SIMDSize
 from std.builtin.dtype import _uint_type_of_width
 
 
@@ -40,7 +40,7 @@ def bitcast[
     """Bitcasts a SIMD value to another SIMD value.
 
     For a discussion of byte order, see
-    [Converting data: bitcasting and byte order](/docs/manual/pointers/unsafe-pointers#converting-data-bitcasting-and-byte-order)
+    [Converting data: bitcasting and byte order](/docs/manual/pointers/unsafe-pointers/#converting-data-bitcasting-and-byte-order)
     in the Mojo Manual.
 
     Examples:

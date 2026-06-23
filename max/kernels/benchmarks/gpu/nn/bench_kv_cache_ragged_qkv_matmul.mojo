@@ -73,11 +73,6 @@ def execute_kv_cache_ragged_matmul[
     seq_len: Int,
     use_random_lengths: Bool,
 ) raises:
-    comptime CollectionType = ContinuousBatchingKVCacheCollection[
-        dtype,
-        KVCacheStaticParams(num_heads=num_kv_heads, head_size=head_dim),
-    ]
-
     comptime hidden_size = num_q_heads * head_dim
     comptime combined_hidden_size = (num_q_heads + 2 * num_kv_heads) * head_dim
     var num_blocks = batch_size + 1
@@ -94,7 +89,7 @@ def execute_kv_cache_ragged_matmul[
         batch_size + 1
     )
     var prefix_sums_device_tensor = TileTensor(
-        prefix_sums_device, row_major(Idx(batch_size + 1))
+        prefix_sums_device, row_major(batch_size + 1)
     )
 
     with prefix_sums_device.map_to_host() as prefix_sums_host:
@@ -118,13 +113,13 @@ def execute_kv_cache_ragged_matmul[
     )
     var hidden_state_device = TileTensor(
         hidden_state_buffer,
-        row_major((Idx(total_seq_len), Idx[hidden_size]())),
+        row_major((total_seq_len, Idx[hidden_size])),
     )
 
     with hidden_state_buffer.map_to_host() as hidden_state_host:
         var hidden_state_host_tensor = TileTensor(
             hidden_state_host,
-            row_major((Idx(total_seq_len), Idx[hidden_size]())),
+            row_major((total_seq_len, Idx[hidden_size])),
         )
         random(hidden_state_host_tensor)
 
@@ -134,13 +129,13 @@ def execute_kv_cache_ragged_matmul[
     )
     var weight_device = TileTensor(
         weight_buffer,
-        row_major((Idx[hidden_size](), Idx[combined_hidden_size]())),
+        row_major((Idx[hidden_size], Idx[combined_hidden_size])),
     )
 
     with weight_buffer.map_to_host() as weight_host:
         var weight_host_tensor = TileTensor(
             weight_host,
-            row_major((Idx[hidden_size](), Idx[combined_hidden_size]())),
+            row_major((Idx[hidden_size], Idx[combined_hidden_size])),
         )
         random(weight_host_tensor)
 
@@ -150,7 +145,7 @@ def execute_kv_cache_ragged_matmul[
     )
     var output_device = TileTensor(
         output_buffer,
-        row_major((Idx(total_seq_len), Idx[combined_hidden_size]())),
+        row_major((total_seq_len, Idx[combined_hidden_size])),
     )
 
     # KV block tensor layout and buffer
@@ -217,22 +212,29 @@ def execute_kv_cache_ragged_matmul[
         for i in range(batch_size):
             cache_lengths_host[i] = 10
 
-    var kv_collection_device = CollectionType(
-        LayoutTensor[dtype, kv_block_static_shape, MutAnyOrigin](
-            kv_block_device.ptr,
+    var kv_collection_device = ContinuousBatchingKVCacheCollection[
+        dtype,
+        KVCacheStaticParams(num_heads=num_kv_heads, head_size=head_dim),
+    ](
+        LayoutTensor[dtype, kv_block_static_shape](
+            # The fused QKV matmul writes both the `k` and `v` cache views, which are
+            # disjoint kv_idx halves of one `blocks` buffer sharing its origin, so the
+            # nested-origin exclusivity check rejects passing both. Declare kv_block_device
+            # as `AnyOrigin` to opt of out exclusivity checking.
+            kv_block_device.ptr.as_unsafe_any_origin(),
             RuntimeLayout[kv_block_static_shape](
                 kv_block_runtime_layout.shape.value,
                 kv_block_runtime_layout.stride.value,
             ),
         ),
-        LayoutTensor[DType.uint32, cache_lengths_static_shape, ImmutAnyOrigin](
+        LayoutTensor[mut=False, DType.uint32, cache_lengths_static_shape](
             cache_lengths_device.ptr,
             RuntimeLayout[cache_lengths_static_shape](
                 cache_lengths_runtime_layout.shape.value,
                 cache_lengths_runtime_layout.stride.value,
             ),
         ),
-        LayoutTensor[DType.uint32, lookup_table_static_shape, ImmutAnyOrigin](
+        LayoutTensor[mut=False, DType.uint32, lookup_table_static_shape](
             lookup_table_device.ptr,
             RuntimeLayout[lookup_table_static_shape](
                 lookup_table_runtime_layout.shape.value,

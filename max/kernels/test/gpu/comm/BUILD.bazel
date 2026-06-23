@@ -72,9 +72,9 @@ DISABLE_ASSERTIONS_TESTS = []
 # Needs multi-GPU constraints, disabled assertions, special env vars,
 # 4GB GPU memory, and extra deps that the standard comm glob doesn't provide.
 mojo_test(
-    name = "test_allreduce_residual_rmsnorm_fp8.mojo.test",
+    name = "test_allreduce_residual_rmsnorm.mojo.test",
     size = "large",
-    srcs = ["test_allreduce_residual_rmsnorm_fp8.mojo"],
+    srcs = ["test_allreduce_residual_rmsnorm.mojo"],
     enable_assertions = False,  # MSTDL-2301: register pressure
     exec_properties = {
         "test.resources:gpu-memory": "4",
@@ -129,7 +129,7 @@ mojo_test(
         exclude = [
             "test_multimem_allreduce.mojo",
             "test_multimem_reducescatter.mojo",
-            "test_allreduce_residual_rmsnorm_fp8.mojo",  # Has its own standalone rule above
+            "test_allreduce_residual_rmsnorm.mojo",  # Has its own standalone rule above
         ],
     )
 ]

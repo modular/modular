@@ -15,24 +15,25 @@
 
 Naive elementwise conv2d and conv_transpose2d kernels for the eager
 interpreter. Supports NHWC input layout and RSCF filter layout.
-CPU and GPU via the elementwise + DeviceContextPtr pattern.
+CPU and GPU via the elementwise + DeviceContext pattern.
 """
 
 from std.os import abort
+from std.gpu.host import DeviceContext
 from std.python import PythonObject
 from std.python.bindings import PythonModuleBuilder
 from std.sys.info import has_accelerator
+from std.utils.coord import Coord
 
 from std.algorithm.functional import elementwise, IndexList
-from std.memory import OpaquePointer
-from std.runtime.asyncrt import DeviceContextPtr
+
 from std.sys.info import has_apple_gpu_accelerator
 
 from op_utils import _get_dtype, _get_ctx, _make_ptr
 
 
 @export
-def PyInit_conv_ops() -> PythonObject:
+def PyInit_conv_ops() abi("C") -> PythonObject:
     """Create a Python module with convolution kernel function bindings."""
     try:
         var b = PythonModuleBuilder("conv_ops")
@@ -57,9 +58,9 @@ def PyInit_conv_ops() -> PythonObject:
 def conv2d_op[
     dtype: DType, //
 ](
-    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    in_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    filt_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    out_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    in_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    filt_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     batch: Int,
     in_h: Int,
     in_w: Int,
@@ -76,7 +77,7 @@ def conv2d_op[
     groups: Int,
     out_h: Int,
     out_w: Int,
-    ctx: Optional[OpaquePointer[MutExternalOrigin]],
+    ctx: DeviceContext,
 ) raises:
     """Naive 2D convolution over NHWC input with RSCF filter.
 
@@ -103,7 +104,7 @@ def conv2d_op[
         groups: Number of groups.
         out_h: Output height.
         out_w: Output width.
-        ctx: Device context pointer (null for CPU).
+        ctx: Device context.
     """
     var total = batch * out_h * out_w * out_c
     var ic_per_group = in_c // groups
@@ -139,8 +140,8 @@ def conv2d_op[
         filt_w_stride,
         filt_h_stride,
     )
-    def func[width: Int, rank: Int, alignment: Int = 1](idx: IndexList[rank]):
-        var i = idx[0]
+    def func[width: Int, alignment: Int = 1](idx: Coord):
+        var i = Int(idx[0].value())
         var n, rem1 = divmod(i, out_h * out_hw_stride)
         var oh, rem2 = divmod(rem1, out_hw_stride)
         var ow, oc = divmod(rem2, out_c)
@@ -168,14 +169,11 @@ def conv2d_op[
                     )
         out_ptr[i] = accum
 
-    if not ctx:
-        elementwise[func, simd_width=1](IndexList[1](total))
+    if ctx.api() == "cpu":
+        elementwise[func, simd_width=1](Coord(total), ctx)
     else:
         comptime if has_accelerator():
-            var device_ctx = DeviceContextPtr(ctx.unsafe_value())
-            elementwise[func, simd_width=1, target="gpu"](
-                IndexList[1](total), device_ctx
-            )
+            elementwise[func, simd_width=1, target="gpu"](Coord(total), ctx)
         else:
             raise Error("No GPU accelerator available")
 
@@ -189,9 +187,9 @@ def conv2d_op[
 def conv_transpose2d_op[
     dtype: DType, //
 ](
-    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    in_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    filt_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    out_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    in_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    filt_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     batch: Int,
     in_h: Int,
     in_w: Int,
@@ -207,7 +205,7 @@ def conv_transpose2d_op[
     pad_w: Int,
     out_h: Int,
     out_w: Int,
-    ctx: Optional[OpaquePointer[MutExternalOrigin]],
+    ctx: DeviceContext,
 ) raises:
     """Naive 2D transposed convolution over NHWC input with RSCF filter.
 
@@ -237,7 +235,7 @@ def conv_transpose2d_op[
         pad_w: Padding before width (on output side).
         out_h: Output height.
         out_w: Output width.
-        ctx: Device context pointer (null for CPU).
+        ctx: Device context.
     """
     var total = batch * out_h * out_w * out_c
     var in_hw_stride = in_w * in_c
@@ -271,8 +269,8 @@ def conv_transpose2d_op[
         filt_w_stride,
         filt_h_stride,
     )
-    def func[width: Int, rank: Int, alignment: Int = 1](idx: IndexList[rank]):
-        var i = idx[0]
+    def func[width: Int, alignment: Int = 1](idx: Coord):
+        var i = Int(idx[0].value())
         var n, rem1 = divmod(i, out_h * out_hw_stride)
         var oh, rem2 = divmod(rem1, out_hw_stride)
         var ow, oc = divmod(rem2, out_c)
@@ -308,14 +306,11 @@ def conv_transpose2d_op[
                     accum += in_ptr[in_hw_off + ic] * filt_ptr[filt_hw_off + ic]
         out_ptr[i] = accum
 
-    if not ctx:
-        elementwise[func, simd_width=1](IndexList[1](total))
+    if ctx.api() == "cpu":
+        elementwise[func, simd_width=1](Coord(total), ctx)
     else:
         comptime if has_accelerator():
-            var device_ctx = DeviceContextPtr(ctx.unsafe_value())
-            elementwise[func, simd_width=1, target="gpu"](
-                IndexList[1](total), device_ctx
-            )
+            elementwise[func, simd_width=1, target="gpu"](Coord(total), ctx)
         else:
             raise Error("No GPU accelerator available")
 
@@ -411,7 +406,7 @@ def _conv2d_dtype_dispatch(
     groups: Int,
     oh: Int,
     ow: Int,
-    ctx: Optional[OpaquePointer[MutExternalOrigin]],
+    ctx: DeviceContext,
 ) raises:
     if dtype == DType.float32:
         conv2d_op(
@@ -638,7 +633,7 @@ def _conv_transpose2d_dtype_dispatch(
     pw: Int,
     oh: Int,
     ow: Int,
-    ctx: Optional[OpaquePointer[MutExternalOrigin]],
+    ctx: DeviceContext,
 ) raises:
     if dtype == DType.float32:
         conv_transpose2d_op(

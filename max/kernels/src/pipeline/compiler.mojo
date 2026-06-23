@@ -168,9 +168,12 @@ struct ScheduleCompiler(Movable):
     All intermediate state is List — sizes are discovered, not prescribed.
 
     Usage:
-        var sc = ScheduleCompiler()
-        sc.compile(SingleBufferSchedule[T](hints))
-        # Read phases via comptime for over sc.prologue, sc.kernel, sc.epilogue
+
+    ```mojo
+    var sc = ScheduleCompiler()
+    sc.compile(SingleBufferSchedule[T](hints))
+    # Read phases via comptime for over sc.prologue, sc.kernel, sc.epilogue
+    ```
     """
 
     var config: PipelineConfig

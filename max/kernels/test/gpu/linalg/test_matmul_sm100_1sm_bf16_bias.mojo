@@ -63,15 +63,15 @@ def test_blackwell_matmul_with_epilogue_tensor[
         t" mma_shape={mma_shape} block_tile_shape={block_tile_shape}"
     )
 
-    var a_shape = row_major(Coord(m, Idx[KType.static_value]()))
+    var a_shape = row_major(Coord(m, Idx[KType.static_value]))
     var b_shape = row_major(
         Coord(
-            Idx[NType.static_value if transpose_b else KType.static_value](),
-            Idx[KType.static_value if transpose_b else NType.static_value](),
+            Idx[NType.static_value if transpose_b else KType.static_value],
+            Idx[KType.static_value if transpose_b else NType.static_value],
         )
     )
-    var c_shape = row_major(Coord(m, Idx[NType.static_value]()))
-    var epilogue_shape = row_major(Coord(m, Idx[NType.static_value]()))
+    var c_shape = row_major(Coord(m, Idx[NType.static_value]))
+    var epilogue_shape = row_major(Coord(m, Idx[NType.static_value]))
 
     var a_size = M * K
     var b_size = N * K if transpose_b else K * N
@@ -161,26 +161,26 @@ def test_blackwell_matmul_with_epilogue_tensor[
     # print("epilogue_host  :", end=" ")
     # for i in range(M):
     #     for j in range(N):
-    #         var idx = epilogue_host.layout(Coord(Idx(i), Idx(j)))
+    #         var idx = epilogue_host.layout(Coord(i, j))
     #         print(epilogue_host.ptr[idx], end=" ")
     #     print()
     # print("c_host(ker):", end=" ")
     # for i in range(M):
     #     for j in range(N):
-    #         var idx = c_host.layout(Coord(Idx(i), Idx(j)))
+    #         var idx = c_host.layout(Coord(i, j))
     #         print(c_host.ptr[idx], end=" ")
     #     print()
     # print("c_ref(blas):", end=" ")
     # for i in range(M):
     #     for j in range(N):
-    #         var idx = c_host_ref.layout(Coord(Idx(i), Idx(j)))
+    #         var idx = c_host_ref.layout(Coord(i, j))
     #         print(c_host_ref.ptr[idx], end=" ")
     #     print()
 
     # print("diff(ker-ref):", end=" ")
     # for i in range(M):
     #     for j in range(N):
-    #         var idx = c_host.layout(Coord(Idx(i), Idx(j)))
+    #         var idx = c_host.layout(Coord(i, j))
     #         print(
     #             c_host.ptr[idx].cast[DType.float32]()
     #             - c_host_ref.ptr[idx].cast[DType.float32](),
@@ -191,21 +191,19 @@ def test_blackwell_matmul_with_epilogue_tensor[
     # Add epilogue tensor to reference on host: C_ref[m, n] += epilogue[m, n]
     for i in range(M):
         for j in range(N):
-            c_host_ref[Coord(Idx(i), Idx(j))] += epilogue_host[
-                Coord(Idx(i), Idx(j))
-            ]
+            c_host_ref[Coord(i, j)] += epilogue_host[Coord(i, j)]
 
     # print("c_ref(blas+epilogue):", end=" ")
     # for i in range(M):
     #     for j in range(N):
-    #         var idx = c_host_ref.layout(Coord(Idx(i), Idx(j)))
+    #         var idx = c_host_ref.layout(Coord(i, j))
     #         print(c_host_ref.ptr[idx], end=" ")
     #     print()
 
     # print("diff(ker-ref+epilogue):", end=" ")
     # for i in range(M):
     #     for j in range(N):
-    #         var idx = c_host.layout(Coord(Idx(i), Idx(j)))
+    #         var idx = c_host.layout(Coord(i, j))
     #         print(
     #             c_host.ptr[idx].cast[DType.float32]()
     #             - c_host_ref.ptr[idx].cast[DType.float32](),
@@ -282,9 +280,9 @@ def main() raises:
                         num_clc_pipeline_stages=0,
                     ](
                         ctx,
-                        Idx(Int(1000)),
-                        Idx[1024](),
-                        Idx[1024 + 16](),
+                        Int(1000),
+                        Idx[1024],
+                        Idx[1024 + 16],
                     )
 
                     test_blackwell_matmul_with_epilogue_tensor[
@@ -300,9 +298,9 @@ def main() raises:
                         block_swizzle_size=4,
                     ](
                         ctx,
-                        Idx(Int(1)),
-                        Idx[4096](),
-                        Idx[1024 + 16](),
+                        Int(1),
+                        Idx[4096],
+                        Idx[1024 + 16],
                     )
 
                     comptime for swapAB in [False, True]:
@@ -323,9 +321,9 @@ def main() raises:
                             num_clc_pipeline_stages=0,
                         ](
                             ctx,
-                            Idx(Int(500)),
-                            Idx[2048](),
-                            Idx[4096](),
+                            Int(500),
+                            Idx[2048],
+                            Idx[4096],
                         )
 
                         test_blackwell_matmul_with_epilogue_tensor[
@@ -343,9 +341,9 @@ def main() raises:
                             swapAB=swapAB,
                         ](
                             ctx,
-                            Idx(Int(999)),
-                            Idx[256](),
-                            Idx[128](),
+                            Int(999),
+                            Idx[256],
+                            Idx[128],
                         )
 
                     test_blackwell_matmul_with_epilogue_tensor[
@@ -363,7 +361,7 @@ def main() raises:
                         swapAB=False,
                     ](
                         ctx,
-                        Idx(Int(777)),
-                        Idx[2560](),
-                        Idx[8192](),
+                        Int(777),
+                        Idx[2560],
+                        Idx[8192],
                     )

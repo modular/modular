@@ -24,13 +24,23 @@ from max._core.driver import is_virtual_device_mode
 from max.driver import Buffer
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import Graph, Value
+from max.graph import BufferValue, Graph, TensorValue, Value
 from max.graph.weights import WeightData
 from max.nn.comm.ep import EPCommInitializer
-from max.nn.kv_cache import KVCacheInputs, KVCacheParams, PagedCacheValues
+from max.nn.kv_cache import (
+    KVCacheInputsInterface,
+    KVCacheParams,
+    MultiKVCacheParams,
+)
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
-from max.pipelines.core import TextContext
-from max.pipelines.lib import CompilationTimer, ModelInputs, UnifiedEagleOutputs
+from max.pipelines.context import TextContext
+from max.pipelines.lib import (
+    CompilationTimer,
+    UnifiedSpecDecodeInputs,
+)
+from max.pipelines.lib.pipeline_variants.unified_spec_decode_model import (
+    _UnifiedSpecDecodeModelMixin,
+)
 from typing_extensions import override
 
 from ..deepseekV3.model import DeepseekV3Inputs, DeepseekV3Model
@@ -41,71 +51,29 @@ logger = logging.getLogger("max.pipelines")
 
 
 @dataclass
-class UnifiedMTPDeepseekV3Inputs(DeepseekV3Inputs):
-    """Inputs for the UnifiedMTPDeepseekV3 model."""
+class UnifiedMTPDeepseekV3Inputs(UnifiedSpecDecodeInputs, DeepseekV3Inputs):
+    """Inputs for the UnifiedMTPDeepseekV3 model.
 
-    draft_tokens: Buffer | None = None
-    draft_kv_blocks: list[Buffer] | None = None
-    seed: Buffer | None = None
-    """Per-execute int64 scalar seed consumed by the stochastic acceptance
-    sampler (and, when enabled, the synthetic benchmarking sampler)."""
-
-    temperature: Buffer | None = None
-    top_k: Buffer | None = None
-    max_k: Buffer | None = None
-    top_p: Buffer | None = None
-    min_top_p: Buffer | None = None
-    """Per-batch sampling parameters consumed by the stochastic acceptance
-    sampler. ``max_k`` and ``min_top_p`` are 0-d CPU scalars; the rest are
-    ``[batch_size]`` tensors on the primary device."""
-
-    in_thinking_phase: Buffer | None = None
-    """Per-batch ``bool`` flag marking rows currently inside a
-    ``<think>...</think>`` block; consumed by relaxed acceptance."""
+    Target-prefix fields come from :class:`DeepseekV3Inputs`; the spec-decode
+    fields and trailing buffer packing come from
+    :class:`UnifiedSpecDecodeInputs`. The MTP graph binds the per-row
+    ``in_thinking_phase`` flag (consumed by relaxed acceptance).
+    """
 
     @property
     def buffers(self) -> tuple[Buffer, ...]:
-        buffers = super().buffers
-        if self.draft_tokens is not None:
-            buffers += (self.draft_tokens,)
-        if self.draft_kv_blocks is not None:
-            buffers += tuple(self.draft_kv_blocks)
-        assert self.seed is not None
-        buffers += (self.seed,)
-        if self.draft_tokens is not None:
-            # Sampling params are only required when the spec-decode path
-            # is active (i.e. draft_tokens was bound). They mirror the
-            # graph's input signature exactly in that case.
-            assert self.temperature is not None
-            assert self.top_k is not None
-            assert self.max_k is not None
-            assert self.top_p is not None
-            assert self.min_top_p is not None
-            assert self.in_thinking_phase is not None
-            buffers += (
-                self.temperature,
-                self.top_k,
-                self.max_k,
-                self.top_p,
-                self.min_top_p,
-                self.in_thinking_phase,
-            )
-        return buffers
+        return super().buffers + self._spec_decode_tail_buffers(
+            include_in_thinking_phase=True
+        )
 
 
-class UnifiedMTPDeepseekV3Model(DeepseekV3Model):
+class UnifiedMTPDeepseekV3Model(_UnifiedSpecDecodeModelMixin, DeepseekV3Model):
     """DeepseekV3 with MTP: merge + target + rejection + shift in one graph."""
 
     def __init__(self, *args, **kwargs):
         kwargs["return_logits"] = ReturnLogits.VARIABLE
         kwargs["return_hidden_states"] = ReturnHiddenStates.ALL_NORMALIZED
         super().__init__(*args, **kwargs)
-        self._seed_counter = 0
-
-    def _next_seed(self) -> Buffer:
-        """Monotonically advancing int64 scalar seed, fresh per execute."""
-        self._seed_counter += 1
-        return Buffer.from_numpy(np.array(self._seed_counter, dtype=np.int64))
 
     @override
     def load_model(self, session: InferenceSession) -> Model:
@@ -182,6 +150,16 @@ class UnifiedMTPDeepseekV3Model(DeepseekV3Model):
                 for k, v in state_dict.items()
                 if k.startswith("draft.")
             }
+            # Some checkpoints share shared_head_norm with
+            # the base model's final norm and don't emit it as a draft weight.
+            # Copy the value from target.norm.weight so load_state_dict finds it.
+            if (
+                "shared_head_norm.weight" not in draft_state_dict
+                and "target.norm.weight" in state_dict
+            ):
+                draft_state_dict["shared_head_norm.weight"] = state_dict[
+                    "target.norm.weight"
+                ]
             draft_config = self._create_draft_config(draft_state_dict)
 
             if (
@@ -193,6 +171,9 @@ class UnifiedMTPDeepseekV3Model(DeepseekV3Model):
             # TODO: don't hard code number of layers
             assert isinstance(self.kv_params, KVCacheParams)
             self._draft_kv_params = replace(self.kv_params, num_layers=1)
+            self.kv_params = MultiKVCacheParams.from_params(
+                {"target": self.kv_params, "draft": self._draft_kv_params}
+            )
 
             draft_config.return_hidden_states = ReturnHiddenStates.LAST
 
@@ -202,6 +183,7 @@ class UnifiedMTPDeepseekV3Model(DeepseekV3Model):
                 config,
                 draft_config,
                 speculative_config=self.pipeline_config.speculative,
+                enable_structured_output=self.pipeline_config.needs_bitmask_constraints,
             )
 
             # Share embed_tokens and lm_head BEFORE loading so state_dict()
@@ -249,9 +231,7 @@ class UnifiedMTPDeepseekV3Model(DeepseekV3Model):
 
             with Graph(
                 "deepseekV3_with_mtp_graph",
-                input_types=nn_model.input_types(
-                    self.kv_params, self._draft_kv_params
-                ),
+                input_types=nn_model.input_types(self.kv_params),
             ) as graph:
                 (
                     tokens,
@@ -268,12 +248,8 @@ class UnifiedMTPDeepseekV3Model(DeepseekV3Model):
                     for _ in range(len(self.devices))
                 ]
 
-                fetch_types = (
-                    self.kv_params.get_symbolic_inputs().inputs[0].flatten()
-                )
-                len_of_kv_inputs = len(list(fetch_types)) * len(self.devices)
-                kv_caches_per_dev = self._unflatten_kv_inputs(
-                    [next(variadic_args_iter) for _ in range(len_of_kv_inputs)]
+                kv_caches_per_dev, draft_kv_collections = (
+                    self.kv_params.unflatten_basic_kv_tree(variadic_args_iter)
                 )
 
                 batch_context_lengths = [
@@ -290,30 +266,6 @@ class UnifiedMTPDeepseekV3Model(DeepseekV3Model):
 
                 draft_tokens = next(variadic_args_iter).tensor
 
-                # Draft KV: only kv_blocks per device; cache_lengths, lookup_table,
-                # max_lengths, and dispatch_metadata are shared from target.
-                draft_kv_collections: list[PagedCacheValues] = []
-                for dev_idx in range(len(self.devices)):
-                    draft_kv_blocks = next(variadic_args_iter).buffer
-                    draft_kv_collections.append(
-                        PagedCacheValues(
-                            kv_blocks=draft_kv_blocks,
-                            cache_lengths=kv_caches_per_dev[
-                                dev_idx
-                            ].cache_lengths,
-                            lookup_table=kv_caches_per_dev[
-                                dev_idx
-                            ].lookup_table,
-                            max_lengths=kv_caches_per_dev[dev_idx].max_lengths,
-                            attention_dispatch_metadata=kv_caches_per_dev[
-                                dev_idx
-                            ].attention_dispatch_metadata,
-                            draft_attention_dispatch_metadata=kv_caches_per_dev[
-                                dev_idx
-                            ].draft_attention_dispatch_metadata,
-                        )
-                    )
-
                 seed = next(variadic_args_iter).tensor
                 temperature = next(variadic_args_iter).tensor
                 top_k = next(variadic_args_iter).tensor
@@ -321,6 +273,19 @@ class UnifiedMTPDeepseekV3Model(DeepseekV3Model):
                 top_p = next(variadic_args_iter).tensor
                 min_top_p = next(variadic_args_iter).tensor
                 in_thinking_phase = next(variadic_args_iter).tensor
+
+                # Optional bitmask triple — present only when
+                # structured output is enabled (matches the
+                # conditional in input_types()).
+                pinned_bitmask_graph: TensorValue | None = None
+                wait_payload_graph: BufferValue | None = None
+                device_bitmask_scratch_graph: BufferValue | None = None
+                if nn_model.enable_structured_output:
+                    pinned_bitmask_graph = next(variadic_args_iter).tensor
+                    wait_payload_graph = next(variadic_args_iter).buffer
+                    device_bitmask_scratch_graph = next(
+                        variadic_args_iter
+                    ).buffer
 
                 outputs = nn_model(
                     tokens=tokens.tensor,
@@ -341,6 +306,9 @@ class UnifiedMTPDeepseekV3Model(DeepseekV3Model):
                     in_thinking_phase=in_thinking_phase,
                     ep_inputs=target_ep_inputs,
                     draft_kv_collections=draft_kv_collections,
+                    pinned_bitmask=pinned_bitmask_graph,
+                    wait_payload=wait_payload_graph,
+                    device_bitmask_scratch=device_bitmask_scratch_graph,
                 )
 
                 graph.output(*outputs)
@@ -350,27 +318,10 @@ class UnifiedMTPDeepseekV3Model(DeepseekV3Model):
 
         return model
 
-    def execute(
-        self,
-        model_inputs: ModelInputs,
-    ) -> UnifiedEagleOutputs:
-        """Execute and return all 3 graph outputs for speculative decoding."""
-        assert isinstance(model_inputs, UnifiedMTPDeepseekV3Inputs)
-        model_outputs = self.model.execute(*model_inputs.buffers)
-        assert len(model_outputs) == 3, (
-            f"Expected 3 outputs, got {len(model_outputs)}"
-        )
-
-        return UnifiedEagleOutputs(
-            num_accepted_draft_tokens=model_outputs[0],
-            next_tokens=model_outputs[1],
-            next_draft_tokens=model_outputs[2],
-        )
-
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
+        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
         draft_tokens: Buffer | None = None,
         draft_kv_cache_buffers: list[Buffer] | None = None,
@@ -380,6 +331,10 @@ class UnifiedMTPDeepseekV3Model(DeepseekV3Model):
             self, replica_batches, kv_cache_inputs, return_n_logits
         )
 
+        # The overlap pipeline assigns ``seed`` and the rest of the per-batch
+        # sampling buffers (temperature/top_k/top_p/max_k/min_top_p) on the
+        # returned inputs *after* this call returns — see
+        # ``OverlapTextGenerationPipeline._run_forward``.
         return UnifiedMTPDeepseekV3Inputs(
             tokens=base.tokens,
             input_row_offsets=base.input_row_offsets,
@@ -391,16 +346,8 @@ class UnifiedMTPDeepseekV3Model(DeepseekV3Model):
             data_parallel_splits=base.data_parallel_splits,
             ep_inputs=base.ep_inputs,
             draft_tokens=draft_tokens,
-            draft_kv_blocks=draft_kv_cache_buffers,
-            seed=self._next_seed(),
+            structured_output=self.pipeline_config.needs_bitmask_constraints,
         )
-
-    def prepare_next_token_inputs(
-        self,
-        next_tokens: Buffer,
-        prev_model_inputs: ModelInputs,
-    ) -> UnifiedMTPDeepseekV3Inputs:
-        raise NotImplementedError("MTP does not support Multistep execution")
 
     def _create_draft_config(
         self, draft_state_dict: dict[str, WeightData]

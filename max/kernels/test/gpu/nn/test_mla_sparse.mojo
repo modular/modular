@@ -48,7 +48,6 @@ from layout import (
     RuntimeLayout,
     TileTensor,
     UNKNOWN_VALUE,
-    lt_to_tt,
     row_major,
 )
 from layout.tma_async import (
@@ -503,21 +502,21 @@ def run_test_sparse[
     )
 
     var kv_collection = PagedKVCacheCollection[kv_type, kv_params, PAGE_SIZE](
-        LayoutTensor[kv_type, Layout.row_major[6](), MutAnyOrigin](
+        LayoutTensor[kv_type, Layout.row_major[6]()](
             blocks_lt.ptr,
             RuntimeLayout[Layout.row_major[6]()](
                 blocks_lt.runtime_layout.shape.value,
                 blocks_lt.runtime_layout.stride.value,
             ),
         ),
-        LayoutTensor[DType.uint32, cl_layout, ImmutAnyOrigin](
+        LayoutTensor[mut=False, DType.uint32, cl_layout](
             cache_lengths_lt.ptr,
             RuntimeLayout[cl_layout](
                 cache_lengths_lt.runtime_layout.shape.value,
                 cache_lengths_lt.runtime_layout.stride.value,
             ),
         ),
-        LayoutTensor[DType.uint32, lt_layout_2d, ImmutAnyOrigin](
+        LayoutTensor[mut=False, DType.uint32, lt_layout_2d](
             lookup_table_lt.ptr,
             RuntimeLayout[lt_layout_2d](
                 lookup_table_lt.runtime_layout.shape.value,
@@ -563,13 +562,13 @@ def run_test_sparse[
     var total_q_tokens = batch_size * q_max_seq_len
     var q_tt = TileTensor(
         q_device.unsafe_ptr(),
-        row_major((Idx(total_q_tokens), Idx[num_heads](), Idx[Q_DEPTH]())),
+        row_major((total_q_tokens, Idx[num_heads], Idx[Q_DEPTH])),
     )
 
     # Output: [batch_size * q_max_seq_len, num_heads, V_DEPTH]
     var out_tt = TileTensor(
         out_device.unsafe_ptr(),
-        row_major((Idx(total_q_tokens), Idx[num_heads](), Idx[V_DEPTH]())),
+        row_major((total_q_tokens, Idx[num_heads], Idx[V_DEPTH])),
     )
 
     # Row offsets for ragged: [0, seq_len, 2*seq_len, ..., batch_size*seq_len]
@@ -585,7 +584,7 @@ def run_test_sparse[
 
     var row_offsets_tt = TileTensor(
         row_offsets_device.unsafe_ptr(),
-        row_major(Idx(batch_size + 1)),
+        row_major(batch_size + 1),
     )
 
     # Scalar args: [batch_size, q_max_seq_len, num_partitions]
@@ -593,7 +592,7 @@ def run_test_sparse[
         num_heads=num_heads,
         is_fp8_kv=True,
     ](batch_size, cache_len, q_max_seq_len, ctx)
-    var scalar_args_buf_lt = mla_args.gpu_layout_tensor()
+    var scalar_args_buf_tt = mla_args.gpu_tile_tensor()
 
     # Compute and print num_partitions to verify split-K usage.
     comptime sm_count = ctx.default_device_info.sm_count
@@ -634,7 +633,7 @@ def run_test_sparse[
         row_offsets_tt,
         scale,
         ctx,
-        lt_to_tt(scalar_args_buf_lt),
+        scalar_args_buf_tt,
         d_indices=rebind[UnsafePointer[Int32, MutAnyOrigin]](
             d_indices_device.unsafe_ptr()
         ),
@@ -1193,21 +1192,21 @@ def run_test_sparse_blockscale[
         scale_dtype_=DType.float32,
         quantization_granularity_=scale_block_size,
     ](
-        LayoutTensor[kv_type, Layout.row_major[6](), MutAnyOrigin](
+        LayoutTensor[kv_type, Layout.row_major[6]()](
             blocks_lt.ptr,
             RuntimeLayout[Layout.row_major[6]()](
                 blocks_lt.runtime_layout.shape.value,
                 blocks_lt.runtime_layout.stride.value,
             ),
         ),
-        LayoutTensor[DType.uint32, cl_layout, ImmutAnyOrigin](
+        LayoutTensor[mut=False, DType.uint32, cl_layout](
             cache_lengths_lt.ptr,
             RuntimeLayout[cl_layout](
                 cache_lengths_lt.runtime_layout.shape.value,
                 cache_lengths_lt.runtime_layout.stride.value,
             ),
         ),
-        LayoutTensor[DType.uint32, lt_layout_2d, ImmutAnyOrigin](
+        LayoutTensor[mut=False, DType.uint32, lt_layout_2d](
             lookup_table_lt.ptr,
             RuntimeLayout[lt_layout_2d](
                 lookup_table_lt.runtime_layout.shape.value,
@@ -1216,7 +1215,7 @@ def run_test_sparse_blockscale[
         ),
         UInt32(q_max_seq_len),
         UInt32(max_cache_len),
-        LayoutTensor[DType.float32, Layout.row_major[6](), MutAnyOrigin](
+        LayoutTensor[DType.float32, Layout.row_major[6]()](
             scales_lt.ptr,
             RuntimeLayout[Layout.row_major[6]()](
                 scales_lt.runtime_layout.shape.value,
@@ -1259,13 +1258,13 @@ def run_test_sparse_blockscale[
     # Q: [batch_size, num_heads, Q_DEPTH] (rank 3, ragged=True)
     var q_tt = TileTensor(
         q_device.unsafe_ptr(),
-        row_major((Idx(batch_size), Idx[num_heads](), Idx[Q_DEPTH]())),
+        row_major((batch_size, Idx[num_heads], Idx[Q_DEPTH])),
     )
 
     # Output: [batch_size, num_heads, V_DEPTH]
     var out_tt = TileTensor(
         out_device.unsafe_ptr(),
-        row_major((Idx(batch_size), Idx[num_heads](), Idx[V_DEPTH]())),
+        row_major((batch_size, Idx[num_heads], Idx[V_DEPTH])),
     )
 
     # Row offsets for ragged: [0, 1, 2, ..., batch_size]
@@ -1280,14 +1279,14 @@ def run_test_sparse_blockscale[
 
     var row_offsets_tt = TileTensor(
         row_offsets_device.unsafe_ptr(),
-        row_major(Idx(batch_size + 1)),
+        row_major(batch_size + 1),
     )
 
     var mla_args = MLADispatchScalarArgs[
         num_heads=num_heads,
         is_fp8_kv=True,
     ](batch_size, max_cache_len, q_max_seq_len, ctx)
-    var scalar_args_buf_lt = mla_args.gpu_layout_tensor()
+    var scalar_args_buf_tt = mla_args.gpu_tile_tensor()
 
     # Compute and print num_partitions to verify split-K usage.
     comptime sm_count_bs = ctx.default_device_info.sm_count
@@ -1329,7 +1328,7 @@ def run_test_sparse_blockscale[
         row_offsets_tt,
         scale,
         ctx,
-        lt_to_tt(scalar_args_buf_lt),
+        scalar_args_buf_tt,
         d_indices=rebind[UnsafePointer[Int32, MutAnyOrigin]](
             d_indices_device.unsafe_ptr()
         ),
@@ -1715,21 +1714,21 @@ def run_test_sparse_variable_topk[
     )
 
     var kv_collection = PagedKVCacheCollection[kv_type, kv_params, PAGE_SIZE](
-        LayoutTensor[kv_type, Layout.row_major[6](), MutAnyOrigin](
+        LayoutTensor[kv_type, Layout.row_major[6]()](
             blocks_lt.ptr,
             RuntimeLayout[Layout.row_major[6]()](
                 blocks_lt.runtime_layout.shape.value,
                 blocks_lt.runtime_layout.stride.value,
             ),
         ),
-        LayoutTensor[DType.uint32, cl_layout, ImmutAnyOrigin](
+        LayoutTensor[mut=False, DType.uint32, cl_layout](
             cache_lengths_lt.ptr,
             RuntimeLayout[cl_layout](
                 cache_lengths_lt.runtime_layout.shape.value,
                 cache_lengths_lt.runtime_layout.stride.value,
             ),
         ),
-        LayoutTensor[DType.uint32, lt_layout_2d, ImmutAnyOrigin](
+        LayoutTensor[mut=False, DType.uint32, lt_layout_2d](
             lookup_table_lt.ptr,
             RuntimeLayout[lt_layout_2d](
                 lookup_table_lt.runtime_layout.shape.value,
@@ -1748,12 +1747,12 @@ def run_test_sparse_variable_topk[
     # -----------------------------------------------------------------------
     var q_tt = TileTensor(
         q_device.unsafe_ptr(),
-        row_major((Idx(batch_size), Idx[num_heads](), Idx[Q_DEPTH]())),
+        row_major((batch_size, Idx[num_heads], Idx[Q_DEPTH])),
     )
 
     var out_tt = TileTensor(
         out_device.unsafe_ptr(),
-        row_major((Idx(batch_size), Idx[num_heads](), Idx[V_DEPTH]())),
+        row_major((batch_size, Idx[num_heads], Idx[V_DEPTH])),
     )
 
     # Row offsets for ragged: [0, 1, 2, ..., batch_size]
@@ -1768,14 +1767,14 @@ def run_test_sparse_variable_topk[
 
     var row_offsets_tt = TileTensor(
         row_offsets_device.unsafe_ptr(),
-        row_major(Idx(batch_size + 1)),
+        row_major(batch_size + 1),
     )
 
     var mla_args = MLADispatchScalarArgs[
         num_heads=num_heads,
         is_fp8_kv=True,
     ](batch_size, max_cache_len, q_max_seq_len, ctx)
-    var scalar_args_buf_lt = mla_args.gpu_layout_tensor()
+    var scalar_args_buf_tt = mla_args.gpu_tile_tensor()
 
     # Compute and print num_partitions to verify split-K usage.
     comptime sm_count_vt = ctx.default_device_info.sm_count
@@ -1814,7 +1813,7 @@ def run_test_sparse_variable_topk[
         row_offsets_tt,
         scale,
         ctx,
-        lt_to_tt(scalar_args_buf_lt),
+        scalar_args_buf_tt,
         d_indices=rebind[UnsafePointer[Int32, MutAnyOrigin]](
             d_indices_device.unsafe_ptr()
         ),
@@ -2209,21 +2208,21 @@ def run_test_sparse_attn_sink[
     )
 
     var kv_collection = PagedKVCacheCollection[kv_type, kv_params, PAGE_SIZE](
-        LayoutTensor[kv_type, Layout.row_major[6](), MutAnyOrigin](
+        LayoutTensor[kv_type, Layout.row_major[6]()](
             blocks_lt.ptr,
             RuntimeLayout[Layout.row_major[6]()](
                 blocks_lt.runtime_layout.shape.value,
                 blocks_lt.runtime_layout.stride.value,
             ),
         ),
-        LayoutTensor[DType.uint32, cl_layout, ImmutAnyOrigin](
+        LayoutTensor[mut=False, DType.uint32, cl_layout](
             cache_lengths_lt.ptr,
             RuntimeLayout[cl_layout](
                 cache_lengths_lt.runtime_layout.shape.value,
                 cache_lengths_lt.runtime_layout.stride.value,
             ),
         ),
-        LayoutTensor[DType.uint32, lt_layout_2d, ImmutAnyOrigin](
+        LayoutTensor[mut=False, DType.uint32, lt_layout_2d](
             lookup_table_lt.ptr,
             RuntimeLayout[lt_layout_2d](
                 lookup_table_lt.runtime_layout.shape.value,
@@ -2256,12 +2255,12 @@ def run_test_sparse_attn_sink[
     # Build TileTensors and call flare_mla_decoding.
     var q_tt = TileTensor(
         q_device.unsafe_ptr(),
-        row_major((Idx(batch_size), Idx[num_heads](), Idx[Q_DEPTH]())),
+        row_major((batch_size, Idx[num_heads], Idx[Q_DEPTH])),
     )
 
     var out_tt = TileTensor(
         out_device.unsafe_ptr(),
-        row_major((Idx(batch_size), Idx[num_heads](), Idx[V_DEPTH]())),
+        row_major((batch_size, Idx[num_heads], Idx[V_DEPTH])),
     )
 
     var row_offsets_host = List(length=batch_size + 1, fill=UInt32(0))
@@ -2275,14 +2274,14 @@ def run_test_sparse_attn_sink[
 
     var row_offsets_tt = TileTensor(
         row_offsets_device.unsafe_ptr(),
-        row_major(Idx(batch_size + 1)),
+        row_major(batch_size + 1),
     )
 
     var mla_args = MLADispatchScalarArgs[
         num_heads=num_heads,
         is_fp8_kv=True,
     ](batch_size, cache_len, q_max_seq_len, ctx)
-    var scalar_args_buf_lt = mla_args.gpu_layout_tensor()
+    var scalar_args_buf_tt = mla_args.gpu_tile_tensor()
 
     comptime sm_count = ctx.default_device_info.sm_count
     var dispatch_scalars = compute_mla_dispatch_scalars[
@@ -2319,7 +2318,7 @@ def run_test_sparse_attn_sink[
         row_offsets_tt,
         scale,
         ctx,
-        lt_to_tt(scalar_args_buf_lt),
+        scalar_args_buf_tt,
         d_indices=rebind[UnsafePointer[Int32, MutAnyOrigin]](
             d_indices_device.unsafe_ptr()
         ),
@@ -2862,21 +2861,21 @@ def run_test_sparse_extra_kv[
     )
 
     var kv_collection = PagedKVCacheCollection[kv_type, kv_params, PAGE_SIZE](
-        LayoutTensor[kv_type, Layout.row_major[6](), MutAnyOrigin](
+        LayoutTensor[kv_type, Layout.row_major[6]()](
             blocks_lt.ptr,
             RuntimeLayout[Layout.row_major[6]()](
                 blocks_lt.runtime_layout.shape.value,
                 blocks_lt.runtime_layout.stride.value,
             ),
         ),
-        LayoutTensor[DType.uint32, cl_layout, ImmutAnyOrigin](
+        LayoutTensor[mut=False, DType.uint32, cl_layout](
             cache_lengths_lt.ptr,
             RuntimeLayout[cl_layout](
                 cache_lengths_lt.runtime_layout.shape.value,
                 cache_lengths_lt.runtime_layout.stride.value,
             ),
         ),
-        LayoutTensor[DType.uint32, lt_layout_2d, ImmutAnyOrigin](
+        LayoutTensor[mut=False, DType.uint32, lt_layout_2d](
             lookup_table_lt.ptr,
             RuntimeLayout[lt_layout_2d](
                 lookup_table_lt.runtime_layout.shape.value,
@@ -2911,21 +2910,21 @@ def run_test_sparse_extra_kv[
     var extra_kv_collection = PagedKVCacheCollection[
         kv_type, kv_params, PAGE_SIZE
     ](
-        LayoutTensor[kv_type, Layout.row_major[6](), MutAnyOrigin](
+        LayoutTensor[kv_type, Layout.row_major[6]()](
             extra_blocks_lt.ptr,
             RuntimeLayout[Layout.row_major[6]()](
                 extra_blocks_lt.runtime_layout.shape.value,
                 extra_blocks_lt.runtime_layout.stride.value,
             ),
         ),
-        LayoutTensor[DType.uint32, cl_layout, ImmutAnyOrigin](
+        LayoutTensor[mut=False, DType.uint32, cl_layout](
             extra_cache_lengths_lt.ptr,
             RuntimeLayout[cl_layout](
                 extra_cache_lengths_lt.runtime_layout.shape.value,
                 extra_cache_lengths_lt.runtime_layout.stride.value,
             ),
         ),
-        LayoutTensor[DType.uint32, lt_layout_2d, ImmutAnyOrigin](
+        LayoutTensor[mut=False, DType.uint32, lt_layout_2d](
             extra_lookup_table_lt.ptr,
             RuntimeLayout[lt_layout_2d](
                 extra_lookup_table_lt.runtime_layout.shape.value,
@@ -2942,12 +2941,12 @@ def run_test_sparse_extra_kv[
     # -----------------------------------------------------------------------
     var q_tt = TileTensor(
         q_device.unsafe_ptr(),
-        row_major((Idx(batch_size), Idx[num_heads](), Idx[Q_DEPTH]())),
+        row_major((batch_size, Idx[num_heads], Idx[Q_DEPTH])),
     )
 
     var out_tt = TileTensor(
         out_device.unsafe_ptr(),
-        row_major((Idx(batch_size), Idx[num_heads](), Idx[V_DEPTH]())),
+        row_major((batch_size, Idx[num_heads], Idx[V_DEPTH])),
     )
 
     var row_offsets_host = List(length=batch_size + 1, fill=UInt32(0))
@@ -2961,14 +2960,14 @@ def run_test_sparse_extra_kv[
 
     var row_offsets_tt = TileTensor(
         row_offsets_device.unsafe_ptr(),
-        row_major(Idx(batch_size + 1)),
+        row_major(batch_size + 1),
     )
 
     var mla_args = MLADispatchScalarArgs[
         num_heads=num_heads,
         is_fp8_kv=True,
     ](batch_size, max_cache_len, q_max_seq_len, ctx)
-    var scalar_args_buf_lt = mla_args.gpu_layout_tensor()
+    var scalar_args_buf_tt = mla_args.gpu_tile_tensor()
 
     comptime sm_count_ek = ctx.default_device_info.sm_count
     var dispatch_scalars_ek = compute_mla_dispatch_scalars[
@@ -3005,7 +3004,7 @@ def run_test_sparse_extra_kv[
         row_offsets_tt,
         scale,
         ctx,
-        lt_to_tt(scalar_args_buf_lt),
+        scalar_args_buf_tt,
         d_indices=rebind[UnsafePointer[Int32, MutAnyOrigin]](
             d_indices_device.unsafe_ptr()
         ),
@@ -3438,21 +3437,21 @@ def run_test_sparse_topk_clamping[
     )
 
     var kv_collection = PagedKVCacheCollection[kv_type, kv_params, PAGE_SIZE](
-        LayoutTensor[kv_type, Layout.row_major[6](), MutAnyOrigin](
+        LayoutTensor[kv_type, Layout.row_major[6]()](
             blocks_lt.ptr,
             RuntimeLayout[Layout.row_major[6]()](
                 blocks_lt.runtime_layout.shape.value,
                 blocks_lt.runtime_layout.stride.value,
             ),
         ),
-        LayoutTensor[DType.uint32, cl_layout, ImmutAnyOrigin](
+        LayoutTensor[mut=False, DType.uint32, cl_layout](
             cache_lengths_lt.ptr,
             RuntimeLayout[cl_layout](
                 cache_lengths_lt.runtime_layout.shape.value,
                 cache_lengths_lt.runtime_layout.stride.value,
             ),
         ),
-        LayoutTensor[DType.uint32, lt_layout_2d, ImmutAnyOrigin](
+        LayoutTensor[mut=False, DType.uint32, lt_layout_2d](
             lookup_table_lt.ptr,
             RuntimeLayout[lt_layout_2d](
                 lookup_table_lt.runtime_layout.shape.value,
@@ -3471,12 +3470,12 @@ def run_test_sparse_topk_clamping[
     # -----------------------------------------------------------------------
     var q_tt = TileTensor(
         q_device.unsafe_ptr(),
-        row_major((Idx(batch_size), Idx[num_heads](), Idx[Q_DEPTH]())),
+        row_major((batch_size, Idx[num_heads], Idx[Q_DEPTH])),
     )
 
     var out_tt = TileTensor(
         out_device.unsafe_ptr(),
-        row_major((Idx(batch_size), Idx[num_heads](), Idx[V_DEPTH]())),
+        row_major((batch_size, Idx[num_heads], Idx[V_DEPTH])),
     )
 
     # Row offsets for ragged: [0, 1, 2, ..., batch_size]
@@ -3491,14 +3490,14 @@ def run_test_sparse_topk_clamping[
 
     var row_offsets_tt = TileTensor(
         row_offsets_device.unsafe_ptr(),
-        row_major(Idx(batch_size + 1)),
+        row_major(batch_size + 1),
     )
 
     var mla_args = MLADispatchScalarArgs[
         num_heads=num_heads,
         is_fp8_kv=True,
     ](batch_size, max_cache_len, q_max_seq_len, ctx)
-    var scalar_args_buf_lt = mla_args.gpu_layout_tensor()
+    var scalar_args_buf_tt = mla_args.gpu_tile_tensor()
 
     # Compute and print num_partitions to verify split-K usage.
     comptime sm_count_tc = ctx.default_device_info.sm_count
@@ -3537,7 +3536,7 @@ def run_test_sparse_topk_clamping[
         row_offsets_tt,
         scale,
         ctx,
-        lt_to_tt(scalar_args_buf_lt),
+        scalar_args_buf_tt,
         d_indices=rebind[UnsafePointer[Int32, MutAnyOrigin]](
             d_indices_device.unsafe_ptr()
         ),

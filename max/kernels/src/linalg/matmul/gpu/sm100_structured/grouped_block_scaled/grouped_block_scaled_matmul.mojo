@@ -405,7 +405,7 @@ def grouped_block_scaled_matmul[
 
     comptime if config.cta_group == 2:
         # 2SM mode: use CLC-based run_2sm() for proper cluster synchronization
-        ctx.enqueue_function[matmul_kernel.run_2sm, matmul_kernel.run_2sm](
+        ctx.enqueue_function[matmul_kernel.run_2sm](
             # Template TMA descriptors
             a_tma_op,
             b_tma_op,
@@ -436,7 +436,7 @@ def grouped_block_scaled_matmul[
         )
     else:
         # 1SM mode: use linear iteration run()
-        ctx.enqueue_function[matmul_kernel.run, matmul_kernel.run](
+        ctx.enqueue_function[matmul_kernel.run](
             # Template TMA descriptors
             a_tma_op,
             b_tma_op,

@@ -55,33 +55,6 @@ Mojo.
 This section introduces a curated set of migration topics that
 explore common Mojo patterns.
 
-### Try Mojo agent skills
-
-Mojo is an AI-first programming language. If you're using an
-AI coding assistant, you don't have to rely on whatever it
-remembers about Mojo.
-
-Mojo agent skills give your AI tool up-to-date guidance about the language.
-They're maintained alongside Mojo and updated as it evolves, so your agent
-isn't limited by when the model was trained. This helps it generate code
-that compiles, follows current patterns, and matches how Mojo works today.
-
-```bash
-npx skills add modular/skills
-```
-
-As you move from Python to Mojo, two skills are particularly
-useful:
-
-- **Mojo syntax** (`mojo-syntax`): keeps generated code aligned with the
-  current language, even when older patterns look similar but
-  no longer apply
-- **Python interop** (`mojo-python-interop`): helps you call Python
-  libraries correctly and bridge between Python and Mojo code
-
-You describe the intent in Python terms. The skills guide the
-translation into correct, modern Mojo.
-
 ### Value semantics
 
 In Mojo, when you assign a value to a new variable, it's given a
@@ -672,6 +645,20 @@ SIMD parallelism and higher-level parallelism across GPUs.
 
 Mojo's `struct` value type and its traits offer a better fit for
 performance-sensitive code.
+
+## Use Mojo with AI coding assistants
+
+If you're using an AI coding assistant to help translate Python code
+to Mojo, install Mojo agent skills. The `mojo-python-interop` skill
+handles the patterns that trip models up like `PythonObject` wrapping,
+`import` conventions, and type conversions between the two languages.
+
+```bash
+npx skills add modular/skills
+```
+
+This installs all four [Mojo agent skills](/docs/tools/skills),
+including `mojo-syntax` for general language accuracy.
 
 ## The Mojo mindset
 

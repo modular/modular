@@ -67,6 +67,7 @@ cc_args(
         "-Wno-builtin-macro-redefined",
         "-Wno-c++17-attribute-extensions",
         "-Wno-c++20-attribute-extensions",
+        "-Wno-c2y-extensions",
         "-Wno-dollar-in-identifier-extension",
         "-Wno-gcc-compat",
         "-Wno-gnu-statement-expression-from-macro-expansion",
@@ -136,6 +137,12 @@ cc_args(
             "-fdata-sections",
             "-ffunction-sections",
         ],
+        "@platforms//os:macos": [],
+    }) + select({
+        # Match the Mojo toolchain's target-cpu so AVX-512 doesn't leak
+        # into auto-vectorized C++ stdlib code on AVX-512-capable hosts.
+        "//:linux_x86_64": ["-march=x86-64-v3"],
+        "//:linux_aarch64": ["-mcpu=neoverse-n1"],
         "@platforms//os:macos": [],
     }),
 )

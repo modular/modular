@@ -61,14 +61,16 @@ def test_write_repr_to() raises:
     check_write_to(
         Pointer(to=n),
         contains=(
-            "Pointer[mut=True, Int, address_space=AddressSpace.GENERIC](0x"
+            "Pointer[mut=True, SIMD[DType.int, 1],"
+            " address_space=AddressSpace.GENERIC](0x"
         ),
         is_repr=True,
     )
     check_write_to(
         Pointer(to=n).get_immutable(),
         contains=(
-            "Pointer[mut=False, Int, address_space=AddressSpace.GENERIC](0x"
+            "Pointer[mut=False, SIMD[DType.int, 1],"
+            " address_space=AddressSpace.GENERIC](0x"
         ),
         is_repr=True,
     )
@@ -150,6 +152,21 @@ def _test_get_immutable() raises -> Int:
 
     var x = Int(0)
     return foo(Pointer(to=x), Pointer(to=x))
+
+
+def origin_superset_conversion(
+    a: String, b: String, c: Bool
+) -> Pointer[String, origin_of(a, b)]:
+    # These pointers should implicitly convert.
+    if c:
+        return Pointer(to=a)
+    else:
+        return Pointer(to=b)
+
+
+def test_implicit_conversion_to_super_origin() raises:
+    # Parse-time only test, but call it anyway.
+    _ = origin_superset_conversion("", "bar", True)
 
 
 def main() raises:

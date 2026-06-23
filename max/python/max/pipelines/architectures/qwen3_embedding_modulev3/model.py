@@ -19,7 +19,7 @@ import logging
 import math
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import Any, ClassVar, cast
 
 import numpy as np
 from max.driver import Buffer, Device
@@ -32,18 +32,16 @@ from max.experimental.nn.embedding import Embedding
 from max.experimental.nn.norm import RMSNorm
 from max.graph import DeviceRef, TensorType
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn.kv_cache import KVCacheInputs
+from max.nn.kv_cache import KVCacheInputsInterface
 from max.nn.transformer import ReturnLogits
-from max.pipelines.core import TextContext
+from max.pipelines.context import TextContext
 from max.pipelines.lib import (
-    CompilationTimer,
     KVCacheConfig,
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
     PipelineModel,
 )
-from transformers import AutoConfig
 
 from .layers import (
     Qwen3AttentionNoCache,
@@ -79,6 +77,8 @@ class Qwen3EmbeddingModel(PipelineModel[TextContext]):
     - Flash attention without cache operations
     - Last token pooling with L2 normalization
     """
+
+    model_config_cls: ClassVar[type[Any]] = Qwen3EmbeddingConfig
 
     model: Callable[..., Any]
     """Compiled model callable."""
@@ -158,74 +158,72 @@ class Qwen3EmbeddingModel(PipelineModel[TextContext]):
             eps=norm_eps,
         )
 
-        with CompilationTimer("model") as timer:
-            with F.lazy():
-                # Create transformer layers
-                layers = []
-                for _layer_idx in range(huggingface_config.num_hidden_layers):
-                    attention = Qwen3AttentionNoCache(
-                        rope=rope,
-                        num_attention_heads=huggingface_config.num_attention_heads,
-                        num_key_value_heads=huggingface_config.num_key_value_heads,
-                        hidden_size=huggingface_config.hidden_size,
-                        head_dim=head_dim,
-                        scale=attention_multiplier,
-                        qk_norm_eps=norm_eps,
-                    )
-
-                    mlp = MLP(
-                        hidden_dim=huggingface_config.hidden_size,
-                        feed_forward_length=huggingface_config.intermediate_size,
-                        bias=False,
-                    )
-
-                    block = Qwen3EmbeddingTransformerBlock(
-                        attention=attention,
-                        mlp=mlp,
-                        attention_norm=create_norm(),
-                        mlp_norm=create_norm(),
-                        residual_multiplier=1.0,
-                    )
-                    layers.append(block)
-
-                embedding = Embedding(
-                    huggingface_config.vocab_size,
-                    dim=huggingface_config.hidden_size,
+        with F.lazy():
+            # Create transformer layers
+            layers = []
+            for _layer_idx in range(huggingface_config.num_hidden_layers):
+                attention = Qwen3AttentionNoCache(
+                    rope=rope,
+                    num_attention_heads=huggingface_config.num_attention_heads,
+                    num_key_value_heads=huggingface_config.num_key_value_heads,
+                    hidden_size=huggingface_config.hidden_size,
+                    head_dim=head_dim,
+                    scale=attention_multiplier,
+                    qk_norm_eps=norm_eps,
                 )
 
-                transformer = Qwen3EmbeddingTransformer(
-                    layers=layers,
-                    norm=create_norm(),
-                    embedding=embedding,
-                    pool_embeddings=self.pipeline_config.model.pool_embeddings,
-                    embedding_multiplier=1.0,
+                mlp = MLP(
+                    hidden_dim=huggingface_config.hidden_size,
+                    feed_forward_length=huggingface_config.intermediate_size,
+                    bias=False,
                 )
 
-                nn_model = Qwen3Embedding(transformer)
-                nn_model.to(self.devices[0])
+                block = Qwen3EmbeddingTransformerBlock(
+                    attention=attention,
+                    mlp=mlp,
+                    attention_norm=create_norm(),
+                    mlp_norm=create_norm(),
+                    residual_multiplier=1.0,
+                )
+                layers.append(block)
 
-            # Define input types
-            device0 = self.devices[0]
-            device_ref = DeviceRef(device0.label, device0.id)
-            tokens_type = TensorType(
-                DType.uint32, shape=["total_seq_len"], device=device_ref
-            )
-            input_row_offsets_type = TensorType(
-                DType.uint32,
-                shape=["batch_size_plus_1"],
-                device=DeviceRef.CPU(),
-            )
-            return_n_logits_type = TensorType(
-                DType.uint32, shape=(1,), device=DeviceRef.CPU()
+            embedding = Embedding(
+                huggingface_config.vocab_size,
+                dim=huggingface_config.hidden_size,
             )
 
-            timer.mark_build_complete()
-            compiled_model = nn_model.compile(
-                tokens_type,
-                input_row_offsets_type,
-                return_n_logits_type,
-                weights=state_dict,
+            transformer = Qwen3EmbeddingTransformer(
+                layers=layers,
+                norm=create_norm(),
+                embedding=embedding,
+                pool_embeddings=self.pipeline_config.model.pool_embeddings,
+                embedding_multiplier=1.0,
             )
+
+            nn_model = Qwen3Embedding(transformer)
+            nn_model.to(self.devices[0])
+
+        # Define input types
+        device0 = self.devices[0]
+        device_ref = DeviceRef(device0.label, device0.id)
+        tokens_type = TensorType(
+            DType.uint32, shape=["total_seq_len"], device=device_ref
+        )
+        input_row_offsets_type = TensorType(
+            DType.uint32,
+            shape=["batch_size_plus_1"],
+            device=DeviceRef.CPU(),
+        )
+        return_n_logits_type = TensorType(
+            DType.uint32, shape=(1,), device=DeviceRef.CPU()
+        )
+
+        compiled_model = nn_model.compile(
+            tokens_type,
+            input_row_offsets_type,
+            return_n_logits_type,
+            weights=state_dict,
+        )
 
         return compiled_model
 
@@ -244,7 +242,7 @@ class Qwen3EmbeddingModel(PipelineModel[TextContext]):
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
+        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> Qwen3EmbeddingInputs:
         if len(replica_batches) > 1:
@@ -274,21 +272,4 @@ class Qwen3EmbeddingModel(PipelineModel[TextContext]):
             tokens=tokens_buffer.to(device),
             input_row_offsets=row_offsets_buffer,
             return_n_logits=return_n_logits_buffer,
-        )
-
-    def prepare_next_token_inputs(
-        self,
-        next_tokens: Buffer,
-        prev_model_inputs: ModelInputs,
-    ) -> Qwen3EmbeddingInputs:
-        raise NotImplementedError(
-            "Qwen3 embedding model does not support autoregressive generation"
-        )
-
-    @staticmethod
-    def calculate_max_seq_len(
-        pipeline_config: PipelineConfig, huggingface_config: AutoConfig
-    ) -> int:
-        return Qwen3EmbeddingConfig.calculate_max_seq_len(
-            pipeline_config, huggingface_config
         )

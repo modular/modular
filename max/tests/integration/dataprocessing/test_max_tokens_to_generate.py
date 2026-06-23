@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from max.pipelines.dataprocessing import max_tokens_to_generate
+from max.pipelines.modeling.dataprocessing import max_tokens_to_generate
 
 
 def test_max_tokens_to_generate() -> None:

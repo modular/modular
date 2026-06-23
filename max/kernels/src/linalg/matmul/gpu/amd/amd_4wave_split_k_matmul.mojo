@@ -38,7 +38,7 @@ from std.utils import Index, IndexList
 from std.gpu import block_dim, global_idx, grid_dim
 from std.gpu.host import DeviceBuffer, DeviceContext
 
-from layout import Coord, Idx, RuntimeInt, TileTensor
+from layout import Coord, Idx, TileTensor
 from layout.tile_layout import row_major
 
 from linalg.utils import elementwise_epilogue_type
@@ -51,6 +51,7 @@ from .amd_4wave_matmul import AMD4WaveMatmul, KernelConfig
 # ===----------------------------------------------------------------------=== #
 
 
+@__name(t"amd_4wave_split_k_reduce_{c_type}_SK{num_splits}")
 def _split_k_reduce_kernel[
     num_splits: Int,
     c_type: DType,
@@ -148,6 +149,7 @@ def amd_4wave_split_k_matmul[
     enable_swizzle: Bool = True,
     block_m_override: Int = 0,
     block_n_override: Int = 0,
+    block_k_override: Int = 0,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     a: TileTensor[mut=False, a_type, ...],
@@ -159,10 +161,25 @@ def amd_4wave_split_k_matmul[
 ) raises:
     """Launches the single-launch split-K 4-wave matmul on the device.
 
+    Production callers go through a higher-level dispatcher that
+    selects tile shapes based on M, N, K, and dtype — it should set
+    `block_{m,n,k}_override` explicitly. The internal auto-pick is a
+    convenience default for direct/ad-hoc/benchmark callers.
+
+    Recommended use (measured on MI355X, bf16 N=K=8192): split-K's
+    sweet spot is **M ≤ ~128** at large N,K, where the plain 4-wave
+    kernel has too few M-blocks to saturate the GPU. With BK=128 and
+    `num_splits=4`, it beats hipBLASLt at M=64–256 by ~10–25%. Above
+    M ≈ 256, the plain `structured_4wave_matmul` is faster.
+
+    Note: epilogue fusion via `elementwise_lambda_fn` may tip the
+    decision toward this kernel even when raw matmul is close to
+    vendor, since it saves a separate elementwise launch.
+
     Pre-allocate `workspace = SplitKWorkspace[num_splits](ctx, M*N)`
     and re-use across calls with the same shape. The workspace holds
-    `num_splits * M * N` f32 partials; the final FP8 (or other) output
-    is reduced into `c` by the reduce kernel.
+    `num_splits * M * N` f32 partials; the final output (FP8 / bf16 /
+    fp16 — matches `c_type`) is reduced into `c` by the reduce kernel.
 
     When `elementwise_lambda_fn` is set, the reduce kernel fires the
     lambda once per output cell on the reduced f32 sum and skips the
@@ -177,10 +194,15 @@ def amd_4wave_split_k_matmul[
         c_type: Element type of `c`.
         num_splits: Number of K-splits to launch concurrently.
         enable_swizzle: Enable LDS bank-conflict avoidance.
-        block_m_override: If > 0, force BM to this value (must be 64 or
-            128). 0 uses the auto-pick (BM=64 for M <= 512, else 128).
-        block_n_override: If > 0, force BN to this value (must be 64 or
-            128). 0 uses BN = BM.
+        block_m_override: If > 0, force BM to this value (must be 64
+            or 128). 0 uses the auto-pick (BM=64 for M <= 512, else
+            128).
+        block_n_override: If > 0, force BN to this value (must be 64
+            or 128). 0 uses BN = BM.
+        block_k_override: If > 0, force BK to this value. Must be a
+            multiple of MMA_K and satisfy
+            `(K / num_splits) % (2*BK) == 0`. Valid: 32, 64, 128 for
+            bf16/fp16; 128 for FP8.
         elementwise_lambda_fn: Optional fused epilogue applied once per
             cell on the reduced f32 sum.
 
@@ -197,7 +219,9 @@ def amd_4wave_split_k_matmul[
     comptime assert a_type == b_type, "A and B must have the same type"
     comptime assert (
         a_type.is_float8()
-    ), "split-K 4-wave currently only supports float8_e4m3fn"
+        or a_type == DType.bfloat16
+        or a_type == DType.float16
+    ), "split-K 4-wave supports float8_e4m3fn, bfloat16, or float16"
     comptime assert num_splits >= 1, "num_splits must be >= 1"
     comptime assert block_m_override == 0 or block_m_override in (
         64,
@@ -207,27 +231,42 @@ def amd_4wave_split_k_matmul[
         64,
         128,
     ), "block_n_override must be 0 (auto), 64, or 128"
+    comptime _is_fp8 = a_type.is_float8()
+
+    # See `structured_4wave_matmul` for the BK selection rationale.
+    # `num_k_mmas = BK / MMA_K` is handled internally by QuadrantMmaOp.
+    # The main loop processes 2 K-tiles per outer iter, so K_per_split
+    # must be a multiple of 2*BK.
+    comptime _mma_k = 128 if _is_fp8 else 32
+    comptime _bk = block_k_override if block_k_override > 0 else 128
+    comptime assert block_k_override == 0 or (
+        block_k_override % _mma_k == 0 and block_k_override in (32, 64, 128)
+    ), (
+        "block_k_override must be 0 (auto) or a multiple of MMA_K in"
+        " {32, 64, 128}"
+    )
+    comptime _k_per_split_alignment = 2 * _bk
 
     comptime K_total = type_of(a).static_shape[1]
     comptime K_per_split, K_remainder = divmod(K_total, num_splits)
     comptime assert K_remainder == 0, "num_splits must evenly divide K"
     comptime assert (
-        K_per_split % 256 == 0
-    ), "K / num_splits must be a multiple of 256 (4-wave kernel constraint)"
+        K_per_split % _k_per_split_alignment == 0
+    ), "K / num_splits must be a multiple of 2*BK (4-wave kernel constraint)"
 
     comptime N = type_of(b).static_shape[0]
     var M = Int(c.dim[0]())
     var elems_per_split = M * N
 
     comptime config_64 = KernelConfig(
-        block_shape=Index(64, 64, 128),
-        warp_shape=Index(32, 32, 128),
-        mma_shape=Index(16, 16, 128),
+        block_shape=Index(64, 64, _bk),
+        warp_shape=Index(32, 32, _bk),
+        mma_shape=Index(16, 16, _mma_k),
     )
     comptime config_128 = KernelConfig(
-        block_shape=Index(128, 128, 128),
-        warp_shape=Index(64, 64, 128),
-        mma_shape=Index(16, 16, 128),
+        block_shape=Index(128, 128, _bk),
+        warp_shape=Index(64, 64, _bk),
+        mma_shape=Index(16, 16, _mma_k),
     )
 
     @parameter
@@ -237,12 +276,7 @@ def amd_4wave_split_k_matmul[
         # the M-band inside the kernel via `pid_m + split_id*num_pid_m`.
         var ws_tile = TileTensor(
             workspace.scratch.unsafe_ptr(),
-            row_major(
-                Coord(
-                    RuntimeInt[DType.int64](Int64(num_splits * M)),
-                    Idx[N](),
-                )
-            ),
+            row_major(Coord(Int64(num_splits * M), Idx[N])),
         )
 
         comptime kernel = AMD4WaveMatmul[
@@ -260,7 +294,7 @@ def amd_4wave_split_k_matmul[
 
         var num_blocks_n = ceildiv(N, config.block_shape[1])
         var num_blocks_m = ceildiv(M, config.block_shape[0])
-        ctx.enqueue_function[kernel, kernel](
+        ctx.enqueue_function[kernel](
             a,
             b,
             ws_tile,
@@ -298,7 +332,7 @@ def amd_4wave_split_k_matmul[
     comptime reduce_kernel = _split_k_reduce_kernel[
         num_splits, c_type, elementwise_lambda_fn=elementwise_lambda_fn
     ]
-    ctx.enqueue_function[reduce_kernel, reduce_kernel](
+    ctx.enqueue_function[reduce_kernel](
         workspace.scratch.unsafe_ptr(),
         c.ptr,
         total_elems,

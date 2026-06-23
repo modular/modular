@@ -49,6 +49,7 @@ def blockwise_fp8_matmul[
     b_scales_type: DType,
     *,
     config: MatmulConfig[_, _, _, transpose_b],
+    n_scale_granularity: Int = 128,
 ](
     c: TileTensor,
     a: TileTensor[mut=False, ...],
@@ -161,6 +162,7 @@ def blockwise_fp8_matmul[
             Int32(corrected_config.cluster_shape[1]),
             Int32(corrected_config.cluster_shape[2]),
         ),
+        n_scale_granularity=n_scale_granularity,
     ]
 
     # Create TMA descriptors using kernel's layout types
@@ -214,7 +216,7 @@ def blockwise_fp8_matmul[
 
     var problem_shape = StaticTuple[Int32, 3](Int32(M), Int32(N), Int32(K))
 
-    ctx.enqueue_function[Kernel.run, Kernel.run, dump_asm=False](
+    ctx.enqueue_function[Kernel.run, dump_asm=False](
         a_tma_op,
         b_tma_op,
         c_tma_op,

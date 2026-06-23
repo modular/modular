@@ -15,31 +15,36 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
+import contextlib
 import json
 import logging
-import math
 import os
 import sys
 import threading
 import time
 import traceback
 from abc import ABC, abstractmethod
-from collections.abc import AsyncIterable, AsyncIterator, Callable, Iterable
+from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass, field
 from typing import Any, TypeVar
 
 import aiohttp
+from openai.types.chat.completion_create_params import ResponseFormat
 from pydantic import BaseModel
 from tqdm.asyncio import tqdm
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
+from typing_extensions import NotRequired, TypedDict
 
-from .config import PIXEL_GENERATION_TASKS, BenchmarkTask
+from .config import PIXEL_GENERATION_TASKS, BenchmarkTask, SamplingConfig
 from .datasets.types import (
+    ChatMessage,
     OpenAIImage,
     PixelGenerationImageOptions,
 )
-from .tts_workloads_utils import SampleTTSRequest
+from .sse import iter_events
+from .utils import deadline_passed
 
 # 30 minute timeout per request session
 AIOHTTP_TIMEOUT = aiohttp.ClientTimeout(total=30 * 60)
@@ -88,22 +93,36 @@ class BaseRequestFuncInput(ABC):
         """Get the output type for the request function input."""
 
 
-# TODO: We shouldn't have to maintain two separate RequestFuncInput classes for
-# text generation and TTS benchmarks respectively.
+def _apply_sampling_to_request_payload(
+    payload: dict[str, Any], sampling: SamplingConfig
+) -> None:
+    """Merge non-None OpenAI-style sampling fields from *sampling* into *payload*."""
+    if sampling.temperature is not None:
+        payload["temperature"] = sampling.temperature
+    if sampling.thinking_temperature is not None:
+        payload["thinking_temperature"] = sampling.thinking_temperature
+    if sampling.top_k is not None:
+        payload["top_k"] = sampling.top_k
+    if sampling.top_p is not None:
+        payload["top_p"] = sampling.top_p
+
+
 @dataclass
 class RequestFuncInput(BaseRequestFuncInput):
     """Request function input for text generation benchmarks."""
 
-    temperature: float | None
-    top_p: float | None
-    top_k: int | None
-    prompt: str | list[dict[str, Any]]
+    sampling: SamplingConfig
+    prompt: str | list[ChatMessage]
     images: list[OpenAIImage]
     api_url: str
     prompt_len: int
     max_tokens: int | None
     ignore_eos: bool
-    response_format: dict[str, Any] | None = None
+    response_format: ResponseFormat | None = None
+    # Forwarded as the chat-completions ``tools`` field. Plain ``list[dict]``
+    # so datasets can pass through OpenAI-shaped or server-specific schemas
+    # without translation; ignored by non-chat drivers.
+    tools: list[dict[str, Any]] | None = None
 
     def get_output_type(self) -> type[BaseRequestFuncOutput]:
         return RequestFuncOutput
@@ -123,24 +142,6 @@ class PixelGenerationRequestFuncInput(BaseRequestFuncInput):
 
 
 @dataclass
-class TTSRequestFuncInput(BaseRequestFuncInput):
-    """Request function input for TTS (text-to-speech) benchmarks."""
-
-    temperature: float | None
-    top_p: float | None
-    top_k: int | None
-    request_index: int
-    tts_request: SampleTTSRequest
-    is_streaming_mode: bool
-    frequency_penalty: float
-    repetition_penalty: float
-    seed: int = 0
-
-    def get_output_type(self) -> type[BaseRequestFuncOutput]:
-        return TTSRequestFuncOutput
-
-
-@dataclass
 class BaseRequestFuncOutput:
     """Base class for request function output with common fields."""
 
@@ -157,6 +158,35 @@ class BaseRequestFuncOutput:
         if self.request_submit_time is None:
             return None
         return self.request_submit_time + self.latency
+
+
+def mark_cancelled_if_past_deadline(
+    output: BaseRequestFuncOutput, end_time_ns: int | None
+) -> BaseRequestFuncOutput:
+    """Reclassify an end-of-benchmark cut-off as cancelled rather than failed.
+
+    When the benchmark duration deadline cancels an in-flight request, aiohttp
+    can surface the cancellation as a swallowed error inside the request driver
+    instead of propagating the ``wait_for`` timeout, leaving a ``success=False``
+    output. If the result is not a success and the benchmark deadline has
+    passed, treat it as cancelled (cut off by benchmark end) rather than a real
+    failure. Successful results are left untouched.
+
+    Args:
+        output: The request output to (possibly) reclassify, mutated in place.
+        end_time_ns: The benchmark ``perf_counter_ns`` deadline, or ``None`` if
+            the run is unbounded.
+
+    Returns:
+        The same ``output`` instance, for convenient inline use.
+    """
+    if not output.success and deadline_passed(end_time_ns):
+        output.cancelled = True
+        logger.info(
+            "Reclassifying request as cancelled (cut off by benchmark end): %s",
+            output.error or "<no error>",
+        )
+    return output
 
 
 def measured_window_duration(
@@ -201,8 +231,6 @@ class ServerTokenStats:
     cached_tokens: int = 0
 
 
-# TODO: We shouldn't have to maintain two separate RequestFuncOutput classes for
-# text generation and TTS benchmarks respectively.
 @dataclass
 class RequestFuncOutput(BaseRequestFuncOutput):
     """Request function output for text generation benchmarks."""
@@ -217,6 +245,10 @@ class RequestFuncOutput(BaseRequestFuncOutput):
     server_token_stats: ServerTokenStats = field(
         default_factory=ServerTokenStats
     )
+    # Multi-turn provenance, set by the conversation driver so per-turn cache
+    # retention can group/order turns within a session. None for single-turn.
+    session_id: str | None = None
+    turn_index: int | None = None
 
 
 @dataclass
@@ -224,103 +256,6 @@ class PixelGenerationRequestFuncOutput(BaseRequestFuncOutput):
     """Request function output for text-to-image benchmarks."""
 
     num_generated_outputs: int = 0
-
-
-@dataclass
-class TTSRequestFuncOutput(BaseRequestFuncOutput):
-    """Request function output for TTS (text-to-speech) benchmarks."""
-
-    request_index: int = 0
-    itl: list[float] = field(default_factory=list)
-    tpot: list[float] = field(default_factory=list)
-    # TODO: We have a torch.Tensor dependency here, but our benchmark_shared
-    # package doesn't "require" torch. For better or worse, this is only used
-    # in the TTS benchmarks, so we'll leave it as Any for now.
-    generated_chunk: list[Any] = field(
-        default_factory=list
-    )  # list[torch.Tensor]
-    ttft: float | None = None  # Time to first token (can be None for TTS)
-
-    def get_chunk_lens_in_samples(self) -> list[int]:
-        """Get lengths of audio chunks in samples."""
-        return [x.shape[-1] for x in self.generated_chunk]
-
-    def get_chunk_lens_in_seconds(self, tts_config: Any) -> list[float]:
-        """Get lengths of audio chunks in seconds.
-
-        Args:
-            tts_config: TTS configuration object with decoder_sample_rate attribute.
-        """
-        lens_in_samples = self.get_chunk_lens_in_samples()
-        return [samples_to_seconds(tts_config, x) for x in lens_in_samples]
-
-    def get_chunk_lens_in_tokens(self, tts_config: Any) -> list[int]:
-        """Get lengths of audio chunks in tokens.
-
-        Args:
-            tts_config: TTS configuration object with codec_tokens_per_sec attribute.
-        """
-        lens_in_samples = self.get_chunk_lens_in_samples()
-        return [samples_to_tokens(tts_config, x) for x in lens_in_samples]
-
-    def get_real_time_factors(self, tts_config: Any) -> list[float]:
-        """Calculate real-time factors (RTF).
-
-        RTF is the inter-chunk latency divided by the playback time of the
-        previous chunk. Anything over 100% would lead to a playback error.
-
-        Args:
-            tts_config: TTS configuration object.
-        """
-        lens_in_seconds = self.get_chunk_lens_in_seconds(tts_config)
-        assert len(lens_in_seconds) == len(self.itl) + 1, (
-            "Missing or extra ITLs?"
-        )
-        return [
-            x / y for x, y in zip(self.itl, lens_in_seconds[:-1], strict=True)
-        ]
-
-    def get_output_length_in_samples(self) -> int:
-        """Get total output length in samples."""
-        return sum(self.get_chunk_lens_in_samples())
-
-    def get_output_length_in_seconds(self, tts_config: Any) -> float:
-        """Get total output length in seconds.
-
-        Args:
-            tts_config: TTS configuration object.
-        """
-        return sum(self.get_chunk_lens_in_seconds(tts_config))
-
-    def get_output_length_in_tokens(self, tts_config: Any) -> int:
-        """Get total output length in tokens.
-
-        Args:
-            tts_config: TTS configuration object.
-        """
-        return sum(self.get_chunk_lens_in_tokens(tts_config))
-
-
-def samples_to_seconds(tts_config: Any, num_samples: int) -> float:
-    """Convert number of samples to seconds.
-
-    Args:
-        tts_config: TTS configuration object with decoder_sample_rate attribute.
-        num_samples: Number of audio samples.
-    """
-    return num_samples / tts_config.decoder_sample_rate
-
-
-def samples_to_tokens(tts_config: Any, num_samples: int) -> int:
-    """Convert number of samples to tokens.
-
-    Args:
-        tts_config: TTS configuration object with decoder_sample_rate and
-                   codec_tokens_per_sec attributes.
-        num_samples: Number of audio samples.
-    """
-    playback_time = samples_to_seconds(tts_config, num_samples)
-    return math.ceil(playback_time * tts_config.codec_tokens_per_sec)
 
 
 class RequestDriver(ABC):
@@ -385,6 +320,39 @@ class ProgressBarRequestDriver(RequestDriver):
         return result
 
 
+@contextlib.contextmanager
+def progressbar_request_driver(
+    request_driver: RequestDriver,
+    total: int,
+    *,
+    disable_tqdm: bool = False,
+    desc: str | None = None,
+) -> Iterator[RequestDriver]:
+    """Yield a request driver that advances a progress bar per request.
+
+    When *disable_tqdm* is set, the driver is yielded unwrapped and no bar is
+    shown. Otherwise the driver is wrapped in a :class:`ProgressBarRequestDriver`
+    backed by a ``tqdm`` bar that is closed on exit.
+
+    Args:
+        request_driver: The underlying request driver to wrap.
+        total: Total number of requests the bar tracks.
+        disable_tqdm: If True, skip the progress bar entirely.
+        desc: Optional description shown alongside the bar.
+
+    Yields:
+        The (possibly progress-wrapped) request driver.
+    """
+    if disable_tqdm:
+        yield request_driver
+        return
+    pbar = tqdm(total=total, desc=desc)
+    try:
+        yield ProgressBarRequestDriver(request_driver, pbar)
+    finally:
+        pbar.close()
+
+
 class TRTLLMRequestDriver(RequestDriver):
     """Request driver for TensorRT-LLM backend."""
 
@@ -398,9 +366,7 @@ class TRTLLMRequestDriver(RequestDriver):
         assert api_url.endswith("generate_stream")
 
         async with aiohttp.ClientSession(timeout=AIOHTTP_TIMEOUT) as session:
-            payload: dict[
-                str, bool | str | int | float | list[dict[str, Any]]
-            ] = {
+            payload: dict[str, bool | str | int | float | list[ChatMessage]] = {
                 "text_input": request_func_input.prompt,
                 "ignore_eos": request_func_input.ignore_eos,
                 "stream": True,
@@ -408,12 +374,9 @@ class TRTLLMRequestDriver(RequestDriver):
 
             if request_func_input.max_tokens is not None:
                 payload["max_tokens"] = request_func_input.max_tokens
-            if request_func_input.temperature is not None:
-                payload["temperature"] = request_func_input.temperature
-            if request_func_input.top_k is not None:
-                payload["top_k"] = request_func_input.top_k
-            if request_func_input.top_p is not None:
-                payload["top_p"] = request_func_input.top_p
+            _apply_sampling_to_request_payload(
+                payload, request_func_input.sampling
+            )
 
             output = RequestFuncOutput()
             output.prompt_len = request_func_input.prompt_len
@@ -425,16 +388,8 @@ class TRTLLMRequestDriver(RequestDriver):
             try:
                 async with session.post(url=api_url, json=payload) as response:
                     if response.status == 200:
-                        async for chunk_bytes in response.content:
-                            chunk_bytes = chunk_bytes.strip()
-                            if not chunk_bytes:
-                                continue
-
-                            chunk = chunk_bytes.decode("utf-8").removeprefix(
-                                "data:"
-                            )
-
-                            data = _TRTLLMChunk.model_validate_json(chunk)
+                        async for event in iter_events(response.content):
+                            data = _TRTLLMChunk.model_validate_json(event.data)
                             chunk_text = data.text_output
                             output.generated_text += chunk_text
                             timestamp = time.perf_counter()
@@ -489,70 +444,6 @@ def _compute_chunk_tpot(
     return None
 
 
-def _extract_sse_payload(line: str) -> str | None:
-    """Extract a payload from an SSE line or a bare JSON line."""
-    stripped = line.strip()
-    if not stripped or stripped.startswith(":"):
-        return None
-
-    if stripped.startswith("data:"):
-        payload = stripped.removeprefix("data:").lstrip()
-        return payload or None
-
-    field, separator, _ = stripped.partition(":")
-    if separator and field.isalpha():
-        return None
-
-    return stripped
-
-
-def _is_complete_sse_payload(payload: str) -> bool:
-    """Return whether the payload is complete enough to parse independently."""
-    if payload == "[DONE]":
-        return True
-    try:
-        json.loads(payload)
-    except json.JSONDecodeError:
-        return False
-    return True
-
-
-async def _iter_sse_payloads(
-    content: AsyncIterable[bytes],
-) -> AsyncIterator[str]:
-    """Yield payload lines for the OpenAI-style SSE subset used by benchmarks.
-
-    This intentionally handles the stream shapes we consume in practice:
-    `data:` payload lines, SSE comment lines, and transport chunk splitting.
-    It does not attempt full SSE event assembly across multiple `data:` lines.
-    """
-    pending = ""
-    async for chunk_bytes in content:
-        if not chunk_bytes:
-            continue
-
-        pending += chunk_bytes.decode("utf-8")
-        while True:
-            newline_index = pending.find("\n")
-            if newline_index == -1:
-                break
-
-            line = pending[:newline_index].rstrip("\r")
-            pending = pending[newline_index + 1 :]
-            payload = _extract_sse_payload(line)
-            if payload is not None:
-                yield payload
-
-        payload = _extract_sse_payload(pending.rstrip("\r"))
-        if payload is not None and _is_complete_sse_payload(payload):
-            yield payload
-            pending = ""
-
-    payload = _extract_sse_payload(pending.rstrip("\r"))
-    if payload is not None:
-        yield payload
-
-
 class _PromptTokensDetails(BaseModel):
     cached_tokens: int = 0
 
@@ -578,14 +469,23 @@ class _CompletionChoice(BaseModel):
     text: str
 
 
+class _ErrorDetail(BaseModel):
+    message: str = ""
+    code: str = ""
+    param: str = ""
+    type: str = ""
+
+
 class _ChatCompletionChunk(BaseModel):
     usage: _UsageChunk | None = None
     choices: list[_ChatChoice] = []
+    error: _ErrorDetail | None = None
 
 
 class _CompletionChunk(BaseModel):
     usage: _UsageChunk | None = None
     choices: list[_CompletionChoice] = []
+    error: _ErrorDetail | None = None
 
 
 class _TRTLLMChunk(BaseModel):
@@ -622,12 +522,17 @@ async def _run_openai_stream_request(
                 url=api_url, json=payload, headers=headers
             ) as response:
                 if response.status == 200:
-                    async for chunk in _iter_sse_payloads(response.content):
+                    async for event in iter_events(response.content):
                         latency = time.perf_counter() - st
-                        if chunk == "[DONE]":
+                        if event.data == "[DONE]":
                             continue
 
-                        data = chunk_type.model_validate_json(chunk)
+                        data = chunk_type.model_validate_json(event.data)
+
+                        if data.error:
+                            output.error = data.error.message or event.data
+                            output.success = False
+                            return output
 
                         # Parse usage from any chunk that reports it.
                         if data.usage:
@@ -707,7 +612,7 @@ class OpenAICompletionsRequestDriver(RequestDriver):
             "OpenAI Completions API URL must end with 'completions' or 'profile'."
         )
 
-        payload: dict[str, bool | str | int | float | list[dict[str, Any]]] = {
+        payload: dict[str, bool | str | int | float | list[ChatMessage]] = {
             "model": request_func_input.model,
             "prompt": request_func_input.prompt,
             "best_of": 1,
@@ -717,12 +622,7 @@ class OpenAICompletionsRequestDriver(RequestDriver):
 
         if request_func_input.max_tokens is not None:
             payload["max_tokens"] = request_func_input.max_tokens
-        if request_func_input.temperature is not None:
-            payload["temperature"] = request_func_input.temperature
-        if request_func_input.top_k is not None:
-            payload["top_k"] = request_func_input.top_k
-        if request_func_input.top_p is not None:
-            payload["top_p"] = request_func_input.top_p
+        _apply_sampling_to_request_payload(payload, request_func_input.sampling)
 
         headers = {
             "Authorization": f"Bearer {os.environ.get('OPENAI_API_KEY')}"
@@ -761,7 +661,9 @@ class OpenAIChatCompletionsRequestDriver(RequestDriver):
                 {"role": "user", "content": content},
             ]
         else:  # conversation
-            messages_data = request_func_input.prompt
+            messages_data = [
+                msg.model_dump() for msg in request_func_input.prompt
+            ]
 
         payload: dict[
             str,
@@ -776,14 +678,15 @@ class OpenAIChatCompletionsRequestDriver(RequestDriver):
 
         if request_func_input.max_tokens is not None:
             payload["max_tokens"] = request_func_input.max_tokens
-        if request_func_input.temperature is not None:
-            payload["temperature"] = request_func_input.temperature
-        if request_func_input.top_k is not None:
-            payload["top_k"] = request_func_input.top_k
-        if request_func_input.top_p is not None:
-            payload["top_p"] = request_func_input.top_p
+        _apply_sampling_to_request_payload(payload, request_func_input.sampling)
         if request_func_input.response_format is not None:
-            payload["response_format"] = request_func_input.response_format
+            # Convert TypedDict to plain dict so mypy accepts the assignment into
+            # payload (since a TypedDict is stricter than a dict[str, Any]).
+            payload["response_format"] = dict(
+                request_func_input.response_format
+            )
+        if request_func_input.tools:
+            payload["tools"] = request_func_input.tools
         for img in request_func_input.images:
             # TODO: Remove this type ignore
             # (error: Value of type "object" is not indexable)
@@ -818,7 +721,10 @@ class OpenAIChatCompletionsRequestDriver(RequestDriver):
         )
 
 
-def _count_output_images(data: dict[str, Any]) -> int:
+_GENERATED_MEDIA_TYPES = frozenset({"output_image", "output_video"})
+
+
+def _count_generated_media(data: dict[str, Any]) -> int:
     output = data.get("output")
     if not isinstance(output, list):
         logger.warning(
@@ -847,7 +753,7 @@ def _count_output_images(data: dict[str, Any]) -> int:
                     f"Skipping output[{message_idx}].content[{item_idx}]: expected dict, got {type(item)}."
                 )
                 continue
-            if item.get("type") == "output_image":
+            if item.get("type") in _GENERATED_MEDIA_TYPES:
                 count += 1
 
     return count
@@ -878,21 +784,27 @@ def _build_pixel_generation_payload(
     if request_func_input.image_options is None:
         return payload
 
-    image_options_payload: dict[str, Any] = {}
+    options_payload: dict[str, Any] = {}
     image_options = request_func_input.image_options
     if image_options.width is not None:
-        image_options_payload["width"] = image_options.width
+        options_payload["width"] = image_options.width
     if image_options.height is not None:
-        image_options_payload["height"] = image_options.height
+        options_payload["height"] = image_options.height
     if image_options.steps is not None:
-        image_options_payload["steps"] = image_options.steps
+        options_payload["steps"] = image_options.steps
     if image_options.guidance_scale is not None:
-        image_options_payload["guidance_scale"] = image_options.guidance_scale
+        options_payload["guidance_scale"] = image_options.guidance_scale
     if image_options.negative_prompt is not None:
-        image_options_payload["negative_prompt"] = image_options.negative_prompt
+        options_payload["negative_prompt"] = image_options.negative_prompt
+    # num_frames is video-only; presence routes the payload to
+    # provider_options.video instead of provider_options.image.
+    is_video = image_options.num_frames is not None
+    if is_video:
+        options_payload["num_frames"] = image_options.num_frames
 
-    if image_options_payload:
-        payload["provider_options"] = {"image": image_options_payload}
+    if options_payload:
+        modality_key = "video" if is_video else "image"
+        payload["provider_options"] = {modality_key: options_payload}
 
     if image_options.seed is not None:
         payload["seed"] = image_options.seed
@@ -944,11 +856,11 @@ class OpenResponsesRequestDriver(RequestDriver):
                         return output
 
                     body = await response.json()
-                    output.num_generated_outputs = _count_output_images(body)
+                    output.num_generated_outputs = _count_generated_media(body)
                     if output.num_generated_outputs <= 0:
                         output.error = (
-                            "No output_image content found in OpenResponses "
-                            "response body."
+                            "No output_image or output_video content found in"
+                            " OpenResponses response body."
                         )
                         output.success = False
                         return output
@@ -1047,6 +959,229 @@ class SglangPixelGenerationRequestDriver(RequestDriver):
 
                     output.success = True
                     return output
+            except Exception:
+                output.latency = time.perf_counter() - start
+                output.success = False
+                exc_info = sys.exc_info()
+                output.error = "".join(traceback.format_exception(*exc_info))
+                return output
+
+
+def _add_input_reference(
+    form: aiohttp.FormData, input_image_paths: list[str] | None
+) -> None:
+    """Attach the i2v conditioning image to a multipart form as ``input_reference``.
+
+    vllm-omni (``/v1/videos[/sync]``) and sglang (``/v1/videos``) both take the
+    image-to-video conditioning image as a multipart ``input_reference`` file.
+    Only the first image is sent; both server APIs accept a single reference.
+    """
+    if not input_image_paths:
+        return
+    image_path = input_image_paths[0]
+    if not os.path.exists(image_path):
+        raise FileNotFoundError(f"Input image not found: {image_path}")
+    with open(image_path, "rb") as f:
+        image_bytes = f.read()
+    form.add_field(
+        "input_reference",
+        image_bytes,
+        filename=os.path.basename(image_path),
+        content_type="application/octet-stream",
+    )
+
+
+class SglangVideoPayload(TypedDict):
+    model: str
+    prompt: str
+    width: NotRequired[int]
+    height: NotRequired[int]
+    num_inference_steps: NotRequired[int]
+    guidance_scale: NotRequired[float]
+    seed: NotRequired[int]
+    negative_prompt: NotRequired[str]
+    num_frames: NotRequired[int]
+
+
+def _build_sglang_video_payload(
+    request_func_input: PixelGenerationRequestFuncInput,
+) -> SglangVideoPayload:
+    """Build JSON payload for sglang's POST /v1/videos endpoint."""
+    payload = SglangVideoPayload(
+        model=request_func_input.model,
+        prompt=request_func_input.prompt,
+    )
+
+    if request_func_input.image_options is not None:
+        opts = request_func_input.image_options
+        if opts.width is not None:
+            payload["width"] = opts.width
+        if opts.height is not None:
+            payload["height"] = opts.height
+        if opts.steps is not None:
+            payload["num_inference_steps"] = opts.steps
+        if opts.guidance_scale is not None:
+            payload["guidance_scale"] = opts.guidance_scale
+        if opts.seed is not None:
+            payload["seed"] = opts.seed
+        if opts.negative_prompt is not None:
+            payload["negative_prompt"] = opts.negative_prompt
+        if opts.num_frames is not None:
+            payload["num_frames"] = opts.num_frames
+
+    return payload
+
+
+def _build_sglang_video_form(
+    request_func_input: PixelGenerationRequestFuncInput,
+) -> aiohttp.FormData:
+    """Build the multipart form for an image-to-video sglang ``/v1/videos`` request.
+
+    Mirrors sglang's reference ``multimodal_gen`` bench_serving: ``size=WxH``
+    and ``num_frames`` are top-level form fields, the remaining sampling knobs
+    are JSON-encoded under ``extra_body``, and the conditioning image is the
+    ``input_reference`` file.
+    """
+    form = aiohttp.FormData()
+    form.add_field("model", request_func_input.model)
+    form.add_field("prompt", request_func_input.prompt)
+
+    extra_body: dict[str, Any] = {}
+    opts = request_func_input.image_options
+    if opts is not None:
+        if opts.width is not None and opts.height is not None:
+            form.add_field("size", f"{opts.width}x{opts.height}")
+        if opts.num_frames is not None:
+            form.add_field("num_frames", str(opts.num_frames))
+        if opts.steps is not None:
+            extra_body["num_inference_steps"] = opts.steps
+        if opts.guidance_scale is not None:
+            extra_body["guidance_scale"] = opts.guidance_scale
+        if opts.seed is not None:
+            extra_body["seed"] = opts.seed
+        if opts.negative_prompt is not None:
+            extra_body["negative_prompt"] = opts.negative_prompt
+    if extra_body:
+        form.add_field("extra_body", json.dumps(extra_body))
+
+    _add_input_reference(form, request_func_input.input_image_paths)
+    return form
+
+
+_SGLANG_VIDEO_POLL_INTERVAL_S = 1.0
+
+
+class SglangVideoRequestDriver(RequestDriver):
+    """Request driver for sglang's async /v1/videos endpoint.
+
+    POST /v1/videos queues a job, then poll GET /v1/videos/{id} until done.
+    Ref: https://github.com/sgl-project/sglang/blob/v0.5.10.post1/python/sglang/multimodal_gen/benchmarks/bench_serving.py#L224
+    """
+
+    async def request(
+        self, request_func_input: BaseRequestFuncInput
+    ) -> PixelGenerationRequestFuncOutput:
+        if not isinstance(request_func_input, PixelGenerationRequestFuncInput):
+            raise TypeError(
+                "SglangVideoRequestDriver requires"
+                " PixelGenerationRequestFuncInput."
+            )
+        api_url = request_func_input.api_url
+        if not api_url.rstrip("/").endswith("/videos"):
+            raise ValueError("Sglang video URL must end with '/videos'.")
+        base_url = api_url.rstrip("/")
+
+        # image-to-video uploads the conditioning image, which requires
+        # multipart/form-data; text-to-video stays JSON. Let aiohttp set the
+        # multipart Content-Type (with boundary) for the form path.
+        headers = {
+            "Authorization": f"Bearer {os.environ.get('OPENAI_API_KEY')}"
+        }
+        if request_func_input.input_image_paths:
+            post_kwargs: dict[str, Any] = {
+                "data": _build_sglang_video_form(request_func_input)
+            }
+        else:
+            headers["Content-Type"] = "application/json"
+            post_kwargs = {
+                "json": _build_sglang_video_payload(request_func_input)
+            }
+
+        output = PixelGenerationRequestFuncOutput()
+        start = time.perf_counter()
+        output.request_submit_time = start
+
+        async with aiohttp.ClientSession(timeout=AIOHTTP_TIMEOUT) as session:
+            try:
+                async with session.post(
+                    url=base_url, headers=headers, **post_kwargs
+                ) as response:
+                    if response.status != 200:
+                        body = await response.text()
+                        output.latency = time.perf_counter() - start
+                        output.error = (
+                            f"HTTP {response.status}: {body}"
+                            if body
+                            else (response.reason or "")
+                        )
+                        output.success = False
+                        return output
+
+                    body = await response.json()
+                    job_id = body.get("id")
+                    if not job_id:
+                        output.latency = time.perf_counter() - start
+                        output.error = (
+                            "No job id in sglang video POST response."
+                        )
+                        output.success = False
+                        return output
+
+                poll_url = f"{base_url}/{job_id}"
+                while True:
+                    async with session.get(
+                        url=poll_url, headers=headers
+                    ) as poll_response:
+                        if poll_response.status != 200:
+                            body = await poll_response.text()
+                            output.latency = time.perf_counter() - start
+                            output.error = (
+                                f"Poll HTTP {poll_response.status}: {body}"
+                                if body
+                                else (poll_response.reason or "")
+                            )
+                            output.success = False
+                            return output
+
+                        poll_body = await poll_response.json()
+                        status = poll_body.get("status", "")
+
+                        if status == "completed":
+                            output.latency = time.perf_counter() - start
+                            output.num_generated_outputs = 1
+                            output.success = True
+
+                            inference_time = poll_body.get("inference_time_s")
+                            if inference_time:
+                                logger.debug(
+                                    "sglang video: inference_time=%s s",
+                                    inference_time,
+                                )
+                            return output
+
+                        if status == "failed":
+                            output.latency = time.perf_counter() - start
+                            error_info = poll_body.get("error", {})
+                            output.error = (
+                                error_info.get("message", "")
+                                if isinstance(error_info, dict)
+                                else str(error_info)
+                            )
+                            output.success = False
+                            return output
+
+                        await asyncio.sleep(_SGLANG_VIDEO_POLL_INTERVAL_S)
+
             except Exception:
                 output.latency = time.perf_counter() - start
                 output.success = False
@@ -1165,6 +1300,117 @@ class VllmOmniPixelGenerationRequestDriver(RequestDriver):
                 return output
 
 
+def _build_vllm_omni_video_payload(
+    request_func_input: PixelGenerationRequestFuncInput,
+) -> dict[str, str]:
+    """Build form payload for vllm-omni's /v1/videos/sync endpoint."""
+    payload: dict[str, str] = {
+        "prompt": request_func_input.prompt,
+        "model": request_func_input.model,
+    }
+
+    if request_func_input.image_options is not None:
+        opts = request_func_input.image_options
+        if opts.width is not None:
+            payload["width"] = str(opts.width)
+        if opts.height is not None:
+            payload["height"] = str(opts.height)
+        if opts.steps is not None:
+            payload["num_inference_steps"] = str(opts.steps)
+        if opts.guidance_scale is not None:
+            payload["guidance_scale"] = str(opts.guidance_scale)
+        if opts.seed is not None:
+            payload["seed"] = str(opts.seed)
+        if opts.negative_prompt is not None:
+            payload["negative_prompt"] = opts.negative_prompt
+        if opts.num_frames is not None:
+            payload["num_frames"] = str(opts.num_frames)
+
+    return payload
+
+
+class VllmOmniVideoRequestDriver(RequestDriver):
+    """Request driver for vllm-omni's /v1/videos/sync endpoint
+    (diffusion video generation)."""
+
+    async def request(
+        self, request_func_input: BaseRequestFuncInput
+    ) -> PixelGenerationRequestFuncOutput:
+        if not isinstance(request_func_input, PixelGenerationRequestFuncInput):
+            raise TypeError(
+                "VllmOmniVideoRequestDriver requires"
+                " PixelGenerationRequestFuncInput."
+            )
+        api_url = request_func_input.api_url
+        if not api_url.endswith("videos/sync"):
+            raise ValueError(
+                "vllm-omni video generation URL must end with 'videos/sync'."
+            )
+
+        # For image-to-video the conditioning image rides along as the
+        # `input_reference` file, which requires multipart/form-data. The
+        # text-to-video path keeps its existing form-encoded dict POST.
+        payload = _build_vllm_omni_video_payload(request_func_input)
+        if request_func_input.input_image_paths:
+            form = aiohttp.FormData()
+            for field_name, value in payload.items():
+                form.add_field(field_name, value)
+            _add_input_reference(form, request_func_input.input_image_paths)
+            post_data: Any = form
+        else:
+            post_data = payload
+
+        headers = {
+            "Authorization": f"Bearer {os.environ.get('OPENAI_API_KEY')}",
+        }
+
+        output = PixelGenerationRequestFuncOutput()
+        start = time.perf_counter()
+        output.request_submit_time = start
+
+        async with aiohttp.ClientSession(timeout=AIOHTTP_TIMEOUT) as session:
+            try:
+                async with session.post(
+                    url=api_url, data=post_data, headers=headers
+                ) as response:
+                    output.latency = time.perf_counter() - start
+                    if response.status != 200:
+                        body = await response.text()
+                        output.error = (
+                            f"HTTP {response.status}: {body}"
+                            if body
+                            else (response.reason or "")
+                        )
+                        output.success = False
+                        return output
+
+                    video_bytes = await response.read()
+                    if not video_bytes:
+                        output.error = (
+                            "Empty response body from /v1/videos/sync."
+                        )
+                        output.success = False
+                        return output
+
+                    output.num_generated_outputs = 1
+                    output.success = True
+
+                    inference_time = response.headers.get("X-Inference-Time-S")
+                    if inference_time:
+                        logger.debug(
+                            "vllm-omni video: inference_time=%s s",
+                            inference_time,
+                        )
+
+                    return output
+            except Exception:
+                output.latency = time.perf_counter() - start
+                output.success = False
+                exc_info = sys.exc_info()
+                output.error = "".join(traceback.format_exception(*exc_info))
+                return output
+
+
 class RequestCounter:
     """Thread-safe counter for limiting the number of requests in benchmarks.
 
@@ -1172,10 +1418,6 @@ class RequestCounter:
     of requests sent across multiple concurrent threads. It uses a threading.Lock
     to ensure thread-safe access to the counter.
 
-    Attributes:
-        max_requests: Maximum number of requests allowed
-        total_sent_requests: Current count of sent requests
-        req_counter_lock: Threading lock for thread-safe access
     """
 
     def __init__(
@@ -1304,21 +1546,28 @@ def get_request_driver_class(
     each backend uses a fundamentally different API format. The mapping is:
       /v1/responses          -> OpenResponsesRequestDriver (modular)
       /v1/images/generations -> SglangPixelGenerationRequestDriver
+      /v1/videos/sync        -> VllmOmniVideoRequestDriver
+      /v1/videos             -> SglangVideoRequestDriver
       /v1/chat/completions   -> VllmOmniPixelGenerationRequestDriver
     The correct endpoint is typically auto-selected by PIXEL_GEN_DEFAULT_ENDPOINT
-    in benchmark_serving.py based on the --backend flag.
+    (or VIDEO_GEN_DEFAULT_ENDPOINT for text-to-video) in benchmark_serving.py
+    based on the --backend flag and task.
     """
     if task in PIXEL_GENERATION_TASKS:
         if api_url.endswith("responses"):
             return OpenResponsesRequestDriver
         if api_url.endswith("images/generations"):
             return SglangPixelGenerationRequestDriver
+        if api_url.endswith("videos/sync"):
+            return VllmOmniVideoRequestDriver
+        if api_url.endswith("/videos"):
+            return SglangVideoRequestDriver
         if api_url.endswith("chat/completions"):
             return VllmOmniPixelGenerationRequestDriver
         raise ValueError(
             "Unsupported API URL for pixel-generation driver selection: "
             f"'{api_url}'. Expected /v1/responses, /v1/images/generations,"
-            " or /v1/chat/completions."
+            " /v1/videos/sync, /v1/videos, or /v1/chat/completions."
         )
 
     # for text generation task

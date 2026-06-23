@@ -40,10 +40,9 @@ from max.benchmark.benchmark_serving import (
 from max.benchmark.benchmark_serving import (
     parse_args as _parse_serving_args,
 )
-from max.benchmark.benchmark_shared.config import ServingBenchmarkConfig
-from max.benchmark.benchmark_shared.metrics import (
-    BenchmarkMetrics,
-    PixelGenerationBenchmarkMetrics,
+from max.benchmark.benchmark_shared.config import (
+    PIXEL_GENERATION_TASKS,
+    ServingBenchmarkConfig,
 )
 from max.benchmark.sweep_benchmark_serving_result_utils import (
     LLMBenchmarkResult,
@@ -71,10 +70,9 @@ def _build_sweep_result(
         if is_pixel_gen:
             return TextToImageBenchmarkResult.zeros(percentiles)
         return LLMBenchmarkResult.zeros(percentiles)
-    metrics = result.result.metrics
-    if isinstance(metrics, PixelGenerationBenchmarkMetrics):
+    metrics = result.result
+    if metrics.task_type == "pixel":
         return TextToImageBenchmarkResult.from_metrics(metrics, percentiles)
-    assert isinstance(metrics, BenchmarkMetrics)
     return LLMBenchmarkResult.from_metrics(metrics, percentiles)
 
 
@@ -120,10 +118,12 @@ def main(
 
     if not config.model:
         raise SystemExit("error: the following arguments are required: --model")
-    # TODO(PAQ-2397): upload_results doesn't have to require workload_config.
+
     if config.upload_results and not config.workload_config:
-        raise SystemExit(
-            "error: --workload-config is required when --upload-results is set"
+        logger.warning(
+            "--workload-config is not set while --upload-results is set. "
+            "Run results will be recorded, but will not include any workload name, "
+            "and may not be picked up by dashboards."
         )
 
     run_sweep(config, uploader=uploader)
@@ -134,6 +134,7 @@ def run_sweep(
     *,
     uploader: SweepUploader | None = None,
     report_result: Callable[[BenchmarkRunResult], None] | None = None,
+    server_liveness: Callable[[], bool] | None = None,
 ) -> list[BenchmarkRunResult]:
     """Set up CSV + upload infrastructure and delegate benchmarking to the library.
 
@@ -156,6 +157,11 @@ def run_sweep(
             during the run rather than after — preserves "live progress"
             visibility and ensures partial results survive a mid-sweep
             crash.
+        server_liveness: Optional predicate forwarded to
+            :func:`benchmark_serving.main_with_parsed_args`. When the
+            orchestrator launched the server it passes a process-liveness
+            check so the server-ready wait aborts promptly on a crashed
+            bring-up instead of polling until the timeout.
 
     Returns:
         The per-iteration :class:`BenchmarkRunResult` list produced by
@@ -196,10 +202,7 @@ def run_sweep(
     if config.workload_config:
         with open(config.workload_config) as f:
             wl = yaml.safe_load(f)
-        is_pixel_gen = wl.get("benchmark-task") in (
-            "text-to-image",
-            "image-to-image",
-        )
+        is_pixel_gen = wl.get("benchmark-task") in PIXEL_GENERATION_TASKS
 
     upload_active = uploader is not None and config.upload_results
 
@@ -216,7 +219,9 @@ def run_sweep(
     # No log directory configured (dry-run without --log-dir): skip CSV
     # and per-result JSON output but still drive the benchmarks.
     if log_dir is None:
-        for result in benchmark_serving_main(config):
+        for result in benchmark_serving_main(
+            config, server_liveness=server_liveness
+        ):
             results.append(result)
             if report_result is not None:
                 report_result(result)
@@ -236,7 +241,9 @@ def run_sweep(
     )
 
     with result_writer:
-        for result in benchmark_serving_main(config):
+        for result in benchmark_serving_main(
+            config, server_liveness=server_liveness
+        ):
             results.append(result)
             # Save per-concurrency JSON with full metrics.
             json_path: str | None = None
@@ -253,6 +260,7 @@ def run_sweep(
                     model_id=config.model,
                     tokenizer_id=config.tokenizer or config.model,
                     request_rate=result.request_rate,
+                    record_max_concurrency=result.max_concurrency,
                 )
 
             sweep_result = _build_sweep_result(

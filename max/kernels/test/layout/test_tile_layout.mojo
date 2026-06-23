@@ -17,6 +17,8 @@ from layout.tile_layout import (
     CoalesceLayout,
     blocked_product,
     coalesce,
+    _format_layout,
+    _print_layout,
     zipped_divide,
 )
 from std.testing import assert_equal, TestSuite
@@ -96,8 +98,8 @@ def test_coalesce_non_contiguous() raises:
     Shape (2, 2), stride (4, 1) -> 2*4=8 != 1, so no merge.
     """
     var layout = Layout(
-        shape=(Idx[2](), Idx[2]()),
-        stride=(Idx[4](), Idx[1]()),
+        shape=(Idx[2], Idx[2]),
+        stride=(Idx[4], Idx[1]),
     )
     var c = coalesce(layout)
     assert_equal(c.shape[0]().value(), 2)
@@ -112,8 +114,8 @@ def test_coalesce_with_shape_1_dims() raises:
     Shape (1, 4, 1), stride (8, 1, 2) -> skip shape-1 dims -> (4, 1).
     """
     var layout = Layout(
-        shape=(Idx[1](), Idx[4](), Idx[1]()),
-        stride=(Idx[8](), Idx[1](), Idx[2]()),
+        shape=(Idx[1], Idx[4], Idx[1]),
+        stride=(Idx[8], Idx[1], Idx[2]),
     )
     var c = coalesce(layout)
     assert_equal(c.shape[0]().value(), 4)
@@ -160,8 +162,8 @@ def test_coalesce_partial_merge() raises:
     (3, 4): 4*1=4 == 4, merge -> (2, 16), (12, 1)
     """
     var layout = Layout(
-        shape=(Idx[2](), Idx[4](), Idx[3]()),
-        stride=(Idx[16](), Idx[1](), Idx[4]()),
+        shape=(Idx[2], Idx[4], Idx[3]),
+        stride=(Idx[16], Idx[1], Idx[4]),
     )
     var c = coalesce(layout)
     assert_equal(c.shape[0]().value(), 2)
@@ -277,6 +279,64 @@ def test_idx2crd_nested_roundtrip() raises:
             + Int(outer[1].value()) * 3
         )
         assert_equal(reconstructed, i)
+
+
+# ===----------------------------------------------------------------------=== #
+# print_layout / format_layout tests
+# ===----------------------------------------------------------------------=== #
+
+
+def test_format_layout_grid() raises:
+    var expected = """\
+       0    1    2    3
+    +----+----+----+----+
+ 0  |  0 |  2 |  4 |  6 |
+    +----+----+----+----+
+ 1  |  1 |  3 |  5 |  7 |
+    +----+----+----+----+
+ 2  |  2 |  4 |  6 |  8 |
+    +----+----+----+----+
+ 3  |  3 |  5 |  7 |  9 |
+    +----+----+----+----+
+"""
+
+    var output = String()
+    _format_layout(
+        Layout(shape=(Idx[4], Idx[4]), stride=(Idx[1], Idx[2])),
+        output,
+    )
+    assert_equal(output, expected)
+
+
+def test_format_layout_blocked() raises:
+    var expected = """\
+       0    1    2    3
+    +----+----+----+----+
+ 0  |  0 |  1 |  4 |  5 |
+    +----+----+----+----+
+ 1  |  2 |  3 |  6 |  7 |
+    +----+----+----+----+
+ 2  |  8 |  9 | 12 | 13 |
+    +----+----+----+----+
+ 3  | 10 | 11 | 14 | 15 |
+    +----+----+----+----+
+"""
+
+    var output = String()
+    _format_layout(
+        blocked_product(row_major[2, 2](), row_major[2, 2]()),
+        output,
+    )
+    assert_equal(output, expected)
+
+
+def test_print_layout() raises:
+    # Flat 2×2 layout: shape (2,2), stride (1,2)
+    _print_layout(Layout(shape=(Idx[2], Idx[2]), stride=(Idx[1], Idx[2])))
+
+    # Nested 4×4 layout via blocked_product
+    var l1 = blocked_product(row_major[2, 2](), row_major[2, 2]())
+    _print_layout(l1)
 
 
 def main() raises:

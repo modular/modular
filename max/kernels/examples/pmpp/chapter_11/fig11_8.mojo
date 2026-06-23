@@ -44,7 +44,7 @@ def warp_scan(val: Float32) -> Float32:
 
 # ========================== TEST CODE ==========================
 def test_warp_scan(
-    input: UnsafePointer[Float32, MutAnyOrigin],
+    input: UnsafePointer[Float32, ImmutAnyOrigin],
     output: UnsafePointer[Float32, MutAnyOrigin],
     N: UInt32,
 ):
@@ -63,8 +63,8 @@ def test_warp_scan(
 
 
 def cpu_scan(
-    input: UnsafePointer[Float32, MutAnyOrigin],
-    output: UnsafePointer[Float32, MutAnyOrigin],
+    input: UnsafePointer[mut=False, Float32, _],
+    output: UnsafePointer[mut=True, Float32, _],
     N: UInt32,
 ):
     """CPU reference scan implementation.
@@ -108,7 +108,7 @@ def main() raises:
         ctx.enqueue_copy(d_input, h_input)
 
         # Launch kernel (single warp)
-        ctx.enqueue_function_experimental[test_warp_scan](
+        ctx.enqueue_function[test_warp_scan](
             d_input,
             d_output,
             UInt32(N),

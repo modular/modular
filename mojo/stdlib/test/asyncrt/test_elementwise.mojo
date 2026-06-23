@@ -20,6 +20,7 @@ from std.gpu.host import DeviceContext, get_gpu_target
 from std.testing import TestSuite, assert_equal
 
 from std.utils import IndexList
+from std.utils.coord import Coord, coord_to_index_list
 from std.utils.index import Index
 
 
@@ -49,10 +50,8 @@ def run_elementwise[dtype: DType](ctx: DeviceContext) raises:
     @always_inline
     @__copy_capture(in_buffer, out_buffer)
     @parameter
-    def func[
-        simd_width: Int, rank: Int, alignment: Int = 1
-    ](idx0: IndexList[rank]):
-        var idx = rebind[IndexList[2]](idx0)
+    def func[simd_width: Int, alignment: Int = 1](idx0: Coord):
+        var idx = rebind[IndexList[2]](coord_to_index_list(idx0))
         out_buffer.unsafe_ptr().store(
             idx[0] * dim_y + idx[1],
             in_buffer.unsafe_ptr().load[width=simd_width](
@@ -62,7 +61,7 @@ def run_elementwise[dtype: DType](ctx: DeviceContext) raises:
         )
 
     elementwise[func, pack_size, target="gpu"](
-        IndexList[2](2, 8),
+        (2, 8),
         ctx,
     )
 
