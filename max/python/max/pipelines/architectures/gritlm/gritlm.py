@@ -34,7 +34,11 @@ from max.experimental.nn.norm import RMSNorm
 from max.experimental.nn.sequential import ModuleList
 from max.experimental.tensor import Tensor
 from max.graph import TensorValue, ops
-from max.nn.kv_cache import KVCacheInputs, KVCacheParamInterface, PagedCacheValues
+from max.nn.kv_cache import (
+    KVCacheInputs,
+    KVCacheParamInterface,
+    PagedCacheValues,
+)
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.architectures.llama3_modulev3.layers.rotary_embedding import (
     Llama3RotaryEmbedding,
@@ -46,7 +50,10 @@ from .model_config import GritLMConfig
 
 
 class GritLMTextModel(
-    Module[[Tensor, PagedCacheValues, Tensor, Tensor], tuple[Tensor | TensorValue, ...]]
+    Module[
+        [Tensor, PagedCacheValues, Tensor, Tensor],
+        tuple[Tensor | TensorValue, ...],
+    ]
 ):
     """GritLM decoder-only transformer (CausalLM path).
 
