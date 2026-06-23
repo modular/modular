@@ -299,7 +299,7 @@ response = client.chat.completions.create(
             ]
         }
     ],
-    max_tokens=300
+    max_completion_tokens=300
 )
 
 print(response.choices[0].message.content)
@@ -352,7 +352,7 @@ curl -N http://localhost:8000/v1/chat/completions \
       ]
     }
   ],
-  "max_tokens": 300
+  "max_completion_tokens": 300
 }' | grep -o '"content":"[^"]*"' | sed 's/"content":"//g' | sed 's/"//g' | tr -d '\n' | sed 's/\\n/\n/g'
 ```
 
@@ -400,7 +400,7 @@ completion = client.chat.completions.create(
             ]
         }
     ],
-    max_tokens=300
+    max_completion_tokens=300
 )
 
 print(completion.choices[0].message.content)
@@ -447,7 +447,7 @@ curl -N http://localhost:8000/v1/chat/completions \
       ]
     }
   ],
-  "max_tokens": 300
+  "max_completion_tokens": 300
 }' | grep -o '"content":"[^"]*"' | sed 's/"content":"//g' | sed 's/"//g' | tr -d '\n' | sed 's/\\n/\n/g'
 ```
 

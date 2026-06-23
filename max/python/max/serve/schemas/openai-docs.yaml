@@ -497,7 +497,7 @@ paths:
                       "content": "Who won the world series in 2020?"
                     },
                 ],
-                max_tokens=100
+                max_completion_tokens=100
             )
 
             print(completion.choices[0].message.content)
@@ -513,7 +513,7 @@ paths:
                     "content": "Who won the world series in 2020?"
                   }
                 ],
-                "max_tokens": 100
+                "max_completion_tokens": 100
               }'
       requestBody:
         required: true
@@ -529,7 +529,7 @@ paths:
                   messages:
                     - role: "user"
                       content: "Who won the world series in 2020?"
-                  max_tokens: 100
+                  max_completion_tokens: 100
               streaming:
                 summary: Streaming chat completion
                 value:
@@ -540,7 +540,7 @@ paths:
                     - role: "user"
                       content: "Write a short poem about AI."
                   stream: true
-                  max_tokens: 100
+                  max_completion_tokens: 100
               withTools:
                 summary: Chat completion with tools
                 value:
@@ -562,7 +562,7 @@ paths:
                               type: "string"
                           required: ["location"]
                   tool_choice: "auto"
-                  max_tokens: 100
+                  max_completion_tokens: 100
               jsonResponse:
                 summary: Chat completion with JSON response format
                 value:
@@ -574,7 +574,7 @@ paths:
                       content: "Generate a JSON object with name, age, and occupation fields"
                   response_format:
                     type: "json_object"
-                  max_tokens: 100
+                  max_completion_tokens: 100
               withImage:
                 summary: Chat completion with image
                 value:
@@ -595,7 +595,7 @@ paths:
                           }
                         }
                       ]
-                  max_tokens: 300
+                  max_completion_tokens: 300
       responses:
         '200':
           description: OK
@@ -1078,6 +1078,7 @@ components:
         max_tokens:
           type: integer
           minimum: 1
+          deprecated: true
           description: |
             The maximum number of tokens to generate in the chat completion.
         max_completion_tokens:

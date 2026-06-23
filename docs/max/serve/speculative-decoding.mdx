@@ -91,7 +91,7 @@ response = client.chat.completions.create(
         {"role": "system", "content": "You are a helpful assistant."},
         {"role": "user", "content": "What are the benefits of speculative decoding?"},
     ],
-    max_tokens=500,
+    max_completion_tokens=500,
 )
 
 print(response.choices[0].message.content)
@@ -129,7 +129,7 @@ response = client.chat.completions.create(
         {"role": "system", "content": "You are a helpful assistant."},
         {"role": "user", "content": "What are the benefits of speculative decoding?"},
     ],
-    max_tokens=500,
+    max_completion_tokens=500,
 )
 
 print(response.choices[0].message.content)
