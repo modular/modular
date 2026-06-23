@@ -46,7 +46,7 @@ from .model_config import GritLMConfig
 
 
 class GritLMTextModel(
-    Module[[Tensor, PagedCacheValues, Tensor, Tensor], tuple[Tensor, ...]]
+    Module[[Tensor, PagedCacheValues, Tensor, Tensor], tuple[Tensor | TensorValue, ...]]
 ):
     """GritLM decoder-only transformer (CausalLM path).
 
