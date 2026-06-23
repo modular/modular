@@ -83,7 +83,14 @@ from openai.types.embedding_create_params import (
 )
 
 # isort: on
-from pydantic import BaseModel, ConfigDict, Field, create_model, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    create_model,
+    field_validator,
+    model_validator,
+)
 from typing_extensions import NotRequired, TypedDict
 
 # ---------------------------------------------------------------------------
@@ -323,6 +330,16 @@ class _MaxRequestExtensions(BaseModel):
 
     # OpenRouter reasoning object; mapped to enable_thinking in the route.
     reasoning: ReasoningConfig | None = None
+
+    # HACK: MiniMax extension. Only ``True`` is supported.
+    reasoning_split: bool = True
+
+    @field_validator("reasoning_split")
+    @classmethod
+    def _require_reasoning_split(cls, value: bool) -> bool:
+        if not value:
+            raise ValueError("`reasoning_split` cannot be disabled")
+        return value
 
 
 # ---- Auto-generated request bases from OpenAI's TypedDict params ----------

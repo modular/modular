@@ -1216,3 +1216,26 @@ async def test_openai_accepts_64mb_request_body() -> None:
     assert len(messages) == 1
     assert not images
     assert not videos
+
+
+@pytest.mark.parametrize(
+    ("payload", "should_raise"),
+    [
+        ({}, False),  # defaults to True
+        ({"reasoning_split": True}, False),
+        ({"reasoning_split": False}, True),  # disabling is rejected
+    ],
+)
+def test_reasoning_split(payload: dict[str, Any], should_raise: bool) -> None:
+    """``reasoning_split`` defaults to True; only ``False`` is rejected."""
+    body = {
+        "model": "test",
+        "messages": [{"role": "user", "content": "hi"}],
+        **payload,
+    }
+    if should_raise:
+        with pytest.raises(ValidationError, match="reasoning_split"):
+            CreateChatCompletionRequest.model_validate(body)
+    else:
+        request = CreateChatCompletionRequest.model_validate(body)
+        assert request.reasoning_split is True
