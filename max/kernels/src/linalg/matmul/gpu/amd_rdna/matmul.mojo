@@ -62,9 +62,7 @@ comptime CD_FRAG_SIZE = 8
 comptime SMEM_PAD = 8
 
 
-@__name(
-    t"gemm_kernel_rdna_{c_type}_{a_type}_{b_type}_{transpose_b}", mangle=True
-)
+@__name(t"gemm_kernel_rdna_{c_type}_{a_type}_{b_type}_{transpose_b}")
 def gemm_kernel_rdna[
     c_type: DType,
     a_type: DType,
@@ -211,7 +209,7 @@ def _load_tile_to_smem[
     NUM_THREADS: Int,
 ](
     smem: UnsafePointer[
-        Scalar[dtype], MutAnyOrigin, address_space=AddressSpace.SHARED
+        mut=True, Scalar[dtype], _, address_space=AddressSpace.SHARED
     ],
     tile: TileTensor[dtype, tile_layout, ImmutAnyOrigin],
     block_row_offset: Int,

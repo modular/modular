@@ -15,8 +15,20 @@ from std.sys.info import size_of
 
 from std.compile import compile_info
 from std.hashlib import hash
-from std.memory import UnsafeMaybeUninit
-from test_utils import CopyCounter, DelRecorder, MoveCounter, check_write_to
+from std.memory import (
+    UnsafeMaybeUninit,
+    is_trivially_copyable,
+    is_trivially_destructible,
+    is_trivially_movable,
+)
+from test_utils import (
+    CopyCounter,
+    DelRecorder,
+    ExplicitDestroy,
+    MoveCounter,
+    MoveOnly,
+    check_write_to,
+)
 from std.testing import assert_equal, assert_true, assert_false, TestSuite
 
 
@@ -360,24 +372,26 @@ def test_write_repr_to() raises:
     var array: InlineArray[Int, 3] = [1, 2, 3]
     check_write_to(
         array,
-        expected="InlineArray[Int, 3]([Int(1), Int(2), Int(3)])",
+        expected="InlineArray[SIMD[DType.int, 1], 3]([Int(1), Int(2), Int(3)])",
         is_repr=True,
     )
 
     var single: InlineArray[Int, 1] = [1]
     check_write_to(
-        single, expected="InlineArray[Int, 1]([Int(1)])", is_repr=True
+        single,
+        expected="InlineArray[SIMD[DType.int, 1], 1]([Int(1)])",
+        is_repr=True,
     )
 
 
 def test_inline_array_triviality() raises:
-    assert_true(InlineArray[Int, 1].__del__is_trivial)
-    assert_true(InlineArray[Int, 1].__copy_ctor_is_trivial)
-    assert_true(InlineArray[Int, 1].__move_ctor_is_trivial)
+    assert_true(is_trivially_destructible[InlineArray[Int, 1]]())
+    assert_true(is_trivially_copyable[InlineArray[Int, 1]]())
+    assert_true(is_trivially_movable[InlineArray[Int, 1]]())
 
-    assert_false(InlineArray[String, 1].__del__is_trivial)
-    assert_false(InlineArray[String, 1].__copy_ctor_is_trivial)
-    assert_true(InlineArray[String, 1].__move_ctor_is_trivial)
+    assert_false(is_trivially_destructible[InlineArray[String, 1]]())
+    assert_false(is_trivially_copyable[InlineArray[String, 1]]())
+    assert_true(is_trivially_movable[InlineArray[String, 1]]())
 
 
 def _return_array[copy: Bool = False]() -> InlineArray[Int32, 4]:
@@ -437,9 +451,7 @@ def _test_inline_array_iter_bounds[
         print(lower, upper, i)
         assert_equal(array_len - i, lower)
         assert_equal(array_len - i, upper.value())
-        _ = trait_downcast_var[Movable & ImplicitlyDestructible](
-            iter.__next__()
-        )
+        _ = trait_downcast_var[Movable & ImplicitlyDeletable](iter.__next__())
 
     var lower, upper = iter.bounds()
     assert_equal(0, lower)
@@ -506,8 +518,21 @@ def test_inline_array_conditional_conformances() raises:
     assert_true(conforms_to(InlineArray[Int, 3], Hashable))
     assert_true(conforms_to(InlineArray[Int, 3], Copyable))
     assert_true(conforms_to(InlineArray[Int, 3], ImplicitlyCopyable))
-    assert_true(conforms_to(InlineArray[Int, 3], ImplicitlyDestructible))
+    assert_true(conforms_to(InlineArray[Int, 3], ImplicitlyDeletable))
+    # An array of explicitly-destroyed elements is not implicitly deletable.
+    assert_false(
+        conforms_to(InlineArray[ExplicitDestroy, 3], ImplicitlyDeletable)
+    )
     assert_false(conforms_to(InlineArray[NonWritable, 3], Writable))
+    # Owned iteration requires `Movable & ImplicitlyDeletable` elements, but
+    # not `Copyable`: a consuming iterator moves elements out rather than
+    # copying them.
+    assert_true(conforms_to(InlineArray[Int, 3], IterableOwned))
+    # `MoveOnly[Int]` is movable and implicitly deletable but not copyable.
+    assert_true(conforms_to(InlineArray[MoveOnly[Int], 2], IterableOwned))
+    # `ExplicitDestroy` is not implicitly deletable, so the consuming iterator
+    # cannot destroy any unconsumed elements.
+    assert_false(conforms_to(InlineArray[ExplicitDestroy, 3], IterableOwned))
 
 
 def test_inline_array_iter_bounds() raises:
@@ -526,6 +551,22 @@ def test_inline_array_iter_owned() raises:
     assert_equal(result[0], 10)
     assert_equal(result[1], 20)
     assert_equal(result[2], 30)
+
+
+def test_inline_array_iter_owned_move_only() raises:
+    # Consuming iteration only requires `Movable & ImplicitlyDeletable`, not
+    # `Copyable`: each element is moved out of the array, not copied.
+    var arr: InlineArray[MoveOnly[Int], 3] = [
+        MoveOnly[Int](0),
+        MoveOnly[Int](1),
+        MoveOnly[Int](2),
+    ]
+
+    var total = 0
+    for elem in arr^:
+        total += elem.data
+
+    assert_equal(total, 3)
 
 
 def test_inline_array_iter_owned_destroys_elements_if_not_consumed() raises:
@@ -552,6 +593,43 @@ def test_inline_array_iter_owned_bounds() raises:
     assert_equal(it.bounds()[0], 1)
     _ = it.__next__()
     assert_equal(it.bounds()[0], 0)
+
+
+def test_inline_array_move_only() raises:
+    # `MoveOnly[Int]` is not `Copyable`; this exercises the conditional
+    # conformance path of `InlineArray[T: Movable, size]`.
+    assert_false(conforms_to(InlineArray[MoveOnly[Int], 2], Copyable))
+
+    var arr: InlineArray[MoveOnly[Int], 3] = [
+        MoveOnly[Int](0),
+        MoveOnly[Int](1),
+        MoveOnly[Int](2),
+    ]
+    assert_equal(arr[0], MoveOnly[Int](0))
+    assert_equal(arr[1], MoveOnly[Int](1))
+    assert_equal(arr[2], MoveOnly[Int](2))
+    assert_equal(len(arr), 3)
+
+    # `unsafe_get` is a non-copying accessor.
+    assert_equal(arr.unsafe_get(2), MoveOnly[Int](2))
+
+
+def test_inline_array_with_explicit_destroy_type() raises:
+    var arr: InlineArray[ExplicitDestroy, 3] = [
+        ExplicitDestroy(0),
+        ExplicitDestroy(1),
+        ExplicitDestroy(2),
+    ]
+
+    var destroyed = List[Int]()
+
+    def destroy_closure(var e: ExplicitDestroy) {mut}:
+        destroyed.append(e.value)
+        e^.destroy()
+
+    arr^.destroy_with(destroy_closure)
+
+    assert_equal(destroyed, [0, 1, 2])
 
 
 def main() raises:

@@ -65,9 +65,9 @@ def _load_im2col_a_tile[
     NUM_THREADS: Int,
 ](
     smem: UnsafePointer[
-        Scalar[dtype], MutAnyOrigin, address_space=AddressSpace.SHARED
+        mut=True, Scalar[dtype], _, address_space=AddressSpace.SHARED
     ],
-    input_ptr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
+    input_ptr: UnsafePointer[mut=False, Scalar[dtype], _],
     block_m_offset: Int,
     k_offset: Int,
     M: Int,
@@ -149,9 +149,9 @@ def _load_b_tile_to_smem[
     NUM_THREADS: Int,
 ](
     smem: UnsafePointer[
-        Scalar[dtype], MutAnyOrigin, address_space=AddressSpace.SHARED
+        mut=True, Scalar[dtype], _, address_space=AddressSpace.SHARED
     ],
-    tile: TileTensor[dtype, tile_layout, MutAnyOrigin],
+    tile: TileTensor[mut=True, dtype, tile_layout, _],
     block_n_offset: Int,
     k_offset: Int,
     max_n: Int,
@@ -191,6 +191,7 @@ def _load_b_tile_to_smem[
 # =========================================================================
 
 
+@__name(t"rdna_conv2d_{out_type}_{in_type}_{filter_type}")
 def conv2d_kernel_rdna[
     out_type: DType,
     in_type: DType,

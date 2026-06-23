@@ -31,7 +31,7 @@ def test_compile_function() raises:
     # CHECK: tid.x
 
     with DeviceContext() as ctx:
-        _ = ctx.compile_function_experimental[kernel]()
+        _ = ctx.compile_function[kernel]()
 
 
 def main() raises:

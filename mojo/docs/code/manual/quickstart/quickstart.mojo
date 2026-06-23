@@ -30,11 +30,11 @@ def main():
     print("Recorded", len(temps), "temperatures")
 
     for index in range(len(temps)):
-        print("  Day {}: {}°C".format(index + 1, temps[index]))
+        print(t"  Day {index + 1}: {temps[index]}°C")
 
     try:
         var avg = calculate_average(temps)
-        print("Average: {}°C".format(avg))
+        print(t"Average: {avg}°C")
 
         if avg > 25.0:
             print("Status: Hot week")

@@ -25,6 +25,7 @@ modular_py_test(
     ],
     deps = [
         "//max/python/max/serve/pipelines:incremental_detokenizer",
+        requirement("numpy"),
         requirement("transformers"),
     ],
 )
@@ -94,9 +95,10 @@ modular_py_test(
         "requires-network",
     ],
     deps = [
-        "//max/python/max/interfaces",
         "//max/python/max/pipelines/architectures",
         "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
+        "//max/python/max/pipelines/request",
         requirement("jinja2"),
         requirement("numpy"),
         requirement("pytest-asyncio"),

@@ -14,6 +14,8 @@ from std.math.uutils import ufloordiv, udivmod
 from std.sys import size_of, simd_width_of
 from std.math import ceildiv
 from layout import (
+    Coord,
+    Idx,
     Layout,
     LayoutTensor,
     RuntimeLayout,
@@ -28,7 +30,7 @@ from std.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.sync import barrier
 from std.gpu.memory import external_memory
 from nn.attention.mha_operand import RaggedMHAOperand, MHAOperand
-from nn.attention.gpu.nvidia.sm90.attention import q_tma
+from nn.attention.gpu.nvidia.common import q_tma
 from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple
 
@@ -44,7 +46,7 @@ struct IndexSmemStorage[
     var scratch: InlineArray[Scalar[DType.float32], Self.BN * 8]
 
 
-@__name(t"fp8_index_{dtype}", mangle=True)
+@__name(t"fp8_index_{dtype}")
 def fp8_index_kernel[
     dtype: DType,
     OutputLT: TensorLayout,
@@ -118,14 +120,12 @@ def fp8_index_kernel[
     var q_smem_tile = LayoutTensor[
         dtype,
         Layout.row_major(num_heads, depth),
-        MutAnyOrigin,
         address_space=AddressSpace.SHARED,
     ](q_smem.unsafe_ptr())
 
     var k_smem_tile = LayoutTensor[
         dtype,
         Layout.row_major(BN, depth),
-        MutAnyOrigin,
         address_space=AddressSpace.SHARED,
     ](k_smem.unsafe_ptr())
 
@@ -178,7 +178,7 @@ def fp8_index_kernel[
     var logits = LogitsType.stack_allocation()
     var q_s_reg_tile = QSRegTileType.stack_allocation()
     var logits_sum = LogitsSumType.stack_allocation()
-    var scratch = ScratchType(scratch_smem.unsafe_ptr())
+    var scratch = ScratchType(scratch_smem.unsafe_ptr().as_unsafe_any_origin())
 
     var q_s_frag = q_s_tile.tile[1, num_heads // thread_dim_y](
         ufloordiv(thread_idx.x, thread_dim_x), thread_idx.y
@@ -286,48 +286,36 @@ def fp8_index[
     depth: Int,
 ](
     output: TileTensor[DType.float32, ...],
-    q: TileTensor[dtype, ...],
+    q: TileTensor[mut=False, dtype, ...],
     q_s: TileTensor[DType.float32, ...],
-    k: TileTensor[dtype, ...],
-    k_s: TileTensor[DType.float32, ...],
-    valid_length: TileTensor[DType.uint32, ...],
-    cache_row_offsets: TileTensor[DType.uint32, ...],
+    k: TileTensor[mut=False, dtype, ...],
+    k_s: TileTensor[mut=False, DType.float32, ...],
+    valid_length: TileTensor[mut=False, DType.uint32, ...],
+    cache_row_offsets: TileTensor[mut=False, DType.uint32, ...],
     batch_size: Int,
     max_seq_len: Int,
     max_num_keys: Int,
     ctx: DeviceContext,
 ) raises:
-    # Construct LayoutTensors from TileTensor ptr + dimensions for
-    # RaggedMHAOperand, which requires LayoutTensor with Layout.row_major().
-    comptime k_layout = Layout.row_major(UNKNOWN_VALUE, 1, depth)
-    comptime ks_layout = Layout.row_major(UNKNOWN_VALUE)
-    comptime cro_layout = Layout.row_major(UNKNOWN_VALUE)
-
     var total_keys = Int(k.dim[0]())
     var cro_size = Int(cache_row_offsets.dim[0]())
 
-    var k_lt = LayoutTensor[dtype, k_layout, ImmutAnyOrigin](
-        rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](k.ptr),
-        RuntimeLayout[k_layout].row_major(Index(total_keys, 1, depth)),
-    )
-    var cache_row_offsets_lt = LayoutTensor[
-        DType.uint32, cro_layout, ImmutAnyOrigin
-    ](
+    var cro_buf = TileTensor(
         rebind[UnsafePointer[UInt32, ImmutAnyOrigin]](cache_row_offsets.ptr),
-        RuntimeLayout[cro_layout].row_major(Index(cro_size)),
+        row_major(Coord(cro_size)),
     )
 
-    var k_operand = RaggedMHAOperand(k_lt, cache_row_offsets_lt)
-
-    # K_s is 1D [total_keys], reshape to 3D [total_keys, 1, 1] for MHAOperand interface
-    comptime ks_3d_layout = Layout.row_major(UNKNOWN_VALUE, 1, 1)
-    var ks_operand = RaggedMHAOperand(
-        LayoutTensor[DType.float32, ks_3d_layout, ImmutAnyOrigin](
-            rebind[UnsafePointer[Float32, ImmutAnyOrigin]](k_s.ptr),
-            RuntimeLayout[ks_3d_layout].row_major(Index(total_keys, 1, 1)),
-        ),
-        cache_row_offsets_lt,
+    var k_buf = TileTensor(
+        rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](k.ptr),
+        row_major(Coord(total_keys, Idx[1], Idx[depth])),
     )
+    var k_operand = RaggedMHAOperand(k_buf, cro_buf)
+
+    var ks_buf = TileTensor(
+        rebind[UnsafePointer[Float32, ImmutAnyOrigin]](k_s.ptr),
+        row_major(Coord(total_keys, Idx[1], Idx[1])),
+    )
+    var ks_operand = RaggedMHAOperand(ks_buf, cro_buf)
 
     comptime block_tile_shape: InlineArray[Int, 2] = [512, 128]
     comptime BM = block_tile_shape[0]
@@ -353,7 +341,7 @@ def fp8_index[
         _is_cache_length_accurate=True,
     ]
 
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         output,
         q.as_immut(),
         q_s,
@@ -373,7 +361,7 @@ def fp8_index[
     )
 
 
-@__name(t"fp8_index_matmul_max_{dtype}", mangle=True)
+@__name(t"fp8_index_matmul_max_{dtype}")
 def _index_matmul_max[
     dtype: DType,
     output_layout: Layout,
@@ -444,7 +432,7 @@ def _index_matmul_max[
     o_batch[seq_idx, key_idx, head_idx] = accum
 
 
-@__name(t"fp8_index_reduce_logits", mangle=True)
+@__name(t"fp8_index_reduce_logits")
 def _reduce_logits[
     logits_layout: Layout,
     output_layout: Layout,
@@ -511,12 +499,12 @@ def fp8_index_naive[
     depth: Int,
 ](
     output: TileTensor[DType.float32, ...],
-    q: TileTensor[dtype, ...],
+    q: TileTensor[mut=False, dtype, ...],
     q_s: TileTensor[DType.float32, ...],
-    k: TileTensor[dtype, ...],
+    k: TileTensor[mut=False, dtype, ...],
     k_s: TileTensor[DType.float32, ...],
-    valid_length: TileTensor[DType.uint32, ...],
-    cache_row_offsets: TileTensor[DType.uint32, ...],
+    valid_length: TileTensor[mut=False, DType.uint32, ...],
+    cache_row_offsets: TileTensor[mut=False, DType.uint32, ...],
     batch_size: Int,
     max_seq_len: Int,
     max_num_keys: Int,
@@ -532,12 +520,10 @@ def fp8_index_naive[
     comptime ks_layout = Layout.row_major(UNKNOWN_VALUE)
     comptime output_layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
     comptime vl_layout = Layout.row_major(UNKNOWN_VALUE)
-    comptime cro_layout = Layout.row_major(UNKNOWN_VALUE)
 
     var total_seq_len = Int(q.dim[0]())
     var total_keys = Int(k.dim[0]())
     var vl_size = Int(valid_length.dim[0]())
-    var cro_size = Int(cache_row_offsets.dim[0]())
 
     var q_lt = LayoutTensor[dtype, q_layout, ImmutAnyOrigin](
         rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](q.ptr),
@@ -567,14 +553,17 @@ def fp8_index_naive[
         rebind[UnsafePointer[UInt32, ImmutAnyOrigin]](valid_length.ptr),
         RuntimeLayout[vl_layout].row_major(Index(vl_size)),
     )
-    var cache_row_offsets_lt = LayoutTensor[
-        DType.uint32, cro_layout, ImmutAnyOrigin
-    ](
-        rebind[UnsafePointer[UInt32, ImmutAnyOrigin]](cache_row_offsets.ptr),
-        RuntimeLayout[cro_layout].row_major(Index(cro_size)),
-    )
 
-    var k_operand = RaggedMHAOperand(k_lt, cache_row_offsets_lt)
+    var cro_size = Int(cache_row_offsets.dim[0]())
+    var cro_buf = TileTensor(
+        rebind[UnsafePointer[UInt32, ImmutAnyOrigin]](cache_row_offsets.ptr),
+        row_major(Coord(cro_size)),
+    )
+    var k_buf = TileTensor(
+        rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](k.ptr),
+        row_major(Coord(total_keys, Idx[1], Idx[depth])),
+    )
+    var k_operand = RaggedMHAOperand(k_buf, cro_buf)
 
     var logits_size = batch_size * max_seq_len * max_num_keys * num_heads
 
@@ -590,7 +579,8 @@ def fp8_index_naive[
     )
 
     var logits_tensor = LayoutTensor[
-        DType.float32, logits_layout, MutAnyOrigin
+        DType.float32,
+        logits_layout,
     ](logits_dev.unsafe_ptr(), logits_runtime_layout)
 
     comptime mm = _index_matmul_max[
@@ -602,7 +592,7 @@ def fp8_index_naive[
         type_of(k_operand),
     ]
 
-    ctx.enqueue_function[mm, mm](
+    ctx.enqueue_function[mm](
         logits_tensor,
         q_lt,
         q_s_lt,
@@ -625,7 +615,7 @@ def fp8_index_naive[
         type_of(k_operand),
     ]
 
-    ctx.enqueue_function[reduce_logits, reduce_logits](
+    ctx.enqueue_function[reduce_logits](
         logits_tensor,
         output_lt,
         k_s_lt,

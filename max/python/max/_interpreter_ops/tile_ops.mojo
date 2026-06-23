@@ -19,13 +19,16 @@ input[i0 % d0, i1 % d1, ...] where d_k = in_shape[k].
 CPU-only (mo.tile is MO_HostOnly).
 """
 
+from std.gpu.host import DeviceContext
 from std.os import abort
 from std.python import PythonObject
 from std.python.bindings import PythonModuleBuilder
 
 from std.algorithm.functional import elementwise, IndexList
+from std.utils.coord import Coord
 
 from op_utils import (
+    _get_ctx,
     _get_dtype,
     _get_shape,
     _make_ptr,
@@ -36,7 +39,7 @@ from op_utils import (
 
 
 @export
-def PyInit_tile_ops() -> PythonObject:
+def PyInit_tile_ops() abi("C") -> PythonObject:
     """Create a Python module with tile kernel function bindings."""
     try:
         var b = PythonModuleBuilder("tile_ops")
@@ -57,13 +60,14 @@ def PyInit_tile_ops() -> PythonObject:
 def tile_op[
     dtype: DType, //
 ](
-    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    in_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    out_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    in_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     in_shape: InlineArray[Int, MAX_RANK],
     out_strides: InlineArray[Int, MAX_RANK],
     in_strides: InlineArray[Int, MAX_RANK],
     rank: Int,
     total: Int,
+    ctx: DeviceContext,
 ) raises:
     """Copy input into output, tiling (repeating) along every dimension.
 
@@ -82,13 +86,14 @@ def tile_op[
         in_strides: Row-major strides of the input tensor.
         rank: Number of dimensions.
         total: Total number of output elements.
+        ctx: Device context (CPU).
     """
 
     @always_inline
     @parameter
     @__copy_capture(out_ptr, in_ptr, in_shape, out_strides, in_strides, rank)
-    def func[width: Int, rank_: Int, alignment: Int = 1](idx: IndexList[rank_]):
-        var i = idx[0]
+    def func[width: Int, alignment: Int = 1](idx: Coord):
+        var i = Int(idx[0].value())
         var rem = i
         var in_flat = 0
         for d in range(rank):
@@ -97,7 +102,7 @@ def tile_op[
             in_flat += (coord % in_shape[d]) * in_strides[d]
         out_ptr[i] = in_ptr[in_flat]
 
-    elementwise[func, simd_width=1](IndexList[1](total))
+    elementwise[func, simd_width=1](Coord(total), ctx)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -116,6 +121,7 @@ struct _TileBody(Dispatchable):
     var i_strides: InlineArray[Int, MAX_RANK]
     var rank: Int
     var total: Int
+    var ctx: DeviceContext
 
     def call[t: DType](self) raises -> None:
         tile_op(
@@ -126,6 +132,7 @@ struct _TileBody(Dispatchable):
             self.i_strides,
             self.rank,
             self.total,
+            self.ctx,
         )
 
 
@@ -151,10 +158,11 @@ def tile_dispatcher(
     var out_addr = Int(py=out_buffer._data_ptr())
     var in_addr = Int(py=in_buffer._data_ptr())
     var total = Int(py=out_buffer.num_elements)
+    var ctx = _get_ctx(device_context_ptr)
 
     dispatch_dtype(
         _TileBody(
-            out_addr, in_addr, in_shape, o_strides, i_strides, rank, total
+            out_addr, in_addr, in_shape, o_strides, i_strides, rank, total, ctx
         ),
         dtype,
     )

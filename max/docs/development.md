@@ -11,7 +11,7 @@ guide](https://docs.modular.com/max/get-started).
 ## Set up your environment
 
 First, make sure your system meets the
-[MAX system requirements](https://docs.modular.com/max/packages/install#system-requirements).
+[MAX system requirements](https://docs.modular.com/max/packages#system-requirements).
 The same requirements that apply to the `modular` package apply to developing in
 this repo.
 
@@ -33,6 +33,12 @@ code examples for package management and virtual environments.
 3. Optionally,
 [install the Mojo extension](https://marketplace.visualstudio.com/items?itemName=modular-mojotools.vscode-mojo)
 in VS Code or Cursor.
+
+4. Optionally, install the
+   [`ty` extension](https://marketplace.visualstudio.com/items?itemName=astral-sh.ty)
+   (`astral-sh.ty`) in VS Code for Python IntelliSense (go-to-definition,
+   autocomplete). The source path is already configured in `pyproject.toml`
+   under `[tool.ty.environment]`.
 
 That's it.
 
@@ -113,7 +119,7 @@ coverage:
 | Change type                                                      | Suggested command                                                                                                                       | Typical prerequisites                                 |
 |------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------|
 | Core Python logic and lightweight local regression               | `./bazelw test //max/tests/tests:cpu_local_tests`                                                                                       | No GPU; usually no `HF_TOKEN`                         |
-| Serve process-control unit tests                                 | `./bazelw test //max/tests/tests/serve/unit:tests`                                                                                      | CPU-only, but slower than the default local suite     |
+| Serve process-control unit tests                                 | `./bazelw test //max/tests/tests/serve:tests`                                                                                           | CPU-only, but slower than the default local suite     |
 | Pipeline library or architecture logic that should stay CPU-safe | `./bazelw test //max/tests/tests/pipelines/... //max/tests/integration/pipelines:tests`                                                 | Network may be needed for some pipeline tests         |
 | Tokenization or HF-backed pipeline integration                   | `./bazelw test //max/tests/integration/pipelines/tokenization:tests //max/tests/integration/architectures/internvl_network_tests:tests` | Hugging Face auth, network, and a GPU-capable machine |
 | GPU runtime, graph, or kernel-facing changes                     | `./bazelw test //max/tests/tests:test_interpreter_ops_gpu //max/tests/integration/pipelines:tests_gpu`                                  | GPU required; network often required                  |

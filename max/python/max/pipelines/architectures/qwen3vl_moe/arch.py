@@ -12,8 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 
 from max.graph.weights import WeightsFormat
-from max.interfaces import InputModality, PipelineTask
+from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
 from max.pipelines.lib import SupportedArchitecture
+from max.pipelines.modeling.types import InputModality, PipelineTask
 
 from .context import Qwen3VLTextAndVisionContext
 from .model import Qwen3VLModel
@@ -46,6 +47,9 @@ qwen3vl_moe_arch = SupportedArchitecture(
         "enable_chunked_prefill": False,
     },
     config=Qwen3VLConfig,
+    memory_planner=PagedMemoryPlanner.with_activation_reservation(
+        10 * 1024**3, always_signal_buffers=True
+    ),
 )
 
 # Register the same architecture under Qwen's non-MoE name for models like Qwen3-VL-4B-Instruct
@@ -73,4 +77,7 @@ qwen3vl_arch = SupportedArchitecture(
         "enable_chunked_prefill": False,
     },
     config=Qwen3VLConfig,
+    memory_planner=PagedMemoryPlanner.with_activation_reservation(
+        10 * 1024**3, always_signal_buffers=True
+    ),
 )

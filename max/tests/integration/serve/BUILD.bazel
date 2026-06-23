@@ -27,15 +27,14 @@ modular_py_test(
         "//conditions:default": [],
     }),  # FIXME: MOCO-2411
     deps = [
-        "//max/python/max/interfaces",
         "//max/python/max/pipelines",
-        "//max/python/max/pipelines/core",
+        "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
         "//max/python/max/serve",
         "//max/python/max/serve:config",
         "//max/python/max/serve/pipelines",
         "//max/python/max/serve/telemetry",
-        "//max/python/max/serve/worker_interface",
         requirement("async-asgi-testclient"),
         requirement("fastapi"),
         requirement("httpx"),
@@ -61,6 +60,12 @@ modular_py_test(
     env = {
         "PIPELINES_TESTDATA": "max/tests/integration/architectures/llama3/testdata",
     },
+    ignore_extra_deps = [
+        # Imported via string lookup
+        "//max/python/max/pipelines/architectures/llama3",
+        "//max/python/max/pipelines/architectures/llama3_modulev3",
+        "//max/python/max/pipelines/architectures/mpnet",
+    ],
     tags = [
         "no-sandbox",
         "requires-network",
@@ -74,16 +79,18 @@ modular_py_test(
     }),
     deps = [
         "//max/python/max/driver",
-        "//max/python/max/interfaces",
         "//max/python/max/pipelines",
-        "//max/python/max/pipelines/core",
+        "//max/python/max/pipelines/architectures/llama3",
+        "//max/python/max/pipelines/architectures/llama3_modulev3",
+        "//max/python/max/pipelines/architectures/mpnet",
+        "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
         "//max/python/max/serve",
         "//max/python/max/serve:config",
         "//max/python/max/serve/pipelines",
         "//max/python/max/serve/schemas",
         "//max/python/max/serve/telemetry",
-        "//max/python/max/serve/worker_interface",
         "//max/tests/integration:hf_repo_lock",
         "//max/tests/integration/test_common:test_data",
         requirement("async-asgi-testclient"),
@@ -104,7 +111,7 @@ modular_py_test(
     ],
     exec_properties = {
         # Ensure the test has at least 16GB of GPU memory available.
-        "test.resources:gpu-memory": "16",
+        "test.resources:gpu-memory": "19",
     },
     gpu_constraints = [
         "//:has_gpu",
@@ -165,17 +172,16 @@ modular_py_test(
     ],
     deps = [
         "//max/python/max/driver",
-        "//max/python/max/interfaces",
         "//max/python/max/pipelines",
-        "//max/python/max/pipelines/core",
+        "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
         "//max/python/max/serve",
         "//max/python/max/serve:config",
         "//max/python/max/serve/mocks",
         "//max/python/max/serve/pipelines",
         "//max/python/max/serve/schemas",
         "//max/python/max/serve/telemetry",
-        "//max/python/max/serve/worker_interface",
         "//max/tests/integration/test_common:test_data",
         requirement("async-asgi-testclient"),
         requirement("pytest-asyncio"),
@@ -216,6 +222,10 @@ modular_py_test(
     srcs = [
         "test_max_serve_e2e.py",
     ],
+    ignore_extra_deps = [
+        # Imported at runtime via string lookup
+        "//max/python/max/pipelines/architectures/llama3",
+    ],
     tags = [
         "requires-network",
     ],
@@ -228,6 +238,7 @@ modular_py_test(
         "//max/python/max/driver",
         "//max/python/max/entrypoints",
         "//max/python/max/pipelines",
+        "//max/python/max/pipelines/architectures/llama3",
         "//max/python/max/pipelines/lib",
         "//max/python/max/serve:config",
         requirement("httpx"),

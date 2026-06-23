@@ -17,10 +17,10 @@ from max.driver import CPU, Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
-from max.kv_cache import PagedKVCacheManager
 from max.nn.attention import MHAMaskVariant
 from max.nn.kernels import flare_mla_prefill_ragged
 from max.nn.kv_cache import KVCacheParams, PagedCacheValues
+from max.pipelines.kv_cache import PagedKVCacheManager
 from test_common.context_utils import create_text_context
 
 
@@ -75,7 +75,7 @@ def test_kv_cache_paged_mla_prefill(gpu_session: InferenceSession) -> None:
                 input_row_offsets_type,
                 k_buffer_type,
                 v_buffer_type,
-                *kv_params.get_symbolic_inputs().flatten(),
+                *kv_params.flattened_kv_inputs(),
             ],
         ) as g:
             (
@@ -120,7 +120,7 @@ def test_kv_cache_paged_mla_prefill(gpu_session: InferenceSession) -> None:
     for i in range(batch_size):
         context = create_text_context(np.empty(prompt_lens[i]))
         kv_manager.claim(context.request_id, replica_idx=0)
-        kv_manager.alloc(context, replica_idx=0, num_steps=1)
+        kv_manager.alloc(context, replica_idx=0)
         batch.append(context)
 
     input_row_offsets = Buffer(
@@ -134,7 +134,7 @@ def test_kv_cache_paged_mla_prefill(gpu_session: InferenceSession) -> None:
     input_row_offsets[batch_size] = running_sum
     input_row_offsets = input_row_offsets.to(device)
 
-    kv_runtime_inputs = kv_manager.runtime_inputs([batch])
+    kv_runtime_inputs = kv_manager.runtime_inputs_for_leaf([batch])
     model = session.load(g)
 
     input_tensor = Buffer.zeros(

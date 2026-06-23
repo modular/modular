@@ -294,6 +294,7 @@ struct TileScheduler[
     comptime ClcBarrierArray = Self.UnderlyingScheduler.ClcBarrierArray
     comptime ThrottleBarrierArray = Self.UnderlyingScheduler.ThrottleBarrierArray
 
+    @__allow_legacy_any_origin_fields
     var locks_ptr: UnsafePointer[Int32, MutAnyOrigin]
     var scheduler: Self.UnderlyingScheduler
     var total_k_tiles: UInt32
@@ -599,13 +600,13 @@ struct TileScheduler[
         var warp_id_y = 0 if Self.BM == 128 else ufloordiv(local_warp_id, 2)
 
         var reduction_frag = workspace_tile.tile[REDUCTION_BM, REDUCTION_BN](
-            Coord(Idx(warp_id_x), Idx(warp_id_y))
+            Coord(warp_id_x, warp_id_y)
         )
         var reduction_upper = reduction_frag.tile[16, REDUCTION_BN](
-            Coord(Idx(0), Idx(0))
+            Coord(Idx[0], Idx[0])
         )
         var reduction_lower = reduction_frag.tile[16, REDUCTION_BN](
-            Coord(Idx(1), Idx(0))
+            Coord(Idx[1], Idx[0])
         )
         var stage_addr = tmem  # Track address for iteration
 

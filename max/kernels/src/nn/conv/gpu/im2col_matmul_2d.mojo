@@ -42,7 +42,7 @@ from nn.conv.conv_utils import elementwise_simd_epilogue_type
 # =========================================================================
 
 
-@__name(t"conv2d_im2col_nhwc_{dtype}", mangle=True)
+@__name(t"conv2d_im2col_nhwc_{dtype}")
 def _im2col_nhwc_kernel[
     dtype: DType,
 ](
@@ -111,7 +111,7 @@ def _im2col_nhwc_kernel[
         k += block_dim.x
 
 
-@__name(t"conv2d_transpose_filter_to_nk_{dtype}_{filter_is_fcrs}", mangle=True)
+@__name(t"conv2d_transpose_filter_to_nk_{dtype}_{filter_is_fcrs}")
 def _transpose_filter_to_nk[
     dtype: DType,
     filter_is_fcrs: Bool,
@@ -157,7 +157,8 @@ def dispatch_im2col_matmul_conv2d[
     input_type: DType,
     filter_type: DType,
     output_type: DType,
-    filter_is_fcrs: Bool,
+    //,
+    filter_is_fcrs: Bool = False,
     maybe_epilogue_func: Optional[elementwise_simd_epilogue_type] = None,
     m_tile_byte_budget: Int = _DEFAULT_M_TILE_BYTE_BUDGET,
 ](
@@ -253,10 +254,7 @@ def dispatch_im2col_matmul_conv2d[
         C_dim = Int(filter.dim[2]())
         F_dim = Int(filter.dim[3]())
 
-    ctx.enqueue_function[
-        _transpose_filter_to_nk[filter_type, filter_is_fcrs],
-        _transpose_filter_to_nk[filter_type, filter_is_fcrs],
-    ](
+    ctx.enqueue_function[_transpose_filter_to_nk[filter_type, filter_is_fcrs]](
         filter.ptr,
         filter_nk_ptr,
         R_dim,
@@ -274,13 +272,11 @@ def dispatch_im2col_matmul_conv2d[
     var m_tile_cap = (
         m_tile_by_budget if m_tile_by_budget > _MIN_M_TILE else _MIN_M_TILE
     )
-    var num_tiles: Int
     var m_tile: Int
     if full_M <= m_tile_cap:
-        num_tiles = 1
         m_tile = full_M
     else:
-        num_tiles = ceildiv(full_M, m_tile_cap)
+        var num_tiles = ceildiv(full_M, m_tile_cap)
         m_tile = ceildiv(full_M, num_tiles)
 
     var im2col_buf = ctx.enqueue_create_buffer[input_type](m_tile * K)
@@ -295,10 +291,7 @@ def dispatch_im2col_matmul_conv2d[
 
         # Block-per-row: one block per output pixel, threads cooperate on K.
         comptime im2col_block = 256
-        ctx.enqueue_function[
-            _im2col_nhwc_kernel[input_type],
-            _im2col_nhwc_kernel[input_type],
-        ](
+        ctx.enqueue_function[_im2col_nhwc_kernel[input_type]](
             im2col_ptr,
             input.ptr,
             batch,
@@ -319,13 +312,11 @@ def dispatch_im2col_matmul_conv2d[
             block_dim=im2col_block,
         )
 
-        var a_tt = TileTensor(
-            im2col_ptr, row_major(Coord(Idx(m_count), Idx(K)))
-        )
-        var b_tt = TileTensor(filter_nk_ptr, row_major(Coord(Idx(N), Idx(K))))
+        var a_tt = TileTensor(im2col_ptr, row_major(Coord(m_count, K)))
+        var b_tt = TileTensor(filter_nk_ptr, row_major(Coord(N, K)))
         # NHWC rows are contiguous in the flattened [M, N] layout.
         var c_ptr = output.ptr + m_offset * N
-        var c_tt = TileTensor(c_ptr, row_major(Coord(Idx(m_count), Idx(N))))
+        var c_tt = TileTensor(c_ptr, row_major(Coord(m_count, N)))
 
         comptime if maybe_epilogue_func:
             comptime epilogue_4d = maybe_epilogue_func.value()
@@ -335,7 +326,7 @@ def dispatch_im2col_matmul_conv2d[
             @__copy_capture(HW_out, W_out, m_offset)
             def _gemm_epilogue[
                 _dtype: DType,
-                _width: Int,
+                _width: SIMDSize,
                 *,
                 alignment: Int = 1,
             ](coords_2d: IndexList[2], val: SIMD[_dtype, _width]):

@@ -74,8 +74,8 @@ from ...structuring import SMemTile
 def distance[
     dtype: DType, //
 ](
-    arg0: UnsafePointer[Scalar[dtype], _],
-    arg1: UnsafePointer[Scalar[dtype], _],
+    arg0: UnsafePointer[mut=False, Scalar[dtype], _],
+    arg1: UnsafePointer[mut=False, Scalar[dtype], _],
 ) -> Int:
     return (Int(arg0) - Int(arg1)) // size_of[dtype]()
 
@@ -125,8 +125,10 @@ def warp_split_k_reduction[
             MutAnyOrigin,
             address_space=AddressSpace.SHARED,
         ](
-            smem.bitcast[Scalar[c_type]]()
-            + ((warp_k_part_id % i_red) * BM * BN)
+            (
+                smem.bitcast[Scalar[c_type]]()
+                + ((warp_k_part_id % i_red) * BM * BN)
+            ).as_unsafe_any_origin()
         ).vectorize[
             1, c_frag_size
         ]()
@@ -696,7 +698,6 @@ def multistage_mma[
 
 @__name(
     t"multistage_gemm_kernel_{c_type}_{a_type}_{b_type}_{transpose_b}",
-    mangle=True,
 )
 def multistage_gemm_kernel[
     c_type: DType,
@@ -725,14 +726,16 @@ def multistage_gemm_kernel[
     var c = c_tt.to_layout_tensor()
     var a = a_tt.to_layout_tensor()
     var b = b_tt.to_layout_tensor()
-    # Hold on adding fp16 because it could have different precisions than bf16.
+    # float16 shares bf16's MMA path here; its accumulation precision can
+    # differ from bf16, so it is opt-in via the float16 quantization encoding.
     comptime assert (
-        a_type in (DType.float32, DType.bfloat16) and a_type == b_type
+        a_type in (DType.float32, DType.bfloat16, DType.float16)
+        and a_type == b_type
     ) or (
         a_type in (DType.float8_e4m3fn, DType.float8_e5m2)
         and a_type == b_type
         and c_type == DType.float32
-    ), "Pipeline gemm only supports tf32, BF16, E4M3, and E5M2 mma"
+    ), "Pipeline gemm only supports tf32, F16, BF16, E4M3, and E5M2 mma"
     comptime simd_size = simd_width_of[c_type]()
 
     var M: Int = c.dim[0]()
@@ -814,7 +817,10 @@ def multistage_gemm_kernel[
         circular=True,
     ]
     var b_smem_iter = IteratorTypeB(
-        b_smem + IteratorTypeB.linear_uint_type(warp_k_part_id * b_smem_size),
+        (
+            b_smem
+            + IteratorTypeB.linear_uint_type(warp_k_part_id * b_smem_size)
+        ).as_unsafe_any_origin(),
         IteratorTypeB.linear_uint_type(b_smem_size),
     )
 
@@ -964,7 +970,11 @@ def multistage_gemm_kernel[
             Layout.row_major(WM, WN),
             MutAnyOrigin,
             address_space=AddressSpace.SHARED,
-        ](a_smem.bitcast[Scalar[c_type]]() + warp_id * WM * WN)
+        ](
+            (
+                a_smem.bitcast[Scalar[c_type]]() + warp_id * WM * WN
+            ).as_unsafe_any_origin()
+        )
 
         copy_local_to_shared[
             thread_layout=Layout.row_major(8, 4),
@@ -1078,7 +1088,6 @@ def multistage_gemm_kernel[
 )
 @__name(
     t"multistage_gemm_split_k_kernel_{c_type}_{a_type}_{b_type}_{transpose_b}",
-    mangle=True,
 )
 def multistage_gemm_split_k_kernel[
     c_type: DType,

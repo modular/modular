@@ -9,7 +9,7 @@ The `benchmark_serving.py` script is adapted from
 [vLLM](https://github.com/vllm-project/vllm/blob/main/benchmarks),
 licensed under Apache 2.0. We forked this script to ensure consistency with
 vLLM's measurement methodology and extended it with features we found helpful,
-such as client-side GPU metric collection via `max.diagnostics`.
+such as client-side GPU metric collection via `max.profiler`.
 
 `benchmark_serving.py` supports:
 

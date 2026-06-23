@@ -1,4 +1,5 @@
-load("//bazel:api.bzl", "modular_py_binary", "modular_py_test", "requirement")
+load("//bazel:api.bzl", "modular_py_binary", "modular_py_library", "modular_py_test", "requirement")
+load("//max/python/max/pipelines/architectures:all_arches.bzl", "ALL_ARCHITECTURES")
 
 package(default_visibility = [
     "//:__pkg__",
@@ -95,10 +96,27 @@ modular_py_binary(
         # required by models that use Expert Parallelism.
         "MODULAR_SHMEM_LIB_DIR": "../+http_archive+nvshmem_prebuilt",
     },
+    ignore_extra_deps = ALL_ARCHITECTURES + [
+        # accelerate isn't imported here directly, but transformers v5
+        # requires it at from_pretrained time in the child process this
+        # binary spawns (see deps comment below).
+        requirement("accelerate"),
+    ],
+    # Expose this package as an import root so out-of-package entrypoints
+    # (e.g. //max_private/minimax_m3:verify_minimax_m3) can `from
+    # verify_pipelines import main`.
+    imports = ["."],
+    # Target-level visibility (the package default cannot list //max_private).
+    # Mirrors the package default plus //max_private so private archs can host
+    # their own logit-verification entrypoints that reuse this driver.
+    visibility = [
+        "//:__pkg__",
+        "//SDK/integration-test:__subpackages__",
+        "//max/tests:__subpackages__",
+        "//max_private:__subpackages__",
+        "//oss/modular/max/tests:__subpackages__",
+    ],
     deps = [
-        "//max/tests/integration/tools:transformers_v4",
-        "//max/tests/integration/tools:huggingface_hub_v0",
-        # Don't sort the above deps, see generate_llm_logits
         ":verify",
         "//max/python/max/pipelines/lib",
         "//max/tests/integration/accuracy/logit_verification:logit_verification_config",
@@ -110,9 +128,14 @@ modular_py_binary(
         "//max/tests/integration/test_common:process_isolation",
         "//max/tests/integration/test_common:storage",
         "@rules_python//python/runfiles",
+        # transformers v5 requires this for device_map/torch.device loading.
+        # verify_pipelines spawns generate_llm_logits as a child process,
+        # which inherits this binary's runfiles tree, so accelerate must
+        # be wired in here directly.
+        requirement("accelerate"),
         requirement("numpy"),
         requirement("pillow"),
-    ],
+    ] + ALL_ARCHITECTURES,
 )
 
 modular_py_test(
@@ -174,7 +197,14 @@ modular_py_test(
         "MODULAR_SHMEM_LIB_DIR": "../+http_archive+nvshmem_prebuilt",
     },
     main = "test_verify_pipelines.py",
-    tags = ["skip-external-ci"],  # Will not fix, see QUA-61
+    # SDLC-3497: MAX OLMo is not yet transformers v5 compatible; the v4
+    # wheel hack that masked this on main was removed in this branch.
+    # "manual" excludes it from automated runs; re-enable once OLMo MAX
+    # is fixed for transformers >=5 (tracked separately).
+    tags = [
+        "manual",
+        "skip-external-ci",
+    ],  # skip-external-ci: QUA-61
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
         "//:asan": ["@platforms//:incompatible"],  # FIXME MODELS-1202: Disabled due to asan timeout
@@ -182,8 +212,6 @@ modular_py_test(
     }),
     deps = [
         ":verify_pipelines",
-        "//max/tests/integration/tools:huggingface_hub_v0",
-        "//max/tests/integration/tools:transformers_v4",
         requirement("click"),
     ],
 )
@@ -207,6 +235,29 @@ modular_py_test(
     ],
 )
 
+modular_py_binary(
+    name = "check_logit_verification_eligibility",
+    testonly = True,
+    srcs = ["check_logit_verification_eligibility.py"],
+    data = ["logit_verification_ignore_list.yaml"],
+    imports = ["."],
+    deps = [
+        requirement("click"),
+        requirement("pyyaml"),
+    ],
+)
+
+modular_py_test(
+    name = "test_check_logit_verification_eligibility",
+    size = "small",
+    srcs = ["test_check_logit_verification_eligibility.py"],
+    imports = ["."],
+    deps = [
+        ":check_logit_verification_eligibility",
+        requirement("click"),
+    ],
+)
+
 modular_py_test(
     name = "test_verify",
     size = "large",
@@ -222,6 +273,10 @@ modular_py_test(
     name = "test_verify_pipelines_results",
     size = "large",
     srcs = ["test_verify_pipelines_results.py"],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2411
     deps = [
         ":verify_pipelines",
         requirement("click"),
@@ -347,11 +402,18 @@ modular_py_test(
     ],
 )
 
+modular_py_library(
+    name = "pipeline_matrix",
+    srcs = ["pipeline_matrix.py"],
+    imports = ["."],
+)
+
 modular_py_binary(
     name = "dataset_eval_matrix",
     srcs = ["dataset_eval_matrix.py"],
     imports = ["."],
     deps = [
+        ":pipeline_matrix",
         requirement("click"),
     ],
 )
@@ -368,14 +430,82 @@ modular_py_test(
 )
 
 modular_py_binary(
+    name = "llm_fuzz_matrix",
+    srcs = ["llm_fuzz_matrix.py"],
+    imports = ["."],
+    deps = [
+        ":pipeline_matrix",
+        requirement("click"),
+    ],
+)
+
+modular_py_test(
+    name = "test_llm_fuzz_matrix",
+    size = "small",
+    srcs = ["test_llm_fuzz_matrix.py"],
+    imports = ["."],
+    deps = [
+        ":llm_fuzz_matrix",
+        requirement("click"),
+    ],
+)
+
+modular_py_binary(
+    name = "llm-fuzz",
+    testonly = True,
+    srcs = glob(
+        ["llm_fuzz/**/*.py"],
+        exclude = ["llm_fuzz/.venv/**"],
+    ),
+    imports = ["llm_fuzz"],
+    main = "llm_fuzz/fuzz.py",
+    visibility = ["//max_private:__subpackages__"],
+    deps = [
+        requirement("openai"),
+        requirement("jsonschema"),
+        requirement("pydantic"),
+    ],
+)
+
+modular_py_library(
+    name = "pipelines_llm_fuzz_lib",
+    testonly = True,
+    srcs = ["pipelines_llm_fuzz.py"],
+    imports = ["."],
+    visibility = ["//max_private:__subpackages__"],
+    deps = [
+        ":pipelines-lm-eval",
+        "@rules_python//python/runfiles",
+        requirement("click"),
+        requirement("requests"),
+    ],
+)
+
+modular_py_binary(
+    name = "pipelines-llm-fuzz",
+    testonly = True,
+    srcs = ["pipelines_llm_fuzz_main.py"],
+    data = [
+        ":llm-fuzz",
+        "//max/python/max/entrypoints:pipelines",
+    ],
+    env = {
+        # required by models that use Expert Parallelism.
+        "MODULAR_SHMEM_LIB_DIR": "../+http_archive+nvshmem_prebuilt",
+    },
+    main = "pipelines_llm_fuzz_main.py",
+    deps = [":pipelines_llm_fuzz_lib"],
+)
+
+modular_py_binary(
     name = "pipelines_mteb",
     testonly = True,
     srcs = ["pipelines_mteb.py"],
     data = ["//max/python/max/entrypoints:pipelines"],
     deps = [
         "//max/python/max/entrypoints",
-        "//max/python/max/interfaces",
         "//max/python/max/pipelines",
+        "//max/python/max/pipelines/modeling",
         requirement("click"),
         requirement("numpy"),
         requirement("mteb"),

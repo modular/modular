@@ -175,8 +175,8 @@ def _cblas_f32[
     alpha: Float32,
     beta: Float32,
     c_ptr: UnsafePointer[mut=True, Float32, ...],
-    a_ptr: UnsafePointer[Float32, ...],
-    b_ptr: UnsafePointer[Float32, ...],
+    a_ptr: UnsafePointer[mut=False, Float32, ...],
+    b_ptr: UnsafePointer[mut=False, Float32, ...],
 ):
     cblas_gemm_fn(
         _CBLASOrder.ROW_MAJOR,
@@ -212,8 +212,8 @@ def _cblas_f32[
     alpha: Float32,
     beta: Float32,
     c_ptr: UnsafePointer[mut=True, Float32, ...],
-    a_ptr: UnsafePointer[Float32, ...],
-    b_ptr: UnsafePointer[Float32, ...],
+    a_ptr: UnsafePointer[mut=False, Float32, ...],
+    b_ptr: UnsafePointer[mut=False, Float32, ...],
 ) raises:
     var cblas_gemm = get_cblas_f32_function()
 
@@ -265,11 +265,11 @@ def apple_gemv[
     var N = Int(b.dim[0]()) if transpose_b or b_packed else Int(b.dim[1]())
 
     var transposed_b_ptr = Optional[
-        UnsafePointer[Scalar[b.dtype], MutExternalOrigin]
+        UnsafePointer[Scalar[b.dtype], MutUntrackedOrigin]
     ]()
     var transposed_b = TileTensor(
-        UnsafePointer[Scalar[b.dtype], MutExternalOrigin].unsafe_dangling(),
-        row_major(Coord(Idx(Int(0)), Idx(Int(0)))),
+        UnsafePointer[Scalar[b.dtype], MutUntrackedOrigin].unsafe_dangling(),
+        row_major(Coord(Int(0), Int(0))),
     )
 
     # If both b_packed and transpose_b are False, we need to transpose B at
@@ -281,7 +281,7 @@ def apple_gemv[
         transposed_b = TileTensor(
             allocated_ptr,
             row_major(
-                Coord(Idx(transposed_b_shape[0]), Idx(transposed_b_shape[1]))
+                Coord(Int(transposed_b_shape[0]), Int(transposed_b_shape[1]))
             ),
         )
 
@@ -311,16 +311,14 @@ def apple_gemv[
 
             @always_inline
             def compute_fn[width: Int](k: Int) {a, b, c, mut}:
-                var a_val = a.load[width=width](Coord(Idx(0), Idx(k))).cast[
+                var a_val = a.load[width=width](Coord(Idx[0], k)).cast[
                     c.dtype
                 ]()
                 var b_val = (
-                    b.load[width=width](Coord(Idx(n), Idx(k))).cast[
-                        c.dtype
-                    ]() if b_packed
+                    b.load[width=width](Coord(n, k)).cast[c.dtype]() if b_packed
                     or (not b_packed and transpose_b) else transposed_b.load[
                         width=width
-                    ](Coord(Idx(n), Idx(k))).cast[c.dtype]()
+                    ](Coord(n, k)).cast[c.dtype]()
                 )
 
                 comptime if width == 1:
@@ -344,7 +342,7 @@ def apple_gemv[
                 comptime func = elementwise_lambda_fn.value()
                 func[c.dtype, 1](Index(0, n), val)
             else:
-                c.store[width=1](Coord(Idx(0), Idx(n)), val)
+                c.store[width=1](Coord(Idx[0], n), val)
 
     # TODO: Experiment with this.
     comptime parallelism_grain_size = 16
@@ -370,8 +368,8 @@ def apple_matmul[
 ](
     cblas_gemm_fn: cblas_gemm_type,
     c: TileTensor[mut=True, ...],
-    a: TileTensor[...],
-    b: TileTensor[...],
+    a: TileTensor[mut=False, ...],
+    b: TileTensor[mut=False, ...],
 ) raises:
     comptime assert c.flat_rank >= 2
     comptime assert a.flat_rank >= 2
@@ -414,15 +412,18 @@ def apple_matmul[
         @always_inline
         @parameter
         def epilogue_on_col_chunk[
-            simd_width: Int, rank: Int, alignment: Int = 1
-        ](idx: IndexList[rank]):
-            var c_coord = IndexList[2](idx[0], idx[1])
-            var c_val = c.load[width=simd_width](
-                Coord(Idx(idx[0]), Idx(idx[1]))
+            simd_width: Int, alignment: Int = 1
+        ](idx: Coord):
+            var c_val = c.load[width=simd_width](idx)
+            epilogue[c.dtype, simd_width](
+                Index(idx[0].value(), idx[1].value()), c_val
             )
-            epilogue[c.dtype, simd_width](c_coord, c_val)
 
-        elementwise[epilogue_on_col_chunk, simd_size](IndexList[2](m, n))
+        # TODO: thread a DeviceContext through the matmul stack so we can
+        # drop this local construction.
+        elementwise[epilogue_on_col_chunk, simd_size](
+            (m, n), DeviceContext(api="cpu")
+        )
 
 
 # apple_matmul used by all matmuls except apple_batched_matmul
@@ -431,7 +432,11 @@ def apple_matmul[
     *,
     transpose_b: Bool = False,
     elementwise_lambda_fn: Optional[matmul_elementwise_epilogue_type] = None,
-](c: TileTensor[mut=True, ...], a: TileTensor[...], b: TileTensor[...]) raises:
+](
+    c: TileTensor[mut=True, ...],
+    a: TileTensor[mut=False, ...],
+    b: TileTensor[mut=False, ...],
+) raises:
     comptime assert (
         a.dtype == b.dtype == c.dtype == DType.float32
     ), "unsupported type in apple accelerate"
@@ -457,8 +462,8 @@ def apple_batched_matmul[
     ] = None,
 ](
     c: TileTensor[mut=True, ...],
-    a: TileTensor[...],
-    b: TileTensor[...],
+    a: TileTensor[mut=False, ...],
+    b: TileTensor[mut=False, ...],
     c_shape_idx: IndexList[rank],
 ) raises:
     comptime assert rank >= 3, "expecting at least rank-3 TileTensor"
@@ -486,15 +491,15 @@ def apple_batched_matmul[
     for batch in range(batch_size):
         var c2 = TileTensor(
             c.ptr + batch * c_stride,
-            row_major(Coord(Idx(c_rows), Idx(c_cols))),
+            row_major(Coord(c_rows, c_cols)),
         )
         var a2 = TileTensor(
             a.ptr + batch * a_stride,
-            row_major(Coord(Idx(a_rows), Idx(a_cols))),
+            row_major(Coord(a_rows, a_cols)),
         )
         var b2 = TileTensor(
             b.ptr + batch * b_stride,
-            row_major(Coord(Idx(b_rows), Idx(b_cols))),
+            row_major(Coord(b_rows, b_cols)),
         )
 
         var batch_coords = _get_start_indices_of_nth_subvolume[2](

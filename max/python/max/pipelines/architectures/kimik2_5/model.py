@@ -14,11 +14,12 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from collections.abc import Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from functools import cached_property
-from typing import Any
+from typing import Any, ClassVar
 
 import numpy as np
 import numpy.typing as npt
@@ -34,14 +35,14 @@ from max.engine import InferenceSession, Model
 from max.graph import BufferType, DeviceRef, Graph, Module, TensorType
 from max.graph.buffer_utils import cast_tensor_to
 from max.graph.weights import WeightData, Weights, WeightsAdapter
-from max.interfaces.request import RequestID
 from max.nn.comm import Signals
 from max.nn.comm.ep import EPCommInitializer, EPConfig
-from max.nn.comm.ep.ep_config import (
-    calculate_ep_max_tokens_per_rank,
-    estimate_ep_memory_usage,
+from max.nn.comm.ep.ep_config import calculate_ep_max_tokens_per_rank
+from max.nn.kv_cache import (
+    KVCacheInputs,
+    KVCacheInputsInterface,
+    KVCacheParamInterface,
 )
-from max.nn.kv_cache import KVCacheInputs, KVCacheParamInterface
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.lib import (
     AlwaysSignalBuffersMixin,
@@ -51,23 +52,28 @@ from max.pipelines.lib import (
     ModelOutputs,
     PipelineConfig,
     PipelineModelWithKVCache,
-    upper_bounded_default,
 )
-from max.pipelines.lib.config.config_enums import (
-    is_float4_encoding,
-    supported_encoding_dtype,
-)
-from max.pipelines.lib.quant import parse_quant_config
 from max.pipelines.lib.utils import compute_data_parallel_splits
-from max.pipelines.lib.vision_encoder_cache import VisionEncoderCache
+from max.pipelines.lib.vision_encoder_cache import (
+    VisionEncoderCache,
+    concat_device_buffers,
+)
+from max.pipelines.modeling.config_enums import is_float4_encoding
+from max.pipelines.request import RequestID
+from max.pipelines.weights.quant import parse_quant_config
 from max.support.algorithm import flatten2d
-from max.support.human_readable_formatter import to_human_readable_bytes
 from transformers import AutoConfig
 
 from ..deepseekV3.model import DeepseekV3Inputs
 from .context import KimiK2_5TextAndVisionContext
+from .kimi_nvfp4_policy import infer_kimi_nvfp4_weight_flags
 from .kimik2_5 import KimiK2_5
+from .memory_planner import _vision_encoder_token_budget, _vision_merge_sq
 from .model_config import KimiK2_5Config, KimiK2_5TextConfig
+from .weight_adapters import (
+    preshuffle_mxfp4_b_experts,
+    preshuffle_mxfp4_b_scales,
+)
 
 logger = logging.getLogger("max.pipelines")
 
@@ -148,7 +154,17 @@ class KimiK2_5Model(
 ):
     """A Kimi-K2.5 pipeline model for multimodal text generation."""
 
-    _GRAPH_CAPTURE_HEADROOM_BYTES_PER_DEVICE = 8 * 1024**3
+    model_config_cls: ClassVar[type[Any]] = KimiK2_5Config
+
+    """Conservative coefficient for vision encoder peak transient memory.
+
+    Per-patch peak transient working memory in the encoder, in units of
+    ``vt_hidden_size`` bytes. Captures the in-layer attention working set
+    (packed QKV bf16 + fp32 Q/K upcast in RoPE + attention output + residual)
+    which dominates the MLP working set for the Kimi-VL config. See
+    ``layers/vision/attention.py::_apply_rope`` for the fp32 upcast that drives
+    this; rounded up from ~16x to leave headroom.
+    """
 
     vision_model: Model
     """The compiled vision model for processing images."""
@@ -221,23 +237,6 @@ class KimiK2_5Model(
             cache_dtype=cache_dtype,
         )
 
-    @classmethod
-    def calculate_max_seq_len(
-        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
-    ) -> int:
-        try:
-            return upper_bounded_default(
-                upper_bound=huggingface_config.text_config.max_position_embeddings,
-                default=pipeline_config.model.max_length,
-            )
-        except ValueError as e:
-            raise ValueError(
-                "Unable to infer max_length for DeepseekV2, the provided "
-                f"max_length ({pipeline_config.model.max_length}) exceeds the "
-                f"model's max_seq_len "
-                f"({huggingface_config.text_config.max_position_embeddings})."
-            ) from e
-
     def _create_model_config(
         self, state_dict: dict[str, WeightData]
     ) -> KimiK2_5TextConfig:
@@ -271,6 +270,30 @@ class KimiK2_5Model(
         dtype = self.dtype
         quant_config = parse_quant_config(config, state_dict, dtype)
 
+        # Kimi K2.5 expects expert B weights in the 5D layout that the AMD
+        # `mxfp4_grouped_matmul_amd_preb` kernel reads, and the per-expert
+        # B-scales in the 4D-cell layout the same kernel addresses via
+        # `Shuffler.scale_4d_byte_off`. The OG weight adapter only renames
+        # keys, so do both CPU preshuffles here and flip the QuantConfig
+        # flag so `MoEQuantized` dispatches to the preb path. Must stay in
+        # lockstep with the weight adapter.
+        if quant_config is not None and quant_config.is_mxfp4:
+            preshuffle_mxfp4_b_experts(state_dict)
+            preshuffle_mxfp4_b_scales(state_dict)
+            quant_config = replace(quant_config, mxfp4_preshuffled_b=True)
+        shared_experts_weight_dtype, dense_mlp_layers_without_quant = (
+            infer_kimi_nvfp4_weight_flags(
+                state_dict,
+                first_k_dense_replace=config.first_k_dense_replace,
+                quant_config=quant_config,
+            )
+        )
+        if quant_config is not None and shared_experts_weight_dtype is not None:
+            quant_config = replace(
+                quant_config,
+                shared_experts_weight_dtype=shared_experts_weight_dtype,
+            )
+
         # Check if EP should be configured
         ep_size = self.pipeline_config.runtime.ep_size
         if ep_size == 1:
@@ -278,8 +301,10 @@ class KimiK2_5Model(
         else:
             if ep_size % len(self.devices) != 0:
                 raise ValueError(
-                    "If you are running with expert parallelism, ep_size must"
-                    " be set to the total number of GPUs across nodes."
+                    f"ep_size={ep_size} is not divisible by the number of GPUs"
+                    f" on this node ({len(self.devices)}). ep_size must equal"
+                    f" n_gpus_per_node * n_nodes. For a single-node deployment"
+                    f" set ep_size={len(self.devices)}."
                 )
             n_nodes = ep_size // len(self.devices)
 
@@ -306,9 +331,14 @@ class KimiK2_5Model(
                 use_allreduce=self.pipeline_config.runtime.ep_use_allreduce,
             )
 
-            if config.n_shared_experts == 1 and not is_mxfp4:
-                # Only enable shared expert fusion if the shared expert is of
-                # the same shape and dtype as routed experts.
+            if (
+                config.n_shared_experts == 1
+                and not is_mxfp4
+                and quant_config is not None
+                and quant_config.shared_experts_use_quant(dtype)
+            ):
+                # Only enable shared expert fusion when shared tensors match
+                # routed NVFP4 experts (false for nvidia/Kimi-K2.6-NVFP4).
                 ep_kwargs["fused_shared_expert"] = True
 
             if quant_config is not None:
@@ -343,6 +373,9 @@ class KimiK2_5Model(
         model_config.ep_config = ep_config
         model_config.graph_mode = graph_mode
         model_config.data_parallel_degree = data_parallel_degree
+        model_config.dense_mlp_layers_without_quant = (
+            dense_mlp_layers_without_quant
+        )
         model_config.return_logits = self.return_logits
         model_config.return_hidden_states = self.return_hidden_states
 
@@ -361,234 +394,6 @@ class KimiK2_5Model(
             )
 
         return model_config
-
-    @classmethod
-    def estimate_weights_size(cls, pipeline_config: PipelineConfig) -> int:
-        """Calculates the estimated memory consumption of our model."""
-        model_config = pipeline_config.model
-        weights_size = model_config.weights_size()
-        n_gpus_per_node = len(model_config.device_specs)
-
-        encoding = pipeline_config.model.quantization_encoding
-        assert encoding is not None
-
-        def _n_elems_to_bytes(n_elems: int) -> int:
-            dtype = supported_encoding_dtype(encoding).size_in_bytes
-            if is_float4_encoding(encoding):
-                # Account for the scales. For NVFP4 format, every 16 FP4 elements
-                # share one FP8 scale factor. The size of the scales is one
-                # eighth of the size of the FP4 quants (8 bits / (16 * 4 bits)).
-                return int(n_elems // 2 * dtype * 1.125)
-            else:
-                return n_elems * dtype
-
-        assert model_config.huggingface_config is not None
-        config = model_config.huggingface_config.text_config
-        assert config is not None
-        n_sparse_layers = (
-            config.num_hidden_layers - config.first_k_dense_replace
-        )
-        n_mtp_layers = config.num_nextn_predict_layers
-
-        # Note: All the following calculations are not exact, but they are
-        # better than directly using the raw weights size.
-
-        # First, Calculate the lm_head/embed_tokens size.
-        # There are always in Bf16.
-        lm_head_size = (
-            config.vocab_size
-            * config.hidden_size
-            * DType.bfloat16.size_in_bytes
-        )
-        embed_tokens_size = lm_head_size
-
-        # Subtract the lm_head/embed_tokens size from the weights size
-        weights_size -= lm_head_size + embed_tokens_size
-        weights_size -= (lm_head_size + embed_tokens_size) * n_mtp_layers
-
-        # We don't use the MTP module for now, so subtract the MTP attn/moe size.
-        # Estimate the MTP module size by assuming the MTP layer is of the same
-        # size as a sparse model layer.
-        weights_size = int(
-            weights_size * n_sparse_layers / (n_sparse_layers + n_mtp_layers)
-        )
-
-        # Calculate the routing experts and the shared experts size.
-        expert_elems = (
-            config.moe_intermediate_size * config.hidden_size * 3
-        )  # A factor of 3 accounts for the gate/up/down proj weights.
-        expert_size = _n_elems_to_bytes(expert_elems)
-        routing_experts_size = (
-            n_sparse_layers * config.n_routed_experts * expert_size
-        )
-        shared_experts_size = (
-            n_sparse_layers * config.n_shared_experts * expert_size
-        )
-
-        # Estimate the size of the attention weights.
-        attn_weights_size = (
-            weights_size - routing_experts_size - shared_experts_size
-        )
-
-        # If we use DP attention, attention weights are duplicated on each DP rank.
-        total_size = attn_weights_size * model_config.data_parallel_degree
-
-        # The shared experts are duplicated on each device.
-        total_size += shared_experts_size * n_gpus_per_node
-
-        ep_size = max(pipeline_config.runtime.ep_size, 1)
-        if ep_size == 1:
-            total_size += routing_experts_size
-        else:
-            # we don't support mixing EP and TP strategies yet.
-            # ep_size must be equal to n_gpus_per_node * n_nodes
-            assert ep_size % n_gpus_per_node == 0
-            n_nodes = ep_size // n_gpus_per_node
-            total_size += routing_experts_size // n_nodes
-
-        # Add back the lm_head/embed_tokens size, they will never be duplicated.
-        total_size += lm_head_size + embed_tokens_size
-
-        return total_size
-
-    @classmethod
-    def estimate_activation_memory(
-        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
-    ) -> int:
-        """Estimates the activation memory required for model execution.
-
-        This accounts for temporary memory buffers used during model execution,
-        such as intermediate activations and working buffers.
-
-        Args:
-            pipeline_config: Pipeline configuration
-            huggingface_config: HuggingFace model configuration
-
-        Returns:
-            Estimated activation memory in bytes
-        """
-
-        encoding = pipeline_config.model.quantization_encoding
-        assert encoding is not None
-        mla_activation_memory: int = 0
-        moe_activation_memory: int = 0
-        ep_buffer_memory = 0
-
-        # During the prefill, we need to up-project all the KV cache for
-        # current requests. The total context length of requests in a batch
-        # should be limited by max_batch_total_tokens.
-        if pipeline_config.runtime.pipeline_role != "decode_only":
-            max_kv_length: int = 0
-
-            if pipeline_config.runtime.max_batch_total_tokens is None:
-                # If max_batch_total_tokens is not set, we use max_length.
-                max_kv_length = pipeline_config.model.max_length or 0
-            else:
-                max_kv_length = pipeline_config.runtime.max_batch_total_tokens
-
-            mla_activation_memory += (
-                pipeline_config.model.data_parallel_degree
-                * 2  # 2 for K and V
-                * max_kv_length
-                * huggingface_config.text_config.num_attention_heads
-                * huggingface_config.text_config.qk_nope_head_dim
-                * pipeline_config.model.kv_cache.cache_dtype.size_in_bytes
-            )
-
-        # Estimate buffer and activation memory during Expert Parallel MoE.
-        if pipeline_config.runtime.ep_size > 1:
-            n_gpus_per_node = len(pipeline_config.model.device_specs)
-
-            ep_max_rank_send_tokens = calculate_ep_max_tokens_per_rank(
-                max_batch_input_tokens=pipeline_config.runtime.max_batch_input_tokens,
-                ep_size=pipeline_config.runtime.ep_size,
-                data_parallel_degree=pipeline_config.model.data_parallel_degree,
-                use_allreduce=pipeline_config.runtime.ep_use_allreduce,
-            )
-
-            # Calculate the maximum number of tokens a rank may receive during
-            # all-to-all routing. Each token selects top_k experts, and in the
-            # worst case all selections land on one rank.
-            max_recv_tokens_per_rank = ep_max_rank_send_tokens * min(
-                huggingface_config.text_config.n_routed_experts,
-                pipeline_config.runtime.ep_size
-                * huggingface_config.text_config.num_experts_per_tok,
-            )
-
-            if pipeline_config.runtime.ep_use_allreduce:
-                max_recv_tokens_per_rank = (
-                    pipeline_config.runtime.max_batch_input_tokens
-                    * min(
-                        huggingface_config.text_config.n_routed_experts
-                        // n_gpus_per_node,
-                        huggingface_config.text_config.num_experts_per_tok,
-                    )
-                )
-
-            # The maximal activation memory usage happens at the second
-            # grouped_matmul in the MoE layer. The input for that matmul would
-            # of shape [max_recv_tokens_per_rank, moe_intermediate_size].
-            moe_activation_memory += (
-                max_recv_tokens_per_rank
-                * huggingface_config.text_config.moe_intermediate_size
-                * supported_encoding_dtype(encoding).size_in_bytes
-            )
-
-            # The output would be of shape [max_recv_tokens_per_rank, hidden_size].
-            moe_activation_memory += (
-                max_recv_tokens_per_rank
-                * huggingface_config.text_config.hidden_size
-                * DType.bfloat16.size_in_bytes  # output is always bfloat16.
-            )
-
-            # Adding 256MB per GPU to account for misc items (e.g. FP8 scalars).
-            moe_activation_memory += 256 * 1024 * 1024
-            moe_activation_memory *= n_gpus_per_node
-
-            # EP SHMEM communication buffers are persistent (allocated once at
-            # model init, not freed between layers).
-            n_nodes = pipeline_config.runtime.ep_size // n_gpus_per_node
-
-            per_device_ep_memory = estimate_ep_memory_usage(
-                hidden_size=huggingface_config.text_config.hidden_size,
-                dispatch_dtype=supported_encoding_dtype(encoding),
-                combine_dtype=DType.bfloat16,
-                max_tokens_per_rank=ep_max_rank_send_tokens,
-                n_experts=huggingface_config.text_config.n_routed_experts,
-                n_nodes=n_nodes,
-                n_gpus_per_node=n_gpus_per_node,
-                top_k=huggingface_config.text_config.num_experts_per_tok,
-                use_allreduce=pipeline_config.runtime.ep_use_allreduce,
-            )
-            ep_buffer_memory = per_device_ep_memory * n_gpus_per_node
-
-            logger.info(
-                "Estimated EP SHMEM buffer memory: "
-                f"{to_human_readable_bytes(ep_buffer_memory)}"
-            )
-
-        # We only need to consider the maximum of the MLA and MoE activation
-        # memories, because the MLA and MoE layers are executed sequentially.
-        activation_memory = max(mla_activation_memory, moe_activation_memory)
-        activation_memory += ep_buffer_memory
-
-        if pipeline_config.runtime.device_graph_capture:
-            graph_capture_headroom = (
-                cls._GRAPH_CAPTURE_HEADROOM_BYTES_PER_DEVICE
-                * len(pipeline_config.model.device_specs)
-            )
-            activation_memory += graph_capture_headroom
-            logger.info(
-                "Added graph capture headroom to activation memory: %s",
-                to_human_readable_bytes(graph_capture_headroom),
-            )
-
-        if activation_memory != 0:
-            logger.info(
-                f"Estimated activation memory: {to_human_readable_bytes(activation_memory)}"
-            )
-
-        return activation_memory
 
     def load_model(self, session: InferenceSession) -> tuple[Model, Model]:
         """Load the model with the given weights."""
@@ -657,17 +462,19 @@ class KimiK2_5Model(
         # Load the vision + language model.
         with CompilationTimer("vision + language model") as timer:
             # Create a new module to hold both models
-            module = Graph.empty_module()
+            module = Module()
 
             # Build the vision graph in the module
-            self._build_vision_graph(kimik2_5_config, state_dict, module=module)
+            vision_graph = self._build_vision_graph(
+                kimik2_5_config, state_dict, module=module
+            )
 
             # Build the language graph in the module
             language_graph = self._build_language_graph(config, module=module)
             timer.mark_build_complete()
-            vision_model, language_model = session.load_all(
-                language_graph, weights_registry=self.state_dict
-            )
+            models = session.load_all(module, weights_registry=self.state_dict)
+            vision_model = models[vision_graph.name]
+            language_model = models[language_graph.name]
 
         return vision_model, language_model
 
@@ -833,13 +640,9 @@ class KimiK2_5Model(
             ]
 
             # Unmarshal the KV cache arguments.
-            fetch_types = (
-                self.kv_params.get_symbolic_inputs().inputs[0].flatten()
-            )
-            len_of_kv_inputs = len(list(fetch_types)) * len(self.devices)
-            kv_caches_per_dev = self._unflatten_kv_inputs(
-                [next(variadic_args_iter) for _ in range(len_of_kv_inputs)]
-            )
+            kv_inputs = self.kv_params.unflatten_kv_inputs(variadic_args_iter)
+            assert isinstance(kv_inputs, KVCacheInputs)
+            kv_caches_per_dev = list(kv_inputs.inputs)
 
             # Unmarshal the batch context lengths
             batch_context_lengths = [
@@ -996,28 +799,180 @@ class KimiK2_5Model(
                 logits=model_outputs[0],
             )
 
-    def _prepare_vision_inputs(
+    def _collect_vision_encoder_request_metadata(
         self,
         context_batch: Sequence[KimiK2_5TextAndVisionContext],
-    ) -> dict[str, list[Buffer]] | None:
-        """Assemble per-device vision encoder ``Buffer``s for uncached images.
+        uncached_contexts: Sequence[KimiK2_5TextAndVisionContext],
+        vision_input_shapes: dict[str, list[int]],
+    ) -> dict[str, Any]:
+        """Collect debug metadata for a vision-encoder invocation.
 
-        Skips images already in the vision encoder cache. Prepares pixel
-        values, grid THWs, cumulative sequence lengths, max sequence
-        length, and RoPE position IDs.
+        ``vision_input_shapes`` is a name->shape map for the encoder input
+        tensors as a single batch (e.g. ``{"pixel_values": [N, C, P, P],
+        "grid_thws": [n_images, 3], ...}``). When chunking is in effect, the
+        caller should pass the **batch-wide** shapes (computed once via
+        :meth:`_batch_vision_input_shapes`) so the metadata stays comparable
+        to the per-image counts above; per-chunk specifics belong in the
+        ``"chunk"`` block of the surrounding failure payload.
+        """
+        patch_size = int(self.model_config.vision_config.patch_size)
+        merge_cfg = self.model_config.vision_config.merge_kernel_size
+        if isinstance(merge_cfg, int):
+            merge_h, merge_w = merge_cfg, merge_cfg
+        else:
+            merge_h = int(merge_cfg[0])
+            merge_w = int(merge_cfg[1])
+        merge_sq = _vision_merge_sq(self.model_config.vision_config)
+
+        request_ids = [str(ctx.request_id) for ctx in context_batch]
+        total_images = sum(len(ctx.images) for ctx in context_batch)
+        next_images_total = sum(len(ctx.next_images) for ctx in context_batch)
+        context_sequence_lengths = [
+            {
+                "request_id": str(ctx.request_id),
+                "active_sequence_length": int(ctx.tokens.active_length),
+                "processed_sequence_length": int(ctx.tokens.processed_length),
+                "total_sequence_length": len(ctx.tokens),
+                "context_needs_vision_encoding": bool(
+                    ctx.needs_vision_encoding
+                ),
+                "image_count": len(ctx.images),
+                "next_image_count": len(ctx.next_images),
+            }
+            for ctx in context_batch
+        ]
+
+        per_image_metadata: list[dict[str, Any]] = []
+        image_counter = 0
+        for ctx in uncached_contexts:
+            for i, (img, thw) in enumerate(
+                zip(ctx.images, ctx.grid_thws, strict=True)
+            ):
+                if (
+                    img.image_hash is None
+                    or self._ve_cache.lookup(img.image_hash) is not None
+                ):
+                    continue
+
+                t = int(thw[0])
+                h = int(thw[1])
+                w = int(thw[2])
+                pixel_values_shape = [int(x) for x in img.pixel_values.shape]
+                per_image_metadata.append(
+                    {
+                        "request_id": str(ctx.request_id),
+                        "image_index_in_request": i,
+                        "image_index_in_uncached_batch": image_counter,
+                        "image_hash_present": img.image_hash is not None,
+                        "token_span": {
+                            "start_idx": int(img.start_idx),
+                            "end_idx": int(img.end_idx),
+                            "length": int(img.end_idx - img.start_idx),
+                        },
+                        "size_before_patching": {
+                            "temporal_frames": t,
+                            "height_px": h * patch_size,
+                            "width_px": w * patch_size,
+                        },
+                        "size_after_patching": {
+                            "patch_grid_thw": [t, h, w],
+                            "patch_tensor_shape": pixel_values_shape,
+                        },
+                        "size_after_patch_merger": {
+                            "merge_kernel_hw": [merge_h, merge_w],
+                            "merged_token_count": int((t * h * w) // merge_sq),
+                        },
+                    }
+                )
+                image_counter += 1
+
+        images_needing_encoding = len(per_image_metadata)
+        grid_thws_shape = vision_input_shapes.get("grid_thws") or []
+        expected_from_inputs = int(grid_thws_shape[0]) if grid_thws_shape else 0
+
+        return {
+            "request_ids": request_ids,
+            "batch_size": len(context_batch),
+            "uncached_context_count": len(uncached_contexts),
+            "vision_cache_enabled": bool(self._ve_cache.enabled),
+            "vision_input_dtype": str(self.model_config.vision_config.dtype),
+            "vision_input_shapes": vision_input_shapes,
+            "images": {
+                "total_images_in_batch": total_images,
+                "next_images_total": next_images_total,
+                "images_needing_encoding": images_needing_encoding,
+                "images_not_needing_encoding": (
+                    total_images - images_needing_encoding
+                ),
+                "images_already_encoded_in_prior_steps": (
+                    total_images - next_images_total
+                ),
+                "images_skipped_due_to_cache": max(
+                    0, next_images_total - images_needing_encoding
+                ),
+                "images_needing_encoding_from_vision_input_shapes": (
+                    expected_from_inputs
+                ),
+            },
+            "context_sequence_lengths": context_sequence_lengths,
+            "per_image_metadata": per_image_metadata,
+        }
+
+    @staticmethod
+    def _batch_vision_input_shapes(
+        per_image: Sequence[dict[str, npt.NDArray[Any]]],
+    ) -> dict[str, list[int]]:
+        """Return the shapes that :meth:`_build_vision_input_buffers` would
+        produce for the full batch, without allocating any GPU buffers.
+
+        Used to feed batch-wide shape info into
+        :meth:`_collect_vision_encoder_request_metadata` even when the
+        encoder is invoked in multiple chunks, so OOM logs keep the
+        batch-vs-chunk distinction unambiguous.
+        """
+        if not per_image:
+            return {
+                "pixel_values": [],
+                "grid_thws": [],
+                "cu_seqlens": [],
+                "max_seqlen": [],
+                "vision_position_ids": [],
+            }
+        pv0 = per_image[0]["pixel_values"]
+        n_patches = sum(int(e["pixel_values"].shape[0]) for e in per_image)
+        # pixel_values: (n_patches, in_channels, patch_size, patch_size)
+        pixel_values_shape = [n_patches, *(int(d) for d in pv0.shape[1:])]
+        n_images = len(per_image)
+        n_position_ids = sum(int(e["position_ids"].shape[0]) for e in per_image)
+        return {
+            "pixel_values": pixel_values_shape,
+            "grid_thws": [n_images, 3],
+            "cu_seqlens": [n_images + 1],
+            "max_seqlen": [1],
+            "vision_position_ids": [n_position_ids],
+        }
+
+    def _collect_uncached_image_inputs(
+        self,
+        context_batch: Sequence[KimiK2_5TextAndVisionContext],
+    ) -> list[dict[str, npt.NDArray[Any]]]:
+        """Collect per-image numpy inputs for images that need encoding.
+
+        Walks the batch and returns one entry per image that is not already
+        in the vision encoder cache. Each entry contains the per-image
+        ``pixel_values``, ``grid_thw`` row, and ``position_ids`` slice as
+        numpy arrays. The outputs are kept per-image (rather than
+        pre-concatenated) so the caller can split them into chunks for
+        memory-bounded encoder invocations.
 
         Args:
             context_batch: Contexts with at least one uncached image
                 (from ``get_uncached_contexts``).
 
         Returns:
-            Dictionary of named per-device ``Buffer`` lists, or ``None``
-            when all images are already cached.
+            List of per-image input dicts. Empty when all images are cached.
         """
-        all_pixel_values_list: list[npt.NDArray[Any]] = []
-        all_grid_thws_list: list[npt.NDArray[np.int64]] = []
-        all_position_ids_list: list[npt.NDArray[np.int64]] = []
-
+        per_image: list[dict[str, npt.NDArray[Any]]] = []
         for ctx in context_batch:
             pos_offset = 0
             for i, img in enumerate(ctx.images):
@@ -1028,19 +983,79 @@ class KimiK2_5Model(
                     img.image_hash is not None
                     and self._ve_cache.lookup(img.image_hash) is None
                 ):
-                    all_pixel_values_list.append(img.pixel_values)
-                    all_grid_thws_list.append(thw)
-                    all_position_ids_list.append(
-                        ctx.position_ids[pos_offset : pos_offset + n_pos]
+                    per_image.append(
+                        {
+                            "pixel_values": img.pixel_values,
+                            "grid_thw": np.asarray(thw, dtype=np.int64),
+                            "position_ids": np.asarray(
+                                ctx.position_ids[
+                                    pos_offset : pos_offset + n_pos
+                                ],
+                                dtype=np.int64,
+                            ),
+                        }
                     )
 
                 pos_offset += n_pos
+        return per_image
 
-        if not all_pixel_values_list:
-            return None
+    @staticmethod
+    def _patches_in_image(entry: dict[str, npt.NDArray[Any]]) -> int:
+        """Number of patches contributed by a single image entry."""
+        thw = entry["grid_thw"]
+        return int(thw[0] * thw[1] * thw[2])
 
-        all_pixel_values = np.concatenate(all_pixel_values_list, axis=0)
-        all_grid_thws_np = np.vstack(all_grid_thws_list).astype(np.int64)
+    @staticmethod
+    def _chunk_image_inputs_by_token_budget(
+        per_image: Sequence[dict[str, npt.NDArray[Any]]],
+        token_budget: int,
+        merge_sq: int,
+    ) -> list[list[dict[str, npt.NDArray[Any]]]]:
+        """Group per-image entries into post-merge-token-bounded chunks.
+
+        ``token_budget`` is in **image tokens** (post patch-merger); each
+        image contributes ``patches // merge_sq`` tokens. A single image
+        whose own token count exceeds the budget is placed alone in its
+        own chunk -- the encoder still has to process it; the caller is
+        responsible for raising/handling the resulting OOM if that occurs.
+        """
+        chunks: list[list[dict[str, npt.NDArray[Any]]]] = []
+        current: list[dict[str, npt.NDArray[Any]]] = []
+        current_tokens = 0
+        for entry in per_image:
+            tokens = KimiK2_5Model._patches_in_image(entry) // merge_sq
+            if current and current_tokens + tokens > token_budget:
+                chunks.append(current)
+                current = []
+                current_tokens = 0
+            current.append(entry)
+            current_tokens += tokens
+        if current:
+            chunks.append(current)
+        return chunks
+
+    def _build_vision_input_buffers(
+        self,
+        per_image: Sequence[dict[str, npt.NDArray[Any]]],
+    ) -> dict[str, list[Buffer]]:
+        """Build per-device vision encoder ``Buffer``s from a chunk of images.
+
+        Args:
+            per_image: One or more per-image entries from
+                :meth:`_collect_uncached_image_inputs`.
+
+        Returns:
+            Dictionary of named per-device ``Buffer`` lists ready to feed
+            into ``vision_model.execute``.
+        """
+        assert per_image, "per_image must not be empty"
+
+        all_pixel_values = np.concatenate(
+            [e["pixel_values"] for e in per_image], axis=0
+        )
+        all_grid_thws_np = np.vstack([e["grid_thw"] for e in per_image]).astype(
+            np.int64
+        )
 
         # Cumulative patch-sequence lengths for packed full-attention.
         seq_lens = [int(np.prod(g)) for g in all_grid_thws_np]
@@ -1049,7 +1064,9 @@ class KimiK2_5Model(
 
         max_seqlen_np = np.array([max(seq_lens)], dtype=np.uint32)
 
-        position_ids_np = np.concatenate(all_position_ids_list).astype(np.int64)
+        position_ids_np = np.concatenate(
+            [e["position_ids"] for e in per_image]
+        ).astype(np.int64)
 
         device0 = self.devices[0]
         vision_dtype = self.model_config.vision_config.dtype
@@ -1076,10 +1093,144 @@ class KimiK2_5Model(
             ],
         }
 
+    def _run_vision_encoder_chunked(
+        self,
+        context_batch: Sequence[KimiK2_5TextAndVisionContext],
+        uncached_contexts: Sequence[KimiK2_5TextAndVisionContext],
+    ) -> tuple[list[Buffer], list[int]]:
+        """Run the vision encoder in token-bounded chunks and return the
+        concatenated per-device outputs plus per-image token counts.
+
+        Bounds per-call work by the same image-token budget the LM forward
+        pass honors under chunked prefill, mirroring how vLLM caps multimodal
+        work via ``max_num_batched_tokens`` and SGLang via
+        ``chunked_prefill_size``. The per-call budget is denominated in
+        post-merge image tokens; the encoder ingests patches, so we convert
+        via the patch merger's kernel area at the input boundary only.
+
+        Each chunk runs in its own ``vision_model.execute`` call. Per-chunk
+        outputs are concatenated on-device into a single per-device tensor
+        so the downstream cache-and-split path is identical to the
+        unchunked case. On encoder failure, logs a structured payload that
+        contains both the chunk-specific stats (which call OOM'd) and the
+        batch-wide metadata (so the failure is comparable to pre-chunking
+        logs).
+
+        .. note::
+            **Temporary implementation** — invoking the vision encoder from
+            inside ``prepare_initial_token_inputs`` couples its per-call budget
+            to the LM-side ``max_batch_input_tokens``, which is sized for MoE
+            all-reduce overhead rather than vision encoder capacity. The proper
+            fix is to fully disaggregate the vision encoder into its own
+            pipeline stage with an independent budget knob. See MXSERV-56.
+        """
+        per_image = self._collect_uncached_image_inputs(uncached_contexts)
+        assert per_image, (
+            "uncached_contexts non-empty but no per-image entries collected"
+        )
+
+        token_budget = _vision_encoder_token_budget(self.pipeline_config)
+        # patches per post-merger image token (e.g. 4 for 2x2 merge)
+        merge_sq = _vision_merge_sq(self.model_config.vision_config)
+
+        if token_budget is None:
+            # ``max_batch_input_tokens`` unset -- skip chunking and run the
+            # encoder on the full uncached batch in a single call. Matches
+            # pre-MXSERV-32 behavior; if this OOMs the operator should set
+            # ``max_batch_input_tokens`` to engage chunking.
+            chunks = [list(per_image)]
+        else:
+            chunks = self._chunk_image_inputs_by_token_budget(
+                per_image, token_budget, merge_sq
+            )
+
+        # Build batch-wide shapes once for the failure-handler metadata so
+        # OOM logs report the original batch-wide footprint, with chunk
+        # specifics living in the separate ``"chunk"`` field. (Avoids
+        # allocating a batch-wide buffer set we wouldn't otherwise use.)
+        batch_input_shapes = self._batch_vision_input_shapes(per_image)
+        total_patches = sum(self._patches_in_image(e) for e in per_image)
+
+        if len(chunks) > 1:
+            assert token_budget is not None  # chunking implies budget is set
+            logger.info(
+                "Vision encoder splitting into %d chunks "
+                "(image_token_budget=%d, total_image_tokens=%d, "
+                "total_patches=%d, image_count=%d)",
+                len(chunks),
+                token_budget,
+                total_patches // merge_sq,
+                total_patches,
+                len(per_image),
+            )
+
+        chunk_outputs: list[list[Buffer]] = []
+        for chunk_idx, chunk in enumerate(chunks):
+            chunk_inputs = self._build_vision_input_buffers(chunk)
+
+            chunk_patches = sum(self._patches_in_image(e) for e in chunk)
+            chunk_meta = {
+                "chunk_index": chunk_idx,
+                "num_chunks": len(chunks),
+                "chunk_image_count": len(chunk),
+                "chunk_image_tokens": chunk_patches // merge_sq,
+                "chunk_total_patches": chunk_patches,
+                "image_token_budget": token_budget,
+            }
+
+            try:
+                chunk_embeds = self.vision_model.execute(
+                    *chunk_inputs["pixel_values"],
+                    *chunk_inputs["grid_thws"],
+                    *chunk_inputs["cu_seqlens"],
+                    *chunk_inputs["max_seqlen"],
+                    *chunk_inputs["vision_position_ids"],
+                    *self.signal_buffers,
+                )
+            except Exception as err:
+                vision_metadata = self._collect_vision_encoder_request_metadata(
+                    context_batch=context_batch,
+                    uncached_contexts=uncached_contexts,
+                    vision_input_shapes=batch_input_shapes,
+                )
+                failure_payload = {
+                    "stage": "prepare_initial_token_inputs",
+                    "chunk": chunk_meta,
+                    "error": {
+                        "type": type(err).__name__,
+                        "message": str(err),
+                        "repr": repr(err),
+                    },
+                    "metadata": vision_metadata,
+                }
+                logger.exception(
+                    "Vision encoder failed. Request metadata: %s",
+                    json.dumps(failure_payload, sort_keys=True),
+                )
+                raise
+            assert len(chunk_embeds) == len(self.devices)
+            chunk_outputs.append(list(chunk_embeds))
+
+        # Concatenate per-chunk outputs into a single per-device tensor so
+        # the rest of the pipeline (cache split, scatter) can treat this
+        # exactly like the unchunked path.
+        if len(chunk_outputs) == 1:
+            vision_embeds = chunk_outputs[0]
+        else:
+            vision_embeds = [
+                concat_device_buffers([chunk[d] for chunk in chunk_outputs])
+                for d in range(len(self.devices))
+            ]
+
+        token_counts = [
+            self._patches_in_image(entry) // merge_sq for entry in per_image
+        ]
+        return vision_embeds, token_counts
+
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[KimiK2_5TextAndVisionContext]],
-        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
+        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> KimiK2_5ModelInputs:
         dp = self.pipeline_config.model.data_parallel_degree
@@ -1208,28 +1359,9 @@ class KimiK2_5Model(
         uncached_contexts = self._ve_cache.get_uncached_contexts(context_batch)
 
         if uncached_contexts:
-            vision_inputs = self._prepare_vision_inputs(uncached_contexts)
-            assert vision_inputs is not None
-
-            vision_embeds = self.vision_model.execute(
-                *vision_inputs["pixel_values"],
-                *vision_inputs["grid_thws"],
-                *vision_inputs["cu_seqlens"],
-                *vision_inputs["max_seqlen"],
-                *vision_inputs["vision_position_ids"],
-                *self.signal_buffers,
+            vision_embeds, token_counts = self._run_vision_encoder_chunked(
+                context_batch, uncached_contexts
             )
-            assert len(vision_embeds) == len(self.devices)
-
-            merge_size = self.model_config.vision_config.merge_kernel_size
-            merge_sq = merge_size[0] * merge_size[1]
-            token_counts = [
-                int(thw[0] * thw[1] * thw[2]) // merge_sq
-                for ctx in uncached_contexts
-                for img, thw in zip(ctx.images, ctx.grid_thws, strict=True)
-                if img.image_hash is not None
-                and self._ve_cache.lookup(img.image_hash) is None
-            ]
         else:
             vision_embeds = self._empty_image_embeddings
             token_counts = []
@@ -1267,31 +1399,4 @@ class KimiK2_5Model(
             image_token_indices=image_token_indices,
             language_image_embeddings=precomputed_image_embeddings,
             language_image_token_indices=image_token_indices,
-        )
-
-    def prepare_next_token_inputs(
-        self,
-        next_tokens: Buffer,
-        prev_model_inputs: ModelInputs,
-    ) -> KimiK2_5ModelInputs:
-        assert isinstance(prev_model_inputs, KimiK2_5ModelInputs)
-        row_offsets_size = prev_model_inputs.input_row_offsets.shape[0]
-        next_row_offsets = self._device_input_row_offsets_prealloc[
-            :row_offsets_size
-        ]
-        next_host_input_row_offsets = self._host_input_row_offsets_prealloc[
-            :row_offsets_size
-        ]
-        return KimiK2_5ModelInputs(
-            tokens=next_tokens,
-            input_row_offsets=next_row_offsets,
-            host_input_row_offsets=next_host_input_row_offsets,
-            batch_context_lengths=self._batch_context_lengths_prealloc_cpu,
-            signal_buffers=self.signal_buffers,
-            kv_cache_inputs=prev_model_inputs.kv_cache_inputs,
-            return_n_logits=prev_model_inputs.return_n_logits,
-            data_parallel_splits=prev_model_inputs.data_parallel_splits,
-            ep_inputs=prev_model_inputs.ep_inputs,
-            language_image_embeddings=self._empty_image_embeddings,
-            language_image_token_indices=self._empty_image_image_token_indices,
         )

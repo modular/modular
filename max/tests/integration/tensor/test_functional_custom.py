@@ -24,8 +24,8 @@ import pytest
 from max.driver import CPU, Accelerator, accelerator_count
 from max.dtype import DType
 from max.engine import Model
+from max.experimental import executor
 from max.experimental import functional as F
-from max.experimental import realization_context as rc
 from max.experimental.tensor import Tensor
 from max.graph import Graph
 from max.nn import kernels
@@ -54,15 +54,27 @@ def test_custom() -> None:
     DEVICE.is_host, reason="scatter_set_constant only supports GPU devices"
 )
 def test_inplace_custom() -> None:
+    # Prior allocate-then-free perturbs the heap next to the buffers below;
+    # the mutation must still land at exactly the requested coordinate.
+    junk = Tensor.ones([4])
+    del junk
+
     values = Tensor.zeros([2, 2])
-    indices = Tensor.ones([1, 1], dtype=DType.int32)
+    # Each indices row is a (row, col) coordinate into values.
+    indices = Tensor([[1, 0]], dtype=DType.int32, device=DEVICE)
     scatter_set_constant(values, indices, 5.0)
     assert values[1, 0].item() == 5.0
     assert values.real
     scatter_set_constant(values, indices, 4.0)
-    assert not values.real
     assert values[1, 0].item() == 4.0
     assert values.real
+
+
+def test_inplace_custom_invalid_indices_shape() -> None:
+    values = Tensor.zeros([2, 2])
+    indices = Tensor.ones([1, 1], dtype=DType.int32)
+    with pytest.raises(ValueError, match=r"\[num_indices, 2\]"):
+        scatter_set_constant(values, indices, 5.0)
 
 
 def test_custom_with_custom_extensions(
@@ -128,13 +140,13 @@ def test_custom_extensions_cached_across_calls(
     kernel_verification_ops_path: Path,
 ) -> None:
     """Test that repeated identical custom op calls reuse a cached Model."""
-    rc._EAGER_MODEL_CACHE.clear()
+    executor._EAGER_MODEL_CACHE.clear()
 
     x = Tensor.ones([65], dtype=DType.float32, device=CPU())
     y = Tensor.ones([65], dtype=DType.float32, device=CPU())
 
     load_count = 0
-    original_load = rc._session().load
+    original_load = executor._session().load
 
     def counting_load(graph: Graph) -> Model:
         nonlocal load_count
@@ -142,7 +154,7 @@ def test_custom_extensions_cached_across_calls(
         return original_load(graph)
 
     with mock.patch.object(
-        type(rc._session()), "load", side_effect=counting_load
+        type(executor._session()), "load", side_effect=counting_load
     ):
         result1 = F.custom(
             "my_add",
@@ -171,7 +183,7 @@ def test_custom_extensions_cache_miss_on_different_shapes(
     kernel_verification_ops_path: Path,
 ) -> None:
     """Test that different input shapes produce cache misses."""
-    rc._EAGER_MODEL_CACHE.clear()
+    executor._EAGER_MODEL_CACHE.clear()
 
     x1 = Tensor.ones([65], dtype=DType.float32, device=CPU())
     y1 = Tensor.ones([65], dtype=DType.float32, device=CPU())
@@ -179,7 +191,7 @@ def test_custom_extensions_cache_miss_on_different_shapes(
     y2 = Tensor.ones([66], dtype=DType.float32, device=CPU())
 
     load_count = 0
-    original_load = rc._session().load
+    original_load = executor._session().load
 
     def counting_load(graph: Graph) -> Model:
         nonlocal load_count
@@ -187,7 +199,7 @@ def test_custom_extensions_cache_miss_on_different_shapes(
         return original_load(graph)
 
     with mock.patch.object(
-        type(rc._session()), "load", side_effect=counting_load
+        type(executor._session()), "load", side_effect=counting_load
     ):
         result1 = F.custom(
             "my_add",

@@ -14,11 +14,9 @@ _MAX_PACKAGES = {
     "nvml": "kernels/src/nvml",
     "shmem": "kernels/src/shmem",
     "quantization": "kernels/src/quantization",
-    "register": "kernels/src/register",
-    "MOGGPrimitives": "kernels/src/Mogg/MOGGPrimitives",
-    "MOGGKernelAPI": "kernels/src/Mogg/MOGGKernelAPI",
-    "tensor": "kernels/src/extensibility/tensor",
-    "compiler_internal": "kernels/src/extensibility/compiler_internal",
+    "extensibility": "kernels/src/graph_compiler/extensibility",
+    "builtin_primitives": "kernels/src/graph_compiler/builtin_primitives",
+    "builtin_kernels": "kernels/src/graph_compiler/builtin_kernels",
     "weights_registry": "kernels/src/weights_registry",
     "internal_utils": "kernels/src/internal_utils",
     "comm": "kernels/src/comm",
@@ -34,6 +32,10 @@ _MAX_PACKAGES = {
     "_rocblas": "kernels/src/_rocblas",
     "_miopen": "kernels/src/_miopen",
 }
+
+_INTERNAL_PACKAGES = [
+    "//Kernels/lib/msa",
+]
 
 # Packages that are marked testonly and cannot be used by production targets
 _TESTONLY_MAX_PACKAGES = ["testdata"]
@@ -57,12 +59,14 @@ alias(
 ALL_MOJOPKGS = [
 {packages}
 {max_packages}
+{internal_packages}
 ]
 
 # PROD_MOJOPKGS excludes testonly packages and can be used by non-test targets
 PROD_MOJOPKGS = [
 {prod_packages}
 {prod_max_packages}
+{internal_packages}
 ]
 
 def max_aliases():
@@ -81,6 +85,10 @@ def max_aliases():
         max_packages = "\n".join([
             '    "//max:{}",'.format(name)
             for name in _MAX_PACKAGES.keys()
+        ]),
+        internal_packages = "\n".join([
+            '    "{}",'.format(name)
+            for name in _INTERNAL_PACKAGES
         ]),
         prod_packages = "\n".join([
             '    "@mojo//:{}",'.format(name)

@@ -35,9 +35,9 @@ def matmul(
     n: Int,
     k: Int,
 ):
-    var a = TileTensor(a_ptr, row_major(Coord(Idx(m), Idx(k))))
-    var b = TileTensor(b_ptr, row_major(Coord(Idx(k), Idx(n))))
-    var c = TileTensor(c_ptr, row_major(Coord(Idx(m), Idx(n))))
+    var a = TileTensor(a_ptr, row_major(Coord(m, k)))
+    var b = TileTensor(b_ptr, row_major(Coord(k, n)))
+    var c = TileTensor(c_ptr, row_major(Coord(m, n)))
 
     # Compute C = A x B
     #   where A is a (m x k) matrix
@@ -131,7 +131,7 @@ def run_matmul(ctx: DeviceContext) raises:
     ctx.enqueue_copy(a_device, a_host_ptr)
     ctx.enqueue_copy(b_device, b_host_ptr)
 
-    ctx.enqueue_function_experimental[matmul](
+    ctx.enqueue_function[matmul](
         a_device,
         b_device,
         c_device,

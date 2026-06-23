@@ -9,7 +9,7 @@ This document walks through the process to create a new model architecture and
 register it with MAX for serving. It's focused on the project setup and
 developer workflow—for an API programming guide using the MAX Python API, see
 the
-[custom model architectures tutorial](https://docs.modular.com/max/tutorials/serve-custom-model-architectures/).
+[custom model architectures tutorial](https://docs.modular.com/max/develop/serve-custom-model-architectures/).
 
 ## 1. Set up your development environment
 
@@ -57,7 +57,7 @@ exactly match the model class name in your Hugging Face model's configuration.
 config to your internal format.
 
 For more information about how to build your model see our
-[custom model architectures tutorial](https://docs.modular.com/max/tutorials/serve-custom-model-architectures/).
+[custom model architectures tutorial](https://docs.modular.com/max/develop/serve-custom-model-architectures/).
 
 ### Test your architecture
 
@@ -269,7 +269,7 @@ Before submitting your custom architecture to the repo:
 - Check out these other docs:
 
   - [Debug MAX model accuracy](/max/docs/accuracy-debugging.md)
-  - [Op logging in MAX](/max/docs/modeling/op-logging.md)
+  - [Op logging in MAX](/max/docs/op-logging.md)
   - [GPU profiling with Nsight Systems](https://docs.modular.com/max/gpu-system-profiling)
 
 - For detailed examples, explore the existing architecture implementations in

@@ -16,7 +16,8 @@ from __future__ import annotations
 import json
 import uuid
 
-from max.interfaces import (
+from max.pipelines.lib.tool_parsing import register
+from max.pipelines.modeling.types import (
     ParsedToolCall,
     ParsedToolCallDelta,
     ParsedToolResponse,
@@ -26,6 +27,7 @@ from .json_utils import parse_json_from_text
 
 
 # TODO: SERVOPT-1219 Rename LlamaToolParser and move to max.pipelines.architecture.
+@register("llama")
 class LlamaToolParser:
     """Parses Llama-style tool calls from model responses.
 

@@ -19,16 +19,18 @@ from unittest.mock import MagicMock
 import hf_repo_lock
 import numpy as np
 from max.driver import DeviceSpec
-from max.interfaces import (
+from max.pipelines.context import (
     ImageMetadata,
-    RequestID,
     SamplingParams,
+    TextContext,
+)
+from max.pipelines.lib import generate_local_model_path
+from max.pipelines.lib.pipeline_variants import text_generation
+from max.pipelines.modeling.types import (
+    RequestID,
     TextGenerationInputs,
     TextGenerationRequest,
 )
-from max.pipelines.core import TextContext
-from max.pipelines.lib import generate_local_model_path
-from max.pipelines.lib.pipeline_variants import text_generation
 from max.support.image import hash_image
 from pytest import MonkeyPatch
 from test_common.mocks import (
@@ -97,9 +99,6 @@ def test_text_generation_pipeline(monkeypatch: MonkeyPatch) -> None:
         text_generation, "weights_format", MagicMock(return_value=None)
     )
     monkeypatch.setattr(text_generation, "load_kv_manager", MagicMock())
-    monkeypatch.setattr(
-        text_generation, "IncrementCacheLengthsProcessor", MagicMock()
-    )
 
     max_length = 512
     eos_token = 998
@@ -153,7 +152,7 @@ def test_text_generation_pipeline(monkeypatch: MonkeyPatch) -> None:
         while True:
             # This will generate a list[dict[request_id, TextGenerationOutput]] for each step
             inputs: TextGenerationInputs[TextContext] = TextGenerationInputs(
-                batches=[list(context_batch.values())], num_steps=1
+                batches=[list(context_batch.values())]
             )
             output = pipeline.execute(inputs)
             assert len(output) == len(context_batch)

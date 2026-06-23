@@ -69,7 +69,7 @@ def test_cluster_dims_attribute_kernel():
 def test_cluster_dims_attribute(ctx: DeviceContext) raises:
     print("== test_cluster_dims_attribute")
     comptime kernel = test_cluster_dims_attribute_kernel
-    ctx.enqueue_function[kernel, kernel](grid_dim=(2, 2, 1), block_dim=(1))
+    ctx.enqueue_function[kernel](grid_dim=(2, 2, 1), block_dim=(1))
     ctx.synchronize()
 
 
@@ -82,7 +82,7 @@ def test_cluster_dims_attribute_with_param(ctx: DeviceContext) raises:
     print("== test_cluster_dims_attribute_with_param")
     comptime x = StaticTuple[Int32, 3](1, 2, 1)
     comptime kernel = test_cluster_dims_attribute_kernel_with_param[x]
-    ctx.enqueue_function[kernel, kernel](grid_dim=(2, 2, 1), block_dim=(1))
+    ctx.enqueue_function[kernel](grid_dim=(2, 2, 1), block_dim=(1))
     ctx.synchronize()
 
 

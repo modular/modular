@@ -79,12 +79,11 @@ def _main() -> None:
 
     cpu_tests = _cquery_tests("remote-intel", None)
     macos_tests = _cquery_tests("remote-macos", None)
-    h100_tests = _cquery_tests("remote-h100", "gpu")
     b200_tests = _cquery_tests("remote-b200", "gpu")
     mi355_tests = _cquery_tests("remote-mi355", "gpu")
 
     missing_on_ci = all_tests - (
-        cpu_tests | h100_tests | mi355_tests | macos_tests | b200_tests
+        cpu_tests | mi355_tests | macos_tests | b200_tests
     )
     missing_on_ci = {
         test for test in missing_on_ci if not _should_ignore_target(test)
