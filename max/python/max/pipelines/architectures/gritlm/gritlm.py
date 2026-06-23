@@ -219,7 +219,7 @@ class GritLMTextModel(
         return ret_val
 
 
-class GritLM(Module[..., tuple[Tensor, ...]]):
+class GritLM(Module[..., tuple[Tensor | TensorValue, ...]]):
     """Top-level GritLM model."""
 
     def __init__(
@@ -235,7 +235,7 @@ class GritLM(Module[..., tuple[Tensor, ...]]):
         return_n_logits: Tensor,
         input_row_offsets: Tensor,
         *variadic_args: Tensor,
-    ) -> tuple[Tensor, ...]:
+    ) -> tuple[Tensor | TensorValue, ...]:
         """Unpack KV cache tensors and delegate to ``GritLMTextModel``.
 
         Args:
