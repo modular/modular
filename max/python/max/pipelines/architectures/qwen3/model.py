@@ -16,35 +16,29 @@ from __future__ import annotations
 import logging
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import Any, Literal
+from typing import Any, ClassVar, Literal
 
 import numpy as np
 from max._core.engine import Model
 from max.driver import Buffer, DevicePinnedBuffer, is_virtual_device_mode
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import DeviceRef, Graph
+from max.graph import Graph
 from max.graph.weights import Weights, WeightsAdapter
 from max.nn.comm.ep import EPCommInitializer, EPConfig
 from max.nn.comm.ep.ep_config import calculate_ep_max_tokens_per_rank
 from max.nn.comm.ep.ep_manager import EPBatchManager
-from max.nn.kv_cache import KVCacheInputs, KVCacheParams
-from max.pipelines.core import TextContext
-from max.pipelines.lib import (
-    CompilationTimer,
-    KVCacheConfig,
-    ModelInputs,
-    PipelineConfig,
-)
-from max.pipelines.lib.config.config_enums import supported_encoding_dtype
+from max.nn.kv_cache import KVCacheInputsInterface
+from max.pipelines.context import TextContext
+from max.pipelines.lib import CompilationTimer
 from max.pipelines.lib.interfaces import AlwaysSignalBuffersMixin
-from max.pipelines.lib.quant import parse_quant_config
 from max.pipelines.lib.utils import (
     compute_data_parallel_splits,
     parse_state_dict_from_weights,
 )
+from max.pipelines.modeling.config_enums import supported_encoding_dtype
+from max.pipelines.weights.quant import parse_quant_config
 from max.support.algorithm import flatten2d
-from transformers import AutoConfig
 from typing_extensions import override
 
 from ..llama3.model import Llama3Inputs, LlamaModelBase
@@ -100,27 +94,12 @@ class Qwen3Model(AlwaysSignalBuffersMixin, LlamaModelBase):
     ColumnParallelLinear always require signal buffers for allreduce.
     """
 
+    model_config_cls: ClassVar[type[Any]] = Qwen3Config
+
     model: Model
     norm_method: Literal["rms_norm"] | Literal["layer_norm"] = "rms_norm"
     attention_bias: bool = False
     state_dict: dict[str, Any]
-
-    @classmethod
-    def get_kv_params(
-        cls,
-        huggingface_config: AutoConfig,
-        pipeline_config: PipelineConfig,
-        devices: list[DeviceRef],
-        kv_cache_config: KVCacheConfig,
-        cache_dtype: DType,
-    ) -> KVCacheParams:
-        return Qwen3Config.construct_kv_params(
-            huggingface_config=huggingface_config,
-            pipeline_config=pipeline_config,
-            devices=devices,
-            kv_cache_config=kv_cache_config,
-            cache_dtype=cache_dtype,
-        )
 
     def _create_ep_config(
         self,
@@ -293,9 +272,7 @@ class Qwen3Model(AlwaysSignalBuffersMixin, LlamaModelBase):
                     next(variadic_args_iter).buffer for _ in range(num_devices)
                 ]
 
-                kv_input_count = len(
-                    self.kv_params.get_symbolic_inputs().flatten()
-                )
+                kv_input_count = len(self.kv_params.flattened_kv_inputs())
                 kv_cache_inputs = [
                     next(variadic_args_iter) for _ in range(kv_input_count)
                 ]
@@ -341,7 +318,7 @@ class Qwen3Model(AlwaysSignalBuffersMixin, LlamaModelBase):
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
+        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> Llama3Inputs | Qwen3Inputs:
         dp = self.pipeline_config.model.data_parallel_degree
@@ -423,34 +400,3 @@ class Qwen3Model(AlwaysSignalBuffersMixin, LlamaModelBase):
             kv_cache_inputs=kv_cache_inputs,
             ep_inputs=ep_inputs,
         )
-
-    @override
-    def prepare_next_token_inputs(
-        self,
-        next_tokens: Buffer,
-        prev_model_inputs: ModelInputs,
-    ) -> Llama3Inputs | Qwen3Inputs:
-        if isinstance(prev_model_inputs, Qwen3Inputs):
-            assert self._input_row_offsets_prealloc is not None
-            row_offsets_size = prev_model_inputs.input_row_offsets.shape[0]
-            next_row_offsets = self._input_row_offsets_prealloc[
-                :row_offsets_size
-            ]
-
-            assert self._host_input_row_offsets_prealloc is not None
-            next_host_offsets = self._host_input_row_offsets_prealloc[
-                :row_offsets_size
-            ]
-
-            return Qwen3Inputs(
-                tokens=next_tokens,
-                input_row_offsets=next_row_offsets,
-                return_n_logits=prev_model_inputs.return_n_logits,
-                host_input_row_offsets=next_host_offsets,
-                data_parallel_splits=prev_model_inputs.data_parallel_splits,
-                signal_buffers=self.signal_buffers,
-                kv_cache_inputs=prev_model_inputs.kv_cache_inputs,
-                ep_inputs=prev_model_inputs.ep_inputs,
-            )
-
-        return super().prepare_next_token_inputs(next_tokens, prev_model_inputs)

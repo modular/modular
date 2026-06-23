@@ -51,8 +51,8 @@ However, in some cases you'll need to interact with origins directly:
   values.
 
 - When working with types like
-  [`Pointer`](/docs/std/memory/pointer/Pointer) or
-  [`Span`](/docs/std/memory/span/Span) which are parameterized on the
+  [`Pointer`](/docs/std/memory/pointer/Pointer/) or
+  [`Span`](/docs/std/memory/span/Span/) which are parameterized on the
   origin of the data they refer to.
 
 This section also covers [`ref` arguments](#ref-arguments) and
@@ -80,7 +80,7 @@ struct ImmutRef[origin: ImmutOrigin]:
     pass
 ```
 
-Or you can use the [`Origin`](/docs/std/builtin/type_aliases/Origin)
+Or you can use the [`Origin`](/docs/std/builtin/type_aliases/Origin/)
 struct to specify an origin with parametric mutability:
 
 ```mojo
@@ -99,7 +99,7 @@ depending on a parameter specified by the enclosing API.
 The `is_mutable` parameter here is an [infer-only
 parameter](/docs/manual/parameters/#infer-only-parameters). The `origin` value
 is often inferred, as well. For example, the following code creates a
-[`Pointer`](/docs/std/memory/pointer/Pointer) to an existing value, but
+[`Pointer`](/docs/std/memory/pointer/Pointer/) to an existing value, but
 doesn't need to specify an origin—the `origin` is inferred from the existing
 value.
 
@@ -114,7 +114,12 @@ def use_pointer():
 ### Origin sets
 
 An `OriginSet` is not a type of origin, it represents a group of origins. Origin
-sets are used for tracking the lifetimes of values captured in closures.
+sets are used for tracking the lifetimes of values captured in parametric
+closures.
+
+An `OriginSet` **isn't** a general-purpose mechanism for expressing a
+combination of multiple origins. Instead, you can use `origin_of()` to express
+an [origin union](#origin-unions).
 
 ### Origin values
 
@@ -128,11 +133,12 @@ few ways to specify origin values:
   associated with the value (or values) passed in.
 - Inferred origin. You can use inferred parameters to capture the origin of a
   value passed in to a function.
-- External origins. The external origins, `MutExternalOrigin` and
-  `ImmutExternalOrigin` represent values that are not tracked by the lifetime
+- Untracked origins. The untracked origins, `MutUntrackedOrigin` and
+  `ImmutUntrackedOrigin` represent values that are not tracked by the lifetime
   checker, such as dynamically-allocated memory.
-- Wildcard origins. The `ImmutAnyOrigin` and `MutAnyOrigin` `comptime` values
-  are special cases indicating a reference that might access any live value.
+- Wildcard origins. The `ImmutUnsafeAnyOrigin` and `MutUnsafeAnyOrigin`
+  `comptime` values are special cases indicating a reference that might access
+  any live value.
 
 #### Static origins
 
@@ -140,11 +146,12 @@ You can use the static origin `StaticConstantOrigin` when you have a
 value that exists for the entire duration of the program.
 
 For example, the `StringLiteral` method
-[`as_string_slice()`](/docs/std/builtin/string_literal/StringLiteral#as_string_slice)
-returns a [`StringSlice`](/docs/std/collections/string/string_slice/StringSlice)
-pointing to the original string literal. String literals are static—they're
-allocated at compile time and never destroyed—so the slice is created with an
-immutable, static origin.
+[`as_string_slice()`](/docs/std/builtin/string_literal/StringLiteral/#as_string_slice)
+returns a
+[`StringSlice`](/docs/std/collections/string/string_slice/StringSlice/) pointing
+to the original string literal. String literals are static—they're allocated at
+compile time and never destroyed—so the slice is created with an immutable,
+static origin.
 
 #### Derived origins
 
@@ -170,7 +177,7 @@ when the compiler analyzes `origin_of(foo())`, it doesn't run the `foo()`
 function.)
 
 The following struct stores a string value using a
-[`OwnedPointer`](/docs/std/memory/owned_pointer/OwnedPointer): a smart
+[`OwnedPointer`](/docs/std/memory/owned_pointer/OwnedPointer/): a smart
 pointer that holds an owned value. The `as_ptr()` method returns a `Pointer` to
 the stored string, using the same origin as the original `OwnedPointer`.
 
@@ -188,7 +195,7 @@ struct BoxedString:
 ```
 
 Note that the `as_ptr()` method takes its `self` argument as `mut self`. If it
-used the default `read` argument convention, it would be immutable, and the
+used the default argument convention, it would be immutable, and the
 derived origin (`origin_of(self.o_ptr)`) would also be immutable.
 
 You can also pass multiple expressions to `origin_of()` to express the union
@@ -198,12 +205,16 @@ of two or more origins:
 
 #### Origin unions
 
-The union of two or more origins creates a new origin that references all of
-the original origins for the purposes of lifetime extension (so a union of the
-origins of `a` and `b` extends both lifetimes).
+When a function returns a reference or pointer that can have one of several
+different origins, you can express the referenced origin as a union of all
+of the possible origin values.
 
-An origin union is mutable if and only if all of its constituent origins are
-mutable. For an example, see
+The union of two or more origins creates a new origin that references all of the
+original origins for the purposes of lifetime extension (so a union of the
+origins of `a` and `b` extends both lifetimes). An origin union is mutable if
+and only if all of its constituent origins are mutable. Use an origin union
+
+For an example, see
 [Return values with union origins](#return-values-with-union-origins).
 
 #### Inferred origins
@@ -217,27 +228,32 @@ it.
 See the section on [`ref` arguments](#ref-arguments) for an example using an
 inferred origin.
 
-#### External origins
+#### Untracked origins
 
-The external origins, `MutExternalOrigin` and `ImmutExternalOrigin` represent
+The untracked origins, `MutUntrackedOrigin` and `ImmutUntrackedOrigin` represent
 values that do not alias any existing value. That is, they point to memory that
 is not owned by any other variable, and are therefore not tracked by the
 lifetime checker. For example, the
 [`alloc()`](/docs/std/memory/unsafe_pointer/alloc/) function returns an
 `UnsafePointer` to a new dynamically-allocated block of memory, with the origin
-`MutExternalOrigin`. The origin indicates that the memory is not managed by the
+`MutUntrackedOrigin`. The origin indicates that the memory is not managed by the
 Mojo ownership system. When you use an unsafe API like this, you're responsible
 for managing the lifetime yourself: for example, a struct that allocates memory
 should generally free that memory in its destructor.
 
 #### Wildcard origins
 
-The wildcard origins, `ImmutAnyOrigin` and `MutAnyOrigin`, are special cases
-indicating a reference that might access any live value. These were previously
-widely used for unsafe pointers. Using a pointer with a wildcard origin into a
-scope effectively disables Mojo's ASAP destruction for any values in that scope,
-as long as the pointer is live. Accordingly, the use of wildcard origins is
-discouraged, and should be used as a last resort.
+The wildcard origins, `ImmutUnsafeAnyOrigin` and `MutUnsafeAnyOrigin`, are
+special cases indicating a reference that might access any live value. These
+were previously widely used for unsafe pointers. Using a pointer with a wildcard
+origin into a scope effectively disables Mojo's ASAP destruction for any values
+in that scope, as long as the pointer is live. It also prevents Mojo from
+enforcing
+[argument exclusivity](/docs/manual/values/ownership/#argument-exclusivity) and
+hides unused variable warnings.
+
+Accordingly, the use of wildcard origins is discouraged, and should be used as a
+last resort.
 
 ## Working with references
 
@@ -245,11 +261,8 @@ You can use the `ref` keyword with arguments and return values to specify a
 reference with parametric mutability. That is, they can be either mutable or
 immutable.
 
-From inside the called function, a `ref` argument looks like a `read` or
-`mut` argument.
-
 A `ref` return value looks like any other return value to the calling function,
-but it is a *reference* to an existing value, not a copy.
+but it's a *reference* to an existing value, not a copy.
 
 ### `ref` arguments
 
@@ -292,7 +305,7 @@ specifier can be either:
   ref[self]
   ```
 
-- An [`AddressSpace`](/docs/std/memory/pointer/AddressSpace) value.
+- An [`AddressSpace`](/docs/std/memory/pointer/AddressSpace/) value.
 
 - An underscore character (`_`) to indicate that the origin is *unbound*. This
   is equivalent to omitting the origin specifier.
@@ -405,7 +418,7 @@ Note the use of the `ref name` syntax to create a reference binding.
 
 If you assign a `ref` return value to a variable, the variable receives a
 *copy* of the referenced item. Use a
-[reference binding](/docs/manual/variables#reference-bindings) if you need to
+[reference binding](/docs/manual/variables/#reference-bindings) if you need to
 capture the reference for future use:
 
 ```mojo

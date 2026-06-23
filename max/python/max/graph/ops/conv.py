@@ -12,13 +12,16 @@
 # ===----------------------------------------------------------------------=== #
 """Op implementation for conv2d."""
 
-from max.mlir.dialects import rmo
+from max._core.dialects import builtin, rmo
 
 from .. import dtype_promotion
 from ..graph import Graph
 from ..type import ConvInputLayout, FilterLayout, Shape
 from ..value import TensorValue, TensorValueLike
+from .elementwise import add
 from .validation import assert_same_device
+
+_si64 = builtin.IntegerType(64, builtin.SignednessSemantics.signed)
 
 
 def conv2d(
@@ -106,19 +109,19 @@ def conv2d(
 
     assert_same_device(x=x, filter=filter)
 
-    conv_output = Graph.current._add_op(
-        rmo.conv,
-        x,
-        filter._with_layout(filter_layout),
-        Shape(stride).to_mlir(),
-        Shape(dilation).to_mlir(),
-        Shape(padding).to_mlir(),
-        groups,
-        input_layout=input_layout.to_mlir(),
+    conv_output = Graph.current._add_op_generated(
+        rmo.ConvOp,
+        input=x,
+        filter=filter._with_layout(filter_layout),
+        strides=Shape(stride),
+        dilations=Shape(dilation),
+        paddings=Shape(padding),
+        num_groups=builtin.IntegerAttr(_si64, groups),
+        input_layout=input_layout,
     )[0].tensor
 
     if bias is not None:
-        return Graph.current._add_op(rmo.add, conv_output, bias)[0].tensor
+        return add(conv_output, bias)
     return conv_output
 
 
@@ -205,17 +208,17 @@ def conv3d(
             " height, width, in_channels / num_groups, out_channels)"
         )
 
-    conv_output = Graph.current._add_op(
-        rmo.conv,
-        x,
-        filter._with_layout(filter_layout),
-        Shape(stride).to_mlir(),
-        Shape(dilation).to_mlir(),
-        Shape(padding).to_mlir(),
-        groups,
-        input_layout=input_layout.to_mlir(),
+    conv_output = Graph.current._add_op_generated(
+        rmo.ConvOp,
+        input=x,
+        filter=filter._with_layout(filter_layout),
+        strides=Shape(stride),
+        dilations=Shape(dilation),
+        paddings=Shape(padding),
+        num_groups=builtin.IntegerAttr(_si64, groups),
+        input_layout=input_layout,
     )[0].tensor
 
     if bias is not None:
-        return Graph.current._add_op(rmo.add, conv_output, bias)[0].tensor
+        return add(conv_output, bias)
     return conv_output

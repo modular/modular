@@ -21,7 +21,11 @@ Architecture config
 
    ArchConfig
    ArchConfigWithAttentionKVCache
+   ArchConfigWithBoundedMaxSeqLen
    ArchConfigWithKVCache
+   ArchConfigWithPermissiveMaxSeqLen
+   ArchConfigWithStoredKVParams
+   ArchVLConfigWithTextSubconfig
 
 Diffusion
 ---------
@@ -31,5 +35,4 @@ Diffusion
    :toctree: generated
    :template: autosummary/class.rst
 
-   ComponentModel
    DiffusionPipeline

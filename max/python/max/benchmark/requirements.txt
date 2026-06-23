@@ -5,6 +5,7 @@ huggingface_hub[hf_transfer]>=0.1.9
 huggingface_hub>=0.28.0
 msgspec>=0.19.0
 numpy>=1.18
+openai>=2.11.0
 prometheus-client>=0.21.0
 protobuf>=6.33.5,<6.34.0
 psutil>=7.0.0

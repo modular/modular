@@ -34,6 +34,7 @@ class PixelBenchmarkDataset(LocalBenchmarkDataset):
         image_guidance_scale: float | None = None,
         image_negative_prompt: str | None = None,
         image_seed: int | None = None,
+        num_frames: int | None = None,
     ) -> PixelGenerationImageOptions | None:
         options = PixelGenerationImageOptions(
             width=image_width,
@@ -42,6 +43,7 @@ class PixelBenchmarkDataset(LocalBenchmarkDataset):
             guidance_scale=image_guidance_scale,
             negative_prompt=image_negative_prompt,
             seed=image_seed,
+            num_frames=num_frames,
         )
         if all(value is None for value in dataclasses.asdict(options).values()):
             return None

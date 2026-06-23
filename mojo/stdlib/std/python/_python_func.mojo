@@ -11,23 +11,24 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.collections import OwnedKwargsDict
+from std.ffi import _CPointer
 from std.os import abort
 from std.sys.intrinsics import _type_is_eq
 
 from std.python import PythonObject as PO  # for brevity of signatures below
+from std.python._cpython import PyObjectPtr
 from std.python.bindings import check_arguments_arity
 
 
 struct PyObjectFunction[
     func_type: TrivialRegisterPassable,
-    self_type: ImplicitlyDestructible = NoneType,
+    self_type: ImplicitlyDeletable = NoneType,
     has_kwargs: Bool = False,
 ](ImplicitlyCopyable):
     """Wrapper to hide the binding logic for functions taking a variadic number
     of PythonObject arguments.
 
-    This currently supports function types with up to 6 positional arguments,
+    This currently supports function types with up to 8 positional arguments,
     both functions that raise and those that don't, both functions that return a PythonObject
     or nothing, and both functions that accept keyword arguments and those that don't.
 
@@ -38,7 +39,7 @@ struct PyObjectFunction[
 
     The has_kwargs parameter indicates whether this function accepts keyword arguments:
     - False (default): Function does not accept kwargs
-    - True: Function's last parameter is OwnedKwargsDict[PythonObject]
+    - True: Function accepts variadic keyword arguments (**kwargs: PythonObject)
 
     Note:
         This is a private implementation detail of the Python bindings, and have
@@ -57,10 +58,10 @@ struct PyObjectFunction[
     comptime _0e = def() thin raises
     comptime _0 = def() thin
 
-    comptime _0er_kwargs = def(OwnedKwargsDict[PO]) thin raises -> PO
-    comptime _0r_kwargs = def(OwnedKwargsDict[PO]) thin -> PO
-    comptime _0e_kwargs = def(OwnedKwargsDict[PO]) thin raises
-    comptime _0_kwargs = def(OwnedKwargsDict[PO]) thin
+    comptime _0er_kwargs = def(** kwargs: PO) thin raises -> PO
+    comptime _0r_kwargs = def(** kwargs: PO) thin -> PO
+    comptime _0e_kwargs = def(** kwargs: PO) thin raises
+    comptime _0_kwargs = def(** kwargs: PO) thin
 
     @doc_hidden
     @implicit
@@ -123,10 +124,10 @@ struct PyObjectFunction[
     comptime _1e = def(PO) thin raises
     comptime _1 = def(PO) thin
 
-    comptime _1er_kwargs = def(PO, OwnedKwargsDict[PO]) thin raises -> PO
-    comptime _1r_kwargs = def(PO, OwnedKwargsDict[PO]) thin -> PO
-    comptime _1e_kwargs = def(PO, OwnedKwargsDict[PO]) thin raises
-    comptime _1_kwargs = def(PO, OwnedKwargsDict[PO]) thin
+    comptime _1er_kwargs = def(a0: PO, ** kwargs: PO) thin raises -> PO
+    comptime _1r_kwargs = def(a0: PO, ** kwargs: PO) thin -> PO
+    comptime _1e_kwargs = def(a0: PO, ** kwargs: PO) thin raises
+    comptime _1_kwargs = def(a0: PO, ** kwargs: PO) thin
 
     @doc_hidden
     @implicit
@@ -212,16 +213,16 @@ struct PyObjectFunction[
     comptime _1_self = def(UnsafePointer[Self.self_type, MutAnyOrigin]) thin
 
     comptime _1er_self_kwargs = def(
-        UnsafePointer[Self.self_type, MutAnyOrigin], OwnedKwargsDict[PO]
+        self: UnsafePointer[Self.self_type, MutAnyOrigin], ** kwargs: PO
     ) thin raises -> PO
     comptime _1r_self_kwargs = def(
-        UnsafePointer[Self.self_type, MutAnyOrigin], OwnedKwargsDict[PO]
+        self: UnsafePointer[Self.self_type, MutAnyOrigin], ** kwargs: PO
     ) thin -> PO
     comptime _1e_self_kwargs = def(
-        UnsafePointer[Self.self_type, MutAnyOrigin], OwnedKwargsDict[PO]
+        self: UnsafePointer[Self.self_type, MutAnyOrigin], ** kwargs: PO
     ) thin raises
     comptime _1_self_kwargs = def(
-        UnsafePointer[Self.self_type, MutAnyOrigin], OwnedKwargsDict[PO]
+        self: UnsafePointer[Self.self_type, MutAnyOrigin], ** kwargs: PO
     ) thin
 
     @doc_hidden
@@ -312,16 +313,16 @@ struct PyObjectFunction[
     comptime _2_self = def(UnsafePointer[Self.self_type, MutAnyOrigin], PO) thin
 
     comptime _2er_self_kwargs = def(
-        UnsafePointer[Self.self_type, MutAnyOrigin], PO, OwnedKwargsDict[PO]
+        self: UnsafePointer[Self.self_type, MutAnyOrigin], a0: PO, ** kwargs: PO
     ) thin raises -> PO
     comptime _2r_self_kwargs = def(
-        UnsafePointer[Self.self_type, MutAnyOrigin], PO, OwnedKwargsDict[PO]
+        self: UnsafePointer[Self.self_type, MutAnyOrigin], a0: PO, ** kwargs: PO
     ) thin -> PO
     comptime _2e_self_kwargs = def(
-        UnsafePointer[Self.self_type, MutAnyOrigin], PO, OwnedKwargsDict[PO]
+        self: UnsafePointer[Self.self_type, MutAnyOrigin], a0: PO, ** kwargs: PO
     ) thin raises
     comptime _2_self_kwargs = def(
-        UnsafePointer[Self.self_type, MutAnyOrigin], PO, OwnedKwargsDict[PO]
+        self: UnsafePointer[Self.self_type, MutAnyOrigin], a0: PO, ** kwargs: PO
     ) thin
 
     @doc_hidden
@@ -414,16 +415,24 @@ struct PyObjectFunction[
     ) thin
 
     comptime _3er_self_kwargs = def(
-        UnsafePointer[Self.self_type, MutAnyOrigin], PO, PO, OwnedKwargsDict[PO]
+        self: UnsafePointer[Self.self_type, MutAnyOrigin],
+        a0: PO,
+        a1: PO, ** kwargs: PO,
     ) thin raises -> PO
     comptime _3r_self_kwargs = def(
-        UnsafePointer[Self.self_type, MutAnyOrigin], PO, PO, OwnedKwargsDict[PO]
+        self: UnsafePointer[Self.self_type, MutAnyOrigin],
+        a0: PO,
+        a1: PO, ** kwargs: PO,
     ) thin -> PO
     comptime _3e_self_kwargs = def(
-        UnsafePointer[Self.self_type, MutAnyOrigin], PO, PO, OwnedKwargsDict[PO]
+        self: UnsafePointer[Self.self_type, MutAnyOrigin],
+        a0: PO,
+        a1: PO, ** kwargs: PO,
     ) thin raises
     comptime _3_self_kwargs = def(
-        UnsafePointer[Self.self_type, MutAnyOrigin], PO, PO, OwnedKwargsDict[PO]
+        self: UnsafePointer[Self.self_type, MutAnyOrigin],
+        a0: PO,
+        a1: PO, ** kwargs: PO,
     ) thin
 
     @doc_hidden
@@ -516,32 +525,28 @@ struct PyObjectFunction[
     ) thin
 
     comptime _4er_self_kwargs = def(
-        UnsafePointer[Self.self_type, MutAnyOrigin],
-        PO,
-        PO,
-        PO,
-        OwnedKwargsDict[PO],
+        self: UnsafePointer[Self.self_type, MutAnyOrigin],
+        a0: PO,
+        a1: PO,
+        a2: PO, ** kwargs: PO,
     ) thin raises -> PO
     comptime _4r_self_kwargs = def(
-        UnsafePointer[Self.self_type, MutAnyOrigin],
-        PO,
-        PO,
-        PO,
-        OwnedKwargsDict[PO],
+        self: UnsafePointer[Self.self_type, MutAnyOrigin],
+        a0: PO,
+        a1: PO,
+        a2: PO, ** kwargs: PO,
     ) thin -> PO
     comptime _4e_self_kwargs = def(
-        UnsafePointer[Self.self_type, MutAnyOrigin],
-        PO,
-        PO,
-        PO,
-        OwnedKwargsDict[PO],
+        self: UnsafePointer[Self.self_type, MutAnyOrigin],
+        a0: PO,
+        a1: PO,
+        a2: PO, ** kwargs: PO,
     ) thin raises
     comptime _4_self_kwargs = def(
-        UnsafePointer[Self.self_type, MutAnyOrigin],
-        PO,
-        PO,
-        PO,
-        OwnedKwargsDict[PO],
+        self: UnsafePointer[Self.self_type, MutAnyOrigin],
+        a0: PO,
+        a1: PO,
+        a2: PO, ** kwargs: PO,
     ) thin
 
     @doc_hidden
@@ -625,10 +630,10 @@ struct PyObjectFunction[
     comptime _2e = def(PO, PO) thin raises
     comptime _2 = def(PO, PO) thin
 
-    comptime _2er_kwargs = def(PO, PO, OwnedKwargsDict[PO]) thin raises -> PO
-    comptime _2r_kwargs = def(PO, PO, OwnedKwargsDict[PO]) thin -> PO
-    comptime _2e_kwargs = def(PO, PO, OwnedKwargsDict[PO]) thin raises
-    comptime _2_kwargs = def(PO, PO, OwnedKwargsDict[PO]) thin
+    comptime _2er_kwargs = def(a0: PO, a1: PO, ** kwargs: PO) thin raises -> PO
+    comptime _2r_kwargs = def(a0: PO, a1: PO, ** kwargs: PO) thin -> PO
+    comptime _2e_kwargs = def(a0: PO, a1: PO, ** kwargs: PO) thin raises
+    comptime _2_kwargs = def(a0: PO, a1: PO, ** kwargs: PO) thin
 
     @doc_hidden
     @implicit
@@ -708,11 +713,11 @@ struct PyObjectFunction[
     comptime _3 = def(PO, PO, PO) thin
 
     comptime _3er_kwargs = def(
-        PO, PO, PO, OwnedKwargsDict[PO]
+        a0: PO, a1: PO, a2: PO, ** kwargs: PO
     ) thin raises -> PO
-    comptime _3r_kwargs = def(PO, PO, PO, OwnedKwargsDict[PO]) thin -> PO
-    comptime _3e_kwargs = def(PO, PO, PO, OwnedKwargsDict[PO]) thin raises
-    comptime _3_kwargs = def(PO, PO, PO, OwnedKwargsDict[PO]) thin
+    comptime _3r_kwargs = def(a0: PO, a1: PO, a2: PO, ** kwargs: PO) thin -> PO
+    comptime _3e_kwargs = def(a0: PO, a1: PO, a2: PO, ** kwargs: PO) thin raises
+    comptime _3_kwargs = def(a0: PO, a1: PO, a2: PO, ** kwargs: PO) thin
 
     @doc_hidden
     @implicit
@@ -792,11 +797,15 @@ struct PyObjectFunction[
     comptime _4 = def(PO, PO, PO, PO) thin
 
     comptime _4er_kwargs = def(
-        PO, PO, PO, PO, OwnedKwargsDict[PO]
+        a0: PO, a1: PO, a2: PO, a3: PO, ** kwargs: PO
     ) thin raises -> PO
-    comptime _4r_kwargs = def(PO, PO, PO, PO, OwnedKwargsDict[PO]) thin -> PO
-    comptime _4e_kwargs = def(PO, PO, PO, PO, OwnedKwargsDict[PO]) thin raises
-    comptime _4_kwargs = def(PO, PO, PO, PO, OwnedKwargsDict[PO]) thin
+    comptime _4r_kwargs = def(
+        a0: PO, a1: PO, a2: PO, a3: PO, ** kwargs: PO
+    ) thin -> PO
+    comptime _4e_kwargs = def(
+        a0: PO, a1: PO, a2: PO, a3: PO, ** kwargs: PO
+    ) thin raises
+    comptime _4_kwargs = def(a0: PO, a1: PO, a2: PO, a3: PO, ** kwargs: PO) thin
 
     @doc_hidden
     @implicit
@@ -884,36 +893,32 @@ struct PyObjectFunction[
     ) thin
 
     comptime _5er_self_kwargs = def(
-        UnsafePointer[Self.self_type, MutAnyOrigin],
-        PO,
-        PO,
-        PO,
-        PO,
-        OwnedKwargsDict[PO],
+        self: UnsafePointer[Self.self_type, MutAnyOrigin],
+        a0: PO,
+        a1: PO,
+        a2: PO,
+        a3: PO, ** kwargs: PO,
     ) thin raises -> PO
     comptime _5r_self_kwargs = def(
-        UnsafePointer[Self.self_type, MutAnyOrigin],
-        PO,
-        PO,
-        PO,
-        PO,
-        OwnedKwargsDict[PO],
+        self: UnsafePointer[Self.self_type, MutAnyOrigin],
+        a0: PO,
+        a1: PO,
+        a2: PO,
+        a3: PO, ** kwargs: PO,
     ) thin -> PO
     comptime _5e_self_kwargs = def(
-        UnsafePointer[Self.self_type, MutAnyOrigin],
-        PO,
-        PO,
-        PO,
-        PO,
-        OwnedKwargsDict[PO],
+        self: UnsafePointer[Self.self_type, MutAnyOrigin],
+        a0: PO,
+        a1: PO,
+        a2: PO,
+        a3: PO, ** kwargs: PO,
     ) thin raises
     comptime _5_self_kwargs = def(
-        UnsafePointer[Self.self_type, MutAnyOrigin],
-        PO,
-        PO,
-        PO,
-        PO,
-        OwnedKwargsDict[PO],
+        self: UnsafePointer[Self.self_type, MutAnyOrigin],
+        a0: PO,
+        a1: PO,
+        a2: PO,
+        a3: PO, ** kwargs: PO,
     ) thin
 
     @doc_hidden
@@ -998,15 +1003,17 @@ struct PyObjectFunction[
     comptime _5 = def(PO, PO, PO, PO, PO) thin
 
     comptime _5er_kwargs = def(
-        PO, PO, PO, PO, PO, OwnedKwargsDict[PO]
+        a0: PO, a1: PO, a2: PO, a3: PO, a4: PO, ** kwargs: PO
     ) thin raises -> PO
     comptime _5r_kwargs = def(
-        PO, PO, PO, PO, PO, OwnedKwargsDict[PO]
+        a0: PO, a1: PO, a2: PO, a3: PO, a4: PO, ** kwargs: PO
     ) thin -> PO
     comptime _5e_kwargs = def(
-        PO, PO, PO, PO, PO, OwnedKwargsDict[PO]
+        a0: PO, a1: PO, a2: PO, a3: PO, a4: PO, ** kwargs: PO
     ) thin raises
-    comptime _5_kwargs = def(PO, PO, PO, PO, PO, OwnedKwargsDict[PO]) thin
+    comptime _5_kwargs = def(
+        a0: PO, a1: PO, a2: PO, a3: PO, a4: PO, ** kwargs: PO
+    ) thin
 
     @doc_hidden
     @implicit
@@ -1094,40 +1101,36 @@ struct PyObjectFunction[
     ) thin
 
     comptime _6er_self_kwargs = def(
-        UnsafePointer[Self.self_type, MutAnyOrigin],
-        PO,
-        PO,
-        PO,
-        PO,
-        PO,
-        OwnedKwargsDict[PO],
+        self: UnsafePointer[Self.self_type, MutAnyOrigin],
+        a0: PO,
+        a1: PO,
+        a2: PO,
+        a3: PO,
+        a4: PO, ** kwargs: PO,
     ) thin raises -> PO
     comptime _6r_self_kwargs = def(
-        UnsafePointer[Self.self_type, MutAnyOrigin],
-        PO,
-        PO,
-        PO,
-        PO,
-        PO,
-        OwnedKwargsDict[PO],
+        self: UnsafePointer[Self.self_type, MutAnyOrigin],
+        a0: PO,
+        a1: PO,
+        a2: PO,
+        a3: PO,
+        a4: PO, ** kwargs: PO,
     ) thin -> PO
     comptime _6e_self_kwargs = def(
-        UnsafePointer[Self.self_type, MutAnyOrigin],
-        PO,
-        PO,
-        PO,
-        PO,
-        PO,
-        OwnedKwargsDict[PO],
+        self: UnsafePointer[Self.self_type, MutAnyOrigin],
+        a0: PO,
+        a1: PO,
+        a2: PO,
+        a3: PO,
+        a4: PO, ** kwargs: PO,
     ) thin raises
     comptime _6_self_kwargs = def(
-        UnsafePointer[Self.self_type, MutAnyOrigin],
-        PO,
-        PO,
-        PO,
-        PO,
-        PO,
-        OwnedKwargsDict[PO],
+        self: UnsafePointer[Self.self_type, MutAnyOrigin],
+        a0: PO,
+        a1: PO,
+        a2: PO,
+        a3: PO,
+        a4: PO, ** kwargs: PO,
     ) thin
 
     @doc_hidden
@@ -1212,15 +1215,17 @@ struct PyObjectFunction[
     comptime _6 = def(PO, PO, PO, PO, PO, PO) thin
 
     comptime _6er_kwargs = def(
-        PO, PO, PO, PO, PO, PO, OwnedKwargsDict[PO]
+        a0: PO, a1: PO, a2: PO, a3: PO, a4: PO, a5: PO, ** kwargs: PO
     ) thin raises -> PO
     comptime _6r_kwargs = def(
-        PO, PO, PO, PO, PO, PO, OwnedKwargsDict[PO]
+        a0: PO, a1: PO, a2: PO, a3: PO, a4: PO, a5: PO, ** kwargs: PO
     ) thin -> PO
     comptime _6e_kwargs = def(
-        PO, PO, PO, PO, PO, PO, OwnedKwargsDict[PO]
+        a0: PO, a1: PO, a2: PO, a3: PO, a4: PO, a5: PO, ** kwargs: PO
     ) thin raises
-    comptime _6_kwargs = def(PO, PO, PO, PO, PO, PO, OwnedKwargsDict[PO]) thin
+    comptime _6_kwargs = def(
+        a0: PO, a1: PO, a2: PO, a3: PO, a4: PO, a5: PO, ** kwargs: PO
+    ) thin
 
     @doc_hidden
     @implicit
@@ -1291,6 +1296,470 @@ struct PyObjectFunction[
         self._func = f
 
     # ===-------------------------------------------------------------------===#
+    # 7 arguments (typed self methods - 6 additional arguments)
+    # ===-------------------------------------------------------------------===#
+
+    comptime _7er_self = def(
+        UnsafePointer[Self.self_type, MutAnyOrigin], PO, PO, PO, PO, PO, PO
+    ) thin raises -> PO
+    comptime _7r_self = def(
+        UnsafePointer[Self.self_type, MutAnyOrigin], PO, PO, PO, PO, PO, PO
+    ) thin -> PO
+    comptime _7e_self = def(
+        UnsafePointer[Self.self_type, MutAnyOrigin], PO, PO, PO, PO, PO, PO
+    ) thin raises
+    comptime _7_self = def(
+        UnsafePointer[Self.self_type, MutAnyOrigin], PO, PO, PO, PO, PO, PO
+    ) thin
+
+    comptime _7er_self_kwargs = def(
+        self: UnsafePointer[Self.self_type, MutAnyOrigin],
+        a0: PO,
+        a1: PO,
+        a2: PO,
+        a3: PO,
+        a4: PO,
+        a5: PO, ** kwargs: PO,
+    ) thin raises -> PO
+    comptime _7r_self_kwargs = def(
+        self: UnsafePointer[Self.self_type, MutAnyOrigin],
+        a0: PO,
+        a1: PO,
+        a2: PO,
+        a3: PO,
+        a4: PO,
+        a5: PO, ** kwargs: PO,
+    ) thin -> PO
+    comptime _7e_self_kwargs = def(
+        self: UnsafePointer[Self.self_type, MutAnyOrigin],
+        a0: PO,
+        a1: PO,
+        a2: PO,
+        a3: PO,
+        a4: PO,
+        a5: PO, ** kwargs: PO,
+    ) thin raises
+    comptime _7_self_kwargs = def(
+        self: UnsafePointer[Self.self_type, MutAnyOrigin],
+        a0: PO,
+        a1: PO,
+        a2: PO,
+        a3: PO,
+        a4: PO,
+        a5: PO, ** kwargs: PO,
+    ) thin
+
+    @doc_hidden
+    @implicit
+    def __init__(
+        out self: PyObjectFunction[Self._7er_self, Self.self_type],
+        f: Self._7er_self,
+    ):
+        self._func = f
+
+    @doc_hidden
+    @implicit
+    def __init__(
+        out self: PyObjectFunction[Self._7r_self, Self.self_type],
+        f: Self._7r_self,
+    ):
+        self._func = f
+
+    @doc_hidden
+    @implicit
+    def __init__(
+        out self: PyObjectFunction[Self._7e_self, Self.self_type],
+        f: Self._7e_self,
+    ):
+        self._func = f
+
+    @doc_hidden
+    @implicit
+    def __init__(
+        out self: PyObjectFunction[Self._7_self, Self.self_type],
+        f: Self._7_self,
+    ):
+        self._func = f
+
+    @doc_hidden
+    @implicit
+    def __init__(
+        out self: PyObjectFunction[
+            Self._7er_self_kwargs, Self.self_type, has_kwargs=True
+        ],
+        f: Self._7er_self_kwargs,
+    ):
+        self._func = f
+
+    @doc_hidden
+    @implicit
+    def __init__(
+        out self: PyObjectFunction[
+            Self._7r_self_kwargs, Self.self_type, has_kwargs=True
+        ],
+        f: Self._7r_self_kwargs,
+    ):
+        self._func = f
+
+    @doc_hidden
+    @implicit
+    def __init__(
+        out self: PyObjectFunction[
+            Self._7e_self_kwargs, Self.self_type, has_kwargs=True
+        ],
+        f: Self._7e_self_kwargs,
+    ):
+        self._func = f
+
+    @doc_hidden
+    @implicit
+    def __init__(
+        out self: PyObjectFunction[
+            Self._7_self_kwargs, Self.self_type, has_kwargs=True
+        ],
+        f: Self._7_self_kwargs,
+    ):
+        self._func = f
+
+    # ===-------------------------------------------------------------------===#
+    # 7 arguments
+    # ===-------------------------------------------------------------------===#
+
+    comptime _7er = def(PO, PO, PO, PO, PO, PO, PO) thin raises -> PO
+    comptime _7r = def(PO, PO, PO, PO, PO, PO, PO) thin -> PO
+    comptime _7e = def(PO, PO, PO, PO, PO, PO, PO) thin raises
+    comptime _7 = def(PO, PO, PO, PO, PO, PO, PO) thin
+
+    comptime _7er_kwargs = def(
+        a0: PO, a1: PO, a2: PO, a3: PO, a4: PO, a5: PO, a6: PO, ** kwargs: PO
+    ) thin raises -> PO
+    comptime _7r_kwargs = def(
+        a0: PO, a1: PO, a2: PO, a3: PO, a4: PO, a5: PO, a6: PO, ** kwargs: PO
+    ) thin -> PO
+    comptime _7e_kwargs = def(
+        a0: PO, a1: PO, a2: PO, a3: PO, a4: PO, a5: PO, a6: PO, ** kwargs: PO
+    ) thin raises
+    comptime _7_kwargs = def(
+        a0: PO, a1: PO, a2: PO, a3: PO, a4: PO, a5: PO, a6: PO, ** kwargs: PO
+    ) thin
+
+    @doc_hidden
+    @implicit
+    def __init__(
+        out self: PyObjectFunction[Self._7er, Self.self_type], f: Self._7er
+    ):
+        self._func = f
+
+    @doc_hidden
+    @implicit
+    def __init__(
+        out self: PyObjectFunction[Self._7r, Self.self_type], f: Self._7r
+    ):
+        self._func = f
+
+    @doc_hidden
+    @implicit
+    def __init__(
+        out self: PyObjectFunction[Self._7e, Self.self_type], f: Self._7e
+    ):
+        self._func = f
+
+    @doc_hidden
+    @implicit
+    def __init__(
+        out self: PyObjectFunction[Self._7, Self.self_type], f: Self._7
+    ):
+        self._func = f
+
+    @doc_hidden
+    @implicit
+    def __init__(
+        out self: PyObjectFunction[
+            Self._7er_kwargs, Self.self_type, has_kwargs=True
+        ],
+        f: Self._7er_kwargs,
+    ):
+        self._func = f
+
+    @doc_hidden
+    @implicit
+    def __init__(
+        out self: PyObjectFunction[
+            Self._7r_kwargs, Self.self_type, has_kwargs=True
+        ],
+        f: Self._7r_kwargs,
+    ):
+        self._func = f
+
+    @doc_hidden
+    @implicit
+    def __init__(
+        out self: PyObjectFunction[
+            Self._7e_kwargs, Self.self_type, has_kwargs=True
+        ],
+        f: Self._7e_kwargs,
+    ):
+        self._func = f
+
+    @doc_hidden
+    @implicit
+    def __init__(
+        out self: PyObjectFunction[
+            Self._7_kwargs, Self.self_type, has_kwargs=True
+        ],
+        f: Self._7_kwargs,
+    ):
+        self._func = f
+
+    # ===-------------------------------------------------------------------===#
+    # 8 arguments (typed self methods - 7 additional arguments)
+    # ===-------------------------------------------------------------------===#
+
+    comptime _8er_self = def(
+        UnsafePointer[Self.self_type, MutAnyOrigin], PO, PO, PO, PO, PO, PO, PO
+    ) thin raises -> PO
+    comptime _8r_self = def(
+        UnsafePointer[Self.self_type, MutAnyOrigin], PO, PO, PO, PO, PO, PO, PO
+    ) thin -> PO
+    comptime _8e_self = def(
+        UnsafePointer[Self.self_type, MutAnyOrigin], PO, PO, PO, PO, PO, PO, PO
+    ) thin raises
+    comptime _8_self = def(
+        UnsafePointer[Self.self_type, MutAnyOrigin], PO, PO, PO, PO, PO, PO, PO
+    ) thin
+
+    comptime _8er_self_kwargs = def(
+        self: UnsafePointer[Self.self_type, MutAnyOrigin],
+        a0: PO,
+        a1: PO,
+        a2: PO,
+        a3: PO,
+        a4: PO,
+        a5: PO,
+        a6: PO, ** kwargs: PO,
+    ) thin raises -> PO
+    comptime _8r_self_kwargs = def(
+        self: UnsafePointer[Self.self_type, MutAnyOrigin],
+        a0: PO,
+        a1: PO,
+        a2: PO,
+        a3: PO,
+        a4: PO,
+        a5: PO,
+        a6: PO, ** kwargs: PO,
+    ) thin -> PO
+    comptime _8e_self_kwargs = def(
+        self: UnsafePointer[Self.self_type, MutAnyOrigin],
+        a0: PO,
+        a1: PO,
+        a2: PO,
+        a3: PO,
+        a4: PO,
+        a5: PO,
+        a6: PO, ** kwargs: PO,
+    ) thin raises
+    comptime _8_self_kwargs = def(
+        self: UnsafePointer[Self.self_type, MutAnyOrigin],
+        a0: PO,
+        a1: PO,
+        a2: PO,
+        a3: PO,
+        a4: PO,
+        a5: PO,
+        a6: PO, ** kwargs: PO,
+    ) thin
+
+    @doc_hidden
+    @implicit
+    def __init__(
+        out self: PyObjectFunction[Self._8er_self, Self.self_type],
+        f: Self._8er_self,
+    ):
+        self._func = f
+
+    @doc_hidden
+    @implicit
+    def __init__(
+        out self: PyObjectFunction[Self._8r_self, Self.self_type],
+        f: Self._8r_self,
+    ):
+        self._func = f
+
+    @doc_hidden
+    @implicit
+    def __init__(
+        out self: PyObjectFunction[Self._8e_self, Self.self_type],
+        f: Self._8e_self,
+    ):
+        self._func = f
+
+    @doc_hidden
+    @implicit
+    def __init__(
+        out self: PyObjectFunction[Self._8_self, Self.self_type],
+        f: Self._8_self,
+    ):
+        self._func = f
+
+    @doc_hidden
+    @implicit
+    def __init__(
+        out self: PyObjectFunction[
+            Self._8er_self_kwargs, Self.self_type, has_kwargs=True
+        ],
+        f: Self._8er_self_kwargs,
+    ):
+        self._func = f
+
+    @doc_hidden
+    @implicit
+    def __init__(
+        out self: PyObjectFunction[
+            Self._8r_self_kwargs, Self.self_type, has_kwargs=True
+        ],
+        f: Self._8r_self_kwargs,
+    ):
+        self._func = f
+
+    @doc_hidden
+    @implicit
+    def __init__(
+        out self: PyObjectFunction[
+            Self._8e_self_kwargs, Self.self_type, has_kwargs=True
+        ],
+        f: Self._8e_self_kwargs,
+    ):
+        self._func = f
+
+    @doc_hidden
+    @implicit
+    def __init__(
+        out self: PyObjectFunction[
+            Self._8_self_kwargs, Self.self_type, has_kwargs=True
+        ],
+        f: Self._8_self_kwargs,
+    ):
+        self._func = f
+
+    # ===-------------------------------------------------------------------===#
+    # 8 arguments
+    # ===-------------------------------------------------------------------===#
+
+    comptime _8er = def(PO, PO, PO, PO, PO, PO, PO, PO) thin raises -> PO
+    comptime _8r = def(PO, PO, PO, PO, PO, PO, PO, PO) thin -> PO
+    comptime _8e = def(PO, PO, PO, PO, PO, PO, PO, PO) thin raises
+    comptime _8 = def(PO, PO, PO, PO, PO, PO, PO, PO) thin
+
+    comptime _8er_kwargs = def(
+        a0: PO,
+        a1: PO,
+        a2: PO,
+        a3: PO,
+        a4: PO,
+        a5: PO,
+        a6: PO,
+        a7: PO, ** kwargs: PO,
+    ) thin raises -> PO
+    comptime _8r_kwargs = def(
+        a0: PO,
+        a1: PO,
+        a2: PO,
+        a3: PO,
+        a4: PO,
+        a5: PO,
+        a6: PO,
+        a7: PO, ** kwargs: PO,
+    ) thin -> PO
+    comptime _8e_kwargs = def(
+        a0: PO,
+        a1: PO,
+        a2: PO,
+        a3: PO,
+        a4: PO,
+        a5: PO,
+        a6: PO,
+        a7: PO, ** kwargs: PO,
+    ) thin raises
+    comptime _8_kwargs = def(
+        a0: PO,
+        a1: PO,
+        a2: PO,
+        a3: PO,
+        a4: PO,
+        a5: PO,
+        a6: PO,
+        a7: PO, ** kwargs: PO,
+    ) thin
+
+    @doc_hidden
+    @implicit
+    def __init__(
+        out self: PyObjectFunction[Self._8er, Self.self_type], f: Self._8er
+    ):
+        self._func = f
+
+    @doc_hidden
+    @implicit
+    def __init__(
+        out self: PyObjectFunction[Self._8r, Self.self_type], f: Self._8r
+    ):
+        self._func = f
+
+    @doc_hidden
+    @implicit
+    def __init__(
+        out self: PyObjectFunction[Self._8e, Self.self_type], f: Self._8e
+    ):
+        self._func = f
+
+    @doc_hidden
+    @implicit
+    def __init__(
+        out self: PyObjectFunction[Self._8, Self.self_type], f: Self._8
+    ):
+        self._func = f
+
+    @doc_hidden
+    @implicit
+    def __init__(
+        out self: PyObjectFunction[
+            Self._8er_kwargs, Self.self_type, has_kwargs=True
+        ],
+        f: Self._8er_kwargs,
+    ):
+        self._func = f
+
+    @doc_hidden
+    @implicit
+    def __init__(
+        out self: PyObjectFunction[
+            Self._8r_kwargs, Self.self_type, has_kwargs=True
+        ],
+        f: Self._8r_kwargs,
+    ):
+        self._func = f
+
+    @doc_hidden
+    @implicit
+    def __init__(
+        out self: PyObjectFunction[
+            Self._8e_kwargs, Self.self_type, has_kwargs=True
+        ],
+        f: Self._8e_kwargs,
+    ):
+        self._func = f
+
+    @doc_hidden
+    @implicit
+    def __init__(
+        out self: PyObjectFunction[
+            Self._8_kwargs, Self.self_type, has_kwargs=True
+        ],
+        f: Self._8_kwargs,
+    ):
+        self._func = f
+
+    # ===-------------------------------------------------------------------===#
     # Helper utilities
     # ===-------------------------------------------------------------------===#
 
@@ -1326,34 +1795,6 @@ struct PyObjectFunction[
                     e,
                 )
             )
-
-    @staticmethod
-    def _convert_kwargs(
-        py_kwargs: PythonObject,
-    ) raises -> OwnedKwargsDict[PythonObject]:
-        """Convert a Python dictionary to an OwnedKwargsDict.
-
-        Args:
-            py_kwargs: Python dictionary containing keyword arguments.
-
-        Returns:
-            An OwnedKwargsDict containing the keyword arguments.
-        """
-        var result = OwnedKwargsDict[PythonObject]()
-
-        # Handle the case where kwargs is None or empty
-        if not py_kwargs._obj_ptr:
-            return result^
-
-        # Iterate through the Python dictionary and populate OwnedKwargsDict
-        var items = py_kwargs.items()
-        for item in items:
-            var key = item[0]
-            var value = item[1]
-            var key_str = String(key)
-            result[key_str] = value
-
-        return result^
 
     # ===-------------------------------------------------------------------===#
     # Compile-time check utilities
@@ -1492,6 +1933,44 @@ struct PyObjectFunction[
             or Self._has_type[Self._6_self_kwargs]()
         ):
             return arity == 6
+        elif (
+            Self._has_type[Self._7er]()
+            or Self._has_type[Self._7r]()
+            or Self._has_type[Self._7e]()
+            or Self._has_type[Self._7]()
+            or Self._has_type[Self._7er_self]()
+            or Self._has_type[Self._7r_self]()
+            or Self._has_type[Self._7e_self]()
+            or Self._has_type[Self._7_self]()
+            or Self._has_type[Self._7er_kwargs]()
+            or Self._has_type[Self._7r_kwargs]()
+            or Self._has_type[Self._7e_kwargs]()
+            or Self._has_type[Self._7_kwargs]()
+            or Self._has_type[Self._7er_self_kwargs]()
+            or Self._has_type[Self._7r_self_kwargs]()
+            or Self._has_type[Self._7e_self_kwargs]()
+            or Self._has_type[Self._7_self_kwargs]()
+        ):
+            return arity == 7
+        elif (
+            Self._has_type[Self._8er]()
+            or Self._has_type[Self._8r]()
+            or Self._has_type[Self._8e]()
+            or Self._has_type[Self._8]()
+            or Self._has_type[Self._8er_self]()
+            or Self._has_type[Self._8r_self]()
+            or Self._has_type[Self._8e_self]()
+            or Self._has_type[Self._8_self]()
+            or Self._has_type[Self._8er_kwargs]()
+            or Self._has_type[Self._8r_kwargs]()
+            or Self._has_type[Self._8e_kwargs]()
+            or Self._has_type[Self._8_kwargs]()
+            or Self._has_type[Self._8er_self_kwargs]()
+            or Self._has_type[Self._8r_self_kwargs]()
+            or Self._has_type[Self._8e_self_kwargs]()
+            or Self._has_type[Self._8_self_kwargs]()
+        ):
+            return arity == 8
         else:
             return False
 
@@ -1501,14 +1980,27 @@ struct PyObjectFunction[
 
     @staticmethod
     @always_inline("nodebug")
-    def _dispatch[
+    def _dispatch_fast[
         is_method: Bool,
-    ](func: Self.func_type, py_self: PO, py_args: PO) raises -> PO:
-        """Compile-time dispatch for non-kwargs function/method calls."""
+    ](
+        func: Self.func_type,
+        py_self: PO,
+        args: UnsafePointer[PyObjectPtr, MutUntrackedOrigin],
+        nargs: Int,
+    ) raises -> PO:
+        """Compile-time dispatch for METH_FASTCALL non-kwargs function/method
+        calls. Reads positional arguments directly from the raw
+        `PyObject *const *` array CPython hands the callee, skipping the
+        tuple-packing path entirely.
+
+        Precondition: `args` is non-null. CPython's vectorcall protocol
+        (PEP 590) guarantees this for every METH_FASTCALL invocation,
+        including the `nargs == 0` case.
+        """
 
         comptime if Self._has_arity(0):
             comptime assert not is_method, "arity-0 methods not supported"
-            check_arguments_arity(0, py_args)
+            check_arguments_arity(0, nargs)
             comptime if Self._has_type[Self._0er]():
                 return rebind[Self._0er](func)()
             elif Self._has_type[Self._0r]():
@@ -1521,8 +2013,8 @@ struct PyObjectFunction[
                 return PO(None)
         elif Self._has_arity(1):
             comptime if not is_method:
-                check_arguments_arity(1, py_args)
-                var a0 = py_args[0]
+                check_arguments_arity(1, nargs)
+                var a0 = PO(from_borrowed=args[0])
                 comptime if Self._has_type[Self._1er]():
                     return rebind[Self._1er](func)(a0)
                 elif Self._has_type[Self._1r]():
@@ -1534,7 +2026,7 @@ struct PyObjectFunction[
                     rebind[Self._1](func)(a0)
                     return PO(None)
             else:
-                check_arguments_arity(0, py_args)
+                check_arguments_arity(0, nargs)
                 comptime if Self._has_type[Self._1er]():
                     return rebind[Self._1er](func)(py_self)
                 elif Self._has_type[Self._1r]():
@@ -1561,9 +2053,9 @@ struct PyObjectFunction[
                     return PO(None)
         elif Self._has_arity(2):
             comptime if not is_method:
-                check_arguments_arity(2, py_args)
-                var a0 = py_args[0]
-                var a1 = py_args[1]
+                check_arguments_arity(2, nargs)
+                var a0 = PO(from_borrowed=args[0])
+                var a1 = PO(from_borrowed=args[1])
                 comptime if Self._has_type[Self._2er]():
                     return rebind[Self._2er](func)(a0, a1)
                 elif Self._has_type[Self._2r]():
@@ -1575,8 +2067,8 @@ struct PyObjectFunction[
                     rebind[Self._2](func)(a0, a1)
                     return PO(None)
             else:
-                check_arguments_arity(1, py_args)
-                var a0 = py_args[0]
+                check_arguments_arity(1, nargs)
+                var a0 = PO(from_borrowed=args[0])
                 comptime if Self._has_type[Self._2er]():
                     return rebind[Self._2er](func)(py_self, a0)
                 elif Self._has_type[Self._2r]():
@@ -1603,10 +2095,10 @@ struct PyObjectFunction[
                     return PO(None)
         elif Self._has_arity(3):
             comptime if not is_method:
-                check_arguments_arity(3, py_args)
-                var a0 = py_args[0]
-                var a1 = py_args[1]
-                var a2 = py_args[2]
+                check_arguments_arity(3, nargs)
+                var a0 = PO(from_borrowed=args[0])
+                var a1 = PO(from_borrowed=args[1])
+                var a2 = PO(from_borrowed=args[2])
                 comptime if Self._has_type[Self._3er]():
                     return rebind[Self._3er](func)(a0, a1, a2)
                 elif Self._has_type[Self._3r]():
@@ -1618,9 +2110,9 @@ struct PyObjectFunction[
                     rebind[Self._3](func)(a0, a1, a2)
                     return PO(None)
             else:
-                check_arguments_arity(2, py_args)
-                var a0 = py_args[0]
-                var a1 = py_args[1]
+                check_arguments_arity(2, nargs)
+                var a0 = PO(from_borrowed=args[0])
+                var a1 = PO(from_borrowed=args[1])
                 comptime if Self._has_type[Self._3er]():
                     return rebind[Self._3er](func)(py_self, a0, a1)
                 elif Self._has_type[Self._3r]():
@@ -1651,11 +2143,11 @@ struct PyObjectFunction[
                     return PO(None)
         elif Self._has_arity(4):
             comptime if not is_method:
-                check_arguments_arity(4, py_args)
-                var a0 = py_args[0]
-                var a1 = py_args[1]
-                var a2 = py_args[2]
-                var a3 = py_args[3]
+                check_arguments_arity(4, nargs)
+                var a0 = PO(from_borrowed=args[0])
+                var a1 = PO(from_borrowed=args[1])
+                var a2 = PO(from_borrowed=args[2])
+                var a3 = PO(from_borrowed=args[3])
                 comptime if Self._has_type[Self._4er]():
                     return rebind[Self._4er](func)(a0, a1, a2, a3)
                 elif Self._has_type[Self._4r]():
@@ -1667,10 +2159,10 @@ struct PyObjectFunction[
                     rebind[Self._4](func)(a0, a1, a2, a3)
                     return PO(None)
             else:
-                check_arguments_arity(3, py_args)
-                var a0 = py_args[0]
-                var a1 = py_args[1]
-                var a2 = py_args[2]
+                check_arguments_arity(3, nargs)
+                var a0 = PO(from_borrowed=args[0])
+                var a1 = PO(from_borrowed=args[1])
+                var a2 = PO(from_borrowed=args[2])
                 comptime if Self._has_type[Self._4er]():
                     return rebind[Self._4er](func)(py_self, a0, a1, a2)
                 elif Self._has_type[Self._4r]():
@@ -1701,12 +2193,12 @@ struct PyObjectFunction[
                     return PO(None)
         elif Self._has_arity(5):
             comptime if not is_method:
-                check_arguments_arity(5, py_args)
-                var a0 = py_args[0]
-                var a1 = py_args[1]
-                var a2 = py_args[2]
-                var a3 = py_args[3]
-                var a4 = py_args[4]
+                check_arguments_arity(5, nargs)
+                var a0 = PO(from_borrowed=args[0])
+                var a1 = PO(from_borrowed=args[1])
+                var a2 = PO(from_borrowed=args[2])
+                var a3 = PO(from_borrowed=args[3])
+                var a4 = PO(from_borrowed=args[4])
                 comptime if Self._has_type[Self._5er]():
                     return rebind[Self._5er](func)(a0, a1, a2, a3, a4)
                 elif Self._has_type[Self._5r]():
@@ -1718,11 +2210,11 @@ struct PyObjectFunction[
                     rebind[Self._5](func)(a0, a1, a2, a3, a4)
                     return PO(None)
             else:
-                check_arguments_arity(4, py_args)
-                var a0 = py_args[0]
-                var a1 = py_args[1]
-                var a2 = py_args[2]
-                var a3 = py_args[3]
+                check_arguments_arity(4, nargs)
+                var a0 = PO(from_borrowed=args[0])
+                var a1 = PO(from_borrowed=args[1])
+                var a2 = PO(from_borrowed=args[2])
+                var a3 = PO(from_borrowed=args[3])
                 comptime if Self._has_type[Self._5er]():
                     return rebind[Self._5er](func)(py_self, a0, a1, a2, a3)
                 elif Self._has_type[Self._5r]():
@@ -1753,13 +2245,13 @@ struct PyObjectFunction[
                     return PO(None)
         elif Self._has_arity(6):
             comptime if not is_method:
-                check_arguments_arity(6, py_args)
-                var a0 = py_args[0]
-                var a1 = py_args[1]
-                var a2 = py_args[2]
-                var a3 = py_args[3]
-                var a4 = py_args[4]
-                var a5 = py_args[5]
+                check_arguments_arity(6, nargs)
+                var a0 = PO(from_borrowed=args[0])
+                var a1 = PO(from_borrowed=args[1])
+                var a2 = PO(from_borrowed=args[2])
+                var a3 = PO(from_borrowed=args[3])
+                var a4 = PO(from_borrowed=args[4])
+                var a5 = PO(from_borrowed=args[5])
                 comptime if Self._has_type[Self._6er]():
                     return rebind[Self._6er](func)(a0, a1, a2, a3, a4, a5)
                 elif Self._has_type[Self._6r]():
@@ -1771,12 +2263,12 @@ struct PyObjectFunction[
                     rebind[Self._6](func)(a0, a1, a2, a3, a4, a5)
                     return PO(None)
             else:
-                check_arguments_arity(5, py_args)
-                var a0 = py_args[0]
-                var a1 = py_args[1]
-                var a2 = py_args[2]
-                var a3 = py_args[3]
-                var a4 = py_args[4]
+                check_arguments_arity(5, nargs)
+                var a0 = PO(from_borrowed=args[0])
+                var a1 = PO(from_borrowed=args[1])
+                var a2 = PO(from_borrowed=args[2])
+                var a3 = PO(from_borrowed=args[3])
+                var a4 = PO(from_borrowed=args[4])
                 comptime if Self._has_type[Self._6er]():
                     return rebind[Self._6er](func)(py_self, a0, a1, a2, a3, a4)
                 elif Self._has_type[Self._6r]():
@@ -1805,6 +2297,132 @@ struct PyObjectFunction[
                         Self._get_self_arg(py_self), a0, a1, a2, a3, a4
                     )
                     return PO(None)
+        elif Self._has_arity(7):
+            comptime if not is_method:
+                check_arguments_arity(7, nargs)
+                var a0 = PO(from_borrowed=args[0])
+                var a1 = PO(from_borrowed=args[1])
+                var a2 = PO(from_borrowed=args[2])
+                var a3 = PO(from_borrowed=args[3])
+                var a4 = PO(from_borrowed=args[4])
+                var a5 = PO(from_borrowed=args[5])
+                var a6 = PO(from_borrowed=args[6])
+                comptime if Self._has_type[Self._7er]():
+                    return rebind[Self._7er](func)(a0, a1, a2, a3, a4, a5, a6)
+                elif Self._has_type[Self._7r]():
+                    return rebind[Self._7r](func)(a0, a1, a2, a3, a4, a5, a6)
+                elif Self._has_type[Self._7e]():
+                    rebind[Self._7e](func)(a0, a1, a2, a3, a4, a5, a6)
+                    return PO(None)
+                else:
+                    rebind[Self._7](func)(a0, a1, a2, a3, a4, a5, a6)
+                    return PO(None)
+            else:
+                check_arguments_arity(6, nargs)
+                var a0 = PO(from_borrowed=args[0])
+                var a1 = PO(from_borrowed=args[1])
+                var a2 = PO(from_borrowed=args[2])
+                var a3 = PO(from_borrowed=args[3])
+                var a4 = PO(from_borrowed=args[4])
+                var a5 = PO(from_borrowed=args[5])
+                comptime if Self._has_type[Self._7er]():
+                    return rebind[Self._7er](func)(
+                        py_self, a0, a1, a2, a3, a4, a5
+                    )
+                elif Self._has_type[Self._7r]():
+                    return rebind[Self._7r](func)(
+                        py_self, a0, a1, a2, a3, a4, a5
+                    )
+                elif Self._has_type[Self._7e]():
+                    rebind[Self._7e](func)(py_self, a0, a1, a2, a3, a4, a5)
+                    return PO(None)
+                elif Self._has_type[Self._7]():
+                    rebind[Self._7](func)(py_self, a0, a1, a2, a3, a4, a5)
+                    return PO(None)
+                elif Self._has_type[Self._7er_self]():
+                    return rebind[Self._7er_self](func)(
+                        Self._get_self_arg(py_self), a0, a1, a2, a3, a4, a5
+                    )
+                elif Self._has_type[Self._7r_self]():
+                    return rebind[Self._7r_self](func)(
+                        Self._get_self_arg(py_self), a0, a1, a2, a3, a4, a5
+                    )
+                elif Self._has_type[Self._7e_self]():
+                    rebind[Self._7e_self](func)(
+                        Self._get_self_arg(py_self), a0, a1, a2, a3, a4, a5
+                    )
+                    return PO(None)
+                else:
+                    rebind[Self._7_self](func)(
+                        Self._get_self_arg(py_self), a0, a1, a2, a3, a4, a5
+                    )
+                    return PO(None)
+        elif Self._has_arity(8):
+            comptime if not is_method:
+                check_arguments_arity(8, nargs)
+                var a0 = PO(from_borrowed=args[0])
+                var a1 = PO(from_borrowed=args[1])
+                var a2 = PO(from_borrowed=args[2])
+                var a3 = PO(from_borrowed=args[3])
+                var a4 = PO(from_borrowed=args[4])
+                var a5 = PO(from_borrowed=args[5])
+                var a6 = PO(from_borrowed=args[6])
+                var a7 = PO(from_borrowed=args[7])
+                comptime if Self._has_type[Self._8er]():
+                    return rebind[Self._8er](func)(
+                        a0, a1, a2, a3, a4, a5, a6, a7
+                    )
+                elif Self._has_type[Self._8r]():
+                    return rebind[Self._8r](func)(
+                        a0, a1, a2, a3, a4, a5, a6, a7
+                    )
+                elif Self._has_type[Self._8e]():
+                    rebind[Self._8e](func)(a0, a1, a2, a3, a4, a5, a6, a7)
+                    return PO(None)
+                else:
+                    rebind[Self._8](func)(a0, a1, a2, a3, a4, a5, a6, a7)
+                    return PO(None)
+            else:
+                check_arguments_arity(7, nargs)
+                var a0 = PO(from_borrowed=args[0])
+                var a1 = PO(from_borrowed=args[1])
+                var a2 = PO(from_borrowed=args[2])
+                var a3 = PO(from_borrowed=args[3])
+                var a4 = PO(from_borrowed=args[4])
+                var a5 = PO(from_borrowed=args[5])
+                var a6 = PO(from_borrowed=args[6])
+                comptime if Self._has_type[Self._8er]():
+                    return rebind[Self._8er](func)(
+                        py_self, a0, a1, a2, a3, a4, a5, a6
+                    )
+                elif Self._has_type[Self._8r]():
+                    return rebind[Self._8r](func)(
+                        py_self, a0, a1, a2, a3, a4, a5, a6
+                    )
+                elif Self._has_type[Self._8e]():
+                    rebind[Self._8e](func)(py_self, a0, a1, a2, a3, a4, a5, a6)
+                    return PO(None)
+                elif Self._has_type[Self._8]():
+                    rebind[Self._8](func)(py_self, a0, a1, a2, a3, a4, a5, a6)
+                    return PO(None)
+                elif Self._has_type[Self._8er_self]():
+                    return rebind[Self._8er_self](func)(
+                        Self._get_self_arg(py_self), a0, a1, a2, a3, a4, a5, a6
+                    )
+                elif Self._has_type[Self._8r_self]():
+                    return rebind[Self._8r_self](func)(
+                        Self._get_self_arg(py_self), a0, a1, a2, a3, a4, a5, a6
+                    )
+                elif Self._has_type[Self._8e_self]():
+                    rebind[Self._8e_self](func)(
+                        Self._get_self_arg(py_self), a0, a1, a2, a3, a4, a5, a6
+                    )
+                    return PO(None)
+                else:
+                    rebind[Self._8_self](func)(
+                        Self._get_self_arg(py_self), a0, a1, a2, a3, a4, a5, a6
+                    )
+                    return PO(None)
         else:
             comptime assert False, "unsupported arity"
 
@@ -1816,7 +2434,7 @@ struct PyObjectFunction[
         func: Self.func_type,
         py_self: PO,
         py_args: PO,
-        kwargs: OwnedKwargsDict[PO],
+        **kwargs: PO,
     ) raises -> PO:
         """Compile-time dispatch for kwargs function/method calls."""
         comptime assert Self.has_kwargs, "only for kwargs functions"
@@ -1825,57 +2443,57 @@ struct PyObjectFunction[
             comptime assert not is_method, "arity-0 methods not supported"
             check_arguments_arity(0, py_args)
             comptime if Self._has_type[Self._0er_kwargs]():
-                return rebind[Self._0er_kwargs](func)(kwargs)
+                return rebind[Self._0er_kwargs](func)(**kwargs^)
             elif Self._has_type[Self._0r_kwargs]():
-                return rebind[Self._0r_kwargs](func)(kwargs)
+                return rebind[Self._0r_kwargs](func)(**kwargs^)
             elif Self._has_type[Self._0e_kwargs]():
-                rebind[Self._0e_kwargs](func)(kwargs)
+                rebind[Self._0e_kwargs](func)(**kwargs^)
                 return PO(None)
             else:
-                rebind[Self._0_kwargs](func)(kwargs)
+                rebind[Self._0_kwargs](func)(**kwargs^)
                 return PO(None)
         elif Self._has_arity(1):
             comptime if not is_method:
                 check_arguments_arity(1, py_args)
                 var a0 = py_args[0]
                 comptime if Self._has_type[Self._1er_kwargs]():
-                    return rebind[Self._1er_kwargs](func)(a0, kwargs)
+                    return rebind[Self._1er_kwargs](func)(a0, **kwargs^)
                 elif Self._has_type[Self._1r_kwargs]():
-                    return rebind[Self._1r_kwargs](func)(a0, kwargs)
+                    return rebind[Self._1r_kwargs](func)(a0, **kwargs^)
                 elif Self._has_type[Self._1e_kwargs]():
-                    rebind[Self._1e_kwargs](func)(a0, kwargs)
+                    rebind[Self._1e_kwargs](func)(a0, **kwargs^)
                     return PO(None)
                 else:
-                    rebind[Self._1_kwargs](func)(a0, kwargs)
+                    rebind[Self._1_kwargs](func)(a0, **kwargs^)
                     return PO(None)
             else:
                 check_arguments_arity(0, py_args)
                 comptime if Self._has_type[Self._1er_kwargs]():
-                    return rebind[Self._1er_kwargs](func)(py_self, kwargs)
+                    return rebind[Self._1er_kwargs](func)(py_self, **kwargs^)
                 elif Self._has_type[Self._1r_kwargs]():
-                    return rebind[Self._1r_kwargs](func)(py_self, kwargs)
+                    return rebind[Self._1r_kwargs](func)(py_self, **kwargs^)
                 elif Self._has_type[Self._1e_kwargs]():
-                    rebind[Self._1e_kwargs](func)(py_self, kwargs)
+                    rebind[Self._1e_kwargs](func)(py_self, **kwargs^)
                     return PO(None)
                 elif Self._has_type[Self._1_kwargs]():
-                    rebind[Self._1_kwargs](func)(py_self, kwargs)
+                    rebind[Self._1_kwargs](func)(py_self, **kwargs^)
                     return PO(None)
                 elif Self._has_type[Self._1er_self_kwargs]():
                     return rebind[Self._1er_self_kwargs](func)(
-                        Self._get_self_arg(py_self), kwargs
+                        Self._get_self_arg(py_self), **kwargs^
                     )
                 elif Self._has_type[Self._1r_self_kwargs]():
                     return rebind[Self._1r_self_kwargs](func)(
-                        Self._get_self_arg(py_self), kwargs
+                        Self._get_self_arg(py_self), **kwargs^
                     )
                 elif Self._has_type[Self._1e_self_kwargs]():
                     rebind[Self._1e_self_kwargs](func)(
-                        Self._get_self_arg(py_self), kwargs
+                        Self._get_self_arg(py_self), **kwargs^
                     )
                     return PO(None)
                 else:
                     rebind[Self._1_self_kwargs](func)(
-                        Self._get_self_arg(py_self), kwargs
+                        Self._get_self_arg(py_self), **kwargs^
                     )
                     return PO(None)
         elif Self._has_arity(2):
@@ -1884,44 +2502,46 @@ struct PyObjectFunction[
                 var a0 = py_args[0]
                 var a1 = py_args[1]
                 comptime if Self._has_type[Self._2er_kwargs]():
-                    return rebind[Self._2er_kwargs](func)(a0, a1, kwargs)
+                    return rebind[Self._2er_kwargs](func)(a0, a1, **kwargs^)
                 elif Self._has_type[Self._2r_kwargs]():
-                    return rebind[Self._2r_kwargs](func)(a0, a1, kwargs)
+                    return rebind[Self._2r_kwargs](func)(a0, a1, **kwargs^)
                 elif Self._has_type[Self._2e_kwargs]():
-                    rebind[Self._2e_kwargs](func)(a0, a1, kwargs)
+                    rebind[Self._2e_kwargs](func)(a0, a1, **kwargs^)
                     return PO(None)
                 else:
-                    rebind[Self._2_kwargs](func)(a0, a1, kwargs)
+                    rebind[Self._2_kwargs](func)(a0, a1, **kwargs^)
                     return PO(None)
             else:
                 check_arguments_arity(1, py_args)
                 var a0 = py_args[0]
                 comptime if Self._has_type[Self._2er_kwargs]():
-                    return rebind[Self._2er_kwargs](func)(py_self, a0, kwargs)
+                    return rebind[Self._2er_kwargs](func)(
+                        py_self, a0, **kwargs^
+                    )
                 elif Self._has_type[Self._2r_kwargs]():
-                    return rebind[Self._2r_kwargs](func)(py_self, a0, kwargs)
+                    return rebind[Self._2r_kwargs](func)(py_self, a0, **kwargs^)
                 elif Self._has_type[Self._2e_kwargs]():
-                    rebind[Self._2e_kwargs](func)(py_self, a0, kwargs)
+                    rebind[Self._2e_kwargs](func)(py_self, a0, **kwargs^)
                     return PO(None)
                 elif Self._has_type[Self._2_kwargs]():
-                    rebind[Self._2_kwargs](func)(py_self, a0, kwargs)
+                    rebind[Self._2_kwargs](func)(py_self, a0, **kwargs^)
                     return PO(None)
                 elif Self._has_type[Self._2er_self_kwargs]():
                     return rebind[Self._2er_self_kwargs](func)(
-                        Self._get_self_arg(py_self), a0, kwargs
+                        Self._get_self_arg(py_self), a0, **kwargs^
                     )
                 elif Self._has_type[Self._2r_self_kwargs]():
                     return rebind[Self._2r_self_kwargs](func)(
-                        Self._get_self_arg(py_self), a0, kwargs
+                        Self._get_self_arg(py_self), a0, **kwargs^
                     )
                 elif Self._has_type[Self._2e_self_kwargs]():
                     rebind[Self._2e_self_kwargs](func)(
-                        Self._get_self_arg(py_self), a0, kwargs
+                        Self._get_self_arg(py_self), a0, **kwargs^
                     )
                     return PO(None)
                 else:
                     rebind[Self._2_self_kwargs](func)(
-                        Self._get_self_arg(py_self), a0, kwargs
+                        Self._get_self_arg(py_self), a0, **kwargs^
                     )
                     return PO(None)
         elif Self._has_arity(3):
@@ -1931,14 +2551,14 @@ struct PyObjectFunction[
                 var a1 = py_args[1]
                 var a2 = py_args[2]
                 comptime if Self._has_type[Self._3er_kwargs]():
-                    return rebind[Self._3er_kwargs](func)(a0, a1, a2, kwargs)
+                    return rebind[Self._3er_kwargs](func)(a0, a1, a2, **kwargs^)
                 elif Self._has_type[Self._3r_kwargs]():
-                    return rebind[Self._3r_kwargs](func)(a0, a1, a2, kwargs)
+                    return rebind[Self._3r_kwargs](func)(a0, a1, a2, **kwargs^)
                 elif Self._has_type[Self._3e_kwargs]():
-                    rebind[Self._3e_kwargs](func)(a0, a1, a2, kwargs)
+                    rebind[Self._3e_kwargs](func)(a0, a1, a2, **kwargs^)
                     return PO(None)
                 else:
-                    rebind[Self._3_kwargs](func)(a0, a1, a2, kwargs)
+                    rebind[Self._3_kwargs](func)(a0, a1, a2, **kwargs^)
                     return PO(None)
             else:
                 check_arguments_arity(2, py_args)
@@ -1946,34 +2566,34 @@ struct PyObjectFunction[
                 var a1 = py_args[1]
                 comptime if Self._has_type[Self._3er_kwargs]():
                     return rebind[Self._3er_kwargs](func)(
-                        py_self, a0, a1, kwargs
+                        py_self, a0, a1, **kwargs^
                     )
                 elif Self._has_type[Self._3r_kwargs]():
                     return rebind[Self._3r_kwargs](func)(
-                        py_self, a0, a1, kwargs
+                        py_self, a0, a1, **kwargs^
                     )
                 elif Self._has_type[Self._3e_kwargs]():
-                    rebind[Self._3e_kwargs](func)(py_self, a0, a1, kwargs)
+                    rebind[Self._3e_kwargs](func)(py_self, a0, a1, **kwargs^)
                     return PO(None)
                 elif Self._has_type[Self._3_kwargs]():
-                    rebind[Self._3_kwargs](func)(py_self, a0, a1, kwargs)
+                    rebind[Self._3_kwargs](func)(py_self, a0, a1, **kwargs^)
                     return PO(None)
                 elif Self._has_type[Self._3er_self_kwargs]():
                     return rebind[Self._3er_self_kwargs](func)(
-                        Self._get_self_arg(py_self), a0, a1, kwargs
+                        Self._get_self_arg(py_self), a0, a1, **kwargs^
                     )
                 elif Self._has_type[Self._3r_self_kwargs]():
                     return rebind[Self._3r_self_kwargs](func)(
-                        Self._get_self_arg(py_self), a0, a1, kwargs
+                        Self._get_self_arg(py_self), a0, a1, **kwargs^
                     )
                 elif Self._has_type[Self._3e_self_kwargs]():
                     rebind[Self._3e_self_kwargs](func)(
-                        Self._get_self_arg(py_self), a0, a1, kwargs
+                        Self._get_self_arg(py_self), a0, a1, **kwargs^
                     )
                     return PO(None)
                 else:
                     rebind[Self._3_self_kwargs](func)(
-                        Self._get_self_arg(py_self), a0, a1, kwargs
+                        Self._get_self_arg(py_self), a0, a1, **kwargs^
                     )
                     return PO(None)
         elif Self._has_arity(4):
@@ -1985,15 +2605,17 @@ struct PyObjectFunction[
                 var a3 = py_args[3]
                 comptime if Self._has_type[Self._4er_kwargs]():
                     return rebind[Self._4er_kwargs](func)(
-                        a0, a1, a2, a3, kwargs
+                        a0, a1, a2, a3, **kwargs^
                     )
                 elif Self._has_type[Self._4r_kwargs]():
-                    return rebind[Self._4r_kwargs](func)(a0, a1, a2, a3, kwargs)
+                    return rebind[Self._4r_kwargs](func)(
+                        a0, a1, a2, a3, **kwargs^
+                    )
                 elif Self._has_type[Self._4e_kwargs]():
-                    rebind[Self._4e_kwargs](func)(a0, a1, a2, a3, kwargs)
+                    rebind[Self._4e_kwargs](func)(a0, a1, a2, a3, **kwargs^)
                     return PO(None)
                 else:
-                    rebind[Self._4_kwargs](func)(a0, a1, a2, a3, kwargs)
+                    rebind[Self._4_kwargs](func)(a0, a1, a2, a3, **kwargs^)
                     return PO(None)
             else:
                 check_arguments_arity(3, py_args)
@@ -2002,34 +2624,36 @@ struct PyObjectFunction[
                 var a2 = py_args[2]
                 comptime if Self._has_type[Self._4er_kwargs]():
                     return rebind[Self._4er_kwargs](func)(
-                        py_self, a0, a1, a2, kwargs
+                        py_self, a0, a1, a2, **kwargs^
                     )
                 elif Self._has_type[Self._4r_kwargs]():
                     return rebind[Self._4r_kwargs](func)(
-                        py_self, a0, a1, a2, kwargs
+                        py_self, a0, a1, a2, **kwargs^
                     )
                 elif Self._has_type[Self._4e_kwargs]():
-                    rebind[Self._4e_kwargs](func)(py_self, a0, a1, a2, kwargs)
+                    rebind[Self._4e_kwargs](func)(
+                        py_self, a0, a1, a2, **kwargs^
+                    )
                     return PO(None)
                 elif Self._has_type[Self._4_kwargs]():
-                    rebind[Self._4_kwargs](func)(py_self, a0, a1, a2, kwargs)
+                    rebind[Self._4_kwargs](func)(py_self, a0, a1, a2, **kwargs^)
                     return PO(None)
                 elif Self._has_type[Self._4er_self_kwargs]():
                     return rebind[Self._4er_self_kwargs](func)(
-                        Self._get_self_arg(py_self), a0, a1, a2, kwargs
+                        Self._get_self_arg(py_self), a0, a1, a2, **kwargs^
                     )
                 elif Self._has_type[Self._4r_self_kwargs]():
                     return rebind[Self._4r_self_kwargs](func)(
-                        Self._get_self_arg(py_self), a0, a1, a2, kwargs
+                        Self._get_self_arg(py_self), a0, a1, a2, **kwargs^
                     )
                 elif Self._has_type[Self._4e_self_kwargs]():
                     rebind[Self._4e_self_kwargs](func)(
-                        Self._get_self_arg(py_self), a0, a1, a2, kwargs
+                        Self._get_self_arg(py_self), a0, a1, a2, **kwargs^
                     )
                     return PO(None)
                 else:
                     rebind[Self._4_self_kwargs](func)(
-                        Self._get_self_arg(py_self), a0, a1, a2, kwargs
+                        Self._get_self_arg(py_self), a0, a1, a2, **kwargs^
                     )
                     return PO(None)
         elif Self._has_arity(5):
@@ -2042,17 +2666,17 @@ struct PyObjectFunction[
                 var a4 = py_args[4]
                 comptime if Self._has_type[Self._5er_kwargs]():
                     return rebind[Self._5er_kwargs](func)(
-                        a0, a1, a2, a3, a4, kwargs
+                        a0, a1, a2, a3, a4, **kwargs^
                     )
                 elif Self._has_type[Self._5r_kwargs]():
                     return rebind[Self._5r_kwargs](func)(
-                        a0, a1, a2, a3, a4, kwargs
+                        a0, a1, a2, a3, a4, **kwargs^
                     )
                 elif Self._has_type[Self._5e_kwargs]():
-                    rebind[Self._5e_kwargs](func)(a0, a1, a2, a3, a4, kwargs)
+                    rebind[Self._5e_kwargs](func)(a0, a1, a2, a3, a4, **kwargs^)
                     return PO(None)
                 else:
-                    rebind[Self._5_kwargs](func)(a0, a1, a2, a3, a4, kwargs)
+                    rebind[Self._5_kwargs](func)(a0, a1, a2, a3, a4, **kwargs^)
                     return PO(None)
             else:
                 check_arguments_arity(4, py_args)
@@ -2062,38 +2686,38 @@ struct PyObjectFunction[
                 var a3 = py_args[3]
                 comptime if Self._has_type[Self._5er_kwargs]():
                     return rebind[Self._5er_kwargs](func)(
-                        py_self, a0, a1, a2, a3, kwargs
+                        py_self, a0, a1, a2, a3, **kwargs^
                     )
                 elif Self._has_type[Self._5r_kwargs]():
                     return rebind[Self._5r_kwargs](func)(
-                        py_self, a0, a1, a2, a3, kwargs
+                        py_self, a0, a1, a2, a3, **kwargs^
                     )
                 elif Self._has_type[Self._5e_kwargs]():
                     rebind[Self._5e_kwargs](func)(
-                        py_self, a0, a1, a2, a3, kwargs
+                        py_self, a0, a1, a2, a3, **kwargs^
                     )
                     return PO(None)
                 elif Self._has_type[Self._5_kwargs]():
                     rebind[Self._5_kwargs](func)(
-                        py_self, a0, a1, a2, a3, kwargs
+                        py_self, a0, a1, a2, a3, **kwargs^
                     )
                     return PO(None)
                 elif Self._has_type[Self._5er_self_kwargs]():
                     return rebind[Self._5er_self_kwargs](func)(
-                        Self._get_self_arg(py_self), a0, a1, a2, a3, kwargs
+                        Self._get_self_arg(py_self), a0, a1, a2, a3, **kwargs^
                     )
                 elif Self._has_type[Self._5r_self_kwargs]():
                     return rebind[Self._5r_self_kwargs](func)(
-                        Self._get_self_arg(py_self), a0, a1, a2, a3, kwargs
+                        Self._get_self_arg(py_self), a0, a1, a2, a3, **kwargs^
                     )
                 elif Self._has_type[Self._5e_self_kwargs]():
                     rebind[Self._5e_self_kwargs](func)(
-                        Self._get_self_arg(py_self), a0, a1, a2, a3, kwargs
+                        Self._get_self_arg(py_self), a0, a1, a2, a3, **kwargs^
                     )
                     return PO(None)
                 else:
                     rebind[Self._5_self_kwargs](func)(
-                        Self._get_self_arg(py_self), a0, a1, a2, a3, kwargs
+                        Self._get_self_arg(py_self), a0, a1, a2, a3, **kwargs^
                     )
                     return PO(None)
         elif Self._has_arity(6):
@@ -2107,19 +2731,21 @@ struct PyObjectFunction[
                 var a5 = py_args[5]
                 comptime if Self._has_type[Self._6er_kwargs]():
                     return rebind[Self._6er_kwargs](func)(
-                        a0, a1, a2, a3, a4, a5, kwargs
+                        a0, a1, a2, a3, a4, a5, **kwargs^
                     )
                 elif Self._has_type[Self._6r_kwargs]():
                     return rebind[Self._6r_kwargs](func)(
-                        a0, a1, a2, a3, a4, a5, kwargs
+                        a0, a1, a2, a3, a4, a5, **kwargs^
                     )
                 elif Self._has_type[Self._6e_kwargs]():
                     rebind[Self._6e_kwargs](func)(
-                        a0, a1, a2, a3, a4, a5, kwargs
+                        a0, a1, a2, a3, a4, a5, **kwargs^
                     )
                     return PO(None)
                 else:
-                    rebind[Self._6_kwargs](func)(a0, a1, a2, a3, a4, a5, kwargs)
+                    rebind[Self._6_kwargs](func)(
+                        a0, a1, a2, a3, a4, a5, **kwargs^
+                    )
                     return PO(None)
             else:
                 check_arguments_arity(5, py_args)
@@ -2130,38 +2756,268 @@ struct PyObjectFunction[
                 var a4 = py_args[4]
                 comptime if Self._has_type[Self._6er_kwargs]():
                     return rebind[Self._6er_kwargs](func)(
-                        py_self, a0, a1, a2, a3, a4, kwargs
+                        py_self, a0, a1, a2, a3, a4, **kwargs^
                     )
                 elif Self._has_type[Self._6r_kwargs]():
                     return rebind[Self._6r_kwargs](func)(
-                        py_self, a0, a1, a2, a3, a4, kwargs
+                        py_self, a0, a1, a2, a3, a4, **kwargs^
                     )
                 elif Self._has_type[Self._6e_kwargs]():
                     rebind[Self._6e_kwargs](func)(
-                        py_self, a0, a1, a2, a3, a4, kwargs
+                        py_self, a0, a1, a2, a3, a4, **kwargs^
                     )
                     return PO(None)
                 elif Self._has_type[Self._6_kwargs]():
                     rebind[Self._6_kwargs](func)(
-                        py_self, a0, a1, a2, a3, a4, kwargs
+                        py_self, a0, a1, a2, a3, a4, **kwargs^
                     )
                     return PO(None)
                 elif Self._has_type[Self._6er_self_kwargs]():
                     return rebind[Self._6er_self_kwargs](func)(
-                        Self._get_self_arg(py_self), a0, a1, a2, a3, a4, kwargs
+                        Self._get_self_arg(py_self),
+                        a0,
+                        a1,
+                        a2,
+                        a3,
+                        a4,
+                        **kwargs^,
                     )
                 elif Self._has_type[Self._6r_self_kwargs]():
                     return rebind[Self._6r_self_kwargs](func)(
-                        Self._get_self_arg(py_self), a0, a1, a2, a3, a4, kwargs
+                        Self._get_self_arg(py_self),
+                        a0,
+                        a1,
+                        a2,
+                        a3,
+                        a4,
+                        **kwargs^,
                     )
                 elif Self._has_type[Self._6e_self_kwargs]():
                     rebind[Self._6e_self_kwargs](func)(
-                        Self._get_self_arg(py_self), a0, a1, a2, a3, a4, kwargs
+                        Self._get_self_arg(py_self),
+                        a0,
+                        a1,
+                        a2,
+                        a3,
+                        a4,
+                        **kwargs^,
                     )
                     return PO(None)
                 else:
                     rebind[Self._6_self_kwargs](func)(
-                        Self._get_self_arg(py_self), a0, a1, a2, a3, a4, kwargs
+                        Self._get_self_arg(py_self),
+                        a0,
+                        a1,
+                        a2,
+                        a3,
+                        a4,
+                        **kwargs^,
+                    )
+                    return PO(None)
+        elif Self._has_arity(7):
+            comptime if not is_method:
+                check_arguments_arity(7, py_args)
+                var a0 = py_args[0]
+                var a1 = py_args[1]
+                var a2 = py_args[2]
+                var a3 = py_args[3]
+                var a4 = py_args[4]
+                var a5 = py_args[5]
+                var a6 = py_args[6]
+                comptime if Self._has_type[Self._7er_kwargs]():
+                    return rebind[Self._7er_kwargs](func)(
+                        a0, a1, a2, a3, a4, a5, a6, **kwargs^
+                    )
+                elif Self._has_type[Self._7r_kwargs]():
+                    return rebind[Self._7r_kwargs](func)(
+                        a0, a1, a2, a3, a4, a5, a6, **kwargs^
+                    )
+                elif Self._has_type[Self._7e_kwargs]():
+                    rebind[Self._7e_kwargs](func)(
+                        a0, a1, a2, a3, a4, a5, a6, **kwargs^
+                    )
+                    return PO(None)
+                else:
+                    rebind[Self._7_kwargs](func)(
+                        a0, a1, a2, a3, a4, a5, a6, **kwargs^
+                    )
+                    return PO(None)
+            else:
+                check_arguments_arity(6, py_args)
+                var a0 = py_args[0]
+                var a1 = py_args[1]
+                var a2 = py_args[2]
+                var a3 = py_args[3]
+                var a4 = py_args[4]
+                var a5 = py_args[5]
+                comptime if Self._has_type[Self._7er_kwargs]():
+                    return rebind[Self._7er_kwargs](func)(
+                        py_self, a0, a1, a2, a3, a4, a5, **kwargs^
+                    )
+                elif Self._has_type[Self._7r_kwargs]():
+                    return rebind[Self._7r_kwargs](func)(
+                        py_self, a0, a1, a2, a3, a4, a5, **kwargs^
+                    )
+                elif Self._has_type[Self._7e_kwargs]():
+                    rebind[Self._7e_kwargs](func)(
+                        py_self, a0, a1, a2, a3, a4, a5, **kwargs^
+                    )
+                    return PO(None)
+                elif Self._has_type[Self._7_kwargs]():
+                    rebind[Self._7_kwargs](func)(
+                        py_self, a0, a1, a2, a3, a4, a5, **kwargs^
+                    )
+                    return PO(None)
+                elif Self._has_type[Self._7er_self_kwargs]():
+                    return rebind[Self._7er_self_kwargs](func)(
+                        Self._get_self_arg(py_self),
+                        a0,
+                        a1,
+                        a2,
+                        a3,
+                        a4,
+                        a5,
+                        **kwargs^,
+                    )
+                elif Self._has_type[Self._7r_self_kwargs]():
+                    return rebind[Self._7r_self_kwargs](func)(
+                        Self._get_self_arg(py_self),
+                        a0,
+                        a1,
+                        a2,
+                        a3,
+                        a4,
+                        a5,
+                        **kwargs^,
+                    )
+                elif Self._has_type[Self._7e_self_kwargs]():
+                    rebind[Self._7e_self_kwargs](func)(
+                        Self._get_self_arg(py_self),
+                        a0,
+                        a1,
+                        a2,
+                        a3,
+                        a4,
+                        a5,
+                        **kwargs^,
+                    )
+                    return PO(None)
+                else:
+                    rebind[Self._7_self_kwargs](func)(
+                        Self._get_self_arg(py_self),
+                        a0,
+                        a1,
+                        a2,
+                        a3,
+                        a4,
+                        a5,
+                        **kwargs^,
+                    )
+                    return PO(None)
+        elif Self._has_arity(8):
+            comptime if not is_method:
+                check_arguments_arity(8, py_args)
+                var a0 = py_args[0]
+                var a1 = py_args[1]
+                var a2 = py_args[2]
+                var a3 = py_args[3]
+                var a4 = py_args[4]
+                var a5 = py_args[5]
+                var a6 = py_args[6]
+                var a7 = py_args[7]
+                comptime if Self._has_type[Self._8er_kwargs]():
+                    return rebind[Self._8er_kwargs](func)(
+                        a0, a1, a2, a3, a4, a5, a6, a7, **kwargs^
+                    )
+                elif Self._has_type[Self._8r_kwargs]():
+                    return rebind[Self._8r_kwargs](func)(
+                        a0, a1, a2, a3, a4, a5, a6, a7, **kwargs^
+                    )
+                elif Self._has_type[Self._8e_kwargs]():
+                    rebind[Self._8e_kwargs](func)(
+                        a0, a1, a2, a3, a4, a5, a6, a7, **kwargs^
+                    )
+                    return PO(None)
+                else:
+                    rebind[Self._8_kwargs](func)(
+                        a0, a1, a2, a3, a4, a5, a6, a7, **kwargs^
+                    )
+                    return PO(None)
+            else:
+                check_arguments_arity(7, py_args)
+                var a0 = py_args[0]
+                var a1 = py_args[1]
+                var a2 = py_args[2]
+                var a3 = py_args[3]
+                var a4 = py_args[4]
+                var a5 = py_args[5]
+                var a6 = py_args[6]
+                comptime if Self._has_type[Self._8er_kwargs]():
+                    return rebind[Self._8er_kwargs](func)(
+                        py_self, a0, a1, a2, a3, a4, a5, a6, **kwargs^
+                    )
+                elif Self._has_type[Self._8r_kwargs]():
+                    return rebind[Self._8r_kwargs](func)(
+                        py_self, a0, a1, a2, a3, a4, a5, a6, **kwargs^
+                    )
+                elif Self._has_type[Self._8e_kwargs]():
+                    rebind[Self._8e_kwargs](func)(
+                        py_self, a0, a1, a2, a3, a4, a5, a6, **kwargs^
+                    )
+                    return PO(None)
+                elif Self._has_type[Self._8_kwargs]():
+                    rebind[Self._8_kwargs](func)(
+                        py_self, a0, a1, a2, a3, a4, a5, a6, **kwargs^
+                    )
+                    return PO(None)
+                elif Self._has_type[Self._8er_self_kwargs]():
+                    return rebind[Self._8er_self_kwargs](func)(
+                        Self._get_self_arg(py_self),
+                        a0,
+                        a1,
+                        a2,
+                        a3,
+                        a4,
+                        a5,
+                        a6,
+                        **kwargs^,
+                    )
+                elif Self._has_type[Self._8r_self_kwargs]():
+                    return rebind[Self._8r_self_kwargs](func)(
+                        Self._get_self_arg(py_self),
+                        a0,
+                        a1,
+                        a2,
+                        a3,
+                        a4,
+                        a5,
+                        a6,
+                        **kwargs^,
+                    )
+                elif Self._has_type[Self._8e_self_kwargs]():
+                    rebind[Self._8e_self_kwargs](func)(
+                        Self._get_self_arg(py_self),
+                        a0,
+                        a1,
+                        a2,
+                        a3,
+                        a4,
+                        a5,
+                        a6,
+                        **kwargs^,
+                    )
+                    return PO(None)
+                else:
+                    rebind[Self._8_self_kwargs](func)(
+                        Self._get_self_arg(py_self),
+                        a0,
+                        a1,
+                        a2,
+                        a3,
+                        a4,
+                        a5,
+                        a6,
+                        **kwargs^,
                     )
                     return PO(None)
         else:

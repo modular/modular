@@ -17,7 +17,7 @@ from collections.abc import Iterable
 
 from max._mlir.dialects import _ods_common
 from max._mlir.dialects.mo import *
-from max._mlir.dialects.mo import GraphOp, IfOp, ParallelOp, _Dialect
+from max._mlir.dialects.mo import GraphOp, IfOp, _Dialect
 
 from .. import Attribute, Block, FunctionType, Type, TypeAttr
 
@@ -45,112 +45,107 @@ class GraphOp(GraphOp):  # type: ignore[no-redef]
 
 @_ods_common._cext.register_operation(_Dialect, replace=True)
 class IfOp(IfOp):  # type: ignore[no-redef]
-    """Extends mo.if op with simpler builders."""
+    """Extends mo.if op with simpler builders.
+
+    Pass ``then_block`` and/or ``else_block`` to attach pre-built blocks to
+    the op's regions; this is the supported way to construct an ``mo.if``
+    whose body was populated before the op existed (see
+    :class:`~max.graph.GraphBlock`). When omitted, an empty entry block is
+    created for the region (existing behavior).
+    """
 
     def __init__(
         self,
         pred,  # noqa: ANN001
         out_types: Iterable[Type] | None,
+        *,
+        then_block: Block | None = None,
+        else_block: Block | None = None,
         loc=None,  # noqa: ANN001
         ip=None,  # noqa: ANN001
     ) -> None:
         if out_types is None:
             out_types = []
         super().__init__(results_=list(out_types), cond=pred)
-        Block.create_at_start(self.thenRegion, [])
-        Block.create_at_start(self.elseRegion, [])
+        if then_block is None:
+            Block.create_at_start(self.thenRegion, [])
+        else:
+            then_block.append_to(self.thenRegion)
+        if else_block is None:
+            Block.create_at_start(self.elseRegion, [])
+        else:
+            else_block.append_to(self.elseRegion)
 
 
 def if_(  # type: ignore[no-redef]
     pred,  # noqa: ANN001
     out_types,  # noqa: ANN001
+    *,
+    then_block: Block | None = None,
+    else_block: Block | None = None,
     loc=None,  # noqa: ANN001
     ip=None,  # noqa: ANN001
 ) -> _ods_common.VariadicResultValueT:
     return _ods_common.get_op_result_or_op_results(
         # mypy doesn't see the IfOp definition above, but the one that is replaced
-        IfOp(pred=pred, out_types=out_types, loc=loc, ip=ip)  # type: ignore[call-arg]
+        IfOp(  # type: ignore[call-arg]
+            pred=pred,
+            out_types=out_types,
+            then_block=then_block,
+            else_block=else_block,
+            loc=loc,
+            ip=ip,
+        )
     )
 
 
 @_ods_common._cext.register_operation(_Dialect, replace=True)
 class WhileOp(WhileOp):  # type: ignore[no-redef]
-    """Extends mo.while op with simpler builders."""
+    """Extends mo.while op with simpler builders.
 
-    def __init__(self, results_, inputs, *, loc=None, ip=None) -> None:  # noqa: ANN001
-        if results_ is None:
-            results_ = []
-        super().__init__(results_=results_, inputs=inputs, loc=loc, ip=ip)
-        Block.create_at_start(self.condRegion, results_)
-        Block.create_at_start(self.bodyRegion, results_)
-
-
-def while_(  # type: ignore[no-redef]
-    results_,  # noqa: ANN001
-    inputs,  # noqa: ANN001
-    *,
-    loc=None,  # noqa: ANN001
-    ip=None,  # noqa: ANN001
-) -> _ods_common.VariadicResultValueT:
-    return _ods_common.get_op_result_or_op_results(
-        WhileOp(results_=results_, inputs=inputs, loc=loc, ip=ip)
-    )
-
-
-@_ods_common._cext.register_operation(_Dialect, replace=True)
-class ParallelOp(ParallelOp):  # type: ignore[no-redef]
-    """Extends mo.parallel op with a simpler builder that creates block args.
-
-    The parallel op takes ``!mo.bundle`` operands and produces bundle results.
-    An optional ``buffers`` list provides per-launch signal buffers for
-    collective operations.  ``buffers`` and ``in_chain`` must be both present
-    or both absent.  ``block_arg_types`` supplies the representative per-launch
-    types so that the body block can be created with the right argument types.
+    Pass ``cond_block`` and/or ``body_block`` to attach pre-built blocks to
+    the op's regions; see :class:`~max.graph.GraphBlock`. When omitted,
+    empty entry blocks are created for each region (existing behavior).
     """
 
     def __init__(
         self,
         results_,  # noqa: ANN001
         inputs,  # noqa: ANN001
-        buffers=None,  # noqa: ANN001
-        in_chain=None,  # noqa: ANN001
         *,
-        block_arg_types=None,  # noqa: ANN001
+        cond_block: Block | None = None,
+        body_block: Block | None = None,
         loc=None,  # noqa: ANN001
         ip=None,  # noqa: ANN001
     ) -> None:
-        all_results = list(results_)
-        if in_chain is not None:
-            all_results.append(Type.parse("!mo.chain"))
-        super().__init__(
-            results_=all_results,
-            inputs=inputs,
-            buffers=buffers if buffers is not None else [],
-            inChain=in_chain,
-            loc=loc,
-            ip=ip,
-        )
-        if block_arg_types is not None:
-            Block.create_at_start(self.bodyRegion, block_arg_types)
+        if results_ is None:
+            results_ = []
+        super().__init__(results_=results_, inputs=inputs, loc=loc, ip=ip)
+        if cond_block is None:
+            Block.create_at_start(self.condRegion, results_)
+        else:
+            cond_block.append_to(self.condRegion)
+        if body_block is None:
+            Block.create_at_start(self.bodyRegion, results_)
+        else:
+            body_block.append_to(self.bodyRegion)
 
 
-def parallel_(
+def while_(  # type: ignore[no-redef]
     results_,  # noqa: ANN001
     inputs,  # noqa: ANN001
-    buffers=None,  # noqa: ANN001
-    in_chain=None,  # noqa: ANN001
     *,
-    block_arg_types=None,  # noqa: ANN001
+    cond_block: Block | None = None,
+    body_block: Block | None = None,
     loc=None,  # noqa: ANN001
     ip=None,  # noqa: ANN001
 ) -> _ods_common.VariadicResultValueT:
     return _ods_common.get_op_result_or_op_results(
-        ParallelOp(  # type: ignore[call-arg]
+        WhileOp(  # type: ignore[call-arg]
             results_=results_,
             inputs=inputs,
-            buffers=buffers,
-            in_chain=in_chain,
-            block_arg_types=block_arg_types,
+            cond_block=cond_block,
+            body_block=body_block,
             loc=loc,
             ip=ip,
         )

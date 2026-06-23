@@ -62,7 +62,7 @@ struct Inner_matmul_neon(InnerMatmulKernel, Movable):
         var global_k = global_offset.K + tile_n_k_idx[1]
 
         var b_ptr = b_packed.ptr_at_offset(
-            Coord(Idx(n_outer_idx), Idx(tile_n_k_idx[1]), Idx(0))
+            Coord(n_outer_idx, tile_n_k_idx[1], Idx[0])
         )
 
         var a_vals = InlineArray[SIMD[c_local.dtype, a_col_size], kernel_rows](
@@ -72,7 +72,7 @@ struct Inner_matmul_neon(InnerMatmulKernel, Movable):
         comptime for row in range(kernel_rows):
             var global_m = global_offset.M + row
             var a_val = a.load[width=a_col_size](
-                Coord(Idx(global_m), Idx(global_k))
+                Coord(global_m, global_k)
             ).cast[c_local.dtype]()
             a_vals[row] = a_val
 

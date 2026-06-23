@@ -29,7 +29,7 @@ And on the command line:
   mojo -D FLOAT32 main.mojo
 ```
 
-For more information, see the [Mojo build docs](https://www.mojolang.org/docs/cli/build.html#d-keyvalue).
+For more information, see the [Mojo build docs](https://mojolang.org/docs/cli/build/#d-keyvalue).
 The `mojo run` command also supports the `-D` option.
 
 
@@ -234,9 +234,9 @@ struct MojoVersion(ImplicitlyCopyable, TrivialRegisterPassable):
     def __init__(out self):
         """Initializes the version by reading it from the compiler at compile time.
         """
-        self.major = Int(value=__mlir_op.`lit.mojo.version.major`())
-        self.minor = Int(value=__mlir_op.`lit.mojo.version.minor`())
-        self.patch = Int(value=__mlir_op.`lit.mojo.version.patch`())
+        self.major = Int(mlir_value=__mlir_op.`lit.mojo.version.major`())
+        self.minor = Int(mlir_value=__mlir_op.`lit.mojo.version.minor`())
+        self.patch = Int(mlir_value=__mlir_op.`lit.mojo.version.patch`())
 
 
 comptime MOJO_VERSION = MojoVersion()

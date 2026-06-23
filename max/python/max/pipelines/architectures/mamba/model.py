@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Sequence
-from typing import Any, cast
+from typing import Any, ClassVar, cast
 
 import numpy as np
 from max.driver import Buffer, Device
@@ -23,11 +23,10 @@ from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef
 from max.graph.weights import Weights, WeightsAdapter
-from max.interfaces import LogProbabilities, RequestID
-from max.nn.kv_cache import KVCacheInputs, KVCacheParams
+from max.nn.kv_cache import KVCacheInputsInterface, KVCacheParams
 from max.nn.kv_cache.cache_params import KVCacheParamInterface
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
-from max.pipelines.core import TextContext
+from max.pipelines.context import LogProbabilities, TextContext
 from max.pipelines.lib import (
     KVCacheConfig,
     ModelInputs,
@@ -40,6 +39,7 @@ from max.pipelines.lib.log_probabilities import (
     log_probabilities_ragged_graph,
 )
 from max.pipelines.lib.utils import parse_state_dict_from_weights
+from max.pipelines.modeling.types import RequestID
 from max.profiler import traced
 from transformers import AutoConfig
 
@@ -85,6 +85,8 @@ class MambaModel(PipelineModelWithKVCache[TextContext]):
     The step model processes single new tokens using cached states.
     """
 
+    model_config_cls: ClassVar[type[Any]] = MambaConfig
+
     def __init__(
         self,
         pipeline_config: PipelineConfig,
@@ -128,14 +130,6 @@ class MambaModel(PipelineModelWithKVCache[TextContext]):
     @classmethod
     def get_num_layers(cls, huggingface_config: AutoConfig) -> int:
         return MambaConfig.get_num_layers(huggingface_config)
-
-    @staticmethod
-    def calculate_max_seq_len(
-        pipeline_config: PipelineConfig, huggingface_config: AutoConfig
-    ) -> int:
-        return MambaConfig.calculate_max_seq_len(
-            pipeline_config, huggingface_config
-        )
 
     @classmethod
     def get_kv_params(
@@ -301,7 +295,7 @@ class MambaModel(PipelineModelWithKVCache[TextContext]):
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
+        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> MambaModelInputs:
         if len(replica_batches) != 1:
@@ -358,25 +352,6 @@ class MambaModel(PipelineModelWithKVCache[TextContext]):
             request_ids=request_ids,
         )
         inputs.kv_cache_inputs = kv_cache_inputs
-        return inputs
-
-    def prepare_next_token_inputs(
-        self,
-        next_tokens: Buffer,
-        prev_model_inputs: ModelInputs,
-    ) -> MambaModelInputs:
-        prev = cast(MambaModelInputs, prev_model_inputs)
-        layer_states = self._ssm_cache.get_states(prev.request_ids)
-
-        inputs = MambaModelInputs(
-            tokens=next_tokens,
-            input_row_offsets=prev.input_row_offsets,
-            return_n_logits=prev.return_n_logits,
-            is_prefill=False,
-            layer_states=layer_states,
-            request_ids=prev.request_ids,
-        )
-        inputs.kv_cache_inputs = prev.kv_cache_inputs
         return inputs
 
     def release(self, request_id: RequestID) -> None:

@@ -62,7 +62,9 @@ class Dim:
         if isinstance(value, Dim):
             # For base Dim constructor, pass through any existing Dim.
             return value
-        if isinstance(value, int | np.integer | builtin.IntegerAttr):
+        if isinstance(
+            value, int | np.integer | builtin.IntegerAttr | kgen.SIMDAttr
+        ):
             return super().__new__(StaticDim)
         if isinstance(value, str | kgen.ParamDeclRefAttr):
             return super().__new__(SymbolicDim)
@@ -124,32 +126,48 @@ class Dim:
         return not self == other
 
     def __add__(self, rhs: DimLike) -> Dim:
+        if not isinstance(rhs, DimLike):
+            return NotImplemented
         return AlgebraicDim.apply(kgen.POC.add, self, rhs)
 
     def __radd__(self, lhs: DimLike) -> Dim:
+        if not isinstance(lhs, DimLike):
+            return NotImplemented
         return Dim(lhs) + self
 
     def __mul__(self, rhs: DimLike) -> Dim:
+        if not isinstance(rhs, DimLike):
+            return NotImplemented
         return AlgebraicDim.apply(kgen.POC.mul_no_wrap, self, rhs)
 
     def __rmul__(self, lhs: DimLike) -> Dim:
+        if not isinstance(lhs, DimLike):
+            return NotImplemented
         return Dim(lhs) * self
 
     def __neg__(self) -> Dim:
         return -1 * self
 
     def __sub__(self, rhs: DimLike) -> Dim:
+        if not isinstance(rhs, DimLike):
+            return NotImplemented
         return self + -Dim(rhs)
 
     def __rsub__(self, lhs: DimLike) -> Dim:
+        if not isinstance(lhs, DimLike):
+            return NotImplemented
         return lhs + -self
 
     def __floordiv__(self, rhs: DimLike) -> Dim:
+        if not isinstance(rhs, DimLike):
+            return NotImplemented
         if isinstance(rhs, int | StaticDim) and int(rhs) == 0:
             raise ZeroDivisionError
         return AlgebraicDim.apply(kgen.POC.div, self, rhs)
 
     def __rfloordiv__(self, lhs: DimLike) -> Dim:
+        if not isinstance(lhs, DimLike):
+            return NotImplemented
         return lhs // self
 
     def to_mlir(self) -> builtin.TypedAttr:
@@ -172,7 +190,7 @@ class Dim:
         Returns:
             Dim: The dimension represented by the MLIR Attr value.
         """
-        if isinstance(attr, builtin.IntegerAttr):
+        if isinstance(attr, builtin.IntegerAttr | kgen.SIMDAttr):
             return StaticDim.from_mlir(attr)
         elif isinstance(attr, kgen.ParamDeclRefAttr):
             return SymbolicDim.from_mlir(attr)
@@ -253,7 +271,7 @@ class SymbolicDim(Dim):
         Returns:
             An ``mlir.Attribute`` in the context representing the dimension.
         """
-        si64 = builtin.IntegerType(64, builtin.SignednessSemantics.signed)
+        si64 = kgen.SIMDType(1, kgen._KGENDType.get_int(64, True))
         return kgen.ParamDeclRefAttr(self.name, si64)
 
     @staticmethod
@@ -419,6 +437,10 @@ class StaticDim(Dim):
     """The size of the static dimension."""
 
     def __init__(self, dim: int | builtin.TypedAttr | StaticDim) -> None:
+        # Use CastToBuiltinAttr to fold back to integer.
+        if isinstance(dim, kgen.SIMDAttr):
+            dim = kgen.CastToBuiltinAttr(dim)
+
         if isinstance(dim, builtin.IntegerAttr):
             dim = dim.value
         elif isinstance(dim, StaticDim):
@@ -460,7 +482,7 @@ class StaticDim(Dim):
     def __hash__(self):
         return hash(self.dim)
 
-    def to_mlir(self) -> builtin.IntegerAttr:
+    def to_mlir(self) -> builtin.TypedAttr:
         """Creates an ``mlir.Attribute`` representing this dimension.
 
         This is used internally when constructing tensor MLIR types.
@@ -469,7 +491,7 @@ class StaticDim(Dim):
             An ``mlir.Attribute`` in the context representing the dimension.
         """
         si64 = builtin.IntegerType(64, builtin.SignednessSemantics.signed)
-        return builtin.IntegerAttr(si64, self.dim)
+        return kgen.CastFromBuiltinAttr(builtin.IntegerAttr(si64, self.dim))
 
     @staticmethod
     def from_mlir(attr: builtin.TypedAttr) -> StaticDim:
@@ -481,7 +503,7 @@ class StaticDim(Dim):
         Returns:
             StaticDim: The ``StaticDim`` represented by the ``builtin.IntegerAttr``.
         """
-        if not isinstance(attr, builtin.IntegerAttr):
+        if not isinstance(attr, builtin.IntegerAttr | kgen.SIMDAttr):
             raise TypeError(
                 f"StaticDim.from_mlir only accepts builtin.IntegerAttr, got {type(attr).__name__}"
             )
@@ -493,4 +515,4 @@ class StaticDim(Dim):
         return ()
 
 
-DimLike = int | str | Dim | np.integer[Any] | builtin.TypedAttr
+DimLike = int | str | Dim | np.integer | builtin.TypedAttr

@@ -69,8 +69,10 @@ def test_no_interp_no_temporal[dtype: DType](ctx: DeviceContext) raises:
     var half = dim // 2
     for t in range(num_frames):
         for d in range(half):
-            var omega = 1.0 / (10000.0 ** (Float32(2 * d) / Float32(dim)))
-            var angle = Float32(t) * omega
+            var omega = 1.0 / (
+                Float32(10000.0) ** (Float32(2 * d) / Float32(dim))
+            )
+            var angle = Float32(t) * Float32(omega)
             tw_tt[t, d] = sin(angle)
             tw_tt[t, half + d] = cos(angle)
 
@@ -86,11 +88,11 @@ def test_no_interp_no_temporal[dtype: DType](ctx: DeviceContext) raises:
     ctx.enqueue_copy(g_dev, g_ptr)
     ctx.enqueue_copy(tw_dev, tw_ptr)
 
-    var x_d = TileTensor(x_dev, row_major(Idx(L), Idx(dim)))
-    var w_d = TileTensor(w_dev, row_major(Idx(H), Idx(W), Idx(dim)))
-    var g_d = TileTensor(g_dev, row_major(Idx(N), Idx(3)))
-    var tw_d = TileTensor(tw_dev, row_major(Idx(num_frames), Idx(dim)))
-    var out_d = TileTensor(out_dev, row_major(Idx(L), Idx(dim)))
+    var x_d = TileTensor(x_dev, row_major(L, dim))
+    var w_d = TileTensor(w_dev, row_major(H, W, dim))
+    var g_d = TileTensor(g_dev, row_major(N, Idx[3]))
+    var tw_d = TileTensor(tw_dev, row_major(num_frames, dim))
+    var out_d = TileTensor(out_dev, row_major(L, dim))
 
     learnable_2d_interp_pos_emb(out_d, x_d, w_d, g_d, tw_d, ctx)
     ctx.enqueue_copy(out_ptr, out_dev)
@@ -152,8 +154,10 @@ def test_no_interp_with_temporal[dtype: DType](ctx: DeviceContext) raises:
     var half = dim // 2
     for t in range(num_frames):
         for d in range(half):
-            var omega = 1.0 / (10000.0 ** (Float32(2 * d) / Float32(dim)))
-            var angle = Float32(t) * omega
+            var omega = 1.0 / (
+                Float32(10000.0) ** (Float32(2 * d) / Float32(dim))
+            )
+            var angle = Float32(t) * Float32(omega)
             tw_tt[t, d] = sin(angle)
             tw_tt[t, half + d] = cos(angle)
 
@@ -169,11 +173,11 @@ def test_no_interp_with_temporal[dtype: DType](ctx: DeviceContext) raises:
     ctx.enqueue_copy(g_dev, g_ptr)
     ctx.enqueue_copy(tw_dev, tw_ptr)
 
-    var x_d = TileTensor(x_dev, row_major(Idx(L), Idx(dim)))
-    var w_d = TileTensor(w_dev, row_major(Idx(H), Idx(W), Idx(dim)))
-    var g_d = TileTensor(g_dev, row_major(Idx(N), Idx(3)))
-    var tw_d = TileTensor(tw_dev, row_major(Idx(num_frames), Idx(dim)))
-    var out_d = TileTensor(out_dev, row_major(Idx(L), Idx(dim)))
+    var x_d = TileTensor(x_dev, row_major(L, dim))
+    var w_d = TileTensor(w_dev, row_major(H, W, dim))
+    var g_d = TileTensor(g_dev, row_major(N, Idx[3]))
+    var tw_d = TileTensor(tw_dev, row_major(num_frames, dim))
+    var out_d = TileTensor(out_dev, row_major(L, dim))
 
     learnable_2d_interp_pos_emb(out_d, x_d, w_d, g_d, tw_d, ctx)
     ctx.enqueue_copy(out_ptr, out_dev)
@@ -242,8 +246,10 @@ def test_bicubic_constant_field[dtype: DType](ctx: DeviceContext) raises:
     var half = dim // 2
     for t in range(num_frames):
         for d in range(half):
-            var omega = 1.0 / (10000.0 ** (Float32(2 * d) / Float32(dim)))
-            var angle = Float32(t) * omega
+            var omega = 1.0 / (
+                Float32(10000.0) ** (Float32(2 * d) / Float32(dim))
+            )
+            var angle = Float32(t) * Float32(omega)
             tw_tt[t, d] = sin(angle)
             tw_tt[t, half + d] = cos(angle)
 
@@ -259,11 +265,11 @@ def test_bicubic_constant_field[dtype: DType](ctx: DeviceContext) raises:
     ctx.enqueue_copy(g_dev, g_ptr)
     ctx.enqueue_copy(tw_dev, tw_ptr)
 
-    var x_d = TileTensor(x_dev, row_major(Idx(L), Idx(dim)))
-    var w_d = TileTensor(w_dev, row_major(Idx(H), Idx(W), Idx(dim)))
-    var g_d = TileTensor(g_dev, row_major(Idx(N), Idx(3)))
-    var tw_d = TileTensor(tw_dev, row_major(Idx(num_frames), Idx(dim)))
-    var out_d = TileTensor(out_dev, row_major(Idx(L), Idx(dim)))
+    var x_d = TileTensor(x_dev, row_major(L, dim))
+    var w_d = TileTensor(w_dev, row_major(H, W, dim))
+    var g_d = TileTensor(g_dev, row_major(N, Idx[3]))
+    var tw_d = TileTensor(tw_dev, row_major(num_frames, dim))
+    var out_d = TileTensor(out_dev, row_major(L, dim))
 
     learnable_2d_interp_pos_emb(out_d, x_d, w_d, g_d, tw_d, ctx)
     ctx.enqueue_copy(out_ptr, out_dev)
@@ -345,8 +351,10 @@ def test_multi_video[dtype: DType](ctx: DeviceContext) raises:
     var half = dim // 2
     for t in range(num_frames):
         for d in range(half):
-            var omega = 1.0 / (10000.0 ** (Float32(2 * d) / Float32(dim)))
-            var angle = Float32(t) * omega
+            var omega = 1.0 / (
+                Float32(10000.0) ** (Float32(2 * d) / Float32(dim))
+            )
+            var angle = Float32(t) * Float32(omega)
             tw_tt[t, d] = sin(angle)
             tw_tt[t, half + d] = cos(angle)
 
@@ -413,11 +421,11 @@ def test_multi_video[dtype: DType](ctx: DeviceContext) raises:
     ctx.enqueue_copy(g_dev, g_ptr)
     ctx.enqueue_copy(tw_dev, tw_ptr)
 
-    var x_d = TileTensor(x_dev, row_major(Idx(L), Idx(dim)))
-    var w_d = TileTensor(w_dev, row_major(Idx(H), Idx(W), Idx(dim)))
-    var g_d = TileTensor(g_dev, row_major(Idx(N), Idx(3)))
-    var tw_d = TileTensor(tw_dev, row_major(Idx(num_frames), Idx(dim)))
-    var out_d = TileTensor(out_dev, row_major(Idx(L), Idx(dim)))
+    var x_d = TileTensor(x_dev, row_major(L, dim))
+    var w_d = TileTensor(w_dev, row_major(H, W, dim))
+    var g_d = TileTensor(g_dev, row_major(N, Idx[3]))
+    var tw_d = TileTensor(tw_dev, row_major(num_frames, dim))
+    var out_d = TileTensor(out_dev, row_major(L, dim))
 
     learnable_2d_interp_pos_emb(out_d, x_d, w_d, g_d, tw_d, ctx)
     ctx.enqueue_copy(out_ptr, out_dev)
@@ -447,8 +455,10 @@ def test_sincos_embed(ctx: DeviceContext) raises:
     var half = dim // 2
     for t in range(num_frames):
         for d in range(half):
-            var omega = 1.0 / (10000.0 ** (Float32(2 * d) / Float32(dim)))
-            var angle = Float32(t) * omega
+            var omega = 1.0 / (
+                Float32(10000.0) ** (Float32(2 * d) / Float32(dim))
+            )
+            var angle = Float32(t) * Float32(omega)
             tw_tt[t, d] = sin(angle)
             tw_tt[t, half + d] = cos(angle)
 

@@ -29,7 +29,7 @@ from std.benchmark import (
     ThroughputMeasure,
 )
 from layout import Idx, TileTensor, row_major
-from comm.sync import enable_p2p
+from comm.sync import enable_p2p, init_signal_buffer
 from comm.allreduce import allreduce
 from comm import MAX_GPUS, Signal
 import comm.vendor.ccl as vendor_ccl
@@ -148,19 +148,20 @@ def bench_reduce[
                 size_of[Signal]() + temp_buffer_num_bytes
             )
         )
-        list_of_ctx[gpu_idx].enqueue_memset[DType.uint8](
-            signal_buffers[gpu_idx], 0
-        )
+        init_signal_buffer(signal_buffers[gpu_idx], list_of_ctx[gpu_idx])
         rank_sigs[gpu_idx] = (
-            signal_buffers[gpu_idx].unsafe_ptr().bitcast[Signal]()
+            signal_buffers[gpu_idx]
+            .unsafe_ptr()
+            .bitcast[Signal]()
+            .as_unsafe_any_origin()
         )
 
     # Create and initialize input and output buffers.
     comptime InTensorType = TileTensor[
-        dtype, type_of(row_major(Idx(length))), ImmutAnyOrigin
+        dtype, type_of(row_major(length)), ImmutAnyOrigin
     ]
     comptime OutTensorType = TileTensor[
-        dtype, type_of(row_major(Idx(length))), MutAnyOrigin
+        dtype, type_of(row_major(length)), MutAnyOrigin
     ]
     var in_tensors = InlineArray[InTensorType, num_buffers](uninitialized=True)
     var out_tensors = InlineArray[OutTensorType, ngpus](uninitialized=True)
@@ -184,7 +185,7 @@ def bench_reduce[
             rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
                 multi_ptr.unsafe_value()
             ),
-            row_major(Idx(length)),
+            row_major(length),
         )
     else:
         comptime for i in range(ngpus):
@@ -192,11 +193,11 @@ def bench_reduce[
                 rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
                     cb_inputs[i].unsafe_ptr()
                 ),
-                row_major(Idx(length)),
+                row_major(length),
             )
 
     for i in range(ngpus):
-        out_tensors[i] = TileTensor(out_dev[i], row_major(Idx(length)))
+        out_tensors[i] = TileTensor(out_dev[i], row_major(length))
         # Ensure setup has propagated.
         list_of_ctx[i].synchronize()
 
@@ -209,7 +210,7 @@ def bench_reduce[
     var out_tensors_capture = StaticTuple[OutTensorType, ngpus]()
 
     comptime for i in range(ngpus):
-        out_tensors_capture[i] = TileTensor(out_dev[i], row_major(Idx(length)))
+        out_tensors_capture[i] = TileTensor(out_dev[i], row_major(length))
 
     # Pre-initialize vendor CCL communicators from the main thread.
     # ncclCommInitAll is not thread-safe, so we must initialize before
@@ -231,7 +232,7 @@ def bench_reduce[
                         rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
                             cb_inputs[i].offset_ptr(cache_iter)
                         ),
-                        row_major(Idx(length)),
+                        row_major(length),
                     )
             else:
                 # multi_ptr is set when use_multimem == True
@@ -240,7 +241,7 @@ def bench_reduce[
                         multi_ptr.unsafe_value()
                         + cb_template.offset(cache_iter)
                     ),
-                    row_major(Idx(length)),
+                    row_major(length),
                 )
             # Run allreduce
             comptime if use_vendor_ccl:

@@ -13,6 +13,7 @@
 
 
 from std.algorithm import elementwise
+from std.gpu.host import DeviceContext
 from layout import Coord, TileTensor, coord_to_index_list, row_major
 from nn.slice import slice_as_copy, slice_as_view
 
@@ -20,21 +21,19 @@ from std.utils.index import Index, IndexList
 
 
 def print_elements[dtype: DType](tensor: TileTensor[dtype, ...]) raises:
-    var shape = coord_to_index_list(tensor.layout.shape_coord())
+    var shape = tensor.layout.shape_coord()
     var stride = coord_to_index_list(tensor.layout.stride_coord())
-    print("New shape:", shape)
+    print("New shape:", coord_to_index_list(shape))
     print("New strides:", stride)
 
     @always_inline
     @parameter
     def print_elements_lambda[
-        simd_width: Int, rank: Int, alignment: Int = 1
-    ](coords: IndexList[rank]):
-        var index = rebind[IndexList[tensor.rank]](coords)
-        var idx = tensor.layout(Coord(index))
-        print(tensor.raw_load(idx))
+        simd_width: Int, alignment: Int = 1
+    ](coords: Coord):
+        print(tensor.load(coords))
 
-    elementwise[print_elements_lambda, 1](shape)
+    elementwise[print_elements_lambda, 1](shape, DeviceContext(api="cpu"))
 
 
 # slice_dim
@@ -121,6 +120,7 @@ def test_slice[
             start_tensor,
             end_tensor,
             step_tensor,
+            DeviceContext(api="cpu"),
         )
 
         print_elements(output_buffer)

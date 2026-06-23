@@ -34,7 +34,6 @@ from layout import (
     ComptimeInt,
     Coord,
     Idx,
-    RuntimeInt,
     TensorLayout,
     TileTensor,
     coord_to_index_list,
@@ -196,7 +195,7 @@ def get_min_max_value[
     return Tuple[Float32, Float32](min_val, max_val)
 
 
-@__name(t"topk_mask_logits_{dtype}_{out_idx_type}", mangle=True)
+@__name(t"topk_mask_logits_{dtype}_{out_idx_type}")
 def TopKMaskLogitsKernel[
     block_size: Int,
     vec_size: Int,
@@ -211,7 +210,9 @@ def TopKMaskLogitsKernel[
     masked_logits: TileTensor[
         dtype, MaskedLogitsLayoutType, masked_logits_origin
     ],
-    top_k_arr: Optional[UnsafePointer[Scalar[out_idx_type], MutExternalOrigin]],
+    top_k_arr: Optional[
+        UnsafePointer[Scalar[out_idx_type], MutUntrackedOrigin]
+    ],
     top_k_val: Int,
     d: Int,
 ):
@@ -222,10 +223,8 @@ def TopKMaskLogitsKernel[
     var logits_ptr = logits.ptr + bx * d
     var masked_logits_ptr = masked_logits.ptr + bx * d
 
-    var logits_row = TileTensor(logits_ptr, row_major(Idx[1](), Idx(d)))
-    var masked_logits_row = TileTensor(
-        masked_logits_ptr, row_major(Idx[1](), Idx(d))
-    )
+    var logits_row = TileTensor(logits_ptr, row_major(Idx[1], d))
+    var masked_logits_row = TileTensor(masked_logits_ptr, row_major(Idx[1], d))
 
     with PDL():
         var k = top_k_val
@@ -263,8 +262,8 @@ def TopKMaskLogitsKernel[
                     if (i * block_size + tx) * vec_size < d:
                         logits_vec = logits_row.load[width=vec_size](
                             (
-                                Idx[0](),
-                                Idx(i * block_size * vec_size + tx * vec_size),
+                                Idx[0],
+                                i * block_size * vec_size + tx * vec_size,
                             ),
                         ).cast[DType.float32]()
 
@@ -329,8 +328,8 @@ def TopKMaskLogitsKernel[
             if (i * block_size + tx) * vec_size < d:
                 logits_vec = logits_row.load[width=vec_size](
                     (
-                        Idx[0](),
-                        Idx(i * block_size * vec_size + tx * vec_size),
+                        Idx[0],
+                        i * block_size * vec_size + tx * vec_size,
                     )
                 ).cast[DType.float32]()
 
@@ -339,8 +338,8 @@ def TopKMaskLogitsKernel[
             if (i * block_size + tx) * vec_size < d:
                 masked_logits_row.store[width=vec_size](
                     (
-                        Idx[0](),
-                        Idx(i * block_size * vec_size + tx * vec_size),
+                        Idx[0],
+                        i * block_size * vec_size + tx * vec_size,
                     ),
                     logits_vec.cast[dtype](),
                 )
@@ -351,16 +350,16 @@ def topk_mask_logits[
     out_idx_type: DType,
     block_size: Int = 1024,
     TopKArrLayoutType: TensorLayout = Layout[
-        shape_types=Coord[RuntimeInt[DType.int64]].element_types,
+        shape_types=Coord[Int64].element_types,
         stride_types=Coord[ComptimeInt[1]].element_types,
     ],
 ](
     ctx: DeviceContext,
-    logits: TileTensor[dtype, ...],
+    logits: TileTensor[mut=False, dtype, ...],
     masked_logits: TileTensor[mut=True, dtype, ...],
     top_k_val: Int,
     top_k_arr: Optional[
-        TileTensor[out_idx_type, TopKArrLayoutType, MutExternalOrigin]
+        TileTensor[out_idx_type, TopKArrLayoutType, MutUntrackedOrigin]
     ] = None,
 ) raises:
     comptime assert logits.rank == 2, "logits rank must be 2"
@@ -399,7 +398,7 @@ def topk_mask_logits[
         var vec_size = gcd(8, d)
 
         var top_k_ptr: Optional[
-            UnsafePointer[Scalar[out_idx_type], MutExternalOrigin]
+            UnsafePointer[Scalar[out_idx_type], MutUntrackedOrigin]
         ] = None
         if top_k_arr:
             top_k_ptr = top_k_arr.value().ptr
@@ -416,7 +415,7 @@ def topk_mask_logits[
                 MaskedLogitsLayoutType=masked_logits.LayoutType,
                 masked_logits_origin=masked_logits.origin,
             ]
-            ctx.enqueue_function[kernel, kernel](
+            ctx.enqueue_function[kernel](
                 logits.as_immut(),
                 masked_logits,
                 top_k_ptr,
@@ -424,7 +423,7 @@ def topk_mask_logits[
                 d,
                 grid_dim=batch_size,
                 block_dim=block_size,
-                attributes=pdl_launch_attributes(PDLLevel(1)),
+                attributes=pdl_launch_attributes(PDLLevel.ON),
             )
 
         # Runtime dispatch to compile-time parameter.
@@ -673,7 +672,6 @@ def _block_reduce_value_count[
 
 @__name(
     t"topk_sampling_from_prob_{dtype}_{out_idx_type}_{deterministic}",
-    mangle=True,
 )
 def TopKSamplingFromProbKernel[
     ProbsLayoutType: TensorLayout,
@@ -688,8 +686,10 @@ def TopKSamplingFromProbKernel[
 ](
     probs: TileTensor[dtype, ProbsLayoutType, probs_origin],
     output: TileTensor[out_idx_type, OutputLayoutType, output_origin],
-    indices: Optional[UnsafePointer[Scalar[out_idx_type], MutExternalOrigin]],
-    top_k_arr: Optional[UnsafePointer[Scalar[out_idx_type], MutExternalOrigin]],
+    indices: Optional[UnsafePointer[Scalar[out_idx_type], MutUntrackedOrigin]],
+    top_k_arr: Optional[
+        UnsafePointer[Scalar[out_idx_type], MutUntrackedOrigin]
+    ],
     top_k_val: Int,
     d: Int,
     rng_seed: UInt64,
@@ -734,7 +734,7 @@ def TopKSamplingFromProbKernel[
             row_idx = Int(indices.unsafe_value().load(bx))
 
         var probs_ptr = probs.ptr + row_idx * d
-        var probs_row = TileTensor(probs_ptr, row_major(Idx[1](), Idx(d)))
+        var probs_row = TileTensor(probs_ptr, row_major(Idx[1], d))
 
         var probs_vec: SIMD[DType.float32, vec_size]
         var aggregate: Float32
@@ -756,7 +756,7 @@ def TopKSamplingFromProbKernel[
                 probs_vec = 0
                 if (i * block_size + tx) * vec_size < d:
                     probs_vec = probs_row.load[width=vec_size](
-                        (Idx[0](), Idx((i * block_size + tx) * vec_size))
+                        (Idx[0], ((i * block_size + tx) * vec_size))
                     ).cast[DType.float32]()
 
                 var result = device_sampling_from_prob[
@@ -793,9 +793,7 @@ def TopKSamplingFromProbKernel[
                 # we use the last valid index as the sampled id.
                 sampled_id = last_valid_id_sram[0]
 
-            var pivot_0 = Float32(
-                probs_row.load[width=1]((Idx[0](), Idx(sampled_id)))
-            )
+            var pivot_0 = Float32(probs_row.load[width=1]((Idx[0], sampled_id)))
             var pivot_1 = (pivot_0 + high) / 2.0
 
             # Accumulate thread-local value counts across all chunks.
@@ -806,7 +804,7 @@ def TopKSamplingFromProbKernel[
                 probs_vec = 0
                 if (i * block_size + tx) * vec_size < d:
                     probs_vec = probs_row.load[width=vec_size](
-                        (Idx[0](), Idx((i * block_size + tx) * vec_size))
+                        (Idx[0], ((i * block_size + tx) * vec_size))
                     ).cast[DType.float32]()
 
                 var probs_gt_pivot_0_values = SIMD[DType.float32, vec_size]()
@@ -883,26 +881,26 @@ def topk_sampling_from_prob[
     out_idx_type: DType,
     block_size: Int = 1024,
     TopKArrLayoutType: TensorLayout = Layout[
-        shape_types=Coord[RuntimeInt[DType.int64]].element_types,
+        shape_types=Coord[Int64].element_types,
         stride_types=Coord[ComptimeInt[1]].element_types,
     ],
     IndicesLayoutType: TensorLayout = Layout[
-        shape_types=Coord[RuntimeInt[DType.int64]].element_types,
+        shape_types=Coord[Int64].element_types,
         stride_types=Coord[ComptimeInt[1]].element_types,
     ],
 ](
     ctx: DeviceContext,
-    probs: TileTensor[dtype, ...],
+    probs: TileTensor[mut=False, dtype, ...],
     output: TileTensor[mut=True, out_idx_type, ...],
     top_k_val: Int,
     deterministic: Bool = False,
     rng_seed: UInt64 = 0,
     rng_offset: UInt64 = 0,
     indices: Optional[
-        TileTensor[out_idx_type, IndicesLayoutType, MutExternalOrigin]
+        TileTensor[out_idx_type, IndicesLayoutType, MutUntrackedOrigin]
     ] = None,
     top_k_arr: Optional[
-        TileTensor[out_idx_type, TopKArrLayoutType, MutExternalOrigin]
+        TileTensor[out_idx_type, TopKArrLayoutType, MutUntrackedOrigin]
     ] = None,
 ) raises:
     """Top-K sampling from probability distribution.
@@ -960,13 +958,13 @@ def topk_sampling_from_prob[
         var vec_size = gcd(8, d)
 
         var indices_ptr: Optional[
-            UnsafePointer[Scalar[out_idx_type], MutExternalOrigin]
+            UnsafePointer[Scalar[out_idx_type], MutUntrackedOrigin]
         ] = None
         if indices:
             indices_ptr = indices.value().ptr
 
         var top_k_ptr: Optional[
-            UnsafePointer[Scalar[out_idx_type], MutExternalOrigin]
+            UnsafePointer[Scalar[out_idx_type], MutUntrackedOrigin]
         ] = None
         if top_k_arr:
             top_k_ptr = top_k_arr.value().ptr
@@ -984,7 +982,7 @@ def topk_sampling_from_prob[
                 out_idx_type,
                 deterministic,
             ]
-            ctx.enqueue_function[kernel, kernel](
+            ctx.enqueue_function[kernel](
                 probs.as_immut(),
                 output,
                 indices_ptr,
@@ -995,7 +993,7 @@ def topk_sampling_from_prob[
                 rng_offset,
                 grid_dim=batch_size,
                 block_dim=block_size,
-                attributes=pdl_launch_attributes(PDLLevel(1)),
+                attributes=pdl_launch_attributes(PDLLevel.ON),
             )
 
         # Runtime dispatch to compile-time parameter.
@@ -1012,13 +1010,13 @@ def topk_sampling_from_prob[
             dispatch_vec_size[False]()
 
 
-@__name(t"apply_min_p_mask_{dtype}_{block_size}", mangle=True)
+@__name(t"apply_min_p_mask_{dtype}_{block_size}")
 def apply_min_p_mask_kernel[
     dtype: DType,
     block_size: Int,
 ](
-    probs: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    min_p_arr: UnsafePointer[Float32, ImmutExternalOrigin],
+    probs: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    min_p_arr: UnsafePointer[Float32, ImmutUntrackedOrigin],
     d: Int,
 ):
     """Zero out probabilities below the per-row min_p threshold.
@@ -1057,7 +1055,6 @@ def apply_min_p_mask_kernel[
 
 @__name(
     t"topk_topp_sampling_from_prob_{dtype}_{out_idx_type}_{deterministic}",
-    mangle=True,
 )
 def TopKTopPSamplingFromProbKernel[
     ProbsLayoutType: TensorLayout,
@@ -1138,7 +1135,7 @@ def TopKTopPSamplingFromProbKernel[
             p = top_p_arr.unsafe_value()[row_idx]
 
         var probs_ptr = probs.ptr + row_idx * d
-        var probs_row = TileTensor(probs_ptr, row_major(Idx[1](), Idx(d)))
+        var probs_row = TileTensor(probs_ptr, row_major(Idx[1], d))
 
         var probs_vec: SIMD[DType.float32, vec_size]
         var aggregate: Float32
@@ -1160,7 +1157,7 @@ def TopKTopPSamplingFromProbKernel[
                 probs_vec = 0
                 if (i * block_size + tx) * vec_size < d:
                     probs_vec = probs_row.load[width=vec_size](
-                        (Idx[0](), Idx((i * block_size + tx) * vec_size))
+                        (Idx[0], ((i * block_size + tx) * vec_size))
                     ).cast[DType.float32]()
 
                 var result = device_sampling_from_prob[
@@ -1194,9 +1191,7 @@ def TopKTopPSamplingFromProbKernel[
             if sampled_id == d:
                 sampled_id = last_valid_id_sram[0]
 
-            var pivot_0 = Float32(
-                probs_row.load[width=1]((Idx[0](), Idx(sampled_id)))
-            )
+            var pivot_0 = Float32(probs_row.load[width=1]((Idx[0], sampled_id)))
             var pivot_1 = (pivot_0 + high) / 2.0
 
             # Accumulate thread-local value counts across all chunks.
@@ -1207,7 +1202,7 @@ def TopKTopPSamplingFromProbKernel[
                 probs_vec = 0
                 if (i * block_size + tx) * vec_size < d:
                     probs_vec = probs_row.load[width=vec_size](
-                        (Idx[0](), Idx((i * block_size + tx) * vec_size))
+                        (Idx[0], ((i * block_size + tx) * vec_size))
                     ).cast[DType.float32]()
 
                 var probs_gt_pivot_0_values = SIMD[DType.float32, vec_size]()
@@ -1289,24 +1284,24 @@ def topk_topp_sampling_from_prob[
     out_idx_type: DType,
     block_size: Int = 1024,
     TopKArrLayoutType: TensorLayout = Layout[
-        shape_types=Coord[RuntimeInt[DType.int64]].element_types,
+        shape_types=Coord[Int64].element_types,
         stride_types=Coord[ComptimeInt[1]].element_types,
     ],
     IndicesLayoutType: TensorLayout = Layout[
-        shape_types=Coord[RuntimeInt[DType.int64]].element_types,
+        shape_types=Coord[Int64].element_types,
         stride_types=Coord[ComptimeInt[1]].element_types,
     ],
     TopPArrLayoutType: TensorLayout = Layout[
-        shape_types=Coord[RuntimeInt[DType.int64]].element_types,
+        shape_types=Coord[Int64].element_types,
         stride_types=Coord[ComptimeInt[1]].element_types,
     ],
     SeedLayoutType: TensorLayout = Layout[
-        shape_types=Coord[RuntimeInt[DType.int64]].element_types,
+        shape_types=Coord[Int64].element_types,
         stride_types=Coord[ComptimeInt[1]].element_types,
     ],
 ](
     ctx: DeviceContext,
-    probs: TileTensor[dtype, ...],
+    probs: TileTensor[mut=False, dtype, ...],
     output: TileTensor[mut=True, out_idx_type, ...],
     top_k_val: Int,
     top_p_val: Float32 = 1.0,
@@ -1416,7 +1411,7 @@ def topk_topp_sampling_from_prob[
                 out_idx_type,
                 deterministic,
             ]
-            ctx.enqueue_function[kernel, kernel](
+            ctx.enqueue_function[kernel](
                 probs.as_immut(),
                 output,
                 indices_ptr,
@@ -1429,7 +1424,7 @@ def topk_topp_sampling_from_prob[
                 rng_offset,
                 grid_dim=batch_size,
                 block_dim=block_size,
-                attributes=pdl_launch_attributes(PDLLevel(1)),
+                attributes=pdl_launch_attributes(PDLLevel.ON),
             )
 
         @parameter
@@ -1444,7 +1439,7 @@ def topk_topp_sampling_from_prob[
             dispatch_vec_size[False]()
 
 
-@__name(t"topk_softmax_sample_{dtype}_{out_idx_type}", mangle=True)
+@__name(t"topk_softmax_sample_{dtype}_{out_idx_type}")
 def topk_softmax_sample_kernel[
     block_size: Int,
     vec_size: Int,
@@ -1459,12 +1454,14 @@ def topk_softmax_sample_kernel[
     sampled_indices: TileTensor[
         out_idx_type, SampledLayoutType, sampled_origin
     ],
-    top_k_arr: Optional[UnsafePointer[Scalar[out_idx_type], MutExternalOrigin]],
+    top_k_arr: Optional[
+        UnsafePointer[Scalar[out_idx_type], MutUntrackedOrigin]
+    ],
     top_k_val: Int,
     temperature_val: Float32,
-    temperature: Optional[UnsafePointer[Float32, MutExternalOrigin]],
+    temperature: Optional[UnsafePointer[Float32, MutUntrackedOrigin]],
     seed_val: UInt64,
-    seed: Optional[UnsafePointer[UInt64, MutExternalOrigin]],
+    seed: Optional[UnsafePointer[UInt64, MutUntrackedOrigin]],
     d: Int,
 ):
     comptime assert sampled_indices.flat_rank == 1
@@ -1475,7 +1472,7 @@ def topk_softmax_sample_kernel[
 
     var logits_ptr = logits.ptr + bx * d
 
-    var logits_row = TileTensor(logits_ptr, row_major(Idx[1](), Idx(d)))
+    var logits_row = TileTensor(logits_ptr, row_major(Idx[1], d))
 
     var k = top_k_val
     if top_k_arr:
@@ -1538,8 +1535,8 @@ def topk_softmax_sample_kernel[
                     if (i * block_size + tx) * vec_size < d:
                         logits_vec = logits_row.load[width=vec_size](
                             (
-                                Idx[0](),
-                                Idx(i * block_size * vec_size + tx * vec_size),
+                                Idx[0],
+                                i * block_size * vec_size + tx * vec_size,
                             )
                         ).cast[DType.float32]()
 
@@ -1614,7 +1611,7 @@ def topk_softmax_sample_kernel[
 
         # Each thread processes elements and atomically writes to shared memory.
         for i in range(tx, d, block_size):
-            var logit = logits_row.load[width=1]((Idx[0](), Idx(i))).cast[
+            var logit = logits_row.load[width=1]((Idx[0], i)).cast[
                 DType.float32
             ]()
             if logit > pivot:
@@ -1661,20 +1658,22 @@ def topk_softmax_sample[
     out_idx_type: DType,
     block_size: Int = 1024,
     TopKArrLayoutType: TensorLayout = Layout[
-        shape_types=Coord[RuntimeInt[DType.int64]].element_types,
+        shape_types=Coord[Int64].element_types,
         stride_types=Coord[ComptimeInt[1]].element_types,
     ],
     TemperatureLayoutType: TensorLayout = Layout[
-        shape_types=Coord[RuntimeInt[DType.int64]].element_types,
+        shape_types=Coord[Int64].element_types,
         stride_types=Coord[ComptimeInt[1]].element_types,
     ],
     SeedLayoutType: TensorLayout = Layout[
-        shape_types=Coord[RuntimeInt[DType.int64]].element_types,
+        shape_types=Coord[Int64].element_types,
         stride_types=Coord[ComptimeInt[1]].element_types,
     ],
 ](
     ctx: DeviceContext,
-    logits: TileTensor[dtype, address_space=AddressSpace.GENERIC, ...],
+    logits: TileTensor[
+        mut=False, dtype, address_space=AddressSpace.GENERIC, ...
+    ],
     sampled_indices: TileTensor[
         mut=True, out_idx_type, address_space=AddressSpace.GENERIC, ...
     ],
@@ -1682,13 +1681,13 @@ def topk_softmax_sample[
     temperature_val: Float32 = 1.0,
     seed_val: UInt64 = 0,
     top_k_arr: Optional[
-        TileTensor[out_idx_type, TopKArrLayoutType, MutExternalOrigin]
+        TileTensor[out_idx_type, TopKArrLayoutType, MutUntrackedOrigin]
     ] = None,
     temperature: Optional[
-        TileTensor[DType.float32, TemperatureLayoutType, MutExternalOrigin]
+        TileTensor[DType.float32, TemperatureLayoutType, MutUntrackedOrigin]
     ] = None,
     seed: Optional[
-        TileTensor[DType.uint64, SeedLayoutType, MutExternalOrigin]
+        TileTensor[DType.uint64, SeedLayoutType, MutUntrackedOrigin]
     ] = None,
 ) raises:
     """Samples token indices from top-K logits using softmax probabilities.
@@ -1778,16 +1777,18 @@ def topk_softmax_sample[
                 )
 
         var top_k_ptr: Optional[
-            UnsafePointer[Scalar[out_idx_type], MutExternalOrigin]
+            UnsafePointer[Scalar[out_idx_type], MutUntrackedOrigin]
         ] = None
         if top_k_arr:
             top_k_ptr = top_k_arr.unsafe_value().ptr
 
-        var temp_ptr: Optional[UnsafePointer[Float32, MutExternalOrigin]] = None
+        var temp_ptr: Optional[
+            UnsafePointer[Float32, MutUntrackedOrigin]
+        ] = None
         if temperature:
             temp_ptr = temperature.unsafe_value().ptr
 
-        var seed_ptr: Optional[UnsafePointer[UInt64, MutExternalOrigin]] = None
+        var seed_ptr: Optional[UnsafePointer[UInt64, MutUntrackedOrigin]] = None
         if seed:
             seed_ptr = seed.unsafe_value().ptr
 
@@ -1803,7 +1804,7 @@ def topk_softmax_sample[
                 SampledLayoutType=sampled_indices.LayoutType,
                 sampled_origin=sampled_indices.origin,
             ]
-            ctx.enqueue_function[kernel, kernel](
+            ctx.enqueue_function[kernel](
                 logits.as_immut(),
                 sampled_indices,
                 top_k_ptr,
@@ -1816,7 +1817,7 @@ def topk_softmax_sample[
                 grid_dim=batch_size,
                 block_dim=block_size,
                 shared_mem_bytes=shared_mem_bytes,
-                attributes=pdl_launch_attributes(PDLLevel(1)),
+                attributes=pdl_launch_attributes(PDLLevel.ON),
             )
 
         # Runtime dispatch to compile-time parameter.

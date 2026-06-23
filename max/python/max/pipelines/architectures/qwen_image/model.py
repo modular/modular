@@ -19,7 +19,7 @@ from max.engine import InferenceSession, Model
 from max.graph import Graph
 from max.graph.weights import Weights
 from max.pipelines.lib import SupportedEncoding
-from max.pipelines.lib.interfaces.component_model import ComponentModel
+from max.pipelines.modeling.base.component_model import ComponentModel
 
 from .model_config import QwenImageConfig
 from .qwen_image import QwenImageTransformer2DModel

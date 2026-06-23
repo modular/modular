@@ -27,18 +27,20 @@ Reference: https://vllm.ai/blog/Kimi-K2-Accuracy
 from __future__ import annotations
 
 import json
-import logging
 import re
 import uuid
-from dataclasses import dataclass, field
+from typing import Any
 
-from max.interfaces import (
-    ParsedToolCall,
-    ParsedToolCallDelta,
-    ParsedToolResponse,
+from llguidance import LLMatcher
+from max.pipelines.lib.tool_parsing import (
+    StructuralTagToolParser,
+    escape_for_lark_string,
+    get_token_id,
+    names_from_tools,
+    register,
+    resolve_lark_token_reference,
 )
-
-logger = logging.getLogger(__name__)
+from max.pipelines.modeling.types import ParsedToolCall, PipelineTokenizer
 
 # Structural tags used by Kimi K2.5
 TOOL_CALLS_SECTION_BEGIN = "<|tool_calls_section_begin|>"
@@ -47,7 +49,38 @@ TOOL_CALL_BEGIN = "<|tool_call_begin|>"
 TOOL_CALL_END = "<|tool_call_end|>"
 TOOL_CALL_ARGUMENT_BEGIN = "<|tool_call_argument_begin|>"
 
-# Regex pattern for extracting individual tool calls
+# Reasoning and turn-terminator tokens. Kimi K2.5 interleaves
+# ``<think>...</think>`` reasoning blocks with tool-call sections and ends
+# the assistant turn with ``<|im_end|>``. These are referenced in the
+# constrained-decoding grammar so the model may interleave reasoning
+# between sections and stop early (see ``generate_tool_call_grammar``).
+THINK_START = "<think>"
+THINK_END = "</think>"
+IM_END = "<|im_end|>"
+
+# Bounds on the constrained-decoding grammar quantifiers. Without these,
+# a model can spin emitting digits in the call index or an unbounded
+# number of back-to-back calls/sections, holding a GPU slot until
+# ``max_tokens``. The argument body is intentionally unbounded — tool
+# arguments can be arbitrarily large (e.g. code blobs, embedded documents,
+# search-result payloads being re-emitted) and a fixed cap would silently
+# drop them. The ``max_tokens`` ceiling is the only meaningful upper bound
+# there.
+_MAX_TOOL_CALL_INDEX_DIGITS = 8  # up to 99_999_999 tool calls per turn
+_MAX_TOOL_CALLS_PER_SECTION = 64
+# Kimi interleaves multiple tool-call sections with reasoning in a single
+# turn ("interleaved thinking"). The grammar admits up to this many
+# sections; the model stops earlier by emitting ``<|im_end|>`` (allowed at
+# every accepting state). A bounded cap keeps a stuck model from holding a
+# slot forever (``max_tokens`` is the primary ceiling; this is a secondary
+# backstop). Set with headroom for long interleaved turns so a legitimate
+# extra section never trips the matcher-desync this grammar fixes — the
+# bound is a counter in the compiled grammar, so raising it has no
+# compile/per-token cost.
+_MAX_TOOL_CALL_SECTIONS = 8
+
+# Regex for one ``<|tool_call_begin|>...<|tool_call_end|>`` body. The
+# function id and arguments are captured; the call markers are anchored.
 _TOOL_CALL_PATTERN = re.compile(
     rf"{re.escape(TOOL_CALL_BEGIN)}"
     rf"(?P<function_id>[^\n<]+)"
@@ -58,299 +91,86 @@ _TOOL_CALL_PATTERN = re.compile(
 )
 
 
-def _partial_tag_overlap(text: str, tag: str) -> int:
-    """Returns the length of partial overlap between end of text and start of tag.
-
-    This detects when the end of accumulated text might be the beginning of
-    a marker tag, so we can hold back those bytes to avoid leaking partial
-    markers into content.
-
-    Args:
-        text: The accumulated text to check.
-        tag: The marker tag to check for partial overlap.
-
-    Returns:
-        The number of characters at the end of text that match the start of tag.
-    """
-    max_overlap = min(len(text), len(tag) - 1)
-    for i in range(max_overlap, 0, -1):
-        if text[-i:] == tag[:i]:
-            return i
-    return 0
-
-
 def _parse_function_id(function_id: str) -> tuple[str, str]:
-    """Parses a Kimi function ID into (name, call_id).
+    """Parses a Kimi function ID into ``(name, call_id)``.
 
-    Kimi function IDs have the format: functions.{name}:{idx}
-    Some IDs may lack the "functions." prefix (e.g., "search:2").
-
-    Args:
-        function_id: The raw function ID string.
-
-    Returns:
-        A tuple of (function_name, call_id).
+    Kimi function IDs have the format ``functions.{name}:{idx}``. Some
+    IDs may lack the ``functions.`` prefix (for example, ``search:2``)
+    or the index suffix. The call id always begins with ``call_`` and
+    includes the index when one is present, matching the OpenAI-style
+    tool id with a stable suffix per call.
     """
     function_id = function_id.strip()
 
-    # Try standard format: functions.{name}:{idx}
+    # Standard form: functions.{name}:{idx}
     if "." in function_id:
         try:
-            # Split on first '.' to get past "functions" prefix
             _, rest = function_id.split(".", 1)
-            # Split on ':' to separate name from index
             if ":" in rest:
-                name, idx = rest.rsplit(":", 1)
+                name, _ = rest.rsplit(":", 1)
             else:
                 name = rest
-                idx = "0"
             short_uuid = str(uuid.uuid4()).replace("-", "")[:8]
-            return name, f"call_{short_uuid}_{idx}"
+            return name, f"{name}:{short_uuid}"
         except (ValueError, IndexError):
             pass
 
-    # Fallback for non-prefixed IDs like "search:2"
+    # Fallback for non-prefixed ids like "search:2"
     if ":" in function_id:
-        name, idx = function_id.rsplit(":", 1)
+        name, _ = function_id.rsplit(":", 1)
         short_uuid = str(uuid.uuid4()).replace("-", "")[:8]
-        return name, f"call_{short_uuid}_{idx}"
+        return name, f"{name}:{short_uuid}"
 
-    # Last resort: use whole string as name
     short_uuid = str(uuid.uuid4()).replace("-", "")[:8]
-    return function_id, f"call_{short_uuid}"
+    return function_id, f"{function_id}:{short_uuid}"
 
 
-@dataclass
-class _StreamingToolCallState:
-    """State for a single tool call being streamed."""
-
-    id: str = ""
-    name: str = ""
-    arguments_sent: str = ""
-
-
-@dataclass
-class _StreamingState:
-    """Internal state for streaming tool call parsing."""
-
-    sent_content_idx: int = 0
-    tool_calls: list[_StreamingToolCallState] = field(default_factory=list)
-
-
-class KimiToolParser:
+@register("kimik2_5")
+class KimiToolParser(StructuralTagToolParser):
     """Parses Kimi K2.5-style tool calls from model responses.
 
-    Kimi K2.5 uses structural tags to delimit tool calls rather than
-    relying on JSON extraction from free-form text.
+    Kimi K2.5 wraps tool calls in section/call markers and embeds the
+    function name as a compound ``functions.{name}:{idx}`` identifier
+    before a dedicated argument-begin marker. Arguments are raw JSON,
+    which the base class can diff directly.
     """
 
-    def __init__(self) -> None:
-        self._buffer: str = ""
-        self._state: _StreamingState = _StreamingState()
+    SECTION_BEGIN = TOOL_CALLS_SECTION_BEGIN
+    SECTION_END = TOOL_CALLS_SECTION_END
+    CALL_BEGIN = TOOL_CALL_BEGIN
+    CALL_END = TOOL_CALL_END
 
-    def parse_complete(self, response: str) -> ParsedToolResponse:
-        """Parses a complete response into tool calls."""
+    def _parse_complete_section(
+        self, tool_section: str
+    ) -> list[ParsedToolCall]:
         tool_calls: list[ParsedToolCall] = []
-
-        # Check if response contains tool calls section
-        if TOOL_CALLS_SECTION_BEGIN not in response:
-            # No tool calls in response
-            return ParsedToolResponse(content=response, tool_calls=[])
-
-        # Extract content before tool calls section (if any)
-        content_before: str | None = None
-        section_start_idx = response.find(TOOL_CALLS_SECTION_BEGIN)
-        if section_start_idx > 0:
-            content_before = response[:section_start_idx].strip() or None
-
-        # Extract the tool calls section
-        section_end_idx = response.find(TOOL_CALLS_SECTION_END)
-        if section_end_idx == -1:
-            section_end_idx = len(response)
-
-        tool_section = response[
-            section_start_idx + len(TOOL_CALLS_SECTION_BEGIN) : section_end_idx
-        ]
-
-        # Parse individual tool calls
         for match in _TOOL_CALL_PATTERN.finditer(tool_section):
             function_id = match.group("function_id")
             arguments_str = match.group("arguments").strip()
 
             name, call_id = _parse_function_id(function_id)
+            if not name:
+                continue
 
-            # Validate arguments is valid JSON
             try:
-                # Parse and re-serialize to ensure valid JSON
                 args_obj = json.loads(arguments_str)
                 arguments_json = json.dumps(args_obj)
             except json.JSONDecodeError:
-                # If not valid JSON, use as-is (may fail downstream)
+                # Pass through to surface upstream rather than dropping.
                 arguments_json = arguments_str
 
-            tool_call = ParsedToolCall(
-                id=call_id,
-                name=name,
-                arguments=arguments_json,
+            tool_calls.append(
+                ParsedToolCall(id=call_id, name=name, arguments=arguments_json)
             )
-            tool_calls.append(tool_call)
+        return tool_calls
 
-        if not tool_calls:
-            raise ValueError(
-                f"Tool calls section found but no valid tool calls parsed from: {tool_section}"
-            )
-
-        return ParsedToolResponse(content=content_before, tool_calls=tool_calls)
-
-    def parse_delta(self, delta: str) -> list[ParsedToolCallDelta] | None:
-        """Parses incremental deltas for streaming tool calls.
-
-        Accumulates tokens in an internal buffer and emits tool call deltas
-        when complete or partial tool calls can be extracted. Uses argument
-        diffing to only send new content.
-
-        Args:
-            delta: The incremental token(s) to process.
-
-        Returns:
-            A list of tool call deltas if any can be extracted,
-            or None if more tokens are needed.
-        """
-        self._buffer += delta
-        deltas: list[ParsedToolCallDelta] = []
-
-        try:
-            # Extract content before tool calls section
-            content_delta = self._extract_content_delta()
-            if content_delta:
-                deltas.append(
-                    ParsedToolCallDelta(index=0, content=content_delta)
-                )
-
-            # Extract tool calls from the buffer
-            tool_call_bodies = self._extract_tool_call_bodies()
-
-            for i, body in enumerate(tool_call_bodies):
-                # Ensure we have state for this tool call index
-                while i >= len(self._state.tool_calls):
-                    self._state.tool_calls.append(_StreamingToolCallState())
-
-                tc_state = self._state.tool_calls[i]
-
-                # Parse header and arguments from body
-                header, args = self._split_tool_call_body(body)
-
-                # Stream the tool name/id if not yet sent
-                if not tc_state.name and header is not None:
-                    tool_id, tool_name = self._extract_tool_id_and_name(header)
-                    if tool_id and tool_name:
-                        tc_state.id = tool_id
-                        tc_state.name = tool_name
-                        deltas.append(
-                            ParsedToolCallDelta(
-                                index=i,
-                                id=tool_id,
-                                name=tool_name,
-                            )
-                        )
-
-                # Stream new arguments by diffing against what was sent
-                if args is not None:
-                    args_diff = self._compute_args_diff(i, args)
-                    if args_diff:
-                        deltas.append(
-                            ParsedToolCallDelta(
-                                index=i,
-                                arguments=args_diff,
-                            )
-                        )
-
-            return deltas if deltas else None
-
-        except Exception:
-            logger.exception("Error parsing streaming tool call delta")
-            raise
-
-    def _extract_content_delta(self) -> str | None:
-        """Extracts unsent content before the tool-calls section.
-
-        Holds back any trailing suffix that partially matches the tool calls
-        section begin marker to avoid leaking marker bytes into content.
-
-        Returns:
-            New content to send, or None if nothing to send.
-        """
-        if TOOL_CALLS_SECTION_BEGIN not in self._buffer:
-            # Check for partial marker overlap at the end
-            overlap = _partial_tag_overlap(
-                self._buffer, TOOL_CALLS_SECTION_BEGIN
-            )
-            sendable_idx = len(self._buffer) - overlap
-        else:
-            sendable_idx = self._buffer.index(TOOL_CALLS_SECTION_BEGIN)
-
-        if sendable_idx > self._state.sent_content_idx:
-            content = self._buffer[self._state.sent_content_idx : sendable_idx]
-            self._state.sent_content_idx = sendable_idx
-            return content
-        return None
-
-    def _extract_tool_call_bodies(self) -> list[str]:
-        """Extracts raw bodies from tool call blocks.
-
-        Finds complete and partial ``<|tool_call_begin|>...<|tool_call_end|>``
-        blocks and returns their inner content.
-
-        Returns:
-            List of tool call body strings (may include incomplete ones).
-        """
-        if TOOL_CALLS_SECTION_BEGIN not in self._buffer:
-            return []
-
-        results: list[str] = []
-        pos = self._buffer.index(TOOL_CALLS_SECTION_BEGIN)
-
-        while True:
-            start = self._buffer.find(TOOL_CALL_BEGIN, pos)
-            if start == -1:
-                break
-
-            tc_start = start + len(TOOL_CALL_BEGIN)
-            end = self._buffer.find(TOOL_CALL_END, tc_start)
-
-            if end != -1:
-                # Complete tool call block
-                tool_call = self._buffer[tc_start:end]
-                pos = end + len(TOOL_CALL_END)
-            else:
-                # Incomplete - might still be streaming
-                tool_call = self._buffer[tc_start:]
-                # Hold back partial end marker
-                overlap = _partial_tag_overlap(tool_call, TOOL_CALL_END)
-                if overlap:
-                    tool_call = tool_call[:-overlap]
-                results.append(tool_call)
-                break
-
-            results.append(tool_call)
-
-        return results
-
-    def _split_tool_call_body(self, body: str) -> tuple[str | None, str | None]:
-        """Splits a tool-call body into (header, arguments).
-
-        The body format is: ``header<|tool_call_argument_begin|>arguments``
-
-        Args:
-            body: The tool call body string.
-
-        Returns:
-            Tuple of (header, arguments), either may be None if not found.
-        """
+    def _split_tool_call_body(
+        self, body: str, is_complete: bool
+    ) -> tuple[str | None, str | None]:
+        """Splits ``functions.foo:0<|tool_call_argument_begin|>{...}``."""
         arg_pos = body.find(TOOL_CALL_ARGUMENT_BEGIN)
         if arg_pos == -1:
             return None, None
-
         header = body[:arg_pos].strip()
         args = body[arg_pos + len(TOOL_CALL_ARGUMENT_BEGIN) :]
         return header, args
@@ -358,55 +178,193 @@ class KimiToolParser:
     def _extract_tool_id_and_name(
         self, header: str
     ) -> tuple[str | None, str | None]:
-        """Parses tool ID and name from a header like ``functions.get_weather:0``.
+        """Parses Kimi's ``functions.{name}:{idx}`` header.
 
-        Args:
-            header: The header string to parse.
-
-        Returns:
-            Tuple of (tool_id, tool_name).
+        Delegates to :func:`_parse_function_id`, which handles all known
+        Kimi header formats and always returns a valid (name, id) pair
+        for non-empty input. Returns ``(None, None)`` only when the
+        header is empty.
         """
         if not header:
             return None, None
-
-        # Match pattern like "functions.name:idx" or "name:idx"
-        match = re.match(r"(.+:\d+)", header)
-        if not match:
-            return None, None
-
-        raw_id = match.group(1).strip()
-        # Extract name: split on ':' and take everything before, then after last '.'
-        name_part = raw_id.split(":")[0]
-        tool_name = name_part.split(".")[-1]
-
-        # Generate a unique call ID
-        short_uuid = str(uuid.uuid4()).replace("-", "")[:8]
-        idx = raw_id.split(":")[-1] if ":" in raw_id else "0"
-        tool_id = f"call_{short_uuid}_{idx}"
-
+        tool_name, tool_id = _parse_function_id(header)
         return tool_id, tool_name
 
-    def _compute_args_diff(self, index: int, args: str) -> str | None:
-        """Computes new argument text not yet sent for the tool at index.
+    # ----- Constrained decoding grammar (Kimi-specific) -----------------
+
+    @staticmethod
+    def _build_envelope(
+        tool_names: list[str] | None,
+        refs: dict[str, str],
+    ) -> tuple[str, list[str]]:
+        """Builds the tool-call envelope rule and shared grammar lines.
+
+        Returns the ``start``-body fragment (the repeated section/think
+        sequence with an optional trailing ``<|im_end|>``) and the list of
+        shared rule/terminal lines it references. Both the no-schema and
+        json_schema branches reuse the same envelope.
+
+        ``refs`` maps each marker to its single-token Lark reference
+        (``<[id]>``). ``THINK_START``/``THINK_END`` and ``IM_END`` are
+        optional: when absent the grammar simply omits interleaved
+        reasoning / early termination rather than failing.
+        """
+        # ``functions.NAME:INDEX`` header. ``NAME`` is an alternation of the
+        # offered tool names (or a length-capped fallback identifier).
+        if tool_names is not None:
+            name_terminal = "NAME: " + " | ".join(
+                f'"{escape_for_lark_string(n)}"' for n in tool_names
+            )
+        else:
+            name_terminal = r"NAME: /[a-zA-Z0-9_-]{1,128}/"
+
+        # ``think?`` is only available when both delimiters resolve.
+        has_think = "THINK_START" in refs and "THINK_END" in refs
+        think_opt = "think? " if has_think else ""
+        # ``<|im_end|>`` lets the model stop before the section cap; it is
+        # an EOS-class token (handled by ``eos_tracker``) and is allowed at
+        # every accepting state via this optional trailing reference.
+        im_end_opt = f" {refs['IM_END']}?" if "IM_END" in refs else ""
+
+        # 1..N sections, each optionally preceded by a reasoning block.
+        envelope = (
+            f"{think_opt}section "
+            f"({think_opt}section){{0,{_MAX_TOOL_CALL_SECTIONS - 1}}}"
+            f"{im_end_opt}"
+        )
+
+        rules = [
+            (
+                f"section: {refs['SECTION_BEGIN']} tool_call "
+                f"(tool_call){{0,{_MAX_TOOL_CALLS_PER_SECTION - 1}}} "
+                f"{refs['SECTION_END']}"
+            ),
+            (
+                f'tool_call: {refs["CALL_BEGIN"]} "functions." NAME ":" '
+                f"INDEX {refs['ARG_BEGIN']} ARGS {refs['CALL_END']}"
+            ),
+            name_terminal,
+            rf"INDEX: /[0-9]{{1,{_MAX_TOOL_CALL_INDEX_DIGITS}}}/",
+            # The argument body and reasoning body are byte-level ``/.*/``
+            # terminals; each terminates naturally at its atomic closing
+            # special token (``<|tool_call_end|>`` / ``</think>``), so they
+            # accept ``<`` and other markup freely. Real argument validation
+            # happens at parse time — the grammar only frames structure.
+            r"ARGS: /[\s\S]*/",
+        ]
+        if has_think:
+            rules.append(
+                f"think: {refs['THINK_START']} THINK_BODY {refs['THINK_END']}"
+            )
+            rules.append(r"THINK_BODY: /[\s\S]*/")
+
+        return envelope, rules
+
+    @staticmethod
+    def _resolve_token_refs(
+        tokenizer: PipelineTokenizer[Any, Any, Any] | None,
+    ) -> dict[str, str]:
+        """Resolves Kimi structural tokens to single-token Lark references.
+
+        Returns a ``name -> "<[id]>"`` map. The five tool-call markers are
+        required (a missing one raises). ``<think>``/``</think>``/
+        ``<|im_end|>`` are optional and simply absent from the map when the
+        tokenizer does not define them.
+        """
+        if tokenizer is None:
+            raise ValueError(
+                "tokenizer is required to generate the Kimi tool-call grammar"
+            )
+
+        required = {
+            "SECTION_BEGIN": TOOL_CALLS_SECTION_BEGIN,
+            "SECTION_END": TOOL_CALLS_SECTION_END,
+            "CALL_BEGIN": TOOL_CALL_BEGIN,
+            "CALL_END": TOOL_CALL_END,
+            "ARG_BEGIN": TOOL_CALL_ARGUMENT_BEGIN,
+        }
+        optional = {
+            "THINK_START": THINK_START,
+            "THINK_END": THINK_END,
+            "IM_END": IM_END,
+        }
+
+        refs: dict[str, str] = {}
+        for name, token in required.items():
+            tid = get_token_id(tokenizer, token)
+            if tid is None:
+                raise ValueError(
+                    f"tokenizer does not define required Kimi tool-call "
+                    f"token {token!r}; cannot build constrained grammar"
+                )
+            refs[name] = resolve_lark_token_reference(tid)
+        for name, token in optional.items():
+            tid = get_token_id(tokenizer, token)
+            if tid is not None:
+                refs[name] = resolve_lark_token_reference(tid)
+        return refs
+
+    @staticmethod
+    def generate_tool_call_grammar(
+        response_format_schema: dict[str, Any] | None = None,
+        tools: list[dict[str, Any]] | None = None,
+        tokenizer: PipelineTokenizer[Any, Any, Any] | None = None,
+        **kwargs: Any,
+    ) -> str:
+        """Generates a Lark grammar for constrained decoding of Kimi tool calls.
+
+        Kimi K2.5 performs "interleaved thinking": a single assistant turn
+        can interleave multiple ``<think>...</think>`` reasoning blocks with
+        multiple ``<|tool_calls_section_begin|>...<|tool_calls_section_end|>``
+        tool-call sections, and ends the turn with ``<|im_end|>``. The
+        grammar admits up to ``_MAX_TOOL_CALL_SECTIONS`` sections, an
+        optional reasoning block before each, and an optional trailing
+        ``<|im_end|>`` so the model can stop before the cap.
+
+        Structural markers, ``<think>``/``</think>``, and ``<|im_end|>`` are
+        referenced as single-token symbols (``<[id]>``) resolved from
+        ``tokenizer`` — they are atomic special tokens, so the freeform
+        ``/[\\s\\S]*/`` argument and reasoning bodies terminate cleanly at
+        the closing marker. Reasoning enforced this way is plain text; a
+        mid-reasoning special token is not admitted under forced decoding.
+
+        When ``response_format_schema`` is provided, the grammar also accepts
+        a JSON response matching the schema (the model's first tokens select
+        the branch).
 
         Args:
-            index: The tool call index.
-            args: The current full arguments string.
+            response_format_schema: Optional JSON schema dict. When provided,
+                the grammar also accepts a JSON response matching the schema.
+            tools: Optional list of OpenAI-style tool dicts. ``None`` accepts
+                any length-capped identifier as the function name.
+            tokenizer: Pipeline tokenizer used to resolve special-token IDs.
+                Required.
+            **kwargs: Ignored; accepts future kwargs.
 
         Returns:
-            The new portion of arguments to send, or None if nothing new.
+            A grammar string compatible with ``LLMatcher``.
         """
-        tc_state = self._state.tool_calls[index]
-        prev_len = len(tc_state.arguments_sent)
+        tool_names = names_from_tools(tools)
+        refs = KimiToolParser._resolve_token_refs(tokenizer)
+        envelope, shared_rules = KimiToolParser._build_envelope(
+            tool_names, refs
+        )
 
-        if len(args) <= prev_len:
-            return None
+        if response_format_schema is None:
+            start_rule = f"start: {envelope}"
+            extra_rules: list[str] = []
+        else:
+            schema_str = json.dumps(response_format_schema)
+            start_rule = "start: tool_calls | json_response"
+            extra_rules = [
+                f"tool_calls: {envelope}",
+                f"json_response: %json {schema_str}",
+            ]
 
-        diff = args[prev_len:]
-        tc_state.arguments_sent = args
-        return diff
-
-    def reset(self) -> None:
-        """Resets internal state for a new streaming session."""
-        self._buffer = ""
-        self._state = _StreamingState()
+        lark = (
+            "\n".join(
+                ["%llguidance {}", start_rule, *extra_rules, *shared_rules]
+            )
+            + "\n"
+        )
+        return LLMatcher.grammar_from_lark(lark)

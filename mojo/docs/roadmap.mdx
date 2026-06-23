@@ -18,9 +18,10 @@ announcements section](https://forum.modular.com/c/modular/announcements/9).
 :::note Phases
 
 The phases below are conceptual groups of work—not version numbers—and they
-have no timeline for completion. We haven't yet established a long-term
-versioning scheme, finalized our approach to language evolution, or decided
-what "stability" will mean or when it will happen.
+have no timeline for completion. Mojo now has versioned releases, but these
+phases remain roadmap categories rather than release commitments. The status
+markers below describe our current direction and may change as the language and
+standard library evolve.
 
 :::
 
@@ -36,7 +37,7 @@ items in each list aren't necessarily ordered by priority and some items may be
 
 ## Mojo's north star
 
-As described in the [Mojo vision](/docs/vision), we created Mojo to unite
+As described in the [Mojo vision](/docs/vision/), we created Mojo to unite
 developers with a single language that provides ergonomic programming features
 for accelerator hardware and that scales to solve other challenges in AI and
 systems programming.
@@ -122,8 +123,8 @@ while avoiding rebinding.
 therefore support higher order functions like `map` that propagate the
 "raisability" of their closure argument.
 
-- 🚧 **Closure refinement**: Improve capture modeling and unify
-compile-time/runtime representations.
+- ✅ **Closure refinement**: Unified representation for compile-time/runtime
+  closures.
 
 - ✅ **`where` clauses**: Enable early constraint checking and better error
 messages for generics. See the
@@ -136,8 +137,8 @@ over parameters.
 refactoring. See the
 [struct extension proposal](https://github.com/modular/modular/blob/main/mojo/proposals/struct-extensions.md).
 
-- 🚧 **Linear types**: Support ownership patterns; blocked on conditional
-  conformance.
+- ✅ **Linear types/explicitly-destroyed types**: Create types that require
+an explicit call to deinitialize a value at end of its lifetime.
 
 - 🚧 **Stabilization markers**: Mechanism to tag standard library APIs with
 maturity levels.

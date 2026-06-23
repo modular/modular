@@ -20,7 +20,7 @@ At time of writing, those steps were:
 2. Modify the permissions in the installer and execute with:
 
     ```bash
-    sudo base nsight-compute-linux-2025.2.0.12-33266684.run
+    sudo bash nsight-compute-linux-2025.2.0.12-33266684.run
     ```
 
 3. Build the binary:
@@ -53,14 +53,14 @@ You can also do this process remotely:
 - SSH into the remote environment:
 
 - Open the Start Activity Dialog, select an SSH-capable Target Platform, and
-    click the + button
+  click the + button
 - Choose your authentication method:
   - Password: enter IP/hostname, username, password, port (default is 22),
-      deployment directory, and optionally a connection name
+    deployment directory, and optionally a connection name
   - Private Key: enter IP/hostname, username, private key path, passphrase,
-      port, deployment directory, and optionally a connection name
+    port, deployment directory, and optionally a connection name
   - If using Coder, the default username and password is `ubuntu`, and the
-      default IP is `coder.workspace_name.main`
+    default IP is `coder.workspace_name.main`
 
 - Select Target Application (per profiling session)
 
@@ -68,20 +68,20 @@ You can also do this process remotely:
 - Browse the remote file system over SSH
 - Select the *compiled binary* of the kernel you want to profile
 - You are responsible for compiling this binary outside Nsight Compute (see
-    above commands to compile)
+  above commands to compile)
 
 - Launch Activity (what Nsight Compute does)
 
 - Copies required profiling tools (e.g., `ncu`, support files) to the
-    deployment directory on the remote machine
+  deployment directory on the remote machine
 - Executes the selected binary on the remote device
 
 - Viewing
 
 - A report file (e.g., `.ncu-rep`) generated in the deployment directory on
-    the remote device
+  the remote device
 - This report is copied back to the host and opened in the UI
 - All actions (file transfers, tunneling, execution, report retrieval) are
-    logged in the Progress Log inside Nsight Compute
+  logged in the Progress Log inside Nsight Compute
 
 You are now ready to profile any kernels!
