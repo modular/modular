@@ -21,7 +21,7 @@ Utilities:
   double-buffered half-output tiles on the SMEM→TMA path.
 - ``swiglu_matmul_config``: convenience factory for ``FusedSwiGLUMatmulConfig``
   with automatic pipeline-stage calculation.
-- ``build_sm100_matmul_configs``: returns ``FusedSwiGLUMatmulConfig``\\s for
+- ``build_sm100_matmul_configs``: returns ``FusedSwiGLUMatmulConfig``s for
   tuned (N, K) shapes from the SwiGLU tuning table. Returns an empty set for
   untuned shapes; dispatch falls back to its safety-net config in that case.
 """
@@ -471,7 +471,7 @@ def build_sm100_swiglu_heuristic_configs[
     has_bias: Bool = False,
     register_swiglu: Bool = True,
 ]() -> Set[FusedSwiGLUMatmulConfig[a_type, b_type, c_type, transpose_b]]:
-    """Build all ``FusedSwiGLUMatmulConfig``\\s reachable by the heuristic.
+    """Build all ``FusedSwiGLUMatmulConfig``s reachable by the heuristic.
 
     Sweeps the same M ranges as ``build_sm100_matmul_configs`` so every config
     ``choose_swiglu_config`` can return at runtime is pre-instantiated at
