@@ -43,7 +43,6 @@ dependencies = [
   "msgspec",
   "munch",
   "mypy",
-  "notebook",
   "numpy==2.2.6; python_version < '3.11'",
   "numpy>=2.3.0; python_version >= '3.11'",
   "nvitop",

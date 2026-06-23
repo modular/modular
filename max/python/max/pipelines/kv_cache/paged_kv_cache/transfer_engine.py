@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import ctypes
+import dataclasses
 import itertools
 import logging
 import os
@@ -234,6 +235,10 @@ class TensorAgentMetadata(
     device_id: int
     """Device ID for this tensor."""
 
+    extra_base_addrs: list[int] = []
+    """Base memory addresses for extra tensor groups (e.g., draft KV in
+    speculative decoding). One entry per extra group beyond the main group."""
+
 
 @dataclass
 class TensorAgent:
@@ -267,6 +272,15 @@ class TensorAgent:
     reg_dlist: nixl.RegistrationDescriptorList
     """Registration descriptor list for this tensor."""
 
+    extra_base_addrs: list[int] = dataclasses.field(default_factory=list)
+    """Base memory addresses for extra groups (e.g., draft KV in spec-decode).
+    Parallel to the extra_reg_dlists list."""
+
+    extra_reg_dlists: list[nixl.RegistrationDescriptorList] = dataclasses.field(
+        default_factory=list
+    )
+    """Registration descriptor lists for extra groups."""
+
     @classmethod
     def create_agent(
         cls,
@@ -277,6 +291,7 @@ class TensorAgent:
         elts_per_page: int,
         memory_type: nixl.MemoryType,
         backend_type: NixlBackendType = "ucx",
+        extra_tensors: Sequence[Buffer] | None = None,
     ) -> TensorAgent:
         """Creates and registers a NIXL agent for the given tensor.
 
@@ -285,9 +300,12 @@ class TensorAgent:
             listen_port: TCP port for the NIXL listener.
             tensor: GPU/CPU buffer to register.
             total_num_pages: Total KV cache pages in the tensor.
-            elts_per_page: Elements per page.
+            elts_per_page: Elements per page for the main group.
             memory_type: NIXL memory segment type (DRAM or VRAM).
             backend_type: NIXL transport backend (``"ucx"`` or ``"libfabric"``).
+            extra_tensors: Additional buffers to register as extra groups (e.g.,
+                draft KV in speculative decoding). Must share the same device as
+                ``tensor``.
         """
         # Pre-load the UCX plugin's GPU runtime dependencies with RTLD_GLOBAL
         # before the NIXL plugin manager dlopens the plugin. Must run in this
@@ -333,7 +351,7 @@ class TensorAgent:
             init_params=backend_params,
         )
 
-        # Register memory
+        # Register main memory
         base_addr = tensor._data_ptr()
         num_bytes = tensor.num_elements * tensor.dtype.size_in_bytes
 
@@ -348,6 +366,34 @@ class TensorAgent:
                 f"Failed to register memory for {agent_name}: {status}"
             )
 
+        # Register extra groups (e.g., draft KV cache for speculative decoding)
+        extra_base_addrs: list[int] = []
+        extra_reg_dlists: list[nixl.RegistrationDescriptorList] = []
+        if extra_tensors:
+            for extra_tensor in extra_tensors:
+                extra_base_addr = extra_tensor._data_ptr()
+                extra_num_bytes = (
+                    extra_tensor.num_elements * extra_tensor.dtype.size_in_bytes
+                )
+                extra_descs = [
+                    (
+                        extra_base_addr,
+                        extra_num_bytes,
+                        extra_tensor.device.id,
+                        "",
+                    )
+                ]
+                extra_reg_dlist = nixl.RegistrationDescriptorList(
+                    type=memory_type, descs=extra_descs
+                )
+                extra_status = agent.register_memory(extra_reg_dlist, [backend])
+                if extra_status != nixl.Status.SUCCESS:
+                    raise ValueError(
+                        f"Failed to register extra memory for {agent_name}: {extra_status}"
+                    )
+                extra_base_addrs.append(extra_base_addr)
+                extra_reg_dlists.append(extra_reg_dlist)
+
         # Get metadata after registration
         agent_metadata = agent.get_local_metadata()
 
@@ -361,6 +407,8 @@ class TensorAgent:
             device_id=device.id,
             agent_metadata=agent_metadata,
             reg_dlist=reg_dlist,
+            extra_base_addrs=extra_base_addrs,
+            extra_reg_dlists=extra_reg_dlists,
         )
 
     def to_metadata(self) -> TensorAgentMetadata:
@@ -370,6 +418,7 @@ class TensorAgent:
             metadata=self.agent_metadata,
             base_addr=self.base_addr,
             device_id=self.device_id,
+            extra_base_addrs=self.extra_base_addrs,
         )
 
 
@@ -468,6 +517,13 @@ class KVTransferEngineMetadata(
     ``[dp*tp][1]`` to let a prefill worker at (DP=m, TP=n) connect to a
     decode worker at (DP=m*n, TP=1)."""
 
+    bytes_per_group: list[int] = []
+    """Bytes per page for each tensor group. The first entry is the main
+    group; subsequent entries correspond to extra groups (e.g., draft KV in
+    speculative decoding). When non-empty, ``bytes_per_page`` equals
+    ``sum(bytes_per_group)``; when empty, the engine is single-group and
+    ``bytes_per_page`` holds the only group's value."""
+
 
 class TransferReqData(
     msgspec.Struct, tag=True, kw_only=True, omit_defaults=True
@@ -535,7 +591,14 @@ class KVTransferEngine:
     """Total number of pages in each tensor (same across all replicas)."""
 
     bytes_per_page: int
-    """Bytes per page for each tensor."""
+    """Total bytes per page across all groups. For single-group engines this
+    equals the main group's bytes per page; for multi-group engines it is
+    ``sum(bytes_per_group)``."""
+
+    bytes_per_group: list[int]
+    """Bytes per page for each group. ``bytes_per_group[0]`` is the main
+    group; subsequent entries are extra groups (e.g., draft KV in
+    speculative decoding)."""
 
     memory_type: nixl.MemoryType
     """Type of memory being managed (e.g. DRAM)."""
@@ -568,7 +631,20 @@ class KVTransferEngine:
         *,
         total_num_pages: int,
         replicate_kv_across_tp: bool = False,
+        extra_tensor_groups: Sequence[Sequence[Sequence[Buffer]]] | None = None,
     ) -> None:
+        """Initialize the transfer engine.
+
+        Args:
+            name: Unique name for this engine.
+            tensors: Main group tensors as ``[replica][tp_shard]``.
+            total_num_pages: Total KV cache pages per tensor.
+            replicate_kv_across_tp: Whether KV is replicated across TP ranks.
+            extra_tensor_groups: Additional tensor groups (e.g., draft KV for
+                speculative decoding). Each entry has the same ``[replica][tp_shard]``
+                structure as ``tensors``. All tensors in each group must have
+                the same shape within that group, but groups may differ in shape.
+        """
         if total_num_pages <= 0:
             raise ValueError(
                 f"Total number of pages {total_num_pages} must be greater than 0"
@@ -596,7 +672,7 @@ class KVTransferEngine:
 
         backend_type = _get_nixl_backend_type()
 
-        # Validate each replica independently
+        # Validate main group across replicas
         bytes_per_page_list = []
         elts_per_page_list = []
         memory_types = []
@@ -631,9 +707,45 @@ class KVTransferEngine:
                 f"Found: {memory_types}"
             )
 
+        # Validate extra groups and compute their bytes_per_page
+        extra_groups: list[Sequence[Sequence[Buffer]]] = (
+            list(extra_tensor_groups) if extra_tensor_groups else []
+        )
+        extra_bpp_list: list[int] = []  # [group_idx] → bytes_per_page
+        extra_elts_list: list[int] = []  # [group_idx] → elts_per_page
+
+        for group_idx, group_tensors in enumerate(extra_groups):
+            if len(group_tensors) != self.dp:
+                raise ValueError(
+                    f"Extra group {group_idx} must have {self.dp} replicas, "
+                    f"but has {len(group_tensors)}"
+                )
+            group_bpp_list = []
+            group_elts_list = []
+            for replica_idx, replica_tensors in enumerate(group_tensors):
+                if len(replica_tensors) != self.tp:
+                    raise ValueError(
+                        f"Extra group {group_idx} replica {replica_idx} must "
+                        f"have {self.tp} TP shards, but has {len(replica_tensors)}"
+                    )
+                gbpp, gelts = _validate_tensor_shape(
+                    replica_tensors, total_num_pages
+                )
+                group_bpp_list.append(gbpp)
+                group_elts_list.append(gelts)
+            if len(set(group_bpp_list)) != 1:
+                raise ValueError(
+                    f"Extra group {group_idx}: all replicas must have the same "
+                    f"bytes_per_page. Found: {group_bpp_list}"
+                )
+            extra_bpp_list.append(group_bpp_list[0])
+            extra_elts_list.append(group_elts_list[0])
+
         # Set memory type and total pages
         self.total_num_pages = total_num_pages
-        self.bytes_per_page = bytes_per_page_list[0]
+        main_bpp = bytes_per_page_list[0]
+        self.bytes_per_group = [main_bpp, *extra_bpp_list]
+        self.bytes_per_page = sum(self.bytes_per_group)
         self.memory_type = memory_types[0]
         elts_per_page = elts_per_page_list[0]
 
@@ -643,6 +755,11 @@ class KVTransferEngine:
         for replica_idx, replica_tensors in enumerate(tensors):
             replica_agents = []
             for tp_idx, tensor in enumerate(replica_tensors):
+                # Gather corresponding extra-group tensors for this shard
+                shard_extra_tensors = [
+                    list(extra_groups[g][replica_idx])[tp_idx]
+                    for g in range(len(extra_groups))
+                ]
                 tensor_agent = TensorAgent.create_agent(
                     agent_name=f"{name}_{replica_idx}_{tp_idx}",
                     listen_port=available_port(),
@@ -651,19 +768,23 @@ class KVTransferEngine:
                     elts_per_page=elts_per_page,
                     memory_type=self.memory_type,
                     backend_type=backend_type,
+                    extra_tensors=shard_extra_tensors
+                    if shard_extra_tensors
+                    else None,
                 )
                 replica_agents.append(tensor_agent)
             self.tensor_agents.append(replica_agents)
 
         logger.info(
             "NIXL memory registration complete for %s (%s backend): "
-            "%d agent(s) (dp=%d, tp=%d), %d bytes per agent.",
+            "%d agent(s) (dp=%d, tp=%d), %d bytes per agent (%d group(s)).",
             self.name,
             backend_type,
             self.dp * self.tp,
             self.dp,
             self.tp,
             self.bytes_per_page * total_num_pages,
+            len(self.bytes_per_group),
         )
 
         # Remote connections
@@ -694,21 +815,55 @@ class KVTransferEngine:
         derives ``replicate_kv_across_tp`` from the cache params. Equivalent to
         constructing the engine manually but consolidates the boilerplate that
         prefill/decode schedulers share.
+
+        For models with multiple KV caches (e.g., speculative decoding with a
+        separate target and draft KV), each child cache is registered as its
+        own NIXL group so that heterogeneous buffer shapes (e.g., 61-layer MLA
+        target vs. 1-layer Eagle draft) are validated and transferred
+        independently.
         """
+        from max.nn.kv_cache.cache_params import MultiKVCacheBuffer
+
         cache_params = kv_cache.params
         dp = cache_params.data_parallel_degree
-        # Flattens every leaf cache's buffers for the replica (values, plus
-        # scales when present).
-        tensors: list[list[Buffer]] = [
-            list(kv_cache.get_device_buffer(replica_idx).all_buffers)
-            for replica_idx in range(dp)
+        total_num_pages = kv_cache.get_num_pages(replica_idx=0) + 1
+
+        device_buffers = [
+            kv_cache.get_device_buffer(replica_idx) for replica_idx in range(dp)
         ]
+
+        tensors: list[list[Buffer]] = []
+        extra_tensor_groups: list[list[list[Buffer]]] = []
+        child_keys: list[str] = []
+
+        # Collect per-replica buffers. MultiKVCacheBuffer replicas are split
+        # into per-child NIXL groups so each group is shape-homogeneous.
+        # KVCacheBuffer replicas go into a single group as before.
+        for r, buf in enumerate(device_buffers):
+            if isinstance(buf, MultiKVCacheBuffer):
+                if r == 0:
+                    child_keys = list(buf.children.keys())
+                    extra_tensor_groups = [[] for _ in child_keys[1:]]
+                # Main group: this replica's buffers for the first child
+                tensors.append(list(buf.children[child_keys[0]].all_buffers))
+                # Extra groups: one entry per remaining child
+                for g, key in enumerate(child_keys[1:]):
+                    extra_tensor_groups[g].append(
+                        list(buf.children[key].all_buffers)
+                    )
+            else:
+                # Single-cache replica: flat buffer list
+                tensors.append(list(buf.all_buffers))
+
         return cls(
             name=name,
             tensors=tensors,
             # Need to add 1 for the null block
-            total_num_pages=kv_cache.get_num_pages(replica_idx=0) + 1,
+            total_num_pages=total_num_pages,
             replicate_kv_across_tp=cache_params.replicates_kv_across_tp,
+            extra_tensor_groups=extra_tensor_groups
+            if extra_tensor_groups
+            else None,
         )
 
     @property
@@ -731,6 +886,7 @@ class KVTransferEngine:
             agents_meta=agents_meta,
             hostname=socket.gethostname(),
             replicate_kv_across_tp=self.replicate_kv_across_tp,
+            bytes_per_group=self.bytes_per_group,
         )
 
     def _resolve_local_agents_for_transfer(
@@ -840,6 +996,14 @@ class KVTransferEngine:
         if self.bytes_per_page != remote.bytes_per_page:
             raise ValueError(
                 f"Bytes per page mismatch: {self.bytes_per_page} != {remote.bytes_per_page}"
+            )
+
+        # Validate per-group breakdown when both sides advertise it
+        remote_bpg = remote.bytes_per_group
+        if remote_bpg and self.bytes_per_group != remote_bpg:
+            raise ValueError(
+                f"Per-group bytes-per-page mismatch: "
+                f"local={self.bytes_per_group} remote={remote_bpg}"
             )
 
         # Check if the relevant transport env vars are set. You can get away
@@ -1118,21 +1282,31 @@ class KVTransferEngine:
         for tp_idx, ta in enumerate(src_agents):
             remote_agent_meta = remote_replica_agents_meta[tp_idx]
 
-            # Prepare source descriptor list (primary tensor)
-            descs_src: list[tuple[int, int, int]] = []
-            for src_idx in src_idxs:
-                src_addr = ta.base_addr + src_idx * self.bytes_per_page
-                descs_src.append((src_addr, self.bytes_per_page, ta.device_id))
+            # Build descriptors for each group (main + extras).
+            # Each group uses its own base address and bytes_per_page; all
+            # groups share the same logical page indices.
+            src_base_addrs = [ta.base_addr, *ta.extra_base_addrs]
+            dst_base_addrs = [
+                remote_agent_meta.base_addr,
+                *remote_agent_meta.extra_base_addrs,
+            ]
 
-            # Prepare destination descriptor list (primary tensor)
+            descs_src: list[tuple[int, int, int]] = []
             descs_dst: list[tuple[int, int, int]] = []
-            for dst_idx in dst_idxs:
-                dst_addr = (
-                    remote_agent_meta.base_addr + dst_idx * self.bytes_per_page
-                )
-                descs_dst.append(
-                    (dst_addr, self.bytes_per_page, remote_agent_meta.device_id)
-                )
+            for group_idx, bpp in enumerate(self.bytes_per_group):
+                s_base = src_base_addrs[group_idx]
+                d_base = dst_base_addrs[group_idx]
+                for src_idx, dst_idx in zip(src_idxs, dst_idxs, strict=True):
+                    descs_src.append(
+                        (s_base + src_idx * bpp, bpp, ta.device_id)
+                    )
+                    descs_dst.append(
+                        (
+                            d_base + dst_idx * bpp,
+                            bpp,
+                            remote_agent_meta.device_id,
+                        )
+                    )
 
             transfer_dlist_src = nixl.TransferDescriptorList(
                 type=self.memory_type, descs=descs_src
@@ -1258,31 +1432,46 @@ class KVTransferEngine:
             )
         local_shards_used = list(range(len(dst_agents)))
 
+        # Determine per-group bytes_per_page for the remote (source) engine.
+        # If the remote advertises bytes_per_group, use it; otherwise fall back
+        # to treating bytes_per_page as a single group.
+        remote_bpg = (
+            remote.bytes_per_group
+            if remote.bytes_per_group
+            else [remote.bytes_per_page]
+        )
+
         for tp_idx, ta in enumerate(dst_agents):
             remote_agent_meta = remote_replica_agents_meta[tp_idx]
 
-            # Local descriptors (destination: our GPU memory)
-            descs_local: list[tuple[int, int, int]] = []
-            for dst_idx in dst_idxs:
-                local_addr = ta.base_addr + dst_idx * self.bytes_per_page
-                descs_local.append(
-                    (local_addr, self.bytes_per_page, ta.device_id)
-                )
+            # Build descriptors for each group (main + extras).
+            local_base_addrs = [ta.base_addr, *ta.extra_base_addrs]
+            remote_base_addrs_list = [
+                remote_agent_meta.base_addr,
+                *remote_agent_meta.extra_base_addrs,
+            ]
 
-            # Remote descriptors (source: BlockStore DRAM)
+            descs_local: list[tuple[int, int, int]] = []
             descs_remote: list[tuple[int, int, int]] = []
-            for src_idx in src_idxs:
-                remote_addr = (
-                    remote_agent_meta.base_addr
-                    + src_idx * remote.bytes_per_page
+            for group_idx, bpp in enumerate(self.bytes_per_group):
+                l_base = local_base_addrs[group_idx]
+                r_base = remote_base_addrs_list[group_idx]
+                r_bpp = (
+                    remote_bpg[group_idx]
+                    if group_idx < len(remote_bpg)
+                    else bpp
                 )
-                descs_remote.append(
-                    (
-                        remote_addr,
-                        remote.bytes_per_page,
-                        remote_agent_meta.device_id,
+                for dst_idx, src_idx in zip(dst_idxs, src_idxs, strict=True):
+                    descs_local.append(
+                        (l_base + dst_idx * bpp, bpp, ta.device_id)
                     )
-                )
+                    descs_remote.append(
+                        (
+                            r_base + src_idx * r_bpp,
+                            r_bpp,
+                            remote_agent_meta.device_id,
+                        )
+                    )
 
             local_dlist = nixl.TransferDescriptorList(
                 type=self.memory_type, descs=descs_local
@@ -1604,10 +1793,19 @@ class KVTransferEngine:
                             f"Failed to invalidate metadata: {status}"
                         )
 
-        # Deregister NIXL memory for all tensors (all replicas)
+        # Deregister NIXL memory for all tensors (all replicas, all groups)
         for replica_agents in self.tensor_agents:
             for ta in replica_agents:
                 # Deregister primary tensor
                 status = ta.agent.deregister_memory(ta.reg_dlist, [ta.backend])
                 if status != nixl.Status.SUCCESS:
                     raise ValueError(f"Failed to deregister memory: {status}")
+                # Deregister extra groups
+                for extra_reg_dlist in ta.extra_reg_dlists:
+                    status = ta.agent.deregister_memory(
+                        extra_reg_dlist, [ta.backend]
+                    )
+                    if status != nixl.Status.SUCCESS:
+                        raise ValueError(
+                            f"Failed to deregister extra memory: {status}"
+                        )

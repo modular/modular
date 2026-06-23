@@ -94,14 +94,9 @@ metrics_resource = Resource.create(
 )
 
 
-# Histogram bucket boundaries for latency-style metrics (in milliseconds).
-#
-# Design goals:
-# - Fine-grained resolution in the sub-10ms region to improve p50/p90 accuracy.
-# - Reasonable coverage for longer requests, up to tens of seconds.
-# - Keep the number of buckets modest to avoid excessive cardinality.
+# Latency metrics (milliseconds). Fine at sub-10ms, ~1.3-1.5x steps elsewhere
+# out to 30 min for slow ops (request time, model load, compile).
 HISTOGRAM_LATENCY_BUCKETS_MS: tuple[float, ...] = (
-    # Sub-10ms: detailed latency where we currently see coarse quantiles
     1.0,
     2.0,
     3.0,
@@ -123,7 +118,7 @@ HISTOGRAM_LATENCY_BUCKETS_MS: tuple[float, ...] = (
     400.0,
     500.0,
     750.0,
-    # Longer running requests up to 60 seconds
+    # Longer running requests up to 30 seconds
     1_000.0,
     1_500.0,
     2_000.0,
@@ -134,13 +129,18 @@ HISTOGRAM_LATENCY_BUCKETS_MS: tuple[float, ...] = (
     15_000.0,
     20_000.0,
     30_000.0,
-    60_000.0,
-    # Long tail for slow operations such as model load / compile, out to 30 min.
-    120_000.0,
-    300_000.0,
-    600_000.0,
-    900_000.0,
-    1_800_000.0,
+    45_000.0,  # 45s
+    60_000.0,  # 1m
+    90_000.0,  # 1m30s
+    120_000.0,  # 2m
+    180_000.0,  # 3m
+    240_000.0,  # 4m
+    300_000.0,  # 5m
+    420_000.0,  # 7m
+    600_000.0,  # 10m
+    900_000.0,  # 15m
+    1_200_000.0,  # 20m
+    1_800_000.0,  # 30m
 )
 
 # Percentages / utilization ratios (0-100). Finer resolution toward the high
@@ -171,31 +171,52 @@ HISTOGRAM_PERCENT_BUCKETS: tuple[float, ...] = (
     100.0,
 )
 
-# Generic counts: token counts per request / per batch and other occupancy
-# counts. Powers of two from a single item up to ~1M to cover both tiny and very
-# large values. Not token-specific; reused for any unbounded count.
+# Token counts per request/batch and other unbounded counts. ~1.25-1.5x steps
+# through 1k-128k so nearby token sizes (e.g. 8k/10k/12k) stay distinct;
+# coarser at the small occupancy end and the large-context tail.
 HISTOGRAM_COUNT_BUCKETS: tuple[float, ...] = (
     1.0,
     2.0,
+    3.0,
     4.0,
+    6.0,
     8.0,
+    12.0,
     16.0,
+    24.0,
     32.0,
+    48.0,
     64.0,
+    96.0,
     128.0,
+    192.0,
     256.0,
+    384.0,
     512.0,
-    1_024.0,
-    2_048.0,
-    4_096.0,
-    8_192.0,
-    16_384.0,
-    32_768.0,
-    65_536.0,
-    131_072.0,
-    262_144.0,
-    524_288.0,
-    1_048_576.0,
+    768.0,
+    1_000.0,
+    1_500.0,
+    2_000.0,
+    3_000.0,
+    4_000.0,
+    6_000.0,
+    8_000.0,
+    10_000.0,
+    12_000.0,
+    16_000.0,
+    20_000.0,
+    24_000.0,
+    32_000.0,
+    48_000.0,
+    64_000.0,
+    96_000.0,
+    128_000.0,
+    192_000.0,
+    256_000.0,
+    384_000.0,
+    512_000.0,
+    768_000.0,
+    1_000_000.0,
 )
 
 # Batch size (number of requests in a batch). Fine-grained at low sizes where
@@ -256,21 +277,29 @@ HISTOGRAM_ACCEPTANCE_LENGTH_BUCKETS: tuple[float, ...] = tuple(
     i * 0.25 for i in range(1, 65)
 )
 
-# Throughput in tokens/second. Spans from very low (slow single request) to very
-# high (large prefill batch), so it is wide and coarse.
+# Throughput in tokens/second. ~1.5x round-number ladder from slow single
+# request to large prefill batch.
 HISTOGRAM_THROUGHPUT_TOKENS_BUCKETS: tuple[float, ...] = (
     10.0,
+    25.0,
     50.0,
     100.0,
+    150.0,
     250.0,
-    500.0,
+    400.0,
+    600.0,
     1_000.0,
+    1_500.0,
     2_500.0,
-    5_000.0,
+    4_000.0,
+    6_000.0,
     10_000.0,
+    15_000.0,
     25_000.0,
-    50_000.0,
+    40_000.0,
+    60_000.0,
     100_000.0,
+    150_000.0,
     250_000.0,
     500_000.0,
     1_000_000.0,

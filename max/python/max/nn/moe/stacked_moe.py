@@ -649,7 +649,7 @@ class StackedMoE(Module, Shardable):
             self.gate_up_proj_transposed,
             routing.expert_start_indices,
             routing.expert_ids,
-            routing.expert_usage_stats.to(DeviceRef.CPU()),
+            routing.expert_usage_stats,
         )
 
         gated_output = self._apply_gated_activation(gate_up_output, routing)
@@ -659,7 +659,7 @@ class StackedMoE(Module, Shardable):
             self.down_proj_transposed,
             routing.expert_start_indices,
             routing.expert_ids,
-            routing.expert_usage_stats.to(DeviceRef.CPU()),
+            routing.expert_usage_stats,
         )
 
         if self.has_bias:

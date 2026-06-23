@@ -228,13 +228,24 @@ class TieredConnector:
         for hit in hits:
             self._host_block_pool.free_block(hit.host_block)
 
-        # Process hits in FIFO order: wait on each disk read individually,
-        # then immediately enqueue H2D + broadcast.  Disk reads complete in
-        # submission order, so this pipelines GPU DMA with remaining I/O.
+        # Process hits in FIFO order accumulating (dst, src) pairs into a batch.
+        # When a disk read is NOT YET complete, flush the current batch first so
+        # its H2D runs concurrently with the disk wait; then block on the future.
+        # If the future is already done, skip the flush and treat it like a CPU
+        # hit — no point paying a memcpy_h2d call for a 1-block batch.
         num_loaded = 0
+        dsts: list[int] = []
+        srcs: list[int] = []
         with Tracer(f"{disk_reads} disk reads + H2D"):
             for i, hit in enumerate(hits):
-                if hit.future is not None:
+                if hit.future is not None and not hit.future.done():
+                    # Flush accumulated ready blocks so their H2D overlaps with
+                    # the disk wait below.
+                    self._block_copy_engine.memcpy_h2d(dsts, srcs)
+                    self._h2d_blocks_copied += len(dsts)
+                    dsts = []
+                    srcs = []
+
                     try:
                         with Tracer(f"Sync on disk read {i}"):
                             hit.future.result()
@@ -246,16 +257,31 @@ class TieredConnector:
                         )
                         break  # prefix chain broken
 
+                elif hit.future is not None:
+                    # Future already done — collect the result without blocking
+                    # so we can batch this hit with the surrounding CPU hits.
+                    try:
+                        hit.future.result()
+                    except Exception as exc:
+                        logger.error(
+                            "Disk read failed for hash %s: %s",
+                            hit.block_hash,
+                            exc,
+                        )
+                        break  # prefix chain broken
+
+                if hit.future is not None:
                     if hit.block_hash not in self._host_block_pool.prefix_cache:
                         self._host_block_pool.commit_into_prefix_cache(
                             hit.block_hash, hit.host_block
                         )
 
-                self._block_copy_engine.memcpy_h2d(
-                    hit.device_block_id, hit.host_block.bid
-                )
-                self._h2d_blocks_copied += 1
+                dsts.append(hit.device_block_id)
+                srcs.append(hit.host_block.bid)
                 num_loaded += 1
+
+            self._block_copy_engine.memcpy_h2d(dsts, srcs)
+            self._h2d_blocks_copied += len(dsts)
 
         # Wait for in-flight disk reads on unprocessed hits so their
         # worker threads finish writing into the host buffer before we return.
@@ -270,10 +296,11 @@ class TieredConnector:
         return num_loaded
 
     @traced
-    def sync(self) -> None:
-        """Wait for pending loads/offloads to complete and post disk writes.
+    def wait_for_offloads(self) -> None:
+        """Drain offloads posted this step and post disk writes.
 
-        Uses zero-copy: host blocks are kept pinned (ref_cnt=1) from D2H
+        Called after the forward pass. Waits for in-flight D2H copies, then
+        uses zero-copy: host blocks are kept pinned (ref_cnt=1) from D2H
         through disk write completion.  Numpy views (no ``.copy()``) are
         passed to the disk writer thread — safe because the block can't be
         evicted while pinned.  Blocks are released on the *main* thread in
@@ -305,9 +332,6 @@ class TieredConnector:
         — keeps the forward pass overlapping with the D2H transfers.
         """
         self._block_copy_engine.wait_for_completion()
-
-    def wait_for_offloads(self) -> None:
-        """No-op: offloads complete in ``sync``."""
 
     @traced
     def _drain_completed_writes(self) -> None:
@@ -344,14 +368,19 @@ class TieredConnector:
         the copies against the forward pass and destroy the overlap.
         """
         host_blocks: list[KVCacheBlock] = []
+        dsts: list[int] = []
+        srcs: list[int] = []
         for device_block_id, block_hash in zip(
             block_ids, block_hashes, strict=True
         ):
-            host_block = self._maybe_offload_to_host(
-                device_block_id, block_hash
-            )
+            host_block = self._maybe_offload_to_host(block_hash)
             if host_block is not None:
                 host_blocks.append(host_block)
+                dsts.append(host_block.bid)
+                srcs.append(device_block_id)
+
+        self._block_copy_engine.memcpy_d2h(dsts, srcs)
+        self._d2h_blocks_copied += len(dsts)
 
         if host_blocks:
             pending_disk_write = _PendingDiskWrite(
@@ -417,19 +446,17 @@ class TieredConnector:
             inflight_disk_ops=self._disk_tier.inflight_disk_ops,
         )
 
-    @traced
-    def _maybe_offload_to_host(
-        self, device_block_id: int, block_hash: int
-    ) -> KVCacheBlock | None:
-        """Offload a device block to host memory if not already cached.
+    def _maybe_offload_to_host(self, block_hash: int) -> KVCacheBlock | None:
+        """Reserve a host slot for device_block_id if not already cached.
 
-        Returns the host block if a new D2H copy was initiated, None
-        otherwise.  The returned block stays at ref_cnt=1 so it can't be
-        evicted while an async disk write reads from its memory.  The
+        Returns the host block (ref_cnt=1) so the caller can batch the D2H
+        copy, or ``None`` if the block is already in the host cache or no free
+        slots are available.  The returned block stays at ref_cnt=1 so it
+        can't be evicted while an async disk write reads from its memory.  The
         caller is responsible for calling ``free_block()`` when the write
         completes (via ``_drain_completed_writes()``).
         """
-        # Skip if already in host cache
+        # Skip if already in host cache.
         if block_hash in self._host_block_pool.prefix_cache:
             return None
 
@@ -439,14 +466,9 @@ class TieredConnector:
             return None
 
         host_block, _ = self._host_block_pool.alloc_block()  # ref_cnt=1
-
-        self._block_copy_engine.memcpy_d2h(host_block.bid, device_block_id)
-        self._d2h_blocks_copied += 1
-
         self._host_block_pool.commit_into_prefix_cache(block_hash, host_block)
         # Do NOT call free_block() — keep ref_cnt=1 so the block can't be
         # evicted while the disk write thread reads from its memory.
-
         return host_block
 
     @traced

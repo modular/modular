@@ -30,6 +30,8 @@ from max.driver import (
     CPU,
     Accelerator,
     accelerator_count,
+    get_virtual_cpu_target,
+    set_virtual_cpu_target,
     set_virtual_device_api,
     set_virtual_device_count,
     set_virtual_device_target_arch,
@@ -269,3 +271,16 @@ def test_nested_collectors_both_observe_phases() -> None:
 
     assert outer.compile_seconds >= inner.compile_seconds
     assert outer.init_seconds >= inner.init_seconds
+
+
+def test_virtual_cpu_target_roundtrip() -> None:
+    """The virtual CPU target setter/getter round-trips and defaults empty."""
+    assert get_virtual_cpu_target() == ""
+    try:
+        set_virtual_cpu_target("x86-64-v3")
+        assert get_virtual_cpu_target() == "x86-64-v3"
+        set_virtual_cpu_target("generic")
+        assert get_virtual_cpu_target() == "generic"
+    finally:
+        set_virtual_cpu_target("")
+    assert get_virtual_cpu_target() == ""

@@ -78,14 +78,6 @@ struct StackTrace(Copyable, Movable, Writable):
         memcpy(dest=new_ptr, src=src_ptr, count=str_len + 1)
         self._data = OwnedPointer(unsafe_from_raw_pointer=new_ptr)
 
-    def __init__(out self, *, deinit move: Self):
-        """Move constructor.
-
-        Args:
-            move: The existing StackTrace to move from.
-        """
-        self._data = move._data^
-
     @staticmethod
     @no_inline
     def collect_if_enabled(depth: Int = 0) -> Optional[StackTrace]:

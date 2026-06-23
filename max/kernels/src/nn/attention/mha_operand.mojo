@@ -18,6 +18,7 @@ from kv_cache.types import (
     _populate_via_row_idx,
     kv_num_sub_tiles,
     kv_sub_tile_rows,
+    kv_tma_fold_chunks,
     padded_depth,
     swizzle_granularity,
 )
@@ -191,6 +192,8 @@ trait MHAOperand(DevicePassable, TrivialRegisterPassable):
         BN: Int,
         depth: Int,
         BK: Int = padded_depth[Self.dtype, swizzle_mode, depth](),
+        fold_chunks: Int = 1,
+        row_major: Bool = False,
     ](self, ctx: DeviceContext) raises -> SplitLastDimTMATensorTile[
         Self.dtype,
         IndexList[3](BN, 1, BK),
@@ -198,7 +201,18 @@ trait MHAOperand(DevicePassable, TrivialRegisterPassable):
     ]:
         """Creates a TMA tile for efficient GPU memory transfers.
         This is useful for `k-major` MMA operations where we don't
-        need to mask any extra rows."""
+        need to mask any extra rows.
+
+        When `fold_chunks >= 2` the contiguous depth chunks are folded into one
+        rank-4 TMA descriptor (SM100 K-only optimization). The caller must pass the
+        value from `kv_tma_fold_chunks` and use the same value at the `tma_copy_k`
+        issue site. `1` (default) is the original per-chunk behavior.
+
+        When `row_major` is `True` (and `fold_chunks >= 2`) the fold uses the
+        rank-5 chunk-inner (page-dense) box instead of the rank-4 chunk-outer
+        box, so a tile can span multiple pages with one TMA per page. The same
+        value must be used at the `tma_copy_k`/`tma_copy_v` issue site and the
+        P@V MMA consumer descriptor."""
         ...
 
     @always_inline
@@ -478,6 +492,8 @@ struct KVCacheMHAOperand[
         BN: Int,
         depth: Int,
         BK: Int = padded_depth[Self.dtype, swizzle_mode, depth](),
+        fold_chunks: Int = 1,
+        row_major: Bool = False,
     ](
         self,
         ctx: DeviceContext,
@@ -494,7 +510,13 @@ struct KVCacheMHAOperand[
             BK % swizzle_granularity[Self.dtype, swizzle_mode]()
         ) == 0
         tma = rebind[type_of(tma)](
-            self.cache.create_tma_tile[swizzle_mode, BN=BN, BK=BK](ctx)
+            self.cache.create_tma_tile[
+                swizzle_mode,
+                BN=BN,
+                BK=BK,
+                fold_chunks=fold_chunks,
+                row_major=row_major,
+            ](ctx)
         )
 
     @always_inline
@@ -748,6 +770,8 @@ struct KVCacheScalesMHAOperand[
         BN: Int,
         depth: Int,
         BK: Int = padded_depth[Self.dtype, swizzle_mode, depth](),
+        fold_chunks: Int = 1,
+        row_major: Bool = False,
     ](
         self,
         ctx: DeviceContext,
@@ -1070,6 +1094,8 @@ struct LayoutTensorMHAOperand[
         BN: Int,
         depth: Int,
         BK: Int = padded_depth[Self.dtype, swizzle_mode, depth](),
+        fold_chunks: Int = 1,
+        row_major: Bool = False,
     ](
         self,
         ctx: DeviceContext,
@@ -1092,6 +1118,8 @@ struct LayoutTensorMHAOperand[
             smem_shape,
             gmem_shape,
             swizzle_mode=swizzle_mode,
+            fold_chunks=fold_chunks,
+            row_major=row_major,
         ](
             ctx,
             self.buffer.ptr.as_immutable().as_unsafe_any_origin(),
@@ -1275,6 +1303,8 @@ struct RaggedMHAOperand[
     comptime page_size = 0
     comptime quantization_granularity = 0
     var buffer: TileTensor[Self.dtype, Self.layout, Self.origin]
+
+    @__allow_legacy_any_origin_fields
     var scale_buffer: TileTensor[
         Self.scale_dtype, Self.scale_layout, ImmutAnyOrigin
     ]
@@ -1428,6 +1458,8 @@ struct RaggedMHAOperand[
         BN: Int,
         depth: Int,
         BK: Int = padded_depth[Self.dtype, swizzle_mode, depth](),
+        fold_chunks: Int = 1,
+        row_major: Bool = False,
     ](
         self,
         ctx: DeviceContext,
@@ -1450,6 +1482,8 @@ struct RaggedMHAOperand[
             smem_shape,
             gmem_shape,
             swizzle_mode=swizzle_mode,
+            fold_chunks=fold_chunks,
+            row_major=row_major,
         ](
             ctx,
             self.buffer.ptr.as_immutable().as_unsafe_any_origin(),

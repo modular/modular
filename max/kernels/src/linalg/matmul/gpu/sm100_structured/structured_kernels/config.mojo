@@ -1504,7 +1504,7 @@ def default_matmul_config_bf16_fp8[
     # Nvidia mma instruction process 32B in K.
     comptime Kbytes_per_mma = 32
 
-    comptime MMA_K = 32 if a_type == DType.float8_e4m3fn else 16
+    comptime MMA_K = 32 // size_of[a_type]()
     comptime BK = TensorMapSwizzle.SWIZZLE_128B.bytes() // size_of[a_type]()
 
     comptime block_tile_shape = Index(128, 128, BK)

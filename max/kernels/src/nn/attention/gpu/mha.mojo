@@ -538,7 +538,7 @@ def q_num_matrix_view_rows[
 
 
 def _apple_naive_fa_decode_enabled() -> Bool:
-    return getenv("MODULAR_ENABLE_APPLE_NAIVE_FA_DECODE", "0") == "1"
+    return getenv("MODULAR_ENABLE_APPLE_NAIVE_FA_DECODE", "1") != "0"
 
 
 @always_inline
@@ -1564,9 +1564,9 @@ def flash_attention_dispatch[
     else:
         # Assumes BSHD.
         comptime if has_apple_gpu_accelerator():
-            # Apple decode-only opt-in. The warp producer splits the head dim
+            # Apple decode default. The warp producer splits the head dim
             # across lanes, hence the `% WARP_SIZE` gate; anything else (prefill,
-            # flag-off, oversized/odd head_dim) falls to mha_gpu_naive.
+            # opt-out, oversized/odd head_dim) falls to mha_gpu_naive.
             if (
                 is_token_generation
                 and _apple_naive_fa_decode_enabled()
@@ -1686,6 +1686,16 @@ def flash_attention[
     var batch_size = q.dim[0]()
     var seq_len = q.dim[1]()
     var num_keys = k.dim[1]()
+
+    # Zero-sized attention (e.g. VAE mid-block attention on a
+    # ``(B, C, 0, 0)`` placeholder image flattens to ``seq_len=0``):
+    # nothing to compute.  The output buffer is pre-allocated zero
+    # element by the caller; softmax over an empty sequence has no
+    # defined value and the downstream readers also have zero seq.
+    # Skipping the dispatch avoids zero-grid kernel launches and
+    # undefined behavior in TMA descriptors with empty extents.
+    if batch_size == 0 or seq_len == 0 or num_keys == 0:
+        return
 
     # Whether head and depth are static. With BSHD, B and S are dynamic.
     # H and D are always known.

@@ -62,9 +62,11 @@ struct Config(Equatable):
     var timeout: Float64
 
 
-def test_field_type_by_name() raises:
-    """Check `field_type["host"]` gives a handle whose .T is usable."""
-    comptime host_handle = reflect[Config].field_type["host"]
+def test_field_by_name() raises:
+    """Check `field["host"]` gives a handle whose .T is usable."""
+    # `field[name]` returns a `Reflected` handle itself (here `Reflected[String]`),
+    # not the bare field type, so you can keep chaining reflection methods on it.
+    comptime host_handle = reflect[Config].field["host"]
     var default_host: host_handle.T = "localhost"
     assert_equal(default_host, "localhost")
 
@@ -292,7 +294,7 @@ def main() raises:
 
     # Inspect a type
     test_base_name()
-    test_field_type_by_name()
+    test_field_by_name()
 
     # Detect field-level changes
     test_diff_fields_detects_changes()

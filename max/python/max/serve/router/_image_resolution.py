@@ -35,8 +35,23 @@ from pydantic import AnyUrl
 
 logger = logging.getLogger("max.serve")
 
+# Some media hosts (e.g. Wikimedia, Google Cloud Storage) reject requests that
+# carry a default library User-Agent (httpx sends ``python-httpx/...``) with an
+# HTTP 403, which turned valid user-supplied image/video URLs into fetch
+# failures. Present a common browser User-Agent (and a permissive Accept) so
+# fetching from such hosts succeeds.
+_FETCH_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+    ),
+    "Accept": "*/*",
+}
 
-def decode_and_validate_images(images: list[bytes]) -> list[Image.Image]:
+
+def decode_and_validate_images(
+    images: list[bytes], max_image_bytes: int | None = None
+) -> list[Image.Image]:
     # Fully decode each image so empty, non-image, or truncated/streamed
     # content (e.g. animated or content-negotiated WebP) fails here as a clean
     # 400 instead of reaching the model worker and crashing it with an
@@ -53,6 +68,12 @@ def decode_and_validate_images(images: list[bytes]) -> list[Image.Image]:
     # the pixels into memory and the caller owns the decoded image.
     decoded: list[Image.Image] = []
     for image_bytes in images:
+        # Optional model-specific cap on resolved bytes (e.g. 10MB).
+        if max_image_bytes is not None and len(image_bytes) > max_image_bytes:
+            raise InputError(
+                "image exceeds the maximum allowed size of "
+                f"{max_image_bytes // (1024 * 1024)}MB"
+            )
         try:
             image = Image.open(io.BytesIO(image_bytes))
             image.load()
@@ -98,7 +119,7 @@ async def resolve_image_from_url(
 ) -> bytes:
     if image_ref.scheme == "http" or image_ref.scheme == "https":
         # TODO: Evaluate creating a single AsyncClient for the app.
-        async with AsyncClient() as client:
+        async with AsyncClient(headers=_FETCH_HEADERS) as client:
             try:
                 response = await client.get(
                     str(image_ref), follow_redirects=True

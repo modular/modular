@@ -8863,3 +8863,97 @@ class TestDistributedReducescatterSumSimulated:
         total = data_a + data_b
         np.testing.assert_allclose(result.local_shards[0].to_numpy(), total[:2])
         np.testing.assert_allclose(result.local_shards[1].to_numpy(), total[2:])
+
+
+class TestLazyGCModelCompilation:
+    """Direct tests for the per-(op, device, dtype) GC model caches.
+
+    These cover the cache behavior the dispatch handlers depend on but do not
+    assert themselves: a target is compiled exactly once and reused, an
+    unsupported unary target still raises rather than handing an uncompilable
+    graph to the backend, and the ``MAX_EAGER_OP_PRECOMPILE`` env var selects
+    between the default precompile sweep (cache miss is a hard error) and lazy
+    per-target compilation on first dispatch.
+    """
+
+    def test_matmul_model_compiles_once_and_reuses(self) -> None:
+        """A second call for the same (device, dtype) returns the cached model."""
+        from max._interpreter_ops import matmul_gc
+
+        cpu = CPU()
+        first = matmul_gc.matmul_model(cpu, DType.float32)
+        second = matmul_gc.matmul_model(cpu, DType.float32)
+        assert first is second
+
+    def test_unary_model_compiles_once_and_reuses(self) -> None:
+        """A second call for the same unary target returns the cached model."""
+        from max._core.dialects import mo
+        from max._interpreter_ops import unary_elementwise_gc
+
+        cpu = CPU()
+        first = unary_elementwise_gc.unary_model(mo.ExpOp, cpu, DType.float32)
+        second = unary_elementwise_gc.unary_model(mo.ExpOp, cpu, DType.float32)
+        assert first is second
+
+    def test_unary_model_unsupported_dtype_raises(self) -> None:
+        """A transcendental op on an int dtype is outside the supported set."""
+        from max._core.dialects import mo
+        from max._interpreter_ops import unary_elementwise_gc
+
+        # Exp only sweeps float dtypes; int32 is unsupported and must not be
+        # handed to load_all as an uncompilable graph.
+        with pytest.raises(KeyError, match="Unsupported unary op/device/dtype"):
+            unary_elementwise_gc.unary_model(mo.ExpOp, CPU(), DType.int32)
+
+    def test_matmul_model_precompile_default_raises_on_miss(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """In precompile mode (the default) a cache miss is a hard error."""
+        from max._interpreter_ops import gc_compile, matmul_gc
+
+        # Simulate a target that the import-time sweep did not cover.
+        monkeypatch.delenv(
+            gc_compile.EAGER_OP_PRECOMPILE_ENV_VAR, raising=False
+        )
+        monkeypatch.setattr(matmul_gc, "_MATMUL_MODEL_CACHE", {})
+        with pytest.raises(KeyError, match="No pre-compiled matmul model"):
+            matmul_gc.matmul_model(CPU(), DType.float32)
+
+    def test_matmul_model_lazy_compiles_on_miss(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """With MAX_EAGER_OP_PRECOMPILE=0, a miss compiles the target lazily."""
+        from max._interpreter_ops import gc_compile, matmul_gc
+
+        monkeypatch.setenv(gc_compile.EAGER_OP_PRECOMPILE_ENV_VAR, "0")
+        monkeypatch.setattr(matmul_gc, "_MATMUL_MODEL_CACHE", {})
+        model = matmul_gc.matmul_model(CPU(), DType.float32)
+        assert model is not None
+
+    def test_unary_model_precompile_default_raises_on_miss(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """In precompile mode a supported-but-unswept target is a hard error."""
+        from max._core.dialects import mo
+        from max._interpreter_ops import gc_compile, unary_elementwise_gc
+
+        monkeypatch.delenv(
+            gc_compile.EAGER_OP_PRECOMPILE_ENV_VAR, raising=False
+        )
+        monkeypatch.setattr(unary_elementwise_gc, "_UNARY_MODEL_CACHE", {})
+        # float32 Exp is supported (passes the _is_supported guard), so the miss
+        # falls through to the precompile-mode hard error, not "Unsupported".
+        with pytest.raises(KeyError, match="No pre-compiled unary model"):
+            unary_elementwise_gc.unary_model(mo.ExpOp, CPU(), DType.float32)
+
+    def test_unary_model_lazy_compiles_on_miss(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """With MAX_EAGER_OP_PRECOMPILE=0, a supported miss compiles lazily."""
+        from max._core.dialects import mo
+        from max._interpreter_ops import gc_compile, unary_elementwise_gc
+
+        monkeypatch.setenv(gc_compile.EAGER_OP_PRECOMPILE_ENV_VAR, "0")
+        monkeypatch.setattr(unary_elementwise_gc, "_UNARY_MODEL_CACHE", {})
+        model = unary_elementwise_gc.unary_model(mo.ExpOp, CPU(), DType.float32)
+        assert model is not None

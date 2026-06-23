@@ -20,7 +20,6 @@ import time
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from max._distributed_ops import distributed_broadcast
 from max.driver import (
     Buffer,
     Device,
@@ -202,21 +201,31 @@ class BlockOffloadEngine:
         _unsafe_free_fast_pinned_buffer(self.host_buffer)
 
     @traced
-    def memcpy_h2d(self, dst: int, src: int) -> None:
-        """Copies a block from host to device(s)."""
+    def memcpy_h2d(self, dsts: list[int], srcs: list[int]) -> None:
+        """Copies blocks from host to device(s)."""
+        if not dsts:
+            return
+
         # h2d on auxiliary stream.
-        offset = 0
-        for buf in self.device_buffers_on_aux_stream:
-            page_bytes = buf.shape[1]
-            buf[dst, :].inplace_copy_from(
-                self.host_buffer[src, offset : offset + page_bytes]
-            )
-            offset += page_bytes
+        for dst, src in zip(dsts, srcs, strict=True):
+            offset = 0
+            for buf in self.device_buffers_on_aux_stream:
+                page_bytes = buf.shape[1]
+                buf[dst, :].inplace_copy_from(
+                    self.host_buffer[src, offset : offset + page_bytes]
+                )
+                offset += page_bytes
 
         if not self._replicated_units:
             return
 
-        # main stream waits for completion of d2h on auxiliary stream.
+        # Imported lazily: instantiating the GPU broadcast collective at module
+        # load compiles it for the active GPU target, which fails on backends
+        # without a GPUInfo entry. Only the multi-device replicated path needs
+        # it, so defer the import (and its compile) to here.
+        from max._distributed_ops import distributed_broadcast
+
+        # main stream waits for completion of h2d on auxiliary stream.
         for main_stream, d2h_auxiliary_stream in zip(
             self.main_streams.values(),
             self.d2h_auxiliary_streams.values(),
@@ -224,31 +233,33 @@ class BlockOffloadEngine:
         ):
             main_stream.wait_for(d2h_auxiliary_stream)
 
-        # Broadcast the block to the other devices on main stream.
-        for unit in self._replicated_units:
-            root = unit.buffer
-            with Tracer("distributed_broadcast"):
-                distributed_broadcast(
-                    input_buffer=root[dst, :],
-                    output_buffers=[
-                        root[dst, :],
-                        *(p[dst, :] for p in unit.peers),
-                    ],
-                    signal_buffers=self._signal_buffers,
-                    devices=self._broadcast_devices,
-                    root=0,
-                )
+        # Broadcast all blocks to the other devices on main stream.
+        for dst in dsts:
+            for unit in self._replicated_units:
+                root = unit.buffer
+                with Tracer("distributed_broadcast"):
+                    distributed_broadcast(
+                        input_buffer=root[dst, :],
+                        output_buffers=[
+                            root[dst, :],
+                            *(p[dst, :] for p in unit.peers),
+                        ],
+                        signal_buffers=self._signal_buffers,
+                        devices=self._broadcast_devices,
+                        root=0,
+                    )
 
     @traced
-    def memcpy_d2h(self, dst: int, src: int) -> None:
-        """Copies a block from device(s) to host."""
-        offset = 0
-        for buf in self.device_buffers_on_aux_stream:
-            page_bytes = buf.shape[1]
-            self.host_buffer[
-                dst, offset : offset + page_bytes
-            ].inplace_copy_from(buf[src, :])
-            offset += page_bytes
+    def memcpy_d2h(self, dsts: list[int], srcs: list[int]) -> None:
+        """Copies blocks from device(s) to host."""
+        for dst, src in zip(dsts, srcs, strict=True):
+            offset = 0
+            for buf in self.device_buffers_on_aux_stream:
+                page_bytes = buf.shape[1]
+                self.host_buffer[
+                    dst, offset : offset + page_bytes
+                ].inplace_copy_from(buf[src, :])
+                offset += page_bytes
 
     @traced
     def wait_for_completion(self) -> None:

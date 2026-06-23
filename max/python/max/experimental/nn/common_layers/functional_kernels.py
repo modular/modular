@@ -86,14 +86,14 @@ def grouped_matmul_ragged_rule(
     weight: TensorLayout,
     expert_start_indices: TensorLayout,
     expert_ids: TensorLayout,
-    expert_usage_stats_host: TensorLayout,
+    expert_usage_stats: TensorLayout,
 ) -> ActionSet:
     layouts = (
         hidden_states,
         weight,
         expert_start_indices,
         expert_ids,
-        expert_usage_stats_host,
+        expert_usage_stats,
     )
     n_axes = weight.mapping.mesh.ndim
     rows = []

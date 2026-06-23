@@ -64,10 +64,6 @@ def execute_decode_compare[
     comptime depth = kv_params.head_size
     comptime num_blocks = 32
 
-    comptime CollectionType = ContinuousBatchingKVCacheCollection[
-        dtype, kv_params
-    ]
-
     var batch_size = len(cache_lengths)
     debug_assert(
         batch_size < num_blocks,
@@ -172,8 +168,15 @@ def execute_decode_compare[
     var kv_block_tensor = kv_block.device_tensor()
     var lookup_table_tensor = lookup_table.device_tensor()
 
-    var kv_collection_device = CollectionType(
-        kv_block_tensor,
+    var kv_collection_device = ContinuousBatchingKVCacheCollection[
+        dtype,
+        kv_params,
+    ](
+        # `mha_gpu_naive`/`naive_fa_decode_apple` read both the `k` and `v` cache
+        # views, which are disjoint kv_idx halves of one `blocks` buffer sharing its
+        # origin, so the nested-origin exclusivity check rejects passing both.
+        # Declare kv_block_tensor origin as UnsafeAnyOrigin` to opt out of exclusivity checking.
+        kv_block_tensor.as_unsafe_any_origin(),
         cache_lengths_device,
         lookup_table_tensor,
         UInt32(max_prompt_len),
