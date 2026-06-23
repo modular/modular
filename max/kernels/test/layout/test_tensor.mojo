@@ -798,7 +798,6 @@ def test_distribute_vectorized():
     tensor_4x16x64 = LayoutTensor[
         DType.float32,
         Layout(IntTuple(IntTuple(16, 16), 4), IntTuple(IntTuple(32, 2), 512)),
-        MutAnyOrigin,
         element_layout=Layout(2),
     ](ptr)
 

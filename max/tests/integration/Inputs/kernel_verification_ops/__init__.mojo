@@ -11,10 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import compiler_internal as compiler
+import extensibility as compiler
+from std.gpu.host import DeviceContext
 from std.gpu.host.device_context import DeviceExternalFunction
 from std.os import abort, getenv
-from tensor import (
+from extensibility import (
     foreach,
     DynamicTensor,
     VariadicTensors,
@@ -22,12 +23,11 @@ from tensor import (
     OutputTensor,
     InputVariadicTensors,
 )
-from tensor import OutputVariadicTensors
-from tensor.managed_tensor_slice import (
+from extensibility import OutputVariadicTensors
+from extensibility import (
     _MutableInputTensor as MutableInputTensor,
 )
 from std.utils.index import IndexList
-from std.runtime.asyncrt import DeviceContextPtr
 
 
 @compiler.register("my_add")
@@ -40,12 +40,13 @@ struct MyAdd:
     ):
         output[0] = x[0] + y[0]
 
-    @staticmethod
-    def shape(
-        x: InputTensor,
-        y: InputTensor,
-    ) raises -> IndexList[x.rank]:
-        raise "NotImplemented"
+
+@compiler.register_shape_function("my_add")
+def my_add_shape(
+    x: InputTensor,
+    y: InputTensor,
+) raises -> IndexList[x.rank]:
+    raise "NotImplemented"
 
 
 @compiler.register("op_with_device_context")
@@ -54,15 +55,16 @@ struct OpWidthDeviceContext:
     def execute(
         output: OutputTensor,
         x: InputTensor[dtype=output.dtype, rank=output.rank, ...],
-        ctx: DeviceContextPtr,
+        ctx: DeviceContext,
     ):
         output[0] = x[0]
 
-    @staticmethod
-    def shape(
-        x: InputTensor,
-    ) raises -> IndexList[x.rank]:
-        raise "NotImplemented"
+
+@compiler.register_shape_function("op_with_device_context")
+def op_with_device_context_shape(
+    x: InputTensor,
+) raises -> IndexList[x.rank]:
+    raise "NotImplemented"
 
 
 @compiler.register("op_with_multiple_outputs")
@@ -76,11 +78,12 @@ struct OpWithMultipleOutputs:
         out0[0] = 2 * x[0]
         out1[0] = 4 * x[0]
 
-    @staticmethod
-    def shape(
-        x: InputTensor,
-    ) raises -> IndexList[x.rank]:
-        raise "NotImplemented"
+
+@compiler.register_shape_function("op_with_multiple_outputs")
+def op_with_multiple_outputs_shape(
+    x: InputTensor,
+) raises -> IndexList[x.rank]:
+    raise "NotImplemented"
 
 
 @compiler.register("op_without_outputs")
@@ -166,12 +169,13 @@ struct BinaryKernelWithRaises:
     ) raises:
         output[0] = x[0] + y[0]
 
-    @staticmethod
-    def shape(
-        x: InputTensor,
-        y: InputTensor,
-    ) raises -> IndexList[x.rank]:
-        raise "NotImplemented"
+
+@compiler.register_shape_function("binary_kernel_with_raises")
+def binary_kernel_with_raises_shape(
+    x: InputTensor,
+    y: InputTensor,
+) raises -> IndexList[x.rank]:
+    raise "NotImplemented"
 
 
 @compiler.register("mutable_input_tensor")
@@ -196,7 +200,7 @@ struct OpWithIntParameter[IntParameter: Int]:
 struct OpWithDTypeParameter[DTypeParameter: DType]:
     @staticmethod
     def execute(
-        output: OutputTensor[...],
+        output: OutputTensor,
         x: InputTensor[dtype=output.dtype, rank=output.rank, ...],
     ):
         output[0] = x[0]
@@ -207,7 +211,7 @@ struct OpWithDTypeParameter[DTypeParameter: DType]:
 struct OpWithStringParameter[StringParameter: String]:
     @staticmethod
     def execute(
-        output: OutputTensor[...],
+        output: OutputTensor,
         x: InputTensor[dtype=output.dtype, rank=output.rank, ...],
     ):
         output[0] = x[0]
@@ -218,7 +222,7 @@ struct OpWithStringParameter[StringParameter: String]:
 struct OpWithStringSliceParameter[StringParameter: StringSlice]:
     @staticmethod
     def execute(
-        output: OutputTensor[...],
+        output: OutputTensor,
         x: InputTensor[dtype=output.dtype, rank=output.rank, ...],
     ):
         output[0] = x[0]
@@ -229,7 +233,7 @@ struct OpWithStringSliceParameter[StringParameter: StringSlice]:
 struct OpWithStaticStringParameter[StringParameter: StaticString]:
     @staticmethod
     def execute(
-        output: OutputTensor[...],
+        output: OutputTensor,
         x: InputTensor[dtype=output.dtype, rank=output.rank, ...],
     ):
         output[0] = x[0]
@@ -247,10 +251,10 @@ struct ExternalCubinVecAdd:
         output: OutputTensor[rank=1, ...],
         lhs: InputTensor[dtype=output.dtype, rank=output.rank, ...],
         rhs: InputTensor[dtype=output.dtype, rank=output.rank, ...],
-        ctx: DeviceContextPtr,
+        ctx: DeviceContext,
     ) raises:
         comptime assert target == "gpu"
-        gpu_ctx = ctx.get_device_context()
+        gpu_ctx = ctx
 
         with open(getenv("CUBIN_PATH"), "r") as file:
             cubin_data = file.read_bytes()
@@ -295,15 +299,13 @@ struct IntentionalGpuCrash:
     ](
         output: OutputTensor[rank=1, ...],
         x: InputTensor[dtype=output.dtype, rank=1, ...],
-        ctx: DeviceContextPtr,
+        ctx: DeviceContext,
     ) raises:
         comptime assert target == "gpu"
-        gpu_ctx = ctx.get_device_context()
+        gpu_ctx = ctx
 
         def crash_kernel():
             abort()
 
-        gpu_ctx.enqueue_function_experimental[crash_kernel](
-            grid_dim=(1,), block_dim=(1,)
-        )
+        gpu_ctx.enqueue_function[crash_kernel](grid_dim=(1,), block_dim=(1,))
         gpu_ctx.synchronize()

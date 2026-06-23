@@ -19,7 +19,7 @@ from std.gpu.host import DeviceContext
 
 def spmv_csr_kernel(
     csrMatrix: CSRMatrix,
-    x: UnsafePointer[Float32, MutAnyOrigin],
+    x: UnsafePointer[Float32, ImmutAnyOrigin],
     y: UnsafePointer[Float32, MutAnyOrigin],
 ):
     var row = block_idx.x * block_dim.x + thread_idx.x
@@ -113,15 +113,15 @@ def main() raises:
         rows,
         cols,
         numNonzeros,
-        d_rowPtrs_buf.unsafe_ptr(),
-        d_colIdx_buf.unsafe_ptr(),
-        d_value_buf.unsafe_ptr(),
+        d_rowPtrs_buf.unsafe_ptr().as_unsafe_any_origin(),
+        d_colIdx_buf.unsafe_ptr().as_unsafe_any_origin(),
+        d_value_buf.unsafe_ptr().as_unsafe_any_origin(),
     )
 
     var blockSize = 256
     var numBlocks = (rows + blockSize - 1) // blockSize
 
-    ctx.enqueue_function_experimental[spmv_csr_kernel](
+    ctx.enqueue_function[spmv_csr_kernel](
         d_csrMatrix,
         d_x_buf,
         d_y_buf,

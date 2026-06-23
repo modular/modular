@@ -27,20 +27,17 @@ from .types import (
 
 
 struct ScheduleEntry(ImplicitlyCopyable, Movable):
-    """An operation placed at a specific position in the schedule.
-
-    Fields:
-        op: The operation descriptor.
-        time_slot: Ordinal position within the phase (0-indexed).
-        phase: Which phase this entry belongs to (PROLOGUE, KERNEL, EPILOGUE).
-        is_prefetch: If True, this op is only emitted when there is a next
-            iteration (i.e., conditional on `k < K - 2*BK`).
-    """
+    """An operation placed at a specific position in the schedule."""
 
     var op: OpDesc
+    """The operation descriptor."""
     var time_slot: Int
+    """Ordinal position within the phase (0-indexed)."""
     var phase: Phase
+    """Phase this entry belongs to (`PROLOGUE`, `KERNEL`, or `EPILOGUE`)."""
     var is_prefetch: Bool
+    """Whether this op is only emitted when a next iteration exists
+    (conditional on `k < K - 2*BK`)."""
 
     @always_inline
     def __init__(
@@ -74,6 +71,7 @@ struct EntryBuilder[N: Int, phase: Phase]:
 
     @always_inline
     def __init__(out self, pos: Int = 0):
+        """Constructs an empty builder at the given write position."""
         self.entries = InlineArray[ScheduleEntry, Self.N](uninitialized=True)
         self.pos = pos
 
@@ -119,15 +117,21 @@ struct Pipe[N: Int](ImplicitlyCopyable, Movable):
 
     Build sequences using the >> operator to chain ops into a pipeline:
 
-        pipe(ld()) >> st() >> br() >> frag[0]() >> sb()
+    ```mojo
+    pipe(ld()) >> st() >> br() >> frag[0]() >> sb()
+    ```
 
     Convert to schedule entries for a given phase:
 
-        my_pipe.as_schedule[Phase.PROLOGUE]()
+    ```mojo
+    my_pipe.as_schedule[Phase.PROLOGUE]()
+    ```
 
     Concatenate two pipes:
 
-        pipe_a >> pipe_b   # Pipe[A+B]
+    ```mojo
+    pipe_a >> pipe_b   # Pipe[A+B]
+    ```
     """
 
     var ops: InlineArray[OpDesc, Self.N]

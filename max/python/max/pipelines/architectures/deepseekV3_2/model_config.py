@@ -26,8 +26,8 @@ from max.nn.kv_cache.cache_params import (
 )
 from max.pipelines.architectures.deepseekV3.model_config import DeepseekV3Config
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
-from max.pipelines.lib.config.config_enums import supported_encoding_dtype
 from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
+from max.pipelines.modeling.config_enums import supported_encoding_dtype
 from transformers import AutoConfig
 from typing_extensions import Self, override
 
@@ -80,7 +80,9 @@ class DeepseekV3_2Config(DeepseekV3Config):
             kvcache_quant_config=indexer_kvcache_quant_config,
         )
         assert isinstance(indexer_kv_params, KVCacheParams)
-        return MultiKVCacheParams.from_params(mla_kv_params, indexer_kv_params)
+        return MultiKVCacheParams.from_params(
+            {"mla": mla_kv_params, "indexer": indexer_kv_params}
+        )
 
     @override
     @classmethod

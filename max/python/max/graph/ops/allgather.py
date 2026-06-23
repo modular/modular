@@ -120,9 +120,7 @@ def allgather(
 
     # Get the current chain for synchronization.
     graph = Graph.current
-    in_chain = graph._merge_chains(
-        [graph._current_chain, *(graph.device_chains[d] for d in devices)]
-    )
+    in_chain = graph.device_chains.merge_for(devices)
 
     # Stage the allgather op with signal buffers and chain.
     *results, out_chain = graph._add_op_generated(

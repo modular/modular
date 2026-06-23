@@ -24,13 +24,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from compiler_internal import register
-from tensor import (
+from extensibility import register
+from std.gpu.host import DeviceContext
+from extensibility import (
     InputTensor,
     OutputTensor,
     foreach,
 )
-from std.runtime.asyncrt import DeviceContextPtr
+
+from std.utils.coord import Coord, coord_to_index_list
 from std.utils.index import IndexList
 
 
@@ -43,15 +45,16 @@ struct Grayscale:
     ](
         img_out: OutputTensor[dtype=DType.uint8, rank=2, ...],
         img_in: InputTensor[dtype=DType.uint8, rank=3, ...],
-        ctx: DeviceContextPtr,
+        ctx: DeviceContext,
     ) raises:
         @parameter
         @always_inline
         def color_to_grayscale[
             simd_width: Int
-        ](idx: IndexList[img_out.rank]) -> SIMD[DType.uint8, simd_width]:
-            var row = idx[0]
-            var col = idx[1]
+        ](idx: Coord) -> SIMD[DType.uint8, simd_width]:
+            var idx_l = coord_to_index_list(idx)
+            var row = idx_l[0]
+            var col = idx_l[1]
 
             var r_idx = IndexList[3](row, col, 0)
             var g_idx = IndexList[3](row, col, 1)
@@ -77,13 +80,11 @@ struct MyAdd:
         C: OutputTensor[dtype=type, rank=rank, ...],
         A: InputTensor[dtype=type, rank=rank, ...],
         B: InputTensor[dtype=type, rank=rank, ...],
-        ctx: DeviceContextPtr,
+        ctx: DeviceContext,
     ) raises:
         @parameter
         @always_inline
-        def doit[
-            simd_width: Int
-        ](idx: IndexList[C.rank]) -> SIMD[C.dtype, simd_width]:
+        def doit[simd_width: Int](idx: Coord) -> SIMD[C.dtype, simd_width]:
             var a = A.load[simd_width](idx)
             var b = B.load[simd_width](idx)
             return a + b
@@ -99,13 +100,11 @@ struct ParameterIncrement:
     ](
         B: OutputTensor[dtype=type, rank=rank, ...],
         A: InputTensor[dtype=type, rank=rank, ...],
-        ctx: DeviceContextPtr,
+        ctx: DeviceContext,
     ) raises:
         @parameter
         @always_inline
-        def doit[
-            simd_width: Int
-        ](idx: IndexList[B.rank]) -> SIMD[B.dtype, simd_width]:
+        def doit[simd_width: Int](idx: Coord) -> SIMD[B.dtype, simd_width]:
             var a = A.load[simd_width](idx)
             return a + type_of(a)(increment)
 
@@ -134,14 +133,13 @@ struct UnsupportedTypeOp:
         output: OutputTensor[dtype=dtype, rank=rank, ...],
         input: InputTensor[dtype=dtype, rank=rank, ...],
         message: String,  # String is not a supported type for PyTorch custom ops
+        ctx: DeviceContext,
     ) raises:
         # This operation is for testing error handling only
         # The String parameter should cause a validation error
         @parameter
         @always_inline
-        def copy[
-            simd_width: Int
-        ](idx: IndexList[output.rank]) -> SIMD[output.dtype, simd_width]:
+        def copy[simd_width: Int](idx: Coord) -> SIMD[output.dtype, simd_width]:
             return input.load[simd_width](idx)
 
-        foreach[copy, target="cpu"](output)
+        foreach[copy, target="cpu"](output, ctx)

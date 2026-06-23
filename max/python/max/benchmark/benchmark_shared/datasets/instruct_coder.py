@@ -21,15 +21,16 @@ from collections.abc import Sequence
 from huggingface_hub import hf_hub_download
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
+from ._tokenizer_pool import TokenizerPool
 from .distribution import DistributionParameter
 from .huggingface import HuggingFaceBenchmarkDataset
 from .multiturn_distribution_fit import build_chat_samples_from_user_text_pool
 from .types import (
-    ChatMessage,
     ChatSamples,
     ChatSession,
     RequestSamples,
     SampledRequest,
+    SessionMessage,
     estimate_num_tokens,
 )
 
@@ -163,6 +164,7 @@ class InstructCoderBenchmarkDataset(HuggingFaceBenchmarkDataset):
         delay_between_chat_turns: float | None = None,
         shuffle: bool = True,
         *,
+        pool: TokenizerPool | None = None,
         fit_length_distributions: bool = False,
         num_turns: DistributionParameter | None = None,
         input_len: DistributionParameter | None = None,
@@ -215,9 +217,13 @@ class InstructCoderBenchmarkDataset(HuggingFaceBenchmarkDataset):
             assert num_turns is not None, "num_turns is required when fitting"
             assert input_len is not None, "input_len is required when fitting"
             assert output_len is not None, "output_len is required when fitting"
+            if pool is None:
+                raise ValueError(
+                    "pool is required for InstructCoder fit-distributions multiturn"
+                )
             return self._gen_multiturn_sessions_from_distributions(
                 num_sessions=num_sessions,
-                tokenizer=tokenizer,
+                pool=pool,
                 pairs=pairs,
                 num_turns=num_turns,
                 input_len=input_len,
@@ -244,7 +250,7 @@ class InstructCoderBenchmarkDataset(HuggingFaceBenchmarkDataset):
             if idx >= len(tokenized):
                 break
 
-            messages: list[ChatMessage] = []
+            messages: list[SessionMessage] = []
             for _ in range(turns_per_session):
                 if idx >= len(tokenized):
                     break
@@ -253,14 +259,14 @@ class InstructCoderBenchmarkDataset(HuggingFaceBenchmarkDataset):
                 idx += 1
 
                 messages.append(
-                    ChatMessage(
+                    SessionMessage(
                         source="user",
                         content=prompt,
                         num_tokens=prompt_len,
                     )
                 )
                 messages.append(
-                    ChatMessage(
+                    SessionMessage(
                         source="assistant",
                         content="",
                         num_tokens=output_len,
@@ -284,7 +290,7 @@ class InstructCoderBenchmarkDataset(HuggingFaceBenchmarkDataset):
     def _gen_multiturn_sessions_from_distributions(
         self,
         num_sessions: int,
-        tokenizer: PreTrainedTokenizerBase,
+        pool: TokenizerPool,
         pairs: list[tuple[str, str]],
         num_turns: DistributionParameter,
         input_len: DistributionParameter,
@@ -297,7 +303,7 @@ class InstructCoderBenchmarkDataset(HuggingFaceBenchmarkDataset):
     ) -> ChatSamples:
         """Build multiturn sessions with sampled lengths (see ``gen_multiturn_sessions``)."""
         return build_chat_samples_from_user_text_pool(
-            tokenizer=tokenizer,
+            pool=pool,
             user_text_pool=[p for p, _ in pairs],
             num_sessions=num_sessions,
             num_turns=num_turns,

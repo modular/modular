@@ -113,4 +113,6 @@ class Gemma4VisionPooler(Module):
         result = (pool_weights @ hidden_states) * ops.constant(
             self._scale, DType.float32, device=hidden_states.device
         )
+        if original_dtype == DType.float16:
+            return result
         return result.cast(original_dtype)

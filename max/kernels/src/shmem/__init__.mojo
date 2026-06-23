@@ -10,9 +10,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""This module implements a subset of OpenSHMEM functionality for Mojo. It will
-abstract over both NVSHMEM and ROCSHMEM, exposing a similar API to DeviceContext
-with a symmetric heap that is accessible by inter-node and intra-node GPUs.
+"""Implements a subset of OpenSHMEM functionality.
+
+It abstracts over both NVSHMEM and ROCSHMEM, exposing a similar API to
+DeviceContext with a symmetric heap that is accessible by inter-node and
+intra-node GPUs.
 
 ```mojo
 from std.testing import assert_equal

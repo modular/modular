@@ -86,18 +86,18 @@ def test_matmul_sm100_blockwise_scaled_fp8[
     var a_shape = row_major(Coord(m, k))
     var b_shape = row_major(
         Coord(
-            Idx[NType.static_value if transpose_b else KType.static_value](),
-            Idx[KType.static_value if transpose_b else NType.static_value](),
+            Idx[NType.static_value if transpose_b else KType.static_value],
+            Idx[KType.static_value if transpose_b else NType.static_value],
         )
     )
     var c_shape = row_major(Coord(m, n))
     var a_scales_shape = row_major(
-        Coord(Idx[ceildiv(KType.static_value, BLOCK_SCALE_K)](), m)
+        Coord(Idx[ceildiv(KType.static_value, BLOCK_SCALE_K)], m)
     )
     var b_scales_shape = row_major(
         Coord(
-            Idx[ceildiv(NType.static_value, BLOCK_SCALE_K)](),
-            Idx[ceildiv(KType.static_value, BLOCK_SCALE_K)](),
+            Idx[ceildiv(NType.static_value, BLOCK_SCALE_K)],
+            Idx[ceildiv(KType.static_value, BLOCK_SCALE_K)],
         )
     )
 
@@ -150,13 +150,13 @@ def test_matmul_sm100_blockwise_scaled_fp8[
     @__copy_capture(c_tensor)
     def epilogue_fn[
         _dtype: DType,
-        width: Int,
+        width: SIMDSize,
         *,
         alignment: Int = align_of[SIMD[_dtype, width]](),
     ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> None:
         comptime assert c_tensor.flat_rank >= 2
         c_tensor.store[alignment=alignment](
-            Coord(Idx(idx[0]), Idx(idx[1])),
+            Coord(idx[0], idx[1]),
             rebind[SIMD[c_type, width]](val),
         )
 
@@ -248,9 +248,9 @@ def main() raises:
             transpose_b=True,
         ](
             ctx,
-            Idx(Int(120)),
-            Idx[1536](),
-            Idx[7168](),
+            Int(120),
+            Idx[1536],
+            Idx[7168],
         )
         test_matmul_sm100_blockwise_scaled_fp8[
             DType.float8_e4m3fn,
@@ -261,9 +261,9 @@ def main() raises:
             transpose_b=True,
         ](
             ctx,
-            Idx(Int(120)),
-            Idx[24576](),
-            Idx[1536](),
+            Int(120),
+            Idx[24576],
+            Idx[1536],
         )
         test_matmul_sm100_blockwise_scaled_fp8[
             DType.float8_e4m3fn,
@@ -275,9 +275,9 @@ def main() raises:
             use_epilogue=True,
         ](
             ctx,
-            Idx(Int(128)),
-            Idx[576](),
-            Idx[7168](),
+            Int(128),
+            Idx[576],
+            Idx[7168],
         )
 
         test_matmul_sm100_blockwise_scaled_fp8[
@@ -289,9 +289,9 @@ def main() raises:
             transpose_b=True,
         ](
             ctx,
-            Idx(Int(400)),
-            Idx[32768](),
-            Idx[512](),
+            Int(400),
+            Idx[32768],
+            Idx[512],
         )
 
         test_matmul_sm100_blockwise_scaled_fp8[
@@ -303,9 +303,9 @@ def main() raises:
             transpose_b=True,
         ](
             ctx,
-            Idx(Int(1024)),
-            Idx[2048](),
-            Idx[2048](),
+            Int(1024),
+            Idx[2048],
+            Idx[2048],
         )
 
         test_matmul_sm100_blockwise_scaled_fp8[
@@ -317,9 +317,9 @@ def main() raises:
             transpose_b=True,
         ](
             ctx,
-            Idx(Int(1024)),
-            Idx[2048](),
-            Idx[2048](),
+            Int(1024),
+            Idx[2048],
+            Idx[2048],
         )
 
         test_matmul_sm100_blockwise_scaled_fp8[
@@ -331,9 +331,9 @@ def main() raises:
             transpose_b=True,
         ](
             ctx,
-            Idx(Int(100)),
-            Idx[512](),
-            Idx[256](),
+            Int(100),
+            Idx[512],
+            Idx[256],
         )
 
         test_matmul_sm100_blockwise_scaled_fp8[
@@ -345,9 +345,9 @@ def main() raises:
             transpose_b=True,
         ](
             ctx,
-            Idx(Int(96)),
-            Idx[1024](),
-            Idx[1024](),
+            Int(96),
+            Idx[1024],
+            Idx[1024],
         )
 
         test_matmul_sm100_blockwise_scaled_fp8[
@@ -359,7 +359,7 @@ def main() raises:
             transpose_b=True,
         ](
             ctx,
-            Idx(Int(208)),
-            Idx[2048](),
-            Idx[256](),
+            Int(208),
+            Idx[2048],
+            Idx[256],
         )

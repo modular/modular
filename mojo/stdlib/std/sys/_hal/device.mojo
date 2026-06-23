@@ -20,20 +20,19 @@ from .plugin import (
 from .status import STATUS_SUCCESS, STATUS_INVALID_ARG, HALError
 
 from std.memory import (
-    MutPointer,
     ArcPointer,
     UnsafeMaybeUninit,
 )
+from std.memory.arc_pointer import WeakPointer
 
-from std.sys.info import _TargetType
 from std.gpu.host.compile import get_gpu_target
+from std.gpu.host.info import GPUInfo
+from std.sys.machine import MachineDefinition, DeviceRef, DeviceSpec
 
 
-@fieldwise_init
-struct DeviceSpec[target: CompilationTarget[value=get_gpu_target()]](
-    Movable, TrivialRegisterPassable
-):
-    pass
+def get_machine_definition() -> MachineDefinition:
+    comptime shared_def = MachineDefinition(private=())
+    return materialize[shared_def]()
 
 
 # TODO(Sawyer: Static Device Info, DRIV-4):
@@ -41,38 +40,60 @@ struct DeviceSpec[target: CompilationTarget[value=get_gpu_target()]](
 # in anyway. This should pull from machine topo and actually use the `device_id`.
 @doc_hidden
 def get_device_spec[
-    _device_id: Int64
-]() -> DeviceSpec[target=CompilationTarget[value=get_gpu_target()]()]:
-    return DeviceSpec[target=CompilationTarget[value=get_gpu_target()]()]()
+    device_id: Int64,
+    machine: MachineDefinition = get_machine_definition(),
+]() -> DeviceSpec:
+    # There isn't currently a way of telling the Mojo compiler
+    # that multiple devices exist on the target machine.
+    # To enable building out the stdlib constructs,
+    # we map that down to assuming the device has an unbounded
+    # number of accelerators with arch matching the value passed
+    # to --target-accelerator.
+    comptime if device_id < 0:
+        comptime assert False, "Negative device indices are not supported"
+    elif len(machine.devices()) == 0:
+        comptime assert False, "Can't get device spec if no devices exist"
+    else:
+        # clamp the max idx so that for the default constructed
+        # case we get a spec for machines with N devices (now)
+        comptime idx = min(len(machine.devices()) - 1, Int(device_id))
+        return materialize[machine.devices()[idx].spec]()
 
 
 @fieldwise_init
-struct Device[driver_origin: MutOrigin, spec: DeviceSpec](Movable):
+struct Device[spec: DeviceSpec](ImplicitlyDeletable, Movable):
     """A device retrieved from a Driver.
 
     Does not own the device handle — the plugin manages device lifetime
     internally. The Device is only valid while the parent Driver is alive.
 
     Parameters:
-        driver_origin: The origin of the parent Driver pointer.
         spec: The DeviceSpec that describes the architecture and other characteristics
                 of this device.
     """
 
     var _handle: DeviceHandle
-    var _driver: MutPointer[Driver, Self.driver_origin]
-    var _raw: MutPointer[RawDriver, Self.driver_origin]
+    var _driver: ArcPointer[Driver]
+    var _raw: ArcPointer[RawDriver]
+    var _self_ref: WeakPointer[Self]
     var id: Int64
 
-    def __init__[
-        o1: MutOrigin
-    ](
-        out self: Device[o1, Self.spec], ref[o1] driver: Driver, id: Int64
+    @staticmethod
+    def _create(
+        out _self: ArcPointer[Self], driver: Driver, id: Int64
+    ) raises HALError:
+        _self = ArcPointer(Self(driver, id))
+        _self[]._self_ref = WeakPointer(downgrade=_self)
+
+    @doc_hidden
+    def __init__(
+        out self: Device[Self.spec], driver: Driver, id: Int64
     ) raises HALError:
         self.id = id
 
-        self._driver = MutPointer(to=driver)
-        self._raw = rebind[type_of(self._raw)](MutPointer(to=driver._raw))
+        self._raw = driver._raw
+        self._driver = driver._self_ref.try_upgrade().value()
+        self._self_ref = WeakPointer[Self]()
 
         ref raw = self._raw[]
 
@@ -103,8 +124,6 @@ struct Device[driver_origin: MutOrigin, spec: DeviceSpec](Movable):
         self._handle = device_handle.unsafe_assume_init_ref()
 
     def get_context(
-        mut self,
-    ) raises HALError -> Context[
-        origin_of(self, Self.driver_origin), Self.spec
-    ]:
-        return Context[origin_of(self, Self.driver_origin), Self.spec](self)
+        self,
+    ) raises HALError -> ArcPointer[Context[Self.spec]]:
+        return Context[Self.spec]._create(self)

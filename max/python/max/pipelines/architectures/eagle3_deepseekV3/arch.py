@@ -12,12 +12,14 @@
 # ===----------------------------------------------------------------------=== #
 
 from max.graph.weights import WeightsFormat
-from max.interfaces import PipelineTask
-from max.pipelines.core import TextContext
+from max.pipelines.context import TextContext
 from max.pipelines.lib import SupportedArchitecture, TextTokenizer
+from max.pipelines.modeling.types import PipelineTask
 
 from ..deepseekV3 import weight_adapters as deepseekV3_weight_adapters
+from ..deepseekV3.memory_planner import DeepseekV3MemoryPlanner
 from ..deepseekV3.model_config import DeepseekV3Config
+from .mha_pipeline import Eagle3MHADeepseekV3Model
 from .model import Eagle3DeepseekV3Model
 
 eagle3_deepseekV3_arch = SupportedArchitecture(
@@ -45,4 +47,31 @@ eagle3_deepseekV3_arch = SupportedArchitecture(
     supports_empty_batches=True,
     requires_max_batch_context_length=True,
     config=DeepseekV3Config,
+    memory_planner=DeepseekV3MemoryPlanner,
+)
+
+eagle3_mha_deepseekV3_arch = SupportedArchitecture(
+    name="Eagle3MHADeepseekV3ForCausalLM",
+    task=PipelineTask.TEXT_GENERATION,
+    example_repo_ids=[
+        "austinpowers/Kimi-K2.5-NVFP4-DeepseekV3",
+    ],
+    default_encoding="bfloat16",
+    supported_encodings={
+        "bfloat16",
+        "float8_e4m3fn",
+        "float4_e2m1fnx2",
+    },
+    multi_gpu_supported=True,
+    pipeline_model=Eagle3MHADeepseekV3Model,
+    tokenizer=TextTokenizer,
+    context_type=TextContext,
+    default_weights_format=WeightsFormat.safetensors,
+    weight_adapters={
+        WeightsFormat.safetensors: deepseekV3_weight_adapters.convert_safetensor_state_dict,
+    },
+    supports_empty_batches=True,
+    requires_max_batch_context_length=True,
+    config=DeepseekV3Config,
+    memory_planner=DeepseekV3MemoryPlanner,
 )

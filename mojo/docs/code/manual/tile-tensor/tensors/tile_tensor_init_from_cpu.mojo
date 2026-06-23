@@ -49,7 +49,7 @@ def initialize_tensor_from_cpu_example() raises:
     ctx.enqueue_copy(dev_buf, host_buf)
     var tensor = TileTensor(dev_buf, input_layout)
 
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         tensor,
         grid_dim=(col_blocks, row_blocks),
         block_dim=(block_size, block_size),

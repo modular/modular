@@ -1,0 +1,57 @@
+##===----------------------------------------------------------------------===##
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+##===----------------------------------------------------------------------===##
+#
+# kbench sweep comparing the SwiGLU + NVFP4 grouped MoE up-projection paths:
+#   - Unfused: grouped_matmul_nvfp4_dispatch (BF16 GMEM) + interleaved
+#              SwiGLU+NVFP4 quant kernel (chained 2 launches).
+#   - Fused:   grouped_matmul_swiglu_nvfp4_dispatch (single dispatch with
+#              the SwiGLU+quant epilogue absorbed into the matmul). Two
+#              precision variants:
+#                match_bf16=True  -> byte-identical to unfused chain
+#                match_bf16=False -> fp32-precise SMEM scatter (slightly
+#                                    different fp4 buckets near boundaries)
+#
+# Sweeps tokens_per_expert across the three SM100 dispatch regimes:
+#   2   -> decode (mma_bn=8,  cta_group=1)
+#   16  -> small prefill (mma_bn=64, cta_group=2)
+#   128 -> large prefill (mma_bn=128, cta_group=2) — Kimi K2.5 hot path
+##===----------------------------------------------------------------------===##
+
+name: bench_grouped_matmul_swiglu_nvfp4
+file: $KERNEL_BENCHMARKS_ROOT/gpu/linalg/profile_grouped_matmul_swiglu_nvfp4.mojo
+
+common: &common
+  ASSERT: none
+  N: 4096
+  K: 7168
+  num_experts: 8
+  num_active_experts: 8
+
+params:
+
+# Unfused chain (BF16 round trip).
+- <<: *common
+  fused: False
+  $tokens_per_expert: [128, 256, 512]
+
+# Fused, byte-identical to chain (fp32 -> bf16 -> fp32 in SMEM scatter).
+- <<: *common
+  fused: True
+  match_bf16: True
+  $tokens_per_expert: [128, 256, 512]
+
+# Fused, fp32 end-to-end (slightly more accurate; not byte-identical).
+- <<: *common
+  fused: True
+  match_bf16: False
+  $tokens_per_expert: [128, 256, 512]

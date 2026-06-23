@@ -79,9 +79,9 @@ struct FileDescriptor(TrivialRegisterPassable, Writer):
         var total_written = 0
         while total_written < len(bytes):
             var bytes_written = external_call["write", c_ssize_t](
-                self.value._int_mlir_index(),
+                self.value.__mlir_index__(),
                 bytes.unsafe_ptr() + total_written,
-                (len(bytes) - total_written)._int_mlir_index(),
+                (len(bytes) - total_written).__mlir_index__(),
             )
 
             if bytes_written < 0:
@@ -148,7 +148,7 @@ struct FileDescriptor(TrivialRegisterPassable, Writer):
 
         Examples:
             ```mojo
-            from sys import stdout
+            from std.sys import stdout
 
             # Check if stdout is a terminal
             if stdout.isatty():
@@ -160,4 +160,4 @@ struct FileDescriptor(TrivialRegisterPassable, Writer):
 
         comptime if is_gpu():
             return False
-        return _external_call_const["isatty", c_int](c_int(self.value)) != 0
+        return external_call["isatty", c_int](c_int(self.value)) != 0

@@ -32,7 +32,7 @@ comptime COARSEN_FACTOR = 4
 
 def cenergy_coarsening_kernel(
     energygrid: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
-    atoms: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    atoms: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
     grid_x: Int,
     grid_y: Int,
     gridspacing: Float32,
@@ -100,11 +100,11 @@ def cenergy_coarsening_kernel(
 
 
 def cenergy_cpu_reference(
-    energygrid: UnsafePointer[Float32, MutAnyOrigin],
+    energygrid: UnsafePointer[mut=True, Float32, _],
     grid: GridDim,
     gridspacing: Float32,
     z: Float32,
-    atoms: UnsafePointer[Float32, MutAnyOrigin],
+    atoms: UnsafePointer[mut=False, Float32, _],
     numatoms: Int,
 ):
     """CPU reference implementation for verification."""
@@ -168,7 +168,7 @@ def main() raises:
     )
     var grid_dim_y = (vol_dim.y + BLOCK_DIM_Y - 1) // BLOCK_DIM_Y
 
-    ctx.enqueue_function[cenergy_coarsening_kernel, cenergy_coarsening_kernel](
+    ctx.enqueue_function[cenergy_coarsening_kernel](
         d_energygrid,
         d_atoms,
         vol_dim.x,

@@ -23,7 +23,7 @@ from std.testing import assert_true
 def test_operation[
     dtype: DType,
     target_arch: StaticString,
-    op_fn: def[width: Int](
+    op_fn: def[width: SIMDSize](
         x: SIMD[dtype, width], y: type_of(x)
     ) thin raises -> type_of(x),
     op_name: StaticString,
@@ -62,21 +62,27 @@ def test_operation[
 
 
 def test_add[dtype: DType, target_arch: StaticString]() raises:
-    def add[width: Int](x: SIMD[dtype, width], y: type_of(x)) -> type_of(x):
+    def add[
+        width: SIMDSize
+    ](x: SIMD[dtype, width], y: type_of(x)) -> type_of(x):
         return x + y
 
     test_operation[dtype, target_arch, add, "add"]()
 
 
 def test_sub[dtype: DType, target_arch: StaticString]() raises:
-    def sub[width: Int](x: SIMD[dtype, width], y: type_of(x)) -> type_of(x):
+    def sub[
+        width: SIMDSize
+    ](x: SIMD[dtype, width], y: type_of(x)) -> type_of(x):
         return x - y
 
     test_operation[dtype, target_arch, sub, "sub"]()
 
 
 def test_mul[dtype: DType, target_arch: StaticString]() raises:
-    def mul[width: Int](x: SIMD[dtype, width], y: type_of(x)) -> type_of(x):
+    def mul[
+        width: SIMDSize
+    ](x: SIMD[dtype, width], y: type_of(x)) -> type_of(x):
         return x * y
 
     test_operation[dtype, target_arch, mul, "mul"]()
@@ -98,12 +104,12 @@ def test_half_float_instruction_selection() raises:
 
 def test_fma[dtype: DType]() raises:
     def fma[
-        width: Int
+        width: SIMDSize
     ](x: SIMD[dtype, width], y: type_of(x), z: type_of(x)) -> type_of(x):
         return x * y + z
 
     def fma_manual[
-        width: Int
+        width: SIMDSize
     ](x: SIMD[dtype, width], y: type_of(x), z: type_of(x)) -> type_of(x):
         return x.fma(y, z)
 
@@ -123,7 +129,7 @@ def test_fma[dtype: DType]() raises:
 
 def test_cast() raises:
     def cast[
-        src_type: DType, dst_type: DType, width: Int
+        src_type: DType, dst_type: DType, width: SIMDSize
     ](src: SIMD[src_type, width]) -> SIMD[dst_type, width]:
         return src.cast[dst_type]()
 

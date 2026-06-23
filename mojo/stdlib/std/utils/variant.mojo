@@ -17,14 +17,21 @@ from std.format._utils import (
     FormatStruct,
     TypeNames,
 )
-from std.memory import UnsafeMaybeUninit
+from std.memory import (
+    UnsafeMaybeUninit,
+    is_trivially_copyable,
+    is_trivially_destructible,
+    is_trivially_movable,
+)
 from std.hashlib.hasher import Hasher
 from std.reflection import call_location
 from std.reflection.traits import (
+    AllMovable,
     AllCopyable,
     AllEquatable,
     AllHashable,
     AllImplicitlyCopyable,
+    AllImplicitlyDestructible,
     AllRegisterPassable,
     AllWritable,
 )
@@ -54,7 +61,7 @@ def _get_type_index[T: AnyType, *Ts: AnyType]() -> Int:
     return _InvalidTypeIndex
 
 
-trait _VariantStorage(Copyable, ImplicitlyDestructible):
+trait _VariantStorage(Copyable, ImplicitlyDeletable):
     """Internal storage backend for `Variant`.
 
     This trait abstracts over the two concrete storage strategies:
@@ -85,7 +92,7 @@ trait _VariantStorage(Copyable, ImplicitlyDestructible):
         ...
 
 
-trait _NicheStorage(Defaultable, ImplicitlyCopyable, ImplicitlyDestructible):
+trait _NicheStorage(Defaultable, ImplicitlyCopyable, ImplicitlyDeletable):
     """Internal abstraction over niche backing storage backends."""
 
     def as_uninit[
@@ -203,11 +210,11 @@ struct _NichedOptionalStorage[
             self = Self()
 
     @always_inline
-    def __init__(out self, *, deinit take: Self):
+    def __init__(out self, *, deinit move: Self):
         comptime assert conforms_to(Self.T, Movable)
-        if take.isa[Self.T]():
+        if move.isa[Self.T]():
             self = Self(
-                take.unsafe_ptr[downcast[Self.T, Movable]]().take_pointee()
+                move.unsafe_ptr[downcast[Self.T, Movable]]().take_pointee()
             )
         else:
             self = Self()
@@ -224,9 +231,9 @@ struct _NichedOptionalStorage[
 
     @always_inline
     def __del__(deinit self):
-        comptime assert conforms_to(Self.T, ImplicitlyDestructible)
+        comptime assert conforms_to(Self.T, ImplicitlyDeletable)
         if self.isa[Self.T]():
-            rebind[UnsafeMaybeUninit[downcast[Self.T, ImplicitlyDestructible]]](
+            rebind[UnsafeMaybeUninit[downcast[Self.T, ImplicitlyDeletable]]](
                 self._memory.as_uninit[Self.T]()[]
             ).unsafe_assume_init_destroy()
 
@@ -299,9 +306,9 @@ struct _DefaultVariantStorage[*Ts: AnyType](
                 return
 
     @always_inline
-    def __init__(out self, *, deinit take: Self):
+    def __init__(out self, *, deinit move: Self):
         self = Self(unsafe_uninitialized=())
-        self.get_discriminant() = take.get_discriminant()
+        self.get_discriminant() = move.get_discriminant()
 
         comptime for i in range(Self.Ts.size):
             comptime TUnknown = Self.Ts[i]
@@ -310,7 +317,7 @@ struct _DefaultVariantStorage[*Ts: AnyType](
 
             if self.get_discriminant() == UInt8(i):
                 self.unsafe_ptr[T]().init_pointee_move_from(
-                    take.unsafe_ptr[T]()
+                    move.unsafe_ptr[T]()
                 )
                 return
 
@@ -318,8 +325,8 @@ struct _DefaultVariantStorage[*Ts: AnyType](
     def __del__(deinit self):
         comptime for i in range(Self.Ts.size):
             comptime TUnknown = Self.Ts[i]
-            comptime assert conforms_to(TUnknown, ImplicitlyDestructible)
-            comptime T = downcast[TUnknown, ImplicitlyDestructible]
+            comptime assert conforms_to(TUnknown, ImplicitlyDeletable)
+            comptime T = downcast[TUnknown, ImplicitlyDeletable]
 
             if self.get_discriminant() == UInt8(i):
                 self.unsafe_ptr[T]().destroy_pointee()
@@ -342,7 +349,7 @@ struct _DefaultVariantStorage[*Ts: AnyType](
         comptime idx = _get_type_index[T, *Self.Ts]()
         return __mlir_op.`pop.variant.bitcast`[
             _type=UnsafePointer[T, origin_of(self)]._mlir_type,
-            index=idx._int_mlir_index(),
+            index=idx.__mlir_index__(),
         ](UnsafePointer(to=self._impl).address)
 
 
@@ -350,7 +357,7 @@ struct _DefaultVariantStorage[*Ts: AnyType](
 # an `Optional` is used as a comptime parameter's field.
 comptime _IsEmptyType[T: AnyType]: Bool = reflect[
     T
-]().field_count() == 0 and conforms_to(T, TrivialRegisterPassable)
+].field_count() == 0 and conforms_to(T, TrivialRegisterPassable)
 """True if `T` is a zero-sized, trivially passable type (i.e. carries no state,
 like `NoneType`). Used to identify the "empty" arm of a niche-optimized variant."""
 
@@ -402,9 +409,11 @@ struct Variant[*Ts: Movable](
     # TODO(MOCO-3421): AllImplicitlyCopyable implies AllCopyable since
     # ImplicitlyCopyable refines Copyable, but the compiler can't infer
     # parent trait constraints from derived ones yet. Remove AllCopyable
-    # from this where clause once that's fixed.
-    ImplicitlyCopyable where AllImplicitlyCopyable[*Ts] and AllCopyable[*Ts],
-    ImplicitlyDestructible,
+    # and AllMovable from this where clause once that's fixed.
+    ImplicitlyCopyable where (
+        AllImplicitlyCopyable[*Ts] and AllCopyable[*Ts] and AllMovable[*Ts]
+    ),
+    ImplicitlyDeletable,
     Movable,
     RegisterPassable where AllRegisterPassable[*Ts],
     Writable where AllWritable[*Ts],
@@ -470,7 +479,7 @@ struct Variant[*Ts: Movable](
     comptime Result = Variant[String, Error]
 
     def process_data(data: String) -> Result:
-        if len(data) == 0:
+        if data.byte_length() == 0:
             return Result(Error("Empty data"))
         return Result(String("Processed: ", data))
 
@@ -523,9 +532,9 @@ struct Variant[*Ts: Movable](
 
     comptime _Storage: _VariantStorage = _VariantStorageFor[*Self.Ts]
 
-    comptime __del__is_trivial = Self._Storage.__del__is_trivial
-    comptime __copy_ctor_is_trivial = Self._Storage.__copy_ctor_is_trivial
-    comptime __move_ctor_is_trivial = Self._Storage.__move_ctor_is_trivial
+    comptime __del__is_trivial = is_trivially_destructible[Self._Storage]()
+    comptime __copy_ctor_is_trivial = is_trivially_copyable[Self._Storage]()
+    comptime __move_ctor_is_trivial = is_trivially_movable[Self._Storage]()
 
     # Fields
     var _storage: Self._Storage
@@ -555,42 +564,15 @@ struct Variant[*Ts: Movable](
         Self._check[T]()
         self._storage = Self._Storage(value^)
 
-    def __init__(out self, *, copy: Self):
-        """Copy-initialize this variant from another variant of the same type.
-
-        Args:
-            copy: The variant to copy from.
-        """
-        # TODO(MOCO-3640): This should be a `where AllCopyable[*Self.Ts]`
-        # constraint, but the compiler can't propagate evidence through
-        # variadic conformance checks (e.g. Optional calling this with
-        # Variant[_NoneType, T] can't prove AllCopyable from conforms_to(T,
-        # Copyable)). Using comptime assert as a workaround.
-        comptime assert AllCopyable[
-            *Self.Ts
-        ], "Cannot copy Variant with non-copyable types"
-        self._storage = Self._Storage(copy=copy._storage)
-
-    def __init__(out self, *, deinit take: Self):
-        """Move-initialize this variant from another variant of the same type.
-
-        Args:
-            take: The variant to move from.
-        """
-        comptime assert _all_movable[
-            *Self.Ts
-        ](), "Cannot move Variant with non-movable types"
-        self._storage = Self._Storage(take=take._storage^)
-
     def __del__(deinit self):
         """Destroy the variant, running the destructor of the currently held value.
 
         Constraints:
-            All types in `Ts` must conform to `ImplicitlyDestructible`.
+            All types in `Ts` must conform to `ImplicitlyDeletable`.
         """
-        comptime assert _all_implicitly_destructible[
+        comptime assert AllImplicitlyDestructible[
             *Self.Ts
-        ](), "Cannot call __del__ on Variant with explicitly destroyed types"
+        ], "Cannot call __del__ on Variant with explicitly destroyed types"
         self._storage^.__del__()
 
     # ===-------------------------------------------------------------------===#
@@ -733,15 +715,10 @@ struct Variant[*Ts: Movable](
         Returns:
             The underlying data to be taken out as an owned value.
         """
-        # TODO(MOCO-3336): Remove isa/storage hack.
-        # Explicitly destroyed types don't play nicely with abort
-        var isa = self.isa[T]()
-        var storage = self._storage^
-        if not isa:
-            std.memory.forget_deinit(storage^)
+        if not self.isa[T]():
             abort("taking the wrong type!")
 
-        return storage^.take[T]()
+        return self._storage^.take[T]()
 
     @always_inline
     def unsafe_take[T: Movable](deinit self) -> T:
@@ -766,7 +743,7 @@ struct Variant[*Ts: Movable](
 
     @always_inline
     def replace[
-        Tin: Movable & ImplicitlyDestructible,
+        Tin: Movable & ImplicitlyDeletable,
         Tout: Movable,
     ](mut self, var value: Tin) -> Tout:
         """Replace the current value of the variant with the provided type.
@@ -906,7 +883,7 @@ struct Variant[*Ts: Movable](
 
         This method can be used to destroy types marked `@explicit_destroy`
         in a `Variant` in-place, without requiring that they be
-        `ImplicitlyDestructible`.
+        `ImplicitlyDeletable`.
 
         This method will abort if this variant does not current contain an
         element of the specified type `T`.
@@ -920,15 +897,10 @@ struct Variant[*Ts: Movable](
             destroy_func: Caller-provided destructor function for destroying
                 an instance of `T`.
         """
-        # TODO(MOCO-3336): Remove isa/storage hack.
-        # Explicitly destroyed types don't play nicely with abort
-        var isa = self.isa[T]()
-        var storage = self._storage^
-        if not isa:
-            std.memory.forget_deinit(storage^)
+        if not self.isa[T]():
             abort("Variant.destroy_with: wrong variant type")
 
-        destroy_func(storage^.take[T]())
+        destroy_func(self._storage^.take[T]())
 
 
 # ===-------------------------------------------------------------------===#
@@ -936,26 +908,12 @@ struct Variant[*Ts: Movable](
 # ===-------------------------------------------------------------------===#
 
 
-def _all_implicitly_destructible[*Ts: AnyType]() -> Bool:
-    comptime for i in range(Ts.size):
-        comptime T = Ts[i]
-        if not conforms_to(T, ImplicitlyDestructible):
-            return False
-    return True
-
-
-def _all_movable[*Ts: AnyType]() -> Bool:
-    comptime for i in range(Ts.size):
-        comptime T = Ts[i]
-        if not conforms_to(T, Movable):
-            return False
-    return True
-
-
 def _all_trivial_del[*Ts: AnyType]() -> Bool:
     comptime for i in range(Ts.size):
-        comptime if conforms_to(Ts[i], ImplicitlyDestructible):
-            if not downcast[Ts[i], ImplicitlyDestructible].__del__is_trivial:
+        comptime if conforms_to(Ts[i], ImplicitlyDeletable):
+            if not is_trivially_destructible[
+                downcast[Ts[i], ImplicitlyDeletable]
+            ]():
                 return False
         else:
             return False
@@ -965,7 +923,7 @@ def _all_trivial_del[*Ts: AnyType]() -> Bool:
 def _all_trivial_copyinit[*Ts: AnyType]() -> Bool:
     comptime for i in range(Ts.size):
         comptime if conforms_to(Ts[i], Copyable):
-            if not downcast[Ts[i], Copyable].__copy_ctor_is_trivial:
+            if not is_trivially_copyable[downcast[Ts[i], Copyable]]():
                 return False
         else:
             return False
@@ -976,7 +934,7 @@ def _all_trivial_copyinit[*Ts: AnyType]() -> Bool:
 def _all_trivial_moveinit[*Ts: AnyType]() -> Bool:
     comptime for i in range(Ts.size):
         comptime if conforms_to(Ts[i], Movable):
-            if not downcast[Ts[i], Movable].__move_ctor_is_trivial:
+            if not is_trivially_movable[downcast[Ts[i], Movable]]():
                 return False
         else:
             return False

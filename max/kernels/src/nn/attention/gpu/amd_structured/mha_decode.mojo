@@ -15,8 +15,11 @@
 Ported from `amd/mha.mojo::mha_decoding`.  Uses a full-depth KVBuffer
 for K (optionally double-buffered via `double_buffer_k_only`) and a
 two-view V setup sharing one SMEM region: `v_dma_buffer` (full
-BN x output_depth) for cooperative DRAM→LDS, `v_buffer` (per-warp
+BN x depth) for cooperative DRAM→LDS, `v_buffer` (per-warp
 BN x depth_per_warp) for LDS→REG and MMA.
+
+MLA decode (K==V aliasing, `output_depth < depth`, K-tail rope handling)
+lives in `mla_decode.mojo`; this file is MHA-only.
 
 Recipe (see `process_tile`):
   * Wait K (and V unless shared_kv) → optional FULL_MASK skip → load K
@@ -37,9 +40,8 @@ from std.gpu import block_idx
 from std.gpu import warp_id as get_warp_id
 from std.gpu.sync import s_waitcnt
 from std.memory import bitcast
-from std.utils.numerics import get_accum_type
+from std.utils.numerics import get_accum_type, min_or_neg_inf
 
-from layout.swizzle import Swizzle
 from nn.attention.mha_mask import TileMaskStatus
 from nn.attention.mha_utils import get_start_and_end_for_partitions
 
@@ -65,6 +67,9 @@ __extension Attention:
         """gfx950 MHA decode on KVBuffer.  See module docstring."""
         comptime assert Self.token_gen, "mha_decode requires token_gen=True"
         comptime assert (
+            not Self.mla_kv_alias
+        ), "mha_decode does not support mla_kv_alias=True; use mla_decode"
+        comptime assert (
             Self.BK == 32 or Self.BK == 64 or Self.BK == 128
         ), "BK must be 32, 64, or 128"
         comptime assert (
@@ -83,6 +88,19 @@ __extension Attention:
             self.num_keys, num_partitions, block_idx.x
         )
 
+        # Empty partitions (from power-of-two bucketing): reset to
+        # rowsum=0/rowmax=-inf so the reduce masks them via `scale > 0`.
+        # In sink mode, __init__ primes `rowsum=1/rowmax=sink_weight` —
+        # we must override that here or the reduce reads uninitialized
+        # partition outputs with a nonzero scale.
+        if start >= end:
+            _ = self.softmax.rowmax_tensor.fill(
+                min_or_neg_inf[Self.accum_type]()
+            )
+            _ = self.softmax.rowsum_tensor.fill(0)
+            self.store_partition_info(num_partitions, exp_sum_ptr, qk_max_ptr)
+            return
+
         # K: full BN × depth SMEM, per-warp DMA cooperation, transpose read.
         comptime KBufT = KVBuffer[
             kv_t=Self.k_t,
@@ -100,21 +118,23 @@ __extension Attention:
             self.k,
             self.batch_idx,
             self.kv_head_idx(),
-            KBufT.SmemParentType(self.k_smem_ptr, KBufT._SmemParentLayout()),
+            KBufT.SmemParentType(
+                self.k_smem_ptr.as_unsafe_any_origin(),
+                KBufT._SmemParentLayout(),
+            ),
             end,
             warp_id,
         )
 
         # V uses two buffers to avoid loading full depth into registers:
-        # - v_dma_buffer: V depth (= output_depth), for cooperative DRAM→LDS.
+        # - v_dma_buffer: full depth, for cooperative DRAM→LDS.
         # - v_buffer:     per-warp depth_per_warp slice, for LDS→REG and MMA.
         # The per-warp buffer's SMEM pointer is offset into the shared V SMEM
         # region.  When depth_per_warp < BK, multiple warps share one
         # BK-wide block; the offset encodes within-block position.
-        # MHA: output_depth == depth.  MLA: output_depth < depth.
-        comptime depth_per_warp = Self.output_depth // Self.num_warps_n
-        # SMEM block width seen by each warp.  Must be >= BK so the blocked
-        # product layout has at least one repeat.
+        comptime depth_per_warp = Self.depth // Self.num_warps_n
+        # SMEM block width seen by each warp.  Must be >= BK so the
+        # blocked product layout has at least one repeat.
         comptime smem_depth_per_warp = max(depth_per_warp, Self.BK)
 
         comptime VDmaBufT = KVBuffer[
@@ -125,7 +145,7 @@ __extension Attention:
             WN=Self.BN,
             BK=Self.BK,
             num_threads=Self.num_threads,
-            depth=Self.output_depth,
+            depth=Self.depth,
             kv_num_heads=Self.num_heads // Self.group,
             transpose=False,
             cache_depth=Self.cache_depth,
@@ -135,7 +155,8 @@ __extension Attention:
             self.batch_idx,
             self.kv_head_idx(),
             VDmaBufT.SmemParentType(
-                self.v_smem_ptr, VDmaBufT._SmemParentLayout()
+                self.v_smem_ptr.as_unsafe_any_origin(),
+                VDmaBufT._SmemParentLayout(),
             ),
             end,
             warp_id,
@@ -144,11 +165,6 @@ __extension Attention:
         # Per-warp V SMEM offset in the blocks-stacked physical layout
         # (row-major (BN, BK) blocks laid out contiguously): for
         # (row=0, col) → (col // BK) * BN * BK + col % BK.
-        # Intentionally NOT a `.tile[BN, depth_per_warp](0, v_warp_col).ptr`
-        # on the MixedLayout-stride parent: that only matches this offset
-        # when `depth_per_warp >= BK` (and is a multiple of BK). For
-        # `depth_per_warp < BK` the two formulas diverge; this manual
-        # form is the correct one for both regimes.
         var v_warp_col = umod(Int(warp_id), Self.num_warps_n)
         var v_col_start = v_warp_col * depth_per_warp
         var v_warp_smem_offset = ufloordiv(
@@ -174,7 +190,7 @@ __extension Attention:
             self.batch_idx,
             self.kv_head_idx(),
             VBufT.SmemParentType(
-                self.v_smem_ptr + v_warp_smem_offset,
+                (self.v_smem_ptr + v_warp_smem_offset).as_unsafe_any_origin(),
                 VBufT._SmemParentLayout(),
             ),
             end,
@@ -230,7 +246,7 @@ __extension Attention:
         @parameter
         def mma_pv():
             # Each warp's v_buffer holds only depth_per_warp tiles
-            # (loaded from the warp's LDS depth offset), so get_mma_tile
+            # (loaded from the warp's LDS depth offset), so mma_subtile
             # directly gives the warp's depth range.
             comptime for i in range(Self.BN // Self.BK):
                 comptime for k_mma in range(v_buffer.num_k_mmas2):
@@ -288,6 +304,15 @@ __extension Attention:
                 if tile_status == TileMaskStatus.FULL_MASK:
                     self.kv_start_row += UInt32(Self.BN)
                     self.mask_advance()
+                    # When `shared_kv`, V DMA is deferred to mid-tile (inside
+                    # the non-skipped branch below) and `prefetch_next` only
+                    # advances K's iterator.  Skipped FULL_MASK tiles must
+                    # still advance V's iterator manually, or the first
+                    # PARTIAL_MASK tile (e.g.  SlidingWindow visible window
+                    # after many FULL_MASK tiles) would load V from the
+                    # original start row instead of the current row.
+                    comptime if shared_kv and not Self.mla_kv_alias:
+                        v_dma_buffer.kv_cache_iter.increment()
                     comptime if has_next:
                         prefetch_next[slot]()
                     return
