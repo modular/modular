@@ -38,96 +38,6 @@ This version is still a work in progress.
   struct Example[origin: Origin]:
     var ptr: UnsafePointer[Int, Self.origin]
 
-  @export("new")
-  def new() abi("C"): pass
-  ```
-
-## Library changes
-
-- The `ImplicitlyCopyable`, `Intable`, and `Equatable` traits no longer
-  inherit from `ImplicitlyDestructible`. Generic code that relied on
-  receiving the destructor bound transitively through these traits (or
-  through `Comparable`, which inherits from `Equatable`) must now spell it
-  out explicitly, for example
-  `T: ImplicitlyCopyable & ImplicitlyDestructible`. In practice, most
-  generic code should prefer `T: Copyable` instead, per the guidance in
-  `ImplicitlyCopyable`'s docstring.
-
-- Changed `Idx` to a `comptime` alias for `ComptimeInt`. Use `Idx[value]`
-  instead of `Idx[value]()` for compile-time coordinates.
-
-- Added `is_trivially_movable`, `is_trivially_copyable`, and
-  `is_trivially_destructible` to `std.memory`. These helper functions
-  return whether a type's move constructor, copy constructor, or destructor is
-  trivial (i.e., a bit-copy or a no-op).
-
-- Added `std.gpu.host.CompletionFlag`, a non-owning handle to an MLRT
-  `M::Driver::CompletionFlag` (an 8-byte slot in pinned host memory mapped
-  into a device's address space). Pairs with the new
-  `DeviceStream.wait_for_host_value(flag, value)` method, which stalls the
-  stream until the flag's 64-bit slot equals the given value. Corresponds to
-  CUDA's `cuStreamWaitValue64` and captures cleanly into a CUDA graph as a
-  wait-value node, letting a CPU thread (or an AsyncRT worker dispatched by
-  `enqueue_host_func`) gate a GPU stream on host-produced data without a
-  second stream or a blocking host-function callback. Currently CUDA-only;
-  other backends raise.
-
-- `Coord`, `coord()`, `Idx`, `ComptimeInt`, `RuntimeInt`, and related coordinate
-  helpers now live in the standard library module
-  [`std.utils.coord`](/docs/std/utils/coord/). The
-  [`layout.coord`](/docs/layout/coord/) module re-exports the same symbols for
-  layout and kernel code; `layout` also hoists the common names at package
-  scope for convenience.
-
-- Python -> Mojo FFI calls registered through `PythonModuleBuilder` and
-  `PythonTypeBuilder` have significantly reduced per-call overhead:
-
-  - Non-kwargs callables registered with `def_function` / `def_method` /
-    `def_staticmethod` now use CPython's `METH_FASTCALL` calling
-    convention rather than `METH_VARARGS`. Kwargs-accepting functions
-    still use `METH_VARARGS | METH_KEYWORDS`.
-
-  - `PythonObject.__del__` skips the `PyGILState_Ensure` /
-    `PyGILState_Release` round-trip when the current thread already
-    holds the GIL (checked via `PyGILState_Check`). On the common
-    Python -> Mojo FFI path (where CPython hands the callee an
-    already-held GIL) the destructor pays just the check and a direct
-    `Py_DecRef`. The public contract is unchanged - dropping a
-    `PythonObject` from a thread that does not hold the GIL remains
-    safe.
-
-  - `Int(py=obj)` and `Scalar[IntDType](py=obj)` fast-path exact
-    Python `int` via `PyLong_AsSsize_t`.
-
-  - `String(py=obj)` fast-paths exact Python `str` via
-    `PyUnicode_AsUTF8AndSize`, reading the cached UTF-8 buffer directly
-    and skipping the `py.__str__()` round trip.
-
-- Added `TileTensor.copy_from()` and `TileTensor.split()` for copying between
-  compatible tile views and splitting tiles into static or runtime-sized
-  partitions.
-
-- `String.as_bytes_mut()` has been renamed to `String.unsafe_as_bytes_mut()`, to
-  reflect that writing invalid UTF-8 to the resulting `Span[Byte]` can lead to
-  later issues like out of bounds access.
-
-- A new `BinaryHeap` collection has been added to the `std.collections` module.
-  This is a list-backed binary max-heap.
-
-- The core collection types no longer require their element type to be
-  `Copyable` — `Movable & ImplicitlyDestructible` is now the minimum bound.
-  This applies to `List[T]`, `Deque[T]`, `LinkedList[T]`, `InlineArray[T,
-  size]`, both type parameters of `Dict[K, V, H]` (along with
-  `SwissTable`/`SwissTableEntry`/`OwnedKwargsDict` and the loosened
-  `KeyElement` trait), and `Set[T]`. Copy-requiring methods stay gated on
-  `Copyable`. `Counter[V]` is unchanged. `Dict.setdefault` and `Set.add`
-  now take their argument by `var T`; for move-only types call them as
-  `d.setdefault(key^, default)` or `set.add(value^)`.
-
-- `reflect[T]` is now a `comptime` alias for the `Reflected[T]` handle type
-  rather than a function returning a zero-sized handle instance. All methods on
-  `Reflected[T]` are `@staticmethod`s, and the type is no longer constructible.
-  Drop the parens at call sites:
   # OR
 
   struct Example:
@@ -144,6 +54,10 @@ This version is still a work in progress.
   form is no longer accepted.
 
 ## Library changes
+
+- `String(py=obj)` fast-paths exact Python `str` via
+  `PyUnicode_AsUTF8AndSize`, reading the cached UTF-8 buffer directly
+  and skipping the `py.__str__()` round trip.
 
 - `Int` is now an alias for `Scalar[DType.int]` and integer literals materialize
   to this `Scalar` type. Because of this some conversions have become more
