@@ -4645,22 +4645,23 @@ AnyValue MagicFunctionNode::emitConformsTo(ExprDest &dest,
   if (!traitToCheck)
     return {};
 
-  if (!sugarIsaAndNonNull<TraitType>(traitToCheck.getIfTypeValue())) {
+  if (!sugarIsaAndNonNull<AnyTraitType>(traitToCheck.getType())) {
     emitter.emitError(subExprs[1]->getLoc(),
                       "expected a trait for the second argument")
         << subExprs[1]->getRange();
     return {};
   }
 
-  auto traitType = sugarCast<TraitType>(traitToCheck.getIfTypeValue());
-  SmallVector<mlir::SymbolRefAttr> symbols(traitType.getSymbols());
-
-  // Canonicalize to include the full ancestor chain so that
-  // constraintImplies can use simple set containment for subsumption.
-  canonicalizeTraitCompositionSymbols(emitter.shared, symbols);
-
-  auto conformToI1 = TypeConformsToTraitAttr::get(typeToCheck, symbols);
-  return emitter.emitBool({conformToI1, this}, dest);
+  if (auto traitType = sugarDynCast<TraitType>(traitToCheck.getIfTypeValue())) {
+    SmallVector<mlir::SymbolRefAttr> symbols(traitType.getSymbols());
+    // Canonicalize to include the full ancestor chain so that
+    // constraintImplies can use simple set containment for subsumption.
+    canonicalizeTraitCompositionSymbols(emitter.shared, symbols);
+    auto canonicalTraitType = TraitType::get(traitType.getContext(), symbols);
+    traitToCheck = canonicalTraitType.getPValue();
+  }
+  return emitter.emitBool(
+      {TypeConformsToTraitAttr::get(typeToCheck, traitToCheck), this}, dest);
 }
 
 AnyValue

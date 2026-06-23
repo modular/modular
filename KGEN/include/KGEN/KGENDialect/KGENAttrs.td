@@ -519,33 +519,39 @@ def KGEN_TypeConformToTraitAttr : KGENAttr<"TypeConformsToTrait", "type_conforms
   let summary = "check whether the type conforms to specific traits";
   let description = [{
     This represents a flag to indicate the type, specified by `typeValue`,
-    conforms to specific traits, specified by a list of trait symbol references.
+    conforms to the specified traits.
 
     Example:
 
     ```mlir
-    #kgen.type_conforms_to_trait<#kgen.param.decl.ref<"T"> : !kgen.type,
-                                 [@Movable, @Copyable]>
+    #kgen.type_conforms_to_trait<T,
+        #kgen.type<typevalue<#kgen.trait_ref<@Movable, @Copyable>>, type> : !kgen.type>
     ```
   }];
 
-  let assemblyFormat = "`<` $typeValue `,` `[` $traitSymbols `]` `>`";
+  let assemblyFormat = "`<` custom<TypeParamValue>($typeValue) `,` custom<TypeParamValue>($traitType) `>`";
 
   let parameters = (ins
     "TypedAttr":$typeValue,
-    ArrayRefParameter<"SymbolRefAttr">:$traitSymbols
+    "TypedAttr":$traitType
   );
 
   let builders = [
     AttrBuilderWithInferredContext<(ins "TypedAttr":$typeValue,
-                                        "ArrayRef<SymbolRefAttr>":$traitSymbols), [{
-      return $_get(typeValue.getContext(), typeValue, traitSymbols);
+                                        "TypedAttr":$traitType), [{
+      return $_get(typeValue.getContext(), typeValue, traitType);
     }]>
   ];
 
   let extraClassDeclaration = [{
     /// Get the type of the attribute. It is always I1 type.
     Type getType() const;
+
+    /// Extract the trait symbol references from the `traitType` value. The
+    /// `traitType` wraps a type that implements the `TraitSymbolInterface`;
+    /// this returns that type's trait symbols. Returns `std::nullopt` if the
+    /// trait value is not yet concrete.
+    std::optional<ArrayRef<SymbolRefAttr>> getTraitSymbols() const;
 
     /// Extract the type reference if the type value field is already resolved.
     /// This will return either a TypeGeneratorRefAttr / TypeInstanceRefAttr,

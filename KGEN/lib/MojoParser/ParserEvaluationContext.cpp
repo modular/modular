@@ -122,7 +122,6 @@ FailureOr<TypedAttr> ParserEvaluationContext::evaluateContextSpecific(
   TypedAttr typedAttr = dyn_cast<TypedAttr>((Attribute)attr);
 
   // Handle TypeConformsToTraitAttr.
-  // TODO: preserve trait symbols in KGEN.
   if (auto conformsTo =
           sugarDynCastIfPresent<TypeConformsToTraitAttr>(typedAttr)) {
     // Try LIT-specific trait type folding first, then fall back to the attr

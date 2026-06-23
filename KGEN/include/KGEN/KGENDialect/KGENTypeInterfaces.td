@@ -154,6 +154,28 @@ def ContextuallyEvaluatedTypeInterface :
 }
 
 //===----------------------------------------------------------------------===//
+// TraitSymbolInterface
+//===----------------------------------------------------------------------===//
+
+def TraitSymbolInterface : TypeInterface<"TraitSymbolInterface"> {
+  let description = [{
+    Interface for types that carry a list of trait symbol references, such as
+    the `!lit.trait` type, or a `!kgen.typevalue<trait_ref<...>>`.
+
+    The practical reason why we need the interface is to avoid cyclic build
+    dependencies.
+  }];
+
+  let cppNamespace = "::M::KGEN";
+
+  let methods = [
+    InterfaceMethod<[{
+      Return the trait symbol references carried by this type.
+    }], "ArrayRef<SymbolRefAttr>", "getTraitSymbols">,
+  ];
+}
+
+//===----------------------------------------------------------------------===//
 // SugaredTypeInterface
 //===----------------------------------------------------------------------===//
 

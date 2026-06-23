@@ -797,7 +797,9 @@ fieldConditionallyConformsToBuiltin(Type fieldMLIRType, StringRef traitName,
 
   TypedAttr fieldParam = getCanonicalAttr(paramType.getParam());
   SmallVector<SymbolRefAttr> traitSymbols = {requiredTraitDecl->getSymbolRef()};
-  auto conformsTo = TypeConformsToTraitAttr::get(fieldParam, traitSymbols);
+  auto traitType = TraitType::get(fieldParam.getContext(), traitSymbols);
+  auto conformsTo =
+      TypeConformsToTraitAttr::get(fieldParam, traitType.getPValue());
 
   for (ConstraintAttr constraint : bodyConstraints)
     if (constraintImplies(constraint.getProposition(), conformsTo))

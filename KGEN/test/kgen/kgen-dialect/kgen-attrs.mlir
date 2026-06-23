@@ -256,8 +256,8 @@ kgen.generator @witnessed_mem_del(%arg0: !kgen.pointer<struct<(index)>> owned_in
   constraint1 = #kgen.constraint<true, loc("test.mojo":10:5)>,
   // CHECK-SAME: constraint2 = #kgen.constraint<ge(:scalar<index> a, 4), #[[LOC_C2]]>
   constraint2 = #kgen.constraint<ge(:scalar<index> a, 4), loc("test.mojo":15:10)>,
-  // CHECK-SAME: #kgen.constraint<conforms_to(:type array<1, i1>, [@trait_1, @trait_2]), #[[LOC_C3]]>
-  constraint3 = #kgen.constraint<conforms_to(:type array<1, i1>, [@trait_1, @trait_2]), loc("test.mojo":20:15)>
+  // CHECK-SAME: #kgen.constraint<conforms_to(:type array<1, i1>, :type [typevalue<#kgen.trait_ref<@trait_1, @trait_2>>, type]), #[[LOC_C3]]>
+  constraint3 = #kgen.constraint<conforms_to(:type array<1, i1>, :type #kgen.type<typevalue<#kgen.trait_ref<@trait_1, @trait_2>>, type> : !kgen.type), loc("test.mojo":20:15)>
 } : () -> ()
 
 // CHECK: llvm_bitcode_lib_unused = #kgen.llvm.bitcode.lib<used = false, library = "/path/to/lib.bc">
