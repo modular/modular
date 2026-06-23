@@ -9,7 +9,7 @@ unit tests using the [Mojo testing
 framework](https://docs.modular.com/mojo/tools/testing).
 
 Refer to
-[An example of implementing operators for a custom type](https://docs.modular.com/mojo/manual/operators#an-example-of-implementing-operators-for-a-custom-type)
+[Add operator support to custom types](https://docs.modular.com/mojo/manual/structs/operator-support)
 in the [Mojo manual](https://docs.modular.com/mojo/manual/) for a complete
 explanation of the implementation of the `Complex` type.
 
