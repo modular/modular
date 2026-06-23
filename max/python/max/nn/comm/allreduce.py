@@ -89,7 +89,7 @@ class Signals:
     # ``max/kernels/src/comm/sync.mojo``; the Lamport region offset below is
     # exact (a wrong value silently corrupts Lamport), so keep them in lockstep.
     _MAX_GPUS = 8
-    _MAX_NUM_BLOCKS = 512
+    _MAX_NUM_BLOCKS = 1024
     # self_counter (1x) + peer_counter (2x) over the [MAX_NUM_BLOCKS x MAX_GPUS]
     # uint32 grid, plus the 16-byte lamport_state block -> the Lamport region's
     # byte offset within the Signal struct.

@@ -34,6 +34,7 @@ _MAX_PACKAGES = {
 }
 
 _INTERNAL_PACKAGES = [
+    "//Kernels/lib/matmul_rs",
     "//Kernels/lib/msa",
 ]
 

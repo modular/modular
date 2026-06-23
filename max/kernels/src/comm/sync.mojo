@@ -18,8 +18,13 @@ from std.sys import size_of
 
 from std.atomic import Atomic, Ordering
 from std.gpu.host import DeviceBuffer, DeviceContext
-from std.gpu import barrier, block_idx, thread_idx
-
+from std.gpu import (
+    barrier,
+    block_idx,
+    grid_dim,
+    thread_idx,
+)
+from std.gpu.sync import named_barrier
 from .lamport import LAMPORT_SENTINEL_U32, Lamport, LamportGeneration
 
 
@@ -68,7 +73,7 @@ def is_p2p_enabled() raises -> Bool:
 # sature the NVLink in the bandwidth-bound regime.
 # TODO(bduke): Dispatch based on device after completing parameter sweep.
 
-comptime MAX_NUM_BLOCKS_UPPER_BOUND = 512
+comptime MAX_NUM_BLOCKS_UPPER_BOUND = 1024
 """Maximum number of thread blocks to use for reduction kernels.
 
 This value has been empirically optimized through grid search across different GPU architectures.
@@ -260,6 +265,8 @@ def _multi_gpu_barrier[
     ngpus: Int,
     is_start: Bool,
     need_fence: Bool = False,
+    named_barrier_threads: Int = 0,
+    named_barrier_id: Int = 1,
 ](
     rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     self_sg: UnsafePointer[Signal, MutAnyOrigin],
@@ -274,6 +281,11 @@ def _multi_gpu_barrier[
         need_fence: Whether memory fence is needed.
             If True, uses release/acquire semantics.
             If False, uses volatile memory operations for faster communication.
+        named_barrier_threads: When > 0, use a named barrier scoped to this
+            many threads instead of a CTA-wide `barrier()` (PTX `bar.sync 0`).
+        named_barrier_id: Hardware named-barrier id (0..15). Only used when
+            `named_barrier_threads > 0`. Defaults to 1 to avoid collision
+            with the implicit id 0 used by `barrier()`.
 
     Args:
         rank_sigs: Signal pointers for all GPUs.
@@ -283,19 +295,32 @@ def _multi_gpu_barrier[
     Uses atomic counters and memory fences to ensure all GPUs reach barrier before proceeding.
     Implementation ported from VLLM's _multi_gpu_barrier in
     https://github.com/vllm-project/vllm/blob/main/csrc/custom_all_reduce.cuh#L169-L198
+
+    Note: while named_barrier_threads makes it possible for only some threads/warps to
+    participate in this barrier, the inter-GPU sync still expects local thread idx 0-ngpus
+    to participate! In other words, it is safe to call this with only warp-0, but not safe
+    to call this with only warp 1, 2 etc.
     """
     comptime assert (
         ngpus <= MAX_GPUS
     ), "too many GPUs for barrier implementation"
 
     comptime if not is_start:
-        barrier()
+        comptime if named_barrier_threads > 0:
+            named_barrier[Int32(named_barrier_threads)](Int32(named_barrier_id))
+        else:
+            barrier()
 
     comptime assert not (
         need_fence and is_start
     ), "Start barrier should not need fence"
     comptime flag_t = Signal.flag_t
-    var bid = block_idx.x
+    # Linearise block_idx
+    var bid = (
+        block_idx.x
+        + block_idx.y * grid_dim.x
+        + (block_idx.z * (grid_dim.x * grid_dim.y))
+    )
 
     if thread_idx.x < ngpus:
         # NOTE: (MOCO-1431) the use of pointer arithmetic here is a temporary workaround
@@ -354,4 +379,7 @@ def _multi_gpu_barrier[
                 pass
 
     comptime if is_start or need_fence:
-        barrier()
+        comptime if named_barrier_threads > 0:
+            named_barrier[Int32(named_barrier_threads)](Int32(named_barrier_id))
+        else:
+            barrier()

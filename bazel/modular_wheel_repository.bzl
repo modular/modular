@@ -123,6 +123,12 @@ mojo_import(
     mojodeps = ["modular/lib/mojo/msa.mojoc"],
     visibility = ["//visibility:public"],
 )
+
+mojo_import(
+    name = "matmul_rs_lib",
+    mojodeps = ["modular/lib/mojo/matmul_rs.mojoc"],
+    visibility = ["//visibility:public"],
+)
 """,
     )
 
@@ -187,6 +193,16 @@ alias(
         "@//:linux_aarch64": "@module_platlib_linux_aarch64//:msa_lib",
         "@//:linux_x86_64": "@module_platlib_linux_x86_64//:msa_lib",
         "@platforms//os:macos": "@module_platlib_macos_arm64//:msa_lib",
+    }),
+    visibility = ["//visibility:public"],
+)
+
+alias(
+    name = "matmul_rs_lib",
+    actual = select({
+        "@//:linux_aarch64": "@module_platlib_linux_aarch64//:matmul_rs_lib",
+        "@//:linux_x86_64": "@module_platlib_linux_x86_64//:matmul_rs_lib",
+        "@platforms//os:macos": "@module_platlib_macos_arm64//:matmul_rs_lib",
     }),
     visibility = ["//visibility:public"],
 )
