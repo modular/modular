@@ -1,6 +1,6 @@
 // RUN: kgen-opt %s -verify-parameters -verify-diagnostics -split-input-file -o /dev/null
 
-// This tests verifcation errors which are not enabled in production builds
+// This tests verification errors which are not enabled in production builds
 // UNSUPPORTED: production
 
 lit.fn @im_a_func() {
