@@ -11,7 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.runtime.asyncrt import create_raising_task, create_task
+from std.runtime.asyncrt import (
+    create_raising_task,
+    create_task,
+    _create_task,
+    task_id_for_device,
+)
 
 from std.testing import assert_equal, TestSuite
 
@@ -68,6 +73,39 @@ def test_runtime_unified_async_memory_result_raises() raises:
     # CHECK: hello world
     print(result)
     assert_equal(result, "hello world")
+
+
+# CHECK-LABEL: test_task_id_for_device_returns_int
+def test_task_id_for_device_returns_int() raises:
+    """Verify task_id_for_device returns a non-negative or -1 integer.
+
+    The function delegates to KGEN_CompilerRT_TaskIdForDevice.  Without a
+    configured affinity map, the runtime may return -1 (no hint) or a valid
+    worker index.  Either way, the return type must be Int and be >= -1.
+    """
+    print("== test_task_id_for_device_returns_int")
+    var result = task_id_for_device(0)
+    # CHECK: task_id_for_device(0) >= -1: True
+    print("task_id_for_device(0) >= -1:", result >= -1)
+
+
+# CHECK-LABEL: test_create_task_with_affinity_runs_coroutine
+def test_create_task_with_affinity_runs_coroutine() raises:
+    """Verify _create_task executes the coroutine to completion.
+
+    The desired_worker_id hint is advisory; correctness must hold regardless
+    of whether the runtime honours the hint.
+    """
+    print("== test_create_task_with_affinity_runs_coroutine")
+
+    @parameter
+    async def compute() -> Int:
+        return 42
+
+    var worker_id = task_id_for_device(0)
+    var task = _create_task(compute(), desired_worker_id=worker_id)
+    # CHECK: affinity task result: 42
+    print("affinity task result:", task.wait())
 
 
 def main() raises:

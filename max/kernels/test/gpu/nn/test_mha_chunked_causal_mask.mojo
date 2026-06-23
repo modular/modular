@@ -145,10 +145,10 @@ def test_attention[
         q_device_ptr,
         row_major(
             (
-                Idx(batch_size),
-                Idx(seq_len),
-                Idx[num_heads](),
-                Idx[depth](),
+                batch_size,
+                seq_len,
+                Idx[num_heads],
+                Idx[depth],
             )
         ),
     )
@@ -156,10 +156,10 @@ def test_attention[
         k_device_ptr,
         row_major(
             (
-                Idx(batch_size),
-                Idx(num_keys),
-                Idx[kv_num_heads](),
-                Idx[depth](),
+                batch_size,
+                num_keys,
+                Idx[kv_num_heads],
+                Idx[depth],
             )
         ),
     )
@@ -167,10 +167,10 @@ def test_attention[
         v_device_ptr,
         row_major(
             (
-                Idx(batch_size),
-                Idx(num_keys),
-                Idx[kv_num_heads](),
-                Idx[depth](),
+                batch_size,
+                num_keys,
+                Idx[kv_num_heads],
+                Idx[depth],
             )
         ),
     )
@@ -178,10 +178,10 @@ def test_attention[
         mask_device_ptr,
         row_major(
             (
-                Idx(batch_size),
-                Idx[num_heads](),
-                Idx(seq_len),
-                Idx(num_keys),
+                batch_size,
+                Idx[num_heads],
+                seq_len,
+                num_keys,
             )
         ),
     )
@@ -189,10 +189,10 @@ def test_attention[
         output_device_ptr,
         row_major(
             (
-                Idx(batch_size),
-                Idx(seq_len),
-                Idx[num_heads](),
-                Idx[depth](),
+                batch_size,
+                seq_len,
+                Idx[num_heads],
+                Idx[depth],
             )
         ),
     )
@@ -219,10 +219,10 @@ def test_attention[
         output_ref_device_ptr,
         row_major(
             (
-                Idx(batch_size),
-                Idx(seq_len),
-                Idx[num_heads](),
-                Idx[depth](),
+                batch_size,
+                seq_len,
+                Idx[num_heads],
+                Idx[depth],
             )
         ),
     )
@@ -323,50 +323,60 @@ def test_mask_status() raises:
     var mask = ChunkedCausalMask[local_window_size=4]()
 
     assert_equal(
-        mask.status(Index(0, 0), Index(4, 4)), TileMaskStatus.PARTIAL_MASK
+        mask.status(UInt32(0), Index(0, 0), Index(4, 4)),
+        TileMaskStatus.PARTIAL_MASK,
     )
     assert_equal(
-        mask.status(Index(4, 4), Index(4, 4)), TileMaskStatus.PARTIAL_MASK
+        mask.status(UInt32(0), Index(4, 4), Index(4, 4)),
+        TileMaskStatus.PARTIAL_MASK,
     )
     assert_equal(
-        mask.status(Index(2, 2), Index(4, 4)), TileMaskStatus.PARTIAL_MASK
+        mask.status(UInt32(0), Index(2, 2), Index(4, 4)),
+        TileMaskStatus.PARTIAL_MASK,
     )
     assert_equal(
-        mask.status(Index(0, 2), Index(4, 4)), TileMaskStatus.PARTIAL_MASK
+        mask.status(UInt32(0), Index(0, 2), Index(4, 4)),
+        TileMaskStatus.PARTIAL_MASK,
     )
     assert_equal(
-        mask.status(Index(2, 0), Index(4, 4)), TileMaskStatus.PARTIAL_MASK
+        mask.status(UInt32(0), Index(2, 0), Index(4, 4)),
+        TileMaskStatus.PARTIAL_MASK,
     )
 
     assert_equal(
-        mask.status(Index(0, 4), Index(4, 4)), TileMaskStatus.FULL_MASK
+        mask.status(UInt32(0), Index(0, 4), Index(4, 4)),
+        TileMaskStatus.FULL_MASK,
     )
     assert_equal(
-        mask.status(Index(4, 0), Index(4, 4)), TileMaskStatus.FULL_MASK
+        mask.status(UInt32(0), Index(4, 0), Index(4, 4)),
+        TileMaskStatus.FULL_MASK,
     )
 
     # cases where tile_size >> local_window_size
     assert_equal(
-        mask.status(Index(100, 0), Index(128, 128)), TileMaskStatus.PARTIAL_MASK
+        mask.status(UInt32(0), Index(100, 0), Index(128, 128)),
+        TileMaskStatus.PARTIAL_MASK,
     )
     assert_equal(
-        mask.status(Index(0, 0), Index(100, 100)), TileMaskStatus.PARTIAL_MASK
+        mask.status(UInt32(0), Index(0, 0), Index(100, 100)),
+        TileMaskStatus.PARTIAL_MASK,
     )
     assert_equal(
-        mask.status(Index(50, 0), Index(100, 100)), TileMaskStatus.PARTIAL_MASK
+        mask.status(UInt32(0), Index(50, 0), Index(100, 100)),
+        TileMaskStatus.PARTIAL_MASK,
     )
 
     var bigger_mask = ChunkedCausalMask[local_window_size=256]()
     assert_equal(
-        bigger_mask.status(Index(256, 256), Index(128, 128)),
+        bigger_mask.status(UInt32(0), Index(256, 256), Index(128, 128)),
         TileMaskStatus.PARTIAL_MASK,
     )
     assert_equal(
-        bigger_mask.status(Index(128, 0), Index(128, 128)),
+        bigger_mask.status(UInt32(0), Index(128, 0), Index(128, 128)),
         TileMaskStatus.NO_MASK,
     )
     assert_equal(
-        bigger_mask.status(Index(256, 0), Index(128, 128)),
+        bigger_mask.status(UInt32(0), Index(256, 0), Index(128, 128)),
         TileMaskStatus.FULL_MASK,
     )
 

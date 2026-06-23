@@ -24,13 +24,14 @@ accepted but currently ignored since the implementation always sorts.
 """
 
 from std.os import abort
+from std.gpu.host import DeviceContext
 from std.python import PythonObject
 from std.python.bindings import PythonModuleBuilder
 from std.sys.info import has_accelerator
+from std.utils.coord import Coord
 
 from std.algorithm.functional import elementwise, IndexList
-from std.memory import OpaquePointer
-from std.runtime.asyncrt import DeviceContextPtr
+
 
 from op_utils import (
     _get_dtype,
@@ -42,7 +43,7 @@ from op_utils import (
 
 
 @export
-def PyInit_topk_ops() -> PythonObject:
+def PyInit_topk_ops() abi("C") -> PythonObject:
     """Create a Python module with top_k kernel function bindings."""
     try:
         var b = PythonModuleBuilder("topk_ops")
@@ -61,14 +62,14 @@ def PyInit_topk_ops() -> PythonObject:
 def topk_op[
     dtype: DType, //
 ](
-    out_val_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    out_idx_ptr: UnsafePointer[Scalar[DType.int64], MutExternalOrigin],
-    in_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    out_val_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    out_idx_ptr: UnsafePointer[Scalar[DType.int64], MutUntrackedOrigin],
+    in_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     dim0: Int,
     dim1: Int,
     dim2: Int,
     k: Int,
-    ctx: Optional[OpaquePointer[MutExternalOrigin]],
+    ctx: DeviceContext,
 ) raises:
     """Select the top-k largest values and their indices along the axis dim.
 
@@ -88,15 +89,15 @@ def topk_op[
         dim1: Size of the top-k axis.
         dim2: Product of dimensions after the top-k axis.
         k: Number of top elements to select.
-        ctx: Device context pointer (null for CPU).
+        ctx: Device context.
     """
     var total = dim0 * dim2
 
     @always_inline
     @parameter
     @__copy_capture(out_val_ptr, out_idx_ptr, in_ptr, dim1, dim2, k)
-    def func[width: Int, rank: Int, alignment: Int = 1](idx: IndexList[rank]):
-        var pair = idx[0]
+    def func[width: Int, alignment: Int = 1](idx: Coord):
+        var pair = Int(idx[0].value())
         var i0, i2 = divmod(pair, dim2)
         var in_base = i0 * dim1 * dim2 + i2
         var out_base = i0 * k * dim2 + i2
@@ -125,14 +126,11 @@ def topk_op[
             out_val_ptr[out_base + ki * dim2] = best_val
             out_idx_ptr[out_base + ki * dim2] = best_idx
 
-    if not ctx:
-        elementwise[func, simd_width=1](IndexList[1](total))
+    if ctx.api() == "cpu":
+        elementwise[func, simd_width=1](Coord(total), ctx)
     else:
         comptime if has_accelerator():
-            var device_ctx = DeviceContextPtr(ctx.unsafe_value())
-            elementwise[func, simd_width=1, target="gpu"](
-                IndexList[1](total), device_ctx
-            )
+            elementwise[func, simd_width=1, target="gpu"](Coord(total), ctx)
         else:
             raise Error("No GPU accelerator available")
 
@@ -158,7 +156,7 @@ struct _TopKBody(Dispatchable):
     var dim1: Int
     var dim2: Int
     var k: Int
-    var ctx: Optional[OpaquePointer[MutExternalOrigin]]
+    var ctx: DeviceContext
 
     def call[t: DType](self) raises -> None:
         comptime if t.is_numeric():
@@ -190,7 +188,7 @@ def topk_dispatcher(
         out_idx_buffer: Output indices buffer (int64).
         in_buffer: Input data buffer.
         params: Python tuple (dim0, dim1, dim2, k).
-        device_context_ptr: Device context pointer (null for CPU).
+        device_context_ptr: Device context pointer.
     """
     var dtype = _get_dtype(in_buffer)
     var out_val_addr = Int(py=out_val_buffer._data_ptr())

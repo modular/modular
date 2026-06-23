@@ -16,11 +16,11 @@ from std.collections import OptionalReg
 from std.atomic import Atomic
 
 import std.gpu.primitives.warp as warp
-from std.builtin.device_passable import DevicePassable
+from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.gpu.host.info import H100
 from std.gpu import block_idx, thread_idx
 from std.gpu.sync import barrier, named_barrier
-from nn.attention.gpu.nvidia.sm90.attention import NullPointer, OptionalPointer
+from nn.attention.gpu.nvidia.common import NullPointer, OptionalPointer
 
 from std.builtin.device_passable import DevicePassable
 
@@ -128,6 +128,8 @@ struct MHASchedulerSynchronization(TrivialRegisterPassable):
 struct MHATileState(TrivialRegisterPassable):
     # Linear work tile index i.e. idx-th work among all possible workload.
     var idx: UInt32
+
+    @__allow_legacy_any_origin_fields
     var sidx_ptr: UnsafePointer[
         UInt32, MutAnyOrigin, address_space=AddressSpace.SHARED
     ]
@@ -417,8 +419,10 @@ struct TransientScheduler[
 
     comptime device_type: AnyType = Self
 
-    def _to_device_type(self, target: MutOpaquePointer[_]):
-        target.bitcast[Self.device_type]()[] = self
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
+        encoder.encode(self, target)
 
     @staticmethod
     def get_type_name() -> String:
@@ -537,8 +541,10 @@ struct TileScheduler[
 
     comptime device_type: AnyType = Self
 
-    def _to_device_type(self, target: MutOpaquePointer[_]):
-        target.bitcast[Self.device_type]()[] = self
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
+        encoder.encode(self, target)
 
     @staticmethod
     def get_type_name() -> String:
@@ -654,6 +660,7 @@ struct QueuedTileScheduler[
     """
 
     # Linear work tile index i.e. idx-th work among all possible workload.
+    @__allow_legacy_any_origin_fields
     var gidx_ptr: UnsafePointer[
         UInt32, MutAnyOrigin, address_space=AddressSpace.GLOBAL
     ]
@@ -789,14 +796,17 @@ struct QueuedTileScheduler[
     # `trait DevicePassable` implementation
     comptime device_type: AnyType = Self
 
-    def _to_device_type(self, target: MutOpaquePointer[_]):
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
         """Convert the host type object to a device_type and store it at the
         target address.
 
         Args:
+            encoder: The device specific type encoder.
             target: The target address to store the device type.
         """
-        target.bitcast[Self.device_type]()[] = self
+        encoder.encode(self, target)
 
     @no_inline
     @staticmethod

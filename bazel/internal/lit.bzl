@@ -315,7 +315,7 @@ EOF
             name = "%s%s.test" % (src.replace("🔥", "fire"), ("." + unique_suffix) if unique_suffix else ""),
             srcs = [src],
             target_compatible_with = target_compatible_with + gpu_constraints,
-            tags = tags + ["no-mypy", "lit"],
+            tags = tags + ["no-mypy", "lit", "enable-sanitizers"],
             args = default_args + ["-a"],
             **kwargs
         )

@@ -130,7 +130,7 @@ struct Q4sym[
     var scale: StaticTuple[UInt8, 2]
     """The FP16 scale of the group, stored as individual bytes."""
 
-    var bits: StaticTuple[UInt8, Self.group_size // 2]
+    var bits: StaticTuple[UInt8, SIMDSize(Self.group_size) // 2]
     """The bits of the encoded uint4 numbers."""
 
     @staticmethod
@@ -153,7 +153,7 @@ struct Q4sym[
     def __init__(out self):
         """Construct a default initialized Q4sym."""
         self.scale = StaticTuple[UInt8, 2]()
-        self.bits = StaticTuple[UInt8, Self.group_size // 2]()
+        self.bits = StaticTuple[UInt8, SIMDSize(Self.group_size) // 2]()
         self._check_constraints()
 
     @always_inline
@@ -180,14 +180,16 @@ struct Q4sym[
     @always_inline
     def _encode_bits(
         qdata: SIMD[DType.uint8, Self.group_size]
-    ) -> SIMD[DType.uint8, Self.group_size // 2]:
+    ) -> SIMD[DType.uint8, SIMDSize(Self.group_size) // 2]:
         var lo_hi = qdata.split()
         return lo_hi[0] | (lo_hi[1] << 4)
 
     @always_inline
     def _decode_bits(mut self) -> SIMD[DType.uint8, Self.group_size]:
         # Extract the lower 4 bits of all bits in the `l_bits` format
-        var bits_simd = _to_SIMD[DType.uint8, Self.group_size // 2](self.bits)
+        var bits_simd = _to_SIMD[DType.uint8, SIMDSize(Self.group_size) // 2](
+            self.bits
+        )
         var bits_upper = (bits_simd & 0xF0) >> 4
         var bits_lower = bits_simd & 0x0F
         return rebind[SIMD[DType.uint8, Self.group_size]](
@@ -268,7 +270,7 @@ struct Q4sym[
         input_rank: Int
     ](
         input_tt: TileTensor[
-            Self.float_dtype, address_space=AddressSpace.GENERIC, ...
+            mut=False, Self.float_dtype, address_space=AddressSpace.GENERIC, ...
         ],
         output_tt: TileTensor[
             mut=True, DType.uint8, address_space=AddressSpace.GENERIC, ...
@@ -352,7 +354,7 @@ struct Q4sym[
         output_rank: Int
     ](
         input_tt: TileTensor[
-            DType.uint8, address_space=AddressSpace.GENERIC, ...
+            mut=False, DType.uint8, address_space=AddressSpace.GENERIC, ...
         ],
         output_tt: TileTensor[
             mut=True,
@@ -466,7 +468,9 @@ def scale_min_k4(
 
 
 def q4_k_dequantize_impl(
-    input_tt: TileTensor[DType.uint8, address_space=AddressSpace.GENERIC, ...],
+    input_tt: TileTensor[
+        mut=False, DType.uint8, address_space=AddressSpace.GENERIC, ...
+    ],
     output_tt: TileTensor[
         mut=True, DType.float32, address_space=AddressSpace.GENERIC, ...
     ],
@@ -552,7 +556,9 @@ struct block_Q6_K:
 def q6_k_dequantize_impl[
     output_rank: Int
 ](
-    input_tt: TileTensor[DType.uint8, address_space=AddressSpace.GENERIC, ...],
+    input_tt: TileTensor[
+        mut=False, DType.uint8, address_space=AddressSpace.GENERIC, ...
+    ],
     output_tt: TileTensor[
         mut=True, DType.float32, address_space=AddressSpace.GENERIC, ...
     ],

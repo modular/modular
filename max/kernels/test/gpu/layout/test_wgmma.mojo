@@ -259,7 +259,7 @@ def wgmma_bf16_bf16_f32[
         transpose_b=transpose_b,
     ]
 
-    ctx.enqueue_function_experimental[kernel](
+    ctx.enqueue_function[kernel](
         a.device_tensor(),
         b.device_tensor(),
         c.device_tensor(),

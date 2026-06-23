@@ -11,6 +11,15 @@ max.experimental.nn
 
 .. currentmodule:: max.experimental.nn
 
+Submodules
+----------
+
+.. toctree::
+   :maxdepth: 1
+
+   experimental.nn.norm
+   experimental.nn.rope
+
 Base classes
 ------------
 
@@ -19,8 +28,10 @@ Base classes
    :toctree: generated
    :template: autosummary/class.rst
 
+   CompiledModel
    Module
    ModuleList
+   PinnedDeviceTensor
    Sequential
 
 Linear layers
@@ -45,11 +56,3 @@ Functions
 
    module_dataclass
 
-Submodules
-----------
-
-.. toctree::
-   :maxdepth: 1
-
-   experimental.nn.norm
-   experimental.nn.rope

@@ -66,7 +66,7 @@ def run_layer_norm_block[
     def input_fn[
         width: Int, alignment: Int
     ](row: Int, col: Int) -> SIMD[dtype, width]:
-        var idx = data_buf.layout(Coord(Idx(row), Idx(col)))
+        var idx = data_buf.layout(Coord(row, col))
         return data_buf.raw_load[width=width, alignment=alignment](idx)
 
     @__copy_capture(gamma)
@@ -75,16 +75,16 @@ def run_layer_norm_block[
     def gamma_fn[
         width: Int, rank: Int, alignment: Int
     ](coords: IndexList[rank]) -> SIMD[dtype, width]:
-        var idx = gamma.layout(Idx(coords[0]))
+        var idx = gamma.layout(coords[0])
         return gamma.raw_load[width=width, alignment=alignment](idx)
 
     @__copy_capture(data_buf)
     @always_inline
     @parameter
     def output_fn[
-        width: Int, alignment: Int
+        width: SIMDSize, alignment: Int
     ](row: Int, col: Int, val: SIMD[dtype, width]):
-        var idx = data_buf.layout(Coord(Idx(row), Idx(col)))
+        var idx = data_buf.layout(Coord(row, col))
         data_buf.raw_store[width=width, alignment=alignment](
             idx, rebind[SIMD[dtype, width]](val)
         )
@@ -105,7 +105,7 @@ def run_layer_norm_block[
             gamma_fn,
             output_fn,
         ]
-        ctx.enqueue_function[kernel, kernel](
+        ctx.enqueue_function[kernel](
             IndexList[2](rows, cols),
             beta,
             epsilon,
@@ -123,7 +123,7 @@ def run_layer_norm_block[
     for r in range(rows):
         var vec = TileTensor(
             data_h.unsafe_ptr() + r * cols,
-            row_major(Idx(cols)),
+            row_major(cols),
         )
         var mean_ref = mean(vec)
         var var_ref = variance(vec, correction=0)
@@ -192,14 +192,14 @@ def run_layer_norm_gpu[
     def gamma_fn[
         width: Int, rank: Int, alignment: Int
     ](coords: IndexList[rank]) -> SIMD[dtype, width]:
-        var idx = gamma.layout(Idx(coords[0]))
+        var idx = gamma.layout(coords[0])
         return gamma.raw_load[width=width, alignment=alignment](idx[0])
 
     @__copy_capture(data_buf)
     @always_inline
     @parameter
     def output_fn[
-        width: Int, rank_: Int, alignment: Int
+        width: SIMDSize, rank_: Int, alignment: Int
     ](coords: IndexList[rank_], val: SIMD[dtype, width]):
         var idx = data_buf.layout(Coord(coords))
         data_buf.raw_store[width=width, alignment=alignment](
@@ -213,7 +213,7 @@ def run_layer_norm_gpu[
     for r in range(rows):
         var vec = TileTensor(
             data_h.unsafe_ptr() + r * cols,
-            row_major(Idx(cols)),
+            row_major(cols),
         )
         var mean_ref = mean(vec)
         var var_ref = variance(vec, correction=0)
@@ -272,7 +272,7 @@ def run_layer_norm_warp_tiling[
     def input_fn[
         width: Int, alignment: Int
     ](row: Int, col: Int) -> SIMD[dtype, width]:
-        var idx = data_buf.layout(Coord(Idx(row), Idx(col)))
+        var idx = data_buf.layout(Coord(row, col))
 
         return data_buf.raw_load[width=width, alignment=alignment](idx)
 
@@ -282,16 +282,16 @@ def run_layer_norm_warp_tiling[
     def gamma_fn[
         width: Int, rank: Int, alignment: Int
     ](coords: IndexList[rank]) -> SIMD[dtype, width]:
-        var idx = gamma.layout(Idx(coords[0]))
+        var idx = gamma.layout(coords[0])
         return gamma.raw_load[width=width, alignment=alignment](idx)
 
     @__copy_capture(data_buf)
     @always_inline
     @parameter
     def output_fn[
-        width: Int, alignment: Int
+        width: SIMDSize, alignment: Int
     ](row: Int, col: Int, val: SIMD[dtype, width]):
-        var idx = data_buf.layout(Coord(Idx(row), Idx(col)))
+        var idx = data_buf.layout(Coord(row, col))
         data_buf.raw_store[width=width, alignment=alignment](
             idx, rebind[SIMD[dtype, width]](val)
         )
@@ -311,7 +311,7 @@ def run_layer_norm_warp_tiling[
             gamma_fn,
             output_fn,
         ]
-        ctx.enqueue_function[kernel, kernel](
+        ctx.enqueue_function[kernel](
             IndexList[2](rows, cols),
             beta,
             epsilon,
@@ -329,7 +329,7 @@ def run_layer_norm_warp_tiling[
     for r in range(rows):
         var vec = TileTensor(
             data_h.unsafe_ptr() + r * cols,
-            row_major(Idx(cols)),
+            row_major(cols),
         )
         var mean_ref = mean(vec)
         var var_ref = variance(vec, correction=0)

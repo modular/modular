@@ -41,6 +41,8 @@ class PagedCacheValues(KVCacheInputsPerDevice[Tensor, Tensor]):
     max_lengths: Tensor
     kv_scales: Tensor | None = None
     attention_dispatch_metadata: Tensor | None = None
+    # MLA capturable-graph scalar; mirrors upstream PagedCacheValues.
+    mla_num_partitions: Tensor | None = None
 
     @classmethod
     def from_upstream(
@@ -72,6 +74,15 @@ class PagedCacheValues(KVCacheInputsPerDevice[Tensor, Tensor]):
                 attention_dispatch_metadata_values
             )
 
+        mla_num_partitions: Tensor | None = None
+        if per_device[0].mla_num_partitions is not None:
+            mla_num_partitions = _wrap(
+                cast(
+                    list[TensorValue],
+                    [d.mla_num_partitions for d in per_device],
+                )
+            )
+
         return cls(
             kv_blocks=_wrap([d.kv_blocks for d in per_device]),
             cache_lengths=_wrap([d.cache_lengths for d in per_device]),
@@ -79,6 +90,7 @@ class PagedCacheValues(KVCacheInputsPerDevice[Tensor, Tensor]):
             max_lengths=_wrap([d.max_lengths for d in per_device]),
             kv_scales=kv_scales,
             attention_dispatch_metadata=attention_dispatch_metadata,
+            mla_num_partitions=mla_num_partitions,
         )
 
     @property
@@ -109,5 +121,10 @@ class PagedCacheValues(KVCacheInputsPerDevice[Tensor, Tensor]):
                 self.attention_dispatch_metadata.local_shards[i]
             )
             if self.attention_dispatch_metadata is not None
+            else None,
+            mla_num_partitions=TensorValue(
+                self.mla_num_partitions.local_shards[i]
+            )
+            if self.mla_num_partitions is not None
             else None,
         )

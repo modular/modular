@@ -343,7 +343,7 @@ def sum[
     return res_tensor
 
 
-def mean(src: LayoutTensor[...]) raises -> Scalar[src.dtype]:
+def mean(src: LayoutTensor) raises -> Scalar[src.dtype]:
     """Computes the mean value of the elements in a buffer.
 
     Args:
@@ -374,7 +374,7 @@ def mean(src: LayoutTensor[...]) raises -> Scalar[src.dtype]:
 
 def mean[
     reduce_axis: Int
-](src: LayoutTensor[...], dst: LayoutTensor[mut=True, src.dtype, ...]) raises:
+](src: LayoutTensor, dst: LayoutTensor[mut=True, src.dtype, ...]) raises:
     """Computes the mean across reduce_axis of a LayoutTensor.
 
     Parameters:
@@ -434,7 +434,7 @@ def mean[
 
 
 def variance(
-    src: LayoutTensor[...], correction: Int = 1
+    src: LayoutTensor, correction: Int = 1
 ) raises -> Scalar[src.dtype]:
     """Computes the variance value of the elements in a buffer.
 
@@ -489,7 +489,7 @@ def variance(src: TileTensor, correction: Int = 1) raises -> Scalar[src.dtype]:
     def input_fn_1d[
         dtype_: DType, width: Int
     ](idx: Int) capturing -> SIMD[dtype_, width]:
-        var src_idx = src.layout(Idx(idx))
+        var src_idx = src.layout(idx)
         return rebind[SIMD[dtype_, width]](src.raw_load[width=width](src_idx))
 
     return reduction.variance[src.dtype, input_fn_1d](
@@ -518,7 +518,7 @@ def mean(src: TileTensor) raises -> Scalar[src.dtype]:
     def input_fn_1d[
         dtype_: DType, width: Int
     ](idx: Int) capturing -> SIMD[dtype_, width]:
-        var src_idx = src.layout(Idx(idx))
+        var src_idx = src.layout(idx)
         return rebind[SIMD[dtype_, width]](src.raw_load[width=width](src_idx))
 
     return reduction.mean[src.dtype, input_fn_1d](src.num_elements())

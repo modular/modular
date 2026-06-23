@@ -37,7 +37,7 @@ struct ResourceGuard(ImplicitlyCopyable):
         print("Releasing:", self.name, "(no error)")
 
     def __exit__[ErrType: AnyType](self, err: ErrType) -> Bool:
-        comptime type_name = reflect[ErrType]().name()
+        comptime type_name = reflect[ErrType].name()
         print("Releasing:", self.name)
         print("  Error type:", type_name)
 

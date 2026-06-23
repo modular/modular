@@ -13,9 +13,10 @@
 
 """Shared utilities for MO interpreter Mojo kernel wrappers."""
 
-from std.python import PythonObject
-from std.memory import OpaquePointer
 from std.algorithm.functional import IndexList
+from std.gpu.host import DeviceContext
+from std.memory import OpaquePointer
+from std.python import PythonObject
 from std.sys.info import has_apple_gpu_accelerator
 
 
@@ -31,9 +32,9 @@ def _get_dtype(buffer: PythonObject) raises -> DType:
 def _get_buffer_ptr[
     dtype: DType
 ](buffer: PythonObject) raises -> UnsafePointer[
-    Scalar[dtype], MutExternalOrigin
+    Scalar[dtype], MutUntrackedOrigin
 ]:
-    return UnsafePointer[Scalar[dtype], MutExternalOrigin](
+    return UnsafePointer[Scalar[dtype], MutUntrackedOrigin](
         unsafe_from_address=Int(py=buffer._data_ptr())
     )
 
@@ -45,20 +46,20 @@ def _get_size(buffer: PythonObject) raises -> Int:
 @always_inline
 def _make_ptr[
     dtype: DType
-](addr: Int) -> UnsafePointer[Scalar[dtype], MutExternalOrigin]:
+](addr: Int) -> UnsafePointer[Scalar[dtype], MutUntrackedOrigin]:
     """Create a typed pointer from a raw integer address."""
-    return UnsafePointer[Scalar[dtype], MutExternalOrigin](
+    return UnsafePointer[Scalar[dtype], MutUntrackedOrigin](
         unsafe_from_address=addr
     )
 
 
 def _get_ctx(
     device_context_ptr: PythonObject,
-) raises -> Optional[OpaquePointer[MutExternalOrigin]]:
+) raises -> DeviceContext:
     var addr = Int(py=device_context_ptr)
-    if addr == 0:
-        return None
-    return OpaquePointer[MutExternalOrigin](unsafe_from_address=addr)
+    return DeviceContext(
+        OpaquePointer[MutUntrackedOrigin](unsafe_from_address=addr)
+    )
 
 
 trait Dispatchable:

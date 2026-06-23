@@ -66,21 +66,21 @@ struct TypeList[
 
     Examples:
 
-    ```text
+    ```mojo
     from std.builtin.variadics import TypeList
     from std.sys.intrinsics import _type_is_eq
     from std.testing import assert_equal
 
     # Create a type list
-    comptime tl = TypeList[Trait=AnyType, Int, String, Float64]()
+    comptime tl = TypeList.of[Trait=AnyType, Int, String, Float64]()
 
-    def main():
+    def main() raises:
         # Query size
         assert_equal(tl.size, 3)
 
         # Check membership
-        comptime assert tl.contains[Int]
-        comptime assert not tl.contains[Bool]
+        comptime assert tl.contains[Int]()
+        comptime assert not tl.contains[Bool]()
 
         # Index into the list
         comptime assert _type_is_eq[tl[0], Int]()
@@ -90,7 +90,7 @@ struct TypeList[
     comptime _mlir_type = _MLIR.KGENParamListType[Self.Trait]
     """The low-level MLIR type of the type list."""
 
-    comptime size: Int = Int(
+    comptime size = Int(
         mlir_value=__mlir_attr[
             `#kgen.param_list.size<:`,
             Self._mlir_type,
@@ -101,7 +101,7 @@ struct TypeList[
     )
     """The number of types in the list."""
 
-    comptime __getitem_param__[idx: Int] = __mlir_attr[
+    comptime __getitem_param__[idx: SIMDSize] = __mlir_attr[
         `#kgen.param_list.get<:`,
         Self._mlir_type,
         ` `,
@@ -186,7 +186,7 @@ struct TypeList[
         Trait=Trait,
         __mlir_attr[
             `#kgen.param_list.tabulate<`,
-            count._int_mlir_index(),
+            count.__mlir_index__(),
             `,`,
             Self._IndexToIntTypeTabulateWrap[Trait=Trait, ToT=ToT, Mapper, ...],
             `> : `,
@@ -268,7 +268,7 @@ struct TypeList[
         `, "From": `,
         _MLIR.KGENParamListType[Self.Trait],
         `, "Idx":`,
-        SIMDSize,
+        Int,
         `>`,
         +Prev,
         `>`,
@@ -686,17 +686,33 @@ struct ParameterList[type: AnyType, //, values: _MLIR.KGENParamListType[type]](
     arguments must have the same type `Int`.
 
     ```mojo
-    def sum_values[*args: Int]() -> Int:
+    def sum_values[*args: Int]():
+
+        # Iterate over elements at compile time
+        comptime for i in range(args.size):  # can also use len() at comptime
+
+            # print() below is a run-time call, so placing args[i] directly inside
+            # it will invoke run-time access and not compile-time access; both share
+            # the same syntax. For illustration, we place comptime access in a separate
+            # step here.
+            comptime arg = args[i]
+            print(arg, end=" ")
+
+        print()
+
+        # Iterate over elements at run-time
         var total = 0
+        for i in range(len(args)): # can also use the comptime args.size
+            total += args[i]
 
-        # Can use regular for loop because args is a ParameterList
-        for i in range(len(args)):
-            total += args[i]  # All elements are Int, so uniform access
-
-        return total
+        print(total)
 
     def main():
-        print(sum_values[1, 2, 3, 4, 5]())
+        sum_values[1, 2, 3, 4, 5]()
+
+        # Output:
+        #  1 2 3 4 5
+        #  15
     ```
 
     Parameters:
@@ -765,13 +781,13 @@ struct ParameterList[type: AnyType, //, values: _MLIR.KGENParamListType[type]](
         """
         return self.get_span()[idx]
 
-    comptime __getitem_param__[idx: Int]: Self.type = __mlir_attr[
+    comptime __getitem_param__[idx: SIMDSize]: Self.type = __mlir_attr[
         `#kgen.param_list.get<:`,
         Self._mlir_type,
         ` `,
         +Self.values,
         `, `,
-        idx._int_mlir_index(),
+        idx._mlir_value,
         `> : `,
         +Self.type,
     ]
@@ -830,7 +846,7 @@ struct ParameterList[type: AnyType, //, values: _MLIR.KGENParamListType[type]](
         type=type,
         __mlir_attr[
             `#kgen.param_list.tabulate<`,
-            count._int_mlir_index(),
+            count.__mlir_index__(),
             `,`,
             Self._IndexToIntTabulateWrap[Mapper, ...],
             `> : `,
@@ -895,7 +911,7 @@ struct ParameterList[type: AnyType, //, values: _MLIR.KGENParamListType[type]](
         PrevV: FromAndTo,
         VA: Self._mlir_type,
         idx: __mlir_type.index,
-    ] = ToWrap[PrevV, Self.__getitem_param__[Int(mlir_value=idx)]]
+    ] = ToWrap[PrevV, Self.__getitem_param__[SIMDSize(mlir_value=idx)]]
     """Takes an index because kgen.variadic.reduce passes it but we don't want it"""
 
     # TODO: This isn't returning a ParamList, so it should really be a 'def' so
@@ -1182,8 +1198,8 @@ struct VariadicList[
     """
 
     comptime _EltPointerType = Pointer[Self.element_type, Self.origin]
-    # FIXME: This should be the origin of the container, not ExternalOrigin.
-    var _value: Span[Self._EltPointerType, ExternalOrigin[mut=False]]
+    # FIXME: This should be the origin of the container, not UntrackedOrigin.
+    var _value: Span[Self._EltPointerType, UntrackedOrigin[mut=False]]
 
     # ===-------------------------------------------------------------------===#
     # Life cycle methods
@@ -1215,11 +1231,11 @@ struct VariadicList[
         # the first element.
         var array_up = UnsafePointer(
             to=Pointer(_mlir_value=value)[]
-        ).unsafe_origin_cast[ExternalOrigin[mut=False]]()
-        var elt_ptr = UnsafePointer[_, ExternalOrigin[mut=False]](
+        ).unsafe_origin_cast[UntrackedOrigin[mut=False]]()
+        var elt_ptr = UnsafePointer[_, UntrackedOrigin[mut=False]](
             __mlir_op.`pop.array.gep`(
                 array_up.address,
-                Int(0)._int_mlir_index(),
+                Int(0).__mlir_index__(),
             )
         ).bitcast[Self._EltPointerType]()
         self._value = Span(ptr=elt_ptr, length=Int(mlir_value=size))
@@ -1236,13 +1252,13 @@ struct VariadicList[
         # normally torn down when CheckLifetimes is left to its own devices.
         comptime if Self.is_owned:
             _constrained_conforms_to[
-                conforms_to(Self.element_type, ImplicitlyDestructible),
+                conforms_to(Self.element_type, ImplicitlyDeletable),
                 Parent=Self,
                 Element=Self.element_type,
-                ParentConformsTo="ImplicitlyDestructible",
+                ParentConformsTo="ImplicitlyDeletable",
             ]()
             comptime TDestructible = downcast[
-                Self.element_type, ImplicitlyDestructible
+                Self.element_type, ImplicitlyDeletable
             ]
 
             for i in reversed(range(len(self))):
@@ -1251,14 +1267,15 @@ struct VariadicList[
                     TDestructible
                 ]().destroy_pointee()
 
-    def consume_elements[
-        elt_handler: def(idx: Int, var elt: Self.element_type) capturing
-    ](deinit self):
+    def consume_elements(
+        deinit self,
+        elt_handler: Some[def(idx: Int, var elt: Self.element_type)],
+    ):
         """Consume the variadic list by transferring ownership of each element
         into the provided closure one at a time.  This is only valid on 'owned'
         variadic lists.
 
-        Parameters:
+        Args:
             elt_handler: A function that will be called for each element of the
                          list.
         """
@@ -1506,15 +1523,15 @@ struct VariadicPack[
             comptime for i in reversed(range(Self.__len__())):
                 comptime element_type = Self.element_types[i]
                 _constrained_conforms_to[
-                    conforms_to(element_type, ImplicitlyDestructible),
+                    conforms_to(element_type, ImplicitlyDeletable),
                     Parent=Self,
                     Element=element_type,
-                    ParentConformsTo="ImplicitlyDestructible",
+                    ParentConformsTo="ImplicitlyDeletable",
                 ]()
 
                 # Safety: We own the elements in this pack.
                 UnsafePointer(
-                    to=trait_downcast[ImplicitlyDestructible](self[i])
+                    to=trait_downcast[ImplicitlyDeletable](self[i])
                 ).mut_cast[True]().destroy_pointee()
 
     def consume_elements[
@@ -1580,7 +1597,7 @@ struct VariadicPack[
             mutability of the pack argument convention.
         """
         litref_elt = __mlir_op.`lit.ref.pack.extract`[
-            index=index._int_mlir_index()
+            index=index.__mlir_index__()
         ](self._value)
         return __get_litref_as_mvalue(litref_elt)
 

@@ -25,9 +25,6 @@ from std.memory import alloc, bitcast
 from std.random import rand, random_ui64, seed
 from internal_utils import assert_almost_equal
 from layout import (
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
     TileTensor,
     Coord,
     CoordLike,
@@ -127,11 +124,11 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     # Infer scaling_kind from scales_dtype.
     comptime scaling_kind = UMMAKind.KIND_MXF4 if scales_dtype == MXFP4_SF_DTYPE else UMMAKind.KIND_MXF4NVF4
 
-    var a_shape = row_major(Coord(m, Idx[KType.static_value // 2]()))
+    var a_shape = row_major(Coord(m, Idx[KType.static_value // 2]))
     var b_shape = row_major(
-        Coord(Idx[NType.static_value](), Idx[KType.static_value // 2]())
+        Coord(Idx[NType.static_value], Idx[KType.static_value // 2])
     )
-    var c_shape = row_major(Coord(m, Idx[NType.static_value]()))
+    var c_shape = row_major(Coord(m, Idx[NType.static_value]))
 
     var a_size = Int(m.value()) * (KType.static_value // 2)
     var b_size = Int(n.value()) * (KType.static_value // 2)
@@ -170,20 +167,20 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
 
     var a_scales_shape = row_major(
         Coord(
-            Idx(ceildiv(Int(m.value()), SF_MN_GROUP_SIZE)),
-            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)](),
-            Idx[SF_ATOM_M[0]](),
-            Idx[SF_ATOM_M[1]](),
-            Idx[SF_ATOM_K](),
+            ceildiv(Int(m.value()), SF_MN_GROUP_SIZE),
+            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1]],
+            Idx[SF_ATOM_K],
         )
     )
     var b_scales_shape = row_major(
         Coord(
-            Idx(ceildiv(Int(n.value()), SF_MN_GROUP_SIZE)),
-            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)](),
-            Idx[SF_ATOM_M[0]](),
-            Idx[SF_ATOM_M[1]](),
-            Idx[SF_ATOM_K](),
+            ceildiv(Int(n.value()), SF_MN_GROUP_SIZE),
+            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1]],
+            Idx[SF_ATOM_K],
         )
     )
 
@@ -204,71 +201,20 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     )
     var b_scales_tensor = TileTensor(b_scales_device, b_scales_shape)
 
-    # LayoutTensors for reference matmul (vendor_blas)
-    var a_lt = a_tensor.to_layout_tensor()
-    var b_lt = b_tensor.to_layout_tensor()
-    var a_scales_lt = a_scales_tensor.to_layout_tensor()
-    var b_scales_lt = b_scales_tensor.to_layout_tensor()
-    var c_ref_tensor_lt = c_ref_tensor.to_layout_tensor()
-
-    # Initialize matmul operands
+    # Initialize matmul operands using TileTensor host views before moving them
+    # to the device.
     if simple_init():
         for m in range(Int(m.value())):
             for k in range(Int(k.value()) // 2):
-                comptime assert a_host.flat_rank >= 2
-                a_host[(Idx(m), Idx(k))] = UInt8(m).cast[a_type]()
+                comptime assert a_host.flat_rank == 2
+                a_host[m, k] = UInt8(m).cast[a_type]()
         for n in range(Int(n.value())):
             for k in range(Int(k.value()) // 2):
                 comptime assert b_host.flat_rank >= 2
-                b_host[(Idx(n), Idx(k))] = UInt8(n).cast[b_type]()
+                b_host[n, k] = UInt8(n).cast[b_type]()
     else:
         rand(a_host.ptr, a_host.num_elements(), min=0, max=255)
         rand(b_host.ptr, b_host.num_elements(), min=0, max=255)
-
-    comptime a_scales_5d_layout = Layout.row_major(
-        a_scales_tensor.static_shape[0],
-        a_scales_tensor.static_shape[1],
-        SF_ATOM_M[0],
-        SF_ATOM_M[1],
-        SF_ATOM_K,
-    )
-    comptime b_scales_5d_layout = Layout.row_major(
-        b_scales_tensor.static_shape[0],
-        b_scales_tensor.static_shape[1],
-        SF_ATOM_M[0],
-        SF_ATOM_M[1],
-        SF_ATOM_K,
-    )
-
-    var a_scales_tensor_host = LayoutTensor[
-        scales_dtype, a_scales_5d_layout, MutAnyOrigin
-    ](
-        a_scales_host_ptr,
-        RuntimeLayout[a_scales_5d_layout].row_major(
-            IndexList[5](
-                Int(a_scales_host.dim(0)),
-                Int(a_scales_host.dim(1)),
-                Int(a_scales_host.dim(2)),
-                Int(a_scales_host.dim(3)),
-                Int(a_scales_host.dim(4)),
-            ),
-        ),
-    )
-
-    var b_scales_tensor_host = LayoutTensor[
-        scales_dtype, b_scales_5d_layout, MutAnyOrigin
-    ](
-        b_scales_host_ptr,
-        RuntimeLayout[b_scales_5d_layout].row_major(
-            IndexList[5](
-                Int(b_scales_host.dim(0)),
-                Int(b_scales_host.dim(1)),
-                Int(b_scales_host.dim(2)),
-                Int(b_scales_host.dim(3)),
-                Int(b_scales_host.dim(4)),
-            ),
-        ),
-    )
 
     comptime if scales_dtype == NVFP4_SF_DTYPE:
         rand(a_scales_host.ptr, a_scales_host.num_elements())
@@ -288,7 +234,7 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         ):
             if idx0 >= Int(m.value()) or idx1 >= Int(k.value()):
                 set_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
-                    a_scales_tensor_host, idx0, idx1, Scalar[scales_dtype](0.0)
+                    a_scales_host, idx0, idx1, Scalar[scales_dtype](0.0)
                 )
 
     for idx0 in range(align_up(Int(n.value()), SF_MN_GROUP_SIZE)):
@@ -299,7 +245,7 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         ):
             if idx0 >= Int(n.value()) or idx1 >= Int(k.value()):
                 set_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
-                    b_scales_tensor_host, idx0, idx1, Scalar[scales_dtype](0.0)
+                    b_scales_host, idx0, idx1, Scalar[scales_dtype](0.0)
                 )
 
     # Move operands to the Device
@@ -325,14 +271,12 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         is_small_bn=is_small_bn,
     )
 
-    var c_device_lt = c_tensor.to_layout_tensor()
-
     # Epilogue multiplies output by 2 so we can verify the lambda is actually
     # invoked — if TileWriter skips the lambda the result will be 1x, not 2x,
     # and the comparison against 2x reference will fail.
     @parameter
     @always_inline
-    @__copy_capture(c_device_lt)
+    @__copy_capture(c_tensor)
     def epilogue_fn[
         _dtype: DType,
         width: SIMDSize,
@@ -340,7 +284,9 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         alignment: Int = 1,
     ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> None:
         var scaled = rebind[SIMD[c_type, width]](val) * Scalar[c_type](2)
-        c_device_lt.store[alignment=alignment * size_of[c_type](),](idx, scaled)
+        c_tensor.store_linear[alignment=alignment * size_of[c_type](),](
+            idx, scaled
+        )
 
     comptime epi = Optional[elementwise_epilogue_type](
         epilogue_fn
@@ -382,22 +328,22 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
             SF_VECTOR_SIZE=SF_VECTOR_SIZE,
             transpose_b=transpose_b,
         ](
-            c_ref_tensor_lt,
-            a_lt,
-            b_lt,
-            a_scales_lt,
-            b_scales_lt,
+            c_ref_tensor,
+            a_tensor,
+            b_tensor,
+            a_scales_tensor,
+            b_scales_tensor,
             ctx,
             alpha,
         )
     else:
         vendor_blas.matmul(
             ctx,
-            c_ref_tensor_lt.as_any_origin(),
-            a_lt,
-            b_lt,
-            a_scales=a_scales_lt.get_immutable().as_any_origin(),
-            b_scales=b_scales_lt.get_immutable().as_any_origin(),
+            c_ref_tensor,
+            a_tensor,
+            b_tensor,
+            a_scales=a_scales_tensor,
+            b_scales=b_scales_tensor,
             transpose_b=transpose_b,
             c_row_major=True,
             alpha=alpha,

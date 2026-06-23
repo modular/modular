@@ -21,6 +21,10 @@ into other stdlib packages.
 Use this package when you need low-level building blocks for data structures,
 generic programming with sum types, or fine-grained control over threading and
 indexing operations.
+
+`coord` (`Coord`, `coord()`, `Idx`, and related APIs) lives in `std.utils.coord`
+and is not re-exported from this package root so callers use explicit imports
+and avoid widening every `from std.utils import` dependency surface.
 """
 
 from .index import Index, IndexList, product

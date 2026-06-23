@@ -66,7 +66,7 @@ def run_copy_via_shared(ctx: DeviceContext) raises:
     ctx.enqueue_copy(out_device, out_data)
 
     comptime kernel = copy_via_shared
-    ctx.enqueue_function_experimental[kernel](
+    ctx.enqueue_function[kernel](
         in_device,
         out_device,
         grid_dim=(1,),

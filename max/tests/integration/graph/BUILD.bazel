@@ -19,6 +19,7 @@ _AMD_ONLY_TESTS = [
 # CPU-only tests that don't require GPU
 _CPU_ONLY_TESTS = [
     "test_bf16_cpu_error.py",
+    "test_devices_infos_mapping.py",
     "test_int_indexing.py",
     "test_is_inf.py",
     "test_is_nan.py",
@@ -30,19 +31,17 @@ _CPU_ONLY_TESTS = [
 
 # Tests with their own targets due to special configurations
 _SEPARATE_TARGET_TESTS = [
+    "test_advanced_indexing.py",
     "test_debug_config.py",
     "test_debug_config_integration.py",
     "test_engine_device_graph.py",
+    "test_graph_error_messages.py",
     "test_graph_pinned.py",
     "test_graph_telemetry.py",
     "test_load_weights_no_deps.py",
     "test_logits_processor_gpu.py",
     "test_runtime_source_notes.py",
-]
-
-# Temporarily disabled tests (MAXPLAT-477: causes H100 timeouts)
-_DISABLED_TESTS = [
-    "test_advanced_indexing.py",
+    "test_scatter.py",
 ]
 
 modular_py_library(
@@ -67,7 +66,8 @@ modular_py_test(
     size = "large",
     srcs = glob(
         ["*.py"],
-        exclude = _AMD_ONLY_TESTS + _NVIDIA_ONLY_TESTS + _CPU_ONLY_TESTS + _SEPARATE_TARGET_TESTS + _DISABLED_TESTS + [
+        exclude = _AMD_ONLY_TESTS + _NVIDIA_ONLY_TESTS + _CPU_ONLY_TESTS + _SEPARATE_TARGET_TESTS + [
+            "graph_error_messages_scenario.py",
             "modular_graph_test.py",
             "test_nan_check.py",
         ],
@@ -75,6 +75,7 @@ modular_py_test(
     data = [
         "//max/tests/integration/Inputs:inputs",
         "//max/tests/integration/Inputs:pytest_inputs",
+        "//max/tests/integration/Inputs/kernel_override_ops",
         "//max/tests/integration/Inputs/kernel_verification_ops",
         "//max/tests/integration/Inputs/test_user_op",
         "//max/tests/integration/graph/testdata/compile_config_ops",
@@ -83,6 +84,7 @@ modular_py_test(
     ],
     env = {
         "MODULAR_COUNTER_OPS_PATH": "$(rootpath //max/tests/integration/graph/testdata/counter_ops)",
+        "MODULAR_KERNEL_OVERRIDE_OPS_PATH": "$(rootpath //max/tests/integration/Inputs/kernel_override_ops)",
         "MODULAR_KERNEL_VERIFICATION_OPS_PATH": "$(rootpath //max/tests/integration/Inputs/kernel_verification_ops)",
         "MODULAR_COMPILE_CONFIG_OPS_PATH": "$(rootpath //max/tests/integration/graph/testdata/compile_config_ops)",
         "CUSTOM_OPS_PATH": "$(rootpath //max/tests/integration/Inputs/test_user_op)",
@@ -96,9 +98,16 @@ modular_py_test(
     ignore_extra_deps = [
         # Optional dep of max.graph, used to test loading weights
         requirement("gguf"),
+        # Loaded automatically by pytest; not imported by any test source.
+        requirement("pytest-asyncio"),
     ],
+    # ``AsyncValue.__await__`` (monkeypatched by max.engine.mlrt) declares
+    # ``AsyncValue[T]`` in its signature; mypy resolves that to
+    # ``max._core.mlrt.AsyncValue`` but the dep graph already covers it
+    # transitively via //max/python/max/engine.
+    ignore_unresolved_imports = ["max._core.mlrt.AsyncValue"],
     mojo_deps = [
-        "//max:MOGGKernelAPI",
+        "//max:builtin_kernels",
         "//max/tests/integration/Inputs/test_user_op",
         "//max/tests/integration/graph/testdata/compile_config_ops",
     ],
@@ -107,6 +116,7 @@ modular_py_test(
     ],
     deps = [
         ":modular_graph_test",
+        "//max/python/max:_core",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
@@ -117,13 +127,25 @@ modular_py_test(
         requirement("gguf"),
         requirement("hypothesis"),
         requirement("numpy"),
+        requirement("pytest-asyncio"),
         requirement("torch"),
         requirement("torchvision"),
     ],
 )
 
-# MAXPLAT-477: Temporarily disabled from CI due to H100 timeouts.
-# Run locally on demand: ./bazelw test //max/tests/integration/graph:test_advanced_indexing
+# GEX-3523 / MAXPLAT-477: this test was originally disabled because its 16
+# GPU parametrizations exceeded the bulk graph target's timebox on H100.
+# Re-enabled as a dedicated, sharded target so each shard fits comfortably
+# under the 600s `ci-persistent --test_timeout=-1,-1,600,600` clamp.
+#
+# Per-case wall-clock (the `set_item*` cases are skipped on accelerators):
+#   H100: median 31.4s, p99 42.6s, max 60.9s (from a 16 000-case stress run).
+#   B200: median ~33s, max ~50s (from a smoke run with 16 GPU cases).
+#
+# Unsharded the B200 wall is ~640-650s, which trips the 600s ci-persistent
+# clamp (observed `TIMEOUT in 610.0s` on postsubmit b200, build 6395).
+# `shard_count = 4` splits the 16 cases roughly 4-per-shard, giving
+# ~150-200s per shard with ~3x headroom.
 modular_py_test(
     name = "test_advanced_indexing",
     size = "large",
@@ -131,13 +153,16 @@ modular_py_test(
         "conftest.py",
         "test_advanced_indexing.py",
     ],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
     gpu_constraints = ["//:has_gpu"] + select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
+    shard_count = 4,
     tags = [
         "gpu",
-        "manual",
     ],
     deps = [
         "//max/python/max/driver",
@@ -151,11 +176,37 @@ modular_py_test(
 )
 
 modular_py_test(
+    name = "test_scatter",
+    srcs = [
+        "conftest.py",
+        "test_scatter.py",
+    ],
+    exec_properties = {
+        "test.resources:gpu-memory": "3",
+    },
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],  # FIXME: MOCO-2411
+        "//conditions:default": [],
+    }),
+    tags = [
+        "gpu",
+    ],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        requirement("hypothesis"),
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
     name = "nvidia_tests",
     size = "large",
     srcs = _NVIDIA_ONLY_TESTS + ["conftest.py"],
     exec_properties = {
-        "test.resources:gpu-memory": "2",
+        "test.resources:gpu-memory": "3",
     },
     gpu_constraints = ["//:nvidia_gpu"],
     tags = [
@@ -221,17 +272,24 @@ modular_py_test(
     ],
 )
 
-# CPU-only graph op tests (no macOS/ASAN restrictions unlike cpu_tests)
+# CPU-only graph op tests (ASAN-only restriction unlike cpu_tests)
 modular_py_test(
     name = "cpu_graph_op_tests",
     size = "medium",
     srcs = [
         "conftest.py",
         "test_bf16_cpu_error.py",
+        "test_devices_infos_mapping.py",
         "test_int_indexing.py",
         "test_is_inf.py",
         "test_is_nan.py",
     ],
+    # TODO(GEX-3773): test_is_nan times out at 600s on slow macOS BuildBuddy
+    # workers; disable the whole group on macOS until investigated.
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     deps = [
         "//max/python/max/driver",
         "//max/python/max/dtype",
@@ -313,6 +371,9 @@ modular_py_test(
         "conftest.py",
         "test_logits_processor_gpu.py",
     ],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
     gpu_constraints = ["//:has_gpu"] + select({
         "//:apple_gpu": ["@platforms//:incompatible"],  # FIXME: SDLC-2743
         "//conditions:default": [],
@@ -325,9 +386,8 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/interfaces",
-        "//max/python/max/pipelines",
-        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/context",
+        "//max/python/max/pipelines/sampling",
         requirement("hypothesis"),
         requirement("numpy"),
     ],
@@ -410,15 +470,72 @@ modular_py_test(
     name = "test_debug_config_integration",
     size = "medium",
     srcs = ["test_debug_config_integration.py"],
-    # The test spawns subprocesses that `import max.engine` / `max.graph`;
-    # the parent test file itself only references these modules inside
-    # subprocess script strings, so pydeps flags them as extra.
+    # The test spawns subprocesses that `import max.engine` / `max.graph` /
+    # `max.driver` / `max.dtype` / `numpy`; the parent test file itself only
+    # references these modules inside subprocess script strings, so pydeps
+    # flags them as extra.
     ignore_extra_deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
+        requirement("numpy"),
+    ],
+    target_compatible_with = select({
+        "//:asan": ["@platforms//:incompatible"],
+        # TODO(GEX-3776): Cold `from max.engine import InferenceSession`
+        # subprocesses exceed the test's internal 60s timeout on slow macOS
+        # BuildBuddy workers.
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_library(
+    name = "graph_error_messages_scenario",
+    testonly = True,
+    srcs = ["graph_error_messages_scenario.py"],
+    imports = ["."],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "test_graph_error_messages",
+    size = "large",
+    srcs = ["test_graph_error_messages.py"],
+    env = {
+        "MODULAR_DEBUG": "source-tracebacks",
+        "MODULAR_DEVICE_CONTEXT_SYNC_MODE": "1",
+        "MODULAR_MAX_DEBUG_ASSERT_LEVEL": "all",
+    },
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//:amd_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    tags = [
+        "gpu",
+        "no-sandbox",
     ],
     deps = [
+        ":graph_error_messages_scenario",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
+        requirement("numpy"),
     ],
 )

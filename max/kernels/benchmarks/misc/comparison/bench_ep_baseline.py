@@ -154,7 +154,6 @@ def _call_grouped_matmul(
             usage_stats,
             qc.input_scale,
             qc.weight_scale,
-            tokens_padded_per_expert=True,
         )
     else:
         tokens, expert_start, expert_ids, usage_stats = dispatched

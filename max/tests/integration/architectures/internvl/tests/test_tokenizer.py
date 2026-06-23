@@ -18,15 +18,16 @@ from unittest.mock import MagicMock, NonCallableMock
 
 import numpy as np
 import pytest
-from max.interfaces import (
+from max.pipelines.architectures.internvl.tokenizer import InternVLTokenizer
+from max.pipelines.context.exceptions import PromptTooLongError
+from max.pipelines.lib import KVCacheConfig
+from max.pipelines.modeling.types import (
     ImageContentPart,
     RequestID,
     TextContentPart,
     TextGenerationRequest,
     TextGenerationRequestMessage,
 )
-from max.pipelines.architectures.internvl.tokenizer import InternVLTokenizer
-from max.pipelines.lib import KVCacheConfig
 from PIL import Image
 from pytest_mock import MockerFixture
 
@@ -161,10 +162,7 @@ async def test_super_long(
         model_name="test-model",
     )
 
-    with pytest.raises(
-        ValueError,
-        match="encoded_prompt is greater than the max_length of the tokenizer",
-    ):
+    with pytest.raises(PromptTooLongError):
         _ = await tokenizer.new_context(request)
 
 

@@ -28,12 +28,15 @@ from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, ops
 from max.graph.weights import Weights, WeightsAdapter
 from max.nn.embedding import Embedding
-from max.nn.kv_cache import KVCacheInputs
+from max.nn.kv_cache import KVCacheInputsInterface
 from max.nn.linear import MLP, Linear
 from max.nn.norm import RMSNorm
-from max.nn.rotary_embedding import Llama3RotaryEmbedding
+from max.nn.rotary_embedding import (
+    Llama3RopeScalingParams,
+    Llama3RotaryEmbedding,
+)
 from max.nn.transformer import ReturnLogits
-from max.pipelines.core import TextContext
+from max.pipelines.context import TextContext
 from max.pipelines.lib import (
     CompilationTimer,
     KVCacheConfig,
@@ -152,6 +155,21 @@ class Qwen3EmbeddingModel(PipelineModel[TextContext]):
         # Create RoPE
         head_dim = self.huggingface_config.head_dim
         max_seq_len = self.pipeline_config.model.max_length or 32768
+        rope_scaling_params: Llama3RopeScalingParams | None = None
+        rope_scaling = getattr(self.huggingface_config, "rope_scaling", None)
+        if rope_scaling is not None:
+            rope_type = rope_scaling.get("type") or rope_scaling.get(
+                "rope_type"
+            )
+            if rope_type == "llama3":
+                rope_scaling_params = Llama3RopeScalingParams(
+                    factor=rope_scaling["factor"],
+                    low_freq_factor=rope_scaling["low_freq_factor"],
+                    high_freq_factor=rope_scaling["high_freq_factor"],
+                    orig_max_position=rope_scaling[
+                        "original_max_position_embeddings"
+                    ],
+                )
         rope = Llama3RotaryEmbedding(
             dim=self.huggingface_config.hidden_size,
             n_heads=self.huggingface_config.num_attention_heads,
@@ -159,9 +177,7 @@ class Qwen3EmbeddingModel(PipelineModel[TextContext]):
             max_seq_len=max_seq_len,
             head_dim=head_dim,
             interleaved=False,  # Qwen3 uses non-interleaved RoPE
-            scaling_params=getattr(
-                self.huggingface_config, "rope_scaling", None
-            ),
+            scaling_params=rope_scaling_params,
         )
 
         # Calculate Qwen3-specific attention multiplier
@@ -325,7 +341,7 @@ class Qwen3EmbeddingModel(PipelineModel[TextContext]):
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
+        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> Qwen3EmbeddingInputs:
         """Prepare initial inputs for embedding generation.
@@ -368,24 +384,6 @@ class Qwen3EmbeddingModel(PipelineModel[TextContext]):
             tokens=tokens_buffer.to(device),
             input_row_offsets=row_offsets_buffer,
             return_n_logits=return_n_logits_buffer,
-        )
-
-    def prepare_next_token_inputs(
-        self,
-        next_tokens: Buffer,
-        prev_model_inputs: ModelInputs,
-    ) -> Qwen3EmbeddingInputs:
-        """Prepare next token inputs (not supported for embedding models).
-
-        Args:
-            next_tokens: Next tokens
-            prev_model_inputs: Previous inputs
-
-        Raises:
-            NotImplementedError: Embedding models don't support autoregressive generation
-        """
-        raise NotImplementedError(
-            "Qwen3 embedding model does not support autoregressive generation"
         )
 
     @classmethod

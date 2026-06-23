@@ -12,8 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 from layout import TileTensor, row_major
+from std.gpu.host import DeviceContext
 from nn.gather_scatter import scatter_set_constant
-from std.runtime.asyncrt import DeviceContextPtr
 
 
 def test_scatter_set_constant() raises:
@@ -44,7 +44,7 @@ def test_scatter_set_constant() raises:
     expected_output[1, 3] = 5.0
     expected_output[2, 0] = 5.0
 
-    var ctx = DeviceContextPtr()
+    var ctx = DeviceContext(api="cpu")
 
     scatter_set_constant[target="cpu",](data, indices, fill_value, ctx)
 

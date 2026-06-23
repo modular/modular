@@ -21,7 +21,6 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.experimental.torch import max_dtype_to_torch
 from max.graph import DeviceRef, Dim, Graph, TensorType, ops
-from max.kv_cache import PagedKVCacheManager, load_kv_manager
 from max.nn.kv_cache import KVCacheParams
 from max.nn.linear import Linear
 from max.pipelines import KVCacheConfig
@@ -31,6 +30,7 @@ from max.pipelines.architectures.qwen3vl_moe.nn.text_attention import (
 from max.pipelines.architectures.qwen3vl_moe.nn.text_rotary import (
     Qwen3VLTextRotaryEmbedding,
 )
+from max.pipelines.kv_cache import PagedKVCacheManager, load_kv_manager
 from test_common.context_utils import create_text_context
 from torch.utils.dlpack import from_dlpack
 from transformers.models.qwen3_vl_moe.configuration_qwen3_vl_moe import (
@@ -287,7 +287,7 @@ def generate_qwen3_max_outputs(
         DType.uint32, shape=[Dim("row_offsets_len")], device=device_ref
     )
 
-    flattened_kv_types = kv_params.get_symbolic_inputs().flatten()
+    flattened_kv_types = kv_params.flattened_kv_inputs()
 
     input_row_offsets = _build_input_row_offsets(seq_lens).to(torch_device)
 
@@ -301,9 +301,7 @@ def generate_qwen3_max_outputs(
     ) as graph:
         x, input_row_offsets_input, *kv_cache = graph.inputs
 
-        kv_collection = (
-            kv_params.get_symbolic_inputs().unflatten(iter(kv_cache)).inputs[0]
-        )
+        kv_collection = kv_params.unflatten_kv_inputs(iter(kv_cache)).inputs[0]
 
         output = attention(
             layer_idx=ops.constant(0, DType.uint32, DeviceRef.CPU()),
@@ -322,9 +320,9 @@ def generate_qwen3_max_outputs(
     ]
     for context in batch:
         kv_manager.claim(context.request_id, replica_idx=0)
-        kv_manager.alloc(context, replica_idx=0, num_steps=1)
+        kv_manager.alloc(context, replica_idx=0)
 
-    kv_cache_runtime = kv_manager.runtime_inputs([batch]).inputs[0]
+    kv_cache_runtime = kv_manager.runtime_inputs_for_leaf([batch]).inputs[0]
     assert kv_cache_runtime.attention_dispatch_metadata is not None
 
     result = compiled.execute(

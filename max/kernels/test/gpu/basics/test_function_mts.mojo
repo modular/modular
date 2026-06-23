@@ -16,7 +16,7 @@ from std.math import ceildiv
 from std.gpu import global_idx
 from std.gpu.host import DeviceContext
 from layout import Layout, LayoutTensor
-from tensor import InputTensor, OutputTensor, StaticTensorSpec
+from extensibility import InputTensor, OutputTensor, StaticTensorSpec
 from std.testing import TestSuite, assert_equal
 from std.utils import IndexList
 
@@ -107,7 +107,7 @@ def test_color_to_grayscale() raises:
         # Launch the compiled function on the GPU. The target device is specified
         # first, followed by all function arguments. The last two named parameters
         # are the dimensions of the grid in blocks, and the block dimensions.
-        ctx.enqueue_function_experimental[color_to_grayscale](
+        ctx.enqueue_function[color_to_grayscale](
             rgb_tensor,
             gray_tensor,
             grid_dim=(num_col_blocks, num_row_blocks),

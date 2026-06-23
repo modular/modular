@@ -41,7 +41,7 @@ from linalg.matmul.gpu.sm100_structured.grouped_block_scaled_1d1d import (
 from linalg.grouped_matmul_sm100_blockwise_fp8 import (
     grouped_matmul_sm100_blockwise_scaled_fp8_persistent,
 )
-from layout import Coord, Idx, RuntimeInt, TileTensor, row_major
+from layout import Coord, Idx, TileTensor, row_major
 from linalg.utils import elementwise_epilogue_type
 
 from std.utils import Index, IndexList
@@ -91,7 +91,7 @@ def _get_run_name[
 
 
 comptime epilogue_func_type = def[
-    dtype: DType, width: Int, *, alignment: Int = 1
+    dtype: DType, width: SIMDSize, *, alignment: Int = 1
 ](SIMD[dtype, width]) capturing -> SIMD[dtype, width]
 
 
@@ -106,7 +106,7 @@ def test_epilogue[
 @parameter
 def add_two[
     dtype: DType,
-    width: Int,
+    width: SIMDSize,
     *,
     alignment: Int = 1,
 ](val: SIMD[dtype, width],) -> SIMD[dtype, width]:
@@ -186,8 +186,8 @@ def bench_grouped_matmul[
         sep="",
     )
 
-    def _ri(v: Int) -> RuntimeInt[DType.int64]:
-        return RuntimeInt[DType.int64](Int64(v))
+    def _ri(v: Int) -> Int64:
+        return Int64(v)
 
     # Define shapes and sizes
     # For fp4, data is stored as uint8 (2 fp4 values per byte), so K dimension is halved
@@ -244,24 +244,24 @@ def bench_grouped_matmul[
 
     var a_dev = TileTensor(
         a_dev_buffer,
-        row_major(Coord(_ri(total_num_tokens), Idx[packed_K]())),
-    ).as_any_origin()
+        row_major(Coord(_ri(total_num_tokens), Idx[packed_K])),
+    ).as_unsafe_any_origin()
     var b_dev = TileTensor(
         b_dev_buffer,
-        row_major(Coord(Idx[num_experts](), Idx[N](), Idx[packed_K]())),
-    ).as_any_origin()
+        row_major(Coord(Idx[num_experts], Idx[N], Idx[packed_K])),
+    ).as_unsafe_any_origin()
     var c_dev = TileTensor(
         c_dev_buffer,
-        row_major(Coord(_ri(total_num_tokens), Idx[N]())),
-    ).as_any_origin()
+        row_major(Coord(_ri(total_num_tokens), Idx[N])),
+    ).as_unsafe_any_origin()
     var a_offsets_dev = TileTensor(
         a_offsets_dev_buffer,
         row_major(Coord(_ri(num_active_experts + 1))),
-    ).as_any_origin()
+    ).as_unsafe_any_origin()
     var expert_ids_dev = TileTensor(
         expert_ids_dev_buffer,
         row_major(Coord(_ri(num_active_experts))),
-    ).as_any_origin()
+    ).as_unsafe_any_origin()
 
     # Initialize data on the device
     init_vector_launch[a_type](a_dev_buffer, a_size, init_type, ctx)
@@ -275,7 +275,7 @@ def bench_grouped_matmul[
     @__copy_capture(c_dev)
     @parameter
     def epilogue_fn[
-        dtype: DType, width: Int, *, alignment: Int = 1
+        dtype: DType, width: SIMDSize, *, alignment: Int = 1
     ](idx: IndexList[2], val: SIMD[dtype, width]) -> None:
         var new_val = val
 
@@ -297,7 +297,7 @@ def bench_grouped_matmul[
         var a_scale_offsets_dev = TileTensor(
             a_scale_offsets_dev_buffer,
             row_major(Coord(_ri(num_active_experts))),
-        ).as_any_origin()
+        ).as_unsafe_any_origin()
         ctx.enqueue_copy(a_scale_offsets_dev_buffer, a_scale_offsets_ptr)
 
         # Calculate scales dimensions
@@ -347,27 +347,27 @@ def bench_grouped_matmul[
             a_scales_dev_buffer,
             row_major(
                 Coord(
-                    RuntimeInt[DType.int64](Scalar[DType.int64](a_scale_dim0)),
-                    Idx[k_groups](),
-                    Idx[SF_ATOM_M[0]](),
-                    Idx[SF_ATOM_M[1]](),
-                    Idx[SF_ATOM_K](),
+                    Int64(a_scale_dim0),
+                    Idx[k_groups],
+                    Idx[SF_ATOM_M[0]],
+                    Idx[SF_ATOM_M[1]],
+                    Idx[SF_ATOM_K],
                 )
             ),
-        ).as_any_origin()
+        ).as_unsafe_any_origin()
         var b_scales_tt = TileTensor(
             b_scales_dev_buffer,
             row_major(
                 Coord(
-                    Idx[num_experts](),
-                    Idx[n_groups](),
-                    Idx[k_groups](),
-                    Idx[SF_ATOM_M[0]](),
-                    Idx[SF_ATOM_M[1]](),
-                    Idx[SF_ATOM_K](),
+                    Idx[num_experts],
+                    Idx[n_groups],
+                    Idx[k_groups],
+                    Idx[SF_ATOM_M[0]],
+                    Idx[SF_ATOM_M[1]],
+                    Idx[SF_ATOM_K],
                 )
             ),
-        ).as_any_origin()
+        ).as_unsafe_any_origin()
 
         var expert_scales_dev_buffer = ctx.enqueue_create_buffer[DType.float32](
             num_experts
@@ -382,12 +382,8 @@ def bench_grouped_matmul[
         ctx.enqueue_copy(expert_scales_dev_buffer, expert_scales_host_ptr)
         var expert_scales_tt = TileTensor(
             expert_scales_dev_buffer,
-            row_major(
-                Coord(
-                    RuntimeInt[DType.int64](Scalar[DType.int64](num_experts)),
-                )
-            ),
-        ).as_any_origin()
+            row_major(Coord(Int64(num_experts))),
+        ).as_unsafe_any_origin()
 
         @parameter
         @__copy_capture(
@@ -486,18 +482,18 @@ def bench_grouped_matmul[
 
         var a_scales_dev = TileTensor(
             a_scales_dev_buffer,
-            row_major(Coord(Idx[K // BLOCK_SCALE_K](), _ri(total_num_tokens))),
-        ).as_any_origin()
+            row_major(Coord(Idx[K // BLOCK_SCALE_K], _ri(total_num_tokens))),
+        ).as_unsafe_any_origin()
         var b_scales_dev = TileTensor(
             b_scales_dev_buffer,
             row_major(
                 Coord(
-                    Idx[num_experts](),
-                    Idx[N // BLOCK_SCALE_K](),
-                    Idx[K // BLOCK_SCALE_K](),
+                    Idx[num_experts],
+                    Idx[N // BLOCK_SCALE_K],
+                    Idx[K // BLOCK_SCALE_K],
                 )
             ),
-        ).as_any_origin()
+        ).as_unsafe_any_origin()
 
         init_vector_launch[DType.float32](
             a_scales_dev_buffer,

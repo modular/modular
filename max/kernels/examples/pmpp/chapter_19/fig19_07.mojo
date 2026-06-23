@@ -38,8 +38,8 @@ def conv_layer_forward_kernel(
     W: Int,
     K: Int,
     W_grid: Int,
-    X: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
-    F: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    X: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
+    F: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
     Y: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
 ):
     """Convolution layer forward kernel.
@@ -148,7 +148,7 @@ def main() raises:
         ", 1)",
     )
 
-    ctx.enqueue_function_experimental[conv_layer_forward_kernel](
+    ctx.enqueue_function[conv_layer_forward_kernel](
         N,
         C,
         H,

@@ -18,7 +18,6 @@ from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
-from max.kv_cache import PagedKVCacheManager
 from max.nn.kernels import (
     store_k_cache_padded,
     store_k_cache_ragged,
@@ -30,6 +29,7 @@ from max.nn.kv_cache import (
     KVCacheQuantizationConfig,
     PagedCacheValues,
 )
+from max.pipelines.kv_cache import PagedKVCacheManager
 from test_common.context_utils import create_text_context
 
 
@@ -60,14 +60,15 @@ def _allocate_batch(
     for prompt_len in prompt_lens:
         context = create_text_context(np.empty(prompt_len, dtype=np.int64))
         kv_manager.claim(context.request_id, replica_idx=0)
-        kv_manager.alloc(context, replica_idx=0, num_steps=1)
+        kv_manager.alloc(context, replica_idx=0)
         batch.append(context)
-    return kv_manager.runtime_inputs([batch]).inputs[0]
+    return kv_manager.runtime_inputs_for_leaf([batch]).inputs[0]
 
 
 def test_kv_cache_store_ragged_executes() -> None:
     device, kv_manager = _make_session_and_kv_manager()
-    kv_params = kv_manager.cache_params()
+    kv_params = kv_manager.params
+    assert isinstance(kv_params, KVCacheParams)
 
     prompt_lens = [33, 66, 1]
     batch_size = len(prompt_lens)
@@ -152,7 +153,8 @@ def test_kv_cache_store_ragged_executes() -> None:
 
 def test_kv_cache_store_padded_executes() -> None:
     device, kv_manager = _make_session_and_kv_manager()
-    kv_params = kv_manager.cache_params()
+    kv_params = kv_manager.params
+    assert isinstance(kv_params, KVCacheParams)
 
     valid_lengths = [33, 66, 1]
     batch_size = len(valid_lengths)
@@ -263,7 +265,8 @@ def _make_session_and_kv_manager_fp8() -> tuple[
 def test_store_k_scale_cache_executes() -> None:
     """Test that store_k_scale_cache kernel executes and writes to kv_scales buffer."""
     device, kv_manager = _make_session_and_kv_manager_fp8()
-    kv_params = kv_manager.cache_params()
+    kv_params = kv_manager.params
+    assert isinstance(kv_params, KVCacheParams)
 
     prompt_lens = [33, 66, 1]
     batch_size = len(prompt_lens)

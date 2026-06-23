@@ -133,7 +133,7 @@ def main() raises:
         print("Input size:", N, "elements")
 
         comptime kernel = filter_kernel
-        ctx.enqueue_function_experimental[kernel](
+        ctx.enqueue_function[kernel](
             d_input,
             d_output,
             d_output_size,
