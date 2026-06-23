@@ -384,6 +384,7 @@ def sample_requests(
                 tokenizer=tokenizer,
                 shuffle=(not args.record_output_lengths),
                 seed=args.seed,
+                delay_between_turns_dist=args.delay_between_chat_turns,
             )
         elif isinstance(benchmark_dataset, AgenticCodeBenchmarkDataset):
             if args.num_chat_sessions:
