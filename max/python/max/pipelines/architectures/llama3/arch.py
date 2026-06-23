@@ -18,6 +18,7 @@ from max.pipelines.lib import SupportedArchitecture, TextTokenizer
 from max.pipelines.modeling.types import PipelineTask
 
 from . import weight_adapters
+from .batch_processor import Llama3BatchProcessor
 from .model import Llama3Model
 from .model_config import Llama3Config
 
@@ -55,5 +56,6 @@ llama_arch = SupportedArchitecture(
     },
     task=PipelineTask.TEXT_GENERATION,
     config=Llama3Config,
+    batching=Llama3BatchProcessor,
     memory_planner=PagedMemoryPlanner,
 )

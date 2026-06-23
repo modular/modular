@@ -10,25 +10,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Compatibility shim for ``asyncio.TaskGroup``.
+"""SM100 Fused GEMM+SwiGLU kernel — BF16 matmul with SwiGLU in the epilogue.
 
-``asyncio.TaskGroup`` was added in Python 3.11. On older interpreters we fall
-back to the ``taskgroup`` PyPI backport. Importers should always use::
-
-    from max.support.taskgroups import TaskGroup
-
-so the version check and dependency live in a single place.
+The caller pre-permutes weight W on its N axis so adjacent output columns
+(2i, 2i+1) carry (gate, up) pairs. The epilogue computes silu(gate)*up in
+FP32 registers, writes BF16 results to double-buffered SMEM, and TMA-stores
+to GMEM at half-N positions.
 """
 
-from __future__ import annotations
-
-import sys
-
-if sys.version_info < (3, 11):
-    from exceptiongroup import BaseExceptionGroup
-    from taskgroup import TaskGroup
-else:
-    BaseExceptionGroup = BaseExceptionGroup  # builtin in 3.11+
-    from asyncio import TaskGroup
-
-__all__ = ["BaseExceptionGroup", "TaskGroup"]
+from .config import swiglu_extra_fixed_smem
+from .dispatch import (
+    matmul_swiglu_dispatch_sm100,
+    matmul_swiglu_dispatch_sm100_bf16,
+)

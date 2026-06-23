@@ -145,7 +145,7 @@ def test_mla_replicated_fp8_offload_roundtrip() -> None:
 
     block_hash = 0xABCD
     connector.offload([src_page], [block_hash])
-    connector.sync()
+    connector.wait_for_offloads()
 
     # Clobber the destination page on every rank.
     for v in values:
@@ -154,7 +154,7 @@ def test_mla_replicated_fp8_offload_roundtrip() -> None:
         _zero_page(s, dst_page)
 
     loaded = connector.load([dst_page], [block_hash])
-    connector.sync()
+    connector.wait_for_offloads()
     assert loaded == 1, "expected the offloaded block to be a host-cache hit"
 
     # Every rank's reloaded page must match the original bytes.
@@ -222,7 +222,7 @@ def test_mixed_replicated_and_sharded_offload_roundtrip() -> None:
 
     block_hash = 0xBEEF
     connector.offload([src_page], [block_hash])
-    connector.sync()
+    connector.wait_for_offloads()
 
     # Clobber the destination page on every buffer.
     _zero_page(rep_root, dst_page)
@@ -230,7 +230,7 @@ def test_mixed_replicated_and_sharded_offload_roundtrip() -> None:
     _zero_page(sharded, dst_page)
 
     loaded = connector.load([dst_page], [block_hash])
-    connector.sync()
+    connector.wait_for_offloads()
     assert loaded == 1, "expected the offloaded block to be a host-cache hit"
 
     # Replicated unit: rank-0 and the broadcast peer must match the original.

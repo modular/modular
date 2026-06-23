@@ -388,6 +388,7 @@ struct PRegisterBuffer[
         address_space=AddressSpace.SHARED,
     ]
 
+    @__allow_legacy_any_origin_fields
     var smem_tile: Self.SmemTileType
 
     # TileTensor type for a single BM×BK blocked SMEM slice. Parent is

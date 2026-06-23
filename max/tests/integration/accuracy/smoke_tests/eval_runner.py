@@ -111,16 +111,17 @@ def get_gpu_name_and_count() -> tuple[str, int]:
                     del env[k]
         result = check_output(amd, text=True, stderr=DEVNULL, env=env)
         data = json.loads(result.strip())["gpu_data"]
-        return data[0]["asic"]["market_name"], len(data)
+        name, count = data[0]["asic"]["market_name"], len(data)
     except Exception:
         try:  # Nvidia path
             lines = (
                 check_output(nv, text=True, stderr=DEVNULL).strip().split("\n")
             )
-            return lines[0].strip(), len(lines)
+            name, count = lines[0].strip(), len(lines)
         except Exception:
             logger.warning("nvidia-smi and amd-smi both failed")
             return "N/A", 0
+    return name, count
 
 
 def safe_model_name(model: str) -> str:
@@ -181,6 +182,7 @@ def call_eval(
             "qwen3",
             "kimi-k2",
             "minimax-m2",
+            "minimax-m3",
             "step-3.5",
             "glm-5",
         )

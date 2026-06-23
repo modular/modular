@@ -907,7 +907,9 @@ struct KVLoad2CvtProducer[dtype: DType, config: MLA_SM100_Decode_Config](
     comptime fp8_stage_stride_elems = 2 * Self.bf16_stage_elems
 
     var pipe: Self.KVPipeType
+
     # IMPORTANT: this pointer must already point to the UPPER HALF (1:fp8) of stage0
+    @__allow_legacy_any_origin_fields
     var smem_upper_fp8: SharedMemPointer[Scalar[Self.dtype]]
 
     @always_inline
@@ -969,7 +971,9 @@ struct KVLoad2CvtConsumer[dtype: DType, config: MLA_SM100_Decode_Config](
     comptime fp8_stage_stride_elems = 2 * Self.bf16_stage_elems
 
     var pipe: Self.PipeT
+
     # points to UPPER HALF (1:fp8) of stage0
+    @__allow_legacy_any_origin_fields
     var smem_upper_fp8: SharedMemPointer[Scalar[Self.dtype]]
 
     @always_inline
@@ -1010,6 +1014,8 @@ struct KVCvt2MmaProducer[dtype: DType, config: MLA_SM100_Decode_Config](
     comptime kv_stage_elems = Self.config.BN_QK * Self.config.q_depth
 
     var pipe: Self.PipeT
+
+    @__allow_legacy_any_origin_fields
     var smem: SharedMemPointer[Scalar[Self.dtype]]
 
     @always_inline
@@ -1053,6 +1059,8 @@ struct KVCvt2MmaConsumer[dtype: DType, config: MLA_SM100_Decode_Config](
     comptime kv_stage_elems = Self.config.BN_QK * Self.config.q_depth
 
     var pipe: Self.KVPipeType
+
+    @__allow_legacy_any_origin_fields
     var smem: SharedMemPointer[Scalar[Self.dtype]]
 
     @always_inline
@@ -1107,6 +1115,8 @@ struct DecodeKVProducer[
     comptime kv_stage_bytes = Self.kv_stage_elems * size_of[Self.dtype]()
 
     var pipe: Self.KVPipeType
+
+    @__allow_legacy_any_origin_fields
     var smem: SharedMemPointer[Scalar[Self.dtype]]
 
     @always_inline
@@ -1168,6 +1178,8 @@ struct DecodeKVConsumer[
     comptime kv_stage_elems = Self.config.BN_QK * Self.config.q_depth
 
     var pipe: Self.KVPipeType
+
+    @__allow_legacy_any_origin_fields
     var smem: SharedMemPointer[Scalar[Self.dtype]]
 
     @always_inline
@@ -1227,6 +1239,7 @@ struct KVPipelineGeneric[
     comptime num_stages: Int = Self.num_kv_stages * Self.num_qk_stages
 
     # mbars are ordered in {producer, consumer} pairs
+    @__allow_legacy_any_origin_fields
     var mbar: MBarType
     var state: PipelineState[Self.num_kv_stages]
 
@@ -1290,6 +1303,7 @@ struct KVPipelineGeneric[
 struct DecodeSM100MiscMBars[
     num_stages: Int, num_producer: Int, num_consumer: Int
 ](TrivialRegisterPassable):
+    @__allow_legacy_any_origin_fields
     var mbar_base: MBarType
 
     # Generic barrier pair (producer + consumer) with num_stages slots.
@@ -1623,6 +1637,7 @@ struct OutPipeline[num_out_stages: Int, num_producer: Int, num_consumer: Int](
     comptime num_stages: Int = Self.num_out_stages
 
     # mbars are ordered in {producer, consumer} pairs
+    @__allow_legacy_any_origin_fields
     var mbar: MBarType
     var state: PipelineState[Self.num_stages]
 
@@ -1699,6 +1714,8 @@ struct DecodeOutProducer[dtype: DType, config: MLA_SM100_Decode_Config](
     comptime out_stage_bytes = Self.out_stage_elems * size_of[Self.dtype]()
 
     var pipe: Self.OutPipeType
+
+    @__allow_legacy_any_origin_fields
     var smem: SharedMemPointer[Scalar[Self.dtype]]
 
     @always_inline
@@ -1760,6 +1777,8 @@ struct DecodeOutConsumer[dtype: DType, config: MLA_SM100_Decode_Config](
     comptime out_stage_elems = Self.config.BM * (Self.config.BN_PV // 4)
 
     var pipe: Self.OutPipeType
+
+    @__allow_legacy_any_origin_fields
     var smem: SharedMemPointer[Scalar[Self.dtype]]
 
     @always_inline

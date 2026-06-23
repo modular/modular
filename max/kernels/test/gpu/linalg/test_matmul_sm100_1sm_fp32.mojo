@@ -17,6 +17,10 @@ import linalg.matmul.vendor.blas as vendor_blas
 from std.gpu.host import DeviceContext
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from internal_utils import assert_almost_equal
+from linalg.utils import (
+    elementwise_compute_lambda_type,
+    elementwise_epilogue_type,
+)
 from std.random import rand
 from layout import TileTensor, Coord, CoordLike, row_major, Idx
 from linalg.matmul.gpu.sm100_structured.default.matmul import (
@@ -64,7 +68,12 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
     benchmark: Bool = False,
     swapAB: Bool = False,
     k_group_size: Int = 1,
+    normal_epilogue: Bool = False,
+    compute_epilogue: Bool = False,
 ](ctx: DeviceContext, m: MType, n: NType, k: KType) raises:
+    comptime assert not (
+        normal_epilogue and compute_epilogue
+    ), "normal_epilogue and compute_epilogue are mutually exclusive"
     var M = Int(m.value())
     var N = Int(n.value())
     var K = Int(k.value())
@@ -104,6 +113,10 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
     var c_host = TileTensor(c_host_ptr, c_shape)
     var c_host_ref_ptr = ctx.enqueue_create_host_buffer[c_type](c_size)
     var c_host_ref = TileTensor(c_host_ref_ptr, c_shape)
+    # Holds the initial C values so the compute-epilogue reference can replay
+    # the lambda (out = matmul * C_initial) on the host.
+    var c_host_copy_ptr = ctx.enqueue_create_host_buffer[c_type](c_size)
+    var c_host_copy = TileTensor(c_host_copy_ptr, c_shape)
 
     # Device allocations
     var a_device = ctx.enqueue_create_buffer[a_type](a_size)
@@ -134,6 +147,16 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
     ctx.enqueue_copy(a_device, a_host_ptr)
     ctx.enqueue_copy(b_device, b_host_ptr)
 
+    # The compute lambda reads the initial C value at each coordinate, so seed C
+    # with a small deterministic integer pattern (in [-2, 2]) and copy it over.
+    comptime if compute_epilogue:
+        for i in range(M):
+            for j in range(N):
+                comptime assert c_host.flat_rank == 2
+                c_host[i, j] = Scalar[c_type](((i + j) % 5) - 2)
+                c_host_copy[i, j] = c_host[i, j]
+        ctx.enqueue_copy(c_device, c_host_ptr)
+
     comptime matmul_config = MatmulConfig[a_type, b_type, c_type, transpose_b](
         cluster_shape=Index(
             cluster_shape[0], cluster_shape[1], cluster_shape[2]
@@ -145,9 +168,43 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
         k_group_size=k_group_size,
     )
 
+    var c_tensor_lt = c_tensor.to_layout_tensor()
+
+    # Normal epilogue: store the matmul result unchanged (exercises the lambda
+    # store path; reference is plain vendor BLAS).
+    @parameter
+    @always_inline
+    @__copy_capture(c_tensor_lt)
+    def epilogue_fn[
+        _dtype: DType, width: SIMDSize, *, alignment: Int = 1
+    ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> None:
+        c_tensor_lt.store[store_alignment=alignment * size_of[c_type]()](
+            idx, rebind[SIMD[c_type, width]](val)
+        )
+
+    # Compute epilogue: out = matmul * C_initial (also checks the coordinate).
+    @parameter
+    @always_inline
+    @__copy_capture(c_tensor_lt)
+    def compute_fn[
+        _dtype: DType, width: SIMDSize, *, alignment: Int = 1
+    ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[
+        _dtype, width
+    ]:
+        return val * c_tensor_lt.load[width=width](idx).cast[_dtype]()
+
+    comptime epi = Optional[elementwise_epilogue_type](
+        epilogue_fn
+    ) if normal_epilogue else None
+    comptime compute_epi = Optional[elementwise_compute_lambda_type](
+        compute_fn
+    ) if compute_epilogue else None
+
     blackwell_matmul_tma_umma_warp_specialized[
         transpose_b=transpose_b,
         config=matmul_config,
+        elementwise_lambda_fn=epi,
+        elementwise_compute_lambda_fn=compute_epi,
     ](
         c_tensor,
         a_tensor,
@@ -178,6 +235,13 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
     ctx.enqueue_copy(c_host_ptr, c_device)
     ctx.enqueue_copy(c_host_ref_ptr, c_device_ref)
     ctx.synchronize()
+
+    # Replay the compute lambda on the reference (out = matmul * C_initial).
+    comptime if compute_epilogue:
+        for i in range(M):
+            for j in range(N):
+                comptime assert c_host_ref.flat_rank == 2
+                c_host_ref[i, j] = c_host_ref[i, j] * c_host_copy[i, j]
 
     comptime rtol = 1e-2
     assert_almost_equal(
@@ -317,4 +381,68 @@ def main() raises:
                         Int(777),
                         Idx[2560],
                         Idx[8192],
+                    )
+
+                    test_blackwell_matmul_tma_umma_warp_specialized[
+                        dtype,
+                        dtype,
+                        dtype,
+                        block_tile_shape,
+                        umma_shape,
+                        cluster_shape=StaticTuple[Int32, 3](4, 2, 1),
+                        cta_group=1,
+                        compute_epilogue=True,
+                    ](
+                        ctx,
+                        Int(199),
+                        Idx[2048],
+                        Idx[1024 + 16],
+                    )
+                    test_blackwell_matmul_tma_umma_warp_specialized[
+                        dtype,
+                        dtype,
+                        dtype,
+                        block_tile_shape,
+                        umma_shape,
+                        cluster_shape=StaticTuple[Int32, 3](4, 2, 1),
+                        cta_group=1,
+                        compute_epilogue=True,
+                        swapAB=True,
+                    ](
+                        ctx,
+                        Int(199),
+                        Idx[2048],
+                        Idx[1024 + 16],
+                    )
+
+                    test_blackwell_matmul_tma_umma_warp_specialized[
+                        dtype,
+                        dtype,
+                        dtype,
+                        block_tile_shape,
+                        umma_shape,
+                        cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
+                        cta_group=1,
+                        normal_epilogue=True,
+                        swapAB=True,
+                    ](
+                        ctx,
+                        Int(517),
+                        Idx[4096],
+                        Idx[1024],
+                    )
+                    test_blackwell_matmul_tma_umma_warp_specialized[
+                        dtype,
+                        dtype,
+                        dtype,
+                        block_tile_shape,
+                        umma_shape,
+                        cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
+                        cta_group=1,
+                        normal_epilogue=True,
+                    ](
+                        ctx,
+                        Int(256),
+                        Idx[512],
+                        Idx[1024],
                     )

@@ -799,17 +799,18 @@ def mla_prefill_branch_fp8[
         ),
     )
 
-    @__copy_capture(k_latent)
     @always_inline
-    @parameter
     def input_fn[
         width: Int, alignment: Int
-    ](row: Int, col: Int) -> SIMD[k_latent.dtype, width]:
+    ](row: Int, col: Int) {var k_latent} -> SIMD[k_latent.dtype, width]:
         return k_latent.load[width=width]((row, col))
 
     quantize_dynamic_scaled_fp8[
-        input_fn, k_scale_granularity, k_latent.static_shape[1]
+        in_dtype=k_latent.dtype,
+        group_size_or_per_token=k_scale_granularity,
+        num_cols=k_latent.static_shape[1],
     ](
+        input_fn,
         fp8_k_latent,
         fp8_k_latent_scale,
         1200.0,
@@ -963,21 +964,20 @@ def quantize_and_bmm_fp8_helper[
         ),
     )
 
-    @parameter
-    @__copy_capture(a)
     @always_inline
     def input_fn[
         width: Int, alignment: Int
-    ](batch: Int, row: Int, col: Int) capturing -> SIMD[dtype, width]:
+    ](batch: Int, row: Int, col: Int) {var a} -> SIMD[dtype, width]:
         # First transpose the q_nope tensor from [row, batch, col] to [batch, row, col].
         comptime assert a.flat_rank == 3
         return a.load[width=width]((row, batch, col))
 
     batched_quantize_dynamic_scaled_fp8[
-        input_fn=input_fn,
+        in_dtype=dtype,
         group_size_or_per_token=k_scale_granularity,
         num_cols=K,
     ](
+        input_fn,
         fp8_a,
         fp8_a_scale,
         1200.0,
@@ -1385,7 +1385,12 @@ def mla_prefill_decode_graph_fp8[
         return
 
     # When running verification with MTP we want to use the decode branch.
-    if max_seq_len <= mla_decode_max_seq_len[collection_t.CacheType.dtype]():
+    if (
+        max_seq_len
+        <= mla_decode_max_seq_len[
+            collection_t.CacheType.dtype, q.static_shape[1]
+        ]()
+    ):
         mla_decode_branch_fp8[
             m_scale_granularity=m_scale_granularity,
             n_scale_granularity=n_scale_granularity,
@@ -2043,10 +2048,17 @@ def mla_prefill_decode_graph_bf16[
 
     # The fold runs in the cache dtype (the decode branch quantizes Q to
     # `collection_t.CacheType.dtype`), so the decode-vs-prefill threshold keys on
-    # the cache dtype, not the BF16 compute dtype: an FP8 cache routes S>1 to the
-    # decode fold (prefill can't serve MTP), a BF16 cache returns 1 and routes
-    # S>1 to prefill. Mirrors `mla_prefill_decode_graph_fp8`.
-    if max_seq_len <= mla_decode_max_seq_len[collection_t.CacheType.dtype]():
+    # the cache dtype, not the BF16 compute dtype: an FP8 cache with
+    # num_heads<=AMD_MLA_DECODE_FOLD_MAX_NUM_HEADS routes S>1 to the decode fold
+    # (prefill can't serve MTP); a BF16 cache or num_heads>16 returns 1 and routes
+    # S>1 to prefill (no large-head decode fold exists). Mirrors
+    # `mla_prefill_decode_graph_fp8`.
+    if (
+        max_seq_len
+        <= mla_decode_max_seq_len[
+            collection_t.CacheType.dtype, q.static_shape[1]
+        ]()
+    ):
         mla_decode_branch_bf16[
             mask_str=mask_str,
             kv_input_fn=kv_input_fn,

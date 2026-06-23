@@ -790,6 +790,42 @@ def test_image_edit_dataset_sample_requests(tmp_path: Path) -> None:
     assert request.image_options.guidance_scale == 3.5
 
 
+def test_image_edit_dataset_forwards_num_frames(tmp_path: Path) -> None:
+    """image-to-video reuses the local-image dataset and threads num_frames."""
+    image_path = tmp_path / "images" / "sample.png"
+    _write_test_image(image_path)
+    dataset_path = tmp_path / "image_edit.jsonl"
+    dataset_path.write_text(
+        json.dumps(
+            {
+                "prompt": "Pan across the scene",
+                "image_path": "images/sample.png",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    dataset = BenchmarkDataset.from_flags(
+        dataset_name="local-image",
+        dataset_path=str(dataset_path),
+    )
+    assert isinstance(dataset, LocalImageBenchmarkDataset)
+
+    samples = dataset.sample_requests(
+        num_requests=1,
+        tokenizer=None,
+        image_width=832,
+        image_height=480,
+        num_frames=81,
+    )
+    request = samples.requests[0]
+    assert isinstance(request, PixelGenerationSampledRequest)
+    assert request.input_image_paths == [str(image_path.resolve())]
+    assert request.image_options is not None
+    assert request.image_options.num_frames == 81
+
+
 def test_image_edit_dataset_invalid_jsonl(tmp_path: Path) -> None:
     dataset_path = tmp_path / "bad.jsonl"
     dataset_path.write_text("{not-json}\n", encoding="utf-8")

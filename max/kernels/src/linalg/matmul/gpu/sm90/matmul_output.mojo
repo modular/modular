@@ -89,7 +89,10 @@ struct MatmulTileWriter[
     ](IndexList[2], mut SIMD[dtype, width]) capturing -> None
 
     # Instance fields
+    @__allow_legacy_any_origin_fields
     var tensor: Self.CTensorType
+
+    @__allow_legacy_any_origin_fields
     var smem_tile: TileTensor[
         mut=True,
         dtype=Self.dtype,

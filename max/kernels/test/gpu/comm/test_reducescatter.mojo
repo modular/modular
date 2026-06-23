@@ -19,7 +19,7 @@ from layout import Coord, Idx, TileTensor, row_major
 from layout.coord import DynamicCoord
 from std.collections import Optional
 from comm import Signal, MAX_GPUS
-from comm.sync import enable_p2p
+from comm.sync import enable_p2p, init_signal_buffer
 from comm.reducescatter import (
     reducescatter,
     ReduceScatterConfig,
@@ -165,9 +165,7 @@ def reducescatter_test[
                 size_of[Signal]()
             )
         )
-        list_of_ctx[gpu_idx].enqueue_memset[DType.uint8](
-            signal_buffers[gpu_idx], 0
-        )
+        init_signal_buffer(signal_buffers[gpu_idx], list_of_ctx[gpu_idx])
         rank_sigs[gpu_idx] = (
             signal_buffers[gpu_idx]
             .unsafe_ptr()

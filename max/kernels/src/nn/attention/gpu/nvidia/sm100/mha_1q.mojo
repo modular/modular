@@ -1000,6 +1000,7 @@ struct SM100TensorAccumulatorSS[
         Self.num_softmax_threads,
     ]
 
+    @__allow_legacy_any_origin_fields
     var mbar: UnsafePointer[
         SharedMemBarrier, MutAnyOrigin, address_space=AddressSpace.SHARED
     ]
@@ -1239,6 +1240,7 @@ struct SM100TensorAccumulatorTS[
         transpose_b=Self.transpose_b,
     ]()
 
+    @__allow_legacy_any_origin_fields
     var mbar: UnsafePointer[
         SharedMemBarrier, MutAnyOrigin, address_space=AddressSpace.SHARED
     ]

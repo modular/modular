@@ -40,7 +40,9 @@ from max.graph import Graph
 
 try:
     # Importing registers all op handlers as a side effect.
-    from ._interpreter_ops import lookup_handler
+    from ._interpreter_ops import (  # type: ignore[import-not-found]
+        lookup_handler,
+    )
 except Exception as _e:
     import os as _os
     import subprocess as _sp

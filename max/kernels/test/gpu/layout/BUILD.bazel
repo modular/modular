@@ -61,6 +61,7 @@ _EXTRA_CONSTRAINTS = {
     "test_tensor_core_amd2.mojo": ["//:amd_gpu"],
     "test_apple_mma_fragment.mojo": ["//:apple_gpu"],  # MSTDL-2592
     "test_tensor_core_apple.mojo": ["//:apple_gpu"],
+    "test_apple_mma_8x8.mojo": ["//:apple_gpu"],
     "test_tensor_core_nvidia.mojo": ["//:nvidia_gpu"],
     "test_tiled_matmul_gpu.mojo": ["//:nvidia_gpu"],  # FIXME: KERN-1377
     "test_vendor_blas_matmul.mojo": select({
@@ -85,6 +86,7 @@ _FILECHECK_TESTS = [
     "test_layout_tensor_copy_nvidia.mojo",
     "test_tensor_core_amd.mojo",
     "test_tensor_core_apple.mojo",
+    "test_apple_mma_8x8.mojo",
     "test_tensor_core_mi300x.mojo",
     "test_tensor_core_mi355x.mojo",
     "test_tensor_core_amd2.mojo",

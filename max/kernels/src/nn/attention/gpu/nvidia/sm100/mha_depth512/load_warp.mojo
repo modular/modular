@@ -52,6 +52,7 @@ from nn.attention.gpu.nvidia.sm100.attention_utils import (
     PagedRowIndices,
     kv_sub_tile_rows,
     kv_num_sub_tiles,
+    kv_tma_fold_chunks,
 )
 from nn.attention.gpu.nvidia.common import (
     KVTMATile,
@@ -215,6 +216,38 @@ def depth512_load[
     comptime k_bytes_pp = BK0 * k_tma_tile_rows * qkv_size
     comptime v_bytes_pp = config.v_cols_per_cta * v_tma_tile_rows * qkv_size
 
+    # Depth-chunk TMA fold (SM100). MUST match `mha_sm100_depth512_dispatch`
+    # which builds `k_tma_op` / `v_tma_op` with the same `kv_tma_fold_chunks`
+    # values (single source of truth). The matching descriptor rank and
+    # issue-coord rank are guaranteed because the same comptime predicate drives
+    # both builder and issue site. The per-issue byte total is unchanged: one
+    # folded TMA carries the same bytes as the N per-chunk TMAs.
+    #
+    # K: box_rows == k_tma_tile_rows, smem_BN == BN // 2 (K's per-CTA tile_rows),
+    # mirroring the issue site's `smem_BN=BN // 2`.
+    comptime k_fold_chunks = kv_tma_fold_chunks[
+        qkv_type,
+        config.swizzle_mode,
+        BK=BK0,
+        head_size=config.qk_depth,
+        box_rows=k_tma_tile_rows,
+        smem_BN=BN // 2,
+        page_size=page_size,
+    ]()
+    # V: folds the `v_cols_per_cta` depth columns. box_rows == v_tma_tile_rows,
+    # smem_BN == BK1 (V's per-sub-tile tile_rows = BN // num_pv_stages); the fold
+    # is byte-equivalent because `_tma_copy_kv_impl` writes V chunks at stride
+    # `tile_rows * gran == BK1 * gran` and the rank-4 box reproduces that stride.
+    comptime v_fold_chunks = kv_tma_fold_chunks[
+        qkv_type,
+        config.swizzle_mode,
+        BK=config.v_cols_per_cta,
+        head_size=config.ov_depth,
+        box_rows=v_tma_tile_rows,
+        smem_BN=BK1,
+        page_size=page_size,
+    ]()
+
     # ---- SMEM pointers ------------------------------------------------------
 
     var q_smem = rebind[SharedMemPointer[Scalar[KVLUTType.dtype]]](
@@ -354,6 +387,7 @@ def depth512_load[
             num_v_sub_tiles=num_pv_stages,
             v_sub_tile_idx=pv_stage,
             oob_fill_pages=v_needs_partial,
+            fold_chunks=v_fold_chunks,
         ](
             v_tma_op,
             kv_smem + kv_pipeline.state.index() * UInt32(kv_elems),
@@ -416,6 +450,7 @@ def depth512_load[
         paged_rows.tma_copy_k[
             needs_partial=partial,
             smem_BN=BN // 2,
+            fold_chunks=k_fold_chunks,
         ](
             k_tma_op,
             kv_smem + kv_pipeline.state.index() * UInt32(kv_elems),
