@@ -172,10 +172,13 @@ _EXTRA_CONSTRAINTS = {
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: MOCO-2489
-    "test_topk_gpu_fi.mojo": select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # FIXME: MOCO-2673
+    # MOCO-2673 fixed: the FI ternary samplers now run the search on a single
+    # thread (no in-loop block collectives that desync warps on Metal).
+    # Apple-only regression probes for the fix mechanism: `probe_block_scan`
+    # asserts block.sum/prefix_sum are correct at the ghost-warp geometry;
+    # `probe_topk_iter_trace` is a non-perturbing smoke trace of the search.
+    "probe_block_scan_metal.mojo": ["//:apple_gpu"],
+    "probe_topk_iter_trace.mojo": ["//:apple_gpu"],
     "test_fused_qk_rope.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],

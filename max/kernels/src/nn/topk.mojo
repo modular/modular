@@ -65,6 +65,19 @@ from .normalization import (
 )
 
 
+# `_APPLE_STATIC_SHMEM_MAX_COUNT` fills the whole 32K of Apple's static
+# threadgroup memory; using it for the main buffer leaves no room for the small
+# auxiliary allocations (the per-warp `s_sum`/counters) the compiler sums into
+# the same kernel -- which pushed `fused_token_sampling` to 32800 B, 32 over
+# Metal's 32768 limit. Reserve headroom so main buffer + auxiliaries stay under
+# 32K. The main buffers here are vastly over-allocated (sized to the 32K bound
+# but indexed only up to `block_size`), so shrinking them is free.
+comptime _APPLE_STATIC_SHMEM_RESERVE_BYTES = 2 * 1024
+comptime _APPLE_STATIC_SHMEM_USABLE_COUNT[T: AnyType] = (
+    _APPLE_STATIC_SHMEM_MAX_BYTES - _APPLE_STATIC_SHMEM_RESERVE_BYTES
+) // size_of[T]()
+
+
 @always_inline
 def top_k_shape_impl[
     dtype: DType
@@ -954,7 +967,7 @@ def _topk_stage1_old[
 
     # Allocate shared memory for the values and indices
     var topk_sram = stack_allocation[
-        _APPLE_STATIC_SHMEM_MAX_COUNT[TopK_2[T]],
+        _APPLE_STATIC_SHMEM_USABLE_COUNT[TopK_2[T]],
         TopK_2[T, largest],
         address_space=AddressSpace.SHARED,
     ]() if comptime (is_apple_gpu()) else external_memory[
@@ -1236,7 +1249,7 @@ def _topk_stage2[
     var num_e_rounded = ceildiv(num_elem_reduced, WARP_SIZE) * WARP_SIZE
     var vals_smem_size = num_e_rounded
     var vals_sram = stack_allocation[
-        _APPLE_STATIC_SHMEM_MAX_COUNT[TopK_2[T]],
+        _APPLE_STATIC_SHMEM_USABLE_COUNT[TopK_2[T]],
         Scalar[T],
         address_space=AddressSpace.SHARED,
     ]() if comptime (is_apple_gpu()) else external_memory[
