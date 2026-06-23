@@ -114,7 +114,11 @@ from linalg.utils import partition_work
 from std.runtime.asyncrt import parallelism_level
 from std.runtime.tracing import Trace, TraceLevel, trace_arg
 
-from std.sys import has_amd_gpu_accelerator, has_amd_rdna_gpu_accelerator
+from std.sys import (
+    has_amd_gpu_accelerator,
+    has_amd_rdna_gpu_accelerator,
+    has_nvidia_gpu_accelerator,
+)
 from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type
 
@@ -4954,6 +4958,16 @@ def conv_gpu[
 
         # Fallback paths for non-SM100, unsupported dtypes, or constraints
         comptime if filter_is_fcrs:
+            # The FCRS-filter fallback runs only on cuDNN (NVIDIA). On any
+            # other GPU, guard here rather than silently entering cuDNN and
+            # failing later with a confusing driver-level error. See MOCO-4172.
+            comptime if not has_nvidia_gpu_accelerator():
+                raise Error(
+                    "conv2d: no GPU kernel for this convolution on this"
+                    " device; the FCRS-filter fallback path is implemented"
+                    " only via cuDNN (NVIDIA)."
+                )
+
             # Construct row-major TileTensors for cuDNN (shared by both
             # epilogue and non-epilogue paths).
             var _in_s = input_lt.runtime_layout.shape.value.canonicalize()
