@@ -17,11 +17,9 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, field
 
-from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn.comm.ep import EPConfig
-from max.nn.kv_cache import KVCacheParams
-from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
+from max.pipelines.lib import MAXModelConfig, PipelineConfig
 from transformers import AutoConfig
 from typing_extensions import Self, override
 
@@ -51,39 +49,6 @@ class Qwen3Config(Llama3Config):
 
     ep_config: EPConfig | None = None
     """Expert parallelism configuration. None means no EP."""
-
-    @staticmethod
-    def construct_kv_params(
-        huggingface_config: AutoConfig,
-        pipeline_config: PipelineConfig,
-        devices: list[DeviceRef],
-        kv_cache_config: KVCacheConfig,
-        cache_dtype: DType,
-    ) -> KVCacheParams:
-        """Override the default Llama3Config.construct_kv_params to use head_dim from config.
-
-        Qwen3 models have an explicit head_dim field in their configuration,
-        unlike Llama models where it needs to be calculated.
-
-        Args:
-            huggingface_config: The HuggingFace configuration object.
-            pipeline_config: The MAX Engine pipeline configuration.
-            devices: Devices to use for the KV cache.
-            kv_cache_config: Configuration for KV cache.
-            cache_dtype: Data type for the cache.
-
-        Returns:
-            KVCacheParams object with the correct head_dim from config.
-        """
-        data_parallel_degree = pipeline_config.model.data_parallel_degree
-        return kv_cache_config.to_params(
-            dtype=cache_dtype,
-            n_kv_heads=huggingface_config.num_key_value_heads,
-            head_dim=huggingface_config.head_dim,
-            num_layers=Qwen3Config.get_num_layers(huggingface_config),
-            devices=devices,
-            data_parallel_degree=data_parallel_degree,
-        )
 
     @staticmethod
     def calculate_attention_multiplier(huggingface_config: AutoConfig) -> float:

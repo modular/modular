@@ -103,16 +103,16 @@ Parameters:
 """
 
 comptime _IsImplicitlyDestructiblePredicate[T: AnyType]: Bool = conforms_to(
-    T, ImplicitlyDestructible
+    T, ImplicitlyDeletable
 )
 
 comptime AllImplicitlyDestructible[*Ts: AnyType]: Bool = Ts.all_satisfies[
     _IsImplicitlyDestructiblePredicate,
 ]()
-"""Evaluates to `True` if all types in `Ts` conform to `ImplicitlyDestructible`, `False` otherwise.
+"""Evaluates to `True` if all types in `Ts` conform to `ImplicitlyDeletable`, `False` otherwise.
 
 Parameters:
-    Ts: The types to check for conformance to `ImplicitlyDestructible`.
+    Ts: The types to check for conformance to `ImplicitlyDeletable`.
 """
 
 comptime _IsRegisterPassablePredicate[T: AnyType]: Bool = conforms_to(

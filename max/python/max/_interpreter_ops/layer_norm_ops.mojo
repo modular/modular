@@ -14,17 +14,17 @@
 """Mojo kernel wrappers for layer_norm MO interpreter operations."""
 
 from std.os import abort
+from std.gpu.host import DeviceContext
 from std.python import PythonObject
 from std.python.bindings import PythonModuleBuilder
 from std.sys.info import has_accelerator
 
 from std.algorithm.functional import IndexList
 from std.math import sqrt
-from std.memory import OpaquePointer
-from std.runtime.asyncrt import DeviceContextPtr
-from tensor import ManagedTensorSlice
-from tensor.io_spec import Input
-from compiler_internal import StaticTensorSpec
+
+from extensibility import ManagedTensorSlice
+from extensibility import Input
+from extensibility import StaticTensorSpec
 from nn.normalization import layer_norm as nn_layer_norm
 
 from op_utils import _get_dtype, _get_buffer_ptr, _get_ctx, _get_shape, MAX_RANK
@@ -36,7 +36,7 @@ from op_utils import _get_dtype, _get_buffer_ptr, _get_ctx, _get_shape, MAX_RANK
 
 
 @export
-def PyInit_layer_norm_ops() -> PythonObject:
+def PyInit_layer_norm_ops() abi("C") -> PythonObject:
     """Create a Python module with layer_norm kernel function bindings."""
     try:
         var b = PythonModuleBuilder("layer_norm_ops")
@@ -58,10 +58,10 @@ def PyInit_layer_norm_ops() -> PythonObject:
 def _layer_norm_cpu[
     dtype: DType,
 ](
-    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    in_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    gamma_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    beta_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    out_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    in_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    gamma_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    beta_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     batch_dim: Int,
     feature_dim: Int,
     epsilon: Scalar[dtype],
@@ -112,14 +112,14 @@ def _layer_norm_cpu[
 def layer_norm_op[
     dtype: DType,
 ](
-    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    in_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    gamma_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    beta_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    out_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    in_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    gamma_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    beta_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     shape: IndexList[2],
     gamma_shape: IndexList[1],
     epsilon: Scalar[dtype],
-    ctx: Optional[OpaquePointer[MutExternalOrigin]],
+    ctx: DeviceContext,
 ) raises where dtype.is_floating_point():
     """Layer normalization on a rank-2 normalized tensor.
 
@@ -137,12 +137,12 @@ def layer_norm_op[
         shape: The normalized rank-2 shape [batch_dim, feature_dim].
         gamma_shape: The gamma shape [feature_dim].
         epsilon: Small constant for numerical stability.
-        ctx: Device context pointer (null for CPU).
+        ctx: Device context.
     """
     var batch_dim = shape[0]
     var feature_dim = shape[1]
 
-    if not ctx:
+    if ctx.api() == "cpu":
         # CPU path: use direct implementation to avoid runtime dependency
         # (nn.normalization requires AsyncRT parallelism which isn't
         # available in the interpreter context)
@@ -188,7 +188,7 @@ def layer_norm_op[
                 @parameter
                 @__copy_capture(out_ptr, feature_dim)
                 def output_fn[
-                    width: Int, rank: Int, alignment: Int
+                    width: SIMDSize, rank: Int, alignment: Int
                 ](coords: IndexList[rank], val: SIMD[dtype, width]):
                     var c = rebind[IndexList[2]](coords)
                     var flat_idx = c[0] * feature_dim + c[1]
@@ -204,8 +204,6 @@ def layer_norm_op[
                     io_spec=Input, static_spec=beta_spec
                 ](beta_ptr, gamma_shape)
 
-                var device_ctx = DeviceContextPtr(ctx.unsafe_value())
-
                 nn_layer_norm[
                     dtype,
                     2,
@@ -218,7 +216,7 @@ def layer_norm_op[
                     gamma_shape,
                     beta_tensor.to_tile_tensor[DType.int64](),
                     epsilon,
-                    device_ctx,
+                    ctx,
                 )
 
             else:

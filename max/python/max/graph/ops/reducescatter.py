@@ -98,9 +98,7 @@ def sum(
         )
 
     # Merge all device chains into one input chain.
-    in_chain = graph._merge_chains(
-        [graph._current_chain, *(graph.device_chains[d] for d in devices)]
-    )
+    in_chain = graph.device_chains.merge_for(devices)
 
     # Stage a single reducescatter op across all devices.
     axis_attr = IntegerAttr(IntegerType(64), axis)

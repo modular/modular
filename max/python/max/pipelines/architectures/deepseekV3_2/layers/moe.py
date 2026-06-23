@@ -16,11 +16,9 @@ from __future__ import annotations
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, ops
+from max.nn.comm.ep.ep_kernels import fused_silu
 from max.nn.kernels import moe_create_indices
 from max.nn.moe import MoEQuantized
-from max.nn.moe.quant_strategy import (
-    silu_gate,
-)
 
 
 class DeepseekV3_2MoE(MoEQuantized):
@@ -70,7 +68,6 @@ class DeepseekV3_2MoE(MoEQuantized):
             self.gate_up_proj,
             gate_up_scales,
             expert_scales=nvfp4.gate_up_expert if nvfp4 else None,
-            tokens_padded_per_expert=True,
             expert_inputs=expert_inputs,
         )
         # V3.2: Cast to float32 at the silu
@@ -88,7 +85,6 @@ class DeepseekV3_2MoE(MoEQuantized):
             self.down_proj,
             down_scales,
             expert_scales=nvfp4.down_expert if nvfp4 else None,
-            tokens_padded_per_expert=True,
             expert_inputs=down_inputs,
         )
 
@@ -186,7 +182,12 @@ class DeepseekV3_2MoE(MoEQuantized):
         # V3.2: Cast to float32 at the silu
         # https://github.com/deepseek-ai/DeepSeek-V3.2-Exp/blob/87e509a2e5a100d221c97df52c6e8be7835f0057/inference/model.py#L744
         gate_up_projs = gate_up_projs.cast(DType.float32)
-        gate_up_projs = silu_gate(gate_up_projs, self.moe_dim)
+        if self.gated_activation_fn is not None:
+            gate_up_projs = self.gated_activation_fn(
+                gate_up_projs, self.moe_dim
+            )
+        else:
+            gate_up_projs = fused_silu(gate_up_projs, expert_start)
         if nvfp4:
             assert scales_offset is not None
             gate_up_quant, gate_up_scales = strategy.grouped_quantize(

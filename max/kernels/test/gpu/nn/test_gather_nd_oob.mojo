@@ -13,7 +13,7 @@
 
 from std.gpu.host import DeviceContext
 from layout import Coord, TileTensor, row_major
-from nn.gather_scatter import _gather_nd_impl, gather_nd_shape
+from nn.gather_scatter import gather_nd, gather_nd_shape
 
 from std.utils import IndexList
 
@@ -85,7 +85,7 @@ def execute_gather_nd_test[
     )
 
     # execute the kernel
-    _gather_nd_impl[batch_dims, target="gpu"](
+    gather_nd[batch_dims, target="gpu"](
         data_device_tensor,
         indices_device_tensor,
         actual_output_tensor,

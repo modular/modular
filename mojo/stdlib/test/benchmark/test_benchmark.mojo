@@ -23,7 +23,13 @@ from std.benchmark.bencher import (
     Format,
     ThroughputMeasure,
 )
-from std.testing import TestSuite, assert_equal, assert_true
+from std.testing import (
+    TestSuite,
+    assert_equal,
+    assert_not_equal,
+    assert_true,
+    assert_false,
+)
 from test_utils import check_write_to
 
 
@@ -315,6 +321,23 @@ def test_bench_function_no_arg_unified() raises:
 
     bench.bench_function(my_func, BenchId("test_noarg_unified"))
     assert_true(count > 0)
+
+
+def test_bench_id_hash() raises:
+    var bench_id1 = BenchId("foo()", "123")
+
+    assert_equal(hash(bench_id1), hash(bench_id1))
+    assert_not_equal(hash(bench_id1), hash(BenchId("bar()")))
+    assert_not_equal(hash(bench_id1), hash(BenchId("bar()", "123")))
+
+
+def test_bench_id_eq() raises:
+    var bench_id1 = BenchId("foo()", "123")
+
+    assert_equal(bench_id1, bench_id1)
+    assert_not_equal(bench_id1, BenchId("foo()", "456"))
+    assert_not_equal(bench_id1, BenchId("bar()"))
+    assert_not_equal(bench_id1, BenchId("bar()", "123"))
 
 
 def main() raises:

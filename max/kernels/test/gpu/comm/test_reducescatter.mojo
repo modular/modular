@@ -13,12 +13,13 @@
 
 from std.sys import size_of, simd_width_of
 from std.itertools import product
+from std.utils.coord import _coerce_dynamic
 
 from layout import Coord, Idx, TileTensor, row_major
 from layout.coord import DynamicCoord
 from std.collections import Optional
 from comm import Signal, MAX_GPUS
-from comm.sync import enable_p2p
+from comm.sync import enable_p2p, init_signal_buffer
 from comm.reducescatter import (
     reducescatter,
     ReduceScatterConfig,
@@ -164,11 +165,12 @@ def reducescatter_test[
                 size_of[Signal]()
             )
         )
-        list_of_ctx[gpu_idx].enqueue_memset[DType.uint8](
-            signal_buffers[gpu_idx], 0
-        )
+        init_signal_buffer(signal_buffers[gpu_idx], list_of_ctx[gpu_idx])
         rank_sigs[gpu_idx] = (
-            signal_buffers[gpu_idx].unsafe_ptr().bitcast[Signal]()
+            signal_buffers[gpu_idx]
+            .unsafe_ptr()
+            .bitcast[Signal]()
+            .as_unsafe_any_origin()
         )
 
     comptime for i in range(ngpus):
@@ -212,24 +214,24 @@ def reducescatter_test[
     comptime for i in range(ngpus):
         var runtime_shape = shape_type()
         comptime if rank == 1:
-            runtime_shape[0] = rebind[runtime_shape.element_types[0]](
-                Idx(config.rank_num_elements(i))
+            runtime_shape[0] = _coerce_dynamic[runtime_shape.element_types[0]](
+                config.rank_num_elements(i)
             )
         elif rank == 2:
             comptime if axis == 0:
-                runtime_shape[0] = rebind[runtime_shape.element_types[0]](
-                    Idx(config.rank_units(i))
-                )
-                runtime_shape[1] = rebind[runtime_shape.element_types[1]](
-                    Idx(Int(shape[1].value()))
-                )
+                runtime_shape[0] = _coerce_dynamic[
+                    runtime_shape.element_types[0]
+                ](config.rank_units(i))
+                runtime_shape[1] = _coerce_dynamic[
+                    runtime_shape.element_types[1]
+                ](Int(shape[1].value()))
             else:
-                runtime_shape[0] = rebind[runtime_shape.element_types[0]](
-                    Idx(Int(shape[0].value()))
-                )
-                runtime_shape[1] = rebind[runtime_shape.element_types[1]](
-                    Idx(config.rank_units(i) * simd_width)
-                )
+                runtime_shape[0] = _coerce_dynamic[
+                    runtime_shape.element_types[0]
+                ](Int(shape[0].value()))
+                runtime_shape[1] = _coerce_dynamic[
+                    runtime_shape.element_types[1]
+                ](config.rank_units(i) * simd_width)
 
         out_bufs[i] = OutputTileType(
             out_bufs_list[i].unsafe_ptr(),
@@ -242,7 +244,7 @@ def reducescatter_test[
     def outputs_lambda[
         input_index: Int,
         _dtype: DType,
-        _width: Int,
+        _width: SIMDSize,
         *,
         _alignment: Int,
     ](coords: Coord, val: SIMD[_dtype, _width]) -> None:
@@ -420,7 +422,7 @@ def run_reducescatter_sweep[use_multimem: Bool]() raises:
                 axis=0,
                 use_custom_epilogue=use_custom_epilogue,
                 use_multimem=use_multimem,
-            ](list_of_ctx, Coord(Idx(length)))
+            ](list_of_ctx, Coord(length))
         except e:
             if (
                 use_multimem
@@ -458,7 +460,7 @@ def run_reducescatter_sweep[use_multimem: Bool]() raises:
                     axis=axis,
                     use_custom_epilogue=use_custom_epilogue,
                     use_multimem=use_multimem,
-                ](list_of_ctx, Coord((Idx(M), Idx(D))))
+                ](list_of_ctx, Coord(M, D))
             except e:
                 if (
                     use_multimem

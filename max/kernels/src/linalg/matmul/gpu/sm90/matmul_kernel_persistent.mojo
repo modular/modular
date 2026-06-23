@@ -17,7 +17,7 @@ from std.gpu import MAX_THREADS_PER_BLOCK_METADATA
 from std.gpu.globals import WARPGROUP_SIZE
 from std.gpu import thread_idx
 from std.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
-from layout import LayoutTensor
+from layout import TensorLayout, TileTensor
 from layout.tma_async import TMATensorTile
 from std.gpu.memory import external_memory, AddressSpace
 
@@ -52,14 +52,15 @@ __extension HopperMatmulSM90Kernel:
         c_desc_shape: IndexList[c_tma_rank],
         grid_shape: IndexList[2],
         schedule: MatmulSchedule,
+        c_tensor_layout: TensorLayout,
     ](
         a_tma_op: TMATensorTile[a_type, a_tma_rank, a_tile_shape, a_desc_shape],
         b_tma_op: TMATensorTile[b_type, b_tma_rank, b_tile_shape, b_desc_shape],
         c_tma_op: TMATensorTile[c_type, c_tma_rank, c_tile_shape, c_desc_shape],
-        c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
+        c: TileTensor[c_type, c_tensor_layout, MutAnyOrigin],
         problem_shape: IndexList[3],
     ):
-        comptime K = b_layout.shape[1].value()
+        comptime K = b_layout.static_shape[1]
         comptime num_k_iters = ceildiv(K, Self.BK)
 
         # Initialize WgmmaOp and SMem first
@@ -92,8 +93,8 @@ __extension HopperMatmulSM90Kernel:
 
         Self.pipeline_init()
 
-        comptime N = b_layout.shape[0].value()
-        comptime M = a_layout.shape[0].value()
+        comptime N = b_layout.static_shape[0]
+        comptime M = a_layout.static_shape[0]
         var scheduler = TileScheduler[
             Index(M, N, K), block_tile_shape, grid_shape, schedule=schedule
         ](problem_shape)
@@ -177,13 +178,13 @@ __extension HopperMatmulSM90Kernel:
         c_desc_shape: IndexList[c_tma_rank],
     ](
         c_tma_op: TMATensorTile[c_type, c_tma_rank, c_tile_shape, c_desc_shape],
-        a: LayoutTensor[a_type, a_layout, ImmutAnyOrigin],
-        b: LayoutTensor[b_type, b_layout, ImmutAnyOrigin],
-        c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
+        a: TileTensor[a_type, a_layout, ImmutAnyOrigin],
+        b: TileTensor[b_type, b_layout, ImmutAnyOrigin],
+        c: TileTensor[c_type, c_layout, MutAnyOrigin],
     ):
         """Kernel using cp.async for A/B loading when K alignment doesn't meet TMA requirements.
         """
-        comptime K = b_layout.shape[1].value()
+        comptime K = b_layout.static_shape[1]
         comptime num_k_iters = ceildiv(K, Self.BK)
 
         # Initialize WgmmaOp and SMem first

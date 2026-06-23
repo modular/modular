@@ -22,22 +22,24 @@ from typing import Any, cast
 
 import torch
 from max.driver import DeviceSpec
-from max.interfaces import PipelineTask, PixelGenerationInputs, RequestID
-from max.interfaces.provider_options import (
-    ImageProviderOptions,
-    ProviderOptions,
-    VideoProviderOptions,
-)
-from max.interfaces.request import OpenResponsesRequest
-from max.interfaces.request.open_responses import OpenResponsesRequestBody
 from max.pipelines import PIPELINE_REGISTRY, PipelineConfig
 from max.pipelines.architectures.wan.context import WanContext
 from max.pipelines.architectures.wan.tokenizer import WanTokenizer
-from max.pipelines.lib.interfaces import DiffusionPipeline
+from max.pipelines.diffusion.interface import DiffusionPipeline
+from max.pipelines.diffusion.pipeline import PixelGenerationPipeline
 from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
-from max.pipelines.lib.pipeline_variants.pixel_generation import (
-    PixelGenerationPipeline,
+from max.pipelines.modeling.types import (
+    PipelineTask,
+    PixelGenerationInputs,
+    RequestID,
+)
+from max.pipelines.request import OpenResponsesRequest
+from max.pipelines.request.open_responses import OpenResponsesRequestBody
+from max.pipelines.request.provider_options import (
+    ImageProviderOptions,
+    ProviderOptions,
+    VideoProviderOptions,
 )
 
 CONFIGS = {
@@ -58,6 +60,8 @@ def _load_pipeline(
         models=manifest,
         runtime=PipelineRuntimeConfig(),
     )
+    # Resolve the manifest (encodings + weight paths) before use.
+    config.models.resolve()
     arch = PIPELINE_REGISTRY.retrieve_architecture(
         config.models.main_architecture_name,
         task=PipelineTask.PIXEL_GENERATION,

@@ -38,7 +38,7 @@ from std.memory import stack_allocation
 from std.utils.static_tuple import StaticTuple
 
 from std.gpu import WARP_SIZE, lane_id, thread_idx, warp_id, barrier
-import .warp
+from . import warp
 
 # ===-----------------------------------------------------------------------===#
 # Block Reduction Core

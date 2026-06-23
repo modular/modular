@@ -32,7 +32,7 @@ from std.gpu.host.device_context import (
 )
 
 from std.utils import IndexList, StaticTuple
-from std.builtin.device_passable import DevicePassable
+from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 
 
 @fieldwise_init("implicit")
@@ -281,8 +281,10 @@ struct TMADescriptor(DevicePassable, ImplicitlyCopyable):
     comptime device_type: AnyType = TMADescriptor
     """The device-side type for this TMA descriptor."""
 
-    def _to_device_type(self, target: MutOpaquePointer[_]):
-        target.bitcast[Self.device_type]()[] = self
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
+        encoder.encode(self, target)
 
     @staticmethod
     def get_type_name() -> String:
@@ -403,14 +405,18 @@ def create_tma_descriptor[
         external_call[
             "AsyncRT_cuda_tensorMapEncodeTiled",
             _CString[],
-            OpaquePointer[MutAnyOrigin],  # tensorMap
+            OpaquePointer[origin_of(tma_descriptor)],  # tensorMap
             Int32,  # tensorDataType
             Int32,  # tensorRank
             type_of(global_buf._handle),  #  globalAddress
-            UnsafePointer[Int64, MutAnyOrigin],  # globalDim
-            UnsafePointer[Int64, MutAnyOrigin],  # globalStrides
-            UnsafePointer[Int32, MutAnyOrigin],  # boxDim
-            UnsafePointer[Int32, MutAnyOrigin],  # elementStrides
+            UnsafePointer[Int64, origin_of(global_dim_arg)],  # globalDim
+            UnsafePointer[
+                Int64, origin_of(global_strides_arg)
+            ],  # globalStrides
+            UnsafePointer[Int32, origin_of(box_dim_arg)],  # boxDim
+            UnsafePointer[
+                Int32, origin_of(element_stride_arg)
+            ],  # elementStrides
             Int32,  # interleave
             Int32,  # swizzle
             Int32,  # l2Promotion

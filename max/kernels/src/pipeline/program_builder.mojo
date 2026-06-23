@@ -214,13 +214,19 @@ def _construct_mma_blocks(
             entry_wait = OpDesc.wait_vm_n(main_wait_vm)
 
         if pos_in_partition == 0 and sched.wait_lgkm_first < 255:
-            # When entry_wait (vm drain) is set on this same block, pair
-            # the lgkm drain with it back-to-back so LLVM's waitcnt-merge
-            # pass can coalesce them into one `vmcnt(N) lgkmcnt(M)`.
-            # Otherwise keep it as `pre_sync` (after globals, before
-            # barrier) for the original semantics.
+            # When `entry_wait` is set on this same block, the lgkm
+            # drain pairs with the vm drain in the entry section —
+            # which fires BEFORE any of this block's `pre_op` /
+            # `global_load` ops. At that point, the only outstanding
+            # lgkm is from the previous iteration (whose ds_reads feed
+            # this block's MMA inputs via the cross-stage rotation
+            # registers). Drain to 0 so the MMA's input registers are
+            # ready by the time the cross-warp `s_barrier` returns —
+            # `sched.wait_lgkm_first` was computed for the original
+            # post-globals `pre_sync` position where leaving "globals
+            # in flight" was meaningful.
             if entry_wait.is_present() and sched.minimal_barriers:
-                entry_wait_lgkm = OpDesc.wait_lgkm_n(sched.wait_lgkm_first)
+                entry_wait_lgkm = OpDesc.wait_lgkm_n(0)
             else:
                 pre_sync = OpDesc.wait_lgkm_n(sched.wait_lgkm_first)
         elif first_cross_in_partition:
@@ -250,14 +256,16 @@ def _construct_mma_blocks(
         var drain_bit = (sched.drain_lgkm_mask >> block_idx) & 1 == 1
         var drain = drain_bit and has_frag and has_dram
 
-        # Barrier strategy: when `sched.minimal_barriers` is set, emit
-        # the pre-MMA barrier ONLY where a real sync is needed
-        # (top-of-half and the first cross-stage block, both of which
-        # also carry an `entry_wait` vm drain), and never emit the
-        # post-MMA barrier or `set_prio[0]`. This matches the hand-tuned
-        # 4-wave inline pattern (4 s_barriers per outer iter instead of
-        # 16). For non-minimal kernels (ping-pong, simple), keep the
-        # full pre-MMA + post-MMA layout.
+        # Barrier strategy: when `sched.minimal_barriers` is set, the
+        # cross-warp `s_barrier` lives in the entry section (paired
+        # with the `entry_wait` vm drain at TOP-of-half and first-
+        # cross-stage blocks — see `expand_to_list` / `emit_minimal_
+        # barrier_block` for the emit shape). We do NOT also emit a
+        # `pre_mma_barrier` at those blocks — that's a second redundant
+        # `s_barrier` covering the same cross-warp invariant. Dropping
+        # it cuts the per-iter barrier count from 8 to 4, matching the
+        # hand-tuned inline body. For non-minimal kernels (ping-pong,
+        # simple) keep the full pre-MMA + post-MMA layout.
         var is_top_of_half = pos_in_partition == 0
         var emit_pre_mma_barrier = True
         var emit_pre_mma_set_prio = True
@@ -265,7 +273,14 @@ def _construct_mma_blocks(
         var emit_post_mma_set_prio = True
         var emit_post_barrier_lgkm = post_barrier_lgkm
         if sched.minimal_barriers:
-            emit_pre_mma_barrier = is_top_of_half or first_cross_in_partition
+            # No pre-MMA `s_barrier` under minimal_barriers — the entry
+            # barrier (paired with `entry_wait`) handles cross-warp
+            # visibility. The MMA's input registers are loaded by
+            # earlier blocks' `pre_op_*` and drained by either this
+            # block's `entry_wait_lgkm` (interior + TOP + CROSS) or the
+            # final block's `pre_sync` wait — explicit lgkm waits are
+            # always sufficient without an additional `s_barrier` here.
+            emit_pre_mma_barrier = False
             # `set_prio[1]` is an LLVM scheduling barrier that blocks
             # register-allocator reuse across it (observed: dropping it
             # entirely cuts VGPR pressure 102 → 86). But it's also a
@@ -276,15 +291,11 @@ def _construct_mma_blocks(
             # entirely and rely on `rocdl.waves_per_eu=1` for priority.
             # Without `omit_mma_set_prio` we keep it at TOP + MID
             # boundaries (4 per iter) as the safer default.
-            emit_pre_mma_set_prio = (
-                False if sched.omit_mma_set_prio else emit_pre_mma_barrier
+            emit_pre_mma_set_prio = False if sched.omit_mma_set_prio else (
+                is_top_of_half or first_cross_in_partition
             )
             emit_post_mma_barrier = False
             emit_post_mma_set_prio = False
-            # Without a pre-MMA barrier the framework's
-            # post_barrier_lgkm wouldn't fire either; the schedule (or
-            # body) is expected to control lgkm via entry_wait or per-op
-            # waits.
             emit_post_barrier_lgkm = False
 
         p.blocks[block_idx] = MMABlockSpec(
@@ -1174,8 +1185,11 @@ def single_buffer_reorder(
     steady-state, so the output has len(logical) + 1 ops.
 
     Output order:
-        frag[1..T-1], compute[0], sync, store_shared, load_global,
-        compute[1..T-1], sync, frag[0]
+
+    ```text
+    frag[1..T-1], compute[0], sync, store_shared, load_global,
+    compute[1..T-1], sync, frag[0]
+    ```
     """
     var lc = config.loop_carried
     var result = List[OpDesc]()
@@ -1316,7 +1330,9 @@ def mma_block_interleave[
     Takes the logical iteration in causal order — what one ping-pong half
     computes:
 
-        global_loads → fragment_loads → MMAs
+    ```text
+    global_loads → fragment_loads → MMAs
+    ```
 
     Distributes them across MMA blocks so fragment loads and global loads
     execute during MMA stalls. Fragment loads are placed just before their

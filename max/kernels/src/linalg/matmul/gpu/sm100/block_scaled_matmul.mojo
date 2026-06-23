@@ -47,7 +47,7 @@ from std.gpu.sync import (
 )
 from std.gpu.compute.arch.tcgen05 import *
 from layout import CoordLike, TileTensor
-from layout.coord import ComptimeInt, Coord, Idx, RuntimeInt
+from layout.coord import ComptimeInt, Coord, Idx
 from layout.tile_layout import row_major as tt_row_major
 from layout.tma_async import (
     PipelineState,
@@ -511,13 +511,12 @@ def consumer_main_loop[
 @__llvm_arg_metadata(sfa_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(sfb_tma_op, `nvvm.grid_constant`)
 @__name(
-    StaticString(config.get_kernal_name())
+    StaticString(config.get_kernel_name())
     + StaticString(
         "_fused_compute_epi" if elementwise_compute_lambda_fn
         is not None else ""
     )
     + StaticString("_fused_epi" if elementwise_lambda_fn is not None else ""),
-    mangle=True,
 )
 def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
     a_type: DType,
@@ -1144,7 +1143,7 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
 
 # =============================================================================
 # TMA + Kernel Launch: operates on already-reshaped 3D TileTensors (A/B/C)
-# and 5D LayoutTensors (scale factors)
+# and 5D TileTensors (scale factors)
 # =============================================================================
 
 
@@ -1158,7 +1157,7 @@ def _create_tma_and_launch[
     ] = None,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     register_based_epilogue: Bool = True,
-    pdl_level: PDLLevel = PDLLevel(1),
+    pdl_level: PDLLevel = PDLLevel.ON,
     max_profiled_tiles_per_SM: Optional[UInt32] = None,
 ](
     a_3d: TileTensor,
@@ -1262,10 +1261,10 @@ def _create_tma_and_launch[
 
     # 4D uint16 views of SF tensors (same memory, reinterpreted)
     var sfa_4d_shape = Coord(
-        RuntimeInt[DType.int64](Int64(Int(sfa_5d_tensor.dim[0]()))),
-        RuntimeInt[DType.int64](Int64(Int(sfa_5d_tensor.dim[1]()))),
-        RuntimeInt[DType.int64](Int64(Int(sfa_5d_tensor.dim[2]()))),
-        Idx[sf_atom_u16](),
+        Int64(sfa_5d_tensor.dim[0]()),
+        Int64(sfa_5d_tensor.dim[1]()),
+        Int64(sfa_5d_tensor.dim[2]()),
+        Idx[sf_atom_u16],
     )
     var sfa_4d_layout = tt_row_major(sfa_4d_shape)
     var sfa_4d_tensor = TileTensor[
@@ -1277,10 +1276,10 @@ def _create_tma_and_launch[
         sfa_4d_layout,
     )
     var sfb_4d_shape = Coord(
-        RuntimeInt[DType.int64](Int64(Int(sfb_5d_tensor.dim[0]()))),
-        RuntimeInt[DType.int64](Int64(Int(sfb_5d_tensor.dim[1]()))),
-        RuntimeInt[DType.int64](Int64(Int(sfb_5d_tensor.dim[2]()))),
-        Idx[sf_atom_u16](),
+        Int64(sfb_5d_tensor.dim[0]()),
+        Int64(sfb_5d_tensor.dim[1]()),
+        Int64(sfb_5d_tensor.dim[2]()),
+        Idx[sf_atom_u16],
     )
     var sfb_4d_layout = tt_row_major(sfb_4d_shape)
     var sfb_4d_tensor = TileTensor[
@@ -1407,7 +1406,7 @@ def _create_tma_and_launch[
         workspace = {}
 
     # Launch kernel
-    ctx.enqueue_function[kernel, kernel, dump_asm=False](
+    ctx.enqueue_function[kernel, dump_asm=False](
         a_tma_op,
         b_tma_op,
         c_tma_op,
@@ -1447,7 +1446,7 @@ def _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         elementwise_compute_lambda_type
     ] = None,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
-    pdl_level: PDLLevel = PDLLevel(1),
+    pdl_level: PDLLevel = PDLLevel.ON,
     max_profiled_tiles_per_SM: Optional[UInt32] = None,
 ](
     c_tensor: TileTensor,
@@ -1552,27 +1551,27 @@ def _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     def _scales_5d_shape(
         scales: TileTensor,
     ) -> Coord[
-        RuntimeInt[DType.int64],
-        RuntimeInt[DType.int64],
-        RuntimeInt[DType.int64],
+        Int64,
+        Int64,
+        Int64,
         ComptimeInt[SF_ATOM_M[0]],
         ComptimeInt[SF_ATOM_M[1] * SF_ATOM_K],
     ]:
         comptime if is_batched_matmul:
             return Coord(
-                RuntimeInt[DType.int64](Int64(Int(scales.dim[0]()))),
-                RuntimeInt[DType.int64](Int64(Int(scales.dim[1]()))),
-                RuntimeInt[DType.int64](Int64(Int(scales.dim[2]()))),
-                Idx[SF_ATOM_M[0]](),
-                Idx[SF_ATOM_M[1] * SF_ATOM_K](),
+                Int64(scales.dim[0]()),
+                Int64(scales.dim[1]()),
+                Int64(scales.dim[2]()),
+                Idx[SF_ATOM_M[0]],
+                Idx[SF_ATOM_M[1] * SF_ATOM_K],
             )
         else:
             return Coord(
-                RuntimeInt[DType.int64](Int64(1)),
-                RuntimeInt[DType.int64](Int64(Int(scales.dim[0]()))),
-                RuntimeInt[DType.int64](Int64(Int(scales.dim[1]()))),
-                Idx[SF_ATOM_M[0]](),
-                Idx[SF_ATOM_M[1] * SF_ATOM_K](),
+                Int64(1),
+                Int64(scales.dim[0]()),
+                Int64(scales.dim[1]()),
+                Idx[SF_ATOM_M[0]],
+                Idx[SF_ATOM_M[1] * SF_ATOM_K],
             )
 
     var sfa_5d_shape = _scales_5d_shape(a_scales_tensor)
@@ -1645,7 +1644,7 @@ def blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         elementwise_compute_lambda_type
     ] = None,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
-    pdl_level: PDLLevel = PDLLevel(1),
+    pdl_level: PDLLevel = PDLLevel.ON,
     max_profiled_tiles_per_SM: Optional[UInt32] = None,
 ](
     c_tensor: TileTensor,

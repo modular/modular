@@ -193,14 +193,14 @@ def smart_nframes(
     """calculate the number of frames for video used for model inputs.
 
     Args:
-        ele (dict): a dict contains the configuration of video.
+        ele: a dict contains the configuration of video.
             support either `fps` or `nframes`:
                 - nframes: the number of frames to extract for model inputs.
                 - fps: the fps to extract frames for model inputs.
                     - min_frames: the minimum number of frames of the video, only used when fps is provided.
                     - max_frames: the maximum number of frames of the video, only used when fps is provided.
-        total_frames (int): the original total number of frames of the video.
-        video_fps (int | float): the original fps of the video.
+        total_frames: the original total number of frames of the video.
+        video_fps: the original fps of the video.
 
     Raises:
         ValueError: nframes should in interval [FRAME_FACTOR, total_frames].
@@ -251,9 +251,9 @@ def calculate_video_frame_range(
     Calculate the start and end frame indices based on the given time range.
 
     Args:
-        ele (dict): A dictionary containing optional 'video_start' and 'video_end' keys (in seconds).
-        total_frames (int): Total number of frames in the video.
-        video_fps (float): Frames per second of the video.
+        ele: A dictionary containing optional 'video_start' and 'video_end' keys (in seconds).
+        total_frames: Total number of frames in the video.
+        video_fps: Frames per second of the video.
 
     Returns:
         tuple: A tuple containing (start_frame, end_frame, frame_count).
@@ -308,7 +308,7 @@ def _read_video_decord(
     """read video using decord.VideoReader
 
     Args:
-        ele (dict): a dict contains the configuration of video.
+        ele: a dict contains the configuration of video.
         support keys:
             - video: the path of video. support "file://", "http://", "https://" and local path.
             - video_start: the start time of video.

@@ -64,19 +64,16 @@ def interpolate_2d_nearest(
     target_shape = [n, c, h * scale_factor, w * scale_factor]
 
     # Reshape: [N, C, H, W] -> [N, C, H, 1, W, 1]
-    x_reshaped = F.reshape(x, [n, c, h, 1, w, 1])
+    x_reshaped = x.reshape([n, c, h, 1, w, 1])
 
     ones_scalar = F.constant(1.0, dtype=x.dtype, device=x.device)
-    ones = F.broadcast_to(
-        ones_scalar,
-        [1, 1, 1, scale_factor, 1, scale_factor],
-    )
+    ones = ones_scalar.broadcast_to([1, 1, 1, scale_factor, 1, scale_factor])
 
     # Broadcast: [N, C, H, 1, W, 1] * [1, 1, 1, 2, 1, 2] -> [N, C, H, 2, W, 2]
-    x_expanded = F.mul(x_reshaped, ones)
+    x_expanded = x_reshaped * ones
 
     # Reshape: [N, C, H, 2, W, 2] -> [N, C, H*2, W*2]
-    return F.reshape(x_expanded, target_shape)
+    return x_expanded.reshape(target_shape)
 
 
 class Upsample2D(Module[[Tensor], Tensor]):
@@ -159,7 +156,14 @@ class Upsample2D(Module[[Tensor], Tensor]):
             Upsampled tensor, optionally convolved.
         """
         if self.interpolate:
-            x = interpolate_2d_nearest(x, scale_factor=2)  # type: ignore[assignment]
+            # ``interpolate_2d_nearest`` drops to a raw graph ``TensorValue``
+            # (its ``.device`` is a ``DeviceRef``). Re-lift to an experimental
+            # ``Tensor`` so a downstream ``Conv2d`` — which colocates its weight
+            # via ``weight.to(x.device)`` — sees a concrete device like every
+            # other conv in the decoder.
+            x = Tensor.from_graph_value(
+                interpolate_2d_nearest(x, scale_factor=2)
+            )
 
         if self.use_conv and self.conv is not None:
             x = self.conv(x)

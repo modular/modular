@@ -10,16 +10,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Inline 4-wave schedule for AMD GPU FP8 matmul kernels.
+"""Inline 4-wave schedule for AMD GPU matmul / implicit-GEMM conv kernels.
 
-Mirrors the hand-written `_run_iter` body in `amd_4wave_matmul.run`
-op-for-op. Per half, four mini-iters of `(LOAD, FRAG, MMA)` with
-**cross-stage MMA fragment rotation** in mini-iters 3-4: those frag-loads
-read the cross SMEM stage to pre-load the *next* half's leading-quadrant
-fragments while this half's last MMAs are still computing. The same
-register-rotation trick the hand-written body uses to hide LDS-load
-latency between halves (saves one frag-load worth of LDS latency on each
-half's first MMA).
+Per half, four mini-iters of `(LOAD, FRAG, MMA)` with **cross-stage
+MMA fragment rotation** in mini-iters 3-4: those frag-loads read the
+cross SMEM stage to pre-load the *next* half's leading-quadrant
+fragments while this half's last MMAs are still computing — a
+register-rotation trick that hides LDS-load latency between halves
+(saves one frag-load worth of LDS latency on each half's first MMA).
 
 Three load-bearing structural choices vs the default ping-pong-shaped
 matmul schedule:

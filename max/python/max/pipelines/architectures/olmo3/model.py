@@ -16,7 +16,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import Any, ClassVar, cast
 
 import numpy as np
 from max.driver import Buffer, Device
@@ -26,8 +26,8 @@ from max.experimental import functional as F
 from max.graph import DeviceRef, TensorType
 from max.graph.weights import Weights, WeightsAdapter
 from max.nn import ReturnLogits
-from max.nn.kv_cache import KVCacheInputs, KVCacheParams
-from max.pipelines.core import TextContext
+from max.nn.kv_cache import KVCacheInputsInterface
+from max.pipelines.context import TextContext
 from max.pipelines.lib import (
     CompilationTimer,
     KVCacheConfig,
@@ -36,7 +36,6 @@ from max.pipelines.lib import (
     PipelineConfig,
     PipelineModelWithKVCache,
 )
-from transformers import AutoConfig
 
 from .model_config import Olmo3Config
 from .olmo3 import Olmo3
@@ -70,6 +69,8 @@ class Olmo3Model(PipelineModelWithKVCache[TextContext]):
     infrastructure, handling model loading, KV cache management, and input preparation
     for inference.
     """
+
+    model_config_cls: ClassVar[type[Any]] = Olmo3Config
 
     def __init__(
         self,
@@ -106,62 +107,6 @@ class Olmo3Model(PipelineModelWithKVCache[TextContext]):
         )
 
         self.model = self.load_model()
-
-    @classmethod
-    def calculate_max_seq_len(
-        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
-    ) -> int:
-        """Calculates the maximum sequence length for the Olmo3 model.
-
-        Uses the `max_length` from the :obj:`max.pipelines.config.PipelineConfig`
-        if provided, otherwise falls back to the `max_position_embeddings` from
-        the HuggingFace configuration's text config.
-
-        Args:
-            pipeline_config: The MAX Engine pipeline configuration.
-            huggingface_config: The HuggingFace model configuration object
-                (:obj:`transformers.AutoConfig`).
-
-        Returns:
-            The calculated maximum sequence length.
-        """
-        return Olmo3Config.calculate_max_seq_len(
-            pipeline_config, huggingface_config
-        )
-
-    @classmethod
-    def get_kv_params(
-        cls,
-        huggingface_config: AutoConfig,
-        pipeline_config: PipelineConfig,
-        devices: list[DeviceRef],
-        kv_cache_config: KVCacheConfig,
-        cache_dtype: DType,
-    ) -> KVCacheParams:
-        """Gets the parameters required to configure the KV cache for Olmo3.
-
-        Delegates to the :obj:`Olmo3Config.construct_kv_params` static method.
-
-        Args:
-            huggingface_config: The HuggingFace model configuration object
-                (:obj:`transformers.AutoConfig`).
-            pipeline_config: The MAX Engine pipeline configuration.
-            devices: The list of devices the model will run on.
-            kv_cache_config: The MAX Engine KV cache configuration settings
-                (:obj:`max.pipelines.max_config.KVCacheConfig`).
-            cache_dtype: The desired data type for the KV cache
-                (:obj:`max.dtype.DType`).
-
-        Returns:
-            The configured :obj:`max.pipelines.kv_cache.KVCacheParams` object.
-        """
-        return Olmo3Config.construct_kv_params(
-            huggingface_config,
-            pipeline_config,
-            devices,
-            kv_cache_config,
-            cache_dtype,
-        )
 
     def load_model(self) -> Callable[..., Any]:
         """Loads the compiled Olmo3 model into the MAX Engine session.
@@ -275,7 +220,7 @@ class Olmo3Model(PipelineModelWithKVCache[TextContext]):
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
+        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> ModelInputs:
         """Prepares the initial inputs for the first execution pass of the Olmo3 model.
@@ -312,30 +257,4 @@ class Olmo3Model(PipelineModelWithKVCache[TextContext]):
                 np.array([return_n_logits], dtype=np.int64)
             ),
             kv_cache_inputs=kv_cache_inputs,
-        )
-
-    def prepare_next_token_inputs(
-        self, next_tokens: Buffer, prev_model_inputs: ModelInputs
-    ) -> ModelInputs:
-        """Prepares the inputs for subsequent execution steps in a multi-step generation.
-
-        Args:
-            next_tokens: The tensor containing the token IDs generated in the previous step.
-            prev_model_inputs: The :obj:`ModelInputs` used in the previous execution step.
-
-        Returns:
-            The prepared :obj:`ModelInputs` object for the next execution step.
-        """
-        prev_model_inputs = cast(Olmo3Inputs, prev_model_inputs)
-        row_offsets_size = prev_model_inputs.input_row_offsets.shape[0]
-
-        next_row_offsets = self._input_row_offsets_prealloc[
-            :row_offsets_size
-        ].to(self.devices[0])
-
-        return Olmo3Inputs(
-            tokens=next_tokens,
-            input_row_offsets=next_row_offsets,
-            return_n_logits=prev_model_inputs.return_n_logits,
-            kv_cache_inputs=prev_model_inputs.kv_cache_inputs,
         )

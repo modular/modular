@@ -117,6 +117,31 @@ class ArrayElementsAttr(max._core.Attribute):
     @property
     def type(self) -> max._core.dialects.builtin.ShapedType: ...
 
+class DeviceInfoAttr(max._core.Attribute):
+    """
+    The `#M.device_info` attribute captures runtime-probed properties of a
+    physical device: its label (e.g. `"gpu"`), the underlying API
+    (e.g. `"cuda"`, `"hip"`), the architecture name
+    (e.g. `"sm_100a"`, `"gfx942"`), and the model name
+    (e.g. `"NVIDIA B200"`). This is used to drive per-kernel device
+    registration and specialization.
+
+    Example:
+    ```mlir
+      #M.device_info<"gpu", "cuda", "sm_100a", "NVIDIA B200">
+    ```
+    """
+
+    def __init__(self, label: str, api: str, arch: str, model: str) -> None: ...
+    @property
+    def label(self) -> str: ...
+    @property
+    def api(self) -> str: ...
+    @property
+    def arch(self) -> str: ...
+    @property
+    def model(self) -> str: ...
+
 class DeviceRefAttr(max._core.Attribute):
     """
     The `#M.device_ref` attribute refers to a unique `#M.device_spec` within the
@@ -302,7 +327,14 @@ class TargetInfoAttr(max._core.Attribute):
     supports a compile time microarchitecutre or feature it may be necessary
     to compare these versions numerically rather than textually.
 
-    Features are encoded in the form of "+feature1,+feature2".
+    Features are encoded in the form of "+feature1,+feature2,-feature3",
+    where "+" enables and "-" disables a feature. The list is fully
+    expanded: it includes both the features explicitly requested by the
+    user and all features enabled by default for the target CPU (e.g.
+    avx512f on znver4), with explicit user overrides applied on top.
+    A feature present in the list without a "-" entry is enabled; a
+    feature absent from the list was not enabled by the CPU model and
+    was not explicitly requested.
 
     Example:
     ```mlir

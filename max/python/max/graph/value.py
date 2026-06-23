@@ -666,14 +666,37 @@ class TensorValue(Value[mo.TensorType]):
         return ops.cast(self, dtype)
 
     def rebind(self, shape: ShapeLike, message: str = "") -> TensorValue:
-        """Rebinds the tensor to a new shape with error handling.
+        """Asserts that the tensor has the specified shape at runtime.
+
+        This method adds a runtime assertion that the tensor's shape matches
+        the given ``shape``. It does not modify the tensor's data or actual
+        shape; instead, it verifies the shape constraint and propagates
+        the asserted shape information to subsequent operations in the graph.
+
+        Use ``rebind()`` when you need to:
+
+        - Constrain a tensor with dynamic or unknown dimensions to specific
+          fixed sizes required by a downstream operation.
+        - Assert shape invariants that the compiler cannot infer statically.
+        - Provide shape hints to enable compiler optimizations.
+
+        If the assertion fails at runtime (the actual shape does not match
+        ``shape``), an error is raised with the optional ``message``.
 
         Args:
-            shape: The new shape as an iterable of integers or symbolic dimensions.
-            message: (optional) A message for logging or debugging.
+            shape: The expected shape as an iterable of integers or symbolic
+                dimensions (:class:`~max.graph.Dim`). The rank must match the
+                tensor's current rank.
+            message: An optional message to include in the error if the
+                assertion fails at runtime.
 
         Returns:
-            A new :class:`TensorValue` with the updated shape.
+            A new :class:`TensorValue` with the same data but with the
+            symbolic shape set to the asserted ``shape``.
+
+        Raises:
+            ValueError: If the rank of ``shape`` does not match the tensor's
+                rank.
         """
         return ops.rebind(self, shape, message)
 

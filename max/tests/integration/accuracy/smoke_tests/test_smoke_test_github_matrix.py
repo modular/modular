@@ -37,22 +37,22 @@ def test_custom_models_defined_in_model_aliases() -> None:
     missing = [
         k
         for k in smoke_test_github_matrix.CUSTOM_MODELS
-        if k not in smoke_test.MODEL_ALIASES
+        if k not in smoke_test.MODEL_RECIPES
     ]
     assert not missing, (
         f"CUSTOM_MODELS keys must have a corresponding entry in "
-        f"smoke_test.MODEL_ALIASES: {missing}"
+        f"smoke_test.MODEL_RECIPES: {missing}"
     )
 
 
 def test_model_aliases_in_custom_models() -> None:
     missing = [
         k
-        for k in smoke_test.MODEL_ALIASES
-        if k not in smoke_test_github_matrix.CUSTOM_MODELS
+        for k in smoke_test.MODEL_RECIPES
+        if "__" in k and k not in smoke_test_github_matrix.CUSTOM_MODELS
     ]
     assert not missing, (
-        f"MODEL_ALIASES keys must have a corresponding entry in "
+        f"Custom MODEL_RECIPES keys must have a corresponding entry in "
         f"smoke_test_github_matrix.CUSTOM_MODELS: {missing}"
     )
 

@@ -164,56 +164,64 @@ def run_varlen_selective_scan_fwd_gpu[
         ssm_states_gpu_h.store(i, ssm_states_cpu_h.load(i))
 
     # Create LayoutTensors for CPU kernel
-    var ssm_states_cpu = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
+    var ssm_states_cpu = LayoutTensor[dtype, layout_3d](
         ssm_states_cpu_h,
         RuntimeLayout[layout_3d].row_major(Index(batch, dim, dstate)),
     )
-    var output_cpu = LayoutTensor[dtype, layout_2d, MutAnyOrigin](
+    var output_cpu = LayoutTensor[dtype, layout_2d](
         output_cpu_h,
         RuntimeLayout[layout_2d].row_major(Index(dim, total_length)),
     )
-    var u_cpu = LayoutTensor[dtype, layout_2d, MutAnyOrigin](
-        u_h, RuntimeLayout[layout_2d].row_major(Index(dim, total_length))
+    var u_cpu = LayoutTensor[dtype, layout_2d](
+        u_h,
+        RuntimeLayout[layout_2d].row_major(Index(dim, total_length)),
     )
-    var delta_cpu = LayoutTensor[dtype, layout_2d, MutAnyOrigin](
-        delta_h, RuntimeLayout[layout_2d].row_major(Index(dim, total_length))
+    var delta_cpu = LayoutTensor[dtype, layout_2d](
+        delta_h,
+        RuntimeLayout[layout_2d].row_major(Index(dim, total_length)),
     )
-    var A_cpu = LayoutTensor[dtype, layout_2d, MutAnyOrigin](
-        A_h, RuntimeLayout[layout_2d].row_major(Index(dim, dstate))
+    var A_cpu = LayoutTensor[dtype, layout_2d](
+        A_h,
+        RuntimeLayout[layout_2d].row_major(Index(dim, dstate)),
     )
-    var B_cpu = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
+    var B_cpu = LayoutTensor[dtype, layout_3d](
         B_h,
         RuntimeLayout[layout_3d].row_major(
             Index(ngroups, dstate, total_length)
         ),
     )
-    var C_cpu = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
+    var C_cpu = LayoutTensor[dtype, layout_3d](
         C_h,
         RuntimeLayout[layout_3d].row_major(
             Index(ngroups, dstate, total_length)
         ),
     )
-    var D_cpu = LayoutTensor[dtype, layout_1d, MutAnyOrigin](
-        D_h, RuntimeLayout[layout_1d].row_major(Index(D_size))
+    var D_cpu = LayoutTensor[dtype, layout_1d](
+        D_h,
+        RuntimeLayout[layout_1d].row_major(Index(D_size)),
     )
-    var z_cpu = LayoutTensor[dtype, layout_2d, MutAnyOrigin](
+    var z_cpu = LayoutTensor[dtype, layout_2d](
         z_cpu_h,
         RuntimeLayout[layout_2d].row_major(
             Index(dim if has_z else 0, total_length if has_z else 0)
         ),
     )
-    var delta_bias_cpu = LayoutTensor[dtype, layout_1d, MutAnyOrigin](
-        delta_bias_h, RuntimeLayout[layout_1d].row_major(Index(delta_bias_size))
+    var delta_bias_cpu = LayoutTensor[dtype, layout_1d](
+        delta_bias_h,
+        RuntimeLayout[layout_1d].row_major(Index(delta_bias_size)),
     )
-    var query_start_loc_cpu = LayoutTensor[
-        DType.int32, layout_1d, MutAnyOrigin
-    ](query_start_loc_h, RuntimeLayout[layout_1d].row_major(Index(batch + 1)))
-    var cache_indices_cpu = LayoutTensor[DType.int32, layout_1d, MutAnyOrigin](
-        cache_indices_h, RuntimeLayout[layout_1d].row_major(Index(batch))
+    var query_start_loc_cpu = LayoutTensor[DType.int32, layout_1d](
+        query_start_loc_h,
+        RuntimeLayout[layout_1d].row_major(Index(batch + 1)),
     )
-    var has_initial_state_cpu = LayoutTensor[
-        DType.bool, layout_1d, MutAnyOrigin
-    ](has_initial_state_h, RuntimeLayout[layout_1d].row_major(Index(batch)))
+    var cache_indices_cpu = LayoutTensor[DType.int32, layout_1d](
+        cache_indices_h,
+        RuntimeLayout[layout_1d].row_major(Index(batch)),
+    )
+    var has_initial_state_cpu = LayoutTensor[DType.bool, layout_1d](
+        has_initial_state_h,
+        RuntimeLayout[layout_1d].row_major(Index(batch)),
+    )
 
     # Strides for row-major layout using IndexList types
     var u_strides = IndexList[2](total_length, 1)
@@ -228,60 +236,52 @@ def run_varlen_selective_scan_fwd_gpu[
     var out_strides = IndexList[2](total_length, 1)
 
     # Create TileTensors for CPU kernel
-    var u_cpu_tt = TileTensor(u_h, row_major(Idx(dim), Idx(total_length)))
-    var delta_cpu_tt = TileTensor(
-        delta_h, row_major(Idx(dim), Idx(total_length))
-    )
-    var A_cpu_tt = TileTensor(A_h, row_major(Idx(dim), Idx(dstate)))
-    var B_cpu_tt = TileTensor(
-        B_h, row_major(Idx(ngroups), Idx(dstate), Idx(total_length))
-    )
-    var C_cpu_tt = TileTensor(
-        C_h, row_major(Idx(ngroups), Idx(dstate), Idx(total_length))
-    )
+    var u_cpu_tt = TileTensor(u_h, row_major(dim, total_length))
+    var delta_cpu_tt = TileTensor(delta_h, row_major(dim, total_length))
+    var A_cpu_tt = TileTensor(A_h, row_major(dim, dstate))
+    var B_cpu_tt = TileTensor(B_h, row_major(ngroups, dstate, total_length))
+    var C_cpu_tt = TileTensor(C_h, row_major(ngroups, dstate, total_length))
     var D_cpu_tt = TileTensor(
         D_h,
         row_major(
-            Idx(D_size),
+            D_size,
         ),
     )
     var z_cpu_tt = TileTensor(
         z_cpu_h,
         row_major(
             (
-                Idx(dim if has_z else 0),
-                Idx(total_length if has_z else 0),
+                dim if has_z else 0,
+                total_length if has_z else 0,
             )
         ),
     )
     var delta_bias_cpu_tt = TileTensor(
         delta_bias_h,
         row_major(
-            Idx(delta_bias_size),
+            delta_bias_size,
         ),
     )
     var ssm_states_cpu_tt = TileTensor(
-        ssm_states_cpu_h, row_major(Idx(batch), Idx(dim), Idx(dstate))
+        ssm_states_cpu_h, row_major(batch, dim, dstate)
     )
-    var output_cpu_tt = TileTensor(
-        output_cpu_h, row_major(Idx(dim), Idx(total_length))
-    )
+    var output_cpu_tt = TileTensor(output_cpu_h, row_major(dim, total_length))
     var query_start_loc_cpu_tt = TileTensor(
         query_start_loc_h,
         row_major(
-            Idx(batch + 1),
+            batch + 1,
         ),
     )
     var cache_indices_cpu_tt = TileTensor(
         cache_indices_h,
         row_major(
-            Idx(batch),
+            batch,
         ),
     )
     var has_initial_state_cpu_tt = TileTensor(
         has_initial_state_h,
         row_major(
-            Idx(batch),
+            batch,
         ),
     )
 
@@ -409,69 +409,69 @@ def run_varlen_selective_scan_fwd_gpu[
     # Create TileTensors for GPU kernel
     var u_gpu_tt = TileTensor(
         u_d,
-        row_major(Idx(dim), Idx(total_length)),
+        row_major(dim, total_length),
     )
     var delta_gpu_tt = TileTensor(
         delta_d,
-        row_major(Idx(dim), Idx(total_length)),
+        row_major(dim, total_length),
     )
     var A_gpu_tt = TileTensor(
         A_d,
-        row_major(Idx(dim), Idx(dstate)),
+        row_major(dim, dstate),
     )
     var B_gpu_tt = TileTensor(
         B_d,
-        row_major(Idx(ngroups), Idx(dstate), Idx(total_length)),
+        row_major(ngroups, dstate, total_length),
     )
     var C_gpu_tt = TileTensor(
         C_d,
-        row_major(Idx(ngroups), Idx(dstate), Idx(total_length)),
+        row_major(ngroups, dstate, total_length),
     )
     var D_gpu_tt = TileTensor(
         D_d,
         row_major(
-            Idx(D_size),
+            D_size,
         ),
     )
     var z_gpu_tt = TileTensor(
         z_d,
         row_major(
             (
-                Idx(dim if has_z else 0),
-                Idx(total_length if has_z else 0),
+                dim if has_z else 0,
+                total_length if has_z else 0,
             )
         ),
     )
     var delta_bias_gpu_tt = TileTensor(
         delta_bias_d,
         row_major(
-            Idx(delta_bias_size),
+            delta_bias_size,
         ),
     )
     var ssm_states_gpu_tt = TileTensor(
         ssm_states_gpu_d,
-        row_major(Idx(batch), Idx(dim), Idx(dstate)),
+        row_major(batch, dim, dstate),
     )
     var output_gpu_tt = TileTensor(
         output_gpu_d,
-        row_major(Idx(dim), Idx(total_length)),
+        row_major(dim, total_length),
     )
     var query_start_loc_gpu_tt = TileTensor(
         query_start_loc_d,
         row_major(
-            Idx(batch + 1),
+            batch + 1,
         ),
     )
     var cache_indices_gpu_tt = TileTensor(
         cache_indices_d,
         row_major(
-            Idx(batch),
+            batch,
         ),
     )
     var has_initial_state_gpu_tt = TileTensor(
         has_initial_state_d,
         row_major(
-            Idx(batch),
+            batch,
         ),
     )
 
@@ -496,24 +496,7 @@ def run_varlen_selective_scan_fwd_gpu[
             query_start_loc_gpu_tt.LayoutType,
             cache_indices_gpu_tt.LayoutType,
             has_initial_state_gpu_tt.LayoutType,
-        ],
-        varlen_selective_scan_fwd_gpu[
-            dtype,
-            DSTATE,
-            u_gpu_tt.LayoutType,
-            delta_gpu_tt.LayoutType,
-            A_gpu_tt.LayoutType,
-            B_gpu_tt.LayoutType,
-            C_gpu_tt.LayoutType,
-            D_gpu_tt.LayoutType,
-            z_gpu_tt.LayoutType,
-            delta_bias_gpu_tt.LayoutType,
-            ssm_states_gpu_tt.LayoutType,
-            output_gpu_tt.LayoutType,
-            query_start_loc_gpu_tt.LayoutType,
-            cache_indices_gpu_tt.LayoutType,
-            has_initial_state_gpu_tt.LayoutType,
-        ],
+        ]
     ]()
 
     ctx.enqueue_function(

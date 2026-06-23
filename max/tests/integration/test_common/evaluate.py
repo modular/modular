@@ -35,16 +35,18 @@ from max.graph import (
     TensorValue,
     ops,
 )
-from max.interfaces import (
+from max.pipelines.context import (
     LogitsProcessor,
-    PipelineTokenizer,
-    PixelGenerationInputs,
     ProcessorInputs,
-    RequestID,
     SamplingParams,
-    TextGenerationRequest,
 )
 from max.pipelines.lib import PixelGenerationTokenizer
+from max.pipelines.modeling.types import (
+    PipelineTokenizer,
+    PixelGenerationInputs,
+    RequestID,
+    TextGenerationRequest,
+)
 from max.support import fetch_bytes_from_s3
 from PIL import Image
 from transformers import PreTrainedTokenizerBase

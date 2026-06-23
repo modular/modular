@@ -30,7 +30,7 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/architectures/idefics3",
         requirement("torch"),
         requirement("transformers"),
     ],
@@ -43,7 +43,7 @@ modular_py_test(
         "MODULAR_TORCH_MEMORY_PERCENT": "0.5",
     },
     exec_properties = {
-        "test.resources:gpu-memory": "1",
+        "test.resources:gpu-memory": "2",
     },
     gpu_constraints = ["//:has_gpu"] + select({
         "//:apple_gpu": ["@platforms//:incompatible"],
@@ -53,22 +53,19 @@ modular_py_test(
     tags = [
         "gpu",
         "manual",
-        "no-pydeps",  # TODO: Fix and re-enable
     ],
     deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
         "//max/python/max/engine",
-        "//max/python/max/nn",
-        "//max/python/max/pipelines",
-        "//max/python/max/serve",
-        "//max/tests/integration/graph:modular_graph_test",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/architectures/idefics3",
         requirement("torch"),
         requirement("transformers"),
-        requirement("hypothesis"),
-        requirement("gguf"),
-        requirement("pytest-asyncio"),
     ],
 )
 
+# MODELS-1415: Test timing out in CI
 modular_py_test(
     name = "test_vision_encoder_layer",
     srcs = ["test_vision_encoder_layer.py"],
@@ -76,7 +73,7 @@ modular_py_test(
         "MODULAR_TORCH_MEMORY_PERCENT": "0.5",
     },
     exec_properties = {
-        "test.resources:gpu-memory": "1",
+        "test.resources:gpu-memory": "2",
     },
     gpu_constraints = ["//:has_gpu"] + select({
         "//:apple_gpu": ["@platforms//:incompatible"],
@@ -84,13 +81,14 @@ modular_py_test(
     }),  # FIXME: MOCO-2411
     tags = [
         "gpu",
+        "manual",
     ],
     deps = [
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/architectures/idefics3",
         requirement("torch"),
         requirement("transformers"),
     ],
@@ -117,7 +115,7 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/architectures/idefics3",
         requirement("torch"),
         requirement("transformers"),
     ],

@@ -270,7 +270,7 @@ def memcpy[
         # A fast version for the interpreter to evaluate
         # this function during compile time.
         llvm_intrinsic["llvm.memcpy", NoneType](
-            dest_bytes, src_bytes, n._int_mlir_index()
+            dest_bytes, src_bytes, n.__mlir_index__()
         )
     else:
         _memcpy_impl(dest_bytes, src_bytes, n)
@@ -400,7 +400,7 @@ def _malloc[
     out result: Optional[
         UnsafePointer[
             type,
-            MutExternalOrigin,
+            MutUntrackedOrigin,
             address_space=AddressSpace.GENERIC,
         ]
     ],
@@ -421,7 +421,7 @@ def _malloc[
         mlir_pointer = external_call["malloc", MlirPointerType](size)
     else:
         mlir_pointer = __mlir_op.`pop.aligned_alloc`[_type=MlirPointerType](
-            alignment._int_mlir_index(), size._int_mlir_index()
+            alignment.__mlir_index__(), size.__mlir_index__()
         )
 
     # SAFETY: Due to the niche optimization, `Optional[UnsafePointer]` is
@@ -445,13 +445,71 @@ def _free(ptr: UnsafePointer[mut=True, ...]):
 @always_inline
 def _free(ptr: OptionalUnsafePointer[mut=True, ...]):
     comptime if is_gpu():
-        libc.free(unsafe_cast[Type=NoneType, origin=MutExternalOrigin](ptr))
+        libc.free(unsafe_cast[Type=NoneType, origin=MutUntrackedOrigin](ptr))
     else:
         comptime KgenPointerType = type_of(ptr).T._mlir_type
         # SAFETY: Due to the niche optimization, `Optional[UnsafePointer]` is
         # represented exactly as the `KgenPointerType` so we can do a bit-cast.
         var kgen_pointer = UnsafePointer(to=ptr).bitcast[KgenPointerType]()[]
         __mlir_op.`pop.aligned_free`(kgen_pointer)
+
+
+# ===-----------------------------------------------------------------------===#
+# is_trivial_* functions
+# ===-----------------------------------------------------------------------===#
+
+
+@always_inline("nodebug")
+def is_trivially_movable[T: Movable]() -> Bool:
+    """Returns whether `T` has a trivial move constructor.
+
+    A move constructor is trivial when the compiler generates it and all of
+    `T`'s fields are themselves trivially movable. In practice this means the
+    value can be moved by copying its bits to a new location without any
+    additional side effects.
+
+    Parameters:
+        T: The type to check.
+
+    Returns:
+        `True` if `T` has a trivial move constructor.
+    """
+    return T.__move_ctor_is_trivial
+
+
+@always_inline("nodebug")
+def is_trivially_copyable[T: Copyable]() -> Bool:
+    """Returns whether `T` has a trivial copy constructor.
+
+    A copy constructor is trivial when the compiler generates it and all of
+    `T`'s fields are themselves trivially copyable. In practice this means the
+    value can be copied by duplicating its bits to a new location without any
+    additional side effects.
+
+    Parameters:
+        T: The type to check.
+
+    Returns:
+        `True` if `T` has a trivial copy constructor.
+    """
+    return T.__copy_ctor_is_trivial
+
+
+@always_inline("nodebug")
+def is_trivially_destructible[T: ImplicitlyDeletable]() -> Bool:
+    """Returns whether `T` has a trivial destructor.
+
+    A destructor is trivial when the compiler generates it and all of `T`'s
+    fields are themselves trivially destructible. In practice this means
+    `__del__` is a no-op.
+
+    Parameters:
+        T: The type to check.
+
+    Returns:
+        `True` if `T` has a trivial destructor.
+    """
+    return T.__del__is_trivial
 
 
 # ===-----------------------------------------------------------------------===#
@@ -512,7 +570,7 @@ def uninit_move_n[
         behavior.
     """
 
-    comptime if T.__move_ctor_is_trivial:
+    comptime if is_trivially_movable[T]():
         comptime if overlapping:
             memmove(dest=dest, src=src, count=count)
         else:
@@ -574,7 +632,7 @@ def uninit_copy_n[
         behavior.
     """
 
-    comptime if T.__copy_ctor_is_trivial:
+    comptime if is_trivially_copyable[T]():
         comptime if overlapping:
             memmove(dest=dest, src=src, count=count)
         else:
@@ -586,7 +644,7 @@ def uninit_copy_n[
 
 @always_inline
 def destroy_n[
-    T: ImplicitlyDestructible
+    T: ImplicitlyDeletable
 ](pointer: UnsafePointer[mut=True, T, _], count: Int):
     """Destroy `count` initialized values at `pointer`.
 
@@ -597,7 +655,7 @@ def destroy_n[
     Otherwise, it calls `destroy_pointee()` on each element.
 
     Parameters:
-        T: The type of values to destroy, which must be `ImplicitlyDestructible`.
+        T: The type of values to destroy, which must be `ImplicitlyDeletable`.
 
     Args:
         pointer: Pointer to the memory region containing values to destroy.
@@ -611,7 +669,7 @@ def destroy_n[
         must not be read or destroyed again until re-initialized.
     """
 
-    comptime if T.__del__is_trivial:
+    comptime if is_trivially_destructible[T]():
         # Trivial destructors don't need to be called!
         pass
     else:

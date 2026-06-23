@@ -41,7 +41,7 @@ from std.gpu.primitives.grid_controls import (
 from layout import TileTensor
 from std.memory import stack_allocation
 from std.utils.numerics import min_or_neg_inf
-from std.builtin.device_passable import DevicePassable
+from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 
 
 # ===----------------------------------------------------------------------=== #
@@ -59,23 +59,31 @@ struct CombineParams[
     comptime heads_per_block = 8 // Self.warps_per_head
     comptime num_threads = Self.heads_per_block * Self.warps_per_head * WARP_SIZE
 
+    @__allow_legacy_any_origin_fields
     var out_accum_split_ptr: UnsafePointer[
         Scalar[Self.output_type], origin=MutAnyOrigin
     ]
 
+    @__allow_legacy_any_origin_fields
     var lse_accum_split_ptr: UnsafePointer[
         Scalar[Self.accum_type], origin=MutAnyOrigin
     ]
+
     # Final output tensor
+    @__allow_legacy_any_origin_fields
     var output_ptr: UnsafePointer[Scalar[Self.output_type], origin=MutAnyOrigin]
+
     # Input row offsets for ragged mode (cumulative token counts per batch)
     # In ragged mode: input_row_offsets[i] = start token index for batch i
+    @__allow_legacy_any_origin_fields
     var input_row_offsets_ptr: UnsafePointer[
         Scalar[DType.uint32], origin=MutAnyOrigin
     ]
+
     # Per-head attn_sink values: shape [num_heads_q], float32, nullable.
     # Contains log-sum-exp of non-selected tokens' attention scores (natural log).
     # Only used when has_attn_sink is True at compile time.
+    @__allow_legacy_any_origin_fields
     var attn_sink_ptr: OptionalReg[
         UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin]
     ]
@@ -95,8 +103,10 @@ struct CombineParams[
 
     comptime device_type: AnyType = Self
 
-    def _to_device_type(self, target: MutOpaquePointer[_]):
-        target.bitcast[Self.device_type]()[] = self
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
+        encoder.encode(self, target)
 
     @staticmethod
     def get_type_name() -> String:
@@ -155,7 +165,6 @@ struct CombineParams[
 # ===----------------------------------------------------------------------=== #
 @__name(
     t"sm100_mla_decode_combine_{output_type}_{accum_type}_{num_splits}_{ragged}",
-    mangle=True,
 )
 def mla_combine_kernel[
     output_type: DType,
@@ -437,20 +446,28 @@ struct SplitParallelCombineParams[
     comptime heads_per_block = 1
     comptime num_threads = Self.num_warps * WARP_SIZE
 
+    @__allow_legacy_any_origin_fields
     var out_accum_split_ptr: UnsafePointer[
         Scalar[Self.output_type], origin=MutAnyOrigin
     ]
 
+    @__allow_legacy_any_origin_fields
     var lse_accum_split_ptr: UnsafePointer[
         Scalar[Self.accum_type], origin=MutAnyOrigin
     ]
+
     # Final output tensor
+    @__allow_legacy_any_origin_fields
     var output_ptr: UnsafePointer[Scalar[Self.output_type], origin=MutAnyOrigin]
+
     # Input row offsets for ragged mode (cumulative token counts per batch)
+    @__allow_legacy_any_origin_fields
     var input_row_offsets_ptr: UnsafePointer[
         Scalar[DType.uint32], origin=MutAnyOrigin
     ]
+
     # Per-head attn_sink values: shape [num_heads_q], float32, nullable.
+    @__allow_legacy_any_origin_fields
     var attn_sink_ptr: OptionalReg[
         UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin]
     ]
@@ -470,8 +487,10 @@ struct SplitParallelCombineParams[
 
     comptime device_type: AnyType = Self
 
-    def _to_device_type(self, target: MutOpaquePointer[_]):
-        target.bitcast[Self.device_type]()[] = self
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
+        encoder.encode(self, target)
 
     @staticmethod
     def get_type_name() -> String:
@@ -527,7 +546,6 @@ struct SplitParallelCombineParams[
 
 @__name(
     t"sm100_mla_decode_combine_split_parallel_{output_type}_{accum_type}_{num_splits}_{ragged}",
-    mangle=True,
 )
 def mla_combine_kernel_split_parallel[
     output_type: DType,
@@ -889,15 +907,7 @@ def launch_mla_combine_kernel_split_parallel[
             num_splits,
             ragged,
             has_attn_sink,
-        ],
-        mla_combine_kernel_split_parallel[
-            output_type,
-            accum_type,
-            head_dim,
-            num_splits,
-            ragged,
-            has_attn_sink,
-        ],
+        ]
     ](
         params,
         grid_dim=grid_dim,
@@ -983,16 +993,7 @@ def launch_mla_combine_kernel[
             ragged,
             warps_per_head,
             has_attn_sink,
-        ],
-        mla_combine_kernel[
-            output_type,
-            accum_type,
-            head_dim,
-            num_splits,
-            ragged,
-            warps_per_head,
-            has_attn_sink,
-        ],
+        ]
     ](
         params,
         grid_dim=grid_dim,

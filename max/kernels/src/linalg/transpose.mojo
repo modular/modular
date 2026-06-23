@@ -379,7 +379,10 @@ def _permute_data[
 
 def _fill_strides[
     dtype: DType,
-](buf: TileTensor[dtype, ...], strides: TileTensor[mut=True, DType.int, ...],):
+](
+    buf: TileTensor[mut=False, dtype, ...],
+    strides: TileTensor[mut=True, DType.int, ...],
+):
     """
     Fill `strides`, which will be an array of strides indexed by axis, assuming
     `buf` contains contiguous buf.

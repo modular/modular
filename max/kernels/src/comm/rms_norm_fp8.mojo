@@ -14,7 +14,7 @@
 
 Provides the fused RMSNorm + FP8 quantization primitive used by both the
 standalone normalization layer and the fused allreduce + RMSNorm + FP8 kernel.
-Lives in comm/ so that allreduce_residual_rmsnorm_fp8 can depend on it without
+Lives in comm/ so that allreduce_residual_rmsnorm can depend on it without
 introducing a comm → nn → comm circular dependency.
 """
 
@@ -33,10 +33,10 @@ from std.gpu.primitives.grid_controls import (
 from layout import Coord, Idx, TensorLayout, TileTensor, row_major
 from std.utils import IndexList, StaticTuple
 from std.utils.numerics import get_accum_type
-from std.runtime.asyncrt import DeviceContextPtr
+
 from std.runtime.tracing import Trace, TraceLevel, trace_arg
 
-from .fp8_utils import compute_dynamic_fp8_scale, fp8_quantize
+from internal_utils.fp8_utils import compute_dynamic_fp8_scale, fp8_quantize
 
 
 @always_inline
@@ -90,7 +90,7 @@ def rms_norm_fused_fp8[
     gamma: TileTensor[in_dtype, ...],
     epsilon: Scalar[in_dtype],
     weight_offset: Scalar[in_dtype],
-    ctx: DeviceContextPtr,
+    ctx: DeviceContext,
     scale_ub: Float32,
     scale_output: TileTensor[mut=True, scales_dtype, ...],
 ) raises:
@@ -151,7 +151,7 @@ def rms_norm_fused_fp8[
     with Trace[TraceLevel.OP, target=target](
         "rms_norm_fused_fp8",
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
-        task_id=Int(ctx.get_device_context().id()),
+        task_id=Int(ctx.id()),
     ):
         if target == "gpu":
             _rms_norm_fused_fp8_gpu[
@@ -169,7 +169,7 @@ def rms_norm_fused_fp8[
                 weight_offset,
                 scale_ub,
                 scale_output,
-                ctx.get_device_context(),
+                ctx,
             )
         else:
             raise Error("CPU implementation not yet supported")
@@ -218,14 +218,10 @@ def _rms_norm_fused_fp8_gpu[
         return input_fn[simd_width, rank](indices.canonicalize())
 
     # Create 2D output TileTensor view
-    var output_2d = TileTensor(
-        output.ptr, row_major(Coord(Idx(rows), Idx(cols)))
-    )
+    var output_2d = TileTensor(output.ptr, row_major(Coord(rows, cols)))
 
     # Create 1D view of scale_output for internal kernel use
-    var scale_output_1d = TileTensor(
-        scale_output.ptr, row_major(Coord(Idx(rows)))
-    )
+    var scale_output_1d = TileTensor(scale_output.ptr, row_major(Coord(rows)))
 
     # Dispatch based on column count (following rms_norm_gpu pattern)
     comptime max_warps_per_block = ctx.default_device_info.max_thread_block_size // WARP_SIZE
@@ -270,7 +266,7 @@ def _rms_norm_fused_fp8_gpu[
         launch[1, False]()
 
 
-@__name(t"rms_norm_fused_fp8_warp_tiling_{in_dtype}_{out_dtype}", mangle=True)
+@__name(t"rms_norm_fused_fp8_warp_tiling_{in_dtype}_{out_dtype}")
 def _rms_norm_fused_fp8_kernel_warp_tiling[
     mut: Bool,
     origin: Origin[mut=mut],
@@ -321,9 +317,7 @@ def _rms_norm_fused_fp8_kernel_warp_tiling[
     def apply_gamma[
         width: Int
     ](val: SIMD[accum_type, width], col: Int) -> SIMD[accum_type, width]:
-        var gamma_val = gamma.load[width=width, alignment=align](
-            Coord(Idx(col))
-        )
+        var gamma_val = gamma.load[width=width, alignment=align](Coord(col))
         var gamma_accum = (
             gamma_val.cast[accum_type]() + weight_offset.cast[accum_type]()
         )
@@ -435,9 +429,9 @@ def _rms_norm_fused_fp8_gpu_launch[
             output_fn=output_fn,
         ]
         comptime if compile_only:
-            _ = ctx.compile_function[kernel, kernel]()
+            _ = ctx.compile_function[kernel]()
         else:
-            ctx.enqueue_function[kernel, kernel](
+            ctx.enqueue_function[kernel](
                 gamma,
                 scale_output,
                 epsilon,
@@ -464,9 +458,9 @@ def _rms_norm_fused_fp8_gpu_launch[
             output_fn=output_fn,
         ]
         comptime if compile_only:
-            _ = ctx.compile_function[kernel, kernel]()
+            _ = ctx.compile_function[kernel]()
         else:
-            ctx.enqueue_function[kernel, kernel](
+            ctx.enqueue_function[kernel](
                 gamma,
                 scale_output,
                 epsilon,
@@ -479,7 +473,7 @@ def _rms_norm_fused_fp8_gpu_launch[
             )
 
 
-@__name(t"rms_norm_fused_fp8_block_{in_dtype}_{out_dtype}", mangle=True)
+@__name(t"rms_norm_fused_fp8_block_{in_dtype}_{out_dtype}")
 def _rms_norm_fused_fp8_kernel_block[
     mut: Bool,
     origin: Origin[mut=mut],
@@ -529,9 +523,7 @@ def _rms_norm_fused_fp8_kernel_block[
     def apply_gamma[
         width: Int
     ](val: SIMD[accum_type, width], col: Int) -> SIMD[accum_type, width]:
-        var gamma_val = gamma.load[width=width, alignment=align](
-            Coord(Idx(col))
-        )
+        var gamma_val = gamma.load[width=width, alignment=align](Coord(col))
         var gamma_accum = (
             gamma_val.cast[accum_type]() + weight_offset.cast[accum_type]()
         )

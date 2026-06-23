@@ -22,21 +22,17 @@ from max.graph import (
     ShardingStrategy,
     TensorValue,
     Weight,
-    ops,
 )
 from max.nn.comm.allreduce import Allreduce
 from max.nn.kv_cache import PagedCacheValues
 from max.nn.layer import Module
+from max.nn.moe.moe import MoE
 from max.nn.transformer.distributed_transformer import (
     ShardableCallable,
     forward_sharded_layers,
 )
 from max.pipelines.architectures.gemma4.layers.attention import (
     Gemma4Attention,
-)
-from max.pipelines.architectures.gemma4.layers.moe import (
-    Gemma4TextExperts,
-    Gemma4TextRouter,
 )
 from max.pipelines.architectures.gemma4.layers.rms_norm import Gemma4RMSNorm
 
@@ -59,10 +55,9 @@ class Gemma4TextDecoderLayer(Module):
         hidden_size: int,
         rms_norm_eps: float,
         devices: list[DeviceRef],
-        dtype: DType = DType.float32,
+        unquantized_dtype: DType = DType.bfloat16,
         enable_moe_block: bool = False,
-        router: Gemma4TextRouter | None = None,
-        experts: Gemma4TextExperts | None = None,
+        moe_block: MoE | None = None,
     ) -> None:
         super().__init__()
 
@@ -79,7 +74,7 @@ class Gemma4TextDecoderLayer(Module):
         self.mlp_shards = mlp.shard(devices)
 
         self.input_layernorm = Gemma4RMSNorm(
-            hidden_size, DType.bfloat16, eps=rms_norm_eps
+            hidden_size, unquantized_dtype, eps=rms_norm_eps
         )
         self.input_layernorm.sharding_strategy = ShardingStrategy.replicate(
             len(devices)
@@ -87,7 +82,7 @@ class Gemma4TextDecoderLayer(Module):
         self.input_layernorm_shards = self.input_layernorm.shard(devices)
 
         self.post_attention_layernorm = Gemma4RMSNorm(
-            hidden_size, DType.bfloat16, eps=rms_norm_eps
+            hidden_size, unquantized_dtype, eps=rms_norm_eps
         )
         self.post_attention_layernorm.sharding_strategy = (
             ShardingStrategy.replicate(len(devices))
@@ -97,7 +92,7 @@ class Gemma4TextDecoderLayer(Module):
         )
 
         self.pre_feedforward_layernorm = Gemma4RMSNorm(
-            hidden_size, DType.bfloat16, eps=rms_norm_eps
+            hidden_size, unquantized_dtype, eps=rms_norm_eps
         )
         self.pre_feedforward_layernorm.sharding_strategy = (
             ShardingStrategy.replicate(len(devices))
@@ -107,7 +102,7 @@ class Gemma4TextDecoderLayer(Module):
         )
 
         self.post_feedforward_layernorm = Gemma4RMSNorm(
-            hidden_size, DType.bfloat16, eps=rms_norm_eps
+            hidden_size, unquantized_dtype, eps=rms_norm_eps
         )
         self.post_feedforward_layernorm.sharding_strategy = (
             ShardingStrategy.replicate(len(devices))
@@ -117,14 +112,17 @@ class Gemma4TextDecoderLayer(Module):
         )
 
         self.enable_moe_block = enable_moe_block
+        self.moe_block = moe_block
+
         if self.enable_moe_block:
-            assert router is not None and experts is not None
-            # TODO: router and moe are not shardable (multi_gpu_supported=False).
-            self.router = router
-            self.experts = experts
+            assert self.moe_block is not None
+            self.moe_block.sharding_strategy = ShardingStrategy.tensor_parallel(
+                len(devices)
+            )
+            self.moe_block_shards = self.moe_block.shard(devices)
 
             self.post_feedforward_layernorm_1 = Gemma4RMSNorm(
-                hidden_size, DType.bfloat16, eps=rms_norm_eps
+                hidden_size, unquantized_dtype, eps=rms_norm_eps
             )
             self.post_feedforward_layernorm_1.sharding_strategy = (
                 ShardingStrategy.replicate(len(devices))
@@ -134,7 +132,7 @@ class Gemma4TextDecoderLayer(Module):
             )
 
             self.post_feedforward_layernorm_2 = Gemma4RMSNorm(
-                hidden_size, DType.bfloat16, eps=rms_norm_eps
+                hidden_size, unquantized_dtype, eps=rms_norm_eps
             )
             self.post_feedforward_layernorm_2.sharding_strategy = (
                 ShardingStrategy.replicate(len(devices))
@@ -143,21 +141,11 @@ class Gemma4TextDecoderLayer(Module):
                 self.post_feedforward_layernorm_2.shard(devices)
             )
 
-            self.pre_feedforward_layernorm_2 = Gemma4RMSNorm(
-                hidden_size, DType.bfloat16, eps=rms_norm_eps
-            )
-            self.pre_feedforward_layernorm_2.sharding_strategy = (
-                ShardingStrategy.replicate(len(devices))
-            )
-            self.pre_feedforward_layernorm_2_shards = (
-                self.pre_feedforward_layernorm_2.shard(devices)
-            )
-
         self.devices = devices
         self.allreduce = Allreduce(num_accelerators=len(devices))
 
         self.layer_scalar = Weight(
-            "layer_scalar", dtype, shape=[1], device=devices[0]
+            "layer_scalar", unquantized_dtype, shape=[1], device=DeviceRef.CPU()
         )
 
     def __call__(
@@ -201,18 +189,12 @@ class Gemma4TextDecoderLayer(Module):
                 self.post_feedforward_layernorm_1_shards, mlp_out
             )
 
-            # TODO: router and moe are not shardable (multi_gpu_supported=False),
-            # so this loops over the single-element list instead of using
-            # forward_sharded_layers.
-            moe_out = []
-            for h in hidden_states:
-                orig_shape = h.shape
-                h_flat = ops.reshape(h, [-1, orig_shape[-1]])
-                top_k_weights, top_k_index = self.router(h_flat)
-                h_flat = self.pre_feedforward_layernorm_2(h_flat)
-                h_flat = self.experts(h_flat, top_k_index, top_k_weights)
-                h_out = ops.reshape(h_flat, orig_shape)
-                moe_out.append(h_out)
+            # Experts are tensor-parallel sharded, so each device computes
+            # a partial result; allreduce sums them into the full output.
+            moe_out = forward_sharded_layers(
+                self.moe_block_shards, hidden_states
+            )
+            moe_out = self.allreduce(moe_out, signal_buffers)
             moe_out = forward_sharded_layers(
                 self.post_feedforward_layernorm_2_shards, moe_out
             )
@@ -234,7 +216,8 @@ class Gemma4TextDecoderLayer(Module):
             residual[i] + hidden_states[i] for i in range(len(hidden_states))
         ]
 
-        scalar = self.layer_scalar.to(hidden_states[0].device)
-        hidden_states = [h * scalar for h in hidden_states]
+        hidden_states = [
+            h * self.layer_scalar.to(h.device) for h in hidden_states
+        ]
 
         return hidden_states
