@@ -428,7 +428,10 @@ accordingly.
 The
 [`PipelineModel`](/max/api/python/generated/max.pipelines.PipelineModel)
 abstract class defines the interface for model implementations. Every model
-architecture must implement certain methods:
+architecture implements `execute()`, and either implements
+`prepare_initial_token_inputs()` directly or delegates input preparation to a
+batch processor (see [Delegating input preparation to a batch
+processor](#delegating-input-preparation-to-a-batch-processor)):
 
 ```python
 from max.pipelines.lib import PipelineModel, ModelInputs, ModelOutputs
@@ -455,6 +458,30 @@ pipeline):
 
 1. **Prefill**: Process the entire prompt at once, building up the KV cache.
 2. **Decode**: Generate tokens one at a time, reusing the cached keys/values.
+
+#### Delegating input preparation to a batch processor
+
+You can move the batching logic into a
+[`BatchProcessor`](/max/api/python/generated/max.pipelines.lib.interfaces.BatchProcessor)
+instead of overriding `prepare_initial_token_inputs()` on the model, and
+register it through the `batching` field of
+[`SupportedArchitecture`](/max/api/python/generated/max.pipelines.lib.registry.SupportedArchitecture).
+At registration, MAX sets the processor as the model's `batch_processor_cls`,
+and the base `PipelineModel.prepare_initial_token_inputs()` delegates to it. For
+ragged batches, subclass
+[`RaggedBatchProcessor`](/max/api/python/generated/max.pipelines.lib.interfaces.RaggedBatchProcessor),
+which receives a
+[`BatchProcessorRuntime`](/max/api/python/generated/max.pipelines.lib.interfaces.BatchProcessorRuntime)
+describing the active devices and KV cache.
+
+Use a batch processor when several architectures share the same batching logic,
+or when you want that logic isolated from the model's graph construction. For
+example, one Llama 3 batch processor backs Llama 3, OLMo, Granite, Qwen 2, and
+Phi-3; see the
+[`llama3` architecture](https://github.com/modular/modular/tree/main/max/python/max/pipelines/architectures/llama3)
+for a reference implementation. Override `prepare_initial_token_inputs()` on the
+model instead when the batching is specific to one architecture and tightly
+coupled to how it builds inputs.
 
 #### Linking to the architecture config
 

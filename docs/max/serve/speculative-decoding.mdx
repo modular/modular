@@ -202,8 +202,10 @@ flags.
 These restrictions apply when speculative decoding is enabled:
 
 - `--enable-echo` isn't supported alongside speculative decoding.
-- Structured output (JSON-schema-constrained generation) isn't supported
-  alongside speculative decoding.
+- [Structured output](/max/serve/structured-output) (JSON-schema-constrained
+  generation) works alongside speculative decoding: the constraint bitmask is
+  applied to each speculated position during verification. As with structured
+  output generally, this requires a GPU deployment.
 - The target and draft must share the same `max_length`.
 - Repetition, frequency, and presence penalties are disabled when a
   separate draft model is configured (`--draft-model-path`), which covers
