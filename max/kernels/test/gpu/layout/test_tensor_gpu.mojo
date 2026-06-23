@@ -59,7 +59,7 @@ def test_copy_dram_to_sram_async(ctx: DeviceContext) raises:
 
     comptime kernel = copy_to_sram_test_kernel[tensor_layout]
     var ptr = UnsafePointer(to=check_state).bitcast[Scalar[DType.bool]]()
-    ctx.enqueue_function_experimental[kernel](
+    ctx.enqueue_function[kernel](
         tensor.device_tensor(),
         DeviceBuffer[DType.bool](
             ctx,

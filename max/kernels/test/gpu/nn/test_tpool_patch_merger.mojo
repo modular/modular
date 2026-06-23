@@ -144,15 +144,15 @@ def test_tpool_patch_merger(ctx: DeviceContext) raises:
     # GPU kernel: contiguous output
     var x_tile = TileTensor[mut=False](
         x_dev,
-        row_major(Coord(Idx(total_in), Idx(D))),
+        row_major(Coord(total_in, D)),
     )
     var out_tile = TileTensor(
         out_dev,
-        row_major(Coord(Idx(total_out), Idx(D))),
+        row_major(Coord(total_out, D)),
     )
     var bounds_tensor = TileTensor[mut=False](
         bounds,
-        row_major(Coord(Idx(n_videos), Idx(3))),
+        row_major(Coord(n_videos, Idx[3])),
     )
 
     tpool_patch_merger(

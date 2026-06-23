@@ -13,10 +13,10 @@
 
 
 from std.math import iota
-from register import *
-import compiler_internal as compiler
-from tensor import OutputTensor
-from tensor.managed_tensor_slice import (
+from extensibility import *
+import extensibility as compiler
+from extensibility import OutputTensor
+from extensibility import (
     _MutableInputVariadicTensors as MutableInputVariadicTensors,
 )
 
@@ -60,6 +60,9 @@ struct ParameterizedOpaqueType:
         output.store(IndexList[1](0), x.x)
         output.store(IndexList[1](P0), x.y)
 
-    @staticmethod
-    def shape[P0: Int](x: SIMDPair[P0, _]) -> IndexList[1]:
-        return IndexList[1](x.S0 + x.S1)
+
+@compiler.register_shape_function("kernel_with_parameterized_opaque")
+def kernel_with_parameterized_opaque_shape[
+    P0: Int
+](x: SIMDPair[P0, _]) -> IndexList[1]:
+    return IndexList[1](x.S0 + x.S1)

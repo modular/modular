@@ -38,10 +38,22 @@ modular_py_binary(
     srcs = ["smoke_test.py"],
     imports = [".."],
     tags = ["no-pydeps"],  # TODO: Fix and re-enable
+    # Mirror the package default plus //max_private so private archs (e.g.
+    # //max_private/minimax_m3:smoke_test_m3) can host their own smoke-test
+    # entrypoints that reuse this driver. Mirrors verify_pipelines.
+    visibility = [
+        "//:__pkg__",
+        "//SDK/integration-test:__subpackages__",
+        "//max/tests:__subpackages__",
+        "//max_private:__subpackages__",
+        "//oss/modular/max/tests:__subpackages__",
+    ],
     deps = [
         ":eval_runner",
         ":inference_server_harness",
         requirement("click"),
+        requirement("pydantic"),
+        requirement("pyyaml"),
         "//max/python/max/entrypoints:pipelines",
         "//max/tests/integration:hf_repo_lock",
     ],
@@ -66,8 +78,40 @@ modular_py_binary(
     name = "smoke_test_github_matrix",
     srcs = ["smoke_test_github_matrix.py"],
     imports = [".."],
+    visibility = [
+        "//:__pkg__",
+        "//SDK/integration-test:__subpackages__",
+        "//ci/serve_smoke_tests_workflow:__pkg__",
+        "//max/tests:__subpackages__",
+        "//oss/modular/max/tests:__subpackages__",
+    ],
     deps = [
         requirement("click"),
+    ],
+)
+
+modular_py_library(
+    name = "check_golden_eligibility",
+    srcs = ["check_golden_eligibility.py"],
+    data = ["golden_ignore_list.yaml"],
+    imports = [".."],
+    deps = [
+        requirement("click"),
+        requirement("pyyaml"),
+        requirement("requests"),
+    ],
+)
+
+modular_py_binary(
+    name = "prefetch_hf_repos",
+    testonly = True,
+    srcs = ["prefetch_hf_repos.py"],
+    imports = [".."],
+    tags = ["no-pydeps"],
+    deps = [
+        ":smoke_test",
+        requirement("click"),
+        requirement("huggingface-hub"),
     ],
 )
 
@@ -134,6 +178,25 @@ modular_py_test(
     deps = [
         ":smoke_test",
         ":smoke_test_github_matrix",
+        requirement("click"),
+    ],
+)
+
+modular_py_test(
+    name = "test_check_golden_eligibility",
+    size = "small",
+    srcs = [
+        "conftest.py",
+        "test_check_golden_eligibility.py",
+    ],
+    imports = [".."],
+    # TODO(MODELS-994): Investigate and enable on macOS
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        ":check_golden_eligibility",
         requirement("click"),
     ],
 )

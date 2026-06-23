@@ -21,14 +21,30 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, get_args
 
+# Polyfill for transformers v5: `is_torch_fx_available` was removed from
+# transformers.utils.import_utils, but some `trust_remote_code` modeling
+# files (e.g. deepseek-ai/DeepSeek-V2-Lite-Chat's modeling_deepseek.py)
+# still import it. torch.fx is unconditionally available in our deps
+# (torch >= 2.9), so always return True. Mirrors the inline patch in
+# max/tests/integration/architectures/deepseekV2/torch_reference/
+# modeling_deepseek.py.
+import transformers.utils.import_utils as _tui
+
+if not hasattr(_tui, "is_torch_fx_available"):
+    _tui.is_torch_fx_available = lambda: True
+
 import click
 import torch
-import transformers
-from create_pipelines import PIPELINE_ORACLES, GenericOracle
+from create_pipelines import (
+    PIPELINE_ORACLES,
+    ComponentModelOracle,
+    GenericOracle,
+)
 from max import driver, pipelines
 from max.entrypoints.cli import DevicesOptionType
 from max.entrypoints.cli.entrypoint import configure_cli_logging
 from max.pipelines.lib.device_specs import (
+    _default_device_specs,
     device_specs_from_normalized_device_handle,
     normalize_device_specs_input,
 )
@@ -76,7 +92,7 @@ EX_TEMPFAIL = 75
     "--devices",
     "device_type",
     type=DevicesOptionType(),
-    default="default",
+    default=None,
     help="Type of device to run pipeline with. Default is to use the first available GPU.",
 )
 @click.option(
@@ -138,7 +154,7 @@ EX_TEMPFAIL = 75
     help="Generate logprobs in addition to logits.",
 )
 def main(
-    device_type: str | list[int],
+    device_type: str | list[int] | None,
     framework_name: str,
     pipeline_name: str,
     encoding_name: pipelines.SupportedEncoding | None,
@@ -150,15 +166,6 @@ def main(
     mini: bool,
     generate_logprobs: bool,
 ) -> None:
-    # This version is detached from the one pulled from rules_pycross,
-    # assert that the override is working. Checked here rather than at
-    # module level so that transitive importers (e.g. precompile_all_pipelines)
-    # that never use transformers don't fail.
-    assert transformers.__version__ == "4.57.6", (
-        f"Expected transformers 4.57.6 but got {transformers.__version__}."
-        " The v4 wheel override may not be wired into this target's deps."
-    )
-
     if "gemma3" in pipeline_name:
         # Running into dynamo error:
         # https://huggingface.co/google/gemma-3-4b-it/discussions/51
@@ -188,8 +195,12 @@ def main(
         )
     try:
         generate_llm_logits(
-            device_specs=device_specs_from_normalized_device_handle(
-                normalize_device_specs_input(device_type)
+            device_specs=(
+                _default_device_specs()
+                if device_type is None
+                else device_specs_from_normalized_device_handle(
+                    normalize_device_specs_input(device_type)
+                )
             ),
             framework_name=framework_name,
             pipeline_name=pipeline_name,
@@ -266,7 +277,27 @@ def generate_llm_logits(
 
     title = f"{pipeline_name} - {framework_name.upper()} - {encoding_name or 'Default Encoding'}"
     with github_log_group(title):
-        if framework_name == "max":
+        if framework_name == "max" and isinstance(
+            pipeline_oracle, ComponentModelOracle
+        ):
+            from max.driver import load_devices
+            from test_common.text_encoder_evaluate import run_max_text_encoder
+
+            devices = load_devices(device_specs)
+            prompts = [req.prompt for req in inputs]
+            print(
+                f"Running {pipeline_name} text encoder on MAX "
+                f"(padded_length={pipeline_oracle.padded_length})"
+            )
+            results = run_max_text_encoder(
+                model_path=pipeline_oracle.model_path,
+                component_model_class=pipeline_oracle.component_model_class,
+                devices=devices,
+                prompts=prompts,
+                padded_length=pipeline_oracle.padded_length,
+                print_outputs=print_output,
+            )
+        elif framework_name == "max":
             if encoding_name is None:
                 max_encoding_name = get_max_default_encoding(
                     pipeline_oracle, pipeline_name, device_specs
@@ -291,6 +322,32 @@ def generate_llm_logits(
                 evaluation_batch_size=evaluation_batch_size,
                 reference=reference,
                 generate_logprobs=generate_logprobs,
+            )
+        elif framework_name == "torch" and isinstance(
+            pipeline_oracle, ComponentModelOracle
+        ):
+            from test_common.torch_utils import run_text_encode
+
+            torch_device = get_torch_device(device_specs)
+
+            with maybe_log_hf_downloads(log_hf_downloads):
+                torch_pipeline_and_tokenizer = (
+                    pipeline_oracle.create_torch_pipeline(
+                        encoding=encoding_name,
+                        device=torch_device,
+                    )
+                )
+
+            print(
+                f"Running {pipeline_name} text encoder on Torch "
+                f"(pad_to_length={pipeline_oracle.padded_length})"
+            )
+            results = run_text_encode(
+                model=torch_pipeline_and_tokenizer.model,
+                data_processor=torch_pipeline_and_tokenizer.data_processor,
+                device=torch_device,
+                textgen_requests=inputs,
+                pad_to_length=pipeline_oracle.padded_length,
             )
         elif framework_name == "torch":
             torch_device = get_torch_device(device_specs)

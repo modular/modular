@@ -96,9 +96,8 @@ mojo_binary(
     deps = [
         ":kernels",
         "//max:compiler",
-        "//max:compiler_internal",
+        "//max:extensibility",
         "//max:layout",
-        "//max:tensor",
         "@mojo//:std",
     ],
 )
@@ -109,9 +108,8 @@ mojo_library(
     validate_missing_docs = False,
     deps = [
         "//max:compiler",
-        "//max:compiler_internal",
+        "//max:extensibility",
         "//max:layout",
-        "//max:tensor",
         "@mojo//:std",
     ],
 )

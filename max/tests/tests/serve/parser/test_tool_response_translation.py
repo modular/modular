@@ -16,7 +16,7 @@
 import json
 from unittest.mock import MagicMock
 
-from max.interfaces import ParsedToolCall, ParsedToolResponse
+from max.pipelines.modeling.types import ParsedToolCall, ParsedToolResponse
 from max.serve.router.openai_routes import OpenAIChatResponseGenerator
 from max.serve.schemas.openai import (
     ChatCompletionLogprobs,

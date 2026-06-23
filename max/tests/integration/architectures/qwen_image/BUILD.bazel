@@ -27,7 +27,7 @@ modular_py_test(
         "no-sandbox",
     ],
     deps = [
-        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/diffusion",
         requirement("numpy"),
     ],
 )

@@ -27,31 +27,65 @@ def rms_norm(
     weight_offset: float = 0.0,
     multiply_before_cast: bool = False,
 ) -> TensorValue:
-    """Performs Root Mean Square layer normalization.
+    """Computes root mean square normalization over the last dimension of ``input``.
 
-    Computes ``output = input / rms(input) * weight`` where
-    ``rms(x) = sqrt(mean(x^2) + epsilon)``.
+    The output is ``input / rms(input) * (weight + weight_offset)`` where
+    ``rms(x) = sqrt(mean(x ** 2) + epsilon)``. Reduction runs over the last
+    axis of ``input`` and is broadcast back across the leading axes. See
+    `Root Mean Square Layer Normalization
+    <https://arxiv.org/abs/1910.07467>`_ for the original formulation.
 
-    When ``multiply_before_cast`` is ``False`` (Llama-style), the input is
-    cast to the output dtype before multiplication by the weight.  When
-    ``True`` (Gemma-style), the multiplication is performed before the cast.
+    Two variants are supported through ``weight_offset`` and
+    ``multiply_before_cast``:
+
+    - **Llama-style** (default): ``weight_offset=0`` and
+      ``multiply_before_cast=False``. The normalized input is cast to the
+      output dtype before multiplication by the weight.
+    - **Gemma-style**: ``weight_offset=1`` and ``multiply_before_cast=True``.
+      The weight is treated as ``1 + weight`` and multiplication runs in
+      the reduction dtype before casting back.
+
+    For example:
+
+    .. code-block:: python
+
+        from max.dtype import DType
+        from max.graph import DeviceRef, Graph, TensorType, ops
+
+        with Graph(
+            "rms",
+            input_types=[
+                TensorType(DType.float32, ("batch", "seq", 128), DeviceRef.GPU()),
+                TensorType(DType.float32, (128,), DeviceRef.GPU()),
+            ],
+        ) as g:
+            x, weight = g.inputs
+            y_llama = ops.rms_norm(x.tensor, weight.tensor, epsilon=1e-6)
+            y_gemma = ops.rms_norm(
+                x.tensor, weight.tensor, epsilon=1e-6,
+                weight_offset=1.0, multiply_before_cast=True,
+            )
+            g.output(y_llama, y_gemma)
 
     Args:
-        input: The input tensor to normalize.
-        weight: The weight tensor whose shape must match the last dimension
-            of ``input``.
-        epsilon: A small value added to the denominator for numerical
-            stability.
-        weight_offset: A value added to the weight before normalization.
-            Typically ``1`` for Gemma-like normalization and ``0`` otherwise.
-        multiply_before_cast: Whether to multiply before casting to the
-            output dtype.
+        input: The tensor to normalize. Reduction runs over the last axis.
+        weight: The scale applied after normalization. A 1-D tensor whose
+            shape matches the last dimension of ``input``.
+        epsilon: A small positive constant added to the mean of squares for
+            numerical stability.
+        weight_offset: A value added to ``weight`` before scaling. Use
+            ``1.0`` for Gemma-style normalization and ``0.0`` otherwise.
+            Defaults to ``0.0``.
+        multiply_before_cast: Whether to multiply by the (offset) weight
+            before casting the normalized input back to the output dtype.
+            Llama-style sets this to ``False``. Defaults to ``False``.
 
     Returns:
-        A normalized tensor with the same shape and dtype as ``input``.
+        A tensor with the same shape and dtype as ``input``.
 
     Raises:
-        ValueError: If weight shape doesn't match the last dimension of input.
+        ValueError: If ``weight`` does not match the last dimension of
+            ``input``.
     """
     input = TensorValue(input)
     weight = TensorValue(weight)

@@ -14,12 +14,42 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 import yaml
 from pydantic import ConfigDict, Field, model_validator
 
 from .base_model import MAXBaseModel
+
+_RECIPE_PREFIX = "max/pipelines/architectures/"
+
+
+def _resolve_config_file(config_file: str) -> str:
+    """Resolve a config file path, handling built-in recipe prefixes.
+
+    Paths starting with ``max/pipelines/architectures/`` are resolved relative
+    to the installed ``max`` package so that users and CI can reference bundled
+    recipe YAML files without hard-coding a repo root or relying on the current
+    working directory.
+
+    All other paths are returned unchanged (resolved by the caller's cwd as
+    before).
+    """
+    if not config_file.startswith(_RECIPE_PREFIX):
+        return config_file
+
+    suffix = config_file[len(_RECIPE_PREFIX) :]
+    # Navigate from this file (max/config/config_file_model.py) up to the max
+    # package root, then down into pipelines/architectures.  This avoids
+    # importing max.pipelines.architectures which would be a circular dep.
+    max_pkg_dir = Path(__file__).parent.parent
+    resolved = max_pkg_dir / "pipelines" / "architectures" / suffix
+    if not resolved.is_file():
+        raise FileNotFoundError(
+            f"Built-in recipe not found: {config_file} (resolved to {resolved})"
+        )
+    return str(resolved)
 
 
 class ConfigFileModel(MAXBaseModel):
@@ -94,6 +124,7 @@ class ConfigFileModel(MAXBaseModel):
             Dictionary with config file values merged in if config_file was provided.
         """
         if (config_file := data.get("config_file")) is not None:
+            config_file = _resolve_config_file(config_file)
             with open(config_file) as f:
                 loaded_data = yaml.safe_load(f) or {}
 

@@ -20,6 +20,7 @@ from std.os import listdir
 ```
 """
 
+from std._plugin import CurrentPlugin
 from std.collections import InlineArray, List
 from std.collections.string.string_slice import _unsafe_strlen
 from std.format.tstring import TString
@@ -88,7 +89,7 @@ struct _dirent_macos(Copyable):
 struct _DirHandle:
     """Handle to an open directory descriptor opened via opendir."""
 
-    var _handle: OpaquePointer[MutExternalOrigin]
+    var _handle: OpaquePointer[MutUntrackedOrigin]
 
     def __init__(out self, var path: String) raises:
         """Construct the _DirHandle using the path provided.
@@ -100,7 +101,7 @@ struct _DirHandle:
             raise Error("the directory '", path, "' does not exist")
 
         var handle = external_call[
-            "opendir", _CPointer[NoneType, ExternalOrigin[mut=True]]
+            "opendir", _CPointer[NoneType, UntrackedOrigin[mut=True]]
         ](path.as_c_string_slice().unsafe_ptr())
 
         if not handle:
@@ -141,17 +142,19 @@ struct _DirHandle:
 
         while True:
             var ep = external_call[
-                "readdir", _CPointer[_dirent_linux, MutExternalOrigin]
+                "readdir", _CPointer[_dirent_linux, MutUntrackedOrigin]
             ](self._handle)
             if not ep:
                 break
             ref name = ep.unsafe_value().take_pointee().name
             var name_ptr = name.unsafe_ptr().bitcast[Byte]()
             var name_str = StringSlice[origin_of(name)](
-                ptr=name_ptr,
-                length=Int(
-                    _unsafe_strlen(name_ptr, _dirent_linux.MAX_NAME_SIZE)
-                ),
+                unsafe_from_utf8=Span(
+                    ptr=name_ptr,
+                    length=Int(
+                        _unsafe_strlen(name_ptr, _dirent_linux.MAX_NAME_SIZE)
+                    ),
+                )
             )
             if name_str == "." or name_str == "..":
                 continue
@@ -169,17 +172,19 @@ struct _DirHandle:
 
         while True:
             var ep = external_call[
-                "readdir", _CPointer[_dirent_macos, MutExternalOrigin]
+                "readdir", _CPointer[_dirent_macos, MutUntrackedOrigin]
             ](self._handle)
             if not ep:
                 break
             ref name = ep.unsafe_value().take_pointee().name
             var name_ptr = name.unsafe_ptr().bitcast[Byte]()
             var name_str = StringSlice[origin_of(name)](
-                ptr=name_ptr,
-                length=Int(
-                    _unsafe_strlen(name_ptr, _dirent_macos.MAX_NAME_SIZE)
-                ),
+                unsafe_from_utf8=Span(
+                    ptr=name_ptr,
+                    length=Int(
+                        _unsafe_strlen(name_ptr, _dirent_macos.MAX_NAME_SIZE)
+                    ),
+                )
             )
             if name_str == "." or name_str == "..":
                 continue
@@ -238,6 +243,10 @@ def abort() -> Never:
     available.
     """
 
+    # Plugin hook may longjmp
+    # if so, the trap below is dead.
+    CurrentPlugin.abort_fn()
+
     __mlir_op.`llvm.intr.trap`()
 
     # We need to satisfy the noreturn checker.
@@ -292,13 +301,6 @@ def _abort_impl[
             )
     else:
         print(prefix, " ", loc, ": ", message, sep="", flush=True)
-
-    # FIXME(MOCO-3858): Mark `message` destroyed to work around a spurious
-    # lifetime-checker error when a `Some[Writable]` value (without an
-    # `ImplicitlyDestructible` bound) is consumed via `print(...)` before a
-    # no-return tail like `abort()`. We can't use `forget_deinit()` because
-    # that takes a `var` argument. Remove this once the compiler bug is fixed.
-    __mlir_op.`lit.ownership.mark_destroyed`(__get_mvalue_as_litref(message))
 
     abort()
 

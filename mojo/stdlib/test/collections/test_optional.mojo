@@ -13,6 +13,11 @@
 
 from std.builtin.device_passable import DevicePassable
 from std.collections import OptionalReg
+from std.memory import (
+    is_trivially_copyable,
+    is_trivially_destructible,
+    is_trivially_movable,
+)
 from std.sys import size_of
 
 from std.testing import *
@@ -152,10 +157,19 @@ def test_optional_conformance() raises:
     assert_true(conforms_to(Optional[Int], Writable))
 
 
+@fieldwise_init
+struct _NonWritable(Movable):
+    """A `Movable & ImplicitlyDeletable` type that is not `Writable`,
+    `Copyable`, or `Hashable` — used to exercise the negative case of
+    `Optional`'s conditional conformances."""
+
+    var n: Int
+
+
 def test_optional_conditional_conformances() raises:
     assert_true(conforms_to(Optional[Int], Writable))
     assert_true(conforms_to(Optional[String], Writable))
-    assert_false(conforms_to(Optional[MoveOnly[Int]], Writable))
+    assert_false(conforms_to(Optional[_NonWritable], Writable))
 
     assert_true(conforms_to(Optional[Int], Copyable))
     assert_true(conforms_to(Optional[String], Copyable))
@@ -163,14 +177,16 @@ def test_optional_conditional_conformances() raises:
 
     assert_true(conforms_to(Optional[Int], Hashable))
     assert_true(conforms_to(Optional[String], Hashable))
-    assert_false(conforms_to(Optional[MoveOnly[Int]], Hashable))
+    # `MoveOnly[T]` is conditionally `Hashable` when `T` is `Hashable`.
+    assert_true(conforms_to(Optional[MoveOnly[Int]], Hashable))
+    assert_false(conforms_to(Optional[_NonWritable], Hashable))
 
 
 struct _NonTrivial(Copyable):
     def __init__(out self, *, copy: Self):
         pass
 
-    def __init__(out self, *, deinit take: Self):
+    def __init__(out self, *, deinit move: Self):
         pass
 
     def __del__(deinit self):
@@ -179,14 +195,14 @@ struct _NonTrivial(Copyable):
 
 def test_optional_triviality() raises:
     comptime trivial = Optional[Int]
-    assert_true(trivial.__copy_ctor_is_trivial)
-    assert_true(trivial.__move_ctor_is_trivial)
-    assert_true(trivial.__del__is_trivial)
+    assert_true(is_trivially_copyable[trivial]())
+    assert_true(is_trivially_movable[trivial]())
+    assert_true(is_trivially_destructible[trivial]())
 
     comptime not_trivial = Optional[_NonTrivial]
-    assert_false(not_trivial.__copy_ctor_is_trivial)
-    assert_false(not_trivial.__move_ctor_is_trivial)
-    assert_false(not_trivial.__del__is_trivial)
+    assert_false(is_trivially_copyable[not_trivial]())
+    assert_false(is_trivially_movable[not_trivial]())
+    assert_false(is_trivially_destructible[not_trivial]())
 
 
 def test_optional_write_to() raises:
@@ -196,10 +212,14 @@ def test_optional_write_to() raises:
 
 def test_optional_write_repr_to() raises:
     check_write_to(
-        Optional[Int](None), expected="Optional[Int](None)", is_repr=True
+        Optional[Int](None),
+        expected="Optional[SIMD[DType.int, 1]](None)",
+        is_repr=True,
     )
     check_write_to(
-        Optional[Int](42), expected="Optional[Int](Int(42))", is_repr=True
+        Optional[Int](42),
+        expected="Optional[SIMD[DType.int, 1]](Int(42))",
+        is_repr=True,
     )
 
 
@@ -258,9 +278,9 @@ def test_optional_unwrap() raises:
 
 def test_optional_repr_wrap() raises:
     var o = Optional(10)
-    assert_equal(repr(o), "Optional[Int](Int(10))")
+    assert_equal(repr(o), "Optional[SIMD[DType.int, 1]](Int(10))")
     o = None
-    assert_equal(repr(o), "Optional[Int](None)")
+    assert_equal(repr(o), "Optional[SIMD[DType.int, 1]](None)")
 
 
 def test_optional_iter() raises:

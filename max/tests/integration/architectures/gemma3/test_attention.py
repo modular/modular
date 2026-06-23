@@ -21,13 +21,13 @@ from max.driver import Accelerator, Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
-from max.kv_cache import PagedKVCacheManager
 from max.nn.kernels import KVCacheParams
 from max.nn.kv_cache import PagedCacheValues
 from max.nn.rotary_embedding import Llama3RotaryEmbedding
 from max.pipelines.architectures.gemma3.layers.attention import (
     Gemma3Attention as MaxGemma3Attention,
 )
+from max.pipelines.kv_cache import PagedKVCacheManager
 from test_common.context_utils import create_text_context
 from torch.utils.dlpack import from_dlpack
 from transformers.models.gemma3.configuration_gemma3 import Gemma3TextConfig
@@ -224,7 +224,7 @@ def generate_max_outputs(
     input_row_offsets_type = TensorType(
         DType.uint32, shape=["input_row_offsets_len"], device=device_ref
     )
-    flattened_kv_types = kv_params.get_symbolic_inputs().flatten()
+    flattened_kv_types = kv_params.flattened_kv_inputs()
 
     # Build graph.
     with Graph(
@@ -236,9 +236,9 @@ def generate_max_outputs(
         ),
     ) as graph:
         inputs, input_row_offsets, *kv_cache = graph.inputs
-        kv_collection: PagedCacheValues = (
-            kv_params.get_symbolic_inputs().unflatten(iter(kv_cache)).inputs[0]
-        )
+        kv_collection: PagedCacheValues = kv_params.unflatten_kv_inputs(
+            iter(kv_cache)
+        ).inputs[0]
 
         graph.output(
             attention(
@@ -253,8 +253,8 @@ def generate_max_outputs(
     # Set up cache inputs and call the compiled model.
     batch = [create_text_context(np.empty(input_seq_len))]
     kv_manager.claim(batch[0].request_id, replica_idx=0)
-    kv_manager.alloc(batch[0], replica_idx=0, num_steps=1)
-    kv_runtime_inputs = kv_manager.runtime_inputs([batch]).inputs[0]
+    kv_manager.alloc(batch[0], replica_idx=0)
+    kv_runtime_inputs = kv_manager.runtime_inputs_for_leaf([batch]).inputs[0]
     assert kv_runtime_inputs.attention_dispatch_metadata is not None
 
     output = compiled.execute(

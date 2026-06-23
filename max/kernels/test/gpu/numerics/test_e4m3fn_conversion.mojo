@@ -610,9 +610,7 @@ def test_simd_e4m3_to_f16_ptx_path(ctx: DeviceContext) raises:
         e4m3_simd[i] = bitcast[DType.float8_e4m3fn](UInt8(i))
 
     comptime kernel = test_simd_float8[DType.float8_e4m3fn, M, DType.float16]
-    ctx.enqueue_function_experimental[kernel](
-        e4m3_simd, grid_dim=1, block_dim=1
-    )
+    ctx.enqueue_function[kernel](e4m3_simd, grid_dim=1, block_dim=1)
     ctx.synchronize()
 
 
@@ -658,9 +656,7 @@ def test_simd_e4m3_to_f32_ptx_path(ctx: DeviceContext) raises:
         e4m3_simd[i] = bitcast[DType.float8_e4m3fn](UInt8(i))
 
     comptime kernel = test_simd_float8[DType.float8_e4m3fn, M, DType.float32]
-    ctx.enqueue_function_experimental[kernel](
-        e4m3_simd, grid_dim=1, block_dim=1
-    )
+    ctx.enqueue_function[kernel](e4m3_simd, grid_dim=1, block_dim=1)
     ctx.synchronize()
 
 
@@ -752,7 +748,7 @@ def test_simd_f32_to_e4m3_ptx_path(ctx: DeviceContext) raises:
         f32_simd[i] = Float32(i - 256)
 
     comptime kernel = test_simd_float32[M, DType.float8_e4m3fn]
-    ctx.enqueue_function_experimental[kernel](f32_simd, grid_dim=1, block_dim=1)
+    ctx.enqueue_function[kernel](f32_simd, grid_dim=1, block_dim=1)
     ctx.synchronize()
 
 

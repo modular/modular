@@ -62,6 +62,12 @@ def modular_py_library(
             data = kwargs.get("data", []),
             ignore_extra_deps = ignore_extra_deps,
             ignore_unresolved_imports = ignore_unresolved_imports,
+            target_compatible_with = select({
+                # No point in running these, causes "error replanting symlinks" failures
+                "//:asan": ["@platforms//:incompatible"],
+                "//:ubsan": ["@platforms//:incompatible"],
+                "//conditions:default": [],
+            }),
             imports = imports if imports != None else [],
             srcs = kwargs.get("srcs", []) + kwargs.get("pyi_srcs", []),
             tags = ["pydeps"],

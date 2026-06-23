@@ -14,6 +14,8 @@
 
 from max._core import __version__
 
+from . import mlrt as mlrt
+from .api import CompiledModel as CompiledModel
 from .api import (
     CustomExtensionsType,
     DebugConfig,

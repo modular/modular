@@ -14,9 +14,11 @@
 # DOC: max/develop/custom-kernels-pytorch.mdx
 
 import compiler
-from std.runtime.asyncrt import DeviceContextPtr
-from tensor import InputTensor, OutputTensor, foreach
 
+from std.gpu.host import DeviceContext
+from extensibility import InputTensor, OutputTensor, foreach
+
+from std.utils.coord import Coord, coord_to_index_list
 from std.utils.index import IndexList
 
 
@@ -30,7 +32,7 @@ struct Grayscale:
     ](
         img_out: OutputTensor[dtype=DType.uint8, rank=2, ...],
         img_in: InputTensor[dtype=DType.uint8, rank=3, ...],
-        ctx: DeviceContextPtr,
+        ctx: DeviceContext,
     ) raises:
         """Execute grayscale conversion on the input image tensor.
 
@@ -44,7 +46,7 @@ struct Grayscale:
         @always_inline
         def color_to_grayscale[
             simd_width: Int
-        ](idx: IndexList[img_out.rank]) -> SIMD[DType.uint8, simd_width]:
+        ](idx: Coord) -> SIMD[DType.uint8, simd_width]:
             """Convert RGB pixel to grayscale using perceptual weighting.
 
             Args:
@@ -60,8 +62,9 @@ struct Grayscale:
             ) -> SIMD[DType.float32, simd_width]:
                 return img_in.load[simd_width](idx).cast[DType.float32]()
 
-            var row = idx[0]
-            var col = idx[1]
+            var idx_l = coord_to_index_list(idx)
+            var row = idx_l[0]
+            var col = idx_l[1]
 
             # Load RGB values from input tensor
             var r = load(IndexList[3](row, col, 0))

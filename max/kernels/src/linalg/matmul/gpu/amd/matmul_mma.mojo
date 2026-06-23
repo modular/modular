@@ -113,19 +113,19 @@ struct QuadrantMmaOp[
     var _a_reg: TileTensor[
         Self.in_type,
         type_of(Self._a_reg_layout),
-        MutExternalOrigin,
+        MutUntrackedOrigin,
         address_space=AddressSpace.LOCAL,
     ]
     var _b_reg: TileTensor[
         Self.in_type,
         type_of(Self._b_reg_layout),
-        MutExternalOrigin,
+        MutUntrackedOrigin,
         address_space=AddressSpace.LOCAL,
     ]
     var _c_reg: TileTensor[
         Self.out_type,
         type_of(Self._c_reg_layout),
-        MutExternalOrigin,
+        MutUntrackedOrigin,
         address_space=AddressSpace.LOCAL,
     ]
 
@@ -203,7 +203,7 @@ struct QuadrantMmaOp[
     ) -> TileTensor[
         Self.out_type,
         type_of(Self._c_reg_layout),
-        MutExternalOrigin,
+        MutUntrackedOrigin,
         address_space=AddressSpace.LOCAL,
     ]:
         """Return the accumulator register tile."""
@@ -256,7 +256,7 @@ struct TiledMma[
         c_reg: TileTensor[
             Self.out_type,
             c_layout,
-            MutExternalOrigin,
+            MutUntrackedOrigin,
             address_space=AddressSpace.LOCAL,
         ],
     ):
@@ -366,19 +366,19 @@ struct MmaOp[
     var _a_reg: TileTensor[
         Self.in_type,
         type_of(Self._a_reg_layout),
-        MutExternalOrigin,
+        MutUntrackedOrigin,
         address_space=AddressSpace.LOCAL,
     ]
     var _b_reg: TileTensor[
         Self.in_type,
         type_of(Self._b_reg_layout),
-        MutExternalOrigin,
+        MutUntrackedOrigin,
         address_space=AddressSpace.LOCAL,
     ]
     var _c_reg: TileTensor[
         Self.out_type,
         type_of(Self._c_reg_layout),
-        MutExternalOrigin,
+        MutUntrackedOrigin,
         address_space=AddressSpace.LOCAL,
     ]
 

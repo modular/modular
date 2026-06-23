@@ -13,6 +13,7 @@ modular_py_test(
     srcs = glob(
         ["*.py"],
         exclude = [
+            "test_encoder.py",  # MODELS-1411
             "test_vision_processor.py",
             "test_vision_transformer_eval.py",
         ],
@@ -34,7 +35,30 @@ modular_py_test(
         "//max/python/max/engine",
         "//max/python/max/graph",
         "//max/python/max/nn",
-        "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/architectures/kimik2_5",
+        requirement("numpy"),
+        requirement("torch"),
+    ],
+)
+
+# MODELS-1411
+modular_py_test(
+    name = "test_encoder",
+    srcs = [
+        "conftest.py",
+        "test_encoder.py",
+    ],
+    imports = ["."],
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/architectures/kimik2_5",
         requirement("numpy"),
         requirement("torch"),
     ],
@@ -48,7 +72,8 @@ modular_py_test(
         "requires-network",
     ],
     deps = [
-        "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/architectures/kimik2_5",
+        "//max/python/max/pipelines/context",
         requirement("av"),
         requirement("numpy"),
         requirement("pillow"),
@@ -81,7 +106,7 @@ modular_py_test(
         "//max/python/max/engine",
         "//max/python/max/graph",
         "//max/python/max/nn",
-        "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/architectures/kimik2_5",
         "//max/tests/integration:hf_repo_lock",
         requirement("datasets"),
         requirement("huggingface-hub"),

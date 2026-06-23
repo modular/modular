@@ -98,8 +98,13 @@ struct TVMFFIErrorCell(
 ):
     comptime type_index: Int32 = Types.ERROR
 
+    @__allow_legacy_any_origin_fields
     var kind: TVMFFIByteArray
+
+    @__allow_legacy_any_origin_fields
     var message: TVMFFIByteArray
+
+    @__allow_legacy_any_origin_fields
     var backtrace: TVMFFIByteArray
     # Unused fields omitted (update_backtrace, cause_chain, extra_context)
 
@@ -123,7 +128,8 @@ def _tvm_ffi_error_move_from_raised(
     lib = OwnedDLHandle(path="libtvm_ffi.so")
     comptime FnType = def(
         UnsafePointer[
-            Optional[UnsafePointer[TVMFFIObject, MutAnyOrigin]], MutAnyOrigin
+            Optional[UnsafePointer[TVMFFIObject, MutAnyOrigin]],
+            origin_of(result),
         ]
     ) thin abi("C") -> None
     fn_ptr = lib.get_function[FnType]("TVMFFIErrorMoveFromRaised")

@@ -18,6 +18,8 @@ from std.math.uutils import udivmod
 from std.sys.info import has_accelerator, has_amd_gpu_accelerator, simd_width_of
 
 import compiler
+
+from std.gpu.host import DeviceContext
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
@@ -43,8 +45,8 @@ from layout import (
 from layout.layout_tensor import Layout, LayoutTensor, copy_dram_to_sram_async
 from layout.tensor_core import TensorCore
 from layout.tile_io import GenericToSharedAsyncTileCopier
-from std.runtime.asyncrt import DeviceContextPtr
-from tensor import InputTensor, ManagedTensorSlice, OutputTensor
+
+from extensibility import InputTensor, ManagedTensorSlice, OutputTensor
 
 from std.utils import StaticTuple
 from std.utils.index import Index
@@ -460,7 +462,7 @@ def tiled_register_matrix_multiplication[
     var dst_reg = stack_allocation[
         dtype=dtype, address_space=AddressSpace.LOCAL
     ](row_major[TM]())
-    dst_reg.copy(dst)
+    dst_reg.copy_from(dst)
 
     # Define the layout for loading tiles of A and B into shared
     # memory.
@@ -497,7 +499,7 @@ def tiled_register_matrix_multiplication[
         barrier()
 
     # Write the final accumulated results to the output matrix.
-    dst.copy(dst_reg)
+    dst.copy_from(dst_reg)
 
 
 # ===-----------------------------------------------------------------------=== #
@@ -576,7 +578,7 @@ def block_tiled_matrix_multiplication[
     var dst_reg = stack_allocation[
         dtype=dtype, address_space=AddressSpace.LOCAL
     ](row_major[TM, TN]())
-    dst_reg.copy(dst)
+    dst_reg.copy_from(dst)
 
     var a_reg = stack_allocation[dtype=dtype, address_space=AddressSpace.LOCAL](
         row_major[TM]()
@@ -603,12 +605,12 @@ def block_tiled_matrix_multiplication[
         comptime for k in range(BK):
             var a_tile = a_smem.tile[TM, 1](partition_row, k)
             var b_tile = b_smem.tile[1, TN](k, partition_col)
-            a_reg.copy(a_tile)
-            b_reg.copy(b_tile)
+            a_reg.copy_from(a_tile)
+            b_reg.copy_from(b_tile)
             outer_product_acc(dst_reg, a_reg, b_reg)
         barrier()
 
-    dst.copy(dst_reg)
+    dst.copy_from(dst_reg)
 
 
 # ===-----------------------------------------------------------------------=== #
@@ -695,7 +697,7 @@ def block_tiled_vectorized_matrix_multiplication[
     var dst_reg = stack_allocation[
         dtype=dtype, address_space=AddressSpace.LOCAL
     ](row_major[TM, TN]())
-    dst_reg.copy(dst)
+    dst_reg.copy_from(dst)
 
     var a_reg = stack_allocation[dtype=dtype, address_space=AddressSpace.LOCAL](
         row_major[TM]()
@@ -740,8 +742,8 @@ def block_tiled_vectorized_matrix_multiplication[
             # Load the corresponding tiles from shared memory into registers.
             var a_tile = a_smem.tile[TM, 1](partition_row, k)
             var b_tile = b_smem.tile[1, TN](k, partition_col)
-            a_reg.copy(a_tile)
-            b_reg.copy(b_tile)
+            a_reg.copy_from(a_tile)
+            b_reg.copy_from(b_tile)
 
             # Perform outer product and accumulate the partial results.
             outer_product_acc(dst_reg, a_reg, b_reg)
@@ -749,7 +751,7 @@ def block_tiled_vectorized_matrix_multiplication[
         barrier()
 
     # Write the final accumulated results to the output matrix.
-    dst.copy(dst_reg)
+    dst.copy_from(dst_reg)
 
 
 # ===-----------------------------------------------------------------------=== #
@@ -935,19 +937,19 @@ struct MatrixMultiplication[algorithm: StaticString]:
         a: InputTensor[dtype=output.dtype, rank=output.rank, ...],
         b: InputTensor[dtype=output.dtype, rank=output.rank, ...],
         # the context is needed for some GPU calls
-        ctx: DeviceContextPtr,
+        ctx: DeviceContext,
     ) raises:
         # At graph compilation time, we will know what device we are compiling
         # this operation for, so we can specialize it for the target hardware.
         comptime if target == "gpu":
-            var a_tt = a.to_tile_tensor().as_any_origin()
-            var b_tt = b.to_tile_tensor().as_any_origin()
-            var out_tt = output.to_tile_tensor().as_any_origin()
+            var a_tt = a.to_tile_tensor().as_unsafe_any_origin()
+            var b_tt = b.to_tile_tensor().as_unsafe_any_origin()
+            var out_tt = output.to_tile_tensor().as_unsafe_any_origin()
 
             M = Int(a_tt.dim[0]())
             N = Int(b_tt.dim[1]())
 
-            gpu_ctx = ctx.get_device_context()
+            gpu_ctx = ctx
 
             # Zero out the memory in the outbound tensor.
             gpu_ctx.enqueue_memset(
@@ -986,7 +988,7 @@ struct MatrixMultiplication[algorithm: StaticString]:
                     BM,
                     BN,
                 ]
-                gpu_ctx.enqueue_function[matmul_kernel, matmul_kernel](
+                gpu_ctx.enqueue_function[matmul_kernel](
                     a_tt,
                     b_tt,
                     out_tt,
@@ -1004,9 +1006,7 @@ struct MatrixMultiplication[algorithm: StaticString]:
                     BM,
                     BN,
                 ]
-                gpu_ctx.enqueue_function[
-                    coalescing_matmul_kernel, coalescing_matmul_kernel
-                ](
+                gpu_ctx.enqueue_function[coalescing_matmul_kernel](
                     a_tt,
                     b_tt,
                     out_tt,
@@ -1028,9 +1028,7 @@ struct MatrixMultiplication[algorithm: StaticString]:
                     BK,
                     NUM_THREADS,
                 ]
-                gpu_ctx.enqueue_function[
-                    tiled_matmul_kernel, tiled_matmul_kernel
-                ](
+                gpu_ctx.enqueue_function[tiled_matmul_kernel](
                     a_tt,
                     b_tt,
                     out_tt,
@@ -1054,9 +1052,7 @@ struct MatrixMultiplication[algorithm: StaticString]:
                     TM,
                     NUM_THREADS,
                 ]
-                gpu_ctx.enqueue_function[
-                    tiled_register_matmul_kernel, tiled_register_matmul_kernel
-                ](
+                gpu_ctx.enqueue_function[tiled_register_matmul_kernel](
                     a_tt,
                     b_tt,
                     out_tt,
@@ -1082,9 +1078,7 @@ struct MatrixMultiplication[algorithm: StaticString]:
                     TN,
                     NUM_THREADS,
                 ]
-                gpu_ctx.enqueue_function[
-                    block_tiled_matmul_kernel, block_tiled_matmul_kernel
-                ](
+                gpu_ctx.enqueue_function[block_tiled_matmul_kernel](
                     a_tt,
                     b_tt,
                     out_tt,
@@ -1110,10 +1104,7 @@ struct MatrixMultiplication[algorithm: StaticString]:
                     TN,
                     NUM_THREADS,
                 ]
-                gpu_ctx.enqueue_function[
-                    block_tiled_vectorized_matmul_kernel,
-                    block_tiled_vectorized_matmul_kernel,
-                ](
+                gpu_ctx.enqueue_function[block_tiled_vectorized_matmul_kernel](
                     a_tt,
                     b_tt,
                     out_tt,
@@ -1151,9 +1142,7 @@ struct MatrixMultiplication[algorithm: StaticString]:
                         MMA_N,
                         MMA_K,
                     ]
-                    gpu_ctx.enqueue_function[
-                        tensor_core_matmul_kernel, tensor_core_matmul_kernel
-                    ](
+                    gpu_ctx.enqueue_function[tensor_core_matmul_kernel](
                         a_layout,
                         b_layout,
                         out_layout,

@@ -16,7 +16,7 @@
 from std.memory import UnsafePointer
 
 
-# CHECK: use of uninitialized memory
+# CHECK: UNINIT_READ at {{.*}}: dtype={{.*}}: load matched debug allocator poison sentinel
 def main():
     var value = UInt32(0x7F7FFFFF)
     var ptr = UnsafePointer(to=value).bitcast[Float32]()

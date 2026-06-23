@@ -56,6 +56,8 @@ def depth512_correction[
     page_size: Int,
 ](
     smem: Depth512AttentionSMem[config=config],
+    tmem_addr: UInt32,
+    seq_id: UInt32,
     score_row: UInt32,
     num_keys: UInt32,
     mask: MaskType,
@@ -87,7 +89,8 @@ def depth512_correction[
     var row: UInt32 = tid % 128
     var m_row = row % UInt32(BM)
 
-    var tmem_addr: UInt32 = smem.tmem_addr_ptr()[]
+    # `tmem_addr` passed in by register (read once post-`cluster_sync` in the
+    # kernel prologue); do NOT re-read `smem.tmem_addr_ptr()` here.
     var o_tmem = TmemAddress(tmem_addr + UInt32(config.TMEM_O))
     var o_hi_tmem = TmemAddress(tmem_addr + UInt32(config.TMEM_O_hi))
 
@@ -98,7 +101,10 @@ def depth512_correction[
     pipeline_o_hi = mbars.consumer_o_hi()
 
     var iter_count: UInt32 = (
-        mask.total_iters[PairBM_mask, BN, page_size](score_row, num_keys) - 1
+        mask.total_iters[PairBM_mask, BN, page_size](
+            seq_id, score_row, num_keys
+        )
+        - 1
     )
 
     # ---- Double-buffer constants for the TMEM rescale loop -------------------
@@ -147,8 +153,8 @@ def depth512_correction[
             comptime for _i in range(0, batch_size, 2):
                 var pair = mul_ftz(
                     SIMD[DType.float32, 2](
-                        rebind[Scalar[DType.float32]](o_b0[_i]),
-                        rebind[Scalar[DType.float32]](o_b0[_i + 1]),
+                        o_b0[_i],
+                        o_b0[_i + 1],
                     ),
                     c_pair,
                 )
@@ -177,8 +183,8 @@ def depth512_correction[
             comptime for _i in range(0, batch_size, 2):
                 var pair = mul_ftz(
                     SIMD[DType.float32, 2](
-                        rebind[Scalar[DType.float32]](o_b1[_i]),
-                        rebind[Scalar[DType.float32]](o_b1[_i + 1]),
+                        o_b1[_i],
+                        o_b1[_i + 1],
                     ),
                     c_pair,
                 )
@@ -200,8 +206,8 @@ def depth512_correction[
             comptime for _i in range(0, load_remainder, 2):
                 var pair = mul_ftz(
                     SIMD[DType.float32, 2](
-                        rebind[Scalar[DType.float32]](o_b0[_i]),
-                        rebind[Scalar[DType.float32]](o_b0[_i + 1]),
+                        o_b0[_i],
+                        o_b0[_i + 1],
                     ),
                     c_pair,
                 )

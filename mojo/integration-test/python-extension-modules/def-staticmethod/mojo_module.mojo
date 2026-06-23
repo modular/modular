@@ -18,7 +18,7 @@ from std.python.bindings import PythonModuleBuilder
 
 
 @export
-def PyInit_mojo_module() -> PythonObject:
+def PyInit_mojo_module() abi("C") -> PythonObject:
     try:
         var b = PythonModuleBuilder("mojo_module")
 
@@ -62,7 +62,6 @@ def PyInit_mojo_module() -> PythonObject:
 
 @fieldwise_init
 struct Dummy(Defaultable, Movable, Writable):
-    @export
     @staticmethod
     def takes_zero_raises_returns() raises -> PythonObject:
         var s = Python().evaluate("getattr(sys.modules['test_module'], 's')")
@@ -71,14 +70,14 @@ struct Dummy(Defaultable, Movable, Writable):
 
         return PythonObject("just another python string")
 
-    @export
     @staticmethod
-    def takes_one_raises_returns(a: PythonObject) raises -> PythonObject:
+    def takes_one_raises_returns(
+        a: PythonObject,
+    ) raises -> PythonObject:
         if a != PythonObject("foo"):
             raise Error(String("input must be 'foo'"))
         return a
 
-    @export
     @staticmethod
     def takes_two_raises_returns(
         a: PythonObject, b: PythonObject
@@ -87,7 +86,6 @@ struct Dummy(Defaultable, Movable, Writable):
             raise Error(String("first input must be 'foo'"))
         return a + b
 
-    @export
     @staticmethod
     def takes_three_raises_returns(
         a: PythonObject, b: PythonObject, c: PythonObject
@@ -126,7 +124,6 @@ struct Dummy(Defaultable, Movable, Writable):
         except e:
             abort(String("Unexpected Python error: ", e))
 
-    @export
     @staticmethod
     def takes_zero_raises() raises:
         var s = Python().evaluate("getattr(sys.modules['test_module'], 's')")
@@ -138,21 +135,18 @@ struct Dummy(Defaultable, Movable, Writable):
             " calling into Python, called from Python!')"
         )
 
-    @export
     @staticmethod
     def takes_one_raises(list_obj: PythonObject) raises:
         if len(list_obj) != 3:
             raise Error(String("list_obj must have length 3"))
         list_obj[PythonObject(0)] = PythonObject("baz")
 
-    @export
     @staticmethod
     def takes_two_raises(list_obj: PythonObject, obj: PythonObject) raises:
         if len(list_obj) != 3:
             raise Error(String("list_obj must have length 3"))
         list_obj[PythonObject(0)] = obj
 
-    @export
     @staticmethod
     def takes_three_raises(
         list_obj: PythonObject, obj: PythonObject, obj2: PythonObject
