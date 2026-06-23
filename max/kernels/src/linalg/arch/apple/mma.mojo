@@ -107,6 +107,53 @@ struct MmaOpApple[
         (tile.ptr + off_hi).store(frag.slice[4, offset=4]())
 
     @always_inline
+    def load_fragment[
+        dtype: DType, bounded: Bool = False
+    ](
+        self,
+        tile: TileTensor[dtype, ...],
+        valid_rows: Int = 16,
+    ) -> SIMD[
+        dtype, 8
+    ]:
+        """Loads one 16x16 simdgroup fragment from a TileTensor sub-tile.
+
+        The `_apple_frag_layout` bit-scatter is owned here at the `MmaOpApple`
+        layer, not via a TileTensor `distribute` (KB
+        `exceptions/apple-mma-fragment-is-not-distribute-expressible`). Used for
+        the V operand of a P.V MMA, where A (P) is a register-resident score
+        fragment and so cannot go through `mma()`.
+
+        `bounded=True` zero-fills rows `>= valid_rows` instead of reading them
+        -- needed for the V load on the last KV sub-tile when `num_keys % 16 !=
+        0`, where reading an OOB row makes `0 * V_oob == NaN` and poisons the
+        fp32 PV accumulator (KB `kernels/apple-m5-fa-prefill`). Depth columns are
+        always in-bounds, so only rows are predicated.
+
+        Parameters:
+            dtype: The element dtype of the source tile.
+            bounded: When True, zero-fill rows `>= valid_rows`.
+
+        Args:
+            tile: A 16x16 source view (row- or col-major).
+            valid_rows: Valid rows from the sub-tile origin (only when bounded).
+
+        Returns:
+            This lane's 8-element fragment.
+        """
+        var row_stride = Self._row_stride(tile)
+        var lo_off = self.rb * row_stride + self.cb
+        var hi_off = (self.rb + 8) * row_stride + self.cb
+        comptime if bounded:
+            # All 16 cols valid (depth is contiguous within a token); only the
+            # key (row) axis can run past the valid KV length.
+            return self._bounded_load[dtype](
+                tile, valid_rows, 16, lo_off, hi_off
+            )
+        else:
+            return self._load_fragment[dtype](tile, lo_off, hi_off)
+
+    @always_inline
     def _do_load[
         dtype: DType, bounded: Bool
     ](

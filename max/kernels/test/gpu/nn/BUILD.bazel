@@ -41,6 +41,10 @@ _EXTRA_CONSTRAINTS = {
     "test_conv_transposed_cudnn.mojo": ["//:nvidia_gpu"],
     "test_irfft.mojo": ["//:nvidia_gpu"],
     "test_flash_attention_amd.mojo": ["//:amd_gpu"],
+    # Apple M5 (cc==5) FA2-prefill: the kernel uses the 16x16 simdgroup MMA
+    # (`MmaOpApple`) which only exists on M5, so these run on Apple GPU only.
+    "test_apple_fa_prefill.mojo": ["//:apple_gpu"],
+    "test_apple_fa_softmax_unit.mojo": ["//:apple_gpu"],
     "test_mha_gemma4_global_decode_amd.mojo": ["//:amd_gpu"],
     "test_mha_sink_weights.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
@@ -365,6 +369,13 @@ _FILECHECK_TESTS = [
             # //max:kv_cache dep and an Apple-GPU-only constraint; declared
             # explicitly below).
             "attention/test_naive_fa_decode_apple.mojo",
+            # Apple-only decode-attention SINK regression (same deps as above).
+            "attention/test_naive_fa_decode_apple_sink.mojo",
+            # Apple-only PAGED-KV prefill correctness gate (needs //max:kv_cache
+            # for the PagedKVCacheCollection operand; declared explicitly below).
+            # Exercises both prefill kernels (no-SMEM + SMEM-staged) via one
+            # `staged` harness flag.
+            "test_apple_fa_prefill_paged.mojo",
         ],
     )
 ]
@@ -374,6 +385,49 @@ _FILECHECK_TESTS = [
 mojo_test(
     name = "attention/test_naive_fa_decode_apple.mojo.test",
     srcs = ["attention/test_naive_fa_decode_apple.mojo"],
+    tags = ["gpu"],
+    target_compatible_with = [
+        "//:has_gpu",
+        "//:apple_gpu",
+    ],
+    deps = [
+        "//max:internal_utils",
+        "//max:kv_cache",
+        "//max:linalg",
+        "//max:nn",
+        "//max:testdata",
+        "@mojo//:std",
+    ],
+)
+
+# Regression for the Apple decode attention-sink seed (split-0-only seeding of
+# the running softmax). Closed-form mass reference. Apple GPU only.
+mojo_test(
+    name = "attention/test_naive_fa_decode_apple_sink.mojo.test",
+    srcs = ["attention/test_naive_fa_decode_apple_sink.mojo"],
+    tags = ["gpu"],
+    target_compatible_with = [
+        "//:has_gpu",
+        "//:apple_gpu",
+    ],
+    deps = [
+        "//max:internal_utils",
+        "//max:kv_cache",
+        "//max:linalg",
+        "//max:nn",
+        "//max:testdata",
+        "@mojo//:std",
+    ],
+)
+
+# Ensure the Apple M5 MMA prefill kernel (`fa_prefill_apple`) is correct on a
+# PAGED KV cache (`PagedKVCacheCollection`, page_size % 16 == 0) vs an
+# independent fp32 host attention reference -- the per-16-row-sub-tile page
+# resolution must interact correctly with page boundaries. Apple GPU only; needs
+# //max:kv_cache.
+mojo_test(
+    name = "test_apple_fa_prefill_paged.mojo.test",
+    srcs = ["test_apple_fa_prefill_paged.mojo"],
     tags = ["gpu"],
     target_compatible_with = [
         "//:has_gpu",
