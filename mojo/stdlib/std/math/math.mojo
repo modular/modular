@@ -3616,7 +3616,7 @@ trait CeilDivable:
 
 trait CeilDivableRaising:
     """
-    The `CeilDivable` trait describes a type that define a floor division and
+    The `CeilDivable` trait describes a type that defines a floor division and
     negation operation that can raise.
 
     Types that conform to `CeilDivableRaising` will work with the `//` operator
