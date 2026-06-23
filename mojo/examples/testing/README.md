@@ -37,8 +37,8 @@ pixi shell
 Run the unit tests contained in the `test` directory by executing:
 
 ```bash
-mojo run test/my_math/test_dec.mojo
-mojo run test/my_math/test_inc.mojo
+mojo run -I src test/my_math/test_dec.mojo
+mojo run -I src test/my_math/test_inc.mojo
 ```
 
 If desired, you can run the example program by executing:
