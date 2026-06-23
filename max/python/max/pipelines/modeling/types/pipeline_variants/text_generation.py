@@ -119,6 +119,21 @@ class VideoContentPart(_MessageContentPart):
         default="video", description="Content type identifier"
     )
 
+    # Optional vendor sampling/sizing hints; ``None`` means unset and models
+    # may ignore them.
+    fps: float | None = Field(
+        default=None,
+        description="Frames-per-second to sample the video at",
+    )
+    max_frames: int | None = Field(
+        default=None,
+        description="Maximum number of frames to sample from the video",
+    )
+    max_long_side_pixel: int | None = Field(
+        default=None,
+        description="Max long-side length in pixels for video preprocessing",
+    )
+
 
 MessageContent = TextContentPart | ImageContentPart | VideoContentPart
 

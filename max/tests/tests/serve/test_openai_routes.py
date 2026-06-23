@@ -67,6 +67,8 @@ from max.serve.router.openai_routes import (
     CompletionStreamResponse,
     OpenAIChatResponseGenerator,
     OpenAICompletionResponseGenerator,
+    _coerce_positive_float,
+    _coerce_positive_int,
     _create_response_format,
     _process_chat_log_probabilities,
     _resolve_grammar_constraints,
@@ -436,6 +438,31 @@ def test_decode_data_uri_base64_padded_unpadded_and_urlsafe() -> None:
 def test_decode_data_uri_base64_rejects_empty_payload() -> None:
     with pytest.raises(ValueError, match="no base64 payload"):
         _decode_data_uri_base64("data:image/png;base64,")
+
+
+def test_coerce_positive_int() -> None:
+    # Positive ints (incl. numeric strings) pass through; everything else,
+    # including bool and non-positive values, becomes None.
+    assert _coerce_positive_int(1008) == 1008
+    assert _coerce_positive_int("512") == 512
+    assert _coerce_positive_int(None) is None
+    assert _coerce_positive_int(0) is None
+    assert _coerce_positive_int(-4) is None
+    assert _coerce_positive_int(True) is None
+    assert _coerce_positive_int("not-a-number") is None
+
+
+def test_coerce_positive_float() -> None:
+    # Positive floats (incl. ints and numeric strings) pass through; bool,
+    # None, non-positive, and garbage become None.
+    assert _coerce_positive_float(1.0) == 1.0
+    assert _coerce_positive_float(2) == 2.0
+    assert _coerce_positive_float("0.5") == 0.5
+    assert _coerce_positive_float(None) is None
+    assert _coerce_positive_float(0) is None
+    assert _coerce_positive_float(-1.0) is None
+    assert _coerce_positive_float(True) is None
+    assert _coerce_positive_float("nope") is None
 
 
 @pytest.mark.asyncio
