@@ -14,9 +14,12 @@
 # DOC: max/develop/build-custom-ops.mdx
 
 import compiler
-from std.runtime.asyncrt import DeviceContextPtr
-from tensor import InputTensor, OutputTensor, foreach
 
+from std.gpu.host import DeviceContext
+
+from extensibility import InputTensor, OutputTensor, foreach
+
+from std.utils.coord import Coord
 from std.utils.index import IndexList
 
 
@@ -30,21 +33,20 @@ struct AddOne:
         output: OutputTensor,
         x: InputTensor[dtype=output.dtype, rank=output.rank, ...],
         # the context is needed for some GPU calls
-        ctx: DeviceContextPtr,
+        ctx: DeviceContext,
     ) raises:
         @parameter
         @always_inline
-        def elementwise_add_one[
-            width: Int
-        ](idx: IndexList[x.rank]) -> SIMD[x.dtype, width]:
+        def elementwise_add_one[width: Int](idx: Coord) -> SIMD[x.dtype, width]:
             return x.load[width](idx) + 1
 
         foreach[elementwise_add_one, target=target](output, ctx)
 
-    # You only need to implement this if you do not manually annotate
-    # output shapes in the graph.
-    @staticmethod
-    def shape(
-        x: InputTensor,
-    ) raises -> IndexList[x.rank]:
-        raise Error("NotImplemented")
+
+# You only need to implement this if you do not manually annotate
+# output shapes in the graph.
+@compiler.register_shape_function("add_one")
+def add_one_shape(
+    x: InputTensor,
+) raises -> IndexList[x.rank]:
+    raise Error("NotImplemented")

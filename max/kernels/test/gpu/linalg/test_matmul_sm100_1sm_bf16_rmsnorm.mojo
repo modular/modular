@@ -75,14 +75,14 @@ def test_rmsnorm_then_matmul[
     )
 
     # --- Shapes ---
-    var ak_shape = row_major(Coord(m, Idx[KType.static_value]()))
+    var ak_shape = row_major(Coord(m, Idx[KType.static_value]))
     var b_shape = row_major(
         Coord(
-            Idx[NType.static_value if transpose_b else KType.static_value](),
-            Idx[KType.static_value if transpose_b else NType.static_value](),
+            Idx[NType.static_value if transpose_b else KType.static_value],
+            Idx[KType.static_value if transpose_b else NType.static_value],
         )
     )
-    var c_shape = row_major(Coord(m, Idx[NType.static_value]()))
+    var c_shape = row_major(Coord(m, Idx[NType.static_value]))
 
     var a_size = M * K
     var b_size = N * K
@@ -110,7 +110,7 @@ def test_rmsnorm_then_matmul[
 
     var gamma_device = ctx.enqueue_create_buffer[a_type](K)
     var gamma_tensor = TileTensor(
-        gamma_device, row_major(Idx[KType.static_value]())
+        gamma_device, row_major(Idx[KType.static_value])
     )
 
     # Separate normalized-A buffers — one per launch, intentionally independent
@@ -136,15 +136,12 @@ def test_rmsnorm_then_matmul[
     var norm_shape = Index(M, K)
 
     # input_fn: shared by both paths, reads from a_raw (read-only)
+    # `rms_norm_gpu` migrated to a `Coord` shape boundary (softmax PR #88203).
     @always_inline
     @__copy_capture(a_raw_tensor)
     @parameter
-    def input_fn[
-        width: Int, _rank: Int
-    ](coords: IndexList[_rank]) -> SIMD[a_type, width]:
-        return a_raw_tensor.raw_load[width=width](
-            a_raw_tensor.layout(Coord(coords))
-        )
+    def input_fn[width: Int](coords: Coord) -> SIMD[a_type, width]:
+        return a_raw_tensor.raw_load[width=width](a_raw_tensor.layout(coords))
 
     # -----------------------------------------------------------------------
     # Vendor path: RMS norm launch 1 → a_normed_vendor → cuBLAS matmul
@@ -153,14 +150,14 @@ def test_rmsnorm_then_matmul[
     @__copy_capture(a_normed_vendor_tensor)
     @parameter
     def output_fn_vendor[
-        width: Int, alignment: Int
-    ](coords: IndexList[2], val: SIMD[a_type, width]) -> None:
+        width: SIMDSize, alignment: Int
+    ](coords: Coord, val: SIMD[a_type, width]) -> None:
         a_normed_vendor_tensor.raw_store[width=width, alignment=alignment](
-            a_normed_vendor_tensor.layout(Coord(coords)), val
+            a_normed_vendor_tensor.layout(coords), val
         )
 
-    rms_norm_gpu[input_fn, output_fn_vendor, multiply_before_cast=True](
-        norm_shape, gamma_tensor, epsilon, weight_offset, ctx
+    rms_norm_gpu[2, input_fn, output_fn_vendor, multiply_before_cast=True](
+        Coord(norm_shape), gamma_tensor, epsilon, weight_offset, ctx
     )
 
     vendor_blas.matmul(
@@ -179,14 +176,14 @@ def test_rmsnorm_then_matmul[
     @__copy_capture(a_normed_ours_tensor)
     @parameter
     def output_fn_ours[
-        width: Int, alignment: Int
-    ](coords: IndexList[2], val: SIMD[a_type, width]) -> None:
+        width: SIMDSize, alignment: Int
+    ](coords: Coord, val: SIMD[a_type, width]) -> None:
         a_normed_ours_tensor.raw_store[width=width, alignment=alignment](
-            a_normed_ours_tensor.layout(Coord(coords)), val
+            a_normed_ours_tensor.layout(coords), val
         )
 
-    rms_norm_gpu[input_fn, output_fn_ours, multiply_before_cast=True](
-        norm_shape, gamma_tensor, epsilon, weight_offset, ctx
+    rms_norm_gpu[2, input_fn, output_fn_ours, multiply_before_cast=True](
+        Coord(norm_shape), gamma_tensor, epsilon, weight_offset, ctx
     )
 
     comptime matmul_config = MatmulConfig[a_type, b_type, c_type, transpose_b](
@@ -206,7 +203,7 @@ def test_rmsnorm_then_matmul[
     @__copy_capture(c_ours_tensor)
     def epilogue_fn[
         _dtype: DType,
-        width: Int,
+        width: SIMDSize,
         *,
         alignment: Int = 1,
     ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> None:
@@ -278,9 +275,9 @@ def main() raises:
                 swapAB=True,
             ](
                 ctx,
-                Idx(Int(m)),
-                Idx[4096](),
-                Idx[4096](),
+                Int(m),
+                Idx[4096],
+                Idx[4096],
             )
 
             test_rmsnorm_then_matmul[
@@ -297,9 +294,9 @@ def main() raises:
                 swapAB=True,
             ](
                 ctx,
-                Idx(Int(m)),
-                Idx[8192](),
-                Idx[7168](),
+                Int(m),
+                Idx[8192],
+                Idx[7168],
             )
 
         # PDL prefetch tests: same small-M shapes with swapAB=True,
@@ -321,9 +318,9 @@ def main() raises:
                 prefetch_tiles_n=2,
             ](
                 ctx,
-                Idx(Int(m)),
-                Idx[4096](),
-                Idx[4096](),
+                Int(m),
+                Idx[4096],
+                Idx[4096],
             )
 
             test_rmsnorm_then_matmul[
@@ -342,7 +339,7 @@ def main() raises:
                 prefetch_tiles_n=2,
             ](
                 ctx,
-                Idx(Int(m)),
-                Idx[8192](),
-                Idx[7168](),
+                Int(m),
+                Idx[8192],
+                Idx[7168],
             )

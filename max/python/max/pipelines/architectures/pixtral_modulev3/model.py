@@ -16,7 +16,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import Any, ClassVar, cast
 
 import numpy as np
 from max.driver import Buffer, Device
@@ -31,19 +31,20 @@ from max.graph.weights import (
     Weights,
     WeightsAdapter,
 )
-from max.nn.kv_cache import KVCacheInputs, KVCacheParams
+from max.nn.kv_cache import KVCacheInputsInterface
 from max.nn.transformer import ReturnLogits
-from max.pipelines.core import TextAndVisionContext
+from max.pipelines.context import TextAndVisionContext
 from max.pipelines.lib import (
-    CompilationTimer,
     KVCacheConfig,
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
     PipelineModelWithKVCache,
+)
+from max.pipelines.lib.utils import (
+    parse_state_dict_from_weights,
     upper_bounded_default,
 )
-from max.pipelines.lib.utils import parse_state_dict_from_weights
 from max.profiler import traced
 from transformers import AutoConfig
 
@@ -75,6 +76,28 @@ class PixtralInputs(ModelInputs):
 
 class PixtralModel(PipelineModelWithKVCache[TextAndVisionContext]):
     """The overall interface to the Pixtral model."""
+
+    model_config_cls: ClassVar[type[Any]] = PixtralConfig
+
+    @classmethod
+    def calculate_max_seq_len(
+        cls,
+        pipeline_config: PipelineConfig,
+        huggingface_config: AutoConfig,
+    ) -> int:
+        """Bounds ``max_length`` by ``text_config.max_position_embeddings`` (config is permissive)."""
+        upper_bound = huggingface_config.text_config.max_position_embeddings
+        try:
+            return upper_bounded_default(
+                upper_bound=upper_bound,
+                default=pipeline_config.model.max_length,
+            )
+        except ValueError as e:
+            raise ValueError(
+                f"Unable to infer max_length for {cls.__qualname__}, "
+                f"the provided max_length ({pipeline_config.model.max_length}) "
+                f"exceeds the model's max_position_embeddings ({upper_bound})."
+            ) from e
 
     vision_model: Callable[..., Any]
     """Compiled vision model (encoder + projector) for a ragged batch of images."""
@@ -150,7 +173,7 @@ class PixtralModel(PipelineModelWithKVCache[TextAndVisionContext]):
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[TextAndVisionContext]],
-        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
+        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> PixtralInputs:
         if len(replica_batches) > 1:
@@ -272,59 +295,6 @@ class PixtralModel(PipelineModelWithKVCache[TextAndVisionContext]):
             kv_cache_inputs=kv_cache_inputs,
         )
 
-    def prepare_next_token_inputs(
-        self,
-        next_tokens: Buffer,
-        prev_model_inputs: ModelInputs,
-    ) -> PixtralInputs:
-        assert isinstance(prev_model_inputs, PixtralInputs)
-
-        old_row_offsets = prev_model_inputs.input_row_offsets
-        row_offsets_size = old_row_offsets.shape[0]
-        next_row_offsets = self._input_row_offsets_prealloc[:row_offsets_size]
-
-        # Next-token steps have no vision inputs
-        return PixtralInputs(
-            tokens=next_tokens,
-            input_row_offsets=next_row_offsets,
-            return_n_logits=prev_model_inputs.return_n_logits,
-            kv_cache_inputs=prev_model_inputs.kv_cache_inputs,
-        )
-
-    @classmethod
-    def get_kv_params(
-        cls,
-        huggingface_config: AutoConfig,
-        pipeline_config: PipelineConfig,
-        devices: list[DeviceRef],
-        kv_cache_config: KVCacheConfig,
-        cache_dtype: DType,
-    ) -> KVCacheParams:
-        return PixtralConfig.construct_kv_params(
-            huggingface_config=huggingface_config,
-            pipeline_config=pipeline_config,
-            devices=devices,
-            kv_cache_config=kv_cache_config,
-            cache_dtype=cache_dtype,
-        )
-
-    @classmethod
-    def calculate_max_seq_len(
-        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
-    ) -> int:
-        try:
-            return upper_bounded_default(
-                upper_bound=huggingface_config.text_config.max_position_embeddings,
-                default=pipeline_config.model.max_length,
-            )
-        except ValueError as e:
-            raise ValueError(
-                "Unable to infer max_length for Pixtral, the provided "
-                f"max_length ({pipeline_config.model.max_length}) exceeds the "
-                f"model's max_position_embeddings "
-                f"({huggingface_config.text_config.max_position_embeddings})."
-            ) from e
-
     def _create_empty_image_embeddings(self) -> Buffer:
         return Buffer.zeros(
             shape=[0, self.huggingface_config.text_config.hidden_size],
@@ -416,73 +386,69 @@ class PixtralModel(PipelineModelWithKVCache[TextAndVisionContext]):
         device_ref = DeviceRef.from_device(self.devices[0])
 
         # ---- Build and compile vision model ----
-        with CompilationTimer("vision model") as timer:
-            with F.lazy(), default_dtype(model_config.dtype):
-                vision_nn = PixtralVision(model_config)
-                vision_nn.to(self.devices[0])
+        with F.lazy(), default_dtype(model_config.dtype):
+            vision_nn = PixtralVision(model_config)
+            vision_nn.to(self.devices[0])
 
-            pixel_patches_type = TensorType(
-                DType.float32,
-                shape=["total_patches", patch_dim],
-                device=DeviceRef.GPU(),
-            )
-            attention_mask_type = TensorType(
-                DType.float32,
-                shape=[1, 1, "total_patches", "total_patches"],
-                device=DeviceRef.GPU(),
-            )
-            position_ids_type = TensorType(
-                DType.int64,
-                shape=["total_patches"],
-                device=DeviceRef.GPU(),
-            )
+        pixel_patches_type = TensorType(
+            DType.float32,
+            shape=["total_patches", patch_dim],
+            device=DeviceRef.GPU(),
+        )
+        attention_mask_type = TensorType(
+            DType.float32,
+            shape=[1, 1, "total_patches", "total_patches"],
+            device=DeviceRef.GPU(),
+        )
+        position_ids_type = TensorType(
+            DType.int64,
+            shape=["total_patches"],
+            device=DeviceRef.GPU(),
+        )
 
-            timer.mark_build_complete()
-            compiled_vision = vision_nn.compile(
-                pixel_patches_type,
-                attention_mask_type,
-                position_ids_type,
-                weights=vision_state_dict,
-            )
+        compiled_vision = vision_nn.compile(
+            pixel_patches_type,
+            attention_mask_type,
+            position_ids_type,
+            weights=vision_state_dict,
+        )
 
         # ---- Build and compile language model ----
-        with CompilationTimer("language model") as timer:
-            with F.lazy(), default_dtype(model_config.dtype):
-                language_nn = PixtralLanguage(model_config)
-                language_nn.kv_params = self.kv_params
-                language_nn.to(self.devices[0])
+        with F.lazy(), default_dtype(model_config.dtype):
+            language_nn = PixtralLanguage(model_config)
+            language_nn.kv_params = self.kv_params
+            language_nn.to(self.devices[0])
 
-            input_ids_type = TensorType(
-                DType.int64, shape=["total_seq_len"], device=DeviceRef.GPU()
-            )
-            input_row_offsets_type = TensorType(
-                DType.uint32, shape=["input_row_offsets_len"], device=device_ref
-            )
-            return_n_logits_type = TensorType(
-                DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
-            )
-            image_embeddings_type = TensorType(
-                model_config.dtype,
-                shape=["total_image_tokens", model_config.hidden_size],
-                device=DeviceRef.GPU(),
-            )
-            image_token_indices_type = TensorType(
-                DType.int32,
-                shape=["num_image_token_indices"],
-                device=device_ref,
-            )
+        input_ids_type = TensorType(
+            DType.int64, shape=["total_seq_len"], device=DeviceRef.GPU()
+        )
+        input_row_offsets_type = TensorType(
+            DType.uint32, shape=["input_row_offsets_len"], device=device_ref
+        )
+        return_n_logits_type = TensorType(
+            DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
+        )
+        image_embeddings_type = TensorType(
+            model_config.dtype,
+            shape=["total_image_tokens", model_config.hidden_size],
+            device=DeviceRef.GPU(),
+        )
+        image_token_indices_type = TensorType(
+            DType.int32,
+            shape=["num_image_token_indices"],
+            device=device_ref,
+        )
 
-            kv_inputs = self.kv_params.get_symbolic_inputs().flatten()
+        kv_inputs = self.kv_params.flattened_kv_inputs()
 
-            timer.mark_build_complete()
-            compiled_language = language_nn.compile(
-                input_ids_type,
-                input_row_offsets_type,
-                return_n_logits_type,
-                image_embeddings_type,
-                image_token_indices_type,
-                *kv_inputs,
-                weights=language_state_dict,
-            )
+        compiled_language = language_nn.compile(
+            input_ids_type,
+            input_row_offsets_type,
+            return_n_logits_type,
+            image_embeddings_type,
+            image_token_indices_type,
+            *kv_inputs,
+            weights=language_state_dict,
+        )
 
         return compiled_vision, compiled_language

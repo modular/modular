@@ -15,18 +15,17 @@ import logging
 import queue
 from dataclasses import dataclass
 
-from max.interfaces import (
+from max.pipelines.lib import EmbeddingsPipelineType
+from max.pipelines.modeling.types import (
     EmbeddingsContext,
     EmbeddingsGenerationInputs,
     EmbeddingsGenerationOutput,
-    MAXPullQueue,
-    MAXPushQueue,
     RequestID,
-    Scheduler,
-    SchedulerResult,
 )
-from max.pipelines.lib import EmbeddingsPipelineType
 from max.profiler import traced
+from max.serve.queue import MAXPullQueue, MAXPushQueue
+from max.serve.scheduler.interface import Scheduler
+from max.serve.scheduler_result import SchedulerResult
 
 from .base import SchedulerProgress
 

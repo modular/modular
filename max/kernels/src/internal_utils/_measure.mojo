@@ -17,8 +17,10 @@ from std.sys import simd_width_of
 
 from std.algorithm import elementwise, mean, sum, vectorize
 from std.algorithm.functional import unswitch
+from std.gpu.host import DeviceContext
 
 from std.utils import IndexList
+from std.utils.coord import Coord
 
 # ===----------------------------------------------------------------------=== #
 # kl_div
@@ -51,31 +53,30 @@ def kl_div(
 def kl_div[
     dtype: DType, //
 ](
-    output: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    x: type_of(output),
-    y: type_of(output),
+    output: UnsafePointer[mut=True, Scalar[dtype], _],
+    x: UnsafePointer[mut=False, Scalar[dtype], _],
+    y: UnsafePointer[mut=False, Scalar[dtype], _],
     len: Int,
+    ctx: DeviceContext,
 ) raises where dtype.is_floating_point():
     @parameter
-    def kl_div_elementwise[
-        simd_width: Int, rank: Int, alignment: Int = 1
-    ](idx: IndexList[rank]):
+    def kl_div_elementwise[simd_width: Int, alignment: Int = 1](idx: Coord):
         output.store(
-            idx[0],
+            idx[0].value(),
             kl_div(
-                x.load[width=simd_width](idx[0]),
-                y.load[width=simd_width](idx[0]),
+                x.load[width=simd_width](idx[0].value()),
+                y.load[width=simd_width](idx[0].value()),
             ),
         )
 
-    elementwise[kl_div_elementwise, simd_width_of[dtype]()](len)
+    elementwise[kl_div_elementwise, simd_width_of[dtype]()](len, ctx)
 
 
 def kl_div[
     dtype: DType, //, out_type: DType = DType.float64
 ](
-    x: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    y: type_of(x),
+    x: UnsafePointer[mut=False, Scalar[dtype], _],
+    y: UnsafePointer[mut=False, Scalar[dtype], _],
     len: Int,
 ) -> Scalar[
     out_type
@@ -109,11 +110,14 @@ def kl_div[
 def correlation[
     dtype: DType, //, out_type: DType = dtype
 ](
-    u: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    v: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
+    u: UnsafePointer[mut=False, Scalar[dtype], _],
+    v: UnsafePointer[mut=False, Scalar[dtype], _],
     len: Int,
+    ctx: DeviceContext,
     *,
-    w: Optional[UnsafePointer[u.type, MutAnyOrigin]] = None,
+    w: OptionalUnsafePointer[mut=True, u.type, _] = Optional[
+        UnsafePointer[u.type, MutUntrackedOrigin]
+    ](),
     centered: Bool = True,
 ) raises -> Scalar[out_type]:
     """Compute the correlation distance between two 1-D arrays.
@@ -134,7 +138,7 @@ def correlation[
     var w_list = List[Scalar[dtype]]()
     if w:
         w_list = List[Scalar[dtype]](capacity=len)
-        _div(w_list.unsafe_ptr(), w.value(), _sum(w.value(), len), len)
+        _div(w_list.unsafe_ptr(), w.value(), _sum(w.value(), len), len, ctx)
     if centered:
         if w:
             umu = _dot[out_type=out_type](u, w_list.unsafe_ptr(), len)
@@ -194,8 +198,8 @@ def correlation[
 def uncentered_unweighted_correlation[
     dtype: DType, //, out_type: DType = dtype
 ](
-    u: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    v: type_of(u),
+    u: UnsafePointer[mut=False, Scalar[dtype], _],
+    v: UnsafePointer[mut=False, Scalar[dtype], _],
     len: Int,
 ) -> Scalar[out_type]:
     """Compute the uncentered and unweighted correlation
@@ -229,8 +233,8 @@ def cosine[
     dtype: DType,
     //,
 ](
-    u: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    v: type_of(u),
+    u: UnsafePointer[mut=False, Scalar[dtype], _],
+    v: UnsafePointer[mut=False, Scalar[dtype], _],
     len: Int,
 ) -> Float64:
     """Compute the Cosine distance between 1-D arrays.
@@ -255,8 +259,8 @@ def relative_difference[
     dtype: DType,
     //,
 ](
-    output: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    ref_out: type_of(output),
+    output: UnsafePointer[mut=False, Scalar[dtype], _],
+    ref_out: UnsafePointer[mut=False, Scalar[dtype], _],
     len: Int,
 ) -> Float64:
     var sum_abs_diff: Float64 = 0.0
@@ -286,71 +290,70 @@ def relative_difference[
 def _sqrt[
     dtype: DType, //
 ](
-    output: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    x: type_of(output),
+    output: UnsafePointer[mut=True, Scalar[dtype], _],
+    x: UnsafePointer[mut=False, Scalar[dtype], _],
     len: Int,
+    ctx: DeviceContext,
 ) raises:
     @parameter
-    def apply_fn[
-        simd_width: Int, rank: Int, alignment: Int = 1
-    ](idx: IndexList[rank]):
+    def apply_fn[simd_width: Int, alignment: Int = 1](idx: Coord):
         output.store(
-            idx[0],
+            idx[0].value(),
             rebind[SIMD[dtype, simd_width]](
-                sqrt(x.load[width=simd_width](idx[0]))
+                sqrt(x.load[width=simd_width](idx[0].value()))
             ),
         )
 
-    elementwise[apply_fn, simd_width_of[dtype]()](len)
+    elementwise[apply_fn, simd_width_of[dtype]()](len, ctx)
 
 
 def _mul[
     dtype: DType, //
 ](
-    output: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    x: type_of(output),
-    y: type_of(output),
+    output: UnsafePointer[mut=True, Scalar[dtype], _],
+    x: UnsafePointer[mut=False, Scalar[dtype], _],
+    y: UnsafePointer[mut=False, Scalar[dtype], _],
     len: Int,
+    ctx: DeviceContext,
 ) raises:
     @parameter
-    def apply_fn[
-        simd_width: Int, rank: Int, alignment: Int = 1
-    ](idx: IndexList[rank]):
+    def apply_fn[simd_width: Int, alignment: Int = 1](idx: Coord):
         output.store(
-            idx[0],
+            idx[0].value(),
             rebind[SIMD[dtype, simd_width]](
-                x.load[width=simd_width](idx[0])
-                * y.load[width=simd_width](idx[0])
+                x.load[width=simd_width](idx[0].value())
+                * y.load[width=simd_width](idx[0].value())
             ),
         )
 
-    elementwise[apply_fn, simd_width_of[dtype]()](len)
+    elementwise[apply_fn, simd_width_of[dtype]()](len, ctx)
 
 
 def _div[
     dtype: DType, //
 ](
-    output: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    x: type_of(output),
+    output: UnsafePointer[mut=True, Scalar[dtype], _],
+    x: UnsafePointer[mut=False, Scalar[dtype], _],
     c: Scalar[dtype],
     len: Int,
+    ctx: DeviceContext,
 ) raises:
     @parameter
-    def apply_fn[
-        simd_width: Int, rank: Int, alignment: Int = 1
-    ](idx: IndexList[rank]):
+    def apply_fn[simd_width: Int, alignment: Int = 1](idx: Coord):
         output.store(
-            idx[0],
-            rebind[SIMD[dtype, simd_width]](x.load[width=simd_width](idx[0]))
+            idx[0].value(),
+            rebind[SIMD[dtype, simd_width]](
+                x.load[width=simd_width](idx[0].value())
+            )
             / c,
         )
 
-    elementwise[apply_fn, simd_width_of[dtype]()](len)
+    elementwise[apply_fn, simd_width_of[dtype]()](len, ctx)
 
 
 def _sum[
     dtype: DType, //
-](src: UnsafePointer[Scalar[dtype], ImmutAnyOrigin], len: Int) raises -> Scalar[
+](src: UnsafePointer[mut=False, Scalar[dtype], _], len: Int) raises -> Scalar[
     dtype
 ]:
     return sum(Span[Scalar[dtype]](ptr=src, length=len))
@@ -358,7 +361,7 @@ def _sum[
 
 def _mean[
     dtype: DType, //
-](src: UnsafePointer[Scalar[dtype], ImmutAnyOrigin], len: Int) raises -> Scalar[
+](src: UnsafePointer[mut=False, Scalar[dtype], _], len: Int) raises -> Scalar[
     dtype
 ]:
     return mean(Span[Scalar[dtype]](ptr=src, length=len))
@@ -367,7 +370,9 @@ def _mean[
 def _dot[
     dtype: DType, //, out_type: DType = dtype
 ](
-    x: UnsafePointer[Scalar[dtype], ImmutAnyOrigin], y: type_of(x), len: Int
+    x: UnsafePointer[mut=False, Scalar[dtype], _],
+    y: UnsafePointer[mut=False, Scalar[dtype], _],
+    len: Int,
 ) -> Scalar[out_type]:
     # loads are the expensive part, so we use the (probably) smaller
     # input type for determining simd width.

@@ -215,14 +215,12 @@ def main() raises:
         # Hash values are AMD MI355-specific (different GPUs produce
         # different MMA results). Only check hashes on AMD.
         comptime amd = has_amd_gpu_accelerator()
-        comptime group4_hash = UInt64(10199430760240325413) if amd else UInt64(
-            0
-        )
+        comptime group4_hash = UInt64(9912283832381023013) if amd else UInt64(0)
         comptime group16_small_hash = UInt64(
             13849357457032651557
         ) if amd else UInt64(0)
         comptime group16_large_hash = UInt64(
-            14361093810734408485
+            16395116742607741733
         ) if amd else UInt64(0)
 
         # group=4 (baseline)

@@ -684,7 +684,7 @@ def test_large_image_gpu_launch[dtype: DType](ctx: DeviceContext) raises:
     ]
 
     # This would fail with block_dim=(64, 64) = 4096 threads.
-    ctx.enqueue_function_experimental[kernel](
+    ctx.enqueue_function[kernel](
         output_dev_nd,
         input_dev_nd.as_immut(),
         grid_dim=(1, 3),

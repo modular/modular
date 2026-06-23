@@ -17,6 +17,7 @@ import logging
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from functools import cached_property
+from typing import Any, ClassVar
 
 import numpy as np
 import numpy.typing as npt
@@ -25,6 +26,7 @@ from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine.api import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
+from max.graph import Module as GraphModule
 from max.graph.buffer_utils import cast_tensors_to
 from max.graph.weights import (
     SafetensorWeights,
@@ -33,11 +35,11 @@ from max.graph.weights import (
     WeightsAdapter,
 )
 from max.nn.comm import Signals
-from max.nn.kv_cache import KVCacheInputs, KVCacheParams
+from max.nn.kv_cache import KVCacheInputsInterface
 from max.nn.layer import Module
 from max.nn.parallel import ParallelArrayOps
 from max.nn.transformer import ReturnLogits
-from max.pipelines.core import TextAndVisionContext
+from max.pipelines.context import TextAndVisionContext
 from max.pipelines.lib import (
     AlwaysSignalBuffersMixin,
     CompilationTimer,
@@ -49,7 +51,6 @@ from max.pipelines.lib import (
 )
 from max.pipelines.lib.vlm_utils import compute_multimodal_merge_indices
 from max.profiler import Tracer, traced
-from transformers import AutoConfig
 
 from .context import Qwen2_5VLTextAndVisionContext, VisionEncodingData
 from .model_config import Qwen2_5VLConfig
@@ -82,7 +83,9 @@ class Qwen2_5VLInputs(ModelInputs):
     return_n_logits: Buffer
     """Number of logits to return, used by speculative decoding for example."""
 
-    kv_cache_inputs: KVCacheInputs[Buffer, Buffer] = field(kw_only=True)
+    kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] = field(
+        kw_only=True
+    )
     """KV cache inputs for the model."""
 
     image_token_indices: list[Buffer] | None = None
@@ -128,6 +131,8 @@ class Qwen2_5VLModel(
 ):
     """A Qwen2.5VL pipeline model for multimodal text generation."""
 
+    model_config_cls: ClassVar[type[Any]] = Qwen2_5VLConfig
+
     vision_model: Model
     """The compiled vision model for processing images."""
 
@@ -169,33 +174,6 @@ class Qwen2_5VLModel(
         self._parallel_ops = ParallelArrayOps(accelerator=gpu0, max_workers=24)
 
         self.vision_model, self.language_model = self.load_model(session)
-
-    @staticmethod
-    def calculate_max_seq_len(
-        pipeline_config: PipelineConfig, huggingface_config: AutoConfig
-    ) -> int:
-        """Calculates the maximum sequence length for the Qwen2.5VL model."""
-        return Qwen2_5VLConfig.calculate_max_seq_len(
-            pipeline_config, huggingface_config
-        )
-
-    @classmethod
-    def get_kv_params(
-        cls,
-        huggingface_config: AutoConfig,
-        pipeline_config: PipelineConfig,
-        devices: list[DeviceRef],
-        kv_cache_config: KVCacheConfig,
-        cache_dtype: DType,
-    ) -> KVCacheParams:
-        """Gets the parameters required to configure the KV cache for Qwen2.5VL."""
-        return Qwen2_5VLConfig.construct_kv_params(
-            huggingface_config,
-            pipeline_config,
-            devices,
-            kv_cache_config,
-            cache_dtype,
-        )
 
     def load_model(self, session: InferenceSession) -> tuple[Model, Model]:
         """Loads the compiled Qwen2.5VL models into the MAX Engine session.
@@ -259,23 +237,22 @@ class Qwen2_5VLModel(
         self.model: Module = Qwen2_5VL(self.model_config)
         self.model.load_state_dict(model_state_dict, strict=True)
 
-        with CompilationTimer("vision model") as timer:
-            vision_graph = self._build_vision_graph()
+        # Build and compile vision + language models in parallel
+        with CompilationTimer("vision + language model") as timer:
+            graph_module = GraphModule()
+            vision_graph = self._build_vision_graph(module=graph_module)
+            language_graph = self._build_language_graph(module=graph_module)
             timer.mark_build_complete()
-            vision_model = session.load(
-                vision_graph, weights_registry=vision_state_dict
+            combined_registry = {**vision_state_dict, **llm_state_dict}
+            models = session.load_all(
+                graph_module, weights_registry=combined_registry
             )
-
-        with CompilationTimer("language model") as timer:
-            language_graph = self._build_language_graph()
-            timer.mark_build_complete()
-            language_model = session.load(
-                language_graph, weights_registry=llm_state_dict
-            )
+            vision_model = models[vision_graph.name]
+            language_model = models[language_graph.name]
 
         return vision_model, language_model
 
-    def _build_vision_graph(self) -> Graph:
+    def _build_vision_graph(self, module: GraphModule | None = None) -> Graph:
         """Build the vision model graph for processing images.
 
         Now supports multi-GPU processing for the vision encoder.
@@ -379,6 +356,7 @@ class Qwen2_5VLModel(
                     *signals.input_types(),
                 ]
             ),
+            module=module,
         ) as graph:
             # Extract inputs
             all_inputs = graph.inputs
@@ -429,7 +407,7 @@ class Qwen2_5VLModel(
 
         return graph
 
-    def _build_language_graph(self) -> Graph:
+    def _build_language_graph(self, module: GraphModule | None = None) -> Graph:
         """Build the language model graph for text generation with image embeddings."""
 
         assert isinstance(self.model, Qwen2_5VL)
@@ -507,6 +485,7 @@ class Qwen2_5VLModel(
                 *signals.input_types(),
                 *flattened_kv_types,
             ),
+            module=module,
         ) as graph:
             (
                 input_ids,
@@ -912,7 +891,7 @@ class Qwen2_5VLModel(
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[Qwen2_5VLTextAndVisionContext]],  # type: ignore[override]
-        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
+        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> Qwen2_5VLInputs:
         """Prepares the initial inputs for the first execution pass of the Qwen2.5VL model."""
@@ -1119,59 +1098,3 @@ class Qwen2_5VLModel(
             max_seqlen=max_seqlen,
             max_window_seqlen=max_window_seqlen,
         )
-
-    def prepare_next_token_inputs(
-        self,
-        next_tokens: Buffer,
-        prev_model_inputs: ModelInputs,
-    ) -> Qwen2_5VLInputs:
-        """Prepares the inputs for subsequent execution steps in a multi-step generation."""
-        # TODO: This is still buggy. Use max_num_steps=1 until this is fixed.
-        assert isinstance(prev_model_inputs, Qwen2_5VLInputs)
-
-        # tokens, old_row_offsets, Optional: [pixel_values, attention_mask]
-        old_row_offsets = prev_model_inputs.input_row_offsets
-
-        row_offsets_size = old_row_offsets[0].shape[0]
-        next_row_offsets = [
-            offsets_prealloc[:row_offsets_size]
-            for offsets_prealloc in self._input_row_offsets_prealloc
-        ]
-
-        old_row_offsets_np = old_row_offsets[0].to_numpy()
-        old_position_ids_np = prev_model_inputs.position_ids.to_numpy()
-
-        # Compute new position ids by adding 1 to the previous final position id
-        # for each element in the batch.
-        # TODO: check this is correct for multi-gpu
-        position_ids_np = (
-            old_position_ids_np[..., old_row_offsets_np[1:] - 1] + 1
-        )
-        position_ids = Buffer.from_numpy(position_ids_np).to(self.devices[0])
-
-        return Qwen2_5VLInputs(
-            signal_buffers=self.signal_buffers,
-            tokens=next_tokens,
-            input_row_offsets=next_row_offsets,
-            position_ids=position_ids,
-            kv_cache_inputs=prev_model_inputs.kv_cache_inputs,
-            return_n_logits=prev_model_inputs.return_n_logits,
-            image_token_indices=None,
-            # Leave vision inputs empty since they are only processed on the
-            # first step.
-            pixel_values=None,
-            window_index=None,
-            vision_position_ids=None,
-            cu_seqlens=None,
-            cu_window_seqlens=None,
-            max_seqlen=None,
-            max_window_seqlen=None,
-            max_grid_size=None,
-        )
-
-    @classmethod
-    def estimate_activation_memory(
-        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
-    ) -> int:
-        # TODO: Make this more robust
-        return 5 * 1024 * 1024 * 1024  # 5 GiB

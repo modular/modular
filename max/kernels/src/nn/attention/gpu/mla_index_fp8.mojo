@@ -41,7 +41,7 @@ from std.utils.index import Index
 # ===----------------------------------------------------------------------=== #
 
 
-@__name(t"mla_apply_mask", mangle=True)
+@__name(t"mla_apply_mask")
 def apply_mask_kernel[
     mask_t: MHAMask,
     ScoresLayoutType: TensorLayout,
@@ -79,7 +79,7 @@ def apply_mask_kernel[
     output.raw_store(Int(global_seq_idx) * max_num_keys + key_idx, masked_val)
 
 
-@__name(t"mla_fill_invalid_topk_{use_causal_mask}", mangle=True)
+@__name(t"mla_fill_invalid_topk_{use_causal_mask}")
 def fill_invalid_topk_kernel[
     IROLayoutType: TensorLayout,
     iro_origin: ImmutOrigin,
@@ -180,9 +180,9 @@ def mla_indexer_ragged_float8_paged[
     mask_str: StaticString,
 ](
     output_indices: TileTensor[DType.int32, ...],
-    q: TileTensor[dtype, ...],
+    q: TileTensor[mut=False, dtype, ...],
     q_s: TileTensor[DType.float32, ...],
-    input_row_offsets: TileTensor[DType.uint32, ...],
+    input_row_offsets: TileTensor[mut=False, DType.uint32, ...],
     k_collection: KCollectionT,
     layer_idx: UInt32,
     ctx: DeviceContext,
@@ -229,6 +229,8 @@ def mla_indexer_ragged_float8_paged[
 
     var batch_size = Int(input_row_offsets.dim[0]()) - 1
     var total_seq_len = Int(q.dim[0]())
+    if total_seq_len == 0:
+        return
 
     var k_cache = k_collection.get_key_cache(Int(layer_idx))
 
@@ -247,7 +249,7 @@ def mla_indexer_ragged_float8_paged[
 
     var scores_tile = TileTensor(
         scores_buf,
-        row_major(Idx(total_seq_len), Idx(max_num_keys)),
+        row_major(total_seq_len, max_num_keys),
     )
 
     var k_operand = KVCacheMHAOperand(k_cache)
@@ -274,7 +276,7 @@ def mla_indexer_ragged_float8_paged[
         depth,
     ]
 
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         scores_tile,
         q.as_immut(),
         q_s,
@@ -308,7 +310,7 @@ def mla_indexer_ragged_float8_paged[
                     ImmutOrigin(input_row_offsets.origin),
                 ]
 
-                ctx.enqueue_function[mask_kernel, mask_kernel](
+                ctx.enqueue_function[mask_kernel](
                     scores_tile,
                     input_row_offsets.as_immut(),
                     mask,
@@ -333,7 +335,7 @@ def mla_indexer_ragged_float8_paged[
     )
     var topk_vals_tile = TileTensor(
         topk_vals_buf,
-        row_major(Idx(total_seq_len), Idx(effective_k)),
+        row_major(total_seq_len, effective_k),
     )
 
     # Output indices tile - use top_k stride to match output buffer layout.
@@ -344,7 +346,7 @@ def mla_indexer_ragged_float8_paged[
         rebind[UnsafePointer[Scalar[DType.int32], MutAnyOrigin]](
             output_indices.ptr
         ),
-        row_major(Idx(total_seq_len), Idx(top_k)),
+        row_major(total_seq_len, top_k),
     )
 
     topk_gpu[sampling=False, largest=True](
@@ -373,7 +375,7 @@ def mla_indexer_ragged_float8_paged[
     var block_size = ceildiv(top_k, 32) * 32
     block_size = min(block_size, 1024)  # Cap at max threads per block
 
-    ctx.enqueue_function[fill_kernel, fill_kernel](
+    ctx.enqueue_function[fill_kernel](
         rebind[UnsafePointer[Scalar[DType.int32], MutAnyOrigin]](
             output_indices.ptr
         ),

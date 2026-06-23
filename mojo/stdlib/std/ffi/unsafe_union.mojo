@@ -27,7 +27,12 @@ type-checked sum types.
 
 from std.builtin.rebind import downcast
 from std.format._utils import FormatStruct, Named, TypeNames
-from std.memory import UnsafePointer
+from std.memory import (
+    UnsafePointer,
+    is_trivially_copyable,
+    is_trivially_destructible,
+    is_trivially_movable,
+)
 from std.sys import align_of, size_of
 from std.sys.intrinsics import _type_is_eq
 
@@ -54,8 +59,10 @@ def _all_trivial_del[*Ts: AnyType]() -> Bool:
     """Check if all types have trivial destructors."""
 
     comptime for i in range(Ts.size):
-        comptime if conforms_to(Ts[i], ImplicitlyDestructible):
-            if not downcast[Ts[i], ImplicitlyDestructible].__del__is_trivial:
+        comptime if conforms_to(Ts[i], ImplicitlyDeletable):
+            if not is_trivially_destructible[
+                downcast[Ts[i], ImplicitlyDeletable]
+            ]():
                 return False
         else:
             return False
@@ -67,7 +74,7 @@ def _all_trivial_copyinit[*Ts: AnyType]() -> Bool:
 
     comptime for i in range(Ts.size):
         comptime if conforms_to(Ts[i], Copyable):
-            if not downcast[Ts[i], Copyable].__copy_ctor_is_trivial:
+            if not is_trivially_copyable[downcast[Ts[i], Copyable]]():
                 return False
         else:
             return False
@@ -79,7 +86,7 @@ def _all_trivial_moveinit[*Ts: AnyType]() -> Bool:
 
     comptime for i in range(Ts.size):
         comptime if conforms_to(Ts[i], Movable):
-            if not downcast[Ts[i], Movable].__move_ctor_is_trivial:
+            if not is_trivially_movable[downcast[Ts[i], Movable]]():
                 return False
         else:
             return False
@@ -239,15 +246,15 @@ struct UnsafeUnion[*Ts: AnyType](ImplicitlyCopyable, Movable, Writable):
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
         self._storage = copy._storage
 
-    def __init__(out self, *, deinit take: Self):
+    def __init__(out self, *, deinit move: Self):
         """Move initializer for the union.
 
         Args:
-            take: The union to move from.
+            move: The union to move from.
         """
         # Bitwise move of the raw storage
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
-        self._storage = take._storage
+        self._storage = move._storage
 
     # Note: No __del__ - UnsafeUnion doesn't know what type is stored, so it
     # cannot call destructors. Users must manually manage destruction if needed.
@@ -258,14 +265,20 @@ struct UnsafeUnion[*Ts: AnyType](ImplicitlyCopyable, Movable, Writable):
     # ===-------------------------------------------------------------------===#
 
     @always_inline("nodebug")
-    def _get_ptr[T: AnyType](ref[_] self) -> UnsafePointer[T, origin_of(self)]:
+    def _get_ptr[
+        origin: Origin, address_space: AddressSpace, //, T: AnyType
+    ](ref[origin, address_space] self) -> UnsafePointer[
+        T, origin, address_space=address_space
+    ]:
         """Get a pointer to the storage interpreted as type T."""
         comptime assert Self._is_element[
             T
         ](), "type is not a union element type"
         var ptr = UnsafePointer(to=self._storage).address
         var typed_ptr = __mlir_op.`pop.union.bitcast`[
-            _type=UnsafePointer[T, origin_of(self)]._mlir_type,
+            _type=UnsafePointer[
+                T, origin, address_space=address_space
+            ]._mlir_type,
         ](ptr)
         return typed_ptr
 
@@ -274,7 +287,9 @@ struct UnsafeUnion[*Ts: AnyType](ImplicitlyCopyable, Movable, Writable):
     # ===-------------------------------------------------------------------===#
 
     @always_inline("nodebug")
-    def unsafe_get[T: AnyType](ref self) -> ref[self] T:
+    def unsafe_get[
+        origin: Origin, address_space: AddressSpace, //, T: AnyType
+    ](ref[origin, address_space] self) -> ref[origin, address_space] T:
         """Get a reference to the stored value as type T.
 
         Parameters:
@@ -401,8 +416,10 @@ struct UnsafeUnion[*Ts: AnyType](ImplicitlyCopyable, Movable, Writable):
 
     @always_inline("nodebug")
     def unsafe_ptr[
-        T: AnyType
-    ](ref[_] self) -> UnsafePointer[T, origin_of(self)]:
+        origin: Origin, address_space: AddressSpace, //, T: AnyType
+    ](ref[origin, address_space] self) -> UnsafePointer[
+        T, origin, address_space=address_space
+    ]:
         """Get a pointer to the storage interpreted as type T.
 
         This allows direct manipulation of the union's storage. Useful for

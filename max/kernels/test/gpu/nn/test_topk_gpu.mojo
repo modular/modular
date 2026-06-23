@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.math import ceildiv, iota
+from std.math import ceildiv, iota, nan
 from std.random import random_float64
 
 from std.algorithm.reduction import max as reduce_max
@@ -26,8 +26,8 @@ from std.gpu.host import DeviceContext
 
 from layout import Coord, Idx, TileTensor, coord_to_index_list, row_major
 
-from nn.topk import _top_k_cpu, _topk_gpu, topk_gpu
-from std.testing import assert_almost_equal, assert_equal
+from nn.topk import _top_k_cpu, _topk_gpu, gumbel_sampling_gpu, topk_gpu
+from std.testing import assert_almost_equal, assert_equal, assert_true
 
 from std.utils import IndexList
 
@@ -142,13 +142,13 @@ def test_case_batched[
 
     # Create tile tensors for kernel calls
 
-    var in_runtime_layout = row_major(Idx(batch_size), Idx(N))
-    var out_vals_runtime_layout = row_major(Idx(batch_size), Idx(K))
-    var out_idxs_runtime_layout = row_major(Idx(batch_size), Idx(out_idx_len))
+    var in_runtime_layout = row_major(batch_size, N)
+    var out_vals_runtime_layout = row_major(batch_size, K)
+    var out_idxs_runtime_layout = row_major(batch_size, out_idx_len)
     var local_topk_runtime_layout = row_major(
-        (Idx(batch_size), Idx(num_blocks_per_input_ * K))
+        (batch_size, num_blocks_per_input_ * K)
     )
-    var k_runtime_layout = row_major(Idx(batch_size))
+    var k_runtime_layout = row_major(batch_size)
 
     var device_in_tt = TileTensor(device_in, in_runtime_layout)
     var device_out_vals_tt = TileTensor(
@@ -178,7 +178,7 @@ def test_case_batched[
                 device_local_topk_idxs_tt,
                 device_out_vals_tt,
                 device_out_idxs_tt,
-                k=k_tt.as_any_origin().as_immut(),
+                k=k_tt.as_unsafe_any_origin().as_immut(),
                 block_size=block_size,
                 num_blocks_per_input=num_blocks_per_input,
             )
@@ -197,7 +197,7 @@ def test_case_batched[
         device_local_topk_idxs_tt,
         device_out_vals_tt,
         device_out_idxs_tt,
-        k=k_tt.as_any_origin().as_immut(),
+        k=k_tt.as_unsafe_any_origin().as_immut(),
         block_size=block_size,
         num_blocks_per_input=num_blocks_per_input,
     )
@@ -214,6 +214,18 @@ def test_case_batched[
         )
         print(_msg1, "and", _msg2, "output available in host pointers")
 
+    # Regression check for sampled token must be in [0, N).
+    # Catches the p==-1 sentinel leaking through as an invalid token id.
+    comptime if sampling:
+        for b in range(batch_size):
+            var tok = Int(topk_idxs_host_ptr[b])
+            assert_true(
+                tok >= 0 and tok < N,
+                "token out of range [0, N): got "
+                + String(tok)
+                + " for N="
+                + String(N),
+            )
     # ASSERT equality with CPU topk kernel reference
     comptime if not sampling:
         var topk_vals_cpu_ptr = ctx.enqueue_create_host_buffer[dtype](
@@ -250,7 +262,7 @@ def test_case_batched[
                     topk_idxs_cpu_tt,
                     1,
                     True,
-                    k=k_host_tt.as_any_origin().as_immut(),
+                    k=k_host_tt.as_unsafe_any_origin().as_immut(),
                 )
 
             time_kernel[run_func_cpu](m, ctx, "topk-cpu")
@@ -263,7 +275,7 @@ def test_case_batched[
             topk_idxs_cpu_tt,
             1,
             True,
-            k=k_host_tt.as_any_origin().as_immut(),
+            k=k_host_tt.as_unsafe_any_origin().as_immut(),
         )
 
         for i in range(out_vals_shape.flattened_length()):
@@ -374,7 +386,7 @@ def test_case_multi_rank[
     var in_runtime_layout = row_major(Coord(input_shape))
     var out_vals_runtime_layout = row_major(Coord(out_vals_shape))
     var out_idxs_runtime_layout = row_major(Coord(out_idxs_shape))
-    var k_runtime_layout = row_major(Idx(batch_size))
+    var k_runtime_layout = row_major(batch_size)
 
     var device_in_tt = TileTensor(device_in, in_runtime_layout)
     var device_out_vals_tt = TileTensor(
@@ -391,7 +403,7 @@ def test_case_multi_rank[
         device_in_tt,
         device_out_vals_tt,
         device_out_idxs_tt,
-        k=k_tt.as_any_origin().as_immut(),
+        k=k_tt.as_unsafe_any_origin().as_immut(),
         block_size=block_size,
         num_blocks_per_input=num_blocks_per_input,
     )
@@ -428,7 +440,7 @@ def test_case_multi_rank[
             topk_idxs_cpu_tt,
             1,
             True,
-            k=k_host_tt.as_any_origin().as_immut(),
+            k=k_host_tt.as_unsafe_any_origin().as_immut(),
         )
 
         for i in range(out_vals_shape.flattened_length()):
@@ -471,6 +483,16 @@ def fill_constant[dtype: DType](buffer: TileTensor[mut=True, dtype, ...]):
 
 
 @parameter
+def fill_nan[dtype: DType](buffer: TileTensor[mut=True, dtype, ...]):
+    """Fill all elements with NaN — regression guard for Bug 1 (all-NaN row
+    emits invalid token) and Bug 3 (p==-1 sentinel causes OOB read/write)."""
+    var nan_val = nan[dtype]()
+    var total_elements = buffer.num_elements()
+    for i in range(total_elements):
+        buffer.raw_store(i, nan_val)
+
+
+@parameter
 def fill_iota[dtype: DType](buf: TileTensor[mut=True, dtype, ...]):
     iota(
         buf.ptr,
@@ -481,6 +503,7 @@ def fill_iota[dtype: DType](buf: TileTensor[mut=True, dtype, ...]):
 struct TestCase[_sampling: Bool, _largest: Bool = True](ImplicitlyCopyable):
     comptime sampling = Self._sampling
     comptime largest = Self._largest
+    var name: String
     var N: Int
     var K: Int
     var block_size: Int
@@ -494,7 +517,9 @@ struct TestCase[_sampling: Bool, _largest: Bool = True](ImplicitlyCopyable):
         block_size: Int,
         batch_size: Int,
         num_blocks_per_input: Optional[Int] = None,
+        name: String = "",
     ):
+        self.name = name
         self.N = N
         self.K = K
         self.block_size = block_size
@@ -530,7 +555,9 @@ def print_test_case(test_case: TestCase):
     if test_case.num_blocks_per_input:
         num_blocks_per_in_msg = String(test_case.num_blocks_per_input.value())
     print(
-        "==== Running Top-K sampling=",
+        "==== Running Top-K "
+        + (test_case.name + " " if test_case.name else "")
+        + "sampling=",
         test_case.sampling,
         ", N=",
         test_case.N,
@@ -644,6 +671,54 @@ def test_multi_rank[dtype: DType, sampling: Bool](ctx: DeviceContext) raises:
     )
     print_test_case(test_case_multi_rank3)
     test_case_multi_rank[dtype, fill_iota](ctx, test_case_multi_rank3)
+
+
+def test_gumbel_zero_temperature[dtype: DType](ctx: DeviceContext) raises:
+    """Regression: temperature == 0 must not cause NaN or an out-of-range token.
+
+    Without the clamp, 0.0 / 0.0 = NaN (all-zero logits at temp=0), causing
+    the argmax to return an undefined token.  With `max(temp, 1e-6)` the
+    division is safe and the token stays in [0, N).
+    """
+    print("==== Running gumbel temp=0 regression: N=256 batch_size=2")
+    comptime N = 256
+    comptime batch_size = 2
+
+    var device_in = ctx.enqueue_create_buffer[dtype](batch_size * N)
+    var device_temp = ctx.enqueue_create_buffer[DType.float32](batch_size)
+    var device_out = ctx.enqueue_create_buffer[DType.int32](batch_size)
+
+    # All-zero logits at temperature 0: the case that divides by zero without
+    # the clamp.
+    with device_in.map_to_host() as in_host:
+        for i in range(batch_size * N):
+            in_host[i] = Scalar[dtype](0)
+    with device_temp.map_to_host() as temp_host:
+        for i in range(batch_size):
+            temp_host[i] = Float32(0)
+
+    var in_tt = TileTensor(device_in, row_major(batch_size, N))
+    var temp_tt = TileTensor(device_temp, row_major(batch_size))
+    var out_tt = TileTensor(device_out, row_major(batch_size, 1))
+
+    gumbel_sampling_gpu(
+        ctx,
+        in_tt.as_unsafe_any_origin().as_immut(),
+        out_tt,
+        temperature=temp_tt.as_unsafe_any_origin().as_immut(),
+    )
+
+    with device_out.map_to_host() as out_host:
+        for b in range(batch_size):
+            var tok = Int(out_host[b])
+            assert_true(
+                tok >= 0 and tok < N,
+                "gumbel temp=0: token out of range [0, N), got "
+                + String(tok)
+                + " (N="
+                + String(N)
+                + ")",
+            )
 
 
 def main() raises:
@@ -915,8 +990,44 @@ def main() raises:
         # Run minimum top-k tests
         test_min_topk[dtype](ctx)
 
+        # Test all NaN input
+        comptime test_nan_256 = TestCase[_sampling=True](
+            name="[All NaN]",
+            N=256,
+            K=1,
+            block_size=256,
+            batch_size=1,
+        )
+        print_test_case(test_nan_256)
+        test_case_batched[dtype, fill_nan](ctx, test_nan_256)
+
+        # Test OOB (N=257) + All NaN
+        comptime test_nan_257 = TestCase[_sampling=True](
+            name="[All NaN + OOB]",
+            N=257,
+            K=1,
+            block_size=256,
+            batch_size=1,
+        )
+        print_test_case(test_nan_257)
+        test_case_batched[dtype, fill_nan](ctx, test_nan_257)
+
+        # All NaN + Batch=4
+        comptime test_nan_batch = TestCase[_sampling=True](
+            name="[All NaN + Batch=4]",
+            N=256,
+            K=1,
+            block_size=256,
+            batch_size=4,
+        )
+        print_test_case(test_nan_batch)
+        test_case_batched[dtype, fill_nan](ctx, test_nan_batch)
+
         # Run multi-rank tests
         test_multi_rank[dtype, False](ctx)
         test_multi_rank[dtype, True](ctx)
         test_multi_rank[bf16_type, False](ctx)
         test_multi_rank[bf16_type, True](ctx)
+
+        # Regression: temperature == 0 in gumbel path must not yield NaN or -1.
+        test_gumbel_zero_temperature[dtype](ctx)

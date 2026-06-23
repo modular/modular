@@ -13,6 +13,7 @@
 
 
 from std.algorithm import elementwise
+from std.gpu.host import DeviceContext
 from layout import (
     TileTensor,
     Coord,
@@ -31,17 +32,12 @@ def print_elements(tensor: TileTensor) raises:
 
     @always_inline
     @parameter
-    def print_elements_lambda[
-        simd_width: Int, rank: Int, alignment: Int = 1
-    ](idx: IndexList[rank]):
-        var coord = Coord(idx)
-        comptime assert tensor.flat_rank >= coord.flat_rank
-        comptime assert coord.is_flat
-        comptime assert not coord.contains_slices
-        print(tensor[coord])
+    def print_elements_lambda[simd_width: Int, alignment: Int = 1](idx: Coord):
+        print(tensor[idx])
 
     elementwise[print_elements_lambda, 1](
-        coord_to_index_list(tensor.layout.shape_coord())
+        tensor.layout.shape_coord(),
+        DeviceContext(api="cpu"),
     )
 
 
@@ -72,19 +68,16 @@ def test_arange[
     @always_inline
     @__copy_capture(out_tensor, step, start, stop)
     @parameter
-    def arange_lambda[
-        simd_width: Int, rank: Int, alignment: Int = 1
-    ](idx: IndexList[rank]):
-        var index = rebind[IndexList[1]](idx)
+    def arange_lambda[simd_width: Int, alignment: Int = 1](idx: Coord):
+        var index = IndexList[1](Int(idx[0].value()))
         var range_val = arange[dtype, simd_width](start, stop, step, index)
         # Extract first element only: idx may have rank > 1 from elementwise,
         # but out_tensor is 1D so we need a single-element coordinate.
-        out_tensor.store[width=simd_width](Coord(Idx(idx[0])), range_val)
+        out_tensor.store[width=simd_width](Coord(idx[0]), range_val)
 
     elementwise[arange_lambda, 1](
-        rebind[IndexList[1]](
-            coord_to_index_list(out_tensor.layout.shape_coord())
-        ),
+        out_tensor.layout.shape_coord(),
+        DeviceContext(api="cpu"),
     )
 
     print_elements(out_tensor)

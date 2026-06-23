@@ -1,12 +1,13 @@
 load("@rules_mojo//mojo:toolchain.bzl", "mojo_copts_toolchain")
 load("@rules_mypy//mypy:mypy.bzl", "mypy_cli")
-load("//bazel:api.bzl", "modular_cc_binary", "modular_cc_library", "modular_py_binary", "modular_py_library", "requirement")
+load("//bazel:api.bzl", "modular_cc_binary", "modular_cc_library", "modular_py_binary", "modular_py_library", "modular_py_test", "requirement")
 load("//bazel:config.bzl", "TOP_LEVEL_TAG")
 load(":gpu_toolchain_alias.bzl", "gpu_toolchain_alias")
 
 package(default_visibility = ["//visibility:public"])
 
 exports_files([
+    "create_venv.py",
     "load_bazel_tools.py",
     "lsan-suppressions.txt",
 ])
@@ -47,12 +48,27 @@ alias(
     }),
 )
 
+modular_py_library(
+    name = "mojodoc_api_href_lib",
+    srcs = ["mojodoc_api_href.py"],
+    imports = ["."],
+)
+
 modular_py_binary(
     name = "mojodoc_json_to_markdown",
     srcs = ["mojodoc_json_to_markdown.py"],
     data = glob(["mojodoc-templates/**"]),
     deps = [
+        ":mojodoc_api_href_lib",
         requirement("jinja2"),
+    ],
+)
+
+modular_py_test(
+    name = "mojodoc_api_href_test",
+    srcs = ["test_mojodoc_api_href.py"],
+    deps = [
+        ":mojodoc_api_href_lib",
     ],
 )
 
@@ -153,7 +169,7 @@ mojo_copts_toolchain(
         "//:modular_config_ci_build": ["-Werror"],
         "//conditions:default": [],
     }),
-    package_copts = select({
+    precompile_copts = select({
         "//:modular_config_ci_build": ["-Werror"],
         "//conditions:default": [],
     }),

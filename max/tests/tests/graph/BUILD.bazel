@@ -54,12 +54,16 @@ modular_py_test(
         "//max/tests/integration/Inputs/test_user_op",
         "@mojo//:std",
     ],
+    tags = [
+        "enable-sanitizers",
+    ],
     deps = [
         "//max/python/max:_core",
         "//max/python/max:_mlir_context",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
+        "//max/python/max/experimental/nn",
         "//max/python/max/graph",
         "//max/python/max/mlir",
         "//max/python/max/nn",
@@ -83,7 +87,12 @@ modular_py_test(
     mojo_deps = [
         "@mojo//:std",
     ],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2411
     deps = [
+        "//max/python/max:_core",
         "//max/python/max:_mlir_context",
         "//max/python/max/driver",
         "//max/python/max/dtype",
@@ -140,7 +149,7 @@ modular_py_test(
         requirement("numpy"),
     ],
     mojo_deps = [
-        "//max:MOGGKernelAPI",
+        "//max:builtin_kernels",
         "//max/tests/tests/graph/uninit_check/read_uninit_op",
         "@mojo//:std",
     ],

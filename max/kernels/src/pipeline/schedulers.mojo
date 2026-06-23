@@ -53,12 +53,7 @@ def _is_ready(
 
 @fieldwise_init
 struct ScheduleMetrics(ImplicitlyCopyable, Movable):
-    """Combined evaluation metrics for a schedule ordering.
-
-    Fields:
-        makespan: Total execution time (max finish time across all ops).
-        vgpr_peak: Peak VGPR pressure (max simultaneous live VGPRs).
-    """
+    """Combined evaluation metrics for a schedule ordering."""
 
     var makespan: Int
     """Total execution time (max finish time across all ops)."""

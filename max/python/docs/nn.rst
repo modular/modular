@@ -11,6 +11,16 @@ max.nn
 
 .. currentmodule:: max.nn
 
+Submodules
+----------
+
+.. toctree::
+   :maxdepth: 1
+
+   nn.attention
+   nn.kernels
+   nn.kv_cache
+
 Base classes
 ------------
 
@@ -175,15 +185,7 @@ Functions
 
    build_max_lengths_tensor
    clamp
+   forward_moe_sharded_layers
    split_batch
    split_batch_replicated
 
-Submodules
-----------
-
-.. toctree::
-   :maxdepth: 1
-
-   nn.attention
-   nn.kernels
-   nn.kv_cache

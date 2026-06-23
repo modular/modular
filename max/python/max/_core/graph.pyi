@@ -63,6 +63,11 @@ def frame_loc(
 ) -> max._mlir.ir.Location:
     """Creates an opaque MLIR location containing a Python stack frame."""
 
+def to_mlir_with_source_locations(op: max._core.Operation) -> str:
+    """
+    Serializes the operation to MLIR assembly text with each op's Python source location materialized into printable form. Does not mutate the operation.
+    """
+
 def _init_and_register_max_context(mlir_ctx: max._mlir.ir.Context) -> None:
     """
     Initializes a process-wide M::Context when none exists, then registers it with the given MLIR context so compiler code can use loadContext.
@@ -71,6 +76,24 @@ def _init_and_register_max_context(mlir_ctx: max._mlir.ir.Context) -> None:
     created via Init::getOrCreateContext (same Init path the Engine uses before
     attaching devices).
     """
+
+class KernelTorchInfo:
+    """
+    Info needed to register a Mojo kernel as a PyTorch custom op.
+
+    Built by ``max.experimental.torch`` from the kernel's ``execute``
+    signature via ``KernelDeclAdaptor``.
+    """
+
+    @property
+    def num_dps_outputs(self) -> int:
+        """Number of leading destination-passing-style output arguments."""
+
+    @property
+    def tensor_arg_names(self) -> list[str]:
+        """
+        Source names of tensor-like arguments in declaration order (DPS outputs first, then inputs).
+        """
 
 class Analysis:
     """
@@ -108,3 +131,13 @@ class Analysis:
 
     def add_path(self, arg: str | os.PathLike, /) -> None:
         """Adds a library search path to this analysis."""
+
+    def seed_kernel_decls(self, arg: max._mlir.ir.Operation, /) -> None:
+        """
+        Copies kernel decl ops and the opaque-type mapping attribute into the given target module. Called by the compile path to seed a model module so the GC pipeline can skip mogg-import-packages.
+        """
+
+    def kernel_torch_info(self, name: str) -> KernelTorchInfo:
+        """
+        Returns the info ``max.experimental.torch`` needs to register the named kernel as a PyTorch custom op. Raises ``ValueError`` if the kernel is unknown or has an unsupported argument type.
+        """

@@ -220,17 +220,23 @@ class Step3p5Attention(Module, Shardable):
             else None
         )
 
+        is_replicate = self._sharding_strategy.is_replicate
         shards: list[Step3p5Attention] = []
         for shard_idx, device in enumerate(devices_list):
-            head_start, head_end = _compute_shard_range(
-                self.n_heads, shard_idx, num_devices
-            )
-            sharded_num_heads = head_end - head_start
+            if is_replicate:
+                # Replicated: every shard owns the full set of heads.
+                sharded_num_heads = self.n_heads
+                sharded_num_kv_heads = self.num_key_value_heads
+            else:
+                head_start, head_end = _compute_shard_range(
+                    self.n_heads, shard_idx, num_devices
+                )
+                sharded_num_heads = head_end - head_start
 
-            kv_head_start, kv_head_end = _compute_shard_range(
-                self.num_key_value_heads, shard_idx, num_devices
-            )
-            sharded_num_kv_heads = kv_head_end - kv_head_start
+                kv_head_start, kv_head_end = _compute_shard_range(
+                    self.num_key_value_heads, shard_idx, num_devices
+                )
+                sharded_num_kv_heads = kv_head_end - kv_head_start
 
             sharded = Step3p5Attention(
                 rope=self.rope,

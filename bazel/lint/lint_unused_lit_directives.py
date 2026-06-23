@@ -73,7 +73,19 @@ def _get_files(bazel: Path, query: str) -> set[Path]:
 
 
 # Add more binary suffixes here if needed
-_BINARY_SUFFIXES = {".jpg", ".jpeg", ".png"}
+_BINARY_SUFFIXES = {
+    ".eot",
+    ".gif",
+    ".ico",
+    ".jpeg",
+    ".jpg",
+    ".otf",
+    ".png",
+    ".ttf",
+    ".webp",
+    ".woff",
+    ".woff2",
+}
 
 
 def _get_lit_directives(file: Path) -> set[str]:

@@ -25,7 +25,6 @@ class TokenGenerationSchedulerConfig:
     max_batch_size: int
     """The maximum number of requests that can be in the token generation batch."""
 
-    max_forward_steps_tg: int
     """The number of tokens to generate for each request in the token generation iteration."""
 
     target_tokens_per_batch_ce: int
@@ -61,6 +60,13 @@ class TokenGenerationSchedulerConfig:
     decode_stall_timeout_s: float | None = None
     """Seconds of no-batch-activity after which the decode worker exits to trigger a pod restart. None disables the watchdog."""
 
+    decode_request_ttl_s: float | None = None
+    """Per-request TTL (seconds) for entries in the decode scheduler's
+    ``prefill_reqs`` and ``inflight_transfers`` dicts. Expired entries are
+    evicted individually (KV blocks released, failure surfaced to the
+    client) so a stuck PD pipeline does not force the stall watchdog to
+    kill the whole engine. ``None`` disables eviction."""
+
     def __post_init__(self) -> None:
         if self.max_batch_size <= 0:
             raise ValueError(
@@ -76,10 +82,6 @@ class TokenGenerationSchedulerConfig:
         ):
             raise ValueError(
                 "Need set `target_tokens_per_batch_ce` for the scheduler to enable chunked prefill."
-            )
-        if self.max_forward_steps_tg <= 0:
-            raise ValueError(
-                f"`max_forward_steps_tg` must be greater than 0, found {self.max_forward_steps_tg}"
             )
         if (
             self.max_batch_total_tokens is not None
@@ -105,9 +107,6 @@ class TokenGenerationSchedulerConfig:
 
         return cls(
             max_batch_size=pipeline_config.runtime.max_batch_size,
-            max_forward_steps_tg=pipeline_config.runtime.max_num_steps
-            if pipeline_config.runtime.max_num_steps != -1
-            else 1,
             target_tokens_per_batch_ce=pipeline_config.runtime.max_batch_input_tokens,
             max_seq_len=pipeline_config.model.max_length,
             max_batch_total_tokens=pipeline_config.runtime.max_batch_total_tokens,
@@ -116,6 +115,7 @@ class TokenGenerationSchedulerConfig:
             data_parallel_degree=pipeline_config.model.data_parallel_degree,
             kvcache_ce_watermark=pipeline_config.runtime.kvcache_ce_watermark,
             decode_stall_timeout_s=pipeline_config.runtime.decode_stall_timeout_s,
+            decode_request_ttl_s=pipeline_config.runtime.decode_request_ttl_s,
             num_speculative_tokens=pipeline_config.speculative.num_speculative_tokens
             if pipeline_config.speculative is not None
             else 0,

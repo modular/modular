@@ -54,7 +54,7 @@ from nn.attention.gpu.nvidia.sm100.attention_utils import (
     elect,
     kv_sub_tile_rows,
 )
-from nn.attention.gpu.nvidia.sm90.attention import (
+from nn.attention.gpu.nvidia.common import (
     get_seq_info,
     KVTMATile,
     MHAPosition,
@@ -138,10 +138,9 @@ struct SM100MHADepth512[
         )
     )
     @__llvm_metadata(`nvvm.cluster_dim`=StaticTuple[Int32, 3](2, 1, 1))
-    @__llvm_metadata(`nvvm.minctasm`=Int(1))
+    @__llvm_metadata(`nvvm.minctasm`=SIMDSize(1))
     @__name(
         t"sm100_mha_depth{Self.config.qk_depth}_{Self.qkv_type}_{Self.output_type}_nqh{Self.config.num_q_heads}_nkvh{Self.config.num_kv_heads}",
-        mangle=True,
     )
     def kernel(
         q_tma_op: QTMATile[
@@ -201,6 +200,13 @@ struct SM100MHADepth512[
 
         var smem = Self.SmemType()
 
+        # Per-warpgroup register allocation.  Depth-512 widens the per-WG
+        # working set vs the depth ≤ 128 path (see `kernel.mojo`), so the
+        # softmax (256) and correction (184) WGs get more registers than
+        # the 192/88 split there; MMA + load warps run lean at "other"
+        # (64), and the spare warps drop to the floor (24).  Sum must fit
+        # in the SM register budget; bump together if a path starts
+        # spilling.
         comptime num_reg_softmax = 256
         comptime num_reg_correction = 184
         comptime num_reg_other = 64
@@ -216,7 +222,8 @@ struct SM100MHADepth512[
         elif warp_idx == 1:
             # TMEM allocation (pair-CTA cooperative).
             tcgen05_alloc[Int32(Self.cta_group)](
-                smem.tmem_addr_ptr(), UInt32(512)
+                smem.tmem_addr_ptr(),
+                UInt32(Self.config.sm100_tmem_cols),
             )
         elif warp_idx == 2:
             e = elect()
@@ -229,6 +236,22 @@ struct SM100MHADepth512[
 
         fence_mbarrier_init()
         cluster_sync()
+
+        # Read the TMEM base from SMEM EXACTLY ONCE here, where the prologue
+        # `cluster_sync()` (preceded by `tcgen05_alloc`'s SMEM store +
+        # MEMBAR.ALL) has provably published it, and carry it in a register to
+        # every consumer warp (softmax/correction/mma) as an explicit argument.
+        # Do NOT let the consumers re-read `smem.tmem_addr_ptr()` in their
+        # bodies: SASS showed the in-body re-reads (the P@V O-operand load deep
+        # in the MMA loop) gated only on KV-pipeline barriers, not on the alloc
+        # publish, so under SM co-residency with the TP `allreduce_1stage` grid
+        # (graph capture) a re-read could observe a stale/pre-alloc slot value
+        # -> garbage TMEM base -> invalid `UTCHMMA` operand ->
+        # CUDA_ERROR_ILLEGAL_INSTRUCTION. Reading once post-barrier and passing
+        # by register (matches the proven `mha_1q` structure) removes every
+        # in-body slot reload. Value is identical to the old per-warp reads
+        # (same published base), so single-shot is bit-identical.
+        var tmem_addr: UInt32 = smem.tmem_addr_ptr()[]
 
         # ---- Warp dispatch -----------------------------------------------
 
@@ -280,6 +303,8 @@ struct SM100MHADepth512[
                 Self.page_size,
             ](
                 smem,
+                tmem_addr,
+                seq_info.prompt_idx,
                 pos.score_row,
                 pos.num_keys,
                 mask,
@@ -320,6 +345,8 @@ struct SM100MHADepth512[
                 Self.page_size,
             ](
                 smem,
+                tmem_addr,
+                seq_info.prompt_idx,
                 pos.score_row,
                 pos.num_keys,
                 mask,
@@ -339,9 +366,10 @@ struct SM100MHADepth512[
             ](batch_size, max_seq_len, valid_length, partition)
 
             if not seq_info.is_valid():
-                var tmem_addr = smem.tmem_addr_ptr()[]
                 tcgen05_release_allocation_lock[Int32(Self.cta_group)]()
-                tcgen05_dealloc[Int32(Self.cta_group)](tmem_addr, UInt32(512))
+                tcgen05_dealloc[Int32(Self.cta_group)](
+                    tmem_addr, UInt32(Self.config.sm100_tmem_cols)
+                )
                 return
             var pos: PositionSummary = PositionSummary.create[
                 ragged=Self.ragged,
@@ -360,6 +388,8 @@ struct SM100MHADepth512[
                 Self.page_size,
             ](
                 smem,
+                tmem_addr,
+                seq_info.prompt_idx,
                 pos.score_row,
                 pos.num_keys,
                 mask,
@@ -439,15 +469,22 @@ struct SM100MHADepth512[
                 )
 
         else:
-            # Spare warps 10-11 (no-op).
+            # Spare warps 10-11 (no-op).  24 is the floor for
+            # `setmaxnreg.dec` on SM90+ — drop these warps' allocation
+            # to the minimum so the active WGs claim their share of the
+            # SM register file.
             warpgroup_reg_dealloc[24]()
 
     @staticmethod
     @always_inline
     def mask_status(
-        mask: Self.MaskType, score_row: UInt32, kv_row: UInt32
+        mask: Self.MaskType,
+        seq_id: UInt32,
+        score_row: UInt32,
+        kv_row: UInt32,
     ) -> TileMaskStatus:
         return mask.status(
+            seq_id,
             Index[dtype=DType.int32](
                 Int(score_row),
                 Int(kv_row),

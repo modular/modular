@@ -30,7 +30,6 @@ from layout import (
     Coord,
     Idx,
     RowMajorLayout,
-    RuntimeInt,
     TileTensor,
     row_major as tt_row_major,
 )
@@ -69,7 +68,7 @@ def _blackwell_matmul_tma_umma_warp_specialized[
     ] = None,
     pdl_level: PDLLevel = PDLLevel(),
     max_profiled_tiles_per_SM: Optional[UInt32] = None,
-    EpilogueLayoutType: TensorLayout = RowMajorLayout[RuntimeInt[DType.int64]],
+    EpilogueLayoutType: TensorLayout = RowMajorLayout[Int64],
 ](
     c_device: TileTensor,
     a_device: TileTensor,
@@ -134,6 +133,14 @@ def _blackwell_matmul_tma_umma_warp_specialized[
             MMA_M == 128 or MMA_M == 64
         ), "Only support MMA_M == 128 or 64 when cta_group == 1"
 
+    comptime if c_type == DType.float32:
+        comptime assert (
+            a_type == b_type == DType.float32
+        ), "Only support float32 input types is tested for float32 output dtype"
+        comptime assert (
+            register_based_epilogue
+        ), "only register-based epilogue is supported for float32 output dtype"
+
     # requirements for float8_e4m3fn output dtype
     comptime if c_type == DType.float8_e4m3fn:
         comptime assert a_type == b_type == DType.bfloat16, (
@@ -169,8 +176,22 @@ def _blackwell_matmul_tma_umma_warp_specialized[
     # ctx.default_device_info.shared_memory_per_multiprocessor gives this magic number on B200
     comptime b200_smem = B200.shared_memory_per_multiprocessor - 1024
 
+    comptime epilogue_is_1d = config.epilogue_is_1d
+
+    comptime assert not (
+        config.use_tma_epilogue_load
+        and elementwise_compute_lambda_fn is not None
+    ), (
+        "use_tma_epilogue_load is mutually exclusive with"
+        " elementwise_compute_lambda_fn"
+    )
+
     comptime SmemType = B200MatmulSmem[
-        a_type, b_type, c_type, transpose_b, config=config
+        a_type,
+        b_type,
+        c_type,
+        transpose_b,
+        config=config,
     ]
     comptime smem_size = size_of[SmemType]()
 
@@ -243,13 +264,15 @@ def _blackwell_matmul_tma_umma_warp_specialized[
     # fmt: on
 
     comptime assert (not config.use_tma_epilogue_load) or (
-        config.use_tma_epilogue_load and c_type == DType.bfloat16
-    ), "TMA epilogue load is only supported for bfloat16 output type"
+        c_type == DType.bfloat16
+        or (config.epilogue_is_1d and c_type == DType.float32)
+    ), "TMA epilogue load is only supported for bfloat16 (2D) or float32 (1D)"
 
-    # Epilogue tensor TMA descriptor: epilogue tensor is 2D (M, N) in GMEM.
-    # When AB_swapped, the CTA's M/N swap, so the tile becomes (MMA_N, BM).
-    # When no epilogue tensor, c_device.ptr is used as a valid placeholder; the
-    # descriptor is never accessed by the kernel (all uses guarded by use_tma_epilogue_load).
+    # Epilogue tensor TMA descriptor (2D only; 1D uses cp.async.bulk).
+    # 2D bias: epilogue tensor is 2D (M, N) in GMEM.
+    #   When AB_swapped, the CTA's M/N swap, so the tile becomes (MMA_N, BM).
+    # When no epilogue tensor or 1D, c_device.ptr is used as a valid placeholder;
+    # the descriptor is never accessed by the kernel.
     comptime epi_load_tma_tile_rows = MMA_N if config.AB_swapped else BM
     comptime epi_load_tma_tile_cols = BM if config.AB_swapped else config.output_tile_shape[
         1
@@ -261,7 +284,7 @@ def _blackwell_matmul_tma_umma_warp_specialized[
     var epi_load_tma_ptr: MutPtr
     var epi_load_tma_rows: Int
     var epi_load_tma_cols: Int
-    comptime if config.use_tma_epilogue_load:
+    comptime if config.use_tma_epilogue_load and not epilogue_is_1d:
         var epi_tt = epilogue_tensor.value()
         epi_load_tma_ptr = rebind[MutPtr](epi_tt.ptr)
         epi_load_tma_rows = Int(epi_tt.dim(0))
@@ -281,6 +304,19 @@ def _blackwell_matmul_tma_umma_warp_specialized[
         epi_load_tma_tile_shape,
         swizzle_mode=config.epi_load_swizzle,
     ](ctx, epi_load_2d)
+
+    # 1D bias: pass raw TileTensor to kernel (cp.async.bulk, no TMA descriptor).
+    # For non-1D, a placeholder dangling pointer is used (never accessed).
+    comptime ImmutPtr = UnsafePointer[Scalar[c_type], ImmutAnyOrigin]
+    var bias_1d_ptr: ImmutPtr
+    comptime if epilogue_is_1d:
+        bias_1d_ptr = rebind[ImmutPtr](epilogue_tensor.value().ptr)
+    else:
+        bias_1d_ptr = rebind[ImmutPtr](c_device.ptr)
+    var bias_1d_tile = KernelType.Bias1DTile(
+        bias_1d_ptr,
+        KernelType.Bias1DTileLayout,
+    )
 
     # Get the kernel entry point from the struct
     comptime kernel = matmul_kernel.run
@@ -308,11 +344,12 @@ def _blackwell_matmul_tma_umma_warp_specialized[
     else:
         workspace = {}
 
-    ctx.enqueue_function[kernel, kernel, dump_asm=False](
+    ctx.enqueue_function[kernel, dump_asm=False](
         a_tma_op,
         b_tma_op,
         c_tma_op,
         epi_load_tma_op,
+        bias_1d_tile,
         cluster_dim,
         mnk,
         workspace,
@@ -342,9 +379,7 @@ def blackwell_matmul_tma_umma_warp_specialized[
     ] = None,
     pdl_level: PDLLevel = PDLLevel(),
     max_profiled_tiles_per_SM: Optional[UInt32] = None,
-    EpilogueLayoutType: TensorLayout = RowMajorLayout[
-        RuntimeInt[DType.int64], RuntimeInt[DType.int64]
-    ],
+    EpilogueLayoutType: TensorLayout = RowMajorLayout[Int64, Int64],
 ](
     c_device: TileTensor,
     a_device: TileTensor,
@@ -607,9 +642,9 @@ def _blackwell_matmul_tma_umma_warp_specialized_split_k[
         reduction_workspace,
         tt_row_major(
             (
-                RuntimeInt(Scalar[DType.int64](num_output_tiles)),
-                Idx[BM](),
-                Idx[MMA_N](),
+                Int64(num_output_tiles),
+                Idx[BM],
+                Idx[MMA_N],
             )
         ),
     )
@@ -623,7 +658,7 @@ def _blackwell_matmul_tma_umma_warp_specialized_split_k[
     else:
         workspace = Span[UInt64, MutAnyOrigin]()
 
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         a_tma_op,
         b_tma_op,
         c_tma_op,
@@ -668,9 +703,7 @@ def blackwell_batched_matmul_tma_umma_warp_specialized[
     ] = None,
     pdl_level: PDLLevel = PDLLevel(),
     max_profiled_tiles_per_SM: Optional[UInt32] = None,
-    EpilogueLayoutType: TensorLayout = RowMajorLayout[
-        RuntimeInt[DType.int64], RuntimeInt[DType.int64]
-    ],
+    EpilogueLayoutType: TensorLayout = RowMajorLayout[Int64, Int64],
 ](
     c_device: TileTensor,
     a_device: TileTensor,
@@ -822,7 +855,7 @@ def matmul_sm100_fallback[
     var N = Int(c.dim[1]())
     var K = Int(a.dim[1]())
 
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         a_tma_op,
         b_tma_op,
         c,

@@ -29,7 +29,7 @@ from std.sys.intrinsics import PrefetchOptions, readfirstlane
 import std.gpu.memory as gpu_memory
 from std.algorithm import vectorize
 from std.bit import log2_floor
-from std.builtin.device_passable import DevicePassable
+from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.builtin.dtype import _unsigned_integral_type_of
 from std.gpu.host import DeviceBuffer, HostBuffer, DeviceContext
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
@@ -315,20 +315,22 @@ struct LayoutTensor[
                 Trait=AnyType,
                 Self,
                 Self.OriginCastType[MutAnyOrigin],
-                Self.OriginCastType[MutExternalOrigin],
+                Self.OriginCastType[MutUntrackedOrigin],
                 Self.OriginCastType[ImmutAnyOrigin],
-                Self.OriginCastType[ImmutExternalOrigin],
+                Self.OriginCastType[ImmutUntrackedOrigin],
             ]().contains[T]()
         else:
             return TypeList.of[
                 Trait=AnyType,
                 Self,
                 Self.OriginCastType[ImmutAnyOrigin],
-                Self.OriginCastType[ImmutExternalOrigin],
+                Self.OriginCastType[ImmutUntrackedOrigin],
             ]().contains[T]()
 
-    def _to_device_type(self, target: MutOpaquePointer[_]):
-        target.bitcast[Self.device_type]()[] = self
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
+        encoder.encode(self, target)
 
     @staticmethod
     def get_type_name() -> String:
@@ -668,7 +670,7 @@ struct LayoutTensor[
 
         Note that the device buffer memory is on the accelerator device (GPU
         global memory). Code running on the CPU can use the
-        [`DeviceContext`](/mojo/std/gpu/host/device_context/DeviceContext) to
+        [`DeviceContext`](/docs/std/gpu/host/device_context/DeviceContext) to
         allocate a `DeviceBuffer` and use that to construct a `LayoutTensor`
         that can be accessed on the GPU. You cannot directly access data in the
         `DeviceBuffer` or `LayoutTensor` from the CPU.
@@ -849,17 +851,7 @@ struct LayoutTensor[
     @implicit
     def __init__(
         other: LayoutTensor,
-        out self: LayoutTensor[
-            other.dtype,
-            other.layout,
-            ImmutOrigin(other.origin),
-            address_space=other.address_space,
-            element_layout=other.element_layout,
-            layout_int_type=other.layout_int_type,
-            linear_idx_type=other.linear_idx_type,
-            masked=other.masked,
-            alignment=other.alignment,
-        ],
+        out self: type_of(other).Immut,
     ):
         """Implicitly cast a mutable LayoutTensor to immutable.
 
@@ -867,6 +859,32 @@ struct LayoutTensor[
             other: The mutable LayoutTensor to cast from.
         """
         self.ptr = other.ptr
+        self.runtime_layout = other.runtime_layout
+        self.runtime_element_layout = other.runtime_element_layout
+
+    @always_inline("builtin")
+    @implicit
+    @doc_hidden
+    def __init__[
+        __disambig: Int = 0
+    ](
+        other: LayoutTensor[mut=True, ...],
+        out self: type_of(other).OriginCastType[MutAnyOrigin],
+    ):
+        self.ptr = other.ptr.as_unsafe_any_origin()
+        self.runtime_layout = other.runtime_layout
+        self.runtime_element_layout = other.runtime_element_layout
+
+    @always_inline("builtin")
+    @implicit
+    @doc_hidden
+    def __init__[
+        __disambig: Int = 0
+    ](
+        other: LayoutTensor,
+        out self: type_of(other).OriginCastType[ImmutAnyOrigin],
+    ):
+        self.ptr = other.ptr.as_unsafe_any_origin()
         self.runtime_layout = other.runtime_layout
         self.runtime_element_layout = other.runtime_element_layout
 
@@ -987,29 +1005,42 @@ struct LayoutTensor[
         origin: The origin for the result tensor.
     """
 
+    comptime Immut = Self.OriginCastType[ImmutOrigin(Self.origin)]
+    """Type alias for an immutably-casted tensor."""
+
     comptime MutableAnyType = Self.OriginCastType[MutAnyOrigin]
     """Mutable LayoutTensor type with MutAnyOrigin."""
     comptime _AsMut = Self.OriginCastType[mut=True, _]
 
     @always_inline("nodebug")
-    def as_any_origin(
+    def as_unsafe_any_origin(
         self,
-    ) -> type_of(self).OriginCastType[AnyOrigin[mut=Self.mut]]:
-        """Casts the origin of the `LayoutTensor` to `AnyOrigin`.
+    ) -> type_of(self).OriginCastType[UnsafeAnyOrigin[mut=Self.mut]]:
+        """Casts the origin of the `LayoutTensor` to `UnsafeAnyOrigin`.
 
         Returns:
-            A pointer with the origin set to `AnyOrigin`.
+            A tensor with the origin set to `UnsafeAnyOrigin`.
 
-        It is usually preferred to maintain concrete origin values instead of
-        using `AnyOrigin`. However, if it is needed, keep in mind that
-        `AnyOrigin` can alias any memory value, so Mojo's ASAP
-        destruction will not apply during the lifetime of the tensor.
+        Safety:
+
+        It is **always** preferred to maintain a concrete origin values instead of
+        using `UnsafeAnyOrigin`. Casting to `UnsafeAnyOrigin` is an inherently unsafe
+        operation that will silently extend unrelated lifetimes and turn off
+        exclusivity checking.
         """
         return {
-            self.ptr.as_any_origin(),
+            self.ptr.as_unsafe_any_origin(),
             self.runtime_layout,
             self.runtime_element_layout,
         }
+
+    @doc_hidden
+    @always_inline("nodebug")
+    @deprecated(use=as_unsafe_any_origin)
+    def as_any_origin(
+        self,
+    ) -> type_of(self).OriginCastType[AnyOrigin[mut=Self.mut]]:
+        return self.as_unsafe_any_origin()
 
     comptime AddressSpaceCastType[
         address_space: AddressSpace = Self.address_space,
@@ -1890,7 +1921,7 @@ struct LayoutTensor[
         """Computes element-wise exponential function.
 
         Returns a new tensor containing the
-        [element-wise exponential](/mojo/std/math/math/exp/) of the input tensor.
+        [element-wise exponential](/docs/std/math/math/exp/) of the input tensor.
 
         Returns:
             A new tensor containing the element-wise exponential.
@@ -2377,7 +2408,7 @@ struct LayoutTensor[
         Returns:
             A SIMD vector containing 'width' consecutive elements from the tensor.
 
-        Performance (copied from 'aligned_load[width](m,n)'):
+        Performance (copied from `aligned_load[width](m,n)`):
 
         - Uses aligned memory access which is faster than unaligned access on
             most architectures.
@@ -2643,7 +2674,7 @@ struct LayoutTensor[
                 Self.dtype,
                 alignment=stack_alignment,
                 address_space=Self.address_space,
-            ]()
+            ]().as_unsafe_any_origin()
         )
 
     @staticmethod
@@ -2698,7 +2729,8 @@ struct LayoutTensor[
             copy = self.stack_allocation()
         else:
             copy = Self.StackTensorType(
-                self.ptr.mut_cast[True]().as_any_origin(), self.runtime_layout
+                self.ptr.mut_cast[True]().as_unsafe_any_origin(),
+                self.runtime_layout,
             )
 
         def self_value(
@@ -5216,7 +5248,7 @@ struct LayoutTensor[
 
     @always_inline
     def distance(
-        self,
+        self: Self.Immut,
         addr: UnsafePointer[
             mut=False,
             Scalar[Self.dtype],
@@ -5269,9 +5301,13 @@ struct LayoutTensor[
         _layout: Layout,
         _uint_dtype: DType = _get_unsigned_type(_layout, Self.address_space),
     ](
-        self,
+        self: Self.Immut,
         src: LayoutTensor[
-            Self.dtype, _layout, address_space=Self.address_space, ...
+            mut=False,
+            Self.dtype,
+            _layout,
+            address_space=Self.address_space,
+            ...,
         ],
     ) -> Scalar[_uint_dtype]:
         """Calculate the element-wise distance between this tensor and another
@@ -5459,12 +5495,12 @@ struct LayoutTensor[
         performance.
 
         For optimal performance, you need to arrange the copy correctly. Use the
-        [`distribute()`](/mojo/layout/layout_tensor/LayoutTensor/#distribute)
+        [`distribute()`](/docs/layout/layout_tensor/LayoutTensor/#distribute)
         method to create thread-local fragments of the source and
         destination tensors, assigning each thread one or more elements to copy.
 
         Optionally, use the
-        [`vectorize()`](/mojo/layout/layout_tensor/LayoutTensor/#vectorize)
+        [`vectorize()`](/docs/layout/layout_tensor/LayoutTensor/#vectorize)
         method to get vectorized views of both tensors before calling
         `distribute()`. This allows each thread to copy multiple elements of the
         tensor. For example:
@@ -5476,9 +5512,9 @@ struct LayoutTensor[
         ```
 
         The copy operation is asynchronous, so you must call
-        [`async_copy_wait_all()`](/mojo/std/gpu/memory/memory/async_copy_wait_all/)
+        [`async_copy_wait_all()`](/docs/std/gpu/memory/memory/async_copy_wait_all/)
         or
-        [`async_copy_wait_group()`](/mojo/std/gpu/memory/memory/async_copy_wait_group/)
+        [`async_copy_wait_group()`](/docs/std/gpu/memory/memory/async_copy_wait_group/)
         to ensure the copy has completed before using the data.
 
         Constraints:
@@ -6451,9 +6487,9 @@ def cp_async_k_major[
     - The destination tensor must be in SHARED address space (SRAM).
     - Both tensors must have the same data type.
     - This function is asynchronous, so you must call
-        [`async_copy_wait_all()`](/mojo/std/gpu/memory/memory/async_copy_wait_all/)
+        [`async_copy_wait_all()`](/docs/std/gpu/memory/memory/async_copy_wait_all/)
         or
-        [`async_copy_wait_group()`](/mojo/std/gpu/memory/memory/async_copy_wait_group/)
+        [`async_copy_wait_group()`](/docs/std/gpu/memory/memory/async_copy_wait_group/)
         to ensure the copy has completed before using the data.
     - K-major layout is particularly beneficial for matrix multiplication
         operations where the inner dimension (K) is accessed contiguously.
@@ -6699,9 +6735,9 @@ def copy_dram_to_sram_async[
     - The destination tensor must be in SHARED address space (SRAM).
     - Both tensors must have the same data type.
     - This function is asynchronous, so you must call
-        [`async_copy_wait_all()`](/mojo/std/gpu/memory/memory/async_copy_wait_all/)
+        [`async_copy_wait_all()`](/docs/std/gpu/memory/memory/async_copy_wait_all/)
         or
-        [`async_copy_wait_group()`](/mojo/std/gpu/memory/memory/async_copy_wait_group/)
+        [`async_copy_wait_group()`](/docs/std/gpu/memory/memory/async_copy_wait_group/)
         to ensure the copy has completed before using the data.
     - The maximum size of each element that can be copied is 16 bytes.
     """
@@ -7794,8 +7830,9 @@ def copy_local_to_shared[
             return
 
     comptime assert src.dtype == dst.dtype or (
-        src.dtype == DType.float32 and dst.dtype.is_half_float()
-    ), "Only support FP32 -> half precision downcast during copy."
+        src.dtype == DType.float32
+        and (dst.dtype.is_half_float() or dst.dtype.is_float8())
+    ), "Only support FP32 -> half-precision or FP8 downcast during copy."
     comptime assert (
         src.element_size == dst.element_size
     ), "src and dst element size mismatch."
@@ -8088,11 +8125,16 @@ struct LayoutTensorIter[
                 not Self.circular
             ), "Circular use case is not supported if an axis is defined."
 
+        # TODO: Temporary stop-gap to avoid refactoring all `LayoutTensor`s
+        # to expect a non-null pointer. Do NOT copy this pattern; new code
+        # should use a properly-initialized `UnsafePointer` instead.
+        # Or to explicitly model nullability, use `Optional[UnsafePointer]`.
+        var this_is_a_hack = 0
         self.ptr = UnsafePointer[
             Scalar[Self.dtype],
             address_space=Self.address_space,
             origin=Self.origin,
-        ](_unsafe_null=())
+        ](unsafe_from_address=this_is_a_hack)
         self.offset = 0
         self.stride = 0
         self.bound = 0
@@ -8234,22 +8276,26 @@ struct LayoutTensorIter[
         self.dimension_bound = dimension_bound
         self.idx = idx
 
+    comptime _OriginCastType[
+        to_mut: Bool, //, to_origin: Origin[mut=to_mut]
+    ] = LayoutTensorIter[
+        Self.dtype,
+        Self.layout,
+        to_origin,
+        address_space=Self.address_space,
+        alignment=Self.alignment,
+        circular=Self.circular,
+        axis=Self.axis,
+        layout_int_type=Self.layout_int_type,
+        linear_idx_type=Self.linear_idx_type,
+        masked=Self.masked,
+    ]
+
     @always_inline("builtin")
     @implicit
     def __init__(
         other: LayoutTensorIter,
-        out self: LayoutTensorIter[
-            other.dtype,
-            other.layout,
-            ImmutOrigin(other.origin),
-            address_space=other.address_space,
-            alignment=other.alignment,
-            circular=other.circular,
-            axis=other.axis,
-            layout_int_type=other.layout_int_type,
-            linear_idx_type=other.linear_idx_type,
-            masked=other.masked,
-        ],
+        out self: type_of(other)._OriginCastType[ImmutOrigin(other.origin)],
     ):
         """Implicitly cast a mutable LayoutTensorIter to immutable.
 
@@ -8257,6 +8303,40 @@ struct LayoutTensorIter[
             other: The mutable LayoutTensorIter to cast from.
         """
         self.ptr = other.ptr
+        self.bound = other.bound
+        self.stride = other.stride
+        self.runtime_layout = other.runtime_layout
+        self.offset = other.offset
+        self.dimension_bound = other.dimension_bound
+        self.idx = other.idx
+
+    @always_inline("builtin")
+    @implicit
+    @doc_hidden
+    def __init__[
+        __disambig: Int = 0,
+    ](
+        other: LayoutTensorIter[mut=True, ...],
+        out self: type_of(other)._OriginCastType[MutAnyOrigin],
+    ):
+        self.ptr = other.ptr.as_unsafe_any_origin()
+        self.bound = other.bound
+        self.stride = other.stride
+        self.runtime_layout = other.runtime_layout
+        self.offset = other.offset
+        self.dimension_bound = other.dimension_bound
+        self.idx = other.idx
+
+    @always_inline("builtin")
+    @implicit
+    @doc_hidden
+    def __init__[
+        __disambig: Int = 0,
+    ](
+        other: LayoutTensorIter[...],
+        out self: type_of(other)._OriginCastType[ImmutAnyOrigin],
+    ):
+        self.ptr = other.ptr.as_unsafe_any_origin()
         self.bound = other.bound
         self.stride = other.stride
         self.runtime_layout = other.runtime_layout
