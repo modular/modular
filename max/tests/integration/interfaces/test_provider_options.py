@@ -245,7 +245,7 @@ class TestImageDimensionValidation:
     """Tests for height/width validation on ImageProviderOptions.
 
     Pixel-area limits are enforced per-architecture via context validators
-    (see ``max.pipelines.core.pixel_context_validators``); the schema only
+    (see ``max.pipelines.context.pixel_context_validators``); the schema only
     enforces a minimum size and multiple-of-8 (the VAE spatial scale factor).
     Per-model tokenizers handle any further patchification-related rounding.
     """

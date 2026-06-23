@@ -1598,6 +1598,7 @@ async def openai_create_chat_completion(
                 request, completion_request.target_endpoint
             ),
             dkv_cache_hint=completion_request.dkv_cache_hint,
+            cache_salt=completion_request.cache_salt,
             chat_template_options=chat_template_options,
         )
 
@@ -2436,6 +2437,7 @@ async def openai_create_completion(
                     request, completion_request.target_endpoint
                 ),
                 dkv_cache_hint=completion_request.dkv_cache_hint,
+                cache_salt=completion_request.cache_salt,
             )
             token_requests.append(tgr)
 

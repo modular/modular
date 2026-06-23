@@ -228,6 +228,43 @@ def test_tokenizer__with_prompt_as_list_of_int(
     assert np.array_equal(context.tokens.all, np.array([0, 1, 2, 3, 4, 5]))
 
 
+def test_tokenizer__propagates_cache_salt(
+    llama_3_1_8b_instruct_local_path: str,
+) -> None:
+    """`tokenizer.new_context` must forward `request.cache_salt` to
+    `context.cache_salt` (Step 6.5 plumbing). Without this the
+    multi-tenant prefix-cache isolation feature is silently inert."""
+
+    pipeline_config = _create_mock_pipeline_config(
+        llama_3_1_8b_instruct_local_path
+    )
+    tokenizer = TextTokenizer(
+        llama_3_1_8b_instruct_local_path,
+        pipeline_config=pipeline_config,
+    )
+
+    request_with_salt = TextGenerationRequest(
+        request_id=RequestID(),
+        model_name=llama_3_1_8b_instruct_local_path,
+        prompt="Hello world!",
+        cache_salt="tenant-abc",
+    )
+
+    context_with_salt = asyncio.run(tokenizer.new_context(request_with_salt))
+    assert context_with_salt.cache_salt == "tenant-abc"
+
+    request_without_salt = TextGenerationRequest(
+        request_id=RequestID(),
+        model_name=llama_3_1_8b_instruct_local_path,
+        prompt="Hello world!",
+    )
+
+    context_without_salt = asyncio.run(
+        tokenizer.new_context(request_without_salt)
+    )
+    assert context_without_salt.cache_salt is None
+
+
 def test_tokenizer__with_context_validation(
     llama_3_1_8b_instruct_local_path: str,
 ) -> None:

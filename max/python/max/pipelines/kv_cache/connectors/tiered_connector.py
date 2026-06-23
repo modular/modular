@@ -481,6 +481,12 @@ class TieredConnector:
         """
         block_hash = host_block.block_hash
         assert block_hash is not None
+        # KVCacheBlock.block_hash widened to int | bytes for SHA-256, but
+        # TieredConnector is host-tier and the BlockManager __init__ guard
+        # forbids SHA-256 + host_blocks>0, so this is always int at runtime.
+        assert isinstance(block_hash, int), (
+            "TieredConnector disk tier only supports ahash64 (int) hashes"
+        )
         # Zero-copy NumPy view of the block's row; aliases the pinned memory.
         src = self._host_buffer[host_block.bid, :].to_numpy()
         future = self._disk_tier.write_block_async(block_hash, src)

@@ -112,6 +112,13 @@ This version is still a work in progress.
 - Added `maxserve.cache.disk_blocks_read` and
   `maxserve.cache.disk_blocks_written` counters, reporting KV blocks read from
   and written to the disk cache tier when tiered (disk) KV caching is enabled.
+- Added opt-in SHA-256 KV-cache block hashing. A new `kv_cache_hash_algo`
+  field on `KVCacheConfig` (default `ahash64`; opt-in `sha256` and
+  `sha256_64`) threads through the pipeline and serve config, selecting a
+  Mojo `block_hasher_sha256` and the matching `hash_request_tokens` SHA-256
+  path. Chat-completion requests also accept an optional `cache_salt` field
+  that scopes prefix-cache reuse to a single per-request KV chain. Default
+  behavior is the same as the existing `ahash64` path.
 
 ### `max` CLI
 

@@ -414,6 +414,17 @@ class TextGenerationRequest:
     ``TextContext.external_block_metadata`` so the DKVConnector can
     fetch cached blocks before the forward pass.
     """
+    cache_salt: str | None = None
+    """Optional per-request salt that isolates this prompt's prefix-cache
+
+    entries from other requests sharing the same tokens.
+    Combined with the cluster-level ``kv_cache_hash_seed`` via XOR inside
+    ``BlockManager`` to derive the root parent hash. Has effect only when
+    ``kv_cache_hash_algo`` is ``sha256`` or ``sha256_64``; under
+    ``ahash64`` the salt is dropped with a one-time warning.
+
+    Capped at 512 chars at the OpenAI schema layer.
+    """
 
     def __str__(self) -> str:
         return str(self.request_id)

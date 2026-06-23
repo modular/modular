@@ -15,12 +15,13 @@
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal, overload
 
 import numpy as np
 import numpy.typing as npt
-from max._core_mojo import block_hasher
+from max._core_mojo import block_hasher, block_hasher_sha256
 from max.pipelines.context import ImageMetadata
 from max.profiler import traced
 
@@ -31,15 +32,125 @@ class InsufficientBlocksError(Exception):
 
 DEFAULT_PARENT_HASH = 0
 
+_KVHashAlgo = Literal["ahash64", "sha256", "sha256_64"]
+"""Supported hash algorithms for KVCache block hashing.
+
+- `ahash64`: Use the AHash64 algorithm.
+- `sha256`: Use the SHA-256 algorithm.
+- `sha256_64`: Use the SHA-256 algorithm with 64-bit output.
+"""
+
+_ZERO_SEED: bytes = b"\x00" * 32
+"""The zero seed for the SHA-256 algorithm.
+Determinstic behaviour across restarts for benchmarking.
+"""
+
+
+def _make_root_parent_hash(seed: bytes | None, salt: str | None) -> bytes:
+    """Combine cluster-level `seed` and per-request `salt` into a 32-byte root parent hash for the SHA-256 chain.
+
+    `effective = (seed or _ZERO_SEED) XOR sha256(salt or b"")`
+
+    Both factors are 32 bytes; the XOR is byte-wise. When neither is
+    supplied, returns 32 zero bytes (preserves cross-restart cache reuse
+    for benchmark workloads).
+    """
+    base = seed if seed is not None else _ZERO_SEED
+    if len(base) != 32:
+        raise ValueError(f"seed must be exactly 32 bytes, got {len(base)}")
+    if salt is None:
+        return bytes(base)
+    # Hash the salt to get a 32-byte digest
+    salt_digest = hashlib.sha256(salt.encode("utf-8")).digest()
+
+    # XOR the base with the salt digest
+    return bytes(b ^ s for b, s in zip(base, salt_digest, strict=False))
+
+
+def _truncate_to_signed64(digest: bytes) -> int:
+    """Reduce a 32-byte SHA-256 digest to a signed 64-bit Python int.
+
+    Takes the first 8 bytes interpreted big-endian. Converts to a signed
+    int (high bit becomes negative), matching the existing
+    `mojo_block_hasher` behaviour.
+    """
+    n = int.from_bytes(digest[:8], "big", signed=False)
+    if n >= 1 << 63:
+        n -= 1 << 64
+    return n
+
+
+# ahash64 overload returning ints
+@overload
+def hash_request_tokens(
+    token_ids: npt.NDArray[np.integer[Any]],
+    block_size: int,
+    parent_hash: int | None = ...,
+    prefix_length: int = ...,
+    images: list[ImageMetadata] | None = ...,
+    *,
+    algo: Literal["ahash64"] = ...,
+    seed: bytes | None = ...,
+    salt: str | None = ...,
+) -> list[int]: ...
+
+
+# sha256_64 overload returning ints
+@overload
+def hash_request_tokens(
+    token_ids: npt.NDArray[np.integer[Any]],
+    block_size: int,
+    parent_hash: int | bytes | None = ...,
+    prefix_length: int = ...,
+    images: list[ImageMetadata] | None = ...,
+    *,
+    algo: Literal["sha256_64"],
+    seed: bytes | None = ...,
+    salt: str | None = ...,
+) -> list[int]: ...
+
+
+# sha256 overload returning bytes
+@overload
+def hash_request_tokens(
+    token_ids: npt.NDArray[np.integer[Any]],
+    block_size: int,
+    parent_hash: int | bytes | None = ...,
+    prefix_length: int = ...,
+    images: list[ImageMetadata] | None = ...,
+    *,
+    algo: Literal["sha256"],
+    seed: bytes | None = ...,
+    salt: str | None = ...,
+) -> list[bytes]: ...
+
+
+@overload
+def hash_request_tokens(
+    token_ids: npt.NDArray[np.integer[Any]],
+    block_size: int,
+    parent_hash: int | bytes | None = ...,
+    prefix_length: int = ...,
+    images: list[ImageMetadata] | None = ...,
+    *,
+    algo: _KVHashAlgo,
+    seed: bytes | None = ...,
+    salt: str | None = ...,
+) -> list[int] | list[bytes]: ...
+
 
 @traced
 def hash_request_tokens(
     token_ids: npt.NDArray[np.integer[Any]],
     block_size: int,
-    parent_hash: int | None = None,
+    parent_hash: int | bytes | None = None,
     prefix_length: int = -1,
     images: list[ImageMetadata] | None = None,
-) -> list[int]:
+    *,
+    algo: _KVHashAlgo = "ahash64",
+    seed: bytes | None = None,
+    salt: str | None = None,
+) -> list[int] | list[bytes] | None:
     """Hash the tokens of a request using the Mojo implementation.
 
     If images are provided, we will set the first vision_token_id to the value
@@ -47,8 +158,11 @@ def hash_request_tokens(
 
     This method should leave the contents of the array unchanged on return.
     """
-    if parent_hash is None:
-        parent_hash = DEFAULT_PARENT_HASH
+    if algo == "ahash64" and (seed is not None or salt is not None):
+        raise ValueError(
+            "seed/salt are only valid with algo=sha256 or "
+            "algo=sha256_64; pass algo to enable"
+        )
 
     # If images are provided, temporarily replace the first vision_token_id with the image hash
     token_to_reset: dict[int, int] = {}
@@ -67,15 +181,47 @@ def hash_request_tokens(
                 token_to_reset[idx] = token_ids[idx]
                 token_ids[idx] = img.image_hash
 
-    # Call into the super fast Mojo block hasher
-    hash_vals = block_hasher(token_ids, block_size, parent_hash)
-    assert len(hash_vals) == len(token_ids) // block_size
+    try:
+        hash_vals: list[int] | list[bytes]
+        if algo == "ahash64":
+            ph_int = DEFAULT_PARENT_HASH if parent_hash is None else parent_hash
+            assert isinstance(ph_int, int), (
+                f"ahash64 algo requires int parent_hash, got{type(parent_hash)}"
+            )
+            hash_vals = block_hasher(token_ids, block_size, ph_int)
 
-    # Reset the contents of the array to the original values
-    for idx, token in token_to_reset.items():
-        token_ids[idx] = token
+        elif algo in ("sha256", "sha256_64"):
+            if parent_hash is None:
+                ph_bytes = _make_root_parent_hash(seed, salt)
+            elif isinstance(parent_hash, bytes):
+                if len(parent_hash) != 32:
+                    raise ValueError(
+                        f"algo={algo} requires 32-byte parent_hash, got"
+                        f"{len(parent_hash)}"
+                    )
+                ph_bytes = parent_hash
+            else:
+                raise TypeError(
+                    "algo=sha256/sha256_64 requires bytes parent_hash, got"
+                    f"{type(parent_hash).__name__}"
+                )
 
-    return hash_vals
+            full_digests: list[bytes] = block_hasher_sha256(
+                token_ids, block_size, ph_bytes
+            )
+            if algo == "sha256":
+                hash_vals = full_digests
+            else:
+                hash_vals = [_truncate_to_signed64(d) for d in full_digests]
+        else:
+            raise ValueError(f"unknown algo={algo}")
+
+        assert len(hash_vals) == len(token_ids) // block_size
+        return hash_vals
+    finally:
+        # Restore any mutated image tokens, even on error
+        for idx, token in token_to_reset.items():
+            token_ids[idx] = token
 
 
 @dataclass
@@ -88,7 +234,7 @@ class KVCacheBlock:
     ref_cnt: int = 0
     # The hash of the block composed of (block hash, tuple of token IDs).
     # It is only available when the block is full.
-    block_hash: int | None = None
+    block_hash: int | bytes | None = None
     # Whether the block is the null block.
     is_null: bool = False
 
@@ -98,7 +244,7 @@ class KVCacheBlock:
     next_free_block: KVCacheBlock | None = None
 
     def __repr__(self) -> str:
-        return f"KVCacheBlock(bid={self.bid}, ref_cnt={self.ref_cnt}, block_hash={self.block_hash})"
+        return f"KVCacheBlock(bid={self.bid}, ref_cnt={self.ref_cnt}, block_hash={self.block_hash!r})"
 
 
 class FreeKVCacheBlockQueue:

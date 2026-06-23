@@ -309,6 +309,17 @@ class _MaxRequestExtensions(BaseModel):
     # Routing / cache hints used by disaggregated serving.
     target_endpoint: str | None = None
     dkv_cache_hint: dict[str, Any] | None = None
+    # Per-request prefix-cache isolation for multi-tenant deployments.
+    cache_salt: str | None = Field(
+        default=None,
+        max_length=512,
+        description=(
+            "Per-request salt that isolates this prompt's prefix-cache "
+            "entries from other requests. Combined with the cluster-level "
+            "kv_cache_hash_seed via XOR. Requires kv_cache_hash_algo=sha256 "
+            "or sha256_64; ignored under ahash64 with a one-time warning."
+        ),
+    )
 
     # OpenRouter reasoning object; mapped to enable_thinking in the route.
     reasoning: ReasoningConfig | None = None

@@ -88,7 +88,7 @@ from openai.types.chat.chat_completion_stream_options_param import (
     ChatCompletionStreamOptionsParam,
 )
 from PIL import Image
-from pydantic import AnyUrl
+from pydantic import AnyUrl, ValidationError
 
 if sys.version_info >= (3, 11):
     from asyncio import TaskGroup
@@ -519,6 +519,40 @@ def test_create_chat_completion_request_with_target_endpoint() -> None:
     )
     assert parsed_request_default.target_endpoint is None
     assert parsed_request_default.model == "gpt-3.5-turbo"
+
+
+def test_create_chat_completion_request_with_cache_salt() -> None:
+    """Test that CreateChatCompletionRequest correctly parses cache_salt field
+    and enforces the 512-char length cap."""
+    request_with_salt = {
+        "model": "gpt-3.5-turbo",
+        "messages": [{"role": "user", "content": "Hello, world!"}],
+        "cache_salt": "tenant-abc",
+    }
+
+    parsed_request = CreateChatCompletionRequest.model_validate(
+        request_with_salt
+    )
+    assert parsed_request.cache_salt == "tenant-abc"
+
+    request_without_salt = {
+        "model": "gpt-3.5-turbo",
+        "messages": [{"role": "user", "content": "Hello, world!"}],
+    }
+
+    parsed_default = CreateChatCompletionRequest.model_validate(
+        request_without_salt
+    )
+    assert parsed_default.cache_salt is None
+
+    request_oversized = {
+        "model": "gpt-3.5-turbo",
+        "messages": [{"role": "user", "content": "Hello, world!"}],
+        "cache_salt": "x" * 600,
+    }
+
+    with pytest.raises(ValidationError):
+        CreateChatCompletionRequest.model_validate(request_oversized)
 
 
 def test_create_chat_completion_request_with_chat_template_kwargs() -> None:

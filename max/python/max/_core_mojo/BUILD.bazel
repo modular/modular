@@ -4,7 +4,10 @@ package(default_visibility = ["//max:consumers"])
 
 mojo_shared_library(
     name = "mojo_module",
-    srcs = ["mojo_module.mojo"],
+    srcs = [
+        "mojo_module.mojo",
+        "sha256.mojo",
+    ],
     shared_lib_name = "mojo_module.so",
     deps = [
         "@mojo//:std",

@@ -31,6 +31,10 @@ from max.nn.kv_cache.utils import (
     AttentionDispatchResolver,
     AttentionDispatchResolverInterface,
 )
+from max.pipelines.kv_cache.paged_kv_cache._seed_helpers import (
+    resolve_kv_hash_seed,
+)
+from max.pipelines.kv_cache.paged_kv_cache.block_utils import _KVHashAlgo
 from pydantic import ConfigDict, Field, PrivateAttr
 
 
@@ -161,6 +165,30 @@ class KVCacheConfig(ConfigFileModel):
         ),
     )
     """An override for the default data type of the KV cache."""
+    kv_cache_hash_algo: _KVHashAlgo = Field(
+        default="ahash64",
+        description=(
+            "Hash algorithm used for KV-cache block identity. "
+            "``ahash64`` is the legacy 64-bit non-cryptographic hasher. "
+            "``sha256`` is a 256-bit cryptographic hasher with optional "
+            "per-cluster seed and per-request salt. ``sha256_64`` "
+            "truncates the SHA-256 chain to 64 bits for protocol "
+            "compatibility."
+        ),
+    )
+    """Hash algorithm used for KV-cache block identity."""
+
+    kv_cache_hash_seed: str | None = Field(
+        default=None,
+        description=(
+            "Optional 64-character hex string (32 bytes) used as a "
+            "cluster-wide seed when ``kv_cache_hash_algo`` is "
+            "``sha256``/``sha256_64``. When omitted, MAX generates a "
+            "random seed at process start; the hex is logged once. "
+            "Ignored for ``ahash64``."
+        ),
+    )
+    """Optional 32-byte hex seed for sha256/sha256_64 hashing."""
 
     # Need to use `Optional` here to support `click` with 3.9.
     _available_cache_memory: int | None = PrivateAttr(default=None)
@@ -224,6 +252,9 @@ class KVCacheConfig(ConfigFileModel):
         if allow_kv_head_replication is None:
             allow_kv_head_replication = self.allow_kv_head_replication
         cfg = self.kv_connector_config
+        kv_hash_seed = resolve_kv_hash_seed(
+            self.kv_cache_hash_algo, self.kv_cache_hash_seed
+        )
         return KVCacheParams(
             dtype=dtype,
             n_kv_heads=n_kv_heads,
@@ -245,4 +276,6 @@ class KVCacheConfig(ConfigFileModel):
             num_draft_tokens=num_draft_tokens,
             attn_dispatch_resolver_cls=attn_dispatch_resolver_cls,
             allow_kv_head_replication=allow_kv_head_replication,
+            kv_hash_algo=self.kv_cache_hash_algo,
+            kv_hash_seed=kv_hash_seed,
         )
