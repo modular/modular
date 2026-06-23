@@ -58,8 +58,11 @@ def _find_chrome() -> str:
 
 
 CHROME = _find_chrome()
-SHEET_W = 1100  # css px; matches .sheet max-width
-VERSION = "1.0.0b3"  # bump per release (strip the .devNNN nightly suffix)
+# Layout presets: (columns, sheet width px, landscape PDF). A card selects one
+# with <!-- layout: portrait|landscape -->; columns/width override per card.
+LAYOUTS = {"portrait": (2, 900, False), "landscape": (3, 1100, True)}
+DEFAULT_LAYOUT = "portrait"
+VERSION = "1.0.0b2"  # bump per release (strip the .devNNN nightly suffix)
 PREFIX = "mojo-cheat-sheet"  # filename stem; matches the repo assets dir
 
 # Cards are discovered from the body-<slug>.html files present in src/, so this
@@ -69,13 +72,20 @@ PREFIX = "mojo-cheat-sheet"  # filename stem; matches the repo assets dir
 #     <!-- subtitle: ... -->
 META_TITLE = re.compile(r"<!--\s*title:\s*(.*?)\s*-->", re.IGNORECASE)
 META_SUB = re.compile(r"<!--\s*subtitle:\s*(.*?)\s*-->", re.IGNORECASE)
+# Per-card layout. A card picks a preset, and may override individual knobs:
+#     <!-- layout: landscape -->
+#     <!-- columns: 3 -->
+#     <!-- width: 1100 -->
+META_LAYOUT = re.compile(r"<!--\s*layout:\s*(\w+)\s*-->", re.IGNORECASE)
+META_COLS = re.compile(r"<!--\s*columns:\s*(\d+)\s*-->", re.IGNORECASE)
+META_WIDTH = re.compile(r"<!--\s*width:\s*(\d+)\s*-->", re.IGNORECASE)
 
 KW = set(
     "def struct trait var ref comptime if elif else for while break continue pass return raise try except finally with as from import and or not in is mut out deinit read raises where assert thin abi".split()
 )
 LIT = set("True False None".split())
 TY = set(
-    "Int UInt Int8 Int16 Int32 Int64 Int128 Int256 UInt8 UInt16 UInt32 UInt64 UInt128 UInt256 Byte Float16 Float32 Float64 BFloat16 Float8_e4m3fn Float8_e5m2 Float4_e2m1fn Bool String List Dict Optional SIMD Scalar DType Error NoneType StaticString Comparable Copyable Movable Writable Writer ImplicitlyCopyable ImplicitlyDeletable AnyType Equatable Sized Printable PrettyPrintable Identifiable Powable Intable TrivialRegisterPassable RegisterPassable Container Shape Box Pair MyInt Color Point Bag Buffer Matrix Test ValueError Self".split()
+    "Int UInt Int8 Int16 Int32 Int64 Int128 Int256 UInt8 UInt16 UInt32 UInt64 UInt128 UInt256 Byte Float16 Float32 Float64 BFloat16 Float8_e4m3fn Float8_e5m2 Float4_e2m1fn Bool String List Dict Optional SIMD Scalar DType Error NoneType StaticString Comparable Copyable Movable Writable Writer ImplicitlyCopyable ImplicitlyDestructible AnyType Equatable Sized Printable PrettyPrintable Identifiable Powable Intable TrivialRegisterPassable RegisterPassable Container Shape Box Pair MyInt Color Point Bag Buffer Matrix Test ValueError Self".split()
 )
 BI = set("print len range reflect type_of".split())
 
@@ -154,11 +164,11 @@ def classes_in(body: str) -> set[str]:
 
 
 def legend_for(body: str) -> str:
-    present = classes_in(body)
+    # Emit the full palette on every card so the legend reads as a stable key,
+    # identical across all sheets, rather than changing with the tokens that
+    # happen to appear on a given card.
     return "\n".join(
-        f'    <span><b class="{c}">{lbl}</b></span>'
-        for c, lbl in LEGEND_DEFS
-        if c in present
+        f'    <span><b class="{c}">{lbl}</b></span>' for c, lbl in LEGEND_DEFS
     )
 
 
@@ -177,14 +187,27 @@ def discover() -> list[str]:
     return out
 
 
-def card_meta(slug: str) -> tuple[str, str]:
-    """Return (title, subtitle) read from a card body file's top comments."""
+def card_meta(slug: str) -> tuple[str, str, int, int, bool]:
+    """Return (title, subtitle, columns, width_px, landscape) for a card.
+
+    Shape comes from an optional `<!-- layout: portrait|landscape -->` preset,
+    with optional `<!-- columns: N -->` / `<!-- width: W -->` overrides.
+    """
     text = read(f"body-{slug}.html")
     t = META_TITLE.search(text)
     s = META_SUB.search(text)
     title = t.group(1) if t else f"Mojo {slug.replace('-', ' ').title()}"
     sub = s.group(1) if s else ""
-    return title, sub
+    m = META_LAYOUT.search(text)
+    layout = m.group(1).lower() if m else DEFAULT_LAYOUT
+    cols, width, landscape = LAYOUTS.get(layout, LAYOUTS[DEFAULT_LAYOUT])
+    c = META_COLS.search(text)
+    w = META_WIDTH.search(text)
+    if c:
+        cols = int(c.group(1))
+    if w:
+        width = int(w.group(1))
+    return title, sub, cols, width, landscape
 
 
 def chrome(*flags: str) -> None:
@@ -197,7 +220,7 @@ def chrome(*flags: str) -> None:
 
 
 def build_html(slug: str, dark: bool = False) -> str:
-    title, sub = card_meta(slug)
+    title, sub, cols, width, landscape = card_meta(slug)
     body = read(f"body-{slug}.html")
     head = (
         read("_head.html")
@@ -206,8 +229,20 @@ def build_html(slug: str, dark: bool = False) -> str:
         .replace("{{LEGEND}}", legend_for(body))
         .replace("{{VERSION}}", VERSION)
     )
-    out = head + "\n" + body + "\n" + read("_foot.html")
+    page = "letter landscape" if landscape else "letter"
+    override = (
+        f"<style>.cols{{column-count:{cols};}}"
+        f"@media print{{.cols{{column-count:{cols};}}}}"
+        f".sheet{{max-width:{width}px;}}"
+        f"@page{{size:{page};margin:0;}}</style>\n</head>"
+    )
+    out = (head + "\n" + body + "\n" + read("_foot.html")).replace(
+        "</head>", override, 1
+    )
     if dark:
+        out = out.replace(
+            '<html lang="en">', '<html lang="en" class="dark">', 1
+        )
         out = out.replace("<body>", '<body class="dark">', 1)
     theme = "dark" if dark else "light"
     stem = f"{PREFIX}-{slug}-{theme}"
@@ -217,13 +252,13 @@ def build_html(slug: str, dark: bool = False) -> str:
     return stem
 
 
-def render_normal(stem: str, dark: bool) -> None:
+def render_normal(stem: str, dark: bool, width: int) -> None:
     url = f"file://{DIST}/{stem}.html"
     chrome("--no-pdf-header-footer", f"--print-to-pdf={DIST}/{stem}.pdf", url)
     chrome(
         "--hide-scrollbars",
         "--force-device-scale-factor=2",
-        "--window-size=1120,1700",
+        f"--window-size={width + 40},2600",
         f"--screenshot={DIST}/{stem}.png",
         url,
     )
@@ -246,12 +281,12 @@ def render_normal(stem: str, dark: bool) -> None:
     )
 
 
-def measure_sheet_height(stem: str) -> int:
+def measure_sheet_height(stem: str, width: int) -> int:
     tmp = f"{DIST}/_measure.png"
     chrome(
         "--hide-scrollbars",
         "--force-device-scale-factor=1",
-        f"--window-size={SHEET_W},4000",
+        f"--window-size={width},4000",
         f"--screenshot={tmp}",
         f"file://{DIST}/{stem}.html",
     )
@@ -273,13 +308,13 @@ def measure_sheet_height(stem: str) -> int:
     return int(h) if h.isdigit() else 1600
 
 
-def make_svg(stem: str) -> None:
-    h = measure_sheet_height(stem) + 6
+def make_svg(stem: str, width: int, cols: int) -> None:
+    h = measure_sheet_height(stem, width) + 6
     inject = (
         "<style>\n@media print{html,body{font-size:11px;}"
         ".sheet{margin:0;padding:18px 20px 14px;box-shadow:none;max-width:none;}"
-        ".cols{column-count:3;column-gap:16px;}.panel{break-inside:avoid;}}\n"
-        f"@page{{size:{SHEET_W}px {h}px;margin:0;}}\n</style>\n</head>"
+        f".cols{{column-count:{cols};column-gap:16px;}}.panel{{break-inside:avoid;}}}}\n"
+        f"@page{{size:{width}px {h}px;margin:0;}}\n</style>\n</head>"
     )
     tmp_html = f"{DIST}/{stem}-1page.html"
     one_pdf = f"{DIST}/{stem}-1page.pdf"
@@ -341,10 +376,11 @@ def main() -> None:
         if not os.path.exists(os.path.join(SRC, f"body-{slug}.html")):
             print("skip unknown card:", slug)
             continue
+        _, _, cols, width, _ = card_meta(slug)
         for dark in (False, True):
             stem = build_html(slug, dark)
-            render_normal(stem, dark)
-            make_svg(stem)
+            render_normal(stem, dark, width)
+            make_svg(stem, width, cols)
             print("built", stem, "(pdf + png + svg)")
     if args == ["all"]:
         combine(False)

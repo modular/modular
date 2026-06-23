@@ -115,11 +115,16 @@ struct DLDevice(ImplicitlyCopyable, Movable):
 
 struct DLTensor[rank: Int, dtype: DType](ImplicitlyCopyable):
     # https://dmlc.github.io/dlpack/latest/c_api.html#c.DLTensor
+    @__allow_legacy_any_origin_fields
     var data: Pointer[Scalar[Self.dtype], MutAnyOrigin]
     var device: DLDevice
     var _rank: Int32
     var data_type: DLDataType
+
+    @__allow_legacy_any_origin_fields
     var _shape_ptr: UnsafePointer[Int64, MutAnyOrigin]
+
+    @__allow_legacy_any_origin_fields
     var _strides_ptr: Optional[UnsafePointer[Int64, MutAnyOrigin]]
     var byte_offset: UInt64
 

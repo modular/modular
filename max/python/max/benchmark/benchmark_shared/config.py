@@ -74,12 +74,21 @@ BenchmarkTask = Literal[
     "text-to-image",
     "image-to-image",
     "text-to-video",
+    "image-to-video",
 ]
 
 PIXEL_GENERATION_TASKS: tuple[BenchmarkTask, ...] = (
     "text-to-image",
     "image-to-image",
     "text-to-video",
+    "image-to-video",
+)
+
+# Pixel-generation tasks that emit video. These route to the dedicated video
+# endpoints on backends that have one (see VIDEO_GEN_DEFAULT_ENDPOINT).
+VIDEO_GENERATION_TASKS: tuple[BenchmarkTask, ...] = (
+    "text-to-video",
+    "image-to-video",
 )
 
 # Default endpoint per backend for pixel generation tasks.
@@ -97,8 +106,8 @@ PIXEL_GEN_DEFAULT_ENDPOINT: Mapping[Backend, Endpoint] = {
     "vllm-chat": "/v1/chat/completions",
 }
 
-# Override endpoint per backend for text-to-video tasks. For vllm-omni
-# use the dedicated /v1/videos/sync endpoint.
+# Override endpoint per backend for video tasks (text-to-video and
+# image-to-video). For vllm-omni use the dedicated /v1/videos/sync endpoint.
 VIDEO_GEN_DEFAULT_ENDPOINT: Mapping[Backend, Endpoint] = {
     "vllm": "/v1/videos/sync",
     "vllm-chat": "/v1/videos/sync",
@@ -115,7 +124,7 @@ PIXEL_GENERATION_ENDPOINTS: frozenset[Endpoint] = frozenset(
 
 def get_pixel_gen_endpoint(backend: Backend, task: BenchmarkTask) -> Endpoint:
     """Return the pixel-generation endpoint for a given backend and task."""
-    if task == "text-to-video" and backend in VIDEO_GEN_DEFAULT_ENDPOINT:
+    if task in VIDEO_GENERATION_TASKS and backend in VIDEO_GEN_DEFAULT_ENDPOINT:
         return VIDEO_GEN_DEFAULT_ENDPOINT[backend]
     if backend in PIXEL_GEN_DEFAULT_ENDPOINT:
         return PIXEL_GEN_DEFAULT_ENDPOINT[backend]
@@ -396,7 +405,7 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
 
     benchmark_task: BenchmarkTask = Field(
         default="text-generation",
-        description="Benchmark task type. Choices: text-generation, text-to-image, image-to-image, text-to-video",
+        description="Benchmark task type. Choices: text-generation, text-to-image, image-to-image, text-to-video, image-to-video",
         json_schema_extra={"group": "Backend and API Configuration"},
     )
 

@@ -100,27 +100,37 @@ def merge_per_device_buffers(
     a_bufs: list[Buffer],
     b_bufs: list[Buffer],
 ) -> list[Buffer]:
-    """Concatenate two per-device buffer lists element-wise.
+    """Concatenate two per-device buffer lists element-wise along axis 0.
 
-    When either side is empty the other is returned directly, avoiding
-    unnecessary round-trips through NumPy.
+    When either side is empty the other is returned directly. Otherwise the
+    concat stays on-device: allocate the combined buffer and copy each half
+    into a contiguous leading-axis slice, avoiding a GPU->host->GPU round-trip.
     """
     merged: list[Buffer] = []
     for a, b in zip(a_bufs, b_bufs, strict=True):
-        a_empty = a.shape[0] == 0
-        b_empty = b.shape[0] == 0
-        if a_empty and b_empty:
+        a_rows = a.shape[0]
+        b_rows = b.shape[0]
+        if a_rows == 0 and b_rows == 0:
             merged.append(a)
-        elif a_empty:
+        elif a_rows == 0:
             merged.append(b)
-        elif b_empty:
+        elif b_rows == 0:
             merged.append(a)
         else:
-            dev = a.device
-            a_np = a.to_numpy()
-            b_np = b.to_numpy()
-            combined = np.concatenate([a_np, b_np], axis=0)
-            merged.append(Buffer.from_numpy(combined).to(dev))
+            combined = Buffer(
+                shape=(a_rows + b_rows, *a.shape[1:]),
+                dtype=a.dtype,
+                device=a.device,
+            )
+            # Slice the leading axis at the buffer's rank: this merges both
+            # rank-2 embeddings and rank-1 indices, and MAX requires
+            # index-count == rank.
+            n_extra = len(a.shape) - 1
+            front = (slice(None, a_rows), *(slice(None),) * n_extra)
+            back = (slice(a_rows, None), *(slice(None),) * n_extra)
+            combined[front].inplace_copy_from(a)
+            combined[back].inplace_copy_from(b)
+            merged.append(combined)
     return merged
 
 

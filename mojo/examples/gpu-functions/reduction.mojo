@@ -90,7 +90,10 @@ def sum_kernel[
 
 
 struct SumKernelBenchmarkParams:
+    @__allow_legacy_any_origin_fields
     var out_ptr: UnsafePointer[Int32, MutAnyOrigin]
+
+    @__allow_legacy_any_origin_fields
     var a_ptr: UnsafePointer[Int32, MutAnyOrigin]
 
     def __init__(

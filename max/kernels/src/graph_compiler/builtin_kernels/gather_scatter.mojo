@@ -35,6 +35,7 @@ from nn.concat import fused_concat, _fused_dual_concat_gpu
 from nn.gather_scatter import (
     Axis,
     ScatterOobIndexStrategy,
+    apply_packed_bitmask,
     gather,
     gather_nd,
     gather_nd_shape,
@@ -520,6 +521,29 @@ def scatter_nd_max_shape[](
             indices.to_tile_tensor[DType.int64](),
         )
     )
+
+
+@compiler.register("mo.apply_packed_bitmask")
+struct ApplyPackedBitmask:
+    @staticmethod
+    def execute[
+        dtype: DType,
+        //,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=dtype, rank=2, ...],
+        logits: InputTensor[dtype=dtype, rank=2, ...],
+        packed: InputTensor[dtype=DType.int32, rank=2, ...],
+        fill_value: Scalar[dtype],
+        ctx: DeviceContext,
+    ) raises:
+        apply_packed_bitmask[target](
+            output.to_tile_tensor(),
+            logits.to_tile_tensor(),
+            packed.to_tile_tensor(),
+            fill_value,
+            ctx,
+        )
 
 
 @compiler.register("mo.scatter_set_constant")

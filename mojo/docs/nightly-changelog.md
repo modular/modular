@@ -19,7 +19,39 @@ This version is still a work in progress.
     takes_them(**kwargs^)
   ```
 
+- Struct fields are no longer allowed to hide `UnsafeAnyOrigin` within a
+  struct, e.g. this is no longer accepted:
+
+  ```mojo
+  struct Example:
+    # error: cannot use UnsafeAnyOrigin in a struct field.
+    var ptr: UnsafePointer[Int, MutUnsafeAnyOrigin]
+  ```
+
+  This is because Mojo doesn't know that uses of `Example` contain an
+  `UnsafeAnyOrigin` and therefore doesn't do lifetime extension for values in
+  its context. The typical solution for this is to add an `Origin` parameter but
+  you can also use `UntrackedOrigin` if you explicitly manage the lifetime of
+  the underlying data:
+
+  ```mojo
+  struct Example[origin: Origin]:
+    var ptr: UnsafePointer[Int, Self.origin]
+
+  # OR
+
+  struct Example:
+    var ptr: UnsafePointer[Int, MutUntrackedOrigin]
+  ```
+
+  As a temporary workaround, you can decorate fields with
+  `@__allow_legacy_any_origin_fields` to ignore the compiler error, however this
+  decorator is not stable and will eventually be removed.
+
 ## Language changes
+
+- Relative imports must now use `from` (`from . import foo`); the `import .foo`
+  form is no longer accepted.
 
 ## Library changes
 
@@ -46,27 +78,54 @@ This version is still a work in progress.
 - `ImplicitlyDestructible` has been renamed to `ImplicitlyDeletable`, for better
   name consistency with its required `__del__()` "delete" special method.
 
-- `InlineArray[ElementType, size]` now conditionally conforms to
-  `ImplicitlyDeletable`, only when its `ElementType` does. This lets an
-  `InlineArray` hold `@explicit_destroy` elements without leaking them when the
-  array is dropped.
+- The `Reflected.field_type[name]` reflection member has been renamed to
+  `Reflected.field[name]`, because it returns a chainable `Reflected` handle
+  for the named field rather than the field's bare type, so the old name was
+  not accurate. Retrieve the field's type from the handle's `.T` member, as in
+  `reflect[T].field["x"].T`. Update call sites such as
+  `reflect[T].field_type["x"]` to `reflect[T].field["x"]`.
 
-  As a result, generic code that takes an `InlineArray` by value with only a
-  `Movable` element bound now fails to compile for every `ElementType`
-  (previously the error was deferred until `ElementType` was a non-deletable
-  type). Add `& ImplicitlyDeletable` to the element bound:
+- Several collection types now *conditionally* conform to `ImplicitlyDeletable`,
+  conforming only when their element type does. This lets a collection hold
+  non-`ImplicitlyDeletable` elements at all (previously such a collection failed
+  to compile); a collection of non-deletable elements is itself linear and must
+  be drained explicitly with the new `destroy_with()` method, which calls a
+  closure on each element:
+
+  ```mojo
+  collection^.destroy_with(my_destroy_closure)
+  ```
+
+  Generic code that takes one of these collections by value may now need
+  `& ImplicitlyDeletable` added to its element bound so the collection can be
+  dropped:
 
   ```mojo
   def foo[T: Movable & ImplicitlyDeletable, //](var arr: InlineArray[T, 3]):
       pass
   ```
 
-  To consume an `InlineArray` of explicitly-destroyed elements, drain it with
-  the new `destroy_with()` method, which calls a closure on each element:
+  Affected types:
 
-  ```mojo
-  arr^.destroy_with(my_destroy_closure)
-  ```
+  - `InlineArray[ElementType, size]`.
+  - `Deque[ElementType]`
+    - Element-destroying operations (`append`, `appendleft`, `extend`,
+      `extendleft`, `insert`, `clear`, `remove`, etc.) still require
+      `ElementType` to be `ImplicitlyDeletable`.
+    - Consuming iteration (`for x in deque^`, the `IterableOwned` conformance)
+      is likewise conditional, requiring `ElementType` to be
+      `ImplicitlyDeletable`; generic code bounded on `IterableOwned` now rejects
+      a non-conforming element type at the bound rather than failing later
+      inside `__iter__()`. For deletable element types (the common case) this is
+      transparent.
+
+- The `IterableOwned` conformance on `List` and `InlineArray` (consuming
+  iteration via `for x in collection^`) is now conditional, requiring the
+  element type to be `Movable & ImplicitlyDeletable`. Consuming iteration moves
+  elements out of the collection rather than copying them, so it no longer
+  requires `Copyable`. Generic code bounded on `IterableOwned` now rejects a
+  collection of non-conforming elements at the bound, rather than failing later
+  inside `__iter__()`.
 
 - The implicit conversion constructors that cast an `UnsafePointer` to
   `MutUnsafeAnyOrigin` or `ImmutUnsafeAnyOrigin` are now deprecated and emit a
@@ -76,11 +135,25 @@ This version is still a work in progress.
   if you must discard it, make the cast explicit with the
   `as_unsafe_any_origin()` method.
 
+- The traits `ImplicitlyDeletable`, `Movable`, `Copyable`, and
+  `ImplicitlyCopyable` are now stable.
+
+- Added `raise_python_exception()` to `std.python.bindings`, which translates a
+  Mojo `Error` into a Python exception via `PyErr_SetString` and returns a null
+  `PyObjectPtr`.
+
 ## Tooling changes
 
 - Added a `--lld-path` CLI flag. This overrides the LLD path that Mojo uses.
 
 ## GPU programming
+
+- Added an 8x8 `simdgroup_matrix` matrix multiply-accumulate primitive
+  (`_mma_apple_8x8()`) with `apple_mma_load_8x8()` / `apple_mma_store_8x8()`
+  fragment helpers for Apple Silicon GPUs in `std.gpu.compute.arch`. Unlike
+  the 16x16 path (Apple M5 only), the 8x8 primitive is available on all Apple
+  GPU generations (M1-M5). It accepts `Float16`, `BFloat16`, and `Float32`
+  inputs with a `Float32` accumulator.
 
 - Apple M5 `simdgroup_matrix` MMA now accepts FP8 (`float8_e4m3fn`,
   `float8_e5m2`) inputs with an F32 accumulator, alongside the existing

@@ -156,6 +156,18 @@ def _pad_constant_impl[
     ],
     ctx: DeviceContext,
 ) raises:
+    # Zero-element input (e.g. a ``(B, C, 0, 0)`` tensor padded out to
+    # ``(B, C, 1, 1)`` in a diffusion VAE encoder for the text-to-image
+    # placeholder): nothing to copy.  The caller -- ``pad_constant`` --
+    # has already filled the output buffer with the constant value via
+    # ``enqueue_fill`` before reaching this function, which is exactly
+    # the correct output (every position is "padded" because there's no
+    # input region to copy from).  Without this guard the kernel would
+    # divide by zero computing ``total_rows = num_elements // row_length``
+    # and launch with ``grid_dim=(0)`` which is undefined.
+    if input_tensor.num_elements() == 0:
+        return
+
     var row_length = Int(input_tensor.dim(input_tensor.rank - 1))
     var total_rows = input_tensor.num_elements() // row_length
 

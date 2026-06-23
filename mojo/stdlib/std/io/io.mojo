@@ -303,9 +303,10 @@ def _printf[
         # print buffer. Metal doesn't support printf-style variadic args.
         var buf = _WriteBufferHeap()
         buf.write_string(fmt)
-        _ = buf.nul_terminate()
-        var s = buf.as_string_slice()
-        _metal_print_write(s)
+        var cstr = buf.nul_terminate()
+        _metal_print_write(
+            StringSlice(unsafe_from_utf8=cstr.as_bytes_with_nul())
+        )
     elif not is_gpu():
         _printf_cpu[fmt](*args, file=file)
     else:
@@ -377,8 +378,8 @@ def print[
     *Ts: Writable
 ](
     *values: *Ts,
-    sep: StaticString = " ",
-    end: StaticString = "\n",
+    sep: StringSlice = " ",
+    end: StringSlice = "\n",
     flush: Bool = False,
     var file: FileDescriptor = stdout,
 ):
@@ -447,17 +448,19 @@ def print[
         var buffer = _WriteBufferHeap()
         values._write_to(buffer, sep=sep, end=end)
 
-        _ = buffer.nul_terminate()
-
-        var slice = buffer.as_string_slice()
+        var cstr = buffer.nul_terminate()
 
         comptime if is_nvidia_gpu():
-            _printf["%s"](slice.unsafe_ptr())
+            _printf["%s"](cstr.unsafe_ptr())
         elif is_amd_gpu():
             var msg = printf_begin()
-            _ = printf_append_string_n(msg, slice.as_bytes(), is_last=True)
+            _ = printf_append_string_n(
+                msg, cstr.as_bytes_with_nul(), is_last=True
+            )
         elif is_apple_gpu():
-            _metal_print_write(slice)
+            _metal_print_write(
+                StringSlice(unsafe_from_utf8=cstr.as_bytes_with_nul())
+            )
         else:
             CompilationTarget.unsupported_target_error[
                 operation=__get_current_function_name()

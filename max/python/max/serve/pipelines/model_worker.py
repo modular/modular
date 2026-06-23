@@ -41,8 +41,8 @@ from max.pipelines.modeling.types import (
     PipelinesFactory,
 )
 from max.profiler import Tracer, traced
+from max.serve._exceptions import detect_and_wrap_ooms
 from max.serve.config import MetricRecordingMethod, Settings
-from max.serve.exceptions import detect_and_wrap_oom
 from max.serve.pipelines.reset_prefix_cache import ResetPrefixCacheBackend
 from max.serve.pipelines.telemetry_worker import MetricClient
 from max.serve.process_control import subprocess_manager
@@ -211,6 +211,9 @@ class ModelWorker:
             )
 
             ModelWorker._configure_metrics(settings, metric_client)
+
+            # improves diagnostic messages for gpu out-of-memory errors
+            exit_stack.enter_context(detect_and_wrap_ooms())
 
             # Prime the pinned memory cache in the model worker process.
             # The first DevicePinnedBuffer allocation per GPU triggers
@@ -438,10 +441,6 @@ class ModelWorker:
             )
         except KeyboardInterrupt:
             pass  # suppress noisy stack traces for user abort
-        except Exception as e:
-            logger.exception("Model worker crashed")
-            detect_and_wrap_oom(e)
-            raise
 
 
 @asynccontextmanager

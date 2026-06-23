@@ -16,6 +16,8 @@
 
 import logging
 import os
+import signal
+from types import FrameType
 
 import uvloop
 from max.pipelines import PIPELINE_REGISTRY, PipelineConfig
@@ -26,13 +28,30 @@ from max.serve.api_server import (
     ServingTokenGeneratorSettings,
     fastapi_app,
     fastapi_config,
+    lifespan,
     validate_port_is_free,
 )
 from max.serve.config import Settings
 from max.serve.pipelines.echo_gen import EchoTokenGenerator
+from max.serve.process_control import SubprocessExit
 from uvicorn import Server
 
 logger = logging.getLogger("max.entrypoints")
+
+
+def _exit_on_signal(signum: int, frame: FrameType | None) -> None:
+    """Turns SIGTERM into an exception that unwinds the serving stack.
+
+    The serving context manager (model worker, pipeline, telemetry) wraps
+    uvicorn's ``server.serve()``, so its teardown runs when that ``async with``
+    block exits. uvicorn re-raises a handled signal once ``serve()`` returns;
+    ``SIGTERM``'s default disposition silently terminates the process, which
+    would skip that teardown and leak the model worker subprocess. Raising here
+    unwinds through the context managers instead, so they tear the worker down.
+    (``SIGINT`` already raises ``KeyboardInterrupt`` by default, so it does not
+    need this.)
+    """
+    raise SystemExit(128 + signum)
 
 
 def serve_api_server_and_model_worker(
@@ -86,5 +105,31 @@ def serve_api_server_and_model_worker(
 
     server = Server(config)
 
+    async def serve() -> None:
+        # Enter the serving context (model worker, pipeline, telemetry) first,
+        # then run uvicorn with lifespan="off". Because the context manager and
+        # server.serve() run in the same task, a model-worker crash (which
+        # surfaces as the worker's TaskGroup cancelling this task) tears down
+        # the running server directly, without the fragile self-SIGINT signaling
+        # the uvicorn lifespan hook previously relied on.
+        try:
+            async with lifespan(
+                app, settings, pipeline_settings, app.state.zmq_endpoint_base
+            ):
+                await server.serve()
+        except SubprocessExit:
+            logger.error("Worker crashed, Shutting down...")
+            # quietly unwind the api-server to keep logs cleaner
+            # so users can focus on the real error printed by the subprocess
+            raise SystemExit(1) from None
+
+    # CLI entry point: install our own SIGTERM handler and don't bother
+    # restoring it. uvicorn re-raises a handled signal once serve() returns;
+    # SIGTERM's default action would silently kill us before the lifespan
+    # teardown above, so raise instead to unwind through it. SIGINT is left
+    # alone: its default handler already raises KeyboardInterrupt, which
+    # unwinds the same way (and is less surprising for interactive use/tests).
+    signal.signal(signal.SIGTERM, _exit_on_signal)
+
     with Tracer("openai_compatible_frontend_server"):
-        uvloop.run(server.serve())
+        uvloop.run(serve())

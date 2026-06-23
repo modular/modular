@@ -287,9 +287,9 @@ def test_copy_to_independent() raises:
 # --- Accessing fields by name ---
 
 
-def test_field_type_by_name() raises:
+def test_field_by_name() raises:
     """Returns a Reflected handle for the field; .T is usable."""
-    comptime host_handle = reflect[Config].field_type["host"]
+    comptime host_handle = reflect[Config].field["host"]
     var default_host: host_handle.T = "localhost"
     assert_equal(default_host, "localhost")
 
@@ -480,7 +480,7 @@ def main() raises:
     test_copy_to_independent()
 
     # Accessing fields by name
-    test_field_type_by_name()
+    test_field_by_name()
     test_field_index_by_name()
 
     # Field layout

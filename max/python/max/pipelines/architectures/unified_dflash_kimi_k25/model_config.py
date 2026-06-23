@@ -17,6 +17,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 
+from max.graph import DeviceRef
 from max.nn.kv_cache import (
     KVCacheParamInterface,
     KVCacheParams,
@@ -124,6 +125,14 @@ class UnifiedDflashKimiK25Config(ArchConfigWithKVCache):
         return MultiKVCacheParams.from_params(
             {"target": target_kv, "draft": self.draft.kv_params}
         )
+
+    @property
+    def devices(self) -> list[DeviceRef]:
+        """Exposes the target's devices so this unified config satisfies the
+        ``ModelConfigWithKVCache`` protocol ``KimiK25MemoryPlanner`` requires
+        (target and draft share placement; ``__post_init__`` checks the device
+        count, and both are built from the target's devices)."""
+        return self.target.devices
 
     @classmethod
     def initialize(

@@ -743,10 +743,9 @@ class PagedKVCacheManager:
     def step(self, batches: Sequence[Sequence[TextContext]]) -> None:
         """Commits new tokens into the prefix cache for per-replica batches."""
         for replica, ctxs in zip(self._replica, batches, strict=True):
-            replica.connector.sync()
-            # Drain offloads posted this iteration (post-forward-pass). No-op for
-            # host/disk tiers, which complete in sync(); used by the dKV
-            # connector to await its NIXL WRITEs and register the blocks.
+            # Drain offloads posted this iteration (post-forward-pass): the
+            # host/disk tiers wait on their D2H copies and post disk writes; the
+            # dKV connector awaits its NIXL WRITEs and registers the blocks.
             replica.connector.wait_for_offloads()
             for ctx in ctxs:
                 replica.block_manager.step(ctx)

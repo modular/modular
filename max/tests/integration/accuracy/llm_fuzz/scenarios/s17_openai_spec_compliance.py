@@ -328,6 +328,7 @@ class OpenAISpecCompliance(BaseScenario):
     name = "openai_spec_compliance"
     description = "Validate endpoint responses conform to the OpenAI Chat Completions API specification"
     tags = ["spec", "compliance", "validation", "openai"]
+    scenario_type = "validation"
 
     async def run(
         self, client: FuzzClient, config: RunConfig

@@ -15,10 +15,14 @@
 import numpy as np
 from max.pipelines.context import (
     GenerationStatus,
+    StructuredOutputRegionDelimiters,
     TextContext,
     TokenBuffer,
 )
-from max.pipelines.lib.pipeline_variants.utils import build_response
+from max.pipelines.lib.pipeline_variants.utils import (
+    StructuredOutputHelper,
+    build_response,
+)
 from max.pipelines.modeling.types import RequestID
 
 
@@ -126,5 +130,44 @@ class TestBuildResponse:
         build_response(
             [ctx], max_seq_len=global_max_seq_len, max_growth_per_step=1
         )
-
         assert ctx.status == GenerationStatus.MAXIMUM_LENGTH
+
+
+class TestTokensForConsume:
+    """``StructuredOutputHelper._tokens_for_consume``.
+
+    On the conditional-enforcement flip-on (``tool_choice=auto``), the fresh
+    matcher must consume the whole tool-call start marker, not just the token
+    that completed it — otherwise multi-token / namespace-prefixed markers
+    (e.g. MiniMax-M3's ``NS<tool_call>``) reject and enforcement falls open.
+    """
+
+    @staticmethod
+    def _helper(start_token_ids: list[int]) -> StructuredOutputHelper:
+        return StructuredOutputHelper(
+            tool_call_region_delimiters=StructuredOutputRegionDelimiters(
+                start_token_ids=start_token_ids,
+                end_token_ids=[999],
+            )
+        )
+
+    def test_flip_on_feeds_full_multitoken_marker(self) -> None:
+        # M3-style NS<tool_call> = two tokens; flip-on feeds both.
+        helper = self._helper([200058, 200052])
+        assert helper._tokens_for_consume(200052, was_enforced=False) == [
+            200058,
+            200052,
+        ]
+
+    def test_already_enforced_feeds_single_token(self) -> None:
+        helper = self._helper([200058, 200052])
+        assert helper._tokens_for_consume(77, was_enforced=True) == [77]
+
+    def test_single_token_marker_is_noop(self) -> None:
+        # Single-token markers (e.g. Kimi) feed just the token even on flip-on.
+        helper = self._helper([42])
+        assert helper._tokens_for_consume(42, was_enforced=False) == [42]
+
+    def test_no_delimiters_feeds_single_token(self) -> None:
+        helper = StructuredOutputHelper()
+        assert helper._tokens_for_consume(5, was_enforced=False) == [5]

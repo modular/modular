@@ -208,6 +208,7 @@ def is_vision_model(model: str) -> bool:
             "internvl",
             "kimi-k2",
             "kimi-vl",
+            "minimax-m3",
             "olmocr",
             "pixtral",
             "qwen2.5-vl",
@@ -392,6 +393,7 @@ def get_server_cmd(
     *,
     serve_extra_args: str = "",
     recipe_path: str | None = None,
+    autoscale_devices: bool = True,
     gpu_spec: tuple[str, int],
 ) -> list[str]:
     gpu_model, gpu_count = gpu_spec
@@ -495,11 +497,9 @@ def get_server_cmd(
     cmd = cmd + ["--port", "8000"]
     if recipe_config is not None:
         config_file_path, recipe = recipe_config
-        cmd += [
-            "--config-file",
-            config_file_path,
-            *_recipe_gpu_overrides(recipe, gpu_count),
-        ]
+        cmd += ["--config-file", config_file_path]
+        if autoscale_devices:
+            cmd += _recipe_gpu_overrides(recipe, gpu_count)
     else:
         cmd += ["--trust-remote-code", "--model", model]
 
@@ -579,6 +579,17 @@ def get_server_cmd(
     default=False,
     help="Disable all timeouts. Useful when debugging hangs.",
 )
+@click.option(
+    "--recipe-path",
+    type=str,
+    default=None,
+    help="Recipe config YAML to serve instead of one looked up by model name.",
+)
+@click.option(
+    "--autoscale-devices/--no-autoscale-devices",
+    default=True,
+    help="Scale a recipe's device count to the local machine's GPU count.",
+)
 def smoke_test(
     hf_model_path: str,
     framework: str,
@@ -589,6 +600,8 @@ def smoke_test(
     num_questions: int,
     serve_extra_args: str,
     disable_timeouts: bool,
+    recipe_path: str | None,
+    autoscale_devices: bool,
 ) -> None:
     """
     Example usage: ./bazelw run smoke-test -- meta-llama/Llama-3.2-1B-Instruct
@@ -612,7 +625,9 @@ def smoke_test(
         output_path = Path(build_workspace) / output_path
 
     model = hf_model_path.strip()
-    recipe_path = MODEL_RECIPES.get(model)
+    # --recipe-path overrides the matrix lookup.
+    if recipe_path is None:
+        recipe_path = MODEL_RECIPES.get(model)
     if recipe_path:
         recipe_model_path = _load_recipe(recipe_path).model.model_path
         if recipe_model_path is None:
@@ -626,6 +641,7 @@ def smoke_test(
         hf_model_path,
         serve_extra_args=serve_extra_args,
         recipe_path=recipe_path,
+        autoscale_devices=autoscale_devices,
         gpu_spec=get_gpu_name_and_count(),
     )
 

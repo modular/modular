@@ -691,6 +691,9 @@ struct Struct_ep_dispatch_wait_mxfp4:
         //,
         target: StaticString,
         num_input_tokens: Int = -1,
+        *,
+        fuse_a_scale_preshuffle: Bool = False,
+        max_padded_M: Int = 0,
     ](
         output_tokens: OutputTensor[dtype=dispatch_dtype, rank=2, ...],
         output_scales: OutputTensor[dtype=dispatch_scale_dtype, rank=2, ...],
@@ -705,6 +708,14 @@ struct Struct_ep_dispatch_wait_mxfp4:
         """Execute the Expert Parallelism dispatch completion kernel. Received
         tokens are in MXFP4 format: two FP4 elements packed per ``uint8`` in
         ``output_tokens`` with per-token even-mode scales in ``output_scales``.
+
+        When ``fuse_a_scale_preshuffle=True`` (KS224 up-proj fusion), the
+        kernel writes the E8M0 activation scale directly into the up-proj
+        grouped matmul's per-expert fixed-stride ``scale_4d`` slot layout (slot
+        stride ``max_padded_M * K_SCALES``), so the standalone
+        ``preshuffle_grouped_scale_4d_gpu`` can be dropped from the decode
+        critical path. The scales output tensor must then have shape
+        ``[n_local_experts * max_padded_M, K_SCALES]``.
         """
         var output_tokens_tensor = output_tokens.to_tile_tensor[DType.int64]()
         var output_scales_tensor = output_scales.to_tile_tensor[DType.int64]()
@@ -713,9 +724,12 @@ struct Struct_ep_dispatch_wait_mxfp4:
             output_tokens_tensor.static_shape[1] * 2 == hidden_size
         ), "EP dispatch_wait: output tokens shape doesn't match hidden size."
 
-        var format_handler = MXFP4TokenFormat[hidden_size, top_k](
+        var format_handler = MXFP4TokenFormat[
+            hidden_size, top_k, fuse_a_scale_preshuffle=fuse_a_scale_preshuffle
+        ](
             output_tokens_tensor,
             output_scales_tensor,
+            max_padded_M,
         )
 
         ep_dispatch_wait_kernel_api[
@@ -972,6 +986,9 @@ struct Struct_ep_dispatch_mxfp4:
         allreduce_world_size: Int,
         //,
         target: StaticString,
+        *,
+        fuse_a_scale_preshuffle: Bool = False,
+        max_padded_M: Int = 0,
     ](
         output_tokens: OutputTensor[dtype=dispatch_dtype, rank=2, ...],
         output_scales: OutputTensor[dtype=dispatch_scale_dtype, rank=2, ...],
@@ -988,13 +1005,23 @@ struct Struct_ep_dispatch_mxfp4:
     ) raises:
         """Execute the fused Expert Parallelism MXFP4 dispatch kernel. Tokens
         are dispatched in MXFP4 format.
+
+        When ``fuse_a_scale_preshuffle=True`` (KS224 up-proj fusion), the
+        wait-side copy writes the E8M0 activation scale directly into the
+        up-proj grouped matmul's per-expert fixed-stride ``scale_4d`` slot
+        layout (slot stride ``max_padded_M * K_SCALES``), dropping the standalone
+        preshuffle. The scales output tensor must then be slot-sized
+        (``[n_local_experts * max_padded_M, K_SCALES]``).
         """
         var output_tokens_tensor = output_tokens.to_tile_tensor[DType.int64]()
         var output_scales_tensor = output_scales.to_tile_tensor[DType.int64]()
 
-        var format_handler = MXFP4TokenFormat[hidden_size, top_k](
+        var format_handler = MXFP4TokenFormat[
+            hidden_size, top_k, fuse_a_scale_preshuffle=fuse_a_scale_preshuffle
+        ](
             output_tokens_tensor,
             output_scales_tensor,
+            max_padded_M,
         )
 
         ep_fused_dispatch_kernel_api[
@@ -1960,6 +1987,9 @@ struct Struct_ep_fused_silu_mxfp4:
         scales_dtype: DType,
         input_dtype: DType,
         target: StaticString,
+        *,
+        fuse_a_scale_preshuffle: Bool = False,
+        max_padded_M: Int = 0,
     ](
         output: OutputTensor[dtype=fp4_dtype, rank=2, ...],
         scales: OutputTensor[dtype=scales_dtype, rank=2, ...],
@@ -1977,6 +2007,13 @@ struct Struct_ep_fused_silu_mxfp4:
         received tokens in the input tensor, and then only perform the SILU
         operation on the received tokens. Once the SILU operation is performed,
         the output will be quantized to the MXFP4 format.
+
+        When `fuse_a_scale_preshuffle=True` (KS64 fusion), the kernel
+        writes the E8M0 scale directly into the grouped matmul's per-expert
+        fixed-stride `scale_4d` slot layout (slot stride `max_padded_M *
+        K_SCALES`), so the standalone `preshuffle_grouped_scale_4d_gpu` can be
+        omitted from the critical path.  The scales output tensor must then have
+        shape `[n_local_experts * max_padded_M, K_SCALES]`.
         """
         # Ensure this kernel only runs on GPU targets
         comptime assert is_gpu[target](), "EP is only supported on GPU."
@@ -2001,6 +2038,7 @@ struct Struct_ep_fused_silu_mxfp4:
             row_offsets_tensor.LayoutType,
             hw_info.max_thread_block_size,
             hw_info.sm_count,
+            fuse_a_scale_preshuffle=fuse_a_scale_preshuffle,
         ]
 
         @always_inline
@@ -2011,6 +2049,7 @@ struct Struct_ep_fused_silu_mxfp4:
                 "fp4_dtype=", fp4_dtype,
                 ";scales_dtype=", scales_dtype,
                 ";input_dtype=", input_dtype,
+                ";fuse_a_scale_preshuffle=", fuse_a_scale_preshuffle,
             )
             # fmt: on
 
@@ -2024,6 +2063,7 @@ struct Struct_ep_fused_silu_mxfp4:
                 scales_tensor,
                 input_tensor,
                 row_offsets_tensor,
+                max_padded_M,
                 grid_dim=hw_info.sm_count,
                 block_dim=hw_info.max_thread_block_size,
                 attributes=pdl_launch_attributes(PDLLevel.ON),
