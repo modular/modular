@@ -218,13 +218,9 @@ def build_image_inputs(
         soft_token_counts: list[int] = []
 
         for ctx in uncached:
-            ctx_pos_ids = ctx.pixel_position_ids
-            if ctx.next_images and len(ctx_pos_ids) != len(ctx.next_images):
-                raise ValueError(
-                    f"Expected {len(ctx.next_images)} pixel_position_ids, "
-                    f"got {len(ctx_pos_ids)}"
-                )
-
+            # Slice off already-encoded images so pixel_position_ids (the full
+            # per-image list) realigns with next_images under chunked prefill.
+            ctx_pos_ids = ctx.pixel_position_ids[ctx.image_idx :]
             for img_idx, img in enumerate(ctx.next_images):
                 num_soft = img.end_idx - img.start_idx
                 num_patches = num_soft * k * k
