@@ -93,6 +93,16 @@ class SamplingConfig(ConfigFileModel):
         ),
     )
 
+    sample_on_host: bool = Field(
+        default=False,
+        description=(
+            "Run the token sampler on the host CPU instead of the model "
+            "device. The last-token logits are copied device-to-host and "
+            "sampling (top-k/argmax) runs on CPU. Default is to sample on "
+            "the model device."
+        ),
+    )
+
     _config_file_section_name: str = PrivateAttr(default="sampling_config")
     """The section name to use when loading this config from a ConfigFileModel file.
     This is used to differentiate between different config sections in a single

@@ -136,15 +136,12 @@ def test_rmsnorm_then_matmul[
     var norm_shape = Index(M, K)
 
     # input_fn: shared by both paths, reads from a_raw (read-only)
+    # `rms_norm_gpu` migrated to a `Coord` shape boundary (softmax PR #88203).
     @always_inline
     @__copy_capture(a_raw_tensor)
     @parameter
-    def input_fn[
-        width: Int, _rank: Int
-    ](coords: IndexList[_rank]) -> SIMD[a_type, width]:
-        return a_raw_tensor.raw_load[width=width](
-            a_raw_tensor.layout(Coord(coords))
-        )
+    def input_fn[width: Int](coords: Coord) -> SIMD[a_type, width]:
+        return a_raw_tensor.raw_load[width=width](a_raw_tensor.layout(coords))
 
     # -----------------------------------------------------------------------
     # Vendor path: RMS norm launch 1 → a_normed_vendor → cuBLAS matmul
@@ -154,13 +151,13 @@ def test_rmsnorm_then_matmul[
     @parameter
     def output_fn_vendor[
         width: SIMDSize, alignment: Int
-    ](coords: IndexList[2], val: SIMD[a_type, width]) -> None:
+    ](coords: Coord, val: SIMD[a_type, width]) -> None:
         a_normed_vendor_tensor.raw_store[width=width, alignment=alignment](
-            a_normed_vendor_tensor.layout(Coord(coords)), val
+            a_normed_vendor_tensor.layout(coords), val
         )
 
-    rms_norm_gpu[input_fn, output_fn_vendor, multiply_before_cast=True](
-        norm_shape, gamma_tensor, epsilon, weight_offset, ctx
+    rms_norm_gpu[2, input_fn, output_fn_vendor, multiply_before_cast=True](
+        Coord(norm_shape), gamma_tensor, epsilon, weight_offset, ctx
     )
 
     vendor_blas.matmul(
@@ -180,13 +177,13 @@ def test_rmsnorm_then_matmul[
     @parameter
     def output_fn_ours[
         width: SIMDSize, alignment: Int
-    ](coords: IndexList[2], val: SIMD[a_type, width]) -> None:
+    ](coords: Coord, val: SIMD[a_type, width]) -> None:
         a_normed_ours_tensor.raw_store[width=width, alignment=alignment](
-            a_normed_ours_tensor.layout(Coord(coords)), val
+            a_normed_ours_tensor.layout(coords), val
         )
 
-    rms_norm_gpu[input_fn, output_fn_ours, multiply_before_cast=True](
-        norm_shape, gamma_tensor, epsilon, weight_offset, ctx
+    rms_norm_gpu[2, input_fn, output_fn_ours, multiply_before_cast=True](
+        Coord(norm_shape), gamma_tensor, epsilon, weight_offset, ctx
     )
 
     comptime matmul_config = MatmulConfig[a_type, b_type, c_type, transpose_b](

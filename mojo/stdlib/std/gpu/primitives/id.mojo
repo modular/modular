@@ -38,7 +38,7 @@ from std.memory import AddressSpace
 from std.builtin.int import _FromInt
 
 from ..globals import WARP_SIZE
-import .warp
+from . import warp
 
 
 # ===-----------------------------------------------------------------------===#

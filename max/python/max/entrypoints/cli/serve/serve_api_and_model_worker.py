@@ -33,6 +33,7 @@ from max.serve.api_server import (
 )
 from max.serve.config import Settings
 from max.serve.pipelines.echo_gen import EchoTokenGenerator
+from max.serve.process_control import SubprocessExit
 from uvicorn import Server
 
 logger = logging.getLogger("max.entrypoints")
@@ -111,10 +112,16 @@ def serve_api_server_and_model_worker(
         # surfaces as the worker's TaskGroup cancelling this task) tears down
         # the running server directly, without the fragile self-SIGINT signaling
         # the uvicorn lifespan hook previously relied on.
-        async with lifespan(
-            app, settings, pipeline_settings, app.state.zmq_endpoint_base
-        ):
-            await server.serve()
+        try:
+            async with lifespan(
+                app, settings, pipeline_settings, app.state.zmq_endpoint_base
+            ):
+                await server.serve()
+        except SubprocessExit:
+            logger.error("Worker crashed, Shutting down...")
+            # quietly unwind the api-server to keep logs cleaner
+            # so users can focus on the real error printed by the subprocess
+            raise SystemExit(1) from None
 
     # CLI entry point: install our own SIGTERM handler and don't bother
     # restoring it. uvicorn re-raises a handled signal once serve() returns;

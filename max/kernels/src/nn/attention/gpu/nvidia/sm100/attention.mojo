@@ -20,6 +20,7 @@ from std.gpu.globals import WARP_SIZE
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.host.info import B200
 from std.gpu.primitives.grid_controls import PDLLevel
+from kv_cache.types import _kv_fold_base_ok
 
 
 comptime EnableForcedOrdering = get_defined_bool[
@@ -79,6 +80,8 @@ struct FA4Config[
     var num_qo: Int
     var page_size: Int
     var is_mla: Bool
+    var row_major_v_atoms: Bool
+    var row_major_k_atoms: Bool
 
     comptime qkv_dtype_size: Int = size_of[Self.qkv_dtype]()
     comptime rope_dtype_size: Int = size_of[Self.rope_dtype]()
@@ -123,6 +126,115 @@ struct FA4Config[
         if self.pair_cta:
             return self.BN // 2
         return self.BN
+
+    @always_inline
+    def v_row_major(self) -> Bool:
+        """Effective row-major (page-dense, chunk-inner) V layout selector.
+
+        Drives BOTH the V TMA producer fold (`tma_copy_v[row_major=...]`) and
+        the P@V MMA consumer descriptor (`smem_descriptor[page_dense=...]` /
+        `SM100TensorAccumulator[b_page_dense=...]`); a single accessor keeps the
+        producer's page-dense SMEM and the consumer's descriptor in agreement.
+
+        Returns True only when the page-dense layout is actually applicable —
+        i.e. when the V-side `kv_tma_fold_chunks[row_major=True]` would fold
+        (`>= 2`). The `base_ok` geometry comes from the SHARED `_kv_fold_base_ok`
+        gate (the single source of truth the predicate also uses), so the two
+        cannot drift; a `comptime assert` at the dispatch site still cross-checks
+        this accessor against the real fold result (it spans the
+        `box_rows == page_size` bridge the shared gate does not).
+
+        Restricted to genuine multi-page paging (`0 < page_size < BN`):
+          - This is the only regime where the fold helps: with `page_size >= BN`
+            or `page_size == 0` the tile is a single page (`pages_per_iter == 1`)
+            that the chunk-outer rank-4 fold already loads in one TMA.
+          - It is also the only regime where the rank-5 atom-row coordinate
+            (`gmem_row // _SWIZZLE_ATOM_ROWS`) is safe: a block-indirected
+            `PagedKVCache` gives `gmem_row = block_idx * stride` with `stride` a
+            multiple of `page_size`, so `page_size % 8 == 0` (checked below)
+            makes every page row 8-aligned. Continuous / ragged operands
+            (`page_size >= BN`) place tiles at arbitrary token offsets that are
+            NOT 8-aligned, which would corrupt the atom-row coordinate.
+
+        Gated to single-CTA: under `pair_cta` the descriptor (`BMN =
+        v_cols_per_cta() = ov/2`) and the accumulator advance (`b_BMN = MMA_N =
+        ov`) disagree on `mn_dim` for the native layout — a fast-follow change.
+        SWIZZLE_128B only (the native layout is defined there).
+        """
+        if not self.row_major_v_atoms:
+            return False
+        if self.swizzle_mode != TensorMapSwizzle.SWIZZLE_128B:
+            return False
+        if self.pair_cta:
+            return False
+        # Multi-page paging only (see docstring): single-page / continuous /
+        # ragged stay chunk-outer.
+        if not (self.page_size > 0 and self.page_size < self.BN):
+            return False
+        var gran = self.swizzle_mode.bytes() // Self.qkv_dtype_size
+        # base_ok: shared with kv_tma_fold_chunks (single source of truth) —
+        # BK % gran == 0, >= 2 chunks, head_size (= ov_depth) divisible by BK.
+        if not _kv_fold_base_ok(self.v_cols_per_cta(), gran, self.ov_depth):
+            return False
+        # geometry_ok (row_major): box_rows == page_size here (page_size < BN),
+        # so the TMA sub-tile must split into _SWIZZLE_ATOM_ROWS (= 8) atom-rows.
+        # This also guarantees the gmem page rows are 8-aligned (see docstring).
+        return self.page_size % 8 == 0
+
+    @always_inline
+    def k_row_major(self) -> Bool:
+        """Effective row-major (page-dense, chunk-inner) K layout selector.
+
+        K-side analog of `v_row_major()`: drives BOTH the K TMA producer fold
+        (`tma_copy_k[row_major=...]`) and the Q@K' MMA consumer descriptor
+        (`smem_descriptor[is_k_major=True, page_dense=...]` /
+        `SM100TensorAccumulator[b_page_dense=...]` for the k-major B operand).
+        A single accessor keeps the producer's page-dense SMEM and the
+        consumer's descriptor in agreement (disagreement is silent wrong
+        output, not a crash).
+
+        Gated identically to V: `SWIZZLE_128B` only, single-CTA only
+        (`not pair_cta`), and genuine multi-page paging
+        (`0 < page_size < k_rows_per_cta()` with `page_size % 8 == 0`, so a
+        block-indirected `PagedKVCache` gives 8-aligned page rows for the
+        rank-5 atom-row coordinate — see `v_row_major()` for the full
+        rationale). The `base_ok` geometry comes from the SHARED
+        `_kv_fold_base_ok` gate (the K-side `kv_tma_fold_chunks` uses the same
+        gate: `BK0 % gran == 0`, `num_chunks >= 2`, `qk_depth % BK0 == 0`), so
+        the two cannot drift; a `comptime assert` at the dispatch site still
+        cross-checks this against the real fold result.
+
+        K and V share the same constructor-computed default
+        (`row_major_{v,k}_atoms = not is_mla and 0 < page_size < BN`); the two
+        accessors then apply their own feasibility gates independently.
+        """
+        if not self.row_major_k_atoms:
+            return False
+        if self.swizzle_mode != TensorMapSwizzle.SWIZZLE_128B:
+            return False
+        if self.pair_cta:
+            return False
+        # Multi-page paging only (see v_row_major docstring): single-page /
+        # continuous / ragged stay chunk-outer. `k_rows_per_cta()` is the K
+        # tile's seq_k extent (== BN single-CTA, which is enforced above).
+        if not (self.page_size > 0 and self.page_size < self.k_rows_per_cta()):
+            return False
+        var gran = self.swizzle_mode.bytes() // Self.qkv_dtype_size
+        # base_ok: shared with the K-side kv_tma_fold_chunks (single source of
+        # truth) — BK0 % gran == 0, >= 2 chunks, qk_depth divisible by BK0.
+        #
+        # The `>= 2 chunks` term naturally restricts the fold to the regime where
+        # it helps: in FUSED-KV mode `num_qk_stages == 1` so `BK0 == padded_qk_depth`
+        # (multiple gran-chunks per K tile to fold). In split-KV mode `BK0 == gran`
+        # (one gran-chunk per stage, separate buffers), so there is one chunk and
+        # this returns False — correct, since K already loads one TMA per page
+        # per stage there (nothing to fold).
+        if not _kv_fold_base_ok(self.BK0, gran, self.qk_depth):
+            return False
+        # geometry_ok (row_major): box_rows == page_size here (< k_rows_per_cta),
+        # so the TMA sub-tile splits into _SWIZZLE_ATOM_ROWS (= 8) atom-rows and
+        # the gmem page rows are 8-aligned.
+        return self.page_size % 8 == 0
 
     @always_inline
     def q_nope_bytes(self) -> Int:
@@ -236,6 +348,17 @@ struct FA4Config[
             and self.BN % page_size != 0
         ):
             self.BN = prev_power_of_two(self.BN)
+        # Row-major (page-dense) K/V is the default in the multi-page paging
+        # regime (0 < page_size < BN); single-page / continuous / ragged
+        # (page_size == 0 or >= BN) stay chunk-outer. MLA is structurally
+        # chunk-outer (its own MMA warps never fold), so it is excluded here.
+        # v_row_major()/k_row_major() still apply the full
+        # geometry/swizzle/pair-CTA/_kv_fold_base_ok feasibility gating.
+        var page_dense_default = (
+            not is_mla and page_size > 0 and page_size < self.BN
+        )
+        self.row_major_v_atoms = page_dense_default
+        self.row_major_k_atoms = page_dense_default
         self.TMEM_S1 = Self.TMEM_S0 + self.BN
         self.TMEM_P0 = Self.TMEM_S0
         self.TMEM_P1 = self.TMEM_S1
@@ -487,7 +610,10 @@ struct FA4Config[
         `pair_cta` is forced False because `num_qo == 1` is single-CTA only
         (see `supported()`). Re-passing the stored `swizzle_mode` is faithful:
         the constructor re-derives it (FP8 re-forces 64B), and it is already
-        the post-override value here.
+        the post-override value here. The `row_major_{v,k}_atoms` fields are
+        not re-passed: the constructor recomputes them from
+        `page_size`/`BN`/`is_mla`, and `BN` is `num_qo`-independent, so the
+        value is identical to `self`'s.
         """
         return Self(
             num_q_heads=self.num_q_heads,

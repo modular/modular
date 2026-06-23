@@ -79,6 +79,7 @@ import numpy.typing as npt
 from max.driver import (
     CPU,
     Buffer,
+    Device,
     DeviceEvent,
     DevicePinnedBuffer,
     is_virtual_device_mode,
@@ -1575,6 +1576,15 @@ class OverlapTextGenerationPipeline(
         # always loaded so requests that don't engage structured output
         # (even with ``--enable-structured-output`` set server-wide) can
         # still be sampled.
+        # Device the sampler runs on. ``sample_on_host`` routes sampling to the
+        # host CPU.
+        self._sampler_device: Device = (
+            CPU()
+            if pipeline_config.sampling.sample_on_host
+            else self._devices[0]
+        )
+        sampler_device_ref = DeviceRef.from_device(self._sampler_device)
+
         self._sampler_with_bitmask: Model | None = None
         self._sampler_without_bitmask: Model | None = None
         if not is_spec_decode:
@@ -1583,12 +1593,12 @@ class OverlapTextGenerationPipeline(
                 if pipeline_config.needs_bitmask_constraints:
                     with_bitmask_graph = token_sampler(
                         pipeline_config.sampling,
-                        device=DeviceRef.from_device(self._devices[0]),
+                        device=sampler_device_ref,
                         needs_bitmask_input=True,
                     )
                 without_bitmask_graph = token_sampler(
                     pipeline_config.sampling,
-                    device=DeviceRef.from_device(self._devices[0]),
+                    device=sampler_device_ref,
                     needs_bitmask_input=False,
                 )
                 sampler_timer.mark_build_complete()
@@ -1608,7 +1618,7 @@ class OverlapTextGenerationPipeline(
         self._pinned_new_tokens: Buffer | None = None
         if (
             pipeline_config.needs_bitmask_constraints
-            and not self._devices[0].is_host
+            and not self._sampler_device.is_host
             and not is_virtual_device_mode()
         ):
             max_batch_size = pipeline_config.runtime.max_batch_size
@@ -1616,12 +1626,12 @@ class OverlapTextGenerationPipeline(
             self._pinned_new_tokens = DevicePinnedBuffer(
                 shape=(max_batch_size,),
                 dtype=DType.int64,
-                device=self._devices[0],
+                device=self._sampler_device,
             )
 
         self._identity_logit_offsets = (
             FusedSamplingProcessor.allocate_identity_logit_offsets(
-                pipeline_config, self._devices[0]
+                pipeline_config, self._sampler_device
             )
         )
 
@@ -2313,7 +2323,7 @@ class OverlapTextGenerationPipeline(
                     sampler=self._sampler_with_bitmask,
                     pipeline_config=self._pipeline_config,
                     context_batch=flat_batch,
-                    device=device0,
+                    device=self._sampler_device,
                     pinned_new_tokens=self._pinned_new_tokens,
                     identity_logit_offsets=self._identity_logit_offsets,
                     bitmask=bitmask,
@@ -2326,7 +2336,7 @@ class OverlapTextGenerationPipeline(
                     sampler=self._sampler_without_bitmask,
                     pipeline_config=self._pipeline_config,
                     context_batch=flat_batch,
-                    device=device0,
+                    device=self._sampler_device,
                     pinned_new_tokens=self._pinned_new_tokens,
                     identity_logit_offsets=self._identity_logit_offsets,
                 )
@@ -2378,26 +2388,30 @@ class OverlapTextGenerationPipeline(
                 batch_logit_offsets=sample_offsets,
                 batch_processors=[sampling_processor],
             )
-        generated_tokens_device = sampling_processor.generated_tokens
+        generated_tokens = sampling_processor.generated_tokens
         # [B, 1] -> [B]
-        generated_tokens_device = generated_tokens_device.view(
-            dtype=generated_tokens_device.dtype,
-            shape=(generated_tokens_device.shape[0],),
+        generated_tokens = generated_tokens.view(
+            dtype=generated_tokens.dtype,
+            shape=(generated_tokens.shape[0],),
         )
 
-        # Do the copy to host for each token generated.
         with Tracer("D2H generated_tokens"):
-            # Allocate a pinned tensor on the host for faster async d2h transfer
-            # speeds.
-            generated_tokens_host = DevicePinnedBuffer(
-                shape=generated_tokens_device.shape,
-                dtype=generated_tokens_device.dtype,
-                device=device0,
-            )
-            generated_tokens_host.inplace_copy_from(generated_tokens_device)
-            # Record an event to track the completion of the d2h copy.
-            # This will ensure that the subsequent synchronize() call will
-            # block until the d2h copy is complete, and no more.
+            if self._sampler_device.is_host:
+                generated_tokens_host = generated_tokens
+                generated_tokens_device = generated_tokens.to(device0)
+            else:
+                generated_tokens_device = generated_tokens
+                # Allocate a pinned tensor on the host for faster async d2h
+                # transfer speeds.
+                generated_tokens_host = DevicePinnedBuffer(
+                    shape=generated_tokens_device.shape,
+                    dtype=generated_tokens_device.dtype,
+                    device=device0,
+                )
+                generated_tokens_host.inplace_copy_from(generated_tokens_device)
+            # Record an event to track the completion of the copy. This ensures
+            # the subsequent synchronize() call blocks until the copy is
+            # complete, and no more.
             copy_event = device0.default_stream.record_event()
 
         # Make a deep copy of the input object in case the caller modifies it!
