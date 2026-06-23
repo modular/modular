@@ -24,9 +24,16 @@ import extensibility as compiler
 
 from std.gpu.host import DeviceContext
 from std.gpu.host.info import is_cpu, is_gpu
-from layout import IntTuple
+from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout, lt_to_tt
 from linalg.fp8_quantization import convert_e4m3fn_to_e4m3fnuz
-from nn.conv.conv import ConvInfoStatic, conv_gpu, conv_nhwc_direct, conv_shape
+from nn.conv.conv import (
+    ConvInfoStatic,
+    conv_gpu,
+    conv_nhwc_direct,
+    conv_shape,
+    pack_conv_filter_shape,
+    pack_filter,
+)
 from nn.conv.conv import pack_filter_shape as pack_filter_shape_conv
 from nn.conv.conv_transpose import (
     conv_transpose_shape,
@@ -411,6 +418,50 @@ struct Conv:
             comptime _input_layout = input.static_spec.to_layout()
             comptime _filter_layout = filter.static_spec.to_layout()
             comptime _output_layout = output.static_spec.to_layout()
+
+            # direct CPU conv kernel only supports grouped convolution with
+            # a *packed* (FRSCf) filter.
+            comptime if not filter_packed:
+                if Int(num_groups) > 1:
+                    var packed_shape = pack_conv_filter_shape(
+                        filter_tt, Int(num_groups)
+                    )
+                    var packed_buf = List(
+                        length=packed_shape.flattened_length(),
+                        fill=Scalar[filter.dtype](0),
+                    )
+                    comptime _packed_layout = Layout.row_major[filter.rank + 1]()
+                    var packed_lt = LayoutTensor[filter.dtype, _packed_layout](
+                        packed_buf,
+                        RuntimeLayout[_packed_layout].row_major(packed_shape),
+                    )
+                    var packed_tt = lt_to_tt(packed_lt)
+                    pack_filter(filter_tt, packed_tt, Int(num_groups))
+                    conv_nhwc_direct[
+                        _input_layout,
+                        _packed_layout,
+                        _output_layout,
+                        input.dtype,
+                        filter.dtype,
+                        output.dtype,
+                        True,
+                        conv_attr,
+                        has_epilogue_fusion,
+                        output_fn,
+                    ](
+                        input_tt,
+                        packed_tt,
+                        output_tt,
+                        stride_tuple,
+                        dilation_tuple,
+                        pad_d_tuple,
+                        pad_h_tuple,
+                        pad_w_tuple,
+                        Int(num_groups),
+                        Optional[DeviceContext](ctx),
+                    )
+                    return
+
             conv_nhwc_direct[
                 _input_layout,
                 _filter_layout,

@@ -50,27 +50,48 @@ def torch_conv2d(  # noqa: ANN201
     return torch.permute(out, (0, 2, 3, 1))
 
 
-# TODO(KERN-1066): Fix and enable test
+# Grouped (groups > 1) cases are a regression test for #5614, where grouped
+# convolution failed to compile: the `mo.conv` lowering forwarded the unpacked
+# RSCF filter to a kernel that requires a packed (FRSCf) filter for grouped conv.
+# `modular_graph_test` calls `session.load(graph)`, so such a regression would
+# reappear as a compile failure here.
+# TODO(KERN-1066): Fix and enable test.
 @pytest.mark.skip(reason="Errors are larger than usual (10^-2)")
 @pytest.mark.parametrize(
-    "input_type, filter_type",
+    "input_type, filter_type, groups",
     [
         (
             TensorType(DType.float32, [1, 16, 16, 4], device=device_ref),
             TensorType(DType.float32, [16, 16, 4, 5], device=device_ref),
+            1,
+        ),
+        (
+            TensorType(DType.float32, [1, 8, 8, 4], device=device_ref),
+            TensorType(DType.float32, [3, 3, 2, 8], device=device_ref),
+            2,
         ),
     ],
 )
 def test_conv2d(
-    session: InferenceSession, input_type: TensorType, filter_type: TensorType
+    session: InferenceSession,
+    input_type: TensorType,
+    filter_type: TensorType,
+    groups: int,
 ) -> None:
+    stride = (16, 16)
+    padding = (0, 0)
+    dilation = (1, 1)
+
     with Graph("conv2d", input_types=[input_type, filter_type]) as graph:
         x, filter = graph.inputs
-        stride = (16, 16)
-        padding = (0, 0)
-        dilation = (1, 1)
-
-        conv = conv2d(x.tensor, filter.tensor, stride, dilation, (0, 0, 0, 0))
+        conv = conv2d(
+            x.tensor,
+            filter.tensor,
+            stride,
+            dilation,
+            (padding[0], padding[0], padding[1], padding[1]),
+            groups,
+        )
         graph.output(conv)
 
         @modular_graph_test(session, graph)
@@ -82,7 +103,7 @@ def test_conv2d(
             result = execute(inputs).to_numpy()
             x, w = torch_inputs
             expected = (
-                torch_conv2d(x, w, stride, dilation, padding)
+                torch_conv2d(x, w, stride, dilation, padding, groups)
                 .detach()
                 .cpu()
                 .numpy()
