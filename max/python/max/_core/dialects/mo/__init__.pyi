@@ -5555,8 +5555,13 @@ class ParallelOp(max._core.Operation):
     enclosing scope.
 
     `buffers(...)` and `chain(...)` must be both present or both absent.  When
-    present, `chain(...)` provides a sequencing dependency and the trailing
-    `!mo.chain` result represents completion of all parallel launches.
+    present, the chain is threaded *explicitly through the body* rather than
+    captured: the body block gains a trailing `!mo.chain` block argument that
+    carries the in-chain, the body's side-effecting (buffer-argument) ops
+    consume and thread that chain, and `mo.yield` produces the resulting
+    chain as its last operand.  That yielded chain becomes the op's trailing
+    `!mo.chain` result (completion of all launches). A chainless parallel has
+    neither the chain block argument nor a yielded chain.
 
     Example with one bundle input (no buffers, no chain):
     ```mlir
@@ -5568,17 +5573,19 @@ class ParallelOp(max._core.Operation):
     }
     ```
 
-    Example with buffers and chain (bundled allreduce):
+    Example with buffers and chain (bundled allreduce). The in-chain enters
+    through the trailing block arg `%bch`; the collective consumes it and the
+    body yields the resulting out-chain:
     ```mlir
     %dt = mo.tensor.bundle(%a, %b) : (...) -> (...)
-    %res, %ch = mo.parallel (%arg) in (%dt : !mo.bundle<[...]>)
+    %res, %ch = mo.parallel (%arg, %bch) in (%dt : !mo.bundle<[...]>)
         buffers(%s0 : !mo.buffer<[1], ui8, gpu:0>,
                 %s1 : !mo.buffer<[1], ui8, gpu:1>)
         chain(%ch_in)
         -> (!mo.bundle<[...]>) {
       %p0, %p1 = mo.bundled.expand(%arg) : ...
-      %out, %ch1 = mo.bundled.allreduce.sum(%p0, %p1, %s0, %s1, %ch_in) : ...
-      mo.yield %out : !mo.tensor<[3], f32, gpu:0>
+      %out, %ch1 = mo.bundled.allreduce.sum(%p0, %p1, %s0, %s1, %bch) : ...
+      mo.yield %out, %ch1 : !mo.tensor<[3], f32, gpu:0>, !mo.chain
     }
     ```
     """
