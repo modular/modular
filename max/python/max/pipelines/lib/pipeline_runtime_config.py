@@ -177,7 +177,12 @@ class PipelineRuntimeConfig(ConfigFileModel):
 
     execute_empty_batches: bool = Field(
         default=False,
-        description="Whether the scheduler should execute empty batches.",
+        description=(
+            "When enabled, the scheduler runs the model's forward pass even "
+            "for an empty batch, so expert-parallel and data-parallel replicas "
+            "still reach their collective barrier points; output processing is "
+            "skipped. The architecture must support empty batches."
+        ),
     )
 
     max_batch_total_tokens: int | None = Field(
