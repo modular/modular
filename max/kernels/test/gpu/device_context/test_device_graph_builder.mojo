@@ -40,6 +40,17 @@ def fill_constant(
     output[tid] = Float32(val)
 
 
+def add_in_place(
+    buf: UnsafePointer[Float32, MutAnyOrigin],
+    delta: Int,
+    length: Int,
+):
+    var tid = global_idx.x
+    if tid >= length:
+        return
+    buf[tid] += Float32(delta)
+
+
 def test_vec_add_kernel_node(ctx: DeviceContext) raises:
     print("Test capturing and replaying a vec_add kernel in a device graph.")
     comptime length = 1024
@@ -476,6 +487,121 @@ def test_collect_dependencies_empty(ctx: DeviceContext) raises:
             assert_equal(host[i], UInt8(0xEE))
 
 
+def test_collect_dependencies_with_dependencies(ctx: DeviceContext) raises:
+    print(
+        "Test collect_dependencies(dependencies=...) injects predecessors so"
+        " a consumer scope runs after a producer scope (RAW on one buffer)."
+    )
+    comptime length = 1024
+    comptime block_dim = 256
+    comptime grid_dim = ceildiv(length, block_dim)
+
+    var buf = ctx.enqueue_create_buffer[DType.float32](length)
+
+    var fill = ctx.compile_function[fill_constant]()
+    var incr = ctx.compile_function[add_in_place]()
+    var builder = ctx.create_graph_builder()
+
+    # Producer scope: fill `buf` with 5 (single kernel node, a graph root).
+    def producer(b: DeviceGraphBuilder) raises {read}:
+        _ = b.add_function(
+            fill,
+            buf,
+            5,
+            length,
+            grid_dim=grid_dim,
+            block_dim=block_dim,
+            dependencies=[],
+        )
+
+    var join_a = builder.collect_dependencies(producer)
+
+    # Consumer scope: increment `buf` by 10. Passing dependencies=[join_a]
+    # injects join_a as an ambient predecessor of the incr node, so it runs
+    # strictly after the producer. Final value must be 15, not 10.
+    def consumer(b: DeviceGraphBuilder) raises {read}:
+        _ = b.add_function(
+            incr,
+            buf,
+            10,
+            length,
+            grid_dim=grid_dim,
+            block_dim=block_dim,
+            dependencies=[],
+        )
+
+    _ = builder.collect_dependencies(consumer, dependencies=[join_a])
+
+    var graph = builder^.instantiate()
+    graph.replay()
+    ctx.synchronize()
+
+    with buf.map_to_host() as host:
+        for i in range(length):
+            assert_equal(host[i], Float32(15))
+
+
+def test_collect_dependencies_passthrough_dependencies(
+    ctx: DeviceContext,
+) raises:
+    print(
+        "Test collect_dependencies returns a join that still gates on"
+        " `dependencies` when the scope adds no nodes (zero-node fallback)."
+    )
+    comptime length = 1024
+    comptime block_dim = 256
+    comptime grid_dim = ceildiv(length, block_dim)
+
+    var buf = ctx.enqueue_create_buffer[DType.float32](length)
+
+    var fill = ctx.compile_function[fill_constant]()
+    var incr = ctx.compile_function[add_in_place]()
+    var builder = ctx.create_graph_builder()
+
+    # Producer scope: fill `buf` with 5.
+    def producer(b: DeviceGraphBuilder) raises {read}:
+        _ = b.add_function(
+            fill,
+            buf,
+            5,
+            length,
+            grid_dim=grid_dim,
+            block_dim=block_dim,
+            dependencies=[],
+        )
+
+    var join_a = builder.collect_dependencies(producer)
+
+    # Empty scope depending on join_a: adds no nodes, so its returned join
+    # falls back to depending on join_a directly (it must chain the barrier).
+    def add_nothing(b: DeviceGraphBuilder) raises {read}:
+        return
+
+    var passthrough = builder.collect_dependencies(
+        add_nothing, dependencies=[join_a]
+    )
+
+    # Increment by 10, gated on the passthrough join. Final value must be 15,
+    # proving the empty scope still ordered the incr after the producer.
+    _ = builder.add_function(
+        incr,
+        buf,
+        10,
+        length,
+        grid_dim=grid_dim,
+        block_dim=block_dim,
+        dependencies=[passthrough],
+    )
+
+    var graph = builder^.instantiate()
+    graph.replay()
+    ctx.synchronize()
+
+    with buf.map_to_host() as host:
+        for i in range(length):
+            assert_equal(host[i], Float32(15))
+
+
 def main() raises:
     with DeviceContext() as ctx:
         test_vec_add_kernel_node(ctx)
@@ -489,3 +615,5 @@ def main() raises:
         test_add_copy_with_dependencies(ctx)
         test_collect_dependencies(ctx)
         test_collect_dependencies_empty(ctx)
+        test_collect_dependencies_with_dependencies(ctx)
+        test_collect_dependencies_passthrough_dependencies(ctx)

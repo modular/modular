@@ -3942,6 +3942,16 @@ struct DeviceGraphBuilder(Movable):
 
     var _handle: _DeviceGraphBuilderPtr[mut=True]
     var _ctx: DeviceContext
+    var _implicit_deps: List[DeviceGraphNode]
+    """Ambient predecessor edges injected into every node added while a
+    `collect_dependencies` scope is active.
+
+    Outside such a scope this is empty and node-adding methods behave exactly
+    as their `dependencies` argument specifies. While a scope is active,
+    `collect_dependencies` pushes the scope's predecessor handles here so each
+    `add_*` call unions them into its own `dependencies`, which is what makes
+    the scope's nodes depend on the scope's incoming predecessors.
+    """
 
     @doc_hidden
     def __init__(
@@ -3951,6 +3961,7 @@ struct DeviceGraphBuilder(Movable):
     ):
         self._handle = handle
         self._ctx = ctx
+        self._implicit_deps = []
 
     def __init__(out self, *, copy: Self):
         """Creates a copy of an existing graph builder by incrementing its
@@ -3967,6 +3978,25 @@ struct DeviceGraphBuilder(Movable):
         ](copy._handle)
         self._handle = copy._handle
         self._ctx = copy._ctx
+        self._implicit_deps = copy._implicit_deps.copy()
+
+    @doc_hidden
+    @always_inline
+    def _merge_implicit(
+        self, var dependencies: List[DeviceGraphNode]
+    ) -> List[DeviceGraphNode]:
+        """Unions the active ambient predecessor set into `dependencies`.
+
+        Returns `dependencies` unchanged when no `collect_dependencies` scope
+        is active (the common case), so node-adding outside a scope is
+        unaffected. The ambient edges are unioned in (order is irrelevant — the
+        dependency list is an unordered predecessor set).
+        """
+        if len(self._implicit_deps) == 0:
+            return dependencies^
+
+        dependencies.extend(Span(self._implicit_deps))
+        return dependencies^
 
     def __del__(deinit self):
         """Releases resources associated with this graph builder."""
@@ -4060,6 +4090,7 @@ struct DeviceGraphBuilder(Movable):
         _check_dim["DeviceGraphBuilder.add_function", "block_dim"](
             block_dim, location=call_location()
         )
+        dependencies = self._merge_implicit(dependencies^)
         # Build a transient enqueuer that pairs the builder handle with the
         # caller-supplied deps. It implements `_FunctionEnqueuer` so the
         # trait machinery in `_call_with_pack_checked` routes the call into
@@ -4180,6 +4211,7 @@ struct DeviceGraphBuilder(Movable):
             dump_llvm=dump_llvm,
             _dump_sass=_dump_sass,
         ]()
+        dependencies = self._merge_implicit(dependencies^)
         # Build a transient enqueuer that pairs the builder handle with the
         # caller-supplied deps. It implements `_FunctionEnqueuer` so the
         # trait machinery in `_call_with_pack` routes the call into our
@@ -4230,6 +4262,7 @@ struct DeviceGraphBuilder(Movable):
         Raises:
             If adding the node fails.
         """
+        dependencies = self._merge_implicit(dependencies^)
         var dep_args = _pack_dep_args(dependencies)
         # const char *AsyncRT_DeviceGraphBuilder_addCopyHostToDevice(
         #     DeviceGraphBuilder *builder, DeviceBuffer *dst, const void *src,
@@ -4279,6 +4312,7 @@ struct DeviceGraphBuilder(Movable):
         Raises:
             If adding the node fails.
         """
+        dependencies = self._merge_implicit(dependencies^)
         var dep_args = _pack_dep_args(dependencies)
         # const char *AsyncRT_DeviceGraphBuilder_addCopyDeviceToHost(
         #     DeviceGraphBuilder *builder, void *dst, DeviceBuffer *src,
@@ -4330,6 +4364,7 @@ struct DeviceGraphBuilder(Movable):
         Raises:
             If adding the node fails.
         """
+        dependencies = self._merge_implicit(dependencies^)
         var dep_args = _pack_dep_args(dependencies)
         # const char *AsyncRT_DeviceGraphBuilder_addCopyDeviceToDevice(
         #     DeviceGraphBuilder *builder, DeviceBuffer *dst, DeviceBuffer *src,
@@ -4394,6 +4429,7 @@ struct DeviceGraphBuilder(Movable):
         else:
             value = bitcast[DType.uint64, 1](val)
 
+        dependencies = self._merge_implicit(dependencies^)
         var dep_args = _pack_dep_args(dependencies)
         # const char *AsyncRT_DeviceGraphBuilder_addSetMemory(
         #     DeviceGraphBuilder *builder, DeviceBuffer *dst, uint64_t val,
@@ -4445,6 +4481,7 @@ struct DeviceGraphBuilder(Movable):
         Raises:
             If adding the node fails.
         """
+        dependencies = self._merge_implicit(dependencies^)
         var dep_args = _pack_dep_args(dependencies)
         # const char *AsyncRT_DeviceGraphBuilder_addEmpty(
         #     DeviceGraphBuilder *builder, const int32_t *depIds,
@@ -4461,7 +4498,9 @@ struct DeviceGraphBuilder(Movable):
         return self._last_node().value()
 
     def collect_dependencies(
-        self, work: Some[def(Self) raises]
+        mut self,
+        work: Some[def(Self) raises],
+        var dependencies: List[DeviceGraphNode] = [],
     ) raises -> DeviceGraphNode:
         """Runs `work` and returns a single empty node that joins every
         node added to this builder during its execution.
@@ -4472,6 +4511,15 @@ struct DeviceGraphBuilder(Movable):
         fan-in barrier so the caller does not need to thread the
         producer set's individual handles to every consumer.
 
+        Every node `work` adds also depends on the predecessors named in
+        `dependencies`: while `work` runs, those handles are injected as
+        ambient predecessors that each `add_*` call unions into its own
+        `dependencies`. This makes the scope's nodes run after the named
+        predecessors without the closure having to thread the handles
+        through to every `add_*` call. With the default (empty)
+        `dependencies`, the scope's nodes are unconstrained relative to
+        earlier work, exactly as before.
+
         Args:
             work: Closure whose effects on this builder are captured. The
                 builder is passed as `work`'s sole argument; the closure
@@ -4479,10 +4527,17 @@ struct DeviceGraphBuilder(Movable):
                 alias with this method's receiver. The closure may add
                 any number of nodes (zero or more) via any of the
                 `add_*` methods.
+            dependencies: Predecessor node handles that every node added by
+                `work` should depend on. Defaults to empty (no added
+                predecessors).
 
         Returns:
-            Handle of the empty node that joins every node added by
-            `work`.
+            A handle that successors can depend on to run after everything
+            `work` added. When `work` adds two or more nodes, this is a fresh
+            empty node that joins them; when it adds exactly one node, that
+            node is returned directly (no extra empty node); when it adds none,
+            the returned empty node falls back to depending on `dependencies`
+            so it still chains correctly.
 
         Raises:
             Anything `work` itself raises, or anything raised while
@@ -4496,6 +4551,11 @@ struct DeviceGraphBuilder(Movable):
         with DeviceContext() as ctx:
             var builder = ctx.create_graph_builder()
 
+            var buf_a = ctx.enqueue_create_buffer[DType.uint8](100)
+            var buf_b = ctx.enqueue_create_buffer[DType.uint8](100)
+            var buf_c = ctx.enqueue_create_buffer[DType.uint8](100)
+            var host_src = ctx.enqueue_create_host_buffer[DType.uint8](100)
+
             def add_producers(b: DeviceGraphBuilder) raises {read} -> None:
                 _ = b.add_memset(buf_a, UInt8(1), dependencies=[])
                 _ = b.add_memset(buf_b, UInt8(2), dependencies=[])
@@ -4508,8 +4568,21 @@ struct DeviceGraphBuilder(Movable):
             graph.replay()
         ```
         """
+
+        # Save the current set of dependencies and replace
+        # self._implicit_deps with an extended version containing the original
+        # plus the new dependencies.
+        var saved_deps = self._implicit_deps.copy()
+        self._implicit_deps.extend(Span(dependencies))
+
         var start_id = self._last_node_id()
-        work(self)
+
+        try:
+            work(self)
+        finally:
+            # Restore the dependencies to the original value
+            self._implicit_deps = saved_deps^
+
         var end_id = self._last_node_id()
 
         var deps = List[DeviceGraphNode]()
@@ -4520,6 +4593,15 @@ struct DeviceGraphBuilder(Movable):
             deps.reserve(Int(end_val) - Int(start_val))
             for id in range(start_val + 1, end_val + 1):
                 deps.append(DeviceGraphNode(Int32(id)))
+
+        # If `work` produced no nodes, gate the join on the incoming
+        # predecessors directly so a downstream consumer of the join still
+        # waits for them.
+        if len(deps) == 0:
+            return self.add_empty(dependencies=dependencies^)
+
+        if len(deps) == 1:
+            return deps[0]
 
         return self.add_empty(dependencies=deps^)
 

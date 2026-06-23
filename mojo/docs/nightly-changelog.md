@@ -169,6 +169,22 @@ This version is still a work in progress.
   instruction, a `readfirstlane` ballot fold on AMD, and a shuffle-based check
   on Apple Silicon GPUs.
 
+- `DeviceGraphBuilder.collect_dependencies` now accepts an optional
+  `dependencies` argument. The named predecessor handles are injected as
+  ambient predecessors of every node the `work` closure adds, so the scope's
+  nodes run after those predecessors without the closure threading the handles
+  through to each `add_*` call. With the default (empty) `dependencies` the
+  behavior is unchanged. When `work` adds no nodes, the returned join node
+  falls back to depending on `dependencies` so it still chains correctly.
+
+  ```mojo
+  var producers = builder.collect_dependencies(add_producers)
+  # Every node added by `add_consumers` depends on `producers`:
+  var consumers = builder.collect_dependencies(
+      add_consumers, dependencies=[producers]
+  )
+  ```
+
 ## Removed
 
 ## Fixed
