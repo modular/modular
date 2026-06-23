@@ -12,9 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 
 from max.graph.weights import WeightsFormat
-from max.interfaces import PipelineTask
-from max.pipelines.core import TextContext
+from max.pipelines.context import TextContext
+from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
 from max.pipelines.lib import SupportedArchitecture, TextTokenizer
+from max.pipelines.modeling.types import PipelineTask
 
 from .model import LFM2Model
 from .model_config import LFM2Config
@@ -25,14 +26,14 @@ lfm2_arch = SupportedArchitecture(
     default_encoding="float32",
     task=PipelineTask.TEXT_GENERATION,
     supported_encodings={"float32", "bfloat16"},
-    example_repo_ids=["LiquidAI/LFM2.5-350M-Base"],
+    example_repo_ids=["LiquidAI/LFM2.5-350M", "LiquidAI/LFM2.5-350M-Base"],
     pipeline_model=LFM2Model,
     tokenizer=TextTokenizer,
     context_type=TextContext,
     rope_type="neox",
     default_weights_format=WeightsFormat.safetensors,
     required_arguments={
-        "allow_safetensors_weights_fp32_bf6_bidirectional_cast": True,
+        "allow_safetensors_weights_fp32_bf16_bidirectional_cast": True,
         "trust_remote_code": True,
     },
     multi_gpu_supported=False,
@@ -40,4 +41,5 @@ lfm2_arch = SupportedArchitecture(
         WeightsFormat.safetensors: convert_lfm2_safetensor_state_dict,
     },
     config=LFM2Config,
+    memory_planner=PagedMemoryPlanner,
 )

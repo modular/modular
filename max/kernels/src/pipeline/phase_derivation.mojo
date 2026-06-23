@@ -65,21 +65,21 @@ struct PhaseStep(ImplicitlyCopyable, Movable):
 
     Specifies what to emit: either infrastructure ops (BARRIER, FENCE) or
     data ops matched from the body by role and predicates (EMIT).
-
-    For EMIT steps:
-      - match_role: required OpRole of body op
-      - match_subtile: -1 = any, else specific subtile value
-      - exclude_lc: True = skip loop-carried ops (subtile == lc.selector)
-      - match_lc_only: True = emit only loop-carried ops
-      - match_all: True = emit ALL matching ops, False = first match only
     """
 
     var action: PhaseAction
+    """Action type for this step (`EMIT`, `BARRIER`, or `FENCE`)."""
     var match_role: OpRole
+    """For `EMIT` steps: required `OpRole` of the body op to match."""
     var match_subtile: Int
+    """For `EMIT` steps: `-1` = any, else a specific subtile value."""
     var exclude_lc: Bool
+    """For `EMIT` steps: skip loop-carried ops (`subtile == lc.selector`)."""
     var match_lc_only: Bool
+    """For `EMIT` steps: emit only loop-carried ops."""
     var match_all: Bool
+    """For `EMIT` steps: emit all matching ops (`True`) or first match only
+    (`False`)."""
 
     @staticmethod
     def emit(
@@ -335,6 +335,17 @@ def _strip_drain_fuse_blocks(
                 global_load_1=(
                     b.global_load_1 if not b.global_load_1_prefetch else OpDesc.none()
                 ),
+                # Drain lgkm before each epilogue block's `pre_op` so the
+                # MMA's input registers (loaded by prior block's frag-
+                # loads) are committed before this block's MMA reads
+                # them. The main-loop equivalent rides on
+                # `inter_block_lgkm_drain` and `entry_wait_lgkm` paired
+                # with `entry_wait`; the epilogue derivation strips
+                # entry_wait, so emit the lgkm drain explicitly here.
+                # Without it, MMA fires with stale registers on multi-
+                # K-iter shapes (caught by logit verification on Olmo /
+                # phi-4 / DeepSeek-V2-Lite / FLUX.2 BF16).
+                entry_wait_lgkm=OpDesc.wait_lgkm[0](),
                 # Carry minimal_barriers / omit_mma_set_prio flags forward
                 # from the source block so the epilogue inherits the same
                 # barrier+setprio layout as the main loop. Without this,
@@ -662,12 +673,12 @@ def apply_edge_rules(
 
     # Half assignment per op.
     @always_inline
-    def _op_half(idx: Int) {mut half} -> Int:
+    def _op_half(idx: Int) {half} -> Int:
         return 0 if idx < half else 1
 
     # _in_half for Phase 1: op at idx is in the half that processes stage.
     @always_inline
-    def _in_half(idx: Int, stage: Int) {mut half} -> Bool:
+    def _in_half(idx: Int, stage: Int) {half} -> Bool:
         return (stage == 0) == (idx < half)
 
     var edges = List[DepEdge]()

@@ -19,7 +19,7 @@ from max.experimental import functional as F
 from max.experimental.tensor import Tensor
 from max.graph.weights import Weights
 from max.pipelines.lib import SupportedEncoding
-from max.pipelines.lib.interfaces.component_model import ComponentModel
+from max.pipelines.modeling.base.component_model import ComponentModel
 
 from .model_config import AutoencoderKLConfigBase
 from .vae import DiagonalGaussianDistribution
@@ -109,7 +109,6 @@ class BaseAutoencoderModel(ComponentModel):
             self.model = autoencoder.decoder.compile(
                 *autoencoder.decoder.input_types(), weights=decoder_state_dict
             )
-            # Flux.1 does not have an encoder.
             if encoder_state_dict and hasattr(autoencoder, "encoder"):
                 autoencoder.encoder.to(self.devices[0])
                 self.encoder_model = autoencoder.encoder.compile(

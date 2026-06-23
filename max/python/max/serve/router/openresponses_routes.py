@@ -26,14 +26,17 @@ from http import HTTPStatus
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
-from max.interfaces import OpenResponsesRequest
-from max.interfaces.generation import GenerationOutput
-from max.interfaces.provider_options import GeneratedMediaResponseFormat
-from max.interfaces.request.open_responses import (
+from max.pipelines.context.exceptions import InputError
+from max.pipelines.context.outputs import GenerationOutput
+from max.pipelines.modeling.types import OpenResponsesRequest
+from max.pipelines.request.open_responses import (
     OutputContent,
     OutputImageContent,
     OutputVideoContent,
     ResponseResource,
+)
+from max.pipelines.request.provider_options import (
+    GeneratedMediaResponseFormat,
 )
 from max.serve.dependencies import create_request_parser
 from max.serve.media import (
@@ -94,24 +97,34 @@ async def create_response(
 
     # Get the first chunk from the handler (raises StopAsyncIteration if empty)
     generator = request.app.state.handler.next(open_responses_request)
-    final_output = await anext(generator)
-    logger.debug(
-        "Received chunk - is_done=%s, status=%s",
-        final_output.is_done,
-        final_output.final_status,
-    )
+    try:
+        final_output = await anext(generator)
+        logger.debug(
+            "Received chunk - is_done=%s, status=%s",
+            final_output.is_done,
+            final_output.final_status,
+        )
 
-    # Continue consuming chunks until we get is_done=True
-    if not final_output.is_done:
-        async for chunk in generator:
-            logger.debug(
-                "Received chunk - is_done=%s, status=%s",
-                chunk.is_done,
-                chunk.final_status,
-            )
-            final_output = chunk
-            if chunk.is_done:
-                break
+        # Continue consuming chunks until we get is_done=True
+        if not final_output.is_done:
+            async for chunk in generator:
+                logger.debug(
+                    "Received chunk - is_done=%s, status=%s",
+                    chunk.is_done,
+                    chunk.final_status,
+                )
+                final_output = chunk
+                if chunk.is_done:
+                    break
+    except InputError as e:
+        logger.warning(
+            "Input validation error in request %s: %s",
+            open_responses_request.request_id.value,
+            str(e),
+        )
+        raise HTTPException(
+            status_code=HTTPStatus.BAD_REQUEST, detail=str(e)
+        ) from e
 
     try:
         final_output = await _persist_generated_media(

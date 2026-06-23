@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Group normalization."""
+"""Provides group normalization for experimental tensors."""
 
 from __future__ import annotations
 
@@ -20,44 +20,78 @@ from max.experimental.nn.module import Module
 from max.experimental.tensor import Tensor
 from max.graph import ops
 
+#: Functional form of group normalization for experimental tensors.
+#:
+#: See :func:`max.graph.ops.group_norm` for the underlying op and the full
+#: parameter description.
 group_norm = F.functional(ops.group_norm)
-"""Applies Group Normalization to an input tensor.
-
-See :func:`max.graph.ops.group_norm` for details.
-"""
 
 
 class GroupNorm(Module[[Tensor], Tensor]):
-    """Group normalization block.
+    """Group normalization over the channel axis of the input.
 
-    Divides channels into groups and computes normalization stats per group.
-    Follows the implementation pattern from PyTorch's group_norm.
+    The input is expected to have shape ``(batch, channels, ...)`` where
+    ``...`` is any number of trailing axes (typically spatial dimensions
+    for convolutional features). The channel axis is split into
+    ``num_groups`` groups and each group is normalized independently.
+    Useful when the batch axis is small enough that batch normalization
+    is unstable.
 
-    This implementation uses Tensor instead of Weight, which
-    automatically handles dtype matching with input tensors, eliminating
-    the need for dtype workarounds.
+    For example:
 
-    Example:
-        .. code-block:: python
+    .. code-block:: python
 
-            from max.experimental.nn import GroupNorm
-            from max.experimental.tensor import Tensor
+        from max.dtype import DType
+        from max.experimental.nn.norm import GroupNorm
+        from max.experimental.realization_context import (
+            GraphRealizationContext,
+            realization_context,
+        )
+        from max.experimental.tensor import Tensor
+        from max.graph import DeviceRef, Graph, TensorType
 
+        graph = Graph(
+            "gn",
+            input_types=[
+                TensorType(DType.float32, ("batch", 128, 32, 32), DeviceRef.GPU()),
+            ],
+        )
+        ctx = GraphRealizationContext(graph)
+        with realization_context(ctx), ctx:
+            x = Tensor.from_graph_value(graph.inputs[0])
             norm = GroupNorm(num_groups=32, num_channels=128)
-            x = Tensor.ones([1, 128, 32, 32])
-            result = norm(x)
+            y = norm(x)
+            graph.output(y)
+
+    Args:
+        num_groups: The number of groups to split the channel axis into.
+            Must divide ``num_channels`` evenly.
+        num_channels: The size of the channel axis of the input (axis 1).
+        eps: A small positive constant added to the variance for numerical
+            stability. Defaults to ``1e-5``.
+        affine: Whether to learn a per-channel scale and bias. When
+            ``False``, no parameters are created. Defaults to ``True``.
+
+    Raises:
+        ValueError: If ``num_channels`` is not divisible by ``num_groups``.
     """
 
     weight: Tensor | None
-    """The weight tensor with shape [num_channels] (None if affine=False)."""
+    """The learned per-channel scale of shape ``[num_channels]``, or
+    ``None`` when ``affine`` is ``False``."""
+
     bias: Tensor | None
-    """The bias tensor with shape [num_channels] (None if affine=False)."""
+    """The learned per-channel bias of shape ``[num_channels]``, or
+    ``None`` when ``affine`` is ``False``."""
+
     num_groups: int
-    """Number of groups to separate the channels into."""
+    """The number of groups the channel axis is split into."""
+
     num_channels: int
-    """Number of input channels."""
+    """The size of the channel axis of the input."""
+
     eps: float
-    """Small constant added to denominator for numerical stability."""
+    """The variance epsilon used for numerical stability."""
 
     def __init__(
         self,
@@ -66,16 +100,6 @@ class GroupNorm(Module[[Tensor], Tensor]):
         eps: float = 1e-5,
         affine: bool = True,
     ) -> None:
-        """Initialize GroupNorm module.
-
-        Args:
-            num_groups: Number of groups to separate the channels into
-            num_channels: Number of input channels
-            eps: Small constant added to denominator for numerical stability.
-                Default: 1e-5
-            affine: If True, apply learnable affine transform parameters.
-                Default: True
-        """
         if num_channels % num_groups != 0:
             raise ValueError(
                 f"num_channels({num_channels}) should be divisible by "
@@ -95,20 +119,25 @@ class GroupNorm(Module[[Tensor], Tensor]):
             self.bias = None
 
     def __rich_repr__(self):
-        """Rich representation for debugging."""
+        """Yields fields for the rich debug repr."""
         yield "num_groups", self.num_groups
         yield "num_channels", self.num_channels
         yield "eps", self.eps, 1e-5
         yield "affine", self.affine, True
 
     def forward(self, x: Tensor) -> Tensor:
-        """Apply group normalization to input tensor.
+        """Returns ``x`` normalized within each channel group.
 
         Args:
-            x: Input tensor of shape [N, C, ...] where C is number of channels
+            x: The input tensor of shape ``(batch, channels, ...)``. The
+                size of the channel axis must equal :attr:`num_channels`.
 
         Returns:
-            Normalized tensor of same shape as input
+            A tensor with the same shape and dtype as ``x``.
+
+        Raises:
+            ValueError: If ``x`` has fewer than 2 dimensions, or if its
+                channel axis does not match :attr:`num_channels`.
         """
         if len(x.shape) < 2:
             raise ValueError(

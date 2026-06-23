@@ -20,6 +20,7 @@ from std.math.uutils import umod, ufloordiv
 from std.sys import simd_width_of, size_of
 
 from std.gpu import lane_id, WARP_SIZE
+from std.gpu.intrinsics import cvt_pk_fp8_f32_raw
 from layout import TensorLayout, TileTensor
 from layout.coord import Coord, ComptimeInt, Idx
 from layout.swizzle import Swizzle
@@ -37,6 +38,38 @@ from structured_kernels.amd_tile_io import RegTileLoader
 from .mma import TiledMmaOp
 from .utils import get_warp_coords
 import std.itertools
+
+
+@always_inline
+def _cast_f32_to_fp8_raw[
+    src_dtype: DType,
+    size: SIMDSize,
+    //,
+    dtype: DType,
+](src: SIMD[src_dtype, size]) -> SIMD[dtype, size]:
+    """Cast N f32 → N fp8 without the compiler's clamp + NaN-scrub wrapper.
+
+    Chunks into groups of 4 and calls `cvt_pk_fp8_f32_raw` per chunk.
+    Only safe when inputs are provably bounded and finite — used by the
+    P→PV cast where softmax output is in (0, 1].
+    """
+    comptime assert (
+        src_dtype == DType.float32
+    ), "_cast_f32_to_fp8_raw source dtype must be float32."
+    comptime assert (
+        size % 4 == 0
+    ), "_cast_f32_to_fp8_raw requires size divisible by 4."
+    comptime assert (
+        dtype == DType.float8_e4m3fn or dtype == DType.float8_e5m2
+    ), "_cast_f32_to_fp8_raw requires E4M3FN or E5M2 destination dtype."
+
+    var f32_src = rebind[SIMD[DType.float32, size]](src)
+    var result = SIMD[dtype, size]()
+    comptime for i in range(size // 4):
+        var chunk = cvt_pk_fp8_f32_raw[dtype](f32_src.slice[4, offset=i * 4]())
+        comptime for j in range(4):
+            result[i * 4 + j] = chunk[j]
+    return result
 
 
 struct QRegisterBuffer[
@@ -61,7 +94,10 @@ struct QRegisterBuffer[
     comptime num_mmas = ceildiv(Self.WM, Self.MMA_M)
     comptime num_k_tiles = ceildiv(Self.BK, Self.MMA_K)
 
-    comptime num_tiles = Self.depth // Self.BK
+    # ceildiv (not floor div): when depth is not a multiple of BK, the
+    # partial tile is loaded via OOB-clamped buffer_load (returns 0 for
+    # out-of-range elements) and the MFMA sees zero-padded Q.
+    comptime num_tiles = ceildiv(Self.depth, Self.BK)
     comptime _total_rows = Self.num_mmas * Self.num_k_tiles * Self.num_tiles
     comptime _rows_per_tile = Self.num_mmas * Self.num_k_tiles
 
@@ -70,7 +106,7 @@ struct QRegisterBuffer[
     comptime RegType = TileTensor[
         Self.dtype,
         type_of(Self.reg_layout),
-        MutExternalOrigin,
+        MutUntrackedOrigin,
         address_space=AddressSpace.LOCAL,
     ]
     var reg_tile: Self.RegType
@@ -96,18 +132,27 @@ struct QRegisterBuffer[
         self.reg_tile = stack_allocation[Self.dtype, AddressSpace.LOCAL](
             Self.reg_layout
         )
+        # Zero before DMA: the partial-tile case (depth % BK != 0) loads OOB
+        # cols via buffer_load whose OOB-clamp-to-zero behavior is the
+        # only thing keeping the rope-tail fragment zero.  Defensive: explicit
+        # zero matches the K SMEM zero-init via buffer_load and is cheap.
+        _ = self.reg_tile.fill(0)
 
         var warp_row = get_warp_coords[Self.BN, Self.WN]()[0]
         # Warp's portion of Q: [WM, depth] sub-tile at (warp_row, 0).
         var warp_tile = q_tile.tile[Self.WM, Self.depth](warp_row, 0)
+
+        # `RegTileLoader` stores the per-thread (M, N) fragment row-major in
+        # the dst register tile, so dst row i is m_mma=i's contiguous frag —
+        # matching the `mma_tile[i, k_idx]` consumer convention for any
+        # `num_mmas`. (For M=1 cases — BM=32 FP8, BF16 multi-k — col_major
+        # would coincide with row_major, but BM=64 with M=2 needs row_major.)
+        comptime load_width = simd_width_of[Self.dtype]()
         var reg_loader = RegTileLoader[
             Self.dtype,
             col_major[Self._q_thread_rows, Self._q_thread_cols](),
             warp_scope=True,
         ](warp_tile)
-
-        # Load each BK-wide strip along the depth axis.
-        comptime load_width = simd_width_of[Self.dtype]()
         comptime for i in range(Self.num_tiles):
             var src = warp_tile.tile[Self.WM, Self.BK](0, i)
             var dst = self.reg_tile.tile[
@@ -117,6 +162,66 @@ struct QRegisterBuffer[
                 dst,
                 src.vectorize[1, load_width](),
             )
+        # Q partial-tile pad zero (AITER-style, mirrors K's
+        # `zero_partial_tile_pad` in `kv_buffer.mojo`).
+        #
+        # NOTE: keep in sync with `KVBuffer.zero_partial_tile_pad`.  Both
+        # sites compute the same `valid_per_lane` / `zero_per_lane` split
+        # and share the upper-half-is-pad assumption (asserted below).  A
+        # future config that violates that assumption (`valid_cols >
+        # BK/2`) needs a different zero pattern in both sites.
+        #
+        # When `depth % BK != 0`, the partial Q-tile (i = depth // BK)
+        # spans `BK` MFMA-K positions but only `valid_cols = depth -
+        # i*BK` are valid; the trailing `BK - valid_cols` are pad and
+        # must read as zero in the MFMA.
+        #
+        # The per-thread fragment from `RegTileLoader`'s
+        # `col_major[thread_rows, thread_cols]` distribute over the
+        # `(WM, BK/load_width)` vector grid is (M=1, N=2) per lane and
+        # gets stored row-major: fragment element [0..load_width) is
+        # the lower-K vector and [load_width..2*load_width) is the
+        # upper-K vector, with the two vectors offset by `BK/2`
+        # source-cols.  So every lane's upper-half fragment elements
+        # correspond to MFMA-K positions in [BK/2, BK), and for the
+        # partial tile those positions land at global depth >=
+        # `BK/2 + valid_cols` -- the pad portion -- when
+        # `valid_cols <= BK/2`.  Zero the upper portion per lane.
+        #
+        # NOTE: zeroing whole lanes >= some thread_col threshold is
+        # WRONG — it also clears valid data in those lanes' lower half
+        # (those MFMA-K positions are valid for the partial tile).
+        # Sparse inputs can mask this; random inputs expose it.
+        comptime if Self.depth % Self.BK != 0:
+            comptime _partial_tile_idx = Self.depth // Self.BK
+            comptime _valid_cols_in_partial = Self.depth - (
+                _partial_tile_idx * Self.BK
+            )
+            # The upper-half-is-pad layout assumption above only holds
+            # when the valid portion fits into the lower-K half of each
+            # lane's fragment.  Today (depth=576, BK=128) `valid_cols`
+            # is exactly BK/2; a future config with `valid_cols > BK/2`
+            # would need a different zero pattern.
+            comptime assert _valid_cols_in_partial <= Self.BK // 2, (
+                "Q partial-tile zero assumes valid cols fit in the"
+                " lower-K half of the per-lane fragment"
+            )
+            comptime _valid_per_lane = (
+                Self.input_frag_size * _valid_cols_in_partial // Self.BK
+            )
+            comptime _zero_per_lane = (Self.input_frag_size - _valid_per_lane)
+            comptime assert (
+                _zero_per_lane > 0
+            ), "Q partial-tile pad zero: _zero_per_lane must be positive"
+            # Zero cols [_valid_per_lane .. input_frag_size) of every
+            # lane's partial-tile fragment slot.
+            _ = (
+                self.reg_tile.tile[Self._rows_per_tile, Self.input_frag_size](
+                    _partial_tile_idx, 0
+                )
+                .tile[Self._rows_per_tile, _zero_per_lane](0, 1)
+                .fill(0)
+            )
 
     @always_inline
     def mma_tile[
@@ -124,7 +229,7 @@ struct QRegisterBuffer[
     ](self) -> TileTensor[
         Self.dtype,
         type_of(row_major[Self.num_mmas, Self.input_frag_size]()),
-        MutExternalOrigin,
+        MutUntrackedOrigin,
         address_space=AddressSpace.LOCAL,
     ]:
         """Return MMA-sized sub-tile for the given tile and k indices."""
@@ -132,7 +237,7 @@ struct QRegisterBuffer[
             TileTensor[
                 Self.dtype,
                 type_of(row_major[Self.num_mmas, Self.input_frag_size]()),
-                MutExternalOrigin,
+                MutUntrackedOrigin,
                 address_space=AddressSpace.LOCAL,
             ]
         ](
@@ -180,7 +285,7 @@ struct OutputRegisterBuffer[
     comptime RegType = TileTensor[
         Self.dtype,
         type_of(Self.reg_layout),
-        MutExternalOrigin,
+        MutUntrackedOrigin,
         address_space=AddressSpace.LOCAL,
     ]
     var reg_tile: Self.RegType
@@ -224,6 +329,11 @@ struct PRegisterBuffer[
     tr_load_enabled: Bool = False,
     num_stages: Int = 1,
     p_swizzle: Optional[Swizzle] = None,
+    # When True, use raw `v_cvt_pk_fp8_f32` without the compiler's
+    # clamp + NaN-scrub wrapper. Safe only when inputs are provably
+    # bounded and finite (e.g. softmax output in (0, 1]). Saves ~200
+    # VALU ops per iteration in the FP8 MLA prefill hot path.
+    raw_fp8_cast: Bool = False,
 ]:
     comptime reg_dtype = Self.accum_type_
     comptime mma_dtype = Self.dtype
@@ -237,7 +347,7 @@ struct PRegisterBuffer[
     comptime RegType = TileTensor[
         Self.accum_type_,
         type_of(Self.reg_layout),
-        MutExternalOrigin,
+        MutUntrackedOrigin,
         address_space=AddressSpace.LOCAL,
     ]
     var reg_tile: Self.RegType
@@ -249,7 +359,7 @@ struct PRegisterBuffer[
     comptime StageTileType = TileTensor[
         Self.accum_type_,
         type_of(Self.stage_layout),
-        MutExternalOrigin,
+        MutUntrackedOrigin,
         address_space=AddressSpace.LOCAL,
     ]
 
@@ -278,6 +388,7 @@ struct PRegisterBuffer[
         address_space=AddressSpace.SHARED,
     ]
 
+    @__allow_legacy_any_origin_fields
     var smem_tile: Self.SmemTileType
 
     # TileTensor type for a single BM×BK blocked SMEM slice. Parent is
@@ -314,11 +425,7 @@ struct PRegisterBuffer[
         var smem_block = self._block_smem(tile_idx)
         var warp_tile = smem_block.tile[Self.WM, Self.BK](warp_row, 0)
 
-        comptime if (
-            Self.mma_shape[0] == 32
-            and Self.input_frag_size == 32
-            and Self.num_m_mmas == 1
-        ):
+        comptime if (Self.mma_shape[0] == 32 and Self.input_frag_size == 32):
             # MFMA_F32_32x32x64_FP8 B-operand register layout = 2-MMA-tile
             # C-output join (same as prefill's register path). With
             # warps_per_block=2, each P block is filled by 2 warps — warp
@@ -329,11 +436,18 @@ struct PRegisterBuffer[
             # slots 16..31 from warp1 lane l — same lane_id across both
             # warps because C-output M=l%32 matches the B-operand K-slot.
             # So two ds_read_b128 + SIMD.join reconstruct the 32-fp8 fragment.
+            #
+            # For num_m_mmas > 1 (BM=64 MLA decode), each m_mma is laid
+            # out as its own 1024B-per-warp lane-contiguous stripe at
+            # offset `m_mma * MMA_M * BK` within the BM×BK SMEM block.
             comptime warps_per_block = Self.BK // Self.WN
             comptime num_gather = (
                 Self.input_frag_size // Self.output_frag_size
             )
-            comptime warp_stride = (Self.BM * Self.BK) // warps_per_block
+            comptime warp_stride = (
+                Self.mma_shape[0] * Self.BK
+            ) // warps_per_block
+            comptime m_mma_stride = Self.mma_shape[0] * Self.BK
             comptime assert num_gather == warps_per_block, (
                 "FP8 MLA P SMEM round-trip expects num_gather =="
                 " warps_per_block."
@@ -350,14 +464,21 @@ struct PRegisterBuffer[
             var lid = lane_id()
             var block_base = smem_block.ptr
             var result_vec = result.vectorize[1, Self.input_frag_size]()
-            var lo = (block_base + Int(lid) * Self.output_frag_size).load[
-                width=Self.output_frag_size
-            ]()
-            var hi = (
-                block_base + warp_stride + Int(lid) * Self.output_frag_size
-            ).load[width=Self.output_frag_size]()
-            var joined = lo.join(hi)
-            result_vec[0, 0] = rebind[type_of(result_vec[0, 0])](joined)
+            comptime for m_mma in range(Self.num_m_mmas):
+                var m_off = m_mma * m_mma_stride
+                var lo = (
+                    block_base + m_off + Int(lid) * Self.output_frag_size
+                ).load[width=Self.output_frag_size]()
+                var hi = (
+                    block_base
+                    + m_off
+                    + warp_stride
+                    + Int(lid) * Self.output_frag_size
+                ).load[width=Self.output_frag_size]()
+                var joined = lo.join(hi)
+                result_vec[m_mma, 0] = rebind[type_of(result_vec[m_mma, 0])](
+                    joined
+                )
         elif (
             Self.mma_shape[0] == 16
             and Self.tr_load_enabled
@@ -430,7 +551,7 @@ struct PRegisterBuffer[
     comptime MmaTileType = TileTensor[
         Self.mma_dtype,
         type_of(Self._mma_layout),
-        MutExternalOrigin,
+        MutUntrackedOrigin,
         address_space=AddressSpace.LOCAL,
     ]
 
@@ -479,8 +600,23 @@ struct PRegisterBuffer[
                     )
                 elif num_gather == 2:
                     # Gather 2 rows, cast each to mma_dtype, join to full frag.
-                    var lo = src_vec[tile_idx * 2, 0].cast[Self.mma_dtype]()
-                    var hi = src_vec[tile_idx * 2 + 1, 0].cast[Self.mma_dtype]()
+                    var lo: SIMD[Self.mma_dtype, Self.output_frag_size]
+                    var hi: SIMD[Self.mma_dtype, Self.output_frag_size]
+                    comptime if (
+                        Self.raw_fp8_cast and Self.mma_dtype.is_float8()
+                    ):
+                        # Raw cvt path: softmax output is in (0, 1], so the
+                        # compiler's clamp + NaN-scrub wrapper is a no-op
+                        # that just adds ~6 VALU ops per f32→fp8 pair.
+                        lo = _cast_f32_to_fp8_raw[Self.mma_dtype](
+                            src_vec[tile_idx * 2, 0]
+                        )
+                        hi = _cast_f32_to_fp8_raw[Self.mma_dtype](
+                            src_vec[tile_idx * 2 + 1, 0]
+                        )
+                    else:
+                        lo = src_vec[tile_idx * 2, 0].cast[Self.mma_dtype]()
+                        hi = src_vec[tile_idx * 2 + 1, 0].cast[Self.mma_dtype]()
                     var joined = lo.join(hi)
                     result_vec[0, 0] = rebind[type_of(result_vec[0, 0])](
                         joined.slice[
@@ -587,7 +723,7 @@ struct PRegisterBuffer[
 
         var mma_tile_res = smem_warp_tile.tile_with_offset[
             Self.mma_shape[0], Self.mma_shape[1]
-        ](Coord(Idx(m_mma), Idx(n_mma)))
+        ](Coord(m_mma, n_mma))
         var mma_tile = mma_tile_res[0]
         # Element offset of mma_tile from smem_warp_tile.ptr
         # (== block_base), used below to build the swizzle argument
@@ -643,6 +779,17 @@ struct PRegisterBuffer[
 
     @always_inline
     def copy_to_shared(self):
+        # When P is not SMEM-backed there is no P SMEM region and `mma_tile`
+        # reads P from registers, but the decode driver calls this
+        # unconditionally — so no-op the register-resident path. This fires only
+        # for a BN==WN config that is NOT warp-local. Warp-local also has
+        # BN==WN, but is deliberately forced SMEM-backed (see `_warp_local_p` in
+        # attention.mojo) because the register-resident 16x16x128 P→PV path does
+        # not compile, so warp-local does NOT take this no-op. Comptime-dead on
+        # every shipping MLA-decode config (byte-identical).
+        comptime if not Self.shared_memory_backed:
+            return
+
         comptime frag_w = Self.output_frag_size
         var warp_row, warp_col = get_warp_coords[Self.BN, Self.WN]()
 
@@ -670,13 +817,12 @@ struct PRegisterBuffer[
         # other consumers. Keep inline; if a second FP8 MLA write ever
         # needs the same lane-contiguous packing, extract a helper at
         # that point.
-        comptime if (
-            Self.mma_shape[0] == 32
-            and not Self.p_swizzle
-            and Self.num_m_mmas == 1
-        ):
+        comptime if (Self.mma_shape[0] == 32 and not Self.p_swizzle):
             comptime warps_per_block = Self.BK // Self.WN
-            comptime warp_stride = (Self.BM * Self.BK) // warps_per_block
+            comptime warp_stride = (
+                Self.mma_shape[0] * Self.BK
+            ) // warps_per_block
+            comptime m_mma_stride = Self.mma_shape[0] * Self.BK
             comptime lane_bytes = size_of[Scalar[Self.dtype]]() * (
                 Self.output_frag_size
             )
@@ -684,8 +830,12 @@ struct PRegisterBuffer[
                 lane_bytes == 16
             ), "FP8 MLA lane MMA-tile size must be 16B for ds_write_b128."
             comptime assert (
-                Self.BM * Self.BK == warps_per_block * Self.num_n_mmas * 64 * 16
-            ), "P SMEM block size must equal warps_per_block*num_n_mmas*64*16B."
+                Self.BM * Self.BK
+                == Self.num_m_mmas * warps_per_block * Self.num_n_mmas * 64 * 16
+            ), (
+                "P SMEM block size must equal"
+                " num_m_mmas*warps_per_block*num_n_mmas*64*16B."
+            )
             var block_idx = warp_col // Int(warps_per_block)
             var n_mma_in_block = warp_col % Int(warps_per_block)
             var block_base = self.smem_tile.tile[Self.BM, Self.BK](
@@ -693,17 +843,27 @@ struct PRegisterBuffer[
             ).ptr
             var lid = lane_id()
 
-            comptime for n_mma in range(Self.num_n_mmas):
-                var p_reg_ptr = p_reg_vec.tile[1, 1](n_mma, 0).ptr
-                var reg16 = p_reg_ptr.load[width=Self.output_frag_size]().cast[
-                    Self.dtype
-                ]()
-                var warp_off = (
-                    n_mma_in_block * Int(Self.num_n_mmas) + n_mma
-                ) * Int(warp_stride)
-                (
-                    block_base + warp_off + Int(lid) * Self.output_frag_size
-                ).store[width=Self.output_frag_size](reg16)
+            comptime for m_mma in range(Self.num_m_mmas):
+                comptime for n_mma in range(Self.num_n_mmas):
+                    # Reg layout is m_mma INNER (matches `mma`'s c_idx).
+                    comptime reg_idx = n_mma * Self.num_m_mmas + m_mma
+                    var p_reg_ptr = p_reg_vec.tile[1, 1](reg_idx, 0).ptr
+                    var loaded = p_reg_ptr.load[width=Self.output_frag_size]()
+                    var reg16: SIMD[Self.dtype, Self.output_frag_size]
+                    comptime if Self.raw_fp8_cast and Self.dtype.is_float8():
+                        # Raw cvt path: softmax output is bounded in (0, 1],
+                        # so the compiler's clamp + NaN-scrub wrapper around
+                        # pop.cast is a no-op that just adds ~6 VALU ops per
+                        # f32→fp8 pair.
+                        reg16 = _cast_f32_to_fp8_raw[Self.dtype](loaded)
+                    else:
+                        reg16 = loaded.cast[Self.dtype]()
+                    var warp_off = m_mma * Int(m_mma_stride) + (
+                        n_mma_in_block * Int(Self.num_n_mmas) + n_mma
+                    ) * Int(warp_stride)
+                    (
+                        block_base + warp_off + Int(lid) * Self.output_frag_size
+                    ).store[width=Self.output_frag_size](reg16)
             return
 
         comptime if Self.WN < Self.BK:
@@ -715,15 +875,25 @@ struct PRegisterBuffer[
             var warp_offset = smem_offset + warp_row * Self.WM * Self.BK
 
             comptime if Self.p_swizzle:
-                # Interleaved P layout for 16-byte reads: each 8-element
-                # group = [warp0_frag(4), warp1_frag(4)].
-                comptime simd_w = simd_width_of[Self.dtype]()
+                # Match the reader's load_a granularity:
+                # `simd_w = num_matrix_reg(mma_m, mma_k)` elements per lane.
+                # Per row, 4 (= BK / simd_w) 32-element vecs.  Each vec is
+                # owned by ONE warp (`vec_idx = r * (BK/simd_w) +
+                # n_mma_in_block`) and filled by that warp's 4 lanes ×
+                # num_n_mmas fragments — lane offset within vec is
+                # `c * frag_w + n_mma * (simd_w / num_n_mmas)`.
+                comptime simd_w = num_matrix_reg[
+                    Self.mma_shape[0], Self.mma_shape[2]
+                ]()
                 comptime warp_m = Self.mma_shape[0]
                 var r = umod(lane_id(), warp_m)
                 var c = ufloordiv(lane_id(), warp_m)
                 var block_base = self.smem_tile.tile[Self.BM, Self.BK](
                     block_idx, 0
                 ).ptr
+
+                var group_idx = r * (Self.BK // simd_w) + n_mma_in_block
+                var swizzled_group = Self.p_swizzle.value()(group_idx)
 
                 comptime for m_mma in range(Self.num_m_mmas):
                     comptime for n_mma in range(Self.num_n_mmas):
@@ -733,10 +903,10 @@ struct PRegisterBuffer[
                             width=p_reg_tile.element_size
                         ](0).cast[Self.dtype]()
 
-                        var group_idx = r * (Self.BK // simd_w) + c
-                        var swizzled_group = Self.p_swizzle.value()(group_idx)
                         var elem_off = (
-                            swizzled_group * simd_w + n_mma_in_block * frag_w
+                            swizzled_group * simd_w
+                            + c * frag_w
+                            + n_mma * (simd_w // Self.num_n_mmas)
                         )
                         (block_base + elem_off).store[width=frag_w](reg_val)
             else:

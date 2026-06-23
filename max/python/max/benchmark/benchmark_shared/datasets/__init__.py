@@ -15,6 +15,7 @@ from .agentic_code import AgenticCodeBenchmarkDataset
 from .arxiv_summarization import ArxivSummarizationBenchmarkDataset
 from .axolotl import AxolotlBenchmarkDataset
 from .batch_job import BatchJobBenchmarkDataset
+from .chat_judge import ChatJudgeBenchmarkDataset, ChatJudgeChatSamples
 from .code_debug import CodeDebugBenchmarkDataset
 from .distribution import (
     BaseDistribution,
@@ -26,6 +27,7 @@ from .huggingface import HuggingFaceBenchmarkDataset
 from .instruct_coder import InstructCoderBenchmarkDataset
 from .interface import BenchmarkDataset
 from .local import LocalBenchmarkDataset
+from .nemotron_opencode import NemotronOpenCodeBenchmarkDataset
 from .obfuscated_conversations import ObfuscatedConversationsBenchmarkDataset
 from .pixel import PixelBenchmarkDataset
 from .pixel_image_edit import LocalImageBenchmarkDataset
@@ -54,6 +56,8 @@ __all__ = [
     "BaseDistribution",
     "BatchJobBenchmarkDataset",
     "BenchmarkDataset",
+    "ChatJudgeBenchmarkDataset",
+    "ChatJudgeChatSamples",
     "ChatSamples",
     "ChatSession",
     "CodeDebugBenchmarkDataset",
@@ -66,6 +70,7 @@ __all__ = [
     "InstructCoderBenchmarkDataset",
     "LocalBenchmarkDataset",
     "LocalImageBenchmarkDataset",
+    "NemotronOpenCodeBenchmarkDataset",
     "ObfuscatedConversationsBenchmarkDataset",
     "OpenAIImage",
     "PixelBenchmarkDataset",

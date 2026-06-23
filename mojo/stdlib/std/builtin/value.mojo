@@ -17,18 +17,19 @@ These are Mojo built-ins, so you don't need to import them.
 
 
 @explicit_destroy
+@stable(since="1.0")
 trait Movable:
     """The Movable trait denotes a type whose value can be moved.
 
     Implement the `Movable` trait on `Foo` which requires the
-    `def __init__(out self, *, deinit take: Self)` method:
+    `def __init__(out self, *, deinit move: Self)` method:
 
     ```mojo
     struct Foo(Movable):
         def __init__(out self):
             pass
 
-        def __init__(out self, *, deinit take: Self):
+        def __init__(out self, *, deinit move: Self):
             print("moving")
     ```
 
@@ -47,11 +48,12 @@ trait Movable:
     ```
     """
 
-    def __init__(out self, *, deinit take: Self):
+    @stable(since="1.0")
+    def __init__(out self, *, deinit move: Self):
         """Create a new instance of the value by moving the value of another.
 
         Args:
-            take: The value to move.
+            move: The value to move.
         """
         ...
 
@@ -69,6 +71,7 @@ trait Movable:
 
 
 @explicit_destroy
+@stable(since="1.0")
 trait Copyable(Movable):
     """The Copyable trait denotes a type whose value can be explicitly copied.
 
@@ -103,6 +106,7 @@ trait Copyable(Movable):
     ```
     """
 
+    @stable(since="1.0")
     def __init__(out self, *, copy: Self):
         """Create a new instance of the value by copying an existing one.
 
@@ -112,9 +116,12 @@ trait Copyable(Movable):
         ...
 
     @always_inline
+    @stable(since="1.0")
     def copy(self) -> Self:
         """Explicitly construct a copy of self, a convenience method for
         `Self(copy=self)` when the type is inconvenient to write out.
+
+        Overriding this method is not allowed.
 
         Returns:
             A copy of this value.
@@ -134,7 +141,8 @@ trait Copyable(Movable):
     """
 
 
-trait ImplicitlyCopyable(Copyable, ImplicitlyDestructible):
+@stable(since="1.0")
+trait ImplicitlyCopyable(Copyable):
     """A marker trait to permit compiler to insert implicit calls to the copy
     constructor in order to make a copy of the object when needed.
 
@@ -232,7 +240,7 @@ trait Defaultable:
 
 
 trait TrivialRegisterPassable(
-    ImplicitlyCopyable, ImplicitlyDestructible, Movable, RegisterPassable
+    ImplicitlyCopyable, ImplicitlyDeletable, Movable, RegisterPassable
 ):
     """A marker trait to denote the type to be register passable trivial.
 

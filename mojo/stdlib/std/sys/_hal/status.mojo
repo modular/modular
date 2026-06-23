@@ -43,13 +43,8 @@ struct HALError(Movable, Writable):
     var status: Int64
     var message: String
 
-    def __init__[
-        O: ImmutOrigin
-    ](out self, status: Int64, *, message: CStringSlice[O]) raises:
+    def __init__(out self, status: Int64, *, message: CStringSlice[_]) raises:
         """Copies from the null-terminated `CStringSlice`.
-
-        Parameters:
-            O: The origin of the `CStringSlice`.
 
         Args:
             status: The status code.
@@ -76,8 +71,5 @@ struct HALError(Movable, Writable):
         self.status = STATUS_UNINIT
         self.message = "(default constructed HALError)"
 
-    def write_to[W: Writer](self, mut writer: W):
-        writer.write("HALError(code=", self.status, "): ", self.message)
-
-    def __str__(self) -> String:
-        return String.write(self)
+    def write_to(self, mut writer: Some[Writer]):
+        t"HALError(code={self.status}): {self.message}".write_to(writer)

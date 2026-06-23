@@ -34,7 +34,7 @@ from std.gpu.primitives.grid_controls import (
 )
 from layout import TensorLayout, TileTensor
 from std.random import Random
-from std.runtime.asyncrt import DeviceContextPtr
+
 from std.runtime.tracing import Trace, TraceLevel, trace_arg
 
 from std.utils.index import IndexList
@@ -282,7 +282,6 @@ def rms_norm_fused_residual_cpu[
 
 @__name(
     t"rms_norm_fused_residual_gpu_block_{dtype}_{multiply_before_cast}",
-    mangle=True,
 )
 def rms_norm_fused_residual_gpu_block[
     dtype: DType,
@@ -488,7 +487,7 @@ def rms_norm_fused_residual_gpu[
         output_residual_fn_2d,
         multiply_before_cast=multiply_before_cast,
     ]
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         gamma,
         epsilon,
         weight_offset,
@@ -497,7 +496,7 @@ def rms_norm_fused_residual_gpu[
         seed,
         grid_dim=grid_dim,
         block_dim=block_dim,
-        attributes=pdl_launch_attributes(PDLLevel(1)),
+        attributes=pdl_launch_attributes(PDLLevel.ON),
         shared_mem_bytes=shared_mem_size,
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
             UInt32(
@@ -530,7 +529,7 @@ def _rms_norm_fused_residual_impl[
     gamma: TileTensor[dtype, ...],
     epsilon: Scalar[dtype],
     weight_offset: Scalar[dtype],
-    ctx: DeviceContextPtr,
+    ctx: DeviceContext,
     dropout_p: Scalar[dtype] = Scalar[dtype](0.0),
     seed: UInt64 = 0,
 ) raises:
@@ -562,7 +561,7 @@ def _rms_norm_fused_residual_impl[
             gamma,
             epsilon,
             weight_offset,
-            ctx.get_device_context(),
+            ctx,
             dropout_p,
             seed,
         )
@@ -648,7 +647,7 @@ def rms_norm_fused_residual[
     gamma: TileTensor[dtype, ...],
     epsilon: Scalar[dtype],
     weight_offset: Scalar[dtype],
-    ctx: DeviceContextPtr,
+    ctx: DeviceContext,
     dropout_p: Scalar[dtype] = Scalar[dtype](0.0),
     seed: UInt64 = 0,
 ) raises:
@@ -676,7 +675,7 @@ def rms_norm_fused_residual[
     with Trace[TraceLevel.OP, target=target](
         "rms_norm_fused_residual",
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
-        task_id=Int(ctx.get_device_context().id()),
+        task_id=Int(ctx.id()),
     ):
         _rms_norm_fused_residual_impl[
             dtype,

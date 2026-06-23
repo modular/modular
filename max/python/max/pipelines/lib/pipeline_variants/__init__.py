@@ -11,6 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from max.pipelines.diffusion.pipeline import PixelGenerationPipeline
+
+from .block_diffusion_text_generation import (
+    BlockDiffusionTextGenerationPipeline,
+)
 from .overlap_text_generation import OverlapTextGenerationPipeline
-from .pixel_generation import PixelGenerationPipeline
 from .text_generation import TextGenerationPipeline

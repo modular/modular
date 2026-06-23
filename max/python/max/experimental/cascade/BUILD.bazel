@@ -8,9 +8,13 @@ package(default_visibility = ["//max:consumers"])
 modular_py_library(
     name = "cascade",
     srcs = ["__init__.py"],
+    ignore_extra_deps = [
+        "//max/python/max/experimental/cascade/serve",
+    ],
     deps = [
         "//max/python/max/experimental/cascade/core",
         "//max/python/max/experimental/cascade/pipelines",
         "//max/python/max/experimental/cascade/runtimes",
+        "//max/python/max/experimental/cascade/serve",
     ],
 )

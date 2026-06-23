@@ -188,9 +188,9 @@ def merge_sequential_shared(
 
 
 def merge_tiled_kernel(
-    A: UnsafePointer[Int32, MutAnyOrigin],
+    A: UnsafePointer[Int32, ImmutAnyOrigin],
     m: Int,
-    B: UnsafePointer[Int32, MutAnyOrigin],
+    B: UnsafePointer[Int32, ImmutAnyOrigin],
     n: Int,
     C: UnsafePointer[Int32, MutAnyOrigin],
     tile_size: Int,
@@ -324,7 +324,7 @@ def cpu_merge(
     m: Int,
     B: UnsafePointer[Int32, _],
     n: Int,
-    C: UnsafePointer[Int32, MutAnyOrigin],
+    C: UnsafePointer[mut=True, Int32, _],
 ):
     """CPU reference implementation of merge.
 
@@ -400,7 +400,7 @@ def main() raises:
     print("Config: ", num_blocks, " blocks x ", threads_per_block, " threads")
     print("Tile size: ", tile_size)
 
-    ctx.enqueue_function_experimental[merge_tiled_kernel](
+    ctx.enqueue_function[merge_tiled_kernel](
         d_A,
         m,
         d_B,

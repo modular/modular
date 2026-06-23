@@ -22,7 +22,6 @@ extra_pipelines_args=(
   --ep-size 8
   --data-parallel-degree 8
   --max-batch-input-tokens 4096
-  --max-num-steps 1
   --enable-prefix-caching
   --kv-cache-format float8_e4m3fn
   --trust-remote-code

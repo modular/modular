@@ -17,7 +17,7 @@ from std.builtin.range import _ZeroStartingRange
 from std.reflection import reflect
 
 
-trait Equatable(ImplicitlyDestructible):
+trait Equatable:
     """A type which can be compared for equality with other instances of itself.
 
     The `Equatable` trait has a default implementation of `__eq__()` that uses
@@ -66,7 +66,7 @@ trait Equatable(ImplicitlyDestructible):
         """
 
         # Default implementation using reflection: compare all fields
-        comptime r = reflect[Self]()
+        comptime r = reflect[Self]
         comptime names = r.field_names()
         comptime types = r.field_types()
 

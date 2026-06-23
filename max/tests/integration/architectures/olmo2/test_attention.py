@@ -20,12 +20,12 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.experimental.torch import max_dtype_to_torch
 from max.graph import DeviceRef, Graph, TensorType, ops
-from max.kv_cache import PagedKVCacheManager
 from max.nn.kv_cache import KVCacheParams
 from max.nn.rotary_embedding import Llama3RotaryEmbedding
 from max.pipelines.architectures.olmo2.layers.attention import (
     Olmo2Attention as MaxOlmo2Attention,
 )
+from max.pipelines.kv_cache import PagedKVCacheManager
 from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
 from test_common.context_utils import create_text_context
 from torch.utils.dlpack import from_dlpack
@@ -171,7 +171,7 @@ def generate_max_outputs(
         DType.uint32, shape=["input_row_offsets_len"], device=device_ref
     )
 
-    flattened_kv_types = kv_params.get_symbolic_inputs().flatten()
+    flattened_kv_types = kv_params.flattened_kv_inputs()
 
     # Build graph.
     with Graph(
@@ -183,9 +183,7 @@ def generate_max_outputs(
         ),
     ) as graph:
         inputs, input_row_offsets, *kv_cache = graph.inputs
-        kv_collection = (
-            kv_params.get_symbolic_inputs().unflatten(iter(kv_cache)).inputs[0]
-        )
+        kv_collection = kv_params.unflatten_kv_inputs(iter(kv_cache)).inputs[0]
 
         graph.output(
             attention(
@@ -202,20 +200,15 @@ def generate_max_outputs(
     # Set up cache inputs and call the compiled model.
     batch = [create_text_context(np.empty(input_seq_len))]
     kv_manager.claim(batch[0].request_id, replica_idx=0)
-    kv_manager.alloc(batch[0], replica_idx=0, num_steps=1)
-    kv_runtime_inputs = kv_manager.runtime_inputs([batch]).inputs[0]
-    assert kv_runtime_inputs.attention_dispatch_metadata is not None
+    kv_manager.alloc(batch[0], replica_idx=0)
+    kv_runtime_inputs = kv_manager.runtime_inputs([batch])
 
     output = compiled.execute(
         Buffer.from_dlpack(input_tensor[0]).to(device),
         Buffer.from_numpy(np.array([0, input_seq_len], dtype=np.uint32)).to(
             device
         ),
-        kv_runtime_inputs.kv_blocks.to(device),
-        kv_runtime_inputs.cache_lengths.to(device),
-        kv_runtime_inputs.lookup_table.to(device),
-        kv_runtime_inputs.max_lengths,
-        kv_runtime_inputs.attention_dispatch_metadata,
+        *kv_runtime_inputs.flatten(),
     )[0]
 
     return output

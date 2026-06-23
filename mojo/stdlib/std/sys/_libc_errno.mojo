@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.ffi import c_int, external_call
+from std.ffi import CStringSlice, c_int, external_call
 from std.sys.info import CompilationTarget, platform_map
 
 
-def _errno_ptr(out result: UnsafePointer[c_int, MutExternalOrigin]):
+def _errno_ptr(out result: UnsafePointer[c_int, MutUntrackedOrigin]):
     comptime if CompilationTarget.is_linux():
         result = external_call["__errno_location", type_of(result)]()
     elif CompilationTarget.is_macos():
@@ -418,9 +418,13 @@ struct ErrNo(Equatable, TrivialRegisterPassable, Writable):
         comptime if CompilationTarget.is_macos():
             assert self != ErrNo.SUCCESS, "macos can't stringify ErrNo.SUCCESS"
         var ptr = external_call[
-            "strerror", UnsafePointer[Byte, MutExternalOrigin]
+            "strerror", UnsafePointer[Byte, MutUntrackedOrigin]
         ](self.value)
-        var string = StringSlice(unsafe_from_utf8_ptr=ptr)
+        var string = StringSlice(
+            unsafe_from_utf8=CStringSlice(
+                unsafe_from_ptr=ptr.bitcast[Int8]().unsafe_mut_cast[False]()
+            )
+        )
         string.write_to(writer)
 
     @always_inline

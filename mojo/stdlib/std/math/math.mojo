@@ -425,7 +425,7 @@ def exp2[
     comptime if dtype == DType.float32:
         return _exp2_float32(x._refine[DType.float32]())._refine[dtype]()
     elif dtype == DType.float64:
-        return 2**x
+        return SIMD[dtype, width](2.0) ** x
     else:
         return exp2(x.cast[DType.float32]()).cast[dtype]()
 
@@ -590,6 +590,12 @@ def _exp_taylor[
     return polynomial_evaluate[
         coefficients if dtype == DType.float64 else coefficients[:8],
     ](x)
+
+
+comptime _ExpPluginHookFnType = def[dtype: DType, width: SIMDSize, //](
+    SIMD[dtype, width]
+) thin -> SIMD[dtype, width]
+"""Plugin-hook signature for `PluginHooks.exp_fn`; keep in sync with `exp`."""
 
 
 @always_inline
@@ -950,12 +956,7 @@ def log[
 
     comptime if is_nvidia_gpu() and dtype == DType.float32:
         comptime ln2 = 0.69314718055966295651160180568695068359375
-        return (
-            _call_ptx_intrinsic[
-                instruction="lg2.approx.f32", constraints="=f,f"
-            ](x)
-            * ln2
-        )
+        return ln2 * log2(x)
 
     return _log_base[27](x)
 
@@ -990,7 +991,7 @@ def log2[
 
     comptime if is_nvidia_gpu() and dtype == DType.float32:
         return _call_ptx_intrinsic[
-            instruction="lg2.approx.f32", constraints="=f,f"
+            instruction="lg2.approx.ftz.f32", constraints="=f,f"
         ](x)
     elif is_amd_gpu() and dtype in (DType.float32, DType.float16):
         return _call_amdgcn_intrinsic[
@@ -1103,6 +1104,12 @@ def erf[
 # ===----------------------------------------------------------------------=== #
 
 
+comptime _TanhPluginHookFnType = def[dtype: DType, width: SIMDSize, //](
+    SIMD[dtype, width]
+) thin -> SIMD[dtype, width]
+"""Plugin-hook signature for `PluginHooks.tanh_fn`; keep in sync with `tanh`."""
+
+
 @always_inline
 def tanh[
     dtype: DType, width: SIMDSize, //
@@ -1119,6 +1126,9 @@ def tanh[
     Returns:
         The result of the elementwise tanh operation.
     """
+
+    comptime if CurrentPlugin.tanh_fn[dtype, width]:
+        return comptime (CurrentPlugin.tanh_fn[dtype, width].value())(x)
 
     comptime if is_nvidia_gpu():
         comptime instruction = "tanh.approx.f32"
@@ -1267,7 +1277,7 @@ def isclose[
 @always_inline
 def iota[
     dtype: DType, width: Int
-](offset: Scalar[dtype] = 0) -> SIMD[dtype, width]:
+](offset: Scalar[dtype] = Scalar[dtype](0)) -> SIMD[dtype, width]:
     """Creates a SIMD vector containing an increasing sequence, starting from
     offset.
 
@@ -3274,22 +3284,6 @@ def perm(n: Int, k: Int = -1) -> Int:
 
 
 def clamp(
-    val: Int, lower_bound: type_of(val), upper_bound: type_of(val)
-) -> type_of(val):
-    """Clamps the integer value vector to be in a certain range.
-
-    Args:
-        val: The value to clamp.
-        lower_bound: Minimum of the range to clamp to.
-        upper_bound: Maximum of the range to clamp to.
-
-    Returns:
-        An integer clamped to be within lower_bound and upper_bound.
-    """
-    return max(min(val, upper_bound), lower_bound)
-
-
-def clamp(
     val: UInt, lower_bound: type_of(val), upper_bound: type_of(val)
 ) -> type_of(val):
     """Clamps the integer value vector to be in a certain range.
@@ -3807,18 +3801,18 @@ def divmod[T: DivModable](numerator: T, denominator: T) -> Tuple[T, T]:
 # ===----------------------------------------------------------------------=== #
 
 
-@always_inline("nodebug")
-def max(x: Int, y: Int, /) -> Int:
-    """Gets the maximum of two integers.
+# @always_inline("nodebug")
+# def max(x: Int, y: Int, /) -> Int:
+#     """Gets the maximum of two integers.
 
-    Args:
-        x: Integer input to max.
-        y: Integer input to max.
+#     Args:
+#         x: Integer input to max.
+#         y: Integer input to max.
 
-    Returns:
-        Maximum of x and y.
-    """
-    return Int(mlir_value=__mlir_op.`index.maxs`(x._mlir_value, y._mlir_value))
+#     Returns:
+#         Maximum of x and y.
+#     """
+#     return Int(mlir_value=__mlir_op.`index.maxs`(x._mlir_value, y._mlir_value))
 
 
 @always_inline("nodebug")
@@ -3850,7 +3844,7 @@ def max[dtype: DType, //](x: SIMD[dtype, _], y: type_of(x), /) -> type_of(x):
 
 
 @always_inline
-def max[T: Copyable & Comparable](x: T, *ys: T) -> T:
+def max[T: Copyable & Comparable & ImplicitlyDeletable](x: T, *ys: T) -> T:
     """Gets the maximum value from a sequence of values.
 
     Parameters:
@@ -3873,20 +3867,6 @@ def max[T: Copyable & Comparable](x: T, *ys: T) -> T:
 # ===----------------------------------------------------------------------=== #
 # min
 # ===----------------------------------------------------------------------=== #
-
-
-@always_inline("nodebug")
-def min(x: Int, y: Int, /) -> Int:
-    """Gets the minimum of two integers.
-
-    Args:
-        x: Integer input to min.
-        y: Integer input to min.
-
-    Returns:
-        Minimum of x and y.
-    """
-    return Int(mlir_value=__mlir_op.`index.mins`(x._mlir_value, y._mlir_value))
 
 
 @always_inline("nodebug")
@@ -3918,7 +3898,7 @@ def min[dtype: DType, //](x: SIMD[dtype, _], y: type_of(x), /) -> type_of(x):
 
 
 @always_inline
-def min[T: Copyable & Comparable](x: T, *ys: T) -> T:
+def min[T: Copyable & Comparable & ImplicitlyDeletable](x: T, *ys: T) -> T:
     """Gets the minimum value from a sequence of values.
 
     Parameters:

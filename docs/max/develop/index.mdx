@@ -94,8 +94,9 @@ runtime and is responsible for:
 - **Graph construction**: Assemble `Module` layers, call
   `load_state_dict(state_dict)` to bind the adapted checkpoint weights, and
   build the `Graph` object.
-- **Compilation**: Call `session.load(graph, weights_registry=state_dict)` to
-  compile the graph into an optimized `Model`.
+- **Compilation**: Call `session.compile(graph)` to compile the graph into a
+  `CompiledModel`, then `session.init(compiled, weights_registry=state_dict)`
+  to bind weights and produce an executable `Model`.
 - **Input preparation**: Convert tokenized requests into graph inputs.
 - **Execution**: Its `execute()` function is called by the serving loop to run
   the compiled model and return the logits.

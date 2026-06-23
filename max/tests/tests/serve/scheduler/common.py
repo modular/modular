@@ -21,24 +21,26 @@ from max.driver import CPU, Accelerator, Device
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef
-from max.interfaces import (
-    BatchType,
+from max.nn.kv_cache import KVCacheParams, KVConnectorType
+from max.pipelines.context import (
     GenerationStatus,
-    MAXPushQueue,
-    Pipeline,
-    RequestID,
-    SchedulerResult,
-    TextGenerationInputs,
+    TextContext,
     TextGenerationOutput,
     TokenBuffer,
 )
-from max.kv_cache import PagedKVCacheManager
-from max.nn.kv_cache import KVCacheParams, KVConnectorType
-from max.pipelines.core import TextContext
+from max.pipelines.kv_cache import PagedKVCacheManager
+from max.pipelines.modeling.types import (
+    BatchType,
+    Pipeline,
+    RequestID,
+    TextGenerationInputs,
+)
+from max.serve.queue import MAXPushQueue
 from max.serve.scheduler.config import TokenGenerationSchedulerConfig
 from max.serve.scheduler.text_generation_scheduler import (
     TokenGenerationScheduler,
 )
+from max.serve.scheduler_result import SchedulerResult
 
 
 def rand(length: int) -> np.ndarray:
@@ -109,7 +111,8 @@ def create_kv_cache(
         host_kvcache_swap_space_gb=999,
         data_parallel_degree=dp,
         devices=device_refs,
-        num_eagle_speculative_tokens=num_speculative_tokens,
+        speculative_method="eagle" if num_speculative_tokens > 0 else None,
+        num_draft_tokens=num_speculative_tokens,
         is_mla=is_mla,
         # num_q_heads must be divisible by the per-replica device count
         # (TP shards) when MLA is enabled.
@@ -142,7 +145,6 @@ def create_paged_scheduler(
     num_blocks: int = 9999,
     max_batch_size: int = 512,
     page_size: int = 128,
-    max_forward_steps_tg: int = 10,
     target_tokens_per_batch_ce: int = 8192,
     enable_prefix_caching: bool = False,
     enable_in_flight_batching: bool = False,
@@ -173,7 +175,6 @@ def create_paged_scheduler(
     # Create a scheduler with a paged manager
     scheduler_config = TokenGenerationSchedulerConfig(
         max_batch_size=max_batch_size,
-        max_forward_steps_tg=max_forward_steps_tg,
         target_tokens_per_batch_ce=target_tokens_per_batch_ce,
         max_seq_len=max_seq_len,
         enable_chunked_prefill=enable_chunked_prefill,
@@ -224,14 +225,12 @@ class FakeTokenGeneratorPipeline(
         self, inputs: TextGenerationInputs[TextContext]
     ) -> dict[RequestID, TextGenerationOutput]:
         max_seq_len = self.max_seq_len
-        # Truncate num steps based on the max seq len
-        num_steps = inputs.num_steps
+        num_steps = 1
         for context in inputs.flat_batch:
             num_available_steps = context.compute_num_available_steps(
                 max_seq_len
             )
             assert num_available_steps > 0
-            num_steps = min(num_steps, num_available_steps)
 
         # Claim cache rows for context.
         for replica_idx, batch in enumerate(inputs.batches):
@@ -245,10 +244,8 @@ class FakeTokenGeneratorPipeline(
 
         for replica_idx, batch in enumerate(inputs.batches):
             for ctx in batch:
-                self.kv_manager.alloc(
-                    ctx, replica_idx=replica_idx, num_steps=num_steps
-                )
-        self.kv_manager.runtime_inputs(inputs.batches, num_steps=num_steps)
+                self.kv_manager.alloc(ctx, replica_idx=replica_idx)
+        self.kv_manager.runtime_inputs(inputs.batches)
 
         # Generate the responses
         responses = {}
@@ -347,7 +344,6 @@ class FakeOverlapPipeline(FakeTokenGeneratorPipeline):
         self._pending_contexts = []
 
         if inputs:
-            num_steps = 1
             for replica_idx, batch in enumerate(inputs.batches):
                 for context in batch:
                     if not self.kv_manager.contains(
@@ -358,10 +354,8 @@ class FakeOverlapPipeline(FakeTokenGeneratorPipeline):
                         )
             for replica_idx, batch in enumerate(inputs.batches):
                 for ctx in batch:
-                    self.kv_manager.alloc(
-                        ctx, replica_idx=replica_idx, num_steps=num_steps
-                    )
-            self.kv_manager.runtime_inputs(inputs.batches, num_steps=num_steps)
+                    self.kv_manager.alloc(ctx, replica_idx=replica_idx)
+            self.kv_manager.runtime_inputs(inputs.batches)
 
             # Generate real tokens now but defer their release to the next call.
             new_outputs: dict[RequestID, TextGenerationOutput] = {}
@@ -492,7 +486,6 @@ def create_batch_and_execute(scheduler: TokenGenerationScheduler) -> BatchInfo:
     batch_size = len(inputs.flat_batch)
     batch_type = inputs.batch_type
     input_tokens = inputs.input_tokens
-    num_steps = inputs.num_steps
     batch_context_length = sum(
         context.tokens.processed_length for context in inputs.flat_batch
     )
@@ -507,7 +500,7 @@ def create_batch_and_execute(scheduler: TokenGenerationScheduler) -> BatchInfo:
         batch_type=batch_type,
         batch_size=batch_size,
         terminated=num_terminated_reqs,
-        steps=num_steps,
+        steps=1,
         preempted=num_preempted,
         input_toks=input_tokens,
         cached_toks=batch_context_length,

@@ -31,17 +31,20 @@ from unittest.mock import patch
 import pytest
 from max.driver import DeviceSpec
 from max.graph import DeviceRef
+from max.graph.weights import WeightsFormat
 from max.pipelines import PIPELINE_REGISTRY, PipelineConfig
+from max.pipelines.context import TextContext
+from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
 from max.pipelines.lib import MAXModelConfig, MemoryEstimator
 from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
 from max.pipelines.lib.registry import SupportedArchitecture
+from max.pipelines.modeling.types import PipelineTask
 from test_common.pipeline_model_dummy import (
     DUMMY_GEMMA_ARCH,
     DUMMY_LLAMA_ARCH,
     DummyLlamaArchConfig,
     DummyLlamaPipelineModel,
-    DummyPipelineModel,
     DummyTextTokenizer,
 )
 from test_common.registry import prepare_registry
@@ -175,7 +178,7 @@ def _pipeline_resolve_mocks(
     - validate_hf_repo_access — avoid network
     - MemoryEstimator — avoid real memory estimation
     - accelerator_api — avoid CUDA probes
-    - estimate_weights_size / estimate_activation_memory — avoid graph ops
+    - PagedMemoryPlanner — avoid activation memory estimation
     """
     mock_devices = [DeviceRef.GPU()] * num_devices
 
@@ -188,7 +191,7 @@ def _pipeline_resolve_mocks(
             "max.pipelines.lib.config.model_config.WeightPathParser.parse",
             return_value=weight_path_return,
         ),
-        patch("max.pipelines.lib.hf_utils.validate_hf_repo_access"),
+        patch("max.pipelines.lib.config.model_config.validate_hf_repo_access"),
         patch(
             "max.pipelines.lib.config.config.load_devices",
             return_value=mock_devices,
@@ -206,22 +209,7 @@ def _pipeline_resolve_mocks(
             return_value="cpu",
         ),
         patch.object(
-            DummyLlamaPipelineModel,
-            "estimate_weights_size",
-            return_value=0,
-        ),
-        patch.object(
-            DummyLlamaPipelineModel,
-            "estimate_activation_memory",
-            return_value=0,
-        ),
-        patch.object(
-            DummyPipelineModel,
-            "estimate_weights_size",
-            return_value=0,
-        ),
-        patch.object(
-            DummyPipelineModel,
+            PagedMemoryPlanner,
             "estimate_activation_memory",
             return_value=0,
         ),
@@ -235,15 +223,43 @@ def _model(config: PipelineConfig) -> MAXModelConfig:
     return config.model
 
 
+def _resolve_config(config: PipelineConfig) -> None:
+    """Look up the architecture from the registry, then call config.resolve(arch).
+
+    Convenience wrapper for tests that call resolve() directly rather than
+    going through PIPELINE_REGISTRY.retrieve_factory().  The arch lookup is
+    explicit here so _resolve_config(config) itself stays free of registry imports.
+    """
+    task = (
+        config.task
+        if config.task != PipelineTask.UNDEFINED
+        else PipelineTask.TEXT_GENERATION
+    )
+    arch = PIPELINE_REGISTRY.retrieve_architecture(
+        architecture_name=config.models.main_architecture_name,
+        prefer_module_v3=config.runtime.prefer_module_v3,
+        task=task,
+    )
+    if arch is None:
+        raise ValueError(
+            f"MAX-optimized architecture not available for"
+            f" '{config.models.main_architecture_name}'."
+            " Please file a request at https://modul.ar/request to add this"
+            " model architecture to MAX."
+        )
+    config.resolve(arch)
+
+
 def _make_pipeline_config(
     model_path: str,
     device_specs: list[DeviceSpec] | None = None,
     weight_path: list[Path] | None = None,
     max_length: int | None = 512,
     max_batch_size: int = 1,
+    pipeline_task: Any = None,
     **model_kwargs: Any,
 ) -> PipelineConfig:
-    """Create a PipelineConfig with defer_resolve=True for testing."""
+    """Create a PipelineConfig for testing (resolve() is not auto-called)."""
     if device_specs is None:
         device_specs = [GPU_DEVICE_SPEC]
     return PipelineConfig(
@@ -260,8 +276,8 @@ def _make_pipeline_config(
         ),
         runtime=PipelineRuntimeConfig(
             max_batch_size=max_batch_size,
-            defer_resolve=True,
         ),
+        task=pipeline_task or PipelineTask.UNDEFINED,
     )
 
 
@@ -283,7 +299,7 @@ class TestArchitectureEncodingResolution:
             )
             config = _make_pipeline_config(tmpdir)
             with _pipeline_resolve_mocks():
-                config.resolve()
+                _resolve_config(config)
             assert _model(config).quantization_encoding == "bfloat16"
             assert any(
                 "model.safetensors" in str(p)
@@ -300,7 +316,7 @@ class TestArchitectureEncodingResolution:
                 tmpdir, device_specs=[CPU_DEVICE_SPEC]
             )
             with _pipeline_resolve_mocks():
-                config.resolve()
+                _resolve_config(config)
             assert _model(config).quantization_encoding == "q4_0"
             assert any(
                 "model-Q4_0.gguf" in str(p) for p in _model(config).weight_path
@@ -317,7 +333,7 @@ class TestArchitectureEncodingResolution:
             )
             config = _make_pipeline_config(tmpdir)
             with _pipeline_resolve_mocks():
-                config.resolve()
+                _resolve_config(config)
             assert _model(config).quantization_encoding == "float8_e4m3fn"
 
     @prepare_registry
@@ -337,7 +353,7 @@ class TestArchitectureEncodingResolution:
                 tmpdir, device_specs=[GPU_DEVICE_SPEC]
             )
             with _pipeline_resolve_mocks():
-                config.resolve()
+                _resolve_config(config)
             # The encoding should be resolved (either float32 or bfloat16)
             # and must be in the architecture's supported_encodings.
             model = _model(config)
@@ -358,7 +374,7 @@ class TestArchitectureEncodingResolution:
                 tmpdir, device_specs=[CPU_DEVICE_SPEC]
             )
             with _pipeline_resolve_mocks():
-                config.resolve()
+                _resolve_config(config)
             assert _model(config).quantization_encoding == "float32"
 
 
@@ -380,8 +396,8 @@ class TestDefaultEncodingFallback:
         falls back to the architecture's default_encoding.
         """
         from max.graph.weights import WeightsFormat
-        from max.interfaces import PipelineTask
-        from max.pipelines import TextContext
+        from max.pipelines.context import TextContext
+        from max.pipelines.modeling.types import PipelineTask
 
         # Create an architecture with default_encoding="float32" compatible with CPU
         cpu_arch = SupportedArchitecture(
@@ -414,7 +430,7 @@ class TestDefaultEncodingFallback:
                 tmpdir, device_specs=[CPU_DEVICE_SPEC]
             )
             with _pipeline_resolve_mocks():
-                config.resolve()
+                _resolve_config(config)
             assert _model(config).quantization_encoding == "float32"
 
 
@@ -440,7 +456,7 @@ class TestEncodingValidation:
                 _pipeline_resolve_mocks(),
                 pytest.raises(ValueError, match="not supported by MAX engine"),
             ):
-                config.resolve()
+                _resolve_config(config)
 
     @prepare_registry
     def test_explicit_unsupported_encoding_rejected(self) -> None:
@@ -459,7 +475,7 @@ class TestEncodingValidation:
                 _pipeline_resolve_mocks(),
                 pytest.raises(ValueError, match="not supported by MAX engine"),
             ):
-                config.resolve()
+                _resolve_config(config)
 
 
 # ---------------------------------------------------------------------------
@@ -489,7 +505,7 @@ class TestArchitectureNotFound:
                     ValueError, match="MAX-optimized architecture not available"
                 ),
             ):
-                config.resolve()
+                _resolve_config(config)
 
     @prepare_registry
     def test_missing_config_json_raises(self) -> None:
@@ -500,7 +516,7 @@ class TestArchitectureNotFound:
             _write_fake_safetensors(os.path.join(tmpdir, "model.safetensors"))
             config = _make_pipeline_config(tmpdir)
             with _pipeline_resolve_mocks(), pytest.raises(Exception):
-                config.resolve()
+                _resolve_config(config)
 
 
 # ---------------------------------------------------------------------------
@@ -534,7 +550,7 @@ class TestMultiGPUValidation:
                     match="Multiple GPU inference is currently not supported",
                 ),
             ):
-                config.resolve()
+                _resolve_config(config)
 
     @prepare_registry
     def test_multi_gpu_allowed_for_supported_arch(self) -> None:
@@ -552,7 +568,7 @@ class TestMultiGPUValidation:
             ]
             config = _make_pipeline_config(tmpdir, device_specs=two_gpus)
             with _pipeline_resolve_mocks(num_devices=2):
-                config.resolve()
+                _resolve_config(config)
             assert _model(config).quantization_encoding == "bfloat16"
 
 
@@ -577,7 +593,7 @@ class TestRopeTypeResolution:
             )
             config = _make_pipeline_config(tmpdir)
             with _pipeline_resolve_mocks():
-                config.resolve()
+                _resolve_config(config)
             assert _model(config).rope_type == "normal"
 
     @prepare_registry
@@ -594,7 +610,7 @@ class TestRopeTypeResolution:
             # Set rope_type="neox" which differs from DUMMY_GEMMA_ARCH's "normal"
             config = _make_pipeline_config(tmpdir, rope_type="neox")
             with _pipeline_resolve_mocks():
-                config.resolve()
+                _resolve_config(config)
             assert _model(config).rope_type == "neox"
 
 
@@ -619,7 +635,7 @@ class TestCacheDtypeResolution:
             )
             config = _make_pipeline_config(tmpdir)
             with _pipeline_resolve_mocks():
-                config.resolve()
+                _resolve_config(config)
             assert _model(config).kv_cache._cache_dtype == DType.bfloat16
 
 
@@ -645,7 +661,7 @@ class TestWeightPathDiscovery:
             )
             config = _make_pipeline_config(tmpdir)
             with _pipeline_resolve_mocks():
-                config.resolve()
+                _resolve_config(config)
             paths = sorted(str(p) for p in _model(config).weight_path)
             assert paths == [
                 "model-00001-of-00002.safetensors",
@@ -664,7 +680,7 @@ class TestWeightPathDiscovery:
             )
             config = _make_pipeline_config(tmpdir)
             with _pipeline_resolve_mocks():
-                config.resolve()
+                _resolve_config(config)
             paths = [str(p) for p in _model(config).weight_path]
             assert paths == ["model.safetensors"]
 
@@ -680,8 +696,8 @@ class TestRequiredArguments:
     @prepare_registry
     def test_required_arguments_override_user_config(self) -> None:
         """Architecture required_arguments should override conflicting config values."""
-        from max.interfaces import PipelineTask
-        from max.pipelines import TextContext
+        from max.pipelines.context import TextContext
+        from max.pipelines.modeling.types import PipelineTask
 
         arch_with_required = SupportedArchitecture(
             name="LlamaForCausalLM",
@@ -708,6 +724,143 @@ class TestRequiredArguments:
             # Set a value that conflicts with the required argument
             _model(config).kv_cache.enable_prefix_caching = True
             with _pipeline_resolve_mocks():
-                config.resolve()
+                _resolve_config(config)
             # Architecture should have overridden it
             assert _model(config).kv_cache.enable_prefix_caching is False
+
+
+# ---------------------------------------------------------------------------
+# Category J: DGC suppressed for embedding task on shared arch name (QUA-484)
+# ---------------------------------------------------------------------------
+
+
+class TestDGCTaskDisambiguation:
+    """DGC must not be auto-enabled when the arch name is shared between
+    TEXT_GENERATION and EMBEDDINGS_GENERATION and the pipeline task is
+    EMBEDDINGS_GENERATION.
+
+    Regression test for QUA-484: Qwen3ForCausalLM is registered for both
+    tasks; removing it from the DGC disable list incorrectly enabled DGC
+    for the embedding model because the no-task lookup returned the
+    text-gen arch (registered first), passing the task eligibility check.
+    """
+
+    @prepare_registry
+    def test_dgc_not_enabled_for_embedding_task(self) -> None:
+        """resolve(task=EMBEDDINGS_GENERATION) must not auto-enable DGC."""
+
+        shared_name = "SharedArchForCausalLM"
+        text_gen_arch = SupportedArchitecture(
+            name=shared_name,
+            task=PipelineTask.TEXT_GENERATION,
+            example_repo_ids=["test/text-model"],
+            default_encoding="bfloat16",
+            supported_encodings={"bfloat16", "float32"},
+            pipeline_model=DummyLlamaPipelineModel,
+            tokenizer=DummyTextTokenizer,
+            context_type=TextContext,
+            multi_gpu_supported=True,
+            default_weights_format=WeightsFormat.safetensors,
+            config=DummyLlamaArchConfig,
+        )
+        embedding_arch = SupportedArchitecture(
+            name=shared_name,
+            task=PipelineTask.EMBEDDINGS_GENERATION,
+            example_repo_ids=["test/embed-model"],
+            default_encoding="bfloat16",
+            supported_encodings={"bfloat16", "float32"},
+            pipeline_model=DummyLlamaPipelineModel,
+            tokenizer=DummyTextTokenizer,
+            context_type=TextContext,
+            multi_gpu_supported=True,
+            default_weights_format=WeightsFormat.safetensors,
+            config=DummyLlamaArchConfig,
+        )
+        # Register text-gen first (mirrors Qwen3ForCausalLM registration order)
+        PIPELINE_REGISTRY.register(text_gen_arch)
+        PIPELINE_REGISTRY.register(embedding_arch)
+
+        hf_config = dict(_LLAMA_CONFIG)
+        hf_config["architectures"] = [shared_name]
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            _make_local_repo(
+                tmpdir,
+                hf_config=hf_config,
+                safetensors_files={"model.safetensors": {"w": "BF16"}},
+            )
+            config = _make_pipeline_config(
+                tmpdir,
+                max_batch_size=4,
+                pipeline_task=PipelineTask.EMBEDDINGS_GENERATION,
+            )
+            with (
+                _pipeline_resolve_mocks(),
+                patch(
+                    "max.pipelines.lib.config.config.accelerator_api",
+                    return_value="cuda",
+                ),
+            ):
+                _resolve_config(config)
+            assert config.runtime.device_graph_capture is False
+
+    @prepare_registry
+    def test_dgc_enabled_for_text_gen_task(self) -> None:
+        """resolve() without task (text-gen default) auto-enables DGC when eligible."""
+
+        shared_name = "SharedArchForCausalLM"
+        text_gen_arch = SupportedArchitecture(
+            name=shared_name,
+            task=PipelineTask.TEXT_GENERATION,
+            example_repo_ids=["test/text-model"],
+            default_encoding="bfloat16",
+            supported_encodings={"bfloat16", "float32"},
+            pipeline_model=DummyLlamaPipelineModel,
+            tokenizer=DummyTextTokenizer,
+            context_type=TextContext,
+            multi_gpu_supported=True,
+            default_weights_format=WeightsFormat.safetensors,
+            config=DummyLlamaArchConfig,
+        )
+        embedding_arch = SupportedArchitecture(
+            name=shared_name,
+            task=PipelineTask.EMBEDDINGS_GENERATION,
+            example_repo_ids=["test/embed-model"],
+            default_encoding="bfloat16",
+            supported_encodings={"bfloat16", "float32"},
+            pipeline_model=DummyLlamaPipelineModel,
+            tokenizer=DummyTextTokenizer,
+            context_type=TextContext,
+            multi_gpu_supported=True,
+            default_weights_format=WeightsFormat.safetensors,
+            config=DummyLlamaArchConfig,
+        )
+        PIPELINE_REGISTRY.register(text_gen_arch)
+        PIPELINE_REGISTRY.register(embedding_arch)
+
+        hf_config = dict(_LLAMA_CONFIG)
+        hf_config["architectures"] = [shared_name]
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            _make_local_repo(
+                tmpdir,
+                hf_config=hf_config,
+                safetensors_files={"model.safetensors": {"w": "BF16"}},
+            )
+            config = _make_pipeline_config(tmpdir, max_batch_size=4)
+            # Look up the text-gen arch explicitly; resolve() no longer falls back
+            # to the registry for overlap-scheduler/DGC decisions.
+            arch = PIPELINE_REGISTRY.retrieve_architecture(
+                architecture_name=shared_name,
+                prefer_module_v3=False,
+                task=PipelineTask.TEXT_GENERATION,
+            )
+            with (
+                _pipeline_resolve_mocks(),
+                patch(
+                    "max.pipelines.lib.config.config.accelerator_api",
+                    return_value="cuda",
+                ),
+            ):
+                config.resolve(arch)
+            assert config.runtime.device_graph_capture is True

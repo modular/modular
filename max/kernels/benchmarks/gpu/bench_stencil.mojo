@@ -24,7 +24,6 @@ from std.benchmark import (
 from layout import (
     Coord,
     Idx,
-    RuntimeInt,
     TileTensor,
     coord_to_index_list,
     row_major,
@@ -77,10 +76,10 @@ def bench_stencil_avg_pool[
         h_input_ptr,
         row_major(
             Coord(
-                Idx[1](),
-                Idx[input_height](),
-                Idx[input_width](),
-                Idx[num_channels](),
+                Idx[1],
+                Idx[input_height],
+                Idx[input_width],
+                Idx[num_channels],
             )
         ),
     )
@@ -89,10 +88,10 @@ def bench_stencil_avg_pool[
         h_output_ptr,
         row_major(
             Coord(
-                Idx[1](),
-                RuntimeInt(Scalar[DType.int64](output_height)),
-                RuntimeInt(Scalar[DType.int64](output_width)),
-                Idx[num_channels](),
+                Idx[1],
+                Int64(output_height),
+                Int64(output_width),
+                Idx[num_channels],
             )
         ),
     )
@@ -101,10 +100,10 @@ def bench_stencil_avg_pool[
         h_output_ref_ptr,
         row_major(
             Coord(
-                Idx[1](),
-                RuntimeInt(Scalar[DType.int64](output_height)),
-                RuntimeInt(Scalar[DType.int64](output_width)),
-                Idx[num_channels](),
+                Idx[1],
+                Int64(output_height),
+                Int64(output_width),
+                Idx[num_channels],
             )
         ),
     )
@@ -119,10 +118,10 @@ def bench_stencil_avg_pool[
         d_input_buf,
         row_major(
             Coord(
-                Idx[1](),
-                Idx[input_height](),
-                Idx[input_width](),
-                Idx[num_channels](),
+                Idx[1],
+                Idx[input_height],
+                Idx[input_width],
+                Idx[num_channels],
             )
         ),
     )
@@ -131,10 +130,10 @@ def bench_stencil_avg_pool[
         d_output_buf,
         row_major(
             Coord(
-                Idx[1](),
-                RuntimeInt(Scalar[DType.int64](output_height)),
-                RuntimeInt(Scalar[DType.int64](output_width)),
-                Idx[num_channels](),
+                Idx[1],
+                Int64(output_height),
+                Int64(output_width),
+                Idx[num_channels],
             )
         ),
     )
@@ -145,50 +144,42 @@ def bench_stencil_avg_pool[
 
     def map_fn_gpu(
         point: IndexList[stencil_rank, ...],
-    ) register_passable {} -> Tuple[
-        IndexList[stencil_rank], IndexList[stencil_rank]
-    ]:
+    ) {} -> Tuple[IndexList[stencil_rank], IndexList[stencil_rank]]:
         var lower_bound = IndexList[stencil_rank](point[0], point[1])
         var upper_bound = IndexList[stencil_rank](
             point[0] + pool_window_h, point[1] + pool_window_w
         )
         return lower_bound, upper_bound
 
-    def dilation_fn_gpu(dim: Int) register_passable {} -> Int:
+    def dilation_fn_gpu(dim: Int) {} -> Int:
         return dilation
 
     @always_inline
     def load_fn_gpu[
         simd_width: Int, dtype: DType
-    ](point: IndexList[rank, ...]) register_passable {
-        var d_input,
-    } -> SIMD[
-        dtype, simd_width
-    ]:
+    ](point: IndexList[rank, ...]) {var d_input,} -> SIMD[dtype, simd_width]:
         return rebind[SIMD[dtype, simd_width]](
             d_input.load_linear[width=simd_width](point)
         )
 
     def avg_pool_compute_init_gpu[
         simd_width: Int
-    ]() register_passable {} -> SIMD[dtype, simd_width]:
+    ]() {} -> SIMD[dtype, simd_width]:
         return SIMD[dtype, simd_width](0)
 
     def avg_pool_compute_gpu[
-        simd_width: Int
+        simd_width: SIMDSize
     ](
         point: IndexList[rank, ...],
         val: SIMD[dtype, simd_width],
         result: SIMD[dtype, simd_width],
-    ) register_passable {} -> SIMD[dtype, simd_width]:
+    ) {} -> SIMD[dtype, simd_width]:
         return val + result
 
     @always_inline
     def avg_pool_compute_finalize_gpu[
-        simd_width: Int
-    ](
-        point: IndexList[rank, ...], val: SIMD[dtype, simd_width]
-    ) register_passable {
+        simd_width: SIMDSize
+    ](point: IndexList[rank, ...], val: SIMD[dtype, simd_width]) {
         var d_output,
     }:
         var res = val / Scalar[dtype](pool_window_h * pool_window_w)
@@ -251,7 +242,7 @@ def bench_stencil_avg_pool[
         return SIMD[dtype, simd_width](0)
 
     def avg_pool_compute_cpu[
-        simd_width: Int
+        simd_width: SIMDSize
     ](
         point: IndexList[rank, ...],
         val: SIMD[dtype, simd_width],
@@ -261,7 +252,7 @@ def bench_stencil_avg_pool[
 
     @always_inline
     def avg_pool_compute_finalize_cpu[
-        simd_width: Int
+        simd_width: SIMDSize
     ](point: IndexList[rank, ...], val: SIMD[dtype, simd_width]) {
         var h_output_ref,
     }:
@@ -368,10 +359,10 @@ def bench_stencil_max_pool[
         h_input_ptr,
         row_major(
             Coord(
-                Idx[1](),
-                Idx[input_height](),
-                Idx[input_width](),
-                Idx[num_channels](),
+                Idx[1],
+                Idx[input_height],
+                Idx[input_width],
+                Idx[num_channels],
             )
         ),
     )
@@ -380,10 +371,10 @@ def bench_stencil_max_pool[
         h_output_ptr,
         row_major(
             Coord(
-                Idx[1](),
-                RuntimeInt(Scalar[DType.int64](output_height)),
-                RuntimeInt(Scalar[DType.int64](output_width)),
-                Idx[num_channels](),
+                Idx[1],
+                Int64(output_height),
+                Int64(output_width),
+                Idx[num_channels],
             )
         ),
     )
@@ -392,10 +383,10 @@ def bench_stencil_max_pool[
         h_output_ref_ptr,
         row_major(
             Coord(
-                Idx[1](),
-                RuntimeInt(Scalar[DType.int64](output_height)),
-                RuntimeInt(Scalar[DType.int64](output_width)),
-                Idx[num_channels](),
+                Idx[1],
+                Int64(output_height),
+                Int64(output_width),
+                Idx[num_channels],
             )
         ),
     )
@@ -410,10 +401,10 @@ def bench_stencil_max_pool[
         d_input_buf,
         row_major(
             Coord(
-                Idx[1](),
-                Idx[input_height](),
-                Idx[input_width](),
-                Idx[num_channels](),
+                Idx[1],
+                Idx[input_height],
+                Idx[input_width],
+                Idx[num_channels],
             )
         ),
     )
@@ -422,10 +413,10 @@ def bench_stencil_max_pool[
         d_output_buf,
         row_major(
             Coord(
-                Idx[1](),
-                RuntimeInt(Scalar[DType.int64](output_height)),
-                RuntimeInt(Scalar[DType.int64](output_width)),
-                Idx[num_channels](),
+                Idx[1],
+                Int64(output_height),
+                Int64(output_width),
+                Idx[num_channels],
             )
         ),
     )
@@ -436,50 +427,42 @@ def bench_stencil_max_pool[
 
     def map_fn_gpu(
         point: IndexList[stencil_rank, ...],
-    ) register_passable {} -> Tuple[
-        IndexList[stencil_rank], IndexList[stencil_rank]
-    ]:
+    ) {} -> Tuple[IndexList[stencil_rank], IndexList[stencil_rank]]:
         var lower_bound = IndexList[stencil_rank](point[0], point[1])
         var upper_bound = IndexList[stencil_rank](
             point[0] + pool_window_h, point[1] + pool_window_w
         )
         return lower_bound, upper_bound
 
-    def dilation_fn_gpu(dim: Int) register_passable {} -> Int:
+    def dilation_fn_gpu(dim: Int) {} -> Int:
         return dilation
 
     @always_inline
     def load_fn_gpu[
         simd_width: Int, dtype: DType
-    ](point: IndexList[rank, ...]) register_passable {
-        var d_input,
-    } -> SIMD[
-        dtype, simd_width
-    ]:
+    ](point: IndexList[rank, ...]) {var d_input,} -> SIMD[dtype, simd_width]:
         return rebind[SIMD[dtype, simd_width]](
             d_input.load_linear[width=simd_width](point)
         )
 
     def max_pool_compute_init_gpu[
         simd_width: Int
-    ]() register_passable {} -> SIMD[dtype, simd_width]:
+    ]() {} -> SIMD[dtype, simd_width]:
         return min_or_neg_inf[dtype]()
 
     def max_pool_compute_gpu[
-        simd_width: Int
+        simd_width: SIMDSize
     ](
         point: IndexList[rank, ...],
         val: SIMD[dtype, simd_width],
         result: SIMD[dtype, simd_width],
-    ) register_passable {} -> SIMD[dtype, simd_width]:
+    ) {} -> SIMD[dtype, simd_width]:
         return max(val, result)
 
     @always_inline
     def max_pool_compute_finalize_gpu[
-        simd_width: Int
-    ](
-        point: IndexList[rank, ...], val: SIMD[dtype, simd_width]
-    ) register_passable {
+        simd_width: SIMDSize
+    ](point: IndexList[rank, ...], val: SIMD[dtype, simd_width]) {
         var d_output,
     }:
         d_output.store_linear(point, val)
@@ -541,7 +524,7 @@ def bench_stencil_max_pool[
         return min_or_neg_inf[dtype]()
 
     def max_pool_compute_cpu[
-        simd_width: Int
+        simd_width: SIMDSize
     ](
         point: IndexList[rank, ...],
         val: SIMD[dtype, simd_width],
@@ -551,7 +534,7 @@ def bench_stencil_max_pool[
 
     @always_inline
     def max_pool_compute_finalize_cpu[
-        simd_width: Int
+        simd_width: SIMDSize
     ](point: IndexList[rank, ...], val: SIMD[dtype, simd_width]) {
         var h_output_ref,
     }:
@@ -651,19 +634,17 @@ def bench_stencil_avg_pool_padded[
     var h_input_ptr = List(length=input_size, fill=Scalar[dtype](0))
     var h_input = TileTensor(
         h_input_ptr,
-        row_major(
-            Coord(Idx[1](), Idx[input_height](), Idx[input_width](), Idx[1]())
-        ),
+        row_major(Coord(Idx[1], Idx[input_height], Idx[input_width], Idx[1])),
     )
     var h_output_ptr = List(length=output_size, fill=Scalar[dtype](0))
     var h_output = TileTensor(
         h_output_ptr,
         row_major(
             Coord(
-                Idx[1](),
-                RuntimeInt(Scalar[DType.int64](output_height)),
-                RuntimeInt(Scalar[DType.int64](output_width)),
-                Idx[1](),
+                Idx[1],
+                Int64(output_height),
+                Int64(output_width),
+                Idx[1],
             )
         ),
     )
@@ -672,10 +653,10 @@ def bench_stencil_avg_pool_padded[
         h_output_ref_ptr,
         row_major(
             Coord(
-                Idx[1](),
-                RuntimeInt(Scalar[DType.int64](output_height)),
-                RuntimeInt(Scalar[DType.int64](output_width)),
-                Idx[1](),
+                Idx[1],
+                Int64(output_height),
+                Int64(output_width),
+                Idx[1],
             )
         ),
     )
@@ -690,10 +671,10 @@ def bench_stencil_avg_pool_padded[
         d_input_buf,
         row_major(
             Coord(
-                Idx[1](),
-                Idx[input_height](),
-                Idx[input_width](),
-                Idx[1](),
+                Idx[1],
+                Idx[input_height],
+                Idx[input_width],
+                Idx[1],
             )
         ),
     )
@@ -702,10 +683,10 @@ def bench_stencil_avg_pool_padded[
         d_output_buf,
         row_major(
             Coord(
-                Idx[1](),
-                RuntimeInt(Scalar[DType.int64](output_height)),
-                RuntimeInt(Scalar[DType.int64](output_width)),
-                Idx[1](),
+                Idx[1],
+                Int64(output_height),
+                Int64(output_width),
+                Idx[1],
             )
         ),
     )
@@ -716,9 +697,7 @@ def bench_stencil_avg_pool_padded[
 
     def map_fn_gpu(
         point: IndexList[stencil_rank, ...],
-    ) register_passable {} -> Tuple[
-        IndexList[stencil_rank], IndexList[stencil_rank]
-    ]:
+    ) {} -> Tuple[IndexList[stencil_rank], IndexList[stencil_rank]]:
         var lower_bound = IndexList[stencil_rank](
             point[0] - pad_h, point[1] - pad_w
         )
@@ -727,41 +706,35 @@ def bench_stencil_avg_pool_padded[
         )
         return lower_bound, upper_bound
 
-    def dilation_fn_gpu(dim: Int) register_passable {} -> Int:
+    def dilation_fn_gpu(dim: Int) {} -> Int:
         return dilation
 
     @always_inline
     def load_fn_gpu[
         simd_width: Int, dtype: DType
-    ](point: IndexList[rank, ...]) register_passable {
-        var d_input,
-    } -> SIMD[
-        dtype, simd_width
-    ]:
+    ](point: IndexList[rank, ...]) {var d_input,} -> SIMD[dtype, simd_width]:
         return rebind[SIMD[dtype, simd_width]](
             d_input.load_linear[width=simd_width](point)
         )
 
     def avg_pool_compute_init_gpu[
         simd_width: Int
-    ]() register_passable {} -> SIMD[dtype, simd_width]:
+    ]() {} -> SIMD[dtype, simd_width]:
         return SIMD[dtype, simd_width](0)
 
     def avg_pool_compute_gpu[
-        simd_width: Int
+        simd_width: SIMDSize
     ](
         point: IndexList[rank, ...],
         val: SIMD[dtype, simd_width],
         result: SIMD[dtype, simd_width],
-    ) register_passable {} -> SIMD[dtype, simd_width]:
+    ) {} -> SIMD[dtype, simd_width]:
         return val + result
 
     @always_inline
     def avg_pool_compute_finalize_gpu[
-        simd_width: Int
-    ](
-        point: IndexList[rank, ...], val: SIMD[dtype, simd_width]
-    ) register_passable {
+        simd_width: SIMDSize
+    ](point: IndexList[rank, ...], val: SIMD[dtype, simd_width]) {
         var d_output,
     }:
         var res = val / Scalar[dtype](pool_window_h * pool_window_w)
@@ -826,7 +799,7 @@ def bench_stencil_avg_pool_padded[
         return SIMD[dtype, simd_width](0)
 
     def avg_pool_compute_cpu[
-        simd_width: Int
+        simd_width: SIMDSize
     ](
         point: IndexList[rank, ...],
         val: SIMD[dtype, simd_width],
@@ -836,7 +809,7 @@ def bench_stencil_avg_pool_padded[
 
     @always_inline
     def avg_pool_compute_finalize_cpu[
-        simd_width: Int
+        simd_width: SIMDSize
     ](point: IndexList[rank, ...], val: SIMD[dtype, simd_width]) {
         var h_output_ref,
     }:

@@ -17,33 +17,21 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from max.pipelines.lib import MAXModelConfig, PipelineConfig
-from max.pipelines.lib.interfaces.arch_config import ArchConfig
-from max.pipelines.lib.utils import upper_bounded_default
+from max.pipelines.lib.interfaces.arch_config import (
+    ArchConfig,
+    ArchConfigWithBoundedMaxSeqLen,
+)
 from transformers import AutoConfig
 from typing_extensions import Self, override
 
 
 @dataclass(kw_only=True)
-class MPNetConfig(ArchConfig):
+class MPNetConfig(ArchConfigWithBoundedMaxSeqLen, ArchConfig):
     """Configuration for MPNet V3 models."""
 
     pool_embeddings: bool
     huggingface_config: AutoConfig
-    pipeline_config: PipelineConfig
-
-    def get_max_seq_len(self) -> int:
-        try:
-            return upper_bounded_default(
-                upper_bound=self.huggingface_config.max_position_embeddings,
-                default=self.pipeline_config.model.max_length,
-            )
-        except ValueError as e:
-            raise ValueError(
-                "Unable to infer max_length for MPNet, the provided "
-                f"max_length ({self.pipeline_config.model.max_length}) exceeds the "
-                f"model's max_position_embeddings "
-                f"({self.huggingface_config.max_position_embeddings})."
-            ) from e
+    max_seq_len: int
 
     @override
     @classmethod
@@ -65,5 +53,7 @@ class MPNetConfig(ArchConfig):
         return cls(
             pool_embeddings=model_config.pool_embeddings,
             huggingface_config=huggingface_config,
-            pipeline_config=pipeline_config,
+            max_seq_len=cls.calculate_max_seq_len(
+                pipeline_config, huggingface_config, model_config
+            ),
         )

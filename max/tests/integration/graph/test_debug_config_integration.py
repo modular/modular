@@ -450,3 +450,244 @@ class TestReaderMigration:
             env_overrides={"MODULAR_DEBUG": "source-tracebacks"},
         )
         _assert_pass(result)
+
+    def test_module_to_mlir_source_locations(self) -> None:
+        """Module._to_mlir_str(source_locations=True) annotates each op with the
+        Python frames it was built from, and leaves the module unchanged."""
+        result = _run_script(
+            """\
+            from max.dtype import DType
+            from max.graph import DeviceRef, Graph, TensorType
+
+            graph = Graph(
+                "tiny_add_source_locations",
+                forward=lambda x, y: x + y,
+                input_types=[
+                    TensorType(
+                        dtype=DType.float32,
+                        shape=(4,),
+                        device=DeviceRef.CPU(),
+                    ),
+                    TensorType(
+                        dtype=DType.float32,
+                        shape=(4,),
+                        device=DeviceRef.CPU(),
+                    ),
+                ],
+            )
+            module = graph.module
+
+            before = module.mlir_module.asm(enable_debug_info=True)
+            with_locs = module._to_mlir_str(source_locations=True)
+            after = module.mlir_module.asm(enable_debug_info=True)
+
+            # The serialized text traces ops back to the building Python code.
+            assert ".py" in with_locs, with_locs
+            # The flag gates it: the plain form carries no source locations.
+            assert ".py" not in module._to_mlir_str(source_locations=False)
+            # Serializing does not mutate the module: its own locations are
+            # untouched and still carry no materialized Python frames.
+            assert before == after
+            assert ".py" not in after
+            print("PASS")
+            """,
+            env_overrides={"MODULAR_DEBUG": "source-tracebacks"},
+        )
+        _assert_pass(result)
+
+    def test_ir_output_dir_via_modular_debug_dumps_ir(
+        self, tmp_path: Path
+    ) -> None:
+        """Compiling a graph under `MODULAR_DEBUG=ir-output-dir=...`
+        should write per-stage MLIR files into the configured directory.
+
+        Regression test for GEX-3684: prior to the fix the option was
+        plumbed into `InferenceSession.debug.ir_output_dir` but no
+        compiler stage actually consulted it, so files were silently
+        not written.
+        """
+        ir_dir = tmp_path / "ir-dump"
+        ir_dir.mkdir()
+        # Disable the MEF cache so the gc-pipeline actually runs (and
+        # therefore writes IR); a previous test in the same shard could
+        # otherwise have cached an MEF for the same graph and skipped
+        # compilation entirely.
+        result = _run_script(
+            """\
+            import numpy as np
+            from max.driver import CPU
+            from max.dtype import DType
+            from max.engine import InferenceSession
+            from max.graph import DeviceRef, Graph, TensorType
+
+            graph = Graph(
+                "tiny_add_modular_debug_dump",
+                forward=lambda x, y: x + y,
+                input_types=[
+                    TensorType(
+                        dtype=DType.float32,
+                        shape=(4,),
+                        device=DeviceRef.CPU(),
+                    ),
+                    TensorType(
+                        dtype=DType.float32,
+                        shape=(4,),
+                        device=DeviceRef.CPU(),
+                    ),
+                ],
+            )
+            session = InferenceSession(devices=[CPU()])
+            model = session.load(graph)
+            model.execute(
+                np.ones((4,), dtype=np.float32),
+                np.ones((4,), dtype=np.float32),
+            )
+            print("PASS")
+            """,
+            env_overrides={
+                "MODULAR_DEBUG": f"ir-output-dir={ir_dir}",
+                "MODULAR_MAX_ENABLE_MODEL_IR_CACHE": "false",
+            },
+        )
+        _assert_pass(result)
+        files = sorted(p.name for p in ir_dir.iterdir())
+        assert files, (
+            "Expected per-stage IR dumps in ir-output-dir, but found nothing.\n"
+            f"stdout: {result.stdout}\nstderr: {result.stderr}"
+        )
+        # The pipeline writes one file per stage with extensions like
+        # `.mo.mlir`, `.mo-pre-mogg.mlir`, `.mogg.mlir`, etc.  We just
+        # require at least one MLIR file landed.
+        assert any(name.endswith(".mlir") for name in files), (
+            f"Expected at least one .mlir file in {ir_dir}, got {files}"
+        )
+        # Regression test for GEX-3810: the `mogg-emit-mojo` stage must also
+        # honor `ir-output-dir` and write the emitted Mojo text, not just the
+        # MLIR files. Prior to the fix the `.mojo` dump only landed when the
+        # legacy `max.temps_dir` key was set.
+        assert any(name.endswith(".mojo") for name in files), (
+            f"Expected an emitted .mojo file in {ir_dir}, got {files}"
+        )
+
+    def test_source_tracebacks_appear_in_ir_dump(self, tmp_path: Path) -> None:
+        """With source-tracebacks and ir-output-dir both on, the post-fusion
+        dump carries the Python call site that built each op.
+
+        Builds a one-op graph inside a distinctively named function and
+        asserts that name shows up in the mogg-pre-mgp dump. This covers
+        the two pieces the kernel-map extractor depends on: the dump is
+        printed with debug info, and the OpaqueLoc tracebacks are converted
+        to printable form before that dump is written.
+        """
+        ir_dir = tmp_path / "traceback-ir-dump"
+        ir_dir.mkdir()
+        result = _run_script(
+            """\
+            from max.driver import CPU
+            from max.dtype import DType
+            from max.engine import InferenceSession
+            from max.graph import DeviceRef, Graph, TensorType
+
+            def build_add_op_for_traceback_check(x, y):
+                return x + y
+
+            graph = Graph(
+                "tiny_add_traceback_dump",
+                forward=build_add_op_for_traceback_check,
+                input_types=[
+                    TensorType(
+                        dtype=DType.float32,
+                        shape=(4,),
+                        device=DeviceRef.CPU(),
+                    ),
+                    TensorType(
+                        dtype=DType.float32,
+                        shape=(4,),
+                        device=DeviceRef.CPU(),
+                    ),
+                ],
+            )
+            session = InferenceSession(devices=[CPU()])
+            session.load(graph)
+            print("PASS")
+            """,
+            env_overrides={
+                "MODULAR_DEBUG": f"source-tracebacks,ir-output-dir={ir_dir}",
+                "MODULAR_MAX_ENABLE_MODEL_IR_CACHE": "false",
+            },
+        )
+        _assert_pass(result)
+        dumps = sorted(ir_dir.glob("*.mogg-pre-mgp.mlir"))
+        assert dumps, (
+            f"Expected a mogg-pre-mgp dump in {ir_dir}, got "
+            f"{sorted(p.name for p in ir_dir.iterdir())}"
+        )
+        text = "".join(p.read_text() for p in dumps)
+        assert "build_add_op_for_traceback_check" in text, (
+            "Expected the op-building function name in the dump's location "
+            "tracebacks, but it was not found."
+        )
+
+    def test_ir_output_dir_via_legacy_temps_dir_still_works(
+        self, tmp_path: Path
+    ) -> None:
+        """`MODULAR_MAX_TEMPS_DIR` continues to drive IR dumping after
+        the migration to `max-debug.ir-output-dir`.
+        """
+        ir_dir = tmp_path / "legacy-ir-dump"
+        ir_dir.mkdir()
+        # Disable the MEF cache so the gc-pipeline actually runs (and
+        # therefore writes IR); a previous test in the same shard could
+        # otherwise have cached an MEF for the same graph and skipped
+        # compilation entirely.
+        result = _run_script(
+            """\
+            import numpy as np
+            from max.driver import CPU
+            from max.dtype import DType
+            from max.engine import InferenceSession
+            from max.graph import DeviceRef, Graph, TensorType
+
+            graph = Graph(
+                "tiny_add_legacy_dump",
+                forward=lambda x, y: x + y,
+                input_types=[
+                    TensorType(
+                        dtype=DType.float32,
+                        shape=(4,),
+                        device=DeviceRef.CPU(),
+                    ),
+                    TensorType(
+                        dtype=DType.float32,
+                        shape=(4,),
+                        device=DeviceRef.CPU(),
+                    ),
+                ],
+            )
+            session = InferenceSession(devices=[CPU()])
+            model = session.load(graph)
+            model.execute(
+                np.ones((4,), dtype=np.float32),
+                np.ones((4,), dtype=np.float32),
+            )
+            print("PASS")
+            """,
+            env_overrides={
+                "MODULAR_MAX_TEMPS_DIR": str(ir_dir),
+                "MODULAR_MAX_ENABLE_MODEL_IR_CACHE": "false",
+            },
+        )
+        _assert_pass(result)
+        files = sorted(p.name for p in ir_dir.iterdir())
+        assert files, (
+            "Expected per-stage IR dumps under MODULAR_MAX_TEMPS_DIR.\n"
+            f"stdout: {result.stdout}\nstderr: {result.stderr}"
+        )
+        assert any(name.endswith(".mlir") for name in files), (
+            f"Expected at least one .mlir file in {ir_dir}, got {files}"
+        )
+        # The legacy temps key has always emitted the Mojo text; keep it
+        # covered so the two paths stay at parity (see GEX-3810).
+        assert any(name.endswith(".mojo") for name in files), (
+            f"Expected an emitted .mojo file in {ir_dir}, got {files}"
+        )

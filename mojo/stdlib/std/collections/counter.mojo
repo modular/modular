@@ -25,6 +25,7 @@ counted sets, also called bags or multisets, and extend that model by
 supporting negative counts.
 
 """
+from std.builtin.rebind import downcast
 from std.collections.dict import (
     Dict,
     _DictEntryIter,
@@ -40,7 +41,10 @@ from std.utils import Variant
 
 
 @fieldwise_init
-struct Counter[V: KeyElement, H: Hasher = default_hasher](
+struct Counter[
+    V: KeyElement & Copyable & ImplicitlyDeletable,
+    H: Hasher = default_hasher,
+](
     Boolable,
     Copyable,
     Defaultable,
@@ -58,11 +62,11 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
     counts. Mojo's `Counter` follows Python's model, and adds math versatility by
     supporting negative counts.
 
-    The value type must implement the `KeyElement` trait, as its values are
-    stored in a dictionary as keys.
-    The keys' uniform value type are specified statically, unlike a Python
-    `Counter`, which can accept arbitrary value types.
-    They must be hashable for use in the underlying dictionary.
+    The value type must implement the `KeyElement` trait and be `Copyable`, as
+    its values are stored in a dictionary as keys and the API copies elements
+    extensively (e.g., `most_common`, `subtract`, merge ops). The keys' uniform
+    value type must be hashable for use in the
+    underlying dictionary.
 
     Example:
 
@@ -75,7 +79,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
     ```
 
     Parameters:
-        V: The value type to be counted. Currently must be `KeyElement`.
+        V: The value type to be counted. Must be `KeyElement` and `Copyable`.
         H: The type of the hasher in the underlying dictionary.
     """
 
@@ -130,7 +134,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         for item in values:
             self._data[item.copy()] = self._data.get(item, 0) + 1
 
-    def __init__(out self, items: List[Self.V, ...]):
+    def __init__(out self, items: List[Self.V]):
         """Create a `Counter` from an input iterable.
 
         Args:
@@ -151,7 +155,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
             self._data[item.copy()] = self._data.get(item, 0) + 1
 
     @staticmethod
-    def fromkeys(keys: List[Self.V, ...], value: Int) -> Self:
+    def fromkeys(keys: List[Self.V], value: Int) -> Self:
         """Create a new `Counter` from a list of keys and a default value.
 
         Args:
@@ -979,7 +983,9 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
             self[item.key] = self.get(item.key, 0) - item.value
 
 
-struct CountTuple[V: KeyElement](Comparable, Copyable):
+struct CountTuple[V: KeyElement & Copyable & ImplicitlyDeletable](
+    Comparable, Copyable
+):
     """A tuple representing a value and its count in a `Counter`.
 
     Parameters:

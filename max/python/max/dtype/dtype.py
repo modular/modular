@@ -88,7 +88,7 @@ def _from_numpy(dtype: np.dtype[Any]) -> DType:
     """Converts a NumPy dtype to the corresponding DType.
 
     Args:
-        dtype (np.dtype): The NumPy dtype to convert.
+        dtype: The NumPy dtype to convert.
 
     Returns:
         DType: The corresponding DType enum value.

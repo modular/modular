@@ -10,7 +10,7 @@ def _collect_mojoinfo_aspect_impl(target, ctx):
         return []
 
     transitive_import_paths = []
-    transitive_mojopkgs = []
+    transitive_mojodeps = []
 
     # 2. Iterate over specified attributes (e.g., 'deps', 'data') to find dependencies
     #    The aspect definition below will specify which attributes to traverse.
@@ -20,14 +20,14 @@ def _collect_mojoinfo_aspect_impl(target, ctx):
         for dep in attr:
             if MojoInfo in dep:
                 transitive_import_paths.append(dep[MojoInfo].import_paths)
-                transitive_mojopkgs.append(dep[MojoInfo].mojopkgs)
+                transitive_mojodeps.append(dep[MojoInfo].mojodeps)
 
-    # Return a new MojoInfo provider with the aggregated mojopkgs.
+    # Return a new MojoInfo provider with the aggregated mojodeps.
     # This allows transitive collection.
     return [
         MojoInfo(
             import_paths = depset(transitive = transitive_import_paths),
-            mojopkgs = depset(transitive = transitive_mojopkgs),
+            mojodeps = depset(transitive = transitive_mojodeps),
         ),
     ]
 
@@ -46,7 +46,7 @@ def _collect_transitive_mojoinfo_impl(ctx):
     Implementation for the rule that collects MojoInfo using an aspect
     """
     import_paths = []
-    mojopkgs = []
+    mojodeps = []
 
     # The 'deps_to_scan' attribute has the 'collect_data_metadata_aspect' applied to it.
     # Each target listed in 'deps_to_scan' (and their relevant transitive dependencies
@@ -58,12 +58,12 @@ def _collect_transitive_mojoinfo_impl(ctx):
     for dep in ctx.attr.deps_to_scan:
         if MojoInfo in dep:
             import_paths.append(dep[MojoInfo].import_paths)
-            mojopkgs.append(dep[MojoInfo].mojopkgs)
+            mojodeps.append(dep[MojoInfo].mojodeps)
 
     return [
         MojoInfo(
             import_paths = depset(transitive = import_paths),
-            mojopkgs = depset(transitive = mojopkgs),
+            mojodeps = depset(transitive = mojodeps),
         ),
     ]
 

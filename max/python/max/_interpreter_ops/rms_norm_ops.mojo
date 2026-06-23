@@ -14,17 +14,19 @@
 """Mojo kernel wrappers for rms_norm MO interpreter operations."""
 
 from std.os import abort
+from std.gpu.host import DeviceContext
 from std.python import PythonObject
 from std.python.bindings import PythonModuleBuilder
 from std.sys.info import has_accelerator
 
 from std.algorithm.functional import IndexList
 from std.math import sqrt
-from std.memory import OpaquePointer
-from std.runtime.asyncrt import DeviceContextPtr
-from tensor import ManagedTensorSlice
-from tensor.io_spec import Input
-from compiler_internal import StaticTensorSpec
+
+from layout import Coord, coord_to_index_list
+
+from extensibility import ManagedTensorSlice
+from extensibility import Input
+from extensibility import StaticTensorSpec
 from nn.normalization import rms_norm as nn_rms_norm
 
 from op_utils import _get_dtype, _get_buffer_ptr, _get_ctx, _get_shape, MAX_RANK
@@ -36,7 +38,7 @@ from op_utils import _get_dtype, _get_buffer_ptr, _get_ctx, _get_shape, MAX_RANK
 
 
 @export
-def PyInit_rms_norm_ops() -> PythonObject:
+def PyInit_rms_norm_ops() abi("C") -> PythonObject:
     """Create a Python module with rms_norm kernel function bindings."""
     try:
         var b = PythonModuleBuilder("rms_norm_ops")
@@ -58,9 +60,9 @@ def PyInit_rms_norm_ops() -> PythonObject:
 def _rms_norm_cpu[
     dtype: DType,
 ](
-    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    in_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    gamma_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    out_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    in_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    gamma_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     batch_dim: Int,
     feature_dim: Int,
     epsilon: Scalar[dtype],
@@ -110,14 +112,14 @@ def rms_norm_op[
     dtype: DType,
     multiply_before_cast: Bool,
 ](
-    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    in_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    gamma_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    out_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    in_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    gamma_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     shape: IndexList[2],
     gamma_shape: IndexList[1],
     epsilon: Scalar[dtype],
     weight_offset: Scalar[dtype],
-    ctx: Optional[OpaquePointer[MutExternalOrigin]],
+    ctx: DeviceContext,
 ) raises where dtype.is_floating_point():
     """RMS normalization on a rank-2 normalized tensor.
 
@@ -133,12 +135,12 @@ def rms_norm_op[
         gamma_shape: The gamma shape [feature_dim].
         epsilon: Small constant for numerical stability.
         weight_offset: Value added to weight before multiplication.
-        ctx: Device context pointer (null for CPU).
+        ctx: Device context.
     """
     var batch_dim = shape[0]
     var feature_dim = shape[1]
 
-    if not ctx:
+    if ctx.api() == "cpu":
         _rms_norm_cpu[dtype](
             out_ptr,
             in_ptr,
@@ -152,14 +154,15 @@ def rms_norm_op[
     else:
         comptime if has_accelerator():
             comptime if dtype in (DType.float32, DType.float16, DType.bfloat16):
-
+                # `rms_norm` migrated to a `Coord` input/shape boundary
+                # (softmax PR #88203). This lambda does runtime index
+                # subscripts, so recover the `IndexList` via
+                # `coord_to_index_list` before computing the flat offset.
                 @always_inline
                 @parameter
                 @__copy_capture(in_ptr, feature_dim)
-                def input_fn[
-                    width: Int, rank: Int
-                ](coords: IndexList[rank]) -> SIMD[dtype, width]:
-                    var c = rebind[IndexList[2]](coords)
+                def input_fn[width: Int](coords: Coord) -> SIMD[dtype, width]:
+                    var c = rebind[IndexList[2]](coord_to_index_list(coords))
                     var flat_idx = c[0] * feature_dim + c[1]
                     return in_ptr.load[width=width](flat_idx)
 
@@ -167,7 +170,7 @@ def rms_norm_op[
                 @parameter
                 @__copy_capture(out_ptr, feature_dim)
                 def output_fn[
-                    width: Int, rank: Int, alignment: Int
+                    width: SIMDSize, rank: Int, alignment: Int
                 ](coords: IndexList[rank], val: SIMD[dtype, width]):
                     var c = rebind[IndexList[2]](coords)
                     var flat_idx = c[0] * feature_dim + c[1]
@@ -180,8 +183,6 @@ def rms_norm_op[
                     io_spec=Input, static_spec=gamma_spec
                 ](gamma_ptr, gamma_shape)
 
-                var device_ctx = DeviceContextPtr(ctx.unsafe_value())
-
                 nn_rms_norm[
                     dtype,
                     2,
@@ -190,11 +191,11 @@ def rms_norm_op[
                     target="gpu",
                     multiply_before_cast=multiply_before_cast,
                 ](
-                    shape,
+                    Coord(shape),
                     gamma_tensor.to_tile_tensor[DType.int64](),
                     epsilon,
                     weight_offset,
-                    device_ctx,
+                    ctx,
                 )
 
             else:
@@ -222,7 +223,7 @@ def _dispatch_rms_norm[
     weight_offset_buffer: PythonObject,
     in_shape_py: PythonObject,
     rank: Int,
-    ctx: Optional[OpaquePointer[MutExternalOrigin]],
+    ctx: DeviceContext,
 ) raises where dtype.is_floating_point():
     """Type-specialized RMS norm dispatch helper.
 

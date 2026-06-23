@@ -16,12 +16,13 @@ from __future__ import annotations
 import logging
 import random
 from collections.abc import Sequence
-from typing import Any
+from typing import Any, Literal
 
 import msgspec
 from huggingface_hub import hf_hub_download
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
+from ._tokenizer_pool import TokenizerPool
 from .distribution import DistributionParameter
 from .huggingface import HuggingFaceBenchmarkDataset
 from .multiturn_distribution_fit import build_chat_samples_from_user_text_pool
@@ -31,13 +32,15 @@ from .types import (
     ChatSession,
     RequestSamples,
     SampledRequest,
+    SessionMessage,
+    TextContentBlock,
 )
 
 logger = logging.getLogger(__name__)
 
 
 class MessageContentPart(msgspec.Struct):
-    type: str
+    type: Literal["text"]
     text: str = ""
 
 
@@ -60,6 +63,36 @@ class Session(msgspec.Struct):
 
 class AgenticCodeData(msgspec.Struct):
     sessions: list[Session]
+
+
+def _to_chat_messages(messages: list[Message]) -> list[ChatMessage]:
+    """Converts a list of dataset ``Message`` objects to ``ChatMessage`` objects.
+
+    Flattens list-of-parts content into a list of ``TextContentBlock`` values;
+    plain string content is passed through as-is (defaulting to ``""`` when
+    ``None``).
+
+    Args:
+        messages: Raw messages decoded from the agentic-code dataset.
+
+    Returns:
+        A list of ``ChatMessage`` objects suitable for use in a
+        ``SampledRequest``.
+    """
+    return [
+        ChatMessage(
+            role=msg.role,
+            content=(
+                [
+                    TextContentBlock(type=part.type, text=part.text)
+                    for part in msg.content
+                ]
+                if isinstance(msg.content, list)
+                else (msg.content or "")
+            ),
+        )
+        for msg in messages
+    ]
 
 
 class AgenticCodeBenchmarkDataset(HuggingFaceBenchmarkDataset):
@@ -141,7 +174,7 @@ class AgenticCodeBenchmarkDataset(HuggingFaceBenchmarkDataset):
             )
             sampled.append(
                 SampledRequest(
-                    prompt_formatted=msgspec.to_builtins(messages),
+                    prompt_formatted=_to_chat_messages(messages),
                     prompt_len=input_tokens,
                     output_len=out_len,
                     encoded_images=[],
@@ -211,6 +244,7 @@ class AgenticCodeBenchmarkDataset(HuggingFaceBenchmarkDataset):
         max_turns_per_session: int | None = None,
         shuffle: bool = True,
         *,
+        pool: TokenizerPool | None = None,
         fit_length_distributions: bool = False,
         num_turns: DistributionParameter | None = None,
         input_len: DistributionParameter | None = None,
@@ -258,9 +292,9 @@ class AgenticCodeBenchmarkDataset(HuggingFaceBenchmarkDataset):
         )
 
         if fit_length_distributions:
-            if tokenizer is None:
+            if pool is None:
                 raise ValueError(
-                    "tokenizer is required for agentic-code when "
+                    "pool is required for agentic-code when "
                     "fit_length_distributions=True"
                 )
             assert num_turns is not None
@@ -270,7 +304,7 @@ class AgenticCodeBenchmarkDataset(HuggingFaceBenchmarkDataset):
             if shuffle:
                 random.shuffle(user_texts)
             return build_chat_samples_from_user_text_pool(
-                tokenizer=tokenizer,
+                pool=pool,
                 user_text_pool=user_texts,
                 num_sessions=num_sessions,
                 num_turns=num_turns,
@@ -289,9 +323,9 @@ class AgenticCodeBenchmarkDataset(HuggingFaceBenchmarkDataset):
             data = msgspec.json.decode(f.read(), type=AgenticCodeData)
 
         # Build all valid sessions, then shuffle and slice.
-        all_messages: list[list[ChatMessage]] = []
+        all_messages: list[list[SessionMessage]] = []
         for session in data.sessions:
-            messages: list[ChatMessage] = []
+            messages: list[SessionMessage] = []
             turns_added = 0
             for turn in session.turns:
                 if (
@@ -338,14 +372,14 @@ class AgenticCodeBenchmarkDataset(HuggingFaceBenchmarkDataset):
                     continue
 
                 messages.append(
-                    ChatMessage(
+                    SessionMessage(
                         source="user",
                         content=user_text,
                         num_tokens=input_tokens,
                     )
                 )
                 messages.append(
-                    ChatMessage(
+                    SessionMessage(
                         source="assistant",
                         content="",  # filled by live model response
                         num_tokens=output_tokens,

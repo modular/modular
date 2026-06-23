@@ -137,7 +137,10 @@ __extension Attention:
             self.k,
             self.batch_idx,
             self.kv_head_idx(),
-            KBufT.SmemParentType(self.k_smem_ptr, KBufT._SmemParentLayout()),
+            KBufT.SmemParentType(
+                self.k_smem_ptr.as_unsafe_any_origin(),
+                KBufT._SmemParentLayout(),
+            ),
             self.num_keys,
             warp_id,
         )
@@ -145,7 +148,10 @@ __extension Attention:
             self.v,
             self.batch_idx,
             self.kv_head_idx(),
-            VBufT.SmemParentType(self.v_smem_ptr, VBufT._SmemParentLayout()),
+            VBufT.SmemParentType(
+                self.v_smem_ptr.as_unsafe_any_origin(),
+                VBufT._SmemParentLayout(),
+            ),
             self.num_keys,
             warp_id,
         )
@@ -199,10 +205,12 @@ __extension Attention:
         # =============================================================
 
         var score_row = UInt32(self.mask_block_row + UInt32(self.start_pos))
-        var start_col = self.mask.start_column[Self.BM, Self.BN, 1](score_row)
+        var start_col = self.mask.start_column[Self.BM, Self.BN, 1](
+            UInt32(self.batch_idx), score_row
+        )
         var num_tiles = Int(
             self.mask.last_masked_set_end[Self.BM, Self.BN, 1](
-                score_row, UInt32(self.num_keys)
+                UInt32(self.batch_idx), score_row, UInt32(self.num_keys)
             )
         )
 

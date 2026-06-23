@@ -27,15 +27,22 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import numpy.typing as npt
-from max.interfaces import (
+from max.pipelines.context import (
+    GrammarEnforcementState,
     ImageMetadata,
+    TokenBuffer,
+)
+from max.pipelines.context.exceptions import PromptTooLongError
+from max.pipelines.lib import TextAndVisionTokenizer, max_tokens_to_generate
+from max.pipelines.lib.tokenizer import (
+    resolve_single_special_token,
+    run_with_default_executor,
+)
+from max.pipelines.modeling.types import (
     TextGenerationRequest,
     TextGenerationRequestMessage,
     TextGenerationRequestTool,
-    TokenBuffer,
 )
-from max.pipelines.lib import TextAndVisionTokenizer, max_tokens_to_generate
-from max.pipelines.lib.tokenizer import run_with_default_executor
 from max.support.image import find_contiguous_ranges, hash_image
 from transformers import AutoTokenizer
 
@@ -54,10 +61,86 @@ logger = logging.getLogger("max.pipelines")
 # Kimi K2.5 special token for image placeholder padding.
 _MEDIA_PAD_TOKEN = "<|media_pad|>"
 
+
+def _sanitize_kimi_tool_schemas(
+    tools: list[TextGenerationRequestTool] | None,
+) -> list[TextGenerationRequestTool] | None:
+    """Rewrite tool schemas to use only constructs Kimi's HF tokenizer supports.
+
+    The Kimi-bundled ``tool_declaration_ts.py:_parse_parameter_type``
+    only recognizes ``$ref``, ``anyOf``, ``enum``, ``type``, and ``{}``.
+    A tool schema containing ``oneOf`` or a bare ``{"const": X}`` makes
+    it raise ``ValueError``; ``tokenization_kimi.py`` then catches the
+    exception, prints a warning, and renders the prompt **without any
+    tool declarations**. Tool calling silently fails for that request
+    even though the server returned 200.
+
+    This function walks each tool's schema (any depth, all standard
+    JSON Schema combinator/container keys) and applies two
+    equivalence-preserving rewrites:
+
+      * ``oneOf`` → ``anyOf`` (concatenated if both keys are present).
+      * ``{"const": X}`` → ``{"enum": [X]}``.
+
+    For tool-call argument schemas these transforms preserve semantics:
+    JSON Schema defines ``const: X`` as exactly equivalent to
+    ``enum: [X]``, and a value that matches a ``oneOf`` branch also
+    matches the corresponding ``anyOf`` (the difference between the
+    combinators — exclusive vs. inclusive matching — is not enforced
+    by either Kimi's argument grammar or downstream tool runtimes).
+    """
+    if not tools:
+        return tools
+    return [
+        TextGenerationRequestTool(
+            type=tool["type"],
+            function={
+                **tool["function"],
+                "parameters": _sanitize_kimi_schema_node(
+                    tool["function"].get("parameters", {})
+                ),
+            },
+        )
+        for tool in tools
+    ]
+
+
+def _sanitize_kimi_schema_node(node: Any) -> Any:
+    """Recursive helper for :func:`_sanitize_kimi_tool_schemas`."""
+    if isinstance(node, dict):
+        out: dict[str, Any] = {}
+        any_of_branches: list[Any] = []
+        for key, value in node.items():
+            if key in ("oneOf", "anyOf"):
+                sanitized = _sanitize_kimi_schema_node(value)
+                if isinstance(sanitized, list):
+                    any_of_branches.extend(sanitized)
+                continue
+            if key == "const":
+                # Defer to the ``enum`` conversion below so an explicit
+                # ``enum`` wins if both are present.
+                continue
+            out[key] = _sanitize_kimi_schema_node(value)
+        if any_of_branches:
+            out["anyOf"] = any_of_branches
+        if "const" in node and "enum" not in node:
+            out["enum"] = [node["const"]]
+        return out
+    if isinstance(node, list):
+        return [_sanitize_kimi_schema_node(item) for item in node]
+    return node
+
+
 # Chat turn terminator. The HF tokenizer lists [EOS] as eos_token, but the
 # chat format ends assistant turns with <|im_end|>.  We need both in the
 # EOS set so generation stops.
 _IM_END_TOKEN = "<|im_end|>"
+
+# Reasoning span delimiters. Both are special tokens in the Kimi K2.5
+# tokenizer vocab; resolving them at init lets us implement the
+# ``ReasoningPipelineTokenizer`` protocol.
+_THINK_START_TOKEN = "<think>"
+_THINK_END_TOKEN = "</think>"
 
 
 class KimiK2_5VLTokenizer(TextAndVisionTokenizer):
@@ -119,6 +202,13 @@ class KimiK2_5VLTokenizer(TextAndVisionTokenizer):
         self.media_pad_token_id: int = media_pad_id
         self.vision_token_ids = [self.media_pad_token_id]
 
+        self._reasoning_start_token_id: int = resolve_single_special_token(
+            self.delegate, _THINK_START_TOKEN
+        )
+        self._reasoning_end_token_id: int = resolve_single_special_token(
+            self.delegate, _THINK_END_TOKEN
+        )
+
         # Build the custom vision processor from HF config.
         media_proc_cfg = getattr(config, "media_proc_cfg", None)
         self.vision_processor = KimiK2_5VisionProcessor(
@@ -130,6 +220,16 @@ class KimiK2_5VLTokenizer(TextAndVisionTokenizer):
         self.rope_max_width: int = int(
             getattr(vision_cfg, "rope_max_width", 512)
         )
+
+    @property
+    def reasoning_start_token_id(self) -> int:
+        """Token id of ``<think>`` (opens a Kimi K2.5 reasoning span)."""
+        return self._reasoning_start_token_id
+
+    @property
+    def reasoning_end_token_id(self) -> int:
+        """Token id of ``</think>`` (closes a Kimi K2.5 reasoning span)."""
+        return self._reasoning_end_token_id
 
     async def encode(
         self, prompt: str | Sequence[int], add_special_tokens: bool = True
@@ -166,10 +266,7 @@ class KimiK2_5VLTokenizer(TextAndVisionTokenizer):
 
             max_length = self.max_length or self.delegate.model_max_length
             if max_length and len(encoded_prompt) > max_length:
-                raise ValueError(
-                    f"Input string is larger than tokenizer's max length"
-                    f" ({len(encoded_prompt)} > {max_length})."
-                )
+                raise PromptTooLongError(len(encoded_prompt), max_length)
         else:
             encoded_prompt = np.array(list(prompt))
 
@@ -179,13 +276,37 @@ class KimiK2_5VLTokenizer(TextAndVisionTokenizer):
         self,
         messages: list[TextGenerationRequestMessage],
         tools: list[TextGenerationRequestTool] | None = None,
+        **chat_template_options: Any,
     ) -> str:
-        """Applies the tokenizer's chat template to messages."""
+        """Applies the tokenizer's chat template to messages.
+
+        Tools are passed through :func:`_sanitize_kimi_tool_schemas` to
+        rewrite JSON Schema constructs that Kimi's HF tokenizer code
+        (``tool_declaration_ts.py``) does not recognize — without the
+        rewrite, tools containing ``oneOf`` or a bare ``{"const": X}``
+        cause the HF code to raise, swallow the exception, and render
+        the prompt with no tool declarations. The model then has no
+        idea those tools exist and silently fails to call them.
+
+        Args:
+            messages: List of messages for the chat template.
+            tools: Optional tools available for the model to invoke.
+            **chat_template_options: Template options to forward to the Jinja
+                template. Merged with ``add_generation_prompt=True`` default.
+                Kimi K2.5 uses ``thinking=False`` to disable thinking mode.
+
+        Returns:
+            The templated chat message as a string.
+        """
+        chat_template_options = {
+            "add_generation_prompt": True,
+            **chat_template_options,
+        }
         templated = self.delegate.apply_chat_template(
-            [msg.model_dump() for msg in messages],
+            [msg.model_dump(exclude_none=True) for msg in messages],
             tokenize=False,
-            tools=tools,
-            add_generation_prompt=True,
+            tools=_sanitize_kimi_tool_schemas(tools),
+            **chat_template_options,
         )
         assert isinstance(templated, str)
         return templated
@@ -206,7 +327,10 @@ class KimiK2_5VLTokenizer(TextAndVisionTokenizer):
         if not request.images:
             return {}
 
-        pil_images = [_to_pil(img_bytes) for img_bytes in request.images]
+        # _to_pil accepts both a PIL.Image and raw bytes.
+        pil_images = [
+            _to_pil(image) for image in request.images_for_processing()
+        ]
         medias = [{"type": "image", "image": img} for img in pil_images]
         return self.vision_processor.preprocess(medias)
 
@@ -224,7 +348,11 @@ class KimiK2_5VLTokenizer(TextAndVisionTokenizer):
         if request.prompt is not None:
             prompt = request.prompt
         elif request.messages:
-            prompt = self.apply_chat_template(request.messages)
+            prompt = self.apply_chat_template(
+                request.messages,
+                request.tools,
+                **(request.chat_template_options or {}),
+            )
             add_special_tokens = False
         else:
             raise ValueError(f"{request} does not provide messages or prompt.")
@@ -304,15 +432,24 @@ class KimiK2_5VLTokenizer(TextAndVisionTokenizer):
         )[0].astype(np.int32)
 
         json_schema = (
-            json.dumps(request.response_format.get("json_schema"))
-            if request.response_format
+            json.dumps(request.response_format.json_schema)
+            if request.response_format and request.response_format.json_schema
             else None
         )
 
+        grammar = (
+            request.response_format.grammar if request.response_format else None
+        )
+
+        # Carry grammar enforcement state (grammar_enforced, tools_forced,
+        # has_json_schema) from the response format.
+        # Mirrors TextTokenizer / TextAndVisionTokenizer.
+        grammar_state = GrammarEnforcementState.from_response_format(
+            request.response_format
+        )
+
         if self.max_length and encoded_prompt.shape[0] > self.max_length:
-            raise ValueError(
-                f"encoded_prompt length {encoded_prompt.shape[0]} is greater than the max_length of the tokenizer {self.max_length}"
-            )
+            raise PromptTooLongError(encoded_prompt.shape[0], self.max_length)
 
         start_and_end_idxs = find_contiguous_ranges(
             encoded_prompt, self.vision_token_ids
@@ -326,10 +463,15 @@ class KimiK2_5VLTokenizer(TextAndVisionTokenizer):
             request_id=request.request_id,
             eos_tracker=await self.create_eos_tracker(request),
             tokens=token_buffer,
+            vocab_size=self.tokenizer_vocab_size,
             max_length=encoded_prompt.shape[0] + max_gen_tokens
             if max_gen_tokens is not None
             else self.max_length,
             json_schema=json_schema,
+            grammar=grammar,
+            grammar_state=grammar_state,
+            log_probabilities=request.logprobs,
+            log_probabilities_echo=request.echo,
             sampling_params=request.sampling_params,
             target_endpoint=request.target_endpoint,
             grid_thws=grid_thws,

@@ -10,6 +10,7 @@ package(default_visibility = [
 # TODO(SERVOPT-949): Tests that timeout on macOS
 _MACOS_INCOMPATIBLE_TESTS = [
     "test_paged_scheduler.py",
+    "test_queue_depth_metric.py",
     "test_queues.py",
     "test_scheduler.py",
     "test_tts_scheduler.py",
@@ -43,18 +44,35 @@ _MACOS_INCOMPATIBLE_TESTS = [
         ["*.py"],
         exclude = [
             "common.py",
+            "conftest.py",
             "test_di.py",
             "*_gpu.py",
         ],
     )
 ]
 
-# CPU test that needs UCX Transfer Engine requires x86_64 linux machines (eg: m7i)
+# CPU test that needs UCX Transfer Engine requires an NVIDIA GPU (for libcuda)
+# TODO(GEX-3817): upstream NIXL only ships a CUDA-flavor libplugin_UCX.so;
+# CPU-only machines (e.g. m7i) lack libcuda so the plugin cannot load.
+# Gate to NVIDIA until ucx_cpu plugin variant is shipped.
 modular_py_test(
     name = "test_di",
-    srcs = ["test_di.py"],
+    srcs = [
+        "conftest.py",
+        "test_di.py",
+    ],
+    # Explicit data dep so the NIXL plugin .so is in the runfiles tree and
+    # conftest.py can locate it via TEST_SRCDIR/+http_archive+nixl_upstream/.
+    data = [
+        "@nixl_upstream//:libplugin_LIBFABRIC.so",
+        "@nixl_upstream//:libplugin_UCX.so",
+    ],
+    gpu_constraints = ["//:nvidia_gpu"],
+    imports = ["."],
     tags = [
         "external-exclusive",  # Times out if run with too many other tests
+        "gpu",
+        "manual",  # TODO(GEX-3817): b200 CI machines have IB misconfiguration causing UCX timeout
     ],
     target_compatible_with = [
         "@platforms//cpu:x86_64",
@@ -63,11 +81,13 @@ modular_py_test(
     deps = [
         ":common",
         "//max/python/max/driver",
-        "//max/python/max/interfaces",
-        "//max/python/max/kv_cache",
         "//max/python/max/nn",
-        "//max/python/max/pipelines/core",
+        "//max/python/max/pipelines/context",
+        "//max/python/max/pipelines/kv_cache",
         "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
+        "//max/python/max/pipelines/speculative",
+        "//max/python/max/serve:scheduler_result",
         "//max/python/max/serve/scheduler",
         "//max/python/max/serve/worker_interface",
         requirement("numpy"),
@@ -112,10 +132,12 @@ modular_py_library(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/interfaces",
-        "//max/python/max/kv_cache",
         "//max/python/max/nn",
-        "//max/python/max/pipelines/core",
+        "//max/python/max/pipelines/context",
+        "//max/python/max/pipelines/kv_cache",
+        "//max/python/max/pipelines/modeling",
+        "//max/python/max/serve:queue",
+        "//max/python/max/serve:scheduler_result",
         "//max/python/max/serve/scheduler",
         requirement("numpy"),
     ],

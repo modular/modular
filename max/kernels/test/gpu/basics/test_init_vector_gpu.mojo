@@ -46,9 +46,7 @@ def test_vec_init[
         InitializationType.arange,
     ]:
         var verification_ptr = context.enqueue_create_host_buffer[dtype](length)
-        var verification_data = TileTensor(
-            verification_ptr, row_major(Idx(length))
-        )
+        var verification_data = TileTensor(verification_ptr, row_major(length))
         seed(0)
         if init_type == InitializationType.zero:
             _ = verification_data.fill(0)

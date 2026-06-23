@@ -197,21 +197,21 @@ cc_library(name = "empty_lib")
 cc_import(
     name = "asan_lib",
     shared_library = select({
-        "//:linux_aarch64": "@clang-linux-aarch64//:lib/clang/20/lib/aarch64-unknown-linux-gnu/libclang_rt.asan.so",
-        "//:linux_x86_64": "@clang-linux-x86_64//:lib/clang/20/lib/x86_64-unknown-linux-gnu/libclang_rt.asan.so",
-        "@platforms//os:macos": "@clang-macos//:lib/clang/20/lib/darwin/libclang_rt.asan_osx_dynamic.dylib",
+        "//:linux_aarch64": "@clang-linux-aarch64//:lib/clang/22/lib/aarch64-unknown-linux-gnu/libclang_rt.asan.so",
+        "//:linux_x86_64": "@clang-linux-x86_64//:lib/clang/22/lib/x86_64-unknown-linux-gnu/libclang_rt.asan.so",
+        "@platforms//os:macos": "@clang-macos//:lib/clang/22/lib/darwin/libclang_rt.asan_osx_dynamic.dylib",
     }),
 )
 
 cc_import(
     name = "tsan_macos_lib",
-    shared_library = "@clang-macos//:lib/clang/20/lib/darwin/libclang_rt.tsan_osx_dynamic.dylib",
+    shared_library = "@clang-macos//:lib/clang/22/lib/darwin/libclang_rt.tsan_osx_dynamic.dylib",
     target_compatible_with = ["@platforms//os:macos"],
 )
 
 cc_import(
     name = "ubsan_macos_lib",
-    shared_library = "@clang-macos//:lib/clang/20/lib/darwin/libclang_rt.ubsan_osx_dynamic.dylib",
+    shared_library = "@clang-macos//:lib/clang/22/lib/darwin/libclang_rt.ubsan_osx_dynamic.dylib",
     target_compatible_with = ["@platforms//os:macos"],
 )
 
