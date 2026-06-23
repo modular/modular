@@ -37,6 +37,19 @@ This version is still a work in progress.
   input upcast is absorbed by ordinary prologue fusion. Numerics match the
   unfused graph (the normalized value is rounded to the output dtype before
   RoPE).
+- Added a `poison-all` mode to the `MODULAR_DEBUG_DEVICE_ALLOCATOR` environment
+  variable for debugging uninitialized device-memory reads. Unlike the existing
+  `uninitialized-poison` (which fills graph tensors with a type-aware, non-NaN
+  sentinel and is detected by an instrumented load check), `poison-all` fills
+  *every* memory-manager allocation — including internal scratch and other
+  non-tensor buffers — with a raw byte (default `0xFF`, a NaN pattern for
+  `float32`/`bfloat16`), so an uninitialized read propagates NaN into the output
+  and trips existing differential tests without any kernel instrumentation. The
+  fill byte is configurable via
+  `MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_POISON_PATTERN`, and the mode composes
+  with `out-of-bounds` redzone checks. Because the NaN can also surface on
+  legitimately-uninitialized allocation padding, it is a manual debugging aid
+  rather than a default.
 
 ### Inference server
 
