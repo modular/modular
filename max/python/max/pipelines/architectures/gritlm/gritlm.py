@@ -34,7 +34,7 @@ from max.experimental.nn.norm import RMSNorm
 from max.experimental.nn.sequential import ModuleList
 from max.experimental.tensor import Tensor
 from max.graph import TensorValue, ops
-from max.nn.kv_cache import KVCacheParamInterface, PagedCacheValues
+from max.nn.kv_cache import KVCacheInputs, KVCacheParamInterface, PagedCacheValues
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.architectures.llama3_modulev3.layers.rotary_embedding import (
     Llama3RotaryEmbedding,
@@ -140,7 +140,7 @@ class GritLMTextModel(
         kv_collection: PagedCacheValues,
         return_n_logits: Tensor,
         input_row_offsets: Tensor,
-    ) -> tuple[Tensor, ...]:
+    ) -> tuple[Tensor | TensorValue, ...]:
         """Run the full GritLM decoder stack and return logits/hidden states.
 
         Args:
@@ -172,8 +172,8 @@ class GritLMTextModel(
 
         last_h = F.gather(h, input_row_offsets[1:] - 1, axis=0)
         last_logits = self._compute_logits(self.norm(last_h))
-        logits = None
-        offsets = None
+        logits: Tensor | None = None
+        offsets: Tensor | TensorValue | None = None
 
         if self.return_logits == ReturnLogits.VARIABLE:
             return_n_logits_range = ops.range(
@@ -208,7 +208,7 @@ class GritLMTextModel(
             if logits is not None:
                 logits = logits / self.logits_scaling
 
-        ret_val: tuple[Tensor, ...] = (last_logits,)
+        ret_val: tuple[Tensor | TensorValue, ...] = (last_logits,)
         if offsets is not None:
             assert logits is not None
             ret_val += (logits, offsets)
@@ -250,9 +250,11 @@ class GritLM(Module[..., tuple[Tensor, ...]]):
         """
 
         kv_inputs = iter(x._graph_value for x in variadic_args)
-        kv_collections = (
-            self.kv_params.get_symbolic_inputs().unflatten(kv_inputs).inputs
+        unflattened = self.kv_params.get_symbolic_inputs().unflatten(kv_inputs)
+        assert isinstance(unflattened, KVCacheInputs), (
+            f"Expected KVCacheInputs, got {type(unflattened)}"
         )
+        kv_collections = unflattened.inputs
         return self.language_model(
             tokens, kv_collections[0], return_n_logits, input_row_offsets
         )

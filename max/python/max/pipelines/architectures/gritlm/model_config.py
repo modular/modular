@@ -264,7 +264,7 @@ class GritLMConfig(ArchConfigWithKVCache):
         ]
 
         # GritLM sliding_window: all layers use SWA with window=4096
-        raw_sliding_window: int = getattr(
+        raw_sliding_window: int | None = getattr(
             huggingface_config, "sliding_window", None
         )
 
