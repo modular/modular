@@ -118,7 +118,7 @@ comptime Scalar = SIMD[
 """Represents a scalar dtype."""
 
 comptime Int = Scalar[DType.int]
-"""Represents a signed integer sutable for indexing."""
+"""Represents a signed integer suitable for indexing."""
 comptime Int8 = Scalar[DType.int8]
 """Represents an 8-bit signed scalar integer."""
 comptime UInt8 = Scalar[DType.uint8]

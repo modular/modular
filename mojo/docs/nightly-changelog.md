@@ -66,7 +66,7 @@ This version is still a work in progress.
   def frob[w: SIMDSize](v: SIMD[DType.int, w]): ...
   ```
 
-  Alternitively the width can be unbound if you simply want to be parametric
+  Alternatively the width can be unbound if you simply want to be parametric
   over any `SIMD` type:
 
   ```mojo

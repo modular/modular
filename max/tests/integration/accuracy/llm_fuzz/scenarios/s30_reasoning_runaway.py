@@ -109,7 +109,7 @@ _CASES: list[dict[str, Any]] = [
         "gold": "D",
         "expected_clean_tokens": 4902,
         "question": (
-            "Find the radiation resistance of a single-turn circular loop witha"
+            "Find the radiation resistance of a single-turn circular loop with a"
             " circumference of (1/4) wavelength."
         ),
         "options": [

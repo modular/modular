@@ -109,7 +109,7 @@ def _do_broadcast[
         out_ptrs[i] = UnsafePointer[Scalar[DType.uint8], MutAnyOrigin](
             unsafe_from_address=out_addr
         )
-        # init_pointee_move prevents DeviceContext.__del__ from droping a
+        # init_pointee_move prevents DeviceContext.__del__ from dropping a
         # refcount, so assigning into the uninitialized slot would destroy it
         (ctx_array.unsafe_ptr() + i).init_pointee_move(
             DeviceContext(
