@@ -221,13 +221,16 @@ def test_v2_causal_paged[depth: Int](ctx: DeviceContext) raises:
         ),
     )
 
-    comptime CollectionType = PagedKVCacheCollection[
+    var kv_collection = PagedKVCacheCollection[
         DType.bfloat16,
         KVCacheStaticParams(num_heads=NUM_KV_HEADS, head_size=depth),
         PAGE_SIZE,
-    ]
-    var kv_collection = CollectionType(
-        kv_block_tensor,
+    ](
+        # `mha_prefill_v2` reads both the `k` and `v` cache views, which are disjoint
+        # kv_idx halves of one `blocks` buffer sharing its origin, so the
+        # nested-origin exclusivity check rejects passing both. Declare the
+        # kv_block_tensor origin as UnsafeAnyOrigin to opt out of exclusivity checking.
+        kv_block_tensor.as_unsafe_any_origin(),
         cache_lengths_tensor,
         paged_lut_tensor,
         UInt32(SEQ_LEN),  # max_seq_length

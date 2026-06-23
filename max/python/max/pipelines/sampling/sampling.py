@@ -30,6 +30,7 @@ from max.graph import (
     ops,
 )
 from max.nn.kernels import (
+    apply_packed_bitmask,
     apply_penalties_to_logits,
     scatter_set_constant,
     topk_fused_sampling,
@@ -114,10 +115,15 @@ def _sampling_input_types(
 
     # If constrained decoding can fire, wire in the bitmask input.
     if needs_bitmask_input:
-        # Use separate symbolic dimension to avoid conflicts with logits' vocab_size
-        # since llguidance creates 32-bit aligned bitmasks.
+        # Packed int32 bitmask: 1 bit per token, 32 tokens per word, so the
+        # inner dim is ceil(vocab_size / 32). A separate symbolic dimension
+        # avoids conflicts with logits' vocab_size. The packed mask is unpacked
+        # and applied to logits in a single fused GPU pass (apply_packed_bitmask),
+        # replacing a CPU unpack + ops.where.
         bitmask_type = TensorType(
-            DType.bool, ["batch", "vocab_size_structured"], device=device
+            DType.int32,
+            ["batch", "packed_vocab_size_structured"],
+            device=device,
         )
         inputs["bitmask"] = bitmask_type
 
@@ -266,15 +272,10 @@ def token_sampler(
         if "bitmask" in _input_dict:
             bitmask = graph.inputs[list(_input_dict).index("bitmask")].tensor
 
-            # Remove extra padding provided by llguidance.
-            if logits.shape[1] != bitmask.shape[1]:
-                bitmask = bitmask[:, : logits.shape[1]]
-
-            logits = ops.where(
-                bitmask,
-                logits,
-                ops.constant(-10000, dtype=DType.float32, device=device),
-            )
+            # Unpack the packed int32 bitmask and mask the logits in one fused
+            # pass. The kernel reads only words covering ``logits``' vocab dim,
+            # so llguidance's 32-bit alignment padding needs no explicit slice.
+            logits = apply_packed_bitmask(logits, bitmask, fill_val=-10000.0)
 
         # Apply top_k sampling
         temperature = graph.inputs[

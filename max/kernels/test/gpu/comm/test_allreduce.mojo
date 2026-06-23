@@ -17,7 +17,7 @@ from std.itertools import product
 
 from layout import Coord, Idx, TileTensor, coord_to_index_list, row_major
 from comm import Signal, MAX_GPUS, group_start, group_end
-from comm.sync import enable_p2p
+from comm.sync import enable_p2p, init_signal_buffer
 from comm.allreduce import (
     _allreduce_naive_single,
     allreduce,
@@ -112,7 +112,6 @@ def allreduce_test[
                 size_of[Signal]() + temp_buffer_num_bytes
             )
         )
-        list_of_ctx[i].enqueue_memset[DType.uint8](signal_buffers[i], 0)
         rank_sigs[i] = (
             signal_buffers[i]
             .unsafe_ptr()
@@ -160,6 +159,11 @@ def allreduce_test[
     for i in range(ngpus):
         out_tensors[i] = TileTensor(out_dev[i], row_major(length))
 
+    # One-time init of the signal buffers: zero the barrier counters / state,
+    # then set the embedded Lamport region to the -0.0 sentinel. Synchronize so
+    # every rank's buffer is initialized before any rank's first push.
+    for i in range(ngpus):
+        init_signal_buffer(signal_buffers[i], list_of_ctx[i])
     for i in range(ngpus):
         list_of_ctx[i].synchronize()
 

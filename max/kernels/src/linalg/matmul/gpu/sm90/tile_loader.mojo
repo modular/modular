@@ -345,6 +345,7 @@ struct TileLoaderCPAsync[
 
     comptime _dtype = Self.dtype
 
+    @__allow_legacy_any_origin_fields
     var src: TileTensor[
         mut=False,
         dtype=Self.dtype,

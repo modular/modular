@@ -44,7 +44,7 @@ from collections.abc import (
 from typing import Any, Protocol, TypeAlias, TypeVar, cast, overload
 
 from max.experimental.cascade.core.interfaces import Worker
-from max.support.taskgroups import TaskGroup
+from max.support._taskgroups import TaskGroup
 
 T = TypeVar("T")
 

@@ -862,7 +862,12 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
         }
 
 
-struct DevicePointer[dtype: DType](
+struct DevicePointer[
+    mut: Bool,
+    //,
+    dtype: DType,
+    origin: Origin[mut=mut],
+](
     DevicePassable,
     Equatable,
     ImplicitlyCopyable,
@@ -887,10 +892,13 @@ struct DevicePointer[dtype: DType](
     the device driver.
 
     Parameters:
+        mut: Whether the borrow of the underlying `DeviceBuffer` is mutable
+            (inferred from `origin`).
         dtype: Data dtype to be stored in the pointer.
+        origin: The origin of the borrowed `DeviceBuffer`.
     """
 
-    var _buffer: UnsafePointer[DeviceBuffer[Self.dtype], MutAnyOrigin]
+    var _buffer: Pointer[DeviceBuffer[Self.dtype], Self.origin]
     var _offset: Int
     var _size: Int
 
@@ -898,7 +906,9 @@ struct DevicePointer[dtype: DType](
     # Constructors
     # ===------------------------------------------------------------------=== #
 
-    def __init__(out self, ref buffer: DeviceBuffer[Self.dtype]) raises:
+    def __init__(
+        out self, ref[Self.origin] buffer: DeviceBuffer[Self.dtype]
+    ) raises:
         """Constructs a `DevicePointer` referencing the start of `buffer`.
 
         Args:
@@ -911,16 +921,12 @@ struct DevicePointer[dtype: DType](
         var size = len(buffer)
         if size == 0:
             raise Error("DevicePointer: size of DeviceBuffer must not be 0")
-        self._buffer = (
-            UnsafePointer(to=buffer)
-            .unsafe_mut_cast[True]()
-            .as_unsafe_any_origin()
-        )
+        self._buffer = Pointer(to=buffer)
         self._offset = 0
         self._size = size
 
     def __init__(
-        out self, ref buffer: DeviceBuffer[Self.dtype], offset: Int
+        out self, ref[Self.origin] buffer: DeviceBuffer[Self.dtype], offset: Int
     ) raises:
         """Constructs a `DevicePointer` into `buffer` at `offset` with `size`
         elements in range.
@@ -942,11 +948,7 @@ struct DevicePointer[dtype: DType](
                 t"DevicePointer: invalid offset '{offset}' for DeviceBuffer of"
                 t" size '{size}'"
             )
-        self._buffer = (
-            UnsafePointer(to=buffer)
-            .unsafe_mut_cast[True]()
-            .as_unsafe_any_origin()
-        )
+        self._buffer = Pointer(to=buffer)
         self._offset = offset
         self._size = size
 
@@ -954,7 +956,7 @@ struct DevicePointer[dtype: DType](
     # Accessors
     # ===------------------------------------------------------------------=== #
 
-    def buffer(self) -> ref[MutAnyOrigin] DeviceBuffer[Self.dtype]:
+    def buffer(self) -> ref[Self.origin] DeviceBuffer[Self.dtype]:
         """Returns a reference to the `DeviceBuffer` this pointer references.
 
         The reference is non-owning; the underlying `DeviceBuffer` must
@@ -1080,6 +1082,7 @@ struct DevicePointer[dtype: DType](
     # Comparison
     # ===------------------------------------------------------------------=== #
 
+    @__unsafe_disable_nested_origin_exclusivity
     def __eq__(self, other: Self) -> Bool:
         """Returns `True` if `self` and `other` reference the same buffer and
         offset.
@@ -1095,7 +1098,48 @@ struct DevicePointer[dtype: DType](
             and self._offset == other._offset
         )
 
-    def __lt__(self, other: Self) raises -> Bool:
+    @__unsafe_disable_nested_origin_exclusivity
+    def __eq__(self, other: DevicePointer[Self.dtype, _]) -> Bool:
+        """Returns `True` if `self` and `other` reference the same buffer and
+        offset.
+
+        Args:
+            other: The other `DevicePointer` to compare.
+
+        Returns:
+            `True` if equal.
+        """
+        return (
+            self._buffer[]._handle == other._buffer[]._handle
+            and self._offset == other._offset
+        )
+
+    @__unsafe_disable_nested_origin_exclusivity
+    def __ne__(self, other: Self) -> Bool:
+        """Returns `True` if `self` and `other` differ in buffer or offset.
+
+        Args:
+            other: The other `DevicePointer` to compare.
+
+        Returns:
+            `True` if not equal.
+        """
+        return not (self == other)
+
+    @__unsafe_disable_nested_origin_exclusivity
+    def __ne__(self, other: DevicePointer[Self.dtype, _]) -> Bool:
+        """Returns `True` if `self` and `other` differ in buffer or offset.
+
+        Args:
+            other: The other `DevicePointer` to compare.
+
+        Returns:
+            `True` if not equal.
+        """
+        return not (self == other)
+
+    @__unsafe_disable_nested_origin_exclusivity
+    def __lt__(self, other: DevicePointer[Self.dtype, _]) raises -> Bool:
         """Returns `True` if `self` precedes `other` within the same buffer.
 
         Args:
@@ -1114,7 +1158,8 @@ struct DevicePointer[dtype: DType](
             )
         return self._offset < other._offset
 
-    def __le__(self, other: Self) raises -> Bool:
+    @__unsafe_disable_nested_origin_exclusivity
+    def __le__(self, other: DevicePointer[Self.dtype, _]) raises -> Bool:
         """Returns `True` if `self` precedes or equals `other` within the
         same buffer.
 
@@ -1134,7 +1179,8 @@ struct DevicePointer[dtype: DType](
             )
         return self._offset <= other._offset
 
-    def __gt__(self, other: Self) raises -> Bool:
+    @__unsafe_disable_nested_origin_exclusivity
+    def __gt__(self, other: DevicePointer[Self.dtype, _]) raises -> Bool:
         """Returns `True` if `self` follows `other` within the same buffer.
 
         Args:
@@ -1153,7 +1199,8 @@ struct DevicePointer[dtype: DType](
             )
         return self._offset > other._offset
 
-    def __ge__(self, other: Self) raises -> Bool:
+    @__unsafe_disable_nested_origin_exclusivity
+    def __ge__(self, other: DevicePointer[Self.dtype, _]) raises -> Bool:
         """Returns `True` if `self` follows or equals `other` within the same
         buffer.
 
@@ -1521,7 +1568,7 @@ struct DeviceBuffer[dtype: DType](
             view_type: The data type for elements in the new sub-buffer.
 
         Args:
-            offset: The starting offset in elements from the beginning of this buffer.
+            offset: The starting offset, in view_type elements, from the beginning of this buffer.
             size: The number of elements in the new sub-buffer.
 
         Returns:
@@ -1794,7 +1841,7 @@ struct DeviceBuffer[dtype: DType](
 
     def device_ptr(
         ref self,
-    ) raises -> DevicePointer[Self.dtype]:
+    ) raises -> DevicePointer[Self.dtype, origin_of(self)]:
         """Returns a `DevicePointer` referencing the start of this buffer.
 
         The returned `DevicePointer` is a non-owning borrow of this
@@ -1810,7 +1857,7 @@ struct DeviceBuffer[dtype: DType](
             If this buffer has size 0.
         """
         comptime assert not is_gpu(), "DeviceBuffer is not supported on GPUs"
-        return DevicePointer(self)
+        return DevicePointer[Self.dtype, origin_of(self)](self)
 
     def context(self) raises -> DeviceContext:
         """Returns the device context associated with this buffer.
@@ -2567,7 +2614,7 @@ struct DeviceFunction[
     func_type: TrivialRegisterPassable,
     //,
     func: func_type,
-    declared_arg_types: Optional[TypeList.of[Trait=AnyType]()._mlir_type],
+    declared_arg_types: TypeList[Trait=AnyType, ...],
     *,
     target: _TargetType = get_gpu_target(),
     compile_options: StaticString = CompilationTarget[
@@ -2584,7 +2631,7 @@ struct DeviceFunction[
     Parameters:
         func_type: The dtype of the function to compile.
         func: The function to compile for GPU execution.
-        declared_arg_types: An optional containing a variadic of the declared dtypes of the kernel signature.
+        declared_arg_types: A variadic of the declared dtypes of the kernel signature (empty when the function is compiled without a checked signature).
         target: The target architecture for compilation. Defaults to the current GPU target.
         compile_options: The string of compilation options to pass to the compiler.
         link_options: The string of linker options to pass to the linker.
@@ -3081,9 +3128,7 @@ struct DeviceFunction[
         *Ts: DevicePassable,
         num_args: Int,
     ]() -> Tuple[Int, InlineArray[Int, num_args]]:
-        comptime declared_num_args = TypeList[
-            Self.declared_arg_types.value()
-        ].size
+        comptime declared_num_args = Self.declared_arg_types.size
 
         comptime assert (
             declared_num_args == num_args
@@ -3099,9 +3144,7 @@ struct DeviceFunction[
         var num_translated_args = 0
 
         comptime for i in range(num_args):
-            comptime declared_arg_type = TypeList[
-                Self.declared_arg_types.value()
-            ]()[i]
+            comptime declared_arg_type = Self.declared_arg_types[i]
             comptime actual_arg_type = Ts[i]
 
             def declared_arg_type_name() -> String:
@@ -3181,20 +3224,14 @@ struct DeviceFunction[
         # We need to keep track of both the number of arguments pushed by the
         # caller and the number of translated arguments expected by the kernel.
         comptime num_passed_args = Ts.size
-        var num_translated_args = 0
-
-        var translated_arg_offsets = InlineArray[Int, num_passed_args](
-            uninitialized=True
-        )
 
         # Validate that all actual arguments do remap to the declared device
         # dtype in the kernel.
-        comptime if Self.declared_arg_types:
-            var validated_args = Self._validate_arguments[
-                *Ts, num_args=num_passed_args
-            ]()
-            num_translated_args = validated_args[0]
-            translated_arg_offsets = validated_args[1].copy()
+        var validated_args = Self._validate_arguments[
+            *Ts, num_args=num_passed_args
+        ]()
+        var num_translated_args = validated_args[0]
+        var translated_arg_offsets = validated_args[1].copy()
 
         var num_captures = max(0, self._func_impl.num_captures)
         comptime populate = type_of(self._func_impl).populate
@@ -4023,9 +4060,6 @@ struct DeviceGraphBuilder(Movable):
         _check_dim["DeviceGraphBuilder.add_function", "block_dim"](
             block_dim, location=call_location()
         )
-        comptime assert Bool(
-            f.declared_arg_types
-        ), "Calling a non-checked DeviceFunction; use the unchecked overload."
         # Build a transient enqueuer that pairs the builder handle with the
         # caller-supplied deps. It implements `_FunctionEnqueuer` so the
         # trait machinery in `_call_with_pack_checked` routes the call into
@@ -4137,7 +4171,7 @@ struct DeviceGraphBuilder(Movable):
         )
         var compiled = DeviceFunction[
             FuncType.__call__,
-            None,
+            TypeList.of[Trait=AnyType](),
             target=DeviceContext.default_device_info.target(),
             _ptxas_info_verbose=_ptxas_info_verbose,
         ](self._ctx)
@@ -5113,7 +5147,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         func_attribute: OptionalReg[FuncAttribute] = None,
         out result: DeviceFunction[
             func,
-            declared_arg_types.values,
+            declared_arg_types,
             compile_options=compile_options,
             link_options=link_options,
             _ptxas_info_verbose=_ptxas_info_verbose,
@@ -5191,7 +5225,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         func_attribute: OptionalReg[FuncAttribute] = None,
         out result: DeviceFunction[
             func,
-            declared_arg_types.values,
+            declared_arg_types,
             target=Self.default_device_info.target(),
             compile_options=compile_options,
             link_options=link_options,
@@ -5267,7 +5301,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         func_attribute: OptionalReg[FuncAttribute] = None,
         out result: DeviceFunction[
             func,
-            declared_arg_types.values,
+            declared_arg_types,
             target=Self.default_device_info.target(),
             compile_options=compile_options,
             link_options=link_options,
@@ -5328,7 +5362,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         func_attribute: OptionalReg[FuncAttribute] = None,
         out result: DeviceFunction[
             func,
-            declared_arg_types.values,
+            declared_arg_types,
             target=Self.default_device_info.target(),
             compile_options=compile_options,
             link_options=link_options,
@@ -5407,7 +5441,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         func_attribute: OptionalReg[FuncAttribute] = None,
         out result: DeviceFunction[
             func,
-            declared_arg_types.values,
+            declared_arg_types,
             target=Self.default_device_info.target(),
             compile_options=compile_options,
             link_options=link_options,
@@ -5483,7 +5517,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         func_attribute: OptionalReg[FuncAttribute] = None,
         out result: DeviceFunction[
             func,
-            declared_arg_types.values,
+            declared_arg_types,
             target=Self.default_device_info.target(),
             compile_options=compile_options,
             link_options=link_options,
@@ -5648,9 +5682,6 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
             block_dim, location=call_location()
         )
 
-        comptime assert Bool(
-            f.declared_arg_types
-        ), "Calling a non-checked function."
         f._call_with_pack_checked(
             self,
             *args,
@@ -6311,7 +6342,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
 
         var gpu_kernel = DeviceFunction[
             FuncType.__call__,
-            None,
+            TypeList.of[Trait=AnyType](),
             target=Self.default_device_info.target(),
             _ptxas_info_verbose=_ptxas_info_verbose,
         ](self)
@@ -6612,9 +6643,6 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
             block_dim, location=call_location()
         )
 
-        comptime assert Bool(
-            f.declared_arg_types
-        ), "Calling a non-checked function."
         f._call_with_pack_checked(
             self,
             *args,

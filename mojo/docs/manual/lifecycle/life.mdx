@@ -612,7 +612,7 @@ value from one variable to another when the original variable's lifetime ends
 A critical feature of move constructors is that it takes the incoming value as a
 `deinit` argument, meaning this method gets unique ownership of the value.
 Moreover, because this is a dunder method that Mojo calls only when performing a
-move (during ownership transfer), the `take` argument is guaranteed to be a
+move (during ownership transfer), the `move` argument is guaranteed to be a
 mutable reference to the original value, *not a copy* (unlike other methods that
 may declare an argument as `var`, but might receive the value as a copy if the
 method is called without the

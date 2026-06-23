@@ -336,11 +336,14 @@ struct MMATileBuffers[
         address_space=AddressSpace.SHARED,
         alignment=Self.mma_type.type_alignment,
     ]
+
+    @__allow_legacy_any_origin_fields
     var shared_mem_tile: Self.SharedMemTileType
 
     # Tile view optimized for matrix multiplication acceleration (MMA)
     # operations. Stays `LayoutTensor` -- it feeds the `LayoutTensor`-only
     # `TiledTensorCore` `load_a` / `load_b`.
+    @__allow_legacy_any_origin_fields
     var shared_mem_warp_tile: Self.SharedMemTileType.TileType[
         Self.warp_rows, Self.mma_type.WK
     ]

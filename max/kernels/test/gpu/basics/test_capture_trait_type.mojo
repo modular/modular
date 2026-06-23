@@ -25,6 +25,7 @@ trait BaseT(TrivialRegisterPassable):
 
 @fieldwise_init
 struct ImplT(BaseT):
+    @__allow_legacy_any_origin_fields
     var values: LayoutTensor[DType.float32, Layout(UNKNOWN_VALUE), MutAnyOrigin]
 
     def __init__(

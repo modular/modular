@@ -188,6 +188,44 @@ trait DeviceTypeEncoder:
                 t" Copyable & ImplicitlyDeletable"
             )
 
+    def encode_closure_state[
+        StructType: AnyType,
+    ](mut self, value: StructType, dst: MutOpaquePointer[_]):
+        """Encodes a compiler-synthesized closure-state struct into `dst`.
+
+        Closure wrappers hold their captured state in a struct that is encoded
+        for device transfer. When the closure captures a single value, that
+        struct has exactly one field and the compiler flattens it down to the
+        field's representation. `encode_fields` would reflect the field with
+        `field_ref`, which lowers to an identity GEP into the flattened struct
+        that the verifier rejects, so for the single-field case the sole field
+        is encoded directly (its offset is 0) using the same per-field dispatch
+        `encode_fields` applies. Multi-field state is forwarded to
+        `encode_fields` unchanged.
+
+        Parameters:
+            StructType: The closure-state struct type whose captures are being
+                encoded.
+
+        Args:
+            value: The closure-state value to encode.
+            dst: The opaque destination pointer that receives the encoded
+                state.
+        """
+        comptime r = reflect[StructType]
+        comptime if r.is_struct() and r.field_count() == 1:
+            comptime FieldType = r.field_types()[0]
+            ref field = UnsafePointer(to=value).bitcast[FieldType]()[]
+
+            comptime if conforms_to(FieldType, DevicePassable):
+                trait_downcast[DevicePassable](field)._to_device_type(self, dst)
+            elif _contains_device_passable_field[FieldType]():
+                self.encode_fields[FieldType](field, dst)
+            else:
+                self.encode(field, dst)
+        else:
+            self.encode_fields[StructType](value, dst)
+
     def encode_fields[
         StructType: AnyType,
     ](mut self, value: StructType, dst: MutOpaquePointer[_]):

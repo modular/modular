@@ -68,6 +68,8 @@ class QuantStrategy(Protocol):
         expert_scales: TensorValue | None = None,
         expert_inputs: tuple[TensorValue, ...] = (),
         estimated_total_m: TensorValue | None = None,
+        a_scales_preshuffled: bool = False,
+        a_scales_max_padded_m: int = 0,
     ) -> TensorValue:
         """Runs grouped matmul for routed experts."""
         ...
@@ -98,6 +100,7 @@ class QuantStrategy(Protocol):
         gate_up_projs: TensorValue,
         input_scales: TensorValue | None = None,
         expert_inputs: tuple[TensorValue, ...] = (),
+        max_padded_M: int = 0,
     ) -> tuple[TensorValue, TensorValue]:
         """Applies gating and quantizes activations for the down proj."""
         ...
@@ -144,8 +147,15 @@ class Fp8Strategy:
         expert_scales: TensorValue | None = None,
         expert_inputs: tuple[TensorValue, ...] = (),
         estimated_total_m: TensorValue | None = None,
+        a_scales_preshuffled: bool = False,
+        a_scales_max_padded_m: int = 0,
     ) -> TensorValue:
-        """Runs grouped FP8 matmul for the routed experts."""
+        """Runs grouped FP8 matmul for the routed experts.
+
+        ``a_scales_preshuffled``/``a_scales_max_padded_m`` are accepted for
+        ``QuantStrategy`` conformance; they only apply to the MXFP4 EP scale
+        fusion and are ignored here.
+        """
         hidden, input_scales, expert_start, expert_ids, usage_stats = (
             expert_inputs
         )
@@ -176,8 +186,13 @@ class Fp8Strategy:
         gate_up_projs: TensorValue,
         input_scales: TensorValue | None = None,
         expert_inputs: tuple[TensorValue, ...] = (),
+        max_padded_M: int = 0,
     ) -> tuple[TensorValue, TensorValue]:
-        """Applies fused SiLU gate and returns quantized activations."""
+        """Applies fused SiLU gate and returns quantized activations.
+
+        ``max_padded_M`` is accepted for ``QuantStrategy`` conformance; it only
+        applies to the MXFP4 EP scale fusion and is ignored here.
+        """
         _, _, expert_start_indices, _, _ = expert_inputs
         return fused_silu_quantized(
             gate_up_projs,
@@ -248,8 +263,15 @@ class NvMxf4f8Strategy:
         expert_scales: TensorValue | None = None,
         expert_inputs: tuple[TensorValue, ...] = (),
         estimated_total_m: TensorValue | None = None,
+        a_scales_preshuffled: bool = False,
+        a_scales_max_padded_m: int = 0,
     ) -> TensorValue:
-        """Runs grouped NVIDIA block-scaled matmul with per-expert scales."""
+        """Runs grouped NVIDIA block-scaled matmul with per-expert scales.
+
+        ``a_scales_preshuffled``/``a_scales_max_padded_m`` are accepted for
+        ``QuantStrategy`` conformance; they only apply to the MXFP4 EP scale
+        fusion and are ignored here.
+        """
         if self.is_nvfp4 and expert_scales is None:
             raise ValueError("NVFP4 requires expert_scales")
 
@@ -308,8 +330,13 @@ class NvMxf4f8Strategy:
         gate_up_projs: TensorValue,
         input_scales: TensorValue | None = None,
         expert_inputs: tuple[TensorValue, ...] = (),
+        max_padded_M: int = 0,
     ) -> tuple[TensorValue, TensorValue]:
-        """Applies SiLU gate then quantizes the result."""
+        """Applies SiLU gate then quantizes the result.
+
+        ``max_padded_M`` is accepted for ``QuantStrategy`` conformance; it only
+        applies to the MXFP4 EP scale fusion and is ignored here.
+        """
         _, _, expert_start_indices, scales_offsets, _, _ = expert_inputs
         return fused_silu_quantized(
             gate_up_projs,
@@ -471,6 +498,8 @@ class Mxfp4Strategy:
         expert_scales: TensorValue | None = None,
         expert_inputs: tuple[TensorValue, ...] = (),
         estimated_total_m: TensorValue | None = None,
+        a_scales_preshuffled: bool = False,
+        a_scales_max_padded_m: int = 0,
     ) -> TensorValue:
         """Runs grouped MXFP4 matmul with per-expert scales."""
         (
@@ -491,6 +520,8 @@ class Mxfp4Strategy:
             usage_stats.to(DeviceRef.CPU()),
             estimated_total_m=estimated_total_m,
             preshuffled_b=self.preshuffled_b,
+            a_scales_preshuffled=a_scales_preshuffled,
+            a_scales_max_padded_m=a_scales_max_padded_m,
         )
 
     def prepare_weight_scales(
@@ -506,6 +537,7 @@ class Mxfp4Strategy:
         gate_up_projs: TensorValue,
         input_scales: TensorValue | None = None,
         expert_inputs: tuple[TensorValue, ...] = (),
+        max_padded_M: int = 0,
     ) -> tuple[TensorValue, TensorValue]:
         """Applies SiLU gate then MXFP4 quantizes the result."""
         _, _, expert_start_indices, _, _ = expert_inputs
@@ -515,6 +547,7 @@ class Mxfp4Strategy:
             self.config,
             self.dtype,
             input_scales,
+            max_padded_M=max_padded_M,
         )
 
 

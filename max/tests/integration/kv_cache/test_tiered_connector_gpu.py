@@ -186,7 +186,7 @@ def test_write_through_to_disk() -> None:
 
         connector.offload([0, 1, 2], [100, 200, 300])
         # offload() records pending disk writes; sync() executes them
-        connector.sync()
+        connector.wait_for_offloads()
 
         # Wait for async disk writes to complete
         connector._disk_tier.wait_for_writes()
@@ -209,14 +209,14 @@ def test_write_through_skips_already_on_disk() -> None:
 
         # First offload
         connector.offload([0], [100])
-        connector.sync()
+        connector.wait_for_offloads()
         connector._disk_tier.wait_for_writes()
 
         written_before = connector._disk_blocks_written
 
         # Offload same hash again (from different device block)
         connector.offload([1], [100])
-        connector.sync()
+        connector.wait_for_offloads()
         connector._disk_tier.wait_for_writes()
 
         # Should not have written again (deduplicated at CPU level)
@@ -239,9 +239,9 @@ def test_disk_promotion_to_cpu() -> None:
 
         # Offload 4 blocks -> fills CPU cache
         connector.offload([0, 1, 2, 3], [100, 200, 300, 400])
-        connector.sync()
+        connector.wait_for_offloads()
         connector._disk_tier.wait_for_writes()
-        connector.sync()  # drain write-locked blocks
+        connector.wait_for_offloads()  # drain write-locked blocks
 
         # All 4 should be on disk
         for h in [100, 200, 300, 400]:
@@ -249,9 +249,9 @@ def test_disk_promotion_to_cpu() -> None:
 
         # Offload 4 more blocks -> evicts the first 4 from CPU
         connector.offload([4, 5, 6, 7], [500, 600, 700, 800])
-        connector.sync()
+        connector.wait_for_offloads()
         connector._disk_tier.wait_for_writes()
-        connector.sync()  # drain write-locked blocks
+        connector.wait_for_offloads()  # drain write-locked blocks
 
         # The first 4 should still be on disk (write-through)
         for h in [100, 200, 300, 400]:
@@ -277,15 +277,15 @@ def test_full_round_trip() -> None:
 
         # Offload 2 blocks (fills CPU)
         connector.offload([0, 1], [100, 200])
-        connector.sync()
+        connector.wait_for_offloads()
         connector._disk_tier.wait_for_writes()
-        connector.sync()  # drain write-locked blocks
+        connector.wait_for_offloads()  # drain write-locked blocks
 
         # Offload 2 more -> evicts 100, 200 from CPU
         connector.offload([2, 3], [300, 400])
-        connector.sync()
+        connector.wait_for_offloads()
         connector._disk_tier.wait_for_writes()
-        connector.sync()  # drain write-locked blocks
+        connector.wait_for_offloads()  # drain write-locked blocks
 
         # 100, 200 should still be on disk
         assert connector._disk_tier.contains(100)
@@ -311,9 +311,9 @@ def test_metrics_track_disk_operations() -> None:
 
         # Write 2 blocks through to disk
         connector.offload([0, 1], [100, 200])
-        connector.sync()
+        connector.wait_for_offloads()
         connector._disk_tier.wait_for_writes()
-        connector.sync()  # drain write-locked blocks
+        connector.wait_for_offloads()  # drain write-locked blocks
 
         metrics = connector.metrics
         assert metrics.d2h_blocks_copied == 2
@@ -321,9 +321,9 @@ def test_metrics_track_disk_operations() -> None:
 
         # Evict from CPU, then promote from disk
         connector.offload([2, 3], [300, 400])
-        connector.sync()
+        connector.wait_for_offloads()
         connector._disk_tier.wait_for_writes()
-        connector.sync()  # drain write-locked blocks
+        connector.wait_for_offloads()  # drain write-locked blocks
 
         connector.load([10], [100])
 
@@ -345,7 +345,7 @@ def test_load_breaks_chain_at_disk_miss() -> None:
         # Only offload hash 100 and 300, NOT 200
         connector.offload([0], [100])
         connector.offload([2], [300])
-        connector.sync()
+        connector.wait_for_offloads()
         connector._disk_tier.wait_for_writes()
 
         # Load [100, 200, 300] -> should stop at 200 (miss)
@@ -374,7 +374,7 @@ def test_reset_prefix_cache_clears_cpu_and_disk() -> None:
         connector = create_tiered_connector(disk_cache_dir=disk_dir)
 
         connector.offload([0, 1], [100, 200])
-        connector.sync()
+        connector.wait_for_offloads()
         connector._disk_tier.wait_for_writes()
         assert connector.num_used_host_blocks == 2
         assert connector._disk_tier.contains(100)
@@ -397,7 +397,7 @@ def test_warm_restart_loads_disk_cache() -> None:
         # First connector: write blocks to disk
         c1 = create_tiered_connector(disk_cache_dir=disk_dir)
         c1.offload([0, 1], [100, 200])
-        c1.sync()
+        c1.wait_for_offloads()
         c1._disk_tier.wait_for_writes()
         c1.shutdown()  # saves metadata
 
@@ -436,7 +436,7 @@ def test_write_locked_blocks_lifecycle() -> None:
         assert pending_disk_write.d2h_copy_complete_event.is_ready()
 
         # sync() submits writes to disk and tracks in _write_locked_blocks
-        connector.sync()
+        connector.wait_for_offloads()
 
         # After sync, _pending_disk_writes is cleared
         assert len(connector._pending_disk_writes) == 0
@@ -473,7 +473,7 @@ def test_host_blocks_pinned_during_disk_write() -> None:
                 )
 
         # After sync() + wait, blocks should eventually be released
-        connector.sync()
+        connector.wait_for_offloads()
         connector._disk_tier.wait_for_writes()
         connector._drain_completed_writes()
 
@@ -489,14 +489,14 @@ def test_drain_completed_writes_across_sync_cycles() -> None:
 
         # Cycle 1: offload + sync
         connector.offload([0, 1], [100, 200])
-        connector.sync()
+        connector.wait_for_offloads()
 
         # Wait for cycle 1 writes to complete
         connector._disk_tier.wait_for_writes()
 
         # Cycle 2: offload + sync — should drain cycle 1's blocks
         connector.offload([2, 3], [300, 400])
-        connector.sync()  # calls _drain_completed_writes() internally
+        connector.wait_for_offloads()  # calls _drain_completed_writes() internally
 
         # Wait for cycle 2
         connector._disk_tier.wait_for_writes()
@@ -519,7 +519,7 @@ def test_shutdown_releases_write_locked_blocks() -> None:
         connector = create_tiered_connector(disk_cache_dir=disk_dir)
 
         connector.offload([0, 1], [100, 200])
-        connector.sync()
+        connector.wait_for_offloads()
 
         # Don't manually drain — let shutdown handle it
         connector.shutdown()
@@ -660,9 +660,9 @@ def _evict_cpu_prefix(
         for b in device_buffers:
             _write_block_pattern(b, scratch_block, seed=987654)
         connector.offload([scratch_block], [900_000 + k])
-        connector.sync()
+        connector.wait_for_offloads()
         connector._disk_tier.wait_for_writes()
-        connector.sync()
+        connector.wait_for_offloads()
 
 
 @pytest.mark.parametrize(
@@ -699,9 +699,9 @@ def test_disk_round_trip_is_bit_exact(use_fp8: bool) -> None:
 
         # Offload -> push through to disk.
         connector.offload(src_blocks, hashes)
-        connector.sync()
+        connector.wait_for_offloads()
         connector._disk_tier.wait_for_writes()
-        connector.sync()
+        connector.wait_for_offloads()
         for h in hashes:
             assert connector._disk_tier.contains(h)
 
@@ -784,16 +784,16 @@ def test_mixed_cpu_and_disk_chain_is_bit_exact(use_fp8: bool) -> None:
 
         # Push h2,h3 to disk, evict everything, then make h0,h1 CPU-resident.
         connector.offload([2, 3], [3002, 3003])
-        connector.sync()
+        connector.wait_for_offloads()
         connector._disk_tier.wait_for_writes()
-        connector.sync()
+        connector.wait_for_offloads()
         _evict_cpu_prefix(connector, device_buffers, 12, num_host_blocks)
         restore(0, 3000)
         restore(1, 3001)
         connector.offload([0, 1], [3000, 3001])
-        connector.sync()
+        connector.wait_for_offloads()
         connector._disk_tier.wait_for_writes()
-        connector.sync()
+        connector.wait_for_offloads()
 
         in_cpu = [
             h for h in hashes if h in connector._host_block_pool.prefix_cache
@@ -976,18 +976,18 @@ def test_multi_cache_disk_round_trip_restores_all_caches() -> None:
         }
 
         connector.offload([bid], [block_hash])
-        connector.sync()
+        connector.wait_for_offloads()
         connector._disk_tier.wait_for_writes()
-        connector.sync()
+        connector.wait_for_offloads()
 
         # Evict host so the reload comes from disk.
         for k in range(4):
             for b in all_bufs:
                 _write_block_pattern(b, 1, seed=55)
             connector.offload([1], [70_000 + k])
-            connector.sync()
+            connector.wait_for_offloads()
             connector._disk_tier.wait_for_writes()
-            connector.sync()
+            connector.wait_for_offloads()
         assert connector._disk_tier.contains(block_hash)
         assert block_hash not in connector._host_block_pool.prefix_cache
 

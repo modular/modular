@@ -2287,6 +2287,7 @@ comptime cudnnCallback_t = def(
 
 
 struct cudnnAlgorithmUnionStruct(TrivialRegisterPassable):
+    @__allow_legacy_any_origin_fields
     var algo: OpaquePointer[MutAnyOrigin]
 
 
@@ -2812,6 +2813,8 @@ struct cudnnDebugStruct(ImplicitlyCopyable, RegisterPassable):
     var time_sec: Int16
     var time_usec: Int16
     var time_delta: Int16
+
+    @__allow_legacy_any_origin_fields
     var handle: UnsafePointer[cudnnContext, UntrackedOrigin[mut=True]]
     var stream: CUstream
     var pid: Int64

@@ -759,6 +759,57 @@ def test_result_json_written_at_specified_path(
     assert data["backend"] == "modular"
 
 
+def test_image_to_video_workload_selects_pixel_writer(
+    tmp_path: Path,
+    mocker: pytest_mock.MockerFixture,
+) -> None:
+    """image-to-video must route to the pixel-gen CSV writer, not the LLM one.
+
+    Regression for a duplicated task list in run_sweep that omitted
+    image-to-video, routing video results into LLMBenchmarkResultWriter whose
+    _format_task_values asserts isinstance(result, LLMBenchmarkResult) and
+    crashed. run_sweep now derives pixel-gen from PIXEL_GENERATION_TASKS.
+    """
+    workload = tmp_path / "i2v.yaml"
+    workload.write_text(
+        yaml.safe_dump(
+            {
+                "dataset-name": "local-image",
+                "benchmark-task": "image-to-video",
+                "num-frames": 17,
+            }
+        )
+    )
+    pixel_writer = mocker.patch.object(
+        sweep_benchmark_serving, "TextToImageBenchmarkResultWriter"
+    )
+    llm_writer = mocker.patch.object(
+        sweep_benchmark_serving, "LLMBenchmarkResultWriter"
+    )
+    mocker.patch(
+        "max.benchmark.sweep_benchmark_serving.benchmark_serving_main",
+        return_value=[],
+    )
+
+    sweep_benchmark_serving.main(
+        [
+            "--model",
+            "myorg/mymodel",
+            "--workload-config",
+            str(workload),
+            "--max-concurrency",
+            "1",
+            "--num-prompts",
+            "2",
+            "--log-dir",
+            str(tmp_path / "logs"),
+        ]
+    )
+
+    pixel_writer.assert_called_once()
+    llm_writer.assert_not_called()
+
+
 # ===========================================================================
 # CLI vs workload-config precedence tests
 # ===========================================================================

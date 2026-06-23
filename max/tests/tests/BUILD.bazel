@@ -24,6 +24,10 @@ modular_py_test(
             "test_mojo_runtime_foreign_thread.py",
         ],
     ),
+    ignore_extra_deps = [
+        # Unsure why, test_tensor slows down if this doesn't exist.
+        "//max/python/max/_interpreter_ops",
+    ],
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
         "//conditions:default": [],
@@ -32,6 +36,7 @@ modular_py_test(
         "//max/python/max:_core",
         "//max/python/max:_mlir_context",
         "//max/python/max:tensor",
+        "//max/python/max/_interpreter_ops",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
@@ -128,6 +133,7 @@ modular_py_test(
         "//conditions:default": [],
     }),  # FIXME: MOCO-2411
     deps = [
+        "//max/python/max:_core",
         "//max/python/max:tensor",
         "//max/python/max/_interpreter_ops",
         "//max/python/max/driver",
@@ -147,12 +153,17 @@ modular_py_test(
     exec_properties = {
         "test.resources:gpu-memory": "4",
     },
+    ignore_extra_deps = [
+        # lazy import
+        "//max/python/max/_interpreter_ops",
+    ],
     tags = ["gpu"],
     target_compatible_with = ["//:nvidia_gpu"],
     deps = [
         "//max/python/max:_core",
         "//max/python/max:interpreter",
         "//max/python/max:tensor",
+        "//max/python/max/_interpreter_ops",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/graph",
@@ -164,6 +175,10 @@ modular_py_test(
 modular_py_test(
     name = "test_executor",
     srcs = ["test_executor.py"],
+    ignore_extra_deps = [
+        # lazy import
+        "//max/python/max/_interpreter_ops",
+    ],
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
         "//conditions:default": [],
@@ -171,6 +186,7 @@ modular_py_test(
     deps = [
         "//max/python/max:_core",
         "//max/python/max:interpreter",
+        "//max/python/max/_interpreter_ops",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",

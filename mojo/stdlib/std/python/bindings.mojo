@@ -22,6 +22,7 @@ and Python code.
 
 from std.ffi import _Global, _CPointer, c_int
 from std.sys.info import size_of
+from std.collections import OwnedKwargsDict
 
 from std.builtin._startup import _ensure_runtime_init
 from std.reflection import reflect
@@ -457,7 +458,7 @@ struct PythonModuleBuilder:
 
         Accepts functions with PythonObject arguments (up to 8), can optionally
         return a PythonObject, and can raise. Functions can also accept keyword
-        arguments if their last parameter is OwnedKwargsDict[PythonObject].
+        arguments via `**kwargs: PythonObject`.
 
         Non-kwargs callables register through CPython's `METH_FASTCALL`
         calling convention; kwargs-accepting callables use
@@ -466,12 +467,11 @@ struct PythonModuleBuilder:
         Example signatures:
         ```mojo
         from std.python import PythonObject
-        from std.collections.dict import OwnedKwargsDict
 
         def func(arg1: PythonObject) -> PythonObject: ...
         def func(arg1: PythonObject, arg2: PythonObject) raises: ...
-        def func(kwargs: OwnedKwargsDict[PythonObject]) -> PythonObject: ...
-        def func(arg1: PythonObject, kwargs: OwnedKwargsDict[PythonObject]) raises: ...
+        def func(**kwargs: PythonObject) -> PythonObject: ...
+        def func(arg1: PythonObject, **kwargs: PythonObject) raises: ...
         ```
 
         Parameters:
@@ -1044,6 +1044,91 @@ struct PythonTypeBuilder(Copyable):
 
 
 # ===-----------------------------------------------------------------------===#
+# Error Translation
+# ===-----------------------------------------------------------------------===#
+
+
+@fieldwise_init
+struct ExceptionType(TrivialRegisterPassable):
+    """A CPython global exception type used to translate a Mojo `Error` into a
+    Python exception.
+    """
+
+    var global_name: StaticString
+    """The name of the backing CPython global, for example `PyExc_TypeError`."""
+
+    comptime Exception = Self("PyExc_Exception")
+    """The base `Exception` type."""
+
+    comptime TypeError = Self("PyExc_TypeError")
+    """The `TypeError` type."""
+
+    comptime ValueError = Self("PyExc_ValueError")
+    """The `ValueError` type."""
+
+
+def _set_python_error(
+    e: Error, exc_type: ExceptionType = ExceptionType.Exception
+):
+    """Set the active Python exception from a Mojo `Error`.
+
+    Translates `e` into a Python exception of type `exc_type` via
+    `PyErr_SetString`, leaving the CPython error indicator set so the
+    enclosing `PyCFunction` wrapper can signal the failure to CPython.
+
+    Args:
+        e: The Mojo error to translate.
+        exc_type: The CPython global exception type to set. Defaults to
+            `ExceptionType.Exception`.
+    """
+    ref cpython = Python().cpython()
+    var error_message = String(e)
+    var error_type = cpython.get_error_global(exc_type.global_name)
+    cpython.PyErr_SetString(
+        error_type, error_message.as_c_string_slice().unsafe_ptr()
+    )
+
+
+def raise_python_exception(
+    e: Error, exc_type: ExceptionType = ExceptionType.Exception
+) -> PyObjectPtr:
+    """Translate a Mojo `Error` into a Python exception and return NULL.
+
+    Sets the active Python exception via `PyErr_SetString` so that the
+    calling `PyCFunction` wrapper can return the resulting null `PyObjectPtr`
+    to signal the error to CPython.
+
+    Example:
+
+    ```mojo
+    from std.python import PythonObject
+    from std.python._cpython import PyObjectPtr
+    from std.python.bindings import raise_python_exception
+
+    def do_work(args: PyObjectPtr) -> PythonObject:
+        # Your wrapper's real work, which may raise a Mojo `Error`.
+        return PythonObject(from_borrowed=args)
+
+    def my_wrapper(py_self: PyObjectPtr, args: PyObjectPtr) -> PyObjectPtr:
+        try:
+            return do_work(args).steal_data()
+        except e:
+            return raise_python_exception(e)
+    ```
+
+    Args:
+        e: The Mojo error to translate.
+        exc_type: The CPython global exception type to set. Defaults to
+            `ExceptionType.Exception`.
+
+    Returns:
+        A null `PyObjectPtr`, which signals the error to CPython.
+    """
+    _set_python_error(e, exc_type)
+    return PyObjectPtr()
+
+
+# ===-----------------------------------------------------------------------===#
 # PyCFunction Wrappers
 # ===-----------------------------------------------------------------------===#
 
@@ -1065,17 +1150,10 @@ def _py_new_function_wrapper[
 ](subtype: PyTypeObjectPtr, args_ptr: PyObjectPtr, kwargs_ptr: PyObjectPtr) abi(
     "C"
 ) -> PyObjectPtr:
-    ref cpython = Python().cpython()
-
     try:
         return _unsafe_alloc[T](subtype)
     except e:
-        var error_message = String(e)
-        var error_type = cpython.get_error_global("PyExc_TypeError")
-        cpython.PyErr_SetString(
-            error_type, error_message.as_c_string_slice().unsafe_ptr()
-        )
-        return {}
+        return raise_python_exception(e, ExceptionType.TypeError)
 
 
 def _py_init_function_wrapper[
@@ -1091,8 +1169,6 @@ def _py_init_function_wrapper[
     var kwargs = PythonObject(from_borrowed=kwargs_ptr)
     var args = PythonObject(from_borrowed=args_ptr)
 
-    ref cpython = Python().cpython()
-
     try:
         var value = init_func(args, kwargs)
         _unsafe_init(py_self, value^)
@@ -1100,11 +1176,7 @@ def _py_init_function_wrapper[
 
     except e:
         # TODO(MSTDL-933): Add custom 'MojoError' type, and raise it here.
-        var error_message = String(e)
-        var error_type = cpython.get_error_global("PyExc_ValueError")
-        cpython.PyErr_SetString(
-            error_type, error_message.as_c_string_slice().unsafe_ptr()
-        )
+        _set_python_error(e, ExceptionType.ValueError)
         return -1
 
 
@@ -1173,8 +1245,6 @@ def _py_c_function_wrapper[
     # held), so we do not acquire it here. Acquiring it would just cost
     # an extra PyGILState_Ensure/Release round-trip per call.
 
-    ref cpython = Python().cpython()
-
     try:
         comptime if user_func.isa[PyFunctionRaising]():
             return user_func.unsafe_get[PyFunctionRaising]()(
@@ -1188,15 +1258,36 @@ def _py_c_function_wrapper[
         else:
             comptime assert False, "unknown `GenericPyFunction` variant"
     except e:
-        var error_message = String(e)
-        var error_type = cpython.get_error_global("PyExc_Exception")
+        # Return a NULL `PyObject*`, with the Python error indicator set.
+        return raise_python_exception(e)
 
-        cpython.PyErr_SetString(
-            error_type, error_message.as_c_string_slice().unsafe_ptr()
-        )
 
-        # Return a NULL `PyObject*`.
-        return PyObjectPtr()
+def _convert_kwargs(
+    py_kwargs: PythonObject,
+) raises -> OwnedKwargsDict[PythonObject]:
+    """Convert a Python dictionary to an OwnedKwargsDict.
+
+    Args:
+        py_kwargs: Python dictionary containing keyword arguments.
+
+    Returns:
+        An OwnedKwargsDict containing the keyword arguments.
+    """
+    var result = OwnedKwargsDict[PythonObject]()
+
+    # Handle the case where kwargs is None or empty
+    if not py_kwargs._obj_ptr:
+        return result^
+
+    # Iterate through the Python dictionary and populate OwnedKwargsDict
+    var items = py_kwargs.items()
+    for item in items:
+        var key = item[0]
+        var value = item[1]
+        var key_str = String(key)
+        result[key_str] = value
+
+    return result^
 
 
 @always_inline
@@ -1225,9 +1316,9 @@ def _py_kwargs_function_wrapper[
         mut py_args: PythonObject,
         mut py_kwargs: PythonObject,
     ) raises -> PythonObject:
-        var kwargs = FuncT._convert_kwargs(py_kwargs)
+        var kwargs = _convert_kwargs(py_kwargs)
         return FuncT._dispatch_kwargs[is_method](
-            func._func, py_self, py_args, kwargs
+            func._func, py_self, py_args, **kwargs^
         )
 
     return GenericPyFunction(wrapper_with_kwargs)
@@ -1284,7 +1375,6 @@ def _py_function_fastcall_wrapper[
         nargs: Py_ssize_t,
     ) abi("C") -> PyObjectPtr:
         var py_self = PythonObject(from_borrowed=py_self_ptr)
-        ref cpython = Python().cpython()
 
         # CPython's vectorcall protocol (PEP 590) guarantees `args` is
         # non-null for every METH_FASTCALL invocation, including the
@@ -1296,13 +1386,8 @@ def _py_function_fastcall_wrapper[
                 func._func, py_self, args, Int(nargs)
             ).steal_data()
         except e:
-            var error_message = String(e)
-            var error_type = cpython.get_error_global("PyExc_Exception")
-            cpython.PyErr_SetString(
-                error_type, error_message.as_c_string_slice().unsafe_ptr()
-            )
-            # Return a NULL `PyObject*`.
-            return PyObjectPtr()
+            # Return a NULL `PyObject*`, with the Python error indicator set.
+            return raise_python_exception(e)
 
     return fastcall
 

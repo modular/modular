@@ -39,6 +39,7 @@ from .input_types import (
 from .metrics import KVCacheMetrics
 from .utils import (
     AttentionDispatchResolver,
+    AttentionDispatchResolverInterface,
     AttnKey,
     AttnKeyInterface,
     MHAAttnKey,
@@ -48,6 +49,7 @@ from .utils import (
 
 __all__ = [
     "AttentionDispatchResolver",
+    "AttentionDispatchResolverInterface",
     "AttnKey",
     "AttnKeyInterface",
     "BatchCharacteristics",

@@ -162,11 +162,9 @@ def print_report(results: list[LogitComparison]) -> None:
         )
 
 
-pipeline_config = PipelineConfig.model_validate(
-    {
-        "model_path": MODEL_PATH,
-        "runtime": {"custom_architectures": CUSTOM_ARCHITECTURES},
-    }
+pipeline_config = PipelineConfig.from_flat_kwargs(
+    model_path=MODEL_PATH,
+    custom_architectures=CUSTOM_ARCHITECTURES,
 )
 _, retrieved_pipeline = PIPELINE_REGISTRY.retrieve(pipeline_config)
 assert isinstance(retrieved_pipeline, GenerateMixin)

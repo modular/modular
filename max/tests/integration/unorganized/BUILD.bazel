@@ -257,6 +257,33 @@ modular_py_test(
     ],
 )
 
+# Test for the fused apply_packed_bitmask op (rank-2 and rank-3 paths)
+modular_py_test(
+    name = "test-apply-packed-bitmask",
+    size = "medium",
+    srcs = [
+        "conftest.py",
+        "sampling/test_apply_packed_bitmask.py",
+    ],
+    env = {
+        "MODULAR_PATH": ".",
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "8",
+    },
+    gpu_constraints = _SAMPLING_GPU_CONSTRAINTS,
+    tags = [
+        "gpu",
+        "no-sandbox",
+    ],
+    deps = _SAMPLING_BASE_DEPS + [
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/support",
+        "//max/tests/integration:hf_repo_lock",
+    ],
+)
+
 # Test for token_sampler (basic sampling without structured output)
 modular_py_test(
     name = "test-token-sampler",

@@ -824,6 +824,8 @@ struct SplitKPartition[dtype: DType](
 ):
     comptime do_partition: Bool = True
     comptime accum_dtype: DType = Self.dtype
+
+    @__allow_legacy_any_origin_fields
     var ptr: UnsafePointer[Scalar[Self.accum_dtype], MutAnyOrigin]
     var num_partitions_value: UInt32
     var max_num_partitions_value: UInt32

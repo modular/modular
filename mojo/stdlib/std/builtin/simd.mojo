@@ -519,7 +519,7 @@ struct SIMD[dtype: DType, size: SIMDSize](
 
     - Vector operations:
       - Horizontal reductions: `reduce_add()`, `reduce_mul()`, `reduce_min()`, `reduce_max()`
-      - Element-wise conditional selection: `select(condition, true_case, false_case)`
+      - Element-wise conditional selection: `select(true_case, false_case)`
       - Vector manipulation: `shuffle()`, `slice()`, `join()`, `split()`
       - Type conversion: `cast[target_dtype]()`
 

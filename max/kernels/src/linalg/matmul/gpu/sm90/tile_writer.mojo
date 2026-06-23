@@ -473,6 +473,7 @@ struct FragmentToSMemWriter[
         Self.tile_n_size, Self.WG_BN
     ]()
 
+    @__allow_legacy_any_origin_fields
     var c_tile: TileTensor[
         mut=True,
         dtype=Self.c_type,

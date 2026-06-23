@@ -123,14 +123,13 @@ def bench_rms_norm_fused_fp8[
                 rms_output_ptr_offset, row_major(Coord(shape))
             )
 
-            # Input function for RMS norm
+            # Input function for RMS norm. `rms_norm_gpu` migrated to a `Coord`
+            # shape boundary (softmax PR #88203).
             @__copy_capture(data_buf_offset)
             @always_inline
             @parameter
-            def input_fn[
-                width: Int, _rank: Int
-            ](coords: IndexList[_rank]) -> SIMD[in_dtype, width]:
-                var idx = data_buf_offset.layout(Coord(coords))
+            def input_fn[width: Int](coords: Coord) -> SIMD[in_dtype, width]:
+                var idx = data_buf_offset.layout(coords)
                 return data_buf_offset.raw_load[width=width, alignment=width](
                     idx
                 )
@@ -141,15 +140,15 @@ def bench_rms_norm_fused_fp8[
             @parameter
             def rms_output_fn[
                 width: SIMDSize, alignment: Int
-            ](coords: IndexList[rank], val: SIMD[in_dtype, width]) -> None:
-                var idx = rms_output_buf_offset.layout(Coord(coords))
+            ](coords: Coord, val: SIMD[in_dtype, width]) -> None:
+                var idx = rms_output_buf_offset.layout(coords)
                 rms_output_buf_offset.raw_store[
                     width=width, alignment=alignment
                 ](idx, val)
 
-            rms_norm_gpu[input_fn, rms_output_fn, multiply_before_cast=True](
-                shape, gamma_tensor, epsilon, weight_offset, ctx
-            )
+            rms_norm_gpu[
+                rank, input_fn, rms_output_fn, multiply_before_cast=True
+            ](Coord(shape), gamma_tensor, epsilon, weight_offset, ctx)
 
         b.iter_custom[kernel_launch](ctx)
 
@@ -177,12 +176,10 @@ def bench_rms_norm_fused_fp8[
             # Input function for FP8 quant (reads from RMS norm output)
             var rms_ptr_offset = cb_rms_output.offset_ptr(iteration)
 
-            @__copy_capture(rms_ptr_offset)
             @always_inline
-            @parameter
             def fp8_input_fn[
                 width: Int, alignment: Int
-            ](row: Int, col: Int) -> SIMD[in_dtype, width]:
+            ](row: Int, col: Int) {var rms_ptr_offset} -> SIMD[in_dtype, width]:
                 var idx = row * cols + col
                 return rms_ptr_offset.load[width=width](idx)
 
@@ -196,10 +193,10 @@ def bench_rms_norm_fused_fp8[
             )
 
             quantize_dynamic_scaled_fp8[
-                input_fn=fp8_input_fn,
+                in_dtype=in_dtype,
                 group_size_or_per_token=-1,  # Per-token quantization
                 num_cols=cols,
-            ](fp8_output_tt, scales_tt, Float32(448.0), ctx, rows)
+            ](fp8_input_fn, fp8_output_tt, scales_tt, Float32(448.0), ctx, rows)
 
         b.iter_custom[kernel_launch](ctx)
 
@@ -306,14 +303,13 @@ def bench_rms_norm_fused_fp8[
         rms_output_ptr_verify, row_major(Coord(shape))
     )
 
-    # Input function for verification
+    # Input function for verification. `rms_norm_gpu` migrated to a `Coord`
+    # shape boundary (softmax PR #88203).
     @__copy_capture(data_buf_verify)
     @always_inline
     @parameter
-    def input_fn_verify[
-        width: Int, _rank: Int
-    ](coords: IndexList[_rank]) -> SIMD[in_dtype, width]:
-        var idx = data_buf_verify.layout(Coord(coords))
+    def input_fn_verify[width: Int](coords: Coord) -> SIMD[in_dtype, width]:
+        var idx = data_buf_verify.layout(coords)
         return data_buf_verify.raw_load[width=width](idx)
 
     # Output function for verification
@@ -322,24 +318,22 @@ def bench_rms_norm_fused_fp8[
     @parameter
     def rms_output_fn_verify[
         width: SIMDSize, alignment: Int
-    ](coords: IndexList[rank], val: SIMD[in_dtype, width]) -> None:
-        var idx = rms_output_buf_verify.layout(Coord(coords))
+    ](coords: Coord, val: SIMD[in_dtype, width]) -> None:
+        var idx = rms_output_buf_verify.layout(coords)
         rms_output_buf_verify.raw_store[width=width, alignment=alignment](
             idx, val
         )
 
     # Run RMS norm
     rms_norm_gpu[
-        input_fn_verify, rms_output_fn_verify, multiply_before_cast=True
-    ](shape, gamma_tensor, epsilon, weight_offset, ctx)
+        rank, input_fn_verify, rms_output_fn_verify, multiply_before_cast=True
+    ](Coord(shape), gamma_tensor, epsilon, weight_offset, ctx)
 
     # Run FP8 quantization on RMS norm output
-    @__copy_capture(rms_verify_base_ptr)
     @always_inline
-    @parameter
     def fp8_input_fn_verify[
         width: Int, alignment: Int
-    ](row: Int, col: Int) -> SIMD[in_dtype, width]:
+    ](row: Int, col: Int) {var rms_verify_base_ptr} -> SIMD[in_dtype, width]:
         var rms_ptr = rms_verify_base_ptr
         var idx = row * cols + col
         return rms_ptr.load[width=width](idx)
@@ -354,10 +348,17 @@ def bench_rms_norm_fused_fp8[
     )
 
     quantize_dynamic_scaled_fp8[
-        input_fn=fp8_input_fn_verify,
+        in_dtype=in_dtype,
         group_size_or_per_token=-1,
         num_cols=cols,
-    ](fp8_output_tt_verify, scales_tt_verify, Float32(448.0), ctx, rows)
+    ](
+        fp8_input_fn_verify,
+        fp8_output_tt_verify,
+        scales_tt_verify,
+        Float32(448.0),
+        ctx,
+        rows,
+    )
 
     # Run fused kernel
     var data_base_ptr_verify = cb_data.unsafe_ptr()

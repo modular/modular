@@ -882,7 +882,7 @@ def blackwell_tma_umma_warp_specialized_kernel[
     a_gmem_layout: Layout = Layout.row_major(1, 1),
     b_gmem_layout: Layout = Layout.row_major(1, 1),
 ](
-    num_active_experts: Int,
+    expert_usage_stats: UnsafePointer[Scalar[DType.uint32], ImmutAnyOrigin],
     a_tma_op: TMATensorTile[a_type, a_tile_rank, a_tile_shape, a_desc_shape],
     expert_ids: UnsafePointer[Scalar[DType.int32], ImmutAnyOrigin],
     b_tma_op: TMATensorTile[b_type, b_tile_rank, b_tile_shape, b_desc_shape],
@@ -1053,6 +1053,11 @@ def blackwell_tma_umma_warp_specialized_kernel[
         b_swizzle=b_swizzle,
         transpose_b=transpose_b,
     ]()
+
+    # num_active_experts is a TileScheduler loop bound, and the persistent grid
+    # is fixed at one CTA per SM, so it can be read from the device tensor
+    # rather than taken as a host scalar. (`[0]` = max tokens, unused here.)
+    var num_active_experts = Int(expert_usage_stats[1])
 
     comptime _offsets_layout = Layout.row_major(UNKNOWN_VALUE)
     b_offsets_tensor = LayoutTensor[
@@ -1328,12 +1333,13 @@ def grouped_matmul_sm100_persistent[
     a_offsets: TileTensor[
         mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
-    max_num_tokens_per_expert: Int,
     b: TileTensor[mut=False, b_type, address_space=AddressSpace.GENERIC, ...],
     expert_ids: TileTensor[
         mut=False, DType.int32, address_space=AddressSpace.GENERIC, ...
     ],
-    num_active_experts: Int,
+    expert_usage_stats: TileTensor[
+        mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
+    ],
     ctx: DeviceContext,
 ) raises:
     # swapAB by default
@@ -1364,7 +1370,7 @@ def grouped_matmul_sm100_persistent[
         expert_ids.ptr.as_unsafe_any_origin(),
         a.ptr.as_unsafe_any_origin(),  # activations (b after swapAB)
         a_offsets.ptr.as_unsafe_any_origin(),
-        num_active_experts,
+        expert_usage_stats.ptr.as_unsafe_any_origin(),
         Int(c.dim[0]()),
         ctx,
     )
@@ -1392,7 +1398,7 @@ def _grouped_matmul_sm100_persistent[
     expert_ids: UnsafePointer[Scalar[DType.int32], ImmutAnyOrigin],
     b_ptr: UnsafePointer[Scalar[b_type], ImmutAnyOrigin],
     b_offsets: UnsafePointer[Scalar[DType.uint32], ImmutAnyOrigin],
-    num_active_experts: Int,
+    expert_usage_stats: UnsafePointer[Scalar[DType.uint32], ImmutAnyOrigin],
     M_runtime: Int,
     ctx: DeviceContext,
 ) raises:
@@ -1618,7 +1624,7 @@ def _grouped_matmul_sm100_persistent[
     var mnk = StaticTuple[UInt32, 3](UInt32(M), UInt32(N), UInt32(K))
 
     ctx.enqueue_function[kernel](
-        num_active_experts,
+        expert_usage_stats,
         a_tma_op,
         expert_ids,
         b_tma_op,

@@ -26,10 +26,12 @@ from std.memory import (
 from std.hashlib.hasher import Hasher
 from std.reflection import call_location
 from std.reflection.traits import (
+    AllMovable,
     AllCopyable,
     AllEquatable,
     AllHashable,
     AllImplicitlyCopyable,
+    AllImplicitlyDestructible,
     AllRegisterPassable,
     AllWritable,
 )
@@ -407,8 +409,10 @@ struct Variant[*Ts: Movable](
     # TODO(MOCO-3421): AllImplicitlyCopyable implies AllCopyable since
     # ImplicitlyCopyable refines Copyable, but the compiler can't infer
     # parent trait constraints from derived ones yet. Remove AllCopyable
-    # from this where clause once that's fixed.
-    ImplicitlyCopyable where AllImplicitlyCopyable[*Ts] and AllCopyable[*Ts],
+    # and AllMovable from this where clause once that's fixed.
+    ImplicitlyCopyable where (
+        AllImplicitlyCopyable[*Ts] and AllCopyable[*Ts] and AllMovable[*Ts]
+    ),
     ImplicitlyDeletable,
     Movable,
     RegisterPassable where AllRegisterPassable[*Ts],
@@ -560,42 +564,15 @@ struct Variant[*Ts: Movable](
         Self._check[T]()
         self._storage = Self._Storage(value^)
 
-    def __init__(out self, *, copy: Self):
-        """Copy-initialize this variant from another variant of the same type.
-
-        Args:
-            copy: The variant to copy from.
-        """
-        # TODO(MOCO-3640): This should be a `where AllCopyable[*Self.Ts]`
-        # constraint, but the compiler can't propagate evidence through
-        # variadic conformance checks (e.g. Optional calling this with
-        # Variant[_NoneType, T] can't prove AllCopyable from conforms_to(T,
-        # Copyable)). Using comptime assert as a workaround.
-        comptime assert AllCopyable[
-            *Self.Ts
-        ], "Cannot copy Variant with non-copyable types"
-        self._storage = Self._Storage(copy=copy._storage)
-
-    def __init__(out self, *, deinit move: Self):
-        """Move-initialize this variant from another variant of the same type.
-
-        Args:
-            move: The variant to move from.
-        """
-        comptime assert _all_movable[
-            *Self.Ts
-        ](), "Cannot move Variant with non-movable types"
-        self._storage = Self._Storage(move=move._storage^)
-
     def __del__(deinit self):
         """Destroy the variant, running the destructor of the currently held value.
 
         Constraints:
             All types in `Ts` must conform to `ImplicitlyDeletable`.
         """
-        comptime assert _all_implicitly_destructible[
+        comptime assert AllImplicitlyDestructible[
             *Self.Ts
-        ](), "Cannot call __del__ on Variant with explicitly destroyed types"
+        ], "Cannot call __del__ on Variant with explicitly destroyed types"
         self._storage^.__del__()
 
     # ===-------------------------------------------------------------------===#
@@ -929,22 +906,6 @@ struct Variant[*Ts: Movable](
 # ===-------------------------------------------------------------------===#
 # Helper functions
 # ===-------------------------------------------------------------------===#
-
-
-def _all_implicitly_destructible[*Ts: AnyType]() -> Bool:
-    comptime for i in range(Ts.size):
-        comptime T = Ts[i]
-        if not conforms_to(T, ImplicitlyDeletable):
-            return False
-    return True
-
-
-def _all_movable[*Ts: AnyType]() -> Bool:
-    comptime for i in range(Ts.size):
-        comptime T = Ts[i]
-        if not conforms_to(T, Movable):
-            return False
-    return True
 
 
 def _all_trivial_del[*Ts: AnyType]() -> Bool:
