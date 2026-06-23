@@ -227,6 +227,8 @@ class Step3p5Config(Llama3Config):
             per_layer_rope_theta = [float(t) for t in rope_theta_raw]
             scalar_theta = rope_theta_raw[0] if rope_theta_raw else 10000.0
             huggingface_config.rope_theta = scalar_theta
+            # Save the list so a second init recovers it after the collapse.
+            huggingface_config.per_layer_rope_theta = per_layer_rope_theta
             # Transformers v5 copies rope_theta into rope_parameters; patch
             # there too so get_rope_theta() returns the scalar.
             rope_params = getattr(huggingface_config, "rope_parameters", None)
