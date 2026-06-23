@@ -1167,7 +1167,7 @@ components:
                 The content of the message as a string.
             - type: array
               description: |
-                The content of the message as an array of content parts. For user messages, content parts can be of type text or image_url.
+                The content of the message as an array of content parts. For user messages, content parts can be of type text, image_url, or video_url.
               items:
                 oneOf:
                   - type: object
@@ -1224,6 +1224,24 @@ components:
                             type: string
                             description: |
                               Either a URL of the video or the base64 encoded video data.
+                          fps:
+                            type: number
+                            exclusiveMinimum: 0
+                            description: |
+                              Optional sampling hint. Frames per second to
+                              sample the video at.
+                          max_frames:
+                            type: integer
+                            minimum: 1
+                            description: |
+                              Optional sampling hint. Maximum number of frames
+                              to sample from the video.
+                          max_long_side_pixel:
+                            type: integer
+                            minimum: 1
+                            description: |
+                              Optional sizing hint. Downscale the video so its
+                              longest side is at most this many pixels.
         name:
           type: string
           description: |

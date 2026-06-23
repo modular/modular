@@ -102,6 +102,20 @@ pixels before the model processes it:
 }
 ```
 
+The `video_url` object accepts optional sampling and sizing hints, all positive
+numbers: `fps` (frames per second to sample), `max_frames` (the maximum number
+of frames to sample), and `max_long_side_pixel` (downscale each frame so its
+longest side is at most that many pixels):
+
+```json
+"video_url": {
+  "url": "https://example.com/path/to/video.mp4",
+  "fps": 1,
+  "max_frames": 64,
+  "max_long_side_pixel": 1024
+}
+```
+
 ### Local file input
 
 To use local images or videos, you must configure allowed directories before
