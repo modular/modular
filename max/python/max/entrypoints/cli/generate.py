@@ -86,22 +86,34 @@ async def stream_text_to_console(
         sampling_params, logits_processors=logits_processors
     )
 
-    messages = [
-        TextGenerationRequestMessage(
-            role="user",
-            content=[
-                TextContentPart(text=prompt),
-                *(ImageContentPart() for _ in images),
+    # Base/completion models (e.g. GPT-2) have no chat template. For these, send the raw
+    # prompt so the tokenizer encodes it directly instead of trying to apply a
+    # chat template. Chat models (with a template) and multimodal requests
+    # still go through the messages path.
+    has_chat_template = bool(getattr(tokenizer.delegate, "chat_template", None))
+    if images or has_chat_template:
+        request = TextGenerationRequest(
+            request_id=RequestID(),
+            messages=[
+                TextGenerationRequestMessage(
+                    role="user",
+                    content=[
+                        TextContentPart(text=prompt),
+                        *(ImageContentPart() for _ in images),
+                    ],
+                )
             ],
+            images=images,
+            model_name=MODEL_NAME,
+            sampling_params=sampling_params,
         )
-    ]
-    request = TextGenerationRequest(
-        request_id=RequestID(),
-        messages=messages,
-        images=images,
-        model_name=MODEL_NAME,
-        sampling_params=sampling_params,
-    )
+    else:
+        request = TextGenerationRequest(
+            request_id=RequestID(),
+            prompt=prompt,
+            model_name=MODEL_NAME,
+            sampling_params=sampling_params,
+        )
 
     if metrics:
         metrics.signpost("begin_generation")

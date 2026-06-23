@@ -17,12 +17,12 @@ from max.graph import DeviceRef, TensorValue, ops
 from .kernels import (
     _fused_qkv_ragged_matmul_scaled_float4,
     _fused_qkv_ragged_matmul_scaled_float8,
+    _fused_qkv_ragged_matmul_scaled_mxfp8,
     block_scales_interleave,
     convert_weights_to_fp8_fnuz_if_needed,
     dynamic_block_scaled_matmul,
     dynamic_block_scaled_matmul_mxfp4,
     dynamic_scaled_matmul,
-    fused_qkv_ragged_matmul,
     grouped_dynamic_scaled_fp8_matmul,
     grouped_matmul_ragged,
     matmul_static_scaled_float8,
@@ -146,32 +146,6 @@ def _matmul_float4_mxfp4(
         out_type=DType.bfloat16,
     )
     return res
-
-
-def _dequantize_mxfp8_weight(
-    weight: TensorValue,
-    weight_scale: TensorValue,
-) -> TensorValue:
-    """Dequantize an MXFP8 weight to bf16.
-
-    ``weight`` is ``float8_e4m3fn`` ``[N, K]`` and ``weight_scale`` is
-    ``float8_e8m0fnu`` ``[N, K // 32]`` (one power-of-two scale per 32-element
-    K block). Returns ``weight * scale`` in bf16, with each scale broadcast
-    across its 32-element block.
-    """
-    SF_VECTOR_SIZE = 32
-    n_dim = weight.shape[0]
-    k_dim = weight.shape[1]
-    k_blocks = k_dim // SF_VECTOR_SIZE
-    # E8M0 -> f32 yields the exact power-of-two value; E4M3 -> f32 is exact.
-    w = weight.cast(DType.float32)
-    scale = weight_scale.cast(DType.float32)
-    scale = ops.broadcast_to(
-        ops.reshape(scale, [n_dim, k_blocks, 1]),
-        [n_dim, k_blocks, SF_VECTOR_SIZE],
-    )
-    scale = ops.reshape(scale, [n_dim, k_dim])
-    return (w * scale).cast(DType.bfloat16)
 
 
 def _matmul_float8_mxfp8(
@@ -451,23 +425,29 @@ def quantized_fused_qkv_matmul(
     """
     match quant_config.format:
         case QuantFormat.MXFP8:
-            # No fused block-scaled MXFP8 QKV+KV-write kernel exists yet, so
-            # dequantize the (constant) QKV weight to bf16 and use the
-            # unquantized fused QKV ragged matmul. The dense MLP still uses the
-            # MXFP8 block-scaled tensor-core path. bf16 weights are strictly
-            # more accurate than the FP8 source, so accuracy does not regress.
-            wqkv_bf16 = _dequantize_mxfp8_weight(
-                wqkv, weight_scale.to(x.device)
+            if bias is not None:
+                raise NotImplementedError(
+                    "bias is not supported by the fused MXFP8 QKV kernel"
+                )
+            x_fp8, x_scales = quantize_dynamic_block_scaled(
+                x,
+                sf_vector_size=32,
+                scales_type=DType.float8_e8m0fnu,
+                out_type=DType.float8_e4m3fn,
             )
-            return fused_qkv_ragged_matmul(
+            weight_scale = block_scales_interleave(
+                weight_scale.to(x.device), sf_vector_size=32
+            )
+            return _fused_qkv_ragged_matmul_scaled_mxfp8(
                 kv_params,
-                input=x,
+                input=x_fp8,
                 input_row_offsets=input_row_offsets,
-                wqkv=wqkv_bf16,
+                wqkv=wqkv,
                 kv_collection=kv_collection,
                 layer_idx=layer_idx,
                 n_heads=n_heads,
-                bias=bias,
+                input_scale=x_scales.to(x.device),
+                weight_scale=weight_scale,
                 _output_dim=_output_dim,
             )
         case QuantFormat.NVFP4:

@@ -263,6 +263,11 @@ class FusedSamplingProcessor:
         logits = inputs.logits
         logit_offsets = inputs.logit_offsets
 
+        if logits.device != self.device:
+            logits = logits.to(self.device)
+            if logit_offsets is not None:
+                logit_offsets = logit_offsets.to(self.device)
+
         new_tokens, new_generated_tokens, new_seed = _sample_logits(
             self.sampler,
             logits,

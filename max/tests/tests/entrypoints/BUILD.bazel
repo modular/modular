@@ -25,6 +25,7 @@ modular_py_test(
         "//max/python/max/pipelines/modeling",
         "//max/python/max/serve",
         "//max/python/max/serve:config",
+        "//max/python/max/serve:process_control",
         "//max/python/max/serve/pipelines",
         "//max/python/max/serve/telemetry",
         "//max/python/max/serve/worker_interface",

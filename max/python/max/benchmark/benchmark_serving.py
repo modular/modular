@@ -54,6 +54,7 @@ from max.benchmark.benchmark_shared.config import (
     CACHE_RESET_ENDPOINT_MAP,
     PIXEL_GENERATION_ENDPOINTS,
     PIXEL_GENERATION_TASKS,
+    VIDEO_GENERATION_TASKS,
     Backend,
     BenchmarkTask,
     Endpoint,
@@ -866,11 +867,11 @@ def validate_task_and_endpoint(
     elif benchmark_task in PIXEL_GENERATION_TASKS:
         if (
             endpoint in ("/v1/videos/sync", "/v1/videos")
-            and benchmark_task != "text-to-video"
+            and benchmark_task not in VIDEO_GENERATION_TASKS
         ):
             raise ValueError(
-                f"--endpoint {endpoint} is only valid for"
-                f" --benchmark-task text-to-video, got {benchmark_task!r}"
+                f"--endpoint {endpoint} is only valid for video tasks"
+                f" {VIDEO_GENERATION_TASKS}, got {benchmark_task!r}"
             )
         if endpoint not in PIXEL_GENERATION_ENDPOINTS:
             raise ValueError(

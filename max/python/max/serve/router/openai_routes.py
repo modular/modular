@@ -959,12 +959,23 @@ class _ParsedChatRequest(NamedTuple):
     decoded_images: list[Image.Image]
 
 
-def _coerce_long_side_pixel(value: Any) -> int | None:
-    """Coerces a ``max_long_side_pixel`` hint to a positive int, else ``None``."""
+def _coerce_positive_int(value: Any) -> int | None:
+    """Coerces a value to a positive int, else ``None``."""
     if isinstance(value, bool) or value is None:
         return None
     try:
         coerced = int(value)
+    except (TypeError, ValueError):
+        return None
+    return coerced if coerced > 0 else None
+
+
+def _coerce_positive_float(value: Any) -> float | None:
+    """Coerces a value to a positive float, else ``None``."""
+    if isinstance(value, bool) or value is None:
+        return None
+    try:
+        coerced = float(value)
     except (TypeError, ValueError):
         return None
     return coerced if coerced > 0 else None
@@ -1115,7 +1126,7 @@ async def openai_parse_chat_completion_request(
                         # Carry the optional sizing hint onto the placeholder.
                         message_content.append(
                             ImageContentPart(
-                                max_long_side_pixel=_coerce_long_side_pixel(
+                                max_long_side_pixel=_coerce_positive_int(
                                     image_url.get("max_long_side_pixel")
                                 )
                             )
@@ -1123,9 +1134,24 @@ async def openai_parse_chat_completion_request(
                     else:
                         message_content.append(dict(content_part))
                 elif part_type == "video_url":
-                    video_refs.append(AnyUrl(content_part["video_url"]["url"]))
+                    video_url = content_part["video_url"]
+                    video_refs.append(AnyUrl(video_url["url"]))
                     if wrap_content:
-                        message_content.append(VideoContentPart())
+                        # Carry the optional sampling/sizing hints onto the
+                        # placeholder.
+                        message_content.append(
+                            VideoContentPart(
+                                fps=_coerce_positive_float(
+                                    video_url.get("fps")
+                                ),
+                                max_frames=_coerce_positive_int(
+                                    video_url.get("max_frames")
+                                ),
+                                max_long_side_pixel=_coerce_positive_int(
+                                    video_url.get("max_long_side_pixel")
+                                ),
+                            )
+                        )
                     else:
                         message_content.append(dict(content_part))
                 elif part_type == "text":
