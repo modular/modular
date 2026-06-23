@@ -147,6 +147,19 @@ struct Stream[device_spec: DeviceSpec](ImplicitlyDeletable, Movable):
         self._queue[].copy_intra_device(dst, src, size)
         self._chain_signal()
 
+    def set_memory(
+        mut self,
+        dst: Buffer,
+        size: UInt64,
+        value: UInt64,
+        value_size: UInt64,
+    ) raises HALError:
+        """Fill `dst` with a repeated value. Runs after all previous Stream
+        ops."""
+        self._chain_wait()
+        self._queue[].set_memory(dst, size, value, value_size)
+        self._chain_signal()
+
     def record_event[
         flags: EventFlags = EVENT_FLAG_NONE,
     ](mut self,) raises HALError -> Event[flags]:

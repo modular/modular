@@ -460,6 +460,24 @@ struct RawDriver(Movable):
                 message=String(t"failed to copy intra-device: {err.message}"),
             )
 
+    def set_memory(
+        self,
+        queue: QueueHandle,
+        dst: MemoryHandle,
+        size: UInt64,
+        value: UInt64,
+        value_size: UInt64,
+    ) raises HALError:
+        var status = self._raw.queue_set_memory.f(
+            queue, dst, size, value, value_size
+        )
+        if status != STATUS_SUCCESS:
+            var err = self.get_status_message(status)
+            raise HALError(
+                err.status,
+                message=String(t"failed to set memory: {err.message}"),
+            )
+
     def synchronize_queue(self, queue: QueueHandle) raises HALError:
         var status = self._raw.queue_synchronize.f(queue)
         if status != STATUS_SUCCESS:
