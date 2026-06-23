@@ -30,7 +30,7 @@ from PIL import Image
 
 @pytest.fixture()
 async def runtime() -> AsyncIterator[LocalRuntime]:
-    async with LocalRuntime().open() as rt:
+    async with LocalRuntime() as rt:
         yield rt
 
 

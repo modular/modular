@@ -19,8 +19,10 @@ from max.experimental.cascade.core import (
     Runtime,
     Worker,
     WorkerType,
+    pipeline_method,
     worker_method,
 )
+from max.experimental.cascade.core.local_runtime import LocalRuntime
 from max.experimental.cascade.pipelines import CascadePipeline
 from max.experimental.cascade.pipelines.imgen import (
     ImageGenInterface,
@@ -31,7 +33,6 @@ from max.experimental.cascade.pipelines.textgen import (
     GenerateRequest,
     TextGenInterface,
 )
-from max.experimental.cascade.runtimes.local import LocalRuntime
 
 __all__ = [
     "CascadePipeline",
@@ -47,5 +48,6 @@ __all__ = [
     "TextGenInterface",
     "Worker",
     "WorkerType",
+    "pipeline_method",
     "worker_method",
 ]

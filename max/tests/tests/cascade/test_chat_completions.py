@@ -26,7 +26,7 @@ from max.tests.tests.cascade.dummy_textgen import build_dummy_textgen_pipeline
 
 @pytest.fixture()
 async def runtime() -> AsyncIterator[LocalRuntime]:
-    async with LocalRuntime().open() as rt:
+    async with LocalRuntime() as rt:
         yield rt
 
 

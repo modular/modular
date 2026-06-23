@@ -10,3 +10,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Entry point for the ``http_worker`` binary.
+
+Kept as a separate file from :py:mod:`.server` so that ``server.py`` lives
+in exactly one Bazel rule (the :py:obj:`http_runtime` library) and can be
+imported as a module by :py:mod:`.client` without also being a binary
+``srcs`` entry. See ``bazel/internal/find_duplicate_srcs.py``.
+"""
+
+from __future__ import annotations
+
+from max.experimental.cascade.http_runtime.server import cli
+
+if __name__ == "__main__":
+    cli()

@@ -29,6 +29,7 @@ modular_py_test(
     srcs = ["test_local_runtime.py"],
     deps = [
         "//max/python/max/experimental/cascade",
+        "//max/python/max/experimental/cascade/core",
         requirement("pytest-asyncio"),
     ],
 )
@@ -39,6 +40,7 @@ modular_py_test(
     srcs = ["test_contexts.py"],
     deps = [
         "//max/python/max/experimental/cascade",
+        "//max/python/max/experimental/cascade/core",
         requirement("pytest-asyncio"),
     ],
 )
@@ -79,6 +81,19 @@ modular_py_test(
         requirement("fastapi"),
         requirement("httpx"),
         requirement("pillow"),
+        requirement("pytest-asyncio"),
+    ],
+)
+
+modular_py_test(
+    name = "test_runtimes",
+    size = "small",
+    srcs = ["test_runtimes.py"],
+    deps = [
+        ":test_helpers",
+        "//max/python/max/experimental/cascade",
+        "//max/python/max/experimental/cascade/core",
+        "//max/python/max/experimental/cascade/http_runtime",
         requirement("pytest-asyncio"),
     ],
 )
