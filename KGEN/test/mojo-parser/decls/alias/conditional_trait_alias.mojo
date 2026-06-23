@@ -18,6 +18,16 @@ struct ConditionallyConforms[value: Int](RequiresIntAlias) where value > 0:
     # CHECK-NEXT: kgen.witness "Value" : !Int = value
 
 
+struct ConditionallyConformsInferred[value: Int](RequiresIntAlias) where (
+    value > 0
+):
+    # A 'where' clause must also work when the alias type is inferred from the
+    # initializer (no explicit ': Int' type annotation).
+    comptime Value where Self.value > 0 = Self.value
+    # CHECK: kgen.conformance @"{{.*}}RequiresIntAlias"
+    # CHECK-NEXT: kgen.witness "Value" : !Int = value
+
+
 trait RequiresParametricIntAlias:
     comptime Value[offset: Int]: Int
 
