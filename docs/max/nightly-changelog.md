@@ -145,6 +145,11 @@ This version is still a work in progress.
   compile each target lazily on first dispatch instead, bounding compile cost to
   the targets a program actually uses.
 
+- Added `max.experimental.nn.subgraphable` for `Module` subgraph compilation: a
+  repeated block (via the `@subgraphable` class decorator, or the
+  `subgraphable(layer)(x)` call form) lowers to one shared subgraph reused per
+  call. Opt out per compile with `Module.compile(..., allow_subgraphs=False)`.
+
 - `max.nn.hooks.PrintHook` now supports `max.experimental.nn.Module`.
 
 - Added `F.print`, which supports both single-device and multi-device tensors.

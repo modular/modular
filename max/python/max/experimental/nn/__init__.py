@@ -47,7 +47,13 @@ Example:
 from .conv import Conv2d
 from .embedding import Embedding
 from .linear import Linear
-from .module import CompiledModel, Module, PinnedDeviceTensor, module_dataclass
+from .module import (
+    CompiledModel,
+    Module,
+    PinnedDeviceTensor,
+    module_dataclass,
+    subgraphable,
+)
 from .norm import GemmaRMSNorm, GroupNorm, LayerNorm, RMSNorm
 from .rope import RotaryEmbedding, TransposedRotaryEmbedding
 from .sequential import ModuleList, Sequential
@@ -68,4 +74,5 @@ __all__ = [
     "Sequential",
     "TransposedRotaryEmbedding",
     "module_dataclass",
+    "subgraphable",
 ]
