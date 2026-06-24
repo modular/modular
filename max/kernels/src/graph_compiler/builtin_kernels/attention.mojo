@@ -52,6 +52,7 @@ from nn.kv_cache_ragged import (
     generic_flare_mla_prefill_kv_cache_ragged,
     generic_flare_mla_prefill_ragged_paged_plan,
     generic_flash_attention_kv_cache_ragged,
+    generic_fused_qkv_index_matmul_kv_cache_paged_ragged_scale_float4,
     generic_fused_qkv_matmul_kv_cache_paged_ragged_scale,
     generic_fused_qkv_matmul_kv_cache_paged_ragged_scale_float4,
 )
@@ -1063,6 +1064,90 @@ struct Struct_fused_qkv_matmul_padded_ragged_scale_mxfp8:
             layer_idx,
             output.to_layout_tensor(),
             ctx,
+        )
+
+
+@compiler.register("mo.fused_qkv_index_matmul.ragged.paged.scale.mxfp8")
+struct Struct_fused_qkv_index_matmul_padded_ragged_scale_mxfp8:
+    # Dual-cache fused QKV + index-QK matmul for MiniMax-M3. Like the
+    # single-cache mxfp8 struct above, this delegates to the dual-mode NVFP4
+    # entry point, which also handles MXFP8 (E8M0 scales, SF_VECTOR_SIZE=32)
+    # from its dtype/scale-dtype/SF_VECTOR_SIZE parameters. The "float4" in the
+    # callee name is intentional; do not split off a separate MXFP8 path.
+    #
+    # The MAIN cache operands (kv_blocks .. max_cache_length) drive the K/V
+    # scatter; the INDEX cache operands (index_kv_blocks .. index_max_cache_length)
+    # drive the IndexK scatter. Q and IndexQ are returned in the combined
+    # `output` tensor [M, q_dim + iq_dim].
+    #
+    # `IQ_DIM` is the IndexQ output-band width (num_index_heads * idx_head_dim).
+    # It is a parameter because, for the MLA index cache, it cannot be recovered
+    # from the index cache's `num_heads` (== 1 for the single latent head).
+    @always_inline
+    @staticmethod
+    def execute[
+        dtype: DType,
+        scale_type: DType,
+        output_type: DType,
+        kv_type: DType,
+        index_kv_type: DType,
+        //,
+        SF_VECTOR_SIZE: Int,
+        IQ_DIM: Int,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=output_type, rank=2, ...],
+        hidden_state: InputTensor[dtype=dtype, rank=2, ...],
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        weight: InputTensor[dtype=dtype, rank=2, ...],
+        input_scale: InputTensor[dtype=scale_type, rank=5, ...],
+        weight_scale: InputTensor[dtype=scale_type, rank=5, ...],
+        tensor_sf: Float32,
+        kv_blocks: MutableInputTensor[dtype=kv_type, rank=6, ...],
+        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        max_prompt_length: InputTensor[dtype=DType.uint32, rank=1, ...],
+        max_cache_length: InputTensor[dtype=DType.uint32, rank=1, ...],
+        index_kv_blocks: MutableInputTensor[dtype=index_kv_type, rank=6, ...],
+        index_cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        index_kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        index_max_prompt_length: InputTensor[dtype=DType.uint32, rank=1, ...],
+        index_max_cache_length: InputTensor[dtype=DType.uint32, rank=1, ...],
+        layer_idx: UInt32,
+        ctx: DeviceContext,
+    ) raises:
+        var kv_collection = generic_get_paged_cache(
+            kv_blocks,
+            cache_lengths,
+            kv_lookup_table,
+            max_prompt_length,
+            max_cache_length,
+        )
+        var index_kv_collection = generic_get_paged_cache(
+            index_kv_blocks,
+            index_cache_lengths,
+            index_kv_lookup_table,
+            index_max_prompt_length,
+            index_max_cache_length,
+        )
+        return (
+            generic_fused_qkv_index_matmul_kv_cache_paged_ragged_scale_float4[
+                SF_VECTOR_SIZE=SF_VECTOR_SIZE,
+                target=target,
+            ](
+                hidden_state.to_layout_tensor(),
+                input_row_offsets.to_layout_tensor(),
+                weight.to_layout_tensor(),
+                input_scale.to_layout_tensor(),
+                weight_scale.to_layout_tensor(),
+                tensor_sf,
+                kv_collection,
+                index_kv_collection,
+                layer_idx,
+                IQ_DIM,
+                output.to_layout_tensor(),
+                ctx,
+            )
         )
 
 
