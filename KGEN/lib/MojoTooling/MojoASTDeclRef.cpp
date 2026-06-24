@@ -136,7 +136,8 @@ std::optional<StringRef> MojoASTDeclRef::getName() const {
         .Case<StructDeclOp, StructFieldOp, VarDeclOp>(
             [](auto op) { return op.getName(); })
         .Case([](FnOp op) { return op.getSourceName(); })
-        .Case<FileModuleOp, PackageOp>([](auto op) { return op.getSymName(); })
+        .Case<FileModuleOp, PackageOp, ImportOp>(
+            [](auto op) { return op.getSymName(); })
         .Case([](AliasDeclOp op) {
           return demangleParameterName(op.getParamDecl().getName(),
                                        /*forUser*/ true);
@@ -235,7 +236,10 @@ ResultType MojoASTDeclRef::getDeclImpl() const {
     if (isa<FnOp>(declOp))
       return createPublicDecl<ResultType, PublicFunctionDecl>(*this);
 
-    if (isa<FileModuleOp>(declOp))
+    // An import op names either a module or package; they ultimately resolve to
+    // the same thing but classify it as a module so tooling sees the imported
+    // name as a module rather than a variable.
+    if (isa<FileModuleOp, ImportOp>(declOp))
       return createPublicDecl<ResultType, PublicModuleDecl>(*this);
 
     if (isa<StructDeclOp>(declOp))

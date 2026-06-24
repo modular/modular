@@ -630,6 +630,11 @@ void LowerSemanticCF::lowerBlock(Block &block, bool &doesRaise, bool &doesBreak,
     if (isa<LIT::ClosureInitOp>(op))
       continue;
 
+    // Import gates carry a region but are resolution-only artifacts and play no
+    // part in control flow, so skip them.
+    if (isa<LIT::ImportOp>(op))
+      continue;
+
     // Process a try op specially to identify dead code and warn.
     if (auto tryOp = dyn_cast<LIT::TryOp>(op)) {
       tryOp.setLabelAttr(

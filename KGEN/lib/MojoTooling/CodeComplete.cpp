@@ -8,6 +8,7 @@
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/MojoParser/CallOperands.h"
+#include "KGEN/MojoParser/DeclResolver.h"
 #include "KGEN/MojoParser/EntryPoint.h"
 #include "KGEN/MojoParser/ExprNode.h"
 #include "KGEN/MojoParser/SharedState.h"
@@ -188,6 +189,20 @@ struct CodeCompletionListener : public BaseCompletionListener {
       }
     };
 
+    // An import gate's own scope holds only the submodules explicitly imported
+    // through it; the imported entity's own members live in its target module.
+    // Enumerate the gate's nested children, then resolve to the target.
+    if (auto importOp = dyn_cast_or_null<ImportOp>(decl.getIfOperation())) {
+      collectDeclChildren(decl);
+      SharedState &shared = parserContext->getSharedState();
+      SMLoc importLoc = shared.diags.convertLocToSMLoc(importOp->getLoc());
+      ASTDecl &target =
+          shared.importModule(importOp.getRealModuleName(),
+                              /*currentPackage=*/PackageOp(), importLoc);
+      (void)shared.getDeclResolver().resolveBody(target, importLoc);
+      decl = MojoASTDeclRef(&target);
+    }
+
     // Collect all of the decls in the current scope.
     if (!searchParentScopes)
       return collectDeclChildren(decl);
@@ -214,6 +229,7 @@ struct CodeCompletionListener : public BaseCompletionListener {
         TypeSwitch<Operation *, CodeCompletionResult::Kind>(op)
             .Case([](FileModuleOp) { return CodeCompletionResult::kModule; })
             .Case([](PackageOp) { return CodeCompletionResult::kPackage; })
+            .Case([](ImportOp) { return CodeCompletionResult::kModule; })
             .Case([](StructDeclOp) { return CodeCompletionResult::kStruct; })
             .Case([](TraitDeclOp) { return CodeCompletionResult::kTrait; })
             .Case([](FnOp) { return CodeCompletionResult::kFunction; })

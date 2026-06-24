@@ -5,3 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 
 from .module import nested_function
+
+# Re-export the public submodules so they are reachable as attributes
+# (`test_nested_package.module`, `test_nested_package.deep_package`).
+from . import module
+from . import deep_package

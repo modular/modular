@@ -200,12 +200,9 @@ void PackageOp::build(OpBuilder &builder, OperationState &state,
 }
 
 void ImportOp::build(OpBuilder &builder, OperationState &state,
-                     StringAttr symName, StringAttr realModuleName,
-                     bool allowAll) {
+                     StringAttr symName, StringAttr realModuleName) {
   state.addAttribute(getSymNameAttrName(state.name), symName);
   state.addAttribute(getRealModuleNameAttrName(state.name), realModuleName);
-  if (allowAll)
-    state.addAttribute(getAllowAllAttrName(state.name), builder.getUnitAttr());
   state.addRegion()->push_back(new Block());
 }
 

@@ -1369,7 +1369,11 @@ DeclRefNode::emitUnqualLookup(StringRef spelling, const ExprNode *expr,
     return emitter.emitCResult(result, expr, dest);
   }
 
-  // If this is a module or package declaration, form a module reference.
+  // If this is a module or package declaration, form a module reference. This
+  // is reached for *intra-package* references - a file naming a sibling
+  // submodule registered by the directory scan in an ancestor package scope
+  // (the scan binds the real module, not a gate). Cross-package access instead
+  // goes through an ImportOp (handled above).
   if (isa_and_nonnull<FileModuleOp, PackageOp>(decl->getIfOperation())) {
     PValue result(ModuleAttr::get(LIT::ModuleType::get(decl->getSymbolRef())));
     return emitter.emitCResult(result, expr, dest);
@@ -2079,15 +2083,10 @@ auto AttributeRefNode::emitLCVIR(ExprDest &dest, IREmitter &emitter,
   // Handle import-gated module references. ImportOp gates access to the
   // real package: nested ImportOps control which child modules are accessible.
   if (auto importOp = dyn_cast_or_null<ImportOp>(typeDeclOp)) {
-    // If unrestricted, delegate directly to the real module.
-    if (importOp.getAllowAll()) {
-      ASTDecl &realDecl = shared.importModule(
-          importOp.getRealModuleName(), /*currentPackage=*/nullptr,
-          shared.diags.convertLocToSMLoc(importOp->getLoc()));
-      return DeclRefNode::emitUnqualLookup(spelling, this, realDecl, dest,
-                                           emitter, false);
-    }
-
+    // The gate may be only signature-resolved when reached here (e.g., reloaded
+    // from a precompiled package) so body-resolve it before looking in its
+    // scope.
+    (void)shared.declResolver->resolveBody(*typeDecl, getLoc());
     // Look for a child ImportOp matching the member name via decl lookup.
     ArrayRef<ASTDecl *> children = typeDecl->lookupInCurrentScope(spelling);
     for (ASTDecl *childDecl : children) {
@@ -2107,12 +2106,45 @@ auto AttributeRefNode::emitLCVIR(ExprDest &dest, IREmitter &emitter,
         spelling, getLoc(), realDecl, /*searchParentScopes=*/false);
     if (memberLookup.isSuccess()) {
       ASTDecl *memberDecl = memberLookup.getIfSuccess().front();
+      // An aliased re-export (`from . import sub as visible_sub` in __init__)
+      // surfaces as a nested ImportOp gate, not a raw module: the directory
+      // scan binds a submodule only under its real name, so the alias exists
+      // solely as the __init__ re-export. Hand back that gate's module directly
+      // - it already carries the correct real module name, and it is in scope
+      // only because __init__ re-exported it, so access is allowed.
+      if (isa_and_nonnull<ImportOp>(memberDecl->getIfOperation())) {
+        PValue result(
+            ModuleAttr::get(LIT::ModuleType::get(memberDecl->getSymbolRef())));
+        return emitter.emitCResult(result, this, dest);
+      }
       if (isa_and_nonnull<PackageOp, FileModuleOp>(
               memberDecl->getIfOperation())) {
-        // Module/package child not in ImportOp tree — blocked.
-        emitter.emitError(getLoc())
-            << "use of unknown declaration '" << spelling << "'";
-        return {};
+        // A submodule not in the import tree is reachable only if the package
+        // re-exports it from its __init__; otherwise it is an implicit
+        // (directory-scan) submodule and component access is blocked - you
+        // reach it by importing it explicitly.
+        if (!shared.declResolver->packageReexportsMember(
+                realDecl, StringAttr::get(shared.getContext(), spelling),
+                getLoc())) {
+          emitter.emitError(getLoc())
+              << "use of unknown declaration '" << spelling << "'";
+          return {};
+        }
+        // Re-exported submodule: bind a child gate over it (memoized under this
+        // gate, so it is found by the child-ImportOp lookup above next time)
+        // and hand that back (not the raw module) so deeper access such as
+        // `pkg.shown.hidden` stays gated.
+        OpBuilder gateBuilder = typeDecl->getDeclEndBuilder();
+        StringAttr childReal = StringAttr::get(
+            shared.getContext(),
+            (importOp.getRealModuleName() + "." + spelling).str());
+        ASTDecl &childGate = shared.declResolver->createImportOp(
+            *typeDecl, gateBuilder,
+            StringAttr::get(shared.getContext(), spelling), childReal,
+            importOp->getLoc());
+        return emitter.emitCResult(PValue(ModuleAttr::get(LIT::ModuleType::get(
+                                       childGate.getSymbolRef()))),
+                                   this, dest);
       }
     }
 
@@ -2121,12 +2153,14 @@ auto AttributeRefNode::emitLCVIR(ExprDest &dest, IREmitter &emitter,
                                          emitter, false);
   }
 
-  // Handle module or package references.
-  if (isa_and_nonnull<PackageOp, FileModuleOp>(typeDeclOp)) {
-    // Look up the unqualified identifier in the right scope.
+  // Member access on a raw module/package. This is reached for intra-package
+  // references - a file naming a sibling submodule registered by the directory
+  // scan in an ancestor package scope. (Cross-package access goes through an
+  // ImportOp, handled above.)
+  // FIXME: Can we remove this?
+  if (isa_and_nonnull<PackageOp, FileModuleOp>(typeDeclOp))
     return DeclRefNode::emitUnqualLookup(spelling, this, *typeDecl, dest,
                                          emitter, false);
-  }
 
   // We can only look up in something of struct or trait type.
   if (!isa_and_nonnull<StructDeclOp, TraitDeclOp>(typeDeclOp) &&

@@ -4,5 +4,6 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# Re-export the public submodule so it is reachable as `deep_package.leaf`.
-from . import leaf
+
+def impl_value() -> Int:
+    return 7

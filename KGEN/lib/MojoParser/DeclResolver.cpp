@@ -695,9 +695,9 @@ LogicalResult DeclResolver::aliasDeclsImpl(
 ASTDecl &DeclResolver::createImportOp(ASTDecl &dest, mlir::OpBuilder &builder,
                                       StringAttr name,
                                       StringAttr realModuleName,
-                                      mlir::Location loc, bool allowAll) {
+                                      mlir::Location loc) {
   auto importOp = ImportOp::create(builder, loc,
-                                   /*sym_name=*/name, realModuleName, allowAll);
+                                   /*sym_name=*/name, realModuleName);
   SMLoc smloc = shared.diags.convertLocToSMLoc(loc);
   ASTDecl &importDecl =
       addDecl(static_cast<Operation *>(importOp), smloc, name, &dest,
@@ -717,73 +717,60 @@ LogicalResult DeclResolver::importModule(ASTDecl &dest, UnresolvedImportOp op,
   shared.notifyListenerOnModuleImport(module, moduleName, loc);
   shared.notifyListenerOnRef(&module, importName, importNameLoc);
 
-  if (failed(aliasImportDecls(&module, importName,
-                              /*declName=*/StringAttr(), moduleName,
-                              importNameLoc, dest, false)))
-    return failure();
-
-  // For dotted imports without an alias (e.g. "import pkg.a.b1"), build/merge
-  // a tree of ImportOps: ImportOp("pkg") → ImportOp("a") → ImportOp("b1",
-  // allowAll). This gates access at every level of the dotted path.
-  StringRef moduleStr = moduleName.getValue();
-  if (!moduleStr.contains('.') || moduleName != importName)
-    return success();
-
-  SmallVector<StringRef> segments;
-  moduleStr.split(segments, '.');
-
-  ASTDecl *currentScope = &dest;
-  OpBuilder importOpBuilder = OpBuilder(op);
-  std::string qualifiedName;
-
-  for (size_t i = 0, e = segments.size(); i != e; ++i) {
-    if (i > 0)
-      qualifiedName += '.';
-    qualifiedName += segments[i];
-    bool isLeaf = (i == e - 1);
-    StringAttr segName = StringAttr::get(getContext(), segments[i]);
-    StringAttr qualName = StringAttr::get(getContext(), qualifiedName);
-
-    // Look for existing ImportOp at this level.
-    ASTDecl *existingDecl = nullptr;
-    ImportOp existingImport;
-    ArrayRef<ASTDecl *> existing = currentScope->lookupInCurrentScope(segName);
-    for (ASTDecl *d : existing) {
-      if (auto imp = dyn_cast_or_null<ImportOp>(d->getIfOperation())) {
-        existingImport = imp;
-        existingDecl = d;
-        break;
-      }
-    }
-
-    if (existingImport) {
-      if (existingImport.getAllowAll()) {
-        // Already unrestricted at this level — nothing more to do.
-        return success();
-      }
-      if (isLeaf) {
-        // Mark leaf as unrestricted.
-        existingImport.setAllowAllAttr(UnitAttr::get(getContext()));
-        return success();
-      }
-      // Navigate into existing ImportOp for next segment.
-      currentScope = existingDecl;
-      importOpBuilder = existingDecl->getDeclEndBuilder();
-    } else {
-      // Create new ImportOp at this level.  Use the UnresolvedImportOp's
-      // location so that the ImportOp inherits the correct debug scope
-      // (e.g. the enclosing function's subprogram scope).
-      ASTDecl &newImport =
-          createImportOp(*currentScope, importOpBuilder, segName, qualName,
-                         op->getLoc(), /*allowAll=*/isLeaf);
-      if (isLeaf)
-        return success();
-      currentScope = &newImport;
-      importOpBuilder = newImport.getDeclEndBuilder();
-    }
+  assert(op.getIsLeafBinding() && "Unexpected lazily-resolved absolute import");
+  // A *leaf-binding* import binds a single name. Two cases:
+  //  - The directory scan registers a package's submodules in the *package*
+  //    scope (`dest` is the PackageOp) as raw module bindings - the package's
+  //    own registry, read by the gate's lookups, never an expression base.
+  //  - A user alias (`import a.b.c as z`) binds a gate over the resolved
+  //    module, so component access through that name is gated like any other
+  //    import.
+  if (isa_and_nonnull<PackageOp>(dest.getIfOperation())) {
+    return aliasImportDecls(&module, importName, /*declName=*/StringAttr(),
+                            moduleName, importNameLoc, dest, false);
   }
 
+  StringAttr realName = moduleName;
+  if (moduleName.getValue().starts_with(".")) {
+    if (StringAttr absolute = getAbsoluteModuleName(module))
+      realName = absolute;
+  }
+
+  // Remove the placeholder (this op, bound under `importName`) from the scope
+  // so a resolved ImportOp can be bound under that name instead.
+  auto removeUnresolvedImportOp = [&] {
+    if (!dest.declsInScope)
+      return;
+    auto it = dest.declsInScope->find(importName);
+    if (it == dest.declsInScope->end())
+      return;
+    llvm::erase_if(it->second, [&](ASTDecl *d) {
+      return d->getIfOperation() == op.getOperation();
+    });
+    if (it->second.empty())
+      dest.declsInScope->erase(it);
+  };
+
+  removeUnresolvedImportOp();
+
+  OpBuilder aliasBuilder(op);
+  createImportOp(dest, aliasBuilder, importName, realName, op->getLoc());
+  // The placeholder op is now superseded by the gate; mark it dead so it is
+  // erased after all resolution.
+  deadImportPlaceholders.insert(op.getOperation());
   return success();
+}
+
+StringAttr DeclResolver::getAbsoluteModuleName(ASTDecl &moduleDecl) {
+  SymbolRefAttr ref = moduleDecl.getSymbolRef();
+  if (!ref)
+    return {};
+  SmallString<64> name(ref.getRootReference().getValue());
+  for (FlatSymbolRefAttr nested : ref.getNestedReferences()) {
+    name += '.';
+    name += nested.getValue();
+  }
+  return StringAttr::get(getContext(), name);
 }
 
 FailureOr<ASTDecl *> DeclResolver::bodyResolvePackageInit(ASTDecl &module,
@@ -802,6 +789,22 @@ FailureOr<ASTDecl *> DeclResolver::bodyResolvePackageInit(ASTDecl &module,
   if (failed(resolveBody(*initDecl, loc)))
     return failure();
   return initDecl;
+}
+
+bool DeclResolver::packageReexportsMember(ASTDecl &package, StringAttr name,
+                                          SMLoc loc) {
+  auto initOrFailure = bodyResolvePackageInit(package, loc);
+  if (failed(initOrFailure) || !*initOrFailure)
+    return false;
+  ASTDecl &initDecl = **initOrFailure;
+  // A re-export binds `name` in __init__'s *own* scope (`from . import name`,
+  // `import .name`, or a re-exported symbol). The directory scan's implicit
+  // `.name` import binds the package scope instead, so it does not appear here
+  // - which is exactly how we tell a re-exported submodule from a hidden one.
+  auto reexport = shared.lookupAndResolveDecl(name.getValue(), loc, initDecl,
+                                              /*searchParentScopes=*/false,
+                                              /*resolveTarget=*/false);
+  return reexport.isSuccess();
 }
 
 SmallVector<ASTDecl *> DeclResolver::lookupNonModuleDecls(ASTDecl &initDecl,
@@ -890,11 +893,66 @@ LogicalResult DeclResolver::importDeclFromModule(
   shared.notifyListenerOnRef(results, sourceName, sourceNameLoc);
   shared.notifyListenerOnRef(results, destName, destNameLoc);
 
-  // Import the desired declaration (struct, function, etc.) that the user
-  // specifically asked for.
-  if (failed(aliasImportDecls(results, destName, sourceName, moduleName,
-                              destNameLoc, dest, false)))
+  // If what we imported is a *submodule* (not a re-exported symbol), bind an
+  // ImportOp over it rather than the raw module, so component access through
+  // the imported name (`sub.foo`) is gated like any other import. The import
+  // re-resolves the name with no package context, so it must be absolute:
+  // `a.b.sub` if it came from an absolute `from a.b import sub`, or if it came
+  // from a relative import `from . import sub` where the current package is
+  // `a.b`.
+  StringAttr gateRealName;
+  if (results.size() == 1 && isa_and_nonnull<PackageOp, FileModuleOp>(
+                                 results.front()->getIfOperation())) {
+    if (moduleName.getValue().starts_with("."))
+      gateRealName = getAbsoluteModuleName(*results.front());
+    else
+      gateRealName = StringAttr::get(
+          getContext(),
+          (moduleName.getValue() + "." + sourceName.getValue()).str());
+  }
+  if (gateRealName) {
+    // Bind an ImportOp under `destName` over the imported submodule, and
+    // reuse the from-import placeholder's ASTDecl for it. The ASTDecl outlives
+    // this resolution (a later resolve-body pass dereferences it), so it must
+    // end up pointing at a live op; re-pointing it also keeps name lookups for
+    // `destName` from returning the now-superseded UnresolvedImportOp.
+    ASTDecl *placeholderDecl = nullptr;
+    if (dest.declsInScope) {
+      auto it = dest.declsInScope->find(destName);
+      if (it != dest.declsInScope->end())
+        for (ASTDecl *d : it->second) {
+          auto imp = dyn_cast_or_null<UnresolvedImportOp>(d->getIfOperation());
+          if (imp && imp.getModuleNameAttr() == moduleName &&
+              imp.getDeclNameAttr() == sourceName) {
+            placeholderDecl = d;
+            break;
+          }
+        }
+    }
+    if (placeholderDecl) {
+      Operation *oldOp = placeholderDecl->getIfOperation();
+      OpBuilder fromBuilder(oldOp);
+      auto gateOp =
+          ImportOp::create(fromBuilder, shared.translateLocation(destNameLoc),
+                           /*sym_name=*/destName, gateRealName);
+      placeholderDecl->setIRValue(gateOp.getOperation());
+      placeholderDecl->resolvedness = DeclResolvedness::body;
+      registerDeclSymbol(placeholderDecl);
+      // The placeholder op is now superseded by the gate and has no live use.
+      if (oldOp && oldOp != gateOp.getOperation())
+        deadImportPlaceholders.insert(oldOp);
+    } else {
+      // No placeholder to reuse (defensive): bind a fresh gate decl.
+      OpBuilder fromBuilder = dest.getDeclEndBuilder();
+      createImportOp(dest, fromBuilder, destName, gateRealName,
+                     shared.translateLocation(destNameLoc));
+    }
+  } else if (failed(aliasImportDecls(results, destName, sourceName, moduleName,
+                                     destNameLoc, dest, false))) {
+    // Import the desired declaration (struct, function, etc.) the user asked
+    // for.
     return failure();
+  }
 
   // Also look for extensions in the source module.
   // When importing any declaration from a module, import all extensions from
@@ -1425,6 +1483,20 @@ void DeclResolver::resolveAllReferencedFrom(ASTDecl &decl,
             decl->setIRValue(nullptr);
           }
         }
+    }
+
+    // Erase from-import placeholders that resolved to a submodule and were
+    // superseded by an ImportOp (see importDeclFromModule). This runs
+    // after all resolution, so any sibling decl surfaced over the same op has
+    // already been re-pointed at its own gate; null out any decl that still
+    // references one before erasing it, to avoid a dangling ASTDecl.
+    if (!deadImportPlaceholders.empty()) {
+      for (ASTDecl *decl : parsedDeclList)
+        if (deadImportPlaceholders.contains(decl->getIfOperation()))
+          decl->setIRValue(nullptr);
+      for (Operation *op : deadImportPlaceholders)
+        op->erase();
+      deadImportPlaceholders.clear();
     }
   }
 }
