@@ -990,10 +990,7 @@ static std::optional<std::string> resolveModulePath(SharedState &shared,
   if (ec)
     return std::nullopt;
 
-  // A path to the module under its deprecated file extension. Cache this if we
-  // find it but only return if we don't find the module under its newer path,
-  // so that the newer one wins out.
-  std::optional<path> legacyPkgPath;
+  std::optional<path> sourcePkgPath, pkgPath, legacyPkgPath, sourceModulePath;
 
   // Gets the name of the file or directory in a case sensitive way. On non-case
   // sensitive systems we cannot just do `path / moduleName` since the
@@ -1002,26 +999,37 @@ static std::optional<std::string> resolveModulePath(SharedState &shared,
     if (entry.path().filename().stem().string() != moduleName)
       continue;
 
-    // If we found a package path, we can return immediately.
-    if (Filesystem::isMojoSourcePackagePath(entry.path()))
-      return std::filesystem::absolute(entry.path());
-
+    if (Filesystem::isMojoSourcePackagePath(entry.path())) {
+      sourcePkgPath = std::filesystem::absolute(entry.path());
+      continue;
+    }
     path ext = entry.path().filename().extension();
-    if (!ignorePrebuilt && ext == ".mojoc")
-      return std::filesystem::absolute(entry.path());
+    // Precompiled file
+    if (!ignorePrebuilt && ext == ".mojoc") {
+      pkgPath = std::filesystem::absolute(entry.path());
+      continue;
+    }
     // Deprecated file extension
-    if (!ignorePrebuilt && ext == ".mojopkg")
-      legacyPkgPath = entry;
-
+    if (!ignorePrebuilt && ext == ".mojopkg") {
+      legacyPkgPath = std::filesystem::absolute(entry.path());
+      continue;
+    }
+    // Source path
     if (ext == ".mojo")
-      return std::filesystem::absolute(entry.path());
+      sourceModulePath = std::filesystem::absolute(entry.path());
   }
 
+  // Priority: source package dir > precompiled (.mojoc) > source file (.mojo) >
+  // legacy (.mojopkg).
+  if (sourcePkgPath)
+    return sourcePkgPath;
+  if (pkgPath)
+    return pkgPath;
+  if (sourceModulePath)
+    return sourceModulePath;
   if (legacyPkgPath)
     return legacyPkgPath;
 
-  // If we cannot find a file or directory with the case-sensitive name, then
-  // return early.
   return std::nullopt;
 }
 
