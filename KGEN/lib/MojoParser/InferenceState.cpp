@@ -45,9 +45,8 @@ InferenceState::InferenceState(ASTDecl &declScope,
     evaluator.appendIndexBinding(TypedAttr());
 }
 
-LogicalResult InferenceState::setInferredValue(size_t paramIdx,
-                                               TypedAttr paramVal,
-                                               bool isDefaulted) {
+void InferenceState::setInferredValue(size_t paramIdx, TypedAttr paramVal,
+                                      bool isDefaulted) {
   paramVal = evaluator.getReboundAttribute(paramVal);
   ASTType targetType = evaluator.getReboundType(declaredParamTypes[paramIdx]);
 
@@ -84,22 +83,6 @@ LogicalResult InferenceState::setInferredValue(size_t paramIdx,
     paramVal = ParamOperatorAttr::getRebind(paramVal, targetType);
 
   evaluator.overwriteIndexBinding(paramIdx, paramVal);
-
-  if (isa<UnboundAttr>(paramVal))
-    return success();
-
-  ArrayRef<ConstraintAttr> constraints =
-      declaredParamPogs.getPogs()[paramIdx].getConstraints();
-  if (constraints.empty())
-    return success();
-
-  // Verify all constraints are satisfied, collecting unprovable constraints.
-  ConstraintResult result = checkConstraints(
-      declScope, declaredParamPogs, constraints, /*origConstraints=*/{},
-      diag.getDiag(), &unprovableConstraints, &evaluator);
-
-  // TODO: how about we just emitting unprovable error here right away?
-  return success(result == ConstraintResult::Satisfied);
 }
 
 namespace {

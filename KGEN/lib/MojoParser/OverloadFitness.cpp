@@ -17,7 +17,6 @@
 #include "ParamInf.h"
 
 #include "KGEN/MojoParser/ASTDecl.h"
-#include "KGEN/MojoParser/Constraints.h"
 #include "KGEN/MojoParser/DeclResolver.h"
 
 #include "KGEN/LITDialect/LITOps.h"
@@ -198,8 +197,8 @@ void emitWrongTypeDiag(MojoInflightDiag &diag, ASTExprAnd<AnyValue> operand,
 //===----------------------------------------------------------------------===//
 
 bool OverloadFitness::isBetter(const OverloadFitness &other) const {
-  // Neither operand should be invalid or have param constraint issues
-  // (they should be filtered out before comparison).
+  // Neither operand should be invalid or have constraint issues (they should be
+  // filtered out before comparison).
   assert(getValidity() >= Validity::kFunctionConstraintInconclusive &&
          other.getValidity() >= Validity::kFunctionConstraintInconclusive);
 
@@ -257,12 +256,9 @@ OverloadFitness OverloadFitness::evaluate(ASTDecl *candidate,
   VerifiedParamBindings bindings = inference.inferForStruct();
 
   if (!bindings) {
-    // If no diagnostics were emitted, this must be an inconclusive fitness.
-    if (!inference.diag.hasErrorEmitted()) {
-      assert(!inference.unprovableConstraints.empty());
-      return std::move(inference.unprovableConstraints);
-    }
-    // Otherwise, it's a real failure, so we return an invalid fitness.
+    // Failed inference must have emitted a diagnostic. Return it as an invalid
+    // fitness.
+    assert(inference.diag.hasErrorEmitted());
     return std::move(*inference.diag.takeMojoDiag());
   }
 
@@ -411,31 +407,17 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
     size_t paramIdx = contextualParams;
     for (const auto &[paramName, paramType] : implicitParams) {
       TypedAttr paramValue = ParamDeclRefAttr::get(paramName, paramType);
-      if (failed(inference.setInitialInferredValue(paramIdx, paramValue))) {
-        if (inference.diag.hasErrorEmitted())
-          return std::move(*inference.diag.takeMojoDiag());
-        assert(!inference.unprovableConstraints.empty());
-        return std::move(inference.unprovableConstraints);
-      }
+      inference.setInitialInferredValue(paramIdx, paramValue);
       ++paramIdx;
     }
   }
 
   VerifiedParamBindings verifiedBindings = inference.inferForCall();
   if (!verifiedBindings) {
-    if (inference.diag.hasErrorEmitted())
-      return std::move(*inference.diag.takeMojoDiag());
-    // Then there must be unprovable per-parameter constraints. Report
-    // immediately, as we cannot fully evaluate the fitness of this candidate.
-    assert(!inference.unprovableConstraints.empty());
-    return std::move(inference.unprovableConstraints);
-    // If there were any unprovable body constraints, inferForCall would have
-    // succeeded and populated its bodyUnprovableConstraints. These are taken as
-    // part of the fitness result later.
+    // Failed inference must have emitted a diagnostic.
+    assert(inference.diag.hasErrorEmitted());
+    return std::move(*inference.diag.takeMojoDiag());
   }
-
-  assert(inference.unprovableConstraints.empty() &&
-         "expect no unprovable constraints on a successful inference.");
 
   // If anything was bound, apply it to the signature so the expected argument
   // types are updated. The bindings produced by inference have already been

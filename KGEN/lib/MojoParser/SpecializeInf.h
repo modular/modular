@@ -25,8 +25,8 @@ public:
                 PogListAttr declaredParamPogs, SMLoc defaultLoc,
                 bool discardError);
 
-  LogicalResult setInitialInferredValue(size_t paramIdx, TypedAttr paramVal) {
-    return setInferredValue(paramIdx, paramVal);
+  void setInitialInferredValue(size_t paramIdx, TypedAttr paramVal) {
+    setInferredValue(paramIdx, paramVal);
   }
 
   FailureOr<SmallVector<TypedAttr>>

@@ -218,19 +218,17 @@ static FuncType getReducedFnType(FuncType sig) {
 
   SmallVector<PassingKind> passingKinds;
   SmallVector<StringAttr> names;
-  SmallVector<SmallVector<ConstraintAttr>> constraints;
   SmallVector<VariadicKind> variadics;
   SmallVector<TypedAttr> defaults(sig.getNumArguments(), {});
   for (size_t i = 0, e = sig.getNumArguments(); i != e; ++i) {
     passingKinds.push_back(origPogListAttr.getPassingKind(i));
     names.push_back(pogs[i].getName());
     variadics.push_back(origPogListAttr.getVariadicKind(i));
-    constraints.emplace_back(pogs[i].getConstraints());
   }
 
   auto newPogListAttr =
       PogListAttr::get(ctx, names, passingKinds, variadics, defaults,
-                       origPogListAttr.getOrigVariadicConvention(), constraints,
+                       origPogListAttr.getOrigVariadicConvention(),
                        origPogListAttr.getBodyConstraints());
 
   auto metadata = FnMetadataAttr::get(

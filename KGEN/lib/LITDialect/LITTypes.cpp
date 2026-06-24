@@ -1358,10 +1358,9 @@ static OptionalParseResult parseOptionalLITFuncType(AsmParser &p,
   passingKindParser.populatePassingKinds(argPassingKinds);
 
   MLIRContext *ctx = p.getContext();
-  auto pogList =
-      PogListAttr::get(ctx, argNames, argPassingKinds, argVariadics,
-                       defaultValues, origVariadicConvention,
-                       /*paramConstraints=*/{}, /*bodyConstraints=*/{});
+  auto pogList = PogListAttr::get(ctx, argNames, argPassingKinds, argVariadics,
+                                  defaultValues, origVariadicConvention,
+                                  /*bodyConstraints=*/{});
   auto metadata =
       FnMetadataAttr::get(ctx, numOriginDecls, captureOrigins,
                           isNestedOriginExclusivityCheckingDisabled);
@@ -1645,16 +1644,12 @@ FnTypeGeneratorType FnTypeGeneratorType::replaceImplicitOriginsWithIndexes(
 FnTypeGeneratorType FnTypeGeneratorType::prependParams(
     FnTypeGeneratorType sigGen, ArrayRef<ParamDeclAttr> parentParams,
     ArrayRef<StringAttr> paramNames, ArrayRef<TypedAttr> paramDefaults,
-    ArrayRef<SmallVector<ConstraintAttr>> paramConstraints,
     ArrayRef<ConstraintAttr> bodyConstraints) {
   assert((paramNames.empty() || paramNames.size() == parentParams.size()) &&
          "paramNames, when provided, must match parent parameter list size");
   assert(
       (paramDefaults.empty() || paramDefaults.size() == parentParams.size()) &&
       "paramDefaults, when non-empty, must match parentParams");
-  assert((paramConstraints.empty() ||
-          paramConstraints.size() == parentParams.size()) &&
-         "paramConstraints, when non-empty, must match parentParams");
   IndexRefRemapper remapper(parentParams, parentParams.size());
   IndexRefRemapper contextRemapper(parentParams, /*offset=*/0);
   SmallVector<Type> inputParamTypes;
@@ -1681,15 +1676,6 @@ FnTypeGeneratorType FnTypeGeneratorType::prependParams(
         defaultValue ? cast<TypedAttr>(contextRemapper.replace(defaultValue))
                      : TypedAttr());
   }
-  SmallVector<SmallVector<ConstraintAttr>> remappedParamConstraints;
-  for (ArrayRef<ConstraintAttr> paramConstraintList : paramConstraints) {
-    SmallVector<ConstraintAttr> remappedConstraints;
-    for (ConstraintAttr constraint : paramConstraintList) {
-      remappedConstraints.push_back(
-          cast<ConstraintAttr>(contextRemapper.replace(constraint)));
-    }
-    remappedParamConstraints.push_back(std::move(remappedConstraints));
-  }
   SmallVector<ConstraintAttr> remappedBodyConstraints;
   for (ConstraintAttr constraint : bodyConstraints) {
     remappedBodyConstraints.push_back(
@@ -1697,8 +1683,7 @@ FnTypeGeneratorType FnTypeGeneratorType::prependParams(
   }
 
   PogListAttr genMetadata = oldMeta.prependAsInferredParams(
-      names, remappedParamDefaults, remappedParamConstraints,
-      remappedBodyConstraints);
+      names, remappedParamDefaults, remappedBodyConstraints);
 
   PogListAttr remappedArgListAttrs;
   if (PogListAttr argListAttrs = sig.getArgListAttrs())

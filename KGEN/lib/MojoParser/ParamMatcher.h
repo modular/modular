@@ -53,12 +53,6 @@ struct MatchFailure {
     size_t paramIdx;
   };
 
-  /// This failure happens when parameter is inferred, yet the constraint
-  /// attached on it can not be proved.
-  struct UnprovableConstraints {
-    size_t paramIdx;
-  };
-
   /// This failure hasn't been categorized yet.
   /// FIXME: Remove this.
   struct Unclassified {};
@@ -84,7 +78,7 @@ struct MatchFailure {
 
 private:
   SmartVariant<TypeConflict, ValueConflict, DependsOnUnresolved, Unclassified,
-               UnprovableConstraints, UnboundButInferrable>
+               UnboundButInferrable>
       info;
 };
 

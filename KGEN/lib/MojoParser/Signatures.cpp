@@ -187,7 +187,6 @@ static RefType processRefOriginSpecifier(const ExprNode *origExpr, ASTType type,
       paramList.locations.push_back(origExpr ? origExpr->getLoc() : SMLoc());
       paramList.variadicKinds.push_back(VariadicKind::None);
       paramList.defaults.push_back(TypedAttr());
-      paramList.allParamConstraints.emplace_back();
       return ParamDeclRefAttr::get(paramDecl);
     };
 
@@ -395,14 +394,12 @@ ParseResult ParsedArgument::parse(ParserBase &p, KWArgMarkerInfo &markerInfo,
             << "use a trailing 'where' clause after the signature instead";
       }
     }
+    // Parse the constraint for error recovery, then discard it: we already
+    // diagnosed it above, and parameter-list `where` clauses are no longer
+    // representable.
     ParsedConstraint constraint;
     if (constraint.parse(p))
       return failure();
-    // Function types can't represent parameter constraints, so drop the parsed
-    // constraint after diagnosing it (we already emitted the error above). Real
-    // parameter lists keep it so any further constraint diagnostics still fire.
-    if (kind != ArgListKind::kFnTypeParamList)
-      constraints.push_back(constraint);
   }
 
   // Parse an optional default argument value: `"=" expression`.
@@ -807,7 +804,6 @@ static ASTType addImplicitTypeParams(StringAttr argName, ASTType type,
   SmallVector<VariadicKind> variadicKinds;
   SmallVector<SMLoc> locations;
   SmallVector<TypedAttr> defaults;
-  SmallVector<SmallVector<ConstraintAttr>> constraints;
 
   // Functor to insert the pending vectors into paramList, either at the front
   // or back.
@@ -839,7 +835,6 @@ static ASTType addImplicitTypeParams(StringAttr argName, ASTType type,
     insertFn(insertPt, paramList.variadicKinds, variadicKinds);
     insertFn(insertPt, paramList.defaults, defaults);
     insertFn(insertPt, paramList.locations, locations);
-    insertFn(insertPt, paramList.allParamConstraints, constraints);
   });
 
   // The parameter decl references that will be used to fully bind the type,
@@ -864,8 +859,7 @@ static ASTType addImplicitTypeParams(StringAttr argName, ASTType type,
   };
 
   // This functor adds a single parameter to the parameter list.
-  auto declareAndAddParam = [&](Type type, StringRef name,
-                                ArrayRef<ConstraintAttr> paramConstraints) {
+  auto declareAndAddParam = [&](Type type, StringRef name) {
     auto boundParamType = evaluator.getReboundType(type);
     // If we are prepending this as an implicit parameter, make sure its type
     // doesn't depend on any parameters before it.  Consider something like:
@@ -941,7 +935,6 @@ static ASTType addImplicitTypeParams(StringAttr argName, ASTType type,
     // FIXME: Autoparam of variadics looks broken?
     variadicKinds.push_back(VariadicKind::None);
     defaults.push_back(TypedAttr());
-    constraints.emplace_back(paramConstraints);
     evaluator.appendIndexBinding(paramValues.back());
   };
 
@@ -951,8 +944,7 @@ static ASTType addImplicitTypeParams(StringAttr argName, ASTType type,
     TypedAttr origins = sig.getCaptureOrigins();
     if (!isa<UnboundAttr>(origins))
       return type;
-    declareAndAddParam(origins.getType(), "__origins__",
-                       /*paramConstraints=*/{});
+    declareAndAddParam(origins.getType(), "__origins__");
     if (hadFailure)
       return {};
     return sig.getWithCaptureOrigins(paramValues.back());
@@ -963,8 +955,7 @@ static ASTType addImplicitTypeParams(StringAttr argName, ASTType type,
       PogListAttr genParamList = gen.getParamListAttrs();
       ArrayRef<PogMetadataAttr> pogs = genParamList.getPogs();
       for (auto [idx, type] : llvm::enumerate(gen.getInputParamTypes()))
-        declareAndAddParam(type, pogs[idx].getName(),
-                           /*paramConstraints=*/pogs[idx].getConstraints());
+        declareAndAddParam(type, pogs[idx].getName());
       if (hadFailure)
         return {};
       propagateBodyConstraints(genParamList);
@@ -982,8 +973,7 @@ static ASTType addImplicitTypeParams(StringAttr argName, ASTType type,
       PogListAttr genParamList = genType.getParamListAttrs();
       ArrayRef<PogMetadataAttr> pogs = genParamList.getPogs();
       for (auto [idx, type] : llvm::enumerate(genType.getInputParamTypes()))
-        declareAndAddParam(type, pogs[idx].getName(),
-                           /*paramConstraints=*/pogs[idx].getConstraints());
+        declareAndAddParam(type, pogs[idx].getName());
       if (hadFailure)
         return {};
       propagateBodyConstraints(genParamList);
@@ -1007,8 +997,7 @@ static ASTType addImplicitTypeParams(StringAttr argName, ASTType type,
     PogListAttr paramList = sig.getParamListAttrs();
     ArrayRef<PogMetadataAttr> pogs = paramList.getPogs();
     for (auto [idx, type] : llvm::enumerate(sig.getParamTypes()))
-      declareAndAddParam(type, pogs[idx].getName(),
-                         /*paramConstraints=*/pogs[idx].getConstraints());
+      declareAndAddParam(type, pogs[idx].getName());
     if (!hadFailure)
       return metatype.bindUnbound(paramValues);
     return {};
@@ -1186,67 +1175,6 @@ TypeCheckedParamList::create(ParsedParamList &parsedParams,
         PValue(ParamDeclRefAttr::get(newDecl)), arg.name, arg.loc, &declScope);
     emitter.shared.notifyListenerOnParameterDecl(resolvedDecl, arg.loc);
     remapper.appendParamDecl(newDecl);
-
-    // Parse optional constraints after the parameter declaration has been added
-    // since constraints may reference the parameter.
-    SmallVector<ConstraintAttr> &paramConstraints =
-        result.allParamConstraints.emplace_back();
-    IREmitter constraintEmitter(declScope, EC_Requires);
-    for (const ParsedConstraint &constraint : arg.constraints) {
-      RValue prop = constraintEmitter.emitExprScalarBool(constraint.propExpr,
-                                                         EC_Requires);
-      if (!prop) {
-        constraintEmitter.emitError(constraint.loc,
-                                    "failed to emit constraint expression");
-        continue;
-      }
-
-      PValue propVal = prop.getIfPValue();
-      if (!propVal) {
-        constraintEmitter.emitErrorForDynamicValueInParameter(constraint.loc);
-        continue;
-      }
-
-      // Convert `x and y` to `x & y` so we get better canonicalization.
-      propVal = deShortCircuitCond(propVal.get());
-
-      // Store the constraint in the parameter list as is. These will be
-      // remapped to using index refs later when constructing the final
-      // GeneratorType.
-      // Translate location without any DebugInfo scope since this metadata is
-      // purely frontend use and never ends up in DWARF.
-      auto paramConstraint = ConstraintAttr::get(
-          propVal, result.shared.diags.translateLocation(constraint.loc));
-      paramConstraints.push_back(paramConstraint);
-
-      // Insert the constraint into the param-list's declScope immediately
-      // so that subsequent constraint expressions can reference it.
-      declScope.insertKnownAssumptions({paramConstraint});
-    }
-
-    // Test that any default given doesn't immediately violate the constraints
-    // on this parameter. Otherwise that default value can never be used.
-    if (defaultVal && !paramConstraints.empty()) {
-      ParameterEvaluator evaluator = result.shared.getParameterEvaluator();
-      evaluator.setDeclBinding(newDecl, defaultVal);
-      // Only report direct violations. Unprovable constraints are allowed
-      // since they may depend on other parameters.
-      std::optional<MojoInflightDiag> diag;
-      auto getDiag = [&](std::optional<SMLoc> loc) -> MojoInflightDiag & {
-        diag = constraintEmitter.emitError(loc ? *loc : arg.loc)
-               << "default value ";
-        return *diag;
-      };
-
-      (void)LIT::checkConstraints(
-          declScope, /*no index remapping*/ PogListAttr(), paramConstraints,
-          /*origConstraints=*/{}, getDiag,
-          /*unprovableConstraints=*/nullptr, &evaluator);
-      if (diag) {
-        hasErrors = true;
-        (void)std::move(*diag);
-      }
-    }
   }
 
   if (hasErrors)
@@ -1327,8 +1255,6 @@ void TypeCheckedParamList::emitBodyConstraints() {
 }
 
 PogListAttr TypeCheckedParamList::getParamListAttr() const {
-  assert(allParamConstraints.size() == names.size() &&
-         "constraints array has different size than parameter arrays");
   // In a parameter list, any variadic list is claimed to be ReadMem.
   std::optional<ArgConvention> origVariadicConvention;
   for (auto var : variadicKinds) {
@@ -1338,7 +1264,7 @@ PogListAttr TypeCheckedParamList::getParamListAttr() const {
 
   return PogListAttr::get(shared.getContext(), names, passingKinds,
                           variadicKinds, defaults, origVariadicConvention,
-                          allParamConstraints, emittedBodyConstraints);
+                          emittedBodyConstraints);
 }
 
 //===----------------------------------------------------------------------===//

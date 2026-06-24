@@ -22,7 +22,6 @@
 #include "KGEN/KGENDialect/ParameterReplacer.h"
 #include "KGEN/LITDialect/LITUtils.h"
 #include "KGEN/MojoParser/ASTDecl.h"
-#include "KGEN/MojoParser/Constraints.h"
 #include "KGEN/MojoParser/DeclResolver.h"
 #include "Support/Compiler/OperationUtils.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
@@ -224,8 +223,6 @@ std::pair<FnOp, ASTDecl *> FunctionEmitter::synthesizeFunction(
   // inject the fn's where-clause constraints as known assumptions here,
   // when the ASTDecl is first created.
   funcDecl.insertKnownAssumptions(paramListAttrs.getBodyConstraints());
-  for (PogMetadataAttr pog : paramListAttrs.getPogs())
-    funcDecl.insertKnownAssumptions(pog.getConstraints());
 
   // Set the symbol and notice if we are redeclaring something.
   [[maybe_unused]] Operation *existing =
@@ -334,8 +331,6 @@ FnOp StructEmitter::synthesizeDefaultTraitMethodWrapper(
          "unexpected redefinition when synthesizing method into existing decl");
 
   existingDecl.insertKnownAssumptions(paramListAttrs.getBodyConstraints());
-  for (PogMetadataAttr pog : paramListAttrs.getPogs())
-    existingDecl.insertKnownAssumptions(pog.getConstraints());
 
   assert(funcOp && "Couldn't synthesize default trait wrapper in body");
 

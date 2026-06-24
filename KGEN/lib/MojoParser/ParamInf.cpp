@@ -14,7 +14,6 @@
 #include "ParamMatcher.h"
 
 #include "KGEN/MojoParser/ASTDecl.h"
-#include "KGEN/MojoParser/Constraints.h"
 #include "KGEN/MojoParser/DeclResolver.h"
 #include "KGEN/MojoParser/IRValues.h"
 #include "KGEN/MojoParser/SharedState.h"
@@ -414,20 +413,15 @@ LogicalResult ParamInf::inferFromRVType(ASTExprAnd<AnyValue> operand,
       assert(!evaluator.getIndexBindings()[paramIdx] &&
              "shouldn't have inferred this if we failed because of it");
       value = evaluator.getReboundAttribute(value);
-      auto result = setInferredValue(paramIdx, value);
-      assert(!failed(result) && "should always succeed");
-      (void)result;
+      setInferredValue(paramIdx, value);
       if (failed(
               inferFromRVType(operand, argIdx, expectedType, argPogs, syntax)))
         return failure();
 
       TypedAttr newValue =
           evaluator.getReboundAttribute(evaluator.getIndexBindings()[paramIdx]);
-      if (newValue != value) {
-        result = setInferredValue(paramIdx, value);
-        assert(!failed(result) && "should always succeed");
-        (void)result;
-      }
+      if (newValue != value)
+        setInferredValue(paramIdx, value);
       return success();
     }
   }
@@ -638,8 +632,10 @@ LogicalResult ParamInf::inferFromParamList() {
       return success();
 
     auto existing = evaluator.getIndexBindings()[idx];
-    if (!existing)
-      return setInferredValue(idx, *paramVal);
+    if (!existing) {
+      setInferredValue(idx, *paramVal);
+      return success();
+    }
 
     assert(isEqualCanon(existing, *paramVal) &&
            "inferred to different values but didn't notice");
@@ -745,8 +741,7 @@ LogicalResult ParamInf::inferFromParamList() {
         // The ParameterList now has a concrete type.
         auto listValue =
             UnknownAttr::get(evaluator.getReboundType(expectedType));
-        if (failed(setInferredValue(idx, listValue)))
-          return failure();
+        setInferredValue(idx, listValue);
       }
       continue;
     }
@@ -773,30 +768,19 @@ VerifiedParamBindings ParamInf::inferForStruct() {
     // Skip the unprovable-constraint diagnostic when the caller has asked
     // the inference state to discard errors (i.e. it's filtering candidates,
     // not committing to this binding).
-    if (!diag.isDiscarding()) {
-      // Only one of these lists will ever be non-empty, because any unprovable
-      // per-parameter constraints would immediately fail inference, and we
-      // would not have had a chance to check the body constraints yet.
-      if (!unprovableConstraints.empty()) {
-        // Per-parameter constraint inconclusiveness is never deferrable: it
-        // would change which candidates are even viable.
+    if (!diag.isDiscarding() && !bodyUnprovableConstraints.empty()) {
+      // If the caller installed a deferred typing context, record
+      // the body-unprovable constraints there and suppress the error.
+      // Otherwise, fall back to the existing hard-error path.
+      if (deferredTypingContext) {
+        SMLoc deferralLoc = paramBindings.getExprLoc();
+        for (ConstraintAttr c : bodyUnprovableConstraints)
+          deferredTypingContext->deferredConstraints.push_back(
+              {c, deferralLoc});
+      } else {
         emitUnprovableConstraintsFromFitness(
-            unprovableConstraints, paramBindings.shared,
+            bodyUnprovableConstraints, paramBindings.shared,
             paramBindings.getExprLoc(), declIfKnown);
-      } else if (!bodyUnprovableConstraints.empty()) {
-        // If the caller installed a deferred typing context, record
-        // the body-unprovable constraints there and suppress the error.
-        // Otherwise, fall back to the existing hard-error path.
-        if (deferredTypingContext) {
-          SMLoc deferralLoc = paramBindings.getExprLoc();
-          for (ConstraintAttr c : bodyUnprovableConstraints)
-            deferredTypingContext->deferredConstraints.push_back(
-                {c, deferralLoc});
-        } else {
-          emitUnprovableConstraintsFromFitness(
-              bodyUnprovableConstraints, paramBindings.shared,
-              paramBindings.getExprLoc(), declIfKnown);
-        }
       }
     }
   });
@@ -849,7 +833,7 @@ LogicalResult ParamInf::inferFromDefaults() {
     if (failed(paramVal))
       return failure();
     if (*paramVal && !evaluator.getIndexBindings()[idx])
-      return setInferredValue(idx, *paramVal, /*isDefaulted=*/true);
+      setInferredValue(idx, *paramVal, /*isDefaulted=*/true);
     return success();
   };
 
@@ -912,8 +896,7 @@ LogicalResult ParamInf::inferFromDefaults() {
 
         TypedAttr paramVal =
             emitter.getStdlibOriginOf(origin, getDeclScope().getLoc());
-        if (failed(setInferredValue(idx, paramVal)))
-          return failure();
+        setInferredValue(idx, paramVal);
         continue;
       }
     }
@@ -992,12 +975,7 @@ LogicalResult ParamInf::inferFromDefaults() {
       // has a concrete type.
       auto listValue =
           UnknownAttr::get(evaluator.getReboundType(declaredParamTypes[idx]));
-      if (failed(setInitialInferredValue(idx, listValue))) {
-        auto &diag = getMojoDiag({});
-        diag << "failed to install default variadic parameter "
-             << declaredParamPogs.getPogs()[idx].getName();
-        return failure();
-      }
+      setInitialInferredValue(idx, listValue);
     }
   }
 

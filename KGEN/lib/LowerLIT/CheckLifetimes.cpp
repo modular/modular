@@ -408,11 +408,8 @@ static SpecialMemberInfo getSpecialMemberForType(
 /// Given a function context, return the constraints known from the context.
 static SmallVector<ConstraintAttr>
 getConstraintsFromContext(FuncTypeGeneratorType fnContext) {
-  SmallVector<ConstraintAttr> assumptions;
   PogListAttr paramList = fnContext.getParamListAttrs();
-  llvm::append_range(assumptions, paramList.getBodyConstraints());
-  for (PogMetadataAttr pog : paramList.getPogs())
-    llvm::append_range(assumptions, pog.getConstraints());
+  SmallVector<ConstraintAttr> assumptions(paramList.getBodyConstraints());
   return assumptions;
 }
 

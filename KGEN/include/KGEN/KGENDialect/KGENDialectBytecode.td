@@ -159,8 +159,7 @@ def PogMetadataAttr : DialectAttribute<(attr
   StringAttr:$name,
   EnumAttr<"::M::KGEN::PassingKind">:$passingKind,
   EnumAttr<"::M::KGEN::VariadicKind">:$variadic,
-  OptionalAttribute<"TypedAttr">:$defaultValue,
-  ConcreteAttrArray<"ConstraintAttr">:$constraints
+  OptionalAttribute<"TypedAttr">:$defaultValue
 )>;
 
 def PogListAttr : DialectAttribute<(attr

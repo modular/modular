@@ -140,27 +140,13 @@ FnTypeGeneratorType LIT::getFullSignature(Operation *container,
   SmallVector<StringAttr> paramNames;
   SmallVector<ParamDeclAttr> paramDecls;
   SmallVector<TypedAttr> paramDefaults;
-  SmallVector<SmallVector<ConstraintAttr>> paramConstraints;
-  SmallVector<ConstraintAttr> prevBodyConstraints;
+  SmallVector<ConstraintAttr> bodyConstraints;
   for (auto [op, pogList] : opAndPogLists) {
-    ArrayRef<PogMetadataAttr> pogs = pogList.getPogs();
-    if (pogs.empty()) {
-      llvm::append_range(prevBodyConstraints, pogList.getBodyConstraints());
-    } else {
-      size_t firstNewConstraintSlot = paramConstraints.size();
-      for (PogMetadataAttr pog : pogs) {
-        paramNames.push_back(pog.getName());
-        paramDefaults.push_back(pog.getDefaultValue());
-        paramConstraints.emplace_back(pog.getConstraints());
-      }
-      if (!prevBodyConstraints.empty()) {
-        SmallVector<ConstraintAttr> &constraints =
-            paramConstraints[firstNewConstraintSlot];
-        constraints.insert(constraints.begin(), prevBodyConstraints.begin(),
-                           prevBodyConstraints.end());
-      }
-      prevBodyConstraints = llvm::to_vector(pogList.getBodyConstraints());
+    for (PogMetadataAttr pog : pogList.getPogs()) {
+      paramNames.push_back(pog.getName());
+      paramDefaults.push_back(pog.getDefaultValue());
     }
+    llvm::append_range(bodyConstraints, pogList.getBodyConstraints());
 
     for (ParamDeclAttr param : cast<DeclInterface>(op).getInputParams())
       paramDecls.push_back(param);
@@ -168,10 +154,8 @@ FnTypeGeneratorType LIT::getFullSignature(Operation *container,
 
   assert(paramNames.size() == paramDecls.size());
   assert(paramDefaults.size() == paramDecls.size());
-  assert(paramConstraints.size() == paramDecls.size());
   return FnTypeGeneratorType::prependParams(signature, paramDecls, paramNames,
-                                            paramDefaults, paramConstraints,
-                                            prevBodyConstraints);
+                                            paramDefaults, bodyConstraints);
 }
 
 //===----------------------------------------------------------------------===//
@@ -704,7 +688,7 @@ static ParseResult parseLITFunctionSignature(
   auto pogList =
       PogListAttr::get(p.getContext(), argNames, argPassingKinds, argVariadics,
                        defaults, origVariadicConvention,
-                       /*paramConstraints=*/{}, /*bodyConstraints=*/{});
+                       /*bodyConstraints=*/{});
   auto metadata =
       FnMetadataAttr::get(p.getContext(), originDecls.size(), captureOrigins,
                           isNestedOriginExclusivityCheckingDisabled);

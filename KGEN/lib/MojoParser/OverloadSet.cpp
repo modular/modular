@@ -121,10 +121,6 @@ static bool isValidOrFnInconclusive(OverloadFitness &eval) {
 ///
 /// Returns true if any of the best candidates have
 /// kFunctionConstraintInconclusive validity.
-///
-/// This function assumes that no candidates with kInvalid or
-/// kParamConstraintInconclusive validity are present (they should be filtered
-/// out before calling this function).
 static bool filterForBestCandidates(
     SmallVectorImpl<std::pair<ASTDecl *, OverloadFitness>> &allCandidates) {
   SmallVector<std::pair<ASTDecl *, OverloadFitness>,
@@ -239,15 +235,12 @@ static const char *getCalleeKind(CallSyntax syntax) {
 /// If `baseName` is empty, it is considered an indirect reference.
 /// If `isCall` is true, the error is emitted as a "call", otherwise it is
 /// emitted as a "reference".
-/// `isParamConstraint` indicates whether the inconclusiveness is due to
-/// parameter constraints (true) or function constraints (false).
 /// `deferralAttempted` indicates the caller had installed a deferred
 /// body-constraint deferral context, but deferral was rejected (e.g. because
 /// more than one candidate is body-constraint-inconclusive). When true, an
 /// extra note is attached to explain why deferral did not apply.
 static void emitInconclusiveCandidatesError(
     SharedState &shared, const ExprNode *expr, StringRef baseName, bool isCall,
-    bool isParamConstraint,
     MutableArrayRef<std::pair<ASTDecl *, OverloadFitness>> candidates,
     bool deferralAttempted = false) {
   // Figure out how many possibly valid candidates there are to make the error
@@ -283,14 +276,12 @@ static void emitInconclusiveCandidatesError(
   // function constraint candidate). Function constraint inconclusive
   // candidates have valid parameter bindings, so we can access fitness
   // metrics.
-  if (!isParamConstraint) {
-    size_t minConversions =
-        candidates.front().second.getNumImplicitConversions() / 2;
-    if (minConversions) {
-      diag << ", each candidate requires " << minConversions
-           << " implicit conversion" << plural(minConversions)
-           << ", disambiguate with an explicit cast";
-    }
+  size_t minConversions =
+      candidates.front().second.getNumImplicitConversions() / 2;
+  if (minConversions) {
+    diag << ", each candidate requires " << minConversions
+         << " implicit conversion" << plural(minConversions)
+         << ", disambiguate with an explicit cast";
   }
 
   // Collect constraints, add candidate-specific information, and gather fitness
@@ -298,11 +289,6 @@ static void emitInconclusiveCandidatesError(
   SmallVector<ConstraintAttr> allConstraints;
   for (auto &[candidate, eval] : candidates) {
     OverloadFitness::Validity validity = eval.getValidity();
-    // If we're reporting param constraint inconclusiveness, only report
-    // candidates that have this kind of validity.
-    if (isParamConstraint &&
-        validity != OverloadFitness::Validity::kParamConstraintInconclusive)
-      continue;
     // Must abandon any diagnostics from invalid candidates as they'll be
     // dropped.
     if (validity == OverloadFitness::Validity::kInvalid) {
@@ -344,7 +330,7 @@ static void emitInconclusiveCandidatesError(
   // Deferral only applies for body-constraint inconclusiveness with exactly
   // one inconclusive candidate; multi-candidate inconclusiveness must still
   // be diagnosed because we cannot pick a candidate to defer for.
-  if (deferralAttempted && !isParamConstraint && numRemainingCandidates > 1) {
+  if (deferralAttempted && numRemainingCandidates > 1) {
     diag.attachNote(expr->getLoc())
         << "body constraints cannot be deferred because more than one "
            "candidate is inconclusive";
@@ -361,7 +347,6 @@ PValue OverloadSet::filterOverloadSetForParamBindings(
               kOverloadEvaluationsInlineSize>
       evaluations;
   bool allInvalid = true;
-  bool anyParamConstraintInconclusive = false;
   for (ASTDecl *candidate : fnDecls) {
     evaluations.emplace_back(
         candidate, OverloadFitness::evaluate(candidate, *this,
@@ -369,18 +354,6 @@ PValue OverloadSet::filterOverloadSetForParamBindings(
     OverloadFitness::Validity validity =
         evaluations.back().second.getValidity();
     allInvalid &= validity == OverloadFitness::Validity::kInvalid;
-    anyParamConstraintInconclusive |=
-        validity == OverloadFitness::Validity::kParamConstraintInconclusive;
-  }
-
-  // Check for param constraint inconclusiveness - if ANY candidate has this,
-  // fail the entire overload resolution immediately. Param-constraint
-  // inconclusiveness is never deferrable.
-  if (anyParamConstraintInconclusive) {
-    emitInconclusiveCandidatesError(getShared(), getExpr(), baseName,
-                                    /*isCall=*/false,
-                                    /*isParamConstraint=*/true, evaluations);
-    return {};
   }
 
   // If all candidates are invalid, emit an error.
@@ -414,8 +387,7 @@ PValue OverloadSet::filterOverloadSetForParamBindings(
     } else {
       emitInconclusiveCandidatesError(
           getShared(), getExpr(), baseName,
-          /*isCall=*/true,
-          /*isParamConstraint=*/false, evaluations,
+          /*isCall=*/true, evaluations,
           /*deferralAttempted=*/deferredTypingContext != nullptr);
       return {};
     }
@@ -619,7 +591,6 @@ PValue OverloadSet::filterOverloadSet(CallOperands &operands,
               kOverloadEvaluationsInlineSize>
       evaluations;
   bool allInvalid = true;
-  bool anyParamConstraintInconclusive = false;
   for (ASTDecl *candidate : fnDecls) {
     if (candidate->isDisabled())
       continue;
@@ -642,8 +613,6 @@ PValue OverloadSet::filterOverloadSet(CallOperands &operands,
     OverloadFitness::Validity validity =
         evaluations.back().second.getValidity();
     allInvalid &= validity == OverloadFitness::Validity::kInvalid;
-    anyParamConstraintInconclusive |=
-        validity == OverloadFitness::Validity::kParamConstraintInconclusive;
 
     // Restore 'self' if we moved it out of the way.
     if (savedSelfOperand.has_value()) {
@@ -651,17 +620,6 @@ PValue OverloadSet::filterOverloadSet(CallOperands &operands,
       operands.hasSelfOperand = true;
       savedSelfOperand = {};
     }
-  }
-
-  // Check for param constraint inconclusiveness - if ANY candidate has this,
-  // fail the entire overload resolution immediately.
-  if (anyParamConstraintInconclusive) {
-    if (emitDiagnosticOnFailure && !isErroneous()) {
-      emitInconclusiveCandidatesError(getShared(), getExpr(), baseName,
-                                      /*isCall=*/true,
-                                      /*isParamConstraint=*/true, evaluations);
-    }
-    return {};
   }
 
   // If all of the candidates are wrong, diagnose this as a failure.
@@ -808,11 +766,10 @@ PValue OverloadSet::filterOverloadSet(CallOperands &operands,
       hasInconclusiveCandidates = false;
     } else {
       if (emitDiagnosticOnFailure && !isErroneous()) {
-        emitInconclusiveCandidatesError(
-            getShared(), getExpr(), baseName,
-            /*isCall=*/true,
-            /*isParamConstraint=*/false, evaluations,
-            /*deferralAttempted=*/context != nullptr);
+        emitInconclusiveCandidatesError(getShared(), getExpr(), baseName,
+                                        /*isCall=*/true, evaluations,
+                                        /*deferralAttempted=*/context !=
+                                            nullptr);
       }
       return {};
     }
@@ -1467,11 +1424,8 @@ CValue IREmitter::emitIndirectCall(CValue callee, CallOperands &&operands) {
                   kBestOverloadCandidatesInlineSize>
           bestCandidates;
       bestCandidates.emplace_back(nullptr, std::move(fitness));
-      emitInconclusiveCandidatesError(
-          shared, callExpr, {}, /*isCall=*/true,
-          /*isParamConstraint=*/fitness.getValidity() ==
-              OverloadFitness::Validity::kParamConstraintInconclusive,
-          bestCandidates);
+      emitInconclusiveCandidatesError(shared, callExpr, {}, /*isCall=*/true,
+                                      bestCandidates);
       operands.dest.resetForError(*this);
       return {};
     }
