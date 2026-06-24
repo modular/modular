@@ -30,7 +30,11 @@ from collections import defaultdict
 from collections.abc import Iterable, Sequence
 
 from max.nn.kv_cache.metrics import KVCacheMetrics
-from max.pipelines.context import TextAndVisionContext, TextContext
+from max.pipelines.context import (
+    TextAndVisionContext,
+    TextContext,
+    TokenHashOverride,
+)
 from max.pipelines.kv_cache.kv_connector import KVConnector, to_block_hash_bytes
 from max.pipelines.kv_cache.memory_tier import MemoryTier
 from max.pipelines.modeling.types import RequestID
@@ -241,7 +245,21 @@ class BlockManager:
 
         unhashed_tokens = ctx.tokens[num_hashed_tokens:num_hashable_tokens]
 
-        images = ctx.images if isinstance(ctx, TextAndVisionContext) else []
+        token_hash_overrides: list[TokenHashOverride] = []
+        if isinstance(ctx, TextAndVisionContext):
+            for img in ctx.images:
+                if img.image_hash is None:
+                    raise ValueError(
+                        "hash_request_tokens requires `image_hash` to be present. Found None."
+                    )
+                token_hash_overrides.append(
+                    TokenHashOverride(
+                        token_idx=img.start_idx,
+                        token_hash=img.image_hash,
+                        source="image",
+                    )
+                )
+            token_hash_overrides.extend(ctx.token_hash_overrides)
 
         cache_salt = ctx.cache_salt
         if cache_salt is not None and self.kv_hash_algo == "ahash64":
@@ -260,7 +278,7 @@ class BlockManager:
             block_size=self.block_size,
             parent_hash=parent_hash_value,
             prefix_length=num_hashed_tokens,
-            images=images,
+            token_hash_overrides=token_hash_overrides,
             algo=self.kv_hash_algo,
             seed=self.kv_hash_seed,
             salt=cache_salt,

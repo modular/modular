@@ -30,7 +30,7 @@ from .log_probabilities import LogProbabilities
 from .outputs import GenerationOutput, TextGenerationOutput
 from .sampling_params import SamplingParams
 from .status import GenerationStatus
-from .tokens import ImageMetadata, TokenBuffer
+from .tokens import ImageMetadata, TokenBuffer, TokenHashOverride
 
 _CHUNK_SIZE = 128
 FUTURE_TOKEN = -999
@@ -1002,6 +1002,9 @@ class TextAndVisionContext(TextContext):
     images: list[ImageMetadata] = field(default_factory=list)
     """Metadata about each image in the prompt. """
 
+    token_hash_overrides: list[TokenHashOverride] = field(default_factory=list)
+    """Token-level content hashes to inject into prefix-cache block hashing."""
+
     extra_model_args: dict[str, npt.NDArray[Any]] = field(default_factory=dict)
     """Extra model arguments for the vision model. These are model specific arguments."""
 
@@ -1036,6 +1039,18 @@ class TextAndVisionContext(TextContext):
                 raise ValueError(
                     f"Images must be filled with <vision_token_id> ({self.vision_token_ids})"
                 )
+
+        token_override_indices: set[int] = set()
+        for override in self.token_hash_overrides:
+            if len(self.tokens) <= override.token_idx:
+                raise ValueError(
+                    "Token hash overrides must be before the end of the token array"
+                )
+            if override.token_idx in token_override_indices:
+                raise ValueError(
+                    f"Multiple token hash overrides target index {override.token_idx}"
+                )
+            token_override_indices.add(override.token_idx)
 
         self._validate_state()
 

@@ -56,7 +56,13 @@ from .sampling_params import (
     SamplingParamsInput,
 )
 from .status import GenerationStatus
-from .tokens import ImageMetadata, Range, TokenBuffer, TokenSlice
+from .tokens import (
+    ImageMetadata,
+    Range,
+    TokenBuffer,
+    TokenHashOverride,
+    TokenSlice,
+)
 
 __all__ = [
     "FUTURE_TOKEN",
@@ -89,6 +95,7 @@ __all__ = [
     "TextGenerationOutput",
     "TextGenerationResponseFormat",
     "TokenBuffer",
+    "TokenHashOverride",
     "TokenSlice",
     "VLMContextType",
     "validate_aspect_ratio_args",

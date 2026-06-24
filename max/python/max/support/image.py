@@ -67,3 +67,26 @@ def hash_image(pixel_values: npt.NDArray[Any]) -> int:
     hash_val = xxhash.xxh3_64_intdigest(np.ascontiguousarray(pixel_values).data)  # type: ignore[arg-type]
     # xxh3_64_intdigest returns unsigned 64-bit int; convert to signed for numpy compatibility
     return int(np.uint64(hash_val).astype(np.int64))
+
+
+def hash_video(
+    pixel_values: npt.NDArray[Any], grid_thw: npt.NDArray[np.integer[Any]]
+) -> int:
+    """Compute the hash of preprocessed video pixels and grid metadata.
+
+    The input must already be the sampled, resized, normalized, model-ready
+    video tensor. This helper does not decode or preprocess video frames.
+    """
+    pixel_hash = hash_image(pixel_values)
+    grid_hash = hash_image(np.asarray(grid_thw, dtype=np.int64))
+    shape = np.asarray(pixel_values.shape, dtype=np.int64)
+    metadata = np.concatenate(
+        (
+            np.array(
+                [pixel_hash, grid_hash, np.dtype(pixel_values.dtype).num],
+                dtype=np.int64,
+            ),
+            shape,
+        )
+    )
+    return hash_image(metadata)
