@@ -2298,15 +2298,21 @@ class TraitInstanceRefAttr(max._core.Attribute):
 
 class TypeConformsToTraitAttr(max._core.Attribute):
     """
-    This represents a flag to indicate the type, specified by `typeValue`,
-    conforms to the specified traits.
+    This represents a flag to indicate that every type in `typeValue` conforms
+    to the specified traits. The stored checked operand is normalized to a
+    `param_list<!kgen.type>` value.
 
     Example:
 
     ```mlir
-    #kgen.type_conforms_to_trait<T,
+    #kgen.type_conforms_to_trait<
+        #kgen.param_list<#kgen.param.decl.ref<"T"> : !kgen.type>,
         #kgen.type<typevalue<#kgen.trait_ref<@Movable, @Copyable>>, type> : !kgen.type>
     ```
+
+    For the common case of a single checked type value, the operand is printed
+    in sugared form: the 1-element `param_list` literal (and any outer upcast
+    that simply retypes its element to `!kgen.type`) is stripped.
     """
 
     @overload
