@@ -28,7 +28,11 @@ from max.experimental.nn.norm import RMSNorm
 from max.experimental.nn.sequential import ModuleList
 from max.experimental.tensor import Tensor
 from max.graph import TensorValue, ops
-from max.nn.kv_cache import KVCacheParamInterface, PagedCacheValues
+from max.nn.kv_cache import (
+    KVCacheInputs,
+    KVCacheParamInterface,
+    PagedCacheValues,
+)
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 
 from .layers.attention import ERNIE45Attention
@@ -284,9 +288,11 @@ class ERNIE45(Module[..., tuple[Tensor, ...]]):
         """
 
         kv_inputs = iter(x._graph_value for x in variadic_args)
-        kv_collections = (
-            self.kv_params.get_symbolic_inputs().unflatten(kv_inputs).inputs
+        unflattened = self.kv_params.get_symbolic_inputs().unflatten(kv_inputs)
+        assert isinstance(unflattened, KVCacheInputs), (
+            f"Expected KVCacheInputs, got {type(unflattened)}"
         )
+        kv_collections = unflattened.inputs
         return self.language_model(
             tokens, kv_collections[0], return_n_logits, input_row_offsets
         )
