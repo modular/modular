@@ -34,6 +34,7 @@ from typing import cast
 import numpy as np
 import pytest
 from max.pipelines.context import TextContext
+from max.pipelines.kv_cache.connectors.dkv.connector import DKVConnector
 from max.pipelines.kv_cache.connectors.local_connector import LocalConnector
 from max.pipelines.kv_cache.connectors.null_connector import NullConnector
 from max.pipelines.kv_cache.connectors.tiered_connector import TieredConnector
@@ -379,3 +380,39 @@ def test_local_and_tiered_connectors_declare_full_sha256_support() -> None:
         instance = cls.__new__(cls)
         assert prop.fget is not None
         assert prop.fget(instance) == _FULL
+
+
+# ---------------------------------------------------------------------------
+# DKV connector capability wiring
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("algo", ["ahash64", "sha256", "sha256_64"])
+def test_block_manager_accepts_dkv_advertised_algos(
+    algo: KVHashAlgo,
+) -> None:
+    """BlockManager accepts every algo the dkv connector advertises.
+
+    Pins the wiring between :attr:`DKVConnector.supported_hash_algos` (now
+    extended to accept full SHA-256 via boundary truncation, see
+    ``max/python/max/pipelines/kv_cache/connectors/dkv/connector.py``) and
+    the BlockManager capability gate. Skips ``__init__`` so no real dkv
+    client is constructed.
+    """
+    dkv_advertised = DKVConnector.__new__(DKVConnector).supported_hash_algos
+    assert algo in dkv_advertised, (
+        f"plan invariant: dkv must advertise {algo}; got {dkv_advertised}"
+    )
+
+    connector = _StubConnector(
+        supported_hash_algos=dkv_advertised, num_host_blocks=4
+    )
+    bm = BlockManager(
+        device_memory_tier=MemoryTier.MEMORY_TIER_CPU,
+        total_num_blocks=32,
+        block_size=8,
+        connector=cast(object, connector),  # type: ignore[arg-type]
+        enable_prefix_caching=True,
+        kv_hash_algo=algo,
+    )
+    assert bm.kv_hash_algo == algo

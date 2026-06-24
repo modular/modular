@@ -18,6 +18,14 @@ A thin :class:`~max.pipelines.kv_cache.kv_connector.KVConnector` shim over the
 owns the NIXL agent, all block transfers, the control-plane RPCs, inline
 reconnection, and metrics; this shim only adapts the MAX-side types (device
 ``KVCacheMemory``, ``KVCacheMetrics``) to the client's API.
+
+Block-hash contract: the dkv wire format carries a ``uint64 seq_hash`` and is
+unchanged by this shim. Callers may pass either the 8-byte canonical encoding
+used by ``ahash64`` / ``sha256_64`` or the 32-byte canonical encoding used by
+full ``sha256``; in the 32-byte case the shim truncates to the first 8 bytes
+at the boundary. Truncation is byte-identical to the existing ``sha256_64``
+algorithm, so configuring MAX with ``sha256`` or ``sha256_64`` yields the
+same dkv key for the same logical digest.
 """
 
 from __future__ import annotations
@@ -31,6 +39,33 @@ from max.driver import Device
 from max.nn.kv_cache.cache_params import KVCacheMemory, KVHashAlgo
 from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.profiler import traced
+
+
+def _to_dkv_u64(h: bytes) -> int:
+    """Packs a connector-level block hash into the 64-bit dkv wire key.
+
+    The dkv proto stays ``uint64 seq_hash``. Accepts the canonical bytes
+    forms produced by :func:`max.pipelines.kv_cache.kv_connector.to_block_hash_bytes`:
+
+    * 8 bytes (``ahash64`` / ``sha256_64``): used as-is, big-endian unsigned.
+    * 32 bytes (full ``sha256``): truncated to the first 8 bytes (big-endian
+      unsigned). Byte-identical to ``sha256_64`` of the same digest, so the
+      same logical block collapses to the same dkv key under either algo.
+
+    Args:
+        h: Canonical block-hash bytes, length 8 or 32.
+
+    Returns:
+        Unsigned 64-bit integer the Rust client carries on the wire.
+
+    Raises:
+        ValueError: If ``h`` is not exactly 8 or 32 bytes long.
+    """
+    if len(h) not in (8, 32):
+        raise ValueError(
+            f"DKVConnector block hash must be 8 or 32 bytes, got {len(h)}"
+        )
+    return int.from_bytes(h[:8], "big", signed=False)
 
 
 class DKVExternalBlockMetadata(
@@ -140,13 +175,16 @@ class DKVConnector:
         device_block_ids: list[int],
         block_hashes: Sequence[bytes],
     ) -> int:
-        assert all(len(h) == 8 for h in block_hashes), (
-            "DKVConnector only supports ahash64 (8-byte) hashes; "
-            "the capability check in BlockManager should have rejected sha256."
-        )
+        """Loads external blocks into device memory by hash.
+
+        Each ``block_hashes`` element must be canonical bytes from
+        :func:`to_block_hash_bytes`: 8 bytes for ``ahash64`` / ``sha256_64``
+        or 32 bytes for full ``sha256``. 32-byte digests are truncated to
+        their first 8 bytes at the dkv boundary (see :func:`_to_dkv_u64`).
+        """
         return self._client.load(
             device_block_ids,
-            [int.from_bytes(h, "big", signed=False) for h in block_hashes],
+            [_to_dkv_u64(h) for h in block_hashes],
         )
 
     def offload(
@@ -155,14 +193,21 @@ class DKVConnector:
         block_hashes: Sequence[bytes],
         parent_seq_hash: bytes | None = None,
     ) -> None:
-        # ``parent_seq_hash`` is accepted for ``KVConnector`` protocol
-        # compatibility but no longer forwarded: the dKV store now dedups by
-        # composite key ``(stream_id, group, seq_hash)`` and does not chain
-        # blocks under a parent, so the Rust client builds the keys (and the
-        # NUMA striping plan) from the hashes alone.
+        """Offloads device blocks to the dkv service by hash.
+
+        Each ``block_hashes`` element follows the same 8-or-32 byte
+        contract as :meth:`load` (truncated to its first 8 bytes at the
+        dkv boundary; see :func:`_to_dkv_u64`).
+
+        ``parent_seq_hash`` is accepted for ``KVConnector`` protocol
+        compatibility but no longer forwarded: the dKV store now dedups
+        by composite key ``(stream_id, group, seq_hash)`` and does not
+        chain blocks under a parent, so the Rust client builds the keys
+        (and the NUMA striping plan) from the hashes alone.
+        """
         self._client.offload(
             block_ids,
-            [int.from_bytes(h, "big", signed=False) for h in block_hashes],
+            [_to_dkv_u64(h) for h in block_hashes],
         )
 
     def wait_for_loads(self) -> None:
@@ -216,4 +261,12 @@ class DKVConnector:
 
     @property
     def supported_hash_algos(self) -> frozenset[KVHashAlgo]:
-        return frozenset({"ahash64"})
+        """Algos this connector accepts in :meth:`load` / :meth:`offload`.
+
+        Accepts the full ahash64-family set plus 32-byte ``sha256``: 32-byte
+        digests are truncated to their first 8 bytes at the boundary, which
+        is byte-identical to the ``sha256_64`` algo (see :func:`_to_dkv_u64`
+        and the module docstring). The dkv wire format stays ``uint64
+        seq_hash``.
+        """
+        return frozenset({"ahash64", "sha256", "sha256_64"})

@@ -136,6 +136,18 @@ This version is still a work in progress.
   reuse of a cache directory. `KVHashAlgo` is re-exported from
   `max.nn.kv_cache` for downstream consumers. Default behavior is
   unchanged.
+- Extended SHA-256 KV-cache block hashes to the dKV (`DKVConnector`)
+  external tier. `DKVConnector.supported_hash_algos` now advertises
+  `frozenset({"ahash64", "sha256", "sha256_64"})`, and `load`/`offload`
+  accept both 8-byte (`ahash64` / `sha256_64`) and 32-byte (full
+  `sha256`) block hashes; 32-byte digests are truncated to their first
+  8 bytes at the boundary into the unchanged `dkv_connector` Rust
+  client, which continues to carry a `uint64 seq_hash` on the wire.
+  Truncation is byte-identical to the existing `sha256_64` algorithm,
+  so configuring MAX with `sha256` or `sha256_64` produces the same
+  dKV key for the same logical block — no change to the dkv wire
+  format, stored block identity, or `DKVExternalBlockMetadata`
+  orchestrator hint shape. Default behavior is unchanged.
 
 ### `max` CLI
 
