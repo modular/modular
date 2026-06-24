@@ -16,6 +16,7 @@ from pathlib import Path
 
 from max.tests.integration.accuracy.logit_verification.logit_verification_config import (
     LOGIT_VERIFICATION_CONFIG,
+    LogitVerificationPipelineConfig,
 )
 
 # hf-repo-lock.tsv (the source of truth for what we cache) lives in
@@ -32,6 +33,17 @@ def test_pre_submit_matrix() -> None:
     assert len(matrix) > 0
 
 
+def _locked_repos() -> set[str]:
+    """Returns the set of Hugging Face repo ids pinned in ``hf-repo-lock.tsv``."""
+    repos: set[str] = set()
+    with _HF_REPO_LOCK.open() as lock_file:
+        for row in csv.DictReader(lock_file, dialect="excel-tab"):
+            repo = row["hf_repo"]
+            if repo != _EXAMPLE_KEY:
+                repos.add(repo)
+    return repos
+
+
 def _canonical_casing_by_casefold() -> dict[str, str]:
     """Maps each locked repo id to its canonical casing, keyed case-insensitively.
 
@@ -39,13 +51,7 @@ def _canonical_casing_by_casefold() -> dict[str, str]:
     is independently verified against Hugging Face's canonical casing by
     ``test_hf_repo_lock_casing``.
     """
-    canonical: dict[str, str] = {}
-    with _HF_REPO_LOCK.open() as lock_file:
-        for row in csv.DictReader(lock_file, dialect="excel-tab"):
-            repo = row["hf_repo"]
-            if repo != _EXAMPLE_KEY:
-                canonical[repo.casefold()] = repo
-    return canonical
+    return {repo.casefold(): repo for repo in _locked_repos()}
 
 
 def test_pipeline_models_use_canonical_casing() -> None:
@@ -76,4 +82,56 @@ def test_pipeline_models_use_canonical_casing() -> None:
         "logit_verification_config.yaml (must match hf-repo-lock.tsv exactly, "
         "or the local cache double-downloads the weights):\n"
         + "\n".join(violations)
+    )
+
+
+def _weight_repo_ids(
+    pipeline_config: LogitVerificationPipelineConfig,
+) -> list[str]:
+    """Extracts the Hugging Face weight repo ids a pipeline pulls in through
+    ``transformer_weight_path`` overrides.
+
+    Pixel-generation pipelines may use a two-repo layout where the
+    transformer's quantized weights live in a separate single-file checkpoint
+    (e.g. ``FLUX.2-dev`` for the pipeline plus ``FLUX.2-dev-NVFP4`` for the
+    transformer). A weight path looks like ``org/repo/.../file.safetensors``;
+    the repo id is the leading ``org/repo``.
+    """
+    overrides = pipeline_config.config_params_override or {}
+    weight_paths = overrides.get("transformer_weight_path") or []
+    repos: list[str] = []
+    for weight_path in weight_paths:
+        weight_path = str(weight_path)
+        # Only Hub references have a lockable repo id; skip local paths.
+        if weight_path.startswith("/"):
+            continue
+        segments = weight_path.split("/")
+        if len(segments) >= 3:
+            repos.append("/".join(segments[:2]))
+    return repos
+
+
+def test_pipeline_weight_repos_are_locked() -> None:
+    """Ensures every separate weight repo a logit verification pipeline pulls in
+    is pinned in ``hf-repo-lock.tsv``.
+
+    Pipelines that use the two-repo layout name their quantized weight repo only
+    through a ``transformer_weight_path`` override, not as the pipeline's model
+    id. ``hf_repo_lock.apply_to_config`` looks that weight repo up in the lock
+    and raises ``No locked revision found for weight repository`` when it is
+    missing, crashing the pipeline at run time (and the offline cache cannot
+    resolve it under ``HF_HUB_OFFLINE``). Requiring an exact match against the
+    lock key additionally enforces the weight repo's canonical casing.
+    """
+    locked = _locked_repos()
+    violations: list[str] = []
+    for name, pipeline_config in LOGIT_VERIFICATION_CONFIG.pipelines.items():
+        for repo in _weight_repo_ids(pipeline_config):
+            if repo not in locked:
+                violations.append(f"  pipeline {name!r}: weight repo {repo!r}")
+    assert not violations, (
+        "Logit verification pipelines reference weight repositories missing "
+        "from hf-repo-lock.tsv. apply_to_config raises 'No locked revision "
+        "found for weight repository' for these at run time; add a row pinning "
+        "each to its Hugging Face commit:\n" + "\n".join(violations)
     )
