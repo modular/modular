@@ -240,6 +240,18 @@ This version is still a work in progress.
   )
   ```
 
+- Added a `DeviceGraphBuilder.add_function` overload that takes the kernel as a
+  compile-time parameter and compiles it automatically, mirroring the
+  parameter-based `DeviceContext.enqueue_function`. Callers no longer need a
+  separate `DeviceContext.compile_function` step to add a kernel node:
+
+  ```mojo
+  def build(mut builder: DeviceGraphBuilder) raises {read}:
+      _ = builder.add_function[kernel](
+          42, grid_dim=1, block_dim=1, dependencies=[]
+      )
+  ```
+
 ## Removed
 
 ## Fixed
