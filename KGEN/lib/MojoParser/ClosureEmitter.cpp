@@ -3278,10 +3278,9 @@ static bool canFunctionSignatureMatchTraitParamInf(FnOp actualFn,
 
     StringAttr actualParamName =
         actualFn.getInputParams()[index + actualAuxCount].getName();
-    if (failed(inference.setInitialInferredValue(
-            index + targetAuxCount,
-            ParamDeclRefAttr::get(actualParamName, actualParam))))
-      return false;
+    inference.setInitialInferredValue(
+        index + targetAuxCount,
+        ParamDeclRefAttr::get(actualParamName, actualParam));
   }
   FailureOr<SmallVector<TypedAttr>> specialization =
       inference.inferSpecialization(target, actualFn);
@@ -3850,7 +3849,6 @@ bool ClosureEmitter::isTypeRebindableTo(FuncTypeGeneratorType from,
     if (pa.getPassingKind() != pb.getPassingKind() ||
         pa.getVariadic() != pb.getVariadic() ||
         pa.getDefaultValue() != pb.getDefaultValue() ||
-        pa.getConstraints() != pb.getConstraints() ||
         (pa.getPassingKind() != PassingKind::Inferred &&
          pa.getName() != pb.getName()))
       return false;

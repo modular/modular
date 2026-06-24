@@ -31,7 +31,6 @@ ParameterEvaluator populateParameterInfos(
     SharedState &shared, ArrayRef<Type> paramTypes, PogListAttr paramListAttr,
     SmallVectorImpl<ParameterInfo> &params, std::optional<ASTType> selfType) {
   ParameterEvaluator evaluator;
-  ArrayRef<PogMetadataAttr> pogs = paramListAttr.getPogs();
   for (auto [idx, paramType] : llvm::enumerate(paramTypes)) {
     TypedAttr defaultValue;
     if (auto defaultAttr = paramListAttr.getDefault(idx))
@@ -54,12 +53,6 @@ ParameterEvaluator populateParameterInfos(
         paramName,
         generateTypeString(shared, reboundType, variadicKind, selfType),
         passingKind, variadicKind, defaultValue, /*constraints=*/{}});
-    if (auto cs = pogs[idx].getConstraints(); !cs.empty()) {
-      std::string remaining =
-          mergeConformsToConstraints(cs, &evaluator, shared, params);
-      if (!remaining.empty())
-        params.back().constraints = std::move(remaining);
-    }
   }
   return evaluator;
 }

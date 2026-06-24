@@ -470,6 +470,27 @@ def use_constraint_fn[x: Int]():
     # expected-error @below {{invalid bindings for 'constraint_fn': lacking evidence to prove correctness}}
     comptime fx = constraint_fn[x, 1]
 
+# Defaults are checked against a trailing 'where' clause when the function is
+# instantiated using them. A default that can never satisfy the constraint is
+# reported at the call that relies on it.
+# expected-note @below {{function declared here}}
+# expected-note @below {{constraint declared here evaluated to False, expected '(x > 3)'}}
+def violated_default_constraint[x: Int = 1]() where x > 3:
+    pass
+
+def use_violated_default_constraint():
+    # expected-error @below {{invalid call to 'violated_default_constraint': violated constraint}}
+    violated_default_constraint()
+
+# A default that depends on another parameter cannot be rejected at declaration
+# time; using the defaults here satisfies the constraint, so there should NOT be
+# any errors.
+def unprovable_default_constraint[x: Int = 3, y: Int = 1]() where x + y > 3:
+    pass
+
+def use_unprovable_default_constraint():
+    unprovable_default_constraint()
+
 ##===----------------------------------------------------------------------===##
 # Function Overloading
 ##===----------------------------------------------------------------------===##

@@ -265,9 +265,6 @@ void LIT::printFnType(AsmPrinter &p, FuncType signature) {
                        signature.getArgConventions(), signature.getFnEffects(),
                        /*optionalResultList=*/false);
   assert(argListAttr.getBodyConstraints().empty());
-  assert(llvm::all_of(argListAttr.getPogs(), [](PogMetadataAttr pog) {
-    return pog.getConstraints().empty();
-  }));
 }
 
 //===----------------------------------------------------------------------===//

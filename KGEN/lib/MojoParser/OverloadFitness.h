@@ -75,24 +75,20 @@ public:
   // Ordered from worst to best validity.
   enum class Validity {
     kInvalid,                        // This is definitely invalid.
-    kParamConstraintInconclusive,    // Unprovable parameter constraints.
     kFunctionConstraintInconclusive, // Unprovable function constraints.
     kValid,                          // This is definitely valid.
   };
 
   /// Return whether the candidate was valid.
   Validity getValidity() const {
-    if (!unprovableConstraints.empty()) {
-      return paramBindings ? Validity::kFunctionConstraintInconclusive
-                           : Validity::kParamConstraintInconclusive;
-    }
+    if (!unprovableConstraints.empty())
+      return Validity::kFunctionConstraintInconclusive;
     return diag ? Validity::kInvalid : Validity::kValid;
   }
 
   /// Return whether the candidate is any kind of inconclusive.
   bool isInconclusive() const {
-    return getValidity() == Validity::kParamConstraintInconclusive ||
-           getValidity() == Validity::kFunctionConstraintInconclusive;
+    return getValidity() == Validity::kFunctionConstraintInconclusive;
   }
 
   /// Determine whether the specified signature can be invoked with the
@@ -148,10 +144,6 @@ private:
 
   /// Constructor for invalid candidates (kInvalid).
   OverloadFitness(MojoInflightDiag &&diag) : diag(std::move(diag)) {}
-  /// Constructor for parameter constraint inconclusiveness
-  /// (kParamConstraintInconclusive).
-  OverloadFitness(SmallVector<ConstraintAttr> &&constraints)
-      : unprovableConstraints(std::move(constraints)) {}
   /// Constructor for valid candidates (kValid).
   /// To create a kFunctionConstraintInconclusive fitness, just insert the
   /// constraints into `unprovableConstraints`.

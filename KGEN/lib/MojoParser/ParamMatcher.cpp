@@ -45,7 +45,7 @@ void MatchFailure::addExplanation(MojoInflightDiag &diag) const {
   if (!shared)
     return;
 
-  if (isa<Unclassified, UnprovableConstraints>(info))
+  if (isa<Unclassified>(info))
     return;
 
   if (isa<DependsOnUnresolved>(info)) {
@@ -944,8 +944,7 @@ LogicalResult ParamMatcher::matchParams(TypedAttr actualAttr,
         if (state.isExplicitlyUnbound(parameterIndex))
           return error(MatchFailure::UnboundButInferrable{parameterIndex});
 
-        if (failed(state.setInferredValue(parameterIndex, actualAttr)))
-          return error(MatchFailure::UnprovableConstraints{parameterIndex});
+        state.setInferredValue(parameterIndex, actualAttr);
         return success();
       }
 

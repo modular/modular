@@ -58,8 +58,8 @@ public:
   const ParameterEvaluator &getEvaluator() const { return evaluator; }
 
   /// Pre-seed an inferred parameter value by index.
-  LogicalResult setInitialInferredValue(size_t paramIdx, TypedAttr paramVal) {
-    return setInferredValue(paramIdx, paramVal);
+  void setInitialInferredValue(size_t paramIdx, TypedAttr paramVal) {
+    setInferredValue(paramIdx, paramVal);
   }
 
 private:

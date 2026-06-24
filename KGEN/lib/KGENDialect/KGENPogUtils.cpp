@@ -120,7 +120,6 @@ KGEN::parseOptionalParameterSpec(AsmParser &p,
   SmallVector<TypedAttr> defaultParams;
   SmallVector<VariadicKind> argsVariadic;
   std::optional<ArgConvention> origVariadicConvention;
-  SmallVector<SmallVector<ConstraintAttr>> constraints;
   SmallVector<ConstraintAttr> bodyConstraints;
   bool parsedBodyConstraints = false;
 
@@ -177,9 +176,6 @@ KGEN::parseOptionalParameterSpec(AsmParser &p,
     if (failed(parseOptionalDefaultValue(p, defaultVal, decl.getType())))
       return failure();
     defaultParams.push_back(defaultVal);
-    SmallVector<ConstraintAttr> &argConstraints = constraints.emplace_back();
-    if (failed(parseOptionalConstraintsList(p, argConstraints)))
-      return failure();
 
     return success();
   };
@@ -193,17 +189,10 @@ KGEN::parseOptionalParameterSpec(AsmParser &p,
 
   passingKindParser.populatePassingKinds(paramPassingKinds);
 
-  paramListAttr = PogListAttr::get(
-      ctx, paramNames, paramPassingKinds, argsVariadic, defaultParams,
-      origVariadicConvention, constraints, bodyConstraints);
+  paramListAttr =
+      PogListAttr::get(ctx, paramNames, paramPassingKinds, argsVariadic,
+                       defaultParams, origVariadicConvention, bodyConstraints);
   return success();
-}
-
-ParseResult KGEN::parseOptionalConstraintsList(
-    AsmParser &p, SmallVectorImpl<ConstraintAttr> &constraints) {
-  if (p.parseOptionalLBrace())
-    return success();
-  return parseConstraintsListContents(p, constraints);
 }
 
 static void printConstraintsListContents(AsmPrinter &p,
@@ -215,16 +204,6 @@ static void printConstraintsListContents(AsmPrinter &p,
           cast<ConstraintAttr>(evaluator->getReboundAttribute(constraint));
     constraint.print(p);
   });
-}
-
-void KGEN::printOptionalConstraintsList(AsmPrinter &p,
-                                        ArrayRef<ConstraintAttr> constraints,
-                                        ParameterEvaluator *evaluator) {
-  if (constraints.empty())
-    return;
-  p << " {";
-  printConstraintsListContents(p, constraints, evaluator);
-  p << "}";
 }
 
 ParseResult KGEN::parseConventionAndVariadicness(
@@ -294,7 +273,6 @@ void KGEN::printOptionalParameterSpec(AsmPrinter &p,
 
   size_t idx = 0;
   PassingKindPrinter passingKindPrinter(p, paramListAttr, '|');
-  ArrayRef<PogMetadataAttr> pogs = paramListAttr.getPogs();
   ArrayRef<ConstraintAttr> bodyConstraints = paramListAttr.getBodyConstraints();
   auto printWithDefault = [&](ParamDeclAttr decl) {
     passingKindPrinter.printOptionalStarSlash(idx);
@@ -312,8 +290,6 @@ void KGEN::printOptionalParameterSpec(AsmPrinter &p,
       printOptionalDefaultValue(p, evaluator.getReboundAttribute(defaultOr),
                                 decl.getType());
     }
-
-    printOptionalConstraintsList(p, pogs[idx].getConstraints(), &evaluator);
 
     // Check if we are at the end; if so, we might still have to print a '/'.
     passingKindPrinter.printOptionalTrailingSlash(idx++);
@@ -344,7 +320,6 @@ ParseResult KGEN::parseOptionalParamSignature(
   SmallVector<TypedAttr> defaultParams;
   SmallVector<VariadicKind> argVariadics;
   std::optional<ArgConvention> origVariadicConvention;
-  SmallVector<SmallVector<ConstraintAttr>> constraints;
   SmallVector<ConstraintAttr> bodyConstraints;
   bool parsedBodyConstraints = false;
 
@@ -387,10 +362,6 @@ ParseResult KGEN::parseOptionalParamSignature(
       return failure();
     defaultParams.push_back(defaultVal);
 
-    SmallVector<ConstraintAttr> &argConstraints = constraints.emplace_back();
-    if (failed(parseOptionalConstraintsList(p, argConstraints)))
-      return failure();
-
     return success();
   };
 
@@ -405,7 +376,7 @@ ParseResult KGEN::parseOptionalParamSignature(
 
   paramListAttr = PogListAttr::get(
       p.getContext(), paramNames, paramPassingKinds, argVariadics,
-      defaultParams, origVariadicConvention, constraints, bodyConstraints);
+      defaultParams, origVariadicConvention, bodyConstraints);
   return success();
 }
 
@@ -428,7 +399,6 @@ void KGEN::printOptionalParamSignature(AsmPrinter &p,
 
   size_t idx = 0;
   PassingKindPrinter passingKindPrinter(p, paramListAttr, '|');
-  ArrayRef<PogMetadataAttr> pogs = paramListAttr.getPogs();
   auto printWithDefault = [&](Type type) {
     passingKindPrinter.printOptionalStarSlash(idx);
 
@@ -439,8 +409,6 @@ void KGEN::printOptionalParamSignature(AsmPrinter &p,
     printKGENType(p, type);
     printVariadicness(p, paramListAttr.getVariadicKind(idx));
     printOptionalDefaultValue(p, paramListAttr.getDefault(idx), type);
-    printOptionalConstraintsList(p, pogs[idx].getConstraints(),
-                                 /*evaluator=*/nullptr);
 
     // Check if we are at the end; if so, we might still have to print a '/'.
     passingKindPrinter.printOptionalTrailingSlash(idx++);

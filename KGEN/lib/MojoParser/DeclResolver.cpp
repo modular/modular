@@ -1779,7 +1779,6 @@ StringAttr DeclResolver::getMangledName(StringAttr baseName, ASTDecl &container,
   // Don't include parent parameters in the mangling.
   ArrayRef<Type> params = fullSig.getInputParamTypes().take_back(
       signatureGen.getInputParamTypes().size());
-  ArrayRef<PogMetadataAttr> pogs = fullSig.getParamListAttrs().getPogs();
   if (!params.empty()) {
     size_t numSkipped = fullSig.getInputParamTypes().size() - params.size();
     os << '[';
@@ -1793,7 +1792,6 @@ StringAttr DeclResolver::getMangledName(StringAttr baseName, ASTDecl &container,
             type = type.getParameterListInfo().elementType;
           }
           os << type.getAsString(/*diags=*/{});
-          printConstraints(os, pogs[idx].getConstraints());
         },
         ",");
     os << ']';

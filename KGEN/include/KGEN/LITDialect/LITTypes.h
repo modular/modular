@@ -186,13 +186,12 @@ public:
   /// index references. If `paramNames` is non-empty, it must match
   /// `parentParams` in length. If `paramDefaults` is non-empty, it must match
   /// `parentParams` in length; a nullptr `TypedAttr` at index `i` means no
-  /// default for that parameter. If `paramConstraints` is non-empty, it must
-  /// match `parentParams` in length.
+  /// default for that parameter. `bodyConstraints` are constraints enforced by
+  /// the body that follows the prepended parameters.
   static FnTypeGeneratorType
   prependParams(FnTypeGeneratorType sig, ArrayRef<ParamDeclAttr> parentParams,
                 ArrayRef<StringAttr> paramNames = {},
                 ArrayRef<TypedAttr> paramDefaults = {},
-                ArrayRef<SmallVector<ConstraintAttr>> paramConstraints = {},
                 ArrayRef<ConstraintAttr> bodyConstraints = {});
 
   /// Return this signature with the specified capture lifetimes.

@@ -2575,15 +2575,13 @@ def KGEN_PogMetadataAttr : KGENAttr<"PogMetadata", "pog_metadata"> {
   let summary = "Metadata for a single argument or parameter.";
   let description = [{
     The `#kgen.pog_metadata` attribute contains metadata about an argument or
-    parameter of a function, including the name, passing kind, variadicness, the
-    default value (if present) and any constraints on it.
+    parameter of a function, including the name, passing kind, variadicness, and
+    the default value (if present).
 
     Example:
 
     ```mlir
-    #kgen.pog_metadata<"some_keyword_param", pos_or_kw, false, 42, {
-      <1, loc("file.mojo":10:5), "Constraint must hold">
-    }>
+    #kgen.pog_metadata<"some_keyword_param", pos_or_kw, false, 42>
     #kgen.pog_metadata<"some_variadic_param", pos_or_kw, true>
     ```
   }];
@@ -2592,14 +2590,12 @@ def KGEN_PogMetadataAttr : KGENAttr<"PogMetadata", "pog_metadata"> {
     "StringAttr":$name,
     "PassingKind":$passingKind,
     "VariadicKind":$variadic,
-    OptionalParameter<"TypedAttr">:$defaultValue,
-    OptionalArrayRefParameter<"ConstraintAttr">:$constraints
+    OptionalParameter<"TypedAttr">:$defaultValue
   );
 
   let assemblyFormat = [{
     `<` $name `,` $passingKind `,` $variadic
     (`,` `default` custom<ColonTypeParamValue>($defaultValue)^)?
-    (`,` `{` $constraints^ `}`)?
     `>`
   }];
 
@@ -2607,11 +2603,10 @@ def KGEN_PogMetadataAttr : KGENAttr<"PogMetadata", "pog_metadata"> {
     AttrBuilderWithInferredContext<(ins "StringAttr":$name,
       "PassingKind":$passingKind,
       CArg<"VariadicKind", "VariadicKind::None">:$variadic,
-      CArg<"TypedAttr", "{}">:$defaultValue,
-      CArg<"ArrayRef<ConstraintAttr>", "{}">:$constraints
+      CArg<"TypedAttr", "{}">:$defaultValue
     ), [{
-      return $_get(name.getContext(), name, passingKind, variadic, defaultValue,
-                   constraints);
+      return $_get(name.getContext(), name, passingKind, variadic,
+                   defaultValue);
     }]>,
     AttrBuilder<(ins), [{
       return get(StringAttr::get($_ctxt), PassingKind::PosOrKw);
@@ -2689,7 +2684,6 @@ def KGEN_PogListAttr : KGENAttr<"PogList", "pog_list"> {
                      "ArrayRef<VariadicKind>":$variadics,
                      "ArrayRef<TypedAttr>":$defaults,
                      "std::optional<ArgConvention>":$origVariadicConvention,
-                     "ArrayRef<SmallVector<ConstraintAttr>>":$paramConstraints,
                      "ArrayRef<ConstraintAttr>":$bodyConstraints)>
   ];
 
@@ -2742,18 +2736,15 @@ def KGEN_PogListAttr : KGENAttr<"PogList", "pog_list"> {
     /// and variadic indices.
     static SmallVector<PogMetadataAttr> toPogs(
       ArrayRef<StringAttr> names, ArrayRef<PassingKind> passingKinds,
-      ArrayRef<VariadicKind> variadics, ArrayRef<TypedAttr> defaults,
-      ArrayRef<SmallVector<ConstraintAttr>> paramConstraints);
+      ArrayRef<VariadicKind> variadics, ArrayRef<TypedAttr> defaults);
 
-    /// Prepend inferred parameters: `defaults` and `paramConstraints` are either
-    /// empty or the same length as `names` (use null/empty `TypedAttr` for
-    /// slots with no default). When non-empty, defaults must already be
-    /// remapped for the prepended `ParamDeclAttr` list by the caller.
-    /// `bodyConstraints` are the constraints enforced by the body that follows
-    /// the prepended parameters.
+    /// Prepend inferred parameters: `defaults` is either empty or the same
+    /// length as `names` (use null/empty `TypedAttr` for slots with no
+    /// default). When non-empty, defaults must already be remapped for the
+    /// prepended `ParamDeclAttr` list by the caller. `bodyConstraints` are the
+    /// constraints enforced by the body that follows the prepended parameters.
     PogListAttr prependAsInferredParams(
       ArrayRef<StringAttr> names, ArrayRef<TypedAttr> defaults,
-      ArrayRef<SmallVector<ConstraintAttr>> paramConstraints = {},
       ArrayRef<ConstraintAttr> bodyConstraints = {}) const;
 
     //===------------------------------------------------------------------===//

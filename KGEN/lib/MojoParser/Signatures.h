@@ -122,9 +122,6 @@ struct ParsedArgument {
   // If this is a ref convention, this specifies the origin expression.
   ExprNode *refOriginExpr = nullptr;
 
-  /// Constraints specified with 'where' clauses on this parameter.
-  SmallVector<ParsedConstraint> constraints;
-
   /// This gets set to true when there is a /diagnosed/ error that should
   /// prevent subsequent references to this argument.
   mutable bool isErroneous = false;
@@ -209,8 +206,6 @@ public:
   /// Deferred typing context from emitting parameter declaration types.
   DeferredTypingContext deferredTypingContext;
 
-  /// Constraints specified with 'where' clauses at each parameter position.
-  SmallVector<SmallVector<ConstraintAttr>> allParamConstraints;
   /// Constraints emitted for the body of the generator.
   SmallVector<ConstraintAttr> emittedBodyConstraints;
 

@@ -59,16 +59,6 @@ void printOptionalParameterSpec(AsmPrinter &p,
                                 PogListAttr paramListAttr,
                                 ParameterEvaluator &evaluator);
 
-/// Parse a list of constraint attributes.
-ParseResult
-parseOptionalConstraintsList(AsmParser &p,
-                             SmallVectorImpl<ConstraintAttr> &constraints);
-
-/// Print a list of constraint attributes.
-void printOptionalConstraintsList(AsmPrinter &p,
-                                  ArrayRef<ConstraintAttr> constraints,
-                                  ParameterEvaluator *evaluator = nullptr);
-
 /// Parse a parameter signature (input/result types with optional default
 /// values) if present. If `parseBody` is provided, it will be called after
 /// parsing the input parameter spec.

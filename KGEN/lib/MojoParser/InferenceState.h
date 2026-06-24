@@ -163,18 +163,13 @@ public:
     return diag.getDiag()(loc);
   }
 
-  LogicalResult setInferredValue(size_t paramIdx, TypedAttr paramVal,
-                                 bool isDefaulted = false);
+  void setInferredValue(size_t paramIdx, TypedAttr paramVal,
+                        bool isDefaulted = false);
   virtual bool isExplicitlyUnbound(size_t paramIdx) const = 0;
 
   /// Verify the body constraints declared on the signature against the
   /// current parameter bindings.
   LogicalResult checkBodyConstraints();
-
-  /// Unprovable constraints from per-parameter constraints. These are
-  /// considered "hard" errors that by default will make inference fail.
-  /// Filled in by `setInferredValue`.
-  SmallVector<ConstraintAttr> unprovableConstraints;
 
   /// Unprovable constraints from body constraints. These are considered "soft"
   /// errors that won't fail inference by default. Users of InferenceState can
@@ -189,8 +184,7 @@ public:
   /// binding sites is silently accepted and the unprovable body constraints
   /// are appended here for the caller to discharge later. This is a routing
   /// policy, similar to `discardError`, set once for the lifetime of an
-  /// inference operation. Per-parameter constraint inconclusiveness is *not*
-  /// affected by this context: those remain hard errors.
+  /// inference operation.
   DeferredTypingContext *deferredTypingContext;
 
   // Debug util.

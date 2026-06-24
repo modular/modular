@@ -4,18 +4,11 @@
 // CHECK-LABEL: "pog.metadata"
 // CHECK-SAME: pog1 = #kgen.pog_metadata<"some_keyword_param", pos_or_kw, not_vararg>,
 // CHECK-SAME: pog2 = #kgen.pog_metadata<"some_variadic_param", pos_or_kw, pos_vararg>
-// CHECK-SAME: pog3 = #kgen.pog_metadata<"some_constrained_param", pos_or_kw, not_vararg, default ?, {
-// CHECK-SAME: pog4 = #kgen.pog_metadata<"some_very_constrained_param", pos_or_kw, pos_vararg, default ?, {
+// CHECK-SAME: pog3 = #kgen.pog_metadata<"some_default_param", pos_or_kw, not_vararg, default ?>
 "pog.metadata"() {
   pog1 = #kgen.pog_metadata<"some_keyword_param", pos_or_kw, not_vararg>,
   pog2 = #kgen.pog_metadata<"some_variadic_param", pos_or_kw, pos_vararg>,
-  pog3 = #kgen.pog_metadata<"some_constrained_param", pos_or_kw, not_vararg, default :index ?, {
-    <true, loc("file.mojo":10:5)>
-  }>,
-  pog4 = #kgen.pog_metadata<"some_very_constrained_param", pos_or_kw, pos_vararg, default :index ?, {
-    <true, loc("file.mojo":10:5)>,
-    <pog1, loc("file.mojo":11:5)>
-  }>
+  pog3 = #kgen.pog_metadata<"some_default_param", pos_or_kw, not_vararg, default :index ?>
 } : () -> ()
 
 // CHECK-LABEL: "pogs.with_defaults"
@@ -37,14 +30,14 @@
 >} : () -> ()
 
 // CHECK-LABEL: "pogs.with_body_constraints"
-// CHECK-SAME: {pogs = #kgen.pog_list<[<"a", pos, not_vararg>]{{.*}}<true, #{{loc[0-9]+}}>, <true, #{{loc[0-9]+}}>}>}
+// CHECK-SAME: {pogs = #kgen.pog_list<[<"a", pos, not_vararg>]{{.*}}<true, #{{loc[0-9]*}}>, <true, #{{loc[0-9]*}}>}>}
 "pogs.with_body_constraints"() {pogs = #kgen.pog_list<
   [<"a", pos, not_vararg>]
   {<true, loc("body.mojo":1:1)>, <true, loc("body.mojo":1:2)>}
 >} : () -> ()
 
 // CHECK-LABEL: "pogs.variadic_and_body"
-// CHECK-SAME: {pogs = #kgen.pog_list<[<"a", pos, not_vararg>, <"b", pos_or_kw, pack_vararg>]{{.*}}<true, #{{loc[0-9]+}}>, <true, #{{loc[0-9]+}}>}{{.*}}owned_in_mem>}
+// CHECK-SAME: {pogs = #kgen.pog_list<[<"a", pos, not_vararg>, <"b", pos_or_kw, pack_vararg>]{{.*}}<true, #{{loc[0-9]*}}>, <true, #{{loc[0-9]*}}>}{{.*}}owned_in_mem>}
 "pogs.variadic_and_body"() {pogs = #kgen.pog_list<
   [<"a", pos, not_vararg>, <"b", pos_or_kw, pack_vararg>]
   {<true, loc("body.mojo":2:1)>, <true, loc("body.mojo":2:2)>},
