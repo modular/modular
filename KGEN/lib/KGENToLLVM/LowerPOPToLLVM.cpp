@@ -314,8 +314,18 @@ struct ConvertPOPRound : public ConvertPOPToLLVMPattern<RoundOp> {
       return success();
     }
     Type type = this->convertType(op.getType());
+    // Apple's Metal/AIR backend cannot codegen `llvm.roundeven` (nor
+    // `llvm.nearbyint`): MTLCompilerService crashes JIT-ing the GPU machine
+    // code with XPC_ERROR_CONNECTION_INTERRUPTED. It does support `llvm.rint`,
+    // which rounds using the current FP rounding mode -- round-to-nearest-even
+    // by default, matching `pop.round`'s documented banker's-rounding
+    // semantics, so the result is numerically identical. Use it on Metal.
+    StringRef intrinsic =
+        isMetalTriple(getTypeConverter()->getTarget().getTriple())
+            ? "llvm.rint"
+            : "llvm.roundeven";
     rewriter.replaceOpWithNewOp<LLVM::CallIntrinsicOp>(
-        op, type, rewriter.getStringAttr("llvm.roundeven"),
+        op, type, rewriter.getStringAttr(intrinsic),
         SmallVector<Value>{adaptor.getOperand()});
     return success();
   }
