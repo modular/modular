@@ -682,6 +682,21 @@ struct SharedState::ModuleState {
   /// Keeps the bytecode buffer alive for deferred lazy materialization.
   /// BytecodeReader holds bufferOwnerRef by reference, so this must outlive it.
   std::shared_ptr<llvm::SourceMgr> sourceMgr;
+
+#if !defined(NDEBUG) || defined(LLVM_ENABLE_DUMP)
+  LLVM_DUMP_METHOD void dump(unsigned indent = 0) const {
+    for (auto &[name, state] : nestedModules) {
+      llvm::dbgs() << llvm::indent(indent * 2) << name;
+      if (state->nestedModules.empty()) {
+        llvm::dbgs() << ",\n";
+        continue;
+      }
+      llvm::dbgs() << " [\n";
+      state->dump(indent + 1);
+      llvm::dbgs() << llvm::indent(indent * 2) << "],\n";
+    }
+  }
+#endif
 };
 
 //===----------------------------------------------------------------------===//
