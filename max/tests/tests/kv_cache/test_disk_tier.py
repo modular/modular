@@ -550,3 +550,50 @@ def test_rewrite_after_eviction(cache_dir: str) -> None:
     assert not tier.contains(h2)
 
     tier.shutdown()
+
+
+# -- Directory sharding layout --
+
+
+def test_blocks_stored_in_shard_subdirs(cache_dir: str) -> None:
+    """Blocks live under a per-hash bucket subdir, not the cache root."""
+    tier = DiskTier(
+        cache_dir=cache_dir,
+        block_nbytes=16,
+        max_disk_size_bytes=10_000,
+    )
+    block_hash = to_block_hash_bytes(0x123)
+    tier.write_block_async(block_hash=block_hash, src=_make_block(16, seed=1))
+    tier.wait_for_writes()
+
+    # No block files at the root; exactly one under a two-hex bucket directory
+    # named for the first byte of the hash.
+    assert list(Path(cache_dir).glob("*.bin")) == []
+    sharded = list(Path(cache_dir).glob("*/*.bin"))
+    assert len(sharded) == 1
+    assert sharded[0].parent.name == f"{block_hash[0]:02x}"
+
+    tier.shutdown()
+
+
+def test_legacy_flat_file_ignored_on_warm_start(cache_dir: str) -> None:
+    """A file left by the old flat layout is not indexed (cold start)."""
+    tier = DiskTier(
+        cache_dir=cache_dir,
+        block_nbytes=16,
+        max_disk_size_bytes=10_000,
+    )
+    tier.shutdown()
+
+    # Drop a legacy flat-layout file at the cache root (not in a bucket).
+    legacy_hash = to_block_hash_bytes(0xABC)
+    (Path(cache_dir) / f"{legacy_hash.hex()}.bin").write_bytes(b"\x00" * 16)
+
+    tier2 = DiskTier(
+        cache_dir=cache_dir,
+        block_nbytes=16,
+        max_disk_size_bytes=10_000,
+    )
+    assert not tier2.contains(legacy_hash)
+    assert tier2.num_used_blocks == 0
+    tier2.shutdown()

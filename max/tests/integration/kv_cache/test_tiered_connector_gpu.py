@@ -205,8 +205,8 @@ def test_write_through_to_disk() -> None:
         assert connector._disk_tier.contains(_b(200))
         assert connector._disk_tier.contains(_b(300))
 
-        # Verify files exist on disk
-        bin_files = list(Path(disk_dir).glob("*.bin"))
+        # Verify files exist on disk (sharded into per-hash subdirectories)
+        bin_files = list(Path(disk_dir).glob("*/*.bin"))
         assert len(bin_files) == 3
 
         connector.shutdown()

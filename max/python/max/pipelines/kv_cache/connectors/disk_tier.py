@@ -13,9 +13,11 @@
 
 """Disk-backed block storage for KV cache tiered offloading.
 
-Provides a flat-file disk cache with async I/O and LRU eviction. Each block
-hash maps to a single binary file containing all TP shards concatenated.
-Reads are prioritized over writes via a priority-based thread pool.
+Provides a disk cache with async I/O and LRU eviction. Each block hash maps to
+a single binary file containing all TP shards concatenated, stored under a
+hex-named subdirectory keyed by the first byte of the hash so no single
+directory grows unboundedly. Reads are prioritized over writes via a
+priority-based thread pool.
 
 Credits to LMCache for inspiring this design.
 https://github.com/LMCache/LMCache/blob/dev/lmcache/v1/storage_backend/local_disk_backend.py
@@ -47,6 +49,13 @@ logger = logging.getLogger("max.pipelines")
 _META_FILE = "kv-disk-cache.meta.json"
 
 _SENTINEL = None
+
+# Block files are sharded across this many hex-named subdirectories (by the
+# first byte of the block hash) so no single directory holds more than
+# ~total/256 entries. A flat directory of ~1-2M files makes per-file
+# open/create/unlink metadata operations slow on ext4/xfs; bucketing keeps each
+# directory small. 256 == one byte, matching the two-hex bucket name.
+_NUM_SHARD_BUCKETS = 256
 
 # Internal type for items in the priority queue: (priority, count, fn, args, kwargs, future)
 _WorkItem = tuple[
@@ -133,14 +142,16 @@ class PriorityExecutor:
 
 
 class DiskTier:
-    """Flat-file disk cache for KV blocks.
+    """Sharded disk cache for KV blocks.
 
-    One file per block hash. All TP shards are concatenated into a single
-    file. Writes are async, reads return a Future.
+    One file per block hash, bucketed into 256 hex-named subdirectories by the
+    first byte of the hash. All TP shards are concatenated into a single file.
+    Writes are async, reads return a Future.
     LRU eviction keeps disk usage within a configurable budget.
     The cached set is the ``*.bin`` files themselves: a warm start rebuilds the
-    in-memory index from a directory scan, so no metadata is persisted and the
-    write path keeps no index in sync.
+    in-memory index by scanning the shard subdirectories, so no metadata is
+    persisted and the write path keeps no index in sync. A cache directory
+    written by an older flat-layout build is treated as a cold start.
 
     ``block_nbytes`` is assumed constant for a given ``cache_dir``. Reusing a
     directory across a block-size change (page size, model, dtype, or TP degree)
@@ -164,6 +175,10 @@ class DiskTier:
     ) -> None:
         self._cache_dir = Path(cache_dir)
         self._cache_dir.mkdir(parents=True, exist_ok=True)
+        # Pre-create the shard buckets so the write path can open files without
+        # a per-write mkdir. Created before _load_existing scans them.
+        for bucket in range(_NUM_SHARD_BUCKETS):
+            (self._cache_dir / f"{bucket:02x}").mkdir(exist_ok=True)
 
         self._block_nbytes = block_nbytes
         self._max_disk_size_bytes = max_disk_size_bytes
@@ -365,7 +380,7 @@ class DiskTier:
             self._saved_hashes.clear()
             self._pending_hashes.clear()
             self._pending_deletes.clear()
-        for path in self._cache_dir.glob("*.bin"):
+        for path in self._cache_dir.glob("*/*.bin"):
             path.unlink(missing_ok=True)
 
     # -- sync I/O (runs on worker threads) --
@@ -486,7 +501,8 @@ class DiskTier:
     # -- file paths --
 
     def _hash_to_path(self, block_hash: bytes) -> Path:
-        return self._cache_dir / f"{block_hash.hex()}.bin"
+        bucket = f"{block_hash[0]:02x}"
+        return self._cache_dir / bucket / f"{block_hash.hex()}.bin"
 
     # -- eviction --
 
@@ -529,30 +545,38 @@ class DiskTier:
     # -- persistence --
 
     def _load_existing(self) -> None:
-        """Rebuild the in-memory index from the on-disk ``*.bin`` files.
-        Filenames are ``<hex>.bin`` where ``<hex>`` is either a 16-char
-        u64 (ahash64) or a 64-char SHA-256 digest. Other lengths are
-        skipped with a warning so a mis-placed sidecar file does not abort
-        warm start.
+        """Rebuild the in-memory index by scanning the shard subdirectories.
+
+        Blocks live at ``<xx>/<hex>.bin`` where ``<hex>`` is either a 16-char
+        u64 (ahash64) or a 64-char SHA-256 digest. Other lengths are skipped
+        with a warning so a mis-placed sidecar file does not abort warm start.
+        Only the ``<xx>/`` bucket subdirectories are scanned, so a cache
+        directory written by an older flat-layout build is treated as a cold
+        start (its root-level files are not indexed); point a changed
+        configuration at a fresh ``cache_dir``.
         """
         scanned = 0
-        for entry in os.scandir(self._cache_dir):
-            scanned += 1
-            name = entry.name
-            if not name.endswith(".bin"):
+        for bucket in os.scandir(self._cache_dir):
+            if not bucket.is_dir():
                 continue
-            stem = name[:-4]
-            if len(stem) not in (16, 64):
-                logger.warning(
-                    "Skipping disk cache file with unexpected stem length: %s",
-                    name,
-                )
-                continue
-            try:
-                block_hash = bytes.fromhex(stem)
-            except ValueError:
-                continue
-            self._saved_hashes[block_hash] = None
+            for entry in os.scandir(bucket.path):
+                scanned += 1
+                name = entry.name
+                if not name.endswith(".bin"):
+                    continue
+                stem = name[:-4]
+                if len(stem) not in (16, 64):
+                    logger.warning(
+                        "Skipping disk cache file with unexpected stem "
+                        "length: %s",
+                        name,
+                    )
+                    continue
+                try:
+                    block_hash = bytes.fromhex(stem)
+                except ValueError:
+                    continue
+                self._saved_hashes[block_hash] = None
 
         if self._saved_hashes:
             logger.info(
