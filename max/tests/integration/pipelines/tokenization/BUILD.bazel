@@ -73,6 +73,36 @@ modular_py_test(
 )
 
 modular_py_test(
+    name = "test_xgrammar_torch_free",
+    size = "small",
+    srcs = [
+        "test_xgrammar_torch_free.py",
+    ],
+    env = {
+        "MODULAR_PATH": ".",
+    },
+    deps = [
+        "//max/python/max:_core",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "test_xgrammar_shim",
+    size = "small",
+    srcs = [
+        "test_xgrammar_shim.py",
+    ],
+    env = {
+        "MODULAR_PATH": ".",
+    },
+    deps = [
+        "//max/python/max/_xgrammar",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
     name = "test_pixel_tokenizer",
     size = "large",
     srcs = [

@@ -145,6 +145,7 @@ modular_py_library(
         "//max/python/max/_core_mojo",
         "//max/python/max/_distributed_ops",
         "//max/python/max/_interpreter_ops",
+        "//max/python/max/_xgrammar",
         "//max/python/max/diagnostics",
         "//max/python/max/driver",
         "//max/python/max/dtype",
