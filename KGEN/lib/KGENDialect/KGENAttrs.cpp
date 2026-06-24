@@ -14,6 +14,7 @@
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/Support/CompilerProfiling.h"
+#include "Support/AssertStream.h"
 #include "Support/Compiler/MLIRDType.h"
 #include "Support/Compiler/OperationUtils.h"
 #include "Support/MDialect/MTypeInterfaces.h"
@@ -675,8 +676,19 @@ Type TypeConformsToTraitAttr::getType() const {
                        DTypeConstantAttr::get(getContext(), KGENDType::kBool));
 }
 
-TypedAttr TypeConformsToTraitAttr::getTypeRefIfResolved() {
-  return getTypeRefForTypeValueIfResolved(getTypeValue());
+TypeConformsToTraitAttr TypeConformsToTraitAttr::get(TypedAttr typeValue,
+                                                     TypedAttr traitType) {
+  // TODO(MOCO-4177): Canonicalize multi-trait and concrete param-list
+  // `conforms_to` propositions to `POC::And` once context evaluation recurses
+  // through boolean proposition operands.
+  return Base::get(typeValue.getContext(),
+                   getConformsToCheckedParamList(typeValue), traitType);
+}
+
+TypeConformsToTraitAttr TypeConformsToTraitAttr::getChecked(
+    function_ref<InFlightDiagnostic()> emitError, TypedAttr typeValue,
+    TypedAttr traitType) {
+  return get(typeValue, traitType);
 }
 
 std::optional<ArrayRef<SymbolRefAttr>>
@@ -711,13 +723,19 @@ TypeConformsToTraitAttr::simplify(const SymbolTable &traitTableOp,
     props.push_back(evaluator.replace(
         getCanonicalAttr(conformOp.getConstraint().getProposition())));
   }
-  assert(!props.empty() && "concrete trait should have a AnyType symbol?");
+  if (props.empty())
+    return {SIMDAttr::getScalarBool(getContext(), true)};
+
   return {ParamOperatorAttr::get(POC::And, props)};
 }
 
 LogicalResult
 TypeConformsToTraitAttr::verify(function_ref<InFlightDiagnostic()> emitError,
-                                TypedAttr typeValue, TypedAttr traitType) {
+                                TypedAttr typeValue, TypedAttr /*traitType*/) {
+  MLIRContext *ctx = typeValue.getContext();
+  if (typeValue.getType() != ParamListType::get(TypeType::get(ctx)))
+    return emitError() << "expected param_list<!kgen.type> value, got "
+                       << typeValue.getType();
   return success();
 }
 

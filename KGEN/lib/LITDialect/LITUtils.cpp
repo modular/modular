@@ -498,7 +498,10 @@ FailureOr<TypedAttr> LIT::simplifyConformsToAgainstTypeValue(
   if (!symOr)
     return failure();
 
-  TypedAttr typeValue = UpcastAttr::strip(conformsTo.getTypeValue());
+  auto concreteList = sugarDynCast<ParamListAttr>(conformsTo.getTypeValue());
+  if (!concreteList || concreteList.getValues().size() != 1)
+    return failure();
+  TypedAttr typeValue = UpcastAttr::strip(concreteList.getValues().front());
 
   TraitType traitType;
   if (auto typeParam = sugarDynCast<TypeParamAttr>(typeValue)) {
@@ -914,9 +917,12 @@ TraitType LIT::getTraitBoundFromAssumptions(
   for (ConstraintAttr assumption : assumptions) {
     forEachConformsToInProposition(
         assumption.getProposition(), [&](TypeConformsToTraitAttr ct) {
-          TypedAttr ctStripped =
-              stripIdentityWrappers(getCanonicalAttr(ct.getTypeValue()));
-          if (!isEqualCanon(ctStripped, targetStripped))
+          auto concreteList = sugarDynCast<ParamListAttr>(ct.getTypeValue());
+          if (!concreteList || concreteList.getValues().size() != 1)
+            return;
+          TypedAttr elementStripped = stripIdentityWrappers(
+              getCanonicalAttr(concreteList.getValues().front()));
+          if (!isEqualCanon(elementStripped, targetStripped))
             return;
           std::optional<ArrayRef<SymbolRefAttr>> symOr = ct.getTraitSymbols();
           if (!symOr)

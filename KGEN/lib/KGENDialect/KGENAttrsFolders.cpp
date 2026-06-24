@@ -121,25 +121,56 @@ GetWitnessAttr::evaluateWithContext(ParameterEvaluationContext &context) const {
 
 FailureOr<TypedAttr> TypeConformsToTraitAttr::evaluateWithContext(
     ParameterEvaluationContext &context) const {
-  FailureOr<ResolvedStructHandle> resolvedOr =
-      context.resolveStructOp(getTypeValue(), /*acceptAsync=*/false);
-  if (failed(resolvedOr)) {
-    // In materialization contexts, failure to resolve means the type is not a
-    // struct (e.g. MLIR primitive types like `index`). Non-struct types don't
-    // conform to any traits, so return false.
-    if (context.isMaterializationContext())
-      return {SIMDAttr::getScalarBool(getContext(), false)};
+  auto paramList = sugarDynCast<ParamListAttr>(getTypeValue());
+  if (!paramList)
     return failure();
-  }
 
-  ResolvedStructHandle resolved = *resolvedOr;
-  FailureOr<TypedAttr> result = failure();
-  context.withEvaluator(
-      resolved.decl.getInputParams(), resolved.paramValues,
-      [&](ParameterEvaluator &evaluator) {
-        result = simplify(SymbolTable(resolved.decl.getOperation()), evaluator);
+  // Evaluate each checked type independently and AND the results together.
+  // When a single element can't be resolved we return it as an open
+  // proposition; `foldConformanceConjunction` collapses a lone conjunct back to
+  // itself, so the 1-element case yields an attribute equal to `this` (i.e. the
+  // attribute is left unevaluated, matching the pre-pack `failure()` behavior),
+  // while multi-element packs simplify away the elements already proven.
+  return foldConformanceConjunction(
+      getContext(), paramList.getValues(),
+      [&](TypedAttr typeValue) -> FailureOr<TypedAttr> {
+        typeValue = UpcastAttr::strip(typeValue);
+        TypedAttr singletonConformsTo = cast<TypedAttr>(
+            TypeConformsToTraitAttr::get(typeValue, getTraitType()));
+
+        FailureOr<ResolvedStructHandle> resolvedOr =
+            context.resolveStructOp(typeValue, /*acceptAsync=*/false);
+        if (failed(resolvedOr)) {
+          // In materialization contexts, failure to resolve means the type is
+          // not a struct (e.g. MLIR primitive types like `index`). Non-struct
+          // types don't conform to any traits, so the element is false.
+          if (context.isMaterializationContext())
+            return {SIMDAttr::getScalarBool(getContext(), false)};
+          // Otherwise defer the element as an open proposition.
+          return singletonConformsTo;
+        }
+
+        ResolvedStructHandle resolved = *resolvedOr;
+        FailureOr<TypedAttr> result = failure();
+        // `simplify` only consults `getTraitSymbols()`; per-element
+        // specialization flows in through the `withEvaluator` binding below
+        // (the trait's conformance constraint is rewritten against *this*
+        // element's struct params). `simplify` must remain pack-oblivious for
+        // this per-element loop to be correct — adding a pack-aware filter
+        // inside `simplify` would double-specialize against the wrong element.
+        context.withEvaluator(
+            resolved.decl.getInputParams(), resolved.paramValues,
+            [&](ParameterEvaluator &evaluator) {
+              result = simplify(SymbolTable(resolved.decl.getOperation()),
+                                evaluator);
+            });
+        // A failed simplify defers the element as an open proposition; a
+        // null/concrete result (skip sentinel, true, false, or residual prop)
+        // flows straight to the conjunction folder.
+        if (failed(result))
+          return singletonConformsTo;
+        return result;
       });
-  return result;
 }
 
 //===----------------------------------------------------------------------===//

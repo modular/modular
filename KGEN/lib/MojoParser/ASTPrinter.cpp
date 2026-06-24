@@ -832,9 +832,9 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
       if (name == "__mlir_i1__" && operands.size() == 2)
         return printParam(os, operands.back(), ctx);
 
-      // Don't print Bool.__init__ wrapping a TypeConformsToTraitAttr — the
-      // Bool wrapper adds no user value and we already print the inner
-      // conforms_to in readable "Type: Trait" form.
+      // Don't print Bool.__init__ wrapping conformance attrs. The Bool wrapper
+      // adds no user value and we already print the inner conforms_to in a
+      // readable form.
       if (name == "__init__" && operands.size() >= 2 &&
           tryGetTypeNameFromSymbolRef(nameAttr) == "Bool" &&
           isa<TypeConformsToTraitAttr>(operands.back()))
@@ -1067,12 +1067,26 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
   }
 
   if (auto conformsTo = dyn_cast<TypeConformsToTraitAttr>(param)) {
+    if (auto concreteList =
+            sugarDynCast<ParamListAttr>(conformsTo.getTypeValue());
+        concreteList && concreteList.getValues().empty()) {
+      os << "True";
+      return;
+    }
+
     // Print as "conforms_to(Type, Trait1 & Trait2)" using valid Mojo syntax,
     // but strip fully-qualified module paths from trait names so we don't leak
     // internal names like "std::builtin::bool::Boolable" into diagnostics and
     // doc output.
     os << "conforms_to(";
-    printParam(os, conformsTo.getTypeValue(), ctx);
+    if (auto concreteList =
+            sugarDynCast<ParamListAttr>(conformsTo.getTypeValue())) {
+      llvm::interleaveComma(concreteList.getValues(), os, [&](TypedAttr value) {
+        printParam(os, UpcastAttr::strip(value), ctx);
+      });
+    } else {
+      printParam(os, UpcastAttr::strip(conformsTo.getTypeValue()), ctx);
+    }
     os << ", ";
     auto traitSymbolsOr = conformsTo.getTraitSymbols();
     if (traitSymbolsOr) {
