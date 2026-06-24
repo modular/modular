@@ -15,6 +15,8 @@
 from .matmul_8x8 import gemm_kernel_apple_8x8
 from .matmul_kernel import (
     AppleM5MatMul,
+    enqueue_apple_conv2d,
     enqueue_apple_matmul,
     enqueue_apple_matmul_split_k,
 )
+from linalg.arch.apple.mma import ConvIm2colParams

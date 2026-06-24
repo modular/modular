@@ -117,6 +117,7 @@ from std.runtime.tracing import Trace, TraceLevel, trace_arg
 from std.sys import (
     has_amd_gpu_accelerator,
     has_amd_rdna_gpu_accelerator,
+    has_apple_gpu_accelerator,
     has_nvidia_gpu_accelerator,
 )
 from std.utils.index import Index, IndexList
@@ -4661,6 +4662,37 @@ def conv_gpu[
             )
 
             if dispatch_im2col_matmul_conv2d[
+                filter_is_fcrs,
+                maybe_epilogue_func,
+            ](
+                input,
+                filter,
+                output,
+                rebind[IndexList[2]](stride),
+                rebind[IndexList[2]](dilation),
+                rebind[IndexList[2]](symmetric_padding),
+                num_groups,
+                ctx,
+            ):
+                return
+
+        # Apple M5 (compute_capability == 5): fused online-im2col conv2d.
+        # `dispatch_fused_im2col_conv2d_apple` runs `AppleM5MatMul.run_conv`
+        # (the structured simdgroup-tiled GEMM, 16x16x16 hardware MMA) with the
+        # A operand gathered directly from the NHWC input per MMA-fragment -- the
+        # `[M, K]` im2col matrix is never materialised to global memory. This
+        # eliminates the materialised path's DRAM round-trip, so conv wins across
+        # both compute- and memory-bound regimes (no memory-bound naive guard
+        # needed). The dispatcher self-gates (bf16, groups=1, dilation=1,
+        # kernel > 1x1, K >= 16, N >= 16); on decline it returns False and we
+        # fall through to `conv_gpu_n` below. Hardware-agnostic path -- no SM100
+        # TMA / swizzle machinery is involved.
+        comptime if has_apple_gpu_accelerator():
+            from nn.conv.gpu.im2col_matmul_2d import (
+                dispatch_fused_im2col_conv2d_apple,
+            )
+
+            if dispatch_fused_im2col_conv2d_apple[
                 filter_is_fcrs,
                 maybe_epilogue_func,
             ](
