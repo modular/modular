@@ -41,9 +41,11 @@ modular_py_binary(
     # Mirror the package default plus //max_private so private archs (e.g.
     # //max_private/minimax_m3:smoke_test_m3) can host their own smoke-test
     # entrypoints that reuse this driver. Mirrors verify_pipelines.
+    # //max/internal covers the kernel-model-map graph tooling.
     visibility = [
         "//:__pkg__",
         "//SDK/integration-test:__subpackages__",
+        "//max/internal:__subpackages__",
         "//max/tests:__subpackages__",
         "//max_private:__subpackages__",
         "//oss/modular/max/tests:__subpackages__",
@@ -82,6 +84,7 @@ modular_py_binary(
         "//:__pkg__",
         "//SDK/integration-test:__subpackages__",
         "//ci/serve_smoke_tests_workflow:__pkg__",
+        "//max/internal:__subpackages__",
         "//max/tests:__subpackages__",
         "//oss/modular/max/tests:__subpackages__",
     ],
