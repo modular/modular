@@ -24,6 +24,30 @@ with a chat template (typically `-instruct`, `-it`, `-chat`) are supported.
 The first local run compiles the model graph, which can take several minutes for
 a large model (subsequent runs reuse the compile cache).
 
+## Task overrides
+
+By default the harness runs `gsm8k_cot_llama` (plus `chartqa` for vision
+models), which is what automated CI uses. To run an eval that isn't in that
+automated CI set — say a long-context sweep — pass `--override-tasks <task>`,
+which selects the tasks you name instead of the model-derived ones. Some tasks
+are parameterized at runtime via `--lm-eval-metadata '<json>'`, which is
+forwarded verbatim to lm-eval's `--metadata`; for example, babilong's context
+length is set with `--lm-eval-metadata '{"max_seq_lengths": "16k"}'`.
+
+`--override-tasks` accepts only a curated allowlist (enforced by
+`click.Choice`); arbitrary lm-eval task names are rejected. We restrict it
+because not every lm-eval task runs cleanly here — some need optional
+dependencies absent from the bazel build, and some use output types the
+chat-completions endpoint can't serve. The allowlisted tasks are the ones we've
+confirmed work end-to-end and give a meaningful accuracy signal.
+
+```bash
+# babilong two-fact reasoning (qa2) at 16k context:
+./bazelw run //:smoke-test -- <model> \
+  --override-tasks babilong_qa2 \
+  --lm-eval-metadata '{"max_seq_lengths": "16k"}'
+```
+
 ## Gotchas when running locally
 
 These bite when running smoke tests outside CI. None are model bugs.

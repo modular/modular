@@ -522,6 +522,29 @@ def get_server_cmd(
     return cmd
 
 
+# Verified stock lm-eval tasks runnable unmodified (qa4+ intentionally excluded).
+VALID_STOCK_TASKS = {"babilong_qa1", "babilong_qa2", "babilong_qa3"}
+
+
+def valid_tasks() -> set[str]:
+    """Return the allowlist of task names accepted by ``--override-tasks``.
+
+    Combines the task names of our mirrored ``tasks/`` yamls (the ``task:``
+    field, parsed line-by-line rather than with ``yaml.safe_load`` since some
+    configs use lm-eval's ``!function`` tag) with the verified stock lm-eval
+    long-context tasks. Restricting to this set keeps arbitrary lm-eval tasks
+    out of the smoke test.
+    """
+    tasks_dir = Path(__file__).resolve().parent / "tasks"
+    names: set[str] = set(VALID_STOCK_TASKS)
+    for yaml_path in tasks_dir.glob("**/*.yaml"):
+        for line in yaml_path.read_text(encoding="utf-8").splitlines():
+            if line.startswith("task:"):
+                names.add(line.split(":", 1)[1].strip())
+                break
+    return names
+
+
 @click.command()
 @click.argument(
     "hf_model_path",
@@ -591,6 +614,29 @@ def get_server_cmd(
     default=True,
     help="Scale a recipe's device count to the local machine's GPU count.",
 )
+@click.option(
+    "--override-tasks",
+    "override_tasks",
+    multiple=True,
+    type=click.Choice(sorted(valid_tasks())),
+    help=(
+        "Run these eval task(s) instead of the model-derived defaults. "
+        "Repeatable (e.g. --override-tasks babilong_qa1 --override-tasks "
+        "babilong_qa3). Restricted to the verified task set; click validates "
+        "against it. When set, the TEXT/VISION default selection is bypassed."
+    ),
+)
+@click.option(
+    "--lm-eval-metadata",
+    "lm_eval_metadata",
+    type=str,
+    default=None,
+    help=(
+        "JSON passed verbatim to lm-eval's --metadata, merged into each task's "
+        "config to parameterize it at runtime. For example, "
+        '\'{"max_seq_lengths": "16k"}\' sets the babilong context length.'
+    ),
+)
 def smoke_test(
     hf_model_path: str,
     framework: str,
@@ -603,6 +649,8 @@ def smoke_test(
     disable_timeouts: bool,
     recipe_path: str | None,
     autoscale_devices: bool,
+    override_tasks: tuple[str, ...],
+    lm_eval_metadata: str | None,
 ) -> None:
     """
     Example usage: ./bazelw run smoke-test -- meta-llama/Llama-3.2-1B-Instruct
@@ -646,9 +694,12 @@ def smoke_test(
         gpu_spec=get_gpu_name_and_count(),
     )
 
-    tasks = [TEXT_TASK]
-    if is_vision_model(model):
-        tasks = [VISION_TASK] + tasks
+    if override_tasks:
+        tasks = list(override_tasks)
+    elif is_vision_model(model):
+        tasks = [VISION_TASK, TEXT_TASK]
+    else:
+        tasks = [TEXT_TASK]
 
     logger.info(f"Starting server with command:\n {' '.join(cmd)}")
     results = []
@@ -677,6 +728,7 @@ def smoke_test(
                 disable_timeouts=disable_timeouts,
                 metrics_url=metrics_url,
                 model_alias=model if hf_model_path != model else None,
+                lm_eval_metadata=lm_eval_metadata,
             )
 
             if print_responses:
