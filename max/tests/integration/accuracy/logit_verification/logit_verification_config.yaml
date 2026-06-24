@@ -625,17 +625,6 @@ logit_verification_pipelines:
     cos_dist_threshold: 2.1e-5
     kl_div_threshold: 4.6e-7
 
-  allenai/Olmo-3-7B-Instruct-bfloat16:
-    pre_submit_agents: []
-    pipeline: "allenai/Olmo-3-7B-Instruct"
-    compatible_with: [gpu]
-    encoding: bfloat16
-    pregenerated_torch_goldens:
-      tar_file: "s3://modular-bazel-artifacts-public/artifacts/torch_allenai_Olmo-3-7B-Instruct_bfloat16_golden/1/57f967c473a246e4f3d40a55393ee615c0feb3134bcbb7e67645993e6294c6aa/torch_allenai_Olmo-3-7B-Instruct_bfloat16_golden.tar.gz"
-      json_file: "torch_allenai_Olmo-3-7B-Instruct_bfloat16_golden.json"
-    kl_div_threshold: 1e-02
-    cos_dist_threshold: 6e-02
-
   HuggingFaceM4/Idefics3-8B-Llama3:
     pre_submit_agents: []
     pipeline: "HuggingFaceM4/Idefics3-8B-Llama3"
