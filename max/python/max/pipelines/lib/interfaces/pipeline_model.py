@@ -19,6 +19,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Sequence
 from dataclasses import dataclass
 from functools import cached_property
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, Generic
 
 from max.driver import (
@@ -462,6 +463,11 @@ class PipelineModel(ABC, Generic[BaseContextType]):
         if quantization_encoding is None:
             raise ValueError("quantization_encoding must not be None")
         return supported_encoding_dtype(quantization_encoding)
+
+    @property
+    def sampler_custom_extensions(self) -> Sequence[Path]:
+        """Custom-op extension paths to compile the sampler graph with."""
+        return ()
 
     @classmethod
     def _calculate_max_seq_len_from_config(

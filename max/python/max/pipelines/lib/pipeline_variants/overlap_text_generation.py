@@ -1585,6 +1585,12 @@ class OverlapTextGenerationPipeline(
         )
         sampler_device_ref = DeviceRef.from_device(self._sampler_device)
 
+        sampler_extensions = (
+            ()
+            if self._sampler_device.is_host
+            else self._pipeline_model.sampler_custom_extensions
+        )
+
         self._sampler_with_bitmask: Model | None = None
         self._sampler_without_bitmask: Model | None = None
         if not is_spec_decode:
@@ -1595,11 +1601,13 @@ class OverlapTextGenerationPipeline(
                         pipeline_config.sampling,
                         device=sampler_device_ref,
                         needs_bitmask_input=True,
+                        custom_extensions=sampler_extensions,
                     )
                 without_bitmask_graph = token_sampler(
                     pipeline_config.sampling,
                     device=sampler_device_ref,
                     needs_bitmask_input=False,
+                    custom_extensions=sampler_extensions,
                 )
                 sampler_timer.mark_build_complete()
                 if with_bitmask_graph is not None:
