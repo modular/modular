@@ -20,6 +20,7 @@
 #include "mlir/IR/Location.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/STLFunctionalExtras.h"
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 
 #include <memory>
@@ -100,6 +101,10 @@ public:
 
   /// Attaches target-specific attributes to a kernel entry point.
   virtual void attachCodegenAttributes(llvm::Function *kernelEntry) const {}
+
+  /// Appends backend-specific arguments to the link step.
+  virtual void appendLinkArgs(llvm::SmallVectorImpl<llvm::StringRef> &args,
+                              const CompilationOptions &options) const {}
 
   virtual ErrorOr<BufferRef> emitAssembly(llvm::Module &module,
                                           EmitContext &ctx) const = 0;

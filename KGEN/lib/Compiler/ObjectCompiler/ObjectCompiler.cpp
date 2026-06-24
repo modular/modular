@@ -40,7 +40,6 @@
 #include "mlir/IR/DialectResourceBlobManager.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Support/FileUtilities.h"
-#include "mlir/Target/LLVM/ROCDL/Utils.h"
 #include "mlir/Target/LLVMIR/Export.h"
 #include "mlir/Target/LLVMIR/ModuleTranslation.h"
 
@@ -688,49 +687,6 @@ createPassManager(const std::optional<std::string> &operationName,
   return {context};
 }
 
-namespace {
-/// Override ROCDL module serializer to access pre-lowering bitcode linking
-/// logic.
-class AMDGPUModuleLinker : public mlir::ROCDL::SerializeGPUModuleBase {
-public:
-  /// The module passed in does not matter as we do not use this serializer to
-  /// perform MLIR to LLVM translation.
-  AMDGPUModuleLinker(Operation &module, mlir::ROCDL::ROCDLTargetAttr target,
-                     const mlir::gpu::TargetOptions &targetOptions)
-      : SerializeGPUModuleBase(module, target, targetOptions) {}
-
-  /// Link the set of `amdLibs` into the LLVM module, along with any other libs
-  /// explicitly specified in `targetOptions` when creating this object.
-  LogicalResult link(llvm::Module &llvmModule,
-                     mlir::ROCDL::AMDGCNLibraries amdLibs) {
-    // This is required to set control variables during prelink.
-    deviceLibs = amdLibs;
-    handleModulePreLink(llvmModule);
-
-    // This is required to actually find the .bc files.
-    if (deviceLibs != mlir::ROCDL::AMDGCNLibraries::None &&
-        failed(appendStandardLibs(deviceLibs)))
-      return failure();
-
-    // Load and link AMD-specific libraries from librariesToLink.
-    SmallVector<std::unique_ptr<llvm::Module>> libs;
-    if (failed(loadBitcodeFilesFromList(llvmModule.getContext(),
-                                        librariesToLink, libs, true)))
-      return failure();
-
-    if (!libs.empty())
-      if (failed(linkFiles(llvmModule, std::move(libs))))
-        return failure();
-
-    handleModulePostLink(llvmModule);
-    return success();
-  }
-};
-} // namespace
-
-/// TODO(billyz): Move this upstream into header for `AMDGCNLibraries`.
-LLVM_ENABLE_BITMASK_ENUMS_IN_NAMESPACE();
-
 static ErrorOr<std::unique_ptr<llvm::Module>>
 loadBitcodeFile(llvm::LLVMContext &context, StringRef path) {
   if (!llvm::sys::fs::is_regular_file(path)) {
@@ -781,39 +737,15 @@ static ErrorOrSuccess
 linkBitcodeLibraries(Location loc, llvm::Module &llvmModule,
                      const CompilationOptions &options,
                      SmallVector<std::pair<bool, Attribute>> &bitcodeLibs) {
-  // AMD GPU needs special linking procedure for AMD-specific libraries.
-  // We handle AMD libraries first, then fall through to standard logic for
-  // custom bitcode.
-  if (isAMDGPUBackend(options)) {
-    mlir::MLIRContext *ctx = loc.getContext();
-    mlir::OpBuilder b(ctx);
-    OwningOpRef<ModuleOp> mlirModule(ModuleOp::create(b, loc, "dummy"));
-    mlir::ROCDL::ROCDLTargetAttr target = mlir::ROCDL::ROCDLTargetAttr::get(
-        ctx, options.optimizationLevel, options.targetTriple, options.targetCpu,
-        options.targetFeatures);
-
-    mlir::ROCDL::AMDGCNLibraries standardLibs =
-        mlir::ROCDL::AMDGCNLibraries::None;
-    SmallVector<Attribute> otherLibs;
-    if (options.sanitizers.has(Sanitizers::kAddress)) {
-      // Both ocml & ockl libs are required for asan.
-      standardLibs = mlir::ROCDL::AMDGCNLibraries::Ockl |
-                     mlir::ROCDL::AMDGCNLibraries::Ocml;
-      // TODO(billyz): Add "asanrtl.bc" to the upstream standard set of
-      // libraries.
-      otherLibs.push_back(
-          b.getStringAttr("/opt/rocm/amdgcn/bitcode/asanrtl.bc"));
-    }
-
-    // Create targetOptions with only AMD-specific libraries (no custom
-    // bitcode).
-    mlir::gpu::TargetOptions targetOptions(
-        /*toolkitPath=*/"/opt/rocm", otherLibs);
-    AMDGPUModuleLinker moduleLinker(**mlirModule, target, targetOptions);
-    if (failed(moduleLinker.link(llvmModule, standardLibs)))
-      return Error("failed to link AMD-specific bitcode libraries");
-
-    // Fall through to standard logic for our custom bitcode libraries.
+  // Vendor device/runtime bitcode is linked by the target backend; backends
+  // without device libraries no-op. Then fall through to the standard logic
+  // for our custom bitcode libraries.
+  if (const TargetBackend *backend = TargetBackendRegistry::get().lookup(
+          llvm::Triple(options.targetTriple))) {
+    ErrorOrSuccess result =
+        backend->linkRuntimeLibraries(loc, llvmModule, options);
+    if (failed(result))
+      return result;
   }
 
   // Use standard linking procedure for custom bitcode libraries.
@@ -1420,7 +1352,6 @@ ErrorOrSuccess ObjectCompiler::emitBitcode(llvm::Module &llvmModule,
 //===----------------------------------------------------------------------===//
 
 /// Utility function for creating shared object from buf
-/// (mostly for AMD GPU kernels)
 static ErrorOr<BufferRef> createSharedObject(BufferRef buf,
                                              CompilationOptions options,
                                              StringRef moduleName,
@@ -1444,6 +1375,7 @@ static ErrorOr<BufferRef> createSharedObject(BufferRef buf,
   sharedObjPath = sharedObjPath / sharedObjName;
 
   auto triple = llvm::Triple(options.targetTriple);
+  const TargetBackend *backend = TargetBackendRegistry::get().lookup(triple);
   std::string version = triple.getOSVersion().getAsString();
   std::string arch = "unknown";
   if (triple.getArch() == llvm::Triple::ArchType::aarch64)
@@ -1476,12 +1408,10 @@ static ErrorOr<BufferRef> createSharedObject(BufferRef buf,
       args.push_back(sharedObjPath.c_str());
       return args;
     }
-    // Build ELF linker args. For AMDGPU add --no-undefined to catch undefined
-    // symbols at link time instead of getting a generic hipErrorNoBinaryForGpu
-    // error at runtime.
+    // Build ELF linker args, plus any backend-specific arguments.
     SmallVector<StringRef> args = {linker, "-flavor", linkerFlavor};
-    if (isAMDGPUBackend(options))
-      args.push_back("--no-undefined");
+    if (backend)
+      backend->appendLinkArgs(args, options);
     args.push_back("-shared");
     if (!options.emissionLinkOptions.empty())
       args.push_back(options.emissionLinkOptions.c_str());
@@ -1512,10 +1442,11 @@ static ErrorOr<BufferRef> createSharedObject(BufferRef buf,
   if (linkExitCode) {
     if (!errorMsg.empty())
       errorMsg.insert(0, ": ");
-    StringRef errorPrefix =
-        isAMDGPUBackend(options)
-            ? "failed to generate AMDGPU shared object binary"
-            : "failed to generate shared object binary";
+    std::string errorPrefix =
+        backend ? ("failed to generate " + backend->name() +
+                   " shared object binary")
+                      .str()
+                : std::string("failed to generate shared object binary");
     if (linkerErrorFile) {
       std::string linkerOutput =
           llvm::MemoryBuffer::getFile(linkerErrorFile->getPath().string())
@@ -1548,8 +1479,8 @@ ErrorOrSuccess ObjectCompiler::emitSharedObject(OwningOpRef<ModuleOp> module,
                                                 llvm::raw_pwrite_stream &os) {
   llvm::Triple triple(options.targetTriple);
 
-  // This function is added to support AMD GPU compilation to hsaco binary.
-  // Generalize to all platforms+formats when needed.
+  // Only ELF and MachO object formats are currently supported for
+  // shared-object emission. Generalize to other platforms+formats when needed.
   if (!llvm::is_contained({llvm::Triple::ELF, llvm::Triple::MachO},
                           triple.getObjectFormat()))
     return Error("cannot create shared object binary from target triple that "
@@ -2040,8 +1971,8 @@ static std::pair<AnyAsyncValueRef, AnyAsyncValueRef> lowerLLVMModuleToObject(
 //   We don't do per function splitting for offload kernels since
 //   some backends are inter-procedural.
 // - Extract kernel ID for each split.
-// - Run LLVM pipeline (opt + asmprint) to generate code for each kernel:
-//   PTX for Nvidia, an so lib for AMD.
+// - Run LLVM pipeline (opt + asmprint) to generate target-specific code for
+//   each kernel (e.g. PTX for NVIDIA, a shared object for other GPU backends).
 ErrorOr<DenseMap<uint64_t, DenseMap<EmitAs, BufferRef>>>
 ObjectCompiler::emitOffloadKernels(
     OwningOpRef<ModuleOp> module,
