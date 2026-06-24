@@ -292,12 +292,22 @@ def build_video_inputs(
     pooling_kernel_size: int,
     dtype: DType,
 ) -> VideoInputs | None:
-    """Assemble ``VideoInputs`` from pre-unpacked per-frame context data."""
+    """Assemble ``VideoInputs`` from pre-unpacked per-frame context data.
+
+    Scatter indices are chunked-prefill-aware: each video token's absolute
+    position is mapped into the current chunk's active window.  Positions
+    outside the window (already processed in a prior chunk, or not yet
+    reached) are emitted as the int32-min sentinel that
+    ``scatter_nd_skip_oob_indices`` ignores.  One index is emitted per
+    video-token position so the index and embedding tensors stay aligned
+    across chunk boundaries.
+    """
     all_frame_patches: list[npt.NDArray[np.floating[Any]]] = []
     all_frame_pos_ids: list[npt.NDArray[np.integer[Any]]] = []
     frame_patch_counts: list[int] = []
     frame_soft_token_counts: list[int] = []
 
+    oob_idx = np.iinfo(np.int32).min
     batch_offset = 0
     scatter_parts: list[npt.NDArray[np.int32]] = []
 
@@ -307,15 +317,20 @@ def build_video_inputs(
         frame_patch_counts.extend(ctx.video_frame_patch_counts)
         frame_soft_token_counts.extend(ctx.video_frame_soft_token_counts)
 
+        processed_length = ctx.tokens.processed_length
+        active_len = ctx.tokens.active_length
         for start, end in ctx.video_token_ranges:
+            # Absolute positions → chunk-relative; keep those in [0, active_len).
+            rel = np.arange(start, end, dtype=np.int64) - processed_length
+            valid = (rel >= 0) & (rel < active_len)
             scatter_parts.append(
-                np.arange(
-                    batch_offset + start,
-                    batch_offset + end,
-                    dtype=np.int32,
+                np.where(
+                    valid,
+                    (rel + batch_offset).astype(np.int32),
+                    np.int32(oob_idx),
                 )
             )
-        batch_offset += len(ctx.tokens.active)
+        batch_offset += active_len
 
     if not all_frame_patches:
         return None
