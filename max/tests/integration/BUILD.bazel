@@ -7,6 +7,11 @@ package(default_visibility = [
     "//oss/modular/max/tests:__subpackages__",
 ])
 
+# Exported so offline tests in other packages can read the lock file as data
+# without depending on the :hf_repo_lock library (whose imports = ["."] would
+# create ambiguous module paths under mypy).
+exports_files(["hf-repo-lock.tsv"])
+
 modular_py_library(
     name = "hf_repo_lock",
     srcs = ["hf_repo_lock.py"],

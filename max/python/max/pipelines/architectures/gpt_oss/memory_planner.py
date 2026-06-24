@@ -47,7 +47,7 @@ class GptOssMemoryPlanner(PagedMemoryPlanner):
         # fragmentation issue. In #77700 we swapped the order of model weight
         # loading and KV cache loading. This affected memory fragmentation and
         # led to CUDA OOM when running
-        # `br smoke-test -- unsloth/gpt-oss-20b-bf16` on 1xH100.
+        # `br smoke-test -- unsloth/gpt-oss-20b-BF16` on 1xH100.
         # We reduce the KV cache size slightly to avoid this.
         base = 6 * 1024 * 1024 * 1024  # 6 GiB
 

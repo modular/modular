@@ -66,7 +66,7 @@ PIPELINES: Final[list[PipelineEntry]] = [
     ),
     PipelineEntry(
         pipeline="google/gemma-4-31B-it",
-        model_path="google/gemma-4-31b-it",
+        model_path="google/gemma-4-31B-it",
         runner="modrunner-b200",
         gpu_flag="--devices gpu:0",
         instance_type="bm.gpu.b200.1",

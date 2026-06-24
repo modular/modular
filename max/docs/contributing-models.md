@@ -240,10 +240,10 @@ model:
 
 | Model                            | Task            | Accuracy | vs Reference |
 |----------------------------------|-----------------|----------|--------------|
-| meta-llama/llama-3.1-8b-instruct | gsm8k_cot_llama | 0.878    | 101.4%       |
-| unsloth/gpt-oss-20b-bf16         | gsm8k_cot_llama | 0.947    | 98.1%        |
-| qwen/qwen2.5-vl-7b-instruct      | gsm8k_cot_llama | 0.787    | 100.3%       |
-| qwen/qwen2.5-vl-7b-instruct      | chartqa         | 0.812    | 100.3%       |
+| meta-llama/Llama-3.1-8B-Instruct | gsm8k_cot_llama | 0.878    | 101.4%       |
+| unsloth/gpt-oss-20b-BF16         | gsm8k_cot_llama | 0.947    | 98.1%        |
+| Qwen/Qwen2.5-VL-7B-Instruct      | gsm8k_cot_llama | 0.787    | 100.3%       |
+| Qwen/Qwen2.5-VL-7B-Instruct      | chartqa         | 0.812    | 100.3%       |
 
 > [!NOTE]
 > Accuracy numbers may vary across GPU types. If your model scores

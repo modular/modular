@@ -36,6 +36,7 @@ modular_py_test(
     name = "test_logit_verification_config",
     size = "medium",
     srcs = ["test_logit_verification_config.py"],
+    data = ["//max/tests/integration:hf-repo-lock.tsv"],
     deps = [
         ":logit_verification_config",
     ],

@@ -72,7 +72,7 @@ _LETTERS = "ABCDEFGHIJ"
 
 # Real mmlu_pro engineering questions with short, well-defined answers that a
 # healthy server solves well within the cap. Observed runaway on
-# google/gemma-4-31b-it: the model fails to terminate and runs to the token
+# google/gemma-4-31B-it: the model fails to terminate and runs to the token
 # cap (finish_reason="length") without emitting a final answer.
 _CASES: list[dict[str, Any]] = [
     {

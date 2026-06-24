@@ -35,7 +35,7 @@ simple question is runaway. The scenario checks:
    finish_reason="length", holding KV for its whole lifetime.
 8. Health check that the server survived.
 
-Motivated by: nvidia/Gemma-4-31B-IT-NVFP4 / google/gemma-4-31b-it reports of
+Motivated by: nvidia/Gemma-4-31B-IT-NVFP4 / google/gemma-4-31B-it reports of
 60k+ output tokens hitting the server max-length limit, with structured output
 and tool calling the trigger.
 

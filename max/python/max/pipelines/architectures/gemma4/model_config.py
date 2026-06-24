@@ -593,7 +593,7 @@ class Gemma4ForConditionalGenerationConfig(ArchConfigWithKVCache):
             raise ValueError("vision_config not found in huggingface_config")
         vision_config: Gemma4VisionConfig | None
         if getattr(huggingface_config, "model_type", None) == "gemma4_unified":
-            # These checkpoints (e.g. google/gemma-4-12b-it) carry a
+            # These checkpoints (e.g. google/gemma-4-12B-it) carry a
             # lightweight vision_embedder with a different schema that is not
             # implemented yet; serve text-only. Keyed on model_type so a
             # genuinely malformed full-vision config fails loudly below
