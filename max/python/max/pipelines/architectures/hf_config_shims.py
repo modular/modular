@@ -227,3 +227,32 @@ try:
     AutoConfig.register("exaone", ExaoneConfig)
 except ValueError:
     pass
+
+
+class LagunaHFConfig(PretrainedConfig):
+    """Local config class for poolside's Laguna models (``model_type: laguna``).
+
+    Laguna repos point ``auto_map`` at a remote ``configuration_laguna.py`` that
+    is incompatible with the pinned ``huggingface_hub``/``transformers`` (it
+    decorates a non-dataclass config with ``@strict`` and uses
+    ``auto_docstring``). Registering this minimal subclass lets
+    ``AutoConfig.from_pretrained`` load the repo's ``config.json`` directly,
+    without ``trust_remote_code`` and without executing the remote config code.
+    ``LagunaConfig`` (the MAX config) reads the raw fields off this object
+    (``rope_parameters``, ``mlp_layer_types``, ``num_experts``, ``gating``, ...),
+    so any field present in ``config.json`` is preserved as an attribute.
+    """
+
+    model_type = "laguna"
+
+    def __init__(self, **kwargs: object) -> None:
+        super().__init__(**kwargs)
+        for k, v in kwargs.items():
+            if not hasattr(self, k):
+                setattr(self, k, v)
+
+
+try:
+    AutoConfig.register("laguna", LagunaHFConfig)
+except ValueError:
+    pass

@@ -10,6 +10,18 @@ This version is still a work in progress.
 
 ## MAX models
 
+- Added Laguna (`LagunaForCausalLM`), poolside's decoder-only sparse-MoE
+  language model. It uses sigmoid expert routing with a per-expert
+  score-correction bias, a per-element softplus attention-output gate, and
+  per-head QK-RMSNorm. Verified on `poolside/Laguna-M.1-NVFP4` (131B,
+  compressed-tensors NVFP4 experts) on a single B200, including chat-template
+  serving and tool calling. On GSM8K (0-shot) it scores ~0.81 with light
+  sampling (`temperature=0.3` plus a frequency penalty); greedy decoding
+  (`temperature=0`) is **not** recommended for this NVFP4 checkpoint, since it
+  falls into repetition loops on a sizable fraction of prompts (dropping GSM8K
+  to ~0.59). An experimental, not-yet-accuracy-validated FP8 KV cache (unscaled
+  cast) is available behind `--kv-cache-format float8_e4m3fn`; the default bf16
+  KV cache is the validated configuration.
 - Added DiffusionGemma (`DiffusionGemmaForBlockDiffusion`), an
   encoder/decoder block-diffusion text model that generates 256-token
   blocks per step via an inner denoising loop. Supports NVFP4 and bfloat16

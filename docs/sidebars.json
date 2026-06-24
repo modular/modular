@@ -434,6 +434,7 @@
                 "max/api/python/pipelines.architectures.ideogram4",
                 "max/api/python/pipelines.architectures.internvl",
                 "max/api/python/pipelines.architectures.kimik2_5",
+                "max/api/python/pipelines.architectures.laguna",
                 "max/api/python/pipelines.architectures.lfm2",
                 "max/api/python/pipelines.architectures.llama3",
                 "max/api/python/pipelines.architectures.mamba",
