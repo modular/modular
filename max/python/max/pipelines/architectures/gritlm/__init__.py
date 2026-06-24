@@ -17,7 +17,6 @@ from .model import GritLMInputs, GritLMModel
 from .model_config import GritLMConfig
 
 __all__ = [
-    "ARCHITECTURES",
     "GritLMConfig",
     "GritLMInputs",
     "GritLMModel",
