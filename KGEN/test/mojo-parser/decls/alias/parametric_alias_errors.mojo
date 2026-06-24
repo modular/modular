@@ -18,9 +18,9 @@ comptime wrongType[x: Int]: String = x
 
 comptime myIntAdd[x: Int, y: Int] = x + y
 
-# expected-warning @+2 {{'where' clauses inside parameter lists are deprecated}}
+# expected-error @+2 {{'where' clauses inside parameter lists are no longer supported}}
 # expected-note @+1 {{use a trailing 'where' clause after the signature instead}}
-comptime deprecatedInlineWhere[x: Int where x > 0] = x
+comptime inlineWhereIsError[x: Int where x > 0] = x
 
 
 def implicit_generator_constraint_drop_error[cond: Bool]():

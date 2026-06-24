@@ -428,23 +428,29 @@ def test_param_constraints():
   # expected-error @below {{invalid call to 'unprovable_param_constraints': violated constraint}}
   unprovable_param_constraints[0]()
 
-# expected-warning @below {{'where' clauses inside parameter lists are deprecated}}
+# expected-error @below {{'where' clauses inside parameter lists are no longer supported}}
 # expected-note @below {{use a trailing 'where' clause after the signature instead}}
-def deprecated_inline_where_warning[x: Int where x > 0]():
+def inline_where_is_error[x: Int where x > 0]():
   pass
 
-# expected-note @below {{'ConstraintStruct' declared here}}
-# expected-note @below {{cannot prove constraint}}
-struct ConstraintStruct[
-  # expected-warning @below {{'where' clauses inside parameter lists are deprecated}}
-  # expected-note @below {{constraint declared here needs evidence for '(x > 0)'}}
-  # expected-note @below {{constraint declared here evaluated to False, expected '(a > 0)'}}
-  a: Int where a > 0
-]:
+# Function types don't support trailing 'where' clauses (yet), so the note
+# points that out instead of suggesting the trailing syntax.
+def fn_type_inline_where[
+  # expected-error @below {{'where' clauses inside parameter lists are no longer supported}}
+  # expected-note @below {{trailing 'where' clauses on function types are not yet supported}}
+  f: def[a: Int where a > 0]() thin -> None
+]():
     pass
 
-# expected-error @below {{invalid bindings for 'ConstraintStruct': lacking evidence to prove correctness}}
+# expected-note @below {{'ConstraintStruct' declared here}}
+# expected-note @below {{constraint declared here needs evidence for '(x > 0)'}}
+# expected-note @below {{constraint declared here evaluated to False, expected '(a > 0)'}}
+struct ConstraintStruct[a: Int] where a > 0:
+    pass
+
+# expected-note @below {{add a trailing 'where' clause that requires '(x > 0)'}}
 def use_constraint_struct[x: Int, cs: ConstraintStruct[x]]():
+    # expected-error @-1 {{invalid bindings in signature: lacking evidence to prove correctness}}
     pass
 
 # expected-error @below {{violated constraint}}
@@ -463,24 +469,6 @@ def use_constraint_fn[x: Int]():
     comptime f0 = constraint_fn[0, 1]
     # expected-error @below {{invalid bindings for 'constraint_fn': lacking evidence to prove correctness}}
     comptime fx = constraint_fn[x, 1]
-
-def violated_default_constraint[
-  # expected-warning @below {{'where' clauses inside parameter lists are deprecated}}
-  # expected-note @below {{use a trailing 'where' clause after the signature instead}}
-  # expected-error @below {{default value violated constraint}}
-  # expected-note @below {{constraint declared here evaluated to False, expected '(x > 3)'}}
-  x: Int where x > 3 = 1
-]():
-    pass
-
-# There should NOT be any errors here.
-def unprovable_default_constraint[
-  x: Int = 3,
-  # expected-warning @below {{'where' clauses inside parameter lists are deprecated}}
-  # expected-note @below {{use a trailing 'where' clause after the signature instead}}
-  y: Int where x + y > 3 = 1
-]():
-    pass
 
 ##===----------------------------------------------------------------------===##
 # Function Overloading

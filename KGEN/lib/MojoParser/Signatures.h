@@ -60,14 +60,6 @@ enum class ArgListKind {
   kBareLambdaArgList, //< argument list like `lambda x, y: x+y`
 };
 
-// Until MOCO-3855 is fixed, we can only conditionally add a 'note' that a user
-// can move a param-where to a decl-where, since `struct` and `comptime` don't
-// currently support decl-where.
-enum class InlineWhereNote {
-  kNone,
-  kTrailingWhere,
-};
-
 enum class CaptureConvention : uint8_t {
   kConventionMove = 0,
   kConventionMut = 1,
@@ -140,7 +132,7 @@ struct ParsedArgument {
   KWArgHandling kwArgHandling = KWArgHandling::kPositionalOrKeyword;
 
   ParseResult parse(ParserBase &p, KWArgMarkerInfo &markerInfo,
-                    ArgListKind kind, InlineWhereNote inlineWhereNote);
+                    ArgListKind kind);
 
   /// Map KWArgHandling to the PassingKind enum of the LIT dialect.
   PassingKind getKWArgHandlingAsPassingKind() const;
@@ -169,9 +161,7 @@ public:
   /// param_signature    ::= "[" param_list ("->" param_result_types)? "]"
   /// param_list   ::= argument_list | "(" ")"
   /// param_result_types ::= expression ("," expression)*
-  ParseResult parseParametersIfPresent(
-      ParserBase &p, ArgListKind kind,
-      InlineWhereNote inlineWhereNote = InlineWhereNote::kNone);
+  ParseResult parseParametersIfPresent(ParserBase &p, ArgListKind kind);
 
   /// Parse trailing constraints if present.
   ///
