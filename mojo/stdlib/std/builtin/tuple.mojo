@@ -45,6 +45,7 @@ from std.utils._visualizers import lldb_formatter_wrapping_type
 
 @lldb_formatter_wrapping_type
 struct Tuple[*element_types: Movable](
+    Comparable where AllComparable[*element_types],
     Copyable where AllCopyable[*element_types],
     Defaultable where AllDefaultable[*element_types],
     Equatable where AllEquatable[*element_types],
@@ -257,6 +258,70 @@ struct Tuple[*element_types: Movable](
                     return True
 
         return False
+
+    @always_inline
+    def __lt__(
+        self, other: Self
+    ) -> Bool where AllComparable[*Self.element_types]:
+        """Compare this tuple to another tuple using lexicographic less-than.
+
+        Args:
+            other: The other tuple to compare against.
+
+        Returns:
+            True if this tuple is lexicographically less than the other, False otherwise.
+        """
+        comptime for i in range(Self.__len__()):
+            ref lhs = trait_downcast[Comparable](self[i])
+            ref rhs = trait_downcast[Comparable](other[i])
+            if lhs < rhs:
+                return True
+            if rhs < lhs:
+                return False
+        return False  # equal
+
+    @always_inline
+    def __le__(
+        self, other: Self
+    ) -> Bool where AllComparable[*Self.element_types]:
+        """Compare this tuple to another tuple using lexicographic less-than-or-equal.
+
+        Args:
+            other: The other tuple to compare against.
+
+        Returns:
+            True if this tuple is lexicographically <= the other, False otherwise.
+        """
+        return not other.__lt__(self)
+
+    @always_inline
+    def __gt__(
+        self, other: Self
+    ) -> Bool where AllComparable[*Self.element_types]:
+        """Compare this tuple to another tuple using lexicographic greater-than.
+
+        Args:
+            other: The other tuple to compare against.
+
+        Returns:
+            True if this tuple is lexicographically greater than the other, False otherwise.
+        """
+        return other.__lt__(self)
+
+    @always_inline
+    def __ge__(
+        self, other: Self
+    ) -> Bool where AllComparable[*Self.element_types]:
+        """Compare this tuple to another tuple using lexicographic greater-than-or-equal.
+
+        Args:
+            other: The other tuple to compare against.
+
+        Returns:
+            True if this tuple is lexicographically >= the other, False otherwise.
+        """
+        return not self.__lt__(other)
+
 
     @always_inline
     def __eq__(
