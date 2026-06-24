@@ -17,6 +17,7 @@
 #include "MLRT/AsyncRT/Support/Semaphore.h"
 #include "MLRT/AsyncRT/Support/ThreadAffinity.h"
 #include "Support/AlignedAlloc.h"
+#include "Support/Configuration.h"
 #include "Support/LLVMForwardDecls.h"
 #include "Support/Profiling/TimeProfiler.h"
 #include "Support/Profiling/Tracy.h"
@@ -27,6 +28,7 @@
 #include "llvm/Support/Compiler.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/Threading.h"
+#include "llvm/Support/thread.h"
 
 #include <atomic>
 #include <cmath>
@@ -61,6 +63,25 @@ constexpr size_t kTaskListSlotsPerThread = 1024;
 
 /// Max number of worker threads.
 constexpr size_t kMaxWorkers = 1024;
+
+/// Default worker-thread stack size. Inline compile nesting overflows the small
+/// stack spawned threads inherit (~512 KB on macOS); 8 MiB matches the typical
+/// Linux main-thread stack. See GEX-3876.
+constexpr unsigned kDefaultWorkerStackSizeBytes = 8u * 1024u * 1024u;
+
+inline std::optional<unsigned> getWorkerStackSizeBytes() {
+  static const unsigned bytes = [] {
+    if (auto config = Config::open(); !config.isError()) {
+      if (auto v = config->maybeGetValue("runtime.worker_stack_size_mb")) {
+        int mb;
+        if (!v->getAsInteger(10, mb) && mb > 0)
+          return static_cast<unsigned>(mb) * 1024u * 1024u;
+      }
+    }
+    return kDefaultWorkerStackSizeBytes;
+  }();
+  return bytes;
+}
 
 //===----------------------------------------------------------------------===//
 // WorkerThread
@@ -289,8 +310,9 @@ struct WorkQueueThread {
   uint64_t threadID = 0;
 
   /// The underlying worker thread, or none if this WorkQueueThread represents
-  /// the 'main' thread in mainWillDonate mode.
-  std::optional<std::thread> thread;
+  /// the 'main' thread in mainWillDonate mode. llvm::thread (not std::thread)
+  /// to set a larger stack size cross-platform.
+  std::optional<llvm::thread> thread;
   // The thread identifier prefix used to name the threads
   std::string_view poolName;
   /// Global worker ID for this thread within a DelegateWorkQueue, or SIZE_MAX
@@ -344,8 +366,9 @@ struct WorkQueueThread {
       threadID = llvm::get_threadid();
       assert(threadID && "get_threadid returned zero for the main thread");
     } else {
-      // Start a 'worker' thread.
-      thread.emplace(&WorkQueueThread::runOnThread, this);
+      // Lambda because llvm::thread calls the callable directly, not via
+      // std::invoke (so it can't bind a pointer-to-member + this).
+      thread.emplace(getWorkerStackSizeBytes(), [this]() { runOnThread(); });
     }
   }
 
