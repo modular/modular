@@ -15,3 +15,13 @@ modular_py_test(
         requirement("pydantic"),
     ],
 )
+
+modular_py_test(
+    name = "test_config_file_model",
+    size = "small",
+    srcs = ["test_config_file_model.py"],
+    deps = [
+        "//max/python/max/config",
+        requirement("pydantic"),
+    ],
+)
