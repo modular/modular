@@ -119,6 +119,7 @@ MODEL_RECIPES = CaseInsensitiveDict({
     "nvidia/DeepSeek-V3.1-NVFP4__tpep_ar": "max/pipelines/architectures/deepseekV3/recipes/nvfp4_tpep_ar_8x_b200.yaml",
     "nvidia/DeepSeek-V3.1-NVFP4__tptp": "max/pipelines/architectures/deepseekV3/recipes/nvfp4_tptp_8x_b200.yaml",
     "amd/Kimi-K2.5-MXFP4": "max/pipelines/architectures/kimik2_5/recipes/mxfp4_8x_mi355.yaml",
+    "amd/Kimi-K2.7-Code-MXFP4": "max/pipelines/architectures/kimik2_5/recipes/mxfp4_kimi_k2_7_code_8x_mi355.yaml",
     "nvidia/Kimi-K2.5-NVFP4": "max/pipelines/architectures/kimik2_5/recipes/nvfp4_with_vision_8x_b200.yaml",
     "nvidia/Kimi-K2.5-NVFP4__tpep": "max/pipelines/architectures/kimik2_5/recipes/nvfp4_tpep_with_vision_8x_b200.yaml",
     "nvidia/Kimi-K2.6-NVFP4": "max/pipelines/architectures/kimik2_5/recipes/nvfp4_kimi_k2_6_eagle_tpep_8x_b200.yaml",

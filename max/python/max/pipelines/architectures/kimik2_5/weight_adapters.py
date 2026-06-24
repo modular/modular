@@ -47,6 +47,7 @@ from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 from max.dtype import DType
 from max.graph.weights import WeightData, Weights
+from max.pipelines.weights._fp8 import dequantize_rowwise_fp8
 from transformers.configuration_utils import PretrainedConfig
 
 logger = logging.getLogger("max.pipelines")
@@ -331,6 +332,49 @@ def preshuffle_mxfp4_b_scales(
     )
 
 
+def _dequantize_fp8_attention(
+    state_dict: dict[str, WeightData],
+) -> dict[str, WeightData]:
+    """Dequantize rowwise-FP8 attention projections to bfloat16.
+
+    Some MXFP4 Kimi checkpoints keep the MoE in MXFP4 but store the attention
+    projections as rowwise FP8. The MLA is built in bf16 when the MoE is FP4,
+    so fold each FP8 attention weight into bf16 and drop its scale. Only the
+    attention linears are FP8; the layernorms stay bf16. Runs only when the
+    checkpoint carries packed-MXFP4 experts, leaving pure-FP8 checkpoints for
+    the native FP8 path.
+    """
+    has_mxfp4_experts = any(
+        _EXPERT_WEIGHT_RE.match(name) and wd.dtype == DType.uint8
+        for name, wd in state_dict.items()
+    )
+    if not has_mxfp4_experts:
+        return state_dict
+
+    converted: dict[str, WeightData] = {}
+    n_dequant = 0
+    for name, wd in state_dict.items():
+        if ".self_attn." not in name:
+            converted[name] = wd
+        elif name.endswith(".weight_scale"):
+            # Folded into the dequantized weight, so drop it.
+            pass
+        elif wd.dtype == DType.float8_e4m3fn:
+            scale = state_dict[name.removesuffix(".weight") + ".weight_scale"]
+            converted[name] = dequantize_rowwise_fp8(
+                wd, scale, wd.name, out_dtype=DType.bfloat16
+            )
+            n_dequant += 1
+        else:
+            converted[name] = wd
+
+    if n_dequant:
+        logger.info(
+            "FP8 attention dequant: %d projections to bfloat16", n_dequant
+        )
+    return converted
+
+
 def _convert_merged_state_dict(
     state_dict: dict[str, Weights],
     huggingface_config: PretrainedConfig,
@@ -395,7 +439,7 @@ def _convert_merged_state_dict(
             data = dataclasses.replace(data, dtype=DType.float8_e8m0fnu)
         result[name] = data
 
-    return result
+    return _dequantize_fp8_attention(result)
 
 
 # ---------------------------------------------------------------------------
