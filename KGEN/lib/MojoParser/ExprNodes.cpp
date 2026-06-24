@@ -40,6 +40,7 @@
 #include "KGEN/POPDialect/POPTypes.h"
 #include "KGEN/POPDialect/POPUtils.h"
 
+#include "Support/AssertStream.h"
 #include "Support/Compiler/OperationUtils.h"
 #include "Support/DebugInfoDialect/IR/DIBuilder.h"
 #include "mlir/AsmParser/AsmParser.h"
@@ -4651,38 +4652,48 @@ AnyValue MagicFunctionNode::emitTypeOf(ExprDest &dest,
 
 AnyValue MagicFunctionNode::emitConformsTo(ExprDest &dest,
                                            IREmitter &emitter) const {
+  ASSERT_STREAM(subExprs.size() == 2,
+                << "conforms_to requires exactly two operands");
 
-  // The first argument should be a type to check conformance for.
-  // Accept Types with metatype TraitType or StructMetaType (e.g., generic
-  // params, concrete struct types)
-  PValue typeToCheck = emitter.emitExprPValue(subExprs[0], EC_ConformsTo);
-  if (!typeToCheck) {
-    emitter.emitError(subExprs[0]->getLoc(),
-                      "expected a type for the first argument")
-        << subExprs[0]->getRange();
+  // The first operand is the checked operand: either a single type value or a
+  // `param_list` of type values (e.g. `Ts.values` for a variadic pack). The
+  // second operand is the trait to check conformance against.
+  ExprNode *checkedExpr = subExprs[0];
+  PValue checkedValue = emitter.emitExprPValue(checkedExpr, EC_ConformsTo);
+  if (!checkedValue) {
+    emitter.emitError(checkedExpr->getLoc(),
+                      "expected a type or param_list operand")
+        << checkedExpr->getRange();
     return {};
   }
 
-  // If not a metatype-based type expression, reject.
-  if (!LIT::isFirstLevelTypeExpr(typeToCheck)) {
+  TypedAttr checkedAttr = checkedValue.get();
+  if (sugarIsa<ParamListType>(checkedAttr.getType())) {
+    if (!LIT::isVariadicOfMetaType(checkedAttr.getType())) {
+      emitter.emitError(checkedExpr->getLoc(),
+                        "param_list operand must contain type expressions")
+          << checkedExpr->getRange();
+      return {};
+    }
+  } else if (!LIT::isFirstLevelTypeExpr(checkedAttr)) {
     // TODO: we should fold to constant when the metatype is `StructMetaType`,
-    // that means we know the concrete type to check at parsing time:
-    emitter.emitError(subExprs[0]->getLoc())
-        << typeToCheck << " is not a type expression"
-        << subExprs[0]->getRange();
-
+    // that means we know the concrete type to check at parsing time.
+    emitter.emitError(checkedExpr->getLoc())
+        << checkedValue << " is not a type expression"
+        << checkedExpr->getRange();
     return {};
   }
 
-  // The second operand must be a !lit.anytrait
-  PValue traitToCheck = emitter.emitExprPValue(subExprs[1], EC_ConformsTo);
+  // The second operand must be the trait to check conformance against.
+  ExprNode *traitExpr = subExprs[1];
+  PValue traitToCheck = emitter.emitExprPValue(traitExpr, EC_ConformsTo);
   if (!traitToCheck)
     return {};
 
   if (!sugarIsaAndNonNull<AnyTraitType>(traitToCheck.getType())) {
-    emitter.emitError(subExprs[1]->getLoc(),
+    emitter.emitError(traitExpr->getLoc(),
                       "expected a trait for the second argument")
-        << subExprs[1]->getRange();
+        << traitExpr->getRange();
     return {};
   }
 
@@ -4694,8 +4705,9 @@ AnyValue MagicFunctionNode::emitConformsTo(ExprDest &dest,
     auto canonicalTraitType = TraitType::get(traitType.getContext(), symbols);
     traitToCheck = canonicalTraitType.getPValue();
   }
-  return emitter.emitBool(
-      {TypeConformsToTraitAttr::get(typeToCheck, traitToCheck), this}, dest);
+  TypedAttr conformToI1 =
+      TypeConformsToTraitAttr::get(checkedAttr, traitToCheck.get());
+  return emitter.emitBool({conformToI1, this}, dest);
 }
 
 AnyValue

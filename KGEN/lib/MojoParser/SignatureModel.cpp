@@ -405,6 +405,11 @@ bool parseConformsToString(StringRef printed, StringRef &paramName,
   auto [lhs, rhs] = inner.split(", ");
   if (rhs.empty())
     return false;
+  // Multi-type `conforms_to(T, U, Trait)` has additional checked operands
+  // before the trait. Keep those as explicit where clauses instead of folding
+  // `U, Trait` into T's rendered type bounds.
+  if (lhs.contains(',') || rhs.contains(','))
+    return false;
   // Only merge if the type is a simple identifier (no dots = not an associated
   // type path like T.Element).
   if (lhs.contains('.'))
