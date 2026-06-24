@@ -32,7 +32,6 @@ The kernel implements a warp-specialized architecture:
 from std.math import ceildiv
 from std.sys import align_of, size_of
 
-from std.memory import UnsafePointer
 from std.gpu import WARP_SIZE, barrier, warp_id as get_warp_id
 from std.gpu.primitives.cluster import (
     block_rank_in_cluster,
@@ -76,7 +75,6 @@ from structured_kernels.tile_types import (
     TmaOpType,
     static_row_major,
     tma_desc_layout_3d,
-    tma_desc_layout_3d_explicit_inner,
 )
 from layout.tile_layout import _IntToComptimeInt
 from layout.tensor_core_async import (
@@ -127,8 +125,6 @@ from ..structured_kernels.tile_scheduler_splitk import (
 )
 from linalg.structuring import SMemPtr
 from linalg.matmul.gpu.profiler import MatmulProfileWarp
-from comm import MAX_GPUS, Signal
-from comm.sync import _multi_gpu_barrier
 
 # Import shared kernel components from kernel_common
 from structured_kernels.kernel_common import (
@@ -142,8 +138,7 @@ from structured_kernels.kernel_common import (
 )
 
 # Import output pipeline from output_writer module
-from ..structured_kernels.output_writer import TileWriter, StandardOutputWriter
-from ..structured_kernels.output_writer_trait import OutputWriter
+from ..structured_kernels.output_writer import TileWriter
 
 
 # =============================================================================
@@ -352,13 +347,6 @@ struct BlackwellMatmulSM100Kernel[
     ] = None,
     pdl_level: PDLLevel = PDLLevel(),
     max_profiled_tiles_per_SM: UInt32 = 0,
-    # Injected output-writer policy (see structured_kernels/output_writer_trait).
-    # Defaults to a local TMA store
-    output_writer_type: OutputWriter = StandardOutputWriter,
-    # Override C TMA descriptor box middle-dim (row count per TMA).
-    # 0 means "use c_tile_dim0" (default, whole SMEM tile per TMA — prefill).
-    # Decode wants this set to 1 (one row per TMA).
-    c_desc_dim0_override: Int = 0,
 ]:
     """Blackwell SM100 GEMM kernel with warp specialization.
 
@@ -598,19 +586,8 @@ struct BlackwellMatmulSM100Kernel[
     comptime CTileLayout = RowMajorLayout[
         *_IntToComptimeInt[1, Self.c_tile_dim0, Self.c_tile_dim1]
     ]
-    # For swizzled modes the innermost descriptor dim is capped at the swizzle
-    # atom size. For SWIZZLE_NONE there is no such cap (driver only requires
-    # boxDim[0] * elem_size % 16 == 0), so use the actual SMEM tile inner
-    # dim -- this lets callers (e.g. matmul_rs decode) transfer full SMEM
-    # rows per TMA instead of being limited to 16 bytes per call.
-    comptime c_desc_inner_elems = (
-        Self.c_tile_dim1
-    ) if Self.config.c_swizzle == TensorMapSwizzle.SWIZZLE_NONE else (
-        Self.config.c_swizzle.bytes() // size_of[Self.c_type]()
-    )
-    comptime c_desc_dim0 = Self.c_desc_dim0_override if Self.c_desc_dim0_override > 0 else Self.c_tile_dim0
-    comptime CDescLayout = tma_desc_layout_3d_explicit_inner[
-        1, Self.c_desc_dim0, Self.c_desc_inner_elems
+    comptime CDescLayout = tma_desc_layout_3d[
+        Self.c_type, 1, Self.c_tile_dim0, Self.config.c_swizzle
     ]
 
     # 2D TMA layouts (only for run_splitk)
@@ -747,50 +724,6 @@ struct BlackwellMatmulSM100Kernel[
         register_based_epilogue=Self.register_based_epilogue,
         batched=False,
     ]
-
-    # Number of C TMA descriptors the kernel must receive (1 for the local
-    # store; one per peer for reduce-scatter). Comes from the injected policy.
-    comptime num_c_tma_descriptors = Self.output_writer_type.num_peers
-
-    @staticmethod
-    @always_inline
-    def write_output_tile[
-        tma_origin: ImmutOrigin
-    ](
-        c_tma_ops: Pointer[
-            InlineArray[Self.CTmaOp, Self.num_c_tma_descriptors], tma_origin
-        ],
-        c_tiles: Self.SmemType.CTileArray,
-        stage: Self.OutputPipeline.Stage,
-        tile_coord: Tuple[UInt32, UInt32, UInt32],
-        shape: Tuple[UInt32, UInt32],
-    ):
-        """Write one batched output tile through the injected writer policy.
-
-        Construction of the concrete tile writer happens inside
-        `Self.output_writer_type.write_batched`
-        """
-        Self.output_writer_type.write_batched[
-            tma_origin,
-            Self.CTmaOp.dtype,
-            Self.CTmaOp.rank,
-            Self.CTmaOp.tile_shape,
-            Self.CTmaOp.desc_shape,
-            Self.a_type,
-            Self.accum_type,
-            Self.config.block_tile_shape,
-            Self.config.mma_shape,
-            Self.opc,
-            Self.config.c_swizzle,
-            Self.config.AB_swapped,
-            Self.SmemType.OutputM,
-            Self.SmemType.OutputN,
-            Self.SmemType.num_output_stages,
-            Self.num_output_warps,
-            Self.elementwise_lambda_fn,
-            Self.elementwise_compute_lambda_fn,
-            Self.register_based_epilogue,
-        ](c_tma_ops, c_tiles, stage, tile_coord, shape)
 
     # ========== Kernel Context Type ==========
     # Type comptime for KernelContext with this kernel's parameters
@@ -1433,7 +1366,7 @@ struct BlackwellMatmulSM100Kernel[
     @__llvm_metadata(`nvvm.cluster_dim`=Self.cluster_shape)
     @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
-    @__llvm_arg_metadata(c_tma_ops, `nvvm.grid_constant`)
+    @__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(epilogue_load_tma_op, `nvvm.grid_constant`)
     @__name(
         StaticString(Self.config.get_kernel_name())
@@ -1448,16 +1381,12 @@ struct BlackwellMatmulSM100Kernel[
     def run(
         a_tma_op: Self.ATmaOp,
         b_tma_op: Self.BTmaOp,
-        c_tma_ops: InlineArray[Self.CTmaOp, Self.num_c_tma_descriptors],
+        c_tma_op: Self.CTmaOp,
         epilogue_load_tma_op: Self.EpilogueLoadTmaOp,
         bias_1d_tile: Self.Bias1DTile,
         cluster_dim: StaticTuple[Int32, 3],
         mnk: StaticTuple[UInt32, 3],
         workspace: Span[UInt64, MutAnyOrigin],
-        rank_sigs: Optional[
-            InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS]
-        ] = None,
-        my_rank: Int = 0,
     ):
         """Main kernel entry point for SM100 matrix multiplication.
 
@@ -1487,8 +1416,7 @@ struct BlackwellMatmulSM100Kernel[
         if ctx.elect_one_warp and ctx.elect_one_thread:
             a_tma_op.prefetch_descriptor()
             b_tma_op.prefetch_descriptor()
-            comptime for i in range(Self.num_c_tma_descriptors):
-                c_tma_ops[i].prefetch_descriptor()
+            c_tma_op.prefetch_descriptor()
             comptime if Self.config.use_tma_epilogue_load and not Self.config.epilogue_is_1d:
                 epilogue_load_tma_op.prefetch_descriptor()
 
@@ -1739,15 +1667,8 @@ struct BlackwellMatmulSM100Kernel[
                     Self.TmemDealloc(smem.pipelines.tmem_dealloc()),
                 )
 
+                var tile_writer = Self.TileWriterType(Pointer(to=c_tma_op))
                 var epi_iter = scheduler.work_iterator()
-
-                # Pre-barrier: ensure all peers' output buffers are ready
-                comptime if Self.output_writer_type.needs_sync:
-                    _multi_gpu_barrier[
-                        Self.num_c_tma_descriptors,
-                        is_start=True,
-                        named_barrier_threads=Self.EPILOGUE_THREADS,
-                    ](rank_sigs.value(), rank_sigs.value()[my_rank], my_rank)
 
                 with epi_ctx:  # signals TMEM dealloc on exit
                     var tile_idx = 0
@@ -1755,9 +1676,8 @@ struct BlackwellMatmulSM100Kernel[
                     for current in epi_iter:
                         with MatmulProfilerType[3](workspace, UInt32(tile_idx)):
                             with epi_ctx.output_pipeline.consumer() as output_stage:  # waits for MMA
-                                # Uniform write through the injected writer policy
-                                Self.write_output_tile(
-                                    Pointer(to=c_tma_ops),
+                                # Use synchronous GMEM load (if any epilogue lambda is provided) + write back to GMEM
+                                tile_writer.write_batched(
                                     smem.c_tiles(),
                                     output_stage,
                                     (
@@ -1767,19 +1687,8 @@ struct BlackwellMatmulSM100Kernel[
                                     ),
                                     (mnk[0], mnk[1]),
                                 )
+
                         tile_idx += 1
-
-                # Post-barrier: ensure all peers have finished reduce-add writes.
-                # Use a named barrier scoped to the 4 epilogue warps (128 threads).
-                # Note this is only safe because epilogue warps are 0-3...
-                comptime if Self.output_writer_type.needs_sync:
-                    _multi_gpu_barrier[
-                        Self.num_c_tma_descriptors,
-                        is_start=False,
-                        need_fence=True,
-                        named_barrier_threads=Self.EPILOGUE_THREADS,
-                    ](rank_sigs.value(), rank_sigs.value()[my_rank], my_rank)
-
         else:
             if WarpRole.is_epilogue():
                 Self.EpilogueCtx.Sync.wait()  # wait for MMA to publish TMEM addr
@@ -1795,7 +1704,7 @@ struct BlackwellMatmulSM100Kernel[
                     Self.TmemDealloc(smem.pipelines.tmem_dealloc()),
                 )
 
-                var tile_writer = Self.TileWriterType(Pointer(to=c_tma_ops[0]))
+                var tile_writer = Self.TileWriterType(Pointer(to=c_tma_op))
                 var epi_iter = scheduler.work_iterator()
 
                 with epi_ctx:  # signals TMEM dealloc on exit

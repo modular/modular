@@ -26,6 +26,5 @@ modular_py_test(
         "//max/python/max/nn",
         "//max/python/max/support",
         requirement("numpy"),
-        requirement("torch"),
     ],
 )
