@@ -3,6 +3,6 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+"""Not re-exported; uses a single-segment relative `import` of a sibling."""
 
-# Re-export the public submodule so it is reachable as `deep_package.leaf`.
-from . import leaf
+import .inner

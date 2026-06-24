@@ -21,8 +21,7 @@ def test_package_import_in_function():
 def test_dotted_module_import_in_function():
     import test_package.module
 
-    # FIXME: They don't work: this shouldn't be an error - MOCO-3509.
-    test_package.module.function()  # expected-error {{use of unknown declaration 'test_package'}}
+    test_package.module.function()  # ok
 
 
 # // -----
@@ -31,8 +30,7 @@ def test_dotted_module_import_in_function():
 def test_dotted_package_import_in_function():
     import test_package.test_nested_package
 
-    # FIXME: They don't work: this shouldn't be an error - MOCO-3509.
-    test_package.test_nested_package.nested_function()  # expected-error {{use of unknown declaration 'test_package'}}
+    test_package.test_nested_package.nested_function()  # ok
 
 
 # // -----

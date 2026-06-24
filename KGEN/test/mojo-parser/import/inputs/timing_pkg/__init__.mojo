@@ -4,5 +4,4 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# Re-export the public submodule so it is reachable as `deep_package.leaf`.
-from . import leaf
+"""A package with one submodule, used to probe dotted-import resolution timing."""

@@ -638,8 +638,11 @@ static TypeConvention getRegisterPassability(ASTType type, llvm::SMLoc loc,
   }
 
   // We don't yet have a runtime representation for packages or modules, but
-  // when we do, it will not be register-passable.
-  if (decl && isa_and_nonnull<FileModuleOp, PackageOp>(decl->getIfOperation()))
+  // when we do, it will not be register-passable. A module reference is an
+  // ImportOp; the raw FileModuleOp/PackageOp cases are kept for the underlying
+  // decls.
+  if (decl && isa_and_nonnull<FileModuleOp, PackageOp, ImportOp>(
+                  decl->getIfOperation()))
     return TypeConvention::MemoryOnly;
 
   auto checkPR = [&](StringRef traitName) {

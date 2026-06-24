@@ -1424,16 +1424,16 @@ void SharedState::importBuiltinModules(ASTDecl &moduleDecl) {
     }
   }
 
-  // Add an unrestricted ImportOp for "std" to the module's scope. This makes
-  // the bare name `std` resolvable (e.g. `_ = std`) and also grants access to
-  // child modules; allowAll means no children are blocked.
+  // Add an ImportOp for "std" to the module's scope. This makes the bare
+  // name `std` resolvable and access to child modules is gated like any import.
+  // Child modules must be explicitly imported by the user or re-exported by
+  // std's __init__.mojo.
   StringAttr stdAttr = StringAttr::get(getContext(), "std");
   auto &block = moduleDecl.getIfOperation()->getRegion(0).front();
   OpBuilder builder = OpBuilder::atBlockEnd(&block);
   declResolver->createImportOp(moduleDecl, builder, stdAttr,
                                /*realModuleName=*/stdAttr,
-                               translateLocation(moduleDecl.getLoc()),
-                               /*allowAll=*/true);
+                               translateLocation(moduleDecl.getLoc()));
 
   for (StringAttr import : impl->implicitBuiltinImports)
     moduleDecl.addUnresolvedWildCardImport(import, /*isFullImport=*/false,

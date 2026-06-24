@@ -4,5 +4,4 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# Re-export the public submodule so it is reachable as `deep_package.leaf`.
-from . import leaf
+"""A nested package, used to probe middle-segment binding of a dotted import."""

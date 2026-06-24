@@ -175,12 +175,18 @@ private:
                                           bool emitDiagnostics);
 
 public:
-  /// Create a resolved ImportOp in \p dest's scope. When \p allowAll is true,
-  /// all child modules are accessible; when false, only nested ImportOps
-  /// in the region gate access.
+  /// Create a resolved ImportOp in \p dest's scope. Only nested ImportOps in
+  /// the region gate access to child modules of \p realModuleName.
   ASTDecl &createImportOp(ASTDecl &dest, mlir::OpBuilder &builder,
                           StringAttr name, StringAttr realModuleName,
-                          mlir::Location loc, bool allowAll);
+                          mlir::Location loc);
+
+  /// Return the absolute, dotted module name of a resolved module/package decl
+  /// (e.g. `a.b.c`), derived from its fully-resolved symbol. Used as a
+  /// gate's `realModuleName` for imports whose syntactic path is relative
+  /// (`import .foo as z`, `from . import sub`), where there is no absolute name
+  /// to copy from the source. Returns {} if \p moduleDecl has no symbol.
+  StringAttr getAbsoluteModuleName(ASTDecl &moduleDecl);
 
   /// Import the given module into the provided destination.
   LogicalResult importModule(ASTDecl &dest, UnresolvedImportOp op,
@@ -202,6 +208,11 @@ public:
                                               StringAttr moduleName,
                                               bool isFullImport,
                                               llvm::SMLoc loc);
+
+  /// Returns true if `package`'s `__init__` explicitly re-exports a member
+  /// named `name` (e.g. `from . import name`, or a re-exported symbol of that
+  /// name).
+  bool packageReexportsMember(ASTDecl &package, StringAttr name, SMLoc loc);
 
   //===--------------------------------------------------------------------===//
   // Decl Resolution
@@ -414,6 +425,10 @@ private:
 
   /// This array holds all of the parsed declarations in a deterministic order.
   std::vector<ASTDecl *> parsedDeclList;
+
+  /// From-import placeholders (`from a.b import c`) that resolved to a
+  /// submodule and were superseded by an ImportOp.
+  llvm::SmallPtrSet<mlir::Operation *, 8> deadImportPlaceholders;
 
   /// Name binding is an recursive process in the general case.  This keeps
   /// track of the declarations currently being name bound so we can diagnose

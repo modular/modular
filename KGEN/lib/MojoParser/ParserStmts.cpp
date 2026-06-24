@@ -3233,6 +3233,48 @@ ParseResult StmtParser::parseFromImportStmt(bool hasStableOverride) {
   return success();
 }
 
+/// Build a chain of nested ImportOps for the dotted module path
+/// \p dottedPath (e.g. `a.b.c`) into \p dest's scope, reusing existing
+/// ImportOps at shared prefixes. This is the resolved form of a plain
+/// `import a.b.c`; it is built eagerly at parse time so the bound name `a`
+/// (and `a.b`, `a.b.c`) are resolvable before any reference to them.
+static void buildImportChain(ParserBase &p, ASTDecl &dest, OpBuilder builder,
+                             StringRef dottedPath, mlir::Location loc) {
+  SmallVector<StringRef> segments;
+  dottedPath.split(segments, '.');
+
+  ASTDecl *scope = &dest;
+  std::string qualifiedName;
+  for (StringRef segment : segments) {
+    if (!qualifiedName.empty())
+      qualifiedName += '.';
+    qualifiedName += segment;
+    auto segName = StringAttr::get(p.getContext(), segment);
+
+    // Reuse the ImportOp already bound at this scope; otherwise create a new
+    // one.
+    ASTDecl *node = nullptr;
+    for (ASTDecl *d : scope->lookupInCurrentScope(segName)) {
+      if (isa_and_nonnull<ImportOp>(d->getIfOperation())) {
+        node = d;
+        break;
+      }
+    }
+    if (!node) {
+      node = &p.getDeclResolver().createImportOp(
+          *scope, builder, segName,
+          StringAttr::get(p.getContext(), qualifiedName), loc);
+    }
+
+    // Descend so the next segment is gated as a child of this node.
+    scope = node;
+    builder = scope->getDeclEndBuilder();
+  }
+
+  p.shared.notifyListenerOnModuleImport(*scope, dottedPath,
+                                        p.shared.diags.convertLocToSMLoc(loc));
+}
+
 /// import_stmt ::=  "import" module ["as" identifier]
 ///                  ("," module ["as" identifier])*
 /// module      ::=  (identifier ".")* identifier
@@ -3250,26 +3292,48 @@ ParseResult StmtParser::parseImportStmt() {
     if (parseImportModuleName(moduleAttr, /*allowRelativeImport=*/false))
       return failure();
 
-    // Check for a name binding.
+    // Check for a name binding. 'import a.b.c as z' is a *leaf binding*: the
+    // name 'z' binds the resolved (leaf) module directly, rather than 'import
+    // a.b.c' which binds each module along the dotted path.
     StringRef boundModuleName = moduleAttr;
-    LocationAttr boundModuleLocAttr;
+    SMLoc boundNameLoc;
+    bool isLeafBinding = false;
     if (consumeIf(Token::kw_as)) {
+      isLeafBinding = true;
       boundModuleName = getTokenSpelling();
-      boundModuleLocAttr = translateLocation(getToken().getLoc());
+      boundNameLoc = getToken().getLoc();
       if (parseIdentifier("expected name to bind import"))
         return failure();
     }
 
-    // Create an unresolved decl for the import.
-    StringAttr importDestNameAttr = builder.getStringAttr(boundModuleName);
-    auto importDecl = LIT::UnresolvedImportOp::create(
-        builder, translateLocation(importLoc), moduleAttr, importDestNameAttr,
-        /*declName=*/StringAttr(), boundModuleLocAttr,
-        /*declNameLoc=*/LocationAttr());
-    getDeclResolver().addDecl(importDecl, importLoc, importDestNameAttr,
-                              curDeclScope, getLexer().getCursor(),
-                              getLexer().getCursor(), /*indentation=*/-1);
+    // Absolute `import`s are built into nested ImportOps at parse time, with no
+    // UnresolvedImportOp placeholder. Resolve the target module first so a
+    // missing module is reported eagerly (this locates the module file; it does
+    // not parse its body).
+    ASTDecl &module =
+        shared.importModule(moduleAttr, /*currentPackage=*/nullptr, importLoc);
+
+    if (!isLeafBinding) {
+      // 'import a.b.c' binds the chain 'a' -> 'a.b' -> 'a.b.c' under the
+      // first segment 'a'.
+      buildImportChain(*this, *curDeclScope, builder, moduleAttr.getValue(),
+                       translateLocation(importLoc));
+      continue;
+    }
+
+    // 'import a.b.c as z' binds a single gate 'z' -> 'a.b.c'; the names 'a'
+    // and 'a.b' are not bound.
+    getDeclResolver().createImportOp(*curDeclScope, builder,
+                                     builder.getStringAttr(boundModuleName),
+                                     moduleAttr, translateLocation(importLoc));
+    shared.notifyListenerOnModuleImport(module, moduleAttr.getValue(),
+                                        importLoc);
+    // Index the bound alias name (`z` in `import a.b.c as z`) as a
+    // reference to the imported module so hover/semantic tokens resolve it.
+    if (boundNameLoc.isValid())
+      shared.notifyListenerOnRef(&module, boundModuleName, boundNameLoc);
   } while (consumeIf(Token::comma));
+
   return success();
 }
 

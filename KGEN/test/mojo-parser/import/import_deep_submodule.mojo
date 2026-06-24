@@ -6,52 +6,58 @@
 
 # RUN: %parse-mojo-isolated -split-input-file -I=%S/inputs -verify-diagnostics %s
 
-# Test that importing a package allows access to arbitrarily deep sub-packages.
+# Importing a package gates access to submodules that were not imported: you
+# reach exactly the path you imported, not arbitrarily deep sub-packages.
 
 import test_package
 
 
 def main():
-    # 2 levels deep
+    # A submodule of test_package that was not imported is not an attribute.
+    # expected-error @+1 {{use of unknown declaration 'test_nested_package'}}
     _ = test_package.test_nested_package
 
-    # 3 levels deep
+    # expected-error @+1 {{use of unknown declaration 'test_nested_package'}}
     test_package.test_nested_package.module.nested_function()
 
-    # 4 levels deep
+    # expected-error @+1 {{use of unknown declaration 'test_nested_package'}}
     test_package.test_nested_package.deep_package.leaf.deep_function()
 
 
 # // -----
 
-# Same but importing one extra level
+# Importing one level: that submodule is reachable, along with everything it
+# re-exports (test_nested_package re-exports module and deep_package).
 
 import test_package.test_nested_package
 
 
 def main():
-    # 1 level deep
     _ = test_package
 
-    # 2 levels deep
+    # On the imported path — reachable.
     _ = test_package.test_nested_package
 
-    # 3 levels deep
+    # 'module' and 'deep_package' are re-exported by test_nested_package, so
+    # they (and deep_package.leaf) are reachable.
     test_package.test_nested_package.module.nested_function()
-
-    # 4 levels deep
     test_package.test_nested_package.deep_package.leaf.deep_function()
+
+    # deep_package re-exports `leaf` but not `hidden`, so the non-re-exported
+    # submodule stays gated even when deep_package is reached via re-export.
+    # expected-error @+1 {{use of unknown declaration 'hidden'}}
+    test_package.test_nested_package.deep_package.hidden.hidden_fn()
 
 
 # // -----
 
-# Same but importing two extra levels
+# Same but importing two extra levels; deep_package stays reachable because
+# test_nested_package re-exports it.
 
 import test_package.test_nested_package.module
 
 
 def main():
-    # expected-error @+1 {{use of unknown declaration 'deep_package'}}
     test_package.test_nested_package.deep_package.leaf.deep_function()
 
 

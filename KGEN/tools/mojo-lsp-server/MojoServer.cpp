@@ -105,9 +105,11 @@ struct Symbol {
   Symbol(MojoASTDeclRef declRef, StringRef identifier, SMLoc identifierLoc)
       : identifier(identifier), declRef(declRef),
         approximateViewKind(declRef.getApproximateDeclKind()) {
-    // Modules/Packages just point to the direct location, they don't have a
-    // name in the source code.
-    if (isa_and_nonnull<FileModuleOp, PackageOp>(declRef.getIfOperation()))
+    // Modules/Packages (and Import access gates over them) just point to the
+    // direct location; their own decl location isn't a source identifier we can
+    // size. Their per-segment source range is supplied via `onModuleImport`.
+    if (isa_and_nonnull<FileModuleOp, PackageOp, ImportOp>(
+            declRef.getIfOperation()))
       range = {identifierLoc, identifierLoc};
     else
       range = getRangeForText(identifierLoc, identifier);
@@ -376,7 +378,8 @@ Symbol *SymbolIndex::registerSymbol(MojoASTDeclRef declRef,
     // would assert in IntervalMap). This also prevents crashes when a REPL
     // docstring imports the module being parsed (a self-import), which causes
     // PackageOp symbols with locations in the main doc to reach this path.
-    if (!isa_and_nonnull<FileModuleOp, PackageOp>(declRef->getIfOperation()))
+    if (!isa_and_nonnull<FileModuleOp, PackageOp, ImportOp>(
+            declRef->getIfOperation()))
       insertRangeInMainDoc({symbol, symbol.range});
   }
   return &symbol;

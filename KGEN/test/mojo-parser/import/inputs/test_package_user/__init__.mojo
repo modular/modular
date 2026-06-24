@@ -5,10 +5,11 @@
 # ===----------------------------------------------------------------------=== #
 
 # This file tests importing and using a package at the same level as the
-# parent package.
+# parent package. The function is imported explicitly from the submodule — a
+# bare `import test_package` would not expose `test_package.module`.
 
-import test_package
+from test_package.module import function
 
 
 def using_test_package():
-    test_package.module.function()
+    function()

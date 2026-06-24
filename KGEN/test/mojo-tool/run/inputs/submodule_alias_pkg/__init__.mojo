@@ -3,6 +3,4 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-
-# Re-export the public submodule so it is reachable as `deep_package.leaf`.
-from . import leaf
+"""Package whose `api` module re-exports a sibling submodule under an alias."""

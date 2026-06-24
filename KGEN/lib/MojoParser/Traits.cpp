@@ -954,7 +954,10 @@ static TraitType getDeclProvidedTrait(ASTDecl *decl) {
   } else if (TraitType canonTraitType =
                  dyn_cast_or_null<TraitType>(decl->getIfTypeValue())) {
     providedCanonTrait = canonTraitType;
-  } else if (isa<PackageOp>(declOp) || isa<FileModuleOp>(declOp)) {
+  } else if (isa<PackageOp>(declOp) || isa<FileModuleOp>(declOp) ||
+             isa<ImportOp>(declOp)) {
+    // A package, module, or import reference provides no trait (and is not a
+    // copyable runtime value - using one as a value is diagnosed elsewhere).
     providedCanonTrait = TraitType::get(decl->getContext(), {});
   } else {
     llvm_unreachable("Invalid decl kind");

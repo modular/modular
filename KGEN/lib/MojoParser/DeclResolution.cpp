@@ -2323,7 +2323,9 @@ ParseResult DeclResolver::resolveBody(LIT::PackageOp op, ASTDecl &decl) {
 
   // Create an unresolved relative import for each nested module. That way we
   // only need to actually pull anything in from the filesystem if it gets
-  // referenced.
+  // referenced. Each binds the bare submodule name ('foo') to the relative
+  // module ('.foo'), so it is a leaf binding - not a dotted-path import that
+  // should build a gating ImportOp tree.
   for (StringRef name : nestedModules) {
     StringAttr importName = builder.getStringAttr("." + name);
     StringAttr boundName = builder.getStringAttr(name);
@@ -2331,6 +2333,7 @@ ParseResult DeclResolver::resolveBody(LIT::PackageOp op, ASTDecl &decl) {
         builder, op->getLoc(), importName, boundName, /*declName=*/StringAttr(),
         /*importNameLoc=*/LocationAttr(),
         /*destNameLoc=*/LocationAttr());
+    importDecl.setIsLeafBinding(true);
     getDeclResolver().addDecl(importDecl, decl.loc, boundName, &decl,
                               LexerCursor(), LexerCursor(), /*indentation=*/-1);
   }
