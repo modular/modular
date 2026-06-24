@@ -147,7 +147,7 @@ def validate_field_type(field_type: Any) -> bool:
     raise ValueError(f"type '{test_type}' not supported in config.")
 
 
-def get_field_type(field_type: Any):  # noqa: ANN201
+def get_field_type(field_type: Any) -> Any:
     validate_field_type(field_type)
 
     # Get underlying core field type, is Optional or list.

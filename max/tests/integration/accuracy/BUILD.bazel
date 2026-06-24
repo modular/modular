@@ -370,7 +370,7 @@ modular_py_binary(
         ":lm-eval",
         ":longbench-v2-eval",
         ":mistral-eval",
-        "//max/python/max/entrypoints:pipelines",  # The transitive mojo deps from this target must be available
+        "//max/python/max/_entrypoints:pipelines",  # The transitive mojo deps from this target must be available
         "//max/tests/integration/accuracy/eval_tasks/human_eval",
         "@mistral-evals//:evaluate",
         "@rules_python//python/runfiles",
@@ -486,7 +486,7 @@ modular_py_binary(
     srcs = ["pipelines_llm_fuzz_main.py"],
     data = [
         ":llm-fuzz",
-        "//max/python/max/entrypoints:pipelines",
+        "//max/python/max/_entrypoints:pipelines",
     ],
     env = {
         # required by models that use Expert Parallelism.
@@ -500,9 +500,9 @@ modular_py_binary(
     name = "pipelines_mteb",
     testonly = True,
     srcs = ["pipelines_mteb.py"],
-    data = ["//max/python/max/entrypoints:pipelines"],
+    data = ["//max/python/max/_entrypoints:pipelines"],
     deps = [
-        "//max/python/max/entrypoints",
+        "//max/python/max/_entrypoints",
         "//max/python/max/pipelines",
         "//max/python/max/pipelines/modeling",
         requirement("click"),

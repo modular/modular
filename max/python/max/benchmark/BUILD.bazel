@@ -40,8 +40,8 @@ modular_py_binary(
     srcs = ["serve_replay.py"],
     visibility = [":__subpackages__"],
     deps = [
-        "//max/python/max/entrypoints:pipelines",
-        "//max/python/max/entrypoints:replay_recording",
+        "//max/python/max/_entrypoints:pipelines",
+        "//max/python/max/_entrypoints:replay_recording",
         requirement("click"),
         requirement("httpx"),
     ],

@@ -28,7 +28,7 @@ from typing_extensions import ParamSpec
 # This is best practice to keep the CLI invocation fast
 
 
-logger = logging.getLogger("max.entrypoints")
+logger = logging.getLogger("max._entrypoints")
 
 _P = ParamSpec("_P")
 _R = TypeVar("_R")
@@ -66,7 +66,7 @@ class WithLazyPipelineOptions(click.Command):
 
     @staticmethod
     def _add_options(callback: Callable[_P, _R]) -> Callable[_P, _R]:
-        from max.entrypoints.cli import pipeline_config_options
+        from max._entrypoints.cli import pipeline_config_options
 
         return pipeline_config_options(callback)
 
@@ -120,7 +120,7 @@ class WithLazyPipelineOptions(click.Command):
 class WithLazySamplingAndPipelineOptions(WithLazyPipelineOptions):
     @staticmethod
     def _add_options(callback: Callable[_P, _R]) -> Callable[_P, _R]:
-        from max.entrypoints.cli import (
+        from max._entrypoints.cli import (
             pipeline_config_options,
             sampling_params_options,
         )
@@ -160,7 +160,7 @@ class ModelGroup(click.Group):
     help="Set logging level explicitly (ignored if --verbose or --quiet is used).",
 )
 def main(log_level: str = "INFO") -> None:
-    from max.entrypoints.cli.entrypoint import configure_cli_logging
+    from max._entrypoints.cli.entrypoint import configure_cli_logging
 
     # Configure logging first, before any other initialization
     configure_cli_logging(
@@ -229,8 +229,8 @@ def cli_serve(
     Loads a model from a Hugging Face model ID or local path and
     exposes OpenAI-compatible HTTP endpoints for inference requests.
     """
-    from max.entrypoints.cli import serve_api_server_and_model_worker
-    from max.entrypoints.workers import start_workers
+    from max._entrypoints.cli import serve_api_server_and_model_worker
+    from max._entrypoints.workers import start_workers
     from max.pipelines import PipelineConfig
     from max.pipelines.context import SamplingParams, SamplingParamsInput
     from max.serve.config import Settings
@@ -362,7 +362,7 @@ def cli_pipeline(
     This command runs text generation using the loaded model, optionally
     accepting image inputs for multimodal models.
     """
-    from max.entrypoints.cli import generate_text_for_pipeline
+    from max._entrypoints.cli import generate_text_for_pipeline
     from max.pipelines import PipelineConfig
     from max.pipelines.context import SamplingParams, SamplingParamsInput
     from max.profiler import maybe_reexec_under_nsys
@@ -428,7 +428,7 @@ def encode(prompt: str, num_warmups: int, **config_kwargs: Any) -> None:
     This command processes the input text through the model's encoder, producing
     embeddings that can be used for various downstream tasks.
     """
-    from max.entrypoints.cli import pipeline_encode
+    from max._entrypoints.cli import pipeline_encode
     from max.pipelines import PipelineConfig
 
     # Load tokenizer & pipeline.
@@ -478,7 +478,7 @@ def cli_list(json: bool) -> None:
     This command displays information about all registered pipelines and their
     configurations. Output can be formatted as human-readable text or JSON.
     """
-    from max.entrypoints.cli import (
+    from max._entrypoints.cli import (
         list_pipelines_to_console,
         list_pipelines_to_json,
     )

@@ -15,7 +15,7 @@ import logging
 
 import hf_repo_lock
 import pytest
-from max.entrypoints import pipelines
+from max._entrypoints import pipelines
 
 # Keep original constants for non-LoRA tests
 REPO_ID = "hf-internal-testing/tiny-random-LlamaForCausalLM"

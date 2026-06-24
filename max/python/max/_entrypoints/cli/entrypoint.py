@@ -76,7 +76,7 @@ def configure_cli_logging(
     # Set up log filtering for MAX components
     components_to_log = [
         "root",
-        "max.entrypoints",
+        "max._entrypoints",
         "max.pipelines",
         "max.serve",
         "max.benchmark",

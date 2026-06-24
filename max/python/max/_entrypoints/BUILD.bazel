@@ -5,7 +5,7 @@ load("//max/python/max/pipelines/architectures:all_arches.bzl", "ALL_ARCHITECTUR
 package(default_visibility = ["//max:consumers"])
 
 modular_py_library(
-    name = "entrypoints",
+    name = "_entrypoints",
     srcs = glob(
         ["**/*.py"],
         exclude = [
@@ -56,7 +56,7 @@ modular_py_library(
         "pipelines.py",
     ],
     deps = [
-        "//max/python/max/entrypoints",
+        "//max/python/max/_entrypoints",
         "//max/python/max:_core",
         "//max/python/max/profiler",
         "//max/python/max/serve/telemetry",
@@ -86,7 +86,7 @@ modular_py_binary(
     ignore_extra_deps = ALL_ARCHITECTURES,
     mojo_deps = PROD_MOJOPKGS,
     deps = ALL_ARCHITECTURES + [
-        ":entrypoints",
+        ":_entrypoints",
         "//max/python/max:_core",
         "//max/python/max/benchmark:benchmark_serving_lib",
         "//max/python/max/pipelines",

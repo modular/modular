@@ -424,7 +424,7 @@ def get_server_cmd(
         "--limit-mm-per-prompt.video",
         "0",
     ]
-    MAX = ["max.entrypoints.pipelines", "serve", "--pretty-print-config"]
+    MAX = ["max._entrypoints.pipelines", "serve", "--pretty-print-config"]
 
     if gpu_count > 1:
         if recipe is not None:

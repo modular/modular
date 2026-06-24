@@ -29,7 +29,7 @@ max_aliases()
 
 alias(
     name = "max",
-    actual = "//max/python/max/entrypoints:pipelines",
+    actual = "//max/python/max/_entrypoints:pipelines",
     tags = [TOP_LEVEL_TAG],
 )
 

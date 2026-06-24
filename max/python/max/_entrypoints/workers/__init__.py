@@ -29,7 +29,7 @@ from max.serve.telemetry.metrics import METRICS
 from max.serve.worker_interface._zmq_queue import generate_zmq_ipc_path
 from max.serve.worker_interface.zmq_interface import ZmqModelWorkerInterface
 
-logger = logging.getLogger("max.entrypoints")
+logger = logging.getLogger("max._entrypoints")
 
 # Global shutdown event for coordinating graceful shutdown
 _shutdown_event: asyncio.Event | None = None

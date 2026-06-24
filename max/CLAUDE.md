@@ -25,11 +25,11 @@ SDK, APIs, and tools. The SDK provides:
 
 # Build specific components
 ./bazelw build //max/python/max
-./bazelw build //max/python/max/entrypoints:pipelines
+./bazelw build //max/python/max/_entrypoints:pipelines
 ./bazelw build //max/python/max/serve
 
 # Build and install MAX CLI
-./bazelw run //max/python/max/entrypoints:pipelines
+./bazelw run //max/python/max/_entrypoints:pipelines
 ```
 
 ### Running Tests
@@ -86,16 +86,16 @@ bt-b200 //max/tests/integration/architectures/llama3:tests_gpu
 
 ```bash
 # Generate text with a model
-./bazelw run //max/python/max/entrypoints:pipelines -- generate \
+./bazelw run //max/python/max/_entrypoints:pipelines -- generate \
   --model modularai/Llama-3.1-8B-Instruct-GGUF \
   --prompt "Hello, world!"
 
 # Serve a model locally
-./bazelw run //max/python/max/entrypoints:pipelines -- serve \
+./bazelw run //max/python/max/_entrypoints:pipelines -- serve \
   --model modularai/Llama-3.1-8B-Instruct-GGUF
 
 # Run with custom configuration
-./bazelw run //max/python/max/entrypoints:pipelines -- generate \
+./bazelw run //max/python/max/_entrypoints:pipelines -- generate \
   --model model.gguf \
   --max-new-tokens 256 \
   --temperature 0.7
@@ -210,11 +210,11 @@ blow-up is in CI, not locally.
 
 ```bash
 # Benchmark model performance
-./bazelw run //max/python/max/entrypoints:pipelines -- benchmark \
+./bazelw run //max/python/max/_entrypoints:pipelines -- benchmark \
   --model model
 
 # Profile model execution
-./bazelw run //max/python/max/entrypoints:pipelines -- profile \
+./bazelw run //max/python/max/_entrypoints:pipelines -- profile \
   --model model
 ```
 

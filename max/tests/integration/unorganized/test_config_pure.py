@@ -19,9 +19,9 @@ from typing import Any
 from unittest.mock import Mock, patch
 
 import pytest
+from max._entrypoints.cli.config import parse_task_flags
 from max.driver import DeviceSpec, accelerator_count
 from max.dtype import DType
-from max.entrypoints.cli.config import parse_task_flags
 from max.pipelines import PIPELINE_REGISTRY
 from max.pipelines.context import SamplingParamsGenerationConfigDefaults
 from max.pipelines.lib import (

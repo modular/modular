@@ -65,7 +65,7 @@ While developing the model, you can use the `--custom-architectures` flag to
 run your model (before it's registered):
 
 ```bash
-./bazelw run //max/python/max/entrypoints:pipelines -- serve \
+./bazelw run //max/python/max/_entrypoints:pipelines -- serve \
   --model your-org/your-model-name \
   --custom-architectures path/to/your/architecture
 ```
@@ -99,7 +99,7 @@ Once registered, you can serve models using your architecture without the
 `--custom-architectures` option:
 
 ```bash
-./bazelw run //max/python/max/entrypoints:pipelines -- serve \
+./bazelw run //max/python/max/_entrypoints:pipelines -- serve \
   --model-path your-org/your-model-name
 ```
 
@@ -107,7 +107,7 @@ For models that require custom code execution (such as custom tokenizers or
 model implementations on Hugging Face), add the `--trust-remote-code` flag:
 
 ```bash
-./bazelw run //max/python/max/entrypoints:pipelines -- serve \
+./bazelw run //max/python/max/_entrypoints:pipelines -- serve \
   --model-path your-org/your-model-name --trust-remote-code
 ```
 
@@ -173,7 +173,7 @@ For help investigating inaccuracy issues, see the guide to
 Start your model server in one terminal:
 
 ```bash
-./bazelw run //max/python/max/entrypoints:pipelines -- serve \
+./bazelw run //max/python/max/_entrypoints:pipelines -- serve \
   --model-path your-org/your-model-name
 ```
 

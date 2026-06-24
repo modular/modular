@@ -36,7 +36,7 @@ from max.serve.pipelines.echo_gen import EchoTokenGenerator
 from max.serve.process_control import SubprocessExit
 from uvicorn import Server
 
-logger = logging.getLogger("max.entrypoints")
+logger = logging.getLogger("max._entrypoints")
 
 
 def _exit_on_signal(signum: int, frame: FrameType | None) -> None:

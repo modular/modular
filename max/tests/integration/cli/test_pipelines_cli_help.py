@@ -16,7 +16,7 @@ import time
 
 import python.runfiles
 from click.testing import CliRunner
-from max.entrypoints import pipelines
+from max._entrypoints import pipelines
 
 
 def test_main_help() -> None:
@@ -46,7 +46,7 @@ def test_help_performance() -> None:
 
     runfiles = python.runfiles.Create()
     assert runfiles is not None, "Unable to find runfiles tree"
-    loc = runfiles.Rlocation("_main/max/python/max/entrypoints/pipelines")
+    loc = runfiles.Rlocation("_main/max/python/max/_entrypoints/pipelines")
     assert loc is not None, "Unable to find pipelines entrypoint"
 
     start_time = time.time()

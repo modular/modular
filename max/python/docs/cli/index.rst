@@ -13,7 +13,7 @@
     in the [install guide](/max/packages#install).
 
 
-.. click:: max.entrypoints.pipelines:main
+.. click:: max._entrypoints.pipelines:main
   :prog: max
   :hide-description:
 

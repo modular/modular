@@ -105,7 +105,6 @@ convention = "google"
 # With exceptions for these packages:
 "max/python/max/benchmark/**/*" = ["D"]
 "max/python/max/config/**/*" = ["D"]
-"max/python/max/entrypoints/**/*" = ["D"]
 "max/python/max/pipelines/kv_cache/connectors/**/*" = ["D"]
 "max/python/max/mlir/**/*" = ["D"]
 "max/python/max/nn/**/*" = ["D"]
@@ -116,6 +115,7 @@ convention = "google"
 # Exclude private packages and modules (NOTE: this allows max/_core/*.pyi files):
 "max/python/max/_core_mojo/**/*" = ["D"]
 "max/python/max/_core_types/**/*" = ["D"]
+"max/python/max/_entrypoints/**/*" = ["D"]
 "max/python/max/_interpreter_ops/**/*" = ["D"]
 "max/python/max/_mlir/**/*" = ["D"]
 "max/python/max/_core/dialects/**/*" = ["D"]

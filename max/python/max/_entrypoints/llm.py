@@ -74,6 +74,10 @@ class ThreadControl:
 class LLM:
     """A high-level interface for interacting with LLMs.
 
+    .. deprecated:: 26.5
+        This is a legacy API that's now private. We'll introduce a new API for
+        offline inference in a future release.
+
     Use this class for offline batch inference against a model loaded from a
     :class:`PipelineConfig`. Call :meth:`generate` with one or more prompts
     to receive completions.
@@ -83,7 +87,7 @@ class LLM:
 
     .. code-block:: python
 
-        from max.entrypoints.llm import LLM
+        from max._entrypoints.llm import LLM
         from max.pipelines import PipelineConfig
 
         pipeline_config = PipelineConfig.from_flat_kwargs(model_path="LiquidAI/LFM2.5-350M")

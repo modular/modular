@@ -33,7 +33,6 @@
         "max/inference/embeddings",
         "max/serve/function-calling",
         "max/serve/structured-output",
-        "max/serve/offline-inference",
         "max/develop/max-pipeline-bring-your-own-model",
         "max/models"
       ]
@@ -225,17 +224,6 @@
           },
           "items": [
             "__AUTOGEN:max.engine__"
-          ]
-        },
-        {
-          "type": "category",
-          "label": "max.entrypoints",
-          "link": {
-            "type": "doc",
-            "id": "max/api/python/entrypoints"
-          },
-          "items": [
-            "__AUTOGEN:max.entrypoints__"
           ]
         },
         {

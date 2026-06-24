@@ -50,7 +50,7 @@ from max.profiler import OneShotCapture, Tracer
 
 from .metrics import TextGenerationMetrics
 
-logger = logging.getLogger("max.entrypoints")
+logger = logging.getLogger("max._entrypoints")
 
 MODEL_NAME = "model"
 

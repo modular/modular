@@ -329,7 +329,7 @@ def test_max_get_server_cmd_recipe_alias_resolves_yaml(
     assert cmd[:5] == [
         ".venv-serve/bin/python",
         "-m",
-        "max.entrypoints.pipelines",
+        "max._entrypoints.pipelines",
         "serve",
         "--pretty-print-config",
     ]

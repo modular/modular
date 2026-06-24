@@ -15,7 +15,7 @@ import logging
 import os
 
 import pytest
-from max.entrypoints import pipelines
+from max._entrypoints import pipelines
 
 logger = logging.getLogger("max.pipelines")
 

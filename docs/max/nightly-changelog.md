@@ -163,6 +163,10 @@ This version is still a work in progress.
 
 ### `max` CLI
 
+- The entrypoint for the CLI, formerly `max.entrypoints`, has been marked as
+  private and moved to `max._entrypoints`. The CLI is still a public facing API,
+  but the code within it is not.
+
 ### Python API
 
 - Added `max.driver.set_virtual_cpu_target()` and `get_virtual_cpu_target()`.
@@ -221,6 +225,10 @@ This version is still a work in progress.
   backend can make its custom-op kernel library reachable from graphs built
   without an explicit `custom_extensions=` — including the eager-realization
   graph that backs `max.experimental` tensors. Empty by default.
+
+- Moved the `max.entrypoints` package to be private. In doing so, we
+  deprecated the `max.entrypoints.LLM` API and we'll introduce a new API
+  for offline inference in a future release.
 
 ### C API
 

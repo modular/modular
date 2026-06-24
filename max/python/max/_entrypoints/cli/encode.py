@@ -36,7 +36,7 @@ from max.pipelines.modeling.types import (
 
 from .metrics import EmbeddingsMetrics
 
-logger = logging.getLogger("max.entrypoints")
+logger = logging.getLogger("max._entrypoints")
 
 MODEL_NAME = "model"
 
