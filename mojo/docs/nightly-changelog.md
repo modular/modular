@@ -53,6 +53,53 @@ This version is still a work in progress.
 - Relative imports must now use `from` (`from . import foo`); the `import .foo`
   form is no longer accepted.
 
+- Absolute imports `import a.b.c` now bind all of `a`, `a.b`, and `a.b.c` into
+  the scope, where previously only `a.b.c` was made available.
+
+- A bug in import handling has been fixed where absolute imports of a package
+  followed by an import of one of its submodules no longer result in a compiler
+  error.
+
+  ```mojo
+  import a
+  import a.b  # fixed; was: "invalid redefinition of 'a'"
+  ```
+
+- A bug in function-scoped imports has been fixed, allowing dotted imports:
+
+  ```mojo
+  def foo():
+    import a.b
+
+    a.b.foo() # fixed; was: "use of unknown declaration 'a'"
+  ```
+
+  Note that this was already working correctly for other forms of import
+  (`import a`, `from a import b`, `from a.b import c`, etc).
+
+- An imported package's submodules are now only accessible when the package's
+  `__init__.mojo` re-exports those submodules.
+
+  ```mojo
+  import pkg
+
+  # only ok if pkg/__init__.mojo re-exports 'sub'.
+  # Re-export submodules with, e.g.,
+  #   from . import sub
+  # Use relative imports to avoid importing system packages.
+  pkg.sub.foo()
+  ```
+
+  Note that absolute imports can always bring in that submodule, bypassing the
+  `__init__.mojo`:
+
+  ```mojo
+  # always ok, regardless of the package's __init__.mojo
+  import pkg.submodule
+
+  pkg.submodule.foo()
+  ```
+
 ## Library changes
 
 - `Int` is now an alias for `Scalar[DType.int]` and integer literals materialize
