@@ -231,8 +231,7 @@ static RefType processRefOriginSpecifier(const ExprNode *origExpr, ASTType type,
 //===----------------------------------------------------------------------===//
 
 ParseResult ParsedArgument::parse(ParserBase &p, KWArgMarkerInfo &markerInfo,
-                                  ArgListKind kind,
-                                  InlineWhereNote inlineWhereNote) {
+                                  ArgListKind kind) {
   loc = p.getToken().getLoc();
   cursor = p.getLexer().getCursor();
 
@@ -382,11 +381,16 @@ ParseResult ParsedArgument::parse(ParserBase &p, KWArgMarkerInfo &markerInfo,
     }
     if (kind == ArgListKind::kParamList ||
         kind == ArgListKind::kFnTypeParamList) {
-      auto diag = p.emitWarning(
-          whereLoc, "'where' clauses inside parameter lists are deprecated");
-      // FIXME(MOCO-3855): Remove this note now that all parameterized decls
-      // support trailing 'where' clauses.
-      if (inlineWhereNote == InlineWhereNote::kTrailingWhere) {
+      auto diag = p.emitError(
+          whereLoc,
+          "'where' clauses inside parameter lists are no longer supported");
+      if (kind == ArgListKind::kFnTypeParamList) {
+        // Function types don't (yet) support trailing 'where' clauses, so we
+        // can't point users at that syntax.
+        diag.attachNote(whereLoc)
+            << "trailing 'where' clauses on function types are not yet "
+               "supported";
+      } else {
         diag.attachNote(whereLoc)
             << "use a trailing 'where' clause after the signature instead";
       }
@@ -394,7 +398,11 @@ ParseResult ParsedArgument::parse(ParserBase &p, KWArgMarkerInfo &markerInfo,
     ParsedConstraint constraint;
     if (constraint.parse(p))
       return failure();
-    constraints.push_back(constraint);
+    // Function types can't represent parameter constraints, so drop the parsed
+    // constraint after diagnosing it (we already emitted the error above). Real
+    // parameter lists keep it so any further constraint diagnostics still fire.
+    if (kind != ArgListKind::kFnTypeParamList)
+      constraints.push_back(constraint);
   }
 
   // Parse an optional default argument value: `"=" expression`.
@@ -453,8 +461,7 @@ PassingKind ParsedArgument::getKWArgHandlingAsPassingKind() const {
 /// arguments.
 static ParseResult
 parseArgOrParamList(ParserBase &p, SmallVectorImpl<ParsedArgument> &parsedArgs,
-                    ParsedArgument *resultArg, ArgListKind kind,
-                    InlineWhereNote inlineWhereNote = InlineWhereNote::kNone) {
+                    ParsedArgument *resultArg, ArgListKind kind) {
   // Figure out where to stop scanning.
   SmallVector<Token::Kind, 2> stopTokens;
   switch (kind) {
@@ -574,7 +581,7 @@ parseArgOrParamList(ParserBase &p, SmallVectorImpl<ParsedArgument> &parsedArgs,
     auto marker = KWArgMarkerInfo::kNotMarker;
     ParsedArgument arg;
     arg.kwArgHandling = defaultKWArgHandling;
-    if (arg.parse(p, marker, kind, inlineWhereNote))
+    if (arg.parse(p, marker, kind))
       return failure();
 
     // If we have a **arg then it must be the last argument.
@@ -1355,16 +1362,14 @@ ParseResult ParsedConstraint::parse(ParserBase &p) {
 /// param_signature    ::= "[" param_list ("->" param_result_types)? "]"
 /// param_list   ::= argument_list | "(" ")"
 /// param_result_types ::= expression ("," expression)*
-ParseResult
-ParsedParamList::parseParametersIfPresent(ParserBase &p, ArgListKind kind,
-                                          InlineWhereNote inlineWhereNote) {
+ParseResult ParsedParamList::parseParametersIfPresent(ParserBase &p,
+                                                      ArgListKind kind) {
   // Check to see if a parameter signature exists at all.
   if (!p.consumeIf(Token::l_square) || p.consumeIf(Token::r_square))
     return success();
 
   // Parse an actual parameter list.
-  if (parseArgOrParamList(p, params, /*resultArg=*/nullptr, kind,
-                          inlineWhereNote))
+  if (parseArgOrParamList(p, params, /*resultArg=*/nullptr, kind))
     return failure();
 
   return p.parseToken(Token::r_square, "expected ']' for parameter list");

@@ -1554,8 +1554,7 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
   // signature list resolve to enclosing scopes, and we add them before the
   // value signature list so the types and parameters can resolve to the bound
   // values.
-  if (parsedParamList.parseParametersIfPresent(p, ArgListKind::kParamList,
-                                               InlineWhereNote::kTrailingWhere))
+  if (parsedParamList.parseParametersIfPresent(p, ArgListKind::kParamList))
     return failure();
 
   if (!parsedParamList.params.empty() && baseName == "__call__" &&
@@ -2405,8 +2404,7 @@ LogicalResult DeclResolver::resolveSignature(AliasDeclOp aliasDeclOp,
 
   // Parse the param signature if present.
   ParsedParamList parsedParams;
-  if (parsedParams.parseParametersIfPresent(p, ArgListKind::kParamList,
-                                            InlineWhereNote::kTrailingWhere))
+  if (parsedParams.parseParametersIfPresent(p, ArgListKind::kParamList))
     return failure();
 
   // Parse the alias body type as a raw expression (no IR emission yet).
