@@ -21,8 +21,9 @@ to device when needed for prefix cache hits.
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 
-from max.nn.kv_cache.cache_params import KVCacheMemory
+from max.nn.kv_cache.cache_params import KVCacheMemory, KVHashAlgo
 from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.pipelines.kv_cache.memory_tier import MemoryTier
 from max.profiler import traced
@@ -99,7 +100,7 @@ class LocalConnector:
     def load(
         self,
         device_block_ids: list[int],
-        block_hashes: list[int],
+        block_hashes: Sequence[bytes],
     ) -> int:
         """Load data from host cache into device blocks.
 
@@ -126,8 +127,8 @@ class LocalConnector:
     def offload(
         self,
         block_ids: list[int],
-        block_hashes: list[int],
-        parent_seq_hash: int = 0,
+        block_hashes: Sequence[bytes],
+        parent_seq_hash: bytes | None = None,
     ) -> None:
         """Offload the device blocks to the external cache.
 
@@ -181,7 +182,7 @@ class LocalConnector:
         self._host_block_pool.reset_prefix_cache()
 
     def _maybe_offload_to_host(
-        self, device_block_id: int, block_hash: int
+        self, device_block_id: int, block_hash: bytes
     ) -> tuple[int, int] | None:
         """Reserve a host slot for device_block_id if not already cached.
 
@@ -205,3 +206,7 @@ class LocalConnector:
             h2d_blocks_copied=self._h2d_blocks_copied,
             d2h_blocks_copied=self._d2h_blocks_copied,
         )
+
+    @property
+    def supported_hash_algos(self) -> frozenset[KVHashAlgo]:
+        return frozenset({"ahash64", "sha256", "sha256_64"})

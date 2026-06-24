@@ -28,12 +28,9 @@ from collections.abc import Sequence
 
 import msgspec
 from max.driver import Device
-from max.nn.kv_cache.cache_params import KVCacheMemory
+from max.nn.kv_cache.cache_params import KVCacheMemory, KVHashAlgo
 from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.profiler import traced
-
-# dKV block hashes are protobuf uint64; normalize signed Python hashes to match.
-_UINT64_MASK = (1 << 64) - 1
 
 
 class DKVExternalBlockMetadata(
@@ -138,16 +135,25 @@ class DKVConnector:
     def name(self) -> str:
         return "dkv"
 
-    def load(self, device_block_ids: list[int], block_hashes: list[int]) -> int:
+    def load(
+        self,
+        device_block_ids: list[int],
+        block_hashes: Sequence[bytes],
+    ) -> int:
+        assert all(len(h) == 8 for h in block_hashes), (
+            "DKVConnector only supports ahash64 (8-byte) hashes; "
+            "the capability check in BlockManager should have rejected sha256."
+        )
         return self._client.load(
-            device_block_ids, [h & _UINT64_MASK for h in block_hashes]
+            device_block_ids,
+            [int.from_bytes(h, "big", signed=False) for h in block_hashes],
         )
 
     def offload(
         self,
         block_ids: list[int],
-        block_hashes: list[int],
-        parent_seq_hash: int = 0,
+        block_hashes: Sequence[bytes],
+        parent_seq_hash: bytes | None = None,
     ) -> None:
         # ``parent_seq_hash`` is accepted for ``KVConnector`` protocol
         # compatibility but no longer forwarded: the dKV store now dedups by
@@ -156,7 +162,7 @@ class DKVConnector:
         # NUMA striping plan) from the hashes alone.
         self._client.offload(
             block_ids,
-            [h & _UINT64_MASK for h in block_hashes],
+            [int.from_bytes(h, "big", signed=False) for h in block_hashes],
         )
 
     def wait_for_loads(self) -> None:
@@ -207,3 +213,7 @@ class DKVConnector:
             nixl_write_latency_total_ms=m["write_transfer_latency_total_ms"],
             nixl_write_latency_count=m["write_transfer_latency_count"],
         )
+
+    @property
+    def supported_hash_algos(self) -> frozenset[KVHashAlgo]:
+        return frozenset({"ahash64"})

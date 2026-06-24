@@ -33,6 +33,7 @@ from max.pipelines.context import TextContext
 from max.pipelines.kv_cache import PagedKVCacheManager
 from max.pipelines.kv_cache.config import KVConnectorConfig
 from max.pipelines.kv_cache.connectors.tiered_connector import TieredConnector
+from max.pipelines.kv_cache.kv_connector import to_block_hash_bytes
 from test_common.context_utils import create_text_context
 
 
@@ -195,7 +196,10 @@ def test_get_metrics_aggregated_h2d_d2h() -> None:
     # Use distinct hashes per replica so they don't collide.
     for replica_idx in range(data_parallel_degree):
         connector = manager._replica[replica_idx].connector
-        hashes = [100 + replica_idx * 100, 200 + replica_idx * 100]
+        hashes = [
+            to_block_hash_bytes(100 + replica_idx * 100),
+            to_block_hash_bytes(200 + replica_idx * 100),
+        ]
         connector.offload([0, 1], hashes)
         connector.wait_for_offloads()
 
@@ -206,7 +210,10 @@ def test_get_metrics_aggregated_h2d_d2h() -> None:
     # Load the same blocks back → triggers H2D copies on each connector.
     for replica_idx in range(data_parallel_degree):
         connector = manager._replica[replica_idx].connector
-        hashes = [100 + replica_idx * 100, 200 + replica_idx * 100]
+        hashes = [
+            to_block_hash_bytes(100 + replica_idx * 100),
+            to_block_hash_bytes(200 + replica_idx * 100),
+        ]
         connector.load([0, 1], hashes)
 
     metrics = manager.get_metrics_aggregated()
@@ -261,7 +268,10 @@ def test_get_metrics_aggregated_disk_ops() -> None:
         for replica_idx in range(data_parallel_degree):
             connector = manager._replica[replica_idx].connector
             assert isinstance(connector, TieredConnector)
-            hashes = [100 + replica_idx * 100, 200 + replica_idx * 100]
+            hashes = [
+                to_block_hash_bytes(100 + replica_idx * 100),
+                to_block_hash_bytes(200 + replica_idx * 100),
+            ]
             connector.offload([0, 1], hashes)
             connector.wait_for_offloads()
             connector._disk_tier.wait_for_writes()
@@ -276,7 +286,10 @@ def test_get_metrics_aggregated_disk_ops() -> None:
         for replica_idx in range(data_parallel_degree):
             connector = manager._replica[replica_idx].connector
             assert isinstance(connector, TieredConnector)
-            new_hashes = [300 + replica_idx * 100, 400 + replica_idx * 100]
+            new_hashes = [
+                to_block_hash_bytes(300 + replica_idx * 100),
+                to_block_hash_bytes(400 + replica_idx * 100),
+            ]
             connector.offload([2, 3], new_hashes)
             connector.wait_for_offloads()
             connector._disk_tier.wait_for_writes()
@@ -285,7 +298,10 @@ def test_get_metrics_aggregated_disk_ops() -> None:
         # Load the first pair back → must be promoted from disk (not in host).
         for replica_idx in range(data_parallel_degree):
             connector = manager._replica[replica_idx].connector
-            hashes = [100 + replica_idx * 100, 200 + replica_idx * 100]
+            hashes = [
+                to_block_hash_bytes(100 + replica_idx * 100),
+                to_block_hash_bytes(200 + replica_idx * 100),
+            ]
             connector.load([4, 5], hashes)
 
         metrics = manager.get_metrics_aggregated()

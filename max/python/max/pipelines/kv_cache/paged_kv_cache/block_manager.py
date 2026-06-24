@@ -28,11 +28,10 @@ import logging
 import os
 from collections import defaultdict
 from collections.abc import Iterable, Sequence
-from typing import cast
 
 from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.pipelines.context import TextAndVisionContext, TextContext
-from max.pipelines.kv_cache.kv_connector import KVConnector
+from max.pipelines.kv_cache.kv_connector import KVConnector, to_block_hash_bytes
 from max.pipelines.kv_cache.memory_tier import MemoryTier
 from max.pipelines.modeling.types import RequestID
 from max.profiler import traced
@@ -42,7 +41,7 @@ from .block_pool import BlockPool
 from .block_utils import (
     InsufficientBlocksError,
     KVCacheBlock,
-    _KVHashAlgo,
+    KVHashAlgo,
     hash_request_tokens,
 )
 
@@ -127,22 +126,21 @@ class BlockManager:
         enable_prefix_caching: bool,
         enable_runtime_checks: bool = False,
         *,
-        kv_hash_algo: _KVHashAlgo = "ahash64",
+        kv_hash_algo: KVHashAlgo = "ahash64",
         kv_hash_seed: bytes | None = None,
     ) -> None:
         self.total_num_blocks = total_num_blocks
         self.block_size = block_size
 
-        self.kv_hash_algo: _KVHashAlgo = kv_hash_algo
+        self.kv_hash_algo: KVHashAlgo = kv_hash_algo
         self.kv_hash_seed: bytes | None = kv_hash_seed
         self._salt_dropped_warned: bool = False
 
-        if kv_hash_algo != "ahash64" and connector.num_host_blocks > 0:
-            raise NotImplementedError(
-                f"kv_hash_algo={kv_hash_algo!r} is not yet compatible with "
-                "host-tier KV connector (host_blocks > 0). The dKV/tiered "
-                "wire format still uses 64-bit hashes; widen those first "
-                "or run with num_host_blocks=0."
+        if kv_hash_algo not in connector.supported_hash_algos:
+            raise ValueError(
+                f"kv_cache_hash_algo={kv_hash_algo!r} is not supported by "
+                f"connector={connector.name!r} (supports="
+                f"{sorted(connector.supported_hash_algos)})"
             )
 
         # Whether to enable prefix caching.
@@ -155,11 +153,11 @@ class BlockManager:
         # Ordered offload sequences pending delivery to the connector. Each
         # entry is (parent_seq_hash, ordered block hashes): one contiguous run
         # of newly-committed blocks, in prefix order, chaining onto
-        # parent_seq_hash (0 = root). Ordering and parentage are preserved so
-        # connectors that chain sequences (dKV) can reconstruct the prefix;
+        # parent_seq_hash (None = root). Ordering and parentage are preserved
+        # so connectors that chain sequences (dKV) can reconstruct the prefix;
         # hash-keyed connectors (host/disk) ignore the parent.
         self._pending_offloads: list[
-            tuple[int | bytes, list[int] | list[bytes]]
+            tuple[int | bytes | None, list[int] | list[bytes]]
         ] = []
 
         # A pool of device blocks.
@@ -245,7 +243,7 @@ class BlockManager:
 
         images = ctx.images if isinstance(ctx, TextAndVisionContext) else []
 
-        cache_salt = getattr(ctx, "cache_salt", None)
+        cache_salt = ctx.cache_salt
         if cache_salt is not None and self.kv_hash_algo == "ahash64":
             if not self._salt_dropped_warned:
                 logger.warning(
@@ -413,11 +411,8 @@ class BlockManager:
 
         # Query connector for available blocks from host cache.
         block_ids = [b.bid for b in blocks]
-        assert all(isinstance(h, int) for h in desired_hashes), (
-            "connector.load() path is only valid for ahash64 (int) hashes"
-        )
         num_loaded = self.connector.load(
-            block_ids, cast(list[int], list(desired_hashes))
+            block_ids, [to_block_hash_bytes(h) for h in desired_hashes]
         )
 
         # The connector may return fewer hashes than requested.
@@ -530,13 +525,14 @@ class BlockManager:
                 req_blocks[block_idx] = new_block
 
         # Queue the newly-committed blocks as one ordered offload sequence. Its
-        # parent is the block immediately before this run in the prefix (0 =
-        # root); that block was committed and offloaded in a previous step.
+        # parent is the block immediately before this run in the prefix
+        # (None = root); that block was committed and offloaded in a previous
+        # step.
         if num_computed_blocks > num_committed_blocks:
             parent_seq_hash = (
                 req_hashes[num_committed_blocks - 1]
                 if num_committed_blocks > 0
-                else 0
+                else None
             )
             new_block_hashes = req_hashes[
                 num_committed_blocks:num_computed_blocks
@@ -568,16 +564,12 @@ class BlockManager:
                 block_ids.append(prefix_cache[block_hash].bid)
                 block_hashes.append(block_hash)
             if block_hashes:
-                assert all(isinstance(h, int) for h in block_hashes), (
-                    "connector.offload() path is only valid for ahash64 (int) hashes"
-                )
-                assert isinstance(parent_seq_hash, int), (
-                    "connector.offload() path is only valid for ahash64 (int) hashes"
-                )
                 self.connector.offload(
                     block_ids,
-                    cast(list[int], block_hashes),
-                    parent_seq_hash,
+                    [to_block_hash_bytes(h) for h in block_hashes],
+                    None
+                    if parent_seq_hash is None
+                    else to_block_hash_bytes(parent_seq_hash),
                 )
         self._pending_offloads.clear()
 

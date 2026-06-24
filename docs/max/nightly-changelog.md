@@ -119,6 +119,23 @@ This version is still a work in progress.
   path. Chat-completion requests also accept an optional `cache_salt` field
   that scopes prefix-cache reuse to a single per-request KV chain. Default
   behavior is the same as the existing `ahash64` path.
+- Added opt-in SHA-256 KV-cache block hashes through host-tier KV
+  connectors. `NullConnector`, `LocalConnector`, and `TieredConnector` now
+  accept 32-byte SHA-256 digests alongside 64-bit `ahash64` hashes. The
+  `KVConnector` Protocol's `load` and `offload` take `Sequence[bytes]`
+  block hashes and a `bytes | None` parent-sequence hash; the block
+  manager coerces legacy `ahash64` int hashes to bytes (8-byte
+  big-endian, signed) at the boundary, so a connector implementation only
+  ever sees one hash shape. Connectors advertise what they accept via a
+  new `supported_hash_algos: frozenset[KVHashAlgo]` property (default
+  `frozenset({"ahash64"})`), which the block manager validates against
+  the configured `kv_hash_algo` at startup so a mismatch fails fast with
+  a clear remediation message. The disk tier names files `<hex>.bin` (16
+  hex chars for 64-bit hashes, 64 hex chars for SHA-256 digests) and pins
+  the algo in a `kv-disk-cache.meta.json` sidecar to refuse cross-algo
+  reuse of a cache directory. `KVHashAlgo` is re-exported from
+  `max.nn.kv_cache` for downstream consumers. Default behavior is
+  unchanged.
 
 ### `max` CLI
 

@@ -29,6 +29,7 @@ from max.nn.kv_cache import (
 )
 from max.pipelines.kv_cache import PagedKVCacheManager
 from max.pipelines.kv_cache.connectors.local_connector import LocalConnector
+from max.pipelines.kv_cache.kv_connector import to_block_hash_bytes
 from test_common.context_utils import create_text_context
 
 
@@ -95,13 +96,13 @@ def test_multi_cache_connector_offloads_all_caches() -> None:
     _write_block(sliding_cache, 0, 1.0)
     _write_block(global_cache, 0, 2.0)
 
-    connector.offload([0], [42])
+    connector.offload([0], [to_block_hash_bytes(42)])
     connector.wait_for_offloads()
 
     _write_block(sliding_cache, 0, 0.0)
     _write_block(global_cache, 0, 0.0)
 
-    loaded = connector.load([0], [42])
+    loaded = connector.load([0], [to_block_hash_bytes(42)])
     assert loaded == 1
     connector.wait_for_offloads()
 

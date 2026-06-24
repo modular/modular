@@ -56,6 +56,9 @@ from .utils import (
 # Literals, so mypy treats them as the same type at use sites.
 SpeculativeMethod = Literal["eagle", "mtp", "dflash"]
 
+KVHashAlgo = Literal["ahash64", "sha256", "sha256_64"]
+"""Supported hash algorithms for KV-cache block identity."""
+
 logger = logging.getLogger("max.pipelines")
 
 
@@ -526,14 +529,8 @@ class KVCacheParams(KVCacheParamInterface):
     kv_connector: KVConnectorType | None = None
     """Type of KV cache connector to use (null, local, tiered, dkv)."""
 
-    kv_hash_algo: Literal["ahash64", "sha256", "sha256_64"] = "ahash64"
-    """Hash algorithm used for KV-cache block identity.
-
-    Mirror of ``KVCacheConfig.kv_cache_hash_algo``. Inlined as a literal
-    here  to avoid a circular package dependency:
-    ``max.pipelines.kv_cache`` already depends on ``max.nn``.
-    Both definitions must stay in sync!
-    """
+    kv_hash_algo: KVHashAlgo = "ahash64"
+    """Hash algorithm used for KV-cache block identity."""
 
     kv_hash_seed: bytes | None = None
     """Resolved 32-byte cluster seed for sha256/sha256_64. None for ahash64.

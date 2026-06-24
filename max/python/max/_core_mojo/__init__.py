@@ -23,6 +23,7 @@ import numpy.typing as npt
 from .mojo_module import (  # type: ignore
     mojo_block_hasher,
     mojo_block_hasher_sha256,
+    mojo_sha256_oneshot,
 )
 
 
@@ -99,3 +100,25 @@ def block_hasher_sha256(
     parent_arr = np.frombuffer(parent_hash, dtype=np.uint8)
     mojo_block_hasher_sha256(tokens, block_size, parent_arr, out)
     return [bytes(out[i]) for i in range(num_blocks)]
+
+
+def sha256_oneshot(data: bytes) -> bytes:
+    """Compute the SHA-256 (FIPS 180-4) digest of ``data``.
+
+    Thin wrapper around the Mojo ``sha256()`` primitive in
+    ``sha256.mojo``, exposed for known-answer-test validation. Production
+    callers should use :func:`block_hasher_sha256` instead.
+
+    Args:
+        data: Input bytes to hash (any length, including empty).
+
+    Returns:
+        32-byte SHA-256 digest.
+    """
+    if data:
+        arr = np.frombuffer(data, dtype=np.uint8)
+    else:
+        arr = np.empty(0, dtype=np.uint8)
+    out = np.empty(32, dtype=np.uint8)
+    mojo_sha256_oneshot(arr, out)
+    return bytes(out)

@@ -25,6 +25,7 @@ from max.nn.kv_cache.cache_params import (
     KVCacheParams,
     KVCacheQuantizationConfig,
     KVConnectorType,
+    KVHashAlgo,
     SpeculativeMethod,
 )
 from max.nn.kv_cache.utils import (
@@ -34,7 +35,6 @@ from max.nn.kv_cache.utils import (
 from max.pipelines.kv_cache.paged_kv_cache._seed_helpers import (
     resolve_kv_hash_seed,
 )
-from max.pipelines.kv_cache.paged_kv_cache.block_utils import _KVHashAlgo
 from pydantic import ConfigDict, Field, PrivateAttr
 
 
@@ -165,7 +165,7 @@ class KVCacheConfig(ConfigFileModel):
         ),
     )
     """An override for the default data type of the KV cache."""
-    kv_cache_hash_algo: _KVHashAlgo = Field(
+    kv_cache_hash_algo: KVHashAlgo = Field(
         default="ahash64",
         description=(
             "Hash algorithm used for KV-cache block identity. "

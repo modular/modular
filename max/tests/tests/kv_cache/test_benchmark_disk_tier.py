@@ -21,6 +21,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 from max.pipelines.kv_cache.connectors.disk_tier import DiskTier
+from max.pipelines.kv_cache.kv_connector import to_block_hash_bytes
 from pytest_benchmark.fixture import BenchmarkFixture
 
 ITERATIONS = 5
@@ -60,7 +61,10 @@ def test_benchmark_batch_write(
     def write_batch() -> None:
         for i in range(batch_size):
             h = next(hash_counter)
-            tier.write_block_async(block_hash=h, src=block_pool[i % pool_size])
+            tier.write_block_async(
+                block_hash=to_block_hash_bytes(h),
+                src=block_pool[i % pool_size],
+            )
         tier.wait_for_writes()
 
     benchmark.pedantic(
@@ -95,7 +99,7 @@ def test_benchmark_batch_read(
     # Pre-populate the cache with batch_size blocks.
     src = np.zeros(BYTES, dtype=np.uint8)
     for h in range(batch_size):
-        tier.write_block_async(block_hash=h, src=src)
+        tier.write_block_async(block_hash=to_block_hash_bytes(h), src=src)
     tier.wait_for_writes()
 
     # Pre-allocate destination buffers (reused each round).
@@ -105,7 +109,9 @@ def test_benchmark_batch_read(
         futures = []
         for h in range(batch_size):
             futures.append(
-                tier.read_block_async(block_hash=h, dest=dest_pool[h])
+                tier.read_block_async(
+                    block_hash=to_block_hash_bytes(h), dest=dest_pool[h]
+                )
             )
         wait(futures)
 

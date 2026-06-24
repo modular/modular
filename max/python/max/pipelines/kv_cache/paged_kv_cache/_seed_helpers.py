@@ -26,7 +26,7 @@ import logging
 import secrets
 import threading
 
-from .block_utils import _KVHashAlgo
+from .block_utils import KVHashAlgo
 
 logger = logging.getLogger("max.pipelines.kv_cache")
 
@@ -36,7 +36,7 @@ _seed_logged: bool = False
 
 
 def resolve_kv_hash_seed(
-    algo: _KVHashAlgo,
+    algo: KVHashAlgo,
     seed_hex: str | None,
 ) -> bytes | None:
     """Resolve the operator-supplied kv_cache_hash_seed.

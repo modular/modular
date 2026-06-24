@@ -22,8 +22,11 @@ from typing import Any, Literal, overload
 import numpy as np
 import numpy.typing as npt
 from max._core_mojo import block_hasher, block_hasher_sha256
+from max.nn.kv_cache.cache_params import KVHashAlgo
 from max.pipelines.context import ImageMetadata
 from max.profiler import traced
+
+__all__ = ["KVHashAlgo"]
 
 
 class InsufficientBlocksError(Exception):
@@ -31,15 +34,6 @@ class InsufficientBlocksError(Exception):
 
 
 DEFAULT_PARENT_HASH = 0
-
-_KVHashAlgo = Literal["ahash64", "sha256", "sha256_64"]
-"""Supported hash algorithms for KVCache block hashing.
-
-- `ahash64`: Use the AHash64 algorithm.
-- `sha256`: Use the SHA-256 algorithm.
-- `sha256_64`: Use the SHA-256 algorithm with 64-bit output.
-"""
-
 _ZERO_SEED: bytes = b"\x00" * 32
 """The zero seed for the SHA-256 algorithm.
 Determinstic behaviour across restarts for benchmarking.
@@ -133,7 +127,7 @@ def hash_request_tokens(
     prefix_length: int = ...,
     images: list[ImageMetadata] | None = ...,
     *,
-    algo: _KVHashAlgo,
+    algo: KVHashAlgo,
     seed: bytes | None = ...,
     salt: str | None = ...,
 ) -> list[int] | list[bytes]: ...
@@ -147,7 +141,7 @@ def hash_request_tokens(
     prefix_length: int = -1,
     images: list[ImageMetadata] | None = None,
     *,
-    algo: _KVHashAlgo = "ahash64",
+    algo: KVHashAlgo = "ahash64",
     seed: bytes | None = None,
     salt: str | None = None,
 ) -> list[int] | list[bytes] | None:
