@@ -94,6 +94,21 @@ modular_multi_py_version_test(
     ],
 )
 
+# Similar to above, but for `max benchmark`. Intentionally separate so that the deps are different.
+modular_multi_py_version_test(
+    name = "test_pipelines_cli_benchmark_help",
+    srcs = ["test_pipelines_cli_benchmark_help.py"],
+    # Takes way too long on Mac
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//max/python/max/_entrypoints:benchmark",
+        requirement("click"),
+    ],
+)
+
 modular_py_test(
     name = "test_pipelines_cli_lightweight",
     size = "large",

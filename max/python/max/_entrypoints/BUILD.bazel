@@ -100,6 +100,23 @@ modular_py_binary(
 )
 
 modular_py_binary(
+    name = "benchmark",
+    srcs = [
+        "cli/entrypoint.py",
+        "pipelines.py",
+    ],
+    main = "pipelines.py",
+    tags = [
+        # Tons of lazy imports
+        "no-mypy",
+        "no-pydeps",
+    ],
+    deps = [
+        "//max/python/max/benchmark:benchmark_serving_lib",
+    ],
+)
+
+modular_py_binary(
     name = "replay_recording",
     srcs = ["replay_recording.py"],
     deps = [

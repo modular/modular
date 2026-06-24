@@ -33,6 +33,9 @@ logger = logging.getLogger("max._entrypoints")
 _P = ParamSpec("_P")
 _R = TypeVar("_R")
 
+# Subcommands that should not configure/emit telemetry.
+_TELEMETRY_OPT_OUT_COMMANDS = {"benchmark", "list"}
+
 
 def check_model_flag_conflict(args: list[str]) -> None:
     """Raises if both --model and --model-path are specified.
@@ -66,7 +69,7 @@ class WithLazyPipelineOptions(click.Command):
 
     @staticmethod
     def _add_options(callback: Callable[_P, _R]) -> Callable[_P, _R]:
-        from max._entrypoints.cli import pipeline_config_options
+        from max._entrypoints.cli.config import pipeline_config_options
 
         return pipeline_config_options(callback)
 
@@ -120,7 +123,7 @@ class WithLazyPipelineOptions(click.Command):
 class WithLazySamplingAndPipelineOptions(WithLazyPipelineOptions):
     @staticmethod
     def _add_options(callback: Callable[_P, _R]) -> Callable[_P, _R]:
-        from max._entrypoints.cli import (
+        from max._entrypoints.cli.config import (
             pipeline_config_options,
             sampling_params_options,
         )
@@ -159,14 +162,18 @@ class ModelGroup(click.Group):
     default="INFO",
     help="Set logging level explicitly (ignored if --verbose or --quiet is used).",
 )
-def main(log_level: str = "INFO") -> None:
+@click.pass_context
+def main(ctx: click.Context, log_level: str = "INFO") -> None:
     from max._entrypoints.cli.entrypoint import configure_cli_logging
 
     # Configure logging first, before any other initialization
     configure_cli_logging(
         level=log_level, log_prefix=os.getenv("MAX_SERVE_LOG_PREFIX")
     )
-    configure_telemetry()
+
+    # Some subcommands opt out of telemetry.
+    if ctx.invoked_subcommand not in _TELEMETRY_OPT_OUT_COMMANDS:
+        configure_telemetry()
 
 
 def configure_telemetry(color: str | None = None) -> None:
@@ -229,7 +236,7 @@ def cli_serve(
     Loads a model from a Hugging Face model ID or local path and
     exposes OpenAI-compatible HTTP endpoints for inference requests.
     """
-    from max._entrypoints.cli import serve_api_server_and_model_worker
+    from max._entrypoints.cli.serve import serve_api_server_and_model_worker
     from max._entrypoints.workers import start_workers
     from max.pipelines import PipelineConfig
     from max.pipelines.context import SamplingParams, SamplingParamsInput
@@ -362,7 +369,7 @@ def cli_pipeline(
     This command runs text generation using the loaded model, optionally
     accepting image inputs for multimodal models.
     """
-    from max._entrypoints.cli import generate_text_for_pipeline
+    from max._entrypoints.cli.generate import generate_text_for_pipeline
     from max.pipelines import PipelineConfig
     from max.pipelines.context import SamplingParams, SamplingParamsInput
     from max.profiler import maybe_reexec_under_nsys
@@ -428,7 +435,7 @@ def encode(prompt: str, num_warmups: int, **config_kwargs: Any) -> None:
     This command processes the input text through the model's encoder, producing
     embeddings that can be used for various downstream tasks.
     """
-    from max._entrypoints.cli import pipeline_encode
+    from max._entrypoints.cli.encode import pipeline_encode
     from max.pipelines import PipelineConfig
 
     # Load tokenizer & pipeline.
@@ -478,7 +485,7 @@ def cli_list(json: bool) -> None:
     This command displays information about all registered pipelines and their
     configurations. Output can be formatted as human-readable text or JSON.
     """
-    from max._entrypoints.cli import (
+    from max._entrypoints.cli.list import (
         list_pipelines_to_console,
         list_pipelines_to_json,
     )

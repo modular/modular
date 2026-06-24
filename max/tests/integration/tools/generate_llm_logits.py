@@ -41,7 +41,7 @@ from create_pipelines import (
     GenericOracle,
 )
 from max import driver, pipelines
-from max._entrypoints.cli import DevicesOptionType
+from max._entrypoints.cli.config import DevicesOptionType
 from max._entrypoints.cli.entrypoint import configure_cli_logging
 from max.pipelines.lib.device_specs import (
     _default_device_specs,

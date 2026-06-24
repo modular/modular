@@ -11,4 +11,19 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""High-level entrypoints for MAX pipelines."""
+
+from click.testing import CliRunner
+from max._entrypoints import pipelines
+
+
+def test_benchmark_subcommand_help() -> None:
+    """Test that the benchmark help message works."""
+    runner = CliRunner()
+    result = runner.invoke(pipelines.main, ["benchmark", "--help"])
+    assert result.exit_code == 0
+
+    # Check if some benchmark specific options are present.
+    assert "--dataset-name" in result.output
+    assert "--dataset-path" in result.output
+    assert "--num-prompts" in result.output
+    assert "--seed" in result.output
