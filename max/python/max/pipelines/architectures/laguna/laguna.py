@@ -78,6 +78,7 @@ def _unpack_kv_collections(
     list[TensorValue],
     list[TensorValue],
     list[TensorValue],
+    list[TensorValue],
 ]:
     """Unpacks KV collections into flat ``Value`` lists for subgraphs.
 
@@ -85,8 +86,8 @@ def _unpack_kv_collections(
     dataclass that cannot be passed directly.
 
     Returns:
-        Tuple of (kv_blocks, cache_lengths, lookup_tables, max_lengths,
-        dispatch_metadata_tensors).
+        Tuple of (kv_blocks, cache_lengths, lookup_tables, max_prompt_lengths,
+        max_cache_lengths, dispatch_metadata_tensors).
     """
     dispatch_metadata_tensors = [
         kv.attention_dispatch_metadata
@@ -97,7 +98,8 @@ def _unpack_kv_collections(
         [kv.kv_blocks for kv in kv_collections],
         [kv.cache_lengths for kv in kv_collections],
         [kv.lookup_table for kv in kv_collections],
-        [kv.max_lengths for kv in kv_collections],
+        [kv.max_prompt_length for kv in kv_collections],
+        [kv.max_cache_length for kv in kv_collections],
         dispatch_metadata_tensors,
     )
 
@@ -293,7 +295,8 @@ class LagunaTransformerBlock(Module):
         kv_blocks: list[BufferValue],
         kv_cache_lengths: list[TensorValue],
         kv_lookup_table: list[TensorValue],
-        kv_max_lengths: list[TensorValue],
+        kv_max_prompt_length: list[TensorValue],
+        kv_max_cache_length: list[TensorValue],
         dispatch_metadata_tensors: list[TensorValue],
         freqs_cis: list[TensorValue],
         input_row_offsets: list[TensorValue],
@@ -308,7 +311,8 @@ class LagunaTransformerBlock(Module):
                 kv_blocks[i],
                 kv_cache_lengths[i],
                 kv_lookup_table[i],
-                kv_max_lengths[i],
+                kv_max_prompt_length[i],
+                kv_max_cache_length[i],
                 attention_dispatch_metadata=dispatch_metadata_tensors[i]
                 if dispatch_metadata_tensors
                 else None,
@@ -518,7 +522,8 @@ class Laguna(DistributedLogitsPostprocessMixin, Module):
             kv_blocks,
             cache_lengths,
             lookup_tables,
-            max_lengths,
+            max_prompt_lengths,
+            max_cache_lengths,
             dispatch_metadata_tensors,
         ) = _unpack_kv_collections(kv_collections)
 
@@ -532,7 +537,8 @@ class Laguna(DistributedLogitsPostprocessMixin, Module):
                 kv_blocks,
                 cache_lengths,
                 lookup_tables,
-                max_lengths,
+                max_prompt_lengths,
+                max_cache_lengths,
                 dispatch_metadata_tensors,
                 freqs_cis,
                 input_row_offsets_list,
