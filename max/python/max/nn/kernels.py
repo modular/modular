@@ -6843,6 +6843,7 @@ def topk_fused_sampling(
         )
     else:
         top_k_tensor = TensorValue(top_k)
+        top_k_tensor = ops.where(top_k_tensor == 0, -1, top_k_tensor)
         if max_k_tensor is None:
             raise ValueError(
                 "max_k must be explicitly set when top_k is a tensor"

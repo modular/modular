@@ -1317,6 +1317,17 @@ def _topk_stage2[
                             batch_i_topk_idxs[remaining_k] = Scalar[
                                 out_idx_type
                             ](-1)
+                else:
+                    if tid == 0:
+                        for remaining_k in range(k, max_k):
+                            batch_i_topk_vals[remaining_k] = _topk_dead_val[
+                                T, largest
+                            ]()
+                        # Skip-token sentinel: use 0, not -1. This index is the
+                        # sampled token returned downstream and is used as an
+                        # array index (gather_nd / embedding lookup), where a
+                        # negative index would read out of bounds.
+                        batch_i_topk_idxs[0] = Scalar[out_idx_type](0)
                 break
 
             # Re-initialize partial for each thread
