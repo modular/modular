@@ -46,7 +46,11 @@ enum class SplitStrategy { None, PerExported, PerFunction };
 struct EmitContext {
   /// Runs llc into `out`, emitting object code when `objectFile`, else asm.
   using RunLlc = llvm::function_ref<ErrorOrSuccess(
-      llvm::Module &module, WriteableBuffer &out, bool objectFile)>;
+      llvm::Module &module, WriteableBuffer &out, bool createObjectFile)>;
+  /// Links an emitted object into the final shared object/binary (plugin or
+  /// lld).
+  using LinkObject = llvm::function_ref<ErrorOr<BufferRef>(
+      BufferRef object, llvm::StringRef moduleName)>;
 
   const CompilationOptions &options;
   llvm::TargetMachine &tm;
@@ -55,6 +59,7 @@ struct EmitContext {
   MCLinker *linker = nullptr;
   PluginManager *pluginMgr = nullptr;
   RunLlc runLlc;
+  LinkObject linkObject;
 };
 
 /// Immutable description of an LLVM-level compilation target.
