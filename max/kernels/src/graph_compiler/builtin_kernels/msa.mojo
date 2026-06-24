@@ -118,7 +118,8 @@ struct Struct_msa_indexer_ragged_paged:
         k_blocks: MutableInputTensor[dtype=DType.bfloat16, rank=6, ...],
         k_cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
         k_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
-        k_max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
+        k_max_prompt_length: InputTensor[dtype=DType.uint32, rank=1, ...],
+        k_max_cache_length: InputTensor[dtype=DType.uint32, rank=1, ...],
         msa_scalar_args: InputTensor[dtype=DType.int64, rank=1, ...],
         layer_idx: UInt32,
         score_scratch: MutableInputTensor[dtype=DType.float32, rank=3, ...],
@@ -152,7 +153,8 @@ struct Struct_msa_indexer_ragged_paged:
                 page_size, 1, idx_head_dim]` BF16.
             k_cache_lengths: Index-K cache lengths `[batch]` uint32.
             k_lookup_table: Index-K page table `[batch, max_pages]` uint32.
-            k_max_lengths: Index-K max lengths `[1, 2]` uint32.
+            k_max_prompt_length: Index-K max prompt (query) length `[1]` uint32.
+            k_max_cache_length: Index-K max cache length `[1]` uint32.
             msa_scalar_args: On-device scalar arguments for the decode indexer
                 msa_scalar_args[0] = batch_size
                 msa_scalar_args[1] = max_cache_valid_length.
@@ -166,7 +168,8 @@ struct Struct_msa_indexer_ragged_paged:
             k_blocks,
             k_cache_lengths,
             k_lookup_table,
-            k_max_lengths,
+            k_max_prompt_length,
+            k_max_cache_length,
         )
         var k_cache = k_collection.get_key_cache(Int(layer_idx))
         var k_operand = KVCacheMHAOperand(k_cache)
@@ -265,7 +268,8 @@ struct Struct_msa_attention_ragged_paged:
         kv_blocks: MutableInputTensor[dtype=DType.bfloat16, rank=6, ...],
         cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
         kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
-        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
+        max_prompt_length: InputTensor[dtype=DType.uint32, rank=1, ...],
+        max_cache_length: InputTensor[dtype=DType.uint32, rank=1, ...],
         msa_scalar_args: InputTensor[dtype=DType.int64, rank=1, ...],
         layer_idx: UInt32,
         d_indices: InputTensor[dtype=DType.int32, rank=3, ...],
@@ -317,7 +321,8 @@ struct Struct_msa_attention_ragged_paged:
                 page_size, n_kv_heads, head_dim]` BF16.
             cache_lengths: Main-KV cache lengths `[batch]` uint32.
             kv_lookup_table: Main-KV page table `[batch, max_pages]` uint32.
-            max_lengths: Main-KV max lengths `[1, 2]` uint32.
+            max_prompt_length: Main-KV max prompt (query) length `[1]` uint32.
+            max_cache_length: Main-KV max cache length `[1]` uint32.
             msa_scalar_args: On-device scalar arguments for the MSA decode
                 msa_scalar_args[0] = batch_size
                 msa_scalar_args[1] = max_cache_valid_length.
@@ -330,7 +335,8 @@ struct Struct_msa_attention_ragged_paged:
             kv_blocks,
             cache_lengths,
             kv_lookup_table,
-            max_lengths,
+            max_prompt_length,
+            max_cache_length,
         )
         var k_cache = kv_collection.get_key_cache(Int(layer_idx))
         var v_cache = kv_collection.get_value_cache(Int(layer_idx))

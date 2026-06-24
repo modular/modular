@@ -67,18 +67,24 @@ from .model_config import DeepseekV3_2Config
 def _unpack_kv_collections(
     kv_collections: Sequence[PagedCacheValues],
 ) -> tuple[
-    list[BufferValue], list[TensorValue], list[TensorValue], list[TensorValue]
+    list[BufferValue],
+    list[TensorValue],
+    list[TensorValue],
+    list[TensorValue],
+    list[TensorValue],
 ]:
     """Unpack KV collections into component lists.
 
     Returns:
-        Tuple of (kv_blocks, cache_lengths, lookup_tables, max_lengths).
+        Tuple of (kv_blocks, cache_lengths, lookup_tables, max_prompt_lengths,
+        max_cache_lengths).
     """
     return (
         [kv.kv_blocks for kv in kv_collections],
         [kv.cache_lengths for kv in kv_collections],
         [kv.lookup_table for kv in kv_collections],
-        [kv.max_lengths for kv in kv_collections],
+        [kv.max_prompt_length for kv in kv_collections],
+        [kv.max_cache_length for kv in kv_collections],
     )
 
 
@@ -89,12 +95,14 @@ def _unpack_kv_collections_with_scales(
     list[TensorValue],
     list[TensorValue],
     list[TensorValue],
+    list[TensorValue],
     list[BufferValue],
 ]:
     """Unpack KV collections into component lists.
 
     Returns:
-        Tuple of (kv_blocks, cache_lengths, lookup_tables, max_lengths, kv_scales).
+        Tuple of (kv_blocks, cache_lengths, lookup_tables, max_prompt_lengths,
+        max_cache_lengths, kv_scales).
     """
     for kv in kv_collections:
         assert kv.kv_scales is not None
@@ -103,7 +111,8 @@ def _unpack_kv_collections_with_scales(
         [kv.kv_blocks for kv in kv_collections],
         [kv.cache_lengths for kv in kv_collections],
         [kv.lookup_table for kv in kv_collections],
-        [kv.max_lengths for kv in kv_collections],
+        [kv.max_prompt_length for kv in kv_collections],
+        [kv.max_cache_length for kv in kv_collections],
         kv_scales,
     )
 
@@ -339,12 +348,14 @@ class DeepseekV3_2DecoderLayer(Module):
         mla_kv_blocks: list[BufferValue],
         mla_kv_cache_lengths: list[TensorValue],
         mla_kv_lookup_table: list[TensorValue],
-        mla_kv_max_lengths: list[TensorValue],
+        mla_kv_max_prompt_lengths: list[TensorValue],
+        mla_kv_max_cache_lengths: list[TensorValue],
         mla_kv_cache_scales: list[BufferValue],
         indexer_kv_blocks: list[BufferValue],
         indexer_kv_cache_lengths: list[TensorValue],
         indexer_kv_lookup_table: list[TensorValue],
-        indexer_kv_max_lengths: list[TensorValue],
+        indexer_kv_max_prompt_lengths: list[TensorValue],
+        indexer_kv_max_cache_lengths: list[TensorValue],
         indexer_kv_cache_scales: list[BufferValue],
         freqs_cis: list[TensorValue],
         mla_prefill_metadata_flat: list[TensorValue],
@@ -359,11 +370,14 @@ class DeepseekV3_2DecoderLayer(Module):
         num_devices = len(mla_kv_blocks)
         mla_kv_collections = [
             PagedCacheValues(
-                mla_kv_blocks[i],
-                mla_kv_cache_lengths[i],
-                mla_kv_lookup_table[i],
-                mla_kv_max_lengths[i],
-                mla_kv_cache_scales[i] if mla_kv_cache_scales else None,
+                kv_blocks=mla_kv_blocks[i],
+                cache_lengths=mla_kv_cache_lengths[i],
+                lookup_table=mla_kv_lookup_table[i],
+                max_prompt_length=mla_kv_max_prompt_lengths[i],
+                max_cache_length=mla_kv_max_cache_lengths[i],
+                kv_scales=mla_kv_cache_scales[i]
+                if mla_kv_cache_scales
+                else None,
                 attention_dispatch_metadata=mla_decode_scalar_args[i]
                 if mla_decode_scalar_args is not None
                 else None,
@@ -379,7 +393,8 @@ class DeepseekV3_2DecoderLayer(Module):
                 kv_blocks=indexer_kv_blocks[i],
                 cache_lengths=indexer_kv_cache_lengths[i],
                 lookup_table=indexer_kv_lookup_table[i],
-                max_lengths=indexer_kv_max_lengths[i],
+                max_prompt_length=indexer_kv_max_prompt_lengths[i],
+                max_cache_length=indexer_kv_max_cache_lengths[i],
                 kv_scales=indexer_kv_cache_scales[i]
                 if indexer_kv_cache_scales
                 else None,
@@ -655,7 +670,8 @@ class DeepseekV3_2(Module):
                 mla_kv_blocks,
                 mla_cache_lengths,
                 mla_lookup_tables,
-                mla_max_lengths,
+                mla_max_prompt_lengths,
+                mla_max_cache_lengths,
                 mla_kv_scales,
             ) = _unpack_kv_collections_with_scales(mla_kv_collections)
         else:
@@ -663,7 +679,8 @@ class DeepseekV3_2(Module):
                 mla_kv_blocks,
                 mla_cache_lengths,
                 mla_lookup_tables,
-                mla_max_lengths,
+                mla_max_prompt_lengths,
+                mla_max_cache_lengths,
             ) = _unpack_kv_collections(mla_kv_collections)
             mla_kv_scales = []
 
@@ -673,7 +690,8 @@ class DeepseekV3_2(Module):
                 indexer_kv_blocks,
                 indexer_cache_lengths,
                 indexer_lookup_tables,
-                indexer_max_lengths,
+                indexer_max_prompt_lengths,
+                indexer_max_cache_lengths,
                 indexer_kv_scales,
             ) = _unpack_kv_collections_with_scales(indexer_kv_collections)
         else:
@@ -681,7 +699,8 @@ class DeepseekV3_2(Module):
                 indexer_kv_blocks,
                 indexer_cache_lengths,
                 indexer_lookup_tables,
-                indexer_max_lengths,
+                indexer_max_prompt_lengths,
+                indexer_max_cache_lengths,
             ) = _unpack_kv_collections(indexer_kv_collections)
             indexer_kv_scales = []
 
@@ -712,12 +731,14 @@ class DeepseekV3_2(Module):
                 mla_kv_blocks,
                 mla_cache_lengths,
                 mla_lookup_tables,
-                mla_max_lengths,
+                mla_max_prompt_lengths,
+                mla_max_cache_lengths,
                 mla_kv_scales,
                 indexer_kv_blocks,
                 indexer_cache_lengths,
                 indexer_lookup_tables,
-                indexer_max_lengths,
+                indexer_max_prompt_lengths,
+                indexer_max_cache_lengths,
                 indexer_kv_scales,
                 freqs_cis,
                 mla_prefill_metadata_flat,

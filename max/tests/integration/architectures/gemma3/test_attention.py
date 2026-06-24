@@ -263,7 +263,8 @@ def generate_max_outputs(
         kv_runtime_inputs.kv_blocks.to(device),
         kv_runtime_inputs.cache_lengths.to(device),
         kv_runtime_inputs.lookup_table.to(device),
-        kv_runtime_inputs.max_lengths,
+        kv_runtime_inputs.max_prompt_length,
+        kv_runtime_inputs.max_cache_length,
         kv_runtime_inputs.attention_dispatch_metadata,
     )[0]
 

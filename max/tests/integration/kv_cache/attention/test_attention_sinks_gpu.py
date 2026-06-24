@@ -129,8 +129,9 @@ def max_flash_attention_with_sinks(
                 kv_blocks=inputs[3].buffer,
                 cache_lengths=inputs[4].tensor,
                 lookup_table=inputs[5].tensor,
-                max_lengths=inputs[6].tensor,
-                attention_dispatch_metadata=inputs[7].tensor,
+                max_prompt_length=inputs[6].tensor,
+                max_cache_length=inputs[7].tensor,
+                attention_dispatch_metadata=inputs[8].tensor,
             )
 
             # Layer index

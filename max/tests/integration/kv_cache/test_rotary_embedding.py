@@ -628,7 +628,8 @@ def test_kv_cache_ragged_rope(
                 blocks,
                 cache_lengths,
                 lookup_table,
-                is_cache_empty,
+                max_prompt_length,
+                max_cache_length,
                 _attention_dispatch_metadata,
             ) = g.inputs[kv_start:]
 
@@ -638,7 +639,8 @@ def test_kv_cache_ragged_rope(
                 blocks.buffer,
                 cache_lengths.tensor,
                 lookup_table.tensor,
-                is_cache_empty.tensor,
+                max_prompt_length.tensor,
+                max_cache_length.tensor,
             )
 
             position_ids = g.inputs[3].tensor if use_position_ids else None
@@ -688,8 +690,9 @@ def test_kv_cache_ragged_rope(
         3 + offset: kv_runtime_inputs.kv_blocks,
         4 + offset: kv_runtime_inputs.cache_lengths,
         5 + offset: kv_runtime_inputs.lookup_table,
-        6 + offset: kv_runtime_inputs.max_lengths,
-        7 + offset: kv_runtime_inputs.attention_dispatch_metadata,
+        6 + offset: kv_runtime_inputs.max_prompt_length,
+        7 + offset: kv_runtime_inputs.max_cache_length,
+        8 + offset: kv_runtime_inputs.attention_dispatch_metadata,
     }
 
     if use_position_ids:
@@ -797,7 +800,8 @@ def test_rope_split_store_ragged(
                 blocks,
                 cache_lengths,
                 lookup_table,
-                is_cache_empty,
+                max_prompt_length,
+                max_cache_length,
                 _attention_dispatch_metadata,
             ) = g.inputs[kv_start:]
 
@@ -807,7 +811,8 @@ def test_rope_split_store_ragged(
                 blocks.buffer,
                 cache_lengths.tensor,
                 lookup_table.tensor,
-                is_cache_empty.tensor,
+                max_prompt_length.tensor,
+                max_cache_length.tensor,
             )
 
             position_ids = g.inputs[3].tensor if use_position_ids else None
@@ -857,8 +862,9 @@ def test_rope_split_store_ragged(
         3 + offset: kv_runtime_inputs.kv_blocks,
         4 + offset: kv_runtime_inputs.cache_lengths,
         5 + offset: kv_runtime_inputs.lookup_table,
-        6 + offset: kv_runtime_inputs.max_lengths,
-        7 + offset: kv_runtime_inputs.attention_dispatch_metadata,
+        6 + offset: kv_runtime_inputs.max_prompt_length,
+        7 + offset: kv_runtime_inputs.max_cache_length,
+        8 + offset: kv_runtime_inputs.attention_dispatch_metadata,
     }
 
     if use_position_ids:

@@ -261,8 +261,10 @@ def test_fused_qkv_ragged_matmul_scaled_float8_valid() -> None:
             TensorType(DType.uint32, shape=(2,), device=device),
             # lookup_table: [batch_size, max_pages]
             TensorType(DType.uint32, shape=(2, 8), device=device),
-            # is_cache_empty: scalar
-            TensorType(DType.uint32, shape=(), device=device),
+            # max_prompt_length: scalar
+            TensorType(DType.uint32, shape=(1,), device=device),
+            # max_cache_length: scalar
+            TensorType(DType.uint32, shape=(1,), device=device),
         ],
     ) as graph:
         (
@@ -276,14 +278,16 @@ def test_fused_qkv_ragged_matmul_scaled_float8_valid() -> None:
             blocks,
             cache_lengths,
             lookup_table,
-            is_cache_empty,
+            max_prompt_length,
+            max_cache_length,
         ) = graph.inputs
 
         kv_collection = PagedCacheValues(
             blocks.buffer,
             cache_lengths.tensor,
             lookup_table.tensor,
-            is_cache_empty.tensor,
+            max_prompt_length.tensor,
+            max_cache_length.tensor,
         )
 
         # Now call the kernel - should not raise any errors when all devices match
@@ -494,8 +498,10 @@ def test_matmul_k_cache_ragged_scaled_float8_valid() -> None:
             TensorType(DType.uint32, shape=(2,), device=device),
             # lookup_table: [batch_size, max_pages]
             TensorType(DType.uint32, shape=(2, 8), device=device),
-            # is_cache_empty: scalar
-            TensorType(DType.uint32, shape=(), device=device),
+            # max_prompt_length: scalar
+            TensorType(DType.uint32, shape=(1,), device=device),
+            # max_cache_length: scalar
+            TensorType(DType.uint32, shape=(1,), device=device),
             # layer_idx
             TensorType(DType.uint32, shape=(), device=device),
         ],
@@ -509,14 +515,16 @@ def test_matmul_k_cache_ragged_scaled_float8_valid() -> None:
             blocks,
             cache_lengths,
             lookup_table,
-            is_cache_empty,
+            max_prompt_length,
+            max_cache_length,
             layer_idx,
         ) = graph.inputs
         kv_collection = PagedCacheValues(
             blocks.buffer,
             cache_lengths.tensor,
             lookup_table.tensor,
-            is_cache_empty.tensor,
+            max_prompt_length.tensor,
+            max_cache_length.tensor,
         )
         matmul_k_cache_ragged_scaled_float8(
             kv_params,
@@ -567,8 +575,10 @@ def test_matmul_k_cache_ragged_scaled_float8_invalid() -> None:
             TensorType(DType.uint32, shape=(2,), device=device),
             # lookup_table: [batch_size, max_pages]
             TensorType(DType.uint32, shape=(2, 8), device=device),
-            # is_cache_empty: scalar
-            TensorType(DType.uint32, shape=(), device=device),
+            # max_prompt_length: scalar
+            TensorType(DType.uint32, shape=(1,), device=device),
+            # max_cache_length: scalar
+            TensorType(DType.uint32, shape=(1,), device=device),
             # layer_idx
             TensorType(DType.uint32, shape=(), device=device),
         ]
@@ -587,14 +597,16 @@ def test_matmul_k_cache_ragged_scaled_float8_invalid() -> None:
                 blocks,
                 cache_lengths,
                 lookup_table,
-                is_cache_empty,
+                max_prompt_length,
+                max_cache_length,
                 layer_idx,
             ) = graph.inputs
             kv_collection = PagedCacheValues(
                 blocks.buffer,
                 cache_lengths.tensor,
                 lookup_table.tensor,
-                is_cache_empty.tensor,
+                max_prompt_length.tensor,
+                max_cache_length.tensor,
             )
             matmul_k_cache_ragged_scaled_float8(
                 kv_params,
@@ -636,7 +648,7 @@ def test_matmul_k_cache_ragged_scaled_float8_invalid() -> None:
 
     # Test 4: layer_idx with invalid dtype (should be uint32)
     invalid_types = get_valid_input_types()
-    invalid_types[9].dtype = DType.int32  # layer_idx
+    invalid_types[10].dtype = DType.int32  # layer_idx
     with pytest.raises(
         ValueError, match="expected layer_idx to have dtype uint32"
     ):

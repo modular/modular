@@ -52,7 +52,7 @@ def mla_dispatch_args_scalar(
     Returns ``(batch_size, q_max_seq_len, num_partitions)``.
     These three values populate the size-3 device-side buffer that the
     kernel reads as ``scalar_args``.  ``effective_split_len`` is no longer
-    returned; the MoGG ops compute it directly from ``max_lengths``.
+    returned; the MoGG ops compute it directly from ``max_cache_length``.
     """
     result = _mla_dispatch_args_scalar(
         batch_size,

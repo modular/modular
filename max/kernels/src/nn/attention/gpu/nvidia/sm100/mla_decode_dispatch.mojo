@@ -520,7 +520,7 @@ def compute_mla_dispatch_scalars[
     Returns ``(batch_size, q_max_seq_len, num_partitions)``.
     These three values are baked into the size-3 GPU buffer.
     ``effective_split_len`` is computed directly inside the MoGG ops from
-    ``max_lengths`` (``max_cache_valid_length + q_max_seq_len`` when
+    ``max_cache_length`` (``max_cache_valid_length + q_max_seq_len`` when
     ``_is_cache_length_accurate=False``, else ``max_cache_valid_length``),
     and no longer needs to be returned here.
     """

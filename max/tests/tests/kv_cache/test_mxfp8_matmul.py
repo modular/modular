@@ -113,7 +113,8 @@ def _build_graph(device: DeviceRef) -> TensorValue:
             ),
             TensorType(DType.uint32, shape=(2,), device=device),
             TensorType(DType.uint32, shape=(2, 8), device=device),
-            TensorType(DType.uint32, shape=(), device=device),
+            TensorType(DType.uint32, shape=(1,), device=device),
+            TensorType(DType.uint32, shape=(1,), device=device),
         ],
     ) as graph:
         (
@@ -125,14 +126,16 @@ def _build_graph(device: DeviceRef) -> TensorValue:
             blocks,
             cache_lengths,
             lookup_table,
-            is_cache_empty,
+            max_prompt_length,
+            max_cache_length,
         ) = graph.inputs
 
         kv_collection = PagedCacheValues(
             blocks.buffer,
             cache_lengths.tensor,
             lookup_table.tensor,
-            is_cache_empty.tensor,
+            max_prompt_length.tensor,
+            max_cache_length.tensor,
         )
 
         tester = FusedQKVRaggedMatmulScaledMXFP8(
@@ -197,7 +200,8 @@ def test_fused_qkv_ragged_matmul_scaled_mxfp8_device_mismatch() -> None:
             ),
             TensorType(DType.uint32, shape=(2,), device=device),
             TensorType(DType.uint32, shape=(2, 8), device=device),
-            TensorType(DType.uint32, shape=(), device=device),
+            TensorType(DType.uint32, shape=(1,), device=device),
+            TensorType(DType.uint32, shape=(1,), device=device),
         ],
     ) as graph:
         (
@@ -210,13 +214,15 @@ def test_fused_qkv_ragged_matmul_scaled_mxfp8_device_mismatch() -> None:
             blocks,
             cache_lengths,
             lookup_table,
-            is_cache_empty,
+            max_prompt_length,
+            max_cache_length,
         ) = graph.inputs
         kv_collection = PagedCacheValues(
             blocks.buffer,
             cache_lengths.tensor,
             lookup_table.tensor,
-            is_cache_empty.tensor,
+            max_prompt_length.tensor,
+            max_cache_length.tensor,
         )
         with pytest.raises(ValueError, match="same device"):
             fused_qkv_ragged_matmul_scaled_mxfp8(

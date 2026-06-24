@@ -1891,8 +1891,11 @@ def _continuous_batch_kv_cache_collection[
     lookup_table: LayoutTensor[
         mut=False, DType.uint32, Layout(UNKNOWN_VALUE), _
     ],
-    max_lengths: LayoutTensor[
-        mut=False, DType.uint32, Layout.row_major[2](), _
+    max_prompt_length: LayoutTensor[
+        mut=False, DType.uint32, Layout.row_major[1](), _
+    ],
+    max_cache_length: LayoutTensor[
+        mut=False, DType.uint32, Layout.row_major[1](), _
     ],
     out result: ContinuousBatchingKVCacheCollection[
         dtype,
@@ -1911,8 +1914,8 @@ def _continuous_batch_kv_cache_collection[
         blocks = blocks,
         cache_lengths = cache_lengths,
         lookup_table = lookup_table,
-        max_seq_length = max_lengths[0, 0][0],
-        max_cache_length = max_lengths[0, 1][0],
+        max_seq_length = max_prompt_length[0][0],
+        max_cache_length = max_cache_length[0][0],
     }
 
 
@@ -1927,8 +1930,11 @@ def generic_get_continuous_cache[
     lookup_table: LayoutTensor[
         mut=False, DType.uint32, Layout(UNKNOWN_VALUE), _
     ],
-    max_lengths: LayoutTensor[
-        mut=False, DType.uint32, Layout.row_major[2](), _
+    max_prompt_length: LayoutTensor[
+        mut=False, DType.uint32, Layout.row_major[1](), _
+    ],
+    max_cache_length: LayoutTensor[
+        mut=False, DType.uint32, Layout.row_major[1](), _
     ],
 ) -> ContinuousBatchingKVCacheCollection[
     dtype,
@@ -1938,7 +1944,11 @@ def generic_get_continuous_cache[
     lookup_table.origin,
 ]:
     return _continuous_batch_kv_cache_collection[kv_params](
-        blocks, cache_lengths, lookup_table, max_lengths
+        blocks,
+        cache_lengths,
+        lookup_table,
+        max_prompt_length,
+        max_cache_length,
     )
 
 
@@ -1948,7 +1958,8 @@ def generic_get_paged_cache[
     blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
     cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
     lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
-    max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
+    max_prompt_length: InputTensor[dtype=DType.uint32, rank=1, ...],
+    max_cache_length: InputTensor[dtype=DType.uint32, rank=1, ...],
     out result: PagedKVCacheCollection[
         dtype,
         KVCacheStaticParams(
@@ -1994,9 +2005,21 @@ def generic_get_paged_cache[
                 lookup_table.shape()
             ),
         ),
-        LayoutTensor[max_lengths.dtype, Layout.row_major[2](), ImmutAnyOrigin](
-            max_lengths.unsafe_ptr(),
-            RuntimeLayout[Layout.row_major[2]()].row_major(max_lengths.shape()),
+        LayoutTensor[
+            max_prompt_length.dtype, Layout.row_major[1](), ImmutAnyOrigin
+        ](
+            max_prompt_length.unsafe_ptr(),
+            RuntimeLayout[Layout.row_major[1]()].row_major(
+                max_prompt_length.shape()
+            ),
+        ),
+        LayoutTensor[
+            max_cache_length.dtype, Layout.row_major[1](), ImmutAnyOrigin
+        ](
+            max_cache_length.unsafe_ptr(),
+            RuntimeLayout[Layout.row_major[1]()].row_major(
+                max_cache_length.shape()
+            ),
         ),
     )
 
@@ -2013,8 +2036,11 @@ def generic_get_paged_cache[
     lookup_table: LayoutTensor[
         mut=False, DType.uint32, Layout.row_major[2](), _
     ],
-    max_lengths: LayoutTensor[
-        mut=False, DType.uint32, Layout.row_major[2](), _
+    max_prompt_length: LayoutTensor[
+        mut=False, DType.uint32, Layout.row_major[1](), _
+    ],
+    max_cache_length: LayoutTensor[
+        mut=False, DType.uint32, Layout.row_major[1](), _
     ],
     out result: PagedKVCacheCollection[
         dtype,
@@ -2034,8 +2060,8 @@ def generic_get_paged_cache[
         blocks = blocks,
         cache_lengths = cache_lengths,
         lookup_table = lookup_table,
-        max_seq_length = max_lengths[0, 0][0],
-        max_cache_length = max_lengths[0, 1][0],
+        max_seq_length = max_prompt_length[0][0],
+        max_cache_length = max_cache_length[0][0],
     }
 
 
@@ -2053,8 +2079,11 @@ def generic_get_paged_cache_with_scales[
     lookup_table: LayoutTensor[
         mut=False, DType.uint32, Layout.row_major[2](), _
     ],
-    max_lengths: LayoutTensor[
-        mut=False, DType.uint32, Layout.row_major[2](), _
+    max_prompt_length: LayoutTensor[
+        mut=False, DType.uint32, Layout.row_major[1](), _
+    ],
+    max_cache_length: LayoutTensor[
+        mut=False, DType.uint32, Layout.row_major[1](), _
     ],
     scales: LayoutTensor[mut=True, scale_dtype, Layout.row_major[6](), _],
     out result: PagedKVCacheCollection[
@@ -2075,7 +2104,8 @@ def generic_get_paged_cache_with_scales[
         blocks: KV cache blocks tensor [num_blocks, kv_dim, num_layers, page_size, num_heads, head_dim].
         cache_lengths: Cache lengths per batch [batch_size].
         lookup_table: Page lookup table [batch_size, max_pages].
-        max_lengths: Max lengths tensor [[max_seq_length, max_cache_length]].
+        max_prompt_length: Max prompt (query) length scalar tensor [1].
+        max_cache_length: Max cache length scalar tensor [1].
         scales: Scales tensor [num_blocks, kv_dim, num_layers, page_size, num_heads, head_dim_granularity].
     """
     # Thread the input tensors' origins into the collection so the borrow
@@ -2084,8 +2114,8 @@ def generic_get_paged_cache_with_scales[
         blocks = blocks,
         cache_lengths = cache_lengths,
         lookup_table = lookup_table,
-        max_seq_length = max_lengths[0, 0][0],
-        max_cache_length = max_lengths[0, 1][0],
+        max_seq_length = max_prompt_length[0][0],
+        max_cache_length = max_cache_length[0][0],
         scales = scales,
     }
 

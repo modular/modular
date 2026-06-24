@@ -35,7 +35,8 @@ class KVCacheInputsPerDevice(Generic[_Tensor, _Buffer]):
     kv_blocks: _Buffer
     cache_lengths: _Tensor
     lookup_table: _Tensor
-    max_lengths: _Tensor
+    max_prompt_length: _Tensor
+    max_cache_length: _Tensor
     kv_scales: _Buffer | None = None  # KV scales for FP8 quantization
     attention_dispatch_metadata: _Tensor | None = None
     draft_attention_dispatch_metadata: _Tensor | None = None
@@ -73,8 +74,8 @@ class KVCacheInputsPerDevice(Generic[_Tensor, _Buffer]):
     def flatten(self) -> list[_Tensor | _Buffer]:
         """Serialize fields into a flat list for graph input binding.
 
-        Ordering: [kv_blocks, cache_lengths, lookup_table, max_lengths,
-        kv_scales?, attention_dispatch_metadata?,
+        Ordering: [kv_blocks, cache_lengths, lookup_table, max_prompt_length,
+        max_cache_length, kv_scales?, attention_dispatch_metadata?,
         draft_attention_dispatch_metadata?, mla_num_partitions?,
         draft_mla_num_partitions?].  Fields marked ``?`` emit zero elements
         when ``None``; ``unflatten`` must consume ``next(it)`` in this exact
@@ -84,7 +85,8 @@ class KVCacheInputsPerDevice(Generic[_Tensor, _Buffer]):
             self.kv_blocks,
             self.cache_lengths,
             self.lookup_table,
-            self.max_lengths,
+            self.max_prompt_length,
+            self.max_cache_length,
             *((self.kv_scales,) if self.kv_scales else ()),
             *(
                 (self.attention_dispatch_metadata,)
@@ -112,7 +114,8 @@ class KVCacheInputsPerDevice(Generic[_Tensor, _Buffer]):
             self.kv_blocks,
             self.cache_lengths,
             self.lookup_table,
-            self.max_lengths,
+            self.max_prompt_length,
+            self.max_cache_length,
             *((self.kv_scales,) if self.kv_scales else ()),
         ]
 
@@ -128,7 +131,8 @@ class KVCacheInputsPerDevice(Generic[_Tensor, _Buffer]):
             kv_blocks=next(it),
             cache_lengths=next(it),
             lookup_table=next(it),
-            max_lengths=next(it),
+            max_prompt_length=next(it),
+            max_cache_length=next(it),
             kv_scales=next(it) if self.kv_scales else None,
             attention_dispatch_metadata=next(it)
             if self.attention_dispatch_metadata

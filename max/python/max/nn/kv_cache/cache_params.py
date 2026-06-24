@@ -378,7 +378,8 @@ class KVCacheAssignments:
 
     cache_lengths_by_device: list[Buffer]
     lookup_table_by_device: list[Buffer]
-    max_lengths: Buffer
+    max_prompt_length: Buffer
+    max_cache_length: Buffer
     batch_characteristics: BatchCharacteristics
 
 
@@ -930,9 +931,14 @@ class KVCacheParams(KVCacheParamInterface):
                     ],
                     device=device,
                 ),
-                max_lengths=TensorType(
+                max_prompt_length=TensorType(
                     DType.uint32,
-                    shape=[dynamic_dim_prefix + "steps_remaining", 2],
+                    shape=[1],
+                    device=DeviceRef.CPU(),
+                ),
+                max_cache_length=TensorType(
+                    DType.uint32,
+                    shape=[1],
                     device=DeviceRef.CPU(),
                 ),
                 kv_scales=BufferType(
@@ -1097,7 +1103,8 @@ class KVCacheParams(KVCacheParamInterface):
                         kv_blocks=blocks,
                         cache_lengths=cl,
                         lookup_table=lut,
-                        max_lengths=assignment.max_lengths,
+                        max_prompt_length=assignment.max_prompt_length,
+                        max_cache_length=assignment.max_cache_length,
                         kv_scales=(
                             buffer.scales[i]
                             if buffer.scales is not None

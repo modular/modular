@@ -76,12 +76,15 @@ def _unpack_kv_collections(
     list[TensorValue],
     list[TensorValue],
     list[TensorValue],
+    list[TensorValue],
     list[BufferValue],
 ]:
     """Unpack KV collections into component lists.
 
     Returns:
-        Tuple of (kv_blocks, cache_lengths, lookup_tables, max_lengths, kv_scales). kv_scales is empty when KV cache is not quantized.
+        Tuple of (kv_blocks, cache_lengths, lookup_tables, max_prompt_lengths,
+        max_cache_lengths, kv_scales). kv_scales is empty when KV cache is not
+        quantized.
     """
     kv_scales = [
         kv.kv_scales for kv in kv_collections if kv.kv_scales is not None
@@ -90,7 +93,8 @@ def _unpack_kv_collections(
         [kv.kv_blocks for kv in kv_collections],
         [kv.cache_lengths for kv in kv_collections],
         [kv.lookup_table for kv in kv_collections],
-        [kv.max_lengths for kv in kv_collections],
+        [kv.max_prompt_length for kv in kv_collections],
+        [kv.max_cache_length for kv in kv_collections],
         kv_scales,
     )
 
@@ -518,7 +522,8 @@ class DeepseekV3DecoderLayer(Module):
         kv_blocks: list[BufferValue],
         kv_cache_lengths: list[TensorValue],
         kv_lookup_table: list[TensorValue],
-        kv_max_lengths: list[TensorValue],
+        kv_max_prompt_lengths: list[TensorValue],
+        kv_max_cache_lengths: list[TensorValue],
         kv_scales: list[BufferValue],
         freqs_cis: list[TensorValue],
         mla_prefill_metadata_flat: list[TensorValue],
@@ -536,7 +541,8 @@ class DeepseekV3DecoderLayer(Module):
                 kv_blocks[i],
                 kv_cache_lengths[i],
                 kv_lookup_table[i],
-                kv_max_lengths[i],
+                kv_max_prompt_lengths[i],
+                kv_max_cache_lengths[i],
                 kv_scales=kv_scales[i] if kv_scales else None,
                 attention_dispatch_metadata=mla_decode_scalar_args[i]
                 if mla_decode_scalar_args is not None
@@ -860,9 +866,14 @@ class DeepseekV3(Module):
             )
 
         # Unpack KV collections once for use throughout the method
-        kv_blocks, cache_lengths, lookup_tables, max_lengths, kv_scales = (
-            _unpack_kv_collections(kv_collections)
-        )
+        (
+            kv_blocks,
+            cache_lengths,
+            lookup_tables,
+            max_prompt_lengths,
+            max_cache_lengths,
+            kv_scales,
+        ) = _unpack_kv_collections(kv_collections)
 
         # Extract dispatch metadata from KV collections (already on GPU
         # for MLA, on CPU for MHA — placed by the KV cache manager).
@@ -908,7 +919,8 @@ class DeepseekV3(Module):
                 kv_blocks,
                 cache_lengths,
                 lookup_tables,
-                max_lengths,
+                max_prompt_lengths,
+                max_cache_lengths,
                 kv_scales,
                 freqs_cis,
                 mla_prefill_metadata_flat,

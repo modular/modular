@@ -39,7 +39,7 @@ from max.nn.kv_cache.cache_params import (
 )
 from max.nn.kv_cache.data_parallelism_utils import split_into_groups
 from max.nn.kv_cache.metrics import KVCacheMetrics
-from max.nn.kv_cache.utils import build_max_lengths_tensor
+from max.nn.kv_cache.utils import build_max_lengths_tensors
 from max.pipelines.context import TextContext
 from max.pipelines.kv_cache.kv_connector import KVConnector
 from max.pipelines.kv_cache.memory_tier import MemoryTier
@@ -410,7 +410,8 @@ class PagedKVCacheManager:
                 views. If not provided, uses request-derived runtime length.
             batch_characteristics: Optional upper-bound batch shape used to
                 prepare attention dispatch metadata. When provided, the dispatch
-                metadata (and ``max_lengths``) is resolved from these
+                metadata (and ``max_prompt_length``/``max_cache_length``) is
+                resolved from these
                 (e.g. graph-capture-aligned) values rather than the batch's real
                 values, so the resolved key matches a captured graph. The batch's
                 real values must not exceed these. When ``None``, the metadata is
@@ -524,7 +525,7 @@ class PagedKVCacheManager:
         cache_lengths_np = cache_lengths_host.to_numpy()
         cache_lengths_np.fill(0)
 
-        # Update cache_lengths and max_lengths.
+        # Update cache_lengths and max prompt / cache lengths.
         max_prompt_len = 0
         absolute_max_cached_len = 0
         for batch_idx, ctx in enumerate(batch):
@@ -577,7 +578,8 @@ class PagedKVCacheManager:
         # dispatch key is resolved once from those (aligned, upper-bound) values
         # so it matches a captured graph; otherwise the real per-replica values
         # are used. LUT / cache_lengths always use the real values; only the
-        # dispatch metadata and ``max_lengths`` follow ``dispatch_*``.
+        # dispatch metadata and ``max_prompt_length`` / ``max_cache_length``
+        # follow ``dispatch_*``.
         if batch_characteristics is not None:
             bc = batch_characteristics
             if (
@@ -592,9 +594,11 @@ class PagedKVCacheManager:
             max_prompt_len = bc.max_prompt_length
             absolute_max_cached_len = bc.max_cache_valid_length
 
-        max_lengths_host = build_max_lengths_tensor(
-            max_prompt_len,
-            absolute_max_cached_len,
+        max_prompt_length_host, max_cache_length_host = (
+            build_max_lengths_tensors(
+                max_prompt_len,
+                absolute_max_cached_len,
+            )
         )
         # Copy shared LUT and cache_lengths to each TP shard's device buffer.
         num_tp_shards = len(replica.devices)
@@ -610,7 +614,8 @@ class PagedKVCacheManager:
         return KVCacheAssignments(
             cache_lengths_by_device=cache_lengths_by_device,
             lookup_table_by_device=lut_table_by_device,
-            max_lengths=max_lengths_host,
+            max_prompt_length=max_prompt_length_host,
+            max_cache_length=max_cache_length_host,
             batch_characteristics=BatchCharacteristics(
                 batch_size=batch_size,
                 max_prompt_length=max_prompt_len,

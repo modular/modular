@@ -407,8 +407,8 @@ class TestDeepNestedKVCacheTree:
         symbolic = root.get_symbolic_inputs()
 
         flat = symbolic.flatten()
-        # Each leaf (single GPU) contributes 5 tensors; 6 leaves → 30 total.
-        assert len(flat) == 6 * 5
+        # Each leaf (single GPU) contributes 6 tensors; 6 leaves → 36 total.
+        assert len(flat) == 6 * 6
 
         it = iter(flat)
         reconstructed = symbolic.unflatten(it)
@@ -571,7 +571,7 @@ class TestDeepTreeParallelism:
     def test_flatten_element_count(
         self, n_devices: int, dp_degree: int
     ) -> None:
-        """Flat list length == n_devices x n_leaves x 5 items per device."""
+        """Flat list length == n_devices x n_leaves x 6 items per device."""
         a = create_leaf_params(n_devices=n_devices, dp_degree=dp_degree)
         b = create_leaf_params(n_devices=n_devices, dp_degree=dp_degree)
         flat = (
@@ -579,7 +579,7 @@ class TestDeepTreeParallelism:
             .get_symbolic_inputs()
             .flatten()
         )
-        assert len(flat) == n_devices * 2 * 5
+        assert len(flat) == n_devices * 2 * 6
 
     def test_deep_tree_flatten_unflatten_roundtrip(
         self, n_devices: int, dp_degree: int
@@ -588,8 +588,8 @@ class TestDeepTreeParallelism:
         root = _build_deep_tree(n_devices=n_devices, dp_degree=dp_degree)
         symbolic = root.get_symbolic_inputs()
         flat = symbolic.flatten()
-        # 6 leaves x n_devices entries x 5 items per device
-        assert len(flat) == 6 * n_devices * 5
+        # 6 leaves x n_devices entries x 6 items per device
+        assert len(flat) == 6 * n_devices * 6
 
         it = iter(flat)
         reconstructed = symbolic.unflatten(it)

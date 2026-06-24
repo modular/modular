@@ -86,7 +86,8 @@ def test_kv_cache_paged_mla_prefill(gpu_session: InferenceSession) -> None:
                 blocks,
                 cache_lengths,
                 lookup_table,
-                is_cache_empty,
+                max_prompt_length,
+                max_cache_length,
                 _attention_dispatch_metadata,
             ) = g.inputs
 
@@ -96,7 +97,8 @@ def test_kv_cache_paged_mla_prefill(gpu_session: InferenceSession) -> None:
                 blocks.buffer,
                 cache_lengths.tensor,
                 lookup_table.tensor,
-                is_cache_empty.tensor,
+                max_prompt_length.tensor,
+                max_cache_length.tensor,
             )
             result = flare_mla_prefill_ragged(
                 kv_params,

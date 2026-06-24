@@ -88,7 +88,8 @@ def test_kv_cache_store_ragged_executes() -> None:
     blocks_type = kv_symbolic_inputs.kv_blocks
     cache_lengths_type = kv_symbolic_inputs.cache_lengths
     lookup_table_type = kv_symbolic_inputs.lookup_table
-    max_lengths_type = kv_symbolic_inputs.max_lengths
+    max_prompt_length_type = kv_symbolic_inputs.max_prompt_length
+    max_cache_length_type = kv_symbolic_inputs.max_cache_length
 
     with Graph(
         "kv_cache_store_ragged",
@@ -98,7 +99,8 @@ def test_kv_cache_store_ragged_executes() -> None:
             blocks_type,
             cache_lengths_type,
             lookup_table_type,
-            max_lengths_type,
+            max_prompt_length_type,
+            max_cache_length_type,
         ],
     ) as graph:
         (
@@ -107,13 +109,15 @@ def test_kv_cache_store_ragged_executes() -> None:
             blocks_in,
             cache_lengths_in,
             lookup_table_in,
-            max_lengths_in,
+            max_prompt_length_in,
+            max_cache_length_in,
         ) = graph.inputs
         kv_collection = PagedCacheValues(
             blocks_in.buffer,
             cache_lengths_in.tensor,
             lookup_table_in.tensor,
-            max_lengths_in.tensor,
+            max_prompt_length_in.tensor,
+            max_cache_length_in.tensor,
         )
         layer_idx = ops.constant(0, DType.uint32, device=DeviceRef.CPU())
         store_k_cache_ragged(
@@ -145,7 +149,8 @@ def test_kv_cache_store_ragged_executes() -> None:
         runtime_inputs.kv_blocks,
         runtime_inputs.cache_lengths,
         runtime_inputs.lookup_table,
-        runtime_inputs.max_lengths,
+        runtime_inputs.max_prompt_length,
+        runtime_inputs.max_cache_length,
     )
 
     assert runtime_inputs.kv_blocks.to_numpy().any()
@@ -174,7 +179,8 @@ def test_kv_cache_store_padded_executes() -> None:
     blocks_type = kv_symbolic_inputs.kv_blocks
     cache_lengths_type = kv_symbolic_inputs.cache_lengths
     lookup_table_type = kv_symbolic_inputs.lookup_table
-    max_lengths_type = kv_symbolic_inputs.max_lengths
+    max_prompt_length_type = kv_symbolic_inputs.max_prompt_length
+    max_cache_length_type = kv_symbolic_inputs.max_cache_length
 
     with Graph(
         "kv_cache_store_padded",
@@ -184,7 +190,8 @@ def test_kv_cache_store_padded_executes() -> None:
             blocks_type,
             cache_lengths_type,
             lookup_table_type,
-            max_lengths_type,
+            max_prompt_length_type,
+            max_cache_length_type,
         ],
     ) as graph:
         (
@@ -193,13 +200,15 @@ def test_kv_cache_store_padded_executes() -> None:
             blocks_in,
             cache_lengths_in,
             lookup_table_in,
-            max_lengths_in,
+            max_prompt_length_in,
+            max_cache_length_in,
         ) = graph.inputs
         kv_collection = PagedCacheValues(
             blocks_in.buffer,
             cache_lengths_in.tensor,
             lookup_table_in.tensor,
-            max_lengths_in.tensor,
+            max_prompt_length_in.tensor,
+            max_cache_length_in.tensor,
         )
         layer_idx = ops.constant(0, DType.uint32, device=DeviceRef.CPU())
         store_k_cache_padded(
@@ -228,7 +237,8 @@ def test_kv_cache_store_padded_executes() -> None:
         runtime_inputs.kv_blocks,
         runtime_inputs.cache_lengths,
         runtime_inputs.lookup_table,
-        runtime_inputs.max_lengths,
+        runtime_inputs.max_prompt_length,
+        runtime_inputs.max_cache_length,
     )
 
     assert runtime_inputs.kv_blocks.to_numpy().any()
@@ -304,14 +314,16 @@ def test_store_k_scale_cache_executes() -> None:
         blocks_in = graph.inputs[2].buffer
         cache_lengths_in = graph.inputs[3].tensor
         lookup_table_in = graph.inputs[4].tensor
-        max_lengths_in = graph.inputs[5].tensor
-        kv_scales_in = graph.inputs[6].buffer if len(graph.inputs) > 6 else None
+        max_prompt_length_in = graph.inputs[5].tensor
+        max_cache_length_in = graph.inputs[6].tensor
+        kv_scales_in = graph.inputs[7].buffer if len(graph.inputs) > 7 else None
 
         kv_collection = PagedCacheValues(
             kv_blocks=blocks_in,
             cache_lengths=cache_lengths_in,
             lookup_table=lookup_table_in,
-            max_lengths=max_lengths_in,
+            max_prompt_length=max_prompt_length_in,
+            max_cache_length=max_cache_length_in,
             kv_scales=kv_scales_in,
         )
 

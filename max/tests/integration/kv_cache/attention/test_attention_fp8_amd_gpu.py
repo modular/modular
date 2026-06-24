@@ -220,7 +220,8 @@ def _build_and_execute_attention_graph(
             blocks,
             cache_lengths,
             lookup_table,
-            max_lengths,
+            max_prompt_length,
+            max_cache_length,
             attention_dispatch_metadata,
         ) = graph.inputs
 
@@ -228,7 +229,8 @@ def _build_and_execute_attention_graph(
             blocks.buffer,
             cache_lengths.tensor,
             lookup_table.tensor,
-            max_lengths.tensor,
+            max_prompt_length.tensor,
+            max_cache_length.tensor,
             attention_dispatch_metadata=attention_dispatch_metadata.tensor,
         )
         output = attention(

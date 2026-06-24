@@ -297,7 +297,7 @@ class UnifiedMTPGemma4(Module):
             1, DType.uint32, DeviceRef.CPU()
         ).broadcast_to([1])
 
-        # Create decode-step KV collections with max_lengths[0,0] = 1.
+        # Create decode-step KV collections with max_prompt_length = 1.
         # Without this, cross-attention sees max_prompt_length() > 1 (the
         # merged prefill length), is_token_generation stays False, and the
         # depth512 pair-CTA prefill kernel is invoked for a 1-token query —
@@ -306,18 +306,16 @@ class UnifiedMTPGemma4(Module):
         decode_sliding_kv = [
             replace(
                 kv,
-                max_lengths=ops.concat(
-                    [one, kv.max_lengths[0, 1].broadcast_to([1])], axis=-1
-                ).reshape([1, 2]),
+                max_prompt_length=one,
+                max_cache_length=kv.max_cache_length,
             )
             for kv in sliding_kv_collections
         ]
         decode_global_kv = [
             replace(
                 kv,
-                max_lengths=ops.concat(
-                    [one, kv.max_lengths[0, 1].broadcast_to([1])], axis=-1
-                ).reshape([1, 2]),
+                max_prompt_length=one,
+                max_cache_length=kv.max_cache_length,
             )
             for kv in global_kv_collections
         ]

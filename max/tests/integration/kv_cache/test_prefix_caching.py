@@ -59,7 +59,10 @@ def assigned_blocks(
 def get_uncommitted_and_committed_block_counts(
     kv_tuple: KVCacheInputs[Buffer, Buffer],
 ) -> list[list[int]]:
-    return kv_tuple.inputs[0].max_lengths.to_numpy().tolist()
+    per_device = kv_tuple.inputs[0]
+    max_prompt = per_device.max_prompt_length.to_numpy().tolist()
+    max_cache = per_device.max_cache_length.to_numpy().tolist()
+    return [[max_prompt[0], max_cache[0]]]
 
 
 def get_cache_lengths_from_kv_tuple(

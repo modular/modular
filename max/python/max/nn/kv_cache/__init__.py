@@ -44,7 +44,7 @@ from .utils import (
     AttnKeyInterface,
     MHAAttnKey,
     MLAAttnKey,
-    build_max_lengths_tensor,
+    build_max_lengths_tensors,
 )
 
 __all__ = [
@@ -72,7 +72,7 @@ __all__ = [
     "MultiKVCacheParams",
     "PagedCacheValues",
     "ReplicatedKVCacheMemory",
-    "build_max_lengths_tensor",
+    "build_max_lengths_tensors",
     "compute_max_seq_len_fitting_in_cache",
     "compute_num_device_blocks",
     "compute_num_host_blocks",

@@ -98,7 +98,8 @@ def test_kv_cache_ragged_attention(
                 blocks,
                 cache_lengths,
                 lookup_table,
-                max_lengths,
+                max_prompt_length,
+                max_cache_length,
                 attention_dispatch_metadata,
             ) = g.inputs
             layer_idx = ops.constant(0, DType.uint32, DeviceRef.CPU())
@@ -107,7 +108,8 @@ def test_kv_cache_ragged_attention(
                 blocks.buffer,
                 cache_lengths.tensor,
                 lookup_table.tensor,
-                max_lengths.tensor,
+                max_prompt_length.tensor,
+                max_cache_length.tensor,
                 attention_dispatch_metadata=attention_dispatch_metadata.tensor,
             )
             result = flash_attention_ragged(
@@ -158,8 +160,9 @@ def test_kv_cache_ragged_attention(
             2: kv_runtime_inputs.kv_blocks,
             3: kv_runtime_inputs.cache_lengths,
             4: kv_runtime_inputs.lookup_table,
-            5: kv_runtime_inputs.max_lengths,
-            6: kv_runtime_inputs.attention_dispatch_metadata,
+            5: kv_runtime_inputs.max_prompt_length,
+            6: kv_runtime_inputs.max_cache_length,
+            7: kv_runtime_inputs.attention_dispatch_metadata,
         },
     )
     def test_runs_without_nan(

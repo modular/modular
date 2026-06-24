@@ -181,14 +181,16 @@ def _run_path(
             blocks,
             cache_lengths,
             lookup_table,
-            max_lengths,
+            max_prompt_length,
+            max_cache_length,
             *_rest,
         ) = graph.inputs
         kv_collection = PagedCacheValues(
             blocks.buffer,
             cache_lengths.tensor,
             lookup_table.tensor,
-            max_lengths.tensor,
+            max_prompt_length.tensor,
+            max_cache_length.tensor,
         )
         q_out = _build_qkv_value(
             is_mxfp8=is_mxfp8,

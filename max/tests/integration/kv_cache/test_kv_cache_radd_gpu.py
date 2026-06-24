@@ -43,7 +43,14 @@ class KVCacheRaddModel:
         *kv_inputs: TensorValue,
     ) -> None:
         """Apply the radd operation to the KV cache."""
-        kv_blocks, cache_lengths, lookup_table, max_lengths, *_ = kv_inputs
+        (
+            kv_blocks,
+            cache_lengths,
+            lookup_table,
+            max_prompt_length,
+            max_cache_length,
+            *_,
+        ) = kv_inputs
         kv_cache_ragged_radd(
             kv_params=self.kv_params,
             a=a,
@@ -51,7 +58,8 @@ class KVCacheRaddModel:
                 kv_blocks=kv_blocks.buffer,
                 cache_lengths=cache_lengths.tensor,
                 lookup_table=lookup_table.tensor,
-                max_lengths=max_lengths.tensor,
+                max_prompt_length=max_prompt_length.tensor,
+                max_cache_length=max_cache_length.tensor,
             ),
             input_row_offsets=input_row_offsets,
             batch_offset=batch_offset,

@@ -90,7 +90,7 @@ class MLAAttnKey(AttnKey):
     ) -> Buffer:
         # MLA decode kernels read a 3-int dispatch buffer on the accelerator.
         # ``max_cache_valid_length`` is not part of the MLA dispatch buffer (it
-        # is carried separately in ``max_lengths``), so it is ignored here.
+        # is carried separately in ``max_cache_length``), so it is ignored here.
         del max_cache_valid_length
         metadata = Buffer.from_numpy(
             np.array(
@@ -282,20 +282,23 @@ class AttentionDispatchResolver(AttentionDispatchResolverInterface):
         return probe_lengths
 
 
-def build_max_lengths_tensor(
-    max_seq_length: int, max_cache_length: int
-) -> Buffer:
-    """Builds a ``[1, 2]`` uint32 buffer of maximum lengths for a single decode step.
+def build_max_lengths_tensors(
+    max_prompt_length: int, max_cache_length: int
+) -> tuple[Buffer, Buffer]:
+    """Builds two ``[1]`` uint32 scalar buffers of maximum lengths.
 
     Args:
-        max_seq_length: The maximum sequence length.
+        max_prompt_length: The maximum prompt (query) length.
         max_cache_length: The maximum cache length.
 
     Returns:
-        A :class:`~max.driver.Buffer` of shape ``[1, 2]`` and dtype
-        ``uint32`` containing ``(max_seq_length, max_cache_length)``.
+        A tuple ``(max_prompt_length, max_cache_length)`` of
+        :class:`~max.driver.Buffer`, each of shape ``[1]`` and dtype
+        ``uint32``.
     """
-    max_lengths_np = np.empty((1, 2), np.uint32)
-    max_lengths_np[0, 0] = max_seq_length
-    max_lengths_np[0, 1] = max_cache_length
-    return Buffer.from_numpy(max_lengths_np)
+    max_prompt_length_np = np.array([max_prompt_length], np.uint32)
+    max_cache_length_np = np.array([max_cache_length], np.uint32)
+    return (
+        Buffer.from_numpy(max_prompt_length_np),
+        Buffer.from_numpy(max_cache_length_np),
+    )

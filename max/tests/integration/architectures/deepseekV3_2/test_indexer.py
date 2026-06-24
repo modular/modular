@@ -319,8 +319,9 @@ def run_max_indexer(
             kv_blocks=graph.inputs[3].buffer,
             cache_lengths=graph.inputs[4].tensor,
             lookup_table=graph.inputs[5].tensor,
-            max_lengths=graph.inputs[6].tensor,
-            kv_scales=graph.inputs[7].buffer,
+            max_prompt_length=graph.inputs[6].tensor,
+            max_cache_length=graph.inputs[7].tensor,
+            kv_scales=graph.inputs[8].buffer,
         )
 
         layer_idx = ops.constant(0, DType.uint32, device=DeviceRef.CPU())
