@@ -1733,14 +1733,6 @@ static AnyAsyncValueRef lowerLLVMModuleToObject(
       if (backend)
         backend->finalizeModuleForTarget(module, tm, moduleTriple);
 
-      EmitContext backendCtx{options,
-                             tm,
-                             loc,
-                             moduleIdx,
-                             /*linker=*/nullptr,
-                             /*pluginMgr=*/nullptr,
-                             /*runLlc=*/{}};
-
       // Optimize the llvm Module.
       if (failed(
               optimizeLLVMModule(module, tm, options, cpuDevice, moduleIdx))) {
@@ -1764,6 +1756,38 @@ static AnyAsyncValueRef lowerLLVMModuleToObject(
 
       std::unique_ptr<llvm::MachineModuleInfo> machineModuleInfo;
       std::unique_ptr<llvm::MCContext> mcContext;
+
+      // Primitives the backend hooks need, bound here so they can reach the
+      // file-local runLlcPasses / createSharedObject helpers.
+      auto runLlc = [&](llvm::Module &m, WriteableBuffer &out,
+                        bool createObjectFile) -> ErrorOrSuccess {
+        if (failed(runLlcPasses(
+                m, options, tm, out, machineModuleInfo, mcContext,
+                createObjectFile ? llvm::CodeGenFileType::ObjectFile
+                                 : llvm::CodeGenFileType::AssemblyFile,
+                /*stopBeforeAsmPrint=*/false, /*numFunctionsBase=*/0,
+                /*sharedTargetMachine=*/nullptr))) {
+          return Error(createObjectFile
+                           ? "llc failed to codegen LLVM IR to object code"
+                           : "llc failed to codegen LLVM IR to assembly");
+        }
+        return {};
+      };
+      auto linkObject = [&](BufferRef object,
+                            StringRef moduleName) -> ErrorOr<BufferRef> {
+        if (pluginMgr->hasPluginForTarget(options.targetTriple))
+          return pluginMgr->createSharedObject(object, options, moduleName,
+                                               linker);
+        return createSharedObject(object, options, moduleName, linker);
+      };
+      EmitContext backendCtx{options,
+                             tm,
+                             loc,
+                             moduleIdx,
+                             /*linker=*/nullptr,
+                             /*pluginMgr=*/nullptr,
+                             runLlc,
+                             linkObject};
 
       if (emissionKind == EmitAs::ASM) {
         if (backend) {
