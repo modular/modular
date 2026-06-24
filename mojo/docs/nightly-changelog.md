@@ -108,6 +108,19 @@ This version is still a work in progress.
   pkg.submodule.foo()
   ```
 
+- `where` clauses inside a parameter list (for example,
+  `[x: Int where x > 0]`) are no longer supported, following a period of
+  deprecation. Use a trailing `where` clause after the signature instead:
+
+  ```mojo
+  # Old (no longer supported):
+  # fn foo[x: Int where x > 0]():
+
+  # New:
+  fn foo[x: Int]() where x > 0:
+      pass
+  ```
+
 ## Library changes
 
 - `Int` is now an alias for `Scalar[DType.int]` and integer literals materialize
