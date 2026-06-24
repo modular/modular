@@ -3161,6 +3161,37 @@ static auto silenceErrors(MLIRContext *ctx) {
   };
 }
 
+static bool structConformsToTrait(ASTDecl &structDecl, StringRef traitName) {
+  auto [conformanceResult, traitDecl] =
+      ASTType(cast<StructDeclOp>(structDecl.getIfOperation()).bindReference())
+          .checkBuiltinConformance(traitName, structDecl.getLoc(),
+                                   structDecl.getShared(), {});
+  // Use optimistic conformance check - conditional conformances should still
+  // trigger synthesis of the relevant methods (with matching constraints).
+  // No caller scope: the struct's own parameter bindings (via concreteType)
+  // are sufficient; where-clause assumptions from an enclosing function are
+  // not relevant for deciding which methods to synthesize on the struct.
+  return conformanceResult != ConformanceResult::No;
+}
+
+// Look up the conditional conformance constraint for a specific trait from
+// the struct's canonical trait. Returns null for unconditional conformances.
+static ConstraintAttr getConformanceConstraint(StructDeclOp structOp,
+                                               StringRef traitName) {
+  TraitType canonTrait = structOp.getCanonicalTrait();
+  if (!canonTrait)
+    return {};
+  ArrayRef<ConstraintAttr> constraints = canonTrait.getConstraints();
+  if (constraints.empty())
+    return {};
+  ArrayRef<SymbolRefAttr> symbols = canonTrait.getSymbols();
+  for (auto [i, symbol] : llvm::enumerate(symbols)) {
+    if (symbol.getLeafReference() == traitName)
+      return constraints[i];
+  }
+  return {};
+}
+
 /// structdef ::=
 ///   [decorators] "struct" identifier [param_signature]
 ///                ["(" conformance_list ")"] ("where" expression)* ":" suite
@@ -3342,6 +3373,70 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
 
   // Always generate SourceName for structs (even on non-debug builds).
   structOp.setSourceNameAttr(shared.getSourceName(structOp));
+
+  // Check for unsupported conditional conformance to
+  // TrivialRegisterPassable and ImplicitlyDeletable.
+  //
+  // TrivialRegisterPassable depends on struct body (field triviality for
+  // copy/move/del) which creates parser cycle risks and requires composing
+  // the user's where-clause with field-level triviality witnesses.
+  //
+  // ImplicitlyDeletable is rejected because CheckLifetimes does not
+  // consult where-clause constraints when auto-destroying fields.
+  //
+  // Conditional conformance to RegisterPassable IS allowed. The struct stays
+  // pessimistically MemoryOnly at declaration time; the parametric
+  // isMemoryOnly bit on the KGEN struct type is resolved per-instantiation.
+  if (TraitType canonTrait = structOp.getCanonicalTrait()) {
+    ArrayRef<ConstraintAttr> traitConstraints = canonTrait.getConstraints();
+    if (!traitConstraints.empty()) {
+      ArrayRef<SymbolRefAttr> traitSymbols = canonTrait.getSymbols();
+      for (size_t i = 0; i < traitSymbols.size(); ++i) {
+        if (isTriviallyTrueConstraint(traitConstraints[i]))
+          continue;
+        StringRef traitName = traitSymbols[i].getLeafReference();
+        if (traitName == "TrivialRegisterPassable") {
+          shared.emitError(traitConstraints[i].getLoc())
+              << "conditional conformance to 'TrivialRegisterPassable' is "
+                 "not supported";
+          decl.setErroneous();
+          return failure();
+        }
+        if (traitName == "ImplicitlyDeletable") {
+          if (!structOp.getLinearTypeErrorMsg().has_value()) {
+            shared.emitError(traitConstraints[i].getLoc())
+                << "conditional conformance to 'ImplicitlyDeletable' "
+                   "requires @explicit_destroy to provide the error message "
+                   "when the constraint is not satisfied";
+            decl.setErroneous();
+            return failure();
+          }
+        }
+      }
+    }
+  }
+
+  // Make the decl as signature resolved before we check rp conformance.
+  decl.resolvedness = DeclResolvedness::signature;
+
+  // Only set the convention for unconditional RP conformance. Conditional RP
+  // leaves the struct as MemoryOnly at declaration time; the parametric
+  // isMemoryOnly bit resolves per-instantiation during lowering.
+  if (structConformsToTrait(decl, "RegisterPassable")) {
+    ConstraintAttr rpConstraint =
+        getConformanceConstraint(structOp, "RegisterPassable");
+    if (isTriviallyTrueConstraint(rpConstraint)) {
+      structOp.setConvention(TypeConvention::RegisterPassable);
+    } else {
+      structOp.setRegisterPassableConstraintAttr(rpConstraint);
+    }
+  }
+
+  // TrivialRegisterPassable conforms to RegisterPassable, so should set this
+  // after setting RegisterPassable. Conditional TrivialRegisterPassable is
+  // rejected above, so this is always unconditional.
+  if (structConformsToTrait(decl, "TrivialRegisterPassable"))
+    structOp.setConvention(TypeConvention::RegisterPassableTrivial);
 
   shared.notifyListenerOnStructDecl(decl, identifierLoc);
   return success();
@@ -3558,35 +3653,6 @@ static void processRegisterPassableDecorator(
 
 ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
                                       ASTDecl &structDecl) {
-  auto conformsToTrait = [&](StringRef traitName) {
-    auto [conformanceResult, traitDecl] =
-        ASTType(structOp.bindReference())
-            .checkBuiltinConformance(traitName, structDecl.getLoc(), shared,
-                                     {});
-    // Use optimistic conformance check - conditional conformances should still
-    // trigger synthesis of the relevant methods (with matching constraints).
-    // No caller scope: the struct's own parameter bindings (via concreteType)
-    // are sufficient; where-clause assumptions from an enclosing function are
-    // not relevant for deciding which methods to synthesize on the struct.
-    return conformanceResult != ConformanceResult::No;
-  };
-
-  // Look up the conditional conformance constraint for a specific trait from
-  // the struct's canonical trait. Returns null for unconditional conformances.
-  auto getConformanceConstraint = [&](StringRef traitName) -> ConstraintAttr {
-    TraitType canonTrait = structOp.getCanonicalTrait();
-    if (!canonTrait)
-      return {};
-    ArrayRef<ConstraintAttr> constraints = canonTrait.getConstraints();
-    if (constraints.empty())
-      return {};
-    ArrayRef<SymbolRefAttr> symbols = canonTrait.getSymbols();
-    for (auto [i, symbol] : llvm::enumerate(symbols)) {
-      if (symbol.getLeafReference() == traitName)
-        return constraints[i];
-    }
-    return {};
-  };
 
   // If the type lacks a __sp_fn__is_trivial member, synthesize it to
   // unresolved.
@@ -3646,55 +3712,14 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
     }
   }
 
-  // Check for unsupported conditional conformance to
-  // TrivialRegisterPassable and ImplicitlyDeletable.
-  //
-  // TrivialRegisterPassable depends on struct body (field triviality for
-  // copy/move/del) which creates parser cycle risks and requires composing
-  // the user's where-clause with field-level triviality witnesses.
-  //
-  // ImplicitlyDeletable is rejected because CheckLifetimes does not
-  // consult where-clause constraints when auto-destroying fields.
-  //
-  // Conditional conformance to RegisterPassable IS allowed. The struct stays
-  // pessimistically MemoryOnly at declaration time; the parametric
-  // isMemoryOnly bit on the KGEN struct type is resolved per-instantiation.
-  if (TraitType canonTrait = structOp.getCanonicalTrait()) {
-    ArrayRef<ConstraintAttr> traitConstraints = canonTrait.getConstraints();
-    if (!traitConstraints.empty()) {
-      ArrayRef<SymbolRefAttr> traitSymbols = canonTrait.getSymbols();
-      for (size_t i = 0; i < traitSymbols.size(); ++i) {
-        if (isTriviallyTrueConstraint(traitConstraints[i]))
-          continue;
-        StringRef traitName = traitSymbols[i].getLeafReference();
-        if (traitName == "TrivialRegisterPassable") {
-          shared.emitError(traitConstraints[i].getLoc())
-              << "conditional conformance to 'TrivialRegisterPassable' is "
-                 "not supported";
-          structDecl.setErroneous();
-          return failure();
-        }
-        if (traitName == "ImplicitlyDeletable") {
-          if (!structOp.getLinearTypeErrorMsg().has_value()) {
-            shared.emitError(traitConstraints[i].getLoc())
-                << "conditional conformance to 'ImplicitlyDeletable' "
-                   "requires @explicit_destroy to provide the error message "
-                   "when the constraint is not satisfied";
-            structDecl.setErroneous();
-            return failure();
-          }
-        }
-      }
-    }
-  }
-
   // Determine if there is an explicit conformance to ImplicitlyDeletable.
-  if (conformsToTrait("ImplicitlyDeletable")) {
+  if (structConformsToTrait(structDecl, "ImplicitlyDeletable")) {
     // Synthesize an empty __del__ when the type conforms to
     // ImplicitlyDeletable but has no explicit destructor.
     if (!shared.typeHasMember(structDecl, "__del__", structDecl.getLoc()))
       (void)StructEmitter(structDecl)
-          .synthesizeEmptyDtor(getConformanceConstraint("ImplicitlyDeletable"));
+          .synthesizeEmptyDtor(
+              getConformanceConstraint(structOp, "ImplicitlyDeletable"));
 
     // If the structure conforms to "ImplicitlyDeletable", we populate the
     // trivial flag.
@@ -3704,48 +3729,32 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
   // If the struct conforms to well-known traits but doesn't have explicit
   // implementations of the corresponding methods, add signatures for them.
   // These can all be synthesized without resolving the members.
-  if (conformsToTrait("Movable")) {
+  if (structConformsToTrait(structDecl, "Movable")) {
     FnOp moveFn = lookupSpecialInit(structDecl, SpecialFunctionKind::kMoveCtor);
     if (!moveFn)
       moveFn = StructEmitter(structDecl)
                    .synthesizeEmptyMoveOrCopyInit(
-                       /*isMove=*/true, getConformanceConstraint("Movable"));
+                       /*isMove=*/true,
+                       getConformanceConstraint(structOp, "Movable"));
     if (moveFn) {
       synthesizeTrivialFlagIfNeeded("__move_ctor_");
       structOp.setMoveInitAttr(moveFn.getBoundSymbolRef(
           structDecl.getShared().getEvaluationContext()));
     }
   }
-  if (conformsToTrait("Copyable")) {
+  if (structConformsToTrait(structDecl, "Copyable")) {
     FnOp copyFn = lookupSpecialInit(structDecl, SpecialFunctionKind::kCopyCtor);
     if (!copyFn)
       copyFn = StructEmitter(structDecl)
                    .synthesizeEmptyMoveOrCopyInit(
-                       /*isMove=*/false, getConformanceConstraint("Copyable"));
+                       /*isMove=*/false,
+                       getConformanceConstraint(structOp, "Copyable"));
     if (copyFn) {
       synthesizeTrivialFlagIfNeeded("__copy_ctor_");
       structOp.setCopyInitAttr(copyFn.getBoundSymbolRef(
           structDecl.getShared().getEvaluationContext()));
     }
   }
-
-  // Only set the convention for unconditional RP conformance. Conditional RP
-  // leaves the struct as MemoryOnly at declaration time; the parametric
-  // isMemoryOnly bit resolves per-instantiation during lowering.
-  if (conformsToTrait("RegisterPassable")) {
-    ConstraintAttr rpConstraint = getConformanceConstraint("RegisterPassable");
-    if (isTriviallyTrueConstraint(rpConstraint)) {
-      structOp.setConvention(TypeConvention::RegisterPassable);
-    } else {
-      structOp.setRegisterPassableConstraintAttr(rpConstraint);
-    }
-  }
-
-  // TrivialRegisterPassable conforms to RegisterPassable, so should set this
-  // after setting RegisterPassable. Conditional TrivialRegisterPassable is
-  // rejected above, so this is always unconditional.
-  if (conformsToTrait("TrivialRegisterPassable"))
-    structOp.setConvention(TypeConvention::RegisterPassableTrivial);
 
   // If the struct is RegisterPassable, check invariants imposed by it before
   // checking other decorators.  This ensures that we reject invalid
