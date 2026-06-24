@@ -24,9 +24,10 @@ ErrorOr<BufferRef> HostBackend::emitAssembly(llvm::Module &module,
                                              EmitContext &ctx) const {
   WriteableBufferRef buf = WriteableBuffer::get();
   if (ErrorOrSuccess error =
-          ctx.runLlc(module, *buf, /*createObjectFile=*/false))
+          ctx.runLlc(module, *buf, /*createObjectFile=*/false)) {
     return Error(Twine(error.getError()) +
                  ", llc failed to codegen LLVM IR to object code");
+  }
 
   std::string postfix =
       offloadAsmExt(llvm::Triple(ctx.options.targetTriple)).str();
@@ -41,9 +42,10 @@ ErrorOr<BufferRef> HostBackend::emitObject(llvm::Module &module,
                                            EmitContext &ctx) const {
   WriteableBufferRef codeBuf = WriteableBuffer::get();
   if (ErrorOrSuccess error =
-          ctx.runLlc(module, *codeBuf, /*createObjectFile=*/true))
+          ctx.runLlc(module, *codeBuf, /*createObjectFile=*/true)) {
     return Error(Twine(error.getError()) +
                  ", llc failed to codegen LLVM IR to object code");
+  }
 
   StringRef name = "mojo-object";
   if (auto fileLoc = ctx.loc->findInstanceOf<mlir::FileLineColLoc>())

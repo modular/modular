@@ -26,7 +26,6 @@
 #include "MLRT/AsyncRT/CompilerSupport/MLIRLocationDecoder.h"
 #include "MLRT/AsyncRT/Runtime/Algorithms.h"
 #include "MLRT/AsyncRT/Runtime/CPUDevice.h"
-#include "MLRT/Driver/DeviceContext/CompilationDevice.h"
 
 #include "KGENToLLVMPipeline.h"
 #include "LLVMAccessorHelper.h"
@@ -1750,54 +1749,7 @@ static AnyAsyncValueRef lowerLLVMModuleToObject(
         std::move(output).emplace(buf.copy());
       } else {
         auto codeBuf = WriteableBuffer::get();
-        if (isNVPTXBackend(options)) {
-          // Compile to PTX first.
-          if (failed(runLlcPasses(module, options, tm, *codeBuf,
-                                  machineModuleInfo, mcContext,
-                                  llvm::CodeGenFileType::AssemblyFile,
-                                  /*stopBeforeAsmPrint=*/false, 0, nullptr))) {
-            return std::move(output).setToError(MLRT::getMLIRDiagnostic(
-                "llc failed to codegen LLVM IR to object code", loc));
-          }
-          StringRef ptx(codeBuf->getBufferStart(), codeBuf->getBufferSize());
-
-          // Use lowest supported architecture as default
-          std::string targetArch("sm_60");
-          // Extract SM version
-          std::pair<StringRef, StringRef> s =
-              StringRef(options.targetAccelerator).rsplit(":");
-          if (s.second.starts_with("sm_"))
-            targetArch = s.second.str();
-
-          // Create CompilationDevice to compile from PTX to cuBIN
-          ErrorOr<std::unique_ptr<Driver::CompilationDevice>> errCD =
-              Driver::CompilationDevice::create(Driver::Device::cudaAPI,
-                                                targetArch);
-          if (errCD.isError()) {
-            return std::move(output).setToError(MLRT::getMLIRDiagnostic(
-                "failed to create cuda compilation device to compile to cubin",
-                loc));
-          }
-          // Compile PTX module
-          if (!llvm::sys::Process::GetEnv("MODULAR_NVPTX_COMPILER_PATH")) {
-            // We don't use NVPTXCompiler when MODULAR_NVPTX_COMPILER_PATH is
-            // set as a way to fallback to lower version of CUDA.
-            LLVM_DEBUG(
-                llvm::dbgs()
-                << "Using the NVPTXCompiler API to compile PTX to CUBIN.\n");
-            KGEN_DEBUG(0, {
-              llvm::dbgs()
-                  << "Using the NVPTXCompiler API to compile PTX to CUBIN.\n";
-            });
-          }
-          ErrorOr<BufferRef> cubinOr = (*errCD)->compileFunction(
-              ptx, options.getDebugLevelString(), options.optimizationLevel);
-          if (cubinOr.isError()) {
-            return std::move(output).setToError(
-                MLRT::getMLIRDiagnostic(cubinOr.takeError(), loc));
-          }
-          (*buf) << (*cubinOr)->getBuffer();
-        } else if (backend) {
+        if (backend) {
           ErrorOr<BufferRef> bufOr = backend->emitObject(module, backendCtx);
           if (bufOr.isError()) {
             return std::move(output).setToError(

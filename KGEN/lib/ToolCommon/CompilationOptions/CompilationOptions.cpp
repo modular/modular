@@ -88,7 +88,7 @@ CompilationOptions::parseDefinesWithDefaults(MLIRContext *ctx,
   return EnvAttr::parseDefines(ctx, definesWithDefaults);
 }
 
-StringRef CompilationOptions::getDebugLevelString() {
+StringRef CompilationOptions::getDebugLevelString() const {
   switch (debugLevel) {
   case kFullDebugInfo:
     return "full";
