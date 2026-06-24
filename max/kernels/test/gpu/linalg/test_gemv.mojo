@@ -358,9 +358,9 @@ def run_split_k_gemm[
     with_epilogue: Bool,
     tile_n: Int = 2,
     tile_m: Int = 1,
+    num_threads: Int = 128,
 ](*, ctx: DeviceContext) raises:
     comptime a_type = DType.float32
-    comptime num_threads = 128
     comptime simd_width = simd_width_of[a_type, target=get_gpu_target()]()
     comptime check_bounds_n = N % tile_n != 0
     # The grid covers ceildiv(M, tile_m) * tile_m rows, so tile_m > 1 needs
@@ -550,3 +550,45 @@ def main() raises:
         run_split_k_gemm[5, 126, 2048, with_epilogue=False, tile_n=4, tile_m=2](
             ctx=ctx
         )
+
+        # FP32 router-GEMM dispatch shapes (small N, large K) with an epilogue,
+        # at the dispatch's tile_m buckets (tile_n=1, 256 threads). Exercises
+        # the split-K GEMV epilogue path that matmul_dispatch_sm100 now routes
+        # the FP32 router/gate GEMM to (the epilogue rides through as the
+        # elementwise_lambda_wrapper).
+        run_split_k_gemm[
+            4,
+            128,
+            6144,
+            with_epilogue=True,
+            tile_n=1,
+            tile_m=1,
+            num_threads=256,
+        ](ctx=ctx)
+        run_split_k_gemm[
+            8,
+            128,
+            6144,
+            with_epilogue=True,
+            tile_n=1,
+            tile_m=2,
+            num_threads=256,
+        ](ctx=ctx)
+        run_split_k_gemm[
+            16,
+            128,
+            6144,
+            with_epilogue=True,
+            tile_n=1,
+            tile_m=4,
+            num_threads=256,
+        ](ctx=ctx)
+        run_split_k_gemm[
+            8,
+            256,
+            6144,
+            with_epilogue=True,
+            tile_n=1,
+            tile_m=2,
+            num_threads=256,
+        ](ctx=ctx)
