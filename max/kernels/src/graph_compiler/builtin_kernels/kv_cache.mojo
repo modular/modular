@@ -194,12 +194,15 @@ struct Struct_kv_cache_store_k_scales_paged:
             DType.int64
         ]()
 
-        @parameter
-        @__copy_capture(k_cache, input_row_offsets_tt, input_row_offsets)
         def write_scale_to_cache[
             width: Int,
             alignment: Int = 1,
-        ](idx: Coord) capturing:
+        ](idx: Coord) {
+            var k_cache,
+            var input_row_offsets_tt,
+            var input_row_offsets,
+            var input_k_scales,
+        }:
             var loaded_val = input_k_scales._lambda_load[
                 width=width, element_alignment=alignment
             ](
@@ -234,8 +237,8 @@ struct Struct_kv_cache_store_k_scales_paged:
             scale_dtype, target=compile_target
         ]()
 
-        elementwise[write_scale_to_cache, simd_width, target=target](
-            input_k_scales.shape_coord(), context
+        elementwise[simd_width=simd_width, target=target](
+            write_scale_to_cache, input_k_scales.shape_coord(), context
         )
 
 

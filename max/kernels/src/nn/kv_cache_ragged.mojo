@@ -1542,7 +1542,7 @@ def _matmul_blockwise_scaled_fp8_common[
         TOTAL_SEQ_LEN * N
     )
     var c_tt = TileTensor(
-        scratch_buffer.unsafe_ptr(),
+        ptr=scratch_buffer.unsafe_ptr(),
         layout=row_major((Int64(TOTAL_SEQ_LEN), Int64(N))),
     )
 

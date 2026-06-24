@@ -3155,7 +3155,7 @@ struct TMATensorTile[
             multicast_mask: Bit mask specifying CTAs that receive the data.
         """
         var dst_slice = type_of(dst)(
-            dst.ptr + cta_rank * tma_load_size, dst.layout
+            dst._offset_storage(cta_rank * tma_load_size), dst.layout
         )
 
         self.async_multicast_load(
