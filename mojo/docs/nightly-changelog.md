@@ -48,6 +48,14 @@ This version is still a work in progress.
   `@__allow_legacy_any_origin_fields` to ignore the compiler error, however this
   decorator is not stable and will eventually be removed.
 
+- Import resolution behavior has been made consistent. When resolving an import
+  of a module or package, in any given directory the resolution in order of
+  preference is: source packages; precompiled `.mojoc` files; source modules;
+  legacy precompiled `.mojopkg` files.
+
+  Previously the behavior was unspecified and would pick whichever matching
+  name it found in the directory first.
+
 ## Language changes
 
 - Relative imports must now use `from` (`from . import foo`); the `import .foo`
