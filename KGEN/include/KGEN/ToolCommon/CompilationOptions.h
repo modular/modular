@@ -91,7 +91,7 @@ public:
                                             ArrayRef<std::string> defines);
 
   /// Get debugLevel as a string that matches how EnvAttr is being set.
-  StringRef getDebugLevelString();
+  StringRef getDebugLevelString() const;
 
   /// Save temporary files to a file with the given prefix.
   void setSaveTemps(std::string prefix) { saveTempsPrefix = prefix; }
