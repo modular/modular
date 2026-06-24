@@ -58,6 +58,14 @@ def serve_api_server_and_model_worker(
     settings: Settings,
     pipeline_config: PipelineConfig,
 ) -> None:
+    # Register custom architectures before any architecture-name lookup. Both
+    # retrieve_pipeline_task and retrieve_factory below resolve by name; a custom
+    # arch that overrides a built-in must be imported first, or the stale lazy
+    # built-in entry is materialized instead (and may fail to import).
+    PIPELINE_REGISTRY._import_custom_architectures(
+        pipeline_config.runtime.custom_architectures
+    )
+
     # Auto-detect pipeline task from the model architecture if not explicitly set.
     if pipeline_config.task == PipelineTask.UNDEFINED:
         pipeline_config.task = PIPELINE_REGISTRY.retrieve_pipeline_task(
