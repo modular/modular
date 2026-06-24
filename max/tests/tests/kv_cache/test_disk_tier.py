@@ -495,3 +495,58 @@ def test_direct_io_disabled_on_unaligned_blocks(cache_dir: str) -> None:
         "Should disable O_DIRECT for unaligned block sizes"
     )
     tier.shutdown()
+
+
+# -- Async eviction (off the scheduler critical path) --
+
+
+def test_eviction_reclaims_disk_space(cache_dir: str) -> None:
+    """Async eviction unlinks files so on-disk usage stays within budget."""
+    # Budget for exactly 2 blocks.
+    tier = DiskTier(
+        cache_dir=cache_dir,
+        block_nbytes=16,
+        max_disk_size_bytes=32,
+    )
+    # Drain between writes so each eviction sees the prior committed blocks
+    # (eviction is keyed on the committed index, which updates on completion).
+    for h in range(5):
+        tier.write_block_async(
+            block_hash=to_block_hash_bytes(h), src=_make_block(16, seed=h)
+        )
+        tier.wait_for_writes()
+
+    # wait_for_writes drains in-flight evictions, so the evicted files are
+    # actually gone from disk -- not just dropped from the in-memory index.
+    on_disk = list(Path(cache_dir).rglob("*.bin"))
+    assert len(on_disk) == 2
+    assert tier.num_used_blocks == 2
+
+    tier.shutdown()
+
+
+def test_rewrite_after_eviction(cache_dir: str) -> None:
+    """A hash can be re-written after it was evicted and its delete drained."""
+    # Room for a single block.
+    tier = DiskTier(
+        cache_dir=cache_dir,
+        block_nbytes=16,
+        max_disk_size_bytes=16,
+    )
+    h1 = to_block_hash_bytes(1)
+    h2 = to_block_hash_bytes(2)
+    assert tier.write_block_async(block_hash=h1, src=_make_block(16, 1))
+    tier.wait_for_writes()
+
+    # Writing a second block evicts hash 1.
+    assert tier.write_block_async(block_hash=h2, src=_make_block(16, 2))
+    tier.wait_for_writes()
+    assert not tier.contains(h1)
+
+    # Hash 1's delete has drained, so it can be written again (evicting 2).
+    assert tier.write_block_async(block_hash=h1, src=_make_block(16, 1))
+    tier.wait_for_writes()
+    assert tier.contains(h1)
+    assert not tier.contains(h2)
+
+    tier.shutdown()

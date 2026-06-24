@@ -62,7 +62,8 @@ _WorkItem = tuple[
 class PriorityExecutor:
     """Thread pool with priority-based job scheduling.
 
-    Lower priority number = higher urgency. Reads (0) preempt writes (2).
+    Lower priority number = higher urgency. Reads (0) preempt deletes (1)
+    preempt writes (2).
     Uses stdlib ``queue.PriorityQueue`` for ordering without asyncio overhead.
     Returns ``concurrent.futures.Future`` for compatibility with ``wait()``.
     """
@@ -215,9 +216,15 @@ class DiskTier:
         # Hashes with in-flight writes (not yet on disk but "claimed")
         self._pending_hashes: set[bytes] = set()
 
-        # Priority executor: reads preempt writes
+        # Hashes evicted from the live index whose files have an in-flight
+        # async unlink. A hash here blocks re-writes until the delete completes,
+        # which avoids a write/delete race over the same content-addressed file.
+        self._pending_deletes: set[bytes] = set()
+
+        # Priority executor: reads preempt deletes preempt writes
         self._executor = PriorityExecutor(num_workers=num_workers)
         self._write_futures: list[Future[None]] = []
+        self._evict_futures: list[Future[None]] = []
 
         self._hash_algo: KVHashAlgo = kv_hash_algo
         self._verify_or_record_algo()
@@ -294,14 +301,31 @@ class DiskTier:
             if (
                 block_hash in self._saved_hashes
                 or block_hash in self._pending_hashes
+                or block_hash in self._pending_deletes
             ):
-                return None  # already on disk or write in progress
+                # Already on disk, mid-write, or mid-delete. Skipping a write
+                # while a delete is in flight avoids racing the unlink against a
+                # fresh create of the same file.
+                return None
 
-            # Reserve space, evicting LRU blocks if needed
-            needed = self._block_nbytes
-            self._evict_until_fits(needed)
-
+            # Reserve space by selecting LRU victims. Their files are unlinked
+            # asynchronously (see below) so the calling thread never blocks on
+            # filesystem metadata operations.
+            evictions = self._select_evictions(self._block_nbytes)
             self._pending_hashes.add(block_hash)
+
+        # Submit the unlinks off the lock and off the caller's thread. Deletes
+        # preempt writes (DELETE_PRIORITY < WRITE_PRIORITY) so freed space is
+        # reclaimed promptly.
+        for evicted_hash, path in evictions:
+            self._evict_futures.append(
+                self._executor.submit(
+                    PriorityExecutor.DELETE_PRIORITY,
+                    self._delete_block_sync,
+                    evicted_hash,
+                    path,
+                )
+            )
 
         future = self._executor.submit(
             PriorityExecutor.WRITE_PRIORITY,
@@ -322,10 +346,13 @@ class DiskTier:
         self._hash_to_path(block_hash).unlink(missing_ok=True)
 
     def wait_for_writes(self) -> None:
-        """Block until all pending async writes complete."""
+        """Block until all pending async writes and evictions complete."""
         for f in self._write_futures:
             f.result()
         self._write_futures.clear()
+        for f in self._evict_futures:
+            f.result()
+        self._evict_futures.clear()
 
     def shutdown(self) -> None:
         """Wait for pending writes and shut down the executor."""
@@ -337,6 +364,7 @@ class DiskTier:
         with self._lock:
             self._saved_hashes.clear()
             self._pending_hashes.clear()
+            self._pending_deletes.clear()
         for path in self._cache_dir.glob("*.bin"):
             path.unlink(missing_ok=True)
 
@@ -462,20 +490,41 @@ class DiskTier:
 
     # -- eviction --
 
-    def _evict_until_fits(self, needed_bytes: int) -> None:
-        """Evict LRU blocks until *needed_bytes* can be accommodated.
+    def _select_evictions(self, needed_bytes: int) -> list[tuple[bytes, Path]]:
+        """Select LRU blocks to evict so *needed_bytes* fits.
+
+        Removes the victims from the live index and marks them in
+        ``_pending_deletes`` so their hashes can't be re-written until the
+        unlink completes. Returns ``(block_hash, path)`` pairs whose files the
+        caller must unlink off the lock and off its own thread (see
+        ``_delete_block_sync``).
 
         Caller must hold ``self._lock``.
         """
+        evictions: list[tuple[bytes, Path]] = []
         while (
             len(self._saved_hashes) * self._block_nbytes + needed_bytes
             > self._max_disk_size_bytes
         ):
             if not self._saved_hashes:
                 logger.warning("Disk cache full, no blocks to evict")
-                return
+                break
             evicted_hash = self._saved_hashes.popitem(last=False)[0]
-            self._hash_to_path(evicted_hash).unlink(missing_ok=True)
+            self._pending_deletes.add(evicted_hash)
+            evictions.append((evicted_hash, self._hash_to_path(evicted_hash)))
+        return evictions
+
+    def _delete_block_sync(self, block_hash: bytes, path: Path) -> None:
+        """Unlink an evicted block file on a worker thread.
+
+        This method is called on a worker thread and must not contain code that
+        hogs the gil for any significant amount of time.
+        """
+        try:
+            path.unlink(missing_ok=True)
+        finally:
+            with self._lock:
+                self._pending_deletes.discard(block_hash)
 
     # -- persistence --
 
