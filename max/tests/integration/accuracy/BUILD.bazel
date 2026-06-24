@@ -3,7 +3,6 @@ load("//max/python/max/pipelines/architectures:all_arches.bzl", "ALL_ARCHITECTUR
 
 package(default_visibility = [
     "//:__pkg__",
-    "//SDK/integration-test:__subpackages__",
     "//max/tests:__subpackages__",
     "//oss/modular/max/tests:__subpackages__",
 ])

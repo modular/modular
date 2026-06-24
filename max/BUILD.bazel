@@ -13,7 +13,6 @@ package_group(
         "//Faux/...",
         "//GraphCompiler/...",
         "//Kernels/...",
-        "//SDK/...",
         "//bazel/...",
         "//docs/...",
         "//examples/...",  # OSS only

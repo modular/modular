@@ -4,7 +4,6 @@ load(":precompile_pipeline.bzl", "modular_pipeline_target_name", "modular_precom
 
 package(default_visibility = [
     "//:__pkg__",
-    "//SDK/integration-test:__subpackages__",
     "//max/tests:__subpackages__",
     "//oss/modular/max/tests:__subpackages__",
 ])
