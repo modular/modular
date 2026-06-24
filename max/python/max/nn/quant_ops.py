@@ -11,13 +11,16 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+import os
+
 from max.dtype import DType
-from max.graph import DeviceRef, TensorValue, ops
+from max.graph import DeviceRef, TensorType, TensorValue, ops
 
 from .kernels import (
     _fused_qkv_ragged_matmul_scaled_float4,
     _fused_qkv_ragged_matmul_scaled_float8,
     _fused_qkv_ragged_matmul_scaled_mxfp8,
+    _is_pre_sm100_nvidia_gpu,
     block_scales_interleave,
     convert_weights_to_fp8_fnuz_if_needed,
     dynamic_block_scaled_matmul,
@@ -27,6 +30,9 @@ from .kernels import (
     grouped_matmul_ragged,
     matmul_static_scaled_float8,
     mxfp4_dequant,
+    nvfp4_gemm,
+    nvfp4_gemv,
+    nvfp4_skeleton_gemm,
     quantize_dynamic_block_scaled,
     quantize_dynamic_block_scaled_mxfp4,
     quantize_dynamic_scaled_float8,
@@ -68,15 +74,35 @@ def _reshape_pre_interleaved_scales(
     )
 
 
+# Activation-row count (M) above which the pre-Blackwell NVFP4 path switches
+# from the fused dequant-GEMV (decode) to a dequant + BF16 tensor-core GEMM
+# (prefill / high-concurrency decode). Override via env var to tune.
+_NVFP4_PRE_SM100_GEMM_M_THRESHOLD = int(
+    os.environ.get("MAX_NVFP4_GEMM_M_THRESHOLD", "32")
+)
+
+# Opt-in: route the pre-Blackwell large-M GEMM through the multistage-skeleton
+# NVFP4 path (repack + qmatmul_nvfp4_g16) instead of the bespoke nvfp4_gemm.
+# The skeleton is bit-exact and ~2.5x faster at gemma4 shapes on L40S, but the
+# graph route is gated behind this flag until validated token-identical in
+# serving (it changes the live NVFP4 dispatch). Default off = unchanged.
+_NVFP4_USE_SKELETON_GEMM = os.environ.get("MAX_NVFP4_SKELETON_GEMM", "0") == "1"
+
+
 def _matmul_float4(
     x: TensorValue,
     weight: TensorValue,
-    weight_scale: TensorValue,
-    input_scale: TensorValue,
-    weight_scale_2: TensorValue,
+    weight_scale: TensorValue | None,
+    input_scale: TensorValue | None,
+    weight_scale_2: TensorValue | None,
     scales_pre_interleaved: bool = False,
 ) -> TensorValue:
     """Computes x @ weight.T with modelopt NVFP4 quantization.
+
+    On NVIDIA GPUs without native FP4 matmul (pre-Blackwell), the fused
+    dequant-GEMV decodes the packed weight in registers instead
+    (``input_scale`` is unused there — activations are never quantized on
+    the fallback path).
 
     Args:
         x: The input tensor in bf16.
@@ -91,6 +117,61 @@ def _matmul_float4(
     Returns:
         The output tensor in bf16.
     """
+    if _NVFP4_USE_SKELETON_GEMM:
+        # Load-time skeleton path: ``weight`` is already the combined buffer
+        # (repacked 4-bit weights + bf16-folded block scales) produced by the
+        # host repack in the weight adapter. There are no separate scales, and
+        # no in-graph repack -- run the skeleton GEMM directly.
+        return nvfp4_skeleton_gemm(x.cast(DType.bfloat16), weight)
+
+    assert weight_scale is not None
+    assert input_scale is not None
+    assert weight_scale_2 is not None
+
+    if _is_pre_sm100_nvidia_gpu():
+        # Pre-Blackwell has no native FP4 tensor cores, so dispatch by the
+        # number of activation rows M (= tokens in flight this step):
+        #   * Small M (single / low-concurrency decode): fused dequant-GEMV.
+        #     FP4 is decoded in registers, the BF16 weight is never
+        #     materialized, and per-token DRAM traffic is the packed bytes
+        #     only -- optimal when M is tiny and the matmul is bandwidth bound.
+        #   * Large M (prefill or high-concurrency decode): dequantize the
+        #     weight to BF16 once and run a BF16 tensor-core GEMM. The GEMV
+        #     re-reads the packed weight once per M_TILE rows and uses scalar
+        #     FMAs, so it does not scale with M; the GEMM amortizes a single
+        #     dequant over all rows and uses the tensor cores. The dequant is
+        #     transient (one weight at a time), so it never needs the ~3x VRAM
+        #     a hoisted full-BF16 weight would.
+        if scales_pre_interleaved:
+            raise ValueError(
+                "NVFP4 checkpoints with pre-interleaved (TCGEN 5D) scales"
+                " are not supported on pre-Blackwell GPUs"
+            )
+        scales_f32 = weight_scale.to(weight.device).cast(
+            DType.float32
+        ) * weight_scale_2.to(weight.device)
+        x_bf16 = x.cast(DType.bfloat16)
+
+        out_type = TensorType(
+            dtype=DType.bfloat16,
+            shape=[x_bf16.shape[0], weight.shape[0]],
+            device=x_bf16.device,
+        )
+
+        def _gemv() -> TensorValue:
+            return nvfp4_gemv(x_bf16, weight, scales_f32)
+
+        def _gemm() -> TensorValue:
+            return nvfp4_gemm(x_bf16, weight, scales_f32)
+
+        m = ops.shape_to_tensor(x_bf16.shape)[0]
+        use_gemm = m > ops.constant(
+            _NVFP4_PRE_SM100_GEMM_M_THRESHOLD,
+            DType.int64,
+            device=DeviceRef.CPU(),
+        )
+        return ops.cond(use_gemm, [out_type], _gemm, _gemv)[0].tensor
+
     x, x_scales = quantize_dynamic_block_scaled(
         x,
         tensor_sf=1.0 / input_scale,
@@ -319,7 +400,7 @@ def _matmul_float8(
 def quantized_matmul(
     x: TensorValue,
     weight: TensorValue,
-    weight_scale: TensorValue,
+    weight_scale: TensorValue | None,
     input_scale: TensorValue | None,
     quant_config: QuantConfig,
     weight_scale_2: TensorValue | None = None,
@@ -343,8 +424,12 @@ def quantized_matmul(
     """
     match quant_config.format:
         case QuantFormat.NVFP4:
-            assert input_scale is not None
-            assert weight_scale_2 is not None
+            if not _NVFP4_USE_SKELETON_GEMM:
+                # The load-time skeleton path folds the scales into the
+                # combined weight buffer, so input_scale / weight_scale_2 are
+                # intentionally absent there.
+                assert input_scale is not None
+                assert weight_scale_2 is not None
             return _matmul_float4(
                 x,
                 weight,
@@ -354,12 +439,16 @@ def quantized_matmul(
                 scales_pre_interleaved=quant_config.scales_pre_interleaved,
             )
         case QuantFormat.MXFP4:
+            # Only NVFP4's load-time skeleton path folds weight_scale away;
+            # every other format requires it.
+            assert weight_scale is not None
             return _matmul_float4_mxfp4(
                 x,
                 weight,
                 weight_scale,
             )
         case QuantFormat.MXFP8:
+            assert weight_scale is not None
             return _matmul_float8_mxfp8(
                 x,
                 weight,
@@ -370,6 +459,7 @@ def quantized_matmul(
             | QuantFormat.FBGEMM_FP8
             | QuantFormat.BLOCKSCALED_FP8
         ):
+            assert weight_scale is not None
             return _matmul_float8(
                 x,
                 weight,
@@ -453,6 +543,17 @@ def quantized_fused_qkv_matmul(
         case QuantFormat.NVFP4:
             assert input_scale is not None
             assert weight_scale_2 is not None
+
+            if _is_pre_sm100_nvidia_gpu():
+                # No in-tree model reaches this branch on pre-Blackwell:
+                # NVFP4 QKV projections route through StackedLinear and
+                # _matmul_float4 (already fused). Keep a clear error rather
+                # than dead fallback code.
+                raise ValueError(
+                    "quantized_fused_qkv_matmul has no NVFP4 path on"
+                    " pre-Blackwell GPUs; route QKV through StackedLinear"
+                    " (_matmul_float4) instead"
+                )
 
             x, x_scales = quantize_dynamic_block_scaled(
                 x,

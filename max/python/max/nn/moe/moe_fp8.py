@@ -20,11 +20,12 @@ from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, ops
 
 from ..comm.ep.ep_kernels import ep_mxfp4_max_padded_m, fused_silu
-from ..kernels import moe_create_indices
+from ..kernels import _is_pre_sm100_nvidia_gpu, moe_create_indices
 from .moe import MoE
 from .quant_strategy import (
     Fp8Strategy,
     Mxfp4Strategy,
+    Nvfp4DequantStrategy,
     Nvfp4Scales,
     NvMxf4f8Strategy,
     QuantStrategy,
@@ -53,6 +54,20 @@ class MoEQuantized(MoE):
         """Selects the quantization strategy for this MoE."""
         assert self.quant_config is not None
         if self._uses_nvidia_block_scaled_ep_layout:
+            return NvMxf4f8Strategy(self.quant_config, self.dtype)
+        if self.quant_config.is_nvfp4:
+            if _is_pre_sm100_nvidia_gpu():
+                if self._ep_batch_manager:
+                    raise NotImplementedError(
+                        "Expert-parallel NVFP4 is not supported on"
+                        " pre-SM100 GPUs (EP dispatch quantizes"
+                        " activations to FP4)."
+                    )
+                # Pre-Blackwell fallback: no FP4 tensor cores -- dequantize
+                # expert weights to BF16 and use the BF16 grouped matmul.
+                return Nvfp4DequantStrategy(self.quant_config, self.dtype)
+            # Native Blackwell NVFP4 path (main renamed Nvfp4Strategy ->
+            # NvMxf4f8Strategy while this branch was open).
             return NvMxf4f8Strategy(self.quant_config, self.dtype)
         elif self.quant_config.is_mxfp4:
             return Mxfp4Strategy(
@@ -121,6 +136,18 @@ class MoEQuantized(MoE):
         local_gate_up_input = ops.broadcast_to(
             gate_up_max_scale, down_input.shape
         )
+
+        if _is_pre_sm100_nvidia_gpu():
+            # Dequant fallback: activations are never quantized and the
+            # BF16 grouped matmul has no scale epilogue; the per-tensor
+            # weight scale is folded into the dequant block scales instead
+            # (no activation input-scale factor anywhere).
+            return Nvfp4Scales(
+                gate_up_input=gate_up_input,
+                down_input=down_input,
+                gate_up_expert=self._collect_scale_2("gate_proj"),
+                down_expert=self._collect_scale_2("down_proj"),
+            )
 
         return Nvfp4Scales(
             gate_up_input=gate_up_input,

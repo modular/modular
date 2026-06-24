@@ -33,7 +33,7 @@ from max.graph import (
 from max.graph.quantization import QuantizationConfig, QuantizationEncoding
 from max.graph.weight import Segment
 from max.nn.quant_config import QuantConfig, ScaleGranularity, fp4_packed_k
-from max.nn.quant_ops import quantized_matmul
+from max.nn.quant_ops import _NVFP4_USE_SKELETON_GEMM, quantized_matmul
 from max.support.math import ceildiv
 
 from .activation import activation_function_from_name
@@ -134,14 +134,39 @@ class Linear(Module, Shardable):
             else dtype
         )
 
+        # When the load-time NVFP4 skeleton repack is enabled, the *only*
+        # registered weight is the combined skeleton buffer
+        # ``[out, in//2 + (in//group_size)*2]`` uint8 (repacked 4-bit weights
+        # followed by bf16-folded block scales). The original packed weight and
+        # the separate scale tensors are never declared, so they are never
+        # uploaded -- avoiding the 2x-weight resident-memory spike.
+        self._nvfp4_skeleton = (
+            _NVFP4_USE_SKELETON_GEMM
+            and quant_config is not None
+            and quant_config.is_nvfp4
+        )
+
         if not is_sharding:
-            self.weight = Weight(
-                name=f"{name}.weight" if name else "weight",
-                dtype=weight_dtype,
-                shape=(out_dim, fp4_packed_k(in_dim, quant_config)),
-                device=device,
-                quantization_encoding=quantization_encoding,
-            )
+            if self._nvfp4_skeleton:
+                assert quant_config is not None
+                assert quant_config.weight_scale.block_size is not None
+                group_size = quant_config.weight_scale.block_size[1]
+                combined_k = in_dim // 2 + (in_dim // group_size) * 2
+                self.weight = Weight(
+                    name=f"{name}.weight" if name else "weight",
+                    dtype=DType.uint8,
+                    shape=(out_dim, combined_k),
+                    device=device,
+                    quantization_encoding=quantization_encoding,
+                )
+            else:
+                self.weight = Weight(
+                    name=f"{name}.weight" if name else "weight",
+                    dtype=weight_dtype,
+                    shape=(out_dim, fp4_packed_k(in_dim, quant_config)),
+                    device=device,
+                    quantization_encoding=quantization_encoding,
+                )
 
         if has_bias:
             bias_dtype = dtype
@@ -185,23 +210,34 @@ class Linear(Module, Shardable):
             weight_scale = quant_config.weight_scale
             weight_scale_shape = self._infer_weight_scale_shape(quant_config)
 
-            self.weight_scale = Weight(
-                name=f"{name}.weight_scale" if name else "weight_scale",
-                dtype=weight_scale.dtype,
-                # TODO: Pass a per-layer quantization type.
-                # For now since we only support row-wise
-                shape=weight_scale_shape,
-                device=DeviceRef.CPU(),
-                quantization_encoding=quantization_encoding,
-            )
-            if quant_config.is_nvfp4:
-                self.weight_scale_2 = Weight(
-                    name=f"{name}.weight_scale_2" if name else "weight_scale_2",
-                    dtype=quant_config.input_scale.dtype,
-                    shape=(),
+            if self._nvfp4_skeleton:
+                # The block scales and per-tensor global scale are folded into
+                # the combined skeleton buffer at load time, so neither
+                # ``weight_scale`` nor ``weight_scale_2`` is registered here
+                # (they are never uploaded). ``_matmul_float4`` early-returns on
+                # the combined buffer alone.
+                self.weight_scale = None
+                self.weight_scale_2 = None
+            else:
+                self.weight_scale = Weight(
+                    name=f"{name}.weight_scale" if name else "weight_scale",
+                    dtype=weight_scale.dtype,
+                    # TODO: Pass a per-layer quantization type.
+                    # For now since we only support row-wise
+                    shape=weight_scale_shape,
                     device=DeviceRef.CPU(),
                     quantization_encoding=quantization_encoding,
                 )
+                if quant_config.is_nvfp4:
+                    self.weight_scale_2 = Weight(
+                        name=f"{name}.weight_scale_2"
+                        if name
+                        else "weight_scale_2",
+                        dtype=quant_config.input_scale.dtype,
+                        shape=(),
+                        device=DeviceRef.CPU(),
+                        quantization_encoding=quantization_encoding,
+                    )
 
     def _infer_weight_scale_shape(
         self, quant_config: QuantConfig
@@ -546,7 +582,11 @@ def linear(
     if quantization_encoding is not None:
         return ops.qmatmul(quantization_encoding, None, x, weight)
     elif quant_config:
-        assert weight_scale is not None
+        # The NVFP4 load-time skeleton path folds all scales into the combined
+        # weight buffer, so it intentionally carries no separate weight_scale.
+        assert weight_scale is not None or (
+            _NVFP4_USE_SKELETON_GEMM and quant_config.is_nvfp4
+        )
 
         # The FP4 and static-scaled FP8 matmul kernels require rank-2
         # inputs. Flatten leading dims before the call and restore them
@@ -992,6 +1032,12 @@ class MLP(Module, Shardable):
             return False
         if self.quant_config is None:
             return True
+        if _NVFP4_USE_SKELETON_GEMM and self.quant_config.is_nvfp4:
+            # The skeleton path's combined weight buffer is not concatenable
+            # along N (the repacked-tile + appended-scale layout depends on the
+            # full output dim), so the gate and up projections must run as
+            # separate skeleton GEMMs rather than one fused concatenated matmul.
+            return False
         return self.quant_config.can_use_fused_mlp
 
     def __call__(self, x: TensorValueLike) -> TensorValue:

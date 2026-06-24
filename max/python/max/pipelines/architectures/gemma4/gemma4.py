@@ -206,6 +206,7 @@ class Gemma4TextModel(DistributedLogitsPostprocessMixin, Module):
                         quant_config=None
                         if (is_nvfp4 and not attn_quantized)
                         else quant_config,
+                        unquantized_dtype=unquantized_dtype,
                     ),
                     mlp=MLP(
                         dtype=unquantized_dtype if moe_nvfp4 else config.dtype,
