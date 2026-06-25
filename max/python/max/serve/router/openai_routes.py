@@ -1119,6 +1119,8 @@ async def openai_parse_chat_completion_request(
     settings: Settings,
     max_images_per_request: int | None = None,
     max_image_bytes: int | None = None,
+    max_videos_per_request: int | None = None,
+    max_video_bytes: int | None = None,
     allowed_roles: frozenset[str] | None = None,
 ) -> _ParsedChatRequest:
     """Parse the OpenAI ChatCompletionRequest to build TextGenerationRequestMessages.
@@ -1127,9 +1129,12 @@ async def openai_parse_chat_completion_request(
     can be downloaded and bundled alongside the request for preprocessing by
     pipelines.
 
-    ``max_images_per_request`` and ``max_image_bytes`` are model-specific image
+    ``max_images_per_request``/``max_image_bytes`` and
+    ``max_videos_per_request``/``max_video_bytes`` are model-specific media
     limits supplied by the caller (read off the tokenizer); ``None`` means the
-    corresponding limit is not enforced.
+    corresponding limit is not enforced. The per-item byte caps are enforced
+    while resolving each reference, so an oversized image/video is rejected
+    before its bytes are fully downloaded or decoded.
 
     ``allowed_roles`` is the set of message roles the model accepts; ``None``
     skips role validation (vendor roles are only allowed for models that
@@ -1247,7 +1252,7 @@ async def openai_parse_chat_completion_request(
                 )
             )
 
-    # Reject over-limit requests before downloading any image.
+    # Reject over-limit requests before downloading any media.
     if (
         max_images_per_request is not None
         and len(image_refs) > max_images_per_request
@@ -1256,9 +1261,23 @@ async def openai_parse_chat_completion_request(
             f"too many images: {len(image_refs)} exceeds the maximum of "
             f"{max_images_per_request} images per request"
         )
+    if (
+        max_videos_per_request is not None
+        and len(video_refs) > max_videos_per_request
+    ):
+        raise InputError(
+            f"too many videos: {len(video_refs)} exceeds the maximum of "
+            f"{max_videos_per_request} videos per request"
+        )
 
+    # Resolve each reference into bytes, enforcing the per-item byte cap during
+    # the download/decode so an oversized item is rejected before it is fully
+    # materialized (CENG-640).
     resolve_image_tasks = [
-        resolve_image_from_url(image_url, settings) for image_url in image_refs
+        resolve_image_from_url(
+            image_url, settings, max_bytes=max_image_bytes, media_kind="image"
+        )
+        for image_url in image_refs
     ]
     request_images = await asyncio.gather(*resolve_image_tasks)
 
@@ -1272,7 +1291,10 @@ async def openai_parse_chat_completion_request(
     )
 
     resolve_video_tasks = [
-        resolve_image_from_url(video_url, settings) for video_url in video_refs
+        resolve_image_from_url(
+            video_url, settings, max_bytes=max_video_bytes, media_kind="video"
+        )
+        for video_url in video_refs
     ]
     request_videos = await asyncio.gather(*resolve_video_tasks)
 
@@ -1451,6 +1473,10 @@ async def openai_create_chat_completion(
                 tokenizer, "max_images_per_request", None
             ),
             max_image_bytes=getattr(tokenizer, "max_image_bytes", None),
+            max_videos_per_request=getattr(
+                tokenizer, "max_videos_per_request", None
+            ),
+            max_video_bytes=getattr(tokenizer, "max_video_bytes", None),
             allowed_roles=_STANDARD_CHAT_ROLES
             | getattr(tokenizer, "extra_chat_roles", frozenset()),
         )
