@@ -246,9 +246,8 @@ for details.
 Diffusion models work by iteratively refining a noisy image. More steps
 produce higher-quality results but take proportionally longer. You can
 experiment with `steps` when considering the tradeoffs of speed and quality.
-Distilled FLUX.2-Klein models are an exception: they're trained for exactly 4
-steps and reject any other value, so set `steps` to 4 for those models.
-Non-distilled Klein variants accept other step counts.
+(Note that because FLUX.2-Klein models are trained for exactly 4
+steps, you must set `steps` to 4 for those models.)
 
 **Prompt adherence**: `guidance_scale` determines how literally the model
 interprets your prompt. Higher values (7-10) produce results that closely
