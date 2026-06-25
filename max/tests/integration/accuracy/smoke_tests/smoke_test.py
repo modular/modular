@@ -39,6 +39,7 @@ import sys
 from functools import cache
 from pathlib import Path
 from pprint import pformat
+from typing import NamedTuple
 
 import click
 import yaml
@@ -181,6 +182,11 @@ class RecipeConfig(BaseModel):
     draft_model: Model | None = None
     runtime: Runtime = Field(default_factory=Runtime)
     speculative: Speculative | None = None
+
+
+class ServerCommand(NamedTuple):
+    cmd: list[str]
+    env: dict[str, str]
 
 
 # TODO Refactor this to a model list/matrix specifying type of model
@@ -396,8 +402,9 @@ def get_server_cmd(
     recipe_path: str | None = None,
     autoscale_devices: bool = True,
     gpu_spec: tuple[str, int],
-) -> list[str]:
+) -> ServerCommand:
     gpu_model, gpu_count = gpu_spec
+    env: dict[str, str] = {}
     if recipe_path is None:
         recipe_path = MODEL_RECIPES.get(model)
     recipe = _load_recipe(recipe_path) if recipe_path else None
@@ -460,7 +467,7 @@ def get_server_cmd(
 
             # Remove once vLLM >= 0.17 (which includes vllm-project/vllm#34673).
             if "minimax-m2" in model.casefold():
-                os.environ["VLLM_USE_FLASHINFER_MOE_FP8"] = "0"
+                env["VLLM_USE_FLASHINFER_MOE_FP8"] = "0"
                 VLLM += ["--attention-backend", "FLASH_ATTN"]
 
         else:  # gpu_count > 1 and recipe is None
@@ -480,7 +487,7 @@ def get_server_cmd(
             and recipe.model.kv_cache.kv_connector is not None
         )
     ):
-        os.environ["MODULAR_ONLY_USE_KV_CONNECTOR_LAST_LEVEL_CACHE"] = "1"
+        env["MODULAR_ONLY_USE_KV_CONNECTOR_LAST_LEVEL_CACHE"] = "1"
 
     if _inside_bazel():
         assert framework == "max-ci", "bazel invocation only supports max-ci"
@@ -519,7 +526,7 @@ def get_server_cmd(
             logger.warning(
                 "Ignoring --serve-extra-args for framework %s", framework
             )
-    return cmd
+    return ServerCommand(cmd, env)
 
 
 # Verified stock lm-eval tasks runnable unmodified (qa4+ intentionally excluded).
@@ -685,7 +692,7 @@ def smoke_test(
     else:
         hf_model_path = model
     hf_model_path = resolve_canonical_repo_id(hf_model_path)
-    cmd = get_server_cmd(
+    cmd, server_env = get_server_cmd(
         framework,
         hf_model_path,
         serve_extra_args=serve_extra_args,
@@ -711,7 +718,7 @@ def smoke_test(
         timeout = 2700
 
     metrics_url = _metrics_url(framework)
-    with start_server(cmd, timeout) as server:
+    with start_server(cmd, timeout, env_overrides=server_env) as server:
         logger.info(f"Server started in {server.startup_time:.2f} seconds")
         write_github_output("startup_time", f"{server.startup_time:.2f}")
 
