@@ -22,7 +22,7 @@ from layout import (
     row_major,
 )
 
-from std.gpu import block_idx, thread_idx
+from std.gpu import block_dim, block_idx, thread_idx
 from std.gpu.host import DeviceContext, FuncAttribute
 
 from kv_cache.types import KVCollectionT
@@ -114,25 +114,17 @@ def fill_invalid_topk_kernel[
     comptime assert cache_lengths.flat_rank == 1
 
     var token_idx = block_idx.x
-    var k_idx = thread_idx.x
 
-    if token_idx >= total_seq_len or k_idx >= top_k:
+    if token_idx >= total_seq_len:
         return
 
-    # Output index: [token_idx, k_idx] with top_k stride
-    var out_idx = token_idx * top_k + k_idx
-
-    # If k_idx >= effective_k, we don't have computed values - fill with -1
-    if k_idx >= effective_k:
-        output_indices[out_idx] = -1
-        return
-
-    # Find which batch this token belongs to by scanning row_offsets
+    # Token-level quantities (independent of k): find which batch this token
+    # belongs to and how many keys it may attend to.
     var batch_idx = 0
     var batch_size = Int(input_row_offsets.dim[0]()) - 1
     for b in range(batch_size):
-        var q_end = Int(input_row_offsets.raw_load(b + 1))
-        if token_idx < q_end:
+        var q_end_b = Int(input_row_offsets.raw_load(b + 1))
+        if token_idx < q_end_b:
             batch_idx = b
             break
 
@@ -153,16 +145,29 @@ def fill_invalid_topk_kernel[
         # No causal mask: all keys in the batch are valid
         num_keys = cache_len + seq_len
 
-    # Get the index value that topk wrote
-    var idx_val = Int(output_indices[out_idx])
+    # Cover ALL top_k output columns. The launch caps block_dim at 1024, which
+    # is smaller than top_k when top_k > 1024 (e.g. the indexer's top_k=2048),
+    # so each thread strides across multiple columns. Without this grid-stride
+    # loop, columns [block_dim, top_k) were never written (garbage, not -1).
+    var k_idx = Int(thread_idx.x)
+    while k_idx < top_k:
+        # Output index: [token_idx, k_idx] with top_k stride
+        var out_idx = Int(token_idx) * top_k + k_idx
 
-    # Fill with -1 if:
-    # 1. This position is beyond the number of valid keys (k_idx >= num_keys)
-    # 2. The index VALUE points beyond valid keys (idx_val >= num_keys)
-    #    This can happen because topk operates on max_num_keys which may be
-    #    larger than num_keys for this specific token/batch
-    if k_idx >= num_keys or idx_val >= num_keys or idx_val < 0:
-        output_indices[out_idx] = -1
+        if k_idx >= effective_k:
+            # No computed value at this position: must be -1.
+            output_indices[out_idx] = -1
+        else:
+            # topk wrote a value here; invalidate it if it is out of range:
+            # 1. position beyond the valid keys (k_idx >= num_keys)
+            # 2. the index VALUE points beyond valid keys (idx_val >= num_keys),
+            #    which can happen because topk operates on
+            #    max_num_keys >= num_keys for this token/batch.
+            var idx_val = Int(output_indices[out_idx])
+            if k_idx >= num_keys or idx_val >= num_keys or idx_val < 0:
+                output_indices[out_idx] = -1
+
+        k_idx += Int(block_dim.x)
 
 
 # ===----------------------------------------------------------------------=== #

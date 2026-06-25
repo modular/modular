@@ -1888,6 +1888,34 @@ def topk_gpu[
             ceildiv(N, block_size_), 8
         ) if not num_blocks_per_input else num_blocks_per_input.value()
 
+        # Bound stage-2 shared memory: `_topk_stage2` reduces
+        # `num_blocks_per_input * max_k` candidates inside a SINGLE block's
+        # dynamic shared memory. For large `max_k` (e.g. the MLA indexer's
+        # top_k=2048) the default of 8 blocks makes that request exceed the
+        # device per-block shared-memory limit, so the launch fails with
+        # CUDA_ERROR_INVALID_VALUE. Reduce `num_blocks_per_input` until the
+        # stage-2 request fits a conservative device budget. This runs BEFORE
+        # the cache buffers are sized below, so the buffers, the stage-1 grid
+        # and the stage-2 shared memory all stay consistent. It is a no-op for
+        # the common small-`max_k` case (8 blocks already fit).
+        var _topk_val_idx_bytes = (
+            size_of[Scalar[dtype]]() + size_of[DType.int]()
+        )
+        var _topk_cache_bytes = (
+            size_of[Scalar[dtype]]() + 2 * size_of[DType.int]()
+        )
+        var _topk_smem_budget = (
+            Int(ctx.default_device_info.shared_memory_per_multiprocessor) - 8192
+        )
+        if bound_max_k > 0 and num_blocks_per_input_ > 1:
+            var _topk_max_nb = (
+                _topk_smem_budget - bound_max_k * _topk_cache_bytes
+            ) // (bound_max_k * _topk_val_idx_bytes)
+            if _topk_max_nb < 1:
+                _topk_max_nb = 1
+            if num_blocks_per_input_ > _topk_max_nb:
+                num_blocks_per_input_ = _topk_max_nb
+
         # Define shape for the kernel's internal cache buffers
         var internal_cache_shape = IndexList[2](
             internal_bs, num_blocks_per_input_ * bound_max_k
