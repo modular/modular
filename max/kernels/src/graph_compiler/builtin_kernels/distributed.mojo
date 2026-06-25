@@ -351,6 +351,7 @@ struct DistributedAllGather:
         rank: Int,
         target: StaticString,
         _trace_name: StaticString,
+        group_size: Int = 0,
     ](
         outputs: OutputVariadicTensors[dtype=dtype, rank=rank, ...],
         inputs: InputVariadicTensors[dtype=dtype, rank=rank, ...],
@@ -370,91 +371,87 @@ struct DistributedAllGather:
         comptime num_devices = inputs.size
         comptime assert (
             signal_buffers.size == num_devices
-            and outputs.size == num_devices * num_devices
+            and outputs.size == num_devices * group_size
         ), (
             "expected allgather inputs, signal buffers to have the same"
-            " number of elements and outputs to have num_devices *"
-            " num_devices"
+            " number of elements and outputs to have num_devices * group_size"
         )
+        comptime assert group_size >= 1, "group_size must be at least 1"
+        comptime assert (
+            num_devices % group_size == 0
+        ), "group_size must evenly divide the number of devices"
 
         var scratch_buffer_size_bytes = 0  # no allgather impl uses scratch
         _check_signal_buffer_size(
             signal_buffers[0].size(), scratch_buffer_size_bytes
         )
 
-        # Build TileTensors directly using flattened 1D layouts. Inputs can
-        # have different sizes in uneven allgather; Scalar dimensions give
-        # a homogeneous TileTensor type for the InlineArray.
-        comptime InputTensorType = type_of(
-            TileTensor(
-                rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
-                    inputs[0]._ptr
-                ),
-                row_major(inputs[0].size()),
-            )
-        )
-        var in_tensors = InlineArray[InputTensorType, num_devices](
-            uninitialized=True
-        )
-        comptime OutputTensorType = type_of(
-            TileTensor(
-                rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](
-                    outputs[0]._ptr
-                ),
-                row_major(outputs[0].size()),
-            )
-        )
-        var out_tensors = InlineArray[
-            OutputTensorType, num_devices * num_devices
-        ](uninitialized=True)
-
-        # Marshal signal buffers.
-        var rank_sigs = InlineArray[
-            UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
-        ](uninitialized=True)
-
-        comptime for i in range(num_devices):
-            in_tensors[i] = TileTensor(
-                rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
-                    inputs[i]._ptr
-                ),
-                row_major(inputs[i].size()),
-            )
-            rank_sigs[i] = (
-                signal_buffers[i]._ptr.bitcast[Signal]().as_unsafe_any_origin()
-            )
-
-        comptime for i in range(num_devices * num_devices):
-            out_tensors[i] = TileTensor(
-                rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](
-                    outputs[i]._ptr
-                ),
-                row_major(outputs[i].size()),
-            )
-
         @always_inline
         def launch_allgather[
             index: Int
         ]() raises {
-            read in_tensors,
-            read out_tensors,
-            read rank_sigs,
+            read inputs,
+            read outputs,
+            read signal_buffers,
             read dev_ctxs_input,
         }:
-            var device_out_tensors = InlineArray[OutputTensorType, num_devices](
+            comptime group_id, local_rank = divmod(index, group_size)
+            comptime group_start = group_id * group_size
+            # Full-world collectives keep domain 0; grouped collectives get a
+            # distinct nonzero domain per device-group so their barrier counters
+            # never poison the full-world bank on the shared Signal buffers.
+            comptime domain_id = 0 if group_size == num_devices else group_size
+            comptime InputTensorType = type_of(
+                TileTensor(
+                    rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
+                        inputs[group_start]._ptr
+                    ),
+                    row_major(inputs[group_start].size()),
+                )
+            )
+            comptime OutputTensorType = type_of(
+                TileTensor(
+                    rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](
+                        outputs[index * group_size]._ptr
+                    ),
+                    row_major(outputs[index * group_size].size()),
+                )
+            )
+            var group_in_tensors = InlineArray[InputTensorType, group_size](
                 uninitialized=True
             )
-            comptime for src_idx in range(num_devices):
-                device_out_tensors[src_idx] = out_tensors[
-                    index * num_devices + src_idx
-                ]
+            var device_out_tensors = InlineArray[OutputTensorType, group_size](
+                uninitialized=True
+            )
+            var group_rank_sigs = InlineArray[
+                UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
+            ](uninitialized=True)
 
-            allgather[ngpus=num_devices](
-                in_tensors,
+            comptime for src_idx in range(group_size):
+                group_in_tensors[src_idx] = TileTensor(
+                    rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
+                        inputs[group_start + src_idx]._ptr
+                    ),
+                    row_major(inputs[group_start + src_idx].size()),
+                )
+                device_out_tensors[src_idx] = TileTensor(
+                    rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](
+                        outputs[index * group_size + src_idx]._ptr
+                    ),
+                    row_major(outputs[index * group_size + src_idx].size()),
+                )
+                group_rank_sigs[src_idx] = (
+                    signal_buffers[group_start + src_idx]
+                    ._ptr.bitcast[Signal]()
+                    .as_unsafe_any_origin()
+                )
+
+            allgather[ngpus=group_size, domain_id=domain_id](
+                group_in_tensors,
                 device_out_tensors,
-                rank_sigs,
+                group_rank_sigs,
                 dev_ctxs_input[index],
-                index,
+                local_rank,
             )
 
         _launch_device_collective[num_devices](launch_allgather, dev_ctxs_input)

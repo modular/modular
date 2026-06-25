@@ -3862,12 +3862,12 @@ def _handle_distributed_allgather(
     """Handle mo.distributed.allgather by copying each input to every device.
 
     Operands (flat): N input tensors, N signal buffers, 1 input chain.
-    Results: N*N output tensors, 1 output chain.
+    Results: N*G output tensors, 1 output chain, where G is the group size.
 
-    The MO-level allgather produces N*N raw outputs: for each device d
-    and each input i, ``results[d*N + i]`` is a copy of ``input[i]`` on
-    ``device[d]``.  The Graph API wraps these with separate ``ConcatOp``
-    calls to produce the final N gathered tensors.
+    The MO-level allgather produces raw outputs grouped by destination device:
+    for each device d and each source i in d's group, the raw result is a copy
+    of that source input on device d.  The Graph API wraps these with separate
+    ``ConcatOp`` calls to produce the final gathered tensors.
 
     The interpreter executes sequentially on the host, so signal buffers
     and chains are unused.
@@ -3877,7 +3877,7 @@ def _handle_distributed_allgather(
         inputs: Flat operand buffers from the interpreter dispatcher.
 
     Returns:
-        N*N output buffers followed by None for the chain.
+        N*G output buffers followed by None for the chain.
     """
     num_inputs = len(op.inputs)
     bufs: list[Buffer] = []
@@ -3887,9 +3887,13 @@ def _handle_distributed_allgather(
         bufs.append(b)
 
     results = list(op.results)
+    group_size = op.group_size
     output_buffers: list[Buffer | None] = []
     for idx, result in enumerate(results[:-1]):
-        input_idx = idx % num_inputs
+        device_idx = idx // group_size
+        local_input_idx = idx % group_size
+        group_start = (device_idx // group_size) * group_size
+        input_idx = group_start + local_input_idx
         result_type: mo.TensorType = result.type  # type: ignore[assignment]
         device = graph.DeviceRef.from_mlir(result_type.device_ref).to_device()
         output_buffers.append(bufs[input_idx].to(device))
