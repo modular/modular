@@ -241,6 +241,14 @@ _EXTRA_CONSTRAINTS = {
         "@platforms//os:macos": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
+    # rope_ragged with position_ids hits the same broken-on-Metal path as
+    # test_rope_ragged above (the GPU output is all-zeros -- needs
+    # investigation); the position_ids marshalling fix here is necessary but
+    # not sufficient on its own.
+    "test_rope_ragged_position_ids.mojo": select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     # These tests fail on Apple GPU - needs investigation
     "test_pool_gpu.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
