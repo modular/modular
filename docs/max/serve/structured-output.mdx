@@ -191,10 +191,10 @@ print(response.choices[0].message.content)
 
 :::note Schema root type
 
-The root of a `json_schema` must resolve to an object. MAX infers `type: object`
-when the root omits a `type`, and accepts a `type` union that includes `object`
-(for example, `["object", "array", "string"]`). A root pinned to a single
-non-object type, such as `{"type": "string"}`, is rejected.
+The root of a `json_schema` must resolve to an object. If the root omits `type`,
+MAX treats it as `type: object`. MAX also accepts root-level type unions that
+include `object`, such as `["object", "array", "string"]`. MAX rejects schemas
+whose root is constrained to a single non-object type (for example, `{"type": "string"}`).
 
 :::
 
