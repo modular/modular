@@ -204,11 +204,20 @@ This version is still a work in progress.
   `EagerRealizationContext(use_interpreter=...)` argument is deprecated in
   favor of `EagerRealizationContext(executor=...)`.
 
-- The eager interpreter precompiles its matmul and unary-elementwise
-  graph-compiler models for the full `(device, dtype)` matrix at import by
-  default. Set `MAX_EAGER_OP_PRECOMPILE=0` to skip the import-time sweep and
-  compile each target lazily on first dispatch instead, bounding compile cost to
-  the targets a program actually uses.
+- The eager interpreter now compiles its matmul and unary-elementwise
+  graph-compiler models lazily, per target on first dispatch, by default —
+  bounding compile cost to the targets a program uses instead of JIT-compiling
+  the full kernel library at import. Set `MAX_EAGER_OP_PRECOMPILE=1` to
+  precompile the full matrix at import instead.
+
+- Added a `max warm-interpreter-cache` command that batch-compiles the full
+  eager interpreter model matrix into the on-disk cache for the current
+  machine's devices and drops a stamp. A later lazy eager process on the same
+  device set adopts the warm — one batched cache load instead of compiling each
+  target on first use — so later programs start warm. Run it as a provisioning
+  step (for example a Dockerfile `RUN`) on the target hardware. Pure
+  optimization: if skipped, or on a different device set, dispatch compiles each
+  target lazily.
 
 - Added `max.experimental.nn.subgraphable` for `Module` subgraph compilation: a
   repeated block (via the `@subgraphable` class decorator, or the

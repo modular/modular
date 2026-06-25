@@ -120,12 +120,9 @@ SOFTMAX: dict[
 from .handlers import _MO_OP_HANDLERS, lookup_handler, register_op_handler
 
 
-# Precompile the full GC matrix here (the default) so dispatch is a warm cache
-# lookup; with MAX_EAGER_OP_PRECOMPILE=0 each target compiles lazily on first
-# dispatch instead, so a trivial program doesn't compile the whole kernel
-# library on a cold cache (MXF-508). See gc_compile / matmul_gc /
-# unary_elementwise_gc. Wrapped in a function so the matmul_gc / unary_gc symbol
-# accesses are deferred past this module's import cycle with them.
+# Opt-in (MAX_EAGER_OP_PRECOMPILE=1) precompile of the full GC matrix; lazy
+# per-dispatch otherwise (MXF-508). Wrapped in a function to defer the
+# matmul_gc / unary_gc symbol access past their import cycle with this module.
 def _precompile_gc_models() -> None:
     if gc_compile.should_precompile():
         matmul_gc.compile_matmul_sweep()

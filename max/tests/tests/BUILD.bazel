@@ -148,6 +148,9 @@ modular_py_test(
     srcs = ["test_interpreter_ops_gpu.py"],
     env = {
         "MODULAR_TORCH_MEMORY_PERCENT": "0.6",
+        # Batch-compile the GC matrix once at import rather than lazily per
+        # dispatch, so the full dtype sweep doesn't time out.
+        "MAX_EAGER_OP_PRECOMPILE": "1",
     },
     exec_properties = {
         "test.resources:gpu-memory": "4",

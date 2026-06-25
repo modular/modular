@@ -471,6 +471,41 @@ def cli_warm_cache(target: str | None, **config_kwargs) -> None:
     _ = PIPELINE_REGISTRY.retrieve(pipeline_config)
 
 
+@main.command(name="warm-interpreter-cache")
+def cli_warm_interpreter_cache() -> None:
+    """Compile the eager interpreter's graph-compiler models to prepare caches.
+
+    Batch-compiles the full matmul and unary-elementwise matrix for this
+    machine's devices into the on-disk cache, then drops a stamp. A later lazy
+    eager process on the same device set adopts the warm (one batched cache
+    load) instead of compiling each target on first use. Run it as a
+    provisioning step on the target hardware. Pure optimization: if skipped, or
+    on a different device set, dispatch compiles each target lazily.
+    """
+    import importlib
+
+    # Dynamic import: _interpreter_ops is an optional Mojo-backed package, kept
+    # out of this target's static deps (see its BUILD).
+    matmul_gc = importlib.import_module("max._interpreter_ops.matmul_gc")
+    unary_gc = importlib.import_module(
+        "max._interpreter_ops.unary_elementwise_gc"
+    )
+    gc_compile = importlib.import_module("max._interpreter_ops.gc_compile")
+
+    logger.info("Warming eager interpreter graph-compiler model cache...")
+    matmul_gc.compile_matmul_sweep()
+    unary_gc.compile_unary_sweep()
+    if gc_compile.write_warm_stamp():
+        logger.info("Done. Compiled models cached for this machine's devices.")
+    else:
+        logger.warning(
+            "Compiled models into the cache, but MODULAR_DERIVED_PATH is unset, "
+            "so the warm wasn't pinned to a shared location and later lazy "
+            "processes won't adopt it. Set MODULAR_DERIVED_PATH (to the same "
+            "value the consumers use) when warming."
+        )
+
+
 @main.command(name="list")
 @click.option(
     "--json",

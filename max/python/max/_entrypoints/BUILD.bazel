@@ -82,12 +82,17 @@ modular_py_binary(
         "OTEL_EXPORTER_OTLP_METRICS_DEFAULT_HISTOGRAM_AGGREGATION": "base2_exponential_bucket_histogram",
         "MODULAR_SHMEM_LIB_DIR": "../+http_archive+nvshmem_prebuilt",
     },
-    # Needed since users can select arbitrary arches on the CLI
-    ignore_extra_deps = ALL_ARCHITECTURES,
+    # ALL_ARCHITECTURES: users can select arbitrary arches on the CLI.
+    # _interpreter_ops: in the runfiles for warm-interpreter-cache's dynamic
+    # import, but optional (Mojo-backed) so not a static import.
+    ignore_extra_deps = ALL_ARCHITECTURES + [
+        "//max/python/max/_interpreter_ops",
+    ],
     mojo_deps = PROD_MOJOPKGS,
     deps = ALL_ARCHITECTURES + [
         ":_entrypoints",
         "//max/python/max:_core",
+        "//max/python/max/_interpreter_ops",
         "//max/python/max/benchmark:benchmark_serving_lib",
         "//max/python/max/pipelines",
         "//max/python/max/pipelines/context",

@@ -13,23 +13,17 @@
 
 """Graph-compiler unary-elementwise model cache for the MO interpreter.
 
-Compilation has two modes, selected by the ``MAX_EAGER_OP_PRECOMPILE``
-environment variable (see :func:`gc_compile.should_precompile`):
+Two compile modes, selected by ``MAX_EAGER_OP_PRECOMPILE`` (see
+:func:`gc_compile.should_precompile`):
 
-- **Precompile sweep (default).** A single ``load_all`` compiles the full
-  (op, device, dtype) matrix at import (see :func:`compile_unary_sweep`, invoked
-  from ``__init__``). A cache miss in :func:`unary_model` is then a hard error.
-- **Lazy per-target (``MAX_EAGER_OP_PRECOMPILE=0``).** The import-time sweep is
-  skipped; the first dispatch for a target builds and compiles just that one
-  rank-1 graph and caches it, bounding compile cost to the targets actually
-  used.
+- **Lazy per-target (default).** First dispatch for a target compiles just that
+  one rank-1 graph.
+- **Precompile sweep (``=1``).** :func:`compile_unary_sweep` compiles the full
+  matrix at import; a :func:`unary_model` miss is then a hard error.
 
-The compiled models are served to the eager handler via :func:`unary_model`.
-This module must not import from ``handlers.py``.
-
-Lazy mode exists for cold compile caches, where the import-time sweep makes a
-trivial program JIT-compile the entire built-in kernel library (~3000+ kernels,
-minutes). See MXF-508.
+Lazy mode avoids a trivial program JIT-compiling the whole kernel library on a
+cold cache (~3000+ kernels, minutes; MXF-508). Models serve the eager handler
+via :func:`unary_model`. Must not import from ``handlers.py``.
 
 The swept dtype set is deliberately conservative (floats-first): the IR type
 category is only a ceiling, so transcendental/activation ops are swept on float
@@ -39,6 +33,7 @@ gets ``bool``. CPU floats are f32/f64 (no 16-bit); GPU floats are f16/f32/bf16
 input and emit a constant ``bool``.
 """
 
+import logging
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from enum import Enum
@@ -57,6 +52,8 @@ from max.driver import (
 )
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, Module, TensorType, TensorValue, ops
+
+logger = logging.getLogger(__name__)
 
 # Float dtypes diverge by device (only f32 is shared). CPU: f32 + f64 (the
 # 16-bit float kernels don't compile on CPU). GPU: f16/f32/bf16 (no f64 —
@@ -216,30 +213,34 @@ def _is_supported(
     return dtype in _supported_dtypes(spec.dtype_class, device)
 
 
+# True once a batched sweep has run, so dispatch attempts adoption at most once.
+_swept = False
+
+
 @in_default_mlir_context
 def compile_unary_sweep() -> None:
-    """Compiles every supported (op, device, dtype) unary graph in one shot.
+    """Compile every supported (op, device, dtype) unary target in one batched
+    ``load_all`` (parallel compile), warming the in-process cache.
 
-    Uses a single ``load_all`` for parallel graph compilation.
+    Used three ways, all the same call: the import-time precompile (``=1``);
+    the ``warm-interpreter-cache`` CLI; and lazy dispatch *adopting* a warm
+    stamp (where the identical batched module hits the warm on-disk cache, so
+    ``load_all`` loads rather than recompiles).
 
-    Invoked from ``__init__`` in the default precompile mode. With
-    ``MAX_EAGER_OP_PRECOMPILE=0`` it is skipped and :func:`unary_model` compiles
-    each target lazily on first use instead. Because it is all-or-nothing (one
-    mis-compiled (op, device, dtype) makes ``load_all`` raise), candidates are
-    filtered through :func:`_is_supported` — the same predicate lazy mode guards
-    on. The real fix is queryable op-capability metadata so the supported set is
-    derived, not guessed: https://linear.app/modularml/issue/MXF-477
+    Candidates are filtered through :func:`_is_supported` so an unsupported
+    target never reaches the backend; a derived supported set is the real fix
+    (MXF-477).
     """
+    global _swept
     module = Module()
     for op_type, spec in _UNARY_OPS.items():
         for device in _DEVICES:
             for dtype in _supported_dtypes(spec.dtype_class, device):
-                if not _is_supported(op_type, device, dtype):
-                    continue
-                _build_unary_graph(module, op_type, spec, device, dtype)
-
+                if _is_supported(op_type, device, dtype):
+                    _build_unary_graph(module, op_type, spec, device, dtype)
     session = engine.InferenceSession(devices=list(_DEVICES))
     _UNARY_MODEL_CACHE.update(session.load_all(module, weights_registry={}))
+    _swept = True
 
 
 @in_default_mlir_context
@@ -259,11 +260,11 @@ def unary_model(
 ) -> engine.Model:
     """Returns the unary :class:`~max.engine.Model` for *op_type* / *device* / *dtype*.
 
-    In the default precompile mode the model was compiled at import by
-    :func:`compile_unary_sweep` and this is a cache lookup. When
-    ``MAX_EAGER_OP_PRECOMPILE=0`` the model is compiled lazily on first use
-    instead. Either way it is cached for the lifetime of the process, so
-    subsequent calls for the same target return the cached model.
+    Lazy by default: compiled on first use and cached for the process lifetime.
+    With ``MAX_EAGER_OP_PRECOMPILE=1`` it was precompiled at import and this is a
+    lookup. If a ``warm-interpreter-cache`` stamp is present for this context,
+    the first miss adopts the warm with one batched sweep (a cache load) instead
+    of compiling each target singly.
 
     Args:
         op_type: The concrete ``mo.*Op`` type of the op being handled.
@@ -274,33 +275,47 @@ def unary_model(
         The compiled model ready for execution.
 
     Raises:
-        KeyError: If the (op, device, dtype) is outside the conservatively-
-            supported set (e.g. a transcendental op on an integer dtype, or a
-            CPU-only op on an accelerator); or, in the default precompile mode,
-            if a supported target was not in the import-time sweep. The message
-            names the exact key and points at ``MAX_EAGER_OP_PRECOMPILE``.
+        KeyError: If the (op, device, dtype) is outside the supported set (e.g.
+            a transcendental op on an int dtype); or, with
+            ``MAX_EAGER_OP_PRECOMPILE=1``, if a supported target was not swept.
     """
     key = _graph_name(op_type, device, dtype)
     model = _UNARY_MODEL_CACHE.get(key)
-    if model is None:
-        if not _is_supported(op_type, device, dtype):
-            raise KeyError(
-                f"Unsupported unary op/device/dtype for key {key!r}."
-                "  Supported dtypes for this op/device: "
-                f"{_supported_dtypes(_UNARY_OPS[op_type].dtype_class, device) if op_type in _UNARY_OPS else '[]'}"
-            )
-        if gc_compile.should_precompile():
-            # TODO(MXF-510): raise UnsupportedGraphError so executors fall back.
-            raise KeyError(
-                f"No pre-compiled unary model for key {key!r}."
-                f"  Available: {sorted(_UNARY_MODEL_CACHE)}."
-                f"  Set {gc_compile.EAGER_OP_PRECOMPILE_ENV_VAR}=0 to compile"
-                " targets lazily on first use."
-            )
-        with gc_compile.COMPILE_LOCK:
-            # Re-check under the lock: another thread may have compiled this
-            # target while we waited.
+    if model is not None:
+        return model
+    if not _is_supported(op_type, device, dtype):
+        raise KeyError(
+            f"Unsupported unary op/device/dtype for key {key!r}."
+            "  Supported dtypes for this op/device: "
+            f"{_supported_dtypes(_UNARY_OPS[op_type].dtype_class, device) if op_type in _UNARY_OPS else '[]'}"
+        )
+    if gc_compile.should_precompile():
+        # TODO(MXF-510): raise UnsupportedGraphError so executors fall back.
+        raise KeyError(
+            f"No pre-compiled unary model for key {key!r}."
+            f"  Available: {sorted(_UNARY_MODEL_CACHE)}."
+            f"  Unset {gc_compile.EAGER_OP_PRECOMPILE_ENV_VAR} (the default)"
+            " to compile targets lazily on first use."
+        )
+    with gc_compile.COMPILE_LOCK:
+        # Re-check under the lock (another thread may have compiled it).
+        model = _UNARY_MODEL_CACHE.get(key)
+        if model is not None:
+            return model
+        global _swept
+        if not _swept and gc_compile.warm_stamp_matches():
+            # Mark _swept before attempting so a stale stamp can't loop; guard
+            # so an adoption failure falls through to per-target, not the op.
+            _swept = True
+            try:
+                compile_unary_sweep()
+            except Exception:
+                logger.warning(
+                    "Eager interpreter warm-cache adoption failed; compiling"
+                    " unary targets on demand.",
+                    exc_info=True,
+                )
             model = _UNARY_MODEL_CACHE.get(key)
-            if model is None:
-                model = _compile_unary_target(op_type, device, dtype)
-    return model
+            if model is not None:
+                return model
+        return _compile_unary_target(op_type, device, dtype)
