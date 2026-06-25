@@ -880,20 +880,37 @@ OpFoldResult PointerBitcastOp::fold(FoldAdaptor adaptor) {
   return {};
 }
 
-/// Canonicalize `bitcast(bitcast(x)) -> bitcast(x)`, only if the intermediate
-/// bitcast has one use.
 LogicalResult PointerBitcastOp::canonicalize(PointerBitcastOp op,
                                              PatternRewriter &b) {
-  auto cast = op.getInput().getDefiningOp<PointerBitcastOp>();
-  if (!cast)
-    return b.notifyMatchFailure(op.getLoc(), "not a bitcast of a bitcast");
-  if (!cast->hasOneUse())
-    return b.notifyMatchFailure(op.getLoc(),
-                                "intermediate cast has multiple uses");
-  b.replaceOpWithNewOp<PointerBitcastOp>(op, op.getType(), cast.getInput());
-  // Erase the intermediate cast -- its only use has been removed.
-  b.eraseOp(cast);
-  return success();
+  // `bitcast(bitcast(x)) -> bitcast(x)`, only if the intermediate bitcast has
+  // one use.
+  if (auto cast = op.getInput().getDefiningOp<PointerBitcastOp>()) {
+    if (cast->hasOneUse()) {
+      b.replaceOpWithNewOp<PointerBitcastOp>(op, op.getType(), cast.getInput());
+      // Erase the intermediate cast -- its only use has been removed.
+      b.eraseOp(cast);
+      return success();
+    }
+  }
+
+  // Bitcast of an array pointer to its element pointer is `&array[0]`; rewrite
+  // to `pop.array.gep %p[0]` so SROA sees element-wise access, not an opaque
+  // cast.
+  if (auto srcPtr = dyn_cast<PointerType>(op.getInput().getType())) {
+    if (auto arrTy = dyn_cast<ArrayType>(srcPtr.getElementType())) {
+      // Skip if the bitcast also changes address space. The only allowed
+      // exception is if it changes it to zero, which is acceptable now, because
+      // !pop.array is always within address space 0.
+      if (op.getType() == PointerType::get(arrTy.getElementType())) {
+        auto zero = ParamConstantOp::create(b, op.getLoc(), b.getIndexAttr(0));
+        b.replaceOpWithNewOp<ArrayGEPOp>(op, op.getType(), op.getInput(), zero);
+        return success();
+      }
+    }
+  }
+
+  return b.notifyMatchFailure(op.getLoc(),
+                              "no applicable bitcast canonicalization");
 }
 
 ErrorTreeOrSuccess PointerBitcastOp::interpret(ArrayRef<Attribute> operands,
