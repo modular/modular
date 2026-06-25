@@ -43,6 +43,15 @@
 // CHECK: #M.target<triple = "a", arch = "b">
 "some.op"() {a = #M.target<triple = "a", arch = "b">} : () -> ()
 
+// A non-default stdlib_plugin round-trips through both the textual and
+// bytecode formats.
+// CHECK: #M.target<triple = "a", arch = "b", stdlib_plugin = "metal", features = "+foo">
+"some.op"() {a = #M.target<triple = "a", arch = "b", stdlib_plugin = "metal", features = "+foo">} : () -> ()
+
+// The default stdlib_plugin ("default") is elided when printing.
+// CHECK: #M.target<triple = "a", arch = "b", features = "+foo">
+"some.op"() {a = #M.target<triple = "a", arch = "b", stdlib_plugin = "default", features = "+foo">} : () -> ()
+
 // CHECK: #M.device_ref<"foo", 3>
 "some.op"() {a = #M.device_ref<"foo", 3>} : () -> ()
 

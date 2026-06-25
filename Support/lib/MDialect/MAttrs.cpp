@@ -1178,7 +1178,9 @@ M::getTargetInfoFor(MLIRContext *ctx, StringRef targetTriple, StringRef arch,
   }
 
   int32_t pointerBitWidth = dl->getPointerBitWidth();
-  return TargetInfoAttr::get(ctx, llvm::Triple(targetTriple), arch,
+  // The plugin name is only set on targets built from Mojo; targets built here
+  // get the default.
+  return TargetInfoAttr::get(ctx, llvm::Triple(targetTriple), arch, "default",
                              resolvedFeatures, std::move(*dl),
                              machine->getRelocationModel(),
                              simdWidthFromFeatures(StringRef(resolvedFeatures)),
@@ -1199,7 +1201,7 @@ TargetInfoAttr M::fromRuntimeTargetInfo(MLIRContext *ctx,
                                         const TargetInfo &runtimeTargetInfo) {
   return TargetInfoAttr::get(
       ctx, runtimeTargetInfo.triple, runtimeTargetInfo.arch,
-      encodeFeatures(runtimeTargetInfo),
+      /*stdlib_plugin=*/"default", encodeFeatures(runtimeTargetInfo),
       /*data_layout=*/{}, /*relocation_model=*/llvm::Reloc::Static,
       /*simd_bit_width=*/0, /*index_width=*/std::nullopt,
       /*tune_cpu=*/{}, /*accelerator_arch=*/{});
