@@ -273,35 +273,66 @@ class Module(Generic[_P, _R]):
 
     :meth:`to` is the single pre-compilation entry point for device placement.
     It moves all weight tensors to the target device and records it on the
-    module via the :attr:`device` property. :meth:`input_types` implementations
-    should reference ``self.device`` when constructing
-    :obj:`~max.graph.TensorType` objects, so a single ``to()`` call drives
-    both weight placement and computation placement:
+    module via the :attr:`device` property. When you construct the
+    :obj:`~max.graph.TensorType` objects you pass to :meth:`compile`, reference
+    ``model.device`` for their ``device`` field, so a single ``to()`` call
+    drives both weight placement and computation placement:
 
     .. code-block:: python
 
-        from max.driver import Accelerator
+        from max.dtype import DType
         from max.experimental.nn import Linear
+        from max.experimental.tensor import Tensor
+        from max.graph import TensorType
 
-        model = Linear(10, 5)
-        model.to(Accelerator())                       # sets device, moves weights
-        compiled = model.compile(*model.input_types())  # computation runs on GPU
+        model = Linear(5, 10)
+
+        # Build the input type from model.device so computation matches weights.
+        input_type = TensorType(DType.float32, ["batch", 5], device=model.device)
+        compiled = model.compile(input_type)
+        result = compiled(Tensor.ones([3, 5], dtype=DType.float32))
+
+    .. invisible-code-block: python
+
+        assert list(result.shape) == [3, 10]
 
     For CPU (the default), calling ``to()`` is optional. The :attr:`device`
     property defaults to :obj:`~max.driver.CPU`:
 
     .. code-block:: python
 
-        model = Linear(10, 5)
-        compiled = model.compile(*model.input_types())  # runs on CPU
+        model = Linear(5, 10)
+        input_type = TensorType(DType.float32, ["batch", 5], device=model.device)
+        compiled = model.compile(input_type)        # runs on CPU
+        result = compiled(Tensor.ones([3, 5], dtype=DType.float32))
+
+    .. invisible-code-block: python
+
+        from max.driver import CPU
+
+        assert list(result.shape) == [3, 10]
+        assert isinstance(model.device, CPU)
 
     Because :attr:`device` is tracked per-module instance, sub-modules can be
-    placed on different devices independently:
+    placed on different devices independently. Here two :class:`Linear`
+    sub-modules are placed on separate CPU device references (use distinct
+    :obj:`~max.driver.Accelerator` instances when accelerators are available):
 
     .. code-block:: python
 
-        encoder.to(Accelerator(0))
-        decoder.to(Accelerator(1))
+        from max.driver import CPU
+        from max.experimental.nn import Linear
+
+        encoder = Linear(5, 8)
+        decoder = Linear(8, 4)
+
+        encoder.to(CPU(0))
+        decoder.to(CPU(0))
+
+    .. invisible-code-block: python
+
+        assert isinstance(encoder.device, CPU)
+        assert isinstance(decoder.device, CPU)
 
     For graph-level tensor routing *inside* ``forward()`` (e.g., pulling an
     activation back to CPU at the end of the graph), use
@@ -738,20 +769,24 @@ class Module(Generic[_P, _R]):
         subclass ``__init__``. When neither has been called the property
         returns :obj:`~max.driver.CPU` as a safe default so that modules
         without an explicit device placement still compile and run on CPU.
-        :meth:`input_types` implementations should reference ``self.device``
-        when constructing :obj:`~max.graph.TensorType` objects so that a
-        single :meth:`to` call drives both weight placement and computation
-        placement.
+        When constructing the :obj:`~max.graph.TensorType` objects you pass to
+        :meth:`compile`, reference ``self.device`` for their ``device`` field
+        so that a single :meth:`to` call drives both weight placement and
+        computation placement.
 
         .. code-block:: python
 
-            from max.driver import Accelerator
+            from max.driver import CPU
             from max.experimental.nn import Linear
 
             model = Linear(2, 3)
             print(model.device)     # CPU()  - CPU default
-            model.to(Accelerator())
-            print(model.device)     # Accelerator(id=0)
+            model.to(CPU())         # use Accelerator() to move weights to a GPU
+            print(model.device)     # CPU()
+
+        .. invisible-code-block: python
+
+            assert isinstance(model.device, CPU)
 
         Returns:
             The device this module is placed on, defaulting to
@@ -781,28 +816,37 @@ class Module(Generic[_P, _R]):
         ``Device`` vs ``DeviceMesh`` vs ``DeviceMapping``.
 
         This is the single entry point for device placement. After calling
-        ``to(device)``, both weight storage and :meth:`input_types` reflect the
-        target device, so ``compile(*self.input_types())`` works correctly
-        without any additional device configuration:
+        ``to(device)``, weight storage reflects the target device, and
+        :attr:`device` records it. Build the :obj:`~max.graph.TensorType`
+        objects you pass to :meth:`compile` from ``model.device`` so
+        computation runs on the same device as the weights:
 
         .. code-block:: python
 
-            from max.driver import Accelerator
-            from max.experimental.nn import Linear
-            from max.graph import TensorType
+            from max.driver import Accelerator, CPU, accelerator_count
             from max.dtype import DType
+            from max.experimental.nn import Linear
+            from max.experimental.tensor import Tensor
+            from max.graph import TensorType
 
             model = Linear(2, 3)
-            model.to(Accelerator())
+            device = CPU() if accelerator_count() == 0 else Accelerator()
+            model.to(device)
 
-            # input_types() uses self.device, so computation runs on GPU:
-            compiled = model.compile(*model.input_types())
+            # Build the input type from model.device so computation matches:
+            input_type = TensorType(DType.float32, ["batch", 2], device=model.device)
+            compiled = model.compile(input_type)
+            result = compiled(Tensor.ones([4, 2], dtype=DType.float32))
+
+        .. invisible-code-block: python
+
+            assert list(result.shape) == [4, 3]
 
         Unlike PyTorch's eager mode where weights and computation are
         inseparable, MAX uses a compiled graph model. ``to()`` handles the
-        weight side; :meth:`input_types` implementations use ``self.device``
-        to handle the computation side. Together they form one coherent
-        mechanism.
+        weight side; the ``device`` field on the input
+        :obj:`~max.graph.TensorType` objects handles the computation side.
+        Together they form one coherent mechanism.
 
         For graph-level tensor routing at execution time (inside
         :meth:`forward`), use :func:`~max.graph.ops.transfer_to` or
@@ -980,22 +1024,31 @@ class Module(Generic[_P, _R]):
         Use positional arguments for positional parameters.
 
         **Device placement:** The canonical pattern is to call :meth:`to`
-        before ``compile``. :meth:`to` sets :attr:`device`, moves all weights
-        to that device, and causes :meth:`input_types` to return
-        :obj:`~max.graph.TensorType` objects annotated with that device. This
-        means a single :meth:`to` call drives both weight placement and
-        computation placement:
+        before ``compile``. :meth:`to` sets :attr:`device` and moves all
+        weights to that device. Build the input :obj:`~max.graph.TensorType`
+        objects from ``model.device`` so a single :meth:`to` call drives both
+        weight placement and computation placement:
 
         .. code-block:: python
 
-            from max.driver import Accelerator
+            from max.dtype import DType
+            from max.driver import Accelerator, CPU, accelerator_count
             from max.experimental.nn import Linear
+            from max.experimental.tensor import Tensor
+            from max.graph import TensorType
 
-            model = Linear(10, 5)
-            model.to(Accelerator())  # sets device, moves weights to GPU
+            model = Linear(5, 10)
+            device = CPU() if accelerator_count() == 0 else Accelerator()
+            model.to(device)
 
-            # input_types() uses self.device — computation runs on GPU:
-            compiled = model.compile(*model.input_types())
+            # Build the input type from model.device — computation matches:
+            input_type = TensorType(DType.float32, ["batch", 5], device=model.device)
+            compiled = model.compile(input_type)
+            result = compiled(Tensor.ones([3, 5], dtype=DType.float32))
+
+        .. invisible-code-block: python
+
+            assert list(result.shape) == [3, 10]
 
         Basic compilation with fixed shapes:
 
@@ -1028,11 +1081,20 @@ class Module(Generic[_P, _R]):
             result = model(input_data)
             print(result)
 
-        Compilation with custom Mojo kernel extensions:
+        .. invisible-code-block: python
 
-        .. code-block:: python
+            assert np.allclose(result.to_numpy(), 0.0)  # zero weights/bias
+            assert list(result.shape) == [3, 10]
+
+        Compilation with custom Mojo kernel extensions follows the same
+        pattern, with one addition: pass the compiled kernel package or Mojo
+        source directory through ``custom_extensions`` so the custom op's
+        signature is available during tracing. A ``forward`` that calls
+        :func:`~max.experimental.functional.custom` then resolves against the
+        loaded kernels::
 
             from pathlib import Path
+
             from max.experimental import functional as F
 
             @module_dataclass
@@ -1046,7 +1108,7 @@ class Module(Generic[_P, _R]):
             module = CustomModule()
             compiled = module.compile(
                 input_type,
-                custom_extensions=[Path("my_ops.mojoc")],
+                custom_extensions=[Path("my_kernels")],  # Mojo source dir or package
             )
 
         Args:
@@ -1268,9 +1330,12 @@ def module_dataclass(  # noqa: ANN201
 
     .. code-block:: python
 
+        from max.dtype import DType
+        from max.experimental import functional as F
+        from max.experimental import random
         from max.experimental.nn import Module, Linear, module_dataclass
         from max.experimental.tensor import Tensor
-        from max.experimental import functional as F
+        from max.graph import TensorType
 
         @module_dataclass
         class MLP(Module):
@@ -1293,10 +1358,25 @@ def module_dataclass(  # noqa: ANN201
         print(dict(mlp.parameters).keys())
         # {'fc1.weight', 'fc1.bias', 'fc2.weight', 'fc2.bias'}
 
-        # Use the module
-        x = Tensor.randn([4, 128])
+        # Run eagerly with a random input.
+        random.set_seed(0)
+        x = random.normal([4, 128], dtype=DType.float32)
         output = mlp(x)
-        print(output.shape)  # (4, 128)
+        print(output.shape)  # [4, 128]
+
+        # Or compile for optimized execution.
+        input_type = TensorType(DType.float32, ["batch", 128], device=mlp.device)
+        compiled = mlp.compile(input_type)
+        compiled_output = compiled(x)
+
+    .. invisible-code-block: python
+
+        assert set(dict(mlp.parameters).keys()) == {
+            "fc1.weight", "fc1.bias", "fc2.weight", "fc2.bias"
+        }
+        assert list(output.shape) == [4, 128]
+        assert list(compiled_output.shape) == [4, 128]
+        assert np.allclose(output.to_numpy(), compiled_output.to_numpy(), atol=1e-4)
 
     Args:
         cls: The class to decorate. Must define a ``forward`` method.

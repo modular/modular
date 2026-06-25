@@ -34,6 +34,8 @@ class Conv2d(Module[[Tensor], Tensor]):
     Example:
         .. code-block:: python
 
+            from max.driver import Accelerator
+            from max.dtype import DType
             from max.experimental.nn import Conv2d
             from max.experimental.tensor import Tensor
 
@@ -41,12 +43,19 @@ class Conv2d(Module[[Tensor], Tensor]):
                 kernel_size=3,
                 in_channels=3,
                 out_channels=64,
+                dtype=DType.float32,
                 has_bias=True,
                 permute=True,
             )
+            x = Tensor.ones([1, 3, 32, 32], dtype=DType.float32)
+            result = conv(x.to(Accelerator()))
 
-            x = Tensor.ones([1, 3, 32, 32])
-            result = conv(x)
+        .. invisible-code-block: python
+
+            # permute=True: NCHW in -> NCHW out. 3x3 kernel, no padding,
+            # so 32x32 -> 30x30 and channels go 3 -> 64.
+            assert tuple(int(d) for d in result.shape) == (1, 64, 30, 30)
+
     """
 
     weight: Tensor

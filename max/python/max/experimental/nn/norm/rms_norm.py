@@ -39,31 +39,24 @@ class RMSNorm(Module[[Tensor], Tensor]):
     For the Gemma variant that uses ``1 + weight`` and multiplies before
     casting back, see :class:`GemmaRMSNorm`.
 
-    For example:
-
     .. code-block:: python
 
+        from max.driver import Accelerator
         from max.dtype import DType
         from max.experimental.nn.norm import RMSNorm
-        from max.experimental.realization_context import (
-            GraphRealizationContext,
-            realization_context,
-        )
         from max.experimental.tensor import Tensor
-        from max.graph import DeviceRef, Graph, TensorType
 
-        graph = Graph(
-            "rms",
-            input_types=[
-                TensorType(DType.float32, ("batch", "seq", 2048), DeviceRef.GPU()),
-            ],
-        )
-        ctx = GraphRealizationContext(graph)
-        with realization_context(ctx), ctx:
-            x = Tensor.from_graph_value(graph.inputs[0])
-            norm = RMSNorm(2048, eps=1e-6)
-            y = norm(x)
-            graph.output(y)
+        device = Accelerator()
+        norm = RMSNorm(2048, eps=1e-6).to(device)
+        x = Tensor.ones([2, 4, 2048], dtype=DType.float32, device=device)
+        y = norm(x)
+
+    .. invisible-code-block: python
+
+        assert y.shape == [2, 4, 2048]
+        # An all-ones input has RMS 1, so it normalizes back to ones.
+        assert np.allclose(y.to_numpy(), 1.0, atol=1e-3)
+
 
     Args:
         dim: The size of the last dimension of the input.

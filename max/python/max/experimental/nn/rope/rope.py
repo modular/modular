@@ -99,6 +99,7 @@ class RotaryEmbedding(Module[..., Tensor]):
 
     .. code-block:: python
 
+        from max.experimental import random
         from max.experimental.nn.rope import RotaryEmbedding
         from max.experimental.tensor import Tensor
 
@@ -108,10 +109,15 @@ class RotaryEmbedding(Module[..., Tensor]):
 
         # Apply to query or key tensors in attention.
         # Shape: (batch, seq_len, num_heads, head_dim)
-        query = Tensor.randn([4, 128, 12, 128])
+        random.set_seed(0)
+        query = random.normal([4, 128, 12, 128])
         query_with_rope = rope(query, start_pos=0)
 
         print(query_with_rope.shape)  # [4, 128, 12, 128]
+
+    .. invisible-code-block: python
+
+        assert query_with_rope.shape == [4, 128, 12, 128]
     """
 
     weight: Tensor

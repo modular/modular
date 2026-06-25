@@ -53,10 +53,30 @@ class SetterContext(Generic[T], contextlib.AbstractContextManager[T]):
 
     .. code-block:: python
 
-        set_thing(value)            # permanent: return value ignored
+        from max.experimental.support import SetterContext
 
-        with set_thing(value):      # scoped: previous restored on exit
-            ...
+        _thing = "initial"
+
+        def set_thing(value: str) -> SetterContext[str]:
+            global _thing
+            previous, _thing = _thing, value
+
+            def restore(v: str) -> None:
+                global _thing
+                _thing = v
+
+            return SetterContext(value, previous, restore)
+
+        set_thing("permanent")          # permanent: return value ignored
+
+        with set_thing("scoped"):       # scoped: previous restored on exit
+            inside = _thing
+        after = _thing
+
+    .. invisible-code-block: python
+
+        assert inside == "scoped"
+        assert after == "permanent"  # previous value restored on block exit
 
     Restoration is value-based (the previous value is captured when the
     setter runs), so out-of-LIFO-order exits restore stale values; nest
