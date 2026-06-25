@@ -43,4 +43,6 @@ olmo3_arch = SupportedArchitecture(
     },
     config=Olmo3Config,
     memory_planner=PagedMemoryPlanner,
+    supports_overlap_scheduler=False,
+    supports_device_graph_capture=False,
 )

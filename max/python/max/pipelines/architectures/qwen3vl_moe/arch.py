@@ -50,6 +50,8 @@ qwen3vl_moe_arch = SupportedArchitecture(
     memory_planner=PagedMemoryPlanner.with_activation_reservation(
         10 * 1024**3, always_signal_buffers=True
     ),
+    supports_overlap_scheduler=False,
+    supports_device_graph_capture=False,
 )
 
 # Register the same architecture under Qwen's non-MoE name for models like Qwen3-VL-4B-Instruct
@@ -80,4 +82,6 @@ qwen3vl_arch = SupportedArchitecture(
     memory_planner=PagedMemoryPlanner.with_activation_reservation(
         10 * 1024**3, always_signal_buffers=True
     ),
+    supports_overlap_scheduler=False,
+    supports_device_graph_capture=False,
 )

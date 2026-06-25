@@ -45,4 +45,6 @@ deepseekV2_arch = SupportedArchitecture(
     requires_max_batch_context_length=True,
     config=DeepseekV2Config,
     memory_planner=PagedMemoryPlanner,
+    supports_overlap_scheduler=False,
+    supports_device_graph_capture=False,
 )

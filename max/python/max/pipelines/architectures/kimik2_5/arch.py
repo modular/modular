@@ -81,6 +81,8 @@ kimivl_arch = SupportedArchitecture(
     tool_parser="kimik2_5",
     reasoning_parser="kimik2_5",
     memory_planner=KimiK25MemoryPlanner,
+    supports_overlap_scheduler=False,
+    supports_device_graph_capture=False,
 )
 
 eagle3_kimik25_arch = SupportedArchitecture(

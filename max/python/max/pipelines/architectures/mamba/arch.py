@@ -46,4 +46,6 @@ mamba_arch = SupportedArchitecture(
     task=PipelineTask.TEXT_GENERATION,
     config=MambaConfig,
     memory_planner=PagedMemoryPlanner,
+    supports_overlap_scheduler=False,
+    supports_device_graph_capture=False,
 )

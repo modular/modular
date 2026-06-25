@@ -49,4 +49,5 @@ unified_dflash_kimi_k25_arch = SupportedArchitecture(
     tool_parser="kimik2_5",
     reasoning_parser="kimik2_5",
     memory_planner=KimiK25MemoryPlanner,
+    supports_device_graph_capture=False,
 )

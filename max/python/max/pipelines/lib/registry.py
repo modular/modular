@@ -321,6 +321,22 @@ class SupportedArchitecture:
     opt in by setting ``runtime.reasoning_parser`` explicitly.
     """
 
+    supports_overlap_scheduler: bool = True
+    """Whether this architecture supports auto-enabling the overlap scheduler.
+
+    When ``False``, the overlap scheduler is not auto-enabled for this
+    architecture even when otherwise eligible. Users can still force-enable
+    via ``--enable-overlap-scheduler --force``.
+    """
+
+    supports_device_graph_capture: bool = True
+    """Whether this architecture supports auto-enabling device graph capture.
+
+    When ``False``, device graph capture is not auto-enabled for this
+    architecture even when otherwise eligible. Users can still force-enable
+    via ``--device-graph-capture --force``.
+    """
+
     memory_planner: type[MemoryPlanner] | None = None
     """Optional :class:`~max.pipelines.kv_cache.MemoryPlanner` subclass for
     this architecture.

@@ -48,6 +48,7 @@ qwen3_arch = SupportedArchitecture(
     memory_planner=PagedMemoryPlanner.with_activation_reservation(
         0, always_signal_buffers=True
     ),
+    supports_device_graph_capture=False,
 )
 
 # Qwen3MoE architecture - uses the same model and config as Qwen3,
@@ -78,4 +79,5 @@ qwen3_moe_arch = SupportedArchitecture(
     memory_planner=PagedMemoryPlanner.with_activation_reservation(
         0, always_signal_buffers=True
     ),
+    supports_device_graph_capture=False,
 )
