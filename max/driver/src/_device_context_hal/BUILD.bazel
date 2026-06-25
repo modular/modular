@@ -1,0 +1,13 @@
+load("//bazel:api.bzl", "mojo_library")
+
+package(default_visibility = ["//max:consumers"])
+
+mojo_library(
+    name = "_device_context_hal",
+    srcs = glob(["**/*.mojo"]),
+    deps = [
+        "//max:_hal",
+        "//max:machine",
+        "@mojo//:std",
+    ],
+)

@@ -47,7 +47,7 @@ from std.reflection import get_linkage_name
 
 from std.collections.string.string_slice import _get_kgen_string
 
-from std.sys.info import is_triple, _TargetType
+from std.sys.info import CompilationTarget, is_triple, _TargetType
 
 
 #
