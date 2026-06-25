@@ -547,7 +547,8 @@ TypeParamAttr TypeParamAttr::getFromBytecode(Type typeValue, Type mlirType,
 }
 
 bool TypeParamAttr::isConstant() const {
-  return !isParameterizedType(getMlirType());
+  return !isParameterizedType(getMlirType()) &&
+         !isParameterizedType(getTypeValue());
 }
 
 bool TypeParamAttr::hasIdenticalRepresentation() {
