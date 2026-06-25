@@ -229,6 +229,11 @@ def _test_boolean_object_api(cpy: CPython) raises:
     var none = cpy.Py_None()
     assert_false(cpy.PyBool_Check(none))
 
+    # Py_True / Py_False accessors must return the same singletons that
+    # PyBool_FromLong yields. Used by PythonObject(value: Bool) fast path.
+    assert_equal(cpy.Py_True(), t)
+    assert_equal(cpy.Py_False(), f)
+
 
 def _test_floating_point_object_api(cpy: CPython) raises:
     var f = cpy.PyFloat_FromDouble(3.14)

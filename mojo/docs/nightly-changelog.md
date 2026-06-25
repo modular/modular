@@ -210,6 +210,11 @@ This version is still a work in progress.
   Mojo `Error` into a Python exception via `PyErr_SetString` and returns a null
   `PyObjectPtr`.
 
+- `PythonObject(value: Bool)` and `PythonObject(value: Scalar[DType.bool])` now
+  read the cached `Py_True` / `Py_False` singletons directly instead of going
+  through `PyBool_FromLong`, skipping one C-call dispatch per Mojo `Bool`
+  returned to Python.
+
 ## Tooling changes
 
 - Added a `--lld-path` CLI flag. This overrides the LLD path that Mojo uses.

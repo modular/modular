@@ -41,6 +41,7 @@ def PyInit_mojo_module() abi("C") -> PythonObject:
         # High-level `def_function` path (the regression target).
         b.def_function[noop_def]("noop_def")
         b.def_function[add_def]("add_def")
+        b.def_function[bool_pass_def]("bool_pass_def")
 
         # Low-level `def_py_c_function` path. Same observable behavior, but
         # bypasses the generic PyObjectFunction dispatch.
@@ -53,6 +54,7 @@ def PyInit_mojo_module() abi("C") -> PythonObject:
         b.def_py_c_function(add_raw, "add_raw")
         b.def_py_c_function(noop_raw_fastcall, "noop_raw_fastcall")
         b.def_py_c_function(add_raw_fastcall, "add_raw_fastcall")
+        b.def_py_c_function(bool_pass_raw_fastcall, "bool_pass_raw_fastcall")
 
         return b.finalize()
     except e:
@@ -72,6 +74,13 @@ def add_def(a: PythonObject, b: PythonObject) raises -> PythonObject:
     var ai = Int(py=a)
     var bi = Int(py=b)
     return PythonObject(ai + bi)
+
+
+def bool_pass_def(b: PythonObject) raises -> PythonObject:
+    # Round-trip a Python `bool` through Mojo `Bool` and back. The return
+    # wrap goes through `PythonObject(value: Bool)` which uses the cached
+    # `Py_True` / `Py_False` singleton fast path.
+    return PythonObject(Bool(py=b))
 
 
 # ===-----------------------------------------------------------------------===#
@@ -123,3 +132,19 @@ def add_raw_fastcall(
     var ai = cpy.PyLong_AsSsize_t(args[0])
     var bi = cpy.PyLong_AsSsize_t(args[1])
     return cpy.PyLong_FromSsize_t(ai + bi)
+
+
+@export
+def bool_pass_raw_fastcall(
+    py_self: PyObjectPtr,
+    args: UnsafePointer[PyObjectPtr, MutExternalOrigin],
+    nargs: Py_ssize_t,
+) -> PyObjectPtr:
+    # Lower bound for `bool_pass_def`: check truthiness, pick the singleton,
+    # IncRef, return. No `Bool` / `PythonObject` wrappers.
+    ref cpy = Python().cpython()
+    var ptr = (
+        cpy.Py_True() if cpy.PyObject_IsTrue(args[0]) != 0 else cpy.Py_False()
+    )
+    cpy.Py_IncRef(ptr)
+    return ptr
