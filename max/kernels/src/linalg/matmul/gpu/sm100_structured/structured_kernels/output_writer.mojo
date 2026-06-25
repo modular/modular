@@ -670,9 +670,7 @@ struct TileWriter[
         ](uninitialized=True)
 
         comptime for stage in range(Self.num_stages):
-            # Load fragments from TMEM tile
             var frags = accum_tiles[stage].load_fragments[Self.rep]()
-            Self.AccumTmemArray.Tile.wait_load()
 
             # Extract fragments (rebind bridges symbolic size mismatch
             # between TmemTensor.frag_size*rep and Self.fragment_size*rep)
@@ -685,6 +683,7 @@ struct TileWriter[
                 lower_frag_partial = rebind[PartialType](frags.lower).copy()
 
             comptime if stage == Self.num_stages - 1:
+                Self.AccumTmemArray.Tile.wait_load()
                 AccumBarrier[Self.cta_group].arrive(
                     output_stage.pipeline, output_stage.index
                 )

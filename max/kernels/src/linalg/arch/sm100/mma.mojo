@@ -209,6 +209,43 @@ struct MmaOpSM100_SS[
                 self.mask |= dim1_mask << UInt16(block_id_in_cluster.x ^ 1)
 
     @always_inline
+    def make_a_desc(
+        self,
+        a: TileTensor[address_space=AddressSpace.SHARED, ...],
+    ) -> MMASmemDescriptor:
+        """Build the K-major MMA descriptor for an A operand tile.
+
+        Exposed so callers that issue MMAs over several adjacent SMEM tiles
+        (e.g. a k-group loop) can build the descriptor once and advance it by
+        a comptime byte stride per tile, rather than rebuilding the full
+        descriptor (base-pointer mask + bitfield inserts) for each tile.
+
+        Args:
+            a: A operand tile in shared memory.
+
+        Returns:
+            The K-major MMA shared-memory descriptor for `a`.
+        """
+        return _create_mma_desc_k_major[a.dtype, Self.a_swizzle](a.ptr)
+
+    @always_inline
+    def make_b_desc(
+        self,
+        b: TileTensor[address_space=AddressSpace.SHARED, ...],
+    ) -> MMASmemDescriptor:
+        """Build the K-major MMA descriptor for a B operand tile.
+
+        See `make_a_desc` for why this is exposed.
+
+        Args:
+            b: B operand tile in shared memory.
+
+        Returns:
+            The K-major MMA shared-memory descriptor for `b`.
+        """
+        return _create_mma_desc_k_major[b.dtype, Self.b_swizzle](b.ptr)
+
+    @always_inline
     def mma(
         self,
         a: TileTensor[address_space=AddressSpace.SHARED, ...],
@@ -225,9 +262,32 @@ struct MmaOpSM100_SS[
             init_c: When True, zero-initialize the accumulator on the first
                 K slice instead of accumulating.
         """
-        var a_desc = _create_mma_desc_k_major[a.dtype, Self.a_swizzle](a.ptr)
-        var b_desc = _create_mma_desc_k_major[b.dtype, Self.b_swizzle](b.ptr)
+        self.mma_from_desc(
+            self.make_a_desc(a), self.make_b_desc(b), c_tmem, init_c
+        )
 
+    @always_inline
+    def mma_from_desc(
+        self,
+        a_desc: MMASmemDescriptor,
+        b_desc: MMASmemDescriptor,
+        c_tmem: UInt32,
+        init_c: Bool,
+    ):
+        """Issue MMA operations over K tiles from precomputed SMEM descriptors.
+
+        Identical to `mma`, but takes already-built A/B descriptors. This lets
+        a k-group caller build the descriptor base once and advance it by a
+        comptime byte stride per tile (the SM100 SMEM-descriptor base address
+        adds linearly), avoiding a redundant full descriptor rebuild per tile.
+
+        Args:
+            a_desc: Precomputed K-major descriptor for the A operand tile.
+            b_desc: Precomputed K-major descriptor for the B operand tile.
+            c_tmem: TMEM address for the accumulator.
+            init_c: When True, zero-initialize the accumulator on the first
+                K slice instead of accumulating.
+        """
         # K-major swizzle layout: within a swizzle tile (k < sw_K), elements
         # are stride-1. Across swizzle tile boundaries (k >= sw_K), the
         # offset jumps by rows * sw_K elements to the next swizzle group.
