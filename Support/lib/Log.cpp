@@ -331,7 +331,7 @@ Logger::~Logger() {
   consumer.join();
 
   auto written = ring.consumeCount();
-  auto dropped = droppedRecords.load(std::memory_order_relaxed);
+  size_t dropped = droppedRecords.load(std::memory_order_relaxed);
   // Only print when the logger was actually used, and allow opt-out.
   // std::printf (C stdout) is safe here; llvm::outs() and file sinks may
   // already be torn down at static-destructor time.
