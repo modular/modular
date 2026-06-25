@@ -93,6 +93,31 @@ TEST(ArchTarget, GetTargetInfoForExpandsFeatures) {
   EXPECT_TRUE(targetOff->hasFeature("avx2"));
 }
 
+// stdlib_plugin is a string field on TargetInfoAttr, defaulting to
+// "default".
+TEST(ArchTarget, StdlibPlugin) {
+  MLIRContext ctx{MLIRContext::Threading::DISABLED};
+  ctx.loadDialect<MDialect>();
+
+  // Explicitly passing "default" matches the field default.
+  auto defaultAttr = TargetInfoAttr::get(
+      &ctx, llvm::Triple("a"), "b", /*stdlib_plugin=*/"default",
+      /*features=*/"", /*data_layout=*/{},
+      /*relocation_model=*/llvm::Reloc::Static,
+      /*simd_bit_width=*/0, /*index_bit_width=*/std::nullopt,
+      /*tune_cpu=*/"", /*accelerator_arch=*/"");
+  EXPECT_EQ(defaultAttr.getStdlibPlugin(), "default");
+
+  // A non-default plugin name is stored on and read back from the attribute.
+  auto pluginAttr = TargetInfoAttr::get(
+      &ctx, llvm::Triple("a"), "b", /*stdlib_plugin=*/"metal",
+      /*features=*/"", /*data_layout=*/{},
+      /*relocation_model=*/llvm::Reloc::Static,
+      /*simd_bit_width=*/0, /*index_bit_width=*/std::nullopt,
+      /*tune_cpu=*/"", /*accelerator_arch=*/"");
+  EXPECT_EQ(pluginAttr.getStdlibPlugin(), "metal");
+}
+
 // DataLayout parses pointer specs per address space. The spec format is
 // `p[<addr-space>]:<size>:<abi-align>[:...]` (LLVM-compatible); `p` with no
 // number is the default address space (0). Each address space keeps its own

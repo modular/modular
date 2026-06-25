@@ -288,8 +288,8 @@ def M_TargetInfoAttr : MAttr<"TargetInfo", "target"> {
   let summary = "Target configuration attribute.";
   let description = [{
     The `#M.target` attribute represents a compilation target configuration. It
-    contains the target triple, microarchitecture, optional features, and
-    derived data such as data layout and SIMD width.
+    contains the target triple, microarchitecture, stdlib plugin, optional features,
+    and derived data such as data layout and SIMD width.
 
     The user can also specify the default index bit width being used. This is
     important for GPUs where the hardware can support different index bit widths
@@ -312,9 +312,10 @@ def M_TargetInfoAttr : MAttr<"TargetInfo", "target"> {
     Example:
     ```mlir
     #M.target<triple="x86_64-unknown-linux-gnu", arch="znver3",
-              features="+avx,+avx2", data_layout="p:64:64-i64:64:64",
-              relocation_model="static", simd_bit_width=256, index_bit_width=64>
-    #M.target<triple="nvptx64-nvidia-cuda", arch="sm_80">
+              stdlib_plugin="default", features="+avx,+avx2",
+              data_layout="p:64:64-i64:64:64", relocation_model="static",
+              simd_bit_width=256, index_bit_width=64>
+    #M.target<triple="nvptx64-nvidia-cuda", arch="sm_80", stdlib_plugin="cuda">
     ```
 
     Can be (partially) represented at runtime by M::TargetInfo.
@@ -327,6 +328,7 @@ def M_TargetInfoAttr : MAttr<"TargetInfo", "target"> {
   let parameters = (ins
     "llvm::Triple":$triple,
     StringRefParameter<>:$arch,
+    StringRefParameter<"", "\"default\"">:$stdlib_plugin,
     OptionalStringRefParameter:$features,
     OptionalDataLayoutParameter:$data_layout,
     DefaultValuedParameter<"llvm::Reloc::Model",

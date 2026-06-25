@@ -97,6 +97,7 @@ def OptionalInt64 :
 def TargetInfoAttr : DialectAttribute<(attr
   LLVMTriple:$triple,
   String:$arch,
+  String:$stdlib_plugin,
   String:$features,
   Custom<"DataLayout">:$data_layout,
   LLVMRelocModel:$relocation_model,

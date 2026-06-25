@@ -3487,8 +3487,8 @@ static Attribute simplifyTargetGetField(SmallVectorImpl<TypedAttr> &operands,
     return {};
 
   Builder b(field.getContext());
-  if (llvm::is_contained<StringRef>({"triple", "os", "arch", "endianness"},
-                                    field))
+  if (llvm::is_contained<StringRef>(
+          {"triple", "os", "arch", "endianness", "stdlib_plugin"}, field))
     resultType = b.getType<StringType>();
   else
     resultType = b.getType<IndexType>();
@@ -3508,6 +3508,8 @@ static Attribute simplifyTargetGetField(SmallVectorImpl<TypedAttr> &operands,
     return b.getIndexAttr(target.getTarget().getSimdBitWidth());
   if (field.getValue() == "index_bit_width")
     return b.getIndexAttr(target.getTarget().resolveIndexBitWidth());
+  if (field.getValue() == "stdlib_plugin")
+    return StringAttr::get(target.getTarget().getStdlibPlugin(), resultType);
   if (field.getValue() == "endianness") {
     return StringAttr::get(
         target.getTarget().getTriple().isLittleEndian() ? "little" : "big",
