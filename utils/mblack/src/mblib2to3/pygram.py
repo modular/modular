@@ -149,7 +149,6 @@ class _python_symbols(Symbols):
     trailer: int
     try_stmt: int
     typedargslist: int
-    typedparamslist: int
     varargslist: int
     var_stmt: int
     vfpdef: int

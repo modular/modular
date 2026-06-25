@@ -1132,9 +1132,7 @@ def delimiter_split(
 
         lowest_depth = min(lowest_depth, leaf.bracket_depth)
         if leaf.bracket_depth == lowest_depth:
-            if is_vararg(
-                leaf, within={syms.typedargslist, syms.typedparamslist}
-            ):
+            if is_vararg(leaf, within={syms.typedargslist}):
                 trailing_comma_safe = (
                     trailing_comma_safe
                     and Feature.TRAILING_COMMA_IN_DEF in features

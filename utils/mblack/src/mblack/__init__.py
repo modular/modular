@@ -1298,7 +1298,6 @@ def get_features_used(
         elif n.type in SLASHES:
             if n.parent and n.parent.type in {
                 syms.typedargslist,
-                syms.typedparamslist,
                 syms.arglist,
                 syms.varargslist,
             }:
@@ -1314,11 +1313,11 @@ def get_features_used(
                 features.add(Feature.RELAXED_DECORATORS)
 
         elif (
-            n.type in {syms.typedargslist, syms.typedparamslist, syms.arglist}
+            n.type in {syms.typedargslist, syms.arglist}
             and n.children
             and n.children[-1].type == token.COMMA
         ):
-            if n.type in (syms.typedargslist, syms.typedparamslist):
+            if n.type == syms.typedargslist:
                 feature = Feature.TRAILING_COMMA_IN_DEF
             else:
                 feature = Feature.TRAILING_COMMA_IN_CALL

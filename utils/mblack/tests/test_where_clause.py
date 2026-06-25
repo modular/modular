@@ -4,7 +4,6 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-import mblack
 from tests.util import assert_mojo_format
 
 # ====================== #
@@ -274,116 +273,5 @@ def test_trailing_where_clause_on_struct_decl():
         "    T, Copyable\n"
         ") and conforms_to(U, Intable):\n"
         "    pass\n"
-    )
-    assert_mojo_format(source, expected)
-
-
-# ============================== #
-# Param decls with where clauses
-# ============================== #
-
-def test_where_clause_in_params():
-    source = (
-        "def where_in_params["
-        "x: Bool where x == False, "
-        "y: Int where y > 0 and x == True]():\n"
-        "    pass\n"
-    )
-    expected = (
-        "def where_in_params[\n"
-        "    x: Bool where x == False, y: Int where y > 0 and x == True\n"
-        "]():\n"
-        "    pass\n"
-    )
-    assert_mojo_format(source, expected)
-
-
-def test_long_where_clause_in_params():
-    source = (
-        "def where_in_params["
-        "z: Int, a: Int, b: Int, c: Int, d: Int, e: Int, f: Int, g: Int,"
-        " xx: Int, yy: Int, zz: Int, aa: Int, ds: Bool, dd: Bool, "
-        "x: Bool where x and z > 0 and a == b and c == d and (e == f or g > 0) and xx == yy and zz == aa or (ds or dd), "
-        "y: Int where y > 0 and x == True]():\n"
-        "    pass\n"
-    )
-    expected = (
-        "def where_in_params[\n"
-        "    z: Int,\n"
-        "    a: Int,\n"
-        "    b: Int,\n"
-        "    c: Int,\n"
-        "    d: Int,\n"
-        "    e: Int,\n"
-        "    f: Int,\n"
-        "    g: Int,\n"
-        "    xx: Int,\n"
-        "    yy: Int,\n"
-        "    zz: Int,\n"
-        "    aa: Int,\n"
-        "    ds: Bool,\n"
-        "    dd: Bool,\n"
-        "    x: Bool where (\n"
-        "        x\n"
-        "        and z > 0\n"
-        "        and a == b\n"
-        "        and c == d\n"
-        "        and (e == f or g > 0)\n"
-        "        and xx == yy\n"
-        "        and zz == aa\n"
-        "        or (ds or dd)\n"
-        "    ),\n"
-        "    y: Int where y > 0 and x == True,\n"
-        "]():\n"
-        "    pass\n"
-    )
-    assert_mojo_format(source, expected)
-
-
-def test_multiple_where_clauses_in_params():
-    source = (
-        "def where_in_params["
-        "z: Int, a: Int, b: Int, c: Int, d: Int, e: Int, f: Int, g: Int,"
-        " xx: Int, yy: Int, zz: Int, aa: Int, ds: Bool, dd: Bool, "
-        "x: Bool where x and z > 0 and a == b where c == d and (e == f or g > 0) and xx == yy where zz == aa or (ds or dd), "
-        "y: Int where y > 0 where x == True]():\n"
-        "    pass\n"
-    )
-    expected = (
-        "def where_in_params[\n"
-        "    z: Int,\n"
-        "    a: Int,\n"
-        "    b: Int,\n"
-        "    c: Int,\n"
-        "    d: Int,\n"
-        "    e: Int,\n"
-        "    f: Int,\n"
-        "    g: Int,\n"
-        "    xx: Int,\n"
-        "    yy: Int,\n"
-        "    zz: Int,\n"
-        "    aa: Int,\n"
-        "    ds: Bool,\n"
-        "    dd: Bool,\n"
-        "    x: Bool where x and z > 0 and a == b where (\n"
-        "        c == d and (e == f or g > 0) and xx == yy\n"
-        "    ) where zz == aa or (ds or dd),\n"
-        "    y: Int where y > 0 where x == True,\n"
-        "]():\n"
-        "    pass\n"
-    )
-    assert_mojo_format(source, expected)
-
-
-def test_composite_param_where_clause_with_default():
-    source = (
-        "def where_composite[y: Int, z: Int,"
-        " x: Bool where x and y + z > 0 = True]() -> Int: return 0"
-    )
-    expected = (
-        "def where_composite[\n"
-        "    y: Int, z: Int, x: Bool where x and y + z > 0 = True\n"
-        "]() -> Int:\n"
-        "    return 0\n"
     )
     assert_mojo_format(source, expected)
