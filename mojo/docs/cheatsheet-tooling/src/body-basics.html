@@ -145,17 +145,12 @@ def nothing():
     </section>
 
     <section class="panel">
-      <h2>Errors</h2>
+      <h2>Imports</h2>
       <div class="body">
-<pre class="code">def risky() raises:
-    raise Error("boom")
-
-def main():
-    try:
-        risky()
-    except e:
-        print("caught:", e)</pre>
-        <p class="note">Mark a raising function <b>raises</b>; <b>raise</b> signals, <b>try</b>/<b>except</b> catches. <b>except e</b> binds the error.</p>
+<pre class="code">from std.math import sqrt # one name
+from std.math import sqrt as root # aliased</pre>
+<p class="note">Built-ins like <b>Int</b>, <b>String</b>, <b>List</b>, and <b>print</b> are in
+  the prelude, no import needed.</p>
       </div>
     </section>
 
@@ -193,12 +188,17 @@ def main():
     </section>
 
     <section class="panel">
-      <h2>Imports</h2>
+      <h2>Errors</h2>
       <div class="body">
-<pre class="code">from std.math import sqrt # one name
-from std.math import sqrt as root # aliased</pre>
-<p class="note">Built-ins like <b>Int</b>, <b>String</b>, <b>List</b>, and <b>print</b> are in
-  the prelude, no import needed.</p>
+<pre class="code">def risky() raises:
+    raise Error("boom")
+
+def main():
+    try:
+        risky()
+    except e:
+        print("caught:", e)</pre>
+        <p class="note">Mark a raising function <b>raises</b>; <b>raise</b> signals, <b>try</b>/<b>except</b> catches. <b>except e</b> binds the error.</p>
       </div>
     </section>
 

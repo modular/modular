@@ -253,16 +253,17 @@ def build_html(slug: str, dark: bool = False) -> str:
 
 
 def render_normal(stem: str, dark: bool, width: int) -> None:
+    # PNG only; the deliverable PDF is produced content-sized in make_svg so it
+    # lands on one big page instead of wrapping onto letter-sized sheets.
     url = f"file://{DIST}/{stem}.html"
-    chrome("--no-pdf-header-footer", f"--print-to-pdf={DIST}/{stem}.pdf", url)
     chrome(
         "--hide-scrollbars",
         "--force-device-scale-factor=2",
-        f"--window-size={width + 40},2600",
+        f"--window-size={width + 40},4000",
         f"--screenshot={DIST}/{stem}.png",
         url,
     )
-    edge = "#020c13" if dark else "#eceef1"
+    edge = "#181c1f" if dark else "#ffffff"
     subprocess.run(
         [
             "magick",
@@ -310,24 +311,32 @@ def measure_sheet_height(stem: str, width: int) -> int:
 
 def make_svg(stem: str, width: int, cols: int) -> None:
     h = measure_sheet_height(stem, width) + 6
-    inject = (
-        "<style>\n@media print{html,body{font-size:11px;}"
+    media = (
+        "@media print{html,body{font-size:11px;}"
         ".sheet{margin:0;padding:18px 20px 14px;box-shadow:none;max-width:none;}"
-        f".cols{{column-count:{cols};column-gap:16px;}}.panel{{break-inside:avoid;}}}}\n"
-        f"@page{{size:{width}px {h}px;margin:0;}}\n</style>\n</head>"
+        f".cols{{column-count:{cols};column-gap:16px;}}.panel{{break-inside:avoid;}}}}"
     )
-    tmp_html = f"{DIST}/{stem}-1page.html"
-    one_pdf = f"{DIST}/{stem}-1page.pdf"
-    with open(tmp_html, "w") as f:
-        f.write(read(f"{stem}.html", DIST).replace("</head>", inject, 1))
-    chrome(
-        "--no-pdf-header-footer",
-        f"--print-to-pdf={one_pdf}",
-        f"file://{tmp_html}",
-    )
+
+    def render_pdf(pdf_path: str, page_rule: str) -> None:
+        inject = f"<style>\n{media}\n{page_rule}\n</style>\n</head>"
+        tmp_html = f"{DIST}/{stem}-1page.html"
+        with open(tmp_html, "w") as f:
+            f.write(read(f"{stem}.html", DIST).replace("</head>", inject, 1))
+        chrome(
+            "--no-pdf-header-footer",
+            f"--print-to-pdf={pdf_path}",
+            f"file://{tmp_html}",
+        )
+        os.remove(tmp_html)
+
+    # SVG source: content-tight page (margin:0), identical to the historical
+    # render, so the deliverable SVG is byte-for-byte unchanged. Built from its
+    # own throwaway PDF that is removed afterward (the SVG, not this PDF, ships).
     svg = f"{DIST}/{stem}.svg"
+    svg_src_pdf = f"{DIST}/{stem}-svgsrc.pdf"
+    render_pdf(svg_src_pdf, f"@page{{size:{width}px {h}px;margin:0;}}")
     subprocess.run(
-        ["pdf2svg", one_pdf, svg],
+        ["pdf2svg", svg_src_pdf, svg],
         cwd=ROOT,
         stderr=subprocess.DEVNULL,
         check=False,
@@ -340,8 +349,16 @@ def make_svg(stem: str, width: int, cols: int) -> None:
         stderr=subprocess.DEVNULL,
         check=False,
     )
-    os.remove(tmp_html)
-    os.remove(one_pdf)  # pure SVG source; not a deliverable
+    os.remove(svg_src_pdf)
+
+    # Deliverable PDF: same content area (width x h) plus a 24px margin so the
+    # right-aligned header and the rightmost column don't sit flush against the
+    # page edge, where margin:0 clipped them. Margin only; layout is unchanged.
+    m = 24
+    pdf = f"{DIST}/{stem}.pdf"
+    render_pdf(
+        pdf, f"@page{{size:{width + 2 * m}px {h + 2 * m}px;margin:{m}px;}}"
+    )
 
 
 def combine(dark: bool = False) -> None:
