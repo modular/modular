@@ -103,7 +103,7 @@ class GrammarMatcher:
     ) -> bool: ...
     def fill_next_token_bitmask(
         self,
-        bitmask: Annotated[NDArray[numpy.int32], dict(order="C", device="cpu")],
+        bitmask: Annotated[NDArray[numpy.int32], dict(order="C")],
         index: int = 0,
         debug_print: bool = False,
     ) -> bool: ...
