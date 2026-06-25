@@ -150,45 +150,60 @@ def test_data_parallel_exceeds_devices_large_degree_fails() -> None:
         )
 
 
-def test_mixed_dp_tp_not_supported_fails() -> None:
-    """Test that DP + TP combination is not yet supported."""
+def test_data_parallel_degree_not_divisible_by_devices_fails() -> None:
+    """Test that DP degree must evenly partition devices into TP groups."""
     with pytest.raises(
         ValueError,
-        match=r"We do not yet support DP \+ TP at the same time.*data_parallel_degree=2.*n_devices=4",
+        match=r"Number of devices \(8\) must be divisible by data parallelism degree \(3\)",
     ):
         MHAKVCacheParams(
             dtype=DType.bfloat16,
-            n_kv_heads=8,
+            n_kv_heads=16,
             head_dim=128,
             num_layers=1,
-            devices=[DeviceRef.GPU(i) for i in range(4)],
-            data_parallel_degree=2,
-            page_size=16,
-        )
-
-
-def test_mixed_dp_tp_another_combination_fails() -> None:
-    """Test another DP + TP combination that should fail."""
-    with pytest.raises(
-        ValueError,
-        match=r"We do not yet support DP \+ TP at the same time.*data_parallel_degree=3.*n_devices=6",
-    ):
-        MHAKVCacheParams(
-            dtype=DType.bfloat16,
-            n_kv_heads=12,
-            head_dim=64,
-            num_layers=1,
-            devices=[DeviceRef.GPU(i) for i in range(6)],
+            devices=[DeviceRef.GPU(i) for i in range(8)],
             data_parallel_degree=3,
             page_size=16,
         )
+
+
+def test_mixed_dp_tp_shards_heads_by_tp_degree() -> None:
+    """Test DP2 TP4 mode shards heads by TP group, not total devices."""
+    params = MHAKVCacheParams(
+        dtype=DType.bfloat16,
+        n_kv_heads=16,
+        head_dim=128,
+        num_layers=1,
+        devices=[DeviceRef.GPU(i) for i in range(8)],
+        data_parallel_degree=2,
+        page_size=16,
+    )
+    assert params.tensor_parallel_degree == 4
+    assert params.n_kv_heads_per_device == 4
+
+
+def test_mixed_dp_tp_mla_replicates_kv_across_tp_group() -> None:
+    """Test MLA in DP2 TP4 keeps one KV head and splits query heads by TP."""
+    params = MLAKVCacheParams(
+        dtype=DType.bfloat16,
+        head_dim=576,
+        num_layers=1,
+        devices=[DeviceRef.GPU(i) for i in range(8)],
+        data_parallel_degree=2,
+        page_size=128,
+        num_q_heads=128,
+    )
+    assert params.tensor_parallel_degree == 4
+    assert params.n_kv_heads_per_device == 1
+    assert params.num_q_heads_per_device == 32
+    assert params.replicates_kv_across_tp
 
 
 def test_tensor_parallel_non_divisible_heads_fails() -> None:
     """Test that TP mode with non-divisible heads raises ValueError."""
     with pytest.raises(
         ValueError,
-        match=r"Number of KV heads \(8\) must be divisible by the number of devices \(3\)",
+        match=r"Number of KV heads \(8\) must be divisible by the tensor parallel degree \(3\)",
     ):
         MHAKVCacheParams(
             dtype=DType.bfloat16,
@@ -205,7 +220,7 @@ def test_tensor_parallel_non_divisible_heads_small_fails() -> None:
     """Test TP mode where n_kv_heads < n_devices."""
     with pytest.raises(
         ValueError,
-        match=r"Number of KV heads \(2\) must be divisible by the number of devices \(4\)",
+        match=r"Number of KV heads \(2\) must be divisible by the tensor parallel degree \(4\)",
     ):
         MHAKVCacheParams(
             dtype=DType.bfloat16,
@@ -222,7 +237,7 @@ def test_tensor_parallel_odd_division_fails() -> None:
     """Test TP mode with an odd number that doesn't divide evenly."""
     with pytest.raises(
         ValueError,
-        match=r"Number of KV heads \(7\) must be divisible by the number of devices \(2\)",
+        match=r"Number of KV heads \(7\) must be divisible by the tensor parallel degree \(2\)",
     ):
         MHAKVCacheParams(
             dtype=DType.bfloat16,
@@ -256,7 +271,7 @@ def test_tensor_parallel_kv_head_replication_requires_opt_in() -> None:
     """Replication stays disabled (and errors) unless explicitly enabled."""
     with pytest.raises(
         ValueError,
-        match=r"Number of KV heads \(4\) must be divisible by the number of devices \(8\)",
+        match=r"Number of KV heads \(4\) must be divisible by the tensor parallel degree \(8\)",
     ):
         MHAKVCacheParams(
             dtype=DType.bfloat16,
@@ -273,7 +288,7 @@ def test_tensor_parallel_kv_head_replication_non_multiple_fails() -> None:
     """Replication needs n_devices to be a multiple of n_kv_heads."""
     with pytest.raises(
         ValueError,
-        match=r"Number of KV heads \(4\) must be divisible by the number of devices \(6\)",
+        match=r"Number of KV heads \(4\) must be divisible by the tensor parallel degree \(6\)",
     ):
         MHAKVCacheParams(
             dtype=DType.bfloat16,

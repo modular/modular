@@ -253,6 +253,52 @@ async def test_mla_runtime_inputs_handles_empty_replica_batch() -> None:
     assert runtime_inputs.inputs[1].attention_dispatch_metadata is not None
 
 
+@pytest.mark.asyncio
+async def test_mixed_dp_tp_runtime_inputs_copy_lut_within_replica() -> None:
+    """DP2 TP4 runtime inputs should be replica-major with shared TP LUTs."""
+    kv_manager = _make_kv_manager(
+        num_devices=8,
+        total_num_pages=16,
+        page_size=128,
+        data_parallel_degree=2,
+        is_mla=True,
+        num_q_heads=128,
+    )
+    assert kv_manager.params.tensor_parallel_degree == 4
+
+    replica_batches = []
+    for replica_idx, token_count in enumerate((1, 129)):
+        context = create_text_context(np.zeros(token_count, dtype=np.int64))
+        kv_manager.claim(context.request_id, replica_idx=replica_idx)
+        kv_manager.alloc(context, replica_idx=replica_idx)
+        replica_batches.append([context])
+
+    runtime_inputs = kv_manager.runtime_inputs_for_leaf(replica_batches)
+    assert len(runtime_inputs.inputs) == 8
+
+    assert tuple(runtime_inputs.inputs[0].lookup_table.shape) == (
+        1,
+        _padded_lut_cols(1),
+    )
+    assert tuple(runtime_inputs.inputs[4].lookup_table.shape) == (
+        1,
+        _padded_lut_cols(2),
+    )
+
+    for replica_start in (0, 4):
+        base = runtime_inputs.inputs[replica_start]
+        base_lut = base.lookup_table.to_numpy()
+        base_cache_lengths = base.cache_lengths.to_numpy()
+        for tp_shard in range(replica_start + 1, replica_start + 4):
+            shard = runtime_inputs.inputs[tp_shard]
+            np.testing.assert_array_equal(
+                shard.lookup_table.to_numpy(), base_lut
+            )
+            np.testing.assert_array_equal(
+                shard.cache_lengths.to_numpy(), base_cache_lengths
+            )
+
+
 @pytest.mark.parametrize("data_parallel_degree", [1, 2, 4])
 @pytest.mark.asyncio
 async def test_multi_cache_runtime_inputs_match_symbolic_order(

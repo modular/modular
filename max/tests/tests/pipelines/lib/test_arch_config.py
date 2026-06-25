@@ -359,7 +359,7 @@ def test_to_params_replication_disabled_by_default() -> None:
     kv_cache_config = KVCacheConfig()
     with pytest.raises(
         ValueError,
-        match=r"Number of KV heads \(4\) must be divisible by the number of devices \(8\)",
+        match=r"Number of KV heads \(4\) must be divisible by the tensor parallel degree \(8\)",
     ):
         kv_cache_config.to_params(
             dtype=DType.bfloat16,

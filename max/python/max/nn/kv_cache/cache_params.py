@@ -562,7 +562,8 @@ class KVCacheParams(KVCacheParamInterface):
     """
 
     data_parallel_degree: int = 1
-    """Degree of data parallelism. Must be 1 or equal to n_devices (DP+TP not yet supported)."""
+    """Degree of data parallelism. Devices are grouped replica-major, with
+    ``n_devices // data_parallel_degree`` TP shards per replica."""
 
     kvcache_quant_config: KVCacheQuantizationConfig | None = None
     """KVCache quantization config. Currently only FP8 quantization supported."""
@@ -582,20 +583,25 @@ class KVCacheParams(KVCacheParamInterface):
         Raises:
             ValueError: If configuration parameters are invalid or incompatible.
         """
-        # Validate parallelism configuration. DP + TP at the same time is not
-        # yet supported, so data parallelism must span every device.
-        if self.data_parallel_degree > 1:
-            if self.n_devices < self.data_parallel_degree:
-                raise ValueError(
-                    f"Data parallelism degree ({self.data_parallel_degree})"
-                    " cannot be greater than the number of devices"
-                    f" ({self.n_devices})"
-                )
-            if self.data_parallel_degree < self.n_devices:
-                raise ValueError(
-                    "We do not yet support DP + TP at the same time. Found"
-                    f" {self.data_parallel_degree=} and {self.n_devices=}"
-                )
+        if self.data_parallel_degree < 1:
+            raise ValueError(
+                f"Data parallelism degree ({self.data_parallel_degree})"
+                " must be at least 1"
+            )
+
+        if self.n_devices < self.data_parallel_degree:
+            raise ValueError(
+                f"Data parallelism degree ({self.data_parallel_degree})"
+                " cannot be greater than the number of devices"
+                f" ({self.n_devices})"
+            )
+
+        if self.n_devices % self.data_parallel_degree != 0:
+            raise ValueError(
+                f"Number of devices ({self.n_devices}) must be divisible by"
+                " data parallelism degree"
+                f" ({self.data_parallel_degree})"
+            )
 
         # Validate connector configuration
         if self.kv_connector in (
@@ -962,22 +968,15 @@ class MHAKVCacheParams(KVCacheParams):
 
     def __post_init__(self) -> None:
         super().__post_init__()
-        # In DP mode the full KV head set is replicated onto each replica, so
-        # there is no per-device divisibility requirement (the base validated
-        # dp <= n_devices and disallowed mixed DP+TP).
-        if self.data_parallel_degree > 1:
-            return
-        if self.n_kv_heads % self.n_devices == 0:
+        tp_degree = self.tensor_parallel_degree
+        if self.n_kv_heads % tp_degree == 0:
             return
         # Fewer heads than devices: replicate each head across a device group.
-        if (
-            self.allow_kv_head_replication
-            and self.n_devices % self.n_kv_heads == 0
-        ):
+        if self.allow_kv_head_replication and tp_degree % self.n_kv_heads == 0:
             return
         raise ValueError(
             f"Number of KV heads ({self.n_kv_heads}) must be divisible by"
-            f" the number of devices ({self.n_devices})"
+            f" the tensor parallel degree ({tp_degree})"
         )
 
     @property
@@ -986,11 +985,9 @@ class MHAKVCacheParams(KVCacheParams):
 
     @property
     def n_kv_heads_per_device(self) -> int:
-        # DP replicates the full KV head set onto each replica.
-        if self.data_parallel_degree > 1:
-            return self.n_kv_heads
-        if self.n_kv_heads % self.n_devices == 0:
-            return max(self.n_kv_heads // self.n_devices, 1)
+        tp_degree = self.tensor_parallel_degree
+        if self.n_kv_heads % tp_degree == 0:
+            return max(self.n_kv_heads // tp_degree, 1)
         # ``allow_kv_head_replication``: each head spans a group of devices.
         return 1
 
@@ -1140,14 +1137,12 @@ class MLAKVCacheParams(KVCacheParams):
 
     def __post_init__(self) -> None:
         super().__post_init__()
-        # DP replicates query heads per replica; only TP requires divisibility.
-        if self.data_parallel_degree > 1:
-            return
-        if self.num_q_heads % self.n_devices != 0:
+        tp_degree = self.tensor_parallel_degree
+        if self.num_q_heads % tp_degree != 0:
             raise ValueError(
                 f"Number of query heads ({self.num_q_heads}) must be"
-                " divisible by the number of devices"
-                f" ({self.n_devices})"
+                " divisible by the tensor parallel degree"
+                f" ({tp_degree})"
             )
 
     @property
@@ -1157,7 +1152,7 @@ class MLAKVCacheParams(KVCacheParams):
     @property
     def replicates_kv_across_tp(self) -> bool:
         """Whether every device holds identical KV state."""
-        return self.data_parallel_degree == 1 and self.n_devices > 1
+        return self.tensor_parallel_degree > 1
 
     @property
     def n_kv_heads_per_device(self) -> int:
@@ -1165,10 +1160,7 @@ class MLAKVCacheParams(KVCacheParams):
 
     @property
     def num_q_heads_per_device(self) -> int:
-        # DP replicates the full query head set onto each replica.
-        if self.data_parallel_degree > 1:
-            return self.num_q_heads
-        return max(self.num_q_heads // self.n_devices, 1)
+        return max(self.num_q_heads // self.tensor_parallel_degree, 1)
 
     def resolve_attn_key(
         self,
