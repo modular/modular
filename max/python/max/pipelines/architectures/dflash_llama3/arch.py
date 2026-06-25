@@ -53,4 +53,6 @@ dflash_llama_arch = SupportedArchitecture(
     task=PipelineTask.TEXT_GENERATION,
     config=Llama3Config,
     memory_planner=PagedMemoryPlanner,
+    supports_overlap_scheduler=False,
+    supports_device_graph_capture=False,
 )

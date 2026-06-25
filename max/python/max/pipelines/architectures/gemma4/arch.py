@@ -57,6 +57,7 @@ gemma4_arch = SupportedArchitecture(
     tool_parser="gemma4",
     reasoning_parser="gemma4",
     memory_planner=Gemma4MemoryPlanner,
+    supports_device_graph_capture=False,
 )
 
 
@@ -70,4 +71,5 @@ gemma4_unified_arch = dataclasses.replace(
     example_repo_ids=["google/gemma-4-12B-it"],
     # Served text-only: the unified vision embedder is not implemented.
     input_modalities={InputModality.TEXT},
+    supports_device_graph_capture=True,
 )

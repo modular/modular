@@ -49,4 +49,6 @@ gpt_oss_arch = SupportedArchitecture(
     },
     config=GptOssConfig,
     memory_planner=GptOssMemoryPlanner,
+    supports_overlap_scheduler=False,
+    supports_device_graph_capture=False,
 )

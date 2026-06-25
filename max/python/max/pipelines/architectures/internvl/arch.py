@@ -39,4 +39,6 @@ internvl_arch = SupportedArchitecture(
     },
     config=InternVLConfig,
     memory_planner=InternVLMemoryPlanner,
+    supports_overlap_scheduler=False,
+    supports_device_graph_capture=False,
 )

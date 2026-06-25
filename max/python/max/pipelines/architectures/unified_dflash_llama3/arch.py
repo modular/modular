@@ -41,4 +41,5 @@ unified_dflash_llama3_arch = SupportedArchitecture(
     },
     task=PipelineTask.TEXT_GENERATION,
     config=UnifiedDflashLlama3Config,
+    supports_device_graph_capture=False,
 )

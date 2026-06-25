@@ -51,4 +51,5 @@ qwen3_5_arch = SupportedArchitecture(
     tool_parser="qwen3_5",
     reasoning_parser="qwen3_5",
     memory_planner=Qwen3_5MemoryPlanner,
+    supports_device_graph_capture=False,
 )
