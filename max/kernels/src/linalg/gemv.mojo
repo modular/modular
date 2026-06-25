@@ -1117,6 +1117,7 @@ def gemv_gpu[
 
     elif m == 1 and transpose_b == True:
         comptime if a_type in (
+            DType.float32,
             DType.bfloat16,
             DType.float16,
             DType.float8_e4m3fn,
