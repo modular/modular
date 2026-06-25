@@ -35,6 +35,12 @@ This version is still a work in progress.
   (`float8_e4m3fn`) checkpoint weights are dequantized to `bfloat16` at load.
   Serve via `/v1/responses`; benchmark with
   `--benchmark-task text-to-image`.
+- Added the `reasoning_split` chat-completion request field for MiniMax M3.
+  It defaults to `true`, which keeps the existing behavior of returning the
+  model's thinking in a separate `reasoning` field. Setting it to `false` folds
+  the thinking back into the `content` field wrapped in `<think>...</think>`
+  tags, matching the official MiniMax M3 endpoint. The field is a no-op for
+  every other model.
 
 ## MAX framework
 
