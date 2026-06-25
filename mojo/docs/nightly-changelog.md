@@ -210,6 +210,13 @@ This version is still a work in progress.
   Mojo `Error` into a Python exception via `PyErr_SetString` and returns a null
   `PyObjectPtr`.
 
+- Iterating over a `String`, `StringSlice`, or `StringLiteral` now yields
+  grapheme clusters by default. Their `__iter__()` and `__reversed__()` methods
+  return a `GraphemeSliceIter`, so `for c in my_string:` produces what a user
+  perceives as a single "character" on screen. The lower-level views remain
+  available when you want them: `codepoints()` or `codepoint_slices()` for
+  Unicode scalars, and `bytes()` for raw UTF-8 bytes.
+
 ## Tooling changes
 
 - Added a `--lld-path` CLI flag. This overrides the LLD path that Mojo uses.
