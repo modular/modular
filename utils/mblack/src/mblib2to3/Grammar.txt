@@ -47,7 +47,7 @@ capture_list: capture_item (',' capture_item)* [',']
 # global capture modes (e.g., "var", "var^", "read"). The move marker '^'
 # follows either VAR or a bare name ("var x^", "var^", "x^").
 capture_item: (VAR [NAME ['^'] | '^' [NAME]]) | (READ [NAME]) | (MUT [NAME]) | (REF [NAME]) | (NAME ['^' | NAME])
-metaparams: '[' [typedparamslist] ']'
+metaparams: '[' [typedargslist] ']'
 parameters: '(' [typedargslist] ')'
 result_type: [REF '[' test [',' test [',']] ']'] (functype | or_expr)
 
@@ -69,7 +69,6 @@ convention: VAR | (OUT ['[' test [',' test [',']] ']']) | READ | MUT | DEINIT | 
 #tname: NAME [metaparams] [':' test]
 
 typedargslist: ((([convention] ['**'|'*'] tfpdef ['=' test])|'/'|'*'|'//') [','])*
-typedparamslist: ((([convention] ['**'|'*'] tfpdef (where_clause)* ['=' test])|'/'|'*'|'//') [','])*
 
 tname: NAME [metaparams] [':' (type_test|star_expr)]
 
