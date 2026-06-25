@@ -69,7 +69,7 @@ def test_parse_delta_streams_full_call() -> None:
         "Sure.",
         "\n<tool_",
         "call>get_we",
-        "ather\n<arg_key>city</arg_key>\n",
+        "ather\n<arg_key>city</arg_key>\n",  # spellchecker:disable-line
         "<arg_value>Paris</arg_value>\n</tool_",
         "call>\n",
     ]

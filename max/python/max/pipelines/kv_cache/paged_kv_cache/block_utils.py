@@ -36,7 +36,7 @@ class InsufficientBlocksError(Exception):
 DEFAULT_PARENT_HASH = 0
 _ZERO_SEED: bytes = b"\x00" * 32
 """The zero seed for the SHA-256 algorithm.
-Determinstic behaviour across restarts for benchmarking.
+Deterministic behaviour across restarts for benchmarking.
 """
 
 

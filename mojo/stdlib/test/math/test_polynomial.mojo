@@ -35,7 +35,7 @@ def test_polynomial_evaluate_degree3() raises:
 
 
 def test_polynomial_evaluate_degree4() raises:
-    # Evalaute 1000 + 99 x - 43 x^2 + 12 x^3 - 14 x^4
+    # Evaluate 1000 + 99 x - 43 x^2 + 12 x^3 - 14 x^4
     comptime coeffs: List[Float64] = [1000.0, 99.0, -43.0, 12.0, -14.0]
 
     assert_equal(_horner_evaluate[coeffs](1.0), 1054.0)
