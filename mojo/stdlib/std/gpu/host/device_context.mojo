@@ -2009,7 +2009,6 @@ trait _FunctionEnqueuer:
         ...
 
 
-@doc_hidden
 struct DeviceStream(ImplicitlyCopyable, _FunctionEnqueuer):
     """Represents a CUDA/HIP stream for asynchronous GPU operations.
 
@@ -2024,9 +2023,10 @@ struct DeviceStream(ImplicitlyCopyable, _FunctionEnqueuer):
     Example:
 
     ```mojo
-    from std.gpu.host import DeviceContext, DeviceStream
+    from std.gpu.host import DeviceContext
+
     var ctx = DeviceContext(0)  # Select first GPU
-    var stream = DeviceStream(ctx)
+    var stream = ctx.create_stream()
 
     # Launch operations on the stream
     # ...

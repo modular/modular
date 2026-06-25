@@ -216,6 +216,13 @@ This version is still a work in progress.
 
 ## GPU programming
 
+- The `DeviceStream` type is now included in the API reference documentation.
+  Returned by `DeviceContext.create_stream()` and
+  `DeviceContext.create_external_stream()`, it provides methods for
+  synchronizing and sequencing asynchronous GPU work (for example,
+  `synchronize()`, `record_event()`, and `enqueue_wait_for()`). The type was
+  already public but was previously hidden from the generated docs.
+
 - Added an 8x8 `simdgroup_matrix` matrix multiply-accumulate primitive
   (`_mma_apple_8x8()`) with `apple_mma_load_8x8()` / `apple_mma_store_8x8()`
   fragment helpers for Apple Silicon GPUs in `std.gpu.compute.arch`. Unlike
