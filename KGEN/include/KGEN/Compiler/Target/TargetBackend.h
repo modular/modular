@@ -31,14 +31,25 @@ class Function;
 class Module;
 class TargetMachine;
 class Triple;
+class raw_pwrite_stream;
 template <class C>
 struct object_creator;
 } // namespace llvm
+
+namespace mlir {
+class Operation;
+} // namespace mlir
 
 namespace M::KGEN {
 
 class MCLinker;
 class PluginManager;
+
+/// Creates an LLVM TargetMachine from already-effective `options` (no
+/// target-specific adjustment). Used by `TargetBackend::createTargetMachine`
+/// and as the fallback for triples with no registered backend.
+ErrorOr<std::unique_ptr<llvm::TargetMachine>>
+defaultCreateTargetMachine(const CompilationOptions &options, bool isJIT);
 
 /// How the module is divided into independently-codegen'd units.
 enum class SplitStrategy { None, PerExported, PerFunction };
@@ -78,8 +89,20 @@ public:
   /// Inter-procedural codegen disables parallel/per-function llc.
   virtual bool isCodegenInterprocedural() const { return false; }
 
-  // (TODO) revisit if this is needed
+  /// Whether this backend produces offload (device) code; a missing kernel id
+  /// is a hard error for offload targets.
   virtual bool isOffload() const { return false; }
+
+  /// Whether the linked module's functions must be restored to their original
+  /// order after MCLinker reorders them (needed when codegen emits function
+  /// declarations whose order matters, e.g. NVPTX).
+  virtual bool requiresOriginalFunctionOrder() const { return false; }
+
+  /// Adjusts the MLIR module before lowering to LLVM (e.g. target-specific
+  /// debug-info fixups). Runs in `ObjectCompiler::lowerAllFuncsToLLVM`.
+  virtual void
+  prepareModuleForLowering(mlir::Operation *module,
+                           const CompilationOptions &options) const {}
 
   /// Options used for `createTargetMachine`; the identity by default.
   virtual CompilationOptions
@@ -87,10 +110,21 @@ public:
                                 llvm::StringRef moduleTriple) const {
     return options;
   }
+  /// Creates the LLVM TargetMachine for `options`. The base implementation
+  /// applies `adjustOptionsForTargetMachine` and uses the generic
+  /// TargetRegistry path; backends may override for full control.
+  virtual ErrorOr<std::unique_ptr<llvm::TargetMachine>>
+  createTargetMachine(const CompilationOptions &options, bool isJIT) const;
   /// Fixes up `module` after the TargetMachine is created.
   virtual void finalizeModuleForTarget(llvm::Module &module,
                                        llvm::TargetMachine &tm,
                                        llvm::StringRef originalTriple) const {}
+
+  /// Writes `module` as bitcode to `os`. The base implementation writes
+  /// standard LLVM bitcode; backends may override (e.g. Metal emits AIR
+  /// bitcode).
+  virtual void emitBitcode(llvm::Module &module,
+                           llvm::raw_pwrite_stream &os) const;
 
   /// Links target-specific device/runtime bitcode into `module`.
   virtual ErrorOrSuccess
