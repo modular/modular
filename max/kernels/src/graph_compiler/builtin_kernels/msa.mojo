@@ -175,6 +175,8 @@ struct Struct_msa_indexer_ragged_paged:
         var k_operand = KVCacheMHAOperand(k_cache)
 
         var total_q = Int(q.dim_size[0]())
+        if total_q == 0:
+            return
         var max_num_blocks = ceildiv(
             Int(k_cache.max_context_length())
             + Int(k_cache.max_prompt_length()),
