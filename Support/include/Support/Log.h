@@ -22,14 +22,23 @@
 // MLOG(LogLevel::DEBUG, "hi"); // "hi" printed at debug level
 // MLOG(LogLevel::DEBUG, "{}", "hello"); // hello printed at debug level
 // MLOG(LogLevel::DEBUG, "{} {}", "hello", 42); // hello 42
+//
+// The library goals are as follows:
+// 1. Log in as few cycles as we can muster
+// 2. Output messages reasonably quickly after they are logged
+// 3. Reliably output all messages
+//
+// These are in order of importance, and design decisions have been taken
+// reflecting this (e.g. messages are dropped on the floor if throughput
+// isn't high enough).
 
 #ifndef SUPPORT_LOG_H
 #define SUPPORT_LOG_H
 
 #include "LogChannels.h"
+#include "MpscRingBuffer.h"
 
 #include "llvm/ADT/SmallString.h"
-#include "llvm/ADT/StringRef.h"
 
 #define FMT_EXCEPTIONS 0
 #include <fmt/base.h>
@@ -37,9 +46,17 @@
 #include <array>
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <cstdint>
 #include <cstdlib>
+#include <memory>
+#include <mutex>
 #include <string_view>
+#include <thread>
+
+namespace M {
+class Config; // avoids including "Configuration.h"
+} // namespace M
 
 #define MLOG(...) M::Log::log(__VA_ARGS__)
 
@@ -50,6 +67,7 @@
 #define MLOG_FATAL(...)                                                        \
   do {                                                                         \
     MLOG(::M::Log::LogLevel::FATAL, __VA_ARGS__);                              \
+    getDefaultLog().flush();                                                   \
     std::abort();                                                              \
   } while (0)
 
@@ -106,6 +124,7 @@ struct LogArg {
 };
 
 namespace Detail {
+
 template <typename T>
 LogArg toLogArg(T &&val) {
   using D = std::decay_t<T>;
@@ -169,17 +188,27 @@ struct LogRecord {
 
   // Constructs from a pre-built args array. Used by the C FFI shim
   // (LogFFI.cpp), which serializes typed arguments across the boundary itself.
+  // The format string must have static duration (the Mojo API enforces this,
+  // as the format string is a parameter).
   LogRecord(Timestamp ts, LogLevel lvl, Channel::Channels c,
             std::string_view fmt, std::array<LogArg, maxArgs> prebuiltArgs,
             uint8_t count)
       : timestamp(ts), fmtString(fmt), args(std::move(prebuiltArgs)),
         argCount(count), level(lvl), channel(c) {}
+
+  // Required for ring-buffer slot pre-allocation.
+  LogRecord() = default;
 };
 
 // Receives formatted log lines and writes to destinations (stdout, file &c).
 class Sink;
 
 class Logger {
+  /// Number of slots in the logger's Ring Buffer.
+  static constexpr size_t kRingCapacity = 1u << 12;
+  /// How much char data can be stored by each log message.
+  static constexpr size_t kStrBufPerSlot = 256;
+
   struct LogFormatState {
     bool useEnhancedFormat = true;
     bool showTimeStamp = true;
@@ -188,19 +217,45 @@ class Logger {
     bool useIsoTimestamps = false;
     bool showMicroseconds = false;
     bool emitJSON = false;
+    bool noShutdownSummary = false;
   } formatState;
+
   std::atomic<LogLevel> level = LogLevel::WARN;
   std::vector<std::unique_ptr<Sink>> sinks;
   ChannelState channelsEnabled;
+  // Async ring buffer (Vyukov MPSC protocol). String-tagged LogArgs point into
+  // strArena_; the slot's sequence number guarantees arena bytes live until
+  // the consumer calls ring_.consume() after processing.
+  M::MpscRingBuffer<LogRecord> ring{kRingCapacity};
+  /// Defaults to 128 MiB.
+  char strArena[kRingCapacity][kStrBufPerSlot];
+  std::mutex drainMutex;
+  std::condition_variable drainCv;
+  std::atomic<bool> stopConsumer{false};
+  std::thread consumer;
+  std::atomic<uint64_t> droppedRecords{0};
+  // Counts producers currently between claim() and publish(). The consumer
+  // only exits when this is zero so it doesn't miss a slot whose sequence
+  // number hasn't been written yet.
+  std::atomic<size_t> inFlightEnqueues{0};
 
   llvm::SmallString<32> buildTimestampString(LogRecord::Timestamp);
   llvm::SmallString<128> buildLogPrefix(LogLevel, Channel::Channels,
                                         LogRecord::Timestamp);
+  void run();
+  bool enqueue(LogRecord record);
+  void initFromConfig(Config cfg);
+  void processRecord(const LogRecord &record);
+  void flushSinks();
 
 public:
   Logger();
   ~Logger();
   void log(LogRecord record);
+
+  // Blocks until all records enqueued before this call have been written to
+  // all sinks. Primarily useful in tests before inspecting sink output.
+  void flush();
 
   void enableChannel(Channel::Channels c) { channelsEnabled.enable(c); }
   void disableChannel(Channel::Channels c) { channelsEnabled.disable(c); }
@@ -217,6 +272,15 @@ public:
 
   void setLogLevel(LogLevel newLevel) {
     level.store(newLevel, std::memory_order::release);
+  }
+
+  /// Total records successfully written to sinks (monotonically increasing).
+  size_t processedCount() const { return ring.consumeCount(); }
+
+  /// Total records dropped because the ring was full (monotonically
+  /// increasing).
+  uint64_t droppedCount() const {
+    return droppedRecords.load(std::memory_order_relaxed);
   }
 };
 

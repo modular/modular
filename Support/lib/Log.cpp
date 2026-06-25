@@ -19,12 +19,15 @@
 #include <fmt/chrono.h>
 #include <fmt/format.h>
 
+#include "Support/Threading/SpinWaiter.h"
+
 #include <chrono>
 #include <cstdlib>
 #include <cstring>
 #include <memory>
 #include <mutex>
 #include <span>
+#include <thread>
 
 namespace M::Log {
 
@@ -38,6 +41,7 @@ static constexpr llvm::StringLiteral LOG_NO_ENHANCED = "log.no_enhanced";
 static constexpr llvm::StringLiteral LOG_NO_TIMESTAMP = "log.no_timestamp";
 static constexpr llvm::StringLiteral LOG_JSON = "log.json";
 static constexpr llvm::StringLiteral LOG_CHANNELS = "log.enabled_channels";
+static constexpr llvm::StringLiteral LOG_NO_SUMMARY = "log.no_summary";
 } // namespace ConfigEntry
 
 static LogLevel parseLogLevelFromString(llvm::StringRef levelStr) {
@@ -202,6 +206,9 @@ class Sink {
 public:
   virtual ~Sink() = default;
   virtual void write(llvm::StringRef msg) = 0;
+  // Called by the consumer thread when the ring drains and before shutdown.
+  // Default is a no-op for sinks that don't buffer.
+  virtual void flush() {}
 };
 
 class FileSink : public Sink {
@@ -225,8 +232,9 @@ public:
     std::lock_guard<std::mutex> lock(outputMutex);
     ostream.write(msg.begin(), msg.size());
     ostream.write('\n');
-    ostream.flush();
   }
+
+  void flush() override { ostream.flush(); }
 };
 
 class StdoutSink : public Sink {
@@ -235,36 +243,19 @@ class StdoutSink : public Sink {
   void write(llvm::StringRef msg) override {
     std::lock_guard<std::mutex> lock(outputMutex);
     llvm::outs() << msg << "\n";
-    llvm::outs().flush();
   }
+
+  void flush() override { llvm::outs().flush(); }
 };
 
-Logger::Logger() {
-  // Respect the standard NO_COLOR env var, any value (even empty) disables
-  // color - does not depend on config object.
-  formatState.showColors = !llvm::sys::Process::GetEnv("NO_COLOR").has_value();
-
-  // Check if the terminal does not support colors.
-  if (formatState.showColors) {
-    auto term = llvm::sys::Process::GetEnv("TERM");
-    if ((term && *term == "dumb") ||
-        !llvm::sys::Process::StandardOutIsDisplayed())
-      formatState.showColors = false;
-  }
-
-  auto cfgOr = Config::open();
-  if (cfgOr.isError()) {
-    // If we can't read the config, the default is to log to stdout.
-    sinks.push_back(std::make_unique<StdoutSink>());
-    return;
-  }
-  auto cfg = cfgOr.takeValue();
+void Logger::initFromConfig(Config cfg) {
   using namespace ConfigEntry;
   formatState.useEnhancedFormat = !cfg.getValueAsBool(LOG_NO_ENHANCED, false);
   formatState.showTimeStamp = !cfg.getValueAsBool(LOG_NO_TIMESTAMP, false);
   formatState.useIsoTimestamps = cfg.getValueAsBool(LOG_ISO_TIME, false);
   formatState.showMicroseconds = cfg.getValueAsBool(LOG_MICROSECONDS, false);
   formatState.emitJSON = cfg.getValueAsBool(LOG_JSON, false);
+  formatState.noShutdownSummary = cfg.getValueAsBool(LOG_NO_SUMMARY, false);
   auto logToStdout = cfg.getValueAsBool(LOG_STDOUT, true);
 
   this->setLogLevel(
@@ -309,9 +300,127 @@ Logger::Logger() {
   }
 }
 
-Logger::~Logger() = default;
+Logger::Logger() {
+  // Respect the standard NO_COLOR env var, any value (even empty) disables
+  // color - does not depend on config object.
+  formatState.showColors = !llvm::sys::Process::GetEnv("NO_COLOR").has_value();
 
-void Logger::log(LogRecord record) {
+  // Check if the terminal does not support colors.
+  if (formatState.showColors) {
+    auto term = llvm::sys::Process::GetEnv("TERM");
+    if ((term && *term == "dumb") ||
+        !llvm::sys::Process::StandardOutIsDisplayed())
+      formatState.showColors = false;
+  }
+
+  auto cfgOr = Config::open();
+  if (cfgOr.isError()) {
+    // If we can't read the config, the default is to log to stdout.
+    sinks.push_back(std::make_unique<StdoutSink>());
+  } else {
+    initFromConfig(cfgOr.takeValue());
+  }
+
+  // Must run after all other optional state has been initialised.
+  consumer = std::thread(&Logger::run, this);
+}
+
+Logger::~Logger() {
+  stopConsumer.store(true, std::memory_order_release);
+  drainCv.notify_all();
+  consumer.join();
+
+  auto written = ring.consumeCount();
+  auto dropped = droppedRecords.load(std::memory_order_relaxed);
+  // Only print when the logger was actually used, and allow opt-out.
+  // std::printf (C stdout) is safe here; llvm::outs() and file sinks may
+  // already be torn down at static-destructor time.
+  if ((written > 0 || dropped > 0) && !formatState.noShutdownSummary)
+    std::printf("[Logger] shutdown: %zu records written, %zu dropped\n",
+                written, dropped);
+}
+
+void Logger::log(LogRecord record) { enqueue(std::move(record)); }
+
+bool Logger::enqueue(LogRecord record) {
+  inFlightEnqueues.fetch_add(1, std::memory_order_relaxed);
+  auto posOpt = ring.claim();
+  if (!posOpt) {
+    inFlightEnqueues.fetch_sub(1, std::memory_order_release);
+    droppedRecords.fetch_add(1, std::memory_order_relaxed);
+    return false;
+  }
+  size_t pos = *posOpt;
+
+  // Copy String-tagged args into the slot's arena so the consumer thread can
+  // safely read them after the caller's stack is gone. If the arena fills up,
+  // strings are clipped to the remaining space rather than left dangling.
+  char *arena = strArena[pos & ring.getMask()];
+  size_t arenaUsed = 0;
+  for (size_t i = 0; i < record.argCount; ++i) {
+    auto &arg = record.args[i];
+    if (arg.tag != LogArg::Type::String)
+      continue;
+    auto &sv = arg.data.str;
+    size_t toCopy = std::min(sv.len, kStrBufPerSlot - arenaUsed);
+    if (toCopy > 0) {
+      std::memcpy(arena + arenaUsed, sv.ptr, toCopy);
+      sv.ptr = arena + arenaUsed;
+      sv.len = toCopy; // may be clipped if arena was nearly full
+      arenaUsed += toCopy;
+    } else {
+      // Arena exhausted; render as empty string rather than dangle a ptr.
+      sv = {"", 0};
+    }
+  }
+
+  ring.itemAt(pos) = std::move(record);
+  ring.publish(pos);
+  inFlightEnqueues.fetch_sub(1, std::memory_order_release);
+  return true;
+}
+
+void Logger::flushSinks() {
+  for (const auto &sink : sinks)
+    sink->flush();
+}
+
+void Logger::run() {
+  while (true) {
+    if (LogRecord *item = ring.peek()) {
+      // Process while holding the slot so strArena_ bytes remain valid.
+      processRecord(*item);
+      ring.consume();
+    } else {
+      if (stopConsumer.load(std::memory_order_acquire) &&
+          inFlightEnqueues.load(std::memory_order_acquire) == 0 &&
+          ring.enqueueCount() <= ring.consumeCount())
+        break;
+      // Flush buffered sink writes to the OS before sleeping — cheaper than
+      // flushing after every record, and ensures output appears promptly when
+      // the ring drains.
+      flushSinks();
+      std::unique_lock<std::mutex> lock(drainMutex);
+      // The consumer polls every 100 us to drain the ring buffer. Messages
+      // will therefore wait up to this long to be seen in the log. Flushing
+      // will force the thread to wake up and drain the buffer as normal.
+      drainCv.wait_for(lock, std::chrono::microseconds(100));
+    }
+  }
+  flushSinks();
+}
+
+void Logger::flush() {
+  if (!consumer.joinable())
+    return;
+  size_t target = ring.enqueueCount();
+  drainCv.notify_one();
+  SpinWaiter<> waiter;
+  while (ring.consumeCount() < target)
+    waiter.wait();
+}
+
+void Logger::processRecord(const LogRecord &record) {
   auto msg = renderRecord(record);
   auto level = record.level;
   llvm::SmallString<512> enhancedOrJSONMsg;
@@ -324,10 +433,8 @@ void Logger::log(LogRecord record) {
   } else {
     enhancedOrJSONMsg = msg;
   }
-
-  for (const auto &sink : sinks) {
+  for (const auto &sink : sinks)
     sink->write(enhancedOrJSONMsg);
-  }
 }
 
 // Depends on logger state to access formatting options

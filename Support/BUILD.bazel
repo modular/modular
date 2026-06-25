@@ -986,6 +986,11 @@ modular_cc_library(
 )
 
 modular_cc_library(
+    name = "MpscRingBuffer",
+    hdrs = ["include/Support/MpscRingBuffer.h"],
+)
+
+modular_cc_library(
     name = "Log",
     srcs = ["lib/Log.cpp"],
     hdrs = [
@@ -994,6 +999,8 @@ modular_cc_library(
     ],
     deps = [
         "Configuration",
+        ":MpscRingBuffer",
+        ":Threading",
         "@fmt",
         "@llvm-project//llvm:Support",
     ],

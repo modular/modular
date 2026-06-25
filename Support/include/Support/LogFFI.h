@@ -39,6 +39,10 @@ void MLog_write(uint8_t level, uint64_t channel, int64_t timestamp,
 /// Sets the minimum log level on the default logger.
 void MLog_set_level(uint8_t level);
 
+/// Blocks until all records enqueued before this call have been written to all
+/// sinks. Use in tests before reading sink output.
+void MLog_flush(void);
+
 #ifdef __cplusplus
 } // extern "C"
 #endif

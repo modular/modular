@@ -19,3 +19,21 @@ modular_cc_binary(
         "@llvm-project//llvm:Support",
     ],
 )
+
+modular_cc_binary(
+    name = "LogThroughputBenchmark",
+    srcs = ["LogThroughputBenchmark.cpp"],
+    deps = [
+        "//Support:Log",
+    ],
+)
+
+modular_cc_binary(
+    name = "LogWorkloadBenchmark",
+    srcs = ["LogWorkloadBenchmark.cpp"],
+    deps = [
+        "//Support:Log",
+        "//Support:MicroBenchmark",
+        "@llvm-project//llvm:Support",
+    ],
+)
