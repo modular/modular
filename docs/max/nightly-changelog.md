@@ -71,6 +71,15 @@ This version is still a work in progress.
 
 ### Inference server
 
+- Improved time-to-first-token for multimodal requests by making the image and
+  video preprocessor reject and decode media more efficiently. Oversized media
+  is now rejected before its bytes are fully materialized: an `http(s)` download
+  is aborted as soon as the advertised `Content-Length` (or the streamed total)
+  crosses the per-item cap, and a `data:` URI is rejected from its base64 length
+  before it is decoded. Large `data:` base64 decoding now runs on a worker
+  thread instead of blocking the server event loop, so one big payload no longer
+  stalls other in-flight requests. Per-request video count and per-video byte
+  limits are also enforced up front (mirroring the existing image limits).
 - Reduced per-iteration latency for structured-output (constrained decoding)
   requests on speculative-decode models. The overlap pipeline now enqueues the
   asynchronous FSM-advance and bitmask compute once the next iteration's batch

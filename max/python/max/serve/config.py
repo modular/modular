@@ -126,6 +126,28 @@ class Settings(BaseSettings):
         default=20 * 1024 * 1024,  # 20MiB
         alias="MAX_SERVE_MAX_LOCAL_IMAGE_BYTES",
     )
+    # Media (image/video) resolution configuration for http(s):// and data:
+    # URIs. ``max_bytes`` is a server-level cap applied on top of any
+    # per-model cap (the smaller of the two wins); 0 disables the
+    # server-level cap. ``media_kind`` is only the default label used in
+    # size-limit error messages when a resolver caller does not pass one.
+    max_bytes: int = Field(
+        description=(
+            "Server-level maximum size in bytes for media resolved from "
+            "http(s):// or data: URIs. Applied on top of any per-model cap "
+            "(the smaller wins). 0 disables the server-level cap."
+        ),
+        default=0,
+        alias="MAX_SERVE_MAX_BYTES",
+    )
+    media_kind: str = Field(
+        description=(
+            "Default media kind ('image' or 'video') used in size-limit error "
+            "messages when a resolver caller does not specify one."
+        ),
+        default="image",
+        alias="MAX_SERVE_MEDIA_KIND",
+    )
     generated_media_storage_mb: int = Field(
         description="Maximum amount of local disk space in MiB to use for generated image/video artifacts served via /content routes.",
         default=512,
@@ -317,6 +339,13 @@ class Settings(BaseSettings):
         logger.info(
             f"    max_local_image_bytes  : {to_human_readable_bytes(self.max_local_image_bytes)}"
         )
+        max_bytes_str = (
+            to_human_readable_bytes(self.max_bytes)
+            if self.max_bytes
+            else "None"
+        )
+        logger.info(f"    max_bytes              : {max_bytes_str}")
+        logger.info(f"    media_kind             : {self.media_kind}")
         logger.info("")
 
         # Metrics and Telemetry Configuration
