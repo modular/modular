@@ -238,6 +238,15 @@ def listdir[PathLike: os.PathLike](path: PathLike) raises -> List[String]:
 
 
 @always_inline
+def _abort_base() -> Never:
+    __mlir_op.`llvm.intr.trap`()
+
+    # We need to satisfy the noreturn checker.
+    while True:
+        pass
+
+
+@always_inline
 def abort() -> Never:
     """Terminates execution, using a target dependent trap instruction if
     available.
@@ -247,11 +256,9 @@ def abort() -> Never:
     # if so, the trap below is dead.
     CurrentPlugin.abort_fn()
 
-    __mlir_op.`llvm.intr.trap`()
-
-    # We need to satisfy the noreturn checker.
-    while True:
-        pass
+    # If no hook, if hook fails, or if hook longjmps,
+    # fall through to base impl.
+    _abort_base()
 
 
 @always_inline
