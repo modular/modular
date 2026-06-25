@@ -1449,6 +1449,8 @@ async def openai_create_chat_completion(
                         response_format_schema=response_format_schema,
                         tools=grammar_tools,
                         tokenizer=pipeline.tokenizer,
+                        backend=pipeline_config.sampling.structured_output_backend,
+                        tool_choice=completion_request.tool_choice,
                     )
                 # Create the response format.
                 # Note:
