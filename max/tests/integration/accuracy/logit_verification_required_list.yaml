@@ -1,0 +1,78 @@
+##===----------------------------------------------------------------------===##
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+##===----------------------------------------------------------------------===##
+
+# Inclusion list for nightly Pipeline Logit Verification golden gating.
+#
+# Only models listed here must pass for the nightly to be tagged golden.
+# All other models still run and their results are reported, but failures
+# do not block the golden tag.
+#
+# Fields
+#   model   HF model path (or logit_verification_config.yaml key),
+#           case-insensitive (required)
+#   runner  Runner label that must pass (e.g. intel-gpu-b200).
+#           If omitted, defaults to intel-gpu-b200 and intel-gpu-mi355 only.
+#           Multi-GPU variants (intel-gpu-8xb200, intel-gpu-b200-multi,
+#           intel-gpu-4xmi355, etc.) must be listed explicitly.
+#   reason  Human-readable explanation (required)
+#
+# Scope: B200 only for now. Add MI355/multi-GPU entries when ready.
+
+required_for_golden:
+
+  # ── Gemma 4 ──────────────────────────────────────────────────────────────────
+  - model: google/gemma-4-26B-A4B-it-bfloat16
+    runner: intel-gpu-b200
+    reason: "Gemma 4 26B (bfloat16) gates golden on B200"
+
+  - model: google/gemma-4-31B-it-bfloat16
+    runner: intel-gpu-b200
+    reason: "Gemma 4 31B (bfloat16) gates golden on B200"
+
+  # ── Kimi K2.5 ────────────────────────────────────────────────────────────────
+  - model: nvidia/Kimi-K2.5-NVFP4
+    runner: intel-gpu-b200
+    reason: "Kimi K2.5 NVFP4 gates golden on B200"
+
+  - model: nvidia/Kimi-K2.5-NVFP4__internal
+    runner: intel-gpu-b200
+    reason: "Kimi K2.5 NVFP4 internal variant gates golden on B200"
+
+  # ── Kimi K2.6 ────────────────────────────────────────────────────────────────
+  - model: nvidia/Kimi-K2.6-NVFP4
+    runner: intel-gpu-b200
+    reason: "Kimi K2.6 NVFP4 gates golden on B200"
+
+  # ── DeepSeek V3.1 ────────────────────────────────────────────────────────────
+  - model: deepseek-ai/DeepSeek-V3.1-Terminus
+    runner: intel-gpu-b200
+    reason: "DeepSeek V3.1 Terminus gates golden on B200"
+
+  # ── DeepSeek V3.2 ────────────────────────────────────────────────────────────
+  - model: deepseek-ai/DeepSeek-V3.2-Exp
+    runner: intel-gpu-b200
+    reason: "DeepSeek V3.2 Exp gates golden on B200"
+
+  # ── MiniMax M2.7 ─────────────────────────────────────────────────────────────
+  - model: MiniMaxAI/MiniMax-M2.7
+    runner: intel-gpu-b200
+    reason: "MiniMax M2.7 gates golden on B200"
+
+  - model: lukealonso/MiniMax-M2.7-NVFP4
+    runner: intel-gpu-b200
+    reason: "MiniMax M2.7 NVFP4 gates golden on B200"
+
+  # ── MiniMax 3 ────────────────────────────────────────────────────────────────
+  - model: minimax/minimax3-dense-only
+    runner: intel-gpu-b200
+    reason: "MiniMax 3 (dense-only checkpoint) gates golden on B200"

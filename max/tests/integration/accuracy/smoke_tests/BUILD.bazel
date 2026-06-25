@@ -95,7 +95,7 @@ modular_py_binary(
 modular_py_library(
     name = "check_golden_eligibility",
     srcs = ["check_golden_eligibility.py"],
-    data = ["golden_ignore_list.yaml"],
+    data = ["golden_required_list.yaml"],
     imports = [".."],
     deps = [
         requirement("click"),

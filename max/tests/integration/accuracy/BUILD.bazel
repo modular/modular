@@ -238,7 +238,7 @@ modular_py_binary(
     name = "check_logit_verification_eligibility",
     testonly = True,
     srcs = ["check_logit_verification_eligibility.py"],
-    data = ["logit_verification_ignore_list.yaml"],
+    data = ["logit_verification_required_list.yaml"],
     imports = ["."],
     deps = [
         requirement("click"),

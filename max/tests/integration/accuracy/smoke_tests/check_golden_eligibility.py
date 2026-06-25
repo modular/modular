@@ -17,12 +17,15 @@ Determine whether a nightly smoke-test run qualifies for the golden container ta
 
 Queries the GitHub Actions API for all jobs in the current workflow run,
 identifies per-model failures under the smoke-test sub-workflow, and checks
-each failure against the checked-in ignore list
-(``golden_ignore_list.yaml``).
+each failure against the checked-in required list
+(``golden_required_list.yaml``).
+
+Only models in the required list can block the golden tag. All other
+failures are reported but do not affect eligibility.
 
 Exit codes
-    0  All failures are in the ignore list → tag the container golden
-    1  One or more unexpected failures, or a script error → do not tag golden
+    0  All required models passed (or required list is empty) → tag golden
+    1  One or more required models failed, or a script error → do not tag golden
 
 Typical invocation in a GitHub Actions step::
 
@@ -47,12 +50,12 @@ import requests
 import yaml
 
 _HERE = Path(__file__).parent
-DEFAULT_IGNORE_LIST = _HERE / "golden_ignore_list.yaml"
+DEFAULT_REQUIRED_LIST = _HERE / "golden_required_list.yaml"
 
-# Non-zero conclusions that block golden.
-# When no GPU is specified in an ignore-list entry, match only these two base
+# Non-zero conclusions that indicate a model failure.
+# When no GPU is specified in a required-list entry, match only these two base
 # configs (one per GPU architecture).  Failures on multi-GPU runners (2xB200,
-# 8xB200, 8xMI355, …) are considered intentional and must be listed explicitly.
+# 8xB200, 8xMI355, …) are treated as optional and must be listed explicitly.
 DEFAULT_GPUS = frozenset({"B200", "MI355"})
 
 BLOCKING_CONCLUSIONS = {"failure", "timed_out", "cancelled"}
@@ -67,45 +70,43 @@ class JobResult:
 
 
 @dataclass(frozen=True)
-class IgnoredFailure:
+class RequiredModel:
     model: str
-    gpu: str | None  # None matches any GPU
+    gpu: str | None  # None matches DEFAULT_GPUS only
     reason: str
-    ticket: str | None
 
 
-def load_ignore_list(path: Path) -> list[IgnoredFailure]:
-    """Load and parse the golden ignore list from *path*."""
+def load_required_list(path: Path) -> list[RequiredModel]:
+    """Load and parse the golden required list from *path*."""
     try:
         data = yaml.safe_load(path.read_text())
     except FileNotFoundError:
-        click.echo(f"[ERROR] Ignore list not found: {path}", err=True)
+        click.echo(f"[ERROR] Required list not found: {path}", err=True)
         sys.exit(1)
     except yaml.YAMLError as exc:
-        click.echo(f"[ERROR] Failed to parse ignore list: {exc}", err=True)
+        click.echo(f"[ERROR] Failed to parse required list: {exc}", err=True)
         sys.exit(1)
 
-    entries: list[IgnoredFailure] = []
-    for item in data.get("ignored_failures", []):
+    entries: list[RequiredModel] = []
+    for item in data.get("required_for_golden", []):
         entries.append(
-            IgnoredFailure(
+            RequiredModel(
                 model=item["model"],
                 gpu=item.get("gpu"),
                 reason=item.get("reason", "(no reason given)"),
-                ticket=item.get("ticket"),
             )
         )
     return entries
 
 
-def is_ignored(job: JobResult, ignore_list: list[IgnoredFailure]) -> bool:
-    """Return True if *job*'s failure is explicitly permitted by *ignore_list*.
+def is_required(job: JobResult, required_list: list[RequiredModel]) -> bool:
+    """Return True if *job* matches an entry in *required_list*.
 
     When an entry has no ``gpu`` field, it matches only B200 and MI355 (the two
-    single-card baseline configs).  Multi-GPU failures (2xB200, 8xB200, 8xMI355,
+    single-card baseline configs).  Multi-GPU results (2xB200, 8xB200, 8xMI355,
     etc.) must be listed with an explicit ``gpu`` value.
     """
-    for entry in ignore_list:
+    for entry in required_list:
         if entry.model.lower() != job.model.lower():
             continue
         if entry.gpu is None:
@@ -213,12 +214,12 @@ def parse_model_job(raw_name: str, prefix: str) -> JobResult | None:
     ),
 )
 @click.option(
-    "--ignore-list",
-    "ignore_list_path",
+    "--required-list",
+    "required_list_path",
     type=click.Path(path_type=Path),
-    default=DEFAULT_IGNORE_LIST,
+    default=DEFAULT_REQUIRED_LIST,
     show_default=True,
-    help="Path to the golden ignore list YAML.",
+    help="Path to the golden required list YAML.",
 )
 @click.option(
     "--token",
@@ -230,10 +231,10 @@ def main(
     run_id: str,
     repo: str,
     job_prefix: str,
-    ignore_list_path: Path,
+    required_list_path: Path,
     token: str,
 ) -> None:
-    """Check smoke-test results and exit 0 if the container is golden-eligible."""
+    """Check smoke-test results and exit 0 if all required models passed."""
     if not token:
         click.echo(
             "[ERROR] No GitHub token found. Set GITHUB_TOKEN or pass --token.",
@@ -241,10 +242,10 @@ def main(
         )
         sys.exit(1)
 
-    ignore_list = load_ignore_list(ignore_list_path)
+    required_list = load_required_list(required_list_path)
     click.echo(
-        f"Loaded {len(ignore_list)} ignore-list entr"
-        f"{'y' if len(ignore_list) == 1 else 'ies'} from {ignore_list_path}"
+        f"Loaded {len(required_list)} required-list entr"
+        f"{'y' if len(required_list) == 1 else 'ies'} from {required_list_path}"
     )
 
     # Fetch all jobs and filter to the smoke-test model jobs.
@@ -276,18 +277,18 @@ def main(
 
     click.echo(f"Found {len(model_jobs)} model job(s).\n")
 
-    # Categorise: passed / blocking-failed / ignored-failed.
+    # Categorise: passed / blocking-failed / not-required-failed.
     passed: list[JobResult] = []
-    ignored: list[JobResult] = []
+    not_required: list[JobResult] = []
     blocking: list[JobResult] = []
 
     for job in sorted(model_jobs, key=lambda j: (j.gpu, j.model)):
         if job.conclusion not in BLOCKING_CONCLUSIONS:
             passed.append(job)
-        elif is_ignored(job, ignore_list):
-            ignored.append(job)
-        else:
+        elif is_required(job, required_list):
             blocking.append(job)
+        else:
+            not_required.append(job)
 
     # Print a structured summary table.
     col_w = max((len(j.model) for j in model_jobs), default=20) + 2
@@ -298,17 +299,10 @@ def main(
     for job in sorted(model_jobs, key=lambda j: (j.gpu, j.model)):
         if job.conclusion not in BLOCKING_CONCLUSIONS:
             tag = "✓ passed"
-        elif is_ignored(job, ignore_list):
-            entry = next(
-                e
-                for e in ignore_list
-                if e.model.lower() == job.model.lower()
-                and (e.gpu is None or e.gpu.lower() == job.gpu.lower())
-            )
-            ticket = f"  [{entry.ticket}]" if entry.ticket else ""
-            tag = f"~ ignored ({job.conclusion}){ticket}"
-        else:
+        elif is_required(job, required_list):
             tag = f"✗ BLOCKED ({job.conclusion})"
+        else:
+            tag = f"~ not required ({job.conclusion})"
         click.echo(f"  {job.gpu:<14}  {job.model:<{col_w}}  {tag}")
 
     click.echo()
@@ -316,7 +310,7 @@ def main(
     # Final verdict.
     if blocking:
         click.echo(
-            f"[FAIL] {len(blocking)} unexpected failure(s) — "
+            f"[FAIL] {len(blocking)} required model(s) failed — "
             "container is NOT eligible for the golden tag.\n"
             "Blocking jobs:",
             err=True,
@@ -326,31 +320,23 @@ def main(
                 f"  • {job.gpu} - {job.model}  ({job.conclusion})", err=True
             )
         click.echo(
-            "\nTo suppress a known failure, add it to golden_ignore_list.yaml "
-            "with a ticket reference.",
+            "\nTo remove a model from the golden gate, delete its entry from "
+            "golden_required_list.yaml.",
             err=True,
         )
         sys.exit(1)
 
-    if ignored:
+    if not_required:
         click.echo(
-            f"[WARN] {len(ignored)} failure(s) were ignored per the ignore list:"
+            f"[WARN] {len(not_required)} failure(s) on non-required models "
+            "(not blocking):"
         )
-        for job in ignored:
-            entry = next(
-                e
-                for e in ignore_list
-                if e.model.lower() == job.model.lower()
-                and (e.gpu is None or e.gpu.lower() == job.gpu.lower())
-            )
-            ticket_str = f" [{entry.ticket}]" if entry.ticket else ""
-            click.echo(
-                f"  • {job.gpu} - {job.model}: {entry.reason}{ticket_str}"
-            )
+        for job in not_required:
+            click.echo(f"  • {job.gpu} - {job.model}  ({job.conclusion})")
         click.echo()
 
     click.echo(
-        f"[PASS] {len(passed)} passed, {len(ignored)} ignored, "
+        f"[PASS] {len(passed)} passed, {len(not_required)} not-required, "
         f"{len(blocking)} blocking — container is eligible for the golden tag."
     )
 

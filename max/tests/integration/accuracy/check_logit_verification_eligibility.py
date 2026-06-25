@@ -17,12 +17,15 @@ Determine whether a logit-verification run is free of unexpected failures.
 
 Reads per-runner verdict JSON files from a local directory (one file per
 runner label, named ``<label>.json``), identifies models with ``error`` or
-``invalid`` status, and checks each failure against the checked-in ignore list
-(``logit_verification_ignore_list.yaml``).
+``invalid`` status, and checks each failure against the checked-in required
+list (``logit_verification_required_list.yaml``).
+
+Only models in the required list can block the golden tag. All other
+failures are reported but do not affect eligibility.
 
 Exit codes
-    0  All failures are in the ignore list → run is eligible (no real regressions)
-    1  One or more unexpected failures, or a script error → regression detected
+    0  All required models passed (or required list is empty) → eligible
+    1  One or more required models failed, or a script error → not eligible
 
 Typical invocation in a GitHub Actions step::
 
@@ -32,7 +35,7 @@ Typical invocation in a GitHub Actions step::
 
 # TODO: This script and check_logit_flakes.py both read the same verdict JSON
 # format and share JSON-parsing logic.  They should ideally be unified into a
-# single tool (e.g. by adding an optional --ignore-list flag to
+# single tool (e.g. by adding an optional --required-list flag to
 # check_logit_flakes.py and consolidating the verdict-reading code).  Kept
 # separate for now to avoid changing check_logit_flakes.py's exit-code
 # behavior and its existing callers in pipelineVerification.yaml.
@@ -54,12 +57,12 @@ logging.basicConfig(format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
 
 _HERE = Path(__file__).parent
-DEFAULT_IGNORE_LIST = _HERE / "logit_verification_ignore_list.yaml"
+DEFAULT_REQUIRED_LIST = _HERE / "logit_verification_required_list.yaml"
 
 # Statuses that represent a genuine model verification failure.
 BLOCKING_STATUSES = frozenset({"error", "invalid"})
 
-# When an ignore-list entry has no ``runner`` field, it matches only these two
+# When a required-list entry has no ``runner`` field, it matches only these two
 # single-card baseline runners.  Multi-GPU variants (intel-gpu-8xb200,
 # intel-gpu-b200-multi, intel-gpu-4xmi355, etc.) must be listed explicitly.
 DEFAULT_RUNNERS = frozenset({"intel-gpu-b200", "intel-gpu-mi355"})
@@ -73,45 +76,43 @@ class ModelVerdict:
 
 
 @dataclass(frozen=True)
-class IgnoredFailure:
+class RequiredModel:
     model: str
     runner: str | None  # None → DEFAULT_RUNNERS only
     reason: str
-    ticket: str | None
 
 
-def load_ignore_list(path: Path) -> list[IgnoredFailure]:
-    """Load and parse the logit verification ignore list from *path*."""
+def load_required_list(path: Path) -> list[RequiredModel]:
+    """Load and parse the logit verification required list from *path*."""
     try:
         data = yaml.safe_load(path.read_text())
     except yaml.YAMLError as exc:
-        logger.error("Failed to parse ignore list: %s", exc)
+        logger.error("Failed to parse required list: %s", exc)
         sys.exit(1)
 
-    entries: list[IgnoredFailure] = []
-    for item in data.get("ignored_failures", []):
+    entries: list[RequiredModel] = []
+    for item in data.get("required_for_golden", []):
         entries.append(
-            IgnoredFailure(
+            RequiredModel(
                 model=item["model"],
                 runner=item.get("runner"),
                 reason=item.get("reason", "(no reason given)"),
-                ticket=item.get("ticket"),
             )
         )
     return entries
 
 
-def is_ignored(
-    verdict: ModelVerdict, ignore_list: list[IgnoredFailure]
+def is_required(
+    verdict: ModelVerdict, required_list: list[RequiredModel]
 ) -> bool:
-    """Return True if *verdict*'s failure is explicitly permitted by *ignore_list*.
+    """Return True if *verdict* matches an entry in *required_list*.
 
     When an entry has no ``runner`` field it matches only the two single-card
     baseline runners (intel-gpu-b200 and intel-gpu-mi355).  Multi-GPU runner
-    failures (intel-gpu-8xb200, intel-gpu-b200-multi, etc.) must be listed
+    results (intel-gpu-8xb200, intel-gpu-b200-multi, etc.) must be listed
     with an explicit ``runner`` value.
     """
-    for entry in ignore_list:
+    for entry in required_list:
         if entry.model.lower() != verdict.model.lower():
             continue
         if entry.runner is None:
@@ -138,7 +139,7 @@ def read_verdicts(verdicts_dir: Path) -> list[ModelVerdict]:
             "(run may have been cancelled or skipped). Treating as eligible."
         )
         click.echo(
-            "[PASS] 0 passed, 0 ignored, 0 blocking — no unexpected regressions."
+            "[PASS] 0 passed, 0 not-required, 0 blocking — no unexpected regressions."
         )
         return results
 
@@ -184,19 +185,19 @@ def read_verdicts(verdicts_dir: Path) -> list[ModelVerdict]:
     help="Directory containing per-runner verdict JSON files.",
 )
 @click.option(
-    "--ignore-list",
-    "ignore_list_path",
+    "--required-list",
+    "required_list_path",
     type=click.Path(exists=True, path_type=Path),
-    default=DEFAULT_IGNORE_LIST,
+    default=DEFAULT_REQUIRED_LIST,
     show_default=True,
-    help="Path to the logit-verification ignore list YAML.",
+    help="Path to the logit-verification required list YAML.",
 )
-def main(verdicts_dir: Path, ignore_list_path: Path) -> None:
-    """Check logit-verification results and exit 0 if no unexpected failures."""
-    ignore_list = load_ignore_list(ignore_list_path)
+def main(verdicts_dir: Path, required_list_path: Path) -> None:
+    """Check logit-verification results and exit 0 if all required models passed."""
+    required_list = load_required_list(required_list_path)
     click.echo(
-        f"Loaded {len(ignore_list)} ignore-list entr"
-        f"{'y' if len(ignore_list) == 1 else 'ies'} from {ignore_list_path}"
+        f"Loaded {len(required_list)} required-list entr"
+        f"{'y' if len(required_list) == 1 else 'ies'} from {required_list_path}"
     )
 
     all_verdicts = read_verdicts(verdicts_dir)
@@ -205,18 +206,18 @@ def main(verdicts_dir: Path, ignore_list_path: Path) -> None:
     )
 
     passed: list[ModelVerdict] = []
-    ignored: list[ModelVerdict] = []
+    not_required: list[ModelVerdict] = []
     blocking: list[ModelVerdict] = []
 
     for v in sorted(all_verdicts, key=lambda v: (v.runner, v.model)):
         if v.status not in BLOCKING_STATUSES:
             passed.append(v)
-        elif is_ignored(v, ignore_list):
-            ignored.append(v)
-        else:
+        elif is_required(v, required_list):
             blocking.append(v)
+        else:
+            not_required.append(v)
 
-    # Print a summary table (only failures and ignores; omit the long ok list).
+    # Print a summary table.
     col_w = max((len(v.model) for v in all_verdicts), default=20) + 2
     runner_w = max((len(v.runner) for v in all_verdicts), default=20) + 2
     header = f"  {'Runner':<{runner_w}}  {'Model':<{col_w}}  Result"
@@ -226,58 +227,43 @@ def main(verdicts_dir: Path, ignore_list_path: Path) -> None:
     for v in sorted(all_verdicts, key=lambda v: (v.runner, v.model)):
         if v.status not in BLOCKING_STATUSES:
             tag = f"✓ {v.status}"
-        elif is_ignored(v, ignore_list):
-            entry = next(
-                e
-                for e in ignore_list
-                if e.model.lower() == v.model.lower()
-                and (e.runner is None or e.runner.lower() == v.runner.lower())
-            )
-            ticket = f"  [{entry.ticket}]" if entry.ticket else ""
-            tag = f"~ ignored ({v.status}){ticket}"
-        else:
+        elif is_required(v, required_list):
             tag = f"✗ BLOCKED ({v.status})"
+        else:
+            tag = f"~ not required ({v.status})"
         click.echo(f"  {v.runner:<{runner_w}}  {v.model:<{col_w}}  {tag}")
 
     click.echo()
 
     if blocking:
         click.echo(
-            f"[FAIL] {len(blocking)} unexpected failure(s) — "
-            "run has genuine regressions.\n"
+            f"[FAIL] {len(blocking)} required model(s) failed — "
+            "run is NOT eligible for the golden tag.\n"
             "Blocking models:",
             err=True,
         )
         for v in blocking:
             click.echo(f"  • {v.runner} - {v.model}  ({v.status})", err=True)
         click.echo(
-            "\nTo suppress a known failure, add it to "
-            "logit_verification_ignore_list.yaml with a ticket reference.",
+            "\nTo remove a model from the golden gate, delete its entry from "
+            "logit_verification_required_list.yaml.",
             err=True,
         )
         sys.exit(1)
 
-    if ignored:
+    if not_required:
         click.echo(
-            f"[WARN] {len(ignored)} failure(s) suppressed by the ignore list:"
+            f"[WARN] {len(not_required)} failure(s) on non-required models "
+            "(not blocking):"
         )
-        for v in ignored:
-            entry = next(
-                e
-                for e in ignore_list
-                if e.model.lower() == v.model.lower()
-                and (e.runner is None or e.runner.lower() == v.runner.lower())
-            )
-            ticket_str = f" [{entry.ticket}]" if entry.ticket else ""
-            click.echo(
-                f"  • {v.runner} - {v.model}: {entry.reason}{ticket_str}"
-            )
+        for v in not_required:
+            click.echo(f"  • {v.runner} - {v.model}  ({v.status})")
         click.echo()
 
     n_pass = len([v for v in passed if v.status == "ok"])
     click.echo(
-        f"[PASS] {n_pass} passed, {len(ignored)} ignored, "
-        f"{len(blocking)} blocking — no unexpected regressions."
+        f"[PASS] {n_pass} passed, {len(not_required)} not-required, "
+        f"{len(blocking)} blocking — run is eligible for the golden tag."
     )
 
 
