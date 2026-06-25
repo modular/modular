@@ -30,6 +30,8 @@ MODULAR_EXPORT void MLog_set_level(uint8_t level) {
   getDefaultLog().setLogLevel(static_cast<LogLevel>(level));
 }
 
+MODULAR_EXPORT void MLog_flush(void) { getDefaultLog().flush(); }
+
 MODULAR_EXPORT void MLog_write(uint8_t level, uint64_t channel,
                                int64_t timestamp, const char *fmt,
                                size_t fmtLen, const void *args,

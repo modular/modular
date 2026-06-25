@@ -105,7 +105,10 @@ class LogOutputTest : public ::testing::Test {
 protected:
   void SetUp() override { startPos_ = currentLogEnd(); }
 
-  std::string capturedOutput() const { return readLogSince(startPos_); }
+  std::string capturedOutput() const {
+    getDefaultLog().flush();
+    return readLogSince(startPos_);
+  }
 
 private:
   std::streampos startPos_{};

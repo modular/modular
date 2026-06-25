@@ -23,7 +23,7 @@ formatting underneath, so the same log message will produce the same output
 regardless of source (modulo timestamps etc.). The interface specifically is:
 
 ```mojo
-mlog[MLOG_INFO, "format string here: {}"]("arguments here")
+mlog["format string here: {}", LogLevel.INFO]("arguments here")
 mlog_info["all {} log convenience functions work"](5)
 ```
 
@@ -44,6 +44,7 @@ The following environment variables control logging behavior.
 | `MODULAR_LOG_NO_ENHANCED`  | Disable all prefix formatting, including the level and timestamp.     |
 | `MODULAR_LOG_NO_TIMESTAMP` | Disable the timestamp while keeping the level prefix.                 |
 | `MODULAR_LOG_JSON`         | Output JSON log lines, overriding other output configurations.        |
+| `MODULAR_LOG_NO_SUMMARY`   | Suppress the shutdown summary printed when the process exits.         |
 
 ## Output sinks
 
@@ -51,6 +52,40 @@ Output can be sent to stdout (`MODULAR_LOG_STDOUT` is true) or to a file
 (`MODULAR_LOG_FILE` is set to some valid path). These options are orthogonal;
 if both are set, output goes to both, and if set to `false` and `""` (empty
 string or unset) then the logging is effectively turned off.
+
+## Async logging
+
+Log calls are non-blocking. Each call serialises the record into a lock-free
+MPSC ring buffer and returns immediately; a dedicated consumer thread reads from
+the buffer and writes to the configured sinks. This means log output may appear
+slightly after the call site executes, and sink writes are batched — they are
+flushed to the OS when the ring drains rather than after every record.
+
+### Dropped records
+
+The ring buffer has a fixed capacity. If producers enqueue records faster than
+the consumer can drain them, new records are dropped rather than blocking the
+caller. This is intentional: logging must never slow down or stall the work
+being observed.
+
+When the process exits, a summary line is printed to stdout if any records were
+written or dropped during the process lifetime:
+
+```text
+[Logger] shutdown: 142000 records written, 0 dropped
+```
+
+A nonzero drop count indicates the log rate exceeded consumer throughput. Set
+`MODULAR_LOG_NO_SUMMARY` to suppress this line.
+
+### String argument lifetime
+
+String arguments (non-literal `std::string` and `std::string_view` values) are
+copied into a per-slot arena at enqueue time so they remain valid after the call
+returns. Each slot holds up to 256 bytes of string data. If the total string
+content in a single log record exceeds 256 bytes, the excess is silently
+clipped. Keep dynamic string arguments short, or prefer string literals (which
+have static storage and are never copied).
 
 ## JSON output format
 
