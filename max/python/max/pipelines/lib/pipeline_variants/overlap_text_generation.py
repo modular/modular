@@ -2707,16 +2707,23 @@ class OverlapTextGenerationPipeline(
         # Cost of this fallback: when a mixed batch recurs, the cold-start
         # prime recomputes every row's bitmask synchronously, including the
         # continuing constrained rows the callback could have produced
-        # off-thread. The scheduler does not emit mixed batches today, so this
-        # is dormant. Once mixed batches are supported, preserving overlap here
-        # means enqueuing the callback for just the continuing subset and
-        # cold-starting only the genuinely new rows -- deferred until then to
-        # avoid splitting the prime/callback bitmask ownership (and the flag
-        # signalling) on a path that cannot yet be exercised or benchmarked.
-        curr_verifies = all(
-            ctx.tokens.generated_length > 0 for ctx in curr_context_batch
+        # off-thread. The scheduler does not emit mixed batches today for
+        # aggregated mode, and on a disaggregated decode-only engine a
+        # KV-transferred row arrives with generated_length > 0 yet was never
+        # in this engine's producing batch -- so the generated_length proxy is
+        # insufficient. Once mixed batches are benchmarkable, preserving
+        # overlap here means enqueuing the callback for just the continuing
+        # subset and cold-starting only the genuinely new rows -- deferred
+        # until then to avoid splitting the prime/callback bitmask ownership
+        # (and the flag signalling) on a path that cannot yet be exercised or
+        # benchmarked.
+        prev_context_batch = prev_batch.inputs.flat_batch
+        prev_rids = {ctx.request_id for ctx in prev_context_batch}
+        all_continuing = all(
+            ctx.request_id in prev_rids and not ctx.is_initial_prompt
+            for ctx in curr_context_batch
         )
-        if not curr_verifies:
+        if not all_continuing:
             return False
 
         overlap_state = spec_state.overlap_state
@@ -2724,7 +2731,6 @@ class OverlapTextGenerationPipeline(
             "Async bitmask callback requires structured output to be enabled"
         )
 
-        prev_context_batch = prev_batch.inputs.flat_batch
         prev_batch_size = len(prev_context_batch)
         next_draft_k = prev_batch.spec_decode.next_draft_tokens_host.shape[1]
         num_positions = next_draft_k + 1
