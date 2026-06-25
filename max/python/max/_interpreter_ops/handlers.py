@@ -4115,19 +4115,7 @@ def _handle_distributed_reducescatter_sum(
         bufs.append(b)
 
     axis = op.axis
-
-    # Sum all inputs on the CPU via NumPy.
-    total = bufs[0].to(CPU()).to_numpy().copy()
-    for buf in bufs[1:]:
-        total += buf.to(CPU()).to_numpy()
-
-    # Split the summed result along the scatter axis using ragged binning
-    # (same formula as ops/reducescatter.py).
-    dim = total.shape[axis]
-    chunk_sizes = [
-        (dim + (num_inputs - i - 1)) // num_inputs for i in range(num_inputs)
-    ]
-    chunks = np.split(total, np.cumsum(chunk_sizes[:-1]), axis=axis)
+    group_size = op.group_size
 
     results = list(op.results)
     num_outputs = len(results) - 1  # exclude trailing chain
@@ -4137,10 +4125,30 @@ def _handle_distributed_reducescatter_sum(
     )
 
     output_buffers: list[Buffer | None] = []
-    for idx, result in enumerate(results[:-1]):
-        result_type: mo.TensorType = result.type  # type: ignore[assignment]
-        device = graph.DeviceRef.from_mlir(result_type.device_ref).to_device()
-        output_buffers.append(Buffer.from_numpy(chunks[idx]).to(device))
+    for group_start in range(0, num_inputs, group_size):
+        group_bufs = bufs[group_start : group_start + group_size]
+
+        # Sum inputs in each group independently on the CPU via NumPy.
+        total = group_bufs[0].to(CPU()).to_numpy().copy()
+        for buf in group_bufs[1:]:
+            total += buf.to(CPU()).to_numpy()
+
+        # Split the summed result along the scatter axis using ragged binning
+        # (same formula as ops/reducescatter.py).
+        dim = total.shape[axis]
+        chunk_sizes = [
+            (dim + (group_size - i - 1)) // group_size
+            for i in range(group_size)
+        ]
+        chunks = np.split(total, np.cumsum(chunk_sizes[:-1]), axis=axis)
+
+        for local_idx, chunk in enumerate(chunks):
+            result = results[group_start + local_idx]
+            result_type: mo.TensorType = result.type  # type: ignore[assignment]
+            device = graph.DeviceRef.from_mlir(
+                result_type.device_ref
+            ).to_device()
+            output_buffers.append(Buffer.from_numpy(chunk).to(device))
 
     # Trailing None for the output chain.
     output_buffers.append(None)

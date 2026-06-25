@@ -6218,6 +6218,7 @@ class DistributedReducescatterSumOp(max._core.Operation):
         signal_buffers: Sequence[max._core.Value[max._core.Type]],
         in_chain: max._core.Value[ChainType],
         axis: max._core.dialects.builtin.IntegerAttr,
+        group_size: max._core.dialects.builtin.IntegerAttr,
     ) -> None: ...
     @property
     def inputs(self) -> Sequence[max._core.Value[max._core.Type]]: ...
@@ -6229,6 +6230,12 @@ class DistributedReducescatterSumOp(max._core.Operation):
     def axis(self) -> int: ...
     @axis.setter
     def axis(self, arg: max._core.dialects.builtin.IntegerAttr, /) -> None: ...
+    @property
+    def group_size(self) -> int: ...
+    @group_size.setter
+    def group_size(
+        self, arg: max._core.dialects.builtin.IntegerAttr, /
+    ) -> None: ...
 
 class ReluOp(max._core.Operation):
     """
