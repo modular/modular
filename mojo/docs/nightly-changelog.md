@@ -267,4 +267,9 @@ This version is still a work in progress.
 
 ## Removed
 
+- Removed the `store_volatile()` and `load_volatile()` intrinsics from
+  `std.gpu.intrinsics`. Use `UnsafePointer.store[volatile=True]()` and
+  `UnsafePointer.load[volatile=True]()` instead, which work across all
+  supported GPU targets rather than NVIDIA only.
+
 ## Fixed
