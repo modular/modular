@@ -1381,14 +1381,17 @@ class TestEnqueuePrevBitmaskCallback:
             max_length=100,
             tokens=TokenBuffer(np.array([1])),
         )
+        # curr_ctx reuses the same request_id so it is a member of the
+        # producing batch -- the steady aggregated decode path.
         curr_ctx = TextContext(
-            request_id=RequestID("curr"),
+            request_id=rid,
             max_length=100,
             tokens=TokenBuffer(np.array([1])),
         )
-        # Simulate one accepted token so generated_length > 0; the callback
-        # guard requires all current contexts to be in the steady decode path.
-        curr_ctx.tokens._current_length += 1
+        # Simulate one accepted token so is_initial_prompt=False; the
+        # membership guard requires every current row to be a producing-batch
+        # member with is_initial_prompt=False.
+        curr_ctx.update(new_token=99)
 
         pipeline._prev_batch = self._make_prev_batch(
             [prev_ctx], num_draft_to_verify=num_draft, next_draft_k=num_draft
@@ -1483,14 +1486,18 @@ class TestEnqueuePrevBitmaskCallback:
             prev_contexts, num_draft_to_verify=num_draft, next_draft_k=num_draft
         )
 
+        # curr_ctx reuses one of the prev batch's request ids (here "a") so it
+        # is a member of the producing batch. The test validates that membership
+        # is checked against the live prev_batch.inputs.flat_batch rather than
+        # any snapshot field.
         curr_ctx = TextContext(
-            request_id=RequestID("curr"),
+            request_id=prev_rids[1],  # "a"
             max_length=100,
             tokens=TokenBuffer(np.array([1])),
         )
-        # Simulate one accepted token so generated_length > 0; the callback
-        # guard requires all current contexts to be in the steady decode path.
-        curr_ctx.tokens._current_length += 1
+        # Apply one token so is_initial_prompt=False; the membership guard
+        # requires every current row to satisfy both conditions.
+        curr_ctx.update(new_token=99)
 
         with patch.object(
             pipeline,
@@ -1505,6 +1512,178 @@ class TestEnqueuePrevBitmaskCallback:
         assert mock_spec_state.has_precomputed_bitmask is True
         # The producing batch's flag is set; no callback_request_ids field.
         assert pipeline._prev_batch.spec_decode.fsm_advanced_by_callback is True
+
+    def _make_pipeline_with_spec_state(
+        self,
+        prev_contexts: list[TextContext],
+        num_draft: int = 2,
+    ) -> tuple[
+        OverlapTextGenerationPipeline[TextContext], MagicMock, MagicMock
+    ]:
+        """Return (pipeline, mock_spec_state, mock_overlap_state) wired for
+        a verify batch with ``prev_contexts`` as the producing batch."""
+        pipeline = self._make_pipeline()
+        pipeline._structured_output.vocab_size = 64
+
+        batch_size = len(prev_contexts)
+        num_positions = num_draft + 1
+        vocab_size = 64
+
+        mock_spec_state = MagicMock()
+        bonus_tokens_pinned = MagicMock()
+        bonus_tokens_pinned.to_numpy.return_value = np.zeros(
+            max(batch_size, 1), dtype=np.int64
+        )
+        num_accepted_pinned = MagicMock()
+        num_accepted_pinned.to_numpy.return_value = np.zeros(
+            max(batch_size, 1), dtype=np.int64
+        )
+        accepted_draft_tokens_pinned = MagicMock()
+        accepted_draft_tokens_pinned.to_numpy.return_value = np.zeros(
+            (max(batch_size, 1), num_draft), dtype=np.int64
+        )
+        next_draft_tokens_pinned = MagicMock()
+        next_draft_tokens_pinned.to_numpy.return_value = np.zeros(
+            (max(batch_size, 1), num_draft), dtype=np.int64
+        )
+
+        mock_spec_state.persistent_bonus_tokens_pinned = bonus_tokens_pinned
+        mock_spec_state.persistent_num_accepted_pinned = num_accepted_pinned
+        mock_spec_state.persistent_accepted_draft_tokens_pinned = (
+            accepted_draft_tokens_pinned
+        )
+        mock_spec_state.persistent_next_draft_tokens_pinned = (
+            next_draft_tokens_pinned
+        )
+        mock_spec_state.has_precomputed_bitmask = False
+
+        overlap_pinned = MagicMock()
+        overlap_pinned.to_numpy.return_value = np.zeros(
+            (max(batch_size, 1), num_positions, vocab_size), dtype=np.bool_
+        )
+        mock_overlap_state = MagicMock()
+        mock_overlap_state.pinned_bitmask = overlap_pinned
+        mock_spec_state.overlap_state = mock_overlap_state
+
+        pipeline._spec_decode_state = mock_spec_state
+        pipeline._devices = [MagicMock()]
+        pipeline._disable_overlap = False
+        pipeline._prev_batch = self._make_prev_batch(
+            prev_contexts,
+            num_draft_to_verify=num_draft,
+            next_draft_k=num_draft,
+        )
+        return pipeline, mock_spec_state, mock_overlap_state
+
+    def test_disagg_transferred_row_routes_to_cold_start_preserving_constraints(
+        self,
+    ) -> None:
+        """Disagg repro: a KV-transferred constrained row must reach cold-start
+        prime, not the async callback.
+
+        A KV-transferred row arrives with generated_length > 0 and
+        is_initial_prompt=False but was never in the decode engine's previous
+        producing batch. The old guard (generated_length > 0) would enqueue
+        the async callback, which would then assert because the row cannot be
+        attributed via rid_to_src. But even if that assert were removed, the
+        callback would hit ``if ctx.matcher is None: continue`` (the matcher is
+        built lazily inside compute_speculative_bitmasks on the cold-start path)
+        and silently leave the bitmask all-valid (-1), dropping the row's
+        grammar/schema constraints entirely.
+
+        The membership guard must return False so _assign_bitmask_inputs takes
+        the cold-start branch (has_precomputed_bitmask=False), which calls
+        compute_speculative_bitmasks + prime. That path builds the matcher and
+        fills a constrained bitmask. The assertion below on has_precomputed_bitmask
+        is the gate: False forces cold-start; True would have taken the
+        steady-state pass-through that relies on the callback having filled the
+        buffer.
+
+        The producer row is itself a continuing member with generated_length > 0,
+        so the old generated_length > 0 guard would PASS and wrongly enqueue the
+        callback -- that is what makes this a real regression test rather than a
+        tautology. The transferred row is the sole non-member, so only the
+        membership guard distinguishes the two code paths.
+        """
+        producer = TextContext(
+            request_id=RequestID("producer"),
+            max_length=100,
+            tokens=TokenBuffer(np.array([1, 2, 3])),
+        )
+        # The producer is a genuine continuing row: it was in the prev batch and
+        # has generated_length > 0. Without this, the old generated_length > 0
+        # guard would also return False (for the wrong reason) and the test
+        # could not tell the buggy and fixed paths apart.
+        producer.update(new_token=7)
+        assert producer.tokens.generated_length > 0
+        pipeline, mock_spec_state, mock_overlap_state = (
+            self._make_pipeline_with_spec_state([producer])
+        )
+
+        # Transferred row: generated_length > 0, is_initial_prompt=False,
+        # but its request_id was never in the decode engine's prev batch.
+        # A constrained row in this state would have matcher=None until
+        # compute_speculative_bitmasks builds it; the callback path would
+        # silently skip it (all-valid), dropping constraints.
+        transferred = TextContext(
+            request_id=RequestID("transferred"),
+            max_length=100,
+            tokens=TokenBuffer(np.array([1, 2, 3])),
+        )
+        transferred.update(new_token=99)
+        assert transferred.tokens.generated_length > 0
+        assert not transferred.is_initial_prompt
+
+        result = pipeline._enqueue_prev_bitmask_callback(
+            curr_context_batch=[producer, transferred],
+        )
+
+        assert result is False
+        # has_precomputed_bitmask=False is the gate that forces _assign_bitmask_inputs
+        # into the cold-start prime branch, which builds matchers and enforces
+        # constraints for the transferred row. True here would route to the
+        # steady-state pass-through and silently drop constraints.
+        assert mock_spec_state.has_precomputed_bitmask is False
+        # No callback enqueued: the async callback would have mis-attributed the
+        # transferred row and either crashed (assert) or silently dropped its
+        # grammar constraints (matcher=None skip).
+        mock_overlap_state.enqueue_async_callback.assert_not_called()
+
+    def test_disagg_all_member_batch_still_enqueues_callback(self) -> None:
+        """Steady-state aggregated decode: every current row is a producing-
+        batch member -- the callback path is preserved, paying no extra sync."""
+        rid_a = RequestID("a")
+        rid_b = RequestID("b")
+        ctx_a = TextContext(
+            request_id=rid_a,
+            max_length=100,
+            tokens=TokenBuffer(np.array([1])),
+        )
+        ctx_b = TextContext(
+            request_id=rid_b,
+            max_length=100,
+            tokens=TokenBuffer(np.array([1])),
+        )
+        # Both rows continuing (is_initial_prompt=False) from the producing batch.
+        ctx_a.update(new_token=10)
+        ctx_b.update(new_token=11)
+
+        pipeline, mock_spec_state, mock_overlap_state = (
+            self._make_pipeline_with_spec_state([ctx_a, ctx_b])
+        )
+
+        with patch.object(
+            pipeline,
+            "_build_bitmask_callback",
+            return_value=lambda: None,
+        ):
+            result = pipeline._enqueue_prev_bitmask_callback(
+                curr_context_batch=[ctx_a, ctx_b],
+            )
+
+        assert result is True
+        assert mock_spec_state.has_precomputed_bitmask is True
+        mock_overlap_state.enqueue_async_callback.assert_called_once()
 
 
 class TestInitializeBitmaskWithGrammar:
