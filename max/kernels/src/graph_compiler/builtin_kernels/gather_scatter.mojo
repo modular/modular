@@ -1617,8 +1617,15 @@ struct Concat:
         comptime for i in range(inputs.size):
             input_shapes[i] = inputs[i].shape()
 
+        # Copy-capture `inputs` into the device-kernel closure via
+        # `@__copy_capture`. Without it the closure captures `inputs` by
+        # reference, so on Metal the GPU kernel holds a host-side pointer to the
+        # capture and reads garbage (concat with >=3 inputs silently returned
+        # all-zeros). `inputs` (`FusedInputVariadicTensors`) stores its tensors
+        # by value, so the copy brings their device pointers into the kernel.
         @always_inline
         @parameter
+        @__copy_capture(inputs)
         def inputs_lambda[
             input_index: Int, width: Int, _rank: Int, alignment: Int = 1
         ](indices: IndexList[_rank]) -> SIMD[dtype, width]:
@@ -1629,8 +1636,12 @@ struct Concat:
                 width=width, element_alignment=alignment
             ](rebind[IndexList[rank]](indices))
 
+        # Copy-capture `output` for the same reason as `inputs` above: a
+        # by-reference capture leaves the device kernel holding a host pointer
+        # to the output tensor on Metal.
         @always_inline
         @parameter
+        @__copy_capture(output)
         def epilogue_wrapper[
             _dtype: DType, _rank: Int, width: SIMDSize, *, alignment: Int = 1
         ](indices: IndexList[_rank], value: SIMD[_dtype, width]):
@@ -1687,8 +1698,14 @@ struct FusedConcatSlice:
         comptime for i in range(inputs.size):
             input_shapes[i] = inputs[i].shape()
 
+        # Copy-capture the captured tensors into the device-kernel closures.
+        # A by-reference capture leaves the GPU kernel holding host-side
+        # pointers on Metal, so it reads garbage/zeros (the concat>=4-input
+        # all-zeros bug). Copy-capture brings the device pointers into the
+        # closure.
         @always_inline
         @parameter
+        @__copy_capture(inputs)
         def inputs_lambda[
             input_index: Int,
             width: Int,
@@ -1704,6 +1721,7 @@ struct FusedConcatSlice:
 
         @always_inline
         @parameter
+        @__copy_capture(concat_output, slice_output)
         def epilogue_wrapper[
             _dtype: DType, _rank: Int, width: SIMDSize, *, alignment: Int = 1
         ](indices: IndexList[_rank], value: SIMD[_dtype, width]):
@@ -1803,8 +1821,13 @@ struct DualFusedConcatSlice:
         comptime for i in range(num_inputs_1):
             input_shapes_1[i] = inputs[num_inputs_0 + i].shape()
 
+        # Copy-capture the captured tensors into the device-kernel closures.
+        # A by-reference capture leaves the GPU kernel holding host-side
+        # pointers on Metal, so it reads garbage/zeros. Copy-capture brings
+        # the device pointers into the closure.
         @always_inline
         @parameter
+        @__copy_capture(inputs)
         def inputs_lambda_0[
             input_index: Int,
             width: Int,
@@ -1820,6 +1843,7 @@ struct DualFusedConcatSlice:
 
         @always_inline
         @parameter
+        @__copy_capture(inputs)
         def inputs_lambda_1[
             input_index: Int,
             width: Int,
@@ -1835,6 +1859,7 @@ struct DualFusedConcatSlice:
 
         @always_inline
         @parameter
+        @__copy_capture(concat_output_0, slice_output_0)
         def epilogue_0[
             _dtype: DType, _rank: Int, width: SIMDSize, *, alignment: Int = 1
         ](indices: IndexList[_rank], value: SIMD[_dtype, width]):
@@ -1888,6 +1913,7 @@ struct DualFusedConcatSlice:
 
         @always_inline
         @parameter
+        @__copy_capture(concat_output_1, slice_output_1)
         def epilogue_1[
             _dtype: DType, _rank: Int, width: SIMDSize, *, alignment: Int = 1
         ](indices: IndexList[_rank], value: SIMD[_dtype, width]):

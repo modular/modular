@@ -846,8 +846,14 @@ def _concat_gpu_elementwise[
 
     # Fallback: elementwise approach (used when epilogue is present or inner
     # dimensions are not aligned for vectorization).
+    #
+    # Copy-capture `inputs` and `output` into the device-kernel closure. On
+    # Metal a by-reference capture leaves the GPU kernel holding host-side
+    # pointers, so it reads garbage/zeros. Copy-capture brings the device
+    # pointers into the closure.
     @parameter
     @always_inline
+    @__copy_capture(inputs, output)
     def per_output_elem[simd_width: Int, alignment: Int = 1](out_index: Coord):
         var in_index = coord_to_index_list(out_index)
 
