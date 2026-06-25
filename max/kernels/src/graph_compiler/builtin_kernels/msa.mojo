@@ -76,7 +76,7 @@ from std.gpu.host import DeviceContext, DeviceBuffer
 from std.math import ceildiv, min
 from std.memory import UnsafePointer
 
-from layout import row_major, TileTensor
+from layout import row_major, TileTensor, Coord
 from layout.tile_tensor import row_major as tt_row_major
 
 from extensibility import InputTensor, OutputTensor
@@ -348,7 +348,6 @@ struct Struct_msa_attention_ragged_paged:
         comptime page_size = Int(kv_blocks.static_spec.shape_tuple[3])
         comptime num_heads = group * k_num_heads
         comptime config = MHAConfig[DType.bfloat16](num_heads, head_dim)
-        comptime KVPtrT = UnsafePointer[Int32, MutAnyOrigin]
 
         # `num_rows` == total query tokens (== batch on decode, 1 token/seq).
         var num_rows = Int(q.dim_size[0]())
@@ -378,7 +377,10 @@ struct Struct_msa_attention_ragged_paged:
                 Int(input_row_offsets.dim_size[0]()),
                 owning=False,
             )
-            var d_indices_ptr = rebind[KVPtrT](d_indices.to_layout_tensor().ptr)
+            var d_indices_tt = TileTensor(
+                d_indices.to_layout_tensor().ptr,
+                row_major(Coord(d_indices.to_layout_tensor().size())),
+            ).as_immut()
             var topk_tokens = topk * page_size
 
             # `msa_sm100_decode` OWNS the split-K partition count: it computes
@@ -405,7 +407,7 @@ struct Struct_msa_attention_ragged_paged:
                 q_buf,
                 k_op,
                 v_op,
-                d_indices_ptr,
+                d_indices_tt,
                 topk,  # indices_stride (topk in BLOCKS)
                 num_rows,  # num_rows_q (1 token/seq)
                 NullMask(),
@@ -449,7 +451,10 @@ struct Struct_msa_attention_ragged_paged:
                 Int(input_row_offsets.dim_size[0]()),
                 owning=False,
             )
-            var d_indices_ptr = rebind[KVPtrT](d_indices.to_layout_tensor().ptr)
+            var d_indices_tt = TileTensor(
+                d_indices.to_layout_tensor().ptr,
+                row_major(Coord(d_indices.to_layout_tensor().size())),
+            ).as_immut()
             var topk_tokens = topk * page_size
             var batch = Int(input_row_offsets.dim_size[0]()) - 1
 
@@ -471,7 +476,7 @@ struct Struct_msa_attention_ragged_paged:
                         q_buf,
                         k_op,
                         v_op,
-                        d_indices_ptr,
+                        d_indices_tt,
                         topk,  # indices_stride (topk in BLOCKS)
                         num_rows,  # num_rows_q (total draft tokens)
                         NullMask(),
