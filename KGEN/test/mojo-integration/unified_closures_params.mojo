@@ -6,7 +6,7 @@
 # RUN: %mojo %s 1 4 | FileCheck %s
 
 from std.sys import argv
-from std.memory.pointer import AddressSpace, _GPUAddressSpace
+from std.memory.pointer import AddressSpace
 
 
 def hasOrigin[F: def[T: MutOrigin](TypeWithOrigin[T]) -> None, //](f: F):
