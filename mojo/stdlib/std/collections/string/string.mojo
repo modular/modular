@@ -41,7 +41,7 @@ from std.ffi import c_char, CStringSlice
 from std.sys.info import is_32bit
 
 from std.bit import count_leading_zeros
-from std.memory import memcmp, memcpy, memset
+from std.memory import Layout, ThinAllocation, dealloc, memcmp, memcpy, memset
 from std.python import ConvertibleFromPython, PythonObject
 from std.reflection.traits import AllWritable
 
@@ -742,12 +742,22 @@ struct String(
             var refcount = ptr.bitcast[Atomic[DType.int]]()
             if refcount[].fetch_sub(1) == 1:
                 fence[Ordering.ACQUIRE]()
-                ptr.free()
+                dealloc(
+                    ThinAllocation(
+                        unsafe_assume_ownership=ptr
+                    ).unsafe_with_layout(
+                        Layout[Byte](
+                            count=self.capacity() + Self.REF_COUNT_SIZE
+                        )
+                    )
+                )
 
     @staticmethod
     def _alloc(capacity: Int) -> UnsafePointer[Byte, MutUntrackedOrigin]:
         """Allocate space for a new out-of-line string buffer."""
-        var ptr = alloc[Byte](capacity + Self.REF_COUNT_SIZE)
+        var ptr = alloc(
+            Layout[Byte](count=capacity + Self.REF_COUNT_SIZE)
+        ).unsafe_leak()
 
         # Initialize the Atomic refcount into the header.
         __get_address_as_uninit_lvalue(

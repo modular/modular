@@ -30,6 +30,14 @@ paths — either by passing it to `dealloc` or by taking the raw pointer with
   tracks its own capacity (such as `List`); pair it back with a `Layout` via
   `unsafe_with_layout` to deallocate.
 
+For automatic cleanup, an `Allocation` can be converted into a
+`DeletableAllocation[T]` with `into_deletable()`. Unlike the two explicitly
+destroyed handles, a `DeletableAllocation` is not `@explicit_destroy`: it
+deallocates its storage in its destructor, which Mojo runs automatically after
+the value's last use (ASAP destruction), so no explicit `dealloc` is needed.
+Like `dealloc`, this frees the storage without running the destructors of any
+elements written into it.
+
 Examples:
 
 Allocate, use, and free storage through the `Allocation` returned by `alloc`:
@@ -252,6 +260,43 @@ struct Allocation[T: AnyType](RegisterPassable, Writable):
         """
         return self._alloc^
 
+    def into_deletable(deinit self) -> DeletableAllocation[Self.T]:
+        """Consumes the `Allocation` and wraps it in a `DeletableAllocation`.
+
+        This converts the explicitly destroyed handle into a self-freeing
+        one. The returned `DeletableAllocation` deallocates the storage in
+        its destructor, which Mojo runs automatically after the value's last use
+        (ASAP destruction), so — unlike `Allocation` — it does not need to be
+        passed to `dealloc`. Use this when you want automatic deallocation
+        instead of explicit destruction.
+
+        Converting to a `DeletableAllocation` does not destroy any values
+        you have initialized in the storage: no element destructors are run,
+        either by this conversion or when the `DeletableAllocation` is later
+        destroyed. If the elements need their destructors run, destroy them
+        yourself (for example with `destroy_n`) before the `DeletableAllocation`
+        is destroyed.
+
+        Returns:
+            A `DeletableAllocation` owning this storage.
+
+        Example:
+
+        ```mojo
+        from std.memory.alloc import alloc, Layout
+
+        var deletable = alloc(Layout[String](count=4)).into_deletable()
+        deletable.unsafe_ptr().init_pointee_move("hello")
+
+        # Even though the allocation is automatically cleaned up, destructors
+        # must still be manually run!
+        std.memory.destroy_n(deletable.unsafe_ptr(), 1)
+
+        # No `dealloc` needed: `deletable` frees its storage when destroyed.
+        ```
+        """
+        return {self^}
+
     def write_to(self, mut writer: Some[Writer]):
         """Writes a human-readable representation of this allocation to `writer`.
 
@@ -272,6 +317,135 @@ struct Allocation[T: AnyType](RegisterPassable, Writable):
             writer: The writer to write to.
         """
         self.write_to(writer)
+
+
+struct DeletableAllocation[T: AnyType](RegisterPassable, Writable):
+    """An owning handle to a heap allocation of `T` that frees itself.
+
+    A `DeletableAllocation` wraps an `Allocation` and deallocates the storage in
+    its destructor. It is the self-freeing counterpart to `Allocation`: where
+    `Allocation` is `@explicit_destroy` and must be passed to `dealloc` on every
+    path, a `DeletableAllocation` deallocates its storage automatically. Mojo
+    runs the destructor after the value's last use, following its "as soon as
+    possible" (ASAP) destruction policy — including on error paths, where the
+    destructor runs as the stack unwinds.
+
+    This trades the compile-time leak-proofing of `Allocation` for ergonomics:
+    there is no need to thread an explicit `dealloc` through every control-flow
+    path. Create one from an `Allocation` with `into_deletable()` (or by passing
+    the `Allocation` to the constructor), and recover the underlying
+    `Allocation` — taking back manual responsibility for deallocation — with
+    `into_allocation()`.
+
+    Like `dealloc`, the destructor frees the storage but does not run the
+    destructors of any elements written into it. If the elements need their
+    destructors run, destroy them yourself (for example with `destroy_n`) before
+    the `DeletableAllocation` is destroyed.
+
+    Parameters:
+        T: The type of the elements stored in the allocation.
+
+    Example:
+
+    ```mojo
+    from std.memory.alloc import alloc, Layout
+
+    var deletable = alloc(Layout[Int32](count=4)).into_deletable()
+    var ptr = deletable.unsafe_ptr()
+    for i in range(4):
+        (ptr + i).init_pointee_move(i)
+    # `deletable` frees its storage when it is destroyed (after its last use).
+    ```
+    """
+
+    var _alloc: Allocation[Self.T]
+    """The wrapped `Allocation` that owns the storage."""
+
+    def __init__(out self, var allocation: Allocation[Self.T], /):
+        """Initializes a `DeletableAllocation` that owns `allocation`.
+
+        This is the constructor form of `Allocation.into_deletable()`. The new
+        `DeletableAllocation` assumes responsibility for deallocating the
+        storage and frees it automatically when it is destroyed, after its last
+        use.
+
+        Args:
+            allocation: The `Allocation` to take ownership of. It is consumed by
+                this call.
+        """
+        self._alloc = allocation^
+
+    def __del__(deinit self):
+        """Deallocates the owned storage.
+
+        Releases the storage owned by the wrapped `Allocation` by passing it to
+        `dealloc`. Like `dealloc`, this frees the storage but does not run the
+        destructors of any elements written into it; destroy them yourself (for
+        example with `destroy_n`) beforehand if they need it.
+        """
+        dealloc(self._alloc^)
+
+    def into_allocation(deinit self) -> Allocation[Self.T]:
+        """Consumes the `DeletableAllocation` and returns its `Allocation`.
+
+        This converts the self-freeing handle back into the explicitly
+        destroyed `Allocation` it wraps, undoing `into_deletable()`. The storage
+        is no longer freed automatically: the returned `Allocation` is an
+        `@explicit_destroy` type that must be destroyed manually on every path,
+        either by passing it to `dealloc` or by calling `unsafe_leak()`.
+
+        Returns:
+            The `Allocation` that owns the storage.
+        """
+        return self._alloc^
+
+    def unsafe_ptr(
+        ref self,
+    ) -> UnsafePointer[Self.T, origin_of(self._alloc._alloc)]:
+        """Returns a pointer to the allocated storage without consuming `self`.
+
+        The returned pointer borrows from `self`, so the `DeletableAllocation`
+        retains ownership of the storage and frees it automatically when it is
+        destroyed.
+
+        Returns:
+            A pointer to the allocated storage.
+
+        Safety:
+
+        `alloc` returns uninitialized storage, so the returned pointer may point
+        to uninitialized memory. Initialize an element (for example with
+        `init_pointee_move`) before reading it.
+        """
+        return self._alloc.unsafe_ptr()
+
+    def unsafe_span(ref self) -> Span[Self.T, origin_of(self._alloc._alloc)]:
+        """Returns a span over the allocated storage without consuming `self`.
+
+        The returned span borrows from `self`, so the `DeletableAllocation`
+        retains ownership of the storage. The span covers `layout.count()`
+        elements.
+
+        Returns:
+            A span over the allocated storage.
+
+        Safety:
+
+        `alloc` returns uninitialized storage, so the returned span may cover
+        uninitialized memory. Initialize the elements before reading them.
+        """
+        return self._alloc.unsafe_span()
+
+    def layout(self) -> Layout[Self.T]:
+        """Returns the `Layout` the storage was allocated with.
+
+        The returned `Layout` carries the element count and alignment used to
+        allocate the storage — the same information needed to deallocate it.
+
+        Returns:
+            The `Layout` this allocation was created with.
+        """
+        return self._alloc.layout()
 
 
 @explicit_destroy(
@@ -478,7 +652,7 @@ def alloc[T: AnyType, //](layout: Layout[T], /) -> Allocation[T]:
         ).unsafe_with_layout(layout)
 
 
-def dealloc[T: AnyType, //](var allocation: Allocation[T], /):
+def dealloc[T: AnyType, /](var allocation: Allocation[T], /):
     """Deallocates the storage owned by an `Allocation`.
 
     Consumes `allocation` and releases its memory. This is the primary way to
