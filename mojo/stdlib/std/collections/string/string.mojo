@@ -42,7 +42,7 @@ from std.sys.info import is_32bit
 
 from std.bit import count_leading_zeros
 from std.memory import memcmp, memcpy, memset
-from std.python import ConvertibleFromPython, PythonObject
+from std.python import ConvertibleFromPython, Python, PythonObject
 from std.reflection.traits import AllWritable
 
 # ===----------------------------------------------------------------------=== #
@@ -1103,10 +1103,21 @@ struct String(
         Raises:
             An error if the conversion failed.
         """
+        # Fast path: exact `str` reads the cached UTF-8 buffer directly,
+        # skipping `py.__str__()` and the temporary `PythonObject`. Subclasses
+        # fall through so an overridden `__str__` is honored. A null
+        # `_obj_ptr` also falls through so CPython's `PyObject_Str` can
+        # render it as the string `"<NULL>"` (preserves prior behavior).
+        ref cpy = Python().cpython()
+        if py._obj_ptr and cpy.PyUnicode_CheckExact(py._obj_ptr):
+            var maybe_slice = cpy.PyUnicode_AsUTF8AndSize(py._obj_ptr)
+            if not maybe_slice:
+                raise cpy.unsafe_get_error()
+            self = String(unsafe_from_utf8=maybe_slice.value().as_bytes())
+            return
         var str_obj = py.__str__()
         self = String(StringSlice(unsafe_borrowed_obj=str_obj))
-        # keep python object alive so the copy can occur
-        _ = str_obj
+        _ = str_obj  # keep python object alive so the copy can occur
 
     # ===------------------------------------------------------------------=== #
     # Methods

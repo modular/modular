@@ -26,6 +26,7 @@ parts of the dispatch chain:
 See https://github.com/modular/modular/issues/6521.
 """
 
+from std.ffi import c_ssize_t
 from std.os import abort
 
 from std.python import Python, PythonObject
@@ -41,6 +42,7 @@ def PyInit_mojo_module() abi("C") -> PythonObject:
         # High-level `def_function` path (the regression target).
         b.def_function[noop_def]("noop_def")
         b.def_function[add_def]("add_def")
+        b.def_function[str_byte_len_def]("str_byte_len_def")
 
         # Low-level `def_py_c_function` path. Same observable behavior, but
         # bypasses the generic PyObjectFunction dispatch.
@@ -53,6 +55,9 @@ def PyInit_mojo_module() abi("C") -> PythonObject:
         b.def_py_c_function(add_raw, "add_raw")
         b.def_py_c_function(noop_raw_fastcall, "noop_raw_fastcall")
         b.def_py_c_function(add_raw_fastcall, "add_raw_fastcall")
+        b.def_py_c_function(
+            str_byte_len_raw_fastcall, "str_byte_len_raw_fastcall"
+        )
 
         return b.finalize()
     except e:
@@ -72,6 +77,13 @@ def add_def(a: PythonObject, b: PythonObject) raises -> PythonObject:
     var ai = Int(py=a)
     var bi = Int(py=b)
     return PythonObject(ai + bi)
+
+
+def str_byte_len_def(s: PythonObject) raises -> PythonObject:
+    # Exercises `String(py=...)` on the input side. Returns an `Int`
+    # (cheap, unchanged conversion), so the before/after delta isolates the
+    # Python -> Mojo string fast path.
+    return PythonObject(String(py=s).byte_length())
 
 
 # ===-----------------------------------------------------------------------===#
@@ -123,3 +135,19 @@ def add_raw_fastcall(
     var ai = cpy.PyLong_AsSsize_t(args[0])
     var bi = cpy.PyLong_AsSsize_t(args[1])
     return cpy.PyLong_FromSsize_t(ai + bi)
+
+
+@export
+def str_byte_len_raw_fastcall(
+    py_self: PyObjectPtr,
+    args: UnsafePointer[PyObjectPtr, MutExternalOrigin],
+    nargs: Py_ssize_t,
+) abi("C") -> PyObjectPtr:
+    # Lower bound for `str_byte_len_def`: get the UTF-8 buffer and return
+    # its byte length as a Python int, without any `String` / `PythonObject`
+    # wrapping.
+    ref cpy = Python().cpython()
+    var maybe_slice = cpy.PyUnicode_AsUTF8AndSize(args[0])
+    if not maybe_slice:
+        return PyObjectPtr()
+    return cpy.PyLong_FromSsize_t(c_ssize_t(maybe_slice.value().byte_length()))

@@ -1445,6 +1445,7 @@ struct CPython(Defaultable, Movable):
     var _PyFloat_FromDouble: PyFloat_FromDouble.type
     var _PyFloat_AsDouble: PyFloat_AsDouble.type
     # Unicode Objects and Codecs
+    var _PyUnicode_Type: PyTypeObjectPtr
     var _PyUnicode_DecodeUTF8: PyUnicode_DecodeUTF8.type
     var _PyUnicode_AsUTF8AndSize: PyUnicode_AsUTF8AndSize.type
     # Tuple Objects
@@ -1647,6 +1648,10 @@ struct CPython(Defaultable, Movable):
         self._PyFloat_FromDouble = PyFloat_FromDouble.load(self.lib.borrow())
         self._PyFloat_AsDouble = PyFloat_AsDouble.load(self.lib.borrow())
         # Unicode Objects and Codecs
+        # PyTypeObject PyUnicode_Type
+        self._PyUnicode_Type = self.lib.get_symbol[PyTypeObject](
+            "PyUnicode_Type"
+        ).value()
         self._PyUnicode_DecodeUTF8 = PyUnicode_DecodeUTF8.load(
             self.lib.borrow()
         )
@@ -2642,6 +2647,29 @@ struct CPython(Defaultable, Movable):
     # Unicode Objects and Codecs
     # ref: https://docs.python.org/3/c-api/unicode.html
     # ===-------------------------------------------------------------------===#
+
+    def PyUnicode_Type(self) -> PyTypeObjectPtr:
+        """The `PyUnicode_Type` Object.
+
+        This instance of `PyTypeObject` represents the Python string type. This
+        is the same object as `str` in the Python layer.
+
+        References:
+        - https://docs.python.org/3.10/c-api/unicode.html#c.PyUnicode_Type
+        """
+        return self._PyUnicode_Type
+
+    def PyUnicode_CheckExact(self, obj: PyObjectPtr) -> c_int:
+        """Return true if its argument is a `PyUnicodeObject`, but not a
+        subtype of `PyUnicodeObject`. This function always succeeds.
+
+        Note: this a C macro in the Python C API.
+
+        References:
+        - https://docs.python.org/3/c-api/unicode.html#c.PyUnicode_CheckExact
+        - https://github.com/python/cpython/blob/main/Include/unicodeobject.h
+        """
+        return c_int(self.Py_TYPE(obj) == self._PyUnicode_Type)
 
     # TODO: fix the signature to take str, size, and errors as args
     def PyUnicode_DecodeUTF8(self, s: StringSlice) -> PyObjectPtr:

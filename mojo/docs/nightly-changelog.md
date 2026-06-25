@@ -123,6 +123,10 @@ This version is still a work in progress.
 
 ## Library changes
 
+- `String(py=obj)` fast-paths exact Python `str` via
+  `PyUnicode_AsUTF8AndSize`, reading the cached UTF-8 buffer directly
+  and skipping the `py.__str__()` round trip.
+
 - `Int` is now an alias for `Scalar[DType.int]` and integer literals materialize
   to this `Scalar` type. Because of this some conversions have become more
   strict.

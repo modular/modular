@@ -58,6 +58,10 @@ def py_add(a, b):  # noqa: ANN001, ANN201
     return a + b
 
 
+def py_str_byte_len(s):  # noqa: ANN001, ANN201
+    return len(s.encode("utf-8"))
+
+
 def _measure(label: str, stmt: str, globals_: dict[str, object]) -> None:
     times = timeit.repeat(
         stmt, number=ITERATIONS, repeat=REPEATS, globals=globals_
@@ -75,6 +79,8 @@ def _sanity_check() -> None:
     assert mojo_module.add_def(1, 2) == 3
     assert mojo_module.add_raw(1, 2) == 3
     assert mojo_module.add_raw_fastcall(1, 2) == 3
+    assert mojo_module.str_byte_len_def("hello world") == 11
+    assert mojo_module.str_byte_len_raw_fastcall("hello world") == 11
 
 
 def main() -> int:
@@ -87,8 +93,11 @@ def main() -> int:
         "add_def": mojo_module.add_def,
         "add_raw": mojo_module.add_raw,
         "add_raw_fastcall": mojo_module.add_raw_fastcall,
+        "str_byte_len_def": mojo_module.str_byte_len_def,
+        "str_byte_len_raw_fastcall": mojo_module.str_byte_len_raw_fastcall,
         "py_noop": py_noop,
         "py_add": py_add,
+        "py_str_byte_len": py_str_byte_len,
     }
 
     print(
@@ -133,9 +142,26 @@ def main() -> int:
         g,
     )
 
+    # String input: covers `String.__init__(py=...)` (Python -> Mojo).
+    _measure(
+        "Python -> Mojo  str_byte_len_def(s)     [def_function/FASTCALL]",
+        "str_byte_len_def('hello world')",
+        g,
+    )
+    _measure(
+        "Python -> Mojo  str_byte_len_raw_fastcall(s) [def_py_c_function/FASTCALL]",
+        "str_byte_len_raw_fastcall('hello world')",
+        g,
+    )
+
     # Pure-Python baselines.
     _measure("Python -> Python py_noop(x)", "py_noop(1)", g)
     _measure("Python -> Python py_add(1, 2)", "py_add(1, 2)", g)
+    _measure(
+        "Python -> Python py_str_byte_len(s)",
+        "py_str_byte_len('hello world')",
+        g,
+    )
 
     # timeit floor: no call at all.
     _measure("Python builtin: 1 + 2  (no call)", "1 + 2", g)
