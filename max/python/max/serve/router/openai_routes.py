@@ -308,9 +308,14 @@ class OpenAIChatResponseGenerator(
         parser: ToolParser | None = None,
         parse_tool_calls: bool = False,
         tools: list[TextGenerationRequestTool] | None = None,
+        fold_reasoning_into_content: bool = False,
     ) -> None:
         super().__init__(pipeline)
         self.stream_options = stream_options
+        # MiniMax ``reasoning_split=False`` folds reasoning into ``content`` as ``<think>...</think>``; ``_think_*`` track the stream fold.
+        self.fold_reasoning_into_content = fold_reasoning_into_content
+        self._think_opened = False
+        self._think_closed = False
         self.parser: ToolParser = (
             parser if parser is not None else LlamaToolParser()
         )
@@ -333,6 +338,38 @@ class OpenAIChatResponseGenerator(
         self._stream_tool_names: dict[int, str] = {}
         self._stream_tool_args: dict[int, list[str]] = {}
 
+    def _fold_reasoning_delta(
+        self, reasoning_text: str | None, content_text: str | None
+    ) -> str | None:
+        """Folds a streaming delta's reasoning + content into one content string.
+
+        Injects ``<think>\\n`` before the first reasoning text and
+        ``\\n</think>\\n\\n`` before the first content text, so the full stream
+        reconstructs ``<think>\\n{reasoning}\\n</think>\\n\\n{content}`` —
+        matching the official MiniMax ``reasoning_split=False`` format. Relies on
+        per-request ``_think_opened`` / ``_think_closed`` state.
+
+        Args:
+            reasoning_text: Decoded reasoning tokens in this delta, if any.
+            content_text: Decoded content tokens in this delta, if any.
+
+        Returns:
+            The folded content string, or ``None`` when the delta carries no
+            visible text.
+        """
+        parts: list[str] = []
+        if reasoning_text:
+            if not self._think_opened:
+                parts.append("<think>\n")
+                self._think_opened = True
+            parts.append(reasoning_text)
+        if content_text:
+            if self._think_opened and not self._think_closed:
+                parts.append("\n</think>\n\n")
+                self._think_closed = True
+            parts.append(content_text)
+        return "".join(parts) or None
+
     async def stream(
         self, request: TextGenerationRequest
     ) -> AsyncGenerator[str | JSONResponse, None]:
@@ -351,6 +388,10 @@ class OpenAIChatResponseGenerator(
             self.parser.reset()
             self._stream_tool_names.clear()
             self._stream_tool_args.clear()
+
+        # Reset the ``<think>`` fold state for this streaming session.
+        self._think_opened = False
+        self._think_closed = False
 
         try:
             async for chunk in self.pipeline.next_token_chunk(request):
@@ -464,6 +505,18 @@ class OpenAIChatResponseGenerator(
                     elif tool_call_chunks:
                         content = None
 
+                    # MiniMax ``reasoning_split=False``: fold reasoning into the
+                    # content stream wrapped in ``<think>...</think>`` and drop
+                    # the dedicated reasoning field. Tool-call deltas are left
+                    # untouched.
+                    reasoning = chunk.decoded_reasoning_tokens
+                    if (
+                        self.fold_reasoning_into_content
+                        and not tool_call_chunks
+                    ):
+                        content = self._fold_reasoning_delta(reasoning, content)
+                        reasoning = None
+
                     finish_reason = get_finish_reason_from_status(
                         chunk.status,
                         allow_none=True,
@@ -477,7 +530,7 @@ class OpenAIChatResponseGenerator(
                                 function_call=None,
                                 role="assistant",
                                 refusal=None,
-                                reasoning=chunk.decoded_reasoning_tokens,
+                                reasoning=reasoning,
                                 tool_calls=tool_call_chunks
                                 if tool_call_chunks
                                 else None,
@@ -685,8 +738,11 @@ class OpenAIChatResponseGenerator(
             # content so a successful turn never returns ``message.content``
             # null. On ``length`` (truncated mid-thought) keep it as reasoning
             # rather than misrepresenting a partial thought as the answer.
+            # Skipped when folding reasoning into content: the ``<think>`` block
+            # already guarantees ``message.content`` is non-null.
             if (
-                not response_message.strip()
+                not self.fold_reasoning_into_content
+                and not response_message.strip()
                 and reasoning_message
                 and finish_reason == "stop"
             ):
@@ -763,8 +819,18 @@ class OpenAIChatResponseGenerator(
                 )
 
             if reasoning_message is not None:
-                for choice in response_choices:
-                    choice.message.reasoning = reasoning_message
+                if self.fold_reasoning_into_content:
+                    # MiniMax ``reasoning_split=False``: fold reasoning into
+                    # ``content`` wrapped in ``<think>...</think>`` and leave the
+                    # dedicated reasoning field unset.
+                    think_block = f"<think>\n{reasoning_message}\n</think>\n\n"
+                    for choice in response_choices:
+                        choice.message.content = think_block + (
+                            choice.message.content or ""
+                        )
+                else:
+                    for choice in response_choices:
+                        choice.message.reasoning = reasoning_message
 
             usage = None
             if n_reasoning_tokens > 0 or n_tokens > 0:
@@ -1486,12 +1552,20 @@ async def openai_create_chat_completion(
         # the model can output either tool calls or structured content. The parser
         # will detect which format was used and handle accordingly.
         parse_tool_calls = tools is not None
+        # MiniMax ``reasoning_split=False`` folds reasoning back into the
+        # ``content`` field wrapped in ``<think>...</think>``. Gated to MiniMax
+        # M3 (identified by its reasoning parser) so other models are unaffected.
+        fold_reasoning_into_content = (
+            completion_request.reasoning_split is False
+            and pipeline_config.runtime.reasoning_parser == "minimax_m3"
+        )
         response_generator = OpenAIChatResponseGenerator(
             pipeline,
             stream_options=stream_options,
             parser=parser,
             parse_tool_calls=parse_tool_calls,
             tools=tools,
+            fold_reasoning_into_content=fold_reasoning_into_content,
         )
         # Use request-level temperature/thinking_temperature if provided, else server defaults.
         temp = (

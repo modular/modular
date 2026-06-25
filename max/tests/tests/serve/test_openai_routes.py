@@ -1170,6 +1170,7 @@ async def _run_stream(
     chunks: list[TokenGeneratorOutput],
     *,
     stream_options: ChatCompletionStreamOptionsParam | None = None,
+    fold_reasoning_into_content: bool = False,
 ) -> list[CreateChatCompletionStreamResponse]:
     """Run streaming generator and return parsed responses."""
     mock_pipeline = Mock()
@@ -1183,7 +1184,9 @@ async def _run_stream(
     mock_request = _make_mock_request()
 
     generator = OpenAIChatResponseGenerator(
-        mock_pipeline, stream_options=stream_options
+        mock_pipeline,
+        stream_options=stream_options,
+        fold_reasoning_into_content=fold_reasoning_into_content,
     )
     return [
         CreateChatCompletionStreamResponse.model_validate_json(p)
@@ -1276,6 +1279,144 @@ async def test_openai_chat_stream_reasoning_in_delta(
     assert responses[0].choices[0].delta.content is None
     assert responses[1].choices[0].delta.content == "answer"
     assert responses[1].choices[0].delta.reasoning is None
+
+
+# ============================================================================
+# Tests for MiniMax ``reasoning_split=False`` (fold reasoning into content).
+#
+# Reference behavior captured from the official MiniMax-M3 endpoint
+# (api.minimax.io, model "MiniMax-M3"): with reasoning_split=False the response
+# ``content`` is ``<think>\n{thinking}\n</think>\n\n{answer}`` and no separate
+# reasoning field is returned. See the design doc for CENG-592.
+# ============================================================================
+
+
+@pytest.mark.asyncio
+async def test_fold_reasoning_into_content_non_streaming(
+    patch_openai_metrics: None,
+) -> None:
+    """Non-streaming fold wraps reasoning in <think> tags inside content."""
+    chunks = [
+        TokenGeneratorOutput(
+            status=GenerationStatus.ACTIVE,
+            decoded_reasoning_tokens="The answer is 408.",
+            reasoning_token_count=5,
+            decoded_tokens=None,
+            token_count=0,
+            prompt_token_count=5,
+        ),
+        TokenGeneratorOutput(
+            status=GenerationStatus.END_OF_SEQUENCE,
+            decoded_reasoning_tokens=None,
+            reasoning_token_count=0,
+            decoded_tokens="17 x 24 = 408",
+            token_count=4,
+            prompt_token_count=5,
+        ),
+    ]
+    mock_pipeline = Mock()
+    mock_pipeline.model_name = "test-model"
+    mock_pipeline.all_tokens = AsyncMock(return_value=chunks)
+
+    generator = OpenAIChatResponseGenerator(
+        mock_pipeline, fold_reasoning_into_content=True
+    )
+    response = await generator.complete([_make_mock_request()])
+    message = response.choices[0].message
+    assert (
+        message.content
+        == "<think>\nThe answer is 408.\n</think>\n\n17 x 24 = 408"
+    )
+    assert message.reasoning is None
+
+
+@pytest.mark.asyncio
+async def test_fold_reasoning_disabled_keeps_reasoning_field(
+    patch_openai_metrics: None,
+) -> None:
+    """Default (split=True) behavior is unchanged: reasoning stays separate."""
+    chunks = [
+        TokenGeneratorOutput(
+            status=GenerationStatus.ACTIVE,
+            decoded_reasoning_tokens="The answer is 408.",
+            reasoning_token_count=5,
+            decoded_tokens=None,
+            token_count=0,
+            prompt_token_count=5,
+        ),
+        TokenGeneratorOutput(
+            status=GenerationStatus.END_OF_SEQUENCE,
+            decoded_reasoning_tokens=None,
+            reasoning_token_count=0,
+            decoded_tokens="17 x 24 = 408",
+            token_count=4,
+            prompt_token_count=5,
+        ),
+    ]
+    mock_pipeline = Mock()
+    mock_pipeline.model_name = "test-model"
+    mock_pipeline.all_tokens = AsyncMock(return_value=chunks)
+
+    generator = OpenAIChatResponseGenerator(
+        mock_pipeline, fold_reasoning_into_content=False
+    )
+    response = await generator.complete([_make_mock_request()])
+    message = response.choices[0].message
+    assert message.content == "17 x 24 = 408"
+    assert message.reasoning == "The answer is 408."
+
+
+@pytest.mark.asyncio
+async def test_fold_reasoning_into_content_streaming(
+    patch_openai_metrics: None,
+) -> None:
+    """Streaming fold emits <think> open/close in the content deltas only.
+
+    Reconstructing the concatenated content must equal the official
+    ``<think>\\n{reasoning}\\n</think>\\n\\n{answer}`` format, and no delta
+    carries a separate reasoning field.
+    """
+    chunks = [
+        TokenGeneratorOutput(
+            status=GenerationStatus.ACTIVE,
+            decoded_reasoning_tokens="The user wants 17 x 24.",
+            reasoning_token_count=6,
+            decoded_tokens=None,
+            token_count=0,
+            prompt_token_count=5,
+        ),
+        TokenGeneratorOutput(
+            status=GenerationStatus.ACTIVE,
+            decoded_reasoning_tokens=" It is 408.",
+            reasoning_token_count=4,
+            decoded_tokens=None,
+            token_count=0,
+            prompt_token_count=5,
+        ),
+        TokenGeneratorOutput(
+            status=GenerationStatus.END_OF_SEQUENCE,
+            decoded_reasoning_tokens=None,
+            reasoning_token_count=0,
+            decoded_tokens="17 x 24 = 408",
+            token_count=4,
+            prompt_token_count=5,
+        ),
+    ]
+    responses = await _run_stream(chunks, fold_reasoning_into_content=True)
+    content = "".join(r.choices[0].delta.content or "" for r in responses)
+    assert (
+        content == "<think>\nThe user wants 17 x 24. It is 408.\n</think>\n\n"
+        "17 x 24 = 408"
+    )
+    assert all(r.choices[0].delta.reasoning is None for r in responses)
+    # The opening tag rides the first reasoning delta; the close + answer ride
+    # the first content delta.
+    assert responses[0].choices[0].delta.content == (
+        "<think>\nThe user wants 17 x 24."
+    )
+    assert responses[-1].choices[0].delta.content == (
+        "\n</think>\n\n17 x 24 = 408"
+    )
 
 
 @pytest.mark.asyncio

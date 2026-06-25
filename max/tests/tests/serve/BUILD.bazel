@@ -14,6 +14,7 @@ modular_py_test(
         "pipelines/*.py",
     ]),
     data = [
+        "//max/tests/tests/serve/fixtures/minimax_m3_reasoning_split:fixtures",
         "//max/tests/tests/serve/testdata",
     ],
     env = {

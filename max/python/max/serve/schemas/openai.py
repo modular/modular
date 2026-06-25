@@ -88,7 +88,6 @@ from pydantic import (
     ConfigDict,
     Field,
     create_model,
-    field_validator,
     model_validator,
 )
 from typing_extensions import NotRequired, TypedDict
@@ -308,6 +307,10 @@ class _MaxRequestExtensions(BaseModel):
     repetition_penalty: float | None = None
     thinking_temperature: float | None = None
 
+    # MiniMax M3 only: ``False`` folds reasoning into ``content`` wrapped in
+    # ``<think>...</think>``; ``True`` (default) keeps it in the ``reasoning`` field.
+    reasoning_split: bool = True
+
     # Generation control.
     min_tokens: int | None = None
     stop_token_ids: list[int] | None = None
@@ -330,16 +333,6 @@ class _MaxRequestExtensions(BaseModel):
 
     # OpenRouter reasoning object; mapped to enable_thinking in the route.
     reasoning: ReasoningConfig | None = None
-
-    # HACK: MiniMax extension. Only ``True`` is supported.
-    reasoning_split: bool = True
-
-    @field_validator("reasoning_split")
-    @classmethod
-    def _require_reasoning_split(cls, value: bool) -> bool:
-        if not value:
-            raise ValueError("`reasoning_split` cannot be disabled")
-        return value
 
 
 # ---- Auto-generated request bases from OpenAI's TypedDict params ----------
