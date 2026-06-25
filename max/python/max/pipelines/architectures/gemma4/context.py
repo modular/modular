@@ -49,6 +49,10 @@ class Gemma4Context(TextAndVisionContext):
     video_token_ranges: list[tuple[int, int]] = field(default_factory=list)
     """``(start_idx, end_idx)`` of video placeholder tokens in the prompt."""
 
+    video_hashes: list[int] = field(default_factory=list)
+    """Content hash per video, in the same order as ``video_token_ranges``.
+    Empty when vision caching is disabled."""
+
     @property
     def needs_video_encoding(self) -> bool:
         """Whether video encoding is still needed for this context.
