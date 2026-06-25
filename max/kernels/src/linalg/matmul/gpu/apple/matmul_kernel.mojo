@@ -26,8 +26,8 @@ tails. Operands load DRAM->register directly -- threadgroup-memory staging
 *degrades* matmul on Apple Silicon. See `kernels/apple-m5-matmul` in the KB.
 """
 
-from std.collections import Optional
-from std.gpu import WARP_SIZE, block_dim, block_idx, thread_idx
+from std.collections import InlineArray, Optional
+from std.gpu import WARP_SIZE, block_dim, block_idx, lane_id, thread_idx
 from std.gpu.host import DeviceContext
 from std.sys import align_of
 from std.utils import IndexList
@@ -55,11 +55,13 @@ from linalg.utils import elementwise_epilogue_type
 
 
 # The body's MMA op: fp32 accumulation, the kernel's `in_type`, and the
-# benchmarked-optimal 2x2 simdgroup tiling. Type-identical to `AppleM5MatMul.Mma`
-# (the two MUST stay in sync); `AccumType` is `InlineArray[SIMD[fp32, 8], 4]`,
-# fixed by the fp32 out-type and the 2x2 count, NOT by `in_type`.
-comptime _BodyMma[in_type: DType] = MmaOpApple[
-    DType.float32, in_type, num_m_mmas=2, num_n_mmas=2
+# simdgroup MMA-fragment count `num_m x num_n` (= `SG_M/16 x SG_N/16`). Default
+# 2x2 is the dense-GEMM optimum; the conv path uses 1x1 (16x16 simdgroup tile).
+# Type-identical to `AppleM5MatMul.Mma` for the same counts (the two MUST stay in
+# sync). `AccumType` is `InlineArray[SIMD[fp32, 8], num_m*num_n]`, fixed by the
+# fp32 out-type and the fragment count, NOT by `in_type`.
+comptime _BodyMma[in_type: DType, num_m: Int = 2, num_n: Int = 2] = MmaOpApple[
+    DType.float32, in_type, num_m_mmas=num_m, num_n_mmas=num_n
 ]
 
 
@@ -84,14 +86,20 @@ trait AOperandLoader:
     """
 
     comptime in_type: DType
+    # Simdgroup MMA-fragment counts (= SG_M/16, SG_N/16); the body keys its
+    # `mma_op`/`accum` on these so loader and body agree on the accumulator size.
+    comptime num_m_mmas: Int
+    comptime num_n_mmas: Int
 
     @always_inline
     def accumulate_strip[
         bounded: Bool, b_layout: TensorLayout
     ](
-        self,
-        mut mma_op: _BodyMma[Self.in_type],
-        mut accum: _BodyMma[Self.in_type].AccumType,
+        mut self,
+        mut mma_op: _BodyMma[Self.in_type, Self.num_m_mmas, Self.num_n_mmas],
+        mut accum: _BodyMma[
+            Self.in_type, Self.num_m_mmas, Self.num_n_mmas
+        ].AccumType,
         b_sub: TileTensor[Self.in_type, b_layout, ImmutAnyOrigin],
         conv: ConvIm2colParams,
         k_strip: Int32,
@@ -99,8 +107,9 @@ trait AOperandLoader:
         a_valid_rows: Int32,
         b_valid_cols: Int,
         k_valid: Int,
-        m_base: Int32,
     ):
+        # `mut self`: the conv loader carries the strength-reduced K-state
+        # (c0/r/s) and advances it per strip; the dense loader is stateless.
         ...
 
 
@@ -122,6 +131,9 @@ struct DenseALoader[dtype: DType, a_layout: TensorLayout](
 
     # Satisfy the trait's associated `in_type` from the struct's `dtype` param.
     comptime in_type = Self.dtype
+    # Dense GEMM is fixed at the 2x2 (SG=32) simdgroup optimum.
+    comptime num_m_mmas = 2
+    comptime num_n_mmas = 2
 
     var a_slab: TileTensor[Self.dtype, Self.a_layout, ImmutUntrackedOrigin]
 
@@ -129,9 +141,11 @@ struct DenseALoader[dtype: DType, a_layout: TensorLayout](
     def accumulate_strip[
         bounded: Bool, b_layout: TensorLayout
     ](
-        self,
-        mut mma_op: _BodyMma[Self.in_type],
-        mut accum: _BodyMma[Self.in_type].AccumType,
+        mut self,  # stateless for dense; `mut` only to satisfy the trait
+        mut mma_op: _BodyMma[Self.in_type, Self.num_m_mmas, Self.num_n_mmas],
+        mut accum: _BodyMma[
+            Self.in_type, Self.num_m_mmas, Self.num_n_mmas
+        ].AccumType,
         b_sub: TileTensor[Self.in_type, b_layout, ImmutAnyOrigin],
         conv: ConvIm2colParams,  # unused by the dense path
         k_strip: Int32,
@@ -139,7 +153,6 @@ struct DenseALoader[dtype: DType, a_layout: TensorLayout](
         a_valid_rows: Int32,
         b_valid_cols: Int,
         k_valid: Int,
-        m_base: Int32,
     ):
         comptime SG_M = AppleM5MatMul[Self.dtype].SG_M
         comptime BK = AppleM5MatMul[Self.dtype].BK
@@ -154,41 +167,101 @@ struct DenseALoader[dtype: DType, a_layout: TensorLayout](
         )
 
 
-@fieldwise_init
-struct Im2colALoader[dtype: DType](AOperandLoader, ImplicitlyCopyable, Movable):
-    """Fused-conv A loader: holds only `input_ptr` (conv flows as an arg).
+struct Im2colALoader[
+    dtype: DType,
+    BK: Int = 16,
+    num_m: Int = 2,
+    num_n: Int = 2,
+    c_aligned: Bool = False,
+](AOperandLoader, ImplicitlyCopyable, Movable):
+    """Fused-conv A loader: `input_ptr` + this simdgroup's prebaked pixel
+    anchors and carried K-state. The gather reads the A MMA-fragment from NHWC
+    via `MmaOpApple.mma_im2col` (the im2col matrix is non-affine, so it is not a
+    `distribute`-expressible TileTensor -- KB
+    `exceptions/apple-mma-fragment-is-not-distribute-expressible`). The anchor
+    prebake + K-state strength-reduction design: KB `kernels/apple-conv2d-im2col`.
 
-    `accumulate_strip` gathers the A MMA-fragment from NHWC on the fly via
-    `MmaOpApple.mma_im2col` (the conv im2col matrix is non-affine, so it cannot
-    be a TileTensor the contiguous slab path consumes -- KB
-    `exceptions/apple-mma-fragment-is-not-distribute-expressible`). Always
-    bounded inside `mma_im2col`; the `bounded` param is accepted for trait
-    parity and not separately consumed (the gather zero-fills regardless).
+    `conv` is deliberately NOT a struct field: an 11-`Int32` `ConvIm2colParams`
+    held in a by-value loader spilled to a GENERIC addrspace alloca that Metal's
+    AIR backend mishandles (the FLUX-concat addrspace-loss class) and crashed
+    MTLCompilerService -- so it is threaded as an `accumulate_strip` arg. The
+    prebaked anchors are plain `Int32` arrays (safe, like `DenseALoader`'s slab).
 
-    `conv` is NOT a struct field: the 11-`Int32` `ConvIm2colParams` held inside
-    a loader passed by value into the shared body was spilled to a GENERIC
-    address-space alloca and reloaded in the device kernel, which Metal's AIR
-    backend mishandles (the addrspace-loss class documented for the FLUX concat
-    fix) -- it crashed MTLCompilerService. Threading `conv` as a plain
-    `accumulate_strip` arg keeps it in arg/register space all the way to the
-    gather, matching the prior flat `run_conv`.
-
-    Lifetime: `input_ptr` is held with `UntrackedOrigin` (a struct field cannot
-    expose `AnyOrigin`); the NHWC input kernel arg outlives the K-loop gather.
+    Lifetime: `input_ptr` uses `UntrackedOrigin` (struct fields cannot expose
+    `AnyOrigin`); the NHWC input kernel arg outlives the K-loop gather.
     """
 
-    # Satisfy the trait's associated `in_type` from the struct's `dtype` param.
     comptime in_type = Self.dtype
+    comptime num_m_mmas = Self.num_m
+    comptime num_n_mmas = Self.num_n
+    comptime NUM_ROWS = Self.num_m * 2  # 2 row-halves x num_m M-fragments
 
     var input_ptr: UnsafePointer[Scalar[Self.dtype], ImmutUntrackedOrigin]
+    var h_base: InlineArray[Int32, Self.NUM_ROWS]
+    var w_base: InlineArray[Int32, Self.NUM_ROWS]
+    var batch_base: InlineArray[Int32, Self.NUM_ROWS]
+    # Carried K-state (k0base -> r, s, c0): seeded in `__init__`, advanced per
+    # strip by add+carry instead of `//`/`%` (KB `kernels/apple-conv2d-im2col`).
+    var c0: Int32
+    var r: Int32
+    var s: Int32
+    var k_total: Int32  # R*S*C, prebaked once (the partial-K bound)
+
+    @always_inline
+    def __init__(
+        out self,
+        input_ptr: UnsafePointer[Scalar[Self.dtype], ImmutUntrackedOrigin],
+        row_base: Int32,
+        rb: Int32,
+        cb: Int32,
+        conv: ConvIm2colParams,
+    ):
+        """Prebake this lane's per-row im2col anchors + seed the K-state.
+
+        `row_base` is the simdgroup's absolute M base (`_sg_row_base`); `rb`/`cb`
+        are this lane's MMA-fragment row/col (matching `MmaOpApple.rb`/`.cb`).
+        Row `ri` covers M-fragment `ri // 2`, row-half `ri % 2`, i.e. output
+        pixel `row_base + (ri//2)*16 + (ri%2)*8 + rb`. The K-state is decomposed
+        once here for the lane's first strip (`k0base = 2*cb`); every later strip
+        advances it incrementally in `accumulate_strip`.
+        """
+        self.input_ptr = input_ptr
+        self.h_base = InlineArray[Int32, Self.NUM_ROWS](uninitialized=True)
+        self.w_base = InlineArray[Int32, Self.NUM_ROWS](uninitialized=True)
+        self.batch_base = InlineArray[Int32, Self.NUM_ROWS](uninitialized=True)
+        var HW_out = conv.H_out * conv.W_out
+        var hwc = conv.H * conv.W * conv.C
+        comptime for ri in range(Self.NUM_ROWS):
+            comptime mi = ri // 2
+            comptime half = ri % 2
+            var m = row_base + Int32(mi * 16 + half * 8) + rb
+            var batch = m // HW_out
+            var spatial = m % HW_out
+            var h_out = spatial // conv.W_out
+            var w_out = spatial % conv.W_out
+            self.h_base[ri] = h_out * conv.stride_h - conv.pad_h
+            self.w_base[ri] = w_out * conv.stride_w - conv.pad_w
+            self.batch_base[ri] = batch * hwc
+
+        # Seed the K-state for k_strip=0: k0base = 2*cb. These are the ONLY
+        # divides on the K axis -- later strips advance by add+carry.
+        var SC = conv.S * conv.C
+        self.k_total = conv.R * SC  # R*S*C, reused as the partial-K bound
+        var k0 = Int32(2) * cb
+        self.r = k0 // SC
+        var sc = k0 % SC
+        self.s = sc // conv.C
+        self.c0 = sc % conv.C
 
     @always_inline
     def accumulate_strip[
         bounded: Bool, b_layout: TensorLayout
     ](
-        self,
-        mut mma_op: _BodyMma[Self.in_type],
-        mut accum: _BodyMma[Self.in_type].AccumType,
+        mut self,
+        mut mma_op: _BodyMma[Self.in_type, Self.num_m_mmas, Self.num_n_mmas],
+        mut accum: _BodyMma[
+            Self.in_type, Self.num_m_mmas, Self.num_n_mmas
+        ].AccumType,
         b_sub: TileTensor[Self.in_type, b_layout, ImmutAnyOrigin],
         conv: ConvIm2colParams,
         k_strip: Int32,
@@ -196,23 +269,42 @@ struct Im2colALoader[dtype: DType](AOperandLoader, ImplicitlyCopyable, Movable):
         a_valid_rows: Int32,
         b_valid_cols: Int,
         k_valid: Int,
-        m_base: Int32,
     ):
-        # The gather's absolute K origin is invariantly `k_strip * BK`.
-        var k_base = k_strip * Int32(AppleM5MatMul[Self.dtype].BK)
-        var k_total = Int32(Int(conv.R) * Int(conv.S) * Int(conv.C))
-        mma_op.mma_im2col(
+        # The gather's absolute K origin is invariantly `k_strip * BK`. `BK` is
+        # this loader's own param (matches the body's `Self.BK` tiling), NOT a
+        # default `AppleM5MatMul[dtype]` instantiation -- the conv path overrides
+        # BK, so reading the default here would desync the gather from the tiles.
+        var k_base = k_strip * Int32(Self.BK)
+        # `bounded` from the body (once per simdgroup) lets interior full strips
+        # skip the ragged-M / partial-K branches.
+        mma_op.mma_im2col[bounded=bounded, c_aligned=Self.c_aligned](
             accum,
             self.input_ptr,
             conv,
             b_sub,
-            m_base=m_base,
+            self.h_base,
+            self.w_base,
+            self.batch_base,
+            self.c0,
+            self.r,
+            self.s,
             k_base=k_base,
             m_valid=a_valid_rows,
-            k_total=k_total,
+            k_total=self.k_total,
             b_valid_cols=b_valid_cols,
             k_valid=k_valid,
         )
+
+        # Advance the K-state to the next strip: k0base += BK, renormalized into
+        # (r, s, c0) by add+carry (no divides). For C >= BK the c0/s carries run
+        # at most once each; smaller C loops a bounded number of times.
+        self.c0 += Int32(Self.BK)
+        while self.c0 >= conv.C:
+            self.c0 -= conv.C
+            self.s += 1
+        while self.s >= conv.S:
+            self.s -= conv.S
+            self.r += 1
 
 
 struct AppleM5MatMul[
@@ -220,6 +312,11 @@ struct AppleM5MatMul[
     c_type: DType = DType.float32,
     transpose_b: Bool = False,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    block_m: Int = 64,
+    block_n: Int = 64,
+    block_k: Int = 16,
+    sg_m: Int = 32,
+    sg_n: Int = 32,
 ]:
     """Apple M5 simdgroup-tiled GEMM (Metal 4 hardware MMA).
 
@@ -230,28 +327,45 @@ struct AppleM5MatMul[
             otherwise B is `(K, N)` row-major.
         elementwise_lambda_fn: Optional fused epilogue; receives
             `SIMD[c_type, width]` at absolute `(row, col)` (AMD's contract).
+        block_m: Threadgroup block rows `BM` (M tile). Multiple of `SG_M`.
+        block_n: Threadgroup block cols `BN` (N tile). Multiple of `SG_N`.
+        block_k: K-strip depth `BK` per accumulate step. Multiple of `MMA_K`
+            (16). The conv path (`enqueue_apple_conv2d`) overrides these to tune
+            the fused im2col GEMM independently of the dense GEMM defaults.
+        sg_m: Simdgroup subtile rows `SG_M`. Multiple of `MMA_M` (16); fixes the
+            M MMA-fragment count `NUM_MMA_M = SG_M / 16`.
+        sg_n: Simdgroup subtile cols `SG_N`. Multiple of `MMA_N` (16); fixes the
+            N MMA-fragment count `NUM_MMA_N = SG_N / 16`.
 
     `run` is the GPU kernel entry (TileTensor operands; `M`/`N`/`K` derived from
     them). `run_split_k_partial` / `run_split_k_reduce` are the split-K kernels.
     Launch via `enqueue_apple_matmul` / `enqueue_apple_matmul_split_k`.
     """
 
-    # === Comptime tile config. 64x64 block, 32x32 simdgroup, BK=16 K-strip. ===
-    comptime BM = 64
-    comptime BN = 64
-    comptime BK = 16
-    comptime SG_M = 32  # simdgroup subtile rows (2 * MMA_M)
-    comptime SG_N = 32  # simdgroup subtile cols (2 * MMA_N)
+    # === Tile config. BM/BN/BK come from the block_* params (default 64x64
+    # block, BK=16 K-strip); SG_M/SG_N from the sg_* params (default 32 = 2*MMA).
+    # Kept as comptime members so the body can alias them. ===
+    comptime BM = Self.block_m
+    comptime BN = Self.block_n
+    comptime BK = Self.block_k
+    comptime SG_M = Self.sg_m  # simdgroup subtile rows (NUM_MMA_M * MMA_M)
+    comptime SG_N = Self.sg_n  # simdgroup subtile cols (NUM_MMA_N * MMA_N)
+    comptime NUM_MMA_M = Self.SG_M // 16  # M MMA fragments per simdgroup
+    comptime NUM_MMA_N = Self.SG_N // 16  # N MMA fragments per simdgroup
     comptime NUM_SG_M = Self.BM // Self.SG_M
     comptime NUM_SG_N = Self.BN // Self.SG_N
     comptime NUM_SG = Self.NUM_SG_M * Self.NUM_SG_N
     comptime THREADS_PER_BLOCK = Self.NUM_SG * Int(WARP_SIZE)
     comptime REDUCE_BLOCK = 256  # threads/block for the split-K reduce kernel
-    # 2x2 (4 accumulators/simdgroup) is the benchmarked optimum on M5 Max;
-    # 2x4 / 4x2 regress 26-60% -- the MMA pipeline is not latency-starved at
-    # 4 accumulators, so more only adds register pressure / spills.
+    # 2x2 (4 accumulators/simdgroup) is the benchmarked dense-GEMM optimum on M5
+    # Max; 2x4 / 4x2 regress 26-60% -- the MMA pipeline is not latency-starved at
+    # 4 accumulators, so more only adds register pressure / spills. The conv path
+    # overrides sg_m/sg_n (and thus this count) via `enqueue_apple_conv2d`.
     comptime Mma = MmaOpApple[
-        DType.float32, Self.in_type, num_m_mmas=2, num_n_mmas=2
+        DType.float32,
+        Self.in_type,
+        num_m_mmas=Self.NUM_MMA_M,
+        num_n_mmas=Self.NUM_MMA_N,
     ]
 
     # === Morton (Z-order) tile scheduling ================================== #
@@ -370,7 +484,7 @@ struct AppleM5MatMul[
     def _run_gemm_body[
         L: AOperandLoader, //, c_layout: TensorLayout, b_layout: TensorLayout
     ](
-        loader: L,
+        mut loader: L,
         c: TileTensor[Self.c_type, c_layout, MutAnyOrigin],
         b: TileTensor[L.in_type, b_layout, ImmutAnyOrigin],
         k: Int,
@@ -403,7 +517,7 @@ struct AppleM5MatMul[
         # both sides must agree on it (see `AOperandLoader`; KB
         # `patterns/trait-type-erasure-and-stride-layout-workaround`).
         # Type-identical to `Self.Mma`.
-        comptime Mma = _BodyMma[L.in_type]
+        comptime Mma = _BodyMma[L.in_type, L.num_m_mmas, L.num_n_mmas]
         # `c_type` / `elementwise_lambda_fn` / `transpose_b` are struct *params*:
         # spelled `Self.x` below (a param can't be aliased to a same-name local
         # the way the members just above are).
@@ -616,7 +730,6 @@ struct AppleM5MatMul[
                     a_valid_rows=valid_rows,
                     b_valid_cols=Int(valid_cols),
                     k_valid=Int(k_valid),
-                    m_base=row_base,
                 )
             comptime if use_epilogue_path:
                 _apply_epilogue[bounded=True](Int(row_base), Int(col_base))
@@ -634,7 +747,6 @@ struct AppleM5MatMul[
                     a_valid_rows=SG_M_i32,
                     b_valid_cols=SG_N,
                     k_valid=BK,
-                    m_base=row_base,
                 )
             if has_k_tail:
                 var k_tail = k_i32 - k_full_strips * BK_i32
@@ -648,7 +760,6 @@ struct AppleM5MatMul[
                     a_valid_rows=SG_M_i32,
                     b_valid_cols=SG_N,
                     k_valid=Int(k_tail),
-                    m_base=row_base,
                 )
             comptime if use_epilogue_path:
                 _apply_epilogue[bounded=False](Int(row_base), Int(col_base))
@@ -723,12 +834,13 @@ struct AppleM5MatMul[
     # so results match the materialised path. B is the filter `[N=C_out, K]`
     # (transpose_b=True). bf16 only for now.
 
-    @__name(t"apple_conv2d_run_{Self.in_type}_{Self.c_type}")
+    @__name(t"apple_conv2d_run_{Self.in_type}_{Self.c_type}_ca{c_aligned}")
     @staticmethod
     def run_conv[
         c_layout: TensorLayout,
         input_layout: TensorLayout,
         b_layout: TensorLayout,
+        c_aligned: Bool = False,
     ](
         c: TileTensor[Self.c_type, c_layout, MutAnyOrigin],
         input: TileTensor[Self.in_type, input_layout, ImmutAnyOrigin],
@@ -756,10 +868,31 @@ struct AppleM5MatMul[
         ), "run_conv requires transpose_b=True (filter NK layout)"
 
         var k = Int(conv.R) * Int(conv.S) * Int(conv.C)  # K = R*S*C_in
+
+        # Prebake this lane's anchors + K-state ONCE here, outside the K-loop
+        # (mirrors the dense slab prebake -- KB `kernels/apple-conv2d-im2col`).
+        # `rb`/`cb` MUST use `MmaOpApple.__init__`'s lane formula and `row_base`
+        # MUST match the body's inline `row_base`, or the anchors misalign with
+        # the gather's fragment rows. OOB simdgroups prebake anchors they never
+        # read (the body early-returns before the K-loop) -- harmless.
+        var row_base = Self._sg_row_base(log2_grid_m, log2_grid_n)
+        var lid = Int(lane_id())
+        var rb = Int32(((lid & 7) >> 1) + ((lid & 16) >> 2))
+        var cb = Int32(((lid & 1) << 2) + (lid & 8))
         # `UntrackedOrigin` so `input_ptr` can be a loader field (struct fields
         # cannot expose `AnyOrigin`); `input` outlives the body's gather.
-        var loader = Im2colALoader[Self.in_type](
-            input.ptr.unsafe_origin_cast[ImmutUntrackedOrigin]()
+        var loader = Im2colALoader[
+            Self.in_type,
+            Self.BK,
+            Self.NUM_MMA_M,
+            Self.NUM_MMA_N,
+            c_aligned=c_aligned,
+        ](
+            input.ptr.unsafe_origin_cast[ImmutUntrackedOrigin](),
+            row_base,
+            rb,
+            cb,
+            conv,
         )
         Self._run_gemm_body(loader, c, b, k, conv, log2_grid_m, log2_grid_n)
 
@@ -1114,11 +1247,19 @@ def enqueue_apple_conv2d[
     Raises:
         If the attached GPU is not Apple M5 (`compute_capability != 5`).
     """
+    # Conv tile config: differs from the dense GEMM only in BK=32 (vs 16) for
+    # the width-8 gather. NB: keep sg_m=sg_n=32 -- sg=16 (1 fragment) measured
+    # ~1.7-1.9x SLOWER. Full config sweep: KB `kernels/apple-conv2d-im2col`.
     comptime MM = AppleM5MatMul[
         in_type,
         c_type,
         transpose_b=True,
         elementwise_lambda_fn=elementwise_lambda_fn,
+        block_m=64,
+        block_n=64,
+        block_k=32,
+        sg_m=32,
+        sg_n=32,
     ]
 
     var cc = ctx.compute_capability()
@@ -1148,6 +1289,23 @@ def enqueue_apple_conv2d[
     debug_assert(
         Int(filter_nk.dim[1]()) == k, "filter_nk must be (C_out, K); K mismatch"
     )
+    # The online-im2col gather forms NHWC addresses in Int32 (batch*H*W*C +
+    # h_in*W*C + w_in*C + c, plus the width-8 channel run). Cap the input extent
+    # so that arithmetic can't silently wrap into a wrong/OOB load -- e.g.
+    # batch>=8 at 1024^2/C256 exceeds 2^31. NOTE: the fix if that workload
+    # appears is Int64 gather indices; we cap here rather than pay 64-bit ALU on
+    # the hot path. `Int` is 64-bit so this product itself can't overflow.
+    var in_elems = (
+        Int(input.dim[0]())
+        * Int(input.dim[1]())
+        * Int(input.dim[2]())
+        * Int(input.dim[3]())
+    )
+    debug_assert(
+        in_elems <= 2147483647,
+        "Apple conv: input N*H*W*C exceeds the Int32 gather-index range; got ",
+        in_elems,
+    )
 
     var grid_m = (m + MM.BM - 1) // MM.BM
     var grid_n = (n + MM.BN - 1) // MM.BN
@@ -1165,21 +1323,33 @@ def enqueue_apple_conv2d[
 
     var grid_dim = side_m * side_n
 
-    comptime kernel = MM.run_conv[
-        type_of(c).LayoutType,
-        type_of(input).LayoutType,
-        type_of(filter_nk).LayoutType,
-    ]
-    ctx.enqueue_function[kernel](
-        c,
-        input.as_immut(),
-        filter_nk.as_immut(),
-        conv,
-        log2_m,
-        log2_n,
-        grid_dim=(grid_dim),
-        block_dim=(MM.THREADS_PER_BLOCK),
-    )
+    # `C` is a runtime conv field, so this launch is the only place its
+    # alignment can be lifted to a comptime kernel parameter without a per-shape
+    # recompile. `c_aligned` lets the kernel DCE the per-element slow gather on
+    # the interior strips (see `_load_a_im2col_fragment_x2`).
+    @parameter
+    def _launch[c_aligned: Bool]() raises:
+        comptime kernel = MM.run_conv[
+            type_of(c).LayoutType,
+            type_of(input).LayoutType,
+            type_of(filter_nk).LayoutType,
+            c_aligned=c_aligned,
+        ]
+        ctx.enqueue_function[kernel](
+            c,
+            input.as_immut(),
+            filter_nk.as_immut(),
+            conv,
+            log2_m,
+            log2_n,
+            grid_dim=(grid_dim),
+            block_dim=(MM.THREADS_PER_BLOCK),
+        )
+
+    if Int(conv.C) % 8 == 0:
+        _launch[True]()
+    else:
+        _launch[False]()
 
 
 @always_inline
