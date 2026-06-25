@@ -299,6 +299,10 @@ _EXTRA_CONSTRAINTS = {
 
 _EXTRA_DEPS = {}
 
+_GPU_MEMORY = {
+    "test_cudnn_conv.mojo": "7",
+}
+
 _FILECHECK_TESTS = [
     "test_mha_tile_scheduler.mojo",
     "test_padding_gpu.mojo",
@@ -349,7 +353,7 @@ _FILECHECK_TESTS = [
             ],
         }),
         exec_properties = {
-            "test.resources:gpu-memory": "3",
+            "test.resources:gpu-memory": _GPU_MEMORY.get(src, "4"),
         },
         tags = ["gpu"],
         target_compatible_with = ["//:has_gpu"] + _EXTRA_CONSTRAINTS.get(src, []),
@@ -617,7 +621,7 @@ _MHA_CAUSAL_MASK_CONFIGS = [
             "ENABLE_MHA_PREFILL_PAIR_CTA=True",
         ] if pair_cta else []),
         exec_properties = {
-            "test.resources:gpu-memory": "3",
+            "test.resources:gpu-memory": "4",
         },
         tags = ["gpu"],
         target_compatible_with = ["//:has_gpu"] + constraints,
@@ -704,7 +708,7 @@ _MLA_DECODE_PAGED_CONFIGS = [
             "//conditions:default": True,
         }),
         exec_properties = {
-            "test.resources:gpu-memory": "5",
+            "test.resources:gpu-memory": "6",
         },
         tags = ["gpu"],
         target_compatible_with = ["//:has_gpu"] + select({
@@ -762,19 +766,19 @@ _MLA_PREFILL_PAGED_VARIANTS = [
         "test_mla_prefill_generic_paged.mojo",
         "test_mla_prefill_generic_paged",
         _MLA_PREFILL_PAGED_PAGE_SIZES,
-        "5",
+        "6",
     ),
     (
         "test_mla_prefill_blockscale_paged.mojo",
         "test_mla_prefill_blockscale_paged",
         _MLA_PREFILL_PAGED_PAGE_SIZES,
-        "5",
+        "6",
     ),
     (
         "test_mla_prefill_per_token_scale_paged.mojo",
         "test_mla_prefill_per_token_scale_paged",
         _MLA_PREFILL_PAGED_PAGE_SIZES,
-        "5",
+        "6",
     ),
     # Large-cache_length finiteness sweep: production page_size (256) only,
     # targeting the softmax-accumulator / scale-range / partition-count axis at

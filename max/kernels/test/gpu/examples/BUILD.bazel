@@ -22,6 +22,10 @@ _TEST_SIZE = {
     "test_matmul_kernel_10.mojo": "large",
 }
 
+_GPU_MEMORY = {
+    "test_matmul_int.mojo": "1",
+}
+
 [
     mojo_filecheck_test(
         name = src + ".test",
@@ -46,7 +50,7 @@ _TEST_SIZE = {
         size = _TEST_SIZE.get(src, "medium"),
         srcs = [src],
         exec_properties = {
-            "test.resources:gpu-memory": "1.5",
+            "test.resources:gpu-memory": _GPU_MEMORY.get(src, "2"),
         },
         tags = ["gpu"] + (
             ["manual"] if src == "test_scatterND.mojo" else []

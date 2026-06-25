@@ -77,6 +77,9 @@ mojo_filecheck_test(
     mojo_test(
         name = src + ".test",
         srcs = [src],
+        exec_properties = {
+            "test.resources:gpu-memory": "1",
+        },
         tags = ["gpu"],
         target_compatible_with = ["//:nvidia_gpu"],
         deps = [
@@ -118,10 +121,17 @@ mojo_test(
     ],
 )
 
+_B200_GPU_MEMORY = {
+    "test_tcgen05.mojo": "2",
+}
+
 [
     mojo_test(
         name = src + ".test",
         srcs = [src],
+        exec_properties = {
+            "test.resources:gpu-memory": _B200_GPU_MEMORY.get(src, "1"),
+        },
         tags = ["gpu"],
         target_compatible_with = ["//:b200_gpu"],
         deps = [
@@ -139,6 +149,7 @@ mojo_test(
 mojo_test(
     name = "test_tma_gather4.mojo.test",
     srcs = ["test_tma_gather4.mojo"],
+    exec_properties = {"test.resources:gpu-memory": "1"},
     tags = ["gpu"],
     target_compatible_with = ["//:b200_gpu"],
     deps = [
@@ -178,10 +189,17 @@ mojo_filecheck_test(
     ],
 )
 
+_GLOB_GPU_MEMORY = {
+    "test_external_memory_callee_patterns.mojo": "1",
+}
+
 [
     mojo_test(
         name = src + ".test",
         srcs = [src],
+        exec_properties = {
+            "test.resources:gpu-memory": _GLOB_GPU_MEMORY.get(src, "1"),
+        },
         tags = ["gpu"],
         target_compatible_with = ["//:has_gpu"] + _EXTRA_CONSTRAINTS.get(src, []),
         deps = [
