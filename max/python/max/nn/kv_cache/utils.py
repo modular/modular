@@ -60,7 +60,6 @@ class MHAAttnKey(AttnKey):
         # MHA decode kernels read a 4-int dispatch buffer on the host (CPU).
         # ``device`` is intentionally ignored: the MHA dispatch-metadata graph
         # input is declared CPU-resident.
-        del device
         return Buffer.from_numpy(
             np.array(
                 [
@@ -84,7 +83,6 @@ class MLAAttnKey(AttnKey):
         # MLA decode kernels read a 3-int dispatch buffer on the accelerator.
         # ``max_cache_valid_length`` is not part of the MLA dispatch buffer (it
         # is carried separately in ``max_cache_length``), so it is ignored here.
-        del max_cache_valid_length
         metadata = Buffer.from_numpy(
             np.array(
                 [

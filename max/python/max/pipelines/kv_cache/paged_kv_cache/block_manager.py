@@ -361,7 +361,6 @@ class BlockManager:
     @traced
     def _count_full_blocks_from_prefix_cache(
         self,
-        ctx: TextContext,
         desired_hashes: Sequence[int | bytes],
     ) -> int:
         """Returns the count of device and host blocks with the desired hashes."""
@@ -468,9 +467,7 @@ class BlockManager:
         req_hashes = self.req_to_hashes[ctx.request_id]
         uncommitted_hashes = req_hashes[num_committed_blocks:]
 
-        return self._count_full_blocks_from_prefix_cache(
-            ctx, uncommitted_hashes
-        )
+        return self._count_full_blocks_from_prefix_cache(uncommitted_hashes)
 
     @traced
     def get_full_blocks_from_prefix_cache(
