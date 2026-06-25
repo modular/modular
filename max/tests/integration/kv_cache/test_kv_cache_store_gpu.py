@@ -27,6 +27,7 @@ from max.nn.kv_cache import (
     KVCacheInputsPerDevice,
     KVCacheParams,
     KVCacheQuantizationConfig,
+    MHAKVCacheParams,
     PagedCacheValues,
 )
 from max.pipelines.kv_cache import PagedKVCacheManager
@@ -36,7 +37,7 @@ from test_common.context_utils import create_text_context
 def _make_session_and_kv_manager() -> tuple[Accelerator, PagedKVCacheManager]:
     device = Accelerator()
     session = InferenceSession(devices=[device])
-    kv_params = KVCacheParams(
+    kv_params = MHAKVCacheParams(
         dtype=DType.float32,
         n_kv_heads=8,
         head_dim=64,
@@ -68,6 +69,7 @@ def _allocate_batch(
 def test_kv_cache_store_ragged_executes() -> None:
     device, kv_manager = _make_session_and_kv_manager()
     kv_params = kv_manager.params
+    assert isinstance(kv_params, MHAKVCacheParams)
     assert isinstance(kv_params, KVCacheParams)
 
     prompt_lens = [33, 66, 1]
@@ -159,6 +161,7 @@ def test_kv_cache_store_ragged_executes() -> None:
 def test_kv_cache_store_padded_executes() -> None:
     device, kv_manager = _make_session_and_kv_manager()
     kv_params = kv_manager.params
+    assert isinstance(kv_params, MHAKVCacheParams)
     assert isinstance(kv_params, KVCacheParams)
 
     valid_lengths = [33, 66, 1]
@@ -250,14 +253,13 @@ def _make_session_and_kv_manager_fp8() -> tuple[
     """Create session and KV manager with FP8 quantized cache (includes kv_scales)."""
     device = Accelerator()
     session = InferenceSession(devices=[device])
-    kv_params = KVCacheParams(
+    kv_params = MHAKVCacheParams(
         dtype=DType.float8_e4m3fn,
         n_kv_heads=1,
         head_dim=128,
         num_layers=1,
         page_size=128,
         devices=[DeviceRef.GPU()],
-        is_mla=False,
         kvcache_quant_config=KVCacheQuantizationConfig(
             scale_dtype=DType.float32,
             quantization_granularity=128,
@@ -276,6 +278,7 @@ def test_store_k_scale_cache_executes() -> None:
     """Test that store_k_scale_cache kernel executes and writes to kv_scales buffer."""
     device, kv_manager = _make_session_and_kv_manager_fp8()
     kv_params = kv_manager.params
+    assert isinstance(kv_params, MHAKVCacheParams)
     assert isinstance(kv_params, KVCacheParams)
 
     prompt_lens = [33, 66, 1]

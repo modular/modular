@@ -37,7 +37,7 @@ from max.nn.kernels import (
     rope_ragged_with_position_ids,
     rope_split_store_ragged,
 )
-from max.nn.kv_cache import KVCacheParams, PagedCacheValues
+from max.nn.kv_cache import MHAKVCacheParams, PagedCacheValues
 from max.pipelines.kv_cache import PagedKVCacheManager
 from modular_graph_test import are_all_tensor_values, modular_graph_test
 from test_common.context_utils import create_text_context
@@ -556,7 +556,7 @@ def test_kv_cache_ragged_rope(
 ) -> None:
     num_q_heads = 32
     head_dim = 128
-    kv_params = KVCacheParams(
+    kv_params = MHAKVCacheParams(
         dtype=DType.float32,
         n_kv_heads=8,
         head_dim=head_dim,
@@ -728,7 +728,7 @@ def test_rope_split_store_ragged(
     """Tests rope_split_store_ragged compiles and produces valid output."""
     num_q_heads = 32
     head_dim = 128
-    kv_params = KVCacheParams(
+    kv_params = MHAKVCacheParams(
         dtype=DType.float32,
         n_kv_heads=8,
         head_dim=head_dim,

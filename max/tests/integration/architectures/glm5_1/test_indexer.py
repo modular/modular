@@ -33,8 +33,8 @@ from max.nn import (
 )
 from max.nn.attention.mask_config import MHAMaskVariant
 from max.nn.kv_cache import (
-    KVCacheParams,
     KVCacheQuantizationConfig,
+    MHAKVCacheParams,
     PagedCacheValues,
 )
 from max.nn.rotary_embedding import RotaryEmbedding
@@ -210,14 +210,13 @@ def run_max_indexer(
         format=QuantFormat.BLOCKSCALED_FP8,
     )
 
-    kv_params = KVCacheParams(
+    kv_params = MHAKVCacheParams(
         dtype=DType.float8_e4m3fn,
         n_kv_heads=1,
         head_dim=index_head_dim,
         num_layers=1,
         page_size=page_size,
         devices=[DeviceRef.GPU()],
-        is_mla=False,
         kvcache_quant_config=KVCacheQuantizationConfig(
             scale_dtype=DType.float32,
             quantization_granularity=128,

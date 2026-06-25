@@ -37,7 +37,7 @@ from max.driver import CPU
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef
-from max.nn.kv_cache import KVCacheParams
+from max.nn.kv_cache import MHAKVCacheParams
 from max.pipelines.context import TextContext
 from max.pipelines.kv_cache import PagedKVCacheManager
 from test_common.context_utils import create_text_context
@@ -51,7 +51,7 @@ def _make_kv_manager(
     total_num_pages: int = 16,
 ) -> PagedKVCacheManager:
     """Build a minimal CPU PagedKVCacheManager with the given hash settings."""
-    params = KVCacheParams(
+    params = MHAKVCacheParams(
         dtype=DType.float32,
         n_kv_heads=1,
         head_dim=16,

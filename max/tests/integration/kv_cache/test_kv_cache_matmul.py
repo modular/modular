@@ -31,7 +31,12 @@ from max.nn.kernels import (
     matmul_k_cache_ragged,
     matmul_kv_cache_ragged,
 )
-from max.nn.kv_cache import KVCacheBuffer, KVCacheParams, PagedCacheValues
+from max.nn.kv_cache import (
+    KVCacheBuffer,
+    KVCacheParams,
+    MHAKVCacheParams,
+    PagedCacheValues,
+)
 from max.pipelines.context import TextContext
 from max.pipelines.kv_cache import PagedKVCacheManager
 from modular_graph_test import modular_graph_test
@@ -127,7 +132,7 @@ def _dump_k_or_v_cache_to_torch_tensor(
 
 def test_fused_qkv_ragged_matmul(session: InferenceSession) -> None:
     num_q_heads = 32
-    kv_params = KVCacheParams(
+    kv_params = MHAKVCacheParams(
         dtype=DType.float32,
         n_kv_heads=8,
         head_dim=128,
@@ -314,7 +319,7 @@ def test_matmul_kv_ragged(session: InferenceSession, dtype: DType) -> None:
         DType.bfloat16: torch.bfloat16,
     }[dtype]
     num_q_heads = 32
-    kv_params = KVCacheParams(
+    kv_params = MHAKVCacheParams(
         dtype=dtype,
         n_kv_heads=8,
         head_dim=128,
@@ -449,7 +454,7 @@ def test_matmul_k_ragged(session: InferenceSession, dtype: DType) -> None:
         DType.bfloat16: torch.bfloat16,
     }[dtype]
     num_q_heads = 32
-    kv_params = KVCacheParams(
+    kv_params = MHAKVCacheParams(
         dtype=dtype,
         n_kv_heads=8,
         head_dim=128,
@@ -555,7 +560,7 @@ def test_matmul_kv_cache_ragged_chains(dtype: DType) -> None:
     """Tests that staging matmul_kv_cache_ragged threads chains."""
     # Set up hyperparameters for the test.
     num_q_heads = 32
-    kv_params = KVCacheParams(
+    kv_params = MHAKVCacheParams(
         dtype=dtype,
         n_kv_heads=8,
         head_dim=128,

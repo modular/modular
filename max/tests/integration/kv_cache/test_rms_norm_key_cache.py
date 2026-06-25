@@ -23,6 +23,7 @@ from max.nn.kernels import rms_norm_key_cache
 from max.nn.kv_cache import (
     KVCacheInputsPerDevice,
     KVCacheParams,
+    MHAKVCacheParams,
     PagedCacheValues,
 )
 from max.pipelines.kv_cache import PagedKVCacheManager
@@ -88,7 +89,7 @@ class RMSNormKeyCacheModel:
 def test_rms_norm_key_cache(session: InferenceSession, dtype: DType) -> None:
     seq_lens = [10, 4]
     batch_size = 2
-    kv_params = KVCacheParams(
+    kv_params = MHAKVCacheParams(
         dtype=dtype,
         n_kv_heads=8,
         head_dim=128,
@@ -170,7 +171,7 @@ def test_partial_rms_norm_key_cache(
     ]
     batch_size = 1
     gamma_size = 512
-    kv_params = KVCacheParams(
+    kv_params = MHAKVCacheParams(
         dtype=dtype,
         n_kv_heads=1,
         head_dim=576,
@@ -266,7 +267,7 @@ def test_rms_norm_new_key_cache(
     ]
     batch_size = 1
     gamma_size = 128
-    kv_params = KVCacheParams(
+    kv_params = MHAKVCacheParams(
         dtype=dtype,
         n_kv_heads=8,
         head_dim=128,
@@ -374,7 +375,7 @@ def test_rms_norm_key_cache_dtype_mismatch(
 ) -> None:
     """Tests that a TypeError is raised when gamma dtype mismatches kv dtype."""
     seq_lens = [10]
-    kv_params = KVCacheParams(
+    kv_params = MHAKVCacheParams(
         dtype=kv_dtype,
         n_kv_heads=8,
         head_dim=128,
@@ -414,7 +415,7 @@ def test_rms_norm_key_cache_per_token_norm(session: InferenceSession) -> None:
     n_kv_heads = 4
     head_dim = 64
 
-    kv_params = KVCacheParams(
+    kv_params = MHAKVCacheParams(
         dtype=DType.float32,
         n_kv_heads=n_kv_heads,
         head_dim=head_dim,

@@ -24,8 +24,10 @@ that invariant against the real ``mo.mla.compute_dispatch_args.scalar`` op.
 from collections.abc import Sequence
 
 import pytest
+from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.kv_cache.utils import AttentionDispatchResolver, MLAAttnKey
+from max.nn.kv_cache import MLAKVCacheParams
+from max.nn.kv_cache.utils import MLAAttnKey
 
 NUM_HEADS = 128
 BATCH_SIZES = [1, 2, 4, 8, 16, 31, 32, 33, 63, 64, 65, 96, 128]
@@ -33,12 +35,12 @@ MAX_CACHE_LENGTH = 16384
 
 
 def _resolve_np(
-    resolver: AttentionDispatchResolver,
+    params: MLAKVCacheParams,
     batch_size: int,
     cache_length: int,
 ) -> int:
     """Returns num_partitions from the real Mojo dispatch kernel."""
-    key = resolver.resolve_attn_key(batch_size, 1, cache_length)
+    key = params.resolve_attn_key(batch_size, 1, cache_length)
     assert isinstance(key, MLAAttnKey)
     return key.num_partitions
 
@@ -51,41 +53,41 @@ def _bucket_cache_length(
     return min(candidates) if candidates else max(probe_lengths_sorted)
 
 
-@pytest.fixture(scope="module")
-def mla_resolver() -> AttentionDispatchResolver:
-    """Builds an MLA dispatch resolver backed by the real custom op."""
-    device = DeviceRef.GPU()
-    return AttentionDispatchResolver(
-        devices=[device],
-        is_mla=True,
-        n_kv_heads_per_device=1,
-        num_q_heads_per_device=NUM_HEADS // 1,
+def _make_mla_params(dtype: DType) -> MLAKVCacheParams:
+    """Builds single-device MLA params backed by the real custom op."""
+    return MLAKVCacheParams(
+        dtype=dtype,
+        head_dim=576,
+        num_layers=1,
+        devices=[DeviceRef.GPU()],
+        num_q_heads=NUM_HEADS,
     )
 
 
 @pytest.fixture(scope="module")
-def mla_resolver_fp8() -> AttentionDispatchResolver:
-    """Builds an MLA dispatch resolver with ``is_fp8_kv=True``."""
-    device = DeviceRef.GPU()
-    return AttentionDispatchResolver(
-        devices=[device],
-        is_mla=True,
-        n_kv_heads_per_device=1,
-        num_q_heads_per_device=NUM_HEADS // 1,
-        is_fp8_kv=True,
-    )
+def mla_params() -> MLAKVCacheParams:
+    """MLA params with a BF16 KV cache."""
+    return _make_mla_params(DType.bfloat16)
 
 
-def _assert_bucketing_covers(resolver: AttentionDispatchResolver) -> None:
+@pytest.fixture(scope="module")
+def mla_params_fp8() -> MLAKVCacheParams:
+    """MLA params with an FP8 KV cache (``is_fp8_kv_dtype`` True)."""
+    return _make_mla_params(DType.float8_e4m3fn)
+
+
+def _assert_bucketing_covers(params: MLAKVCacheParams) -> None:
     """For every cache length, the bucketed probe covers its num_partitions."""
-    probe_lengths = sorted(set(resolver.probe_lengths(MAX_CACHE_LENGTH)))
+    probe_lengths = sorted(
+        set(params.graph_capture_probe_cache_lengths(MAX_CACHE_LENGTH))
+    )
     for batch_size in BATCH_SIZES:
         probe_np = {
-            length: _resolve_np(resolver, batch_size, length)
+            length: _resolve_np(params, batch_size, length)
             for length in probe_lengths
         }
         for cache_length in range(1, MAX_CACHE_LENGTH + 1):
-            runtime_np = _resolve_np(resolver, batch_size, cache_length)
+            runtime_np = _resolve_np(params, batch_size, cache_length)
             bucketed = _bucket_cache_length(cache_length, probe_lengths)
             assert probe_np[bucketed] >= runtime_np, (
                 f"batch_size={batch_size}, cache_length={cache_length}: "
@@ -95,22 +97,22 @@ def _assert_bucketing_covers(resolver: AttentionDispatchResolver) -> None:
 
 
 def test_mla_bucketing_coverage(
-    mla_resolver: AttentionDispatchResolver,
+    mla_params: MLAKVCacheParams,
 ) -> None:
     """Bucketing a cache length up always reaches a graph with enough np."""
-    _assert_bucketing_covers(mla_resolver)
+    _assert_bucketing_covers(mla_params)
 
 
 def test_mla_bucketing_coverage_fp8(
-    mla_resolver_fp8: AttentionDispatchResolver,
+    mla_params_fp8: MLAKVCacheParams,
 ) -> None:
-    """Coverage holds when ``is_fp8_kv=True`` (different np thresholds)."""
-    _assert_bucketing_covers(mla_resolver_fp8)
+    """Coverage holds when the KV cache is FP8 (different np thresholds)."""
+    _assert_bucketing_covers(mla_params_fp8)
 
 
 def test_fp8_produces_fewer_partitions(
-    mla_resolver: AttentionDispatchResolver,
-    mla_resolver_fp8: AttentionDispatchResolver,
+    mla_params: MLAKVCacheParams,
+    mla_params_fp8: MLAKVCacheParams,
 ) -> None:
     """FP8 never produces more partitions than BF16 (``np_fp8 <= np_bf16``).
 
@@ -139,8 +141,8 @@ def test_fp8_produces_fewer_partitions(
             8192,
             16384,
         ]:
-            np_bf16 = _resolve_np(mla_resolver, batch_size, cl)
-            np_fp8 = _resolve_np(mla_resolver_fp8, batch_size, cl)
+            np_bf16 = _resolve_np(mla_params, batch_size, cl)
+            np_fp8 = _resolve_np(mla_params_fp8, batch_size, cl)
             assert np_fp8 <= np_bf16, (
                 f"FP8 produced more partitions than BF16: "
                 f"bs={batch_size}, cl={cl}, np_fp8={np_fp8}, "

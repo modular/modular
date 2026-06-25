@@ -21,6 +21,8 @@ from max.graph import DeviceRef
 from max.nn.kv_cache import (
     KVCacheInputs,
     KVCacheParams,
+    MHAKVCacheParams,
+    MLAKVCacheParams,
     MultiKVCacheInputs,
     MultiKVCacheParams,
 )
@@ -43,15 +45,26 @@ def _make_kv_manager(
     **extra_kv_params: object,
 ) -> PagedKVCacheManager:
     devices = [DeviceRef.CPU() for _ in range(num_devices)]
-    params = KVCacheParams(
-        dtype=DType.float32,
-        n_kv_heads=n_kv_heads,
-        head_dim=head_dim,
-        num_layers=num_layers,
-        page_size=page_size,
-        devices=devices or [DeviceRef.CPU()],
-        **extra_kv_params,  # type: ignore[arg-type]
-    )
+    params: KVCacheParams
+    if extra_kv_params.pop("is_mla", False):
+        params = MLAKVCacheParams(
+            dtype=DType.float32,
+            head_dim=head_dim,
+            num_layers=num_layers,
+            page_size=page_size,
+            devices=devices or [DeviceRef.CPU()],
+            **extra_kv_params,  # type: ignore[arg-type]
+        )
+    else:
+        params = MHAKVCacheParams(
+            dtype=DType.float32,
+            n_kv_heads=n_kv_heads,
+            head_dim=head_dim,
+            num_layers=num_layers,
+            page_size=page_size,
+            devices=devices or [DeviceRef.CPU()],
+            **extra_kv_params,  # type: ignore[arg-type]
+        )
     return PagedKVCacheManager(
         params=params,
         session=InferenceSession(devices=[CPU()]),
@@ -412,7 +425,7 @@ def _make_multi_kv_manager(
 ) -> PagedKVCacheManager:
     """Creates a multi-cache manager with two caches (primary + secondary)."""
     devices = [DeviceRef.CPU() for _ in range(num_devices)]
-    primary = KVCacheParams(
+    primary = MHAKVCacheParams(
         dtype=DType.float32,
         n_kv_heads=8,
         head_dim=128,
@@ -422,7 +435,7 @@ def _make_multi_kv_manager(
         data_parallel_degree=data_parallel_degree,
         enable_prefix_caching=enable_prefix_caching,
     )
-    secondary = KVCacheParams(
+    secondary = MHAKVCacheParams(
         dtype=DType.float32,
         n_kv_heads=1,
         head_dim=64,

@@ -22,6 +22,9 @@ Cache configuration
    KVCacheBuffer
    KVCacheParamInterface
    KVCacheParams
+   MHAKVCacheParams
+   MLAKVCacheParams
+   MSAKVCacheParams
    KVCacheQuantizationConfig
    KVConnectorType
    KVCacheMemory
@@ -49,10 +52,10 @@ Attention dispatch
    :toctree: generated
    :template: autosummary/class.rst
 
-   AttentionDispatchResolver
    AttnKey
    MHAAttnKey
    MLAAttnKey
+   MSAAttnKey
 
 Metrics
 -------

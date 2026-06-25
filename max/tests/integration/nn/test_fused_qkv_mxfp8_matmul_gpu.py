@@ -48,6 +48,7 @@ from max.nn.kernels import (
 from max.nn.kv_cache import (
     KVCacheInputsPerDevice,
     KVCacheParams,
+    MHAKVCacheParams,
     PagedCacheValues,
 )
 from max.pipelines.kv_cache import PagedKVCacheManager
@@ -258,7 +259,7 @@ def test_fused_qkv_mxfp8_matmul(
     device = Accelerator()
     device_ref = DeviceRef(device.label, device.id)
     session = InferenceSession(devices=[device])
-    kv_params = KVCacheParams(
+    kv_params = MHAKVCacheParams(
         dtype=DType.bfloat16,
         page_size=128,
         n_kv_heads=num_kv_heads,

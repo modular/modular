@@ -220,6 +220,7 @@ modular_py_test(
     ],
     target_compatible_with = ["//:b200_gpu"],
     deps = [
+        "//max/python/max/dtype",
         "//max/python/max/graph",
         "//max/python/max/nn",
     ],

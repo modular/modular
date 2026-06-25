@@ -19,10 +19,8 @@ from max.driver import CPU, Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, ops
-from max.nn.kv_cache.utils import (
-    AttentionDispatchResolver,
-    MHAAttnKey,
-)
+from max.nn.kv_cache import MHAKVCacheParams, MLAKVCacheParams
+from max.nn.kv_cache.utils import MHAAttnKey
 
 N_KV_HEADS = 8
 MLA_NUM_HEADS = [8, 16, 64, 128]
@@ -133,37 +131,40 @@ def mla_num_heads(request: pytest.FixtureRequest) -> int:
 
 
 @pytest.fixture(scope="module")
-def mha_resolver(
+def mha_params(
     gpu_device_ref: DeviceRef,
-) -> AttentionDispatchResolver:
-    return AttentionDispatchResolver(
+) -> MHAKVCacheParams:
+    return MHAKVCacheParams(
+        dtype=DType.bfloat16,
+        head_dim=128,
+        num_layers=1,
         devices=[gpu_device_ref],
-        is_mla=False,
-        n_kv_heads_per_device=N_KV_HEADS,
+        n_kv_heads=N_KV_HEADS,
     )
 
 
 @pytest.fixture(scope="module")
-def mla_resolver(
+def mla_params(
     gpu_device_ref: DeviceRef,
     mla_num_heads: int,
-) -> AttentionDispatchResolver:
-    return AttentionDispatchResolver(
+) -> MLAKVCacheParams:
+    return MLAKVCacheParams(
+        dtype=DType.bfloat16,
+        head_dim=576,
+        num_layers=1,
         devices=[gpu_device_ref],
-        is_mla=True,
-        n_kv_heads_per_device=1,
-        num_q_heads_per_device=mla_num_heads,
+        num_q_heads=mla_num_heads,
     )
 
 
 @pytest.fixture(scope="module")
-def mla_resolver_fp8(gpu_device_ref: DeviceRef) -> AttentionDispatchResolver:
-    return AttentionDispatchResolver(
+def mla_params_fp8(gpu_device_ref: DeviceRef) -> MLAKVCacheParams:
+    return MLAKVCacheParams(
+        dtype=DType.float8_e4m3fn,
+        head_dim=576,
+        num_layers=1,
         devices=[gpu_device_ref],
-        is_mla=True,
-        n_kv_heads_per_device=1,
-        num_q_heads_per_device=128,
-        is_fp8_kv=True,
+        num_q_heads=128,
     )
 
 
@@ -203,7 +204,7 @@ def reference_mla_model_fp8(
     TEST_CASES,
 )
 def test_mha_dispatch_resolver_matches_reference_graph(
-    mha_resolver: AttentionDispatchResolver,
+    mha_params: MHAKVCacheParams,
     reference_mha_model: Model,
     batch_size: int,
     max_prompt_length: int,
@@ -213,7 +214,7 @@ def test_mha_dispatch_resolver_matches_reference_graph(
         reference_mha_model, batch_size, max_cache_valid_length
     )
 
-    key = mha_resolver.resolve_attn_key(
+    key = mha_params.resolve_attn_key(
         batch_size, max_prompt_length, max_cache_valid_length
     )
     assert isinstance(key, MHAAttnKey)
@@ -240,13 +241,13 @@ def test_mha_dispatch_resolver_matches_reference_graph(
     MLA_TEST_CASES,
 )
 def test_mla_dispatch_resolver_matches_reference_graph(
-    mla_resolver: AttentionDispatchResolver,
+    mla_params: MLAKVCacheParams,
     reference_mla_model: Model,
     batch_size: int,
     max_prompt_length: int,
     max_cache_valid_length: int,
 ) -> None:
-    key = mla_resolver.resolve_attn_key(
+    key = mla_params.resolve_attn_key(
         batch_size, max_prompt_length, max_cache_valid_length
     )
     # MLA packs a 3-int buffer on the accelerator.
@@ -266,13 +267,13 @@ def test_mla_dispatch_resolver_matches_reference_graph(
     MLA_TEST_CASES,
 )
 def test_mla_fp8_dispatch_resolver_matches_reference_graph(
-    mla_resolver_fp8: AttentionDispatchResolver,
+    mla_params_fp8: MLAKVCacheParams,
     reference_mla_model_fp8: Model,
     batch_size: int,
     max_prompt_length: int,
     max_cache_valid_length: int,
 ) -> None:
-    key = mla_resolver_fp8.resolve_attn_key(
+    key = mla_params_fp8.resolve_attn_key(
         batch_size, max_prompt_length, max_cache_valid_length
     )
     np.testing.assert_array_equal(

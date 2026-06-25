@@ -21,7 +21,7 @@ from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef
-from max.nn.kv_cache import KVCacheInputs, KVCacheParams
+from max.nn.kv_cache import KVCacheInputs, MHAKVCacheParams
 from max.pipelines.context import (
     ImageMetadata,
     TextAndVisionContext,
@@ -76,7 +76,7 @@ def create_kv_cache(
     page_size: int = 1,
     max_batch_size: int = 128,
 ) -> PagedKVCacheManager:
-    kv_params = KVCacheParams(
+    kv_params = MHAKVCacheParams(
         dtype=DType.float32,
         num_layers=1,
         n_kv_heads=1,

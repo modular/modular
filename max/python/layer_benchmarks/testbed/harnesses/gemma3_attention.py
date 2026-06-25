@@ -45,7 +45,7 @@ import torch
 from max.driver import DLPackArray
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType
-from max.nn.kv_cache import KVCacheParams
+from max.nn.kv_cache import MHAKVCacheParams
 from max.nn.rotary_embedding import Llama3RotaryEmbedding
 from max.pipelines.architectures.gemma3.layers.attention import Gemma3Attention
 from transformers.models.gemma3.configuration_gemma3 import Gemma3TextConfig
@@ -108,7 +108,7 @@ class Gemma3AttentionHarness(
         local_window_size = p.local_window_size
         layer_idx = p.layer_idx
 
-        kv_params = KVCacheParams(
+        kv_params = MHAKVCacheParams(
             dtype=DType.bfloat16,
             n_kv_heads=n_kv_heads,
             head_dim=head_dim,

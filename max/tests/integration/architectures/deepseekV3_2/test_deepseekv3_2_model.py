@@ -24,7 +24,7 @@ from max.nn import (
     ScaleOrigin,
     WeightScaleSpec,
 )
-from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams
+from max.nn.kv_cache import MHAKVCacheParams, MultiKVCacheParams
 from max.pipelines.architectures.deepseekV3_2.deepseekV3_2 import DeepseekV3_2
 from max.pipelines.architectures.deepseekV3_2.model_config import (
     DeepseekV3_2Config,
@@ -96,14 +96,14 @@ def make_test_config() -> DeepseekV3_2Config:
     hf_config = make_test_huggingface_config()
     device = DeviceRef.CPU()
 
-    mla_kv_params = KVCacheParams(
+    mla_kv_params = MHAKVCacheParams(
         dtype=DType.bfloat16,
         n_kv_heads=hf_config.num_key_value_heads,
         head_dim=hf_config.v_head_dim,
         num_layers=hf_config.num_hidden_layers,
         devices=[device],
     )
-    indexer_kv_params = KVCacheParams(
+    indexer_kv_params = MHAKVCacheParams(
         dtype=DType.float8_e4m3fn,
         n_kv_heads=1,
         head_dim=hf_config.index_head_dim,

@@ -52,7 +52,7 @@ from max.graph import (
     ops,
 )
 from max.nn.comm.allreduce import Signals
-from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams
+from max.nn.kv_cache import MHAKVCacheParams, MultiKVCacheParams
 from max.nn.transformer import ReturnLogits
 from max.pipelines.architectures.gemma4.batch_vision_inputs import (
     create_empty_embeddings,
@@ -86,7 +86,7 @@ def _make_kv_params(
     )
     global_layers = sum(1 for t in TEXT_LAYER_TYPES if t == "full_attention")
 
-    sliding_kv = KVCacheParams(
+    sliding_kv = MHAKVCacheParams(
         dtype=DType.bfloat16,
         n_kv_heads=TEXT_NUM_KEY_VALUE_HEADS,
         head_dim=TEXT_HEAD_DIM,
@@ -94,7 +94,7 @@ def _make_kv_params(
         devices=devices,
         page_size=128,
     )
-    global_kv = KVCacheParams(
+    global_kv = MHAKVCacheParams(
         dtype=DType.bfloat16,
         n_kv_heads=TEXT_NUM_GLOBAL_KEY_VALUE_HEADS,
         head_dim=TEXT_GLOBAL_HEAD_DIM,
@@ -122,7 +122,7 @@ def _make_text_config(
         layer_types = TEXT_LAYER_TYPES[:num_hidden_layers]
 
     # Text config uses the sliding-window KVCacheParams (inherited field).
-    text_kv = KVCacheParams(
+    text_kv = MHAKVCacheParams(
         dtype=DType.bfloat16,
         n_kv_heads=TEXT_NUM_KEY_VALUE_HEADS,
         head_dim=TEXT_HEAD_DIM,
@@ -554,7 +554,7 @@ def _make_small_model_config(
     )
     global_layers = sum(1 for t in _EXEC_LAYER_TYPES if t == "full_attention")
 
-    sliding_kv = KVCacheParams(
+    sliding_kv = MHAKVCacheParams(
         dtype=DType.bfloat16,
         n_kv_heads=_EXEC_N_KV_HEADS,
         head_dim=_EXEC_HEAD_DIM,
@@ -562,7 +562,7 @@ def _make_small_model_config(
         devices=devices,
         page_size=128,
     )
-    global_kv = KVCacheParams(
+    global_kv = MHAKVCacheParams(
         dtype=DType.bfloat16,
         n_kv_heads=_EXEC_N_GLOBAL_KV_HEADS,
         head_dim=_EXEC_GLOBAL_HEAD_DIM,
@@ -574,7 +574,7 @@ def _make_small_model_config(
         {"sliding_attention": sliding_kv, "full_attention": global_kv}
     )
 
-    text_kv = KVCacheParams(
+    text_kv = MHAKVCacheParams(
         dtype=DType.bfloat16,
         n_kv_heads=_EXEC_N_KV_HEADS,
         head_dim=_EXEC_HEAD_DIM,

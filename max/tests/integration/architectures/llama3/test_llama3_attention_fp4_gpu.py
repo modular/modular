@@ -27,7 +27,11 @@ from max.experimental.torch import torch_dtype_to_max
 from max.graph import DeviceRef, Graph, Shape, TensorType, ops
 from max.graph.weights import WeightData
 from max.nn import AttentionWithRope, Linear, RotaryEmbedding
-from max.nn.kv_cache import KVCacheParams, PagedCacheValues
+from max.nn.kv_cache import (
+    KVCacheParams,
+    MHAKVCacheParams,
+    PagedCacheValues,
+)
 from max.nn.quant_config import QuantConfig
 from max.pipelines.architectures.llama3.model_config import (
     create_rope_embedding,
@@ -208,7 +212,7 @@ def generate_max_outputs_fp4(
     if quant_config is None:
         raise ValueError("Failed to parse quant config for FP4")
 
-    kv_params = KVCacheParams(
+    kv_params = MHAKVCacheParams(
         dtype=cache_dtype,
         n_kv_heads=config.num_key_value_heads,
         head_dim=config.head_dim,

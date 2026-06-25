@@ -27,7 +27,7 @@ from unittest.mock import Mock
 from max.driver import DeviceSpec
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.kv_cache.cache_params import KVCacheParams
+from max.nn.kv_cache.cache_params import MHAKVCacheParams
 from max.pipelines.architectures import hf_config_shims  # noqa: F401
 from max.pipelines.architectures.gemma4.model_config import (
     Gemma4ForConditionalGenerationConfig,
@@ -96,8 +96,8 @@ def test_construct_kv_params_with_null_global_kv_heads() -> None:
     # the global (full-attention) cache must resolve null -> 2 KV heads with
     # global_head_dim=512.
     sliding_params, global_params = kv_params.children.values()
-    assert isinstance(sliding_params, KVCacheParams)
-    assert isinstance(global_params, KVCacheParams)
+    assert isinstance(sliding_params, MHAKVCacheParams)
+    assert isinstance(global_params, MHAKVCacheParams)
     assert sliding_params.n_kv_heads == 2
     assert sliding_params.head_dim == 256
     assert global_params.n_kv_heads == 2
@@ -132,5 +132,5 @@ def test_top_level_initialize_from_config() -> None:
     assert config.text_config.num_global_key_value_heads == 2
     assert config.vision_config is not None
     _, global_params = config.kv_params.children.values()
-    assert isinstance(global_params, KVCacheParams)
+    assert isinstance(global_params, MHAKVCacheParams)
     assert global_params.n_kv_heads == 2

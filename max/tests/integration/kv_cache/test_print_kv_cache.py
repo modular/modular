@@ -18,7 +18,7 @@ from max.driver import CPU
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
-from max.nn.kv_cache import KVCacheParams, PagedCacheValues
+from max.nn.kv_cache import KVCacheParams, MHAKVCacheParams, PagedCacheValues
 
 
 @dataclass(frozen=True)
@@ -79,7 +79,7 @@ class PrintKVCacheModel:
 )
 def test_print_kv_cache(dtype: DType) -> None:
     """Tests compiling a print KV cache op."""
-    kv_params = KVCacheParams(
+    kv_params = MHAKVCacheParams(
         dtype=dtype,
         # Use minimal model parameters for faster compilation.
         n_kv_heads=1,

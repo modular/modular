@@ -31,6 +31,7 @@ from max.nn.kernels import (
 )
 from max.nn.kv_cache import (
     KVCacheParams,
+    MHAKVCacheParams,
     PagedCacheValues,
 )
 
@@ -91,7 +92,7 @@ def test_fused_qkv_ragged_matmul_scaled_float4_valid() -> None:
     device = DeviceRef.CPU()
 
     # Create KV cache parameters
-    kv_params = KVCacheParams(
+    kv_params = MHAKVCacheParams(
         dtype=DType.bfloat16,
         n_kv_heads=8,
         head_dim=64,

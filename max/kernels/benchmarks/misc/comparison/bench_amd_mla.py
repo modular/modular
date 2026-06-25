@@ -58,7 +58,7 @@ from max.nn.kernels import (
     flare_mla_decode_ragged,
     flare_mla_prefill_ragged,
 )
-from max.nn.kv_cache import KVCacheParams, PagedCacheValues
+from max.nn.kv_cache import MLAKVCacheParams, PagedCacheValues
 
 _aiter: types.ModuleType | None
 _aiter_mla: types.ModuleType | None
@@ -286,14 +286,12 @@ def bench_max_decode(
     is_fp8 = dtype == torch.float8_e4m3fn
     max_dtype = torch_dtype_to_max(dtype)
 
-    kv_params = KVCacheParams(
+    kv_params = MLAKVCacheParams(
         dtype=max_dtype,
-        n_kv_heads=1,
         head_dim=config.qk_head_dim,
         num_layers=1,
         page_size=_MAX_PAGE_SIZE,
         devices=[DeviceRef.GPU()],
-        is_mla=True,
         num_q_heads=config.num_q_heads,
     )
 
@@ -563,14 +561,12 @@ def bench_max_prefill(
     is_fp8 = dtype == torch.float8_e4m3fn
     max_dtype = torch_dtype_to_max(dtype)
 
-    kv_params = KVCacheParams(
+    kv_params = MLAKVCacheParams(
         dtype=max_dtype,
-        n_kv_heads=1,
         head_dim=config.qk_head_dim,
         num_layers=1,
         page_size=_MAX_PAGE_SIZE,
         devices=[DeviceRef.GPU()],
-        is_mla=True,
         num_q_heads=config.num_q_heads,
     )
 

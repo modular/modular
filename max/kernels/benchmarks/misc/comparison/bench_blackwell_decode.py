@@ -43,7 +43,7 @@ from max.experimental.torch import torch_dtype_to_max
 from max.graph import BufferType, DeviceRef, Graph, TensorType, ops
 from max.nn.attention import MHAMaskVariant
 from max.nn.kernels import flash_attention_ragged
-from max.nn.kv_cache import KVCacheParams, PagedCacheValues
+from max.nn.kv_cache import MHAKVCacheParams, PagedCacheValues
 
 # Try importing external libraries (installed via Bazel pycross_wheel_library)
 _flashinfer: types.ModuleType | None
@@ -230,7 +230,7 @@ def bench_max(
     session = InferenceSession(devices=[Accelerator()])
 
     # Setup KV cache configuration
-    kv_params = KVCacheParams(
+    kv_params = MHAKVCacheParams(
         dtype=max_dtype,
         n_kv_heads=num_kv_heads,
         head_dim=head_dim,

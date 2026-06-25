@@ -22,8 +22,8 @@ from max.nn.kv_cache import (
     KVCacheBuffer,
     KVCacheInputs,
     KVCacheInputsPerDevice,
-    KVCacheParams,
     KVConnectorType,
+    MHAKVCacheParams,
     MultiKVCacheBuffer,
     MultiKVCacheParams,
 )
@@ -48,7 +48,7 @@ def test_multi_cache_connector_offloads_all_caches() -> None:
     """
     device = Accelerator()
     page_size = 128
-    primary = KVCacheParams(
+    primary = MHAKVCacheParams(
         dtype=DType.float32,
         n_kv_heads=4,
         head_dim=64,
@@ -59,7 +59,7 @@ def test_multi_cache_connector_offloads_all_caches() -> None:
         kv_connector=KVConnectorType.local,
         host_kvcache_swap_space_gb=999,
     )
-    secondary = KVCacheParams(
+    secondary = MHAKVCacheParams(
         dtype=DType.float32,
         n_kv_heads=2,
         head_dim=32,
@@ -116,7 +116,7 @@ def test_kv_cache_gpu() -> None:
 
 async def _test_kv_cache_gpu() -> None:
     device = Accelerator()
-    kv_params = KVCacheParams(
+    kv_params = MHAKVCacheParams(
         n_kv_heads=8,
         head_dim=128,
         dtype=DType.bfloat16,

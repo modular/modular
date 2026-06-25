@@ -30,7 +30,7 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
 from max.nn.attention.multi_latent_attention import LatentAttentionWithRope
-from max.nn.kv_cache import KVCacheParams
+from max.nn.kv_cache import MLAKVCacheParams
 from max.nn.rotary_embedding import RotaryEmbedding
 from max.pipelines.kv_cache import PagedKVCacheManager
 from test_common.context_utils import create_text_context
@@ -366,14 +366,12 @@ def _generate_mla_max_outputs(
         interleaved=False,
     )
 
-    kv_params = KVCacheParams(
+    kv_params = MLAKVCacheParams(
         dtype=kv_dtype,
-        n_kv_heads=1,
         head_dim=_mla_kv_head_dim(config),
         num_layers=config.num_hidden_layers,
         devices=[DeviceRef.GPU()],
         page_size=128,
-        is_mla=True,
         num_q_heads=config.num_attention_heads,
     )
 

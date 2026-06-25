@@ -24,7 +24,7 @@ from max.engine import InferenceSession
 from max.experimental.torch import torch_dtype_to_max
 from max.graph import DeviceRef, Graph, TensorType, ops
 from max.nn.kernels import masked_flash_attention_gpu
-from max.nn.kv_cache import KVCacheParams
+from max.nn.kv_cache import MHAKVCacheParams
 from max.nn.rotary_embedding import Llama3RotaryEmbedding
 from max.pipelines.architectures.qwen3.layers.attention import (
     Qwen3Attention as MaxQwen3Attention,
@@ -124,7 +124,7 @@ def generate_max_outputs(
         for weight_name, value in attention_weights.items()
     }
 
-    kv_params = KVCacheParams(
+    kv_params = MHAKVCacheParams(
         dtype=dtype,
         n_kv_heads=text_config.num_key_value_heads,
         head_dim=text_config.head_dim,

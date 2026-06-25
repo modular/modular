@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 from max.dtype import DType
 from max.graph import DeviceRef, Graph
-from max.nn.kv_cache import KVCacheParams
+from max.nn.kv_cache import MHAKVCacheParams
 from max.pipelines.architectures.llama3.model_config import Llama3Config
 from max.pipelines.architectures.unified_eagle_llama3.model_config import (
     UnifiedEagleLlama3Config,
@@ -38,7 +38,7 @@ def create_dummy_llama3_config(layers: int) -> Llama3Config:
         dtype=DType.bfloat16,
         model_quantization_encoding=None,
         quantization_config=None,
-        kv_params=KVCacheParams(
+        kv_params=MHAKVCacheParams(
             dtype=DType.bfloat16,
             n_kv_heads=4,
             head_dim=2,

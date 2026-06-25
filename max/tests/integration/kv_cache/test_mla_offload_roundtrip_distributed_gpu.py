@@ -33,6 +33,7 @@ from max.nn.kv_cache import (
     KVCacheParams,
     KVCacheQuantizationConfig,
     KVConnectorType,
+    MLAKVCacheParams,
 )
 from max.nn.kv_cache.cache_params import (
     KVCacheMemory,
@@ -82,13 +83,11 @@ def _u8_device_buffer(
 
 
 def _make_mla_fp8_params(num_devices: int) -> KVCacheParams:
-    return KVCacheParams(
+    return MLAKVCacheParams(
         dtype=DType.float8_e4m3fn,
-        n_kv_heads=1,
         head_dim=512,
         num_layers=2,
         num_q_heads=num_devices,
-        is_mla=True,
         page_size=128,
         enable_prefix_caching=True,
         kv_connector=KVConnectorType.local,

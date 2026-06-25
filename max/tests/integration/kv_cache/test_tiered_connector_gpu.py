@@ -29,6 +29,7 @@ from max.nn.kv_cache import (
     KVCacheBuffer,
     KVCacheParams,
     KVConnectorType,
+    MHAKVCacheParams,
     MultiKVCacheBuffer,
     MultiKVCacheParams,
 )
@@ -67,7 +68,7 @@ def create_tiered_connector(
         disk_cache_dir = tempfile.mkdtemp(prefix="tiered_test_")
 
     device = Accelerator()
-    kv_params = KVCacheParams(
+    kv_params = MHAKVCacheParams(
         dtype=DType.float32,
         num_layers=num_layers,
         n_kv_heads=n_kv_heads,
@@ -611,7 +612,7 @@ def _make_connector_and_buffers(
         n_kv_heads = 8
         quant_cfg = None
 
-    kv_params = KVCacheParams(
+    kv_params = MHAKVCacheParams(
         dtype=dtype,
         num_layers=num_layers,
         n_kv_heads=n_kv_heads,
@@ -868,7 +869,7 @@ def _fp8_cache_params(
     head_dim: int,
     num_layers: int = 2,
 ) -> KVCacheParams:
-    return KVCacheParams(
+    return MHAKVCacheParams(
         dtype=DType.float8_e4m3fn,
         num_layers=num_layers,
         n_kv_heads=n_kv_heads,

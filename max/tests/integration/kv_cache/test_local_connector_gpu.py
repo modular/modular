@@ -17,7 +17,7 @@ import pytest
 from max.driver import Accelerator, Buffer, accelerator_count
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.kv_cache import KVCacheBuffer, KVCacheParams, KVConnectorType
+from max.nn.kv_cache import KVCacheBuffer, KVConnectorType, MHAKVCacheParams
 from max.pipelines.kv_cache.connectors.local_connector import LocalConnector
 from max.pipelines.kv_cache.kv_connector import to_block_hash_bytes
 
@@ -46,7 +46,7 @@ def create_local_connector(
         pytest.skip("No GPU available")
 
     device = Accelerator()
-    kv_params = KVCacheParams(
+    kv_params = MHAKVCacheParams(
         dtype=DType.float32,
         num_layers=num_layers,
         n_kv_heads=n_kv_heads,

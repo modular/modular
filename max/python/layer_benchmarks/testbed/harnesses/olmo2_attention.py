@@ -42,7 +42,7 @@ import torch
 from max.driver import DLPackArray
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType, ops
-from max.nn.kv_cache import KVCacheParams
+from max.nn.kv_cache import MHAKVCacheParams
 from max.nn.rotary_embedding import RotaryEmbedding
 from max.pipelines.architectures.olmo2.layers.attention import Olmo2Attention
 from transformers.models.olmo2.configuration_olmo2 import Olmo2Config
@@ -91,7 +91,7 @@ class Olmo2AttentionHarness(RaggedAttentionHarness[Olmo2AttentionStaticParams]):
         rope_theta = p.rope_theta
         rms_norm_eps = p.rms_norm_eps
 
-        kv_params = KVCacheParams(
+        kv_params = MHAKVCacheParams(
             dtype=DType.bfloat16,
             n_kv_heads=n_kv_heads,
             head_dim=head_dim,

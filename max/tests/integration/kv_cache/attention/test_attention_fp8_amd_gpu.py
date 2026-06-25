@@ -27,7 +27,7 @@ from max.nn import (
     ScaleOrigin,
 )
 from max.nn.attention.attention_with_rope import AttentionWithRope
-from max.nn.kv_cache import KVCacheParams, PagedCacheValues
+from max.nn.kv_cache import KVCacheParams, MHAKVCacheParams, PagedCacheValues
 from max.nn.quant_config import WeightScaleSpec
 from max.nn.rotary_embedding import RotaryEmbedding
 from max.pipelines.kv_cache import PagedKVCacheManager
@@ -83,7 +83,7 @@ def _create_kv_manager(
     gpu_session: InferenceSession,
 ) -> tuple[PagedKVCacheManager, KVCacheParams]:
     """Create and configure the KV cache manager."""
-    kv_params = KVCacheParams(
+    kv_params = MHAKVCacheParams(
         dtype=DType.bfloat16,
         page_size=128,
         n_kv_heads=num_kv_heads,

@@ -35,7 +35,11 @@ from max.nn.kernels import (
     grouped_dynamic_scaled_fp8_matmul,
     matmul_k_cache_ragged_scaled_float8,
 )
-from max.nn.kv_cache import KVCacheParams, PagedCacheValues
+from max.nn.kv_cache import (
+    KVCacheParams,
+    MHAKVCacheParams,
+    PagedCacheValues,
+)
 
 
 class DynamicScaledMatmul:
@@ -226,7 +230,7 @@ def test_fused_qkv_ragged_matmul_scaled_float8_valid() -> None:
     device = DeviceRef.CPU()
 
     # Create KV cache parameters
-    kv_params = KVCacheParams(
+    kv_params = MHAKVCacheParams(
         dtype=DType.bfloat16,
         n_kv_heads=8,
         head_dim=64,
@@ -367,7 +371,7 @@ def test_fused_qkv_ragged_matmul_scaled_float8_device_mismatch(
         return DeviceRef.GPU(0) if dev_str == "gpu" else DeviceRef.CPU()
 
     # Create KV cache parameters (can use real object for device tests)
-    kv_params = KVCacheParams(
+    kv_params = MHAKVCacheParams(
         dtype=DType.bfloat16,
         n_kv_heads=8,
         head_dim=64,
@@ -422,7 +426,7 @@ def test_fused_qkv_ragged_matmul_scaled_float8_layer_idx_device() -> None:
     device = DeviceRef.GPU(0)
 
     # Create KV cache parameters
-    kv_params = KVCacheParams(
+    kv_params = MHAKVCacheParams(
         dtype=DType.bfloat16,
         n_kv_heads=8,
         head_dim=64,
@@ -467,7 +471,7 @@ def test_matmul_k_cache_ragged_scaled_float8_valid() -> None:
     scale_granularity = (1, 128, 128)
 
     # Create KV cache parameters
-    kv_params = KVCacheParams(
+    kv_params = MHAKVCacheParams(
         dtype=DType.bfloat16,
         n_kv_heads=8,
         head_dim=64,
@@ -545,7 +549,7 @@ def test_matmul_k_cache_ragged_scaled_float8_invalid() -> None:
     scale_granularity = (1, 128, 128)
 
     # Create KV cache parameters
-    kv_params = KVCacheParams(
+    kv_params = MHAKVCacheParams(
         dtype=DType.bfloat16,
         n_kv_heads=8,
         head_dim=64,

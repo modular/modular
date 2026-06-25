@@ -27,6 +27,7 @@ from max.nn.kernels import (
 )
 from max.nn.kv_cache import (
     KVCacheParams,
+    MHAKVCacheParams,
     PagedCacheValues,
 )
 
@@ -80,7 +81,7 @@ class FusedQKVRaggedMatmulScaledMXFP8:
 
 
 def _build_graph(device: DeviceRef) -> TensorValue:
-    kv_params = KVCacheParams(
+    kv_params = MHAKVCacheParams(
         dtype=DType.bfloat16,
         n_kv_heads=_N_KV_HEADS,
         head_dim=_HEAD_DIM,
@@ -163,7 +164,7 @@ def test_fused_qkv_ragged_matmul_scaled_mxfp8_valid() -> None:
 def test_fused_qkv_ragged_matmul_scaled_mxfp8_device_mismatch() -> None:
     """The kernel rejects operands that do not share the input's device."""
     device = DeviceRef.CPU()
-    kv_params = KVCacheParams(
+    kv_params = MHAKVCacheParams(
         dtype=DType.bfloat16,
         n_kv_heads=_N_KV_HEADS,
         head_dim=_HEAD_DIM,

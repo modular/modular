@@ -20,7 +20,7 @@ from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue
 from max.graph.buffer_utils import cast_tensor_to
 from max.nn.kernels import kv_cache_ragged_radd
-from max.nn.kv_cache import KVCacheParams, PagedCacheValues
+from max.nn.kv_cache import KVCacheParams, MHAKVCacheParams, PagedCacheValues
 from max.pipelines.kv_cache import PagedKVCacheManager
 from test_common.context_utils import create_text_context
 
@@ -78,7 +78,7 @@ def test_kv_cache_radd_basic() -> None:
     device = Accelerator()
     session = InferenceSession(devices=[device])
 
-    kv_params = KVCacheParams(
+    kv_params = MHAKVCacheParams(
         n_kv_heads=8,
         head_dim=128,
         dtype=dtype,

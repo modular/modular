@@ -23,6 +23,7 @@ from max.nn.kernels import fused_qk_ragged_rms_norm, rms_norm_key_cache
 from max.nn.kv_cache import (
     KVCacheInputsPerDevice,
     KVCacheParams,
+    MHAKVCacheParams,
     PagedCacheValues,
 )
 from max.pipelines.kv_cache import PagedKVCacheManager
@@ -125,7 +126,7 @@ def test_fused_qk_rms_norm_matches_unfused_gpu() -> None:
     layer_idx = 0
     epsilon = 1e-5
     weight_offset = 1.0
-    kv_params = KVCacheParams(
+    kv_params = MHAKVCacheParams(
         dtype=dtype,
         n_kv_heads=2,
         head_dim=64,

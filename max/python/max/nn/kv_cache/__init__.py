@@ -22,6 +22,9 @@ from .cache_params import (
     KVCacheQuantizationConfig,
     KVConnectorType,
     KVHashAlgo,
+    MHAKVCacheParams,
+    MLAKVCacheParams,
+    MSAKVCacheParams,
     MultiKVCacheBuffer,
     MultiKVCacheParams,
     ReplicatedKVCacheMemory,
@@ -39,18 +42,15 @@ from .input_types import (
 )
 from .metrics import KVCacheMetrics
 from .utils import (
-    AttentionDispatchResolver,
-    AttentionDispatchResolverInterface,
     AttnKey,
     AttnKeyInterface,
     MHAAttnKey,
     MLAAttnKey,
+    MSAAttnKey,
     build_max_lengths_tensors,
 )
 
 __all__ = [
-    "AttentionDispatchResolver",
-    "AttentionDispatchResolverInterface",
     "AttnKey",
     "AttnKeyInterface",
     "BatchCharacteristics",
@@ -68,7 +68,11 @@ __all__ = [
     "KVConnectorType",
     "KVHashAlgo",
     "MHAAttnKey",
+    "MHAKVCacheParams",
     "MLAAttnKey",
+    "MLAKVCacheParams",
+    "MSAAttnKey",
+    "MSAKVCacheParams",
     "MultiKVCacheBuffer",
     "MultiKVCacheInputs",
     "MultiKVCacheParams",

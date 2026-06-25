@@ -36,7 +36,7 @@ from max.nn.kernels import (
     flash_attention_gpu,
     flash_attention_ragged_gpu,
 )
-from max.nn.kv_cache import KVCacheParams, PagedCacheValues
+from max.nn.kv_cache import MHAKVCacheParams, PagedCacheValues
 from modular_graph_test import are_all_tensor_values
 from torch.nn.functional import scaled_dot_product_attention
 
@@ -391,7 +391,7 @@ def test_cross_attention_ragged_rejects_q_max_seq_len_on_gpu() -> None:
     page_size = 128
     dtype = DType.bfloat16
 
-    kv_params = KVCacheParams(
+    kv_params = MHAKVCacheParams(
         dtype=dtype,
         n_kv_heads=n_kv_heads,
         head_dim=head_dim,

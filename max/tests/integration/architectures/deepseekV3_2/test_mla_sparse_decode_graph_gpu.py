@@ -40,6 +40,7 @@ from max.nn.kv_cache import (
     KVCacheInputs,
     KVCacheParams,
     KVCacheQuantizationConfig,
+    MLAKVCacheParams,
     MultiKVCacheInputs,
     MultiKVCacheParams,
     PagedCacheValues,
@@ -159,14 +160,12 @@ def test_mla_decode_graph_sparse_smoke() -> None:
         scaling_params=scaling_params,
     )
 
-    kv_params = KVCacheParams(
+    kv_params = MLAKVCacheParams(
         dtype=DType.float8_e4m3fn,
-        n_kv_heads=1,
         head_dim=576,
         num_layers=1,
         page_size=page_size,
         devices=[DeviceRef.GPU()],
-        is_mla=True,
         num_q_heads=num_heads,
     )
 
@@ -334,14 +333,12 @@ def test_mla_prefill_decode_graph_sparse_smoke() -> None:
         scaling_params=scaling_params,
     )
 
-    kv_params = KVCacheParams(
+    kv_params = MLAKVCacheParams(
         dtype=DType.float8_e4m3fn,
-        n_kv_heads=1,
         head_dim=576,
         num_layers=1,
         page_size=page_size,
         devices=[DeviceRef.GPU()],
-        is_mla=True,
         num_q_heads=num_heads,
     )
 
@@ -538,28 +535,24 @@ def test_mla_decode_graph_sparse_multi_step_smoke() -> None:
     )
 
     index_head_dim = 128
-    mla_kv_params = KVCacheParams(
+    mla_kv_params = MLAKVCacheParams(
         dtype=DType.float8_e4m3fn,
-        n_kv_heads=1,
         head_dim=kv_lora_rank + qk_rope_head_dim,
         num_layers=1,
         page_size=page_size,
         devices=[DeviceRef.GPU()],
-        is_mla=True,
         num_q_heads=num_heads,
         kvcache_quant_config=KVCacheQuantizationConfig(
             scale_dtype=DType.int8,
             quantization_granularity=32,
         ),
     )
-    indexer_kv_params = KVCacheParams(
+    indexer_kv_params = MLAKVCacheParams(
         dtype=DType.float8_e4m3fn,
-        n_kv_heads=1,
         head_dim=index_head_dim,
         num_layers=1,
         page_size=page_size,
         devices=[DeviceRef.GPU()],
-        is_mla=True,
         num_q_heads=num_heads,
         kvcache_quant_config=KVCacheQuantizationConfig(
             scale_dtype=DType.float32,

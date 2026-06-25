@@ -42,7 +42,7 @@ import torch
 from max.driver import Accelerator, Buffer, DLPackArray
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType, ops
-from max.nn.kv_cache import KVCacheParams
+from max.nn.kv_cache import MHAKVCacheParams
 from max.nn.rotary_embedding import Llama3RotaryEmbedding
 from max.pipelines.architectures.qwen2_5vl.nn.decoder import (
     Qwen25VLDecoderAttentionWithRope,
@@ -98,7 +98,7 @@ class Qwen25VLAttentionHarness(
         device: Accelerator,
     ) -> None:
         super().__init__(static_params, session, device)
-        self._kv_params = KVCacheParams(
+        self._kv_params = MHAKVCacheParams(
             dtype=DType.bfloat16,
             n_kv_heads=static_params.n_kv_heads,
             head_dim=static_params.head_dim,

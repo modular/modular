@@ -48,7 +48,7 @@ from max.nn.kernels import (
     flare_mla_decode_ragged_scaled,
 )
 from max.nn.kv_cache import (
-    KVCacheParams,
+    MLAKVCacheParams,
     PagedCacheValues,
 )
 
@@ -476,14 +476,12 @@ def bench_max(
         if per_token_scale_rope_aware
         else (kv_lora_rank + qk_rope_head_dim)
     )
-    kv_params = KVCacheParams(
+    kv_params = MLAKVCacheParams(
         dtype=max_kv_dtype,
-        n_kv_heads=num_kv_heads,
         head_dim=kv_cache_head_dim,
         num_layers=1,  # Benchmarking a single layer
         page_size=page_size,
         devices=[DeviceRef.GPU()],
-        is_mla=True,
         num_q_heads=num_q_heads,
     )
 
@@ -869,7 +867,7 @@ def bench_max(
     # Use the canonical Mojo dispatch heuristic via mla_dispatch_args_scalar
     # instead of duplicating the logic in Python.
     # The kernel reads these from device memory, so we must place them on GPU
-    # (matching the production path in AttentionDispatchResolver).
+    # (matching the production path in MLAKVCacheParams.resolve_attn_key).
     device = Accelerator()
     scalar_args_gpu = Buffer.from_numpy(
         np.array(

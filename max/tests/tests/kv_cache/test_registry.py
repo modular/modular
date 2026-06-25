@@ -20,7 +20,7 @@ from unittest.mock import MagicMock, Mock, patch
 import pytest
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.kv_cache import KVCacheParams
+from max.nn.kv_cache import KVCacheParams, MHAKVCacheParams
 from max.pipelines.kv_cache import load_kv_manager
 
 
@@ -32,7 +32,7 @@ def create_kv_params(
     dtype: DType = DType.bfloat16,
 ) -> KVCacheParams:
     """Helper to create KVCacheParams with common defaults."""
-    return KVCacheParams(
+    return MHAKVCacheParams(
         dtype=dtype,
         n_kv_heads=n_kv_heads,
         head_dim=head_dim,
@@ -126,7 +126,7 @@ class TestLoadKvManager:
     ) -> None:
         """load_kv_manager should reject page sizes that aren't multiples of 128."""
         # Create params with invalid page size (not multiple of 128)
-        params = KVCacheParams(
+        params = MHAKVCacheParams(
             dtype=DType.bfloat16,
             n_kv_heads=8,
             head_dim=128,
