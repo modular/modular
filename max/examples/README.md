@@ -59,7 +59,7 @@ modular_py_binary(
     srcs = ["addition.py"],
     imports = ["."],
     deps = [
-        "//max/python/max",
+        "//max/python/max/graph",
         requirement("numpy"),
     ],
 )
