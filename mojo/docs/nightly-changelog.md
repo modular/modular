@@ -294,3 +294,6 @@ This version is still a work in progress.
   `AddressSpace` directly.
 
 ## Fixed
+
+- `FileDescriptor.write_bytes()`: Fixed silent data loss on partial writes by
+  looping until all bytes are written, matching `FileHandle.write_bytes()`.
