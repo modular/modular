@@ -2075,7 +2075,7 @@ struct _HALBufferInner(Movable):
     destruction can call `Context.free_sync`.
     """
 
-    var _buffer: Buffer
+    var _buffer: Buffer[get_device_spec[0]()]
     var _context: ArcPointer[Context[get_device_spec[0]()]]
     var _device_addr: UInt64
 
@@ -2297,7 +2297,7 @@ struct _HostBufferInner(Movable):
     `unsafe_ptr` / `__getitem__` / `__setitem__` are non-raising.
     """
 
-    var _buffer: Buffer
+    var _buffer: Buffer[get_device_spec[0]()]
     var _context: ArcPointer[Context[get_device_spec[0]()]]
     var _host_ptr: UnsafePointer[UInt8, MutUntrackedOrigin]
 
