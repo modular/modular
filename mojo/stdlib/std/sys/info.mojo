@@ -1047,6 +1047,26 @@ def simd_byte_width[target: _TargetType = _current_target()]() -> Int:
 
 
 @always_inline("nodebug")
+def stdlib_plugin[target: _TargetType = _current_target()]() -> StaticString:
+    """Returns the stdlib plugin name for the specified target.
+
+    Parameters:
+        target: The target architecture.
+
+    Returns:
+        The stdlib plugin name for the specified target.
+    """
+    return StaticString(
+        __mlir_attr[
+            `#kgen.param.expr<target_get_field,`,
+            target,
+            `, "stdlib_plugin" : !kgen.string`,
+            `> : !kgen.string`,
+        ]
+    )
+
+
+@always_inline("nodebug")
 def size_of[type: AnyType, target: _TargetType = _current_target()]() -> Int:
     """Returns the size of (in bytes) of the type.
 
