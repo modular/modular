@@ -97,9 +97,9 @@ int main(int argc, char **argv) {
   llvm::outs() << "Speedup of B w.r.t. A:\n";
   BIND(ratioSamples, Samples::ratio(aSamples, bSamples, kMaxSamples));
   ratioSamples.printSummary();
-  BIND(ratioHisogram, Histogram::fromSamples(ratioSamples, kPercentRounding));
+  BIND(ratioHistogram, Histogram::fromSamples(ratioSamples, kPercentRounding));
   llvm::outs() << "  histogram:\n";
-  ratioHisogram.printSummary();
+  ratioHistogram.printSummary();
   llvm::outs() << "\n";
 
   llvm::outs() << "Welch t-test:\n";
