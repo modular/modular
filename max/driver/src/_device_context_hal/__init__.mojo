@@ -31,7 +31,7 @@ from std.memory import stack_allocation
 from std.os import getenv
 from std.reflection import call_location, reflect, SourceLocation
 from std.sys import size_of
-from std.sys._hal import (
+from _hal import (
     Buffer,
     Context,
     Device,
@@ -42,14 +42,14 @@ from std.sys._hal import (
     Stream,
     get_device_spec,
 )
-from std.sys._hal.event import EVENT_FLAG_CPU_VISIBLE
+from _hal.event import EVENT_FLAG_CPU_VISIBLE
 from std.sys.intrinsics import _type_is_eq
-from std.utils import TypeList
+from std.builtin.variadics import TypeList
 
-from .constant_memory_mapping import ConstantMemoryMapping
-from .dim import Dim
-from .info import GPUInfo
-from .launch_attribute import LaunchAttribute
+from std.gpu.host.constant_memory_mapping import ConstantMemoryMapping
+from std.gpu.host.dim import Dim
+from std.gpu.host.info import GPUInfo
+from std.gpu.host.launch_attribute import LaunchAttribute
 
 
 def _check_dim[

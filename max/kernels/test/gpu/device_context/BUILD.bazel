@@ -91,6 +91,7 @@ mojo_test(
         "//conditions:default": [],
     }),
     deps = [
+        "//max:_device_context_hal",
         "//max:internal_utils",
         "//max:kv_cache",
         "//max:linalg",

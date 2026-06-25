@@ -15,9 +15,9 @@
 from std.memory import ArcPointer, UnsafePointer
 from std.os import abort
 from std.python import PythonObject
-from std.sys._hal.context import Context as HALContext
-from std.sys._hal.device import get_device_spec
-from std.sys._hal.event import (
+from _hal.context import Context as HALContext
+from _hal.device import get_device_spec
+from _hal.event import (
     Event as HALEvent,
     EVENT_FLAG_CPU_VISIBLE,
 )

@@ -16,10 +16,10 @@ from std.collections import List
 from std.memory import ArcPointer, OpaquePointer, UnsafePointer
 from std.os import abort
 from std.python import PythonObject
-from std.sys._hal.device import get_device_spec
-from std.sys._hal.event import EVENT_FLAG_CPU_VISIBLE
-from std.sys._hal.plugin import EventHandle, FunctionHandle, RawDriver
-from std.sys._hal.stream import Stream as HALStream
+from _hal.device import get_device_spec
+from _hal.event import EVENT_FLAG_CPU_VISIBLE
+from _hal.plugin import EventHandle, FunctionHandle, RawDriver
+from _hal.stream import Stream as HALStream
 
 from .buffer import Buffer
 from .event import Event

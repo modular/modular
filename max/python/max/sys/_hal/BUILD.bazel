@@ -10,6 +10,7 @@ mojo_library(
         "//max:consumers",
     ],
     deps = [
+        "//max:_hal",
         "@mojo//:std",
     ],
 )
@@ -20,6 +21,7 @@ mojo_shared_library(
     shared_lib_name = "mojo_module.so",
     deps = [
         ":_mojo_module",
+        "//max:_hal",
         "@mojo//:std",
     ],
 )
