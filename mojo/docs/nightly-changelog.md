@@ -210,6 +210,9 @@ This version is still a work in progress.
   Mojo `Error` into a Python exception via `PyErr_SetString` and returns a null
   `PyObjectPtr`.
 
+- `Set.difference_update()` now uses `discard()` instead of a try/except
+  `remove()` pattern, avoiding exception overhead for missing elements.
+
 ## Tooling changes
 
 - Added a `--lld-path` CLI flag. This overrides the LLD path that Mojo uses.

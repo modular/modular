@@ -599,10 +599,7 @@ struct Set[
             other: Another Set instance to subtract from this one.
         """
         for o in other:
-            try:
-                self.remove(o)
-            except:
-                pass
+            self.discard(o)
 
     def issubset(self, other: Self) -> Bool where conforms_to(Self.T, Copyable):
         """Check if this set is a subset of another set.
