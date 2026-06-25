@@ -720,9 +720,11 @@ have a non-zero length.
 
 ## Tuples
 
-Mojo's `Tuple` type represents an immutable tuple consisting of zero or more
-values, separated by commas. Tuples can consist of multiple types and you can
-index into tuples in multiple ways.
+Mojo's `Tuple` is a lightweight, fixed-size, heterogeneous collection with
+value semantics. A tuple contains zero or more comma-separated values,
+which may have different types. Although a tuple's structure (its size and
+element types) is fixed, individual elements can be mutated. Tuples support
+several forms of indexing:
 
 ```mojo
 # Tuples are immutable and can hold multiple types

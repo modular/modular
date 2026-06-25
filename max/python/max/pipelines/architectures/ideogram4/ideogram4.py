@@ -35,6 +35,11 @@ from .layers.embeddings import (
     Ideogram4EmbedScalar,
     Ideogram4MRoPE,
 )
+from .layers.fp8_linear import (
+    Ideogram4FP8Linear,
+    fp8_matmul_2d,
+    fp8_quantize_2d,
+)
 from .model_config import (
     LLM_TOKEN_INDICATOR,
     OUTPUT_IMAGE_INDICATOR,
@@ -43,15 +48,36 @@ from .model_config import (
 
 
 class Ideogram4MLP(Module[[Tensor], Tensor]):
-    """SwiGLU feed-forward (``w2(silu(w1 x) * w3 x)``)."""
+    """SwiGLU feed-forward (``w2(silu(w1 x) * w3 x)``) as native FP8 GEMMs."""
 
     def __init__(self, dim: int, hidden_dim: int) -> None:
-        self.w1 = Linear(dim, hidden_dim, bias=False)
-        self.w2 = Linear(hidden_dim, dim, bias=False)
-        self.w3 = Linear(dim, hidden_dim, bias=False)
+        self.w1 = Ideogram4FP8Linear(dim, hidden_dim)
+        self.w2 = Ideogram4FP8Linear(hidden_dim, dim)
+        self.w3 = Ideogram4FP8Linear(dim, hidden_dim)
 
     def forward(self, x: Tensor) -> Tensor:
-        return self.w2(F.silu(self.w1(x)) * self.w3(x))
+        # Fuse the gate (w1) and up (w3) projections into one FP8 GEMM: both
+        # read the same input and share the (dim -> hidden_dim) shape, so the
+        # activation is quantized once and the row-stacked FP8 weight (with its
+        # stacked rowwise scales) runs as a single wider matmul, halving the
+        # projection launch + activation-quant count. The split halves are
+        # numerically identical to two separate FP8 matmuls.
+        b, seq, dim = x.shape
+        hidden_dim = int(self.w1.weight.shape[0])
+        x_2d = F.reshape(x, [b * seq, dim])
+        x_fp8, x_scales = fp8_quantize_2d(x_2d)
+
+        gate_up_weight = F.concat((self.w1.weight, self.w3.weight))
+        gate_up_scale = F.concat((self.w1.weight_scale, self.w3.weight_scale))
+        gate_up = fp8_matmul_2d(x_fp8, x_scales, gate_up_weight, gate_up_scale)
+        gate, up = gate_up.split([hidden_dim, hidden_dim], axis=-1)
+        hidden = F.silu(gate) * up
+
+        hidden_fp8, hidden_scales = fp8_quantize_2d(hidden)
+        out_2d = fp8_matmul_2d(
+            hidden_fp8, hidden_scales, self.w2.weight, self.w2.weight_scale
+        )
+        return F.reshape(out_2d, [b, seq, int(self.w2.weight.shape[0])])
 
 
 class Ideogram4TransformerBlock(Module[..., Tensor]):

@@ -862,7 +862,6 @@ class MAXModelConfig(MAXModelConfigBase):
                 return architectures[0]
         return None
 
-    @computed_field  # type: ignore[prop-decorator]
     @property
     def huggingface_config(self) -> PretrainedConfig:
         """Returns the Hugging Face model config (loaded on first access).
@@ -885,7 +884,6 @@ class MAXModelConfig(MAXModelConfigBase):
             )
         return self._huggingface_config
 
-    @computed_field  # type: ignore[prop-decorator]
     @cached_property
     def generation_config(self) -> GenerationConfig:
         """Retrieves the Hugging Face ``GenerationConfig`` for this model.
@@ -1238,6 +1236,16 @@ class MAXModelConfig(MAXModelConfigBase):
                 # We allow ourselves to load float32 safetensors weights as bfloat16.
                 weight_files = self.huggingface_weight_repo.files_for_encoding(
                     encoding=self._applied_dtype_cast_from
+                )
+
+            if not weight_files and self.quantization_encoding in (
+                "float16",
+                "bfloat16",
+            ):
+                # A float16/bfloat16 graph can load float32 weights cast at
+                # load time by the architecture's weight adapter.
+                weight_files = self.huggingface_weight_repo.files_for_encoding(
+                    encoding="float32"
                 )
 
             if default_weight_files := weight_files.get(

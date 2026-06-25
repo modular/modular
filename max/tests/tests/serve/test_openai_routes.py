@@ -67,6 +67,8 @@ from max.serve.router.openai_routes import (
     CompletionStreamResponse,
     OpenAIChatResponseGenerator,
     OpenAICompletionResponseGenerator,
+    _coerce_positive_float,
+    _coerce_positive_int,
     _create_response_format,
     _process_chat_log_probabilities,
     _resolve_grammar_constraints,
@@ -86,7 +88,7 @@ from openai.types.chat.chat_completion_stream_options_param import (
     ChatCompletionStreamOptionsParam,
 )
 from PIL import Image
-from pydantic import AnyUrl
+from pydantic import AnyUrl, ValidationError
 
 if sys.version_info >= (3, 11):
     from asyncio import TaskGroup
@@ -438,6 +440,31 @@ def test_decode_data_uri_base64_rejects_empty_payload() -> None:
         _decode_data_uri_base64("data:image/png;base64,")
 
 
+def test_coerce_positive_int() -> None:
+    # Positive ints (incl. numeric strings) pass through; everything else,
+    # including bool and non-positive values, becomes None.
+    assert _coerce_positive_int(1008) == 1008
+    assert _coerce_positive_int("512") == 512
+    assert _coerce_positive_int(None) is None
+    assert _coerce_positive_int(0) is None
+    assert _coerce_positive_int(-4) is None
+    assert _coerce_positive_int(True) is None
+    assert _coerce_positive_int("not-a-number") is None
+
+
+def test_coerce_positive_float() -> None:
+    # Positive floats (incl. ints and numeric strings) pass through; bool,
+    # None, non-positive, and garbage become None.
+    assert _coerce_positive_float(1.0) == 1.0
+    assert _coerce_positive_float(2) == 2.0
+    assert _coerce_positive_float("0.5") == 0.5
+    assert _coerce_positive_float(None) is None
+    assert _coerce_positive_float(0) is None
+    assert _coerce_positive_float(-1.0) is None
+    assert _coerce_positive_float(True) is None
+    assert _coerce_positive_float("nope") is None
+
+
 @pytest.mark.asyncio
 async def test_resolve_image_from_url_data_uri_unpadded() -> None:
     # End-to-end through resolve_image_from_url: an unpadded data URI used to
@@ -492,6 +519,40 @@ def test_create_chat_completion_request_with_target_endpoint() -> None:
     )
     assert parsed_request_default.target_endpoint is None
     assert parsed_request_default.model == "gpt-3.5-turbo"
+
+
+def test_create_chat_completion_request_with_cache_salt() -> None:
+    """Test that CreateChatCompletionRequest correctly parses cache_salt field
+    and enforces the 512-char length cap."""
+    request_with_salt = {
+        "model": "gpt-3.5-turbo",
+        "messages": [{"role": "user", "content": "Hello, world!"}],
+        "cache_salt": "tenant-abc",
+    }
+
+    parsed_request = CreateChatCompletionRequest.model_validate(
+        request_with_salt
+    )
+    assert parsed_request.cache_salt == "tenant-abc"
+
+    request_without_salt = {
+        "model": "gpt-3.5-turbo",
+        "messages": [{"role": "user", "content": "Hello, world!"}],
+    }
+
+    parsed_default = CreateChatCompletionRequest.model_validate(
+        request_without_salt
+    )
+    assert parsed_default.cache_salt is None
+
+    request_oversized = {
+        "model": "gpt-3.5-turbo",
+        "messages": [{"role": "user", "content": "Hello, world!"}],
+        "cache_salt": "x" * 600,
+    }
+
+    with pytest.raises(ValidationError):
+        CreateChatCompletionRequest.model_validate(request_oversized)
 
 
 def test_create_chat_completion_request_with_chat_template_kwargs() -> None:

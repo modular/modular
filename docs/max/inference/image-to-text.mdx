@@ -91,6 +91,31 @@ Use `video_url` to pass a video:
 Both `image_url` and `video_url` also accept base64-encoded data URIs
 (such as `data:image/jpeg;base64,...` or `data:video/mp4;base64,...`).
 
+The `image_url` object also accepts an optional `max_long_side_pixel` integer
+sizing hint, which downscales the image so its longest side is at most that many
+pixels before the model processes it:
+
+```json
+"image_url": {
+  "url": "https://example.com/path/to/image.jpg",
+  "max_long_side_pixel": 1024
+}
+```
+
+The `video_url` object accepts optional sampling and sizing hints, all positive
+numbers: `fps` (frames per second to sample), `max_frames` (the maximum number
+of frames to sample), and `max_long_side_pixel` (downscale each frame so its
+longest side is at most that many pixels):
+
+```json
+"video_url": {
+  "url": "https://example.com/path/to/video.mp4",
+  "fps": 1,
+  "max_frames": 64,
+  "max_long_side_pixel": 1024
+}
+```
+
 ### Local file input
 
 To use local images or videos, you must configure allowed directories before
@@ -274,7 +299,7 @@ response = client.chat.completions.create(
             ]
         }
     ],
-    max_tokens=300
+    max_completion_tokens=300
 )
 
 print(response.choices[0].message.content)
@@ -327,7 +352,7 @@ curl -N http://localhost:8000/v1/chat/completions \
       ]
     }
   ],
-  "max_tokens": 300
+  "max_completion_tokens": 300
 }' | grep -o '"content":"[^"]*"' | sed 's/"content":"//g' | sed 's/"//g' | tr -d '\n' | sed 's/\\n/\n/g'
 ```
 
@@ -375,7 +400,7 @@ completion = client.chat.completions.create(
             ]
         }
     ],
-    max_tokens=300
+    max_completion_tokens=300
 )
 
 print(completion.choices[0].message.content)
@@ -422,7 +447,7 @@ curl -N http://localhost:8000/v1/chat/completions \
       ]
     }
   ],
-  "max_tokens": 300
+  "max_completion_tokens": 300
 }' | grep -o '"content":"[^"]*"' | sed 's/"content":"//g' | sed 's/"//g' | tr -d '\n' | sed 's/\\n/\n/g'
 ```
 

@@ -191,6 +191,7 @@ def _load_b_tile_to_smem[
 # =========================================================================
 
 
+@__name(t"rdna_conv2d_{out_type}_{in_type}_{filter_type}")
 def conv2d_kernel_rdna[
     out_type: DType,
     in_type: DType,

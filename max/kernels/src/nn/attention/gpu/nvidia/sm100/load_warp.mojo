@@ -30,6 +30,7 @@ from nn.attention.gpu.nvidia.sm100.attention_utils import (
     PagedRowIndices,
     kv_sub_tile_rows,
     kv_num_sub_tiles,
+    kv_tma_fold_chunks,
 )
 from nn.attention.gpu.nvidia.common import (
     KVTMATile,
@@ -242,6 +243,37 @@ def fa4_load[
         qkv_type
     ]()
 
+    # Depth-chunk TMA fold (SM100). Fold the BK0 (K) / v_cols_per_cta (V) depth
+    # chunks into one rank-4 TMA when byte-equivalent. MUST use identical args to
+    # the matching `create_tma_tile[..., fold_chunks=...]` calls in
+    # `mha_sm100_dispatch` (single source of truth) so the baked descriptor rank
+    # and the issue-coord rank agree. The per-issue byte totals are unchanged: one
+    # folded TMA carries the same bytes as the N per-chunk TMAs.
+    #   K: smem_BN == k_rows_per_cta (K's per-CTA tile_rows; == BN single-CTA,
+    #      BN//2 pair-CTA). V: smem_BN == BN (V's tile_rows; num_v_sub_tiles == 1).
+    comptime k_row_major = config.k_row_major()
+    comptime k_fold_chunks = kv_tma_fold_chunks[
+        qkv_type,
+        config.swizzle_mode,
+        BK=config.BK0,
+        head_size=config.qk_depth,
+        box_rows=kv_sub_tile_rows(config.k_rows_per_cta(), page_size),
+        smem_BN=config.k_rows_per_cta(),
+        page_size=page_size,
+        row_major=k_row_major,
+    ]()
+    comptime v_row_major = config.v_row_major()
+    comptime v_fold_chunks = kv_tma_fold_chunks[
+        qkv_type,
+        config.swizzle_mode,
+        BK=config.v_cols_per_cta(),
+        head_size=config.ov_depth,
+        box_rows=kv_sub_tile_rows(BN, page_size),
+        smem_BN=BN,
+        page_size=page_size,
+        row_major=v_row_major,
+    ]()
+
     @parameter
     @always_inline
     def _k_num_valid_pages(current_kv_row: UInt32) -> UInt32:
@@ -352,7 +384,12 @@ def fa4_load[
                 mbar[],
                 depth_idx=UInt32(d_idx),
             )
-        kv_paged_rows.tma_copy_k[needs_partial=partial](
+        kv_paged_rows.tma_copy_k[
+            needs_partial=partial,
+            smem_BN=config.k_rows_per_cta(),
+            fold_chunks=k_fold_chunks,
+            row_major=k_row_major,
+        ](
             k_tma_op,
             smem_ptr,
             mbar[],
@@ -379,7 +416,11 @@ def fa4_load[
             else:
                 v_bytes = Int32(v_expect_bytes)
             expect_bytes_pred(mbar, v_bytes, e)
-        kv_paged_rows.tma_copy_v[needs_partial=partial](
+        kv_paged_rows.tma_copy_v[
+            needs_partial=partial,
+            fold_chunks=v_fold_chunks,
+            row_major=v_row_major,
+        ](
             v_tma_op,
             smem_ptr,
             mbar[],

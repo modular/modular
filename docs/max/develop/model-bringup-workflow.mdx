@@ -228,10 +228,10 @@ For architectures that load FP8 or FP4 checkpoints, use
 [`QuantFormat`](/max/api/python/generated/max.nn.QuantFormat) and
 [`QuantConfig`](/max/api/python/generated/max.nn.QuantConfig) from `max.nn`.
 `QuantFormat` identifies the checkpoint's quantization scheme (such as
-`COMPRESSED_TENSORS_FP8` or `NVFP4`) and `QuantConfig` carries the per-layer
-scaling settings: which layers are quantized, the granularity and dtype of
-weight and activation scales, and the block sizes that the hardware-accelerated
-kernels require.
+`COMPRESSED_TENSORS_FP8`, `NVFP4`, or `MXFP8`) and `QuantConfig` carries the
+per-layer scaling settings: which layers are quantized, the granularity and
+dtype of weight and activation scales, and the block sizes that the
+hardware-accelerated kernels require.
 
 ## Connect to the KV cache
 
@@ -278,12 +278,12 @@ def construct_kv_params(
     )
 ```
 
-Store the result as a [`KVCacheParams`][kv-cache-params] in a `kv_params`
-field on your config class and return it from `get_kv_params()`. Then pass it
-to each [`AttentionWithRope`][attn-with-rope] layer at construction time:
-
-[kv-cache-params]: /max/api/python/generated/max.nn.kv_cache.KVCacheParams/
-[attn-with-rope]: /max/api/python/generated/max.nn.AttentionWithRope/
+Store the result as a
+[`KVCacheParams`](/max/api/python/generated/max.nn.kv_cache.KVCacheParams/) in a
+`kv_params` field on your config class and return it from `get_kv_params()`.
+Then pass it to each
+[`AttentionWithRope`](/max/api/python/generated/max.nn.AttentionWithRope/) layer
+at construction time:
 
 ```python title="model.py"
 self.attn = AttentionWithRope(
@@ -292,13 +292,20 @@ self.attn = AttentionWithRope(
 )
 ```
 
+Most architectures return a flat `KVCacheParams`. Architectures with multiple or
+hybrid KV caches (for example, separate sliding-window and full-attention
+caches) return a
+[`MultiKVCacheParams`](/max/api/python/generated/max.nn.kv_cache.MultiKVCacheParams/)
+tree instead, which the cache manager consumes through the shared
+[`KVCacheParamInterface`](/max/api/python/generated/max.nn.kv_cache.KVCacheParamInterface/).
+
 With `kv_params` correctly configured, MAX dispatches fused attention kernels
 (RoPE application, KV store, and flash attention) and manages paged memory
-allocation. See [Serve custom model
-architectures](/max/develop/serve-custom-model-architectures) for a complete
-implementation with [`KVCacheConfig`][kv-cache-config] wired end-to-end.
-
-[kv-cache-config]: /max/api/python/generated/max.pipelines.kv_cache.KVCacheConfig/
+allocation. See
+[Serve custom model architectures](/max/develop/serve-custom-model-architectures)
+for a complete implementation with
+[`KVCacheConfig`](/max/api/python/generated/max.pipelines.kv_cache.KVCacheConfig/)
+wired end-to-end.
 
 {/* TODO(docs): Link to attention-kv-cache page once it exists. Covers
 AttentionWithRope call signature, input_row_offsets, and KV cache failure modes
@@ -470,5 +477,6 @@ worked examples.
 
 Once your architecture loads and generates text, verify its forward pass
 numerically against a PyTorch reference. See
-[Logit comparison](/max/develop/logit-comparison) for the full
-workflow.
+[Logit comparison](/max/develop/logit-comparison) for the full workflow, or use
+the [`debug-model`](/max/develop/model-bringup-skills/#debug-output-divergences)
+skill to run that per-layer comparison with an AI coding agent.

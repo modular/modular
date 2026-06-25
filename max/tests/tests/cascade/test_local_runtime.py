@@ -22,6 +22,16 @@ Each test demonstrates a specific capability of the cascade LocalRuntime:
 - Error propagation from worker methods
 - Concurrent method calls
 - Multiple workers coordinating in a pipeline
+
+Each test wraps its body in the framework-internal
+``_pipeline_method_scope`` to establish a pipeline-method scope; outside
+a scope, proxy method calls would raise. User code reaches the same
+scope by decorating an entry point with :py:func:`pipeline_method`. The
+calls themselves use two ``await`` s -- one to get the
+:py:class:`Result` handle, one to resolve it -- which mirrors what code
+inside a ``@pipeline_method``-decorated body sees as well (the inner
+await is done automatically by the consuming worker method's
+``MaybeAsync`` argument resolution).
 """
 
 from __future__ import annotations
@@ -32,6 +42,7 @@ from contextlib import asynccontextmanager
 
 import pytest
 from max.experimental.cascade import LocalRuntime, Result, Worker, worker_method
+from max.experimental.cascade.core.pipeline_method import _pipeline_method_scope
 
 # ---------------------------------------------------------------------------
 # Test workers
@@ -138,26 +149,31 @@ class StringWorker(Worker):
 @pytest.mark.asyncio
 async def test_deploy_and_call() -> None:
     """Deploy a worker, call a method, and await the result."""
-    async with LocalRuntime().open() as rt:
+    async with LocalRuntime() as rt, _pipeline_method_scope():
         adder = await rt.deploy(Adder())
-        result = adder.add(2, 3)
+        handle = await adder.add(2, 3)
 
-        # result is a Result handle, not the value yet
-        assert isinstance(result, Result)
+        # The first await returned a Result handle, not the value yet.
+        assert isinstance(handle, Result)
 
-        # awaiting it resolves the value
-        assert await result == 5
+        # A second await resolves it. Inside a ``@pipeline_method`` body,
+        # this second await is done automatically when the handle is
+        # passed as an argument to the next worker method.
+        assert await handle == 5
 
 
 @pytest.mark.asyncio
 async def test_deploy_multiple_workers() -> None:
     """Deploy multiple workers and call methods on each independently."""
-    async with LocalRuntime().open() as rt:
+    async with LocalRuntime() as rt, _pipeline_method_scope():
         adder = await rt.deploy(Adder())
         multiplier = await rt.deploy(Multiplier())
 
-        assert await adder.add(10, 20) == 30
-        assert await multiplier.multiply(4, 5) == 20
+        add_handle = await adder.add(10, 20)
+        assert await add_handle == 30
+
+        multiply_handle = await multiplier.multiply(4, 5)
+        assert await multiply_handle == 20
 
 
 # ---------------------------------------------------------------------------
@@ -168,30 +184,30 @@ async def test_deploy_multiple_workers() -> None:
 @pytest.mark.asyncio
 async def test_streaming_results() -> None:
     """Async generator methods produce iterable result streams."""
-    async with LocalRuntime().open() as rt:
+    async with LocalRuntime() as rt, _pipeline_method_scope():
         counter = await rt.deploy(Counter())
 
-        items = [item async for item in counter.count_up(5)]
+        items = [item async for item in await counter.count_up(5)]
         assert items == [0, 1, 2, 3, 4]
 
 
 @pytest.mark.asyncio
 async def test_streaming_with_arguments() -> None:
     """Streaming methods accept arguments like regular methods."""
-    async with LocalRuntime().open() as rt:
+    async with LocalRuntime() as rt, _pipeline_method_scope():
         counter = await rt.deploy(Counter())
 
-        items = [item async for item in counter.count_from(10, 3)]
+        items = [item async for item in await counter.count_from(10, 3)]
         assert items == [10, 11, 12]
 
 
 @pytest.mark.asyncio
 async def test_empty_stream() -> None:
     """A streaming method that yields zero items produces an empty iteration."""
-    async with LocalRuntime().open() as rt:
+    async with LocalRuntime() as rt, _pipeline_method_scope():
         counter = await rt.deploy(Counter())
 
-        items = [item async for item in counter.count_up(0)]
+        items = [item async for item in await counter.count_up(0)]
         assert items == []
 
 
@@ -208,13 +224,15 @@ async def test_chain_results_between_workers() -> None:
     so you can wire worker outputs directly as inputs to other workers
     without manually awaiting intermediate results.
     """
-    async with LocalRuntime().open() as rt:
+    async with LocalRuntime() as rt, _pipeline_method_scope():
         adder = await rt.deploy(Adder())
         multiplier = await rt.deploy(Multiplier())
 
-        # adder.add returns a Result[int], passed directly to multiplier
-        sum_result = adder.add(3, 4)  # Result[int] = 7
-        product = multiplier.multiply(sum_result, 2)  # 7 * 2 = 14
+        # adder.add returns a Result[int] (after one await); passed
+        # directly to multiplier, whose MaybeAsync arg resolution awaits
+        # it on the worker side.
+        sum_result = await adder.add(3, 4)  # Result[int] = 7
+        product = await multiplier.multiply(sum_result, 2)  # 7 * 2 = 14
 
         assert await product == 14
 
@@ -222,13 +240,13 @@ async def test_chain_results_between_workers() -> None:
 @pytest.mark.asyncio
 async def test_chain_multiple_steps() -> None:
     """Chain three operations across workers in sequence."""
-    async with LocalRuntime().open() as rt:
+    async with LocalRuntime() as rt, _pipeline_method_scope():
         adder = await rt.deploy(Adder())
         multiplier = await rt.deploy(Multiplier())
 
-        step1 = adder.add(1, 2)  # 3
-        step2 = multiplier.multiply(step1, step1)  # 3 * 3 = 9
-        step3 = adder.add(step2, 1)  # 9 + 1 = 10
+        step1 = await adder.add(1, 2)  # 3
+        step2 = await multiplier.multiply(step1, step1)  # 3 * 3 = 9
+        step3 = await adder.add(step2, 1)  # 9 + 1 = 10
 
         assert await step3 == 10
 
@@ -236,12 +254,12 @@ async def test_chain_multiple_steps() -> None:
 @pytest.mark.asyncio
 async def test_chain_result_into_stream() -> None:
     """Pass a Result handle as an argument to a streaming method."""
-    async with LocalRuntime().open() as rt:
+    async with LocalRuntime() as rt, _pipeline_method_scope():
         adder = await rt.deploy(Adder())
         counter = await rt.deploy(Counter())
 
-        count = adder.add(2, 3)  # Result[int] = 5
-        items = [item async for item in counter.count_up(count)]
+        count = await adder.add(2, 3)  # Result[int] = 5
+        items = [item async for item in await counter.count_up(count)]
         assert items == [0, 1, 2, 3, 4]
 
 
@@ -256,11 +274,13 @@ async def test_worker_lifecycle() -> None:
     worker = StatefulWorker()
     assert not worker.initialized
 
-    async with LocalRuntime().open() as rt:
-        proxy = await rt.deploy(worker)
-        # open() was called during deploy
-        assert worker.initialized
-        assert await proxy.is_ready() is True
+    async with LocalRuntime() as rt:
+        async with _pipeline_method_scope():
+            proxy = await rt.deploy(worker)
+            # open() was called during deploy
+            assert worker.initialized
+            ready_handle = await proxy.is_ready()
+            assert await ready_handle is True
 
     # After runtime closes, worker's open() context was exited
     assert worker.closed
@@ -274,24 +294,27 @@ async def test_worker_lifecycle() -> None:
 @pytest.mark.asyncio
 async def test_error_propagation() -> None:
     """Exceptions raised in worker methods propagate to the awaiter."""
-    async with LocalRuntime().open() as rt:
+    async with LocalRuntime() as rt, _pipeline_method_scope():
         worker = await rt.deploy(FailingWorker())
 
         with pytest.raises(ValueError, match="something went wrong"):
-            await worker.fail("something went wrong")
+            fail_handle = await worker.fail("something went wrong")
+            await fail_handle
 
 
 @pytest.mark.asyncio
 async def test_error_does_not_poison_runtime() -> None:
     """A failed call does not prevent subsequent successful calls."""
-    async with LocalRuntime().open() as rt:
+    async with LocalRuntime() as rt, _pipeline_method_scope():
         worker = await rt.deploy(FailingWorker())
 
         with pytest.raises(ValueError):
-            await worker.fail("boom")
+            fail_handle = await worker.fail("boom")
+            await fail_handle
 
         # Runtime is still functional
-        assert await worker.succeed() == "ok"
+        succeed_handle = await worker.succeed()
+        assert await succeed_handle == "ok"
 
 
 # ---------------------------------------------------------------------------
@@ -307,17 +330,18 @@ async def test_concurrent_calls() -> None:
     fourth slow_add. If resolution were sequential, the total would be
     ~0.4s; concurrent resolution keeps it around ~0.2s.
     """
-    async with LocalRuntime().open() as rt:
+    async with LocalRuntime() as rt, _pipeline_method_scope():
         worker = await rt.deploy(SlowAdder())
 
-        r1 = worker.slow_add(1, 2, 3)  # 6, takes 0.1s
-        r2 = worker.slow_add(4, 5, 6)  # 15, takes 0.1s
-        r3 = worker.slow_add(7, 8, 9)  # 24, takes 0.1s
+        r1 = await worker.slow_add(1, 2, 3)  # 6, takes 0.1s
+        r2 = await worker.slow_add(4, 5, 6)  # 15, takes 0.1s
+        r3 = await worker.slow_add(7, 8, 9)  # 24, takes 0.1s
 
-        # Pass all three Result handles into a single call — the
+        # Pass all three Result handles into a single call -- the
         # @worker_method decorator resolves them concurrently.
         start = asyncio.get_event_loop().time()
-        total = await worker.slow_add(r1, r2, r3)  # 6+15+24 = 45
+        total_handle = await worker.slow_add(r1, r2, r3)
+        total = await total_handle  # 6+15+24 = 45
         elapsed = asyncio.get_event_loop().time() - start
 
         assert total == 45
@@ -336,19 +360,28 @@ async def test_mini_pipeline() -> None:
     Demonstrates the core pattern: build a pipeline by wiring Result
     handles between deployed workers, then await only the final output.
     """
-    async with LocalRuntime().open() as rt:
+    async with LocalRuntime() as rt, _pipeline_method_scope():
         strings = await rt.deploy(StringWorker())
 
         # Pipeline: upper("hello") -> repeat(result, 3)
-        uppered = strings.upper("hello")  # Result[str] = "HELLO"
-        repeated = strings.repeat(uppered, 3)  # "HELLOHELLOHELLO"
+        uppered = await strings.upper("hello")  # Result[str] = "HELLO"
+        repeated = await strings.repeat(uppered, 3)  # "HELLOHELLOHELLO"
 
         assert await repeated == "HELLOHELLOHELLO"
 
 
 @pytest.mark.asyncio
-async def test_deploy_outside_open_raises() -> None:
-    """Deploying a worker outside the open() context raises an error."""
+async def test_deploy_outside_context_raises() -> None:
+    """Deploying a worker outside the runtime context raises an error."""
     rt = LocalRuntime()
-    with pytest.raises(RuntimeError, match="outside of open"):
+    with pytest.raises(RuntimeError, match="context not entered"):
         await rt.deploy_worker(Adder())
+
+
+@pytest.mark.asyncio
+async def test_call_outside_pipeline_method_scope_raises() -> None:
+    """Calling a proxy method outside a pipeline scope raises."""
+    async with LocalRuntime() as rt:
+        adder = await rt.deploy(Adder())
+        with pytest.raises(RuntimeError, match="No cascade pipeline scope"):
+            await adder.add(1, 2)

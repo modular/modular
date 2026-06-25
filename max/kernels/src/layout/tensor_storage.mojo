@@ -65,7 +65,7 @@ trait TensorStorage:
         are valid for the referenced storage.
 
         Parameters:
-            to_mut: The mutability of the origin.
+            to_mut: The mutability to reinterpret the storage as.
             to_dtype: The element data type to reinterpret the storage as.
             to_origin: The origin to reinterpret the storage as.
             to_address_space: The address space to reinterpret the storage as.
@@ -81,13 +81,23 @@ trait TensorStorage:
 
     @staticmethod
     def load[
-        dtype: DType, //, width: SIMDSize, alignment: Int
+        dtype: DType,
+        //,
+        width: SIMDSize,
+        alignment: Int,
+        invariant: Bool = False,
+        non_temporal: Bool = False,
     ](storage: Self.StorageType[mut=False, dtype, ...]) -> SIMD[dtype, width]:
         """Loads a `SIMD` value from the storage.
 
         Parameters:
+            dtype: The element data type of the storage.
             width: The number of elements to load.
             alignment: The alignment guarantee for the load.
+            invariant: If True, the compiler may assume the memory won't be
+                modified during the kernel, enabling load hoisting and caching.
+            non_temporal: If True, indicates the data will not be reused soon,
+                allowing the hardware to bypass caches (e.g., streaming loads).
 
         Args:
             storage: The storage to load from.
@@ -99,15 +109,26 @@ trait TensorStorage:
 
     @staticmethod
     def load[
-        dtype: DType, //, width: SIMDSize, alignment: Int
+        dtype: DType,
+        //,
+        width: SIMDSize,
+        alignment: Int,
+        invariant: Bool = False,
+        non_temporal: Bool = False,
     ](
-        storage: Self.StorageType[mut=False, dtype, ...], offset: Some[Indexer]
+        storage: Self.StorageType[mut=False, dtype, ...],
+        offset: Some[Indexer],
     ) -> SIMD[dtype, width]:
         """Loads a `SIMD` value at an element offset from the storage.
 
         Parameters:
+            dtype: The element data type of the storage.
             width: The number of elements to load.
             alignment: The alignment guarantee for the load.
+            invariant: If True, the compiler may assume the memory won't be
+                modified during the kernel, enabling load hoisting and caching.
+            non_temporal: If True, indicates the data will not be reused soon,
+                allowing the hardware to bypass caches (e.g., streaming loads).
 
         Args:
             storage: The storage to load from.
@@ -120,12 +141,18 @@ trait TensorStorage:
 
     @staticmethod
     def store[
-        dtype: DType, //, alignment: Int
-    ](storage: Self.StorageType[mut=True, dtype, ...], value: SIMD[dtype, _]):
+        dtype: DType,
+        alignment: Int,
+        *,
+        non_temporal: Bool = False,
+    ](storage: Self.StorageType[mut=True, dtype, ...], value: SIMD[dtype, _],):
         """Stores a `SIMD` value into the storage.
 
         Parameters:
+            dtype: The element data type of the storage.
             alignment: The alignment guarantee for the store.
+            non_temporal: If True, indicates the data will not be reused soon,
+                allowing the hardware to bypass caches (e.g., streaming stores).
 
         Args:
             storage: The storage to store into.
@@ -135,7 +162,10 @@ trait TensorStorage:
 
     @staticmethod
     def store[
-        dtype: DType, //, alignment: Int
+        dtype: DType,
+        alignment: Int,
+        *,
+        non_temporal: Bool = False,
     ](
         storage: Self.StorageType[mut=True, dtype, ...],
         offset: Some[Indexer],
@@ -143,8 +173,17 @@ trait TensorStorage:
     ):
         """Stores a `SIMD` value at an element offset in the storage.
 
+        The caller is responsible for ensuring the storage is actually mutable.
+        The `dtype`, `origin`, and `address_space` are inferred from the
+        `storage` argument for concrete storage types; callers using the trait
+        through an abstract `TensorStorage` bound must pass them explicitly
+        (before `alignment`).
+
         Parameters:
+            dtype: The element data type of the storage.
             alignment: The alignment guarantee for the store.
+            non_temporal: If True, indicates the data will not be reused soon,
+                allowing the hardware to bypass caches (e.g., streaming stores).
 
         Args:
             storage: The storage to store into.
@@ -155,13 +194,9 @@ trait TensorStorage:
 
     @staticmethod
     def offset(
-        storage: Self.StorageType[...],
-        offset: Some[Indexer],
+        storage: Self.StorageType[...], offset: Some[Indexer]
     ) -> type_of(storage):
         """Returns a storage handle offset by a number of elements.
-
-        The returned handle refers to the same externally owned storage,
-        advanced by `offset` elements.
 
         Args:
             storage: The storage to offset from.
@@ -260,13 +295,23 @@ struct PointerStorage(TensorStorage):
     @staticmethod
     @always_inline
     def load[
-        dtype: DType, //, width: SIMDSize, alignment: Int
+        dtype: DType,
+        //,
+        width: SIMDSize,
+        alignment: Int,
+        invariant: Bool = False,
+        non_temporal: Bool = False,
     ](storage: Self.StorageType[mut=False, dtype, ...]) -> SIMD[dtype, width]:
         """Loads a `SIMD` value from the storage.
 
         Parameters:
+            dtype: The element data type of the storage.
             width: The number of elements to load.
             alignment: The alignment guarantee for the load.
+            invariant: If True, the compiler may assume the memory won't be
+                modified during the kernel, enabling load hoisting and caching.
+            non_temporal: If True, indicates the data will not be reused soon,
+                allowing the hardware to bypass caches (e.g., streaming loads).
 
         Args:
             storage: The storage to load from.
@@ -274,20 +319,36 @@ struct PointerStorage(TensorStorage):
         Returns:
             The loaded `SIMD` value.
         """
-        return storage.load[width=width, alignment=alignment]()
+        return storage.load[
+            width=width,
+            alignment=alignment,
+            invariant=invariant,
+            non_temporal=non_temporal,
+        ]()
 
     @staticmethod
     @always_inline
     def load[
-        dtype: DType, //, width: SIMDSize, alignment: Int
+        dtype: DType,
+        //,
+        width: SIMDSize,
+        alignment: Int,
+        invariant: Bool = False,
+        non_temporal: Bool = False,
     ](
-        storage: Self.StorageType[mut=False, dtype, ...], offset: Some[Indexer]
+        storage: Self.StorageType[mut=False, dtype, ...],
+        offset: Some[Indexer],
     ) -> SIMD[dtype, width]:
         """Loads a `SIMD` value at an element offset from the storage.
 
         Parameters:
+            dtype: The element data type of the storage.
             width: The number of elements to load.
             alignment: The alignment guarantee for the load.
+            invariant: If True, the compiler may assume the memory won't be
+                modified during the kernel, enabling load hoisting and caching.
+            non_temporal: If True, indicates the data will not be reused soon,
+                allowing the hardware to bypass caches (e.g., streaming loads).
 
         Args:
             storage: The storage to load from.
@@ -296,27 +357,42 @@ struct PointerStorage(TensorStorage):
         Returns:
             The loaded `SIMD` value.
         """
-        return storage.load[width=width, alignment=alignment](offset)
+        return storage.load[
+            width=width,
+            alignment=alignment,
+            invariant=invariant,
+            non_temporal=non_temporal,
+        ](offset)
 
     @staticmethod
     @always_inline
     def store[
-        dtype: DType, //, alignment: Int
-    ](storage: Self.StorageType[mut=True, dtype, ...], value: SIMD[dtype, _]):
+        dtype: DType,
+        alignment: Int,
+        *,
+        non_temporal: Bool = False,
+    ](storage: Self.StorageType[mut=True, dtype, ...], value: SIMD[dtype, _],):
         """Stores a `SIMD` value into the storage.
 
         Parameters:
+            dtype: The element data type of the storage.
             alignment: The alignment guarantee for the store.
+            non_temporal: If True, indicates the data will not be reused soon,
+                allowing the hardware to bypass caches (e.g., streaming stores).
 
         Args:
             storage: The storage to store into.
             value: The `SIMD` value to store.
         """
-        storage.store[alignment=alignment](value)
+        storage.store[alignment=alignment, non_temporal=non_temporal](value)
 
     @staticmethod
+    @always_inline
     def store[
-        dtype: DType, //, alignment: Int
+        dtype: DType,
+        alignment: Int,
+        *,
+        non_temporal: Bool = False,
     ](
         storage: Self.StorageType[mut=True, dtype, ...],
         offset: Some[Indexer],
@@ -325,14 +401,19 @@ struct PointerStorage(TensorStorage):
         """Stores a `SIMD` value at an element offset in the storage.
 
         Parameters:
+            dtype: The element data type of the storage.
             alignment: The alignment guarantee for the store.
+            non_temporal: If True, indicates the data will not be reused soon,
+                allowing the hardware to bypass caches (e.g., streaming stores).
 
         Args:
             storage: The storage to store into.
             offset: The element offset to store at.
             value: The `SIMD` value to store.
         """
-        storage.store[alignment=alignment](offset, value)
+        storage.store[alignment=alignment, non_temporal=non_temporal](
+            offset, value
+        )
 
     @staticmethod
     @always_inline

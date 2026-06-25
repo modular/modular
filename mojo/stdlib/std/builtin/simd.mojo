@@ -118,7 +118,7 @@ comptime Scalar = SIMD[
 """Represents a scalar dtype."""
 
 comptime Int = Scalar[DType.int]
-"""Represents a signed integer sutable for indexing."""
+"""Represents a signed integer suitable for indexing."""
 comptime Int8 = Scalar[DType.int8]
 """Represents an 8-bit signed scalar integer."""
 comptime UInt8 = Scalar[DType.uint8]
@@ -519,7 +519,7 @@ struct SIMD[dtype: DType, size: SIMDSize](
 
     - Vector operations:
       - Horizontal reductions: `reduce_add()`, `reduce_mul()`, `reduce_min()`, `reduce_max()`
-      - Element-wise conditional selection: `select(condition, true_case, false_case)`
+      - Element-wise conditional selection: `select(true_case, false_case)`
       - Vector manipulation: `shuffle()`, `slice()`, `join()`, `split()`
       - Type conversion: `cast[target_dtype]()`
 

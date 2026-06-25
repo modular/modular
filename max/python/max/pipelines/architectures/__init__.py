@@ -126,6 +126,11 @@ def register_all_models() -> None:
         ),
         _LazyArch("Flux2Pipeline", ".flux2", "flux2_arch"),
         _LazyArch("Flux2KleinPipeline", ".flux2", "flux2_klein_arch"),
+        _LazyArch(
+            "Flux2Pipeline_ModuleV3",
+            ".flux2_modulev3",
+            "flux2_modulev3_arch",
+        ),
         _LazyArch("Gemma3ForCausalLM", ".gemma3", "gemma3_arch"),
         _LazyArch(
             "Gemma3ForCausalLM_ModuleV3",

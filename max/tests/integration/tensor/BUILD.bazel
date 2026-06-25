@@ -29,6 +29,7 @@ modular_py_test(
             "test_from_dim.py",
             "test_functional_custom_gpu.py",
             "test_philox_torch_divergence.py",
+            "test_reduce_add_rmsnorm_fusion.py",
         ],
     ),
     data = [
@@ -37,6 +38,10 @@ modular_py_test(
     env = {
         "MODULAR_KERNEL_VERIFICATION_OPS_PATH": "$(rootpath //max/tests/integration/Inputs/kernel_verification_ops)",
     },
+    ignore_extra_deps = [
+        # lazy import
+        "//max/python/max/_interpreter_ops",
+    ],
     imports = ["."],
     per_test_shard_count = {
         "test_functional_other.py": 10,
@@ -51,6 +56,7 @@ modular_py_test(
     deps = [
         ":conftest",
         "//max/python/max:tensor",
+        "//max/python/max/_interpreter_ops",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
@@ -110,6 +116,25 @@ modular_py_test(
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/experimental",
+        requirement("torch"),
+    ],
+)
+
+modular_py_test(
+    name = "test_reduce_add_rmsnorm_fusion",
+    srcs = ["test_reduce_add_rmsnorm_fusion.py"],
+    gpu_constraints = ["//:b200_gpu"],
+    imports = ["."],
+    tags = [
+        "gpu",
+    ],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        requirement("ml-dtypes"),
+        requirement("numpy"),
         requirement("torch"),
     ],
 )

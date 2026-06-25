@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Sequence
+from typing import TYPE_CHECKING
 
 from max.driver import Device
 from max.nn.kv_cache.cache_params import (
@@ -30,12 +31,14 @@ from max.nn.kv_cache.cache_params import (
     KVCacheMemory,
     KVConnectorType,
 )
-from max.pipelines.kv_cache.config import KVConnectorConfig
 from max.pipelines.kv_cache.kv_connector import KVConnector
 
 from .local_connector import LocalConnector
 from .null_connector import NullConnector
 from .tiered_connector import TieredConnector
+
+if TYPE_CHECKING:
+    from max.pipelines.kv_cache.config import KVConnectorConfig
 
 logger = logging.getLogger("max.pipelines")
 

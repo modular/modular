@@ -44,6 +44,9 @@ from max.benchmark.benchmark_shared.datasets import (
 from max.benchmark.benchmark_shared.datasets._tokenizer_pool import (
     TokenizerPool,
 )
+from max.benchmark.benchmark_shared.datasets.chat_judge import (
+    ChatJudgeBenchmarkDataset,
+)
 
 # Import the module under test
 from max.benchmark.benchmark_shared.datasets.multiturn_distribution_fit import (
@@ -790,6 +793,42 @@ def test_image_edit_dataset_sample_requests(tmp_path: Path) -> None:
     assert request.image_options.guidance_scale == 3.5
 
 
+def test_image_edit_dataset_forwards_num_frames(tmp_path: Path) -> None:
+    """image-to-video reuses the local-image dataset and threads num_frames."""
+    image_path = tmp_path / "images" / "sample.png"
+    _write_test_image(image_path)
+    dataset_path = tmp_path / "image_edit.jsonl"
+    dataset_path.write_text(
+        json.dumps(
+            {
+                "prompt": "Pan across the scene",
+                "image_path": "images/sample.png",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    dataset = BenchmarkDataset.from_flags(
+        dataset_name="local-image",
+        dataset_path=str(dataset_path),
+    )
+    assert isinstance(dataset, LocalImageBenchmarkDataset)
+
+    samples = dataset.sample_requests(
+        num_requests=1,
+        tokenizer=None,
+        image_width=832,
+        image_height=480,
+        num_frames=81,
+    )
+    request = samples.requests[0]
+    assert isinstance(request, PixelGenerationSampledRequest)
+    assert request.input_image_paths == [str(image_path.resolve())]
+    assert request.image_options is not None
+    assert request.image_options.num_frames == 81
+
+
 def test_image_edit_dataset_invalid_jsonl(tmp_path: Path) -> None:
     dataset_path = tmp_path / "bad.jsonl"
     dataset_path.write_text("{not-json}\n", encoding="utf-8")
@@ -892,6 +931,74 @@ def test_instruct_coder_multiturn_fit_distributions(
         for user in session.messages[0::2]:
             assert user.source == "user"
             assert user.num_tokens == 80
+
+
+def _write_chat_judge_file(path: Path) -> None:
+    """Write a single chat-judge session: system turn + 3 user turns."""
+    path.write_text(
+        json.dumps(
+            {
+                "session_id": "s0",
+                "turns": [
+                    {"text": "You are a judge.", "role": "system"},
+                    {"text": "Item 0"},
+                    {"text": "Item 1"},
+                    {"text": "Item 2"},
+                ],
+            }
+        )
+        + "\n"
+    )
+
+
+def test_chat_judge_gen_chat_sessions_sets_per_turn_delay(
+    tmp_path: Path,
+) -> None:
+    """The delay is sampled per turn and set on every user message except
+    the final one; the system message never carries a delay."""
+    dataset_file = tmp_path / "chat_judge.jsonl"
+    _write_chat_judge_file(dataset_file)
+
+    dataset = ChatJudgeBenchmarkDataset()
+    dataset.dataset_path = str(dataset_file)
+
+    samples = dataset.gen_chat_sessions(
+        num_sessions=1,
+        tokenizer=_FakeTokenizer(),
+        shuffle=False,
+        delay_between_turns_dist="100",
+    )
+
+    (session,) = samples.chat_sessions
+    assert session.messages[0].source == "system"
+    assert session.messages[0].delay_until_next_message is None
+
+    user_messages = [m for m in session.messages if m.source == "user"]
+    assert [m.delay_until_next_message for m in user_messages] == [
+        100.0,
+        100.0,
+        None,
+    ]
+
+
+def test_chat_judge_gen_chat_sessions_no_delay_by_default(
+    tmp_path: Path,
+) -> None:
+    """Without a delay distribution, no message carries an inter-turn delay."""
+    dataset_file = tmp_path / "chat_judge.jsonl"
+    _write_chat_judge_file(dataset_file)
+
+    dataset = ChatJudgeBenchmarkDataset()
+    dataset.dataset_path = str(dataset_file)
+
+    samples = dataset.gen_chat_sessions(
+        num_sessions=1,
+        tokenizer=_FakeTokenizer(),
+        shuffle=False,
+    )
+
+    (session,) = samples.chat_sessions
+    assert all(m.delay_until_next_message is None for m in session.messages)
 
 
 def test_pool_wraps_with_pass_marker_when_exhausted() -> None:

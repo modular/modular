@@ -37,14 +37,12 @@ requirements](/max/packages#system-requirements).
 ## Supported methods
 
 MAX supports common speculative-decoding methods like EAGLE, EAGLE3, and
-MTP. For experimenting with arbitrary target/draft pairs, use
-`standalone`.
+MTP.
 
 | Method             | Draft source                                                           | Supported targets and hardware                                    |
 |--------------------|------------------------------------------------------------------------|-------------------------------------------------------------------|
 | `eagle` / `eagle3` | A trained EAGLE draft that shares the target's embedding and `lm_head` | Llama 3 (1 GPU), Kimi K2.5 and K2.6 (8× B200).                    |
 | `mtp`              | A native multi-token prediction head inside the target checkpoint      | DeepSeek V3 and derivatives (8× B200), Gemma 4 (1 GPU).           |
-| `standalone`       | A separate small model you pass with `--draft-model-path`              | Any target with a same-family draft, on any GPU the pair fits on. |
 
 ## Serve with speculative decoding
 
@@ -93,7 +91,7 @@ response = client.chat.completions.create(
         {"role": "system", "content": "You are a helpful assistant."},
         {"role": "user", "content": "What are the benefits of speculative decoding?"},
     ],
-    max_tokens=500,
+    max_completion_tokens=500,
 )
 
 print(response.choices[0].message.content)
@@ -131,45 +129,7 @@ response = client.chat.completions.create(
         {"role": "system", "content": "You are a helpful assistant."},
         {"role": "user", "content": "What are the benefits of speculative decoding?"},
     ],
-    max_tokens=500,
-)
-
-print(response.choices[0].message.content)
-```
-
-  </TabItem>
-  <TabItem value="standalone" label="Standalone">
-
-Serve `Llama 3.1 8B Instruct` with `Llama 3.2 1B Instruct` as the
-draft:
-
-```sh
-max serve \
-  --model meta-llama/Llama-3.1-8B-Instruct \
-  --speculative-method standalone \
-  --draft-model-path meta-llama/Llama-3.2-1B-Instruct \
-  --num-speculative-tokens 2 \
-  --devices gpu
-```
-
-Once the server prints `Server ready on http://0.0.0.0:8000`, send a
-chat-completion request:
-
-```python
-from openai import OpenAI
-
-client = OpenAI(
-    base_url="http://localhost:8000/v1",
-    api_key="EMPTY",
-)
-
-response = client.chat.completions.create(
-    model="meta-llama/Llama-3.1-8B-Instruct",
-    messages=[
-        {"role": "system", "content": "You are a helpful assistant."},
-        {"role": "user", "content": "What are the benefits of speculative decoding?"},
-    ],
-    max_tokens=500,
+    max_completion_tokens=500,
 )
 
 print(response.choices[0].message.content)
@@ -183,9 +143,7 @@ print(response.choices[0].message.content)
 For EAGLE and MTP, MAX reports a unified architecture at startup, for
 example `UnifiedEagleLlama3ForCausalLM`, `UnifiedMTPDeepseekV3ForCausalLM`,
 or `UnifiedMTPGemma4ForCausalLM`. That's expected: MAX compiles the
-target, draft, and verifier into a single graph. `standalone` runs the
-target and draft as separate models and reports the target's normal
-architecture.
+target, draft, and verifier into a single graph.
 
 ## Monitor acceptance rates
 
@@ -225,7 +183,7 @@ model's config and on
 - `--rejection-sampling-strategy`: how the target verifies drafted
   tokens. Accepts `greedy`, `residual`, `typical-acceptance`, or
   `logit-comparison`. When unset, EAGLE and MTP default to
-  `typical-acceptance`; `standalone` defaults to `residual`.
+  `typical-acceptance`.
 - `--synthetic-acceptance-rate`: benchmarking-only knob that accepts
   each drafted token with a calibrated probability, ignoring real logits.
   Use this to model hypothetical speedups without changing the draft.
@@ -244,13 +202,15 @@ flags.
 These restrictions apply when speculative decoding is enabled:
 
 - `--enable-echo` isn't supported alongside speculative decoding.
-- Structured output (JSON-schema-constrained generation) isn't supported
-  alongside speculative decoding.
+- [Structured output](/max/serve/structured-output) (JSON-schema-constrained
+  generation) works alongside speculative decoding: the constraint bitmask is
+  applied to each speculated position during verification. As with structured
+  output generally, this requires a GPU deployment.
 - The target and draft must share the same `max_length`.
 - Repetition, frequency, and presence penalties are disabled when a
-  separate draft model is configured (`--draft-model-path`). That covers
-  EAGLE and `standalone`. MTP keeps the draft head inside the target
-  checkpoint, so it supports penalties.
+  separate draft model is configured (`--draft-model-path`), which covers
+  EAGLE. MTP keeps the draft head inside the target checkpoint, so it
+  supports penalties.
 
 ## Next steps
 

@@ -26,8 +26,47 @@ This version is still a work in progress.
 
 ## MAX framework
 
+- The graph compiler now fuses query/key RMSNorm followed by rotate-half RoPE
+  into a single `rms_norm_rope` GPU kernel even when the RMSNorm is written "in
+  float32" — that is, when a `bfloat16`/`float16` activation is upcast to
+  `float32`, normalized, and cast back before RoPE. Previously the intervening
+  `float32`-to-`bfloat16` downcast blocked the fusion and the idiom compiled to
+  several separate elementwise kernels. The fused kernel now decouples its
+  output dtype from its input dtype, so the reduction and weight/epsilon scaling
+  stay in `float32` and only the result is produced in the activation dtype; the
+  input upcast is absorbed by ordinary prologue fusion. Numerics match the
+  unfused graph (the normalized value is rounded to the output dtype before
+  RoPE).
+- Added a `poison-all` mode to the `MODULAR_DEBUG_DEVICE_ALLOCATOR` environment
+  variable for debugging uninitialized device-memory reads. Unlike the existing
+  `uninitialized-poison` (which fills graph tensors with a type-aware, non-NaN
+  sentinel and is detected by an instrumented load check), `poison-all` fills
+  *every* memory-manager allocation — including internal scratch and other
+  non-tensor buffers — with a raw byte (default `0xFF`, a NaN pattern for
+  `float32`/`bfloat16`), so an uninitialized read propagates NaN into the output
+  and trips existing differential tests without any kernel instrumentation. The
+  fill byte is configurable via
+  `MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_POISON_PATTERN`, and the mode composes
+  with `out-of-bounds` redzone checks. Because the NaN can also surface on
+  legitimately-uninitialized allocation padding, it is a manual debugging aid
+  rather than a default.
+
 ### Inference server
 
+- Reduced per-iteration latency for structured-output (constrained decoding)
+  requests on speculative-decode models. The overlap pipeline now enqueues the
+  asynchronous FSM-advance and bitmask compute once the next iteration's batch
+  order is known, so the bitmask is written directly in the consuming batch's
+  row order. This removes both the host-synchronization point that previously
+  stalled the GPU-feeding thread when the batch composition changed between
+  iterations and the device-side gather that earlier reconciled the order. The
+  improvement applies across all six supported speculative-decode architectures
+  (Kimi K2.5 MLA and MHA, DeepseekV3 MTP and Eagle3, Gemma 4 MTP,
+  and EAGLE Llama 3).
+- Constrained decoding (structured output) now unpacks the grammar bitmask on
+  the GPU. The packed `int32` bitmask is transferred to device as-is and
+  unpacked and applied to the logits in a single fused kernel
+  (`apply_packed_bitmask`), instead of unpacking to a `bool` tensor on the CPU.
 - Fixed image requests failing with a 400 or 500 across all vision models. Two
   bugs in the shared image-resolution layer: `data:` URIs with unpadded or
   URL-safe base64 (sent routinely by clients and relays) were rejected by the
@@ -73,10 +112,25 @@ This version is still a work in progress.
 - Added `maxserve.cache.disk_blocks_read` and
   `maxserve.cache.disk_blocks_written` counters, reporting KV blocks read from
   and written to the disk cache tier when tiered (disk) KV caching is enabled.
+- Added opt-in SHA-256 KV-cache block hashing. A new `kv_cache_hash_algo`
+  field on `KVCacheConfig` (default `ahash64`; opt-in `sha256` and
+  `sha256_64`) threads through the pipeline and serve config, selecting a
+  Mojo `block_hasher_sha256` and the matching `hash_request_tokens` SHA-256
+  path. Chat-completion requests also accept an optional `cache_salt` field
+  that scopes prefix-cache reuse to a single per-request KV chain. Default
+  behavior is the same as the existing `ahash64` path.
 
 ### `max` CLI
 
 ### Python API
+
+- Added `max.driver.set_virtual_cpu_target()` and `get_virtual_cpu_target()`.
+  Set a fixed CPU codegen target (for example `"x86-64-v3"`, `"neoverse-n1"`,
+  or `"generic"` for the most-portable baseline of the host arch family) before
+  importing `max._interpreter_ops` so the eager interpreter's CPU kernel cache
+  is compiled host-independently and can be shipped and reused across hosts of
+  the same architecture family. Mirrors `set_virtual_device_target_arch()` for
+  GPUs. Leaving it unset compiles for the build host's CPU, as before.
 
 - **Preview (no-op today)**: `InferenceSession.profiling` is a new namespace
   that will control the libkineto-backed MAX profiler. The lifecycle methods
@@ -105,12 +159,52 @@ This version is still a work in progress.
   `EagerRealizationContext(use_interpreter=...)` argument is deprecated in
   favor of `EagerRealizationContext(executor=...)`.
 
+- The eager interpreter precompiles its matmul and unary-elementwise
+  graph-compiler models for the full `(device, dtype)` matrix at import by
+  default. Set `MAX_EAGER_OP_PRECOMPILE=0` to skip the import-time sweep and
+  compile each target lazily on first dispatch instead, bounding compile cost to
+  the targets a program actually uses.
+
+- Added `max.experimental.nn.subgraphable` for `Module` subgraph compilation: a
+  repeated block (via the `@subgraphable` class decorator, or the
+  `subgraphable(layer)(x)` call form) lowers to one shared subgraph reused per
+  call. Opt out per compile with `Module.compile(..., allow_subgraphs=False)`.
+
 - `max.nn.hooks.PrintHook` now supports `max.experimental.nn.Module`.
 
 - Added `F.print`, which supports both single-device and multi-device tensors.
 
+- Added `max.graph.default_custom_extensions()` and the
+  `default_custom_extensions_scope()` context manager. Paths registered as
+  defaults are merged into the `custom_extensions` of every new `Graph`, so a
+  backend can make its custom-op kernel library reachable from graphs built
+  without an explicit `custom_extensions=` — including the eager-realization
+  graph that backs `max.experimental` tensors. Empty by default.
+
+### C API
+
+- Fixed `M_borrowTensorInto()` copying instead of borrowing a GPU input. When
+  the borrowed pointer already lived on the target accelerator, the call
+  allocated a fresh device buffer and copied into it, so in-place mutation of a
+  `BufferType` model input was applied to the engine's private copy and never
+  reflected back into the caller's buffer. Such pointers are now borrowed in
+  place (zero-copy) on CUDA devices, matching the documented borrow semantics
+  and the existing behavior for host inputs. Host pointers passed with a device
+  spec are still staged via a host-to-device copy, as are device pointers on
+  backends that do not yet implement in-place borrowing (AMD and Apple).
+
 ## MAX kernels
 
+- Apple silicon GPU support for running MAX models has been extended to M1 and
+  M2 systems. Previously, the optimized matrix multiplication kernels for Apple
+  silicon GPUs only returned correct results on M3 and newer systems. That has
+  now been fixed for M1 and M2 systems, allowing many common MAX models to run
+  correctly on them.
+- The split-K decode attention kernel for Apple GPUs is now the default for
+  token-generation attention, covering paged-KV-cache MHA and GQA decode for
+  head dims that are a multiple of 32. It was previously opt-in;
+  `MODULAR_ENABLE_APPLE_NAIVE_FA_DECODE=0` now opts out, falling back to
+  `mha_gpu_naive`.
 - Sped up GPU RMS norm on AMD CDNA4 (MI355X) for prefill-sized shapes. The
   warp-tiling path runs one row per block, so the per-thread SIMD width sets
   how many warps a row needs; on CDNA4, when there are enough rows to keep the

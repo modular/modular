@@ -214,113 +214,113 @@ def test_bf16(ctx: DeviceContext) raises:
         in_type=DType.bfloat16,
         out_type=DType.float32,
         transpose_b=False,
-        N=Int(256),
-        K=Int(128),
+        N=256,
+        K=128,
     ](ctx, 256, 256, 128)
     test[
         in_type=DType.bfloat16,
         out_type=DType.float32,
         transpose_b=True,
-        N=Int(256),
-        K=Int(128),
+        N=256,
+        K=128,
     ](ctx, 256, 256, 128)
     test[
         in_type=DType.bfloat16,
         out_type=DType.bfloat16,
         transpose_b=False,
-        N=Int(256),
-        K=Int(128),
+        N=256,
+        K=128,
     ](ctx, 256, 256, 128)
     test[
         in_type=DType.bfloat16,
         out_type=DType.bfloat16,
         transpose_b=True,
-        N=Int(256),
-        K=Int(128),
+        N=256,
+        K=128,
     ](ctx, 256, 256, 128)
 
     test[
         in_type=DType.bfloat16,
         out_type=DType.bfloat16,
         transpose_b=False,
-        N=Int(256),
-        K=Int(128),
+        N=256,
+        K=128,
     ](ctx, 1024, 256, 128)
     test[
         in_type=DType.bfloat16,
         out_type=DType.bfloat16,
         transpose_b=False,
-        N=Int(256),
-        K=Int(256),
+        N=256,
+        K=256,
     ](ctx, 1024, 256, 256)
     test[
         in_type=DType.bfloat16,
         out_type=DType.float32,
         transpose_b=True,
-        N=Int(256),
-        K=Int(1024),
+        N=256,
+        K=1024,
     ](ctx, 1024, 256, 1024)
     test[
         in_type=DType.bfloat16,
         out_type=DType.float32,
         transpose_b=True,
-        N=Int(1024),
-        K=Int(1024),
+        N=1024,
+        K=1024,
     ](ctx, 1024, 1024, 1024)
 
     test[
         in_type=DType.bfloat16,
         out_type=DType.bfloat16,
         transpose_b=True,
-        N=Int(284),
-        K=Int(256),
+        N=284,
+        K=256,
     ](ctx, 256, 284, 256)
     test[
         in_type=DType.bfloat16,
         out_type=DType.bfloat16,
         transpose_b=True,
-        N=Int(260),
-        K=Int(1024),
+        N=260,
+        K=1024,
     ](ctx, 259, 260, 1024)
 
     test[
         in_type=DType.bfloat16,
         out_type=DType.bfloat16,
         transpose_b=True,
-        N=Int(36864),
-        K=Int(6144),
+        N=36864,
+        K=6144,
     ](ctx, 2, 36864, 6144)
 
     test[
         in_type=DType.bfloat16,
         out_type=DType.bfloat16,
         transpose_b=True,
-        N=Int(55296),
-        K=Int(6144),
+        N=55296,
+        K=6144,
     ](ctx, 2, 55296, 6144)
 
     test[
         in_type=DType.bfloat16,
         out_type=DType.bfloat16,
         transpose_b=True,
-        N=Int(6144),
-        K=Int(24576),
+        N=6144,
+        K=24576,
     ](ctx, 2, 6144, 24576)
 
     test[
         in_type=DType.bfloat16,
         out_type=DType.bfloat16,
         transpose_b=True,
-        N=Int(6144),
-        K=Int(18432),
+        N=6144,
+        K=18432,
     ](ctx, 2, 6144, 18432)
 
     test[
         in_type=DType.bfloat16,
         out_type=DType.bfloat16,
         transpose_b=True,
-        N=Int(6144),
-        K=Int(6144),
+        N=6144,
+        K=6144,
     ](ctx, 2, 6144, 6144)
 
 
@@ -331,16 +331,16 @@ def test_float8[fp8_type: DType](ctx: DeviceContext) raises:
         in_type=fp8_type,
         out_type=DType.bfloat16,
         transpose_b=True,
-        N=Int(512),
-        K=Int(640),
+        N=512,
+        K=640,
     ](ctx, 480, 512, 640)
 
     test[
         in_type=DType.bfloat16,
         out_type=fp8_type,
         transpose_b=True,
-        N=Int(384),
-        K=Int(128),
+        N=384,
+        K=128,
     ](ctx, 256, 384, 128)
 
 
@@ -359,7 +359,7 @@ def test_block_k(ctx: DeviceContext) raises:
             block_tile_shape=Index(64, 64, block_k),
             warp_tile_shape=Index(32, 32, block_k),
         )
-        test[config, N=Int(N), K=Int(K)](ctx, m, n, k)
+        test[config, N=N, K=K](ctx, m, n, k)
 
     comptime block_ks: List[Int] = [32, 64, 128, 256]
 
@@ -406,11 +406,30 @@ def test_warp_k_partitions(ctx: DeviceContext) raises:
         ]
 
         comptime for i in range(len(configs)):
-            test[configs[i], N=Int(N), K=Int(K)](ctx, m, n, k)
+            test[configs[i], N=N, K=K](ctx, m, n, k)
 
     test_warp_k_partitions[DType.bfloat16, DType.bfloat16, 2048, 2048](
         16, 2048, 2048
     )
+
+
+def test_float32(ctx: DeviceContext) raises:
+    print("=== test_float32")
+
+    test[
+        in_type=DType.float32,
+        out_type=DType.float32,
+        transpose_b=False,
+        N=256,
+        K=128,
+    ](ctx, 256, 256, 128)
+    test[
+        in_type=DType.float32,
+        out_type=DType.float32,
+        transpose_b=True,
+        N=256,
+        K=128,
+    ](ctx, 256, 256, 128)
 
 
 def test_matmul_config_from_block_shape(ctx: DeviceContext) raises:
@@ -443,9 +462,7 @@ def test_matmul_config_from_block_shape(ctx: DeviceContext) raises:
                     config.warp_tile_shape,
                     config.num_warp_k_partitions,
                 )
-                test[config, M=Int(m_val), N=Int(n_val), K=Int(k)](
-                    ctx, m_val, n_val, k
-                )
+                test[config, M=m_val, N=n_val, K=k](ctx, m_val, n_val, k)
 
             comptime if block_m <= 32 and block_n <= 32:
                 # Exercise the warp_k partitioning where the number of partitions
@@ -472,3 +489,4 @@ def main() raises:
 
         test_block_k(ctx)
         test_warp_k_partitions(ctx)
+        test_float32(ctx)

@@ -27,7 +27,8 @@ from __future__ import annotations
 import logging
 import os
 from collections import defaultdict
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
+from typing import cast
 
 from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.pipelines.context import TextAndVisionContext, TextContext
@@ -41,6 +42,7 @@ from .block_pool import BlockPool
 from .block_utils import (
     InsufficientBlocksError,
     KVCacheBlock,
+    _KVHashAlgo,
     hash_request_tokens,
 )
 
@@ -124,9 +126,24 @@ class BlockManager:
         connector: KVConnector,
         enable_prefix_caching: bool,
         enable_runtime_checks: bool = False,
+        *,
+        kv_hash_algo: _KVHashAlgo = "ahash64",
+        kv_hash_seed: bytes | None = None,
     ) -> None:
         self.total_num_blocks = total_num_blocks
         self.block_size = block_size
+
+        self.kv_hash_algo: _KVHashAlgo = kv_hash_algo
+        self.kv_hash_seed: bytes | None = kv_hash_seed
+        self._salt_dropped_warned: bool = False
+
+        if kv_hash_algo != "ahash64" and connector.num_host_blocks > 0:
+            raise NotImplementedError(
+                f"kv_hash_algo={kv_hash_algo!r} is not yet compatible with "
+                "host-tier KV connector (host_blocks > 0). The dKV/tiered "
+                "wire format still uses 64-bit hashes; widen those first "
+                "or run with num_host_blocks=0."
+            )
 
         # Whether to enable prefix caching.
         self.enable_prefix_caching = enable_prefix_caching
@@ -141,7 +158,9 @@ class BlockManager:
         # parent_seq_hash (0 = root). Ordering and parentage are preserved so
         # connectors that chain sequences (dKV) can reconstruct the prefix;
         # hash-keyed connectors (host/disk) ignore the parent.
-        self._pending_offloads: list[tuple[int, list[int]]] = []
+        self._pending_offloads: list[
+            tuple[int | bytes, list[int] | list[bytes]]
+        ] = []
 
         # A pool of device blocks.
         self.device_block_pool = BlockPool(
@@ -161,7 +180,9 @@ class BlockManager:
         # Mapping from request ID to kv block hashes.
         # This is to avoid recomputing the block hashes for each call of
         # `get_computed_blocks` or `allocate_slots`.
-        self.req_to_hashes: dict[RequestID, list[int]] = defaultdict(list)
+        self.req_to_hashes: dict[RequestID, list[int] | list[bytes]] = (
+            defaultdict(list)
+        )
 
         # Mapping from request ID to committed index (number of tokens
         # committed into the prefix cache). This replaces reliance on
@@ -216,21 +237,37 @@ class BlockManager:
         if num_unhashed_tokens < self.block_size:
             return
 
-        parent_hash_value = None
+        parent_hash_value: int | bytes | None = None
         if len(hashes) > 0:
             parent_hash_value = hashes[-1]
 
         unhashed_tokens = ctx.tokens[num_hashed_tokens:num_hashable_tokens]
 
         images = ctx.images if isinstance(ctx, TextAndVisionContext) else []
+
+        cache_salt = getattr(ctx, "cache_salt", None)
+        if cache_salt is not None and self.kv_hash_algo == "ahash64":
+            if not self._salt_dropped_warned:
+                logger.warning(
+                    "cache_salt was supplied on a request but "
+                    "kv_cache_hash_algo=ahash64; salt is being dropped. Set "
+                    "kv_cache_hash_algo=sha256 to enable per-request "
+                    "prefix-cache isolation."
+                )
+                self._salt_dropped_warned = True
+            cache_salt = None
+
         new_hashes = hash_request_tokens(
             token_ids=unhashed_tokens,
             block_size=self.block_size,
             parent_hash=parent_hash_value,
             prefix_length=num_hashed_tokens,
             images=images,
+            algo=self.kv_hash_algo,
+            seed=self.kv_hash_seed,
+            salt=cache_salt,
         )
-        hashes.extend(new_hashes)
+        hashes.extend(new_hashes)  # type: ignore[arg-type]
 
     @traced
     def reuse_blocks_from_prefix_cache(
@@ -307,7 +344,9 @@ class BlockManager:
 
     @traced
     def _count_full_blocks_from_prefix_cache(
-        self, ctx: TextContext, desired_hashes: list[int]
+        self,
+        ctx: TextContext,
+        desired_hashes: Sequence[int | bytes],
     ) -> int:
         """Returns the count of device and host blocks with the desired hashes."""
         # Count the number of device block hashes that are in the device prefix cache.
@@ -332,7 +371,7 @@ class BlockManager:
     @traced
     def _get_full_blocks_from_device_prefix_cache(
         self,
-        desired_hashes: list[int],
+        desired_hashes: Sequence[int | bytes],
     ) -> list[KVCacheBlock]:
         """Returns a list of device blocks with the desired hashes."""
         if self._only_use_kv_connector_last_level_cache:
@@ -353,7 +392,7 @@ class BlockManager:
 
     @traced
     def _get_full_blocks_from_host_prefix_cache(
-        self, desired_hashes: list[int]
+        self, desired_hashes: Sequence[int | bytes]
     ) -> list[KVCacheBlock]:
         """Returns a list of device blocks with the desired hashes.
 
@@ -374,7 +413,12 @@ class BlockManager:
 
         # Query connector for available blocks from host cache.
         block_ids = [b.bid for b in blocks]
-        num_loaded = self.connector.load(block_ids, desired_hashes)
+        assert all(isinstance(h, int) for h in desired_hashes), (
+            "connector.load() path is only valid for ahash64 (int) hashes"
+        )
+        num_loaded = self.connector.load(
+            block_ids, cast(list[int], list(desired_hashes))
+        )
 
         # The connector may return fewer hashes than requested.
         for surplus_block in blocks[num_loaded:]:
@@ -497,9 +541,7 @@ class BlockManager:
             new_block_hashes = req_hashes[
                 num_committed_blocks:num_computed_blocks
             ]
-            self._pending_offloads.append(
-                (parent_seq_hash, list(new_block_hashes))
-            )
+            self._pending_offloads.append((parent_seq_hash, new_block_hashes))
 
         # Bump the committed index.
         self.req_to_committed_idx[ctx.request_id] = (
@@ -526,7 +568,17 @@ class BlockManager:
                 block_ids.append(prefix_cache[block_hash].bid)
                 block_hashes.append(block_hash)
             if block_hashes:
-                self.connector.offload(block_ids, block_hashes, parent_seq_hash)
+                assert all(isinstance(h, int) for h in block_hashes), (
+                    "connector.offload() path is only valid for ahash64 (int) hashes"
+                )
+                assert isinstance(parent_seq_hash, int), (
+                    "connector.offload() path is only valid for ahash64 (int) hashes"
+                )
+                self.connector.offload(
+                    block_ids,
+                    cast(list[int], block_hashes),
+                    parent_seq_hash,
+                )
         self._pending_offloads.clear()
 
     def release(self, request_id: RequestID) -> None:

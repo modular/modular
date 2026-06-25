@@ -31,6 +31,7 @@ from linalg.fp4_utils import (
     compute_mxfp4_even_scale,
     set_scale_factor,
 )
+from linalg.matmul.gpu.amd import Shuffler
 
 import std.gpu.primitives.warp as warp
 from std.collections import OptionalReg
@@ -372,8 +373,16 @@ trait TokenFormat(DevicePassable, ImplicitlyDeletable):
         self,
         buf_p: UnsafePointer[mut=False, UInt8, _, address_space=buf_addr_space],
         token_index: Int,
+        expert_slot: Int = 0,
+        expert_start: Int = 0,
     ) -> None:
-        "Copy the message to the output tensor. This function needs to be called by all threads in a warp."
+        """Copy the message to the output tensor. This function needs to be called by all threads in a warp.
+
+        `expert_slot` (= `expert_id + shared_expert_offset`) and `expert_start`
+        (the expert's first output row) are supplied by the tile loop and used
+        only by formats that fold the grouped-matmul scale preshuffle into this
+        copy (MXFP4 KS224); other formats ignore them.
+        """
         ...
 
     @always_inline
@@ -409,7 +418,15 @@ trait TokenFormat(DevicePassable, ImplicitlyDeletable):
         for tok_id_in_tile in range(w, tile_end - tile_start, n_warps):
             var msg_ptr = recv_buf_ptr_functor(tok_id_in_tile)
             var output_pos = expert_start_pos + tile_start + tok_id_in_tile
-            self.copy_msg_to_output_tensor(msg_ptr, output_pos)
+            # `expert_slot` / `expert_start` let scale-preshuffle-folding
+            # formats (MXFP4 KS224) re-base `output_pos` to the per-expert
+            # `scale_4d` slot. Other formats ignore them.
+            self.copy_msg_to_output_tensor(
+                msg_ptr,
+                output_pos,
+                expert_id + shared_expert_offset,
+                expert_start_pos,
+            )
 
             if umod(tile_id, n_k_tiles) == 0:
                 extract_topk_info_functor(msg_ptr, output_pos)
@@ -503,6 +520,8 @@ struct BF16TokenFormat[
         self,
         buf_p: UnsafePointer[mut=False, UInt8, _, address_space=buf_addr_space],
         token_index: Int,
+        expert_slot: Int = 0,
+        expert_start: Int = 0,
     ) -> None:
         comptime assert (
             Self.TensorType.flat_rank >= 2
@@ -715,6 +734,8 @@ struct BlockwiseFP8TokenFormat[
         self,
         buf_p: UnsafePointer[mut=False, UInt8, _, address_space=buf_addr_space],
         token_index: Int,
+        expert_slot: Int = 0,
+        expert_start: Int = 0,
     ) -> None:
         comptime assert (
             Self.TensorType.flat_rank >= 2
@@ -1085,6 +1106,8 @@ struct NVBlockScaledTokenFormat[
         self,
         buf_p: UnsafePointer[mut=False, UInt8, _, address_space=buf_addr_space],
         token_index: Int,
+        expert_slot: Int = 0,
+        expert_start: Int = 0,
     ) -> None:
         "NVFP4 format directly uses tile based copy."
         pass
@@ -1282,6 +1305,8 @@ struct MXFP4TokenFormat[
     _hid_dim: Int,
     _top_k: Int,
     _alignment: Int = 0,
+    *,
+    fuse_a_scale_preshuffle: Bool = False,
 ](TokenFormat, TrivialRegisterPassable):
     comptime hid_dim = Self._hid_dim
     comptime top_k = Self._top_k
@@ -1299,6 +1324,9 @@ struct MXFP4TokenFormat[
     ]
     var output_tokens: Self.TensorType
     var output_scales: Self.ScalesTensorType
+    # Per-expert `scale_4d` slot stride in rows (= `align_up(max, 32)`); only
+    # used when `fuse_a_scale_preshuffle` (KS224 up-proj fusion).
+    var max_padded_M: Int
 
     comptime device_type: AnyType = Self
 
@@ -1327,6 +1355,8 @@ struct MXFP4TokenFormat[
             String(Self.top_k),
             ", alignment = ",
             String(Self.alignment),
+            ", fuse_a_scale_preshuffle = ",
+            String(Self.fuse_a_scale_preshuffle),
             "]",
         )
 
@@ -1335,6 +1365,7 @@ struct MXFP4TokenFormat[
         out self,
         output_tokens: TileTensor[Self.fp4_dtype, Self.output_layout, ...],
         output_scales: TileTensor[Self.scales_dtype, Self.scales_layout, ...],
+        max_padded_M: Int = 0,
     ):
         self.output_tokens = {
             UnsafePointer[Scalar[Self.fp4_dtype], MutUntrackedOrigin](
@@ -1348,6 +1379,7 @@ struct MXFP4TokenFormat[
             ),
             output_scales.layout,
         }
+        self.max_padded_M = max_padded_M
 
     @always_inline
     @staticmethod
@@ -1435,6 +1467,8 @@ struct MXFP4TokenFormat[
         self,
         buf_p: UnsafePointer[mut=False, UInt8, _, address_space=buf_addr_space],
         token_index: Int,
+        expert_slot: Int = 0,
+        expert_start: Int = 0,
     ) -> None:
         comptime assert (
             Self.TensorType.flat_rank >= 2
@@ -1464,19 +1498,77 @@ struct MXFP4TokenFormat[
             Self.ScalesTensorType.flat_rank >= 2
         ), "output_scales expects rank >= 2"
         comptime scale_bytes = size_of[Self.scales_dtype]()
-        for i in range(lane_id(), Self.hid_dim // Self.group_size, WARP_SIZE):
-            self.output_scales.store(
-                (token_index, i),
-                bitcast[Self.scales_dtype, 1](
-                    buf_p.load[
-                        width=scale_bytes,
-                        invariant=True,
-                        alignment=scale_bytes,
-                    ](
-                        Self.scales_offset() + i * scale_bytes,
-                    )
+
+        comptime if Self.fuse_a_scale_preshuffle:
+            # KS224 up/gate proj (AMD CDNA4 only — `scale_4d_slot_byte_off` is
+            # the MI355 MFMA-16x128 `Shuffler` layout): write the E8M0
+            # activation scale straight into the up-proj grouped matmul's
+            # per-expert fixed-stride `scale_4d` slot layout, dropping the
+            # standalone `preshuffle_grouped_scale_4d_gpu` from the decode
+            # critical path. Unlike the KS64 (`fused_silu`) fold, `ep_wait`
+            # already knows `(expert_slot, local_row)` from the tile loop — no
+            # `row_offsets` scan needed, which is why `scale_4d_slot_byte_off`
+            # takes them directly.
+            #
+            # The stores are intentionally scattered single E8M0 bytes:
+            # `scale_4d` is column-major-in-atoms (adjacent lanes land ~16 bytes
+            # apart), so this gives up the coalesced row-major vector store the
+            # non-fused path issues. Still a net win — it deletes a serial
+            # kernel + a full HBM round-trip of the scale buffer. Do NOT
+            # "optimize" it back into a vector store.
+            #
+            # Race-free: a single E8M0 byte store. The `scale_4d` i32 cell packs
+            # 2 tokens (rows `mn`, `mn+16`) x 2 k-positions; rows `r` and `r+16`
+            # may land on different warps/SMs, but each is an independent byte
+            # store (no read-modify-write), and different experts never share a
+            # cell (separated by `expert_slot * max_padded_M * K_SCALES`).
+            comptime assert scale_bytes == 1, (
+                "fused scale_4d store assumes a 1-byte E8M0 scale: the byte"
+                " offset is used directly as a scales_dtype element index"
+            )
+            comptime K_SCALES = Self.hid_dim // Self.group_size
+            var local_row = token_index - expert_start
+            debug_assert(
+                self.max_padded_M > 0,
+                "KS224 fused scale store requires max_padded_M > 0",
+            )
+            debug_assert(
+                local_row < self.max_padded_M,
+                (
+                    "KS224 fused scale store: local_row exceeds the per-expert"
+                    " slot capacity (max_padded_M)"
                 ),
             )
+            for i in range(
+                lane_id(), Self.hid_dim // Self.group_size, WARP_SIZE
+            ):
+                var byte = buf_p.load[
+                    width=scale_bytes,
+                    invariant=True,
+                    alignment=scale_bytes,
+                ](Self.scales_offset() + i * scale_bytes)
+                var dst_off = Shuffler[1].scale_4d_slot_byte_off[
+                    K_SCALES=K_SCALES
+                ](expert_slot, local_row, i, self.max_padded_M)
+                self.output_scales.ptr[dst_off] = bitcast[Self.scales_dtype, 1](
+                    byte
+                )
+        else:
+            for i in range(
+                lane_id(), Self.hid_dim // Self.group_size, WARP_SIZE
+            ):
+                self.output_scales.store(
+                    (token_index, i),
+                    bitcast[Self.scales_dtype, 1](
+                        buf_p.load[
+                            width=scale_bytes,
+                            invariant=True,
+                            alignment=scale_bytes,
+                        ](
+                            Self.scales_offset() + i * scale_bytes,
+                        )
+                    ),
+                )
 
 
 # ===-----------------------------------------------------------------------===#
@@ -2608,8 +2700,12 @@ def dispatch_async_kernel[
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_threads))
 )
 @__llvm_arg_metadata(format_handler, `nvvm.grid_constant`)
+# `token_fmt_type.get_type_name()` carries `fuse_a_scale_preshuffle = <bool>` for
+# MXFP4 (KS224 up-proj fold), so fused and non-fused instantiations get distinct
+# symbol names and never alias in the kernel cache. It also disambiguates the
+# token format itself (BF16/FP8/NVFP4/MXFP4), which the scalar-only name did not.
 @__name(
-    t"ep_wait_{num_threads}_{n_sms}_{n_experts}_{n_ranks}_{max_tokens_per_rank}",
+    t"ep_wait_{num_threads}_{n_sms}_{n_experts}_{n_ranks}_{max_tokens_per_rank}_{token_fmt_type.get_type_name()}"
 )
 def dispatch_wait_kernel[
     num_threads: Int,
@@ -4502,7 +4598,9 @@ def fused_silu_nvfp4_interleaved_kernel[
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_threads))
 )
-@__name(t"fused_silu_mxfp4_{input_dtype}_{fp4_dtype}")
+@__name(
+    t"fused_silu_mxfp4_{input_dtype}_{fp4_dtype}_fuse_a_scale_preshuffle_{fuse_a_scale_preshuffle}"
+)
 def fused_silu_mxfp4_kernel[
     fp4_dtype: DType,
     scales_dtype: DType,
@@ -4513,11 +4611,14 @@ def fused_silu_mxfp4_kernel[
     offsets_layout: TensorLayout,
     num_threads: Int,
     num_sms: Int,
+    *,
+    fuse_a_scale_preshuffle: Bool = False,
 ](
     output_tensor: TileTensor[fp4_dtype, output_layout, MutUntrackedOrigin],
     scales_tensor: TileTensor[scales_dtype, scales_layout, MutUntrackedOrigin],
     input_tensor: TileTensor[input_dtype, input_layout, ImmutUntrackedOrigin],
     row_offsets: TileTensor[DType.uint32, offsets_layout, ImmutUntrackedOrigin],
+    max_padded_M: Int = 0,
 ):
     """
     This kernel performs the SILU operation for all the MLPs in the EP MoE
@@ -4569,6 +4670,14 @@ def fused_silu_mxfp4_kernel[
         var num_tokens = row_offsets[row_offsets.static_shape[0] - 1]
         var num_elem = num_tokens * UInt32(output_dim) * 2
 
+        # Persistent expert-slot tracker for the fused (fuse_a_scale_preshuffle)
+        # scale store. `m` is monotonic non-decreasing in `i` (m = i*src_width
+        # // hidden_size) and each thread walks strictly-increasing `i`, so the
+        # tracker only ever advances forward — amortized O(1) per store instead
+        # of the O(n_experts) rescan-from-0. Unused on the non-fused path (the
+        # comptime branch below is elided).
+        var expert_slot = 0
+
         for i in range(
             gid,
             Int(num_elem // UInt32(src_width)),
@@ -4601,9 +4710,54 @@ def fused_silu_mxfp4_kernel[
 
             # The first thread in each group stores the scale factor.
             if i % NUM_THREADS_PER_SF == 0:
-                scales_tensor.store(
-                    (m, k // MXFP4_SF_VECTOR_SIZE), fp8_scale_factor
-                )
+                var k_scale = k // MXFP4_SF_VECTOR_SIZE
+
+                comptime if fuse_a_scale_preshuffle:
+                    # KS64 down proj (AMD CDNA4 only — `scale_4d_slot_byte_off`
+                    # is the MI355 MFMA-16x128 `Shuffler` layout): write the
+                    # E8M0 scale straight into the grouped matmul's per-expert
+                    # fixed-stride `scale_4d` slot layout, dropping the
+                    # standalone `preshuffle_grouped_scale_4d_gpu` from the
+                    # critical path. Race-free: a single E8M0 byte store; the
+                    # i32 cell packs 2 tokens x 2 k-positions but byte stores
+                    # never collide, whichever thread/warp owns the row.
+                    # Byte-equivalence:
+                    # test/gpu/shmem/test_mxfp4_fused_silu_scale_fusion.mojo.
+                    comptime assert size_of[scales_dtype]() == 1, (
+                        "fused scale_4d store assumes a 1-byte E8M0 scale: the"
+                        " byte offset is used directly as a scales_dtype"
+                        " element index"
+                    )
+                    comptime K_SCALES = hidden_size // MXFP4_SF_VECTOR_SIZE
+
+                    # Advance the tracker to the slot owning row `m`
+                    # (`row_offsets` = per-expert prefix sum, len
+                    # n_local_experts + 1).
+                    comptime n_active = row_offsets.static_shape[0] - 1
+                    while expert_slot < n_active - 1 and Int(
+                        row_offsets[Coord(expert_slot + 1)]
+                    ) <= Int(m):
+                        expert_slot += 1
+
+                    var token_start = Int(row_offsets[Coord(expert_slot)])
+                    var local_row = Int(m) - token_start
+                    debug_assert(
+                        max_padded_M > 0,
+                        "KS64 fused scale store requires max_padded_M > 0",
+                    )
+                    debug_assert(
+                        local_row < max_padded_M,
+                        (
+                            "KS64 fused scale store: local_row exceeds the"
+                            " per-expert slot capacity (max_padded_M)"
+                        ),
+                    )
+                    var dst_off = Shuffler[1].scale_4d_slot_byte_off[
+                        K_SCALES=K_SCALES
+                    ](expert_slot, local_row, k_scale, max_padded_M)
+                    scales_tensor.ptr[dst_off] = fp8_scale_factor
+                else:
+                    scales_tensor.store((m, k_scale), fp8_scale_factor)
 
             var output_vector = bitcast[fp4_dtype, byte_width](
                 cast_float_to_fp4e2m1_amd(output_val, scale_f32)

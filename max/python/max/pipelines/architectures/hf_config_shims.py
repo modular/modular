@@ -65,6 +65,18 @@ except ValueError:
     pass
 
 
+# The gemma4_assistant MTP draft is registered lazily by its arch module,
+# too late for the gemma4 MTP recipe's draft config load; register it eagerly.
+class _Gemma4AssistantHFConfig(PretrainedConfig):
+    model_type = "gemma4_assistant"
+
+
+try:
+    AutoConfig.register("gemma4_assistant", _Gemma4AssistantHFConfig)
+except ValueError:
+    pass
+
+
 # Register custom config since "step3p5" is not in the transformers library.
 class Step3p5PretrainedConfig(PretrainedConfig):
     """Custom PretrainedConfig for Step-3.5 so AutoConfig.from_pretrained() works.
@@ -79,7 +91,20 @@ class Step3p5PretrainedConfig(PretrainedConfig):
     model_type = "step3p5"
 
     def __init__(self, **kwargs: object) -> None:
+        # >=5.4 requires len(layer_types) == num_hidden_layers, trim MTP tail.
+        # >=5.5 reads max_position_embeddings in __post_init__, so defer rope.
+        num_layers = kwargs.get("num_hidden_layers")
+        layer_types = kwargs.get("layer_types")
+        if isinstance(layer_types, list) and isinstance(num_layers, int):
+            kwargs["layer_types"] = layer_types[:num_layers]
+        deferred_rope = {
+            key: kwargs.pop(key)
+            for key in ("rope_scaling", "rope_parameters", "rope_theta")
+            if key in kwargs
+        }
         super().__init__(**kwargs)
+        for key, value in deferred_rope.items():
+            setattr(self, key, value)
         for k, v in kwargs.items():
             if not hasattr(self, k):
                 setattr(self, k, v)
@@ -128,6 +153,20 @@ class _KimiK2Config(PretrainedConfig):
     """
 
     model_type = "kimi_k2"
+
+    def __init__(
+        self, max_position_embeddings: int = 262144, **kwargs: object
+    ) -> None:
+        # transformers >= 5.12 standardizes RoPE params in ``__post_init__``.
+        # For scaling rope types (the draft uses ``yarn``) it eagerly reads
+        # ``self.max_position_embeddings`` as the ``setdefault`` fallback for
+        # ``original_max_position_embeddings``. ``max_position_embeddings`` is
+        # not a declared field on the base config, so on this bare stub it is
+        # never set before ``__post_init__`` runs, raising ``AttributeError``.
+        # Bind it explicitly (from config.json, with a sane default) before
+        # delegating to ``super().__init__``.
+        self.max_position_embeddings = max_position_embeddings
+        super().__init__(**kwargs)
 
 
 AutoConfig.register("kimi_k2", _KimiK2Config, exist_ok=True)

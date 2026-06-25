@@ -43,8 +43,8 @@ from std.hashlib import Hasher
 from std.memory import UnsafeMaybeUninit
 from std.memory.unsafe_pointer import unsafe_cast
 from std.reflection import call_location, reflect
+from std.reflection.traits import AllCopyable
 from std.sys.intrinsics import _type_is_eq
-from std.utils.variant import _all_trivial_copyinit
 from std.utils._nicheable import (
     UnsafeNicheable,
     UnsafeCustomNicheStorage,
@@ -94,7 +94,10 @@ struct EmptyOptionalError[T: AnyType](
 
 struct Optional[T: Movable](
     Boolable,
-    Copyable where conforms_to(T, Copyable),
+    # TODO(MOCO-3640): Remove AllCopyable once the compiler can synthesize copy
+    # constructors through variadic conditional conformances
+    # (AllCopyable[_NoneType, T] when T: Copyable).
+    Copyable where conforms_to(T, Copyable) and AllCopyable[_NoneType, T],
     Defaultable,
     DevicePassable where conforms_to(T, DevicePassable) and conforms_to(
         T, Copyable
@@ -297,20 +300,6 @@ struct Optional[T: Movable](
                 AnyOrigin[mut=False]
             ]()
         }
-
-    # TODO(MOCO-3640): Remove once the compiler can synthesize copy
-    # constructors through variadic conditional conformances
-    # (AllCopyable[_NoneType, T] when T: Copyable).
-    comptime __copy_ctor_is_trivial: Bool = _all_trivial_copyinit[Self.T]()
-
-    @always_inline
-    def __init__(out self, *, copy: Self):
-        """Copy-initialize an `Optional`.
-
-        Args:
-            copy: The `Optional` to copy from.
-        """
-        self._value = Self._type(copy=copy._value)
 
     # ===-------------------------------------------------------------------===#
     # Operator dunders

@@ -60,6 +60,16 @@ class SpecialToken(str, Enum):
     TURN_END = "<turn|>"
 
 
+# Reasoning-block opener Gemma 4 prefills on the generation turn (see
+# apply_chat_template). Single source of truth — the reasoning parser derives
+# its prefix from this too.
+REASONING_OPEN = "<|channel>thought\n"
+
+# Generation-turn header the chat template emits before the reasoning
+# channel; reused to re-open a turn after a tool result (apply_chat_template).
+MODEL_TURN_OPEN = "<|turn>model\n"
+
+
 class Gemma4Tokenizer(TextAndVisionTokenizer):
     """Gemma4-specific tokenizer handling text and vision inputs.
 
@@ -285,6 +295,32 @@ class Gemma4Tokenizer(TextAndVisionTokenizer):
             **chat_template_options,
         )
         assert isinstance(templated_message, str)
+
+        # When thinking is on, force the reasoning channel open on the
+        # generation turn so the model reasons on *every* assistant turn,
+        # including after a tool result. Gemma otherwise only hints via
+        # <|think|> and skips thinking post-tool, which fails OpenRouter's
+        # reasoning+tool-call test and makes OR auto-disable tools.
+        # Match the chat template, which only reads ``enable_thinking``.
+        thinking_enabled = bool(chat_template_options.get("enable_thinking"))
+        if (
+            thinking_enabled
+            and chat_template_options.get("add_generation_prompt")
+            and not templated_message.rstrip("\n").endswith(
+                REASONING_OPEN.rstrip("\n")
+            )
+        ):
+            # After a tool result the template leaves the model mid-turn (no
+            # <|turn>model header), so REASONING_OPEN alone has no turn
+            # boundary and Gemma -- which only reasons at the start of a fresh
+            # model turn -- closes the channel empty. Re-open a turn first,
+            # matching the user-turn structure that does reason.
+            stripped = templated_message.rstrip("\n")
+            if stripped.endswith(SpecialToken.TOOL_RESPONSE_END.value):
+                templated_message = stripped + SpecialToken.TURN_END.value
+                templated_message += "\n" + MODEL_TURN_OPEN
+            templated_message += REASONING_OPEN
+
         return templated_message
 
     async def decode(

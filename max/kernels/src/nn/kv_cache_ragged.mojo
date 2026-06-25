@@ -12,9 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.sys.info import _current_target, simd_width_of
+from std.math import ceildiv
 from std.math.uutils import udivmod
 
 from std.algorithm.functional import elementwise, unswitch
+from std.gpu import global_idx
 from std.gpu.host import DeviceContext, get_gpu_target
 from std.gpu.host.info import is_cpu, is_gpu
 from std.collections import Optional, OptionalReg
@@ -36,6 +38,7 @@ from layout import (
     RowMajorLayout,
     RuntimeLayout,
     TileTensor,
+    TensorLayout,
     UNKNOWN_VALUE,
     coord_to_index_list,
     lt_to_tt,
@@ -1539,7 +1542,7 @@ def _matmul_blockwise_scaled_fp8_common[
         TOTAL_SEQ_LEN * N
     )
     var c_tt = TileTensor(
-        scratch_buffer.unsafe_ptr(),
+        ptr=scratch_buffer.unsafe_ptr(),
         layout=row_major((Int64(TOTAL_SEQ_LEN), Int64(N))),
     )
 
@@ -1642,6 +1645,7 @@ def kv_matmul_ragged_paged[
         dtype,
         params,
         page_size,
+        ...,
     ],
     layer_idx: UInt32,
     ctx: DeviceContext,
@@ -1740,6 +1744,14 @@ def _matmul_kv_cache_ragged[
     )
 
 
+# HACK: `k_cache` and `v_cache` are the key/value halves (kv_idx 0 vs 1) of the
+# same `blocks` buffer, so they share the collection's mutable `blocks_origin`
+# (and `scales_origin`). They are only ever stored to at disjoint offsets, but
+# the exclusivity checker cannot prove that and rejects passing both as
+# separately-writable arguments to this call. Disabling the nested-origin
+# exclusivity check is a stopgap workaround; the proper fix is to give the k/v
+# views provably-disjoint origins instead of sharing the collection's.
+@__unsafe_disable_nested_origin_exclusivity
 @always_inline
 def _matmul_kv_cache_ragged_impl[
     dtype: DType,
@@ -1872,6 +1884,7 @@ def k_matmul_ragged_paged[
         dtype,
         params,
         page_size,
+        ...,
     ],
     layer_idx: UInt32,
     ctx: DeviceContext,
@@ -2267,6 +2280,7 @@ def unfused_qkv_matmul_ragged_paged_gguf_quantized[
         dtype,
         params,
         page_size,
+        ...,
     ],
     layer_idx: UInt32,
     output: LayoutTensor[
@@ -2380,7 +2394,13 @@ def _unfused_qkv_matmul_ragged_paged_gguf_quantized_impl[
     v_cache = kv_collection.get_value_cache(layer_idx_cast)
 
     comptime cache_t = PagedKVCache[
-        DType.float32, kv_collection.kv_params, kv_collection.page_size
+        DType.float32,
+        kv_collection.kv_params,
+        kv_collection.page_size,
+        kv_collection.blocks_origin,
+        kv_collection.cache_lengths_origin,
+        kv_collection.lookup_table_origin,
+        kv_collection.scales_origin,
     ]
     k_cache_reg = rebind[cache_t](k_cache)
     v_cache_reg = rebind[cache_t](v_cache)
@@ -2402,6 +2422,14 @@ def _unfused_qkv_matmul_ragged_paged_gguf_quantized_impl[
     )
 
 
+# HACK: `k_cache` and `v_cache` are the key/value halves (kv_idx 0 vs 1) of the
+# same `blocks` buffer, so they share the collection's mutable `blocks_origin`
+# (and `scales_origin`). They are only ever stored to at disjoint offsets, but
+# the exclusivity checker cannot prove that and rejects passing both as
+# separately-writable arguments to this call. Disabling the nested-origin
+# exclusivity check is a stopgap workaround; the proper fix is to give the k/v
+# views provably-disjoint origins instead of sharing the collection's.
+@__unsafe_disable_nested_origin_exclusivity
 @always_inline
 def _matmul_kv_cache_ragged_gguf_quantized_impl[
     cache_t: KVCacheT,
@@ -3457,6 +3485,84 @@ def generic_flare_mla_prefill_ragged_paged_plan[
             buffer_token_size,
             cuda_ctx,
         )
+
+
+@always_inline
+def kv_cache_row_offsets_ragged_paged[
+    target: StaticString,
+](
+    cache_row_offsets: TileTensor[
+        mut=True, DType.uint32, address_space=AddressSpace.GENERIC, ...
+    ],
+    input_row_offsets: TileTensor[
+        mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
+    ],
+    cache_lengths: TileTensor[
+        mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
+    ],
+    ctx: DeviceContext,
+) raises:
+    """Builds cumulative valid-cache row offsets for a ragged prefill batch."""
+    comptime assert is_gpu[
+        target
+    ](), "Building cache row offsets is only supported on GPU"
+
+    var batch_size = Int(input_row_offsets.dim[0]()) - 1
+    comptime kernel = kv_cache_row_offsets_ragged_paged_kernel[
+        cache_row_offsets.LayoutType,
+        input_row_offsets.LayoutType,
+        cache_lengths.LayoutType,
+    ]
+    ctx.enqueue_function[kernel](
+        cache_row_offsets,
+        input_row_offsets,
+        cache_lengths,
+        grid_dim=max(ceildiv(batch_size, 128), 1),
+        block_dim=128,
+    )
+
+
+def kv_cache_row_offsets_ragged_paged_kernel[
+    CacheRowOffsetsLayoutType: TensorLayout,
+    InputRowOffsetsLayoutType: TensorLayout,
+    CacheLengthsLayoutType: TensorLayout,
+](
+    cache_row_offsets: TileTensor[
+        mut=True,
+        DType.uint32,
+        CacheRowOffsetsLayoutType,
+        MutUntrackedOrigin,
+    ],
+    input_row_offsets: TileTensor[
+        DType.uint32,
+        InputRowOffsetsLayoutType,
+        ImmutUntrackedOrigin,
+    ],
+    cache_lengths: TileTensor[
+        DType.uint32,
+        CacheLengthsLayoutType,
+        ImmutUntrackedOrigin,
+    ],
+):
+    comptime assert cache_row_offsets.flat_rank == 1
+    comptime assert input_row_offsets.flat_rank == 1
+    comptime assert cache_lengths.flat_rank == 1
+
+    var batch_size = Int(input_row_offsets.dim[0]()) - 1
+    var output_idx = global_idx.x
+    if output_idx > batch_size:
+        return
+
+    var running_length = 0
+    var prev_input_row_offset = Int(input_row_offsets[0])
+    for batch_idx in range(output_idx):
+        var row_offset = Int(input_row_offsets[batch_idx + 1])
+        running_length += (
+            Int(cache_lengths[batch_idx]) + row_offset - prev_input_row_offset
+        )
+        prev_input_row_offset = row_offset
+
+    cache_row_offsets[output_idx] = UInt32(running_length)
 
 
 @always_inline

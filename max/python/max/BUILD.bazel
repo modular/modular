@@ -112,12 +112,11 @@ modular_py_library(
         "_interpreter.py",
     ],
     # _interpreter_ops is optional - Mojo kernels may not be available
-    ignore_extra_deps = [
-        "//max/python/max/_interpreter_ops",
+    ignore_unresolved_imports = [
+        "._interpreter_ops.lookup_handler",
     ],
     deps = [
         ":_core",
-        "//max/python/max/_interpreter_ops",
         "//max/python/max/driver",
         "//max/python/max/graph",
     ],
@@ -145,6 +144,7 @@ modular_py_library(
         ":tensor",
         "//max/python/max/_core_mojo",
         "//max/python/max/_distributed_ops",
+        "//max/python/max/_interpreter_ops",
         "//max/python/max/diagnostics",
         "//max/python/max/driver",
         "//max/python/max/dtype",
@@ -155,6 +155,7 @@ modular_py_library(
         "//max/python/max/entrypoints:pipelines",
         "//max/python/max/entrypoints:replay_recording",
         "//max/python/max/experimental/cascade",
+        "//max/python/max/experimental/cascade/http_runtime",
         "//max/python/max/experimental/nn",
         "//max/python/max/experimental/torch",
         "//max/python/max/graph",

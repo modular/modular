@@ -34,6 +34,7 @@ import hf_repo_lock
 import huggingface_hub
 import torch
 import transformers
+import transformers.integrations.peft as peft_integration
 from idefics3 import torch_utils as idefics3_torch_utils
 from internvl import torch_utils as internvl_torch_utils
 from max import driver, pipelines
@@ -65,15 +66,12 @@ from typing_extensions import NotRequired
 # since it is always taken when `peft` is available in the env.
 @contextmanager
 def disable_peft() -> Generator[None, None, None]:
-    original_peft_available = transformers.utils.import_utils._peft_available
-
-    transformers.utils.import_utils._peft_available = False
+    original_is_peft_available = peft_integration.is_peft_available
+    peft_integration.is_peft_available = lambda: False
     try:
         yield
     finally:
-        transformers.utils.import_utils._peft_available = (
-            original_peft_available
-        )
+        peft_integration.is_peft_available = original_is_peft_available
 
 
 ENCODING_TO_TORCH_DTYPE: dict[str, torch.dtype] = {
@@ -450,8 +448,9 @@ class Idefics3PipelineOracle(PipelineOracle):
         processor = transformers.AutoProcessor.from_pretrained(
             self.model_path, revision=revision
         )
-        # Use AutoModelForVision2Seq instead of AutoModel for Idefics3
-        model = transformers.AutoModelForVision2Seq.from_pretrained(
+        # Use AutoModelForImageTextToText instead of AutoModel for Idefics3
+        # (transformers 5.12 removed AutoModelForVision2Seq).
+        model = transformers.AutoModelForImageTextToText.from_pretrained(
             self.model_path,
             revision=revision,
             config=config,
@@ -639,7 +638,7 @@ class Qwen3VLPipelineOracle(PipelineOracle):
             torch_dtype = (
                 ENCODING_TO_TORCH_DTYPE[encoding] if encoding else None
             )
-        model = transformers.AutoModelForVision2Seq.from_pretrained(
+        model = transformers.AutoModelForImageTextToText.from_pretrained(
             self.model_path,
             revision=revision,
             config=config,
@@ -842,13 +841,42 @@ class KimiK2_6PipelineOracle(KimiK2_5PipelineOracle):
     """Pipeline oracle for Kimi-K2.6-NVFP4 (vLLM only).
 
     K2.6 reuses the Kimi-K2.5 MAX architecture — same TEXT+IMAGE modalities,
-    parsers, tokenizer, and NVFP4 / 8x EP-DP pipeline config (see
-    ``architectures/kimik2_5/arch.py``, which lists K2.6 as an example repo).
-    It therefore shares K2.5's vLLM golden setup verbatim: multimodal
-    (``KIMIK2_5_REQUESTS``) + text inputs and the vision ``_vllm_extra_kwargs``
-    (``mm_encoder_tp_mode`` / ``limit_mm_per_prompt`` on the ``vision_chunk``
-    mm-data key).
+    parsers, and tokenizer (see ``architectures/kimik2_5/arch.py``, which lists
+    K2.6 as an example repo). It therefore inherits K2.5's vLLM golden setup
+    verbatim: multimodal (``KIMIK2_5_REQUESTS``) + text inputs and the vision
+    ``_vllm_extra_kwargs`` (``mm_encoder_tp_mode`` / ``limit_mm_per_prompt`` on
+    the ``vision_chunk`` mm-data key).
+
+    The MAX pipeline runs in TP+EP mode (``data_parallel_degree=1``,
+    ``ep_size=8``, ``ep_use_allreduce=True``) to match the served K2.6
+    deployment, rather than the K2.5 base oracle's DP+EP (``dp=8``) layout. This
+    create_max_pipeline override is adapted from PR #86438.
     """
+
+    def create_max_pipeline(
+        self,
+        *,
+        encoding: pipelines.SupportedEncoding,
+        device_specs: list[driver.DeviceSpec],
+    ) -> MaxPipelineAndTokenizer:
+        revision = hf_repo_lock.revision_for_hf_repo(self.model_path)
+        config = pipelines.PipelineConfig.from_flat_kwargs(
+            device_specs=device_specs,
+            quantization_encoding=encoding,
+            model_path=self.model_path,
+            huggingface_model_revision=revision,
+            huggingface_weight_revision=revision,
+            max_length=4096,
+            trust_remote_code=self.trust_remote_code,
+            max_batch_input_tokens=4096,
+            ep_size=8,
+            data_parallel_degree=1,
+            ep_use_allreduce=True,
+        )
+        hf_repo_lock.apply_to_config(config)
+        tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
+        assert isinstance(pipeline, TextGenerationPipelineInterface)
+        return MaxPipelineAndTokenizer(pipeline, tokenizer)
 
 
 class KimiK2_5DeepseekV3PipelineOracle(_KimiK2_5BaseOracle):

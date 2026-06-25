@@ -149,10 +149,14 @@ class DKVConnector:
         block_hashes: list[int],
         parent_seq_hash: int = 0,
     ) -> None:
+        # ``parent_seq_hash`` is accepted for ``KVConnector`` protocol
+        # compatibility but no longer forwarded: the dKV store now dedups by
+        # composite key ``(stream_id, group, seq_hash)`` and does not chain
+        # blocks under a parent, so the Rust client builds the keys (and the
+        # NUMA striping plan) from the hashes alone.
         self._client.offload(
             block_ids,
             [h & _UINT64_MASK for h in block_hashes],
-            parent_seq_hash & _UINT64_MASK,
         )
 
     def wait_for_loads(self) -> None:
@@ -160,11 +164,6 @@ class DKVConnector:
 
     def wait_for_offloads(self) -> None:
         self._client.wait_for_offloads()
-
-    def sync(self) -> None:
-        # dKV uses wait_for_loads/wait_for_offloads as its barriers; the
-        # per-step sync() is a no-op for this connector.
-        pass
 
     def shutdown(self) -> None:
         # No-op: the Rust client releases its NIXL agent, heartbeat poller, and

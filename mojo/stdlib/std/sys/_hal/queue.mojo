@@ -155,6 +155,21 @@ struct Queue[device_spec: DeviceSpec](ImplicitlyDeletable, Movable):
             self._handle, dst._handle, src._handle, size
         )
 
+    def set_memory(
+        self,
+        dst: Buffer,
+        size: UInt64,
+        value: UInt64,
+        value_size: UInt64,
+    ) raises HALError:
+        """
+        Fill `dst` with a repeated `value_size`-byte `value`. Enqueues on this
+        queue.
+        """
+        self._raw[].set_memory(
+            self._handle, dst._handle, size, value, value_size
+        )
+
     def record_event[
         flags: EventFlags = EVENT_FLAG_NONE,
     ](self, out event: Event[flags],) raises HALError:

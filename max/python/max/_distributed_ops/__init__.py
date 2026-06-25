@@ -24,9 +24,17 @@ from max.driver import Buffer, Device, accelerator_count
 # The mojo source comptime-instantiates a GPU kernel, which fails to JIT on
 # hosts without a GPU toolchain.
 if sys.platform == "linux" and accelerator_count() > 0:
-    from .distributed_ops import (  # type: ignore[import-not-found]
-        broadcast_kernel as _broadcast_kernel,
-    )
+    try:
+        from .distributed_ops import (  # type: ignore[import-not-found]
+            broadcast_kernel as _broadcast_kernel,
+        )
+    except ImportError:
+        # The broadcast kernel only compiles for some GPU architectures; on an
+        # accelerator whose architecture it does not support the JIT raises at
+        # import. Degrade to the no-kernel path so merely importing this module
+        # (e.g. transitively via the pipelines entrypoint) does not fail.
+        # distributed_broadcast still raises a clear error if actually called.
+        _broadcast_kernel = None
 else:
     _broadcast_kernel = None
 
@@ -114,8 +122,10 @@ def distributed_broadcast(
 
     if _broadcast_kernel is None:
         raise RuntimeError(
-            "distributed_broadcast is unavailable: the mojo extension could "
-            "not be loaded. This typically means the host has no GPU toolchain."
+            "distributed_broadcast is unavailable: the broadcast kernel could "
+            "not be loaded. This means the host has no GPU toolchain, or the "
+            "broadcast kernel does not support this accelerator's GPU "
+            "architecture."
         )
 
     num_bytes = input_buffer.num_elements * dtype.size_in_bytes

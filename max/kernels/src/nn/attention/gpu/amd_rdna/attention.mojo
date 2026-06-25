@@ -342,6 +342,8 @@ struct AttentionRDNA[
     ]
 
     var q_buffer: Self.QRegisterBufferType
+
+    @__allow_legacy_any_origin_fields
     var output_tile: TileTensor[
         Self.output_type, Self.OutputTileLayout, MutAnyOrigin
     ]

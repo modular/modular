@@ -85,10 +85,15 @@ Knobs: `CS_JOBS` (local parallelism), `CS_GPU` (pin to one physical GPU),
   - `redzone` mode — `MODULAR_DEBUG_DEVICE_ALLOCATOR=out-of-bounds` validates
     guard regions at free time. Catches small global OOB **writes** *inside* the
     pool, so it's the fast everyday OOB sweep. Misses OOB reads.
-  - NaN-poison — `MODULAR_DEBUG_DEVICE_ALLOCATOR=poison` fills fresh allocations
-    with `0xFF` (NaN), so an uninitialized read propagates NaN into the output
-    and is caught by the *existing* differential tests — closing the
-    uninit-**use** gap without `initcheck`'s copy-back noise.
+  - NaN-poison — `MODULAR_DEBUG_DEVICE_ALLOCATOR=poison-all` fills *every*
+    fresh allocation with `0xFF` (NaN), so an uninitialized read propagates NaN
+    into the output and is caught by the *existing* differential tests — closing
+    the uninit-**use** gap without `initcheck`'s copy-back noise. This is the
+    allocator-layer, type-agnostic backstop; for graph tensors specifically the
+    graph driver also offers `uninitialized-poison`, a dtype-aware, non-NaN
+    sentinel paired with an instrumented Mojo load check (precise source
+    location, but tensors only). The two compose — see
+    `MLRT/docs/Driver/MemoryManagerOverview.md`.
 - **SM100 / Blackwell coverage gap.** Compute Sanitizer can't instrument cuBLAS
   `nvjet_sm100_*` kernels ("didn't track the launch"), so GEMM tests that call a
   vendor reference emit storms of Internal Sanitizer Errors. The findings grep

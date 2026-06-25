@@ -105,6 +105,12 @@ class ImageContentPart(_MessageContentPart):
         default="image", description="Content type identifier"
     )
 
+    # Optional vendor sizing hint; ``None`` means unset and models may ignore it.
+    max_long_side_pixel: int | None = Field(
+        default=None,
+        description="Max long-side length in pixels for image preprocessing",
+    )
+
 
 class VideoContentPart(_MessageContentPart):
     """A video content part of a message."""
@@ -113,10 +119,28 @@ class VideoContentPart(_MessageContentPart):
         default="video", description="Content type identifier"
     )
 
+    # Optional vendor sampling/sizing hints; ``None`` means unset and models
+    # may ignore them.
+    fps: float | None = Field(
+        default=None,
+        description="Frames-per-second to sample the video at",
+    )
+    max_frames: int | None = Field(
+        default=None,
+        description="Maximum number of frames to sample from the video",
+    )
+    max_long_side_pixel: int | None = Field(
+        default=None,
+        description="Max long-side length in pixels for video preprocessing",
+    )
+
 
 MessageContent = TextContentPart | ImageContentPart | VideoContentPart
 
-_MessageRole = Literal["system", "user", "assistant", "tool", "function"]
+# ``root`` is a vendor role; supporting chat templates order it above ``system``.
+_MessageRole = Literal[
+    "system", "user", "assistant", "tool", "function", "root"
+]
 
 
 class TextGenerationRequestMessage(BaseModel):
@@ -389,6 +413,17 @@ class TextGenerationRequest:
     When present, the serving layer converts this into
     ``TextContext.external_block_metadata`` so the DKVConnector can
     fetch cached blocks before the forward pass.
+    """
+    cache_salt: str | None = None
+    """Optional per-request salt that isolates this prompt's prefix-cache
+
+    entries from other requests sharing the same tokens.
+    Combined with the cluster-level ``kv_cache_hash_seed`` via XOR inside
+    ``BlockManager`` to derive the root parent hash. Has effect only when
+    ``kv_cache_hash_algo`` is ``sha256`` or ``sha256_64``; under
+    ``ahash64`` the salt is dropped with a one-time warning.
+
+    Capped at 512 chars at the OpenAI schema layer.
     """
 
     def __str__(self) -> str:

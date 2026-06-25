@@ -764,6 +764,18 @@ def test_list_iter_owned_destroys_elements_if_partially_consumed() raises:
     assert_equal(dels, 2)
 
 
+def test_list_iter_owned_move_only() raises:
+    # Consuming iteration only requires `Movable & ImplicitlyDeletable`, not
+    # `Copyable`: each element is moved out of the list, not copied.
+    var list = [MoveOnly[Int](0), MoveOnly[Int](1), MoveOnly[Int](2)]
+
+    var total = 0
+    for elem in list^:
+        total += elem.data
+
+    assert_equal(total, 3)
+
+
 def test_list_iter_owned_bounds() raises:
     var iter = iter([1, 2, 3])
     for i in range(3, 0, -1):
@@ -1012,6 +1024,16 @@ def test_list_conditional_conformances() raises:
 
     assert_true(conforms_to(List[Int], Writable))
     assert_false(conforms_to(List[NonEquatable], Writable))
+
+    # Owned iteration requires `Movable & ImplicitlyDeletable` elements, but
+    # not `Copyable`: a consuming iterator moves elements out rather than
+    # copying them.
+    assert_true(conforms_to(List[Int], IterableOwned))
+    # `MoveOnly[Int]` is movable and implicitly deletable but not copyable.
+    assert_true(conforms_to(List[MoveOnly[Int]], IterableOwned))
+    # `ExplicitDestroy` is not implicitly deletable, so the consuming iterator
+    # cannot destroy any unconsumed elements.
+    assert_false(conforms_to(List[ExplicitDestroy], IterableOwned))
 
 
 def test_list_init_span() raises:

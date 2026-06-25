@@ -1784,7 +1784,7 @@ def print_kv_cache_paged_generic_kernel_api[
     page_size: Int,
 ](
     valid_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
-    kv_collection: PagedKVCacheCollection[dtype, kv_params, page_size],
+    kv_collection: PagedKVCacheCollection[dtype, kv_params, page_size, ...],
     layer_idx: UInt32,
     is_print_compact: InputTensor[dtype=DType.bool, rank=1, ...],
     context: DeviceContext,
@@ -2101,7 +2101,9 @@ struct BundledAllReduceSum:
             in_tensors[i] = rebind[InputTensorType](
                 inputs[i].to_tile_tensor[DType.int64]().as_immut()
             )
-            rank_sigs[i] = signal_buffers[i]._ptr.bitcast[Signal]()
+            rank_sigs[i] = (
+                signal_buffers[i]._ptr.bitcast[Signal]().as_unsafe_any_origin()
+            )
 
         @always_inline
         @parameter
@@ -2220,7 +2222,9 @@ struct BundledAllReduceAddRMSNormQuantFP8:
             in_tensors[i] = rebind[InputTensorType](
                 inputs[i].to_tile_tensor[DType.int64]().as_immut()
             )
-            rank_sigs[i] = signal_buffers[i]._ptr.bitcast[Signal]()
+            rank_sigs[i] = (
+                signal_buffers[i]._ptr.bitcast[Signal]().as_unsafe_any_origin()
+            )
 
         allreduce_residual_rmsnorm(
             in_tensors,
@@ -2613,10 +2617,6 @@ struct GatedDeltaRecurrenceFwd:
         input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
         ctx: DeviceContext,
     ) capturing raises:
-        # Number of threads per block for the recurrence kernel.
-        # One thread handles (batch_item, value_head, vd_element).
-        comptime RECURRENCE_BLOCK_SIZE: Int = 128
-
         var total_seq_len = qkv_conv_output.dim_size(0)
         var conv_dim = qkv_conv_output.dim_size(1)
         var num_value_heads = decay_per_token.dim_size(1)
@@ -2726,14 +2726,13 @@ struct GatedDeltaRecurrenceFwd:
             recurrence_output_strides[1]
         )
 
-        var total_threads = batch_size * num_value_heads * value_head_dim
-
         comptime assert is_gpu[
             target
         ](), "gated_delta_recurrence_fwd is only supported on GPU."
 
         var gpu_ctx = ctx
-        var num_blocks = ceildiv(total_threads, RECURRENCE_BLOCK_SIZE)
+        # One CTA per (batch_item, value_head); block has value_head_dim threads.
+        var num_blocks = batch_size * num_value_heads
 
         # NOTE: Only (key_head_dim=128, value_head_dim=128) is currently
         # compiled (Qwen3.5 default).  To support a new model with different
@@ -2747,7 +2746,6 @@ struct GatedDeltaRecurrenceFwd:
                     state_dtype,
                     kKD,
                     kVD,
-                    RECURRENCE_BLOCK_SIZE,
                     recurrence_output_tt.LayoutType,
                     qkv_conv_output_tt.LayoutType,
                     decay_per_token_tt.LayoutType,
@@ -2757,14 +2755,10 @@ struct GatedDeltaRecurrenceFwd:
                     input_row_offsets_tt.LayoutType,
                 ]
             ](
-                total_threads,
                 batch_size,
-                total_seq_len,
                 num_value_heads,
                 num_key_heads,
                 key_dim,
-                value_dim,
-                conv_dim,
                 recurrence_output_tt,
                 recurrent_state_tt,
                 slot_idx_tt,
@@ -2783,7 +2777,7 @@ struct GatedDeltaRecurrenceFwd:
                 recurrence_output_seqlen_stride,
                 recurrence_output_valuedim_stride,
                 grid_dim=(num_blocks,),
-                block_dim=(RECURRENCE_BLOCK_SIZE,),
+                block_dim=(kVD,),
             )
         else:
             raise Error(

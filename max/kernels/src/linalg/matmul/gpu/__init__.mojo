@@ -469,7 +469,7 @@ def _matmul_gpu[
     )
 
     comptime matmul_supported_format_amd = (
-        (a_type == DType.bfloat16 or a_type in amd_float8_dtypes)
+        a_type in amd_float8_dtypes.concat((DType.float32, DType.bfloat16))
         and b_type == a_type
         and c_type in amd_float8_dtypes.concat((DType.float32, DType.bfloat16))
         and not has_amd_rdna_gpu_accelerator()
@@ -741,6 +741,9 @@ def _matmul_gpu[
 
                 comptime if not transpose_b:
                     return kernel_helper[128, 128, num_pipeline_stages=2]()
+
+                comptime if a_type == DType.float32:
+                    return kernel_helper[128, 128]()
 
                 # FP8 / bf16 / fp16 transpose_b on MI355X: route to the
                 # 4-wave kernel family in its bench-validated regime.

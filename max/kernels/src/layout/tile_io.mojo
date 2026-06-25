@@ -310,7 +310,7 @@ struct SharedToGenericTileCopier[
             comptime swizzle_fn = Self.swizzle.value()
 
             var src_frag_offset = Scalar[src.linear_idx_type](
-                src_fragments._distance(src.ptr)
+                src_fragments._distance(src)
             )
             comptime num_stores_per_thread = (
                 src_fragments.LayoutType.static_product // simd_size
@@ -330,12 +330,10 @@ struct SharedToGenericTileCopier[
                     src_frag_offset + src_idx_base
                 ) + Scalar[src.linear_idx_type](src_idx_diff)
 
-                var src_vec = src.ptr.load[
+                var src_vec = src.raw_load[
                     width=simd_size, alignment=src_align
                 ](swizzled_idx).cast[dst.dtype]()
-                dst_fragments.ptr.mut_cast[True]().store[alignment=dst_align](
-                    dst_idx, src_vec
-                )
+                dst_fragments.raw_store[alignment=dst_align](dst_idx, src_vec)
 
 
 @fieldwise_init
@@ -602,7 +600,7 @@ struct LocalToSharedTileCopier[
             comptime swizzle_fn = Self.swizzle.value()
 
             var dst_frag_offset = Scalar[dst.linear_idx_type](
-                dst_fragments._distance(dst.ptr)
+                dst_fragments._distance(dst)
             )
             comptime num_vecs = src.LayoutType.static_product // simd_size
 
@@ -619,12 +617,10 @@ struct LocalToSharedTileCopier[
                 var swizzled_idx = swizzle_fn(
                     dst_frag_offset + dst_idx_base
                 ) + Scalar[dst.linear_idx_type](dst_idx_diff)
-                var src_vec = src.ptr.load[
+                var src_vec = src.raw_load[
                     width=simd_size, alignment=src_align
                 ](src_idx).cast[dst.dtype]()
-                dst.ptr.mut_cast[True]().store[alignment=dst_align](
-                    swizzled_idx, src_vec
-                )
+                dst.raw_store[alignment=dst_align](swizzled_idx, src_vec)
 
 
 @fieldwise_init
@@ -826,7 +822,7 @@ struct GenericToSharedAsyncTileCopier[
         # equals the column count. The bound is computed in `Int` to keep
         # the comparison free of scalar-dtype unification fights.
         comptime row_stride_static = src.LayoutType.static_stride[0]
-        var src_frag_offset = Int(src_fragments._distance(src.ptr))
+        var src_frag_offset = Int(src_fragments._distance(src))
         # The valid-row count drives the masked zero-fill bound. By default it
         # is `src.dim[0]()` (legacy behavior). A caller may override it with an
         # explicit runtime value when `src`'s own dim0 is static (e.g. a
@@ -847,7 +843,7 @@ struct GenericToSharedAsyncTileCopier[
         # the per-fragment offset directly.
         comptime if Self.swizzle:
             comptime swizzle_fn = Self.swizzle.value()
-            var dst_frag_offset = dst_fragments._distance(dst.ptr)
+            var dst_frag_offset = dst_fragments._distance(dst)
             var dst_frag_offset_typed = Scalar[dst.linear_idx_type](
                 dst_frag_offset
             )

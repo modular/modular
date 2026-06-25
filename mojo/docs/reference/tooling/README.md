@@ -49,11 +49,31 @@ python3 bin/build.py all       # every card present + combined PDFs
 with no arguments to list the cards currently present. Output filenames follow
 `mojo-cheat-sheet-<topic>-<light|dark>.<ext>`.
 
+## Card shape
+
+Each card chooses a layout preset with an optional comment at the top of its
+body file, defaulting to portrait:
+
+```text
+<!-- layout: portrait -->   2 columns, ~900px wide, portrait PDF (the default)
+<!-- layout: landscape -->  3 columns, ~1100px wide, landscape PDF
+```
+
+Override a single knob when a card needs more room:
+
+```text
+<!-- columns: 4 -->
+<!-- width: 1300 -->
+```
+
+Content-light cards read best portrait; dense cards (many panels, wide tables)
+read best landscape. A card grows taller on its own as panels are added.
+
 ## Update a card
 
 1. Edit `src/body-<topic>.html`. Never edit files in `dist/`.
-2. Keep each card's title and subtitle in the two comment lines at the top of
-   its body file.
+2. Keep each card's title, subtitle, and optional `layout` in the comment lines
+   at the top of its body file (see Card shape).
 3. Verify every behavioral claim against the Mojo reference docs
    (`mojo/docs/reference/`) or a runnable compiler check.
 4. Rebuild that card and open the PNG to review it.

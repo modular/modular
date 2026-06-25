@@ -99,7 +99,7 @@ response = client.chat.completions.create(
             ]
         }
     ],
-    max_tokens=300,
+    max_completion_tokens=300,
     response_format={
         "type": "json_schema",
         "json_schema": {
@@ -158,7 +158,7 @@ print(response.choices[0].message.content)
         ]
       }
     ],
-    "max_tokens": 300,
+    "max_completion_tokens": 300,
     "response_format": {
       "type": "json_schema",
       "json_schema": {
@@ -188,6 +188,15 @@ print(response.choices[0].message.content)
 
 </TabItem>
 </Tabs>
+
+:::note Schema root type
+
+The root of a `json_schema` must resolve to an object. MAX infers `type: object`
+when the root omits a `type`, and accepts a `type` union that includes `object`
+(for example, `["object", "array", "string"]`). A root pinned to a single
+non-object type, such as `{"type": "string"}`, is rejected.
+
+:::
 
 Instead of a typical text response from the model, the `response_format` schema
 defined above results in a JSON-formatted structured output such as the
@@ -265,7 +274,7 @@ completion = client.chat.completions.parse(
             ]
         }
     ],
-    max_tokens=300,
+    max_completion_tokens=300,
     response_format=ImageAnalysis,
 )
 

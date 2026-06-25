@@ -39,6 +39,7 @@ from layout import (
 from nn._ragged_utils import get_batch_from_row_offsets
 from nn.kv_cache import (
     copy_kv_pages_d2h,
+    fused_qk_rms_norm_ragged_paged,
     generic_get_paged_cache,
     generic_get_paged_cache_with_scales,
     rms_norm_kv_cache_ragged_paged,
@@ -48,12 +49,13 @@ from nn.kv_cache_ragged import (
     generic_kv_cache_radd_dispatch,
     k_matmul_ragged_paged,
     k_matmul_ragged_paged_scale,
+    kv_cache_row_offsets_ragged_paged,
     kv_cache_2m_iadd_dispatch,
     kv_cache_store_ragged,
     kv_cache_store_padded,
     kv_matmul_ragged_paged,
 )
-from extensibility import InputTensor
+from extensibility import InputTensor, OutputTensor
 from extensibility import (
     _FusedInputTensor as FusedInputTensor,
 )
@@ -192,12 +194,15 @@ struct Struct_kv_cache_store_k_scales_paged:
             DType.int64
         ]()
 
-        @parameter
-        @__copy_capture(k_cache, input_row_offsets_tt, input_row_offsets)
         def write_scale_to_cache[
             width: Int,
             alignment: Int = 1,
-        ](idx: Coord) capturing:
+        ](idx: Coord) {
+            var k_cache,
+            var input_row_offsets_tt,
+            var input_row_offsets,
+            var input_k_scales,
+        }:
             var loaded_val = input_k_scales._lambda_load[
                 width=width, element_alignment=alignment
             ](
@@ -232,8 +237,8 @@ struct Struct_kv_cache_store_k_scales_paged:
             scale_dtype, target=compile_target
         ]()
 
-        elementwise[write_scale_to_cache, simd_width, target=target](
-            input_k_scales.shape_coord(), context
+        elementwise[simd_width=simd_width, target=target](
+            write_scale_to_cache, input_k_scales.shape_coord(), context
         )
 
 
@@ -328,6 +333,54 @@ struct Struct_rms_norm_kv_cache_ragged_paged:
             layer_idx,
             total_seq_len,
             input_row_offsets.to_tile_tensor[DType.int64](),
+            context,
+        )
+
+
+@compiler.register("mo.fused_qk_rms_norm.ragged.paged")
+struct Struct_fused_qk_rms_norm_ragged_paged:
+    @always_inline
+    @staticmethod
+    def execute[
+        dtype: DType,
+        multiply_before_cast: Bool,
+        cache_dtype: DType,
+        //,
+        target: StaticString,
+    ](
+        q_output: OutputTensor[dtype=dtype, rank=3, ...],
+        q_proj: InputTensor[dtype=dtype, rank=3, ...],
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_blocks: MutableInputTensor[dtype=cache_dtype, rank=6, ...],
+        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
+        q_gamma: InputTensor[dtype=dtype, rank=1, ...],
+        k_gamma: InputTensor[dtype=dtype, rank=1, ...],
+        epsilon: Scalar[dtype],
+        layer_idx: UInt32,
+        weight_offset: Scalar[dtype=dtype],
+        context: DeviceContext,
+    ) raises:
+        var kv_collection = generic_get_paged_cache(
+            kv_blocks,
+            cache_lengths,
+            kv_lookup_table,
+            max_lengths,
+        )
+        fused_qk_rms_norm_ragged_paged[
+            target=target,
+            multiply_before_cast=multiply_before_cast,
+        ](
+            q_proj.to_tile_tensor[DType.int64](),
+            kv_collection,
+            q_gamma.to_tile_tensor[DType.int64](),
+            k_gamma.to_tile_tensor[DType.int64](),
+            epsilon,
+            weight_offset,
+            layer_idx,
+            input_row_offsets.to_tile_tensor[DType.int64](),
+            q_output.to_tile_tensor[DType.int64](),
             context,
         )
 
@@ -527,6 +580,26 @@ struct Struct_k_matmul_ragged_paged_scale:
             kv_collection,
             layer_idx,
             ctx,
+        )
+
+
+@compiler.register("mo.kv_cache.row_offsets.ragged.paged")
+struct Struct_kv_cache_row_offsets_ragged_paged:
+    @always_inline
+    @staticmethod
+    def execute[
+        target: StaticString,
+    ](
+        cache_row_offsets: OutputTensor[dtype=DType.uint32, rank=1, ...],
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        context: DeviceContext,
+    ) raises:
+        kv_cache_row_offsets_ragged_paged[target=target](
+            cache_row_offsets.to_tile_tensor[DType.int64](),
+            input_row_offsets.to_tile_tensor[DType.int64](),
+            cache_lengths.to_tile_tensor[DType.int64](),
+            context,
         )
 
 

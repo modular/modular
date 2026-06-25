@@ -99,6 +99,10 @@ from .apple.naive_fa_decode import (
     NAIVE_FA_DECODE_APPLE_MAX_HEAD_DIM,
     naive_fa_decode_apple,
 )
+from .apple.fa_prefill import (
+    FA_PREFILL_APPLE_MAX_HEAD_DIM,
+    fa_prefill_apple,
+)
 from .amd_structured.attention import Attention
 from .amd_structured.mha_prefill_v2 import (
     MhaConfigV2,
@@ -538,7 +542,11 @@ def q_num_matrix_view_rows[
 
 
 def _apple_naive_fa_decode_enabled() -> Bool:
-    return getenv("MODULAR_ENABLE_APPLE_NAIVE_FA_DECODE", "0") == "1"
+    return getenv("MODULAR_ENABLE_APPLE_NAIVE_FA_DECODE", "1") != "0"
+
+
+def _apple_fa_prefill_enabled() -> Bool:
+    return getenv("MODULAR_ENABLE_APPLE_FA_PREFILL", "1") != "0"
 
 
 @always_inline
@@ -1564,9 +1572,13 @@ def flash_attention_dispatch[
     else:
         # Assumes BSHD.
         comptime if has_apple_gpu_accelerator():
-            # Apple decode-only opt-in. The warp producer splits the head dim
-            # across lanes, hence the `% WARP_SIZE` gate; anything else (prefill,
-            # flag-off, oversized/odd head_dim) falls to mha_gpu_naive.
+            # Apple attention. Decode (1 query row) -> `naive_fa_decode_apple`
+            # (head dim split across lanes, % WARP_SIZE gate). Prefill ->
+            # MMA-based `fa_prefill_apple` when depth % 16 == 0 and KV is
+            # contiguous or 16-aligned-paged; otherwise `mha_gpu_naive`. The KV
+            # gate is COMPTIME because the prefill resolves a page per 16-row
+            # sub-tile and comptime-asserts page_size % 16 == 0 (an odd page
+            # could bisect a sub-tile) -- KB apple-paged-kv-prefill-per-sub-tile.
             if (
                 is_token_generation
                 and _apple_naive_fa_decode_enabled()
@@ -1596,28 +1608,87 @@ def flash_attention_dispatch[
                     sink_weights,
                 )
             else:
-                mha_gpu_naive[
-                    ragged=ragged,
-                    _use_valid_length=_use_valid_length,
-                    _is_cache_length_accurate=_is_cache_length_accurate,
-                    sink=sink,
-                ](
-                    q,
-                    k,
-                    v,
-                    mask_functor,
-                    output,
-                    valid_length.value(),
-                    scale,
-                    batch_size,
-                    max_prompt_len,
-                    max_cache_valid_length,
-                    num_heads,
-                    depth,
-                    group,
-                    ctx,
-                    sink_weights,
+                comptime apple_prefill_kv_ok = (
+                    k_t.page_size == 0 or k_t.page_size % 16 == 0
                 )
+                comptime apple_prefill_depth_ok = (
+                    depth <= FA_PREFILL_APPLE_MAX_HEAD_DIM and depth % 16 == 0
+                )
+                comptime if apple_prefill_kv_ok and apple_prefill_depth_ok:
+                    # Wide-threadgroup no-SMEM prefill (num_simdgroups=16): 16
+                    # simdgroups / 256 query rows share a threadgroup and read
+                    # K/V from DRAM (no staging, no barriers). It beat both the
+                    # block_dim=32 base and the SMEM-staged variant at every
+                    # shape measured (KB kernels/apple-m5-fa-prefill).
+                    if not is_token_generation and _apple_fa_prefill_enabled():
+                        fa_prefill_apple[
+                            ragged=ragged,
+                            sink=sink,
+                            _use_valid_length=_use_valid_length,
+                            _is_cache_length_accurate=_is_cache_length_accurate,
+                        ](
+                            q,
+                            k,
+                            v,
+                            mask_functor,
+                            output,
+                            valid_length.value(),
+                            scale,
+                            batch_size,
+                            max_prompt_len,
+                            max_cache_valid_length,
+                            num_heads,
+                            depth,
+                            group,
+                            ctx,
+                            sink_weights,
+                        )
+                    else:
+                        mha_gpu_naive[
+                            ragged=ragged,
+                            _use_valid_length=_use_valid_length,
+                            _is_cache_length_accurate=_is_cache_length_accurate,
+                            sink=sink,
+                        ](
+                            q,
+                            k,
+                            v,
+                            mask_functor,
+                            output,
+                            valid_length.value(),
+                            scale,
+                            batch_size,
+                            max_prompt_len,
+                            max_cache_valid_length,
+                            num_heads,
+                            depth,
+                            group,
+                            ctx,
+                            sink_weights,
+                        )
+                else:
+                    mha_gpu_naive[
+                        ragged=ragged,
+                        _use_valid_length=_use_valid_length,
+                        _is_cache_length_accurate=_is_cache_length_accurate,
+                        sink=sink,
+                    ](
+                        q,
+                        k,
+                        v,
+                        mask_functor,
+                        output,
+                        valid_length.value(),
+                        scale,
+                        batch_size,
+                        max_prompt_len,
+                        max_cache_valid_length,
+                        num_heads,
+                        depth,
+                        group,
+                        ctx,
+                        sink_weights,
+                    )
         else:
             mha_gpu_naive[
                 ragged=ragged,
@@ -1686,6 +1757,16 @@ def flash_attention[
     var batch_size = q.dim[0]()
     var seq_len = q.dim[1]()
     var num_keys = k.dim[1]()
+
+    # Zero-sized attention (e.g. VAE mid-block attention on a
+    # ``(B, C, 0, 0)`` placeholder image flattens to ``seq_len=0``):
+    # nothing to compute.  The output buffer is pre-allocated zero
+    # element by the caller; softmax over an empty sequence has no
+    # defined value and the downstream readers also have zero seq.
+    # Skipping the dispatch avoids zero-grid kernel launches and
+    # undefined behavior in TMA descriptors with empty extents.
+    if batch_size == 0 or seq_len == 0 or num_keys == 0:
+        return
 
     # Whether head and depth are static. With BSHD, B and S are dynamic.
     # H and D are always known.

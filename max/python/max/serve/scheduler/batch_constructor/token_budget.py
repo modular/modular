@@ -285,7 +285,6 @@ class ActiveTokenBudget(TokenBudget):
 
         # Already at or beyond capacity - no more contexts can be accepted.
         if tokens_remaining <= 0:
-            print(f"no tokens remaining in budget: {tokens_remaining}.")
             return BudgetStatus.BUDGET_EXHAUSTED
 
         # Fits without any modification.

@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Dummy text-generation components for local cascade examples and tests."""
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterable, AsyncIterator
 from dataclasses import dataclass
 
 import numpy as np
@@ -23,6 +23,7 @@ from max.experimental.cascade import (
     GenerateRequest,
     TextGenInterface,
     Worker,
+    pipeline_method,
     worker_method,
 )
 
@@ -51,7 +52,7 @@ class AsciiTokenizer(Worker):
 
     @worker_method()
     async def decode_streaming(
-        self, token_iter: AsyncIterator[int]
+        self, token_iter: AsyncIterable[int]
     ) -> AsyncIterator[str]:
         """Convert a token stream into a stream of single-character strings."""
         async for token in token_iter:
@@ -81,15 +82,17 @@ class DummyTextGenPipeline(CascadePipeline, TextGenInterface):
     tokenizer: AsciiTokenizer
     transformer: Transformer
 
-    def generate_text(
+    @pipeline_method
+    async def generate_text(
         self,
         req: GenerateRequest,
         prompt: str | ChatMessages,
     ) -> AsyncIterator[str]:
         """Run text generation from text or OpenAI-style chat messages."""
-        tokens = self.tokenizer.encode(prompt)
-        gen_tokens = self.transformer.decode(req, tokens)
-        return self.tokenizer.decode_streaming(gen_tokens)
+        tokens = await self.tokenizer.encode(prompt)
+        gen_tokens = await self.transformer.decode(req, tokens)
+        async for token in await self.tokenizer.decode_streaming(gen_tokens):
+            yield token
 
 
 async def build_dummy_textgen_pipeline() -> DummyTextGenPipeline:

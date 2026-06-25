@@ -63,7 +63,7 @@ def _get_position_embeddings(
     rope_params = getattr(text_config, "rope_parameters", None)
     if isinstance(rope_params, dict) and "sliding_attention" in rope_params:
         # v5: single embedding handles both layer types natively
-        rotary_emb = Gemma3RotaryEmbedding(config=text_config, device="cuda")
+        rotary_emb = Gemma3RotaryEmbedding(config=text_config).to("cuda")
         layer_type = (
             "full_attention" if use_global_rope else "sliding_attention"
         )
@@ -71,14 +71,12 @@ def _get_position_embeddings(
     else:
         # v4: need separate embedding with hacked config for local rope
         if use_global_rope:
-            rotary_emb = Gemma3RotaryEmbedding(
-                config=text_config, device="cuda"
-            )
+            rotary_emb = Gemma3RotaryEmbedding(config=text_config).to("cuda")
         else:
             config = copy.deepcopy(text_config)
             config.rope_theta = config.rope_local_base_freq
             config.rope_scaling = {"rope_type": "default"}
-            rotary_emb = Gemma3RotaryEmbedding(config=config, device="cuda")
+            rotary_emb = Gemma3RotaryEmbedding(config=config).to("cuda")
         cos, sin = rotary_emb(input_tensor, position_ids)
 
     return cos.to(torch.bfloat16).to("cuda"), sin.to(torch.bfloat16).to("cuda")

@@ -51,7 +51,7 @@ _ALLOWED_DUPLICATE_PACKAGES = (
         "nvidia-nvshmem-cu12",  # Differs between torch 2.9.1 and 2.10.0 for cuda
         "outlines-core",  # Conflicts between vllm and sglang
         "tilelang",  # MAX itself doesn't use tilelang, but the default environment group does; vllm 0.20.0 hard-pins 0.1.9
-        "transformers",  # MAX pins <5.3.0; vllm/sglang require >=5.5.0
+        "transformers",  # MAX pins 5.12.x; sglang pins 5.3.0, vllm aligns on 5.12.x
         "vllm",
         "sglang",
     }

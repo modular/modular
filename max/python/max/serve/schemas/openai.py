@@ -83,7 +83,14 @@ from openai.types.embedding_create_params import (
 )
 
 # isort: on
-from pydantic import BaseModel, ConfigDict, Field, create_model, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    create_model,
+    field_validator,
+    model_validator,
+)
 from typing_extensions import NotRequired, TypedDict
 
 # ---------------------------------------------------------------------------
@@ -212,21 +219,23 @@ class _ToolCallParam(TypedDict):
     type: NotRequired[str]
 
 
-# Content part for multi-modal messages. Superset of text, image_url,
-# and video_url parts; the route dispatches on ``type``.
+# Multi-modal content part; image_url/video_url are dicts to accept non-string
+# vendor hints (e.g. max_long_side_pixel int, video fps float).
 class _ContentPart(TypedDict):
     type: str
     text: NotRequired[str]
-    image_url: NotRequired[dict[str, str]]
-    video_url: NotRequired[dict[str, str]]
+    image_url: NotRequired[dict[str, Any]]
+    video_url: NotRequired[dict[str, Any]]
 
 
 # MAX chat message schema. Vendor extensions like ``reasoning_content``
 # are first-class fields so pydantic type-checks them at request
 # validation time.
 class ChatCompletionMessageParam(TypedDict):
+    # ``root`` is a vendor role; parsed for all models but gated at the route to
+    # those that declare it (``extra_chat_roles``), others get a 400.
     role: Literal[
-        "developer", "system", "user", "assistant", "tool", "function"
+        "developer", "system", "user", "assistant", "tool", "function", "root"
     ]
     content: NotRequired[str | list[_ContentPart] | None]
     name: NotRequired[str]
@@ -307,9 +316,30 @@ class _MaxRequestExtensions(BaseModel):
     # Routing / cache hints used by disaggregated serving.
     target_endpoint: str | None = None
     dkv_cache_hint: dict[str, Any] | None = None
+    # Per-request prefix-cache isolation for multi-tenant deployments.
+    cache_salt: str | None = Field(
+        default=None,
+        max_length=512,
+        description=(
+            "Per-request salt that isolates this prompt's prefix-cache "
+            "entries from other requests. Combined with the cluster-level "
+            "kv_cache_hash_seed via XOR. Requires kv_cache_hash_algo=sha256 "
+            "or sha256_64; ignored under ahash64 with a one-time warning."
+        ),
+    )
 
     # OpenRouter reasoning object; mapped to enable_thinking in the route.
     reasoning: ReasoningConfig | None = None
+
+    # HACK: MiniMax extension. Only ``True`` is supported.
+    reasoning_split: bool = True
+
+    @field_validator("reasoning_split")
+    @classmethod
+    def _require_reasoning_split(cls, value: bool) -> bool:
+        if not value:
+            raise ValueError("`reasoning_split` cannot be disabled")
+        return value
 
 
 # ---- Auto-generated request bases from OpenAI's TypedDict params ----------
@@ -349,6 +379,9 @@ class CreateChatCompletionRequest(
     model: str
     messages: list[ChatCompletionMessageParam] = Field(min_length=1)
 
+    max_tokens: int | None = None
+    max_completion_tokens: int | None = None
+
     # ``stream`` lives on the OpenAI streaming/non-streaming subclasses, not
     # on ``CompletionCreateParamsBase`` - declare it explicitly here.
     stream: bool | None = False
@@ -363,18 +396,46 @@ class CreateChatCompletionRequest(
     # If both are provided, ``prompt_tokens`` takes precedence.
     prompt_tokens: list[int] | None = None
 
+    @model_validator(mode="before")
+    @classmethod
+    def _translate_thinking_to_standard(cls, data: Any) -> Any:
+        # A vendor ``thinking`` control ({"type": enabled|disabled|adaptive})
+        # is translated to the standard ``enable_thinking``/``thinking``
+        # chat-template booleans. ``adaptive`` leaves them unset: templates
+        # default to adaptive when no reasoning flag is given, so the two
+        # render identically. Client-set ``chat_template_kwargs`` win.
+        if not isinstance(data, dict):
+            return data
+        thinking = data.get("thinking")
+        if thinking is None:
+            return data
+        if not isinstance(thinking, dict) or set(thinking) - {"type"}:
+            raise ValueError("`thinking` must be an object with a `type` field")
+        mode = thinking.get("type")
+        if mode not in ("enabled", "disabled", "adaptive"):
+            raise ValueError(
+                "`thinking.type` must be one of 'enabled', 'disabled', "
+                f"'adaptive'; got {mode!r}"
+            )
+        data = dict(data)
+        data.pop("thinking")
+        if mode != "adaptive":
+            enabled = mode == "enabled"
+            kwargs = dict(data.get("chat_template_kwargs") or {})
+            kwargs.setdefault("enable_thinking", enabled)
+            kwargs.setdefault("thinking", enabled)
+            data["chat_template_kwargs"] = kwargs
+        return data
+
     @model_validator(mode="after")
-    def _check_max_completion_tokens_conflict(self) -> CreateChatCompletionRequest:
+    def _reconcile_max_completion_tokens(self) -> CreateChatCompletionRequest:
+        # Accept both token-limit fields; ``max_completion_tokens`` wins.
         if (
-            self.max_tokens is not None
-            and self.max_completion_tokens is not None
+            self.max_completion_tokens is not None
+            and self.max_tokens is not None
             and self.max_tokens != self.max_completion_tokens
         ):
-            raise ValueError(
-                "Both 'max_tokens' and 'max_completion_tokens' were"
-                " provided with different values, prefer only passing"
-                " 'max_completion_tokens'."
-            )
+            self.max_tokens = self.max_completion_tokens
         return self
 
 

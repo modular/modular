@@ -68,15 +68,26 @@ def min(x: TensorValueLike, axis: int = -1) -> TensorValue:
 
     .. code-block:: python
 
-        x = ops.constant(
-            [[1.2, 3.5, 2.1, 0.8], [2.3, 1.9, 4.2, 3.1]],
-            DType.float32,
-            device=device,
-        )
-        row_min = ops.min(x, axis=-1)
-        # row_min has shape (2, 1): [[0.8], [1.9]]
-        col_min = ops.min(x, axis=0)
-        # col_min has shape (1, 4): [[1.2, 1.9, 2.1, 0.8]]
+        from max.engine import InferenceSession
+
+        with Graph("min_example") as graph:
+            x = ops.constant(
+                [[1.2, 3.5, 2.1, 0.8], [2.3, 1.9, 4.2, 3.1]],
+                DType.float32,
+                device=device,
+            )
+            graph.output(
+                ops.min(x, axis=-1),  # row_min, shape (2, 1)
+                ops.min(x, axis=0),  # col_min, shape (1, 4)
+            )
+
+        model = InferenceSession().load(graph)
+        row_min, col_min = model.execute()
+
+    .. invisible-code-block: python
+
+        assert np.allclose(row_min.to_numpy(), [[0.8], [1.9]])
+        assert np.allclose(col_min.to_numpy(), [[1.2, 1.9, 2.1, 0.8]])
 
     Args:
         x: The input tensor for the operation.

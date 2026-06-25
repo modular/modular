@@ -18,6 +18,8 @@ from std.python import Python, PythonObject
 from std.python.bindings import PythonModuleBuilder
 from std.python._cpython import PyObjectPtr
 
+from sha256 import sha256
+
 
 @export
 def PyInit_mojo_module() abi("C") -> PythonObject:
@@ -28,6 +30,14 @@ def PyInit_mojo_module() abi("C") -> PythonObject:
             "mojo_block_hasher",
             docstring=(
                 "Computes block hashes for a numpy array containing tokens"
+            ),
+        )
+        b.def_function[mojo_block_hasher_sha256](
+            "mojo_block_hasher_sha256",
+            docstring=(
+                "Chained SHA-256 block hasher. Writes (num_blocks, 32) uint8"
+                " bytes into the supplied `out` numpy array. `parent_hash` is a"
+                " 32-byte uint8 array used as the initial chain value."
             ),
         )
         return b.finalize()
@@ -43,9 +53,14 @@ struct PyArrayObject[dtype: DType](ImplicitlyCopyable):
     See: https://numpy.org/doc/2.1/reference/c-api/types-and-structures.html#c.PyArrayObject
     """
 
+    @__allow_legacy_any_origin_fields
     var data: UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]
     var nd: Int
+
+    @__allow_legacy_any_origin_fields
     var dimensions: UnsafePointer[Int, MutAnyOrigin]
+
+    @__allow_legacy_any_origin_fields
     var strides: UnsafePointer[Int, MutAnyOrigin]
     var base: PyObjectPtr
     var descr: PyObjectPtr
@@ -121,3 +136,73 @@ def mojo_block_hasher(
     )
 
     return results^
+
+
+@always_inline
+def _mojo_block_hasher_sha256(
+    tokens_ptr: UnsafePointer[PyArrayObject[DType.int32], _],
+    block_size: Int,
+    parent_hash_ptr: UnsafePointer[PyArrayObject[DType.uint8], _],
+    out_ptr: UnsafePointer[PyArrayObject[DType.uint8], _],
+):
+    """Chained block hashing using SHA-256. Writes (num_blocks, 32) bytes to out_ptr.
+    Args:
+        tokens_ptr: Pointer to the tokens array.
+        block_size: The number of tokens per block.
+        parent_hash_ptr: Pointer to the parent hash array.
+        out_ptr: Pointer to the output array.
+    """
+    var num_token_elts = tokens_ptr[].num_elts()
+    var num_blocks = num_token_elts // block_size
+    var token_bytes_per_block = block_size * size_of[DType.int32]()
+
+    var token_bytes_base = tokens_ptr[].data.bitcast[Byte]()
+    var parent_bytes = parent_hash_ptr[].data
+    var out_bytes = out_ptr[].data
+
+    var pair = InlineArray[UInt8, 64](fill=UInt8(0))
+
+    # Initialise prev with the caller-provided parent hash
+    for i in range(32):
+        pair[32 + i] = parent_bytes[i]
+
+    for block_idx in range(num_blocks):
+        # Local hash = SHA-256( token_bytes_for_this_block )
+        var token_span = Span[Byte, _](
+            ptr=token_bytes_base + block_idx * token_bytes_per_block,
+            length=token_bytes_per_block,
+        )
+        var local_hash = sha256(token_span)
+
+        # Pair = local_hash || prev_seq_hash; seq = SHA-256(pair)
+        for i in range(32):
+            pair[i] = local_hash[i]
+        var pair_span = Span[Byte, _](ptr=pair.unsafe_ptr(), length=64)
+        var seq_hash = sha256(pair_span)
+
+        # Write to out[block_idx, :] and shift seq into pair[32:64] for newx iter
+        for i in range(32):
+            out_bytes[block_idx * 32 + i] = seq_hash[i]
+            pair[32 + i] = seq_hash[i]
+
+
+def mojo_block_hasher_sha256(
+    tokens_obj: PythonObject,
+    block_size_obj: PythonObject,
+    parent_hash_obj: PythonObject,
+    out_obj: PythonObject,
+) raises -> PythonObject:
+    var tokens_ptr = UnsafePointer[PyArrayObject[DType.int32], _](
+        unchecked_downcast_value=tokens_obj
+    )
+    var parent_ptr = UnsafePointer[PyArrayObject[DType.uint8], _](
+        unchecked_downcast_value=parent_hash_obj
+    )
+    var out_ptr = UnsafePointer[PyArrayObject[DType.uint8], _](
+        unchecked_downcast_value=out_obj
+    )
+    var block_size = Int(py=block_size_obj)
+
+    _mojo_block_hasher_sha256(tokens_ptr, block_size, parent_ptr, out_ptr)
+
+    return Python.none()
