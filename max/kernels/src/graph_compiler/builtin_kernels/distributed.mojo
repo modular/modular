@@ -227,6 +227,7 @@ struct DistributedReduceScatterSum:
         target: StaticString,
         _trace_name: StaticString,
         axis: Int = 0,
+        group_size: Int = 0,
     ](
         outputs: FusedOutputVariadicTensors[dtype=dtype, rank=rank, ...],
         inputs: InputVariadicTensors[dtype=dtype, rank=rank, ...],
@@ -246,12 +247,16 @@ struct DistributedReduceScatterSum:
         Limitations:
             - Maximum of 8 GPUs supported (matches MAX_GPUS in comm/sync.mojo)
             - Tensor element count must be multiple of SIMD width
-            - Requires identical tensor shapes across all participating GPUs
+            - Requires identical tensor shapes within each reduce-scatter group
         """
         comptime num_devices = inputs.size
         comptime assert (
             signal_buffers.size == num_devices
         ), "expected 1 signal buffer per device"
+        comptime assert group_size >= 1, "group_size must be at least 1"
+        comptime assert (
+            num_devices % group_size == 0
+        ), "group_size must evenly divide the number of devices"
 
         # Reduce-scatter doesn't use scratch storage, so
         # only need enough signal_buffer space for Signal struct
@@ -260,38 +265,48 @@ struct DistributedReduceScatterSum:
             signal_buffers[0].size(), scratch_buffer_size_bytes
         )
 
-        # Marshal input tensors into TileTensors.
-        comptime InputTensorType = type_of(
-            inputs[0].to_tile_tensor[DType.int64]().as_immut()
-        )
-        var in_tensors = InlineArray[InputTensorType, inputs.size](
-            uninitialized=True
-        )
-
-        comptime for i in range(inputs.size):
-            in_tensors[i] = rebind[InputTensorType](
-                inputs[i].to_tile_tensor[DType.int64]().as_immut()
-            )
-
-        # Marshal signal buffers.
-        var rank_sigs = InlineArray[
-            UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
-        ](uninitialized=True)
-
-        comptime for i in range(num_devices):
-            rank_sigs[i] = (
-                signal_buffers[i]._ptr.bitcast[Signal]().as_unsafe_any_origin()
-            )
+        # Marshal input tensors into fully dynamic TileTensors so groups can
+        # have different static shapes while sharing one InlineArray type.
 
         @always_inline
         def launch_reducescatter[
             index: Int
         ]() raises {
-            read in_tensors,
-            read rank_sigs,
+            read inputs,
+            read signal_buffers,
             read dev_ctxs_input,
             read outputs,
         }:
+            comptime group_id, local_rank = divmod(index, group_size)
+            comptime group_start = group_id * group_size
+            # Full-world collectives keep scope 0; grouped collectives get a
+            # distinct nonzero scope per device-group so their barrier counters
+            # never poison the full-world bank on the shared Signal buffers.
+            comptime domain_id = 0 if group_size == num_devices else group_size
+            comptime InputTensorType = type_of(
+                inputs[group_start].to_tile_tensor[DType.int64]().as_immut()
+            )
+
+            var in_tensors = InlineArray[InputTensorType, group_size](
+                uninitialized=True
+            )
+            var rank_sigs = InlineArray[
+                UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
+            ](uninitialized=True)
+
+            comptime for i in range(group_size):
+                in_tensors[i] = rebind[InputTensorType](
+                    inputs[group_start + i]
+                    .to_tile_tensor[DType.int64]()
+                    .as_immut()
+                )
+
+                rank_sigs[i] = (
+                    signal_buffers[group_start + i]
+                    ._ptr.bitcast[Signal]()
+                    .as_unsafe_any_origin()
+                )
+
             @always_inline
             @parameter
             def output_lambda[
@@ -311,14 +326,16 @@ struct DistributedReduceScatterSum:
 
             var out_buf = outputs[index].to_tile_tensor[DType.int64]()
             reducescatter[
-                ngpus=num_devices,
+                ngpus=group_size,
                 output_lambda=output_lambda[output_index=index, ...],
                 axis=axis,
+                domain_id=domain_id,
             ](
                 in_tensors,
                 out_buf.make_dynamic[DType.int64](),
                 rank_sigs,
                 dev_ctxs_input[index],
+                local_rank=local_rank,
             )
 
         _launch_device_collective[num_devices](
