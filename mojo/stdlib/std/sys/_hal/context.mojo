@@ -236,23 +236,35 @@ struct Context[device_spec: DeviceSpec](ImplicitlyDeletable, Movable):
     # Memory operations
     # ===-------------------------------------------------------------------===#
 
-    def alloc_sync(self, byte_size: UInt64) raises HALError -> Buffer:
-        return Buffer(
-            self._raw[].alloc_sync(self._handle, byte_size), byte_size
+    def alloc_sync(
+        self, byte_size: UInt64
+    ) raises HALError -> Buffer[Self.device_spec]:
+        return Buffer[Self.device_spec](
+            _handle=self._raw[].alloc_sync(self._handle, byte_size),
+            byte_size=byte_size,
+            _context=self._self_ref.try_upgrade().value(),
         )
 
-    def free_sync(self, var mem: Buffer) raises HALError:
+    def free_sync(self, var mem: Buffer[Self.device_spec]) raises HALError:
         self._raw[].free_sync(self._handle, mem._handle)
 
-    def alloc_host_pinned(self, byte_size: UInt64) raises HALError -> Buffer:
-        return Buffer(
-            self._raw[].alloc_pinned(self._handle, byte_size), byte_size
+    def alloc_host_pinned(
+        self, byte_size: UInt64
+    ) raises HALError -> Buffer[Self.device_spec]:
+        return Buffer[Self.device_spec](
+            _handle=self._raw[].alloc_pinned(self._handle, byte_size),
+            byte_size=byte_size,
+            _context=self._self_ref.try_upgrade().value(),
         )
 
-    def free_host_pinned(self, var mem: Buffer) raises HALError:
+    def free_host_pinned(
+        self, var mem: Buffer[Self.device_spec]
+    ) raises HALError:
         self._raw[].free_pinned(self._handle, mem._handle)
 
-    def memory_get_address(self, mem: Buffer) raises HALError -> UInt64:
+    def memory_get_address(
+        self, mem: Buffer[Self.device_spec]
+    ) raises HALError -> UInt64:
         """Get the GPU address of a device memory allocation."""
         return self._raw[].get_memory_property["address", UInt64](mem._handle)
 
@@ -270,19 +282,29 @@ struct Context[device_spec: DeviceSpec](ImplicitlyDeletable, Movable):
 
 
 @fieldwise_init
-struct Buffer(Movable):
+struct Buffer[device_spec: DeviceSpec](Movable):
     """A device memory allocation.
 
-    Tracks the allocation mode and byte size.
+    Tracks the allocation handle, its byte size, and a strong reference to
+    the owning `Context`.
+
+    Holding the context `ArcPointer` keeps the context (and its driver) alive
+    for the buffer's lifetime, and lets transport-dispatching APIs such as
+    `copy` recover the buffer's residency (via the context's device) and
+    obtain a queue for synchronous transfers.
+
+    Parameters:
+        device_spec: The compilation target whose memory this buffer lives on.
     """
 
     # TODO(Sawyer): decide Buffer ownership. Currently leaks unless the user
-    # calls `Context.free_sync`. Either give Buffer a destructor (requires
-    # carrying `ContextHandle` + `ArcPointer[RawDriver]`) or document it as a
-    # non-owning view and remove `Movable`.
+    # calls `Context.free_sync`; `_context` is carried for residency only, not
+    # to drive an auto-freeing destructor. Either give Buffer a destructor or
+    # document it as a non-owning view and remove `Movable`.
 
     var _handle: MemoryHandle
     var byte_size: UInt64
+    var _context: ArcPointer[Context[Self.device_spec]]
 
 
 @fieldwise_init

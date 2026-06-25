@@ -116,7 +116,7 @@ struct Queue[device_spec: DeviceSpec](ImplicitlyDeletable, Movable):
 
     def copy_to_device(
         self,
-        dst: Buffer,
+        dst: Buffer[Self.device_spec],
         src: UnsafePointer[mut=False, UInt8, _],
         size: UInt64,
     ) raises HALError:
@@ -130,7 +130,7 @@ struct Queue[device_spec: DeviceSpec](ImplicitlyDeletable, Movable):
     def copy_from_device(
         self,
         dst: UnsafePointer[mut=True, UInt8, _],
-        src: Buffer,
+        src: Buffer[Self.device_spec],
         size: UInt64,
     ) raises HALError:
         """
@@ -142,8 +142,8 @@ struct Queue[device_spec: DeviceSpec](ImplicitlyDeletable, Movable):
 
     def copy_intra_device(
         self,
-        dst: Buffer,
-        src: Buffer,
+        dst: Buffer[Self.device_spec],
+        src: Buffer[Self.device_spec],
         size: UInt64,
     ) raises HALError:
         """
@@ -157,7 +157,7 @@ struct Queue[device_spec: DeviceSpec](ImplicitlyDeletable, Movable):
 
     def set_memory(
         self,
-        dst: Buffer,
+        dst: Buffer[Self.device_spec],
         size: UInt64,
         value: UInt64,
         value_size: UInt64,

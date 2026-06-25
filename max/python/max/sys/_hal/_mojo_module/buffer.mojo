@@ -35,7 +35,7 @@ struct Buffer(ImplicitlyDeletable, Movable, Writable):
 
     # TODO: generalize to multi-device — currently hardcoded to device 0.
     comptime device_spec = get_device_spec[0]()
-    var _hal: HALBuffer
+    var _hal: HALBuffer[Self.device_spec]
     var _ctx: ArcPointer[HALContext[Self.device_spec]]
     var _is_pinned: Bool
 
