@@ -742,9 +742,6 @@ def _matmul_gpu[
                 comptime if not transpose_b:
                     return kernel_helper[128, 128, num_pipeline_stages=2]()
 
-                comptime if a_type == DType.float32:
-                    return kernel_helper[128, 128]()
-
                 # FP8 / bf16 / fp16 transpose_b on MI355X: route to the
                 # 4-wave kernel family in its bench-validated regime.
                 # The 4-wave kernels' fixed BM/BN auto-pick (64 or 128)
