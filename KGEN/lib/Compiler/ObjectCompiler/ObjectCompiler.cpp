@@ -360,7 +360,7 @@ static MLRT::AnyAsyncValueRef compileOptimizedLLVMModuleToObject(
 
   // No need to reload the module to a different context if we are not
   // going to further parallelizing compilation.
-  // This is essential for NVPTX backend to avoid false hit
+  // This is essential for some backends to avoid false hit
   // with stale AnnotationCache which is populated during both
   // llvm-opt and llc pipeline passes but is only cleared at the end of
   // codegen in AsmPrint. We need to make sure that llvm-opt and llc
@@ -382,9 +382,12 @@ static MLRT::AnyAsyncValueRef compileOptimizedLLVMModuleToObject(
       [nonBitcodeKeySize, loc, keyBuf = keyBuf.copy(), output = output.copy(),
        options, isJIT, isParLLC, moduleIdx, splitIdx, numFunctionBase,
        inputModule = std::move(module), &targetMachine, &tmMutex]() mutable {
-        if (isNVPTXBackend(options) && isParLLC) {
+        const TargetBackend *backend = TargetBackendRegistry::get().lookup(
+            llvm::Triple(options.targetTriple));
+        if (backend && backend->isCodegenInterprocedural() && isParLLC) {
           return std::move(output).setToError(MLRT::getMLIRDiagnostic(
-              "cannot do per function codegen for NVPTX backend.", loc));
+              "cannot do per function codegen for an inter-procedural backend.",
+              loc));
         }
         LLVMModuleAndContext moduleAndContext;
         if (isParLLC) {
@@ -601,34 +604,12 @@ static SmallVector<MLRT::AnyAsyncValueRef> compileOptimizedLLVMToObjects(
 
 ErrorOr<std::unique_ptr<llvm::TargetMachine>>
 KGEN::createTargetMachine(const CompilationOptions &options, bool isJIT) {
-  std::string errorMessage;
-  std::string effectiveTriple = options.targetTriple;
-  std::string effectiveFeatures = options.targetFeatures;
-
-  // Handle air64 targets by mapping to arm64 for LLVM
-  if (isMetalBackend(options)) {
-    // Replace air64 with arm64 for LLVM target lookup
-    effectiveTriple = "arm64" + effectiveTriple.substr(5);
-    // Drop all features that are Metal-specific
-    effectiveFeatures = "";
-  }
-
-  const llvm::Target *target = llvm::TargetRegistry::lookupTarget(
-      llvm::Triple(effectiveTriple), errorMessage);
-  if (!target)
-    return Error("no target exists for '" + options.targetTriple +
-                 "': " + errorMessage);
-
-  std::unique_ptr<llvm::TargetMachine> machine(target->createTargetMachine(
-      llvm::Triple(effectiveTriple), options.targetCpu, effectiveFeatures,
-      /*Options=*/{}, options.relocModel, /*CM=*/options.mcmodel,
-      /*OL=*/options.getCodeGenOptLevel(), /*JIT=*/isJIT));
-  if (options.largeDataThreshold)
-    machine->setLargeDataThreshold(options.largeDataThreshold.value());
-  if (!machine)
-    return Error("unable to create target machine");
-
-  return machine;
+  // Each backend owns how its TargetMachine is built.
+  // Triples with no registered backend use the generic path directly.
+  if (const TargetBackend *backend = TargetBackendRegistry::get().lookup(
+          llvm::Triple(options.targetTriple)))
+    return backend->createTargetMachine(options, isJIT);
+  return defaultCreateTargetMachine(options, isJIT);
 }
 
 //===----------------------------------------------------------------------===//
@@ -651,30 +632,6 @@ static void attachInstrumentationAttributes(llvm::Module &module,
       f.addFnAttr(llvm::Attribute::SanitizeAddress);
     if (options.sanitizers.has(Sanitizers::kThread))
       f.addFnAttr(llvm::Attribute::SanitizeThread);
-  }
-}
-
-/// HACK HACK HACK https://github.com/modularml/modular/issues/27478
-/// Using LineTables for NVPTX backend disables optimizations in cuda JIT. Use
-/// DebugDirectives instead for equivalent performance to no-debug.
-static void adaptDebugEmissionKind(ModuleOp module,
-                                   CompilationOptions &options) {
-  if (isNVPTXBackend(options) &&
-      options.getDIEmissionKind() == DebugInfo::EmissionKind::LineTablesOnly) {
-    mlir::AttrTypeReplacer replacer;
-    replacer.addReplacement(
-        [](DebugInfo::DICompileUnitAttr CU) -> std::optional<Attribute> {
-          if (CU.getEmissionKind() == DebugInfo::EmissionKind::LineTablesOnly) {
-            return DebugInfo::DICompileUnitAttr::get(
-                CU.getSourceLanguage(), CU.getFile(), CU.getProducer(),
-                CU.getIsOptimized(),
-                DebugInfo::EmissionKind::DebugDirectivesOnly,
-                CU.getNameTableKind());
-          }
-          return std::nullopt;
-        });
-    replacer.recursivelyReplaceElementsIn(module, /*replaceAttrs=*/false,
-                                          /*replaceLocs=*/true);
   }
 }
 
@@ -851,7 +808,9 @@ ObjectCompiler::lowerAllFuncsToLLVM(llvm::LLVMContext &ctx, ModuleOp module) {
   // which does not register pass manager options.
   (void)pmOptions.configurePassManager(mgr);
 
-  adaptDebugEmissionKind(module, options);
+  if (const TargetBackend *backend = TargetBackendRegistry::get().lookup(
+          llvm::Triple(options.targetTriple)))
+    backend->prepareModuleForLowering(module, options);
 
   LowerToLLVMOptions llvmOptions(
       options.optimizationLevel, options.getDIEmissionKind(),
@@ -892,16 +851,23 @@ ObjectCompiler::emitArchiveParallelCompilation(
 
   bool noSplitting = cpuDevice.getWorkQueue()->getParallelismLevel() < 2;
 
-  // Disable parLLC for NVPTX because NVPTX codegen is inter-procedural for
-  // arguments' alignment when calling a function.
-  // TODO: MOCO-1407 investigate how to workaround NVPTX backend for
-  // per function codegen.
+  // Disable parLLC for inter-procedural backends.
+  const TargetBackend *backend =
+      TargetBackendRegistry::get().lookup(llvm::Triple(options.targetTriple));
   bool parLLC = cpuDevice.getWorkQueue()->getParallelismLevel() >= 2 &&
-                options.enableParallelLLC && !isGPUBackend(options);
+                options.enableParallelLLC &&
+                !(backend && backend->isCodegenInterprocedural());
+
+  // How the module is divided into independently-codegen'd units. Targets with
+  // no registered backend fall back to the per-function/per-exported flag.
+  SplitStrategy strategy = backend ? backend->splitStrategy(options)
+                                   : (options.enableLLVMPerFunctionSplitting
+                                          ? SplitStrategy::PerFunction
+                                          : SplitStrategy::PerExported);
 
   SmallVector<MLRT::AnyAsyncValueRef> cacheResults;
 
-  if (noSplitting) {
+  if (noSplitting || strategy == SplitStrategy::None) {
     cacheResults.push_back(lowerLLVMModuleToObjects(
         forwardModule(std::move(llvmModule)), opLoc, targetMachine, parLLC,
         std::nullopt, /*numFunctionsBase=*/0));
@@ -913,10 +879,10 @@ ObjectCompiler::emitArchiveParallelCompilation(
             std::optional<int64_t> idx, unsigned numFunctionsBase) {
           cacheResults.push_back(lowerLLVMModuleToObjects(
               std::move(produceModule), opLoc, targetMachine,
-              !options.enableLLVMPerFunctionSplitting && parLLC, idx,
+              strategy != SplitStrategy::PerFunction && parLLC, idx,
               numFunctionsBase));
         };
-    if (options.enableLLVMPerFunctionSplitting)
+    if (strategy == SplitStrategy::PerFunction)
       splitPerFunction(std::move(llvmModule), handleSplit, symbolLinkageTypes);
     else
       splitPerExported(std::move(llvmModule), handleSplit);
@@ -1028,8 +994,8 @@ ErrorOrSuccess ObjectCompiler::emitArchiveSaveTemps(ModuleOp module,
 }
 
 // Compute the original order of Function in an llvm::Module.
-// This is needed to help sort the linkedModule's functions list
-// for correct codegen with NVPTX backend.
+// This is needed to help sort the linkedModule's functions list for backends
+// that require the original function order (see requiresOriginalFunctionOrder).
 static void computeFnOrdering(llvm::Module &module,
                               llvm::StringMap<unsigned> &result) {
   unsigned idx = 0;
@@ -1084,9 +1050,13 @@ ErrorOr<BufferRef> ObjectCompiler::emitArchive(OwningOpRef<ModuleOp> module,
             Error("failed to link bitcode libraries"), moduleLoc));
 
       // Split the module into multiple slices and compile each in parallel.
-      [[maybe_unused]] bool isNVPTX = isNVPTXBackend(options);
-      assert((!isNVPTX || (isNVPTX && emitAssembly)) &&
-             "should only emit assembly with NVPTX backend");
+      const TargetBackend *backend = TargetBackendRegistry::get().lookup(
+          llvm::Triple(options.targetTriple));
+      [[maybe_unused]] bool needsOriginalOrder =
+          backend && backend->requiresOriginalFunctionOrder();
+      assert((!needsOriginalOrder || emitAssembly) &&
+             "backends requiring original function order should only emit "
+             "assembly here");
 
       // Release mlir::ModuleOp before codegen happens to reduce memory
       // pressure.
@@ -1099,12 +1069,12 @@ ErrorOr<BufferRef> ObjectCompiler::emitArchive(OwningOpRef<ModuleOp> module,
 
       llvm::StringMap<unsigned> originalFnOrdering;
 
-      // MCLinker changes function ordering in the linkedModule,
-      // but the original order matters for NVPTX backend to generate function
-      // declaration properly to avoid use before def/decl illegal instructions.
-      // Keep record of the ordering here so that we can sort the linkedModule
-      // to its original order.
-      if (isNVPTXBackend(options))
+      // MCLinker changes function ordering in the linkedModule, but some
+      // backends may need the original order to generate function
+      // declarations properly and avoid use before def/decl illegal
+      // instructions. Keep record of the ordering here so that we can sort the
+      // linkedModule to its original order.
+      if (needsOriginalOrder)
         computeFnOrdering(*llvmModule, originalFnOrdering);
 
       // Split the module into multiple slices and compile each in parallel.
@@ -1179,14 +1149,6 @@ ErrorOr<BufferRef> ObjectCompiler::emitArchive(OwningOpRef<ModuleOp> module,
                      << ", relocModel=" << options.relocModel
                      << ", verboseOutput=" << options.verboseOutput << ')';
 
-#if MODULAR_LINUX
-  KGEN_DEBUG(0, {
-    if (auto path = llvm::sys::Process::GetEnv("MODULAR_NVPTX_COMPILER_PATH")) {
-      llvm::dbgs() << "MODULAR_NVPTX_COMPILER_PATH: " << path.value();
-    }
-  });
-#endif
-
   MLRT::AnyAsyncValueRef output = cachedTransform(
       module.release(), transformCache.copy(),
       MLRT::AsyncValueRef<Chain>::createReady(cpuDevice),
@@ -1214,17 +1176,10 @@ MLRT::AsyncValueRef<SymbolAndMCInfo> ObjectCompiler::lowerLLVMModuleToObjects(
        loc, moduleIdx, parLLC, numFunctionsBase, &targetMachine]() mutable {
         CompilerTimeTraceScope traceScope("optimizeLLVMTask");
 
-        // Materialize the module first so we can check its target triple
+        // Materialize the module first.
         LLVMModuleAndContext module = produceModule();
 
-        // Create the target machine.
-        // For Metal targets, adjust options if needed
-        std::string moduleTriple = module->getTargetTriple().getTriple();
-        CompilationOptions adjustedOptions = this->options;
-        if (isMetalBackend(this->options))
-          adjustedOptions.targetTriple = "arm64" + moduleTriple.substr(5);
-
-        auto tmOr = createTargetMachine(adjustedOptions, isJIT);
+        auto tmOr = createTargetMachine(this->options, isJIT);
         if (failed(tmOr)) {
           return std::move(result).setToError(
               MLRT::getMLIRDiagnostic(tmOr.takeError(), loc));
@@ -1333,15 +1288,13 @@ ErrorOrSuccess ObjectCompiler::emitAssembly(OwningOpRef<ModuleOp> module,
 ErrorOrSuccess ObjectCompiler::emitBitcode(llvm::Module &llvmModule,
                                            llvm::raw_pwrite_stream &os) {
   CompilerTimeTraceScope traceScope("emitBitcode");
-  if (isMetalTriple(llvmModule.getTargetTriple())) {
-    M::KGEN::LLVM::WriteBitcode17ToFile(llvmModule, os,
-                                        /*ShouldPreserveUseListOrder = */ false,
-                                        /*ModuleSummaryIndex =*/nullptr,
-                                        /*GenerateHash = */ false,
-                                        /*ModuleHash = */ nullptr);
+  // The backend owns the bitcode format (e.g. Metal emits AIR bitcode).
+  if (const TargetBackend *backend =
+          TargetBackendRegistry::get().lookup(llvmModule.getTargetTriple())) {
+    backend->emitBitcode(llvmModule, os);
   } else {
     llvm::WriteBitcodeToFile(llvmModule, os,
-                             /* ShouldPreserveUseListOrder */ true);
+                             /*ShouldPreserveUseListOrder=*/true);
   }
   return success();
 }
@@ -1542,13 +1495,6 @@ getKernelIDFromLLVMModule(llvm::Module &module) {
   return Error("Can't find kgen.offload.kernelid from the llvm split.");
 }
 
-static void attachGPUCodeGenAttributes(llvm::Function *kernelEntry) {
-  // Recursion is not supported for kernel entry functions.
-  // This is that same as what clang does:
-  // https://github.com/llvm/llvm-project/blob/c1ec5beb4ab36c2c4d99ed6d735d217e74364771/clang/lib/CodeGen/CodeGenFunction.cpp#L1086
-  kernelEntry->addFnAttr(llvm::Attribute::NoRecurse);
-}
-
 static AnyAsyncValueRef lowerLLVMModuleToObject(
     llvm::Module &inputModule, Location loc,
     RCRef<Cache::TransformCache> transformCache, size_t moduleIdx,
@@ -1565,14 +1511,6 @@ static AnyAsyncValueRef lowerLLVMModuleToObject(
   if (!options.emissionLinkOptions.empty())
     *keyBuf << " emissionLinkOptions = " << options.emissionLinkOptions;
 
-#if MODULAR_LINUX
-  KGEN_DEBUG(0, {
-    if (auto path = llvm::sys::Process::GetEnv("MODULAR_NVPTX_COMPILER_PATH")) {
-      llvm::dbgs() << "MODULAR_NVPTX_COMPILER_PATH: " << path.value();
-    }
-  });
-#endif
-
   size_t nonBitcodeKeySize = keyBuf->getBufferSize();
 
   llvm::WriteBitcodeToFile(inputModule, *keyBuf);
@@ -1588,7 +1526,7 @@ static AnyAsyncValueRef lowerLLVMModuleToObject(
                         buf = buf.copy(), keyBuf = std::move(keyBuf), options,
                         isJIT, moduleIdx, &inputModule, nonBitcodeKeySize,
                         shouldDeserialize, &linker, &pluginMgr]() mutable {
-      CompilerTimeTraceScope traceScope("lowerLLVMModuleToObjectGPU");
+      CompilerTimeTraceScope traceScope("lowerLLVMModuleToObjectKernels");
 
       LLVMModuleAndContext deserializedModule;
       // We need to deserialize the llvm::Module into a separate copy here
@@ -1651,15 +1589,15 @@ static AnyAsyncValueRef lowerLLVMModuleToObject(
         module.setTargetTriple(llvm::Triple(adjustedOptions.targetTriple));
       }
 
-      auto tmOr = createTargetMachine(adjustedOptions, isJIT);
+      // `adjustedOptions` is already target-adjusted above, so build the
+      // TargetMachine directly without re-dispatching through the backend.
+      auto tmOr = defaultCreateTargetMachine(adjustedOptions, isJIT);
       if (failed(tmOr)) {
         return std::move(output).setToError(
             MLRT::getMLIRDiagnostic(tmOr.takeError(), loc));
       }
       llvm::TargetMachine &tm = **tmOr;
 
-      // Set correct data layout and restore target for GPU targets after
-      // TargetMachine creation.
       if (backend)
         backend->finalizeModuleForTarget(module, tm, moduleTriple);
 
@@ -1824,7 +1762,7 @@ static std::pair<AnyAsyncValueRef, AnyAsyncValueRef> lowerLLVMModuleToObject(
                                      transformCache = transformCache.copy(),
                                      &kernelEmissionKinds, &linker,
                                      &bitcodeLibs, &pluginMgr]() mutable {
-    CompilerTimeTraceScope traceScope("lowerLLVMModuleToObjectGPU");
+    CompilerTimeTraceScope traceScope("lowerLLVMModuleToObjectKernels");
 
     // Materialize the module.
     LLVMModuleAndContext module = produceModule();
@@ -1851,7 +1789,9 @@ static std::pair<AnyAsyncValueRef, AnyAsyncValueRef> lowerLLVMModuleToObject(
 
     uint64_t kernelId = (*kernelIdFuncOr).first;
     llvm::Function *kernelEntry = (*kernelIdFuncOr).second;
-    attachGPUCodeGenAttributes(kernelEntry);
+    if (const TargetBackend *backend = TargetBackendRegistry::get().lookup(
+            llvm::Triple(options.targetTriple)))
+      backend->attachCodegenAttributes(kernelEntry);
 
     SmallVector<EmitAs> emissionKinds;
     SmallVector<MLRT::AnyAsyncValueRef> emissionResults;
@@ -1871,7 +1811,7 @@ static std::pair<AnyAsyncValueRef, AnyAsyncValueRef> lowerLLVMModuleToObject(
 
     if (shouldRunExtraAsm) {
       // We need to run the llvm lowering again to saveTempsPrefix for
-      // assembly if we are generating object (for GPUs). Since codegen has
+      // assembly if we are generating object. Since codegen has
       // side effect, we cannot reuse the same llvm module for assembly and
       // object file, we have to run the llvm lowering separately for each
       // codegen result.
@@ -1924,7 +1864,7 @@ static std::pair<AnyAsyncValueRef, AnyAsyncValueRef> lowerLLVMModuleToObject(
 //   some backends are inter-procedural.
 // - Extract kernel ID for each split.
 // - Run LLVM pipeline (opt + asmprint) to generate target-specific code for
-//   each kernel (e.g. PTX for NVIDIA, a shared object for other GPU backends).
+//   each kernel.
 ErrorOr<DenseMap<uint64_t, DenseMap<EmitAs, BufferRef>>>
 ObjectCompiler::emitOffloadKernels(
     OwningOpRef<ModuleOp> module,
@@ -1984,7 +1924,9 @@ ObjectCompiler::emitOffloadKernels(
           AnyAsyncValueRef &kernelId = values[i + 1];
 
           if (kernelId.isError()) {
-            if (isGPUBackend(options))
+            const TargetBackend *backend = TargetBackendRegistry::get().lookup(
+                llvm::Triple(options.targetTriple));
+            if (backend && backend->isOffload())
               return std::move(result).setToError(kernelId.takeDiagnostic());
             else
               continue;
