@@ -62,6 +62,9 @@ _EXTRA_CONSTRAINTS = {
         size = "large",
         srcs = [src],
         copts = _EXTRA_COPTS.get(src, []),
+        exec_properties = {
+            "test.resources:gpu-memory": "1",
+        },
         tags = ["gpu"],
         target_compatible_with = ["//:has_gpu"] + _EXTRA_CONSTRAINTS.get(src, []),
         deps = [
