@@ -10,22 +10,40 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Tests for llguidance-based structured output sampling."""
+"""Tests for structured-output sampling across grammar backends.
+
+Parametrized over the pluggable grammar backends (``llguidance`` and
+``xgrammar``): each compiles a JSON schema, fills a packed int32 bitmask, and
+feeds it through the GPU ``token_sampler``, then asserts the sampled tokens are
+grammar-legal. This exercises the ``GrammarBackend`` abstraction symmetrically
+and confirms each backend's bitmask layout is compatible with the GPU
+``apply_packed_bitmask`` path.
+"""
 
 import json
 
-import llguidance.hf
-import llguidance.numpy
 import numpy as np
 import pytest
-from llguidance import LLMatcher
 from max.driver import Buffer
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef
 from max.pipelines.context import SamplingParams
 from max.pipelines.lib import SamplingConfig, token_sampler
+from max.pipelines.lib.pipeline_variants.structured_output_backend import (
+    make_grammar_backend,
+)
 from transformers import AutoConfig, AutoTokenizer
+
+_PERSON_SCHEMA = {
+    "title": "Person",
+    "type": "object",
+    "properties": {
+        "name": {"type": "string"},
+        "age": {"type": "integer"},
+    },
+    "required": ["name", "age"],
+}
 
 
 @pytest.fixture(scope="module")
@@ -40,39 +58,25 @@ def structured_output_sampler(session: InferenceSession) -> Model:
     return session.load(graph)
 
 
-def test_llguidance_sampling(
+@pytest.mark.parametrize("backend_name", ["llguidance", "xgrammar"])
+def test_structured_output_sampling(
     session: InferenceSession,
     structured_output_sampler: Model,
     modular_ai_llama_3_1_local_path: str,
+    backend_name: str,
 ) -> None:
     config = AutoConfig.from_pretrained(modular_ai_llama_3_1_local_path)
     hf_tokenizer = AutoTokenizer.from_pretrained(
         modular_ai_llama_3_1_local_path
     )
-    tokenizer = llguidance.hf.from_tokenizer(
-        hf_tokenizer, n_vocab=config.vocab_size
-    )
+    vocab_size = config.vocab_size
 
-    # Compile the grammar for a sample schema.
-    person_schema = {
-        "title": "Person",
-        "type": "object",
-        "properties": {
-            "name": {"type": "string"},
-            "age": {
-                "type": "integer",
-            },
-        },
-        "required": ["name", "age"],
-    }
-
-    matcher = LLMatcher(tokenizer, json.dumps(person_schema))
+    backend = make_grammar_backend(backend_name, hf_tokenizer, vocab_size)
+    compiled = backend.compile_json_schema(json.dumps(_PERSON_SCHEMA))
+    matcher = backend.create_matcher(compiled)
 
     device = session.devices[0]
-
-    # Variables
     batch_size = 1
-    vocab_size = tokenizer.vocab_size
     n_trials = 1
 
     sampling_params = SamplingParams(top_k=5)
@@ -102,21 +106,15 @@ def test_llguidance_sampling(
         np.array([sampling_params.seed] * batch_size, dtype=np.uint64)
     ).to(device)
     for _ in range(n_trials):
-        token_bitmask = llguidance.numpy.allocate_token_bitmask(
-            batch_size, vocab_size
-        )
-        llguidance.numpy.fill_next_token_bitmask(matcher, token_bitmask)
+        token_bitmask = backend.allocate_token_bitmask(batch_size, vocab_size)
+        backend.fill_next_token_bitmask(matcher, token_bitmask, 0)
 
-        # Generate Random Logits
         logits = np.random.default_rng().random(
             size=(batch_size, vocab_size), dtype=np.float32
         )
 
-        # Pass the packed int32 bitmask straight through; the sampler graph
-        # unpacks and applies it on the GPU (apply_packed_bitmask).
         bitmask = np.ascontiguousarray(token_bitmask)
 
-        # Run through Sampler
         _, new_tokens = structured_output_sampler(
             Buffer.from_dlpack(logits).to(device),
             generated_tokens,
@@ -131,4 +129,5 @@ def test_llguidance_sampling(
         )[:2]
         assert isinstance(new_tokens, Buffer)
         for token in new_tokens.to_numpy():
-            assert matcher.validate_tokens(token) == len(token)
+            token_ids = [int(t) for t in token]
+            assert matcher.try_consume_tokens(token_ids) == len(token_ids)

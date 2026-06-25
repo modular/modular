@@ -49,7 +49,9 @@ from max._core.xgrammar import (
 )
 from transformers import PreTrainedTokenizerBase, PreTrainedTokenizerFast
 
-from .builtin_structural_tag import get_builtin_structural_tag
+from .builtin_structural_tag import (
+    get_builtin_structural_tag as _get_builtin_structural_tag,
+)
 from .structural_tag import StructuralTag, StructuralTagItem
 
 try:
@@ -329,6 +331,22 @@ def allocate_token_bitmask(
     """
     return np.full(
         (batch_size, get_bitmask_size(vocab_size)), -1, dtype=np.int32
+    )
+
+
+def get_builtin_structural_tag(
+    model: str,
+    tools: Sequence[dict[str, Any]] | None = None,
+    tool_choice: str | dict[str, Any] | None = "auto",
+    reasoning: bool = True,
+) -> StructuralTag:
+    # Permissive typed boundary: callers pass OpenAI-style tool dicts and a
+    # string/dict tool_choice; the vendored helper's params are stricter.
+    return _get_builtin_structural_tag(
+        model,
+        tools=tools,
+        tool_choice=tool_choice,
+        reasoning=reasoning,
     )
 
 

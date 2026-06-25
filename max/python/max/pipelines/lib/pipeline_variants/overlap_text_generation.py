@@ -1485,6 +1485,7 @@ class OverlapTextGenerationPipeline(
             self.tokenizer,
             pipeline_config.sampling.enable_structured_output,
             pipeline_config.runtime.tool_parser,
+            pipeline_config.sampling.structured_output_backend,
         )
         self.vocab_size = self._structured_output.vocab_size
 

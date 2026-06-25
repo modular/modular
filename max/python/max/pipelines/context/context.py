@@ -19,7 +19,6 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any, Protocol, TypeVar, runtime_checkable
 
-import llguidance
 import numpy as np
 import numpy.typing as npt
 from max.pipelines.request import RequestID
@@ -208,6 +207,40 @@ class StructuredOutputRegionDelimiters:
 
     end_token_ids: list[int] | None = None
     """Token ID sequence marking the end of a structured output region."""
+
+
+@runtime_checkable
+class GrammarMatcher(Protocol):
+    """Per-request grammar matcher stepped each decode step.
+
+    Backend-agnostic interface; method names mirror llguidance's ``LLMatcher``
+    so a context can hold any backend's matcher (llguidance, xgrammar) without
+    branching. The llguidance ``LLMatcher`` satisfies this protocol natively.
+    """
+
+    def try_consume_tokens(self, tokens: list[int]) -> int:
+        """Advance the matcher; returns the number of tokens consumed."""
+        ...
+
+    def is_accepting(self) -> bool:
+        """Whether the matcher is at an accepting (stoppable) state."""
+        ...
+
+    def is_stopped(self) -> bool:
+        """Whether the matcher has reached a terminal state."""
+        ...
+
+    def get_error(self) -> str | None:
+        """Error message for the last rejection, if any (diagnostics)."""
+        ...
+
+    def get_grammar_warnings(self) -> Any:
+        """Grammar compilation warnings, if any (diagnostics)."""
+        ...
+
+    def deep_copy(self) -> GrammarMatcher:
+        """Independent copy for speculative walks (never mutates the original)."""
+        ...
 
 
 @dataclass
@@ -584,12 +617,12 @@ class TextContext:
 
         return ret_list
 
-    def set_matcher(self, matcher: llguidance.LLMatcher) -> None:
+    def set_matcher(self, matcher: GrammarMatcher) -> None:
         """Sets the grammar matcher for constrained decoding."""
         self._matcher = matcher
 
     @property
-    def matcher(self) -> llguidance.LLMatcher | None:
+    def matcher(self) -> GrammarMatcher | None:
         """The optional grammar matcher for constrained decoding."""
         return self._matcher
 

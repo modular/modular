@@ -227,13 +227,13 @@ modular_py_test(
     ],
 )
 
-# Test for llguidance-based structured output sampling
+# Test for structured-output sampling across grammar backends
 modular_py_test(
-    name = "test-llguidance-sampling",
+    name = "test-structured-output-sampling",
     size = "medium",
     srcs = [
         "conftest.py",
-        "sampling/test_llguidance_sampling.py",
+        "sampling/test_structured_output_sampling.py",
     ],
     env = {
         "MODULAR_PATH": ".",
@@ -251,7 +251,6 @@ modular_py_test(
         "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/lib",
         "//max/tests/integration:hf_repo_lock",
-        requirement("llguidance"),
         requirement("transformers"),
     ],
 )

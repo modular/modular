@@ -18,6 +18,7 @@ from unittest.mock import MagicMock, call, patch
 
 import numpy as np
 import pytest
+from llguidance import LLMatcher
 from max.pipelines.context import (
     StructuredOutputRegionDelimiters,
     TextContext,
@@ -723,13 +724,14 @@ class TestAdvanceFsmAndComputeBitmasks:
         # Mark as a continuing (non-initial-prompt) context so Part 2 writes
         # its row; is_initial_prompt=True causes Part 2 to skip the row.
         ctx._is_initial_prompt = False
-        mock_matcher = MagicMock()
+        mock_matcher = MagicMock(spec=LLMatcher)
         ret = 1 if always_accept else 0
         mock_matcher.try_consume_tokens = MagicMock(return_value=ret)
         # Part 2 speculates on a deep copy of the matcher (never the real one),
         # so the rollback-across-rule-boundary desync cannot occur. Mirror the
         # accept behavior on the copy; tests reach it via
         # ``mock_matcher.deep_copy.return_value``.
+        mock_matcher.deep_copy.return_value = MagicMock(spec=LLMatcher)
         mock_matcher.deep_copy.return_value.try_consume_tokens = MagicMock(
             return_value=ret
         )

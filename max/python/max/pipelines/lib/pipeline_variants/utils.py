@@ -21,13 +21,8 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
-import llguidance
-import llguidance.hf
-import llguidance.numpy
 import numpy as np
 import numpy.typing as npt
-from llguidance import LLMatcher, LLTokenizer
-from llguidance._tokenizer import TokenizerWrapper
 from max.pipelines.context import (
     GenerationStatus,
     LogProbabilities,
@@ -36,6 +31,11 @@ from max.pipelines.context import (
     TextGenerationOutput,
 )
 from max.pipelines.context.exceptions import InputError
+from max.pipelines.lib.pipeline_variants.structured_output_backend import (
+    GrammarBackend,
+    LlguidanceBackend,
+    make_grammar_backend,
+)
 from max.pipelines.lib.tool_parsing import (
     StructuralTagToolParser,
     get_parser_cls,
@@ -44,11 +44,7 @@ from max.pipelines.lib.utils import upper_bounded_default
 from max.pipelines.modeling.types import RequestID
 from max.profiler import Tracer, traced
 from max.support.math import ceildiv
-from transformers import (
-    AutoConfig,
-    PreTrainedTokenizerBase,
-    PreTrainedTokenizerFast,
-)
+from transformers import AutoConfig
 
 if TYPE_CHECKING:
     from max.pipelines.modeling.types import PipelineTokenizer
@@ -81,81 +77,6 @@ def _count_token_subsequence(
         else:
             i += 1
     return count
-
-
-class _TikTokenAdapter:
-    """Adapter to make TikToken-based tokenizers compatible with llguidance.
-
-    llguidance's TokenizerWrapper expects a tokenizer object with specific
-    attributes (eos_token_id, bos_token_id, tokens, special_token_ids) and
-    a callable interface for encoding. This adapter wraps TikToken-based
-    tokenizers (which don't inherit from PreTrainedTokenizerFast) to provide
-    that interface.
-
-    Raises:
-        ValueError: If the tokenizer is not a TikToken-based tokenizer.
-    """
-
-    def __init__(self, tokenizer: PreTrainedTokenizerBase) -> None:
-        if "TikToken" not in type(tokenizer).__name__:
-            raise ValueError(
-                f"Structured output requires PreTrainedTokenizerFast or "
-                f"TikToken-based tokenizers, but got {type(tokenizer).__name__}"
-            )
-
-        self._tokenizer = tokenizer
-        self.eos_token_id = tokenizer.eos_token_id
-        self.bos_token_id = tokenizer.bos_token_id
-        self.special_token_ids = getattr(tokenizer, "all_special_ids", [])
-
-        # Build byte representation for each token (required by TokenizerWrapper).
-        # convert_ids_to_tokens(i) returns the token's byte->unicode *surface
-        # form* (e.g. raw newline 0x0A -> 'Ċ', space 0x20 -> 'Ġ'); .encode("utf-8")
-        # then gives the UTF-8 bytes of those placeholder characters (b'\xc4\x8a'),
-        # not the token's true bytes (b'\n'). Feeding those to llguidance makes it
-        # mask against the wrong bytes and admit control-char tokens as legal JSON
-        # string content, leaking raw newlines into structured output. Reverse the
-        # map via the tokenizer's byte_decoder to recover the true bytes.
-        # byte_decoder is integral to a byte-level BPE tokenizer (its own decode
-        # depends on it).
-        byte_decoder = getattr(tokenizer, "byte_decoder", None)
-        if byte_decoder is None:
-            raise ValueError(
-                "TikToken-based structured output requires a tokenizer with a "
-                "`byte_decoder` (byte-level BPE inverse map); "
-                f"{type(tokenizer).__name__} does not provide one."
-            )
-        vocab_size = len(tokenizer.get_vocab())
-        self._tokens: list[bytes] = []
-        for i in range(vocab_size):
-            token_str = tokenizer.convert_ids_to_tokens(i)
-            if token_str is None:
-                self._tokens.append(b"")
-            else:
-                try:
-                    self._tokens.append(
-                        bytes(byte_decoder[c] for c in token_str)
-                    )
-                except KeyError:
-                    # A char outside the byte->unicode map (rare; e.g. some
-                    # special tokens, like an emoji): fall back to the UTF-8 encoding.
-                    # This fallback is not expected to be used for standard TikToken vocabs.
-                    self._tokens.append(
-                        token_str.encode("utf-8", errors="replace")
-                    )
-
-    @property
-    def tokens(self) -> list[bytes]:
-        """Returns byte representation of each token in vocabulary."""
-        return self._tokens
-
-    def __call__(self, text: str | bytes) -> list[int]:
-        """Encode text to token IDs."""
-        if isinstance(text, bytes):
-            text = text.decode("utf-8", errors="replace")
-
-        # TikToken tokenizers use allow_special_tokens (not add_special_tokens)
-        return self._tokenizer.encode(text, allow_special_tokens=True)
 
 
 def calculate_num_steps(
@@ -463,7 +384,8 @@ class StructuredOutputHelper:
     """Whether user-provided json_schema is allowed."""
     vocab_size: int | None = None
     """Vocabulary size from the tokenizer, or None if disabled."""
-    _tokenizer_info: Any = field(default=None, repr=False)
+    backend: GrammarBackend | None = field(default=None, repr=False)
+    """Pluggable grammar backend (llguidance by default)."""
     tool_call_region_delimiters: StructuredOutputRegionDelimiters | None = None
     """Token sequences for tool call boundaries (conditional enforcement)."""
     # Serialises access to per-context ``ctx.matcher`` between the async
@@ -473,6 +395,10 @@ class StructuredOutputHelper:
     _matcher_lock: threading.Lock = field(
         default_factory=threading.Lock, repr=False
     )
+
+    def __post_init__(self) -> None:
+        if self.enabled and self.backend is None:
+            self.backend = LlguidanceBackend(None)
 
     @staticmethod
     def _get_tool_region_tags(
@@ -529,6 +455,7 @@ class StructuredOutputHelper:
         tokenizer: PipelineTokenizer[Any, Any, Any],
         enable_structured_output: bool,
         tool_parser_name: str | None = None,
+        backend_name: str = "llguidance",
     ) -> StructuredOutputHelper:
         """Create a helper from a tokenizer.
 
@@ -538,6 +465,8 @@ class StructuredOutputHelper:
                 (e.g. to constrain to response format json_schema).
             tool_parser_name: Name of the registered tool parser. Used to extract
                 structural tags for tool call start/end markers.
+            backend_name: Structured-output backend to use (default
+                ``"llguidance"``).
 
         Returns:
             A configured StructuredOutputHelper instance.
@@ -549,17 +478,9 @@ class StructuredOutputHelper:
         tokenizer_delegate = tokenizer.delegate
         vocab_size = len(tokenizer_delegate)
 
-        if isinstance(tokenizer_delegate, PreTrainedTokenizerFast):
-            # Fast path for HuggingFace fast tokenizers
-            tokenizer_info = llguidance.hf.from_tokenizer(
-                tokenizer_delegate, n_vocab=vocab_size
-            )
-        else:
-            # Fallback for TikTokenTokenizer, used by KimiK2_5
-            # Use adapter -> TokenizerWrapper -> LLTokenizer chain
-            adapter = _TikTokenAdapter(tokenizer_delegate)
-            wrapper = TokenizerWrapper(adapter)
-            tokenizer_info = LLTokenizer(wrapper, n_vocab=vocab_size)
+        backend = make_grammar_backend(
+            backend_name, tokenizer_delegate, vocab_size
+        )
 
         # Extract structural tags from tool parser if available
         tool_start, tool_end = cls._get_tool_region_tags(tool_parser_name)
@@ -588,7 +509,7 @@ class StructuredOutputHelper:
             enabled=True,
             enable_response_format_schema=enable_structured_output,
             vocab_size=vocab_size,
-            _tokenizer_info=tokenizer_info,
+            backend=backend,
             tool_call_region_delimiters=tool_call_region_delimiters,
         )
 
@@ -643,15 +564,16 @@ class StructuredOutputHelper:
                     "schema-constrained responses."
                 )
 
+            assert self.backend is not None
             try:
                 with Tracer("tool_grammar_compile"):
-                    matcher = LLMatcher(self._tokenizer_info, context.grammar)
+                    matcher = self.backend.create_matcher(context.grammar)
                 context.set_matcher(matcher)
                 self.set_context_tool_region(context)
             except Exception as e:
                 raise InputError(
                     f"Grammar provided in request cannot be compiled. "
-                    f"From llguidance: {e}"
+                    f"From {self.backend.name}: {e}"
                 ) from e
 
         # Fall back to json_schema if no grammar
@@ -663,20 +585,16 @@ class StructuredOutputHelper:
                     "Pass --enable-structured-output to enable this feature."
                 )
 
+            assert self.backend is not None
             try:
-                # Compact JSON (no structural whitespace) to match
-                # the tool-call grammar convention.
-                grammar = LLMatcher.grammar_from_json_schema(
-                    context.json_schema,
-                    overrides={"whitespace_pattern": ""},
-                )
-                matcher = LLMatcher(self._tokenizer_info, grammar)
+                grammar = self.backend.compile_json_schema(context.json_schema)
+                matcher = self.backend.create_matcher(grammar)
                 context.set_matcher(matcher)
             except Exception as e:
                 raise InputError(
                     f"JSON schema provided in request cannot be compiled to "
                     f"valid grammar. Update your JSON schema to produce valid "
-                    f"structured output. From llguidance: {e}"
+                    f"structured output. From {self.backend.name}: {e}"
                 ) from e
 
         if context.matcher:
@@ -700,9 +618,8 @@ class StructuredOutputHelper:
         """
         if self.vocab_size is None:
             raise ValueError("vocab_size must be set to allocate bitmask")
-        return llguidance.numpy.allocate_token_bitmask(
-            batch_size, self.vocab_size
-        )
+        assert self.backend is not None
+        return self.backend.allocate_token_bitmask(batch_size, self.vocab_size)
 
     def fill_bitmask(
         self,
@@ -723,8 +640,9 @@ class StructuredOutputHelper:
             index: Position in the bitmask for this request.
         """
         if context.matcher and context.grammar_enforced:
-            llguidance.numpy.fill_next_token_bitmask(
-                context.matcher, bitmask, index=index
+            assert self.backend is not None
+            self.backend.fill_next_token_bitmask(
+                context.matcher, bitmask, index
             )
 
     def set_context_tool_region(
@@ -799,12 +717,13 @@ class StructuredOutputHelper:
         # issue by taking a deep copy instead.
         matcher_copy = ctx.matcher.deep_copy()
 
+        assert self.backend is not None
         # Slot 0: state immediately after committed tokens.
         if ctx.grammar_enforced:
-            llguidance.numpy.fill_next_token_bitmask(
+            self.backend.fill_next_token_bitmask(
                 matcher_copy,
                 bitmask_window[0, :].reshape(1, -1),
-                index=0,
+                0,
             )
 
         vocab_size = self.vocab_size or 0
@@ -832,10 +751,10 @@ class StructuredOutputHelper:
                     break
 
             if consumed or ctx.grammar_enforced:
-                llguidance.numpy.fill_next_token_bitmask(
+                self.backend.fill_next_token_bitmask(
                     matcher_copy,
                     bitmask_window[i + 1, :].reshape(1, -1),
-                    index=0,
+                    0,
                 )
 
         ctx.restore_grammar_state(fsm_snap)
@@ -1132,8 +1051,8 @@ class StructuredOutputHelper:
                 dtype=np.int32,
             )
 
-        # Allocate packed bitmask (int32) for llguidance
-        packed_bitmask = llguidance.numpy.allocate_token_bitmask(
+        assert self.backend is not None
+        packed_bitmask = self.backend.allocate_token_bitmask(
             batch_size * num_positions, self.vocab_size
         )
         packed_vocab_size = packed_bitmask.shape[1]
