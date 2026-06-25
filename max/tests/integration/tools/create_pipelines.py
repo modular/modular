@@ -2237,6 +2237,34 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         ],
         apply_chat_template=False,
     ),
+    # MiniMax-M3-MXFP8, compared against goldens pregenerated
+    # from the mm-sglang MiniMax-M3 fork. Uses the short logit-verification
+    # prompts (the long prompt is excluded) and apply_chat_template is off so
+    # the input_ids match the raw tokens the reference logits were generated
+    # from. Config mirrors the proven 8-GPU MXFP8 recipe
+    # (max_private/minimax_m3/recipes/mxfp8_8x_b200.yaml): ep_size=8 builds the
+    # sparse-attention indexer's multi-KV branch, data_parallel_degree=1 avoids
+    # the DP-attention indexer kernel crash, and chunked prefill + prefix
+    # caching keep the EP / FP8 paths on their known-good code path.
+    # trust_remote_code is off so MAX's registered MiniMaxM3VLConfig is used.
+    # The MAX side needs the private arch registered: run via
+    # //max_private/minimax_m3:verify_minimax_m3.
+    "MiniMaxAI/MiniMax-M3-MXFP8": GenericOracle(
+        model_path="MiniMaxAI/MiniMax-M3-MXFP8",
+        config_params={
+            "max_length": 1024,
+            "trust_remote_code": False,
+            "data_parallel_degree": 1,
+            "ep_size": 8,
+            "max_batch_input_tokens": 4096,
+            "enable_chunked_prefill": True,
+            "enable_prefix_caching": True,
+            "device_memory_utilization": 0.65,
+        },
+        device_encoding_map={"gpu": ["float8_e4m3fn"]},
+        prompts=list(test_data.SHORT_TEXT_PROMPTS),
+        apply_chat_template=False,
+    ),
     "MiniMaxAI/MiniMax-M2.7": GenericOracle(
         model_path="MiniMaxAI/MiniMax-M2.7",
         config_params={
