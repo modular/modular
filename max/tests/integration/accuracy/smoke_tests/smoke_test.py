@@ -96,6 +96,7 @@ MODEL_RECIPES = CaseInsensitiveDict({
     "google/gemma-4-31B-it__tieredkv": "max/pipelines/architectures/gemma4/recipes/gemma4_31b_tieredkv.yaml",
     "google/gemma-4-31B-it__tp2": "max/pipelines/architectures/gemma4/recipes/gemma4_31b_tp2.yaml",
     "nvidia/Gemma-4-26B-A4B-NVFP4__no_dgc": "max/pipelines/architectures/gemma4/recipes/gemma4_26b_a4b_nvfp4_no_dgc.yaml",
+    "nvidia/Gemma-4-26B-A4B-NVFP4__fp8kv": "max/pipelines/architectures/gemma4/recipes/gemma4_26b_a4b_nvfp4_fp8kv.yaml",
     "nvidia/Gemma-4-26B-A4B-NVFP4__localkv": "max/pipelines/architectures/gemma4/recipes/gemma4_26b_a4b_nvfp4_localkv.yaml",
     "nvidia/Gemma-4-26B-A4B-NVFP4__tieredkv": "max/pipelines/architectures/gemma4/recipes/gemma4_26b_a4b_nvfp4_tieredkv.yaml",
     "nvidia/Gemma-4-31B-IT-NVFP4__localkv": "max/pipelines/architectures/gemma4/recipes/gemma4_31b_nvfp4_localkv.yaml",
