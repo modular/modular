@@ -265,6 +265,17 @@ This version is still a work in progress.
       )
   ```
 
+- `AddressSpace` is now target-extensible rather than a fixed, portable enum.
+  The built-in GPU spaces (`GENERIC`, `GLOBAL`, `SHARED`, `CONSTANT`, `LOCAL`,
+  `SHARED_CLUSTER`, `BUFFER_RESOURCE`) are unchanged, but accessing any other
+  name — for example an accelerator-specific `AddressSpace.SCRATCHPAD` — now
+  resolves through the active hardware backend instead of being a hard-coded
+  compile error. The set of valid address-space names is the union of the
+  built-in GPU spaces and whatever the active backend defines, so accelerator
+  backends can provide their own named spaces (with their own values) only
+  where they exist. A name that no backend defines remains a compile-time
+  error.
+
 ## Removed
 
 - Removed the `store_volatile()` and `load_volatile()` intrinsics from
