@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 
-
 from .arch import ernie45_arch
 from .model import ERNIE45Inputs, ERNIE45Model
 from .model_config import ERNIE45Config
