@@ -310,6 +310,36 @@ def test_file_seek() raises:
             )
 
 
+def test_file_seek_int64_offset() raises:
+    """Test that seek accepts Int64 offsets, including negative values."""
+    import std.os
+
+    var tmp = Path(gettempdir().value()) / "test_seek_int64"
+    with open(tmp, "w") as f:
+        f.write("abcdefghijklmnopqrstuvwxyz")
+
+    with open(tmp, "r") as f:
+        # Positive Int64 offset
+        var offset = Int64(10)
+        var pos = f.seek(offset)
+        assert_equal(pos, 10)
+        assert_equal(f.read(3), "klm")
+
+        # Negative Int64 offset from end
+        var neg_offset = Int64(-5)
+        pos = f.seek(neg_offset, std.os.SEEK_END)
+        assert_equal(pos, 21)
+        assert_equal(f.read(5), "vwxyz")
+
+        # Negative Int64 offset from current position
+        _ = f.seek(Int64(15))
+        pos = f.seek(Int64(-5), std.os.SEEK_CUR)
+        assert_equal(pos, 10)
+        assert_equal(f.read(3), "klm")
+
+    std.os.remove(tmp)
+
+
 def test_file_open_nodir() raises:
     var f = open(Path("test_file_open_nodir"), "w")
     f.close()
