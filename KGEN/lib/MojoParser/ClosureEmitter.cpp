@@ -1717,7 +1717,7 @@ static PromotedSignature buildPromotedSignature(
     SharedState &shared, FnTypeGeneratorType sig,
     ArrayRef<ParamDeclAttr> params, ArrayRef<ParamDeclAttr> prependedParams,
     std::optional<ClosureEmitter::PromotedClosureSelfArg> selfArg,
-    bool forceCapturing = false) {
+    std::optional<bool> capturingOverride = std::nullopt) {
   MLIRContext *ctx = shared.getContext();
   size_t oldNumImplicitOrigins =
       sig.getFnMetadata().getNumImplicitOriginDecls();
@@ -1759,10 +1759,13 @@ static PromotedSignature buildPromotedSignature(
   FunctionType promotedFunctionType = replaceIndexRefsWithNamedRefs(
       sig.getValues(), explicitParamDecls, implicitOriginDecls);
 
-  // Step 5: propagate the capturing flag if any prepended param is capturing.
-  bool shouldBeCapturing =
-      forceCapturing || sig.isCapturing() ||
-      hasCapturingParameterType(shared, explicitPrependedParams);
+  bool shouldBeCapturing;
+  if (capturingOverride)
+    shouldBeCapturing = *capturingOverride;
+  else
+    shouldBeCapturing =
+        sig.isCapturing() ||
+        hasCapturingParameterType(shared, explicitPrependedParams);
   FnTypeGeneratorType promotedSignature = FnTypeGeneratorType::get(
       sig.getInputParamTypes(), sig.getValues(), sig.getArgConventions(),
       sig.getFnEffects().setCapturing(shouldBeCapturing), sig.getFnMetadata(),
@@ -1789,9 +1792,11 @@ static PromotedSignature buildPromotedSignature(
           std::move(newParams)};
 }
 
-ASTDecl *ClosureEmitter::promoteClosure(
-    ASTDecl &nestedFnDecl, ArrayRef<ParamDeclAttr> prependedParams,
-    std::optional<PromotedClosureSelfArg> selfArg, bool forceCapturing) {
+ASTDecl *
+ClosureEmitter::promoteClosure(ASTDecl &nestedFnDecl,
+                               ArrayRef<ParamDeclAttr> prependedParams,
+                               std::optional<PromotedClosureSelfArg> selfArg,
+                               std::optional<bool> capturingOverride) {
   assert(nestedFnDecl.resolvedness == DeclResolvedness::body &&
          "nested decl must be fully resolved to promote");
   MLIRContext *ctx = shared.getContext();
@@ -1803,7 +1808,7 @@ ASTDecl *ClosureEmitter::promoteClosure(
         newParams] =
       buildPromotedSignature(shared, function.getFuncTypeGenerator(),
                              function.getParams(), prependedParams, selfArg,
-                             forceCapturing);
+                             capturingOverride);
 
   OpBuilder builder = moduleDecl->getDeclEndBuilder();
   function->moveBefore(builder.getInsertionBlock(),
@@ -1905,14 +1910,17 @@ ASTDecl *ClosureEmitter::promoteClosure(
   return &decl;
 }
 
-ASTDecl *ClosureEmitter::promoteClosure(
-    ASTDecl &nestedFnDecl, ArrayRef<ParamDeclRefAttr> prependedParamRefs,
-    std::optional<PromotedClosureSelfArg> selfArg, bool forceCapturing) {
+ASTDecl *
+ClosureEmitter::promoteClosure(ASTDecl &nestedFnDecl,
+                               ArrayRef<ParamDeclRefAttr> prependedParamRefs,
+                               std::optional<PromotedClosureSelfArg> selfArg,
+                               std::optional<bool> capturingOverride) {
   SmallVector<ParamDeclAttr> prependedParams =
       llvm::map_to_vector(prependedParamRefs, [](ParamDeclRefAttr paramRef) {
         return ParamDeclAttr::get(paramRef);
       });
-  return promoteClosure(nestedFnDecl, prependedParams, selfArg, forceCapturing);
+  return promoteClosure(nestedFnDecl, prependedParams, selfArg,
+                        capturingOverride);
 }
 
 template <typename T>
@@ -2066,7 +2074,7 @@ ASTDecl *ClosureEmitter::liftClosureIntoMethod(
   MLIRContext *ctx = shared.getContext();
   ASTDecl *promotedDecl = promoteClosure(nestedFnDecl, concreteParams,
                                          /*selfArg=*/selfArg,
-                                         /*forceCapturing=*/true);
+                                         /*capturingOverride=*/true);
   FnOp promotedCallFunction = cast<FnOp>(promotedDecl->getIfOperation());
   assert(concreteFieldDecls.size() == concreteFieldCaptures.size() &&
          "expected one capture value per closure field");
@@ -2243,6 +2251,57 @@ ClosureEmitter::Closure ClosureEmitter::liftClosure(
       concreteFieldCaptures, concreteFieldCaptureConventions,
       selfBoundFieldTypes, location);
   FnOp promotedCallFunction = cast<FnOp>(promotedCallDecl->getIfOperation());
+  StructEmitter structEmitter(structDecl);
+  DenseMap<ClosureMethod, FnOp> methodImpls;
+  methodImpls[ClosureMethod::CALL] = promotedCallFunction;
+  auto synthesizeValueMethodBody = [&](bool isMove) -> FnOp {
+    FnOp fn = structEmitter.synthesizeEmptyMoveOrCopyInit(/*isMove=*/isMove);
+    ASTDecl *decl = shared.declResolver->getDeclForFuncSymbol(
+        getFullyResolvedSymbolRef(fn));
+    assert(decl && "synthesized value method must be registered");
+    (void)structEmitter.populateMoveCopy(*decl, isMove);
+    return fn;
+  };
+  for (ClosureParent &closureParent : closureParents) {
+    switch (closureParent.getClosureMethod()) {
+    case ClosureMethod::DEL:
+      methodImpls[ClosureMethod::DEL] = structEmitter.synthesizeEmptyDtor();
+      break;
+    case ClosureMethod::MOVE:
+      methodImpls[ClosureMethod::MOVE] =
+          synthesizeValueMethodBody(/*isMove=*/true);
+      break;
+    case ClosureMethod::COPY:
+      methodImpls[ClosureMethod::COPY] =
+          synthesizeValueMethodBody(/*isMove=*/false);
+      break;
+    default:
+      break;
+    }
+  }
+  // Delete when the storage struct replaces the kgen.struct.generator. For now
+  // we need to lift the methods to top level because the parameters are stored
+  // in the kgen.struct.generator
+  auto promoteToTopLevel = [&](FnOp methodFn) -> FnOp {
+    ASTDecl *decl = shared.declResolver->getDeclForFuncSymbol(
+        getFullyResolvedSymbolRef(methodFn));
+    assert(decl && "synthesized value method must be registered");
+    decl->resolvedness = DeclResolvedness::body;
+    ASTDecl *promoted =
+        promoteClosure(*decl, concreteParams, /*selfArg=*/std::nullopt,
+                       /*capturingOverride=*/false);
+    return cast<FnOp>(promoted->getIfOperation());
+  };
+  for (ClosureMethod method :
+       {ClosureMethod::DEL, ClosureMethod::MOVE, ClosureMethod::COPY}) {
+    auto it = methodImpls.find(method);
+    if (it != methodImpls.end())
+      it->second = promoteToTopLevel(it->second);
+  }
+
+  // TODO: remove once kgen.struct.generator is collapsed into storage struct
+  structOp.removeMoveInitAttr();
+  structOp.removeCopyInitAttr();
 
   // Create the struct generator op. This will be moved into the struct in a
   // follow up.
@@ -2282,30 +2341,12 @@ ClosureEmitter::Closure ClosureEmitter::liftClosure(
     builder.setInsertionPointToStart(&block);
     ClosureMethod method = closureParent.getClosureMethod();
     FnOp fnOp = closureParent.getDefiningOp(moduleDecl);
-    FnTypeGeneratorType sig =
-        specializeSignature(fnOp, closureStructType, *shared.declResolver);
-    SmallVector<TypedAttr> paramValues;
-    mlir::AttrTypeReplacer replacer;
-    replacer.addReplacement([&](ParamDeclRefAttr parameterReference) {
-      return UnboundAttr::get(parameterReference.getType());
-    });
-    replacer.addReplacement([&](ParamIndexRefAttr parameterReference) {
-      return UnboundAttr::get(parameterReference.getType());
-    });
-    for (Type paramType : sig.getInputParamTypes())
-      paramValues.push_back(UnboundAttr::get(replacer.replace(paramType)));
 
-    TypedAttr symbol;
-    if (method == ClosureMethod::CALL) {
-      SymbolConstantAttr callSymbol = buildSymbolWithBoundPrependedParams(
-          promotedCallFunction, concreteParams);
-      symbol = callSymbol;
-    }
-    if (!symbol) {
-      symbol = ClosureSymbolAttr::get(ctx, parentSymbolRef, name,
-                                      ClosureMethodAttr::get(ctx, method),
-                                      paramValues, sig);
-    }
+    auto it = methodImpls.find(method);
+    assert(it != methodImpls.end() &&
+           "non-marker closure method missing an implementation");
+    TypedAttr symbol =
+        buildSymbolWithBoundPrependedParams(it->second, concreteParams);
     WitnessOp::create(builder, fnOp.getSymNameAttr(), symbol);
 
     // add the alias entries

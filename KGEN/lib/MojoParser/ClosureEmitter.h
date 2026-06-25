@@ -102,14 +102,14 @@ public:
   promoteClosure(ASTDecl &nestedFnDecl,
                  ArrayRef<ParamDeclAttr> prependedParams = {},
                  std::optional<PromotedClosureSelfArg> selfArg = std::nullopt,
-                 bool forceCapturing = false);
+                 std::optional<bool> capturingOverride = std::nullopt);
 
   /// Adapter overload for callsites that currently hold ParamDeclRefAttr.
   ASTDecl *
   promoteClosure(ASTDecl &nestedFnDecl,
                  ArrayRef<ParamDeclRefAttr> prependedParamRefs,
                  std::optional<PromotedClosureSelfArg> selfArg = std::nullopt,
-                 bool forceCapturing = false);
+                 std::optional<bool> capturingOverride = std::nullopt);
 
   Value emitClosureOp(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
                       ArrayRef<Capture> captures, TraitDeclOp trait,
