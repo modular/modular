@@ -271,17 +271,6 @@
             },
             {
               "type": "category",
-              "label": "random",
-              "link": {
-                "type": "doc",
-                "id": "max/api/python/experimental.random"
-              },
-              "items": [
-                "__AUTOGEN:max.experimental.random__"
-              ]
-            },
-            {
-              "type": "category",
               "label": "sharding",
               "link": {
                 "type": "doc",
