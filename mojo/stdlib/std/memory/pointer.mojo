@@ -169,19 +169,6 @@ struct AddressSpace(
 
 
 # ===-----------------------------------------------------------------------===#
-# Deprecated aliases for backward compatibility
-# ===-----------------------------------------------------------------------===#
-
-comptime _GPUAddressSpace = AddressSpace
-"""Deprecated: Use `AddressSpace` instead. This alias is provided for backward
-compatibility and will be removed in a future release."""
-
-comptime GPUAddressSpace = AddressSpace
-"""Deprecated: Use `AddressSpace` instead. This alias is provided for backward
-compatibility and will be removed in a future release."""
-
-
-# ===-----------------------------------------------------------------------===#
 # Pointer aliases
 # ===-----------------------------------------------------------------------===#
 

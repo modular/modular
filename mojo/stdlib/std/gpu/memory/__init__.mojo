@@ -26,7 +26,6 @@ GPU memory spaces and coordination of memory operations across threads.
 
 from .memory import (
     AddressSpace,
-    GPUAddressSpace,
     CacheEviction,
     CacheOperation,
     Consistency,

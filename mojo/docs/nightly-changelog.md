@@ -283,4 +283,7 @@ This version is still a work in progress.
   `UnsafePointer.load[volatile=True]()` instead, which work across all
   supported GPU targets rather than NVIDIA only.
 
+- Removed the deprecated `GPUAddressSpace` alias for `AddressSpace`. Use
+  `AddressSpace` directly.
+
 ## Fixed
