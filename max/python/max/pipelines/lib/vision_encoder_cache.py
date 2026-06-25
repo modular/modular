@@ -123,7 +123,14 @@ class VisionEncoderCache(Generic[VLMContextType]):
 
     @traced
     def lookup(self, image_hash: int) -> VisionEncoderCacheEntry | None:
-        """Look up a cached entry by image hash, refreshing LRU order."""
+        """Look up a cached entry by image hash, refreshing LRU order.
+
+        A falsy hash (``0``, the sentinel for an image/video with no
+        content hash) is treated as a miss, so callers don't need to guard
+        the call themselves.
+        """
+        if not image_hash:
+            return None
         entry = self._cache.get(image_hash)
         if entry is not None:
             self._cache.move_to_end(image_hash)

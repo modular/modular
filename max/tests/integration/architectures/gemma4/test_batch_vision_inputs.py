@@ -27,6 +27,7 @@ from max.pipelines.architectures.gemma4.context import Gemma4Context
 from max.pipelines.context import ImageMetadata
 from max.pipelines.context.context import TokenBuffer
 from max.pipelines.lib.vision_encoder_cache import VisionEncoderCache
+from max.pipelines.request import RequestID
 
 _HIDDEN = 4
 
@@ -187,11 +188,14 @@ def _video_ctx(
     tokens: np.ndarray,
     video_token_ranges: list[tuple[int, int]],
     processed_length: int,
+    video_hashes: list[int] | None = None,
+    request_id: str = "r0",
 ) -> Gemma4Context:
     """Build a minimal Gemma4Context with video fields populated."""
     # One dummy frame covering the first video range (patches = range width).
     n_patches = sum(e - s for s, e in video_token_ranges)
     ctx = Gemma4Context(
+        request_id=RequestID(request_id),
         max_length=128,
         tokens=TokenBuffer(tokens),
         images=[],
@@ -205,6 +209,7 @@ def _video_ctx(
         video_frame_patch_counts=[n_patches],
         video_frame_soft_token_counts=[n_patches],
         video_token_ranges=video_token_ranges,
+        video_hashes=video_hashes or [],
     )
     if processed_length > 0:
         ctx.tokens.skip_processing(processed_length)
@@ -295,3 +300,130 @@ def test_build_video_inputs_chunked_straddle() -> None:
         indices, np.array([2, 3, oob, oob], dtype=np.int32)
     )
     assert indices.dtype == np.int32
+
+
+# ---------------------------------------------------------------------------
+# Video vision-encoder cache tests
+# ---------------------------------------------------------------------------
+
+_VIDEO_HIDDEN = 4
+
+
+def _video_embed_buf(n_tokens: int) -> list[Buffer]:
+    """Single-device fake embedding for a video with n_tokens output tokens."""
+    data = np.ones((n_tokens, _VIDEO_HIDDEN), dtype=np.float32)
+    return [Buffer.from_numpy(data).to(CPU())]
+
+
+def _cached_video_ctx(
+    video_hash: int,
+    n_tokens: int,
+    request_id: str = "r0",
+) -> Gemma4Context:
+    """Build a minimal context with one video whose hash is pre-set."""
+    tokens = np.array([1] + [99] * n_tokens + [2], dtype=np.int64)
+    return _video_ctx(
+        tokens,
+        [(1, 1 + n_tokens)],
+        processed_length=0,
+        video_hashes=[video_hash],
+        request_id=request_id,
+    )
+
+
+def test_video_cache_miss_encodes_and_carries_metadata() -> None:
+    # A cache miss: build_video_inputs should return a raw path with cache
+    # metadata so execute() can call _cache_and_split afterward.
+    cache: VisionEncoderCache[Gemma4Context] = VisionEncoderCache(max_entries=4)
+    ctx = _cached_video_ctx(video_hash=0xDEAD_BEEF, n_tokens=4)
+    result = build_video_inputs(
+        context_batch=[ctx],
+        devices=[CPU()],
+        pooling_kernel_size=1,
+        dtype=DType.float32,
+        ve_cache=cache,
+        empty_embeddings=create_empty_embeddings([CPU()], _VIDEO_HIDDEN),
+    )
+    assert result is not None
+    assert result.raw is not None  # miss → needs encoding
+    assert result.cached_embeddings is None
+    assert result.cache_hashes == [0xDEAD_BEEF]
+    assert result.cache_per_video_token_counts == [4]
+
+
+def test_video_cache_hit_returns_cached_embeddings() -> None:
+    # Pre-populate the cache, then verify build_video_inputs returns the cached path.
+    cache: VisionEncoderCache[Gemma4Context] = VisionEncoderCache(max_entries=4)
+    video_hash = 0x1234_5678
+    bufs = _video_embed_buf(3)
+    cache.insert(video_hash, bufs, num_tokens=3)
+
+    ctx = _cached_video_ctx(video_hash=video_hash, n_tokens=3)
+    empty = create_empty_embeddings([CPU()], _VIDEO_HIDDEN)
+    result = build_video_inputs(
+        context_batch=[ctx],
+        devices=[CPU()],
+        pooling_kernel_size=1,
+        dtype=DType.float32,
+        ve_cache=cache,
+        empty_embeddings=empty,
+    )
+    assert result is not None
+    assert result.raw is None  # hit → skip encoding
+    assert result.cached_embeddings is not None
+    assert result.cached_embeddings[0].shape[0] == 3
+    # Scatter indices still populated for the hit path.
+    assert result.token_indices_np is not None
+
+
+def test_video_cache_cross_request_reuse() -> None:
+    # Two requests with the same video hash: second request gets a cache hit.
+    cache: VisionEncoderCache[Gemma4Context] = VisionEncoderCache(max_entries=4)
+    video_hash = 0xABCD_EF01
+    bufs = _video_embed_buf(5)
+    cache.insert(video_hash, bufs, num_tokens=5)
+
+    req1 = _cached_video_ctx(video_hash=video_hash, n_tokens=5, request_id="r1")
+    req2 = _cached_video_ctx(video_hash=video_hash, n_tokens=5, request_id="r2")
+    empty = create_empty_embeddings([CPU()], _VIDEO_HIDDEN)
+
+    for ctx in (req1, req2):
+        result = build_video_inputs(
+            context_batch=[ctx],
+            devices=[CPU()],
+            pooling_kernel_size=1,
+            dtype=DType.float32,
+            ve_cache=cache,
+            empty_embeddings=empty,
+        )
+        assert result is not None
+        assert result.raw is None, "Both requests should be cache hits"
+
+    # Both requests acquired a ref.
+    entry = cache.lookup(video_hash)
+    assert entry is not None
+    assert entry.ref_count == 2
+
+    cache.release_request(RequestID("r1"))
+    assert entry.ref_count == 1
+    cache.release_request(RequestID("r2"))
+    assert entry.ref_count == 0
+
+
+def test_video_inflight_not_evicted() -> None:
+    # A video with an active ref must survive when the cache is full.
+    cache: VisionEncoderCache[Gemma4Context] = VisionEncoderCache(max_entries=1)
+    video_hash = 0xFEED_FACE
+    bufs = _video_embed_buf(6)
+    cache.insert(video_hash, bufs, num_tokens=6)
+    cache.acquire(RequestID("in-flight"), video_hash)
+
+    # Inserting another entry should not evict the ref-held video.
+    other_hash = 0x1111_2222
+    cache.insert(other_hash, _video_embed_buf(2), num_tokens=2)
+    assert cache.lookup(video_hash) is not None  # still alive
+
+    # Releasing the request makes it evictable.
+    cache.release_request(RequestID("in-flight"))
+    cache.insert(0x3333_4444, _video_embed_buf(2), num_tokens=2)
+    assert cache.lookup(video_hash) is None  # evicted after ref dropped
