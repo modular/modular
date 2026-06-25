@@ -43,13 +43,15 @@ kgen.func @bitcast_muli_use_offset() -> (!kgen.scalar<si64>, !kgen.pointer<scala
   kgen.return %load, %2 : !kgen.scalar<si64>, !kgen.pointer<scalar<si64>>
 }
 
-// We should have replaced the load and preserved the other offset.
+// We should have replaced the load and preserved the other access; the
+// `pop.pointer.bitcast` + `pop.offset` chain canonicalizes to a single
+// `pop.array.gep`.
 // CHECK-LABEL: kgen.func @bitcast_muli_use_offset
 // CHECK: %[[OUT:.*]] = kgen.param.constant: scalar<si64> = <4>
+// CHECK: %[[IDX:.*]] = kgen.param.constant = <1>
 // CHECK: %[[GLOBAL:.*]] = pop.global_constant: array<3, scalar<si64>> = <[2, 3, 4]>
-// CHECK: %[[PTR:.*]] = pop.pointer.bitcast %[[GLOBAL]]
-// CHECK: %[[OFF:.*]] = pop.offset %[[PTR]]
-// CHECK: kgen.return %[[OUT]], %[[OFF]]
+// CHECK: %[[GEP:.*]] = pop.array.gep %[[GLOBAL]][%[[IDX]]]
+// CHECK: kgen.return %[[OUT]], %[[GEP]]
 
 
 kgen.func @array_gep() -> !kgen.scalar<si64> {
