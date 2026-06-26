@@ -27,7 +27,7 @@ def get_string() -> String:
 def main():
     # Create a non-trivial value and a trivial value derived from it.
     var my_string = get_string()
-    var length = len(my_string)
+    var length = len(my_string.bytes())
     use_int(length)  # last use of length
 
     # my_string should still be alive because print uses it.
