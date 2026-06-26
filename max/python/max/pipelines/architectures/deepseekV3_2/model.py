@@ -17,8 +17,6 @@ from __future__ import annotations
 import logging
 from typing import Any, ClassVar
 
-import numpy as np
-from max.driver import Buffer
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import Graph
@@ -164,27 +162,6 @@ class DeepseekV3_2Model(DeepseekV3Model):
     def load_model(self, session: InferenceSession) -> Model:
         """Load the model with the given weights."""
 
-        max_batch_size = self.pipeline_config.runtime.max_batch_size
-        assert max_batch_size, "Expected max_batch_size to be set"
-
-        # `_host_input_row_offsets_prealloc` tensor needs to reserve space for
-        # `max_batch_size` of requests on each DP rank.
-        dp_size = self.pipeline_config.model.data_parallel_degree
-        max_batch_size *= dp_size
-
-        self._host_input_row_offsets_prealloc = Buffer.from_numpy(
-            np.arange(max_batch_size + 1, dtype=np.uint32)
-        )
-        self._device_input_row_offsets_prealloc = (
-            self._host_input_row_offsets_prealloc.to(self.devices[0])
-        )
-
-        # create batch context lengths tensor for each device
-        self._batch_context_lengths_prealloc_cpu = [
-            Buffer.zeros(shape=[1], dtype=DType.int32)
-            for _ in range(len(self.devices))
-        ]
-
         with CompilationTimer("model") as timer:
             if self.adapter:
                 state_dict = self.adapter(
@@ -265,5 +242,12 @@ class DeepseekV3_2Model(DeepseekV3Model):
 
             timer.mark_build_complete()
             model = session.load(graph, weights_registry=nn_model.state_dict())
+
+        if self._batch_processor is not None:
+            bind_ep = getattr(
+                self._batch_processor, "bind_ep_comm_initializer", None
+            )
+            if bind_ep is not None:
+                bind_ep(self.ep_comm_initializer)
 
         return model
