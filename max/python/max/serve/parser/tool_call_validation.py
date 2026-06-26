@@ -140,7 +140,7 @@ def log_tool_call_conformance(
 ) -> None:
     """Logs schema-conformance of generated tool calls (observability only).
 
-    Emits one INFO line per *non-conforming* call; conforming calls are
+    Emits one WARNING line per *non-conforming* call; conforming calls are
     silent to keep log volume proportional to failures. Never raises into the
     caller. See the module docstring for the PII guarantee.
     """
@@ -152,7 +152,7 @@ def log_tool_call_conformance(
     for r in results:
         if r.outcome == "valid":
             continue
-        logger.info(
+        logger.warning(
             "tool_call_conformance req=%s stream=%s fn=%s outcome=%s errors=%s",
             request_id,
             streaming,
