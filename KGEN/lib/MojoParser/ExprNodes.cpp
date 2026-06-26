@@ -39,6 +39,7 @@
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
 #include "KGEN/POPDialect/POPUtils.h"
+#include "KGEN/ToolCommon/MLIROpFString.h"
 
 #include "Support/AssertStream.h"
 #include "Support/Compiler/OperationUtils.h"
@@ -2448,6 +2449,47 @@ auto AttributeRefNode::emitLCVIR(ExprDest &dest, IREmitter &emitter,
   return {};
 }
 
+/// Decode a canonical `_type=` value (shared by the dot-syntax and f-string
+/// `__mlir_op` paths). The bare `__mlir_deferred_type` marker sets
+/// `forceDeferred` and adds no type; a `Tuple[...]` appends each element; any
+/// other type appends itself. Emits an error at `loc` and fails if a value
+/// isn't a type.
+static LogicalResult decodeMLIRResultTypes(TypedAttr value, SMLoc loc,
+                                           IREmitter &emitter,
+                                           SmallVectorImpl<Type> &out,
+                                           bool &forceDeferred) {
+  value = getCanonicalAttr(value);
+  if (sugarIsa<MagicMLIRDeferredTypeType>(ASTType(value).mlirType)) {
+    forceDeferred = true;
+    return success();
+  }
+  auto pushType = [&](TypedAttr type, const Twine &message) -> LogicalResult {
+    if (!LIT::isTypeExpr(type)) {
+      emitter.emitError(loc, message);
+      return failure();
+    }
+    out.push_back(ASTType(type));
+    return success();
+  };
+  if (auto valueMetaType = sugarDynCast<StructMetaType>(value.getType())) {
+    ASTType tupleType =
+        emitter.shared.lookupBuiltinType("Tuple", emitter.declScope, loc);
+    if (valueMetaType.getSymbol() ==
+        sugarCast<StructMetaType>(tupleType.extractMetaType()).getSymbol()) {
+      auto tca = sugarCast<TypeParamAttr>(value);
+      auto drt = sugarCast<LIT::StructType>(tca.getMlirType());
+      ArrayRef<TypedAttr> paramValues = drt.getParamValues();
+      assert(paramValues.size() == 2 && "Tuple ParamValues must be size 2");
+      auto variadic = sugarCast<ParamListAttr>(paramValues[0]);
+      for (TypedAttr type : variadic.getValues())
+        if (failed(pushType(type, "value in _type tuple is not a type")))
+          return failure();
+      return success();
+    }
+  }
+  return pushType(value, "_type value is not a type");
+}
+
 /// Given a call to an UnboundMLIROperator, generate an MLIR operation with
 /// the operands as SSA values.
 static AnyValue emitMLIROperatorCall(const CallNode &call,
@@ -2498,54 +2540,8 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
         emitter.emitError(call.getLoc(), "unknown _type value");
         return {};
       }
-      // Strip any sugar from the type specifier. Ops may have verifiers that
-      // restrict the result type to something unsugared.
-      value = getCanonicalAttr(value);
-
-      // Bare `__mlir_deferred_type` (the magic decl itself, not a deferred
-      // type instance): force `kgen.deferred` with no result types.
-      if (sugarIsa<MagicMLIRDeferredTypeType>(ASTType(value).mlirType)) {
-        forceDeferred = true;
-        hadTypeSpec = true;
-        continue;
-      }
-
-      auto pushTypeToState = [&](TypedAttr type,
-                                 const Twine &message) -> LogicalResult {
-        if (!LIT::isTypeExpr(type)) {
-          emitter.emitError(call.getLoc(), message);
-          return failure();
-        }
-        state.types.push_back(ASTType(type));
-        return success();
-      };
-      if (auto valueMetaType = sugarDynCast<StructMetaType>(value.getType())) {
-        ASTType tupleType = emitter.shared.lookupBuiltinType(
-            "Tuple", emitter.declScope, call.getLoc());
-        // If the _type field is a Tuple of types, then the operation
-        // returns multiple results, with types specified in the list.  We
-        // need to take apart the Tuple value to get the types from inside it.
-        if (valueMetaType.getSymbol() ==
-            sugarCast<StructMetaType>(tupleType.extractMetaType())
-                .getSymbol()) {
-          // Dig out the types from the tuple.  Tuple literals must always
-          // have this particular shape.
-          auto tca = sugarCast<TypeParamAttr>(value);
-          auto drt = sugarCast<LIT::StructType>(tca.getMlirType());
-          ArrayRef<TypedAttr> paramValues = drt.getParamValues();
-          assert(paramValues.size() == 2 &&
-                 "_types tuple ParamValues must be size 1");
-          auto variadic = sugarCast<ParamListAttr>(paramValues[0]);
-          for (TypedAttr type : variadic.getValues()) {
-            if (pushTypeToState(type, "value in _type tuple is not a type")
-                    .failed())
-              return {};
-          }
-          hadTypeSpec = true;
-          continue;
-        }
-      }
-      if (pushTypeToState(value, "_type value is not a type").failed())
+      if (failed(decodeMLIRResultTypes(value, call.getLoc(), emitter,
+                                       state.types, forceDeferred)))
         return {};
       hadTypeSpec = true;
       continue;
@@ -2940,11 +2936,336 @@ AnyValue SliceLiteralNode::emitIR(ExprDest &dest, IREmitter &emitter) const {
   return emitter.emitResult(result, this, dest);
 }
 
+//===----------------------------------------------------------------------===//
+// `__mlir_op[`f-string`, _type=...]` subscript syntax
+//===----------------------------------------------------------------------===//
+//
+// Uses the op's natural assembly with `%{name}` / `%{type_of(name)}`
+// resolving to Mojo identifiers in scope. Shapes:
+//   __mlir_op[`fstring`]
+//   __mlir_op[`fstring`, _type=...]
+//   __mlir_op[_type=..., `fstring`]
+
+/// Rewrite `%{name}` → `%arg<N>` / `%param<N>` and `%{type_of(name)}` → operand
+/// type text, then lower now via `KGEN::lowerFStringMLIROp` or stash as
+/// `kgen.deferred` for the elaborator (parametric types / comptime parameters).
+static AnyValue emitFStringSubscriptMLIROp(const SubscriptNode &subscript,
+                                           ExprDest &dest, IREmitter &emitter) {
+  SMLoc loc = subscript.getLoc();
+  MLIRContext *context = emitter.getContext();
+  if (!emitter.builder)
+    return emitter.emitErrorForDynamicValueInParameter(&subscript);
+
+  // 1. Validate shape: one or more positional backtick templates (concatenated
+  //    at parse time, mirroring `__mlir_type[…]` / `__mlir_attr[…]`) plus an
+  //    optional `_type=` keyword.
+  SmallVector<const Operand *> fstringOps;
+  const Operand *typeOp = nullptr;
+  for (const Operand &op : subscript.operands) {
+    if (op.isPositional()) {
+      fstringOps.push_back(&op);
+    } else if (op.isKeyword() && op.name && op.name.getValue() == "_type") {
+      if (typeOp) {
+        emitter.emitError(op.expr->getLoc(),
+                          "duplicate '_type' in __mlir_op[...]");
+        return {};
+      }
+      typeOp = &op;
+    } else {
+      emitter.emitError(op.expr->getLoc(),
+                        "__mlir_op[...] only accepts backtick template "
+                        "chunks and an optional '_type=' keyword");
+      return {};
+    }
+  }
+  if (fstringOps.empty()) {
+    emitter.emitError(loc,
+                      "__mlir_op[...] requires a backtick f-string template");
+    return {};
+  }
+
+  // 2. Concatenate the backtick chunks; the multi-chunk path interns the
+  //    concat via the shared allocator so derived `StringRef`s outlive
+  //    diagnostics.
+  StringRef tmpl;
+  if (fstringOps.size() == 1) {
+    auto *dre = dyn_cast<DeclRefNode>(fstringOps.front()->expr);
+    if (!dre || dre->spelling.empty() ||
+        dre->spelling.data()[dre->spelling.size()] != '`') {
+      emitter.emitError(fstringOps.front()->expr->getLoc(),
+                        "__mlir_op[...] template chunk must be a backtick "
+                        "string");
+      return {};
+    }
+    tmpl = dre->spelling;
+  } else {
+    std::string concat;
+    for (const Operand *fop : fstringOps) {
+      auto *dre = dyn_cast<DeclRefNode>(fop->expr);
+      if (!dre || dre->spelling.empty() ||
+          dre->spelling.data()[dre->spelling.size()] != '`') {
+        emitter.emitError(fop->expr->getLoc(),
+                          "__mlir_op[...] template chunk must be a backtick "
+                          "string");
+        return {};
+      }
+      concat.append(dre->spelling.data(), dre->spelling.size());
+    }
+    tmpl = emitter.shared.getPersistentCopy(StringRef(concat));
+  }
+
+  // 3. Process `_type` if present (single Type or Tuple of Types).
+  SmallVector<Type> resultTypes;
+  bool hadTypeSpec = false;
+  bool forceDeferred = false;
+  if (typeOp) {
+    AnyValue typeAny = emitter.emitExpr(typeOp->expr, EC_MLIRMagic);
+    if (!typeAny)
+      return {};
+    auto pv = typeAny.getIfPValue();
+    if (!pv) {
+      emitter.emitError(typeOp->expr->getLoc(), "unknown _type value");
+      return {};
+    }
+    auto value = dyn_cast<TypedAttr>(pv.get());
+    if (!value) {
+      emitter.emitError(typeOp->expr->getLoc(), "unknown _type value");
+      return {};
+    }
+    if (failed(decodeMLIRResultTypes(value, typeOp->expr->getLoc(), emitter,
+                                     resultTypes, forceDeferred)))
+      return {};
+    hadTypeSpec = true;
+  }
+
+  // 4. Walk the template, resolving `%{name}` once per name:
+  //      * SRValue → operand, emit `%arg<N>`.
+  //      * PValue (comptime/parametric) → `ToStringDeferredAttr`, emit
+  //        `%param<N>` for the elaborator to inline.
+  //    `%{type_of(name)}` prints the operand's MLIR type now, unless the type
+  //    is parametric (`MLIRDeferredType`), in which case the placeholder
+  //    survives as `%type_of(arg<N>)` and the op is deferred.
+  //    String literals pass through verbatim; `//` comments are not handled.
+  llvm::DenseMap<StringRef, unsigned> nameToIdx;
+  SmallVector<Value> operands;
+  SmallVector<Attribute> paramAttrs;
+  std::string rewritten;
+  llvm::raw_string_ostream os(rewritten);
+  bool operandTypeDeferred = false;
+
+  // The callback decides each placeholder's rewrite; it signals errors (already
+  // diagnosed) by setting `walkFailed` and returning -1, since it can't
+  // `return` out of the enclosing function.
+  bool walkFailed = false;
+  KGEN::scanFStringTemplate(
+      tmpl, os, [&](StringRef rest, llvm::raw_ostream &out) -> int {
+        // `%{name}` / `%{type_of(name)}` — the only user-facing placeholders.
+        if (rest.starts_with("{")) {
+          size_t end = rest.find('}');
+          if (end == StringRef::npos) {
+            emitter.emitError(loc, "unterminated `%{...}` placeholder");
+            walkFailed = true;
+            return -1;
+          }
+          StringRef inner = rest.substr(1, end - 1);
+          bool wantType = inner.starts_with("type_of(") && inner.ends_with(")");
+          StringRef name = wantType ? inner.drop_front(8).drop_back(1) : inner;
+          if (name.empty() || (!llvm::isAlpha(name[0]) && name[0] != '_') ||
+              !llvm::all_of(name.drop_front(), [](char ch) {
+                return llvm::isAlnum(ch) || ch == '_';
+              })) {
+            emitter.emitError(loc,
+                              "invalid identifier in `%{...}` placeholder: '")
+                << name << "'";
+            walkFailed = true;
+            return -1;
+          }
+
+          // Resolve once. PValue → `%param<N>` (deferred string), otherwise
+          // emit an SRValue operand → `%arg<N>`. The high bit of
+          // `nameToIdx[name]` tags literal vs operand so re-references share a
+          // slot.
+          static constexpr unsigned kParamTag = 1u << 31;
+          auto it = nameToIdx.find(name);
+          if (it == nameToIdx.end()) {
+            DeclRefNode synthRef(name, /*isEscapedIdentifier=*/false);
+            AnyValue val = emitter.emitExpr(&synthRef, EC_MLIRMagic);
+            if (!val) {
+              walkFailed = true;
+              return -1;
+            }
+            if (PValue pv = val.getIfPValue()) {
+              TypedAttr canon = getCanonicalAttr(pv.get());
+              nameToIdx[name] =
+                  static_cast<unsigned>(paramAttrs.size()) | kParamTag;
+              paramAttrs.push_back(
+                  ToStringDeferredAttr::get(canon, /*needElideType=*/true));
+            } else {
+              SRValue srv = emitter.emitSRValue({val, &synthRef}, EC_MLIRMagic,
+                                                ASTType());
+              if (!srv) {
+                walkFailed = true;
+                return -1;
+              }
+              Value v = emitter.emitRebindOpIfNeeded(
+                  srv, getCanonicalType(Value(srv).getType()),
+                  fstringOps.front()->expr->getLoc());
+              if (!v) {
+                walkFailed = true;
+                return -1;
+              }
+              nameToIdx[name] = operands.size();
+              operands.push_back(v);
+            }
+            it = nameToIdx.find(name);
+          }
+          unsigned encoded = it->second;
+          bool isParam = (encoded & kParamTag) != 0;
+          unsigned idx = encoded & ~kParamTag;
+
+          if (wantType) {
+            if (isParam) {
+              emitter.emitError(loc, "`%{type_of(")
+                  << name
+                  << ")}` is not supported for comptime parameter placeholders";
+              walkFailed = true;
+              return -1;
+            }
+            // Parametric (`MLIRDeferredType`): keep the placeholder so the
+            // elaborator can substitute after binding (bracketed index,
+            // matching `%arg<N>` / `%param<N>`).
+            if (sugarIsa<MLIRDeferredType>(operands[idx].getType())) {
+              operandTypeDeferred = true;
+              out << "%type_of(arg<" << idx << ">)";
+            } else {
+              operands[idx].getType().print(out);
+            }
+          } else if (isParam) {
+            out << "%param<" << idx << ">";
+          } else {
+            out << "%arg<" << idx << ">";
+          }
+          return static_cast<int>(end + 1);
+        }
+        // `%arg<N>` / `%param<N>` / `%type_of(arg<N>)` are internal
+        // placeholders the rewrites above own; reject them (and the unbracketed
+        // `%argN`, which collides with the synthetic block args, and `%paramN`)
+        // in user templates.
+        if (rest.starts_with("arg<") || rest.starts_with("param<") ||
+            rest.starts_with("type_of(") ||
+            (rest.starts_with("arg") && rest.size() > 3 &&
+             llvm::isDigit(rest[3])) ||
+            (rest.starts_with("param") && rest.size() > 5 &&
+             llvm::isDigit(rest[5]))) {
+          emitter.emitError(
+              loc, "reserved `%...` placeholder in __mlir_op template; "
+                   "use `%{name}` or `%{type_of(name)}`");
+          walkFailed = true;
+          return -1;
+        }
+        return 0;
+      });
+  if (walkFailed)
+    return {};
+
+  // 5. Defer when anything in operand/result types is parametric, a `%param<N>`
+  //    survived, or `forceDeferred` was requested. The elaborator re-runs
+  //    `lowerFStringMLIROp` after binding.
+  bool resultTypeDeferred = llvm::any_of(
+      resultTypes, [](Type t) { return sugarIsa<MLIRDeferredType>(t); });
+  bool isDeferred = forceDeferred || operandTypeDeferred ||
+                    resultTypeDeferred || !paramAttrs.empty();
+
+  auto emitR = [&](CValue value) -> AnyValue {
+    return emitter.emitResult(value, &subscript, dest);
+  };
+  auto emitTupleOf = [&](Operation::result_range results) -> AnyValue {
+    auto tupleType =
+        emitter.shared.lookupBuiltinType("Tuple", emitter.declScope, loc);
+    if (tupleType.isTypeCheckErrorType())
+      return {};
+    tupleType = tupleType.getWithoutParameters(emitter.shared);
+    CallOperands callOperands(CallSyntax::kTypeCall, &subscript,
+                              std::move(dest));
+    for (Value r : results)
+      callOperands.add({SRValue(r), &subscript});
+    return emitter.emitConstructorCall(tupleType, std::move(callOperands));
+  };
+
+  if (isDeferred) {
+    // Stash the rewritten template on `kgen.deferred`; the elaborator
+    // detects it via `isFStringTemplate` and re-runs `lowerFStringMLIROp`
+    // after concretization. Comptime parameters ride as `fstring_params`.
+    OperationState dstate(subscript.getLocation(emitter),
+                          DeferredOp::getOperationName());
+    dstate.addOperands(operands);
+    dstate.addTypes(resultTypes);
+    auto deferredName =
+        mlir::OperationName(DeferredOp::getOperationName(), context);
+    dstate.addAttribute(DeferredOp::getOpNameAttrName(deferredName),
+                        StringAttr::get(context, rewritten));
+    DictionaryAttr opAttrs = DictionaryAttr::get(context, {});
+    if (!paramAttrs.empty()) {
+      NamedAttribute litsNA(
+          StringAttr::get(context, KGEN::getFStringParamsAttrName()),
+          ArrayAttr::get(context, paramAttrs));
+      opAttrs = DictionaryAttr::get(context, {litsNA});
+    }
+    dstate.addAttribute(DeferredOp::getOpAttrsAttrName(deferredName), opAttrs);
+    Operation *deferred = emitter.builder->create(dstate);
+
+    if (deferred->getNumResults() == 0)
+      return emitR(PValue(emitter.shared.getNoneAttr()));
+    if (deferred->getNumResults() == 1)
+      return emitR(SRValue(deferred->getResult(0)));
+    return emitTupleOf(deferred->getResults());
+  }
+
+  // 6. Concrete path: lower via the shared helper now. `tmpl` is the original
+  //    `%{name}` source, passed for diagnostics.
+  std::string errorMsg;
+  Operation *parsedOp = KGEN::lowerFStringMLIROp(
+      *emitter.builder, subscript.getLocation(emitter), rewritten, operands,
+      resultTypes, errorMsg, /*userTmpl=*/tmpl);
+  if (!parsedOp) {
+    emitter.emitError(loc) << errorMsg;
+    return {};
+  }
+
+  if (hadTypeSpec && (parsedOp->getNumResults() != resultTypes.size() ||
+                      !llvm::equal(parsedOp->getResultTypes(), resultTypes))) {
+    emitter.emitError(loc, "_type does not match parsed op's result types");
+    return {};
+  }
+
+  for (Type type : parsedOp->getResultTypes()) {
+    if (!ASTType(type).isRegisterPassable(loc, emitter.shared)) {
+      emitter.emitError(loc)
+          << ASTType(type)
+          << " cannot be returned directly from __mlir_op as it is not a "
+             "'RegisterPassable' type";
+      return {};
+    }
+  }
+
+  if (parsedOp->getNumResults() == 0)
+    return emitR(PValue(emitter.shared.getNoneAttr()));
+  if (parsedOp->getNumResults() == 1)
+    return emitR(SRValue(parsedOp->getResult(0)));
+  (void)context;
+  return emitTupleOf(parsedOp->getResults());
+}
+
 /// Emit a reference like "x[i, j]" to MLIR. These can always be
 /// emitted eagerly in the LHS of an assignment because the base expression can
 /// never have an inferred type.
 auto SubscriptNode::emitLCVIR(ExprDest &dest, IREmitter &emitter,
                               bool isSpeculative) const -> ELVIITResult {
+  // Bare `__mlir_op[...]` — new f-string subscript syntax. Intercept early
+  // so we don't run through the OverloadSet / __call__ / param-binding path.
+  if (auto *dre = dyn_cast<DeclRefNode>(base);
+      dre && dre->spelling == "__mlir_op")
+    return emitFStringSubscriptMLIROp(*this, dest, emitter);
   // Subscripting a generic function binds the parameter expressions.
   auto baseAnyValue = emitter.emitExpr(base, EC_SubscriptBase);
   if (!baseAnyValue)

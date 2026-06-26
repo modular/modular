@@ -23,6 +23,7 @@
 #include "KGEN/Support/NameMangling.h"
 #include "KGEN/ToolCommon/CLOptions.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
+#include "KGEN/ToolCommon/MLIROpFString.h"
 #include "KGEN/TransformUtils/EliminateDeadSymbolUtils.h"
 #include "KGEN/TransformUtils/ManglingUtils.h"
 #include "MLRT/AsyncRT/CompilerSupport/Context.h"
@@ -2060,8 +2061,132 @@ ElaborationState Elaborator::processCompileOffload(ImplNode *parent,
 // processDeferredOp
 //===----------------------------------------------------------------------===//
 
+/// Replace every `DeferredAttr` in `a` with its wrapped attribute.
+static Attribute stripDeferredAttrs(Attribute a) {
+  mlir::AttrTypeReplacer replacer;
+  replacer.addReplacement(
+      [](DeferredAttr attr) -> std::pair<Attribute, WalkResult> {
+        return {attr.getAttr(), WalkResult::advance()};
+      });
+  return replacer.replace(a);
+}
+
+/// Print one deferred-string fragment to `os`: a bare `StringAttr` (raw, no
+/// quotes) or a `ToStringDeferredAttr` (unwrapped, honoring its elide-type
+/// request, with the same no-quotes rule when the wrapped value is a string).
+/// Returns false if `a` is neither, leaving the fallback to the caller.
+static bool printDeferredFragment(Attribute a, llvm::raw_ostream &os) {
+  if (auto strAttr = dyn_cast<StringAttr>(a)) {
+    os << strAttr.str();
+    return true;
+  }
+  if (auto toStr = dyn_cast<ToStringDeferredAttr>(a)) {
+    Attribute val = toStr.getAttr();
+    bool elideType = toStr.getNeedElideType() != nullptr;
+    if (auto sv = dyn_cast<StringAttr>(val); sv && elideType)
+      os << sv.str();
+    else
+      val.print(os, elideType);
+    return true;
+  }
+  return false;
+}
+
 ElaborationState Elaborator::processDeferredOp(ImplNode *inode, DeferredOp op) {
   Location loc = op.getLoc();
+
+  // F-string MLIR op: template lives in `opName`. Concretize result types,
+  // inline any `%param<N>` placeholders, then parse via the shared helper.
+  if (KGEN::isFStringTemplate(op.getOpName())) {
+    SmallVector<Type> resultTypes;
+    resultTypes.reserve(op->getNumResults());
+    for (Type t : op->getResultTypes()) {
+      Type concrete;
+      HANDLE_EVALUATOR_CONC(concrete, inode, loc, t);
+      resultTypes.push_back(concrete);
+    }
+    OpBuilder b(op);
+    SmallVector<Value> operands(op.getOperands().begin(),
+                                op.getOperands().end());
+
+    // `fstring_params` carries the comptime-PValue substitutions; skip
+    // entirely when no `%param<N>` marker survived (the common case).
+    std::string templateStr = op.getOpName().str();
+    if (templateStr.find("%param<") != std::string::npos) {
+      // Strip `#kgen.deferred<…>` wrappers so we print bare values.
+      Attribute opAttrsConc;
+      HANDLE_EVALUATOR_CONC(opAttrsConc, inode, loc, op.getOpAttrs());
+      opAttrsConc = stripDeferredAttrs(opAttrsConc);
+      auto opAttrsDict = dyn_cast<DictionaryAttr>(opAttrsConc);
+      auto params =
+          opAttrsDict
+              ? opAttrsDict.getAs<ArrayAttr>(KGEN::getFStringParamsAttrName())
+              : ArrayAttr();
+      if (params) {
+        SmallVector<std::string> paramStrings;
+        for (Attribute a : params) {
+          std::string s;
+          llvm::raw_string_ostream ss(s);
+          if (!printDeferredFragment(a, ss))
+            a.print(ss);
+          paramStrings.push_back(std::move(s));
+        }
+
+        // Inline `%param<N>`; `%arg<N>` / `%type_of(arg<N>)` are left for
+        // `lowerFStringMLIROp`. A malformed `%param<` means the emitter and
+        // elaborator are out of sync (internal error).
+        std::string paramErr;
+        std::string substituted;
+        llvm::raw_string_ostream sos(substituted);
+        KGEN::scanFStringTemplate(
+            templateStr, sos,
+            [&](StringRef rest, llvm::raw_ostream &os) -> int {
+              if (!rest.consume_front("param<"))
+                return 0;
+              size_t len = 0;
+              while (len < rest.size() && llvm::isDigit(rest[len]))
+                ++len;
+              if (len == 0 || len >= rest.size() || rest[len] != '>') {
+                paramErr = "internal: malformed `%param<...>` placeholder";
+                return -1;
+              }
+              size_t n = 0;
+              if (rest.slice(0, len).getAsInteger(10, n)) {
+                paramErr =
+                    "internal: failed to parse `%param` placeholder index";
+                return -1;
+              }
+              if (n >= paramStrings.size()) {
+                llvm::raw_string_ostream eos(paramErr);
+                eos << "internal: `%param<" << n
+                    << ">` references a parameter beyond the `fstring_params` "
+                       "array (have "
+                    << paramStrings.size() << " entries)";
+                return -1;
+              }
+              os << paramStrings[n];
+              return static_cast<int>(StringRef("param<").size() + len + 1);
+            });
+        if (!paramErr.empty()) {
+          inode->setToError(ErrorTree(loc, paramErr));
+          return failure();
+        }
+        templateStr = std::move(substituted);
+      }
+    }
+
+    std::string errorMsg;
+    Operation *parsedOp = KGEN::lowerFStringMLIROp(
+        b, loc, templateStr, operands, resultTypes, errorMsg);
+    if (!parsedOp) {
+      inode->setToError(ErrorTree(loc, errorMsg));
+      return failure();
+    }
+    op.replaceAllUsesWith(parsedOp);
+    op->erase();
+    return ElaborationState::advance();
+  }
+
   Attribute dict;
   HANDLE_EVALUATOR_CONC(dict, inode, loc, op.getOpAttrs());
   assert(isa<DictionaryAttr>(dict) && "expected dictionary attribute");
@@ -2072,14 +2197,9 @@ ElaborationState Elaborator::processDeferredOp(ImplNode *inode, DeferredOp op) {
   // At this point remove all deferred attributes by replacing them with their
   // content. It's essential to do this before operation is constructed,
   // otherwise attribute may not be set if it's not concretized.
-  mlir::AttrTypeReplacer replacer;
-  replacer.addReplacement(
-      [](DeferredAttr attr) -> std::pair<Attribute, WalkResult> {
-        return {attr.getAttr(), WalkResult::advance()};
-      });
-  dict = replacer.replace(dict);
+  dict = stripDeferredAttrs(dict);
   if (propsDict)
-    propsDict = replacer.replace(propsDict);
+    propsDict = stripDeferredAttrs(propsDict);
 
   // Do have to call to attr replacer again as AttrTypeReplacer does not visit
   // just replaced attribute and goes directly to its sub attributes. That
@@ -2089,24 +2209,11 @@ ElaborationState Elaborator::processDeferredOp(ImplNode *inode, DeferredOp op) {
       [](AttrCtorDeferredAttr attr) -> std::pair<Attribute, WalkResult> {
         std::string attrString;
         llvm::raw_string_ostream os(attrString);
+        // Print bare (no quotes); a StringAttr or elide-type string would
+        // otherwise emit quotes that make the attribute parser fail.
         for (Attribute str : attr.getStrings()) {
-          if (auto strAttr = dyn_cast<StringAttr>(str)) {
-            // Avoid strAttr.print as it will print quotes.
-            os << strAttr.str();
-          } else if (auto toStrAttr = dyn_cast<ToStringDeferredAttr>(str)) {
-            Attribute val = toStrAttr.getAttr();
-            bool elideType = toStrAttr.getNeedElideType() != nullptr;
-            // Special case when deferred attr was evaluated to a string, but
-            // user requested to omit the type. Likewise for a case above,
-            // printing of that StringAttr would also print quotes that will
-            // make parser fail.
-            if (auto strAttr = dyn_cast<StringAttr>(val); strAttr && elideType)
-              os << strAttr.str();
-            else
-              val.print(os, elideType);
-          } else {
+          if (!printDeferredFragment(str, os))
             llvm_unreachable("unexpected attribute type");
-          }
         }
         SmallString<64> tmpBuf(attrString.begin(), attrString.end());
         tmpBuf.push_back(0);
