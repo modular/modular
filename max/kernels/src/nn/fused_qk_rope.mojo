@@ -305,14 +305,12 @@ def fused_qk_rope[
     comptime kernel_simd_width = gcd(target_simd_width, kv_params.head_size)
     comptime assert kernel_simd_width >= 2, "invalid simd_width and head size"
 
-    comptime if is_cpu[target]():
-        elementwise[func=rope_fn, simd_width=kernel_simd_width, target=target](
-            launch_shape, context
-        )
-    else:
-        elementwise[func=rope_fn, simd_width=kernel_simd_width, target=target](
-            launch_shape, context
-        )
+    elementwise[
+        func=rope_fn,
+        simd_width=kernel_simd_width,
+        target=target,
+        _trace_description="fused_qk_rope",
+    ](launch_shape, context)
 
 
 @always_inline
@@ -519,11 +517,9 @@ def fused_qk_rope_ragged[
 
     comptime assert kernel_simd_width >= 2, "invalid simd_width and head size"
 
-    comptime if is_cpu[target]():
-        elementwise[func=rope_fn, simd_width=kernel_simd_width, target=target](
-            launch_shape, context
-        )
-    else:
-        elementwise[func=rope_fn, simd_width=kernel_simd_width, target=target](
-            launch_shape, context
-        )
+    elementwise[
+        func=rope_fn,
+        simd_width=kernel_simd_width,
+        target=target,
+        _trace_description="fused_qk_rope_ragged",
+    ](launch_shape, context)
