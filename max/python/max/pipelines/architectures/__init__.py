@@ -315,6 +315,16 @@ def register_all_models() -> None:
     except ModuleNotFoundError:
         pass
 
+    # Optional: import the unified MiniMax-M3 + MTP model if available.
+    try:
+        from minimax_m3_mtp import (  # type: ignore[import-not-found]
+            unified_mtp_minimax_m3_arch,
+        )
+
+        PIPELINE_REGISTRY.register(unified_mtp_minimax_m3_arch)
+    except ModuleNotFoundError:
+        pass
+
     _MODELS_ALREADY_REGISTERED = True
 
 
