@@ -274,6 +274,17 @@ def render_normal(stem: str, dark: bool, width: int) -> None:
             edge,
             "-border",
             "24",
+            # palette-quantize: the cards use ~2k colors (mostly glyph
+            # antialiasing), so a 256-color no-dither palette is ~64% smaller
+            # with no visible loss. Dithering would scatter noise into glyph
+            # edges, so it stays off.
+            "-strip",
+            "-dither",
+            "None",
+            "-colors",
+            "256",
+            "-define",
+            "png:compression-level=9",
             f"{DIST}/{stem}.png",
         ],
         cwd=ROOT,
@@ -335,14 +346,31 @@ def make_svg(stem: str, width: int, cols: int) -> None:
     svg = f"{DIST}/{stem}.svg"
     svg_src_pdf = f"{DIST}/{stem}-svgsrc.pdf"
     render_pdf(svg_src_pdf, f"@page{{size:{width}px {h}px;margin:0;}}")
+    # mutool converts PDF text to SVG paths but defines each glyph once and
+    # <use>-references it; pdf2svg/pdftocairo instead repeat the full path for
+    # every character (~2.3MB on the densest card). Glyph reuse is ~55% smaller,
+    # pixel-identical, and still renders everywhere (paths, no font dependency).
+    # text=path keeps that behavior explicit across mutool versions. Output is
+    # page-numbered (%d); cards are single-page, so move page 1 into place.
+    svg_tmp = f"{DIST}/{stem}-svgtmp1.svg"
     subprocess.run(
-        ["pdf2svg", svg_src_pdf, svg],
+        [
+            "mutool",
+            "convert",
+            "-O",
+            "text=path",
+            "-o",
+            f"{DIST}/{stem}-svgtmp%d.svg",
+            svg_src_pdf,
+        ],
         cwd=ROOT,
         stderr=subprocess.DEVNULL,
         check=False,
     )
-    # pdf2svg outlines glyphs at huge precision (~2.8MB); svgo at precision 1
-    # cuts ~70% (~0.9MB) with no visible loss, keeping it under the 2MB repo cap.
+    if os.path.exists(svg_tmp):
+        os.replace(svg_tmp, svg)
+    # svgo at precision 1 trims another ~37% (path coordinates) with no visible
+    # loss, keeping even the densest card near 1MB.
     subprocess.run(
         ["npx", "-y", "svgo", "--multipass", "-p", "1", "-i", svg, "-o", svg],
         cwd=ROOT,

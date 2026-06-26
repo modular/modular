@@ -26,14 +26,14 @@ is no card list to maintain.
 
 ## Required tools
 
-| tool          | used for                       | install                                 |
-|---------------|--------------------------------|-----------------------------------------|
-| Python 3      | runs `build.py`                | system                                  |
-| Google Chrome | headless render to PDF + PNG   | google.com/chrome (or set `CHROME_BIN`) |
-| ImageMagick   | trim + measure PNGs (`magick`) | `brew install imagemagick`              |
-| pdf2svg       | PDF to SVG                     | `brew install pdf2svg`                  |
-| ghostscript   | combine per-card PDFs (`gs`)   | `brew install ghostscript`              |
-| Node / npx    | runs `svgo` to shrink SVGs     | `brew install node`                     |
+| tool          | used for                        | install                                 |
+|---------------|---------------------------------|-----------------------------------------|
+| Python 3      | runs `build.py`                 | system                                  |
+| Google Chrome | headless render to PDF + PNG    | google.com/chrome (or set `CHROME_BIN`) |
+| ImageMagick   | trim + measure PNGs (`magick`)  | `brew install imagemagick`              |
+| mutool        | PDF to SVG (glyph reuse, small) | `brew install mupdf-tools`              |
+| ghostscript   | combine per-card PDFs (`gs`)    | `brew install ghostscript`              |
+| Node / npx    | runs `svgo` to shrink SVGs      | `brew install node`                     |
 
 Fonts: the cards use **Inter** (text) and **Roboto Mono** (code). Install both
 locally; Chrome renders them at build time. Fonts are not part of this kit.

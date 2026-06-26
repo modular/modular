@@ -2,6 +2,10 @@
 <!-- subtitle: Syntax essentials: the core you reach for first -->
 <!-- layout: landscape -->
 
+<style>
+  .sheet table.bt td:first-child{white-space:nowrap;}
+</style>
+
 <section class="panel">
       <h2>Hello, Mojo</h2>
       <div class="body">
@@ -44,19 +48,19 @@ comptime PI = 3.14159 # compile-time const</pre>
       <div class="body">
 <pre class="code">Float32 == Scalar[DType.float32]
         == SIMD[DType.float32, 1]</pre>
-        <table>
-          <tr><td>Int</td><td>machine-word integer; default index type (not SIMD)</td></tr>
-          <tr><td>UInt</td><td>machine-word, SIMD-based</td></tr>
+        <table class="bt">
+          <tr><td>Int</td><td>machine-word integer; default index type</td></tr>
+          <tr><td>UInt</td><td>machine-word</td></tr>
           <tr><td>Int8 … Int64</td><td>sized integers</td></tr>
-          <tr><td>Float64</td><td>default floating point (also Float32, Float16)</td></tr>
+          <tr><td>Float64</td><td>default floating point (also Float32, Float16, and special-purpose 8-bit FP8 and 4-bit FP4 floats)</td></tr>
           <tr><td>Bool</td><td>True / False</td></tr>
-          <tr><td>String</td><td>Unicode graphemes</td></tr>
+          <tr><td>String</td><td>UTF-8, supports Unicode graphemes</td></tr>
           <tr><td>List[T]</td><td>array, fixed size or growing</td></tr>
           <tr><td>SIMD[dt, n]</td><td>n-wide numeric vector</td></tr>
         </table>
         <p class="note">Numeric types are <b>SIMD</b> vectors under the hood: scaling to vector
-          math is built in. <b>Int</b> is the exception.</p>
-        <p class="note">No implicit numeric conversion: cast explicitly with <b>Float64(n)</b>, <b>Int(x)</b>, <b>String(v)</b>.</p>
+          math is built in.</p>
+        <p class="note">No implicit numeric conversion: cast explicitly with <b>Float64(n)</b>, <b>Int(x)</b>, <b>String(v)</b>. Use <b>.cast</b> for SIMD vectors.</p>
         <p class="note">Types are <b>PascalCase</b> (<b>Int</b>); names are <b>lower_snake_case</b>.</p>
       </div>
     </section>
@@ -87,7 +91,7 @@ print(1, 2, 3, end=": ") # keyword args
 
 var s = String(t"x = {1 + 1}") # to String
 var raw = r"C:\path" # raw string</pre>
-        <p class="note">Mojo uses <b>t"…"</b> where Python uses <code>f"…"</code>. <b>print</b> takes a t-string directly; cast with <b>String(...)</b> to use one elsewhere. Triple quotes make multi-line strings.</p>
+        <p class="note"><b>print</b> takes a t-string directly; cast with <b>String(...)</b> to use one elsewhere. Triple quotes make multi-line strings.</p>
       </div>
     </section>
 
@@ -150,7 +154,7 @@ def nothing():
 <pre class="code">from std.math import sqrt # one name
 from std.math import sqrt as root # aliased</pre>
 <p class="note">Built-ins like <b>Int</b>, <b>String</b>, <b>List</b>, and <b>print</b> are in
-  the prelude, no import needed.</p>
+  the Mojo prelude, no import needed.</p>
       </div>
     </section>
 
