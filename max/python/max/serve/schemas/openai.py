@@ -108,23 +108,27 @@ from typing_extensions import NotRequired, TypedDict
 class ChatCompletionResponseMessage(_OpenAIChatCompletionMessage):
     """OpenAI assistant message extended with MAX reasoning text.
 
-    Reasoning-capable models emit their chain-of-thought under ``reasoning``
-    (the OpenAI Responses API naming). The ``reasoning_content`` alias
-    previously emitted by vLLM, SGLang, and the DeepSeek API is deprecated;
-    see https://github.com/vllm-project/vllm/pull/33402.
+    Reasoning-capable models emit their chain-of-thought under one of two
+    fields, selected by the ``emit_reasoning_content`` runtime flag:
+    ``reasoning`` (the OpenAI Responses API naming, the default) or
+    ``reasoning_content`` (the alias used by vLLM, SGLang, and the DeepSeek
+    API). Exactly one is populated per response; the other stays ``None``.
     """
 
     reasoning: str | None = None
+    reasoning_content: str | None = None
 
 
 class ChatCompletionStreamResponseDelta(_OpenAIChoiceDelta):
     """OpenAI stream delta extended with MAX reasoning text.
 
     Mirrors :class:`ChatCompletionResponseMessage`: each delta carries the
-    reasoning fragment under ``reasoning``.
+    reasoning fragment under ``reasoning`` or ``reasoning_content`` (selected
+    by the ``emit_reasoning_content`` runtime flag), never both.
     """
 
     reasoning: str | None = None
+    reasoning_content: str | None = None
 
 
 class ChatCompletionResponseChoice(_OpenAIChatCompletionChoice):

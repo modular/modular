@@ -309,6 +309,7 @@ class OpenAIChatResponseGenerator(
         parse_tool_calls: bool = False,
         tools: list[TextGenerationRequestTool] | None = None,
         fold_reasoning_into_content: bool = False,
+        emit_reasoning_content: bool = False,
     ) -> None:
         super().__init__(pipeline)
         self.stream_options = stream_options
@@ -321,6 +322,11 @@ class OpenAIChatResponseGenerator(
         )
         # Whether to parse tool calls from the response.
         self.parse_tool_calls = parse_tool_calls
+        # Reasoning text is emitted under exactly one field, selected here.
+        # See PipelineRuntimeConfig.emit_reasoning_content / CENG-651.
+        self._reasoning_field = (
+            "reasoning_content" if emit_reasoning_content else "reasoning"
+        )
         # Function name -> JSON schema, used only for observability-only
         # schema-conformance logging (see tool_call_validation). The raw
         # client schema is kept so it matches what callers validate against.
@@ -522,6 +528,7 @@ class OpenAIChatResponseGenerator(
                         allow_none=True,
                         has_tool_calls=has_emitted_tool_calls,
                     )
+                    reasoning_kwargs = {self._reasoning_field: reasoning}
                     choices = [
                         ChatCompletionStreamResponseChoice(
                             index=0,
@@ -530,10 +537,10 @@ class OpenAIChatResponseGenerator(
                                 function_call=None,
                                 role="assistant",
                                 refusal=None,
-                                reasoning=reasoning,
                                 tool_calls=tool_call_chunks
                                 if tool_call_chunks
                                 else None,
+                                **reasoning_kwargs,
                             ),
                             logprobs=logprobs_response,
                             finish_reason=finish_reason,
@@ -830,7 +837,11 @@ class OpenAIChatResponseGenerator(
                         )
                 else:
                     for choice in response_choices:
-                        choice.message.reasoning = reasoning_message
+                        setattr(
+                            choice.message,
+                            self._reasoning_field,
+                            reasoning_message,
+                        )
 
             usage = None
             if n_reasoning_tokens > 0 or n_tokens > 0:
@@ -1603,6 +1614,7 @@ async def openai_create_chat_completion(
             parse_tool_calls=parse_tool_calls,
             tools=tools,
             fold_reasoning_into_content=fold_reasoning_into_content,
+            emit_reasoning_content=pipeline_config.runtime.emit_reasoning_content,
         )
         # Use request-level temperature/thinking_temperature if provided, else server defaults.
         temp = (

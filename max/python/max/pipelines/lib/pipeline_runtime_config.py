@@ -314,6 +314,18 @@ class PipelineRuntimeConfig(ConfigFileModel):
         ),
     )
 
+    emit_reasoning_content: bool = Field(
+        default=False,
+        description=(
+            "When ``True``, chat completion responses emit a thinking model's "
+            "chain-of-thought under ``reasoning_content`` only (``reasoning`` "
+            "is omitted). The ``reasoning_content`` alias is used by vLLM, "
+            "SGLang, and the DeepSeek API; some clients require it. When "
+            "``False`` (default), responses emit reasoning under ``reasoning`` "
+            "only."
+        ),
+    )
+
     temperature: float | None = Field(
         default=None,
         description=(
