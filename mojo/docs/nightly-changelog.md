@@ -290,6 +290,8 @@ This version is still a work in progress.
   where they exist. A name that no backend defines remains a compile-time
   error.
 
+- Added support for the Steam Deck's RDNA2 Van Gogh APU.
+
 ## Removed
 
 - Removed the `store_volatile()` and `load_volatile()` intrinsics from

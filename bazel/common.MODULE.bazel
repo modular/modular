@@ -381,6 +381,7 @@ mojo.gpu_toolchains(
         "AMD Radeon Pro W7900": "W7900",
         "Phoenix3": "780M",
         "Strix Halo": "strixhalo",
+        "VanGogh": "steamdeck",
         "Metal 1": "",  # M1. Officially is not supported
         "Metal 2": "metal2",  # M2 + macOS 15
         "Metal 3": "metal3",  # M3 + macOS 15
@@ -414,6 +415,7 @@ mojo.gpu_toolchains(
         "gb10": "nvidia:sm_121",
         "rx6900xt": "amdgpu:gfx1030",
         "strixhalo": "amdgpu:gfx1151",
+        "steamdeck": "amdgpu:gfx1033",
         "metal2": "metal:2",
         "metal3": "metal:3",
         "metal4": "metal:4",
