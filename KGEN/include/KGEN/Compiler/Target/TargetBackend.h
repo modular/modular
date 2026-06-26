@@ -22,6 +22,7 @@
 #include "llvm/ADT/STLFunctionalExtras.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/IR/PassManager.h"
 
 #include <memory>
 #include <vector>
@@ -29,6 +30,7 @@
 namespace llvm {
 class Function;
 class Module;
+class PassBuilder;
 class TargetMachine;
 class Triple;
 class raw_pwrite_stream;
@@ -125,6 +127,20 @@ public:
   /// bitcode).
   virtual void emitBitcode(llvm::Module &module,
                            llvm::raw_pwrite_stream &os) const;
+
+  /// Builds the backend's complete LLVM pass pipeline into `mpm`, returning
+  /// true if it fully owns the pipeline (so the generic optimization pipeline
+  /// is skipped). The default returns false; backends that need a fully custom
+  /// pipeline (e.g. Metal's AIR legalization) override it.
+  virtual bool buildLLVMPipeline(llvm::ModulePassManager &mpm,
+                                 llvm::PassBuilder &passBuilder,
+                                 const CompilationOptions &options) const {
+    return false;
+  }
+
+  /// Registers the backend's named passes with `passBuilder` for `-passes=`
+  /// (used by kgen-llvm-opt). The default registers nothing.
+  virtual void registerPipelinePasses(llvm::PassBuilder &passBuilder) const {}
 
   /// Links target-specific device/runtime bitcode into `module`.
   virtual ErrorOrSuccess
