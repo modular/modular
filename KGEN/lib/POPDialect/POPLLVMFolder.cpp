@@ -307,12 +307,12 @@ ErrorTreeOrSuccess CallLLVMIntrinsicOp::interpret(ArrayRef<Attribute> operands,
     return ErrorTree(getLoc(), "LLVM intrinsic has unknown result type: " +
                                    stringize(getResult(0).getType()));
 
-  // Try using "ConstantFoldBinaryIntrinsic" first - if it works, it avoids us
+  // Try using "ConstantFoldIntrinsic" first - if it works, it avoids us
   // having to create a bunch of IR.
   llvm::Constant *result = nullptr;
   if (loweredOperands.size() == 2) {
-    result = ConstantFoldBinaryIntrinsic(id, loweredOperandsCst[0],
-                                         loweredOperandsCst[1], resultTy);
+    result = ConstantFoldIntrinsic(
+        id, {loweredOperandsCst[0], loweredOperandsCst[1]}, resultTy);
   }
 
   if (!result) {
@@ -431,12 +431,12 @@ CallLLVMIntrinsicOp::parametric_interpret(ArrayRef<Attribute> operands,
     return ErrorTree(getLoc(), "LLVM intrinsic has unknown result type: " +
                                    stringize(resultType));
 
-  // Try using "ConstantFoldBinaryIntrinsic" first - if it works, it avoids us
+  // Try using "ConstantFoldIntrinsic" first - if it works, it avoids us
   // having to create a bunch of IR.
   llvm::Constant *result = nullptr;
   if (loweredOperands.size() == 2) {
-    result = ConstantFoldBinaryIntrinsic(id, loweredOperandsCst[0],
-                                         loweredOperandsCst[1], resultTy);
+    result = ConstantFoldIntrinsic(
+        id, {loweredOperandsCst[0], loweredOperandsCst[1]}, resultTy);
   }
 
   if (!result) {

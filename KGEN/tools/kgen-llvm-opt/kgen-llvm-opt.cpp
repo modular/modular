@@ -326,7 +326,7 @@ int main(int argc, char **argv) {
 
     // Otherwise we infer the DataLayout from the target machine.
     Expected<std::unique_ptr<TargetMachine>> expectedTM =
-        codegen::createTargetMachineForTriple(tripleStr,
+        codegen::createTargetMachineForTriple(Triple(tripleStr),
                                               getCodeGenOptLevel(clOptions));
     if (!expectedTM) {
       errs() << argv[0] << ": warning: failed to infer data layout: "
@@ -384,7 +384,7 @@ int main(int argc, char **argv) {
     cpuStr = codegen::getCPUStr();
     featuresStr = codegen::getFeaturesStr();
     Expected<std::unique_ptr<TargetMachine>> expectedTM =
-        codegen::createTargetMachineForTriple(moduleTriple.str(),
+        codegen::createTargetMachineForTriple(moduleTriple,
                                               getCodeGenOptLevel(clOptions));
     if (auto e = expectedTM.takeError()) {
       errs() << argv[0] << ": WARNING: failed to create target machine for '"
