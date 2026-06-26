@@ -89,6 +89,16 @@ class PipelineRuntimeConfig(ConfigFileModel):
         ),
     )
 
+    eplb_profile: bool = Field(
+        default_factory=lambda: os.getenv("MAX_SERVE_EPLB_PROFILE", "").lower()
+        in ("1", "true", "yes"),
+        description=(
+            "When True, enables expert-parallel load balancing (EPLB) MoE "
+            "routing histogram profiling in the pipeline. Mirrors "
+            "Settings.eplb_profile for pipeline code that doesn't have "
+            "access to Settings."
+        ),
+    )
     ce_delay_ms: float = Field(
         default=0.0,
         description=(

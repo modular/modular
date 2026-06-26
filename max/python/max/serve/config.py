@@ -209,6 +209,15 @@ class Settings(BaseSettings):
         description="Maximum time to wait for a heartbeat & remain healthy.  This should be longer than ITL",
         alias="MAX_SERVE_MW_HEALTH_FAIL",
     )
+    eplb_profile: bool = Field(
+        default=False,
+        description=(
+            "When True, enables expert-parallel load balancing (EPLB) MoE routing "
+            "histogram profiling in the model worker. The accumulator "
+            "is opt-in and unused unless this flag is set."
+        ),
+        alias="MAX_SERVE_EPLB_PROFILE",
+    )
 
     telemetry_worker_spawn_timeout: float | None = Field(
         default=None,
