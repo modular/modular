@@ -286,12 +286,16 @@ struct RawDriver(Movable):
             )
         return queue.unsafe_assume_init_ref()
 
-    def destroy_queue(
+    def destroy_queue[
+        ctx_origin: Origin, //
+    ](
         self,
-        context: ContextHandle,
+        context: UnsafePointer[ContextHandle.type, ctx_origin],
         queue: QueueHandle,
     ) raises HALError:
-        var status = self._raw.queue_destroy.f(context, queue)
+        var status = self._raw.queue_destroy.f(
+            rebind[ContextHandle](context), queue
+        )
         if status != STATUS_SUCCESS:
             var err = self.get_status_message(status)
             raise HALError(

@@ -78,13 +78,9 @@ struct Queue[device_spec: DeviceSpec](ImplicitlyDeletable, Movable):
 
     def __del__(deinit self):
         try:
-            self._raw[].destroy_queue(self._context[]._handle, self._handle)
+            self._raw[].destroy_queue(self._context[].handle(), self._handle)
         except e:
             print("warning: destroy_queue failed:", e)
-
-        # Keep the context alive until after destroy_queue has finished so its
-        # underlying handle is not invalidated. Related to MOCO-3980.
-        _ = self._context^
 
     # TODO: revisit all of these when we get to queue dependency ordering
     def execute(
