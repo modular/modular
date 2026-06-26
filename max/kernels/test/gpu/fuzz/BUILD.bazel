@@ -1,0 +1,60 @@
+load("//bazel:api.bzl", "modular_py_binary", "mojo_test")
+
+package(default_visibility = ["//max:consumers"])
+
+# CPU unit test for the reusable fuzz harness (_fuzz.mojo): boundary-aware shape
+# generation and the value-distribution fills (incl. NaN/Inf injection). No GPU.
+mojo_test(
+    name = "test_fuzz_fills.mojo.test",
+    size = "small",
+    srcs = [
+        "_fuzz.mojo",
+        "test_fuzz_fills.mojo",
+    ],
+    main = "test_fuzz_fills.mojo",
+    tags = ["manual"],
+    deps = [
+        "@mojo//:std",
+    ],
+)
+
+# Target: matmul _matmul_gpu (tuned SM100 bf16 path; memory-safety oracle).
+# N/K are compile-time (`-D N=.. -D K=..`); M is the runtime fuzz axis. B200-only
+# (the tuned tensor-core kernel needs SM100 + static N/K + structured_kernels).
+mojo_test(
+    name = "fuzz_matmul.mojo.test",
+    size = "large",
+    srcs = [
+        "_fuzz.mojo",
+        "fuzz_matmul.mojo",
+    ],
+    exec_properties = {
+        "test.resources:gpu-memory": "4",
+    },
+    main = "fuzz_matmul.mojo",
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    target_compatible_with = [
+        "//:has_gpu",
+        "//:b200_gpu",
+    ],
+    deps = [
+        "//max:internal_utils",
+        "//max:linalg",
+        "//max:nn",
+        "//max:structured_kernels",
+        "@mojo//:std",
+    ],
+)
+
+# Python orchestrator: build, enumerate, run-per-case, classify, shrink, corpus,
+# replay. Registered targets invoke the per-kernel mojo_test binaries above.
+modular_py_binary(
+    name = "fuzz",
+    testonly = True,
+    srcs = ["fuzz.py"],
+    main = "fuzz.py",
+    tags = ["manual"],
+)
