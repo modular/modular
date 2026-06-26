@@ -370,6 +370,7 @@ def test_video_content_part_dict_validation() -> None:
         "type": "video",
         "fps": None,
         "max_frames": None,
+        "detail": None,
         "max_long_side_pixel": None,
     }
 

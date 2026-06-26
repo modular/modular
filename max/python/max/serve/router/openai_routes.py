@@ -1047,6 +1047,11 @@ def _coerce_positive_float(value: Any) -> float | None:
     return coerced if coerced > 0 else None
 
 
+def _coerce_optional_str(value: Any) -> str | None:
+    """Returns ``value`` when it is a string, else ``None``."""
+    return value if isinstance(value, str) else None
+
+
 def _validate_tool_message_consistency(
     messages: Sequence[Mapping[str, Any]],
 ) -> None:
@@ -1197,9 +1202,12 @@ async def openai_parse_chat_completion_request(
                         # Carry the optional sizing hint onto the placeholder.
                         message_content.append(
                             ImageContentPart(
+                                detail=_coerce_optional_str(
+                                    image_url.get("detail")
+                                ),
                                 max_long_side_pixel=_coerce_positive_int(
                                     image_url.get("max_long_side_pixel")
-                                )
+                                ),
                             )
                         )
                     else:
@@ -1217,6 +1225,9 @@ async def openai_parse_chat_completion_request(
                                 ),
                                 max_frames=_coerce_positive_int(
                                     video_url.get("max_frames")
+                                ),
+                                detail=_coerce_optional_str(
+                                    video_url.get("detail")
                                 ),
                                 max_long_side_pixel=_coerce_positive_int(
                                     video_url.get("max_long_side_pixel")
