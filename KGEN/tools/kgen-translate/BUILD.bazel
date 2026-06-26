@@ -12,6 +12,7 @@ modular_cc_binary(
         "//KGEN:ExecutionEngine",
         "//KGEN:KGENDialect",
         "//KGEN:MojoParser",
+        "//KGEN:MojoTooling",
         "//KGEN:ObjectCompiler",
         "//KGEN:Pipeline",
         "//KGEN:Support",

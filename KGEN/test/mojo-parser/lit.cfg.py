@@ -26,6 +26,7 @@ config.test_exec_root = os.path.join("KGEN", "test", "mojo-parser")
 
 config.excludes = [
     "debuginfo/inputs",
+    "lsp/inputs",
     "test_package",
     "test_package.foo",
     "test_package_user",

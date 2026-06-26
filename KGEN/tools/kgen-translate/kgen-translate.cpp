@@ -7,6 +7,8 @@
 #include "Init/Init.h"
 #include "KGEN/KGENDialect/KGENDialect.h"
 #include "KGEN/MojoParser/EntryPoint.h"
+#include "KGEN/MojoTooling/ParserDriver.h"
+#include "KGEN/MojoTooling/PublicASTDecl.h"
 #include "KGEN/Support/CompilerProfiling.h"
 #include "KGEN/ToolCommon/CLOptions.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
@@ -49,6 +51,13 @@ int main(int argc, char *argv[]) {
     llvm::errs() << "failed to create context: " << ctxOr.getError() << "\n";
     return 1;
   }
+
+  M::cl::MOpt<bool> lspMode{
+      "lsp",
+      cl::desc("Parse the input the way the language server does, via "
+               "parseFileForLSP (lazy, error-tolerant), instead of the "
+               "compiler's importMojoFile path."),
+      cl::init(false)};
 
   M::cl::MOpt<bool> disableBuiltinModule{
       "mojo-disable-builtins",
@@ -132,20 +141,44 @@ int main(int argc, char *argv[]) {
         config.maxNotesPerDiagnostic = maxNotesPerDiagnostic;
         config.disablePrebuiltPackages = !enablePrebuiltPackages;
         config.useBuiltinModule = !disableBuiltinModule;
-        OwningOpRef<ModuleOp> output =
-            LIT::importMojoFile(*ctxOr, sourceMgr, config, ts,
-                                /*includedFiles=*/nullptr);
+
+        OwningOpRef<ModuleOp> output;
+        if (lspMode) {
+          // Mirror the language server: build a single-threaded parser context
+          // over this SourceMgr and run the same lazy, error-tolerant parse the
+          // LSP uses for an open document.
+          context->disableMultithreading();
+          MojoParserContext parserContext(sourceMgr, config);
+          MojoASTDeclRef decl =
+              parserContext.parseFileForLSP(sourceMgr.getMainFileID());
+          parserContext.ensureSignaturesResolved();
+          if (!decl)
+            return {};
+
+          // Clone the parsed module out: the parser context owns the original
+          // IR and finalizes imported bytecode in its destructor, so we
+          // snapshot the pre-finalization "LSP view" the server sees.
+          output = OwningOpRef<ModuleOp>(parserContext.getModule().clone());
+        } else {
+          output = LIT::importMojoFile(*ctxOr, sourceMgr, config, ts,
+                                       /*includedFiles=*/nullptr);
+        }
 
         if (!output)
           return {};
 
         // To make sure the parser did a good thing, we run the
-        // verify-parameters pass.
-        mlir::PassManager pm(context);
-        pm.addPass(createVerifyParameters());
-        if (failed(pm.run(*output))) {
-          llvm::errs() << "mojo parser created invalid IR\n";
-          return {};
+        // verify-parameters pass. We skip this in LSP mode: parseFileForLSP
+        // intentionally leaves empty-body FnOp stubs for imported bytecode and
+        // skips DCE/verification, so the verifier would reject IR that is
+        // legitimately shaped the way the language server sees it.
+        if (!lspMode) {
+          mlir::PassManager pm(context);
+          pm.addPass(createVerifyParameters());
+          if (failed(pm.run(*output))) {
+            llvm::errs() << "mojo parser created invalid IR\n";
+            return {};
+          }
         }
 
         if (!parserBytecodeOutput.getValue().empty()) {
