@@ -14,13 +14,9 @@
 
 from __future__ import annotations
 
-import logging
 from typing import Any
 
-from max.serve.parser.tool_call_validation import (
-    check_tool_call_conformance,
-    log_tool_call_conformance,
-)
+from max.serve.parser.tool_call_validation import check_tool_call_conformance
 
 _WEATHER_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -112,34 +108,3 @@ def test_multiple_calls_independently_classified() -> None:
         "schema_mismatch",
         "unknown_tool",
     ]
-
-
-def test_log_is_silent_on_valid_and_never_raises(
-    caplog: Any,
-) -> None:
-    with caplog.at_level(logging.INFO, logger="max.serve"):
-        log_tool_call_conformance(
-            [("get_weather", '{"location": "NYC"}')],
-            _SCHEMAS,
-            request_id="req-1",
-            streaming=False,
-        )
-    assert not [r for r in caplog.records if "tool_call_conformance" in r.msg]
-
-
-def test_log_emits_one_line_per_failing_call(caplog: Any) -> None:
-    with caplog.at_level(logging.INFO, logger="max.serve"):
-        log_tool_call_conformance(
-            [
-                ("get_weather", '{"location": "NYC"}'),  # valid -> silent
-                ("get_weather", "{}"),  # missing required
-            ],
-            _SCHEMAS,
-            request_id="req-2",
-            streaming=True,
-        )
-    lines = [r for r in caplog.records if "tool_call_conformance" in r.msg]
-    assert len(lines) == 1
-    rendered = lines[0].getMessage()
-    assert "outcome=schema_mismatch" in rendered
-    assert "stream=True" in rendered

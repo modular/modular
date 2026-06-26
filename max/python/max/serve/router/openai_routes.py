@@ -81,7 +81,7 @@ from max.serve.parser.tool_call_normalization import (
     _validate_response_format_schema,
     normalize_response_format_schema,
 )
-from max.serve.parser.tool_call_validation import log_tool_call_conformance
+from max.serve.parser.tool_call_validation import check_tool_call_conformance
 from max.serve.pipelines.llm import (
     TokenGeneratorOutput,
     TokenGeneratorPipeline,
@@ -344,6 +344,25 @@ class OpenAIChatResponseGenerator(
         self._stream_tool_names: dict[int, str] = {}
         self._stream_tool_args: dict[int, list[str]] = {}
 
+    def _log_tool_call_conformance(
+        self,
+        calls: list[tuple[str, object]],
+        request_id: str,
+        is_streaming: bool,
+    ) -> None:
+        results = check_tool_call_conformance(calls, self._tool_schemas)
+        for result in results:
+            if result.outcome == "valid":
+                continue
+            logger.warning(
+                "tool_call_conformance req=%s stream=%s fn=%s outcome=%s errors=%s",
+                request_id,
+                is_streaming,
+                result.function,
+                result.outcome,
+                ",".join(result.errors) if result.errors else "-",
+            )
+
     def _fold_reasoning_delta(
         self, reasoning_text: str | None, content_text: str | None
     ) -> str | None:
@@ -481,7 +500,7 @@ class OpenAIChatResponseGenerator(
                     and self._tool_schemas
                     and self._stream_tool_names
                 ):
-                    log_tool_call_conformance(
+                    self._log_tool_call_conformance(
                         [
                             (
                                 self._stream_tool_names[i],
@@ -489,9 +508,8 @@ class OpenAIChatResponseGenerator(
                             )
                             for i in sorted(self._stream_tool_names)
                         ],
-                        self._tool_schemas,
                         request_id=str(request.request_id),
-                        streaming=True,
+                        is_streaming=True,
                     )
 
                 if (
@@ -784,40 +802,22 @@ class OpenAIChatResponseGenerator(
                                 )
                     if parsed.tool_calls:
                         if self._tool_schemas:
-                            log_tool_call_conformance(
+                            self._log_tool_call_conformance(
                                 [
                                     (tc.name, tc.arguments)
                                     for tc in parsed.tool_calls
                                 ],
-                                self._tool_schemas,
                                 request_id=str(request.request_id),
-                                streaming=False,
+                                is_streaming=False,
                             )
                         response_choices = self._tool_response_to_choices(
                             parsed, logprobs=logprobs
                         )
-                    else:
-                        # No tool calls found, handle as text
-                        self._handle_text_response(
-                            response_message,
-                            response_choices,
-                            finish_reason=finish_reason,
-                            logprobs=logprobs,
-                        )
                 except Exception as e:
                     # If parser fails, handle as traditional text
-                    logging.warning(
-                        f"Parsing for tool use failed, handling as general text response. Original error: {e}"
-                    )
-                    self._handle_text_response(
-                        response_message,
-                        response_choices,
-                        finish_reason=finish_reason,
-                        logprobs=logprobs,
-                    )
+                    logging.warning(f"Parsing for tool use failed: {e}")
 
-            else:
-                # Handle as regular text response if JSON cannot be parsed
+            if not response_choices:
                 self._handle_text_response(
                     response_message,
                     response_choices,
@@ -1845,14 +1845,16 @@ def _validate_json_schema(json_schema: dict[str, Any]) -> None:
         raise InputError(str(e)) from e
 
     try:
-        # This validates the schema can be compiled to a grammar.
-        # It doesn't need a tokenizer - just checks schema structure.
-        LLMatcher.grammar_from_json_schema(json_schema)
+        grammar = LLMatcher.grammar_from_json_schema(json_schema)
     except Exception as e:
         raise InputError(
-            f"JSON schema cannot be compiled to valid grammar: {e}. "
-            "Recursive $ref schemas and other unsupported constructs are not allowed."
+            f"Failed to create a grammar from the JSON schema: {e}"
         ) from e
+    error = LLMatcher.validate_grammar(grammar)
+    if error:
+        raise InputError(
+            f"Invalid grammar created from the JSON schema: {error}"
+        )
 
 
 def _create_response_format(

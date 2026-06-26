@@ -129,34 +129,3 @@ def check_tool_call_conformance(
             )
         )
     return results
-
-
-def log_tool_call_conformance(
-    calls: list[tuple[str, object]],
-    schemas_by_name: Mapping[str, Mapping[str, Any]],
-    *,
-    request_id: str,
-    streaming: bool,
-) -> None:
-    """Logs schema-conformance of generated tool calls (observability only).
-
-    Emits one WARNING line per *non-conforming* call; conforming calls are
-    silent to keep log volume proportional to failures. Never raises into the
-    caller. See the module docstring for the PII guarantee.
-    """
-    try:
-        results = check_tool_call_conformance(calls, schemas_by_name)
-    except Exception:
-        logger.debug("tool_call_conformance check failed", exc_info=True)
-        return
-    for r in results:
-        if r.outcome == "valid":
-            continue
-        logger.warning(
-            "tool_call_conformance req=%s stream=%s fn=%s outcome=%s errors=%s",
-            request_id,
-            streaming,
-            r.function,
-            r.outcome,
-            ",".join(r.errors) if r.errors else "-",
-        )
