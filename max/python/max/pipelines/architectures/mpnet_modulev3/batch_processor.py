@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Input batching for BERT embedding models."""
+"""Input batching for MPNet ModuleV3 pipeline models."""
 
 from __future__ import annotations
 
@@ -22,21 +22,21 @@ from max.pipelines.lib.interfaces.batch_processor import (
 )
 
 if TYPE_CHECKING:
-    from .model import BertInputs
+    from .model import MPNetInputs
 
 
-class BertBatchProcessor(PaddedEncoderBatchProcessor["BertInputs"]):
-    """Fixed-shape padded batching for encoder-only BERT models."""
+class MPNetModuleV3BatchProcessor(PaddedEncoderBatchProcessor["MPNetInputs"]):
+    """Fixed-shape padded batching for MPNet ModuleV3 encoder models."""
 
     def _make_inputs(
         self,
         *,
         next_tokens_batch: Buffer,
         attention_mask: Buffer,
-    ) -> BertInputs:
-        from .model import BertInputs
+    ) -> MPNetInputs:
+        from .model import MPNetInputs
 
-        return BertInputs(
+        return MPNetInputs(
             next_tokens_batch=next_tokens_batch,
             attention_mask=attention_mask,
         )

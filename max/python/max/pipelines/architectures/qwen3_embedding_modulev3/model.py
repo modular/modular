@@ -17,22 +17,20 @@ from __future__ import annotations
 import functools
 import logging
 import math
-from collections.abc import Callable, Sequence
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, ClassVar, cast
 
-import numpy as np
 from max.driver import Buffer, Device
-from max.dtype import DType
 from max.engine import InferenceSession
 from max.experimental import functional as F
 from max.experimental.nn.common_layers.mlp import MLP
 from max.experimental.nn.common_layers.rotary_embedding import RotaryEmbedding
 from max.experimental.nn.embedding import Embedding
 from max.experimental.nn.norm import RMSNorm
-from max.graph import DeviceRef, TensorType
+from max.graph import DeviceRef
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn.kv_cache import KVCacheInputsInterface
+from max.nn.kv_cache.cache_params import KVCacheParamInterface
 from max.nn.transformer import ReturnLogits
 from max.pipelines.context import TextContext
 from max.pipelines.lib import (
@@ -43,6 +41,7 @@ from max.pipelines.lib import (
     PipelineModel,
 )
 
+from .batch_processor import Qwen3EmbeddingModuleV3BatchProcessor
 from .layers import (
     Qwen3AttentionNoCache,
     Qwen3Embedding,
@@ -79,6 +78,9 @@ class Qwen3EmbeddingModel(PipelineModel[TextContext]):
     """
 
     model_config_cls: ClassVar[type[Any]] = Qwen3EmbeddingConfig
+    batch_processor_cls: ClassVar[
+        type[Qwen3EmbeddingModuleV3BatchProcessor]
+    ] = Qwen3EmbeddingModuleV3BatchProcessor
 
     model: Callable[..., Any]
     """Compiled model callable."""
@@ -93,11 +95,15 @@ class Qwen3EmbeddingModel(PipelineModel[TextContext]):
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.ALL,
     ) -> None:
-        self.pipeline_config = pipeline_config
-        self.devices = devices
-        self.weights = weights
-        self.adapter = adapter
-
+        super().__init__(
+            pipeline_config,
+            session,
+            devices,
+            kv_cache_config,
+            weights,
+            adapter,
+            return_logits,
+        )
         self.model = self.load_model()
 
     def load_model(self) -> Callable[..., Any]:
@@ -203,25 +209,14 @@ class Qwen3EmbeddingModel(PipelineModel[TextContext]):
             nn_model = Qwen3Embedding(transformer)
             nn_model.to(self.devices[0])
 
-        # Define input types
-        device0 = self.devices[0]
-        device_ref = DeviceRef(device0.label, device0.id)
-        tokens_type = TensorType(
-            DType.uint32, shape=["total_seq_len"], device=device_ref
-        )
-        input_row_offsets_type = TensorType(
-            DType.uint32,
-            shape=["batch_size_plus_1"],
-            device=DeviceRef.CPU(),
-        )
-        return_n_logits_type = TensorType(
-            DType.uint32, shape=(1,), device=DeviceRef.CPU()
+        assert self.batch_processor is not None
+        compile_input_types = self.batch_processor.get_symbolic_inputs(
+            kv_params=cast(KVCacheParamInterface, None),
+            device_refs=[DeviceRef.from_device(self.devices[0])],
         )
 
         compiled_model = nn_model.compile(
-            tokens_type,
-            input_row_offsets_type,
-            return_n_logits_type,
+            *compile_input_types,
             weights=state_dict,
         )
 
@@ -238,38 +233,3 @@ class Qwen3EmbeddingModel(PipelineModel[TextContext]):
         )
 
         return ModelOutputs(logits=cast(Buffer, model_outputs[0].driver_tensor))
-
-    def prepare_initial_token_inputs(
-        self,
-        replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
-        return_n_logits: int = 1,
-    ) -> Qwen3EmbeddingInputs:
-        if len(replica_batches) > 1:
-            raise ValueError("Model does not support DP>1")
-
-        context_batch = replica_batches[0]
-        device = self.devices[0]
-
-        all_tokens: list[int] = []
-        row_offsets = [0]
-
-        for ctx in context_batch:
-            tokens = ctx.tokens.active
-            all_tokens.extend(tokens)
-            row_offsets.append(len(all_tokens))
-
-        tokens_array = np.array(all_tokens, dtype=np.uint32)
-        row_offsets_array = np.array(row_offsets, dtype=np.uint32)
-
-        tokens_buffer = Buffer.from_numpy(tokens_array)
-        row_offsets_buffer = Buffer.from_numpy(row_offsets_array)
-        return_n_logits_buffer = Buffer.from_numpy(
-            np.array([return_n_logits], dtype=np.uint32)
-        )
-
-        return Qwen3EmbeddingInputs(
-            tokens=tokens_buffer.to(device),
-            input_row_offsets=row_offsets_buffer,
-            return_n_logits=return_n_logits_buffer,
-        )

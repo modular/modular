@@ -19,6 +19,7 @@ from max.pipelines.lib import SupportedArchitecture, TextTokenizer
 from max.pipelines.modeling.types import PipelineTask
 
 from . import weight_adapters
+from .batch_processor import Gemma3ModuleV3BatchProcessor
 from .model import Gemma3Model
 from .model_config import Gemma3Config
 
@@ -47,6 +48,7 @@ gemma3_modulev3_arch = SupportedArchitecture(
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
     },
     config=Gemma3Config,
+    batching=Gemma3ModuleV3BatchProcessor,
     memory_planner=PagedMemoryPlanner,
     supports_overlap_scheduler=False,
     supports_device_graph_capture=False,

@@ -19,6 +19,7 @@ from max.pipelines.lib import SupportedArchitecture, TextTokenizer
 from max.pipelines.modeling.types import PipelineTask
 
 from . import weight_adapters
+from .batch_processor import Olmo3BatchProcessor
 from .model import Olmo3Model
 from .model_config import Olmo3Config
 
@@ -32,6 +33,7 @@ olmo3_arch = SupportedArchitecture(
         "bfloat16",
     },
     pipeline_model=Olmo3Model,
+    batching=Olmo3BatchProcessor,
     task=PipelineTask.TEXT_GENERATION,
     tokenizer=TextTokenizer,
     context_type=TextContext,

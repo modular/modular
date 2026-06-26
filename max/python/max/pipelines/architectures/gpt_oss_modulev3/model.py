@@ -14,18 +14,16 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable, Sequence
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, ClassVar, cast
 
 import numpy as np
 from max.driver import Buffer, Device
-from max.dtype import DType
 from max.engine import InferenceSession
 from max.experimental import functional as F
-from max.graph import DeviceRef, TensorType
+from max.graph import DeviceRef
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn.kv_cache import KVCacheInputsInterface
 from max.nn.transformer import ReturnLogits
 from max.pipelines.context import TextContext
 from max.pipelines.lib import (
@@ -36,6 +34,7 @@ from max.pipelines.lib import (
     PipelineModelWithKVCache,
 )
 
+from .batch_processor import GptOssModuleV3BatchProcessor
 from .gpt_oss import GptOss
 from .model_config import GptOssConfig
 
@@ -70,6 +69,9 @@ class GptOssModel(PipelineModelWithKVCache[TextContext]):
     """
 
     model_config_cls: ClassVar[type[Any]] = GptOssConfig
+    batch_processor_cls: ClassVar[type[GptOssModuleV3BatchProcessor]] = (
+        GptOssModuleV3BatchProcessor
+    )
 
     def __init__(
         self,
@@ -116,31 +118,8 @@ class GptOssModel(PipelineModelWithKVCache[TextContext]):
         Returns:
             The loaded MAX Engine model object.
         """
-        assert self.pipeline_config.runtime.max_batch_size, (
-            "Expected max_batch_size to be set"
-        )
-        self._input_row_offsets_prealloc = Buffer.from_numpy(
-            np.arange(
-                self.pipeline_config.runtime.max_batch_size + 1,
-                dtype=np.uint32,
-            )
-        ).to(self.devices[0])
-
         device0 = self.devices[0]
         device_ref = DeviceRef(device0.label, device0.id)
-        tokens_type = TensorType(
-            DType.int64, shape=["total_seq_len"], device=device_ref
-        )
-        # NOTE: input_row_offsets_len should be batch_size + 1.
-        # Create input_row_offsets_type for each device
-        input_row_offsets_type = TensorType(
-            DType.uint32,
-            shape=["input_row_offsets_len"],
-            device=device0,
-        )
-        return_n_logits_type = TensorType(
-            DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
-        )
 
         huggingface_config = self.huggingface_config
         if self.adapter:
@@ -163,14 +142,14 @@ class GptOssModel(PipelineModelWithKVCache[TextContext]):
             nn_model = GptOss(model_config, self.kv_params)
             nn_model.to(self.devices[0])
 
-        kv_inputs = self.kv_params.get_symbolic_inputs()
-        flattened_kv_types = kv_inputs.flatten()
+        assert self.batch_processor is not None
+        compile_input_types = self.batch_processor.get_symbolic_inputs(
+            kv_params=self.kv_params,
+            device_refs=[device_ref],
+        )
 
         compiled_model = nn_model.compile(
-            tokens_type,
-            return_n_logits_type,
-            input_row_offsets_type,
-            *flattened_kv_types,
+            *compile_input_types,
             weights=state_dict,
         )
 
@@ -216,50 +195,3 @@ class GptOssModel(PipelineModelWithKVCache[TextContext]):
                 logits=cast(Buffer, model_outputs[0].driver_tensor),
                 next_token_logits=cast(Buffer, model_outputs[0].driver_tensor),
             )
-
-    def prepare_initial_token_inputs(
-        self,
-        replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
-        return_n_logits: int = 1,
-    ) -> ModelInputs:
-        """Prepares the initial inputs for the first execution pass of the GPT OSS model.
-
-        Args:
-            replica_batches: A sequence of sequences of :obj:`TextContext` objects representing
-                the input prompts for each replica.
-            kv_cache_inputs: Optional inputs required by the KV cache manager.
-
-        Returns:
-            The prepared :obj:`ModelInputs` object for the initial execution step.
-        """
-        if len(replica_batches) > 1:
-            raise ValueError("Model does not support DP>1")
-
-        context_batch = replica_batches[0]
-        assert kv_cache_inputs is not None
-
-        # This needs to be replaced with actual input preparation
-        # Get input_row_offsets: start and end position of each batch in the
-        # combined total_seq_len dimension.
-        input_row_offsets = np.cumsum(
-            [0] + [ctx.tokens.active_length for ctx in context_batch],
-            dtype=np.uint32,
-        )
-
-        # Create a ragged token vector of length: sum(len(t) for t in tokens).
-        tokens = np.concatenate([ctx.tokens.active for ctx in context_batch])
-
-        # Create input_row_offsets
-        input_row_offsets_tensor = Buffer.from_numpy(input_row_offsets).to(
-            self.devices[0]
-        )
-
-        return GptOssInputs(
-            tokens=Buffer.from_numpy(tokens).to(self.devices[0]),
-            input_row_offsets=input_row_offsets_tensor,
-            return_n_logits=Buffer.from_numpy(
-                np.array([return_n_logits], dtype=np.int64)
-            ),
-            kv_cache_inputs=kv_cache_inputs,
-        )

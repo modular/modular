@@ -14,21 +14,18 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable, Sequence
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, ClassVar, cast
 
-import numpy as np
 from max.driver import Buffer, Device
-from max.dtype import DType
 from max.engine import InferenceSession
 from max.experimental import functional as F
 from max.experimental.sharding import (
     DeviceMesh,
 )
-from max.graph import DeviceRef, TensorType
+from max.graph import DeviceRef
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn.kv_cache import KVCacheInputsInterface
 from max.nn.transformer import ReturnLogits
 from max.pipelines.context import TextContext
 from max.pipelines.lib import (
@@ -41,6 +38,7 @@ from max.pipelines.lib import (
 from max.pipelines.lib.log_probabilities import LogProbabilitiesMixin
 from transformers import AutoConfig
 
+from .batch_processor import Gemma3ModuleV3BatchProcessor
 from .gemma3 import Gemma3
 from .model_config import Gemma3Config
 
@@ -77,6 +75,9 @@ class Gemma3Model(
     """
 
     model_config_cls: ClassVar[type[Any]] = Gemma3Config
+    batch_processor_cls: ClassVar[type[Gemma3ModuleV3BatchProcessor]] = (
+        Gemma3ModuleV3BatchProcessor
+    )
 
     def __init__(
         self,
@@ -108,32 +109,9 @@ class Gemma3Model(
 
     def load_model(self) -> Callable[..., Any]:
         """Loads the compiled Gemma3 model using the ModuleV3 API."""
-        assert self.pipeline_config.runtime.max_batch_size, (
-            "Expected max_batch_size to be set"
-        )
-        self._input_row_offsets_prealloc = Buffer.from_numpy(
-            np.arange(
-                self.pipeline_config.runtime.max_batch_size + 1,
-                dtype=np.uint32,
-            )
-        ).to(self.devices[0])
-
         n_devices = len(self.devices)
         mesh = DeviceMesh(tuple(self.devices), (n_devices,), ("tp",))
-
-        tokens_type = TensorType(
-            DType.int64, shape=["total_seq_len"], device=self.devices[0]
-        )
-
-        input_row_offsets_type = TensorType(
-            DType.uint32,
-            shape=["input_row_offsets_len"],
-            device=self.devices[0],
-        )
-
-        return_n_logits_type = TensorType(
-            DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
-        )
+        device_ref = DeviceRef.from_device(self.devices[0])
 
         text_config = (
             self.huggingface_config.text_config
@@ -165,14 +143,14 @@ class Gemma3Model(
             nn_model = Gemma3(model_config, self.kv_params)
             nn_model.to(mesh)
 
-        kv_inputs = self.kv_params.get_symbolic_inputs()
-        flattened_kv_types = kv_inputs.flatten()
+        assert self.batch_processor is not None
+        compile_input_types = self.batch_processor.get_symbolic_inputs(
+            kv_params=self.kv_params,
+            device_refs=[device_ref],
+        )
 
         compiled_model = nn_model.compile(
-            tokens_type,
-            return_n_logits_type,
-            input_row_offsets_type,
-            *flattened_kv_types,
+            *compile_input_types,
             weights=state_dict,
         )
 
@@ -201,33 +179,3 @@ class Gemma3Model(
                 logits=cast(Buffer, model_outputs[0].driver_tensor),
                 next_token_logits=cast(Buffer, model_outputs[0].driver_tensor),
             )
-
-    def prepare_initial_token_inputs(
-        self,
-        replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
-        return_n_logits: int = 1,
-    ) -> ModelInputs:
-        if len(replica_batches) > 1:
-            raise ValueError("Model does not support DP>1")
-
-        context_batch = replica_batches[0]
-        assert kv_cache_inputs is not None
-
-        input_row_offsets = np.cumsum(
-            [0] + [ctx.tokens.active_length for ctx in context_batch],
-            dtype=np.uint32,
-        )
-
-        tokens = np.concatenate([ctx.tokens.active for ctx in context_batch])
-
-        return Gemma3Inputs(
-            tokens=Buffer.from_numpy(tokens).to(self.devices[0]),
-            input_row_offsets=Buffer.from_numpy(input_row_offsets).to(
-                self.devices[0]
-            ),
-            return_n_logits=Buffer.from_numpy(
-                np.array([return_n_logits], dtype=np.int64)
-            ),
-            kv_cache_inputs=kv_cache_inputs,
-        )

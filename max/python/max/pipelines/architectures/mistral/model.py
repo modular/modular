@@ -18,11 +18,9 @@ from dataclasses import dataclass
 from typing import Any, ClassVar
 
 from max.driver import Buffer, Device
-from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import BufferType, DeviceRef, Graph, TensorType
+from max.graph import BufferType, Graph, TensorType
 from max.graph.weights import SafetensorWeights, Weights, WeightsAdapter
-from max.nn.comm import Signals
 from max.nn.layer import Module
 from max.nn.transformer import ReturnLogits
 from max.pipelines.context import TextContext
@@ -137,42 +135,13 @@ class MistralModel(PipelineModelWithKVCache[TextContext]):
         return self.batch_processor.process_outputs(model_outputs)
 
     def graph_inputs(self) -> tuple[TensorType | BufferType, ...]:
-        # Generate DeviceRef
-        device_ref = DeviceRef.from_device(self.devices[0])
-
-        # Construct general input types
-        return_n_logits_type = TensorType(
-            DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
-        )
-
-        kv_inputs = self.kv_params.flattened_kv_inputs()
-
-        tokens_type = TensorType(
-            DType.int64, shape=["total_seq_len"], device=device_ref
-        )
-        input_row_offsets_type = TensorType(
-            DType.uint32, shape=["input_row_offsets_len"], device=device_ref
-        )
-
-        if len(self.devices) > 1:
-            # Flatten kv types for each device
-            signals = Signals(
-                devices=(DeviceRef(d.label, d.id) for d in self.devices)
+        assert self.batch_processor is not None
+        return tuple(
+            self.batch_processor.get_symbolic_inputs(
+                kv_params=self.kv_params,
+                device_refs=self.device_refs,
             )
-            return (
-                tokens_type,
-                input_row_offsets_type,
-                return_n_logits_type,
-                *signals.input_types(),
-                *kv_inputs,
-            )
-        else:
-            return (
-                tokens_type,
-                input_row_offsets_type,
-                return_n_logits_type,
-                *kv_inputs,
-            )
+        )
 
     @traced
     def _build_graph(

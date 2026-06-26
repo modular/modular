@@ -10,42 +10,35 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Input batching for Mistral pipeline models."""
+"""Input batching for the unified EAGLE Llama3 pipeline model."""
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
 from max.driver import Buffer
-from max.graph import BufferType, DeviceRef, TensorType
 from max.nn.kv_cache import KVCacheInputsInterface
-from max.nn.kv_cache.cache_params import KVCacheParamInterface
-from max.pipelines.context import TextContext
 from max.pipelines.lib.interfaces.batch_processor import (
-    SingleReplicaRaggedBatchProcessor,
-    ragged_kv_symbolic_inputs,
+    BatchProcessorRuntime,
+    UnifiedSpecDecodeBatchProcessor,
 )
 
 if TYPE_CHECKING:
-    from .model import MistralInputs
+    from .model import UnifiedEagleLlama3Inputs
+    from .model_config import UnifiedEagleLlama3Config
 
 
-class MistralBatchProcessor(
-    SingleReplicaRaggedBatchProcessor[TextContext, "MistralInputs"]
+class UnifiedEagleLlama3BatchProcessor(
+    UnifiedSpecDecodeBatchProcessor["UnifiedEagleLlama3Inputs"]
 ):
-    """Single-replica ragged KV batching for Mistral."""
+    """Ragged batching with persistent buffers and seed for EAGLE Llama3."""
 
-    def get_symbolic_inputs(
+    def __init__(
         self,
-        *,
-        kv_params: KVCacheParamInterface,
-        device_refs: list[DeviceRef],
-    ) -> list[TensorType | BufferType]:
-        return ragged_kv_symbolic_inputs(
-            kv_params=kv_params,
-            device_refs=device_refs,
-            include_signal_buffers=len(device_refs) > 1,
-        )
+        config: UnifiedEagleLlama3Config,
+        runtime: BatchProcessorRuntime,
+    ) -> None:
+        super().__init__(config, runtime)
 
     def _make_inputs(
         self,
@@ -54,14 +47,16 @@ class MistralBatchProcessor(
         input_row_offsets: Buffer,
         return_n_logits: Buffer,
         kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None,
-        signal_buffers: list[Buffer],
-    ) -> MistralInputs:
-        from .model import MistralInputs
+        seed: Buffer,
+        structured_output: bool,
+    ) -> UnifiedEagleLlama3Inputs:
+        from .model import UnifiedEagleLlama3Inputs
 
-        return MistralInputs(
+        return UnifiedEagleLlama3Inputs(
             tokens=tokens,
             input_row_offsets=input_row_offsets,
             return_n_logits=return_n_logits,
-            signal_buffers=signal_buffers,
             kv_cache_inputs=kv_cache_inputs,
+            seed=seed,
+            structured_output=structured_output,
         )

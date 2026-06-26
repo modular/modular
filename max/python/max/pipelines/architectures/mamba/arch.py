@@ -20,6 +20,7 @@ from max.pipelines.lib import (
 from max.pipelines.modeling.types import PipelineTask
 
 from . import weight_adapters
+from .batch_processor import MambaBatchProcessor
 from .model import MambaModel
 from .model_config import MambaConfig
 from .tokenizer import MambaTokenizer
@@ -35,6 +36,7 @@ mamba_arch = SupportedArchitecture(
         "bfloat16",
     },
     pipeline_model=MambaModel,
+    batching=MambaBatchProcessor,
     tokenizer=MambaTokenizer,
     context_type=TextContext,
     rope_type="normal",

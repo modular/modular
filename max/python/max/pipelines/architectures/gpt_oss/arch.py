@@ -21,6 +21,7 @@ from max.pipelines.lib import (
 from max.pipelines.modeling.types import PipelineTask
 
 from . import weight_adapters
+from .batch_processor import GptOssBatchProcessor
 from .memory_planner import GptOssMemoryPlanner
 from .model import GptOssModel
 from .model_config import GptOssConfig
@@ -38,6 +39,7 @@ gpt_oss_arch = SupportedArchitecture(
         "float4_e2m1fnx2",
     },
     pipeline_model=GptOssModel,
+    batching=GptOssBatchProcessor,
     task=PipelineTask.TEXT_GENERATION,
     tokenizer=TextTokenizer,
     context_type=TextContext,
