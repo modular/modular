@@ -71,6 +71,11 @@ This version is still a work in progress.
 
 ### Inference server
 
+- Added an opt-in `emit_reasoning_content` server config. When enabled, chat
+  completion responses emit a reasoning model's chain-of-thought under
+  `reasoning_content` instead of `reasoning` (the two are never emitted
+  together). This restores the `reasoning_content` field for clients that
+  require it; it remains off by default, so responses emit `reasoning` only.
 - Improved time-to-first-token for multimodal requests by making the image and
   video preprocessor reject and decode media more efficiently. Oversized media
   is now rejected before its bytes are fully materialized: an `http(s)` download

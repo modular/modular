@@ -29,6 +29,7 @@ import pytest
 import pytest_asyncio
 from async_asgi_testclient import TestClient as AsyncTestClient
 from fastapi import FastAPI
+from fastapi.encoders import jsonable_encoder
 from fastapi.testclient import TestClient as SyncTestClient
 from max.pipelines.architectures.kimik2_5.tool_parser import KimiToolParser
 from max.pipelines.context import (
@@ -78,6 +79,8 @@ from max.serve.router.openai_routes import (
 from max.serve.schemas.openai import (
     ChatCompletionLogprobs,
     ChatCompletionMessageToolCall,
+    ChatCompletionResponseMessage,
+    ChatCompletionStreamResponseDelta,
     ChatCompletionTokenLogprob,
     CreateChatCompletionRequest,
     CreateChatCompletionResponse,
@@ -1171,6 +1174,7 @@ async def _run_stream(
     *,
     stream_options: ChatCompletionStreamOptionsParam | None = None,
     fold_reasoning_into_content: bool = False,
+    emit_reasoning_content: bool = False,
 ) -> list[CreateChatCompletionStreamResponse]:
     """Run streaming generator and return parsed responses."""
     mock_pipeline = Mock()
@@ -1187,6 +1191,7 @@ async def _run_stream(
         mock_pipeline,
         stream_options=stream_options,
         fold_reasoning_into_content=fold_reasoning_into_content,
+        emit_reasoning_content=emit_reasoning_content,
     )
     return [
         CreateChatCompletionStreamResponse.model_validate_json(p)
@@ -2338,3 +2343,145 @@ async def test_completion_extra_field_dropped_when_flag_set(
     assert response.status_code == 200
     body = response.json()
     assert body["choices"][0]["text"] == "echo this"
+
+
+def test_response_message_carries_reasoning_content() -> None:
+    msg = ChatCompletionResponseMessage(
+        role="assistant", reasoning_content="thinking"
+    )
+    assert msg.reasoning_content == "thinking"
+    # Unselected field stays None and is dropped from the wire.
+    assert '"reasoning":' not in msg.model_dump_json(exclude_none=True)
+
+
+def test_stream_delta_carries_reasoning_content() -> None:
+    delta = ChatCompletionStreamResponseDelta(reasoning_content="frag")
+    assert delta.reasoning_content == "frag"
+
+
+# ============================================================================
+# Tests for emit_reasoning_content flag (CENG-651).
+# ============================================================================
+
+
+@pytest.mark.asyncio
+async def test_non_stream_emits_reasoning_content_when_flag_on(
+    patch_openai_metrics: None,
+) -> None:
+    mock_pipeline = Mock()
+    mock_pipeline.model_name = "test-model"
+    mock_pipeline.all_tokens = AsyncMock(
+        return_value=[
+            TokenGeneratorOutput(
+                status=GenerationStatus.ACTIVE,
+                decoded_reasoning_tokens="thinking",
+                reasoning_token_count=1,
+                decoded_tokens=None,
+                token_count=0,
+                prompt_token_count=5,
+            ),
+            TokenGeneratorOutput(
+                status=GenerationStatus.END_OF_SEQUENCE,
+                decoded_reasoning_tokens=None,
+                reasoning_token_count=0,
+                decoded_tokens="answer",
+                token_count=1,
+                prompt_token_count=5,
+            ),
+        ]
+    )
+
+    generator = OpenAIChatResponseGenerator(
+        mock_pipeline, emit_reasoning_content=True
+    )
+    response = await generator.complete([_make_mock_request()])
+
+    message = response.choices[0].message
+    assert message.reasoning_content == "thinking"
+    assert message.reasoning is None
+    assert message.content == "answer"
+
+
+@pytest.mark.asyncio
+async def test_stream_emits_reasoning_content_when_flag_on(
+    patch_openai_metrics: None,
+) -> None:
+    responses = await _run_stream(
+        _STREAM_REASONING_CHUNKS, emit_reasoning_content=True
+    )
+    assert responses[0].choices[0].delta.reasoning_content == "thinking"
+    assert responses[0].choices[0].delta.reasoning is None
+    assert responses[1].choices[0].delta.content == "answer"
+
+
+@pytest.mark.asyncio
+async def test_stream_emits_reasoning_by_default(
+    patch_openai_metrics: None,
+) -> None:
+    responses = await _run_stream(_STREAM_REASONING_CHUNKS)
+    assert responses[0].choices[0].delta.reasoning == "thinking"
+    assert responses[0].choices[0].delta.reasoning_content is None
+
+
+_REASONING_CONTENT_CHUNKS = [
+    TokenGeneratorOutput(
+        status=GenerationStatus.ACTIVE,
+        decoded_reasoning_tokens="thinking",
+        reasoning_token_count=1,
+        decoded_tokens=None,
+        token_count=0,
+        prompt_token_count=5,
+    ),
+    TokenGeneratorOutput(
+        status=GenerationStatus.END_OF_SEQUENCE,
+        decoded_reasoning_tokens=None,
+        reasoning_token_count=0,
+        decoded_tokens="answer",
+        token_count=1,
+        prompt_token_count=5,
+    ),
+]
+
+
+@pytest.mark.asyncio
+async def test_non_stream_reasoning_content_wire_serialization(
+    patch_openai_metrics: None,
+) -> None:
+    """Verify non-streaming wire serialization of reasoning_content vs reasoning.
+
+    The chat completion route is declared with ``response_model=None``, so FastAPI
+    serializes the returned Pydantic model via ``jsonable_encoder`` WITHOUT
+    ``exclude_none``. As a result, the unselected reasoning field appears in the
+    wire body as ``null`` (null-not-absent) rather than being omitted — this is
+    the documented, spec-accepted behavior. The streaming path serializes with
+    ``model_dump_json(exclude_none=True)`` and is covered by separate tests.
+
+    Flag ON:  reasoning_content == "thinking", reasoning is present but null.
+    Flag OFF: reasoning == "thinking", reasoning_content is present but null.
+    """
+    mock_pipeline = Mock()
+    mock_pipeline.model_name = "test-model"
+
+    # --- Flag ON: emit_reasoning_content=True ---
+    mock_pipeline.all_tokens = AsyncMock(return_value=_REASONING_CONTENT_CHUNKS)
+    generator_on = OpenAIChatResponseGenerator(
+        mock_pipeline, emit_reasoning_content=True
+    )
+    response_on = await generator_on.complete([_make_mock_request()])
+    body_on = jsonable_encoder(response_on)
+    message_on = body_on["choices"][0]["message"]
+    assert message_on["reasoning_content"] == "thinking"
+    # Non-streaming route uses response_model=None → no exclude_none → null on wire.
+    assert message_on["reasoning"] is None
+
+    # --- Flag OFF (default): emit_reasoning_content=False ---
+    mock_pipeline.all_tokens = AsyncMock(return_value=_REASONING_CONTENT_CHUNKS)
+    generator_off = OpenAIChatResponseGenerator(
+        mock_pipeline, emit_reasoning_content=False
+    )
+    response_off = await generator_off.complete([_make_mock_request()])
+    body_off = jsonable_encoder(response_off)
+    message_off = body_off["choices"][0]["message"]
+    assert message_off["reasoning"] == "thinking"
+    # The unselected field is null-not-absent on this path (same behavior as above).
+    assert message_off["reasoning_content"] is None
