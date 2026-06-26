@@ -135,21 +135,17 @@ trait SizedRaising:
 # ===----------------------------------------------------------------------=== #
 
 
-@deprecated(
-    "Using String.__len__() is discouraged, prefer .byte_length() or"
-    " .count_codepoints()"
+@doc_hidden
+@unavailable(
+    "`len(String/StringSlice)` is not supported because Mojo strings are UTF-8"
+    " encoded, so a single length is ambiguous: it could mean the number of"
+    " UTF-8 bytes, the number of Unicode code points, or the number of"
+    " user-visible characters (grapheme clusters). Use `s.byte_length()` or"
+    " `len(s.bytes())` for the number of UTF-8 bytes, `len(s.codepoints())` for"
+    " Unicode code points, or `len(s.graphemes())` for grapheme clusters."
 )
-@always_inline("nodebug")
-def len(value: StringSlice[mut=False, _]) -> Int:
-    """Get the string length.
-
-    Args:
-        value: The object to get the length of.
-
-    Returns:
-        The length of this value.
-    """
-    return value.byte_length()
+def len(value: StringSlice) -> Int:
+    ...
 
 
 @always_inline
