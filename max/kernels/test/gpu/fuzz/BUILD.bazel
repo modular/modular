@@ -49,6 +49,156 @@ mojo_test(
     ],
 )
 
+# Kernel-level fuzzing (see gpu-kernels-fuzzing-design.md).
+#
+# Slice 0: a seeded, boundary-aware shape generator drives flash_attention with
+# a CausalPaddingMask. Run PLAIN, an OOB underflow read (if present) lands inside
+# the device pool and is masked; run under the memcheck + pool-off oracle it
+# would surface from generated shapes:
+#
+#   bash max/kernels/test/gpu/compute_sanitizer/run_sanitizer.sh memcheck \
+#     //max/kernels/test/gpu/fuzz:fuzz_mha_causal.mojo.test
+#
+# Tagged `manual` so it stays out of `//...` wildcard CI until a fuzz lane is
+# wired up deliberately (Slice 5). Explicit invocation (above) still runs it.
+mojo_test(
+    name = "fuzz_mha_causal.mojo.test",
+    size = "large",
+    srcs = [
+        "_fuzz.mojo",
+        "fuzz_mha_causal.mojo",
+    ],
+    exec_properties = {
+        "test.resources:gpu-memory": "4",
+    },
+    main = "fuzz_mha_causal.mojo",
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    target_compatible_with = ["//:has_gpu"],
+    deps = [
+        "//max:internal_utils",
+        "//max:linalg",
+        "//max:nn",
+        "@mojo//:std",
+    ],
+)
+
+# Target: MHA NullMask (non-causal full attention; memory-safety + ref oracle).
+mojo_test(
+    name = "fuzz_mha_nullmask.mojo.test",
+    size = "large",
+    srcs = [
+        "_fuzz.mojo",
+        "fuzz_mha_nullmask.mojo",
+    ],
+    exec_properties = {
+        "test.resources:gpu-memory": "4",
+    },
+    main = "fuzz_mha_nullmask.mojo",
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    target_compatible_with = ["//:has_gpu"],
+    deps = [
+        "//max:internal_utils",
+        "//max:linalg",
+        "//max:nn",
+        "@mojo//:std",
+    ],
+)
+
+# Target: generic_flare_mla_decode_kv_cache_ragged (ragged paged-KV-cache MLA
+# decode -- the DeepSeek/Kimi production decode op). num_heads + mask are
+# compile-time (`-D mla_num_heads=128|64|16`, default 128); the ragged shape
+# (batch, per-batch cache lengths, per-batch Q lengths) is the runtime fuzz
+# axis. B200-only (SM100 MLADispatchScalarArgs + tuned decode dispatch).
+mojo_test(
+    name = "fuzz_mla_decode.mojo.test",
+    size = "large",
+    srcs = [
+        "_fuzz.mojo",
+        "fuzz_mla_decode.mojo",
+    ],
+    exec_properties = {
+        "test.resources:gpu-memory": "8",
+    },
+    main = "fuzz_mla_decode.mojo",
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    target_compatible_with = [
+        "//:has_gpu",
+        "//:b200_gpu",
+    ],
+    deps = [
+        "//max:internal_utils",
+        "//max:kv_cache",
+        "//max:linalg",
+        "//max:nn",
+        "//max:structured_kernels",
+        "@mojo//:std",
+    ],
+)
+
+# Target: fused MLA RoPE + KV-cache RMSNorm + quantize-write
+# (`mla_fused_rope_rmsnorm_quantization` -> `fused_rope_rmsnorm_quantization_kernel`,
+# the DeepSeek/Kimi prefill op with no isolated unit test). The ragged shape
+# (batch, per-batch cache lengths driving `post_seq_idx`, per-batch new-token
+# counts) is the runtime fuzz axis; num_q_heads is compile-time
+# (`-D frrq_num_heads=128|64|16`, default 16). memory-safety primary; `ref`
+# (--check 1) verifies the dense roped query AND the paged K-cache writes.
+mojo_test(
+    name = "fuzz_fused_rope_rmsnorm.mojo.test",
+    size = "large",
+    srcs = [
+        "_fuzz.mojo",
+        "fuzz_fused_rope_rmsnorm.mojo",
+    ],
+    exec_properties = {
+        "test.resources:gpu-memory": "8",
+    },
+    main = "fuzz_fused_rope_rmsnorm.mojo",
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    target_compatible_with = ["//:has_gpu"],
+    deps = [
+        "//max:internal_utils",
+        "//max:kv_cache",
+        "//max:linalg",
+        "//max:nn",
+        "@mojo//:std",
+    ],
+)
+
+# Minimal repro probe for the decode-path hang found by the Slice 0 fuzzer.
+# `num_keys` / `valid_length` come from argv (`--test_arg=`), so one build probes
+# many configs. Tagged `manual` (a hanging config TIMES OUT by design).
+mojo_test(
+    name = "repro_decode_hang.mojo.test",
+    size = "small",
+    srcs = ["repro_decode_hang.mojo"],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    target_compatible_with = ["//:has_gpu"],
+    deps = [
+        "//max:internal_utils",
+        "//max:linalg",
+        "//max:nn",
+        "@mojo//:std",
+    ],
+)
+
 # Python orchestrator: build, enumerate, run-per-case, classify, shrink, corpus,
 # replay. Registered targets invoke the per-kernel mojo_test binaries above.
 modular_py_binary(
