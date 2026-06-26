@@ -7,7 +7,7 @@
 
 @always_inline
 def use_string(s: String) -> Int:
-    if len(s):
+    if len(s.bytes()):
         return 2
     return 8
 
