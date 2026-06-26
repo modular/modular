@@ -16,6 +16,7 @@
 import os
 
 import pytest
+from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
 from max.serve.config import Settings
 
 
@@ -78,3 +79,46 @@ def test_deprecated_dispatcher_config_fails_even_with_valid_di_bind_address() ->
             del os.environ["MAX_SERVE_DISPATCHER_CONFIG"]
         if "MAX_SERVE_DI_BIND_ADDRESS" in os.environ:
             del os.environ["MAX_SERVE_DI_BIND_ADDRESS"]
+
+
+def test_eplb_profile_default_is_false() -> None:
+    """EP profiling must default to off — opt-in only."""
+    if "MAX_SERVE_EPLB_PROFILE" in os.environ:
+        del os.environ["MAX_SERVE_EPLB_PROFILE"]
+
+    settings = Settings()
+    assert settings.eplb_profile is False
+
+
+def test_eplb_profile_can_be_enabled_via_env() -> None:
+    """MAX_SERVE_EPLB_PROFILE=1 enables profiling."""
+    os.environ["MAX_SERVE_EPLB_PROFILE"] = "1"
+    try:
+        settings = Settings()
+        assert settings.eplb_profile is True
+    finally:
+        del os.environ["MAX_SERVE_EPLB_PROFILE"]
+
+
+def test_eplb_profile_can_be_set_by_field_name() -> None:
+    """Direct init by field name (eplb_profile=True) works."""
+    if "MAX_SERVE_EPLB_PROFILE" in os.environ:
+        del os.environ["MAX_SERVE_EPLB_PROFILE"]
+
+    settings = Settings(eplb_profile=True)
+    assert settings.eplb_profile is True
+
+
+def test_pipeline_runtime_config_eplb_profile_mirrors_env() -> None:
+    """PipelineRuntimeConfig.eplb_profile reads MAX_SERVE_EPLB_PROFILE
+    so pipeline code has the same view as Settings."""
+
+    if "MAX_SERVE_EPLB_PROFILE" in os.environ:
+        del os.environ["MAX_SERVE_EPLB_PROFILE"]
+    assert PipelineRuntimeConfig().eplb_profile is False
+
+    os.environ["MAX_SERVE_EPLB_PROFILE"] = "1"
+    try:
+        assert PipelineRuntimeConfig().eplb_profile is True
+    finally:
+        del os.environ["MAX_SERVE_EPLB_PROFILE"]
