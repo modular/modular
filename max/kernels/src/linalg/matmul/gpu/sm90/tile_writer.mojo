@@ -33,6 +33,7 @@ Two main traits abstract these writing mechanisms:
 from layout.tma_async import TMATensorTile
 from layout import (
     Coord,
+    Idx,
     IntTuple,
     Layout,
     MixedLayout,

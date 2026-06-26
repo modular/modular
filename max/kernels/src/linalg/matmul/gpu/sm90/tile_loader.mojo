@@ -39,7 +39,7 @@ from std.gpu.sync import async_copy_arrive
 from structured_kernels.pipeline import (
     ProducerConsumerPipeline,
 )
-from std.sys import simd_width_of
+from std.sys import simd_width_of, size_of
 from std.utils.index import IndexList
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 

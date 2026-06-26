@@ -14,6 +14,7 @@
 from ...tile_scheduler import RasterOrder
 from linalg.gemv import GEMVAlgorithm
 from internal_utils import TuningConfig
+from std.utils.index import Index, IndexList
 
 
 struct TuningConfigSM100(TrivialRegisterPassable, TuningConfig):

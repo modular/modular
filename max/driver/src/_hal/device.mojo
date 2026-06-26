@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """HAL Device — a device retrieved from a Driver."""
 
+from . import Context, Driver
 from .plugin import (
     RawDriver,
     OutParam,

@@ -25,6 +25,7 @@ from std.memory.unsafe_pointer import unsafe_cast
 from std.reflection import call_location
 from std.gpu.host import DeviceBuffer, DeviceContext, HostBuffer
 from layout._fillers import BATCH_SIZE
+from layout.layout_tensor import LayoutTensor
 from std.sys import prefetch
 from std.sys.intrinsics import PrefetchOptions, _type_is_eq_parse_time
 from std.utils import IndexList, StaticTuple
@@ -2481,7 +2482,7 @@ struct TileTensor[
         self,
         out result: LayoutTensor[
             Self.dtype,
-            layout.Layout(
+            _LegacyLayout(
                 coord_to_int_tuple[*Self.LayoutType._shape_types](),
                 coord_to_int_tuple[*Self.LayoutType._stride_types](),
             ),
@@ -2928,7 +2929,7 @@ struct NullableTileTensor[
         self,
         out result: LayoutTensor[
             Self.dtype,
-            layout.Layout(
+            _LegacyLayout(
                 coord_to_int_tuple[*Self.LayoutType._shape_types](),
                 coord_to_int_tuple[*Self.LayoutType._stride_types](),
             ),

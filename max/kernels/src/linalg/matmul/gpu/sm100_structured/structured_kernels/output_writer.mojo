@@ -31,9 +31,12 @@ from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from layout import (
     Coord,
     Idx,
+    IntTuple,
+    Layout,
     RuntimeTuple,
     TensorLayout,
     TileTensor,
+    UNKNOWN_VALUE,
     row_major,
 )
 from layout.layout import zipped_divide
@@ -42,7 +45,10 @@ from layout.runtime_tuple import crd2idx as rt_crd2idx
 from layout.swizzle import make_swizzle
 from layout.tma_async import TMATensorTile
 from std.gpu.compute.mma import ld_matrix
-from linalg.utils import elementwise_compute_lambda_type
+from linalg.utils import (
+    elementwise_compute_lambda_type,
+    elementwise_epilogue_type,
+)
 
 from std.utils.index import IndexList
 

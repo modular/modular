@@ -15,6 +15,7 @@ from std.math import ceildiv
 from std.sys import simd_width_of
 from std.sys.info import _current_target
 
+from nn.reshape import reshape
 from std.algorithm import elementwise, sync_parallelize
 from std.gpu.host import DeviceContext, get_gpu_target
 from std.gpu.host.info import is_cpu
@@ -223,7 +224,7 @@ def _index_tensor_1d[
         reshaped_data_tuple[counter] = data_shape[i]
         counter += 1
 
-    var reshaped_data = reshape.reshape[reshaped_data_rank](
+    var reshaped_data = reshape[reshaped_data_rank](
         data.make_dynamic[DType.int64](),
         reshaped_data_tuple,
     )

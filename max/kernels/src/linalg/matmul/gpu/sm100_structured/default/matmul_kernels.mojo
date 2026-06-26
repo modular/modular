@@ -62,6 +62,7 @@ from layout import (
     Coord,
     CoordLike,
     Idx,
+    Layout,
     RowMajorLayout,
     TensorLayout,
     TileTensor,

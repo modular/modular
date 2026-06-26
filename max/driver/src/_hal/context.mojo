@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """HAL Context — per-device context for memory and queue operations."""
 
+from . import Device, Queue
 from .plugin import (
     RawDriver,
     OutParam,
