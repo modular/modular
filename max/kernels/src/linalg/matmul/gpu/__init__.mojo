@@ -570,7 +570,7 @@ def _matmul_gpu[
                 type_of(b).origin,
                 address_space=type_of(b).address_space,
                 linear_idx_type=type_of(b).linear_idx_type,
-                element_size=type_of(b).element_size,
+                Storage=type_of(b).Storage,
             ]
             enqueue_apple_matmul[
                 a_type,

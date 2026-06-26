@@ -81,6 +81,7 @@ from layout.coord import crd2idx
 from layout._utils import make_amd_buffer_resource
 from layout.tile_layout import Layout, row_major, col_major
 from layout.swizzle import Swizzle
+from layout.tensor_storage import PointerStorage
 from layout.tile_tensor import stack_allocation as tt_stack_allocation
 from std.itertools import product
 
@@ -238,7 +239,10 @@ struct TiledMmaLoader[
         imm_offset_bytes: Int = 0,
     ](
         src: TileTensor[
-            Self.in_type, _, address_space=AddressSpace.SHARED, ...
+            Self.in_type,
+            _,
+            address_space=AddressSpace.SHARED,
+            ...,
         ],
     ) -> InlineArray[SIMD[Self.in_type, simd_width], num_mmas]:
         """Full B operand load from a SMEM warp tile.
@@ -308,7 +312,10 @@ struct TiledMmaLoader[
     @always_inline
     def load_b_tr(
         tile: TileTensor[
-            Self.in_type, _, address_space=AddressSpace.SHARED, ...
+            Self.in_type,
+            _,
+            address_space=AddressSpace.SHARED,
+            ...,
         ],
     ) -> SIMD[Self.in_type, 8]:
         """Transposed B operand load for double-rate MFMA shapes.
@@ -562,7 +569,10 @@ struct TiledMmaLoader[
         imm_offset_bytes: Int = 0,
     ](
         src: TileTensor[
-            Self.in_type, _, address_space=AddressSpace.SHARED, ...
+            Self.in_type,
+            _,
+            address_space=AddressSpace.SHARED,
+            ...,
         ],
     ) -> SIMD[Self.in_type, simd_width_of[Self.in_type]()]:
         """Private helper for `load_b`: single MMA sub-tile load.
@@ -1604,7 +1614,11 @@ struct SubTileLoaderLDS[
     ](
         self,
         dst: TileTensor[
-            Self.dtype, _, _, address_space=AddressSpace.SHARED, ...
+            Self.dtype,
+            _,
+            _,
+            address_space=AddressSpace.SHARED,
+            ...,
         ],
         src: TileTensor[Self.dtype, ...],
         scalar_offset: Int = 0,

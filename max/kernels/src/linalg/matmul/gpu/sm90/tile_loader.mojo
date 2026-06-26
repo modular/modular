@@ -269,7 +269,6 @@ struct TileLoaderTMA[
             origin=MutAnyOrigin,
             address_space=AddressSpace.SHARED,
             linear_idx_type=type_of(dst).linear_idx_type,
-            element_size=type_of(dst).element_size,
         ](
             dst.ptr.mut_cast[True]()
             .unsafe_origin_cast[MutAnyOrigin]()
@@ -411,23 +410,23 @@ struct TileLoaderCPAsync[
         # Perform the async copy with bounds checking and swizzling.  Rebind
         # through an exact destination type so the dtype parameter can unify
         # across the source and destination TileTensor arguments.
-        var dst_vec_any = dst.as_unsafe_any_origin().vectorize[
-            1, Self.vector_size
-        ]()
-        var dst_vec = TileTensor[
+        # Materialize an exact, any-origin destination tile from the raw
+        # pointer (non-vectorized `PointerStorage[element_width=1]`), then vectorize it.
+        # Vectorized tiles cannot be reconstructed directly from a pointer.
+        var dst_exact = TileTensor[
             mut=True,
             dtype=Self._dtype,
-            LayoutType=type_of(dst_vec_any).LayoutType,
+            LayoutType=type_of(dst).LayoutType,
             origin=MutAnyOrigin,
             address_space=AddressSpace.SHARED,
-            linear_idx_type=type_of(dst_vec_any).linear_idx_type,
-            element_size=type_of(dst_vec_any).element_size,
+            linear_idx_type=type_of(dst).linear_idx_type,
         ](
-            dst_vec_any.ptr.mut_cast[True]()
+            dst.ptr.mut_cast[True]()
             .unsafe_origin_cast[MutAnyOrigin]()
             .bitcast[Scalar[Self._dtype]](),
-            dst_vec_any.layout,
+            dst.layout,
         )
+        var dst_vec = dst_exact.vectorize[1, Self.vector_size]()
         async_copy_with_bound_check[
             Self.thread_layout,
             Self.swizzle_mode,
