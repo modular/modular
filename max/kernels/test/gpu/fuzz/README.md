@@ -166,6 +166,11 @@ columns), at `num_q_heads` 16 and 128. Two PASS regression anchors (one
 
 ## Adding a kernel target
 
+The `add-kernel-fuzz-target` Claude Code skill walks this end-to-end — picking
+the fuzz axes, oracle, and reference; writing the target; wiring the build; and
+validating locally (run `/add-kernel-fuzz-target`, or just ask to fuzz a
+kernel). The summary:
+
 1. Write `fuzz_<kernel>.mojo` with a `CaseSpec` (its fuzzable fields) and a
    `run_one_case(ctx, spec)`. Support the three argv modes — `list-specs`
    (print `FUZZ_SPEC <key>=<val> ...`), `single` (read `--<key>` per field, run
