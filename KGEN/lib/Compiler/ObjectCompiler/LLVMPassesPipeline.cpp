@@ -377,13 +377,13 @@ static void addVectorPasses(FunctionPassManager &FPM,
 }
 
 static ModulePassManager buildO3Pipeline(PassBuilder &passBuilder,
-                                         const CompilationOptions &options) {
+                                         const CompilationOptions &options,
+                                         const TargetBackend *backend) {
   OptimizationLevel level = OptimizationLevel::O3;
   ModulePassManager mpm;
 
-  if (isNVPTXBackend(options)) {
-    mpm.addPass(SetFunctionAttributes());
-  }
+  if (backend)
+    backend->addPipelineStartPasses(mpm, options);
 
   // Do basic inference of function attributes from known properties of system
   // libraries and other oracles.
@@ -545,13 +545,13 @@ static ModulePassManager buildO3Pipeline(PassBuilder &passBuilder,
 }
 
 static ModulePassManager buildO0Pipeline(PassBuilder &passBuilder,
-                                         const CompilationOptions &options) {
+                                         const CompilationOptions &options,
+                                         const TargetBackend *backend) {
   OptimizationLevel level = getOptimizationLevel(options.optimizationLevel);
   ModulePassManager mpm;
 
-  if (isNVPTXBackend(options)) {
-    mpm.addPass(SetFunctionAttributes());
-  }
+  if (backend)
+    backend->addPipelineStartPasses(mpm, options);
 
   passBuilder.invokePipelineStartEPCallbacks(mpm, OptimizationLevel::O0);
 
@@ -582,10 +582,12 @@ static ModulePassManager buildO0Pipeline(PassBuilder &passBuilder,
 ModulePassManager
 M::KGEN::buildLLVMOptimizationPipeline(PassBuilder &passBuilder,
                                        const CompilationOptions &options) {
+  const TargetBackend *backend =
+      TargetBackendRegistry::get().lookup(llvm::Triple(options.targetTriple));
+
   // A backend may fully own its pipeline (e.g. Metal's AIR legalization),
   // replacing the standard optimization pipeline below.
-  if (const TargetBackend *backend = TargetBackendRegistry::get().lookup(
-          llvm::Triple(options.targetTriple))) {
+  if (backend) {
     ModulePassManager mpm;
     if (backend->buildLLVMPipeline(mpm, passBuilder, options))
       return mpm;
@@ -593,9 +595,9 @@ M::KGEN::buildLLVMOptimizationPipeline(PassBuilder &passBuilder,
 
   CodeGenOptLevel optLevel = options.getCodeGenOptLevel();
   if (optLevel == CodeGenOptLevel::None)
-    return buildO0Pipeline(passBuilder, options);
+    return buildO0Pipeline(passBuilder, options, backend);
   // All non-zero optimization levels are currently equivalent.
-  return buildO3Pipeline(passBuilder, options);
+  return buildO3Pipeline(passBuilder, options, backend);
 }
 
 void M::KGEN::addLLVMIRDowngradePass(llvm::ModulePassManager &mpm) {
@@ -609,10 +611,6 @@ void M::KGEN::registerKGENLLVMPasses(PassBuilder &passBuilder) {
          ArrayRef<PassBuilder::PipelineElement>) -> bool {
         if (name == "kgen-llvmir-downgrade") {
           mpm.addPass(LLVMIRDowngradePass());
-          return true;
-        }
-        if (name == "kgen-set-function-attrs") {
-          mpm.addPass(SetFunctionAttributes());
           return true;
         }
         return false;
