@@ -24,6 +24,14 @@ export const typesSheet = {
   darkPdf: require('./assets/types-literals/mojo-cheat-sheet-types-and-literals-dark.pdf').default,
 };
 
+export const convertSheet = {
+  id: 'mojo-cheat-sheet-conversions',
+  lightPng: require('./assets/conversions/mojo-cheat-sheet-conversions-light.png').default,
+  lightPdf: require('./assets/conversions/mojo-cheat-sheet-conversions-light.pdf').default,
+  darkPng: require('./assets/conversions/mojo-cheat-sheet-conversions-dark.png').default,
+  darkPdf: require('./assets/conversions/mojo-cheat-sheet-conversions-dark.pdf').default,
+};
+
 export const Preview = ({sheet, alt}) => {
   const {colorMode} = useColorMode();
   const img = colorMode === 'dark' ? sheet.darkPng : sheet.lightPng;
@@ -161,6 +169,14 @@ Syntax essentials. The core you reach for first.
 ## Types and literals {#types-and-literals}
 
 Types, literals, and the sharp edges. Know before you write.
+
+</CheatSheet>
+
+<CheatSheet sheet={convertSheet} alt="Mojo conversions cheat sheet">
+
+## Type conversions {#conversions}
+
+Create it or convert it, and get back to work.
 
 </CheatSheet>
 
