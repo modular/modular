@@ -86,6 +86,7 @@ class KVConnector(Protocol):
         self,
         device_block_ids: list[int],
         block_hashes: Sequence[bytes],
+        replica_idx: int = 0,
     ) -> int:
         """Load data from external cache into device blocks.
 
@@ -94,6 +95,9 @@ class KVConnector(Protocol):
             block_hashes: Hashes to load data for, in canonical bytes form
                 (8 big-endian bytes for ahash64-family, 32 bytes for
                 SHA-256).
+            replica_idx: DP replica whose device buffers receive the loaded
+                blocks. The external tier itself is replica-agnostic (keyed by
+                hash); this only selects the H2D destination.
 
         Returns:
             Number of blocks loaded from external cache.
@@ -105,6 +109,7 @@ class KVConnector(Protocol):
         block_ids: list[int],
         block_hashes: Sequence[bytes],
         parent_seq_hash: bytes | None = None,
+        replica_idx: int = 0,
     ) -> None:
         """Offload the device blocks to the external cache.
 
@@ -122,6 +127,8 @@ class KVConnector(Protocol):
             parent_seq_hash: Hash of the block preceding ``block_hashes[0]``
                 in the prefix in the same bytes form as ``block_hashes``,
                 or ``None`` if this run begins at the root.
+            replica_idx: DP replica whose device buffers source the offloaded
+                blocks. The external tier itself is replica-agnostic.
         """
         ...
 

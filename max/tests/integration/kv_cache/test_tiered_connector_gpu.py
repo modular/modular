@@ -94,7 +94,7 @@ def create_tiered_connector(
 
     return TieredConnector(
         devices=[device],
-        kv_memory=kv_buffer.to_memory(),
+        replica_kv_memory=[kv_buffer.to_memory()],
         total_num_host_blocks=num_host_blocks,
         disk_cache_dir=disk_cache_dir,
         max_disk_size_gb=max_disk_size_gb,
@@ -650,7 +650,7 @@ def _make_connector_and_buffers(
 
     connector = TieredConnector(
         devices=[device],
-        kv_memory=kv_buffer.to_memory(),
+        replica_kv_memory=[kv_buffer.to_memory()],
         total_num_host_blocks=num_host_blocks,
         disk_cache_dir=disk_cache_dir,
         max_disk_size_gb=1.0,
@@ -941,9 +941,10 @@ def test_connector_offloads_every_cache_not_just_primary() -> None:
         )
 
         assert len(cache_buffers) == 2, "expected sliding + global caches"
-        assert len(engine.device_buffers) == expected_num_buffers, (
+        device_buffers = engine._replicas[0].device_buffers
+        assert len(device_buffers) == expected_num_buffers, (
             "connector offload engine must cover every cache's buffers "
-            f"(sliding+global); got {len(engine.device_buffers)}, expected "
+            f"(sliding+global); got {len(device_buffers)}, expected "
             f"{expected_num_buffers} -- only the primary cache is offloaded "
             "(SERVOPT-1420 regression)"
         )

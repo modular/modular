@@ -36,6 +36,7 @@ class NullConnector:
         self,
         device_block_ids: list[int],
         block_hashes: Sequence[bytes],
+        replica_idx: int = 0,
     ) -> int:
         return 0
 
@@ -44,6 +45,7 @@ class NullConnector:
         block_ids: list[int],
         block_hashes: Sequence[bytes],
         parent_seq_hash: bytes | None = None,
+        replica_idx: int = 0,
     ) -> None:
         pass
 

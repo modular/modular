@@ -46,6 +46,15 @@ This version is still a work in progress.
 
 ## MAX framework
 
+- Data-parallel (DP) serving now shares the prefix cache across replicas, so a
+  multi-turn conversation gets cache hits even when a later turn is scheduled on
+  a different replica than the previous one. GPU prefix-cache hits are served by
+  a cheap device-to-device copy of the cached pages onto the assigned replica,
+  and the CPU/disk offload tiers are now a single pool shared by every replica
+  (a block offloaded by one replica can be loaded by another). As a result,
+  `host_kvcache_swap_space_gb` now sizes one shared host pool of that size for
+  the whole deployment, rather than allocating a separate pool of that size per
+  replica.
 - The graph compiler now fuses query/key RMSNorm followed by rotate-half RoPE
   into a single `rms_norm_rope` GPU kernel even when the RMSNorm is written "in
   float32" — that is, when a `bfloat16`/`float16` activation is upcast to

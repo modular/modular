@@ -132,6 +132,37 @@ class KVCacheMemory:
         """Returns the total number of pages."""
         return self.buffer.shape[0]
 
+    @property
+    def all_buffers(self) -> list[Buffer]:
+        """Returns every shard buffer backing this unit (rank-0 + peers)."""
+        return [self.buffer]
+
+    def copy_block_to(
+        self,
+        dst: KVCacheMemory,
+        dst_block_id: int,
+        src_block_id: int,
+    ) -> None:
+        """Copies one page from this unit into ``dst`` (device-to-device).
+
+        ``dst`` must be the same logical unit on another replica (identical
+        page layout, same number of shards). The copy may cross devices; the
+        driver issues a peer-to-peer (or host-bounced) transfer. Used to
+        materialize a prefix-cache block on a different DP replica
+        (SERVOPT-1500).
+
+        Args:
+            dst: Destination memory unit (same logical unit, another replica).
+            dst_block_id: Destination page index.
+            src_block_id: Source page index in this unit.
+        """
+        for dst_buffer, src_buffer in zip(
+            dst.all_buffers, self.all_buffers, strict=True
+        ):
+            dst_buffer[dst_block_id, :].inplace_copy_from(
+                src_buffer[src_block_id, :]
+            )
+
 
 @dataclass
 class ReplicatedKVCacheMemory(KVCacheMemory):
@@ -161,6 +192,17 @@ class ReplicatedKVCacheMemory(KVCacheMemory):
         )
         if len(unique_shapes) > 1:
             raise ValueError("All buffers must have the same shape")
+
+    @property
+    def all_buffers(self) -> list[Buffer]:
+        """Returns the rank-0 shard buffer followed by every peer buffer.
+
+        For replicated caches (MLA) all shards hold identical data; the
+        inherited :meth:`KVCacheMemory.copy_block_to` zips these against the
+        destination's shards (``strict=True``), so each shard is fanned out
+        with an independent point-to-point copy (no broadcast collective).
+        """
+        return [self.buffer, *self.peers]
 
 
 @runtime_checkable
@@ -1813,8 +1855,15 @@ def compute_max_seq_len_fitting_in_cache(
 def compute_num_host_blocks(params: KVCacheParamInterface) -> int:
     """Computes the number of blocks that can be allocated on the host.
 
+    The host (CPU/disk) tier is a single pool shared across all data-parallel
+    replicas via one connector (SERVOPT-1501), sized at
+    ``host_kvcache_swap_space_gb`` total (independent of
+    ``data_parallel_degree``). The connector is replica-agnostic, so a block
+    offloaded by one replica can be served as a cache hit for another.
+
     Returns:
-        The number of blocks that can be allocated on the host.
+        The total number of blocks that can be allocated in the shared host
+        pool.
     """
     if params.kv_connector not in (
         KVConnectorType.local,
@@ -1823,22 +1872,21 @@ def compute_num_host_blocks(params: KVCacheParamInterface) -> int:
         return 0
     assert params.host_kvcache_swap_space_gb is not None
     GiB = 1024 * 1024 * 1024
-    host_gb_per_replica = params.host_kvcache_swap_space_gb
-    host_bytes_per_replica = host_gb_per_replica * GiB
+    host_bytes = params.host_kvcache_swap_space_gb * GiB
 
     bytes_per_block = params.bytes_per_block
     if params.replicates_kv_across_tp:
         # On cpu/disk, we don't need multiple replicas of the same KV state.
         assert bytes_per_block % params.tensor_parallel_degree == 0
         bytes_per_block = bytes_per_block // params.tensor_parallel_degree
-    num_host_blocks = int(host_bytes_per_replica // bytes_per_block)
+    num_host_blocks = int(host_bytes // bytes_per_block)
 
     if num_host_blocks == 0:
         raise RuntimeError(
             "Insufficient cache memory to allocate even a single page.\nOne"
             " page requires"
             f" {to_human_readable_bytes(params.bytes_per_block)} but only"
-            f" {to_human_readable_bytes(host_gb_per_replica * GiB)} are"
+            f" {to_human_readable_bytes(host_bytes)} are"
             " available on host."
         )
 

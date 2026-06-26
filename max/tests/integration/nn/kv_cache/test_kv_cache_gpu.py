@@ -83,7 +83,7 @@ def test_multi_cache_connector_offloads_all_caches() -> None:
 
     connector = kv_manager._replica[0].connector
     assert isinstance(connector, LocalConnector)
-    assert len(connector._block_copy_engine.device_buffers) == 2
+    assert len(connector._block_copy_engine._replicas[0].device_buffers) == 2
 
     kv_buffer = kv_manager.get_device_buffer(0)
     assert isinstance(kv_buffer, MultiKVCacheBuffer)

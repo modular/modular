@@ -48,19 +48,27 @@ def create_connector(
     kv_connector: KVConnectorType | None,
     kv_connector_config: KVConnectorConfig | None,
     devices: Sequence[Device],
-    kv_buffers: KVCacheBufferInterface,
+    replica_kv_memory: Sequence[Sequence[KVCacheMemory]],
     total_num_host_blocks: int,
     kv_hash_algo: KVHashAlgo,
 ) -> KVConnector:
     """Create a KV cache connector instance based on ``kv_connector``.
 
+    A single connector serves every DP replica for all connector types:
+    ``replica_kv_memory`` holds each replica's device buffers, and load/offload
+    select the replica via ``replica_idx`` (SERVOPT-1501). The host/disk tiers
+    (``local``/``tiered``) back this with one shared pinned host buffer / disk
+    cache; the distributed ``dkv`` connector owns one Rust client per replica
+    internally.
+
     Args:
         kv_connector: Connector type to instantiate (or None for no-op).
         kv_connector_config: Connector-specific configuration object.
-        devices: Devices for the KV cache tensors.
-        kv_buffers: The replica's KV buffer (a single leaf or a tree of
-            leaves) describing all caches to offload.
-        total_num_host_blocks: Total number of host blocks for swapping.
+        devices: Devices for the KV cache tensors (all participating devices).
+        replica_kv_memory: Per-replica offload-ready KV memory units (one inner
+            sequence per DP replica).
+        total_num_host_blocks: Total number of host blocks for swapping (the
+            full shared pool across replicas for ``local``/``tiered``).
         kv_hash_algo: KV-cache hash algorithm; forwarded to connectors that
             persist hash-keyed state on disk so they can refuse to start
             against a directory locked to a different algorithm.
@@ -69,7 +77,6 @@ def create_connector(
         A connector instance implementing the KVConnector protocol.
     """
     connector = kv_connector
-    kv_memory: list[KVCacheMemory] = kv_buffers.to_memory()
 
     if connector == KVConnectorType.dkv:
         from .dkv import DKVConnector
@@ -87,8 +94,7 @@ def create_connector(
             kv_connector_config.block_store_endpoint,
         )
         return DKVConnector(
-            devices=devices,
-            kv_memory=kv_memory,
+            replica_kv_memory=replica_kv_memory,
             local_block_store_endpoint=kv_connector_config.block_store_endpoint,
         )
 
@@ -108,7 +114,7 @@ def create_connector(
 
         return TieredConnector(
             devices=devices,
-            kv_memory=kv_memory,
+            replica_kv_memory=replica_kv_memory,
             total_num_host_blocks=total_num_host_blocks,
             disk_cache_dir=cfg.disk_offload_dir,
             max_disk_size_gb=cfg.disk_offload_max_gb,
@@ -121,7 +127,7 @@ def create_connector(
             f"Creating LocalConnector: host_blocks={total_num_host_blocks}"
         )
         return LocalConnector(
-            kv_memory=kv_memory,
+            replica_kv_memory=replica_kv_memory,
             total_num_host_blocks=total_num_host_blocks,
         )
 
