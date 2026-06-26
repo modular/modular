@@ -14,14 +14,10 @@
 from __future__ import annotations
 
 import logging
-import math
-from collections.abc import Callable, Sequence
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, ClassVar, cast
 
-import numpy as np
-import numpy.typing as npt
 from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
@@ -31,9 +27,7 @@ from max.experimental.sharding import (
 )
 from max.experimental.tensor import Tensor
 from max.graph import DeviceRef, TensorType
-from max.graph.buffer_utils import cast_dlpack_to
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn.kv_cache import KVCacheInputsInterface
 from max.nn.transformer import ReturnLogits
 from max.pipelines.context import TextAndVisionContext
 from max.pipelines.lib import (
@@ -45,6 +39,7 @@ from max.pipelines.lib import (
 )
 from transformers import AutoConfig
 
+from .batch_processor import Gemma3MultiModalModuleV3BatchProcessor
 from .model_config import Gemma3ForConditionalGenerationConfig
 from .vision_model.gemma3multimodal import (
     Gemma3LanguageModel,
@@ -56,44 +51,6 @@ from .weight_adapters import (
 )
 
 logger = logging.getLogger("max.pipelines")
-
-
-class _VisionStacker:
-    """Helper class for efficient parallel stacking of vision patches."""
-
-    def __init__(self, max_workers: int = 24) -> None:
-        self._pool = ThreadPoolExecutor(max_workers=max_workers)
-
-    def stack(
-        self, images: list[npt.NDArray[np.floating[Any]]]
-    ) -> npt.NDArray[np.floating[Any]]:
-        n = len(images)
-        if n == 0:
-            return np.empty((0,), dtype=np.float32)
-
-        out = np.empty((n, *images[0].shape), dtype=images[0].dtype)
-
-        workers = self._pool._max_workers
-        step = math.ceil(n / workers)
-        slices = [slice(i, min(i + step, n)) for i in range(0, n, step)]
-
-        futures = [
-            self._pool.submit(self._copy_block, out, images, sl)
-            for sl in slices
-        ]
-
-        for f in as_completed(futures):
-            f.result()
-
-        return out
-
-    @staticmethod
-    def _copy_block(
-        out: npt.NDArray[np.floating[Any]],
-        images: list[npt.NDArray[np.floating[Any]]],
-        sl: slice,
-    ) -> None:
-        np.copyto(out[sl], np.asarray(images[sl], dtype=images[0].dtype))
 
 
 @dataclass
@@ -117,6 +74,9 @@ class Gemma3MultiModalModelV3(
     """Gemma 3 multimodal pipeline model using the ModuleV3 API."""
 
     model_config_cls: ClassVar[type[Any]] = Gemma3ForConditionalGenerationConfig
+    batch_processor_cls: ClassVar[
+        type[Gemma3MultiModalModuleV3BatchProcessor]
+    ] = Gemma3MultiModalModuleV3BatchProcessor
 
     language_model: Callable[..., Any]
     vision_model: Callable[..., Any]
@@ -141,7 +101,6 @@ class Gemma3MultiModalModelV3(
             return_logits,
         )
 
-        self._stacker = _VisionStacker()
         self.vision_model, self.language_model = self._load_models()
 
     @classmethod
@@ -155,13 +114,6 @@ class Gemma3MultiModalModelV3(
         assert self.pipeline_config.runtime.max_batch_size, (
             "Expected max_batch_size to be set"
         )
-
-        self._input_row_offsets_prealloc = Buffer.from_numpy(
-            np.arange(
-                self.pipeline_config.runtime.max_batch_size + 1,
-                dtype=np.uint32,
-            )
-        ).to(self.devices[0])
 
         weights_dict = dict(self.weights.items())
         language_weights_dict = convert_safetensor_language_state_dict(
@@ -211,43 +163,19 @@ class Gemma3MultiModalModelV3(
             language_nn = Gemma3LanguageModel(model_config, self.kv_params)
             language_nn.to(mesh)
 
-        tokens_type = TensorType(
-            DType.int64,
-            shape=["total_seq_len"],
-            device=device_ref,
+        assert isinstance(
+            self._batch_processor, Gemma3MultiModalModuleV3BatchProcessor
         )
-        image_embeddings_type = TensorType(
-            DType.bfloat16,
-            shape=[
-                "num_image_tokens",
-                model_config.text_config.hidden_size,
-            ],
-            device=device_ref,
+        language_input_types = (
+            self._batch_processor.get_language_symbolic_inputs(
+                kv_params=self.kv_params,
+                device_ref=device_ref,
+                hidden_size=model_config.text_config.hidden_size,
+            )
         )
-        image_token_indices_type = TensorType(
-            DType.int32,
-            shape=["total_image_tokens"],
-            device=device_ref,
-        )
-        input_row_offsets_type = TensorType(
-            DType.uint32,
-            shape=["input_row_offsets_len"],
-            device=device_ref,
-        )
-        return_n_logits_type = TensorType(
-            DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
-        )
-
-        kv_inputs = self.kv_params.get_symbolic_inputs()
-        flattened_kv_types = kv_inputs.flatten()
 
         compiled_language = language_nn.compile(
-            tokens_type,
-            return_n_logits_type,
-            input_row_offsets_type,
-            image_embeddings_type,
-            image_token_indices_type,
-            *flattened_kv_types,
+            *language_input_types,
             weights=language_weights_dict,
         )
 
@@ -267,8 +195,13 @@ class Gemma3MultiModalModelV3(
             assert model_inputs.image_token_indices is not None
             image_token_indices = model_inputs.image_token_indices
         else:
-            image_embeddings = self._create_empty_image_embeddings()
-            image_token_indices = self._create_empty_indices()
+            assert isinstance(
+                self._batch_processor, Gemma3MultiModalModuleV3BatchProcessor
+            )
+            image_embeddings = self._batch_processor.empty_image_embeddings()
+            image_token_indices = (
+                self._batch_processor.empty_image_token_indices()
+            )
 
         kv_cache_inputs = model_inputs.kv_cache_inputs
         assert kv_cache_inputs is not None
@@ -299,95 +232,3 @@ class Gemma3MultiModalModelV3(
                 logits=_to_buffer(model_outputs[0]),
                 next_token_logits=_to_buffer(model_outputs[0]),
             )
-
-    def prepare_initial_token_inputs(
-        self,
-        replica_batches: Sequence[Sequence[TextAndVisionContext]],
-        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
-        return_n_logits: int = 1,
-    ) -> ModelInputs:
-        if len(replica_batches) > 1:
-            raise ValueError("Model does not support DP>1")
-
-        context_batch = replica_batches[0]
-        dev = self.devices[0]
-        assert kv_cache_inputs is not None
-
-        input_row_offsets = Buffer.from_numpy(
-            np.cumsum(
-                [0] + [ctx.tokens.active_length for ctx in context_batch],
-                dtype=np.uint32,
-            )
-        ).to(dev)
-
-        tokens = np.concatenate([ctx.tokens.active for ctx in context_batch])
-
-        pixel_values = self._prepare_vision_inputs(context_batch)
-        image_token_indices = self._batch_image_token_indices(context_batch)
-
-        return Gemma3MultiModalModelInputs(
-            tokens=Buffer.from_numpy(tokens).to(dev),
-            input_row_offsets=input_row_offsets,
-            return_n_logits=Buffer.from_numpy(
-                np.array([return_n_logits], dtype=np.int64)
-            ),
-            kv_cache_inputs=kv_cache_inputs,
-            pixel_values=pixel_values,
-            image_token_indices=image_token_indices,
-        )
-
-    def _prepare_vision_inputs(
-        self, context_batch: Sequence[TextAndVisionContext]
-    ) -> Buffer | None:
-        images = []
-        for context in context_batch:
-            for img in context.next_images:
-                images.append(img.pixel_values)
-
-        if not images:
-            return None
-
-        final_images = self._stacker.stack(images)
-
-        return cast_dlpack_to(
-            final_images, DType.float32, DType.bfloat16, self.devices[0]
-        )
-
-    def _batch_image_token_indices(
-        self, context_batch: Sequence[TextAndVisionContext]
-    ) -> Buffer | None:
-        indices_and_offsets = []
-        batch_offset = 0
-
-        for ctx in context_batch:
-            input_ids = ctx.tokens.active
-
-            special_image_token_mask = (
-                input_ids == self.config.image_token_index
-            )
-            indices = np.where(special_image_token_mask)[0]
-
-            if len(indices) > 0:
-                indices_and_offsets.append(indices + batch_offset)
-
-            batch_offset += ctx.tokens.active_length
-
-        if not indices_and_offsets:
-            return Buffer.zeros(shape=[0], dtype=DType.int32).to(
-                self.devices[0]
-            )
-
-        np_indices = np.concatenate(indices_and_offsets).astype(
-            np.int32, copy=False
-        )
-
-        return Buffer.from_numpy(np_indices).to(self.devices[0])
-
-    def _create_empty_image_embeddings(self) -> Buffer:
-        return Buffer.zeros(
-            shape=[0, self.huggingface_config.text_config.hidden_size],
-            dtype=DType.bfloat16,
-        ).to(self.devices[0])
-
-    def _create_empty_indices(self) -> Buffer:
-        return Buffer.zeros(shape=[0], dtype=DType.int32).to(self.devices[0])

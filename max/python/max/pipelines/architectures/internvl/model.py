@@ -14,14 +14,10 @@
 from __future__ import annotations
 
 import logging
-import math
 from collections.abc import Sequence
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from typing import Any, ClassVar
 
-import numpy as np
-import numpy.typing as npt
 from max.driver import Buffer, Device, DLPackArray
 from max.dtype import DType
 from max.engine import InferenceSession, Model
@@ -33,7 +29,6 @@ from max.graph.weights import (
     WeightsAdapter,
 )
 from max.nn.comm import Signals
-from max.nn.kv_cache import KVCacheInputsInterface
 from max.nn.transformer import ReturnLogits
 from max.pipelines.context import TextAndVisionContext
 from max.pipelines.lib import (
@@ -47,84 +42,16 @@ from max.pipelines.lib import (
 )
 from transformers.models.auto.configuration_auto import AutoConfig
 
+from .batch_processor import InternVLBatchProcessor
 from .internvl import InternVLLanguageModel, InternVLVisionModel
 from .model_config import InternVLConfig
-from .tokenizer import (
-    IMAGE_NDIMS,
-    _get_image_context_token_id,
-)
+from .tokenizer import _get_image_context_token_id
 from .weight_adapters import (
     convert_internvl_language_model_state_dict,
     convert_internvl_vision_model_state_dict,
 )
 
 logger = logging.getLogger("max.pipelines")
-
-
-class _VisionStacker:
-    """Helper class for efficient parallel stacking of vision patches.
-
-    Uses ThreadPoolExecutor for thread management and bulk numpy operations
-    for optimal memory bandwidth utilization.
-    """
-
-    def __init__(self, max_workers: int = 24) -> None:
-        """Initialize the vision stacker with a thread pool.
-
-        Args:
-            max_workers: Maximum number of worker threads (default: 24).
-        """
-        self._pool = ThreadPoolExecutor(max_workers=max_workers)
-
-    def stack(
-        self, images: list[npt.NDArray[np.floating[Any]]]
-    ) -> npt.NDArray[np.floating[Any]]:
-        """Stack images using parallel bulk copy operations.
-
-        Args:
-            images: List of numpy arrays to stack.
-
-        Returns:
-            Stacked numpy array.
-        """
-        n = len(images)
-        if n == 0:
-            return np.empty((0,), dtype=np.float32)
-
-        # Pre-allocate output.
-        out = np.empty((n, *images[0].shape), dtype=images[0].dtype)
-
-        # Divide work evenly among threads.
-        # ThreadPoolExecutor will handle cases where n < workers.
-        workers = self._pool._max_workers
-        step = math.ceil(n / workers)
-        slices = [slice(i, min(i + step, n)) for i in range(0, n, step)]
-
-        # Launch parallel bulk copy tasks.
-        futures = [
-            self._pool.submit(self._copy_block, out, images, sl)
-            for sl in slices
-        ]
-
-        # Wait for completion and propagate any exceptions.
-        for f in as_completed(futures):
-            f.result()
-
-        return out
-
-    @staticmethod
-    def _copy_block(
-        out: npt.NDArray[np.floating[Any]],
-        images: list[npt.NDArray[np.floating[Any]]],
-        sl: slice,
-    ) -> None:
-        """Copy a block of images using bulk numpy operations.
-
-        This method performs a C-level bulk copy that releases the GIL,
-        allowing true parallel execution.
-        """
-        # Convert slice of list to temporary array view and bulk copy.
-        np.copyto(out[sl], np.asarray(images[sl], dtype=images[0].dtype))
 
 
 @dataclass
@@ -185,6 +112,9 @@ class InternVLModel(
     """An InternVL pipeline model for multimodal text generation."""
 
     model_config_cls: ClassVar[type[Any]] = InternVLConfig
+    batch_processor_cls: ClassVar[type[InternVLBatchProcessor]] = (
+        InternVLBatchProcessor
+    )
 
     @classmethod
     def calculate_max_seq_len(
@@ -206,11 +136,6 @@ class InternVLModel(
 
     language_model: Model
     """The compiled language model for text generation."""
-
-    _input_row_offsets_prealloc: list[Buffer]
-    """Pre-allocated per-device tensors for input row offsets in multi-step
-    execution.
-    """
 
     def __init__(
         self,
@@ -234,29 +159,12 @@ class InternVLModel(
 
         self.vision_model, self.language_model = self.load_model(session)
 
-        # Initialize vision stacker for optimized parallel stacking.
-        self._stacker = _VisionStacker()
-
     def load_model(self, session: InferenceSession) -> tuple[Model, Model]:
         """Loads the compiled InternVL models into the MAX Engine session.
 
         Returns:
             A tuple of (vision_model, language_model).
         """
-        # Pre-allocation for multi-step execution
-        assert self.pipeline_config.runtime.max_batch_size, (
-            "Expected max_batch_size to be set"
-        )
-        input_row_offsets_prealloc_host = Buffer.from_numpy(
-            np.arange(
-                self.pipeline_config.runtime.max_batch_size + 1,
-                dtype=np.uint32,
-            )
-        )
-        self._input_row_offsets_prealloc = [
-            input_row_offsets_prealloc_host.to(dev) for dev in self.devices
-        ]
-
         # Validate SafetensorWeights requirement
         if not isinstance(self.weights, SafetensorWeights):
             raise ValueError(
@@ -513,98 +421,6 @@ class InternVLModel(
 
             return graph, language_model.state_dict()
 
-    def _prepare_vision_inputs(
-        self, context_batch: Sequence[TextAndVisionContext]
-    ) -> list[Buffer] | None:
-        """Batches up pixel_values for vision processing."""
-        images = []
-        for context in context_batch:
-            if context.needs_vision_encoding:
-                # TODO(MODELS-638): Support multiple images per request for InternVL
-                next_images = context.next_images
-                if len(next_images) != 1:
-                    raise ValueError(
-                        "InternVL only supports one image per request"
-                    )
-                image = next_images[0].pixel_values
-
-                if len(image.shape) != IMAGE_NDIMS:
-                    raise ValueError(
-                        "InternVL vision model expects image shape to be [num_patches, height_patches, width_patches, channels, patch_size, patch_size]"
-                    )
-
-                # Each image patch group needs to be processed separately by the vision model
-                # So we add each patch group as a separate "batch" item
-                for patch_group in image:
-                    images.append(patch_group)
-
-        if not images:
-            return None
-
-        final_images = self._stacker.stack(images)
-
-        tensor = Buffer.from_numpy(final_images)
-
-        # If uint16, interpret as bfloat16 to work around lack of NumPy
-        # bfloat16 support.
-        if final_images.dtype == np.uint16:
-            tensor = tensor.view(DType.bfloat16, tensor.shape)
-
-        return [tensor.to(dev) for dev in self.devices]
-
-    def _batch_image_token_indices(
-        self, context_batch: Sequence[TextAndVisionContext]
-    ) -> list[Buffer] | None:
-        """Batch image token indices from multiple contexts, adjusting for
-        position in batch.
-
-        This method efficiently combines image token indices from multiple
-        contexts using vectorized operations.
-
-        Args:
-            context_batch: Sequence of contexts that may contain image token
-                indices
-
-        Returns:
-            Buffer containing all batched indices, or None if no indices found
-        """
-        # Collect indices and offsets.
-        indices_and_offsets = []
-        batch_offset = 0
-
-        for ctx in context_batch:
-            if "image_token_indices" in ctx.extra_model_args:
-                indices = ctx.extra_model_args["image_token_indices"]
-                indices_and_offsets.append(indices + batch_offset)
-            batch_offset += ctx.tokens.active_length
-
-        if not indices_and_offsets:
-            return None
-
-        np_indices = np.concatenate(indices_and_offsets).astype(
-            np.int32, copy=False
-        )
-
-        # Create tensor and distribute to devices.
-        return [Buffer.from_numpy(np_indices).to(dev) for dev in self.devices]
-
-    def _create_empty_image_embeddings(self) -> list[Buffer]:
-        """Create empty image embeddings for text-only inputs."""
-        return [
-            Buffer.zeros(
-                shape=[0, self.huggingface_config.llm_config.hidden_size],
-                dtype=self.dtype,
-            ).to(dev)
-            for dev in self.devices
-        ]
-
-    def _create_empty_indices(self) -> list[Buffer]:
-        """Create empty image token indices tensor."""
-        return [
-            Buffer.zeros(shape=[0], dtype=DType.int32).to(dev)
-            for dev in self.devices
-        ]
-
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
         """Executes the InternVL model with the prepared inputs."""
         assert model_inputs.kv_cache_inputs is not None, (
@@ -637,8 +453,11 @@ class InternVLModel(
             )
         else:
             # Initialize empty tensors for text-only mode.
-            image_embeddings = self._create_empty_image_embeddings()
-            image_token_indices = self._create_empty_indices()
+            assert isinstance(self.batch_processor, InternVLBatchProcessor)
+            image_embeddings = self.batch_processor.empty_image_embeddings()
+            image_token_indices = (
+                self.batch_processor.empty_image_token_indices()
+            )
 
         # Prepare KV cache inputs as list of tensors
         assert model_inputs.kv_cache_inputs
@@ -670,50 +489,3 @@ class InternVLModel(
                 next_token_logits=language_outputs[0],
                 logits=language_outputs[0],
             )
-
-    def prepare_initial_token_inputs(
-        self,
-        replica_batches: Sequence[Sequence[TextAndVisionContext]],
-        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
-        return_n_logits: int = 1,
-    ) -> ModelInputs:
-        """Prepares the initial inputs for the first execution pass of the InternVL model."""
-
-        if len(replica_batches) > 1:
-            raise ValueError("Model does not support DP>1")
-
-        context_batch = replica_batches[0]
-
-        # First marshal out the pixel values, since we'll overwrite them.
-        pixel_values = self._prepare_vision_inputs(context_batch)
-
-        # Input row offset type: ["input_row_offsets_len"], UInt32
-        input_row_offsets_host = Buffer.from_numpy(
-            np.cumsum(
-                [0] + [ctx.tokens.active_length for ctx in context_batch],
-                dtype=np.uint32,
-            ),
-        )
-        input_row_offsets = [
-            input_row_offsets_host.to(dev) for dev in self.devices
-        ]
-
-        # Input Ids: ["total_seq_len"], Int64
-        # Create a ragged token vector of length: sum(len(t) for t in tokens).
-        tokens = np.concatenate([ctx.tokens.active for ctx in context_batch])
-        input_ids = Buffer.from_numpy(tokens).to(self.devices[0])
-
-        # Batch image token indices, offsetting for position in the batch.
-        image_token_indices = self._batch_image_token_indices(context_batch)
-
-        return InternVLInputs(
-            tokens=input_ids,
-            input_row_offsets=input_row_offsets,
-            signal_buffers=self.signal_buffers,
-            return_n_logits=Buffer.from_numpy(
-                np.array([return_n_logits], dtype=np.int64)
-            ),
-            pixel_values=pixel_values,
-            kv_cache_inputs=kv_cache_inputs,
-            image_token_indices=image_token_indices,
-        )

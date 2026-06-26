@@ -734,3 +734,81 @@ class PaddedEncoderBatchProcessor(
         """Maps raw execution buffers to :class:`ModelOutputs`."""
         assert isinstance(outputs[0], Buffer)
         return ModelOutputs(logits=outputs[0])
+
+
+def modulev3_gemma_multimodal_language_symbolic_inputs(
+    *,
+    kv_params: KVCacheParamInterface,
+    device_ref: DeviceRef,
+    hidden_size: int,
+    embedding_dtype: DType = DType.bfloat16,
+) -> list[TensorType | BufferType]:
+    """Symbolic language-model inputs for Gemma3 multimodal ModuleV3 compile."""
+    tokens_type = TensorType(
+        DType.int64, shape=["total_seq_len"], device=device_ref
+    )
+    image_embeddings_type = TensorType(
+        embedding_dtype,
+        shape=["num_image_tokens", hidden_size],
+        device=device_ref,
+    )
+    image_token_indices_type = TensorType(
+        DType.int32,
+        shape=["total_image_tokens"],
+        device=device_ref,
+    )
+    input_row_offsets_type = TensorType(
+        DType.uint32,
+        shape=["input_row_offsets_len"],
+        device=device_ref,
+    )
+    return_n_logits_type = TensorType(
+        DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
+    )
+    kv_inputs = kv_params.get_symbolic_inputs().flatten()
+    return [
+        tokens_type,
+        return_n_logits_type,
+        input_row_offsets_type,
+        image_embeddings_type,
+        image_token_indices_type,
+        *kv_inputs,
+    ]
+
+
+def modulev3_idefics3_language_symbolic_inputs(
+    *,
+    kv_params: KVCacheParamInterface,
+    device_ref: DeviceRef,
+    hidden_size: int,
+    embedding_dtype: DType,
+) -> list[TensorType | BufferType]:
+    """Symbolic language-model inputs for Idefics3 ModuleV3 compile."""
+    tokens_type = TensorType(
+        DType.int64, shape=["total_seq_len"], device=device_ref
+    )
+    input_row_offsets_type = TensorType(
+        DType.uint32, shape=["input_row_offsets_len"], device=device_ref
+    )
+    return_n_logits_type = TensorType(
+        DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
+    )
+    image_embeddings_type = TensorType(
+        embedding_dtype,
+        shape=["num_image_tokens", hidden_size],
+        device=device_ref,
+    )
+    image_token_indices_type = TensorType(
+        DType.int32,
+        shape=["total_image_tokens"],
+        device=device_ref,
+    )
+    kv_inputs = kv_params.get_symbolic_inputs().flatten()
+    return [
+        tokens_type,
+        input_row_offsets_type,
+        return_n_logits_type,
+        image_embeddings_type,
+        image_token_indices_type,
+        *kv_inputs,
+    ]

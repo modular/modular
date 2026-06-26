@@ -16,6 +16,7 @@ from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
 from max.pipelines.lib import SupportedArchitecture
 from max.pipelines.modeling.types import InputModality, PipelineTask
 
+from .batch_processor import Qwen3VLMoeBatchProcessor
 from .context import Qwen3VLTextAndVisionContext
 from .model import Qwen3VLModel
 from .model_config import Qwen3VLConfig
@@ -41,6 +42,7 @@ qwen3vl_moe_arch = SupportedArchitecture(
         WeightsFormat.safetensors: convert_qwen3vl_model_state_dict,
     },
     pipeline_model=Qwen3VLModel,
+    batching=Qwen3VLMoeBatchProcessor,
     tokenizer=Qwen3VLTokenizer,
     context_type=Qwen3VLTextAndVisionContext,
     required_arguments={
@@ -73,6 +75,7 @@ qwen3vl_arch = SupportedArchitecture(
         WeightsFormat.safetensors: convert_qwen3vl_model_state_dict,
     },
     pipeline_model=Qwen3VLModel,
+    batching=Qwen3VLMoeBatchProcessor,
     tokenizer=Qwen3VLTokenizer,
     context_type=Qwen3VLTextAndVisionContext,
     required_arguments={

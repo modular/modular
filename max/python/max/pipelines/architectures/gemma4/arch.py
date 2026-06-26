@@ -17,6 +17,7 @@ from max.graph.weights import WeightsFormat
 from max.pipelines.lib import SupportedArchitecture
 from max.pipelines.modeling.types import InputModality, PipelineTask
 
+from .batch_processor import Gemma4BatchProcessor
 from .context import Gemma4Context
 from .memory_planner import Gemma4MemoryPlanner
 from .model import Gemma3_MultiModalModel
@@ -42,6 +43,7 @@ gemma4_arch = SupportedArchitecture(
         "float4_e2m1fnx2",
     },
     pipeline_model=Gemma3_MultiModalModel,
+    batching=Gemma4BatchProcessor,
     task=PipelineTask.TEXT_GENERATION,
     tokenizer=Gemma4Tokenizer,
     default_weights_format=WeightsFormat.safetensors,

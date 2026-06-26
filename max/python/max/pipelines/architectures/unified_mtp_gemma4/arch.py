@@ -19,6 +19,7 @@ from max.pipelines.modeling.types import PipelineTask
 from ..gemma4.memory_planner import Gemma4MemoryPlanner
 from ..gemma4.model_config import Gemma4ForConditionalGenerationConfig
 from ..gemma4.tokenizer import Gemma4Tokenizer
+from .batch_processor import UnifiedMTPGemma4BatchProcessor
 from .model import UnifiedMTPGemma4Model
 from .weight_adapters import convert_safetensor_state_dict
 
@@ -40,4 +41,5 @@ unified_mtp_gemma4_arch = SupportedArchitecture(
     memory_planner=Gemma4MemoryPlanner,
     tool_parser="gemma4",
     reasoning_parser="gemma4",
+    batching=UnifiedMTPGemma4BatchProcessor,
 )

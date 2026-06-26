@@ -19,6 +19,7 @@ from ..kimik2_5 import weight_adapters
 from ..kimik2_5.context import KimiK2_5TextAndVisionContext
 from ..kimik2_5.memory_planner import KimiK25MemoryPlanner
 from ..kimik2_5.tokenizer import KimiK2_5VLTokenizer
+from .batch_processor import UnifiedDflashKimiK25BatchProcessor
 from .model import UnifiedDflashKimiK25Model
 from .model_config import UnifiedDflashKimiK25Config
 
@@ -37,6 +38,7 @@ unified_dflash_kimi_k25_arch = SupportedArchitecture(
     multi_gpu_supported=True,
     input_modalities={InputModality.TEXT, InputModality.IMAGE},
     pipeline_model=UnifiedDflashKimiK25Model,
+    batching=UnifiedDflashKimiK25BatchProcessor,
     tokenizer=KimiK2_5VLTokenizer,
     context_type=KimiK2_5TextAndVisionContext,
     default_weights_format=WeightsFormat.safetensors,

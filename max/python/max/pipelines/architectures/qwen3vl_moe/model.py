@@ -14,12 +14,9 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Sequence
 from dataclasses import dataclass, field
-from functools import cached_property
 from typing import Any, ClassVar
 
-import numpy as np
 from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession, Model
@@ -43,7 +40,6 @@ from max.graph.weights import (
 from max.nn.comm import Signals
 from max.nn.kv_cache import KVCacheInputsInterface
 from max.nn.layer import Module
-from max.nn.parallel import ParallelArrayOps
 from max.nn.transformer import ReturnLogits
 from max.pipelines.lib import (
     AlwaysSignalBuffersMixin,
@@ -54,10 +50,9 @@ from max.pipelines.lib import (
     PipelineConfig,
     PipelineModelWithKVCache,
 )
-from max.pipelines.lib.vlm_utils import compute_multimodal_merge_indices
-from max.profiler import Tracer
 
-from .context import Qwen3VLTextAndVisionContext, VisionEncodingData
+from .batch_processor import Qwen3VLMoeBatchProcessor
+from .context import Qwen3VLTextAndVisionContext
 from .model_config import Qwen3VLConfig
 from .qwen3vl import Qwen3VL
 from .weight_adapters import convert_qwen3vl_model_state_dict
@@ -139,6 +134,9 @@ class Qwen3VLModel(
     """A Qwen3VL pipeline model for multimodal text generation."""
 
     model_config_cls: ClassVar[type[Any]] = Qwen3VLConfig
+    batch_processor_cls: ClassVar[type[Qwen3VLMoeBatchProcessor]] = (
+        Qwen3VLMoeBatchProcessor
+    )
 
     vision_model: Model
     """The compiled vision model for processing images."""
@@ -148,12 +146,6 @@ class Qwen3VLModel(
 
     model_config: Qwen3VLConfig | None
     """The Qwen3VL model configuration."""
-
-    _input_row_offsets_prealloc: list[Buffer]
-    """Pre-allocated per-device tensors for input row offsets in multi-step execution."""
-
-    _parallel_ops: ParallelArrayOps
-    """Parallel array operations for parallel execution of concatenations."""
 
     def __init__(
         self,
@@ -179,7 +171,6 @@ class Qwen3VLModel(
         self._session = session  # reuse for on-device casts
 
         self.vision_model, self.language_model = self.load_model(session)
-        self._parallel_ops = ParallelArrayOps(max_workers=24)
 
     # TODO: Seems like a common pattern. Implement in a base class?
     def load_model(self, session: InferenceSession) -> tuple[Model, Model]:
@@ -188,21 +179,6 @@ class Qwen3VLModel(
         Returns:
             A tuple of (vision_model, language_model).
         """
-        # TODO: Pre-allocation Seems like a common pattern. Implement in a base class?
-        # Pre-allocation for multi-step execution
-        assert self.pipeline_config.runtime.max_batch_size, (
-            "Expected max_batch_size to be set"
-        )
-        input_row_offsets_prealloc_host = Buffer.from_numpy(
-            np.arange(
-                self.pipeline_config.runtime.max_batch_size + 1,
-                dtype=np.uint32,
-            )
-        )
-        self._input_row_offsets_prealloc = [
-            input_row_offsets_prealloc_host.to(dev) for dev in self.devices
-        ]
-
         # Validate SafetensorWeights requirement
         if not isinstance(self.weights, SafetensorWeights):
             raise ValueError(
@@ -628,69 +604,6 @@ class Qwen3VLModel(
 
         return graph
 
-    @cached_property
-    def _empty_image_embeddings(
-        self,
-    ) -> tuple[list[Buffer], list[Buffer]]:
-        """Create empty image embeddings for text-only inputs on multi-device."""
-        assert self.model_config is not None
-        n_deepstack_layers = len(
-            self.model_config.vision_config.deepstack_visual_indexes
-        )
-        image_embeddings = Buffer.zeros(
-            shape=[
-                0,
-                self.huggingface_config.text_config.hidden_size,
-            ],
-            dtype=self.dtype,
-        ).to(self.devices)
-        # Create empty deepstack embeddings: flattened list[Buffer] where
-        # deepstack_image_embeddings[layer_idx*len(devices): layer_idx*len(devices)+len(devices)]
-        # is a list of tensors (one per device) for layer layer_idx
-        deepstack_image_embeddings = [
-            tensor
-            for _ in range(n_deepstack_layers)
-            for tensor in Buffer.zeros(
-                shape=[
-                    0,
-                    self.huggingface_config.text_config.hidden_size,
-                ],
-                dtype=self.dtype,
-            ).to(self.devices)
-        ]
-        return image_embeddings, deepstack_image_embeddings
-
-    @cached_property
-    def _empty_image_image_token_indices(self) -> list[Buffer]:
-        """Create empty image scatter indices for text-only inputs on multi-device."""
-        return Buffer.zeros(
-            shape=[0],
-            dtype=DType.int32,
-        ).to(self.devices)
-
-    def _batch_image_token_indices(
-        self, context_batch: Sequence[Qwen3VLTextAndVisionContext]
-    ) -> list[Buffer]:
-        """Batch image token indices from multiple contexts, adjusting for
-        position in batch.
-
-        This method efficiently combines image token indices from multiple
-        contexts using vectorized operations.
-
-        Args:
-            context_batch: Sequence of contexts that may contain image token
-                indices
-
-        Returns:
-            List of buffers containing all multimodal merge indices distributed across devices
-        """
-        assert self.model_config is not None, "Model config must be initialized"
-
-        np_image_token_indices = compute_multimodal_merge_indices(context_batch)
-
-        # Create buffer and distribute to devices
-        return Buffer.from_numpy(np_image_token_indices).to(self.devices)
-
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
         """Executes the Qwen3VL model with the prepared inputs."""
         assert isinstance(model_inputs, Qwen3VLInputs)
@@ -774,11 +687,13 @@ class Qwen3VLModel(
                 image_token_indices, DType.int32, self._session
             )
         else:
-            # Initialize empty tensors for text-only mode
+            assert isinstance(self._batch_processor, Qwen3VLMoeBatchProcessor)
             image_embeddings, deepstack_image_embeddings = (
-                self._empty_image_embeddings
+                self._batch_processor.empty_image_embeddings()
             )
-            image_token_indices = self._empty_image_image_token_indices
+            image_token_indices = (
+                self._batch_processor.empty_image_token_indices()
+            )
 
         # Prepare KV cache inputs as list of tensors
         assert model_inputs.kv_cache_inputs
@@ -815,211 +730,3 @@ class Qwen3VLModel(
                 next_token_logits=language_outputs[0],
                 logits=language_outputs[0],
             )
-
-    def prepare_initial_token_inputs(
-        self,
-        replica_batches: Sequence[Sequence[Qwen3VLTextAndVisionContext]],
-        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
-        return_n_logits: int = 1,
-    ) -> Qwen3VLInputs:
-        """Prepares the initial inputs for the first execution pass of the Qwen3VL model."""
-        if len(replica_batches) > 1:
-            raise ValueError("Model does not support DP>1")
-
-        context_batch = replica_batches[0]
-
-        if kv_cache_inputs is None:
-            raise ValueError("KV Cache Inputs must be provided")
-
-        # Gather all vision data from contexts that need vision encoding
-        vision_datas: list[VisionEncodingData] = []
-        for ctx in context_batch:
-            # Validate all contexts are the correct type
-            assert isinstance(ctx, Qwen3VLTextAndVisionContext), (
-                f"Expected Qwen3VLTextAndVisionContext, got {type(ctx).__name__}"
-            )
-            if ctx.needs_vision_encoding:
-                assert ctx.vision_data is not None, (
-                    "vision_data must be present when needs_vision_encoding is True"
-                )
-                vision_datas.append(ctx.vision_data)
-        any_needs_vision_encoding = len(vision_datas) > 0
-
-        # Prepare Inputs Needed Regardless of Images
-        with Tracer("prepare_input_ids"):
-            input_ids = Buffer.from_numpy(
-                np.concatenate([ctx.tokens.active for ctx in context_batch])
-            ).to(self.devices[0])
-
-        with Tracer("prepare_input_row_offsets"):
-            input_row_offsets_host = Buffer.from_numpy(
-                np.cumsum(
-                    [0] + [ctx.tokens.active_length for ctx in context_batch],
-                    dtype=np.uint32,
-                ),
-            )
-            input_row_offsets = [
-                input_row_offsets_host.to(dev) for dev in self.devices
-            ]
-
-        with Tracer("prepare_decoder_position_ids"):
-            decoder_position_ids_list = []
-            for ctx in context_batch:
-                ctx_decoder_position_ids = ctx.decoder_position_ids
-                if ctx.needs_vision_encoding and ctx_decoder_position_ids.shape[
-                    1
-                ] == len(ctx.tokens):
-                    decoder_position_ids_list.append(
-                        ctx_decoder_position_ids[
-                            :,
-                            ctx.tokens.processed_length : ctx.tokens.current_position,
-                        ]
-                    )
-                else:
-                    # Recompute or use simple position IDs
-                    # TODO: Implement proper position ID computation for Qwen3VL
-                    context_seq_length = ctx.tokens.active_length
-                    # Qwen3VL uses 3D position IDs (mrope)
-                    temp_pos_ids = np.tile(
-                        np.arange(context_seq_length).reshape(1, 1, -1),
-                        (
-                            (
-                                len(self.model_config.mrope_section)
-                                if self.model_config
-                                else 3
-                            ),
-                            1,
-                            1,
-                        ),
-                    )
-                    delta = ctx.tokens.processed_length + ctx.rope_delta
-                    temp_position_ids = (temp_pos_ids + delta).squeeze(1)
-                    decoder_position_ids_list.append(temp_position_ids)
-
-            decoder_position_ids = Buffer.from_numpy(
-                np.concatenate(decoder_position_ids_list, axis=1).astype(
-                    np.int64
-                )
-            )
-
-        # Batch image token indices
-        with Tracer("prepare_image_token_indices"):
-            image_token_indices = self._batch_image_token_indices(context_batch)
-
-        if not any_needs_vision_encoding:
-            return Qwen3VLInputs(
-                tokens=input_ids,
-                input_row_offsets=input_row_offsets,
-                signal_buffers=self.signal_buffers,
-                decoder_position_ids=decoder_position_ids,
-                return_n_logits=Buffer.from_numpy(
-                    np.array([return_n_logits], dtype=np.int64)
-                ),
-                kv_cache_inputs=kv_cache_inputs,
-                image_token_indices=image_token_indices,
-                pixel_values=None,
-                vision_position_ids=None,
-                weights=None,
-                indices=None,
-                max_grid_size=None,
-                cu_seqlens=None,
-                max_seqlen=None,
-                grid_thw=None,
-            )
-
-        # From here on, assume that all inputs are available in vision_data
-        # Prepare vision inputs
-        pixel_values_list = [
-            vision_data.concatenated_pixel_values
-            for vision_data in vision_datas
-        ]
-        pixel_values = Buffer.from_numpy(
-            np.concatenate(pixel_values_list).astype(np.float32)
-        ).to(self.devices)
-
-        # Prepare bilinear interpolation weights and indices
-        # Each vision_data.weights has shape (4, N_patches, 1) and
-        # vision_data.indices has shape (4, N_patches).
-        # The 4 represents the 4 bilinear interpolation neighbors.
-        # Concatenate along axis=1 to merge patches while preserving the 4-neighbor structure.
-        weights = Buffer.from_numpy(
-            np.concatenate(
-                [vision_data.weights for vision_data in vision_datas], axis=1
-            ).astype(np.float32)
-        ).to(self.devices)
-
-        indices = Buffer.from_numpy(
-            np.concatenate(
-                [vision_data.indices for vision_data in vision_datas], axis=1
-            )
-        ).to(self.devices)
-
-        # Prepare vision position IDs
-        vision_position_ids_list = [
-            vision_data.vision_position_ids for vision_data in vision_datas
-        ]
-        vision_position_ids = Buffer.from_numpy(
-            np.concatenate(vision_position_ids_list).astype(np.int32)
-        ).to(self.devices)
-
-        # Prepare grid_thw
-        grid_thw_list = [
-            vision_data.image_grid_thw for vision_data in vision_datas
-        ]
-        grid_thw = Buffer.from_numpy(
-            np.concatenate(grid_thw_list).astype(np.int64)
-        ).to(self.devices)
-
-        # Prepare max_grid_size
-        max_grid_size_value = max(
-            vision_data.max_grid_size.item() for vision_data in vision_datas
-        )
-        max_grid_size = [
-            Buffer.from_numpy(np.array(max_grid_size_value, dtype=np.int32))
-            for _ in self.devices
-        ]
-
-        # Prepare cu_seqlens
-        cu_seqlens_list = []
-        offset = 0
-        for vision_data in vision_datas:
-            seqlens = vision_data.cu_seqlens
-            adjusted = seqlens.copy()
-            adjusted[1:] += offset
-            cu_seqlens_list.append(adjusted[1:])
-            offset = adjusted[-1]
-
-        cu_seqlens = Buffer.from_numpy(
-            np.concatenate(
-                [np.array([0], dtype=np.uint32), *cu_seqlens_list]
-            ).astype(np.uint32)
-        ).to(self.devices)
-
-        # Prepare max_seqlen
-        max_seqlen_value = max(
-            vision_data.max_seqlen.item() for vision_data in vision_datas
-        )
-        max_seqlen = [
-            Buffer.from_numpy(np.array([max_seqlen_value], dtype=np.uint32))
-            for _ in self.devices
-        ]
-
-        return Qwen3VLInputs(
-            tokens=input_ids,
-            input_row_offsets=input_row_offsets,
-            signal_buffers=self.signal_buffers,
-            decoder_position_ids=decoder_position_ids,
-            return_n_logits=Buffer.from_numpy(
-                np.array([return_n_logits], dtype=np.int64)
-            ),
-            kv_cache_inputs=kv_cache_inputs,
-            image_token_indices=image_token_indices,
-            pixel_values=pixel_values,
-            vision_position_ids=vision_position_ids,
-            weights=weights,
-            indices=indices,
-            max_grid_size=max_grid_size,
-            cu_seqlens=cu_seqlens,
-            max_seqlen=max_seqlen,
-            grid_thw=grid_thw,
-        )
