@@ -114,7 +114,9 @@ class UnifiedMTPGemma4Model(
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
         return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
+        max_batch_size: int = 1,
     ) -> None:
+        self._max_batch_size = max_batch_size
         super().__init__(
             pipeline_config,
             session,
@@ -132,7 +134,7 @@ class UnifiedMTPGemma4Model(
         self.model = self.load_model(session)
 
     def load_model(self, session: InferenceSession) -> Model:
-        max_batch_size = self.pipeline_config.runtime.max_batch_size
+        max_batch_size = self._max_batch_size
         assert max_batch_size, "Expected max_batch_size to be set"
 
         with CompilationTimer("unified_mtp_gemma4_model") as timer:

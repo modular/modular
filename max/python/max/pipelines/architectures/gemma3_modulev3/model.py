@@ -88,6 +88,7 @@ class Gemma3Model(
         weights: Weights,
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
+        max_batch_size: int = 1,
     ) -> None:
         super().__init__(
             pipeline_config,
@@ -97,6 +98,7 @@ class Gemma3Model(
             weights,
             adapter,
             return_logits,
+            max_batch_size=max_batch_size,
         )
         # Detect multimodal models by presence of text_config
         self._is_multimodal = hasattr(self.huggingface_config, "text_config")

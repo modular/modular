@@ -31,10 +31,6 @@ from max.pipelines.kv_cache.config import KVCacheConfig, KVConnectorConfig
 from max.pipelines.lib.interfaces import (
     ArchConfig,
     ArchConfigWithKVCache,
-    PipelineModel,
-)
-from max.pipelines.lib.memory_estimation import (
-    MemoryEstimator,
 )
 from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.lib.pipeline_runtime_config import (
@@ -45,7 +41,6 @@ from max.pipelines.lora import LoRAConfig
 from max.pipelines.modeling.types.task import PipelineTask
 from max.pipelines.sampling import SamplingConfig
 from max.pipelines.speculative.config import SpeculativeConfig
-from max.pipelines.weights.hf_utils import is_diffusion_pipeline
 from pydantic import (
     BaseModel,
     ConfigDict,
@@ -1008,7 +1003,7 @@ class PipelineConfig(ConfigFileModel):
         arch: Any,
         draft_arch: Any = None,
     ) -> None:
-        """Validates and resolves the config.
+        """Validates the config.
 
         Args:
             arch: Pre-resolved target architecture from the registry.
@@ -1060,9 +1055,8 @@ class PipelineConfig(ConfigFileModel):
         # By this point, we should have a valid model_path.
 
         if self.draft_model:
-            # Joint memory estimation for speculative decoding
             _resolve_kvconnector_config(self.draft_model.kv_cache)
-            self._validate_and_resolve_speculative_memory(
+            self._validate_speculative_model_configs(
                 target_arch=arch, draft_arch=draft_arch
             )
             self._validate_pipeline_config_for_speculative_decoding(
@@ -1070,11 +1064,9 @@ class PipelineConfig(ConfigFileModel):
                 draft_arch=draft_arch,
             )
         else:
-            self._validate_and_resolve_remaining_pipeline_config(
+            self._validate_remaining_pipeline_config(
                 model_config=self.model, resolved_arch=arch
             )
-
-        self._validate_and_resolve_overlap_scheduler(arch=arch)
 
         self._resolve_default_reasoning_parser(arch=arch)
         self._resolve_default_tool_parser(arch=arch)
@@ -1150,14 +1142,14 @@ class PipelineConfig(ConfigFileModel):
             arch.name,
         )
 
-    def _validate_and_resolve_overlap_scheduler(self, arch: Any = None) -> None:
+    def _validate_and_resolve_overlap_scheduler(
+        self, arch: Any = None, max_batch_size: int = 1
+    ) -> None:
         if not self.runtime.force:
-            max_batch_size = self.runtime.max_batch_size
             if (
                 self.runtime.device_graph_capture is None
                 and arch is not None
                 and arch.supports_device_graph_capture
-                and max_batch_size is not None
                 and accelerator_api() in ("cuda", "hip")
                 and self._is_eligible_for_overlap_serve_optimizations(arch)
                 # Device graph capture is not supported for prefill-only workers.
@@ -1230,10 +1222,6 @@ class PipelineConfig(ConfigFileModel):
         if not self.runtime.device_graph_capture:
             return
 
-        if self.runtime.max_batch_size is None:
-            raise ValueError(
-                "device_graph_capture requires max_batch_size to be set."
-            )
         if not self.runtime.enable_overlap_scheduler:
             logger.info("Enabling overlap scheduling for device graph capture.")
         self.runtime.enable_overlap_scheduler = True
@@ -1341,15 +1329,10 @@ class PipelineConfig(ConfigFileModel):
             default_weights_format=arch.default_weights_format,
         )
 
-    def _validate_and_resolve_speculative_memory(
+    def _validate_speculative_model_configs(
         self, target_arch: Any, draft_arch: Any
     ) -> None:
-        """Memory estimation for unified speculative decoding.
-
-        The draft model shares almost all weights with the target, so
-        memory estimation uses the target model's weight size directly.
-        If a future speculative method introduces a draft with significant
-        non-shared weights, draft weight reservation should be added here.
+        """Validates model configs for unified speculative decoding.
 
         Args:
             target_arch: Pre-resolved target architecture from the registry.
@@ -1364,127 +1347,28 @@ class PipelineConfig(ConfigFileModel):
 
         # Validate draft model config against its architecture (quantization,
         # rope type, encoding, etc.). Target validation is handled inside
-        # _validate_and_resolve_remaining_pipeline_config below.
+        # _validate_remaining_pipeline_config below.
         self._validate_model_config_against_arch(self.draft_model, draft_arch)
-
-        self._validate_and_resolve_remaining_pipeline_config(
+        self._validate_remaining_pipeline_config(
             model_config=self.model,
             resolved_arch=target_arch,
         )
 
-        if self.draft_model.kv_cache._available_cache_memory is not None:
-            raise ValueError(
-                "Expected draft model's available_cache_memory to be None"
-            )
-        self.draft_model.kv_cache._available_cache_memory = 0
-
-        # Clamp max_length to the draft model's max sequence length.
-        # EAGLE and other draft models may support a shorter context than the
-        # target model (e.g. 2048 vs 131072).  Both models share a KV cache
-        # and must agree on the sequence length, so we use the minimum.
-        draft_arch_config = draft_arch.config.initialize(
-            self, model_config=self.draft_model
-        )
-        draft_max_seq_len = draft_arch_config.get_max_seq_len()
-        target_max_length = self.model.max_length
-        if (
-            target_max_length is not None
-            and target_max_length > draft_max_seq_len
-        ):
-            logger.info(
-                f"Clamping max_length from {target_max_length} to"
-                f" {draft_max_seq_len} (draft model max sequence length)"
-            )
-            self.model.max_length = draft_max_seq_len
-            self.draft_model.max_length = draft_max_seq_len
-
-    def _validate_and_resolve_remaining_pipeline_config(
+    def _validate_remaining_pipeline_config(
         self,
         model_config: MAXModelConfig,
         resolved_arch: Any,
     ) -> None:
-        """Validates model config against the architecture and runs memory estimation.
+        """Validates model config against the architecture.
+
+        Memory estimation and max_length resolution have moved to the registry
+        (``retrieve_factory``), where they run after this validation completes.
 
         Args:
-            model_config: The model configuration to validate and resolve.
+            model_config: The model configuration to validate.
             resolved_arch: Pre-resolved architecture from the registry.
         """
         self._validate_model_config_against_arch(model_config, resolved_arch)
-
-        if is_diffusion_pipeline(model_config.huggingface_model_repo):
-            # Skip memory estimation for diffusion pipelines,
-            # since they don't use KV cache.
-            return
-
-        if not issubclass(resolved_arch.pipeline_model, PipelineModel):
-            # Non-PipelineModel architectures (e.g. PipelineExecutor) skip
-            # memory estimation.
-            return
-
-        devices = load_devices(model_config.device_specs)
-        arch_config = resolved_arch.config.initialize(
-            self, model_config=model_config
-        )
-
-        if resolved_arch.memory_planner is not None:
-            planner = resolved_arch.memory_planner(arch_config)
-            weights_size = planner.estimate_weights_size(self)
-            activation_size = planner.estimate_activation_memory(
-                self, model_config.huggingface_config
-            )
-            signal_buffer_size = planner.estimate_signal_buffer_memory(
-                self, arch_config
-            )
-        else:
-            # ``memory_planner=None`` is the intentional state for architectures
-            # that manage memory outside the planner path (e.g. diffusion models,
-            # which exit early via ``is_diffusion_pipeline()`` before reaching
-            # this point).  It is also the fallback for any architecture not yet
-            # wired to a MemoryPlanner — if you are adding a new architecture
-            # that uses a KV cache, set ``memory_planner=PagedMemoryPlanner``
-            # on your ``SupportedArchitecture`` to get correct memory estimation.
-            weights_size = model_config.weights_size()
-            activation_size = 0
-            signal_buffer_size = self.estimate_signal_buffer_memory(arch_config)
-
-        MemoryEstimator.estimate_memory_footprint(
-            self,
-            model_config,
-            arch_config,
-            devices,
-            weights_size,
-            activation_size,
-            signal_buffer_size,
-            arch=resolved_arch,
-        )
-
-        if clamped_max_seq_len := MemoryEstimator.max_supported_sequence_length(
-            weights_size,
-            activation_size,
-            model_config,
-            devices,
-            arch_config,
-            signal_buffer_size,
-        ):
-            if self.model.max_length is None:
-                self.model.max_length = clamped_max_seq_len
-            elif self.model.max_length > clamped_max_seq_len:
-                logging.warning(
-                    f"Clamping max_length from {self.model.max_length} to {clamped_max_seq_len} due to capacity of KV Cache"
-                )
-                self.model.max_length = clamped_max_seq_len
-
-        # Validate whether the architecture requires a max batch total tokens to be specified.
-        # This needs to be done after max_length is resolved.
-        if (
-            resolved_arch.requires_max_batch_context_length
-            and self.runtime.max_batch_total_tokens is None
-        ):
-            logger.warning(
-                f"Architecture '{resolved_arch.name}' requires max-batch-total-tokens to be specified but found None. "
-                f"Defaulting to the max sequence length of the model: {self.model.max_length}"
-            )
-            self.runtime.max_batch_total_tokens = self.model.max_length
 
     # NOTE: Do not override `__getstate__` / `__setstate__` on Pydantic models.
     #

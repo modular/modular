@@ -116,7 +116,7 @@ class UnifiedDflashKimiK25Model(_UnifiedSpecDecodeModelMixin, KimiK2_5Model):
 
     @override
     def load_model(self, session: InferenceSession) -> tuple[Model, Model]:
-        max_batch_size = self.pipeline_config.runtime.max_batch_size
+        max_batch_size = self.max_batch_size
         assert max_batch_size, "Expected max_batch_size to be set"
 
         dp_size = self.pipeline_config.model.data_parallel_degree

@@ -144,9 +144,13 @@ def generate_text_for_pipeline(
     # nsys, ``cudaProfilerStop`` triggers the ``.nsys-rep`` write — delaying
     # it past the metrics report keeps the normal generate output (text +
     # stats) from being buried inside nsys's file-writing progress lines.
-    tokenizer, pipeline = PIPELINE_REGISTRY.retrieve(pipeline_config)
-    log_basic_config(pipeline_config)
+    tokenizer, pipeline_factory = PIPELINE_REGISTRY.retrieve_factory(
+        pipeline_config
+    )
+    pipeline = pipeline_factory()
     assert isinstance(pipeline, Pipeline)
+    log_basic_config(pipeline_config)
+    logger.info("max_batch_size: %d", pipeline.max_batch_size)
 
     capture = OneShotCapture(top_n=profile_top_n) if profile else None
     try:

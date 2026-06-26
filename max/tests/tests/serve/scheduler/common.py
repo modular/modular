@@ -297,6 +297,10 @@ class FakeTokenGeneratorPipeline(
 
         return responses
 
+    @property
+    def max_batch_size(self) -> int:
+        return 1
+
     def release(self, request_id: RequestID) -> None:
         # No-op. Previously the pipeline was responsible for calling kv.release().
         # but now the whole lifecycle is managed by the scheduler.

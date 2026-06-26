@@ -73,6 +73,7 @@ class DeepseekV3Model(DeepseekV2Model):
         weights: Weights,
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
+        max_batch_size: int = 1,
     ) -> None:
         # Capture the session so load_model() can initialize EP communication,
         # and default the EP buffers so execute() works without EP.
@@ -86,6 +87,7 @@ class DeepseekV3Model(DeepseekV2Model):
             weights,
             adapter,
             return_logits,
+            max_batch_size=max_batch_size,
         )
 
     def _build_ep_config(

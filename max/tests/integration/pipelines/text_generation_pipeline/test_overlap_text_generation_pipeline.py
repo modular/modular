@@ -167,7 +167,7 @@ def test_warmup_graph_capture_batch_size(
     mock_model.max_seq_len = 2048
     pipeline._pipeline_model = mock_model
     pipeline._pipeline_config = MagicMock()
-    pipeline._pipeline_config.runtime.max_batch_size = config_max_batch_size
+    pipeline._max_batch_size = config_max_batch_size
     pipeline._kv_manager = MagicMock()
     mock_kv_params = MagicMock()
     mock_kv_params.page_size = 128

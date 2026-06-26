@@ -72,6 +72,7 @@ class MPNetPipelineModel(PipelineModel[TextContext]):
         weights: Weights,
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.ALL,
+        max_batch_size: int = 1,
     ) -> None:
         super().__init__(
             pipeline_config,
@@ -81,6 +82,7 @@ class MPNetPipelineModel(PipelineModel[TextContext]):
             weights,
             adapter,
             return_logits,
+            max_batch_size=max_batch_size,
         )
         self.model = self.load_model(session)
 

@@ -160,6 +160,11 @@ class EchoTokenGenerator(
         # Track the echo index for each request (0-based, counts how many tokens we've echoed)
         self._echo_indices: dict[RequestID, int] = {}
         self._kv_manager = DummyKVCache()
+        self._max_batch_size = 1
+
+    @property
+    def max_batch_size(self) -> int:
+        return self._max_batch_size
 
     @property
     def kv_manager(self) -> PagedKVCacheManager:

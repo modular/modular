@@ -111,7 +111,9 @@ class PixtralModel(PipelineModelWithKVCache[TextAndVisionContext]):
         weights: Weights,
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
+        max_batch_size: int = 1,
     ) -> None:
+        self._max_batch_size = max_batch_size
         super().__init__(
             pipeline_config,
             session,
@@ -304,9 +306,7 @@ class PixtralModel(PipelineModelWithKVCache[TextAndVisionContext]):
                 "Pixtral model does not currently implement enable echo."
             )
 
-        assert self.pipeline_config.runtime.max_batch_size, (
-            "Expected max_batch_size to be set"
-        )
+        assert self._max_batch_size, "Expected max_batch_size to be set"
 
         if not isinstance(self.weights, SafetensorWeights):
             raise ValueError(

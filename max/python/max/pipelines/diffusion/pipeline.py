@@ -201,6 +201,11 @@ class PixelGenerationPipeline(
         """Return the pipeline configuration."""
         return self._pipeline_config
 
+    @property
+    def max_batch_size(self) -> int:
+        """Returns 1: pixel generation pipelines process one request at a time."""
+        return 1
+
     def execute(
         self,
         inputs: PixelGenerationInputs[PixelGenerationContextType],

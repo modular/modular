@@ -101,6 +101,7 @@ class UnifiedEagleLlama3Model(
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
         return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
+        max_batch_size: int = 1,
     ) -> None:
         super().__init__(
             pipeline_config,
@@ -111,6 +112,7 @@ class UnifiedEagleLlama3Model(
             adapter,
             return_logits=ReturnLogits.VARIABLE,
             return_hidden_states=ReturnHiddenStates.ALL_NORMALIZED,
+            max_batch_size=max_batch_size,
         )
         self.model = self.load_model(session)
 

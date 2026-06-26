@@ -732,7 +732,7 @@ class TestDraftModelQuantizationEncoding:
         draft_max_seq_len: int = 131072,
         draft_encoding: SupportedEncoding = "bfloat16",
     ) -> None:
-        """Run _validate_and_resolve_speculative_memory with mocked internals.
+        """Run _validate_speculative_model_configs with mocked internals.
 
         Mocks architecture resolution so that calling it on the target model
         sets its encoding to ``"bfloat16"`` and on the draft model sets its
@@ -771,10 +771,10 @@ class TestDraftModelQuantizationEncoding:
             ),
             patch.object(
                 PipelineConfig,
-                "_validate_and_resolve_remaining_pipeline_config",
+                "_validate_remaining_pipeline_config",
             ),
         ):
-            config._validate_and_resolve_speculative_memory(
+            config._validate_speculative_model_configs(
                 target_arch=mock_arch, draft_arch=mock_arch
             )
 

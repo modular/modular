@@ -90,7 +90,9 @@ class Gemma3MultiModalModelV3(
         weights: Weights,
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
+        max_batch_size: int = 1,
     ) -> None:
+        self._max_batch_size = max_batch_size
         super().__init__(
             pipeline_config,
             session,
@@ -111,9 +113,7 @@ class Gemma3MultiModalModelV3(
 
     def _load_models(self) -> tuple[Callable[..., Any], Callable[..., Any]]:
         """Loads vision and language models using the ModuleV3 API."""
-        assert self.pipeline_config.runtime.max_batch_size, (
-            "Expected max_batch_size to be set"
-        )
+        assert self._max_batch_size, "Expected max_batch_size to be set"
 
         weights_dict = dict(self.weights.items())
         language_weights_dict = convert_safetensor_language_state_dict(
