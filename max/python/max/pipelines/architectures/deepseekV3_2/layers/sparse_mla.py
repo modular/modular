@@ -253,9 +253,9 @@ class SparseLatentAttentionWithRopeFp8(LatentAttentionWithRopeFp8):
             input_row_offsets,
             indexer_kv_collection,
             layer_idx,
-            mask_variant=MHAMaskVariant.CAUSAL_MASK
-            if self.graph_mode in ["prefill", "auto"]
-            else MHAMaskVariant.NULL_MASK,
+            # TODO(KERN-2997): Once the graph mode is no longer hardcoded to
+            # "decode", this should be conditionally set to NULL_MASK.
+            mask_variant=MHAMaskVariant.CAUSAL_MASK,
         )
         topk_indices = ops.where(
             (topk_indices != -1),
