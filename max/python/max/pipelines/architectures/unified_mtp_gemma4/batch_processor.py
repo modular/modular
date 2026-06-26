@@ -147,6 +147,7 @@ class UnifiedMTPGemma4BatchProcessor(
             kv_cache_inputs=kv_cache_inputs,
             batch_context_lengths=batch_context_lengths,
             draft_tokens=None,
+            structured_output=self.runtime.pipeline_config.needs_bitmask_constraints,
         )
 
     def process_outputs(
