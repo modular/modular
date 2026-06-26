@@ -141,3 +141,4 @@ trl-internal-testing/tiny-random-LlamaForCausalLM	2c542e4731d42d3bb68324c4eca16d
 unsloth/gpt-oss-20b-BF16	cc89b3e7fd423253264883a80a4fa5abc619649f
 z-lab/Kimi-K2.5-DFlash	e2db14df8337367b5eae8a6c206ea0d7d01a42a8
 z-lab/LLaMA3.1-8B-Instruct-DFlash-UltraChat	d3af30def9601abdd10810aba220d692f0e803f0
+zai-org/GLM-5.1-FP8	f396cf805182f4ca10fa675e1a99815b3ca384db
