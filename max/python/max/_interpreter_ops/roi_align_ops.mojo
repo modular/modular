@@ -105,24 +105,7 @@ def roi_align_op[
     var offset = Float32(0.5) if aligned_flag else Float32(0.0)
 
     @always_inline
-    @parameter
-    @__copy_capture(
-        out_ptr,
-        in_ptr,
-        rois_ptr,
-        n_regions,
-        height,
-        width,
-        channels,
-        out_h,
-        out_w,
-        spatial_scale_val,
-        sampling_ratio_val,
-        aligned_flag,
-        mode_flag,
-        offset,
-    )
-    def func[width_param: Int, alignment: Int = 1](idx: Coord):
+    def func[width_param: Int, alignment: Int = 1](idx: Coord) {var}:
         var i = Int(idx[0].value())
         var rem, c = divmod(i, channels)
         var rem2, pw = divmod(rem, out_w)
@@ -260,10 +243,10 @@ def roi_align_op[
             out_ptr[i] = pool_val
 
     if ctx.api() == "cpu":
-        elementwise[func, simd_width=1](Coord(total), ctx)
+        elementwise[simd_width=1](func, Coord(total), ctx)
     else:
         comptime if has_accelerator():
-            elementwise[func, simd_width=1, target="gpu"](Coord(total), ctx)
+            elementwise[simd_width=1, target="gpu"](func, Coord(total), ctx)
         else:
             raise Error("No GPU accelerator available")
 

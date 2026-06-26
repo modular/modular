@@ -86,9 +86,7 @@ def argminmax_reduce_op[
     var in_stride0 = dim1 * dim2
 
     @always_inline
-    @parameter
-    @__copy_capture(out_ptr, in_ptr, dim1, dim2, in_stride0)
-    def func[width: Int, alignment: Int = 1](idx: Coord):
+    def func[width: Int, alignment: Int = 1](idx: Coord) {var}:
         var i = Int(idx[0].value())
         var i0, i2 = divmod(i, dim2)
         var base = i0 * in_stride0 + i2
@@ -111,11 +109,11 @@ def argminmax_reduce_op[
         out_ptr[i] = best_idx
 
     if ctx.api() == "cpu":
-        elementwise[func, simd_width=1](Coord(IndexList[1](total)), ctx)
+        elementwise[simd_width=1](func, Coord(IndexList[1](total)), ctx)
     else:
         comptime if has_accelerator():
-            elementwise[func, simd_width=1, target="gpu"](
-                Coord(IndexList[1](total)), ctx
+            elementwise[simd_width=1, target="gpu"](
+                func, Coord(IndexList[1](total)), ctx
             )
         else:
             raise Error("No GPU accelerator available")
