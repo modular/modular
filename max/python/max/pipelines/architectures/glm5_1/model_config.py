@@ -20,6 +20,7 @@ from typing import Any
 from max.graph import DeviceRef
 from max.pipelines.architectures.deepseekV3_2.model_config import (
     DeepseekV3_2Config,
+    resolve_indexer_types,
 )
 from max.pipelines.lib import MAXModelConfig, PipelineConfig
 from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
@@ -135,4 +136,7 @@ class Glm5_1Config(DeepseekV3_2Config):
             index_head_dim=config.index_head_dim,
             index_n_heads=config.index_n_heads,
             index_topk=config.index_topk,
+            indexer_types=resolve_indexer_types(
+                config, config.num_hidden_layers
+            ),
         )

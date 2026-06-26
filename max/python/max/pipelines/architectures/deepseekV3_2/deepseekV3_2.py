@@ -139,6 +139,21 @@ def _validate_parallelism_config(config: DeepseekV3_2Config) -> None:
         )
 
 
+def _validate_indexer_types(config: DeepseekV3_2Config) -> None:
+    """Validate the cross-layer index-sharing schedule.
+
+    A ``"shared"`` layer reuses the top-k selection from the most recent
+    ``"full"`` layer, so the first layer must be ``"full"`` — otherwise there is
+    no prior selection to reuse. An empty schedule means every layer is full.
+    """
+    if config.indexer_types and config.indexer_types[0] != "full":
+        raise ValueError(
+            "indexer_types[0] must be 'full': the first layer cannot be "
+            "'shared' because no preceding full indexer layer exists to "
+            f"reuse a top-k selection from (got {config.indexer_types[0]!r})."
+        )
+
+
 class DeepseekV3_2DecoderLayer(Module):
     """Decoder layer for DeepseekV3.2."""
 
@@ -175,6 +190,11 @@ class DeepseekV3_2DecoderLayer(Module):
         mla_kv_params = config.kv_params.children["mla"]
         _indexer_kv_params = config.kv_params.children["indexer"]
 
+        skip_topk = (
+            bool(config.indexer_types)
+            and config.indexer_types[layer_idx] == "shared"
+        )
+
         sparse_attn_kwargs: dict[str, Any] = dict(
             rope=rope,
             num_attention_heads=config.num_attention_heads,
@@ -192,6 +212,7 @@ class DeepseekV3_2DecoderLayer(Module):
             index_n_heads=config.index_n_heads,
             index_head_dim=config.index_head_dim,
             index_topk=config.index_topk,
+            skip_topk=skip_topk,
         )
 
         self.tp_attention = num_devices > 1 and config.data_parallel_degree == 1
@@ -360,6 +381,7 @@ class DeepseekV3_2DecoderLayer(Module):
         freqs_cis: list[TensorValue],
         mla_prefill_metadata_flat: list[TensorValue],
         input_row_offsets: list[TensorValue],
+        prev_topk_indices: list[TensorValue],
         mla_decode_scalar_args: list[TensorValue] | None = None,
         mla_num_partitions_scalars: list[TensorValue] | None = None,
         ep_inputs: list[Value[Any]] | None = None,
@@ -417,7 +439,10 @@ class DeepseekV3_2DecoderLayer(Module):
         # Apply input layer norm to each shard
         norm_xs = forward_sharded_layers(self.input_layernorm_shards, xs)
 
-        attn_outs = self.self_attn(
+        # ``prev_topk_indices`` may arrive empty (first layer, before any full
+        # layer has produced a selection); ``full`` layers ignore it.
+        prev_topk = prev_topk_indices if prev_topk_indices is not None else None
+        attn_outs, topk_indices = self.self_attn(
             layer_idx,
             norm_xs,
             signal_buffers,
@@ -426,6 +451,7 @@ class DeepseekV3_2DecoderLayer(Module):
             freqs_cis=freqs_cis,
             input_row_offsets=input_row_offsets,
             mla_prefill_metadata=mla_prefill_metadata,
+            prev_topk_indices=prev_topk,
         )
 
         hs = self._post_attention(xs, attn_outs, signal_buffers)
@@ -449,7 +475,9 @@ class DeepseekV3_2DecoderLayer(Module):
         if self.tp_attention:
             hs = [ops.rebind(h, x.shape) for h, x in zip(hs, xs, strict=True)]
 
-        return hs
+        # Subgraphs require the outputs to be a single list of TensorValue,
+        # which is why the returned lists are concatenated.
+        return hs + topk_indices
 
     def _post_attention(
         self,
@@ -497,8 +525,6 @@ class DeepseekV3_2(Module):
     classes from the HuggingFace Transformers implementation.
 
     DeepseekV3.2 extends DeepseekV3 with sparse attention using an indexer mechanism.
-    TODO(MODELS-944): Integrate indexer layer once available.
-    TODO(MODELS-968): Replace standard MLA with sparse attention MLA.
     """
 
     def __init__(self, config: DeepseekV3_2Config) -> None:
@@ -508,6 +534,7 @@ class DeepseekV3_2(Module):
         devices = config.devices
 
         _validate_parallelism_config(config)
+        _validate_indexer_types(config)
 
         embedding_output_dtype = config.dtype
         if embedding_output_dtype == DType.uint8:
@@ -586,13 +613,24 @@ class DeepseekV3_2(Module):
         )
 
         if config.use_subgraphs:
+            # ``full`` and ``shared`` layers differ structurally (shared layers
+            # have no indexer weights), so they cannot share a subgraph. Split
+            # the MoE layers into one subgraph group per indexer type. An empty
+            # schedule (DeepSeek V3.2, GLM-5.1) collapses to a single full group.
+            moe_layers = range(
+                config.first_k_dense_replace, config.num_hidden_layers
+            )
+
+            def _is_shared(i: int) -> bool:
+                return (
+                    bool(config.indexer_types)
+                    and config.indexer_types[i] == "shared"
+                )
+
+            full_group = [i for i in moe_layers if not _is_shared(i)]
+            shared_group = [i for i in moe_layers if _is_shared(i)]
             self.subgraph_layer_groups = [
-                [
-                    i
-                    for i in range(
-                        config.first_k_dense_replace, config.num_hidden_layers
-                    )
-                ]
+                g for g in (full_group, shared_group) if g
             ]
         else:
             self.subgraph_layer_groups = []
@@ -721,12 +759,24 @@ class DeepseekV3_2(Module):
                 if kv.mla_num_partitions is not None
             ]
 
+        num_devices = len(devices)
+
         def inputs_for_layer(
             idx: int, h: list[TensorValue]
         ) -> list[Value[Any] | Sequence[Value[Any]]]:
+            # Each decoder layer returns ``hidden_states + topk_indices`` (both
+            # per-device lists), so ``h`` carries the previous layer's top-k
+            # selection after its first ``num_devices`` entries. The very first
+            # layer receives only hidden states (no prior selection yet).
+            if len(h) > num_devices:
+                hidden = h[:num_devices]
+                prev_topk: list[TensorValue] = h[num_devices:]
+            else:
+                hidden = h
+                prev_topk = []
             values: list[Value[Any] | Sequence[Value[Any]]] = [
                 ops.constant(idx, DType.uint32, device=DeviceRef.CPU()),
-                h,
+                hidden,
                 signal_buffers,
                 mla_kv_blocks,
                 mla_cache_lengths,
@@ -743,6 +793,7 @@ class DeepseekV3_2(Module):
                 freqs_cis,
                 mla_prefill_metadata_flat,
                 input_row_offsets_,
+                prev_topk,
             ]
             if mla_decode_scalar_args is not None:
                 values.append(mla_decode_scalar_args)
@@ -760,6 +811,9 @@ class DeepseekV3_2(Module):
             name_for_subgraph=lambda g: f"dist_transformer_block_{g}",
             initial_hidden_states=h,
         )
+
+        # Strip the trailing top-k selection carried alongside hidden states.
+        h = h[:num_devices]
 
         if self.config.data_parallel_degree > 1:
             last_token_per_dev: list[TensorValue] = []
