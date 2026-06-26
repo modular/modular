@@ -19,6 +19,9 @@ All implementations are based on that reference material.
 
 import std.format
 
+from std.ffi import OwnedDLHandle
+from std.os import abort
+
 from .dlpack import DLTensor
 
 
