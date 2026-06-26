@@ -1620,7 +1620,12 @@ def flash_attention_dispatch[
                     # K/V from DRAM (no staging, no barriers). It beat both the
                     # block_dim=32 base and the SMEM-staged variant at every
                     # shape measured (KB kernels/apple-m5-fa-prefill).
-                    if not is_token_generation and _apple_fa_prefill_enabled():
+                    # The 16x16 simdgroup MMA needs M5+.
+                    if (
+                        not is_token_generation
+                        and _apple_fa_prefill_enabled()
+                        and ctx.compute_capability() >= 5
+                    ):
                         fa_prefill_apple[
                             ragged=ragged,
                             sink=sink,

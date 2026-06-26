@@ -162,6 +162,9 @@ def test_conv2d_fused_apple_dynamic_round(
         ctx,
     )
     if not handled:
+        if ctx.compute_capability() < 5:
+            print("  SKIP: fused conv requires M5+")
+            return
         raise Error("dynamic-shape fused conv unexpectedly declined")
 
     ctx.synchronize()
@@ -522,8 +525,7 @@ def test_conv2d_fused_apple[
         )
 
     if not handled:
-        # Fused path declines only on 1x1 / K<16 (no N gate, unlike materialise).
-        print("  SKIP: fused dispatcher declined this shape (1x1 / K<16)")
+        print("  SKIP: fused dispatcher declined (1x1 / K<16, or not Apple M5)")
         _ = input_dev^
         _ = filter_dev^
         _ = output_dev^

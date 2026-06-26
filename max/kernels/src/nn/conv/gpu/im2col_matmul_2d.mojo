@@ -27,7 +27,7 @@ kernel wins on 1×1), K >= 16 (below MMA_K).
 
 from std.math import ceildiv
 from std.math.uutils import udivmod
-from std.sys.info import size_of
+from std.sys.info import has_apple_gpu_accelerator, size_of
 from std.gpu import block_dim, block_idx, global_idx, thread_idx
 from std.gpu.host import DeviceContext
 from layout import Coord, Idx, TileTensor, row_major
@@ -228,8 +228,10 @@ def dispatch_im2col_matmul_conv2d[
     # Degenerate N shapes (e.g. conv_out 96->3) don't amortize the
     # matmul launch cost; the naive kernel wins on these. On B200 we
     # measured naive at 0.21 ms vs im2col at 0.66 ms for C_out=3.
-    if N < 16:
-        return False
+    # Apple has no naive FCRS path, so the matmul must take small N too.
+    comptime if not has_apple_gpu_accelerator():
+        if N < 16:
+            return False
 
     # Filter transpose runs once, before the M-tile loop.
     var filter_size = filter.num_elements()
@@ -447,6 +449,10 @@ def dispatch_fused_im2col_conv2d_apple[
     # scratch round-trip; that tradeoff does not apply here, and naive is broken
     # on Metal for the C_out=3 VAE->RGB conv this routes around.
     if N < 1:
+        return False
+
+    # The 16x16 simdgroup MMA needs M5+, fall back to the materialised matmul path.
+    if ctx.compute_capability() < 5:
         return False
 
     # Filter transpose to (C_out, K) -- identical to the materialised path so
