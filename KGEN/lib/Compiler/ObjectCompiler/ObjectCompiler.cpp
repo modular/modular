@@ -32,9 +32,6 @@
 #include "MCLinker.h"
 #include "Support/Context.h"
 #include "Support/FileSystemExtras.h"
-#include "LLVM/Bitcode/BitcodeWriter17.h"
-#include "LLVM/Bitcode/BitcodeWriter19.h"
-#include "LLVM/Bitcode/BitcodeWriter21.h"
 
 #include "mlir/IR/DialectResourceBlobManager.h"
 #include "mlir/Pass/PassManager.h"
@@ -1290,12 +1287,11 @@ ErrorOrSuccess ObjectCompiler::emitBitcode(llvm::Module &llvmModule,
   CompilerTimeTraceScope traceScope("emitBitcode");
   // The backend owns the bitcode format (e.g. Metal emits AIR bitcode).
   if (const TargetBackend *backend =
-          TargetBackendRegistry::get().lookup(llvmModule.getTargetTriple())) {
+          TargetBackendRegistry::get().lookup(llvmModule.getTargetTriple()))
     backend->emitBitcode(llvmModule, os);
-  } else {
+  else
     llvm::WriteBitcodeToFile(llvmModule, os,
                              /*ShouldPreserveUseListOrder=*/true);
-  }
   return success();
 }
 

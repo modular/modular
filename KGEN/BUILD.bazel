@@ -1127,8 +1127,8 @@ modular_cc_library(
 modular_cc_library(
     name = "ObjectCompiler.BitcodeWriter",
     srcs = glob([
-        "lib/Compiler/ObjectCompiler/LLVM/Bitcode/*.cpp",
-        "lib/Compiler/ObjectCompiler/LLVM/Bitcode/*.h",
+        "lib/Compiler/ObjectCompiler/LLVM/Bitcode/**/*.cpp",
+        "lib/Compiler/ObjectCompiler/LLVM/Bitcode/**/*.h",
     ]),
     tags = ["no-clang-tidy"],
     visibility = ["//visibility:private"],
