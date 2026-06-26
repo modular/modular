@@ -463,6 +463,44 @@ mojo_test(
     ],
 )
 
+# Target: MiniMax-M3 MSA indexer PREFILL path (`sparse_indexer_prefill_score` +
+# `sparse_indexer_prefill_topk`, in //Kernels/lib/msa). Per ragged query token,
+# block-max QK scoring up to the token's causal boundary, init/local forcing,
+# then block_select_topk. On B200 the scorer is the SM100 tensor-core (SS-UMMA)
+# kernel with TMA-staged software-pipelined K; on MI355 the cooperative path.
+# `ref` (--check) is an f32 per-token causal block-max + forcing oracle (with a
+# planted-key causality probe); an always-on validity contract guards the top-k
+# output; `schedule` re-runs the scorer for query-tile/split-K nondeterminism.
+# Compile-time config via -D (default M3 4/128/128). Dual-arch (B200 + MI355).
+mojo_test(
+    name = "fuzz_sparse_indexer_prefill.mojo.test",
+    size = "large",
+    srcs = [
+        "_fuzz.mojo",
+        "fuzz_sparse_indexer_prefill.mojo",
+    ],
+    exec_properties = {
+        "test.resources:gpu-memory": "8",
+    },
+    main = "fuzz_sparse_indexer_prefill.mojo",
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    target_compatible_with = ["//:has_gpu"] + select({
+        "//:b200_gpu": [],
+        "//:mi355_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//Kernels/lib/msa",
+        "//max:internal_utils",
+        "//max:linalg",
+        "//max:nn",
+        "@mojo//:std",
+    ],
+)
+
 # OOB canary: the positive control for the fuzz-oracle pipeline. Driven by the
 # orchestrator under --oracle redzone/memcheck it reports FAIL (detects the
 # planted OOB write); under --oracle diff it reports PASS (the pool masks it).

@@ -233,6 +233,23 @@ _TARGETS: dict[str, FuzzTarget] = {
         ),
         default_oracle="ref",
     ),
+    "sparse_indexer_prefill": FuzzTarget(
+        name="sparse_indexer_prefill",
+        bazel_target=(
+            "//max/kernels/test/gpu/fuzz:fuzz_sparse_indexer_prefill.mojo.test"
+        ),
+        binary=(
+            "bazel-bin/max/kernels/test/gpu/fuzz/"
+            "fuzz_sparse_indexer_prefill.mojo.test"
+        ),
+        description=(
+            "sparse_indexer_prefill_score + _topk: MiniMax-M3 MSA indexer"
+            " prefill path (SM100 tensor-core causal block-max scoring, ragged"
+            " Q, init/local forcing, top-k); ref (f32 causal block-max oracle +"
+            " planted-key causality probe) + validity contract + schedule"
+        ),
+        default_oracle="ref",
+    ),
     "oob_canary": FuzzTarget(
         name="oob_canary",
         bazel_target=("//max/kernels/test/gpu/fuzz:fuzz_oob_canary.mojo.test"),
