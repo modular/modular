@@ -56,6 +56,7 @@ class RecordingConnector:
         block_ids: list[int],
         block_hashes: Sequence[bytes],
         parent_seq_hash: bytes | None = None,
+        replica_idx: int = 0,
     ) -> None:
         self.offloads.append((block_ids, list(block_hashes), parent_seq_hash))
 
@@ -63,6 +64,7 @@ class RecordingConnector:
         self,
         device_block_ids: list[int],
         block_hashes: Sequence[bytes],
+        replica_idx: int = 0,
     ) -> int:
         return 0
 
@@ -114,7 +116,7 @@ def test_offload_delivers_run_resolving_hashes_to_bids() -> None:
     bm, connector = _make_block_manager()
     _commit(bm, {_b(111): 5, _b(222): 6, _b(333): 7})
     # One run of three committed blocks chaining onto parent 999.
-    bm._pending_offloads = [(_b(999), [_b(111), _b(222), _b(333)])]
+    bm._pending_offloads = [[(_b(999), [_b(111), _b(222), _b(333)])]]
 
     bm.offload()
 
@@ -122,13 +124,13 @@ def test_offload_delivers_run_resolving_hashes_to_bids() -> None:
         ([5, 6, 7], [_b(111), _b(222), _b(333)], _b(999))
     ]
     # Pending queue drained.
-    assert bm._pending_offloads == []
+    assert bm._pending_offloads == [[]]
 
 
 def test_offload_root_run_uses_parent_none() -> None:
     bm, connector = _make_block_manager()
     _commit(bm, {_b(111): 5, _b(222): 6})
-    bm._pending_offloads = [(None, [_b(111), _b(222)])]
+    bm._pending_offloads = [[(None, [_b(111), _b(222)])]]
 
     bm.offload()
 
@@ -140,7 +142,7 @@ def test_offload_truncates_run_at_evicted_block() -> None:
     # 222 was evicted since commit; the run must stop before it so the chain
     # has no gap (333's parent would otherwise be missing).
     _commit(bm, {_b(111): 5, _b(333): 7})
-    bm._pending_offloads = [(None, [_b(111), _b(222), _b(333)])]
+    bm._pending_offloads = [[(None, [_b(111), _b(222), _b(333)])]]
 
     bm.offload()
 
@@ -151,12 +153,12 @@ def test_offload_skips_fully_evicted_run() -> None:
     bm, connector = _make_block_manager()
     # First (and only) block of the run is gone -> nothing to deliver.
     _commit(bm, {})
-    bm._pending_offloads = [(None, [_b(111)])]
+    bm._pending_offloads = [[(None, [_b(111)])]]
 
     bm.offload()
 
     assert connector.offloads == []
-    assert bm._pending_offloads == []
+    assert bm._pending_offloads == [[]]
 
 
 def test_offload_preserves_multi_run_order() -> None:
@@ -164,8 +166,10 @@ def test_offload_preserves_multi_run_order() -> None:
     _commit(bm, {_b(111): 1, _b(222): 2, _b(333): 3, _b(444): 4})
     # Two runs queued across two commits; second chains onto the first's tail.
     bm._pending_offloads = [
-        (None, [_b(111), _b(222)]),
-        (_b(222), [_b(333), _b(444)]),
+        [
+            (None, [_b(111), _b(222)]),
+            (_b(222), [_b(333), _b(444)]),
+        ]
     ]
 
     bm.offload()

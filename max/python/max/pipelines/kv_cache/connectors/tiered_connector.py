@@ -75,7 +75,7 @@ class TieredConnector:
     def __init__(
         self,
         devices: Sequence[Device],
-        kv_memory: list[KVCacheMemory],
+        replica_kv_memory: Sequence[Sequence[KVCacheMemory]],
         total_num_host_blocks: int,
         disk_cache_dir: str,
         max_disk_size_gb: float,
@@ -89,9 +89,12 @@ class TieredConnector:
         self._devices = list(devices)
         self._total_num_host_blocks = total_num_host_blocks
 
+        # One pinned host buffer + disk tier shared by every DP replica
+        # (SERVOPT-1501); ``replica_kv_memory`` holds each replica's device
+        # buffers for the H2D/D2H endpoints.
         self._block_copy_engine = BlockOffloadEngine(
             total_num_host_blocks,
-            kv_memory,
+            replica_kv_memory,
         )
         self._host_buffer: DevicePinnedBuffer = (
             self._block_copy_engine.host_buffer
@@ -178,8 +181,9 @@ class TieredConnector:
         self,
         device_block_ids: list[int],
         block_hashes: Sequence[bytes],
+        replica_idx: int = 0,
     ) -> int:
-        """Load data from host or disk cache into device blocks.
+        """Load data from host or disk cache into ``replica_idx``'s blocks.
 
         Returns:
             Number of blocks loaded from host cache.
@@ -243,7 +247,7 @@ class TieredConnector:
                 if hit.future is not None and not hit.future.done():
                     # Flush accumulated ready blocks so their H2D overlaps with
                     # the disk wait below.
-                    self._block_copy_engine.memcpy_h2d(dsts, srcs)
+                    self._block_copy_engine.memcpy_h2d(dsts, srcs, replica_idx)
                     self._h2d_blocks_copied += len(dsts)
                     dsts = []
                     srcs = []
@@ -282,7 +286,7 @@ class TieredConnector:
                 srcs.append(hit.host_block.bid)
                 num_loaded += 1
 
-            self._block_copy_engine.memcpy_h2d(dsts, srcs)
+            self._block_copy_engine.memcpy_h2d(dsts, srcs, replica_idx)
             self._h2d_blocks_copied += len(dsts)
 
         # Wait for in-flight disk reads on unprocessed hits so their
@@ -358,8 +362,9 @@ class TieredConnector:
         block_ids: list[int],
         block_hashes: Sequence[bytes],
         parent_seq_hash: bytes | None = None,
+        replica_idx: int = 0,
     ) -> None:
-        """Offload the device blocks to the external cache.
+        """Offload ``replica_idx``'s device blocks to the external cache.
 
         ``parent_seq_hash`` is ignored: blocks are keyed by hash at each tier.
 
@@ -381,12 +386,14 @@ class TieredConnector:
                 dsts.append(host_block.bid)
                 srcs.append(device_block_id)
 
-        self._block_copy_engine.memcpy_d2h(dsts, srcs)
+        self._block_copy_engine.memcpy_d2h(dsts, srcs, replica_idx)
         self._d2h_blocks_copied += len(dsts)
 
         if host_blocks:
             pending_disk_write = _PendingDiskWrite(
-                d2h_copy_complete_event=self._block_copy_engine.record_d2h_event(),
+                d2h_copy_complete_event=self._block_copy_engine.record_d2h_event(
+                    replica_idx
+                ),
                 host_blocks=host_blocks,
             )
             self._pending_disk_writes.appendleft(pending_disk_write)

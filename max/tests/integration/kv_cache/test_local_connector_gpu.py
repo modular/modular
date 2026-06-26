@@ -71,7 +71,7 @@ def create_local_connector(
     )
 
     return LocalConnector(
-        kv_memory=kv_buffer.to_memory(),
+        replica_kv_memory=[kv_buffer.to_memory()],
         total_num_host_blocks=num_host_blocks,
     )
 

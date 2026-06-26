@@ -44,10 +44,15 @@ class LocalConnector:
     @traced
     def __init__(
         self,
-        kv_memory: list[KVCacheMemory],
+        replica_kv_memory: Sequence[Sequence[KVCacheMemory]],
         total_num_host_blocks: int,
     ) -> None:
-        """Initialize the local host memory connector."""
+        """Initialize the local host memory connector.
+
+        The host tier is shared across every DP replica: ``replica_kv_memory``
+        holds each replica's device buffers, and a single pinned host buffer +
+        host block pool serve them all (SERVOPT-1501).
+        """
         if total_num_host_blocks <= 0:
             raise ValueError("LocalConnector requires host blocks")
 
@@ -56,7 +61,7 @@ class LocalConnector:
         # Create BlockOffloadEngine for memory transfers
         self._block_copy_engine = BlockOffloadEngine(
             total_num_host_blocks,
-            kv_memory,
+            replica_kv_memory,
         )
 
         # Host block pool for managing host memory
@@ -101,8 +106,9 @@ class LocalConnector:
         self,
         device_block_ids: list[int],
         block_hashes: Sequence[bytes],
+        replica_idx: int = 0,
     ) -> int:
-        """Load data from host cache into device blocks.
+        """Load data from host cache into ``replica_idx``'s device blocks.
 
         Returns:
             Number of blocks loaded from host cache.
@@ -119,7 +125,7 @@ class LocalConnector:
             else:
                 break
 
-        self._block_copy_engine.memcpy_h2d(dsts, srcs)
+        self._block_copy_engine.memcpy_h2d(dsts, srcs, replica_idx)
         self._h2d_blocks_copied += len(dsts)
         return len(dsts)
 
@@ -129,8 +135,9 @@ class LocalConnector:
         block_ids: list[int],
         block_hashes: Sequence[bytes],
         parent_seq_hash: bytes | None = None,
+        replica_idx: int = 0,
     ) -> None:
-        """Offload the device blocks to the external cache.
+        """Offload ``replica_idx``'s device blocks to the host cache.
 
         ``parent_seq_hash`` is ignored: host blocks are keyed by hash.
 
@@ -148,7 +155,7 @@ class LocalConnector:
                 dsts.append(pair[0])
                 srcs.append(pair[1])
 
-        self._block_copy_engine.memcpy_d2h(dsts, srcs)
+        self._block_copy_engine.memcpy_d2h(dsts, srcs, replica_idx)
         self._d2h_blocks_copied += len(dsts)
 
     def wait_for_loads(self) -> None:
