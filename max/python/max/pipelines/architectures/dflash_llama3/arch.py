@@ -21,6 +21,7 @@ from max.pipelines.lib import (
 from max.pipelines.modeling.types import PipelineTask
 
 from ..llama3 import weight_adapters as llama3_weight_adapters
+from ..llama3.batch_processor import Llama3BatchProcessor
 from ..llama3.model_config import Llama3Config
 from .model import DFlashLlama3Model
 
@@ -42,6 +43,7 @@ dflash_llama_arch = SupportedArchitecture(
         "float32",
     },
     pipeline_model=DFlashLlama3Model,
+    batching=Llama3BatchProcessor,
     context_type=TextContext,
     tokenizer=TextTokenizer,
     rope_type="normal",

@@ -15,18 +15,15 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from typing import Any, ClassVar
 
-import numpy as np
-from max.driver import Buffer, Device, DevicePinnedBuffer
+from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import Graph
+from max.graph import DeviceRef, Graph
 from max.graph.weights import Weights, WeightsAdapter, load_weights
 from max.nn.kv_cache import (
-    KVCacheInputsInterface,
     KVCacheParams,
     MultiKVCacheParams,
 )
@@ -36,9 +33,9 @@ from max.pipelines.lib import (
     CompilationTimer,
     KVCacheConfig,
     PipelineConfig,
-    PipelineRuntimeConfig,
     UnifiedSpecDecodeInputs,
 )
+from max.pipelines.lib._hf_config import PretrainedConfig
 from max.pipelines.lib.interfaces import PipelineModelWithKVCache
 from max.pipelines.lib.pipeline_variants.unified_spec_decode_model import (
     _UnifiedSpecDecodeModelMixin,
@@ -47,6 +44,7 @@ from max.pipelines.lib.utils import parse_state_dict_from_weights
 
 from ..llama3.model_config import Llama3Config
 from ..llama3.weight_adapters import _convert_safetensor_with_model_config
+from .batch_processor import UnifiedEagleLlama3BatchProcessor
 from .model_config import UnifiedEagleLlama3Config
 from .unified_eagle_llama3 import UnifiedEagleLlama3 as UnifiedEagleLlama3Module
 from .weight_adapters import convert_unified_safetensor_state_dict
@@ -81,31 +79,15 @@ class UnifiedEagleLlama3Inputs(UnifiedSpecDecodeInputs):
         )
 
 
-@dataclass
-class PersistentInputBuffers:
-    tokens: Buffer
-    input_row_offsets: Buffer
-
-    @classmethod
-    def alloc(
-        cls, max_batch_size: int, max_batch_input_tokens: int, device: Device
-    ) -> PersistentInputBuffers:
-        max_batch_input_tokens = max(max_batch_input_tokens, max_batch_size)
-        tokens = Buffer(
-            shape=(max_batch_input_tokens,), dtype=DType.int64, device=device
-        )
-        input_row_offsets = Buffer(
-            shape=(max_batch_size + 1,), dtype=DType.uint32, device=device
-        )
-        return cls(tokens, input_row_offsets)
-
-
 class UnifiedEagleLlama3Model(
     _UnifiedSpecDecodeModelMixin, PipelineModelWithKVCache[TextContext]
 ):
     """Unified EAGLE Llama3: target + draft in one compiled graph."""
 
-    model_config_cls: ClassVar[type[Any]] = Llama3Config
+    model_config_cls: ClassVar[type[Any]] = UnifiedEagleLlama3Config
+    batch_processor_cls: ClassVar[type[UnifiedEagleLlama3BatchProcessor]] = (
+        UnifiedEagleLlama3BatchProcessor
+    )
 
     model: Model
 
@@ -132,14 +114,23 @@ class UnifiedEagleLlama3Model(
         )
         self.model = self.load_model(session)
 
-        assert isinstance(pipeline_config.runtime, PipelineRuntimeConfig)
-        assert pipeline_config.runtime.max_batch_size is not None
-        self._persistent_input_buffers = PersistentInputBuffers.alloc(
-            max_batch_size=pipeline_config.runtime.max_batch_size,
-            max_batch_input_tokens=pipeline_config.runtime.max_batch_input_tokens,
-            device=devices[0],
+    @classmethod
+    def get_kv_params(
+        cls,
+        huggingface_config: PretrainedConfig,
+        pipeline_config: PipelineConfig,
+        devices: list[DeviceRef],
+        kv_cache_config: KVCacheConfig,
+        cache_dtype: DType,
+    ) -> KVCacheParams:
+        """Target KV params for memory planning; ``load_model`` upgrades to multi-KV."""
+        return Llama3Config.construct_kv_params(
+            huggingface_config,
+            pipeline_config,
+            devices,
+            kv_cache_config,
+            cache_dtype,
         )
-        self._seed_counter = 0
 
     def load_model(self, session: InferenceSession) -> Model:
         with CompilationTimer("unified_eagle_llama3_model") as timer:
@@ -243,61 +234,3 @@ class UnifiedEagleLlama3Model(
             model = session.load(graph, weights_registry=self.state_dict)
 
         return model
-
-    def prepare_initial_token_inputs(
-        self,
-        replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
-        return_n_logits: int = 1,
-    ) -> UnifiedEagleLlama3Inputs:
-        context_batch = [ctx for batch in replica_batches for ctx in batch]
-        device0 = self.devices[0]
-        buffer_type = Buffer if device0.is_host else DevicePinnedBuffer
-
-        total_seq_len = sum(ctx.tokens.active_length for ctx in context_batch)
-        batch_size = len(context_batch)
-
-        persistent_tokens = self._persistent_input_buffers.tokens
-        persistent_tokens = persistent_tokens[:total_seq_len]
-        persistent_input_row_offsets = (
-            self._persistent_input_buffers.input_row_offsets
-        )
-        persistent_input_row_offsets = persistent_input_row_offsets[
-            : batch_size + 1
-        ]
-
-        tokens_host = buffer_type(
-            dtype=DType.int64,
-            shape=(total_seq_len,),
-            device=device0,
-        )
-        offsets_host = buffer_type(
-            dtype=DType.uint32,
-            shape=(batch_size + 1,),
-            device=device0,
-        )
-
-        np.concatenate(
-            [ctx.tokens.active for ctx in context_batch],
-            out=tokens_host.to_numpy(),
-        )
-        persistent_tokens.inplace_copy_from(tokens_host)
-        np.cumsum(
-            [0] + [ctx.tokens.active_length for ctx in context_batch],
-            dtype=np.uint32,
-            out=offsets_host.to_numpy(),
-        )
-        persistent_input_row_offsets.inplace_copy_from(offsets_host)
-
-        return_n_logits_buf = Buffer.from_numpy(
-            np.array([return_n_logits], dtype=np.int64)
-        )
-
-        return UnifiedEagleLlama3Inputs(
-            tokens=persistent_tokens,
-            input_row_offsets=persistent_input_row_offsets,
-            return_n_logits=return_n_logits_buf,
-            kv_cache_inputs=kv_cache_inputs,
-            seed=self._next_seed(),
-            structured_output=self.pipeline_config.needs_bitmask_constraints,
-        )

@@ -14,13 +14,12 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any, ClassVar, Literal
 
 import numpy as np
 from max._core.engine import Model
-from max.driver import Buffer, DevicePinnedBuffer, is_virtual_device_mode
+from max.driver import Buffer, is_virtual_device_mode
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import Graph
@@ -28,21 +27,16 @@ from max.graph.weights import Weights, WeightsAdapter
 from max.nn.comm.ep import EPCommInitializer, EPConfig
 from max.nn.comm.ep.ep_config import calculate_ep_max_tokens_per_rank
 from max.nn.comm.ep.ep_manager import EPBatchManager
-from max.nn.kv_cache import KVCacheInputsInterface
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
-from max.pipelines.context import TextContext
 from max.pipelines.lib import CompilationTimer
 from max.pipelines.lib.interfaces import AlwaysSignalBuffersMixin
-from max.pipelines.lib.utils import (
-    compute_data_parallel_splits,
-    parse_state_dict_from_weights,
-)
+from max.pipelines.lib.utils import parse_state_dict_from_weights
 from max.pipelines.modeling.config_enums import supported_encoding_dtype
 from max.pipelines.weights.quant import parse_quant_config
-from max.support.algorithm import flatten2d
 from typing_extensions import override
 
 from ..llama3.model import Llama3Inputs, LlamaModelBase
+from .batch_processor import Step3p5BatchProcessor
 from .model_config import Step3p5Config
 from .step3p5 import ParallelismMode, Step3p5
 
@@ -95,6 +89,9 @@ class Step3p5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
     """
 
     model_config_cls: ClassVar[type[Any]] = Step3p5Config
+    batch_processor_cls: ClassVar[type[Step3p5BatchProcessor]] = (
+        Step3p5BatchProcessor
+    )
 
     model: Model
     norm_method: Literal["rms_norm"] | Literal["layer_norm"] = "rms_norm"
@@ -188,6 +185,18 @@ class Step3p5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
             graph = self._build_graph(self.weights, self.adapter, session)
             timer.mark_build_complete()
             model = session.load(graph, weights_registry=self.state_dict)
+
+        if self._batch_processor is not None:
+            bind_ep = getattr(
+                self._batch_processor, "bind_ep_comm_initializer", None
+            )
+            if bind_ep is not None:
+                bind_ep(self.ep_comm_initializer)
+            bind_mode = getattr(
+                self._batch_processor, "bind_parallelism_mode", None
+            )
+            if bind_mode is not None:
+                bind_mode(self._mode)
 
         return model
 
@@ -314,110 +323,3 @@ class Step3p5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
 
             graph.output(*outputs)
             return graph
-
-    @override
-    def prepare_initial_token_inputs(
-        self,
-        replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
-        return_n_logits: int = 1,
-    ) -> Llama3Inputs | Step3p5Inputs:
-        # TP_TP needs no EP/DP plumbing; defer to the base class.
-        if self._mode == ParallelismMode.TP_TP:
-            return super().prepare_initial_token_inputs(
-                replica_batches, kv_cache_inputs, return_n_logits
-            )
-
-        ep_inputs = (
-            ()
-            if self.ep_comm_initializer is None
-            else tuple(self.ep_comm_initializer.model_inputs())
-        )
-
-        # TP_EP: same per-batch buffer layout as TP_TP, plus EP comm
-        # buffers tail-appended via Step3p5Inputs. host_input_row_offsets
-        # and data_parallel_splits stay None — there is no DP batch split.
-        if self._mode == ParallelismMode.TP_EP:
-            base = super().prepare_initial_token_inputs(
-                replica_batches, kv_cache_inputs, return_n_logits
-            )
-            return Step3p5Inputs(
-                tokens=base.tokens,
-                input_row_offsets=base.input_row_offsets,
-                return_n_logits=base.return_n_logits,
-                signal_buffers=base.signal_buffers,
-                kv_cache_inputs=base.kv_cache_inputs,
-                host_input_row_offsets=None,
-                data_parallel_splits=None,
-                ep_inputs=ep_inputs,
-            )
-
-        # DP_EP path below.
-        dp = self.pipeline_config.model.data_parallel_degree
-        if len(replica_batches) != dp:
-            raise ValueError(
-                "Number of replica batches must match data parallel degree"
-            )
-
-        context_batch = flatten2d(replica_batches)
-        device0 = self.devices[0]
-        pinned = not device0.is_host
-
-        # Build tokens.
-        num_tokens = sum(ctx.tokens.active_length for ctx in context_batch)
-        host_tokens: Buffer
-        if pinned:
-            host_tokens = DevicePinnedBuffer(
-                shape=(num_tokens,), dtype=DType.int64, device=device0
-            )
-        else:
-            host_tokens = Buffer(
-                shape=(num_tokens,), dtype=DType.int64, device=device0
-            )
-
-        if context_batch:
-            np.concatenate(
-                [ctx.tokens.active for ctx in context_batch],
-                out=host_tokens.to_numpy(),
-            )
-        tokens = host_tokens.to(device0)
-
-        # Build input_row_offsets.
-        batch_size = len(context_batch)
-        input_row_offsets_np = np.cumsum(
-            [0] + [ctx.tokens.active_length for ctx in context_batch],
-            dtype=np.uint32,
-        )
-
-        host_input_row_offsets = Buffer.from_numpy(input_row_offsets_np.copy())
-
-        pinned_offsets: Buffer
-        if pinned:
-            pinned_offsets = DevicePinnedBuffer(
-                shape=(batch_size + 1,), dtype=DType.uint32, device=device0
-            )
-        else:
-            pinned_offsets = Buffer(
-                shape=(batch_size + 1,), dtype=DType.uint32, device=device0
-            )
-        pinned_offsets.to_numpy()[:] = input_row_offsets_np
-        device_input_row_offsets = pinned_offsets.to(device0)
-
-        return_n_logits_tensor = Buffer.from_numpy(
-            np.array([return_n_logits], dtype=np.int64)
-        )
-
-        data_parallel_splits = Buffer.from_numpy(
-            compute_data_parallel_splits(replica_batches)
-        )
-
-        return Step3p5Inputs(
-            tokens=tokens,
-            input_row_offsets=device_input_row_offsets,
-            return_n_logits=return_n_logits_tensor,
-            host_input_row_offsets=host_input_row_offsets,
-            data_parallel_splits=data_parallel_splits,
-            signal_buffers=self.signal_buffers,
-            kv_cache_inputs=kv_cache_inputs,
-            ep_inputs=ep_inputs,
-        )

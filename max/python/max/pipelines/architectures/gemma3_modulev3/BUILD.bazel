@@ -16,7 +16,6 @@ modular_py_library(
         "//max/python/max/nn/hooks",
     ],
     deps = [
-        requirement("numpy"),
         requirement("transformers"),
         requirement("typing-extensions"),
         "//max/python/max/driver",

@@ -20,6 +20,7 @@ from max.pipelines.lib import (
 )
 from max.pipelines.modeling.types import PipelineTask
 
+from ..llama3.batch_processor import Llama3BatchProcessor
 from ..llama3.model_config import Llama3Config
 from . import weight_adapters
 from .model import EagleLlama3Model
@@ -35,6 +36,7 @@ eagle_llama_arch = SupportedArchitecture(
         "float32",
     },
     pipeline_model=EagleLlama3Model,
+    batching=Llama3BatchProcessor,
     context_type=TextContext,
     tokenizer=TextTokenizer,
     rope_type="normal",
@@ -62,6 +64,7 @@ eagle3_llama_arch = SupportedArchitecture(
         "float32",
     },
     pipeline_model=EagleLlama3Model,
+    batching=Llama3BatchProcessor,
     context_type=TextContext,
     tokenizer=TextTokenizer,
     rope_type="normal",

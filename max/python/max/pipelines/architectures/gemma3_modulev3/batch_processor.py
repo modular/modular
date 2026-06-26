@@ -10,33 +10,41 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Input batching for BERT embedding models."""
+"""Input batching for Gemma3 ModuleV3 pipeline models."""
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
 from max.driver import Buffer
+from max.nn.kv_cache import KVCacheInputsInterface
+from max.pipelines.context import TextContext
 from max.pipelines.lib.interfaces.batch_processor import (
-    PaddedEncoderBatchProcessor,
+    ModuleV3SingleReplicaBatchProcessor,
 )
 
 if TYPE_CHECKING:
-    from .model import BertInputs
+    from .model import Gemma3Inputs
 
 
-class BertBatchProcessor(PaddedEncoderBatchProcessor["BertInputs"]):
-    """Fixed-shape padded batching for encoder-only BERT models."""
+class Gemma3ModuleV3BatchProcessor(
+    ModuleV3SingleReplicaBatchProcessor[TextContext, "Gemma3Inputs"]
+):
+    """Ragged batching for Gemma3 ModuleV3 models (single GPU, no signals)."""
 
     def _make_inputs(
         self,
         *,
-        next_tokens_batch: Buffer,
-        attention_mask: Buffer,
-    ) -> BertInputs:
-        from .model import BertInputs
+        tokens: Buffer,
+        input_row_offsets: Buffer,
+        return_n_logits: Buffer,
+        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer],
+    ) -> Gemma3Inputs:
+        from .model import Gemma3Inputs
 
-        return BertInputs(
-            next_tokens_batch=next_tokens_batch,
-            attention_mask=attention_mask,
+        return Gemma3Inputs(
+            tokens=tokens,
+            input_row_offsets=input_row_offsets,
+            return_n_logits=return_n_logits,
+            kv_cache_inputs=kv_cache_inputs,
         )

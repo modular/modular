@@ -10,42 +10,29 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Input batching for Mistral pipeline models."""
+"""Input batching for Gemma3 pipeline models."""
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
 from max.driver import Buffer
-from max.graph import BufferType, DeviceRef, TensorType
 from max.nn.kv_cache import KVCacheInputsInterface
-from max.nn.kv_cache.cache_params import KVCacheParamInterface
 from max.pipelines.context import TextContext
 from max.pipelines.lib.interfaces.batch_processor import (
     SingleReplicaRaggedBatchProcessor,
-    ragged_kv_symbolic_inputs,
 )
 
 if TYPE_CHECKING:
-    from .model import MistralInputs
+    from .model import Gemma3Inputs
 
 
-class MistralBatchProcessor(
-    SingleReplicaRaggedBatchProcessor[TextContext, "MistralInputs"]
+class Gemma3BatchProcessor(
+    SingleReplicaRaggedBatchProcessor[TextContext, "Gemma3Inputs"]
 ):
-    """Single-replica ragged KV batching for Mistral."""
+    """Single-replica ragged KV batching for Gemma3 with always-on signal buffers."""
 
-    def get_symbolic_inputs(
-        self,
-        *,
-        kv_params: KVCacheParamInterface,
-        device_refs: list[DeviceRef],
-    ) -> list[TensorType | BufferType]:
-        return ragged_kv_symbolic_inputs(
-            kv_params=kv_params,
-            device_refs=device_refs,
-            include_signal_buffers=len(device_refs) > 1,
-        )
+    _include_signal_buffers = True
 
     def _make_inputs(
         self,
@@ -55,10 +42,10 @@ class MistralBatchProcessor(
         return_n_logits: Buffer,
         kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None,
         signal_buffers: list[Buffer],
-    ) -> MistralInputs:
-        from .model import MistralInputs
+    ) -> Gemma3Inputs:
+        from .model import Gemma3Inputs
 
-        return MistralInputs(
+        return Gemma3Inputs(
             tokens=tokens,
             input_row_offsets=input_row_offsets,
             return_n_logits=return_n_logits,

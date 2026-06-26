@@ -21,6 +21,7 @@ from max.pipelines.lib import (
 from max.pipelines.modeling.types import PipelineTask
 
 from ..llama3 import weight_adapters
+from .batch_processor import Qwen3BatchProcessor
 from .model import Qwen3Model
 from .model_config import Qwen3Config
 from .weight_adapters import convert_qwen3_moe_state_dict
@@ -44,6 +45,7 @@ qwen3_arch = SupportedArchitecture(
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
     },
     config=Qwen3Config,
+    batching=Qwen3BatchProcessor,
     multi_gpu_supported=True,
     memory_planner=PagedMemoryPlanner.with_activation_reservation(
         0, always_signal_buffers=True
@@ -75,6 +77,7 @@ qwen3_moe_arch = SupportedArchitecture(
         WeightsFormat.safetensors: convert_qwen3_moe_state_dict,
     },
     config=Qwen3Config,
+    batching=Qwen3BatchProcessor,
     multi_gpu_supported=True,
     memory_planner=PagedMemoryPlanner.with_activation_reservation(
         0, always_signal_buffers=True

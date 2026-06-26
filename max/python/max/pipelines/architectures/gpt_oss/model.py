@@ -14,7 +14,6 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, ClassVar, cast
 
@@ -26,7 +25,6 @@ from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType
 from max.graph.weights import Weights, WeightsAdapter
 from max.nn.comm import Signals
-from max.nn.kv_cache import KVCacheInputsInterface
 from max.nn.transformer import ReturnLogits
 from max.pipelines.context import TextContext
 from max.pipelines.lib import (
@@ -39,6 +37,7 @@ from max.pipelines.lib import (
     PipelineModelWithKVCache,
 )
 
+from .batch_processor import GptOssBatchProcessor
 from .gpt_oss import GptOss
 from .model_config import GptOssConfig
 
@@ -79,6 +78,9 @@ class GptOssModel(
     """
 
     model_config_cls: ClassVar[type[Any]] = GptOssConfig
+    batch_processor_cls: ClassVar[type[GptOssBatchProcessor]] = (
+        GptOssBatchProcessor
+    )
 
     model: Model
     """The compiled and initialized MAX Engine model ready for inference."""
@@ -128,16 +130,6 @@ class GptOssModel(
         Returns:
             The loaded MAX Engine model object.
         """
-
-        assert self.pipeline_config.runtime.max_batch_size, (
-            "Expected max_batch_size to be set"
-        )
-        self._input_row_offsets_prealloc = Buffer.from_numpy(
-            np.arange(
-                self.pipeline_config.runtime.max_batch_size + 1,
-                dtype=np.uint32,
-            )
-        ).to(self.devices[0])
 
         with CompilationTimer("model") as timer:
             graph = self._build_graph()
@@ -293,52 +285,3 @@ class GptOssModel(
                 logits=cast(Buffer, model_outputs[0]),
                 next_token_logits=cast(Buffer, model_outputs[0]),
             )
-
-    def prepare_initial_token_inputs(
-        self,
-        replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
-        return_n_logits: int = 1,
-    ) -> ModelInputs:
-        """Prepares the initial inputs for the first execution pass of the GPT OSS model.
-
-        Args:
-            context_batch: A sequence of :obj:`TextContext` objects representing
-                the input prompts.
-            kv_cache_inputs: Optional inputs required by the KV cache manager.
-
-        Returns:
-            The prepared :obj:`ModelInputs` object for the initial execution step.
-        """
-        if len(replica_batches) > 1:
-            raise ValueError("Model does not support DP>1")
-
-        context_batch = replica_batches[0]
-        assert kv_cache_inputs is not None
-
-        # This needs to be replaced with actual input preparation
-        # Get input_row_offsets: start and end position of each batch in the
-        # combined total_seq_len dimension.
-        input_row_offsets = np.cumsum(
-            [0] + [ctx.tokens.active_length for ctx in context_batch],
-            dtype=np.uint32,
-        )
-
-        # Create a ragged token vector of length: sum(len(t) for t in tokens).
-        tokens = np.concatenate([ctx.tokens.active for ctx in context_batch])
-
-        # Create input_row_offsets for each device
-        input_row_offsets_tensors = [
-            Buffer.from_numpy(input_row_offsets).to(device)
-            for device in self.devices
-        ]
-
-        return GptOssInputs(
-            tokens=Buffer.from_numpy(tokens).to(self.devices[0]),
-            input_row_offsets=input_row_offsets_tensors,
-            return_n_logits=Buffer.from_numpy(
-                np.array([return_n_logits], dtype=np.int64)
-            ),
-            signal_buffers=self.signal_buffers,
-            kv_cache_inputs=kv_cache_inputs,
-        )
