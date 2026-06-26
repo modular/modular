@@ -13,8 +13,8 @@
 //===----------------------------------------------------------------------===//
 
 #include "BitcodeWriter17.h"
-#include "../Transforms/PointerRewriter.h"
 #include "ValueEnumerator17.h"
+#include "LLVM/Transforms/PointerRewriter.h"
 
 #include "llvm/ADT/APFloat.h"
 #include "llvm/ADT/APInt.h"

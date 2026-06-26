@@ -6,16 +6,11 @@
 
 #include "LLVMPassesPipeline.h"
 #include "KGEN/Compiler/LLVMOptimizationPipeline.h"
+#include "KGEN/Compiler/Target/TargetBackend.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
 #include "LLVMAccessorHelper.h"
 #include "MCLinker.h"
-#include "LLVM/Transforms/InstructionRewrite.h"
 #include "LLVM/Transforms/LLVMIRDowngradePass.h"
-#include "LLVM/Transforms/MetalAIRPass.h"
-#include "LLVM/Transforms/MetalModuleRewritePass.h"
-#include "LLVM/Transforms/MetalRewriteDebugInfo.h"
-#include "LLVM/Transforms/MetalVerifier.h"
-#include "LLVM/Transforms/PointerRewriter.h"
 #include "LLVM/Transforms/SetFunctionAttributes.h"
 #include "llvm/Analysis/GlobalsModRef.h"
 #include "llvm/Analysis/OptimizationRemarkEmitter.h"
@@ -27,6 +22,7 @@
 #include "llvm/IR/PassManager.h"
 #include "llvm/Passes/PassBuilder.h"
 #include "llvm/Support/Process.h"
+#include "llvm/TargetParser/Triple.h"
 #include "llvm/Transforms/AggressiveInstCombine/AggressiveInstCombine.h"
 #include "llvm/Transforms/IPO/AlwaysInliner.h"
 #include "llvm/Transforms/IPO/ConstantMerge.h"
@@ -385,29 +381,6 @@ static ModulePassManager buildO3Pipeline(PassBuilder &passBuilder,
   OptimizationLevel level = OptimizationLevel::O3;
   ModulePassManager mpm;
 
-  // Add Metal AIR transformation pass at the very end for Metal GPU targets
-  if (isMetalBackend(options)) {
-    // Initial LLVM IR must be correct for Metal
-    mpm.addPass(MetalVerifierPass());
-    // Run module-level lowering before per-function rewrites: inlines
-    // static_string_* globals and replaces print sentinel calls.
-    mpm.addPass(MetalModuleRewritePass());
-    FunctionPassManager fpm;
-    // Rewrite all Metal-unsupported LLVM IR intrinsics and instructions
-    fpm.addPass(InstructionRewritePass());
-    mpm.addPass(createModuleToFunctionPassAdaptor(std::move(fpm)));
-    // Run MetalAIRPass to do address space conversions
-    mpm.addPass(MetalAIRPass());
-    // Run PointerRewriter to add bitcasts for typed IR
-    mpm.addPass(PointerRewriter());
-    // Rewrite all debuginfo to what Instruments expects (for now just strip
-    // debuginfo)
-    mpm.addPass(MetalRewriteDebugInfoPass());
-    // Verify that IR is now correct to the best of our knowledge
-    mpm.addPass(MetalVerifierPass());
-    return mpm;
-  }
-
   if (isNVPTXBackend(options)) {
     mpm.addPass(SetFunctionAttributes());
   }
@@ -576,29 +549,6 @@ static ModulePassManager buildO0Pipeline(PassBuilder &passBuilder,
   OptimizationLevel level = getOptimizationLevel(options.optimizationLevel);
   ModulePassManager mpm;
 
-  // Add Metal AIR transformation pass at the very end for Metal GPU targets
-  if (isMetalBackend(options)) {
-    // Initial LLVM IR must be correct for Metal
-    mpm.addPass(MetalVerifierPass());
-    // Run module-level lowering before per-function rewrites: inlines
-    // static_string_* globals and replaces print sentinel calls.
-    mpm.addPass(MetalModuleRewritePass());
-    FunctionPassManager fpm;
-    // Rewrite all Metal-unsupported LLVM IR intrinsics and instructions
-    fpm.addPass(InstructionRewritePass());
-    mpm.addPass(createModuleToFunctionPassAdaptor(std::move(fpm)));
-    // Run MetalAIRPass to do address space conversions
-    mpm.addPass(MetalAIRPass());
-    // Run PointerRewriter to add bitcasts for typed IR
-    mpm.addPass(PointerRewriter());
-    // Rewrite all debuginfo to what Instruments expects (for now just strip
-    // debuginfo)
-    mpm.addPass(MetalRewriteDebugInfoPass());
-    // Verify that IR is now correct to the best of our knowledge
-    mpm.addPass(MetalVerifierPass());
-    return mpm;
-  }
-
   if (isNVPTXBackend(options)) {
     mpm.addPass(SetFunctionAttributes());
   }
@@ -632,8 +582,16 @@ static ModulePassManager buildO0Pipeline(PassBuilder &passBuilder,
 ModulePassManager
 M::KGEN::buildLLVMOptimizationPipeline(PassBuilder &passBuilder,
                                        const CompilationOptions &options) {
-  CodeGenOptLevel optLevel = options.getCodeGenOptLevel();
+  // A backend may fully own its pipeline (e.g. Metal's AIR legalization),
+  // replacing the standard optimization pipeline below.
+  if (const TargetBackend *backend = TargetBackendRegistry::get().lookup(
+          llvm::Triple(options.targetTriple))) {
+    ModulePassManager mpm;
+    if (backend->buildLLVMPipeline(mpm, passBuilder, options))
+      return mpm;
+  }
 
+  CodeGenOptLevel optLevel = options.getCodeGenOptLevel();
   if (optLevel == CodeGenOptLevel::None)
     return buildO0Pipeline(passBuilder, options);
   // All non-zero optimization levels are currently equivalent.
@@ -645,25 +603,10 @@ void M::KGEN::addLLVMIRDowngradePass(llvm::ModulePassManager &mpm) {
 }
 
 void M::KGEN::registerKGENLLVMPasses(PassBuilder &passBuilder) {
+  // Target-agnostic passes.
   passBuilder.registerPipelineParsingCallback(
       [](StringRef name, ModulePassManager &mpm,
          ArrayRef<PassBuilder::PipelineElement>) -> bool {
-        if (name == "kgen-metal-air") {
-          mpm.addPass(MetalAIRPass());
-          return true;
-        }
-        if (name == "kgen-pointer-rewriter") {
-          mpm.addPass(PointerRewriter());
-          return true;
-        }
-        if (name == "kgen-metal-verifier") {
-          mpm.addPass(MetalVerifierPass());
-          return true;
-        }
-        if (name == "kgen-metal-rewrite-di") {
-          mpm.addPass(MetalRewriteDebugInfoPass());
-          return true;
-        }
         if (name == "kgen-llvmir-downgrade") {
           mpm.addPass(LLVMIRDowngradePass());
           return true;
@@ -675,15 +618,10 @@ void M::KGEN::registerKGENLLVMPasses(PassBuilder &passBuilder) {
         return false;
       });
 
-  passBuilder.registerPipelineParsingCallback(
-      [](StringRef name, FunctionPassManager &fpm,
-         ArrayRef<PassBuilder::PipelineElement>) -> bool {
-        if (name == "kgen-instruction-rewrite") {
-          fpm.addPass(InstructionRewritePass());
-          return true;
-        }
-        return false;
-      });
+  // Backend-specific passes (e.g. Metal's kgen-metal-air).
+  for (const std::unique_ptr<TargetBackend> &backend :
+       TargetBackendRegistry::get().backends())
+    backend->registerPipelinePasses(passBuilder);
 }
 
 bool M::KGEN::addPassesToEmitFile(CompilationOptions &options,

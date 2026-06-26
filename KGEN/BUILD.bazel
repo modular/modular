@@ -1146,7 +1146,9 @@ modular_cc_library(
     hdrs = glob([
         "lib/Compiler/ObjectCompiler/*.h",
         "lib/Compiler/ObjectCompiler/LLVM/Transforms/*.h",
+        "lib/Compiler/ObjectCompiler/Target/**/*.h",
     ]),
+    strip_include_prefix = "lib/Compiler/ObjectCompiler",
     tags = ["no-clang-tidy-headers"],
     visibility = ["//visibility:private"],
 )
