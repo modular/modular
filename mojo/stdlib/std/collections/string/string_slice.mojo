@@ -649,6 +649,19 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
     # Operator dunders
     # ===------------------------------------------------------------------===#
 
+    @doc_hidden
+    @unavailable(
+        "StringSlice does not support `__len__` because Mojo strings are"
+        " UTF-8 encoded, so a single length is ambiguous: it could mean the"
+        " number of UTF-8 bytes, the number of Unicode code points, or the"
+        " number of user-visible characters (grapheme clusters). Use"
+        " `s.byte_length()` or `len(s.bytes())` for the number of UTF-8 bytes,"
+        " `len(s.codepoints())` for Unicode code points, or"
+        " `len(s.graphemes())` for grapheme clusters."
+    )
+    def __len__(self) -> Int:
+        ...
+
     # This decorator informs the compiler that indirect address spaces are not
     # dereferenced by the method.
     # TODO: replace with a safe model that checks the body of the method for
