@@ -121,6 +121,25 @@ struct Context[device_spec: DeviceSpec](ImplicitlyDeletable, Movable):
         except e:
             print("warning: destroy_context failed:", e)
 
+    def handle[
+        origin: Origin, //
+    ](ref[origin] self) -> UnsafePointer[ContextHandle.type, origin]:
+        """Returns the raw context handle, tying its origin back to `self`.
+
+        Accessing `self._handle` directly hands out a `ContextHandle` whose
+        origin is `MutExternalOrigin`, so it keeps nothing alive.
+
+        Parameters:
+            origin: The origin of the borrow of `self`, inferred at the call
+                site.
+
+        Returns:
+            The context handle carrying `self`'s origin.
+        """
+        return self._handle.unsafe_mut_cast[origin.mut]().unsafe_origin_cast[
+            origin
+        ]()
+
     def _compile_inner[
         fn_type: TrivialRegisterPassable,
         func: fn_type,
