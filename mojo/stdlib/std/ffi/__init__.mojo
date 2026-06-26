@@ -50,7 +50,7 @@ from std.collections.string.string_slice import (
     _get_kgen_string,
     get_static_string,
 )
-from std.os import PathLike, abort
+from std.os import PathLike as stdPathLike, abort
 from std.pathlib import Path
 from std.sys._libc import dlclose, dlerror, dlopen, dlsym
 from std.sys._libc_errno import ErrNo, get_errno, set_errno
@@ -238,7 +238,7 @@ struct OwnedDLHandle(Movable):
         self._handle = _DLHandle(flags)
 
     def __init__[
-        PathLike: os.PathLike, //
+        PathLike: stdPathLike, //
     ](out self, path: PathLike, flags: Int = DEFAULT_RTLD) raises:
         """Initialize an OwnedDLHandle by loading the dynamic library at the
         given path.
@@ -485,7 +485,7 @@ struct _DLHandle(Boolable, ImplicitlyCopyable, RegisterPassable):
         )
 
     def __init__[
-        PathLike: os.PathLike, //
+        PathLike: stdPathLike, //
     ](out self, path: PathLike, flags: Int = DEFAULT_RTLD) raises:
         """Initialize a DLHandle object by loading the dynamic library at the
         given path.

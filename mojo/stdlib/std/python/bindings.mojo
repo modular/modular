@@ -20,7 +20,8 @@ conversion. This enables seamless bidirectional interoperability between Mojo
 and Python code.
 """
 
-from std.ffi import _Global, _CPointer, c_int
+from . import ConvertibleFromPython
+from std.ffi import _Global, _CPointer, c_int, c_char
 from std.sys.info import size_of
 from std.collections import OwnedKwargsDict
 
@@ -663,7 +664,7 @@ struct PythonTypeBuilder(Copyable):
 
         var type_spec = PyType_Spec(
             # FIXME(MOCO-1306): This should be `T.__name__`.
-            self.type_name.unsafe_ptr().bitcast[ffi.c_char](),
+            self.type_name.unsafe_ptr().bitcast[c_char](),
             c_int(self.basicsize),
             0,
             Py_TPFLAGS_DEFAULT,

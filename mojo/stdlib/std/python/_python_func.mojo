@@ -1766,7 +1766,7 @@ struct PyObjectFunction[
     @staticmethod
     @always_inline("nodebug")
     def _get_self_arg(
-        py_self: PythonObject,
+        py_self: PO,
     ) -> UnsafePointer[Self.self_type, MutAnyOrigin]:
         """Get the appropriate self argument for method calls with automatic downcasting.
 
