@@ -53,6 +53,7 @@ from typing_extensions import override
 from ..dflash_kimi_k25 import DFlashKimiK25DraftConfig
 from ..kimik2_5.model import KimiK2_5Model, KimiK2_5ModelInputs
 from ..llama3.weight_adapters import _convert_safetensor_with_model_config
+from .batch_processor import UnifiedDflashKimiK25BatchProcessor
 from .model_config import (
     MultiKVCacheParams,
     UnifiedDflashKimiK25Config,
@@ -106,11 +107,12 @@ class UnifiedDflashKimiK25Model(_UnifiedSpecDecodeModelMixin, KimiK2_5Model):
     ``SpeculativeConfig.is_dflash()`` is true.
     """
 
+    batch_processor_cls = UnifiedDflashKimiK25BatchProcessor
+
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         kwargs["return_logits"] = ReturnLogits.VARIABLE
         kwargs["return_hidden_states"] = ReturnHiddenStates.SELECTED_LAYERS
         super().__init__(*args, **kwargs)
-        self._seed_counter = 0
 
     @override
     def load_model(self, session: InferenceSession) -> tuple[Model, Model]:
@@ -405,24 +407,19 @@ class UnifiedDflashKimiK25Model(_UnifiedSpecDecodeModelMixin, KimiK2_5Model):
         draft_tokens: Buffer | None = None,
         **kwargs: Any,
     ) -> UnifiedDflashKimiK25Inputs:
-        base = KimiK2_5Model.prepare_initial_token_inputs(
-            self,
-            replica_batches=replica_batches,
-            kv_cache_inputs=kv_cache_inputs,
-            return_n_logits=return_n_logits,
-        )
-        return UnifiedDflashKimiK25Inputs(
-            tokens=base.tokens,
-            input_row_offsets=base.input_row_offsets,
-            host_input_row_offsets=base.host_input_row_offsets,
-            batch_context_lengths=base.batch_context_lengths,
-            signal_buffers=base.signal_buffers,
-            kv_cache_inputs=base.kv_cache_inputs,
-            return_n_logits=base.return_n_logits,
-            data_parallel_splits=base.data_parallel_splits,
-            ep_inputs=base.ep_inputs,
-            draft_tokens=draft_tokens,
-            seed=self._next_seed(),
+        if self._batch_processor is not None:
+            assert isinstance(
+                self._batch_processor, UnifiedDflashKimiK25BatchProcessor
+            )
+            return self._batch_processor.prepare_initial_token_inputs(
+                replica_batches,
+                kv_cache_inputs=kv_cache_inputs,
+                return_n_logits=return_n_logits,
+                draft_tokens=draft_tokens,
+                **kwargs,
+            )
+        raise RuntimeError(
+            "No batch processor configured for UnifiedDflashKimiK25Model"
         )
 
 
