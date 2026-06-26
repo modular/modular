@@ -1,6 +1,7 @@
 """Generate MEF files from python Graphs."""
 
 load("@cfg_workaround.bzl", "TARGET_CONSTRAINTS")
+load(":modular_genrule.bzl", "modular_genrule")
 load(":modular_py_binary.bzl", "modular_py_binary")
 
 # All transitive mojo dependencies of //max:kernels
@@ -54,11 +55,14 @@ def mef(name, src, args = [], target_compatible_with = [], mojo_deps = MOJO_DEPS
         **kwargs
     )
 
-    native.genrule(
+    modular_genrule(
         name = name,
         outs = [mef_name],
-        exec_compatible_with = TARGET_CONSTRAINTS,
-        target_compatible_with = target_compatible_with,
+        exec_compatible_with = TARGET_CONSTRAINTS + target_compatible_with,
+        target_compatible_with = target_compatible_with + select({
+            "//:asan": ["@platforms//:incompatible"],  # TODO: SDLC-4011
+            "//conditions:default": [],
+        }),
         cmd = " ".join([
             "MODULAR_HOME=.",
             "MODULAR_MOJO_MAX_IMPORT_PATH=" + ",".join([
