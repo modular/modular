@@ -17,12 +17,17 @@ use_max_private=1
 batch_size=64
 max_length=131072
 
+# Enable the VMM-backed device-context memory manager allocator (the M3
+# serving default). This config is sourced by run-llm-fuzz.sh, so exporting it
+# here puts it in the environment `max serve` inherits.
+export MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_VMM=1
+
 extra_pipelines_args=(
   --ep-size 8
+  --data-parallel-degree 2
   --device-graph-capture
   --trust-remote-code
   --enable-structured-output
-  --device-memory-utilization 0.65
 )
 
 # llm-fuzz knobs. Empty scenarios runs the tool's full default suite.
