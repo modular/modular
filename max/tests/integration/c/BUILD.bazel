@@ -200,9 +200,10 @@ modular_cc_test(
         "TEST_MEF_PATH": "$(rootpath :vector_add_gpu.mef)",
     },
     # TODO(GEX-3548): ExecuteModelWithGPUTensors produces zeros instead of the
-    # expected vector-add result on Apple GPU (Metal) workers.
+    # expected vector-add result on Apple GPU (Metal) workers and AMD MI355 GPUs.
     gpu_constraints = ["//:has_gpu"] + select({
         "//:apple_gpu": ["@platforms//:incompatible"],
+        "//:mi355_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
     tags = ["gpu"],
