@@ -138,6 +138,12 @@ public:
     return false;
   }
 
+  /// Adds backend-specific passes at the start of the standard optimization
+  /// pipeline (for backends that augment rather than replace it, e.g. NVPTX).
+  virtual void addPipelineStartPasses(llvm::ModulePassManager &mpm,
+                                      const CompilationOptions &options) const {
+  }
+
   /// Registers the backend's named passes with `passBuilder` for `-passes=`
   /// (used by kgen-llvm-opt). The default registers nothing.
   virtual void registerPipelinePasses(llvm::PassBuilder &passBuilder) const {}
