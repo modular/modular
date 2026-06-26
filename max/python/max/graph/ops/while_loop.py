@@ -41,7 +41,11 @@ def while_loop(
 
     .. code-block:: python
 
+        from max.dtype import DType
         from max.engine import InferenceSession
+        from max.graph import DeviceRef, Graph, ops
+
+        device = DeviceRef.CPU()
 
         def predicate(x):
             return x < 10

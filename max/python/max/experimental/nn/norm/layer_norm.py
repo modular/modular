@@ -84,6 +84,8 @@ class LayerNorm(Module[[Tensor], Tensor]):
 
     .. invisible-code-block: python
 
+        import numpy as np
+
         assert y.shape == [2, 4, 2048]
         # A constant input has zero variance, so it normalizes to zeros.
         assert np.allclose(y.to_numpy(), 0.0, atol=1e-3)

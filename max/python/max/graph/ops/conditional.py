@@ -55,7 +55,11 @@ def cond(
 
     .. code-block:: python
 
+        from max.dtype import DType
         from max.engine import InferenceSession
+        from max.graph import DeviceRef, Graph, TensorType, ops
+
+        device = DeviceRef.CPU()
 
         def then_fn():
             return ops.constant(1, DType.int32, device=device)

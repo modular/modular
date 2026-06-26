@@ -73,9 +73,10 @@ with randomly initialized weights before loading weights
 
 .. code-block:: python
 
-    from max.experimental.nn import Linear
     from max.driver import CPU
     from max.dtype import DType
+    from max.experimental import functional as F
+    from max.experimental.nn import Linear
     from max.graph import TensorType
 
     with F.lazy():
@@ -817,6 +818,8 @@ class Tensor(DLPackArray, HasTensorValue):
             result = model(Tensor.ones([1, 4], dtype=DType.float32, device=CPU()))
 
         .. invisible-code-block: python
+
+            import numpy as np
 
             assert np.allclose(result.to_numpy(), 2.0)  # batch 1 (<= 2) -> x * 2
 

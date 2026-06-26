@@ -49,8 +49,13 @@ def rms_norm(
 
     .. code-block:: python
 
-        from max.engine import InferenceSession
+        import numpy as np
 
+        from max.dtype import DType
+        from max.engine import InferenceSession
+        from max.graph import DeviceRef, Graph, ops
+
+        device = DeviceRef.CPU()
         with Graph("rms_norm_example") as graph:
             x = ops.constant([[3.0, 4.0]], DType.float32, device=device)
             weight = ops.constant([1.0, 1.0], DType.float32, device=device)
@@ -67,6 +72,8 @@ def rms_norm(
         # weight_offset adds 1.0 to the weight, doubling the result here.
 
     .. invisible-code-block: python
+
+        import numpy as np
 
         assert np.allclose(gemma.to_numpy(), [[1.697056, 2.262742]], atol=1e-4)
 

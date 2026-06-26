@@ -53,6 +53,8 @@ class RMSNorm(Module[[Tensor], Tensor]):
 
     .. invisible-code-block: python
 
+        import numpy as np
+
         assert y.shape == [2, 4, 2048]
         # An all-ones input has RMS 1, so it normalizes back to ones.
         assert np.allclose(y.to_numpy(), 1.0, atol=1e-3)
