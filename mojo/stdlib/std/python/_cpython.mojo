@@ -17,6 +17,8 @@ Documentation for these functions can be found online at:
   <https://docs.python.org/3/c-api/stable.html#contents-of-limited-api>
 """
 
+from .python import Python
+from .python_object import PythonObject
 from std.collections import InlineArray
 from std.memory import OpaquePointer
 from std.memory.alloc import alloc, Layout

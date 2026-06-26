@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from std.sys import simd_width_of
 from std.memory import memcmp, memcpy
 
 from .constants import CONTAINER_SIZE, MAXIMUM_UINT64_AS_STRING
@@ -82,7 +83,7 @@ def to_integer(
     # 24 is not divisible by 16, so we stop at 8. Later on,
     # when we have better compile-time computation, we can
     # change 24 to be adapted to the simd width.
-    comptime simd_width = min(sys.simd_width_of[DType.uint64](), 8)
+    comptime simd_width = min(simd_width_of[DType.uint64](), 8)
 
     var accumulator = SIMD[DType.uint64, simd_width](0)
 

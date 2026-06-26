@@ -22,7 +22,7 @@ from std.os import stat
 from std.sys import CompilationTarget
 from std.time.time import _CTimeSpec
 
-from . import PathLike
+from . import PathLike as stdPathLike
 from ._linux_aarch64 import _lstat as _lstat_linux_arm
 from ._linux_aarch64 import _stat as _stat_linux_arm
 from ._linux_x86 import _lstat as _lstat_linux_x86
@@ -176,7 +176,7 @@ struct stat_result(Copyable, Writable):
 # ===----------------------------------------------------------------------=== #
 
 
-def stat[PathLike: os.PathLike](path: PathLike) raises -> stat_result:
+def stat[PathLike: stdPathLike](path: PathLike) raises -> stat_result:
     """Get the status of a file or a file descriptor.
 
     Parameters:
@@ -204,7 +204,7 @@ def stat[PathLike: os.PathLike](path: PathLike) raises -> stat_result:
 # ===----------------------------------------------------------------------=== #
 # lstat
 # ===----------------------------------------------------------------------=== #
-def lstat[PathLike: os.PathLike](path: PathLike) raises -> stat_result:
+def lstat[PathLike: stdPathLike](path: PathLike) raises -> stat_result:
     """Get the status of a file or a file descriptor (similar to stat, but does
     not follow symlinks).
 

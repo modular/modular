@@ -18,6 +18,7 @@ automatically handles `Bencher` setup and the `keep()` calls needed to prevent
 optimization, supporting functions with 0-10 arguments.
 """
 
+from .compiler import keep
 from .bencher import Bench, Bencher, BenchId, ThroughputMeasure
 
 

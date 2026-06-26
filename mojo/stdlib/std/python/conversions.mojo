@@ -19,6 +19,8 @@ from std.python import ConvertibleToPython
 ```
 """
 
+from . import PythonObject
+
 
 trait ConvertibleToPython(ImplicitlyDeletable):
     """A trait that indicates a type can be converted to a PythonObject, and

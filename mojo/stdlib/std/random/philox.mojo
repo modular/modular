@@ -241,7 +241,7 @@ struct NormalRandom[rounds: Int = 10](Copyable):
         var u2 = 1.0 - self._rng.step_uniform()
 
         var r = sqrt(-2.0 * log(u1))
-        var theta = 2.0 * math.pi * u2
+        var theta = 2.0 * pi * u2
         var z0 = r * cos(theta)
         var z1 = r * sin(theta)
 

@@ -18,6 +18,7 @@ It includes support for throughput metrics, warmup iterations, batch execution,
 and both CPU and GPU kernel benchmarking.
 """
 
+from . import Report, Unit
 import std.time
 from std.collections import Dict, Optional
 import std.format._utils as fmt

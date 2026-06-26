@@ -19,6 +19,7 @@ from std.python import PythonObject
 ```
 """
 
+from . import ConvertibleToPython
 from std.os import abort
 from std.sys import bit_width_of
 from std.ffi import _CPointer, c_double, c_long, c_size_t, c_ssize_t
