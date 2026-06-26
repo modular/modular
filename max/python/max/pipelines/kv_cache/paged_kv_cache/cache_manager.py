@@ -34,8 +34,6 @@ from max.nn.kv_cache import KVCacheInputsPerDevice as _KVCacheInputsPerDevice
 from max.nn.kv_cache.cache_params import (
     KVCacheAssignments,
     KVCacheBufferInterface,
-    KVCacheParams,
-    MultiKVCacheParams,
 )
 from max.nn.kv_cache.data_parallelism_utils import split_into_groups
 from max.nn.kv_cache.metrics import KVCacheMetrics
@@ -270,18 +268,6 @@ class PagedKVCacheManager:
             params.allocate_buffers(total_num_pages + 1)
         )
 
-        primary_params: KVCacheParams
-        if isinstance(params, KVCacheParams):
-            primary_params = params
-        else:
-            assert isinstance(params, MultiKVCacheParams)
-            first_child = next(iter(params.children.values()))
-            assert isinstance(first_child, KVCacheParams), (
-                "Nested MultiKVCacheParams is not supported for hash"
-                " algo extraction"
-            )
-            primary_params = first_child
-
         self._replica: list[_ReplicaMetadata] = []
         for replica_idx in range(num_replicas):
             replica_devices = devices_per_replica[replica_idx]
@@ -291,7 +277,7 @@ class PagedKVCacheManager:
                 devices=replica_devices,
                 kv_buffers=self._kv_buffers[replica_idx],
                 total_num_host_blocks=total_num_host_pages,
-                kv_hash_algo=primary_params.kv_hash_algo,
+                kv_hash_algo=params.kv_hash_algo,
             )
 
             persistent_kv_device_input_buffers = (
@@ -309,8 +295,8 @@ class PagedKVCacheManager:
                 connector=connector,
                 enable_prefix_caching=params.enable_prefix_caching,
                 enable_runtime_checks=enable_runtime_checks,
-                kv_hash_algo=primary_params.kv_hash_algo,
-                kv_hash_seed=primary_params.kv_hash_seed,
+                kv_hash_algo=params.kv_hash_algo,
+                kv_hash_seed=params.kv_hash_seed,
             )
 
             self._replica.append(
