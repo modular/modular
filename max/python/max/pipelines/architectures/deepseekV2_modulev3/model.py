@@ -15,20 +15,18 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable, Sequence
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, ClassVar, cast
 
-import numpy as np
 from max.driver import Buffer, Device, DeviceSpec
 from max.dtype import DType
 from max.engine.api import InferenceSession
 from max.experimental import functional as F
 from max.experimental.tensor import default_dtype
-from max.graph import DeviceRef, TensorType
+from max.graph import DeviceRef
 from max.graph.weights import SafetensorWeights, Weights, WeightsAdapter
 from max.nn.kv_cache import (
-    KVCacheInputsInterface,
     KVCacheParamInterface,
 )
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
@@ -44,6 +42,7 @@ from max.pipelines.lib import (
 from max.pipelines.lib.log_probabilities import LogProbabilitiesMixin
 from transformers import AutoConfig
 
+from .batch_processor import DeepseekV2ModuleV3BatchProcessor
 from .deepseekV2 import DeepseekV2
 from .model_config import DeepseekV2Config
 
@@ -64,6 +63,9 @@ class DeepseekV2Model(
     LogProbabilitiesMixin, PipelineModelWithKVCache[TextContext]
 ):
     model_config_cls: ClassVar[type[Any]] = DeepseekV2Config
+    batch_processor_cls: ClassVar[type[DeepseekV2ModuleV3BatchProcessor]] = (
+        DeepseekV2ModuleV3BatchProcessor
+    )
 
     def __init__(
         self,
@@ -114,34 +116,6 @@ class DeepseekV2Model(
             next_token_logits=cast(Buffer, model_outputs[0].driver_tensor),
         )
 
-    def prepare_initial_token_inputs(
-        self,
-        replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
-        return_n_logits: int = 1,
-    ) -> DeepseekV2Inputs:
-        if len(replica_batches) > 1:
-            raise ValueError("Model does not support DP>1")
-
-        context_batch = replica_batches[0]
-        input_row_offsets = np.cumsum(
-            [0] + [ctx.tokens.active_length for ctx in context_batch],
-            dtype=np.uint32,
-        )
-
-        tokens = np.concatenate([ctx.tokens.active for ctx in context_batch])
-
-        return DeepseekV2Inputs(
-            tokens=Buffer.from_numpy(tokens).to(self.devices[0]),
-            input_row_offsets=Buffer.from_numpy(input_row_offsets).to(
-                self.devices[0]
-            ),
-            kv_cache_inputs=kv_cache_inputs,
-            return_n_logits=Buffer.from_numpy(
-                np.array([return_n_logits], dtype=np.int64)
-            ),
-        )
-
     @classmethod
     def get_kv_params(
         cls,
@@ -177,13 +151,6 @@ class DeepseekV2Model(
             ) from e
 
     def load_model(self) -> Callable[..., Any]:
-        max_batch_size = self.pipeline_config.runtime.max_batch_size
-        assert max_batch_size, "Expected max_batch_size to be set"
-
-        self._input_row_offsets_prealloc = Buffer.from_numpy(
-            np.arange(max_batch_size + 1, dtype=np.uint32)
-        ).to(self.devices[0])
-
         if not isinstance(self.weights, SafetensorWeights):
             raise ValueError(
                 "only safetensors weights supported in DeepseekV2."
@@ -209,27 +176,18 @@ class DeepseekV2Model(
 
         device0 = self.devices[0]
         device_ref = DeviceRef(device0.label, device0.id)
-        tokens_type = TensorType(
-            DType.int64, shape=["total_seq_len"], device=device_ref
-        )
-        input_row_offsets_type = TensorType(
-            DType.uint32, shape=["input_row_offsets_len"], device=device_ref
-        )
-        return_n_logits_type = TensorType(
-            DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
-        )
 
         with F.lazy(), default_dtype(model_config.dtype):
             nn_model = DeepseekV2(model_config, self.kv_params)
             nn_model.to(self.devices[0])
 
-        kv_inputs = self.kv_params.get_symbolic_inputs()
-        flattened_kv_types = kv_inputs.flatten()
+        assert self.batch_processor is not None
+        compile_input_types = self.batch_processor.get_symbolic_inputs(
+            kv_params=self.kv_params,
+            device_refs=[device_ref],
+        )
 
         return nn_model.compile(
-            tokens_type,
-            return_n_logits_type,
-            input_row_offsets_type,
-            *flattened_kv_types,
+            *compile_input_types,
             weights=state_dict,
         )

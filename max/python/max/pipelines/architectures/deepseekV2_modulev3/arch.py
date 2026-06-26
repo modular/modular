@@ -21,6 +21,7 @@ from max.pipelines.lib import (
 from max.pipelines.modeling.types import PipelineTask
 
 from . import weight_adapters
+from .batch_processor import DeepseekV2ModuleV3BatchProcessor
 from .model import DeepseekV2Model
 from .model_config import DeepseekV2Config
 
@@ -44,6 +45,7 @@ deepseekV2_modulev3_arch = SupportedArchitecture(
     },
     requires_max_batch_context_length=True,
     config=DeepseekV2Config,
+    batching=DeepseekV2ModuleV3BatchProcessor,
     memory_planner=PagedMemoryPlanner,
     supports_overlap_scheduler=False,
     supports_device_graph_capture=False,

@@ -19,6 +19,10 @@ from max.pipelines.modeling.types import PipelineTask
 from ..deepseekV3 import weight_adapters as deepseekV3_weight_adapters
 from ..deepseekV3.memory_planner import DeepseekV3MemoryPlanner
 from ..deepseekV3.model_config import DeepseekV3Config
+from .batch_processor import (
+    Eagle3DeepseekV3BatchProcessor,
+    Eagle3MHADeepseekV3BatchProcessor,
+)
 from .mha_pipeline import Eagle3MHADeepseekV3Model
 from .model import Eagle3DeepseekV3Model
 
@@ -44,6 +48,7 @@ eagle3_deepseekV3_arch = SupportedArchitecture(
     weight_adapters={
         WeightsFormat.safetensors: deepseekV3_weight_adapters.convert_safetensor_state_dict,
     },
+    batching=Eagle3DeepseekV3BatchProcessor,
     supports_empty_batches=True,
     requires_max_batch_context_length=True,
     config=DeepseekV3Config,
@@ -70,6 +75,7 @@ eagle3_mha_deepseekV3_arch = SupportedArchitecture(
     weight_adapters={
         WeightsFormat.safetensors: deepseekV3_weight_adapters.convert_safetensor_state_dict,
     },
+    batching=Eagle3MHADeepseekV3BatchProcessor,
     supports_empty_batches=True,
     requires_max_batch_context_length=True,
     config=DeepseekV3Config,

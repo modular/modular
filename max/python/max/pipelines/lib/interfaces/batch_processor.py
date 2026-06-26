@@ -18,7 +18,15 @@ import logging
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Generic, TypeVar
+from typing import (
+    TYPE_CHECKING,
+    ClassVar,
+    Generic,
+    Protocol,
+    TypeVar,
+    cast,
+    runtime_checkable,
+)
 
 import numpy as np
 from max.driver import Buffer, Device, is_virtual_device_mode
@@ -29,6 +37,7 @@ from max.nn.kv_cache import KVCacheInputsInterface
 from max.nn.kv_cache.cache_params import KVCacheParamInterface
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.context import BaseContext
+from max.pipelines.context.tokens import TokenBuffer
 from max.pipelines.lib.interfaces.arch_config import ArchConfig
 from max.pipelines.lib.interfaces.pipeline_model import (
     ModelInputs,
@@ -43,6 +52,13 @@ logger = logging.getLogger("max.pipelines")
 
 ContextT = TypeVar("ContextT", bound=BaseContext)
 InputsT = TypeVar("InputsT", bound=ModelInputs)
+
+
+@runtime_checkable
+class RaggableContext(Protocol):
+    """Context protocol for ragged token batching helpers."""
+
+    tokens: TokenBuffer
 
 
 @dataclass
@@ -114,6 +130,169 @@ class RaggedBatchProcessor(BatchProcessor[ContextT, InputsT]):
             self._input_row_offsets_prealloc = Buffer.from_numpy(
                 np.arange(runtime.max_batch_size + 1, dtype=np.uint32),
             ).to(runtime.devices[0])
+
+
+def single_replica_context_batch(
+    replica_batches: Sequence[Sequence[ContextT]],
+    *,
+    processor_name: str,
+) -> Sequence[ContextT]:
+    """Returns the sole replica batch or raises when DP is unsupported."""
+    if len(replica_batches) > 1:
+        raise ValueError(f"{processor_name} does not support DP>1")
+    return replica_batches[0]
+
+
+def build_single_replica_ragged_token_arrays(
+    context_batch: Sequence[RaggableContext],
+) -> tuple[np.ndarray, np.ndarray]:
+    """Builds concatenated token and row-offset arrays for a ragged batch."""
+    input_row_offsets = np.cumsum(
+        [0] + [ctx.tokens.active_length for ctx in context_batch],
+        dtype=np.uint32,
+    )
+    tokens = np.concatenate([ctx.tokens.active for ctx in context_batch])
+    return tokens, input_row_offsets
+
+
+class SingleReplicaRaggedBatchProcessor(
+    RaggedBatchProcessor[ContextT, InputsT]
+):
+    """Single-replica ragged KV batching for Graph-path models (no DP / LoRA).
+
+    Subclasses implement :meth:`_make_inputs` to construct their architecture-
+    specific :class:`~max.pipelines.lib.interfaces.pipeline_model.ModelInputs`
+    type. Override :attr:`_include_signal_buffers` or :meth:`get_symbolic_inputs`
+    when signal-buffer wiring differs.
+    """
+
+    _include_signal_buffers: ClassVar[bool] = False
+
+    def get_symbolic_inputs(
+        self,
+        *,
+        kv_params: KVCacheParamInterface,
+        device_refs: list[DeviceRef],
+    ) -> list[TensorType | BufferType]:
+        """Returns symbolic graph inputs for single-replica ragged KV models."""
+        return ragged_kv_symbolic_inputs(
+            kv_params=kv_params,
+            device_refs=device_refs,
+            include_signal_buffers=self._include_signal_buffers,
+        )
+
+    def prepare_initial_token_inputs(
+        self,
+        replica_batches: Sequence[Sequence[ContextT]],
+        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
+        return_n_logits: int = 1,
+    ) -> InputsT:
+        """Prepares ragged token inputs for a single-replica Graph-path batch."""
+        context_batch = single_replica_context_batch(
+            replica_batches,
+            processor_name=type(self).__qualname__,
+        )
+        device0 = self.runtime.devices[0]
+        tokens_np, offsets_np = build_single_replica_ragged_token_arrays(
+            cast(Sequence[RaggableContext], context_batch)
+        )
+        return self._make_inputs(
+            tokens=Buffer.from_numpy(tokens_np).to(device0),
+            input_row_offsets=Buffer.from_numpy(offsets_np).to(device0),
+            return_n_logits=Buffer.from_numpy(
+                np.array([return_n_logits], dtype=np.int64)
+            ),
+            kv_cache_inputs=kv_cache_inputs,
+            signal_buffers=list(self.runtime.signal_buffers),
+        )
+
+    def _make_inputs(
+        self,
+        *,
+        tokens: Buffer,
+        input_row_offsets: Buffer,
+        return_n_logits: Buffer,
+        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None,
+        signal_buffers: list[Buffer],
+    ) -> InputsT:
+        """Constructs architecture-specific model inputs."""
+        raise NotImplementedError(
+            f"{type(self).__qualname__} must implement _make_inputs"
+        )
+
+    def process_outputs(
+        self, outputs: Sequence[Buffer | object]
+    ) -> ModelOutputs:
+        """Maps raw execution buffers to :class:`ModelOutputs`."""
+        return process_ragged_kv_outputs(
+            outputs,
+            return_logits=self.runtime.return_logits,
+            return_hidden_states=self.runtime.return_hidden_states,
+        )
+
+
+class ModuleV3SingleReplicaBatchProcessor(BatchProcessor[ContextT, InputsT]):
+    """Single-replica ragged KV batching for ModuleV3 compile-path models."""
+
+    def get_symbolic_inputs(
+        self,
+        *,
+        kv_params: KVCacheParamInterface,
+        device_refs: list[DeviceRef],
+    ) -> list[TensorType | BufferType]:
+        """Returns symbolic graph inputs for single-replica ModuleV3 models."""
+        return modulev3_ragged_kv_symbolic_inputs(
+            kv_params=kv_params,
+            device_refs=device_refs,
+        )
+
+    def prepare_initial_token_inputs(
+        self,
+        replica_batches: Sequence[Sequence[ContextT]],
+        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
+        return_n_logits: int = 1,
+    ) -> InputsT:
+        """Prepares ragged token inputs for a single-replica ModuleV3 batch."""
+        context_batch = single_replica_context_batch(
+            replica_batches,
+            processor_name=type(self).__qualname__,
+        )
+        assert kv_cache_inputs is not None
+        tokens_np, offsets_np = build_single_replica_ragged_token_arrays(
+            cast(Sequence[RaggableContext], context_batch)
+        )
+        device0 = self.runtime.devices[0]
+        return self._make_inputs(
+            tokens=Buffer.from_numpy(tokens_np).to(device0),
+            input_row_offsets=Buffer.from_numpy(offsets_np).to(device0),
+            return_n_logits=Buffer.from_numpy(
+                np.array([return_n_logits], dtype=np.int64)
+            ),
+            kv_cache_inputs=kv_cache_inputs,
+        )
+
+    def _make_inputs(
+        self,
+        *,
+        tokens: Buffer,
+        input_row_offsets: Buffer,
+        return_n_logits: Buffer,
+        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer],
+    ) -> InputsT:
+        """Constructs architecture-specific model inputs."""
+        raise NotImplementedError(
+            f"{type(self).__qualname__} must implement _make_inputs"
+        )
+
+    def process_outputs(
+        self, outputs: Sequence[Buffer | object]
+    ) -> ModelOutputs:
+        """Maps raw execution buffers to :class:`ModelOutputs`."""
+        return process_ragged_kv_outputs(
+            outputs,
+            return_logits=self.runtime.return_logits,
+            return_hidden_states=self.runtime.return_hidden_states,
+        )
 
 
 def process_ragged_kv_outputs(
@@ -193,5 +372,35 @@ def ragged_kv_symbolic_inputs(
         tokens_type,
         input_row_offsets_type,
         return_n_logits_type,
+        *kv_inputs,
+    ]
+
+
+def modulev3_ragged_kv_symbolic_inputs(
+    *,
+    kv_params: KVCacheParamInterface,
+    device_refs: list[DeviceRef],
+) -> list[TensorType | BufferType]:
+    """Symbolic compile inputs for ModuleV3 ragged KV models.
+
+    ModuleV3 ``forward`` expects ``(tokens, return_n_logits, input_row_offsets,
+    *kv)`` — a different argument order than the Graph-path
+    :func:`ragged_kv_symbolic_inputs`.
+    """
+    device_ref = device_refs[0]
+    return_n_logits_type = TensorType(
+        DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
+    )
+    tokens_type = TensorType(
+        DType.int64, shape=["total_seq_len"], device=device_ref
+    )
+    input_row_offsets_type = TensorType(
+        DType.uint32, shape=["input_row_offsets_len"], device=device_ref
+    )
+    kv_inputs = kv_params.get_symbolic_inputs().flatten()
+    return [
+        tokens_type,
+        return_n_logits_type,
+        input_row_offsets_type,
         *kv_inputs,
     ]
