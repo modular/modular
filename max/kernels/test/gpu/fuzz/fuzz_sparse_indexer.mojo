@@ -473,6 +473,102 @@ def run_one_case(
     _ = out_dev
 
 
+def run_schedule_case(ctx: DeviceContext, spec: CaseSpec, repeats: Int) raises:
+    """Cross-launch-width determinism oracle (the `schedule` decomposition).
+
+    `block_select_topk` documents a width-independent contract: "ties broken by
+    smallest index". So for one fixed score row, the emitted index array must be
+    bit-identical no matter how many threads the CTA uses. We run the same
+    pristine scores across a set of valid launch widths and flag any divergence
+    -- a reduction-order / tie-break leak that diff/ref/memcheck cannot see.
+
+    Each launch needs a fresh device copy of the scores, because the kernel
+    evicts winners by overwriting `scores` in place during extraction.
+    """
+    var num_rows = spec.num_rows
+    var num_blocks = spec.num_blocks
+    var k = spec.k
+    var n_scores = num_rows * num_blocks
+    var n_out = num_rows * k
+
+    # Valid widths (multiples of 64; <= 1024). Vary the warp/stride decomposition.
+    var widths: List[Int] = [64, 128, 192, 256, 384, 512, 768, 1024]
+    var n_variants = min(repeats, len(widths))
+    if n_variants < 2:
+        n_variants = 2
+
+    # Fill the pristine scores once (mirror run_one_case: dist + optional force).
+    var scores_host = ctx.enqueue_create_host_buffer[score_type](n_scores)
+    _fill_scores(
+        scores_host.unsafe_ptr(), num_rows, num_blocks, k, spec.dist, False
+    )
+    if spec.force == 1 and num_blocks > 0:
+        var force_idx = spec.seed % num_blocks
+        for r in range(num_rows):
+            scores_host[r * num_blocks + force_idx] = Float32(1.0e30)
+    ctx.synchronize()
+
+    var ref_out = ctx.enqueue_create_host_buffer[out_idx_type](n_out)
+
+    for v in range(n_variants):
+        var bd = _snap_block_dim(widths[v])
+
+        var scores_dev = ctx.enqueue_create_buffer[score_type](n_scores)
+        ctx.enqueue_copy(dst_buf=scores_dev, src_buf=scores_host)
+        var out_dev = ctx.enqueue_create_buffer[out_idx_type](n_out)
+        out_dev.enqueue_fill(Int32(-2))
+
+        var scores_t = TileTensor(scores_dev, row_major((num_rows, num_blocks)))
+        var out_t = TileTensor(out_dev, row_major((num_rows, k)))
+
+        comptime kernel = _select_test_kernel[
+            type_of(scores_t).LayoutType, type_of(out_t).LayoutType
+        ]
+        ctx.enqueue_function[kernel](
+            scores_t,
+            out_t,
+            num_blocks,
+            k,
+            grid_dim=num_rows,
+            block_dim=bd,
+        )
+
+        var out_host = ctx.enqueue_create_host_buffer[out_idx_type](n_out)
+        ctx.enqueue_copy(dst_buf=out_host, src_buf=out_dev)
+        ctx.synchronize()
+
+        if v == 0:
+            for i in range(n_out):
+                ref_out[i] = out_host[i]
+        else:
+            for i in range(n_out):
+                if out_host[i] != ref_out[i]:
+                    var row = i // k
+                    var pos = i % k
+                    print(
+                        "FUZZ_NUMERIC_FAIL kind=width_nondeterminism width=",
+                        bd,
+                        "ref_width=",
+                        _snap_block_dim(widths[0]),
+                        "row=",
+                        row,
+                        "pos=",
+                        pos,
+                        "got=",
+                        Int(out_host[i]),
+                        "ref=",
+                        Int(ref_out[i]),
+                        "dist=",
+                        _dist_name(spec.dist),
+                    )
+                    raise Error(
+                        "block_select_topk output depends on block_dim"
+                        " (tie-break / reduction-order leak)"
+                    )
+        _ = scores_dev
+        _ = out_dev
+
+
 def _apply_inject(
     inject: Int,
     out_host: UnsafePointer[mut=True, Scalar[out_idx_type], _],
@@ -568,6 +664,7 @@ def main() raises:
     var check = flag_int(args, "--check", 0) == 1
     var contract = flag_int(args, "--contract", 0) == 1
     var inject = flag_int(args, "--inject", 0)
+    var schedule_repeats = flag_int(args, "--schedule", 0)
     set_seed(the_seed)
 
     if mode == "list-specs":
@@ -605,7 +702,10 @@ def main() raises:
         )
         print("FUZZ_SINGLE ", spec)
         with DeviceContext() as ctx:
-            run_one_case(ctx, spec, check, contract, inject)
+            if schedule_repeats > 0:
+                run_schedule_case(ctx, spec, schedule_repeats)
+            else:
+                run_one_case(ctx, spec, check, contract, inject)
         print("FUZZ_RESULT verdict=PASS")
         return
 
@@ -620,5 +720,8 @@ def main() raises:
     with DeviceContext() as ctx:
         for i in range(len(specs)):
             print("case", i, ":", specs[i])
-            run_one_case(ctx, specs[i], check, contract, inject)
+            if schedule_repeats > 0:
+                run_schedule_case(ctx, specs[i], schedule_repeats)
+            else:
+                run_one_case(ctx, specs[i], check, contract, inject)
     print("=== done:", len(specs), "cases ===")
