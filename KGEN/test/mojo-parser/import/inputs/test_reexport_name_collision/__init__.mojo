@@ -7,3 +7,4 @@
 from .foo import foo
 from .bar import bar
 from .baz import baz
+from . import qux
