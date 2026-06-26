@@ -424,6 +424,45 @@ mojo_test(
     ],
 )
 
+# Target: MiniMax-M3 MSA indexer DECODE path (`sparse_indexer_decode_score` +
+# `sparse_indexer_decode_topk`, in //Kernels/lib/msa). Block-max QK scoring with
+# split-K over the KV-block dim, init/local forcing, partial-final-block handling,
+# then block_select_topk. num_index_heads / idx_head_dim / block_size are
+# compile-time (`-D sidx_num_heads=.. sidx_head_dim=.. sidx_block_size=..`,
+# default the M3 config 4/128/128); the ragged shape (batch, per-batch seq lens)
+# is the runtime fuzz axis. `ref` (--check) is an f32 host block-max + forcing
+# oracle; an always-on validity contract guards the top-k output; `schedule`
+# re-runs the scorer for split-K nondeterminism. Dual-arch (B200 tensor-core +
+# MI355 cooperative path), matching the kernel's own test.
+mojo_test(
+    name = "fuzz_sparse_indexer_decode.mojo.test",
+    size = "large",
+    srcs = [
+        "_fuzz.mojo",
+        "fuzz_sparse_indexer_decode.mojo",
+    ],
+    exec_properties = {
+        "test.resources:gpu-memory": "4",
+    },
+    main = "fuzz_sparse_indexer_decode.mojo",
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    target_compatible_with = ["//:has_gpu"] + select({
+        "//:b200_gpu": [],
+        "//:mi355_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//Kernels/lib/msa",
+        "//max:internal_utils",
+        "//max:linalg",
+        "//max:nn",
+        "@mojo//:std",
+    ],
+)
+
 # OOB canary: the positive control for the fuzz-oracle pipeline. Driven by the
 # orchestrator under --oracle redzone/memcheck it reports FAIL (detects the
 # planted OOB write); under --oracle diff it reports PASS (the pool masks it).
