@@ -156,10 +156,10 @@ Python gives you `int` and `float` with arbitrary precision. Mojo takes a
 different approach: it uses explicit, fixed-width numeric types so the
 compiler can optimize aggressively and scale across parallel execution.
 
-Mojo provides concrete numeric types like `Int8`, `Int16`, `Int32`,
-`Int64`, `Float16`, `Float32`, and `Float64`. Fixed width isn't a
-limitation in Mojo, it's a feature that lets the compiler pack numbers
-with known sizes into memory.
+Mojo provides concrete numeric types like `Int`, `UInt`, `Int8`, `Int16`,
+`Int32`, `Int64`, `Float16`, `Float32`, and `Float64`. Fixed width isn't a
+limitation in Mojo, it's a feature that lets the compiler pack numbers with
+known sizes into memory.
 
 ### SIMD types
 
