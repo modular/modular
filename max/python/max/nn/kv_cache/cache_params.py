@@ -481,6 +481,16 @@ class KVCacheParamInterface(Protocol):
         """Returns the cache lengths to probe during decode graph capture."""
         ...
 
+    @property
+    def kv_hash_algo(self) -> KVHashAlgo:
+        """Hash algorithm used for KV-cache block identity."""
+        ...
+
+    @property
+    def kv_hash_seed(self) -> bytes | None:
+        """Resolved 32-byte cluster seed for sha256/sha256_64. None for ahash64."""
+        ...
+
     def allocate_buffers(
         self, total_num_pages: int
     ) -> Sequence[KVCacheBufferInterface]:
@@ -1490,6 +1500,20 @@ class MultiKVCacheParams(KVCacheParamInterface):
                 f" {num_draft_tokens_set}"
             )
 
+        kv_hash_algos = {p.kv_hash_algo for p in params}
+        if len(kv_hash_algos) > 1:
+            raise ValueError(
+                "All params must use the same kv_hash_algo, got:"
+                f" {kv_hash_algos}"
+            )
+
+        kv_hash_seeds = {p.kv_hash_seed for p in params}
+        if len(kv_hash_seeds) > 1:
+            raise ValueError(
+                "All params must use the same kv_hash_seed, got:"
+                f" {kv_hash_seeds}"
+            )
+
     @property
     def _first(self) -> KVCacheParamInterface:
         """Returns the first child param set."""
@@ -1509,6 +1533,16 @@ class MultiKVCacheParams(KVCacheParamInterface):
     def kv_connector_config(self) -> Any:
         """Connector config (shared across all caches)."""
         return self._first.kv_connector_config
+
+    @property
+    def kv_hash_algo(self) -> KVHashAlgo:
+        """Hash algorithm used for KV-cache block identity."""
+        return self._first.kv_hash_algo
+
+    @property
+    def kv_hash_seed(self) -> bytes | None:
+        """Resolved 32-byte cluster seed for sha256/sha256_64. None for ahash64."""
+        return self._first.kv_hash_seed
 
     @property
     def bytes_per_block(self) -> int:
