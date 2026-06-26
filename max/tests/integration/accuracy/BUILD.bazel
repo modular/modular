@@ -456,6 +456,11 @@ modular_py_binary(
         ["llm_fuzz/**/*.py"],
         exclude = ["llm_fuzz/.venv/**"],
     ),
+    data = glob(["llm_fuzz/data/**"]),
+    ignore_unresolved_imports = [
+        "referencing",  # Provided transitively by jsonschema
+        "referencing.jsonschema",
+    ],
     imports = ["llm_fuzz"],
     main = "llm_fuzz/fuzz.py",
     visibility = ["//max_private:__subpackages__"],
