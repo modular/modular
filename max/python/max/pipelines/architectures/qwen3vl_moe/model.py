@@ -156,6 +156,7 @@ class Qwen3VLModel(
         weights: Weights,
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
+        max_batch_size: int = 1,
     ) -> None:
         super().__init__(
             pipeline_config,
@@ -165,6 +166,7 @@ class Qwen3VLModel(
             weights,
             adapter,
             return_logits,
+            max_batch_size=max_batch_size,
         )
 
         self.model_config = None

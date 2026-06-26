@@ -94,6 +94,7 @@ class GptOssModel(
         weights: Weights,
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
+        max_batch_size: int = 1,
     ) -> None:
         """
         Args:
@@ -117,6 +118,7 @@ class GptOssModel(
             weights,
             adapter,
             return_logits,
+            max_batch_size=max_batch_size,
         )
 
         self.model = self.load_model(session)

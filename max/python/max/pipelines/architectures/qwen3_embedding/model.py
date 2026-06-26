@@ -111,6 +111,7 @@ class Qwen3EmbeddingModel(PipelineModel[TextContext]):
         weights: Weights,
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.ALL,
+        max_batch_size: int = 1,
     ) -> None:
         """Initialize the Qwen3 embedding pipeline model.
 

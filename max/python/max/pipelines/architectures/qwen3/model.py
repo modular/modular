@@ -157,12 +157,10 @@ class Qwen3Model(AlwaysSignalBuffersMixin, LlamaModelBase):
 
     @override
     def load_model(self, session: InferenceSession) -> Model:
-        assert self.pipeline_config.runtime.max_batch_size, (
-            "Expected max_batch_size to be set"
-        )
+        assert self.max_batch_size, "Expected max_batch_size to be set"
 
         dp = self.pipeline_config.model.data_parallel_degree
-        max_batch_size = self.pipeline_config.runtime.max_batch_size
+        max_batch_size = self.max_batch_size
         if dp > 1:
             max_batch_size *= dp
 

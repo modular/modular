@@ -52,10 +52,15 @@ if TYPE_CHECKING:
     from .config import PipelineConfig
     from .pipeline_executor import PipelineExecutor
 
+from max.driver import load_devices
 from max.pipelines.diffusion.pipeline import PixelGenerationPipeline
 from max.pipelines.lib._hf_config import load_huggingface_config
+from max.pipelines.lib.memory_estimation import MemoryEstimator, _MemoryPlan
 from max.pipelines.modeling.config_enums import RopeType, SupportedEncoding
-from max.pipelines.weights.hf_utils import HuggingFaceRepo
+from max.pipelines.weights.hf_utils import (
+    HuggingFaceRepo,
+    is_diffusion_pipeline,
+)
 
 from .embeddings_pipeline import EmbeddingsPipeline
 from .interfaces import ArchConfig, ArchConfigWithKVCache, PipelineModel
@@ -486,6 +491,132 @@ def _apply_thinking_region(
         tokenizer, tokenizer.new_context, reasoning_parser_name
     )
     tokenizer.new_context = wrapper  # type: ignore[method-assign]
+
+
+def _run_memory_planning(
+    pipeline_config: Any,
+    arch: Any,
+    draft_arch: Any = None,
+) -> _MemoryPlan:
+    """Runs memory estimation and resolves max_length / max_batch_size.
+
+    Called by ``retrieve_factory`` after ``pipeline_config.resolve()`` has
+    completed validation. Returns a :class:`_MemoryPlan` whose
+    ``max_batch_size`` is passed to the pipeline constructor.
+
+    Also applies ``max_length`` clamping and ``max_batch_total_tokens``
+    defaulting, which depend on memory estimation output.
+    """
+    model_config = pipeline_config.model
+
+    # Diffusion pipelines and non-PipelineModel architectures skip KV-cache
+    # memory estimation.
+    if is_diffusion_pipeline(
+        model_config.huggingface_model_repo
+    ) or not issubclass(arch.pipeline_model, PipelineModel):
+        return _MemoryPlan(
+            max_batch_size=pipeline_config.runtime.max_batch_size or 1,
+            footprint=0,
+        )
+
+    devices = load_devices(model_config.device_specs)
+    arch_config = arch.config.initialize(
+        pipeline_config, model_config=model_config
+    )
+
+    if arch.memory_planner is not None:
+        planner = arch.memory_planner(arch_config)
+        weights_size = planner.estimate_weights_size(pipeline_config)
+        activation_size = planner.estimate_activation_memory(
+            pipeline_config, model_config.huggingface_config
+        )
+        signal_buffer_size = planner.estimate_signal_buffer_memory(
+            pipeline_config, arch_config
+        )
+    else:
+        # ``memory_planner=None`` is the fallback for architectures not yet
+        # wired to a MemoryPlanner. If adding a new architecture that uses a
+        # KV cache, set ``memory_planner=PagedMemoryPlanner`` on its
+        # ``SupportedArchitecture``.
+        weights_size = model_config.weights_size()
+        activation_size = 0
+        signal_buffer_size = pipeline_config.estimate_signal_buffer_memory(
+            arch_config
+        )
+
+    plan = MemoryEstimator.estimate_memory_footprint(
+        pipeline_config,
+        model_config,
+        arch_config,
+        devices,
+        weights_size,
+        activation_size,
+        signal_buffer_size,
+        arch=arch,
+        max_batch_size=pipeline_config.runtime.max_batch_size,
+    )
+
+    # Clamp max_length to what the KV cache can support.
+    if clamped_max_seq_len := MemoryEstimator.max_supported_sequence_length(
+        weights_size,
+        activation_size,
+        model_config,
+        devices,
+        arch_config,
+        signal_buffer_size,
+    ):
+        if model_config.max_length is None:
+            model_config.max_length = clamped_max_seq_len
+        elif model_config.max_length > clamped_max_seq_len:
+            logging.warning(
+                "Clamping max_length from %d to %d due to capacity of KV Cache",
+                model_config.max_length,
+                clamped_max_seq_len,
+            )
+            model_config.max_length = clamped_max_seq_len
+
+    # For speculative decoding, clamp max_length to the draft model's limit
+    # and zero out its cache memory (it shares the target model's KV cache).
+    if draft_arch is not None and pipeline_config.draft_model is not None:
+        if (
+            pipeline_config.draft_model.kv_cache._available_cache_memory
+            is not None
+        ):
+            raise ValueError(
+                "Expected draft model's available_cache_memory to be None"
+            )
+        pipeline_config.draft_model.kv_cache._available_cache_memory = 0
+        draft_arch_config = draft_arch.config.initialize(
+            pipeline_config, model_config=pipeline_config.draft_model
+        )
+        draft_max_seq_len = draft_arch_config.get_max_seq_len()
+        if (
+            model_config.max_length is not None
+            and model_config.max_length > draft_max_seq_len
+        ):
+            logger.info(
+                "Clamping max_length from %d to %d (draft model max sequence length)",
+                model_config.max_length,
+                draft_max_seq_len,
+            )
+            model_config.max_length = draft_max_seq_len
+            pipeline_config.draft_model.max_length = draft_max_seq_len
+
+    # Validate that architectures requiring chunked prefill have it configured.
+    # Must run after max_length is resolved.
+    if (
+        arch.requires_max_batch_context_length
+        and pipeline_config.runtime.max_batch_total_tokens is None
+    ):
+        logger.warning(
+            "Architecture '%s' requires max-batch-total-tokens to be specified "
+            "but found None. Defaulting to the max sequence length of the model: %s",
+            arch.name,
+            model_config.max_length,
+        )
+        pipeline_config.runtime.max_batch_total_tokens = model_config.max_length
+
+    return plan
 
 
 class PipelineRegistry:
@@ -991,9 +1122,21 @@ class PipelineRegistry:
             draft_arch=draft_arch,
         )
 
-        # Must be called after pipeline_config.resolve() so that
-        # enable_overlap_scheduler is set correctly (e.g. forced True when
-        # --device-graph-capture is explicitly passed).
+        # Memory planning: derive sizes, run estimation, resolve max_length.
+        # Runs after validation (resolve()) and before the factory is built so
+        # that all resolved values are available to the pipeline constructor.
+        memory_plan = _run_memory_planning(
+            pipeline_config, arch, draft_arch=draft_arch
+        )
+
+        # Must be called after memory planning so that max_batch_size is known,
+        # and after pipeline_config.resolve() so that enable_overlap_scheduler
+        # is set correctly (e.g. forced True when --device-graph-capture is
+        # explicitly passed).
+        pipeline_config._validate_and_resolve_overlap_scheduler(
+            arch=arch, max_batch_size=memory_plan.max_batch_size
+        )
+
         pipeline_class = get_pipeline_for_task(task, pipeline_config)
 
         # An architecture may declare a custom pipeline class that overrides
@@ -1140,6 +1283,7 @@ class PipelineRegistry:
             "eos_token_id": tokenizer.eos,
             "weight_adapters": arch.weight_adapters,
             "tokenizer": typed_tokenizer,
+            "memory_plan": memory_plan,
         }
 
         pipeline_factory = cast(

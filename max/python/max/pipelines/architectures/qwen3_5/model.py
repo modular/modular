@@ -193,7 +193,7 @@ class Qwen3_5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
 
         self._input_row_offsets_prealloc: Buffer | None = None
         self._slot_idx_prealloc: Buffer | None = None
-        max_batch_size = self.pipeline_config.runtime.max_batch_size
+        max_batch_size = self.max_batch_size
         assert max_batch_size is not None, (
             "max_batch_size must be set in runtime config"
         )

@@ -435,7 +435,7 @@ def load_prefill_scheduler(
 
     # Create Scheduler Config.
     scheduler_config = TokenGenerationSchedulerConfig.from_pipeline_config(
-        pipeline_config
+        pipeline_config, pipeline.max_batch_size
     )
 
     return PrefillScheduler(

@@ -93,6 +93,7 @@ class Llama3Model(LogProbabilitiesMixin, PipelineModelWithKVCache[TextContext]):
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
         return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
+        max_batch_size: int = 1,
     ) -> None:
         super().__init__(
             pipeline_config,
@@ -103,6 +104,7 @@ class Llama3Model(LogProbabilitiesMixin, PipelineModelWithKVCache[TextContext]):
             adapter,
             return_logits,
             return_hidden_states,
+            max_batch_size=max_batch_size,
         )
         self.model = self.load_model()
 

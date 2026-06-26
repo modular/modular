@@ -158,7 +158,9 @@ class Gemma3_MultiModalModel(
         weights: Weights,
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
+        max_batch_size: int = 1,
     ) -> None:
+        self._max_batch_size = max_batch_size
         super().__init__(
             pipeline_config,
             session,
@@ -213,9 +215,7 @@ class Gemma3_MultiModalModel(
         Returns:
             A tuple of (vision_model, language_model).
         """
-        assert self.pipeline_config.runtime.max_batch_size, (
-            "Expected max_batch_size to be set"
-        )
+        assert self._max_batch_size, "Expected max_batch_size to be set"
 
         # Get processed state dict for language and vision models
         weights_dict = dict(self.weights.items())

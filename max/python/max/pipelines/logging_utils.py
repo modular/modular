@@ -57,7 +57,6 @@ def log_pipeline_info(pipeline_config: PipelineConfig) -> None:
             f"No architecture found for {pipeline_config.models.main_architecture_name}. "
             "This should not happen after config resolution."
         )
-
     pipeline_class = get_pipeline_for_task(arch.task, pipeline_config)
 
     arch_entries: list[tuple[str, Any]] = [
@@ -81,7 +80,6 @@ def log_pipeline_info(pipeline_config: PipelineConfig) -> None:
         )
     pipeline_entries.extend(
         [
-            ("max_batch_size", pipeline_config.runtime.max_batch_size),
             ("chunked_prefill", pipeline_config.runtime.enable_chunked_prefill),
             (
                 "max_batch_input_tokens",
@@ -189,13 +187,8 @@ def log_basic_config(pipeline_config: PipelineConfig) -> None:
             [
                 ("model", pipeline_config.model.model_path),
                 ("devices", devices_str),
-                ("max_batch_size", pipeline_config.runtime.max_batch_size),
                 ("max_seq_len", pipeline_config.model.max_length),
             ]
-        )
-    else:
-        config_entries.append(
-            ("max_batch_size", pipeline_config.runtime.max_batch_size)
         )
 
     if memory_str:

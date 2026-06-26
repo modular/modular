@@ -94,6 +94,7 @@ class Qwen3EmbeddingModel(PipelineModel[TextContext]):
         weights: Weights,
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.ALL,
+        max_batch_size: int = 1,
     ) -> None:
         super().__init__(
             pipeline_config,

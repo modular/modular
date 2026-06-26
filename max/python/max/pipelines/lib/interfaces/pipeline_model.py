@@ -324,8 +324,10 @@ class PipelineModel(ABC, Generic[BaseContextType]):
         adapter: WeightsAdapter | None,
         return_logits: ReturnLogits,
         return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
+        max_batch_size: int = 1,
     ) -> None:
         self.pipeline_config = pipeline_config
+        self.max_batch_size = max_batch_size
         self.devices = devices
         self.device_refs = [DeviceRef.from_device(d) for d in devices]
         self.kv_cache_config = kv_cache_config
@@ -347,8 +349,7 @@ class PipelineModel(ABC, Generic[BaseContextType]):
                 self.huggingface_config.num_attention_heads,
                 self.huggingface_config.num_key_value_heads,
                 self.huggingface_config.head_dim,
-                self.max_seq_len
-                * (pipeline_config.runtime.max_batch_size or 1),
+                self.max_seq_len * max_batch_size,
             )
             if pipeline_config.lora
             else None
@@ -377,7 +378,7 @@ class PipelineModel(ABC, Generic[BaseContextType]):
                     signal_buffers=self.signal_buffers,
                     lora_manager=self._lora_manager,
                     pad_token_id=pad_token_id or 0,
-                    max_batch_size=pipeline_config.runtime.max_batch_size,
+                    max_batch_size=self.max_batch_size,
                 ),
             )
 
@@ -609,6 +610,7 @@ class PipelineModelWithKVCache(PipelineModel[BaseContextType]):
         adapter: WeightsAdapter | None,
         return_logits: ReturnLogits,
         return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
+        max_batch_size: int = 1,
     ) -> None:
         super().__init__(
             pipeline_config=pipeline_config,
@@ -619,6 +621,7 @@ class PipelineModelWithKVCache(PipelineModel[BaseContextType]):
             adapter=adapter,
             return_logits=return_logits,
             return_hidden_states=return_hidden_states,
+            max_batch_size=max_batch_size,
         )
         self.kv_params = type(self).get_kv_params(
             huggingface_config=self.huggingface_config,

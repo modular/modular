@@ -67,6 +67,8 @@ GiB = 1024 * 1024 * 1024
 
 @runtime_checkable
 class SupportsGraphCaptureWarmup(Protocol):
+    max_batch_size: int
+
     def warmup_graph_capture(self) -> None: ...
 
 
@@ -282,11 +284,6 @@ class ModelWorker:
                             "device_graph_capture is enabled but the pipeline "
                             "does not support graph-capture warmup."
                         )
-                    max_batch_size = pipeline_config.runtime.max_batch_size
-                    if max_batch_size is None:
-                        raise ValueError(
-                            "device_graph_capture requires max_batch_size to be set."
-                        )
                     warmup_start_s = time.monotonic()
                     pipeline.warmup_graph_capture()
                     warmup_duration_s = time.monotonic() - warmup_start_s
@@ -295,7 +292,7 @@ class ModelWorker:
                         "(model=%s, max_batch_size=%d).",
                         warmup_duration_s,
                         pipeline_config.models.main_architecture_name,
-                        max_batch_size,
+                        pipeline.max_batch_size,
                     )
 
             total_in_run_s = time.monotonic() - run_start_s

@@ -100,6 +100,7 @@ class MambaModel(PipelineModelWithKVCache[TextContext]):
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
         return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
+        max_batch_size: int = 1,
     ) -> None:
         super().__init__(
             pipeline_config,
@@ -110,6 +111,7 @@ class MambaModel(PipelineModelWithKVCache[TextContext]):
             adapter,
             return_logits,
             return_hidden_states,
+            max_batch_size=max_batch_size,
         )
         self._prefill_model, self._step_model = self._load_models(session)
         self._ssm_cache = self._create_ssm_cache()
@@ -123,7 +125,7 @@ class MambaModel(PipelineModelWithKVCache[TextContext]):
     def _create_ssm_cache(self) -> SSMStateCache:
         """Create the SSM state cache with pre-allocated slot buffers."""
         cfg = self._model_config
-        max_slots = self.pipeline_config.runtime.max_batch_size or 1
+        max_slots = self.max_batch_size
         return SSMStateCache(
             num_layers=cfg.num_hidden_layers,
             intermediate_size=cfg.intermediate_size,
@@ -176,12 +178,10 @@ class MambaModel(PipelineModelWithKVCache[TextContext]):
 
         from .mamba_module import MambaPrefill, MambaStep
 
-        assert self.pipeline_config.runtime.max_batch_size, (
-            "Expected max_batch_size to be set"
-        )
+        assert self.max_batch_size, "Expected max_batch_size to be set"
         self._input_row_offsets_prealloc = Buffer.from_numpy(
             np.arange(
-                self.pipeline_config.runtime.max_batch_size + 1,
+                self.max_batch_size + 1,
                 dtype=np.uint32,
             )
         ).to(self.devices[0])

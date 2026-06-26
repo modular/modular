@@ -214,6 +214,7 @@ class LFM2Model(LlamaModelBase):
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
         return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
+        max_batch_size: int = 1,
     ) -> None:
         super().__init__(
             pipeline_config,
@@ -224,6 +225,7 @@ class LFM2Model(LlamaModelBase):
             adapter,
             return_logits,
             return_hidden_states,
+            max_batch_size=max_batch_size,
         )
         num_conv_layers = sum(
             1 for t in self._model_config.layer_types if t != "full_attention"
@@ -233,7 +235,7 @@ class LFM2Model(LlamaModelBase):
             hidden_size=self._model_config.hidden_size,
             conv_kernel=self._model_config.conv_L_cache,
             dtype=self._model_config.dtype,
-            max_slots=self.pipeline_config.runtime.max_batch_size or 1,
+            max_slots=self.max_batch_size,
             device=self.devices[0],
         )
         if self._batch_processor is not None:

@@ -38,7 +38,6 @@ from max.pipelines.modeling.types import PipelineTask
 def _make_pipeline_config(
     max_length: int | None,
     available_cache_memory: int | None,
-    max_batch_size: int = 32,
 ) -> PipelineConfig:
     """Build a minimal PipelineConfig without triggering full validation."""
     model_config = MAXModelConfig.model_construct(
@@ -51,9 +50,7 @@ def _make_pipeline_config(
     model_config.kv_cache = kv_cache
     model_config._huggingface_config = MagicMock()
 
-    runtime = PipelineRuntimeConfig.model_construct(
-        max_batch_size=max_batch_size,
-    )
+    runtime = PipelineRuntimeConfig.model_construct()
     return PipelineConfig.model_construct(
         runtime=runtime,
         models=ModelManifest({"main": model_config}),
