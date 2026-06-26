@@ -202,6 +202,21 @@ _TARGETS: dict[str, FuzzTarget] = {
         ),
         default_oracle="memcheck",
     ),
+    "sparse_indexer": FuzzTarget(
+        name="sparse_indexer",
+        bazel_target=(
+            "//max/kernels/test/gpu/fuzz:fuzz_sparse_indexer.mojo.test"
+        ),
+        binary=(
+            "bazel-bin/max/kernels/test/gpu/fuzz/fuzz_sparse_indexer.mojo.test"
+        ),
+        description=(
+            "block_select_topk: MiniMax-M3 MSA indexer block-selection core;"
+            " validity contract (index in-range / distinct / -1-tail) + ref"
+            " (top-k invariant). diff/memcheck/redzone/ref/contract"
+        ),
+        default_oracle="ref",
+    ),
     "oob_canary": FuzzTarget(
         name="oob_canary",
         bazel_target=("//max/kernels/test/gpu/fuzz:fuzz_oob_canary.mojo.test"),
