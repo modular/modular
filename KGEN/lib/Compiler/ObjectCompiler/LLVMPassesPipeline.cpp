@@ -31,9 +31,7 @@
 #include "llvm/Transforms/IPO/InferFunctionAttrs.h"
 #include "llvm/Transforms/IPO/Inliner.h"
 #include "llvm/Transforms/InstCombine/InstCombine.h"
-#include "llvm/Transforms/Instrumentation/AddressSanitizer.h"
 #include "llvm/Transforms/Instrumentation/CGProfile.h"
-#include "llvm/Transforms/Instrumentation/ThreadSanitizer.h"
 #include "llvm/Transforms/Scalar/ADCE.h"
 #include "llvm/Transforms/Scalar/AlignmentFromAssumptions.h"
 #include "llvm/Transforms/Scalar/AnnotationRemarks.h"
@@ -84,21 +82,10 @@ using namespace M::KGEN;
 static SimplifyCFGOptions
 adjustSimplifyCFGOptions(SimplifyCFGOptions simplifyCFGOptions,
                          const CompilationOptions &options) {
-  if (!isGPUBackend(options))
-    return simplifyCFGOptions;
-
-  // On GPUs the branch cost is much larger than that of the CPU, so increase
-  // the threshold. E.g. if we have
-  //
-  // if (cond0) return
-  // if (cond1) return
-  // <<stuff>>
-  //
-  // then we want to simplify this to
-  //
-  // if (cond0 | cond1) return
-  // <<stuff>>
-  return simplifyCFGOptions.bonusInstThreshold(2);
+  const TargetBackend *backend =
+      TargetBackendRegistry::get().lookup(llvm::Triple(options.targetTriple));
+  return backend ? backend->adjustSimplifyCFGOptions(simplifyCFGOptions)
+                 : simplifyCFGOptions;
 }
 
 static OptimizationLevel getOptimizationLevel(unsigned level) {
@@ -112,25 +99,14 @@ static OptimizationLevel getOptimizationLevel(unsigned level) {
 
 static void addSanitizers(ModulePassManager &modulePassManager,
                           const CompilationOptions &options) {
-  // LLVM's address sanitizer instrumentation is not supported for NVPTX.
-  if (isNVPTXBackend(options))
-    return;
-
-  if (options.sanitizers.has(M::Sanitizers::kAddress)) {
-    AddressSanitizerOptions opts;
-    bool moduleUseAfterScope = false;
-    bool useOdrIndicator = false;
-    modulePassManager.addPass(
-        AddressSanitizerPass(opts, moduleUseAfterScope, useOdrIndicator));
-  }
-
-  if (isGPUBackend(options))
-    return;
-
-  if (options.sanitizers.has(M::Sanitizers::kThread)) {
-    modulePassManager.addPass(ModuleThreadSanitizerPass());
-    modulePassManager.addPass(
-        llvm::createModuleToFunctionPassAdaptor(llvm::ThreadSanitizerPass()));
+  const TargetBackend *backend =
+      TargetBackendRegistry::get().lookup(llvm::Triple(options.targetTriple));
+  if (backend) {
+    backend->addSanitizers(modulePassManager, options);
+  } else {
+    // No registered backend (e.g. hexagon): apply the default host policy.
+    addAddressSanitizerPass(modulePassManager, options);
+    addThreadSanitizerPass(modulePassManager, options);
   }
 }
 
