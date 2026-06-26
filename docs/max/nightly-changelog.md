@@ -10,6 +10,8 @@ This version is still a work in progress.
 
 ## MAX models
 
+- Added GLM-5.2 (`GlmMoeDsaForCausalLM`) support, extending the existing
+  GLM-5.1 sparse-attention architecture with cross-layer index sharing.
 - Added Laguna (`LagunaForCausalLM`), poolside's decoder-only sparse-MoE
   language model. It uses sigmoid expert routing with a per-expert
   score-correction bias, a per-element softplus attention-output gate, and

@@ -623,7 +623,7 @@ def test_mla_decode_graph_sparse_multi_step_smoke() -> None:
             )
             layer_idx = ops.constant(0, DType.uint32, device=DeviceRef.CPU())
             freqs_cis = ops.cast(rope.freqs_cis, hidden.dtype).to(hidden.device)
-            out = sparse_attn(
+            out, _topk_indices = sparse_attn(
                 layer_idx,
                 hidden,
                 kv_mla,
