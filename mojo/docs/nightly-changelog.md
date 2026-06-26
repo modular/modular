@@ -303,3 +303,15 @@ This version is still a work in progress.
   `AddressSpace` directly.
 
 ## Fixed
+
+- A `comptime` member with a trailing `where` clause is now accepted as a
+  witness for a conditional trait conformance when the conformance constraint
+  implies the member's constraint, for example:
+
+  ```mojo
+  trait StaticSize:
+      comptime SIZE: Int
+
+  struct Foo[size: Int = -1](StaticSize where size >= 0):
+      comptime SIZE: Int where Self.size >= 0 = Self.size
+  ```
