@@ -199,6 +199,250 @@ mojo_test(
     ],
 )
 
+# Target: MoE moe_create_indices (uninitialized-read oracle: initcheck/poison).
+mojo_test(
+    name = "fuzz_moe_indices.mojo.test",
+    size = "large",
+    srcs = [
+        "_fuzz.mojo",
+        "fuzz_moe_indices.mojo",
+    ],
+    exec_properties = {
+        "test.resources:gpu-memory": "4",
+    },
+    main = "fuzz_moe_indices.mojo",
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    target_compatible_with = ["//:has_gpu"],
+    deps = [
+        "//max:internal_utils",
+        "//max:linalg",
+        "//max:nn",
+        "@mojo//:std",
+    ],
+)
+
+# Target: softmax _softmax_gpu (memory-safety oracle: memcheck/redzone).
+mojo_test(
+    name = "fuzz_softmax.mojo.test",
+    size = "large",
+    srcs = [
+        "_fuzz.mojo",
+        "fuzz_softmax.mojo",
+    ],
+    exec_properties = {
+        "test.resources:gpu-memory": "4",
+    },
+    main = "fuzz_softmax.mojo",
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    target_compatible_with = ["//:has_gpu"],
+    deps = [
+        "//max:internal_utils",
+        "//max:nn",
+        "@mojo//:std",
+    ],
+)
+
+# Target: rms_norm rms_norm_gpu (memory-safety oracle; fully runtime-shapeable).
+mojo_test(
+    name = "fuzz_rms_norm.mojo.test",
+    size = "large",
+    srcs = [
+        "_fuzz.mojo",
+        "fuzz_rms_norm.mojo",
+    ],
+    exec_properties = {
+        "test.resources:gpu-memory": "4",
+    },
+    main = "fuzz_rms_norm.mojo",
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    target_compatible_with = ["//:has_gpu"],
+    deps = [
+        "//max:internal_utils",
+        "//max:nn",
+        "@mojo//:std",
+    ],
+)
+
+# Target: layer_norm layer_norm_gpu (memory-safety + numerical ref oracle).
+mojo_test(
+    name = "fuzz_layer_norm.mojo.test",
+    size = "large",
+    srcs = [
+        "_fuzz.mojo",
+        "fuzz_layer_norm.mojo",
+    ],
+    exec_properties = {
+        "test.resources:gpu-memory": "4",
+    },
+    main = "fuzz_layer_norm.mojo",
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    target_compatible_with = ["//:has_gpu"],
+    deps = [
+        "//max:internal_utils",
+        "//max:nn",
+        "@mojo//:std",
+    ],
+)
+
+# Target: block-scaled FP4 SM100 matmul small_bn (thin wrapper over the testbed).
+# B200-only. memcheck+pool-off surfaces a small_bn scale-factor over-read across
+# fuzzed M.
+mojo_test(
+    name = "fuzz_block_scaled_fp4.mojo.test",
+    size = "large",
+    srcs = [
+        "_fuzz.mojo",
+        "fuzz_block_scaled_fp4.mojo",
+    ],
+    exec_properties = {
+        "test.resources:gpu-memory": "4",
+    },
+    main = "fuzz_block_scaled_fp4.mojo",
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    target_compatible_with = [
+        "//:has_gpu",
+        "//:b200_gpu",
+    ],
+    deps = [
+        "//max:internal_utils",
+        "//max:linalg",
+        "//max:nn",
+        "//max:structured_kernels",
+        "@mojo//:std",
+    ],
+)
+
+# Target: token sampler `fused_token_sampling_gpu` (the production top-k+top-p
+# sampling op). Two oracles: (1) a validity contract that every sampled
+# out_idxs is in [0, vocab) -- a negative / out-of-range token id is FAIL; and
+# (2) memory-safety on a FRESH int64 output buffer, so an UNWRITTEN row surfaces
+# under initcheck/memcheck or poison (0xFF -> large negative token id).
+# Covers three distinct bugs (all hardware-independent control-flow gaps):
+#  - gumbel path (top_k=-1, the served greedy config): an all-NaN logits row
+#    makes the argmax (TopK_2 seeded p=-1, u=-Inf) match no element > -Inf, so
+#    it emits index -1 (logit_sign=3). This is the production negative-token id.
+#  - gumbel temperature=0 unclamped divide (apply_gumbel_noise_kernel) on an
+#    all-<=0 row -> all -Inf -> index -1 (logit_sign=1, temp=0).
+#  - _topk_stage2 per-row top_k == 0 (k_lo=0) -> output row never written (the
+#    Python per-row top_k tensor path is not normalized).
+mojo_test(
+    name = "fuzz_topk_sampling.mojo.test",
+    size = "large",
+    srcs = [
+        "_fuzz.mojo",
+        "fuzz_topk_sampling.mojo",
+    ],
+    exec_properties = {
+        "test.resources:gpu-memory": "4",
+    },
+    main = "fuzz_topk_sampling.mojo",
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    target_compatible_with = ["//:has_gpu"],
+    deps = [
+        "//max:internal_utils",
+        "//max:nn",
+        "@mojo//:std",
+    ],
+)
+
+# Target: EP MoE combine `send_tokens_back` write-offset containment.
+# Runs a real single-GPU dispatch, overwrites `src_info` with a fuzzed
+# (valid/boundary/off-by-one/garbage/-1/INT32_MAX) distribution, then runs
+# `combine_async`. Under memcheck/redzone the unvalidated write offset OOBs
+# (FAIL pre-fix); the src_info sentinel + bounds-check containment makes it PASS.
+mojo_test(
+    name = "fuzz_ep_combine.mojo.test",
+    size = "large",
+    srcs = [
+        "_fuzz.mojo",
+        "fuzz_ep_combine.mojo",
+    ],
+    exec_properties = {
+        "test.resources:gpu-memory": "4",
+    },
+    main = "fuzz_ep_combine.mojo",
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    target_compatible_with = ["//:has_gpu"],
+    deps = [
+        "//max:internal_utils",
+        "//max:linalg",
+        "//max:nn",
+        "//max:shmem",
+        "@mojo//:std",
+    ],
+)
+
+# OOB canary: the positive control for the fuzz-oracle pipeline. Driven by the
+# orchestrator under --oracle redzone/memcheck it reports FAIL (detects the
+# planted OOB write); under --oracle diff it reports PASS (the pool masks it).
+# Tagged `manual` (it writes OOB on purpose).
+mojo_test(
+    name = "fuzz_oob_canary.mojo.test",
+    size = "small",
+    srcs = [
+        "_fuzz.mojo",
+        "fuzz_oob_canary.mojo",
+    ],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    main = "fuzz_oob_canary.mojo",
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    target_compatible_with = ["//:has_gpu"],
+    deps = [
+        "@mojo//:std",
+    ],
+)
+
+# Numeric canary: the positive control for the numerical (`ref`) oracle. Under
+# --oracle ref it FAILs on even n (a deliberate shape-dependent wrong answer)
+# and PASSes on odd n; under --oracle diff it PASSes (the wrong value is never
+# checked) -- proving the ref oracle catches what memory/diff oracles miss.
+mojo_test(
+    name = "fuzz_numeric_canary.mojo.test",
+    size = "small",
+    srcs = [
+        "_fuzz.mojo",
+        "fuzz_numeric_canary.mojo",
+    ],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    main = "fuzz_numeric_canary.mojo",
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    target_compatible_with = ["//:has_gpu"],
+    deps = [
+        "@mojo//:std",
+    ],
+)
+
 # Python orchestrator: build, enumerate, run-per-case, classify, shrink, corpus,
 # replay. Registered targets invoke the per-kernel mojo_test binaries above.
 modular_py_binary(
