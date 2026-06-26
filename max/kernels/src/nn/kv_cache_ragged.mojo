@@ -4380,24 +4380,17 @@ def kv_cache_store_ragged[
             loaded_val,
         )
 
-    comptime if is_gpu[target]():
-        comptime compile_target = get_gpu_target()
-        comptime simd_width = simd_width_of[
-            cache_t.dtype, target=compile_target
-        ]()
+    comptime compile_target = _current_target() if is_cpu[
+        target
+    ]() else get_gpu_target()
+    comptime simd_width = simd_width_of[cache_t.dtype, target=compile_target]()
 
-        elementwise[write_to_cache, simd_width, target=target](
-            Coord(input_shape), context
-        )
-    else:
-        comptime compile_target = _current_target()
-        comptime simd_width = simd_width_of[
-            cache_t.dtype, target=compile_target
-        ]()
-
-        elementwise[write_to_cache, simd_width, target=target](
-            Coord(input_shape), context
-        )
+    elementwise[
+        write_to_cache,
+        simd_width,
+        target=target,
+        _trace_description="kv_cache_store_ragged",
+    ](Coord(input_shape), context)
 
 
 def kv_cache_store_padded[
@@ -4447,24 +4440,17 @@ def kv_cache_store_padded[
             loaded_val,
         )
 
-    comptime if is_gpu[target]():
-        comptime compile_target = get_gpu_target()
-        comptime simd_width = simd_width_of[
-            cache_t.dtype, target=compile_target
-        ]()
+    comptime compile_target = _current_target() if is_cpu[
+        target
+    ]() else get_gpu_target()
+    comptime simd_width = simd_width_of[cache_t.dtype, target=compile_target]()
 
-        elementwise[write_to_cache, simd_width, target=target](
-            Coord(input_shape), context
-        )
-    else:
-        comptime compile_target = _current_target()
-        comptime simd_width = simd_width_of[
-            cache_t.dtype, target=compile_target
-        ]()
-
-        elementwise[write_to_cache, simd_width, target=target](
-            Coord(input_shape), context
-        )
+    elementwise[
+        write_to_cache,
+        simd_width,
+        target=target,
+        _trace_description="kv_cache_store_padded",
+    ](Coord(input_shape), context)
 
 
 # ===-----------------------------------------------------------------------===#
