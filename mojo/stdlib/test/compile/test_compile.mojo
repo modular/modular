@@ -112,7 +112,7 @@ def test_cross_compile() raises:
         ), "test_kernel is only supported on CDNA4+"
 
     var asm = compile_info[test_kernel, target=MI355X_TARGET]()
-    assert_true("amdgcn-amd-amdhsa--gfx950" in asm)
+    assert_true("amdgcn-amd-amdhsa-unknown-gfx950" in asm)
 
 
 def main() raises:
