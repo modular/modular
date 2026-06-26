@@ -283,15 +283,16 @@ public:
   /// Return true if 'value' may be implicitly converted to 'requiredType'
   /// by invoking (one level of) conversion operations.  This does not generate
   /// any IR.
-  static bool canImplicitlyConvertToType(ASTExprAnd<CValue> value,
-                                         ASTType requiredType,
-                                         ASTDecl &declScope);
+  static bool canImplicitlyConvertToType(
+      ASTExprAnd<CValue> value, ASTType requiredType, ASTDecl &declScope,
+      ArrayRef<ConstraintAttr> additionalAssumptions = {});
 
   /// This emits an implicit conversion to the specified type if the types
   /// differ, including emitting any implicit constructor calls as well as
   /// implicit promotions like origin conversions.
-  CValue emitImplicitConversionToType(ASTExprAnd<CValue> value,
-                                      ASTType requiredType, ExprDest &dest);
+  CValue emitImplicitConversionToType(
+      ASTExprAnd<CValue> value, ASTType requiredType, ExprDest &dest,
+      ArrayRef<ConstraintAttr> additionalAssumptions = {});
 
   /// Emit the specified expression into the specified destination.
   AnyValue emitExpr(const ExprNode *expr, ExprDest &dest);

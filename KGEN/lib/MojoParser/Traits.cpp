@@ -761,13 +761,18 @@ LIT::verifyAndBuildConformance(ASTDecl &structDecl, SymbolRefAttr parent,
       TypedAttr initializerExpr = structAliasDeclOp.getValueAttr();
       assert(initializerExpr && "Struct's alias should have initializer");
 
+      // Pass the conformance constraint as an assumption.
+      SmallVector<ConstraintAttr, 1> conformanceAssumptions;
+      if (ConstraintAttr conformanceConstraint = op.getConstraintAttr())
+        conformanceAssumptions.push_back(conformanceConstraint);
+
       // We don't yet put initializerExpr into the traitAliasReplacer because
       // they need to be converted first to the trait's alias's type (see
       // SAVMBCTATBS).
       SyntheticNode synthNode(structAliasDecl->getLoc());
-      if (!IREmitter::canImplicitlyConvertToType({initializerExpr, &synthNode},
-                                                 traitAliasType,
-                                                 emitter.getDeclScope())) {
+      if (!IREmitter::canImplicitlyConvertToType(
+              {initializerExpr, &synthNode}, traitAliasType,
+              emitter.getDeclScope(), conformanceAssumptions)) {
         diag->attachNote(*traitAliasDecl)
             << "comptime member "
             << "'" + name.str() + "'" << " type " << ASTType(structAliasType)
@@ -813,7 +818,8 @@ LIT::verifyAndBuildConformance(ASTDecl &structDecl, SymbolRefAttr parent,
       // somewhere.
       ExprDest dest(traitAliasType, EC_AliasValue);
       CValue convertedValue = emitter.emitImplicitConversionToType(
-          {initializerExpr, &synthNode}, traitAliasType, dest);
+          {initializerExpr, &synthNode}, traitAliasType, dest,
+          conformanceAssumptions);
 
       aliasValue = convertedValue.getIfPValue();
     } else {

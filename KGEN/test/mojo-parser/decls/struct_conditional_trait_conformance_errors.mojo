@@ -539,3 +539,24 @@ struct CopySynthFailsMultiField[
     def __init__(out self, var first: Self.T, var second: Self.U):
         self.first = first^
         self.second = second^
+
+
+# ===========================================================================
+# comptime member constraint not implied by the conformance constraint
+# ===========================================================================
+# A conditional conformance discharges a comptime member's trailing `where`
+# clause only when the conformance constraint implies it. Here the conformance
+# is gated on `n >= 0` but the member requires `n >= 10`, which is not implied,
+# so the constrained member type cannot satisfy the trait's plain `Int`
+# requirement.
+
+
+# expected-note @below {{trait 'CondAliasNotImplied' declared here}}
+trait CondAliasNotImplied:
+    # expected-note-re @below {{comptime member 'SIZE' type{{.*}}does not conform to trait's required type 'Int'}}
+    comptime SIZE: Int
+
+
+# expected-error @below {{'CondAliasNotImpliedStruct[n]' does not implement all requirements for 'CondAliasNotImplied'}}
+struct CondAliasNotImpliedStruct[n: Int = -1](CondAliasNotImplied where n >= 0):
+    comptime SIZE: Int where Self.n >= 10 = Self.n

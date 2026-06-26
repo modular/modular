@@ -43,3 +43,42 @@ struct ConditionallyConformsParametric[value: Int](
     # CHECK-NEXT: kgen.witness "Value" : !lit.generator<<"offset": !Int>!Int> = #kgen.gen<
     # CHECK-SAME: @"__add__(::Int,::Int)", value, *(0,0)
     # CHECK-SAME: add(from_builtin(#lit.struct.extract<:!Int value, "_mlir_value">), from_builtin(#lit.struct.extract<:!Int *(0,0), "_mlir_value">))
+
+
+# A `where` clause attached to the conformance list itself (conditional
+# conformance), rather than a trailing struct-level `where`, must also discharge
+# a matching `where` clause on the comptime member. Here `Foo` conforms to
+# `RequiresIntAlias` only when `value > 0`, which implies the member's own
+# `where Self.value > 0`, so the witness reduces to the unconstrained `!Int`.
+
+
+struct ConfListConditional[value: Int = -1](RequiresIntAlias where value > 0):
+    comptime Value: Int where Self.value > 0 = Self.value
+    # CHECK: kgen.conformance @"{{.*}}RequiresIntAlias"
+    # CHECK-NEXT: kgen.witness "Value" : !Int = value
+
+
+# Same, but parametric: the body constraint is discharged while the `offset`
+# input parameter is retained on the witnessed generator.
+
+
+struct ConfListConditionalParametric[value: Int = -1](
+    RequiresParametricIntAlias where value > 0
+):
+    comptime Value[offset: Int]: Int where Self.value > 0 = Self.value + offset
+    # CHECK: kgen.conformance @"{{.*}}RequiresParametricIntAlias"
+    # CHECK-NEXT: kgen.witness "Value" : !lit.generator<<"offset": !Int>!Int> = #kgen.gen<
+    # CHECK-SAME: @"__add__(::Int,::Int)", value, *(0,0)
+
+
+# The conformance constraint may be strictly stronger than the member's `where`
+# clause: conjunction elimination proves `(value > 0 and other > 0)` implies
+# `value > 0`, so the member constraint is still discharged.
+
+
+struct ConfListConditionalConjunction[value: Int = -1, other: Int = -1](
+    RequiresIntAlias where value > 0 and other > 0
+):
+    comptime Value: Int where Self.value > 0 = Self.value
+    # CHECK: kgen.conformance @"{{.*}}RequiresIntAlias"
+    # CHECK-NEXT: kgen.witness "Value" : !Int = value
