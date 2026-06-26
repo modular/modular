@@ -1285,6 +1285,7 @@ modular_cc_library(
         "@llvm-project//mlir:LLVMIRTransforms",
         "@llvm-project//mlir:LLVMToLLVMIRTranslation",
         "@llvm-project//mlir:NVVMToLLVMIRTranslation",
+        "@llvm-project//mlir:Parser",
         "@llvm-project//mlir:ROCDLToLLVMIRTranslation",
     ],
 )
