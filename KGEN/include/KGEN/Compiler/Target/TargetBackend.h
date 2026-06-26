@@ -21,8 +21,10 @@
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/STLFunctionalExtras.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/IR/PassManager.h"
+#include "llvm/Transforms/Utils/SimplifyCFGOptions.h"
 
 #include <memory>
 #include <vector>
@@ -52,6 +54,14 @@ class PluginManager;
 /// and as the fallback for triples with no registered backend.
 ErrorOr<std::unique_ptr<llvm::TargetMachine>>
 defaultCreateTargetMachine(const CompilationOptions &options, bool isJIT);
+
+/// Adds the AddressSanitizer / ThreadSanitizer passes when requested in
+/// `options`. Shared building blocks for `TargetBackend::addSanitizers` and the
+/// no-backend fallback.
+void addAddressSanitizerPass(llvm::ModulePassManager &mpm,
+                             const CompilationOptions &options);
+void addThreadSanitizerPass(llvm::ModulePassManager &mpm,
+                            const CompilationOptions &options);
 
 /// How the module is divided into independently-codegen'd units.
 enum class SplitStrategy { None, PerExported, PerFunction };
@@ -99,6 +109,33 @@ public:
   /// order after MCLinker reorders them (needed when codegen emits function
   /// declarations whose order matters, e.g. NVPTX).
   virtual bool requiresOriginalFunctionOrder() const { return false; }
+
+  /// Whether the backend requires the module to be emitted as a single split
+  /// (e.g. NVPTX, whose AnnotationCache must be shared across the llvm-opt and
+  /// llc pipelines, so MCLinker cannot operate on multiple splits).
+  virtual bool requiresSingleModuleSplit() const { return false; }
+
+  /// Reorders `module`'s functions back to `originalOrder` after MCLinker
+  /// linking, for backends that emit function declarations before uses
+  /// (e.g. NVPTX). The default leaves the order untouched.
+  virtual void reorderLinkedModuleFunctions(
+      llvm::Module &module,
+      const llvm::StringMap<unsigned> &originalOrder) const {}
+
+  /// Adjusts the SimplifyCFG options for this target. The default leaves them
+  /// unchanged; GPUs raise the bonus instruction threshold because branches are
+  /// far costlier than on CPU.
+  virtual llvm::SimplifyCFGOptions
+  adjustSimplifyCFGOptions(llvm::SimplifyCFGOptions options) const {
+    return options;
+  }
+
+  /// Adds the sanitizer passes this target supports. The default applies the
+  /// host policy (AddressSanitizer and ThreadSanitizer as requested in
+  /// `options`); backends override to restrict (e.g. GPUs drop ThreadSanitizer,
+  /// NVPTX drops all sanitizers).
+  virtual void addSanitizers(llvm::ModulePassManager &mpm,
+                             const CompilationOptions &options) const;
 
   /// Adjusts the MLIR module before lowering to LLVM (e.g. target-specific
   /// debug-info fixups). Runs in `ObjectCompiler::lowerAllFuncsToLLVM`.

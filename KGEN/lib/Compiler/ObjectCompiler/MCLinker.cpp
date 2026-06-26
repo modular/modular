@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "MCLinker.h"
+#include "KGEN/Compiler/Target/TargetBackend.h"
 #include "LLVMAccessorHelper.h"
 #include "LLVMPassesPipeline.h"
 #include "llvm/Analysis/RuntimeLibcallInfo.h"
@@ -16,6 +17,7 @@
 #include "llvm/Linker/Linker.h"
 #include "llvm/Target/TargetLoweringObjectFile.h"
 #include "llvm/Target/TargetMachine.h"
+#include "llvm/TargetParser/Triple.h"
 
 using namespace M;
 using namespace KGEN;
@@ -300,19 +302,17 @@ ErrorOr<WriteableBufferRef> MCLinker::linkAndPrint(StringRef moduleName,
   bool hasOneSplit =
       symbolAndMCInfos.size() == 1 && symbolAndMCInfos[0]->mcInfos.size() == 1;
 
+  const TargetBackend *backend =
+      TargetBackendRegistry::get().lookup(llvm::Triple(options.targetTriple));
+
   llvm::Module *oneSplitModule = nullptr;
 
   if (!hasOneSplit) {
-    if (isNVPTXBackend(options)) {
-      // For NVPTX backend to avoid false hit
-      // with its stale AnnotationCache which is populated during both
-      // llvm-opt and llc pipeline passes but is only cleared at the end of
-      // codegen in AsmPrint. We need to make sure that llvm-opt and llc
-      // are using the sname llvm::Module to that the cache can be properly
-      // cleaned. We currently achieve this by keeping only one split for NVPTX
-      // compilation.
-      return Error("NVPTX compilation should have multiple splits.");
-    }
+    // Backends that share one llvm::Module across llvm-opt and llc (e.g. NVPTX,
+    // for its AnnotationCache) cannot operate on multiple splits here.
+    if (backend && backend->requiresSingleModuleSplit())
+      return Error("single-module-split backend unexpectedly has multiple "
+                   "splits.");
 
     // link at llvm::Module level.
     ErrorOrSuccess lmResult = linkLLVMModules(moduleName);
@@ -321,33 +321,11 @@ ErrorOr<WriteableBufferRef> MCLinker::linkAndPrint(StringRef moduleName,
 
     prepareMachineModuleInfo(llvmTargetMachine);
 
-    // Function ordering may be changed in the linkedModule due to Linker,
-    // but the original order matters for NVPTX backend to generate function
-    // declaration properly to avoid use before def/decl illegal instructions.
-    // Sort the linkedModule's functions back to to its original order
-    // (only definition matter, declaration doesn't).
-    if (isNVPTXBackend(options)) {
-      linkedModule->getFunctionList().sort(
-          [&](const auto &lhs, const auto &rhs) {
-            if (lhs.isDeclaration() && rhs.isDeclaration())
-              return true;
-
-            if (lhs.isDeclaration())
-              return false;
-
-            if (rhs.isDeclaration())
-              return true;
-
-            auto iter1 = originalFnOrdering.find(lhs.getName());
-            if (iter1 == originalFnOrdering.end())
-              return true;
-            auto iter2 = originalFnOrdering.find(rhs.getName());
-            if (iter2 == originalFnOrdering.end())
-              return true;
-
-            return iter1->second < iter2->second;
-          });
-    }
+    // The Linker may change function ordering in the linkedModule; some
+    // backends (e.g. NVPTX) need it restored to the original order so function
+    // declarations precede uses. No-op for backends that don't care.
+    if (backend)
+      backend->reorderLinkedModuleFunctions(*linkedModule, originalFnOrdering);
   } else {
     oneSplitModule = getModuleToPrintOneSplit(llvmTargetMachine);
     oneSplitModule->setModuleIdentifier(moduleName);

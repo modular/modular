@@ -8,12 +8,41 @@
 
 #include "llvm/Bitcode/BitcodeWriter.h"
 #include "llvm/IR/Module.h"
+#include "llvm/IR/PassManager.h"
 #include "llvm/MC/TargetRegistry.h"
 #include "llvm/Support/ManagedStatic.h"
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/TargetParser/Triple.h"
+#include "llvm/Transforms/Instrumentation/AddressSanitizer.h"
+#include "llvm/Transforms/Instrumentation/ThreadSanitizer.h"
 
 namespace M::KGEN {
+
+void addAddressSanitizerPass(llvm::ModulePassManager &mpm,
+                             const CompilationOptions &options) {
+  if (!options.sanitizers.has(M::Sanitizers::kAddress))
+    return;
+  llvm::AddressSanitizerOptions opts;
+  bool moduleUseAfterScope = false;
+  bool useOdrIndicator = false;
+  mpm.addPass(
+      llvm::AddressSanitizerPass(opts, moduleUseAfterScope, useOdrIndicator));
+}
+
+void addThreadSanitizerPass(llvm::ModulePassManager &mpm,
+                            const CompilationOptions &options) {
+  if (!options.sanitizers.has(M::Sanitizers::kThread))
+    return;
+  mpm.addPass(llvm::ModuleThreadSanitizerPass());
+  mpm.addPass(
+      llvm::createModuleToFunctionPassAdaptor(llvm::ThreadSanitizerPass()));
+}
+
+void TargetBackend::addSanitizers(llvm::ModulePassManager &mpm,
+                                  const CompilationOptions &options) const {
+  addAddressSanitizerPass(mpm, options);
+  addThreadSanitizerPass(mpm, options);
+}
 
 void TargetBackend::emitBitcode(llvm::Module &module,
                                 llvm::raw_pwrite_stream &os) const {
