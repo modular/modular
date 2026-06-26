@@ -65,6 +65,8 @@ from std.collections import check_bounds
 from std.utils.numerics import max_finite
 from std.utils import IndexList
 from layout.coord import ComptimeInt, Coord, CoordLike
+from .layout import Layout
+from . import math as layout_math
 
 
 def _get_index_type(address_space: AddressSpace) -> DType:
@@ -231,7 +233,7 @@ struct IntArray(ImplicitlyCopyable, RegisterPassable):
         Returns:
             The number of elements in the array, regardless of ownership status.
         """
-        return math.abs(self._size)
+        return layout_math.abs(self._size)
 
     @always_inline("nodebug")
     def copy_from(mut self, offset: Int, source: Self, size: Int):

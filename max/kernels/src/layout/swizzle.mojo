@@ -39,7 +39,7 @@ from std.math.uutils import udivmod
 from std.bit import log2_floor
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 
-from .int_tuple import flatten
+from .int_tuple import flatten, IntTuple
 from .layout import Layout
 
 # ===-----------------------------------------------------------------------===#

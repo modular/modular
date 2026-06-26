@@ -62,6 +62,7 @@ from std.gpu.primitives.grid_controls import (
 )
 from std.gpu.sync import syncwarp
 from std.gpu.compute.arch.tcgen05 import *
+from layout import Layout
 from layout.tensor_core_async import (
     tile_layout_k_major_typed,
     tile_layout_mn_major_typed,

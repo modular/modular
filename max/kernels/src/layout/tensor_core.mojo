@@ -78,7 +78,7 @@ from std.gpu.compute.mma import (
     mma,
 )
 from layout._utils import load_to_simd, idx2crd
-from layout.int_tuple import product
+from layout.int_tuple import product, IntTuple
 from layout.layout import Layout
 from layout.layout_tensor import LayoutTensor
 from layout.swizzle import (

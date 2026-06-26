@@ -27,7 +27,7 @@ Utilities:
 """
 
 from std.sys import size_of
-from std.math import align_down
+from std.math import align_down, align_up, ceildiv
 from std.itertools.itertools import product
 from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type

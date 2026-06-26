@@ -29,6 +29,7 @@ from linalg.utils import partition_work
 from std.memory import (
     alloc,
     bitcast,
+    memcpy,
     stack_allocation,
 )
 

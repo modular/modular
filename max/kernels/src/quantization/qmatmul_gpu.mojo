@@ -62,7 +62,7 @@ from linalg.utils_gpu import MatmulConfig, block_swizzle
 from std.memory.unsafe import bitcast
 
 
-from std.utils.index import Index
+from std.utils.index import Index, StaticTuple
 from std.utils.numerics import get_accum_type
 
 

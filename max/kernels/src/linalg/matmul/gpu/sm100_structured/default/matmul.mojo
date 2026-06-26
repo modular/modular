@@ -30,13 +30,15 @@ from layout import (
     Coord,
     Idx,
     RowMajorLayout,
+    TensorLayout,
     TileTensor,
     row_major as tt_row_major,
 )
 from structured_kernels.tile_types import create_tma_tile
 from structured_kernels.kernel_common import _to_batched_3d
 
-from std.utils.index import Index
+from std.utils.index import Index, IndexList
+from std.collections import OptionalReg
 from std.utils.static_tuple import StaticTuple
 
 from linalg.utils import (

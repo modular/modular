@@ -18,6 +18,7 @@ control plane view (NUMA domains, device network
 interconnects, etc), and associated data and metadata.
 """
 
+from . import DeviceSpec
 from .device import DeviceRef
 from std.sys.info import _accelerator_arch
 from std.gpu.host.info import GPUInfo

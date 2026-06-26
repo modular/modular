@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from std.math import ceildiv
+from std.math import align_up, ceildiv
 from std.sys import (
     get_defined_bool,
     get_defined_int,
@@ -35,6 +35,7 @@ from layout.tile_tensor import NullableTileTensor
 from std.logger import Logger
 
 from std.utils.index import Index, IndexList
+from std.collections import OptionalReg
 
 from .....utils import (
     GemmShape,

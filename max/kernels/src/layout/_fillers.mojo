@@ -26,6 +26,8 @@ from std.random import random_float64
 from std.sys import is_nvidia_gpu
 from layout.coord import Coord
 
+from .layout import Layout
+from .layout_tensor import LayoutTensor
 from .tile_layout import TensorLayout
 from .tile_tensor import TileTensor
 

@@ -18,7 +18,17 @@ from std.sys.info import simd_width_of
 import std.algorithm.reduction as reduction
 from std.algorithm import vectorize
 from std.math.math import max as b_max
-from layout import Coord, Idx, LayoutTensor, TileTensor, UNKNOWN_VALUE
+from layout import (
+    Coord,
+    Idx,
+    IntTuple,
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    RuntimeTuple,
+    TileTensor,
+    UNKNOWN_VALUE,
+)
 
 from std.utils.index import IndexList
 
