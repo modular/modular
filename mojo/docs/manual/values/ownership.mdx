@@ -20,7 +20,7 @@ deallocates those resources in its destructor. Mojo's ownership system ensures
 that destructors are called promptly.
 
 On this page, we'll explain the rules that govern this ownership model, and how
-to specify different passing conventions that define how values are passed into
+to specify different argument conventions that define how values are passed into
 functions.
 
 ## Ownership summary
@@ -48,7 +48,7 @@ can use a reference binding:
 ref value_ref = list[0]
 ```
 
-## Argument passing conventions
+## Argument conventions
 
 In all programming languages, code quality and performance is heavily dependent
 upon how functions treat argument values. That is, whether a value received by
@@ -63,10 +63,10 @@ also need to offer full control over memory optimizations, which generally
 requires reference semantics. The trick is to introduce reference semantics in
 a way that ensures all code is memory safe by tracking the lifetime of every
 value and destroying each one at the right time (and only once). All of this is
-made possible in Mojo through the use of passing conventions that ensure every
+made possible in Mojo through the use of argument conventions that ensure every
 value has only one owner at a time.
 
-A passing convention specifies whether an argument is mutable or immutable,
+An argument convention specifies whether an argument is mutable or immutable,
 and whether the function owns the value. Each convention is defined by a
 keyword at the beginning of an argument declaration:
 
@@ -148,7 +148,7 @@ and destructor aren't invoked for a default (immutable reference) argument.
 
 ### Compared to C++ and Rust
 
-Mojo's default passing convention is similar in some ways to passing an
+Mojo's default argument convention is similar in some ways to passing an
 argument by `const&` in C++, which also avoids a copy of the value and disables
 mutability in the callee. However, the default convention differs from
 `const&` in C++ in two important ways:
