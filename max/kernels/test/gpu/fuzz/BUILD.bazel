@@ -393,6 +393,37 @@ mojo_test(
     ],
 )
 
+# Target: `block_select_topk` -- the MiniMax-M3 sparse-attention (MSA) indexer's
+# block-selection core (shared by the prefill + decode indexer phases). A test
+# launcher runs one CTA per score row; we fuzz the shape (num_rows, num_blocks,
+# k), the launch width (block_dim), and the score distribution. Two oracles: a
+# VALIDITY CONTRACT (always on: in-range / distinct / -1-tail / no-winner -> all
+# -1, on a fresh -2-poisoned int32 output + an OOB scores guard) and `ref`
+# (--check: the top-k correctness invariant). Hardware-independent (no SM100),
+# so it runs on any non-Apple GPU.
+mojo_test(
+    name = "fuzz_sparse_indexer.mojo.test",
+    size = "large",
+    srcs = [
+        "_fuzz.mojo",
+        "fuzz_sparse_indexer.mojo",
+    ],
+    exec_properties = {
+        "test.resources:gpu-memory": "4",
+    },
+    main = "fuzz_sparse_indexer.mojo",
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    target_compatible_with = ["//:has_gpu"],
+    deps = [
+        "//max:internal_utils",
+        "//max:nn",
+        "@mojo//:std",
+    ],
+)
+
 # OOB canary: the positive control for the fuzz-oracle pipeline. Driven by the
 # orchestrator under --oracle redzone/memcheck it reports FAIL (detects the
 # planted OOB write); under --oracle diff it reports PASS (the pool masks it).
