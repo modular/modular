@@ -997,6 +997,11 @@ class PipelineConfig(ConfigFileModel):
             )
             if draft_archs and draft_archs[0] == "Gemma4AssistantForCausalLM":
                 target_archs[0] = "UnifiedMTPGemma4ForCausalLM"
+        if target_archs[0] == "MiniMaxM3SparseForConditionalGeneration":
+            if self.speculative.is_mtp() and self.draft_model is None:
+                target_archs[0] = (
+                    "UnifiedMTPMiniMaxM3SparseForConditionalGeneration"
+                )
 
     def resolve(
         self,
