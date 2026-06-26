@@ -290,7 +290,10 @@ def _oracle_command_and_env(
                  compares its output to a higher-precision CPU reference and
                  emits FUZZ_NUMERIC_FAIL on a wrong answer. No sanitizer.
     redzone   -- MAX redzone allocator: catches OOB *writes* at free (~native).
-    poison    -- MAX poison allocator: uninitialized reads surface as NaN.
+    poison    -- MAX poison allocator (`poison-all`) + `--check`: every device
+                 allocation is NaN-filled, so an unwritten/uninitialized output
+                 survives as NaN and the reference comparison flags it. No
+                 sanitizer, no kernel instrumentation.
     memcheck  -- compute-sanitizer memcheck + device pool disabled so small OOB
                  reads/writes are not masked by the caching allocator.
     initcheck -- compute-sanitizer initcheck + pool disabled.
@@ -333,8 +336,25 @@ def _oracle_command_and_env(
         env["MODULAR_DEBUG_DEVICE_ALLOCATOR"] = "out-of-bounds"
         return base_cmd, env
     if oracle == "poison":
-        env["MODULAR_DEBUG_DEVICE_ALLOCATOR"] = "poison"
-        return base_cmd, env
+        # The debug allocator exposes two complementary poison tiers (see
+        # MLRT/docs/Driver/MemoryManagerOverview.md): `poison-all` fills *every*
+        # memory-manager allocation with a raw NaN byte (0xFF default) at the
+        # allocator layer, while `uninitialized-poison` fills only graph-driver
+        # tensors (`createDeviceMemory`) with a type-aware, non-NaN sentinel
+        # detected by an instrumented Mojo load check. The fuzz targets
+        # allocate device buffers directly via
+        # `DeviceContext.enqueue_create_buffer` (the allocator layer, not the
+        # graph driver), so `poison-all` is the tier that covers them. The
+        # bare `poison` token (the old value) matches neither tier and silently
+        # no-ops.
+        #
+        # `--check` is what observes the poison: poison-all NaN-fills each
+        # output before the kernel runs, then the reference comparison flags a
+        # surviving NaN (an unwritten output element / uninitialized read) as a
+        # numeric mismatch. Without it the case would run but never inspect the
+        # poisoned result.
+        env["MODULAR_DEBUG_DEVICE_ALLOCATOR"] = "poison-all"
+        return base_cmd + ["--check", "1"], env
     if oracle == "memcheck":
         env.update(pool_off)
         cmd = cs_common + ["--tool", "memcheck", "--leak-check", "no"]
