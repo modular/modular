@@ -772,13 +772,13 @@ struct MLA_SM100_Decode_Sparse_KV_FP8[
                 # transform d_indices → TMA rows and load scales
                 # into SMEM, one tile ahead of warp 8's TMA loads.
                 var batch_d_indices_w11 = d_indices.unsafe_value() + (
-                    offset_position.batch_idx * indices_stride
+                    offset_position.q_token_idx * indices_stride
                 )
                 var batch_extra_d_indices_w11 = extra_d_indices
                 comptime if Self.has_extra_kv:
                     batch_extra_d_indices_w11 = (
                         extra_d_indices.unsafe_value()
-                        + (offset_position.batch_idx * extra_indices_stride)
+                        + (offset_position.q_token_idx * extra_indices_stride)
                     )
                 Self.idx_producer(
                     idx_bars,
