@@ -20,6 +20,9 @@ All implementations are based on that reference material.
 """
 
 from std.sys import bit_width_of
+from std.utils import IndexList
+
+from extensibility import ManagedTensorSlice
 
 
 @fieldwise_init
