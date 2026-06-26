@@ -1201,6 +1201,11 @@ components:
                             type: string
                             description: |
                               Either a URL of the image or a base64 encoded image with the data-uri scheme.
+                          detail:
+                            type: string
+                            description: |
+                              Optional quality tier. Mutually exclusive with
+                              max_long_side_pixel.
                           max_long_side_pixel:
                             type: integer
                             minimum: 1
@@ -1237,6 +1242,11 @@ components:
                             description: |
                               Optional sampling hint. Maximum number of frames
                               to sample from the video.
+                          detail:
+                            type: string
+                            description: |
+                              Optional quality tier. Mutually exclusive with
+                              max_long_side_pixel.
                           max_long_side_pixel:
                             type: integer
                             minimum: 1

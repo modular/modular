@@ -783,6 +783,46 @@ def test_openai_image_url_accepts_non_string_sizing_hints() -> None:
     assert video_url["max_long_side_pixel"] == 1008
 
 
+async def test_openai_wrap_content_carries_detail_hint() -> None:
+    """``detail`` is carried onto wrapped image/video content parts."""
+    smily_b64 = (
+        "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwC"
+        "AAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
+    )
+    request = CreateChatCompletionRequest.model_validate(
+        {
+            "model": "test",
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "describe"},
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": smily_b64, "detail": "high"},
+                        },
+                        {
+                            "type": "video_url",
+                            "video_url": {
+                                "url": "data:video/mp4;base64,AAAA",
+                                "detail": "low",
+                            },
+                        },
+                    ],
+                }
+            ],
+        }
+    )
+    settings = Settings()
+    parsed = await openai_parse_chat_completion_request(request, True, settings)
+    content = parsed.messages[0].content
+    assert isinstance(content, list)
+    assert content[1].type == "image"
+    assert content[1].detail == "high"
+    assert content[2].type == "video"
+    assert content[2].detail == "low"
+
+
 async def test_openai_root_role_accepted_and_passed_through() -> None:
     """The MiniMax ``root`` role validates and passes through unchanged as the first message."""
     request_data = {
