@@ -72,8 +72,11 @@ def conv2d(
 
     .. code-block:: python
 
+        from max.dtype import DType
         from max.engine import InferenceSession
+        from max.graph import DeviceRef, Graph, ops
 
+        device = DeviceRef.CPU()
         with Graph("conv2d_example") as graph:
             # NHWC input: batch 1, 2x2 spatial, 1 channel.
             x = ops.constant(
@@ -93,6 +96,8 @@ def conv2d(
         result = model.execute()[0]
 
     .. invisible-code-block: python
+
+        import numpy as np
 
         assert np.allclose(result.to_numpy(), [[[[10.0]]]])
 

@@ -54,6 +54,8 @@ A ``mode(...)`` block selects the solver for the ops inside it:
 
 .. invisible-code-block: python
 
+    import numpy as np
+
     # full(4, 8) @ full(8, 2) = 8 * ones(4, 2), then relu is a no-op (positive).
     assert np.allclose(y.to_numpy(), np.full((4, 2), 8.0))
 

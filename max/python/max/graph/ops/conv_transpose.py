@@ -78,6 +78,10 @@ def conv2d_transpose(
 
     .. code-block:: python
 
+        from max.dtype import DType
+        from max.graph import DeviceRef, Graph, ops
+
+        device = DeviceRef.CPU()
         with Graph("conv2d_transpose_example") as graph:
             # NHWC input: batch 1, 1x1 spatial, 1 channel.
             x = ops.constant([[[[3.0]]]], DType.float32, device=device)

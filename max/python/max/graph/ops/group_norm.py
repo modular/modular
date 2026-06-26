@@ -41,6 +41,10 @@ def group_norm(
 
     .. code-block:: python
 
+        from max.dtype import DType
+        from max.graph import DeviceRef, Graph, ops
+
+        device = DeviceRef.CPU()
         with Graph("group_norm_example") as graph:
             # Shape (batch=1, channels=4, spatial=1, 1); 2 groups of 2 channels.
             x = ops.constant(

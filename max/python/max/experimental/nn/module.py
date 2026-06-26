@@ -301,6 +301,11 @@ class Module(Generic[_P, _R]):
 
     .. code-block:: python
 
+        from max.dtype import DType
+        from max.experimental.nn import Linear
+        from max.experimental.tensor import Tensor
+        from max.graph import TensorType
+
         model = Linear(5, 10)
         input_type = TensorType(DType.float32, ["batch", 5], device=model.device)
         compiled = model.compile(input_type)        # runs on CPU
@@ -1083,6 +1088,8 @@ class Module(Generic[_P, _R]):
 
         .. invisible-code-block: python
 
+            import numpy as np
+
             assert np.allclose(result.to_numpy(), 0.0)  # zero weights/bias
             assert list(result.shape) == [3, 10]
 
@@ -1370,6 +1377,8 @@ def module_dataclass(  # noqa: ANN201
         compiled_output = compiled(x)
 
     .. invisible-code-block: python
+
+        import numpy as np
 
         assert set(dict(mlp.parameters).keys()) == {
             "fc1.weight", "fc1.bias", "fc2.weight", "fc2.bias"

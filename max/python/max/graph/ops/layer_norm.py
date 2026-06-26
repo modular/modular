@@ -42,8 +42,11 @@ def layer_norm(
 
     .. code-block:: python
 
+        from max.dtype import DType
         from max.engine import InferenceSession
+        from max.graph import DeviceRef, Graph, ops
 
+        device = DeviceRef.CPU()
         with Graph("layer_norm_example") as graph:
             x = ops.constant([[1.0, 3.0]], DType.float32, device=device)
             gamma = ops.constant([1.0, 1.0], DType.float32, device=device)
@@ -55,6 +58,8 @@ def layer_norm(
         # Each row is normalized to zero mean and unit variance.
 
     .. invisible-code-block: python
+
+        import numpy as np
 
         assert np.allclose(result.to_numpy(), [[-1.0, 1.0]], atol=1e-3)
 

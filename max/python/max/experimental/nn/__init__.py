@@ -44,6 +44,8 @@ Example:
 
 .. invisible-code-block: python
 
+    import numpy as np
+
     assert tuple(int(d) for d in y.shape) == (3, 10)
     assert tuple(int(d) for d in result.shape) == (3, 10)
     assert np.allclose(y.to_numpy(), result.to_numpy())

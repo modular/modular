@@ -30,8 +30,11 @@ def concat(
 
     .. code-block:: python
 
+        from max.dtype import DType
         from max.engine import InferenceSession
+        from max.graph import DeviceRef, Graph, ops
 
+        device = DeviceRef.CPU()
         with Graph("concat_example") as graph:
             a = ops.constant([[1, 2], [3, 4]], DType.int32, device=device)
             b = ops.constant([[5, 6], [7, 8]], DType.int32, device=device)
@@ -44,6 +47,8 @@ def concat(
         vertical, horizontal = model.execute()
 
     .. invisible-code-block: python
+
+        import numpy as np
 
         assert np.array_equal(
             vertical.to_numpy(), [[1, 2], [3, 4], [5, 6], [7, 8]]

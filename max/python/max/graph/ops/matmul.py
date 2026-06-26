@@ -29,8 +29,11 @@ def matmul(lhs: TensorValueLike, rhs: TensorValueLike) -> TensorValue:
 
     .. code-block:: python
 
+        from max.dtype import DType
         from max.engine import InferenceSession
+        from max.graph import DeviceRef, Graph, ops
 
+        device = DeviceRef.CPU()
         with Graph("matmul_example") as graph:
             lhs = ops.constant(
                 [[1.0, 2.0], [3.0, 4.0]], DType.float32, device=device
@@ -44,6 +47,8 @@ def matmul(lhs: TensorValueLike, rhs: TensorValueLike) -> TensorValue:
         result = model.execute()[0]
 
     .. invisible-code-block: python
+
+        import numpy as np
 
         assert np.allclose(result.to_numpy(), [[19.0, 22.0], [43.0, 50.0]])
 
