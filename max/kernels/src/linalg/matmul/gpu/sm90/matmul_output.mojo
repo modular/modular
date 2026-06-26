@@ -44,7 +44,6 @@ struct MatmulTileWriter[
     tensor_layout: TensorLayout,
     tensor_storage: TensorStorage,
     linear_idx_type: DType,
-    tensor_element_size: Int,
     smem_tile_layout: TensorLayout,
     //,
     /,
@@ -82,7 +81,6 @@ struct MatmulTileWriter[
         Storage=Self.tensor_storage,
         address_space=AddressSpace.GENERIC,
         linear_idx_type=Self.linear_idx_type,
-        element_size=Self.tensor_element_size,
     ]
     comptime lambda_type = def[
         dtype: DType, width: SIMDSize, *, alignment: Int = 1

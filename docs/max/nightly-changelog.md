@@ -268,6 +268,13 @@ This version is still a work in progress.
 
 ## MAX kernels
 
+- The `TileTensor` layout type no longer takes an `element_size` parameter. A
+  tensor's logical element width is now carried by its `Storage` parameter via
+  `PointerStorage[element_width]` (default `PointerStorage[1]`), and
+  `element_size` remains available as a derived comptime member. Code that
+  passed `element_size=N` should now pass
+  `Storage=PointerStorage[element_width=N]`, or use `TileTensor.vectorize()` to
+  build the vectorized view.
 - Apple silicon GPU support for running MAX models has been extended to M1 and
   M2 systems. Previously, the optimized matrix multiplication kernels for Apple
   silicon GPUs only returned correct results on M3 and newer systems. That has

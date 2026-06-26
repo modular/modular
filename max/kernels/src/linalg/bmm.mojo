@@ -156,7 +156,6 @@ def _reshape_tile_tensor_with_batch_to_3d(
         origin=tensor.origin,
         address_space=tensor.address_space,
         linear_idx_type=tensor.linear_idx_type,
-        element_size=tensor.element_size,
     ],
 ):
     """

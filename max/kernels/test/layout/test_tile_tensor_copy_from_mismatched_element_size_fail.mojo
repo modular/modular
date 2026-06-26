@@ -23,5 +23,5 @@ def main():
     var src = TileTensor(src_data, row_major[2, 2]())
     var dst = TileTensor(dst_data, row_major[2, 4]()).vectorize[1, 2]()
 
-    # CHECK: invalid call to 'copy_from': value passed to 'other' cannot be converted
+    # CHECK: invalid call to 'copy_from': violated constraint
     dst.copy_from(src)

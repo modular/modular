@@ -752,7 +752,6 @@ struct PRegisterBuffer[
             layout_3d,
             MutAnyOrigin,
             address_space=AddressSpace.SHARED,
-            element_size=1,
         ](mma_tile.ptr, layout_3d())
 
         var dist_res = mma_3d.distribute_with_offset[tl_3d](lane_id())

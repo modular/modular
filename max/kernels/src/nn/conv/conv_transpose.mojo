@@ -377,13 +377,10 @@ def get_partition(
 
 @fieldwise_init
 struct ConvTransposedPacked[
-    input_element_size: Int,
     input_linear_idx_type: DType,
     input_storage: TensorStorage,
-    filter_element_size: Int,
     filter_linear_idx_type: DType,
     filter_storage: TensorStorage,
-    output_element_size: Int,
     output_linear_idx_type: DType,
     output_storage: TensorStorage,
     InputLayoutType: TensorLayout,
@@ -405,7 +402,6 @@ struct ConvTransposedPacked[
         Self.OutputLayoutType,
         Self.output_origin,
         Storage=Self.output_storage,
-        element_size=Self.output_element_size,
         linear_idx_type=Self.output_linear_idx_type,
     ]
     var input: TileTensor[
@@ -413,7 +409,6 @@ struct ConvTransposedPacked[
         Self.InputLayoutType,
         Self.input_origin,
         Storage=Self.input_storage,
-        element_size=Self.input_element_size,
         linear_idx_type=Self.input_linear_idx_type,
     ]
     var filter: TileTensor[
@@ -421,7 +416,6 @@ struct ConvTransposedPacked[
         Self.FilterLayoutType,
         Self.filter_origin,
         Storage=Self.filter_storage,
-        element_size=Self.filter_element_size,
         linear_idx_type=Self.filter_linear_idx_type,
     ]
 
@@ -442,7 +436,6 @@ struct ConvTransposedPacked[
             Self.OutputLayoutType,
             Self.output_origin,
             Storage=Self.output_storage,
-            element_size=Self.output_element_size,
             linear_idx_type=Self.output_linear_idx_type,
             address_space=AddressSpace.GENERIC,
             ...,
@@ -452,7 +445,6 @@ struct ConvTransposedPacked[
             Self.InputLayoutType,
             Self.input_origin,
             Storage=Self.input_storage,
-            element_size=Self.input_element_size,
             linear_idx_type=Self.input_linear_idx_type,
             address_space=AddressSpace.GENERIC,
             ...,
@@ -462,7 +454,6 @@ struct ConvTransposedPacked[
             Self.FilterLayoutType,
             Self.filter_origin,
             Storage=Self.filter_storage,
-            element_size=Self.filter_element_size,
             linear_idx_type=Self.filter_linear_idx_type,
             address_space=AddressSpace.GENERIC,
             ...,
