@@ -248,6 +248,7 @@ AMD (ROCm/HIP):
   gfx950      - CDNA4 (MI355X)
   mi355x      - (alias) -> gfx950
   gfx1030     - RDNA2 (Radeon 6900)
+  gfx1033     - RDNA2 (Van Gogh)
   gfx1100     - RDNA3 (Radeon 7900)
   gfx1101     - RDNA3 (Radeon 7800/7700)
   gfx1102     - RDNA3 (Radeon 7600)
