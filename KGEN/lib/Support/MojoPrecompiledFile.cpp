@@ -46,21 +46,21 @@ M::KGEN::checkCompatiblePrecompiledFile(const MojoPrecompiledFileHeader &header,
 
   // The most common case (for end users) is that both the precompiled file
   // and compiler have version information. Report that.
-  if (currentVer && header.modularVersion) {
+  if (currentVer && header.mojoVersion) {
     std::string packageVerStr = ". Precompiled file";
     if (!packageName.empty())
       packageVerStr += (Twine(" '") + packageName + "'").str();
     packageVerStr += " version";
 
-    if (auto err = checkVersion(header.modularVersion, currentVer,
-                                packageVerStr, "compiler version")) {
+    if (auto err = checkVersion(header.mojoVersion, currentVer, packageVerStr,
+                                "compiler version")) {
       return Error(errMsg + err.getError());
     }
 
     // Otherwise the versions are the same but the MLIR checksums don't match -
     // this is unlikely.
     return Error(
-        errMsg + packageVerStr + " " + header.modularVersion.toString() +
+        errMsg + packageVerStr + " " + header.mojoVersion.toString() +
         " matches the compiler version, but has incompatible MLIR bytecode");
   }
 
@@ -79,7 +79,7 @@ M::KGEN::checkCompatiblePrecompiledFile(const MojoPrecompiledFileHeader &header,
   if (!packageName.empty())
     errMsg += (Twine(" '") + packageName + "'").str();
   return Error(errMsg + " was built with version " +
-               header.modularVersion.toString() +
+               header.mojoVersion.toString() +
                " but the compiler is missing version information");
 }
 
