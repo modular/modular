@@ -25,16 +25,6 @@ from std.memory import (
 )
 from std.hashlib.hasher import Hasher
 from std.reflection import call_location
-from std.reflection.traits import (
-    AllMovable,
-    AllCopyable,
-    AllEquatable,
-    AllHashable,
-    AllImplicitlyCopyable,
-    AllImplicitlyDestructible,
-    AllRegisterPassable,
-    AllWritable,
-)
 from ._nicheable import (
     UnsafeNicheable,
     NicheIndex,
@@ -259,7 +249,7 @@ struct _NichedOptionalStorage[
 
 struct _DefaultVariantStorage[*Ts: AnyType](
     Copyable,
-    RegisterPassable where AllRegisterPassable[*Ts],
+    RegisterPassable where Ts.all_conforms_to[RegisterPassable](),
     _VariantStorage,
 ):
     """General-purpose discriminated-union storage for `Variant`.
@@ -403,20 +393,23 @@ when eligible, falling back to the general discriminant-tagged storage."""
 
 
 struct Variant[*Ts: Movable](
-    Copyable where AllCopyable[*Ts],
-    Equatable where AllEquatable[*Ts],
-    Hashable where AllHashable[*Ts],
-    # TODO(MOCO-3421): AllImplicitlyCopyable implies AllCopyable since
-    # ImplicitlyCopyable refines Copyable, but the compiler can't infer
-    # parent trait constraints from derived ones yet. Remove AllCopyable
-    # and AllMovable from this where clause once that's fixed.
+    Copyable where Ts.all_conforms_to[Copyable](),
+    Equatable where Ts.all_conforms_to[Equatable](),
+    Hashable where Ts.all_conforms_to[Hashable](),
+    # TODO(MOCO-3421): all_conforms_to[ImplicitlyCopyable] implies
+    # all_conforms_to[Copyable] since ImplicitlyCopyable refines Copyable, but
+    # the compiler can't infer parent trait constraints from derived ones yet.
+    # Remove the Copyable and Movable checks from this where clause once that's
+    # fixed.
     ImplicitlyCopyable where (
-        AllImplicitlyCopyable[*Ts] and AllCopyable[*Ts] and AllMovable[*Ts]
+        Ts.all_conforms_to[ImplicitlyCopyable]()
+        and Ts.all_conforms_to[Copyable]()
+        and Ts.all_conforms_to[Movable]()
     ),
     ImplicitlyDeletable,
     Movable,
-    RegisterPassable where AllRegisterPassable[*Ts],
-    Writable where AllWritable[*Ts],
+    RegisterPassable where Ts.all_conforms_to[RegisterPassable](),
+    Writable where Ts.all_conforms_to[Writable](),
 ):
     """A union that can hold a runtime-variant value from a set of predefined
     types.
@@ -570,9 +563,9 @@ struct Variant[*Ts: Movable](
         Constraints:
             All types in `Ts` must conform to `ImplicitlyDeletable`.
         """
-        comptime assert AllImplicitlyDestructible[
-            *Self.Ts
-        ], "Cannot call __del__ on Variant with explicitly destroyed types"
+        comptime assert Self.Ts.all_conforms_to[
+            ImplicitlyDeletable
+        ](), "Cannot call __del__ on Variant with explicitly destroyed types"
         self._storage^.__del__()
 
     # ===-------------------------------------------------------------------===#
@@ -602,7 +595,9 @@ struct Variant[*Ts: Movable](
         return self.unsafe_get[T]()
 
     @always_inline
-    def __eq__(self, other: Self) -> Bool where AllEquatable[*Self.Ts]:
+    def __eq__(
+        self, other: Self
+    ) -> Bool where Self.Ts.all_conforms_to[Equatable]():
         """Compares two variants for equality.
 
         Two variants are equal if they hold the same type and the held
@@ -625,7 +620,9 @@ struct Variant[*Ts: Movable](
         return False
 
     @always_inline
-    def __ne__(self, other: Self) -> Bool where AllEquatable[*Self.Ts]:
+    def __ne__(
+        self, other: Self
+    ) -> Bool where Self.Ts.all_conforms_to[Equatable]():
         """Compares two variants for inequality.
 
         Args:
@@ -636,7 +633,9 @@ struct Variant[*Ts: Movable](
         """
         return not self == other
 
-    def __hash__(self, mut hasher: Some[Hasher]) where AllHashable[*Self.Ts]:
+    def __hash__(
+        self, mut hasher: Some[Hasher]
+    ) where Self.Ts.all_conforms_to[Hashable]():
         """Hashes the variant using the given hasher.
 
         The hash incorporates both the type discriminant and the held
@@ -659,7 +658,7 @@ struct Variant[*Ts: Movable](
 
     def _write_value_to[
         *, is_repr: Bool
-    ](self, mut writer: Some[Writer]) where AllWritable[*Self.Ts]:
+    ](self, mut writer: Some[Writer]) where Self.Ts.all_conforms_to[Writable]():
         comptime for i in range(Self.Ts.size):
             comptime T = Self.Ts[i]
             if self.isa[T]():
@@ -673,7 +672,9 @@ struct Variant[*Ts: Movable](
                 return
 
     @no_inline
-    def write_to(self, mut writer: Some[Writer]) where AllWritable[*Self.Ts]:
+    def write_to(
+        self, mut writer: Some[Writer]
+    ) where Self.Ts.all_conforms_to[Writable]():
         """Writes the currently held variant value to the provided Writer.
 
         Args:
@@ -684,7 +685,7 @@ struct Variant[*Ts: Movable](
     @no_inline
     def write_repr_to(
         self, mut writer: Some[Writer]
-    ) where AllWritable[*Self.Ts]:
+    ) where Self.Ts.all_conforms_to[Writable]():
         """Write the string representation of the Variant.
 
         Args:

@@ -43,7 +43,6 @@ from std.sys.info import is_32bit
 from std.bit import count_leading_zeros
 from std.memory import Layout, ThinAllocation, dealloc, memcmp, memcpy, memset
 from std.python import ConvertibleFromPython, PythonObject
-from std.reflection.traits import AllWritable
 
 # ===----------------------------------------------------------------------=== #
 # String
@@ -479,7 +478,7 @@ struct String(
         _ = variadic_pack_to_string(1, ", ", 2.0, ", ", "three")
         ```
         """
-        comptime assert AllWritable[*Ts]  # satisfy where clause.
+        comptime assert Ts.all_conforms_to[Writable]()  # satisfy where clause.
 
         var total_bytes = _TotalWritableBytes()
         args._write_to(total_bytes, end=end, sep=sep)
@@ -510,7 +509,7 @@ struct String(
         Returns:
             A string formed by formatting the argument sequence.
         """
-        comptime assert AllWritable[*Ts]  # satisfy where clause.
+        comptime assert Ts.all_conforms_to[Writable]()  # satisfy where clause.
 
         var total_bytes = _TotalWritableBytes()
         args._write_to(total_bytes, end=end, sep=sep)
@@ -535,7 +534,7 @@ struct String(
         Args:
             args: Sequence of arguments to write to this Writer.
         """
-        comptime assert AllWritable[*Ts]  # satisfy where clause.
+        comptime assert Ts.all_conforms_to[Writable]()  # satisfy where clause.
 
         var total_bytes = _TotalWritableBytes()
         total_bytes.size += self.byte_length()

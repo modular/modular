@@ -32,7 +32,6 @@ def main() raises:
 """
 
 from std.math import isclose
-from std.reflection.traits import AllWritable
 
 from std.reflection import call_location, SourceLocation
 from std.memory import memcmp

@@ -60,7 +60,6 @@ from std.sys.intrinsics import _type_is_eq_parse_time
 
 
 from std.builtin.variadics import TypeList
-from std.reflection.traits import AllImplicitlyDestructible, AllCopyable
 
 
 # ===-----------------------------------------------------------------------===#
@@ -498,8 +497,8 @@ def enumerate(
 
 
 struct _ZipIterator[origin: Origin, *Ts: Iterator](
-    Copyable where AllCopyable[*Ts],
-    Iterable where AllCopyable[*Ts],
+    Copyable where conforms_to(Tuple[*Ts], Copyable),
+    Iterable where conforms_to(Tuple[*Ts], Copyable),
     IterableOwned,
     Iterator,
 ):
@@ -535,7 +534,9 @@ struct _ZipIterator[origin: Origin, *Ts: Iterator](
     @always_inline
     def __iter__(
         ref self,
-    ) -> Self.IteratorType[origin_of(self)] where AllCopyable[*Self.Ts]:
+    ) -> Self.IteratorType[origin_of(self)] where conforms_to(
+        Tuple[*Self.Ts], Copyable
+    ):
         return self.copy()
 
     @always_inline
@@ -583,7 +584,7 @@ def zip[
     out res: _ZipIterator[
         iterables.origin, *_iterable_to_iterator[iterables.origin, *Ts]
     ],
-) where AllImplicitlyDestructible[*res.Ts]:
+) where res.Ts.all_conforms_to[ImplicitlyDeletable]():
     """Returns an iterator that yields tuples of the elements of the original
     iterables.
 
@@ -620,7 +621,7 @@ def zip[
     out res: _ZipIterator[
         MutUntrackedOrigin, *_iterable_owned_to_iterator[*Ts]
     ],
-) where AllImplicitlyDestructible[*res.Ts]:
+) where res.Ts.all_conforms_to[ImplicitlyDeletable]():
     """Returns an iterator that yields tuples of the elements of the original
     iterables.
 
@@ -911,8 +912,8 @@ comptime _all_yield_same_owned[*Ts: IterableOwned]: Bool = Ts.all_satisfies[
 
 
 struct _ChainedIterator[*Ts: Iterator](
-    Copyable where AllCopyable[*Ts],
-    Iterable where AllCopyable[*Ts],
+    Copyable where conforms_to(Tuple[*Ts], Copyable),
+    Iterable where conforms_to(Tuple[*Ts], Copyable),
     IterableOwned,
     Iterator,
 ):
@@ -928,7 +929,9 @@ struct _ChainedIterator[*Ts: Iterator](
 
     def __iter__(
         ref self,
-    ) -> Self.IteratorType[origin_of(self)] where AllCopyable[*Self.Ts]:
+    ) -> Self.IteratorType[origin_of(self)] where conforms_to(
+        Tuple[*Self.Ts], Copyable
+    ):
         return self.copy()
 
     def __iter__(var self) -> Self.IteratorOwnedType:
