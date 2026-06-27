@@ -710,7 +710,7 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
     )
     random_input_len: DistributionParameter = Field(
         default=1024,
-        description="Number of input tokens per request, used only for random sampling. Use ';' to separate first-turn and remaining-turn distributions for multiturn.",
+        description="Number of input tokens per request, used by the random and artificial-analysis datasets. Use ';' to separate first-turn and remaining-turn distributions for multiturn.",
         json_schema_extra={"group": "Dataset-Specific Parameters"},
     )
     random_max_num_unique_sys_prompt: int = Field(
@@ -725,7 +725,7 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
     )
     random_output_len: DistributionParameter = Field(
         default=128,
-        description="Number of output tokens per request, used only for random sampling. Use ';' to separate first-turn and remaining-turn distributions for multiturn.",
+        description="Number of output tokens per request, used by the random and artificial-analysis datasets. Use ';' to separate first-turn and remaining-turn distributions for multiturn.",
         json_schema_extra={"group": "Dataset-Specific Parameters"},
     )
     random_sys_prompt_ratio: float = Field(
