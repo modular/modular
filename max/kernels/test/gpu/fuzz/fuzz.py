@@ -165,6 +165,22 @@ _TARGETS: dict[str, FuzzTarget] = {
         ),
         default_oracle="ref",
     ),
+    "grouped_matmul_mxfp8": FuzzTarget(
+        name="grouped_matmul_mxfp8",
+        bazel_target=(
+            "//max/kernels/test/gpu/fuzz:fuzz_grouped_matmul_mxfp8.mojo.test"
+        ),
+        binary=(
+            "bazel-bin/max/kernels/test/gpu/fuzz/"
+            "fuzz_grouped_matmul_mxfp8.mojo.test"
+        ),
+        description=(
+            "grouped block-scaled MXFP8 SM100 matmul (MiniMax-M3-MXFP8 routed"
+            " MoE experts): ragged per-expert token distribution fuzz vs"
+            " per-expert cuBLAS ref. ref/memcheck"
+        ),
+        default_oracle="ref",
+    ),
     "mla_decode": FuzzTarget(
         name="mla_decode",
         bazel_target=("//max/kernels/test/gpu/fuzz:fuzz_mla_decode.mojo.test"),
