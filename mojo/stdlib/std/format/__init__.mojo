@@ -73,7 +73,7 @@ print(repr(p)) # Point: x=1.5, y=2.7
 ```
 """
 
-from std.builtin.constrained import _constrained_field_conforms_to
+from std.builtin.constrained import _field_conforms_to_error
 from std.memory import Span
 from std.reflection import reflect
 from std.reflection.type_info import _unqualified_type_name
@@ -284,8 +284,9 @@ def _reflection_write_to[
 
     comptime for i in range(names.size):
         comptime FieldType = types[i]
-        _constrained_field_conforms_to[
-            conforms_to(FieldType, Writable),
+        comptime assert conforms_to(
+            FieldType, Writable
+        ), _field_conforms_to_error[
             Parent=T,
             FieldIndex=i,
             ParentConformsTo="Writable",
@@ -296,7 +297,7 @@ def _reflection_write_to[
         writer.write_string(materialize[names[i]]())
         writer.write_string("=")
 
-        ref field = trait_downcast[Writable](r.field_ref[i](this))
+        ref field = r.field_ref[i](this)
         f(field, writer)
 
     writer.write_string(")")
