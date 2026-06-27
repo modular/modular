@@ -1696,6 +1696,10 @@ def rms_norm_gpu[
     var warp_per_row_region = (
         ceildiv(rows, warp_per_row_rows_per_block) >= warp_per_row_min_grid
     )
+    # Conservative floor: below one block per SM, chunking can't raise
+    # occupancy and only reassociates the mean-of-squares reduction (the real
+    # crossover is higher and width-dependent; this sits safely below it).
+    var enough_rows_to_chunk = rows >= sm_count
 
     var grid_dim = rows
     var block_dim = min(
@@ -1919,6 +1923,8 @@ def rms_norm_gpu[
             var enough_rows = rows >= 8 * sm_count
             if widen_ok and enough_rows and cols % sw_wide == 0:
                 _launch_warp_tiling[sw_wide, 1]()
+            elif not enough_rows_to_chunk:
+                _launch_warp_tiling[simd_width, 1]()
             else:
                 # Narrow rows: a single full-width pass keeps the block small;
                 # split into independent chunks (ILP + smaller block_reduce)
@@ -1933,8 +1939,11 @@ def rms_norm_gpu[
             cols <= (WARP_SIZE * (simd_width * 2) * max_warps_per_block)
             and cols % (simd_width * 2) == 0
         ):
-            # Wider rows: double the vector width and split into chunks.
-            if cols <= (WARP_SIZE * simd_width * 2 * 2):
+            # Wider rows: double the vector width and, for high-row launches,
+            # split into chunks.
+            if not enough_rows_to_chunk:
+                _launch_warp_tiling[simd_width * 2, 1]()
+            elif cols <= (WARP_SIZE * simd_width * 2 * 2):
                 _launch_warp_tiling[simd_width * 2, 2]()
             else:
                 _launch_warp_tiling[simd_width * 2, 4]()
