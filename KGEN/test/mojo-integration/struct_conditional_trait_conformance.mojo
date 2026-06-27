@@ -53,9 +53,7 @@ struct SimpleWrapper[T: ImplicitlyDeletable & Movable](
         self.value = value^
 
     def __init__(out self, *, copy: Self) where conforms_to(Self.T, Copyable):
-        self.value = rebind_var[Self.T](
-            trait_downcast[Copyable](copy.value).copy()
-        )
+        self.value = copy.value.copy()
 
 
 def needs_copyable[T: Copyable](x: T):
@@ -143,7 +141,7 @@ def test_function_type_conversion():
 #         self.value = copy.value
 #
 #     def print_value(self) where conforms_to(Self.T, Printable):
-#         trait_downcast[Printable](self.value).print_value()
+#         self.value.print_value()
 #
 #
 # def use_printable_closure[
@@ -340,9 +338,7 @@ struct MultipleConditional[T: ImplicitlyDeletable & Movable](
         self.data = data^
 
     def __init__(out self, *, copy: Self) where conforms_to(Self.T, Copyable):
-        self.data = rebind_var[Self.T](
-            trait_downcast[Copyable](copy.data).copy()
-        )
+        self.data = copy.data.copy()
 
     def __int__(self) -> Int where conforms_to(Self.T, Intable):
         return 0
@@ -579,9 +575,7 @@ struct BothConditionalMoveCopy[T: ImplicitlyDeletable & Movable](
     def __init__(
         out self, *, copy: Self
     ) where conforms_to(Self.T, Copyable) and conforms_to(Self.T, Movable):
-        self.value = rebind_var[Self.T](
-            trait_downcast[Copyable](copy.value).copy()
-        )
+        self.value = copy.value.copy()
 
 
 def test_both_conditional_move_copy():
