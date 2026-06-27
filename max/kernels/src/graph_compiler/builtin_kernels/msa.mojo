@@ -12,12 +12,24 @@
 # ===----------------------------------------------------------------------=== #
 """Graph-op bindings for the MiniMax-M3 block-sparse attention (MSA) kernels.
 
-Target: NVIDIA SM100 (B200), BF16, head_dim 128, paged KV with page_size 128
-(== block size BN), single index-K head.  Two ops:
+BF16, head_dim 128, paged KV with page_size 128 (== block size BN), single
+index-K head.  Two ops:
 
   * `mo.msa.indexer.ragged.paged`   -> `sparse_indexer_{prefill,decode}`
   * `mo.msa.attention.ragged.paged` -> `msa_sm100_decode` (decode) /
-    `msa_sm100_prefill_{plan,run}` (prefill)
+    `msa_sm100_prefill_{plan,run}` (prefill) on NVIDIA SM100;
+    `msa_amd_decode_dispatch` (decode) / `msa_amd_prefill_run` (prefill) on
+    AMD gfx950 (MI355).
+
+The attention op is dual-arch: its body comptime-branches on
+`has_amd_gpu_accelerator()` so the dead arch's kernels never codegen (the SM100
+tcgen05/TMA prefill cannot lower on gfx950, and the AMD MFMA path cannot lower
+on SM100).  The AMD prefill `plan` is the arch-neutral `msa_sm100_prefill_plan`
+(host sizing + buffer alloc only -- no SM100 device kernel), shared by both
+arches; only the pure-device run differs.  The indexer op is still SM100-only
+(the MSA indexer was not ported to AMD); an AMD M3 deployment must source
+`d_indices` from an AMD indexer or a host build -- the attention op only
+consumes `d_indices`.
 
 Each op takes the same arguments for prefill and decode and picks the kernel at
 runtime from `kv_collection.max_seq_length` (the max number of *new* query tokens
@@ -75,6 +87,7 @@ from std.collections import OptionalReg
 from std.gpu.host import DeviceContext, DeviceBuffer
 from std.math import ceildiv, min
 from std.memory import UnsafePointer
+from std.sys.info import has_amd_gpu_accelerator
 
 from layout import row_major, TileTensor, Coord
 from layout.tile_tensor import row_major as tt_row_major
@@ -91,6 +104,8 @@ from msa.sparse_indexer_prefill import sparse_indexer_prefill
 from msa.sparse_indexer_decode import sparse_indexer_decode
 from msa.msa_1q import msa_sm100_decode
 from msa.msa_2q import msa_sm100_prefill_plan, msa_sm100_prefill_run
+from msa.amd.decode import msa_amd_decode_dispatch
+from msa.amd.prefill import msa_amd_prefill_run
 
 
 # ===-----------------------------------------------------------------------===#
@@ -366,12 +381,16 @@ struct Struct_msa_attention_ragged_paged:
 
         # Route purely on the runtime query length.  MAX speculative draft
         # length is 4; `2/3/4` route to spec decode, `> 4` to prefill (a short
-        # 2-4 prefill is correctly served by the spec path).
+        # 2-4 prefill is correctly served by the spec/prefill path).  Spec
+        # decode is SM100-only; on AMD the `2-4` case falls through to the
+        # paged prefill run (the AMD decode dispatch has no spec mode).
         comptime MAX_SPEC_DRAFT = 4
         var max_q_len = Int(kv_collection.max_seq_length)
 
         # Decode == one query token per sequence (`max_q_len == 1`).
         if max_q_len == 1:
+            var topk_tokens = topk * page_size
+
             var iro_lt = input_row_offsets.to_layout_tensor()
             var valid_length = DeviceBuffer[DType.uint32](
                 ctx,
@@ -383,46 +402,69 @@ struct Struct_msa_attention_ragged_paged:
                 d_indices.to_layout_tensor().ptr,
                 row_major(Coord(d_indices.to_layout_tensor().size())),
             ).as_immut()
-            var topk_tokens = topk * page_size
 
-            # `msa_sm100_decode` OWNS the split-K partition count: it computes
-            # `np` itself from the args below (`batch_size=num_rows`,
-            # `max_cache_valid_length=topk_tokens`, cap `indices_stride=topk`) via
-            # the dense-MHA decode heuristic, so this op passes none.
+            # `np` is owned by the decode entry (computed from batch_size,
+            # topk_tokens, topk via the dense-MHA heuristic).
             #
-            # `mask_unselected=True`: the indexer `-1`-pads `d_indices` when the
-            # sequence has fewer than `topk` selectable blocks (e.g. a short
-            # first decode step). The kernel must poison those `-1` slots' columns
-            # to -inf (and `block_base_row` redirects their load to block 0 to
-            # avoid an OOB page lookup). Without this the `-1` blocks attend
-            # phantom rows, and -- with split-K at the production count (np ==
-            # topk) -- each `-1` lands in its own fully-masked partition, whose
-            # NaN exp-sum poisons the combine and NaNs the whole decode row.
-            msa_sm100_decode[
-                config=config,
-                group=group,
-                ragged=True,
-                _is_cache_length_accurate=False,
-                mask_unselected=True,
-            ](
-                output_buf,
-                q_buf,
-                k_op,
-                v_op,
-                d_indices_tt,
-                topk,  # indices_stride (topk in BLOCKS)
-                num_rows,  # num_rows_q (1 token/seq)
-                NullMask(),
-                valid_length,
-                StaticInt[1](),  # max_prompt_len (decode)
-                topk_tokens,  # max_cache_valid_length
-                scale,
-                None,  # kv_input_row_offsets
-                num_rows,  # batch_size
-                ctx,
-            )
-        elif max_q_len <= MAX_SPEC_DRAFT:
-            # ---- Sparse SPECULATIVE decode (`2 <= max_q_len <= 4`) ----
+            # `mask_unselected=True`: the indexer `-1`-pads `d_indices` when
+            # the sequence has fewer than `topk` selectable blocks (e.g. a
+            # short first decode step). Without this the `-1` blocks attend
+            # phantom rows, and -- with np == topk -- each `-1` lands in its
+            # own fully-masked partition whose NaN exp-sum poisons the combine.
+            #
+            # AMD and SM100 take the same call signature; the two arms differ
+            # only in kernel name.  No `valid_key` (the indexer's trailing
+            # block is whole; a sub-BN partial would need per-batch clamp).
+            comptime if has_amd_gpu_accelerator():
+                msa_amd_decode_dispatch[
+                    config=config,
+                    group=group,
+                    ragged=True,
+                    _is_cache_length_accurate=False,
+                    mask_unselected=True,
+                ](
+                    output_buf,
+                    q_buf,
+                    k_op,
+                    v_op,
+                    d_indices_tt,
+                    topk,  # indices_stride (topk in BLOCKS)
+                    num_rows,  # num_rows_q (1 token/seq)
+                    NullMask(),
+                    valid_length,
+                    StaticInt[1](),  # max_prompt_len (decode)
+                    topk_tokens,  # max_cache_valid_length
+                    scale,
+                    None,  # kv_input_row_offsets
+                    num_rows,  # batch_size
+                    ctx,
+                )
+            else:
+                msa_sm100_decode[
+                    config=config,
+                    group=group,
+                    ragged=True,
+                    _is_cache_length_accurate=False,
+                    mask_unselected=True,
+                ](
+                    output_buf,
+                    q_buf,
+                    k_op,
+                    v_op,
+                    d_indices_tt,
+                    topk,  # indices_stride (topk in BLOCKS)
+                    num_rows,  # num_rows_q (1 token/seq)
+                    NullMask(),
+                    valid_length,
+                    StaticInt[1](),  # max_prompt_len (decode)
+                    topk_tokens,  # max_cache_valid_length
+                    scale,
+                    None,  # kv_input_row_offsets
+                    num_rows,  # batch_size
+                    ctx,
+                )
+        elif (not has_amd_gpu_accelerator()) and max_q_len <= MAX_SPEC_DRAFT:
+            # ---- Sparse SPECULATIVE decode (`2 <= max_q_len <= 4`, SM100) ----
             # Each draft token runs on its OWN CTA via the per-token decode
             # kernel (`spec_max_seq_len > 1` derives the spec mode in-entry =>
             # per_token_index + causal + the over-launched
@@ -445,59 +487,66 @@ struct Struct_msa_attention_ragged_paged:
             # when np > 1 (the causal dead-partition salvage in the partial
             # writeback keeps the combine NaN-free).  The partials key on the
             # ragged global query row, so the combine writes the ragged output
-            # directly (no dense intermediate / gather).
-            var iro_lt = input_row_offsets.to_layout_tensor()
-            var valid_length = DeviceBuffer[DType.uint32](
-                ctx,
-                iro_lt.ptr,
-                Int(input_row_offsets.dim_size[0]()),
-                owning=False,
-            )
-            var d_indices_tt = TileTensor(
-                d_indices.to_layout_tensor().ptr,
-                row_major(Coord(d_indices.to_layout_tensor().size())),
-            ).as_immut()
-            var topk_tokens = topk * page_size
-            var batch = Int(input_row_offsets.dim_size[0]()) - 1
+            # directly (no dense intermediate / gather).  SM100 only: AMD has
+            # no spec mode (the `2-4` case falls through to paged prefill).
+            # The inner `comptime if` keeps the tcgen05 `msa_1q` body from
+            # codegen'ing on gfx950 even though the outer `elif` is runtime.
+            comptime if not has_amd_gpu_accelerator():
+                var iro_lt = input_row_offsets.to_layout_tensor()
+                var valid_length = DeviceBuffer[DType.uint32](
+                    ctx,
+                    iro_lt.ptr,
+                    Int(input_row_offsets.dim_size[0]()),
+                    owning=False,
+                )
+                var d_indices_tt = TileTensor(
+                    d_indices.to_layout_tensor().ptr,
+                    row_major(Coord(d_indices.to_layout_tensor().size())),
+                ).as_immut()
+                var topk_tokens = topk * page_size
+                var batch = Int(input_row_offsets.dim_size[0]()) - 1
 
-            # The over-launch span `spec_max_seq_len` is a graph constant, so
-            # bind it to the matched runtime length per branch (one CTA per
-            # (draft token, partition) over `batch * spec_max_seq_len`).  The
-            # entry derives the spec mode from `spec_max_seq_len > 1`.
-            comptime for n in range(2, MAX_SPEC_DRAFT + 1):
-                if max_q_len == n:
-                    msa_sm100_decode[
-                        config=config,
-                        group=group,
-                        ragged=True,
-                        _is_cache_length_accurate=False,
-                        mask_unselected=True,
-                        spec_max_seq_len=n,  # over-launch span (graph constant)
-                    ](
-                        output_buf,
-                        q_buf,
-                        k_op,
-                        v_op,
-                        d_indices_tt,
-                        topk,  # indices_stride (topk in BLOCKS)
-                        num_rows,  # num_rows_q (total draft tokens)
-                        NullMask(),
-                        valid_length,  # ragged Q offsets (token tail + row remap)
-                        StaticInt[1](),  # max_prompt_len: tile is decode-shaped
-                        topk_tokens,  # max_cache_valid_length
-                        scale,
-                        None,  # kv_input_row_offsets
-                        batch,  # batch_size (grid.x = batch * spec_max_seq_len)
-                        ctx,
-                        # Spec decode derives BOTH the per-block logical start
-                        # and the per-token logical query position in-kernel
-                        # (the latter from `cache_lengths + tok_in_seq`), so it
-                        # carries neither a `kv_logical_pos` nor a `q_positions`
-                        # array.  The kernel keys causal off the derived spec
-                        # mode (=> `causal`), not off the presence of a
-                        # `q_positions` pointer.
-                    )
-                    return
+                # The over-launch span `spec_max_seq_len` is a graph constant,
+                # so bind it to the matched runtime length per branch (one CTA
+                # per (draft token, partition) over `batch * spec_max_seq_len`).
+                # The entry derives the spec mode from `spec_max_seq_len > 1`.
+                comptime for n in range(2, MAX_SPEC_DRAFT + 1):
+                    if max_q_len == n:
+                        msa_sm100_decode[
+                            config=config,
+                            group=group,
+                            ragged=True,
+                            _is_cache_length_accurate=False,
+                            mask_unselected=True,
+                            spec_max_seq_len=n,  # over-launch span (graph const)
+                        ](
+                            output_buf,
+                            q_buf,
+                            k_op,
+                            v_op,
+                            d_indices_tt,
+                            topk,  # indices_stride (topk in BLOCKS)
+                            num_rows,  # num_rows_q (total draft tokens)
+                            NullMask(),
+                            valid_length,  # ragged Q offsets (tail + row remap)
+                            StaticInt[
+                                1
+                            ](),  # max_prompt_len: tile is decode-shaped
+                            topk_tokens,  # max_cache_valid_length
+                            scale,
+                            None,  # kv_input_row_offsets
+                            batch,  # batch_size (grid.x = batch*spec_max_seq_len)
+                            ctx,
+                            # Spec decode derives BOTH the per-block logical
+                            # start and the per-token logical query position
+                            # in-kernel (the latter from `cache_lengths +
+                            # tok_in_seq`), so it carries neither a
+                            # `kv_logical_pos` nor a `q_positions` array.  The
+                            # kernel keys causal off the derived spec mode (=>
+                            # `causal`), not off the presence of a `q_positions`
+                            # pointer.
+                        )
+                        return
         else:
             var batch = Int(input_row_offsets.dim_size[0]()) - 1
 
@@ -539,23 +588,48 @@ struct Struct_msa_attention_ragged_paged:
                 owning=False,
             )
 
-            msa_sm100_prefill_run[
-                config=config,
-                group=group,
-                topk=topk,
-                use_causal=True,
-            ](
-                plan,
-                output_buf,
-                lse_buf,
-                q_buf,
-                k_op,
-                v_op,
-                d_indices_buf,
-                cuq_d,
-                cuk_d,
-                scale,
-                ctx,
-            )
+            # The plan (host sizing + buffer alloc) is arch-neutral (no SM100
+            # device kernel), so it codegens on gfx950.  Only the device run
+            # differs: AMD chains CSR-build -> block-major fwd -> combine;
+            # SM100 runs its tcgen05 path.  Both take the identical signature;
+            # the comptime branch keeps the dead arch's kernels from codegen'ing.
+            comptime if has_amd_gpu_accelerator():
+                msa_amd_prefill_run[
+                    config=config,
+                    group=group,
+                    topk=topk,
+                    use_causal=True,
+                ](
+                    plan,
+                    output_buf,
+                    lse_buf,
+                    q_buf,
+                    k_op,
+                    v_op,
+                    d_indices_buf,
+                    cuq_d,
+                    cuk_d,
+                    scale,
+                    ctx,
+                )
+            else:
+                msa_sm100_prefill_run[
+                    config=config,
+                    group=group,
+                    topk=topk,
+                    use_causal=True,
+                ](
+                    plan,
+                    output_buf,
+                    lse_buf,
+                    q_buf,
+                    k_op,
+                    v_op,
+                    d_indices_buf,
+                    cuq_d,
+                    cuk_d,
+                    scale,
+                    ctx,
+                )
 
             _ = lse_buf^
