@@ -10,6 +10,13 @@ This version is still a work in progress.
 
 ## Language enhancements
 
+- Mojo now warns about redundant trait composition
+
+  ```mojo
+  # Warning: Redundant trait composition: 'Copyable' already implies 'AnyType'
+  comptime T : AnyType & Copyable = xxx
+  ```
+
 - Keyword variadic arguments can now be forwarded to another function that takes
   keyword variadics, using Python style `**` syntax:
 

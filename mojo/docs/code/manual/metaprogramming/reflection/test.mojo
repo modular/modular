@@ -189,7 +189,7 @@ def test_field_offset_alignment() raises:
 # --- type_of ---
 
 
-def make_default[T: AnyType & Defaultable]() -> T:
+def make_default[T: Defaultable]() -> T:
     return T()
 
 
