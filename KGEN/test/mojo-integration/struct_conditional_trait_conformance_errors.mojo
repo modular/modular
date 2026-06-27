@@ -29,9 +29,7 @@ struct ConditionalCopyableWrapper[T: ImplicitlyDeletable & Movable](
     def __copyinit__(
         out self, copy: Self, /
     ) where conforms_to(Self.T, Copyable):
-        self.value = rebind_var[Self.T](
-            trait_downcast[Copyable](copy.value).copy()
-        )
+        self.value = copy.value.copy()
 
 
 # A function that requires Copyable
@@ -91,7 +89,7 @@ struct PrintableWrapper[T: ImplicitlyCopyable](
         self.value = copy.value
 
     def print_value(self) where conforms_to(Self.T, Printable):
-        trait_downcast[Printable](self.value).print_value()
+        self.value.print_value()
 
 
 def use_printable_closure[

@@ -48,7 +48,7 @@ struct ConditionalCopyable[T: Movable & ImplicitlyDeletable](
         self.value = move.value^
 
     def __init__(out self, *, copy: Self) where conforms_to(Self.T, Copyable):
-        self.value = rebind_var[Self.T](trait_downcast[Copyable](copy.value).copy())
+        self.value = copy.value.copy()
 
 
 # ===========================================================================
@@ -74,7 +74,7 @@ struct MultipleConditionalConformances[T: Movable & ImplicitlyDeletable](
         self.inner = move.inner^
 
     def __init__(out self, *, copy: Self) where conforms_to(Self.T, Copyable):
-        self.inner = rebind_var[Self.T](trait_downcast[Copyable](copy.inner).copy())
+        self.inner = copy.inner.copy()
 
     def __int__(self) -> Int where conforms_to(Self.T, Intable):
         return 0
