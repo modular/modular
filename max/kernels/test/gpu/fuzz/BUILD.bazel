@@ -361,6 +361,40 @@ mojo_test(
     ],
 )
 
+# Target: grouped block-scaled MXFP8 SM100 matmul (the MiniMax-M3-MXFP8 routed
+# MoE expert FFN). Ragged per-expert token distribution + active-expert count
+# are the runtime fuzz axis (encoded as `num_active_experts` + `tok_seed`,
+# expanded with boundary_int around SF_MN_GROUP_SIZE=128); N/K/num_experts are
+# compile-time (`-D N=.. -D K=.. -D num_experts=..`). `ref` (--check) compares
+# per-expert against cuBLAS with the same E8M0 scales. B200-only.
+mojo_test(
+    name = "fuzz_grouped_matmul_mxfp8.mojo.test",
+    size = "large",
+    srcs = [
+        "_fuzz.mojo",
+        "fuzz_grouped_matmul_mxfp8.mojo",
+    ],
+    exec_properties = {
+        "test.resources:gpu-memory": "8",
+    },
+    main = "fuzz_grouped_matmul_mxfp8.mojo",
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    target_compatible_with = [
+        "//:has_gpu",
+        "//:b200_gpu",
+    ],
+    deps = [
+        "//max:internal_utils",
+        "//max:linalg",
+        "//max:nn",
+        "//max:structured_kernels",
+        "@mojo//:std",
+    ],
+)
+
 # Target: token sampler `fused_token_sampling_gpu` (the production top-k+top-p
 # sampling op). Two oracles: (1) a validity contract that every sampled
 # out_idxs is in [0, vocab) -- a negative / out-of-range token id is FAIL; and
