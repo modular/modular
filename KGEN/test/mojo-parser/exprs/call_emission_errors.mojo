@@ -221,10 +221,12 @@ def test_ref[mut: Bool, //, origin: Origin[mut=mut]](ref[origin] arg: String):
 
 
 def call_test_ref(mut s: String):
-    # expected-error @+1 {{cannot use parameterized function of type 'def[mut: Bool, //, origin: Origin[mut=mut]](ref[origin] arg: String) -> None'}}
+    # expected-error @below {{cannot use parametric function as a runtime closure}}
+    # expected-note @below {{parameter 'mut' of type 'Bool' is not bound}}
     var f1 = test_ref
 
-    # expected-error @+1 {{cannot use parameterized function of type 'def[origin: MutOrigin](ref[origin] arg: String) -> None' without binding all its parameters}}
+    # This is ok, because the only unbound parameter is the origin which is a
+    # singleton type.
     var f2 = test_ref[mut=True, ...]
     # expected-error @+1 {{cannot call dynamic function with parameterized type}}
     f2(s)

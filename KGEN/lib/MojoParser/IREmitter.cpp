@@ -407,14 +407,22 @@ SRValue IREmitter::emitPValueToSRValue(ASTExprAnd<PValue> value,
   // TODO: We should have a general predicate from this provided by the KGEN
   // parameter utilities.
   if (auto signature = dyn_cast<FnTypeGeneratorType>(attr.getType())) {
-    // If the value has any unbound parameters, they might be default arguments
-    // or an variadic list that should be bound to an empty list.
-    if (!signature.getInputParamTypes().empty()) {
-      // We require explicit `[]` to bind values, if we are still seeing
-      // parametric type, then we can not materialize it as an SSA value.
-      emitError(expr->getLoc(), "cannot use parameterized function of type ")
-          << ASTType(attr.getType()) << " without binding all its parameters"
+    // Reject any unbound non-singleton parameters. This can't be materialized
+    // to a runtime value, because it needs to get instantiated.
+    for (auto [paramType, pog] : llvm::zip(signature.getInputParamTypes(),
+                                           signature.getMetadata().getPogs())) {
+      // Singleton values like origins are fine. They will be removed by
+      // lowerlit before code generation.
+      if (ASTType(paramType).isSingleton(shared))
+        continue;
+
+      auto diag =
+          emitError(expr->getLoc(),
+                    "cannot use parametric function as a runtime closure")
           << expr->getRange();
+      diag.attachNote(expr->getLoc())
+          << "parameter " << pog.getName() << " of type " << ASTType(paramType)
+          << " is not bound";
       return {};
     }
 

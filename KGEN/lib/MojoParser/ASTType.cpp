@@ -18,6 +18,7 @@
 #include "Support/Compiler/OperationUtils.h"
 
 #include "KGEN/KGENDialect/KGENParameters.h"
+#include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LITDialect/LITUtils.h"
 
@@ -1116,6 +1117,25 @@ bool ASTType::containsUnmaterializableOrigins(SharedState &shared) const {
 
     // Otherwise, it is something we can't track.
     return true;
+  }
+
+  return false;
+}
+
+/// Return true if this type is a singleton type. This is a type that has one
+/// value, e.g. a !lit.origin or a struct whose fields are all singleton types.
+bool ASTType::isSingleton(SharedState &shared) const {
+  // Raw lit.origin's and origin sets are always singleton types.
+  if (sugarIsa<OriginType, OriginSetType>(mlirType))
+    return true;
+
+  if (auto structType = sugarDynCast<LIT::StructType>(mlirType)) {
+    ASTDecl *decl = getDecl(shared);
+    assert(decl && "struct decl not found");
+    if (failed(shared.declResolver->resolveBody(*decl, decl->getLoc())))
+      return false;
+    auto structDecl = cast<StructDeclOp>(decl->getIfOperation());
+    return structDecl.field_begin() == structDecl.field_end();
   }
 
   return false;
