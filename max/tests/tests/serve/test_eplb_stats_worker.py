@@ -18,11 +18,11 @@ import logging
 from typing import Any, cast
 
 import pytest
-from max.pipelines.modeling.types.pipeline import Pipeline
-from max.serve.pipelines.eplb_stats import (
+from max.pipelines.lib.eplb_stats import (
     EplbStatsAccumulator,
     EplbStatsMetadata,
 )
+from max.pipelines.modeling.types.pipeline import Pipeline
 from max.serve.pipelines.model_worker import _get_eplb_stats_accumulator
 
 

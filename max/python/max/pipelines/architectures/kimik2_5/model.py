@@ -47,6 +47,10 @@ from max.pipelines.lib import (
     PipelineConfig,
     PipelineModelWithKVCache,
 )
+from max.pipelines.lib.eplb_stats import (
+    EplbStatsAccumulator,
+    EplbStatsMetadata,
+)
 from max.pipelines.lib.vision_encoder_cache import VisionEncoderCache
 from max.pipelines.modeling.config_enums import is_float4_encoding
 from max.pipelines.request import RequestID
@@ -110,6 +114,9 @@ class KimiK2_5ModelInputs(DeepseekV3Inputs):
     """Per-device scatter indices for the language model graph.
     Shape [0] during decode, [num_image_tokens] during prefill."""
 
+    eplb_counter_buffers: list[Buffer] = field(default_factory=list)
+    """Per-device EP counter buffers for the language model graph."""
+
     @property
     def has_vision_inputs(self) -> bool:
         """Check if this input contains vision data."""
@@ -134,6 +141,7 @@ class KimiK2_5ModelInputs(DeepseekV3Inputs):
             ),
             *self.batch_context_lengths,
             *self.ep_inputs,
+            *self.eplb_counter_buffers,
         )
 
 
@@ -163,6 +171,9 @@ class KimiK2_5Model(
 
     language_model: Model
     """The compiled language model for text generation."""
+
+    _eplb_stats_accumulator: EplbStatsAccumulator | None = None
+    """The EPLB routing histogram accumulator."""
 
     def __init__(
         self,
@@ -399,7 +410,9 @@ class KimiK2_5Model(
                 f" ep_size={ep_size}. Use {attn_strategy}-attention +"
                 f" {moe_strategy}-MoE strategy."
             )
-
+        model_config.eplb_profile_enabled = (
+            self.pipeline_config.runtime.eplb_profile
+        )
         return model_config
 
     def load_model(self, session: InferenceSession) -> tuple[Model, Model]:
@@ -444,6 +457,15 @@ class KimiK2_5Model(
         )
         self.state_dict = self.nn_model.state_dict()
         logger.info("Loaded Weights")
+
+        # EPLB profiling — gated on pipeline_config.runtime.eplb_profile.
+        if self.pipeline_config.runtime.eplb_profile:
+            self._eplb_stats_accumulator = EplbStatsAccumulator(
+                metadata=self._eplb_stats_metadata(),
+                devices=list(self.devices),
+            )
+        else:
+            self._eplb_stats_accumulator = None
 
         # Load the vision + language model.
         with CompilationTimer("vision + language model") as timer:
@@ -637,7 +659,19 @@ class KimiK2_5Model(
             ]
 
             # all remaining arguments are for EP inputs
-            ep_model_inputs = list(variadic_args_iter)
+            remaining = list(variadic_args_iter)
+            if self._eplb_stats_accumulator is not None:
+                L = self.huggingface_config.text_config.num_hidden_layers
+                D = len(self.devices)
+                flat_bufs = [v.buffer for v in remaining[-L * D :]]
+                eplb_counter_buffers_per_layer = [
+                    flat_bufs[layer_idx * D : (layer_idx + 1) * D]
+                    for layer_idx in range(L)
+                ]
+                ep_model_inputs = remaining[: -L * D]
+            else:
+                eplb_counter_buffers_per_layer = None
+                ep_model_inputs = remaining
 
             outputs = language_model(
                 tokens=tokens.tensor,
@@ -651,6 +685,7 @@ class KimiK2_5Model(
                 data_parallel_splits=data_parallel_splits.tensor,
                 batch_context_lengths=batch_context_lengths,
                 ep_inputs=ep_model_inputs,
+                eplb_counter_buffers_per_layer=eplb_counter_buffers_per_layer,
             )
 
             graph.output(*outputs)
@@ -704,7 +739,15 @@ class KimiK2_5Model(
                 model_inputs.image_token_indices
             )
 
+        if self._eplb_stats_accumulator is not None:
+            model_inputs.eplb_counter_buffers = (
+                self._eplb_stats_accumulator.device_buffers
+            )
         model_outputs = self.language_model.execute(*model_inputs.buffers)
+        if self._eplb_stats_accumulator is not None:
+            self._eplb_stats_accumulator.record_batch_total_tokens(
+                int(model_inputs.tokens.shape[0])
+            )
         assert self.batch_processor is not None
         return self.batch_processor.process_outputs(model_outputs)
 
@@ -729,3 +772,12 @@ class KimiK2_5Model(
                 ),
             )
         raise RuntimeError("No batch processor configured for KimiK2_5Model")
+
+    def _eplb_stats_metadata(self) -> EplbStatsMetadata:
+        """Returns shape descriptor for the language MoE layers."""
+        text = self.huggingface_config.text_config
+        return EplbStatsMetadata(
+            num_moe_layers=text.num_hidden_layers,
+            num_logical_experts=text.n_routed_experts,
+            num_experts_per_token=text.num_experts_per_tok,
+        )

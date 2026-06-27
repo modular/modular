@@ -33,7 +33,7 @@ import socket as _socket
 import time
 from dataclasses import dataclass
 
-from max.serve.pipelines.eplb_stats import (
+from max.pipelines.lib.eplb_stats import (
     EplbStatsAccumulator,
     EplbStatsSnapshot,
 )

@@ -29,6 +29,8 @@ from typing import cast
 
 from max.dtype import DType
 from max.graph import (
+    BufferValue,
+    DeviceRef,
     TensorValue,
     ops,
 )
@@ -40,12 +42,16 @@ from .moe import MoE
 def _ep_forward(
     moe_shards: list[MoE],
     xs: list[TensorValue],
+    eplb_counter_buffers: list[BufferValue] | None = None,
 ) -> list[TensorValue]:
     """Runs the EP MoE forward pass using multi-device dispatch and combine.
 
     Uses single multi-device graph ops for both dispatch and combine,
     with per-shard gate and local expert compute in between:
     gate -> multi-device dispatch -> local compute -> multi-device combine.
+
+    Returns:
+        outputs: One output tensor per shard.
     """
 
     all_topk_ids: list[TensorValue] = []
@@ -53,9 +59,22 @@ def _ep_forward(
     all_input_scales: list[TensorValue | None] = []
     device_ids: list[int] = []
 
-    for shard, x in zip(moe_shards, xs, strict=True):
+    batch_mgr = moe_shards[0].ep_batch_manager
+
+    for i, (shard, x) in enumerate(zip(moe_shards, xs, strict=True)):
         router_idx, router_weight = shard.gate(x)
-        all_topk_ids.append(ops.cast(router_idx, DType.int32))
+        router_idx = ops.cast(router_idx, DType.int32)
+
+        # histogram to capture eplb logical stats
+        if eplb_counter_buffers is not None:
+            _accumulate(
+                eplb_counter_buffers[i],
+                ops.cast(router_idx, DType.int32).reshape([-1]),
+                shard.devices[0],
+                shard.gate.num_experts,
+            )
+
+        all_topk_ids.append(router_idx)
         all_router_weights.append(router_weight)
         all_input_scales.append(shard._ep_dispatch_input_scales())
         device_ids.append(shard.devices[0].id)
@@ -64,8 +83,6 @@ def _ep_forward(
     scales: list[TensorValue] | None = None
     if all_input_scales[0] is not None:
         scales = [s for s in all_input_scales if s is not None]
-
-    batch_mgr = moe_shards[0].ep_batch_manager
 
     # When the model has an unfused shared expert and non-allreduce EP, split
     # the per-device dispatch and combine into async launch + wait and run the
@@ -208,12 +225,48 @@ def _ep_forward(
         if shared_out is not None:
             out += shared_out
         outputs.append(out.cast(x.dtype))
+
     return outputs
+
+
+def _accumulate(
+    counter_buf: BufferValue,
+    router_idx_flat: TensorValue,
+    device: DeviceRef,
+    num_experts: int,
+) -> None:
+    """Atomic-equivalent on-GPU histogram via broadcast equality + reduction.
+
+    Memory: N*K*E bytes temporary (int8). For Kimi prefill (N=4096, K=8,
+    E=384) that's 12 MB per layer per forward; freed before the next layer.
+    """
+    counter = ops.buffer_load(counter_buf)
+
+    expert_ids = ops.range(
+        start=0,
+        stop=num_experts,
+        step=1,
+        out_dim=num_experts,
+        dtype=DType.int32,
+        device=device,
+    )
+
+    matches = ops.equal(
+        ops.unsqueeze(router_idx_flat, axis=-1),
+        ops.unsqueeze(expert_ids, axis=0),
+    )
+
+    increment_2d = ops.sum(matches.cast(DType.int32), axis=0)
+
+    increment = ops.reshape(increment_2d, [num_experts]).cast(DType.int64)
+
+    ops.buffer_store(counter_buf, counter + increment)
 
 
 def forward_moe_sharded_layers(
     shards: Sequence[Callable[[TensorValue], TensorValue]],
     xs: list[TensorValue],
+    eplb_counter_buffers: list[BufferValue] | None = None,
 ) -> list[TensorValue]:
     """Forward pass through DP-sharded layers (EP MoE or replicated MLP/MoE).
 
@@ -227,12 +280,14 @@ def forward_moe_sharded_layers(
         xs: Input tensors, one per shard.
 
     Returns:
-        Output tensors, one per shard.
+        outputs: Output tensors, one per shard.
     """
     first = shards[0]
     if (
         hasattr(first, "_ep_batch_manager")
         and first._ep_batch_manager is not None
     ):
-        return _ep_forward(cast(list[MoE], list(shards)), xs)
+        return _ep_forward(
+            cast(list[MoE], list(shards)), xs, eplb_counter_buffers
+        )
     return forward_sharded_layers(shards, xs)

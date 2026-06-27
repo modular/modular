@@ -12,10 +12,12 @@
 # ===----------------------------------------------------------------------=== #
 
 """Schema types for expert-parallel Load Balancing (EPLB) MoE profiling snapshots.
+
 This module defines the schema for EPLB routing
 histograms collected by the model worker and exposed over an internal
 HTTP route. It is intentionally free of any serve, ZMQ, or GPU
 imports so it can be reused by:
+
 * the model worker (producer)
 * the API server (consumer / serializer)
 """
@@ -73,10 +75,13 @@ class EplbStatsMetadata:
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> EplbStatsMetadata:
         """Constructs an instance from a dict produced by method to_dict.
+
         Args:
             data: A dict produced by method to_dict.
+
         Returns:
             An `EplbStatsMetadata` class instance.
+
         Raises:
             ValueError: If a required field is missing or has the wrong
                 type.
@@ -164,16 +169,21 @@ class EplbStatsSnapshot:
         hostname: str | None = None,
     ) -> EplbStatsSnapshot:
         """Builds a snapshot, defensively copying the histogram.
+
         Use this when the source array is owned by a live accumulator
         that may keep mutating after the snapshot is taken.
+
         Args:
             metadata: Static shape descriptor.
             histogram: 2D int64 array of cumulative counts. Will
                 be copied.
             total_tokens: Total number of tokens contributing to the
                 histogram so far.
+            hostname: Optional worker hostname to tag the snapshot with.
+
         Returns:
             A new class instance of `EplbStatsSnapshot`.
+
         Raises:
             AssertionError: If shape/dtype/values are invalid.
         """
@@ -186,8 +196,10 @@ class EplbStatsSnapshot:
 
     def to_dict(self) -> dict[str, Any]:
         """Returns a JSON-safe dict representation.
+
         The histogram is serialized as a nested list[list[int]] and
         int64 values are converted to Python int via ndarray.tolist().
+
         Returns:
             A dict that is safe to pass directly to json.dumps.
         """
@@ -201,10 +213,13 @@ class EplbStatsSnapshot:
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> EplbStatsSnapshot:
         """Constructs a snapshot from a dict produced by method to_dict.
+
         Args:
             data: A dict produced by method to_dict.
+
         Returns:
             A new class instance of EplbStatsSnapshot.
+
         Raises:
             ValueError: If a required field is missing, has the wrong
                 type,
@@ -284,13 +299,27 @@ class EplbStatsAccumulator:
 
     @property
     def metadata(self) -> EplbStatsMetadata:
+        """Static shape/semantics descriptor for the accumulator."""
         return self._metadata
 
     def record_batch_total_tokens(self, num_tokens: int) -> None:
+        """Increments the cumulative token count by `num_tokens`."""
         with self._lock:
             self._total_tokens += int(num_tokens)
 
     def snapshot(self, hostname: str | None = None) -> EplbStatsSnapshot:
+        """Returns a snapshot of the current per-layer routing histograms.
+
+        Pulls each per-(layer, device) counter buffer to host, sums across
+        devices, and packages the result with the cumulative token count
+        and optional worker hostname.
+
+        Args:
+            hostname: Optional worker hostname to tag the snapshot with.
+
+        Returns:
+            An immutable `EplbStatsSnapshot`.
+        """
         num_layers = self._metadata.num_moe_layers
         num_experts = self._metadata.num_logical_experts
         histogram = np.zeros((num_layers, num_experts), dtype=np.int64)
@@ -306,6 +335,7 @@ class EplbStatsAccumulator:
         )
 
     def reset(self) -> None:
+        """Zeros every per-(layer, device) counter buffer and the token count."""
         with self._lock:
             self._layer_device_buffers = [
                 [

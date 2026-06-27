@@ -100,6 +100,11 @@ class DeepseekV3Config(ArchConfigWithKVCache):
     eagle_aux_hidden_state_layer_ids: list[int] | None = None
     """Optional explicit hidden-state capture layer ids for EAGLE3."""
 
+    eplb_profile_enabled: bool = False
+    """When True, the language graph emits per-layer ep_counter_buffers
+    mutated in-place by scatter_nd_add. Set from
+    pipeline_config.runtime.eplb_profile at config build time."""
+
     def __post_init__(self) -> None:
         if self.hidden_act != "silu":
             raise ValueError(

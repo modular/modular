@@ -21,7 +21,7 @@ import threading
 
 import numpy as np
 import pytest
-from max.serve.pipelines.eplb_stats import (
+from max.pipelines.lib.eplb_stats import (
     EplbStatsAccumulator,
     EplbStatsMetadata,
     EplbStatsSnapshot,
