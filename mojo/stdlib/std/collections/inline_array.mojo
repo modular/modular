@@ -458,10 +458,7 @@ struct InlineArray[ElementType: Movable, size: Int](
         comptime unroll_end = std.math.align_down(Self.size, batch_size)
 
         var base = self.unsafe_ptr()
-        comptime CopyablePointerType = UnsafePointer[
-            downcast[Self.ElementType, Copyable], origin_of(base)
-        ]
-        var ptr = rebind[CopyablePointerType](base)
+        var ptr = base
 
         for _ in range(0, unroll_end, batch_size):
             comptime for _ in range(batch_size):
@@ -473,7 +470,7 @@ struct InlineArray[ElementType: Movable, size: Int](
             ptr.init_pointee_copy(fill)
             ptr += 1
         debug_assert(
-            ptr == rebind[CopyablePointerType](base + Self.size),
+            ptr == (base + Self.size),
             "error during `InlineArray` initialization , please file a bug",
             " report.",
         )
@@ -539,20 +536,13 @@ struct InlineArray[ElementType: Movable, size: Int](
         # to `Copyable` when resolving downstream parametric overloads (e.g.
         # `UnsafePointer.init_pointee_copy[T: Copyable]`). Drop the downcasts
         # once the compiler propagates `where`-clause evidence.
-        comptime if is_trivially_copyable[
-            downcast[Self.ElementType, Copyable]
-        ]():
+        comptime if is_trivially_copyable[Self.ElementType]():
             self._array = copy._array
         else:
             self = Self(uninitialized=True)
             var base = self.unsafe_ptr()
-            comptime CopyablePointerType = UnsafePointer[
-                downcast[Self.ElementType, Copyable], origin_of(base)
-            ]
             for idx in range(Self.size):
-                rebind[CopyablePointerType](base + idx).init_pointee_copy(
-                    copy.unsafe_get(idx)
-                )
+                (base + idx).init_pointee_copy(copy.unsafe_get(idx))
 
     def __init__(out self, *, deinit move: Self):
         """Move constructs the array from another array.

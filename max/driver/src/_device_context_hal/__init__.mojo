@@ -1140,9 +1140,7 @@ struct DeviceFunction[
 
             def declared_arg_type_name() -> String:
                 comptime if conforms_to(declared_arg_type, DevicePassable):
-                    return downcast[
-                        declared_arg_type, DevicePassable
-                    ].get_type_name()
+                    return declared_arg_type.get_type_name()
                 else:
                     return reflect[declared_arg_type].name()
 

@@ -1278,15 +1278,11 @@ struct VariadicList[
                 Element=Self.element_type,
                 ParentConformsTo="ImplicitlyDeletable",
             ]()
-            comptime TDestructible = downcast[
-                Self.element_type, ImplicitlyDeletable
-            ]
+            comptime assert conforms_to(Self.element_type, ImplicitlyDeletable)
 
             for i in reversed(range(len(self))):
                 # Safety: We own the elements in this list.
-                UnsafePointer(to=self[i]).mut_cast[True]().bitcast[
-                    TDestructible
-                ]().destroy_pointee()
+                UnsafePointer(to=self[i]).mut_cast[True]().destroy_pointee()
 
     def consume_elements(
         deinit self,
