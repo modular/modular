@@ -13,6 +13,8 @@
 
 """Unit tests for benchmark_shared.datasets module."""
 
+from __future__ import annotations
+
 import json
 from pathlib import Path
 from unittest.mock import Mock, mock_open, patch
@@ -1083,6 +1085,11 @@ def _mock_nemotron_rows() -> list[dict[str, object]]:
     ``tools`` is in Anthropic schema (``{id, description, inputSchema:
     {jsonSchema}}``) to match the real dataset, which records OpenCode CLI
     sessions whose tool definitions follow the Anthropic API.
+
+    Note that ``content`` is deliberately heterogeneous: a plain ``str`` in
+    most messages but a list of content blocks in the first assistant turn.
+    This mirrors the upstream corpus and is exactly the shape that broke the
+    old pyarrow-backed loader (PERF-2714).
     """
     return [
         {
@@ -1119,10 +1126,22 @@ def _mock_nemotron_rows() -> list[dict[str, object]]:
     ]
 
 
-@patch("max.benchmark.benchmark_shared.datasets.nemotron_opencode.load_dataset")
-def test_nemotron_opencode_sample_requests(mock_load: Mock) -> None:
+def _mock_nemotron_jsonl_lines() -> list[bytes]:
+    """Encode :func:`_mock_nemotron_rows` as raw JSONL byte lines.
+
+    This matches what :meth:`NemotronOpenCodeBenchmarkDataset._stream_jsonl_lines`
+    yields, so patching that method drives the real msgspec line decoder.
+    """
+    return [json.dumps(row).encode("utf-8") for row in _mock_nemotron_rows()]
+
+
+@patch(
+    "max.benchmark.benchmark_shared.datasets.nemotron_opencode"
+    ".NemotronOpenCodeBenchmarkDataset._stream_jsonl_lines"
+)
+def test_nemotron_opencode_sample_requests(mock_stream: Mock) -> None:
     """``sample_requests`` collapses each row to (history, last_assistant)."""
-    mock_load.return_value = iter(_mock_nemotron_rows())
+    mock_stream.return_value = iter(_mock_nemotron_jsonl_lines())
 
     tok = Mock(spec=PreTrainedTokenizerBase)
     tok.encode = Mock(
@@ -1160,19 +1179,17 @@ def test_nemotron_opencode_sample_requests(mock_load: Mock) -> None:
     # ``ignore_eos=True`` always, matching sharegpt/arxiv (decode the full
     # target length even when ``output_len`` came from the dataset).
     assert all(r.ignore_eos is True for r in samples.requests)
-    # Mock load_dataset was called with the streaming + data_files config and
-    # the canonical HuggingFace repo id (NOT the registry key).
-    call_args = mock_load.call_args
-    assert call_args.args[0] == NEMOTRON_OPENCODE_REPO_ID
-    assert call_args.kwargs["streaming"] is True
-    assert call_args.kwargs["data_files"].endswith("/data.jsonl")
-    assert call_args.kwargs["split"] == "train"
+    # The raw JSONL stream was consumed exactly once.
+    mock_stream.assert_called_once()
 
 
-@patch("max.benchmark.benchmark_shared.datasets.nemotron_opencode.load_dataset")
-def test_nemotron_opencode_disable_tool_calls(mock_load: Mock) -> None:
+@patch(
+    "max.benchmark.benchmark_shared.datasets.nemotron_opencode"
+    ".NemotronOpenCodeBenchmarkDataset._stream_jsonl_lines"
+)
+def test_nemotron_opencode_disable_tool_calls(mock_stream: Mock) -> None:
     """``enable_tool_calls=False`` drops rows containing tool messages."""
-    mock_load.return_value = iter(_mock_nemotron_rows())
+    mock_stream.return_value = iter(_mock_nemotron_jsonl_lines())
 
     tok = Mock(spec=PreTrainedTokenizerBase)
     tok.encode = Mock(
@@ -1197,10 +1214,13 @@ def test_nemotron_opencode_disable_tool_calls(mock_load: Mock) -> None:
     assert samples.requests[0].tools is None
 
 
-@patch("max.benchmark.benchmark_shared.datasets.nemotron_opencode.load_dataset")
-def test_nemotron_opencode_gen_multiturn(mock_load: Mock) -> None:
+@patch(
+    "max.benchmark.benchmark_shared.datasets.nemotron_opencode"
+    ".NemotronOpenCodeBenchmarkDataset._stream_jsonl_lines"
+)
+def test_nemotron_opencode_gen_multiturn(mock_stream: Mock) -> None:
     """Multi-turn conversion alternates user/assistant and drops tools."""
-    mock_load.return_value = iter(_mock_nemotron_rows())
+    mock_stream.return_value = iter(_mock_nemotron_jsonl_lines())
 
     tok = Mock(spec=PreTrainedTokenizerBase)
     tok.encode = Mock(
@@ -1228,6 +1248,96 @@ def test_nemotron_opencode_gen_multiturn(mock_load: Mock) -> None:
         # at run time, like agentic-code / instruct-coder).
         for assistant in session.messages[1::2]:
             assert assistant.content == ""
+
+
+@patch(
+    "max.benchmark.benchmark_shared.datasets.nemotron_opencode"
+    ".NemotronOpenCodeBenchmarkDataset._stream_jsonl_lines"
+)
+def test_nemotron_opencode_iter_rows_heterogeneous_content(
+    mock_stream: Mock,
+) -> None:
+    """Regression for PERF-2714: ``content`` may be a string or a list.
+
+    The old ``datasets.load_dataset`` path unified a single Arrow schema
+    across rows via pyarrow, which cannot represent ``messages[].content``
+    being a ``str`` in one row and a list of content blocks in another. It
+    aborted with ``ArrowInvalid: ... changed from string to array`` and then a
+    whole-file ``pandas.read_json`` fallback failed with
+    ``ValueError: Trailing data``. Decoding each JSONL line independently with
+    msgspec must handle both shapes without error.
+    """
+    lines = [
+        json.dumps(
+            {"messages": [{"role": "user", "content": "plain string"}]}
+        ).encode("utf-8"),
+        json.dumps(
+            {
+                "messages": [
+                    {
+                        "role": "assistant",
+                        "content": [{"type": "text", "text": "block list"}],
+                    }
+                ]
+            }
+        ).encode("utf-8"),
+        # A malformed line must be skipped, not abort the whole stream.
+        b"{ this is not valid json",
+        # An empty line is also tolerated.
+        b"",
+    ]
+    mock_stream.return_value = iter(lines)
+
+    dataset = NemotronOpenCodeBenchmarkDataset()
+    rows = list(dataset._iter_rows())
+
+    # The empty line is dropped by ``_stream_jsonl_lines`` in production; here
+    # the mock yields it directly, so msgspec's decoder rejects it. Either
+    # way, only the two well-formed rows survive.
+    assert len(rows) == 2
+    assert rows[0].messages is not None
+    assert rows[0].messages[0].content == "plain string"
+    assert rows[1].messages is not None
+    content = rows[1].messages[0].content
+    assert isinstance(content, list)
+    assert content[0].text == "block list"
+
+
+def test_nemotron_opencode_stream_path_uses_repo_id() -> None:
+    """``_stream_jsonl_lines`` targets the dataset blob under ``datasets/``."""
+    dataset = NemotronOpenCodeBenchmarkDataset()
+    dataset.subset = "general"
+    captured: dict[str, str] = {}
+
+    class _FakeFile:
+        def __enter__(self) -> _FakeFile:
+            return self
+
+        def __exit__(self, *exc: object) -> None:
+            return None
+
+        def __iter__(self):
+            return iter([b'{"messages": []}\n'])
+
+    class _FakeFs:
+        def open(self, path: str, mode: str) -> _FakeFile:
+            captured["path"] = path
+            captured["mode"] = mode
+            return _FakeFile()
+
+    with patch(
+        "max.benchmark.benchmark_shared.datasets.nemotron_opencode"
+        ".HfFileSystem",
+        return_value=_FakeFs(),
+    ):
+        lines = list(dataset._stream_jsonl_lines())
+
+    assert lines == [b'{"messages": []}']
+    assert captured["mode"] == "rb"
+    assert (
+        captured["path"]
+        == f"datasets/{NEMOTRON_OPENCODE_REPO_ID}/general/data.jsonl"
+    )
 
 
 def test_nemotron_opencode_rejects_unknown_subset() -> None:
