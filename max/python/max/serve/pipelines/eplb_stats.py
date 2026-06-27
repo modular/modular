@@ -129,6 +129,7 @@ class EplbStatsSnapshot:
     ``sum(histogram) == total_tokens * num_experts_per_token`` when
     accumulation is well-formed.
     """
+    hostname: str | None = None
 
     def __post_init__(self) -> None:
         assert isinstance(self.histogram, np.ndarray), (
@@ -160,6 +161,7 @@ class EplbStatsSnapshot:
         histogram: NDArray[np.int64],
         *,
         total_tokens: int = 0,
+        hostname: str | None = None,
     ) -> EplbStatsSnapshot:
         """Builds a snapshot, defensively copying the histogram.
         Use this when the source array is owned by a live accumulator
@@ -179,6 +181,7 @@ class EplbStatsSnapshot:
             metadata=metadata,
             histogram=np.array(histogram, dtype=np.int64, copy=True),
             total_tokens=int(total_tokens),
+            hostname=hostname,
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -192,6 +195,7 @@ class EplbStatsSnapshot:
             "metadata": self.metadata.to_dict(),
             "histogram": self.histogram.tolist(),
             "total_tokens": self.total_tokens,
+            "hostname": self.hostname,
         }
 
     @classmethod
@@ -211,6 +215,7 @@ class EplbStatsSnapshot:
             "metadata",
             "histogram",
             "total_tokens",
+            "hostname",
         ):
             if key not in data:
                 raise ValueError(f"Missing required field: {key}")
@@ -285,7 +290,7 @@ class EplbStatsAccumulator:
         with self._lock:
             self._total_tokens += int(num_tokens)
 
-    def snapshot(self) -> EplbStatsSnapshot:
+    def snapshot(self, hostname: str | None = None) -> EplbStatsSnapshot:
         num_layers = self._metadata.num_moe_layers
         num_experts = self._metadata.num_logical_experts
         histogram = np.zeros((num_layers, num_experts), dtype=np.int64)
@@ -297,6 +302,7 @@ class EplbStatsAccumulator:
             metadata=self._metadata,
             histogram=histogram,
             total_tokens=total,
+            hostname=hostname,
         )
 
     def reset(self) -> None:
@@ -312,3 +318,10 @@ class EplbStatsAccumulator:
                 for _ in range(self._metadata.num_moe_layers)
             ]
             self._total_tokens = 0
+
+
+__all__ = [
+    "EplbStatsAccumulator",
+    "EplbStatsMetadata",
+    "EplbStatsSnapshot",
+]
