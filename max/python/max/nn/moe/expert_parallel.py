@@ -235,11 +235,7 @@ def _accumulate(
     device: DeviceRef,
     num_experts: int,
 ) -> None:
-    """Atomic-equivalent on-GPU histogram via broadcast equality + reduction.
-
-    Memory: N*K*E bytes temporary (int8). For Kimi prefill (N=4096, K=8,
-    E=384) that's 12 MB per layer per forward; freed before the next layer.
-    """
+    """Atomic-equivalent on-GPU histogram via broadcast equality + reduction."""
     counter = ops.buffer_load(counter_buf)
 
     expert_ids = ops.range(
