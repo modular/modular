@@ -793,15 +793,15 @@ struct _TakeWhileIterator[
 
     @always_inline
     def __next__(mut self) raises StopIteration -> Self.Element:
+        comptime assert conforms_to(Self.Element, ImplicitlyDeletable)
+
         if self._exhausted:
             raise StopIteration()
         var elem = next(self._inner)
         if not Self.predicate(elem):
             self._exhausted = True
             # Discard the element that failed the predicate
-            _ = rebind_var[
-                downcast[Self.Element, Movable & ImplicitlyDeletable]
-            ](elem^)
+            _ = elem^
             raise StopIteration()
         return elem^
 
@@ -954,14 +954,14 @@ struct _DropWhileIterator[
 
     @always_inline
     def __next__(mut self) raises StopIteration -> Self.Element:
+        comptime assert conforms_to(Self.Element, ImplicitlyDeletable)
+
         if self._dropping:
             while True:
                 var elem = next(self._inner)
                 if Self.predicate(elem):
                     # Discard the element that matched the predicate
-                    _ = rebind_var[
-                        downcast[Self.Element, Movable & ImplicitlyDeletable]
-                    ](elem^)
+                    _ = elem^
                     continue
                 self._dropping = False
                 return elem^
@@ -1335,14 +1335,14 @@ struct _DropIterator[InnerIteratorType: Iterator](
 
     @always_inline
     def __next__(mut self) raises StopIteration -> Self.Element:
+        comptime assert conforms_to(Self.Element, ImplicitlyDeletable)
+
         while self._to_drop > 0:
             # Discard dropped elements. If `next` raises, `_to_drop` is not
             # decremented, leaving the iterator in a consistent exhausted
             # state.
             var elem = next(self._inner)
-            _ = rebind_var[
-                downcast[Self.Element, Movable & ImplicitlyDeletable]
-            ](elem^)
+            _ = elem^
             self._to_drop -= 1
         return next(self._inner)
 
