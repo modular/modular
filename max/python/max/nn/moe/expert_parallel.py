@@ -24,6 +24,7 @@ The caller is responsible for calling
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable, Sequence
 from typing import cast
 
@@ -35,14 +36,18 @@ from max.graph import (
     ops,
 )
 
+from ..comm.ep.ep_manager import EPBatchManager
 from ..transformer.distributed_transformer import forward_sharded_layers
 from .moe import MoE
+
+_logger = logging.getLogger("max.serve")
 
 
 def _ep_forward(
     moe_shards: list[MoE],
     xs: list[TensorValue],
     eplb_counter_buffers: list[BufferValue] | None = None,
+    layer_idx_per_device: list[TensorValue] | None = None,
 ) -> list[TensorValue]:
     """Runs the EP MoE forward pass using multi-device dispatch and combine.
 
@@ -60,19 +65,36 @@ def _ep_forward(
     device_ids: list[int] = []
 
     batch_mgr = moe_shards[0].ep_batch_manager
-
+    _eplb_remap_logged = False
     for i, (shard, x) in enumerate(zip(moe_shards, xs, strict=True)):
         router_idx, router_weight = shard.gate(x)
         router_idx = ops.cast(router_idx, DType.int32)
 
         # histogram to capture eplb logical stats
-        if eplb_counter_buffers is not None:
+        if eplb_counter_buffers:
             _accumulate(
                 eplb_counter_buffers[i],
                 ops.cast(router_idx, DType.int32).reshape([-1]),
                 shard.devices[0],
                 shard.gate.num_experts,
             )
+
+        if batch_mgr.config.eplb_enabled:
+            assert layer_idx_per_device, (
+                "EPLB requires per-device layer_idx tensors; got "
+                f"{layer_idx_per_device!r}"
+            )
+            # Each shard picks the GPU constant on its own device — no transfer.
+            layer_idx_t = layer_idx_per_device[shard.devices[0].id]
+            if not _eplb_remap_logged and i == 0:  # ADD
+                _logger.info(  # ADD
+                    "EPLB: round-robin remap installed in compiled graph "
+                    "(layer_idx=%s, max_replicas=%d)",
+                    shard.layer_idx,
+                    batch_mgr.config.max_replicas,
+                )
+                _eplb_remap_logged = True
+            router_idx = _eplb_remap(router_idx, shard, batch_mgr, layer_idx_t)
 
         all_topk_ids.append(router_idx)
         all_router_weights.append(router_weight)
@@ -259,10 +281,42 @@ def _accumulate(
     ops.buffer_store(counter_buf, counter + increment)
 
 
+def _eplb_remap(
+    router_idx: TensorValue,
+    shard: MoE,
+    batch_mgr: EPBatchManager,
+    layer_idx_t: TensorValue,
+) -> TensorValue:
+    """Round-robin log2phy remap. Returns [N, K] int32 physical ids.
+    `layer_idx_t` is a rank-0 int32 baked into outer-graph GPU memory on the
+    shard's device (one ops.constant per call site per device).  Reads stay
+    on-device, so this is safe inside CUDA graph capture.
+    """
+    device = shard.devices[0]
+    if batch_mgr.config.max_replicas != 1:
+        raise NotImplementedError(
+            "EPLB remap with max_replicas > 1 is not implemented yet; "
+            f"got max_replicas={batch_mgr.config.max_replicas}"
+        )
+    num_log = shard.gate.num_experts
+    num_layers = batch_mgr.config.num_moe_layers
+    log2phy_3d = ops.buffer_load(batch_mgr._eplb_log2phy_per_device[device.id])
+    log2phy_flat = log2phy_3d.reshape([num_layers * num_log])
+    flat = router_idx.reshape([-1])
+
+    layer_offset = layer_idx_t * ops.constant(
+        num_log, DType.int32, device=device
+    )
+    linear_idx = flat + layer_offset
+    phy_flat = ops.gather(log2phy_flat, linear_idx, axis=0)
+    return phy_flat.reshape(router_idx.shape)
+
+
 def forward_moe_sharded_layers(
     shards: Sequence[Callable[[TensorValue], TensorValue]],
     xs: list[TensorValue],
     eplb_counter_buffers: list[BufferValue] | None = None,
+    layer_idx_per_device: list[TensorValue] | None = None,
 ) -> list[TensorValue]:
     """Forward pass through DP-sharded layers (EP MoE or replicated MLP/MoE).
 
@@ -284,6 +338,9 @@ def forward_moe_sharded_layers(
         and first._ep_batch_manager is not None
     ):
         return _ep_forward(
-            cast(list[MoE], list(shards)), xs, eplb_counter_buffers
+            cast(list[MoE], list(shards)),
+            xs,
+            eplb_counter_buffers,
+            layer_idx_per_device,
         )
     return forward_sharded_layers(shards, xs)

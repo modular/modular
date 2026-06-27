@@ -86,7 +86,8 @@ class KimiK2_5MoEDecoder(DeepseekV3):
         )
 
     def input_types(
-        self, kv_params: KVCacheParamInterface
+        self,
+        kv_params: KVCacheParamInterface,
     ) -> tuple[TensorType | BufferType, ...]:
         all_input_types: tuple[TensorType | BufferType, ...] = (
             super().input_types(kv_params)

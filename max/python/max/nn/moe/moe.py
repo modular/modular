@@ -269,13 +269,17 @@ class MoE(Module, Shardable):
     shard_index: int = 0
     """The index of the current shard (if the MoE layer was sharded)."""
 
+    layer_idx: int | None = None
+    """The index of the MoE layer."""
+
     def __init__(
         self,
         devices: list[DeviceRef],
         hidden_dim: int,
-        num_experts: int,
+        num_experts: int,  # phycial id
         num_experts_per_token: int,
         moe_dim: int,
+        num_logical_experts: int | None = None,
         gate_cls: Callable[..., MoEGate] = MoEGate,
         mlp_cls: Callable[..., MLP] = MLP,
         shared_mlp_cls: Callable[..., MLP] | None = None,
@@ -301,6 +305,7 @@ class MoE(Module, Shardable):
         self.hidden_dim = hidden_dim
         self.num_experts = num_experts
         self.num_experts_per_token = num_experts_per_token
+        self.num_logical_experts = num_logical_experts or num_experts
         self.moe_dim = moe_dim
         self.gate_cls = gate_cls
         self.mlp_cls = mlp_cls
@@ -386,7 +391,7 @@ class MoE(Module, Shardable):
                 devices=self.devices,
                 quant_config=self.quant_config,
             )
-            for _ in range(self.num_experts)
+            for _ in range(self.num_logical_experts)
         ]
 
         self.experts = LayerList(self._all_experts)
@@ -504,6 +509,7 @@ class MoE(Module, Shardable):
                 hidden_dim=self.hidden_dim,
                 num_experts=self.num_experts,
                 num_experts_per_token=self.num_experts_per_token,
+                num_logical_experts=self.num_logical_experts,
                 moe_dim=sharded_moe_dim,
                 gate_cls=self.gate_cls,
                 mlp_cls=self.mlp_cls,
@@ -551,7 +557,15 @@ class MoE(Module, Shardable):
 
                 experts_list: list[MLP] = []
                 for _ in range(self.num_local_experts):
-                    curr_expert = self.experts[expert_idx]
+                    plan = self.ep_batch_manager._eplb_phy2log
+                    if plan is not None:
+                        assert self.layer_idx is not None, (
+                            "MoE.layer_idx must be set when EPLB is enabled"
+                        )
+                        log_id = int(plan[self.layer_idx, expert_idx])
+                    else:
+                        log_id = expert_idx
+                    curr_expert = self.experts[log_id]
                     assert isinstance(curr_expert, MLP)
                     experts_list.append(curr_expert.shard([device])[0])
                     expert_idx += 1
@@ -559,6 +573,7 @@ class MoE(Module, Shardable):
                 sharded.experts = LayerList(experts_list)
                 sharded._ep_batch_manager = self.ep_batch_manager
 
+            sharded.layer_idx = self.layer_idx
             shards.append(sharded)
 
         return shards

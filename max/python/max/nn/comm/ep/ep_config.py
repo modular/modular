@@ -15,6 +15,7 @@
 
 import os
 from dataclasses import dataclass
+from typing import Any
 
 from max.dtype import DType
 from max.nn.quant_config import QuantConfig
@@ -93,6 +94,22 @@ class EPConfig:
 
     use_allreduce: bool = False
     """Whether to use allreduce for the cross-device communication."""
+    # EPLB parameters (used only when eplb_enabled is True)
+    eplb_enabled: bool = False
+    """When true, EPBatchManager exposes log2phy / logcnt input buffer. """
+
+    num_moe_layers: int = 0
+    """Number of MoE layers; sizes the per layer EPLB buffer. """
+
+    max_replicas: int = 1
+    """Largest replica count across all (layer, logical) cells. Also the trailing dim of log2phy."""
+
+    eplb_phy2log_plan: Any = None
+    """Optional pre-computed EPLB plan (phy2log numpy array, shape
+    [num_moe_layers, num_phy]). When non-None, EPBatchManager picks it
+    up at construction time so that MoE.shard sees the plan during the
+    model's first __init__ pass (no re-shard needed).
+    """
 
     mxfp4_a_scales_preshuffled: bool = False
     """When True (KS224 up-proj fusion, MXFP4 preshuffled-B path on

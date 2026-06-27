@@ -382,7 +382,7 @@ class EplbPlacement:
 
     phy2log: NDArray[np.int64]  # [num_layers, num_phy]
     log2phy: NDArray[np.int32]  # [num_layers, num_log, max_replicas]
-    logcnt: NDArray[np.int64]  # [num_layers, num_log]
+    logcnt: NDArray[np.int32]  # [num_layers, num_log]
 
     @property
     def num_phy(self) -> int:
@@ -403,25 +403,58 @@ class EplbPlacement:
         n_nodes: int,
         n_groups: int,
     ) -> EplbPlacement:
-        """Run the rebalance algorithm on a routing-histogram snapshot."""
-        weight = np.asarray(snap.histogram, dtype=np.int64)
-        num_log = weight.shape[1]
+        """Run the rebalance algorithm on a routing-histogram snapshot.
+
+        Subgraph reuse requires that every MoE layer share an identical
+        expert placement: ``MoE.shard`` bakes ``phy2log[layer_idx, ...]``
+        into weight names at Python construction time, but the subgraph
+        is built once using the first MoE layer and then re-invoked for
+        every other layer via prefix substitution. If the per-layer
+        plans differ, the substituted weight name points at the wrong
+        logical expert and the model produces garbage.
+
+        We aggregate the per-layer histograms into a single load vector,
+        rebalance once, and broadcast the resulting plan across every
+        MoE layer.
+        """
+        weight_per_layer = np.asarray(snap.histogram, dtype=np.int64)
+        num_layers, num_log = weight_per_layer.shape
         if num_log % ep_size or num_log % n_groups:
             raise ValueError(
                 f"num_logical={num_log} must be divisible by "
                 f"ep_size={ep_size} and n_groups={n_groups}"
             )
-        phy2log, log2phy, logcnt = rebalance_experts(
-            weight,
+
+        # Aggregate per-layer histograms; rebalance once on the sum.
+        weight_agg = weight_per_layer.sum(axis=0, keepdims=True)  # [1, num_log]
+
+        phy2log_u, log2phy_u, logcnt_u = rebalance_experts(
+            weight_agg,
             num_log,
             n_groups,
             n_nodes,
             ep_size,
         )
-        cls._log_summary(weight, phy2log, ep_size)
+        # phy2log_u: [1, num_phy], log2phy_u: [1, num_log, max_replicas],
+        # logcnt_u: [1, num_log]. Broadcast layer dimension to num_layers.
+        num_phy = phy2log_u.shape[1]
+        max_replicas = log2phy_u.shape[-1]
+        phy2log = np.broadcast_to(phy2log_u, (num_layers, num_phy)).copy()
+        log2phy = (
+            np.broadcast_to(log2phy_u, (num_layers, num_log, max_replicas))
+            .copy()
+            .astype(np.int32)
+        )
+        logcnt = (
+            np.broadcast_to(logcnt_u, (num_layers, num_log))
+            .copy()
+            .astype(np.int32)
+        )
+
+        cls._log_summary(weight_per_layer, phy2log, ep_size)
         return cls(
             phy2log=phy2log,
-            log2phy=log2phy.astype(np.int32),
+            log2phy=log2phy,
             logcnt=logcnt,
         )
 
@@ -433,7 +466,7 @@ class EplbPlacement:
             (num_layers, num_logical),
         ).copy()
         log2phy = phy2log.astype(np.int32)[..., None]
-        logcnt = np.ones((num_layers, num_logical), dtype=np.int64)
+        logcnt = np.ones((num_layers, num_logical), dtype=np.int32)
         return cls(phy2log=phy2log, log2phy=log2phy, logcnt=logcnt)
 
     @staticmethod
