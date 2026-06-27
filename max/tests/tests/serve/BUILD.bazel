@@ -21,9 +21,15 @@ modular_py_test(
         "MAX_SERVE_DISABLE_TELEMETRY": "True",
         "MAX_SERVE_TESTDATA": "max/tests/tests/serve/testdata",
     },
+    ignore_unresolved_imports = [
+        # test_eplb_rebalance.py imports torch only for an optional parity
+        # check; torch is not a hard test dependency.
+        "torch",
+    ],
     imports = ["../.."],
     per_test_tags = {
         "test_reset_prefix_cache.py": ["external-exclusive"],
+        "test_eplb_rebalance.py": ["no-mypy"],
     },
     target_compatible_with = select({
         # note: these tests are critical to max-serve workflows on mac-os
