@@ -24,6 +24,7 @@ imports so it can be reused by:
 
 from __future__ import annotations
 
+import logging
 import threading
 from dataclasses import dataclass
 from typing import Any
@@ -32,6 +33,16 @@ import numpy as np
 from max.driver import Buffer, Device
 from max.dtype import DType
 from numpy.typing import NDArray
+
+from .eplb_rebalance import rebalance_experts
+
+logger = logging.getLogger("max.serve")
+
+__all__ = [
+    "EplbStatsAccumulator",
+    "EplbStatsMetadata",
+    "EplbStatsSnapshot",
+]
 
 
 @dataclass(frozen=True)
@@ -266,27 +277,38 @@ class EplbStatsSnapshot:
 
 
 class EplbStatsAccumulator:
-    """Per-device on-GPU expert-routing counter, drained on HTTP request."""
+    """Owns per-GPU persistent int64 histogram buffers.
+
+    Lives in the model worker. Each forward atomically increments
+    cells in these buffers via on-GPU scatter_nd_add ops emitted by
+    _ep_forward. snapshot() pulls them to host and sums across GPUs.
+    """
 
     def __init__(
         self,
         metadata: EplbStatsMetadata,
         devices: list[Device],
     ) -> None:
+        """Initializes a zero-valued accumulator.
+
+        Args:
+            metadata: Static shape / semantics descriptor.
+            devices: List of devices to allocate buffers on.
+        """
         self._metadata = metadata
         self._devices = devices
-
-        num_layers = metadata.num_moe_layers
-        num_experts = metadata.num_logical_experts
+        self._lock = threading.Lock()
+        self._total_tokens: int = 0
         self._layer_device_buffers: list[list[Buffer]] = [
             [
-                Buffer.zeros(shape=(num_experts,), dtype=DType.int64).to(d)
+                Buffer.zeros(
+                    shape=(metadata.num_logical_experts,),
+                    dtype=DType.int64,
+                ).to(d)
                 for d in devices
             ]
-            for _ in range(num_layers)
+            for _ in range(metadata.num_moe_layers)
         ]
-        self._total_tokens: int = 0
-        self._lock = threading.Lock()
 
     @property
     def device_buffers(self) -> list[Buffer]:
@@ -350,8 +372,87 @@ class EplbStatsAccumulator:
             self._total_tokens = 0
 
 
-__all__ = [
-    "EplbStatsAccumulator",
-    "EplbStatsMetadata",
-    "EplbStatsSnapshot",
-]
+@dataclass(frozen=True)
+class EplbPlacement:
+    """Static log2phy expert placement derived from a snapshot.
+
+    Built once at server startup; consumed by the EP dispatch graph
+    via per-device log2phy / logcnt buffers.
+    """
+
+    phy2log: NDArray[np.int64]  # [num_layers, num_phy]
+    log2phy: NDArray[np.int32]  # [num_layers, num_log, max_replicas]
+    logcnt: NDArray[np.int64]  # [num_layers, num_log]
+
+    @property
+    def num_phy(self) -> int:
+        """Total physical slot count (>= num_logical_experts)."""
+        return int(self.phy2log.shape[1])
+
+    @property
+    def max_replicas(self) -> int:
+        """Largest replica count across all (layer, logical) cells."""
+        return int(self.logcnt.max())
+
+    @classmethod
+    def from_snapshot(
+        cls,
+        snap: EplbStatsSnapshot,
+        *,
+        ep_size: int,
+        n_nodes: int,
+        n_groups: int,
+    ) -> EplbPlacement:
+        """Run the rebalance algorithm on a routing-histogram snapshot."""
+        weight = np.asarray(snap.histogram, dtype=np.int64)
+        num_log = weight.shape[1]
+        if num_log % ep_size or num_log % n_groups:
+            raise ValueError(
+                f"num_logical={num_log} must be divisible by "
+                f"ep_size={ep_size} and n_groups={n_groups}"
+            )
+        phy2log, log2phy, logcnt = rebalance_experts(
+            weight,
+            num_log,
+            n_groups,
+            n_nodes,
+            ep_size,
+        )
+        cls._log_summary(weight, phy2log, ep_size)
+        return cls(
+            phy2log=phy2log,
+            log2phy=log2phy.astype(np.int32),
+            logcnt=logcnt,
+        )
+
+    @classmethod
+    def identity(cls, num_layers: int, num_logical: int) -> EplbPlacement:
+        """No-op placement: phy[i] = i, one replica per logical expert."""
+        phy2log = np.broadcast_to(
+            np.arange(num_logical, dtype=np.int64),
+            (num_layers, num_logical),
+        ).copy()
+        log2phy = phy2log.astype(np.int32)[..., None]
+        logcnt = np.ones((num_layers, num_logical), dtype=np.int64)
+        return cls(phy2log=phy2log, log2phy=log2phy, logcnt=logcnt)
+
+    @staticmethod
+    def _log_summary(
+        weight: NDArray[np.int64],
+        phy2log: NDArray[np.int64],
+        n_gpus: int,
+    ) -> None:
+        """Logs per-GPU load max/min ratio before vs after rebalance."""
+        per_gpu = phy2log.shape[1] // n_gpus
+        before = weight.sum(0).reshape(n_gpus, per_gpu).sum(-1)
+        after = (
+            np.take_along_axis(weight, phy2log, axis=-1)
+            .sum(0)
+            .reshape(n_gpus, per_gpu)
+            .sum(-1)
+        )
+        logger.info(
+            "EPLB: per-GPU load max/min %.2f -> %.2f",
+            before.max() / max(before.min(), 1),
+            after.max() / max(after.min(), 1),
+        )
