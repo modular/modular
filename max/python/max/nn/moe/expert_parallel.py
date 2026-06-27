@@ -28,6 +28,7 @@ import logging
 from collections.abc import Callable, Sequence
 from typing import cast
 
+import numpy as np
 from max.dtype import DType
 from max.graph import (
     BufferValue,
@@ -37,10 +38,11 @@ from max.graph import (
 )
 
 from ..comm.ep.ep_manager import EPBatchManager
+from ..kernels import moe_eplb_remap
 from ..transformer.distributed_transformer import forward_sharded_layers
 from .moe import MoE
 
-_logger = logging.getLogger("max.serve")
+logger = logging.getLogger("max.serve")
 
 
 def _ep_forward(
@@ -86,9 +88,9 @@ def _ep_forward(
             )
             # Each shard picks the GPU constant on its own device — no transfer.
             layer_idx_t = layer_idx_per_device[shard.devices[0].id]
-            if not _eplb_remap_logged and i == 0:  # ADD
-                _logger.info(  # ADD
-                    "EPLB: round-robin remap installed in compiled graph "
+            if not _eplb_remap_logged and i == 0:
+                logger.info(
+                    "EPLB: fused mo.moe.eplb.remap installed in compiled graph "
                     "(layer_idx=%s, max_replicas=%d)",
                     shard.layer_idx,
                     batch_mgr.config.max_replicas,
@@ -287,29 +289,43 @@ def _eplb_remap(
     batch_mgr: EPBatchManager,
     layer_idx_t: TensorValue,
 ) -> TensorValue:
-    """Round-robin log2phy remap. Returns [N, K] int32 physical ids.
-    `layer_idx_t` is a rank-0 int32 baked into outer-graph GPU memory on the
-    shard's device (one ops.constant per call site per device).  Reads stay
-    on-device, so this is safe inside CUDA graph capture.
-    """
-    device = shard.devices[0]
-    if batch_mgr.config.max_replicas != 1:
-        raise NotImplementedError(
-            "EPLB remap with max_replicas > 1 is not implemented yet; "
-            f"got max_replicas={batch_mgr.config.max_replicas}"
-        )
-    num_log = shard.gate.num_experts
-    num_layers = batch_mgr.config.num_moe_layers
-    log2phy_3d = ops.buffer_load(batch_mgr._eplb_log2phy_per_device[device.id])
-    log2phy_flat = log2phy_3d.reshape([num_layers * num_log])
-    flat = router_idx.reshape([-1])
+    """Fused EPLB logical-to-physical id remap.
 
-    layer_offset = layer_idx_t * ops.constant(
-        num_log, DType.int32, device=device
+    Single Mojo kernel (``mo.moe.eplb.remap``) that replaces the legacy
+    7-op chain (gather logcnt -> range -> mod -> mul + adds -> gather
+    log2phy). Caches the current layer's slice of ``logcnt`` and
+    ``log2phy`` in SMEM and writes physical ids in one launch.
+
+    Identity-bypassed at graph build time when the EPLB plan is the
+    identity permutation. With a non-identity plan we MUST remap even
+    at ``max_replicas == 1``, because weights are loaded at permuted
+    physical slots and the gate emits logical ids — so a bare
+    ``max_replicas`` check would be wrong.
+
+    Returns ``[N, K]`` int32 physical ids.
+    """
+    if _eplb_is_identity_placement(batch_mgr):
+        return router_idx
+
+    device = shard.devices[0]
+    num_log = shard.gate.num_experts
+    max_replicas = batch_mgr.config.max_replicas
+
+    log2phy = ops.buffer_load(batch_mgr._eplb_log2phy_per_device[device.id])
+    logcnt = ops.buffer_load(batch_mgr._eplb_logcnt_per_device[device.id])
+
+    return moe_eplb_remap(
+        router_idx=router_idx,
+        logcnt=logcnt,
+        log2phy=log2phy,
+        layer_idx=layer_idx_t,
+        num_log=num_log,
+        max_replicas=max_replicas,
+        n_experts_per_tok=int(router_idx.shape[1]),
+        hash_decorrelate=getattr(
+            batch_mgr.config, "eplb_hash_decorrelate", True
+        ),
     )
-    linear_idx = flat + layer_offset
-    phy_flat = ops.gather(log2phy_flat, linear_idx, axis=0)
-    return phy_flat.reshape(router_idx.shape)
 
 
 def forward_moe_sharded_layers(
@@ -344,3 +360,18 @@ def forward_moe_sharded_layers(
             layer_idx_per_device,
         )
     return forward_sharded_layers(shards, xs)
+
+
+def _eplb_is_identity_placement(batch_mgr: EPBatchManager) -> bool:
+    """True iff EPLB's host-side plan is the identity permutation.
+
+    When True, ``router_idx`` from the gate is already in physical-id
+    space and no kernel-side remap is needed.
+    """
+    plan = batch_mgr._eplb_phy2log
+    if plan is None:
+        return True
+
+    n_phy = plan.shape[1]
+    ident = np.broadcast_to(np.arange(n_phy, dtype=plan.dtype), plan.shape)
+    return bool(np.array_equal(plan, ident))

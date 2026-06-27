@@ -258,7 +258,7 @@ class EPBatchManager:
     def _eplb_input_types(self) -> list[TensorType | BufferType]:
         """Per-device log2phy + logcnt buffer types."""
         num_moe_layers = self.config.num_moe_layers
-        num_experts_per_layer = self.config.n_experts
+        num_experts_per_layer = self.config.num_logical_experts
         max_replicas = self.config.max_replicas
         n_gpus = self.config.n_gpus_per_node
         log2phy: list[TensorType | BufferType] = [

@@ -131,6 +131,17 @@ class PipelineRuntimeConfig(ConfigFileModel):
         ),
     )
 
+    eplb_replicas_per_gpu: int = Field(
+        default=0,
+        description=(
+            "Number of redundant expert replicas to add per GPU when EPLB is "
+            "active. 0 (default) means no replication. k > 0 adds k extras "
+            "per GPU; total redundant slots = k * ep_size (so num_redundant "
+            "is always a multiple of the device count, which the rebalance "
+            "algorithm requires)."
+        ),
+    )
+
     max_num_steps: int = Field(
         default=1,
         description=(

@@ -1241,3 +1241,216 @@ def single_group_router[
             block_dim=num_threads,
             attributes=pdl_launch_attributes(PDLLevel.ON),
         )
+
+
+# EPLB remap (log2hy id) kernel
+
+
+@__llvm_metadata(
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(tile_tokens * K))
+)
+@__name(
+    t"eplb_remap_kernel_n{num_log}_r{max_replicas}_k{K}_t{tile_tokens}_h{Int(hash_decorrelate)}",
+)
+def eplb_remap_kernel[
+    PhyIdxLayoutType: TensorLayout,
+    RouterIdxLayoutType: TensorLayout,
+    LogcntLayoutType: TensorLayout,
+    Log2phyLayoutType: TensorLayout,
+    LayerIdxLayoutType: TensorLayout,
+    num_log: Int,
+    max_replicas: Int,
+    K: Int,  # topK experts per token
+    tile_tokens: Int,  # rows of router_idx per block; threads/block = tile_tokens * K
+    hash_decorrelate: Bool,
+](
+    phy_idx: TileTensor[mut=True, DType.int32, PhyIdxLayoutType, MutAnyOrigin],
+    router_idx: TileTensor[DType.int32, RouterIdxLayoutType, ImmutAnyOrigin],
+    logcnt: TileTensor[DType.int32, LogcntLayoutType, ImmutAnyOrigin],
+    log2phy: TileTensor[DType.int32, Log2phyLayoutType, ImmutAnyOrigin],
+    layer_idx: TileTensor[DType.int32, LayerIdxLayoutType, ImmutAnyOrigin],
+):
+    """Fused EPLB per tile_token rows of router idx; one thread per (n,k) element.
+    Each block cooperatively caces the current layer's logcnt and log2phy slices in
+    SMEM, then every thread does: HBM-load logical id -> SMEM-looup cnt -> int mod -> SMEM-Lookup phy id
+    -> HBM-store.
+
+    Portable accross all hardwares.
+
+    Optimiality of choosing : hash_decorrelate=True xor-hashes the flat position with a
+    Knuth multiplicative hash of the logical id before the modulo, breaking
+    structured position-vs-cnt alignment without warp ops.
+    """
+
+    comptime assert phy_idx.flat_rank == 2
+    comptime assert router_idx.flat_rank == 2
+    comptime assert logcnt.flat_rank == 2
+    comptime assert log2phy.flat_rank == 3
+    comptime assert layer_idx.flat_rank == 1
+
+    comptime assert (
+        router_idx.static_shape[1] == K
+    ), "router_idx.static_shape[1] must equal K"
+    comptime assert (
+        phy_idx.static_shape[1] == K
+    ), "phy_idx.static_shape[1] must equal K"
+    comptime assert (
+        logcnt.static_shape[1] == num_log
+    ), "logcnt.static_shape[1] must equal num_log"
+    comptime assert (
+        log2phy.static_shape[1] == num_log
+    ), "log2phy.static_shape[1] must equal num_log"
+    comptime assert (
+        log2phy.static_shape[2] == max_replicas
+    ), "log2phy.static_shape[2] must equal max_replicas"
+    comptime assert (
+        K.is_power_of_two()
+    ), "K must be a power of two so (tid % K) is a bitmask"
+
+    comptime BLOCK_THREADS = tile_tokens * K
+    comptime HASH_C = UInt32(
+        2654435761
+    )  # Knuth golden-ratio multiplicative hash
+
+    var tid = Int(thread_idx.x)
+
+    var smem_cnt = stack_allocation[
+        num_log,
+        DType.int32,
+        address_space=AddressSpace.SHARED,
+    ]()
+
+    var smem_phy = stack_allocation[
+        num_log * max_replicas,
+        DType.int32,
+        address_space=AddressSpace.SHARED,
+    ]()
+
+    with PDL():
+        # Broadcast scalar layer index. Every thread reads the same address →
+        # one HBM transaction, hot in L1 for the rest of the block.
+        var Lidx = Int(layer_idx.load[width=1](Coord(Idx[0]))[0])
+
+        # Cooperative SMEM load of (logcnt, log2phy) slice for layer Lidx.
+        # BLOCK_THREADS threads cover num_log entries; unrolled at comptime.
+        comptime for off in range(ceildiv(num_log, BLOCK_THREADS)):
+            var i = tid + off * BLOCK_THREADS
+            if i < num_log:
+                # logcnt only matters for the round-robin path.
+                comptime if max_replicas > 1:
+                    smem_cnt[i] = Int32(logcnt.load[width=1]((Lidx, i))[0])
+                comptime for r in range(max_replicas):
+                    smem_phy[i * max_replicas + r] = Int32(
+                        log2phy.load[width=1]((Lidx, i, r))[0]
+                    )
+        barrier()
+
+        # Per element remap, One thread = one (n,k)
+        var token_in_block = tid // K
+        var k = tid % K
+        var n = Int(block_idx.x) * tile_tokens + token_in_block
+        var N = Int(phy_idx.dim(0))
+
+        if n < N:
+            var log = Int(router_idx.load[width=1]((n, k))[0])
+
+            comptime if max_replicas == 1:
+                # Pure permutation: cnt is always 1, r is always 0.
+                # No cnt lookup, no modulo, no hash.
+                var phy = Int32(smem_phy[log])
+                phy_idx.store((n, k), phy)
+            else:
+                # Permutation + round-robin replica picker.
+                var cnt = Int(smem_cnt[log])
+                var pos: UInt32 = UInt32(n) * UInt32(K) + UInt32(k)
+
+                comptime if hash_decorrelate:
+                    # XOR-hash to break structured-position bias against `cnt`.
+                    pos = pos ^ (UInt32(log) * HASH_C)
+
+                var r = Int(pos % UInt32(cnt))
+                var phy = Int32(smem_phy[log * max_replicas + r])
+                phy_idx.store((n, k), phy)
+
+
+@always_inline
+def eplb_remap[
+    num_log: Int,
+    max_replicas: Int,
+    K: Int,
+    hash_decorrelate: Bool,
+    target: StaticString,
+](
+    phy_idx: TileTensor[mut=True, DType.int32, ...],  # [N, K] output
+    router_idx: TileTensor[DType.int32, ...],  # [N, K] logical ids
+    logcnt: TileTensor[DType.int32, ...],  # [L, num_log]
+    log2phy: TileTensor[DType.int32, ...],  # [L, num_log, max_replicas]
+    layer_idx: TileTensor[DType.int32, ...],  # rank-1 [1] scalar
+    context: DeviceContext,
+) raises:
+    """Launch the fused EPLB log->phy remap on GPU.
+
+    One block per tile_tokens rows of router_idx; one thread per
+    (n, k) element.
+
+    Parameters:
+        num_log: Number of logical experts per layer.
+        max_replicas: Maximum physical replicas per logical expert.
+        K: Top-K experts per token. Must be a power of two.
+        hash_decorrelate: If True, xor-hash the position before the modulo
+            to break structured-position bias in replica selection. If False,
+            preserves the exact pos % cnt semantics of the legacy chain.
+        target: The target device to run the kernel on.
+
+    Inputs:
+        phy_idx: Output physical expert ids. Shape: [num_tokens, K].
+        router_idx: Input logical expert ids from the gate.
+            Shape: [num_tokens, K].
+        logcnt: Per-(layer, logical) replica count.
+            Shape: [num_moe_layers, num_log].
+        log2phy: Per-(layer, logical, replica) physical-id table.
+            Shape: [num_moe_layers, num_log, max_replicas].
+        layer_idx: Rank-1 scalar tensor of shape [1] carrying the current
+            MoE layer index. Sits on the same device as router_idx.
+        context: DeviceContext.
+    """
+    comptime assert is_gpu[
+        target
+    ](), "EPLB remap kernel is only supported on GPU"
+
+    if router_idx.dim(0) == 0:
+        return
+
+    var gpu_ctx = context
+
+    with Trace[TraceLevel.OP, target=target](
+        "mo.moe.eplb.remap", task_id=Int(gpu_ctx.id())
+    ):
+        # Target ~128 threads/block. Divides cleanly into NVIDIA warp=32,
+        # AMD wave=64, and Apple SIMD=32 so no lanes idle from divisibility.
+        # tile_tokens scales with K so block_dim stays ≈128 regardless of model.
+        comptime tile_tokens = 128 // K if K <= 128 else 1
+
+        comptime kernel = eplb_remap_kernel[
+            phy_idx.LayoutType,
+            router_idx.LayoutType,
+            logcnt.LayoutType,
+            log2phy.LayoutType,
+            layer_idx.LayoutType,
+            num_log,
+            max_replicas,
+            K,
+            tile_tokens,
+            hash_decorrelate,
+        ]
+
+        gpu_ctx.enqueue_function[kernel](
+            phy_idx,
+            router_idx,
+            logcnt,
+            log2phy,
+            layer_idx,
+            grid_dim=ceildiv(Int(router_idx.dim(0)), tile_tokens),
+            block_dim=tile_tokens * K,
+            attributes=pdl_launch_attributes(PDLLevel(1)),
+        )
