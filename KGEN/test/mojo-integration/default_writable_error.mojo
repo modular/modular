@@ -28,8 +28,8 @@ def main():
     var string = String()
 
     comptime if get_defined_int["test"]() == 1:
-        # CHECK_1: constraint failed: Invalid downcast
+        # CHECK_1: constraint failed: Could not derive Writable for HasBadField
         value.write_to(string)
     elif get_defined_int["test"]() == 2:
-        # CHECK_2: constraint failed: Invalid downcast
+        # CHECK_2: constraint failed: Could not derive Writable for HasBadField
         value.write_repr_to(string)
