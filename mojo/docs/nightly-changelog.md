@@ -230,6 +230,16 @@ This version is still a work in progress.
 
 ## GPU programming
 
+- `DeviceContext.load_function` now keys its runtime cache on the requested
+  entry-point name as well as the blob. Loading two different entry points
+  (for example `kernel_a` and `kernel_b`) from a single PTX/cubin blob no
+  longer collides — previously the second load silently returned the function
+  resolved by the first. The cache also no longer keys on the entire blob
+  when no module name is supplied: it keys on a short hash of the blob instead,
+  so each call avoids copying, hashing, and byte-comparing the whole blob (and
+  retaining a duplicate of it). The win scales with blob size and matters most
+  for large multi-entry blobs loaded on the per-execution path.
+
 - The `DeviceStream` type is now included in the API reference documentation.
   Returned by `DeviceContext.create_stream()` and
   `DeviceContext.create_external_stream()`, it provides methods for
