@@ -90,6 +90,8 @@ ConstraintResult LIT::checkConstraints(
     MLIRContext *ctx = constraints.front().getContext();
     overallAssumption = SIMDAttr::getScalarBool(ctx, true);
   }
+  if (evaluator)
+    overallAssumption = evaluator->getReboundAttribute(overallAssumption);
 
   SmallVector<std::pair<size_t, ConstraintAttr>> failedConstraints;
   SmallVector<ConstraintAttr> localUnprovableConstraints;

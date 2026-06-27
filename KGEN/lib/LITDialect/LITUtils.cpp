@@ -840,8 +840,9 @@ LIT::evaluateConstraint(ParameterEvaluator &evaluator,
 
   bool anyImplies = false;
   for (ConstraintAttr assumption : callerAssumptions) {
-    switch (inferConstraintRelation(
-        getCanonicalAttr(assumption.getProposition()), rebound)) {
+    TypedAttr assumptionRebound = getCanonicalAttr(
+        evaluator.getReboundAttribute(assumption.getProposition()));
+    switch (inferConstraintRelation(assumptionRebound, rebound)) {
     case ConstraintRelation::Contradicts:
       return ConformanceResult::No;
     case ConstraintRelation::Implies:

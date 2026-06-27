@@ -120,7 +120,8 @@ def unsound_generic_call[
 # Test: Unsound variadic pack call is rejected
 # ===========================================================================
 # Tuple[*types] with *types: Movable has no Copyable bound on its elements,
-# so its conditional Copyable conformance (AllCopyable) can't be proven.
+# so its conditional Copyable conformance
+# (all_conforms_to[Copyable]()) can't be proven.
 
 
 # CHECK: argument type 'Tuple[types]' does not conform to trait 'Copyable'
