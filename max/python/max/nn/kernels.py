@@ -4405,6 +4405,110 @@ def moe_router_group_limited(
     return (results[0].tensor, results[1].tensor)
 
 
+def moe_eplb_remap(
+    router_idx: TensorValue,
+    logcnt: TensorValue,
+    log2phy: TensorValue,
+    layer_idx: TensorValue,
+    *,
+    num_log: int,
+    max_replicas: int,
+    n_experts_per_tok: int,
+    hash_decorrelate: bool = False,
+) -> TensorValue:
+    """Fused EPLB logical-to-physical id remap.
+    single Mojo kernel that caches the per-layer slice of logcnt and
+    log2phy in shared memory and writes physical ids in one launch.
+
+    The replica picker is deterministic position-mod
+    (``r = (n*K + k) % logcnt[layer, log]``), bit-identical to the legacy
+    chain when ``hash_decorrelate=False``. With ``hash_decorrelate=True``
+    the flat position is xor-hashed with a Knuth multiplicative hash of the
+    logical id before the modulo, breaking structured position-vs-cnt
+    alignment without warp primitives.
+
+    Args:
+        router_idx: [num_tokens, n_experts_per_tok] int32 logical
+            expert ids from the gate.
+        logcnt: [num_moe_layers, num_log] int32 replica count per
+            (layer, logical id).
+        log2phy: [num_moe_layers, num_log, max_replicas] int32
+            physical-id table.
+        layer_idx: Rank-0 or rank-1 [1] int32 scalar tensor on the same
+            device as router_idx. Rank-0 is reshaped to [1] to match
+            the kernel signature.
+        num_log: Number of logical experts (comptime).
+        max_replicas: Maximum replicas per logical expert (comptime).
+        n_experts_per_tok: Top-K experts per token (comptime). Must be a
+            power of two.
+        hash_decorrelate: If True, xor-hash position before the modulo.
+            Defaults to False to preserve legacy routing distribution.
+
+    Returns:
+        [num_tokens, n_experts_per_tok] int32 physical expert ids.
+    """
+    _check_dtype(
+        DType.int32,
+        router_idx=router_idx,
+        logcnt=logcnt,
+        log2phy=log2phy,
+        layer_idx=layer_idx,
+    )
+    _check_rank(2, router_idx=router_idx, logcnt=logcnt)
+    _check_rank(3, log2phy=log2phy)
+
+    if layer_idx.rank not in (0, 1):
+        raise ValueError(
+            f"expected layer_idx of rank 0 or 1 but got {layer_idx.rank}"
+        )
+
+    # Kernel expects rank-1 [1] — reshape rank-0 scalar without copy.
+    if layer_idx.rank == 0:
+        layer_idx = ops.reshape(layer_idx, [1])
+
+    if router_idx.shape[1] != n_experts_per_tok:
+        raise ValueError(
+            "expected router_idx of shape [num_tokens, n_experts_per_tok], "
+            f"got shape {router_idx.shape} with n_experts_per_tok="
+            f"{n_experts_per_tok}"
+        )
+
+    if logcnt.shape[1] != num_log:
+        raise ValueError(
+            "expected logcnt of shape [num_moe_layers, num_log], "
+            f"got shape {logcnt.shape} with num_log={num_log}"
+        )
+
+    if log2phy.shape[1] != num_log or log2phy.shape[2] != max_replicas:
+        raise ValueError(
+            "expected log2phy of shape "
+            "[num_moe_layers, num_log, max_replicas], "
+            f"got shape {log2phy.shape} with num_log={num_log}, "
+            f"max_replicas={max_replicas}"
+        )
+
+    parameters: dict[str, bool | int | str | DType] = {
+        "num_log": num_log,
+        "max_replicas": max_replicas,
+        "K": n_experts_per_tok,
+        "hash_decorrelate": hash_decorrelate,
+    }
+
+    return ops.custom(
+        "mo.moe.eplb.remap",
+        device=router_idx.device,
+        values=[router_idx, logcnt, log2phy, layer_idx],
+        out_types=[
+            TensorType(
+                dtype=DType.int32,
+                shape=router_idx.shape,
+                device=router_idx.device,
+            ),
+        ],
+        parameters=parameters,
+    )[0].tensor
+
+
 def grouped_matmul_ragged(
     hidden_states: TensorValue,
     weight: TensorValue,

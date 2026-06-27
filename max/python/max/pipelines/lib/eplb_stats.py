@@ -402,6 +402,7 @@ class EplbPlacement:
         ep_size: int,
         n_nodes: int,
         n_groups: int,
+        eplb_replicas_per_gpu: int = 0,
     ) -> EplbPlacement:
         """Run the rebalance algorithm on a routing-histogram snapshot.
 
@@ -425,19 +426,24 @@ class EplbPlacement:
                 f"ep_size={ep_size} and n_groups={n_groups}"
             )
 
+        if eplb_replicas_per_gpu < 0:
+            raise ValueError(
+                f"eplb_replicas_per_gpu must be >= 0, got {eplb_replicas_per_gpu}"
+            )
+
+        num_phy = num_log + eplb_replicas_per_gpu * ep_size
         # Aggregate per-layer histograms; rebalance once on the sum.
         weight_agg = weight_per_layer.sum(axis=0, keepdims=True)  # [1, num_log]
 
         phy2log_u, log2phy_u, logcnt_u = rebalance_experts(
             weight_agg,
-            num_log,
+            num_phy,
             n_groups,
             n_nodes,
             ep_size,
         )
         # phy2log_u: [1, num_phy], log2phy_u: [1, num_log, max_replicas],
         # logcnt_u: [1, num_log]. Broadcast layer dimension to num_layers.
-        num_phy = phy2log_u.shape[1]
         max_replicas = log2phy_u.shape[-1]
         phy2log = np.broadcast_to(phy2log_u, (num_layers, num_phy)).copy()
         log2phy = (
@@ -451,7 +457,7 @@ class EplbPlacement:
             .astype(np.int32)
         )
 
-        cls._log_summary(weight_per_layer, phy2log, ep_size)
+        cls._log_summary(weight_per_layer, phy2log, logcnt, ep_size)
         return cls(
             phy2log=phy2log,
             log2phy=log2phy,
@@ -473,17 +479,33 @@ class EplbPlacement:
     def _log_summary(
         weight: NDArray[np.int64],
         phy2log: NDArray[np.int64],
+        logcnt: NDArray[np.int64] | NDArray[np.int32],
         n_gpus: int,
     ) -> None:
-        """Logs per-GPU load max/min ratio before vs after rebalance."""
-        per_gpu = phy2log.shape[1] // n_gpus
-        before = weight.sum(0).reshape(n_gpus, per_gpu).sum(-1)
-        after = (
-            np.take_along_axis(weight, phy2log, axis=-1)
-            .sum(0)
-            .reshape(n_gpus, per_gpu)
-            .sum(-1)
+        """Logs per-GPU load max/min ratio before vs after rebalance.
+
+        For replicated experts, runtime load splits across replicas; the
+        reported metric must do the same to reflect actual per-GPU work
+        rather than double-counting replicated experts' load.
+        """
+        phy_per_gpu = phy2log.shape[1] // n_gpus
+        log_per_gpu = weight.shape[1] // n_gpus
+
+        # Identity baseline (no rebalancing): each GPU hosts a contiguous
+        # block of logical experts, each contributing its full weight.
+        before = weight.sum(0).reshape(n_gpus, log_per_gpu).sum(-1)
+
+        # Rebalanced placement: each phy contributes weight / logcnt of
+        # its logical, since runtime traffic to that logical is split
+        # across all of its replicas.
+        counts_per_phy = np.take_along_axis(weight, phy2log, axis=-1)
+        logcnt_per_phy = np.take_along_axis(
+            logcnt.astype(np.int64), phy2log, axis=-1
         )
+        normalized = counts_per_phy / np.maximum(logcnt_per_phy, 1)
+
+        after = normalized.sum(0).reshape(n_gpus, phy_per_gpu).sum(-1)
+
         logger.info(
             "EPLB: per-GPU load max/min %.2f -> %.2f",
             before.max() / max(before.min(), 1),

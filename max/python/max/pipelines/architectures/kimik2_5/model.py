@@ -444,19 +444,6 @@ class KimiK2_5Model(
 
         # Create the LM model first
         config = self._create_model_config(state_dict)
-
-        self.ep_comm_initializer: EPCommInitializer | None = None
-        # Skip EP initialization in virtual device mode (compilation-only)
-        # since NVSHMEM functions cannot be linked without real GPU devices.
-        # We still keep ep_config to generate the correct graph structure.
-        if config.ep_config is not None and not is_virtual_device_mode():
-            self.ep_comm_initializer = EPCommInitializer(config.ep_config)
-            self.ep_comm_initializer.ep_init(session)
-            if config.ep_config.node_id == -1:
-                raise ValueError(
-                    "EP node ID is not set. Please check if the EP initialization is successful."
-                )
-
         # ---- EPLB placement -----------------------------------------------------
         plan: EplbPlacement | None = None
         if config.ep_config is not None:
@@ -473,6 +460,7 @@ class KimiK2_5Model(
                 config.ep_config.eplb_enabled = True
                 config.ep_config.num_moe_layers = plan.phy2log.shape[0]
                 config.ep_config.max_replicas = plan.max_replicas
+                config.ep_config.num_logical_experts = plan.log2phy.shape[1]
                 config.ep_config.n_experts = plan.num_phy
                 config.ep_config.eplb_phy2log_plan = plan.phy2log
                 logger.info(
@@ -484,6 +472,17 @@ class KimiK2_5Model(
                     plan.phy2log.shape[0],
                 )
 
+        self.ep_comm_initializer: EPCommInitializer | None = None
+        # Skip EP initialization in virtual device mode (compilation-only)
+        # since NVSHMEM functions cannot be linked without real GPU devices.
+        # We still keep ep_config to generate the correct graph structure.
+        if config.ep_config is not None and not is_virtual_device_mode():
+            self.ep_comm_initializer = EPCommInitializer(config.ep_config)
+            self.ep_comm_initializer.ep_init(session)
+            if config.ep_config.node_id == -1:
+                raise ValueError(
+                    "EP node ID is not set. Please check if the EP initialization is successful."
+                )
         # ------------------------------------------------------------------
         # Generate the full KimiK2_5Config from HuggingFace config and LM config
         kimik2_5_config = KimiK2_5Config.initialize_from_config(
@@ -876,4 +875,5 @@ class KimiK2_5Model(
             ep_size=ep_size,
             n_nodes=n_nodes,
             n_groups=n_groups,
+            eplb_replicas_per_gpu=self.pipeline_config.runtime.eplb_replicas_per_gpu,
         )

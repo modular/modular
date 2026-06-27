@@ -81,7 +81,12 @@ from nn.kv_cache_ragged import (
 )
 from nn.attention.gpu.mha import MHADecodeDispatchMetadata
 from nn.attention.mha_utils import as_dynamic_row_major_1d
-from nn.moe import moe_create_indices, router_group_limited, single_group_router
+from nn.moe import (
+    eplb_remap,
+    moe_create_indices,
+    router_group_limited,
+    single_group_router,
+)
 from nn.nms import non_max_suppression, non_max_suppression_shape_func
 from nn.pool import max_pool, pool_shape, pool_shape_ceil
 from nn.rand_normal import random_normal
@@ -1660,6 +1665,41 @@ struct Struct_moe_single_group_router:
             expert_scores.to_tile_tensor[DType.int64]().as_immut(),
             expert_bias.to_tile_tensor[DType.int64]().as_immut(),
             routed_scaling_factor,
+            context,
+        )
+
+
+@compiler.register("mo.moe.eplb.remap")
+struct Struct_moe_eplb_remap:
+    @always_inline
+    @staticmethod
+    @parameter
+    def execute[
+        num_log: Int,
+        max_replicas: Int,
+        K: Int,
+        hash_decorrelate: Bool,
+        target: StaticString,
+    ](
+        phy_idx: OutputTensor[dtype=DType.int32, rank=2, ...],
+        router_idx: InputTensor[dtype=DType.int32, rank=2, ...],
+        logcnt: InputTensor[dtype=DType.int32, rank=2, ...],
+        log2phy: InputTensor[dtype=DType.int32, rank=3, ...],
+        layer_idx: InputTensor[dtype=DType.int32, rank=1, ...],
+        context: DeviceContext,
+    ) raises:
+        eplb_remap[
+            num_log=num_log,
+            max_replicas=max_replicas,
+            K=K,
+            hash_decorrelate=hash_decorrelate,
+            target=target,
+        ](
+            phy_idx.to_tile_tensor[DType.int64](),
+            router_idx.to_tile_tensor[DType.int64]().as_immut(),
+            logcnt.to_tile_tensor[DType.int64]().as_immut(),
+            log2phy.to_tile_tensor[DType.int64]().as_immut(),
+            layer_idx.to_tile_tensor[DType.int64]().as_immut(),
             context,
         )
 

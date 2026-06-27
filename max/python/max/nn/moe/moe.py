@@ -326,7 +326,7 @@ class MoE(Module, Shardable):
         self.gate = gate_cls(
             devices=devices,
             hidden_dim=hidden_dim,
-            num_experts=num_experts,
+            num_experts=self.num_logical_experts,
             num_experts_per_token=num_experts_per_token,
             dtype=DType.bfloat16,
         )
