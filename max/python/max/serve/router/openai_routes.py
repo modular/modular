@@ -78,7 +78,6 @@ from max.serve.parser import (
 )
 from max.serve.parser.tool_call_normalization import (
     _normalize_tools_parameters,
-    _validate_response_format_schema,
     normalize_response_format_schema,
 )
 from max.serve.parser.tool_call_validation import check_tool_call_conformance
@@ -1833,16 +1832,10 @@ def _validate_json_schema(json_schema: dict[str, Any]) -> None:
     crashing the model worker process later during constrained decoding.
 
     Raises:
-        InputError: If the schema cannot be compiled or has a non-object root.
+        InputError: If a grammar cannot be created from the JSON schema.
     """
     if not json_schema:
         return
-
-    # Root must be type: object per OpenAI's structured-outputs guide.
-    try:
-        _validate_response_format_schema(json_schema)
-    except ValueError as e:
-        raise InputError(str(e)) from e
 
     try:
         grammar = LLMatcher.grammar_from_json_schema(json_schema)
