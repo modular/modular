@@ -327,6 +327,40 @@ mojo_test(
     ],
 )
 
+# Target: block-scaled MXFP8 SM100 dense matmul (the MiniMax-M3-MXFP8 attention
+# q/k/v/o + shared-expert GEMM). float8_e4m3fn operands + E8M0 (float8_e8m0fnu)
+# block scales, fp32 accum, bf16 out. N/K/mma_n/cta_group are compile-time
+# (`-D N=.. -D K=.. -D mma_n=.. -D cta_group=..`); M is the runtime fuzz axis.
+# `ref` (--check) compares against cuBLAS with the same scales; memcheck+pool-off
+# surfaces K-tail / scale-tensor over-reads. B200-only (SM100 + static N/K).
+mojo_test(
+    name = "fuzz_block_scaled_mxfp8.mojo.test",
+    size = "large",
+    srcs = [
+        "_fuzz.mojo",
+        "fuzz_block_scaled_mxfp8.mojo",
+    ],
+    exec_properties = {
+        "test.resources:gpu-memory": "4",
+    },
+    main = "fuzz_block_scaled_mxfp8.mojo",
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    target_compatible_with = [
+        "//:has_gpu",
+        "//:b200_gpu",
+    ],
+    deps = [
+        "//max:internal_utils",
+        "//max:linalg",
+        "//max:nn",
+        "//max:structured_kernels",
+        "@mojo//:std",
+    ],
+)
+
 # Target: token sampler `fused_token_sampling_gpu` (the production top-k+top-p
 # sampling op). Two oracles: (1) a validity contract that every sampled
 # out_idxs is in [0, vocab) -- a negative / out-of-range token id is FAIL; and
