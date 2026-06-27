@@ -1608,7 +1608,7 @@ def paramfor_has_next[
     var result = it.copy()
     try:
         var elem = result.__next__()
-        _ = trait_downcast_var[Movable & ImplicitlyDeletable](elem^)
+        _ = elem^
         return True
     except:
         return False
@@ -1628,7 +1628,7 @@ def paramfor_next_iter[
     # so recomputing it in the body of the loop is fine.
     try:
         var elem = result.__next__()
-        _ = trait_downcast_var[Movable & ImplicitlyDeletable](elem^)
+        _ = elem^
     except:
         abort()
     return result^
@@ -1722,14 +1722,6 @@ def trait_downcast[
     T: TrivialRegisterPassable, //, Trait: type_of(AnyType)
 ](var src: T) -> downcast[T, Trait]:
     return rebind[downcast[T, Trait]](src)
-
-
-def trait_downcast_var[
-    T: Movable,
-    //,
-    Trait: type_of(Movable),
-](var src: T) -> downcast[T, Trait]:
-    return rebind_var[downcast[T, Trait]](src^)
 
 
 @always_inline
