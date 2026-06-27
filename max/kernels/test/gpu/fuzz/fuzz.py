@@ -181,6 +181,17 @@ _TARGETS: dict[str, FuzzTarget] = {
         ),
         default_oracle="ref",
     ),
+    "moe_router": FuzzTarget(
+        name="moe_router",
+        bazel_target=("//max/kernels/test/gpu/fuzz:fuzz_moe_router.mojo.test"),
+        binary="bazel-bin/max/kernels/test/gpu/fuzz/fuzz_moe_router.mojo.test",
+        description=(
+            "single_group_router: MiniMax-M3 MoE top-k routing (select by"
+            " score+bias, unbiased normalized scaled weights). ref (host"
+            " top-k) + contract (indices in-range/distinct under NaN/Inf)"
+        ),
+        default_oracle="ref",
+    ),
     "mla_decode": FuzzTarget(
         name="mla_decode",
         bazel_target=("//max/kernels/test/gpu/fuzz:fuzz_mla_decode.mojo.test"),

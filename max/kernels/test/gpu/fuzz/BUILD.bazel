@@ -395,6 +395,38 @@ mojo_test(
     ],
 )
 
+# Target: MoE router `single_group_router` (the MiniMax-M3 n_groups=1 routing
+# path: top-k expert selection by score+bias, unbiased normalized scaled
+# weights). num_tokens + the score value-distribution are the fuzz axes;
+# n_routed_experts/n_experts_per_tok/norm_weights are compile-time
+# (`-D n_routed_experts=.. -D n_experts_per_tok=.. -D norm_weights=..`,
+# default M3 128/4/True). `ref` (--check) compares a host top-k reference;
+# `contract` (--contract) injects NaN/Inf and checks indices stay in-range +
+# distinct. Single-GPU, hardware-independent (runs on any non-Apple GPU).
+mojo_test(
+    name = "fuzz_moe_router.mojo.test",
+    size = "large",
+    srcs = [
+        "_fuzz.mojo",
+        "fuzz_moe_router.mojo",
+    ],
+    exec_properties = {
+        "test.resources:gpu-memory": "4",
+    },
+    main = "fuzz_moe_router.mojo",
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    target_compatible_with = ["//:has_gpu"],
+    deps = [
+        "//max:internal_utils",
+        "//max:linalg",
+        "//max:nn",
+        "@mojo//:std",
+    ],
+)
+
 # Target: token sampler `fused_token_sampling_gpu` (the production top-k+top-p
 # sampling op). Two oracles: (1) a validity contract that every sampled
 # out_idxs is in [0, vocab) -- a negative / out-of-range token id is FAIL; and
