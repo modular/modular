@@ -253,6 +253,22 @@ def run_one_case(
     var s_ref_dev = ctx.enqueue_create_buffer[scales_dtype](s_size)
     var s_test_dev = ctx.enqueue_create_buffer[scales_dtype](s_size)
 
+    # Zero-init the bf16 matmul scratch + the scale-output tiles. The REF
+    # chain's standalone epilogue vector-loads c_ref in 32-byte chunks; the
+    # grouped matmul leaves a tile-tail region of c_ref unwritten (it never
+    # reaches the compared output -- the `ref` byte-exact check passes -- but a
+    # pool-off `initcheck` flags the read). Zeroing also makes any scale-pad row
+    # that neither path writes compare equal.
+    var c_ref_zero = ctx.enqueue_create_host_buffer[c_type](M * N)
+    for i in range(M * N):
+        c_ref_zero[i] = Scalar[c_type](0)
+    ctx.enqueue_copy(c_ref_dev, c_ref_zero)
+    var s_zero = ctx.enqueue_create_host_buffer[scales_dtype](s_size)
+    for i in range(s_size):
+        s_zero[i] = Scalar[scales_dtype](0)
+    ctx.enqueue_copy(s_ref_dev, s_zero)
+    ctx.enqueue_copy(s_test_dev, s_zero)
+
     ctx.enqueue_copy(a_dev, a_host)
     ctx.enqueue_copy(b_dev, b_host)
     ctx.enqueue_copy(a_scales_dev, a_scales_host)
