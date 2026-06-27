@@ -225,6 +225,22 @@ _TARGETS: dict[str, FuzzTarget] = {
         ),
         default_oracle="ref",
     ),
+    "fused_swiglu_dispatch": FuzzTarget(
+        name="fused_swiglu_dispatch",
+        bazel_target=(
+            "//max/kernels/test/gpu/fuzz:fuzz_fused_swiglu_dispatch.mojo.test"
+        ),
+        binary=(
+            "bazel-bin/max/kernels/test/gpu/fuzz/"
+            "fuzz_fused_swiglu_dispatch.mojo.test"
+        ),
+        description=(
+            "grouped_matmul_swiglu_mxfp8_dispatch: the fully-fused MiniMax-M3"
+            " MoE up-projection (matmul+SwiGLU+requant). ref = byte-exact"
+            " fusion-equivalence vs the unfused matmul+epilogue chain"
+        ),
+        default_oracle="ref",
+    ),
     "mla_decode": FuzzTarget(
         name="mla_decode",
         bazel_target=("//max/kernels/test/gpu/fuzz:fuzz_mla_decode.mojo.test"),

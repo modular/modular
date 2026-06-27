@@ -500,6 +500,43 @@ mojo_test(
     ],
 )
 
+# Target: the fully-fused MoE up-projection `grouped_matmul_swiglu_mxfp8_dispatch`
+# (grouped MXFP8 matmul + SwiGLU + re-quantize in one kernel). Oracle is a
+# fusion-equivalence byte-exact check against the same kernels run UNFUSED
+# (grouped_matmul_mxfp8_dispatch[fuse_swiglu=False] -> bf16 ->
+# fused_silu_mxfp8_interleaved_kernel); value-independent, so the fuzz axis is
+# the ragged token distribution + active-expert count (sweeps the regime
+# dispatch). num_experts/N/K compile-time (`-D ..`); clamp default M3 swigluoai.
+# B200-only.
+mojo_test(
+    name = "fuzz_fused_swiglu_dispatch.mojo.test",
+    size = "large",
+    srcs = [
+        "_fuzz.mojo",
+        "fuzz_fused_swiglu_dispatch.mojo",
+    ],
+    exec_properties = {
+        "test.resources:gpu-memory": "8",
+    },
+    main = "fuzz_fused_swiglu_dispatch.mojo",
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    target_compatible_with = [
+        "//:has_gpu",
+        "//:b200_gpu",
+    ],
+    deps = [
+        "//max:internal_utils",
+        "//max:linalg",
+        "//max:nn",
+        "//max:shmem",
+        "//max:structured_kernels",
+        "@mojo//:std",
+    ],
+)
+
 # Target: token sampler `fused_token_sampling_gpu` (the production top-k+top-p
 # sampling op). Two oracles: (1) a validity contract that every sampled
 # out_idxs is in [0, vocab) -- a negative / out-of-range token id is FAIL; and
