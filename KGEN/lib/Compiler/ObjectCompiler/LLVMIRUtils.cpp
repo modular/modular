@@ -5,11 +5,10 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/Compiler/LLVMIRUtils.h"
+#include "KGEN/Compiler/Target/TargetBackend.h"
 #include "KGEN/Support/CompilerProfiling.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
 #include "Support/Buffer.h"
-#include "mlir/Dialect/LLVMIR/NVVMDialect.h"
-#include "mlir/Dialect/LLVMIR/ROCDLDialect.h"
 #include "mlir/Support/LLVM.h"
 #include "llvm/ADT/MapVector.h"
 #include "llvm/ADT/SetOperations.h"
@@ -30,8 +29,6 @@
 
 using namespace M;
 using namespace KGEN;
-
-const char *M::KGEN::kMetalKernelAttr = "metal.kernel";
 
 #define DEBUG_TYPE "llvm-module-split"
 
@@ -302,29 +299,6 @@ void KGEN::splitPerExported(LLVMModuleAndContext module,
   impl.split(processFn);
 }
 
-static unsigned getGPUSharedAddressSpace(const llvm::Triple &triple) {
-  if (triple.isNVPTX())
-    return static_cast<unsigned>(mlir::NVVM::NVVMMemorySpace::Shared);
-  if (triple.isAMDGPU())
-    return mlir::ROCDL::ROCDLDialect::kSharedMemoryAddressSpace;
-  if (isMetalTriple(triple))
-    return MetalAddressSpace::ThreadGroup;
-  llvm_unreachable(
-      ("GPU shared AddressSpace not defined for target " + triple.str())
-          .c_str());
-}
-
-static bool isGlobalVarInGPUSharedMem(const llvm::Triple &triple,
-                                      const llvm::GlobalVariable &global) {
-  if (!isGPUTriple(triple))
-    return false;
-  if (global.getAddressSpace() != getGPUSharedAddressSpace(triple))
-    return false;
-
-  return global.getName().contains("._gpu_shared_mem") ||
-         global.hasExternalLinkage();
-}
-
 void LLVMModuleSplitterImpl::split(LLVMSplitProcessFn processFn) {
   // The use-def list is sparse. Use it to build a sparse dependency graph
   // between global values.
@@ -336,13 +310,18 @@ void LLVMModuleSplitterImpl::split(LLVMSplitProcessFn processFn) {
     collectImmediateDependencies(&value, &value);
   };
 
-  const llvm::Triple &triple = mainModule->getTargetTriple();
+  // The target backend, used to recognize shared-memory globals (which aren't
+  // split anchors). Null for unregistered targets, in which case nothing is
+  // treated as shared memory.
+  const TargetBackend *backend =
+      TargetBackendRegistry::get().lookup(mainModule->getTargetTriple());
+
   // NOTE: The visitation of globals then functions has to line up with
   // `readAndMaterializeDependencies`.
   for (const llvm::GlobalVariable &global : mainModule->globals()) {
     computeDeps(global);
     if (!global.hasInternalLinkage() && !global.hasPrivateLinkage() &&
-        !(isGlobalVarInGPUSharedMem(triple, global)))
+        !(backend && backend->isSharedMemoryGlobal(global)))
       transitiveDeps[&global];
   }
   for (const llvm::Function &fn : mainModule->functions()) {
@@ -393,12 +372,9 @@ void LLVMModuleSplitterImpl::split(LLVMSplitProcessFn processFn) {
       // put all users of a mutable global in the same module.
       if (auto *global = dyn_cast<llvm::GlobalVariable>(it);
           global && !global->isConstant()) {
-        // global alloc in GPU shared memory space are not actual
-        // splitting anchors as they are only shared among threads within
-        // a block but never between kernels.
-        // We also use a name handle "._gpu_shared_mem" to be sure
-        // that this is from stack_allocation in GPU shared memory.
-        if (!isGlobalVarInGPUSharedMem(triple, *global)) {
+        // Globals in shared memory are not splitting anchors (see
+        // TargetBackend::isSharedMemoryGlobal).
+        if (!(backend && backend->isSharedMemoryGlobal(*global))) {
           splitAnchorUsers[global].insert(&deps);
         }
       }

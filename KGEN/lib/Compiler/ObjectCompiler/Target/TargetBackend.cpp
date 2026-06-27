@@ -7,6 +7,7 @@
 #include "KGEN/Compiler/Target/TargetBackend.h"
 
 #include "llvm/Bitcode/BitcodeWriter.h"
+#include "llvm/IR/GlobalVariable.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/PassManager.h"
 #include "llvm/MC/TargetRegistry.h"
@@ -78,6 +79,20 @@ TargetBackend::createTargetMachine(const CompilationOptions &options,
                                    bool isJIT) const {
   return defaultCreateTargetMachine(
       adjustOptionsForTargetMachine(options, options.targetTriple), isJIT);
+}
+
+bool TargetBackend::isSharedMemoryGlobal(
+    const llvm::GlobalVariable &global) const {
+  std::optional<unsigned> addressSpace = sharedMemoryAddressSpace();
+  if (!addressSpace || global.getAddressSpace() != *addressSpace)
+    return false;
+
+  // A "._gpu_shared_mem" name handle confirms the global came from a
+  // stack_allocation in shared memory.
+  // Externally linked globals in the shared
+  // address space are also treated as shared memory (not split anchors).
+  return global.getName().contains("._gpu_shared_mem") ||
+         global.hasExternalLinkage();
 }
 
 static llvm::ManagedStatic<TargetBackendRegistry> TheRegistry;

@@ -5,7 +5,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "CABICallHelpers.h"
-#include "KGEN/Compiler/LLVMIRUtils.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENTypes.h"
@@ -38,6 +37,12 @@
 using namespace M;
 using namespace KGEN;
 namespace LLVM = mlir::LLVM;
+
+// Defined by the Metal backend; declared here for now. Marks Metal kernel
+// entry functions so the backend can find them.
+namespace M::KGEN {
+extern const char *kMetalKernelAttr;
+} // namespace M::KGEN
 
 /// Get the LLVM linkage kind for an export kind.
 static LLVM::Linkage getLinkageKind(ExportKind exportKind) {
