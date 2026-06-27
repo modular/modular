@@ -28,7 +28,6 @@ from std.ffi import (
     _CPointer,
 )
 from std.memory.unsafe_pointer import unsafe_cast
-from std.reflection.traits import AllWritable
 from std.sys import (
     is_amd_gpu,
     is_apple_gpu,
@@ -422,7 +421,9 @@ def print[
         file: The output stream.
     """
 
-    comptime assert AllWritable[*Ts]  # satisfy _write_to where clause.
+    comptime assert Ts.all_conforms_to[
+        Writable
+    ]()  # satisfy _write_to where clause.
 
     if __is_run_in_comptime_interpreter:
         var buffer = _WriteBufferStack(file)

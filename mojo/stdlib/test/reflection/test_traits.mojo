@@ -10,18 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Tests for trait-checking meta functions in reflection.traits."""
+"""Tests for `TypeList.all_conforms_to` trait-conformance checks."""
 
-from std.reflection.traits import (
-    AllWritable,
-    AllMovable,
-    AllCopyable,
-    AllImplicitlyCopyable,
-    AllDefaultable,
-    AllEquatable,
-    AllHashable,
-    AllImplicitlyDestructible,
-)
+from std.builtin.variadics import TypeList
 from std.testing import assert_true, assert_false
 from std.testing import TestSuite
 from test_utils import ExplicitDelOnly
@@ -31,63 +22,28 @@ struct NoConformances:
     pass
 
 
-def test_all_writable() raises:
-    assert_true(comptime (AllWritable[Int]))
-    assert_true(comptime (AllWritable[Int, String, Float64]))
-    assert_false(comptime (AllWritable[Int, NoConformances]))
-    assert_false(comptime (AllWritable[NoConformances]))
-
-
-def test_all_movable() raises:
-    assert_true(comptime (AllMovable[Int]))
-    assert_true(comptime (AllMovable[Int, String, Float64]))
-    assert_false(comptime (AllMovable[Int, NoConformances]))
-    assert_false(comptime (AllMovable[NoConformances]))
-
-
-def test_all_copyable() raises:
-    assert_true(comptime (AllCopyable[Int]))
-    assert_true(comptime (AllCopyable[Int, String, Float64]))
-    assert_false(comptime (AllCopyable[Int, NoConformances]))
-    assert_false(comptime (AllCopyable[NoConformances]))
-
-
-def test_all_implicitly_copyable() raises:
-    assert_true(comptime (AllImplicitlyCopyable[Int]))
-    assert_true(comptime (AllImplicitlyCopyable[Int, Float64, Bool]))
-    assert_false(comptime (AllImplicitlyCopyable[Int, NoConformances]))
-    assert_false(comptime (AllImplicitlyCopyable[NoConformances]))
-
-
-def test_all_defaultable() raises:
-    assert_true(comptime (AllDefaultable[Int]))
-    assert_true(comptime (AllDefaultable[Int, Float64, Bool]))
-    assert_false(comptime (AllDefaultable[Int, NoConformances]))
-    assert_false(comptime (AllDefaultable[NoConformances]))
-
-
-def test_all_equatable() raises:
-    assert_true(comptime (AllEquatable[Int]))
-    assert_true(comptime (AllEquatable[Int, String, Bool]))
-    assert_false(comptime (AllEquatable[Int, NoConformances]))
-    assert_false(comptime (AllEquatable[NoConformances]))
-
-
-def test_all_hashable() raises:
-    assert_true(comptime (AllHashable[Int]))
-    assert_true(comptime (AllHashable[Int, String, Bool]))
-    assert_false(comptime (AllHashable[Int, NoConformances]))
-    assert_false(comptime (AllHashable[NoConformances]))
-
-
-def test_all_implicitly_destructible() raises:
-    assert_true(comptime (AllImplicitlyDestructible[Int]))
-    assert_true(comptime (AllImplicitlyDestructible[Int, String, Bool]))
-    # NoConformances is trivially ImplicitlyDeletable (no fields), so use
-    # ExplicitDelOnly from test_utils which requires explicit destruction.
-    assert_false(comptime (AllImplicitlyDestructible[Int, ExplicitDelOnly]))
-    assert_false(comptime (AllImplicitlyDestructible[ExplicitDelOnly]))
+def test_all_conforms_to[Trait: type_of(AnyType)]() raises:
+    assert_true(TypeList.of[Trait=AnyType, Int]().all_conforms_to[Trait]())
+    assert_true(
+        TypeList.of[Trait=AnyType, Int, String, Float64]().all_conforms_to[
+            Trait
+        ]()
+    )
+    assert_false(
+        TypeList.of[Trait=AnyType, Int, NoConformances]().all_conforms_to[
+            Trait
+        ]()
+    )
+    assert_false(
+        TypeList.of[Trait=AnyType, NoConformances]().all_conforms_to[Trait]()
+    )
 
 
 def main() raises:
-    TestSuite.discover_tests[__functions_in_module()]().run()
+    test_all_conforms_to[Writable]()
+    test_all_conforms_to[Movable]()
+    test_all_conforms_to[Copyable]()
+    test_all_conforms_to[ImplicitlyCopyable]()
+    test_all_conforms_to[Defaultable]()
+    test_all_conforms_to[Equatable]()
+    test_all_conforms_to[Hashable]()

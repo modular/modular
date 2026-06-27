@@ -20,7 +20,6 @@ from std.builtin.rebind import downcast
 from std.format._utils import FormatStruct, TypeNames
 from std.sys.intrinsics import _type_is_eq_parse_time
 from std.builtin.globals import global_constant
-from std.reflection.traits import AllWritable
 
 
 struct _MLIR:
@@ -411,6 +410,23 @@ struct TypeList[
         last_value: Bool,
         this_element: Self.Trait,
     ] = last_value and predicate[this_element]
+
+    comptime _ConformsToPredicate[
+        T: type_of(AnyType), Type: Self.Trait
+    ]: Bool = conforms_to(Type, T)
+
+    @always_inline("builtin")
+    @staticmethod
+    def all_conforms_to[_trait: type_of(AnyType)]() -> Bool:
+        """Returns true if all types in this list conform to `Trait`.
+
+        Parameters:
+            _trait: The trait to check for conformance to.
+
+        Returns:
+            True if all types in this list conform to `Trait`, False otherwise.
+        """
+        return Self.all_satisfies[Self._ConformsToPredicate[_trait, _]]()
 
     @always_inline("builtin")
     @staticmethod
@@ -1677,7 +1693,7 @@ struct VariadicPack[
         start: StringSlice[O1] = StaticString(""),
         end: StringSlice[O2] = StaticString(""),
         sep: StringSlice[O3] = StaticString(", "),
-    ) where AllWritable[*Self.element_types]:
+    ) where Self.element_types.all_conforms_to[Writable]():
         """Writes a sequence of writable values from a pack to a writer with
         delimiters.
 
@@ -1713,7 +1729,7 @@ struct VariadicPack[
     def write_to(
         self,
         mut writer: Some[Writer],
-    ) where AllWritable[*Self.element_types]:
+    ) where Self.element_types.all_conforms_to[Writable]():
         """Writes the elements of this pack to a writer.
 
         Args:
@@ -1729,7 +1745,7 @@ struct VariadicPack[
     def write_repr_to(
         self,
         mut writer: Some[Writer],
-    ) where AllWritable[*Self.element_types]:
+    ) where Self.element_types.all_conforms_to[Writable]():
         """Writes the repr of the elements of this pack to a writer.
 
         Args:
