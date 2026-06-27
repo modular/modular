@@ -9,6 +9,7 @@
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
 from std.builtin.rebind import downcast
+import std.memory
 
 
 trait Greetable:
@@ -1185,7 +1186,7 @@ def destroy_via_comptime_if[T: Movable](var x: T):
         use_refined_dtor(x)
     else:
         # Keep both branches consuming `x` symmetrically.
-        _ = trait_downcast_var[ImplicitlyDeletable & Movable](x^)
+        std.memory.forget_deinit(x^)
 
 
 def destroy_via_chained_refinement[
@@ -1228,7 +1229,7 @@ def test_refined_implicitly_destructible():
 # The scope-refinement machinery must not interfere with user-authored
 # `trait_downcast` calls. Each case scope-refines `T` with `Describable`,
 # consumes that refinement (`needs_describable`), drops a user-written
-# `trait_downcast` / `trait_downcast_var` to an unrelated trait (`Greetable`),
+# `trait_downcast` to an unrelated trait (`Greetable`),
 # then re-consumes the original `Describable` refinement. If refinement leaks
 # into the downcast's input/output typing — or conversely the downcast's
 # result perturbs `x`'s refined state — either `needs_describable(x)` call
@@ -1264,15 +1265,13 @@ def downcast_preserves_refinement_ref[
     return before + " | " + mid + " | " + after
 
 
-# `trait_downcast_var` consumes its argument, so copy to keep `x` live and
+# `rebind_var` consumes its argument, so copy to keep `x` live and
 # verify its Describable refinement survives across the owning downcast call.
 def downcast_preserves_refinement_var[
     T: Copyable & ImplicitlyDeletable
 ](var x: T) -> String where conforms_to(T, Describable):
     var before = needs_describable(x)
-    var y = trait_downcast_var[Greetable & ImplicitlyDeletable & Movable](
-        x.copy()
-    )
+    var y = rebind_var[downcast[T, Greetable]](x.copy())
     var mid = needs_greetable(y)
     var after = needs_describable(x)
     return before + " | " + mid + " | " + after
