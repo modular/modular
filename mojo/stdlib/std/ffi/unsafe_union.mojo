@@ -60,9 +60,7 @@ def _all_trivial_del[*Ts: AnyType]() -> Bool:
 
     comptime for i in range(Ts.size):
         comptime if conforms_to(Ts[i], ImplicitlyDeletable):
-            if not is_trivially_destructible[
-                downcast[Ts[i], ImplicitlyDeletable]
-            ]():
+            if not is_trivially_destructible[Ts[i]]():
                 return False
         else:
             return False
@@ -74,7 +72,7 @@ def _all_trivial_copyinit[*Ts: AnyType]() -> Bool:
 
     comptime for i in range(Ts.size):
         comptime if conforms_to(Ts[i], Copyable):
-            if not is_trivially_copyable[downcast[Ts[i], Copyable]]():
+            if not is_trivially_copyable[Ts[i]]():
                 return False
         else:
             return False
@@ -86,7 +84,7 @@ def _all_trivial_moveinit[*Ts: AnyType]() -> Bool:
 
     comptime for i in range(Ts.size):
         comptime if conforms_to(Ts[i], Movable):
-            if not is_trivially_movable[downcast[Ts[i], Movable]]():
+            if not is_trivially_movable[Ts[i]]():
                 return False
         else:
             return False

@@ -207,19 +207,16 @@ trait Iterator(ImplicitlyDeletable, Movable):
         var missing = iter(l).nth(10)   # None
         ```
         """
+        # `Self.Element` is only declared `Movable` on the trait, so a
+        # bare `_ = self.__next__()` won't type-check without this assertion.
+        # Drop this workaround once MOCO-3947 lets us put the bound in a
+        # `where` clause on the method.
         comptime assert conforms_to(Self.Element, ImplicitlyDeletable)
+
         debug_assert[assert_mode="safe"](n.ge(0), "nth: n must be non-negative")
         try:
             for _ in range(n):
-                # `Self.Element` is only declared `Movable` on the trait, so a
-                # bare `_ = self.__next__()` won't type-check. Funnel the
-                # discard through the conformance we asserted above. Drop
-                # this workaround once MOCO-3947 lets us put the bound in a
-                # `where` clause on the method.
-                var elem = self.__next__()
-                _ = rebind_var[
-                    downcast[Self.Element, Movable & ImplicitlyDeletable]
-                ](elem^)
+                _ = self.__next__()
             return self.__next__()
         except StopIteration:
             return None

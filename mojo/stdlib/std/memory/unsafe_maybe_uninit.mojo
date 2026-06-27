@@ -116,10 +116,8 @@ struct UnsafeMaybeUninit[T: AnyType](
         Args:
             copy: The instance to copy from.
         """
-        comptime assert (
-            conforms_to(Self.T, Copyable)
-            and is_trivially_copyable[downcast[Self.T, Copyable]]()
-        )
+        comptime assert conforms_to(Self.T, Copyable)
+        comptime assert is_trivially_copyable[Self.T]()
         self._array = copy._array
 
     def __init__(out self, *, deinit move: Self):
@@ -132,10 +130,8 @@ struct UnsafeMaybeUninit[T: AnyType](
         Args:
             move: The value to move from.
         """
-        comptime assert (
-            conforms_to(Self.T, Movable)
-            and is_trivially_movable[downcast[Self.T, Movable]]()
-        )
+        comptime assert conforms_to(Self.T, Movable)
+        comptime assert is_trivially_movable[Self.T]()
         self._array = move._array
 
     @always_inline
@@ -217,12 +213,12 @@ struct UnsafeMaybeUninit[T: AnyType](
 @always_inline
 def _is_trivially_copyable[T: AnyType]() -> Bool:
     comptime if conforms_to(T, Copyable):
-        return is_trivially_copyable[downcast[T, Copyable]]()
+        return is_trivially_copyable[T]()
     return False
 
 
 @always_inline
 def _is_trivially_movable[T: AnyType]() -> Bool:
     comptime if conforms_to(T, Movable):
-        return is_trivially_movable[downcast[T, Movable]]()
+        return is_trivially_movable[T]()
     return False

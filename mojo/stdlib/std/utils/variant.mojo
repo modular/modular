@@ -196,16 +196,14 @@ struct _NichedOptionalStorage[
         else:
             # This is the empty "none" type.
             comptime assert conforms_to(U, TrivialRegisterPassable)
-            _ = rebind_var[downcast[U, TrivialRegisterPassable]](value^)
+            _ = value^
             self = Self()
 
     @always_inline
     def __init__(out self, *, deinit move: Self):
         comptime assert conforms_to(Self.T, Movable)
         if move.isa[Self.T]():
-            self = Self(
-                move.unsafe_ptr[downcast[Self.T, Movable]]().take_pointee()
-            )
+            self = Self(move.unsafe_ptr[Self.T]().take_pointee())
         else:
             self = Self()
 
@@ -221,9 +219,7 @@ struct _NichedOptionalStorage[
     def __del__(deinit self):
         comptime assert conforms_to(Self.T, ImplicitlyDeletable)
         if self.isa[Self.T]():
-            rebind[UnsafeMaybeUninit[downcast[Self.T, ImplicitlyDeletable]]](
-                self._memory.as_uninit[Self.T]()[]
-            ).unsafe_assume_init_destroy()
+            self._memory.as_uninit[Self.T]()[].unsafe_assume_init_destroy()
 
     @always_inline
     def isa[U: AnyType](self) -> Bool:
@@ -285,9 +281,8 @@ struct _DefaultVariantStorage[*Ts: AnyType](
         self.get_discriminant() = copy.get_discriminant()
 
         comptime for i in range(Self.Ts.size):
-            comptime TUnknown = Self.Ts[i]
-            comptime assert conforms_to(TUnknown, Copyable)
-            comptime T = downcast[TUnknown, Copyable]
+            comptime T = Self.Ts[i]
+            comptime assert conforms_to(T, Copyable)
 
             if self.get_discriminant() == UInt8(i):
                 self.unsafe_ptr[T]().init_pointee_copy(copy.unsafe_ptr[T]()[])
@@ -299,9 +294,8 @@ struct _DefaultVariantStorage[*Ts: AnyType](
         self.get_discriminant() = move.get_discriminant()
 
         comptime for i in range(Self.Ts.size):
-            comptime TUnknown = Self.Ts[i]
-            comptime assert conforms_to(TUnknown, Movable)
-            comptime T = downcast[TUnknown, Movable]
+            comptime T = Self.Ts[i]
+            comptime assert conforms_to(T, Movable)
 
             if self.get_discriminant() == UInt8(i):
                 self.unsafe_ptr[T]().init_pointee_move_from(
@@ -312,9 +306,8 @@ struct _DefaultVariantStorage[*Ts: AnyType](
     @always_inline
     def __del__(deinit self):
         comptime for i in range(Self.Ts.size):
-            comptime TUnknown = Self.Ts[i]
-            comptime assert conforms_to(TUnknown, ImplicitlyDeletable)
-            comptime T = downcast[TUnknown, ImplicitlyDeletable]
+            comptime T = Self.Ts[i]
+            comptime assert conforms_to(T, ImplicitlyDeletable)
 
             if self.get_discriminant() == UInt8(i):
                 self.unsafe_ptr[T]().destroy_pointee()
@@ -911,9 +904,7 @@ struct Variant[*Ts: Movable](
 def _all_trivial_del[*Ts: AnyType]() -> Bool:
     comptime for i in range(Ts.size):
         comptime if conforms_to(Ts[i], ImplicitlyDeletable):
-            if not is_trivially_destructible[
-                downcast[Ts[i], ImplicitlyDeletable]
-            ]():
+            if not is_trivially_destructible[Ts[i]]():
                 return False
         else:
             return False
@@ -923,7 +914,7 @@ def _all_trivial_del[*Ts: AnyType]() -> Bool:
 def _all_trivial_copyinit[*Ts: AnyType]() -> Bool:
     comptime for i in range(Ts.size):
         comptime if conforms_to(Ts[i], Copyable):
-            if not is_trivially_copyable[downcast[Ts[i], Copyable]]():
+            if not is_trivially_copyable[Ts[i]]():
                 return False
         else:
             return False
@@ -934,7 +925,7 @@ def _all_trivial_copyinit[*Ts: AnyType]() -> Bool:
 def _all_trivial_moveinit[*Ts: AnyType]() -> Bool:
     comptime for i in range(Ts.size):
         comptime if conforms_to(Ts[i], Movable):
-            if not is_trivially_movable[downcast[Ts[i], Movable]]():
+            if not is_trivially_movable[Ts[i]]():
                 return False
         else:
             return False

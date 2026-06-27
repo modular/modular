@@ -164,9 +164,9 @@ struct OwnedPointer[T: AnyType](
             Element=Self.T,
             ParentConformsTo="ImplicitlyDeletable",
         ]()
-        comptime TDestructible = downcast[Self.T, ImplicitlyDeletable]
+        comptime assert conforms_to(Self.T, ImplicitlyDeletable)
 
-        self._inner.unsafe_ptr().bitcast[TDestructible]().destroy_pointee()
+        self._inner.unsafe_ptr().destroy_pointee()
         dealloc(self._inner^.unsafe_with_layout(Layout[Self.T].single()))
 
     # ===-------------------------------------------------------------------===#

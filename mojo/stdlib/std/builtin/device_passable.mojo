@@ -33,9 +33,7 @@ trait DevicePassable:
         comptime if not _type_is_eq[Self, Self.device_type]() and conforms_to(
             Self.device_type, DevicePassable
         ):
-            return downcast[
-                Self.device_type, DevicePassable
-            ]._is_convertible_to_device_type[SrcT]()
+            return Self.device_type._is_convertible_to_device_type[SrcT]()
         else:
             return _type_is_eq[SrcT, Self.device_type]()
 
@@ -156,8 +154,7 @@ trait DeviceTypeEncoder:
         )
 
         comptime if conforms_to(ValueType, DevicePassable):
-            comptime DPType = downcast[ValueType, DevicePassable]
-            comptime assert DPType._is_convertible_to_device_type[
+            comptime assert ValueType._is_convertible_to_device_type[
                 ValueType
             ](), String(
                 t"encode: ValueType '{reflect[ValueType].base_name()}' being"
