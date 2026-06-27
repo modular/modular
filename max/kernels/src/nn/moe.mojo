@@ -54,6 +54,13 @@ from std.builtin.dtype import _uint_type_of_width
 from nn.topk import TopK_2
 
 
+from std.gpu.memory import (
+    async_copy,
+    async_copy_commit_group,
+    async_copy_wait_all,
+)
+
+
 @always_inline
 def calculate_warp_offset[
     MaskType: DType
@@ -1151,6 +1158,253 @@ def single_group_router_kernel[
                 expert_weights[token_idx, lane_id] = original_weight
 
 
+@__llvm_metadata(
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_threads))
+)
+@__name(
+    t"single_group_router_eplb_{scores_type}_{bias_type}_t{num_threads}_n{num_log}_r{max_replicas}_h{Int(hash_decorrelate)}",
+)
+def single_group_router_eplb_kernel[
+    scores_type: DType,
+    bias_type: DType,
+    ExpertIndicesLayoutType: TensorLayout,  # phy ids out
+    ExpertIndicesLogLayoutType: TensorLayout,  # log ids out (for histogram)
+    ExpertWeightsLayoutType: TensorLayout,
+    ExpertScoresLayoutType: TensorLayout,
+    ExpertBiasLayoutType: TensorLayout,
+    LogcntLayoutType: TensorLayout,
+    Log2phyLayoutType: TensorLayout,
+    LayerIdxLayoutType: TensorLayout,
+    n_routed_experts: Int,
+    n_experts_per_tok: Int,
+    norm_weights: Bool,
+    num_threads: Int,
+    num_log: Int,
+    max_replicas: Int,
+    hash_decorrelate: Bool,
+    scores_input_fn: OptionalReg[
+        def[width: Int](IndexList[2]) capturing -> SIMD[scores_type, width]
+    ] = None,
+](
+    expert_indices: TileTensor[
+        mut=True, DType.int32, ExpertIndicesLayoutType, MutAnyOrigin
+    ],  # phy ids
+    expert_indices_log: TileTensor[
+        mut=True, DType.int32, ExpertIndicesLogLayoutType, MutAnyOrigin
+    ],  # log ids (for EPLB histogram)
+    expert_weights: TileTensor[
+        mut=True, scores_type, ExpertWeightsLayoutType, MutAnyOrigin
+    ],
+    expert_scores: TileTensor[
+        scores_type, ExpertScoresLayoutType, ImmutAnyOrigin
+    ],
+    expert_bias: TileTensor[bias_type, ExpertBiasLayoutType, ImmutAnyOrigin],
+    logcnt: TileTensor[DType.int32, LogcntLayoutType, ImmutAnyOrigin],
+    log2phy: TileTensor[DType.int32, Log2phyLayoutType, ImmutAnyOrigin],
+    layer_idx: TileTensor[DType.int32, LayerIdxLayoutType, ImmutAnyOrigin],
+    routed_scaling_factor: Float32,
+):
+    """Single-group MoE router fused with EPLB log->phy remap.
+
+    Mirrors `single_group_router_kernel` exactly through phase 3, then at the
+    K writers performs the EPLB lookup using a per-block SMEM cache of the
+    current layer's logcnt/log2phy slice.
+
+    Backend specialization:
+      - NVIDIA: cp.async issues the table fetch up front; sort hides the latency.
+      - AMD/Apple: plain ld_global into registers up front, ds_write later.
+    """
+
+    # ---- existing comptime asserts ----
+    comptime assert expert_indices.flat_rank == 2
+    comptime assert expert_indices_log.flat_rank == 2
+    comptime assert expert_weights.flat_rank == 2
+    comptime assert expert_scores.flat_rank == 2
+    comptime assert expert_bias.flat_rank == 1
+    comptime assert logcnt.flat_rank == 2
+    comptime assert log2phy.flat_rank == 3
+    comptime assert layer_idx.flat_rank == 1
+
+    comptime assert (
+        expert_scores.static_shape[1] == n_routed_experts
+    ), "expert_scores.static_shape[1] must be equal to n_routed_experts"
+    comptime assert (
+        expert_indices.static_shape[1] == n_experts_per_tok
+    ), "expert_indices.static_shape[1] must be equal to n_experts_per_tok"
+    comptime assert (
+        expert_indices_log.static_shape[1] == n_experts_per_tok
+    ), "expert_indices_log.static_shape[1] must be equal to n_experts_per_tok"
+    comptime assert (
+        num_threads == n_routed_experts
+    ), "num_threads must be equal to n_routed_experts"
+    comptime assert (
+        num_threads % WARP_SIZE == 0
+    ), "WARP_SIZE must be divisible by num_threads"
+    comptime assert (
+        n_experts_per_tok.is_power_of_two()
+    ), "n_experts_per_tok must be a power of two"
+
+    # ---- EPLB-specific asserts ----
+    comptime assert (
+        logcnt.static_shape[1] == num_log
+    ), "logcnt.static_shape[1] must equal num_log"
+    comptime assert (
+        log2phy.static_shape[1] == num_log
+    ), "log2phy.static_shape[1] must equal num_log"
+    comptime assert (
+        log2phy.static_shape[2] == max_replicas
+    ), "log2phy.static_shape[2] must equal max_replicas"
+    comptime assert (
+        n_experts_per_tok.is_power_of_two()
+    ), "n_experts_per_tok must be a power of two"
+
+    # ---- existing phase math ----
+    comptime num_warps = num_threads // WARP_SIZE
+    comptime phase1_candidates = num_warps * n_experts_per_tok
+    comptime num_phase2_warps = ceildiv(phase1_candidates, WARP_SIZE)
+    comptime phase2_candidates = num_phase2_warps * n_experts_per_tok
+    comptime skip_phase2 = (num_phase2_warps == 1)
+    comptime assert phase2_candidates <= WARP_SIZE
+    comptime if skip_phase2:
+        comptime assert phase1_candidates <= WARP_SIZE
+
+    comptime total_smem = phase1_candidates if skip_phase2 else (
+        phase1_candidates + phase2_candidates
+    )
+
+    var token_idx = Int(block_idx.x)
+    var tid = Int(thread_idx.x)
+    var w_id = warp_id()
+    var l_id = lane_id()
+
+    # ---- existing TopK_2 SMEM ----
+    var shared_mem = stack_allocation[
+        total_smem,
+        TopK_2[scores_type],
+        address_space=AddressSpace.SHARED,
+    ]()
+    var shared_mem_phase1 = shared_mem
+    var shared_mem_phase2 = shared_mem + phase1_candidates
+
+    with PDL():
+        var Lidx = Int(layer_idx.load[width=1](Coord(Idx[0]))[0])
+        var thread_expert_bias = expert_bias.load[width=1](Coord(tid)).cast[
+            scores_type
+        ]()
+
+        var thread_expert_score: Scalar[scores_type]
+        comptime if scores_input_fn:
+            comptime scores_fn = scores_input_fn.value()
+            thread_expert_score = scores_fn[width=1]((token_idx, tid))
+        else:
+            thread_expert_score = expert_scores.load[width=1]((token_idx, tid))
+        var biased_score = thread_expert_score + thread_expert_bias
+
+        var val = TopK_2(u=biased_score, p=tid)
+        var sorted_val = _warp_bitonic_sort[num_lanes=WARP_SIZE](val)
+
+        if l_id < n_experts_per_tok:
+            shared_mem_phase1[w_id * n_experts_per_tok + l_id] = sorted_val
+        barrier()
+
+        comptime if not skip_phase2:
+            var val2: TopK_2[scores_type]
+            if w_id < num_phase2_warps:
+                val2 = shared_mem_phase1[tid]
+            else:
+                val2 = TopK_2[scores_type]()
+
+            var sorted_val2 = _warp_bitonic_sort[num_lanes=WARP_SIZE](val2)
+
+            if w_id < num_phase2_warps and l_id < n_experts_per_tok:
+                shared_mem_phase2[w_id * n_experts_per_tok + l_id] = sorted_val2
+            barrier()
+
+        # ============================================================
+        # PHASE 3 + REMAP + STORE (warp 0 only)
+        # ============================================================
+        if w_id == 0:
+            var val3: TopK_2[scores_type]
+            comptime if skip_phase2:
+                if l_id < phase1_candidates:
+                    val3 = shared_mem_phase1[l_id]
+                else:
+                    val3 = TopK_2[scores_type]()
+            else:
+                if l_id < phase2_candidates:
+                    val3 = shared_mem_phase2[l_id]
+                else:
+                    val3 = TopK_2[scores_type]()
+
+            var sorted_val3 = _warp_bitonic_sort[num_lanes=WARP_SIZE](val3)
+
+            comptime assert (
+                max_replicas == 1
+                or max_replicas == 2
+                or max_replicas == 4
+                or max_replicas == 8
+                or max_replicas == 16
+            ), "max_replicas must be a SIMD-loadable width (1,2,4,8,16)"
+
+            # Hoisted out of the `if l_id < K` so non-writer lanes still
+            # have valid registers for the reduction's uniform shuffles.
+            var log: Int = 0
+            var original_weight: Scalar[scores_type] = 0
+            var cnt: Int = 1
+            var phy_all = SIMD[DType.int32, max_replicas](0)
+
+            if l_id < n_experts_per_tok:
+                log = Int(sorted_val3.p)
+
+                # Burst load #1 — original_weight (existing).
+                comptime if scores_input_fn:
+                    comptime d_fn = scores_input_fn.value()
+                    original_weight = d_fn[width=1]((token_idx, log))
+                else:
+                    original_weight = expert_scores.load[width=1](
+                        (token_idx, log)
+                    )
+
+                # Burst load #2 — full log2phy[Lidx, log, :] slice.
+                # One 4*max_replicas-byte HBM transaction (16B for mr=4,
+                # 32B for mr=8). Replica selection moves into registers.
+                phy_all = log2phy.load[width=max_replicas]((Lidx, log, Idx[0]))
+
+                # Burst load #3 — cnt (only when mr > 1).
+                comptime if max_replicas > 1:
+                    cnt = Int(logcnt.load[width=1]((Lidx, log))[0])
+
+            # ---------- Weight reduction (loads above are in flight) ----
+            var weights_sum = warp.lane_group_sum[num_lanes=n_experts_per_tok](
+                original_weight
+            )
+            comptime if norm_weights:
+                original_weight /= weights_sum
+            original_weight *= Scalar[scores_type](routed_scaling_factor)
+
+            # ---------- Replica pick + store (all register ops) ---------
+            if l_id < n_experts_per_tok:
+                var r = _pick_replica[
+                    max_replicas, hash_decorrelate, n_experts_per_tok
+                ](log, cnt, token_idx, Int(l_id))
+
+                var phy: Int32
+                comptime if max_replicas == 1:
+                    phy = phy_all[0]
+                else:
+                    # Comptime-unrolled select chain. Keeps phy_all in
+                    # registers — dynamic SIMD indexing can otherwise
+                    # spill to local memory on some lowerings.
+                    phy = phy_all[0]
+                    comptime for ri in range(1, max_replicas):
+                        if r == ri:
+                            phy = phy_all[ri]
+
+                expert_indices.store((token_idx, l_id), phy)
+                expert_indices_log.store((token_idx, l_id), Int32(log))
+                expert_weights[token_idx, l_id] = original_weight
+
+
 @always_inline
 def single_group_router[
     scores_type: DType,
@@ -1244,6 +1498,99 @@ def single_group_router[
 
 
 # EPLB remap (log2hy id) kernel
+@always_inline
+def single_group_router_eplb[
+    scores_type: DType,
+    bias_type: DType,
+    //,
+    n_routed_experts: Int,
+    n_experts_per_tok: Int,
+    norm_weights: Bool,
+    num_log: Int,
+    max_replicas: Int,
+    hash_decorrelate: Bool,
+    target: StaticString,
+    scores_input_fn: OptionalReg[
+        def[width: Int](IndexList[2]) capturing -> SIMD[scores_type, width]
+    ] = None,
+](
+    expert_indices: TileTensor[mut=True, DType.int32, ...],
+    expert_indices_log: TileTensor[mut=True, DType.int32, ...],
+    expert_weights: TileTensor[mut=True, scores_type, ...],
+    expert_scores: TileTensor[scores_type, ...],
+    expert_bias: TileTensor[bias_type, ...],
+    logcnt: TileTensor[DType.int32, ...],
+    log2phy: TileTensor[DType.int32, ...],
+    layer_idx: TileTensor[DType.int32, ...],
+    routed_scaling_factor: Float32,
+    context: DeviceContext,
+) raises:
+    comptime assert is_gpu[
+        target
+    ](), "Single group router (EPLB) is only supported on GPU"
+
+    if expert_scores.dim(0) == 0:
+        return
+
+    var gpu_ctx = context
+
+    with Trace[TraceLevel.OP, target=target](
+        "mo.moe.single.group.router.eplb", task_id=Int(gpu_ctx.id())
+    ):
+        comptime num_threads = n_routed_experts
+
+        comptime kernel = single_group_router_eplb_kernel[
+            scores_type,
+            bias_type,
+            expert_indices.LayoutType,
+            expert_indices_log.LayoutType,
+            expert_weights.LayoutType,
+            expert_scores.LayoutType,
+            expert_bias.LayoutType,
+            logcnt.LayoutType,
+            log2phy.LayoutType,
+            layer_idx.LayoutType,
+            n_routed_experts,
+            n_experts_per_tok,
+            norm_weights,
+            num_threads,
+            num_log,
+            max_replicas,
+            hash_decorrelate,
+            scores_input_fn=scores_input_fn,
+        ]
+
+        gpu_ctx.enqueue_function[kernel](
+            expert_indices,
+            expert_indices_log,
+            expert_weights,
+            expert_scores,
+            expert_bias,
+            logcnt,
+            log2phy,
+            layer_idx,
+            routed_scaling_factor,
+            grid_dim=expert_scores.dim(0),
+            block_dim=num_threads,
+            attributes=pdl_launch_attributes(PDLLevel(1)),
+        )
+
+
+@always_inline
+def _pick_replica[
+    max_replicas: Int,
+    hash_decorrelate: Bool,
+    K: Int,
+](log: Int, cnt: Int, n: Int, k: Int,) -> Int:
+    """Deterministic replica picker. cnt is ignored when max_replicas == 1."""
+    comptime if max_replicas == 1:
+        return 0
+    else:
+        comptime HASH_C = UInt32(2654435761)  # Knuth golden ratio
+        var pos: UInt32 = UInt32(n) * UInt32(K) + UInt32(k)
+        comptime if hash_decorrelate:
+            pos = pos ^ (UInt32(log) * HASH_C)
+        return Int(pos % UInt32(cnt))
 
 
 @__llvm_metadata(

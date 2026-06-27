@@ -4509,6 +4509,98 @@ def moe_eplb_remap(
     )[0].tensor
 
 
+def moe_router_single_group_eplb(
+    expert_scores: TensorValue,
+    expert_bias: TensorValue,
+    logcnt: TensorValue,
+    log2phy: TensorValue,
+    layer_idx: TensorValue,
+    *,
+    n_routed_experts: int,
+    n_experts_per_tok: int,
+    norm_weights: bool,
+    num_log: int,
+    max_replicas: int,
+    hash_decorrelate: bool,
+    routed_scaling_factor: float,
+) -> tuple[TensorValue, TensorValue, TensorValue]:
+    """Fused single-group MoE router + EPLB log->phy remap.
+
+    Replaces the chained ``moe_router_group_limited`` (n_groups==1) →
+    ``moe_eplb_remap`` for the single-group path. Returns physical
+    expert ids, logical expert ids (kept for the EPLB stats histogram),
+    and routing weights in one launch.
+    """
+    if expert_bias.rank != 1:
+        raise ValueError(
+            f"expected expert_bias of rank 1 but got {expert_bias.rank}"
+        )
+    if expert_bias.shape[0] != expert_scores.shape[1]:
+        raise ValueError(
+            f"expected expert_bias of shape [num_experts] but got {expert_bias.shape}"
+        )
+
+    _check_dtype(
+        DType.int32, logcnt=logcnt, log2phy=log2phy, layer_idx=layer_idx
+    )
+    _check_rank(2, logcnt=logcnt)
+    _check_rank(3, log2phy=log2phy)
+    if layer_idx.rank == 0:
+        layer_idx = ops.reshape(layer_idx, [1])
+    if logcnt.shape[1] != num_log:
+        raise ValueError(
+            f"expected logcnt of shape [L, num_log], got {logcnt.shape} num_log={num_log}"
+        )
+    if log2phy.shape[1] != num_log or log2phy.shape[2] != max_replicas:
+        raise ValueError(
+            f"expected log2phy of shape [L, num_log, max_replicas], got {log2phy.shape}"
+        )
+
+    parameters: dict[str, int | str | DType | bool] = {
+        "n_routed_experts": n_routed_experts,
+        "n_experts_per_tok": n_experts_per_tok,
+        "norm_weights": norm_weights,
+        "num_log": num_log,
+        "max_replicas": max_replicas,
+        "hash_decorrelate": hash_decorrelate,
+    }
+
+    results = ops.custom(
+        "mo.moe.single.group.router.eplb",
+        device=expert_scores.device,
+        values=[
+            expert_scores,
+            expert_bias,
+            logcnt,
+            log2phy,
+            layer_idx,
+            ops.constant(
+                routed_scaling_factor, DType.float32, device=DeviceRef.CPU()
+            ),
+        ],
+        out_types=[
+            TensorType(  # expert_indices_phy
+                dtype=DType.int32,
+                shape=[expert_scores.shape[0], n_experts_per_tok],
+                device=expert_scores.device,
+            ),
+            TensorType(  # expert_indices_log
+                dtype=DType.int32,
+                shape=[expert_scores.shape[0], n_experts_per_tok],
+                device=expert_scores.device,
+            ),
+            TensorType(  # expert_weights
+                dtype=expert_scores.dtype,
+                shape=[expert_scores.shape[0], n_experts_per_tok],
+                device=expert_scores.device,
+            ),
+        ],
+        parameters=parameters,
+    )
+
+    return (results[0].tensor, results[1].tensor, results[2].tensor)
+
+
 def grouped_matmul_ragged(
     hidden_states: TensorValue,
     weight: TensorValue,

@@ -111,6 +111,11 @@ class DeepseekV3TopKRouter(MoEGate):
             dtype=correction_bias_dtype,
         )
 
+    def compute_scores(self, hidden_states: TensorValue) -> TensorValue:
+        """Sigmoid scores in correction-bias dtype, ready for the router kernel."""
+        logits = self.gate_score(hidden_states)
+        return ops.sigmoid(logits.cast(self.correction_bias_dtype))
+
     def __call__(
         self, hidden_states: TensorValue
     ) -> tuple[TensorValue, TensorValue]:
@@ -125,9 +130,9 @@ class DeepseekV3TopKRouter(MoEGate):
                 - topk_weight: Routing weights for selected experts of shape (seq_len, num_experts_per_token)
         """
         # compute gate score
-        logits = self.gate_score(hidden_states)
-
-        scores = ops.sigmoid(logits.cast(self.correction_bias_dtype))
+        # logits = self.gate_score(hidden_states)
+        scores = self.compute_scores(hidden_states)
+        # scores = ops.sigmoid(logits.cast(self.correction_bias_dtype))
         topk_idx, topk_weight = moe_router_group_limited(
             scores,
             self.e_score_correction_bias,

@@ -86,6 +86,7 @@ from nn.moe import (
     moe_create_indices,
     router_group_limited,
     single_group_router,
+    single_group_router_eplb,
 )
 from nn.nms import non_max_suppression, non_max_suppression_shape_func
 from nn.pool import max_pool, pool_shape, pool_shape_ceil
@@ -1569,8 +1570,8 @@ struct Struct_moe_create_indices_with_scales_offset:
         )
 
 
-@compiler.register("mo.moe.router.group.limited")
-struct Struct_moe_router_group_limited:
+@compiler.register("mo.moe.single.group.router.eplb")
+struct Struct_moe_single_group_router_eplb:
     @always_inline
     @staticmethod
     @parameter
@@ -1580,15 +1581,20 @@ struct Struct_moe_router_group_limited:
         //,
         n_routed_experts: Int,
         n_experts_per_tok: Int,
-        n_groups: Int,
-        topk_group: Int,
         norm_weights: Bool,
+        num_log: Int,
+        max_replicas: Int,
+        hash_decorrelate: Bool,
         target: StaticString,
     ](
         expert_indices: OutputTensor[dtype=DType.int32, rank=2, ...],
+        expert_indices_log: OutputTensor[dtype=DType.int32, rank=2, ...],
         expert_weights: OutputTensor[dtype=scores_type, rank=2, ...],
         expert_scores: FusedInputTensor[dtype=scores_type, rank=2, ...],
         expert_bias: InputTensor[dtype=bias_type, rank=1, ...],
+        logcnt: InputTensor[dtype=DType.int32, rank=2, ...],
+        log2phy: InputTensor[dtype=DType.int32, rank=3, ...],
+        layer_idx: InputTensor[dtype=DType.int32, rank=1, ...],
         routed_scaling_factor: Float32,
         context: DeviceContext,
     ) raises:
@@ -1599,12 +1605,13 @@ struct Struct_moe_router_group_limited:
         ](coords: IndexList[2]) -> SIMD[scores_type, width]:
             return expert_scores._lambda_load[width=width](coords)
 
-        router_group_limited[
+        single_group_router_eplb[
             n_routed_experts,
             n_experts_per_tok,
-            n_groups,
-            topk_group,
-            norm_weights,
+            norm_weights=norm_weights,
+            num_log=num_log,
+            max_replicas=max_replicas,
+            hash_decorrelate=hash_decorrelate,
             target=target,
             scores_input_fn=OptionalReg[
                 def[
@@ -1613,9 +1620,13 @@ struct Struct_moe_router_group_limited:
             ](scores_input_fn),
         ](
             expert_indices.to_tile_tensor[DType.int64](),
+            expert_indices_log.to_tile_tensor[DType.int64](),
             expert_weights.to_tile_tensor[DType.int64](),
             expert_scores.to_tile_tensor[DType.int64]().as_immut(),
             expert_bias.to_tile_tensor[DType.int64]().as_immut(),
+            logcnt.to_tile_tensor[DType.int64]().as_immut(),
+            log2phy.to_tile_tensor[DType.int64]().as_immut(),
+            layer_idx.to_tile_tensor[DType.int64]().as_immut(),
             routed_scaling_factor,
             context,
         )

@@ -38,7 +38,7 @@ from max.graph import (
 )
 
 from ..comm.ep.ep_manager import EPBatchManager
-from ..kernels import moe_eplb_remap
+from ..kernels import moe_eplb_remap, moe_router_single_group_eplb
 from ..transformer.distributed_transformer import forward_sharded_layers
 from .moe import MoE
 
@@ -69,34 +69,99 @@ def _ep_forward(
     batch_mgr = moe_shards[0].ep_batch_manager
     _eplb_remap_logged = False
     for i, (shard, x) in enumerate(zip(moe_shards, xs, strict=True)):
-        router_idx, router_weight = shard.gate(x)
-        router_idx = ops.cast(router_idx, DType.int32)
+        gate = shard.gate
+        device = shard.devices[0]
 
-        # histogram to capture eplb logical stats
-        if eplb_counter_buffers:
-            _accumulate(
-                eplb_counter_buffers[i],
-                ops.cast(router_idx, DType.int32).reshape([-1]),
-                shard.devices[0],
-                shard.gate.num_experts,
-            )
+        use_fused_eplb_router = (
+            batch_mgr.config.eplb_enabled
+            and getattr(gate, "n_group", 1) == 1
+            and not _eplb_is_identity_placement(batch_mgr)
+            and hasattr(
+                gate, "compute_scores"
+            )  # only Kimi gate has this for now
+        )
 
-        if batch_mgr.config.eplb_enabled:
+        if use_fused_eplb_router:
             assert layer_idx_per_device, (
                 "EPLB requires per-device layer_idx tensors; got "
                 f"{layer_idx_per_device!r}"
             )
-            # Each shard picks the GPU constant on its own device — no transfer.
-            layer_idx_t = layer_idx_per_device[shard.devices[0].id]
+            layer_idx_t = layer_idx_per_device[device.id]
+            log2phy = ops.buffer_load(
+                batch_mgr._eplb_log2phy_per_device[device.id]
+            )
+            logcnt = ops.buffer_load(
+                batch_mgr._eplb_logcnt_per_device[device.id]
+            )
+
+            scores = gate.compute_scores(x)  # type: ignore[attr-defined]
+            phy_idx, log_idx, router_weight = moe_router_single_group_eplb(
+                expert_scores=scores,
+                expert_bias=gate.e_score_correction_bias,  # type: ignore[attr-defined]
+                logcnt=logcnt,
+                log2phy=log2phy,
+                layer_idx=layer_idx_t,
+                n_routed_experts=gate.num_experts,
+                n_experts_per_tok=gate.num_experts_per_token,
+                norm_weights=gate.norm_topk_prob,  # type: ignore[attr-defined]
+                num_log=gate.num_experts,
+                max_replicas=batch_mgr.config.max_replicas,
+                hash_decorrelate=getattr(
+                    batch_mgr.config, "eplb_hash_decorrelate", True
+                ),
+                routed_scaling_factor=gate.routed_scaling_factor,  # type: ignore[attr-defined]
+            )
+
+            # Histogram still consumes LOGICAL ids — emit it BEFORE swapping.
+            if eplb_counter_buffers:
+                _accumulate(
+                    eplb_counter_buffers[i],
+                    log_idx.reshape([-1]),
+                    device,
+                    gate.num_experts,
+                )
+
             if not _eplb_remap_logged and i == 0:
                 logger.info(
-                    "EPLB: fused mo.moe.eplb.remap installed in compiled graph "
-                    "(layer_idx=%s, max_replicas=%d)",
+                    "EPLB: fused mo.moe.single.group.router.eplb installed "
+                    "in compiled graph (layer_idx=%s, max_replicas=%d)",
                     shard.layer_idx,
                     batch_mgr.config.max_replicas,
                 )
                 _eplb_remap_logged = True
-            router_idx = _eplb_remap(router_idx, shard, batch_mgr, layer_idx_t)
+
+            router_idx = phy_idx
+        else:
+            # Original chained path. Covers DSV3 (n_group > 1) and any
+            # build where the gate doesn't yet expose compute_scores.
+            router_idx, router_weight = gate(x)
+            router_idx = ops.cast(router_idx, DType.int32)
+
+            if eplb_counter_buffers:
+                _accumulate(
+                    eplb_counter_buffers[i],
+                    ops.cast(router_idx, DType.int32).reshape([-1]),
+                    device,
+                    gate.num_experts,
+                )
+
+            if batch_mgr.config.eplb_enabled:
+                assert layer_idx_per_device, (
+                    "EPLB requires per-device layer_idx tensors; got "
+                    f"{layer_idx_per_device!r}"
+                )
+                layer_idx_t = layer_idx_per_device[device.id]
+                if not _eplb_remap_logged and i == 0:
+                    logger.info(
+                        "EPLB: fused mo.moe.eplb.remap installed in compiled graph "
+                        "(layer_idx=%s, max_replicas=%d)",
+                        shard.layer_idx,
+                        batch_mgr.config.max_replicas,
+                    )
+                    _eplb_remap_logged = True
+                router_idx = _eplb_remap(
+                    router_idx, shard, batch_mgr, layer_idx_t
+                )
 
         all_topk_ids.append(router_idx)
         all_router_weights.append(router_weight)
