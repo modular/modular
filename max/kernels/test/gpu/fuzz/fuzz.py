@@ -149,6 +149,22 @@ _TARGETS: dict[str, FuzzTarget] = {
         description=("block-scaled FP4 SM100 matmul small_bn (memcheck)"),
         default_oracle="memcheck",
     ),
+    "block_scaled_mxfp8": FuzzTarget(
+        name="block_scaled_mxfp8",
+        bazel_target=(
+            "//max/kernels/test/gpu/fuzz:fuzz_block_scaled_mxfp8.mojo.test"
+        ),
+        binary=(
+            "bazel-bin/max/kernels/test/gpu/fuzz/"
+            "fuzz_block_scaled_mxfp8.mojo.test"
+        ),
+        description=(
+            "block-scaled MXFP8 SM100 dense matmul (MiniMax-M3-MXFP8 attention"
+            " + shared-expert GEMM): e4m3 + E8M0 scales vs cuBLAS ref. ref/"
+            "memcheck"
+        ),
+        default_oracle="ref",
+    ),
     "mla_decode": FuzzTarget(
         name="mla_decode",
         bazel_target=("//max/kernels/test/gpu/fuzz:fuzz_mla_decode.mojo.test"),
