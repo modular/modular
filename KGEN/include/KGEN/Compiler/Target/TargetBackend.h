@@ -27,10 +27,12 @@
 #include "llvm/Transforms/Utils/SimplifyCFGOptions.h"
 
 #include <memory>
+#include <optional>
 #include <vector>
 
 namespace llvm {
 class Function;
+class GlobalVariable;
 class Module;
 class PassBuilder;
 class TargetMachine;
@@ -105,6 +107,22 @@ public:
   /// is a hard error for offload targets.
   virtual bool isOffload() const { return false; }
 
+  /// Whether `global` lives in this target's shared/threadgroup memory. Such
+  /// globals are not split anchors: they are shared among threads within a
+  /// block but never across kernels. The default uses
+  /// `sharedMemoryAddressSpace()`; targets without shared memory (e.g. host)
+  /// never match.
+  bool isSharedMemoryGlobal(const llvm::GlobalVariable &global) const;
+
+protected:
+  /// The target's shared/threadgroup-memory address space, or nullopt for
+  /// targets without one (e.g. host). Backing datum for
+  /// `isSharedMemoryGlobal`.
+  virtual std::optional<unsigned> sharedMemoryAddressSpace() const {
+    return std::nullopt;
+  }
+
+public:
   /// Whether the linked module's functions must be restored to their original
   /// order after MCLinker reorders them (needed when codegen emits function
   /// declarations whose order matters, e.g. NVPTX).
