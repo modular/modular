@@ -138,9 +138,7 @@ trait DeviceTypeEncoder:
 
         Constraints:
             - `ValueType` must conform to `DevicePassable` or `RegisterPassable`.
-            - `ValueType` must conform to
-              `ImplicitlyCopyable & ImplicitlyDeletable` or
-              `Copyable & ImplicitlyDeletable`.
+            - `ValueType` must conform to `Copyable & ImplicitlyDeletable`.
             - If `ValueType` is `DevicePassable`, it must be its own leaf
               `device_type`
               (`ValueType._is_convertible_to_device_type[ValueType]()`), since a
@@ -168,21 +166,12 @@ trait DeviceTypeEncoder:
                 t" between host-type and device-type size"
             )
 
-        comptime if conforms_to(
-            ValueType, ImplicitlyCopyable & ImplicitlyDeletable
-        ):
-            comptime T = downcast[
-                ValueType, ImplicitlyCopyable & ImplicitlyDeletable
-            ]
-            dst.bitcast[T]()[] = rebind[T](value)
-        elif conforms_to(ValueType, Copyable & ImplicitlyDeletable):
-            comptime T = downcast[ValueType, Copyable & ImplicitlyDeletable]
-            dst.bitcast[T]()[] = rebind[T](value).copy()
+        comptime if conforms_to(ValueType, Copyable):
+            dst.bitcast[ValueType]().init_pointee_copy(value)
         else:
             comptime assert False, String(
                 t"encode: ValueType '{reflect[ValueType].base_name()}' must"
-                t" conform to ImplicitlyCopyable & ImplicitlyDeletable or"
-                t" Copyable & ImplicitlyDeletable"
+                t" conform to Copyable"
             )
 
     def encode_closure_state[
