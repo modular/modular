@@ -86,7 +86,6 @@ from std.builtin.rebind import (
     rebind,
     rebind_var,
     trait_downcast,
-    trait_downcast_var,
 )
 from std.builtin.reversed import ReversibleRange, reversed
 from std.builtin.simd_size import SIMDSize

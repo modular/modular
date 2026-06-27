@@ -443,7 +443,9 @@ def test_inline_array_iter_mut() raises:
 
 def _test_inline_array_iter_bounds[
     I: Iterator
-](var array_iter: I, array_len: Int) raises:
+](var array_iter: I, array_len: Int) raises where conforms_to(
+    I.Element, ImplicitlyDeletable
+):
     var iter = array_iter^
 
     for i in range(array_len):
@@ -451,7 +453,7 @@ def _test_inline_array_iter_bounds[
         print(lower, upper, i)
         assert_equal(array_len - i, lower)
         assert_equal(array_len - i, upper.value())
-        _ = trait_downcast_var[Movable & ImplicitlyDeletable](iter.__next__())
+        _ = iter.__next__()
 
     var lower, upper = iter.bounds()
     assert_equal(0, lower)
