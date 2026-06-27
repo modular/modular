@@ -537,6 +537,45 @@ mojo_test(
     ],
 )
 
+# Target: MiniMax-M3 block-sparse decode ATTENTION (`msa_sm100_decode`, in
+# //Kernels/lib/msa) -- the kernel that attends the indexer-selected blocks
+# (QK.softmax.V), distinct from the indexer (fuzzed by sparse_indexer_decode).
+# Fuzzes batch + per-batch cache_length (biased non-BN-aligned) + topk; the
+# last selected block is a PARTIAL local block whose tail (logical position >
+# cache_length) is a 1e4 poison sentinel. `ref` (--check) is an f64 block-max
+# softmax masking k_logical > cache_length -- a leaked tail blows O ~1e4 out of
+# band (the CENG-639 long-context decode runaway). head_dim/group compile-time
+# (`-D`, default 128/8). B200-only.
+mojo_test(
+    name = "fuzz_msa_decode.mojo.test",
+    size = "large",
+    srcs = [
+        "_fuzz.mojo",
+        "fuzz_msa_decode.mojo",
+    ],
+    exec_properties = {
+        "test.resources:gpu-memory": "8",
+    },
+    main = "fuzz_msa_decode.mojo",
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    target_compatible_with = [
+        "//:has_gpu",
+        "//:b200_gpu",
+    ],
+    deps = [
+        "//Kernels/lib/msa",
+        "//max:internal_utils",
+        "//max:kv_cache",
+        "//max:linalg",
+        "//max:nn",
+        "//max:structured_kernels",
+        "@mojo//:std",
+    ],
+)
+
 # Target: token sampler `fused_token_sampling_gpu` (the production top-k+top-p
 # sampling op). Two oracles: (1) a validity contract that every sampled
 # out_idxs is in [0, vocab) -- a negative / out-of-range token id is FAIL; and

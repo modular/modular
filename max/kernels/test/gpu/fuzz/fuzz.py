@@ -241,6 +241,18 @@ _TARGETS: dict[str, FuzzTarget] = {
         ),
         default_oracle="ref",
     ),
+    "msa_decode": FuzzTarget(
+        name="msa_decode",
+        bazel_target="//max/kernels/test/gpu/fuzz:fuzz_msa_decode.mojo.test",
+        binary="bazel-bin/max/kernels/test/gpu/fuzz/fuzz_msa_decode.mojo.test",
+        description=(
+            "msa_sm100_decode: MiniMax-M3 block-sparse decode attention"
+            " (attends indexer-selected blocks). ref = f64 block-max softmax"
+            " masking the partial-local-block tail (CENG-639 runaway:"
+            " non-BN-aligned cache_length + 1e4 poison tail)"
+        ),
+        default_oracle="ref",
+    ),
     "mla_decode": FuzzTarget(
         name="mla_decode",
         bazel_target=("//max/kernels/test/gpu/fuzz:fuzz_mla_decode.mojo.test"),
