@@ -208,6 +208,23 @@ _TARGETS: dict[str, FuzzTarget] = {
         ),
         default_oracle="contract",
     ),
+    "fused_swiglu_mxfp8": FuzzTarget(
+        name="fused_swiglu_mxfp8",
+        bazel_target=(
+            "//max/kernels/test/gpu/fuzz:fuzz_fused_swiglu_mxfp8.mojo.test"
+        ),
+        binary=(
+            "bazel-bin/max/kernels/test/gpu/fuzz/"
+            "fuzz_fused_swiglu_mxfp8.mojo.test"
+        ),
+        description=(
+            "fused_silu_mxfp8_interleaved: MiniMax-M3-MXFP8 MoE up-projection"
+            " SwiGLU + MXFP8 re-quantize epilogue (swigluoai(g,u) -> fp8 + E8M0"
+            " block scales). ref (host SwiGLU dequant round-trip) + contract"
+            " (finiteness)"
+        ),
+        default_oracle="ref",
+    ),
     "mla_decode": FuzzTarget(
         name="mla_decode",
         bazel_target=("//max/kernels/test/gpu/fuzz:fuzz_mla_decode.mojo.test"),

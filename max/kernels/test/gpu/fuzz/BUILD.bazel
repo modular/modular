@@ -463,6 +463,43 @@ mojo_test(
     ],
 )
 
+# Target: fused SwiGLU + MXFP8 re-quantize epilogue
+# (`fused_silu_mxfp8_interleaved_kernel`, in //max:shmem) -- the activation half
+# of the MiniMax-M3-MXFP8 MoE up-projection. Interleaved [g,u] bf16 in ->
+# SiLU/swigluoai(g,u) -> fp8_e4m3fn + E8M0 block scales. H is compile-time
+# (`-D H=..`, multiple of 128); clamp_activation defaults True (M3 swigluoai).
+# The ragged per-expert token distribution is the runtime fuzz axis. `ref`
+# (--check) is a host-SwiGLU dequant round-trip; `contract` (--contract) checks
+# finiteness. B200-only (SM100 E8M0 interleaved scales).
+mojo_test(
+    name = "fuzz_fused_swiglu_mxfp8.mojo.test",
+    size = "large",
+    srcs = [
+        "_fuzz.mojo",
+        "fuzz_fused_swiglu_mxfp8.mojo",
+    ],
+    exec_properties = {
+        "test.resources:gpu-memory": "4",
+    },
+    main = "fuzz_fused_swiglu_mxfp8.mojo",
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    target_compatible_with = [
+        "//:has_gpu",
+        "//:b200_gpu",
+    ],
+    deps = [
+        "//max:internal_utils",
+        "//max:linalg",
+        "//max:nn",
+        "//max:shmem",
+        "//max:structured_kernels",
+        "@mojo//:std",
+    ],
+)
+
 # Target: token sampler `fused_token_sampling_gpu` (the production top-k+top-p
 # sampling op). Two oracles: (1) a validity contract that every sampled
 # out_idxs is in [0, vocab) -- a negative / out-of-range token id is FAIL; and
