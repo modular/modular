@@ -23,6 +23,7 @@ are spelled as `reflect[T].method()` (no parens after `[T]`).
 - `field_types()` - a `TypeList` of field types.
 - `field_index[name]()` - index of the named field.
 - `field[name]` - `Reflected[FieldT]` for the named field's type.
+- `field_at[idx]` - `Reflected[FieldT]` for the field at index `idx`.
 - `field_offset[name=...]()` / `field_offset[index=...]()` - byte offset.
 - `field_ref[idx](s)` - reference to field at index `idx` in value `s`.
 
@@ -136,7 +137,8 @@ struct Reflected[T: AnyType]:
     - A member that returns a **type** (e.g. `Reflected[FieldT]`) is a
       `comptime` member alias and is spelled without `()`. This keeps it
       composable in type position: `reflect[T].field["x"].T` reads as a
-      type. `field[name]` is the only such member today.
+      type. `field[name]` and `field_at[idx]` are the type-returning
+      members today.
     - A member that returns a **value** (an `Int`, `StaticString`,
       `InlineArray`, a `TypeList`, a typed `ref`, etc.) is an
       `@staticmethod` and is spelled with `()` — e.g.
@@ -381,6 +383,34 @@ struct Reflected[T: AnyType]:
 
         def main():
             comptime y_type = reflect[Point].field["y"]
+            var v: y_type.T = 3.14  # y_type.T is Float64
+        ```
+    """
+
+    # A separate name (not an overload of `field`) because `comptime`
+    # member aliases cannot be overloaded on parameter type.
+    comptime field_at[idx: Int] = Reflected[_field_types_of[Self.T]()[idx]]
+    """A reflection handle type for the type of the field at the given index.
+
+    The by-index dual of `field[name]`. Unlike the by-name form, it works
+    when only the field index is available, such as inside a `comptime for` over
+    a struct's fields, and `T` may be a generic type parameter. The result is
+    `Reflected[FieldT]`, so `reflect[T].field_at[idx].T` reads as a type.
+
+    Parameters:
+        idx: The zero-based index of the field.
+
+    Constraints:
+        `T` must be a struct type. `idx` must be in range `[0, field_count())`.
+
+    Example:
+        ```mojo
+        struct Point:
+            var x: Int
+            var y: Float64
+
+        def main():
+            comptime y_type = reflect[Point].field_at[1]
             var v: y_type.T = 3.14  # y_type.T is Float64
         ```
     """
