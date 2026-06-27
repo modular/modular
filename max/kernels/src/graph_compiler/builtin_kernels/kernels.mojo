@@ -1991,9 +1991,8 @@ struct Struct_fused_token_sampling:
                 .as_immut(),
             )
         else:
-            var cuda_ctx = ctx
             _fused_token_sampling_gpu(
-                cuda_ctx,
+                ctx,
                 Int(max_k),
                 min_top_p,
                 input.to_tile_tensor[DType.int64](),
@@ -2043,9 +2042,8 @@ struct Struct_min_p_sampling:
                 temperature,
             )
         else:
-            var cuda_ctx = ctx
             min_p_sampling_gpu(
-                cuda_ctx,
+                ctx,
                 min_ps.to_tile_tensor[DType.int64](),
                 input.to_tile_tensor[DType.int64](),
                 out_token_ids.to_tile_tensor[DType.int64](),
@@ -2409,15 +2407,13 @@ struct Learnable2DInterpPosEmb:
             target
         ](), "learnable_2d_interp_pos_emb only supported on GPUs"
 
-        var cuda_ctx = ctx
-
         learnable_2d_interp_pos_emb[dtype](
             output.to_tile_tensor[DType.int64](),
             x.to_tile_tensor[DType.int64](),
             weight.to_tile_tensor[DType.int64](),
             grid_thws.to_tile_tensor[DType.int64](),
             time_weight.to_tile_tensor[DType.int64](),
-            cuda_ctx,
+            ctx,
         )
 
 
@@ -2439,15 +2435,13 @@ struct SpatialMerge:
     ) raises:
         comptime assert is_gpu[target](), "spatial_merge only supported on GPUs"
 
-        var cuda_ctx = ctx
-
         spatial_merge[dtype](
             output.to_tile_tensor[DType.int64](),
             input.to_tile_tensor[DType.int64](),
             grid_thw.to_tile_tensor[DType.int64](),
             Int(hidden_size),
             Int(merge_size),
-            cuda_ctx,
+            ctx,
         )
 
 
@@ -2474,8 +2468,6 @@ struct TPoolPatchMerger:
             target
         ](), "tpool_patch_merger only supported on GPUs"
 
-        var cuda_ctx = ctx
-
         var out_tt = output.to_tile_tensor[DType.int64]()
         var in_tt = input.to_tile_tensor[DType.int64]()
         var grid_tt = grid_thws.to_tile_tensor[DType.int64]()
@@ -2497,7 +2489,7 @@ struct TPoolPatchMerger:
             Int(kW),
             Int(max_h),
             Int(max_w),
-            cuda_ctx,
+            ctx,
         )
 
 

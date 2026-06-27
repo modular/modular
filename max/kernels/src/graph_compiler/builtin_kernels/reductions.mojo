@@ -96,9 +96,8 @@ struct ArgMax:
             # Has no static shape info
 
             # TODO(KERN-1045): Add support for taking advantage of static_shapes
-            var cuda_ctx = ctx
             argmax_gpu(
-                cuda_ctx,
+                ctx,
                 input.to_tile_tensor[DType.int64](),
                 output.to_tile_tensor[DType.int64](),
             )
@@ -131,9 +130,8 @@ struct ArgMin:
                 raise Error("axis other than -1 not supported on GPU")
 
             # TODO(KERN-1045): Add support for taking advantage of static_shapes
-            var cuda_ctx = ctx
             argmin_gpu(
-                cuda_ctx,
+                ctx,
                 input.to_tile_tensor[DType.int64](),
                 output.to_tile_tensor[DType.int64](),
             )
@@ -1297,7 +1295,6 @@ struct ArgSort[*, ascending: Bool]:
         comptime if target == "cpu":
             argsort[ascending=Self.ascending](indices_tensor, input_tensor)
         else:
-            var cuda_ctx = ctx
             argsort[ascending=Self.ascending, target=target](
-                indices_tensor, input_tensor, cuda_ctx
+                indices_tensor, input_tensor, ctx
             )

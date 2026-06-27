@@ -552,12 +552,10 @@ def moe_create_indices[
         target
     ](), "Creating MoE indices is only supported on GPU"
 
-    var cuda_ctx = context
-
     with Trace[TraceLevel.OP, target=target](
         "mo.moe.create_indices", task_id=Int(context.id())
     ):
-        var lock_buffer = cuda_ctx.enqueue_create_buffer[DType.uint64](1)
+        var lock_buffer = context.enqueue_create_buffer[DType.uint64](1)
 
         def fill_zero_kernel(
             lock_ptr: UnsafePointer[UInt64, MutAnyOrigin],
@@ -567,7 +565,7 @@ def moe_create_indices[
             expert_usage_stats_ptr.store(0)
             expert_usage_stats_ptr.store(1, 0)
 
-        cuda_ctx.enqueue_function[fill_zero_kernel](
+        context.enqueue_function[fill_zero_kernel](
             lock_buffer,
             expert_usage_stats.ptr,
             grid_dim=(1,),
@@ -596,7 +594,7 @@ def moe_create_indices[
             expected_count=expected_count,
         ]
 
-        cuda_ctx.enqueue_function[kernel](
+        context.enqueue_function[kernel](
             token_expert_order,
             lock,
             expert_start_indices,

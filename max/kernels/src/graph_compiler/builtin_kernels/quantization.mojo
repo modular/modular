@@ -698,7 +698,6 @@ struct Struct_quantize_dynamic_block_scaled:
             " block scaled support"
         )
 
-        cuda_ctx = context
         quantize_dynamic_block_scaled[
             SF_VECTOR_SIZE=SF_VECTOR_SIZE,
             target=target,
@@ -707,7 +706,7 @@ struct Struct_quantize_dynamic_block_scaled:
             scales.to_tile_tensor[DType.int64](),
             input.to_tile_tensor[DType.int64](),
             tensor_sf,
-            cuda_ctx,
+            context,
         )
 
 
@@ -736,7 +735,6 @@ struct Struct_grouped_quantize_dynamic_block_scaled:
             target
         ](), "grouped quantize dynamic block scaled only supports GPUs"
 
-        cuda_ctx = context
         grouped_quantize_dynamic_scaled_fp4_async(
             output.to_tile_tensor[DType.int64](),
             scales.to_tile_tensor[DType.int64](),
@@ -745,7 +743,7 @@ struct Struct_grouped_quantize_dynamic_block_scaled:
             scales_offsets.to_tile_tensor[DType.int64](),
             expert_ids.to_tile_tensor[DType.int64](),
             sf_tensor.to_tile_tensor[DType.int64](),
-            cuda_ctx,
+            context,
         )
 
 
@@ -804,8 +802,6 @@ struct Struct_dequant_mxfp4:
             scales_type == DType.float8_e8m0fnu
         ), "MXFP4 dequant scales must be float8_e8m0fnu"
 
-        cuda_ctx = context
-
         var in_tt = input.to_tile_tensor[DType.int64]()
         var scales_tt = scales.to_tile_tensor[DType.int64]()
         var out_tt = output.to_tile_tensor[DType.int64]()
@@ -815,7 +811,7 @@ struct Struct_dequant_mxfp4:
         var num_cols = Int(in_tt.dim[1]()) * 2
 
         dequant_mxfp4(
-            cuda_ctx,
+            context,
             out_tt,
             in_tt,
             scales_tt,
@@ -843,11 +839,10 @@ struct Struct_interleave_block_scales:
             " block scaled support"
         )
 
-        cuda_ctx = context
         block_scales_interleave[SF_VECTOR_SIZE=SF_VECTOR_SIZE, target=target](
             output_scales.to_tile_tensor[DType.int64](),
             input_scales.to_tile_tensor[DType.int64](),
-            cuda_ctx,
+            context,
         )
 
 
