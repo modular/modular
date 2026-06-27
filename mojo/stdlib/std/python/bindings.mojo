@@ -226,7 +226,7 @@ def _tp_repr_wrapper[
         comptime assert conforms_to(
             T, Writable
         ), "_tp_repr_wrapper requires conformance to Writable."
-        trait_downcast[Writable](self.mojo_value).write_repr_to(repr_str)
+        self.mojo_value.write_repr_to(repr_str)
     else:
         repr_str = String(t"<uninitialized {reflect[T].name()}>")
 

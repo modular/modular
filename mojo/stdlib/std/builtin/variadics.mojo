@@ -1009,6 +1009,7 @@ struct ParameterList[type: AnyType, //, values: _MLIR.KGENParamListType[type]](
             Self._AllSatisfiesReducer[predicate, ...],
         ]
 
+    # TODO(MOCO-3531): Remove `trait_downcast` uses here.
     comptime _ContainsValuePredicate[
         search_value: Self.type,
         element_value: Self.type,
@@ -1079,15 +1080,16 @@ struct ParameterList[type: AnyType, //, values: _MLIR.KGENParamListType[type]](
             ParentConformsTo="Writable",
             ElementConformsTo="Writable",
         ]()
+        comptime assert conforms_to(Self.type, Writable)
         writer.write_string("(")
         for i in range(len(self)):
             if i > 0:
                 writer.write_string(", ")
 
             comptime if is_repr:
-                trait_downcast[Writable](self[i]).write_repr_to(writer)
+                self[i].write_repr_to(writer)
             else:
-                trait_downcast[Writable](self[i]).write_to(writer)
+                self[i].write_to(writer)
         writer.write_string(")")
 
     @no_inline
@@ -1363,15 +1365,16 @@ struct VariadicList[
             ParentConformsTo="Writable",
             ElementConformsTo="Writable",
         ]()
+        comptime assert conforms_to(Self.element_type, Writable)
         writer.write_string("(")
         for i in range(len(self)):
             if i > 0:
                 writer.write_string(", ")
 
             comptime if is_repr:
-                trait_downcast[Writable](self[i]).write_repr_to(writer)
+                self[i].write_repr_to(writer)
             else:
-                trait_downcast[Writable](self[i]).write_to(writer)
+                self[i].write_to(writer)
         writer.write_string(")")
 
     @no_inline
@@ -1547,11 +1550,10 @@ struct VariadicPack[
                     Element=element_type,
                     ParentConformsTo="ImplicitlyDeletable",
                 ]()
+                comptime assert conforms_to(element_type, ImplicitlyDeletable)
 
                 # Safety: We own the elements in this pack.
-                UnsafePointer(
-                    to=trait_downcast[ImplicitlyDeletable](self[i])
-                ).mut_cast[True]().destroy_pointee()
+                UnsafePointer(to=self[i]).mut_cast[True]().destroy_pointee()
 
     def consume_elements[
         elt_handler: def[idx: Int](var elt: Self.element_types[idx]) capturing
@@ -1716,13 +1718,14 @@ struct VariadicPack[
         writer.write_string(start)
 
         comptime for i in range(self.__len__()):
+            comptime assert conforms_to(Self.element_types[i], Writable)
             comptime if i != 0:
                 writer.write_string(sep)
 
             comptime if is_repr:
-                trait_downcast[Writable](self[i]).write_repr_to(writer)
+                self[i].write_repr_to(writer)
             else:
-                trait_downcast[Writable](self[i]).write_to(writer)
+                self[i].write_to(writer)
         writer.write_string(end)
 
     @no_inline

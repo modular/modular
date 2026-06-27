@@ -111,6 +111,8 @@ def diff_fields[T: AnyType](a: T, b: T) -> List[String]:
         ref a_val = reflect[T].field_ref[idx](a)
         ref b_val = reflect[T].field_ref[idx](b)
 
+        # TODO(MOCO-4206): Remove `trait_downcast` after type refinement
+        #   following early `continue` is fixed.
         if trait_downcast[Equatable](a_val) != trait_downcast[Equatable](b_val):
             diffs.append(String(names[idx]))
 
@@ -193,9 +195,7 @@ struct ConditionalCopyableWrapper[T: ImplicitlyDeletable & Movable](
 
     # Copy initializer
     def __init__(out self, *, copy: Self) where conforms_to(Self.T, Copyable):
-        self.value = rebind_var[Self.T](
-            trait_downcast[Copyable](copy.value).copy()
-        )
+        self.value = copy.value.copy()
 
 
 # All structs are inherently `ImplicitlyDeletable`
@@ -244,10 +244,14 @@ trait MakeCopyable:
 
         comptime for idx in range(field_count):
             comptime field_type = field_types[idx]
-            comptime if not conforms_to(field_type, Copyable):
+            comptime if not conforms_to(
+                field_type, Copyable & ImplicitlyDeletable
+            ):
                 continue
 
             ref p_value = reflect[Self].field_ref[idx](self)
+            # TODO(MOCO-4206): Remove `trait_downcast` after type refinement
+            #   following early `continue` is fixed.
             trait_downcast[Copyable & ImplicitlyDeletable](
                 reflect[Self].field_ref[idx](other)
             ) = trait_downcast[Copyable & ImplicitlyDeletable](p_value).copy()
