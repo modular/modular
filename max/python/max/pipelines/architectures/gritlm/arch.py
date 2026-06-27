@@ -43,4 +43,6 @@ gritlm_arch = SupportedArchitecture(
     },
     task=PipelineTask.TEXT_GENERATION,
     config=GritLMConfig,
+    supports_overlap_scheduler=False,
+    supports_device_graph_capture=False,
 )
