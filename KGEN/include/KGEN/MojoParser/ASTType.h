@@ -343,6 +343,11 @@ public:
   /// underlying !lit.origin.  This returns null on failure.  This does not
   /// resolve the origin type, so it may be a !lit.origin or an Origin type.
   static TypedAttr extractOriginOf(TypedAttr value);
+
+  /// Return true if this type is a singleton type. This is a type that has one
+  /// value, e.g. a !lit.origin or a struct whose fields are all singleton
+  /// types.
+  bool isSingleton(SharedState &shared) const;
 };
 raw_ostream &operator<<(raw_ostream &os, ASTType type);
 
