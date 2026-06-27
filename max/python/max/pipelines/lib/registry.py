@@ -57,10 +57,7 @@ from max.pipelines.diffusion.pipeline import PixelGenerationPipeline
 from max.pipelines.lib._hf_config import load_huggingface_config
 from max.pipelines.lib.memory_estimation import MemoryEstimator, _MemoryPlan
 from max.pipelines.modeling.config_enums import RopeType, SupportedEncoding
-from max.pipelines.weights.hf_utils import (
-    HuggingFaceRepo,
-    is_diffusion_pipeline,
-)
+from max.pipelines.weights.hf_utils import HuggingFaceRepo
 
 from .embeddings_pipeline import EmbeddingsPipeline
 from .interfaces import ArchConfig, ArchConfigWithKVCache, PipelineModel
@@ -507,13 +504,19 @@ def _run_memory_planning(
     Also applies ``max_length`` clamping and ``max_batch_total_tokens``
     defaulting, which depend on memory estimation output.
     """
+    # Multi-component pipelines (diffusion models) have no "main" model entry
+    # — they store per-component configs (transformer, vae, text_encoder, etc.)
+    # and don't use a KV cache, so skip memory estimation entirely.
+    if "main" not in pipeline_config.models:
+        return _MemoryPlan(
+            max_batch_size=pipeline_config.runtime.max_batch_size or 1,
+            footprint=0,
+        )
+
     model_config = pipeline_config.model
 
-    # Diffusion pipelines and non-PipelineModel architectures skip KV-cache
-    # memory estimation.
-    if is_diffusion_pipeline(
-        model_config.huggingface_model_repo
-    ) or not issubclass(arch.pipeline_model, PipelineModel):
+    # Non-PipelineModel architectures skip KV-cache memory estimation.
+    if not issubclass(arch.pipeline_model, PipelineModel):
         return _MemoryPlan(
             max_batch_size=pipeline_config.runtime.max_batch_size or 1,
             footprint=0,
