@@ -328,10 +328,10 @@ TEST(MojoPrecompiledFileTest, testValidationErrorNoVer) {
 }
 
 TEST(MojoPrecompiledFileTest, testPackageValidationErrorPackageVer) {
-  M::KGEN::MojoPrecompiledFileVersion mojoVer{0, 0, 0};
   // Use a version guaranteed to be older than any non-zero version
-  M::KGEN::MojoPrecompiledFileVersion modularVer{0, 0, 1};
-  modularVer.label = "-test";
+  M::KGEN::MojoPrecompiledFileVersion mojoVer{0, 0, 1};
+  M::KGEN::MojoPrecompiledFileVersion modularVer{0, 0, 0};
+  mojoVer.label = "-test";
   // As a hexadecimal sha256 string, the checksum should never contain the
   // character 'x'.
   const char *mlirChecksum = "xxxx";
