@@ -427,6 +427,42 @@ mojo_test(
     ],
 )
 
+# Target: MXFP8 dynamic block-scaled quantize (`quantize_dynamic_scaled_fp4fp8`
+# with SF_VECTOR_SIZE=32, the `mo.quantize.dynamic.block.scaled` op): BF16 ->
+# fp8_e4m3fn + E8M0 block scales, the MiniMax-M3-MXFP8 activation-narrowing step.
+# M + the input value-distribution are the fuzz axes; N is compile-time
+# (`-D N=..`, multiple of 32). `contract` (--contract, default) checks the
+# finiteness guard (a finite-but-large input must not cast to NaN -- the
+# SERVOPT-1420 class) and scale validity; `ref` (--check) is a coarse dequant
+# round-trip. B200-only (SM100 TCGEN05 interleaved scales).
+mojo_test(
+    name = "fuzz_mxfp8_quantize.mojo.test",
+    size = "large",
+    srcs = [
+        "_fuzz.mojo",
+        "fuzz_mxfp8_quantize.mojo",
+    ],
+    exec_properties = {
+        "test.resources:gpu-memory": "4",
+    },
+    main = "fuzz_mxfp8_quantize.mojo",
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    target_compatible_with = [
+        "//:has_gpu",
+        "//:b200_gpu",
+    ],
+    deps = [
+        "//max:internal_utils",
+        "//max:linalg",
+        "//max:nn",
+        "//max:structured_kernels",
+        "@mojo//:std",
+    ],
+)
+
 # Target: token sampler `fused_token_sampling_gpu` (the production top-k+top-p
 # sampling op). Two oracles: (1) a validity contract that every sampled
 # out_idxs is in [0, vocab) -- a negative / out-of-range token id is FAIL; and
