@@ -20,14 +20,14 @@ trait Marker:
 
 
 # CHECK-LABEL: lit.struct.decl @SingleLineTrailingWhere
-# CHECK-SAME: <T: !Base, {{{.*}}conforms_to(:!Base T, :!lit.anytrait<!{{.*}}Extra> !{{.*}}Extra))
+# CHECK-SAME: <T: !AnyType_Base, {{{.*}}conforms_to(:!AnyType_Base T, :!lit.anytrait<!{{.*}}Extra> !{{.*}}Extra))
 @fieldwise_init
 struct SingleLineTrailingWhere[T: Base] where conforms_to(T, Extra):
     pass
 
 
 # CHECK-LABEL: lit.struct.decl @TrailingWhereWithParent
-# CHECK-SAME: <T: !Base, {{{.*}}conforms_to(:!Base T, :!lit.anytrait<!{{.*}}Extra> !{{.*}}Extra))
+# CHECK-SAME: <T: !AnyType_Base, {{{.*}}conforms_to(:!AnyType_Base T, :!lit.anytrait<!{{.*}}Extra> !{{.*}}Extra))
 # CHECK-SAME: (!AnyType_ImplicitlyDeletable_Marker)
 @fieldwise_init
 struct TrailingWhereWithParent[T: Base](Marker) where conforms_to(T, Extra):
@@ -35,7 +35,7 @@ struct TrailingWhereWithParent[T: Base](Marker) where conforms_to(T, Extra):
 
 
 # CHECK-LABEL: lit.struct.decl @MultilineParentTrailingWhere
-# CHECK-SAME: <T: !Base, {{{.*}}conforms_to(:!Base T, :!lit.anytrait<!{{.*}}Extra> !{{.*}}Extra))
+# CHECK-SAME: <T: !AnyType_Base, {{{.*}}conforms_to(:!AnyType_Base T, :!lit.anytrait<!{{.*}}Extra> !{{.*}}Extra))
 # CHECK-SAME: (!AnyType_ImplicitlyDeletable_Marker)
 @fieldwise_init
 struct MultilineParentTrailingWhere[T: Base](Marker) where conforms_to(
@@ -45,8 +45,8 @@ struct MultilineParentTrailingWhere[T: Base](Marker) where conforms_to(
 
 
 # CHECK-LABEL: lit.struct.decl @MultipleTrailingWhereClauses
-# CHECK-SAME: <T: !Base, {{{.*}}conforms_to(:!Base T, :!lit.anytrait<!{{.*}}Extra> !{{.*}}Extra))
-# CHECK-SAME: conforms_to(:!Base T, :!lit.anytrait<!{{.*}}Base> !{{.*}}Base))
+# CHECK-SAME: <T: !AnyType_Base, {{{.*}}conforms_to(:!AnyType_Base T, :!lit.anytrait<!{{.*}}Extra> !{{.*}}Extra))
+# CHECK-SAME: conforms_to(:!AnyType_Base T, :!lit.anytrait<!{{.*}}Base> !{{.*}}Base))
 @fieldwise_init
 struct MultipleTrailingWhereClauses[T: Base] where conforms_to(
     T, Extra

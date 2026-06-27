@@ -202,7 +202,7 @@ def main():
     def make_wrapper() {var} -> PrintableWrapper[NonPrintableType]:
         return PrintableWrapper(captured)
 
-    # CHECK: 'use_printable_closure' parameter 'T' has 'Printable & ImplicitlyCopyable' type, but value has type 'AnyStruct[PrintableWrapper[NonPrintableType]]'
+    # CHECK: 'use_printable_closure' parameter 'T' has 'ImplicitlyCopyable & Printable' type, but value has type 'AnyStruct[PrintableWrapper[NonPrintableType]]'
     use_printable_closure[
         PrintableWrapper[NonPrintableType], type_of(make_wrapper)
     ](make_wrapper)

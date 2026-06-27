@@ -113,8 +113,6 @@ struct ConflictMethod(diags_package.OtherConflictTraitMethod):
 # CHECK-NEXT: def doSomething(self: _Self)    # note - synthetic signature
 # CHECK: note: trait 'NoDefaultFunc' declared here
 # CHECK-NEXT: trait NoDefaultFunc    # note - synthetic signature
-# CHECK: note: inherited through 'StillNoDefaultFunc' here
-# CHECK-NEXT: trait StillNoDefaultFunc    # note - synthetic signature
 struct StructViolation(diags_package.StillNoDefaultFunc):
     def doEverything(self):
         pass

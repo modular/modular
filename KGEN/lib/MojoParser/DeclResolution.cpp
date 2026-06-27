@@ -2968,24 +2968,27 @@ static ParseResult resolveConformanceList(
           simplifiedProp, shared.diags.translateLocation(conformance.loc));
     }
 
+    // If we want to extra information to detect conflict conditional
+    // conformance constraints, set them now.
+    if (explicitTraits || traitConstraints) {
+      // We used the reduced set to detect conflict constraints.
+      SmallVector<SymbolRefAttr> reduced =
+          reduceTraitCompositionSymbols(shared, traitType.getSymbols());
+      if (explicitTraits)
+        explicitTraits->insert_range(reduced);
+
+      if (traitConstraints) {
+        for (SymbolRefAttr symbol : reduced) {
+          traitConstraints->push_back(
+              {symbol, constraint, /*isExplicit=*/true});
+        }
+      }
+    }
+
     // Successively flatten the parent list so we always have all the parents
     // available to check.
     // TODO: Encode an "inherited from" here, to make diagnostics nice.
     for (SymbolRefAttr symbol : traitType.getSymbols()) {
-      // Track explicitly listed traits BEFORE checking if already a parent.
-      // This ensures that even if a trait was already added as an ancestor
-      // of a previously processed trait, we still record that it was
-      // explicitly listed (for constraint propagation decisions).
-      if (explicitTraits)
-        explicitTraits->insert(symbol);
-
-      // Store the constraint for the explicitly listed trait (conditional or
-      // unconditional). This must happen BEFORE the inheritedFrom check
-      // because an ancestor trait may be explicitly listed with its own
-      // constraint that differs from the propagated constraint.
-      if (traitConstraints)
-        traitConstraints->push_back({symbol, constraint, /*isExplicit=*/true});
-
       // If this symbol is already a parent, skip further processing.
       // Note: The explicit constraint was already recorded above.
       if (inheritedFrom->contains(symbol))
@@ -5003,8 +5006,7 @@ ParseResult DeclResolver::resolveBody(TraitType traitType, ASTDecl &traitDecl) {
           }
         } else {
           // If the decl is not a function or alias, it is an error.
-          return emitError(traitDecl.getLoc(),
-                           "unexpected decl in trait composition")
+          return emitError(parentDecl.getLoc(), "unexpected decl in trait")
                      .attachNote(decl->getLoc())
                  << " declared here";
         }

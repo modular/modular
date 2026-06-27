@@ -131,8 +131,8 @@ def refine_type_base_static_member[T: AnyType]():
 
 
 # CHECK-LABEL: lit.fn @"refine_type_base_static_member_preserves_original_bound
-# CHECK: lit.call{{.*}}#kgen.get_witness<:!StaticOriginal T, "type_refinement_ir::StaticRefined", "refined_static_value{{.*}}">
-# CHECK: lit.call{{.*}}#kgen.get_witness<:!StaticOriginal T, "type_refinement_ir::StaticOriginal", "original_static_value{{.*}}">
+# CHECK: lit.call{{.*}}#kgen.get_witness<:!AnyType_StaticOriginal T, "type_refinement_ir::StaticRefined", "refined_static_value{{.*}}">
+# CHECK: lit.call{{.*}}#kgen.get_witness<:!AnyType_StaticOriginal T, "type_refinement_ir::StaticOriginal", "original_static_value{{.*}}">
 def refine_type_base_static_member_preserves_original_bound[
     T: StaticOriginal
 ]():
@@ -142,8 +142,8 @@ def refine_type_base_static_member_preserves_original_bound[
 
 
 # CHECK-LABEL: lit.fn @"refine_type_base_alias_static_member_preserves_original_bound
-# CHECK: lit.call{{.*}}#kgen.get_witness<:!StaticOriginal T, "type_refinement_ir::StaticRefined", "refined_static_value{{.*}}">
-# CHECK: lit.call{{.*}}#kgen.get_witness<:!StaticOriginal T, "type_refinement_ir::StaticOriginal", "original_static_value{{.*}}">
+# CHECK: lit.call{{.*}}#kgen.get_witness<:!AnyType_StaticOriginal T, "type_refinement_ir::StaticRefined", "refined_static_value{{.*}}">
+# CHECK: lit.call{{.*}}#kgen.get_witness<:!AnyType_StaticOriginal T, "type_refinement_ir::StaticOriginal", "original_static_value{{.*}}">
 def refine_type_base_alias_static_member_preserves_original_bound[
     T: StaticOriginal
 ]():
@@ -154,8 +154,8 @@ def refine_type_base_alias_static_member_preserves_original_bound[
 
 
 # CHECK-LABEL: lit.fn @"refine_type_of_static_member_preserves_original_bound
-# CHECK: lit.call{{.*}}#kgen.get_witness<:!StaticOriginal T, "type_refinement_ir::StaticRefined", "refined_static_value{{.*}}">
-# CHECK: lit.call{{.*}}#kgen.get_witness<:!StaticOriginal T, "type_refinement_ir::StaticOriginal", "original_static_value{{.*}}">
+# CHECK: lit.call{{.*}}#kgen.get_witness<:!AnyType_StaticOriginal T, "type_refinement_ir::StaticRefined", "refined_static_value{{.*}}">
+# CHECK: lit.call{{.*}}#kgen.get_witness<:!AnyType_StaticOriginal T, "type_refinement_ir::StaticOriginal", "original_static_value{{.*}}">
 def refine_type_of_static_member_preserves_original_bound[
     T: StaticOriginal
 ](read x: T):
@@ -165,22 +165,22 @@ def refine_type_of_static_member_preserves_original_bound[
 
 
 # CHECK-LABEL: lit.fn @"refine_type_value_function_binding
-# CHECK: lit.call{{.*}}@"accepts_guarded_param{{.*}}<:!GuardedParam upcast(:!AnyType_GuardedParam downcast(:!AnyType T))>
+# CHECK: lit.call{{.*}}@"accepts_guarded_param{{.*}}<:!AnyType_GuardedParam downcast(:!AnyType T)>
 def refine_type_value_function_binding[T: AnyType]():
     comptime if conforms_to(T, GuardedParam):
         accepts_guarded_param[T]()
 
 
 # CHECK-LABEL: lit.fn @"refine_type_value_struct_binding
-# CHECK: #GuardedParamBox <:!GuardedParam upcast(:!AnyType_GuardedParam downcast(:!AnyType T))>
+# CHECK: #GuardedParamBox <:!AnyType_GuardedParam downcast(:!AnyType T)>
 def refine_type_value_struct_binding[T: AnyType]():
     comptime if conforms_to(T, GuardedParam):
         _ = GuardedParamBox[T]()
 
 
 # CHECK-LABEL: lit.fn @"refine_type_value_binding_preserves_original_bound
-# CHECK: lit.call{{.*}}@"accepts_refined_param{{.*}}<:!RefinedParam upcast(:!AnyType_OriginalParam_RefinedParam downcast(:!OriginalParam T))>
-# CHECK: lit.call{{.*}}@"accepts_original_param{{.*}}<:!OriginalParam T>
+# CHECK: lit.call{{.*}}@"accepts_refined_param{{.*}}<:!AnyType_RefinedParam upcast(:!AnyType_OriginalParam_RefinedParam downcast(:!AnyType_OriginalParam T))>
+# CHECK: lit.call{{.*}}@"accepts_original_param{{.*}}<:!AnyType_OriginalParam T>
 def refine_type_value_binding_preserves_original_bound[T: OriginalParam]():
     comptime if conforms_to(T, RefinedParam):
         accepts_refined_param[T]()
@@ -188,8 +188,8 @@ def refine_type_value_binding_preserves_original_bound[T: OriginalParam]():
 
 
 # CHECK-LABEL: lit.fn @"refine_type_value_alias_binding_preserves_original_bound
-# CHECK: lit.call{{.*}}@"accepts_refined_param{{.*}}<:!RefinedParam upcast(:!AnyType_OriginalParam_RefinedParam downcast(:!OriginalParam T))>
-# CHECK: lit.call{{.*}}@"accepts_original_param{{.*}}<:!OriginalParam #alias_Alias
+# CHECK: lit.call{{.*}}@"accepts_refined_param{{.*}}<:!AnyType_RefinedParam upcast(:!AnyType_OriginalParam_RefinedParam downcast(:!AnyType_OriginalParam T))>
+# CHECK: lit.call{{.*}}@"accepts_original_param{{.*}}<:!AnyType_OriginalParam #alias_Alias
 def refine_type_value_alias_binding_preserves_original_bound[
     T: OriginalParam
 ]():
@@ -201,7 +201,7 @@ def refine_type_value_alias_binding_preserves_original_bound[
 
 struct OriginalParamPack[*Ts: OriginalParam]:
     # CHECK-LABEL: lit.fn @"refine_type_value_variadic_binding_preserves_original_bound
-    # CHECK: lit.call{{.*}}@"accepts_refined_param{{.*}}<:!RefinedParam upcast(:!AnyType_OriginalParam_RefinedParam downcast(:!OriginalParam #kgen.param_list.get<{{.*}}Ts.values{{.*}}))>
+    # CHECK: lit.call{{.*}}@"accepts_refined_param{{.*}}<:!AnyType_RefinedParam upcast(:!AnyType_OriginalParam_RefinedParam downcast(:!AnyType_OriginalParam #kgen.param_list.get<{{.*}}Ts.values{{.*}}))>
     # CHECK: lit.call{{.*}}@"accepts_original_param
     def refine_type_value_variadic_binding_preserves_original_bound[
         i: Int
@@ -216,7 +216,7 @@ trait HasOriginalParamElement:
 
 
 # CHECK-LABEL: lit.fn @"refine_type_value_associated_binding_preserves_original_bound
-# CHECK: lit.call{{.*}}@"accepts_refined_param{{.*}}<:!RefinedParam upcast(:!AnyType_OriginalParam_RefinedParam downcast(:!OriginalParam #kgen.get_witness<{{.*}}Element{{.*}}))>
+# CHECK: lit.call{{.*}}@"accepts_refined_param{{.*}}<:!AnyType_RefinedParam upcast(:!AnyType_OriginalParam_RefinedParam downcast(:!AnyType_OriginalParam #kgen.get_witness<{{.*}}Element{{.*}}))>
 # CHECK: lit.call{{.*}}@"accepts_original_param
 def refine_type_value_associated_binding_preserves_original_bound[C: AnyType]():
     comptime if conforms_to(C, HasOriginalParamElement):
@@ -226,8 +226,8 @@ def refine_type_value_associated_binding_preserves_original_bound[C: AnyType]():
 
 
 # CHECK-LABEL: lit.fn @"refine_from_where
-# CHECK-SAME: ([[ARG:%.*]]: !lit.ref<:!Base T, imm *"x`"> read_mem)
-# CHECK: [[WHERE_REF:%.*]] = kgen.rebind [[ARG]] : {{.*}} to {{.*}}Base_Extra downcast(:!Base T){{.*}}
+# CHECK-SAME: ([[ARG:%.*]]: !lit.ref<:!AnyType_Base T, imm *"x`"> read_mem)
+# CHECK: [[WHERE_REF:%.*]] = kgen.rebind [[ARG]] : {{.*}} to {{.*}}Base_Extra downcast(:!AnyType_Base T){{.*}}
 # CHECK: lit.call{{.*}}@{{.*}}@"use_base
 # CHECK: lit.call{{.*}}@{{.*}}@"use_extra
 def refine_from_where[T: Base](read x: T) where conforms_to(T, Extra):
@@ -236,9 +236,9 @@ def refine_from_where[T: Base](read x: T) where conforms_to(T, Extra):
 
 
 # CHECK-LABEL: lit.fn @"refine_in_comptime_if
-# CHECK-SAME: ([[ARG:%.*]]: !lit.ref<:!Base T, imm *"x`"> read_mem)
-# CHECK: kgen.param.if <{{.*}}conforms_to(:!Base T, :!lit.anytrait<!{{.*}}Extra> !{{.*}}Extra){{.*}}> {
-# CHECK: [[IF_REF:%.*]] = kgen.rebind [[ARG]] : {{.*}} to {{.*}}Base_Extra downcast(:!Base T){{.*}}
+# CHECK-SAME: ([[ARG:%.*]]: !lit.ref<:!AnyType_Base T, imm *"x`"> read_mem)
+# CHECK: kgen.param.if <{{.*}}conforms_to(:!AnyType_Base T, :!lit.anytrait<!{{.*}}Extra> !{{.*}}Extra){{.*}}> {
+# CHECK: [[IF_REF:%.*]] = kgen.rebind [[ARG]] : {{.*}} to {{.*}}Base_Extra downcast(:!AnyType_Base T){{.*}}
 # CHECK: lit.call{{.*}}@{{.*}}@"use_base
 # CHECK: lit.call{{.*}}@{{.*}}@"use_extra
 def refine_in_comptime_if[T: Base](read x: T):
@@ -248,9 +248,9 @@ def refine_in_comptime_if[T: Base](read x: T):
 
 
 # CHECK-LABEL: lit.fn @"refine_after_comptime_assert
-# CHECK-SAME: ([[ARG:%.*]]: !lit.ref<:!Base T, imm *"x`"> read_mem)
-# CHECK: kgen.param.assert <{{.*}}conforms_to(:!Base T, :!lit.anytrait<!{{.*}}Extra> !{{.*}}Extra){{.*}}>
-# CHECK: [[ASSERT_REF:%.*]] = kgen.rebind [[ARG]] : {{.*}} to {{.*}}Base_Extra downcast(:!Base T){{.*}}
+# CHECK-SAME: ([[ARG:%.*]]: !lit.ref<:!AnyType_Base T, imm *"x`"> read_mem)
+# CHECK: kgen.param.assert <{{.*}}conforms_to(:!AnyType_Base T, :!lit.anytrait<!{{.*}}Extra> !{{.*}}Extra){{.*}}>
+# CHECK: [[ASSERT_REF:%.*]] = kgen.rebind [[ARG]] : {{.*}} to {{.*}}Base_Extra downcast(:!AnyType_Base T){{.*}}
 # CHECK: lit.call{{.*}}@{{.*}}@"use_base
 # CHECK: lit.call{{.*}}@{{.*}}@"use_extra
 def refine_after_comptime_assert[T: Base](read x: T):
@@ -260,9 +260,9 @@ def refine_after_comptime_assert[T: Base](read x: T):
 
 
 # CHECK-LABEL: lit.fn @"refinement_does_not_leak_after_comptime_if
-# CHECK-SAME: ([[ARG:%.*]]: !lit.ref<:!Base T, imm *"x`"> read_mem)
-# CHECK: kgen.param.if <{{.*}}conforms_to(:!Base T, :!lit.anytrait<!{{.*}}Extra> !{{.*}}Extra){{.*}}> {
-# CHECK: [[IF_REF:%.*]] = kgen.rebind [[ARG]] : {{.*}} to {{.*}}Base_Extra downcast(:!Base T){{.*}}
+# CHECK-SAME: ([[ARG:%.*]]: !lit.ref<:!AnyType_Base T, imm *"x`"> read_mem)
+# CHECK: kgen.param.if <{{.*}}conforms_to(:!AnyType_Base T, :!lit.anytrait<!{{.*}}Extra> !{{.*}}Extra){{.*}}> {
+# CHECK: [[IF_REF:%.*]] = kgen.rebind [[ARG]] : {{.*}} to {{.*}}Base_Extra downcast(:!AnyType_Base T){{.*}}
 # CHECK: lit.call{{.*}}@{{.*}}@"use_extra
 # CHECK-NOT: kgen.rebind [[ARG]]
 # CHECK: lit.call{{.*}}@{{.*}}@"use_base
@@ -273,11 +273,11 @@ def refinement_does_not_leak_after_comptime_if[T: Base](read x: T):
 
 
 # CHECK-LABEL: lit.fn @"no_refinement_before_comptime_assert
-# CHECK-SAME: ([[ARG:%.*]]: !lit.ref<:!Base T, imm *"x`"> read_mem)
+# CHECK-SAME: ([[ARG:%.*]]: !lit.ref<:!AnyType_Base T, imm *"x`"> read_mem)
 # CHECK-NOT: kgen.rebind [[ARG]]
 # CHECK: lit.call{{.*}}@{{.*}}@"use_base
-# CHECK: kgen.param.assert <{{.*}}conforms_to(:!Base T, :!lit.anytrait<!{{.*}}Extra> !{{.*}}Extra){{.*}}>
-# CHECK: [[ASSERT_REF:%.*]] = kgen.rebind [[ARG]] : {{.*}} to {{.*}}Base_Extra downcast(:!Base T){{.*}}
+# CHECK: kgen.param.assert <{{.*}}conforms_to(:!AnyType_Base T, :!lit.anytrait<!{{.*}}Extra> !{{.*}}Extra){{.*}}>
+# CHECK: [[ASSERT_REF:%.*]] = kgen.rebind [[ARG]] : {{.*}} to {{.*}}Base_Extra downcast(:!AnyType_Base T){{.*}}
 # CHECK: lit.call{{.*}}@{{.*}}@"use_extra
 def no_refinement_before_comptime_assert[T: Base](read x: T):
     use_base(x)
@@ -286,9 +286,9 @@ def no_refinement_before_comptime_assert[T: Base](read x: T):
 
 
 # CHECK-LABEL: lit.fn @"refine_in_comptime_if_no_call
-# CHECK-SAME: ([[ARG:%.*]]: !lit.ref<:!SomeTrait T, mut *"x`"> owned_in_mem)
-# CHECK: kgen.param.if <{{.*}}conforms_to(:!SomeTrait T, :!lit.anytrait<!{{.*}}ImplicitlyDeletable> !{{.*}}ImplicitlyDeletable){{.*}}> {
-# CHECK: [[IF_REBIND:%.*]] = kgen.rebind [[ARG]] : {{.*}} to {{.*}}ImplicitlyDeletable{{.*}}downcast(:!SomeTrait T){{.*}}
+# CHECK-SAME: ([[ARG:%.*]]: !lit.ref<:!AnyType_SomeTrait T, mut *"x`"> owned_in_mem)
+# CHECK: kgen.param.if <{{.*}}conforms_to(:!AnyType_SomeTrait T, :!lit.anytrait<!{{.*}}ImplicitlyDeletable> !{{.*}}ImplicitlyDeletable){{.*}}> {
+# CHECK: [[IF_REBIND:%.*]] = kgen.rebind [[ARG]] : {{.*}} to {{.*}}ImplicitlyDeletable{{.*}}downcast(:!AnyType_SomeTrait T){{.*}}
 # CHECK: lit.ownership.use [[IF_REBIND]]
 def refine_in_comptime_if_no_call[T: SomeTrait](var x: T):
     comptime if conforms_to(T, ImplicitlyDeletable):
@@ -296,9 +296,9 @@ def refine_in_comptime_if_no_call[T: SomeTrait](var x: T):
 
 
 # CHECK-LABEL: lit.fn @"refine_after_comptime_assert_no_call
-# CHECK-SAME: ([[ARG:%.*]]: !lit.ref<:!SomeTrait T, mut *"x`"> owned_in_mem)
-# CHECK: kgen.param.assert <{{.*}}conforms_to(:!SomeTrait T, :!lit.anytrait<!{{.*}}ImplicitlyDeletable> !{{.*}}ImplicitlyDeletable){{.*}}>
-# CHECK: [[ASSERT_REBIND:%.*]] = kgen.rebind [[ARG]] : {{.*}} to {{.*}}ImplicitlyDeletable{{.*}}downcast(:!SomeTrait T){{.*}}
+# CHECK-SAME: ([[ARG:%.*]]: !lit.ref<:!AnyType_SomeTrait T, mut *"x`"> owned_in_mem)
+# CHECK: kgen.param.assert <{{.*}}conforms_to(:!AnyType_SomeTrait T, :!lit.anytrait<!{{.*}}ImplicitlyDeletable> !{{.*}}ImplicitlyDeletable){{.*}}>
+# CHECK: [[ASSERT_REBIND:%.*]] = kgen.rebind [[ARG]] : {{.*}} to {{.*}}ImplicitlyDeletable{{.*}}downcast(:!AnyType_SomeTrait T){{.*}}
 # CHECK: lit.ownership.use [[ASSERT_REBIND]]
 def refine_after_comptime_assert_no_call[T: SomeTrait](var x: T):
     comptime assert conforms_to(T, ImplicitlyDeletable)

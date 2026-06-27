@@ -66,8 +66,8 @@ def launch_flying[F: Flying](mut flying: F):
 
 # CHECK-LABEL: lit.fn @"launch_ship
 def launch_ship(mut ship: PlainStruct):
-    # CHECK: lit.call tail @struct_extensions_importing::@"launch_flying[struct_extensions_importing::Flying]
-    # CHECK-SAME: <:!Flying !PlainStruct>
+    # CHECK: lit.call tail @struct_extensions_importing::@"launch_flying[::AnyType & struct_extensions_importing::Flying]
+    # CHECK-SAME: <:!AnyType_Flying !PlainStruct>
     launch_flying(ship)
 
 
@@ -106,8 +106,8 @@ def launch_flying2[F: ImportedFlying](mut flying: F):
 
 # CHECK-LABEL: lit.fn @"launch_ship2
 def launch_ship2(mut ship: Spaceship):
-    # CHECK: lit.call {{.*}}@"launch_flying2[trait_package::plain_trait::Flying]
-    # CHECK-SAME: <:!Flying !Spaceship>
+    # CHECK: lit.call {{.*}}@"launch_flying2[::AnyType & trait_package::plain_trait::Flying]
+    # CHECK-SAME: <:!AnyType_Flying !Spaceship>
     launch_flying2(ship)
 
 

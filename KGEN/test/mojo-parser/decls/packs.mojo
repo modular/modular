@@ -48,7 +48,7 @@ def takeOwnedAnyTypePack[*Ts: AnyType](var *rest: *Ts):
 # Check the argument pack.
 # CHECK-LABEL: lit.fn @"takeOwnedSomeTraitPack
 # CHECK-SAME: (%rest: !lit.ref<{{.*}}#VariadicPack <:!Bool {:scalar<bool> true}, {{.*}}origin<true> *"rest
-# CHECK-SAME: :!lit.anytrait<!AnyType> !SomeTrait, :param_list<!SomeTrait> {{.*}}Ts>>, mut *"rest`3"> owned_in_mem|pack_vararg)
+# CHECK-SAME: :!lit.anytrait<!AnyType> !SomeTrait_AnyType, :param_list<!SomeTrait_AnyType> {{.*}}Ts>>, mut *"rest`3"> owned_in_mem|pack_vararg)
 def takeOwnedSomeTraitPack[*Ts: SomeTrait](var *rest: *Ts):
     pass
 
@@ -106,7 +106,7 @@ def test_owned_trait():
 # Check the argument pack.
 # CHECK-LABEL: lit.fn @"takeInoutSomeTraitPack
 # CHECK-SAME: (%rest: !lit.ref<{{.*}}#VariadicPack <:!Bool {:scalar<bool> true}, {{.*}}origin<true> *"rest
-# CHECK-SAME: :!lit.anytrait<!AnyType> !SomeTrait, :param_list<!SomeTrait> {{.*}}Ts>>, imm *"rest`3"> mut|pack_vararg)
+# CHECK-SAME: :!lit.anytrait<!AnyType> !SomeTrait_AnyType, :param_list<!SomeTrait_AnyType> {{.*}}Ts>>, imm *"rest`3"> mut|pack_vararg)
 def takeInoutSomeTraitPack[*Ts: SomeTrait](mut*rest: *Ts):
     pass
 
@@ -220,9 +220,9 @@ def usePacks(x: FloatDyn, y: Int):
 
     packBorrowed(Int(1)._mlir_value, x, y)
 
-    # CHECK: lit.call {{.*}}variadicParameter{{.*}}<:param_list<!TrivialRegisterPassable> [!Int, !FloatDyn]
+    # CHECK: lit.call {{.*}}variadicParameter{{.*}}<:param_list<!AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable_RegisterPassable_TrivialRegisterPassable> [!Int, !FloatDyn]
     variadicParameter[Int, FloatDyn](1)
-    # CHECK: lit.call {{.*}}variadicParameter{{.*}}<:param_list<!TrivialRegisterPassable> []
+    # CHECK: lit.call {{.*}}variadicParameter{{.*}}<:param_list<!AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable_RegisterPassable_TrivialRegisterPassable> []
     variadicParameter(Int(2))
 
 

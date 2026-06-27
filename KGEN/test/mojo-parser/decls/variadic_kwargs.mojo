@@ -14,7 +14,7 @@
 
 # CHECK-LABEL: lit.fn @"variadic_kwargs
 # CHECK-SAME: %a: !Int, %b: !Int, %args: !lit.ref<!lit.struct<#VariadicList{{.*}}> read_mem|pos_vararg, *, %c: !Int, %d: !Int,
-# CHECK-SAME: %kwargs: !lit.ref<!lit.struct<#OwnedKwargsDict <:!ImplicitlyCopyable !Int>>, mut {{.*}}> owned_in_mem|kw_vararg)
+# CHECK-SAME: %kwargs: !lit.ref<!lit.struct<#OwnedKwargsDict <:!AnyType_Copyable_ImplicitlyCopyable_Movable !Int>>, mut {{.*}}> owned_in_mem|kw_vararg)
 def variadic_kwargs(a: Int, b: Int, *args: Int, c: Int, d: Int, **kwargs: Int):
     pass
 
@@ -24,7 +24,7 @@ def variadic_kwargs_def_with_type(**kwargs: Int) raises:
     pass
 
 
-# CHECK-SAME: (*, %kwargs: !lit.ref<!lit.struct<#OwnedKwargsDict <:!ImplicitlyCopyable !Int>>, mut {{.*}}> owned_in_mem|kw_vararg,
+# CHECK-SAME: (*, %kwargs: !lit.ref<!lit.struct<#OwnedKwargsDict <:!AnyType_Copyable_ImplicitlyCopyable_Movable !Int>>, mut {{.*}}> owned_in_mem|kw_vararg,
 def takes_int_variadic_kwargs(**kwargs: Int):
     pass
 
@@ -38,7 +38,7 @@ def takes_int_variadic_kwargs_multiline(
 # CHECK-LABEL: lit.fn @"test_variadic_kwargs
 def test_variadic_kwargs():
     # CHECK: %[[DICT_VAR:.*]] = lit.var.decl
-    # CHECK-SAME: !lit.struct<#OwnedKwargsDict <:!ImplicitlyCopyable !Int>>
+    # CHECK-SAME: !lit.struct<#OwnedKwargsDict <:!AnyType_Copyable_ImplicitlyCopyable_Movable !Int>>
     # CHECK: lit.call {{.*}}@OwnedKwargsDict::@"__init__{{.*}}(%[[DICT_VAR]])
 
     # CHECK: %[[X_KEY:.*]] = kgen.param.constant: {{.*}}#StringLiteral <:string "x">
@@ -86,7 +86,7 @@ def test_variadic_kwargs_param_inference():
     # CHECK: %[[M:.*]] = lit.var.decl
     # CHECK: lit.call {{.*}}MemOnly::@"__init__{{.*}}(%[[M]])
 
-    # CHECK: %[[DICT_VAR:.*]] = lit.var.decl {{.*}}#OwnedKwargsDict <:!ImplicitlyCopyable !MemOnly>
+    # CHECK: %[[DICT_VAR:.*]] = lit.var.decl {{.*}}#OwnedKwargsDict <:!AnyType_Copyable_ImplicitlyCopyable_Movable !MemOnly>
     # CHECK: lit.call {{.*}}@OwnedKwargsDict::@"__init__{{.*}}(%[[DICT_VAR]])
     # CHECK: %[[Y_KEY:.*]] = kgen.param.constant: {{.*}}#StringLiteral <:string "y">
 
@@ -108,7 +108,7 @@ def takes_kw(**kwargs: MemOnly) -> Int:
 
 # CHECK-LABEL: lit.fn @"test_takes_kw_in_assignment
 def test_takes_kw_in_assignment(x: MemOnly):
-    # CHECK: %[[DICT_VAR:.*]] = lit.var.decl{{.*}}#OwnedKwargsDict <:!ImplicitlyCopyable !MemOnly>
+    # CHECK: %[[DICT_VAR:.*]] = lit.var.decl{{.*}}#OwnedKwargsDict <:!AnyType_Copyable_ImplicitlyCopyable_Movable !MemOnly>
     # CHECK: %[[RES:.*]] = lit.call {{.*}}@"takes_kw{{.*}}(%[[DICT_VAR]])
     # CHECK: %b = lit.var.decl "b" var : !lit.ref<!Int,
     # CHECK: lit.ref.store %[[RES]], %b

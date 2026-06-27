@@ -63,7 +63,7 @@ struct StructWithMatchingDependentAlias2(TraitWithDependentAlias):
 # alias.
 # CHECK-LABEL: lit.fn @"getNFromTraitWithAlias
 def getNFromTraitWithAlias[T: TraitWithAlias](t: T) -> ZInt:
-    # CHECK-NEXT: lit.alias.decl [[X:.*]]: !ZInt = <{{.*}}#kgen.get_witness<:!TraitWithAlias T, "associated_aliases::TraitWithAlias", "N">
+    # CHECK-NEXT: lit.alias.decl [[X:.*]]: !ZInt = <{{.*}}#kgen.get_witness<:!TraitWithAlias_AnyType T, "associated_aliases::TraitWithAlias", "N">
     # CHECK-NEXT: kgen.param.constant: !ZInt = <#alias_X>
     comptime X = T.N
     return X
@@ -74,7 +74,7 @@ def getNFromTraitWithAlias[T: TraitWithAlias](t: T) -> ZInt:
 # CHECK-LABEL: lit.fn export @"testTraitWithAliasAndStructWithMatchingAlias
 @export
 def testTraitWithAliasAndStructWithMatchingAlias() abi("Mojo"):
-    # CHECK: {{.*}} = lit.call @associated_aliases::@"getNFromTraitWithAlias{{.*}}<:!TraitWithAlias !StructWithMatchingAlias>(%1)
+    # CHECK: {{.*}} = lit.call @associated_aliases::@"getNFromTraitWithAlias{{.*}}<:!TraitWithAlias_AnyType !StructWithMatchingAlias>(%1)
     _ = getNFromTraitWithAlias(StructWithMatchingAlias())
 
 
@@ -106,7 +106,7 @@ trait TraitWithSameTypeAlias(TraitWithTypeAlias):
 
 # CHECK-LABEL: lit.fn @"testTraitWithRefinedTypeAlias
 def testTraitWithRefinedTypeAlias[T: TraitWithSameTypeAlias]():
-    # CHECK-NEXT: !TraitWithAlias = <{{.*}}#kgen.get_witness<:!TraitWithSameTypeAlias T, "associated_aliases::TraitWithTypeAlias", "T">
+    # CHECK-NEXT: !TraitWithAlias_AnyType = <{{.*}}#kgen.get_witness<:!TraitWithSameTypeAlias_TraitWithTypeAlias_AnyType T, "associated_aliases::TraitWithTypeAlias", "T">
     comptime MyT: TraitWithAlias = T.T
 
 
@@ -140,7 +140,7 @@ trait TraitWithAliasArgMethod:
 @fieldwise_init
 struct StructWithAliasArgMethod(TraitWithAliasArgMethod):
     # CHECK: kgen.conformance {{.*}}::TraitWithAliasArgMethod
-    # CHECK: kgen.witness "T" : !ATrait = !ZInt
+    # CHECK: kgen.witness "T" : !ATrait_AnyType = !ZInt
     # CHECK: kgen.witness "lork{{.*}}" : {{.*}} = {{.*}}::@StructWithAliasArgMethod::@"lork{{.*}}"
     comptime T: ATrait = ZInt
 
@@ -154,7 +154,7 @@ def receiveTraitWithAliasArgMethod[X: TraitWithAliasArgMethod](t: X):
 
 # CHECK-LABEL: lit.fn @"testUpcastingStructWithAliasArgMethod
 def testUpcastingStructWithAliasArgMethod():
-    # CHECK: {{.*}}lit.call @associated_aliases::@"receiveTraitWithAliasArgMethod{{.*}}<:!TraitWithAliasArgMethod !StructWithAliasArgMethod>
+    # CHECK: {{.*}}lit.call @associated_aliases::@"receiveTraitWithAliasArgMethod{{.*}}<:!TraitWithAliasArgMethod_AnyType !StructWithAliasArgMethod>
     receiveTraitWithAliasArgMethod(StructWithAliasArgMethod())
 
 
@@ -201,7 +201,7 @@ def receiveTraitWithAliasArgMethod[X: TraitWithAliasArgMethod](t: X):
 
 # CHECK-LABEL: lit.fn @"testUpcastingStructWithAliasArgMethod
 def testUpcastingStructWithAliasArgMethod():
-    # CHECK: {{.*}}lit.call @associated_aliases::@"receiveTraitWithAliasArgMethod{{.*}}<:!TraitWithAliasArgMethod !StructWithAliasArgMethod>
+    # CHECK: {{.*}}lit.call @associated_aliases::@"receiveTraitWithAliasArgMethod{{.*}}<:!TraitWithAliasArgMethod_AnyType !StructWithAliasArgMethod>
     receiveTraitWithAliasArgMethod(StructWithAliasArgMethod())
 
 
@@ -236,8 +236,8 @@ def callTraitMethodWithAliasArg[
     X: TraitWithAliasArgMethod
 ](t: X, thing: SIMD[X.T]):
     # CHECK:  %0 = lit.call
-    # CHECK-SAME: "thing": !lit.ref<{{.*}}#SIMD <:!ATrait {{.*}}#kgen.get_witness<:!TraitWithAliasArgMethod X, "associated_aliases::TraitWithAliasArgMethod", "T">)>
-    # CHECK-SAME: #kgen.get_witness<:!TraitWithAliasArgMethod X, "associated_aliases::TraitWithAliasArgMethod", "lork
+    # CHECK-SAME: "thing": !lit.ref<{{.*}}#SIMD <:!ATrait_AnyType {{.*}}#kgen.get_witness<:!TraitWithAliasArgMethod_AnyType X, "associated_aliases::TraitWithAliasArgMethod", "T">)>
+    # CHECK-SAME: #kgen.get_witness<:!TraitWithAliasArgMethod_AnyType X, "associated_aliases::TraitWithAliasArgMethod", "lork
     t.lork(thing)
 
 
@@ -273,8 +273,8 @@ def callTraitMethodWithAliasArg[
     X: TraitWithAliasArgMethod
 ](t: X, thing: SIMD[X.T]):
     # CHECK:  %0 = lit.call
-    # CHECK-SAME: "thing": !lit.ref<{{.*}}#SIMD <:!ATrait {{.*}}#kgen.get_witness<:!TraitWithAliasArgMethod X, "associated_aliases::TraitWithAliasArgMethod", "T">)>
-    # CHECK-SAME: #kgen.get_witness<:!TraitWithAliasArgMethod X, "associated_aliases::TraitWithAliasArgMethod", "lork
+    # CHECK-SAME: "thing": !lit.ref<{{.*}}#SIMD <:!ATrait_AnyType {{.*}}#kgen.get_witness<:!TraitWithAliasArgMethod_AnyType X, "associated_aliases::TraitWithAliasArgMethod", "T">)>
+    # CHECK-SAME: #kgen.get_witness<:!TraitWithAliasArgMethod_AnyType X, "associated_aliases::TraitWithAliasArgMethod", "lork
     t.lork(thing)
 
 
@@ -309,7 +309,7 @@ trait TraitWithAliasReturnMethod:
 @fieldwise_init
 struct ExplicitStructWithAliasMethod(TraitWithAliasReturnMethod):
     # CHECK: kgen.conformance {{.*}}::TraitWithAliasReturnMethod
-    # CHECK: kgen.witness "T" : !ATrait = !ZInt
+    # CHECK: kgen.witness "T" : !ATrait_AnyType = !ZInt
     # CHECK: kgen.witness "bork{{.*}}" : {{.*}} = {{.*}}::@ExplicitStructWithAliasMethod::@"bork{{.*}}"
     comptime T: ATrait = ZInt
 
@@ -319,7 +319,7 @@ struct ExplicitStructWithAliasMethod(TraitWithAliasReturnMethod):
 
 # CHECK-LABEL: lit.fn @"testUpcastingExplicitStructWithAliasMethod
 def testUpcastingExplicitStructWithAliasMethod():
-    # CHECK:       {{.*}}lit.call @associated_aliases::@"receiveTraitWithAliasReturnMethod{{.*}}<:!TraitWithAliasReturnMethod !ExplicitStructWithAliasMethod>
+    # CHECK:       {{.*}}lit.call @associated_aliases::@"receiveTraitWithAliasReturnMethod{{.*}}<:!TraitWithAliasReturnMethod_AnyType !ExplicitStructWithAliasMethod>
     receiveTraitWithAliasReturnMethod(ExplicitStructWithAliasMethod())
 
 
@@ -368,7 +368,7 @@ struct ExplicitStructWithAliasMethod(TraitWithAliasReturnMethod):
 
 # CHECK-LABEL: lit.fn @"testUpcastingExplicitStructWithAliasMethod
 def testUpcastingExplicitStructWithAliasMethod():
-    # CHECK:       {{.*}}lit.call @associated_aliases::@"receiveTraitWithAliasReturnMethod{{.*}}<:!TraitWithAliasReturnMethod !ExplicitStructWithAliasMethod>
+    # CHECK:       {{.*}}lit.call @associated_aliases::@"receiveTraitWithAliasReturnMethod{{.*}}<:!TraitWithAliasReturnMethod_AnyType !ExplicitStructWithAliasMethod>
     receiveTraitWithAliasReturnMethod(ExplicitStructWithAliasMethod())
 
 
@@ -399,8 +399,8 @@ trait TraitWithAliasReturnMethod:
 # CHECK-LABEL: lit.fn @"callTraitWithAliasReturnMethod
 def callTraitWithAliasReturnMethod[X: TraitWithAliasReturnMethod](t: X):
     # CHECK: {{.*}}lit.call
-    # CHECK-SAME: "__result__": !lit.ref<{{.*}}#SIMD <:!ATrait {{.*}}#kgen.get_witness<:!TraitWithAliasReturnMethod X, "associated_aliases::TraitWithAliasReturnMethod", "T">)>
-    # CHECK-SAME: #kgen.get_witness<:!TraitWithAliasReturnMethod X, "associated_aliases::TraitWithAliasReturnMethod", "bork($0)"
+    # CHECK-SAME: "__result__": !lit.ref<{{.*}}#SIMD <:!ATrait_AnyType {{.*}}#kgen.get_witness<:!TraitWithAliasReturnMethod_AnyType X, "associated_aliases::TraitWithAliasReturnMethod", "T">)>
+    # CHECK-SAME: #kgen.get_witness<:!TraitWithAliasReturnMethod_AnyType X, "associated_aliases::TraitWithAliasReturnMethod", "bork($0)"
     _ = t.bork()
 
 
@@ -429,8 +429,8 @@ trait TraitWithAliasReturnMethod:
 # CHECK-LABEL: lit.fn @"callTraitWithAliasReturnMethod
 def callTraitWithAliasReturnMethod[X: TraitWithAliasReturnMethod](t: X):
     # CHECK: {{.*}}lit.call
-    # CHECK-SAME: "__result__": !lit.ref<{{.*}}#SIMD <:!ATrait {{.*}}#kgen.get_witness<:!TraitWithAliasReturnMethod X, "associated_aliases::TraitWithAliasReturnMethod", "T">)>
-    # CHECK-SAME: #kgen.get_witness<:!TraitWithAliasReturnMethod X, "associated_aliases::TraitWithAliasReturnMethod", "bork()">
+    # CHECK-SAME: "__result__": !lit.ref<{{.*}}#SIMD <:!ATrait_AnyType {{.*}}#kgen.get_witness<:!TraitWithAliasReturnMethod_AnyType X, "associated_aliases::TraitWithAliasReturnMethod", "T">)>
+    # CHECK-SAME: #kgen.get_witness<:!TraitWithAliasReturnMethod_AnyType X, "associated_aliases::TraitWithAliasReturnMethod", "bork()">
     _ = t.bork()
 
 
@@ -463,11 +463,11 @@ trait TraitWithAliasReturnMethod:
 
 
 # TODO(MOCO-1109): also check that this works with the thunk generation for RegisterPassable methods
-# CHECK-LABEL: lit.struct.decl @GenericStructWithAliasMethod<Z: !ATrait>
+# CHECK-LABEL: lit.struct.decl @GenericStructWithAliasMethod<Z: !ATrait_AnyType>
 @fieldwise_init
 struct GenericStructWithAliasMethod[Z: ATrait](TraitWithAliasReturnMethod):
     # CHECK: kgen.conformance {{.*}}::TraitWithAliasReturnMethod
-    # CHECK: kgen.witness "T" : !ATrait = Z
+    # CHECK: kgen.witness "T" : !ATrait_AnyType = Z
     # CHECK: kgen.witness "bork{{.*}}" : {{.*}} = {{.*}}::@GenericStructWithAliasMethod::@"bork{{.*}}"
     comptime T: ATrait = Self.Z
 
@@ -477,7 +477,7 @@ struct GenericStructWithAliasMethod[Z: ATrait](TraitWithAliasReturnMethod):
 
 # CHECK-LABEL: lit.fn @"testUpcastingGenericStructWithAliasMethod
 def testUpcastingGenericStructWithAliasMethod():
-    # CHECK: {{.*}}lit.call @associated_aliases::@"receiveTraitWithAliasReturnMethod{{.*}}<:!TraitWithAliasReturnMethod @associated_aliases::@GenericStructWithAliasMethod<:!ATrait !ZInt>>
+    # CHECK: {{.*}}lit.call @associated_aliases::@"receiveTraitWithAliasReturnMethod{{.*}}<:!TraitWithAliasReturnMethod_AnyType @associated_aliases::@GenericStructWithAliasMethod<:!ATrait_AnyType !ZInt>>
     receiveTraitWithAliasReturnMethod(GenericStructWithAliasMethod[ZInt]())
 
 
@@ -526,7 +526,7 @@ struct GenericStructWithAliasMethod[Z: ATrait](TraitWithAliasReturnMethod):
 
 # CHECK-LABEL: lit.fn @"testUpcastingGenericStructWithAliasMethod
 def testUpcastingGenericStructWithAliasMethod():
-    # CHECK: {{.*}}lit.call @associated_aliases::@"receiveTraitWithAliasReturnMethod{{.*}}<:!TraitWithAliasReturnMethod @associated_aliases::@GenericStructWithAliasMethod<:!ATrait !ZInt>>
+    # CHECK: {{.*}}lit.call @associated_aliases::@"receiveTraitWithAliasReturnMethod{{.*}}<:!TraitWithAliasReturnMethod_AnyType @associated_aliases::@GenericStructWithAliasMethod<:!ATrait_AnyType !ZInt>>
     receiveTraitWithAliasReturnMethod(GenericStructWithAliasMethod[ZInt]())
 
 
@@ -566,7 +566,7 @@ trait TraitWithSelfDotAliasReturnMethod:
 # CHECK-LABEL: lit.struct.decl @StructWithSelfDotAliasReturnMethod
 struct StructWithSelfDotAliasReturnMethod(TraitWithSelfDotAliasReturnMethod):
     # CHECK: kgen.conformance {{.*}}::TraitWithSelfDotAliasReturnMethod
-    # CHECK: kgen.witness "T" : !ATrait = !ZInt
+    # CHECK: kgen.witness "T" : !ATrait_AnyType = !ZInt
     # CHECK: kgen.witness "bork{{.*}}" : {{.*}} = {{.*}}::@StructWithSelfDotAliasReturnMethod::@"bork{{.*}}"
     comptime T: ATrait = ZInt
 
@@ -669,13 +669,13 @@ trait TraitWithSelfDotAliasReturnMethod:
 
 
 # TODO(MOCO-1109): also check that this works with the thunk generation for RegisterPassable methods
-# CHECK-LABEL: lit.struct.decl @GenericStructWithSelfDotAliasReturnMethod<Z: !ATrait>
+# CHECK-LABEL: lit.struct.decl @GenericStructWithSelfDotAliasReturnMethod<Z: !ATrait_AnyType>
 @fieldwise_init
 struct GenericStructWithSelfDotAliasReturnMethod[Z: ATrait](
     TraitWithSelfDotAliasReturnMethod
 ):
     # CHECK: kgen.conformance {{.*}}::TraitWithSelfDotAliasReturnMethod
-    # CHECK: kgen.witness "T" : !ATrait = Z
+    # CHECK: kgen.witness "T" : !ATrait_AnyType = Z
     # CHECK: kgen.witness "bork{{.*}}" : {{.*}} = {{.*}}::@GenericStructWithSelfDotAliasReturnMethod::@"bork{{.*}}"
     comptime T: ATrait = Self.Z
 
@@ -905,7 +905,15 @@ def fa[T: A]() -> T.Type:
 
 # CHECK-LABEL: lit.fn @"fb
 def fb[T: B]() -> T.Type:
-    # CHECK: [[REBIND:%.*]] = kgen.rebind %__result__ : {{.*}} to !lit.ref<:!AA sugar_member_alias{{.*}}#kgen.get_witness{{.*}}"associated_aliases::A", "Type">
+    # CHECK: [[REBIND:%.*]] = kgen.rebind %__result__ : {{.*}} to !lit.ref<:!AA_AnyType_Movable sugar_member_alias{{.*}}#kgen.get_witness{{.*}}"associated_aliases::A", "Type">
+    # CHECK-NEXT: lit.call{{.*}}fa{{.*}}([[REBIND]])
+    return fa[T]()
+
+
+# Seeing two resolvable conflicting aliases in trait type should work too.
+# CHECK-LABEL: lit.fn @"fb_trait_composition
+def fb_trait_composition[T: B & A]() -> T.Type:
+    # CHECK: [[REBIND:%.*]] = kgen.rebind %__result__ : {{.*}} to !lit.ref<:!AA_AnyType_Movable sugar_member_alias{{.*}}#kgen.get_witness{{.*}}"associated_aliases::A", "Type">
     # CHECK-NEXT: lit.call{{.*}}fa{{.*}}([[REBIND]])
     return fa[T]()
 
@@ -1036,7 +1044,7 @@ struct MyStruct(MyTrait, MyTrait2):
 
 # CHECK-LABEL: lit.fn @"bitwidth_from_instance
 def bitwidth_from_instance[T: MyTrait, Inst: T]() -> ZInt:
-    # CHECK-NEXT: #kgen.get_witness<:!MyTrait T, "{{.*}}::MyTrait", "BIT_WIDTH">
+    # CHECK-NEXT: #kgen.get_witness<:!MyTrait_AnyType T, "{{.*}}::MyTrait", "BIT_WIDTH">
     return Inst.BIT_WIDTH
 
 
@@ -1044,7 +1052,7 @@ def bitwidth_from_instance[T: MyTrait, Inst: T]() -> ZInt:
 def bitwidth_from_composition_instance[
     T: MyTrait & MyTrait2, Inst: T
 ]() -> ZInt:
-    # CHECK-NEXT: #kgen.get_witness<:!MyTrait_MyTrait2 T, "associated_aliases::MyTrait", "BIT_WIDTH">
+    # CHECK-NEXT: #kgen.get_witness<:!MyTrait_MyTrait2_AnyType T, "associated_aliases::MyTrait", "BIT_WIDTH">
     return Inst.BIT_WIDTH
 
 

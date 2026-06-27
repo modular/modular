@@ -18,10 +18,10 @@ trait Extra:
 
 
 # CHECK-LABEL: lit.fn @"tuple_unpack_param_no_call
-# CHECK: [[OUTER_A:%.*]] = lit.var.decl "a" var : !lit.ref<:!Base_Copyable_ImplicitlyCopyable T, mut
-# CHECK: [[OUTER_B:%.*]] = lit.var.decl "b" var : !lit.ref<:!Base_Copyable_ImplicitlyCopyable T, mut
-# CHECK: kgen.rebind [[OUTER_A]] : {{.*}}to {{.*}}Extra{{.*}}downcast(:!Base_Copyable_ImplicitlyCopyable T){{.*}}
-# CHECK: kgen.rebind [[OUTER_B]] : {{.*}}to {{.*}}Extra{{.*}}downcast(:!Base_Copyable_ImplicitlyCopyable T){{.*}}
+# CHECK: [[OUTER_A:%.*]] = lit.var.decl "a" var : !lit.ref<:!AnyType_Copyable_ImplicitlyCopyable_Movable_Base T, mut
+# CHECK: [[OUTER_B:%.*]] = lit.var.decl "b" var : !lit.ref<:!AnyType_Copyable_ImplicitlyCopyable_Movable_Base T, mut
+# CHECK: kgen.rebind [[OUTER_A]] : {{.*}}to {{.*}}Extra{{.*}}downcast(:!AnyType_Copyable_ImplicitlyCopyable_Movable_Base T){{.*}}
+# CHECK: kgen.rebind [[OUTER_B]] : {{.*}}to {{.*}}Extra{{.*}}downcast(:!AnyType_Copyable_ImplicitlyCopyable_Movable_Base T){{.*}}
 # CHECK: lit.ownership.use %{{.*}}
 # CHECK: lit.ownership.use %{{.*}}
 def tuple_unpack_param_no_call[T: Base & Copyable & ImplicitlyCopyable](
@@ -33,15 +33,15 @@ def tuple_unpack_param_no_call[T: Base & Copyable & ImplicitlyCopyable](
 
 
 # CHECK-LABEL: lit.fn @"tuple_unpack_shadow_no_call
-# CHECK: [[OUTER_A:%.*]] = lit.var.decl "a" var : !lit.ref<:!Base_Copyable_ImplicitlyCopyable T, mut
-# CHECK: [[OUTER_B:%.*]] = lit.var.decl "b" var : !lit.ref<:!Base_Copyable_ImplicitlyCopyable T, mut
-# CHECK: kgen.rebind [[OUTER_A]] : {{.*}}to {{.*}}Extra{{.*}}downcast(:!Base_Copyable_ImplicitlyCopyable T){{.*}}
-# CHECK: kgen.rebind [[OUTER_B]] : {{.*}}to {{.*}}Extra{{.*}}downcast(:!Base_Copyable_ImplicitlyCopyable T){{.*}}
+# CHECK: [[OUTER_A:%.*]] = lit.var.decl "a" var : !lit.ref<:!AnyType_Copyable_ImplicitlyCopyable_Movable_Base T, mut
+# CHECK: [[OUTER_B:%.*]] = lit.var.decl "b" var : !lit.ref<:!AnyType_Copyable_ImplicitlyCopyable_Movable_Base T, mut
+# CHECK: kgen.rebind [[OUTER_A]] : {{.*}}to {{.*}}Extra{{.*}}downcast(:!AnyType_Copyable_ImplicitlyCopyable_Movable_Base T){{.*}}
+# CHECK: kgen.rebind [[OUTER_B]] : {{.*}}to {{.*}}Extra{{.*}}downcast(:!AnyType_Copyable_ImplicitlyCopyable_Movable_Base T){{.*}}
 # CHECK: kgen.param.if <true> {
-# CHECK: [[INNER_A:%.*]] = lit.var.decl "a" var : !lit.ref<:!Base_Copyable_ImplicitlyCopyable T, mut
-# CHECK: [[INNER_B:%.*]] = lit.var.decl "b" var : !lit.ref<:!Base_Copyable_ImplicitlyCopyable T, mut
-# CHECK: kgen.rebind [[INNER_A]] : {{.*}}to {{.*}}Extra{{.*}}downcast(:!Base_Copyable_ImplicitlyCopyable T){{.*}}
-# CHECK: kgen.rebind [[INNER_B]] : {{.*}}to {{.*}}Extra{{.*}}downcast(:!Base_Copyable_ImplicitlyCopyable T){{.*}}
+# CHECK: [[INNER_A:%.*]] = lit.var.decl "a" var : !lit.ref<:!AnyType_Copyable_ImplicitlyCopyable_Movable_Base T, mut
+# CHECK: [[INNER_B:%.*]] = lit.var.decl "b" var : !lit.ref<:!AnyType_Copyable_ImplicitlyCopyable_Movable_Base T, mut
+# CHECK: kgen.rebind [[INNER_A]] : {{.*}}to {{.*}}Extra{{.*}}downcast(:!AnyType_Copyable_ImplicitlyCopyable_Movable_Base T){{.*}}
+# CHECK: kgen.rebind [[INNER_B]] : {{.*}}to {{.*}}Extra{{.*}}downcast(:!AnyType_Copyable_ImplicitlyCopyable_Movable_Base T){{.*}}
 def tuple_unpack_shadow_no_call[T: Base & Copyable & ImplicitlyCopyable](
     read first: Tuple[T, T], read second: Tuple[T, T]
 ) where conforms_to(T, Extra):
@@ -55,12 +55,12 @@ def tuple_unpack_shadow_no_call[T: Base & Copyable & ImplicitlyCopyable](
 
 
 # CHECK-LABEL: lit.fn @"tuple_unpack_ref_no_call
-# CHECK: [[A_SLOT:%.*]] = lit.var.decl "a" ref : !lit.ref<!lit.ref<:!Base_Copyable_ImplicitlyCopyable T, imm
-# CHECK: [[B_SLOT:%.*]] = lit.var.decl "b" ref : !lit.ref<!lit.ref<:!Base_Copyable_ImplicitlyCopyable T, imm
+# CHECK: [[A_SLOT:%.*]] = lit.var.decl "a" ref : !lit.ref<!lit.ref<:!AnyType_Copyable_ImplicitlyCopyable_Movable_Base T, imm
+# CHECK: [[B_SLOT:%.*]] = lit.var.decl "b" ref : !lit.ref<!lit.ref<:!AnyType_Copyable_ImplicitlyCopyable_Movable_Base T, imm
 # CHECK: [[A_REF:%.*]] = lit.ref.load [[A_SLOT]]
-# CHECK: [[A_REBIND:%.*]] = kgen.rebind [[A_REF]] : {{.*}}to {{.*}}Extra{{.*}}downcast(:!Base_Copyable_ImplicitlyCopyable T){{.*}}
+# CHECK: [[A_REBIND:%.*]] = kgen.rebind [[A_REF]] : {{.*}}to {{.*}}Extra{{.*}}downcast(:!AnyType_Copyable_ImplicitlyCopyable_Movable_Base T){{.*}}
 # CHECK: [[B_REF:%.*]] = lit.ref.load [[B_SLOT]]
-# CHECK: [[B_REBIND:%.*]] = kgen.rebind [[B_REF]] : {{.*}}to {{.*}}Extra{{.*}}downcast(:!Base_Copyable_ImplicitlyCopyable T){{.*}}
+# CHECK: [[B_REBIND:%.*]] = kgen.rebind [[B_REF]] : {{.*}}to {{.*}}Extra{{.*}}downcast(:!AnyType_Copyable_ImplicitlyCopyable_Movable_Base T){{.*}}
 # CHECK: lit.ownership.use [[A_REBIND]]
 # CHECK: lit.ownership.use [[B_REBIND]]
 def tuple_unpack_ref_no_call[T: Base & Copyable & ImplicitlyCopyable](
@@ -72,7 +72,7 @@ def tuple_unpack_ref_no_call[T: Base & Copyable & ImplicitlyCopyable](
 
 
 # CHECK-LABEL: lit.fn @"for_ref_capture_single
-# CHECK: [[ITEM_SLOT:%.*]] = lit.var.decl "item" ref : !lit.ref<!lit.ref<:{{.*}}Extra{{.*}}downcast(:!Base_ImplicitlyCopyable T), imm
+# CHECK: [[ITEM_SLOT:%.*]] = lit.var.decl "item" ref : !lit.ref<!lit.ref<:{{.*}}Extra{{.*}}downcast(:!AnyType_Copyable_ImplicitlyCopyable_Movable_Base T), imm
 # CHECK: [[ITEM_REF:%.*]] = lit.ref.load [[ITEM_SLOT]]
 # CHECK: lit.ownership.use [[ITEM_REF]]
 def for_ref_capture_single[T: Base & ImplicitlyCopyable](
@@ -83,12 +83,12 @@ def for_ref_capture_single[T: Base & ImplicitlyCopyable](
 
 
 # CHECK-LABEL: lit.fn @"for_ref_capture_tuple
-# CHECK: [[LEFT_SLOT:%.*]] = lit.var.decl "left" ref : !lit.ref<!lit.ref<:!Base_ImplicitlyCopyable T, imm
-# CHECK: [[RIGHT_SLOT:%.*]] = lit.var.decl "right" ref : !lit.ref<!lit.ref<:!Base_ImplicitlyCopyable T, imm
+# CHECK: [[LEFT_SLOT:%.*]] = lit.var.decl "left" ref : !lit.ref<!lit.ref<:!AnyType_Copyable_ImplicitlyCopyable_Movable_Base T, imm
+# CHECK: [[RIGHT_SLOT:%.*]] = lit.var.decl "right" ref : !lit.ref<!lit.ref<:!AnyType_Copyable_ImplicitlyCopyable_Movable_Base T, imm
 # CHECK: [[LEFT_REF:%.*]] = lit.ref.load [[LEFT_SLOT]]
-# CHECK: [[LEFT_REBIND:%.*]] = kgen.rebind [[LEFT_REF]] : {{.*}}to {{.*}}Extra{{.*}}downcast(:!Base_ImplicitlyCopyable T){{.*}}
+# CHECK: [[LEFT_REBIND:%.*]] = kgen.rebind [[LEFT_REF]] : {{.*}}to {{.*}}Extra{{.*}}downcast(:!AnyType_Copyable_ImplicitlyCopyable_Movable_Base T){{.*}}
 # CHECK: [[RIGHT_REF:%.*]] = lit.ref.load [[RIGHT_SLOT]]
-# CHECK: [[RIGHT_REBIND:%.*]] = kgen.rebind [[RIGHT_REF]] : {{.*}}to {{.*}}Extra{{.*}}downcast(:!Base_ImplicitlyCopyable T){{.*}}
+# CHECK: [[RIGHT_REBIND:%.*]] = kgen.rebind [[RIGHT_REF]] : {{.*}}to {{.*}}Extra{{.*}}downcast(:!AnyType_Copyable_ImplicitlyCopyable_Movable_Base T){{.*}}
 # CHECK: lit.ownership.use [[LEFT_REBIND]]
 # CHECK: lit.ownership.use [[RIGHT_REBIND]]
 def for_ref_capture_tuple[T: Base & ImplicitlyCopyable](

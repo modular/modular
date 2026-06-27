@@ -70,7 +70,7 @@ def variadic_trait_elt[T: ImplicitlyCopyable](*xs: T):
 # CHECK-SAME: <{{.*}}, Ts:
 
 # CHECK-SAME: %rest: !lit.ref<!lit.struct<#VariadicPack <:!Bool {:scalar<bool> false}, :origin<false> *"rest
-# CHECK-SAME: :!lit.anytrait<!AnyType> !ImplicitlyCopyable, :param_list<!ImplicitlyCopyable> *"Ts.values`"
+# CHECK-SAME: :!lit.anytrait<!AnyType> !AnyType_Copyable_ImplicitlyCopyable_Movable, :param_list<!AnyType_Copyable_ImplicitlyCopyable_Movable> *"Ts.values`"
 def trait_pack[T: ImplicitlyCopyable, *Ts: ImplicitlyCopyable](first: T, *rest: *Ts):
     pass
 
@@ -170,9 +170,9 @@ def take_variadic_struct[*Ts: TrivialRegisterPassable](a: VariadicStruct[*Ts]):
 
 # CHECK-LABEL: lit.fn @"variadic_params()"
 def variadic_params():
-    # CHECK-NEXT: call {{.*}}param_func[{{.*}}Int]()"<:param_list<!TrivialRegisterPassable> [!Int, !FloatDyn], {{.*}}, :!Int {4}>
+    # CHECK-NEXT: call {{.*}}param_func[{{.*}}Int]()"<:param_list<!AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable_RegisterPassable_TrivialRegisterPassable> [!Int, !FloatDyn], {{.*}}, :!Int {4}>
     VariadicStruct[Int, FloatDyn].param_func[4]()
-    # CHECK: call {{.*}}take_variadic_struct{{.*}}<:param_list<!TrivialRegisterPassable> [!Int, !FloatDyn],
+    # CHECK: call {{.*}}take_variadic_struct{{.*}}<:param_list<!AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable_RegisterPassable_TrivialRegisterPassable> [!Int, !FloatDyn],
     take_variadic_struct(VariadicStruct[Int, FloatDyn]())
 
 
@@ -204,7 +204,7 @@ def orvalueInferType():
     def func(x: __mlir_type.index) -> __mlir_type.index:
         return x
 
-    # CHECK: call {{.*}}paramRefFunc{{.*}}<:!TrivialRegisterPassable{{.*}}!lit.generator<("x": index) -> index>>
+    # CHECK: call {{.*}}paramRefFunc{{.*}}<:!AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable_RegisterPassable_TrivialRegisterPassable{{.*}}!lit.generator<("x": index) -> index>>
     paramRefFunc(func)
 
 
@@ -489,9 +489,9 @@ def callVariadic[p: Int](x: Int):
     # CHECK-SAME: @"variadics{{.*}}Int*)"{{.*}}[store_to_mem(p), store_to_mem({1})]
     comptime NonEmptyVariadic = variadics(p, 1)
 
-    # CHECK: lit.call {{.*}}parameterizedVariadic{{.*}}<:!TrivialRegisterPassable !Int
+    # CHECK: lit.call {{.*}}parameterizedVariadic{{.*}}<:!AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable_RegisterPassable_TrivialRegisterPassable !Int
     parameterizedVariadic(1, 2)
-    # CHECK: lit.call {{.*}}@ParameterizedStruct::@"__init__{{.*}}<:!TrivialRegisterPassable !Int
+    # CHECK: lit.call {{.*}}@ParameterizedStruct::@"__init__{{.*}}<:!AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable_RegisterPassable_TrivialRegisterPassable !Int
     _ = ParameterizedStruct(3)
     # CHECK: lit.call {{.*}}@VarArgsParameterizedStruct::@"__init__{{.*}}<:param_list<!Int> [{4}, {5}]
     _ = VarArgsParameterizedStruct[4, 5]()

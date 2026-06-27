@@ -22,18 +22,20 @@ trait LeakTestTrait:
 
 # --- Refinement should NOT leak to a different parameter ---
 
+
 # expected-note @below {{function declared here}}
 def process_element_1[T: ProcessTrait](elem: T) -> Int:
     return elem.process()
 
 
-def test_wrong_param[T: ImplicitlyCopyable, U: ImplicitlyCopyable](
-    t_val: T, u_val: U,
-) -> Int where conforms_to(T, ProcessTrait):
+def test_wrong_param[
+    T: ImplicitlyCopyable, U: ImplicitlyCopyable
+](t_val: T, u_val: U,) -> Int where conforms_to(T, ProcessTrait):
     return process_element_1(u_val)  # expected-error {{cannot be converted}}
 
 
 # --- No refinement without where clause ---
+
 
 # expected-note @below {{function declared here}}
 def process_element_2[T: ProcessTrait](elem: T) -> Int:
@@ -45,6 +47,7 @@ def test_no_where_clause[T: ImplicitlyCopyable](val: T) -> Int:
 
 
 # --- Ambiguous method from declared and refined traits ---
+
 
 trait TraitWithValue:
     # expected-note @below {{candidate declared here}}
@@ -58,13 +61,14 @@ trait TraitWithDoubleValue:
         ...
 
 
-def test_ambiguous_method[T: TraitWithValue](
-    x: T,
-) -> Int where conforms_to(T, TraitWithDoubleValue):
+def test_ambiguous_method[
+    T: TraitWithValue
+](x: T,) -> Int where conforms_to(T, TraitWithDoubleValue):
     return x.get_value()  # expected-error {{ambiguous call to 'get_value'}}
 
 
 # --- comptime assert on unrelated condition should NOT refine ---
+
 
 # expected-note @below {{function declared here}}
 def process_element_3[T: ProcessTrait](elem: T) -> Int:
@@ -78,14 +82,15 @@ def test_unrelated_assert[T: ImplicitlyCopyable](val: T) -> Int:
 
 # --- Refinement inside comptime if must NOT leak outside the branch ---
 
+
 # expected-note @below {{function declared here}}
 def needs_leak_trait_1[T: LeakTestTrait](x: T) -> Int:
     return x.leak_method()
 
 
-def test_refinement_does_not_leak_past_branch[T: ImplicitlyCopyable](
-    val: T,
-) -> Int:
+def test_refinement_does_not_leak_past_branch[
+    T: ImplicitlyCopyable
+](val: T,) -> Int:
     comptime if conforms_to(T, LeakTestTrait):
         pass
     return needs_leak_trait_1(val)  # expected-error {{cannot be converted}}
@@ -96,9 +101,9 @@ def needs_leak_trait_2[T: LeakTestTrait](x: T) -> Int:
     return x.leak_method()
 
 
-def test_refinement_does_not_leak_to_else_branch[T: ImplicitlyCopyable](
-    val: T,
-) -> Int:
+def test_refinement_does_not_leak_to_else_branch[
+    T: ImplicitlyCopyable
+](val: T,) -> Int:
     comptime if conforms_to(T, LeakTestTrait):
         return needs_leak_trait_2(val)
     else:
@@ -106,6 +111,7 @@ def test_refinement_does_not_leak_to_else_branch[T: ImplicitlyCopyable](
 
 
 # --- Variable refinement must NOT persist past comptime if ---
+
 
 # expected-note @below {{function declared here}}
 def needs_leak_trait_3[T: LeakTestTrait](x: T) -> Int:
@@ -122,6 +128,7 @@ def test_var_refinement_does_not_persist_past_comptime_if[
 
 
 # --- Refinement from nested comptime assert must NOT leak past branch ---
+
 
 # expected-note @below {{function declared here}}
 def needs_leak_trait_4[T: LeakTestTrait](x: T) -> Int:
@@ -147,6 +154,7 @@ def test_nested_assert_refinement_does_not_leak[
 # original bound — otherwise the user can't tell that the assumption was
 # taken into account at all.
 
+
 trait NeededTrait:
     pass
 
@@ -162,7 +170,7 @@ def needs_needed_trait[T: NeededTrait]():
 
 def test_diag_shows_refined_type[T: AnyType]():
     comptime if conforms_to(T, UnrelatedTrait):
-        # expected-error @+1 {{value has type 'AnyType & UnrelatedTrait'}}
+        # expected-error @+1 {{value has type 'UnrelatedTrait'}}
         needs_needed_trait[T]()
 
 
@@ -174,6 +182,7 @@ def test_diag_shows_refined_type[T: AnyType]():
 # standard "no such attribute" diagnostic, which should report the refined
 # merged trait so the user knows the assumption was applied.
 
+
 trait HasKnownStaticMethod:
     @staticmethod
     def known_method() -> Int:
@@ -182,5 +191,5 @@ trait HasKnownStaticMethod:
 
 def test_refined_type_base_unknown_member[T: AnyType]():
     comptime if conforms_to(T, HasKnownStaticMethod):
-        # expected-error @+1 {{'AnyType & HasKnownStaticMethod' value has no attribute 'unknown_method'}}
+        # expected-error @+1 {{'HasKnownStaticMethod' value has no attribute 'unknown_method'}}
         _ = T.unknown_method()

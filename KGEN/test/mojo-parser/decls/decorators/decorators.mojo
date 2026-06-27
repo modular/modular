@@ -499,7 +499,7 @@ struct Node(ImplicitlyCopyable):
 struct RecursiveCopyable:
     comptime ID = Int
     # CHECK: lit.struct.field recurse
-    # CHECK-SAME: <:!ImplicitlyCopyable !Node>
+    # CHECK-SAME: <:!AnyType_Copyable_ImplicitlyCopyable_Movable !Node>
     var recurse: BoxCopyable[Node]
 
 

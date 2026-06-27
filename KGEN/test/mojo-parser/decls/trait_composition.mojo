@@ -10,8 +10,8 @@
 # CHECK-DAG: !Trait1 = !lit.trait<@trait_composition::@Trait1>
 # CHECK-DAG: !Trait2 = !lit.trait<@trait_composition::@Trait2>
 # CHECK-DAG: !Trait3 = !lit.trait<@trait_composition::@Trait3>
-# CHECK-DAG: !Trait1_Trait2 = !lit.trait<@trait_composition::@Trait1, @trait_composition::@Trait2>
-# CHECK-DAG: !Trait1_Trait2_Trait3 = !lit.trait<@trait_composition::@Trait1, @trait_composition::@Trait2, @trait_composition::@Trait3>
+# CHECK-DAG: !AnyType_Trait1_Trait2 = !lit.trait<@std::@builtin::@stubs::@AnyType, @trait_composition::@Trait1, @trait_composition::@Trait2>
+# CHECK-DAG: !AnyType_Trait1_Trait2_Trait3 = !lit.trait<@std::@builtin::@stubs::@AnyType, @trait_composition::@Trait1, @trait_composition::@Trait2, @trait_composition::@Trait3>
 
 
 trait Trait1:
@@ -70,10 +70,10 @@ def useAny[T: AnyType](x: T):
 
 
 # CHECK: lit.fn @"use1
-# CHECK-SAME: <T: !Trait1>
-# CHECK-SAME: (%x: !lit.ref<:!Trait1 T,
+# CHECK-SAME: <T: !AnyType_Trait1>
+# CHECK-SAME: (%x: !lit.ref<:!AnyType_Trait1 T,
 def use1[T: Trait1](x: T):
-    # CHECK: lit.call tail[{{.*}}"self": !lit.ref<:!Trait1 T,{{.*}} #kgen.get_witness<:!Trait1 T, "trait_composition::Trait1", "f1{{.*}}">][{{.*}}](%x)
+    # CHECK: lit.call tail[{{.*}}"self": !lit.ref<:!AnyType_Trait1 T,{{.*}} #kgen.get_witness<:!AnyType_Trait1 T, "trait_composition::Trait1", "f1{{.*}}">][{{.*}}](%x)
     x.f1()
 
 
@@ -83,14 +83,14 @@ def use2[T: Trait2](x: T):
 
 # Use aliased trait composition.
 # CHECK-LABEL: lit.fn @"use12
-# CHECK-SAME: <T: !Trait1_Trait2>
-# CHECK-SAME: (%x: !lit.ref<:!Trait1_Trait2 T,
+# CHECK-SAME: <T: !AnyType_Trait1_Trait2>
+# CHECK-SAME: (%x: !lit.ref<:!AnyType_Trait1_Trait2 T,
 def use12[T: Trait1 & Trait2](x: T):
     # CHECK: lit.call tail @trait_composition::@"use1
-    # CHECK-SAME: <:!Trait1 upcast(:!Trait1_Trait2 T)>
+    # CHECK-SAME: <:!AnyType_Trait1 upcast(:!AnyType_Trait1_Trait2 T)>
     use1[T](x)
     # CHECK: lit.call tail @trait_composition::@"use2
-    # CHECK-SAME: <:!Trait2 upcast(:!Trait1_Trait2 T)>
+    # CHECK-SAME: <:!AnyType_Trait2 upcast(:!AnyType_Trait1_Trait2 T)>
     use2[T](x)
 
 
@@ -98,15 +98,15 @@ def use12[T: Trait1 & Trait2](x: T):
 # CHECK-LABEL: lit.fn @"use23
 def use23[T: Trait2 & Trait3](x: T):
     # CHECK: lit.call tail[
-    # CHECK-SAME: "self": !lit.ref<:!Trait2_Trait3 T,
-    # CHECK-SAME: #kgen.get_witness<:!Trait2_Trait3 T{{.*}}, "trait_composition::Trait3", "f3{{.*}}">
+    # CHECK-SAME: "self": !lit.ref<:!AnyType_Trait2_Trait3 T,
+    # CHECK-SAME: #kgen.get_witness<:!AnyType_Trait2_Trait3 T{{.*}}, "trait_composition::Trait3", "f3{{.*}}">
     x.f3()
 
 
 # CHECK-LABEL: lit.fn @"use123
 def use123[T: Trait1 & Trait2 & Trait3](x: T):
     # CHECK: lit.call {{.*}}@"use23
-    # CHECK-SAME: "x": !lit.ref<:!Trait1_Trait2_Trait3 T,
+    # CHECK-SAME: "x": !lit.ref<:!AnyType_Trait1_Trait2_Trait3 T,
     use23(x)
 
 
@@ -118,35 +118,35 @@ def main_use():
     # CHECK-SAME: <:!AnyType !Struct123>
     useAny(s123)
     # CHECK: lit.call {{.*}}@"use1
-    # CHECK-SAME: <:!Trait1 !Struct123>
+    # CHECK-SAME: <:!AnyType_Trait1 !Struct123>
     use1(s123)
     # CHECK: lit.call {{.*}}@"use1
-    # CHECK-SAME: <:!Trait1 !Struct123>
+    # CHECK-SAME: <:!AnyType_Trait1 !Struct123>
     use1[Struct123](s123)
     # CHECK: lit.call {{.*}}@"use12
-    # CHECK-SAME: <:!Trait1_Trait2 !Struct123>
+    # CHECK-SAME: <:!AnyType_Trait1_Trait2 !Struct123>
     use12(s123)
     # CHECK: lit.call {{.*}}@"use23
-    # CHECK-SAME: <:!Trait2_Trait3 !Struct123>
+    # CHECK-SAME: <:!AnyType_Trait2_Trait3 !Struct123>
     use23(s123)
     # CHECK: lit.call {{.*}}@"use123
-    # CHECK-SAME: <:!Trait1_Trait2_Trait3 !Struct123>
+    # CHECK-SAME: <:!AnyType_Trait1_Trait2_Trait3 !Struct123>
     use123(s123)
 
     s12direct = Struct12Direct()
     # CHECK: lit.call {{.*}}@"use12
-    # CHECK-SAME: <:!Trait1_Trait2 !Struct12Direct>
+    # CHECK-SAME: <:!AnyType_Trait1_Trait2 !Struct12Direct>
     use12(s12direct)
     # CHECK: lit.call {{.*}}@"use12
-    # CHECK-SAME: <:!Trait1_Trait2 !Struct12Direct>
+    # CHECK-SAME: <:!AnyType_Trait1_Trait2 !Struct12Direct>
     use12[Struct12Direct](s12direct)
 
     s12alias = Struct12Alias()
     # CHECK: lit.call {{.*}}@"use12
-    # CHECK-SAME: <:!Trait1_Trait2 !Struct12Alias>
+    # CHECK-SAME: <:!AnyType_Trait1_Trait2 !Struct12Alias>
     use12(s12alias)
     # CHECK: lit.call {{.*}}@"use12
-    # CHECK-SAME: <:!Trait1_Trait2 !Struct12Alias>
+    # CHECK-SAME: <:!AnyType_Trait1_Trait2 !Struct12Alias>
     use12[Struct12Alias](s12alias)
 
 
@@ -189,7 +189,7 @@ def useCond1[
     ElementType: Trait1 & Trait2
 ](p1: Wrapper[ElementType], p2: Wrapper[ElementType]):
     # CHECK: lit.call {{.*}}@Wrapper::@"cond1
-    # CHECK-SAME: <:!AnyType upcast(:!Trait1_Trait2 ElementType), :!Trait1 upcast(:!Trait1_Trait2 ElementType)>
+    # CHECK-SAME: <:!AnyType upcast(:!AnyType_Trait1_Trait2 ElementType), :!AnyType_Trait1 upcast(:!AnyType_Trait1_Trait2 ElementType)>
     p1.cond1(p2)
 
 
@@ -212,7 +212,7 @@ trait IntConstructable:
 def useIntConstructable[T: Defaultable & IntConstructable]() -> T:
     # CHECK: %[[INT33:.*]] = {{.*}} !Int = <{33}>
     # CHECK: lit.call tail[
-    # CHECK-SAME: #kgen.get_witness<:!Defaultable_IntConstructable T{{.*}}, "trait_composition::IntConstructable", "__init__{{.*}}">
+    # CHECK-SAME: #kgen.get_witness<:!AnyType_Defaultable_IntConstructable T{{.*}}, "trait_composition::IntConstructable", "__init__{{.*}}">
     # CHECK-SAME: %[[INT33]]
     return T(33)
 

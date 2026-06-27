@@ -952,13 +952,13 @@ def test_metatype_upcast_with_scope():
 
 
 def apply_copyable_fn[
-    T: Copyable & ImplicitlyDeletable & Movable
+    T: Copyable & ImplicitlyDeletable
 ](f: def(SimpleWrapper[T]) thin -> None, x: SimpleWrapper[T]):
     f(x)
 
 
 def print_wrapper_value[
-    T: Copyable & ImplicitlyDeletable & Movable
+    T: Copyable & ImplicitlyDeletable
 ](w: SimpleWrapper[T],):
     # CHECK: fn_conversion_scope: ok
     print("fn_conversion_scope: ok")
@@ -983,7 +983,7 @@ def accept_movable[T: Movable](x: T):
 
 
 def upcast_conditional_to_base[
-    T: Copyable & ImplicitlyDeletable & Movable
+    T: Copyable & ImplicitlyDeletable
 ](x: SimpleWrapper[T]):
     # SimpleWrapper[T] is Copyable (proven by T: Copyable in scope).
     # Copyable refines Movable, so this upcast should work.

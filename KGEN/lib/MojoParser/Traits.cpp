@@ -1124,6 +1124,31 @@ void LIT::canonicalizeTraitCompositionSymbols(
   sortAndDeduplicateSymbols(symbols);
 }
 
+SmallVector<SymbolRefAttr>
+LIT::reduceTraitCompositionSymbols(SharedState &shared,
+                                   ArrayRef<SymbolRefAttr> symbols) {
+  DenseSet<SymbolRefAttr> impliedSymbols;
+  for (SymbolRefAttr symbol : symbols) {
+    ASTDecl &traitDecl = shared.declResolver->getDeclForTypeSymbol(symbol);
+    auto traitOp = cast<TraitDeclOp>(traitDecl.getIfOperation());
+    for (SymbolRefAttr ancestor : traitOp.getCanonicalTrait().getSymbols()) {
+      if (ancestor != symbol)
+        impliedSymbols.insert(ancestor);
+    }
+  }
+
+  // Keep only the symbols that are not already implied by another symbol in the
+  // composition. `{Movable, AnyType}` will be reduced to `{Movable}`
+  SmallVector<SymbolRefAttr> reduced;
+  for (SymbolRefAttr symbol : symbols) {
+    if (!impliedSymbols.contains(symbol))
+      reduced.push_back(symbol);
+  }
+
+  sortAndDeduplicateSymbols(reduced);
+  return reduced;
+}
+
 TraitType
 LIT::getTraitBoundFromAssumptions(TypedAttr typeAttr, SharedState &shared,
                                   ArrayRef<ConstraintAttr> assumptions) {
