@@ -3880,15 +3880,12 @@ def generic_flare_mla_prefill_ragged_paged_plan[
 ) raises:
     comptime assert is_gpu[target](), "Planning MLA is only supported on GPU"
 
-    var cuda_ctx = context
-
     var layer_idx_cast = Int(layer_idx)
 
     var k = kv_collection.get_key_cache(layer_idx_cast)
 
     with Trace[TraceLevel.OP, target=target](
-        "mo.mla.prefill.ragged.paged.plan",
-        task_id=Int(context.id()),
+        "mo.mla.prefill.ragged.paged.plan", task_id=Int(context.id())
     ):
         mla_prefill_plan(
             lt_to_tt(buffer_row_offsets),
@@ -3897,7 +3894,7 @@ def generic_flare_mla_prefill_ragged_paged_plan[
             lt_to_tt(input_row_offsets),
             k,
             buffer_token_size,
-            cuda_ctx,
+            context,
         )
 
 
@@ -4004,7 +4001,6 @@ def generic_flare_mla_decompress_k_cache_ragged_paged[
     context: DeviceContext,
 ) raises:
     comptime assert is_gpu[target](), "MLA is only supported on GPU"
-    var cuda_ctx = context
 
     var buffer_length_int = Int(buffer_length)
     var layer_idx_cast = Int(layer_idx)
@@ -4021,7 +4017,7 @@ def generic_flare_mla_decompress_k_cache_ragged_paged[
         k,
         Int32(buffer_length_int),
         k_latent_tile,
-        cuda_ctx,
+        context,
     )
 
     # rebind k_latent_buffer with dynamic dim
@@ -4045,14 +4041,11 @@ def generic_flare_mla_decompress_k_cache_ragged_paged[
         k_buffer.ptr, RuntimeLayout[k_layout].row_major(k_dynamic_shape)
     )
 
-    matmul[
-        target=target,
-        transpose_b=True,
-    ](
+    matmul[target=target, transpose_b=True](
         lt_to_tt(k_buffer_dynamic),
         lt_to_tt(k_latent_buffer_dynamic),
         lt_to_tt(weight),
-        Optional(cuda_ctx),
+        Optional(context),
     )
 
 

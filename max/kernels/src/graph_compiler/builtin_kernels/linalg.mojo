@@ -395,7 +395,6 @@ struct Struct_grouped_matmul_ragged:
         context: DeviceContext,
     ) raises:
         comptime assert is_gpu[target](), "grouped matmul only support GPUs"
-        cuda_ctx = context
         grouped_matmul(
             c.to_tile_tensor[DType.int64](),
             a.to_tile_tensor[DType.int64](),
@@ -403,7 +402,7 @@ struct Struct_grouped_matmul_ragged:
             expert_start_indices.to_tile_tensor[DType.int64](),
             expert_ids.to_tile_tensor[DType.int64](),
             expert_usage_stats.to_tile_tensor[DType.int64](),
-            cuda_ctx,
+            context,
         )
 
 
@@ -470,7 +469,6 @@ struct Struct_grouped_matmul_block_scaled:
         ](), "grouped block-scaled matmul only supports GPUs"
         if num_active_experts == 0:
             return
-        var cuda_ctx = context
         grouped_matmul_block_scaled_dispatch[transpose_b=True, target=target](
             c.to_tile_tensor[DType.int64](),
             a.to_tile_tensor[DType.int64](),
@@ -483,7 +481,7 @@ struct Struct_grouped_matmul_block_scaled:
             expert_scales.to_tile_tensor[DType.int64](),
             Int(num_active_experts),
             Int(estimated_total_m),
-            cuda_ctx,
+            context,
         )
 
 
@@ -619,7 +617,6 @@ struct Struct_grouped_matmul_dynamic_scaled_fp8:
             "grouped dynamic scaled matmul only support GPUs with native"
             " FP8 support"
         )
-        cuda_ctx = context
         grouped_matmul_dynamic_scaled_fp8[
             input_scale_granularity,
             weight_scale_granularity,
@@ -638,7 +635,7 @@ struct Struct_grouped_matmul_dynamic_scaled_fp8:
             expert_ids.to_tile_tensor[DType.int64](),
             Int(max_num_tokens_per_expert),
             Int(num_active_experts),
-            cuda_ctx,
+            context,
         )
 
 
@@ -775,7 +772,6 @@ struct Struct_batched_matmul_dynamic_scaled_fp8:
 
         if a.dim_size(1) == 0:
             return
-        cuda_ctx = context
         batched_matmul_dynamic_scaled_fp8[
             input_scale_granularity,
             weight_scale_granularity,
@@ -790,7 +786,7 @@ struct Struct_batched_matmul_dynamic_scaled_fp8:
             b.to_tile_tensor[DType.int64](),
             a_scales.to_tile_tensor[DType.int64](),
             b_scales.to_tile_tensor[DType.int64](),
-            cuda_ctx,
+            context,
         )
 
 
@@ -861,7 +857,6 @@ struct Struct_matmul_dynamic_block_scaled:
             output_compute_fn
         ) if has_epilogue_fusion and has_compute_lambda else None
 
-        cuda_ctx = context
         block_scaled_matmul[
             SF_VECTOR_SIZE=SF_VECTOR_SIZE,
             transpose_b=True,
@@ -875,7 +870,7 @@ struct Struct_matmul_dynamic_block_scaled:
             a_scales.to_tile_tensor[DType.int64](),
             b_scales.to_tile_tensor[DType.int64](),
             tensor_sf,
-            cuda_ctx,
+            context,
         )
 
 
@@ -947,13 +942,12 @@ struct Struct_matmul_mxfp4_dequant_fp8:
             b_scales_type == DType.float8_e8m0fnu
         ), "MXFP4 matmul scales must be float8_e8m0fnu"
 
-        cuda_ctx = context
         mxfp4_matmul_sm90(
             c.to_tile_tensor[DType.int64](),
             a.to_tile_tensor[DType.int64](),
             b.to_tile_tensor[DType.int64](),
             b_scales.to_tile_tensor[DType.int64](),
-            cuda_ctx,
+            context,
         )
 
 
@@ -1201,21 +1195,19 @@ struct Struct_lora_sgmv_ragged:
         context: DeviceContext,
     ) raises:
         comptime assert is_gpu[target](), "SGMV only supported on GPUs"
-        cuda_ctx = context
-        var a_tensor = a.to_tile_tensor[DType.int64]()
 
         if a.dim_size[0]() == 0:
             return
 
         grouped_matmul(
             c.to_tile_tensor[DType.int64](),
-            a_tensor,
+            a.to_tile_tensor[DType.int64](),
             b.to_tile_tensor[DType.int64](),
             input_row_offsets.to_tile_tensor[DType.int64](),
             lora_ids.to_tile_tensor[DType.int64](),
             Int(max_seq_length),
             lora_ids.dim_size[0](),
-            cuda_ctx,
+            context,
         )
 
 
@@ -1239,21 +1231,19 @@ struct Struct_lora_sgmv_qkv_shrink_ragged:
         context: DeviceContext,
     ) raises:
         comptime assert is_gpu[target](), "SGMV only supported on GPUs"
-        cuda_ctx = context
-        var a_tensor = a.to_tile_tensor[DType.int64]()
 
         if a.dim_size[0]() == 0:
             return
 
         shrink_qkv_permute_3mn_sm100(
             c.to_tile_tensor[DType.int64](),
-            a_tensor,
+            a.to_tile_tensor[DType.int64](),
             b.to_tile_tensor[DType.int64](),
             input_row_offsets.to_tile_tensor[DType.int64](),
             lora_ids.to_tile_tensor[DType.int64](),
             Int(max_seq_length),
             lora_ids.dim_size[0](),
-            cuda_ctx,
+            context,
         )
 
 
