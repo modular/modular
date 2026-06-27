@@ -213,9 +213,7 @@ struct _NichedOptionalStorage[
     def __init__(out self, *, copy: Self):
         comptime assert conforms_to(Self.T, Copyable)
         if copy.isa[Self.T]():
-            self = Self(
-                trait_downcast[Copyable](copy.unsafe_ptr[Self.T]()[]).copy()
-            )
+            self = Self(copy.unsafe_ptr[Self.T]()[].copy())
         else:
             self = Self()
 
@@ -611,12 +609,11 @@ struct Variant[*Ts: Movable](
         """
         comptime for i in range(Self.Ts.size):
             comptime T = Self.Ts[i]
+            comptime assert conforms_to(T, Equatable)
             if self.isa[T]():
                 if not other.isa[T]():
                     return False
-                return trait_downcast[Equatable](
-                    self.unsafe_get[T]()
-                ) == trait_downcast[Equatable](other.unsafe_get[T]())
+                return self.unsafe_get[T]() == other.unsafe_get[T]()
         return False
 
     @always_inline
@@ -647,9 +644,10 @@ struct Variant[*Ts: Movable](
         """
         comptime for i in range(Self.Ts.size):
             comptime T = Self.Ts[i]
+            comptime assert conforms_to(T, Hashable)
             if self.isa[T]():
                 hasher.update(UInt8(i))
-                trait_downcast[Hashable](self.unsafe_get[T]()).__hash__(hasher)
+                self.unsafe_get[T]().__hash__(hasher)
                 return
 
     # ===-------------------------------------------------------------------===#
@@ -661,8 +659,9 @@ struct Variant[*Ts: Movable](
     ](self, mut writer: Some[Writer]) where Self.Ts.all_conforms_to[Writable]():
         comptime for i in range(Self.Ts.size):
             comptime T = Self.Ts[i]
+            comptime assert conforms_to(T, Writable)
             if self.isa[T]():
-                ref value = trait_downcast[Writable](self.unsafe_get[T]())
+                ref value = self.unsafe_get[T]()
 
                 comptime if is_repr:
                     value.write_repr_to(writer)

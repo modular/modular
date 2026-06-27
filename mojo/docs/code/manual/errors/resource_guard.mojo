@@ -42,7 +42,7 @@ struct ResourceGuard(ImplicitlyCopyable):
         print("  Error type:", type_name)
 
         comptime if conforms_to(ErrType, Writable):
-            print("  Message:", trait_downcast[Writable](err))
+            print("  Message:", err)
 
         return self.suppress_errors
 

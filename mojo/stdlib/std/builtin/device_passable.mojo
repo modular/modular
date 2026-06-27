@@ -15,7 +15,7 @@
 from std.sys import size_of
 from std.sys.info import _TargetType
 from std.sys.intrinsics import _type_is_eq
-from std.builtin.rebind import downcast, trait_downcast
+from std.builtin.rebind import downcast
 from std.gpu.host.device_context import DeviceBuffer, DevicePointer
 from std.collections.inline_array import InlineArray
 from std.reflection import reflect
@@ -218,7 +218,7 @@ trait DeviceTypeEncoder:
             ref field = UnsafePointer(to=value).bitcast[FieldType]()[]
 
             comptime if conforms_to(FieldType, DevicePassable):
-                trait_downcast[DevicePassable](field)._to_device_type(self, dst)
+                field._to_device_type(self, dst)
             elif _contains_device_passable_field[FieldType]():
                 self.encode_fields[FieldType](field, dst)
             else:
@@ -283,7 +283,7 @@ trait DeviceTypeEncoder:
         comptime if conforms_to(StructType, DevicePassable) and (
             base == "StaticTuple"
         ):
-            trait_downcast[DevicePassable](value)._to_device_type(self, dst)
+            value._to_device_type(self, dst)
             return
 
         comptime field_types = r.field_types()
@@ -295,7 +295,7 @@ trait DeviceTypeEncoder:
             var sub = (dst.bitcast[UInt8]() + offset).bitcast[NoneType]()
 
             comptime if conforms_to(FieldType, DevicePassable):
-                trait_downcast[DevicePassable](field)._to_device_type(self, sub)
+                field._to_device_type(self, sub)
             elif _contains_device_passable_field[FieldType]():
                 # Recurse so the nested `DevicePassable` member runs its
                 # own `_to_device_type` instead of being byte-copied.
@@ -353,7 +353,7 @@ trait DeviceTypeEncoder:
             ref elem = value._unsafe_ref(i)
 
             comptime if conforms_to(ElementType, DevicePassable):
-                trait_downcast[DevicePassable](elem)._to_device_type(self, sub)
+                elem._to_device_type(self, sub)
             elif _contains_device_passable_field[ElementType]():
                 self.encode_fields[ElementType](elem, sub)
             else:
@@ -407,7 +407,7 @@ trait DeviceTypeEncoder:
             ref elem = value.unsafe_get(i)
 
             comptime if conforms_to(ElementType, DevicePassable):
-                trait_downcast[DevicePassable](elem)._to_device_type(self, sub)
+                elem._to_device_type(self, sub)
             elif _contains_device_passable_field[ElementType]():
                 self.encode_fields[ElementType](elem, sub)
             else:

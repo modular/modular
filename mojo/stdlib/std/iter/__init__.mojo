@@ -417,9 +417,7 @@ struct _Enumerate[InnerIteratorType: Iterator](
     def __init__(
         out self, *, copy: Self
     ) where conforms_to(Self.InnerIteratorType, Copyable):
-        self._inner = rebind_var[Self.InnerIteratorType](
-            trait_downcast[Copyable](copy._inner).copy()
-        )
+        self._inner = copy._inner.copy()
         self._count = copy._count
 
     def __iter__(
@@ -680,9 +678,7 @@ struct _MapIterator[
     def __init__(
         out self, *, copy: Self
     ) where conforms_to(Self.InnerIteratorType, Copyable):
-        self._inner = rebind_var[Self.InnerIteratorType](
-            trait_downcast[Copyable](copy._inner).copy()
-        )
+        self._inner = copy._inner.copy()
 
     def __iter__(
         ref self,
@@ -816,9 +812,7 @@ struct _PeekableIterator[InnerIterator: Iterator](
     ) where conforms_to(Self.InnerIterator, Copyable) and conforms_to(
         Self.InnerIterator.Element, Copyable
     ):
-        self._inner = rebind_var[Self.InnerIterator](
-            trait_downcast[Copyable](copy._inner).copy()
-        )
+        self._inner = copy._inner.copy()
 
         comptime assert conforms_to(Self.Element, Copyable)
         self._next = copy._next.copy()
