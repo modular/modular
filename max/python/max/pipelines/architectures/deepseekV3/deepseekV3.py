@@ -531,6 +531,7 @@ class DeepseekV3DecoderLayer(Module):
         mla_decode_scalar_args: list[TensorValue] | None = None,
         mla_num_partitions_scalars: list[TensorValue] | None = None,
         ep_inputs: list[Value[Any]] | None = None,
+        eplb_counter_buffers: list[BufferValue] | None = None,
     ) -> list[TensorValue]:
         # We have to unpack our PagedCacheValues into constituent parts so
         # subgraphs have only max.graph.Values as arguments.
@@ -592,7 +593,11 @@ class DeepseekV3DecoderLayer(Module):
             if self.ep_manager is not None:
                 self.ep_manager.fetch_buffers(ep_inputs)
 
-        mlp_outs = forward_moe_sharded_layers(self.mlp_shards, norm_outs)
+        mlp_outs = forward_moe_sharded_layers(
+            self.mlp_shards,
+            norm_outs,
+            eplb_counter_buffers,
+        )
 
         hs = self._post_mlp(hs, mlp_outs, signal_buffers)
         hs = [ops.rebind(h, x.shape) for h, x in zip(hs, xs, strict=True)]
@@ -785,6 +790,7 @@ class DeepseekV3(Module):
         data_parallel_splits: TensorValue,
         batch_context_lengths: list[TensorValue],
         ep_inputs: list[Value[Any]] | None = None,
+        eplb_counter_buffers_per_layer: list[list[BufferValue]] | None = None,
     ) -> tuple[TensorValue, ...]:
         h = self.embed_tokens(tokens, signal_buffers)
 
@@ -798,6 +804,7 @@ class DeepseekV3(Module):
             data_parallel_splits,
             batch_context_lengths,
             ep_inputs,
+            eplb_counter_buffers_per_layer,
         )
 
     def _process_hidden_states(
@@ -811,6 +818,8 @@ class DeepseekV3(Module):
         data_parallel_splits: TensorValue,
         batch_context_lengths: list[TensorValue],
         ep_inputs: list[Value[Any]] | None = None,
+        eplb_counter_buffers_per_layer: list[list[BufferValue]]
+        | None = None,  # (num_layers, num_devices)
     ) -> tuple[TensorValue, ...]:
         if not host_input_row_offsets.device == DeviceRef.CPU():
             raise ValueError("input_row_offsets must be located on CPU")
@@ -935,6 +944,9 @@ class DeepseekV3(Module):
             if ep_inputs is not None:
                 values.append(ep_inputs)
 
+            if eplb_counter_buffers_per_layer is not None:
+                values.append(eplb_counter_buffers_per_layer[idx])
+
             return values
 
         def capture_for_eagle3(idx: int, h_out: list[TensorValue]) -> None:
@@ -962,7 +974,7 @@ class DeepseekV3(Module):
             lm_head=self.lm_head,
             signal_buffers=signal_buffers,
             devices=devices,
-            is_data_parallel_attention=self.config.data_parallel_degree > 1,
+            is_data_parallel_attention=(self.config.data_parallel_degree > 1),
             return_logits=self.return_logits,
             return_hidden_states=self.return_hidden_states,
             logits_scaling=self.logits_scaling,
@@ -1026,4 +1038,15 @@ class DeepseekV3(Module):
 
         if self.ep_manager is not None:
             all_input_types.extend(self.ep_manager.input_types())
+
+        if self.config.eplb_profile_enabled:
+            for _layer_idx in range(self.config.num_hidden_layers):
+                for device in self.config.devices:
+                    all_input_types.append(
+                        BufferType(
+                            DType.int64,
+                            shape=[self.config.n_routed_experts],
+                            device=device,
+                        )
+                    )
         return tuple(all_input_types)

@@ -34,6 +34,7 @@ from max.experimental.nn._compilation_timer import collect_compilation_stats
 from max.pipelines.context import BaseContextType
 from max.pipelines.kv_cache import DummyKVCache, PagedKVCacheManager
 from max.pipelines.lib import PipelineConfig, PipelineModel
+from max.pipelines.lib.eplb_stats import EplbStatsAccumulator
 from max.pipelines.modeling.types import (
     Pipeline,
     PipelineInputsType,
@@ -43,7 +44,6 @@ from max.pipelines.modeling.types import (
 from max.profiler import Tracer, traced
 from max.serve._exceptions import detect_and_wrap_ooms
 from max.serve.config import MetricRecordingMethod, Settings
-from max.serve.pipelines.eplb_stats import EplbStatsAccumulator
 from max.serve.pipelines.eplb_stats_rpc import (
     EplbStatsBackend,
     EplbStatsResetBackend,
