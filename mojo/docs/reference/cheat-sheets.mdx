@@ -32,6 +32,14 @@ export const convertSheet = {
   darkPdf: require('./assets/conversions/mojo-cheat-sheet-conversions-dark.pdf').default,
 };
 
+export const traitsSheet = {
+  id: 'mojo-cheat-sheet-traits',
+  lightPng: require('./assets/traits/mojo-cheat-sheet-traits-light.png').default,
+  lightPdf: require('./assets/traits/mojo-cheat-sheet-traits-light.pdf').default,
+  darkPng: require('./assets/traits/mojo-cheat-sheet-traits-dark.png').default,
+  darkPdf: require('./assets/traits/mojo-cheat-sheet-traits-dark.pdf').default,
+};
+
 export const Preview = ({sheet, alt}) => {
   const {colorMode} = useColorMode();
   const img = colorMode === 'dark' ? sheet.darkPng : sheet.lightPng;
