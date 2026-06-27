@@ -998,15 +998,16 @@ struct StructWithUnknownTrait(UnknownTrait):
     pass
 
 
+# expected-error @below {{unexpected decl in trait}}
 trait EverythingIsWrongTrait:
     var value: Int # expected-error {{traits do not support 'var' fields; use 'comptime' to declare associated types}}
 
     def trait_fn_no_dot_dot_dot(self): # expected-error {{body must not be empty; use 'pass' or check that the lines below are indented}}
 
+    # expected-note @+1 {{declared here}}
     trait NestedTrait: # expected-error {{nested trait not supported here}}
         ...
 
-    # expected-note @below {{function declared here}}
     def parametric[x: Int](self): ...
 
     struct NestedStruct: # expected-error {{nested struct in a trait not supported here}}
@@ -1015,8 +1016,8 @@ trait EverythingIsWrongTrait:
 trait TraitWithParams[T: TrivialRegisterPassable]: # expected-error {{trait declarations do not support parameters; remove the parameter list}}
     ...
 
+# Errors on emitting trait type for `EverythingIsWrongTrait`
 def bad_trait_params[T: EverythingIsWrongTrait](x: T):
-  # expected-error @below {{invalid call to 'parametric': failed to infer parameter 'x'}}
   x.parametric()
 
 trait Shape(ImplicitlyCopyable):
@@ -1162,6 +1163,7 @@ struct Outer(RegisterPassable): # expected-error {{all members of 'RegisterPassa
     var inner: Inner # expected-note {{'inner' declared with type 'Inner'}}
 
 
+# expected-warning @+2 {{redundant trait composition: 'ImplicitlyDeletable' already implies 'AnyType'}}
 @fieldwise_init
 struct AnyTypeMember[T: AnyType & ImplicitlyDeletable](ImplicitlyCopyable):
 # expected-error @below {{cannot synthesize fieldwise init because field 'value' has non-copyable and non-movable type 'T'}}

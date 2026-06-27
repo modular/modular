@@ -187,7 +187,7 @@ trait LinearBar:
 
 
 # Test: First trait has custom message - uses that message
-# expected-error @below {{Use custom_foo_destroy().}}
+# expected-error @below {{Use custom_bar_destroy().}}
 # expected-note @below {{consider adding trait conformance to ImplicitlyDeletable}}
 def take_foo_and_bar[T: LinearFoo & LinearBar](var value: T):
     pass

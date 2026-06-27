@@ -28,7 +28,7 @@ trait WithASum(WithA):
 
 
 # CHECK-LABEL: lit.fn @"concat_add
-# CHECK-SAME: #kgen.get_witness<:!WithASum p, "constraint_trait_alias_upcast::WithA", "A">
+# CHECK-SAME: #kgen.get_witness<:!WithA_WithASum_AnyType p, "constraint_trait_alias_upcast::WithA", "A">
 def concat_add[
     p: WithASum, o: WithA
 ](lhs: p, rhs: o) -> Concat[p, o] where _type_is_eq_parse_time[p.A, o.A]():

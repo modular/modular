@@ -96,8 +96,8 @@ struct Foo[T: Movable, b: T]:
 
 # CHECK: [[TRAIT:!None.*]] = !lit.trait<@"def[T: MyInterface, b: T, c: Foo[T, b]](a: T) -> None">
 # CHECK: lit.trait.decl @"def[T: MyInterface, b: T, c: Foo[T, b]](a: T) -> None"<?, *"_Self`{{.*}}": [[TRAIT]]>(!{{.*}}) unspecified attributes {{{.*}}} {
-# CHECK: lit.fn @"__call__{{.*}}"<T: !MyInterface, b: !kgen.param<:!MyInterface T>, c: {{.*}}Foo <:!Movable {{.*}}, :!kgen.param<:!MyInterface T> b>>
-# CHECK-SAME: [mut *"self`", imm *"[[L1:.*]]`"](%0[*""]: !lit.ref<:[[TRAIT]] *"_Self`{{.*}}", mut *"self`"> read_mem, |, %a: !lit.ref<:!MyInterface T, imm *"[[L1]]`"> read_mem) capturing -> !kgen.none
+# CHECK: lit.fn @"__call__{{.*}}"<T: !AnyType_Movable_MyInterface, b: !kgen.param<:!AnyType_Movable_MyInterface T>, c: {{.*}}Foo <:!AnyType_Movable {{.*}}, :!kgen.param<:!AnyType_Movable_MyInterface T> b>>
+# CHECK-SAME: [mut *"self`", imm *"[[L1:.*]]`"](%0[*""]: !lit.ref<:[[TRAIT]] *"_Self`{{.*}}", mut *"self`"> read_mem, |, %a: !lit.ref<:!AnyType_Movable_MyInterface T, imm *"[[L1]]`"> read_mem) capturing -> !kgen.none
 
 
 def make_closure(x: Int, mem: String) -> Int:
@@ -533,16 +533,16 @@ def giveIt(z: Int, cm: CopyMe, var one: OneOfAKind):
 
 # COM: The captured parameter becomes an alias on the trait
 # CHECK: lit.trait.decl @"def{{.*}} -> U"
-# CHECK-NEXT: lit.alias.decl U: !TrivialRegisterPassable
+# CHECK-NEXT: lit.alias.decl U: !AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable_RegisterPassable_TrivialRegisterPassable
 
 # COM: The captured parameter becomes a parameter of the struct generator
-# CHECK: kgen.struct.generator @"makeIt{{.*}}::parametric"<U: !TrivialRegisterPassable>
-# CHECK: kgen.witness "U" : !TrivialRegisterPassable = U
+# CHECK: kgen.struct.generator @"makeIt{{.*}}::parametric"<U: !AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable_RegisterPassable_TrivialRegisterPassable>
+# CHECK: kgen.witness "U" : !AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable_RegisterPassable_TrivialRegisterPassable = U
 
 
 # COM: The alias is set to the alias of the impl in the struct wrapper
 # CHECK: lit.struct.decl @"def{{.*}} -> U_{{.*}}"
-# CHECK: kgen.witness "U" : !TrivialRegisterPassable = #kgen.get_witness<:!{{.*}} impl, "def{{.*}} -> U", "U">
+# CHECK: kgen.witness "U" : !AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable_RegisterPassable_TrivialRegisterPassable = #kgen.get_witness<:!{{.*}} impl, "def{{.*}} -> U", "U">
 def makeIt[U: TrivialRegisterPassable](a: U):
     def parametric() {var a} -> U:
         return a
@@ -574,14 +574,14 @@ trait DoIt:
 
 
 # CHECK: lit.trait.decl @"def{{.*}} -> None"
-# CHECK-NEXT: lit.alias.decl T: !DoIt
+# CHECK-NEXT: lit.alias.decl T: !AnyType_DoIt
 struct House[T: DoIt]:
     def aMethod[C: def(x: Self.T)](self, impl: C):
         pass
 
 
 # CHECK: lit.trait.decl @"def{{.*}} -> None"
-# CHECK-NEXT: lit.alias.decl TT: !DoIt
+# CHECK-NEXT: lit.alias.decl TT: !AnyType_DoIt
 def useIt[TT: DoIt, C: def(x: TT)](impl: C):
     pass
 
@@ -740,7 +740,7 @@ struct Store[E: ElemLike]:
 # CHECK: lit.struct.decl @"def[n: Int](item: Box[ConcreteElem, n]) -> Box[ConcreteElem, n]_{{.*}}"
 # CHECK: kgen.conformance @"def[{{.*}}n: Int](item: Box[E, n]) -> Box[E, n]" {
 # CHECK: kgen.witness "__call__{{.*}}" : !lit.generator
-# CHECK: kgen.witness "E" : !ElemLike = !ConcreteElem
+# CHECK: kgen.witness "E" : !AnyType_ElemLike = !ConcreteElem
 def repro_nested_type_param(mem: String):
     var capture = 0
 
@@ -1606,7 +1606,7 @@ def bind[
 
 
 # CHECK-LABEL: lit.struct.decl @"def[A: Copyable, B: Copyable, #, C: Copyable](a: A, b: B, c: C) -> None_{{.*}}"
-# CHECK: lit.fn @"__call__{{.*}}"<_A: !Copyable, _B: !Copyable, C: !Copyable, +>
+# CHECK: lit.fn @"__call__{{.*}}"<_A: !AnyType_Copyable_Movable, _B: !AnyType_Copyable_Movable, C: !AnyType_Copyable_Movable, +>
 
 
 def top[A: Copyable, B: Copyable](aa: A, bb: B):
@@ -1630,8 +1630,8 @@ def bind[
 
 # CHECK-LABEL: lit.struct.decl @"def[{{.*}}C: Copyable](a: {{.*}}, b: {{.*}}, c: C) -> None_{{.*}}"
 # CHECK: lit.fn @"__call__$def
-# CHECK-NEXT: kgen.rebind %a : !lit.ref<:!Copyable _D, imm *"1_unnamed`"> to !lit.ref<!String, imm *"1_unnamed`">
-# CHECK-NEXT: kgen.rebind %b : !lit.ref<:!Copyable _E, imm *"2_unnamed`"> to !lit.ref<!String, imm *"2_unnamed`">
+# CHECK-NEXT: kgen.rebind %a : !lit.ref<:!AnyType_Copyable_Movable _D, imm *"1_unnamed`"> to !lit.ref<!String, imm *"1_unnamed`">
+# CHECK-NEXT: kgen.rebind %b : !lit.ref<:!AnyType_Copyable_Movable _E, imm *"2_unnamed`"> to !lit.ref<!String, imm *"2_unnamed`">
 
 
 def top():
@@ -1698,7 +1698,7 @@ def demo[
 # CHECK-LABEL: lit.fn @"apply_closure
 def apply_closure[T: TrivialRegisterPassable](x: T):
     # COM: Make sure the field type is paramtric over `T`, not a plain `AnyType`.
-    # CHECK: [[CLOSURE:%[0-9a-zA-Z_]+]] = lit.closure.init{{.*}}struct<(:!TrivialRegisterPassable T)>
+    # CHECK: [[CLOSURE:%[0-9a-zA-Z_]+]] = lit.closure.init{{.*}}struct<(:!AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable_RegisterPassable_TrivialRegisterPassable T)>
     def f() {var x}:
         _ = x
 

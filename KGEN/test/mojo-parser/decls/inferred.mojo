@@ -80,7 +80,7 @@ def test_inferred_params[x: Int, y: ParamType[x], z: DependentParam[x, y]]():
     inferred_param_from_param[y]()
     # CHECK: inferred_param_variadic{{.*}}<:!Int x, :param_list<!lit.struct<#ParamType <:!Int x>>> [y, y],
     inferred_param_variadic[y, y]()
-    # CHECK: inferred_trait{{.*}}<:!SomeTrait @inferred::@ParamType<:!Int x>, :!lit.struct<#ParamType <:!Int x>> y>
+    # CHECK: inferred_trait{{.*}}<:!SomeTrait_AnyType @inferred::@ParamType<:!Int x>, :!lit.struct<#ParamType <:!Int x>> y>
     inferred_trait[y]()
     # CHECK: inferred_with_default{{.*}}<:!Int x, :!lit.struct<#ParamType <:!Int x>> y, :!Int {1}>()
     inferred_with_default[y]()
@@ -110,7 +110,7 @@ def test_inferred_params[x: Int, y: ParamType[x], z: DependentParam[x, y]]():
     # CHECK-NEXT: fully_bound_type{{.*}}<@inferred::@InferredStruct<:!Int x, :!Int {1}, :!lit.struct<#ParamType <:!Int x>> y>>
     comptime fully_bound_type = partially_bound_type[y]
 
-    # CHECK-NEXT: lit.var.decl "inferred_type" var : !lit.ref<!lit.struct<#InferredStructConversion <:!Int x, :!TrivialRegisterPassable !Int, :!lit.struct<#ParamType <:!Int x>> y>>
+    # CHECK-NEXT: lit.var.decl "inferred_type" var : !lit.ref<!lit.struct<#InferredStructConversion <:!Int x, :!AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable_RegisterPassable_TrivialRegisterPassable !Int, :!lit.struct<#ParamType <:!Int x>> y>>
     var inferred_type: InferredStructConversion[Int, y]
 
 

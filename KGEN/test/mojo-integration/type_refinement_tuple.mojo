@@ -65,7 +65,7 @@ def test_for_var_whole[
 # `var` unpack then reassign one side after first use; store-time refinement
 # must track the loop-carried `var` binding across the assignment.
 def test_for_var_reassign[
-    T: Copyable & ImplicitlyCopyable & ImplicitlyDeletable
+    T: ImplicitlyCopyable & ImplicitlyDeletable
 ](items1: List[T], items2: List[T]) where conforms_to(T, Greetable):
     for var left, var right in zip(items1, items2):
         var before = left.greet()

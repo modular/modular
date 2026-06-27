@@ -7,7 +7,7 @@
 # RUN: %parse-mojo-isolated %s | FileCheck %s
 
 
-# CHECK: [[SCALARF64:.*]] = #kgen.type<!lit.struct<#MLIRType <:non_struct_type scalar<f64>>>, scalar<f64>> : !TrivialRegisterPassable
+# CHECK: [[SCALARF64:.*]] = #kgen.type<!lit.struct<#MLIRType <:non_struct_type scalar<f64>>>, scalar<f64>> : !AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable_RegisterPassable_TrivialRegisterPassable
 
 
 struct MyInt(TrivialRegisterPassable):
@@ -52,19 +52,19 @@ def take_kw_param_infer[B: TrivialRegisterPassable](a: MyInt, b: B):
 def test_kw_args_param_infer(
     x: Int, f: __mlir_type.`!kgen.scalar<f64>`, s: MyInt
 ):
-    # CHECK: call {{.*}}@"take_kw_param_infer[::TrivialRegisterPassable,::TrivialRegisterPassable]{{.*}}"<:{{.*}}!Int, {{.*}}[[SCALARF64]]>(%x, %f)
+    # CHECK: call {{.*}}@"take_kw_param_infer[::AnyType & ::Copyable & ::ImplicitlyCopyable & ::ImplicitlyDeletable & ::Movable & ::RegisterPassable & ::TrivialRegisterPassable,::AnyType & ::Copyable & ::ImplicitlyCopyable & ::ImplicitlyDeletable & ::Movable & ::RegisterPassable & ::TrivialRegisterPassable]{{.*}}"<:{{.*}}!Int, {{.*}}[[SCALARF64]]>(%x, %f)
     take_kw_param_infer(x, b=f)
 
-    # CHECK: call {{.*}}@"take_kw_param_infer[::TrivialRegisterPassable,::TrivialRegisterPassable]{{.*}}"<:{{.*}}!Int, {{.*}}[[SCALARF64]]>(%x, %f)
+    # CHECK: call {{.*}}@"take_kw_param_infer[::AnyType & ::Copyable & ::ImplicitlyCopyable & ::ImplicitlyDeletable & ::Movable & ::RegisterPassable & ::TrivialRegisterPassable,::AnyType & ::Copyable & ::ImplicitlyCopyable & ::ImplicitlyDeletable & ::Movable & ::RegisterPassable & ::TrivialRegisterPassable]{{.*}}"<:{{.*}}!Int, {{.*}}[[SCALARF64]]>(%x, %f)
     take_kw_param_infer[Int](b=f, a=x)
 
-    # CHECK: call {{.*}}@"take_kw_param_infer[::TrivialRegisterPassable,::TrivialRegisterPassable]{{.*}}"<:{{.*}}!Int, {{.*}}[[SCALARF64]]>(%x, %f)
+    # CHECK: call {{.*}}@"take_kw_param_infer[::AnyType & ::Copyable & ::ImplicitlyCopyable & ::ImplicitlyDeletable & ::Movable & ::RegisterPassable & ::TrivialRegisterPassable,::AnyType & ::Copyable & ::ImplicitlyCopyable & ::ImplicitlyDeletable & ::Movable & ::RegisterPassable & ::TrivialRegisterPassable]{{.*}}"<:{{.*}}!Int, {{.*}}[[SCALARF64]]>(%x, %f)
     take_kw_param_infer[Int, __mlir_type.`!kgen.scalar<f64>`](b=f, a=x)
 
-    # CHECK: call {{.*}}@"take_kw_param_infer[::TrivialRegisterPassable]{{.*}}<:{{.*}}!Int>(%s, %x)
+    # CHECK: call {{.*}}@"take_kw_param_infer[::AnyType & ::Copyable & ::ImplicitlyCopyable & ::ImplicitlyDeletable & ::Movable & ::RegisterPassable & ::TrivialRegisterPassable]{{.*}}<:{{.*}}!Int>(%s, %x)
     take_kw_param_infer(s, b=x)
 
-    # CHECK: call {{.*}}@"take_kw_param_infer[::TrivialRegisterPassable]{{.*}}<:{{.*}}!Int>(%s, %x)
+    # CHECK: call {{.*}}@"take_kw_param_infer[::AnyType & ::Copyable & ::ImplicitlyCopyable & ::ImplicitlyDeletable & ::Movable & ::RegisterPassable & ::TrivialRegisterPassable]{{.*}}<:{{.*}}!Int>(%s, %x)
     take_kw_param_infer(b=x, a=s)
 
 

@@ -21,7 +21,7 @@ trait ToCastInto:
 
 # CHECK-LABEL: lit.fn @"trait_downcast_reg_type
 def trait_downcast_reg_type[T: TrivialRegisterPassable](x: T):
-    # CHECK: lit.var.decl "y" var : !lit.ref<:!TrivialRegisterPassable_ToCastInto downcast(:!TrivialRegisterPassable T), mut *"y`1">
+    # CHECK: lit.var.decl "y" var : !lit.ref<:!AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable_RegisterPassable_TrivialRegisterPassable_ToCastInto downcast(:!AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable_RegisterPassable_TrivialRegisterPassable T), mut *"y`1">
     var y = trait_downcast[ToCastInto](x)
     y.test()
 
@@ -40,7 +40,7 @@ struct ListIterator[T: Copyable & ImplicitlyDeletable]:
 struct List[T: Movable & ImplicitlyDeletable]:
     var t: Self.T
 
-    # CHECK: lit.alias.decl *"Iterator`": meta<!lit.struct<#ListIterator <:{{.*}} upcast(:!Copyable_ImplicitlyDeletable_Movable downcast(:!Movable_ImplicitlyDeletable T))>>>
+    # CHECK: lit.alias.decl *"Iterator`": meta<!lit.struct<#ListIterator <:{{.*}} downcast(:!AnyType_ImplicitlyDeletable_Movable T)>>>
     comptime Iterator = ListIterator[downcast[Self.T, Copyable]]
 
     def iter(self) -> Self.Iterator:

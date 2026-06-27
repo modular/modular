@@ -26,6 +26,7 @@ trait RPTTrait(TrivialRegisterPassable):
 struct DtorExample1(AnyType, TrivialRegisterPassable):
     var a: Int
 
+
 # CHECK-LABEL: lit.struct.decl @DtorExample2
 # Non-trivial destructor because it is explicit.
 # CHECK: kgen.witness "__del__is_trivial" : !Bool = {:scalar<bool> false}
@@ -47,6 +48,7 @@ struct DtorExample3[T: RPTTrait]:
 # Dtor is trivial if T's dtor is trivial.
 # CHECK: lit.alias.decl __del__is_trivial:
 # CHECK-SAME: <#kgen.get_witness<:!AnyType_ImplicitlyDeletable T, {{.*}}"__del__is_trivial">>
+# expected-warning @below {{redundant trait composition: 'ImplicitlyDeletable' already implies 'AnyType}}
 struct DtorExample4[T: AnyType & ImplicitlyDeletable]:
     var thing: Self.T
 
@@ -137,7 +139,7 @@ struct FieldwiseInitExample1[T: Movable & ImplicitlyDeletable]:
 
 # CHECK-LABEL: lit.struct.decl @FieldwiseInitExample1
 # CHECK: lit.fn @"__init__
-# CHECK-SAME: (%x: !Int, %y: !lit.ref<:!Movable_ImplicitlyDeletable T, mut *"y`"> owned_in_mem,
+# CHECK-SAME: (%x: !Int, %y: !lit.ref<:!AnyType_ImplicitlyDeletable_Movable T, mut *"y`"> owned_in_mem,
 # CHECK-SAME: %self: !lit.ref<{{.*}}> byref_result)
 # CHECK-NEXT: [[TMP:%.*]] = lit.ref.struct.ger %self[x]
 # CHECK-NEXT: lit.ref.store %x, [[TMP]]

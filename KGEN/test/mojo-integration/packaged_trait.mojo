@@ -41,13 +41,13 @@ def bind_trait[T: PackageTrait]():
 
 # CHECK-LABEL: lit.fn @"test
 def test():
-    # CHECK-NEXT: <:!PackageTrait !MyType>
+    # CHECK-NEXT: <:!AnyType_PackageTrait !MyType>
     bind_trait[MyType]()
-    # CHECK-NEXT: <:!PackageTrait !MyRegType>
+    # CHECK-NEXT: <:!AnyType_PackageTrait !MyRegType>
     bind_trait[MyRegType]()
-    # CHECK-NEXT: <:!UsedInPackageTrait !UseTrait>
+    # CHECK-NEXT: <:!AnyType_UsedInPackageTrait !UseTrait>
     trait_method[UseTrait]()
-    # CHECK-NEXT: <:!UsedInPackageTrait !UseTraitReg>
+    # CHECK-NEXT: <:!AnyType_UsedInPackageTrait !UseTraitReg>
     trait_method[UseTraitReg]()
 
     # COM: Anchor this decl reference to materialize it.

@@ -104,7 +104,7 @@ def test_list_literal():
     # CHECK: lit.call {{.*}}@IntList::@"__init__{{.*}}({{.*}}, [[NONE_MARKER]])
     var c: IntList = []
 
-    # CHECK: lit.call {{.*}}@List::@"__init__{{.*}}<:!Copyable !FloatDyn>
+    # CHECK: lit.call {{.*}}@List::@"__init__{{.*}}<:!AnyType_Copyable_Movable !FloatDyn>
     inspect([1.0, 2])
 
     # MOCO-2085: List comprehensive fails without explicit use of var
@@ -113,7 +113,7 @@ def test_list_literal():
 
 # CHECK-LABEL: lit.fn @"test_list_comprehension
 def test_list_comprehension():
-    # CHECK-NEXT: %a_collection = lit.var.decl{{.*}}#List <:!Copyable !Int>
+    # CHECK-NEXT: %a_collection = lit.var.decl{{.*}}#List <:!AnyType_Copyable_Movable !Int>
     # CHECK: lit.loop {
     # CHECK-NEXT: [[ANON:%.*]] = lit.var.decl "anonymous*"
     # CHECK:      lit.call {{.*}}SimpleIntRange::@"__next__{{.*}}(%$ITER, %__call_error_tmp__, [[ANON]])
@@ -127,7 +127,7 @@ def test_list_comprehension():
     # CHECK: }
     var a_collection = [i1 * 2 for i1 in SimpleIntRange()]
 
-    # CHECK: %b_collection = lit.var.decl{{.*}}#List <:!Copyable !Int>
+    # CHECK: %b_collection = lit.var.decl{{.*}}#List <:!AnyType_Copyable_Movable !Int>
     # CHECK: lit.loop {
     # CHECK-NEXT: [[ANONI2:%.*]] = lit.var.decl "anonymous*"
 
@@ -208,7 +208,7 @@ def test_dict_literal(aBool: Bool):
 
 # CHECK-LABEL: lit.fn @"test_dict_comprehension
 def test_dict_comprehension():
-    # CHECK-NEXT: %a_collection = lit.var.decl{{.*}}#Dict <:!Copyable_ImplicitlyDeletable !Int, :!Copyable_ImplicitlyDeletable !String>
+    # CHECK-NEXT: %a_collection = lit.var.decl{{.*}}#Dict <:!AnyType_Copyable_ImplicitlyDeletable_Movable !Int, :!AnyType_Copyable_ImplicitlyDeletable_Movable !String>
     # CHECK: lit.loop {
     # CHECK-NEXT: [[ANONI:%.*]] = lit.var.decl "anonymous*"
     # CHECK:     lit.call {{.*}}SimpleIntRange::@"__next__
@@ -416,11 +416,11 @@ def _moco_3801_pack[*Ts: AnyType](var *values: *Ts):
 # CHECK-LABEL: lit.fn @"test_moco_3801_pack_of_literals
 def test_moco_3801_pack_of_literals():
     # COM: Each list literal defaults to List[Int] and binds its own pack slot.
-    # CHECK: lit.call {{.*}}@"_moco_3801_pack{{.*}}<:param_list<!AnyType> [{{.*}}@List<:!Copyable !Int>, {{.*}}@List<:!Copyable !Int>]
+    # CHECK: lit.call {{.*}}@"_moco_3801_pack{{.*}}<:param_list<!AnyType> [{{.*}}@List<:!AnyType_Copyable_Movable !Int>, {{.*}}@List<:!AnyType_Copyable_Movable !Int>]
     _moco_3801_pack([1, 2, 3], [4, 5, 6])
 
     # COM: Dict literal defaults to Dict[Int, Int].
-    # CHECK: lit.call {{.*}}@"_moco_3801_pack{{.*}}<:param_list<!AnyType> [{{.*}}@Dict<:!Copyable_ImplicitlyDeletable !Int, :!Copyable_ImplicitlyDeletable !Int>]
+    # CHECK: lit.call {{.*}}@"_moco_3801_pack{{.*}}<:param_list<!AnyType> [{{.*}}@Dict<:!AnyType_Copyable_ImplicitlyDeletable_Movable !Int, :!AnyType_Copyable_ImplicitlyDeletable_Movable !Int>]
     _moco_3801_pack({1: 2})
 
     # COM: Set literal defaults to Set[Int].
@@ -429,5 +429,5 @@ def test_moco_3801_pack_of_literals():
 
     # COM: Mixed-literal packs work because each pack element infers
     # independently.
-    # CHECK: lit.call {{.*}}@"_moco_3801_pack{{.*}}<:param_list<!AnyType> [{{.*}}@List<:!Copyable !Int>, {{.*}}@Set<:!AnyType !Int>]
+    # CHECK: lit.call {{.*}}@"_moco_3801_pack{{.*}}<:param_list<!AnyType> [{{.*}}@List<:!AnyType_Copyable_Movable !Int>, {{.*}}@Set<:!AnyType !Int>]
     _moco_3801_pack([1, 2], {3, 4})

@@ -9,6 +9,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "IREmitter.h"
+#include "KGEN/lib/MojoParser/Traits.h"
 #include "ParserEvaluationContext.h"
 
 #include "KGEN/LITDialect/LITUtils.h"
@@ -1923,8 +1924,13 @@ void ASTType::print(raw_ostream &os, ASTTypePrinterContext ctx) const {
     printUserType(anyStruct.getSymbol(), anyStruct.getParamValues(), decl);
     os << ']';
   } else if (auto traitType = dyn_cast<TraitType>(type)) {
+    // Print using the most concise form of the trait composition.
+    SmallVector<SymbolRefAttr> reduced(traitType.getSymbols());
+    if (diagShared)
+      reduced = reduceTraitCompositionSymbols(*ctx.shared, reduced);
+
     llvm::interleave(
-        traitType.getSymbols(), os,
+        reduced, os,
         [&](SymbolRefAttr symbol) {
           // Closure traits have a readable source name; prefer it.
           if (diagShared)

@@ -82,10 +82,14 @@ struct ParamDoesNotConform[x: Int](SimpleTrait):
 
 def call_many_things_of_specified_trait(a: TraitStruct):
     # This is ok!
-    test_many_things_of_specified_trait[element_type=AnyType, TraitStruct, Int]()
+    test_many_things_of_specified_trait[
+        element_type=AnyType, TraitStruct, Int
+    ]()
 
-    # expected-error @+1 {{'test_many_things_of_specified_trait' parameter 'element_types' has 'Movable' type, but value has type 'AnyStruct[TraitStruct]'}}
-    test_many_things_of_specified_trait[element_type=Movable, TraitStruct, TraitStruct]()
+    # expected-error @+2 {{'test_many_things_of_specified_trait' parameter 'element_types' has 'Movable' type, but value has type 'AnyStruct[TraitStruct]'}}
+    test_many_things_of_specified_trait[
+        element_type=Movable, TraitStruct, TraitStruct
+    ]()
 
     test_many_things_of_specified_trait[
         element_type=SimpleTrait,
@@ -200,3 +204,21 @@ trait ConflictTraitName:
 # expected-error @+1 {{name conflict between parameter 'a' in the default trait method and a parameter in the struct}}
 struct ConflictStruct[a: Int](ConflictTraitName):
     pass
+
+
+trait SameEntryDeclA(TrivialRegisterPassable):
+    # expected-note @+1 {{candidate declared here}}
+    def foo(self: Self):
+        pass
+
+
+trait SameEntryDeclB(SameEntryDeclA, TrivialRegisterPassable):
+    # expected-note @+1 {{candidate declared here}}
+    def foo(self: Self):
+        pass
+
+
+# TODO: maybe better to be detected at trait resolution time instead of overload resolution time here?
+def blah[b_t: SameEntryDeclB](b: b_t):
+    # expected-error @+1 {{ambiguous call to 'foo'}}
+    b.foo()

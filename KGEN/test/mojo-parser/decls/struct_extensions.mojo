@@ -190,8 +190,8 @@ def launch_flying[F: Flying](mut flying: F):
 
 # CHECK-LABEL: lit.fn @"launch_ship
 def launch_ship(mut ship: Spaceship):
-    # CHECK: lit.call tail @struct_extensions::@"launch_flying[struct_extensions::Flying]
-    # CHECK-SAME: <:!Flying !Spaceship>
+    # CHECK: lit.call tail @struct_extensions::@"launch_flying[::AnyType & struct_extensions::Flying]
+    # CHECK-SAME: <:!AnyType_Flying !Spaceship>
     launch_flying(ship)
 
 

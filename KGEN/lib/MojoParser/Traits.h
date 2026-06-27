@@ -36,6 +36,12 @@ LogicalResult verifyAndBuildConformance(ASTDecl &structDecl,
 void canonicalizeTraitCompositionSymbols(
     SharedState &shared, SmallVectorImpl<SymbolRefAttr> &symbols);
 
+/// Reduce the list of trait composition symbols to the minimal set of symbols
+/// that still implies the original trait composition.
+SmallVector<SymbolRefAttr>
+reduceTraitCompositionSymbols(SharedState &shared,
+                              ArrayRef<SymbolRefAttr> symbols);
+
 /// Given a type expression and scope-level assumptions, compute the effective
 /// trait bound implied by any `conforms_to(type, Trait)` constraints.
 TraitType getTraitBoundFromAssumptions(TypedAttr typeAttr, SharedState &shared,

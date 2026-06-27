@@ -93,8 +93,8 @@ struct Wrapper(Copyable):
 
 
 # CHECK-LABEL: lit.struct.decl @TrivialFieldGen
-# CHECK: lit.alias.decl __del__is_trivial: !Bool = <#kgen.get_witness<:!Movable_ImplicitlyDeletable T, "{{.*}}::ImplicitlyDeletable", "__del__is_trivial">>
-# CHECK: lit.alias.decl __move_ctor_is_trivial: !Bool = <#kgen.get_witness<:!Movable_ImplicitlyDeletable T, "{{.*}}::Movable", "__move_ctor_is_trivial">>
+# CHECK: lit.alias.decl __del__is_trivial: !Bool = <#kgen.get_witness<:!AnyType_ImplicitlyDeletable_Movable T, "{{.*}}::ImplicitlyDeletable", "__del__is_trivial">>
+# CHECK: lit.alias.decl __move_ctor_is_trivial: !Bool = <#kgen.get_witness<:!AnyType_ImplicitlyDeletable_Movable T, "{{.*}}::Movable", "__move_ctor_is_trivial">>
 struct TrivialFieldGen[T: Movable & ImplicitlyDeletable](Movable):
     var z: Self.T
     var y: Int

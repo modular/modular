@@ -56,11 +56,11 @@ def generic_fn[a: DType, b: Int, c: TrivialRegisterPassable](d : Int):
 # CHECK: lit.fn @"call_generic{{.*}}"<dt: !DType>()
 def call_generic[dt: DType]():
   # CHECK: %[[C57:.*]] = {{.*}}constant{{.*}}57
-  # CHECK: lit.call {{.*}}@"generic_fn{{.*}}"<:!DType dt, :!Int {{.*}}42{{.*}}, :!TrivialRegisterPassable !DType>(%[[C57]])
+  # CHECK: lit.call {{.*}}@"generic_fn{{.*}}"<:!DType dt, :!Int {{.*}}42{{.*}}, :!AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable_RegisterPassable_TrivialRegisterPassable !DType>(%[[C57]])
   generic_fn[dt, 42, DType](57)
 
   # CHECK: %[[C57_2:.*]] = {{.*}}constant{{.*}}57
-  # CHECK: lit.call {{.*}}@"generic_fn{{.*}}"<:!DType dt, :!Int {13}, :!TrivialRegisterPassable {{.*}}SIMD<:!DType dt, :!Int {4}>>(%[[C57_2]])
+  # CHECK: lit.call {{.*}}@"generic_fn{{.*}}"<:!DType dt, :!Int {13}, :!AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable_RegisterPassable_TrivialRegisterPassable {{.*}}SIMD<:!DType dt, :!Int {4}>>(%[[C57_2]])
   generic_fn[dt, 13, SIMD[dt, 4]](57)
 
 # CHECK-LABEL: lit.struct.decl @TestParamStruct<
@@ -173,7 +173,7 @@ struct TypeParameter[T: __mlir_type.`!kgen.non_struct_type`]:
 
 # Test that parameter decls can refine subsequent ones in the same param list.
 # CHECK-LABEL: lit.struct.decl @ParamSubst
-# CHECK-SAME: <T: {{.*}}, shape: param_list<:!TrivialRegisterPassable T>>
+# CHECK-SAME: <T: {{.*}}, shape: param_list<:!AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable_RegisterPassable_TrivialRegisterPassable T>>
 struct ParamSubst[
     T: TrivialRegisterPassable,
     shape: __mlir_type[`!kgen.param_list<`, T,`>`],
@@ -181,7 +181,7 @@ struct ParamSubst[
 
 # CHECK-LABEL: lit.fn @"testParamSubst
 def testParamSubst():
-  # CHECK: %xx = lit.var.decl {{.*}} : !lit.ref<!lit.struct<#ParamSubst <:!TrivialRegisterPassable {{..*}}<:non_struct_type index>, {{.*}}:param_list<index> [1, 2]>>,
+  # CHECK: %xx = lit.var.decl {{.*}} : !lit.ref<!lit.struct<#ParamSubst <:!AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable_RegisterPassable_TrivialRegisterPassable {{..*}}<:non_struct_type index>, {{.*}}:param_list<index> [1, 2]>>,
   var xx : ParamSubst[__mlir_type.index, __mlir_attr.`#kgen.param_list<1, 2> : !kgen.param_list<index>`]
 
 
@@ -769,7 +769,7 @@ def dependent_variadic_parameter[
 def pass_variadic[elems: __mlir_type.`!kgen.param_list<index>`]():
     # CHECK-NEXT: lit.call {{.*}}@"variadic_parameter{{.*}}"<:param_list<index> elems>
     _ = variadic_parameter[elems]()
-    # CHECK: lit.call {{.*}}@"dependent_variadic_parameter{{.*}}"<:!TrivialRegisterPassable !Int, :param_list<!Int>
+    # CHECK: lit.call {{.*}}@"dependent_variadic_parameter{{.*}}"<:!AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable_RegisterPassable_TrivialRegisterPassable !Int, :param_list<!Int>
     _ = dependent_variadic_parameter[type=Int, 1, 2]()
 
 
@@ -855,7 +855,7 @@ def testParamInference[size: Int](a: StaticVec[4], b: StaticVec[size],
   callee1(b)
   # CHECK-NEXT: lit.call tail {{.*}}callee1{{.*}}to_builtin(:scalar<index> add(from_builtin(#lit.struct.extract<:!Int size, "_mlir_value">), 2)){{.*}}>(%b2)
   callee1(b2)
-  # CHECK-NEXT: lit.call {{.*}}callee2{{.*}}<:!TrivialRegisterPassable {{.*}}StaticVec<:!Int size>>(%b)
+  # CHECK-NEXT: lit.call {{.*}}callee2{{.*}}<:!AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable_RegisterPassable_TrivialRegisterPassable {{.*}}StaticVec<:!Int size>>(%b)
   callee2(b)
   # CHECK-NEXT: lit.call {{.*}}callee3{{.*}}<:!Int {17}, :dtype f32>(%c)
   callee3[17](c)
@@ -941,11 +941,11 @@ def tail_types[T: TrivialRegisterPassable, *U: AnyType](a: T, *b: *U):
 
 # CHECK-LABEL: lit.fn @"call_with_tail_types()"
 def call_with_tail_types():
-    # CHECK: call {{.*}}tail_types{{.*}}<:param_list<!AnyType> [], :!TrivialRegisterPassable !Int,
+    # CHECK: call {{.*}}tail_types{{.*}}<:param_list<!AnyType> [], :!AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable_RegisterPassable_TrivialRegisterPassable !Int,
     tail_types(1)
-    # CHECK: call {{.*}}tail_types{{.*}}<:param_list<!AnyType> [!FloatDyn], :!TrivialRegisterPassable !Int,
+    # CHECK: call {{.*}}tail_types{{.*}}<:param_list<!AnyType> [!FloatDyn], :!AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable_RegisterPassable_TrivialRegisterPassable !Int,
     tail_types(1, 1.2)
-    # CHECK: call {{.*}}tail_types{{.*}}<:param_list<!AnyType> [!Int], :!TrivialRegisterPassable !Int,
+    # CHECK: call {{.*}}tail_types{{.*}}<:param_list<!AnyType> [!Int], :!AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable_RegisterPassable_TrivialRegisterPassable !Int,
     tail_types(1, 77)
 
 # COM: We can't infer parameters from the default value, but we need to test if
@@ -1022,7 +1022,7 @@ struct CallableArg[ArgT: TrivialRegisterPassable]:
 
 # CHECK-LABEL: lit.fn @"infer_conversion_arg_type
 def infer_conversion_arg_type(callable: CallableArg[NoneType]):
-    # CHECK: lit.call {{.*}}CallableArg::@"__call__{{.*}}<:!TrivialRegisterPassable !NoneType>
+    # CHECK: lit.call {{.*}}CallableArg::@"__call__{{.*}}<:!AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable_RegisterPassable_TrivialRegisterPassable !NoneType>
     callable(None)
 
 def take_two[a_type: DType, c_type: DType, width: Int](
@@ -1077,8 +1077,8 @@ struct HasToInt(TrivialRegisterPassable, ToInt):
 struct MixedInferAndPosParam[size: Int](TrivialRegisterPassable):
     var f0: Int
 
-    # CHECK-LABEL: lit.fn @"__init__[{{.*}}ToInt](
-    # CHECK-SAME: T0: !ToInt, T1: !ToInt
+    # CHECK-LABEL: lit.fn @"__init__[{{.*}}ToInt & ::AnyType](
+    # CHECK-SAME: T0: !ToInt_AnyType, T1: !ToInt_AnyType
     def __init__[T0: ToInt, T1: ToInt, //](out self, a: T0, b: T1):
         self.f0 = a.to_int()
 
@@ -1086,16 +1086,16 @@ struct MixedInferAndPosParam[size: Int](TrivialRegisterPassable):
 struct MixedInferAndPosParamWithInferredOnStruct[ST: ToInt, //, size: Int](TrivialRegisterPassable):
     var f0: Int
 
-    # CHECK-LABEL: lit.fn @"__init__[{{.*}}ToInt](
-    # CHECK-SAME: T0: !ToInt, T1: !ToInt
+    # CHECK-LABEL: lit.fn @"__init__[{{.*}}ToInt & ::AnyType](
+    # CHECK-SAME: T0: !ToInt_AnyType, T1: !ToInt_AnyType
     def __init__[T0: ToInt, T1: ToInt, //](out self, z: Self.ST, a: T0, b: T1):
         self.f0 = a.to_int()
 
 # CHECK-LABEL: lit.fn @"useMixedInferAndPosParam()"
 def useMixedInferAndPosParam():
-    # CHECK: lit.call {{.*}}::@MixedInferAndPosParam::@"__init__{{.*}}<:!Int {27}, :!ToInt !HasToInt, :!ToInt !HasToInt
+    # CHECK: lit.call {{.*}}::@MixedInferAndPosParam::@"__init__{{.*}}<:!Int {27}, :!ToInt_AnyType !HasToInt, :!ToInt_AnyType !HasToInt
     _ = MixedInferAndPosParam[27](HasToInt(37), HasToInt(47))
-    # CHECK: lit.call {{.*}}::@MixedInferAndPosParamWithInferredOnStruct::@"__init__{{.*}}<:!ToInt !HasToInt, :!Int {27}, :!ToInt !HasToInt, :!ToInt !HasToInt
+    # CHECK: lit.call {{.*}}::@MixedInferAndPosParamWithInferredOnStruct::@"__init__{{.*}}<:!ToInt_AnyType !HasToInt, :!Int {27}, :!ToInt_AnyType !HasToInt, :!ToInt_AnyType !HasToInt
     _ = MixedInferAndPosParamWithInferredOnStruct[27](HasToInt(99), HasToInt(37), HasToInt(47))
 
 struct Box[T: AnyType](TrivialRegisterPassable):
@@ -1158,7 +1158,7 @@ struct SomeWrapper[t: WithAnAlias, a: AnyType, b: AnyType]:
 
 def test_param_inference_contextual_fold():
     # CHECK: lit.call {{.*}}SomeWrapper::@"__init__
-    # CHECK-SAME: <:!WithAnAlias !SomeStruct,
+    # CHECK-SAME: <:!WithAnAlias_AnyType !SomeStruct,
     # CHECK-SAME: :!AnyType sugar_member_alias(!SomeStruct, "A", !Int),
     # CHECK-SAME: :!AnyType sugar_member_alias(!SomeStruct, "A", !Int)>
     sw = SomeWrapper[SomeStruct]()
@@ -1434,8 +1434,8 @@ struct StructWithParametricDefaultValue[T: TrivialRegisterPassable, N: Int = Int
 # CHECK-LABEL: lit.fn @"test_struct_with_parametric_default_value()"
 def test_struct_with_parametric_default_value():
     # CHECK: lit.alias.decl *"a{{.*}}": meta<!lit.struct<{{.*}}>> = <@{{.*}}::@StructWithParametricDefaultValue<
-    # CHECK-SAME: :!TrivialRegisterPassable !Int,
-    # CHECK-SAME: :!Int apply(:!lit.generator<() -> !Int> @{{.*}}::@"IntForType[::TrivialRegisterPassable]()"{{.*}}<:!TrivialRegisterPassable !Int>)>
+    # CHECK-SAME: :!AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable_RegisterPassable_TrivialRegisterPassable !Int,
+    # CHECK-SAME: :!Int apply(:!lit.generator<() -> !Int> @{{.*}}::@"IntForType[::AnyType & ::Copyable & ::ImplicitlyCopyable & ::ImplicitlyDeletable & ::Movable & ::RegisterPassable & ::TrivialRegisterPassable]()"{{.*}}<:!AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable_RegisterPassable_TrivialRegisterPassable !Int>)>
     comptime a = StructWithParametricDefaultValue[Int]
 
 ##===----------------------------------------------------------------------===##
@@ -1607,7 +1607,7 @@ def test_inference_from_Self_type(x: Int):
   implicit_convert_specific_Self(x)
 
   # CHECK: [[TMP:%.*]] = lit.var.decl "__call_result_tmp__"
-  # CHECK: lit.call {{.*}}__init__{{.*}}<:!AnyType !Int, :!Movable !Int>{{.*}}({{.*}}, [[TMP]])
+  # CHECK: lit.call {{.*}}__init__{{.*}}<:!AnyType !Int, :!AnyType_Movable !Int>{{.*}}({{.*}}, [[TMP]])
   _ = DependentSpecificInitSelf(x)
 
 struct AutoParamDefault[value: Int, param: Int, default: Int = param]:
@@ -1731,9 +1731,9 @@ def infer_variadic[
 
 # CHECK-LABEL:     lit.fn @"test_infer_variadic()"
 def test_infer_variadic():
-    # CHECK: lit.call {{.*}}@"infer_variadic{{.*}}"<:param_list<!Movable>
+    # CHECK: lit.call {{.*}}@"infer_variadic{{.*}}"<:param_list<!AnyType_Movable>
     # CHECK-SAME: [!Int, !Bool]
-    # CHECK-SAME: :meta<!lit.struct<#Tuple <:param_list<!Movable>
+    # CHECK-SAME: :meta<!lit.struct<#Tuple <:param_list<!AnyType_Movable>
     infer_variadic[Tuple[Int, Bool]]()
 
 # Make sure we can store RP types with different sugars correctly.
@@ -1788,7 +1788,7 @@ def takeGenerator[
 # CHECK-LABEL: lit.fn @"myDriver()"()
 def myDriver():
     # We should be able to infer From -> Copyable, To -> mt_Int
-    # CHECK: %0 = lit.call {{.*}}@"takeGenerator{{.*}}"<:!lit.anytrait<!AnyType> !Copyable, :!lit.anytrait<!AnyType> !mt_Int, :!lit.generator<<"From": !Copyable>!mt_Int>
+    # CHECK: %0 = lit.call {{.*}}@"takeGenerator{{.*}}"<:!lit.anytrait<!AnyType> !AnyType_Copyable_Movable, :!lit.anytrait<!AnyType> !mt_Int, :!lit.generator<<"From": !AnyType_Copyable_Movable>!mt_Int>
     takeGenerator[Generator]()
 
 # This should not crash, even though TakesXOrigin has an inferred parameter

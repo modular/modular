@@ -29,5 +29,5 @@ def test() -> Int:
     # This call requires the extension conformance to be pulled in from the
     # precompiled file. Without it, this would fail in the elaborator because
     # it can't find the conformance.
-    # CHECK: kgen.call @"extension_conformance_dce::use_convertible[struct_and_conforming_extension_package::my_struct::Convertible]
+    # CHECK: kgen.call @"extension_conformance_dce::use_convertible[::AnyType & struct_and_conforming_extension_package::my_struct::Convertible]
     return use_convertible(s)

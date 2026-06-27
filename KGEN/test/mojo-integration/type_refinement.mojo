@@ -1005,7 +1005,7 @@ def explicit_downcast_ref_to_original_ref[
 
 
 @fieldwise_init
-struct RefinedFieldHolder[T: Copyable & ImplicitlyDeletable & Movable]:
+struct RefinedFieldHolder[T: Copyable & ImplicitlyDeletable]:
     var value: Self.T
 
     def use_value(self) -> Bool where conforms_to(Self.T, Equatable):
@@ -1267,7 +1267,7 @@ def downcast_preserves_refinement_ref[
 # `trait_downcast_var` consumes its argument, so copy to keep `x` live and
 # verify its Describable refinement survives across the owning downcast call.
 def downcast_preserves_refinement_var[
-    T: Copyable & ImplicitlyDeletable & Movable
+    T: Copyable & ImplicitlyDeletable
 ](var x: T) -> String where conforms_to(T, Describable):
     var before = needs_describable(x)
     var y = trait_downcast_var[Greetable & ImplicitlyDeletable & Movable](

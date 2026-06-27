@@ -1529,7 +1529,7 @@ struct TestSynthesizedConditionalDtor[T: Movable & ImplicitlyDeletable](
 ):
     var data: Self.T
 
-# CHECK: lit.fn @"__del__{{.*}}TestSynthesizedConditionalDtor{{.*}}conforms_to(:!Movable_ImplicitlyDeletable T, {{.*}}ImplicitlyDeletable{{.*}}synthetic
+# CHECK: lit.fn @"__del__{{.*}}TestSynthesizedConditionalDtor{{.*}}conforms_to(:!AnyType_ImplicitlyDeletable_Movable T, {{.*}}ImplicitlyDeletable{{.*}}synthetic
 
 # MOCO-4059: Conditionally linear type with concrete struct.
 # CHECK-LABEL: lit.struct.decl @AConditionallyLinearType
