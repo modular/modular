@@ -867,16 +867,14 @@ def test_comptime_if_guard():
 # ===========================================================================
 # where clause proves variadic conditional conformance
 # ===========================================================================
-# A where clause asserting AllWritable[*types] enables calling repr() on
-# Tuple[*types], because the assumption is wired into doesNominalTypeConformTo
-# via constraintImplies.
-
-from std.reflection.traits import AllWritable
+# A where clause asserting types.all_conforms_to[Writable]() enables calling
+# repr() on Tuple[*types], because the assumption is wired into
+# doesNominalTypeConformTo via constraintImplies.
 
 
 def repr_with_where[
     *types: Movable & Writable
-](t: Tuple[*types]) -> String where AllWritable[*types]:
+](t: Tuple[*types]) -> String where conforms_to(Tuple[*types], Writable):
     return repr(t)
 
 
