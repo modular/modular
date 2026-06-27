@@ -210,6 +210,16 @@ This version is still a work in progress.
   if you must discard it, make the cast explicit with the
   `as_unsafe_any_origin()` method.
 
+- Added `reflect[T].field_at[idx]` to the reflection API, the by-index dual
+  of `reflect[T].field[name]`. It returns the reflection handle for the
+  type of the field at `idx`, so a field's concrete type can be recovered while
+  iterating fields by index (where the name is not available as a literal):
+
+  ```mojo
+  comptime y_type = reflect[Point].field_at[1]
+  var v: y_type.T = 3.14  # y_type.T is the concrete field type
+  ```
+
 - The traits `ImplicitlyDeletable`, `Movable`, `Copyable`, and
   `ImplicitlyCopyable` are now stable.
 
