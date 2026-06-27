@@ -20,30 +20,21 @@ Llama-style MHA Eagle3 head (``LlamaForCausalLMEagle3``) over a bare
 from __future__ import annotations
 
 import logging
-from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, ClassVar
 
-import numpy as np
 from max._core.driver import is_virtual_device_mode
-from max.driver import Buffer, Device
+from max.driver import Buffer
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import BufferValue, Graph, TensorValue, Value
-from max.graph.weights import Weights, WeightsAdapter, load_weights
+from max.graph.weights import load_weights
 from max.nn.comm.ep import EPCommInitializer
 from max.nn.kv_cache import (
-    KVCacheInputsInterface,
     KVCacheParams,
     MultiKVCacheParams,
 )
-from max.nn.transformer import ReturnHiddenStates, ReturnLogits
-from max.pipelines.context import TextContext
-from max.pipelines.lib import (
-    CompilationTimer,
-    KVCacheConfig,
-    PipelineConfig,
-)
+from max.pipelines.lib import CompilationTimer
 from max.pipelines.lib.interfaces import UnifiedSpecDecodeInputs
 from max.pipelines.lib.pipeline_variants.unified_spec_decode_model import (
     _UnifiedSpecDecodeModelMixin,
@@ -58,6 +49,7 @@ from ..kimik2_5.unified_eagle_mha_pipeline_model import (
     _infer_fc_input_multiplier,
 )
 from ..kimik2_5.weight_adapters import convert_llama_eagle3_draft_state_dict
+from .batch_processor import Eagle3MHADeepseekV3BatchProcessor
 from .model import extract_eagle_aux_layer_ids
 
 logger = logging.getLogger("max.pipelines")
@@ -87,48 +79,12 @@ class Eagle3MHADeepseekV3Inputs(UnifiedSpecDecodeInputs, DeepseekV3Inputs):
 class Eagle3MHADeepseekV3Model(_UnifiedSpecDecodeModelMixin, DeepseekV3Model):
     """Eagle3 MHA-draft + DeepseekV3: target + draft in one compiled graph."""
 
-    def __init__(
-        self,
-        pipeline_config: PipelineConfig,
-        session: InferenceSession,
-        devices: list[Device],
-        kv_cache_config: KVCacheConfig,
-        weights: Weights,
-        adapter: WeightsAdapter | None = None,
-        return_logits: ReturnLogits = ReturnLogits.VARIABLE,
-        return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.SELECTED_LAYERS,
-    ) -> None:
-        super().__init__(
-            pipeline_config,
-            session,
-            devices,
-            kv_cache_config,
-            weights,
-            adapter,
-            return_logits,
-            return_hidden_states,
-        )
-        self._seed_counter = 0
+    batch_processor_cls: ClassVar[type[Eagle3MHADeepseekV3BatchProcessor]] = (
+        Eagle3MHADeepseekV3BatchProcessor
+    )
 
     @override
     def load_model(self, session: InferenceSession) -> Model:
-        max_batch_size = self.pipeline_config.runtime.max_batch_size
-        assert max_batch_size, "Expected max_batch_size to be set"
-
-        dp_size = self.pipeline_config.model.data_parallel_degree
-        max_batch_size *= dp_size
-
-        self._host_input_row_offsets_prealloc = Buffer.from_numpy(
-            np.arange(max_batch_size + 1, dtype=np.uint32)
-        )
-        self._device_input_row_offsets_prealloc = (
-            self._host_input_row_offsets_prealloc.to(self.devices[0])
-        )
-        self._batch_context_lengths_prealloc_cpu = [
-            Buffer.zeros(shape=[1], dtype=DType.int32)
-            for _ in range(len(self.devices))
-        ]
-
         if self.adapter:
             target_state_dict = self.adapter(
                 dict(self.weights.items()),
@@ -364,33 +320,14 @@ class Eagle3MHADeepseekV3Model(_UnifiedSpecDecodeModelMixin, DeepseekV3Model):
             timer.mark_build_complete()
             model = session.load(graph, weights_registry=self.state_dict)
 
-        return model
+        if self._batch_processor is not None:
+            bind_ep = getattr(
+                self._batch_processor, "bind_ep_comm_initializer", None
+            )
+            if bind_ep is not None:
+                bind_ep(self.ep_comm_initializer)
 
-    def prepare_initial_token_inputs(
-        self,
-        replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
-        return_n_logits: int = 1,
-        draft_tokens: Buffer | None = None,
-        **kwargs,
-    ) -> Eagle3MHADeepseekV3Inputs:
-        base = DeepseekV3Model.prepare_initial_token_inputs(
-            self, replica_batches, kv_cache_inputs, return_n_logits
-        )
-        return Eagle3MHADeepseekV3Inputs(
-            tokens=base.tokens,
-            input_row_offsets=base.input_row_offsets,
-            host_input_row_offsets=base.host_input_row_offsets,
-            batch_context_lengths=base.batch_context_lengths,
-            signal_buffers=base.signal_buffers,
-            kv_cache_inputs=base.kv_cache_inputs,
-            return_n_logits=base.return_n_logits,
-            data_parallel_splits=base.data_parallel_splits,
-            ep_inputs=base.ep_inputs,
-            draft_tokens=draft_tokens,
-            seed=self._next_seed(),
-            structured_output=self.pipeline_config.needs_bitmask_constraints,
-        )
+        return model
 
 
 def _default_aux_layer_ids(

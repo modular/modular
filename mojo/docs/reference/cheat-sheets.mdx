@@ -4,98 +4,198 @@ sidebar_label: Cheat sheets
 description: Quick reference cards for Mojo's syntax and keywords
 ---
 
-<!--
-FIXME:
-
-SVG must be hosted in @site/static. Downloads from assets/name.svg or
-assets/name.svg?url don't work.
-
-SVGR turns .svg imports into React components, so there's no href to
-download.
-
-Update fe to support SVG downloads.
--->
-
 <!-- markdownlint-disable MD033 -->
+
+import {useColorMode} from '@docusaurus/theme-common';
+
+export const basicsSheet = {
+  id: 'mojo-cheat-sheet-basics',
+  lightPng: require('./assets/basics/mojo-cheat-sheet-basics-light.png').default,
+  lightPdf: require('./assets/basics/mojo-cheat-sheet-basics-light.pdf').default,
+  darkPng: require('./assets/basics/mojo-cheat-sheet-basics-dark.png').default,
+  darkPdf: require('./assets/basics/mojo-cheat-sheet-basics-dark.pdf').default,
+};
+
+export const typesSheet = {
+  id: 'mojo-cheat-sheet-types-and-literals',
+  lightPng: require('./assets/types-literals/mojo-cheat-sheet-types-and-literals-light.png').default,
+  lightPdf: require('./assets/types-literals/mojo-cheat-sheet-types-and-literals-light.pdf').default,
+  darkPng: require('./assets/types-literals/mojo-cheat-sheet-types-and-literals-dark.png').default,
+  darkPdf: require('./assets/types-literals/mojo-cheat-sheet-types-and-literals-dark.pdf').default,
+};
+
+export const convertSheet = {
+  id: 'mojo-cheat-sheet-conversions',
+  lightPng: require('./assets/conversions/mojo-cheat-sheet-conversions-light.png').default,
+  lightPdf: require('./assets/conversions/mojo-cheat-sheet-conversions-light.pdf').default,
+  darkPng: require('./assets/conversions/mojo-cheat-sheet-conversions-dark.png').default,
+  darkPdf: require('./assets/conversions/mojo-cheat-sheet-conversions-dark.pdf').default,
+};
+
+export const traitsSheet = {
+  id: 'mojo-cheat-sheet-traits',
+  lightPng: require('./assets/traits/mojo-cheat-sheet-traits-light.png').default,
+  lightPdf: require('./assets/traits/mojo-cheat-sheet-traits-light.pdf').default,
+  darkPng: require('./assets/traits/mojo-cheat-sheet-traits-dark.png').default,
+  darkPdf: require('./assets/traits/mojo-cheat-sheet-traits-dark.pdf').default,
+};
+
+export const Preview = ({sheet, alt}) => {
+  const {colorMode} = useColorMode();
+  const img = colorMode === 'dark' ? sheet.darkPng : sheet.lightPng;
+  return (
+    <a
+      className="cheatsheet-preview"
+      href={img}
+      target="_blank"
+      rel="noopener noreferrer"
+      aria-label={alt}
+      title="Open the full-size cheat sheet in a new tab"
+      style={{
+        position: 'relative',
+        display: 'block',
+        height: '190px',
+        overflow: 'hidden',
+        cursor: 'zoom-in',
+        marginTop: '0.75rem',
+        borderRadius: '10px',
+        backgroundImage: `url(${img})`,
+        backgroundSize: '130%',
+        backgroundPosition: 'top left',
+        backgroundRepeat: 'no-repeat',
+      }}>
+      <span
+        className="cheatsheet-badge"
+        aria-hidden="true"
+        style={{
+          position: 'absolute',
+          top: '0.5rem',
+          right: '0.5rem',
+          padding: '0.15rem 0.55rem',
+          borderRadius: '999px',
+          fontSize: '0.72rem',
+          fontWeight: 700,
+          color: '#fff',
+          background: 'rgba(0, 0, 0, 0.65)',
+        }}>
+        ⤢ Full size
+      </span>
+    </a>
+  );
+};
+
+{/* PNG/PDF resolve via require() of co-located ./assets files. SVG can't be
+    co-located (SVGR turns a bundled .svg import into a React component, so
+    there's no URL). Host the SVGs in mojosite/static/img/cheatsheet-assets/,
+    add `import useBaseUrl from '@docusaurus/useBaseUrl';` up top, then uncomment
+    the SVG segment in each row below. */}
+export const DownloadRow = ({label, png, pdf, name}) => (
+  <div style={{display: 'flex', alignItems: 'center', gap: '0.75rem'}}>
+    <span
+      style={{
+        fontSize: '0.8rem',
+        fontWeight: 400,
+        minWidth: '2.75rem',
+        color: 'var(--ifm-color-emphasis-700)',
+      }}>
+      {label}
+    </span>
+    <div className="button-group">
+      <a className="button button--sm button--outline button--primary" href={png} download={`${name}.png`}>PNG</a>
+      <a className="button button--sm button--outline button--primary" href={pdf} download={`${name}.pdf`}>PDF</a>
+      {/* <a className="button button--sm button--outline button--primary" href={useBaseUrl(`/img/cheatsheet-assets/${name}.svg`)} download={`${name}.svg`}>SVG</a> */}
+    </div>
+  </div>
+);
+
+export const Downloads = ({sheet}) => (
+  <div
+    style={{
+      marginTop: '1.1rem',
+      paddingTop: '1rem',
+      borderTop: '1px solid var(--ifm-color-emphasis-200)',
+      display: 'flex',
+      flexDirection: 'column',
+      gap: '0.5rem',
+    }}>
+    <DownloadRow label="Light" png={sheet.lightPng} pdf={sheet.lightPdf} name={`${sheet.id}-light`} />
+    <DownloadRow label="Dark" png={sheet.darkPng} pdf={sheet.darkPdf} name={`${sheet.id}-dark`} />
+  </div>
+);
+
+export const CheatSheet = ({sheet, alt, children}) => (
+  <div
+    className="cheatsheet-card"
+    style={{
+      display: 'flex',
+      flexDirection: 'column',
+      border: '1px solid var(--ifm-color-emphasis-300)',
+      borderRadius: '12px',
+      padding: '1.25rem',
+      background: 'var(--ifm-background-color)',
+    }}>
+    <div>{children}</div>
+    <Preview sheet={sheet} alt={alt} />
+    <Downloads sheet={sheet} />
+  </div>
+);
+
+Quick-reference cards for Mojo syntax and types. Each preview matches your
+light or dark theme. Click a preview to open it full size, or download a PNG
+or PDF to keep.
+
+<style>{`
+  .cheatsheet-card { transition: border-color 0.15s ease; }
+  .cheatsheet-card:hover { border-color: var(--ifm-color-primary); }
+  .cheatsheet-card .button { border-width: 1px; font-weight: 400; }
+  .cheatsheet-card h2 { margin-top: 0; margin-bottom: 0.4rem; font-size: 1.25rem; }
+  .cheatsheet-card p { margin-bottom: 0; font-size: 0.9rem; line-height: 1.45; color: var(--ifm-color-emphasis-700); }
+  .cheatsheet-badge { opacity: 0; transition: opacity 0.15s ease; }
+  .cheatsheet-card:hover .cheatsheet-badge { opacity: 1; }
+  .cheatsheet-preview { transition: background-size 0.3s ease, border-color 0.15s ease; }
+  .cheatsheet-preview:hover { background-size: 138%; }
+`}</style>
+
 <div
   style={{
-    border: '2px solid var(--Elements-Ember-20-DarkAlpha)',
-    borderRadius: '18px',
-    padding: '2rem',
-    marginBottom: '2rem',
-    boxShadow: 'var(--Shadow-3)',
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))',
+    gap: '1.5rem',
+    margin: '1.5rem 0',
   }}>
 
-## 🔥 Mojo basics {#mojo-basics}
+<CheatSheet sheet={basicsSheet} alt="Mojo basics cheat sheet">
 
-<p>Syntax essentials. The core you reach for first.</p>
+## Mojo basics {#mojo-basics}
 
-<p>
-Download:&nbsp;&nbsp;
-  <a className="button button--outline button--secondary" href={require('./assets/mojo-cheat-sheet-basics-light.png').default} download>☀️ PNG</a>{' '}
-  <a className="button button--outline button--secondary" href={require('./assets/mojo-cheat-sheet-basics-light.pdf').default} download>☀️ PDF</a>{' '}
-  <a className="button button--outline button--secondary" href={require('./assets/mojo-cheat-sheet-basics-dark.png').default} download>🌙 PNG</a>{' '}
-  <a className="button button--outline button--secondary" href={require('./assets/mojo-cheat-sheet-basics-dark.pdf').default} download>🌙 PDF</a>
-</p>
+Syntax essentials. The core you reach for first.
 
-<details   style={{
-    marginTop: '1rem',
-    border: '2px solid var(--Elements-Ember-20-DarkAlpha)',
-    borderRadius: '8px',
-    padding: '1rem',
-  }}>
+</CheatSheet>
 
-  <summary>Preview cheatsheet</summary>
+<CheatSheet sheet={typesSheet} alt="Mojo types and literals cheat sheet">
 
-  <img
-    src={require('./assets/mojo-cheat-sheet-basics-dark.png').default}
-    alt="Mojo basics cheat sheet"
-    width="480"
-  />
+## Types and literals {#types-and-literals}
 
-</details>
-</div>
+Types, literals, and the sharp edges. Know before you write.
 
-<!-- markdownlint-enable MD033 -->
+</CheatSheet>
 
-<!-- markdownlint-disable MD033 -->
-<div
-  style={{
-    border: '2px solid var(--Elements-Ember-20-DarkAlpha)',
-    borderRadius: '18px',
-    padding: '2rem',
-    marginBottom: '2rem',
-    boxShadow: 'var(--Shadow-3)',
-  }}>
+<CheatSheet sheet={convertSheet} alt="Mojo conversions cheat sheet">
 
-## 🔥 Types and literals {#types-and-literals}
+## Type conversions {#conversions}
 
-<p>Types, literals, and the sharp edges. Know before you write.</p>
+Create it or convert it, and get back to work.
 
-<p>
-Download:&nbsp;&nbsp;
-  <a className="button button--outline button--secondary" href={require('./assets/mojo-cheat-sheet-types-and-literals-light.png').default} download>☀️ PNG</a>{' '}
-  <a className="button button--outline button--secondary" href={require('./assets/mojo-cheat-sheet-types-and-literals-light.pdf').default} download>☀️ PDF</a>{' '}
-  <a className="button button--outline button--secondary" href={require('./assets/mojo-cheat-sheet-types-and-literals-dark.png').default} download>🌙 PNG</a>{' '}
-  <a className="button button--outline button--secondary" href={require('./assets/mojo-cheat-sheet-types-and-literals-dark.pdf').default} download>🌙 PDF</a>
-</p>
+</CheatSheet>
 
-<details   style={{
-    marginTop: '1rem',
-    border: '2px solid var(--Elements-Ember-20-DarkAlpha)',
-    borderRadius: '8px',
-    padding: '1rem',
-  }}>
+<CheatSheet sheet={traitsSheet} alt="Mojo traits cheat sheet">
 
-  <summary>Preview cheatsheet</summary>
+## Traits {#traits}
 
-  <img
-    src={require('./assets/mojo-cheat-sheet-types-and-literals-dark.png').default}
-    alt="Mojo types and literals cheat sheet"
-    width="480"
-  />
+Shared capabilities and requirements. Know what generic code expects.
 
-</details>
+</CheatSheet>
+
 </div>
 
 <!-- markdownlint-enable MD033 -->

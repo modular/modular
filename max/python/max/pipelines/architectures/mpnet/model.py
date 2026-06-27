@@ -18,15 +18,12 @@ Implementation is based on MPNetModel from the transformers library.
 from __future__ import annotations
 
 import logging
-from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import ClassVar
 
-import numpy as np
 from max.driver import Buffer, Device
 from max.engine import InferenceSession, Model
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn.kv_cache import KVCacheInputsInterface
 from max.nn.transformer import ReturnLogits
 from max.pipelines.context import TextContext
 from max.pipelines.lib import (
@@ -37,8 +34,8 @@ from max.pipelines.lib import (
     PipelineConfig,
     PipelineModel,
 )
-from max.pipelines.modeling.dataprocessing import collate_batch
 
+from .batch_processor import MPNetBatchProcessor
 from .graph import build_graph
 from .model_config import MPNetConfig
 
@@ -62,6 +59,9 @@ class MPNetInputs(ModelInputs):
 
 class MPNetPipelineModel(PipelineModel[TextContext]):
     model_config_cls: ClassVar[type[MPNetConfig]] = MPNetConfig
+    batch_processor_cls: ClassVar[type[MPNetBatchProcessor]] = (
+        MPNetBatchProcessor
+    )
 
     def __init__(
         self,
@@ -72,6 +72,7 @@ class MPNetPipelineModel(PipelineModel[TextContext]):
         weights: Weights,
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.ALL,
+        max_batch_size: int = 1,
     ) -> None:
         super().__init__(
             pipeline_config,
@@ -81,6 +82,7 @@ class MPNetPipelineModel(PipelineModel[TextContext]):
             weights,
             adapter,
             return_logits,
+            max_batch_size=max_batch_size,
         )
         self.model = self.load_model(session)
 
@@ -92,40 +94,6 @@ class MPNetPipelineModel(PipelineModel[TextContext]):
         assert isinstance(model_outputs[0], Buffer)
 
         return ModelOutputs(logits=model_outputs[0])
-
-    def prepare_initial_token_inputs(
-        self,
-        replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
-        return_n_logits: int = 1,
-    ) -> MPNetInputs:
-        if len(replica_batches) > 1:
-            raise ValueError("Model does not support DP>1")
-
-        context_batch = replica_batches[0]
-
-        # Get tokens and seq_ids.
-        tokens = [ctx.tokens.active for ctx in context_batch]
-
-        # Pad tokens for the batch.
-        pad_value = getattr(self.huggingface_config, "pad_token_id", 1)
-        next_tokens_batch, _ = collate_batch(
-            tokens,
-            pad_value=pad_value,
-            batch_size=len(tokens),
-        )
-
-        # Compute attention mask.
-        attention_mask = (next_tokens_batch != pad_value).astype(np.float32)
-
-        return MPNetInputs(
-            next_tokens_batch=Buffer.from_numpy(next_tokens_batch).to(
-                self.devices[0]
-            ),
-            attention_mask=Buffer.from_numpy(attention_mask).to(
-                self.devices[0]
-            ),
-        )
 
     def load_model(self, session: InferenceSession) -> Model:
         with CompilationTimer("model") as timer:

@@ -19,7 +19,7 @@ from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
 from max.nn.attention import MHAMaskVariant
 from max.nn.kernels import flare_mla_prefill_ragged
-from max.nn.kv_cache import KVCacheParams, PagedCacheValues
+from max.nn.kv_cache import MHAKVCacheParams, PagedCacheValues
 from max.pipelines.kv_cache import PagedKVCacheManager
 from test_common.context_utils import create_text_context
 
@@ -31,7 +31,7 @@ def test_kv_cache_paged_mla_prefill(gpu_session: InferenceSession) -> None:
     q_head_dim = 192
     k_head_dim = 128
     num_layers = 1
-    kv_params = KVCacheParams(
+    kv_params = MHAKVCacheParams(
         dtype=DType.bfloat16,
         n_kv_heads=1,
         head_dim=576,
@@ -86,7 +86,8 @@ def test_kv_cache_paged_mla_prefill(gpu_session: InferenceSession) -> None:
                 blocks,
                 cache_lengths,
                 lookup_table,
-                is_cache_empty,
+                max_prompt_length,
+                max_cache_length,
                 _attention_dispatch_metadata,
             ) = g.inputs
 
@@ -96,7 +97,8 @@ def test_kv_cache_paged_mla_prefill(gpu_session: InferenceSession) -> None:
                 blocks.buffer,
                 cache_lengths.tensor,
                 lookup_table.tensor,
-                is_cache_empty.tensor,
+                max_prompt_length.tensor,
+                max_cache_length.tensor,
             )
             result = flare_mla_prefill_ragged(
                 kv_params,

@@ -15,6 +15,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
+from pathlib import Path
 from typing import Protocol
 
 import numpy as np
@@ -167,6 +169,7 @@ def token_sampler(
     device: DeviceRef,
     return_logits: bool = False,
     needs_bitmask_input: bool | None = None,
+    custom_extensions: Iterable[Path] = (),
 ) -> Graph:
     """Builds a sampling graph that samples tokens from logits.
 
@@ -179,6 +182,8 @@ def token_sampler(
             ``sampling_config.enable_structured_output``. Callers should
             pass ``True`` explicitly when tool-call grammars can fire even
             though ``--enable-structured-output`` is off.
+        custom_extensions: Custom-op extension paths to compile the graph
+            with. Empty by default.
 
     Returns:
         A graph that takes logits (and optional penalty inputs) and outputs tokens.
@@ -191,7 +196,11 @@ def token_sampler(
         device=device,
         needs_bitmask_input=needs_bitmask_input,
     )
-    with Graph("top_k_sampler", input_types=_input_dict.values()) as graph:
+    with Graph(
+        "top_k_sampler",
+        input_types=_input_dict.values(),
+        custom_extensions=custom_extensions,
+    ) as graph:
         # Deconstruct inputs
         # TODO: Explore better ways of indexing into these input values
         # tightly coupling the input order with element indices feels

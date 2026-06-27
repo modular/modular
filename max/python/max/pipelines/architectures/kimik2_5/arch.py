@@ -16,6 +16,7 @@ from max.pipelines.lib import SupportedArchitecture
 from max.pipelines.modeling.types import InputModality, PipelineTask
 
 from . import weight_adapters
+from .batch_processor import KimiK2_5BatchProcessor
 from .context import KimiK2_5TextAndVisionContext
 from .memory_planner import KimiK25MemoryPlanner
 from .model import KimiK2_5Model
@@ -40,6 +41,7 @@ kimik2_5_arch = SupportedArchitecture(
     multi_gpu_supported=True,
     input_modalities={InputModality.TEXT, InputModality.IMAGE},
     pipeline_model=KimiK2_5Model,
+    batching=KimiK2_5BatchProcessor,
     tokenizer=KimiK2_5VLTokenizer,
     context_type=KimiK2_5TextAndVisionContext,
     default_weights_format=WeightsFormat.safetensors,
@@ -69,6 +71,7 @@ kimivl_arch = SupportedArchitecture(
     multi_gpu_supported=True,
     input_modalities={InputModality.TEXT, InputModality.IMAGE},
     pipeline_model=KimiK2_5Model,
+    batching=KimiK2_5BatchProcessor,
     tokenizer=KimiK2_5VLTokenizer,
     context_type=KimiK2_5TextAndVisionContext,
     default_weights_format=WeightsFormat.safetensors,
@@ -81,6 +84,8 @@ kimivl_arch = SupportedArchitecture(
     tool_parser="kimik2_5",
     reasoning_parser="kimik2_5",
     memory_planner=KimiK25MemoryPlanner,
+    supports_overlap_scheduler=False,
+    supports_device_graph_capture=False,
 )
 
 eagle3_kimik25_arch = SupportedArchitecture(

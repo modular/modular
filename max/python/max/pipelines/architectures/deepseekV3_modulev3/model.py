@@ -18,14 +18,13 @@ import logging
 from collections.abc import Callable
 from typing import Any, ClassVar, cast
 
-import numpy as np
 from max.driver import Buffer, Device, is_virtual_device_mode
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.experimental import functional as F
 from max.experimental.sharding import DeviceMesh
 from max.experimental.tensor import default_dtype
-from max.graph import DeviceRef, TensorType
+from max.graph import DeviceRef
 from max.graph.weights import SafetensorWeights, Weights, WeightsAdapter
 from max.nn.comm.ep import (
     EPBatchManager,
@@ -45,6 +44,7 @@ from max.pipelines.weights.quant import parse_quant_config
 from transformers import AutoConfig
 
 from ..deepseekV2_modulev3.model import DeepseekV2Inputs, DeepseekV2Model
+from .batch_processor import DeepseekV3ModuleV3BatchProcessor
 from .deepseekV3 import DeepseekV3
 from .model_config import DeepseekV3Config
 
@@ -60,6 +60,9 @@ class DeepseekV3Model(DeepseekV2Model):
     """A DeepseekV3 model (ModuleV3), single- or multi-GPU (TP attention, EP)."""
 
     model_config_cls: ClassVar[type[Any]] = DeepseekV3Config
+    batch_processor_cls: ClassVar[type[DeepseekV3ModuleV3BatchProcessor]] = (
+        DeepseekV3ModuleV3BatchProcessor
+    )
 
     def __init__(
         self,
@@ -70,6 +73,7 @@ class DeepseekV3Model(DeepseekV2Model):
         weights: Weights,
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
+        max_batch_size: int = 1,
     ) -> None:
         # Capture the session so load_model() can initialize EP communication,
         # and default the EP buffers so execute() works without EP.
@@ -83,6 +87,7 @@ class DeepseekV3Model(DeepseekV2Model):
             weights,
             adapter,
             return_logits,
+            max_batch_size=max_batch_size,
         )
 
     def _build_ep_config(
@@ -141,13 +146,6 @@ class DeepseekV3Model(DeepseekV2Model):
         )
 
     def load_model(self) -> Callable[..., Any]:
-        max_batch_size = self.pipeline_config.runtime.max_batch_size
-        assert max_batch_size, "Expected max_batch_size to be set"
-
-        self._input_row_offsets_prealloc = Buffer.from_numpy(
-            np.arange(max_batch_size + 1, dtype=np.uint32)
-        ).to(self.devices[0])
-
         if not isinstance(self.weights, SafetensorWeights):
             raise ValueError(
                 "only safetensors weights supported in DeepseekV3."
@@ -222,15 +220,6 @@ class DeepseekV3Model(DeepseekV2Model):
 
         device0 = self.devices[0]
         device_ref = DeviceRef(device0.label, device0.id)
-        tokens_type = TensorType(
-            DType.int64, shape=["total_seq_len"], device=device_ref
-        )
-        input_row_offsets_type = TensorType(
-            DType.uint32, shape=["input_row_offsets_len"], device=device_ref
-        )
-        return_n_logits_type = TensorType(
-            DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
-        )
 
         # When the weights are FP8, build the module with a bf16 default so
         # the non-quantized parameters (norms, biases, embeddings) match the
@@ -244,15 +233,17 @@ class DeepseekV3Model(DeepseekV2Model):
             )
             nn_model.to(mesh)
 
-        kv_inputs = self.kv_params.get_symbolic_inputs()
-        flattened_kv_types = kv_inputs.flatten()
+        assert isinstance(
+            self.batch_processor, DeepseekV3ModuleV3BatchProcessor
+        )
+        compile_input_types = self.batch_processor.get_symbolic_inputs(
+            kv_params=self.kv_params,
+            device_refs=[device_ref],
+            extra_input_types=ep_input_types,
+        )
 
         return nn_model.compile(
-            tokens_type,
-            return_n_logits_type,
-            input_row_offsets_type,
-            *flattened_kv_types,
-            *ep_input_types,
+            *compile_input_types,
             weights=state_dict,
         )
 

@@ -32,7 +32,7 @@ Basically, MyPy was designed with a C++ mindset, and would make perfect sense
 if python had nice variadic template type metaprogramming tools. But it doesn't.
 So we have this horrible monster adapter just to make MyPy happy with our decorator.
 At least it's quarantined in this file, and not mixed with any business logic.
-So hopefully it will remain out of the way for future maintainence.
+So hopefully it will remain out of the way for future maintenance.
 """
 
 from __future__ import annotations

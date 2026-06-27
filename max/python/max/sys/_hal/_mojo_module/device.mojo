@@ -15,8 +15,8 @@
 from std.memory import ArcPointer, UnsafePointer
 from std.os import abort
 from std.python import PythonObject
-from std.sys._hal.context import Context as HALContext
-from std.sys._hal.device import Device as HALDevice, get_device_spec
+from _hal.context import Context as HALContext
+from _hal.device import Device as HALDevice, get_device_spec
 
 from .context import Context
 

@@ -65,7 +65,7 @@ While developing the model, you can use the `--custom-architectures` flag to
 run your model (before it's registered):
 
 ```bash
-./bazelw run //max/python/max/entrypoints:pipelines -- serve \
+./bazelw run //max/python/max/_entrypoints:pipelines -- serve \
   --model your-org/your-model-name \
   --custom-architectures path/to/your/architecture
 ```
@@ -99,7 +99,7 @@ Once registered, you can serve models using your architecture without the
 `--custom-architectures` option:
 
 ```bash
-./bazelw run //max/python/max/entrypoints:pipelines -- serve \
+./bazelw run //max/python/max/_entrypoints:pipelines -- serve \
   --model-path your-org/your-model-name
 ```
 
@@ -107,7 +107,7 @@ For models that require custom code execution (such as custom tokenizers or
 model implementations on Hugging Face), add the `--trust-remote-code` flag:
 
 ```bash
-./bazelw run //max/python/max/entrypoints:pipelines -- serve \
+./bazelw run //max/python/max/_entrypoints:pipelines -- serve \
   --model-path your-org/your-model-name --trust-remote-code
 ```
 
@@ -173,7 +173,7 @@ For help investigating inaccuracy issues, see the guide to
 Start your model server in one terminal:
 
 ```bash
-./bazelw run //max/python/max/entrypoints:pipelines -- serve \
+./bazelw run //max/python/max/_entrypoints:pipelines -- serve \
   --model-path your-org/your-model-name
 ```
 
@@ -240,10 +240,10 @@ model:
 
 | Model                            | Task            | Accuracy | vs Reference |
 |----------------------------------|-----------------|----------|--------------|
-| meta-llama/llama-3.1-8b-instruct | gsm8k_cot_llama | 0.878    | 101.4%       |
-| unsloth/gpt-oss-20b-bf16         | gsm8k_cot_llama | 0.947    | 98.1%        |
-| qwen/qwen2.5-vl-7b-instruct      | gsm8k_cot_llama | 0.787    | 100.3%       |
-| qwen/qwen2.5-vl-7b-instruct      | chartqa         | 0.812    | 100.3%       |
+| meta-llama/Llama-3.1-8B-Instruct | gsm8k_cot_llama | 0.878    | 101.4%       |
+| unsloth/gpt-oss-20b-BF16         | gsm8k_cot_llama | 0.947    | 98.1%        |
+| Qwen/Qwen2.5-VL-7B-Instruct      | gsm8k_cot_llama | 0.787    | 100.3%       |
+| Qwen/Qwen2.5-VL-7B-Instruct      | chartqa         | 0.812    | 100.3%       |
 
 > [!NOTE]
 > Accuracy numbers may vary across GPU types. If your model scores

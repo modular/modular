@@ -22,6 +22,7 @@ from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
 from max.pipelines.lib import SupportedArchitecture
 from max.pipelines.modeling.types import InputModality, PipelineTask
 
+from .batch_processor import Qwen2_5VLBatchProcessor
 from .context import Qwen2_5VLTextAndVisionContext
 from .model import Qwen2_5VLModel
 from .model_config import Qwen2_5VLConfig
@@ -77,6 +78,7 @@ qwen2_5_vl_arch = SupportedArchitecture(
         WeightsFormat.safetensors: convert_qwen2_5vl_model_state_dict,
     },
     pipeline_model=Qwen2_5VLModel,
+    batching=Qwen2_5VLBatchProcessor,
     tokenizer=Qwen2_5VLTokenizer,
     context_type=Qwen2_5VLTextAndVisionContext,
     required_arguments={
@@ -89,4 +91,6 @@ qwen2_5_vl_arch = SupportedArchitecture(
     memory_planner=PagedMemoryPlanner.with_activation_reservation(
         5 * 1024**3, always_signal_buffers=True
     ),
+    supports_overlap_scheduler=False,
+    supports_device_graph_capture=False,
 )

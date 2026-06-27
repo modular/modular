@@ -19,6 +19,9 @@ All operations are no-ops that return immediately.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
+from max.nn.kv_cache.cache_params import KVHashAlgo
 from max.nn.kv_cache.metrics import KVCacheMetrics
 
 
@@ -32,15 +35,17 @@ class NullConnector:
     def load(
         self,
         device_block_ids: list[int],
-        block_hashes: list[int],
+        block_hashes: Sequence[bytes],
+        replica_idx: int = 0,
     ) -> int:
         return 0
 
     def offload(
         self,
         block_ids: list[int],
-        block_hashes: list[int],
-        parent_seq_hash: int = 0,
+        block_hashes: Sequence[bytes],
+        parent_seq_hash: bytes | None = None,
+        replica_idx: int = 0,
     ) -> None:
         pass
 
@@ -75,3 +80,7 @@ class NullConnector:
     @property
     def metrics(self) -> KVCacheMetrics:
         return KVCacheMetrics()
+
+    @property
+    def supported_hash_algos(self) -> frozenset[KVHashAlgo]:
+        return frozenset({"ahash64", "sha256", "sha256_64"})

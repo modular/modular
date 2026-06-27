@@ -2,7 +2,6 @@ load("//bazel:api.bzl", "modular_multi_py_version_test", "modular_py_library", "
 
 package(default_visibility = [
     "//:__pkg__",
-    "//SDK/integration-test:__subpackages__",
     "//max/tests:__subpackages__",
     "//oss/modular/max/tests:__subpackages__",
 ])
@@ -159,10 +158,10 @@ modular_py_test(
         "run-in-hf-workflow",  # TODO(SERVOPT-900)
     ],
     deps = [
+        "//max/python/max/_entrypoints",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
-        "//max/python/max/entrypoints",
         "//max/python/max/graph",
         "//max/python/max/pipelines",
         "//max/python/max/pipelines/context",
@@ -228,13 +227,13 @@ modular_py_test(
     ],
 )
 
-# Test for llguidance-based structured output sampling
+# Test for structured-output sampling across grammar backends
 modular_py_test(
-    name = "test-llguidance-sampling",
+    name = "test-structured-output-sampling",
     size = "medium",
     srcs = [
         "conftest.py",
-        "sampling/test_llguidance_sampling.py",
+        "sampling/test_structured_output_sampling.py",
     ],
     env = {
         "MODULAR_PATH": ".",
@@ -252,7 +251,6 @@ modular_py_test(
         "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/lib",
         "//max/tests/integration:hf_repo_lock",
-        requirement("llguidance"),
         requirement("transformers"),
     ],
 )
@@ -547,14 +545,16 @@ modular_py_test(
     tags = [
         "gpu",
         "manual",  # TODO(AITLIB-293): Remove this once we have a way to run these tests on CI.
-        "no-pydeps",  # TODO: Fix and re-enable
         "no-sandbox",
         "requires-network",
         "run-in-hf-workflow",
     ],
     deps = [
-        "//max/python/max",
-        "//max/python/max/entrypoints",
+        "//max/python/max/driver",
+        "//max/python/max/engine",
+        "//max/python/max/pipelines",
+        "//max/python/max/pipelines/lib",
+        "//max/tests/integration:hf_repo_lock",
         "//max/tests/integration/test_common:mocks",
         "//max/tests/integration/test_common:pipeline_model_dummy",
         "//max/tests/integration/test_common:registry",

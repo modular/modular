@@ -37,6 +37,10 @@ from max.pipelines.modeling.types import (
 )
 from max.serve.config import APIType, MetricRecordingMethod, Settings
 from max.serve.media import GeneratedMediaStore
+from max.serve.pipelines.eplb_stats_rpc import (
+    EplbStatsFrontend,
+    EplbStatsResetFrontend,
+)
 from max.serve.pipelines.general_handler import GeneralPipelineHandler
 from max.serve.pipelines.llm import TokenGeneratorPipeline
 from max.serve.pipelines.model_worker import start_model_worker
@@ -356,6 +360,42 @@ def fastapi_app(
         "/reset_prefix_cache", reset_prefix_cache, methods=["POST"]
     )
 
+    eplb_stats_frontend = EplbStatsFrontend(zmq_endpoint_base)
+
+    async def eplb_stats() -> Response:
+        """Get the EPLB stats snapshot."""
+        if not settings.eplb_profile:
+            return Response(
+                status_code=404,
+                content="EPLB stats profiling is not enabled.",
+            )
+        try:
+            snap = await eplb_stats_frontend.fetch_snapshot()
+        except TimeoutError:
+            return Response(
+                status_code=504,
+                content="EPLB stats fetch timed out.",
+            )
+        return JSONResponse(snap.to_dict())
+
+    app.add_api_route("/max_internal/eplb_stats", eplb_stats, methods=["GET"])
+
+    # reset eplb stat endpoint
+    eplb_stats_reset_frontend = EplbStatsResetFrontend(zmq_endpoint_base)
+
+    async def eplb_stats_reset() -> Response:
+        """Reset the EP stats accumulator on the worker."""
+        if not settings.eplb_profile:
+            return Response(
+                status_code=404,
+                content="EP stats profiling is not enabled.",
+            )
+        eplb_stats_reset_frontend.enqueue_reset()
+        return Response(status_code=200, content="Success")
+
+    app.add_api_route(
+        "/max_internal/eplb_stats_reset", eplb_stats_reset, methods=["POST"]
+    )
     for api_type in settings.api_types:
         app.include_router(ROUTES[api_type].router)
 

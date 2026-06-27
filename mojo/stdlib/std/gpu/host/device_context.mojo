@@ -19,6 +19,15 @@ which represents a single stream of execution on a given accelerator. You can
 use this struct to allocate accelerator memory, copy data to and from the
 accelerator, and compile and execute functions on the accelerator."""
 
+from . import (
+    Dim,
+    Attribute,
+    FuncAttribute,
+    LaunchAttribute,
+    ConstantMemoryMapping,
+    DeviceAttribute,
+)
+
 from std.collections.optional import OptionalReg
 from std.math import align_up
 from std.os import abort
@@ -2009,7 +2018,6 @@ trait _FunctionEnqueuer:
         ...
 
 
-@doc_hidden
 struct DeviceStream(ImplicitlyCopyable, _FunctionEnqueuer):
     """Represents a CUDA/HIP stream for asynchronous GPU operations.
 
@@ -2024,9 +2032,10 @@ struct DeviceStream(ImplicitlyCopyable, _FunctionEnqueuer):
     Example:
 
     ```mojo
-    from std.gpu.host import DeviceContext, DeviceStream
+    from std.gpu.host import DeviceContext
+
     var ctx = DeviceContext(0)  # Select first GPU
-    var stream = DeviceStream(ctx)
+    var stream = ctx.create_stream()
 
     # Launch operations on the stream
     # ...
@@ -4267,9 +4276,139 @@ struct DeviceGraphBuilder[arena_origin: ImmutOrigin](Movable):
             shared_mem_bytes=shared_mem_bytes,
             attributes=attributes^,
             constant_memory=constant_memory^,
-            location=call_location(),
         )
         return self._last_node().value()
+
+    @parameter
+    @always_inline
+    def add_function[
+        declared_arg_types: TypeList[Trait=AnyType, ...],
+        //,
+        func: def(* args: * declared_arg_types) thin -> None,
+        *actual_arg_types: DevicePassable,
+        link_options: StaticString = "",
+        dump_asm: _DumpPath = False,
+        dump_llvm: _DumpPath = False,
+        _dump_sass: _DumpPath = False,
+        _ptxas_info_verbose: Bool = False,
+    ](
+        self,
+        *args: *actual_arg_types,
+        grid_dim: Dim,
+        block_dim: Dim,
+        var dependencies: List[Self.Node] = [],
+        cluster_dim: OptionalReg[Dim] = None,
+        shared_mem_bytes: OptionalReg[Int] = None,
+        var attributes: List[LaunchAttribute] = [],
+        var constant_memory: List[ConstantMemoryMapping] = [],
+        func_attribute: OptionalReg[FuncAttribute] = None,
+    ) raises -> Self.Node:
+        """Compiles and adds a kernel function as a node in this graph.
+
+        This overload takes the kernel as a compile-time parameter and
+        compiles it automatically using the `DeviceContext` that created this
+        builder, so no separate `DeviceContext.compile_function()` step is
+        needed. It mirrors the parameter-based
+        [`DeviceContext.enqueue_function()`](/docs/std/gpu/host/device_context/DeviceContext/#enqueue_function)
+        overload for the non-graph path.
+
+        Parameters:
+            declared_arg_types: Types of the arguments to pass to the device
+                function.
+            func: The function to compile and add as a graph node.
+            actual_arg_types: The types of the arguments being passed to the
+                function.
+            link_options: Additional linker flags and options as a string.
+            dump_asm: To dump the compiled assembly, pass `True`, or a file
+                path to dump to, or a function returning a file path.
+            dump_llvm: To dump the generated LLVM code, pass `True`, or a file
+                path to dump to, or a function returning a file path.
+            _dump_sass: Only runs on NVIDIA targets, and requires CUDA Toolkit
+                to be installed. Pass `True`, or a file path to dump to, or a
+                function returning a file path.
+            _ptxas_info_verbose: Only runs on NVIDIA targets, and requires CUDA
+                Toolkit to be installed. Changes `dump_asm` to output verbose
+                PTX assembly (default `False`).
+
+        Args:
+            args: Variadic arguments which are passed to the `func`.
+            grid_dim: Dimensions of the compute grid.
+            block_dim: Dimensions of each thread block.
+            dependencies: Explicit list of predecessor node handles. An
+                empty list makes the new node a graph root with no
+                predecessors; a non-empty list uses those exact handles
+                as predecessors.
+            cluster_dim: Cluster dimensions (optional).
+            shared_mem_bytes: Amount of dynamic shared memory per block.
+            attributes: Launch attributes.
+            constant_memory: Constant memory mappings.
+            func_attribute: `CUfunction_attribute` enum.
+
+        Returns:
+            A handle to the newly added kernel-dispatch node.
+
+        Raises:
+            If adding the node fails.
+
+        You can pass the function directly to `add_function` without compiling
+        it first:
+
+        ```mojo
+        from std.gpu.host import DeviceContext, DeviceGraphBuilder
+
+        def kernel(x: Int):
+            print("Value:", x)
+
+        with DeviceContext() as ctx:
+            def build(mut builder: DeviceGraphBuilder) raises {read}:
+                _ = builder.add_function[kernel](
+                    42, grid_dim=1, block_dim=1, dependencies=[]
+                )
+
+            var graph = ctx.create_device_graph(build)
+            graph.replay()
+            ctx.synchronize()
+        ```
+        """
+        _check_dim["DeviceGraphBuilder.add_function", "grid_dim"](
+            grid_dim, location=call_location()
+        )
+        _check_dim["DeviceGraphBuilder.add_function", "block_dim"](
+            block_dim, location=call_location()
+        )
+
+        # If shared_mem_bytes is specified but func_attribute is not,
+        # automatically set MAX_DYNAMIC_SHARED_SIZE_BYTES if needed (>48KB)
+        var inferred_func_attribute = func_attribute
+        if not func_attribute and shared_mem_bytes:
+            var max_shared = self._ctx._get_max_dynamic_shared_memory_bytes(
+                shared_mem_bytes.value()
+            )
+            if max_shared > 0:
+                inferred_func_attribute = (
+                    FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(max_shared)
+                )
+
+        var gpu_kernel = self._ctx.compile_function[
+            func,
+            dump_asm=dump_asm,
+            dump_llvm=dump_llvm,
+            link_options=link_options,
+            _dump_sass=_dump_sass,
+            _ptxas_info_verbose=_ptxas_info_verbose,
+        ](func_attribute=inferred_func_attribute)
+
+        return self.add_function(
+            gpu_kernel,
+            *args,
+            grid_dim=grid_dim,
+            block_dim=block_dim,
+            dependencies=dependencies^,
+            cluster_dim=cluster_dim,
+            shared_mem_bytes=shared_mem_bytes,
+            attributes=attributes^,
+            constant_memory=constant_memory^,
+        )
 
     def add_copy[
         dtype: DType

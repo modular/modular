@@ -1260,7 +1260,12 @@ def TopKTopPSamplingFromProbKernel[
         if rng_seed:
             seed_val = rng_seed.unsafe_value()[row_idx]
 
-        var generator = Random(seed=seed_val, offset=UInt64(bx) + rng_offset)
+        # Offset is keyed on row_idx (the request's logical row), not bx (the
+        # physical batch slot), so a request samples identically regardless of
+        # where it lands in the batch. The per-row seed already decorrelates rows.
+        var generator = Random(
+            seed=seed_val, offset=UInt64(row_idx) + rng_offset
+        )
 
         var k = top_k_val
         if top_k_arr:

@@ -1378,6 +1378,420 @@ def _fused_qkv_matmul_kv_cache_ragged_impl_scale_float4[
     )
 
 
+# ===-----------------------------------------------------------------------===#
+# Dual-cache fused QKV + index projection (ragged, paged, MXFP8/NVFP4)
+# ===-----------------------------------------------------------------------===#
+#
+# SM100 (B200) / generic-GPU MXFP8 (E8M0, SF_VECTOR_SIZE=32) or NVFP4
+# (float8_e4m3fn scales, SF_VECTOR_SIZE=16) block-scaled GEMM that fuses
+# MiniMax-M3's five projections (Q, K, V, IndexQ, IndexK) into ONE matmul over
+# the concatenated weight W = [Wq | Wk | Wv | Wiq | Wik] (concat along N), then
+# routes the matmul output columns in a single elementwise epilogue to:
+#   - the combined output buffer [M, q_dim + iq_dim]  (Q then IndexQ), and
+#   - TWO paged KV cache collections: the MAIN cache (K + V) and the INDEX
+#     cache (IndexK only, single shared KV head).
+#
+# This is the dual-cache generalization of
+# `generic_fused_qkv_matmul_kv_cache_paged_ragged_scale_float4`. The single-cache
+# entry routes columns to {output | main-K | main-V}; this one adds two more
+# column bands {IndexQ | IndexK} and a second collection. The fusion is
+# bit-exact to running the QKV matmul and the IndexQK matmul separately ONLY
+# when every band boundary lands on a quantization SF-atom row group
+# (SF_VECTOR_SIZE divides each band width); for M3 all boundaries are multiples
+# of 128, which holds. See `_can_fuse_index_qk` in
+# minimax_m3/layers/sparse_indexer.py.
+#
+# Column routing over col in [0, N_total) with
+#   N_total = q_dim + 2*kv_dim + iq_dim + ik_dim:
+#   [0, q_dim)                       -> Q       : output[:, col]
+#   [q_dim, q_dim+kv_dim)            -> K       : main k_cache (head/dim from col)
+#   [q_dim+kv_dim, q_dim+2*kv_dim)   -> V       : main v_cache
+#   [q_dim+2*kv_dim, +iq_dim)        -> IndexQ  : output[:, q_dim + (col-base)]
+#   [+iq_dim, +ik_dim)               -> IndexK  : index k_cache (head=0, dim)
+#
+# The MAIN cache is GQA/MHA (non-MLA). The INDEX cache is MLA (single latent
+# head, K only): M3 builds it with `is_mla=True`, `n_kv_heads=1`
+# (model_config.py). The IndexK scatter therefore always uses head 0 and
+# `hd_idx = col - <index band start>` — the MLA pattern, identical to the
+# single-cache `write_to_cache` MLA branch. `iq_dim` (the IndexQ band width =
+# num_index_heads * idx_head_dim) is passed explicitly because for an MLA index
+# cache `index_kv_params.num_heads` (== 1) does NOT equal num_index_heads; only
+# `ik_dim == index_kv_params.head_size` is derivable from the cache params.
+def generic_fused_qkv_index_matmul_kv_cache_paged_ragged_scale_float4[
+    dtype: DType,
+    weight_dtype: DType,
+    output_dtype: DType,
+    scale_dtype: DType,
+    a_layout: Layout,
+    b_layout: Layout,
+    sfa_layout: Layout,
+    sfb_layout: Layout,
+    SF_VECTOR_SIZE: Int,
+    target: StaticString = "cpu",
+](
+    hidden_state: LayoutTensor[mut=False, dtype, a_layout, MutAnyOrigin],
+    input_row_offsets: LayoutTensor[
+        mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
+    ],
+    weight: LayoutTensor[mut=False, weight_dtype, b_layout, MutAnyOrigin],
+    input_scale: LayoutTensor[mut=False, scale_dtype, sfa_layout, MutAnyOrigin],
+    weight_scale: LayoutTensor[
+        mut=False, scale_dtype, sfb_layout, MutAnyOrigin
+    ],
+    tensor_sf: Float32,
+    kv_collection: PagedKVCacheCollection,
+    index_kv_collection: PagedKVCacheCollection,
+    layer_idx: UInt32,
+    iq_dim: Int,
+    output: LayoutTensor[
+        mut=True, output_dtype, address_space=AddressSpace.GENERIC, ...
+    ],
+    ctx: DeviceContext,
+) raises:
+    """Performs a fused QKV + index-QK matmul. Q and IndexQ are written to the
+    combined `output` buffer; K/V are scattered into the MAIN `kv_collection`
+    and IndexK into the INDEX `index_kv_collection`.
+
+    Args:
+        hidden_state: Tensor with shape (sum(seq_lens), hidden).
+        input_row_offsets: Tensor with shape (batch_size + 1,). The value at
+            each index is the start_idx of the corresponding batch in
+            hidden_state.
+        weight: Concatenated weight W = [Wq | Wk | Wv | Wiq | Wik], shape
+            (N_total, hidden) where N_total = q_dim + 2*kv_dim + iq_dim + ik_dim.
+        input_scale: 5D blockwise scale tensor for the input.
+        weight_scale: 5D blockwise scale tensor for the weight.
+        tensor_sf: Per-tensor scaling factor.
+        kv_collection: The MAIN KVCache collection (K, V) for this layer.
+        index_kv_collection: The INDEX KVCache collection (IndexK only,
+            single shared KV head) for this layer.
+        layer_idx: The current layer, used to retrieve the KVCache objects.
+        iq_dim: Width of the IndexQ output band (num_index_heads *
+            idx_head_dim). Passed explicitly because for an MLA index cache it
+            is not recoverable from the index cache's `num_heads`.
+        output: The pre-allocated combined output buffer for Q and IndexQ
+            projections. Shape: (sum(seq_lens), q_dim + iq_dim).
+        ctx: The call context pointer, passed by the graph compiler.
+    """
+
+    @always_inline
+    @parameter
+    def description_fn() -> String:
+        return String(";").join(
+            Span(
+                [
+                    trace_arg("output", output.runtime_layout.shape.value),
+                    trace_arg(
+                        "hidden_state", hidden_state.runtime_layout.shape.value
+                    ),
+                    trace_arg("weight", weight.runtime_layout.shape.value),
+                    "tensor_sf=" + String(tensor_sf),
+                    "layer_idx=" + String(layer_idx),
+                    "num_heads=" + String(kv_collection.kv_params.num_heads),
+                    "head_size=" + String(kv_collection.kv_params.head_size),
+                    "idx_num_heads="
+                    + String(index_kv_collection.kv_params.num_heads),
+                    "idx_head_size="
+                    + String(index_kv_collection.kv_params.head_size),
+                ]
+            )
+        )
+
+    comptime name = "mo.fused_qkv_index_matmul.ragged.paged.scale.nhead_" + String(
+        kv_collection.kv_params.num_heads
+    ) + ".hdim_" + String(
+        kv_collection.kv_params.head_size
+    )
+    with Trace[TraceLevel.OP, target=target](
+        name,
+        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+        task_id=Int(ctx.id()),
+    ):
+        return _fused_qkv_index_matmul_kv_cache_ragged_scale_float4[
+            SF_VECTOR_SIZE=SF_VECTOR_SIZE,
+            target=target,
+        ](
+            hidden_state,
+            input_row_offsets,
+            weight,
+            input_scale,
+            weight_scale,
+            tensor_sf,
+            kv_collection,
+            index_kv_collection,
+            layer_idx,
+            iq_dim,
+            output,
+            ctx,
+        )
+
+
+@always_inline
+def _fused_qkv_index_matmul_kv_cache_ragged_scale_float4[
+    dtype: DType,
+    weight_dtype: DType,
+    output_dtype: DType,
+    scale_dtype: DType,
+    a_layout: Layout,
+    b_layout: Layout,
+    sfa_layout: Layout,
+    sfb_layout: Layout,
+    collection_t: KVCollectionT,
+    index_collection_t: KVCollectionT,
+    //,
+    SF_VECTOR_SIZE: Int,
+    *,
+    target: StaticString,
+](
+    hidden_state: LayoutTensor[mut=False, dtype, a_layout, MutAnyOrigin],
+    input_row_offsets: LayoutTensor[
+        mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
+    ],
+    weight: LayoutTensor[mut=False, weight_dtype, b_layout, MutAnyOrigin],
+    input_scale: LayoutTensor[mut=False, scale_dtype, sfa_layout, MutAnyOrigin],
+    weight_scale: LayoutTensor[
+        mut=False, scale_dtype, sfb_layout, MutAnyOrigin
+    ],
+    tensor_sf: Float32,
+    kv_collection: collection_t,
+    index_kv_collection: index_collection_t,
+    layer_idx: UInt32,
+    iq_dim: Int,
+    output: LayoutTensor[
+        mut=True, output_dtype, address_space=AddressSpace.GENERIC, ...
+    ],
+    context: DeviceContext,
+) raises:
+    """Resolves both KVCache objects from their collections and dispatches the
+    dual-cache impl. K/V come from the MAIN (non-MLA) collection, IndexK from
+    the INDEX (MLA, single latent head) collection."""
+    comptime kv_params = collection_t.kv_params
+
+    # The MAIN cache is GQA/MHA — it has a real K and V side scattered per
+    # head. The INDEX cache is MLA (K-only, single latent head); its scatter
+    # uses head 0, so MLA is supported there (the assert below only constrains
+    # the main cache). `get_value_cache` is therefore only taken on the main
+    # collection, which is always non-MLA.
+    comptime assert (
+        not kv_params.is_mla
+    ), "Dual-cache fused QKV+index: the MAIN (K/V) cache must be non-MLA."
+
+    var layer_idx_cast = Int(layer_idx)
+    var k_cache = kv_collection.get_key_cache(layer_idx_cast)
+    var v_cache = kv_collection.get_value_cache(layer_idx_cast)
+    var index_k_cache = index_kv_collection.get_key_cache(layer_idx_cast)
+
+    return _fused_qkv_index_matmul_kv_cache_ragged_impl_scale_float4[
+        SF_VECTOR_SIZE=SF_VECTOR_SIZE, target=target
+    ](
+        hidden_state,
+        input_row_offsets,
+        weight,
+        input_scale,
+        weight_scale,
+        tensor_sf,
+        k_cache,
+        v_cache,
+        index_k_cache,
+        iq_dim,
+        output,
+        context,
+    )
+
+
+@always_inline
+def _fused_qkv_index_matmul_kv_cache_ragged_impl_scale_float4[
+    dtype: DType,
+    weight_dtype: DType,
+    output_dtype: DType,
+    scale_dtype: DType,
+    a_layout: Layout,
+    b_layout: Layout,
+    sfa_layout: Layout,
+    sfb_layout: Layout,
+    cache_t: KVCacheT,
+    index_cache_t: KVCacheT,
+    //,
+    SF_VECTOR_SIZE: Int,
+    *,
+    target: StaticString,
+](
+    hidden_state: LayoutTensor[dtype, a_layout, ImmutAnyOrigin],
+    input_row_offsets: LayoutTensor[
+        mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
+    ],
+    weight: LayoutTensor[weight_dtype, b_layout, ImmutAnyOrigin],
+    input_scale: LayoutTensor[scale_dtype, sfa_layout, ImmutAnyOrigin],
+    weight_scale: LayoutTensor[scale_dtype, sfb_layout, ImmutAnyOrigin],
+    tensor_sf: Float32,
+    k_cache: cache_t,
+    v_cache: cache_t,
+    index_k_cache: index_cache_t,
+    iq_dim: Int,
+    output: LayoutTensor[
+        mut=True, output_dtype, address_space=AddressSpace.GENERIC, ...
+    ],
+    context: Optional[DeviceContext],
+) raises:
+    """Dual-cache fused QKV + index matmul on ragged tensors.
+
+    Q and IndexQ are written to the combined `output` buffer (Q in
+    `[0, q_dim)`, IndexQ in `[q_dim, q_dim + iq_dim)`); K/V are scattered into
+    the main `k_cache`/`v_cache`; IndexK is scattered into the MLA
+    `index_k_cache` (single latent head, head 0).
+    """
+    comptime kv_type = cache_t.dtype
+    comptime kv_params = cache_t.kv_params
+    comptime index_kv_type = index_cache_t.dtype
+    comptime index_kv_params = index_cache_t.kv_params
+
+    comptime assert (
+        kv_type == index_kv_type == output_dtype
+    ), "Main/index KV cache dtype must match the combined output dtype."
+
+    # Boundaries over the concatenated N dimension. `output` is the combined
+    # [M, q_dim + iq_dim] buffer (Q then IndexQ):
+    #   kv_dim = main num_heads * head_size   (K band == V band width)
+    #   iq_dim = num_index_heads * idx_head_dim  (IndexQ band; PASSED IN, since
+    #            for an MLA index cache index_kv_params.num_heads == 1 != it)
+    #   ik_dim = index head_size              (IndexK band == single MLA latent
+    #            head width; derivable from the index cache params)
+    #   q_dim  = output_width - iq_dim        (Q band)
+    var kv_dim = kv_params.head_size * kv_params.num_heads
+    var ik_dim = index_kv_params.head_size
+    var output_width = output.dim[1]()
+    var q_dim = output_width - iq_dim
+
+    # Column band boundaries (exclusive upper bounds).
+    var q_end = q_dim  # Q       : [0, q_end)
+    var k_end = q_end + kv_dim  # K       : [q_end, k_end)
+    var v_end = k_end + kv_dim  # V       : [k_end, v_end)
+    var iq_end = v_end + iq_dim  # IndexQ  : [v_end, iq_end)
+    var ik_end = iq_end + ik_dim  # IndexK  : [iq_end, ik_end)
+
+    var batch_size = input_row_offsets.dim[0]() - 1
+
+    if batch_size == 0:
+        return
+
+    # The fusion is bit-exact to separate matmuls only when each band boundary
+    # lands on the MXFP8/NVFP4 scale-block row group (SF_VECTOR_SIZE divides the
+    # N-band widths). All band widths and offsets must be multiples of the SF
+    # row group for the per-column scale lookup in the matmul to be identical to
+    # the unfused matmuls. For M3 these are all multiples of 128.
+    comptime SF_MN_GROUP = SF_VECTOR_SIZE
+    if (
+        q_dim % SF_MN_GROUP != 0
+        or kv_dim % SF_MN_GROUP != 0
+        or iq_dim % SF_MN_GROUP != 0
+        or ik_dim % SF_MN_GROUP != 0
+    ):
+        raise Error(
+            "Dual-cache fused QKV+index requires every output band width to be"
+            " a multiple of the scale-block group size for bit-exact fusion."
+        )
+
+    @parameter
+    @__copy_capture(
+        q_end,
+        k_end,
+        v_end,
+        iq_end,
+        q_dim,
+    )
+    @always_inline
+    def write_to_caches[
+        dtype: DType, width: SIMDSize, *, alignment: Int = 1
+    ](idx: IndexList[2], val: SIMD[dtype, width]):
+        # The block-scaled matmul already applied the scales; the epilogue just
+        # routes and casts. `idx[1]` is the column in the concatenated N space.
+        var output_val_out: SIMD[output_dtype, width] = rebind[
+            SIMD[output_dtype, width]
+        ](val.cast[output_dtype]())
+
+        var col = idx[1]
+
+        # Q band -> output[:, col].
+        if col < q_end:
+            output.store[width=width](idx, output_val_out)
+            return
+
+        # IndexQ band -> output[:, q_dim + (col - v_end)]. Packed right after Q
+        # in the combined output. Checked before the cache scatters so the
+        # branch order matches the column layout (Q | K | V | IndexQ | IndexK).
+        if col >= v_end and col < iq_end:
+            output.store[width=width](
+                IndexList[2](idx[0], q_dim + (col - v_end)),
+                output_val_out,
+            )
+            return
+
+        var global_token_idx = idx[0]
+        var batch_idx: Int = get_batch_from_row_offsets(
+            input_row_offsets, global_token_idx
+        )
+        var token_idx = Int(
+            UInt32(global_token_idx) - input_row_offsets[batch_idx]
+        )
+
+        # K / V bands -> main cache. IndexK band -> index cache.
+        if col < v_end:
+            var h_idx: Int
+            var hd_idx: Int
+            var cache: cache_t
+            if col < k_end:
+                cache = k_cache
+                h_idx, hd_idx = udivmod(col - q_end, kv_params.head_size)
+            else:
+                cache = v_cache
+                h_idx, hd_idx = udivmod(col - k_end, kv_params.head_size)
+            var cache_length = cache.cache_length(batch_idx)
+            var cache_token_idx = token_idx + cache_length
+            cache.store(
+                batch_idx,
+                h_idx,
+                cache_token_idx,
+                hd_idx,
+                rebind[SIMD[kv_type, width]](output_val_out.cast[kv_type]()),
+            )
+        else:
+            # IndexK band -> index cache, single shared head (head == 0).
+            var hd_idx = col - iq_end
+            var cache_length = index_k_cache.cache_length(batch_idx)
+            var cache_token_idx = token_idx + cache_length
+            index_k_cache.store(
+                batch_idx,
+                0,
+                cache_token_idx,
+                hd_idx,
+                rebind[SIMD[index_kv_type, width]](
+                    output_val_out.cast[index_kv_type]()
+                ),
+            )
+
+    comptime assert (
+        weight_dtype == dtype
+    ), "Mismatch in dtype between weight and QKV tensors"
+
+    comptime assert is_gpu[
+        target
+    ](), "Blockwise scaled fp4 matmul only works on GPU."
+
+    _matmul_blockwise_scaled_fp4_common[
+        output_dtype=output_dtype,
+        target=target,
+        SF_VECTOR_SIZE=SF_VECTOR_SIZE,
+        elementwise_lambda_fn=write_to_caches,
+    ](
+        hidden_state,
+        weight,
+        input_scale,
+        weight_scale,
+        tensor_sf,
+        context.value(),
+    )
+
+
 @always_inline
 def _matmul_common[
     dtype: DType,
@@ -3966,24 +4380,17 @@ def kv_cache_store_ragged[
             loaded_val,
         )
 
-    comptime if is_gpu[target]():
-        comptime compile_target = get_gpu_target()
-        comptime simd_width = simd_width_of[
-            cache_t.dtype, target=compile_target
-        ]()
+    comptime compile_target = _current_target() if is_cpu[
+        target
+    ]() else get_gpu_target()
+    comptime simd_width = simd_width_of[cache_t.dtype, target=compile_target]()
 
-        elementwise[write_to_cache, simd_width, target=target](
-            Coord(input_shape), context
-        )
-    else:
-        comptime compile_target = _current_target()
-        comptime simd_width = simd_width_of[
-            cache_t.dtype, target=compile_target
-        ]()
-
-        elementwise[write_to_cache, simd_width, target=target](
-            Coord(input_shape), context
-        )
+    elementwise[
+        write_to_cache,
+        simd_width,
+        target=target,
+        _trace_description="kv_cache_store_ragged",
+    ](Coord(input_shape), context)
 
 
 def kv_cache_store_padded[
@@ -4033,24 +4440,17 @@ def kv_cache_store_padded[
             loaded_val,
         )
 
-    comptime if is_gpu[target]():
-        comptime compile_target = get_gpu_target()
-        comptime simd_width = simd_width_of[
-            cache_t.dtype, target=compile_target
-        ]()
+    comptime compile_target = _current_target() if is_cpu[
+        target
+    ]() else get_gpu_target()
+    comptime simd_width = simd_width_of[cache_t.dtype, target=compile_target]()
 
-        elementwise[write_to_cache, simd_width, target=target](
-            Coord(input_shape), context
-        )
-    else:
-        comptime compile_target = _current_target()
-        comptime simd_width = simd_width_of[
-            cache_t.dtype, target=compile_target
-        ]()
-
-        elementwise[write_to_cache, simd_width, target=target](
-            Coord(input_shape), context
-        )
+    elementwise[
+        write_to_cache,
+        simd_width,
+        target=target,
+        _trace_description="kv_cache_store_padded",
+    ](Coord(input_shape), context)
 
 
 # ===-----------------------------------------------------------------------===#

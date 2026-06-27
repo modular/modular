@@ -16,18 +16,16 @@ from __future__ import annotations
 
 import logging
 import time
-from collections.abc import Sequence
 from dataclasses import dataclass, field, fields
 from typing import Any, ClassVar, cast
 
-import numpy as np
 from max.driver import Buffer, Device, DLPackArray
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import Graph, ops
 from max.graph.weights import WeightData, Weights, WeightsAdapter
 from max.nn.comm.ep import EPCommInitializer
-from max.nn.kv_cache import KVCacheInputs, KVCacheInputsInterface
+from max.nn.kv_cache import KVCacheInputs
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.context import TextContext
 from max.pipelines.lib import (
@@ -38,12 +36,11 @@ from max.pipelines.lib import (
     PipelineConfig,
     PipelineModel,
 )
-from max.pipelines.lib.utils import compute_data_parallel_splits
-from max.support.algorithm import flatten2d
 from typing_extensions import override
 
 from ..deepseekV2.model import DeepseekV2Model
 from ..deepseekV3.model import DeepseekV3Inputs, DeepseekV3Model
+from .batch_processor import DeepseekV3NextNBatchProcessor
 from .deepseekV3_nextn import DeepseekV3NextN
 from .model_config import DeepseekV3NextNConfig
 
@@ -63,6 +60,9 @@ class DeepseekV3NextNInputs(DeepseekV3Inputs):
 
 class DeepseekV3NextNModel(AlwaysSignalBuffersMixin, DeepseekV2Model):
     model_config_cls: ClassVar[type[Any]] = DeepseekV3NextNConfig
+    batch_processor_cls: ClassVar[type[DeepseekV3NextNBatchProcessor]] = (
+        DeepseekV3NextNBatchProcessor  # type: ignore[assignment]
+    )
 
     def __init__(
         self,
@@ -76,6 +76,7 @@ class DeepseekV3NextNModel(AlwaysSignalBuffersMixin, DeepseekV2Model):
         return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
         shared_weights: dict[str, DLPackArray] | None = None,
         shared_ep_comm_initializer: EPCommInitializer | None = None,
+        max_batch_size: int = 1,
     ) -> None:
         self._shared_weights = shared_weights
         self._shared_ep_comm_initializer = shared_ep_comm_initializer
@@ -88,6 +89,7 @@ class DeepseekV3NextNModel(AlwaysSignalBuffersMixin, DeepseekV2Model):
             adapter,
             return_logits,
             return_hidden_states,
+            max_batch_size=max_batch_size,
         )
 
     def _apply_shared_weights(self, state_dict: dict[str, WeightData]) -> None:
@@ -163,26 +165,6 @@ class DeepseekV3NextNModel(AlwaysSignalBuffersMixin, DeepseekV2Model):
     @override
     def load_model(self, session: InferenceSession) -> Model:
         """Load the NextN model with the given weights."""
-
-        max_batch_size = self.pipeline_config.runtime.max_batch_size
-        assert max_batch_size, "Expected max_batch_size to be set"
-
-        # `_host_input_row_offsets_prealloc` tensor needs to reserve space for
-        # `max_batch_size` of requests on each DP rank.
-        dp_size = self.pipeline_config.model.data_parallel_degree
-        max_batch_size *= dp_size
-
-        self._host_input_row_offsets_prealloc = Buffer.from_numpy(
-            np.arange(max_batch_size + 1, dtype=np.uint32)
-        )
-        self._device_input_row_offsets_prealloc = (
-            self._host_input_row_offsets_prealloc.to(self.devices[0])
-        )
-
-        self._batch_context_lengths_prealloc_cpu = [
-            Buffer.zeros(shape=[1], dtype=DType.int32)
-            for _ in range(len(self.devices))
-        ]
 
         logger.info("Building DeepseekV3 NextN model...")
         before = time.perf_counter()
@@ -296,6 +278,14 @@ class DeepseekV3NextNModel(AlwaysSignalBuffersMixin, DeepseekV2Model):
         logging.info(
             f"DeepseekV3 NextN model loaded in {load_time:.6f} seconds"
         )
+
+        if self._batch_processor is not None:
+            bind_ep = getattr(
+                self._batch_processor, "bind_ep_comm_initializer", None
+            )
+            if bind_ep is not None:
+                bind_ep(self.ep_comm_initializer)
+
         return model
 
     def execute(
@@ -344,81 +334,6 @@ class DeepseekV3NextNModel(AlwaysSignalBuffersMixin, DeepseekV2Model):
                 next_token_logits=model_outputs[0],
                 logits=model_outputs[0],
             )
-
-    def prepare_initial_token_inputs(
-        self,
-        replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
-        return_n_logits: int = 1,
-        hidden_states: Buffer | None = None,
-    ) -> DeepseekV3NextNInputs:
-        """Prepare initial inputs for the NextN model.
-
-        Args:
-            replica_batches: Batches of text contexts per replica
-            kv_cache_inputs: KV cache inputs (optional)
-            return_n_logits: Number of logits to return
-            hidden_states: Hidden states from the base or draft model
-
-        Returns:
-            NextN model inputs
-        """
-
-        dp = self.pipeline_config.model.data_parallel_degree
-        if len(replica_batches) != dp:
-            raise ValueError(
-                "Number of replica batches must match data parallel degree"
-            )
-
-        # If we are not in decode only mode, we need to create a list of
-        # tensors containing the context length of each batch. Needed by MLA prefill.
-        if self.pipeline_config.runtime.pipeline_role != "decode_only":
-            for i, batch in enumerate(replica_batches):
-                curr_length = sum([ctx.tokens.active_length for ctx in batch])
-                self._batch_context_lengths_prealloc_cpu[i][0] = curr_length
-
-            if dp != len(self.devices):
-                assert dp == 1
-                # Duplicate the batch context lengths for each device.
-                for dev_idx in range(1, len(self.devices)):
-                    self._batch_context_lengths_prealloc_cpu[dev_idx][0] = (
-                        self._batch_context_lengths_prealloc_cpu[0][0].item()
-                    )
-
-        context_batch = flatten2d(replica_batches)
-        if len(context_batch) == 0:
-            tokens = Buffer(shape=[0], dtype=DType.int64).to(self.devices[0])
-            host_input_row_offsets = Buffer.zeros(shape=[1], dtype=DType.uint32)
-        else:
-            # Create a ragged token vector of length: sum(len(t) for t in tokens).
-            tokens = Buffer.from_numpy(
-                np.concatenate([ctx.tokens.active for ctx in context_batch])
-            ).to(self.devices[0])
-
-            host_input_row_offsets = Buffer.from_numpy(
-                np.cumsum(
-                    [0] + [ctx.tokens.active_length for ctx in context_batch],
-                    dtype=np.uint32,
-                )
-            )
-
-        device_input_row_offsets = host_input_row_offsets.to(self.devices[0])
-
-        data_parallel_splits = compute_data_parallel_splits(replica_batches)
-
-        return DeepseekV3NextNInputs(
-            tokens=tokens,
-            hidden_states=hidden_states,
-            input_row_offsets=device_input_row_offsets,
-            host_input_row_offsets=host_input_row_offsets,
-            signal_buffers=self.signal_buffers,
-            batch_context_lengths=self._batch_context_lengths_prealloc_cpu,
-            kv_cache_inputs=kv_cache_inputs,
-            return_n_logits=Buffer.from_numpy(
-                np.array([return_n_logits], dtype=np.int64)
-            ),
-            data_parallel_splits=Buffer.from_numpy(data_parallel_splits),
-        )
 
 
 def maybe_build_deepseekv3_nextn_kwargs(

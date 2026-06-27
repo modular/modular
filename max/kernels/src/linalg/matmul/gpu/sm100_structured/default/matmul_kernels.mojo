@@ -62,6 +62,7 @@ from layout import (
     Coord,
     CoordLike,
     Idx,
+    Layout,
     RowMajorLayout,
     TensorLayout,
     TileTensor,
@@ -864,16 +865,28 @@ struct BlackwellMatmulSM100Kernel[
         var accum = tmem_stage.tensor[Self.accum_type, Self.accum_layout]()
 
         if elect_one_sync():
+            # Build the A/B MMA SMEM descriptors once from the j=0 tile, then
+            # advance the descriptor base by the comptime per-k-group byte
+            # stride for j>0 — instead of rebuilding the full descriptor
+            # (runtime base-pointer mask + bitfield inserts) for every k-group
+            # tile. Consecutive k-group tiles are contiguous in the SMEM tile
+            # array (stride = tile elems * dtype size), and the SM100
+            # descriptor base address adds linearly, so the advanced descriptor
+            # is bit-identical to one freshly built from the j-th tile pointer.
+            comptime a_stride_bytes = Self.BM * Self.BK * size_of[Self.a_type]()
+            comptime b_stride_bytes = Self.BN * Self.BK * size_of[Self.b_type]()
+
+            var a_tile0, b_tile0 = tiles.payload().get_tile[
+                Self.config.k_group_size
+            ](tiles.stage(), 0)
+            var a_desc_base = mma_op.make_a_desc(a_tile0)
+            var b_desc_base = mma_op.make_b_desc(b_tile0)
+
             comptime for j in range(Self.config.k_group_size):
-                # Get tiles using payload accessor - tiles have swizzled layout
-                var a_tile, b_tile = tiles.payload().get_tile[
-                    Self.config.k_group_size
-                ](tiles.stage(), j)
                 var is_first_k = (iter_idx + UInt32(j)) == k_start
-                # Pass TileTensor directly to MMA - layout is encoded in type
-                mma_op.mma(
-                    a_tile,
-                    b_tile,
+                mma_op.mma_from_desc(
+                    a_desc_base + (a_stride_bytes * j),
+                    b_desc_base + (b_stride_bytes * j),
                     UInt32(accum.offset()),
                     init_c=is_first_k,
                 )

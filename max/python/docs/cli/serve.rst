@@ -79,6 +79,6 @@ the form ``path/to/module:module_name``:
 
     :::
 
-.. click:: max.entrypoints.pipelines:cli_serve
+.. click:: max._entrypoints.pipelines:cli_serve
   :prog: max serve
   :hide-description:

@@ -18,7 +18,11 @@ from max.driver import Accelerator, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef
-from max.nn.kv_cache import KVCacheParams, KVConnectorType
+from max.nn.kv_cache import (
+    KVConnectorType,
+    MHAKVCacheParams,
+    MLAKVCacheParams,
+)
 from max.pipelines.context import TextContext
 from max.pipelines.kv_cache import PagedKVCacheManager
 from max.pipelines.kv_cache.connectors.local_connector import LocalConnector
@@ -32,7 +36,7 @@ async def test_kv_cache_multi_gpu() -> None:
     if num_devices > 1:
         list_of_devices = [Accelerator(id=i) for i in range(num_devices)]
         inference_session = InferenceSession(devices=list_of_devices)
-        kv_params = KVCacheParams(
+        kv_params = MHAKVCacheParams(
             n_kv_heads=8,
             head_dim=128,
             dtype=DType.bfloat16,
@@ -54,7 +58,7 @@ async def test_kv_cache_multi_gpu() -> None:
         kv_inputs = kv_manager.runtime_inputs_for_leaf([batch])
         for i in range(num_devices):
             kv_inputs_per_device = kv_inputs.inputs[i]
-            assert len(kv_inputs_per_device.flatten()) == 5
+            assert len(kv_inputs_per_device.flatten()) == 6
             assert kv_inputs_per_device.attention_dispatch_metadata is not None
 
 
@@ -68,13 +72,11 @@ async def test_mla_runtime_inputs_keep_dispatch_metadata_on_shard_device() -> (
 ):
     devices = [Accelerator(id=i) for i in range(2)]
     session = InferenceSession(devices=devices)
-    kv_params = KVCacheParams(
+    kv_params = MLAKVCacheParams(
         dtype=DType.bfloat16,
-        n_kv_heads=8,
         head_dim=128,
         num_layers=1,
         page_size=128,
-        is_mla=True,
         num_q_heads=16,
         devices=[DeviceRef.GPU(i) for i in range(2)],
     )
@@ -113,7 +115,7 @@ def create_kv_cache(
 
     devices = [Accelerator(id=i) for i in range(accelerator_count())]
 
-    kv_params = KVCacheParams(
+    kv_params = MHAKVCacheParams(
         dtype=dtype,
         n_kv_heads=4,
         head_dim=1,

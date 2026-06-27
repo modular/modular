@@ -1,7 +1,6 @@
 load("@aspect_bazel_lib//lib:write_source_files.bzl", "write_source_files")
 load("//bazel:api.bzl", "modular_generate_stubfiles", "modular_nanobind_extension", "modular_py_library", "requirement")
 load("//bazel:config.bzl", "TOP_LEVEL_TAG")
-load("//max/python/max/pipelines/architectures:all_arches.bzl", "ALL_ARCHITECTURES")
 
 package(default_visibility = ["//max:consumers"])
 
@@ -133,45 +132,4 @@ modular_py_library(
 alias(
     name = "tensor",
     actual = "//max/python/max/experimental",
-)
-
-modular_py_library(
-    name = "max",
-    srcs = [],
-    tags = ["no-pydeps"],  # All deps are unused
-    deps = ALL_ARCHITECTURES + [
-        ":_core",
-        ":tensor",
-        "//max/python/max/_core_mojo",
-        "//max/python/max/_distributed_ops",
-        "//max/python/max/_interpreter_ops",
-        "//max/python/max/diagnostics",
-        "//max/python/max/driver",
-        "//max/python/max/dtype",
-        "//max/python/max/engine",
-        "//max/python/max/entrypoints",
-        "//max/python/max/entrypoints:_pipelines",
-        "//max/python/max/entrypoints:gpu-query",
-        "//max/python/max/entrypoints:pipelines",
-        "//max/python/max/entrypoints:replay_recording",
-        "//max/python/max/experimental/cascade",
-        "//max/python/max/experimental/cascade/http_runtime",
-        "//max/python/max/experimental/nn",
-        "//max/python/max/experimental/torch",
-        "//max/python/max/graph",
-        "//max/python/max/kv_cache",
-        "//max/python/max/mlir",
-        "//max/python/max/nn",
-        "//max/python/max/nn/hooks",
-        "//max/python/max/pipelines",
-        "//max/python/max/pipelines/architectures",
-        "//max/python/max/pipelines/modeling",
-        "//max/python/max/profiler",
-        "//max/python/max/serve",
-        "//max/python/max/serve:debug",
-        "//max/python/max/serve/mocks",
-        "//max/python/max/support",
-        "//max/python/max/sys",
-        "//max/python/max/sys/_hal",
-    ],
 )

@@ -14,7 +14,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from max.dtype import DType
 from max.graph import DeviceRef
@@ -32,6 +32,35 @@ from transformers import AutoConfig
 from typing_extensions import Self, override
 
 
+def resolve_indexer_types(
+    huggingface_config: AutoConfig, num_hidden_layers: int
+) -> list[str]:
+    """Resolve the per-layer indexer schedule for DeepSeek Sparse Attention.
+
+    Each layer is either ``"full"`` (runs its own lightning indexer top-k) or
+    ``"shared"`` (reuses the top-k selection from the most recent full layer).
+
+    If the model doesn't provide an indexer schedule, it will default to all
+    ``"full"`` layers.
+    """
+    types = getattr(huggingface_config, "indexer_types", None)
+    if types is not None:
+        return list(types)
+
+    pattern = getattr(huggingface_config, "index_topk_pattern", None)
+    if pattern is not None:
+        if isinstance(pattern, str):
+            return [{"F": "full", "S": "shared"}[c] for c in pattern]
+        return list(pattern)
+
+    freq = max(getattr(huggingface_config, "index_topk_freq", 1) or 1, 1)
+    offset = getattr(huggingface_config, "index_skip_topk_offset", 2)
+    return [
+        "full" if (max(i - offset + 1, 0) % freq) == 0 else "shared"
+        for i in range(num_hidden_layers)
+    ]
+
+
 @dataclass(kw_only=True)
 class DeepseekV3_2Config(DeepseekV3Config):
     """Configuration for DeepseekV3.2 models."""
@@ -40,6 +69,7 @@ class DeepseekV3_2Config(DeepseekV3Config):
     index_head_dim: int = 128
     index_n_heads: int = 64
     index_topk: int = 2048
+    indexer_types: list[str] = field(default_factory=list)
 
     @staticmethod
     def construct_kv_params(
@@ -173,4 +203,7 @@ class DeepseekV3_2Config(DeepseekV3Config):
             index_head_dim=config.index_head_dim,
             index_n_heads=config.index_n_heads,
             index_topk=config.index_topk,
+            indexer_types=resolve_indexer_types(
+                config, config.num_hidden_layers
+            ),
         )

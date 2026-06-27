@@ -25,7 +25,6 @@ from layout.layout import zipped_divide
 from layout._utils import ManagedLayoutTensor
 from layout.tma_async import SharedMemBarrier
 from std.memory import stack_allocation
-from std.memory.pointer import _GPUAddressSpace
 from std.testing import assert_equal
 
 from std.utils.index import IndexList
@@ -194,14 +193,14 @@ def test_tma_load_kernel[
         dtype,
         smem_layout,
         MutAnyOrigin,
-        address_space=_GPUAddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation()
 
     var mbar_ptr = stack_allocation[
         1,
         SharedMemBarrier,
-        address_space=_GPUAddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=8,
     ]()
 

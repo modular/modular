@@ -17,18 +17,15 @@ from __future__ import annotations
 import functools
 import logging
 import math
-from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Any, ClassVar, Literal
 
-import numpy as np
 from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, ops
 from max.graph.weights import Weights, WeightsAdapter
 from max.nn.embedding import Embedding
-from max.nn.kv_cache import KVCacheInputsInterface
 from max.nn.linear import MLP, Linear
 from max.nn.norm import RMSNorm
 from max.nn.rotary_embedding import (
@@ -49,6 +46,7 @@ from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
 from max.pipelines.lib.utils import parse_state_dict_from_weights
 from transformers import AutoConfig
 
+from .batch_processor import Qwen3EmbeddingBatchProcessor
 from .layers import (
     Qwen3AttentionNoCache,
     Qwen3EmbeddingTransformer,
@@ -56,6 +54,7 @@ from .layers import (
     last_token_pool,
     normalize_embeddings,
 )
+from .model_config import Qwen3EmbeddingConfig
 
 logger = logging.getLogger("max.pipelines")
 
@@ -84,6 +83,13 @@ class Qwen3EmbeddingModel(PipelineModel[TextContext]):
     - Last token pooling with L2 normalization
     """
 
+    model_config_cls: ClassVar[type[Qwen3EmbeddingConfig]] = (
+        Qwen3EmbeddingConfig
+    )
+    batch_processor_cls: ClassVar[type[Qwen3EmbeddingBatchProcessor]] = (
+        Qwen3EmbeddingBatchProcessor
+    )
+
     model: Model
     """Compiled and initialized model."""
 
@@ -105,6 +111,7 @@ class Qwen3EmbeddingModel(PipelineModel[TextContext]):
         weights: Weights,
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.ALL,
+        max_batch_size: int = 1,
     ) -> None:
         """Initialize the Qwen3 embedding pipeline model.
 
@@ -337,54 +344,6 @@ class Qwen3EmbeddingModel(PipelineModel[TextContext]):
         # Return embeddings in logits field for pipeline compatibility
         assert isinstance(model_outputs[0], Buffer)
         return ModelOutputs(logits=model_outputs[0])
-
-    def prepare_initial_token_inputs(
-        self,
-        replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
-        return_n_logits: int = 1,
-    ) -> Qwen3EmbeddingInputs:
-        """Prepare initial inputs for embedding generation.
-
-        Args:
-            replica_batches: Batches of text contexts
-            kv_cache_inputs: Ignored (no KV cache for embeddings)
-            return_n_logits: Number of logits (ignored for embeddings)
-
-        Returns:
-            Prepared inputs
-        """
-        if len(replica_batches) > 1:
-            raise ValueError("Model does not support DP>1")
-
-        context_batch = replica_batches[0]
-        device = self.devices[0]
-
-        # Collect all tokens from the batch
-        all_tokens: list[int] = []
-        row_offsets = [0]
-
-        for ctx in context_batch:
-            tokens = ctx.tokens.active
-            all_tokens.extend(tokens)
-            row_offsets.append(len(all_tokens))
-
-        # Convert to numpy arrays
-        tokens_array = np.array(all_tokens, dtype=np.uint32)
-        row_offsets_array = np.array(row_offsets, dtype=np.uint32)
-
-        # Create buffers on CPU (inputs are expected on CPU)
-        tokens_buffer = Buffer.from_numpy(tokens_array)
-        row_offsets_buffer = Buffer.from_numpy(row_offsets_array)
-        return_n_logits_buffer = Buffer.from_numpy(
-            np.array([return_n_logits], dtype=np.uint32)
-        )
-
-        return Qwen3EmbeddingInputs(
-            tokens=tokens_buffer.to(device),
-            input_row_offsets=row_offsets_buffer,
-            return_n_logits=return_n_logits_buffer,
-        )
 
     @classmethod
     def calculate_max_seq_len(

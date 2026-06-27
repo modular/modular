@@ -143,6 +143,7 @@ from max.pipelines.speculative.ragged_token_merger import _shape_to_scalar
 from max.pipelines.speculative.utils import _SpeculativeDecodingMetrics
 from max.profiler import Tracer, traced
 
+from ..memory_estimation import _MemoryPlan
 from .structured_output_overlap import StructuredOutputOverlapState
 from .text_generation import TextGenerationPipelineInterface, load_kv_manager
 from .utils import (
@@ -372,6 +373,7 @@ class SpecDecodeState:
         session: InferenceSession,
         model: PipelineModelWithKVCache[Any],
         pipeline_config: PipelineConfig,
+        max_batch_size: int,
         vocab_size: int | None = None,
     ) -> SpecDecodeState:
         """Load the spec decode state.
@@ -385,7 +387,7 @@ class SpecDecodeState:
 
         kv_manager = load_kv_manager(
             params=model.kv_params,
-            max_batch_size=pipeline_config.runtime.max_batch_size,
+            max_batch_size=max_batch_size,
             max_seq_len=model.max_seq_len,
             session=session,
             available_cache_memory=(
@@ -396,10 +398,8 @@ class SpecDecodeState:
         num_speculative_tokens = (
             pipeline_config.speculative.num_speculative_tokens
         )
-        assert pipeline_config.runtime.max_batch_size is not None
         total_max_batch = (
-            pipeline_config.runtime.max_batch_size
-            * pipeline_config.model.data_parallel_degree
+            max_batch_size * pipeline_config.model.data_parallel_degree
         )
         persistent_draft_tokens = Buffer(
             dtype=DType.int64,
@@ -1416,6 +1416,7 @@ class OverlapTextGenerationPipeline(
             npt.NDArray[np.integer[Any]],
             TextGenerationRequest,
         ],
+        memory_plan: _MemoryPlan,
         disable_overlap: bool = False,
     ) -> None:
         """Initialize a text generation pipeline instance.
@@ -1430,6 +1431,8 @@ class OverlapTextGenerationPipeline(
                 one or to seed the EOS set.
             weight_adapters: Mapping from weights format to adapter implementation.
             tokenizer: Tokenizer implementation used to build contexts and decode.
+            memory_plan: Memory plan from the registry containing max_batch_size
+                and other resolved memory parameters.
             disable_overlap: When this flag is set, the overlap scheduler will
                 immediately synchronize after model execution. This removes any
                 potential cpu / gpu overlap.
@@ -1440,6 +1443,8 @@ class OverlapTextGenerationPipeline(
                 requested without a valid tokenizer delegate.
         """
         self._pipeline_config = pipeline_config
+        self._max_batch_size = memory_plan.max_batch_size
+        max_batch_size = memory_plan.max_batch_size
 
         model_config: MAXModelConfig = pipeline_config.model
         huggingface_config = model_config.huggingface_config
@@ -1485,6 +1490,7 @@ class OverlapTextGenerationPipeline(
             self.tokenizer,
             pipeline_config.sampling.enable_structured_output,
             pipeline_config.runtime.tool_parser,
+            pipeline_config.sampling.structured_output_backend,
         )
         self.vocab_size = self._structured_output.vocab_size
 
@@ -1524,6 +1530,7 @@ class OverlapTextGenerationPipeline(
             weights=load_weights(weight_paths),
             adapter=weight_adapters.get(weights_format(weight_paths)),
             return_logits=return_logits,
+            max_batch_size=max_batch_size,
         )
 
         available_cache_memory = model_config.kv_cache._available_cache_memory
@@ -1536,7 +1543,7 @@ class OverlapTextGenerationPipeline(
         if not is_spec_decode:
             self._kv_manager = load_kv_manager(
                 params=kv_params,
-                max_batch_size=self._pipeline_config.runtime.max_batch_size,
+                max_batch_size=max_batch_size,
                 max_seq_len=self._pipeline_model.max_seq_len,
                 session=session,
                 available_cache_memory=available_cache_memory,
@@ -1551,6 +1558,7 @@ class OverlapTextGenerationPipeline(
                 session=session,
                 model=self._pipeline_model,
                 pipeline_config=self._pipeline_config,
+                max_batch_size=max_batch_size,
                 vocab_size=(
                     self.vocab_size
                     if pipeline_config.needs_bitmask_constraints
@@ -1585,6 +1593,12 @@ class OverlapTextGenerationPipeline(
         )
         sampler_device_ref = DeviceRef.from_device(self._sampler_device)
 
+        sampler_extensions = (
+            ()
+            if self._sampler_device.is_host
+            else self._pipeline_model.sampler_custom_extensions
+        )
+
         self._sampler_with_bitmask: Model | None = None
         self._sampler_without_bitmask: Model | None = None
         if not is_spec_decode:
@@ -1595,11 +1609,13 @@ class OverlapTextGenerationPipeline(
                         pipeline_config.sampling,
                         device=sampler_device_ref,
                         needs_bitmask_input=True,
+                        custom_extensions=sampler_extensions,
                     )
                 without_bitmask_graph = token_sampler(
                     pipeline_config.sampling,
                     device=sampler_device_ref,
                     needs_bitmask_input=False,
+                    custom_extensions=sampler_extensions,
                 )
                 sampler_timer.mark_build_complete()
                 if with_bitmask_graph is not None:
@@ -1621,8 +1637,6 @@ class OverlapTextGenerationPipeline(
             and not self._sampler_device.is_host
             and not is_virtual_device_mode()
         ):
-            max_batch_size = pipeline_config.runtime.max_batch_size
-            assert max_batch_size is not None, "max_batch_size must be set"
             self._pinned_new_tokens = DevicePinnedBuffer(
                 shape=(max_batch_size,),
                 dtype=DType.int64,
@@ -1631,7 +1645,7 @@ class OverlapTextGenerationPipeline(
 
         self._identity_logit_offsets = (
             FusedSamplingProcessor.allocate_identity_logit_offsets(
-                pipeline_config, self._sampler_device
+                pipeline_config, self._sampler_device, max_batch_size
             )
         )
 
@@ -1666,6 +1680,11 @@ class OverlapTextGenerationPipeline(
         self._max_graph_capture_batch_size: int = _MAX_GRAPH_CAPTURE_BATCH_SIZE
 
         self._disable_overlap = disable_overlap
+
+    @property
+    def max_batch_size(self) -> int:
+        """Maximum number of requests that can be processed in a single batch."""
+        return self._max_batch_size
 
     @property
     def _effective_max_cache_length(self) -> int:
@@ -1910,25 +1929,17 @@ class OverlapTextGenerationPipeline(
                 "Device graph capture is enabled but pipeline model does not "
                 "expose a compiled model for capture/replay."
             )
-        if self._pipeline_config.runtime.max_batch_size is None:
-            raise RuntimeError(
-                "device_graph_capture requires max_batch_size to be resolved."
-            )
-
         max_capture_batch_size = min(
-            self._pipeline_config.runtime.max_batch_size,
+            self._max_batch_size,
             _MAX_GRAPH_CAPTURE_BATCH_SIZE,
         )
-        if (
-            max_capture_batch_size
-            < self._pipeline_config.runtime.max_batch_size
-        ):
+        if max_capture_batch_size < self._max_batch_size:
             logger.warning(
                 "Capping graph capture batch size to %d "
                 "(max_batch_size=%d). Decode batches above %d will fall "
                 "back to eager execution.",
                 max_capture_batch_size,
-                self._pipeline_config.runtime.max_batch_size,
+                self._max_batch_size,
                 max_capture_batch_size,
             )
 
@@ -2698,16 +2709,23 @@ class OverlapTextGenerationPipeline(
         # Cost of this fallback: when a mixed batch recurs, the cold-start
         # prime recomputes every row's bitmask synchronously, including the
         # continuing constrained rows the callback could have produced
-        # off-thread. The scheduler does not emit mixed batches today, so this
-        # is dormant. Once mixed batches are supported, preserving overlap here
-        # means enqueuing the callback for just the continuing subset and
-        # cold-starting only the genuinely new rows -- deferred until then to
-        # avoid splitting the prime/callback bitmask ownership (and the flag
-        # signalling) on a path that cannot yet be exercised or benchmarked.
-        curr_verifies = all(
-            ctx.tokens.generated_length > 0 for ctx in curr_context_batch
+        # off-thread. The scheduler does not emit mixed batches today for
+        # aggregated mode, and on a disaggregated decode-only engine a
+        # KV-transferred row arrives with generated_length > 0 yet was never
+        # in this engine's producing batch -- so the generated_length proxy is
+        # insufficient. Once mixed batches are benchmarkable, preserving
+        # overlap here means enqueuing the callback for just the continuing
+        # subset and cold-starting only the genuinely new rows -- deferred
+        # until then to avoid splitting the prime/callback bitmask ownership
+        # (and the flag signalling) on a path that cannot yet be exercised or
+        # benchmarked.
+        prev_context_batch = prev_batch.inputs.flat_batch
+        prev_rids = {ctx.request_id for ctx in prev_context_batch}
+        all_continuing = all(
+            ctx.request_id in prev_rids and not ctx.is_initial_prompt
+            for ctx in curr_context_batch
         )
-        if not curr_verifies:
+        if not all_continuing:
             return False
 
         overlap_state = spec_state.overlap_state
@@ -2715,7 +2733,6 @@ class OverlapTextGenerationPipeline(
             "Async bitmask callback requires structured output to be enabled"
         )
 
-        prev_context_batch = prev_batch.inputs.flat_batch
         prev_batch_size = len(prev_context_batch)
         next_draft_k = prev_batch.spec_decode.next_draft_tokens_host.shape[1]
         num_positions = next_draft_k + 1

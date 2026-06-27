@@ -89,6 +89,16 @@ class PipelineRuntimeConfig(ConfigFileModel):
         ),
     )
 
+    eplb_profile: bool = Field(
+        default_factory=lambda: os.getenv("MAX_SERVE_EPLB_PROFILE", "").lower()
+        in ("1", "true", "yes"),
+        description=(
+            "When True, enables expert-parallel load balancing (EPLB) MoE "
+            "routing histogram profiling in the pipeline. Mirrors "
+            "Settings.eplb_profile for pipeline code that doesn't have "
+            "access to Settings."
+        ),
+    )
     ce_delay_ms: float = Field(
         default=0.0,
         description=(
@@ -311,6 +321,18 @@ class PipelineRuntimeConfig(ConfigFileModel):
             'if any. Pass ``"none"`` (case-insensitive) to explicitly '
             "disable tool parsing even when the architecture declares a "
             "default."
+        ),
+    )
+
+    emit_reasoning_content: bool = Field(
+        default=False,
+        description=(
+            "When ``True``, chat completion responses emit a thinking model's "
+            "chain-of-thought under ``reasoning_content`` only (``reasoning`` "
+            "is omitted). The ``reasoning_content`` alias is used by vLLM, "
+            "SGLang, and the DeepSeek API; some clients require it. When "
+            "``False`` (default), responses emit reasoning under ``reasoning`` "
+            "only."
         ),
     )
 

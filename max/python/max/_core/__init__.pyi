@@ -49,6 +49,9 @@ from . import (
     safetensors as safetensors,
 )
 from . import (
+    xgrammar as xgrammar,
+)
+from . import (
     xxhash as xxhash,
 )
 

@@ -316,13 +316,6 @@ then binds the artifact to weights and returns an executable
 [`Model`](/max/api/python/generated/max.engine.Model/). It accepts a
 `weights_registry`, or a dictionary that maps weight names to tensor data.
 
-For non-blocking compilation, use
-[`InferenceSession.compile_async()`](/max/api/python/generated/max.engine.InferenceSession/#max.engine.InferenceSession.compile_async),
-which schedules the compile and returns immediately; `compile()` is the
-synchronous variant that blocks. `compile_async()` doesn't raise compilation
-errors itself—they surface when you consume the artifact, for example by calling
-`init()`, `init_all()`, or `CompiledModel.export_mef()`.
-
 You should have already passed this dictionary to `load_state_dict()`, which
 stored the dictionary inside the `Module` instance. Reuse it by passing
 `model.state_dict()` as the `weights_registry` argument.

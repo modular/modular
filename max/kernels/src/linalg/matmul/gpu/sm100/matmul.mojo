@@ -23,7 +23,7 @@ For new code, use sm100_structured directly:
 - Import matmul from: linalg.matmul.gpu.sm100_structured.matmul
 """
 
-from std.sys import simd_width_of, size_of
+from std.sys import align_of, simd_width_of, size_of
 from std.math.uutils import umod, ufloordiv, udivmod
 
 from std.gpu import WARP_SIZE, lane_id, warp_id
@@ -42,6 +42,7 @@ from layout import (
     IntTuple,
     Idx,
     Layout,
+    RuntimeLayout,
     TileTensor,
     row_major,
     col_major,

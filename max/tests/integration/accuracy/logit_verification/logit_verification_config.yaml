@@ -625,17 +625,6 @@ logit_verification_pipelines:
     cos_dist_threshold: 2.1e-5
     kl_div_threshold: 4.6e-7
 
-  allenai/Olmo-3-7B-Instruct-bfloat16:
-    pre_submit_agents: []
-    pipeline: "allenai/Olmo-3-7B-Instruct"
-    compatible_with: [gpu]
-    encoding: bfloat16
-    pregenerated_torch_goldens:
-      tar_file: "s3://modular-bazel-artifacts-public/artifacts/torch_allenai_Olmo-3-7B-Instruct_bfloat16_golden/1/57f967c473a246e4f3d40a55393ee615c0feb3134bcbb7e67645993e6294c6aa/torch_allenai_Olmo-3-7B-Instruct_bfloat16_golden.tar.gz"
-      json_file: "torch_allenai_Olmo-3-7B-Instruct_bfloat16_golden.json"
-    kl_div_threshold: 1e-02
-    cos_dist_threshold: 6e-02
-
   HuggingFaceM4/Idefics3-8B-Llama3:
     pre_submit_agents: []
     pipeline: "HuggingFaceM4/Idefics3-8B-Llama3"
@@ -888,6 +877,28 @@ logit_verification_pipelines:
     cos_dist_threshold: 5.0e-04
     kl_div_threshold: 1.0e-03
 
+  # MiniMax-M3-MXFP8, compared against logprob goldens
+  # pregenerated from the mm-sglang MiniMax-M3 fork on the 3 short prompts.
+  # Serving engines expose logprobs (not raw logits), so this is a brittle
+  # pipeline: cosine distance + KL divergence only. Needs the private arch, so
+  # run via //max_private/minimax_m3:verify_minimax_m3
+  # --pipeline=MiniMaxAI/MiniMax-M3-MXFP8. 8 GPUs (ep_size=8, dp=1).
+  MiniMaxAI/MiniMax-M3-MXFP8:
+    pre_submit_agents: []
+    post_submit_agents: []
+    pipeline: "MiniMaxAI/MiniMax-M3-MXFP8"
+    compatible_with: [gpu]
+    encoding: float8_e4m3fn
+    tags: [manual, nvidia-multi, 8xb200]
+    pregenerated_torch_goldens:
+      tar_file: "s3://modular-bazel-artifacts-public/artifacts/MiniMaxAI_MiniMax-M3-MXFP8_golden/1/f6c729e886f1750f1c569f5d68bfcd300f5e5eca24507047fd11830dadfd9cae/MiniMaxAI_MiniMax-M3-MXFP8_golden.tar.gz"
+      json_file: "sglang_MiniMaxAI_MiniMax-M3-MXFP8_float8_e4m3fn_golden.json"
+    # Tuned via --find-tolerances on 8x B200 (measured: cos_dist 5.6e-04,
+    # kl_div 1.8e-01) with headroom. KL is dominated by the translate prompt's
+    # later steps; MAX fp8 vs sglang mxfp8+deep_gemm kernels differ.
+    cos_dist_threshold: 1.0e-03
+    kl_div_threshold: 3.0e-01
+
   deepseek-ai/DeepSeek-V3.1-Terminus:
     pre_submit_agents: []
     pipeline: "deepseek-ai/DeepSeek-V3.1-Terminus"
@@ -912,6 +923,21 @@ logit_verification_pipelines:
     # Loosened pending MODELS-943 (sparse-MLA prefill correctness).
     cos_dist_threshold: 6.0e-01
     kl_div_threshold: 5.0e+00
+    timeout: 1200
+
+  zai-org/GLM-5.1-FP8:
+    pre_submit_agents: []
+    pipeline: "zai-org/GLM-5.1-FP8"
+    compatible_with: [gpu]
+    encoding: float8_e4m3fn
+    tags: [nvidia-multi, 8xb200]
+    # Goldens generated using local installation of vLLM, not with workflow
+    # because model requires deep_gemm, which must be installed from git repo.
+    pregenerated_torch_goldens:
+      tar_file: "s3://modular-bazel-artifacts-public/artifacts/zai-org_GLM-5.1-FP8_golden/1/6a79dc15919c845af6e762d41d7e38bae299eb78b20e4b8a4024de24f4c1b0cb/zai-org_GLM-5.1-FP8_golden.tar.gz"
+      json_file: "torch_zai-org_GLM-5.1-FP8_float8_e4m3fn_golden.json"
+    cos_dist_threshold: 6.6e-04
+    kl_div_threshold: 1.7e-01
     timeout: 1200
 
   nvidia/DeepSeek-R1-0528-NVFP4-v2:

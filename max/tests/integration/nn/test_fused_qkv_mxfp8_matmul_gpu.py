@@ -48,6 +48,7 @@ from max.nn.kernels import (
 from max.nn.kv_cache import (
     KVCacheInputsPerDevice,
     KVCacheParams,
+    MHAKVCacheParams,
     PagedCacheValues,
 )
 from max.pipelines.kv_cache import PagedKVCacheManager
@@ -181,14 +182,16 @@ def _run_path(
             blocks,
             cache_lengths,
             lookup_table,
-            max_lengths,
+            max_prompt_length,
+            max_cache_length,
             *_rest,
         ) = graph.inputs
         kv_collection = PagedCacheValues(
             blocks.buffer,
             cache_lengths.tensor,
             lookup_table.tensor,
-            max_lengths.tensor,
+            max_prompt_length.tensor,
+            max_cache_length.tensor,
         )
         q_out = _build_qkv_value(
             is_mxfp8=is_mxfp8,
@@ -256,7 +259,7 @@ def test_fused_qkv_mxfp8_matmul(
     device = Accelerator()
     device_ref = DeviceRef(device.label, device.id)
     session = InferenceSession(devices=[device])
-    kv_params = KVCacheParams(
+    kv_params = MHAKVCacheParams(
         dtype=DType.bfloat16,
         page_size=128,
         n_kv_heads=num_kv_heads,

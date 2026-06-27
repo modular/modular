@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Implements the property test runner and configuration."""
 
+from .random import Rng
 from .strategy import Strategy
 from std.time import perf_counter_ns
 

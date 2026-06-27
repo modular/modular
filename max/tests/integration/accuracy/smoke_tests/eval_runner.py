@@ -165,6 +165,7 @@ def call_eval(
     disable_timeouts: bool,
     metrics_url: str | None = None,
     model_alias: str | None = None,
+    lm_eval_metadata: str | None = None,
 ) -> tuple[EvalResults, EvalSamples]:
     extra_gen_kwargs = ""
     # model_alias carries the original recipe key (e.g. "nvidia/Kimi-K2.5-NVFP4__internal")
@@ -222,6 +223,11 @@ def call_eval(
             f"--include_path={include_path}",
             "--fewshot_as_multiturn",
         ]
+
+        # Passed verbatim to lm-eval; merged into each task's config metadata to
+        # parameterize it at runtime (e.g. babilong context length).
+        if lm_eval_metadata is not None:
+            eval_cmd.append(f"--metadata={lm_eval_metadata}")
 
         args = [interpreter, "-m", *eval_cmd]
         logger.info(f"Running eval with:\n {' '.join(args)}")
@@ -321,6 +327,10 @@ def build_eval_summary(
             accuracy = metrics["exact_match,flexible-extract"]
             accuracy_stderr = metrics["exact_match_stderr,flexible-extract"]
             task_type = "text"
+        elif "babilong" in task:
+            accuracy = metrics["acc,none"]
+            accuracy_stderr = metrics["acc_stderr,none"]
+            task_type = "long-context"
         else:
             raise ValueError(f"Unknown task: {task}")
 

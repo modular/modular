@@ -10,6 +10,20 @@ This version is still a work in progress.
 
 ## MAX models
 
+- Added GLM-5.2 (`GlmMoeDsaForCausalLM`) support, extending the existing
+  GLM-5.1 sparse-attention architecture with cross-layer index sharing.
+- Added Laguna (`LagunaForCausalLM`), poolside's decoder-only sparse-MoE
+  language model. It uses sigmoid expert routing with a per-expert
+  score-correction bias, a per-element softplus attention-output gate, and
+  per-head QK-RMSNorm. Verified on `poolside/Laguna-M.1-NVFP4` (131B,
+  compressed-tensors NVFP4 experts) on a single B200, including chat-template
+  serving and tool calling. On GSM8K (0-shot) it scores ~0.81 with light
+  sampling (`temperature=0.3` plus a frequency penalty); greedy decoding
+  (`temperature=0`) is **not** recommended for this NVFP4 checkpoint, since it
+  falls into repetition loops on a sizable fraction of prompts (dropping GSM8K
+  to ~0.59). An experimental, not-yet-accuracy-validated FP8 KV cache (unscaled
+  cast) is available behind `--kv-cache-format float8_e4m3fn`; the default bf16
+  KV cache is the validated configuration.
 - Added DiffusionGemma (`DiffusionGemmaForBlockDiffusion`), an
   encoder/decoder block-diffusion text model that generates 256-token
   blocks per step via an inner denoising loop. Supports NVFP4 and bfloat16
@@ -23,9 +37,24 @@ This version is still a work in progress.
   (`float8_e4m3fn`) checkpoint weights are dequantized to `bfloat16` at load.
   Serve via `/v1/responses`; benchmark with
   `--benchmark-task text-to-image`.
+- Added the `reasoning_split` chat-completion request field for MiniMax M3.
+  It defaults to `true`, which keeps the existing behavior of returning the
+  model's thinking in a separate `reasoning` field. Setting it to `false` folds
+  the thinking back into the `content` field wrapped in `<think>...</think>`
+  tags, matching the official MiniMax M3 endpoint. The field is a no-op for
+  every other model.
 
 ## MAX framework
 
+- Data-parallel (DP) serving now shares the prefix cache across replicas, so a
+  multi-turn conversation gets cache hits even when a later turn is scheduled on
+  a different replica than the previous one. GPU prefix-cache hits are served by
+  a cheap device-to-device copy of the cached pages onto the assigned replica,
+  and the CPU/disk offload tiers are now a single pool shared by every replica
+  (a block offloaded by one replica can be loaded by another). As a result,
+  `host_kvcache_swap_space_gb` now sizes one shared host pool of that size for
+  the whole deployment, rather than allocating a separate pool of that size per
+  replica.
 - The graph compiler now fuses query/key RMSNorm followed by rotate-half RoPE
   into a single `rms_norm_rope` GPU kernel even when the RMSNorm is written "in
   float32" — that is, when a `bfloat16`/`float16` activation is upcast to
@@ -53,6 +82,20 @@ This version is still a work in progress.
 
 ### Inference server
 
+- Added an opt-in `emit_reasoning_content` server config. When enabled, chat
+  completion responses emit a reasoning model's chain-of-thought under
+  `reasoning_content` instead of `reasoning` (the two are never emitted
+  together). This restores the `reasoning_content` field for clients that
+  require it; it remains off by default, so responses emit `reasoning` only.
+- Improved time-to-first-token for multimodal requests by making the image and
+  video preprocessor reject and decode media more efficiently. Oversized media
+  is now rejected before its bytes are fully materialized: an `http(s)` download
+  is aborted as soon as the advertised `Content-Length` (or the streamed total)
+  crosses the per-item cap, and a `data:` URI is rejected from its base64 length
+  before it is decoded. Large `data:` base64 decoding now runs on a worker
+  thread instead of blocking the server event loop, so one big payload no longer
+  stalls other in-flight requests. Per-request video count and per-video byte
+  limits are also enforced up front (mirroring the existing image limits).
 - Reduced per-iteration latency for structured-output (constrained decoding)
   requests on speculative-decode models. The overlap pipeline now enqueues the
   asynchronous FSM-advance and bitmask compute once the next iteration's batch
@@ -119,8 +162,41 @@ This version is still a work in progress.
   path. Chat-completion requests also accept an optional `cache_salt` field
   that scopes prefix-cache reuse to a single per-request KV chain. Default
   behavior is the same as the existing `ahash64` path.
+- Added opt-in SHA-256 KV-cache block hashes through host-tier KV
+  connectors. `NullConnector`, `LocalConnector`, and `TieredConnector` now
+  accept 32-byte SHA-256 digests alongside 64-bit `ahash64` hashes. The
+  `KVConnector` Protocol's `load` and `offload` take `Sequence[bytes]`
+  block hashes and a `bytes | None` parent-sequence hash; the block
+  manager coerces legacy `ahash64` int hashes to bytes (8-byte
+  big-endian, signed) at the boundary, so a connector implementation only
+  ever sees one hash shape. Connectors advertise what they accept via a
+  new `supported_hash_algos: frozenset[KVHashAlgo]` property (default
+  `frozenset({"ahash64"})`), which the block manager validates against
+  the configured `kv_hash_algo` at startup so a mismatch fails fast with
+  a clear remediation message. The disk tier names files `<hex>.bin` (16
+  hex chars for 64-bit hashes, 64 hex chars for SHA-256 digests) and pins
+  the algo in a `kv-disk-cache.meta.json` sidecar to refuse cross-algo
+  reuse of a cache directory. `KVHashAlgo` is re-exported from
+  `max.nn.kv_cache` for downstream consumers. Default behavior is
+  unchanged.
+- Extended SHA-256 KV-cache block hashes to the dKV (`DKVConnector`)
+  external tier. `DKVConnector.supported_hash_algos` now advertises
+  `frozenset({"ahash64", "sha256", "sha256_64"})`, and `load`/`offload`
+  accept both 8-byte (`ahash64` / `sha256_64`) and 32-byte (full
+  `sha256`) block hashes; 32-byte digests are truncated to their first
+  8 bytes at the boundary into the unchanged `dkv_connector` Rust
+  client, which continues to carry a `uint64 seq_hash` on the wire.
+  Truncation is byte-identical to the existing `sha256_64` algorithm,
+  so configuring MAX with `sha256` or `sha256_64` produces the same
+  dKV key for the same logical block — no change to the dkv wire
+  format, stored block identity, or `DKVExternalBlockMetadata`
+  orchestrator hint shape. Default behavior is unchanged.
 
 ### `max` CLI
+
+- The entrypoint for the CLI, formerly `max.entrypoints`, has been marked as
+  private and moved to `max._entrypoints`. The CLI is still a public facing API,
+  but the code within it is not.
 
 ### Python API
 
@@ -159,11 +235,20 @@ This version is still a work in progress.
   `EagerRealizationContext(use_interpreter=...)` argument is deprecated in
   favor of `EagerRealizationContext(executor=...)`.
 
-- The eager interpreter precompiles its matmul and unary-elementwise
-  graph-compiler models for the full `(device, dtype)` matrix at import by
-  default. Set `MAX_EAGER_OP_PRECOMPILE=0` to skip the import-time sweep and
-  compile each target lazily on first dispatch instead, bounding compile cost to
-  the targets a program actually uses.
+- The eager interpreter now compiles its matmul and unary-elementwise
+  graph-compiler models lazily, per target on first dispatch, by default —
+  bounding compile cost to the targets a program uses instead of JIT-compiling
+  the full kernel library at import. Set `MAX_EAGER_OP_PRECOMPILE=1` to
+  precompile the full matrix at import instead.
+
+- Added a `max warm-interpreter-cache` command that batch-compiles the full
+  eager interpreter model matrix into the on-disk cache for the current
+  machine's devices and drops a stamp. A later lazy eager process on the same
+  device set adopts the warm — one batched cache load instead of compiling each
+  target on first use — so later programs start warm. Run it as a provisioning
+  step (for example a Dockerfile `RUN`) on the target hardware. Pure
+  optimization: if skipped, or on a different device set, dispatch compiles each
+  target lazily.
 
 - Added `max.experimental.nn.subgraphable` for `Module` subgraph compilation: a
   repeated block (via the `@subgraphable` class decorator, or the
@@ -181,6 +266,10 @@ This version is still a work in progress.
   without an explicit `custom_extensions=` — including the eager-realization
   graph that backs `max.experimental` tensors. Empty by default.
 
+- Moved the `max.entrypoints` package to be private. In doing so, we
+  deprecated the `max.entrypoints.LLM` API and we'll introduce a new API
+  for offline inference in a future release.
+
 ### C API
 
 - Fixed `M_borrowTensorInto()` copying instead of borrowing a GPU input. When
@@ -195,6 +284,13 @@ This version is still a work in progress.
 
 ## MAX kernels
 
+- The `TileTensor` layout type no longer takes an `element_size` parameter. A
+  tensor's logical element width is now carried by its `Storage` parameter via
+  `PointerStorage[element_width]` (default `PointerStorage[1]`), and
+  `element_size` remains available as a derived comptime member. Code that
+  passed `element_size=N` should now pass
+  `Storage=PointerStorage[element_width=N]`, or use `TileTensor.vectorize()` to
+  build the vectorized view.
 - Apple silicon GPU support for running MAX models has been extended to M1 and
   M2 systems. Previously, the optimized matrix multiplication kernels for Apple
   silicon GPUs only returned correct results on M3 and newer systems. That has

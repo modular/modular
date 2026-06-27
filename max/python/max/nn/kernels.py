@@ -42,7 +42,7 @@ from max.graph.quantization import QuantizationConfig, QuantizationEncoding
 from max.nn.quant_config import InputScaleSpec, QuantConfig, WeightScaleSpec
 
 from .attention.mask_config import AttentionMaskVariant, MHAMaskVariant
-from .kv_cache import KVCacheParams, PagedCacheValues
+from .kv_cache import KVCacheParams, MHAKVCacheParams, PagedCacheValues
 
 _MHA_MASK_VARIANT_TO_ATTENTION_MASK = {
     MHAMaskVariant.CAUSAL_MASK: AttentionMaskVariant.CAUSAL_MASK,
@@ -426,7 +426,8 @@ def store_k_scale_cache_ragged(
             kv_collection.cache_lengths,
             kv_collection.lookup_table,
             input_row_offsets,
-            kv_collection.max_lengths,
+            kv_collection.max_prompt_length,
+            kv_collection.max_cache_length,
             kv_collection.kv_scales,
             layer_idx,
         ],
@@ -452,6 +453,7 @@ def _rope_split_store_ragged_unfused(
     custom op, so the graph compiler can attempt to fuse them.
     """
     head_dim = kv_params.head_dim
+    assert isinstance(kv_params, MHAKVCacheParams)
     n_kv_heads = kv_params.n_kv_heads
     q_dim = n_heads * head_dim
     kv_dim = n_kv_heads * head_dim
@@ -484,7 +486,8 @@ def _rope_split_store_ragged_unfused(
     kv_blocks = kv_collection.kv_blocks
     cache_lengths = kv_collection.cache_lengths
     lookup_table = kv_collection.lookup_table
-    max_lengths = kv_collection.max_lengths
+    max_prompt_length = kv_collection.max_prompt_length
+    max_cache_length = kv_collection.max_cache_length
     ops.inplace_custom(
         "mo.kv_cache.store.paged.ragged",
         device=xk_rope.device,
@@ -494,7 +497,8 @@ def _rope_split_store_ragged_unfused(
             cache_lengths,
             lookup_table,
             input_row_offsets,
-            max_lengths,
+            max_prompt_length,
+            max_cache_length,
             layer_idx,
         ],
         parameters={"key_or_value": 0},
@@ -508,7 +512,8 @@ def _rope_split_store_ragged_unfused(
             cache_lengths,
             lookup_table,
             input_row_offsets,
-            max_lengths,
+            max_prompt_length,
+            max_cache_length,
             layer_idx,
         ],
         parameters={"key_or_value": 1},
@@ -878,6 +883,138 @@ def _fused_qkv_ragged_matmul_scaled_mxfp8(
     output_dim = (
         _output_dim if _output_dim is not None else n_heads * kv_params.head_dim
     )
+
+    return ops.inplace_custom(
+        op_name,
+        device=input.device,
+        values=values,
+        out_types=[
+            TensorType(
+                dtype=DType.bfloat16,
+                shape=input.shape[:-1] + [output_dim],
+                device=input.device,
+            )
+        ],
+        parameters=parameters,
+    )[0].tensor
+
+
+def _fused_qkv_index_ragged_matmul_scaled_mxfp8(
+    kv_params: KVCacheParams,
+    index_kv_params: KVCacheParams,
+    input: TensorValue,
+    input_row_offsets: TensorValue,
+    wqkv: TensorValue,
+    kv_collection: PagedCacheValues,
+    index_kv_collection: PagedCacheValues,
+    layer_idx: TensorValue,
+    n_heads: int,
+    num_index_heads: int,
+    idx_head_dim: int,
+    input_scale: TensorValue,
+    weight_scale: TensorValue,
+) -> TensorValue:
+    """Computes MiniMax-M3's fused QKV + index-QK projections in one MXFP8 GEMM.
+
+    A 5-way fusion: ``input`` and ``wqkv`` carry ``float8_e4m3fn`` data with
+    E8M0 (``float8_e8m0fnu``) block scales over 32-element K blocks. ``wqkv`` is
+    the concatenation ``[Wq | Wk | Wv | Wiq | Wik]`` along the output dimension.
+    The single matmul output columns route as:
+
+    - ``Q``       -> returned combined output, columns ``[0, q_dim)``.
+    - ``K`` / ``V`` -> scattered in place into the MAIN ``kv_collection``.
+    - ``IndexQ``  -> returned combined output, columns
+      ``[q_dim, q_dim + iq_dim)`` (packed right after ``Q``).
+    - ``IndexK``  -> scattered in place into the INDEX ``index_kv_collection``
+      (MLA cache: single latent head, head 0, K only).
+
+    The fusion is bit-exact to separate QKV and IndexQK matmuls because every
+    band boundary lands on a 128-element scale-block boundary for M3. The model
+    code splits the returned tensor into ``Q`` and ``IndexQ`` via ``ops.split``.
+
+    Args:
+        kv_params: KVCacheParams for the MAIN (K, V) cache (GQA/MHA, non-MLA).
+        index_kv_params: KVCacheParams for the INDEX (IndexK) cache; MLA with a
+            single latent head (``is_mla=True``, ``n_kv_heads=1`` for M3).
+        input: Activation tensor, ``float8_e4m3fn`` with shape
+            [M=total_seq_len, K=hidden_dim].
+        input_row_offsets: Ragged offsets ``[batch_size + 1]``, uint32.
+        wqkv: Concatenated weight ``[Wq | Wk | Wv | Wiq | Wik]``,
+            ``float8_e4m3fn``, shape [N_total, K=hidden_dim] where
+            ``N_total = q_dim + 2 * kv_dim + iq_dim + ik_dim``.
+        kv_collection: PagedCacheValues for the MAIN cache.
+        index_kv_collection: PagedCacheValues for the INDEX cache.
+        layer_idx: Layer index, uint32 on CPU.
+        n_heads: Number of (main) attention heads. ``q_dim = n_heads *
+            head_dim``.
+        num_index_heads: Number of index Q heads. ``iq_dim = num_index_heads *
+            idx_head_dim``.
+        idx_head_dim: Index head dimension; also the single-head IndexK width.
+        input_scale: E8M0 input block scales in the rank-5 SF-atom layout.
+        weight_scale: E8M0 weight block scales in the rank-5 SF-atom layout.
+
+    Returns:
+        Combined ``[M, q_dim + iq_dim]`` bf16 tensor (Q then IndexQ).
+
+    Raises:
+        ValueError: on input shapes/dtypes that are invalid for the kernel.
+    """
+    _check_same_dtype(input=input, wqkv=wqkv)
+
+    input_rank_expected = 2
+    _check_rank(input_rank_expected, input=input)
+
+    _check_dtype(
+        DType.uint32, input_row_offsets=input_row_offsets, layer_idx=layer_idx
+    )
+
+    tensors_to_check = [wqkv, input_row_offsets, input_scale, weight_scale]
+    if not all(t.device == input.device for t in tensors_to_check):
+        raise ValueError(
+            "expected all tensors to be on the same device as input"
+            f" ({input.device}), but got:\n  wqkv={wqkv.device}\n "
+            f" input_row_offsets={input_row_offsets.device}\n "
+            f" input_scale={input_scale.device}\n "
+            f" weight_scale={weight_scale.device}"
+        )
+
+    if layer_idx.device != DeviceRef.CPU():
+        raise ValueError(
+            "expected layer_idx to be on CPU device, but got"
+            f" {layer_idx.device}"
+        )
+
+    # MXFP8 block scales fully describe the quantization, but the kernel still
+    # multiplies by a per-tensor scale, so pass an identity scale on CPU.
+    tensor_sf = ops.constant(1.0, DType.float32, device=DeviceRef.CPU())
+
+    assert kv_params.page_size is not None
+    assert index_kv_params.page_size is not None
+    iq_dim = num_index_heads * idx_head_dim
+    parameters: dict[str, int | str | DType] = {
+        "dtype": DType.float8_e4m3fn,
+        "scale_type": DType.float8_e8m0fnu,
+        "kv_type": kv_params.dtype,
+        "index_kv_type": index_kv_params.dtype,
+        "SF_VECTOR_SIZE": 32,
+        "IQ_DIM": iq_dim,
+    }
+
+    op_name = "mo.fused_qkv_index_matmul.ragged.paged.scale.mxfp8"
+    values = [
+        input,
+        input_row_offsets,
+        wqkv,
+        input_scale,
+        weight_scale,
+        tensor_sf,
+        *kv_collection.flatten_without_attention_dispatch_metadata(),
+        *index_kv_collection.flatten_without_attention_dispatch_metadata(),
+        layer_idx,
+    ]
+
+    # Combined output: Q (n_heads * head_dim) then IndexQ (iq_dim).
+    output_dim = n_heads * kv_params.head_dim + iq_dim
 
     return ops.inplace_custom(
         op_name,
@@ -1476,10 +1613,11 @@ def _validate_kv_cache_store_common(
     _check_rank(0, layer_idx=layer_idx)
     _check_rank(6, kv_blocks=kv_collection.kv_blocks)
     _check_rank(1, cache_lengths=kv_collection.cache_lengths)
+    _check_rank(2, lookup_table=kv_collection.lookup_table)
     _check_rank(
-        2,
-        lookup_table=kv_collection.lookup_table,
-        max_lengths=kv_collection.max_lengths,
+        1,
+        max_prompt_length=kv_collection.max_prompt_length,
+        max_cache_length=kv_collection.max_cache_length,
     )
     if key_or_value not in (KEY_CACHE_INDEX, VALUE_CACHE_INDEX):
         raise ValueError(
@@ -1515,7 +1653,8 @@ def kv_cache_store_paged_ragged(
             kv_collection.cache_lengths,
             kv_collection.lookup_table,
             input_row_offsets,
-            kv_collection.max_lengths,
+            kv_collection.max_prompt_length,
+            kv_collection.max_cache_length,
             layer_idx,
         ],
         parameters=parameters,
@@ -1601,7 +1740,8 @@ def kv_cache_store_paged_padded(
             kv_collection.cache_lengths,
             kv_collection.lookup_table,
             valid_lengths,
-            kv_collection.max_lengths,
+            kv_collection.max_prompt_length,
+            kv_collection.max_cache_length,
             layer_idx,
         ],
         parameters=parameters,

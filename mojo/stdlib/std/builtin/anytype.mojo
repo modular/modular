@@ -32,6 +32,7 @@ from std.builtin.variadics import _MLIR
 # ===----------------------------------------------------------------------=== #
 
 
+@stable(since="1.0")
 trait AnyType:
     """The most basic trait that all Mojo types extend by default.
 

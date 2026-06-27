@@ -340,23 +340,16 @@ class Eagle3KimiK25Unified(Module):
         )
 
         one = ops.constant(1, DType.uint32, DeviceRef.CPU()).broadcast_to([1])
-        new_max_lengths = [
-            ops.concat(
-                [one, kv.max_lengths[0, 1].broadcast_to([1])], axis=-1
-            ).reshape([1, 2])
-            for kv in draft_kv_collections
-        ]
 
         draft_kv_collections = [
             replace(
                 kv,
-                max_lengths=max_lengths,
+                max_prompt_length=one,
+                max_cache_length=kv.max_cache_length,
                 attention_dispatch_metadata=kv.draft_attention_dispatch_metadata,
                 mla_num_partitions=kv.draft_mla_num_partitions,
             )
-            for kv, max_lengths in zip(
-                draft_kv_collections, new_max_lengths, strict=True
-            )
+            for kv in draft_kv_collections
         ]
 
         next_draft_tokens = next_draft_tokens.rebind(["batch_size"])

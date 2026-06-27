@@ -17,8 +17,8 @@ Mirrors :class:`Eagle3KimiK25Unified` but:
 - carries an MHA draft (:class:`Eagle3MHADraft`) whose KV cache geometry
   is independent of the target's MLA cache;
 - declares an independent set of per-device draft KV inputs (kv_blocks,
-  cache_lengths, lookup_table, max_lengths, attention_dispatch_metadata)
-  instead of borrowing the target's slots.
+  cache_lengths, lookup_table, max_prompt_length, max_cache_length,
+  attention_dispatch_metadata) instead of borrowing the target's slots.
 """
 
 from __future__ import annotations
@@ -343,25 +343,18 @@ class Eagle3MHAKimiK25Unified(Module):
         )
 
         one = ops.constant(1, DType.uint32, DeviceRef.CPU()).broadcast_to([1])
-        new_max_lengths = [
-            ops.concat(
-                [one, kv.max_lengths[0, 1].broadcast_to([1])], axis=-1
-            ).reshape([1, 2])
-            for kv in draft_kv_collections
-        ]
 
         # The pipeline_model already swapped attention_dispatch_metadata to
         # the draft slot at graph-init; carry that through to the step-1+
-        # collections along with the updated max_lengths.
+        # collections along with the updated max prompt / cache lengths.
         draft_kv_collections = [
             replace(
                 kv,
-                max_lengths=max_lengths,
+                max_prompt_length=one,
+                max_cache_length=kv.max_cache_length,
                 attention_dispatch_metadata=kv.draft_attention_dispatch_metadata,
             )
-            for kv, max_lengths in zip(
-                draft_kv_collections, new_max_lengths, strict=True
-            )
+            for kv in draft_kv_collections
         ]
 
         next_draft_tokens = next_draft_tokens.rebind(["batch_size"])
@@ -471,7 +464,7 @@ def _patch_draft0_kv_cache(kv: PagedCacheValues) -> PagedCacheValues:
     """
     decode_md = kv.draft_attention_dispatch_metadata
     assert decode_md is not None
-    step0_max_prompt = kv.max_lengths[0, 0].cast(DType.int64).reshape([1]) + 1
+    step0_max_prompt = kv.max_prompt_length.cast(DType.int64).reshape([1]) + 1
     step0_md = ops.concat(
         [decode_md[0:1], step0_max_prompt, decode_md[2:4]],
         axis=0,

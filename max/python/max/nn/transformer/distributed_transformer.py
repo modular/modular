@@ -258,7 +258,8 @@ class DistributedTransformerBlock(Module):
         kv_blocks: list[BufferValue],
         kv_cache_lengths: list[TensorValue],
         kv_lookup_table: list[TensorValue],
-        kv_max_lengths: list[TensorValue],
+        kv_max_prompt_lengths: list[TensorValue],
+        kv_max_cache_lengths: list[TensorValue],
         kv_dispatch_metadata: list[TensorValue],
         freqs_cis: list[TensorValue],
         input_row_offsets: list[TensorValue],
@@ -274,14 +275,16 @@ class DistributedTransformerBlock(Module):
                 kv_blocks=kv_block,
                 cache_lengths=cache_lengths,
                 lookup_table=lookup_table,
-                max_lengths=max_lengths,
+                max_prompt_length=max_prompt_length,
+                max_cache_length=max_cache_length,
                 attention_dispatch_metadata=dispatch_metadata,
             )
-            for kv_block, cache_lengths, lookup_table, max_lengths, dispatch_metadata in zip(
+            for kv_block, cache_lengths, lookup_table, max_prompt_length, max_cache_length, dispatch_metadata in zip(
                 kv_blocks,
                 kv_cache_lengths,
                 kv_lookup_table,
-                kv_max_lengths,
+                kv_max_prompt_lengths,
+                kv_max_cache_lengths,
                 kv_dispatch_metadata,
                 strict=True,
             )
@@ -384,8 +387,11 @@ class DistributedTransformer(DistributedLogitsPostprocessMixin, Module):
         kv_lookup_table = [
             kv_collection.lookup_table for kv_collection in kv_collections
         ]
-        kv_max_lengths = [
-            kv_collection.max_lengths for kv_collection in kv_collections
+        kv_max_prompt_lengths = [
+            kv_collection.max_prompt_length for kv_collection in kv_collections
+        ]
+        kv_max_cache_lengths = [
+            kv_collection.max_cache_length for kv_collection in kv_collections
         ]
 
         def inputs_for_layer(
@@ -398,7 +404,8 @@ class DistributedTransformer(DistributedLogitsPostprocessMixin, Module):
                 kv_blocks,
                 kv_cache_lengths,
                 kv_lookup_table,
-                kv_max_lengths,
+                kv_max_prompt_lengths,
+                kv_max_cache_lengths,
                 dispatch_metadata_tensors,
                 freqs_cis,
                 input_row_offsets_per_device,

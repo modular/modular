@@ -88,7 +88,6 @@ from pydantic import (
     ConfigDict,
     Field,
     create_model,
-    field_validator,
     model_validator,
 )
 from typing_extensions import NotRequired, TypedDict
@@ -109,23 +108,27 @@ from typing_extensions import NotRequired, TypedDict
 class ChatCompletionResponseMessage(_OpenAIChatCompletionMessage):
     """OpenAI assistant message extended with MAX reasoning text.
 
-    Reasoning-capable models emit their chain-of-thought under ``reasoning``
-    (the OpenAI Responses API naming). The ``reasoning_content`` alias
-    previously emitted by vLLM, SGLang, and the DeepSeek API is deprecated;
-    see https://github.com/vllm-project/vllm/pull/33402.
+    Reasoning-capable models emit their chain-of-thought under one of two
+    fields, selected by the ``emit_reasoning_content`` runtime flag:
+    ``reasoning`` (the OpenAI Responses API naming, the default) or
+    ``reasoning_content`` (the alias used by vLLM, SGLang, and the DeepSeek
+    API). Exactly one is populated per response; the other stays ``None``.
     """
 
     reasoning: str | None = None
+    reasoning_content: str | None = None
 
 
 class ChatCompletionStreamResponseDelta(_OpenAIChoiceDelta):
     """OpenAI stream delta extended with MAX reasoning text.
 
     Mirrors :class:`ChatCompletionResponseMessage`: each delta carries the
-    reasoning fragment under ``reasoning``.
+    reasoning fragment under ``reasoning`` or ``reasoning_content`` (selected
+    by the ``emit_reasoning_content`` runtime flag), never both.
     """
 
     reasoning: str | None = None
+    reasoning_content: str | None = None
 
 
 class ChatCompletionResponseChoice(_OpenAIChatCompletionChoice):
@@ -308,6 +311,10 @@ class _MaxRequestExtensions(BaseModel):
     repetition_penalty: float | None = None
     thinking_temperature: float | None = None
 
+    # MiniMax M3 only: ``False`` folds reasoning into ``content`` wrapped in
+    # ``<think>...</think>``; ``True`` (default) keeps it in the ``reasoning`` field.
+    reasoning_split: bool = True
+
     # Generation control.
     min_tokens: int | None = None
     stop_token_ids: list[int] | None = None
@@ -330,16 +337,6 @@ class _MaxRequestExtensions(BaseModel):
 
     # OpenRouter reasoning object; mapped to enable_thinking in the route.
     reasoning: ReasoningConfig | None = None
-
-    # HACK: MiniMax extension. Only ``True`` is supported.
-    reasoning_split: bool = True
-
-    @field_validator("reasoning_split")
-    @classmethod
-    def _require_reasoning_split(cls, value: bool) -> bool:
-        if not value:
-            raise ValueError("`reasoning_split` cannot be disabled")
-        return value
 
 
 # ---- Auto-generated request bases from OpenAI's TypedDict params ----------

@@ -27,11 +27,12 @@ kernel wins on 1×1), K >= 16 (below MMA_K).
 
 from std.math import ceildiv
 from std.math.uutils import udivmod
-from std.sys.info import size_of
+from std.sys.info import has_apple_gpu_accelerator, size_of
 from std.gpu import block_dim, block_idx, global_idx, thread_idx
 from std.gpu.host import DeviceContext
 from layout import Coord, Idx, TileTensor, row_major
 from linalg.matmul.gpu import _matmul_gpu
+from linalg.matmul.gpu.apple import ConvIm2colParams, enqueue_apple_conv2d
 from std.utils.index import IndexList
 from linalg.utils import elementwise_epilogue_type
 from nn.conv.conv_utils import elementwise_simd_epilogue_type
@@ -227,8 +228,10 @@ def dispatch_im2col_matmul_conv2d[
     # Degenerate N shapes (e.g. conv_out 96->3) don't amortize the
     # matmul launch cost; the naive kernel wins on these. On B200 we
     # measured naive at 0.21 ms vs im2col at 0.66 ms for C_out=3.
-    if N < 16:
-        return False
+    # Apple has no naive FCRS path, so the matmul must take small N too.
+    comptime if not has_apple_gpu_accelerator():
+        if N < 16:
+            return False
 
     # Filter transpose runs once, before the M-tile loop.
     var filter_size = filter.num_elements()
@@ -361,4 +364,196 @@ def dispatch_im2col_matmul_conv2d[
     ctx.synchronize()
     _ = filter_nk_buf^
     _ = im2col_buf^
+    return True
+
+
+def dispatch_fused_im2col_conv2d_apple[
+    input_type: DType,
+    filter_type: DType,
+    output_type: DType,
+    //,
+    filter_is_fcrs: Bool = False,
+    maybe_epilogue_func: Optional[elementwise_simd_epilogue_type] = None,
+](
+    input: TileTensor[input_type, ...],
+    filter: TileTensor[filter_type, ...],
+    output: TileTensor[mut=True, output_type, ...],
+    stride: IndexList[2],
+    dilation: IndexList[2],
+    symmetric_padding: IndexList[2],
+    num_groups: Int,
+    ctx: DeviceContext,
+) raises -> Bool:
+    """Apple M5 fused online-im2col conv2d (no `[M, K]` scratch materialised).
+
+    Apple silicon (`compute_capability == 5`). Mirrors the MI355 conv pattern:
+    the filter is transposed to the `(C_out, K=R*S*C_in)` NK matrix once (the
+    same kernel the materialised path uses), then `enqueue_apple_conv2d` runs the
+    simdgroup-tiled GEMM with the A operand gathered from the NHWC input on the
+    fly -- so the im2col matrix never touches global memory. This wins across
+    both compute- and memory-bound regimes, removing the materialised path's
+    memory-bound loss (and the `conv_gpu` Apple memory-bound naive guard).
+
+    Returns True if handled; False to fall back. Self-gates: bf16, groups=1,
+    dilation=1, kernel > 1x1, K=R*S*C_in >= 16. Unlike the materialised
+    dispatcher, there is NO N=C_out >= 16 gate: the fused path has no `[M, K]`
+    scratch round-trip, so small C_out (down to 1) takes the MMA path and beats
+    the naive thread-per-pixel conv (which is also broken on Metal for the
+    C_out=3 VAE->RGB shape). The MMA handles tiny N via the existing edge-tile
+    mask (`b_valid_cols` zero-fill in the B load + `acol < n` in the epilogue),
+    all comptime-fixed by SG_N=32 and independent of the runtime N.
+    """
+    comptime assert input.flat_rank == 4, "input must be rank 4 (NHWC)"
+    comptime assert filter.flat_rank == 4, "filter must be rank 4"
+    comptime assert output.flat_rank == 4, "output must be rank 4 (NHWC)"
+
+    comptime if input_type != DType.bfloat16:
+        return False
+
+    if num_groups != 1:
+        return False
+    if dilation[0] != 1 or dilation[1] != 1:
+        return False
+
+    var batch = Int(input.dim[0]())
+    var H = Int(input.dim[1]())
+    var W = Int(input.dim[2]())
+    var C_in = Int(input.dim[3]())
+
+    var H_out = Int(output.dim[1]())
+    var W_out = Int(output.dim[2]())
+    var C_out = Int(output.dim[3]())
+
+    var R: Int
+    var S: Int
+    comptime if filter_is_fcrs:
+        R = Int(filter.dim[2]())
+        S = Int(filter.dim[3]())
+    else:
+        R = Int(filter.dim[0]())
+        S = Int(filter.dim[1]())
+
+    if R == 1 and S == 1:
+        return False
+
+    var full_M = batch * H_out * W_out
+    var K = R * S * C_in
+    var N = C_out
+
+    if K < 16:
+        return False
+    # No N>=16 gate: the fused MMA path has no `[M, K]` scratch round-trip, so
+    # it handles small C_out (down to 1) on the MMA path -- edge-masked by
+    # `b_valid_cols` (B-load zero-fill) and `acol < n` (epilogue). The
+    # materialised dispatcher keeps N>=16 because for tiny C_out naive beat its
+    # scratch round-trip; that tradeoff does not apply here, and naive is broken
+    # on Metal for the C_out=3 VAE->RGB conv this routes around.
+    if N < 1:
+        return False
+
+    # The 16x16 simdgroup MMA needs M5+, fall back to the materialised matmul path.
+    if ctx.compute_capability() < 5:
+        return False
+
+    # Filter transpose to (C_out, K) -- identical to the materialised path so
+    # the K-ordering (r, s, c) matches the gather's (M, K) -> NHWC map.
+    var filter_size = filter.num_elements()
+    var filter_nk_buf = ctx.enqueue_create_buffer[filter_type](filter_size)
+    var filter_nk_ptr = filter_nk_buf.unsafe_ptr()
+
+    comptime transpose_block = 256
+    var transpose_grid = ceildiv(filter_size, transpose_block)
+
+    var R_dim: Int
+    var S_dim: Int
+    var C_dim: Int
+    var F_dim: Int
+    comptime if filter_is_fcrs:
+        F_dim = Int(filter.dim[0]())
+        C_dim = Int(filter.dim[1]())
+        R_dim = Int(filter.dim[2]())
+        S_dim = Int(filter.dim[3]())
+    else:
+        R_dim = Int(filter.dim[0]())
+        S_dim = Int(filter.dim[1]())
+        C_dim = Int(filter.dim[2]())
+        F_dim = Int(filter.dim[3]())
+
+    ctx.enqueue_function[_transpose_filter_to_nk[filter_type, filter_is_fcrs]](
+        filter.ptr,
+        filter_nk_ptr,
+        R_dim,
+        S_dim,
+        C_dim,
+        F_dim,
+        grid_dim=transpose_grid,
+        block_dim=transpose_block,
+    )
+
+    # The Apple conv launcher takes a single `in_type` for input and filter
+    # (the GEMM's A and B). Under the bf16 gate above, filter_type == input_type;
+    # rebind the NK pointer so the type matches the input's.
+    comptime assert (
+        filter_type == input_type
+    ), "Apple fused conv expects filter dtype == input dtype (bf16)"
+    var filter_nk_in_ptr = rebind[
+        UnsafePointer[Scalar[input_type], MutAnyOrigin]
+    ](filter_nk_ptr)
+    var filter_nk = TileTensor(filter_nk_in_ptr, row_major(Coord(N, K)))
+    # Flat (M, N) view of the NHWC output buffer (NHWC rows are contiguous).
+    var c_tt = TileTensor(output.ptr, row_major(Coord(full_M, N)))
+
+    var conv = ConvIm2colParams(
+        H=Int32(H),
+        W=Int32(W),
+        C=Int32(C_in),
+        R=Int32(R),
+        S=Int32(S),
+        H_out=Int32(H_out),
+        W_out=Int32(W_out),
+        pad_h=Int32(symmetric_padding[0]),
+        pad_w=Int32(symmetric_padding[1]),
+        stride_h=Int32(stride[0]),
+        stride_w=Int32(stride[1]),
+    )
+
+    comptime if maybe_epilogue_func:
+        comptime epilogue_4d = maybe_epilogue_func.value()
+        var HW_out = H_out * W_out
+
+        @parameter
+        @always_inline
+        @__copy_capture(HW_out, W_out)
+        def _gemm_epilogue[
+            _dtype: DType,
+            _width: SIMDSize,
+            *,
+            alignment: Int = 1,
+        ](coords_2d: IndexList[2], val: SIMD[_dtype, _width]):
+            var full_m = coords_2d[0]
+            var n_idx = coords_2d[1]
+            var batch_idx = full_m // HW_out
+            var sp = full_m - batch_idx * HW_out
+            var h_idx = sp // W_out
+            var w_idx = sp - h_idx * W_out
+            epilogue_4d(
+                IndexList[4](batch_idx, h_idx, w_idx, n_idx),
+                rebind[SIMD[output_type, _width]](val),
+            )
+
+        enqueue_apple_conv2d[
+            in_type=input_type,
+            c_type=output_type,
+            elementwise_lambda_fn=Optional[elementwise_epilogue_type](
+                _gemm_epilogue
+            ),
+        ](c_tt, input, filter_nk, conv, ctx)
+    else:
+        enqueue_apple_conv2d[
+            in_type=input_type,
+            c_type=output_type,
+        ](c_tt, input, filter_nk, conv, ctx)
+
+    ctx.synchronize()
+    _ = filter_nk_buf^
     return True

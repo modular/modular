@@ -46,4 +46,6 @@ hy_v3_arch = SupportedArchitecture(
     multi_gpu_supported=True,
     batching=HyV3BatchProcessor,
     memory_planner=HyV3MemoryPlanner,
+    supports_overlap_scheduler=False,
+    supports_device_graph_capture=False,
 )

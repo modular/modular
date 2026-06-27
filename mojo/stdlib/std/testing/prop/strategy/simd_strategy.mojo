@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Implements the SIMD strategy for generating random `SIMD` values in property tests."""
 
+from . import Strategy
 from std.testing.prop.random import Rng
 
 

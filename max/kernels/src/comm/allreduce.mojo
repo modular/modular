@@ -319,15 +319,15 @@ comptime allreduce_tuning_table = Table(
             num_blocks=512,
             algorithm=AllReduceAlgorithm.ONE_STAGE,
         ),
-        # B200 Lamport crossover (1 KiB - 8 MiB forced sweep): Lamport beats
-        # 1-stage by ~1.1-1.68x across the small-message range, reaching
-        # break-even at ~1 MiB (1-stage pulls ahead above it).
+        # B200 small-message range (1 KiB - 8 MiB): lamport is faster here
+        # (~1.1-1.68x, break-even ~1 MiB) but is held to 1-stage while its
+        # multi-GPU logit regression is investigated (KERN-3090).
         AllReduceTuningConfig(
             ngpus=2,
             num_bytes=(1 * MB),
             sm_version="sm_100a",
             num_blocks=512,
-            algorithm=AllReduceAlgorithm.LAMPORT,
+            algorithm=AllReduceAlgorithm.ONE_STAGE,
         ),
         # 2xB200: 1-stage wins across all measured sizes (16KB to 256MB).
         # The 2-stage curve approaches but does not cross 1-stage in the
@@ -339,12 +339,13 @@ comptime allreduce_tuning_table = Table(
             num_blocks=512,
             algorithm=AllReduceAlgorithm.ONE_STAGE,
         ),
+        # 4xB200 small-message: lamport held to 1-stage pending KERN-3090.
         AllReduceTuningConfig(
             ngpus=4,
             num_bytes=(1 * MB),
             sm_version="sm_100a",
             num_blocks=512,
-            algorithm=AllReduceAlgorithm.LAMPORT,
+            algorithm=AllReduceAlgorithm.ONE_STAGE,
         ),
         # 8xB200 / 4xB200 thresholds: 1-stage wins for latency-bound sizes,
         # 2-stage wins where bandwidth dominates. The crossover is at a
@@ -364,12 +365,13 @@ comptime allreduce_tuning_table = Table(
             num_blocks=512,
             algorithm=AllReduceAlgorithm.TWO_STAGE,
         ),
+        # 8xB200 small-message: lamport held to 1-stage pending KERN-3090.
         AllReduceTuningConfig(
             ngpus=8,
             num_bytes=(1 * MB),
             sm_version="sm_100a",
             num_blocks=512,
-            algorithm=AllReduceAlgorithm.LAMPORT,
+            algorithm=AllReduceAlgorithm.ONE_STAGE,
         ),
         AllReduceTuningConfig(
             ngpus=8,

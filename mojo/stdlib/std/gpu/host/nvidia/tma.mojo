@@ -21,6 +21,7 @@ features like swizzling for bank conflict avoidance, L2 cache promotion hints, a
 support for various data types and memory layouts.
 """
 
+from .. import DeviceBuffer
 from std.ffi import external_call
 from std.sys import size_of
 

@@ -19,7 +19,6 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any, ClassVar
 
-import numpy as np
 from max.driver import Buffer, Device, DeviceSpec
 from max.dtype import DType
 from max.engine.api import InferenceSession, Model
@@ -28,7 +27,6 @@ from max.graph.weights import SafetensorWeights, Weights, WeightsAdapter
 from max.nn.comm import Signals
 from max.nn.kv_cache import (
     KVCacheInputs,
-    KVCacheInputsInterface,
     KVCacheParamInterface,
     PagedCacheValues,
 )
@@ -45,6 +43,7 @@ from max.pipelines.lib import (
 )
 from max.pipelines.lib.log_probabilities import LogProbabilitiesMixin
 
+from .batch_processor import DeepseekV2BatchProcessor
 from .deepseekV2 import DeepseekV2
 from .distributed_deepseekV2 import DistributedDeepseekV2
 from .model_config import DeepseekV2Config
@@ -75,6 +74,9 @@ class DeepseekV2Model(
     PipelineModelWithKVCache[TextContext],
 ):
     model_config_cls: ClassVar[type[Any]] = DeepseekV2Config
+    batch_processor_cls: ClassVar[type[DeepseekV2BatchProcessor]] = (
+        DeepseekV2BatchProcessor
+    )
 
     def __init__(
         self,
@@ -86,6 +88,7 @@ class DeepseekV2Model(
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.ALL,
         return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
+        max_batch_size: int = 1,
     ) -> None:
         if pipeline_config.model.device_specs[0] == DeviceSpec.cpu():
             raise ValueError("DeepseekV2 currently only supported on gpu.")
@@ -99,6 +102,7 @@ class DeepseekV2Model(
             adapter,
             return_logits,
             return_hidden_states,
+            max_batch_size=max_batch_size,
         )
 
         self.model = self.load_model(session)
@@ -133,38 +137,6 @@ class DeepseekV2Model(
                 next_token_logits=model_outputs[0],
                 logits=model_outputs[0],
             )
-
-    def prepare_initial_token_inputs(
-        self,
-        replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
-        return_n_logits: int = 1,
-    ) -> DeepseekV2Inputs:
-        if len(replica_batches) > 1:
-            raise ValueError("Model does not support DP>1")
-
-        context_batch = replica_batches[0]
-        # Get input_row_offsets: start and end position of each batch in the
-        # combined total_seq_len dimension.
-        input_row_offsets = np.cumsum(
-            [0] + [ctx.tokens.active_length for ctx in context_batch],
-            dtype=np.uint32,
-        )
-
-        # Create a ragged token vector of length: sum(len(t) for t in tokens).
-        tokens = np.concatenate([ctx.tokens.active for ctx in context_batch])
-
-        return DeepseekV2Inputs(
-            tokens=Buffer.from_numpy(tokens).to(self.devices[0]),
-            input_row_offsets=Buffer.from_numpy(input_row_offsets).to(
-                self.devices[0]
-            ),
-            signal_buffers=self.signal_buffers,
-            kv_cache_inputs=kv_cache_inputs,
-            return_n_logits=Buffer.from_numpy(
-                np.array([return_n_logits], dtype=np.int64)
-            ).to(self.devices[0]),
-        )
 
     def graph_inputs(self) -> tuple[TensorType | BufferType, ...]:
         # Generate DeviceRef
@@ -218,15 +190,6 @@ class DeepseekV2Model(
         return list(symbolic_inputs.inputs)
 
     def _build_graph(self) -> Graph:
-        # Pre-allocate a buffer for input_row_offsets in multistep execution.
-        # We do this to avoid materializing and copying a buffer with each multistep step
-        max_batch_size = self.pipeline_config.runtime.max_batch_size
-        assert max_batch_size, "Expected max_batch_size to be set"
-
-        self._input_row_offsets_prealloc = Buffer.from_numpy(
-            np.arange(max_batch_size + 1, dtype=np.uint32)
-        ).to(self.devices[0])
-
         # Read in weights.
         if not isinstance(self.weights, SafetensorWeights):
             raise ValueError(

@@ -26,6 +26,7 @@ from unittest.mock import Mock, patch
 from max.driver import DeviceSpec
 from max.dtype import DType
 from max.graph import DeviceRef
+from max.nn.kv_cache import MHAKVCacheParams
 from max.nn.transformer import ReturnLogits
 from max.pipelines.architectures.qwen2_5vl.model_config import Qwen2_5VLConfig
 from max.pipelines.architectures.qwen2_5vl.tokenizer import (
@@ -83,6 +84,7 @@ def test_all_config_entry_points() -> None:
         KVCacheConfig(),
         DType.bfloat16,
     )
+    assert isinstance(kv_params, MHAKVCacheParams)
     assert kv_params.n_kv_heads > 0
 
     # get_num_layers

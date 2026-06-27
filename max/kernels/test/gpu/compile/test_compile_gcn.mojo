@@ -254,10 +254,10 @@ def test_barrier_compile() raises:
 def test_threadid_compile() raises:
     print("== test_threadid_compile")
 
-    # CHECK: .amdgcn_target "amdgcn-amd-amdhsa--gfx942"
+    # CHECK: .amdgcn_target "amdgcn-amd-amdhsa-unknown-gfx942"
     # CHECK: s_waitcnt lgkmcnt
     print(_compile_code[kernel, target=MI300X_TARGET]())
-    # CHECK: .amdgcn_target "amdgcn-amd-amdhsa--gfx942"
+    # CHECK: .amdgcn_target "amdgcn-amd-amdhsa-unknown-gfx942"
     # CHECK: s_waitcnt lgkmcnt
     print(_compile_code[parametric[kernel], target=MI300X_TARGET]())
     # CHECK: ; ModuleID =

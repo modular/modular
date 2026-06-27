@@ -169,6 +169,7 @@ def _allgather_p2p_kernel[
     ngpus: Int,
     *,
     BLOCK_SIZE: Int,
+    domain_id: Int = 0,
 ](
     outputs: StaticTuple[UnsafePointer[Scalar[dtype], MutAnyOrigin], ngpus],
     src_ptrs: StaticTuple[UnsafePointer[Scalar[dtype], ImmutAnyOrigin], ngpus],
@@ -204,7 +205,9 @@ def _allgather_p2p_kernel[
 
     with PDL():
         # Synchronize before reading.
-        _multi_gpu_barrier[ngpus, is_start=True](rank_sigs, my_sig, my_rank)
+        _multi_gpu_barrier[ngpus, is_start=True, domain_id=domain_id](
+            rank_sigs, my_sig, my_rank
+        )
 
         # Copy data from each source GPU to corresponding output buffer.
         # outputs[i] should contain data from GPU i.
@@ -241,7 +244,9 @@ def _allgather_p2p_kernel[
                         ]
 
         # Synchronize after writing.
-        _multi_gpu_barrier[ngpus, is_start=False](rank_sigs, my_sig, my_rank)
+        _multi_gpu_barrier[ngpus, is_start=False, domain_id=domain_id](
+            rank_sigs, my_sig, my_rank
+        )
 
 
 @__llvm_metadata(
@@ -254,6 +259,7 @@ def _allgather_tma_kernel[
     *,
     BLOCK_SIZE: Int,
     BYTES_PER_COPY: Int,
+    domain_id: Int = 0,
 ](
     outputs: StaticTuple[UnsafePointer[Scalar[dtype], MutAnyOrigin], ngpus],
     src_ptrs: StaticTuple[UnsafePointer[Scalar[dtype], ImmutAnyOrigin], ngpus],
@@ -315,7 +321,9 @@ def _allgather_tma_kernel[
     var total_chunks = ceildiv(nbytes, BYTES_PER_COPY)
 
     with PDL():
-        _multi_gpu_barrier[ngpus, is_start=True](rank_sigs, my_sig, my_rank)
+        _multi_gpu_barrier[ngpus, is_start=True, domain_id=domain_id](
+            rank_sigs, my_sig, my_rank
+        )
 
         if is_leader:
             var phase = UInt32(0)
@@ -338,13 +346,16 @@ def _allgather_tma_kernel[
                 cp_async_bulk_commit_group()
                 cp_async_bulk_wait_group[0]()
 
-        _multi_gpu_barrier[ngpus, is_start=False](rank_sigs, my_sig, my_rank)
+        _multi_gpu_barrier[ngpus, is_start=False, domain_id=domain_id](
+            rank_sigs, my_sig, my_rank
+        )
 
 
 @always_inline
 def _allgather_p2p_tma[
     dtype: DType,
     ngpus: Int,
+    domain_id: Int = 0,
 ](
     output_ptrs: StaticTuple[UnsafePointer[Scalar[dtype], MutAnyOrigin], ngpus],
     list_of_in_ptrs: StaticTuple[
@@ -386,6 +397,7 @@ def _allgather_p2p_tma[
         ngpus,
         BLOCK_SIZE=TMA_BLOCK_SIZE,
         BYTES_PER_COPY=TMA_BYTES_PER_COPY,
+        domain_id=domain_id,
     ]
     ctx.enqueue_function[tma_kernel](
         output_ptrs,
@@ -410,6 +422,7 @@ def _allgather_p2p[
     in_origin: Origin,
     out_layout: TensorLayout,
     out_origin: MutOrigin,
+    domain_id: Int = 0,
 ](
     input_buffers: InlineArray[TileTensor[dtype, in_layout, in_origin], ngpus],
     output_buffers: InlineArray[
@@ -454,7 +467,7 @@ def _allgather_p2p[
                 tma_ok = False
 
         if tma_ok:
-            return _allgather_p2p_tma(
+            return _allgather_p2p_tma[domain_id=domain_id](
                 output_ptrs,
                 list_of_in_ptrs,
                 rank_sigs,
@@ -490,6 +503,7 @@ def _allgather_p2p[
         rank,
         ngpus,
         BLOCK_SIZE=BLOCK_SIZE,
+        domain_id=domain_id,
     ]
     ctx.enqueue_function[allgather_p2p_kernel](
         output_ptrs,
@@ -512,6 +526,7 @@ def allgather[
     in_origin: Origin,
     out_layout: TensorLayout,
     out_origin: MutOrigin,
+    domain_id: Int = 0,
 ](
     input_buffers: InlineArray[TileTensor[dtype, in_layout, in_origin], ngpus],
     output_buffers: InlineArray[
@@ -538,6 +553,9 @@ def allgather[
         in_origin: Origin of the input TileTensors.
         out_layout: Layout of the output TileTensors.
         out_origin: Origin of the output TileTensors.
+        domain_id: Barrier counter bank to use (0 for full-world; a distinct
+            nonzero value for grouped collectives sharing the same Signal
+            buffers). See `_multi_gpu_barrier`.
 
     Args:
         input_buffers: Input buffers from ALL GPUs as TileTensors.
@@ -564,7 +582,7 @@ def allgather[
     if not is_p2p_enabled():
         return _allgather_naive(input_buffers, output_buffers, ctx)
     else:
-        return _allgather_p2p[rank=1](
+        return _allgather_p2p[rank=1, domain_id=domain_id](
             input_buffers,
             output_buffers,
             rank_sigs,

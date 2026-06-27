@@ -16,81 +16,78 @@ from pathlib import Path
 
 from check_logit_verification_eligibility import (
     DEFAULT_RUNNERS,
-    IgnoredFailure,
     ModelVerdict,
-    is_ignored,
+    RequiredModel,
+    is_required,
     main,
 )
 from click.testing import CliRunner
 
 # ---------------------------------------------------------------------------
-# is_ignored unit tests
+# is_required unit tests
 # ---------------------------------------------------------------------------
 
 
-def test_is_ignored_exact_runner_match() -> None:
-    entry = IgnoredFailure(
+def test_is_required_exact_runner_match() -> None:
+    entry = RequiredModel(
         model="org/model-a",
         runner="intel-gpu-8xb200",
-        reason="known broken",
-        ticket=None,
+        reason="production model",
     )
     verdict = ModelVerdict(
         runner="intel-gpu-8xb200", model="org/model-a", status="error"
     )
-    assert is_ignored(verdict, [entry])
+    assert is_required(verdict, [entry])
 
 
-def test_is_ignored_case_insensitive() -> None:
-    entry = IgnoredFailure(
-        model="Org/Model-A", runner="Intel-GPU-B200", reason="r", ticket=None
+def test_is_required_case_insensitive() -> None:
+    entry = RequiredModel(
+        model="Org/Model-A", runner="Intel-GPU-B200", reason="r"
     )
     verdict = ModelVerdict(
         runner="intel-gpu-b200", model="org/model-a", status="invalid"
     )
-    assert is_ignored(verdict, [entry])
+    assert is_required(verdict, [entry])
 
 
-def test_is_ignored_no_runner_defaults_to_single_card() -> None:
-    entry = IgnoredFailure(
-        model="org/model-b", runner=None, reason="r", ticket=None
-    )
+def test_is_required_no_runner_defaults_to_single_card() -> None:
+    entry = RequiredModel(model="org/model-b", runner=None, reason="r")
     for runner in DEFAULT_RUNNERS:
         v = ModelVerdict(runner=runner, model="org/model-b", status="error")
-        assert is_ignored(v, [entry]), f"should be ignored on {runner}"
+        assert is_required(v, [entry]), f"should be required on {runner}"
 
 
-def test_is_ignored_no_runner_does_not_match_multi_gpu() -> None:
-    entry = IgnoredFailure(
-        model="org/model-b", runner=None, reason="r", ticket=None
-    )
+def test_is_required_no_runner_does_not_match_multi_gpu() -> None:
+    entry = RequiredModel(model="org/model-b", runner=None, reason="r")
     for runner in [
         "intel-gpu-8xb200",
         "intel-gpu-b200-multi",
         "intel-gpu-4xmi355",
     ]:
         v = ModelVerdict(runner=runner, model="org/model-b", status="error")
-        assert not is_ignored(v, [entry]), f"should NOT be ignored on {runner}"
+        assert not is_required(v, [entry]), (
+            f"should NOT be required on {runner}"
+        )
 
 
-def test_is_ignored_different_model_not_ignored() -> None:
-    entry = IgnoredFailure(
-        model="org/model-a", runner="intel-gpu-b200", reason="r", ticket=None
+def test_is_required_different_model_not_required() -> None:
+    entry = RequiredModel(
+        model="org/model-a", runner="intel-gpu-b200", reason="r"
     )
     verdict = ModelVerdict(
         runner="intel-gpu-b200", model="org/model-b", status="error"
     )
-    assert not is_ignored(verdict, [entry])
+    assert not is_required(verdict, [entry])
 
 
-def test_is_ignored_wrong_runner_not_ignored() -> None:
-    entry = IgnoredFailure(
-        model="org/model-a", runner="intel-gpu-8xb200", reason="r", ticket=None
+def test_is_required_wrong_runner_not_required() -> None:
+    entry = RequiredModel(
+        model="org/model-a", runner="intel-gpu-8xb200", reason="r"
     )
     verdict = ModelVerdict(
         runner="intel-gpu-b200", model="org/model-a", status="error"
     )
-    assert not is_ignored(verdict, [entry])
+    assert not is_required(verdict, [entry])
 
 
 # ---------------------------------------------------------------------------
@@ -108,8 +105,8 @@ def _write_verdicts(
     return verdicts_dir
 
 
-def _write_ignore_list(tmp_path: Path, content: str) -> Path:
-    p = tmp_path / "ignore_list.yaml"
+def _write_required_list(tmp_path: Path, content: str) -> Path:
+    p = tmp_path / "required_list.yaml"
     p.write_text(content)
     return p
 
@@ -122,61 +119,63 @@ def test_cli_all_pass(tmp_path: Path) -> None:
             "intel-gpu-mi355.json": {"org/model-b": {"status": "ok"}},
         },
     )
-    ignore_list = _write_ignore_list(tmp_path, "ignored_failures: []\n")
+    required_list = _write_required_list(tmp_path, "required_for_golden: []\n")
     result = CliRunner().invoke(
         main,
         [
             "--verdicts-dir",
             str(verdicts_dir),
-            "--ignore-list",
-            str(ignore_list),
+            "--required-list",
+            str(required_list),
         ],
     )
     assert result.exit_code == 0, result.output
     assert "[PASS]" in result.output
 
 
-def test_cli_failure_blocked(tmp_path: Path) -> None:
+def test_cli_required_model_failure_blocks(tmp_path: Path) -> None:
+    """A failure on a required model blocks golden."""
     verdicts_dir = _write_verdicts(
         tmp_path,
         {"intel-gpu-b200.json": {"org/model-a": {"status": "error"}}},
     )
-    ignore_list = _write_ignore_list(tmp_path, "ignored_failures: []\n")
+    required_yaml = textwrap.dedent("""\
+        required_for_golden:
+          - model: org/model-a
+            reason: production model
+    """)
+    required_list = _write_required_list(tmp_path, required_yaml)
     result = CliRunner().invoke(
         main,
         [
             "--verdicts-dir",
             str(verdicts_dir),
-            "--ignore-list",
-            str(ignore_list),
+            "--required-list",
+            str(required_list),
         ],
     )
     assert result.exit_code == 1
     assert "BLOCKED" in result.output
 
 
-def test_cli_failure_ignored_single_card(tmp_path: Path) -> None:
+def test_cli_non_required_failure_does_not_block(tmp_path: Path) -> None:
+    """A failure on a model NOT in the required list does not block golden."""
     verdicts_dir = _write_verdicts(
         tmp_path,
         {"intel-gpu-b200.json": {"org/model-a": {"status": "error"}}},
     )
-    ignore_yaml = textwrap.dedent("""\
-        ignored_failures:
-          - model: org/model-a
-            reason: known broken
-    """)
-    ignore_list = _write_ignore_list(tmp_path, ignore_yaml)
+    required_list = _write_required_list(tmp_path, "required_for_golden: []\n")
     result = CliRunner().invoke(
         main,
         [
             "--verdicts-dir",
             str(verdicts_dir),
-            "--ignore-list",
-            str(ignore_list),
+            "--required-list",
+            str(required_list),
         ],
     )
     assert result.exit_code == 0, result.output
-    assert "ignored" in result.output
+    assert "not required" in result.output
 
 
 def test_cli_failure_on_multi_gpu_not_covered_by_no_runner_entry(
@@ -186,50 +185,51 @@ def test_cli_failure_on_multi_gpu_not_covered_by_no_runner_entry(
         tmp_path,
         {"intel-gpu-8xb200.json": {"org/model-a": {"status": "invalid"}}},
     )
-    # Entry has no runner → only covers single-card; should NOT suppress 8xb200
-    ignore_yaml = textwrap.dedent("""\
-        ignored_failures:
+    # Entry has no runner → only covers single-card; should NOT block 8xb200
+    required_yaml = textwrap.dedent("""\
+        required_for_golden:
           - model: org/model-a
-            reason: known broken on single card
+            reason: single-card only
     """)
-    ignore_list = _write_ignore_list(tmp_path, ignore_yaml)
+    required_list = _write_required_list(tmp_path, required_yaml)
     result = CliRunner().invoke(
         main,
         [
             "--verdicts-dir",
             str(verdicts_dir),
-            "--ignore-list",
-            str(ignore_list),
+            "--required-list",
+            str(required_list),
         ],
     )
-    assert result.exit_code == 1
-    assert "BLOCKED" in result.output
+    assert result.exit_code == 0
+    assert "not required" in result.output
 
 
-def test_cli_failure_on_multi_gpu_covered_by_explicit_entry(
+def test_cli_failure_on_multi_gpu_blocks_with_explicit_entry(
     tmp_path: Path,
 ) -> None:
     verdicts_dir = _write_verdicts(
         tmp_path,
         {"intel-gpu-8xb200.json": {"org/model-a": {"status": "invalid"}}},
     )
-    ignore_yaml = textwrap.dedent("""\
-        ignored_failures:
+    required_yaml = textwrap.dedent("""\
+        required_for_golden:
           - model: org/model-a
             runner: intel-gpu-8xb200
-            reason: known broken on 8xb200
+            reason: required on 8xb200
     """)
-    ignore_list = _write_ignore_list(tmp_path, ignore_yaml)
+    required_list = _write_required_list(tmp_path, required_yaml)
     result = CliRunner().invoke(
         main,
         [
             "--verdicts-dir",
             str(verdicts_dir),
-            "--ignore-list",
-            str(ignore_list),
+            "--required-list",
+            str(required_list),
         ],
     )
-    assert result.exit_code == 0, result.output
+    assert result.exit_code == 1
+    assert "BLOCKED" in result.output
 
 
 def test_cli_flake_not_blocking(tmp_path: Path) -> None:
@@ -237,14 +237,19 @@ def test_cli_flake_not_blocking(tmp_path: Path) -> None:
         tmp_path,
         {"intel-gpu-b200.json": {"org/model-a": {"status": "flake"}}},
     )
-    ignore_list = _write_ignore_list(tmp_path, "ignored_failures: []\n")
+    required_yaml = textwrap.dedent("""\
+        required_for_golden:
+          - model: org/model-a
+            reason: required
+    """)
+    required_list = _write_required_list(tmp_path, required_yaml)
     result = CliRunner().invoke(
         main,
         [
             "--verdicts-dir",
             str(verdicts_dir),
-            "--ignore-list",
-            str(ignore_list),
+            "--required-list",
+            str(required_list),
         ],
     )
     assert result.exit_code == 0, result.output
@@ -255,20 +260,26 @@ def test_cli_infra_not_blocking(tmp_path: Path) -> None:
         tmp_path,
         {"intel-gpu-b200.json": {"org/model-a": {"status": "infra"}}},
     )
-    ignore_list = _write_ignore_list(tmp_path, "ignored_failures: []\n")
+    required_yaml = textwrap.dedent("""\
+        required_for_golden:
+          - model: org/model-a
+            reason: required
+    """)
+    required_list = _write_required_list(tmp_path, required_yaml)
     result = CliRunner().invoke(
         main,
         [
             "--verdicts-dir",
             str(verdicts_dir),
-            "--ignore-list",
-            str(ignore_list),
+            "--required-list",
+            str(required_list),
         ],
     )
     assert result.exit_code == 0, result.output
 
 
-def test_cli_mixed_pass_and_ignored(tmp_path: Path) -> None:
+def test_cli_required_passes_non_required_fails(tmp_path: Path) -> None:
+    """Required model passes, non-required model fails → golden eligible."""
     verdicts_dir = _write_verdicts(
         tmp_path,
         {
@@ -278,24 +289,24 @@ def test_cli_mixed_pass_and_ignored(tmp_path: Path) -> None:
             },
         },
     )
-    ignore_yaml = textwrap.dedent("""\
-        ignored_failures:
-          - model: org/broken-model
+    required_yaml = textwrap.dedent("""\
+        required_for_golden:
+          - model: org/good-model
             runner: intel-gpu-b200
-            reason: known broken
+            reason: required
     """)
-    ignore_list = _write_ignore_list(tmp_path, ignore_yaml)
+    required_list = _write_required_list(tmp_path, required_yaml)
     result = CliRunner().invoke(
         main,
         [
             "--verdicts-dir",
             str(verdicts_dir),
-            "--ignore-list",
-            str(ignore_list),
+            "--required-list",
+            str(required_list),
         ],
     )
     assert result.exit_code == 0, result.output
-    assert "WARN" in result.output
+    assert "not required" in result.output
     assert "PASS" in result.output
 
 
@@ -308,14 +319,14 @@ def test_cli_no_json_files(tmp_path: Path) -> None:
     """
     verdicts_dir = tmp_path / "empty"
     verdicts_dir.mkdir()
-    ignore_list = _write_ignore_list(tmp_path, "ignored_failures: []\n")
+    required_list = _write_required_list(tmp_path, "required_for_golden: []\n")
     result = CliRunner().invoke(
         main,
         [
             "--verdicts-dir",
             str(verdicts_dir),
-            "--ignore-list",
-            str(ignore_list),
+            "--required-list",
+            str(required_list),
         ],
     )
     assert result.exit_code == 0, result.output

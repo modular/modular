@@ -8,7 +8,6 @@ modular_py_library(
     deps = [
         "//max/python/max/driver",
         "//max/python/max/pipelines/request",
-        requirement("llguidance"),
         requirement("msgspec"),
         requirement("numpy"),
         requirement("pydantic"),

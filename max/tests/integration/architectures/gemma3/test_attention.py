@@ -21,8 +21,7 @@ from max.driver import Accelerator, Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
-from max.nn.kernels import KVCacheParams
-from max.nn.kv_cache import PagedCacheValues
+from max.nn.kv_cache import MHAKVCacheParams, PagedCacheValues
 from max.nn.rotary_embedding import Llama3RotaryEmbedding
 from max.pipelines.architectures.gemma3.layers.attention import (
     Gemma3Attention as MaxGemma3Attention,
@@ -158,7 +157,7 @@ def generate_max_outputs(
         for weight_name, value in attention_weights.items()
     }
 
-    kv_params = KVCacheParams(
+    kv_params = MHAKVCacheParams(
         dtype=dtype,
         devices=[device_ref],
         n_kv_heads=text_config.num_key_value_heads,
@@ -263,7 +262,8 @@ def generate_max_outputs(
         kv_runtime_inputs.kv_blocks.to(device),
         kv_runtime_inputs.cache_lengths.to(device),
         kv_runtime_inputs.lookup_table.to(device),
-        kv_runtime_inputs.max_lengths,
+        kv_runtime_inputs.max_prompt_length,
+        kv_runtime_inputs.max_cache_length,
         kv_runtime_inputs.attention_dispatch_metadata,
     )[0]
 

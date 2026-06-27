@@ -76,8 +76,11 @@ add.__doc__ = """Adds two tensors element-wise.
 
 .. code-block:: python
 
+    from max.dtype import DType
     from max.engine import InferenceSession
+    from max.graph import DeviceRef, Graph, ops
 
+    device = DeviceRef.CPU()
     with Graph("add_example") as graph:
         lhs = ops.constant([1.0, 2.0, 3.0], DType.float32, device=device)
         rhs = ops.constant([4.0, 5.0, 6.0], DType.float32, device=device)
@@ -87,6 +90,8 @@ add.__doc__ = """Adds two tensors element-wise.
     result = model.execute()[0]
 
 .. invisible-code-block: python
+
+    import numpy as np
 
     assert np.array_equal(result.to_numpy(), [5.0, 7.0, 9.0])
 
@@ -113,8 +118,11 @@ def div(lhs: TensorValueLike, rhs: TensorValueLike) -> TensorValue:
 
     .. code-block:: python
 
+        from max.dtype import DType
         from max.engine import InferenceSession
+        from max.graph import DeviceRef, Graph, ops
 
+        device = DeviceRef.CPU()
         with Graph("div_example") as graph:
             lhs = ops.constant(
                 [6.0, 10.0, 18.0], DType.float32, device=device
@@ -126,6 +134,8 @@ def div(lhs: TensorValueLike, rhs: TensorValueLike) -> TensorValue:
         result = model.execute()[0]
 
     .. invisible-code-block: python
+
+        import numpy as np
 
         assert np.array_equal(result.to_numpy(), [3.0, 2.0, 3.0])
 
@@ -162,8 +172,11 @@ Computes the element-wise maximum of two tensors.
 
 .. code-block:: python
 
+    from max.dtype import DType
     from max.engine import InferenceSession
+    from max.graph import DeviceRef, Graph, ops
 
+    device = DeviceRef.CPU()
     with Graph("max_example") as graph:
         lhs = ops.constant([1.0, 5.0, 3.0], DType.float32, device=device)
         rhs = ops.constant([4.0, 2.0, 6.0], DType.float32, device=device)
@@ -173,6 +186,8 @@ Computes the element-wise maximum of two tensors.
     result = model.execute()[0]
 
 .. invisible-code-block: python
+
+    import numpy as np
 
     assert np.array_equal(result.to_numpy(), [4.0, 5.0, 6.0])
 
@@ -195,8 +210,11 @@ Computes the element-wise minimum of two tensors.
 
 .. code-block:: python
 
+    from max.dtype import DType
     from max.engine import InferenceSession
+    from max.graph import DeviceRef, Graph, ops
 
+    device = DeviceRef.CPU()
     with Graph("min_example") as graph:
         lhs = ops.constant([1.0, 5.0, 3.0], DType.float32, device=device)
         rhs = ops.constant([4.0, 2.0, 6.0], DType.float32, device=device)
@@ -206,6 +224,8 @@ Computes the element-wise minimum of two tensors.
     result = model.execute()[0]
 
 .. invisible-code-block: python
+
+    import numpy as np
 
     assert np.array_equal(result.to_numpy(), [1.0, 2.0, 3.0])
 
@@ -228,8 +248,11 @@ Computes the element-wise modulus of two tensors.
 
 .. code-block:: python
 
+    from max.dtype import DType
     from max.engine import InferenceSession
+    from max.graph import DeviceRef, Graph, ops
 
+    device = DeviceRef.CPU()
     with Graph("mod_example") as graph:
         lhs = ops.constant([10.0, 7.0, 5.0], DType.float32, device=device)
         rhs = ops.constant([3.0, 2.0, 4.0], DType.float32, device=device)
@@ -239,6 +262,8 @@ Computes the element-wise modulus of two tensors.
     result = model.execute()[0]
 
 .. invisible-code-block: python
+
+    import numpy as np
 
     assert np.array_equal(result.to_numpy(), [1.0, 1.0, 1.0])
 
@@ -262,8 +287,11 @@ Multiplies two tensors element-wise.
 
 .. code-block:: python
 
+    from max.dtype import DType
     from max.engine import InferenceSession
+    from max.graph import DeviceRef, Graph, ops
 
+    device = DeviceRef.CPU()
     with Graph("mul_example") as graph:
         lhs = ops.constant([1.0, 2.0, 3.0], DType.float32, device=device)
         rhs = ops.constant([4.0, 5.0, 6.0], DType.float32, device=device)
@@ -273,6 +301,8 @@ Multiplies two tensors element-wise.
     result = model.execute()[0]
 
 .. invisible-code-block: python
+
+    import numpy as np
 
     assert np.array_equal(result.to_numpy(), [4.0, 10.0, 18.0])
 
@@ -295,8 +325,11 @@ Raises elements of one tensor to the power of another element-wise.
 
 .. code-block:: python
 
+    from max.dtype import DType
     from max.engine import InferenceSession
+    from max.graph import DeviceRef, Graph, ops
 
+    device = DeviceRef.CPU()
     with Graph("pow_example") as graph:
         lhs = ops.constant([2.0, 3.0, 4.0], DType.float32, device=device)
         rhs = ops.constant([3.0, 2.0, 0.5], DType.float32, device=device)
@@ -306,6 +339,8 @@ Raises elements of one tensor to the power of another element-wise.
     result = model.execute()[0]
 
 .. invisible-code-block: python
+
+    import numpy as np
 
     assert np.allclose(result.to_numpy(), [8.0, 9.0, 2.0], atol=1e-3)
 
@@ -328,8 +363,11 @@ Subtracts two tensors element-wise.
 
 .. code-block:: python
 
+    from max.dtype import DType
     from max.engine import InferenceSession
+    from max.graph import DeviceRef, Graph, ops
 
+    device = DeviceRef.CPU()
     with Graph("sub_example") as graph:
         lhs = ops.constant([5.0, 7.0, 9.0], DType.float32, device=device)
         rhs = ops.constant([1.0, 2.0, 3.0], DType.float32, device=device)
@@ -339,6 +377,8 @@ Subtracts two tensors element-wise.
     result = model.execute()[0]
 
 .. invisible-code-block: python
+
+    import numpy as np
 
     assert np.array_equal(result.to_numpy(), [4.0, 5.0, 6.0])
 
@@ -361,8 +401,11 @@ equal.__doc__ = """Tests element-wise equality between two tensors.
 
 .. code-block:: python
 
+    from max.dtype import DType
     from max.engine import InferenceSession
+    from max.graph import DeviceRef, Graph, ops
 
+    device = DeviceRef.CPU()
     with Graph("equal_example") as graph:
         lhs = ops.constant([1.0, 2.0, 3.0], DType.float32, device=device)
         rhs = ops.constant([1.0, 5.0, 3.0], DType.float32, device=device)
@@ -372,6 +415,8 @@ equal.__doc__ = """Tests element-wise equality between two tensors.
     result = model.execute()[0]
 
 .. invisible-code-block: python
+
+    import numpy as np
 
     assert np.array_equal(result.to_numpy(), [True, False, True])
 
@@ -394,8 +439,11 @@ greater.__doc__ = """Tests element-wise whether one tensor is greater than anoth
 
 .. code-block:: python
 
+    from max.dtype import DType
     from max.engine import InferenceSession
+    from max.graph import DeviceRef, Graph, ops
 
+    device = DeviceRef.CPU()
     with Graph("greater_example") as graph:
         lhs = ops.constant([1.0, 5.0, 3.0], DType.float32, device=device)
         rhs = ops.constant([1.0, 2.0, 4.0], DType.float32, device=device)
@@ -405,6 +453,8 @@ greater.__doc__ = """Tests element-wise whether one tensor is greater than anoth
     result = model.execute()[0]
 
 .. invisible-code-block: python
+
+    import numpy as np
 
     assert np.array_equal(result.to_numpy(), [False, True, False])
 
@@ -427,8 +477,11 @@ greater_equal.__doc__ = """Tests element-wise whether one tensor is greater than
 
 .. code-block:: python
 
+    from max.dtype import DType
     from max.engine import InferenceSession
+    from max.graph import DeviceRef, Graph, ops
 
+    device = DeviceRef.CPU()
     with Graph("greater_equal_example") as graph:
         lhs = ops.constant([1.0, 5.0, 3.0], DType.float32, device=device)
         rhs = ops.constant([1.0, 2.0, 4.0], DType.float32, device=device)
@@ -438,6 +491,8 @@ greater_equal.__doc__ = """Tests element-wise whether one tensor is greater than
     result = model.execute()[0]
 
 .. invisible-code-block: python
+
+    import numpy as np
 
     assert np.array_equal(result.to_numpy(), [True, True, False])
 
@@ -460,8 +515,11 @@ not_equal.__doc__ = """Tests element-wise inequality between two tensors.
 
 .. code-block:: python
 
+    from max.dtype import DType
     from max.engine import InferenceSession
+    from max.graph import DeviceRef, Graph, ops
 
+    device = DeviceRef.CPU()
     with Graph("not_equal_example") as graph:
         lhs = ops.constant([1.0, 2.0, 3.0], DType.float32, device=device)
         rhs = ops.constant([1.0, 5.0, 3.0], DType.float32, device=device)
@@ -471,6 +529,8 @@ not_equal.__doc__ = """Tests element-wise inequality between two tensors.
     result = model.execute()[0]
 
 .. invisible-code-block: python
+
+    import numpy as np
 
     assert np.array_equal(result.to_numpy(), [False, True, False])
 
@@ -492,8 +552,11 @@ logical_and.__doc__ = """Computes the element-wise logical AND of two boolean te
 
 .. code-block:: python
 
+    from max.dtype import DType
     from max.engine import InferenceSession
+    from max.graph import DeviceRef, Graph, ops
 
+    device = DeviceRef.CPU()
     with Graph("logical_and_example") as graph:
         lhs = ops.constant([True, True, False], DType.bool, device=device)
         rhs = ops.constant([True, False, True], DType.bool, device=device)
@@ -503,6 +566,8 @@ logical_and.__doc__ = """Computes the element-wise logical AND of two boolean te
     result = model.execute()[0]
 
 .. invisible-code-block: python
+
+    import numpy as np
 
     assert np.array_equal(result.to_numpy(), [True, False, False])
 
@@ -525,8 +590,11 @@ logical_or.__doc__ = """Computes the element-wise logical OR of two boolean tens
 
 .. code-block:: python
 
+    from max.dtype import DType
     from max.engine import InferenceSession
+    from max.graph import DeviceRef, Graph, ops
 
+    device = DeviceRef.CPU()
     with Graph("logical_or_example") as graph:
         lhs = ops.constant([True, False, False], DType.bool, device=device)
         rhs = ops.constant([False, True, False], DType.bool, device=device)
@@ -536,6 +604,8 @@ logical_or.__doc__ = """Computes the element-wise logical OR of two boolean tens
     result = model.execute()[0]
 
 .. invisible-code-block: python
+
+    import numpy as np
 
     assert np.array_equal(result.to_numpy(), [True, True, False])
 
@@ -558,8 +628,11 @@ logical_xor.__doc__ = """Computes the element-wise logical XOR of two boolean te
 
 .. code-block:: python
 
+    from max.dtype import DType
     from max.engine import InferenceSession
+    from max.graph import DeviceRef, Graph, ops
 
+    device = DeviceRef.CPU()
     with Graph("logical_xor_example") as graph:
         lhs = ops.constant([True, False, True], DType.bool, device=device)
         rhs = ops.constant([True, True, False], DType.bool, device=device)
@@ -569,6 +642,8 @@ logical_xor.__doc__ = """Computes the element-wise logical XOR of two boolean te
     result = model.execute()[0]
 
 .. invisible-code-block: python
+
+    import numpy as np
 
     assert np.array_equal(result.to_numpy(), [False, True, True])
 
@@ -645,8 +720,11 @@ abs.__doc__ = """Computes the absolute value of a tensor element-wise.
 
 .. code-block:: python
 
+    from max.dtype import DType
     from max.engine import InferenceSession
+    from max.graph import DeviceRef, Graph, ops
 
+    device = DeviceRef.CPU()
     with Graph("abs_example") as graph:
         x = ops.constant([-1.0, 2.0, -3.0], DType.float32, device=device)
         graph.output(ops.abs(x))
@@ -655,6 +733,8 @@ abs.__doc__ = """Computes the absolute value of a tensor element-wise.
     result = model.execute()[0]
 
 .. invisible-code-block: python
+
+    import numpy as np
 
     assert np.array_equal(result.to_numpy(), [1.0, 2.0, 3.0])
 
@@ -678,8 +758,11 @@ activation functions, and probability distributions. ``exp(x) = e^x``, where
 
 .. code-block:: python
 
+    from max.dtype import DType
     from max.engine import InferenceSession
+    from max.graph import DeviceRef, Graph, ops
 
+    device = DeviceRef.CPU()
     with Graph("exp_example") as graph:
         x = ops.constant([0.0, 1.0, 2.0], DType.float32, device=device)
         graph.output(ops.exp(x))
@@ -688,6 +771,8 @@ activation functions, and probability distributions. ``exp(x) = e^x``, where
     result = model.execute()[0]
 
 .. invisible-code-block: python
+
+    import numpy as np
 
     assert np.allclose(result.to_numpy(), [1.0, 2.718, 7.389], atol=1e-3)
 
@@ -710,8 +795,11 @@ normal distribution falls within a given range.
 
 .. code-block:: python
 
+    from max.dtype import DType
     from max.engine import InferenceSession
+    from max.graph import DeviceRef, Graph, ops
 
+    device = DeviceRef.CPU()
     with Graph("erf_example") as graph:
         x = ops.constant([-1.0, 0.0, 1.0], DType.float32, device=device)
         graph.output(ops.erf(x))
@@ -720,6 +808,8 @@ normal distribution falls within a given range.
     result = model.execute()[0]
 
 .. invisible-code-block: python
+
+    import numpy as np
 
     assert np.allclose(result.to_numpy(), [-0.842, 0.0, 0.842], atol=1e-3)
 
@@ -786,8 +876,11 @@ is Euler's number.
 
 .. code-block:: python
 
+    from max.dtype import DType
     from max.engine import InferenceSession
+    from max.graph import DeviceRef, Graph, ops
 
+    device = DeviceRef.CPU()
     with Graph("log_example") as graph:
         x = ops.constant(
             [1.0, 2.718, 7.389, 20.0], DType.float32, device=device
@@ -798,6 +891,8 @@ is Euler's number.
     result = model.execute()[0]
 
 .. invisible-code-block: python
+
+    import numpy as np
 
     assert np.allclose(result.to_numpy(), [0.0, 1.0, 2.0, 2.996], atol=1e-3)
 
@@ -821,8 +916,11 @@ log1p.__doc__ = """Computes ``log(1 + x)`` element-wise.
 
 .. code-block:: python
 
+    from max.dtype import DType
     from max.engine import InferenceSession
+    from max.graph import DeviceRef, Graph, ops
 
+    device = DeviceRef.CPU()
     with Graph("log1p_example") as graph:
         x = ops.constant([0.0, 1.0, 9.0], DType.float32, device=device)
         graph.output(ops.log1p(x))
@@ -831,6 +929,8 @@ log1p.__doc__ = """Computes ``log(1 + x)`` element-wise.
     result = model.execute()[0]
 
 .. invisible-code-block: python
+
+    import numpy as np
 
     assert np.allclose(result.to_numpy(), [0.0, 0.693, 2.302], atol=1e-3)
 
@@ -872,8 +972,11 @@ logsoftmax.__doc__ = """Computes the log-softmax of a tensor along an axis.
 
 .. code-block:: python
 
+    from max.dtype import DType
     from max.engine import InferenceSession
+    from max.graph import DeviceRef, Graph, ops
 
+    device = DeviceRef.CPU()
     with Graph("logsoftmax_example") as graph:
         x = ops.constant([1.0, 2.0, 3.0], DType.float32, device=device)
         graph.output(ops.logsoftmax(x))
@@ -882,6 +985,8 @@ logsoftmax.__doc__ = """Computes the log-softmax of a tensor along an axis.
     result = model.execute()[0]
 
 .. invisible-code-block: python
+
+    import numpy as np
 
     assert np.allclose(
         result.to_numpy(), [-2.407, -1.407, -0.407], atol=1e-3
@@ -910,8 +1015,11 @@ its mitigation of the vanishing gradient problem.
 
 .. code-block:: python
 
+    from max.dtype import DType
     from max.engine import InferenceSession
+    from max.graph import DeviceRef, Graph, ops
 
+    device = DeviceRef.CPU()
     with Graph("relu_example") as graph:
         x = ops.constant(
             [[-2.0, -1.0, 0.0], [1.0, 2.0, 3.0]],
@@ -924,6 +1032,8 @@ its mitigation of the vanishing gradient problem.
     result = model.execute()[0]
 
 .. invisible-code-block: python
+
+    import numpy as np
 
     assert np.array_equal(
         result.to_numpy(), [[0.0, 0.0, 0.0], [1.0, 2.0, 3.0]]
@@ -951,8 +1061,11 @@ def sigmoid(x: TensorValue) -> TensorValue:
 
     .. code-block:: python
 
+        from max.dtype import DType
         from max.engine import InferenceSession
+        from max.graph import DeviceRef, Graph, ops
 
+        device = DeviceRef.CPU()
         with Graph("sigmoid_example") as graph:
             x = ops.constant(
                 [[-2.0, -1.0, 0.0], [1.0, 2.0, 3.0]],
@@ -965,6 +1078,8 @@ def sigmoid(x: TensorValue) -> TensorValue:
         result = model.execute()[0]
 
     .. invisible-code-block: python
+
+        import numpy as np
 
         assert np.allclose(
             result.to_numpy(),
@@ -992,8 +1107,11 @@ def silu(x: TensorValue):  # noqa: ANN201
 
     .. code-block:: python
 
+        from max.dtype import DType
         from max.engine import InferenceSession
+        from max.graph import DeviceRef, Graph, ops
 
+        device = DeviceRef.CPU()
         with Graph("silu_example") as graph:
             x = ops.constant(
                 [-2.0, 0.0, 1.0, 3.0], DType.float32, device=device
@@ -1004,6 +1122,8 @@ def silu(x: TensorValue):  # noqa: ANN201
         result = model.execute()[0]
 
     .. invisible-code-block: python
+
+        import numpy as np
 
         assert np.allclose(
             result.to_numpy(), [-0.238, 0.0, 0.731, 2.857], atol=1e-3
@@ -1031,8 +1151,11 @@ exponentiated values along that axis.
 
 .. code-block:: python
 
+    from max.dtype import DType
     from max.engine import InferenceSession
+    from max.graph import DeviceRef, Graph, ops
 
+    device = DeviceRef.CPU()
     with Graph("softmax_example") as graph:
         x = ops.constant([1.0, 2.0, 3.0], DType.float32, device=device)
         graph.output(ops.softmax(x))
@@ -1041,6 +1164,8 @@ exponentiated values along that axis.
     result = model.execute()[0]
 
 .. invisible-code-block: python
+
+    import numpy as np
 
     assert np.allclose(result.to_numpy(), [0.090, 0.244, 0.665], atol=1e-3)
 
@@ -1062,8 +1187,11 @@ cos.__doc__ = """Computes the cosine of a tensor element-wise.
 
 .. code-block:: python
 
+    from max.dtype import DType
     from max.engine import InferenceSession
+    from max.graph import DeviceRef, Graph, ops
 
+    device = DeviceRef.CPU()
     with Graph("cos_example") as graph:
         x = ops.constant([0.0, 1.5707, 3.1415], DType.float32, device=device)
         graph.output(ops.cos(x))
@@ -1072,6 +1200,8 @@ cos.__doc__ = """Computes the cosine of a tensor element-wise.
     result = model.execute()[0]
 
 .. invisible-code-block: python
+
+    import numpy as np
 
     assert np.allclose(result.to_numpy(), [1.0, 0.0, -1.0], atol=1e-3)
 
@@ -1091,8 +1221,11 @@ ceil.__doc__ = """Computes the ceil of a tensor element-wise.
 
 .. code-block:: python
 
+    from max.dtype import DType
     from max.engine import InferenceSession
+    from max.graph import DeviceRef, Graph, ops
 
+    device = DeviceRef.CPU()
     with Graph("ceil_example") as graph:
         x = ops.constant([1.5, -1.5, 2.7, -2.7], DType.float32, device=device)
         graph.output(ops.ceil(x))
@@ -1101,6 +1234,8 @@ ceil.__doc__ = """Computes the ceil of a tensor element-wise.
     result = model.execute()[0]
 
 .. invisible-code-block: python
+
+    import numpy as np
 
     assert np.array_equal(result.to_numpy(), [2.0, -1.0, 3.0, -2.0])
 
@@ -1120,8 +1255,11 @@ floor.__doc__ = """Computes the floor of a tensor element-wise.
 
 .. code-block:: python
 
+    from max.dtype import DType
     from max.engine import InferenceSession
+    from max.graph import DeviceRef, Graph, ops
 
+    device = DeviceRef.CPU()
     with Graph("floor_example") as graph:
         x = ops.constant([1.5, -1.5, 2.7, -2.7], DType.float32, device=device)
         graph.output(ops.floor(x))
@@ -1130,6 +1268,8 @@ floor.__doc__ = """Computes the floor of a tensor element-wise.
     result = model.execute()[0]
 
 .. invisible-code-block: python
+
+    import numpy as np
 
     assert np.array_equal(result.to_numpy(), [1.0, -2.0, 2.0, -3.0])
 
@@ -1149,8 +1289,11 @@ round.__doc__ = """Rounds a tensor to the nearest integer element-wise.
 
 .. code-block:: python
 
+    from max.dtype import DType
     from max.engine import InferenceSession
+    from max.graph import DeviceRef, Graph, ops
 
+    device = DeviceRef.CPU()
     with Graph("round_example") as graph:
         x = ops.constant([1.5, 2.5, 3.5, -1.5], DType.float32, device=device)
         graph.output(ops.round(x))
@@ -1159,6 +1302,8 @@ round.__doc__ = """Rounds a tensor to the nearest integer element-wise.
     result = model.execute()[0]
 
 .. invisible-code-block: python
+
+    import numpy as np
 
     assert np.array_equal(result.to_numpy(), [2.0, 2.0, 4.0, -2.0])
 
@@ -1177,8 +1322,11 @@ rsqrt.__doc__ = """Computes the reciprocal square root of a tensor element-wise.
 
 .. code-block:: python
 
+    from max.dtype import DType
     from max.engine import InferenceSession
+    from max.graph import DeviceRef, Graph, ops
 
+    device = DeviceRef.CPU()
     with Graph("rsqrt_example") as graph:
         x = ops.constant([1.0, 4.0, 9.0, 16.0], DType.float32, device=device)
         graph.output(ops.rsqrt(x))
@@ -1187,6 +1335,8 @@ rsqrt.__doc__ = """Computes the reciprocal square root of a tensor element-wise.
     result = model.execute()[0]
 
 .. invisible-code-block: python
+
+    import numpy as np
 
     assert np.allclose(result.to_numpy(), [1.0, 0.5, 0.333, 0.25], atol=1e-3)
 
@@ -1209,8 +1359,11 @@ calculations, and statistical operations like standard deviation.
 
 .. code-block:: python
 
+    from max.dtype import DType
     from max.engine import InferenceSession
+    from max.graph import DeviceRef, Graph, ops
 
+    device = DeviceRef.CPU()
     with Graph("sqrt_example") as graph:
         x = ops.constant([1.0, 4.0, 9.0, 16.0], DType.float32, device=device)
         graph.output(ops.sqrt(x))
@@ -1219,6 +1372,8 @@ calculations, and statistical operations like standard deviation.
     result = model.execute()[0]
 
 .. invisible-code-block: python
+
+    import numpy as np
 
     assert np.allclose(result.to_numpy(), [1.0, 2.0, 3.0, 4.0], atol=1e-3)
 
@@ -1242,8 +1397,11 @@ sin.__doc__ = """Computes the sine of a tensor element-wise.
 
 .. code-block:: python
 
+    from max.dtype import DType
     from max.engine import InferenceSession
+    from max.graph import DeviceRef, Graph, ops
 
+    device = DeviceRef.CPU()
     with Graph("sin_example") as graph:
         x = ops.constant([0.0, 1.5707, 3.1415], DType.float32, device=device)
         graph.output(ops.sin(x))
@@ -1252,6 +1410,8 @@ sin.__doc__ = """Computes the sine of a tensor element-wise.
     result = model.execute()[0]
 
 .. invisible-code-block: python
+
+    import numpy as np
 
     assert np.allclose(result.to_numpy(), [0.0, 1.0, 0.0], atol=1e-3)
 
@@ -1278,8 +1438,11 @@ during training.
 
 .. code-block:: python
 
+    from max.dtype import DType
     from max.engine import InferenceSession
+    from max.graph import DeviceRef, Graph, ops
 
+    device = DeviceRef.CPU()
     with Graph("tanh_example") as graph:
         x = ops.constant(
             [[-2.0, -1.0, 0.0], [1.0, 2.0, 3.0]],
@@ -1292,6 +1455,8 @@ during training.
     result = model.execute()[0]
 
 .. invisible-code-block: python
+
+    import numpy as np
 
     assert np.allclose(
         result.to_numpy(),
@@ -1315,8 +1480,11 @@ atanh.__doc__ = """Computes the inverse hyperbolic tangent of a tensor element-w
 
 .. code-block:: python
 
+    from max.dtype import DType
     from max.engine import InferenceSession
+    from max.graph import DeviceRef, Graph, ops
 
+    device = DeviceRef.CPU()
     with Graph("atanh_example") as graph:
         x = ops.constant([-0.5, 0.0, 0.5], DType.float32, device=device)
         graph.output(ops.atanh(x))
@@ -1325,6 +1493,8 @@ atanh.__doc__ = """Computes the inverse hyperbolic tangent of a tensor element-w
     result = model.execute()[0]
 
 .. invisible-code-block: python
+
+    import numpy as np
 
     assert np.allclose(result.to_numpy(), [-0.549, 0.0, 0.549], atol=1e-3)
 
@@ -1345,8 +1515,11 @@ trunc.__doc__ = """Truncates a tensor toward zero element-wise.
 
 .. code-block:: python
 
+    from max.dtype import DType
     from max.engine import InferenceSession
+    from max.graph import DeviceRef, Graph, ops
 
+    device = DeviceRef.CPU()
     with Graph("trunc_example") as graph:
         x = ops.constant([1.5, -1.5, 2.7, -2.7], DType.float32, device=device)
         graph.output(ops.trunc(x))
@@ -1355,6 +1528,8 @@ trunc.__doc__ = """Truncates a tensor toward zero element-wise.
     result = model.execute()[0]
 
 .. invisible-code-block: python
+
+    import numpy as np
 
     assert np.array_equal(result.to_numpy(), [1.0, -1.0, 2.0, -2.0])
 
@@ -1373,8 +1548,11 @@ is_nan.__doc__ = """Tests element-wise whether a tensor contains NaN values.
 
 .. code-block:: python
 
+    from max.dtype import DType
     from max.engine import InferenceSession
+    from max.graph import DeviceRef, Graph, ops
 
+    device = DeviceRef.CPU()
     with Graph("is_nan_example") as graph:
         x = ops.constant(
             [1.0, float("nan"), 3.0], DType.float32, device=device
@@ -1385,6 +1563,8 @@ is_nan.__doc__ = """Tests element-wise whether a tensor contains NaN values.
     result = model.execute()[0]
 
 .. invisible-code-block: python
+
+    import numpy as np
 
     assert np.array_equal(result.to_numpy(), [False, True, False])
 
@@ -1405,8 +1585,11 @@ is_inf.__doc__ = """Tests element-wise whether a tensor contains infinite values
 
 .. code-block:: python
 
+    from max.dtype import DType
     from max.engine import InferenceSession
+    from max.graph import DeviceRef, Graph, ops
 
+    device = DeviceRef.CPU()
     with Graph("is_inf_example") as graph:
         x = ops.constant(
             [1.0, float("inf"), 3.0], DType.float32, device=device
@@ -1417,6 +1600,8 @@ is_inf.__doc__ = """Tests element-wise whether a tensor contains infinite values
     result = model.execute()[0]
 
 .. invisible-code-block: python
+
+    import numpy as np
 
     assert np.array_equal(result.to_numpy(), [False, True, False])
 
@@ -1436,8 +1621,11 @@ logical_not.__doc__ = """Computes the element-wise logical NOT of a boolean tens
 
 .. code-block:: python
 
+    from max.dtype import DType
     from max.engine import InferenceSession
+    from max.graph import DeviceRef, Graph, ops
 
+    device = DeviceRef.CPU()
     with Graph("logical_not_example") as graph:
         x = ops.constant([True, False, True], DType.bool, device=device)
         graph.output(ops.logical_not(x))
@@ -1446,6 +1634,8 @@ logical_not.__doc__ = """Computes the element-wise logical NOT of a boolean tens
     result = model.execute()[0]
 
 .. invisible-code-block: python
+
+    import numpy as np
 
     assert np.array_equal(result.to_numpy(), [False, True, False])
 
@@ -1464,8 +1654,11 @@ negate.__doc__ = """Negates a tensor element-wise.
 
 .. code-block:: python
 
+    from max.dtype import DType
     from max.engine import InferenceSession
+    from max.graph import DeviceRef, Graph, ops
 
+    device = DeviceRef.CPU()
     with Graph("negate_example") as graph:
         x = ops.constant([1.0, -2.0, 3.0], DType.float32, device=device)
         graph.output(ops.negate(x))
@@ -1474,6 +1667,8 @@ negate.__doc__ = """Negates a tensor element-wise.
     result = model.execute()[0]
 
 .. invisible-code-block: python
+
+    import numpy as np
 
     assert np.array_equal(result.to_numpy(), [-1.0, 2.0, -3.0])
 
@@ -1495,8 +1690,11 @@ def acos(x: TensorValue) -> TensorValue:
 
     .. code-block:: python
 
+        from max.dtype import DType
         from max.engine import InferenceSession
+        from max.graph import DeviceRef, Graph, ops
 
+        device = DeviceRef.CPU()
         with Graph("acos_example") as graph:
             x = ops.constant(
                 [-1.0, 0.0, 0.5, 1.0], DType.float32, device=device
@@ -1507,6 +1705,8 @@ def acos(x: TensorValue) -> TensorValue:
         result = model.execute()[0]
 
     .. invisible-code-block: python
+
+        import numpy as np
 
         assert np.allclose(
             result.to_numpy(), [3.141, 1.570, 1.047, 0.0], atol=1e-3

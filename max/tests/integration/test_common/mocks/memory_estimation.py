@@ -19,6 +19,7 @@ from typing import TypeVar
 from unittest.mock import patch
 
 from max.pipelines.lib import MemoryEstimator
+from max.pipelines.lib.memory_estimation import _MemoryPlan
 from typing_extensions import ParamSpec
 
 _P = ParamSpec("_P")
@@ -36,7 +37,9 @@ def mock_estimate_memory_footprint(func: Callable[_P, _R]) -> Callable[_P, _R]:
         async def async_wrapper(*args: _P.args, **kwargs: _P.kwargs) -> _R:
             with (
                 patch.object(
-                    MemoryEstimator, "estimate_memory_footprint", return_value=0
+                    MemoryEstimator,
+                    "estimate_memory_footprint",
+                    return_value=_MemoryPlan(max_batch_size=1, footprint=0),
                 ),
                 patch.object(
                     MemoryEstimator,
@@ -53,7 +56,9 @@ def mock_estimate_memory_footprint(func: Callable[_P, _R]) -> Callable[_P, _R]:
         def wrapper(*args: _P.args, **kwargs: _P.kwargs) -> _R:
             with (
                 patch.object(
-                    MemoryEstimator, "estimate_memory_footprint", return_value=0
+                    MemoryEstimator,
+                    "estimate_memory_footprint",
+                    return_value=_MemoryPlan(max_batch_size=1, footprint=0),
                 ),
                 patch.object(
                     MemoryEstimator,

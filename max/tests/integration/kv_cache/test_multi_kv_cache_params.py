@@ -22,6 +22,7 @@ from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn.kv_cache import (
     KVCacheParams,
+    MHAKVCacheParams,
     MultiKVCacheParams,
     compute_max_seq_len_fitting_in_cache,
     compute_num_device_blocks,
@@ -41,7 +42,7 @@ def create_kv_cache_params(
     dtype: DType = DType.bfloat16,
 ) -> KVCacheParams:
     """Helper to create KVCacheParams with common defaults."""
-    return KVCacheParams(
+    return MHAKVCacheParams(
         dtype=dtype,
         n_kv_heads=n_kv_heads,
         head_dim=head_dim,
@@ -60,7 +61,7 @@ def create_leaf_params(
     page_size: int = 128,
 ) -> KVCacheParams:
     """Create a KVCacheParams leaf for any (n_devices, dp_degree) combination."""
-    return KVCacheParams(
+    return MHAKVCacheParams(
         dtype=DType.bfloat16,
         n_kv_heads=n_kv_heads,
         head_dim=head_dim,
@@ -156,7 +157,7 @@ class TestMultiKVCacheParamsValidation:
 
     def test_mismatched_data_parallel_degree_raises_error(self) -> None:
         """MultiKVCacheParams should raise if data parallel degrees don't match."""
-        params1 = KVCacheParams(
+        params1 = MHAKVCacheParams(
             dtype=DType.bfloat16,
             n_kv_heads=8,
             head_dim=128,
@@ -165,7 +166,7 @@ class TestMultiKVCacheParamsValidation:
             page_size=128,
             data_parallel_degree=1,
         )
-        params2 = KVCacheParams(
+        params2 = MHAKVCacheParams(
             dtype=DType.bfloat16,
             n_kv_heads=8,
             head_dim=128,
@@ -407,8 +408,8 @@ class TestDeepNestedKVCacheTree:
         symbolic = root.get_symbolic_inputs()
 
         flat = symbolic.flatten()
-        # Each leaf (single GPU) contributes 5 tensors; 6 leaves → 30 total.
-        assert len(flat) == 6 * 5
+        # Each leaf (single GPU) contributes 6 tensors; 6 leaves → 36 total.
+        assert len(flat) == 6 * 6
 
         it = iter(flat)
         reconstructed = symbolic.unflatten(it)
@@ -571,7 +572,7 @@ class TestDeepTreeParallelism:
     def test_flatten_element_count(
         self, n_devices: int, dp_degree: int
     ) -> None:
-        """Flat list length == n_devices x n_leaves x 5 items per device."""
+        """Flat list length == n_devices x n_leaves x 6 items per device."""
         a = create_leaf_params(n_devices=n_devices, dp_degree=dp_degree)
         b = create_leaf_params(n_devices=n_devices, dp_degree=dp_degree)
         flat = (
@@ -579,7 +580,7 @@ class TestDeepTreeParallelism:
             .get_symbolic_inputs()
             .flatten()
         )
-        assert len(flat) == n_devices * 2 * 5
+        assert len(flat) == n_devices * 2 * 6
 
     def test_deep_tree_flatten_unflatten_roundtrip(
         self, n_devices: int, dp_degree: int
@@ -588,8 +589,8 @@ class TestDeepTreeParallelism:
         root = _build_deep_tree(n_devices=n_devices, dp_degree=dp_degree)
         symbolic = root.get_symbolic_inputs()
         flat = symbolic.flatten()
-        # 6 leaves x n_devices entries x 5 items per device
-        assert len(flat) == 6 * n_devices * 5
+        # 6 leaves x n_devices entries x 6 items per device
+        assert len(flat) == 6 * n_devices * 6
 
         it = iter(flat)
         reconstructed = symbolic.unflatten(it)

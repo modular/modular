@@ -78,13 +78,15 @@ def _unpack_kv_collections(
     list[TensorValue],
     list[TensorValue],
     list[TensorValue],
+    list[TensorValue],
 ]:
     """Split ``PagedCacheValues`` into flat tensor lists for subgraph inputs."""
     return (
         [kv.kv_blocks for kv in kv_collections],
         [kv.cache_lengths for kv in kv_collections],
         [kv.lookup_table for kv in kv_collections],
-        [kv.max_lengths for kv in kv_collections],
+        [kv.max_prompt_length for kv in kv_collections],
+        [kv.max_cache_length for kv in kv_collections],
         [
             kv.attention_dispatch_metadata
             for kv in kv_collections
@@ -197,7 +199,8 @@ class InternVLDecoderLayer(Module):
         kv_blocks: list[BufferValue],
         kv_cache_lengths: list[TensorValue],
         kv_lookup_table: list[TensorValue],
-        kv_max_lengths: list[TensorValue],
+        kv_max_prompt_lengths: list[TensorValue],
+        kv_max_cache_lengths: list[TensorValue],
         kv_dispatch_metadata: list[TensorValue],
         freqs_cis: list[TensorValue],
         input_row_offsets: list[TensorValue],
@@ -211,7 +214,8 @@ class InternVLDecoderLayer(Module):
             kv_blocks: Paged KV cache blocks, one per device.
             kv_cache_lengths: Per-device cache length tensors.
             kv_lookup_table: Per-device cache lookup tables.
-            kv_max_lengths: Per-device max-length tensors.
+            kv_max_prompt_lengths: Per-device max prompt (query) length tensors.
+            kv_max_cache_lengths: Per-device max cache length tensors.
             kv_dispatch_metadata: Per-device attention dispatch metadata.
             freqs_cis: Per-device RoPE frequencies.
             input_row_offsets: Offsets for flattened input sequences.
@@ -235,14 +239,16 @@ class InternVLDecoderLayer(Module):
                 kv_blocks=kv_block,
                 cache_lengths=cache_lengths,
                 lookup_table=lookup_table,
-                max_lengths=max_lengths,
+                max_prompt_length=max_prompt_length,
+                max_cache_length=max_cache_length,
                 attention_dispatch_metadata=dispatch_metadata,
             )
-            for kv_block, cache_lengths, lookup_table, max_lengths, dispatch_metadata in zip(
+            for kv_block, cache_lengths, lookup_table, max_prompt_length, max_cache_length, dispatch_metadata in zip(
                 kv_blocks,
                 kv_cache_lengths,
                 kv_lookup_table,
-                kv_max_lengths,
+                kv_max_prompt_lengths,
+                kv_max_cache_lengths,
                 kv_dispatch_metadata,
                 strict=True,
             )
@@ -425,7 +431,8 @@ class InternVLLanguageModel(DistributedLogitsPostprocessMixin, Module):
             kv_blocks,
             kv_cache_lengths,
             kv_lookup_table,
-            kv_max_lengths,
+            kv_max_prompt_lengths,
+            kv_max_cache_lengths,
             dispatch_metadata_tensors,
         ) = _unpack_kv_collections(kv_collections)
 
@@ -442,7 +449,8 @@ class InternVLLanguageModel(DistributedLogitsPostprocessMixin, Module):
                 kv_blocks,
                 kv_cache_lengths,
                 kv_lookup_table,
-                kv_max_lengths,
+                kv_max_prompt_lengths,
+                kv_max_cache_lengths,
                 dispatch_metadata_tensors,
                 freqs_cis,
                 input_row_offsets_list,

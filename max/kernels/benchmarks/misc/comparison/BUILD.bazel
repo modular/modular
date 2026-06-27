@@ -196,8 +196,11 @@ modular_py_binary(
         requirement("pybind11"),
         requirement("torch"),
         "//max/kernels/benchmarks/autotune:bencher_utils",
-        "//max/python/max",
+        "//max/python/max/driver",
+        "//max/python/max/engine",
         "//max/python/max/experimental/torch",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
     ],
 )
 
@@ -225,8 +228,13 @@ modular_py_binary(
         requirement("numpy"),
         requirement("torch"),
         "//max/kernels/benchmarks/autotune:bencher_utils",
-        "//max/python/max",
+        "//max/python/max/_kv_cache_ops",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
         "//max/python/max/experimental/torch",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
     ],
 )
 
@@ -253,8 +261,11 @@ modular_py_binary(
         requirement("pybind11"),
         requirement("torch"),
         "//max/kernels/benchmarks/autotune:bencher_utils",
-        "//max/python/max",
-        "//max/python/max/experimental/torch",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
     ],
 )
 

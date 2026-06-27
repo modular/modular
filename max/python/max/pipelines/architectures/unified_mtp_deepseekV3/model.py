@@ -15,11 +15,9 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Sequence
 from dataclasses import dataclass, fields, replace
-from typing import Any
+from typing import Any, ClassVar
 
-import numpy as np
 from max._core.driver import is_virtual_device_mode
 from max.driver import Buffer
 from max.dtype import DType
@@ -28,12 +26,10 @@ from max.graph import BufferValue, Graph, TensorValue, Value
 from max.graph.weights import WeightData
 from max.nn.comm.ep import EPCommInitializer
 from max.nn.kv_cache import (
-    KVCacheInputsInterface,
     KVCacheParams,
     MultiKVCacheParams,
 )
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
-from max.pipelines.context import TextContext
 from max.pipelines.lib import (
     CompilationTimer,
     UnifiedSpecDecodeInputs,
@@ -45,6 +41,7 @@ from typing_extensions import override
 
 from ..deepseekV3.model import DeepseekV3Inputs, DeepseekV3Model
 from ..deepseekV3_nextn.model_config import DeepseekV3NextNConfig
+from .batch_processor import UnifiedMTPDeepseekV3BatchProcessor
 from .unified_mtp_deepseekV3 import UnifiedMTPDeepseekV3
 
 logger = logging.getLogger("max.pipelines")
@@ -70,6 +67,10 @@ class UnifiedMTPDeepseekV3Inputs(UnifiedSpecDecodeInputs, DeepseekV3Inputs):
 class UnifiedMTPDeepseekV3Model(_UnifiedSpecDecodeModelMixin, DeepseekV3Model):
     """DeepseekV3 with MTP: merge + target + rejection + shift in one graph."""
 
+    batch_processor_cls: ClassVar[type[UnifiedMTPDeepseekV3BatchProcessor]] = (
+        UnifiedMTPDeepseekV3BatchProcessor
+    )
+
     def __init__(self, *args, **kwargs):
         kwargs["return_logits"] = ReturnLogits.VARIABLE
         kwargs["return_hidden_states"] = ReturnHiddenStates.ALL_NORMALIZED
@@ -77,24 +78,6 @@ class UnifiedMTPDeepseekV3Model(_UnifiedSpecDecodeModelMixin, DeepseekV3Model):
 
     @override
     def load_model(self, session: InferenceSession) -> Model:
-        max_batch_size = self.pipeline_config.runtime.max_batch_size
-        assert max_batch_size, "Expected max_batch_size to be set"
-
-        dp_size = self.pipeline_config.model.data_parallel_degree
-        max_batch_size *= dp_size
-
-        self._host_input_row_offsets_prealloc = Buffer.from_numpy(
-            np.arange(max_batch_size + 1, dtype=np.uint32)
-        )
-        self._device_input_row_offsets_prealloc = (
-            self._host_input_row_offsets_prealloc.to(self.devices[0])
-        )
-
-        self._batch_context_lengths_prealloc_cpu = [
-            Buffer.zeros(shape=[1], dtype=DType.int32)
-            for _ in range(len(self.devices))
-        ]
-
         with CompilationTimer("with_mtp_model") as timer:
             if self.adapter:
                 state_dict = self.adapter(
@@ -316,38 +299,14 @@ class UnifiedMTPDeepseekV3Model(_UnifiedSpecDecodeModelMixin, DeepseekV3Model):
             timer.mark_build_complete()
             model = session.load(graph, weights_registry=self.state_dict)
 
+        if self._batch_processor is not None:
+            bind_ep = getattr(
+                self._batch_processor, "bind_ep_comm_initializer", None
+            )
+            if bind_ep is not None:
+                bind_ep(self.ep_comm_initializer)
+
         return model
-
-    def prepare_initial_token_inputs(
-        self,
-        replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
-        return_n_logits: int = 1,
-        draft_tokens: Buffer | None = None,
-        draft_kv_cache_buffers: list[Buffer] | None = None,
-        **kwargs,
-    ) -> UnifiedMTPDeepseekV3Inputs:
-        base = DeepseekV3Model.prepare_initial_token_inputs(
-            self, replica_batches, kv_cache_inputs, return_n_logits
-        )
-
-        # The overlap pipeline assigns ``seed`` and the rest of the per-batch
-        # sampling buffers (temperature/top_k/top_p/max_k/min_top_p) on the
-        # returned inputs *after* this call returns — see
-        # ``OverlapTextGenerationPipeline._run_forward``.
-        return UnifiedMTPDeepseekV3Inputs(
-            tokens=base.tokens,
-            input_row_offsets=base.input_row_offsets,
-            host_input_row_offsets=base.host_input_row_offsets,
-            batch_context_lengths=base.batch_context_lengths,
-            signal_buffers=base.signal_buffers,
-            kv_cache_inputs=base.kv_cache_inputs,
-            return_n_logits=base.return_n_logits,
-            data_parallel_splits=base.data_parallel_splits,
-            ep_inputs=base.ep_inputs,
-            draft_tokens=draft_tokens,
-            structured_output=self.pipeline_config.needs_bitmask_constraints,
-        )
 
     def _create_draft_config(
         self, draft_state_dict: dict[str, WeightData]

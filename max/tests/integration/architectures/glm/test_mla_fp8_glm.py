@@ -36,7 +36,7 @@ from max.nn.attention.multi_latent_attention import LatentAttentionWithRope
 from max.nn.attention.multi_latent_attention_fp8 import (
     LatentAttentionWithRopeFp8,
 )
-from max.nn.kv_cache import KVCacheParams
+from max.nn.kv_cache import KVCacheParams, MLAKVCacheParams
 from max.nn.quant_config import (
     InputScaleSpec,
     QuantConfig,
@@ -200,14 +200,12 @@ def _make_rope() -> DeepseekYarnRotaryEmbedding:
 
 
 def _kv_params() -> KVCacheParams:
-    return KVCacheParams(
+    return MLAKVCacheParams(
         dtype=DType.bfloat16,
-        n_kv_heads=1,
         head_dim=KV_LORA_RANK + QK_ROPE_HEAD_DIM,
         num_layers=1,
         devices=[DeviceRef.GPU()],
         page_size=128,
-        is_mla=True,
         num_q_heads=H_HEADS,
     )
 

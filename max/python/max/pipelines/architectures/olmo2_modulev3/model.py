@@ -17,13 +17,11 @@ import logging
 from collections.abc import Callable
 from typing import Any, ClassVar
 
-import numpy as np
-from max.driver import Buffer
-from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental.tensor import default_dtype
-from max.graph import DeviceRef, TensorType
+from max.graph import DeviceRef
 
+from ..llama3_modulev3.batch_processor import Llama3ModuleV3BatchProcessor
 from ..llama3_modulev3.model import Llama3Model
 from .model_config import Olmo2Config
 from .olmo2 import Olmo2
@@ -35,31 +33,13 @@ class Olmo2Model(Llama3Model):
     """An Olmo2 pipeline model for text generation."""
 
     model_config_cls: ClassVar[type[Any]] = Olmo2Config
+    batch_processor_cls: ClassVar[type[Llama3ModuleV3BatchProcessor]] = (
+        Llama3ModuleV3BatchProcessor
+    )
 
     def load_model(self) -> Callable[..., Any]:
-        assert self.pipeline_config.runtime.max_batch_size, (
-            "Expected max_batch_size to be set"
-        )
-        self._input_row_offsets_prealloc = Buffer.from_numpy(
-            np.arange(
-                self.pipeline_config.runtime.max_batch_size + 1,
-                dtype=np.uint32,
-            )
-        ).to(self.devices[0])
-
         device0 = self.devices[0]
         device_ref = DeviceRef(device0.label, device0.id)
-        tokens_type = TensorType(
-            DType.int64, shape=["total_seq_len"], device=device_ref
-        )
-        input_row_offsets_type = TensorType(
-            DType.uint32,
-            shape=["input_row_offsets_len"],
-            device=device0,
-        )
-        return_n_logits_type = TensorType(
-            DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
-        )
 
         huggingface_config = self.huggingface_config
         if self.adapter:
@@ -83,14 +63,14 @@ class Olmo2Model(Llama3Model):
             nn_model = Olmo2(model_config, self.kv_params)
             nn_model.to(self.devices[0])
 
-        kv_inputs = self.kv_params.get_symbolic_inputs()
-        flattened_kv_types = kv_inputs.flatten()
+        assert self.batch_processor is not None
+        compile_input_types = self.batch_processor.get_symbolic_inputs(
+            kv_params=self.kv_params,
+            device_refs=[device_ref],
+        )
 
         compiled_model = nn_model.compile(
-            tokens_type,
-            return_n_logits_type,
-            input_row_offsets_type,
-            *flattened_kv_types,
+            *compile_input_types,
             weights=state_dict,
         )
 

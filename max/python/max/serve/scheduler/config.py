@@ -98,15 +98,12 @@ class TokenGenerationSchedulerConfig:
 
     @classmethod
     def from_pipeline_config(
-        cls, pipeline_config: PipelineConfig
+        cls, pipeline_config: PipelineConfig, max_batch_size: int
     ) -> TokenGenerationSchedulerConfig:
-        # We know that the max_length and max_batch_size is not None since they
-        # are required for memory estimation.
-        assert pipeline_config.runtime.max_batch_size is not None
         assert pipeline_config.model is not None
 
         return cls(
-            max_batch_size=pipeline_config.runtime.max_batch_size,
+            max_batch_size=max_batch_size,
             target_tokens_per_batch_ce=pipeline_config.runtime.max_batch_input_tokens,
             max_seq_len=pipeline_config.model.max_length,
             max_batch_total_tokens=pipeline_config.runtime.max_batch_total_tokens,

@@ -15,6 +15,7 @@ from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, ops
 
 from .kernels import (
+    _fused_qkv_index_ragged_matmul_scaled_mxfp8,
     _fused_qkv_ragged_matmul_scaled_float4,
     _fused_qkv_ragged_matmul_scaled_float8,
     _fused_qkv_ragged_matmul_scaled_mxfp8,
@@ -549,6 +550,83 @@ def quantized_fused_qkv_matmul(
             raise ValueError(
                 f"Unsupported quantization format for fused QKV matmul: {quant_config.format}"
             )
+
+
+def quantized_fused_qkv_index_matmul(
+    kv_params: KVCacheParams,
+    index_kv_params: KVCacheParams,
+    x: TensorValue,
+    wqkv: TensorValue,
+    kv_collection: PagedCacheValues,
+    index_kv_collection: PagedCacheValues,
+    layer_idx: TensorValue,
+    input_row_offsets: TensorValue,
+    n_heads: int,
+    num_index_heads: int,
+    idx_head_dim: int,
+    quant_config: QuantConfig,
+    weight_scale: TensorValue,
+) -> TensorValue:
+    """Fuses MiniMax-M3's QKV and index-QK projections into one MXFP8 matmul.
+
+    All five projections (``Q``, ``K``, ``V``, ``IndexQ``, ``IndexK``) read the
+    same hidden state ``x``. This quantizes ``x`` once and runs a single
+    block-scaled GEMM over the concatenated weights ``[Wq | Wk | Wv | Wiq |
+    Wik]``, scattering ``K`` / ``V`` into ``kv_collection`` and ``IndexK`` into
+    ``index_kv_collection`` while returning the combined ``Q`` / ``IndexQ``
+    output for the caller to split.
+
+    Only the MXFP8 dynamic-activation-quant format is supported; callers must
+    gate on it (other formats keep the separate QKV + IndexQK matmuls).
+
+    Args:
+        kv_params: KVCacheParams for the MAIN (K, V) cache.
+        index_kv_params: KVCacheParams for the INDEX (IndexK) cache.
+        x: The input tensor of shape ``[total_seq_len, hidden_dim]``.
+        wqkv: The concatenated ``[Wq | Wk | Wv | Wiq | Wik]`` weight tensor.
+        kv_collection: The MAIN paged KV cache.
+        index_kv_collection: The INDEX paged KV cache.
+        layer_idx: The current layer index.
+        input_row_offsets: Batch boundary offsets.
+        n_heads: Number of main attention heads.
+        num_index_heads: Number of index Q heads.
+        idx_head_dim: Index head dimension (also the IndexK width).
+        quant_config: The quantization configuration; must be MXFP8.
+        weight_scale: The concatenated E8M0 weight scale tensor (pre-interleave).
+
+    Returns:
+        The combined ``[total_seq_len, q_dim + iq_dim]`` bf16 tensor
+        (``Q`` followed by ``IndexQ``).
+    """
+    if quant_config.format != QuantFormat.MXFP8:
+        raise ValueError(
+            "quantized_fused_qkv_index_matmul only supports MXFP8, got"
+            f" {quant_config.format}"
+        )
+    x_fp8, x_scales = quantize_dynamic_block_scaled(
+        x,
+        sf_vector_size=32,
+        scales_type=DType.float8_e8m0fnu,
+        out_type=DType.float8_e4m3fn,
+    )
+    weight_scale = block_scales_interleave(
+        weight_scale.to(x.device), sf_vector_size=32
+    )
+    return _fused_qkv_index_ragged_matmul_scaled_mxfp8(
+        kv_params=kv_params,
+        index_kv_params=index_kv_params,
+        input=x_fp8,
+        input_row_offsets=input_row_offsets,
+        wqkv=wqkv,
+        kv_collection=kv_collection,
+        index_kv_collection=index_kv_collection,
+        layer_idx=layer_idx,
+        n_heads=n_heads,
+        num_index_heads=num_index_heads,
+        idx_head_dim=idx_head_dim,
+        input_scale=x_scales.to(x.device),
+        weight_scale=weight_scale,
+    )
 
 
 def quantized_grouped_matmul(

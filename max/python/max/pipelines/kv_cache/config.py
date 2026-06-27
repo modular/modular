@@ -17,6 +17,7 @@ from __future__ import annotations
 __all__ = ["KVCacheConfig", "KVConnectorConfig"]
 
 from collections.abc import Sequence
+from typing import Any
 
 from max.config import ConfigFileModel
 from max.dtype import DType
@@ -25,16 +26,14 @@ from max.nn.kv_cache.cache_params import (
     KVCacheParams,
     KVCacheQuantizationConfig,
     KVConnectorType,
+    KVHashAlgo,
+    MHAKVCacheParams,
+    MLAKVCacheParams,
     SpeculativeMethod,
-)
-from max.nn.kv_cache.utils import (
-    AttentionDispatchResolver,
-    AttentionDispatchResolverInterface,
 )
 from max.pipelines.kv_cache.paged_kv_cache._seed_helpers import (
     resolve_kv_hash_seed,
 )
-from max.pipelines.kv_cache.paged_kv_cache.block_utils import _KVHashAlgo
 from pydantic import ConfigDict, Field, PrivateAttr
 
 
@@ -165,7 +164,7 @@ class KVCacheConfig(ConfigFileModel):
         ),
     )
     """An override for the default data type of the KV cache."""
-    kv_cache_hash_algo: _KVHashAlgo = Field(
+    kv_cache_hash_algo: KVHashAlgo = Field(
         default="ahash64",
         description=(
             "Hash algorithm used for KV-cache block identity. "
@@ -217,12 +216,14 @@ class KVCacheConfig(ConfigFileModel):
         kvcache_quant_config: KVCacheQuantizationConfig | None = None,
         speculative_method: SpeculativeMethod | None = None,
         num_draft_tokens: int = 0,
-        attn_dispatch_resolver_cls: type[
-            AttentionDispatchResolverInterface
-        ] = AttentionDispatchResolver,
         allow_kv_head_replication: bool | None = None,
     ) -> KVCacheParams:
         """Returns :class:`~max.nn.kv_cache.cache_params.KVCacheParams` built from this config.
+
+        Selects the attention-type-specific subclass: a
+        :class:`~max.nn.kv_cache.cache_params.MLAKVCacheParams` when ``is_mla``
+        is set, otherwise a
+        :class:`~max.nn.kv_cache.cache_params.MHAKVCacheParams`.
 
         Args:
             dtype: Data type for KV cache storage.
@@ -240,8 +241,6 @@ class KVCacheConfig(ConfigFileModel):
                 ``None`` when speculative decoding is disabled.
             num_draft_tokens: Total draft tokens generated per
                 speculative iteration. Zero when no speculative decoding.
-            attn_dispatch_resolver_cls: Class to use for resolving attention
-                dispatch metadata.
             allow_kv_head_replication: Replicate KV heads for TP wider than the
                 KV head count. Defaults to ``None`` (falls back to the config's
                 :attr:`allow_kv_head_replication`).
@@ -255,9 +254,8 @@ class KVCacheConfig(ConfigFileModel):
         kv_hash_seed = resolve_kv_hash_seed(
             self.kv_cache_hash_algo, self.kv_cache_hash_seed
         )
-        return KVCacheParams(
+        shared_kwargs: dict[str, Any] = dict(
             dtype=dtype,
-            n_kv_heads=n_kv_heads,
             head_dim=head_dim,
             num_layers=num_layers,
             page_size=self.kv_cache_page_size,
@@ -268,14 +266,19 @@ class KVCacheConfig(ConfigFileModel):
                 cfg.host_kvcache_swap_space_gb if cfg else None
             ),
             devices=devices,
-            is_mla=is_mla,
-            num_q_heads=num_q_heads,
             data_parallel_degree=data_parallel_degree,
             kvcache_quant_config=kvcache_quant_config,
             speculative_method=speculative_method,
             num_draft_tokens=num_draft_tokens,
-            attn_dispatch_resolver_cls=attn_dispatch_resolver_cls,
-            allow_kv_head_replication=allow_kv_head_replication,
             kv_hash_algo=self.kv_cache_hash_algo,
             kv_hash_seed=kv_hash_seed,
+        )
+        if is_mla:
+            if num_q_heads is None:
+                raise ValueError("num_q_heads is required when is_mla=True.")
+            return MLAKVCacheParams(num_q_heads=num_q_heads, **shared_kwargs)
+        return MHAKVCacheParams(
+            n_kv_heads=n_kv_heads,
+            allow_kv_head_replication=allow_kv_head_replication,
+            **shared_kwargs,
         )

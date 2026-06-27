@@ -33,7 +33,6 @@
         "max/inference/embeddings",
         "max/serve/function-calling",
         "max/serve/structured-output",
-        "max/serve/offline-inference",
         "max/develop/max-pipeline-bring-your-own-model",
         "max/models"
       ]
@@ -229,17 +228,6 @@
         },
         {
           "type": "category",
-          "label": "max.entrypoints",
-          "link": {
-            "type": "doc",
-            "id": "max/api/python/entrypoints"
-          },
-          "items": [
-            "__AUTOGEN:max.entrypoints__"
-          ]
-        },
-        {
-          "type": "category",
           "label": "max.experimental",
           "collapsed": true,
           "link": {
@@ -279,17 +267,6 @@
               },
               "items": [
                 "__AUTOGEN:max.experimental.nn.rope__"
-              ]
-            },
-            {
-              "type": "category",
-              "label": "random",
-              "link": {
-                "type": "doc",
-                "id": "max/api/python/experimental.random"
-              },
-              "items": [
-                "__AUTOGEN:max.experimental.random__"
               ]
             },
             {
@@ -434,6 +411,7 @@
                 "max/api/python/pipelines.architectures.ideogram4",
                 "max/api/python/pipelines.architectures.internvl",
                 "max/api/python/pipelines.architectures.kimik2_5",
+                "max/api/python/pipelines.architectures.laguna",
                 "max/api/python/pipelines.architectures.lfm2",
                 "max/api/python/pipelines.architectures.llama3",
                 "max/api/python/pipelines.architectures.mamba",

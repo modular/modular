@@ -4,7 +4,6 @@ load("//bazel:api.bzl", "modular_py_test", "requirement")
 
 package(default_visibility = [
     "//:__pkg__",
-    "//SDK/integration-test:__subpackages__",
     "//max/tests:__subpackages__",
     "//oss/modular/max/tests:__subpackages__",
 ])
@@ -221,6 +220,7 @@ modular_py_test(
     ],
     target_compatible_with = ["//:b200_gpu"],
     deps = [
+        "//max/python/max/dtype",
         "//max/python/max/graph",
         "//max/python/max/nn",
     ],

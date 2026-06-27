@@ -2,6 +2,7 @@ load("@rules_mojo//mojo:toolchain.bzl", "mojo_copts_toolchain")
 load("@rules_mypy//mypy:mypy.bzl", "mypy_cli")
 load("//bazel:api.bzl", "modular_cc_binary", "modular_cc_library", "modular_py_binary", "modular_py_library", "modular_py_test", "requirement")
 load("//bazel:config.bzl", "TOP_LEVEL_TAG")
+load("//max/python/max:all_deps.bzl", "ALL_MAX_PYTHON_DEPS")
 load(":gpu_toolchain_alias.bzl", "gpu_toolchain_alias")
 
 package(default_visibility = ["//visibility:public"])
@@ -128,8 +129,7 @@ modular_py_binary(
         requirement("sphinx"),
         requirement("munch"),
         requirement("torch"),
-        "//max/python/max",
-    ],
+    ] + ALL_MAX_PYTHON_DEPS,
 )
 
 modular_py_binary(

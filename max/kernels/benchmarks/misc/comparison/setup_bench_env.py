@@ -653,7 +653,7 @@ def ensure_max_venv() -> Path:
     env = os.environ.copy()
     env.setdefault("MAX_JOBS", str(DEFAULT_MAX_JOBS))
     sh(
-        ["./bazelw", "run", "//max/python/max/entrypoints:pipelines.venv"],
+        ["./bazelw", "run", "//max/python/max/_entrypoints:pipelines.venv"],
         env=env,
         cwd=str(REPO_ROOT),
     )

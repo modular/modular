@@ -958,7 +958,8 @@ struct Struct_unfused_qkv_matmul_ragged_paged_gguf_quantized:
         kv_blocks: MutableInputTensor[dtype=DType.float32, rank=6, ...],
         cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
         kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
-        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
+        max_prompt_length: InputTensor[dtype=DType.uint32, rank=1, ...],
+        max_cache_length: InputTensor[dtype=DType.uint32, rank=1, ...],
         layer_idx: UInt32,
         ctx: DeviceContext,
     ) raises:
@@ -966,7 +967,8 @@ struct Struct_unfused_qkv_matmul_ragged_paged_gguf_quantized:
             kv_blocks,
             cache_lengths,
             kv_lookup_table,
-            max_lengths,
+            max_prompt_length,
+            max_cache_length,
         )
         unfused_qkv_matmul_ragged_paged_gguf_quantized[
             quantization_encoding_q,

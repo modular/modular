@@ -1090,7 +1090,8 @@ struct Struct_rope_split_store_ragged_paged[interleaved: Bool]:
         kv_blocks: MutableInputTensor[dtype=cache_dtype, rank=6, ...],
         cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
         kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
-        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
+        max_prompt_length: InputTensor[dtype=DType.uint32, rank=1, ...],
+        max_cache_length: InputTensor[dtype=DType.uint32, rank=1, ...],
         layer_idx: UInt32,
         ctx: DeviceContext,
     ) raises:
@@ -1098,7 +1099,8 @@ struct Struct_rope_split_store_ragged_paged[interleaved: Bool]:
             kv_blocks,
             cache_lengths,
             kv_lookup_table,
-            max_lengths,
+            max_prompt_length,
+            max_cache_length,
         )
         return rope_split_store_paged_ragged[
             q_out_dtype=out_dtype,
@@ -1133,7 +1135,8 @@ struct Struct_rope_split_store_ragged_paged_with_position_id[interleaved: Bool]:
         kv_blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
         cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
         kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
-        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
+        max_prompt_length: InputTensor[dtype=DType.uint32, rank=1, ...],
+        max_cache_length: InputTensor[dtype=DType.uint32, rank=1, ...],
         position_ids: InputTensor[dtype=DType.uint32, rank=2, ...],
         layer_idx: UInt32,
         ctx: DeviceContext,
@@ -1142,7 +1145,8 @@ struct Struct_rope_split_store_ragged_paged_with_position_id[interleaved: Bool]:
             kv_blocks,
             cache_lengths,
             kv_lookup_table,
-            max_lengths,
+            max_prompt_length,
+            max_cache_length,
         )
 
         comptime if mrope_section == "":
@@ -1410,7 +1414,8 @@ def _execute_mha_ragged_paged_scalar_args[
     kv_blocks: MutableInputTensor[dtype=cache_dtype, rank=6, ...],
     cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
     kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
-    max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
+    max_prompt_length: InputTensor[dtype=DType.uint32, rank=1, ...],
+    max_cache_length: InputTensor[dtype=DType.uint32, rank=1, ...],
     layer_idx: UInt32,
     scale: Float32,
     mha_decode_dispatch_metadata: InputTensor[dtype=DType.int64, rank=1, ...],
@@ -1426,7 +1431,8 @@ def _execute_mha_ragged_paged_scalar_args[
         kv_blocks,
         cache_lengths,
         kv_lookup_table,
-        max_lengths,
+        max_prompt_length,
+        max_cache_length,
     )
     var input_row_offsets_lt = as_dynamic_row_major_1d(
         input_row_offsets.to_layout_tensor().get_immutable()

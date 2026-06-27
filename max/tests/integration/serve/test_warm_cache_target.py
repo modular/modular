@@ -24,7 +24,7 @@ def _get_pipelines_binary() -> str:
     """Get the path to the pipelines binary from runfiles."""
     runfiles = python.runfiles.Create()
     assert runfiles is not None, "Unable to find runfiles tree"
-    loc = runfiles.Rlocation("_main/max/python/max/entrypoints/pipelines")
+    loc = runfiles.Rlocation("_main/max/python/max/_entrypoints/pipelines")
     assert loc is not None, "Unable to find pipelines entrypoint"
     return loc
 

@@ -26,7 +26,7 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
 from max.nn.attention.multi_latent_attention import LatentAttentionWithRope
-from max.nn.kv_cache import KVCacheParams
+from max.nn.kv_cache import MLAKVCacheParams
 from max.nn.rotary_embedding import (
     DeepseekYarnRopeScalingParams,
     DeepseekYarnRotaryEmbedding,
@@ -114,14 +114,12 @@ def _generate_latent_attention_max_outputs(
         scaling_params=scaling_params,
     )
 
-    kv_params = KVCacheParams(
+    kv_params = MLAKVCacheParams(
         dtype=kv_dtype,
-        n_kv_heads=1,
         head_dim=576,
         num_layers=config.num_hidden_layers,
         devices=[DeviceRef.GPU()],
         page_size=128,
-        is_mla=True,
         num_q_heads=config.num_attention_heads,
     )
 

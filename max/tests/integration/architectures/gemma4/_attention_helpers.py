@@ -40,7 +40,7 @@ from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType
-from max.nn.kernels import KVCacheParams
+from max.nn.kv_cache import MHAKVCacheParams
 from max.nn.rotary_embedding import Llama3RotaryEmbedding
 from max.pipelines.architectures.gemma4.layers.attention import (
     Gemma4Attention as MaxGemma4Attention,
@@ -185,7 +185,7 @@ def build_max_attention(
     }
 
     cache_dtype_eff = cache_dtype if cache_dtype is not None else dtype
-    kv_params_local = KVCacheParams(
+    kv_params_local = MHAKVCacheParams(
         dtype=cache_dtype_eff,
         devices=[device_ref],
         n_kv_heads=text_config.num_key_value_heads,
@@ -196,7 +196,7 @@ def build_max_attention(
         page_size=256,
     )
 
-    kv_params_global = KVCacheParams(
+    kv_params_global = MHAKVCacheParams(
         dtype=cache_dtype_eff,
         devices=[device_ref],
         n_kv_heads=text_config.num_global_key_value_heads,

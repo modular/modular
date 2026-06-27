@@ -2,7 +2,6 @@ load("//bazel:api.bzl", "modular_py_test", "requirement")
 
 package(default_visibility = [
     "//:__pkg__",
-    "//SDK/integration-test:__subpackages__",
     "//max/tests:__subpackages__",
     "//oss/modular/max/tests:__subpackages__",
 ])
@@ -15,15 +14,22 @@ modular_py_test(
         "pipelines/*.py",
     ]),
     data = [
+        "//max/tests/tests/serve/fixtures/minimax_m3_reasoning_split:fixtures",
         "//max/tests/tests/serve/testdata",
     ],
     env = {
         "MAX_SERVE_DISABLE_TELEMETRY": "True",
         "MAX_SERVE_TESTDATA": "max/tests/tests/serve/testdata",
     },
+    ignore_unresolved_imports = [
+        # test_eplb_rebalance.py imports torch only for an optional parity
+        # check; torch is not a hard test dependency.
+        "torch",
+    ],
     imports = ["../.."],
     per_test_tags = {
         "test_reset_prefix_cache.py": ["external-exclusive"],
+        "test_eplb_rebalance.py": ["no-mypy"],
     },
     target_compatible_with = select({
         # note: these tests are critical to max-serve workflows on mac-os

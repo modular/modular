@@ -192,7 +192,7 @@ def test_8x_recipe_auto_reduces_on_4_gpu_machine(
     monkeypatch.setattr(smoke_test, "_load_hf_repo_lock", lambda: {})
 
     # amd/MiniMax-M2.7-MXFP4 pins device_specs [0..7] and ep_size 8.
-    cmd = smoke_test.get_server_cmd(
+    cmd, _ = smoke_test.get_server_cmd(
         "max", "amd/MiniMax-M2.7-MXFP4", gpu_spec=("AMD MI355X", 4)
     )
 
@@ -205,7 +205,7 @@ def test_no_autoscale_devices_honors_recipe(monkeypatch: MonkeyPatch) -> None:
     monkeypatch.setattr(smoke_test, "_inside_bazel", lambda: False)
     monkeypatch.setattr(smoke_test, "_load_hf_repo_lock", lambda: {})
 
-    cmd = smoke_test.get_server_cmd(
+    cmd, _ = smoke_test.get_server_cmd(
         "max",
         "amd/MiniMax-M2.7-MXFP4",
         autoscale_devices=False,
@@ -221,9 +221,8 @@ def test_vllm_minimax_keeps_flashinfer_workaround(
 ) -> None:
     monkeypatch.setattr(smoke_test, "_inside_bazel", lambda: False)
     monkeypatch.setattr(smoke_test, "_load_hf_repo_lock", lambda: {})
-    monkeypatch.delenv("VLLM_USE_FLASHINFER_MOE_FP8", raising=False)
 
-    cmd = smoke_test.get_server_cmd(
+    cmd, env = smoke_test.get_server_cmd(
         "vllm", "MiniMaxAI/MiniMax-M2.7", gpu_spec=("NVIDIA B200", 8)
     )
 
@@ -234,7 +233,7 @@ def test_vllm_minimax_keeps_flashinfer_workaround(
     assert "--data-parallel-size=8" in cmd
     assert "--attention-backend" in cmd
     assert "FLASH_ATTN" in cmd
-    assert smoke_test.os.environ["VLLM_USE_FLASHINFER_MOE_FP8"] == "0"
+    assert env["VLLM_USE_FLASHINFER_MOE_FP8"] == "0"
 
 
 def test_vllm_uses_tp_for_recipe_default_data_parallel_degree(
@@ -243,7 +242,7 @@ def test_vllm_uses_tp_for_recipe_default_data_parallel_degree(
     monkeypatch.setattr(smoke_test, "_inside_bazel", lambda: False)
     monkeypatch.setattr(smoke_test, "_load_hf_repo_lock", lambda: {})
 
-    cmd = smoke_test.get_server_cmd(
+    cmd, _ = smoke_test.get_server_cmd(
         "vllm",
         "nvidia/DeepSeek-V3.1-NVFP4__tpep",
         gpu_spec=("NVIDIA B200", 8),
@@ -260,7 +259,7 @@ def test_sglang_uses_tp_for_recipe_with_tensor_parallel_attention(
     monkeypatch.setattr(smoke_test, "_inside_bazel", lambda: False)
     monkeypatch.setattr(smoke_test, "_load_hf_repo_lock", lambda: {})
 
-    cmd = smoke_test.get_server_cmd(
+    cmd, _ = smoke_test.get_server_cmd(
         "sglang",
         "nvidia/DeepSeek-V3.1-NVFP4__tpep",
         gpu_spec=("NVIDIA B200", 8),
@@ -281,7 +280,7 @@ def test_sglang_uses_data_parallel_attention_for_recipe_dp(
     monkeypatch.setattr(smoke_test, "_inside_bazel", lambda: False)
     monkeypatch.setattr(smoke_test, "_load_hf_repo_lock", lambda: {})
 
-    cmd = smoke_test.get_server_cmd(
+    cmd, _ = smoke_test.get_server_cmd(
         "sglang",
         "nvidia/DeepSeek-V3.1-NVFP4__fp8kv",
         gpu_spec=("NVIDIA B200", 8),
@@ -300,7 +299,7 @@ def test_sglang_uses_recipe_memory_cap(monkeypatch: MonkeyPatch) -> None:
     monkeypatch.setattr(smoke_test, "_inside_bazel", lambda: False)
     monkeypatch.setattr(smoke_test, "_load_hf_repo_lock", lambda: {})
 
-    cmd = smoke_test.get_server_cmd(
+    cmd, _ = smoke_test.get_server_cmd(
         "sglang",
         "nvidia/Kimi-K2.5-NVFP4__eagle_tiered_kvconnector_tpep_ar",
         gpu_spec=("NVIDIA B200", 8),
@@ -324,12 +323,14 @@ def test_max_get_server_cmd_recipe_alias_resolves_yaml(
 
     alias = "microsoft/phi-4__modulev3"
     recipe_path = MODEL_RECIPES[alias]
-    cmd = smoke_test.get_server_cmd("max", alias, gpu_spec=("NVIDIA L40S", 1))
+    cmd, _ = smoke_test.get_server_cmd(
+        "max", alias, gpu_spec=("NVIDIA L40S", 1)
+    )
 
     assert cmd[:5] == [
         ".venv-serve/bin/python",
         "-m",
-        "max.entrypoints.pipelines",
+        "max._entrypoints.pipelines",
         "serve",
         "--pretty-print-config",
     ]

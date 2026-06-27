@@ -70,6 +70,25 @@ trait PluginHooks:
         _StackAllocationPluginHookFnType[address_space]
     ]
 
+    comptime address_space_fn[name: StaticString]: Optional[AddressSpace]
+    """Target-specific named address-space lookup.
+
+    Resolves an address-space *name* that has no built-in constant on
+    `AddressSpace` (the GPU spaces `GENERIC`/`GLOBAL`/`SHARED`/...) to its
+    target-specific value — for example an accelerator-specific scratchpad
+    space. `AddressSpace.<NAME>` consults this hook for any such name; leaving it
+    `None` (the default) makes the name a compile-time error. This keeps the
+    set of valid address-space names open and target-extensible rather than a
+    fixed portable enum.
+
+    Parameters:
+        name: The address-space name being looked up.
+
+    Returns:
+        The backend's `AddressSpace` for `name`, or `None` if the backend does
+        not define it.
+    """
+
     comptime unsafe_dangling_fn: Optional[_UnsafeDanglingPluginHookFnType]
     """`UnsafePointer.unsafe_dangling()` address override.
 
@@ -173,6 +192,8 @@ struct DefaultPlugin(PluginHooks):
     comptime stack_allocation_fn[address_space: AddressSpace]: Optional[
         _StackAllocationPluginHookFnType[address_space]
     ] = None
+
+    comptime address_space_fn[name: StaticString]: Optional[AddressSpace] = None
 
     comptime unsafe_dangling_fn: Optional[
         _UnsafeDanglingPluginHookFnType

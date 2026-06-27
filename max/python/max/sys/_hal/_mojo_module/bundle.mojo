@@ -15,11 +15,11 @@
 from std.memory import ArcPointer, UnsafePointer, forget_deinit
 from std.os import abort
 from std.python import PythonObject
-from std.sys._hal.context import (
+from _hal.context import (
     Context as HALContext,
     RuntimeBundle as HALRuntimeBundle,
 )
-from std.sys._hal.device import get_device_spec
+from _hal.device import get_device_spec
 
 from .context import Context
 

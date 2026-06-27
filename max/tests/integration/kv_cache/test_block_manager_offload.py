@@ -23,31 +23,49 @@ pass-through, multi-run ordering, and that the pending queue is drained.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
+from max.nn.kv_cache import KVHashAlgo
 from max.nn.kv_cache.metrics import KVCacheMetrics
+from max.pipelines.kv_cache.kv_connector import to_block_hash_bytes
 from max.pipelines.kv_cache.memory_tier import MemoryTier
 from max.pipelines.kv_cache.paged_kv_cache.block_manager import BlockManager
 from max.pipelines.kv_cache.paged_kv_cache.block_utils import KVCacheBlock
+
+# Short alias for readability in test fixtures and assertions: maps an int
+# block hash to its canonical 8-byte big-endian signed encoding.
+_b = to_block_hash_bytes
 
 
 class RecordingConnector:
     """Connector stub that records the ``offload`` calls it receives."""
 
     def __init__(self) -> None:
-        self.offloads: list[tuple[list[int], list[int], int]] = []
+        self.offloads: list[tuple[list[int], list[bytes], bytes | None]] = []
 
     @property
     def name(self) -> str:
         return "recording"
 
+    @property
+    def supported_hash_algos(self) -> frozenset[KVHashAlgo]:
+        return frozenset({"ahash64", "sha256", "sha256_64"})
+
     def offload(
         self,
         block_ids: list[int],
-        block_hashes: list[int],
-        parent_seq_hash: int = 0,
+        block_hashes: Sequence[bytes],
+        parent_seq_hash: bytes | None = None,
+        replica_idx: int = 0,
     ) -> None:
-        self.offloads.append((block_ids, block_hashes, parent_seq_hash))
+        self.offloads.append((block_ids, list(block_hashes), parent_seq_hash))
 
-    def load(self, device_block_ids: list[int], block_hashes: list[int]) -> int:
+    def load(
+        self,
+        device_block_ids: list[int],
+        block_hashes: Sequence[bytes],
+        replica_idx: int = 0,
+    ) -> int:
         return 0
 
     def wait_for_loads(self) -> None: ...
@@ -88,7 +106,7 @@ def _make_block_manager() -> tuple[BlockManager, RecordingConnector]:
     return bm, connector
 
 
-def _commit(bm: BlockManager, hash_to_bid: dict[int, int]) -> None:
+def _commit(bm: BlockManager, hash_to_bid: dict[bytes, int]) -> None:
     """Place ``hash -> KVCacheBlock(bid)`` entries in the device prefix cache."""
     for block_hash, bid in hash_to_bid.items():
         bm.device_block_pool.prefix_cache[block_hash] = KVCacheBlock(bid)
@@ -96,60 +114,67 @@ def _commit(bm: BlockManager, hash_to_bid: dict[int, int]) -> None:
 
 def test_offload_delivers_run_resolving_hashes_to_bids() -> None:
     bm, connector = _make_block_manager()
-    _commit(bm, {111: 5, 222: 6, 333: 7})
+    _commit(bm, {_b(111): 5, _b(222): 6, _b(333): 7})
     # One run of three committed blocks chaining onto parent 999.
-    bm._pending_offloads = [(999, [111, 222, 333])]
+    bm._pending_offloads = [[(_b(999), [_b(111), _b(222), _b(333)])]]
 
     bm.offload()
 
-    assert connector.offloads == [([5, 6, 7], [111, 222, 333], 999)]
+    assert connector.offloads == [
+        ([5, 6, 7], [_b(111), _b(222), _b(333)], _b(999))
+    ]
     # Pending queue drained.
-    assert bm._pending_offloads == []
+    assert bm._pending_offloads == [[]]
 
 
-def test_offload_root_run_uses_parent_zero() -> None:
+def test_offload_root_run_uses_parent_none() -> None:
     bm, connector = _make_block_manager()
-    _commit(bm, {111: 5, 222: 6})
-    bm._pending_offloads = [(0, [111, 222])]
+    _commit(bm, {_b(111): 5, _b(222): 6})
+    bm._pending_offloads = [[(None, [_b(111), _b(222)])]]
 
     bm.offload()
 
-    assert connector.offloads == [([5, 6], [111, 222], 0)]
+    assert connector.offloads == [([5, 6], [_b(111), _b(222)], None)]
 
 
 def test_offload_truncates_run_at_evicted_block() -> None:
     bm, connector = _make_block_manager()
     # 222 was evicted since commit; the run must stop before it so the chain
     # has no gap (333's parent would otherwise be missing).
-    _commit(bm, {111: 5, 333: 7})
-    bm._pending_offloads = [(0, [111, 222, 333])]
+    _commit(bm, {_b(111): 5, _b(333): 7})
+    bm._pending_offloads = [[(None, [_b(111), _b(222), _b(333)])]]
 
     bm.offload()
 
-    assert connector.offloads == [([5], [111], 0)]
+    assert connector.offloads == [([5], [_b(111)], None)]
 
 
 def test_offload_skips_fully_evicted_run() -> None:
     bm, connector = _make_block_manager()
     # First (and only) block of the run is gone -> nothing to deliver.
     _commit(bm, {})
-    bm._pending_offloads = [(0, [111])]
+    bm._pending_offloads = [[(None, [_b(111)])]]
 
     bm.offload()
 
     assert connector.offloads == []
-    assert bm._pending_offloads == []
+    assert bm._pending_offloads == [[]]
 
 
 def test_offload_preserves_multi_run_order() -> None:
     bm, connector = _make_block_manager()
-    _commit(bm, {111: 1, 222: 2, 333: 3, 444: 4})
+    _commit(bm, {_b(111): 1, _b(222): 2, _b(333): 3, _b(444): 4})
     # Two runs queued across two commits; second chains onto the first's tail.
-    bm._pending_offloads = [(0, [111, 222]), (222, [333, 444])]
+    bm._pending_offloads = [
+        [
+            (None, [_b(111), _b(222)]),
+            (_b(222), [_b(333), _b(444)]),
+        ]
+    ]
 
     bm.offload()
 
     assert connector.offloads == [
-        ([1, 2], [111, 222], 0),
-        ([3, 4], [333, 444], 222),
+        ([1, 2], [_b(111), _b(222)], None),
+        ([3, 4], [_b(333), _b(444)], _b(222)),
     ]

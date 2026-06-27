@@ -26,6 +26,8 @@ trait TensorStorage:
     tracks the lifetime and mutability of the borrowed storage.
     """
 
+    comptime element_size: Int = 1
+
     comptime StorageType[
         mut: Bool,
         //,
@@ -119,7 +121,7 @@ trait TensorStorage:
         storage: Self.StorageType[mut=False, dtype, ...],
         offset: Some[Indexer],
     ) -> SIMD[dtype, width]:
-        """Loads a `SIMD` value at an element offset from the storage.
+        """Loads a `SIMD` value at a scalar-element offset from the storage.
 
         Parameters:
             dtype: The element data type of the storage.
@@ -132,7 +134,7 @@ trait TensorStorage:
 
         Args:
             storage: The storage to load from.
-            offset: The element offset to load at.
+            offset: The scalar-element offset to load at.
 
         Returns:
             The loaded `SIMD` value.
@@ -171,7 +173,7 @@ trait TensorStorage:
         offset: Some[Indexer],
         value: SIMD[dtype, _],
     ):
-        """Stores a `SIMD` value at an element offset in the storage.
+        """Stores a `SIMD` value at a scalar-element offset in the storage.
 
         The caller is responsible for ensuring the storage is actually mutable.
         The `dtype`, `origin`, and `address_space` are inferred from the
@@ -187,7 +189,7 @@ trait TensorStorage:
 
         Args:
             storage: The storage to store into.
-            offset: The element offset to store at.
+            offset: The scalar-element offset to store at.
             value: The `SIMD` value to store.
         """
         ...
@@ -196,15 +198,15 @@ trait TensorStorage:
     def offset(
         storage: Self.StorageType[...], offset: Some[Indexer]
     ) -> type_of(storage):
-        """Returns a storage handle offset by a number of elements.
+        """Returns a storage handle offset by a number of scalar elements.
 
         Args:
             storage: The storage to offset from.
-            offset: The number of elements to advance the handle by.
+            offset: The number of scalar elements to advance the handle by.
 
         Returns:
-            A handle of the same type starting `offset` elements into the
-            referenced storage.
+            A handle of the same type starting `offset` scalar elements into
+            the referenced storage.
         """
         ...
 
@@ -215,7 +217,7 @@ trait TensorStorage:
         storage: Self.StorageType[mut=False, dtype, _, address_space],
         other: Self.StorageType[mut=False, dtype, _, address_space],
     ) -> Int:
-        """Returns the element distance from `other` to `storage`.
+        """Returns the scalar-element distance from `other` to `storage`.
 
         Parameters:
             dtype: The storages' `DType`.
@@ -226,20 +228,28 @@ trait TensorStorage:
             other: The storage to measure the distance from.
 
         Returns:
-            The number of elements separating the two handles. The value is
-            positive when `storage` is ahead of `other` and negative when it
-            precedes `other`.
+            The number of scalar elements separating the two handles. The
+            value is positive when `storage` is ahead of `other` and negative
+            when it precedes `other`.
         """
         ...
 
 
-struct PointerStorage(TensorStorage):
+struct PointerStorage[*, element_width: Int = 1](TensorStorage):
     """Implements `TensorStorage` backed by a raw `UnsafePointer`.
 
     `PointerStorage` is the default storage policy for `TileTensor`. Its
     `StorageType` handle is a plain `UnsafePointer`, and every operation is
     expressed directly in terms of the underlying pointer.
+
+    Parameters:
+        element_width: Number of scalar elements per logical element. A value
+            of `1` (the default) is a non-vectorized tensor; larger values
+            describe a vectorized view whose logical elements are SIMD vectors.
     """
+
+    comptime element_size = Self.element_width
+    """Number of scalar elements per logical element (alias of `element_width`)."""
 
     comptime StorageType[
         mut: Bool,
@@ -248,7 +258,7 @@ struct PointerStorage(TensorStorage):
         origin: Origin[mut=mut],
         address_space: AddressSpace,
     ]: TrivialRegisterPassable = UnsafePointer[
-        Scalar[dtype], origin, address_space=address_space
+        SIMD[dtype, Self.element_width], origin, address_space=address_space
     ]
     """A raw `UnsafePointer` to `Scalar[dtype]` borrowing the storage.
 
@@ -319,7 +329,7 @@ struct PointerStorage(TensorStorage):
         Returns:
             The loaded `SIMD` value.
         """
-        return storage.load[
+        return storage.bitcast[Scalar[dtype]]().load[
             width=width,
             alignment=alignment,
             invariant=invariant,
@@ -339,7 +349,7 @@ struct PointerStorage(TensorStorage):
         storage: Self.StorageType[mut=False, dtype, ...],
         offset: Some[Indexer],
     ) -> SIMD[dtype, width]:
-        """Loads a `SIMD` value at an element offset from the storage.
+        """Loads a `SIMD` value at a scalar-element offset from the storage.
 
         Parameters:
             dtype: The element data type of the storage.
@@ -352,12 +362,12 @@ struct PointerStorage(TensorStorage):
 
         Args:
             storage: The storage to load from.
-            offset: The element offset to load at.
+            offset: The scalar-element offset to load at.
 
         Returns:
             The loaded `SIMD` value.
         """
-        return storage.load[
+        return storage.bitcast[Scalar[dtype]]().load[
             width=width,
             alignment=alignment,
             invariant=invariant,
@@ -384,7 +394,9 @@ struct PointerStorage(TensorStorage):
             storage: The storage to store into.
             value: The `SIMD` value to store.
         """
-        storage.store[alignment=alignment, non_temporal=non_temporal](value)
+        storage.bitcast[Scalar[dtype]]().store[
+            alignment=alignment, non_temporal=non_temporal
+        ](value)
 
     @staticmethod
     @always_inline
@@ -398,7 +410,7 @@ struct PointerStorage(TensorStorage):
         offset: Some[Indexer],
         value: SIMD[dtype, _],
     ):
-        """Stores a `SIMD` value at an element offset in the storage.
+        """Stores a `SIMD` value at a scalar-element offset in the storage.
 
         Parameters:
             dtype: The element data type of the storage.
@@ -408,32 +420,41 @@ struct PointerStorage(TensorStorage):
 
         Args:
             storage: The storage to store into.
-            offset: The element offset to store at.
+            offset: The scalar-element offset to store at.
             value: The `SIMD` value to store.
         """
-        storage.store[alignment=alignment, non_temporal=non_temporal](
-            offset, value
-        )
+        storage.bitcast[Scalar[dtype]]().store[
+            alignment=alignment, non_temporal=non_temporal
+        ](offset, value)
 
     @staticmethod
     @always_inline
     def offset(
         storage: Self.StorageType[...], offset: Some[Indexer]
     ) -> type_of(storage):
-        """Returns a storage handle offset by a number of elements.
+        """Returns a storage handle offset by a number of scalar elements.
 
         The returned handle refers to the same externally owned storage,
-        advanced by `offset` elements.
+        advanced by `offset` scalar elements. The offset is measured in scalar
+        elements (not logical SIMD elements) so that it matches the scalar-unit
+        offsets produced by a tensor's layout and consumed by `load`/`store`;
+        for a vectorized storage (`element_width > 1`) advancing the raw
+        SIMD-typed handle directly would over-advance by `element_width`.
 
         Args:
             storage: The storage to offset from.
-            offset: The number of elements to advance the handle by.
+            offset: The number of scalar elements to advance the handle by.
 
         Returns:
-            A handle of the same type starting `offset` elements into the
-            referenced storage.
+            A handle of the same type starting `offset` scalar elements into
+            the referenced storage.
         """
-        return storage + offset
+        # `storage` is an `UnsafePointer[SIMD[dtype, element_width]]`. Reinterpret
+        # it as a scalar pointer so `+ offset` advances in scalar (not SIMD)
+        # units, then `rebind` back to the original handle type.
+        return (
+            storage.bitcast[Scalar[type_of(storage).type.dtype]]() + offset
+        ).bitcast[SIMD[type_of(storage).type.dtype, Self.element_width]]()
 
     @staticmethod
     def distance[
@@ -442,7 +463,7 @@ struct PointerStorage(TensorStorage):
         storage: Self.StorageType[mut=False, dtype, _, address_space],
         other: Self.StorageType[mut=False, dtype, _, address_space],
     ) -> Int:
-        """Returns the element distance from `other` to `storage`.
+        """Returns the scalar-element distance from `other` to `storage`.
 
         Parameters:
             dtype: The storages' `DType`.
@@ -453,8 +474,8 @@ struct PointerStorage(TensorStorage):
             other: The storage to measure the distance from.
 
         Returns:
-            The number of elements separating the two handles. The value is
-            positive when `storage` is ahead of `other` and negative when it
-            precedes `other`.
+            The number of scalar elements separating the two handles. The
+            value is positive when `storage` is ahead of `other` and negative
+            when it precedes `other`.
         """
         return (Int(storage) - Int(other)) // size_of[dtype]()

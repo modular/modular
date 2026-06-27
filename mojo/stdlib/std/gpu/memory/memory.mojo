@@ -52,7 +52,7 @@ from std.sys.info import (
 from std.sys.intrinsics import _RegisterPackType
 
 from std.builtin.dtype import _uint_type_of_width
-from std.memory.pointer import AddressSpace, GPUAddressSpace
+from std.memory.pointer import AddressSpace
 from std.memory.unsafe import bitcast
 
 from std.utils import IndexList, StaticTuple

@@ -24,7 +24,7 @@ from max.graph import BufferType, DeviceRef, Graph, TensorType, ops
 from max.nn.attention.multi_latent_attention import (
     DataParallelLatentAttentionWithRope,
 )
-from max.nn.kv_cache import KVCacheInputs, KVCacheParams
+from max.nn.kv_cache import KVCacheInputs, KVCacheParams, MLAKVCacheParams
 from max.nn.rotary_embedding import (
     DeepseekYarnRopeScalingParams,
     DeepseekYarnRotaryEmbedding,
@@ -69,14 +69,12 @@ def _single_gpu_baseline(
         scaling_params=scaling_params,
     )
 
-    kv_params = KVCacheParams(
+    kv_params = MLAKVCacheParams(
         dtype=DType.bfloat16,
         num_layers=config.num_hidden_layers,
-        n_kv_heads=1,
         head_dim=576,
         devices=[DeviceRef.GPU()],
         page_size=128,
-        is_mla=True,
         num_q_heads=config.num_attention_heads,
     )
 
@@ -213,15 +211,13 @@ def _build_scaling_and_rope(
 
 
 def _build_kv_params(config: DeepseekV2Config, dp_degree: int) -> KVCacheParams:
-    return KVCacheParams(
+    return MLAKVCacheParams(
         dtype=DType.bfloat16,
-        n_kv_heads=1,
         head_dim=576,
         num_layers=config.num_hidden_layers,
         devices=[DeviceRef.GPU(i) for i in range(dp_degree)],
         page_size=128,
         data_parallel_degree=dp_degree,
-        is_mla=True,
         num_q_heads=config.num_attention_heads,
     )
 

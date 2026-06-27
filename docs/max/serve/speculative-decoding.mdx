@@ -199,18 +199,20 @@ flags.
 
 ## Compatibility and limits
 
-These restrictions apply when speculative decoding is enabled:
+When using speculative decoding:
 
-- `--enable-echo` isn't supported alongside speculative decoding.
-- [Structured output](/max/serve/structured-output) (JSON-schema-constrained
-  generation) works alongside speculative decoding: the constraint bitmask is
-  applied to each speculated position during verification. As with structured
-  output generally, this requires a GPU deployment.
-- The target and draft must share the same `max_length`.
-- Repetition, frequency, and presence penalties are disabled when a
-  separate draft model is configured (`--draft-model-path`), which covers
-  EAGLE. MTP keeps the draft head inside the target checkpoint, so it
-  supports penalties.
+- The `--enable-echo` flag isn't supported.
+- The [`--max-length`](/max/cli/serve/#--max-length-max_length) and
+  [`--draft-max-length`](/max/cli/serve/#--draft-max-length-draft_max_length)
+  are both capped at the draft model's maximum supported length. MAX
+  clamps both to that limit if either exceeds it.
+- [Structured output](/max/serve/structured-output) is supported. MAX
+  applies the constraint bitmask to each speculated position during
+  verification. This feature requires a GPU deployment.
+- Repetition, frequency, and presence penalties aren't supported when
+  using a separate draft model (`--draft-model-path`), including EAGLE.
+  Repetition, frequency, and presence penalties are supported when using
+  MTP.
 
 ## Next steps
 

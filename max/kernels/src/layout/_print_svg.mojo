@@ -13,7 +13,7 @@
 from std.pathlib import Path
 from std.sys import size_of
 
-from layout import Layout, LayoutTensor
+from layout import IntTuple, Layout, LayoutTensor
 from layout.swizzle import Swizzle
 
 

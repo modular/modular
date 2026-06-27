@@ -42,6 +42,7 @@ _EXTRA_CONSTRAINTS = {
         "//conditions:default": [],
     }),  # FIXME: PRDT-506
     "gpu/linalg/bench_apple_gpu_matmul.mojo": ["//:apple_gpu"],  # Apple M5 simdgroup matmul (incl. split-K) — Metal only
+    "gpu/nn/bench_conv2d_apple.mojo": ["//:apple_gpu"],  # Apple M5 im2col conv2d vs naive — Metal only
     "gpu/nn/bench_apple_fa_prefill.mojo": ["//:apple_gpu"],  # Apple M5 MMA flash-attention prefill (no-SMEM + SMEM-staged) — Metal only
     "gpu/linalg/bench_matmul.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],

@@ -105,7 +105,13 @@ class ImageContentPart(_MessageContentPart):
         default="image", description="Content type identifier"
     )
 
-    # Optional vendor sizing hint; ``None`` means unset and models may ignore it.
+    # Optional vendor sizing hints; ``None`` means unset and models may ignore
+    # them. ``detail`` is the OpenAI quality tier; models that honor it map the
+    # tier to a resolution.
+    detail: str | None = Field(
+        default=None,
+        description="Detail/quality tier hint for image preprocessing",
+    )
     max_long_side_pixel: int | None = Field(
         default=None,
         description="Max long-side length in pixels for image preprocessing",
@@ -128,6 +134,10 @@ class VideoContentPart(_MessageContentPart):
     max_frames: int | None = Field(
         default=None,
         description="Maximum number of frames to sample from the video",
+    )
+    detail: str | None = Field(
+        default=None,
+        description="Detail/quality tier hint for video preprocessing",
     )
     max_long_side_pixel: int | None = Field(
         default=None,

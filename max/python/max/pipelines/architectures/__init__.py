@@ -194,6 +194,7 @@ def register_all_models() -> None:
             "KimiK25ForConditionalGeneration", ".kimik2_5", "kimik2_5_arch"
         ),
         _LazyArch("KimiVLForConditionalGeneration", ".kimik2_5", "kimivl_arch"),
+        _LazyArch("LagunaForCausalLM", ".laguna", "laguna_arch"),
         _LazyArch("Lfm2ForCausalLM", ".lfm2", "lfm2_arch"),
         _LazyArch("LlamaForCausalLM", ".llama3", "llama_arch"),
         _LazyArch(
@@ -317,6 +318,16 @@ def register_all_models() -> None:
         from minimax_m3 import minimax_m3_arch  # type: ignore[import-not-found]
 
         PIPELINE_REGISTRY.register(minimax_m3_arch)
+    except ModuleNotFoundError:
+        pass
+
+    # Optional: import the unified MiniMax-M3 + MTP model if available.
+    try:
+        from minimax_m3_mtp import (  # type: ignore[import-not-found]
+            unified_mtp_minimax_m3_arch,
+        )
+
+        PIPELINE_REGISTRY.register(unified_mtp_minimax_m3_arch)
     except ModuleNotFoundError:
         pass
 

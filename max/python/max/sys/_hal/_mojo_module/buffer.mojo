@@ -15,8 +15,8 @@
 from std.memory import ArcPointer, UnsafePointer
 from std.os import abort
 from std.python import PythonObject
-from std.sys._hal.context import Buffer as HALBuffer, Context as HALContext
-from std.sys._hal.device import get_device_spec
+from _hal.context import Buffer as HALBuffer, Context as HALContext
+from _hal.device import get_device_spec
 
 
 @fieldwise_init
@@ -35,7 +35,7 @@ struct Buffer(ImplicitlyDeletable, Movable, Writable):
 
     # TODO: generalize to multi-device — currently hardcoded to device 0.
     comptime device_spec = get_device_spec[0]()
-    var _hal: HALBuffer
+    var _hal: HALBuffer[Self.device_spec]
     var _ctx: ArcPointer[HALContext[Self.device_spec]]
     var _is_pinned: Bool
 

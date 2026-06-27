@@ -37,31 +37,26 @@ class GroupNorm(Module[[Tensor], Tensor]):
     Useful when the batch axis is small enough that batch normalization
     is unstable.
 
-    For example:
-
     .. code-block:: python
 
+        from max.driver import Accelerator
         from max.dtype import DType
         from max.experimental.nn.norm import GroupNorm
-        from max.experimental.realization_context import (
-            GraphRealizationContext,
-            realization_context,
-        )
         from max.experimental.tensor import Tensor
-        from max.graph import DeviceRef, Graph, TensorType
 
-        graph = Graph(
-            "gn",
-            input_types=[
-                TensorType(DType.float32, ("batch", 128, 32, 32), DeviceRef.GPU()),
-            ],
-        )
-        ctx = GraphRealizationContext(graph)
-        with realization_context(ctx), ctx:
-            x = Tensor.from_graph_value(graph.inputs[0])
-            norm = GroupNorm(num_groups=32, num_channels=128)
-            y = norm(x)
-            graph.output(y)
+        device = Accelerator()
+        norm = GroupNorm(num_groups=32, num_channels=128).to(device)
+        x = Tensor.ones([2, 128, 8, 8], dtype=DType.float32, device=device)
+        y = norm(x)
+
+    .. invisible-code-block: python
+
+        import numpy as np
+
+        assert y.shape == [2, 128, 8, 8]
+        # A constant input has zero variance, so it normalizes to zeros.
+        assert np.allclose(y.to_numpy(), 0.0, atol=1e-3)
+
 
     Args:
         num_groups: The number of groups to split the channel axis into.

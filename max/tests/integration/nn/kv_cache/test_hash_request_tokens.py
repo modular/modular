@@ -15,6 +15,7 @@ from typing import cast
 
 import numpy as np
 import pytest
+from max.pipelines.context import TokenHashOverride
 from max.pipelines.kv_cache.paged_kv_cache.block_utils import (
     _ZERO_SEED,
     _make_root_parent_hash,
@@ -40,6 +41,61 @@ def test_ahash64_rejects_seed_or_salt() -> None:
         hash_request_tokens(tokens, 128, seed=b"\x00" * 32)
     with pytest.raises(ValueError, match="algo"):
         hash_request_tokens(tokens, 128, salt="x")
+
+
+def test_token_hash_override_replaces_only_target_token_and_restores() -> None:
+    tokens = np.arange(16, dtype=np.int64)
+    original = tokens.copy()
+    override = TokenHashOverride(token_idx=5, token_hash=99_001)
+
+    got = hash_request_tokens(
+        tokens, 4, prefix_length=0, token_hash_overrides=[override]
+    )
+    manual = original.copy()
+    manual[5] = override.token_hash
+    expected = hash_request_tokens(manual, 4)
+
+    assert got == expected
+    assert np.array_equal(tokens, original)
+
+
+def test_token_hash_override_honors_prefix_length() -> None:
+    full_tokens = np.arange(16, dtype=np.int64)
+    prefix_length = 4
+    token_slice = full_tokens[prefix_length:12].copy()
+    original = token_slice.copy()
+    override = TokenHashOverride(token_idx=6, token_hash=77_003)
+
+    got = hash_request_tokens(
+        token_slice,
+        4,
+        prefix_length=prefix_length,
+        token_hash_overrides=[override],
+    )
+    manual = original.copy()
+    manual[override.token_idx - prefix_length] = override.token_hash
+    expected = hash_request_tokens(manual, 4)
+
+    assert got == expected
+    assert np.array_equal(token_slice, original)
+
+
+def test_duplicate_token_hash_override_rejects_without_mutating() -> None:
+    tokens = np.arange(16, dtype=np.int64)
+    original = tokens.copy()
+
+    with pytest.raises(ValueError, match="same token index"):
+        hash_request_tokens(
+            tokens,
+            4,
+            prefix_length=0,
+            token_hash_overrides=[
+                TokenHashOverride(token_idx=5, token_hash=99_001),
+                TokenHashOverride(token_idx=5, token_hash=77_003),
+            ],
+        )
+
+    assert np.array_equal(tokens, original)
 
 
 # --- sha256 path -----------------------------------------------------------

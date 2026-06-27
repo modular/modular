@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 from max.dtype import DType
 from max.graph import DeviceRef, Graph
-from max.nn.kv_cache import KVCacheParams
+from max.nn.kv_cache import MHAKVCacheParams
 from max.pipelines.architectures.llama3.model_config import Llama3Config
 from max.pipelines.architectures.unified_eagle_llama3.model_config import (
     UnifiedEagleLlama3Config,
@@ -38,7 +38,7 @@ def create_dummy_llama3_config(layers: int) -> Llama3Config:
         dtype=DType.bfloat16,
         model_quantization_encoding=None,
         quantization_config=None,
-        kv_params=KVCacheParams(
+        kv_params=MHAKVCacheParams(
             dtype=DType.bfloat16,
             n_kv_heads=4,
             head_dim=2,
@@ -92,10 +92,10 @@ def test_graph_construction() -> None:
     # Verify input types include draft_tokens and draft_cache_lengths.
     input_types = model.input_types()
     # Expected: tokens, input_row_offsets, return_n_logits,
-    #           + target KV (6 fields) + draft KV (6 fields) + draft_tokens,
+    #           + target KV (7 fields) + draft KV (7 fields) + draft_tokens,
     #           + rng seed, + sampling params (temperature, top_k, max_k, top_p, min_top_p)
-    assert len(input_types) == 22, (
-        f"Expected 22 input types, got {len(input_types)}"
+    assert len(input_types) == 24, (
+        f"Expected 24 input types, got {len(input_types)}"
     )
 
     # Smoke test that graph construction (not compilation) works
@@ -122,10 +122,10 @@ def test_input_types_with_structured_output() -> None:
     # Verify input types include the bitmask triple when structured
     # output is enabled.
     input_types = model.input_types()
-    # Expected: 22 mandatory inputs + 3 bitmask (pinned, wait_payload,
-    # device_bitmask_scratch) = 25 total
-    assert len(input_types) == 25, (
-        f"Expected 25 input types (with bitmask triple), got {len(input_types)}"
+    # Expected: 24 mandatory inputs + 3 bitmask (pinned, wait_payload,
+    # device_bitmask_scratch) = 27 total
+    assert len(input_types) == 27, (
+        f"Expected 27 input types (with bitmask triple), got {len(input_types)}"
     )
 
     # The trailing three inputs are pinned_bitmask (packed int32 tensor),

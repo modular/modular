@@ -22,8 +22,11 @@ from typing import Any, Literal, overload
 import numpy as np
 import numpy.typing as npt
 from max._core_mojo import block_hasher, block_hasher_sha256
-from max.pipelines.context import ImageMetadata
+from max.nn.kv_cache.cache_params import KVHashAlgo
+from max.pipelines.context import TokenHashOverride
 from max.profiler import traced
+
+__all__ = ["KVHashAlgo"]
 
 
 class InsufficientBlocksError(Exception):
@@ -31,18 +34,9 @@ class InsufficientBlocksError(Exception):
 
 
 DEFAULT_PARENT_HASH = 0
-
-_KVHashAlgo = Literal["ahash64", "sha256", "sha256_64"]
-"""Supported hash algorithms for KVCache block hashing.
-
-- `ahash64`: Use the AHash64 algorithm.
-- `sha256`: Use the SHA-256 algorithm.
-- `sha256_64`: Use the SHA-256 algorithm with 64-bit output.
-"""
-
 _ZERO_SEED: bytes = b"\x00" * 32
 """The zero seed for the SHA-256 algorithm.
-Determinstic behaviour across restarts for benchmarking.
+Deterministic behaviour across restarts for benchmarking.
 """
 
 
@@ -87,7 +81,7 @@ def hash_request_tokens(
     block_size: int,
     parent_hash: int | None = ...,
     prefix_length: int = ...,
-    images: list[ImageMetadata] | None = ...,
+    token_hash_overrides: list[TokenHashOverride] | None = ...,
     *,
     algo: Literal["ahash64"] = ...,
     seed: bytes | None = ...,
@@ -102,7 +96,7 @@ def hash_request_tokens(
     block_size: int,
     parent_hash: int | bytes | None = ...,
     prefix_length: int = ...,
-    images: list[ImageMetadata] | None = ...,
+    token_hash_overrides: list[TokenHashOverride] | None = ...,
     *,
     algo: Literal["sha256_64"],
     seed: bytes | None = ...,
@@ -117,7 +111,7 @@ def hash_request_tokens(
     block_size: int,
     parent_hash: int | bytes | None = ...,
     prefix_length: int = ...,
-    images: list[ImageMetadata] | None = ...,
+    token_hash_overrides: list[TokenHashOverride] | None = ...,
     *,
     algo: Literal["sha256"],
     seed: bytes | None = ...,
@@ -131,9 +125,9 @@ def hash_request_tokens(
     block_size: int,
     parent_hash: int | bytes | None = ...,
     prefix_length: int = ...,
-    images: list[ImageMetadata] | None = ...,
+    token_hash_overrides: list[TokenHashOverride] | None = ...,
     *,
-    algo: _KVHashAlgo,
+    algo: KVHashAlgo,
     seed: bytes | None = ...,
     salt: str | None = ...,
 ) -> list[int] | list[bytes]: ...
@@ -145,16 +139,16 @@ def hash_request_tokens(
     block_size: int,
     parent_hash: int | bytes | None = None,
     prefix_length: int = -1,
-    images: list[ImageMetadata] | None = None,
+    token_hash_overrides: list[TokenHashOverride] | None = None,
     *,
-    algo: _KVHashAlgo = "ahash64",
+    algo: KVHashAlgo = "ahash64",
     seed: bytes | None = None,
     salt: str | None = None,
 ) -> list[int] | list[bytes] | None:
     """Hash the tokens of a request using the Mojo implementation.
 
-    If images are provided, we will set the first vision_token_id to the value
-    of the image hash.
+    Token hash overrides let callers replace one placeholder token per media
+    item with a content hash while computing prefix-cache keys.
 
     This method should leave the contents of the array unchanged on return.
     """
@@ -164,24 +158,30 @@ def hash_request_tokens(
             "algo=sha256_64; pass algo to enable"
         )
 
-    # If images are provided, temporarily replace the first vision_token_id with the image hash
-    token_to_reset: dict[int, int] = {}
-    if images:
+    overrides_in_slice: dict[int, int] = {}
+    if token_hash_overrides:
         if prefix_length == -1:
             raise ValueError(
-                "prefix_length must be set when images are provided"
+                "prefix_length must be set when token hash overrides are provided"
             )
-        for img in images:
-            if img.image_hash is None:
-                raise ValueError(
-                    "hash_request_tokens requires `image_hash` to be present. Found None."
-                )
-            idx = img.start_idx - prefix_length
+        for override in token_hash_overrides:
+            idx = override.token_idx - prefix_length
             if 0 <= idx < len(token_ids):
-                token_to_reset[idx] = token_ids[idx]
-                token_ids[idx] = img.image_hash
+                if idx in overrides_in_slice:
+                    raise ValueError(
+                        "Multiple token hash overrides target the same token index."
+                    )
+                overrides_in_slice[idx] = override.token_hash
 
+    # Temporarily replace the selected placeholder tokens with content hashes.
+    # All validation above happens before mutation so errors cannot leak
+    # modified tokens.
+    token_to_reset: dict[int, int] = {}
     try:
+        for idx, token_hash in overrides_in_slice.items():
+            token_to_reset[idx] = token_ids[idx]
+            token_ids[idx] = token_hash
+
         hash_vals: list[int] | list[bytes]
         if algo == "ahash64":
             ph_int = DEFAULT_PARENT_HASH if parent_hash is None else parent_hash
@@ -219,7 +219,7 @@ def hash_request_tokens(
         assert len(hash_vals) == len(token_ids) // block_size
         return hash_vals
     finally:
-        # Restore any mutated image tokens, even on error
+        # Restore any mutated media tokens, even on error.
         for idx, token in token_to_reset.items():
             token_ids[idx] = token
 

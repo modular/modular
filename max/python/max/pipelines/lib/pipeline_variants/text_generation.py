@@ -88,6 +88,7 @@ from ..interfaces import (
     PipelineModelWithKVCache,
 )
 from ..interfaces.generate import GenerateMixin
+from ..memory_estimation import _MemoryPlan
 from ..utils import CompilationTimer
 
 logger = logging.getLogger("max.pipelines")
@@ -142,6 +143,7 @@ class TextGenerationPipeline(
             npt.NDArray[np.integer[Any]],
             TextGenerationRequest,
         ],
+        memory_plan: _MemoryPlan,
     ) -> None:
         """Initialize a text generation pipeline instance.
 
@@ -155,6 +157,8 @@ class TextGenerationPipeline(
                 one or to seed the EOS set.
             weight_adapters: Mapping from weights format to adapter implementation.
             tokenizer: Tokenizer implementation used to build contexts and decode.
+            memory_plan: Memory plan from the registry containing max_batch_size
+                and other resolved memory parameters.
 
         Raises:
             ValueError: If ``quantization_encoding`` is not configured in
@@ -162,6 +166,8 @@ class TextGenerationPipeline(
                 requested without a valid tokenizer delegate.
         """
         self._pipeline_config = pipeline_config
+        self._max_batch_size = memory_plan.max_batch_size
+        max_batch_size = memory_plan.max_batch_size
         model_config: MAXModelConfig = pipeline_config.model
         huggingface_config = model_config.huggingface_config
         if huggingface_config is None:
@@ -190,6 +196,7 @@ class TextGenerationPipeline(
             self.tokenizer,
             pipeline_config.sampling.enable_structured_output,
             pipeline_config.runtime.tool_parser,
+            pipeline_config.sampling.structured_output_backend,
         )
         self.vocab_size = self._structured_output.vocab_size
 
@@ -221,13 +228,14 @@ class TextGenerationPipeline(
             return_logits=ReturnLogits.ALL
             if self._pipeline_config.model.enable_echo
             else ReturnLogits.LAST_TOKEN,
+            max_batch_size=max_batch_size,
         )
 
         available_cache_memory = model_config.kv_cache._available_cache_memory
         kv_params = self._pipeline_model.kv_params
         self._kv_manager = load_kv_manager(
             params=kv_params,
-            max_batch_size=pipeline_config.runtime.max_batch_size,
+            max_batch_size=max_batch_size,
             max_seq_len=self._pipeline_model.max_seq_len,
             session=session,
             available_cache_memory=available_cache_memory,
@@ -275,8 +283,6 @@ class TextGenerationPipeline(
             and not self._sampler_device.is_host
             and not is_virtual_device_mode()
         ):
-            max_batch_size = pipeline_config.runtime.max_batch_size
-            assert max_batch_size is not None, "max_batch_size must be set"
             self._pinned_new_tokens = DevicePinnedBuffer(
                 shape=(max_batch_size,),
                 dtype=DType.int64,
@@ -285,9 +291,14 @@ class TextGenerationPipeline(
 
         self._identity_logit_offsets = (
             FusedSamplingProcessor.allocate_identity_logit_offsets(
-                pipeline_config, self._sampler_device
+                pipeline_config, self._sampler_device, max_batch_size
             )
         )
+
+    @property
+    def max_batch_size(self) -> int:
+        """Maximum number of requests that can be processed in a single batch."""
+        return self._max_batch_size
 
     @property
     def pipeline_config(self) -> PipelineConfig:

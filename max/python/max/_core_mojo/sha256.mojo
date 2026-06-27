@@ -223,7 +223,7 @@ def sha256(data: Span[Byte, _]) -> InlineArray[UInt8, 32]:
     pad[rem] = UInt8(0x80)
     var bit_len = UInt64(n * 8)
     var pad_len = 128 if rem >= 56 else 64
-    # Write 64-bit lenght into last 8 bytes
+    # Write 64-bit length into last 8 bytes
     for i in range(8):
         pad[pad_len - 1 - i] = UInt8((bit_len >> UInt64(i * 8)) & 0xFF)
     _compress(h, Span[Byte, _](ptr=pad.unsafe_ptr(), length=64))

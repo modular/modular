@@ -14,7 +14,7 @@ import hashlib
 
 import numpy as np
 import pytest
-from max._core_mojo import block_hasher_sha256
+from max._core_mojo import block_hasher_sha256, sha256_oneshot
 
 
 def _py_reference(
@@ -88,3 +88,75 @@ def test_dtype_coerced_to_int32() -> None:
     a = block_hasher_sha256(tokens_int64, 32)
     b = block_hasher_sha256(tokens_int32, 32)
     assert a == b
+
+
+# FIPS 180-4 Appendix B / NIST CAVP known-answer test (KAT) vectors for
+# SHA-256. These lock the raw `sha256.mojo` primitive against drift; the
+# digests are constants from the published standard.
+_FIPS_KAT_VECTORS: list[tuple[bytes, str]] = [
+    (
+        b"",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    ),
+    (
+        b"abc",
+        "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+    ),
+    (
+        b"abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq",
+        "248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1",
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    ("data", "expected_hex"), _FIPS_KAT_VECTORS, ids=["empty", "abc", "fips_b2"]
+)
+def test_sha256_fips_kat(data: bytes, expected_hex: str) -> None:
+    """Mojo `sha256()` must match the FIPS 180-4 published digests."""
+    assert sha256_oneshot(data).hex() == expected_hex
+
+
+def test_sha256_one_million_a() -> None:
+    """Mojo `sha256()` of 1,000,000 'a' bytes must match the FIPS digest."""
+    one_million_a = b"a" * 1_000_000
+    expected = (
+        "cdc76e5c9914fb9281a1c7e284d73e67f1809a48a497200e046d39ccc7112cd0"
+    )
+    assert sha256_oneshot(one_million_a).hex() == expected
+
+
+def test_sha256_matches_hashlib_random() -> None:
+    """Cross-check the Mojo primitive against hashlib for arbitrary inputs."""
+    rng = np.random.default_rng(seed=0xC0FFEE)
+    for n in (1, 55, 56, 63, 64, 65, 127, 128, 129, 1024, 8193):
+        buf = rng.bytes(n)
+        assert sha256_oneshot(buf) == hashlib.sha256(buf).digest()
+
+
+def test_block_hasher_chained_block_layout() -> None:
+    """Lock the `local_hash || prev_seq_hash` layout in `mojo_module.mojo`.
+    Mirrors the algorithm described in the plan: hash two adjacent blocks
+    of distinct token bytes against a zero parent and compare to a
+    hand-rolled hashlib computation that asserts the exact chain order.
+    """
+    block_size = 8
+    tokens = np.concatenate(
+        [
+            np.zeros(block_size, dtype=np.int32),
+            np.ones(block_size, dtype=np.int32),
+        ]
+    )
+    parent = b"\x00" * 32
+
+    got = block_hasher_sha256(tokens, block_size, parent)
+
+    block0_bytes = tokens[:block_size].tobytes()
+    local0 = hashlib.sha256(block0_bytes).digest()
+    seq0 = hashlib.sha256(local0 + parent).digest()
+
+    block1_bytes = tokens[block_size:].tobytes()
+    local1 = hashlib.sha256(block1_bytes).digest()
+    seq1 = hashlib.sha256(local1 + seq0).digest()
+
+    assert got == [seq0, seq1]

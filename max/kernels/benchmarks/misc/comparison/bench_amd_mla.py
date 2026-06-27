@@ -58,7 +58,7 @@ from max.nn.kernels import (
     flare_mla_decode_ragged,
     flare_mla_prefill_ragged,
 )
-from max.nn.kv_cache import KVCacheParams, PagedCacheValues
+from max.nn.kv_cache import MLAKVCacheParams, PagedCacheValues
 
 _aiter: types.ModuleType | None
 _aiter_mla: types.ModuleType | None
@@ -286,14 +286,12 @@ def bench_max_decode(
     is_fp8 = dtype == torch.float8_e4m3fn
     max_dtype = torch_dtype_to_max(dtype)
 
-    kv_params = KVCacheParams(
+    kv_params = MLAKVCacheParams(
         dtype=max_dtype,
-        n_kv_heads=1,
         head_dim=config.qk_head_dim,
         num_layers=1,
         page_size=_MAX_PAGE_SIZE,
         devices=[DeviceRef.GPU()],
-        is_mla=True,
         num_q_heads=config.num_q_heads,
     )
 
@@ -327,8 +325,11 @@ def bench_max_decode(
     cache_lengths_torch = torch.full(
         (batch_size,), cache_len, dtype=torch.uint32, device="cuda"
     )
-    max_lengths_torch = torch.tensor(
-        [[1, cache_len]], dtype=torch.uint32, device="cpu"
+    max_prompt_length_torch = torch.tensor(
+        [1], dtype=torch.uint32, device="cpu"
+    )
+    max_cache_length_torch = torch.tensor(
+        [cache_len], dtype=torch.uint32, device="cpu"
     )
 
     # FP8 tensors can't be DLPack'd directly; round-trip via uint8.
@@ -340,7 +341,8 @@ def bench_max_decode(
         blocks_max = Buffer.from_dlpack(blocks_torch)
     lut_max = Buffer.from_dlpack(lut_torch)
     cache_lengths_max = Buffer.from_dlpack(cache_lengths_torch)
-    max_lengths_max = Buffer.from_dlpack(max_lengths_torch)
+    max_prompt_length_max = Buffer.from_dlpack(max_prompt_length_torch)
+    max_cache_length_max = Buffer.from_dlpack(max_cache_length_torch)
 
     q_type = TensorType(
         max_dtype,
@@ -368,8 +370,11 @@ def bench_max_decode(
     lookup_table_type = TensorType(
         DType.uint32, shape=["batch", "max_num_pages"], device=DeviceRef.GPU()
     )
-    max_lengths_type = TensorType(
-        DType.uint32, shape=[1, 2], device=DeviceRef.CPU()
+    max_prompt_length_type = TensorType(
+        DType.uint32, shape=[1], device=DeviceRef.CPU()
+    )
+    max_cache_length_type = TensorType(
+        DType.uint32, shape=[1], device=DeviceRef.CPU()
     )
     scalar_args_type = TensorType(
         DType.int64, shape=[3], device=DeviceRef.GPU()
@@ -417,14 +422,21 @@ def bench_max_decode(
             *([blocks_type] * ncopies),
             cache_lengths_type,
             lookup_table_type,
-            max_lengths_type,
+            max_prompt_length_type,
+            max_cache_length_type,
             scalar_args_type,
         ],
     ) as graph:
         ins = graph.inputs
         q, row_offsets = ins[0], ins[1]
         blocks_in = ins[2 : 2 + ncopies]
-        cache_lens, lut, max_lens, scalar_args = ins[2 + ncopies : 6 + ncopies]
+        (
+            cache_lens,
+            lut,
+            max_prompt_len,
+            max_cache_len,
+            scalar_args,
+        ) = ins[2 + ncopies : 7 + ncopies]
         layer_idx = ops.constant(0, DType.uint32, DeviceRef.CPU())
         results = [
             flare_mla_decode_ragged(
@@ -435,7 +447,8 @@ def bench_max_decode(
                     bl.buffer,
                     cache_lens.tensor,
                     lut.tensor,
-                    max_lens.tensor,
+                    max_prompt_len.tensor,
+                    max_cache_len.tensor,
                 ),
                 layer_idx,
                 mask_variant=MHAMaskVariant.CAUSAL_MASK,
@@ -498,7 +511,8 @@ def bench_max_decode(
         *blocks_bufs,
         cache_lengths_max,
         lut_max,
-        max_lengths_max,
+        max_prompt_length_max,
+        max_cache_length_max,
         scalar_args_gpu,
     )
     outs = model.capture(0, *graph_inputs)
@@ -547,14 +561,12 @@ def bench_max_prefill(
     is_fp8 = dtype == torch.float8_e4m3fn
     max_dtype = torch_dtype_to_max(dtype)
 
-    kv_params = KVCacheParams(
+    kv_params = MLAKVCacheParams(
         dtype=max_dtype,
-        n_kv_heads=1,
         head_dim=config.qk_head_dim,
         num_layers=1,
         page_size=_MAX_PAGE_SIZE,
         devices=[DeviceRef.GPU()],
-        is_mla=True,
         num_q_heads=config.num_q_heads,
     )
 
@@ -584,10 +596,11 @@ def bench_max_prefill(
     cache_lengths_torch = torch.zeros(
         batch_size, dtype=torch.uint32, device="cuda"
     )
-    # max_lengths: [[max_q_len, max_cache_len]]
-    max_lengths_torch = torch.tensor(
-        [[qkv_len, 0]], dtype=torch.uint32, device="cpu"
+    # max_prompt_length: [max_q_len], max_cache_length: [max_cache_len]
+    max_prompt_length_torch = torch.tensor(
+        [qkv_len], dtype=torch.uint32, device="cpu"
     )
+    max_cache_length_torch = torch.tensor([0], dtype=torch.uint32, device="cpu")
 
     if is_fp8:
         blocks_max = Buffer.from_dlpack(blocks_torch.view(torch.uint8)).view(
@@ -597,7 +610,8 @@ def bench_max_prefill(
         blocks_max = Buffer.from_dlpack(blocks_torch)
     lut_max = Buffer.from_dlpack(lut_torch)
     cache_lengths_max = Buffer.from_dlpack(cache_lengths_torch)
-    max_lengths_max = Buffer.from_dlpack(max_lengths_torch)
+    max_prompt_length_max = Buffer.from_dlpack(max_prompt_length_torch)
+    max_cache_length_max = Buffer.from_dlpack(max_cache_length_torch)
 
     q_type = TensorType(
         max_dtype,
@@ -649,8 +663,11 @@ def bench_max_prefill(
     lookup_table_type = TensorType(
         DType.uint32, shape=["batch", "max_num_pages"], device=DeviceRef.GPU()
     )
-    max_lengths_type = TensorType(
-        DType.uint32, shape=[1, 2], device=DeviceRef.CPU()
+    max_prompt_length_type = TensorType(
+        DType.uint32, shape=[1], device=DeviceRef.CPU()
+    )
+    max_cache_length_type = TensorType(
+        DType.uint32, shape=[1], device=DeviceRef.CPU()
     )
 
     session = InferenceSession(devices=[Accelerator()])
@@ -666,7 +683,8 @@ def bench_max_prefill(
             blocks_type,
             cache_lengths_type,
             lookup_table_type,
-            max_lengths_type,
+            max_prompt_length_type,
+            max_cache_length_type,
         ],
     ) as graph:
         (
@@ -679,13 +697,15 @@ def bench_max_prefill(
             blocks,
             cache_lens,
             lut,
-            max_lens,
+            max_prompt_len,
+            max_cache_len,
         ) = graph.inputs
         kv_collection = PagedCacheValues(
             blocks.buffer,
             cache_lens.tensor,
             lut.tensor,
-            max_lens.tensor,
+            max_prompt_len.tensor,
+            max_cache_len.tensor,
         )
         layer_idx = ops.constant(0, DType.uint32, DeviceRef.CPU())
         result = flare_mla_prefill_ragged(
@@ -764,7 +784,8 @@ def bench_max_prefill(
             blocks_max,
             cache_lengths_max,
             lut_max,
-            max_lengths_max,
+            max_prompt_length_max,
+            max_cache_length_max,
         )[0]
 
     # MAX native device-graph (HIP graph) capture/replay -> removes the
@@ -784,7 +805,8 @@ def bench_max_prefill(
         blocks_max,
         cache_lengths_max,
         lut_max,
-        max_lengths_max,
+        max_prompt_length_max,
+        max_cache_length_max,
     )
     try:
         outs = model.capture(0, *g_inputs)

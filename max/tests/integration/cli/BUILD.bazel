@@ -2,7 +2,6 @@ load("//bazel:api.bzl", "modular_multi_py_version_test", "modular_py_test", "req
 
 package(default_visibility = [
     "//:__pkg__",
-    "//SDK/integration-test:__subpackages__",
     "//max/tests:__subpackages__",
     "//oss/modular/max/tests:__subpackages__",
 ])
@@ -30,7 +29,7 @@ modular_py_test(
         "//conditions:default": [],
     }),  # FIXME: MOCO-2411
     deps = [
-        "//max/python/max/entrypoints:pipelines",
+        "//max/python/max/_entrypoints:pipelines",
     ],
 )
 
@@ -51,7 +50,7 @@ modular_py_test(
         "requires-network",
     ],
     deps = [
-        "//max/python/max/entrypoints:pipelines",
+        "//max/python/max/_entrypoints:pipelines",
         "//max/tests/integration:hf_repo_lock",
         "//max/tests/integration/test_common:graph_utils",
         "//max/tests/integration/test_common:lora_utils",
@@ -75,7 +74,7 @@ modular_py_test(
         "requires-network",
     ],
     deps = [
-        "//max/python/max/entrypoints:pipelines",
+        "//max/python/max/_entrypoints:pipelines",
         "//max/tests/integration:hf_repo_lock",
         "//max/tests/integration/test_common:graph_utils",
     ],
@@ -90,7 +89,22 @@ modular_multi_py_version_test(
         "//conditions:default": [],
     }),
     deps = [
-        "//max/python/max/entrypoints:pipelines",
+        "//max/python/max/_entrypoints:pipelines",
+        requirement("click"),
+    ],
+)
+
+# Similar to above, but for `max benchmark`. Intentionally separate so that the deps are different.
+modular_multi_py_version_test(
+    name = "test_pipelines_cli_benchmark_help",
+    srcs = ["test_pipelines_cli_benchmark_help.py"],
+    # Takes way too long on Mac
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//max/python/max/_entrypoints:benchmark",
         requirement("click"),
     ],
 )
@@ -100,7 +114,7 @@ modular_py_test(
     size = "large",
     srcs = ["test_pipelines_cli_lightweight.py"],
     deps = [
-        "//max/python/max/entrypoints:pipelines",
+        "//max/python/max/_entrypoints:pipelines",
     ],
 )
 
@@ -112,7 +126,7 @@ modular_py_test(
         "//conditions:default": [],
     }),  # FIXME: MOCO-2411
     deps = [
-        "//max/python/max/entrypoints:pipelines",
+        "//max/python/max/_entrypoints:pipelines",
     ],
 )
 
@@ -136,7 +150,7 @@ modular_py_test(
         "requires-network",
     ],
     deps = [
-        "//max/python/max/entrypoints:pipelines",
+        "//max/python/max/_entrypoints:pipelines",
         "//max/tests/integration:hf_repo_lock",
         requirement("transformers"),
         requirement("gguf"),

@@ -474,8 +474,8 @@ When we pass a value to a Mojo function, the default behavior is that an
 argument is treated as an immutable reference to the value. This is
 particularly useful for values like `List`s, where copying them could be
 expensive. As we'll see later, we can specify different behavior by including an
-explicit [argument passing
-convention](/docs/manual/values/ownership#argument-passing-conventions).
+explicit [argument
+convention](/docs/manual/values/ownership#argument-conventions).
 
 Each argument name is followed by a type annotation indicating the type of value
 you can pass to the argument. Just like when assigning a value to a variable,
@@ -945,8 +945,8 @@ The body of `__setitem__()` is similarly straightforward. We just take the given
 `value` and store it in the corresponding `row` and `col` in `data`. One new
 thing in the declaration is that we set the return type to `None` to indicate
 that the method doesn't have a return value. More notable is that we've added
-the `mut` [argument passing
-convention](/docs/manual/values/ownership/#argument-passing-conventions) to
+the `mut` [argument
+convention](/docs/manual/values/ownership/#argument-conventions) to
 the `self` argument to explicitly tell the Mojo compiler that we want to mutate
 the state of the current instance. If we were to omit `mut`, we would get an
 error because the compiler would default to immutable access for the argument.

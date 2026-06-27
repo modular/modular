@@ -28,7 +28,6 @@ from std.ffi import CStringSlice
 
 from std.bit import byte_swap
 from std.memory import Span, bitcast, memcpy
-from std.reflection.traits import AllWritable
 
 
 def constrained_conforms_to_writable[*Ts: AnyType, Parent: AnyType]():
@@ -151,7 +150,7 @@ def write_sequence_to[
         end: The ending delimiter.
         sep: The separator between items (default: `", "`).
     """
-    comptime assert AllWritable[*Ts]  # satisfy where clause.
+    comptime assert Ts.all_conforms_to[Writable]()  # satisfy where clause.
     args._write_to(writer, start=start, end=end, sep=sep)
 
 
@@ -345,7 +344,7 @@ struct FormatStruct[T: Writer, o: MutOrigin](Movable):
         Returns:
             A reference to this `FormatStruct` instance for method chaining.
         """
-        comptime assert AllWritable[*Ts]  # satisfy where clause.
+        comptime assert Ts.all_conforms_to[Writable]()  # satisfy where clause.
         args._write_to(self._writer[], start="[", end="]")
         return self
 
@@ -363,7 +362,7 @@ struct FormatStruct[T: Writer, o: MutOrigin](Movable):
         Args:
             args: The field values to write.
         """
-        comptime assert AllWritable[*Ts]  # satisfy where clause.
+        comptime assert Ts.all_conforms_to[Writable]()  # satisfy where clause.
         args._write_to(self._writer[], start="(", end=")")
 
     # TODO (MOCO-2367): Use unified closures once they correctly capture parameters.

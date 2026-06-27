@@ -90,10 +90,18 @@ class Signals:
     # exact (a wrong value silently corrupts Lamport), so keep them in lockstep.
     _MAX_GPUS = 8
     _MAX_NUM_BLOCKS = 512
-    # self_counter (1x) + peer_counter (2x) over the [MAX_NUM_BLOCKS x MAX_GPUS]
-    # uint32 grid, plus the 16-byte lamport_state block -> the Lamport region's
-    # byte offset within the Signal struct.
-    _LAMPORT_REGION_OFFSET = 3 * _MAX_NUM_BLOCKS * _MAX_GPUS * 4 + 16
+    # Number of disjoint barrier counter banks. MUST match ``NUM_BARRIER_DOMAINS``
+    # in ``max/kernels/src/comm/sync.mojo``. Each domain gets its own
+    # self_counter + peer_counter grids so grouped (subgroup) and full-world
+    # collectives never share a barrier bank on the same Signal buffer.
+    _NUM_BARRIER_DOMAINS = _MAX_GPUS
+    # Per domain: self_counter (1x) + peer_counter (2x) over the
+    # [MAX_NUM_BLOCKS x MAX_GPUS] uint32 grid; times NUM_BARRIER_DOMAINS domains,
+    # plus the 16-byte lamport_state block -> the Lamport region's byte offset
+    # within the Signal struct.
+    _LAMPORT_REGION_OFFSET = (
+        _NUM_BARRIER_DOMAINS * 3 * _MAX_NUM_BLOCKS * _MAX_GPUS * 4 + 16
+    )
     # Embedded Lamport comm region: 3 generations x MAX_GPUS slots x per-slot max.
     _LAMPORT_MAX_SMALL_MESSAGE_BYTES = 1024 * 1024
     _LAMPORT_REGION_BYTES = 3 * _MAX_GPUS * _LAMPORT_MAX_SMALL_MESSAGE_BYTES

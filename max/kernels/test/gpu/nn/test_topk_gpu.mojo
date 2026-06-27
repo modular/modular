@@ -1146,6 +1146,25 @@ def main() raises:
         print_test_case(test_nan_batch)
         test_case_batched[dtype, fill_nan](ctx, test_nan_batch)
 
+        # Regression: large top_k (2048) forces the public topk_gpu to reduce
+        # num_blocks_per_input so the stage-2 reduction fits the device
+        # per-block shared-memory limit. Verify the result still matches the CPU
+        # reference (values and indices) with the clamp active. Pre-fix these
+        # launched with CUDA_ERROR_INVALID_VALUE.
+        comptime test_case_large_k = TestCaseMultiRank[
+            _sampling=False, rank=2, _largest=True
+        ](input_shape=IndexList[2](2, 4096), K=2048)
+        print_test_case(test_case_large_k)
+        test_case_multi_rank[dtype, fill_iota](ctx, test_case_large_k)
+
+        # Same, but with an explicit num_blocks_per_input=8 that the clamp must
+        # override (8 * 2048 candidates would overflow stage-2 shared memory).
+        comptime test_case_large_k_nb = TestCaseMultiRank[
+            _sampling=False, rank=2, _largest=True
+        ](input_shape=IndexList[2](2, 4096), K=2048, num_blocks_per_input=8)
+        print_test_case(test_case_large_k_nb)
+        test_case_multi_rank[dtype, fill_iota](ctx, test_case_large_k_nb)
+
         # Run multi-rank tests
         test_multi_rank[dtype, False](ctx)
         test_multi_rank[dtype, True](ctx)

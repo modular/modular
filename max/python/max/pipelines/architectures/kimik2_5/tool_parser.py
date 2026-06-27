@@ -32,6 +32,10 @@ import uuid
 from typing import Any
 
 from llguidance import LLMatcher
+from max.pipelines.context.exceptions import InputError
+from max.pipelines.lib.pipeline_variants.structured_output_backend import (
+    build_xgrammar_tool_grammar,
+)
 from max.pipelines.lib.tool_parsing import (
     StructuralTagToolParser,
     escape_for_lark_string,
@@ -304,14 +308,23 @@ class KimiToolParser(StructuralTagToolParser):
                 refs[name] = resolve_lark_token_reference(tid)
         return refs
 
+    XGRAMMAR_FORMAT = "kimi"
+
     @staticmethod
     def generate_tool_call_grammar(
         response_format_schema: dict[str, Any] | None = None,
         tools: list[dict[str, Any]] | None = None,
         tokenizer: PipelineTokenizer[Any, Any, Any] | None = None,
+        backend: str = "llguidance",
+        tool_choice: str | dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> str:
-        """Generates a Lark grammar for constrained decoding of Kimi tool calls.
+        """Generates a grammar for constrained decoding of Kimi tool calls.
+
+        With ``backend="xgrammar"`` this returns a serialized xgrammar
+        StructuralTag (which constrains each call's arguments to that tool's
+        JSON schema). With the default ``backend="llguidance"`` it returns a
+        Lark grammar whose argument body is freeform.
 
         Kimi K2.5 performs "interleaved thinking": a single assistant turn
         can interleave multiple ``<think>...</think>`` reasoning blocks with
@@ -342,8 +355,31 @@ class KimiToolParser(StructuralTagToolParser):
             **kwargs: Ignored; accepts future kwargs.
 
         Returns:
-            A grammar string compatible with ``LLMatcher``.
+            A grammar string compatible with the selected backend.
         """
+        if backend == "xgrammar":
+            if response_format_schema is not None:
+                raise InputError(
+                    "The xgrammar backend does not yet support combined "
+                    "tool-calling and response_format json_schema. Use "
+                    "--structured-output-backend=llguidance for that case."
+                )
+            normalized_choice = (
+                tool_choice if tool_choice is not None else "auto"
+            )
+            # Forced tool calling (required / named) disables the reasoning
+            # prefix so the envelope is forced from the first token; ``auto``
+            # keeps reasoning optional.
+            forced = normalized_choice == "required" or isinstance(
+                normalized_choice, dict
+            )
+            return build_xgrammar_tool_grammar(
+                KimiToolParser.XGRAMMAR_FORMAT,
+                tools or [],
+                normalized_choice,
+                reasoning=not forced,
+            )
+
         tool_names = names_from_tools(tools)
         refs = KimiToolParser._resolve_token_refs(tokenizer)
         envelope, shared_rules = KimiToolParser._build_envelope(

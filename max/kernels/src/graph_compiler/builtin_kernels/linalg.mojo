@@ -804,10 +804,11 @@ struct Struct_matmul_dynamic_block_scaled:
         b_type: DType,
         scales_type: DType,
         //,
+        has_epilogue_fusion: Bool,
         SF_VECTOR_SIZE: Int,
         target: StaticString,
     ](
-        c: OutputTensor[dtype=c_type, rank=2, ...],
+        c: _FusedComputeOutputTensor[dtype=c_type, rank=2, ...],
         a: InputTensor[dtype=a_type, rank=2, ...],
         b: InputTensor[dtype=b_type, rank=2, ...],
         a_scales: InputTensor[dtype=scales_type, rank=5, ...],
@@ -820,10 +821,52 @@ struct Struct_matmul_dynamic_block_scaled:
             " block scaled support"
         )
 
+        # The SM100 block-scaled matmul applies the epilogue on the f32
+        # accumulator (`_dtype` may be f32), whereas the fusion lambdas operate
+        # on the logical output dtype `c.dtype`. Use `cast` rather than `rebind`
+        # so the conversion is correct on both the structured Mojo path (f32
+        # accumulator) and the vendor path (`_dtype == c.dtype`).
+        @parameter
+        @always_inline
+        def epilogue_fn[
+            _dtype: DType, _width: SIMDSize, *, alignment: Int = 1
+        ](coords: IndexList[2], val: SIMD[_dtype, _width]):
+            c._lambda_store[width=_width, element_alignment=alignment](
+                coords,
+                val.cast[c.dtype](),
+            )
+
+        @parameter
+        @always_inline
+        def output_compute_fn[
+            _dtype: DType, _width: SIMDSize, *, alignment: Int = 1
+        ](coords: IndexList[2], val: SIMD[_dtype, _width]) -> SIMD[
+            _dtype, _width
+        ]:
+            return c._fused_compute_output_lambda[element_alignment=alignment](
+                coords, val.cast[c.dtype]()
+            ).cast[_dtype]()
+
+        comptime has_compute_lambda = type_of(c)._has_compute_fusion
+
+        comptime elementwise_lambda = Optional[
+            matmul_elementwise_epilogue_type
+        ](
+            epilogue_fn
+        ) if has_epilogue_fusion and not has_compute_lambda else None
+
+        comptime compute_lambda = Optional[
+            matmul_elementwise_compute_lambda_type
+        ](
+            output_compute_fn
+        ) if has_epilogue_fusion and has_compute_lambda else None
+
         cuda_ctx = context
         block_scaled_matmul[
             SF_VECTOR_SIZE=SF_VECTOR_SIZE,
             transpose_b=True,
+            elementwise_lambda_fn=elementwise_lambda,
+            elementwise_compute_lambda_fn=compute_lambda,
             target=target,
         ](
             c.to_tile_tensor[DType.int64](),

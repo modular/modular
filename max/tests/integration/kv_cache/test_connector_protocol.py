@@ -37,4 +37,6 @@ def test_barrier_methods_are_callable() -> None:
 
 def test_offload_accepts_parent_seq_hash() -> None:
     # The new third positional/keyword arg is accepted (and ignored here).
-    NullConnector().offload([0], [123], parent_seq_hash=7)
+    NullConnector().offload([0], [b"\x01" * 8], parent_seq_hash=b"\x02" * 8)
+    # ``None`` is the root-of-chain sentinel under the bytes-only contract.
+    NullConnector().offload([0], [b"\x01" * 8], parent_seq_hash=None)

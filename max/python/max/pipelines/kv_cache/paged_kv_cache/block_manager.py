@@ -28,11 +28,15 @@ import logging
 import os
 from collections import defaultdict
 from collections.abc import Iterable, Sequence
-from typing import cast
 
+from max.nn.kv_cache.cache_params import KVCacheMemory
 from max.nn.kv_cache.metrics import KVCacheMetrics
-from max.pipelines.context import TextAndVisionContext, TextContext
-from max.pipelines.kv_cache.kv_connector import KVConnector
+from max.pipelines.context import (
+    TextAndVisionContext,
+    TextContext,
+    TokenHashOverride,
+)
+from max.pipelines.kv_cache.kv_connector import KVConnector, to_block_hash_bytes
 from max.pipelines.kv_cache.memory_tier import MemoryTier
 from max.pipelines.modeling.types import RequestID
 from max.profiler import traced
@@ -42,7 +46,7 @@ from .block_pool import BlockPool
 from .block_utils import (
     InsufficientBlocksError,
     KVCacheBlock,
-    _KVHashAlgo,
+    KVHashAlgo,
     hash_request_tokens,
 )
 
@@ -115,7 +119,23 @@ def _resolve_only_use_kv_connector_last_level_cache() -> bool:
 
 
 class BlockManager:
-    """Manages allocation and deallocation of paged KV cache blocks."""
+    """Manages allocation and deallocation of paged KV cache blocks.
+
+    A single ``BlockManager`` is responsible for every data-parallel (DP)
+    replica. Device (GPU) memory is physically partitioned per replica, so the
+    manager owns one :class:`BlockPool` per replica (``device_block_pools``).
+    A request lives on exactly one replica for its lifetime; replica-scoped
+    methods take a ``replica_idx`` (defaulting to ``0`` for the common
+    single-replica case).
+
+    The device prefix cache is shared across replicas in the sense that a
+    lookup for a request on replica ``B`` can hit a block physically resident
+    on replica ``A``: the block's pages are copied device-to-device onto ``B``
+    via :meth:`KVCacheMemory.copy_block_to` (SERVOPT-1500). External tiers
+    (host/disk) are reached through a single ``KVConnector`` shared by every
+    replica; each ``load``/``offload`` passes the ``replica_idx`` so the
+    connector can select that replica's device buffers (SERVOPT-1501).
+    """
 
     @traced
     def __init__(
@@ -127,48 +147,71 @@ class BlockManager:
         enable_prefix_caching: bool,
         enable_runtime_checks: bool = False,
         *,
-        kv_hash_algo: _KVHashAlgo = "ahash64",
+        num_replicas: int = 1,
+        kv_hash_algo: KVHashAlgo = "ahash64",
         kv_hash_seed: bytes | None = None,
+        replica_kv_memory: Sequence[Sequence[KVCacheMemory]] | None = None,
     ) -> None:
+        if num_replicas < 1:
+            raise ValueError("BlockManager requires at least one replica")
+
         self.total_num_blocks = total_num_blocks
         self.block_size = block_size
+        self.num_replicas = num_replicas
 
-        self.kv_hash_algo: _KVHashAlgo = kv_hash_algo
+        self.kv_hash_algo: KVHashAlgo = kv_hash_algo
         self.kv_hash_seed: bytes | None = kv_hash_seed
         self._salt_dropped_warned: bool = False
 
-        if kv_hash_algo != "ahash64" and connector.num_host_blocks > 0:
-            raise NotImplementedError(
-                f"kv_hash_algo={kv_hash_algo!r} is not yet compatible with "
-                "host-tier KV connector (host_blocks > 0). The dKV/tiered "
-                "wire format still uses 64-bit hashes; widen those first "
-                "or run with num_host_blocks=0."
+        if kv_hash_algo not in connector.supported_hash_algos:
+            raise ValueError(
+                f"kv_cache_hash_algo={kv_hash_algo!r} is not supported by "
+                f"connector={connector.name!r} (supports="
+                f"{sorted(connector.supported_hash_algos)})"
             )
 
         # Whether to enable prefix caching.
         self.enable_prefix_caching = enable_prefix_caching
 
-        # Connector for external cache tiers (host memory, etc.)
-        # The connector owns host memory, host block pool, and H2D/D2H transfers.
+        # A single connector for external cache tiers (host memory, disk, dKV),
+        # shared across every replica. It owns host memory / a host block pool
+        # and the H2D/D2H transfers; ``load``/``offload`` take a ``replica_idx``
+        # to select the device endpoint.
         self.connector = connector
 
-        # Ordered offload sequences pending delivery to the connector. Each
-        # entry is (parent_seq_hash, ordered block hashes): one contiguous run
-        # of newly-committed blocks, in prefix order, chaining onto
-        # parent_seq_hash (0 = root). Ordering and parentage are preserved so
-        # connectors that chain sequences (dKV) can reconstruct the prefix;
-        # hash-keyed connectors (host/disk) ignore the parent.
-        self._pending_offloads: list[
-            tuple[int | bytes, list[int] | list[bytes]]
-        ] = []
-
-        # A pool of device blocks.
-        self.device_block_pool = BlockPool(
-            device_memory_tier,
-            total_num_blocks,
-            enable_prefix_caching,
-            enable_runtime_checks=enable_runtime_checks,
+        # Per-replica offload-ready device memory units, used to copy committed
+        # prefix blocks device-to-device between replicas. Required (non-None)
+        # when ``num_replicas > 1`` and prefix caching is on.
+        self._replica_kv_memory: list[list[KVCacheMemory]] | None = (
+            [list(units) for units in replica_kv_memory]
+            if replica_kv_memory is not None
+            else None
         )
+
+        # Ordered offload sequences pending delivery to each replica's
+        # connector. Each entry is (parent_seq_hash, ordered block hashes): one
+        # contiguous run of newly-committed blocks, in prefix order, chaining
+        # onto parent_seq_hash (None = root). Ordering and parentage are
+        # preserved so connectors that chain sequences (dKV) can reconstruct the
+        # prefix; hash-keyed connectors (host/disk) ignore the parent.
+        self._pending_offloads: list[
+            list[tuple[int | bytes | None, list[int] | list[bytes]]]
+        ] = [[] for _ in range(self.num_replicas)]
+
+        # One pool of device blocks per replica.
+        self.device_block_pools: list[BlockPool] = [
+            BlockPool(
+                device_memory_tier,
+                total_num_blocks,
+                enable_prefix_caching,
+                enable_runtime_checks=enable_runtime_checks,
+            )
+            for _ in range(self.num_replicas)
+        ]
+
+        # Mapping from request ID to the replica it is assigned to. A request
+        # lives on a single replica for its whole lifetime.
+        self.req_to_replica: dict[RequestID, int] = {}
 
         # Mapping from request ID to blocks to track the blocks allocated
         # for each request, so that we can free the blocks when the request
@@ -203,10 +246,27 @@ class BlockManager:
             _resolve_only_use_kv_connector_last_level_cache()
         )
 
+    @property
+    def device_block_pool(self) -> BlockPool:
+        """The replica-0 device block pool (single-replica convenience)."""
+        return self.device_block_pools[0]
+
+    def _register_replica(
+        self, request_id: RequestID, replica_idx: int
+    ) -> None:
+        """Records the replica a request is assigned to (idempotent)."""
+        existing = self.req_to_replica.get(request_id)
+        if existing is not None and existing != replica_idx:
+            raise ValueError(
+                f"Request {request_id} is already assigned to replica "
+                f"{existing}, cannot reassign to {replica_idx}"
+            )
+        self.req_to_replica[request_id] = replica_idx
+
     @traced
-    def step(self, ctx: TextContext) -> None:
+    def step(self, ctx: TextContext, replica_idx: int = 0) -> None:
         """Step the block manager by committing blocks into prefix cache."""
-        self.assert_runtime_invariants(ctx)
+        self.assert_runtime_invariants(ctx, replica_idx)
 
         if not self.enable_prefix_caching:
             return
@@ -216,9 +276,9 @@ class BlockManager:
 
         # Now that we generated new tokens, we can possibly commit additional
         # blocks into prefix cache.
-        self.commit_to_prefix_cache(ctx)
+        self.commit_to_prefix_cache(ctx, replica_idx)
 
-        self.assert_runtime_invariants(ctx)
+        self.assert_runtime_invariants(ctx, replica_idx)
 
     @traced
     def compute_hashes_for_request(
@@ -243,9 +303,23 @@ class BlockManager:
 
         unhashed_tokens = ctx.tokens[num_hashed_tokens:num_hashable_tokens]
 
-        images = ctx.images if isinstance(ctx, TextAndVisionContext) else []
+        token_hash_overrides: list[TokenHashOverride] = []
+        if isinstance(ctx, TextAndVisionContext):
+            for img in ctx.images:
+                if img.image_hash is None:
+                    raise ValueError(
+                        "hash_request_tokens requires `image_hash` to be present. Found None."
+                    )
+                token_hash_overrides.append(
+                    TokenHashOverride(
+                        token_idx=img.start_idx,
+                        token_hash=img.image_hash,
+                        source="image",
+                    )
+                )
+            token_hash_overrides.extend(ctx.token_hash_overrides)
 
-        cache_salt = getattr(ctx, "cache_salt", None)
+        cache_salt = ctx.cache_salt
         if cache_salt is not None and self.kv_hash_algo == "ahash64":
             if not self._salt_dropped_warned:
                 logger.warning(
@@ -262,7 +336,7 @@ class BlockManager:
             block_size=self.block_size,
             parent_hash=parent_hash_value,
             prefix_length=num_hashed_tokens,
-            images=images,
+            token_hash_overrides=token_hash_overrides,
             algo=self.kv_hash_algo,
             seed=self.kv_hash_seed,
             salt=cache_salt,
@@ -273,6 +347,7 @@ class BlockManager:
     def reuse_blocks_from_prefix_cache(
         self,
         ctx: TextContext,
+        replica_idx: int = 0,
         skip_tokens: bool = True,
     ) -> int:
         """Reuses blocks from prefix cache.
@@ -282,6 +357,7 @@ class BlockManager:
 
         Args:
             ctx: The request context.
+            replica_idx: Index of the replica the request is assigned to.
             skip_tokens: When True (default), advances the context's active
                 token window via ``ctx.tokens.skip_processing`` to reflect
                 the reused prefix-cache blocks.  Set to False when multiple
@@ -292,7 +368,8 @@ class BlockManager:
             The number of tokens that were (or should be) skipped due to
             prefix-cache reuse.  Returns 0 when no blocks were reused.
         """
-        self.assert_runtime_invariants(ctx)
+        self._register_replica(ctx.request_id, replica_idx)
+        self.assert_runtime_invariants(ctx, replica_idx)
 
         if not self.enable_prefix_caching or ctx.tokens.active_length == 1:
             return 0
@@ -307,7 +384,9 @@ class BlockManager:
         self.compute_hashes_for_request(ctx)
 
         # Query prefix cache for full blocks.
-        prefix_cache_blocks = self.get_full_blocks_from_prefix_cache(ctx)
+        prefix_cache_blocks = self.get_full_blocks_from_prefix_cache(
+            ctx, replica_idx
+        )
 
         if len(prefix_cache_blocks) > 0:
             # Update metrics.
@@ -316,7 +395,9 @@ class BlockManager:
             )
 
             # Since we got cache hits, clear out existing uncommitted blocks
-            self.release_uncommitted_blocks(ctx, skip_tokens=skip_tokens)
+            self.release_uncommitted_blocks(
+                ctx, replica_idx, skip_tokens=skip_tokens
+            )
 
             # Append them to the request's blocks.
             req_blocks.extend(prefix_cache_blocks)
@@ -345,18 +426,21 @@ class BlockManager:
     @traced
     def _count_full_blocks_from_prefix_cache(
         self,
-        ctx: TextContext,
         desired_hashes: Sequence[int | bytes],
+        replica_idx: int = 0,
     ) -> int:
-        """Returns the count of device and host blocks with the desired hashes."""
-        # Count the number of device block hashes that are in the device prefix cache.
-        device_prefix_cache = self.device_block_pool.prefix_cache
+        """Returns the count of device blocks with the desired hashes.
 
+        A hash counts as a device hit if it is resident in *any* replica's
+        device prefix cache, because a cross-replica hit is served by a
+        device-to-device copy onto ``replica_idx`` rather than a recompute.
+        """
         device_prefix_cache_hits = []
         desired_host_hashes = []
         for hash_value in desired_hashes:
-            if hash_value in device_prefix_cache:
-                # Device hashes with prefix cache hit
+            _, block = self._find_block_in_any_replica(hash_value, replica_idx)
+            if block is not None:
+                # Device hashes with prefix cache hit (local or cross-replica)
                 device_prefix_cache_hits.append(hash_value)
             else:
                 # Record potential host hash
@@ -368,79 +452,162 @@ class BlockManager:
 
         return device_prefix_cache_hit_count
 
+    def _find_block_in_any_replica(
+        self, block_hash: int | bytes, preferred_replica: int
+    ) -> tuple[int, KVCacheBlock | None]:
+        """Finds a committed block for ``block_hash`` on any replica.
+
+        The preferred (local) replica is checked first so that local hits never
+        incur a cross-replica copy. Returns ``(replica_idx, block)`` for a hit,
+        or ``(preferred_replica, None)`` when no replica has the block.
+        """
+        local_cache = self.device_block_pools[preferred_replica].prefix_cache
+        block = local_cache.get(block_hash)
+        if block is not None:
+            return preferred_replica, block
+        for replica_idx in range(self.num_replicas):
+            if replica_idx == preferred_replica:
+                continue
+            block = self.device_block_pools[replica_idx].prefix_cache.get(
+                block_hash
+            )
+            if block is not None:
+                return replica_idx, block
+        return preferred_replica, None
+
     @traced
     def _get_full_blocks_from_device_prefix_cache(
         self,
         desired_hashes: Sequence[int | bytes],
+        replica_idx: int = 0,
     ) -> list[KVCacheBlock]:
-        """Returns a list of device blocks with the desired hashes."""
+        """Returns device blocks on ``replica_idx`` with the desired hashes.
+
+        Blocks resident in ``replica_idx``'s own prefix cache are reused
+        directly. Blocks committed on a *different* replica are materialized
+        onto ``replica_idx`` via a device-to-device copy into a freshly
+        allocated block, which is then committed into the local prefix cache so
+        subsequent requests on this replica hit locally (SERVOPT-1500).
+        """
         if self._only_use_kv_connector_last_level_cache:
             return []
 
-        device_prefix_cache = self.device_block_pool.prefix_cache
+        local_pool = self.device_block_pools[replica_idx]
+        local_cache = local_pool.prefix_cache
 
-        blocks = []
+        blocks: list[KVCacheBlock] = []
         for block_hash in desired_hashes:
-            hash_value = block_hash
-            if hash_value not in device_prefix_cache:
+            local_block = local_cache.get(block_hash)
+            if local_block is not None:
+                local_pool.touch(local_block)
+                blocks.append(local_block)
+                continue
+
+            # Local miss: look for the block on another replica.
+            src_replica, src_block = self._find_block_in_any_replica(
+                block_hash, replica_idx
+            )
+            if src_block is None:
                 break
-            block = device_prefix_cache[hash_value]
-            blocks.append(block)
-            self.device_block_pool.touch(block)
+
+            # A cross-replica hit needs a free local block to copy into, and
+            # device memory handles to copy with. If either is missing, stop the
+            # prefix chain here (it must remain contiguous).
+            if (
+                self._replica_kv_memory is None
+                or local_pool.num_free_blocks == 0
+            ):
+                break
+
+            # Materialize the block on this replica via a device-to-device copy
+            # and commit it locally so future requests here hit directly. The
+            # copy is enqueued on the destination device's default stream -- the
+            # same stream the forward pass runs on -- so it is ordered before
+            # the block is read, and the source block (on another replica's
+            # pool, which this method never allocates from) cannot be recycled
+            # before the copy is enqueued. No pinning or synchronization needed.
+            dst_block = self.allocate_device_block(replica_idx)
+            self._copy_block_across_replicas(
+                dst_replica=replica_idx,
+                src_replica=src_replica,
+                dst_block_id=dst_block.bid,
+                src_block_id=src_block.bid,
+            )
+            local_pool.commit_into_prefix_cache(block_hash, dst_block)
+            blocks.append(dst_block)
+            self._metrics.cross_replica_blocks_copied += 1
 
         return blocks
 
+    def _copy_block_across_replicas(
+        self,
+        dst_replica: int,
+        src_replica: int,
+        dst_block_id: int,
+        src_block_id: int,
+    ) -> None:
+        """Copies one page from ``src_replica`` to ``dst_replica`` (per shard)."""
+        assert self._replica_kv_memory is not None
+        src_units = self._replica_kv_memory[src_replica]
+        dst_units = self._replica_kv_memory[dst_replica]
+        for src_unit, dst_unit in zip(src_units, dst_units, strict=True):
+            src_unit.copy_block_to(dst_unit, dst_block_id, src_block_id)
+
     @traced
     def _get_full_blocks_from_host_prefix_cache(
-        self, desired_hashes: Sequence[int | bytes]
+        self,
+        desired_hashes: Sequence[int | bytes],
+        replica_idx: int = 0,
     ) -> list[KVCacheBlock]:
         """Returns a list of device blocks with the desired hashes.
 
         These device blocks are newly allocated and initialized with the
         contents of the host blocks via the connector.
         """
-        if self.connector.num_host_blocks == 0 or not desired_hashes:
+        connector = self.connector
+        pool = self.device_block_pools[replica_idx]
+        if connector.num_host_blocks == 0 or not desired_hashes:
             return []
 
         # Limit by available device blocks.
-        num_hashes_to_load = min(
-            len(desired_hashes), self.device_block_pool.num_free_blocks
-        )
+        num_hashes_to_load = min(len(desired_hashes), pool.num_free_blocks)
         desired_hashes = desired_hashes[:num_hashes_to_load]
         blocks = [
-            self.allocate_device_block() for _ in range(num_hashes_to_load)
+            self.allocate_device_block(replica_idx)
+            for _ in range(num_hashes_to_load)
         ]
 
         # Query connector for available blocks from host cache.
         block_ids = [b.bid for b in blocks]
-        assert all(isinstance(h, int) for h in desired_hashes), (
-            "connector.load() path is only valid for ahash64 (int) hashes"
-        )
-        num_loaded = self.connector.load(
-            block_ids, cast(list[int], list(desired_hashes))
+        num_loaded = connector.load(
+            block_ids,
+            [to_block_hash_bytes(h) for h in desired_hashes],
+            replica_idx=replica_idx,
         )
 
         # The connector may return fewer hashes than requested.
         for surplus_block in blocks[num_loaded:]:
-            self.device_block_pool.free_block(surplus_block)
+            pool.free_block(surplus_block)
         loaded_blocks = blocks[:num_loaded]
         loaded_hashes = desired_hashes[:num_loaded]
 
         # Commit the device blocks into the device prefix cache.
         for block, block_hash in zip(loaded_blocks, loaded_hashes, strict=True):
-            if block_hash in self.device_block_pool.prefix_cache:
+            if block_hash in pool.prefix_cache:
                 # When this env var is set, we may perform host/disk -> device
                 # transfers of blocks already resident in the device prefix cache.
                 # If the block is already in the device prefix cache, we skip the
                 # commit.
                 assert self._only_use_kv_connector_last_level_cache
                 continue
-            self.device_block_pool.commit_into_prefix_cache(block_hash, block)
+            pool.commit_into_prefix_cache(block_hash, block)
 
         return loaded_blocks
 
     @traced
-    def count_full_blocks_from_prefix_caches(self, ctx: TextContext) -> int:
+    def count_full_blocks_from_prefix_caches(
+        self, ctx: TextContext, replica_idx: int = 0
+    ) -> int:
         """Returns the number of computed (cached) blocks related to this request.
 
         Note that only full blocks are counted.
@@ -456,12 +623,12 @@ class BlockManager:
         uncommitted_hashes = req_hashes[num_committed_blocks:]
 
         return self._count_full_blocks_from_prefix_cache(
-            ctx, uncommitted_hashes
+            uncommitted_hashes, replica_idx
         )
 
     @traced
     def get_full_blocks_from_prefix_cache(
-        self, ctx: TextContext
+        self, ctx: TextContext, replica_idx: int = 0
     ) -> list[KVCacheBlock]:
         """Gets the computed (cached) blocks for the request.
 
@@ -477,7 +644,7 @@ class BlockManager:
 
         # query the device prefix cache for full blocks
         device_blocks = self._get_full_blocks_from_device_prefix_cache(
-            uncommitted_hashes
+            uncommitted_hashes, replica_idx
         )
 
         if self.connector.num_host_blocks == 0:
@@ -489,7 +656,7 @@ class BlockManager:
 
         # query the host prefix cache for full blocks via connector
         host_blocks = self._get_full_blocks_from_host_prefix_cache(
-            uncommitted_hashes
+            uncommitted_hashes, replica_idx
         )
         return device_blocks + host_blocks
 
@@ -497,6 +664,7 @@ class BlockManager:
     def commit_to_prefix_cache(
         self,
         ctx: TextContext,
+        replica_idx: int = 0,
     ) -> None:
         """Commits all blocks whose hashes are known for prefix caching.
 
@@ -504,7 +672,9 @@ class BlockManager:
 
         Args:
             ctx: TextContext.
+            replica_idx: Index of the replica the request is assigned to.
         """
+        pool = self.device_block_pools[replica_idx]
         req_blocks = self.req_to_blocks[ctx.request_id]
         req_hashes = self.req_to_hashes[ctx.request_id]
         num_committed_blocks = (
@@ -520,9 +690,7 @@ class BlockManager:
             block = req_blocks[block_idx]
             block_hash = req_hashes[block_idx]
 
-            new_block = self.device_block_pool.get_or_commit_into_prefix_cache(
-                block_hash, block
-            )
+            new_block = pool.get_or_commit_into_prefix_cache(block_hash, block)
             # If the block is already int the prefix cache, we skip the commit.
             # Then we overwrite the req blocks with the existing block that contains
             # the same contents.
@@ -530,26 +698,29 @@ class BlockManager:
                 req_blocks[block_idx] = new_block
 
         # Queue the newly-committed blocks as one ordered offload sequence. Its
-        # parent is the block immediately before this run in the prefix (0 =
-        # root); that block was committed and offloaded in a previous step.
+        # parent is the block immediately before this run in the prefix
+        # (None = root); that block was committed and offloaded in a previous
+        # step.
         if num_computed_blocks > num_committed_blocks:
             parent_seq_hash = (
                 req_hashes[num_committed_blocks - 1]
                 if num_committed_blocks > 0
-                else 0
+                else None
             )
             new_block_hashes = req_hashes[
                 num_committed_blocks:num_computed_blocks
             ]
-            self._pending_offloads.append((parent_seq_hash, new_block_hashes))
+            self._pending_offloads[replica_idx].append(
+                (parent_seq_hash, new_block_hashes)
+            )
 
         # Bump the committed index.
         self.req_to_committed_idx[ctx.request_id] = (
             num_computed_blocks * self.block_size
         )
 
-    def offload(self) -> None:
-        """Offload the pending sequences to the connector.
+    def offload(self, replica_idx: int = 0) -> None:
+        """Offload the pending sequences to the replica's connector.
 
         Each pending sequence is delivered as one ordered ``offload`` call so
         connectors can chain it onto ``parent_seq_hash``. Hashes are re-resolved
@@ -557,8 +728,9 @@ class BlockManager:
         committed, the run is truncated at that point (the remaining blocks'
         parent would be absent), so the connector never sees a gap-chain.
         """
-        prefix_cache = self.device_block_pool.prefix_cache
-        for parent_seq_hash, hashes in self._pending_offloads:
+        prefix_cache = self.device_block_pools[replica_idx].prefix_cache
+        connector = self.connector
+        for parent_seq_hash, hashes in self._pending_offloads[replica_idx]:
             block_ids = []
             block_hashes = []
             for block_hash in hashes:
@@ -568,21 +740,19 @@ class BlockManager:
                 block_ids.append(prefix_cache[block_hash].bid)
                 block_hashes.append(block_hash)
             if block_hashes:
-                assert all(isinstance(h, int) for h in block_hashes), (
-                    "connector.offload() path is only valid for ahash64 (int) hashes"
-                )
-                assert isinstance(parent_seq_hash, int), (
-                    "connector.offload() path is only valid for ahash64 (int) hashes"
-                )
-                self.connector.offload(
+                connector.offload(
                     block_ids,
-                    cast(list[int], block_hashes),
-                    parent_seq_hash,
+                    [to_block_hash_bytes(h) for h in block_hashes],
+                    None
+                    if parent_seq_hash is None
+                    else to_block_hash_bytes(parent_seq_hash),
+                    replica_idx=replica_idx,
                 )
-        self._pending_offloads.clear()
+        self._pending_offloads[replica_idx].clear()
 
-    def release(self, request_id: RequestID) -> None:
+    def release(self, request_id: RequestID, replica_idx: int = 0) -> None:
         """Release the blocks for the request."""
+        pool = self.device_block_pools[replica_idx]
         blocks = self.req_to_blocks[request_id]
         ordered_blocks: Iterable[KVCacheBlock] = blocks
         if self.enable_prefix_caching:
@@ -591,10 +761,11 @@ class BlockManager:
             ordered_blocks = reversed(blocks)
 
         for block in ordered_blocks:
-            self.device_block_pool.free_block(block)
+            pool.free_block(block)
 
         self.req_to_blocks[request_id] = []
         self.req_to_hashes[request_id] = []
+        self.req_to_replica.pop(request_id, None)
 
         # Committed idx is only used with the prefix cache
         # therefore this may not always be in the dict.
@@ -607,6 +778,7 @@ class BlockManager:
         ctx: TextContext,
         num_draft_tokens: int = 0,
         num_draft_tokens_per_step: int = 1,
+        replica_idx: int = 0,
     ) -> None:
         """Allocate new blocks for a request to accommodate additional tokens.
 
@@ -626,11 +798,15 @@ class BlockManager:
                 ``_compute_seq_len`` to size the cache for block drafts,
                 whose ``forward_block`` writes one extra position past the
                 bonus token.
+            replica_idx: Index of the replica the request is assigned to.
 
         Raises:
             InsufficientBlocksError: If there are insufficient free blocks to
             satisfy the allocation.
         """
+        self._register_replica(ctx.request_id, replica_idx)
+        pool = self.device_block_pools[replica_idx]
+
         # It is impossible to schedule this request, even if it was the only req
         # and could use the entire KV cache.
         # This should literally never happen unless the user sets an absurdly
@@ -673,8 +849,8 @@ class BlockManager:
         )
 
         # Check that we have enough free blocks to allocate the new blocks.
-        if num_new_blocks > self.device_block_pool.num_free_blocks:
-            free = self.device_block_pool.num_free_blocks
+        if num_new_blocks > pool.num_free_blocks:
+            free = pool.num_free_blocks
             in_use = self.total_num_blocks - free
             raise InsufficientBlocksError(
                 f"Cannot get {num_new_blocks} free blocks from the free block queue"
@@ -684,7 +860,7 @@ class BlockManager:
 
         # Allocate new blocks.
         for _ in range(num_new_blocks):
-            new_block = self.allocate_device_block()
+            new_block = self.allocate_device_block(replica_idx)
             current_blocks.append(new_block)
 
     @traced
@@ -724,17 +900,19 @@ class BlockManager:
         return max(num_new_blocks, 0)
 
     @traced
-    def allocate_device_block(self) -> KVCacheBlock:
-        """Allocates a single block from the device block pool."""
-        new_block, _ = self.device_block_pool.alloc_block()
+    def allocate_device_block(self, replica_idx: int = 0) -> KVCacheBlock:
+        """Allocates a single block from the replica's device block pool."""
+        new_block, _ = self.device_block_pools[replica_idx].alloc_block()
         return new_block
 
     def release_uncommitted_blocks(
         self,
         ctx: TextContext,
+        replica_idx: int = 0,
         skip_tokens: bool = True,
     ) -> None:
         """Release the uncommitted blocks for the request."""
+        pool = self.device_block_pools[replica_idx]
         req_blocks = self.req_to_blocks[ctx.request_id]
         num_committed_blocks = (
             self.req_to_committed_idx[ctx.request_id] // self.block_size
@@ -743,7 +921,7 @@ class BlockManager:
         num_uncommitted_blocks = len(req_blocks) - num_committed_blocks
         for _ in range(num_uncommitted_blocks):
             block = req_blocks.pop()
-            self.device_block_pool.free_block(block)
+            pool.free_block(block)
         if skip_tokens:
             delta = (
                 ctx.tokens.processed_length
@@ -754,23 +932,31 @@ class BlockManager:
             elif delta < 0:
                 ctx.tokens.skip_processing(-delta)
 
-    def register_dummy_request(self, request_id: RequestID) -> None:
-        """Maps a dummy request to the pool's reserved null block."""
+    def register_dummy_request(
+        self, request_id: RequestID, replica_idx: int = 0
+    ) -> None:
+        """Maps a dummy request to the replica pool's reserved null block."""
         assert self.req_to_blocks[request_id] == []
-        self.req_to_blocks[request_id] = [self.device_block_pool.null_block]
+        self._register_replica(request_id, replica_idx)
+        self.req_to_blocks[request_id] = [
+            self.device_block_pools[replica_idx].null_block
+        ]
 
     @traced
-    def get_req_blocks(self, request_id: RequestID) -> list[int]:
+    def get_req_blocks(
+        self, request_id: RequestID, replica_idx: int = 0
+    ) -> list[int]:
         """Get the block ids for a request."""
         return [block.bid for block in self.req_to_blocks[request_id]]
 
     @traced
     def reset_prefix_cache(self) -> None:
-        """Resets the device prefix cache.
+        """Resets the device prefix caches for all replicas.
 
         Note: Host prefix cache reset is handled by the connector.
         """
-        self.device_block_pool.reset_prefix_cache()
+        for pool in self.device_block_pools:
+            pool.reset_prefix_cache()
 
     @property
     def metrics(self) -> KVCacheMetrics:
@@ -782,21 +968,32 @@ class BlockManager:
         self._metrics = KVCacheMetrics()
 
     @traced
-    def assert_runtime_invariants(self, ctx: TextContext) -> None:
+    def assert_runtime_invariants(
+        self, ctx: TextContext, replica_idx: int = 0
+    ) -> None:
         """Asserts runtime invariants when runtime checks are enabled."""
         if not self.enable_runtime_checks:
             return
 
-        # Get the active block ids
-        active_block_ids = []
-        for blocks in self.req_to_blocks.values():
+        # Get the active block ids, partitioned by the replica that owns each
+        # request's blocks.
+        active_block_ids_by_replica: list[list[int]] = [
+            [] for _ in range(self.num_replicas)
+        ]
+        for request_id, blocks in self.req_to_blocks.items():
+            req_replica = self.req_to_replica.get(request_id, 0)
             for block in blocks:
-                active_block_ids.append(block.bid)
+                active_block_ids_by_replica[req_replica].append(block.bid)
                 # Check that all active blocks have a ref_cnt > 0
                 assert block.ref_cnt > 0
 
-        # Check that the block pool is consistent
-        self.device_block_pool.assert_runtime_invariants(active_block_ids)
+        # Check that each block pool is consistent
+        for pool, active_block_ids in zip(
+            self.device_block_pools,
+            active_block_ids_by_replica,
+            strict=True,
+        ):
+            pool.assert_runtime_invariants(active_block_ids)
 
         # Get the request hashes and blocks
         req_hashes = self.req_to_hashes[ctx.request_id]

@@ -68,8 +68,11 @@ def min(x: TensorValueLike, axis: int = -1) -> TensorValue:
 
     .. code-block:: python
 
+        from max.dtype import DType
         from max.engine import InferenceSession
+        from max.graph import DeviceRef, Graph, ops
 
+        device = DeviceRef.CPU()
         with Graph("min_example") as graph:
             x = ops.constant(
                 [[1.2, 3.5, 2.1, 0.8], [2.3, 1.9, 4.2, 3.1]],
@@ -85,6 +88,8 @@ def min(x: TensorValueLike, axis: int = -1) -> TensorValue:
         row_min, col_min = model.execute()
 
     .. invisible-code-block: python
+
+        import numpy as np
 
         assert np.allclose(row_min.to_numpy(), [[0.8], [1.9]])
         assert np.allclose(col_min.to_numpy(), [[1.2, 1.9, 2.1, 0.8]])

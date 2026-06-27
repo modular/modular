@@ -16,6 +16,17 @@ from max.pipelines.diffusion.interface import (
     DiffusionPipeline,
     DiffusionPipelineOutput,
 )
+from max.pipelines.lib.interfaces.batch_processor import (
+    BatchProcessor,
+    BatchProcessorRuntime,
+    ModuleV3SingleReplicaBatchProcessor,
+    RaggedBatchProcessor,
+    SingleReplicaRaggedBatchProcessor,
+    build_single_replica_ragged_token_arrays,
+    process_ragged_kv_outputs,
+    ragged_kv_symbolic_inputs,
+    single_replica_context_batch,
+)
 
 from .arch_config import (
     ArchConfig,
@@ -25,13 +36,6 @@ from .arch_config import (
     ArchConfigWithPermissiveMaxSeqLen,
     ArchConfigWithStoredKVParams,
     ArchVLConfigWithTextSubconfig,
-)
-from .batch_processor import (
-    BatchProcessor,
-    BatchProcessorRuntime,
-    RaggedBatchProcessor,
-    process_ragged_kv_outputs,
-    ragged_kv_symbolic_inputs,
 )
 from .generate import GenerateMixin
 from .pipeline_model import (
@@ -60,11 +64,15 @@ __all__ = [
     "GenerateMixin",
     "ModelInputs",
     "ModelOutputs",
+    "ModuleV3SingleReplicaBatchProcessor",
     "PipelineModel",
     "PipelineModelWithKVCache",
     "RaggedBatchProcessor",
+    "SingleReplicaRaggedBatchProcessor",
     "UnifiedEagleOutputs",
     "UnifiedSpecDecodeInputs",
+    "build_single_replica_ragged_token_arrays",
     "process_ragged_kv_outputs",
     "ragged_kv_symbolic_inputs",
+    "single_replica_context_batch",
 ]

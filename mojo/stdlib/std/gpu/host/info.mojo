@@ -1605,6 +1605,23 @@ def _get_860m_target() -> _TargetType:
     ]
 
 
+def _get_steamdeck_target() -> _TargetType:
+    """Creates an MLIR target configuration for the Steam Deck's Van Gogh APU.
+
+    Returns:
+        MLIR target configuration for the Steam Deck's Van Gogh APU.
+    """
+    return __mlir_attr[
+        `#kgen.target<triple = "amdgcn-amd-amdhsa", `,
+        `arch = "gfx1033", `,
+        `features = "", `,
+        `data_layout = "e-m:e-p:64:64-p1:64:64-p2:32:32-p3:32:32-p4:64:64-p5:32:32-p6:32:32-p7:160:256:256:32-p8:128:128:128:48-p9:192:256:256:32-i64:64-v16:16-v24:32-v32:32-v48:64-v96:128-v192:256-v256:256-v512:512-v1024:1024-v2048:2048-n32:64-S32-A5-G1-ni:7:8:9",`,
+        `index_bit_width = 64,`,
+        `simd_bit_width = 128`,
+        `> : !kgen.target`,
+    ]
+
+
 comptime Radeon9070 = GPUInfo.from_family(
     family=AMDRDNAFamily,
     name="Radeon 9070",
@@ -1726,6 +1743,17 @@ comptime Radeon860m = GPUInfo.from_family(
 )
 """AMD Radeon 860M GPU configuration."""
 
+comptime SteamDeck = GPUInfo.from_family(
+    family=AMDRDNAFamily,
+    name="Steam Deck",
+    vendor=Vendor.AMD_GPU,
+    api="hip",
+    arch_name="gfx1033",
+    compute=10.3,
+    version="RDNA2",
+    sm_count=8,
+)
+"""Steam Deck (Van Gogh) APU configuration."""
 
 # ===-----------------------------------------------------------------------===#
 # GPUInfo
@@ -1845,6 +1873,8 @@ struct GPUInfo(Copyable, Equatable, Movable, RegisterPassable, Writable):
             return _get_9070_target()
         if self.name == "Radeon 9060":
             return _get_9060_target()
+        if self.name == "Steam Deck":
+            return _get_steamdeck_target()
         if self.name == "M1":
             return _get_metal_m1_target()
         if self.name == "M1 Metal4":
@@ -2012,9 +2042,10 @@ def _build_unsupported_arch_error[target_arch: StaticString]() -> String:
     )
     comptime amd_archs = (
         "gfx90a (MI250X), gfx942 (MI300X/MI300A), gfx950 (MI355X), gfx1030"
-        " (Radeon 6900), gfx1100 (Radeon 7900), gfx1101 (Radeon 7800), gfx1102"
-        " (Radeon 7600), gfx1103 (Radeon 780M), gfx1150/gfx1151/gfx1152 (Radeon"
-        " 8xx), gfx1200 (Radeon 9060), gfx1201 (Radeon 9070)"
+        " (Radeon 6900), gfx1033 (Van Gogh), gfx1100 (Radeon 7900), gfx1101"
+        " (Radeon 7800), gfx1102 (Radeon 7600), gfx1103 (Radeon 780M),"
+        " gfx1150/gfx1151/gfx1152 (Radeon 8xx), gfx1200 (Radeon 9060), gfx1201"
+        " (Radeon 9070)"
     )
     comptime apple_archs = (
         "metal:1 (M1), metal:2 (M2), metal:3 (M3), metal:4 (M4)"
@@ -2089,6 +2120,7 @@ comptime _all_targets = (
     StaticString("mi300a"),
     StaticString("gfx950"),
     StaticString("gfx1030"),
+    StaticString("gfx1033"),
     StaticString("gfx1100"),
     StaticString("gfx1101"),
     StaticString("gfx1102"),
@@ -2197,6 +2229,8 @@ def _get_info_from_target[target_arch0: StaticString]() -> GPUInfo:
         return materialize[MI355X]()
     elif target_arch == "gfx1030":
         return materialize[Radeon6900]()
+    elif target_arch == "gfx1033":
+        return materialize[SteamDeck]()
     elif target_arch == "gfx1100":
         return materialize[Radeon7900]()
     elif target_arch == "gfx1101":

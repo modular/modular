@@ -4,7 +4,6 @@ load(":precompile_pipeline.bzl", "modular_pipeline_target_name", "modular_precom
 
 package(default_visibility = [
     "//:__pkg__",
-    "//SDK/integration-test:__subpackages__",
     "//max/tests:__subpackages__",
     "//oss/modular/max/tests:__subpackages__",
 ])
@@ -46,8 +45,8 @@ modular_py_library(
         ":create_pipelines",
         ":hf_config_overrides",
         ":run_models",
+        "//max/python/max/_entrypoints",
         "//max/python/max/driver",
-        "//max/python/max/entrypoints",
         "//max/python/max/pipelines/architectures",
         "//max/python/max/pipelines/lib",
         "//max/tests/integration:hf_repo_lock",
@@ -178,7 +177,7 @@ modular_py_binary(
     deps = [
         ":create_pipelines",
         ":run_models",
-        "//max/python/max/entrypoints",
+        "//max/python/max/_entrypoints",
         "//max/python/max/pipelines/architectures",
         "//max/python/max/pipelines/lib",
         "//max/tests/integration:hf_repo_lock",
@@ -243,7 +242,7 @@ modular_py_binary(
         ":debugging_utils",
         ":hf_config_overrides",
         ":run_models",
-        "//max/python/max/entrypoints",
+        "//max/python/max/_entrypoints",
         "//max/python/max/pipelines",
         "//max/python/max/pipelines/lib",
         requirement("click"),
@@ -330,8 +329,8 @@ modular_py_binary(
     imports = ["."],
     deps = [
         ":create_pipelines",
+        "//max/python/max/_entrypoints",
         "//max/python/max/driver",
-        "//max/python/max/entrypoints",
         "//max/python/max/pipelines/lib",
         "//max/python/max/pipelines/modeling",
         "//max/python/max/serve:config",
@@ -450,79 +449,6 @@ PIPELINE_SPECS = [
     )
     for spec in PIPELINE_SPECS
 ]
-
-modular_py_binary(
-    name = "pipeline_to_mo_graph",
-    testonly = True,
-    srcs = ["pipeline_to_mo_graph.py"],
-    imports = ["."],
-    main = "pipeline_to_mo_graph.py",
-    deps = [
-        "//max/python/max/engine",
-        "//max/python/max/entrypoints",
-        "//max/python/max/graph",
-        "//max/python/max/pipelines",
-        requirement("click"),
-    ],
-)
-
-modular_py_binary(
-    name = "all_pipelines_to_mo_graphs",
-    testonly = True,
-    srcs = ["all_pipelines_to_mo_graphs.py"],
-    # pipeline_to_mo_graph runs as a subprocess via runfiles, so it belongs in
-    # data: that keeps max.pipelines out of this orchestrator process and gives
-    # each dump its own import path, timeout and crash isolation.
-    data = [":pipeline_to_mo_graph"],
-    imports = ["../accuracy/smoke_tests"],
-    main = "all_pipelines_to_mo_graphs.py",
-    tags = ["no-pydeps"],  # Depends on :smoke_test binary for imports
-    deps = [
-        "//max/tests/integration/accuracy/smoke_tests:smoke_test",
-        "//max/tests/integration/accuracy/smoke_tests:smoke_test_github_matrix",
-        "@rules_python//python/runfiles",
-        requirement("click"),
-    ],
-)
-
-modular_py_test(
-    name = "test_pipeline_to_mo_graph",
-    size = "large",
-    srcs = [
-        "test_pipeline_to_mo_graph.py",
-    ],
-    data = [
-        ":pipeline_to_mo_graph",
-    ],
-    tags = [
-        "manual",
-        "no-sandbox",
-        "requires-network",
-        "run-in-hf-workflow",
-    ],
-    target_compatible_with = select({
-        "@platforms//os:linux": [],
-        "//conditions:default": ["@platforms//:incompatible"],
-    }),
-)
-
-modular_py_test(
-    name = "test_pipeline_to_mo_graph_unit",
-    size = "small",
-    srcs = ["test_pipeline_to_mo_graph_unit.py"],
-    imports = ["."],
-    target_compatible_with = select({
-        "@platforms//os:linux": [],
-        "//conditions:default": ["@platforms//:incompatible"],
-    }),
-    deps = [
-        ":pipeline_to_mo_graph",
-        "//max/python/max/pipelines",
-        "//max/tests/integration/test_common:pipeline_model_dummy",
-        "//max/tests/integration/test_common:registry",
-        requirement("click"),
-    ],
-)
 
 modular_py_binary(
     name = "compare_tensors",

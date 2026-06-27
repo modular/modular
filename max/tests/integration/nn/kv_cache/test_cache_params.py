@@ -19,16 +19,17 @@ from max.graph import DeviceRef
 from max.nn.kv_cache import (
     AttnKey,
     BatchCharacteristics,
-    KVCacheParams,
     KVCacheQuantizationConfig,
     MHAAttnKey,
+    MHAKVCacheParams,
     MLAAttnKey,
+    MLAKVCacheParams,
 )
 
 
 def test_single_device_compatible() -> None:
     """Test single device configuration (no DP or TP)."""
-    params = KVCacheParams(
+    params = MHAKVCacheParams(
         dtype=DType.bfloat16,
         n_kv_heads=8,
         head_dim=128,
@@ -42,7 +43,7 @@ def test_single_device_compatible() -> None:
 
 def test_tensor_parallel_compatible_divisible_heads() -> None:
     """Test TP mode with n_kv_heads divisible by n_devices."""
-    params = KVCacheParams(
+    params = MHAKVCacheParams(
         dtype=DType.bfloat16,
         n_kv_heads=8,
         head_dim=128,
@@ -56,7 +57,7 @@ def test_tensor_parallel_compatible_divisible_heads() -> None:
 
 def test_tensor_parallel_compatible_multiple_devices() -> None:
     """Test TP mode with 4 devices and 16 heads."""
-    params = KVCacheParams(
+    params = MHAKVCacheParams(
         dtype=DType.bfloat16,
         n_kv_heads=16,
         head_dim=128,
@@ -70,7 +71,7 @@ def test_tensor_parallel_compatible_multiple_devices() -> None:
 
 def test_tensor_parallel_compatible_large_heads() -> None:
     """Test TP mode with many heads evenly distributed."""
-    params = KVCacheParams(
+    params = MHAKVCacheParams(
         dtype=DType.bfloat16,
         n_kv_heads=32,
         head_dim=128,
@@ -84,7 +85,7 @@ def test_tensor_parallel_compatible_large_heads() -> None:
 
 def test_data_parallel_compatible_equal_devices() -> None:
     """Test DP mode with data_parallel_degree equal to n_devices."""
-    params = KVCacheParams(
+    params = MHAKVCacheParams(
         dtype=DType.bfloat16,
         n_kv_heads=8,
         head_dim=128,
@@ -99,7 +100,7 @@ def test_data_parallel_compatible_equal_devices() -> None:
 
 def test_data_parallel_compatible_multiple_devices() -> None:
     """Test DP mode with multiple devices."""
-    params = KVCacheParams(
+    params = MHAKVCacheParams(
         dtype=DType.bfloat16,
         n_kv_heads=12,
         head_dim=64,
@@ -121,7 +122,7 @@ def test_data_parallel_exceeds_devices_fails() -> None:
         ValueError,
         match=r"Data parallelism degree \(4\) cannot be greater than the number of devices \(2\)",
     ):
-        KVCacheParams(
+        MHAKVCacheParams(
             dtype=DType.bfloat16,
             n_kv_heads=8,
             head_dim=128,
@@ -138,7 +139,7 @@ def test_data_parallel_exceeds_devices_large_degree_fails() -> None:
         ValueError,
         match=r"Data parallelism degree \(8\) cannot be greater than the number of devices \(1\)",
     ):
-        KVCacheParams(
+        MHAKVCacheParams(
             dtype=DType.bfloat16,
             n_kv_heads=16,
             head_dim=128,
@@ -149,47 +150,62 @@ def test_data_parallel_exceeds_devices_large_degree_fails() -> None:
         )
 
 
-def test_mixed_dp_tp_not_supported_fails() -> None:
-    """Test that DP + TP combination is not yet supported."""
+def test_data_parallel_degree_not_divisible_by_devices_fails() -> None:
+    """Test that DP degree must evenly partition devices into TP groups."""
     with pytest.raises(
         ValueError,
-        match=r"We do not yet support DP \+ TP at the same time.*data_parallel_degree=2.*n_devices=4",
+        match=r"Number of devices \(8\) must be divisible by data parallelism degree \(3\)",
     ):
-        KVCacheParams(
+        MHAKVCacheParams(
             dtype=DType.bfloat16,
-            n_kv_heads=8,
+            n_kv_heads=16,
             head_dim=128,
             num_layers=1,
-            devices=[DeviceRef.GPU(i) for i in range(4)],
-            data_parallel_degree=2,
-            page_size=16,
-        )
-
-
-def test_mixed_dp_tp_another_combination_fails() -> None:
-    """Test another DP + TP combination that should fail."""
-    with pytest.raises(
-        ValueError,
-        match=r"We do not yet support DP \+ TP at the same time.*data_parallel_degree=3.*n_devices=6",
-    ):
-        KVCacheParams(
-            dtype=DType.bfloat16,
-            n_kv_heads=12,
-            head_dim=64,
-            num_layers=1,
-            devices=[DeviceRef.GPU(i) for i in range(6)],
+            devices=[DeviceRef.GPU(i) for i in range(8)],
             data_parallel_degree=3,
             page_size=16,
         )
+
+
+def test_mixed_dp_tp_shards_heads_by_tp_degree() -> None:
+    """Test DP2 TP4 mode shards heads by TP group, not total devices."""
+    params = MHAKVCacheParams(
+        dtype=DType.bfloat16,
+        n_kv_heads=16,
+        head_dim=128,
+        num_layers=1,
+        devices=[DeviceRef.GPU(i) for i in range(8)],
+        data_parallel_degree=2,
+        page_size=16,
+    )
+    assert params.tensor_parallel_degree == 4
+    assert params.n_kv_heads_per_device == 4
+
+
+def test_mixed_dp_tp_mla_replicates_kv_across_tp_group() -> None:
+    """Test MLA in DP2 TP4 keeps one KV head and splits query heads by TP."""
+    params = MLAKVCacheParams(
+        dtype=DType.bfloat16,
+        head_dim=576,
+        num_layers=1,
+        devices=[DeviceRef.GPU(i) for i in range(8)],
+        data_parallel_degree=2,
+        page_size=128,
+        num_q_heads=128,
+    )
+    assert params.tensor_parallel_degree == 4
+    assert params.n_kv_heads_per_device == 1
+    assert params.num_q_heads_per_device == 32
+    assert params.replicates_kv_across_tp
 
 
 def test_tensor_parallel_non_divisible_heads_fails() -> None:
     """Test that TP mode with non-divisible heads raises ValueError."""
     with pytest.raises(
         ValueError,
-        match=r"Number of KV heads \(8\) must be divisible by the number of devices \(3\)",
+        match=r"Number of KV heads \(8\) must be divisible by the tensor parallel degree \(3\)",
     ):
-        KVCacheParams(
+        MHAKVCacheParams(
             dtype=DType.bfloat16,
             n_kv_heads=8,
             head_dim=128,
@@ -204,9 +220,9 @@ def test_tensor_parallel_non_divisible_heads_small_fails() -> None:
     """Test TP mode where n_kv_heads < n_devices."""
     with pytest.raises(
         ValueError,
-        match=r"Number of KV heads \(2\) must be divisible by the number of devices \(4\)",
+        match=r"Number of KV heads \(2\) must be divisible by the tensor parallel degree \(4\)",
     ):
-        KVCacheParams(
+        MHAKVCacheParams(
             dtype=DType.bfloat16,
             n_kv_heads=2,
             head_dim=128,
@@ -221,9 +237,9 @@ def test_tensor_parallel_odd_division_fails() -> None:
     """Test TP mode with an odd number that doesn't divide evenly."""
     with pytest.raises(
         ValueError,
-        match=r"Number of KV heads \(7\) must be divisible by the number of devices \(2\)",
+        match=r"Number of KV heads \(7\) must be divisible by the tensor parallel degree \(2\)",
     ):
-        KVCacheParams(
+        MHAKVCacheParams(
             dtype=DType.bfloat16,
             n_kv_heads=7,
             head_dim=128,
@@ -236,7 +252,7 @@ def test_tensor_parallel_odd_division_fails() -> None:
 
 def test_tensor_parallel_kv_head_replication() -> None:
     """TP wider than the KV head count replicates heads when opted in."""
-    params = KVCacheParams(
+    params = MHAKVCacheParams(
         dtype=DType.bfloat16,
         n_kv_heads=4,
         head_dim=128,
@@ -255,9 +271,9 @@ def test_tensor_parallel_kv_head_replication_requires_opt_in() -> None:
     """Replication stays disabled (and errors) unless explicitly enabled."""
     with pytest.raises(
         ValueError,
-        match=r"Number of KV heads \(4\) must be divisible by the number of devices \(8\)",
+        match=r"Number of KV heads \(4\) must be divisible by the tensor parallel degree \(8\)",
     ):
-        KVCacheParams(
+        MHAKVCacheParams(
             dtype=DType.bfloat16,
             n_kv_heads=4,
             head_dim=128,
@@ -272,9 +288,9 @@ def test_tensor_parallel_kv_head_replication_non_multiple_fails() -> None:
     """Replication needs n_devices to be a multiple of n_kv_heads."""
     with pytest.raises(
         ValueError,
-        match=r"Number of KV heads \(4\) must be divisible by the number of devices \(6\)",
+        match=r"Number of KV heads \(4\) must be divisible by the tensor parallel degree \(6\)",
     ):
-        KVCacheParams(
+        MHAKVCacheParams(
             dtype=DType.bfloat16,
             n_kv_heads=4,
             head_dim=128,
@@ -289,32 +305,27 @@ def test_tensor_parallel_kv_head_replication_non_multiple_fails() -> None:
 def test_mla_bypasses_divisibility_check() -> None:
     """Test MLA mode bypasses tensor parallel head divisibility check."""
     # This would fail for non-MLA due to 1 head not being divisible by 4 devices
-    params = KVCacheParams(
+    params = MLAKVCacheParams(
         dtype=DType.bfloat16,
-        n_kv_heads=1,
         head_dim=576,
         num_layers=1,
         devices=[DeviceRef.GPU(i) for i in range(4)],
         data_parallel_degree=1,
         page_size=128,
-        is_mla=True,
         num_q_heads=128,
     )
-    assert params.n_kv_heads == 1
     assert params.n_kv_heads_per_device == 1
 
 
 def test_mla_with_data_parallel_compatible() -> None:
     """Test MLA mode with data parallelism."""
-    params = KVCacheParams(
+    params = MLAKVCacheParams(
         dtype=DType.bfloat16,
-        n_kv_heads=1,
         head_dim=576,
         num_layers=1,
         devices=[DeviceRef.GPU(i) for i in range(4)],
         data_parallel_degree=4,
         page_size=128,
-        is_mla=True,
         num_q_heads=128,
     )
     # In DP mode, all heads are on each device
@@ -327,7 +338,7 @@ def test_kv_cache_quantization_config() -> None:
     )
     dp: int = 2
     tp: int = 1
-    params = KVCacheParams(
+    params = MHAKVCacheParams(
         dtype=DType.float8_e4m3fn,
         n_kv_heads=8,
         head_dim=128,
@@ -392,7 +403,7 @@ def test_batch_characteristics_is_hashable() -> None:
 
 def test_graph_capture_probe_cache_lengths_mha() -> None:
     """MHA probes at 256-token granularity."""
-    params = KVCacheParams(
+    params = MHAKVCacheParams(
         dtype=DType.bfloat16,
         n_kv_heads=8,
         head_dim=128,
@@ -411,14 +422,12 @@ def test_graph_capture_probe_cache_lengths_mha() -> None:
 
 def test_graph_capture_probe_cache_lengths_mla() -> None:
     """MLA probes at 64-token granularity, with extra probes when q > 1."""
-    params = KVCacheParams(
+    params = MLAKVCacheParams(
         dtype=DType.bfloat16,
-        n_kv_heads=1,
         head_dim=576,
         num_layers=1,
         devices=[DeviceRef.CPU()],
         page_size=128,
-        is_mla=True,
         num_q_heads=128,
     )
     base = params.graph_capture_probe_cache_lengths(256, 1)
@@ -438,7 +447,7 @@ def test_graph_capture_probe_cache_lengths_filters_min_cache() -> None:
     length is never replayed (and can't be prepared with the dummy warmup
     batch). The probe set must exclude those lengths.
     """
-    params = KVCacheParams(
+    params = MHAKVCacheParams(
         dtype=DType.bfloat16,
         n_kv_heads=8,
         head_dim=128,
@@ -456,7 +465,7 @@ def test_graph_capture_probe_cache_lengths_filters_min_cache() -> None:
 
 def test_graph_capture_probe_cache_lengths_no_draft_keeps_length_one() -> None:
     """Without draft tokens the footprint is 1, so no probes are filtered."""
-    params = KVCacheParams(
+    params = MHAKVCacheParams(
         dtype=DType.bfloat16,
         n_kv_heads=8,
         head_dim=128,

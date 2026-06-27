@@ -15,10 +15,10 @@
 from std.memory import ArcPointer, UnsafePointer
 from std.os import abort
 from std.python import PythonObject
-from std.sys._hal.context import Buffer as HALBuffer, Context as HALContext
-from std.sys._hal.device import get_device_spec
-from std.sys._hal.queue import Queue as HALQueue
-from std.sys._hal.stream import Stream as HALStream
+from _hal.context import Buffer as HALBuffer, Context as HALContext
+from _hal.device import get_device_spec
+from _hal.queue import Queue as HALQueue
+from _hal.stream import Stream as HALStream
 
 from .buffer import Buffer
 from .bundle import Bundle

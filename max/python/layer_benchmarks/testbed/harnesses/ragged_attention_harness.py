@@ -30,7 +30,7 @@ from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef
-from max.nn.kv_cache import KVCacheParams
+from max.nn.kv_cache import MHAKVCacheParams
 from max.pipelines.context import TextContext, TokenBuffer
 from max.pipelines.kv_cache import PagedKVCacheManager
 from max.pipelines.modeling.types import RequestID
@@ -107,7 +107,7 @@ class RaggedAttentionHarness(
         device: Accelerator,
     ) -> None:
         super().__init__(static_params, session, device)
-        self._kv_params = KVCacheParams(
+        self._kv_params = MHAKVCacheParams(
             dtype=DType.bfloat16,
             n_kv_heads=static_params.n_kv_heads,
             head_dim=static_params.head_dim,

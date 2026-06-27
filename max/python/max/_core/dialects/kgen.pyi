@@ -1712,7 +1712,6 @@ class PogListAttr(max._core.Attribute):
         variadics: Sequence[VariadicKind],
         defaults: Sequence[max._core.dialects.builtin.TypedAttr],
         orig_variadic_convention: ArgConvention | None,
-        param_constraints: Sequence[Sequence[ConstraintAttr]],
         body_constraints: Sequence[ConstraintAttr],
     ) -> None: ...
     @property
@@ -1725,15 +1724,13 @@ class PogListAttr(max._core.Attribute):
 class PogMetadataAttr(max._core.Attribute):
     """
     The `#kgen.pog_metadata` attribute contains metadata about an argument or
-    parameter of a function, including the name, passing kind, variadicness, the
-    default value (if present) and any constraints on it.
+    parameter of a function, including the name, passing kind, variadicness, and
+    the default value (if present).
 
     Example:
 
     ```mlir
-    #kgen.pog_metadata<"some_keyword_param", pos_or_kw, false, 42, {
-      <1, loc("file.mojo":10:5), "Constraint must hold">
-    }>
+    #kgen.pog_metadata<"some_keyword_param", pos_or_kw, false, 42>
     #kgen.pog_metadata<"some_variadic_param", pos_or_kw, true>
     ```
     """
@@ -1747,7 +1744,6 @@ class PogMetadataAttr(max._core.Attribute):
         passing_kind: PassingKind,
         variadic: VariadicKind = VariadicKind.not_vararg,
         default_value: max._core.dialects.builtin.TypedAttr = ...,
-        constraints: Sequence[ConstraintAttr] = [],
     ) -> None: ...
     @overload
     def __init__(
@@ -1756,7 +1752,6 @@ class PogMetadataAttr(max._core.Attribute):
         passing_kind: PassingKind,
         variadic: VariadicKind,
         default_value: max._core.dialects.builtin.TypedAttr,
-        constraints: Sequence[ConstraintAttr],
     ) -> None: ...
     @property
     def name(self) -> max._core.dialects.builtin.StringAttr: ...
@@ -1766,8 +1761,6 @@ class PogMetadataAttr(max._core.Attribute):
     def variadic(self) -> VariadicKind: ...
     @property
     def default_value(self) -> max._core.dialects.builtin.TypedAttr: ...
-    @property
-    def constraints(self) -> Sequence[ConstraintAttr]: ...
 
 class PreservedAttr(max._core.Attribute):
     """
@@ -2298,15 +2291,21 @@ class TraitInstanceRefAttr(max._core.Attribute):
 
 class TypeConformsToTraitAttr(max._core.Attribute):
     """
-    This represents a flag to indicate the type, specified by `typeValue`,
-    conforms to the specified traits.
+    This represents a flag to indicate that every type in `typeValue` conforms
+    to the specified traits. The stored checked operand is normalized to a
+    `param_list<!kgen.type>` value.
 
     Example:
 
     ```mlir
-    #kgen.type_conforms_to_trait<T,
+    #kgen.type_conforms_to_trait<
+        #kgen.param_list<#kgen.param.decl.ref<"T"> : !kgen.type>,
         #kgen.type<typevalue<#kgen.trait_ref<@Movable, @Copyable>>, type> : !kgen.type>
     ```
+
+    For the common case of a single checked type value, the operand is printed
+    in sugared form: the 1-element `param_list` literal (and any outer upcast
+    that simply retypes its element to `!kgen.type`) is stripped.
     """
 
     @overload

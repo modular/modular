@@ -19,7 +19,6 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any, Protocol, TypeVar, runtime_checkable
 
-import llguidance
 import numpy as np
 import numpy.typing as npt
 from max.pipelines.request import RequestID
@@ -30,7 +29,7 @@ from .log_probabilities import LogProbabilities
 from .outputs import GenerationOutput, TextGenerationOutput
 from .sampling_params import SamplingParams
 from .status import GenerationStatus
-from .tokens import ImageMetadata, TokenBuffer
+from .tokens import ImageMetadata, TokenBuffer, TokenHashOverride
 
 _CHUNK_SIZE = 128
 FUTURE_TOKEN = -999
@@ -208,6 +207,40 @@ class StructuredOutputRegionDelimiters:
 
     end_token_ids: list[int] | None = None
     """Token ID sequence marking the end of a structured output region."""
+
+
+@runtime_checkable
+class GrammarMatcher(Protocol):
+    """Per-request grammar matcher stepped each decode step.
+
+    Backend-agnostic interface; method names mirror llguidance's ``LLMatcher``
+    so a context can hold any backend's matcher (llguidance, xgrammar) without
+    branching. The llguidance ``LLMatcher`` satisfies this protocol natively.
+    """
+
+    def try_consume_tokens(self, tokens: list[int]) -> int:
+        """Advance the matcher; returns the number of tokens consumed."""
+        ...
+
+    def is_accepting(self) -> bool:
+        """Whether the matcher is at an accepting (stoppable) state."""
+        ...
+
+    def is_stopped(self) -> bool:
+        """Whether the matcher has reached a terminal state."""
+        ...
+
+    def get_error(self) -> str | None:
+        """Error message for the last rejection, if any (diagnostics)."""
+        ...
+
+    def get_grammar_warnings(self) -> Any:
+        """Grammar compilation warnings, if any (diagnostics)."""
+        ...
+
+    def deep_copy(self) -> GrammarMatcher:
+        """Independent copy for speculative walks (never mutates the original)."""
+        ...
 
 
 @dataclass
@@ -584,12 +617,12 @@ class TextContext:
 
         return ret_list
 
-    def set_matcher(self, matcher: llguidance.LLMatcher) -> None:
+    def set_matcher(self, matcher: GrammarMatcher) -> None:
         """Sets the grammar matcher for constrained decoding."""
         self._matcher = matcher
 
     @property
-    def matcher(self) -> llguidance.LLMatcher | None:
+    def matcher(self) -> GrammarMatcher | None:
         """The optional grammar matcher for constrained decoding."""
         return self._matcher
 
@@ -1002,6 +1035,9 @@ class TextAndVisionContext(TextContext):
     images: list[ImageMetadata] = field(default_factory=list)
     """Metadata about each image in the prompt. """
 
+    token_hash_overrides: list[TokenHashOverride] = field(default_factory=list)
+    """Token-level content hashes to inject into prefix-cache block hashing."""
+
     extra_model_args: dict[str, npt.NDArray[Any]] = field(default_factory=dict)
     """Extra model arguments for the vision model. These are model specific arguments."""
 
@@ -1036,6 +1072,18 @@ class TextAndVisionContext(TextContext):
                 raise ValueError(
                     f"Images must be filled with <vision_token_id> ({self.vision_token_ids})"
                 )
+
+        token_override_indices: set[int] = set()
+        for override in self.token_hash_overrides:
+            if len(self.tokens) <= override.token_idx:
+                raise ValueError(
+                    "Token hash overrides must be before the end of the token array"
+                )
+            if override.token_idx in token_override_indices:
+                raise ValueError(
+                    f"Multiple token hash overrides target index {override.token_idx}"
+                )
+            token_override_indices.add(override.token_idx)
 
         self._validate_state()
 

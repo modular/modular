@@ -684,6 +684,7 @@ def _amd_gemv_config[
 
 
 def _nvidia_gemv_config[
+    a_type: DType,
     simd_width: Int,
     static_K: Int,
     has_N: Bool,
@@ -696,6 +697,14 @@ def _nvidia_gemv_config[
     """
     comptime tile_k_256 = 256 * simd_width
     comptime tile_k_128 = 128 * simd_width
+
+    # FP32 (16B vectorized load -> simd_width 4 on B200). The tiny-M / small-N
+    # router GEMM (e.g. M<=16, N=128, K=6144) is HBM-bandwidth-bound on the N*K
+    # weight, so tile_n=1 maximizes the launched CTA count (one output column
+    # per block); 256 threads/block and unroll=2 are the swept winner, while
+    # tile_n>=2 and 128T regress. (KERN-3076.)
+    comptime if a_type == DType.float32:
+        return IndexList[3](256, 1, 2)
 
     var num_threads: Int
     comptime if simd_width <= 8:
@@ -761,6 +770,7 @@ def gemv_gpu_dispatch[
     transpose_b: Bool = False,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     pdl_level: PDLLevel = PDLLevel.ON,
+    tile_m: Int = 1,
 ](
     kernel_func: GEMVAlgorithm,
     c: TileTensor[mut=True, ...],
@@ -789,7 +799,6 @@ def gemv_gpu_dispatch[
 
     if kernel_func is GEMVAlgorithm.GEMV_SPLIT_K:
         logger.info("Executing: GEMV_SPLIT_K kernel")
-        comptime tile_m = 1
 
         @parameter
         def _gemv_split_k_dispatch[
@@ -842,6 +851,7 @@ def gemv_gpu_dispatch[
         else:
             # NVIDIA B200: shape-dependent dispatch for FP8 and BF16.
             comptime config = _nvidia_gemv_config[
+                a_type,
                 simd_width,
                 static_K,
                 has_N,
@@ -1107,6 +1117,7 @@ def gemv_gpu[
 
     elif m == 1 and transpose_b == True:
         comptime if a_type in (
+            DType.float32,
             DType.bfloat16,
             DType.float16,
             DType.float8_e4m3fn,

@@ -76,12 +76,15 @@ def _unpack_kv_collections(
     list[TensorValue],
     list[TensorValue],
     list[TensorValue],
+    list[TensorValue],
     list[BufferValue],
 ]:
     """Unpack KV collections into component lists.
 
     Returns:
-        Tuple of (kv_blocks, cache_lengths, lookup_tables, max_lengths, kv_scales). kv_scales is empty when KV cache is not quantized.
+        Tuple of (kv_blocks, cache_lengths, lookup_tables, max_prompt_lengths,
+        max_cache_lengths, kv_scales). kv_scales is empty when KV cache is not
+        quantized.
     """
     kv_scales = [
         kv.kv_scales for kv in kv_collections if kv.kv_scales is not None
@@ -90,7 +93,8 @@ def _unpack_kv_collections(
         [kv.kv_blocks for kv in kv_collections],
         [kv.cache_lengths for kv in kv_collections],
         [kv.lookup_table for kv in kv_collections],
-        [kv.max_lengths for kv in kv_collections],
+        [kv.max_prompt_length for kv in kv_collections],
+        [kv.max_cache_length for kv in kv_collections],
         kv_scales,
     )
 
@@ -422,12 +426,20 @@ class DeepseekV3DecoderLayer(Module):
             else:
                 ep_size = 1
 
+            num_phy = (
+                config.ep_config.n_experts
+                if config.ep_config is not None
+                and config.ep_config.eplb_enabled
+                else config.n_routed_experts
+            )
+
             moe_kwargs: dict[str, Any] = dict(
                 devices=config.devices,
                 hidden_dim=config.hidden_size,
-                num_experts=config.n_routed_experts,
+                num_experts=num_phy,
                 num_experts_per_token=config.num_experts_per_tok,
                 moe_dim=config.moe_intermediate_size,
+                num_logical_experts=config.n_routed_experts,
                 gate_cls=functools.partial(
                     DeepseekV3TopKRouter,
                     routed_scaling_factor=config.routed_scaling_factor,
@@ -459,6 +471,8 @@ class DeepseekV3DecoderLayer(Module):
                 moe = MoEQuantized(**moe_kwargs)
             else:
                 moe = MoE(**moe_kwargs)
+
+            moe.layer_idx = layer_idx
 
             num_devices = len(config.devices)
             if self.mode == ParallelismMode.TP_TP:
@@ -518,7 +532,8 @@ class DeepseekV3DecoderLayer(Module):
         kv_blocks: list[BufferValue],
         kv_cache_lengths: list[TensorValue],
         kv_lookup_table: list[TensorValue],
-        kv_max_lengths: list[TensorValue],
+        kv_max_prompt_lengths: list[TensorValue],
+        kv_max_cache_lengths: list[TensorValue],
         kv_scales: list[BufferValue],
         freqs_cis: list[TensorValue],
         mla_prefill_metadata_flat: list[TensorValue],
@@ -526,6 +541,8 @@ class DeepseekV3DecoderLayer(Module):
         mla_decode_scalar_args: list[TensorValue] | None = None,
         mla_num_partitions_scalars: list[TensorValue] | None = None,
         ep_inputs: list[Value[Any]] | None = None,
+        eplb_counter_buffers: list[BufferValue] | None = None,
+        layer_idx_per_device: list[TensorValue] | None = None,
     ) -> list[TensorValue]:
         # We have to unpack our PagedCacheValues into constituent parts so
         # subgraphs have only max.graph.Values as arguments.
@@ -536,10 +553,11 @@ class DeepseekV3DecoderLayer(Module):
                 kv_blocks[i],
                 kv_cache_lengths[i],
                 kv_lookup_table[i],
-                kv_max_lengths[i],
+                kv_max_prompt_lengths[i],
+                kv_max_cache_lengths[i],
                 kv_scales=kv_scales[i] if kv_scales else None,
                 attention_dispatch_metadata=mla_decode_scalar_args[i]
-                if mla_decode_scalar_args is not None
+                if mla_decode_scalar_args
                 else None,
                 mla_num_partitions=mla_num_partitions_scalars[i]
                 if mla_num_partitions_scalars is not None
@@ -582,11 +600,15 @@ class DeepseekV3DecoderLayer(Module):
         )
 
         if self.config.ep_config is not None:
-            assert ep_inputs is not None
-            if self.ep_manager is not None:
+            if self.ep_manager is not None and ep_inputs is not None:
                 self.ep_manager.fetch_buffers(ep_inputs)
 
-        mlp_outs = forward_moe_sharded_layers(self.mlp_shards, norm_outs)
+        mlp_outs = forward_moe_sharded_layers(
+            self.mlp_shards,
+            norm_outs,
+            eplb_counter_buffers,
+            layer_idx_per_device,
+        )
 
         hs = self._post_mlp(hs, mlp_outs, signal_buffers)
         hs = [ops.rebind(h, x.shape) for h, x in zip(hs, xs, strict=True)]
@@ -779,6 +801,7 @@ class DeepseekV3(Module):
         data_parallel_splits: TensorValue,
         batch_context_lengths: list[TensorValue],
         ep_inputs: list[Value[Any]] | None = None,
+        eplb_counter_buffers_per_layer: list[list[BufferValue]] | None = None,
     ) -> tuple[TensorValue, ...]:
         h = self.embed_tokens(tokens, signal_buffers)
 
@@ -792,6 +815,7 @@ class DeepseekV3(Module):
             data_parallel_splits,
             batch_context_lengths,
             ep_inputs,
+            eplb_counter_buffers_per_layer,
         )
 
     def _process_hidden_states(
@@ -805,6 +829,8 @@ class DeepseekV3(Module):
         data_parallel_splits: TensorValue,
         batch_context_lengths: list[TensorValue],
         ep_inputs: list[Value[Any]] | None = None,
+        eplb_counter_buffers_per_layer: list[list[BufferValue]]
+        | None = None,  # (num_layers, num_devices)
     ) -> tuple[TensorValue, ...]:
         if not host_input_row_offsets.device == DeviceRef.CPU():
             raise ValueError("input_row_offsets must be located on CPU")
@@ -860,9 +886,14 @@ class DeepseekV3(Module):
             )
 
         # Unpack KV collections once for use throughout the method
-        kv_blocks, cache_lengths, lookup_tables, max_lengths, kv_scales = (
-            _unpack_kv_collections(kv_collections)
-        )
+        (
+            kv_blocks,
+            cache_lengths,
+            lookup_tables,
+            max_prompt_lengths,
+            max_cache_lengths,
+            kv_scales,
+        ) = _unpack_kv_collections(kv_collections)
 
         # Extract dispatch metadata from KV collections (already on GPU
         # for MLA, on CPU for MHA — placed by the KV cache manager).
@@ -908,20 +939,41 @@ class DeepseekV3(Module):
                 kv_blocks,
                 cache_lengths,
                 lookup_tables,
-                max_lengths,
+                max_prompt_lengths,
+                max_cache_lengths,
                 kv_scales,
                 freqs_cis,
                 mla_prefill_metadata_flat,
                 input_row_offsets_,
             ]
 
-            if mla_decode_scalar_args is not None:
-                values.append(mla_decode_scalar_args)
-            if mla_num_partitions_scalars is not None:
-                values.append(mla_num_partitions_scalars)
-
-            if ep_inputs is not None:
-                values.append(ep_inputs)
+            values.append(
+                mla_decode_scalar_args
+                if mla_decode_scalar_args is not None
+                else []
+            )
+            values.append(
+                mla_num_partitions_scalars
+                if mla_num_partitions_scalars is not None
+                else []
+            )
+            values.append(ep_inputs if ep_inputs is not None else [])
+            values.append(
+                eplb_counter_buffers_per_layer[idx]
+                if eplb_counter_buffers_per_layer is not None
+                else []
+            )
+            if self.config.ep_config is not None and getattr(
+                self.config.ep_config, "eplb_enabled", False
+            ):
+                values.append(
+                    [
+                        ops.constant(idx, DType.int32, device=d)
+                        for d in self.config.devices
+                    ]
+                )
+            else:
+                values.append([])
 
             return values
 
@@ -958,7 +1010,8 @@ class DeepseekV3(Module):
         )
 
     def input_types(
-        self, kv_params: KVCacheParamInterface
+        self,
+        kv_params: KVCacheParamInterface,
     ) -> tuple[TensorType | BufferType, ...]:
         # TODO: Move input symbol computation from the manager classes.
         # It should be possible to compute the input symbols from the model
@@ -1014,4 +1067,15 @@ class DeepseekV3(Module):
 
         if self.ep_manager is not None:
             all_input_types.extend(self.ep_manager.input_types())
+
+        if self.config.eplb_profile_enabled:
+            for _layer_idx in range(self.config.num_hidden_layers):
+                for device in self.config.devices:
+                    all_input_types.append(
+                        BufferType(
+                            DType.int64,
+                            shape=[self.config.n_routed_experts],
+                            device=device,
+                        )
+                    )
         return tuple(all_input_types)

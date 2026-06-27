@@ -570,7 +570,7 @@ def _matmul_gpu[
                 type_of(b).origin,
                 address_space=type_of(b).address_space,
                 linear_idx_type=type_of(b).linear_idx_type,
-                element_size=type_of(b).element_size,
+                Storage=type_of(b).Storage,
             ]
             enqueue_apple_matmul[
                 a_type,
@@ -741,9 +741,6 @@ def _matmul_gpu[
 
                 comptime if not transpose_b:
                     return kernel_helper[128, 128, num_pipeline_stages=2]()
-
-                comptime if a_type == DType.float32:
-                    return kernel_helper[128, 128]()
 
                 # FP8 / bf16 / fp16 transpose_b on MI355X: route to the
                 # 4-wave kernel family in its bench-validated regime.

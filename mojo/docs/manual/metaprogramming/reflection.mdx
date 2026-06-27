@@ -291,7 +291,7 @@ information from expressions:
 positions:
 
 ```mojo
-def make_default[T: AnyType & Defaultable]() -> T:
+def make_default[T: Defaultable]() -> T:
     return T()
 
 def main():

@@ -20,6 +20,7 @@ from max.pipelines.lib import (
 )
 from max.pipelines.modeling.types import PipelineTask
 
+from .batch_processor import Qwen3EmbeddingBatchProcessor
 from .model import Qwen3EmbeddingModel
 from .model_config import Qwen3EmbeddingConfig
 
@@ -45,4 +46,6 @@ qwen3_embedding_arch = SupportedArchitecture(
         WeightsFormat.gguf: weight_adapters.convert_gguf_state_dict,
     },
     config=Qwen3EmbeddingConfig,
+    supports_device_graph_capture=False,
+    batching=Qwen3EmbeddingBatchProcessor,
 )
