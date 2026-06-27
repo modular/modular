@@ -202,6 +202,13 @@ def common_server_options(func: Callable[_P, _R]) -> Callable[_P, _R]:
         type=str,
         help="Optional prefix to add to all log messages for this server instance.",
     )
+    @click.option(
+        "--eplb-stats",
+        type=click.Path(exists=True, dir_okay=False, readable=True),
+        default=None,
+        help="Path to a snapshot JSON from /max_internal/eplb_stats. "
+        "Triggers an EPLB rebalance at startup.",
+    )
     @functools.wraps(func)
     def wrapper(*args: _P.args, **kwargs: _P.kwargs) -> _R:
         return func(*args, **kwargs)
@@ -227,6 +234,8 @@ def cli_serve(
     port: int,
     headless: bool,
     log_prefix: str | None,
+    eplb_stats: str | None,
+    task: str,
     task_arg: tuple[str, ...],
     pretty_print_config: bool,
     **config_kwargs: Any,
@@ -253,6 +262,10 @@ def cli_serve(
 
     if headless is not None:
         setting_kwargs["MAX_SERVE_HEADLESS"] = headless
+
+    if eplb_stats is not None:
+        os.environ["MAX_SERVE_EPLB_STATS"] = eplb_stats
+        setting_kwargs["MAX_SERVE_EPLB_STATS"] = eplb_stats
 
     settings = Settings(**setting_kwargs)
 

@@ -426,12 +426,20 @@ class DeepseekV3DecoderLayer(Module):
             else:
                 ep_size = 1
 
+            num_phy = (
+                config.ep_config.n_experts
+                if config.ep_config is not None
+                and config.ep_config.eplb_enabled
+                else config.n_routed_experts
+            )
+
             moe_kwargs: dict[str, Any] = dict(
                 devices=config.devices,
                 hidden_dim=config.hidden_size,
-                num_experts=config.n_routed_experts,
+                num_experts=num_phy,
                 num_experts_per_token=config.num_experts_per_tok,
                 moe_dim=config.moe_intermediate_size,
+                num_logical_experts=config.n_routed_experts,
                 gate_cls=functools.partial(
                     DeepseekV3TopKRouter,
                     routed_scaling_factor=config.routed_scaling_factor,
@@ -463,6 +471,8 @@ class DeepseekV3DecoderLayer(Module):
                 moe = MoEQuantized(**moe_kwargs)
             else:
                 moe = MoE(**moe_kwargs)
+
+            moe.layer_idx = layer_idx
 
             num_devices = len(config.devices)
             if self.mode == ParallelismMode.TP_TP:
@@ -532,6 +542,7 @@ class DeepseekV3DecoderLayer(Module):
         mla_num_partitions_scalars: list[TensorValue] | None = None,
         ep_inputs: list[Value[Any]] | None = None,
         eplb_counter_buffers: list[BufferValue] | None = None,
+        layer_idx_per_device: list[TensorValue] | None = None,
     ) -> list[TensorValue]:
         # We have to unpack our PagedCacheValues into constituent parts so
         # subgraphs have only max.graph.Values as arguments.
@@ -546,7 +557,7 @@ class DeepseekV3DecoderLayer(Module):
                 kv_max_cache_lengths[i],
                 kv_scales=kv_scales[i] if kv_scales else None,
                 attention_dispatch_metadata=mla_decode_scalar_args[i]
-                if mla_decode_scalar_args is not None
+                if mla_decode_scalar_args
                 else None,
                 mla_num_partitions=mla_num_partitions_scalars[i]
                 if mla_num_partitions_scalars is not None
@@ -589,14 +600,14 @@ class DeepseekV3DecoderLayer(Module):
         )
 
         if self.config.ep_config is not None:
-            assert ep_inputs is not None
-            if self.ep_manager is not None:
+            if self.ep_manager is not None and ep_inputs is not None:
                 self.ep_manager.fetch_buffers(ep_inputs)
 
         mlp_outs = forward_moe_sharded_layers(
             self.mlp_shards,
             norm_outs,
             eplb_counter_buffers,
+            layer_idx_per_device,
         )
 
         hs = self._post_mlp(hs, mlp_outs, signal_buffers)
@@ -936,16 +947,33 @@ class DeepseekV3(Module):
                 input_row_offsets_,
             ]
 
-            if mla_decode_scalar_args is not None:
-                values.append(mla_decode_scalar_args)
-            if mla_num_partitions_scalars is not None:
-                values.append(mla_num_partitions_scalars)
-
-            if ep_inputs is not None:
-                values.append(ep_inputs)
-
-            if eplb_counter_buffers_per_layer is not None:
-                values.append(eplb_counter_buffers_per_layer[idx])
+            values.append(
+                mla_decode_scalar_args
+                if mla_decode_scalar_args is not None
+                else []
+            )
+            values.append(
+                mla_num_partitions_scalars
+                if mla_num_partitions_scalars is not None
+                else []
+            )
+            values.append(ep_inputs if ep_inputs is not None else [])
+            values.append(
+                eplb_counter_buffers_per_layer[idx]
+                if eplb_counter_buffers_per_layer is not None
+                else []
+            )
+            if self.config.ep_config is not None and getattr(
+                self.config.ep_config, "eplb_enabled", False
+            ):
+                values.append(
+                    [
+                        ops.constant(idx, DType.int32, device=d)
+                        for d in self.config.devices
+                    ]
+                )
+            else:
+                values.append([])
 
             return values
 
@@ -974,7 +1002,7 @@ class DeepseekV3(Module):
             lm_head=self.lm_head,
             signal_buffers=signal_buffers,
             devices=devices,
-            is_data_parallel_attention=(self.config.data_parallel_degree > 1),
+            is_data_parallel_attention=self.config.data_parallel_degree > 1,
             return_logits=self.return_logits,
             return_hidden_states=self.return_hidden_states,
             logits_scaling=self.logits_scaling,
@@ -982,7 +1010,8 @@ class DeepseekV3(Module):
         )
 
     def input_types(
-        self, kv_params: KVCacheParamInterface
+        self,
+        kv_params: KVCacheParamInterface,
     ) -> tuple[TensorType | BufferType, ...]:
         # TODO: Move input symbol computation from the manager classes.
         # It should be possible to compute the input symbols from the model

@@ -14,9 +14,12 @@
 
 from __future__ import annotations
 
+import json
 import logging
+import os
 from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
+from functools import cached_property
 from typing import Any, ClassVar, cast
 
 from max.driver import (
@@ -27,7 +30,13 @@ from max.driver import (
 )
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import BufferType, DeviceRef, Graph, Module, TensorType
+from max.graph import (
+    BufferType,
+    DeviceRef,
+    Graph,
+    Module,
+    TensorType,
+)
 from max.graph.weights import WeightData, Weights, WeightsAdapter
 from max.nn.comm import Signals
 from max.nn.comm.ep import EPCommInitializer, EPConfig
@@ -48,8 +57,10 @@ from max.pipelines.lib import (
     PipelineModelWithKVCache,
 )
 from max.pipelines.lib.eplb_stats import (
+    EplbPlacement,
     EplbStatsAccumulator,
     EplbStatsMetadata,
+    EplbStatsSnapshot,
 )
 from max.pipelines.lib.vision_encoder_cache import VisionEncoderCache
 from max.pipelines.modeling.config_enums import is_float4_encoding
@@ -190,6 +201,8 @@ class KimiK2_5Model(
         if pipeline_config.model.device_specs[0] == DeviceSpec.cpu():
             raise ValueError("DeepseekV2 currently only supported on gpu.")
         self.session = session
+        self._eplb_log2phy_buffers: list[Buffer] = []
+        self._eplb_logcnt_buffers: list[Buffer] = []
         self._ve_cache: VisionEncoderCache[KimiK2_5TextAndVisionContext] = (
             VisionEncoderCache(
                 max_entries=pipeline_config.runtime.max_vision_cache_entries
@@ -444,6 +457,34 @@ class KimiK2_5Model(
                     "EP node ID is not set. Please check if the EP initialization is successful."
                 )
 
+        # ---- EPLB placement -----------------------------------------------------
+        plan: EplbPlacement | None = None
+        if config.ep_config is not None:
+            plan = self._build_eplb_plan(
+                ep_size=config.ep_config.n_gpus_per_node
+                * config.ep_config.n_nodes,
+                n_nodes=config.ep_config.n_nodes,
+                n_groups=getattr(
+                    self.huggingface_config.text_config, "n_group", 1
+                ),
+            )
+            if plan is not None:
+                # Inflate the physical slot count visible to the dispatcher.
+                config.ep_config.eplb_enabled = True
+                config.ep_config.num_moe_layers = plan.phy2log.shape[0]
+                config.ep_config.max_replicas = plan.max_replicas
+                config.ep_config.n_experts = plan.num_phy
+                config.ep_config.eplb_phy2log_plan = plan.phy2log
+                logger.info(
+                    "EPLB: plan installed in EPConfig "
+                    "(num_phy=%d, max_replicas=%d, num_moe_layers=%d, "
+                    "eplb_enabled=True)",
+                    plan.num_phy,
+                    plan.max_replicas,
+                    plan.phy2log.shape[0],
+                )
+
+        # ------------------------------------------------------------------
         # Generate the full KimiK2_5Config from HuggingFace config and LM config
         kimik2_5_config = KimiK2_5Config.initialize_from_config(
             pipeline_config=self.pipeline_config,
@@ -457,6 +498,14 @@ class KimiK2_5Model(
         )
         self.state_dict = self.nn_model.state_dict()
         logger.info("Loaded Weights")
+
+        if plan is not None:
+            self._eplb_log2phy_buffers = [
+                Buffer.from_numpy(plan.log2phy).to(d) for d in self.devices
+            ]
+            self._eplb_logcnt_buffers = [
+                Buffer.from_numpy(plan.logcnt).to(d) for d in self.devices
+            ]
 
         # EPLB profiling — gated on pipeline_config.runtime.eplb_profile.
         if self.pipeline_config.runtime.eplb_profile:
@@ -743,6 +792,7 @@ class KimiK2_5Model(
             model_inputs.eplb_counter_buffers = (
                 self._eplb_stats_accumulator.device_buffers
             )
+        model_inputs.ep_inputs = self._frozen_ep_inputs
         model_outputs = self.language_model.execute(*model_inputs.buffers)
         if self._eplb_stats_accumulator is not None:
             self._eplb_stats_accumulator.record_batch_total_tokens(
@@ -754,6 +804,16 @@ class KimiK2_5Model(
     def release(self, request_id: RequestID) -> None:
         """Release vision encoder cache entries for a completed request."""
         self._ve_cache.release_request(request_id)
+
+    @cached_property
+    def _frozen_ep_inputs(self) -> tuple[Buffer, ...]:
+        """Persistent EP inputs: ep_comm + log2phy + logcnt buffers."""
+        parts: list[Buffer] = []
+        if self.ep_comm_initializer is not None:
+            parts.extend(self.ep_comm_initializer.model_inputs())
+        parts.extend(self._eplb_log2phy_buffers)
+        parts.extend(self._eplb_logcnt_buffers)
+        return tuple(parts)
 
     def prepare_initial_token_inputs(
         self,
@@ -780,4 +840,40 @@ class KimiK2_5Model(
             num_moe_layers=text.num_hidden_layers,
             num_logical_experts=text.n_routed_experts,
             num_experts_per_token=text.num_experts_per_tok,
+        )
+
+    def _build_eplb_plan(
+        self,
+        ep_size: int,
+        n_nodes: int,
+        n_groups: int,
+    ) -> EplbPlacement | None:
+        """Read --eplb-stats if set, build a plan, log a summary."""
+        path = os.environ.get("MAX_SERVE_EPLB_STATS")
+        if not path:
+            return None
+        with open(path) as f:
+            snap = EplbStatsSnapshot.from_dict(json.load(f))
+        md = self._eplb_stats_metadata()
+        if (
+            snap.metadata.num_moe_layers != md.num_moe_layers
+            or snap.metadata.num_logical_experts != md.num_logical_experts
+        ):
+            raise ValueError(
+                f"EPLB snapshot {snap.metadata} doesn't match model {md}"
+            )
+
+        logger.info(
+            "EPLB: loaded snapshot from %s "
+            "(num_layers=%d, num_logical_experts=%d, total_tokens=%d)",
+            path,
+            snap.metadata.num_moe_layers,
+            snap.metadata.num_logical_experts,
+            snap.total_tokens,
+        )
+        return EplbPlacement.from_snapshot(
+            snap,
+            ep_size=ep_size,
+            n_nodes=n_nodes,
+            n_groups=n_groups,
         )
