@@ -192,6 +192,22 @@ _TARGETS: dict[str, FuzzTarget] = {
         ),
         default_oracle="ref",
     ),
+    "mxfp8_quantize": FuzzTarget(
+        name="mxfp8_quantize",
+        bazel_target=(
+            "//max/kernels/test/gpu/fuzz:fuzz_mxfp8_quantize.mojo.test"
+        ),
+        binary=(
+            "bazel-bin/max/kernels/test/gpu/fuzz/fuzz_mxfp8_quantize.mojo.test"
+        ),
+        description=(
+            "quantize_dynamic_scaled_fp4fp8 (MXFP8): BF16 -> fp8_e4m3fn + E8M0"
+            " block scales (MiniMax-M3-MXFP8 activation narrowing). contract"
+            " (finite input -> finite output, SERVOPT-1420 clamp guard) + ref"
+            " (coarse dequant round-trip)"
+        ),
+        default_oracle="contract",
+    ),
     "mla_decode": FuzzTarget(
         name="mla_decode",
         bazel_target=("//max/kernels/test/gpu/fuzz:fuzz_mla_decode.mojo.test"),
