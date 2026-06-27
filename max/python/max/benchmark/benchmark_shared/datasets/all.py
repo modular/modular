@@ -29,6 +29,9 @@ from max.benchmark.benchmark_shared.datasets._tokenizer_pool import (
 from max.benchmark.benchmark_shared.datasets.agentic_code import (
     AgenticCodeBenchmarkDataset,
 )
+from max.benchmark.benchmark_shared.datasets.artificial_analysis import (
+    ArtificialAnalysisBenchmarkDataset,
+)
 from max.benchmark.benchmark_shared.datasets.arxiv_summarization import (
     ArxivSummarizationBenchmarkDataset,
 )
@@ -238,6 +241,19 @@ def sample_requests(
                 num_requests=args.num_prompts,
                 tokenizer=tokenizer,
                 output_lengths=output_lengths,
+            )
+        elif isinstance(benchmark_dataset, ArtificialAnalysisBenchmarkDataset):
+            assert args.num_prompts is not None
+            return benchmark_dataset.sample_requests(
+                num_requests=args.num_prompts,
+                tokenizer=tokenizer,
+                output_lengths=output_lengths,
+                shuffle=(
+                    output_lengths is None and not args.record_output_lengths
+                ),
+                input_len=args.random_input_len,
+                output_len=args.random_output_len,
+                seed=args.seed,
             )
         elif isinstance(benchmark_dataset, ArxivSummarizationBenchmarkDataset):
             if output_lengths:

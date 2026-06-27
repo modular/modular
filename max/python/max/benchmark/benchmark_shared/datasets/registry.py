@@ -69,6 +69,10 @@ Notes:
 """
 
 DATASET_REGISTRY: Mapping[str, DatasetRegistryEntry] = {
+    "artificial-analysis": DatasetRegistryEntry(
+        class_name="ArtificialAnalysisBenchmarkDataset",
+        has_multiturn_chat_support=False,
+    ),
     "arxiv-summarization": DatasetRegistryEntry(
         class_name="ArxivSummarizationBenchmarkDataset",
         has_multiturn_chat_support=False,
