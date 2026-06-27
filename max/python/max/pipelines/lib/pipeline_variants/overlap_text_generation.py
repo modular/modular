@@ -1963,6 +1963,45 @@ class OverlapTextGenerationPipeline(
         graph_capture_runner.warmup_pre_ready()
         logger.info("Completed serve device graph capture warmup.")
 
+        self._warmup_structured_output_kickoff()
+
+    def _warmup_structured_output_kickoff(self) -> None:
+        """Service one async-bitmask kickoff host node before serving.
+
+        The first ``cuLaunchHostFunc`` kickoff serviced on the stream stalls
+        ~7-9s once per server lifetime (MXSERV-189); driving one here, while the
+        GPU is active, moves that one-time cost off the first real request.
+        """
+        spec_state = self._spec_decode_state
+        if spec_state is None or spec_state.overlap_state is None:
+            return
+        if not self._pipeline_config.needs_bitmask_constraints:
+            return
+
+        overlap_state = spec_state.overlap_state
+        device0 = self._devices[0]
+
+        def _warmup_callback() -> None:
+            overlap_state.pinned_bitmask.to_numpy()[...] = -1
+
+        logger.info("Priming structured-output async bitmask kickoff path.")
+        overlap_state.enqueue_async_callback(_warmup_callback)
+        # Synchronize so the kickoff host node is serviced now, during warmup,
+        # not on the first real request.
+        device0.synchronize()
+        # Restore the clean cold-start flag/buffer state.
+        prime_np = np.full(
+            (
+                overlap_state.max_batch_size,
+                overlap_state.num_positions,
+                overlap_state.packed_vocab_size,
+            ),
+            -1,
+            dtype=np.int32,
+        )
+        overlap_state.prime(prime_np)
+        logger.info("Structured-output async bitmask kickoff path primed.")
+
     def _build_spec_decode_sampling_buffers(
         self,
         context_batch: list[TextGenerationContextType],
