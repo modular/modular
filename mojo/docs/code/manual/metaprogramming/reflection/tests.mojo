@@ -108,12 +108,14 @@ def diff_fields[T: AnyType](a: T, b: T) -> List[String]:
         comptime if not conforms_to(types[idx], Equatable):
             continue
 
+        # TODO(MOCO-4206): Remove redundant assertion after type refinement
+        #   following early `continue` is fixed.
+        comptime assert conforms_to(types[idx], Equatable)
+
         ref a_val = reflect[T].field_ref[idx](a)
         ref b_val = reflect[T].field_ref[idx](b)
 
-        # TODO(MOCO-4206): Remove `trait_downcast` after type refinement
-        #   following early `continue` is fixed.
-        if trait_downcast[Equatable](a_val) != trait_downcast[Equatable](b_val):
+        if a_val != b_val:
             diffs.append(String(names[idx]))
 
     return diffs^
@@ -154,7 +156,7 @@ def test_diff_fields_single_field() raises:
     assert_equal(changes[0], "timeout")
 
 
-# --- conforms_to and trait_downcast ---
+# --- conforms_to type refinement ---
 
 
 def test_conforms_to_positive() raises:
@@ -168,7 +170,7 @@ def test_trait_downcast_equality() raises:
     var p2 = Point(x=1, y=2.0)
     ref lhs = reflect[Point].field_ref[0](p1)
     ref rhs = reflect[Point].field_ref[0](p2)
-    var equal = trait_downcast[Equatable](lhs) == trait_downcast[Equatable](rhs)
+    var equal = lhs == rhs
     assert_true(equal)
 
 
@@ -178,7 +180,7 @@ def test_trait_downcast_inequality() raises:
     var p2 = Point(x=1, y=9.0)
     ref lhs = reflect[Point].field_ref[1](p1)
     ref rhs = reflect[Point].field_ref[1](p2)
-    var equal = trait_downcast[Equatable](lhs) == trait_downcast[Equatable](rhs)
+    var equal = lhs == rhs
     assert_true(not equal)
 
 
@@ -249,12 +251,14 @@ trait MakeCopyable:
             ):
                 continue
 
-            ref p_value = reflect[Self].field_ref[idx](self)
-            # TODO(MOCO-4206): Remove `trait_downcast` after type refinement
+            # TODO(MOCO-4206): Remove redundant assertion after type refinement
             #   following early `continue` is fixed.
-            trait_downcast[Copyable & ImplicitlyDeletable](
-                reflect[Self].field_ref[idx](other)
-            ) = trait_downcast[Copyable & ImplicitlyDeletable](p_value).copy()
+            comptime assert conforms_to(
+                field_type, Copyable & ImplicitlyDeletable
+            )
+
+            ref p_value = reflect[Self].field_ref[idx](self)
+            reflect[Self].field_ref[idx](other) = p_value.copy()
 
 
 @fieldwise_init
@@ -469,7 +473,7 @@ def main() raises:
     test_diff_fields_all_different()
     test_diff_fields_single_field()
 
-    # conforms_to and trait_downcast
+    # conforms_to type refinement
     test_conforms_to_positive()
     test_trait_downcast_equality()
     test_trait_downcast_inequality()

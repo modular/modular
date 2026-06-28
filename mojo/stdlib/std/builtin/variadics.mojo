@@ -1009,14 +1009,16 @@ struct ParameterList[type: AnyType, //, values: _MLIR.KGENParamListType[type]](
             Self._AllSatisfiesReducer[predicate, ...],
         ]
 
-    # TODO(MOCO-3531): Remove `trait_downcast` uses here.
+    # TODO(MOCO-3531): Remove downcasts here.
     comptime _ContainsValuePredicate[
         search_value: Self.type,
         element_value: Self.type,
-    ] where conforms_to(Self.type, Equatable) = trait_downcast[Equatable](
+    ] where conforms_to(Self.type, Equatable) = rebind[
+        downcast[Self.type, Equatable]
+    ](
         search_value
-    ) == trait_downcast[
-        Equatable
+    ) == rebind[
+        downcast[Self.type, Equatable]
     ](
         element_value
     )
@@ -1714,7 +1716,9 @@ struct VariadicPack[
         writer.write_string(start)
 
         comptime for i in range(self.__len__()):
-            comptime assert conforms_to(Self.element_types[i], Writable)
+            comptime assert conforms_to(
+                Self.element_types[i], Writable
+            ), "variadic pack element type is not Writable"
             comptime if i != 0:
                 writer.write_string(sep)
 
