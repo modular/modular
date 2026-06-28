@@ -49,7 +49,7 @@
 # bands (vs the paged cache read back through its page table). B200/SM100 only
 # (the tuned block-scaled matmul asserts on SM100 + static N/K).
 
-from std.math import align_up, ceildiv, max, min
+from std.math import align_up, ceildiv, exp2, max, min
 from std.random import random_ui64, seed
 from std.sys.defines import get_defined_int
 
@@ -242,17 +242,24 @@ def fill_scales[
 ):
     """Fill an SF-atom scale tensor: random powers of two over each 32-K block,
     0.0 in the padding rows/cols (unused scales MUST be 0.0 or accuracy breaks).
+
+    Draws a wide E8M0 exponent in [-12, +12], i.e. the scale spans 2^-12..2^+12
+    (mostly fractional -- the realistic MXFP8 regime, where block scales are
+    normalizing factors usually <= 1). E8M0 (float8_e8m0fnu) stores powers of two
+    exactly, so 2.0**e casts losslessly. The spread exercises the exponent decode
+    plus the fractional/underflow path; the worst-case dequant product
+    (fp8 ~2^9 * 2^12 * 2^12 over K ~2^13) stays ~2^46, far under fp32 max, so the
+    `ref` GEMM stays finite. (Genuine overflow extremes 2^+-127 are not
+    ref-distinguishable -- kernel and ref both go Inf -- so the goal is a wide
+    *finite* spread, not literal overflow.)
     """
     for idx0 in range(align_up(mn, SF_MN_GROUP_SIZE)):
         for idx1 in range(
             0, align_up(k, SF_VECTOR_SIZE * SF_ATOM_K), SF_VECTOR_SIZE
         ):
             if idx0 < mn and idx1 < k:
-                var sv = (
-                    (1 << random_ui64(0, 3))
-                    .cast[DType.float32]()
-                    .cast[scale_dtype]()
-                )
+                var e = Int(random_ui64(0, 24)) - 12
+                var sv = exp2(Float64(e)).cast[scale_dtype]()
                 set_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
                     scales, idx0, idx1, sv
                 )

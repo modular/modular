@@ -25,6 +25,16 @@
 # (the complex multiply (x_re + i x_im)*(f_re + i f_im); see rope_value). Q is
 # roped into `output`; the K cache is roped in place (read K, rope, store K).
 #
+# PARTIAL ROTARY (`-D fqr_rope_dim=64`): the M3 sparse INDEXER ropes only the
+# last `rope_dim` head-dim elements (idx_head_dim=128, rotary_dim=64,
+# partial_rotary_factor 0.5). The kernel reads rope_dim from
+# freqs_cis.static_shape[1] (fused_qk_rope.mojo:367); for the interleaved
+# has_nope path (:451-457) it passes the first `unroped_dim = head_dim - rope_dim`
+# elements through (identity coeff) and ropes the last `rope_dim` with freqs
+# column `head_dim_idx - unroped_dim`. K-cache prefix elements are left untouched
+# (the kernel `return`s before the store; :480-482). This mirrors
+# test_fused_qk_rope_ragged.mojo::execute_fused_qk_rope_ragged_mla (rope_dim=64).
+#
 # The fuzzable surface is the *ragged shape*, which drives every runtime index:
 #   - batch size + per-batch new-token counts (`input_row_offsets`): the
 #     per-row batch lookup and the elementwise grid (q_proj.dim[0] tokens x
@@ -32,11 +42,12 @@
 #   - per-batch cache lengths: `post_seq_idx = cache_length(b) + token` indexes
 #     the freqs row AND the paged K-cache slot (the `% PAGE_SIZE` page-crossing
 #     edge is the interesting modulus);
-#   - num_q_heads / num_kv_heads are compile-time `-D` (kept small by default for
-#     a fast/cheap ref oracle); head_dim is fixed at the M3 dense value 128.
+#   - num_q_heads / num_kv_heads / rope_dim are compile-time `-D` (kept small by
+#     default for a fast/cheap ref oracle); head_dim is fixed at the M3 value 128.
 #
 #   -D fqr_num_q_heads=16 -D fqr_num_kv_heads=4   [default: small + fast ref]
 #   -D fqr_num_q_heads=64 -D fqr_num_kv_heads=4   M3 dense attention (layers 0-2)
+#   -D fqr_rope_dim=64                            M3 sparse indexer (partial rope)
 #
 # Three argv modes so the Python orchestrator can drive it with a per-case
 # timeout + process isolation (a hanging case only kills its own subprocess):
@@ -94,12 +105,22 @@ from _fuzz import (
 # Fixed M3 dense config. num_q_heads / num_kv_heads are -D-overridable.
 # ===----------------------------------------------------------------------=== #
 
-comptime HEAD_DIM = 128  # M3 dense head_dim == rope_dim (full interleaved rope)
+comptime HEAD_DIM = 128  # M3 dense head_dim
 comptime PAGE_SIZE = 128  # paged-cache page size; the interesting cache modulus
 comptime NUM_LAYERS = 1
 
 comptime num_q_heads = get_defined_int["fqr_num_q_heads", 16]()
 comptime num_kv_heads = get_defined_int["fqr_num_kv_heads", 4]()
+
+# RoPE width. Default == HEAD_DIM (full interleaved rope, M3 dense attention).
+# Set < HEAD_DIM (e.g. 64) for PARTIAL rotary -- the M3 sparse indexer uses
+# idx_head_dim=128 with rotary_dim=64 (partial_rotary_factor 0.5). The kernel
+# derives rope_dim from freqs_cis.static_shape[1] (fused_qk_rope.mojo:367) and
+# ropes the LAST rope_dim head-dim elements (interleaved + has_nope path,
+# :451-457), passing the first UNROPED_DIM through unchanged -- matching
+# test_fused_qk_rope_ragged.mojo::execute_fused_qk_rope_ragged_mla.
+comptime ROPE_DIM = get_defined_int["fqr_rope_dim", 128]()
+comptime UNROPED_DIM = HEAD_DIM - ROPE_DIM  # pass-through prefix width
 
 comptime dtype = DType.bfloat16  # q / output / K-cache dtype
 comptime freq_dtype = DType.float32  # precomputed RoPE freqs (interleaved cos/sin)
@@ -267,17 +288,20 @@ def fill_stable[
 def fill_freqs(freqs: Span[mut=True, Scalar[freq_dtype], _], num_rows: Int):
     """Fill `freqs_cis` as interleaved magnitude-1 (cos, sin) pairs.
 
-    Column `2j` = cos(pos * theta^(-2j/HEAD_DIM)), column `2j+1` = sin(...). The
-    unit magnitude means RoPE preserves |x| (no overflow); the ref oracle reads
-    these exact values back, so only the interleaving convention must match the
-    kernel -- not any particular frequency schedule.
+    The tensor has `ROPE_DIM` columns (== HEAD_DIM for full rope). Column `2j` =
+    cos(pos * theta^(-2j/ROPE_DIM)), column `2j+1` = sin(...). The unit magnitude
+    means RoPE preserves |x| (no overflow); the ref oracle reads these exact
+    values back, so only the interleaving convention must match the kernel -- not
+    any particular frequency schedule. For partial rope, column `c` corresponds
+    to the kernel's `head_dim_idx - UNROPED_DIM == c` (it loads
+    freqs_cis[pos, head_dim_idx - unroped_dim]; fused_qk_rope.mojo:457).
     """
     for pos in range(num_rows):
-        for j in range(HEAD_DIM // 2):
-            var inv = THETA ** (-(2.0 * Float64(j)) / Float64(HEAD_DIM))
+        for j in range(ROPE_DIM // 2):
+            var inv = THETA ** (-(2.0 * Float64(j)) / Float64(ROPE_DIM))
             var angle = Float64(pos) * inv
-            freqs[pos * HEAD_DIM + 2 * j] = cos(angle).cast[freq_dtype]()
-            freqs[pos * HEAD_DIM + 2 * j + 1] = sin(angle).cast[freq_dtype]()
+            freqs[pos * ROPE_DIM + 2 * j] = cos(angle).cast[freq_dtype]()
+            freqs[pos * ROPE_DIM + 2 * j + 1] = sin(angle).cast[freq_dtype]()
 
 
 # ===----------------------------------------------------------------------=== #
@@ -371,7 +395,7 @@ def run_one_case(
 
     var freq_rows = max(1, max_post)
     var freqs_host = ctx.enqueue_create_host_buffer[freq_dtype](
-        freq_rows * HEAD_DIM
+        freq_rows * ROPE_DIM
     )
     fill_freqs(freqs_host.as_span(), freq_rows)
 
@@ -413,7 +437,7 @@ def run_one_case(
     ctx.enqueue_copy(q_device, q_host)
     var qout_device = ctx.enqueue_create_buffer[dtype](q_size)
     var freqs_device = ctx.enqueue_create_buffer[freq_dtype](
-        freq_rows * HEAD_DIM
+        freq_rows * ROPE_DIM
     )
     ctx.enqueue_copy(freqs_device, freqs_host)
     var cache_lengths_device = ctx.enqueue_create_buffer[DType.uint32](
@@ -480,7 +504,9 @@ def run_one_case(
         qout_device,
         row_major((total_q_tokens, Idx[num_q_heads], Idx[HEAD_DIM])),
     )
-    var freqs = TileTensor(freqs_device, row_major((freq_rows, Idx[HEAD_DIM])))
+    # freqs last-dim == ROPE_DIM: the kernel reads rope_dim from
+    # freqs_cis.static_shape[1] (fused_qk_rope.mojo:367).
+    var freqs = TileTensor(freqs_device, row_major((freq_rows, Idx[ROPE_DIM])))
     var row_offsets = TileTensor(row_offsets_device, row_major(batch_size + 1))
 
     # === Kernel under test ===================================================
@@ -535,16 +561,29 @@ def _rope_ref(
     out_span: Span[mut=True, Scalar[dtype], _],
     out_base: Int,
 ):
-    """Interleaved complex RoPE reference matching `rope_value` (fp64)."""
-    for j in range(HEAD_DIM // 2):
-        var x_re = x[base + 2 * j].cast[DType.float64]()
-        var x_im = x[base + 2 * j + 1].cast[DType.float64]()
-        var f_re = freqs[post * HEAD_DIM + 2 * j].cast[DType.float64]()
-        var f_im = freqs[post * HEAD_DIM + 2 * j + 1].cast[DType.float64]()
-        out_span[out_base + 2 * j] = (x_re * f_re - x_im * f_im).cast[dtype]()
-        out_span[out_base + 2 * j + 1] = (x_re * f_im + x_im * f_re).cast[
-            dtype
-        ]()
+    """Interleaved complex RoPE reference matching `rope_value` (fp64).
+
+    Partial rope (ROPE_DIM < HEAD_DIM): the first UNROPED_DIM elements pass
+    through unchanged and the LAST ROPE_DIM elements are roped, with freqs column
+    `2j` indexing the roped sub-range (kernel loads
+    freqs_cis[post, head_dim_idx - unroped_dim]; fused_qk_rope.mojo:457).
+    For full rope (UNROPED_DIM == 0) this is the original all-element rope.
+    """
+    # Pass-through prefix (no rope; identity coefficient in the kernel).
+    for d in range(UNROPED_DIM):
+        out_span[out_base + d] = x[base + d]
+    # Roped suffix: ROPE_DIM elements as interleaved (re, im) pairs.
+    for j in range(ROPE_DIM // 2):
+        var x_re = x[base + UNROPED_DIM + 2 * j].cast[DType.float64]()
+        var x_im = x[base + UNROPED_DIM + 2 * j + 1].cast[DType.float64]()
+        var f_re = freqs[post * ROPE_DIM + 2 * j].cast[DType.float64]()
+        var f_im = freqs[post * ROPE_DIM + 2 * j + 1].cast[DType.float64]()
+        out_span[out_base + UNROPED_DIM + 2 * j] = (
+            x_re * f_re - x_im * f_im
+        ).cast[dtype]()
+        out_span[out_base + UNROPED_DIM + 2 * j + 1] = (
+            x_re * f_im + x_im * f_re
+        ).cast[dtype]()
 
 
 def _verify_ref(
@@ -647,6 +686,14 @@ def _verify_ref(
 
 
 def main() raises:
+    # Partial rope must keep both bands SIMD-aligned: the kernel ropes per
+    # `kernel_simd_width = gcd(simd_width, rope_dim)` elements and the rope /
+    # pass-through split must fall on that boundary. ROPE_DIM even and a
+    # power-of-two divisor of HEAD_DIM (e.g. 64) satisfies this.
+    comptime assert 0 < ROPE_DIM <= HEAD_DIM, "fqr_rope_dim must be in (0, 128]"
+    comptime assert ROPE_DIM % 2 == 0, "fqr_rope_dim must be even"
+    comptime assert UNROPED_DIM % 2 == 0, "head_dim - rope_dim must be even"
+
     var args = collect_args()
     var mode = flag(args, "--mode", "fuzz")
     var the_seed = flag_int(args, "--seed", fuzz_seed)
