@@ -280,6 +280,23 @@ _TARGETS: dict[str, FuzzTarget] = {
         ),
         default_oracle="memcheck",
     ),
+    "fused_qk_rms_norm": FuzzTarget(
+        name="fused_qk_rms_norm",
+        bazel_target=(
+            "//max/kernels/test/gpu/fuzz:fuzz_fused_qk_rms_norm.mojo.test"
+        ),
+        binary=(
+            "bazel-bin/max/kernels/test/gpu/fuzz/"
+            "fuzz_fused_qk_rms_norm.mojo.test"
+        ),
+        description=(
+            "fused_qk_rms_norm_ragged_paged: MiniMax-M3 per-head QK RMSNorm of"
+            " Q + the in-place K rows of the paged KV cache (weight_offset"
+            " runtime, multiply_before_cast True). ragged shape fuzz;"
+            " memcheck/ref (verifies q_output + the in-place K-cache rows)"
+        ),
+        default_oracle="ref",
+    ),
     "topk_sampling": FuzzTarget(
         name="topk_sampling",
         bazel_target=(
