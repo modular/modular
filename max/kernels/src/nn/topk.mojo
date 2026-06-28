@@ -2115,9 +2115,10 @@ def fused_token_sampling_gpu[
         task_id=Int(ctx.id()),
     ):
         # If all items in the batch, want to sample all tokens (top_k==-1, top_p=1)
-        # We can use gumbel sampling.
+        # Use the fused kernel: generates Gumbel noise inline and argmax-reduces
+        # in a single pass with no intermediate HBM buffer.
         if max_k == -1 and min_top_p == 1.0:
-            gumbel_sampling_gpu(
+            gumbel_sampling_fused_gpu(
                 ctx,
                 input,
                 out_idxs,
@@ -2305,6 +2306,233 @@ def apply_gumbel_noise_kernel[
                         (N - N_res) + tid_in_group,
                         noised_logit.cast[dtype](),
                     )
+
+
+# ===-----------------------------------------------------------------------===#
+# Fused Gumbel-noise + argmax (single kernel, no intermediate HBM buffer)
+# ===-----------------------------------------------------------------------===#
+#
+# Target families: NVIDIA (SM90/SM100) and AMD CDNA. One block per batch row,
+# grid-strides over the vocab dimension, generates Gumbel(0,1) noise inline in
+# registers (identical RNG/indexing to `apply_gumbel_noise_kernel`), feeds each
+# noised logit into a per-thread `TopK_2` running max, then a block-level argmax
+# reduction (`_block_reduce_topk`) writes the winning token to `out_idxs`.
+#
+# This fuses `apply_gumbel_noise_kernel` + the stage-1/2 argmax of
+# `topk_gpu[..., max_k=1]` into a single launch, saving one full
+# `[batch, vocab]` HBM round-trip (the noised-logits temp buffer the two-kernel
+# path writes then reads back).
+#
+# Bit-identity contract: for vocab element `j` of token `b`, the noise added
+# here is the SAME value the two-kernel path adds. Bit-identity holds because
+# the noise for element `j` depends only on `(seed_val, N, j)` via the exact
+# same SIMD-chunked RNG sequence (`Random(seed=seed_val*N + chunk_idx)` then
+# `step_uniform()` per 4-lane group), independent of grid layout. The argmax
+# winner is therefore identical (argmax is permutation-invariant; ties resolve
+# to the lowest index in both paths via `TopK_2.insert`'s strict `>` and the
+# block reduce keeping the first maximum).
+
+
+@__name(t"gumbel_argmax_fused_{dtype}_{out_idx_type}")
+def _gumbel_argmax_fused_kernel[
+    dtype: DType,
+    out_idx_type: DType,
+    InputLayoutType: TensorLayout,
+    OutIdxLayoutType: TensorLayout,
+](
+    input: TileTensor[dtype, InputLayoutType, ImmutAnyOrigin],
+    out_idxs: TileTensor[
+        mut=True, out_idx_type, OutIdxLayoutType, MutAnyOrigin
+    ],
+    temperature: Optional[UnsafePointer[Float32, ImmutAnyOrigin]],
+    seed: Optional[UnsafePointer[UInt64, ImmutAnyOrigin]],
+):
+    """Fused Gumbel-noise + argmax. One block per batch row.
+
+    Each thread grid-strides over the vocab dimension, applies Gumbel(0,1)
+    noise to its logits using the same RNG sequence as
+    `apply_gumbel_noise_kernel` (bit-identical), tracks a per-thread argmax in a
+    `TopK_2`, and the block reduces to the global argmax which is written to
+    `out_idxs[batch_id]`.
+
+    Parameters:
+        dtype: Element type of the input logits.
+        out_idx_type: Output index dtype.
+        InputLayoutType: Layout of the `[batch, vocab]` input.
+        OutIdxLayoutType: Layout of the `[batch, 1]` output indices.
+
+    Args:
+        input: Input logits `[batch, vocab]`.
+        out_idxs: Output sampled indices `[batch, 1]`.
+        temperature: Optional per-row temperature scaling `[batch]`.
+        seed: Optional per-row random seeds `[batch]`.
+    """
+    comptime EPS = Float32(1e-20)
+    comptime LOG2 = Float32(0.6931471806)
+    comptime MIN_TEMP = Float32(1e-6)
+
+    comptime simd_width = simd_width_of[dtype]()
+    comptime assert (
+        simd_width % 4 == 0
+    ), "SIMD width must be divisible by 4 to match RNG output size."
+
+    var N = Int(input.dim(1))
+    var tid = thread_idx.x
+    var block_size = block_dim.x
+    var batch_id = block_idx.x
+
+    var temp_val = Float32(1.0)
+    if temperature:
+        temp_val = temperature.unsafe_value()[batch_id]
+        temp_val = max(temp_val, MIN_TEMP)
+
+    var seed_val = UInt64(0)
+    if seed:
+        seed_val = seed.unsafe_value()[batch_id]
+
+    var ld_ptr = input.ptr + batch_id * N
+    comptime align = align_of[SIMD[dtype, simd_width]]()
+
+    # Per-thread running argmax over the (noised) logits.
+    var partial = TopK_2[dtype, True]()
+
+    with PDL():
+        # Main region: process vocab in `simd_width`-sized chunks. The RNG is
+        # seeded per chunk index `i` exactly as `apply_gumbel_noise_kernel`, so
+        # the noise added to each element is bit-identical.
+        for i in range(tid, N // simd_width, block_size):
+            var rng_state = Random(
+                seed=seed_val * UInt64(N) + UInt64(i),
+            )
+            var input_val: SIMD[dtype, simd_width]
+            if N % simd_width == 0:
+                input_val = ld_ptr.load[width=simd_width, alignment=align](
+                    i * simd_width
+                )
+            else:
+                input_val = ld_ptr.load[width=simd_width](i * simd_width)
+            var noised_logits = input_val.cast[DType.float32]() / temp_val
+
+            comptime for loop_i in range(simd_width // 4):
+                var rnd_val = rng_state.step_uniform()
+                rnd_val = -LOG2 * log2(-log2(rnd_val + EPS) + EPS)
+
+                comptime for vec_i in range(4):
+                    noised_logits[4 * loop_i + vec_i] += rnd_val[vec_i]
+
+            # Feed each noised element into the per-thread argmax.
+            comptime for lane in range(simd_width):
+                partial.insert(
+                    noised_logits[lane].cast[dtype](),
+                    i * simd_width + lane,
+                )
+
+        # Tail region: elements not covered by a full `simd_width` chunk. Uses
+        # the same per-thread seed as `apply_gumbel_noise_kernel`.
+        if N % simd_width != 0:
+            var N_res = N % simd_width
+            var rng_state = Random(
+                seed=seed_val * UInt64(N) + UInt64(N - N_res) + UInt64(tid),
+            )
+            if tid < N_res:
+                var input_val = ld_ptr.load((N - N_res) + tid).cast[
+                    DType.float32
+                ]()
+                var noised_logit = input_val / temp_val
+                var rnd_val = rng_state.step_uniform()[0]
+                rnd_val = -LOG2 * log2(-log2(rnd_val + EPS) + EPS)
+                noised_logit += rnd_val
+                partial.insert(
+                    noised_logit.cast[dtype](),
+                    (N - N_res) + tid,
+                )
+
+        # Block-level argmax reduction over per-thread winners.
+        var total = _block_reduce_topk[ascending=True](partial)
+
+        if tid == 0:
+            out_idxs.ptr[batch_id] = Scalar[DType.int](total.p).cast[
+                out_idx_type
+            ]()
+
+
+@always_inline
+def gumbel_sampling_fused_gpu[
+    dtype: DType,
+    out_idx_type: DType,
+    //,
+    TemperatureLayoutType: TensorLayout = RowMajorLayout[Int64],
+    SeedLayoutType: TensorLayout = RowMajorLayout[Int64],
+](
+    ctx: DeviceContext,
+    input: TileTensor[mut=False, dtype, ...],
+    out_idxs: TileTensor[mut=True, out_idx_type, ...],
+    temperature: Optional[
+        TileTensor[DType.float32, TemperatureLayoutType, ImmutAnyOrigin]
+    ] = None,
+    seed: Optional[
+        TileTensor[DType.uint64, SeedLayoutType, ImmutAnyOrigin]
+    ] = None,
+) raises:
+    """
+    Fused Gumbel sampling: applies Gumbel(0,1) noise and selects the argmax in a
+    single GPU kernel launch (no intermediate noised-logits HBM buffer).
+
+    Mathematically equivalent to `gumbel_sampling_gpu` and produces bit-identical
+    results for the same seed, but saves one full `[batch, vocab]` HBM
+    round-trip by fusing noise generation and argmax.
+
+    Args:
+        ctx: Device context for GPU operations.
+        input: Input logits tensor [batch, vocab_size].
+        out_idxs: Output tensor for sampled indices [batch, 1].
+        temperature: Optional per-token temperature scaling [batch].
+        seed: Optional per-token random seeds [batch] for reproducibility.
+    """
+
+    var input_shape = rebind[IndexList[input.rank]](
+        coord_to_index_list(input.layout.shape_coord())
+    )
+
+    @parameter
+    def trace_information() -> String:
+        return trace_arg("input", input_shape, dtype)
+
+    with Trace[TraceLevel.OP, target=StaticString("gpu")](
+        "gumbel_sampling_fused_gpu",
+        Trace[TraceLevel.OP]._get_detail_str[trace_information](),
+        task_id=Int(ctx.id()),
+    ):
+        var batch_size = Int(input.dim(0))
+
+        comptime hw_info = ctx.default_device_info
+        comptime block_size = hw_info.max_thread_block_size
+
+        comptime kernel = _gumbel_argmax_fused_kernel[
+            dtype,
+            out_idx_type,
+            input.LayoutType,
+            out_idxs.LayoutType,
+        ]
+
+        var temperature_ptr: Optional[
+            UnsafePointer[Float32, ImmutAnyOrigin]
+        ] = None
+        if temperature:
+            temperature_ptr = temperature.value().ptr
+        var seed_ptr: Optional[UnsafePointer[UInt64, ImmutAnyOrigin]] = None
+        if seed:
+            seed_ptr = seed.value().ptr
+
+        ctx.enqueue_function[kernel](
+            input.as_immut(),
+            out_idxs,
+            temperature_ptr,
+            seed_ptr,
+            grid_dim=batch_size,
+            block_dim=block_size,
+            attributes=pdl_launch_attributes(PDLLevel.ON),
+        )
 
 
 @always_inline
