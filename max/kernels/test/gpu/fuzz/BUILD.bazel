@@ -736,6 +736,47 @@ mojo_test(
     ],
 )
 
+# Target: MiniMax-M3 block-sparse PREFILL ATTENTION (`msa_sm100_prefill_plan` +
+# `msa_sm100_prefill_run`, in //Kernels/lib/msa) -- the chunked-prefill kernel
+# that attends the indexer-selected blocks over a ragged Q batch via an
+# on-device reverse-CSR + block-major fwd + combine. Distinct from MSA decode
+# (single-token) and the indexer (block selection). Fuzzes the ragged shape
+# (batch, per-batch seqlen_q / seqlen_k driving the CSR work decomposition +
+# q-chunking) + the q2k block selection (incl. the C==0 empty-split edge);
+# topk/num_q_heads/group/causal are compile-time (`-D msap_topk=.. msap_num_q_heads=..
+# msap_group=.. msap_causal=..`, default 8/1/1/0); head_dim fixed at 128.
+# memory-safety primary (device CSR build + block-major scatter); `ref` (--check,
+# default) is the f64 block-sparse oracle from the kernel's authority test. B200-only.
+mojo_test(
+    name = "fuzz_msa_prefill.mojo.test",
+    size = "large",
+    srcs = [
+        "_fuzz.mojo",
+        "fuzz_msa_prefill.mojo",
+    ],
+    exec_properties = {
+        "test.resources:gpu-memory": "8",
+    },
+    main = "fuzz_msa_prefill.mojo",
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    target_compatible_with = [
+        "//:has_gpu",
+        "//:b200_gpu",
+    ],
+    deps = [
+        "//Kernels/lib/msa",
+        "//max:internal_utils",
+        "//max:kv_cache",
+        "//max:linalg",
+        "//max:nn",
+        "//max:structured_kernels",
+        "@mojo//:std",
+    ],
+)
+
 # Target: token sampler `fused_token_sampling_gpu` (the production top-k+top-p
 # sampling op). Two oracles: (1) a validity contract that every sampled
 # out_idxs is in [0, vocab) -- a negative / out-of-range token id is FAIL; and

@@ -253,6 +253,19 @@ _TARGETS: dict[str, FuzzTarget] = {
         ),
         default_oracle="ref",
     ),
+    "msa_prefill": FuzzTarget(
+        name="msa_prefill",
+        bazel_target="//max/kernels/test/gpu/fuzz:fuzz_msa_prefill.mojo.test",
+        binary="bazel-bin/max/kernels/test/gpu/fuzz/fuzz_msa_prefill.mojo.test",
+        description=(
+            "msa_sm100_prefill_plan + _run: MiniMax-M3 block-sparse PREFILL"
+            " attention (ragged Q, on-device reverse-CSR + block-major fwd +"
+            " combine). Fuzzes the ragged shape (per-batch seqlen_q/seqlen_k +"
+            " q2k selection incl. C==0). ref = f64 block-sparse oracle (the"
+            " kernel's authority); memcheck (CSR build + scatter OOB)"
+        ),
+        default_oracle="ref",
+    ),
     "mla_decode": FuzzTarget(
         name="mla_decode",
         bazel_target=("//max/kernels/test/gpu/fuzz:fuzz_mla_decode.mojo.test"),
