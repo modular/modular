@@ -266,7 +266,7 @@ def test_parameter_list_splat_zero() raises:
 
 
 def test_variadic_contains() raises:
-    comptime types = TypeList.of[Trait=Writable, Int, String, Float32]()
+    comptime types = TypeList.of[Int, String, Float32]()
     assert_equal(types.size, 3)
     assert_true(types.contains[Int]())
     assert_true(types.contains[String]())
@@ -301,9 +301,7 @@ def test_slice_types_empty() raises:
 
 
 def test_slice_types() raises:
-    comptime types = TypeList.of[Trait=AnyType, Int, String, Float32]().slice[
-        start=0, end=2
-    ]()
+    comptime types = TypeList.of[Int, String, Float32]().slice[start=0, end=2]()
     assert_equal(types.size, 2)
     assert_true(_type_is_eq[types[0], Int]())
     assert_true(_type_is_eq[types[1], String]())
@@ -329,6 +327,7 @@ struct Baz(TestErrable):
 
 def test_map_types_to_types() raises:
     comptime Mapper[T: TestErrable] = T.ErrorType
+    # TODO: to remove `Trait=TestErrable`, we need to better support generator type conversion.
     comptime types = TypeList.of[Trait=TestErrable, Foo, Baz]().map[Mapper]()
     assert_equal(types.size, 2)
     assert_true(_type_is_eq[types[0], Int]())

@@ -41,7 +41,7 @@ from op_utils import _get_dtype, _get_buffer_ptr, _get_size, _get_ctx
 
 # Binary comparison operations
 comptime BINARY_COMPARISON_OPS = TypeList.of[
-    Trait=ElementwiseBinaryComparisonOp, Equal, Greater, GreaterEqual, NotEqual
+    Equal, Greater, GreaterEqual, NotEqual
 ]()
 
 # =============================================================================

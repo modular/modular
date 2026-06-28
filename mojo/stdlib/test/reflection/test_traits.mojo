@@ -23,20 +23,10 @@ struct NoConformances:
 
 
 def test_all_conforms_to[Trait: type_of(AnyType)]() raises:
-    assert_true(TypeList.of[Trait=AnyType, Int]().all_conforms_to[Trait]())
-    assert_true(
-        TypeList.of[Trait=AnyType, Int, String, Float64]().all_conforms_to[
-            Trait
-        ]()
-    )
-    assert_false(
-        TypeList.of[Trait=AnyType, Int, NoConformances]().all_conforms_to[
-            Trait
-        ]()
-    )
-    assert_false(
-        TypeList.of[Trait=AnyType, NoConformances]().all_conforms_to[Trait]()
-    )
+    assert_true(TypeList.of[Int]().all_conforms_to[Trait]())
+    assert_true(TypeList.of[Int, String, Float64]().all_conforms_to[Trait]())
+    assert_false(TypeList.of[Int, NoConformances]().all_conforms_to[Trait]())
+    assert_false(TypeList.of[NoConformances]().all_conforms_to[Trait]())
 
 
 def main() raises:

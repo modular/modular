@@ -449,13 +449,13 @@ struct TypeList[
         ]
 
     comptime _ContainsTypePredicate[
-        search: Self.Trait,
+        search: AnyType,
         element: Self.Trait,
     ] = _type_is_eq_parse_time[element, search]()
 
     @always_inline("builtin")
     @staticmethod
-    def contains[type: Self.Trait]() -> Bool:
+    def contains[type: AnyType]() -> Bool:
         """Checks if a type is contained in this type list.
 
         Parameters:

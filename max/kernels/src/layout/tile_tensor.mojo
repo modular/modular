@@ -273,12 +273,11 @@ struct TileTensor[
     def _is_convertible_to_device_type[T: AnyType]() -> Bool:
         comptime if Self.mut:
             return TypeList.of[
-                Trait=AnyType,
                 Self,
                 Self.OriginCastType[ImmutOrigin(Self.origin)],
             ]().contains[T]()
         else:
-            return TypeList.of[Trait=AnyType, Self]().contains[T]()
+            return TypeList.of[Self]().contains[T]()
 
     @staticmethod
     def get_type_name() -> String:
