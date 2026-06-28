@@ -329,6 +329,25 @@ _TARGETS: dict[str, FuzzTarget] = {
         ),
         default_oracle="memcheck",
     ),
+    "fused_qkv_index_matmul_mxfp8": FuzzTarget(
+        name="fused_qkv_index_matmul_mxfp8",
+        bazel_target=(
+            "//max/kernels/test/gpu/fuzz:"
+            "fuzz_fused_qkv_index_matmul_mxfp8.mojo.test"
+        ),
+        binary=(
+            "bazel-bin/max/kernels/test/gpu/fuzz/"
+            "fuzz_fused_qkv_index_matmul_mxfp8.mojo.test"
+        ),
+        description=(
+            "generic_fused_qkv_index_matmul_kv_cache_paged_ragged_scale_float4"
+            " (MXFP8): MiniMax-M3 5-way dual-cache fused projection. Returns Q +"
+            " IndexQ, scatters K/V to the MAIN cache + IndexK to the INDEX (MLA)"
+            " cache. ragged shape fuzz; memcheck (two cache-scatter OOB) + ref"
+            " (host dequant GEMM: Q+IndexQ + main K/V + index K)"
+        ),
+        default_oracle="memcheck",
+    ),
     "topk_sampling": FuzzTarget(
         name="topk_sampling",
         bazel_target=(

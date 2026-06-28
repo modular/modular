@@ -293,6 +293,49 @@ mojo_test(
     ],
 )
 
+# Target: MiniMax-M3's 5-way dual-cache fused projection
+# (`generic_fused_qkv_index_matmul_kv_cache_paged_ragged_scale_float4`; op
+# `mo.fused_qkv_index_matmul.ragged.paged.scale.mxfp8`). One MXFP8 block-scaled
+# GEMM over the concatenated weight [Wq|Wk|Wv|Wiq|Wik]: returns Q + IndexQ in a
+# combined output, scatters K/V into the MAIN (MHA) paged cache and IndexK into
+# the INDEX (MLA, single latent head, K only) paged cache. Bit-exactness vs
+# separate matmuls is conditional on every band landing on a 128-elem scale block
+# -- the flagged accuracy suspect -- so `ref` (--check 1, host fp32 dequant GEMM)
+# verifies BOTH outputs (Q + IndexQ) AND all three cache read-backs (main K, main
+# V, index K). The ragged shape (batch, per-batch cache lengths -> scatter slots,
+# per-batch new-token counts) is the runtime fuzz axis (M = total tokens);
+# head counts/hidden are compile-time (`-D g2_num_q_heads=.. g2_num_kv_heads=..
+# g2_num_index_heads=.. g2_hidden=..`, default 8/1/4/256); head_dim fixed at 128.
+# memory-safety primary (two cache scatters = OOB-write risk). B200-only.
+mojo_test(
+    name = "fuzz_fused_qkv_index_matmul_mxfp8.mojo.test",
+    size = "large",
+    srcs = [
+        "_fuzz.mojo",
+        "fuzz_fused_qkv_index_matmul_mxfp8.mojo",
+    ],
+    exec_properties = {
+        "test.resources:gpu-memory": "8",
+    },
+    main = "fuzz_fused_qkv_index_matmul_mxfp8.mojo",
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    target_compatible_with = [
+        "//:has_gpu",
+        "//:b200_gpu",
+    ],
+    deps = [
+        "//max:internal_utils",
+        "//max:kv_cache",
+        "//max:linalg",
+        "//max:nn",
+        "//max:structured_kernels",
+        "@mojo//:std",
+    ],
+)
+
 # Minimal repro probe for the decode-path hang found by the Slice 0 fuzzer.
 # `num_keys` / `valid_length` come from argv (`--test_arg=`), so one build probes
 # many configs. Tagged `manual` (a hanging config TIMES OUT by design).
