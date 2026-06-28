@@ -297,6 +297,21 @@ _TARGETS: dict[str, FuzzTarget] = {
         ),
         default_oracle="ref",
     ),
+    "fused_qk_rope": FuzzTarget(
+        name="fused_qk_rope",
+        bazel_target=(
+            "//max/kernels/test/gpu/fuzz:fuzz_fused_qk_rope.mojo.test"
+        ),
+        binary=(
+            "bazel-bin/max/kernels/test/gpu/fuzz/fuzz_fused_qk_rope.mojo.test"
+        ),
+        description=(
+            "fused_qk_rope_ragged: MiniMax-M3 interleaved full-head_dim RoPE of"
+            " Q + the in-place K rows of the paged KV cache. ragged shape fuzz;"
+            " memcheck/ref (verifies output + the in-place-roped K-cache rows)"
+        ),
+        default_oracle="ref",
+    ),
     "topk_sampling": FuzzTarget(
         name="topk_sampling",
         bazel_target=(
