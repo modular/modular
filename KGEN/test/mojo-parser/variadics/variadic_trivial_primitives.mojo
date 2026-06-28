@@ -20,3 +20,9 @@ comptime AddOne[i: Int]: Int = i + 1
 # Tabulate: [0, 1, 2, 3, 4] from index identity
 comptime TabulateIndices = ParameterList.tabulate[5, AddOne]
 # CHECK: lit.alias.decl *"TabulateIndices`{{.*}}:param_list<!Int> [{1}, {2}, {3}, {4}, {5}]>>
+
+# `TypeList.of` infers the element trait from its arguments, so no explicit
+# `Trait=` keyword argument is required.
+# CHECK-LABEL: lit.alias.decl *"TLOf{{[^"]*}}": meta<!lit.struct<#TypeList <:!lit.anytrait<!AnyType> !AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable_RegisterPassable_TrivialRegisterPassable
+# CHECK-SAME: :param_list<!AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable_RegisterPassable_TrivialRegisterPassable> [!Int, !Bool]
+comptime TLOf = TypeList.of[Int, Bool]

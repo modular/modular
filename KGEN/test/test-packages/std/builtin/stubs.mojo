@@ -1103,6 +1103,10 @@ struct TypeList[
     def __init__(out self):
         pass
 
+    comptime of[Trait: type_of(AnyType), //, *values: Trait] = TypeList[
+        Trait=Trait, values.values
+    ]
+
     @implicit
     @always_inline("builtin")
     def __init__(
