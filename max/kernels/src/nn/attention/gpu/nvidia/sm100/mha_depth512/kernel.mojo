@@ -53,6 +53,7 @@ from nn.attention.gpu.nvidia.sm100.attention_utils import (
     MBarType,
     elect,
     kv_sub_tile_rows,
+    o_store_tma_blocks_per_op,
 )
 from nn.attention.gpu.nvidia.common import (
     get_seq_info,
@@ -167,10 +168,22 @@ struct SM100MHADepth512[
         ],
         ragged_tma_store: RaggedTMA3DTile[
             Self.output_type,
-            Self.config.swizzle_mode,
+            # O output store is row-major SWIZZLE_NONE (decoupled from the
+            # swizzled Q/K/V/S/P buffers governed by `config.swizzle_mode`).
+            TensorMapSwizzle.SWIZZLE_NONE,
             BM=Self.config.BM,
             BN=Self.config.ov_depth,
+            middle_dim=Self.config.num_kv_heads if Self.fuse_gqa else Self.config.num_q_heads,
             group=Self.config.group if Self.fuse_gqa else 1,
+            # Single issuer, no combine (depth_splits=1): full-depth box, one
+            # batched rank-5 TMA. Must match dispatch.mojo's store.
+            tma_blocks_per_op=o_store_tma_blocks_per_op[
+                Self.output_type,
+                TensorMapSwizzle.SWIZZLE_NONE,
+                Self.config.ov_depth,
+                Self.config.group if Self.fuse_gqa else 1,
+                depth_splits=1,
+            ](),
         ],
         kv_lut: Self.KVLUTType,
         scale: Float32,

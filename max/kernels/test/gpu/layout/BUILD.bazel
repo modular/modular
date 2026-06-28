@@ -50,6 +50,9 @@ _EXTRA_CONSTRAINTS = {
     # Works on any NVIDIA GPU (H100+), incompatible with AMD
     "test_grouped_tensormap_update.mojo": ["//:nvidia_gpu"],
 } | {
+    # Experimental SWIZZLE_NONE uint32 TMA store, validated on B200.
+    "test_tma_swizzle_none_uint32_store.mojo": ["//:b200_gpu"],
+} | {
     "test_layout_tensor_copy_amd.mojo": ["//:amd_gpu"],
     "test_layout_tensor_copy_nvidia.mojo": ["//:nvidia_gpu"],
     # compile_info emits PTX assembly, which is NVIDIA-specific
