@@ -30,6 +30,8 @@ import zmq.asyncio
 from max.pipelines.modeling.types import (
     msgpack_numpy_decoder,
     msgpack_numpy_encoder,
+    msgpack_numpy_oob_decoder,
+    msgpack_numpy_oob_encoder,
 )
 from max.serve.queue import MAXPullQueue, MAXPushQueue
 
@@ -40,8 +42,9 @@ T = TypeVar("T")
 Request = TypeVar("Request")
 Reply = TypeVar("Reply")
 
-DEFAULT_MSGPACK_NUMPY_ENCODER = msgpack_numpy_encoder(use_shared_memory=True)
-
+# Encoder for the inter-node Router/Dealer sockets, which cannot use the
+# intra-node out-of-band path. It never uses shared memory (which does not work
+# across nodes); large numpy arrays do not cross these sockets anyway.
 NON_SHARED_MSGPACK_NUMPY_ENCODER = msgpack_numpy_encoder()
 
 
@@ -280,42 +283,55 @@ class ZmqPushSocket(Generic[T], ZmqSocket, MAXPushQueue[T]):
         *,
         endpoint: str,
         payload_type: Any,
-        use_shared_memory: bool = True,
     ) -> None:
-        self._serialize = (
-            DEFAULT_MSGPACK_NUMPY_ENCODER
-            if use_shared_memory
-            else NON_SHARED_MSGPACK_NUMPY_ENCODER
-        )
+        # Out-of-band, zero-copy serialization: large numpy arrays (e.g.
+        # multimodal pixel_values) ride as their own ZMQ frame instead of being
+        # copied into the msgpack stream. This supersedes both the shared-memory
+        # and tobytes-copy paths for the intra-node request/response queues --
+        # it is faster at every size and correct-by-construction (the received
+        # frame's lifetime is tied to the decoded array, so there is no
+        # /dev/shm segment to size, leak, or clean up).
+        self._serialize = msgpack_numpy_oob_encoder()
         super().__init__(endpoint=endpoint, mode=zmq.PUSH)
 
     def put(self, msg: T) -> None:
         """Send a message, blocking until the peer is ready."""
         if self._is_closed:
             raise RuntimeError("Socket is closed")
-        serialized_msg = self._serialize(msg)
-        self._socket.send(serialized_msg)
+        # `copy=False`: ZMQ holds a reference to each frame's buffer until its
+        # I/O thread has sent it, so the source arrays must not be mutated or
+        # freed before then. Each request owns fresh arrays, so this holds.
+        frames = self._serialize(msg)
+        self._socket.send_multipart(frames, copy=False)
 
     def put_nowait(self, msg: T) -> None:
         """Send a message without blocking; raises zmq.Again if peer isn't connected."""
         if self._is_closed:
             raise RuntimeError("Socket is closed")
-        serialized_msg = self._serialize(msg)
-        self._socket.send(serialized_msg, flags=zmq.NOBLOCK)
+        # See `put` for why `copy=False` is safe. The NOBLOCK EAGAIN lands at
+        # message granularity only because these sockets use unbounded HWM
+        # (SNDHWM=0): it fails on frame 0 without committing any frame, never
+        # mid-multipart. A finite HWM could accept frame 0 and then EAGAIN,
+        # which would desync the stream on retry.
+        frames = self._serialize(msg)
+        self._socket.send_multipart(frames, flags=zmq.NOBLOCK, copy=False)
 
 
 class ZmqPullSocket(Generic[T], ZmqSocket, MAXPullQueue[T]):
     def __init__(self, *, endpoint: str, payload_type: Any) -> None:
-        self._deserialize = msgpack_numpy_decoder(payload_type)
+        self._deserialize = msgpack_numpy_oob_decoder(payload_type)
         super().__init__(endpoint=endpoint, mode=zmq.PULL)
 
     def get_nowait(self) -> T:
         if self._is_closed:
             raise RuntimeError("Socket is closed")
-        serialized_msg = _get_helper(
-            lambda: self._socket.recv(flags=zmq.NOBLOCK)
+        # `copy=False`: received frames are views into ZMQ-owned memory.
+        # Out-of-band arrays decode to zero-copy views that keep their frame
+        # mapped for the view's lifetime (see _MsgpackNumpyOOBDecoder).
+        frames = _get_helper(
+            lambda: self._socket.recv_multipart(flags=zmq.NOBLOCK, copy=False)
         )
-        msg = self._deserialize(serialized_msg)
+        msg = self._deserialize(frames)
         return msg
 
 
@@ -423,28 +439,29 @@ class ZmqAsyncPushSocket(Generic[T], ZmqAsyncSocket):
         *,
         endpoint: str,
         payload_type: type[T] | object,
-        use_shared_memory: bool = True,
     ) -> None:
-        self._serialize = (
-            DEFAULT_MSGPACK_NUMPY_ENCODER
-            if use_shared_memory
-            else NON_SHARED_MSGPACK_NUMPY_ENCODER
-        )
+        # The async API-server side and the sync model-worker side are the two
+        # ends of the same intra-node queues, so this uses the same out-of-band
+        # transport as the sync `ZmqPushSocket` (see its `__init__`).
+        self._serialize = msgpack_numpy_oob_encoder()
         super().__init__(endpoint=endpoint, mode=zmq.PUSH)
 
     async def put(self, msg: T) -> None:
         """Send a message, awaiting until the socket is ready."""
         if self._is_closed:
             raise RuntimeError("Socket is closed")
-        serialized_msg = self._serialize(msg)
-        await self._socket.send(serialized_msg)
+        # See `ZmqPushSocket.put` for why `copy=False` is safe here.
+        frames = self._serialize(msg)
+        await self._socket.send_multipart(frames, copy=False)
 
     def put_nowait(self, msg: T) -> None:
         """Send a message without blocking; raises on EAGAIN."""
         if self._is_closed:
             raise RuntimeError("Socket is closed")
-        serialized_msg = self._serialize(msg)
-        self._socket.send(serialized_msg, flags=zmq.NOBLOCK)
+        # See `ZmqPushSocket.put_nowait`: unbounded SNDHWM keeps a NOBLOCK
+        # EAGAIN at message granularity, never mid-multipart.
+        frames = self._serialize(msg)
+        self._socket.send_multipart(frames, flags=zmq.NOBLOCK, copy=False)
 
 
 class ZmqAsyncPullSocket(Generic[T], ZmqAsyncSocket):
@@ -453,21 +470,23 @@ class ZmqAsyncPullSocket(Generic[T], ZmqAsyncSocket):
     def __init__(
         self, *, endpoint: str, payload_type: type[T] | object
     ) -> None:
-        self._deserialize = msgpack_numpy_decoder(payload_type)
+        self._deserialize = msgpack_numpy_oob_decoder(payload_type)
         super().__init__(endpoint=endpoint, mode=zmq.PULL)
 
     async def get(self) -> T:
         """Receive a message, awaiting until one is available."""
         if self._is_closed:
             raise RuntimeError("Socket is closed")
-        serialized_msg = await self._socket.recv()
-        return self._deserialize(serialized_msg)
+        # `copy=False`: received frames are views into ZMQ-owned memory that the
+        # decoded arrays keep mapped for their lifetime (see `ZmqPullSocket`).
+        frames = await self._socket.recv_multipart(copy=False)
+        return self._deserialize(frames)
 
     def get_nowait(self) -> T:
         """Receive a message without blocking; raises queue.Empty if none available."""
         if self._is_closed:
             raise RuntimeError("Socket is closed")
-        serialized_msg = _get_helper(
-            lambda: self._socket.recv(flags=zmq.NOBLOCK)
+        frames = _get_helper(
+            lambda: self._socket.recv_multipart(flags=zmq.NOBLOCK, copy=False)
         )
-        return self._deserialize(serialized_msg)
+        return self._deserialize(frames)
