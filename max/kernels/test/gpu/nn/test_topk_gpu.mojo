@@ -30,6 +30,7 @@ from nn.topk import (
     _top_k_cpu,
     _topk_dead_val,
     _topk_gpu,
+    gumbel_sampling_fused_gpu,
     gumbel_sampling_gpu,
     topk_gpu,
 )
@@ -727,6 +728,81 @@ def test_gumbel_zero_temperature[dtype: DType](ctx: DeviceContext) raises:
             )
 
 
+def test_gumbel_fused_matches_two_kernel[
+    dtype: DType
+](ctx: DeviceContext, N: Int, batch_size: Int) raises:
+    """Bit-identity: fused Gumbel-argmax must match the two-kernel path.
+
+    Both paths use the same Philox RNG seeded identically per vocab element, so
+    the noised logits are bit-identical and the argmax winner must match exactly
+    for every batch row.
+    """
+    print(
+        "==== Running gumbel fused == two-kernel: N=",
+        N,
+        " batch_size=",
+        batch_size,
+        sep="",
+    )
+
+    var device_in = ctx.enqueue_create_buffer[dtype](batch_size * N)
+    var device_temp = ctx.enqueue_create_buffer[DType.float32](batch_size)
+    var device_seed = ctx.enqueue_create_buffer[DType.uint64](batch_size)
+    var out_ref = ctx.enqueue_create_buffer[DType.int32](batch_size)
+    var out_fused = ctx.enqueue_create_buffer[DType.int32](batch_size)
+
+    with device_in.map_to_host() as in_host:
+        for i in range(batch_size * N):
+            in_host[i] = Scalar[dtype](random_float64(-5.0, 5.0))
+    with device_temp.map_to_host() as temp_host:
+        for b in range(batch_size):
+            temp_host[b] = Float32(0.5 + 0.1 * Float32(b))
+    with device_seed.map_to_host() as seed_host:
+        for b in range(batch_size):
+            seed_host[b] = UInt64(1234 + b)
+
+    var in_tt = TileTensor(device_in, row_major(batch_size, N))
+    var temp_tt = TileTensor(device_temp, row_major(batch_size))
+    var seed_tt = TileTensor(device_seed, row_major(batch_size))
+    var ref_tt = TileTensor(out_ref, row_major(batch_size, 1))
+    var fused_tt = TileTensor(out_fused, row_major(batch_size, 1))
+
+    gumbel_sampling_gpu(
+        ctx,
+        in_tt.as_unsafe_any_origin().as_immut(),
+        ref_tt,
+        temperature=temp_tt.as_unsafe_any_origin().as_immut(),
+        seed=seed_tt.as_unsafe_any_origin().as_immut(),
+    )
+    gumbel_sampling_fused_gpu(
+        ctx,
+        in_tt.as_unsafe_any_origin().as_immut(),
+        fused_tt,
+        temperature=temp_tt.as_unsafe_any_origin().as_immut(),
+        seed=seed_tt.as_unsafe_any_origin().as_immut(),
+    )
+    ctx.synchronize()
+
+    with out_ref.map_to_host() as ref_host, out_fused.map_to_host() as fused_host:
+        for b in range(batch_size):
+            assert_equal(
+                Int(fused_host[b]),
+                Int(ref_host[b]),
+                "fused != two-kernel at row "
+                + String(b)
+                + ": fused="
+                + String(Int(fused_host[b]))
+                + " ref="
+                + String(Int(ref_host[b])),
+            )
+
+    _ = device_in^
+    _ = device_temp^
+    _ = device_seed^
+    _ = out_ref^
+    _ = out_fused^
+
+
 def test_topk_zero_k_row[dtype: DType](ctx: DeviceContext) raises:
     """Regression: a per-row ``k == 0`` must emit the skip-token sentinel, not garbage.
 
@@ -1173,6 +1249,15 @@ def main() raises:
 
         # Regression: temperature == 0 in gumbel path must not yield NaN or -1.
         test_gumbel_zero_temperature[dtype](ctx)
+
+        test_gumbel_fused_matches_two_kernel[dtype](ctx, N=256, batch_size=2)
+        test_gumbel_fused_matches_two_kernel[dtype](ctx, N=32000, batch_size=8)
+        test_gumbel_fused_matches_two_kernel[dtype](
+            ctx, N=llama3_vocab_size, batch_size=4
+        )
+        test_gumbel_fused_matches_two_kernel[bf16_type](
+            ctx, N=32000, batch_size=8
+        )
 
         # Regression: a per-row k=0 must emit the skip-token sentinel (0), not garbage.
         test_topk_zero_k_row[dtype](ctx)
