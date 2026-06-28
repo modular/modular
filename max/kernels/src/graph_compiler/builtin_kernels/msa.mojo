@@ -205,6 +205,13 @@ struct Struct_msa_indexer_ragged_paged:
             # Use persistent score scratch. This is required for graph capture.
             var score = score_scratch.to_tile_tensor[DType.int64]()
 
+            # `prefix_lens` is the index-K `cache_lengths` BEFORE this step's
+            # IndexK was scattered (MAX `_is_cache_length_accurate=False`
+            # convention). The decode scorer needs the POST-write key count, so
+            # it adds this step's per-batch query-token count (from
+            # `input_row_offsets`) internally. On the decode route there is
+            # exactly one new token per sequence, so that count is 1; passing
+            # `input_row_offsets` keeps it correct for any ragged in-step count.
             sparse_indexer_decode[
                 DType.bfloat16,
                 type_of(k_operand),
@@ -215,6 +222,7 @@ struct Struct_msa_indexer_ragged_paged:
                 q.to_tile_tensor[DType.int64](),
                 k_operand,
                 prefix_lens.to_tile_tensor[DType.int64](),
+                input_row_offsets.to_tile_tensor[DType.int64](),
                 score,
                 out_idxs.to_tile_tensor[DType.int64](),
                 batch,

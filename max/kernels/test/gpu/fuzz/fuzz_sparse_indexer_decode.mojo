@@ -337,6 +337,12 @@ def run_one_case(
     )
     var out_t = TileTensor(out_dev, row_major((num_index_heads, batch, topk)))
 
+    # `seq_lens` here is the full inclusive key count, so the decode kernels'
+    # in-step add must be 0: pass an all-zeros `input_row_offsets`.
+    var iro_dev = ctx.enqueue_create_buffer[DType.uint32](batch + 1)
+    iro_dev.enqueue_fill(UInt32(0))
+    var iro_t = TileTensor(iro_dev, row_major(batch + 1))
+
     # Ragged index-K operand: [total_keys, 1, idx_head_dim].
     var k_buf = TileTensor(
         rebind[UnsafePointer[Scalar[kv_type], ImmutAnyOrigin]](
@@ -367,6 +373,7 @@ def run_one_case(
                 q_t,
                 k_operand,
                 sl_t,
+                iro_t,
                 score_t,
                 batch,
                 max_num_blocks,
@@ -402,6 +409,7 @@ def run_one_case(
         _ = k_dev
         _ = sl_dev
         _ = cro_dev
+        _ = iro_dev
         _ = score_dev
         _ = out_dev
         return
@@ -417,6 +425,7 @@ def run_one_case(
         q_t,
         k_operand,
         sl_t,
+        iro_t,
         score_t,
         batch,
         max_num_blocks,
@@ -432,6 +441,7 @@ def run_one_case(
     # --- top-k kernel (block_select_topk; mutates score_t in place) ----------
     sparse_indexer_decode_topk[num_index_heads, block_size](
         sl_t,
+        iro_t,
         score_t,
         out_t,
         batch,
@@ -569,6 +579,7 @@ def run_one_case(
     _ = k_dev
     _ = sl_dev
     _ = cro_dev
+    _ = iro_dev
     _ = score_dev
     _ = out_dev
 
