@@ -176,12 +176,8 @@ def test_idx2crd_no_static_1() raises:
 
 def test_idx2crd_result_types_runtime_idx() raises:
     """No shape-1 dims with runtime idx: all Scalar."""
-    comptime shape = TypeList.of[
-        Trait=CoordLike, ComptimeInt[3], ComptimeInt[4]
-    ]()
-    comptime stride = TypeList.of[
-        Trait=CoordLike, ComptimeInt[4], ComptimeInt[1]
-    ]()
+    comptime shape = TypeList.of[ComptimeInt[3], ComptimeInt[4]]()
+    comptime stride = TypeList.of[ComptimeInt[4], ComptimeInt[1]]()
     comptime types = _Idx2CrdResultTypes[DType.int64, Int64, stride, shape]
     assert_true(_type_is_eq[types[0], Int64]())
     assert_true(_type_is_eq[types[1], Int64]())
@@ -189,12 +185,8 @@ def test_idx2crd_result_types_runtime_idx() raises:
 
 def test_idx2crd_result_types_shape_1() raises:
     """Shape dim of 1 produces ComptimeInt[0], others Scalar."""
-    comptime shape = TypeList.of[
-        Trait=CoordLike, ComptimeInt[1], ComptimeInt[4]
-    ]()
-    comptime stride = TypeList.of[
-        Trait=CoordLike, ComptimeInt[4], ComptimeInt[1]
-    ]()
+    comptime shape = TypeList.of[ComptimeInt[1], ComptimeInt[4]]()
+    comptime stride = TypeList.of[ComptimeInt[4], ComptimeInt[1]]()
     comptime types = _Idx2CrdResultTypes[DType.int64, Int64, stride, shape]
     assert_true(_type_is_eq[types[0], ComptimeInt[0]]())
     assert_true(_type_is_eq[types[1], Int64]())
@@ -202,12 +194,8 @@ def test_idx2crd_result_types_shape_1() raises:
 
 def test_idx2crd_result_types_all_shape_1() raises:
     """All shape dims are 1: all ComptimeInt[0]."""
-    comptime shape = TypeList.of[
-        Trait=CoordLike, ComptimeInt[1], ComptimeInt[1]
-    ]()
-    comptime stride = TypeList.of[
-        Trait=CoordLike, ComptimeInt[1], ComptimeInt[1]
-    ]()
+    comptime shape = TypeList.of[ComptimeInt[1], ComptimeInt[1]]()
+    comptime stride = TypeList.of[ComptimeInt[1], ComptimeInt[1]]()
     comptime types = _Idx2CrdResultTypes[DType.int64, Int64, stride, shape]
     assert_true(_type_is_eq[types[0], ComptimeInt[0]]())
     assert_true(_type_is_eq[types[1], ComptimeInt[0]]())
@@ -215,12 +203,8 @@ def test_idx2crd_result_types_all_shape_1() raises:
 
 def test_idx2crd_result_types_runtime_shape() raises:
     """Scalar shape dims always produce Scalar result."""
-    comptime shape = TypeList.of[
-        Trait=CoordLike, Scalar[DType.int], Scalar[DType.int]
-    ]()
-    comptime stride = TypeList.of[
-        Trait=CoordLike, Scalar[DType.int], Scalar[DType.int]
-    ]()
+    comptime shape = TypeList.of[Scalar[DType.int], Scalar[DType.int]]()
+    comptime stride = TypeList.of[Scalar[DType.int], Scalar[DType.int]]()
     comptime types = _Idx2CrdResultTypes[DType.int64, Int64, stride, shape]
     assert_true(_type_is_eq[types[0], Int64]())
     assert_true(_type_is_eq[types[1], Int64]())
@@ -229,12 +213,8 @@ def test_idx2crd_result_types_runtime_shape() raises:
 def test_idx2crd_result_types_all_static() raises:
     """All three static (idx=5, shape=(3,4), stride=(4,1)): compile-time results.
     """
-    comptime shape = TypeList.of[
-        Trait=CoordLike, ComptimeInt[3], ComptimeInt[4]
-    ]()
-    comptime stride = TypeList.of[
-        Trait=CoordLike, ComptimeInt[4], ComptimeInt[1]
-    ]()
+    comptime shape = TypeList.of[ComptimeInt[3], ComptimeInt[4]]()
+    comptime stride = TypeList.of[ComptimeInt[4], ComptimeInt[1]]()
     comptime types = _Idx2CrdResultTypes[
         DType.int64, ComptimeInt[5], stride, shape
     ]

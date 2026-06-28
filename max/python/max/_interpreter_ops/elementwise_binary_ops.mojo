@@ -49,13 +49,11 @@ from op_utils import _get_dtype, _get_buffer_ptr, _get_size, _get_ctx
 
 
 comptime BINARY_ARITHMETIC_OPS = TypeList.of[
-    Trait=ElementwiseBinaryOp, Add, Sub, Mul, Div, Mod, Max, Min
+    Add, Sub, Mul, Div, Mod, Max, Min
 ]()
 
 # Binary boolean operations
-comptime BINARY_BOOLEAN_OPS = TypeList.of[
-    Trait=ElementwiseBinaryOp, And, Or, Xor
-]()
+comptime BINARY_BOOLEAN_OPS = TypeList.of[And, Or, Xor]()
 
 
 # =============================================================================

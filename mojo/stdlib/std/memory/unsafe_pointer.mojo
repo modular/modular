@@ -1048,7 +1048,6 @@ struct UnsafePointer[
     def _is_convertible_to_device_type[T: AnyType]() -> Bool:
         comptime if Self.mut:
             return TypeList.of[
-                Trait=AnyType,
                 Self,
                 Self._OriginCastType[MutAnyOrigin],
                 Self._OriginCastType[MutUntrackedOrigin],
@@ -1062,7 +1061,6 @@ struct UnsafePointer[
             ]().contains[T]()
         else:
             return TypeList.of[
-                Trait=AnyType,
                 Self,
                 Self._OriginCastType[ImmutAnyOrigin],
                 Self._OriginCastType[ImmutUntrackedOrigin],

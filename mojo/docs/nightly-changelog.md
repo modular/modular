@@ -10,6 +10,14 @@ This version is still a work in progress.
 
 ## Language enhancements
 
+- Mojo now infers `Trait` for `TypeList.of` such that
+
+  ```mojo
+  comptime TL = TypeList.of[Int, Bool]
+  # works without
+  comptime TL = TypeList.of[Trait = AnyType, Int, Bool]
+  ```
+
 - Mojo now warns about redundant trait composition
 
   ```mojo
