@@ -17,6 +17,7 @@
 #include "KGEN/MojoParser/DeclResolver.h"
 #include "KGEN/MojoParser/IRValues.h"
 #include "KGEN/MojoParser/SharedState.h"
+#include "KGEN/lib/MojoParser/Traits.h"
 
 #include "KGEN/Interpreter/InterpreterAttrs.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
@@ -27,6 +28,7 @@
 
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/ScopeExit.h"
+#include "llvm/ADT/SetOperations.h"
 #include "llvm/Support/SaveAndRestore.h"
 
 using namespace M;
@@ -613,6 +615,38 @@ LogicalResult ParamInf::inferFromParamList() {
     return getMojoDiag(loc);
   };
 
+  // TODO: This is a generally useful for things like ternary statements where
+  // we can merge two type values to the common bound, maybe we should
+  // generalize this.
+  auto mergeTwoMetaType = [&](ASTType typeA, ASTType typeB) -> Type {
+    if (typeA.isEqualCanon(typeB))
+      return typeA;
+
+    auto extractTraitBound = [&](ASTType type) -> TraitType {
+      if (auto anyTrait = dyn_cast<AnyTraitType>(type.extractMetaType()))
+        return anyTrait.getTraitType();
+
+      ASTDecl *decl = type.getDecl(shared);
+      auto structDecl = cast<StructDeclOp>(decl->getIfOperation());
+      return structDecl.getCanonicalTrait();
+    };
+
+    TraitType traitA = extractTraitBound(typeA);
+    TraitType traitB = extractTraitBound(typeB);
+    if (traitA == traitB)
+      return traitA;
+
+    llvm::DenseSet<SymbolRefAttr> symbolsA(traitA.getSymbols().begin(),
+                                           traitA.getSymbols().end());
+    llvm::DenseSet<SymbolRefAttr> symbolsB(traitB.getSymbols().begin(),
+                                           traitB.getSymbols().end());
+    llvm::set_intersect(symbolsA, symbolsB);
+
+    SmallVector<SymbolRefAttr> symbols(symbolsA.begin(), symbolsA.end());
+    canonicalizeTraitCompositionSymbols(shared, symbols);
+    return TraitType::get(shared.getContext(), symbols);
+  };
+
   // Do basic validation of the argument list using shared logic.
   CallOperands::PogAssignment pogAssignment;
   if (failed(givenBindings.assignToPogs(declaredParamPogs,
@@ -695,12 +729,46 @@ LogicalResult ParamInf::inferFromParamList() {
         }
       }
 
+      Type mergedTypeBound;
+      if (paramFinder.hasReferences(varArgsEltType) &&
+          sugarIsa<AnyTraitType>(ASTType(varArgsEltType).extractMetaType())) {
+        if (pogAssignment.posVariadicIdxs.empty()) {
+          // TODO: The correct thing is to infer to `NeverTrait` such that an
+          // empty type list can be upcasted to any TypeList with a less refined
+          // bound. Use `AnyType` here, better than nothing.
+          mergedTypeBound = shared.lookupBuiltinTraitType(
+              "AnyType", givenBindings.getExprLoc());
+        }
+
+        // To infer `TypeList[Trait : type_of(AnyType), *values: Trait]`
+        // with `TypeList[Int, Float, Bool]`, merge the types list to a common
+        // trait bound first to infer the trait instead of always using the
+        // first element types.
+        for (auto idx : pogAssignment.posVariadicIdxs) {
+          TypedAttr typeValue = givenBindings[idx].ir.getIfPValue().get();
+          // This is an invalid element, bail out and an error will be when
+          // emitting the binding below.
+          if (!typeValue || !LIT::isFirstLevelTypeExpr(typeValue)) {
+            mergedTypeBound = nullptr;
+            break;
+          }
+
+          if (!mergedTypeBound) {
+            mergedTypeBound = typeValue.getType();
+            continue;
+          }
+
+          mergedTypeBound =
+              mergeTwoMetaType(mergedTypeBound, typeValue.getType());
+        }
+      }
+
       // Otherwise, we infer the variadic to be the elements of the variadic
       // list being passed in.
       SmallVector<TypedAttr> elements;
       bool isDeferred = false;
       for (auto operandIdx : pogAssignment.posVariadicIdxs) {
-        auto &operand = givenBindings[operandIdx];
+        OperandValue operand = givenBindings[operandIdx];
 
         // Passing `_` to a variadic is not allowed. Users should pass `*_` to
         // unbind a variadic parameter.
@@ -709,6 +777,12 @@ LogicalResult ParamInf::inferFromParamList() {
           diag << "unbound syntax (i.e. `_`) cannot be passed as a variadic "
                   "parameter";
           return failure();
+        }
+
+        // Merge if needed.
+        if (mergedTypeBound) {
+          operand.ir =
+              UpcastAttr::get(mergedTypeBound, operand.ir.getIfPValue());
         }
 
         // FIXME: pack and install variadics parameter correctly.
