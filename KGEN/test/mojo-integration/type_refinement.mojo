@@ -1001,7 +1001,7 @@ def refined_ref_to_original_ref[
 def explicit_downcast_ref_to_original_ref[
     T: AnyType
 ](ref x: T) -> Bool where conforms_to(T, Equatable):
-    ref y = trait_downcast[Equatable](x)
+    ref y = rebind[downcast[T, Equatable]](x)
     return accepts_original_ref[T](y)
 
 
@@ -1239,7 +1239,7 @@ def downcast_preserves_refinement_read[
     T: AnyType
 ](read x: T) -> String where conforms_to(T, Describable):
     var before = needs_describable(x)
-    ref y = trait_downcast[Greetable](x)
+    ref y = rebind[downcast[T, Greetable]](x)
     var mid = needs_greetable(y)
     var after = needs_describable(x)
     return before + " | " + mid + " | " + after
@@ -1249,7 +1249,7 @@ def downcast_preserves_refinement_mut[
     T: AnyType
 ](mut x: T) -> String where conforms_to(T, Describable):
     var before = needs_describable(x)
-    ref y = trait_downcast[Greetable](x)
+    ref y = rebind[downcast[T, Greetable]](x)
     var mid = needs_greetable(y)
     var after = needs_describable(x)
     return before + " | " + mid + " | " + after
@@ -1259,7 +1259,7 @@ def downcast_preserves_refinement_ref[
     T: AnyType
 ](ref x: T) -> String where conforms_to(T, Describable):
     var before = needs_describable(x)
-    ref y = trait_downcast[Greetable](x)
+    ref y = rebind[downcast[T, Greetable]](x)
     var mid = needs_greetable(y)
     var after = needs_describable(x)
     return before + " | " + mid + " | " + after

@@ -16,9 +16,10 @@ trait CanDoSomething:
 
         comptime for i in range(names.size):
             print(materialize[names[i]](), ": ", sep="", end="")
-            trait_downcast[CanDoSomething](
-                reflect[Self].field_ref[i](self)
-            ).do_something()
+            comptime assert conforms_to(
+                reflect[Self].field_types()[i], CanDoSomething
+            )
+            reflect[Self].field_ref[i](self).do_something()
 
 
 @fieldwise_init
@@ -51,32 +52,12 @@ def closure_fields():
         return a + b
 
     # COM: reset `b` value to be 31
-    trait_downcast[TrivialRegisterPassable](
-        __struct_field_ref(1, __struct_field_ref(0, test))
-    ) = rebind[
-        type_of(
-            trait_downcast[TrivialRegisterPassable](
-                __struct_field_ref(1, __struct_field_ref(0, test))
-            )
-        )
-    ](
-        Int32(31)
-    )
+    __struct_field_ref(1, __struct_field_ref(0, test)) = Int32(31)
 
     print("closure_fields: ", test())
 
     # COM: reset `b` value to be 100
-    trait_downcast[TrivialRegisterPassable](
-        __struct_field_ref(1, __struct_field_ref(0, test))
-    ) = rebind[
-        type_of(
-            trait_downcast[TrivialRegisterPassable](
-                __struct_field_ref(1, __struct_field_ref(0, test))
-            )
-        )
-    ](
-        Int32(100)
-    )
+    __struct_field_ref(1, __struct_field_ref(0, test)) = Int32(100)
 
     print("closure_fields: ", test())
 

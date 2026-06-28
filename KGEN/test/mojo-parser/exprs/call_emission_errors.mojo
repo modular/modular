@@ -461,7 +461,7 @@ def my_print_single[T: MyWritable](value: T):
 
 
 def test_print_errors(s: MyStruct):
-    # expected-error @below {{invalid call to 'my_print_variadic': an element of 'args' with type 'MyStruct' does not conform to trait 'MyWritable'; either prove the conformance with 'conforms_to' and 'trait_downcast', or add conformance}}
+    # expected-error @below {{invalid call to 'my_print_variadic': an element of 'args' with type 'MyStruct' does not conform to trait 'MyWritable'; either prove the conformance with 'conforms_to', or add conformance}}
     my_print_variadic(1, s)
 
     # expected-error @below {{invalid call to 'my_print_single': value passed to 'value' cannot be converted from 'MyStruct' to 'T', argument type 'MyStruct' does not conform to trait 'MyWritable'}}

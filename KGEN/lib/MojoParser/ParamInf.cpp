@@ -1943,8 +1943,8 @@ VerifiedParamBindings CallParamInf::inferForCall() {
               << "an element of " << argPogs.getName(expectedArgIdx)
               << " with type " << toPush << " does not conform to trait "
               << elementType
-              << "; either prove the conformance with 'conforms_to' and"
-                 " 'trait_downcast', or add conformance";
+              << "; either prove the conformance with 'conforms_to'"
+                 ", or add conformance";
           return {};
         }
 
