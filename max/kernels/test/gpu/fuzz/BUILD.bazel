@@ -176,6 +176,43 @@ mojo_test(
     ],
 )
 
+# Target: fused QK RMSNorm over Q + the newly-written K rows in the paged KV
+# cache (`fused_qk_rms_norm_ragged_paged` -> `_fused_qk_rms_norm_ragged_paged_gpu`,
+# the MiniMax-M3 per-head QK RMSNorm op `mo.fused_qk_rms_norm.ragged.paged`).
+# Distinct from the MLA `fused_rope_rmsnorm` target: standard MHA-style paged
+# cache (num_kv_heads > 1, K/V dim), full-head_dim RMSNorm of Q AND K (no RoPE),
+# `weight_offset` runtime (M3 = 1.0), `multiply_before_cast` compile-time True.
+# The ragged shape (batch, per-batch cache lengths driving the K-cache slot,
+# per-batch new-token counts) is the runtime fuzz axis; num_q_heads/num_kv_heads
+# are compile-time (`-D fqrn_num_q_heads=16|64 -D fqrn_num_kv_heads=4`, default
+# 16/4 for a fast ref oracle); head_dim fixed at the M3 dense 128. memory-safety
+# primary (the kernel reads+writes the paged K cache in place); `ref` (--check 1)
+# verifies the dense RMSNorm'd query AND the in-place-normalized K-cache rows.
+mojo_test(
+    name = "fuzz_fused_qk_rms_norm.mojo.test",
+    size = "large",
+    srcs = [
+        "_fuzz.mojo",
+        "fuzz_fused_qk_rms_norm.mojo",
+    ],
+    exec_properties = {
+        "test.resources:gpu-memory": "8",
+    },
+    main = "fuzz_fused_qk_rms_norm.mojo",
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    target_compatible_with = ["//:has_gpu"],
+    deps = [
+        "//max:internal_utils",
+        "//max:kv_cache",
+        "//max:linalg",
+        "//max:nn",
+        "@mojo//:std",
+    ],
+)
+
 # Minimal repro probe for the decode-path hang found by the Slice 0 fuzzer.
 # `num_keys` / `valid_length` come from argv (`--test_arg=`), so one build probes
 # many configs. Tagged `manual` (a hanging config TIMES OUT by design).
