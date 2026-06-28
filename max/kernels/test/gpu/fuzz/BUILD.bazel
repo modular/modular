@@ -213,6 +213,43 @@ mojo_test(
     ],
 )
 
+# Target: fused QK RoPE over Q + the newly-written K rows in the paged KV cache
+# (`fused_qk_rope_ragged`, the MiniMax-M3 ragged RoPE op
+# `mo.fused_qk_rope.ragged.paged`). Distinct from the MLA combined
+# `fused_rope_rmsnorm` kernel: this is RoPE-only. M3 dense attention uses
+# INTERLEAVED full-head_dim RoPE (head_dim == rope_dim == 128). The ragged shape
+# (batch, per-batch cache lengths driving the freqs row + K-cache slot, per-batch
+# new-token counts) is the runtime fuzz axis; num_q_heads/num_kv_heads are
+# compile-time (`-D fqr_num_q_heads=16|64 -D fqr_num_kv_heads=4`, default 16/4
+# for a fast ref oracle); head_dim fixed at the M3 dense 128. memory-safety
+# primary (the kernel reads+writes the paged K cache in place and reads freqs at
+# the ragged-driven row); `ref` (--check 1) verifies the roped query AND the
+# in-place-roped K-cache rows.
+mojo_test(
+    name = "fuzz_fused_qk_rope.mojo.test",
+    size = "large",
+    srcs = [
+        "_fuzz.mojo",
+        "fuzz_fused_qk_rope.mojo",
+    ],
+    exec_properties = {
+        "test.resources:gpu-memory": "8",
+    },
+    main = "fuzz_fused_qk_rope.mojo",
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    target_compatible_with = ["//:has_gpu"],
+    deps = [
+        "//max:internal_utils",
+        "//max:kv_cache",
+        "//max:linalg",
+        "//max:nn",
+        "@mojo//:std",
+    ],
+)
+
 # Minimal repro probe for the decode-path hang found by the Slice 0 fuzzer.
 # `num_keys` / `valid_length` come from argv (`--test_arg=`), so one build probes
 # many configs. Tagged `manual` (a hanging config TIMES OUT by design).
