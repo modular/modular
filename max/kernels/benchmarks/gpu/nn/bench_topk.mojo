@@ -559,12 +559,12 @@ struct TestCase[_sampling: Bool, _largest: Bool = True](ImplicitlyCopyable):
 
 
 def main() raises:
-    var N = arg_parse("N", -1)
-    var K = arg_parse("K", -1)
+    var N = arg_parse("N", 1024)
+    var K = arg_parse("K", 50)
     var block_size = arg_parse("block_size", 256)
-    var batch_size = arg_parse("batch_size", -1)
+    var batch_size = arg_parse("batch_size", 8)
     var num_blocks_per_input = arg_parse("num_blocks_per_input", 0)
-    var fill_fn_name = arg_parse("fill_fn_name", "fill_random")
+    var fill_fn_name = arg_parse("fill_fn_name", "fill_iota")
 
     comptime dtype = get_defined_dtype["dtype", DType.float32]()
     comptime rank = get_defined_int["rank", 2]()
@@ -574,6 +574,7 @@ def main() raises:
     comptime use_fi = get_defined_bool["USE_FI_TOPK_KERNEL", False]()
 
     var m = Bench()
+    m.config.show_progress = False
     with DeviceContext() as ctx:
         var test_case = TestCase[_sampling=sampling, _largest=largest](
             N=N,
@@ -591,6 +592,8 @@ def main() raises:
             )
 
     m.dump_report()
+
+    bench_dispatch_all()
 
 
 from std.benchmark import BenchConfig
@@ -688,10 +691,13 @@ def bench_dispatch_all() raises:
     var vocab_sizes = [32000, 128000]
 
     with DeviceContext() as ctx:
-        var b = Bench(BenchConfig(max_iters=1000))
+        var b = Bench()
+        b.config.max_iters = 1000
+        b.config.show_progress = False
         for bs in batch_sizes:
             for v in vocab_sizes:
                 bench_dispatch[dtype, -1](b, ctx, bs, v)
                 bench_dispatch[dtype, 20](b, ctx, bs, v)
                 bench_dispatch[dtype, 50](b, ctx, bs, v)
-        print(b)
+        print()
+        b.dump_report()
