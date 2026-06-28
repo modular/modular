@@ -17,9 +17,10 @@
 
 trait LocalEquatable:
     def __eq__(self, other: Self) -> Bool:
-        if trait_downcast[LocalEquatable](
-            __struct_field_ref(0, self)
-        ) != trait_downcast[LocalEquatable](__struct_field_ref(0, other)):
+        comptime assert conforms_to(
+            type_of(__struct_field_ref(0, self)), LocalEquatable
+        )
+        if __struct_field_ref(0, self) != __struct_field_ref(0, other):
             return False
         return True
 

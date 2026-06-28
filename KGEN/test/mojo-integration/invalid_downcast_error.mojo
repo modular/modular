@@ -11,9 +11,10 @@
 
 # RUN: not kgen %s -elaborate 2>&1 | FileCheck %s
 
+from std.builtin.rebind import downcast
 
 # CHECK: error: function instantiation failed
-# CHECK: note: constraint failed: Invalid downcast
+# CHECK: note: constraint failed: variadic pack element type is not Writable
 
 
 @fieldwise_init
@@ -26,7 +27,7 @@ def print_foo_invalid[T: Writable & ImplicitlyDeletable](var x: T):
 
 
 def invalid[T: ImplicitlyCopyable & ImplicitlyDeletable](x: T):
-    print_foo_invalid(trait_downcast[Writable](x))
+    print_foo_invalid(rebind[downcast[T, Writable]](x))
 
 
 def main():
