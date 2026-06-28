@@ -250,6 +250,49 @@ mojo_test(
     ],
 )
 
+# Target: the MiniMax-M3-MXFP8 fused QKV projection
+# (`generic_fused_qkv_matmul_kv_cache_paged_ragged_scale_float4`, the dual-mode
+# NVFP4/MXFP8 entry; op `mo.fused_qkv_matmul.ragged.paged.scale.mxfp8`). MXFP8:
+# float8_e4m3fn input + weights, float8_e8m0fnu (E8M0) block scales over 32-elem
+# K blocks in the rank-5 SF-atom layout, fp32 accum; computes hidden @ [Wq|Wk|Wv]^T,
+# returns Q (bf16) and SCATTERS K/V into the paged cache. The ragged shape (batch,
+# per-batch cache lengths driving the K/V scatter slot, per-batch new-token counts)
+# is the runtime fuzz axis (M = total tokens); num_q_heads/num_kv_heads/hidden are
+# compile-time (`-D g3_num_q_heads=.. -D g3_num_kv_heads=.. -D g3_hidden=..`,
+# default 8/1/256; the tuned SM100 matmul reads N/K from the static shape);
+# head_dim fixed at 128, every band a multiple of SF_MN_GROUP_SIZE=128.
+# memory-safety primary (the K/V cache scatter is the OOB-write risk); `ref`
+# (--check 1) is a host fp32-accum naive dequant GEMM (E8M0 block dequant), split
+# into Q (vs output) + K/V (vs the cache read-back). B200-only (SM100 + static N/K).
+mojo_test(
+    name = "fuzz_fused_qkv_matmul_mxfp8.mojo.test",
+    size = "large",
+    srcs = [
+        "_fuzz.mojo",
+        "fuzz_fused_qkv_matmul_mxfp8.mojo",
+    ],
+    exec_properties = {
+        "test.resources:gpu-memory": "8",
+    },
+    main = "fuzz_fused_qkv_matmul_mxfp8.mojo",
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    target_compatible_with = [
+        "//:has_gpu",
+        "//:b200_gpu",
+    ],
+    deps = [
+        "//max:internal_utils",
+        "//max:kv_cache",
+        "//max:linalg",
+        "//max:nn",
+        "//max:structured_kernels",
+        "@mojo//:std",
+    ],
+)
+
 # Minimal repro probe for the decode-path hang found by the Slice 0 fuzzer.
 # `num_keys` / `valid_length` come from argv (`--test_arg=`), so one build probes
 # many configs. Tagged `manual` (a hanging config TIMES OUT by design).
