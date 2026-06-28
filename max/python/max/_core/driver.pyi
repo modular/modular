@@ -1342,6 +1342,21 @@ class DevicePinnedBuffer(Buffer):
             ValueError: If is a CPU device.
         """
 
+    def __getitem__(
+        self, idx: int | slice | Sequence[int | slice]
+    ) -> DevicePinnedBuffer:
+        """
+        Gets a buffer slice, preserving the device-pinned type.
+
+        Unlike :obj:`Buffer.__getitem__`, the returned slice is itself a
+        :obj:`DevicePinnedBuffer`, so reads such as ``to_numpy`` on the slice
+        keep the no-synchronization behavior of device-pinned memory.
+        """
+
+    def _view(
+        self, dtype: max._core.dtype.DType, shape: Sequence[int]
+    ) -> DevicePinnedBuffer: ...
+
 def _release_buffers_to_borrowed(buffers: Sequence[Buffer]) -> list[Buffer]:
     """Convert owning buffers into borrowed wrappers over the same storage."""
 
