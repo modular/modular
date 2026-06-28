@@ -110,6 +110,15 @@ This version is still a work in progress.
   the GPU. The packed `int32` bitmask is transferred to device as-is and
   unpacked and applied to the logits in a single fused kernel
   (`apply_packed_bitmask`), instead of unpacking to a `bool` tensor on the CPU.
+- Made numpy array transport across the API-server-to-model-worker request
+  queue zero-copy. Large arrays (notably multi-image or high-resolution vision
+  `pixel_values`) now ride out-of-band as their own ZMQ frame instead of being
+  copied into the message body and then again through the socket, and the
+  receiver decodes them as views with no copy. This is faster than both the
+  previous copy and shared-memory transports at every payload size (for example
+  ~5x faster than the copy path and ~2x faster than shared memory at 24-32 MiB
+  in the transport microbenchmark), and removes the per-request shared-memory
+  segment (and its sizing, leak, and page-fault costs) from this path entirely.
 - Fixed image requests failing with a 400 or 500 across all vision models. Two
   bugs in the shared image-resolution layer: `data:` URIs with unpadded or
   URL-safe base64 (sent routinely by clients and relays) were rejected by the
