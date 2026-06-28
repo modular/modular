@@ -120,29 +120,10 @@ Parameters:
 """
 
 
-@always_inline
-def trait_downcast[
-    T: TrivialRegisterPassable, //, Trait: type_of(AnyType)
-](var src: T) -> downcast[T, Trait]:
-    """Downcast a parameter input type `T` and rebind the type such that the
-    return value's type conforms the provided `Trait`. If `T`, after resolving
-    to a concrete type, does not actually conform to `Trait`, a compilation
-    error would occur.
-
-    Parameters:
-        T: The original type.
-        Trait: The trait to downcast into.
-
-    Args:
-        src: The value to downcast.
-
-    Returns:
-        The downcasted value.
-    """
-    comptime assert conforms_to(T, Trait), "Invalid downcast"
-    return rebind[downcast[T, Trait]](src)
-
-
+@deprecated(
+    "use `conforms_to(type_of(src), Trait)` instead in a `where` clause or"
+    " `comptime assert`"
+)
 @always_inline
 def trait_downcast[
     T: AnyType, //, Trait: type_of(AnyType)

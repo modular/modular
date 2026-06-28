@@ -102,7 +102,7 @@ struct SomeStruct:
 
 def represent[T: AnyType](v: T) -> String:
     comptime if conforms_to(T, Writable):
-        return String(trait_downcast[Writable](v))
+        return String(v)
     else:
         return String(t"{reflect[T].name()}")
 
@@ -244,7 +244,7 @@ def test_mixing_type_and_value() raises:
     assert_equal(ExampleStruct().example[Int, 3]("x:", 7), "x:777")
 
 
-# --- Downcasting safely: `conforms_to` + `trait_downcast()` ---
+# --- Type refinement: `conforms_to` ---
 # The page prints the result; this returns a String so it can be asserted.
 
 
@@ -252,15 +252,12 @@ def process[T: AnyType](value: T) -> String:
     comptime if conforms_to(
         T, Writable & ImplicitlyCopyable & ImplicitlyDeletable
     ):
-        var w = trait_downcast[
-            Writable & ImplicitlyCopyable & ImplicitlyDeletable
-        ](value)
-        return String(w)
+        return String(value)
     else:
         return "<not writable>"
 
 
-def test_downcasting() raises:
+def test_type_refinement() raises:
     assert_equal(process(42), "42")
     assert_equal(process("Hello, Mojo!"), "Hello, Mojo!")
     assert_equal(process(3.14), "3.14")
@@ -316,7 +313,7 @@ struct Wrapper[T: BaseTraits](
     var value: Self.T
 
     def __bool__(self) -> Bool where conforms_to(Self.T, Boolable):
-        return trait_downcast[Boolable](self.value).__bool__()
+        return self.value.__bool__()
 
 
 @fieldwise_init
@@ -420,7 +417,7 @@ def main() raises:
     test_where_some_wont_work()
     test_generic_types()
     test_mixing_type_and_value()
-    test_downcasting()
+    test_type_refinement()
     test_make_filled()
     test_conditional_conformance()
     test_parts_conformance()

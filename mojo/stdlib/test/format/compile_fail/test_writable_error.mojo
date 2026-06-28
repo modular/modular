@@ -30,11 +30,11 @@ def main() raises:
 
     comptime if get_defined_int["test"]() == 1:
         # CHECK_1: error: no matching method in call to 'write'
-        # CHECK_1: candidate not viable: an element of 'args' with type 'ArcPointer[NotWritable]' does not conform to trait 'Writable'; either prove the conformance with 'conforms_to' and 'trait_downcast', or add conformance
+        # CHECK_1: candidate not viable: an element of 'args' with type 'ArcPointer[NotWritable]' does not conform to trait 'Writable'; either prove the conformance with 'conforms_to', or add conformance
         var ptr = ArcPointer[NotWritable](NotWritable())
         string.write(ptr)
     elif get_defined_int["test"]() == 2:
         # CHECK_2: error: no matching method in call to 'write'
-        # CHECK_2: candidate not viable: an element of 'args' with type 'OwnedPointer[NotWritable]' does not conform to trait 'Writable'; either prove the conformance with 'conforms_to' and 'trait_downcast', or add conformance
+        # CHECK_2: candidate not viable: an element of 'args' with type 'OwnedPointer[NotWritable]' does not conform to trait 'Writable'; either prove the conformance with 'conforms_to', or add conformance
         var ptr = OwnedPointer[NotWritable](NotWritable())
         string.write(ptr)

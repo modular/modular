@@ -205,7 +205,7 @@ conformance and downcasting to expose the `Writable` trait:
 ```mojo
 def represent[T: AnyType](v: T) -> String:
     comptime if conforms_to(T, Writable):
-        return String(trait_downcast[Writable](v))
+        return String(v)
     else:
         return String(t"{reflect[T].name()}")
 
@@ -414,6 +414,8 @@ def main():
     print(s)  # Struct[Int](x=1)
 ```
 
+<!-- TODO(DOCS-2175): Needs updating from downcasting -> type refinment -->
+
 ## Downcasting safely: `conforms_to` + `trait_downcast()` {#downcasting-safely}
 
 Sometimes a generic conformance is broader than what you need. Use a
@@ -428,10 +430,7 @@ def process[T: AnyType](value: T):
     comptime if conforms_to(
         T, Writable & ImplicitlyCopyable & ImplicitlyDeletable
     ):
-        var w = trait_downcast[
-            Writable & ImplicitlyCopyable & ImplicitlyDeletable
-        ](value)
-        print(w)
+        print(value)
     else:
         print("<not writable>")
         # Or fail at compile time with `comptime assert`
@@ -441,6 +440,8 @@ def process[T: AnyType](value: T):
   composition.
 - `trait_downcast()` rebinds the value to a trait-constrained view at
   compile time.
+
+<!-- TODO(DOCS-2175): Needs updating from downcasting -> type refinment -->
 
 Only call `trait_downcast()` inside the guarded branch. Handle the
 fallback in the `else` branch. If you always need the trait, add it as a
@@ -653,7 +654,7 @@ struct Wrapper[T: BaseTraits](
     var value: Self.T
 
     def __bool__(self) -> Bool where conforms_to(Self.T, Boolable):
-        return trait_downcast[Boolable](self.value).__bool__()
+        return self.value.__bool__()
 ```
 
 The condition on `__bool__()` matches the one used for the `Boolable`
