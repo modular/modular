@@ -1540,6 +1540,122 @@ def fused_qk_ragged_rms_norm(
     )[0].tensor
 
 
+def fused_qk_rms_norm_rope_ragged(
+    kv_params: KVCacheParams,
+    input: TensorValue,
+    input_row_offsets: TensorValue,
+    kv_collection: PagedCacheValues,
+    q_gamma: TensorValue,
+    k_gamma: TensorValue,
+    freqs_cis: TensorValue,
+    epsilon: float | np.floating[Any],
+    layer_idx: TensorValue,
+    weight_offset: float | np.floating[Any],
+    interleaved: bool = True,
+    multiply_before_cast: bool = True,
+) -> TensorValue:
+    """Computes fused per-head RMSNorm and RoPE with ragged inputs and paged KV cache.
+
+    This fuses :obj:`fused_qk_ragged_rms_norm` and :obj:`fused_qk_ragged_rope`
+    into a single GPU launch. It applies per-head RMSNorm to the query tensor
+    and to the new key entries written into the paged KV cache, then applies
+    RoPE to the normalized values. The query tensor is returned as a new tensor
+    with the same shape and dtype as ``input``; the key cache is updated in
+    place for the newly written entries.
+
+    The RoPE dimension is taken from ``freqs_cis.shape[1]``. When it is smaller
+    than the head dimension, RoPE is applied only to the prefix
+    ``[0, rope_dim)`` of each head (non-interleaved layout) and the suffix is
+    left un-roped, matching :obj:`fused_qk_ragged_rope`.
+
+    Args:
+        kv_params: The KV cache parameters.
+        input: The query tensor of shape ``[total_seq_len, n_heads, head_dim]``.
+        input_row_offsets: The ragged tensor offsets indicating where each
+            batch starts and ends in ``input``. Must have dtype ``uint32``.
+        kv_collection: The paged KV cache collection containing the key cache.
+        q_gamma: The rank-1 query RMSNorm weight. Its size must match
+            ``kv_params.head_dim``.
+        k_gamma: The rank-1 key RMSNorm weight. Its size must match ``q_gamma``
+            and ``kv_params.head_dim``.
+        freqs_cis: The RoPE frequency tensor. Its second dimension determines
+            the RoPE dimension. Must share ``input``'s dtype.
+        epsilon: The RMSNorm epsilon value.
+        layer_idx: The layer index for the KV cache. Must have dtype ``uint32``.
+        weight_offset: The constant offset added to each RMSNorm weight.
+        interleaved: Whether to use the interleaved RoPE pattern.
+        multiply_before_cast: Whether to multiply by the effective weight before
+            casting to the output dtype.
+
+    Returns:
+        The normalized and RoPE-applied query tensor with the same shape and
+        dtype as ``input``.
+
+    Raises:
+        ValueError: If the input ranks are invalid, the row offset or layer
+            index dtypes are invalid, the gamma weights have different sizes,
+            the gamma size does not match the head dimension, or ``freqs_cis``
+            dtype does not match ``input``.
+    """
+    _check_dtype(
+        DType.uint32, input_row_offsets=input_row_offsets, layer_idx=layer_idx
+    )
+    _check_rank(3, input=input)
+    _check_rank(1, q_gamma=q_gamma, k_gamma=k_gamma)
+    _check_rank(2, freqs_cis=freqs_cis)
+
+    if q_gamma.shape[0] != k_gamma.shape[0]:
+        raise ValueError(
+            "expected q_gamma and k_gamma to have the same size, got"
+            f" {q_gamma.shape[0]} and {k_gamma.shape[0]}"
+        )
+    if q_gamma.shape[0] != kv_params.head_dim:
+        raise ValueError(
+            "fused_qk_rms_norm_rope_ragged requires full per-head"
+            f" normalization; expected gamma size {kv_params.head_dim} but got"
+            f" {q_gamma.shape[0]}"
+        )
+    if input.shape[2] != kv_params.head_dim:
+        raise ValueError(
+            "expected input head_dim to match kv_params.head_dim, got"
+            f" {input.shape[2]} and {kv_params.head_dim}"
+        )
+    if freqs_cis.dtype != input.dtype:
+        raise ValueError(
+            "expected freqs_cis dtype to match input dtype, got"
+            f" {freqs_cis.dtype} and {input.dtype}"
+        )
+
+    parameters: dict[str, bool | int | str | DType] = {
+        "interleaved": interleaved,
+        "multiply_before_cast": multiply_before_cast,
+        "cache_dtype": kv_params.dtype,
+    }
+    assert kv_params.page_size is not None
+
+    return ops.inplace_custom(
+        "mo.fused_qk_rms_norm_rope.ragged.paged",
+        device=input.device,
+        values=[
+            input,
+            input_row_offsets,
+            *kv_collection.flatten_without_attention_dispatch_metadata(),
+            q_gamma,
+            k_gamma,
+            freqs_cis,
+            ops.constant(epsilon, input.dtype, device=DeviceRef.CPU()),
+            layer_idx,
+            ops.constant(weight_offset, input.dtype, device=DeviceRef.CPU()),
+        ],
+        out_types=[
+            TensorType(
+                dtype=input.dtype, shape=input.shape, device=input.device
+            )
+        ],
+        parameters=parameters,
+    )[0].tensor
+
+
 def fused_qk_padded_rope(
     kv_params: KVCacheParams,
     input: TensorValue,
