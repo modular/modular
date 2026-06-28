@@ -80,7 +80,7 @@ struct TensorMapDataType(TrivialRegisterPassable):
         Parameters:
             dtype: The Mojo data type to convert. Must be one of `DType.float32`,
                 `DType.float16`, `DType.bfloat16`, `DType.uint8`, `DType.uint16`,
-                `DType.int64`, `DType.uint64`,
+                `DType.uint32`, `DType.int32`, `DType.int64`, `DType.uint64`,
                 `DType.float8_e4m3fn`, or `DType.float8_e8m0fnu`.
 
         Constraints:
@@ -95,6 +95,8 @@ struct TensorMapDataType(TrivialRegisterPassable):
             DType.bfloat16,
             DType.uint8,
             DType.uint16,
+            DType.uint32,
+            DType.int32,
             DType.int64,
             DType.uint64,
             DType.float8_e4m3fn,
@@ -109,8 +111,10 @@ struct TensorMapDataType(TrivialRegisterPassable):
             return Self.UINT16
         elif dtype in (DType.float8_e4m3fn, DType.float8_e8m0fnu, DType.uint8):
             return Self.UINT8
-        elif dtype == DType.uint16:
-            return Self.UINT16
+        elif dtype == DType.uint32:
+            return Self.UINT32
+        elif dtype == DType.int32:
+            return Self.INT32
         elif dtype == DType.int64:
             return Self.INT64
         elif dtype == DType.uint64:

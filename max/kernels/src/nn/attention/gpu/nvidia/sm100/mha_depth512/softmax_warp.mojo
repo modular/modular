@@ -75,6 +75,7 @@ from nn.attention.gpu.nvidia.sm100.attention_utils import (
     maximum,
     apply_mask,
     peel_mask,
+    scale_pack_o_row,
 )
 from nn.attention.mha_mask import MHAMask, TileMaskStatus, MaskStrategy
 from nn.attention.mha_operand import MHAOperand
@@ -96,6 +97,7 @@ def depth512_scale_write_output[
     output_type: DType,
     qkv_dtype: DType,
     config: Depth512SM100Config[qkv_dtype],
+    tma_bpo: Int = 0,
 ](
     tid: UInt32,
     m_row: UInt32,
@@ -105,10 +107,15 @@ def depth512_scale_write_output[
     tmem_addr: UInt32,
     ragged_tma_store: RaggedTMA3DTile[
         output_type,
-        config.swizzle_mode,
+        TensorMapSwizzle.SWIZZLE_NONE,
         BM=config.BM,
         BN=config.ov_depth,
+        middle_dim=_,
         group=config.group if config.fuse_gqa else 1,
+        # `tma_bpo` (blocks per batched TMA op) is inferred from the store arg:
+        # full depth (one batched copy: rank-4 group==1, rank-5 group>1),
+        # 0 => per-block (swizzled-output fallback).
+        tma_blocks_per_op=tma_bpo,
     ],
     num_output_rows: Int32,
     out_head_idx: UInt32,
@@ -136,10 +143,24 @@ def depth512_scale_write_output[
 
     # Output SMEM base (reuses Q buffer).
     var o_smem = smem.o_smem[output_type]()
+    # O SMEM is row-major (SWIZZLE_NONE): the gmem output is row-major and the
+    # O accumulator is loaded one-row-per-thread, so no swizzle is needed and
+    # the per-row writes stay bank-conflict-free (8 rows * 16 B = 128 B = all
+    # 32 banks once). O's TMA store swizzle is decoupled from `config.swizzle_mode`
+    # (which still governs the swizzled Q/K/V/S/P buffers).
+    comptime o_swizzle_mode = TensorMapSwizzle.SWIZZLE_NONE
     # O SMEM must match tile_layout_k_major[BM, ov_depth] for TMA store.
-    # Decompose col into k-block + inner offset, swizzle only the inner part.
-    comptime o_swizzle = make_swizzle[output_type, config.swizzle_mode]()
-    comptime o_sw_K = config.swizzle_mode.bytes() // size_of[output_type]()
+    # Decompose col into k-block + inner offset; SWIZZLE_NONE makes the inner
+    # swizzle the identity, so the layout is plain row-major within each k-block.
+    comptime o_swizzle = make_swizzle[output_type, o_swizzle_mode]()
+    comptime o_sw_K = o_swizzle_mode.bytes() // size_of[output_type]()
+    # ov_depth is a multiple of o_sw_K for every supported head size.
+    comptime n_blocks = config.ov_depth // o_sw_K
+    comptime batched = tma_bpo > 0
+    comptime if batched:
+        comptime assert (
+            tma_bpo == n_blocks
+        ), "batched depth512 store expects a full-depth box (single issuer)."
 
     # ---- Helper: load from TMEM, scale, write to SMEM --------------------
     @parameter
@@ -159,27 +180,20 @@ def depth512_scale_write_output[
                 width=batch_size,
             ]((o_tmem + col_offset).addr)
 
-            # Scale and cast in groups of 8, write to swizzled SMEM.
+            # Scale+pack each group of 8 into one 16 B row-major (SWIZZLE_NONE)
+            # store (f32x2 compute, wide store; see scale_pack_o_row).
             comptime for g in range(batch_size // 8):
                 comptime base = g * 8
-                var vals: SIMD[accum_dtype, 8] = {
-                    o_vals[base],
-                    o_vals[base + 1],
-                    o_vals[base + 2],
-                    o_vals[base + 3],
-                    o_vals[base + 4],
-                    o_vals[base + 5],
-                    o_vals[base + 6],
-                    o_vals[base + 7],
-                }
-                vals = vals * inv_row_sum
+                var packed = scale_pack_o_row[output_type, w=8, start=base](
+                    o_vals, inv_row_sum
+                )
 
                 var col = col_base + col_offset + base
                 var o_k_block = col // o_sw_K
                 var o_inner = Int(m_row) * o_sw_K + col % o_sw_K
                 (o_smem + o_k_block * BM * o_sw_K + o_swizzle(o_inner)).bitcast[
                     Scalar[DType.uint32]
-                ]().store(bitcast[DType.uint32, 4](vals.cast[output_type]()))
+                ]().store(packed)
 
     comptime if config.split_o:
         comptime ov_quarter = config.ov_depth // 4
@@ -206,18 +220,27 @@ def depth512_scale_write_output[
     if local_warp_idx == 0:
         if e != 0:
             fence_async_view_proxy()
-        comptime swizzle_granularity = config.swizzle_mode.bytes() // size_of[
-            output_type
-        ]()
-        comptime num_col_chunks = config.ov_depth // swizzle_granularity
-        comptime for col in range(num_col_chunks):
+        comptime if batched:
+            # Single full-depth batched copy (no combine path). Covers fused GQA
+            # too: the RaggedTMA3DTile selector merge keeps group>1 within the
+            # 5D limit (rank-5; rank-4 for group==1).
             if e != 0:
-                ragged_tma_store.async_copy_from_col[col](
+                ragged_tma_store.async_copy_batched[0](
                     o_smem,
                     ragged_idx=out_row_idx,
                     dynamic_dim=UInt32(num_output_rows),
                     middle_idx=out_head_idx,
                 )
+        else:
+            # tma_bpo == 0: swizzled-output fallback -> one per-block TMA each.
+            comptime for col in range(n_blocks):
+                if e != 0:
+                    ragged_tma_store.async_copy_from_col[col](
+                        o_smem,
+                        ragged_idx=out_row_idx,
+                        dynamic_dim=UInt32(num_output_rows),
+                        middle_idx=out_head_idx,
+                    )
         if e != 0:
             cp_async_bulk_commit_group()
 
@@ -242,10 +265,14 @@ def depth512_softmax[
     scale: Float32,
     ragged_tma_store: RaggedTMA3DTile[
         output_type,
-        config.swizzle_mode,
+        TensorMapSwizzle.SWIZZLE_NONE,
         BM=config.BM,
         BN=config.ov_depth,
+        middle_dim=_,
         group=config.group if config.fuse_gqa else 1,
+        # Inferred from the store the kernel built; forwarded to the writeback
+        # helper, which infers its own `tma_bpo` from this arg.
+        tma_blocks_per_op=_,
     ],
     num_output_rows: Int32,
     out_head_idx: UInt32,

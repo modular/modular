@@ -274,6 +274,105 @@ struct STMatrixOffsets[
 
 
 @always_inline
+def o_store_tma_blocks_per_op[
+    output_type: DType,
+    output_swizzle_mode: TensorMapSwizzle,
+    ov_depth: Int,
+    group: Int,
+    depth_splits: Int,
+]() -> Int:
+    """Box size (swizzle-granularity blocks per batched O-store TMA).
+
+    The O store splits the contiguous `ov_depth` into swizzle-granularity blocks
+    `K = output_swizzle_mode.bytes() // size_of[output_type]` and a single batched
+    TMA copies `ceil(n_blocks / depth_splits)` of them (vs `n_blocks` per-block
+    copies). `depth_splits` is the number of contiguous depth ranges the issuers
+    divide the store into:
+      - MHA (`depth_splits == 2`): the descriptor is shared between the 1Q combine
+        (2 warpgroups, 1 TMA each over its half) and the single-issuer scale_write
+        (2 pipelined TMAs over its two halves), so the box is the half-depth
+        `ceil(n_blocks / 2)`.
+      - depth512 (`depth_splits == 1`): single issuer, no combine, so the box is
+        the full depth `n_blocks` (one TMA).
+    The box size is independent of `group`: `RaggedTMA3DTile` folds the
+    `(middle_dim, rows)` selectors into one dim, so even fused GQA (`group > 1`)
+    fits the *blocks* dimension within the 5D TMA limit (rank-5 batched store) and
+    uses the same `ceil(n_blocks / depth_splits)` box.
+    Returns 0 (per-block path) only when `output_swizzle_mode != SWIZZLE_NONE`:
+    the blocked-smem / identity-layout invariant the batched box relies on holds
+    only for SWIZZLE_NONE (e.g. an FP8-QKV MLA variant with a SWIZZLE_128B bf16
+    output store stays per-block).
+    `group` is retained in the signature for call-site compatibility but no longer
+    gates the result. This is the single source of truth for `tma_blocks_per_op`
+    across the O-store descriptor type/creation sites.
+    """
+    comptime if output_swizzle_mode != TensorMapSwizzle.SWIZZLE_NONE:
+        return 0
+    comptime K = output_swizzle_mode.bytes() // size_of[output_type]()
+    comptime n_blocks = align_up(ov_depth, K) // K
+    return ceildiv(n_blocks, depth_splits)
+
+
+@always_inline
+def scale_pack_o_row[
+    n: Int, //, output_type: DType, w: Int, start: Int = 0
+](o_vals: InlineArray[Scalar[DType.float32], n], inv_row_sum: Float32) -> SIMD[
+    DType.uint32, w // 2
+]:
+    """Scale the `w` f32 O lanes `o_vals[start : start + w]` by `inv_row_sum`,
+    cast to the 2-byte `output_type`, and pack into `w // 2` u32 lanes (the
+    row-major 16 B SWIZZLE_NONE store register).
+
+    `o_vals` is a `tcgen05_ld` result; `start`/`w` window it so one wide TMEM
+    load can feed several stores (depth512 loads 16 lanes, stores two 8-lane
+    blocks). Compute stays in f32x2 (64-bit) chunks because LLVM scalarizes
+    wider SIMD here; only the packed u32 store register is built wide. Shared by
+    the SM100 O-store writeback helpers (`fa4_scale_write_output`,
+    `depth512_scale_write_output`).
+    """
+    comptime assert size_of[output_type]() == 2
+    var packed = SIMD[DType.uint32, w // 2]()
+    comptime for c in range(w // 2):
+        var pair = (
+            SIMD[DType.float32, 2](
+                o_vals[start + 2 * c], o_vals[start + 2 * c + 1]
+            )
+            * inv_row_sum
+        ).cast[output_type]()
+        packed[c] = bitcast[DType.uint32, 1](pair)
+    return packed
+
+
+@always_inline
+def combine_pack_o_row[
+    n: Int, //, output_type: DType
+](
+    own: InlineArray[Scalar[DType.float32], n],
+    peer: InlineArray[Scalar[DType.float32], n],
+    scale_own: Float32,
+    scale_peer: Float32,
+) -> SIMD[DType.uint32, n // 2]:
+    """LSE-combine `own * scale_own + peer * scale_peer` over `n` f32 O lanes,
+    cast to the 2-byte `output_type`, and pack into `n // 2` u32 lanes.
+
+    `own`/`peer` are `tcgen05_ld` results. f32x2 compute / wide-only store, as
+    in `scale_pack_o_row`; the fused `peer.fma(scale_peer, own * scale_own)`
+    form matches the per-element combine it replaces. Used by
+    `fa4_lse_combine_write`.
+    """
+    comptime assert size_of[output_type]() == 2
+    var packed = SIMD[DType.uint32, n // 2]()
+    comptime for c in range(n // 2):
+        var own_c = SIMD[DType.float32, 2](own[2 * c], own[2 * c + 1])
+        var peer_c = SIMD[DType.float32, 2](peer[2 * c], peer[2 * c + 1])
+        var comb = peer_c.fma(
+            SIMD[DType.float32, 2](scale_peer), own_c * scale_own
+        ).cast[output_type]()
+        packed[c] = bitcast[DType.uint32, 1](comb)
+    return packed
+
+
+@always_inline
 def _tmem_offset(dtype_size: Int, *, MMA_N: Int, m_mma: Int, n_mma: Int) -> Int:
     row = 16 * m_mma
     col = (MMA_N * n_mma * dtype_size) // 4

@@ -23,6 +23,7 @@ from std.gpu.host import (
 )
 from nn.attention.gpu.nvidia.common import ImmutTileTensor1D
 from layout.tma_async import RaggedTMA3DTile
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.logger import Logger
 from nn.attention.gpu.nvidia.sm100.attention import FA4Config, MHA_PDL_LEVEL
 from nn.attention.gpu.nvidia.common import (
@@ -41,7 +42,11 @@ from nn.attention.mha_utils import (
     OptionallyStaticInt,
     _is_decoding,
 )
-from .attention_utils import kv_sub_tile_rows, kv_tma_fold_chunks
+from .attention_utils import (
+    kv_sub_tile_rows,
+    kv_tma_fold_chunks,
+    o_store_tma_blocks_per_op,
+)
 from .kernel import SM100MHA2Q
 
 comptime logger = Logger()
@@ -106,6 +111,11 @@ def mha_sm100_dispatch[
     @always_inline
     def with_fa4_config[fa4_config: FA4Config[KVType.dtype]]() raises:
         comptime swizzle_mode = fa4_config.swizzle_mode
+        # O output store is row-major SWIZZLE_NONE (decoupled from the swizzled
+        # Q/K/V/S/P buffers governed by `swizzle_mode`). The softmax warp loads
+        # O one-row-per-thread and writes it row-major, avoiding cross-thread
+        # shuffles and swizzling while staying bank-conflict-free.
+        comptime output_swizzle_mode = TensorMapSwizzle.SWIZZLE_NONE
         comptime BM = fa4_config.BM
         comptime fuse_gqa = fa4_config.fuse_gqa
         comptime num_threads = fa4_config.num_threads
@@ -116,19 +126,36 @@ def mha_sm100_dispatch[
         comptime BM_per_mma = fa4_config.MMA_M // fa4_config.cta_group()
         comptime assert BM == 128 or BM == 256
 
+        # Batch the O store into one TMA per issuer: the box covers
+        # `ceil(n_blocks/2)` swizzle-granularity blocks, so the single-issuer
+        # writeback emits 2 pipelined copies and the 1Q combine emits 1 per WG
+        # (vs `n_blocks` per-block copies). Fused GQA (group > 1) batches too —
+        # the RaggedTMA3DTile (middle_dim, rows) selector merge keeps it within
+        # the 5D TMA limit (rank-5; rank-4 for group==1). Only swizzled-output
+        # callers fall back to per-block (0). Shared formula keeps this in sync
+        # with the kernel param type.
+        comptime store_blocks_per_op = o_store_tma_blocks_per_op[
+            output_type,
+            output_swizzle_mode,
+            fa4_config.ov_depth,
+            fa4_config.group if fuse_gqa else 1,
+            depth_splits=2,
+        ]()
+
         comptime RaggedStoreType = RaggedTMA3DTile[
             output_type,
-            swizzle_mode,
+            output_swizzle_mode,
             BM=BM_per_mma,
             BN=fa4_config.ov_depth,
+            middle_dim=fa4_config.num_kv_heads if fuse_gqa else fa4_config.num_q_heads,
             group=fa4_config.group if fuse_gqa else 1,
+            tma_blocks_per_op=store_blocks_per_op,
         ]
 
         var ragged_tma_store = RaggedStoreType.create(
             ctx,
             output.unsafe_ptr(),
             rows=num_rows_q,
-            middle_dim=fa4_config.num_kv_heads if fuse_gqa else fa4_config.num_q_heads,
         )
 
         q_tma_op = q_tma[

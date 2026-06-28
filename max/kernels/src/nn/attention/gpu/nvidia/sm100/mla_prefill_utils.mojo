@@ -146,7 +146,11 @@ struct MLAConfig[
         else:
             self.rope_gmem_swizzle_mode = TensorMapSwizzle.SWIZZLE_128B
 
-        self.output_swizzle_mode = TensorMapSwizzle.SWIZZLE_128B
+        # O output store is row-major SWIZZLE_NONE (decoupled from the swizzled
+        # QKV/RoPE buffers). The softmax warp loads O one-row-per-thread and
+        # writes it row-major, avoiding cross-thread shuffles and swizzling
+        # while staying bank-conflict-free.
+        self.output_swizzle_mode = TensorMapSwizzle.SWIZZLE_NONE
 
         self.fa4_config = {
             num_q_heads = num_q_heads,
