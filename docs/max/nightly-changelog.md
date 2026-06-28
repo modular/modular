@@ -353,4 +353,10 @@ This version is still a work in progress.
   `<|tool_call_begin|>`). The walk now runs on a deep copy of the matcher,
   leaving the real matcher untouched.
 
+- Fixed slicing and `view()` on a `max.driver.DevicePinnedBuffer` silently
+  returning a plain `Buffer`. The decayed type lost the pinned buffer's
+  no-synchronization behavior, so a later `to_numpy()` on the slice triggered
+  an unexpected device synchronization. Slices and views now preserve the
+  `DevicePinnedBuffer` type.
+
 ## Mojo language

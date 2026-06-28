@@ -112,6 +112,46 @@ def test_device_pinned_buffer_data_transfer() -> None:
     assert np.allclose(result_np, expected)
 
 
+@pytest.mark.skipif(
+    accelerator_count() == 0,
+    reason="DevicePinnedBuffer GPU tests require GPU",
+)
+def test_device_pinned_buffer_slice_preserves_type() -> None:
+    """Slicing a DevicePinnedBuffer should stay a DevicePinnedBuffer (DRIV-7).
+
+    A slice that decays to a plain Buffer loses the no-synchronization
+    behavior, so reads like to_numpy() would trigger an unexpected
+    cuStreamSynchronize.
+    """
+    gpu = Accelerator()
+    buffer = DevicePinnedBuffer(dtype=DType.float32, shape=[10], device=gpu)
+
+    sliced = buffer[:5]
+    assert isinstance(sliced, DevicePinnedBuffer)
+    assert sliced.pinned
+    assert sliced.shape == (5,)
+
+    # A multi-dimensional slice should keep the type too.
+    buffer2d = DevicePinnedBuffer(dtype=DType.float32, shape=[4, 3], device=gpu)
+    sliced2d = buffer2d[1:3, :]
+    assert isinstance(sliced2d, DevicePinnedBuffer)
+    assert sliced2d.pinned
+
+
+@pytest.mark.skipif(
+    accelerator_count() == 0,
+    reason="DevicePinnedBuffer GPU tests require GPU",
+)
+def test_device_pinned_buffer_view_preserves_type() -> None:
+    """view() on a DevicePinnedBuffer should stay a DevicePinnedBuffer."""
+    gpu = Accelerator()
+    buffer = DevicePinnedBuffer(dtype=DType.float32, shape=[10], device=gpu)
+
+    viewed = buffer.view(DType.uint8)
+    assert isinstance(viewed, DevicePinnedBuffer)
+    assert viewed.pinned
+
+
 def test_device_pinned_buffer_cpu_zeros() -> None:
     """Test DevicePinnedBuffer.zeros() raises error on CPU."""
     cpu = CPU()
