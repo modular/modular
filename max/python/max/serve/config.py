@@ -225,6 +225,15 @@ class Settings(BaseSettings):
         alias="MAX_SERVE_TELEMETRY_WORKER_SPAWN_TIMEOUT",
     )
 
+    graceful_shutdown_timeout_s: int = Field(
+        default=5,
+        description=(
+            "Seconds to wait for in-flight requests to finish after SIGTERM "
+            "before cancelling them and exiting."
+        ),
+        alias="MAX_SERVE_GRACEFUL_SHUTDOWN_TIMEOUT_S",
+    )
+
     metric_recording: MetricRecordingMethod = Field(
         default=MetricRecordingMethod.PROCESS,
         description="How metrics should be recorded?",
