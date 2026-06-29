@@ -129,7 +129,7 @@ private:
   //
   // Do we need to support this? I don't think this is too crazy to require user
   // to type `foo[rank = 2, coord = (1, 2)]` here?
-  bool hasDeferredGivenParam = false;
+  llvm::BitVector deferredGivenParams;
 
   /// This describes the parameters that are explicitly unbound (only applicable
   /// for struct binding. For call binding, every parameter might have a

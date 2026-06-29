@@ -88,6 +88,7 @@ ParamInf::ParamInf(const ParamBindings &paramBinding,
                      declaredParamPogs, paramBinding.getExprLoc(), discardError,
                      deferredTypingContext),
       paramBindings(paramBinding), declIfKnown(declIfDirect),
+      deferredGivenParams(declaredParamTypes.size(), false),
       explicitlyUnboundParams(declaredParamTypes.size(), false),
       allowImplicitConversions(allowImplicitConversions) {}
 
@@ -389,7 +390,7 @@ LogicalResult ParamInf::inferFromRVType(ASTExprAnd<AnyValue> operand,
     // FIXME(MOCO-3300): for call binding, we need to resolve deferred parameter
     // binding before default as well (IT IS NOT THE CASE AT THE MOMENT).
     if (syntax == CallSyntax::kParamBindings && !isInferForStruct) {
-      hasDeferredGivenParam = true;
+      deferredGivenParams.set(argIdx);
       return success();
     }
 
@@ -495,7 +496,7 @@ ParamInf::inferAndEmitOneParam(ASTExprAnd<AnyValue> binding,
   expectedType = evaluator.getReboundType(expectedType);
 
   if (paramFinder.hasReferences(expectedType)) {
-    hasDeferredGivenParam = true;
+    deferredGivenParams.set(paramIdx);
     return TypedAttr(); // Deferred.
   }
 
@@ -906,7 +907,8 @@ LogicalResult ParamInf::inferFromDefaults() {
         {value, getGivenBindings().getExpr()}, argType, idx);
     if (failed(paramVal))
       return failure();
-    if (*paramVal && !evaluator.getIndexBindings()[idx])
+    if (*paramVal && !evaluator.getIndexBindings()[idx] &&
+        !deferredGivenParams[idx])
       setInferredValue(idx, *paramVal, /*isDefaulted=*/true);
     return success();
   };
@@ -2132,7 +2134,7 @@ VerifiedParamBindings CallParamInf::inferForCall() {
   if (failed(inferFromDefaults()))
     return {};
 
-  if (hasDeferredGivenParam) {
+  if (deferredGivenParams.any()) {
     // Simply try it again now that more parameter has been inferred.
     if (failed(inferFromParamList()))
       return {};
