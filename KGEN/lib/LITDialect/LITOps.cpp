@@ -11,7 +11,9 @@
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/CODialect/COUtils.h"
 #include "KGEN/Interpreter/ParametricInterpreterState.h"
+#include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENOps.h"
+#include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/KGENDialect/KGENPogUtils.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
@@ -419,6 +421,189 @@ LogicalResult LIT::CallIndirectOp::verify() {
   if (failed(verifyOriginParams(*this, sig.getBody())))
     return failure();
   return verifyCallOp(*this, sig.getBody(), getArguments(), getResultTypes());
+}
+
+//===----------------------------------------------------------------------===//
+// BindParamsOp
+//===----------------------------------------------------------------------===//
+
+static ParseResult
+parseDischargedBodyConstraints(AsmParser &p, DenseBoolArrayAttr &discharged) {
+  if (failed(p.parseOptionalVerticalBar()))
+    return success();
+
+  std::string mask;
+  if (p.parseString(&mask))
+    return failure();
+
+  SmallVector<bool> values;
+  values.reserve(mask.size());
+  for (char bit : mask) {
+    if (bit != '0' && bit != '1') {
+      return p.emitError(
+          p.getCurrentLocation(),
+          "expected discharged mask to contain only '0' and '1'");
+    }
+    values.push_back(bit == '1');
+  }
+  discharged = Builder(p.getContext()).getDenseBoolArrayAttr(values);
+  return success();
+}
+
+static DenseBoolArrayAttr
+toDenseBoolArrayAttr(MLIRContext *context, std::optional<ArrayRef<bool>> mask) {
+  if (!mask)
+    return {};
+  return DenseBoolArrayAttr::get(context, *mask);
+}
+
+/// Parse parameter bindings for `lit.bind_params` using the generator operand
+/// type. This mirrors `parseBindParams` but omits the generator attribute.
+static ParseResult
+parseBindParamsOpValues(AsmParser &p, GeneratorType genType,
+                        SmallVectorImpl<TypedAttr> &paramValues,
+                        DenseBoolArrayAttr &discharged) {
+  ParameterEvaluator evaluator;
+  evaluator.setInputDepth(1);
+  IndexDepthAdjuster minusOneAdjuster(/*adjustDepth=*/-1);
+  size_t numUnboundParams = 0;
+  for (Type inputType : genType.getInputParamTypes()) {
+    if (failed(p.parseOptionalComma()))
+      break;
+    Type remappedDeclType = evaluator.getReboundType(inputType);
+    Type defaultValueType = minusOneAdjuster.replace(remappedDeclType);
+    Type valueType;
+    if (parseColonTypeOrDefault(p, valueType, defaultValueType) ||
+        parseParamValue(p, paramValues.emplace_back(), valueType,
+                        /*disableTypeParser=*/true))
+      return failure();
+    TypedAttr value = paramValues.back();
+    if (::isa<UnboundAttr>(value)) {
+      auto residual = ParamIndexRefAttr::get(
+          /*depth=*/-1, numUnboundParams++, defaultValueType);
+      evaluator.appendIndexBinding(residual);
+      continue;
+    }
+    evaluator.appendIndexBinding(value);
+  }
+  return parseDischargedBodyConstraints(p, discharged);
+}
+
+static void printBindParamsOpValues(AsmPrinter &p, GeneratorType genType,
+                                    ArrayRef<TypedAttr> paramValues,
+                                    DenseBoolArrayAttr discharged) {
+  ParameterEvaluator evaluator;
+  evaluator.setInputDepth(1);
+  IndexDepthAdjuster minusOneAdjuster(/*adjustDepth=*/-1);
+  size_t numUnboundParams = 0;
+  for (auto [inputType, value] :
+       llvm::zip(genType.getInputParamTypes(), paramValues)) {
+    p << ", ";
+    Type remappedDeclType = evaluator.getReboundType(inputType);
+    Type defaultValueType = minusOneAdjuster.replace(remappedDeclType);
+    if (::isa<UnboundAttr>(value)) {
+      printColonTypeOrDefault(p, value.getType(), defaultValueType);
+      printParamValue(p, value);
+      auto residual = ParamIndexRefAttr::get(
+          /*depth=*/-1, numUnboundParams++, defaultValueType);
+      evaluator.appendIndexBinding(residual);
+      continue;
+    }
+    printColonTypeParamValue(p, value);
+    evaluator.appendIndexBinding(value);
+  }
+  if (discharged && !discharged.empty()) {
+    p << " | \"";
+    for (bool value : discharged.asArrayRef())
+      p << (value ? '1' : '0');
+    p << '"';
+  }
+}
+
+Type BindParamsOp::inferResultType(FnTypeGeneratorType generator,
+                                   ArrayRef<TypedAttr> paramValues,
+                                   DenseBoolArrayAttr discharged) {
+  return BindParamsAttr::inferResultType(UnknownAttr::get(generator),
+                                         paramValues, discharged,
+                                         /*evaluationContext=*/nullptr);
+}
+
+LogicalResult
+BindParamsOp::inferReturnTypes(MLIRContext *context,
+                               std::optional<Location> loc, Adaptor adaptor,
+                               SmallVectorImpl<Type> &inferredReturnTypes) {
+  auto emitError = [&](const Twine &msg) -> LogicalResult {
+    return mlir::emitOptionalError(loc, msg);
+  };
+  if (adaptor.getOperands().size() != 1)
+    return emitError("expected one generator operand");
+  auto generator =
+      dyn_cast<FnTypeGeneratorType>(adaptor.getGenerator().getType());
+  if (!generator)
+    return emitError("generator operand must have FnTypeGeneratorType");
+
+  inferredReturnTypes.push_back(
+      inferResultType(generator, adaptor.getParamValues(),
+                      toDenseBoolArrayAttr(context, adaptor.getDischarged())));
+  return success();
+}
+
+ParseResult BindParamsOp::parse(OpAsmParser &parser, OperationState &result) {
+  OpAsmParser::UnresolvedOperand generatorOperand;
+  Type generatorType, resultType;
+  SmallVector<TypedAttr> paramValues;
+  DenseBoolArrayAttr discharged;
+
+  if (parser.parseOperand(generatorOperand) || parser.parseColon() ||
+      parseGenerator(parser, generatorType))
+    return failure();
+
+  auto genType = cast<FnTypeGeneratorType>(generatorType);
+  if (parseBindParamsOpValues(parser, genType, paramValues, discharged) ||
+      parser.parseOptionalAttrDict(result.attributes) || parser.parseArrow() ||
+      parseGenerator(parser, resultType) ||
+      parser.resolveOperand(generatorOperand, generatorType, result.operands))
+    return failure();
+
+  result.addAttribute("paramValues", ParameterExprArrayAttr::get(
+                                         parser.getContext(), paramValues));
+  if (discharged)
+    result.addAttribute("discharged", discharged);
+  result.addTypes(resultType);
+  return success();
+}
+
+void BindParamsOp::print(OpAsmPrinter &p) {
+  p << " ";
+  p.printOperand(getGenerator());
+  p << " : ";
+  printGenerator(p, getGenerator().getType());
+  printBindParamsOpValues(p, getGenerator().getType(), getParamValues(),
+                          toDenseBoolArrayAttr(getContext(), getDischarged()));
+  p.printOptionalAttrDict(
+      getOperation()->getAttrs(),
+      /*elidedAttrs=*/{"generator", "paramValues", "discharged"});
+  p << " -> ";
+  printGenerator(p, getResult().getType());
+}
+
+LogicalResult BindParamsOp::verify() {
+  auto generator = getGenerator().getType();
+  TypedAttr generatorAttr = UnknownAttr::get(generator);
+  DenseBoolArrayAttr discharged =
+      toDenseBoolArrayAttr(getContext(), getDischarged());
+  if (failed(BindParamsAttr::verify([&] { return emitOpError(); },
+                                    generatorAttr, getParamValues(),
+                                    discharged)))
+    return failure();
+
+  Type expectedResult =
+      inferResultType(generator, getParamValues(), discharged);
+  if (getResult().getType() != expectedResult)
+    return emitOpError("result type ")
+           << getResult().getType() << " does not match inferred type "
+           << expectedResult;
+  return success();
 }
 
 //===----------------------------------------------------------------------===//

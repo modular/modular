@@ -86,6 +86,27 @@ kgen.generator @bind_params_discharged_mask_cleared() {
   kgen.return
 }
 
+!FnWithOrigin = !lit.generator<<origin<false>>() -> ()>
+
+// CHECK-LABEL: kgen.generator @bind_params_origin_op
+lit.fn @bind_params_origin_op(%fn: !FnWithOrigin) {
+  // CHECK-NOT: lit.bind_params
+  // CHECK: kgen.return
+  %bound = lit.bind_params %fn : !FnWithOrigin, :origin<false> #lit.any.origin -> !lit.generator<() -> ()>
+  kgen.return
+}
+
+!FnWithOriginAndConstraints = !lit.generator<<origin<false>, {<true, loc("lower-lit":2:1)>}>() -> ()>
+
+// CHECK-LABEL: kgen.generator @bind_params_origin_discharged
+lit.fn @bind_params_origin_discharged(%fn: !FnWithOriginAndConstraints) {
+  // CHECK-NOT: lit.bind_params
+  // CHECK-NOT: | "
+  // CHECK: kgen.return
+  %bound = lit.bind_params %fn : !FnWithOriginAndConstraints, :origin<false> #lit.any.origin | "1" -> !lit.generator<() -> ()>
+  kgen.return
+}
+
 // CHECK-LABEL: @generic_types_retain_convention
 lit.fn @generic_types_retain_convention<T: type>[imm a](
   // CHECK: %arg0: !kgen.param<T>,
