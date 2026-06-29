@@ -552,6 +552,54 @@ def test_rewrite_after_eviction(cache_dir: str) -> None:
     tier.shutdown()
 
 
+# -- In-flight tracking / drain --
+
+
+def test_wait_for_writes_drains_writes_and_evictions(cache_dir: str) -> None:
+    """wait_for_writes drains every write and the deletes eviction triggers.
+
+    Regression guard for the cyclic-GC stall: outstanding work is tracked by
+    an in-flight counter, not a growing list of completed Futures, so the
+    count is back to zero once drained.
+    """
+    tier = DiskTier(
+        cache_dir=cache_dir,
+        block_nbytes=16,
+        max_disk_size_bytes=32,
+    )
+
+    for h in range(8):
+        tier.write_block_async(
+            block_hash=to_block_hash_bytes(h), src=_make_block(16, seed=h)
+        )
+        tier.wait_for_writes()
+        assert tier.inflight_disk_ops == 0
+
+    assert tier.num_used_blocks == 2
+
+    tier.shutdown()
+
+
+def test_wait_for_writes_drains_reads(cache_dir: str) -> None:
+    """wait_for_writes also waits for in-flight reads, not just writes."""
+    tier = DiskTier(
+        cache_dir=cache_dir,
+        block_nbytes=16,
+        max_disk_size_bytes=10_000,
+    )
+    block_hash = to_block_hash_bytes(1)
+    tier.write_block_async(block_hash=block_hash, src=_make_block(16, seed=1))
+    tier.wait_for_writes()
+    assert tier.inflight_disk_ops == 0
+
+    dest = np.empty(16, dtype=np.uint8)
+    tier.read_block_async(block_hash=block_hash, dest=dest)
+    tier.wait_for_writes()
+    assert tier.inflight_disk_ops == 0
+
+    tier.shutdown()
+
+
 # -- Directory sharding layout --
 
 
