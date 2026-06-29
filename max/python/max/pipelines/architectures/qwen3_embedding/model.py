@@ -124,9 +124,17 @@ class Qwen3EmbeddingModel(PipelineModel[TextContext]):
             adapter: Optional weight adapter
             return_logits: Return logits mode
         """
-        self.pipeline_config = pipeline_config
+        super().__init__(
+            pipeline_config,
+            session,
+            devices,
+            kv_cache_config,
+            weights,
+            adapter,
+            return_logits,
+            max_batch_size=max_batch_size,
+        )
         self.session = session
-        self.devices = devices
 
         # Build and compile graph
         with CompilationTimer("model") as timer:
