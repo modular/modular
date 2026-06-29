@@ -1337,6 +1337,11 @@ def foo(s: SIMD) abi("Mojo"):
 def bar[n: Int]() abi("Mojo"):
     pass
 
+@export
+def exported_with_origin_param[a: ImmutOrigin](ref [a] x: Int) abi("Mojo"):
+  pass
+
+
 
 comptime _something = MyParam.p # expected-error {{'p' refers to an unbound parameter in 'MyParam[_]'}}
 
