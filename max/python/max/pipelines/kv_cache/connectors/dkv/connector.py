@@ -273,6 +273,10 @@ class DKVConnector:
     def num_used_disk_blocks(self) -> int:
         return 0
 
+    def reset_metrics(self) -> None:
+        """Clear Rust-side transfer counters after the scheduler samples a batch."""
+        self._client.reset_metrics()
+
     @property
     def metrics(self) -> KVCacheMetrics:
         total = KVCacheMetrics()

@@ -214,6 +214,11 @@ class LocalConnector:
             d2h_blocks_copied=self._d2h_blocks_copied,
         )
 
+    def reset_metrics(self) -> None:
+        """Clear transfer counters after the scheduler samples a batch."""
+        self._h2d_blocks_copied = 0
+        self._d2h_blocks_copied = 0
+
     @property
     def supported_hash_algos(self) -> frozenset[KVHashAlgo]:
         return frozenset({"ahash64", "sha256", "sha256_64"})

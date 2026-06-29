@@ -81,6 +81,9 @@ class NullConnector:
     def metrics(self) -> KVCacheMetrics:
         return KVCacheMetrics()
 
+    def reset_metrics(self) -> None:
+        pass
+
     @property
     def supported_hash_algos(self) -> frozenset[KVHashAlgo]:
         return frozenset({"ahash64", "sha256", "sha256_64"})

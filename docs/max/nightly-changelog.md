@@ -331,6 +331,10 @@ This version is still a work in progress.
 
 ## Fixes
 
+- Fixed inflated `maxserve.cache.h2d_blocks_copied` and
+  `maxserve.cache.d2h_blocks_copied` telemetry on tiered and local KV cache
+  deployments. The scheduler now resets connector transfer counters after each
+  batch metrics sample so OpenTelemetry counters report per-batch deltas.
 - Fixed `max.nn.WeightNormConvTranspose1d` raising `AttributeError` when
   constructed with its default `has_bias=False`. The constructor
   unconditionally deleted the wrapped conv's `bias` attribute, which is only
