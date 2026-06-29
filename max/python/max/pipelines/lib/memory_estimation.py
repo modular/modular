@@ -70,7 +70,13 @@ class MemoryEstimator:
     def free_memory(cls, devices: list[Device]) -> int:
         """Returns the total free memory available across all provided devices."""
         try:
-            return int(sum(d.stats["free_memory"] for d in devices))
+            free_memory = int(sum(d.stats["free_memory"] for d in devices))
+            if free_memory == 0:
+                total_memory = int(
+                    sum(d.stats.get("total_memory", 0) for d in devices)
+                )
+                return total_memory
+            return free_memory
         except Exception as e:
             logger.warning(
                 "Unable to estimate memory footprint of model, can't query device stats: "
