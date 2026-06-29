@@ -37,13 +37,11 @@ def test_star_expr_with_trailers_in_subscript():
     """`*Name.attr[T, U]()` in a subscript: no space after `*` regardless of
     how deep the trailer chain goes."""
     source = (
-        "from std.iter import AllCopyable\n"
-        "\n"
-        "\n"
-        "struct Variant[*Ts: Movable](\n"
-        "    Copyable where AllCopyable[*TypeList.of[Int, Int]()],\n"
-        "):\n"
+        "struct Holder[*Ts: Movable]:\n"
         "    pass\n"
+        "\n"
+        "\n"
+        "comptime MyHolder = Holder[*TypeList.of[Int, Int]()]\n"
     )
     assert_mojo_format(source, source)
 
