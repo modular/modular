@@ -3718,6 +3718,14 @@ struct ConvertPOPAlignedFree : public ConvertSymbolOpToLLVM<AlignedFreeOp> {
 struct ConvertPOPGlobalAlloc : public ConvertSymbolOpToLLVM<GlobalAllocOp> {
   using ConvertSymbolOpToLLVM::ConvertSymbolOpToLLVM;
 
+  // Tracks the next available local index per parent function to give
+  // deterministic names.
+  // mark `mutable` here because it is mutated in a `const` method
+  // matchAndRewrite. This pattern must remain an ModuleOp pattern
+  // instead of FunctionOp pattern so that this pattern is not being running in
+  // parallel while this mutable is not thread-safe.
+  mutable llvm::DenseMap<mlir::Operation *, unsigned> gpuSharedAllocIdx;
+
   LogicalResult matchAndRewrite(GlobalAllocOp op, GlobalAllocOpAdaptor adaptor,
                                 ConversionPatternRewriter &b) const override {
     // Set the alignment if specified. Otherwise use the natural alignment.
@@ -3735,8 +3743,16 @@ struct ConvertPOPGlobalAlloc : public ConvertSymbolOpToLLVM<GlobalAllocOp> {
     // GlobalValues to have passthrough metadata.
 
     std::string name = cast<StringAttr>(adaptor.getName()).str();
-    if (op.getMemoryType() == POP::GlobalAllocAddressSpace::GPU_SHARED)
+    if (op.getMemoryType() == POP::GlobalAllocAddressSpace::GPU_SHARED) {
+      // Scope the name to the enclosing function so every GPU_SHARED global
+      // gets a deterministic unique name per kernel.
+      if (auto parentFuncOp = op->getParentOfType<LLVM::LLVMFuncOp>()) {
+        unsigned localIdx = gpuSharedAllocIdx[parentFuncOp.getOperation()]++;
+        name = parentFuncOp.getSymName().str() + "." + name + "_" +
+               std::to_string(localIdx);
+      }
       name += "._gpu_shared_mem";
+    }
 
     // Create the global.
     b.clearInsertionPoint();
