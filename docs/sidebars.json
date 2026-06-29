@@ -420,6 +420,7 @@
                 "max/api/python/pipelines.architectures.mistral",
                 "max/api/python/pipelines.architectures.mistral3",
                 "max/api/python/pipelines.architectures.mpnet",
+                "max/api/python/pipelines.architectures.nemotron_h",
                 "max/api/python/pipelines.architectures.olmo",
                 "max/api/python/pipelines.architectures.olmo2",
                 "max/api/python/pipelines.architectures.olmo3",

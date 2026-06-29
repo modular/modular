@@ -50,6 +50,7 @@ family.
    pipelines.architectures.mistral
    pipelines.architectures.mistral3
    pipelines.architectures.mpnet
+   pipelines.architectures.nemotron_h
    pipelines.architectures.olmo
    pipelines.architectures.olmo2
    pipelines.architectures.olmo3
@@ -105,6 +106,7 @@ Text generation
    ~max.pipelines.architectures.minimax_m2
    ~max.pipelines.architectures.mistral
    ~max.pipelines.architectures.mistral3
+   ~max.pipelines.architectures.nemotron_h
    ~max.pipelines.architectures.olmo
    ~max.pipelines.architectures.olmo2
    ~max.pipelines.architectures.olmo3

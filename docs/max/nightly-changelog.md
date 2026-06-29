@@ -28,6 +28,14 @@ This version is still a work in progress.
   encoder/decoder block-diffusion text model that generates 256-token
   blocks per step via an inner denoising loop. Supports NVFP4 and bfloat16
   weights; text-only for now.
+- Added Nemotron-H (`NemotronHForCausalLM`), NVIDIA's hybrid Mamba-2 +
+  attention + relu-squared-MLP decoder, with modelopt per-tensor FP8. Adds a
+  new Mamba-2 SSD chunked-scan varlen prefill kernel (also used for decode as
+  length-1 sequences). Verified on `nvidia/NVIDIA-Nemotron-3-Nano-4B-FP8` on a
+  single B200: random-weight logit-verify cosine 0.9999 vs HuggingFace, GSM8K
+  strict-match ~0.70. Decode is optimized with an in-place SSM state-pool
+  read-modify-write that writes only the active slots (+52% output tok/s at
+  concurrency 32).
 - Added tool-calling and reasoning support to Qwen 3.5 / 3.6.
 - Added support for the Ideogram 4 (`Ideogram4Pipeline`) text-to-image
   flow-matching diffusion transformer. The pipeline pairs a Qwen3-VL text
