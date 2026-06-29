@@ -949,33 +949,49 @@ static LogicalResult concretizeLocsInScope(Block &scope, ImplNode *inode) {
 /// considering we're about to delete the op itself.
 static void recursivelyEraseFromNestedScopes(ImplNode *node, Operation *op) {
   ParameterUseDefGraph &paramGraph = node->paramGraph;
-  auto eraseScopes = [op](ParameterUseDefGraph &graph) {
-    // Erase any regions from the nested scopes that belong either to this op
-    // or under this op. Collect first — DenseMap::erase invalidates all
-    // iterators, so we cannot erase during iteration.
-    SmallVector<Region *> toErase;
-    for (auto &[r, _] : graph.nestedScopes)
-      if (op->isAncestor(r->getParentOp()))
-        toErase.push_back(r);
-    for (Region *r : toErase)
-      graph.nestedScopes.erase(r);
 
-    // Do the same for nested decls. These two are somehow not always in sync,
-    // so we have to check both separately.
-    auto newEnd = llvm::remove_if(graph.nestedDecls, [&](Region *r) {
-      return op->isAncestor(r->getParentOp());
-    });
-    graph.nestedDecls.erase(newEnd, graph.nestedDecls.end());
+  // Compute the set of regions that live within `op` (including `op`'s own
+  // regions). This is exactly { r : op->isAncestor(r->getParentOp()) }, the
+  // predicate the old code tested against every scope in the graph — but
+  // computed once in O(size of op's subtree).
+  //
+  // `ParameterUseDefGraph::calculate` flattens the graph so that the top-level
+  // `nestedScopes` map holds the scopes for ALL nesting depths (see the comment
+  // in `ParameterUseDefGraph::dump`: "Nested graphs are actually contained on
+  // the top-level map"), and `copy` preserves that flattening when `param.for`
+  // unrolling clones scopes. So every scope to erase is a key in the top-level
+  // map, and erasing a key drops its whole sub-graph. We therefore only need a
+  // direct, keyed erase against `regionsWithinOp` rather than scanning every
+  // scope and walking each one's ancestor chain — the latter was quadratic in
+  // the size of the enclosing function (every param.if/param.for resolution
+  // rescanned the whole function's scope graph).
+  llvm::SmallPtrSet<Region *, 8> regionsWithinOp;
+  for (Region &r : op->getRegions())
+    regionsWithinOp.insert(&r);
+  op->walk([&](Operation *o) {
+    for (Region &r : o->getRegions())
+      regionsWithinOp.insert(&r);
+  });
+
+  llvm::SmallPtrSet<Region *, 8> parentScopesToPrune;
+  for (Region *r : regionsWithinOp) {
+    paramGraph.nestedScopes.erase(r);
+    if (Region *parent = r->getParentOp()->getParentRegion())
+      parentScopesToPrune.insert(parent);
+  }
+
+  auto pruneNestedDecls = [&](ParameterUseDefGraph &g) {
+    auto newEnd = llvm::remove_if(
+        g.nestedDecls, [&](Region *r) { return regionsWithinOp.contains(r); });
+    g.nestedDecls.erase(newEnd, g.nestedDecls.end());
   };
-  // Delete references to this nested declaration from all nested graphs.
-  // ParameterUseDefGraph nests recursively, so we must traverse all levels —
-  // erasing only the top level leaves stale Region* in deeper sub-graphs.
-  SmallVector<ParameterUseDefGraph *> worklist = {&paramGraph};
-  while (!worklist.empty()) {
-    ParameterUseDefGraph *g = worklist.pop_back_val();
-    eraseScopes(*g);
-    for (auto &[scope, nested] : g->nestedScopes)
-      worklist.push_back(&nested);
+  pruneNestedDecls(paramGraph);
+  for (Region *parentScope : parentScopesToPrune) {
+    if (parentScope == paramGraph.scope)
+      continue;
+    auto it = paramGraph.nestedScopes.find(parentScope);
+    if (it != paramGraph.nestedScopes.end())
+      pruneNestedDecls(it->second);
   }
 }
 
