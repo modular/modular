@@ -182,6 +182,10 @@ class KVConnector(Protocol):
         """Transfer metrics for this connector. Returns empty metrics by default."""
         return KVCacheMetrics()
 
+    def reset_metrics(self) -> None:
+        """Reset per-batch transfer counters after the scheduler samples them."""
+        return None
+
     @property
     def supported_hash_algos(self) -> frozenset[KVHashAlgo]:
         """Set of hash algos this connector accepts in ``load``/``offload``.

@@ -455,6 +455,13 @@ class TieredConnector:
             inflight_disk_ops=self._disk_tier.inflight_disk_ops,
         )
 
+    def reset_metrics(self) -> None:
+        """Clear transfer counters after the scheduler samples a batch."""
+        self._h2d_blocks_copied = 0
+        self._d2h_blocks_copied = 0
+        self._disk_blocks_written = 0
+        self._disk_blocks_read = 0
+
     def _maybe_offload_to_host(self, block_hash: bytes) -> KVCacheBlock | None:
         """Reserve a host slot for device_block_id if not already cached.
 
