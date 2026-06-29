@@ -6198,12 +6198,165 @@ def mxfp4_dequant(
     return result
 
 
+def nvfp4_gemv(
+    x: TensorValue,
+    packed_weights: TensorValue,
+    scales: TensorValue,
+) -> TensorValue:
+    """Fused NVFP4 dequant-GEMV: ``x @ W.T`` with FP4 decoded in registers.
+
+    Pre-Blackwell fallback path. The BF16 weight is never materialized, so
+    per-token DRAM traffic is the packed bytes (~0.5 B/element). Optimized
+    for small M (decode); prefill rows are tiled in groups of 4.
+
+    Args:
+        x: Activations ``[M, K]`` in bfloat16.
+        packed_weights: Packed FP4 weight ``[N, K // 2]`` in uint8.
+        scales: Float32 block scales ``[N, K // 16]`` with the per-tensor
+            scale pre-multiplied.
+
+    Returns:
+        ``[M, N]`` in bfloat16.
+    """
+    if x.dtype != DType.bfloat16:
+        raise ValueError(f"nvfp4_gemv requires bfloat16 x, got {x.dtype}")
+    if packed_weights.dtype != DType.uint8:
+        raise ValueError("nvfp4_gemv requires uint8 packed weights")
+    if scales.dtype != DType.float32:
+        raise ValueError("nvfp4_gemv requires float32 scales")
+
+    m = x.shape[0]
+    n = packed_weights.shape[0]
+    return ops.custom(
+        "mo.gemv.nvfp4",
+        device=x.device,
+        values=[x, packed_weights, scales],
+        out_types=[
+            TensorType(
+                dtype=DType.bfloat16,
+                shape=[m, n],
+                device=x.device,
+            )
+        ],
+    )[0].tensor
+
+
+def nvfp4_dequant(
+    packed_weights: TensorValue,
+    scales: TensorValue,
+    out_type: DType = DType.bfloat16,
+) -> TensorValue:
+    """Dequantizes NVFP4 packed weights to BF16 or FP8 on GPU.
+
+    Software-decode kernel that runs on any GPU — the fallback path on
+    architectures without native FP4 matmul support (pre-Blackwell NVIDIA).
+    The modelopt per-tensor ``weight_scale_2`` must be pre-multiplied into
+    ``scales`` by the caller (yielding float32 scales); raw float8_e4m3fn
+    block scales are also accepted (currently exercised only by tests —
+    the modelopt parser always provides a per-tensor scale).
+
+    Supports rank 2 ``[N, K//2]`` and rank 3 ``[E, N, K//2]`` inputs.
+    For rank 3, leading dims are flattened to 2D, dequantized, and reshaped back.
+
+    Args:
+        packed_weights: Packed weights in uint8 (2 FP4 values per byte).
+            Shape ``[N, K//2]`` or ``[E, N, K//2]``.
+        scales: Block scales in float32 (pre-multiplied) or float8_e4m3fn.
+            Shape ``[N, K//16]`` or ``[E, N, K//16]`` (non-interleaved).
+        out_type: Output dtype (bfloat16 or float8_e4m3fn).
+
+    Returns:
+        Dequantized tensor ``[N, K]`` or ``[E, N, K]`` in out_type.
+    """
+    if packed_weights.rank not in (2, 3):
+        raise ValueError(
+            f"packed_weights must be rank 2 or 3, got {packed_weights.rank}"
+        )
+    if scales.rank != packed_weights.rank:
+        raise ValueError(
+            f"scales rank ({scales.rank}) must match packed_weights rank"
+            f" ({packed_weights.rank})"
+        )
+    if packed_weights.dtype != DType.uint8:
+        raise ValueError(
+            f"packed_weights must be uint8, got {packed_weights.dtype}"
+        )
+    if scales.dtype not in (DType.float32, DType.float8_e4m3fn):
+        raise ValueError(
+            "scales must be float32 (pre-multiplied) or float8_e4m3fn, got"
+            f" {scales.dtype}"
+        )
+
+    # Flatten leading dims if rank 3
+    is_batched_weights = packed_weights.rank == 3
+    if is_batched_weights:
+        e = packed_weights.shape[0]
+        n = packed_weights.shape[1]
+        k_packed = packed_weights.shape[2]
+        packed_weights = ops.reshape(packed_weights, [e * n, k_packed])
+        scales = ops.reshape(scales, [e * n, scales.shape[2]])
+
+    rows = packed_weights.shape[0]
+    k = packed_weights.shape[1] * 2  # Unpacked column count
+
+    result = ops.custom(
+        "mo.dequant.nvfp4",
+        device=packed_weights.device,
+        values=[packed_weights, scales],
+        out_types=[
+            TensorType(
+                dtype=out_type,
+                shape=[rows, k],
+                device=packed_weights.device,
+            )
+        ],
+    )[0].tensor
+
+    # Reshape back if originally rank 3
+    if is_batched_weights:
+        result = ops.reshape(result, [e, n, k])
+
+    return result
+
+
+def _nvidia_sm_version() -> int | None:
+    """Returns the NVIDIA SM compute capability as an int (``sm_89`` -> 89).
+
+    Returns None when the accelerator is not an NVIDIA GPU (AMD, Apple) or the
+    architecture name cannot be queried. Any non-digit suffix is stripped, so
+    arch-variant names like ``sm_90a`` parse to 90.
+    """
+    try:
+        arch = accelerator_architecture_name()
+    except Exception:
+        return None
+    if not arch.startswith("sm_"):
+        return None
+    digits = ""
+    for ch in arch[len("sm_") :]:
+        if not ch.isdigit():
+            break
+        digits += ch
+    return int(digits) if digits else None
+
+
 def _is_sm10x_gpu() -> bool:
     """Checks if the current accelerator is NVIDIA SM100+ (Blackwell)."""
-    try:
-        return accelerator_architecture_name().startswith("sm_10")
-    except Exception:
-        return False
+    sm = _nvidia_sm_version()
+    return sm is not None and sm >= 100
+
+
+def _is_pre_sm100_nvidia_gpu() -> bool:
+    """Checks for an NVIDIA GPU without native FP4 matmul (pre-Blackwell).
+
+    Deliberately False on AMD and Apple GPUs: the NVFP4 dequant fallback is
+    only validated on NVIDIA, so other vendors keep their previous behavior
+    (erroring at the Blackwell-only kernels). A numeric compare (not a string
+    prefix) keeps future archs like ``sm_120`` on the native SM100+ path
+    instead of misclassifying them as pre-Blackwell.
+    """
+    sm = _nvidia_sm_version()
+    return sm is not None and sm < 100
 
 
 def quantize_dynamic_block_scaled(
@@ -6332,6 +6485,89 @@ def quantize_dynamic_block_scaled(
         parameters={
             "SF_VECTOR_SIZE": sf_vector_size,
         },
+    )
+
+    return result[0].tensor, result[1].tensor
+
+
+def grouped_quantize_dynamic_block_scaled_fp4(
+    input: TensorValue,
+    row_offsets: TensorValue,
+    scales_offsets: TensorValue,
+    expert_ids: TensorValue,
+    sf_tensor: TensorValue,
+    sf_vector_size: int = 16,
+    scales_type: DType = DType.float8_e4m3fn,
+    out_type: DType = DType.uint8,
+) -> tuple[TensorValue, TensorValue]:
+    """Grouped dynamic FP4 quantization for MoE experts.
+
+    Quantizes a concatenated token tensor where different row ranges belong
+    to different experts, each with its own tensor-wise scale factor.
+
+    Args:
+        input: The concatenated input tensor. Shape: ``[total_tokens, K]``,
+            dtype ``bfloat16``.
+        row_offsets: Cumulative token offsets per expert.
+            Shape: ``[num_experts + 1]``, dtype ``uint32``.
+        scales_offsets: Per-expert scale tile offset corrections.
+            Shape: ``[num_experts]``, dtype ``uint32``.
+        expert_ids: Expert ID mapping (typically identity).
+            Shape: ``[num_experts]``, dtype ``int32``.
+        sf_tensor: Per-expert tensor-wise scale factors.
+            Shape: ``[num_experts]``, dtype ``float32``.
+        sf_vector_size: The block size for the scaling factors.
+        scales_type: Scale factor dtype. ``float8_e4m3fn`` for NVFP4.
+        out_type: Output dtype. ``uint8`` for packed FP4.
+
+    Returns:
+        The quantized tensor ``[total_tokens, K // 2]`` and scales in
+        rank-5 interleaved layout
+        ``[total_m_tiles, K_tiles, 32, 4, 4]``.
+    """
+    if input.rank != 2:
+        raise ValueError("input tensor must be rank 2")
+
+    if input.dtype != DType.bfloat16:
+        raise ValueError("input tensor dtype must be bfloat16")
+
+    if not _is_sm10x_gpu():
+        # route to the fallback kernel
+        return quantize_dynamic_block_scaled(
+            input, sf_tensor[0], sf_vector_size, scales_type, out_type
+        )
+
+    SF_ATOM_M = [32, 4]
+    SF_ATOM_K = 4
+    SF_MN_GROUP_SIZE = SF_ATOM_M[0] * SF_ATOM_M[1]  # 128
+    SF_K_GROUP_SIZE = SF_ATOM_K * 16
+
+    total_m_tiles = ceildiv(input.shape[0], Dim(SF_MN_GROUP_SIZE))
+    total_m_tiles += expert_ids.shape[0]  # add one padding tile for each group
+    scales_shape: list[Dim | int] = [
+        total_m_tiles,
+        ceildiv(input.shape[1], Dim(SF_K_GROUP_SIZE)),
+        SF_ATOM_M[0],
+        SF_ATOM_M[1],
+        SF_ATOM_K,
+    ]
+
+    result = ops.custom(
+        "mo.grouped.quantize.dynamic.block.scaled",
+        device=input.device,
+        values=[input, row_offsets, scales_offsets, expert_ids, sf_tensor],
+        out_types=[
+            TensorType(
+                dtype=out_type,
+                shape=[input.shape[0], input.shape[1] // 2],
+                device=input.device,
+            ),
+            TensorType(
+                dtype=scales_type,
+                shape=scales_shape,
+                device=input.device,
+            ),
+        ],
     )
 
     return result[0].tensor, result[1].tensor

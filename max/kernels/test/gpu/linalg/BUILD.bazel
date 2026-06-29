@@ -67,6 +67,16 @@ _EXTRA_CONSTRAINTS = {
         "//:nvidia_gpu",
         "//:has_multi_gpu",
     ],
+    "test_nvfp4_dequant_smoke.mojo": select({
+        "//:nvidia_gpu": ["//:nvidia_gpu"],
+        "//:amd_gpu": ["//:amd_gpu"],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "test_nvfp4_gemv_smoke.mojo": select({
+        "//:nvidia_gpu": ["//:nvidia_gpu"],
+        "//:amd_gpu": ["//:amd_gpu"],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     "test_mxfp4_dequant_smoke.mojo": select({
         "//:h100_gpu": ["//:h100_gpu"],
         "//:amd_gpu": ["//:amd_gpu"],

@@ -27,7 +27,9 @@ from ..kernels import (
     grouped_dynamic_scaled_mxfp4_matmul,
     grouped_matmul_block_scaled,
     grouped_matmul_blocked_swiglu,
+    grouped_matmul_ragged,
     grouped_quantize_dynamic_block_scaled,
+    nvfp4_dequant,
     quantize_dynamic_block_scaled_mxfp4,
     quantize_dynamic_scaled_float8,
 )
@@ -442,6 +444,116 @@ class NvMxf4f8Strategy:
             clamp_activation=use_swigluoai,
             swiglu_alpha=swiglu_alpha,
             swiglu_limit=swiglu_limit,
+        )
+
+
+class Nvfp4DequantStrategy:
+    """NVFP4 fallback for GPUs without native FP4 matmul (pre-Blackwell).
+
+    Keeps activations in BF16 (no dynamic quantization), dequantizes the
+    expert weights to BF16 with the software-LUT kernel, and routes the
+    expert computation through the regular BF16 grouped matmul. Slower and
+    more memory-hungry per matmul than the SM100 path, but it is the only
+    way to serve NVFP4 checkpoints on these GPUs (BF16 weights would not
+    fit at all for the models NVFP4 targets).
+    """
+
+    def __init__(self, config: QuantConfig, dtype: DType):
+        self.config = config
+        self.dtype = dtype
+
+    def quantize(
+        self,
+        tensor: TensorValue,
+        group_size: int,
+    ) -> tuple[TensorValue, TensorValue]:
+        # Activations stay BF16; the scales slot is unused on this path
+        # (grouped_matmul below never reads it).
+        return tensor, tensor
+
+    def grouped_quantize(
+        self,
+        tensor: TensorValue,
+        group_size: int,
+        input_scale: TensorValue | None,
+        expert_start: TensorValue,
+        scales_offset: TensorValue,
+        expert_ids: TensorValue,
+    ) -> tuple[TensorValue, TensorValue]:
+        # Activations stay BF16 (see quantize()).
+        return tensor, tensor
+
+    def grouped_matmul(
+        self,
+        weight: TensorValue,
+        weight_scales: TensorValue,
+        expert_scales: TensorValue | None = None,
+        expert_inputs: tuple[TensorValue, ...] = (),
+        estimated_total_m: TensorValue | None = None,
+        a_scales_preshuffled: bool = False,
+        a_scales_max_padded_m: int = 0,
+    ) -> TensorValue:
+        """Dequantizes expert weights to BF16 and runs the BF16 grouped matmul.
+
+        ``expert_scales`` here is the raw per-expert ``weight_scale_2``
+        (NOT multiplied by any activation input scale -- activations are
+        never quantized on this path). ``a_scales_preshuffled`` and
+        ``a_scales_max_padded_m`` are accepted for protocol conformance but
+        unused: activation scales are never preshuffled on the BF16 fallback.
+        """
+        if expert_scales is None:
+            raise ValueError("NVFP4 requires expert_scales")
+
+        hidden, _, expert_start, _, expert_ids, usage_stats = expert_inputs
+
+        # Replace GPU usage stats with a dummy CPU constant rather than copying
+        # them back: the host transfer would force a device sync on the decode
+        # hot path, and grouped_matmul_ragged does not need accurate stats here
+        # (same approach as the native NvMxf4f8Strategy path above).
+        if usage_stats.device.is_gpu():
+            usage_stats = ops.constant(
+                [8192, int(expert_ids.shape[0])],
+                dtype=DType.uint32,
+                device=DeviceRef.CPU(),
+            )
+
+        # Pre-multiply the per-tensor scale into the block scales:
+        # [E, 1, 1] * [E, N, K//16] -> float32 [E, N, K//16].
+        scales_f32 = weight_scales.cast(DType.float32) * ops.reshape(
+            expert_scales.to(weight_scales.device).cast(DType.float32),
+            [expert_scales.shape[0], 1, 1],
+        )
+        # Activations are BF16 on this path by construction; self.dtype is
+        # the packed storage dtype (uint8) and must not be used here.
+        dequanted = nvfp4_dequant(weight, scales_f32, out_type=DType.bfloat16)
+
+        return grouped_matmul_ragged(
+            hidden,
+            dequanted,
+            expert_start,
+            expert_ids,
+            usage_stats,
+        )
+
+    def prepare_weight_scales(
+        self,
+        gate_up: TensorValue,
+        down: TensorValue,
+        device: DeviceRef,
+    ) -> tuple[TensorValue, TensorValue]:
+        """No interleaving: the dequant kernel reads flat [E, N, K//16]."""
+        return gate_up.to(device), down.to(device)
+
+    def fused_silu_quantize(
+        self,
+        gate_up_projs: TensorValue,
+        input_scales: TensorValue | None = None,
+        expert_inputs: tuple[TensorValue, ...] = (),
+        max_padded_M: int = 0,
+    ) -> tuple[TensorValue, TensorValue]:
+        raise NotImplementedError(
+            "fused_silu_quantize is not used on the NVFP4 dequant fallback"
+            " (expert-parallel NVFP4 is not supported on pre-Blackwell GPUs)"
         )
 
 

@@ -19,6 +19,7 @@ from .kernels import (
     _fused_qkv_ragged_matmul_scaled_float4,
     _fused_qkv_ragged_matmul_scaled_float8,
     _fused_qkv_ragged_matmul_scaled_mxfp8,
+    _is_pre_sm100_nvidia_gpu,
     block_scales_interleave,
     convert_weights_to_fp8_fnuz_if_needed,
     dynamic_block_scaled_matmul,
@@ -28,6 +29,7 @@ from .kernels import (
     grouped_matmul_ragged,
     matmul_static_scaled_float8,
     mxfp4_dequant,
+    nvfp4_gemv,
     quantize_dynamic_block_scaled,
     quantize_dynamic_block_scaled_mxfp4,
     quantize_dynamic_scaled_float8,
@@ -79,6 +81,11 @@ def _matmul_float4(
 ) -> TensorValue:
     """Computes x @ weight.T with modelopt NVFP4 quantization.
 
+    On NVIDIA GPUs without native FP4 matmul (pre-Blackwell), the fused
+    dequant-GEMV decodes the packed weight in registers instead
+    (``input_scale`` is unused there — activations are never quantized on
+    the fallback path).
+
     Args:
         x: The input tensor in bf16.
         weight: The weight tensor in uint8 (float4-e2m1x2).
@@ -92,6 +99,22 @@ def _matmul_float4(
     Returns:
         The output tensor in bf16.
     """
+    if _is_pre_sm100_nvidia_gpu():
+        # Fused dequant-GEMV (Marlin-style): FP4 is decoded in registers
+        # inside the kernel, so the BF16 weight is never materialized and
+        # per-token DRAM traffic is the packed bytes only. The op consumes
+        # x, so unlike dequantize-then-matmul it can never be hoisted into
+        # an init-time constant (which costs ~3x the packed size in VRAM).
+        if scales_pre_interleaved:
+            raise ValueError(
+                "NVFP4 checkpoints with pre-interleaved (TCGEN 5D) scales"
+                " are not supported on pre-Blackwell GPUs"
+            )
+        scales_f32 = weight_scale.to(weight.device).cast(
+            DType.float32
+        ) * weight_scale_2.to(weight.device)
+        return nvfp4_gemv(x.cast(DType.bfloat16), weight, scales_f32)
+
     x, x_scales = quantize_dynamic_block_scaled(
         x,
         tensor_sf=1.0 / input_scale,
@@ -454,6 +477,17 @@ def quantized_fused_qkv_matmul(
         case QuantFormat.NVFP4:
             assert input_scale is not None
             assert weight_scale_2 is not None
+
+            if _is_pre_sm100_nvidia_gpu():
+                # No in-tree model reaches this branch on pre-Blackwell:
+                # NVFP4 QKV projections route through StackedLinear and
+                # _matmul_float4 (already fused). Keep a clear error rather
+                # than dead fallback code.
+                raise ValueError(
+                    "quantized_fused_qkv_matmul has no NVFP4 path on"
+                    " pre-Blackwell GPUs; route QKV through StackedLinear"
+                    " (_matmul_float4) instead"
+                )
 
             x, x_scales = quantize_dynamic_block_scaled(
                 x,

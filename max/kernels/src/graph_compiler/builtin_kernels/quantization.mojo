@@ -42,7 +42,8 @@ from linalg.matmul.gpu.amd import (
     Shuffler,
     mxfp4_grouped_matmul_amd,
 )
-from linalg.mxfp4_dequant import dequant_mxfp4
+from linalg.nvfp4_gemv import nvfp4_gemv
+from linalg.mxfp4_dequant import dequant_mxfp4, dequant_nvfp4
 from nn.bicubic import resize_bicubic
 from nn.kv_cache import generic_get_paged_cache
 from nn.kv_cache_ragged import unfused_qkv_matmul_ragged_paged_gguf_quantized
@@ -818,6 +819,98 @@ struct Struct_dequant_mxfp4:
             num_rows=num_rows,
             num_cols=num_cols,
         )
+
+
+@compiler.register("mo.dequant.nvfp4")
+struct NVFP4Dequant:
+    @always_inline
+    @staticmethod
+    def execute[
+        out_type: DType,
+        in_type: DType,
+        scales_type: DType,
+        //,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=out_type, rank=2, ...],
+        input: InputTensor[dtype=in_type, rank=2, ...],
+        scales: InputTensor[dtype=scales_type, rank=2, ...],
+        context: DeviceContext,
+    ) raises:
+        comptime assert is_gpu[target](), "NVFP4 dequant only supports GPUs"
+        comptime assert out_type in (
+            DType.bfloat16,
+            DType.float8_e4m3fn,
+        ), "NVFP4 dequant output must be bfloat16 or float8_e4m3fn"
+        comptime assert (
+            in_type == DType.uint8
+        ), "NVFP4 dequant input must be uint8 (packed FP4)"
+        comptime assert scales_type in (
+            DType.float8_e4m3fn,
+            DType.float32,
+        ), "NVFP4 dequant scales must be float8_e4m3fn or float32"
+
+        cuda_ctx = context
+
+        var in_tt = input.to_tile_tensor[DType.int64]()
+        var scales_tt = scales.to_tile_tensor[DType.int64]()
+        var out_tt = output.to_tile_tensor[DType.int64]()
+
+        var num_rows = Int(in_tt.dim[0]())
+        # num_cols is the unpacked column count (2x packed)
+        var num_cols = Int(in_tt.dim[1]()) * 2
+
+        dequant_nvfp4(
+            cuda_ctx,
+            out_tt,
+            in_tt,
+            scales_tt,
+            num_rows=num_rows,
+            num_cols=num_cols,
+        )
+
+
+@compiler.register("mo.gemv.nvfp4")
+struct NVFP4Gemv:
+    """Fused NVFP4 dequant-GEMV: C[M, N] = A[M, K] @ W_packed.T.
+
+    Pre-Blackwell fallback that decodes FP4 in registers — the BF16 weight
+    is never materialized in global memory.
+    """
+
+    @always_inline
+    @staticmethod
+    def execute[
+        c_type: DType,
+        a_type: DType,
+        //,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=c_type, rank=2, ...],
+        a: InputTensor[dtype=a_type, rank=2, ...],
+        w_packed: InputTensor[dtype=DType.uint8, rank=2, ...],
+        scales: InputTensor[dtype=DType.float32, rank=2, ...],
+        context: DeviceContext,
+    ) raises:
+        comptime assert is_gpu[target](), "NVFP4 gemv only supports GPUs"
+        comptime assert c_type in (
+            DType.bfloat16,
+            DType.float32,
+        ), "NVFP4 gemv output must be bfloat16 or float32"
+        comptime assert (
+            a_type == DType.bfloat16
+        ), "NVFP4 gemv activations must be bfloat16"
+
+        var c_tt = output.to_tile_tensor[DType.int64]()
+        var a_tt = a.to_tile_tensor[DType.int64]()
+        var w_tt = w_packed.to_tile_tensor[DType.int64]()
+        var s_tt = scales.to_tile_tensor[DType.int64]()
+
+        var m = Int(a_tt.dim[0]())
+        var n = Int(w_tt.dim[0]())
+        var k = Int(w_tt.dim[1]()) * 2
+
+        nvfp4_gemv(context, c_tt, a_tt, w_tt, s_tt, m, n, k)
 
 
 @compiler.register("mo.interleave.block.scales")
