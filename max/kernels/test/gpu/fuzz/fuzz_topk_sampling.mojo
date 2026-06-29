@@ -165,12 +165,12 @@ def gen_specs(n: Int) -> List[CaseSpec]:
             # whole row -Inf (the clean trigger-(a) p==-1). 3 = all-NaN row
             # (deterministic trigger (b)). Also try all-positive (2) and mixed
             # (0). dist 5 (NaN/Inf specials) is a softer probabilistic (b).
-            var sroll = Int(random_ui64(0, 4))
-            if sroll == 0 or sroll == 1:
+            var sign_roll = Int(random_ui64(0, 4))
+            if sign_roll == 0 or sign_roll == 1:
                 logit_sign = 1
-            elif sroll == 2:
+            elif sign_roll == 2:
                 logit_sign = 3
-            elif sroll == 3:
+            elif sign_roll == 3:
                 logit_sign = 0
             else:
                 logit_sign = 2

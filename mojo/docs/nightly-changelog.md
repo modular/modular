@@ -257,8 +257,8 @@ This version is still a work in progress.
 - The traits `ImplicitlyDeletable`, `Movable`, `Copyable`, and
   `ImplicitlyCopyable` are now stable.
 
-- Removed `trait_downcast_var()`. Improvements to type refinment based on
-  `where conforms_to(..)` and `comptime assert conforms_to(..)` make explcit
+- Removed `trait_downcast_var()`. Improvements to type refinement based on
+  `where conforms_to(..)` and `comptime assert conforms_to(..)` make explicit
   value trait downcasting no longer necessary.
 
 - Added `raise_python_exception()` to `std.python.bindings`, which translates a

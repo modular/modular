@@ -130,7 +130,7 @@ class EPBatchManager:
     Populated by fetch_buffers when config.eplb_enabled is True."""
 
     _eplb_logcnt_per_device: dict[int, BufferValue] = {}
-    """Per-device logcnt bufffer. Shape: [num_moe_layer, num_experts_per_layer]"""
+    """Per-device logcnt buffer. Shape: [num_moe_layer, num_experts_per_layer]"""
 
     _eplb_phy2log: NDArray[np.int64] | None = None
     """Per-layer logical->physical map from EPLB. Shape [num_layers, num_phy].
