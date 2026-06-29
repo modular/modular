@@ -84,6 +84,7 @@ modular_py_test(
 _NN_LIGHT_GPU_TESTS = [
     "test_async_host_func_gpu.py",
     "test_completion_flag_gpu.py",
+    "test_grouped_matmul_rowwise_fp8_gpu.py",
     "test_host_func_gpu.py",
     "test_moe_gpu.py",
     "test_sleep_gpu.py",

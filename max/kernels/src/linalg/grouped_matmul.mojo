@@ -18,7 +18,7 @@ from std.sys.info import has_amd_gpu_accelerator, has_amd_rdna_gpu_accelerator
 from std.gpu import MAX_THREADS_PER_BLOCK_METADATA, WARP_SIZE, barrier
 from std.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu.host.info import H100, _is_sm10x_gpu
+from std.gpu.host.info import H100, _is_sm10x_gpu, is_gpu
 from std.gpu import block_idx, global_idx, warp_id, lane_id, thread_idx
 from std.gpu.memory import external_memory
 from std.gpu.primitives.grid_controls import PDLLevel
@@ -1282,6 +1282,281 @@ def naive_grouped_matmul[
         ),
         block_dim=(32, 16, 1),
     )
+
+
+# ===----------------------------------------------------------------------=== #
+# Rowwise / per-token dynamic-scaled FP8 grouped matmul (SM100 B200)
+# ===----------------------------------------------------------------------=== #
+#
+# Target: NVIDIA SM100 (B200). Correctness-first naive ``block_idx.z`` grouped
+# kernel - NO persistent / TileScheduler / TMA path (deliberately deferred).
+#
+# This serves rowwise (per-output-channel) weight scales + per-token (colwise)
+# dynamic activation scales - the compressed-tensors FP8 layout used by
+# ``RedHatAI/Llama-4-Scout-17B-16E-Instruct-FP8-dynamic`` - which the 128x128
+# blockwise grouped FP8 kernel (``grouped_matmul_dynamic_scaled_fp8``) cannot
+# express (it hard-asserts ``(1,128,128)`` scale granularity).
+#
+# The simplification vs. the blockwise kernel: there is NO per-K scale
+# streaming. We accumulate the FP8 x FP8 products in fp32 over the FULL K, then
+# apply a SINGLE epilogue scale:
+#
+#     out[t, n] = (sum_k a[t, k] * b[expert, n, k]) * a_scale[t] * b_scale[expert, n]
+#
+# Correctness invariants (mirrors the dense rowwise path in
+# ``fp8_quantization.matmul_dynamic_scaled_fp8`` and the blockwise grouped
+# reference ``naive_blockwise_scaled_fp8_grouped_matmul``):
+#   1. ``a_scale`` is indexed by the GLOBAL ragged row ``a_start_row + m``,
+#      NOT the per-expert local row ``m``.
+#   2. ``b_scale`` is indexed by the REAL expert id ``expert_ids[z]``, NOT the
+#      group index ``z`` (these differ for sparse routing).
+#   3. Accumulate in fp32; scale ONCE after the full-K reduction. A partial-K
+#      rescale would be silently wrong.
+#   4. Empty groups (M == 0) produce no work; ``expert == -1`` (LoRA-style
+#      inactive block) skips the matmul but the row range is still empty so no
+#      output is written for it here.
+
+
+@__name(t"grouped_matmul_rowwise_scaled_fp8_kernel_{c_type}_{a_type}_{b_type}")
+def grouped_matmul_rowwise_scaled_fp8_kernel[
+    c_type: DType,
+    a_type: DType,
+    b_type: DType,
+    a_scales_type: DType,
+    b_scales_type: DType,
+    accum_type: DType,
+    CLayout: TensorLayout,
+    ALayout: TensorLayout,
+    BLayout: TensorLayout,
+    AScalesLayout: TensorLayout,
+    BScalesLayout: TensorLayout,
+    AOffsetsLayout: TensorLayout,
+    ExpertIdsLayout: TensorLayout,
+    *,
+    transpose_b: Bool = True,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+](
+    c: TileTensor[mut=True, c_type, CLayout, MutAnyOrigin],
+    a: TileTensor[mut=False, a_type, ALayout, MutAnyOrigin],
+    b: TileTensor[mut=False, b_type, BLayout, MutAnyOrigin],
+    a_scales: TileTensor[mut=False, a_scales_type, AScalesLayout, MutAnyOrigin],
+    b_scales: TileTensor[mut=False, b_scales_type, BScalesLayout, MutAnyOrigin],
+    a_offsets: TileTensor[
+        mut=False, DType.uint32, AOffsetsLayout, MutAnyOrigin
+    ],
+    expert_ids: TileTensor[
+        mut=False, DType.int32, ExpertIdsLayout, MutAnyOrigin
+    ],
+):
+    comptime assert transpose_b, "Only support transposed B (B is [E, N, K])."
+    comptime assert (
+        accum_type == DType.float32
+    ), "Only float32 accumulation is supported."
+    comptime assert a_offsets.flat_rank == 1, "a_offsets must be rank 1"
+    comptime assert expert_ids.flat_rank == 1, "expert_ids must be rank 1"
+    comptime assert c.flat_rank == 2, "c must be rank 2"
+    comptime assert a.flat_rank == 2, "a must be rank 2"
+    comptime assert b.flat_rank == 3, "b must be rank 3 ([E, N, K])"
+    comptime assert a_scales.flat_rank == 2, "a_scales must be rank 2 ([T, 1])"
+    comptime assert (
+        b_scales.flat_rank == 3
+    ), "b_scales must be rank 3 ([E, N, 1])"
+
+    var M: Int = Int(a_offsets[block_idx.z + 1] - a_offsets[block_idx.z])
+    var N = Int(b.dim[1]())
+    var K = Int(b.dim[2]())
+
+    var a_start_row = a_offsets[block_idx.z]
+    var a_by_expert = a.ptr + Int64(a_start_row) * Int64(K)
+
+    var expert = expert_ids[block_idx.z]
+    var b_by_expert = b.ptr + Int64(expert) * Int64(N) * Int64(K)
+
+    # indices in current matmul
+    var n = global_idx.x
+    var m = global_idx.y
+
+    if n >= N or m >= M:
+        return
+
+    # Global ragged row index for this token (correctness invariant #1).
+    var m_global = a_start_row + UInt32(m)
+
+    var accum = Scalar[accum_type](0.0)
+
+    # ``expert == -1`` marks an inactive (LoRA) block; skip the matmul.
+    if expert != -1:
+        for k in range(K):
+            accum += (
+                a_by_expert[m * K + k].cast[accum_type]()
+                * b_by_expert[n * K + k].cast[accum_type]()
+            )
+
+        # Apply the rowwise + per-token scale ONCE after the full-K reduction
+        # (correctness invariant #3). a_scale is per global token (invariant
+        # #1); b_scale is per (real expert, output channel) (invariant #2).
+        comptime assert a_scales.flat_rank == 2
+        comptime assert b_scales.flat_rank == 3
+        var a_scale = rebind[Scalar[a_scales_type]](
+            a_scales[Int(m_global), 0]
+        ).cast[accum_type]()
+        var b_scale = rebind[Scalar[b_scales_type]](
+            b_scales[Int(expert), n, 0]
+        ).cast[accum_type]()
+        accum = accum * a_scale * b_scale
+
+    comptime if elementwise_lambda_fn:
+        comptime elementwise_lambda = elementwise_lambda_fn.value()
+        elementwise_lambda[c_type, 1](
+            Index(Int(m_global), n), accum.cast[c_type]()
+        )
+    else:
+        var c_by_expert = c.ptr + Int64(a_start_row) * Int64(N)
+        c_by_expert[m * N + n] = accum.cast[c_type]()
+
+
+@always_inline
+def grouped_matmul_rowwise_dynamic_scaled_fp8[
+    c_type: DType,
+    a_type: DType,
+    b_type: DType,
+    a_scales_type: DType,
+    b_scales_type: DType,
+    a_offsets_type: DType,
+    expert_ids_type: DType,
+    //,
+    transpose_b: Bool = True,
+    target: StaticString = "cpu",
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+](
+    c: TileTensor[mut=True, c_type, address_space=AddressSpace.GENERIC, ...],
+    a: TileTensor[mut=False, a_type, address_space=AddressSpace.GENERIC, ...],
+    b: TileTensor[mut=False, b_type, address_space=AddressSpace.GENERIC, ...],
+    a_scales: TileTensor[
+        mut=False, a_scales_type, address_space=AddressSpace.GENERIC, ...
+    ],
+    b_scales: TileTensor[
+        mut=False, b_scales_type, address_space=AddressSpace.GENERIC, ...
+    ],
+    a_offsets: TileTensor[
+        mut=False, a_offsets_type, address_space=AddressSpace.GENERIC, ...
+    ],
+    expert_ids: TileTensor[
+        mut=False, expert_ids_type, address_space=AddressSpace.GENERIC, ...
+    ],
+    max_num_tokens_per_expert: Int,
+    num_active_experts: Int,
+    ctx: DeviceContext,
+) raises:
+    """Grouped (ragged MoE) FP8 matmul with rowwise weight + per-token act scales.
+
+    Target: NVIDIA SM100 (B200). Correctness-first naive grouped kernel; no
+    persistent / TMA path. Computes, for each token ``t`` in group ``g``'s row
+    range and each output channel ``n``::
+
+        out[t, n] = (sum_k a[t, k] * b[expert_ids[g], n, k])
+                    * a_scale[t] * b_scale[expert_ids[g], n]
+
+    accumulated in fp32 with a single post-reduction scale.
+
+    Parameters:
+        c_type: Output dtype (typically ``bfloat16``).
+        a_type: Activation dtype (``float8_e4m3fn``).
+        b_type: Weight dtype (``float8_e4m3fn``).
+        a_scales_type: Per-token activation scale dtype (``float32``).
+        b_scales_type: Per-channel weight scale dtype (``float32``).
+        a_offsets_type: Ragged-offset dtype (``uint32``).
+        expert_ids_type: Expert-id dtype (``int32``).
+        transpose_b: Must be ``True``; ``b`` is ``[E, N, K]``.
+        target: Compilation target string.
+        elementwise_lambda_fn: Optional output epilogue applied with the
+            ``(global_row, n)`` index.
+
+    Args:
+        c: Output ``[total_tokens, N]``.
+        a: Activations ``[total_tokens, K]``.
+        b: Weights ``[num_experts, N, K]`` (already transposed; K innermost).
+        a_scales: Per-token activation scales ``[total_tokens, 1]``.
+        b_scales: Per-channel weight scales ``[num_experts, N, 1]``.
+        a_offsets: Ragged row offsets ``[num_active_experts + 1]``.
+        expert_ids: Real expert ids ``[num_active_experts]``.
+        max_num_tokens_per_expert: Max tokens routed to any active expert.
+        num_active_experts: Number of active experts (groups).
+        ctx: Device context.
+    """
+    comptime assert c.rank == 2 and c.flat_rank == 2
+    comptime assert a.rank == 2 and a.flat_rank == 2
+    comptime assert b.rank == 3 and b.flat_rank == 3
+    comptime assert a_scales.rank == 2 and a_scales.flat_rank == 2
+    comptime assert b_scales.rank == 3 and b_scales.flat_rank == 3
+    comptime assert a_offsets.rank == 1 and a_offsets.flat_rank == 1
+    comptime assert expert_ids.rank == 1 and expert_ids.flat_rank == 1
+
+    comptime assert transpose_b, "Only support transpose_b = True."
+    comptime assert (
+        a_type == b_type == DType.float8_e4m3fn
+    ), "input A and B dtype should be float8_e4m3fn"
+    comptime assert (
+        a_scales_type == DType.float32 and b_scales_type == DType.float32
+    ), "A and B scales must be float32 for rowwise/per-token granularity"
+    comptime assert a_offsets_type == DType.uint32, (
+        "Only uint32 is supported for a_offsets in grouped rowwise scaled fp8"
+        " matmul"
+    )
+    comptime assert expert_ids_type == DType.int32, (
+        "Only int32 is supported for expert_ids in grouped rowwise scaled fp8"
+        " matmul"
+    )
+    comptime assert is_gpu[target](), (
+        "grouped rowwise dynamic scaled fp8 matmul only supports GPUs with"
+        " native FP8 support"
+    )
+
+    if num_active_experts == 0 or max_num_tokens_per_expert == 0:
+        return
+
+    comptime accum_type = get_accum_type[a_type]()
+
+    comptime kernel = grouped_matmul_rowwise_scaled_fp8_kernel[
+        c_type,
+        a_type,
+        b_type,
+        a_scales_type,
+        b_scales_type,
+        accum_type,
+        type_of(c).LayoutType,
+        type_of(a).LayoutType,
+        type_of(b).LayoutType,
+        type_of(a_scales).LayoutType,
+        type_of(b_scales).LayoutType,
+        type_of(a_offsets).LayoutType,
+        type_of(expert_ids).LayoutType,
+        transpose_b=transpose_b,
+        elementwise_lambda_fn=elementwise_lambda_fn,
+    ]
+
+    with Trace[TraceLevel.OP, target=StaticString("gpu")](
+        get_static_string[
+            "grouped_matmul_rowwise_dynamic_scaled_fp8_",
+            String(a_type) + "x" + String(b_type) + "_to_" + String(c_type),
+        ](),
+        task_id=get_safe_task_id(ctx),
+    ):
+        ctx.enqueue_function[kernel](
+            c,
+            a.as_immut(),
+            b.as_immut(),
+            a_scales.as_immut(),
+            b_scales.as_immut(),
+            a_offsets,
+            expert_ids,
+            grid_dim=(
+                ceildiv(Int(c.dim[1]()), 32),
+                ceildiv(max_num_tokens_per_expert, 16),
+                num_active_experts,
+            ),
+            block_dim=(32, 16, 1),
+        )
 
 
 @always_inline

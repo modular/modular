@@ -56,7 +56,10 @@ from linalg.matmul.gpu.sm100_structured.fused_swiglu import (
     matmul_swiglu_dispatch_sm100_bf16,
 )
 from linalg.bmm import batched_matmul_dynamic_scaled_fp8
-from linalg.grouped_matmul import grouped_matmul
+from linalg.grouped_matmul import (
+    grouped_matmul,
+    grouped_matmul_rowwise_dynamic_scaled_fp8,
+)
 from linalg.lora import shrink_qkv_permute_3mn_sm100
 from linalg.matmul import matmul
 from linalg.matmul.gpu import _matmul_gpu
@@ -636,6 +639,60 @@ struct Struct_grouped_matmul_dynamic_scaled_fp8:
             Int(max_num_tokens_per_expert),
             Int(num_active_experts),
             context,
+        )
+
+
+@compiler.register("mo.grouped.matmul.rowwise.dynamic.scaled.fp8")
+struct Struct_grouped_matmul_rowwise_dynamic_scaled_fp8:
+    """MOGG wrapper for grouped (ragged MoE) rowwise/per-token scaled FP8 matmul.
+
+    Serves rowwise (per-output-channel) weight scales + per-token (colwise)
+    dynamic activation scales - the compressed-tensors FP8 layout used by
+    e.g. ``RedHatAI/Llama-4-Scout-17B-16E-Instruct-FP8-dynamic``. Targets
+    NVIDIA SM100 (B200) with a correctness-first naive grouped kernel.
+    """
+
+    @always_inline
+    @staticmethod
+    def execute[
+        c_type: DType,
+        a_type: DType,
+        b_type: DType,
+        a_scales_type: DType,
+        b_scales_type: DType,
+        //,
+        target: StaticString,
+    ](
+        c: OutputTensor[dtype=c_type, rank=2, ...],
+        a: InputTensor[dtype=a_type, rank=2, ...],
+        b: InputTensor[dtype=b_type, rank=3, ...],
+        a_scales: InputTensor[dtype=a_scales_type, rank=2, ...],
+        b_scales: InputTensor[dtype=b_scales_type, rank=3, ...],
+        expert_start_indices: InputTensor[dtype=DType.uint32, rank=1, ...],
+        expert_ids: InputTensor[dtype=DType.int32, rank=1, ...],
+        max_num_tokens_per_expert: UInt32,
+        num_active_experts: UInt32,
+        context: DeviceContext,
+    ) raises:
+        comptime assert is_gpu[target](), (
+            "grouped rowwise dynamic scaled matmul only supports GPUs with"
+            " native FP8 support"
+        )
+        cuda_ctx = context
+        grouped_matmul_rowwise_dynamic_scaled_fp8[
+            transpose_b=True,
+            target=target,
+        ](
+            c.to_tile_tensor[DType.int64](),
+            a.to_tile_tensor[DType.int64](),
+            b.to_tile_tensor[DType.int64](),
+            a_scales.to_tile_tensor[DType.int64](),
+            b_scales.to_tile_tensor[DType.int64](),
+            expert_start_indices.to_tile_tensor[DType.int64](),
+            expert_ids.to_tile_tensor[DType.int64](),
+            Int(max_num_tokens_per_expert),
+            Int(num_active_experts),
+            cuda_ctx,
         )
 
 
