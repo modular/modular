@@ -403,14 +403,14 @@ def test_parametric_alias_spaces_in_complex_nested_whitespace():
         'alias ComplexWhitespace[ x : Int = 1 + 2 , y : String = "  hello  " ] = ('
         "    x    *    2    ,\n"
         "    y    .    strip( )    ,\n"
-        "    x    +    len( y )\n"
+        "    x    +    len( y . bytes( ) )\n"
         ")"
     )
     expected = (
         'alias ComplexWhitespace[x: Int = 1 + 2, y: String = "  hello  "] = (\n'
         "    x * 2,\n"
         "    y.strip(),\n"
-        "    x + len(y),\n"
+        "    x + len(y.bytes()),\n"
         ")\n"
     )
     assert_mojo_format(source, expected)
@@ -420,15 +420,35 @@ def test_parametric_alias_spaces_in_complex_whitespace_edge_cases():
     """Test parametric alias with complex whitespace edge cases."""
     source = (
         'alias ComplexEdgeCase[ x : Int = 1 + 2 * 3 // 4 % 5 ** 6 , y : String = "  hello  world  " ] = ('
-        "    x    +    len( y    .    strip( )    .    split( )    [ 0 ] )    ,\n"
-        "    len( y    .    strip( )    )    ,\n"
+        "    x    +    len( y    .    strip( )    .    split( )    [ 0 ] . bytes( ) )    ,\n"
+        "    len( y    .    strip( )    . bytes( ) )    ,\n"
         "    x    **    2    +    y    .    count( ' ' )    *    10\n"
         ")\n"
     )
     expected = (
         "alias ComplexEdgeCase[\n"
         '    x: Int = 1 + 2 * 3 // 4 % 5**6, y: String = "  hello  world  "\n'
-        '] = (x + len(y.strip().split()[0]), len(y.strip()), x**2 + y.count(" ") * 10)\n'
+        "] = (\n"
+        "    x + len(y.strip().split()[0].bytes()),\n"
+        "    len(y.strip().bytes()),\n"
+        '    x**2 + y.count(" ") * 10,\n'
+        ")\n"
+    )
+    assert_mojo_format(source, expected)
+
+
+def test_parametric_alias_long_header_keeps_tuple_body_inline():
+    """Test that a long header explodes while a short tuple body stays inline."""
+    source = (
+        "alias CollapseBodyLongHeader[ first : Int = 1 + 2 * 3 // 4 % 5 ** 6 , second : Int = 9 - 8 * 7 // 6 ] = ("
+        "    first    +    second    ,\n"
+        "    first    *    second\n"
+        ")\n"
+    )
+    expected = (
+        "alias CollapseBodyLongHeader[\n"
+        "    first: Int = 1 + 2 * 3 // 4 % 5**6, second: Int = 9 - 8 * 7 // 6\n"
+        "] = (first + second, first * second)\n"
     )
     assert_mojo_format(source, expected)
 
