@@ -186,28 +186,6 @@ def run_causal_conv1d_update_gpu[
         ctx.enqueue_copy(weight_device, weight_buf.ptr)
         ctx.enqueue_copy(bias_device, bias_buf.ptr)
 
-    # Create device tensors
-    var input_device_tensor = LayoutTensor[dtype, layout_3d](
-        input_device,
-        RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen)),
-    )
-    var conv_state_device_tensor = LayoutTensor[dtype, layout_3d](
-        conv_state_device,
-        RuntimeLayout[layout_3d].row_major(Index(batch, dim, state_len)),
-    )
-    var weight_device_tensor = LayoutTensor[dtype, layout_2d](
-        weight_device,
-        RuntimeLayout[layout_2d].row_major(Index(dim, width)),
-    )
-    var bias_device_tensor = LayoutTensor[dtype, layout_1d](
-        bias_device,
-        RuntimeLayout[layout_1d].row_major(Index(dim)),
-    )
-    var output_device_tensor = LayoutTensor[dtype, layout_3d](
-        output_device,
-        RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen)),
-    )
-
     # Create TileTensors for GPU kernel
     var input_device_tt = TileTensor(
         input_device,

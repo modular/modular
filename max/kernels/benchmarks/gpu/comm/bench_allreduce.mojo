@@ -178,9 +178,11 @@ def bench_reduce[
             list_of_ctx[i].enqueue_copy(unicast_buf, host_buffers[i])
 
         # All GPUs use the same multicast pointer
-        multi_ptr = multicast_buf.multicast_buffer_for(
-            list_of_ctx[0]
-        ).unsafe_ptr()
+        multi_ptr = (
+            multicast_buf.multicast_buffer_for(list_of_ctx[0])
+            .unsafe_ptr()
+            .as_unsafe_any_origin()
+        )
         in_tensors[0] = TileTensor(
             rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
                 multi_ptr.unsafe_value()

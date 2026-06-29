@@ -1336,7 +1336,7 @@ def _cublasLt_matmul[
                 .as_unsafe_any_origin(),
                 _ffi_void_ptr(b.ptr),
                 _adesc,  # _adesc
-                _ffi_void_ptr(a.ptr),  # _b
+                _ffi_void_ptr(a.ptr).as_immutable(),  # _b
                 _bdesc,  # _bdesc
                 UnsafePointer(to=beta)
                 .bitcast[NoneType]()
@@ -1368,7 +1368,7 @@ def _cublasLt_matmul[
                 .as_unsafe_any_origin(),  # alpha
                 _ffi_void_ptr(a.ptr),  # _a
                 _adesc,  # _adesc
-                _ffi_void_ptr(b.ptr),  # _b
+                _ffi_void_ptr(b.ptr).as_immutable(),  # _b
                 _bdesc,  # _bdesc
                 UnsafePointer(to=beta)
                 .bitcast[NoneType]()

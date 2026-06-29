@@ -578,8 +578,14 @@ def _memcpy_regions_fast[
                 copy_from * output_axis_stride
             )
 
+            # dest and src are non-overlapping slices of the same buffer
+            # (shared origin). Opt out of exclusivity with an unsafe any-origin:
+            # memcpy's non-overlap requirement is a caller contract the
+            # exclusivity checker can't prove.
             memcpy(
-                dest=copy_to_ptr, src=copy_from_ptr, count=output_axis_stride
+                dest=copy_to_ptr,
+                src=copy_from_ptr.as_unsafe_any_origin(),
+                count=output_axis_stride,
             )
             copy_to += -1 if pre_copy else +1
 

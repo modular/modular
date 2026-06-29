@@ -161,7 +161,11 @@ struct DLTensor[rank: Int, dtype: DType](ImplicitlyCopyable):
         if Self._is_row_major(self.shape, self.strides):
             self._strides_ptr = {}
         else:
-            self._strides_ptr = UnsafePointer(to=self.strides).bitcast[Int64]()
+            self._strides_ptr = (
+                UnsafePointer(to=self.strides)
+                .bitcast[Int64]()
+                .as_unsafe_any_origin()
+            )
 
     @staticmethod
     def _is_row_major(

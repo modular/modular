@@ -302,7 +302,6 @@ struct Q4sym[
 
         # Read and quantize `input_tensor`` to blocked format, dump the raw
         # struct/block into `output_tensor`
-        var size_of_block = size_of[Q4sym[Self.group_size, Self.float_dtype]]()
         assert (
             input_shape[input_tensor.rank - 1] % Self.group_size == 0
         ), "Only support fully divisible dimensions right now."
