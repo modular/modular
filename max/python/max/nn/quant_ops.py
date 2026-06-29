@@ -19,6 +19,7 @@ from .kernels import (
     _fused_qkv_ragged_matmul_scaled_float4,
     _fused_qkv_ragged_matmul_scaled_float8,
     _fused_qkv_ragged_matmul_scaled_mxfp8,
+    _grouped_matmul_rowwise_dynamic_scaled_fp8,
     block_scales_interleave,
     convert_weights_to_fp8_fnuz_if_needed,
     dynamic_block_scaled_matmul,
@@ -676,10 +677,47 @@ def quantized_grouped_matmul(
             | QuantFormat.FBGEMM_FP8
             | QuantFormat.BLOCKSCALED_FP8
         ):
+            # Weight is stored [E, in, out] = [E, K, N]; transpose to the
+            # [E, N, K] orientation both grouped FP8 kernels expect (K
+            # innermost, transpose_b=True).
+            weight_t = weight.transpose(1, 2)
+
+            if (
+                quant_config.weight_scale.is_rowwise
+                and quant_config.input_scale.block_size is None
+            ):
+                # Rowwise (per-output-channel) weight scale + per-token dynamic
+                # activation scale -- the compressed-tensors FP8-dynamic layout
+                # (e.g. RedHatAI Llama-4-Scout FP8-dynamic). No block_size.
+                #
+                # Orientation:
+                #   * weight_scale arrives [E, N, 1] (per output channel) from
+                #     StackedMLP._init_weights, which is exactly what the kernel
+                #     wants as b_scales -- so it is NOT transposed (unlike the
+                #     block path, whose 2D-per-expert scale needs transposing).
+                #   * per-token activation quant returns [1, total_tokens]; the
+                #     kernel wants a_scales [total_tokens, 1], so transpose it.
+                x_fp8, x_scales = quantize_dynamic_scaled_float8(
+                    x,
+                    quant_config.input_scale,
+                    quant_config.weight_scale,
+                    out_type=weight.dtype,
+                    scales_type=DType.float32,
+                )
+
+                return _grouped_matmul_rowwise_dynamic_scaled_fp8(
+                    x_fp8,
+                    weight_t,
+                    x_scales.transpose(0, 1),
+                    weight_scale,
+                    expert_start_indices,
+                    expert_ids,
+                    usage_stats.to(DeviceRef.CPU()),
+                )
+
             assert quant_config.input_scale.block_size is not None
             input_block_size = quant_config.input_scale.block_size[1]
 
-            weight_t = weight.transpose(1, 2)
             scale_t = weight_scale.transpose(1, 2)
 
             x_fp8, x_scales = quantize_dynamic_scaled_float8(

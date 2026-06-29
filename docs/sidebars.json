@@ -414,6 +414,7 @@
                 "max/api/python/pipelines.architectures.laguna",
                 "max/api/python/pipelines.architectures.lfm2",
                 "max/api/python/pipelines.architectures.llama3",
+                "max/api/python/pipelines.architectures.llama4",
                 "max/api/python/pipelines.architectures.mamba",
                 "max/api/python/pipelines.architectures.minimax_m2",
                 "max/api/python/pipelines.architectures.mistral",

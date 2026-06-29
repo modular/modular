@@ -196,6 +196,12 @@ def register_all_models() -> None:
             ".llama3_modulev3",
             "llama_modulev3_arch",
         ),
+        _LazyArch("Llama4ForCausalLM", ".llama4", "llama4_arch"),
+        _LazyArch(
+            "Llama4ForConditionalGeneration",
+            ".llama4",
+            "llama4_conditional_arch",
+        ),
         _LazyArch("MambaForCausalLM", ".mamba", "mamba_arch"),
         _LazyArch("MiniMaxM2ForCausalLM", ".minimax_m2", "minimax_m2_arch"),
         _LazyArch("MistralForCausalLM", ".mistral", "mistral_arch"),

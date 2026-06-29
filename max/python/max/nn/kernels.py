@@ -5483,6 +5483,158 @@ def grouped_dynamic_scaled_fp8_matmul(
     return output
 
 
+def _grouped_matmul_rowwise_dynamic_scaled_fp8(
+    hidden_states: TensorValue,
+    weight: TensorValue,
+    a_scales: TensorValue,
+    b_scales: TensorValue,
+    expert_start_indices: TensorValue,
+    expert_ids: TensorValue,
+    expert_usage_stats_host: TensorValue,
+    out_type: DType = DType.bfloat16,
+) -> TensorValue:
+    """Grouped (ragged MoE) FP8 matmul with rowwise weight + per-token scales.
+
+    Drives ``mo.grouped.matmul.rowwise.dynamic.scaled.fp8`` (NVIDIA SM100 /
+    B200). Computes, for each token ``t`` in expert group ``g`` and each output
+    channel ``n``::
+
+        out[t, n] = (sum_k a[t, k] * b[expert_ids[g], n, k])
+                    * a_scale[t] * b_scale[expert_ids[g], n]
+
+    This is the compressed-tensors FP8-dynamic layout (per-output-channel
+    weight scale + per-token dynamic activation scale), e.g.
+    ``RedHatAI/Llama-4-Scout-17B-16E-Instruct-FP8-dynamic``. It is distinct
+    from :func:`grouped_dynamic_scaled_fp8_matmul`, which handles the
+    blockwise (1x128 act / 128x128 weight) layout.
+
+    The kernel applies ``transpose_b=True``: ``weight`` must already be in
+    ``[num_experts, N, K]`` orientation (K innermost), and the weight scale is
+    per output channel ``N``.
+
+    Args:
+        hidden_states: The activations, ``float8_e4m3fn`` rank-2
+            ``[total_tokens, K]``.
+        weight: The expert weights, ``float8_e4m3fn`` rank-3
+            ``[num_experts, N, K]`` (already transposed; K innermost).
+        a_scales: Per-token activation scales, ``float32`` rank-2
+            ``[total_tokens, 1]``.
+        b_scales: Per-output-channel weight scales, ``float32`` rank-3
+            ``[num_experts, N, 1]``.
+        expert_start_indices: Where each group starts/ends in ``hidden_states``,
+            ``uint32`` rank-1.
+        expert_ids: The expert id for each group, ``int32`` rank-1.
+        expert_usage_stats_host: ``[max_num_tokens_per_expert, num_active_experts]``
+            on the host (CPU).
+        out_type: The output dtype.
+
+    Returns:
+        The matmul output, ``[total_tokens, N]`` in ``out_type``.
+    """
+    if hidden_states.rank != 2:
+        raise ValueError(
+            f"expected hidden_states of rank 2 but got {hidden_states.rank}"
+        )
+
+    if weight.rank != 3:
+        raise ValueError(f"expected weight of rank 3 but got {weight.rank}")
+
+    # transpose_b=True: weight is [E, N, K], so its K dim (axis 2) must match
+    # the activation K dim (axis 1).
+    if (
+        weight.shape[2] != hidden_states.shape[1]
+        or weight.shape[0] != expert_ids.shape[0]
+    ):
+        raise ValueError(
+            "expected weight of shape [num_experts, N,"
+            f" {hidden_states.shape[1]}] with num_experts ="
+            f" {expert_ids.shape[0]} but got {weight.shape}"
+        )
+
+    if (hidden_states.dtype != weight.dtype) or (
+        hidden_states.dtype != DType.float8_e4m3fn
+    ):
+        raise TypeError(
+            "hidden_states and weight dtypes must be float8_e4m3fn, but got"
+            f" {hidden_states.dtype}, {weight.dtype}"
+        )
+
+    if a_scales.rank != 2 or b_scales.rank != 3:
+        raise ValueError(
+            "expected a_scales of rank 2 and b_scales of rank 3 but got"
+            f" {a_scales.rank} and {b_scales.rank}"
+        )
+
+    if a_scales.dtype != DType.float32 or b_scales.dtype != DType.float32:
+        raise TypeError(
+            "a_scales and b_scales dtypes must both be float32 for rowwise /"
+            f" per-token granularity, but got {a_scales.dtype},"
+            f" {b_scales.dtype}"
+        )
+
+    # Per-token activation scale: [total_tokens, 1]; per-channel weight scale:
+    # [num_experts, N, 1].
+    if a_scales.shape[1] != 1:
+        raise ValueError(
+            "expected per-token a_scales of shape [total_tokens, 1] but got"
+            f" {a_scales.shape}"
+        )
+    if (
+        b_scales.shape[2] != 1
+        or b_scales.shape[0] != weight.shape[0]
+        or b_scales.shape[1] != weight.shape[1]
+    ):
+        raise ValueError(
+            "expected per-channel b_scales of shape [num_experts, N, 1]"
+            f" matching weight [num_experts, N, K], but got b_scales"
+            f" {b_scales.shape} and weight {weight.shape}"
+        )
+
+    if expert_ids.dtype != DType.int32:
+        raise TypeError(
+            f"expert_ids dtype must be int32, but got {expert_ids.dtype}"
+        )
+
+    if expert_ids.rank != 1:
+        raise ValueError(
+            f"expected expert_ids of rank 1 but got {expert_ids.rank}"
+        )
+
+    if expert_start_indices.dtype != DType.uint32:
+        raise TypeError(
+            "expert_start_indices dtype must be uint32, but got"
+            f" {expert_start_indices.dtype}"
+        )
+
+    if expert_start_indices.rank != 1:
+        raise ValueError(
+            "expected expert_start_indices of rank 1 but got"
+            f" {expert_start_indices.rank}"
+        )
+
+    return ops.custom(
+        "mo.grouped.matmul.rowwise.dynamic.scaled.fp8",
+        device=hidden_states.device,
+        values=[
+            hidden_states,
+            weight,
+            a_scales,
+            b_scales,
+            expert_start_indices,
+            expert_ids,
+            expert_usage_stats_host[0],
+            expert_usage_stats_host[1],
+        ],
+        out_types=[
+            TensorType(
+                dtype=out_type,
+                shape=[hidden_states.shape[0], weight.shape[1]],
+                device=hidden_states.device,
+            ),
+        ],
+    )[0].tensor
+
+
 def batched_dynamic_scaled_fp8_matmul(
     a: TensorValue,
     b: TensorValue,

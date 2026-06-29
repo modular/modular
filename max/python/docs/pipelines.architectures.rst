@@ -44,6 +44,7 @@ family.
    pipelines.architectures.laguna
    pipelines.architectures.lfm2
    pipelines.architectures.llama3
+   pipelines.architectures.llama4
    pipelines.architectures.mamba
    pipelines.architectures.minimax_m2
    pipelines.architectures.mistral
@@ -99,6 +100,7 @@ Text generation
    ~max.pipelines.architectures.laguna
    ~max.pipelines.architectures.lfm2
    ~max.pipelines.architectures.llama3
+   ~max.pipelines.architectures.llama4
    ~max.pipelines.architectures.mamba
    ~max.pipelines.architectures.minimax_m2
    ~max.pipelines.architectures.mistral
