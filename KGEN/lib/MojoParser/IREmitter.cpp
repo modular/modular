@@ -1304,7 +1304,7 @@ ASTType IREmitter::emitType(ASTExprAnd<PValue> value, bool allowUnbound) {
       return {};
     }
 
-    // Function types with non-singleton parametres can only be used at
+    // Function types with non-singleton parameters can only be used at
     // comptime.
     for (auto [paramType, pog] :
          llvm::zip(sig.getInputParamTypes(), sig.getMetadata().getPogs())) {
