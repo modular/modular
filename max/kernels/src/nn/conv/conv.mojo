@@ -3990,12 +3990,10 @@ def _conv_miopen[
         var R_dim = Int(filter.dim[2]())
         var S_dim = Int(filter.dim[3]())
 
-        @parameter
-        @__copy_capture(filter_frsc_ptr, F_dim, C_dim, R_dim, S_dim)
         @always_inline
         def transpose_fcrs_to_frsc[
             _width: Int, alignment: Int = 1
-        ](coords: Coord):
+        ](coords: Coord) {var}:
             var f = Int(coords[0].value())
             var r = Int(coords[1].value())
             var s = Int(coords[2].value())
@@ -4006,8 +4004,8 @@ def _conv_miopen[
             )
             filter_frsc_ptr.store(out_idx, val)
 
-        elementwise[transpose_fcrs_to_frsc, 1, target="gpu"](
-            (F_dim, R_dim, S_dim, C_dim), ctx
+        elementwise[1, target="gpu"](
+            transpose_fcrs_to_frsc, (F_dim, R_dim, S_dim, C_dim), ctx
         )
         filter_shape[0] = UInt64(F_dim)
         filter_shape[1] = UInt64(C_dim)
@@ -4021,12 +4019,10 @@ def _conv_miopen[
         var C_dim = Int(filter.dim[2]())
         var F_dim = Int(filter.dim[3]())
 
-        @parameter
-        @__copy_capture(filter_frsc_ptr, R_dim, S_dim, C_dim, F_dim)
         @always_inline
         def transpose_rscf_to_frsc[
             _width: Int, alignment: Int = 1
-        ](coords: Coord):
+        ](coords: Coord) {var}:
             var f = Int(coords[0].value())
             var r = Int(coords[1].value())
             var s = Int(coords[2].value())
@@ -4037,8 +4033,8 @@ def _conv_miopen[
             )
             filter_frsc_ptr.store(out_idx, val)
 
-        elementwise[transpose_rscf_to_frsc, 1, target="gpu"](
-            (F_dim, R_dim, S_dim, C_dim), ctx
+        elementwise[1, target="gpu"](
+            transpose_rscf_to_frsc, (F_dim, R_dim, S_dim, C_dim), ctx
         )
 
         filter_shape[0] = UInt64(F_dim)
@@ -4056,12 +4052,10 @@ def _conv_miopen[
         var C_dim = Int(filter.dim[3]())
         var F_dim = Int(filter.dim[4]())
 
-        @parameter
-        @__copy_capture(filter_frsc_ptr, Q_dim, R_dim, S_dim, C_dim, F_dim)
         @always_inline
         def transpose_qrscf_to_fqrsc[
             _width: Int, alignment: Int = 1
-        ](coords: Coord):
+        ](coords: Coord) {var}:
             var f = Int(coords[0].value())
             var q = Int(coords[1].value())
             var r = Int(coords[2].value())
@@ -4077,8 +4071,8 @@ def _conv_miopen[
             )
             filter_frsc_ptr.store(out_idx, val)
 
-        elementwise[transpose_qrscf_to_fqrsc, 1, target="gpu"](
-            (F_dim, Q_dim, R_dim, S_dim, C_dim), ctx
+        elementwise[1, target="gpu"](
+            transpose_qrscf_to_fqrsc, (F_dim, Q_dim, R_dim, S_dim, C_dim), ctx
         )
 
         filter_shape[0] = UInt64(F_dim)
@@ -4329,20 +4323,20 @@ def _conv_miopen[
             ctx,
         )
 
-        @parameter
-        @__copy_capture(output_tmp)
         @always_inline
-        def miopen_epilogue[_width: Int, alignment: Int = 1](coords: Coord):
+        def miopen_epilogue[
+            _width: Int, alignment: Int = 1
+        ](coords: Coord) {var}:
             epilogue(
                 coord_to_index_list(coords),
                 output_tmp.load[width=_width](coords),
             )
 
         elementwise[
-            miopen_epilogue,
             simd_width_of[output_type, target=get_gpu_target()](),
             target="gpu",
         ](
+            miopen_epilogue,
             output.layout.shape_coord(),
             ctx,
         )
@@ -5084,20 +5078,20 @@ def conv_gpu[
                     ctx,
                 )
 
-                @parameter
-                @__copy_capture(output_tmp_lt)
                 @always_inline
                 def epilogue_wrapper[
                     _width: Int, alignment: Int = 1
-                ](coords: Coord):
+                ](coords: Coord) {var}:
                     comptime align = align_of[SIMD[output_type, _width]]()
                     var idx = rebind[IndexList[4]](coord_to_index_list(coords))
                     vec = output_tmp_lt.load[width=_width](idx)
                     epilogue(idx, vec)
 
-                elementwise[
-                    epilogue_wrapper, simd_width_of[output_type](), target="gpu"
-                ](Coord(output_lt.runtime_layout.shape.value), ctx)
+                elementwise[simd_width_of[output_type](), target="gpu"](
+                    epilogue_wrapper,
+                    Coord(output_lt.runtime_layout.shape.value),
+                    ctx,
+                )
 
                 _ = output_tmp_data^
 

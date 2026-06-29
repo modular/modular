@@ -1398,9 +1398,7 @@ def split_k_reduce[
     var N = Int(c.dim[1]())
 
     @always_inline
-    @__copy_capture(c, work_space, num_partitions)
-    @parameter
-    def _reduce[simd_width: Int, alignment: Int = 1](c_coord: Coord):
+    def _reduce[simd_width: Int, alignment: Int = 1](c_coord: Coord) {var}:
         var idx = Coord(Idx[0], c_coord[0], c_coord[1])
         var vec = work_space.load[width=simd_width](idx)
         for k in range(1, num_partitions):
@@ -1421,7 +1419,7 @@ def split_k_reduce[
                 (c_coord[0], c_coord[1]), vec.cast[c_type]()
             )
 
-    elementwise[_reduce, simd_width, target="gpu"]((M, N), ctx)
+    elementwise[simd_width, target="gpu"](_reduce, (M, N), ctx)
 
 
 def multistage_gemm[

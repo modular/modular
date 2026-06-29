@@ -316,9 +316,9 @@ def _block_scaled_matmul_with_epilogue[
         # The epilogue lambda takes IndexList[2]. We load from c's raw pointer
         # using row-major offset since TileTensor.load's Coord constraint
         # can't be proved when c's layout type is fully inferred.
-        @parameter
-        @__copy_capture(c, n)
-        def epilogue_wrapper[simd_width: Int, alignment: Int = 1](idx: Coord):
+        def epilogue_wrapper[
+            simd_width: Int, alignment: Int = 1
+        ](idx: Coord) {var}:
             var c_val = rebind[SIMD[c_type, simd_width]](
                 c.load[width=simd_width](idx)
             )
@@ -341,7 +341,7 @@ def _block_scaled_matmul_with_epilogue[
             ctx,
             alpha=tensor_sf,
         )
-        elementwise[epilogue_wrapper, simd_size, target="gpu"]((m, n), ctx)
+        elementwise[simd_size, target="gpu"](epilogue_wrapper, (m, n), ctx)
 
 
 def _vendor_blas_block_scaled_matmul_with_epilogue[
@@ -423,11 +423,9 @@ def _vendor_blas_block_scaled_matmul_with_epilogue[
         if c.ptr:
             var c_tt = c.value()
 
-            @parameter
-            @__copy_capture(c_tt)
             def epilogue_wrapper[
                 simd_width: Int, alignment: Int = 1
-            ](idx: Coord):
+            ](idx: Coord) {var}:
                 var c_val = rebind[SIMD[c_type, simd_width]](
                     c_tt.load[width=simd_width](idx)
                 )
@@ -446,7 +444,7 @@ def _vendor_blas_block_scaled_matmul_with_epilogue[
                 transpose_b=True,
                 c_row_major=True,
             )
-            elementwise[epilogue_wrapper, simd_size, target="gpu"]((m, n), ctx)
+            elementwise[simd_size, target="gpu"](epilogue_wrapper, (m, n), ctx)
             return
 
         # Otherwise, we need to allocate a new buffer for c and apply the epilogue.

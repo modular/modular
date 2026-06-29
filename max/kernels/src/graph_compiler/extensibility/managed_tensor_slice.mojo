@@ -2518,21 +2518,19 @@ def foreach[
         ctx: The call context (forward this from the custom operation).
     """
 
-    @parameter
     @always_inline
     def elementwise_fn_wrapper[
         width: Int,
         alignment: Int = 1,
-    ](index: Coord) capturing:
+    ](index: Coord) {var}:
         var val = func[width](index)
         tensor._fused_store[element_alignment=alignment](index, val)
 
     std.algorithm.functional.elementwise[
-        elementwise_fn_wrapper,
         simd_width,
         target=target,
         _trace_description=_trace_name,
-    ](tensor.shape_coord(), ctx)
+    ](elementwise_fn_wrapper, tensor.shape_coord(), ctx)
 
 
 def _shape_types_compatible[

@@ -162,9 +162,7 @@ def run_bmm_and_check_result[
     comptime pack_size = simd_width_of[dtype, target=get_gpu_target()]()
 
     @always_inline
-    @__copy_capture(c_device_ref)
-    @parameter
-    def func[simd_width: Int, alignment: Int = 1](coord: Coord):
+    def func[simd_width: Int, alignment: Int = 1](coord: Coord) {var}:
         comptime assert c_device_ref.flat_rank >= 3
         var val = c_device_ref.load[width=simd_width](coord)
         comptime element_lambda = lambda_fn.value()
@@ -176,7 +174,8 @@ def run_bmm_and_check_result[
         )
 
     comptime if lambda_fn:
-        elementwise[func, pack_size, target="gpu"](
+        elementwise[pack_size, target="gpu"](
+            func,
             (b, m, n),
             ctx,
         )

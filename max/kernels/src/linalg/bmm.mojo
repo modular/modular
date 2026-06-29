@@ -743,11 +743,9 @@ def _batched_matmul_gpu[
                 # SM100+ supports 32B load/store to global memory.
                 comptime simd_size = 32 // size_of[c_type]()
 
-                @parameter
-                @__copy_capture(c_tensor_reshaped)
                 def epilogue_wrapper[
                     simd_width: Int, alignment: Int = 1
-                ](idx: Coord):
+                ](idx: Coord) {var}:
                     var c_val = c_tensor_reshaped.load[
                         width=simd_width,
                         alignment=alignment * size_of[c_type](),
@@ -756,8 +754,8 @@ def _batched_matmul_gpu[
                         coord_to_index_list(idx), c_val
                     )
 
-                elementwise[epilogue_wrapper, simd_size, target="gpu"](
-                    Coord(batch_size, m, n), ctx
+                elementwise[simd_size, target="gpu"](
+                    epilogue_wrapper, Coord(batch_size, m, n), ctx
                 )
 
             return

@@ -410,10 +410,9 @@ def apple_matmul[
         comptime simd_size = simd_width_of[c.dtype]()
 
         @always_inline
-        @parameter
         def epilogue_on_col_chunk[
             simd_width: Int, alignment: Int = 1
-        ](idx: Coord):
+        ](idx: Coord) {var}:
             var c_val = c.load[width=simd_width](idx)
             epilogue[c.dtype, simd_width](
                 Index(idx[0].value(), idx[1].value()), c_val
@@ -421,8 +420,8 @@ def apple_matmul[
 
         # TODO: thread a DeviceContext through the matmul stack so we can
         # drop this local construction.
-        elementwise[epilogue_on_col_chunk, simd_size](
-            (m, n), DeviceContext(api="cpu")
+        elementwise[simd_size](
+            epilogue_on_col_chunk, (m, n), DeviceContext(api="cpu")
         )
 
 

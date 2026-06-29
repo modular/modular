@@ -67,8 +67,7 @@ def apply_penalties_to_logits[
     comptime assert logits.element_size == 1
 
     @always_inline
-    @parameter
-    def apply_penalties_fn[width: Int, alignment: Int = 1](idx: Coord):
+    def apply_penalties_fn[width: Int, alignment: Int = 1](idx: Coord) {var}:
         comptime assert idx.rank == 1, "apply_penalties_fn: rank must be 1"
 
         var batch_id = get_batch_from_row_offsets(
@@ -111,11 +110,10 @@ def apply_penalties_to_logits[
 
     var dispatch_shape = Coord(Int(compressed_frequency_data.dim[0]()))
     elementwise[
-        func=apply_penalties_fn,
         simd_width=1,
         target=target,
         _trace_description="apply_penalties_to_logits",
-    ](dispatch_shape, ctx)
+    ](apply_penalties_fn, dispatch_shape, ctx)
 
 
 @__name(t"update_frequency_data_{token_type}")
@@ -254,10 +252,9 @@ def update_frequency_data[
     else:
 
         @always_inline
-        @parameter
         def update_frequency_data_fn[
             width: Int, alignment: Int = 1
-        ](idx: Coord):
+        ](idx: Coord) {var}:
             comptime assert (
                 idx.rank == 1
             ), "update_frequency_data_fn: rank must be 1"
@@ -281,8 +278,7 @@ def update_frequency_data[
 
         var dispatch_shape = Coord(new_tokens.num_elements())
         elementwise[
-            func=update_frequency_data_fn,
             simd_width=1,
             target=target,
             _trace_description="update_frequency_data",
-        ](dispatch_shape, ctx)
+        ](update_frequency_data_fn, dispatch_shape, ctx)

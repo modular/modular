@@ -110,9 +110,8 @@ def nan_check_count[
         nan_acc[] = Int32(0)
         inf_acc[] = Int32(0)
 
-        @parameter
         @always_inline
-        def scan[width: Int, alignment: Int = 1](idx: Coord) capturing:
+        def scan[width: Int, alignment: Int = 1](idx: Coord) {var}:
             var flat = idx[0].value()
             var ptr = input.unsafe_ptr()
             var val = ptr.load[width=width](flat)
@@ -123,7 +122,7 @@ def nan_check_count[
             if infs > 0:
                 _ = Atomic.fetch_add(inf_acc, infs)
 
-        elementwise[scan, simd_width_of[dtype]()](total, ctx)
+        elementwise[simd_width_of[dtype]()](scan, Coord(total), ctx)
 
         nan_count_out.unsafe_ptr()[] = nan_acc[]
         inf_count_out.unsafe_ptr()[] = inf_acc[]

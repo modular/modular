@@ -239,6 +239,11 @@ def fused_qk_rope[
 
     var k_cache = kv_collection.get_key_cache(Int(layer_idx))
 
+    # TODO: This elementwise body captures a KV cache view (`CacheType`),
+    # which fails codegen when stored into a unified closure ('pop.store'
+    # pointer element-type verification). Keep using the deprecated
+    # parameter-closure overload until cache captures in unified closures are
+    # supported.
     @always_inline
     @parameter
     @__copy_capture(k_cache, valid_lengths)
@@ -388,6 +393,11 @@ def fused_qk_rope_ragged[
 
     var k_cache = kv_collection.get_key_cache(Int(layer_idx))
 
+    # TODO: This elementwise body captures a KV cache view (`CacheType`),
+    # which fails codegen when stored into a unified closure ('pop.store'
+    # pointer element-type verification). Keep using the deprecated
+    # parameter-closure overload until cache captures in unified closures are
+    # supported.
     @always_inline
     @parameter
     @__copy_capture(k_cache, batch_size, input_row_offsets, position_ids)

@@ -60,10 +60,8 @@ def random_uniform[
     var strides = shape.get_row_major_strides()
     var delta = Float32(upper_bound - lower_bound)
 
-    @parameter
     @always_inline
-    @__copy_capture(strides, delta, seed_ptr)
-    def generate[width: Int, alignment: Int = 1](idx: Coord):
+    def generate[width: Int, alignment: Int = 1](idx: Coord) {var}:
         comptime assert width <= 4
 
         var offset = _dot_prod(
@@ -81,4 +79,4 @@ def random_uniform[
             coord_to_index_list(idx), values.cast[dtype]().slice[width]()
         )
 
-    elementwise[generate, simd_width=4, target=target](Coord(shape), ctx)
+    elementwise[simd_width=4, target=target](generate, Coord(shape), ctx)
