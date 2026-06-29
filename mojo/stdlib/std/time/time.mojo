@@ -358,9 +358,15 @@ def sleep(sec: Float64):
 
     comptime NANOSECONDS_IN_SECOND = 1_000_000_000
     var total_secs = floor(sec)
+    var nsecs = Int(round((sec - total_secs) * NANOSECONDS_IN_SECOND))
+    # Handle floating-point rounding edge case where the nanosecond value
+    # rounds to exactly one second (e.g., 0.9999999999 seconds).
+    if nsecs >= NANOSECONDS_IN_SECOND:
+        total_secs += 1
+        nsecs -= NANOSECONDS_IN_SECOND
     var tv_spec = _CTimeSpec(
         Int(total_secs),
-        Int((sec - total_secs) * NANOSECONDS_IN_SECOND),
+        nsecs,
     )
     var req = UnsafePointer(to=tv_spec)
     var rem = _CPointer[_CTimeSpec, MutUntrackedOrigin]()
