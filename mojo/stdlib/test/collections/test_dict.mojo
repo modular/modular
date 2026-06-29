@@ -392,6 +392,32 @@ def test_iter_take_items() raises:
             _ = dict[i]
 
 
+def test_iter_take_items_owned() raises:
+    # Test that dict `take_items()` works with non-Copyable values
+    var dict = Dict[MoveOnly[Int], String]()
+    dict[MoveOnly(0)] = "a"
+    dict[MoveOnly(1)] = "b"
+    dict[MoveOnly(2)] = "c"
+
+    var values = String()
+    var keys = 0
+
+    for entry in dict.take_items():
+        keys += entry.key.data
+        values += entry.value
+
+    assert_equal(values, "abc")
+    assert_equal(keys, 3)
+    assert_equal(len(dict), 0)
+    with assert_raises():
+        var it = dict.take_items()
+        _ = it.__next__()  # raises StopIteration
+
+    for i in range(3):
+        with assert_raises(contains="KeyError"):
+            _ = dict[MoveOnly(i)]
+
+
 def test_iter_take_items_empty() raises:
     var dict: Dict[Int, String] = {}
 
@@ -1279,6 +1305,11 @@ def test_dict_conditional_conformances() raises:
     assert_true(conforms_to(Dict[Int, Int], Hashable))
     assert_false(conforms_to(Dict[Int, NonWritable], Writable))
 
+    # Owned iteration should work for any combination of non-Copyable K/V types
+    assert_true(conforms_to(Dict[MoveOnly[Int], Int], IterableOwned))
+    assert_true(conforms_to(Dict[Int, MoveOnly[Int]], IterableOwned))
+    assert_true(conforms_to(Dict[MoveOnly[Int], MoveOnly[Int]], IterableOwned))
+
     # Move-only key drops every copy-requiring conformance: each conditional
     # clause on `Dict` includes `conforms_to(K, Copyable)`.
     assert_false(conforms_to(Dict[MoveOnly[Int], Int], Copyable))
@@ -1302,14 +1333,15 @@ def test_dict_conditional_conformances() raises:
 
 
 def test_dict_iter_owned() raises:
-    var d = Dict[String, Int]()
-    d["a"] = 1
-    d["b"] = 2
-    d["c"] = 3
+    # Test that owned iteration works, for non-Copyable types
+    var d = Dict[MoveOnly[String], Int]()
+    d[MoveOnly("a")] = 1
+    d[MoveOnly("b")] = 2
+    d[MoveOnly("c")] = 3
 
-    var keys = List[String]()
-    for key in d^:
-        keys.append(key)
+    var keys = List[MoveOnly[String]]()
+    for var key in d^:
+        keys.append(key^)
 
     assert_equal(len(keys), 3)
     assert_equal(keys[0], "a")

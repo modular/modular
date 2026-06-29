@@ -218,8 +218,8 @@ struct _DictEntryIter[
 
 @fieldwise_init
 struct _TakeDictEntryIter[
-    K: KeyElement & Copyable & ImplicitlyDeletable,
-    V: Copyable & ImplicitlyDeletable,
+    K: KeyElement & ImplicitlyDeletable,
+    V: Movable & ImplicitlyDeletable,
     H: Hasher,
     origin: MutOrigin,
 ](Copyable, Iterable, Iterator):
@@ -273,8 +273,8 @@ struct _TakeDictEntryIter[
 
 @fieldwise_init
 struct _DictEntryIterOwned[
-    K: KeyElement & Copyable & ImplicitlyDeletable,
-    V: Copyable & ImplicitlyDeletable,
+    K: KeyElement & ImplicitlyDeletable,
+    V: Movable & ImplicitlyDeletable,
     H: Hasher,
 ](IterableOwned, Iterator, Movable):
     """An owning iterator over DictEntry values that consumes the dictionary.
@@ -325,8 +325,8 @@ struct _DictEntryIterOwned[
 
 @fieldwise_init
 struct _DictKeyIterOwned[
-    K: KeyElement & Copyable & ImplicitlyDeletable,
-    V: Copyable & ImplicitlyDeletable,
+    K: KeyElement & ImplicitlyDeletable,
+    V: Movable & ImplicitlyDeletable,
     H: Hasher,
 ](IterableOwned, Iterator, Movable):
     """An owning iterator over Dict keys that consumes the dictionary.
@@ -684,9 +684,7 @@ struct Dict[
     """
 
     comptime IteratorOwnedType: Iterator = _DictKeyIterOwned[
-        downcast[Self.K, KeyElement & Copyable & ImplicitlyDeletable],
-        downcast[Self.V, Copyable & ImplicitlyDeletable],
-        Self.H,
+        Self.K, Self.V, Self.H
     ]
     """The owned iterator type for this dictionary."""
 
@@ -855,25 +853,7 @@ struct Dict[
         Returns:
             An iterator that owns the dictionary's keys.
         """
-        # TODO(MSTDL-2390): Remove `Copyable` constraints once we have better iter traits.
-        comptime assert conforms_to(Self.K, Copyable) and conforms_to(
-            Self.V, Copyable
-        ), "Dict iteration requires the key and value types to be `Copyable`."
-        return {
-            _DictEntryIterOwned(
-                rebind_var[
-                    Dict[
-                        downcast[
-                            Self.K,
-                            KeyElement & Copyable & ImplicitlyDeletable,
-                        ],
-                        downcast[Self.V, Copyable & ImplicitlyDeletable],
-                        Self.H,
-                    ]
-                ](self^),
-                0,
-            )
-        }
+        return {_DictEntryIterOwned(self^, 0)}
 
     def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         """Iterate over the dict's keys as immutable references.
@@ -1456,12 +1436,7 @@ struct Dict[
 
     def take_items(
         mut self,
-    ) -> _TakeDictEntryIter[
-        downcast[Self.K, KeyElement & Copyable & ImplicitlyDeletable],
-        downcast[Self.V, Copyable & ImplicitlyDeletable],
-        Self.H,
-        origin_of(self),
-    ]:
+    ) -> _TakeDictEntryIter[Self.K, Self.V, Self.H, origin_of(self),]:
         """Iterate over the dict's entries and move them out of the dictionary
         effectively draining the dictionary.
 
@@ -1484,18 +1459,7 @@ struct Dict[
         # prints 0
         ```
         """
-        # TODO(MSTDL-2390): Remove `Copyable` constraints once we have better iter traits.
-        comptime assert conforms_to(Self.K, Copyable) and conforms_to(
-            Self.V, Copyable
-        ), "Dict iteration requires the key and value types to be `Copyable`."
-        comptime DictCopyable = Dict[
-            downcast[Self.K, KeyElement & Copyable & ImplicitlyDeletable],
-            downcast[Self.V, Copyable & ImplicitlyDeletable],
-            Self.H,
-        ]
-        return _TakeDictEntryIter(
-            rebind[Pointer[DictCopyable, origin_of(self)]](Pointer(to=self))[]
-        )
+        return _TakeDictEntryIter(self)
 
     def update(
         mut self, other: Self, /

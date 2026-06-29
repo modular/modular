@@ -690,17 +690,16 @@ def test_linked_list_conditional_conformances() raises:
 
 
 def test_linked_list_iter_owned() raises:
-    var ll = LinkedList[Int](1, 2, 3, 4, 5)
-    var result = List[Int]()
-    for elem in ll^:
-        result.append(elem)
+    # Test that owned iteration works, for non-Copyable types
+    var ll = LinkedList[MoveOnly[Int]](MoveOnly(1), MoveOnly(2), MoveOnly(3))
+    var result = List[MoveOnly[Int]]()
+    for var elem in ll^:
+        result.append(elem^)
 
-    assert_equal(len(result), 5)
-    assert_equal(result[0], 1)
-    assert_equal(result[1], 2)
-    assert_equal(result[2], 3)
-    assert_equal(result[3], 4)
-    assert_equal(result[4], 5)
+    assert_equal(len(result), 3)
+    assert_equal(result[0], MoveOnly(1))
+    assert_equal(result[1], MoveOnly(2))
+    assert_equal(result[2], MoveOnly(3))
 
 
 def test_linked_list_iter_owned_destroys_elements_if_not_consumed() raises:

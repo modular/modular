@@ -202,13 +202,24 @@ This version is still a work in progress.
       inside `__iter__()`. For deletable element types (the common case) this is
       transparent.
 
-- The `IterableOwned` conformance on `List` and `InlineArray` (consuming
-  iteration via `for x in collection^`) is now conditional, requiring the
-  element type to be `Movable & ImplicitlyDeletable`. Consuming iteration moves
-  elements out of the collection rather than copying them, so it no longer
-  requires `Copyable`. Generic code bounded on `IterableOwned` now rejects a
-  collection of non-conforming elements at the bound, rather than failing later
-  inside `__iter__()`.
+- Is is now possible to iterate over owned elements in
+  `List`, `Dict`, `InlineArray`, `LinkedList`, and `Set`
+  when the element type is not `Copyable`:
+
+  ```mojo
+  def iterate[T: Movable](var list: List[T]):
+    # Consume elements
+    for var x in list^:
+        pass
+  ```
+
+  The `IterableOwned` conformance on several collections is now conditional
+  on the element type conforming to `Movable & ImplicitlyDeletable`, dropping
+  `Copyable`.
+
+  Additionally, generic code bounded on `IterableOwned` now rejects a collection
+  of non-conforming elements at the bound, rather than failing later inside
+  `__iter__()`.
 
 - The implicit conversion constructors that cast an `UnsafePointer` to
   `MutUnsafeAnyOrigin` or `ImmutUnsafeAnyOrigin` are now deprecated and emit a
