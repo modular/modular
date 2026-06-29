@@ -186,8 +186,7 @@ def test_func_type():
     comptime float2: def[a: Int]() thin -> MemType = test_func_type
     # expected-error @below {{def[a: Int](var Int) -> MemType}}
     comptime float3: def[a: Int](var Int) thin -> MemType = test_func_type
-    # FIXME: Function type printing is really bad.
-    # expected-error @below {{'def[a: Int](mut *Int) -> None'}}
+    # expected-error @below {{def[a: Int](mut *Int) -> None}}
     comptime float4: def[a: Int](mut *Int) thin -> None = test_func_type
     # expected-error @below {{'def(*MemType) raises capturing -> None'}}
     comptime float5: def(*MemType) raises capturing -> None = test_func_type
@@ -801,7 +800,8 @@ def unbound_function_type():
   # expected-error @below {{function type missing required origin set parameter}}
   var f: def() thin [_] -> None
 
-  # expected-error @below {{cannot use parametric function type at runtime 'def(HasIntParam[_]) -> None'}}
+  # expected-error @below {{cannot use parametric function as a runtime closure}}
+  # expected-note @below {{parameter 'p' of type 'Int' is not bound}}
   var g: def(HasIntParam) thin -> None
 
   # expected-error @below {{'HasIntParamAlias' is not a concrete type, use '[]' to bind missing parameters}}

@@ -716,7 +716,12 @@ LogicalResult FnSigDecorators::applyOne(ExprNode *decorator) {
 
   StringRef spelling = declRef->spelling;
   if (spelling == "export") {
-    if (!tcSignature.paramList.names.empty()) {
+    for (ParamDeclAttr paramDecl : tcSignature.paramList.paramDeclAttrs) {
+      // Singleton values like origins are fine. They will be removed by
+      // lowerlit before code generation.
+      if (ASTType(paramDecl.getType()).isSingleton(shared))
+        continue;
+
       emitError(decorator->getLoc(),
                 "@export can not be applied on parametric functions");
       decl.setErroneous();

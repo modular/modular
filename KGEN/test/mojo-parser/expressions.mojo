@@ -1033,9 +1033,8 @@ def function_types():
   # CHECK: lit.var.decl "float6"{{.*}}(!Int, |, ?, "__result__": !lit.ref<none, mut *[0,0]> byref_result) async|capturing -> !kgen.none
   var float6: async def(Int) capturing thin -> None
 
-  # FIXME: Allow origin parameters on dynamic values.
-  # HECK: lit.var.decl "float7"{{.*}}(!lit.ref<!lit.struct<#VariadicList{{.*}}> read_mem|pos_vararg, ?, {{.*}}) throws -> i1
-  # var float7: def(*Int) thin raises -> None
+  # CHECK: lit.var.decl "float7"{{.*}}(!lit.ref<!lit.struct<#VariadicList <:!Bool {:scalar<bool> false}, :origin<false> *(0,0), :!lit.struct<#Origin <:!Bool {:scalar<bool> false}, :origin<false> *(0,0)>> *(0,1), :!AnyType !Int, :!Bool {:scalar<bool> false}>>, imm *[0,0]> read_mem|pos_vararg, ?, {{.*}}) throws -> !kgen.scalar<bool>
+  var float7: def(*Int) thin raises -> None
 
   # CHECK: lit.var.decl "float12"{{.*}}<(!Int = {10}, {{.*}}StringLiteral <:string "foo">
   # CHECK-SAME: , |) -> !kgen.none>
@@ -1055,7 +1054,6 @@ comptime def_type_alias = def() thin -> None
 
 @always_inline
 def func_with_decorator(): pass
-
 
 struct TwoParamsStruct[a: Int, b: Int](ImplicitlyCopyable):
     pass

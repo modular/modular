@@ -421,8 +421,8 @@ SRValue IREmitter::emitPValueToSRValue(ASTExprAnd<PValue> value,
                     "cannot use parametric function as a runtime closure")
           << expr->getRange();
       diag.attachNote(expr->getLoc())
-          << "parameter " << pog.getName() << " of type " << ASTType(paramType)
-          << " is not bound";
+          << "parameter " << ParamDeclRefAttr::get(pog.getName(), paramType)
+          << " of type " << ASTType(paramType) << " is not bound";
       return {};
     }
 
@@ -1304,11 +1304,22 @@ ASTType IREmitter::emitType(ASTExprAnd<PValue> value, bool allowUnbound) {
       return {};
     }
 
-    // Parametric function types can only be used at comptime.
-    if (!sig.isFullyBound()) {
-      emitError(value.expr->getLoc(),
-                "cannot use parametric function type at runtime ")
-          << sig << value.expr->getRange();
+    // Function types with non-singleton parametres can only be used at
+    // comptime.
+    for (auto [paramType, pog] :
+         llvm::zip(sig.getInputParamTypes(), sig.getMetadata().getPogs())) {
+      // Singleton values like origins are fine. They will be removed by
+      // lowerlit before code generation.
+      if (ASTType(paramType).isSingleton(shared))
+        continue;
+
+      auto diag =
+          emitError(value.expr->getLoc(),
+                    "cannot use parametric function as a runtime closure")
+          << value.expr->getRange();
+      diag.attachNote(value.expr->getLoc())
+          << "parameter " << ParamDeclRefAttr::get(pog.getName(), paramType)
+          << " of type " << ASTType(paramType) << " is not bound";
       return {};
     }
   }
