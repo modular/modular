@@ -179,7 +179,15 @@ def tile[
                     var dst_ptr = output.ptr + (
                         src_index + (rep + 1) * src_index_stride
                     )
-                    memcpy(dest=dst_ptr, src=src_ptr, count=count)
+                    # dst_ptr and src_ptr are non-overlapping slices of the
+                    # same `output` buffer (shared origin). Opt out of
+                    # exclusivity with an unsafe any-origin: memcpy's non-overlap
+                    # is a caller contract the checker can't prove.
+                    memcpy(
+                        dest=dst_ptr,
+                        src=src_ptr.as_unsafe_any_origin(),
+                        count=count,
+                    )
 
     # Handles tiling across the third dimension from the end (if tensor rank >= 3)
     comptime if input.rank >= 3:
@@ -206,7 +214,15 @@ def tile[
                 var dst_ptr = output.ptr + (
                     src_index + (rep + 1) * src_index_stride
                 )
-                memcpy(dest=dst_ptr, src=src_ptr, count=count)
+                # dst_ptr and src_ptr are non-overlapping slices of the
+                # same `output` buffer (shared origin). Opt out of
+                # exclusivity with an unsafe any-origin: memcpy's non-overlap
+                # is a caller contract the checker can't prove.
+                memcpy(
+                    dest=dst_ptr,
+                    src=src_ptr.as_unsafe_any_origin(),
+                    count=count,
+                )
 
     # Handles tiling across the fourth dimension from the end (if tensor rank == 4)
     comptime if input.rank == 4:
@@ -226,7 +242,15 @@ def tile[
             var dst_ptr = output.ptr + (
                 src_index + (rep + 1) * src_index_stride
             )
-            memcpy(dest=dst_ptr, src=src_ptr, count=count)
+            # dst_ptr and src_ptr are non-overlapping slices of the
+            # same `output` buffer (shared origin). Opt out of
+            # exclusivity with an unsafe any-origin: memcpy's non-overlap
+            # is a caller contract the checker can't prove.
+            memcpy(
+                dest=dst_ptr,
+                src=src_ptr.as_unsafe_any_origin(),
+                count=count,
+            )
 
 
 @always_inline

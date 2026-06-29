@@ -446,7 +446,6 @@ def test_dynamic_fp8_quant_near_zero[
     var in_host_ptr = alloc[Scalar[in_dtype]](total_size)
     var out_host_ptr = alloc[Scalar[out_dtype]](total_size)
     var scales_host_ptr = alloc[Scalar[scales_dtype]](scales_size)
-    var in_host = TileTensor(in_host_ptr, shape)
 
     # Fill the whole input with a near-zero magnitude (~1e-38) and a zero lane
     # at the start of each group — so every group's max-abs is a tiny denormal
@@ -541,7 +540,6 @@ def test_dynamic_tensor_fp8_quant_near_zero[
     var in_host_ptr = alloc[Scalar[in_dtype]](total_size)
     var out_host_ptr = alloc[Scalar[out_dtype]](total_size)
     var scales_host_ptr = alloc[Scalar[scales_dtype]](scales_size)
-    var in_host = TileTensor(in_host_ptr, shape)
 
     # Every group's max-abs is a tiny f32 denormal (~1e-38) with an exactly-zero
     # lane at each group start (the 0*Inf lane). With num_rows > 1 the per-tensor

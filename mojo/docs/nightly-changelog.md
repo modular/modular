@@ -228,6 +228,32 @@ This version is still a work in progress.
   var v: y_type.T = 3.14  # y_type.T is the concrete field type
   ```
 
+- Removed the implicit constructors that converted an `UnsafePointer` into an
+  `Optional[UnsafePointer[..., UnsafeAnyOrigin]]`. Constructing an
+  `Optional[UnsafePointer]` now preserves the pointer's real origin instead of
+  silently widening it to `UnsafeAnyOrigin`. Two call-site updates may be
+  needed:
+
+  - Passing a concrete pointer where the parameter's origin is a genuinely
+    fixed `MutAnyOrigin`/`ImmutAnyOrigin` (typically C-FFI signatures) now
+    requires an explicit `as_unsafe_any_origin()`.
+
+  - Because origins are now preserved, exclusivity checking applies to
+    `memcpy()` (and similar) calls whose `dest` and `src` derive from the same
+    buffer. An intra-buffer copy that previously compiled now errors with
+    "argument of 'memcpy' call allows writing a memory location previously
+    writable through another aliased argument". Opt out by making one argument
+    an unsafe any-origin (the non-overlap of `dest` and `src` is already a
+    `memcpy()` precondition):
+
+    ```mojo
+    memcpy(
+        dest=buf + dst_off,
+        src=(buf + src_off).as_unsafe_any_origin(),
+        count=n,
+    )
+    ```
+
 - The traits `ImplicitlyDeletable`, `Movable`, `Copyable`, and
   `ImplicitlyCopyable` are now stable.
 

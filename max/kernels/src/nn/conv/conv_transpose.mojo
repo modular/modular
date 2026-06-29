@@ -1683,7 +1683,9 @@ def _conv_transposed_cudnn[
             input.ptr.bitcast[NoneType](),
             cudnn_handle[].ptr_conv_desc,
             algo,
-            workspace_buffer.unsafe_ptr().bitcast[NoneType](),
+            workspace_buffer.unsafe_ptr()
+            .bitcast[NoneType]()
+            .as_unsafe_any_origin(),
             workspace_size,
             UnsafePointer(to=beta).bitcast[NoneType](),
             cudnn_handle[].ptr_output_desc,

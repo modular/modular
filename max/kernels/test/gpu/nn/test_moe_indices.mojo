@@ -258,7 +258,7 @@ def test_moe_create_indices[
             expert_usage_stats,
             top_k,
             ctx,
-            scales_offset_p=scales_offset_buffer.unsafe_ptr(),
+            scales_offset_p=scales_offset_buffer.unsafe_ptr().as_unsafe_any_origin(),
         )
     else:
         moe_create_indices["gpu", expected_count=expected_count](

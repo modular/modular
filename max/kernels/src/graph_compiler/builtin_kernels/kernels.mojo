@@ -1618,7 +1618,7 @@ struct Struct_moe_create_indices_with_scales_offset:
             expert_usage_stats.to_tile_tensor[DType.int64](),
             topk_ids.to_tile_tensor[DType.int64](),
             context,
-            scales_offset_p=scales_offset._ptr,
+            scales_offset_p=scales_offset._ptr.as_unsafe_any_origin(),
         )
 
 

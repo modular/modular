@@ -253,57 +253,6 @@ struct Optional[T: Movable](
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
         UnsafePointer(to=self).bitcast[OptionalReg[U]]()[] = optional_reg
 
-    @always_inline
-    @implicit
-    @doc_hidden
-    def __init__(
-        nullable: UnsafePointer[...],
-        out self: Optional[
-            UnsafePointer[
-                nullable.type,
-                nullable.origin,
-                address_space=nullable.address_space,
-            ]
-        ],
-    ):
-        self = {value = nullable}
-
-    @always_inline
-    @implicit
-    @doc_hidden
-    def __init__(
-        nullable: UnsafePointer[mut=True, ...],
-        out self: Optional[
-            UnsafePointer[
-                nullable.type,
-                AnyOrigin[mut=True],
-                address_space=nullable.address_space,
-            ]
-        ],
-    ):
-        self = {value = nullable.unsafe_origin_cast[AnyOrigin[mut=True]]()}
-
-    @always_inline
-    @implicit
-    @doc_hidden
-    def __init__[
-        __disambiguate: NoneType = None
-    ](
-        nullable: UnsafePointer[...],
-        out self: Optional[
-            UnsafePointer[
-                nullable.type,
-                AnyOrigin[mut=False],
-                address_space=nullable.address_space,
-            ]
-        ],
-    ):
-        self = {
-            value = nullable.as_immutable().unsafe_origin_cast[
-                AnyOrigin[mut=False]
-            ]()
-        }
-
     # ===-------------------------------------------------------------------===#
     # Operator dunders
     # ===-------------------------------------------------------------------===#

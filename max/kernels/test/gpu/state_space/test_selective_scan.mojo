@@ -200,58 +200,6 @@ def run_selective_scan_gpu[
 
     # Create LayoutTensors for CPU
     # Create CPU LayoutTensors with MutAnyOrigin for CPU function (using host memory)
-    var output_cpu_buf = LayoutTensor[dtype, layout_3d](
-        output_cpu_h,
-        RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen)),
-    )
-    var x_cpu_buf = LayoutTensor[dtype, layout_4d](
-        x_cpu_h,
-        RuntimeLayout[layout_4d].row_major(
-            Index(batch, dim, n_chunks, 2 * dstate)
-        ),
-    )
-    var out_z_cpu_buf = LayoutTensor[dtype, layout_3d](
-        out_z_cpu_h,
-        RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen)),
-    )
-    var u_cpu_buf = LayoutTensor[dtype, layout_3d](
-        u_h,
-        RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen)),
-    )
-    var delta_cpu_buf = LayoutTensor[dtype, layout_3d](
-        delta_h,
-        RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen)),
-    )
-    var A_cpu_buf = LayoutTensor[dtype, layout_2d](
-        A_h,
-        RuntimeLayout[layout_2d].row_major(Index(dim, dstate)),
-    )
-    var B_cpu_buf = LayoutTensor[dtype, layout_4d](
-        B_h,
-        RuntimeLayout[layout_4d].row_major(
-            Index(batch, n_groups, dstate, seqlen)
-        ),
-    )
-    var C_cpu_buf = LayoutTensor[dtype, layout_4d](
-        C_h,
-        RuntimeLayout[layout_4d].row_major(
-            Index(batch, n_groups, dstate, seqlen)
-        ),
-    )
-    var D_cpu_buf = LayoutTensor[dtype, layout_1d](
-        D_h,
-        RuntimeLayout[layout_1d].row_major(Index(D_size)),
-    )
-    var z_cpu_buf = LayoutTensor[dtype, layout_3d](
-        z_h,
-        RuntimeLayout[layout_3d].row_major(
-            Index(
-                batch if has_z else 0,
-                dim if has_z else 0,
-                seqlen if has_z else 0,
-            )
-        ),
-    )
     var _delta_bias_cpu_buf = LayoutTensor[dtype, layout_1d](
         delta_bias_h,
         RuntimeLayout[layout_1d].row_major(Index(delta_bias_size)),
@@ -688,48 +636,6 @@ def run_selective_scan_update_gpu[
             ctx.enqueue_copy(dt_bias_device, dt_bias_h)
 
     # Create device tensors
-    var state_in_device_tensor = LayoutTensor[dtype, layout_3d](
-        state_in_device,
-        RuntimeLayout[layout_3d].row_major(Index(batch, dim, dstate)),
-    )
-    var state_out_device_tensor = LayoutTensor[dtype, layout_3d](
-        state_out_device,
-        RuntimeLayout[layout_3d].row_major(Index(batch, dim, dstate)),
-    )
-    var output_device_tensor = LayoutTensor[dtype, layout_2d](
-        output_device,
-        RuntimeLayout[layout_2d].row_major(Index(batch, dim)),
-    )
-    var x_device_tensor = LayoutTensor[dtype, layout_2d](
-        x_device,
-        RuntimeLayout[layout_2d].row_major(Index(batch, dim)),
-    )
-    var dt_device_tensor = LayoutTensor[dtype, layout_2d](
-        dt_device,
-        RuntimeLayout[layout_2d].row_major(Index(batch, dim)),
-    )
-    var A_device_tensor = LayoutTensor[dtype, layout_2d](
-        A_device,
-        RuntimeLayout[layout_2d].row_major(Index(dim, dstate)),
-    )
-    var B_device_tensor = LayoutTensor[dtype, layout_3d](
-        B_device,
-        RuntimeLayout[layout_3d].row_major(Index(batch, n_groups, dstate)),
-    )
-    var C_device_tensor = LayoutTensor[dtype, layout_3d](
-        C_device,
-        RuntimeLayout[layout_3d].row_major(Index(batch, n_groups, dstate)),
-    )
-    var D_device_tensor = LayoutTensor[dtype, layout_1d](
-        D_device,
-        RuntimeLayout[layout_1d].row_major(Index(D_size)),
-    )
-    var z_device_tensor = LayoutTensor[dtype, layout_2d](
-        z_device,
-        RuntimeLayout[layout_2d].row_major(
-            Index(batch if has_z else 0, dim if has_z else 0)
-        ),
-    )
     var _dt_bias_device_tensor = LayoutTensor[dtype, layout_1d](
         dt_bias_device,
         RuntimeLayout[layout_1d].row_major(Index(dt_bias_size)),

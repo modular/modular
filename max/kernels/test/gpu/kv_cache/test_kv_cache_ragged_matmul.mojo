@@ -107,12 +107,6 @@ def _initialize_ragged_inputs[
     # Initialize padded hidden state.
     var padded_size = batch_size * max_seq_length_batch * hidden_size
     var hidden_state_padded_host_ptr = alloc[Scalar[dtype]](padded_size)
-    var hidden_state_padded_host = LayoutTensor[dtype, hidden_state_layout](
-        hidden_state_padded_host_ptr,
-        RuntimeLayout[hidden_state_layout].row_major(
-            IndexList[2](batch_size * max_seq_length_batch, hidden_size)
-        ),
-    )
 
     # Copy over the ragged values to the padded tensor.
     # Don't worry about padded values, we won't read them.
