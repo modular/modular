@@ -1721,6 +1721,12 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
             "gpu": ["float32", "bfloat16"],
         },
     ),
+    "meta-llama/Llama-4-Scout-17B-16E-Instruct": GenericOracle(
+        model_path="meta-llama/Llama-4-Scout-17B-16E-Instruct",
+        # BF16 weights use ~278/288 GB on MI355X; cap context + batch to fit KV cache in remaining ~10 GB.
+        config_params={"max_length": 8192, "max_batch_size": 16},
+        device_encoding_map={"gpu": ["bfloat16"]},
+    ),
     "meta-llama/Meta-Llama-3-8B-Instruct": GenericOracle(
         model_path="meta-llama/Meta-Llama-3-8B-Instruct",
         weight_path_map={

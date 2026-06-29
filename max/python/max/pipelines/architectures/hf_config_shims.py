@@ -256,3 +256,65 @@ try:
     AutoConfig.register("laguna", LagunaHFConfig)
 except ValueError:
     pass
+
+
+# Register Llama4 config shims if the installed transformers version does not
+# include native ``llama4``/``llama4_text`` support.
+try:
+    from transformers import Llama4Config as _Llama4HFConfig
+    from transformers import Llama4TextConfig as _Llama4TextHFConfig
+except ImportError:
+
+    class _Llama4TextHFConfig(PretrainedConfig):  # type: ignore[no-redef]
+        """Minimal shim for the ``llama4_text`` model type.
+
+        Llama4 stores its text-decoder config under the ``text_config`` key.
+        This shim forwards all kwargs so that ``Llama4Config.initialize()``
+        can extract every field it needs via ``getattr``.
+        """
+
+        model_type = "llama4_text"
+
+        def __init__(self, **kwargs: Any) -> None:
+            super().__init__(**kwargs)
+            for k, v in kwargs.items():
+                if not hasattr(self, k):
+                    setattr(self, k, v)
+            # Provide defaults for fields that PretrainedConfig expects.
+            if not hasattr(self, "rope_scaling"):
+                self.rope_scaling = None
+
+    try:
+        AutoConfig.register("llama4_text", _Llama4TextHFConfig)
+    except ValueError:
+        pass  # Already registered
+
+    class _Llama4HFConfig(PretrainedConfig):  # type: ignore[no-redef]
+        """Minimal shim for the top-level ``llama4`` model type.
+
+        ``Llama4ForConditionalGeneration`` config.json files nest the text
+        decoder config under a ``text_config`` key.  This shim instantiates
+        a ``_Llama4TextHFConfig`` for that sub-config so that
+        ``Llama4Config.initialize()`` can find it via
+        ``getattr(config, "text_config", config)``.
+        """
+
+        model_type = "llama4"
+        sub_configs = {"text_config": _Llama4TextHFConfig}
+
+        def __init__(
+            self,
+            text_config: dict[str, Any] | _Llama4TextHFConfig | None = None,
+            **kwargs: Any,
+        ) -> None:
+            if text_config is None:
+                text_config = {}
+            if isinstance(text_config, dict):
+                text_config = _Llama4TextHFConfig(**text_config)
+            self.text_config = text_config
+            super().__init__(**kwargs)
+
+    try:
+        AutoConfig.register("llama4", _Llama4HFConfig)
+    except ValueError:
+        pass  # Already registered

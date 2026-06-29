@@ -43,6 +43,12 @@ llama4_arch = SupportedArchitecture(
     context_type=TextContext,
     default_weights_format=WeightsFormat.safetensors,
     multi_gpu_supported=False,
+    # ``grouped_matmul_ragged`` raises ``hipErrorStreamCaptureUnsupported``
+    # during HIP graph-capture warmup on ROCm, so opt out of auto device-graph
+    # capture. This lets Llama4 Scout serve on MI355X out-of-the-box without
+    # ``--no-device-graph-capture`` until the kernel gains stream-capture
+    # support.
+    supports_device_graph_capture=False,
     rope_type="normal",
     weight_adapters={
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
@@ -61,6 +67,12 @@ llama4_conditional_arch = SupportedArchitecture(
     context_type=TextContext,
     default_weights_format=WeightsFormat.safetensors,
     multi_gpu_supported=False,
+    # ``grouped_matmul_ragged`` raises ``hipErrorStreamCaptureUnsupported``
+    # during HIP graph-capture warmup on ROCm, so opt out of auto device-graph
+    # capture. This lets Llama4 Scout serve on MI355X out-of-the-box without
+    # ``--no-device-graph-capture`` until the kernel gains stream-capture
+    # support.
+    supports_device_graph_capture=False,
     rope_type="normal",
     weight_adapters={
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
