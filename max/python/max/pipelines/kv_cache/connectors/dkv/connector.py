@@ -227,7 +227,7 @@ class DKVConnector:
 
         ``parent_seq_hash`` is accepted for ``KVConnector`` protocol
         compatibility but no longer forwarded: the dKV store now dedups
-        by composite key ``(stream_id, group, seq_hash)`` and does not
+        by composite key ``(tp_shard_id, group, seq_hash)`` and does not
         chain blocks under a parent, so the Rust client builds the keys
         (and the NUMA striping plan) from the hashes alone.
         """
