@@ -32,7 +32,7 @@ from max.pipelines.request import RequestID
 from max.profiler import traced
 
 from .context import Gemma4Context
-from .vision_model.pooling import avg_pool_by_positions
+from .vision_model.pooling import compute_pool_gather_index
 
 
 @dataclass
@@ -46,7 +46,7 @@ class VisionRawInputs:
     patches_flat: list[Buffer]
     pixel_position_ids: list[Buffer]
     cu_seqlens: list[Buffer]
-    pool_weights: list[Buffer]
+    pool_gather_index: list[Buffer]
     max_seq_len: Buffer
 
 
@@ -193,7 +193,10 @@ def pack_vision_buffers(
     np.cumsum(patch_counts, out=cu_seqlens_np[1:])
 
     max_seq_len_np = np.array(max(patch_counts), dtype=np.uint32)
-    pool_weights_np = avg_pool_by_positions(
+
+    # Pooling gather index: per output token, the patch indices that pool into
+    # it (shape [num_pooled, max_per_bin]).
+    pool_gather_index_np = compute_pool_gather_index(
         all_pos_ids, soft_token_counts, pooling_kernel_size
     )
 
@@ -203,17 +206,15 @@ def pack_vision_buffers(
     )
     patches_flat = [cast_tensor_to(buf, dtype) for buf in patches_flat_bufs]
 
-    pool_weights_bufs = _pinned_to_devices(
-        pool_weights_np.astype(np.float32), DType.float32, devices
-    )
-
     return VisionRawInputs(
         patches_flat=patches_flat,
         pixel_position_ids=_pinned_to_devices(
             pos_ids_np.astype(np.int32), DType.int32, devices
         ),
         cu_seqlens=_pinned_to_devices(cu_seqlens_np, DType.uint32, devices),
-        pool_weights=pool_weights_bufs,
+        pool_gather_index=_pinned_to_devices(
+            pool_gather_index_np, DType.int32, devices
+        ),
         max_seq_len=Buffer.from_numpy(max_seq_len_np),
     )
 
