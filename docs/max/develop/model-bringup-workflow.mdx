@@ -1,6 +1,5 @@
 ---
 title: Model bring-up workflow
-sidebar_label: Model bring-up workflow
 description: Understand MAX's model architecture system and how to implement a custom architecture by mapping config fields, translating weight names, connecting to the KV cache, and extending the compute graph.
 ---
 
@@ -10,31 +9,31 @@ You can automate this entire model bring-up process using AI coding agents. See
 details.
 :::
 
-MAX organizes model support through **architectures**: Python module directories
-that define the compute graph, map configuration, and load weights. An
-architecture connects your Hugging Face checkpoint to the
-[MAX pipeline](/max/develop/pipelines) and gives you hardware-optimized
-kernels, production batching, KV cache management, and multi-GPU distribution,
-with no serving layer to write yourself.
+_Model bring-up_ is the process of adapting a pretrained model from Hugging
+Face or PyTorch to run in MAX.
 
-MAX ships with implementations for the most common transformer families: dense
-transformers, mixture-of-experts variants, and sliding-window attention models.
-Most publicly released checkpoints are structurally close enough to one of
-those that adopting an existing architecture requires only weight renaming or a
-few config field overrides. Some models require new layers that differ
-minimally from an existing one, such as a different activation function or an
-added normalization; start those from a copy of the closest layer in `max.nn`
-rather than writing from scratch. When your model's compute graph differs
-structurally from any of the available implementations, you write a new one.
+To bring a model to MAX, you must implement a _model architecture_. A model
+architecture is a Python package that defines the model's compute graph, maps
+its configuration, and loads its weights. Once implemented, you can [serve the
+model](/max/develop/serve-custom-model-architectures/) with hardware-optimized
+kernels, production batching, KV cache management, and multi-GPU distribution.
 
-This guide starts with the directory structure every custom architecture shares,
-then covers the two decisions that shape your implementation: which reference
-architecture to start from, and how far your model's compute graph departs from
-it.
+This guide shows how to write a custom architecture by choosing a reference
+implementation, adapting its configuration and weights, and extending the
+compute graph where your model differs.
+
+:::note
+
+MAX [supports models](/max/models/) across various modalities. This guide
+focuses on transformer-based text generation models, as they share common,
+established implementation patterns in MAX.
+
+:::
 
 ## Architecture directory structure
 
-A custom architecture lives in a directory:
+The majority of text-generation model architectures follow this standard
+directory layout:
 
 ```text
 {your_model}/
@@ -68,9 +67,8 @@ Each file serves a distinct role:
 - `weight_adapters.py`: translates Hugging Face checkpoint weight names to MAX
   weight slot names.
 
-Pass the parent directory and package name to `--custom-architectures` when you
-run `max generate` or `max serve`. MAX imports the package at startup, reads its
-`ARCHITECTURES` list, and registers each entry before the model loads.
+The following sections go into detail about how each component works and
+whether they require customization.
 
 ## Choose a reference architecture
 
