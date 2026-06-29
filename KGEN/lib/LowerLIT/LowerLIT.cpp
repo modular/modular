@@ -88,6 +88,27 @@ removeSingletonParamDecls(SingletonTypeHelper &singletonTypeHelper,
   return mask;
 }
 
+/// Lower `lit.bind_params` to a no-op by replacing it with its generator
+/// operand. This is only valid when every input parameter on the generator is
+/// a singleton type, since those parameters are removed during lowering and
+/// the bound/unbound generator types become identical.
+static LogicalResult
+lowerBindParamsOp(BindParamsOp op, SingletonTypeHelper &singletonTypeHelper) {
+  FnTypeGeneratorType genType = op.getGenerator().getType();
+  for (auto [idx, paramType] : llvm::enumerate(genType.getInputParamTypes())) {
+    if (singletonTypeHelper.isSingletonType(paramType))
+      continue;
+    return op.emitError()
+           << "may only bind singleton compile-time parameters during "
+              "lowering; parameter "
+           << idx << " has non-singleton type " << paramType;
+  }
+
+  IRRewriter rewriter{OpBuilder(op)};
+  rewriter.replaceOp(op, op.getGenerator());
+  return success();
+}
+
 //===----------------------------------------------------------------------===//
 // Op Lowering
 //===----------------------------------------------------------------------===//
@@ -106,7 +127,7 @@ struct LITLowerer {
   /// lower it to a ParamDeclareRegionOp.
   void lowerNestedFunction(FnOp func);
   /// Lower LIT dialect operations in a function body.
-  void lowerLITOps(FnOp func);
+  void lowerLITOps(FnOp func, bool &hadErrors);
 
   /// Lower a function from LIT FnOp to KGEN GeneratorOp.
   /// Caller must handle removal of the original symbol and pass the
@@ -175,7 +196,7 @@ struct LITLowerer {
 };
 } // namespace
 
-void LITLowerer::lowerLITOps(FnOp func) {
+void LITLowerer::lowerLITOps(FnOp func, bool &hadErrors) {
   func.getBodyRegion().walk([&](Operation *op) {
     // Lower any aliases within the function body to param declare.
     IRRewriter b{OpBuilder(op)};
@@ -205,6 +226,9 @@ void LITLowerer::lowerLITOps(FnOp func) {
       b.replaceOpWithNewOp<KGEN::CallIndirectOp>(
           call, call.getResultTypes(), call.getCallee(), call.getArguments(),
           call.getTailKindAttr());
+    } else if (auto bindParams = dyn_cast<BindParamsOp>(op)) {
+      if (failed(lowerBindParamsOp(bindParams, singletonTypeHelper)))
+        hadErrors = true;
     } else if (auto call = dyn_cast<LIT::AsyncCallOp>(op)) {
       b.replaceOpWithNewOp<CO::InvokeOp>(call, call.getCallee(),
                                          call.getOperands());
@@ -292,7 +316,10 @@ LITLowerer::lowerFunction(FnOp func, ArrayRef<ParamDeclAttr> parentInputParams,
     DebugInfo::updateSubprogram(func, newName);
   }
 
-  lowerLITOps(func);
+  bool hadErrors = false;
+  lowerLITOps(func, hadErrors);
+  if (hadErrors)
+    return failure();
 
   FnTypeGeneratorType signature = func.getFuncTypeGenerator();
 

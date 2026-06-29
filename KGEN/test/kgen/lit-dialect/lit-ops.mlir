@@ -591,6 +591,40 @@ lit.fn @"bar"<PARAM: index>[mut R](?, %__result__: !lit.ref<@Foo<:index PARAM>, 
 
 // -----
 
+!FnWithOrigin = !lit.generator<<origin<false>>(!lit.ref<index, mut lt>) -> ()>
+!FnBound = !lit.generator<(!lit.ref<index, mut lt>) -> ()>
+!FnWithOriginAndConstraints = !lit.generator<<origin<false>, {<true, loc("bind_params":1:1)>, <true, loc("bind_params":1:2)>}>(!lit.ref<index, mut lt>) -> ()>
+!FnOriginBoundOneConstraint = !lit.generator<<{<true, loc("bind_params":1:2)>}>(!lit.ref<index, mut lt>) -> ()>
+
+lit.fn @origin_callee<lt: !lit.origin<false>>(%x: !lit.ref<index, mut lt>) -> () {
+  lit.end_fn
+}
+
+// CHECK-LABEL: @bind_params_origin_unbound
+kgen.generator @bind_params_origin_unbound(%fn: !FnWithOrigin) {
+  // CHECK: lit.bind_params %{{.*}} : !lit.generator<<origin<false>>(!lit.ref<index, mut lt>) -> ()>, ? -> !lit.generator<<origin<false>>
+  %partial = lit.bind_params %fn : !FnWithOrigin, ? -> !FnWithOrigin
+  kgen.return
+}
+
+// CHECK-LABEL: @bind_params_origin_bound
+kgen.generator @bind_params_origin_bound(%fn: !FnWithOrigin, %x: !lit.ref<index, mut lt>) {
+  // CHECK: lit.bind_params %{{.*}} : !lit.generator<<origin<false>>(!lit.ref<index, mut lt>) -> ()>, :origin<false> #lit.any.origin -> !lit.generator<(!lit.ref<index, mut lt>) -> ()>
+  %bound = lit.bind_params %fn : !FnWithOrigin, :origin<false> #lit.any.origin -> !FnBound
+  // CHECK: lit.call_indirect %{{.*}}(%{{.*}}) : !lit.generator<(!lit.ref<index, mut lt>) -> ()>
+  lit.call_indirect %bound(%x) : !FnBound
+  kgen.return
+}
+
+// CHECK-LABEL: @bind_params_origin_discharged
+kgen.generator @bind_params_origin_discharged(%fn: !FnWithOriginAndConstraints) {
+  // CHECK: lit.bind_params %{{.*}} : !lit.generator<<origin<false>, {{.*}}>(!lit.ref<index, mut lt>) -> ()>, :origin<false> #lit.any.origin | "10" -> !lit.generator<<{<true, {{.*}}>}>(!lit.ref<index, mut lt>) -> ()>
+  %bound = lit.bind_params %fn : !FnWithOriginAndConstraints, :origin<false> #lit.any.origin | "10" -> !FnOriginBoundOneConstraint
+  kgen.return
+}
+
+// -----
+
 // COM: Where clauses on parameters
 
 // CHECK-DAG: #[[LOC1:.+]] = loc("test.mlir":1:2)
