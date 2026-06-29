@@ -34,6 +34,28 @@
 using namespace M;
 using namespace KGEN;
 
+namespace {
+/// A headless parser listener that mirrors how the Mojo LSP server exercises
+/// the parser. It reports interest only in locations within the main file
+/// (matching `LSPParserListener::isInterestedInLoc` in the LSP server), which
+/// gates the parser's eager, listener-driven resolution to the same scope the
+/// LSP uses. The `on*` notification callbacks are intentionally left as
+/// base-class no-ops: kgen-translate only needs the parser to *do the work*,
+/// not to build a symbol index itself.
+class MainFileParserListener : public LIT::ParserListener {
+public:
+  explicit MainFileParserListener(const llvm::SourceMgr &sourceMgr)
+      : sourceMgr(sourceMgr) {}
+
+  bool isInterestedInLoc(llvm::SMLoc loc) override {
+    return sourceMgr.FindBufferContainingLoc(loc) == sourceMgr.getMainFileID();
+  }
+
+private:
+  const llvm::SourceMgr &sourceMgr;
+};
+} // namespace
+
 int main(int argc, char *argv[]) {
   KGENCommonOptions clOptions;
   KGENCommonCLOptions parser(clOptions);
@@ -148,6 +170,14 @@ int main(int argc, char *argv[]) {
           // over this SourceMgr and run the same lazy, error-tolerant parse the
           // LSP uses for an open document.
           context->disableMultithreading();
+
+          // Install a parser listener the same way the LSP server does, so the
+          // parse exercises the parser's eager listener-driven resolution paths
+          // (member lookups, reference resolution, import resolution) that are
+          // otherwise skipped when no listener is present.
+          MainFileParserListener lspListener(sourceMgr);
+          config.parserListener = &lspListener;
+
           MojoParserContext parserContext(sourceMgr, config);
           MojoASTDeclRef decl =
               parserContext.parseFileForLSP(sourceMgr.getMainFileID());
