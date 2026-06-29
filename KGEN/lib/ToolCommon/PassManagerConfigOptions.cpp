@@ -22,7 +22,9 @@ PassManagerConfigOptions::configurePassManager(mlir::PassManager &pm) const {
       return Error("applyPassManagerCLOptions failed during configuring");
   }
 
-  if constexpr (KGEN::kIsTracingEnabled)
+  if (timingScope)
+    pm.enableTiming(*timingScope);
+  else if constexpr (KGEN::kIsTracingEnabled)
     pm.enableTiming(std::make_unique<TimeProfilerTimingManager>());
   else if (enableTiming)
     pm.enableTiming();
