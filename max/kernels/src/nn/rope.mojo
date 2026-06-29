@@ -177,17 +177,7 @@ def rope_ragged[
         pos_ids_stride = 0
 
     @always_inline
-    @parameter
-    @__copy_capture(
-        x,
-        input_row_offsets,
-        start_pos,
-        freqs_cis,
-        pos_ids_ptr,
-        pos_ids_stride,
-        has_position_ids,
-    )
-    def rope_fn[width: Int, alignment: Int = 1](idx_arg: Coord):
+    def rope_fn[width: Int, alignment: Int = 1](idx_arg: Coord) {var}:
         comptime assert idx_arg.rank == 3, "Invalid rank passed to rope kernel"
         comptime assert freqs_cis.flat_rank >= 2
 
@@ -281,13 +271,12 @@ def rope_ragged[
     )
 
     comptime if is_cpu[target]():
-        elementwise[func=rope_fn, simd_width=kernel_simd_width, target=target](
-            x.layout.shape_coord(), context
+        elementwise[simd_width=kernel_simd_width, target=target](
+            rope_fn, x.layout.shape_coord(), context
         )
     else:
         elementwise[
-            func=rope_fn,
             simd_width=kernel_simd_width,
             target=target,
             _trace_description="rope",
-        ](x.layout.shape_coord(), context)
+        ](rope_fn, x.layout.shape_coord(), context)

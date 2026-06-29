@@ -1537,22 +1537,20 @@ def foreach[
         ctx: The call context (forward this from the custom operation).
     """
 
-    @parameter
     @always_inline
     def elementwise_fn_wrapper[
         width: Int,
         alignment: Int = 1,
-    ](index: Coord) capturing:
+    ](index: Coord) {var}:
         var idx = coord_to_index_list(index)
         var val = func[width, alignment](rebind[IndexList[tensor.rank]](idx))
         tensor._fused_store[element_alignment=alignment](index, val)
 
     std.algorithm.functional.elementwise[
-        elementwise_fn_wrapper,
         simd_width,
         target=target,
         _trace_description=_trace_name,
-    ](tensor.shape_coord(), ctx)
+    ](elementwise_fn_wrapper, tensor.shape_coord(), ctx)
 
 
 @register_internal("mogg.elemwise_for_each")
@@ -1750,18 +1748,16 @@ def foreach_out_func[
         ctx: The call context (forward this from the custom operation).
     """
 
-    @parameter
     @always_inline
-    def out_func_shim[_width: Int, _alignment: Int = 1](index: Coord) capturing:
+    def out_func_shim[_width: Int, _alignment: Int = 1](index: Coord) {var}:
         idx = rebind[IndexList[rank]](coord_to_index_list(index))
         out_func[_width](idx)
 
     std.algorithm.functional.elementwise[
-        out_func_shim,
         simd_width,
         target=target,
         _trace_description=_trace_name,
-    ](tensor.shape_coord(), ctx)
+    ](out_func_shim, tensor.shape_coord(), ctx)
 
 
 # TensorCopy intrinsic used by view kernels.

@@ -100,9 +100,10 @@ def memcpy_or_fuse[
             row_major(Coord(shape_1d)),
         )
 
-        @parameter
         @always_inline
-        def epilogue_wrapper[simd_width: Int, alignment: Int = 1](index: Coord):
+        def epilogue_wrapper[
+            simd_width: Int, alignment: Int = 1
+        ](index: Coord) {var}:
             var load = input.load[width=simd_width, alignment=1](index)
 
             var out_index = _get_start_indices_of_nth_subvolume[0](
@@ -119,8 +120,8 @@ def memcpy_or_fuse[
         # We must run scalar to be conservative. This is because the fused
         # output lambda might operate on views (e.g., broadcast) that does not
         # always work with indices produced from a linearized address.
-        elementwise[epilogue_wrapper, simd_width=1](
-            shape_1d, DeviceContext(api="cpu")
+        elementwise[simd_width=1](
+            epilogue_wrapper, shape_1d, DeviceContext(api="cpu")
         )
 
 
@@ -851,10 +852,10 @@ def _concat_gpu_elementwise[
     # Metal a by-reference capture leaves the GPU kernel holding host-side
     # pointers, so it reads garbage/zeros. Copy-capture brings the device
     # pointers into the closure.
-    @parameter
     @always_inline
-    @__copy_capture(inputs, output)
-    def per_output_elem[simd_width: Int, alignment: Int = 1](out_index: Coord):
+    def per_output_elem[
+        simd_width: Int, alignment: Int = 1
+    ](out_index: Coord) {var}:
         var in_index = coord_to_index_list(out_index)
 
         comptime for i in range(num_inputs):
@@ -883,13 +884,13 @@ def _concat_gpu_elementwise[
     # dimension, so all elements belong to the same input and we can safely
     # use vectorized loads/stores (float4 = 128-bit transactions).
     comptime if axis != output.rank - 1:
-        elementwise[
-            per_output_elem, 4, target="gpu", _trace_description="concat"
-        ](output.layout.shape_coord(), ctx)
+        elementwise[4, target="gpu", _trace_description="concat"](
+            per_output_elem, output.layout.shape_coord(), ctx
+        )
     else:
-        elementwise[
-            per_output_elem, 1, target="gpu", _trace_description="concat"
-        ](output.layout.shape_coord(), ctx)
+        elementwise[1, target="gpu", _trace_description="concat"](
+            per_output_elem, output.layout.shape_coord(), ctx
+        )
 
 
 @always_inline
@@ -1003,11 +1004,10 @@ def _fused_concat_cpu[
     comptime for i in range(input_shapes.size):
         var input_shape = input_shapes[i]
 
-        @parameter
         @always_inline
         def elementwise_wrapper[
             _width: Int, alignment: Int = 1
-        ](indices: Coord):
+        ](indices: Coord) {var}:
             var c = rebind[IndexList[rank]](coord_to_index_list(indices))
             c[axis] += offset
 
@@ -1022,10 +1022,9 @@ def _fused_concat_cpu[
         # TODO: we can use simd_width > 0 if all inputs are aligned.
         var device_ctx = ctx.value() if ctx else DeviceContext(api="cpu")
         elementwise[
-            elementwise_wrapper,
             1,
             _trace_description="concat_fused",
-        ](Coord(input_shape), device_ctx)
+        ](elementwise_wrapper, Coord(input_shape), device_ctx)
         offset = offset + input_shape[axis]
 
 
@@ -1212,9 +1211,10 @@ def _fused_concat_gpu_elementwise[
 ) raises:
     comptime num_inputs = input_shapes.size
 
-    @parameter
     @always_inline
-    def per_output_elem[simd_width: Int, alignment: Int = 1](out_index: Coord):
+    def per_output_elem[
+        simd_width: Int, alignment: Int = 1
+    ](out_index: Coord) {var}:
         var in_index = coord_to_index_list(out_index)
 
         comptime for i in range(num_inputs):
@@ -1239,25 +1239,22 @@ def _fused_concat_gpu_elementwise[
 
         if _vec_width > 1 and inner_size % _vec_width == 0:
             elementwise[
-                per_output_elem,
                 _vec_width,
                 target="gpu",
                 _trace_description="concat_fused",
-            ](output.layout.shape_coord(), ctx)
+            ](per_output_elem, output.layout.shape_coord(), ctx)
         elif inner_size % 4 == 0:
             elementwise[
-                per_output_elem,
                 4,
                 target="gpu",
                 _trace_description="concat_fused",
-            ](output.layout.shape_coord(), ctx)
+            ](per_output_elem, output.layout.shape_coord(), ctx)
         else:
             elementwise[
-                per_output_elem,
                 1,
                 target="gpu",
                 _trace_description="concat_fused",
-            ](output.layout.shape_coord(), ctx)
+            ](per_output_elem, output.layout.shape_coord(), ctx)
     else:
         comptime simd_width = preferred_simd_width[dtype]()
 
@@ -1269,18 +1266,16 @@ def _fused_concat_gpu_elementwise[
 
         if use_simd_width:
             elementwise[
-                per_output_elem,
                 simd_width,
                 target="gpu",
                 _trace_description="concat_fused",
-            ](output.layout.shape_coord(), ctx)
+            ](per_output_elem, output.layout.shape_coord(), ctx)
         else:
             elementwise[
-                per_output_elem,
                 1,
                 target="gpu",
                 _trace_description="concat_fused",
-            ](output.layout.shape_coord(), ctx)
+            ](per_output_elem, output.layout.shape_coord(), ctx)
 
 
 @always_inline

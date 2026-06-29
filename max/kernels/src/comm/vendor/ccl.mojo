@@ -360,9 +360,9 @@ def allreduce[
         comptime epilogue = output_lambda.value()
         comptime simd_size = simd_width_of[dtype, target=get_gpu_target()]()
 
-        @parameter
-        @__copy_capture(output_tensor)
-        def epilogue_wrapper[simd_width: Int, alignment: Int = 1](idx: Coord):
+        def epilogue_wrapper[
+            simd_width: Int, alignment: Int = 1
+        ](idx: Coord) {var}:
             var flat_idx = idx[0].value()
             var val = output_tensor.raw_load[
                 width=simd_width,
@@ -374,11 +374,10 @@ def allreduce[
             )
 
         elementwise[
-            epilogue_wrapper,
             simd_size,
             target="gpu",
             _trace_description="ccl_epilogue",
-        ](Coord(output_tensor.num_elements()), ctx)
+        ](epilogue_wrapper, Coord(output_tensor.num_elements()), ctx)
 
 
 @parameter

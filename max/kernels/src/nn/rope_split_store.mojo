@@ -124,6 +124,10 @@ def _rope_split_store_ragged_impl[
     var combined_dim = Int(qkv.dim[1]())
     var qk_offset = q_dim + k_dim
 
+    # TODO: This elementwise body captures KV cache views (`CacheType`), which
+    # fail codegen when stored into a unified closure ('pop.store' pointer
+    # element-type verification). Keep using the deprecated parameter-closure
+    # overload until cache captures in unified closures are supported.
     @parameter
     @__copy_capture(
         q_dim,

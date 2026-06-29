@@ -283,10 +283,9 @@ def _index_tensor_impl[
 
     # This is modeled as an elementwise function mapping an index in the
     # output to an index in the input
-    @parameter
     def index_tensor_elementwise_fn[
         simd_width: Int, alignment: Int = 1
-    ](output_idx_arg: Coord) capturing -> None:
+    ](output_idx_arg: Coord) {var}:
         var output_idx = IndexList[output.rank]()
         comptime for i in range(output.rank):
             output_idx[i] = Int(output_idx_arg[i].value())
@@ -347,31 +346,35 @@ def _index_tensor_impl[
         var cpu_ctx = DeviceContext(api="cpu")
         if use_simd:
             elementwise[
-                index_tensor_elementwise_fn,
                 target_simd_width,
                 target=target,
-            ](output.layout.shape_coord(), cpu_ctx)
+            ](index_tensor_elementwise_fn, output.layout.shape_coord(), cpu_ctx)
         else:
             elementwise[
-                index_tensor_elementwise_fn,
                 1,
                 target=target,
-            ](output.layout.shape_coord(), cpu_ctx)
+            ](index_tensor_elementwise_fn, output.layout.shape_coord(), cpu_ctx)
     else:
         assert Bool(ctx), "Must provide DeviceContext if executing on GPU."
         var cuda_ctx = ctx.value()
         if use_simd:
             elementwise[
-                index_tensor_elementwise_fn,
                 target_simd_width,
                 target=target,
-            ](output.layout.shape_coord(), cuda_ctx)
+            ](
+                index_tensor_elementwise_fn,
+                output.layout.shape_coord(),
+                cuda_ctx,
+            )
         else:
             elementwise[
-                index_tensor_elementwise_fn,
                 1,
                 target=target,
-            ](output.layout.shape_coord(), cuda_ctx)
+            ](
+                index_tensor_elementwise_fn,
+                output.layout.shape_coord(),
+                cuda_ctx,
+            )
 
 
 # ===-----------------------------------------------------------------------===#
@@ -486,12 +489,11 @@ def advanced_indexing_getitem[
         out_tensor.rank == input_rank + index_rank - num_index_tensors
     )
 
-    @parameter
     @always_inline
     def elementwise_fn_wrapper[
         width: Int,
         alignment: Int = 1,
-    ](output_index: Coord) capturing:
+    ](output_index: Coord) {var}:
         input_index = IndexList[input_rank]()
 
         # Find the associated output index from input index
@@ -535,18 +537,16 @@ def advanced_indexing_getitem[
     )
     if use_simd:
         elementwise[
-            elementwise_fn_wrapper,
             target_simd_width,
             target=target,
             _trace_description=trace_description,
-        ](out_tensor.layout.shape_coord(), ctx)
+        ](elementwise_fn_wrapper, out_tensor.layout.shape_coord(), ctx)
     else:
         elementwise[
-            elementwise_fn_wrapper,
             1,
             target=target,
             _trace_description=trace_description,
-        ](out_tensor.layout.shape_coord(), ctx)
+        ](elementwise_fn_wrapper, out_tensor.layout.shape_coord(), ctx)
 
 
 @always_inline
@@ -703,11 +703,10 @@ def advanced_indexing_setitem_inplace[
         else:
             iteration_shape[i] = index_tensor_shape[i - start_axis]
 
-    @parameter
     @always_inline
     def elementwise_fn_wrapper[
         width: Int, alignment: Int = 1
-    ](iteration_indices: Coord) capturing:
+    ](iteration_indices: Coord) {var}:
         var index_tensor_indices = IndexList[index_rank]()
 
         # Find the index into the indexing tensors from the common index
@@ -761,15 +760,13 @@ def advanced_indexing_setitem_inplace[
     )
     if use_simd:
         elementwise[
-            elementwise_fn_wrapper,
             target_simd_width,
             target=target,
             _trace_description=trace_description,
-        ](Coord(iteration_shape), ctx)
+        ](elementwise_fn_wrapper, Coord(iteration_shape), ctx)
     else:
         elementwise[
-            elementwise_fn_wrapper,
             1,
             target=target,
             _trace_description=trace_description,
-        ](Coord(iteration_shape), ctx)
+        ](elementwise_fn_wrapper, Coord(iteration_shape), ctx)

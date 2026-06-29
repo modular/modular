@@ -259,9 +259,7 @@ def test[
     comptime pack_size = simd_width_of[dtype, target=get_gpu_target()]()
 
     @always_inline
-    @__copy_capture(c_device_ref, m, n)
-    @parameter
-    def func[simd_width: Int, alignment: Int = 1](idx0: Coord):
+    def func[simd_width: Int, alignment: Int = 1](idx0: Coord) {var}:
         var val = c_device_ref.load[width=simd_width](idx0)
 
         var update_val = val
@@ -277,7 +275,8 @@ def test[
         )
 
     comptime if lambda_fn:
-        elementwise[func, pack_size, target="gpu"](
+        elementwise[pack_size, target="gpu"](
+            func,
             (m, n),
             ctx,
         )

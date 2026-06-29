@@ -115,8 +115,7 @@ def merge_ragged_tensors[
     ), "b_row_offsets.flat_rank must be 1"
 
     @always_inline
-    @parameter
-    def merge_fn[width: Int, alignment: Int = 1](idx: Coord):
+    def merge_fn[width: Int, alignment: Int = 1](idx: Coord) {var}:
         comptime assert idx.rank == rank, "Invalid rank passed to the kernel"
 
         var a_tensor_size = Int(a.dim[0]())
@@ -190,11 +189,10 @@ def merge_ragged_tensors[
     comptime kernel_simd_width = 1 if rank == 1 else target_simd_width
 
     elementwise[
-        func=merge_fn,
         simd_width=kernel_simd_width,
         target=target,
         _trace_description="merge_ragged_tensors",
-    ](c.layout.shape_coord(), ctx)
+    ](merge_fn, c.layout.shape_coord(), ctx)
 
 
 def eagle_prefill_shift_tokens[
@@ -215,8 +213,7 @@ def eagle_prefill_shift_tokens[
     comptime assert shift_next_tokens.flat_rank == 1
 
     @always_inline
-    @parameter
-    def shift_fn[width: Int, alignment: Int = 1](idx: Coord):
+    def shift_fn[width: Int, alignment: Int = 1](idx: Coord) {var}:
         comptime assert idx.rank == 1
 
         var i = Int(idx[0].value())
@@ -238,8 +235,7 @@ def eagle_prefill_shift_tokens[
     var shape = Coord(Int(output.dim[0]()))
 
     elementwise[
-        func=shift_fn,
         simd_width=1,
         target=target,
         _trace_description="eagle_prefill_shift_tokens",
-    ](shape, ctx)
+    ](shift_fn, shape, ctx)

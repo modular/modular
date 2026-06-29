@@ -1136,11 +1136,9 @@ def _matmul_dispatch_sm100[
             var n = Int(c_tensor.dim[1]())
             var c_tt = c_tensor.value()
 
-            @parameter
-            @__copy_capture(c_tt)
             def epilogue_wrapper[
                 simd_width: Int, alignment: Int = 1
-            ](idx: Coord):
+            ](idx: Coord) {var}:
                 comptime assert c_tt.flat_rank >= 2
                 var c_val = c_tt.load[
                     width=simd_width,
@@ -1165,7 +1163,7 @@ def _matmul_dispatch_sm100[
                 epilogue_tensor=epilogue_tensor,
             )
 
-            elementwise[epilogue_wrapper, simd_size, target="gpu"]((m, n), ctx)
+            elementwise[simd_size, target="gpu"](epilogue_wrapper, (m, n), ctx)
             return
 
         # Otherwise, we need to allocate a new buffer for c and apply the epilogue.

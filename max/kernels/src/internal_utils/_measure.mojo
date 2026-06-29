@@ -59,8 +59,9 @@ def kl_div[
     len: Int,
     ctx: DeviceContext,
 ) raises where dtype.is_floating_point():
-    @parameter
-    def kl_div_elementwise[simd_width: Int, alignment: Int = 1](idx: Coord):
+    def kl_div_elementwise[
+        simd_width: Int, alignment: Int = 1
+    ](idx: Coord) {var}:
         output.store(
             idx[0].value(),
             kl_div(
@@ -69,7 +70,7 @@ def kl_div[
             ),
         )
 
-    elementwise[kl_div_elementwise, simd_width_of[dtype]()](len, ctx)
+    elementwise[simd_width_of[dtype]()](kl_div_elementwise, Coord(len), ctx)
 
 
 def kl_div[
@@ -295,8 +296,7 @@ def _sqrt[
     len: Int,
     ctx: DeviceContext,
 ) raises:
-    @parameter
-    def apply_fn[simd_width: Int, alignment: Int = 1](idx: Coord):
+    def apply_fn[simd_width: Int, alignment: Int = 1](idx: Coord) {var}:
         output.store(
             idx[0].value(),
             rebind[SIMD[dtype, simd_width]](
@@ -304,7 +304,7 @@ def _sqrt[
             ),
         )
 
-    elementwise[apply_fn, simd_width_of[dtype]()](len, ctx)
+    elementwise[simd_width_of[dtype]()](apply_fn, Coord(len), ctx)
 
 
 def _mul[
@@ -316,8 +316,7 @@ def _mul[
     len: Int,
     ctx: DeviceContext,
 ) raises:
-    @parameter
-    def apply_fn[simd_width: Int, alignment: Int = 1](idx: Coord):
+    def apply_fn[simd_width: Int, alignment: Int = 1](idx: Coord) {var}:
         output.store(
             idx[0].value(),
             rebind[SIMD[dtype, simd_width]](
@@ -326,7 +325,7 @@ def _mul[
             ),
         )
 
-    elementwise[apply_fn, simd_width_of[dtype]()](len, ctx)
+    elementwise[simd_width_of[dtype]()](apply_fn, Coord(len), ctx)
 
 
 def _div[
@@ -338,8 +337,7 @@ def _div[
     len: Int,
     ctx: DeviceContext,
 ) raises:
-    @parameter
-    def apply_fn[simd_width: Int, alignment: Int = 1](idx: Coord):
+    def apply_fn[simd_width: Int, alignment: Int = 1](idx: Coord) {var}:
         output.store(
             idx[0].value(),
             rebind[SIMD[dtype, simd_width]](
@@ -348,7 +346,7 @@ def _div[
             / c,
         )
 
-    elementwise[apply_fn, simd_width_of[dtype]()](len, ctx)
+    elementwise[simd_width_of[dtype]()](apply_fn, Coord(len), ctx)
 
 
 def _sum[

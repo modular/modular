@@ -32,8 +32,7 @@ from std.utils.coord import Coord
 def test_trace_description_elementwise(ctx: DeviceContext) raises:
     var len = 1024
 
-    @parameter
-    def func[simd_width: Int, alignment: Int = 1](idx: Coord):
+    def func[simd_width: Int, alignment: Int = 1](idx: Coord) {var}:
         pass
 
     # Verify the PTX entry point has the expected sanitized+hashed name.
@@ -42,11 +41,10 @@ def test_trace_description_elementwise(ctx: DeviceContext) raises:
     # CHECK-BOTH: [[NAME:my_function_with_some_name_r1_w[0-9]+_b[0-9]+_gs_False_[0-9a-f]+]]
     # CHECK-BOTH: [[NAME]]
     elementwise[
-        func=func,
         simd_width=simd_width_of[DType.float32](),
         _trace_description="my_function_with_some_name",
         target="gpu",
-    ](len, ctx)
+    ](func, Coord(len), ctx)
 
 
 def main() raises:

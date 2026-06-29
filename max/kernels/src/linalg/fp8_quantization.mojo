@@ -1906,11 +1906,9 @@ def blockwise_scaled_fp8_with_epilogue[
             var m = Int(c.dim[0]())
             var n = Int(c.dim[1]())
 
-            @parameter
-            @__copy_capture(c)
             def epilogue_wrapper[
                 simd_width: Int, alignment: Int = 1
-            ](idx: Coord):
+            ](idx: Coord) {var}:
                 var c_val = c.load[simd_width](idx)
                 epilogue[c_type, simd_width, alignment=alignment](
                     Index(idx[0].value(), idx[1].value()), c_val
@@ -1923,8 +1921,8 @@ def blockwise_scaled_fp8_with_epilogue[
                 config=matmul_config,
                 n_scale_granularity=scales_granularity_mnk[1],
             ](c, a, b, a_scales, b_scales, ctx)
-            elementwise[epilogue_wrapper, simd_size, target="gpu"](
-                Coord(m, n), ctx
+            elementwise[simd_size, target="gpu"](
+                epilogue_wrapper, Coord(m, n), ctx
             )
 
     else:

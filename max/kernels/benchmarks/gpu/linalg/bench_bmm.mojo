@@ -174,9 +174,7 @@ def bench_bmm[
     comptime pack_size = simd_width_of[c_type, target=get_gpu_target()]()
 
     @always_inline
-    @__copy_capture(c_device, b, m, n)
-    @parameter
-    def func[simd_width: Int, alignment: Int = 1](idx: Coord):
+    def func[simd_width: Int, alignment: Int = 1](idx: Coord) {var}:
         var val = c_device.load[width=simd_width](idx)
         comptime element_lambda = lambda_fn.value()
         var update_val = element_lambda(val)
@@ -265,7 +263,8 @@ def bench_bmm[
 
                 # Epilogue
                 comptime if lambda_fn:
-                    elementwise[func, pack_size, target="gpu"](
+                    elementwise[pack_size, target="gpu"](
+                        func,
                         (b, m, n),
                         ctx,
                     )

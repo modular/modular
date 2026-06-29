@@ -6221,10 +6221,8 @@ def _naive_attention[
     )
     batched_matmul[transpose_b=transpose_k](score, q_tt, k_tt)
 
-    @__copy_capture(score)
-    @parameter
     @always_inline
-    def scale_and_mask[width: Int, alignment: Int = 1](coords: Coord):
+    def scale_and_mask[width: Int, alignment: Int = 1](coords: Coord) {var}:
         var score_idx = coord_to_index_list(coords)
         var vec = score.load_linear[width, alignment=alignment](score_idx)
         vec = vec * scale.cast[dtype]()
@@ -6236,8 +6234,8 @@ def _naive_attention[
         )
         score.store_linear[width, alignment=alignment](score_idx, vec)
 
-    elementwise[scale_and_mask, simd_size](
-        (batch_size, num_heads, seq_len, num_keys), ctx
+    elementwise[simd_size](
+        scale_and_mask, (batch_size, num_heads, seq_len, num_keys), ctx
     )
 
     softmax[dtype, simd_size, 4](score, score, axis=3)

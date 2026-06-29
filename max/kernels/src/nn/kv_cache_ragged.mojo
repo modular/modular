@@ -4263,6 +4263,10 @@ def generic_kv_cache_radd_dispatch[
     var k_cache = cache.get_key_cache(layer_idx_cast)
     var v_cache = cache.get_value_cache(layer_idx_cast)
 
+    # TODO: This elementwise body captures KV cache views (`CacheType`), which
+    # fail codegen when stored into a unified closure ('pop.store' pointer
+    # element-type verification). Keep using the deprecated parameter-closure
+    # overload until cache captures in unified closures are supported.
     @parameter
     @__copy_capture(k_cache, v_cache, input_row_offsets)
     def do_radd[width: Int, alignment: Int = 1](idx: Coord):
@@ -4345,6 +4349,10 @@ def kv_cache_store_ragged[
         " + 1,)`"
     )
 
+    # TODO: This elementwise body captures a KV cache view (`CacheType`), which
+    # fails codegen when stored into a unified closure ('pop.store' pointer
+    # element-type verification). Keep using the deprecated parameter-closure
+    # overload until cache captures in unified closures are supported.
     @parameter
     @__copy_capture(cache, input_row_offsets)
     def write_to_cache[
@@ -4405,6 +4413,10 @@ def kv_cache_store_padded[
         valid_lengths.layout.rank() == 1
     ), "Expected valid_lengths to be a 1D tensor of shape `(batch_size,)`"
 
+    # TODO: This elementwise body captures a KV cache view (`CacheType`), which
+    # fails codegen when stored into a unified closure ('pop.store' pointer
+    # element-type verification). Keep using the deprecated parameter-closure
+    # overload until cache captures in unified closures are supported.
     @parameter
     @__copy_capture(cache, valid_lengths)
     @always_inline
@@ -4506,6 +4518,10 @@ def kv_cache_2m_iadd_dispatch[
     # [2m, N]
     var elementwise_shape = IndexList[2](2 * m, kv_shape[1])
 
+    # TODO: This elementwise body captures KV cache views (`CacheType`), which
+    # fail codegen when stored into a unified closure ('pop.store' pointer
+    # element-type verification). Keep using the deprecated parameter-closure
+    # overload until cache captures in unified closures are supported.
     @parameter
     @__copy_capture(kv, k_cache, v_cache, input_row_offsets, m, M)
     def iadd[width: Int, alignment: Int = 1](idx: Coord):

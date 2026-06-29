@@ -96,9 +96,7 @@ def run_elementwise[type: DType](ctx: DeviceContext) raises:
     var out_remainders_buffer = TileTensor(out_remainders, row_major(length))
 
     @always_inline
-    @__copy_capture(out_divisors_buffer, out_remainders_buffer)
-    @parameter
-    def func[simd_width: Int, alignment: Int = 1](idx0: Coord):
+    def func[simd_width: Int, alignment: Int = 1](idx0: Coord) {var}:
         comptime fast_div = FastDiv[type](4)
         var idx = idx0[0].value()
 
@@ -109,7 +107,7 @@ def run_elementwise[type: DType](ctx: DeviceContext) raises:
             Scalar[fast_div.uint_type](idx) % fast_div
         ).cast[type]()
 
-    elementwise[func, simd_width=1, target="gpu"](Coord(length), ctx)
+    elementwise[simd_width=1, target="gpu"](func, Coord(length), ctx)
 
     ctx.enqueue_copy(divisors.ptr, out_divisors)
     ctx.enqueue_copy(remainders.ptr, out_remainders)

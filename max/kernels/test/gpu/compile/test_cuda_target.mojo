@@ -121,16 +121,14 @@ def erf_elementwise(
     var tid = granularity * global_idx.x
 
     @always_inline
-    @__copy_capture(tid)
-    @parameter
-    def func[simd_width: Int, alignment: Int = 1](idx: Coord):
+    def func[simd_width: Int, alignment: Int = 1](idx: Coord) {var}:
         var offset = tid + Int(idx[0].value())
         if offset >= len:
             return
         buf[offset] = erf(buf[offset])
 
-    elementwise[func, simd_width=simd_width_of[DType.float32](), target="gpu"](
-        granularity, ctx
+    elementwise[simd_width=simd_width_of[DType.float32](), target="gpu"](
+        func, Coord(granularity), ctx
     )
 
 
