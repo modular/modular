@@ -414,7 +414,7 @@ def main():
     print(s)  # Struct[Int](x=1)
 ```
 
-<!-- TODO(DOCS-2175): Needs updating from downcasting -> type refinment -->
+<!-- TODO(DOCS-2175): Needs updating from downcasting -> type refinement -->
 
 ## Downcasting safely: `conforms_to` + `trait_downcast()` {#downcasting-safely}
 
@@ -441,7 +441,7 @@ def process[T: AnyType](value: T):
 - `trait_downcast()` rebinds the value to a trait-constrained view at
   compile time.
 
-<!-- TODO(DOCS-2175): Needs updating from downcasting -> type refinment -->
+<!-- TODO(DOCS-2175): Needs updating from downcasting -> type refinement -->
 
 Only call `trait_downcast()` inside the guarded branch. Handle the
 fallback in the `else` branch. If you always need the trait, add it as a

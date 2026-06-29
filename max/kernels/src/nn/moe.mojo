@@ -1620,9 +1620,9 @@ def eplb_remap_kernel[
     SMEM, then every thread does: HBM-load logical id -> SMEM-looup cnt -> int mod -> SMEM-Lookup phy id
     -> HBM-store.
 
-    Portable accross all hardwares.
+    Portable across all hardwares.
 
-    Optimiality of choosing : hash_decorrelate=True xor-hashes the flat position with a
+    Optimality of choosing : hash_decorrelate=True xor-hashes the flat position with a
     Knuth multiplicative hash of the logical id before the modulo, breaking
     structured position-vs-cnt alignment without warp ops.
     """
