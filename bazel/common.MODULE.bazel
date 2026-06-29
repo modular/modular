@@ -192,9 +192,9 @@ http_archive(
     build_file = "//bazel/public-patches:nixl_upstream.BUILD",
     patch_args = ["-p1"],
     patches = [],
-    sha256 = "d86da898277f51d5e5b72ca5bf69c1c3f93d10c433ea128cd205afdbbaa93839",
-    strip_prefix = "nixl-1.2.0",
-    url = "https://github.com/ai-dynamo/nixl/archive/refs/tags/v1.2.0.tar.gz",
+    sha256 = "74ab77453bd117e80e4bda14aa5fe4050b7767cedb04357b65b485e7c7101612",
+    strip_prefix = "nixl-1.3.0",
+    url = "https://github.com/ai-dynamo/nixl/archive/refs/tags/v1.3.0.tar.gz",
 )
 # END_NIXL_GENERATED
 

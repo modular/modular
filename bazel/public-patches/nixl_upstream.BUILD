@@ -65,8 +65,8 @@ cc_library(
     ]),
     copts = [
         # Upstream's meson defines these on the command line.
-        '-DNIXL_VERSION=\\"1.1.0\\"',
-        '-DNIXL_GIT_HASH=\\"upstream-v1.1.0\\"',
+        '-DNIXL_VERSION=\\"1.3.0\\"',
+        '-DNIXL_GIT_HASH=\\"upstream-v1.3.0\\"',
     ],
     # Upstream's meson sets utils_inc_dirs=src/utils so `#include "common/..."`
     # works; but telemetry.cpp also uses bare `#include "util.h"` which
@@ -159,6 +159,11 @@ cc_library(
         "src/core/nixl_plugin_manager.cpp",
         "src/core/telemetry/buffer_exporter.cpp",
         "src/core/telemetry/buffer_plugin.cpp",
+        # nop_plugin.cpp defines createStaticNOPPlugin(), which
+        # nixl_plugin_manager.cpp references unconditionally via
+        # registerBuiltinPlugins() since upstream v1.3.0. Without it the
+        # consumer link fails with an undefined reference.
+        "src/core/telemetry/nop_plugin.cpp",
         "src/core/telemetry/telemetry.cpp",
     ],
     hdrs = glob([
