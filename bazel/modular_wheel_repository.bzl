@@ -87,20 +87,9 @@ filegroup(
 INDIRECT_DEPENDENCIES = [
     "AsyncRTMojoBindings",
     "AsyncRTRuntimeGlobals",
-    "DeviceContextGlobals",
     "KGENCompilerRTShared",
     "MGPRT",
     "MSupportGlobals",
-]
-
-# A library is added to this list in the same change that introduces it to the
-# source tree, but the published wheel only contains it from the next release
-# on. Tolerate libraries missing from the downloaded wheel rather than failing
-# the glob, so the list can lead the wheel.
-PRESENT_INDIRECT_DEPENDENCIES = [
-    lib_name
-    for lib_name in INDIRECT_DEPENDENCIES
-    if glob(["modular/lib/lib{}.*".format(lib_name)], allow_empty = True)
 ]
 
 [
@@ -108,7 +97,7 @@ PRESENT_INDIRECT_DEPENDENCIES = [
         name = "{}_lib".format(lib_name),
         shared_library = glob(["modular/lib/lib{}.*".format(lib_name)])[0],
     )
-    for lib_name in PRESENT_INDIRECT_DEPENDENCIES
+    for lib_name in INDIRECT_DEPENDENCIES
 ]
 
 # Special case, NVPTX is platform-specific.
@@ -123,7 +112,7 @@ cc_import(
     shared_library = glob(["modular/lib/libmax.*"])[0],
     visibility = ["//visibility:public"],
     data = ["modular/lib/*.so"],
-    deps = [":" + dep + "_lib" for dep in PRESENT_INDIRECT_DEPENDENCIES] + select({
+    deps = [":" + dep + "_lib" for dep in INDIRECT_DEPENDENCIES] + select({
         "@platforms//os:linux": [":NVPTX_lib"],
         "//conditions:default": [],
     })
