@@ -363,4 +363,12 @@ This version is still a work in progress.
   an unexpected device synchronization. Slices and views now preserve the
   `DevicePinnedBuffer` type.
 
+- Fixed virtual-device mode on macOS. Previously the
+  `max.driver.set_virtual_device_*()` settings had no effect on device
+  creation: `Accelerator()` still took the real-hardware path, so requesting
+  more devices than physically present failed and single-device
+  cross-compilation silently used the real GPU. The virtual-device state now
+  lives in a single shared library, so the setters and device creation always
+  observe the same configuration on every platform.
+
 ## Mojo language
