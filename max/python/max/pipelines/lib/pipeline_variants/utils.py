@@ -835,7 +835,11 @@ class StructuredOutputHelper:
         Part 1 permanently advances the FSM of every ``context_batch`` request
         through its committed tokens (accepted draft tokens followed by the
         bonus token). This mirrors what sync_and_process_outputs would do for
-        structured output, and is independent of the output row order.
+        structured output, and is independent of the output row order. A row
+        preempted in flight (``reset()`` after enqueue) is skipped: ``reset()``
+        rewinds its token buffer but preserves its matcher, so advancing
+        through the dropped committed token would desync the matcher from the
+        sequence it re-primes on resume.
 
         Part 2 owns the **entire** ``output_context_batch`` rectangle and
         writes each row's speculative bitmask **in that batch's row order**, by
@@ -847,8 +851,9 @@ class StructuredOutputHelper:
         from ``context_batch`` (the scheduler routes fresh/resumed requests
         through the cold-start prime path instead; see the caller
         ``_enqueue_prev_bitmask_callback`` and ``_assign_bitmask_inputs``). A
-        row absent from ``context_batch`` would break that invariant and is
-        asserted against rather than silently mis-filled. Writing directly in
+        row preempted in flight (``reset()`` after enqueue) is degraded to the
+        all-valid -1 reset rather than raising, which would blanket-reset the
+        whole rectangle and unconstrain every other row. Writing directly in
         the consumer's row order, with no second writer on the main thread, is
         what lets the model graph consume the bitmask without an on-device
         gather and without a host wait.
@@ -882,7 +887,7 @@ class StructuredOutputHelper:
             # what keeps the batch-level ``skip_fsm_advance`` contract intact
             # for the producing batch's later sync.
             for ctx_idx, ctx in enumerate(context_batch):
-                if ctx.matcher is None:
+                if ctx.matcher is None or ctx.is_initial_prompt:
                     continue
 
                 # Advance the enforcement state machine through committed
@@ -969,24 +974,37 @@ class StructuredOutputHelper:
                 # work and no row is ever left holding a previous iteration's
                 # bitmask for the next iter's in-graph H2D to copy.
                 bitmask_out[out_idx, :, :] = -1
-                # Invariant: the callback is only enqueued when the whole current
-                # batch verifies drafts, so every consumer row continues from the
-                # producing batch -- the scheduler routes every fresh or resumed
-                # request through the cold-start prime path, never here. A row
-                # absent from ``context_batch`` (or flagged as an initial prompt)
-                # would mean that invariant broke; assert rather than index
-                # ``next_draft_tokens`` with None and silently mis-fill. Running
-                # inside the callback's try/except, a failure here degrades to
-                # the safe blanket -1 fallback instead of corrupting the bitmask.
+                # The callback is enqueued only when the whole current batch
+                # verifies drafts, so every consumer row should continue from
+                # the producing batch. But the callback runs on an AsyncRT
+                # worker and holds live references to these contexts: between
+                # its enqueue and its execution the scheduler can preempt a row
+                # (``reset()`` to an initial prompt, requeueing it to
+                # context-encoding) when KV pages run short. Degrade such a row
+                # to the all-valid -1 reset above and ``continue`` rather than
+                # raising -- a raise propagates to the callback's except and
+                # blanket-resets the *whole* rectangle to -1, unconstraining
+                # every other (correctly continuing) request in the batch.
                 src = rid_to_src.get(ctx.request_id)
-                assert src is not None and not ctx.is_initial_prompt, (
-                    f"bitmask callback: row {ctx.request_id} is not an "
-                    "attributable continuing row (absent from the producing "
-                    "batch, or reset to an initial prompt). The callback's "
-                    "single-writer invariant is broken -- a scheduler change "
-                    "that admits new or resumed rows into a verify batch must "
-                    "restore a synchronous fill for them."
-                )
+                if src is None:
+                    logger.error(
+                        "bitmask callback: row %s absent from the producing "
+                        "batch -- a scheduler change admitted a new or resumed "
+                        "row into a verify batch without a synchronous fill. "
+                        "Leaving this row unconstrained for this step.",
+                        ctx.request_id,
+                    )
+                    continue
+                if ctx.is_initial_prompt:
+                    # Preempted in flight: its token is dropped and it re-primes
+                    # on resume, so -1 is the correct don't-care. Debug-only to
+                    # avoid per-row log spam on the hot path under KV pressure.
+                    logger.debug(
+                        "bitmask callback: row %s was preempted in flight; "
+                        "leaving it unconstrained for this step.",
+                        ctx.request_id,
+                    )
+                    continue
                 if ctx.matcher is None:
                     # Continuing unconstrained row: all-valid, no fill needed.
                     continue
