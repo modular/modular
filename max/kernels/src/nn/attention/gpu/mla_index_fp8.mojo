@@ -31,6 +31,10 @@ from nn.index_fp8 import fp8_index_kernel, IndexSmemStorage
 from nn.attention.mha_mask import MHAMask, MaskName
 from nn.attention.mha_operand import KVCacheMHAOperand, KVCacheScalesMHAOperand
 from nn.attention.mha_utils import dispatch_mask
+from nn.topk_bitonic import (
+    PERSISTENT_TOPK_MAX_N,
+    persistent_topk_block,
+)
 from nn.topk import topk_gpu
 
 from std.utils.index import Index
@@ -372,13 +376,32 @@ def mla_indexer_ragged_float8_paged[
         row_major(total_seq_len, effective_k),
     )
 
-    topk_gpu[sampling=False, largest=True](
-        ctx,
-        effective_k,
-        scores_tile,
-        topk_vals_tile,
-        topk_idxs_tile,
-    )
+    # Dispatch to the fast bitonic-sort path when N fits in SMEM (N ≤ 2048).
+    # The two-stage sequential-extraction topk_gpu is O(k² / BLOCK) and takes
+    # ~2 ms at k=N=2048; the bitonic sort runs in O(N log² N) ≈ 1–2 µs.
+    # Fall back to topk_gpu for N > PERSISTENT_TOPK_MAX_N (large-context where
+    # k << N and the extraction approach is more efficient).
+    if max_num_keys <= PERSISTENT_TOPK_MAX_N:
+        persistent_topk_block(
+            ctx,
+            rebind[UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin]](
+                scores_tile.ptr
+            ),
+            rebind[UnsafePointer[Scalar[DType.int32], MutAnyOrigin]](
+                topk_idxs_tile.ptr
+            ),
+            max_num_keys,
+            effective_k,
+            total_seq_len,
+        )
+    else:
+        topk_gpu[sampling=False, largest=True](
+            ctx,
+            effective_k,
+            scores_tile,
+            topk_vals_tile,
+            topk_idxs_tile,
+        )
 
     # Fill invalid positions with -1:
     # - Positions [effective_k, top_k) when top_k > max_num_keys
