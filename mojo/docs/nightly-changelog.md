@@ -141,6 +141,9 @@ This version is still a work in progress.
 
 ## Library changes
 
+- `StringSlice._justify()` (used by `ljust`, `rjust`, `center`) now uses
+  `memset`/`memcpy` instead of repeated single-character concatenation.
+
 - `Int` is now an alias for `Scalar[DType.int]` and integer literals materialize
   to this `Scalar` type. Because of this some conversions have become more
   strict.
