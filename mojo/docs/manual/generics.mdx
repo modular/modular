@@ -46,7 +46,7 @@ the call site.
 ### Type constraints
 
 *Constraints* define what a type must do. You express them as traits or
-trait compositions. You must always constrain generic parameters — without
+trait compositions. You must always constrain generic parameters. Without
 a fixed set of required features, the compiler has no guarantees about
 what operations are valid.
 
@@ -64,7 +64,7 @@ to exist for any type that satisfies them.
 ### Naming conventions
 
 Mojo follows naming conventions used in languages like Rust and C++.
-Type parameter names use PascalCase — short (`T`, `E`) or descriptive
+Type parameter names use PascalCase, short (`T`, `E`) or descriptive
 (`ErrorType`, `Element`). By convention, `T`, `U`, `V` are general
 types; `K`/`V` for key-value pairs; `E` for errors; `H` for hashers.
 Value parameter names use lower_snake_case and should be descriptive
@@ -126,7 +126,7 @@ print("String (Expect False):\t",
 ```
 
 The compiler generates a concrete, type-specific version of
-`all_equal()` for each type you use — one for `Int` and one for
+`all_equal()` for each type you use: one for `Int` and one for
 `String` in this example.
 
 :::note
@@ -143,7 +143,7 @@ T: Equatable & Copyable
 ```
 
 The ampersand (`&`) composes traits. Use the fewest constraints your code
-needs — that keeps your function usable with more types. If you remove
+needs. This keeps your function usable with more types. If you remove
 `Equatable` from `all_equal()`, the code won't compile because the
 compiler can't guarantee that `!=` exists for all `T`.
 
@@ -152,7 +152,7 @@ A type supports `!=` by implementing `__ne__()`.
 :::
 
 When your code uses an operation not covered by its constraints, the
-compiler reports an error — the type is *underspecified*. Fix this by
+compiler reports an error: the type is *underspecified*. Fix this by
 adding the trait that provides the missing behavior. In practice, generic
 errors mean your constraints don't include the behavior your code uses.
 
@@ -176,7 +176,7 @@ embedding it in a container:
 def my_generic_fn[T: AnyType](value: T):
 ```
 
-This function accepts any type because its only limit is `AnyType` — the
+This function accepts any type because its only limit is `AnyType`, the
 root of the trait hierarchy that all types conform to. Using `AnyType`
 means the value has no guaranteed destructor or lifetime management.
 Outside of [reflection](/docs/manual/metaprogramming/reflection/), this
@@ -250,7 +250,7 @@ struct Pair[T: ComparableValue](ComparableValue):
         return self.left == other.left and self.right == other.right
 ```
 
-Like generic functions, generic types use placeholder parameters — but a
+Like generic functions, generic types use placeholder parameters, but a
 generic type uses those parameters in its storage as well as in its
 methods. Here, `Pair` stores two values of the same element type and
 implements equality by comparing its fields.
@@ -371,7 +371,7 @@ def show(*pack: *SomeTypeList[Writable]):
 
 ### Operator overloads
 
-Operator overloads are a natural fit for `Some` — the trait that enables
+Operator overloads are a natural fit for `Some`, the trait that enables
 the operator lives directly on the declaration:
 
 ```mojo
@@ -414,42 +414,48 @@ def main():
     print(s)  # Struct[Int](x=1)
 ```
 
-<!-- TODO(DOCS-2175): Needs updating from downcasting -> type refinement -->
+## Using conditional availability {#downcasting-safely}
 
-## Downcasting safely: `conforms_to` + `trait_downcast()` {#downcasting-safely}
-
-Sometimes a generic conformance is broader than what you need. Use a
-guarded downcast with `conforms_to()` and `trait_downcast()` to access
-operations from a specific trait the conformance doesn't guarantee.
-
-Check conformance first, then downcast and use the value through that
-trait:
+Sometimes a conformance is broader than you need. For example, a
+parameterized type may be constrained to `AnyType` in a struct, but you
+want to use it as `Writable` in a given method. Add a `where` clause to
+require `Writable`, allowing the compiler to prove the conformance before
+allowing a concrete instance to call the method:
 
 ```mojo
-def process[T: AnyType](value: T):
-    comptime if conforms_to(
-        T, Writable & ImplicitlyCopyable & ImplicitlyDeletable
-    ):
-        print(value)
-    else:
-        print("<not writable>")
-        # Or fail at compile time with `comptime assert`
+def process(self, value: Self.T) where conforms_to(Self.T, Writable):
+    print(value)
 ```
 
-- `conforms_to(T, Trait)` checks whether `T` satisfies the trait
-  composition.
-- `trait_downcast()` rebinds the value to a trait-constrained view at
-  compile time.
+Call `conforms_to(T, Trait)` to test whether `T` satisfies a trait.
+Combine multiple checks with `and` or `or` to express more complex
+conditions.
 
-<!-- TODO(DOCS-2175): Needs updating from downcasting -> type refinement -->
+Conditions are not limited to trait checks. They can also constrain
+compile-time facts, such as a data length being a power of two or a
+capacity being positive. Any compile-time expression with a known value
+can appear in a `where` clause.
 
-Only call `trait_downcast()` inside the guarded branch. Handle the
-fallback in the `else` branch. If you always need the trait, add it as a
-constraint (for example, `T: Writable`) instead of downcasting.
+The compiler rejects calls that don't satisfy the constraint. For example,
+a type built with a non-writable type `T` can't call `process()`:
 
-Use this pattern when you can't express the requirement as a constraint.
-It's common in reflection-style code that handles values based on their
-traits. See [reflection](/docs/manual/metaprogramming/reflection/).
+```mojo
+self.process(non_writable)   # Compile-time error, constraint violation
+```
+
+`where` clauses let the compiler prove conditions before constructing
+types, resolving conformances, compiling methods and functions, or
+manifesting compile-time declarations.
+
+Beyond conformance, a where clause can test predicates on its
+parameters: whether a `DType` is floating point or numeric
+(`dtype.is_floating_point()`, `dtype.is_numeric()`), or whether an integer
+parameter is a power of two.
+
+What it can't do is evaluate target facts like `is_64bit()` or
+`is_nvidia_gpu()`, or arbitrary compile-time functions, as constraints. The
+compiler can't carry those as proof. For those cases, use `comptime if`
+instead, which evaluates its condition directly.
 
 ## Value generics
 
@@ -519,7 +525,7 @@ def dynamic(size: Int):
 ## Generics and explicit destruction
 
 Explicitly destroyed types don't always work with generic code. The issue
-isn't generics — it's lifetime management. Explicit destruction gives you
+isn't generics; it's lifetime management. Explicit destruction gives you
 control over teardown: you can define destructors that take arguments,
 follow different paths, or raise errors.
 
@@ -550,7 +556,7 @@ caution with `RegisterPassable` and `TrivialRegisterPassable`.
 :::
 
 *Conditional trait conformance* uses checks before allowing a type to
-adopt a trait. When the condition is satisfied, the type conforms — it
+adopt a trait. When the condition is satisfied, the type conforms. It
 must fulfill the trait's requirements and gains any default implementation
 the trait provides. When the condition isn't satisfied, Mojo skips the
 conformance.
@@ -570,7 +576,7 @@ struct Wrapper[T: BaseTraits](
 ```
 
 When conforming to `Writable`, `Wrapper` doesn't need to implement any
-methods — the trait provides a default implementation of `write_to()`.
+methods. The trait provides a default implementation of `write_to()`.
 
 Now consider a type that isn't `Writable`:
 
@@ -639,7 +645,7 @@ var pair2 = Pair[Int, NotHashable](left=1, right=NotHashable(10))
 ### Example: conditional method access
 
 When a type adopts a trait, it must satisfy the trait's required methods.
-You gate those method implementations with `where` clauses — the same
+You gate those method implementations with `where` clauses, the same
 conditions that control whether the conformance applies.
 
 You can make `Wrapper` testable in `if` statements by conforming to
@@ -659,7 +665,7 @@ struct Wrapper[T: BaseTraits](
 
 The condition on `__bool__()` matches the one used for the `Boolable`
 conditional conformance. Since the method and the conformance use the
-same condition, they stay aligned — you won't end up with a conformance
+same condition, they stay aligned. You won't end up with a conformance
 but no method, or a method without the corresponding conformance.
 
 ```mojo
