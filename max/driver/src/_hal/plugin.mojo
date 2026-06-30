@@ -484,10 +484,28 @@ struct RawDriver(Movable):
         self,
         queue: QueueHandle,
         dst: M_driver_memory_view,
+        value: UInt8,
+    ) raises HALError:
+        var status = self._raw.queue_set_memory.f(
+            queue,
+            rebind[MemoryViewHandle](UnsafePointer(to=dst)),
+            value,
+        )
+        if status != STATUS_SUCCESS:
+            var err = self.get_status_message(status)
+            raise HALError(
+                err.status,
+                message=String(t"failed to set memory: {err.message}"),
+            )
+
+    def fill(
+        self,
+        queue: QueueHandle,
+        dst: M_driver_memory_view,
         value: UInt64,
         value_size: UInt64,
     ) raises HALError:
-        var status = self._raw.queue_set_memory.f(
+        var status = self._raw.queue_fill.f(
             queue,
             rebind[MemoryViewHandle](UnsafePointer(to=dst)),
             value,
@@ -497,7 +515,7 @@ struct RawDriver(Movable):
             var err = self.get_status_message(status)
             raise HALError(
                 err.status,
-                message=String(t"failed to set memory: {err.message}"),
+                message=String(t"failed to fill memory: {err.message}"),
             )
 
     def synchronize_queue(self, queue: QueueHandle) raises HALError:
@@ -859,6 +877,14 @@ struct RawPlugin(Movable):
         def(
             queue: QueueHandle,
             dst: MemoryViewHandle,
+            value: UInt8,
+        ) thin -> PluginResultCode,
+    ]
+    var queue_fill: HALFunction[
+        "M_driver_queue_fill",
+        def(
+            queue: QueueHandle,
+            dst: MemoryViewHandle,
             value: UInt64,
             value_size: UInt64,
         ) thin -> PluginResultCode,
@@ -1018,6 +1044,7 @@ struct RawPlugin(Movable):
             handle, so_path
         )
         self.queue_set_memory = type_of(self.queue_set_memory)(handle, so_path)
+        self.queue_fill = type_of(self.queue_fill)(handle, so_path)
         self.event_create = type_of(self.event_create)(handle, so_path)
         self.event_destroy = type_of(self.event_destroy)(handle, so_path)
         self.event_synchronize = type_of(self.event_synchronize)(

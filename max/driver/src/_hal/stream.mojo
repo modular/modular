@@ -148,13 +148,25 @@ struct Stream[device_spec: DeviceSpec](ImplicitlyDeletable, Movable):
     def set_memory(
         mut self,
         dst: BufferView,
+        value: UInt8,
+    ) raises HALError:
+        """Set every byte of `dst` to `value`. Runs after all previous Stream
+        ops."""
+        self._chain_wait()
+        self._queue[].set_memory(dst, value)
+        self._chain_signal()
+
+    def fill(
+        mut self,
+        dst: BufferView,
         value: UInt64,
         value_size: UInt64,
     ) raises HALError:
-        """Fill `dst` with a repeated value. Runs after all previous Stream
-        ops."""
+        """Fill `dst` with a repeated `value_size`-byte value. Runs after all
+        previous Stream ops. `value_size` must be one of 1, 2, 4, or 8; a
+        `value_size` of 1 is equivalent to `set_memory`."""
         self._chain_wait()
-        self._queue[].set_memory(dst, value, value_size)
+        self._queue[].fill(dst, value, value_size)
         self._chain_signal()
 
     def record_event[
