@@ -51,10 +51,16 @@
 # `ref` (--check 1, DEFAULT) is the f64 block-sparse oracle (mirrors the kernel's
 # own authority test, test_msa_d128_prefill.mojo): each query attends its topk
 # blocks' surviving (and, if causal, causally-valid) tokens, f64 softmax of
-# scale*Q.K^T, weighted V; O must match within (atol=2e-2, rtol=4e-2). B200/SM100.
+# scale*Q.K^T, weighted V; O must match within (atol=2e-2, rtol=4e-2).
+# Dual-arch: B200/SM100 (msa_sm100_prefill_run) + AMD MI355 (msa_amd_prefill_run).
 
 from std.math import exp, isinf, isnan, sqrt
 from std.random import randn, random_ui64, seed
+from std.sys import (
+    CompilationTarget,
+    has_amd_gpu_accelerator,
+    has_nvidia_gpu_accelerator,
+)
 from std.sys.defines import get_defined_int
 from std.utils import IndexList
 
@@ -64,6 +70,7 @@ from layout import Idx, TileTensor, row_major
 from nn.attention.mha_operand import LayoutTensorMHAOperand, MHAOperand
 from nn.attention.mha_utils import MHAConfig
 from msa.msa_2q import msa_sm100_prefill_plan, msa_sm100_prefill_run
+from msa.amd.prefill import msa_amd_prefill_run
 
 from _fuzz import boundary_int, collect_args, flag, flag_int
 
@@ -343,21 +350,42 @@ def run_one_case(
     var plan = msa_sm100_prefill_plan[
         output_type=dtype, config=config, group=group, topk=topk
     ](total_q, total_k, batch, max_sq, max_sk, ctx)
-    msa_sm100_prefill_run[
-        config=config, group=group, topk=topk, use_causal=causal
-    ](
-        plan,
-        o_dev,
-        lse_dev,
-        q_dev,
-        k_op,
-        v_op,
-        q2k_dev,
-        cuq_dev,
-        cuk_dev,
-        scale_f32,
-        ctx,
-    )
+    comptime if has_amd_gpu_accelerator():
+        msa_amd_prefill_run[
+            config=config, group=group, topk=topk, use_causal=causal
+        ](
+            plan,
+            o_dev,
+            lse_dev,
+            q_dev,
+            k_op,
+            v_op,
+            q2k_dev,
+            cuq_dev,
+            cuk_dev,
+            scale_f32,
+            ctx,
+        )
+    elif has_nvidia_gpu_accelerator():
+        msa_sm100_prefill_run[
+            config=config, group=group, topk=topk, use_causal=causal
+        ](
+            plan,
+            o_dev,
+            lse_dev,
+            q_dev,
+            k_op,
+            v_op,
+            q2k_dev,
+            cuq_dev,
+            cuk_dev,
+            scale_f32,
+            ctx,
+        )
+    else:
+        CompilationTarget.unsupported_target_error[
+            operation=__get_current_function_name()
+        ]()
     ctx.synchronize()
 
     if check:

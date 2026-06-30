@@ -48,7 +48,7 @@ Modeled on the MLA FP8 indexer registration in `attention.mojo`
 (`mo.mla.indexer.ragged.float8.paged`) for the comptime cache-param extraction
 + paged-collection build, and on the in-tree MSA tests
 (`Kernels/test/msa/test_msa_sm100_d128_decode_paged.mojo`,
-`test_msa_sm100_d128_prefill_device_csr.mojo`) for the exact call shapes.
+`test_msa_d128_prefill_device_csr.mojo`) for the exact call shapes.
 
 Three attention routes, picked at runtime from `kv_collection.max_seq_length`
 (`max_q_len`, the max number of *new* query tokens; MAX draft length = 4):
