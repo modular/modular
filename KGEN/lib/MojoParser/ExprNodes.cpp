@@ -1257,6 +1257,12 @@ DeclRefNode::emitUnqualLookup(StringRef spelling, const ExprNode *expr,
   }
 
   ArrayRef<ASTDecl *> declsRef = lookup.getIfSuccess();
+
+  // Backs `declsRef` when we resolve a deprecated intra-package reference
+  // below. A LookupResult points into a scope's symbol table; the decls we
+  // resolve here (a sibling module, or a name exposed by __init__) are not in
+  // the empty package scope, so we need our own stable storage.
+  SmallVector<ASTDecl *, 1> deprecatedDeclStorage;
   if (declsRef.empty()) {
     if (lookup.isErroneous())
       return {}; // Error already diagnosed.
@@ -1266,6 +1272,62 @@ DeclRefNode::emitUnqualLookup(StringRef spelling, const ExprNode *expr,
     if (isSpeculative)
       return expr;
 
+    // Deprecated intra-package access. A file inside a package used to see two
+    // things through its enclosing package's scope, with no import:
+    //   1. its sibling modules (the package scope listed them), and
+    //   2. whatever __init__ exposed (the package scope wildcard-imported
+    //      __init__, so its re-exports - and its own defs/imports - leaked in).
+    // The package scope is now empty and the package->__init__ redirect does
+    // not fire on the upward walk, so neither resolves.
+    //
+    // Keep both working with a deprecation warning; afterwards they fall
+    // through to the hard "unknown declaration" error below.
+    //
+    // Only recover a *bare unqualified* reference. Member access (`mod.x`) also
+    // routes through emitUnqualLookup, but with `lookupScope` set to the
+    // accessed module rather than the emitter's own scope. A name missing from
+    // `mod` must stay a hard error there - it must not be silently resolved
+    // against the *current* file's enclosing package.
+    if (ASTDecl *package =
+            &lookupScope == &emitter.getDeclScope()
+                ? emitter.getDeclScope().getNearestDeclOfType<PackageOp>()
+                : nullptr) {
+      // Case 1: a bare reference to a sibling module.
+      if (ASTDecl *sibling =
+              emitter.shared.tryImportSubModule(*package, spelling, loc);
+          sibling && succeeded(emitter.getDeclResolver().resolve(
+                         *sibling, DeclResolvedness::signature, loc))) {
+        emitter.emitWarning(loc)
+            << "implicit reference to sibling module '" << spelling
+            << "' without an import is deprecated; import it explicitly with "
+               "'from . import "
+            << spelling << "'" << expr->getRange();
+        deprecatedDeclStorage.push_back(sibling);
+        declsRef = deprecatedDeclStorage;
+      } else if (FailureOr<ASTDecl *> init =
+                     emitter.getDeclResolver().bodyResolvePackageInit(*package,
+                                                                      loc);
+                 succeeded(init) && *init) {
+        // Case 2: a bare reference to a name exposed by the package's
+        // __init__ (a re-export, or __init__'s own definition/import).
+        LookupResult reexport = emitter.shared.lookupAndResolveDecl(
+            spelling, loc, **init, /*searchParentScopes=*/false);
+        if (!reexport.getIfSuccess().empty()) {
+          emitter.emitWarning(loc)
+              << "implicit reference to '" << spelling
+              << "' from the enclosing package's '__init__' is deprecated; "
+                 "import it explicitly with 'from . import "
+              << spelling << "'" << expr->getRange();
+          ArrayRef<ASTDecl *> reexportDecls = reexport.getIfSuccess();
+          deprecatedDeclStorage.assign(reexportDecls.begin(),
+                                       reexportDecls.end());
+          declsRef = deprecatedDeclStorage;
+        }
+      }
+    }
+  }
+
+  if (declsRef.empty()) {
     // Otherwise, diagnose the unknown declaration, and try to provide fixits.
     return diagnoseUnknownDeclaration(spelling, lookupScope,
                                       lookup.getIfFailure(), emitter, expr);
@@ -1371,11 +1433,10 @@ DeclRefNode::emitUnqualLookup(StringRef spelling, const ExprNode *expr,
     return emitter.emitCResult(result, expr, dest);
   }
 
-  // If this is a module or package declaration, form a module reference. This
-  // is reached for *intra-package* references - a file naming a sibling
-  // submodule registered by the directory scan in an ancestor package scope
-  // (the scan binds the real module, not a gate). Cross-package access instead
-  // goes through an ImportOp (handled above).
+  // If this is a module or package declaration, form a module reference.
+  // Cross-package access goes through an ImportOp (handled above); this is
+  // reached for a sibling module resolved via the deprecated intra-package
+  // fallback above (a bare sibling reference with no explicit import).
   if (isa_and_nonnull<FileModuleOp, PackageOp>(decl->getIfOperation())) {
     PValue result(ModuleAttr::get(LIT::ModuleType::get(decl->getSymbolRef())));
     return emitter.emitCResult(result, expr, dest);
@@ -2099,8 +2160,10 @@ auto AttributeRefNode::emitLCVIR(ExprDest &dest, IREmitter &emitter,
       }
     }
 
-    // Not a child ImportOp — check if it's a non-module member (always
-    // allowed).
+    // Not a child ImportOp. Resolve the underlying module and look the member
+    // up there. For a package this resolves through its __init__'s scope (the
+    // package's public surface), so only names that __init__ defines or
+    // re-exports are reachable.
     ASTDecl &realDecl = shared.importModule(
         importOp.getRealModuleName(), /*currentPackage=*/nullptr,
         shared.diags.convertLocToSMLoc(importOp->getLoc()));
@@ -2108,12 +2171,9 @@ auto AttributeRefNode::emitLCVIR(ExprDest &dest, IREmitter &emitter,
         spelling, getLoc(), realDecl, /*searchParentScopes=*/false);
     if (memberLookup.isSuccess()) {
       ASTDecl *memberDecl = memberLookup.getIfSuccess().front();
-      // An aliased re-export (`from . import sub as visible_sub` in __init__)
-      // surfaces as a nested ImportOp gate, not a raw module: the directory
-      // scan binds a submodule only under its real name, so the alias exists
-      // solely as the __init__ re-export. Hand back that gate's module directly
-      // - it already carries the correct real module name, and it is in scope
-      // only because __init__ re-exported it, so access is allowed.
+      // A re-exported submodule surfaces as a nested ImportOp. Hand
+      // back that op's module directly; it is in scope only because __init__
+      // re-exported it.
       if (isa_and_nonnull<ImportOp>(memberDecl->getIfOperation())) {
         PValue result(
             ModuleAttr::get(LIT::ModuleType::get(memberDecl->getSymbolRef())));
@@ -2121,21 +2181,10 @@ auto AttributeRefNode::emitLCVIR(ExprDest &dest, IREmitter &emitter,
       }
       if (isa_and_nonnull<PackageOp, FileModuleOp>(
               memberDecl->getIfOperation())) {
-        // A submodule not in the import tree is reachable only if the package
-        // re-exports it from its __init__; otherwise it is an implicit
-        // (directory-scan) submodule and component access is blocked - you
-        // reach it by importing it explicitly.
-        if (!shared.declResolver->packageReexportsMember(
-                realDecl, StringAttr::get(shared.getContext(), spelling),
-                getLoc())) {
-          emitter.emitError(getLoc())
-              << "use of unknown declaration '" << spelling << "'";
-          return {};
-        }
-        // Re-exported submodule: bind a child gate over it (memoized under this
-        // gate, so it is found by the child-ImportOp lookup above next time)
-        // and hand that back (not the raw module) so deeper access such as
-        // `pkg.shown.hidden` stays gated.
+        // A raw submodule bound in __init__'s scope. It is reachable precisely
+        // because __init__ bound it, so access is allowed. Bind a child
+        // ImportOp over it and hand that back (not the raw module) so deeper
+        // access stays gated.
         OpBuilder gateBuilder = typeDecl->getDeclEndBuilder();
         StringAttr childReal = StringAttr::get(
             shared.getContext(),
@@ -2150,7 +2199,7 @@ auto AttributeRefNode::emitLCVIR(ExprDest &dest, IREmitter &emitter,
       }
     }
 
-    // Non-module member — delegate to real module.
+    // Non-module member - delegate to the real module.
     return DeclRefNode::emitUnqualLookup(spelling, this, realDecl, dest,
                                          emitter, false);
   }

@@ -773,56 +773,32 @@ StringAttr DeclResolver::getAbsoluteModuleName(ASTDecl &moduleDecl) {
   return StringAttr::get(getContext(), name);
 }
 
-FailureOr<ASTDecl *> DeclResolver::bodyResolvePackageInit(ASTDecl &module,
+FailureOr<ASTDecl *> DeclResolver::bodyResolvePackageInit(ASTDecl &package,
                                                           SMLoc loc) {
   // Not a package — nothing to do.
-  if (!isa_and_nonnull<PackageOp>(module.getIfOperation()))
-    return FailureOr<ASTDecl *>(nullptr);
-  StringAttr initName = StringAttr::get(getContext(), "__init__");
-  auto initResult = shared.lookupAndResolveDecl(initName, loc, module,
-                                                /*searchParentScopes=*/false,
-                                                /*resolveTarget=*/false);
-  // Package has no __init__.
-  if (!initResult.isSuccess())
-    return FailureOr<ASTDecl *>(nullptr);
-  ASTDecl *initDecl = initResult.getIfSuccess().front();
-  if (failed(resolveBody(*initDecl, loc)))
+  auto packageOp = dyn_cast_or_null<PackageOp>(package.getIfOperation());
+  if (!packageOp)
+    return nullptr;
+  // The package's scope is empty; its __init__ holds the package's symbols.
+  if (!shared.hasNestedModule(packageOp, "__init__"))
+    return nullptr;
+  ASTDecl &initDecl = shared.importModule(".__init__", packageOp, loc);
+  if (initDecl.isErroneous())
+    return nullptr;
+  // If __init__'s body is itself mid-resolution - e.g. we are resolving a
+  // statement that lives inside __init__ - do not recurse into it. Return null
+  // so the caller treats the package scope as empty and falls back to
+  // resolving the name as a submodule from the filesystem.
+  //
+  // Note: this guards the case where __init__'s body is still resolving. The
+  // related guard in importDeclFromModule handles the narrower lazy case where
+  // __init__'s body is fully resolved but a specific `from . import sub`
+  // binding within it is the import currently in flight.
+  if (isAlreadyProcessing(initDecl))
+    return nullptr;
+  if (failed(resolveBody(initDecl, loc)))
     return failure();
-  return initDecl;
-}
-
-bool DeclResolver::packageReexportsMember(ASTDecl &package, StringAttr name,
-                                          SMLoc loc) {
-  auto initOrFailure = bodyResolvePackageInit(package, loc);
-  if (failed(initOrFailure) || !*initOrFailure)
-    return false;
-  ASTDecl &initDecl = **initOrFailure;
-  // A re-export binds `name` in __init__'s *own* scope (`from . import name`,
-  // `import .name`, or a re-exported symbol). The directory scan's implicit
-  // `.name` import binds the package scope instead, so it does not appear here
-  // - which is exactly how we tell a re-exported submodule from a hidden one.
-  auto reexport = shared.lookupAndResolveDecl(name.getValue(), loc, initDecl,
-                                              /*searchParentScopes=*/false,
-                                              /*resolveTarget=*/false);
-  return reexport.isSuccess();
-}
-
-SmallVector<ASTDecl *> DeclResolver::lookupNonModuleDecls(ASTDecl &initDecl,
-                                                          StringAttr name,
-                                                          SMLoc loc,
-                                                          bool resolveTarget) {
-  SmallVector<ASTDecl *> nonModuleDecls;
-  auto lookup =
-      shared.lookupAndResolveDecl(name, loc, initDecl,
-                                  /*searchParentScopes=*/false, resolveTarget);
-  if (lookup.isSuccess()) {
-    for (ASTDecl *d : lookup.getIfSuccess()) {
-      auto *op = d->getIfOperation();
-      if (!isa_and_nonnull<FileModuleOp, PackageOp>(op))
-        nonModuleDecls.push_back(d);
-    }
-  }
-  return nonModuleDecls;
+  return &initDecl;
 }
 
 LogicalResult DeclResolver::importDeclFromModule(
@@ -833,62 +809,60 @@ LogicalResult DeclResolver::importDeclFromModule(
   ASTDecl &module = shared.importModule(moduleName, currentPackage, loc);
   shared.notifyListenerOnModuleImport(module, moduleName, loc);
 
+  // A relative self-import written inside a package's __init__ (`from . import
+  // sub`) would, via the package->__init__ redirect, look up the submodule in
+  // the very __init__ we are currently resolving and find this same import - a
+  // spurious self recursion.
+  //
+  // This is the lazy-import counterpart to bodyResolvePackageInit's
+  // `isAlreadyProcessing(initDecl)` guard: that one fires while __init__'s body
+  // is still resolving; this one fires once the body is resolved but a specific
+  // re-export binding inside it is being resolved on demand.
+  bool selfReferential = false;
+  if (auto initOrFail = bodyResolvePackageInit(module, loc);
+      succeeded(initOrFail) && *initOrFail == &dest) {
+    for (ASTDecl *d : dest.lookupInCurrentScope(sourceName))
+      if (isAlreadyProcessing(*d)) {
+        selfReferential = true;
+        break;
+      }
+  }
+
   // Check to see if the module has the construct we are importing.
-  auto result = shared.lookupAndResolveDecl(sourceName, sourceNameLoc, module,
-                                            /*searchParentScopes=*/false,
-                                            /*resolveTarget=*/resolveTarget);
+  LookupResult result =
+      selfReferential
+          ? LookupResult::getFailure({})
+          : shared.lookupAndResolveDecl(sourceName, sourceNameLoc, module,
+                                        /*searchParentScopes=*/false,
+                                        /*resolveTarget=*/resolveTarget);
   if (result.isErroneous())
     return failure();
+  SmallVector<ASTDecl *> results;
   if (result.isFailure()) {
-    StringRef name =
-        cast_or_null<mlir::SymbolOpInterface>(module.getIfOperation())
-            .getName();
-    StringRef declType = isa_and_nonnull<PackageOp>(module.getIfOperation())
-                             ? "package"
-                             : "module";
-    emitError(sourceNameLoc, declType + " '" + name + "' does not contain '" +
-                                 sourceName.getValue() + "'");
-    return failure();
-  }
-  // Copy the entries out of the scope's symbol table. The lookups below
-  // (re-export resolution, extension imports) can resolve further decls and
-  // invalidate the underlying storage, leaving a dangling reference.
-  SmallVector<ASTDecl *> results(result.getIfSuccess());
-  assert(!results.empty() && "other cases handled above");
-
-  // If the initial lookup only found submodule/package decls in a package,
-  // the name might also refer to a re-exported symbol from __init__.mojo
-  // (e.g. `foo.mojo` defines `def foo` and __init__ does `from .foo import
-  // foo`). The directory-scan creates whole-module imports that shadow
-  // wildcard imports from __init__, so look up the name directly in __init__'s
-  // scope and prefer such a re-exported symbol over the submodule.
-  // Note: the lookup results here are already resolved, so we only need to
-  // check for FileModuleOp/PackageOp (unlike the wildcard path which also
-  // sees UnresolvedImportOp entries from raw getDeclsInScope()).
-  SmallVector<ASTDecl *> reExported;
-  if (llvm::all_of(results, [](ASTDecl *d) {
-        return isa_and_nonnull<FileModuleOp, PackageOp>(d->getIfOperation());
-      })) {
-    auto initOrFailure = bodyResolvePackageInit(module, loc);
-    if (failed(initOrFailure))
+    // The name was not bound in the module's (or, for a package, its
+    // __init__'s) scope. It may instead be a submodule of the package -
+    // resolve it lazily from the filesystem.
+    if (ASTDecl *sub =
+            shared.tryImportSubModule(module, sourceName, sourceNameLoc)) {
+      results.push_back(sub);
+    } else {
+      StringRef name =
+          cast_or_null<mlir::SymbolOpInterface>(module.getIfOperation())
+              .getName();
+      StringRef declType = isa_and_nonnull<PackageOp>(module.getIfOperation())
+                               ? "package"
+                               : "module";
+      emitError(sourceNameLoc, declType + " '" + name + "' does not contain '" +
+                                   sourceName.getValue() + "'");
       return failure();
-    if (ASTDecl *initDecl = *initOrFailure) {
-      // Skip the promotion lookup when __init__'s binding for this name is the
-      // very import we are currently resolving: a relative self-import such as
-      // `from . import foo` in __init__.mojo. Resolving it again here would
-      // re-enter that import and report a spurious recursive reference, and the
-      // submodule result is already what such a self-import wants.
-      bool selfReferential =
-          llvm::any_of(initDecl->lookupInCurrentScope(sourceName),
-                       [&](ASTDecl *d) { return isAlreadyProcessing(*d); });
-      if (!selfReferential) {
-        reExported = lookupNonModuleDecls(*initDecl, sourceName, sourceNameLoc,
-                                          resolveTarget);
-        if (!reExported.empty())
-          results.assign(reExported.begin(), reExported.end());
-      }
     }
+  } else {
+    // Copy the entries out of the scope's symbol table. The lookups below
+    // (re-export resolution, extension imports) can resolve further decls and
+    // invalidate the underlying storage, leaving a dangling reference.
+    results.assign(result.getIfSuccess().begin(), result.getIfSuccess().end());
   }
+  assert(!results.empty() && "other cases handled above");
 
   shared.notifyListenerOnRef(results, sourceName, sourceNameLoc);
   shared.notifyListenerOnRef(results, destName, destNameLoc);
@@ -1019,16 +993,17 @@ LogicalResult DeclResolver::importWildCardDeclsFromModule(ASTDecl &context,
   if (failed(resolveBody(module, loc)))
     return failure();
 
-  // Resolve pending wildcard imports in this module.
-  if (failed(resolveAllWildcardImports(module)))
-    return failure();
-
-  // For packages, resolve __init__'s body so we can look up re-exported
-  // symbols that may be shadowed by submodule names of the same name.
+  // For packages, wildcard-import from __init__'s scope: it holds all
+  // re-exported symbols and any sibling-module stubs. A PackageOp's own scope
+  // is always empty.
   FailureOr<ASTDecl *> initOrFailure = bodyResolvePackageInit(module, loc);
   if (failed(initOrFailure))
     return failure();
-  ASTDecl *initDecl = *initOrFailure;
+  ASTDecl &iterScope = *initOrFailure ? **initOrFailure : module;
+
+  // Resolve pending wildcard imports in the scope we are about to iterate.
+  if (failed(resolveAllWildcardImports(iterScope)))
+    return failure();
 
   auto shouldImportWildcardDecl = [](ASTDecl *decl) {
     auto structOp = dyn_cast_or_null<StructDeclOp>(decl->getIfOperation());
@@ -1039,7 +1014,7 @@ LogicalResult DeclResolver::importWildCardDeclsFromModule(ASTDecl &context,
 
   // Wildcard imports don't import decls with a leading '_'.
   LogicalResult result = success();
-  for (const auto &[name, decls] : module.getDeclsInScope()) {
+  for (const auto &[name, decls] : iterScope.getDeclsInScope()) {
     // Ignore erroneous children, which have nothing in them.
     if (decls.empty())
       continue;
@@ -1051,33 +1026,8 @@ LogicalResult DeclResolver::importWildCardDeclsFromModule(ASTDecl &context,
                   shouldImportWildcardDecl);
     if (filteredDecls.empty())
       continue;
-    ArrayRef<ASTDecl *> importDecls = filteredDecls;
 
-    // If this name only has whole-module imports (from directory scanning) or
-    // resolved module/package decls, check __init__'s scope for re-exported
-    // non-module decls that should take priority. Unlike the explicit import
-    // path, we iterate raw getDeclsInScope() entries here, so we must also
-    // check for UnresolvedImportOp (whole-module imports without a declName).
-    SmallVector<ASTDecl *> reExported;
-    if (initDecl && llvm::all_of(decls, [](ASTDecl *d) {
-          auto *op = d->getIfOperation();
-          if (isa_and_nonnull<FileModuleOp, PackageOp>(op))
-            return true;
-          // Whole-module imports (no declName) from directory scanning.
-          if (auto importOp = dyn_cast_or_null<UnresolvedImportOp>(op))
-            return !importOp.getDeclNameAttr();
-          return false;
-        })) {
-      reExported = lookupNonModuleDecls(*initDecl, name, loc,
-                                        /*resolveTarget=*/true);
-      llvm::erase_if(reExported, [&](ASTDecl *decl) {
-        return !shouldImportWildcardDecl(decl);
-      });
-      if (!reExported.empty())
-        importDecls = ArrayRef(reExported);
-    }
-
-    if (failed(aliasImportDecls(importDecls, name, name, moduleName, loc,
+    if (failed(aliasImportDecls(filteredDecls, name, name, moduleName, loc,
                                 context, false)))
       result = failure();
   }
@@ -1294,6 +1244,17 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
       TypeSwitch<Operation &>(*declOp)
           .Case<FileModuleOp, FnOp, StructDeclOp, StructFieldOp,
                 ExtensionDeclOp, TraitDeclOp, AliasDeclOp>([&](auto op) {
+            // A deferred source module opens + lexes its file lazily here, on
+            // first body resolution, mirroring how a bytecode child
+            // materializes from its reader. This sets up its parse cursor.
+            if constexpr (std::is_same_v<FileModuleOp, decltype(op)>) {
+              if (decl.getCursor().isInvalid() &&
+                  failed(shared.materializeDeferredModule(decl))) {
+                decl.setErroneous();
+                return;
+              }
+            }
+
             // If this is a synthetic decl, complete it specially.
             if (decl.getCursor().isInvalid()) {
               if constexpr (std::is_same_v<FnOp, decltype(op)>) {
@@ -1443,11 +1404,12 @@ void DeclResolver::resolveAllReferencedFrom(ASTDecl &decl,
     // If this is a package, resolve all of the modules within it as a pre-step.
     // Normally these get lazily resolved, but if we're forcing pulling them in,
     // we need to do it now.
-    if (isa_and_nonnull<PackageOp>(declIt->getIfOperation())) {
-      for (auto &[_, decls] : declIt->getDeclsInScope())
-        if (isa_and_nonnull<UnresolvedImportOp>(
-                decls.front()->getIfOperation()))
-          (void)resolveBody(*decls.front(), declIt->getLoc());
+    if (auto packageOp =
+            dyn_cast_or_null<PackageOp>(declIt->getIfOperation())) {
+      for (ASTDecl *sub : shared.getNestedModuleDecls(packageOp)) {
+        (void)resolveBody(*sub, declIt->getLoc());
+        worklist.push_front(sub);
+      }
     }
 
     // Traverse the children. We don't resolve alias children, these will be

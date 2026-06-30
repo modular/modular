@@ -2285,21 +2285,18 @@ ParseResult DeclResolver::resolveBody(LIT::FileModuleOp op, Lexer &lexer,
 // Package Decl implementation
 //===----------------------------------------------------------------------===//
 
-static bool isModuleOrPackagePath(const std::filesystem::path &path) {
-  // Handle source files.
-  if (path.extension() == ".mojo")
-    return true;
-  // Handle source packages.
-  return Filesystem::isMojoSourcePackagePath(path);
-}
-
 ParseResult DeclResolver::resolveBody(LIT::PackageOp op, ASTDecl &decl) {
   // TODO: Sink this to when the body is actually resolved.
   decl.resolvedness = DeclResolvedness::body;
 
-  // A source package corresponds to a directory, resolving the body requires
-  // iterating the filesystem directory and importing the corresponding
-  // children.
+  // A source package corresponds to a directory. Its children (modules
+  // and sub-packages) become decls, but the package's own importable scope
+  // stays empty. This is because the package's public surface is its __init__,
+  // which external lookups are redirected to. Children are unlisted decls, so a
+  // file inside the package can't see a sibling via upward lexical lookup, and
+  // a hidden submodule isn't reachable through component access. The children
+  // are, however, navigable via ModuleState::nestedModules and are present in
+  // the package IR; just not in declsInScope.
 
   // Grab the directory that this package is defined in.
   std::optional<std::string> directoryStr = shared.getModuleSourcePath(decl);
@@ -2311,61 +2308,22 @@ ParseResult DeclResolver::resolveBody(LIT::PackageOp op, ASTDecl &decl) {
   if (!std::filesystem::is_directory(directory, ec) || ec)
     return emitError(op.getLoc(), "unable to locate package directory");
 
-  // Iterate the directory and import nested modules.
-  OpBuilder builder = decl.getDeclEndBuilder();
-  SmallVector<std::string> nestedModules;
-  for (const auto &entry : std::filesystem::directory_iterator(directory, ec)) {
-    if (ec || !isModuleOrPackagePath(entry.path()))
-      continue;
-    nestedModules.emplace_back(
-        entry.path().filename().replace_extension().generic_string());
-  }
-
-  // Sort the nested modules to ensure that we get a deterministic filesystem
-  // ordering across the different platforms.
-  llvm::stable_sort(nestedModules);
-
-  // Create an unresolved relative import for each nested module. That way we
-  // only need to actually pull anything in from the filesystem if it gets
-  // referenced. Each binds the bare submodule name ('foo') to the relative
-  // module ('.foo'), so it is a leaf binding - not a dotted-path import that
-  // should build a gating ImportOp tree.
-  for (StringRef name : nestedModules) {
-    StringAttr importName = builder.getStringAttr("." + name);
-    StringAttr boundName = builder.getStringAttr(name);
-    auto importDecl = LIT::UnresolvedImportOp::create(
-        builder, op->getLoc(), importName, boundName, /*declName=*/StringAttr(),
-        /*importNameLoc=*/LocationAttr(),
-        /*destNameLoc=*/LocationAttr());
-    importDecl.setIsLeafBinding(true);
-    getDeclResolver().addDecl(importDecl, decl.loc, boundName, &decl,
-                              LexerCursor(), LexerCursor(), /*indentation=*/-1);
-  }
-
-  // Create a full wildcard import from the __init__, as the symbols defined
-  // there are visible from the package.
-  StringAttr importModule = builder.getStringAttr(".__init__");
-  UnresolvedWildcardImportOp::create(builder, op->getLoc(), importModule,
-                                     /*fullImport=*/true);
-  decl.addUnresolvedWildCardImport(importModule, /*isFullImport=*/true,
-                                   decl.loc);
-
-  // Resolve the body of the __init__ within the package, and inherit some
-  // attributes from it if they are present.
-  LookupResult initResult =
-      shared.lookupAndResolveDecl("__init__", decl.loc, decl,
-                                  /*searchParentScopes=*/false);
-  if (initResult.isSuccess()) {
-    ASTDecl &initDecl = *initResult.getIfSuccess().front();
-    if (failed(resolveBody(initDecl, decl.loc)))
-      return failure();
-    if (auto initDeclOp =
-            dyn_cast_or_null<ASTDeclInterface>(initDecl.getIfOperation())) {
-      // Inherit the docstring from the __init__ if it is present.
-      if (auto docstring = initDeclOp.getDocStringAttr())
-        op.setDocStringAttr(docstring);
+  // Resolve __init__ (the public surface) if present, inheriting its docstring.
+  if (std::filesystem::exists(directory / "__init__.mojo", ec) && !ec) {
+    ASTDecl &initModule = shared.importModule(".__init__", op, decl.loc);
+    if (!initModule.isErroneous()) {
+      if (failed(resolveBody(initModule, decl.loc)))
+        return failure();
+      if (auto initDeclOp =
+              dyn_cast_or_null<ASTDeclInterface>(initModule.getIfOperation()))
+        if (auto docstring = initDeclOp.getDocStringAttr())
+          op.setDocStringAttr(docstring);
     }
   }
+
+  // Register a (deferred, unlisted) child decl for every sibling module and
+  // sub-package.
+  shared.registerSourcePackageChildren(decl);
 
   return success();
 }

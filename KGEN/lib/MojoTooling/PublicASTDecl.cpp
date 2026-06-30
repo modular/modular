@@ -1561,8 +1561,37 @@ std::string PublicPackageDecl::getMarkdownDocString() const {
 }
 
 llvm::json::Object PublicPackageDecl::toJSON(MojoParserContext &ctx) const {
-  auto packages = extractChildDecls<PublicPackageDecl, PackageOp>(*decl);
-  auto modules = extractChildDecls<PublicModuleDecl, FileModuleOp>(*decl);
+  // A package's child modules and sub-packages are unlisted: they live in the
+  // module-state cache (ModuleState::nestedModules) and the package IR, not in
+  // declsInScope (which extractChildDecls iterates). Enumerate them from the
+  // cache so the package's contents are documented. The package body has been
+  // resolved by resolveAllReferencedFrom, so nestedModules is populated.
+  // `__init__` is kept (it is the package's documented entry module); private
+  // modules are hidden, matching extractChildDecls' filtering.
+  SmallVector<PublicModuleDecl> modules;
+  SmallVector<PublicPackageDecl> packages;
+  if (auto packageOp = dyn_cast_or_null<PackageOp>(decl->getIfOperation())) {
+    for (ASTDecl *child :
+         ctx.getSharedState().getNestedModuleDecls(packageOp)) {
+      MojoASTDeclRef childRef(child);
+      StringRef name = childRef.getName().value_or(StringRef());
+      if (shouldHideDeclInDocGen(*child, name) ||
+          child->getParentDecl() != &*decl)
+        continue;
+      Operation *childOp = child->getIfOperation();
+      if (isa_and_nonnull<FileModuleOp>(childOp))
+        modules.push_back(cast<PublicModuleDecl>(*childRef.getDecl()));
+      else if (isa_and_nonnull<PackageOp>(childOp))
+        packages.push_back(cast<PublicPackageDecl>(*childRef.getDecl()));
+    }
+  }
+
+  auto byName = [](const auto &lhs, const auto &rhs) {
+    return compareDeclNames(lhs.getName(), rhs.getName());
+  };
+  llvm::stable_sort(modules, byName);
+  llvm::stable_sort(packages, byName);
+
   return llvm::json::Object{
       {"description", description},
       {"kind", getKindAsString()},

@@ -109,6 +109,13 @@ public:
   /// the colon.
   LexerCursor &getCursor() { return cursor; }
 
+  /// Set the parse cursor and matching end-cursor together. Used when a decl's
+  /// source is materialized after the decl is created.
+  void setParseCursor(const LexerCursor &cursor, const LexerCursor &endCursor) {
+    this->cursor = cursor;
+    this->endCursorState = endCursor.getState();
+  }
+
   /// Return true if the end of the speculatively scanned decl matches the
   /// specified cursor.
   bool isMatchingEndCursor(const LexerCursor &cursor) const {

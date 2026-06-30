@@ -154,6 +154,29 @@ struct CodeCompletionListener : public BaseCompletionListener {
   /// currently being resolved.
   void onImport(ResolveInputDeclFn getPackageDecl, SMLoc importLoc) override {
     MojoASTDeclRef packageDecl = getPackageDecl();
+
+    // A package's submodules are unlisted children: they live in the
+    // module-state cache and the package IR, not in declsInScope (which is what
+    // getChildren() iterates below). Thus we enumerate them from the cache
+    // instead. This lets a relative import (`from . import X`) complete any
+    // sibling module or sub-package.
+    if (auto pkgOp =
+            dyn_cast_or_null<PackageOp>(packageDecl.getIfOperation())) {
+      SharedState &shared = parserContext->getSharedState();
+      for (ASTDecl *sub : shared.getNestedModuleDecls(pkgOp)) {
+        MojoASTDeclRef subRef(sub);
+        StringAttr nameAttr =
+            TypeSwitch<Operation *, StringAttr>(subRef.getIfOperation())
+                .Case<FileModuleOp, PackageOp>(
+                    [](auto m) { return m.getSymNameAttr(); })
+                .Default(StringAttr());
+        if (!nameAttr || nameAttr.getValue() == "__init__")
+          continue;
+        addCompletionForOp(nameAttr.getValue(), subRef);
+      }
+      return;
+    }
+
     for (MojoASTDeclRef::ChildEntry child : packageDecl.getChildren()) {
       StringRef name = child.getName();
       MojoASTDeclRef childDecl = *child.getDecls().begin();
@@ -201,6 +224,18 @@ struct CodeCompletionListener : public BaseCompletionListener {
                               /*currentPackage=*/PackageOp(), importLoc);
       (void)shared.getDeclResolver().resolveBody(target, importLoc);
       decl = MojoASTDeclRef(&target);
+    }
+
+    // A package's own scope is empty; its public surface lives in its
+    // __init__. Redirect a package target to its __init__ so member access
+    // (`pkg.<...>`) completes exactly what __init__ re-exports.
+    if (auto pkgOp = dyn_cast_or_null<PackageOp>(decl.getIfOperation())) {
+      SharedState &shared = parserContext->getSharedState();
+      SMLoc loc = shared.diags.convertLocToSMLoc(pkgOp->getLoc());
+      if (auto initOrFail =
+              shared.getDeclResolver().bodyResolvePackageInit(*decl, loc);
+          succeeded(initOrFail) && *initOrFail)
+        decl = MojoASTDeclRef(*initOrFail);
     }
 
     // Collect all of the decls in the current scope.
