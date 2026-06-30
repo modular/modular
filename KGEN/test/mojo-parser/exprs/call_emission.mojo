@@ -632,3 +632,21 @@ def test_nonmat_callee():
     # This should call the concrete nonmat_callee, not the generic one.
     # CHECK: lit.call {{.*}}@"nonmat_callee(::Int)"
     nonmat_callee(1)
+
+# CHECK-LABEL: lit.fn @"test_singleton_fnptr_params
+def test_singleton_fnptr_params():
+  var someInt : Int
+
+  # CHECK: [[FP1:%.*]] = lit.ref.load %fp1
+  var fp1: def[a: MutOrigin](ref [a] x: Int) thin -> None
+  # CHECK-NEXT: [[FP1BOUND:%.*]] = lit.bind_params [[FP1]] :
+  # CHECK-SAME: :!lit.struct<#Origin <:!Bool {{{.*}} true}, :origin<true> *"someInt`">>
+  # CHECK-NEXT: lit.call_indirect [[FP1BOUND]](%someInt)
+  fp1(someInt)
+
+  # Need to bind the origin of the variadic list.
+  var fp2: def(*Int) thin -> None
+  # CHECK: [[FP2:%.*]] = lit.ref.load %fp2
+  # CHECK: [[FP2BOUND:%.*]] = lit.bind_params [[FP2]] :
+  # CHECK: lit.call_indirect [[FP2BOUND]]
+  fp2(someInt, someInt)

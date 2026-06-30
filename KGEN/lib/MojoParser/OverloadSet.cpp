@@ -18,6 +18,7 @@
 
 #include "KGEN/HLCFDialect/HLCFOps.h"
 #include "KGEN/KGENDialect/KGENOps.h"
+#include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LITDialect/LITUtils.h"
 #include "KGEN/MojoParser/ASTDecl.h"
@@ -1435,20 +1436,29 @@ CValue IREmitter::emitIndirectCall(CValue callee, CallOperands &&operands) {
     return {};
   }
 
-  // If we have inferred parameters, bind them here. An indirect call with
-  // inferred parameters must be a PValue.
+  // If we have inferred parameters, bind them here.
   auto boundCalleeRV = calleeRV;
   if (!fitness.getParamBindings().empty()) {
-    auto calleePVal = calleeRV.getIfPValue();
-    if (!calleePVal) {
-      emitError(callExpr->getLoc(),
-                "cannot call dynamic function with parameterized type ")
-          << calleeRV.getRValueType();
-      operands.dest.resetForError(*this);
-      return {};
+    if (auto calleePVal = calleeRV.getIfPValue()) {
+      boundCalleeRV =
+          PValue(fitness.getParamBindings().specializeGenerator(calleePVal));
+    } else {
+      // Function pointers can have singleton parameters like origins.
+      SRValue calleeVal = emitSRValue({calleeRV, callExpr}, EC_CallCalleeValue);
+      if (!calleeVal) {
+        operands.dest.resetForError(*this);
+        return {};
+      }
+      const VerifiedParamBindings &paramBindings = fitness.getParamBindings();
+      auto discharged = KGEN::getDenseBoolArrayAttr(
+          getContext(), paramBindings.getDischargedBodyConstraints());
+      auto paramValues =
+          ParameterExprArrayAttr::get(getContext(), paramBindings.getValues());
+      Location loc = translateLocation(callExpr->getLoc());
+      auto bindOp = BindParamsOp::create(*builder, loc, calleeVal, paramValues,
+                                         discharged);
+      boundCalleeRV = SRValue(bindOp.getResult());
     }
-    boundCalleeRV =
-        PValue(fitness.getParamBindings().specializeGenerator(calleePVal));
   }
 
   // If the selected candidate needs some register operands emitted to memory,
