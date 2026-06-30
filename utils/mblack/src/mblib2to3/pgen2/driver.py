@@ -263,6 +263,48 @@ def _try_merge_line(result: list[str], line: str) -> bool:
     return merged
 
 
+def _scan_code_brackets(
+    line: str, in_string: bool, quote: str | None
+) -> tuple[int, bool, str | None]:
+    """Return ``(bracket_delta, in_string, quote)`` for *line*.
+
+    Counts ``()[]{}`` in code only, skipping ``#`` comments and string
+    literals (single- and triple-quoted, any f/t/r prefix). *quote*
+    (``\"\"\"`` or ``'''``) carries an open triple-quoted string across lines,
+    so a bracket inside a docstring, comment, or string never desyncs depth.
+    """
+    delta = 0
+    i, n = 0, len(line)
+    while i < n:
+        if quote:  # inside a string: walk to its closing delimiter
+            if len(quote) == 1 and line[i] == "\\":
+                i += 2  # escaped char (single-line strings only)
+            elif line.startswith(quote, i):
+                i += len(quote)
+                quote = None
+            else:
+                i += 1
+        else:
+            c = line[i]
+            if c == "#":
+                break  # rest of the line is a comment
+            if c in "([{":
+                delta += 1
+            elif c in ")]}":
+                delta -= 1
+            elif c in "\"'":
+                quote = (
+                    line[i : i + 3] if line[i : i + 3] in ('"""', "'''") else c
+                )
+                i += len(quote)  # step past the opener
+                continue
+            i += 1
+    # Only an open triple-quoted string carries over to the next line.
+    if quote and len(quote) == 3:
+        return delta, True, quote
+    return delta, False, None
+
+
 def _normalize_mojo_source(text: str) -> str:
     """Apply Mojo-specific line normalizations before tokenization.
 
@@ -279,6 +321,7 @@ def _normalize_mojo_source(text: str) -> str:
     lines = text.split("\n")
     result: list[str] = []
     in_multiline_string = False
+    ml_quote: str | None = None
     in_fmt_off = False
     bracket_depth = 0
 
@@ -301,17 +344,14 @@ def _normalize_mojo_source(text: str) -> str:
         if not (can_normalize and _try_merge_line(result, line)):
             result.append(line)
 
-        # Update state for the *next* iteration.
-        if not in_multiline_string:
-            # Heuristic bracket count — also counts brackets in single-line
-            # strings and comments, but those are usually balanced; at worst
-            # an imbalance just disables the normalizer.
-            bracket_depth += line.count("(") - line.count(")")
-            bracket_depth += line.count("[") - line.count("]")
-            bracket_depth += line.count("{") - line.count("}")
-        # Heuristic: toggle on odd triple-quote counts.
-        if line.count('"""') % 2 == 1 or line.count("'''") % 2 == 1:
-            in_multiline_string = not in_multiline_string
+        # Update bracket/string state for the next iteration, counting only
+        # brackets that appear in code -- never inside strings or comments.
+        # An unbalanced bracket in a docstring or comment must not desync the
+        # depth and silently disable normalization for the rest of the scope.
+        delta, in_multiline_string, ml_quote = _scan_code_brackets(
+            line, in_multiline_string, ml_quote
+        )
+        bracket_depth += delta
 
     return "\n".join(result)
 
