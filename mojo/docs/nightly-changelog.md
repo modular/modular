@@ -141,6 +141,8 @@ This version is still a work in progress.
 
 ## Library changes
 
+- Added `InlineArray.fill(value)` to set all elements to a given value.
+
 - `Int` is now an alias for `Scalar[DType.int]` and integer literals materialize
   to this `Scalar` type. Because of this some conversions have become more
   strict.
