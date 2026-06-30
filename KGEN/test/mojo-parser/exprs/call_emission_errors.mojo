@@ -228,7 +228,7 @@ def call_test_ref(mut s: String):
     # This is ok, because the only unbound parameter is the origin which is a
     # singleton type.
     var f2 = test_ref[mut=True, ...]
-    # expected-error @+1 {{cannot call dynamic function with parameterized type}}
+    # Can now bind the remaining parameter in a call.
     f2(s)
 
 
