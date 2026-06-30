@@ -8,6 +8,7 @@ mojo_library(
     docs_base_path = "",
     docs_hosted_on_mojolang = True,
     docs_title = "Layout library",
+    use_production_compiler_for_asan = True,
     deps = [
         "@mojo//:std",
     ],

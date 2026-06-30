@@ -67,6 +67,8 @@ EXTRA_DEPS = {
             "@mojo//:python",
         ],
         shared_lib_name = name + ".so",
+        # Prove the production-compiler path for MojoCompile actions on one op.
+        use_production_compiler_for_asan = True,
         deps = [
             ":op_utils",
             "@mojo//:std",

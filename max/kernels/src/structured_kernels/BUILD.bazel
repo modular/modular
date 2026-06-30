@@ -5,6 +5,7 @@ package(default_visibility = ["//max:consumers"])
 mojo_library(
     name = "structured_kernels",
     srcs = glob(["**/*.mojo"]),
+    use_production_compiler_for_asan = True,
     validate_missing_docs = False,
     deps = [
         "//max:layout",
