@@ -100,6 +100,14 @@ else:
 
 logger = logging.getLogger(__name__)
 
+# FIXME: SERVSYS-1275 — this suite runs for many minutes on contended macOS CI
+# workers and has timed out at 1200s, pushing the macOS job past its 2h cap.
+# Skip on macOS until the serve-test slowness is addressed.
+pytestmark = pytest.mark.skipif(
+    sys.platform == "darwin",
+    reason="SERVSYS-1275: too slow on macOS CI; exceeds the 2h job timeout",
+)
+
 
 @pytest.fixture(autouse=True)
 def patch_pipeline_registry_context_type(

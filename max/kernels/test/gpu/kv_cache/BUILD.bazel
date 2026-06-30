@@ -36,6 +36,7 @@ _EXTRA_CONSTRAINTS = {
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     "test_kv_cache_radd.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: MOCO-3187
+    "test_paged_sparse_kv_index_remap.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: MSTDL-2793 — #90065 miscompiles remap on Metal
     "test_batch_kv_cache_flash_attention_causal_mask_ragged_paged.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: MOCO-3187
     "test_kv_cache_store_ragged.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: MOCO-3187
     "test_kv_cache_2m_iadd.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: MOCO-3187
