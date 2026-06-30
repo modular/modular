@@ -164,7 +164,7 @@ def test_conforms_to_positive() raises:
     assert_true(conforms_to(Int, Equatable))
 
 
-def test_trait_downcast_equality() raises:
+def test_reflection_equality() raises:
     """Enables trait operations on reflected fields."""
     var p1 = Point(x=1, y=2.0)
     var p2 = Point(x=1, y=2.0)
@@ -174,7 +174,7 @@ def test_trait_downcast_equality() raises:
     assert_true(equal)
 
 
-def test_trait_downcast_inequality() raises:
+def test_reflection_inequality() raises:
     """Detects differing field values."""
     var p1 = Point(x=1, y=2.0)
     var p2 = Point(x=1, y=9.0)
@@ -206,7 +206,7 @@ struct NotCopyable(Movable):
     pass
 
 
-def test_trait_downcast_copy_constructor() raises:
+def test_reflection_copy_constructor() raises:
     """Rebind for conditional conformance."""
     var i = ConditionalCopyableWrapper(42)
     var i_copy = ConditionalCopyableWrapper(copy=i)
@@ -475,9 +475,9 @@ def main() raises:
 
     # conforms_to type refinement
     test_conforms_to_positive()
-    test_trait_downcast_equality()
-    test_trait_downcast_inequality()
-    test_trait_downcast_copy_constructor()
+    test_reflection_equality()
+    test_reflection_inequality()
+    test_reflection_copy_constructor()
 
     # field_ref
     test_field_ref_read()
