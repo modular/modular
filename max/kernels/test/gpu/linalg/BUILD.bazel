@@ -139,6 +139,10 @@ _EXTRA_CONSTRAINTS = {
     "test_4wave_epilogue.mojo": ["//:mi355_gpu"],
     "test_4wave_split_k.mojo": ["//:mi355_gpu"],
     "test_4wave_nonaligned.mojo": ["//:mi355_gpu"],
+    "test_split_k_determinism_amd.mojo": [
+        "//:mi355_gpu",
+        "//:has_multi_gpu",
+    ],
     "test_gemm_mma_cpasync.mojo": ["//:b200_gpu"],
 } | {
     # Grouped GEMM infra tests - work on any NVIDIA GPU with 32-thread warps
@@ -323,6 +327,7 @@ _GPU_MEMORY = {
     "test_pipeline_ldg.mojo": "1",
     "test_sm90_splitk.mojo": "1.5",
     "test_small_mn_gemms_row_oob.mojo": "3",
+    "test_split_k_determinism_amd.mojo": "2",
     "test_split_k_reduce.mojo": "2",
     "test_tma_mma_sm100.mojo": "1.5",
     "test_tma_mma_sm100_fp8.mojo": "1.5",
