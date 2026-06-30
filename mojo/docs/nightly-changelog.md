@@ -141,6 +141,8 @@ This version is still a work in progress.
 
 ## Library changes
 
+- `math.hypot()` now supports variadic and `Span` overloads for computing the
+  Euclidean norm of N values, matching Python's `math.hypot(*coordinates)`.
 - `Int` is now an alias for `Scalar[DType.int]` and integer literals materialize
   to this `Scalar` type. Because of this some conversions have become more
   strict.
