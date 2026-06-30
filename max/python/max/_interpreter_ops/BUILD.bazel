@@ -48,10 +48,6 @@ EXTRA_DEPS = {
     "select_ops": [
         "//max:builtin_kernels",
     ],
-    "softmax_ops": [
-        "//max:nn",
-        "//max:layout",
-    ],
 }
 
 [

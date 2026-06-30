@@ -9241,3 +9241,36 @@ class TestLazyGCModelCompilation:
         )
         elementwise_binary_gc.binary_model(mo.AddOp, CPU(), DType.float32)
         assert calls == ["per_target"]
+
+    def test_reduce_model_no_stamp_compiles_per_target(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """Without a stamp, a lazy reduce miss compiles the single target."""
+        from max._core.dialects import mo
+        from max._interpreter_ops import gc_compile, reduce_axis_gc
+
+        monkeypatch.delenv(
+            gc_compile.EAGER_OP_PRECOMPILE_ENV_VAR, raising=False
+        )
+        # Fresh cache dir with no stamp written.
+        monkeypatch.setattr(gc_compile, "_cache_dir", lambda: tmp_path)
+        monkeypatch.setattr(reduce_axis_gc, "_REDUCE_MODEL_CACHE", {})
+        monkeypatch.setattr(reduce_axis_gc, "_swept", False)
+        calls: list[str] = []
+
+        def fake_per_target(
+            op: object, dev: object, dt: object, variant: object
+        ) -> object:
+            calls.append("per_target")
+            return object()
+
+        monkeypatch.setattr(
+            reduce_axis_gc,
+            "compile_reduce_axis_sweep",
+            lambda: calls.append("sweep"),
+        )
+        monkeypatch.setattr(
+            reduce_axis_gc, "_compile_reduce_axis_target", fake_per_target
+        )
+        reduce_axis_gc.reduce_model(mo.ReduceAddOp, CPU(), DType.float32)
+        assert calls == ["per_target"]

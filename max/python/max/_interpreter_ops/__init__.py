@@ -28,7 +28,6 @@ from max._core.driver import Buffer
 # matmul / unary-elementwise handlers are backed by graph-compiler models
 # (compiled below), unlike the Mojo op bindings above.
 from . import (  # type: ignore[attr-defined]
-    argmax_ops,
     argnonzero_ops,
     avg_pool_ops,
     band_part_ops,
@@ -46,28 +45,16 @@ from . import (  # type: ignore[attr-defined]
     nms_ops,
     pad_ops,
     pooling_ops,
-    reduce_ops,
+    reduce_axis_gc,
     resize_ops,
     rms_norm_ops,
     roi_align_ops,
     select_ops,
-    softmax_ops,
     split_ops,
     tile_ops,
     topk_ops,
     unary_elementwise_gc,
 )
-
-# Reduce ops: reduce along an axis, output shape has reduced dim = 1
-REDUCE: dict[
-    type[_core.Operation], Callable[[Buffer, Buffer, int, int], None]
-] = {
-    mo.ReduceMaxOp: reduce_ops.ReduceMax,
-    mo.ReduceMinOp: reduce_ops.ReduceMin,
-    mo.ReduceAddOp: reduce_ops.ReduceAdd,
-    mo.ReduceMeanOp: reduce_ops.Mean,
-    mo.ReduceMulOp: reduce_ops.ReduceMul,
-}
 
 # Cast: any dtype input -> any dtype output. (IsNan/IsInf now route through the
 # graph compiler; see unary_elementwise_gc.)
@@ -75,14 +62,6 @@ UNARY_MIXED: dict[
     type[_core.Operation], Callable[[Buffer, Buffer, int], None]
 ] = {
     mo.CastOp: elementwise_cast_ops.Cast,
-}
-
-# Softmax ops: output shape matches input, applied along an axis
-SOFTMAX: dict[
-    type[_core.Operation], Callable[[Buffer, Buffer, int, int], None]
-] = {
-    mo.ReduceSoftmaxOp: softmax_ops.Softmax,
-    mo.ReduceLogsoftmaxOp: softmax_ops.LogSoftmax,
 }
 
 # Import handlers after defining kernels to avoid circular import issues.
@@ -98,13 +77,12 @@ def _precompile_gc_models() -> None:
         matmul_gc.compile_matmul_sweep()
         unary_elementwise_gc.compile_unary_sweep()
         elementwise_binary_gc.compile_binary_sweep()
+        reduce_axis_gc.compile_reduce_axis_sweep()
 
 
 _precompile_gc_models()
 
 __all__ = [
-    "REDUCE",
-    "SOFTMAX",
     "UNARY_MIXED",
     "_MO_OP_HANDLERS",
     "lookup_handler",
