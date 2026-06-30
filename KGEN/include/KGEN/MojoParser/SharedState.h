@@ -41,6 +41,7 @@ struct Operand;
 class FileModuleOp;
 class FnOp;
 class FnTypeGeneratorType;
+class LexerCursor;
 class LookupResult;
 class LookupAllResult;
 class PackageOp;
@@ -268,6 +269,31 @@ public:
   /// found.
   ASTDecl &importModule(StringRef name, PackageOp currentPackage,
                         llvm::SMLoc loc);
+
+  /// Return true if the package has a nested module with the given name in the
+  /// module-state cache. The package body must be resolved before calling this
+  /// for the result to be accurate.
+  bool hasNestedModule(PackageOp packageOp, StringRef name) const;
+
+  /// Try to import a direct submodule with the given name, returning the
+  /// submodule's decl, or null if no such submodule exists.
+  ASTDecl *tryImportSubModule(ASTDecl &parent, StringRef name, llvm::SMLoc loc);
+
+  /// Return the decls of every nested module/package currently materialized in
+  /// the package's module-state cache. These are navigable but unlisted (not
+  /// in the package's importable scope).
+  SmallVector<ASTDecl *> getNestedModuleDecls(PackageOp packageOp) const;
+
+  /// Scan a source package's directory and register a child decl for every
+  /// sibling module/sub-package - a deferred `FileModuleOp` for each `.mojo`
+  /// file and a (already-deferred) `PackageOp` for each sub-package. The
+  /// children are unlisted (in the module-state cache + package IR, never the
+  /// package's importable scope) and their bodies/files are opened lazily.
+  void registerSourcePackageChildren(ASTDecl &packageDecl);
+
+  /// Open and lex the source file of a deferred module, wiring up its parse
+  /// cursor so its body can be resolved.
+  LogicalResult materializeDeferredModule(ASTDecl &decl);
 
   /// Create a new module with the given name, location, and body.
   ASTDecl &createModule(StringRef moduleName,
@@ -561,16 +587,43 @@ private:
   ModuleState &importSubModuleState(StringRef name, ASTDecl *parentDecl,
                                     llvm::SMLoc loc, llvm::SMLoc identifierLoc);
 
+  ModuleState *importSubModuleStateImpl(StringRef name, ASTDecl *parentDecl,
+                                        llvm::SMLoc loc,
+                                        llvm::SMLoc identifierLoc,
+                                        bool emitErrors);
+
+  /// Open (and lex-prepare) the module source file at the given path within the
+  /// source manager, reusing an already-open buffer if present. Returns null
+  /// without emitting a diagnostic if the file cannot be opened.
+  const llvm::MemoryBuffer *openModuleFile(StringRef path, llvm::SMLoc loc);
+
   /// Import the specified module or package, which contains `.` indexing,
   /// returning the module state. Always returns a valid module state, even if
   /// the module could not be found.
   ModuleState &importRelativeModuleState(StringRef name, ASTDecl *parentDecl,
                                          llvm::SMLoc loc);
 
+  /// Shared core of createModuleState and createDeferredModuleState: create the
+  /// `FileModuleOp` + unlisted decl + nested module state. The caller supplies
+  /// the parse cursor (valid for an already-open module, invalid for a deferred
+  /// one) and is responsible for importing builtins (eagerly, or at
+  /// materialization for a deferred module).
+  ModuleState &createFileModuleState(StringAttr declName,
+                                     ModuleState &parentState,
+                                     FileLineColLoc loc, llvm::SMLoc declLoc,
+                                     LexerCursor cursor, LexerCursor endCursor,
+                                     StringRef sourcePath);
+
   /// Create a new module state with the given name, location, and body.
   ModuleState &createModuleState(StringAttr declName,
                                  const llvm::MemoryBuffer *moduleBuffer,
                                  ModuleState &parentState, FileLineColLoc loc);
+
+  /// Create a module state for a source module whose file has not been opened.
+  ModuleState &createDeferredModuleState(StringAttr declName,
+                                         StringRef filePath,
+                                         ModuleState &parentState,
+                                         FileLineColLoc loc);
 
   /// Create a new module state for a package with the given name, location,
   /// and body.

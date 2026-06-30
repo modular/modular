@@ -672,6 +672,74 @@ The `postParseModuleAttr` contains the full post-parse IR serialized as
 bytecode. When the package is compiled, this bytecode is deserialized and
 merged into the compilation.
 
+### Package and module IR representation
+
+A Mojo package's public surface is its `__init__.mojo`, and nothing else.
+Therefore the `PackageOp`'s own importable scope is kept empty; its sibling
+modules and sub-packages exist as children but are deliberately not reachable
+through the package's scope. This is what makes Mojo packages behave like
+Python ones:
+
+- A file inside a package does not implicitly see its siblings.
+  `foo/bar.mojo` cannot reference `foo/baz.mojo`'s contents without an explicit
+  `from . import baz` (or `from .baz import ...`).
+- A submodule of an imported package decl is reachable via
+  component access from outwith the package only if the package's `__init__`
+  re-exports it. An unreferenced module of a package stays hidden:
+
+  ```mojo
+  import pkg
+
+  _ = pkg.sub  # error unless package does, e,g., `from . import sub`
+  ```
+
+- A submodule of a package may always be imported explicitly using "path-like"
+  module syntax, whether or not the `__init__` re-exports it:
+
+  ```mojo
+  import pkg.non_reexported_sub # ok; path-like imports bypass `__init__.mojo`
+  ```
+
+Two mechanisms implement this:
+
+1. `__init__` as the public surface. `SharedState::lookupAndResolveDecl`
+   redirects any lookup rooted at a `PackageOp` to that package's `__init__`
+   scope (see `bodyResolvePackageInit`). So `pkg.x` and `from pkg import x`
+   resolve against `__init__`'s symbols and re-exports, never the package's own
+   (empty) scope. The redirect intentionally does not fire during the
+   upward parent-scope walk, so a file inside the package still can't see a
+   sibling by walking up to the `PackageOp`.
+
+2. Unlisted children. Each sibling module / sub-package becomes a child decl
+   that lives in the module-state cache (`ModuleState::nestedModules`) and in
+   the `PackageOp`'s IR region, but is not added to the package's
+   `declsInScope` (it is created with `createUnlistedDecl`). Name lookup
+   consults `declsInScope`, so unlisted children are invisible to it; the
+   directory scan that creates them (`registerSourcePackageChildren`) is a cheap
+   `readdir` with no file opens.
+
+Source and binary packages share this exact shape. A `.mojoc` package's
+children are `FileModuleOp`/`PackageOp` ops with bodies materialized lazily
+from the bytecode reader (`resolveDeclFromBytecode`). A source package mirrors
+that: its `.mojo` siblings become deferred `FileModuleOp`s
+(`createDeferredModuleState`) whose file is opened and lexed only on first body
+resolution (`materializeDeferredModule`, invoked from `resolve`); its
+sub-package directories become deferred `PackageOp`s (`createPackageState`)
+resolved on demand. In both cases the child op exists immediately, but its body
+is lazy.
+
+| Access path                                           | Resolves through                                                                                                                                                |
+|-------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `pkg.x` / `from pkg import x` (external)              | `__init__` scope (the redirect)                                                                                                                                 |
+| `import pkg.sub` / `from pkg.sub import x` (external) | per-segment `importSubModuleState` -> `nestedModules` (filesystem fallback), bypassing the redirect — so it resolves whether or not `__init__` re-exports `sub` |
+| Bare name inside `pkg/mod.mojo` (parent walk)         | reaches the empty package scope — siblings invisible                                                                                                            |
+| IR symbol reference (`lookupAndResolveMangledDecl`)   | `nestedModules` directly — internal access sees unlisted children                                                                                               |
+
+Precompilation resolves a package's whole subtree because
+`resolveAllReferencedFrom` is rooted at the `PackageOp` and force-resolves its
+nested modules; a normal compile stays lazy because imported packages are not on
+that worklist (they arrive as referenced decls).
+
 ### Importing Packages in the Parser
 
 When the parser encounters an import statement, it resolves the module through
@@ -681,18 +749,28 @@ When the parser encounters an import statement, it resolves the module through
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │  IMPORT RESOLUTION (importModuleState)                                      │
 │  • Search import paths for the module name                                  │
-│  • Find: foo.mojo, foo/ (source package), or foo.mojoc (binary)             │
+│  • Find: foo.mojo, foo/ (source package), foo.mojoc (binary)                │
 └─────────────────────────────────────────────────────────────────────────────┘
                     │                      │                      │
         Source File │           Source Pkg │           Binary Pkg │
                     ▼                      ▼                      ▼
-┌─────────────────────┐  ┌───────────────────────┐  ┌──────────────────────┐
-│  createModuleState  │  │ createPackageState    │  │ createBinaryPkgState │
-│  • Lex and parse    │  │ • Create lit.package  │  │ • Read bytecode      │
-│  • Register decls   │  │ • Parse __init__.mojo │  │ • Lazy load ops      │
-│  • Import builtins  │  │ • Lazy resolution     │  │ • Register stubs     │
-└─────────────────────┘  └───────────────────────┘  └──────────────────────┘
+┌─────────────────────┐  ┌───────────────────────┐  ┌────────────────────────┐
+│  createModuleState  │  │ createPackageState    │  │ createBinaryPackageState│
+│  • Lex, set cursor  │  │ • Create lit.package  │  │ • Read bytecode         │
+│    (body is lazy)   │  │   (unlisted)          │  │ • Lazy load ops         │
+│  • Unlisted FileMod │  │ • Register pkg state  │  │ • Register decls from   │
+│  • Import builtins  │  │ • __init__ + children │  │   bytecode (signatures, │
+│                     │  │   resolved lazily in  │  │   bodies on demand)     │
+│                     │  │   resolveBody         │  │                         │
+└─────────────────────┘  └───────────────────────┘  └────────────────────────┘
 ```
+
+The `createModuleState` / `createPackageState` boxes are deliberately *unlisted*
+(`createUnlistedDecl`, not `addDecl`) — the imported module/package is reachable
+via `ModuleState::nestedModules` and the package IR, but not via the parent's
+`declsInScope`. See
+[Package and module IR representation](#package-and-module-ir-representation)
+above for why, and for how `__init__` and deferred sibling modules are resolved.
 
 ### Binary Package Import Details
 

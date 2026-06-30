@@ -209,11 +209,6 @@ public:
                                               bool isFullImport,
                                               llvm::SMLoc loc);
 
-  /// Returns true if `package`'s `__init__` explicitly re-exports a member
-  /// named `name` (e.g. `from . import name`, or a re-exported symbol of that
-  /// name).
-  bool packageReexportsMember(ASTDecl &package, StringAttr name, SMLoc loc);
-
   //===--------------------------------------------------------------------===//
   // Decl Resolution
   //===--------------------------------------------------------------------===//
@@ -228,6 +223,11 @@ public:
   LogicalResult resolveBody(ASTDecl &decl, llvm::SMLoc loc) {
     return resolve(decl, DeclResolvedness::body, loc);
   }
+
+  /// For a given package, find the __init__ module, resolve its body, and
+  /// return it. Returns nullptr if the package is not a package or has no
+  /// __init__. Returns failure() if body resolution fails.
+  FailureOr<ASTDecl *> bodyResolvePackageInit(ASTDecl &package, SMLoc loc);
 
   /// Body-resolve the specified declaration and all declarations contained
   /// within it.
@@ -387,18 +387,6 @@ private:
   ParseResult resolveSignature(TraitType traitType, ASTDecl &decl);
   ParseResult resolveBody(TraitType traitType, ASTDecl &decl);
   ParseResult resolveBody(ConformanceOp op, ASTDecl &decl);
-
-  /// For a package `module`, find the __init__ module, resolve its body, and
-  /// return it. Returns nullptr if `module` is not a package or has no
-  /// __init__. Returns failure() if body resolution fails.
-  FailureOr<ASTDecl *> bodyResolvePackageInit(ASTDecl &module, SMLoc loc);
-
-  /// Look up `name` in `initDecl`'s scope and return only non-module/package
-  /// declarations (i.e. re-exported symbols from __init__.mojo). The caller
-  /// must have already resolved `initDecl`'s body.
-  SmallVector<ASTDecl *> lookupNonModuleDecls(ASTDecl &initDecl,
-                                              StringAttr name, SMLoc loc,
-                                              bool resolveTarget);
 
   /// This map tracks the ASTDecl for every MLIR type declaration with a symbol.
   /// This does not include functions, only things that may be referred to by a

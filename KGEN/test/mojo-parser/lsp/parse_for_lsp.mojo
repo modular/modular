@@ -33,7 +33,11 @@ struct BoxedInt(ImplicitlyCopyable):
 def main():
     pass
 
-# LSP mode keeps the lazy named imports as unresolved-import ops; the compiler
-# path strips them via DCE.
-# CHECK: lit.unresolved_import @".builtin" as @builtin
-# REGULAR-NOT: lit.unresolved_import
+# LSP mode keeps imports lazy as unresolved-import ops; the compiler path
+# resolves and strips them via DCE. The implicit prelude import is the clearest
+# case: every module gets a `from std.prelude import *`, which LSP preserves as
+# an unresolved wildcard (its symbols are never eagerly pulled in) and the
+# compiler path strips. `REGULAR-NOT: lit.unresolved` covers both the wildcard
+# and any named unresolved imports.
+# CHECK: lit.unresolved_wildcard_import from @std.builtin.stubs
+# REGULAR-NOT: lit.unresolved
