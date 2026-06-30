@@ -141,6 +141,8 @@ This version is still a work in progress.
 
 ## Library changes
 
+- `FileHandle` now supports `tell()` to query the current file position, similar
+  to Python's `file.tell()`.
 - `Int` is now an alias for `Scalar[DType.int]` and integer literals materialize
   to this `Scalar` type. Because of this some conversions have become more
   strict.
