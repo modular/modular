@@ -19,11 +19,34 @@ import sys
 from collections.abc import Sequence
 
 import mojo.importer
-from max.driver import Buffer, Device, accelerator_count
+from max.driver import (
+    Buffer,
+    Device,
+    DevicePinnedBuffer,
+    DeviceStream,
+    accelerator_count,
+)
 
 # The mojo source comptime-instantiates a GPU kernel, which fails to JIT on
 # hosts without a GPU toolchain.
 if sys.platform == "linux" and accelerator_count() > 0:
+    try:
+        from .block_offload_ops import (  # type: ignore[import-not-found]
+            copy_d2h as _copy_d2h,
+        )
+        from .block_offload_ops import (
+            copy_h2d as _copy_h2d,
+        )
+    except ImportError:
+        # copy_h2d comptime-instantiates the same GPU broadcast collective as
+        # the broadcast kernel below (it fans replicated blocks out to peers via
+        # comm.broadcast). On an accelerator whose architecture the collective
+        # does not support, the JIT raises at import. Degrade to the no-kernel
+        # path so merely importing this module does not fail; batched_copy_h2d /
+        # batched_copy_d2h still raise a clear error if actually called.
+        _copy_h2d = None
+        _copy_d2h = None
+
     try:
         from .distributed_ops import (  # type: ignore[import-not-found]
             broadcast_kernel as _broadcast_kernel,
@@ -37,6 +60,8 @@ if sys.platform == "linux" and accelerator_count() > 0:
         _broadcast_kernel = None
 else:
     _broadcast_kernel = None
+    _copy_h2d = None
+    _copy_d2h = None
 
 
 def distributed_broadcast(
@@ -139,4 +164,152 @@ def distributed_broadcast(
     )
 
 
-__all__ = ["distributed_broadcast"]
+def batched_copy_h2d(
+    host_buf: DevicePinnedBuffer,
+    device_bufs_on_aux_stream: list[Buffer],
+    dsts: list[int],
+    srcs: list[int],
+    *,
+    main_streams: list[DeviceStream],
+    root_and_peer_buffers: list[list[Buffer]],
+    signal_buffers: list[Buffer],
+    broadcast_devices: Sequence[Device],
+) -> None:
+    """Enqueue H2D copies, stream waits, and peer broadcasts for all block pairs.
+
+    A single Mojo call handles the full pipeline for every ``(dst, src)`` pair,
+    looping inside Mojo with the GIL released for the entire batch:
+
+    1. **H2D DMA** (aux stream): one async copy per device buffer per pair.
+    2. **Stream wait** (device-side): ``main_ctx.enqueue_wait_for(aux_ctx)``
+       per unit so the main stream will not advance until the DMA completes.
+       Only issued when ``main_streams`` is non-empty.
+    3. **Peer broadcast** (main stream, replicated units only): fans each block
+       out to all peer devices via the ``comm.broadcast`` kernel.
+       Only issued when ``root_and_peer_buffers`` is non-empty.
+
+    The broadcast-related arguments are unconditional; pass empty lists for the
+    non-replicated (MHA-only) path rather than ``None``.
+
+    Args:
+        host_buf:                 Pinned host buffer ``[num_host_blocks, bytes_per_block]``.
+        device_bufs_on_aux_stream: Device buffers, each bound to their device's
+                                   aux stream via ``Buffer.to(stream)``.
+        dsts:                     Destination device block IDs.
+        srcs:                     Source host block IDs.
+        main_streams:             Main streams, one per unit, for the stream-wait
+                                  barrier. Empty to skip.
+        root_and_peer_buffers:    For replicated units: each element is
+                                  ``[root_buf, peer_buf_0, ...]``. Empty for
+                                  non-replicated (MHA-only) deployments.
+        signal_buffers:           Per-device signal buffers for the broadcast.
+                                  Empty when ``root_and_peer_buffers`` is empty.
+        broadcast_devices:        Broadcast-group devices (root + peers). Empty
+                                  when ``root_and_peer_buffers`` is empty.
+    """
+    if _copy_h2d is None:
+        raise RuntimeError(
+            "batched_copy_h2d is unavailable: the Mojo extension could not be "
+            "loaded. This typically means the host has no GPU toolchain."
+        )
+
+    # Stream-wait contexts: main stream for each unit (device-side barrier).
+    wait_main_ctx_ptrs = (
+        [ms._device_context_ptr() for ms in main_streams]
+        if main_streams
+        else []
+    )
+
+    # Broadcast parameters: empty list signals "no broadcast" to copy_h2d.
+    if root_and_peer_buffers:
+        bcast_signal_ptrs = [sig._data_ptr() for sig in signal_buffers]
+        # [num_units][ngpus]: base data ptr for each output buffer per unit.
+        bcast_out_ptrs = [
+            [b._data_ptr() for b in unit_bufs]
+            for unit_bufs in root_and_peer_buffers
+        ]
+        bcast_out_strides = [
+            unit_bufs[0].shape[1] for unit_bufs in root_and_peer_buffers
+        ]
+        # Main-stream contexts for all broadcast devices (root + peers).
+        bcast_main_ctx_ptrs = [
+            dev._device_context_ptr() for dev in broadcast_devices
+        ]
+    else:
+        bcast_signal_ptrs = []
+        bcast_out_ptrs = []
+        bcast_out_strides = []
+        bcast_main_ctx_ptrs = []
+
+    _copy_h2d(
+        [host_buf._data_ptr(), host_buf.shape[1]],
+        [
+            [buf._data_ptr() for buf in device_bufs_on_aux_stream],
+            [buf.shape[1] for buf in device_bufs_on_aux_stream],
+            # Stream-specific aux context — NOT buf.device._device_context_ptr().
+            [
+                buf.stream._device_context_ptr()
+                for buf in device_bufs_on_aux_stream
+            ],
+        ],
+        dsts,
+        srcs,
+        wait_main_ctx_ptrs,
+        [
+            bcast_signal_ptrs,
+            bcast_out_ptrs,
+            bcast_out_strides,
+            bcast_main_ctx_ptrs,
+        ]
+        if root_and_peer_buffers
+        else [],
+    )
+
+
+def batched_copy_d2h(
+    host_buf: DevicePinnedBuffer,
+    device_bufs_on_aux_stream: list[Buffer],
+    dst_ids: Sequence[int],
+    src_ids: Sequence[int],
+) -> None:
+    """Enqueue async D2H copies for all block pairs across all device buffers.
+
+    For each ``(dst, src)`` pair and device buffer ``j``:
+
+        host_buf[dst, offset_j : offset_j + strides[j]] ← device_bufs[j][src, :]
+
+    where ``offset_j = sum(strides[0..j-1])``.  Copies land on each buffer's
+    aux stream via its stream-specific DeviceContext.
+
+    Args:
+        host_buf:                 Pinned host buffer ``[num_host_blocks, bytes_per_block]``.
+        device_bufs_on_aux_stream: Device buffers, each bound to their device's
+                                   aux stream via ``Buffer.to(stream)``.
+        dst_ids:                  Destination host block IDs.
+        src_ids:                  Source device block IDs.
+    """
+    n = len(dst_ids)
+    if n == 0:
+        return
+    if _copy_d2h is None:
+        raise RuntimeError(
+            "batched_copy_d2h is unavailable: the Mojo extension could not be "
+            "loaded. This typically means the host has no GPU toolchain."
+        )
+
+    _copy_d2h(
+        host_buf._data_ptr(),
+        host_buf.shape[1],
+        [buf._data_ptr() for buf in device_bufs_on_aux_stream],
+        [buf.shape[1] for buf in device_bufs_on_aux_stream],
+        [buf.stream._device_context_ptr() for buf in device_bufs_on_aux_stream],
+        dst_ids,
+        src_ids,
+    )
+
+
+__all__ = [
+    "batched_copy_d2h",
+    "batched_copy_h2d",
+    "distributed_broadcast",
+]

@@ -742,6 +742,9 @@ class DeviceStream:
     def device(self) -> Device:
         """The device this stream is executing on."""
 
+    def _device_context_ptr(self) -> int:
+        """Gets the AsyncRT DeviceContext pointer for this specific stream."""
+
     @property
     def native_stream_handle(self) -> int:
         """
