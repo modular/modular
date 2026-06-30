@@ -92,7 +92,9 @@ modular_py_test(
         ":test_helpers",
         "//max/python/max/experimental/cascade",
         "//max/python/max/experimental/cascade/core",
+        "//max/python/max/experimental/cascade/grpc_runtime",
         "//max/python/max/experimental/cascade/http_runtime",
+        "//max/python/max/serve:process_control",
         requirement("pytest-asyncio"),
     ],
 )
