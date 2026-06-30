@@ -268,6 +268,22 @@ def _load_recipe(recipe_path: str) -> RecipeConfig:
     return RecipeConfig.model_validate(data)
 
 
+def resolve_model_path(
+    model: str, recipe_path: str | None = None
+) -> tuple[str, str | None]:
+    """Resolve a model alias to a canonical HF repo id and its recipe path."""
+    if recipe_path is None:
+        recipe_path = MODEL_RECIPES.get(model)
+    if recipe_path:
+        recipe_model_path = _load_recipe(recipe_path).model.model_path
+        if recipe_model_path is None:
+            raise ValueError("Recipe model section must contain model_path.")
+        hf_model_path = recipe_model_path
+    else:
+        hf_model_path = model
+    return resolve_canonical_repo_id(hf_model_path), recipe_path
+
+
 def hf_repos_for_model(model: str) -> list[tuple[str, str | None]]:
     """Return (repo, revision) pairs to pre-cache for the given model.
 
@@ -682,17 +698,7 @@ def smoke_test(
         output_path = Path(build_workspace) / output_path
 
     model = hf_model_path.strip()
-    # --recipe-path overrides the matrix lookup.
-    if recipe_path is None:
-        recipe_path = MODEL_RECIPES.get(model)
-    if recipe_path:
-        recipe_model_path = _load_recipe(recipe_path).model.model_path
-        if recipe_model_path is None:
-            raise ValueError("Recipe model section must contain model_path.")
-        hf_model_path = recipe_model_path
-    else:
-        hf_model_path = model
-    hf_model_path = resolve_canonical_repo_id(hf_model_path)
+    hf_model_path, recipe_path = resolve_model_path(model, recipe_path)
     cmd, server_env = get_server_cmd(
         framework,
         hf_model_path,
