@@ -111,6 +111,13 @@ _EXTRA_CONSTRAINTS = {
     }),  # Kernel uses device-scope atomics (_DEVICE_SCOPE) unsupported on Metal.
 }
 
+# Benchmarks that need kernel sources not pulled in by the default deps.
+_EXTRA_DEPS = {
+    "gpu/state_space/bench_selective_scan_update.mojo": [
+        "//max/kernels/src/state_space",
+    ],
+}
+
 _CPU_TESTS = glob(
     ["**/*.mojo"],
     exclude = [
@@ -189,7 +196,7 @@ _CPU_TESTS = glob(
             "//max:shmem",
             "//max:structured_kernels",
             "@mojo//:std",
-        ],
+        ] + _EXTRA_DEPS.get(src, []),
     )
     for src in glob(
         ["gpu/**/*.mojo"],
