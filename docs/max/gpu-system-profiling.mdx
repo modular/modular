@@ -17,6 +17,13 @@ into specific kernel performance
 or our purpose-built [`kbench` tool](https://modul.ar/kbench) that helps you
 benchmark, autotune, and analyze Mojo kernel performance.
 
+An AI coding agent can run this for you with the `profile-model` skill, which
+automates the same workflow: a GPU utilization check, then a kernel breakdown,
+then a single-kernel deep dive. It works on NVIDIA or AMD GPUs and for any model
+MAX can run, including custom architectures loaded with
+`--custom-architectures`. See [Modular skills](/max/coding-assistants#skills) to
+install it.
+
 <img src={require('./images/nsight-systems.png').default} alt="" />
 
 ## Requirements
@@ -277,10 +284,12 @@ Guide](https://docs.nvidia.com/nsight-systems/AnalysisGuide/index.html).
 
 ## Enable MAX profiling markers
 
-To enable MAX profiling markers, set the `MODULAR_ENABLE_PROFILING` environment
-variable to `detailed`, call the
+Enable MAX profiling markers with the `MODULAR_ENABLE_PROFILING` environment
+variable (recommended): it needs no code or command changes and applies to any
+MAX process, including one launched under `nsys`. The
 [`InferenceSession.gpu_profiling()`](/max/api/python/generated/max.engine.InferenceSession#max.engine.InferenceSession.gpu_profiling)
-method, or add the `--gpu-profiling` option to [`max serve`](/max/cli/serve).
+method and the `--gpu-profiling` option for [`max serve`](/max/cli/serve) are
+alternatives that override the environment variable when set.
 
 ### Enable profiling with an environment variable
 
@@ -385,3 +394,7 @@ A companion to Nsight Systems for kernel-level profiling on NVIDIA GPUs.
 A Python-based toolkit that builds and executes Mojo kernel benchmarks across a
 grid of parameter combinations to help you autotune and analyze Mojo kernel
 performance on any hardware.
+
+- [The `profile-model` skill](https://github.com/modular/skills/tree/main/profile-model):
+An AI coding agent skill that automates GPU utilization checks, kernel
+breakdowns, and single-kernel deep dives on NVIDIA and AMD GPUs.
