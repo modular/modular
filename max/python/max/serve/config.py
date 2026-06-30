@@ -219,6 +219,37 @@ class Settings(BaseSettings):
         alias="MAX_SERVE_EPLB_PROFILE",
     )
 
+    gc_debug: bool = Field(
+        default=False,
+        description=(
+            "When True, attaches a CPython garbage-collection callback in the "
+            "model worker that times every GC pass and logs slow pauses. Used "
+            "to diagnose whether stop-the-world GC collections are the source "
+            "of per-scheduler-iteration latency spikes. Purely diagnostic; "
+            "does not change GC behavior."
+        ),
+        alias="MAX_SERVE_GC_DEBUG",
+    )
+    gc_debug_min_duration_ms: float = Field(
+        default=50.0,
+        description=(
+            "When gc_debug is enabled, GC pauses at or above this duration (in "
+            "milliseconds) are logged at WARNING; shorter pauses are logged at "
+            "DEBUG."
+        ),
+        alias="MAX_SERVE_GC_DEBUG_MIN_DURATION_MS",
+    )
+    gc_debug_top_objects: int = Field(
+        default=0,
+        description=(
+            "When gc_debug is enabled and this is greater than zero, log the N "
+            "most common live object types in the collected generation on each "
+            "GC pause. Walks the heap and is expensive; leave at 0 unless "
+            "actively investigating what is filling the heap."
+        ),
+        alias="MAX_SERVE_GC_DEBUG_TOP_OBJECTS",
+    )
+
     telemetry_worker_spawn_timeout: float | None = Field(
         default=None,
         description="Amount of time in seconds to wait for the telemetry worker to spawn and turn healthy",
