@@ -37,6 +37,21 @@ This version is still a work in progress.
     takes_them(**kwargs^)
   ```
 
+- Dynamic function pointers with unbound type parameters can now be called
+  directly. The compiler infers parameters from the call arguments and
+  specializes the callee before the indirect call. This capability only works
+  with a limited set of parameters - those which are specialized to a single
+  value. This notably enables origin parameters on runtime function calls,
+  which can also be implicit from variadics:
+
+  ```mojo
+  var fp1: def(*Int) thin -> None
+  var fp2: def[a: ImmutOrigin](ref [a] x: Int) thin -> None
+  ...
+  fp1(1, 2)
+  fp2(42)
+  ```
+
 - Struct fields are no longer allowed to hide `UnsafeAnyOrigin` within a
   struct, e.g. this is no longer accepted:
 
