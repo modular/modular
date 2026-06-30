@@ -10,6 +10,9 @@ This version is still a work in progress.
 
 ## Language enhancements
 
+- Mojo now support `==` and `!=` for type equality check, and `_type_is_eq` is
+  removed.
+
 - Mojo now infers `Trait` for `TypeList.of` such that
 
   ```mojo

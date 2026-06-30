@@ -14,7 +14,6 @@
 
 from std.sys import size_of
 from std.sys.info import _TargetType
-from std.sys.intrinsics import _type_is_eq
 from std.builtin.rebind import downcast
 from std.gpu.host.device_context import DeviceBuffer, DevicePointer
 from std.collections.inline_array import InlineArray
@@ -30,12 +29,12 @@ trait DevicePassable:
 
     @staticmethod
     def _is_convertible_to_device_type[SrcT: AnyType]() -> Bool:
-        comptime if not _type_is_eq[Self, Self.device_type]() and conforms_to(
+        comptime if Self != Self.device_type and conforms_to(
             Self.device_type, DevicePassable
         ):
             return Self.device_type._is_convertible_to_device_type[SrcT]()
         else:
-            return _type_is_eq[SrcT, Self.device_type]()
+            return SrcT == Self.device_type
 
     def _to_device_type(
         self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]

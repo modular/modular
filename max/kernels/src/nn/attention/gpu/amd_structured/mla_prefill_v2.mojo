@@ -113,7 +113,7 @@ from std.gpu.sync import s_waitcnt
 from std.math import ceildiv
 from std.memory import AddressSpace
 from std.sys import get_defined_bool, get_defined_int, size_of
-from std.sys.intrinsics import readfirstlane, _type_is_eq
+from std.sys.intrinsics import readfirstlane
 from std.utils import StaticTuple
 
 from layout import TensorLayout, TileTensor
@@ -1945,7 +1945,7 @@ struct MlaPrefillV2[config: MlaConfigV2]:
                 max_q_end_pos_i32 + _KVB_I32 - 1
             ) // _KVB_I32
             var max_num_tiles_local: Int
-            comptime if _type_is_eq[mask_t, CausalMask]():
+            comptime if mask_t == CausalMask:
                 var capped_i32 = (
                     max_num_tiles_calc_i32 if max_num_tiles_calc_i32
                     < num_tiles_i32 else num_tiles_i32

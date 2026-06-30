@@ -33,7 +33,6 @@ from ._nicheable import (
 )
 from std.os import abort
 from std.sys import align_of, size_of
-from std.sys.intrinsics import _type_is_eq
 from std.utils.type_functions import ConditionalType
 
 # ===----------------------------------------------------------------------=== #
@@ -46,7 +45,7 @@ comptime _InvalidTypeIndex: Int = -1
 @always_inline
 def _get_type_index[T: AnyType, *Ts: AnyType]() -> Int:
     comptime for i in range(Ts.size):
-        comptime if _type_is_eq[Ts[i], T]():
+        comptime if Ts[i] == T:
             return i
     return _InvalidTypeIndex
 
@@ -105,7 +104,7 @@ struct _DefaultNicheStorage[T: AnyType](Defaultable, _NicheStorage):
     def as_uninit[
         U: AnyType
     ](ref self) -> UnsafePointer[UnsafeMaybeUninit[U], origin_of(self)]:
-        comptime assert _type_is_eq[Self.T, U]()
+        comptime assert Self.T == U
         return (
             UnsafePointer(to=self._memory)
             .bitcast[UnsafeMaybeUninit[U]]()
@@ -175,9 +174,7 @@ struct _NichedOptionalStorage[
 
     @staticmethod
     def _check[U: AnyType]():
-        comptime assert (
-            _type_is_eq[U, Self.T]() or _type_is_eq[U, Self.EmptyType]()
-        ), "unexpected type"
+        comptime assert U == Self.T or U == Self.EmptyType, "unexpected type"
 
     @always_inline
     def __init__(out self):
@@ -190,7 +187,7 @@ struct _NichedOptionalStorage[
     @always_inline
     def __init__[U: Movable](out self, var value: U):
         Self._check[U]()
-        comptime if _type_is_eq[U, Self.T]():
+        comptime if U == Self.T:
             self._memory = {}
             self._memory.as_uninit[U]()[].init_from(value^)
         else:
@@ -226,7 +223,7 @@ struct _NichedOptionalStorage[
         Self._check[U]()
         var niche = Self.T.classify_niche(self._memory.as_uninit[Self.T]())
         var is_some = niche == NicheIndex.NotANiche
-        comptime if _type_is_eq[U, Self.T]():
+        comptime if U == Self.T:
             return is_some
         else:
             return not is_some

@@ -91,7 +91,6 @@ from std.gpu.memory import AddressSpace
 from std.gpu.primitives.warp import shuffle_xor
 from std.math import ceildiv, exp
 from std.sys.info import size_of
-from std.sys.intrinsics import _type_is_eq
 from std.utils.index import Index
 from std.utils.numerics import get_accum_type
 
@@ -590,7 +589,7 @@ def fa_prefill_apple_core[
     # express the causal case as a monotonic early-exit on the same generic
     # `status` query rather than precomputing `last_masked_set_end`, so a
     # single code path stays correct for every `MHAMask`.
-    comptime causal_monotonic = _type_is_eq[mask_t, CausalMask]()
+    comptime causal_monotonic = mask_t == CausalMask
 
     # Stream the KV range in SK-wide tiles.
     var kv0 = 0

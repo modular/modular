@@ -43,7 +43,6 @@ from _hal import (
     get_device_spec,
 )
 from _hal.event import EVENT_FLAG_CPU_VISIBLE
-from std.sys.intrinsics import _type_is_eq
 from std.builtin.variadics import TypeList
 
 from std.gpu.host.constant_memory_mapping import ConstantMemoryMapping
@@ -1148,9 +1147,7 @@ struct DeviceFunction[
                 declared_arg_type
             ]()
 
-            comptime if _type_is_eq[
-                actual_arg_type, actual_arg_type.device_type
-            ]():
+            comptime if actual_arg_type == actual_arg_type.device_type:
                 comptime assert is_convertible, String(
                     "argument #",
                     i,
