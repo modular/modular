@@ -705,7 +705,8 @@ mojo_test(
 # cache_length) is a 1e4 poison sentinel. `ref` (--check) is an f64 block-max
 # softmax masking k_logical > cache_length -- a leaked tail blows O ~1e4 out of
 # band (the CENG-639 long-context decode runaway). head_dim/group compile-time
-# (`-D`, default 128/8). B200-only.
+# (`-D`, default 128/8). Dual-arch (B200 tensor-core + MI355 cooperative path),
+# via msa_amd_decode_dispatch on AMD.
 mojo_test(
     name = "fuzz_msa_decode.mojo.test",
     size = "large",
@@ -721,10 +722,11 @@ mojo_test(
         "gpu",
         "manual",
     ],
-    target_compatible_with = [
-        "//:has_gpu",
-        "//:b200_gpu",
-    ],
+    target_compatible_with = ["//:has_gpu"] + select({
+        "//:b200_gpu": [],
+        "//:mi355_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     deps = [
         "//Kernels/lib/msa",
         "//max:internal_utils",
@@ -746,7 +748,8 @@ mojo_test(
 # topk/num_q_heads/group/causal are compile-time (`-D msap_topk=.. msap_num_q_heads=..
 # msap_group=.. msap_causal=..`, default 8/1/1/0); head_dim fixed at 128.
 # memory-safety primary (device CSR build + block-major scatter); `ref` (--check,
-# default) is the f64 block-sparse oracle from the kernel's authority test. B200-only.
+# default) is the f64 block-sparse oracle from the kernel's authority test. Dual-arch
+# (B200 tensor-core + MI355 cooperative path), via msa_amd_prefill_run on AMD.
 mojo_test(
     name = "fuzz_msa_prefill.mojo.test",
     size = "large",
@@ -762,10 +765,11 @@ mojo_test(
         "gpu",
         "manual",
     ],
-    target_compatible_with = [
-        "//:has_gpu",
-        "//:b200_gpu",
-    ],
+    target_compatible_with = ["//:has_gpu"] + select({
+        "//:b200_gpu": [],
+        "//:mi355_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     deps = [
         "//Kernels/lib/msa",
         "//max:internal_utils",
