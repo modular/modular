@@ -126,6 +126,38 @@ This version is still a work in progress.
   pkg.submodule.foo()
   ```
 
+- Intra-package accesses without explicit `import`s are now deprecated and will
+  be removed in a future release:
+
+  ```mojo
+  package/
+      __init__.mojo:
+        # Exported or re-exported symbols
+        def foo(): pass
+
+      module1.mojo:
+        # Module-defined symbol
+        def bar(): pass
+
+      module2.mojo:
+        # Previously able to implicitly use either of the above symbols, e.g.,
+        foo()
+        module1.bar()
+  ```
+
+  With this change, `module2.mojo` above must explicitly import symbols from
+  elsewhere in the package:
+
+  ```mojo
+  # module2.mojo
+
+  from . import foo
+  from . import module1
+
+  foo()
+  module1.bar()
+  ```
+
 - `where` clauses inside a parameter list (for example,
   `[x: Int where x > 0]`) are no longer supported, following a period of
   deprecation. Use a trailing `where` clause after the signature instead:
