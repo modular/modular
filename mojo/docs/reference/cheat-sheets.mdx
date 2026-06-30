@@ -1,7 +1,7 @@
 ---
 title: Mojo cheat sheets
 sidebar_label: Cheat sheets
-description: Quick reference cards for Mojo's syntax and keywords
+description: Quick reference cards for Mojo essentials.
 ---
 
 <!-- markdownlint-disable MD033 -->
@@ -14,6 +14,22 @@ export const basicsSheet = {
   lightPdf: require('./assets/basics/mojo-cheat-sheet-basics-light.pdf').default,
   darkPng: require('./assets/basics/mojo-cheat-sheet-basics-dark.png').default,
   darkPdf: require('./assets/basics/mojo-cheat-sheet-basics-dark.pdf').default,
+};
+
+export const compiletimeSheet = {
+  id: 'mojo-cheat-sheet-compile-time',
+  lightPng: require('./assets/compile-time/mojo-cheat-sheet-compile-time-light.png').default,
+  lightPdf: require('./assets/compile-time/mojo-cheat-sheet-compile-time-light.pdf').default,
+  darkPng: require('./assets/compile-time/mojo-cheat-sheet-compile-time-dark.png').default,
+  darkPdf: require('./assets/compile-time/mojo-cheat-sheet-compile-time-dark.pdf').default,
+};
+
+export const traitsSheet = {
+  id: 'mojo-cheat-sheet-traits',
+  lightPng: require('./assets/traits/mojo-cheat-sheet-traits-light.png').default,
+  lightPdf: require('./assets/traits/mojo-cheat-sheet-traits-light.pdf').default,
+  darkPng: require('./assets/traits/mojo-cheat-sheet-traits-dark.png').default,
+  darkPdf: require('./assets/traits/mojo-cheat-sheet-traits-dark.pdf').default,
 };
 
 export const typesSheet = {
@@ -30,14 +46,6 @@ export const convertSheet = {
   lightPdf: require('./assets/conversions/mojo-cheat-sheet-conversions-light.pdf').default,
   darkPng: require('./assets/conversions/mojo-cheat-sheet-conversions-dark.png').default,
   darkPdf: require('./assets/conversions/mojo-cheat-sheet-conversions-dark.pdf').default,
-};
-
-export const traitsSheet = {
-  id: 'mojo-cheat-sheet-traits',
-  lightPng: require('./assets/traits/mojo-cheat-sheet-traits-light.png').default,
-  lightPdf: require('./assets/traits/mojo-cheat-sheet-traits-light.pdf').default,
-  darkPng: require('./assets/traits/mojo-cheat-sheet-traits-dark.png').default,
-  darkPdf: require('./assets/traits/mojo-cheat-sheet-traits-dark.pdf').default,
 };
 
 export const Preview = ({sheet, alt}) => {
@@ -118,8 +126,8 @@ export const Downloads = ({sheet}) => (
       flexDirection: 'column',
       gap: '0.5rem',
     }}>
-    <DownloadRow label="Light" png={sheet.lightPng} pdf={sheet.lightPdf} name={`${sheet.id}-light`} />
-    <DownloadRow label="Dark" png={sheet.darkPng} pdf={sheet.darkPdf} name={`${sheet.id}-dark`} />
+    <DownloadRow label="Download light" png={sheet.lightPng} pdf={sheet.lightPdf} name={`${sheet.id}-light`} />
+    <DownloadRow label="Download dark" png={sheet.darkPng} pdf={sheet.darkPdf} name={`${sheet.id}-dark`} />
   </div>
 );
 
@@ -172,6 +180,22 @@ Syntax essentials. The core you reach for first.
 
 </CheatSheet>
 
+<CheatSheet sheet={compiletimeSheet} alt="Mojo compile-time cheat sheet">
+
+## Compile-time {#compile-time}
+
+Mojo's superpower. Less for runtime to do.
+
+</CheatSheet>
+
+<CheatSheet sheet={traitsSheet} alt="Mojo traits cheat sheet">
+
+## Traits {#traits}
+
+Shared capabilities and requirements.
+
+</CheatSheet>
+
 <CheatSheet sheet={typesSheet} alt="Mojo types and literals cheat sheet">
 
 ## Types and literals {#types-and-literals}
@@ -185,14 +209,6 @@ Types, literals, and the sharp edges. Know before you write.
 ## Type conversions {#conversions}
 
 Create it or convert it, and get back to work.
-
-</CheatSheet>
-
-<CheatSheet sheet={traitsSheet} alt="Mojo traits cheat sheet">
-
-## Traits {#traits}
-
-Shared capabilities and requirements. Know what generic code expects.
 
 </CheatSheet>
 
