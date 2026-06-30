@@ -537,22 +537,20 @@ def matmul_dispatch_sm100_fp8[
         T: Table[TuningConfigSM100],
         domain: List[Int] = List[Int](),
     ]() raises -> Int:
-        @parameter
         @always_inline
-        def get_m(x: TuningConfigSM100) -> Int:
+        def get_m(x: TuningConfigSM100) {} -> Int:
             return x.M
 
-        comptime m_values = T.query_values[Int, get_m, domain]()
+        comptime m_values = T.query_values[Int, domain=domain](rule=get_m)
 
         comptime for static_m in m_values:
 
-            @parameter
             @always_inline
-            def rule_eq_m(x: TuningConfigSM100) -> Bool:
+            def rule_eq_m(x: TuningConfigSM100) {} -> Bool:
                 return x.M == static_m
 
             if m <= static_m:
-                comptime idx_list = T.query_index[rule_eq_m, domain=domain]()
+                comptime idx_list = T.query_index[domain=domain](rule=rule_eq_m)
 
                 comptime if idx_list:
                     comptime entry = T.configs[idx_list[0]]
@@ -568,12 +566,11 @@ def matmul_dispatch_sm100_fp8[
     comptime tuning_list = _get_tuning_list_sm100_fp8[mma_k=MMA_K, bk=BK]()
     comptime tuning_table = Table(tuning_list, "tuning_table_sm100_fp8")
 
-    @parameter
     @always_inline
-    def rule_eq_nk(x: TuningConfigSM100) -> Bool:
+    def rule_eq_nk(x: TuningConfigSM100) {} -> Bool:
         return x.K == static_K and x.N == static_N
 
-    comptime nk_idx_list = tuning_table.query_index[rule_eq_nk]()
+    comptime nk_idx_list = tuning_table.query_index(rule=rule_eq_nk)
 
     # TODO: Re-enable the following tuning dispatch.
     # Make sure `domain(nk_idx_list)` is not empty.
@@ -616,23 +613,22 @@ def _sm100_outlier_configs[
     `mma_k` into its tile shapes -- is never instantiated for bf16/fp32.
     """
 
-    @parameter
     @always_inline
-    def rule(x: TuningConfigSM100) -> Bool:
+    def rule(x: TuningConfigSM100) {} -> Bool:
         return x.K == static_K and x.N == static_N
 
     comptime if a_type == DType.bfloat16:
         return Table(
             _get_tuning_list_sm100_bf16(), "bf16_heuristic_outliers"
-        ).find[rule]()
+        ).find(rule=rule)
     elif a_type == DType.float32:
         return Table(
             _get_tuning_list_sm100_fp32(), "fp32_heuristic_outliers"
-        ).find[rule]()
+        ).find(rule=rule)
     else:
         return Table(
             _get_tuning_list_sm100_fp8[mma_k, bk](), "fp8_heuristic_outliers"
-        ).find[rule]()
+        ).find(rule=rule)
 
 
 def select_and_launch_sm100_config[
@@ -885,14 +881,13 @@ def matmul_dispatch_sm100_bf16[
         _get_tuning_list_small_MN_gemms_bf16(), "small_MN_gemms_configs"
     )
 
-    @parameter
     @always_inline
-    def small_MN_gemms_rule(x: TuningConfigSmallMNGemms) -> Bool:
+    def small_MN_gemms_rule(x: TuningConfigSmallMNGemms) {} -> Bool:
         return x.K == static_K and x.N == static_N
 
-    comptime small_MN_gemms_configs = small_MN_gemms_table.find[
-        small_MN_gemms_rule
-    ]()
+    comptime small_MN_gemms_configs = small_MN_gemms_table.find(
+        rule=small_MN_gemms_rule
+    )
 
     comptime if small_MN_gemms_configs and c_type in (DType.bfloat16,):
         var m = Int(c.dim[0]())
@@ -1195,26 +1190,25 @@ def _sm100_batched_outlier_configs[
     dtype's list is only instantiated for its own dtype.
     """
 
-    @parameter
     @always_inline
-    def rule(x: TuningConfigSM100) -> Bool:
+    def rule(x: TuningConfigSM100) {} -> Bool:
         return x.K == static_K and x.N == static_N
 
     comptime if a_type == DType.bfloat16:
         return Table(
             _get_tuning_list_sm100_batched_bf16(),
             "batched_bf16_heuristic_outliers",
-        ).find[rule]()
+        ).find(rule=rule)
     elif a_type == DType.float32:
         return Table(
             _get_tuning_list_sm100_batched_fp32(),
             "batched_fp32_heuristic_outliers",
-        ).find[rule]()
+        ).find(rule=rule)
     else:
         return Table(
             _get_tuning_list_sm100_batched_fp8(),
             "batched_fp8_heuristic_outliers",
-        ).find[rule]()
+        ).find(rule=rule)
 
 
 @always_inline

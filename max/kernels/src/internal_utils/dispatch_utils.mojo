@@ -76,8 +76,9 @@ struct Table[type: TuningConfig](Writable):
     #     These indices are marked valid in the flag and may not represent the entire domain.
     #   - Returns a list of matching indices, not the entire domain.
     def query_index[
-        rule: def(Self.type) capturing -> Bool, domain: List[Int] = List[Int]()
-    ](self) -> List[Int]:
+        rule_fn: ImplicitlyCopyable & def(Self.type) -> Bool,
+        domain: List[Int] = List[Int](),
+    ](self, *, rule: rule_fn) -> List[Int]:
         var flag: List[Bool]
 
         comptime if len(domain):
@@ -99,9 +100,9 @@ struct Table[type: TuningConfig](Writable):
     # Apply rule on all configs in the table and return list of all the unique results.
     def query_values[
         ret_type: Comparable & ImplicitlyCopyable & ImplicitlyDeletable,
-        rule: def(Self.type) capturing -> ret_type,
+        rule_fn: ImplicitlyCopyable & def(Self.type) -> ret_type,
         domain: List[Int] = List[Int](),
-    ](self) -> List[ret_type]:
+    ](self, *, rule: rule_fn) -> List[ret_type]:
         var result = List[ret_type]()
 
         @always_inline
@@ -127,8 +128,8 @@ struct Table[type: TuningConfig](Writable):
         return result^
 
     def find[
-        rule: def(Self.type) capturing -> Bool,
-    ](self) -> List[Self.type]:
+        rule_fn: ImplicitlyCopyable & def(Self.type) -> Bool,
+    ](self, *, rule: rule_fn) -> List[Self.type]:
         var result = List[Self.type]()
 
         for config in self.configs:
