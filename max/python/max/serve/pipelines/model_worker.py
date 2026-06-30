@@ -54,6 +54,7 @@ from max.serve.process_control import subprocess_manager
 from max.serve.scheduler import load_scheduler
 from max.serve.scheduler.base import SchedulerProgress
 from max.serve.telemetry.common import configure_logging, configure_metrics
+from max.serve.telemetry.gc_debug import install_gc_debugger
 from max.serve.telemetry.metrics import METRICS
 from max.serve.telemetry.stopwatch import record_ms
 from max.serve.worker_interface import (
@@ -235,6 +236,16 @@ class ModelWorker:
         configure_logging(settings)
         pid = os.getpid()
         logger.debug("Starting model worker on process %d!", pid)
+
+        # Optionally instrument CPython garbage-collection pauses. Stop-the-
+        # world GC collections hold the GIL and can stall the scheduler thread,
+        # surfacing as large batch_execution_time_ms spikes (MXSERV-152).
+        install_gc_debugger(
+            enabled=settings.gc_debug,
+            min_duration_ms=settings.gc_debug_min_duration_ms,
+            top_objects=settings.gc_debug_top_objects,
+        )
+
         run_start_s = time.monotonic()
         spawn_duration_s = (
             time.time() - spawn_start_wall_ts
