@@ -43,6 +43,7 @@ from max.benchmark.benchmark_shared.request import (
     TRTLLMRequestDriver,
     VllmOmniPixelGenerationRequestDriver,
     VllmOmniVideoRequestDriver,
+    _build_final_payload,
     _build_sglang_pixel_generation_payload,
     _build_sglang_video_payload,
     _build_vllm_omni_pixel_generation_payload,
@@ -775,6 +776,150 @@ class TestRequestDriver:
         result = await driver.request(request_input)
 
         assert result.success is True
+
+
+class TestBuildFinalPayload:
+    """Unit tests for the ``_build_final_payload`` payload helper."""
+
+    def test_none_and_empty_return_copy_unchanged(self) -> None:
+        payload = {"model": "m"}
+        assert _build_final_payload(payload, None) == {"model": "m"}
+        assert _build_final_payload(payload, {}) == {"model": "m"}
+        # The helper returns a fresh dict; the caller's payload is not mutated.
+        assert _build_final_payload(payload, {"x": 1}) is not payload
+        assert "x" not in payload
+
+    def test_adds_new_keys_with_nested_verbatim(self) -> None:
+        payload: dict[str, Any] = {"model": "m"}
+        extra = {
+            "vendor_ext": {"flags": ["a", "b"]},
+            "stop": ["}"],
+        }
+        body = _build_final_payload(payload, extra)
+        assert body["vendor_ext"] == {"flags": ["a", "b"]}
+        assert body["stop"] == ["}"]
+
+    def test_collision_overwrites_and_logs(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        payload = {"max_tokens": 100, "stream": True}
+        with caplog.at_level(
+            logging.WARNING, logger="max.benchmark.benchmark_shared.request"
+        ):
+            body = _build_final_payload(payload, {"max_tokens": 15})
+        # last-writer-wins
+        assert body["max_tokens"] == 15
+        assert body["stream"] is True
+        # collision is surfaced
+        assert any(
+            "overwrites managed request field" in rec.message
+            and "max_tokens" in rec.message
+            for rec in caplog.records
+        )
+
+
+class TestDriverExtraBody:
+    """End-to-end: extra_body reaches the POST payload of text-gen drivers."""
+
+    _EXTRA = {
+        "stop": ["}"],
+        "chat_template_kwargs": {"reasoning_effort": "low"},
+        # Synthetic vendor extension: a nested object holding an array, to
+        # confirm arbitrary nested structures pass through verbatim.
+        "vendor_ext": {"flags": ["a", "b"]},
+    }
+
+    @staticmethod
+    async def _single_chunk(chunk: bytes) -> AsyncIterator[bytes]:
+        yield chunk
+        yield b"data: [DONE]\n\n"
+
+    def _make_input(self, api_url: str) -> RequestFuncInput:
+        return RequestFuncInput(
+            model="test-model",
+            session_id=None,
+            sampling=SamplingConfig(),
+            prompt="hi",
+            images=[],
+            api_url=api_url,
+            prompt_len=1,
+            max_tokens=100,
+            ignore_eos=False,
+        )
+
+    @pytest.mark.asyncio
+    async def test_chat_driver_merges_extra_body(
+        self,
+        mock_aiohttp_session: Any,
+        mock_openai_env: None,
+        mocker: MockerFixture,
+    ) -> None:
+        mock_response = mocker.AsyncMock()
+        mock_response.status = 200
+        mock_response.content = self._single_chunk(
+            b'data: {"choices": [{"delta": {"content": "ok"}}]}\n\n'
+        )
+        mock_aiohttp_session.setup_post_response(mock_response)
+
+        driver = OpenAIChatCompletionsRequestDriver(extra_body=self._EXTRA)
+        result = await driver.request(
+            self._make_input("http://localhost:8000/v1/chat/completions")
+        )
+        assert result.success is True
+        sent = mock_aiohttp_session.post.call_args[1]["json"]
+        assert sent["stop"] == ["}"]
+        assert sent["chat_template_kwargs"] == {"reasoning_effort": "low"}
+        assert sent["vendor_ext"] == {"flags": ["a", "b"]}
+
+    @pytest.mark.asyncio
+    async def test_completions_driver_merges_extra_body(
+        self,
+        mock_aiohttp_session: Any,
+        mock_openai_env: None,
+        mocker: MockerFixture,
+    ) -> None:
+        mock_response = mocker.AsyncMock()
+        mock_response.status = 200
+        mock_response.content = self._single_chunk(
+            b'data: {"choices": [{"text": "ok"}]}\n\n'
+        )
+        mock_aiohttp_session.setup_post_response(mock_response)
+
+        driver = OpenAICompletionsRequestDriver(extra_body=self._EXTRA)
+        result = await driver.request(
+            self._make_input("http://localhost:8000/v1/completions")
+        )
+        assert result.success is True
+        sent = mock_aiohttp_session.post.call_args[1]["json"]
+        assert sent["stop"] == ["}"]
+        assert sent["vendor_ext"] == {"flags": ["a", "b"]}
+
+    @pytest.mark.asyncio
+    async def test_trtllm_driver_merges_extra_body(
+        self,
+        mock_aiohttp_session: Any,
+        mocker: MockerFixture,
+    ) -> None:
+        async def trtllm_chunk() -> AsyncIterator[bytes]:
+            # The TRT-LLM driver validates every event as a chunk and has no
+            # ``[DONE]`` sentinel, so emit only a single data line.
+            yield b'data: {"text_output": "ok"}\n\n'
+
+        mock_response = mocker.AsyncMock()
+        mock_response.status = 200
+        mock_response.content = trtllm_chunk()
+        mock_aiohttp_session.setup_post_response(mock_response)
+
+        driver = TRTLLMRequestDriver(extra_body=self._EXTRA)
+        result = await driver.request(
+            self._make_input(
+                "http://localhost:8000/v2/models/ensemble/generate_stream"
+            )
+        )
+        assert result.success is True
+        sent = mock_aiohttp_session.post.call_args[1]["json"]
+        assert sent["stop"] == ["}"]
+        assert sent["vendor_ext"] == {"flags": ["a", "b"]}
 
 
 class TestRequestDriverSelection:

@@ -26,7 +26,7 @@ import threading
 import time
 import traceback
 from abc import ABC, abstractmethod
-from collections.abc import Callable, Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator, Mapping
 from dataclasses import dataclass, field
 from typing import Any, TypeVar
 
@@ -105,6 +105,28 @@ def _apply_sampling_to_request_payload(
         payload["top_k"] = sampling.top_k
     if sampling.top_p is not None:
         payload["top_p"] = sampling.top_p
+
+
+def _build_final_payload(
+    base_payload: Mapping[str, Any], extra_body: Mapping[str, Any] | None
+) -> dict[str, Any]:
+    """Return a new payload: a shallow copy of *base_payload* with *extra_body*
+    merged on top, last-writer-wins (an *extra_body* key overrides the managed
+    field of the same name). Not mutated, so *base_payload* keeps its precise
+    type and the result is ``dict[str, Any]``.
+    """
+    payload: dict[str, Any] = dict(base_payload)
+    if not extra_body:
+        return payload
+    for key, value in extra_body.items():
+        if key in payload:
+            logger.warning(
+                "extra_body key %r overwrites managed request field; "
+                "last-writer-wins.",
+                key,
+            )
+        payload[key] = value
+    return payload
 
 
 @dataclass
@@ -262,14 +284,21 @@ class RequestDriver(ABC):
     """Abstract base class for a driver that handles API requests to different backends."""
 
     def __init__(
-        self, tokenizer: PreTrainedTokenizerBase | None = None
+        self,
+        tokenizer: PreTrainedTokenizerBase | None = None,
+        extra_body: Mapping[str, Any] | None = None,
     ) -> None:
         """Initialize the request driver.
 
         Args:
             tokenizer: Optional tokenizer for per-chunk TPOT computation.
+            extra_body: Optional arbitrary top-level fields merged onto every
+                request payload (last-writer-wins). Consumed by the
+                text-generation drivers (chat completions, completions, and
+                TensorRT-LLM); other drivers ignore it.
         """
         self.tokenizer = tokenizer
+        self.extra_body = extra_body
 
     @abstractmethod
     async def request(
@@ -366,17 +395,20 @@ class TRTLLMRequestDriver(RequestDriver):
         assert api_url.endswith("generate_stream")
 
         async with aiohttp.ClientSession(timeout=AIOHTTP_TIMEOUT) as session:
-            payload: dict[str, bool | str | int | float | list[ChatMessage]] = {
+            base_payload: dict[
+                str, bool | str | int | float | list[ChatMessage]
+            ] = {
                 "text_input": request_func_input.prompt,
                 "ignore_eos": request_func_input.ignore_eos,
                 "stream": True,
             }
 
             if request_func_input.max_tokens is not None:
-                payload["max_tokens"] = request_func_input.max_tokens
+                base_payload["max_tokens"] = request_func_input.max_tokens
             _apply_sampling_to_request_payload(
-                payload, request_func_input.sampling
+                base_payload, request_func_input.sampling
             )
+            payload = _build_final_payload(base_payload, self.extra_body)
 
             output = RequestFuncOutput()
             output.prompt_len = request_func_input.prompt_len
@@ -612,7 +644,9 @@ class OpenAICompletionsRequestDriver(RequestDriver):
             "OpenAI Completions API URL must end with 'completions' or 'profile'."
         )
 
-        payload: dict[str, bool | str | int | float | list[ChatMessage]] = {
+        base_payload: dict[
+            str, bool | str | int | float | list[ChatMessage]
+        ] = {
             "model": request_func_input.model,
             "prompt": request_func_input.prompt,
             "best_of": 1,
@@ -621,8 +655,11 @@ class OpenAICompletionsRequestDriver(RequestDriver):
         }
 
         if request_func_input.max_tokens is not None:
-            payload["max_tokens"] = request_func_input.max_tokens
-        _apply_sampling_to_request_payload(payload, request_func_input.sampling)
+            base_payload["max_tokens"] = request_func_input.max_tokens
+        _apply_sampling_to_request_payload(
+            base_payload, request_func_input.sampling
+        )
+        payload = _build_final_payload(base_payload, self.extra_body)
 
         headers = {
             "Authorization": f"Bearer {os.environ.get('OPENAI_API_KEY')}"
@@ -665,7 +702,7 @@ class OpenAIChatCompletionsRequestDriver(RequestDriver):
                 msg.model_dump() for msg in request_func_input.prompt
             ]
 
-        payload: dict[
+        base_payload: dict[
             str,
             bool | str | int | float | list[dict[str, Any]] | dict[str, Any],
         ] = {
@@ -677,20 +714,23 @@ class OpenAIChatCompletionsRequestDriver(RequestDriver):
         }
 
         if request_func_input.max_tokens is not None:
-            payload["max_tokens"] = request_func_input.max_tokens
-        _apply_sampling_to_request_payload(payload, request_func_input.sampling)
+            base_payload["max_tokens"] = request_func_input.max_tokens
+        _apply_sampling_to_request_payload(
+            base_payload, request_func_input.sampling
+        )
         if request_func_input.response_format is not None:
             # Convert TypedDict to plain dict so mypy accepts the assignment into
-            # payload (since a TypedDict is stricter than a dict[str, Any]).
-            payload["response_format"] = dict(
+            # base_payload (since a TypedDict is stricter than a dict[str, Any]).
+            base_payload["response_format"] = dict(
                 request_func_input.response_format
             )
         if request_func_input.tools:
-            payload["tools"] = request_func_input.tools
+            base_payload["tools"] = request_func_input.tools
         for img in request_func_input.images:
             # TODO: Remove this type ignore
             # (error: Value of type "object" is not indexable)
-            payload["messages"][0]["content"].append(img)  # type: ignore[index, union-attr]
+            base_payload["messages"][0]["content"].append(img)  # type: ignore[index, union-attr]
+        payload = _build_final_payload(base_payload, self.extra_body)
 
         headers = {
             "Content-Type": "application/json",
