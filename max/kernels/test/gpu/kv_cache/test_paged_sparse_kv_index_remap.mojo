@@ -196,6 +196,16 @@ def main() raises:
         )
 
         ctx.enqueue_copy(h_out, d_out)
+
+        # TODO(GPUA-92)
+        # `DeviceBuffer.unsafe_ptr()` returns an untracked-origin pointer, so
+        # these buffers are otherwise destroyed at the `unsafe_ptr()` calls in
+        # the dispatch above — before the async kernel actually runs — freeing
+        # their device memory and causing a use-after-free.
+        _ = d_log^
+        _ = d_row_off^
+        _ = d_lut^
+
         ctx.synchronize()
 
     for i in range(NUM_IDX):
