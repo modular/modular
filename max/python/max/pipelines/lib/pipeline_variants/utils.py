@@ -979,7 +979,7 @@ class StructuredOutputHelper:
                 # the producing batch. But the callback runs on an AsyncRT
                 # worker and holds live references to these contexts: between
                 # its enqueue and its execution the scheduler can preempt a row
-                # (``reset()`` to an initial prompt, requeueing it to
+                # (``reset()`` to an initial prompt, requeuing it to
                 # context-encoding) when KV pages run short. Degrade such a row
                 # to the all-valid -1 reset above and ``continue`` rather than
                 # raising -- a raise propagates to the callback's except and
