@@ -159,6 +159,12 @@ public:
   bool hasPluginForTarget(StringRef targetTriple) const;
   bool hasPluginForTarget(const llvm::Triple &targetTriple) const;
 
+  /// The loaded plugins. Lets callers wrap each one individually (e.g.
+  /// PluginImplBackend) instead of relying on the mutable `currPlugin`.
+  const std::vector<std::unique_ptr<Plugin>> &getPlugins() const {
+    return plugins;
+  }
+
   /// Pick the active plugin for `targetTriple` from the already-loaded
   /// plugins. Needed because the default ctor loads plugins without a
   /// triple, leaving `currPlugin` null. Default ctor should only be invoked

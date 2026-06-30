@@ -105,10 +105,19 @@ void TargetBackendRegistry::add(std::unique_ptr<TargetBackend> backend) {
 
 const TargetBackend *
 TargetBackendRegistry::lookup(const llvm::Triple &triple) const {
-  for (const std::unique_ptr<TargetBackend> &backend : Backends)
-    if (backend->matches(triple))
-      return backend.get();
-  return nullptr;
+  // A backend that resolves `triple` to a different backend (one it owns,
+  // e.g. discovered at runtime) takes precedence over a direct self-match.
+  const TargetBackend *directMatch = nullptr;
+  for (const std::unique_ptr<TargetBackend> &backend : Backends) {
+    const TargetBackend *resolved = backend->resolve(triple);
+    if (!resolved)
+      continue;
+    if (resolved != backend.get())
+      return resolved;
+    if (!directMatch)
+      directMatch = resolved;
+  }
+  return directMatch;
 }
 
 } // namespace M::KGEN

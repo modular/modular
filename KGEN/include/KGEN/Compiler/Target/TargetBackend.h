@@ -49,7 +49,6 @@ class Operation;
 namespace M::KGEN {
 
 class MCLinker;
-class PluginManager;
 
 /// Creates an LLVM TargetMachine from already-effective `options` (no
 /// target-specific adjustment). Used by `TargetBackend::createTargetMachine`
@@ -83,7 +82,9 @@ struct EmitContext {
   mlir::Location loc;
   size_t moduleIdx = 0;
   MCLinker *linker = nullptr;
-  PluginManager *pluginMgr = nullptr;
+  /// Path to the system linker (lld), for backends that produce the final
+  /// shared object themselves (e.g. a plugin-provided backend).
+  llvm::StringRef linkerPath;
   RunLlc runLlc;
   LinkObject linkObject;
 };
@@ -97,6 +98,16 @@ public:
   virtual llvm::StringRef name() const = 0;
   /// Whether this backend handles `triple`.
   virtual bool matches(const llvm::Triple &triple) const = 0;
+
+  /// Resolves `triple` to the concrete backend that should handle it, or null
+  /// if this backend does not. The default returns `this` when `matches`; a
+  /// backend that owns nested backends (e.g. one discovered at runtime) can
+  /// override this to return one of them. The registry prefers a resolution
+  /// that differs from the backend it queried, so a nested backend takes
+  /// precedence over a direct match.
+  virtual const TargetBackend *resolve(const llvm::Triple &triple) const {
+    return matches(triple) ? this : nullptr;
+  }
 
   virtual SplitStrategy
   splitStrategy(const CompilationOptions &options) const = 0;

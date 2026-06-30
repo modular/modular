@@ -1495,8 +1495,7 @@ static AnyAsyncValueRef lowerLLVMModuleToObject(
     llvm::Module &inputModule, Location loc,
     RCRef<Cache::TransformCache> transformCache, size_t moduleIdx,
     MLRT::CPUDevice &cpuDevice, CompilationOptions options, bool isJIT,
-    bool shouldDeserialize, EmitAs emissionKind, std::string &linker,
-    const std::unique_ptr<PluginManager> &pluginMgr) {
+    bool shouldDeserialize, EmitAs emissionKind, std::string &linker) {
   WriteableBufferRef keyBuf = WriteableBuffer::get();
   options.print(*keyBuf << "compileLLVMModuleToObject(");
   *keyBuf << ")";
@@ -1513,15 +1512,15 @@ static AnyAsyncValueRef lowerLLVMModuleToObject(
 
   auto runTransformation = [loc, moduleIdx, isJIT, options, &cpuDevice,
                             emissionKind, keyBuf = keyBuf.copy(), &inputModule,
-                            nonBitcodeKeySize, shouldDeserialize, &linker,
-                            &pluginMgr](WriteableBufferRef buf,
-                                        MLRT::AnyAsyncValueRef chain) mutable {
+                            nonBitcodeKeySize, shouldDeserialize,
+                            &linker](WriteableBufferRef buf,
+                                     MLRT::AnyAsyncValueRef chain) mutable {
     auto output = MLRT::AsyncValueRef<BufferRef>::allocate(cpuDevice);
 
     chain.andThenAsync([loc, &cpuDevice, emissionKind, output = output.copy(),
                         buf = buf.copy(), keyBuf = std::move(keyBuf), options,
                         isJIT, moduleIdx, &inputModule, nonBitcodeKeySize,
-                        shouldDeserialize, &linker, &pluginMgr]() mutable {
+                        shouldDeserialize, &linker]() mutable {
       CompilerTimeTraceScope traceScope("lowerLLVMModuleToObjectKernels");
 
       LLVMModuleAndContext deserializedModule;
@@ -1639,9 +1638,6 @@ static AnyAsyncValueRef lowerLLVMModuleToObject(
       };
       auto linkObject = [&](BufferRef object,
                             StringRef moduleName) -> ErrorOr<BufferRef> {
-        if (pluginMgr->hasPluginForTarget(options.targetTriple))
-          return pluginMgr->createSharedObject(object, options, moduleName,
-                                               linker);
         return createSharedObject(object, options, moduleName, linker);
       };
       EmitContext backendCtx{options,
@@ -1649,7 +1645,7 @@ static AnyAsyncValueRef lowerLLVMModuleToObject(
                              loc,
                              moduleIdx,
                              /*linker=*/nullptr,
-                             /*pluginMgr=*/nullptr,
+                             /*linkerPath=*/linker,
                              runLlc,
                              linkObject};
 
@@ -1703,27 +1699,16 @@ static AnyAsyncValueRef lowerLLVMModuleToObject(
             name = llvm::sys::path::filename(moduleLoc.getFilename());
           std::string moduleName = (name + Twine(moduleIdx)).str();
 
-          if (pluginMgr->hasPluginForTarget(options.targetTriple)) {
-            ErrorOr<BufferRef> bufOr = pluginMgr->createSharedObject(
-                BufferRef::create(codeBuf->Buffer::getBuffer()), options,
-                moduleName, linker);
-
-            if (bufOr.isError())
-              return std::move(output).setToError(
-                  MLRT::getMLIRDiagnostic(bufOr.takeError(), loc));
-
-            (*buf) << (*bufOr)->getBuffer();
-          } else {
-            // Emitting as a shared object
-            ErrorOr<BufferRef> bufOr = createSharedObject(
-                BufferRef::create(codeBuf->Buffer::getBuffer()), options,
-                moduleName, linker);
-            if (bufOr.isError()) {
-              return std::move(output).setToError(
-                  MLRT::getMLIRDiagnostic(bufOr.takeError(), loc));
-            }
-            (*buf) << (*bufOr)->getBuffer();
+          // Fallback for triples with no matching backend: link the object
+          // into a shared object via the default path.
+          ErrorOr<BufferRef> bufOr = createSharedObject(
+              BufferRef::create(codeBuf->Buffer::getBuffer()), options,
+              moduleName, linker);
+          if (bufOr.isError()) {
+            return std::move(output).setToError(
+                MLRT::getMLIRDiagnostic(bufOr.takeError(), loc));
           }
+          (*buf) << (*bufOr)->getBuffer();
         }
 
         std::move(output).emplace(buf.copy());
@@ -1745,8 +1730,7 @@ static std::pair<AnyAsyncValueRef, AnyAsyncValueRef> lowerLLVMModuleToObject(
     std::optional<size_t> moduleIdx, MLRT::CPUDevice &cpuDevice,
     CompilationOptions options, bool isJIT,
     DenseMap<uint64_t, llvm::SmallSet<EmitAs, 4>> &kernelEmissionKinds,
-    std::string &linker, SmallVector<std::pair<bool, Attribute>> &bitcodeLibs,
-    const std::unique_ptr<PluginManager> &pluginMgr) {
+    std::string &linker, SmallVector<std::pair<bool, Attribute>> &bitcodeLibs) {
   auto resultBufs =
       MLRT::AsyncValueRef<DenseMap<EmitAs, BufferRef>>::allocate(cpuDevice);
   auto resultKernelId = MLRT::AsyncValueRef<uint64_t>::allocate(cpuDevice);
@@ -1757,7 +1741,7 @@ static std::pair<AnyAsyncValueRef, AnyAsyncValueRef> lowerLLVMModuleToObject(
                                      loc, isJIT, options, &cpuDevice,
                                      transformCache = transformCache.copy(),
                                      &kernelEmissionKinds, &linker,
-                                     &bitcodeLibs, &pluginMgr]() mutable {
+                                     &bitcodeLibs]() mutable {
     CompilerTimeTraceScope traceScope("lowerLLVMModuleToObjectKernels");
 
     // Materialize the module.
@@ -1802,7 +1786,7 @@ static std::pair<AnyAsyncValueRef, AnyAsyncValueRef> lowerLLVMModuleToObject(
       emissionKinds.push_back(kind);
       emissionResults.push_back(lowerLLVMModuleToObject(
           *module, loc, transformCache, kernelId, cpuDevice, options, isJIT,
-          shouldDeserialize, kind, linker, pluginMgr));
+          shouldDeserialize, kind, linker));
     }
 
     if (shouldRunExtraAsm) {
@@ -1813,7 +1797,7 @@ static std::pair<AnyAsyncValueRef, AnyAsyncValueRef> lowerLLVMModuleToObject(
       // codegen result.
       emissionResults.push_back(lowerLLVMModuleToObject(
           *module, loc, transformCache, kernelId, cpuDevice, options, isJIT,
-          shouldDeserialize, EmitAs::ASM, linker, pluginMgr));
+          shouldDeserialize, EmitAs::ASM, linker));
     }
 
     auto kernelBufs =
@@ -1899,8 +1883,7 @@ ObjectCompiler::emitOffloadKernels(
           std::optional<int64_t> idx, unsigned numFunctionsBase) {
         auto result = lowerLLVMModuleToObject(
             std::move(produceModule), moduleLoc, transformCache, idx, cpuDevice,
-            options, isJIT, kernelEmissionKinds, linker, bitcodeLibs,
-            pluginMgr);
+            options, isJIT, kernelEmissionKinds, linker, bitcodeLibs);
         cachedResults.push_back(std::move(result.first));
         cachedResults.push_back(std::move(result.second));
       };
