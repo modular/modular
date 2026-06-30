@@ -5,7 +5,6 @@ description: Use speculative decoding to accelerate LLM inference
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
-import MDXListing from '@site/src/components/Listing/MDXListing';
 import InstallOpenAI from '../../_includes/install-openai.mdx';
 
 Speculative decoding accelerates LLM token generation without changing the
@@ -220,10 +219,9 @@ You can combine speculative decoding with prefix caching and with
 disaggregated inference. The following topics go deeper on performance
 and deployment:
 
-export const docs = [
-  '../../serve/prefix-caching.mdx',
-  '../../deploy/benchmark.mdx',
-  '../../deploy/local-to-cloud.mdx',
-];
-
-<MDXListing mdxList={docs} />
+- [Prefix caching with PagedAttention](/max/serve/prefix-caching): Use prefix
+  caching and PagedAttention when serving a model with the MAX CLI.
+- [Benchmark MAX on NVIDIA or AMD GPUs](/max/deploy/benchmark): Learn how to
+  use our benchmarking script to measure the performance of MAX.
+- [Deploy MAX on GPU with self-hosted endpoints](/max/deploy/local-to-cloud):
+  Learn how to deploy MAX pipelines to cloud.

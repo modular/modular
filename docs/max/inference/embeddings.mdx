@@ -10,7 +10,6 @@ import TabItem from '@theme/TabItem';
 import SmallCards from '@site/src/components/SmallCards';
 import InstallModular from '../../_includes/install-modular.mdx';
 import InstallOpenAI from '../../_includes/install-openai.mdx';
-import MDXListing from '@site/src/components/Listing/MDXListing';
 import Requirements from '@site/src/components/Requirements';
 import { requirementsNoGPU } from '../../requirements';
 
@@ -165,12 +164,10 @@ For complete details on all available API endpoints and options, see the
 ## Next steps
 
 Now that you have successfully set up MAX with an OpenAI-compatible embeddings
-endpoint, checkout out these other tutorials:
+endpoint, checkout out these other docs:
 
-export const docs = [
-  '../../develop/modules.mdx',
-  '../../develop/build-custom-ops.mdx',
-  '../../develop/custom-ops-matmul.mdx',
-];
-
-<MDXListing mdxList={docs} />
+- [Build a model graph with Module](/max/develop/modules): Learn how to
+  compose modules, write custom modules with explicit weights, load checkpoint
+  data, and construct a model graph.
+- [Build custom ops for GPUs](/max/develop/build-custom-ops): Write custom GPU
+  and CPU operations in Mojo and load them into a MAX graph.

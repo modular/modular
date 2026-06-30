@@ -3,7 +3,6 @@ title: Structured output
 description: Enable structured output with your GenAI deployments for predictable responses
 ---
 
-import MDXListing from '@site/src/components/Listing/MDXListing';
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
@@ -296,9 +295,8 @@ deployments.
 
 Next, try processing local image files or deploying to the cloud.
 
-export const docs = [
-  '../../inference/image-to-text.mdx',
-  '../../deploy/local-to-cloud.mdx',
-];
-
-<MDXListing mdxList={docs} />
+- [Image and video to text](/max/inference/image-to-text): Use the MAX chat
+  completions endpoint with image or video input to generate descriptions and
+  answer questions about visual content.
+- [Deploy MAX on GPU with self-hosted endpoints](/max/deploy/local-to-cloud):
+  Learn how to deploy MAX pipelines to cloud.
